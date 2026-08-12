@@ -5,6 +5,7 @@ import {
   getWaits,
   isCheckpointSize,
   isCompleteHand,
+  isEightPairsComplete,
   isThirteenOrphansComplete,
   parseHand,
   tileCount,
@@ -105,6 +106,21 @@ describe("isCompleteHand", () => {
     expect(tiles.length).toBe(17);
     expect(isThirteenOrphansComplete(tiles)).toBe(false);
   });
+
+  it("recognizes the Eight Pairs special hand via isEightPairsComplete", () => {
+    // 7 pairs (11m,22m,33m,44m,11z,22z,33z) + a 444z triplet = 17 tiles
+    const tiles = [...parseHand("11223344m"), ...parseHand("112233444z")];
+    expect(tiles.length).toBe(17);
+    expect(isEightPairsComplete(tiles)).toBe(true);
+    expect(isCompleteHand(tiles)).toBe(true);
+  });
+
+  it("rejects a hand with four copies of one kind instead of a clean triplet", () => {
+    // 1m appears 4 times - not "7 pairs + 1 triplet", even though the total is still 17
+    const tiles = [...parseHand("1111m222t"), ...parseHand("334455s1122z")];
+    expect(tiles.length).toBe(17);
+    expect(isEightPairsComplete(tiles)).toBe(false);
+  });
 });
 
 describe("getWaits", () => {
@@ -142,6 +158,15 @@ describe("getWaits", () => {
     expect(waits).toEqual(
       ["1m", "9m", "1t", "9t", "1s", "9s", "1z", "2z", "3z", "4z", "5z", "6z", "7z"].sort()
     );
+  });
+
+  it("finds the wide 8-way wait for a tenpai Eight Pairs hand", () => {
+    // 8 distinct pairs, spaced apart so no standard run/triplet coincides -
+    // drawing any of the 8 kinds upgrades that pair into the triplet.
+    const tiles = parseHand("114477m1144t11s1122z");
+    expect(tiles.length).toBe(16);
+    const waits = getWaits(tiles).map((t) => `${t.rank}${t.suit}`).sort();
+    expect(waits).toEqual(["1m", "4m", "7m", "1t", "4t", "1s", "1z", "2z"].sort());
   });
 });
 

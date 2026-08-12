@@ -263,11 +263,31 @@ export function isThirteenOrphansComplete(tiles: Tile[]): boolean {
   return false;
 }
 
+// The Taiwanese 16-tile Eight Pairs special hand ("liuliu"): 8 pairs of
+// distinct tile kinds (16 tiles), plus one more tile matching one of those
+// pairs, upgrading it to a triplet - 7*2 + 1*3 = 17 tiles.
+export function isEightPairsComplete(tiles: Tile[]): boolean {
+  if (tiles.length !== COMPLETE_SIZE) return false;
+  const counts = countAll(tiles);
+  let pairOrTripleKinds = 0;
+  let tripleKinds = 0;
+  for (const c of counts.values()) {
+    if (c === 2) pairOrTripleKinds++;
+    else if (c === 3) {
+      pairOrTripleKinds++;
+      tripleKinds++;
+    } else return false; // a lone single or a 4th copy breaks the pattern
+  }
+  return pairOrTripleKinds === 8 && tripleKinds === 1;
+}
+
 // Checks whether `tiles` decomposes into `meldsRequired` melds (triplet/run)
 // plus exactly one pair, i.e. tiles.length must be meldsRequired * 3 + 2.
 export function isCompleteHand(tiles: Tile[], meldsRequired: number = MELDS_REQUIRED): boolean {
   if (tiles.length !== meldsRequired * 3 + 2) return false;
-  if (meldsRequired === MELDS_REQUIRED && isThirteenOrphansComplete(tiles)) return true;
+  if (meldsRequired === MELDS_REQUIRED && (isThirteenOrphansComplete(tiles) || isEightPairsComplete(tiles))) {
+    return true;
+  }
 
   const m = countsForSuit(tiles, "m", 9);
   const t = countsForSuit(tiles, "t", 9);
