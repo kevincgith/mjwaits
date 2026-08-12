@@ -1,15 +1,9 @@
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
   font: 16px/1.5 system-ui, "Segoe UI", Roboto, sans-serif;
 }
 
 body {
   margin: 0;
   background: #fff;
-}
-
-@media (prefers-color-scheme: dark) {
-  body {
-    background: #131314;
-  }
 }

@@ -15,6 +15,16 @@ export const MELDS_REQUIRED = 5;
 export const TENPAI_SIZE = MELDS_REQUIRED * 3 + 1; // 16
 export const COMPLETE_SIZE = MELDS_REQUIRED * 3 + 2; // 17
 
+// A hand can only be checked for waits at sizes of the form 3n + 1 (one tile
+// short of some number of complete melds plus a pair): 1, 4, 7, 10, 13, 16.
+export function isCheckpointSize(size: number): boolean {
+  return size >= 1 && size <= TENPAI_SIZE && size % 3 === 1;
+}
+
+export function meldsForSize(size: number): number {
+  return (size - 1) / 3;
+}
+
 // Honor order/labels follow the common riichi convention:
 // 1 East, 2 South, 3 West, 4 North, 5 White, 6 Green, 7 Red.
 const HONOR_NAMES = ["", "East", "South", "West", "North", "White", "Green", "Red"];
@@ -38,16 +48,28 @@ export function tileLabel(t: Tile): string {
   return `${t.rank} ${suitName}`;
 }
 
-// Unicode Mahjong Tiles block glyphs for the numbered suits (well-supported
-// by most fonts). Honor tiles use traditional CJK characters instead, since
-// the wind/dragon codepoints in that block have poor font coverage.
-const HONOR_GLYPHS = ["", "東", "南", "西", "北", "白", "發", "中"];
+// Unicode Mahjong Tiles block glyphs (U+1F000-U+1F02B).
+// Honor order: East South West North (1F000-1F003), White Green Red (1F006,1F005,1F004).
+const HONOR_CODEPOINTS: Record<number, number> = {
+  1: 0x1f000,
+  2: 0x1f001,
+  3: 0x1f002,
+  4: 0x1f003,
+  5: 0x1f006,
+  6: 0x1f005,
+  7: 0x1f004,
+};
+
+// U+FE0E forces text (not emoji/color) presentation, since some of these
+// codepoints (notably Red Dragon, U+1F004) default to emoji presentation
+// while the rest of the block doesn't, which otherwise looks inconsistent.
+const TEXT_PRESENTATION = String.fromCodePoint(0xfe0e);
 
 export function tileGlyph(t: Tile): string {
-  if (t.suit === "m") return String.fromCodePoint(0x1f007 + (t.rank - 1));
-  if (t.suit === "s") return String.fromCodePoint(0x1f010 + (t.rank - 1));
-  if (t.suit === "p") return String.fromCodePoint(0x1f019 + (t.rank - 1));
-  return HONOR_GLYPHS[t.rank];
+  if (t.suit === "m") return String.fromCodePoint(0x1f007 + (t.rank - 1)) + TEXT_PRESENTATION;
+  if (t.suit === "s") return String.fromCodePoint(0x1f010 + (t.rank - 1)) + TEXT_PRESENTATION;
+  if (t.suit === "p") return String.fromCodePoint(0x1f019 + (t.rank - 1)) + TEXT_PRESENTATION;
+  return String.fromCodePoint(HONOR_CODEPOINTS[t.rank]) + TEXT_PRESENTATION;
 }
 
 export class ParseError extends Error {}
@@ -79,7 +101,25 @@ export function parseHand(input: string): Tile[] {
   if (matched.replace(/\s/g, "") !== trimmed.replace(/\s/g, "")) {
     throw new ParseError(`Could not parse: "${trimmed}"`);
   }
+  if (tiles.length > TENPAI_SIZE) {
+    throw new ParseError(`Too many tiles (max ${TENPAI_SIZE})`);
+  }
+
+  const counts = new Map<string, number>();
+  for (const t of tiles) {
+    const key = tileKey(t);
+    const count = (counts.get(key) ?? 0) + 1;
+    if (count > 4) {
+      throw new ParseError(`Too many copies of ${tileLabel(t)} (max 4)`);
+    }
+    counts.set(key, count);
+  }
+
   return tiles;
+}
+
+export function tileCount(tiles: Tile[], tile: Tile): number {
+  return tiles.filter((t) => t.suit === tile.suit && t.rank === tile.rank).length;
 }
 
 export function formatHand(tiles: Tile[]): string {
@@ -138,10 +178,10 @@ function canDecompose(counts: number[], allowRuns: boolean): boolean {
   return false;
 }
 
-// Checks whether `tiles` (expected length = COMPLETE_SIZE) decomposes into
-// MELDS_REQUIRED melds (triplet/run) plus exactly one pair.
-export function isCompleteHand(tiles: Tile[]): boolean {
-  if (tiles.length !== COMPLETE_SIZE) return false;
+// Checks whether `tiles` decomposes into `meldsRequired` melds (triplet/run)
+// plus exactly one pair, i.e. tiles.length must be meldsRequired * 3 + 2.
+export function isCompleteHand(tiles: Tile[], meldsRequired: number = MELDS_REQUIRED): boolean {
+  if (tiles.length !== meldsRequired * 3 + 2) return false;
 
   const m = countsForSuit(tiles, "m", 9);
   const p = countsForSuit(tiles, "p", 9);
@@ -168,18 +208,15 @@ export function isCompleteHand(tiles: Tile[]): boolean {
   return false;
 }
 
-// For a tenpai hand (length TENPAI_SIZE), returns every tile kind that
-// completes it.
-export function getWaits(tiles: Tile[]): Tile[] {
-  if (tiles.length !== TENPAI_SIZE) return [];
+// For a hand one tile short of meldsRequired melds + a pair (length
+// meldsRequired * 3 + 1), returns every tile kind that completes it.
+export function getWaits(tiles: Tile[], meldsRequired: number = MELDS_REQUIRED): Tile[] {
+  if (tiles.length !== meldsRequired * 3 + 1) return [];
 
   const waits: Tile[] = [];
   for (const candidate of allTileKinds()) {
-    const already = tiles.filter(
-      (t) => t.suit === candidate.suit && t.rank === candidate.rank
-    ).length;
-    if (already >= 4) continue; // all 4 copies already used, can't draw a 5th
-    if (isCompleteHand([...tiles, candidate])) {
+    if (tileCount(tiles, candidate) >= 4) continue; // all 4 copies already used, can't draw a 5th
+    if (isCompleteHand([...tiles, candidate], meldsRequired)) {
       waits.push(candidate);
     }
   }

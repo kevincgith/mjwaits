@@ -6,8 +6,11 @@ import {
   allTileKinds,
   formatHand,
   getWaits,
+  isCheckpointSize,
+  meldsForSize,
   parseHand,
   sortTiles,
+  tileCount,
   tileGlyph,
   tileLabel,
 } from "./lib/mahjong";
@@ -15,6 +18,19 @@ import type { Suit, Tile } from "./lib/mahjong";
 
 const SUIT_ORDER: Suit[] = ["m", "p", "s", "z"];
 const SUIT_LABELS: Record<Suit, string> = { m: "Man", p: "Pin", s: "Sou", z: "Honors" };
+const CHECKPOINTS = [1, 4, 7, 10, 13, 16];
+
+function nextCheckpoint(size: number): number | undefined {
+  return CHECKPOINTS.find((c) => c > size);
+}
+
+function TileGlyphSpan({ tile, large }: { tile: Tile; large?: boolean }) {
+  return (
+    <span className={large ? "tile-glyph large" : "tile-glyph"} data-suit={tile.suit} data-rank={tile.rank}>
+      {tileGlyph(tile)}
+    </span>
+  );
+}
 
 function TileButton({ tile, onClick, disabled }: { tile: Tile; onClick: () => void; disabled?: boolean }) {
   return (
@@ -25,9 +41,15 @@ function TileButton({ tile, onClick, disabled }: { tile: Tile; onClick: () => vo
       disabled={disabled}
       title={tileLabel(tile)}
     >
-      <span className="tile-glyph" data-suit={tile.suit}>
-        {tileGlyph(tile)}
-      </span>
+      <TileGlyphSpan tile={tile} />
+    </button>
+  );
+}
+
+function HandTileButton({ tile, onClick }: { tile: Tile; onClick: () => void }) {
+  return (
+    <button type="button" className="hand-tile-button" onClick={onClick} title={`Remove ${tileLabel(tile)}`}>
+      <TileGlyphSpan tile={tile} large />
     </button>
   );
 }
@@ -59,12 +81,16 @@ function App() {
     }
   };
 
-  const handleSort = () => applyHand(sortTiles(hand));
+  const handleSort = () => setHand((h) => sortTiles(h));
   const handleReset = () => applyHand([]);
+  const removeTileAt = (index: number) => applyHand(hand.filter((_, i) => i !== index));
 
-  const waits = useMemo(() => (hand.length === TENPAI_SIZE ? getWaits(hand) : []), [hand]);
-
-  const remaining = TENPAI_SIZE - hand.length;
+  const canCalculate = isCheckpointSize(hand.length);
+  const upcoming = nextCheckpoint(hand.length);
+  const results = useMemo(
+    () => (canCalculate && hand.length > 0 ? getWaits(hand, meldsForSize(hand.length)) : null),
+    [hand, canCalculate]
+  );
 
   return (
     <div className="page">
@@ -72,50 +98,6 @@ function App() {
       <p className="subtitle">Taiwanese rules · 16-tile hand</p>
 
       <section className="panel">
-        <div className="panel-header">
-          <span className="panel-title">Hand</span>
-          <button type="button" onClick={handleSort} disabled={hand.length === 0}>
-            Sort
-          </button>
-          <button type="button" onClick={handleReset} disabled={hand.length === 0}>
-            Reset
-          </button>
-          <span className="tile-count">
-            {hand.length} / {TENPAI_SIZE} tiles
-          </span>
-        </div>
-
-        <div className="hand-display">
-          {hand.length === 0 && <span className="hint">Click tiles below, or type algebraic notation.</span>}
-          {hand.map((t, i) => (
-            <span key={i} className="tile-glyph large" data-suit={t.suit}>
-              {tileGlyph(t)}
-            </span>
-          ))}
-        </div>
-
-        {hand.length === TENPAI_SIZE && (
-          <div className="waits">
-            {waits.length > 0 ? (
-              <>
-                <span className="waits-label">Waiting for:</span>
-                {waits.map((t) => (
-                  <span key={tileLabel(t)} className="tile-glyph large" data-suit={t.suit}>
-                    {tileGlyph(t)}
-                  </span>
-                ))}
-              </>
-            ) : (
-              <span className="waits-label">Not tenpai — no winning tile completes this hand.</span>
-            )}
-          </div>
-        )}
-        {hand.length < TENPAI_SIZE && hand.length > 0 && (
-          <div className="waits">
-            <span className="hint">Add {remaining} more tile{remaining === 1 ? "" : "s"} to check waits.</span>
-          </div>
-        )}
-
         <div className="tile-picker">
           {SUIT_ORDER.map((suit) => (
             <div className="suit-row" key={suit}>
@@ -127,7 +109,7 @@ function App() {
                     key={tileLabel(t)}
                     tile={t}
                     onClick={() => addTile(t)}
-                    disabled={hand.length >= TENPAI_SIZE}
+                    disabled={hand.length >= TENPAI_SIZE || tileCount(hand, t) >= 4}
                   />
                 ))}
             </div>
@@ -146,6 +128,48 @@ function App() {
           />
           {error && <span className="error">{error}</span>}
         </div>
+
+        <div className="panel-header">
+          <span className="panel-title">Hand</span>
+          <button type="button" onClick={handleSort} disabled={hand.length === 0}>
+            Sort
+          </button>
+          <button type="button" onClick={handleReset} disabled={hand.length === 0}>
+            Reset
+          </button>
+          <span className="tile-count">
+            {hand.length} / {TENPAI_SIZE} tiles
+          </span>
+        </div>
+
+        <div className="hand-display">
+          {hand.length === 0 && <span className="hint">Click tiles above, or type algebraic notation.</span>}
+          {hand.map((t, i) => (
+            <HandTileButton key={i} tile={t} onClick={() => removeTileAt(i)} />
+          ))}
+        </div>
+
+        {results !== null && (
+          <div className="waits">
+            {results.length > 0 ? (
+              <>
+                <span className="waits-label">Waiting for:</span>
+                {results.map((t) => (
+                  <TileGlyphSpan key={tileLabel(t)} tile={t} large />
+                ))}
+              </>
+            ) : (
+              <span className="waits-label">Not tenpai — no winning tile completes this hand.</span>
+            )}
+          </div>
+        )}
+        {results === null && hand.length > 0 && upcoming !== undefined && (
+          <div className="waits">
+            <span className="hint">
+              Add {upcoming - hand.length} more tile{upcoming - hand.length === 1 ? "" : "s"} to see waits.
+            </span>
+          </div>
+        )}
       </section>
     </div>
   );

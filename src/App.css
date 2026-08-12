@@ -76,6 +76,19 @@ h1 {
   font-size: 0.9rem;
 }
 
+.hand-tile-button {
+  border: none;
+  background: transparent;
+  padding: 0.1rem;
+  border-radius: 4px;
+  cursor: pointer;
+  line-height: 0;
+}
+
+.hand-tile-button:hover {
+  background: #fdecea;
+}
+
 .waits {
   display: flex;
   flex-wrap: wrap;
@@ -97,6 +110,7 @@ h1 {
 .tile-glyph {
   font-size: 1.6rem;
   line-height: 1;
+  font-variant-emoji: text;
 }
 
 .tile-glyph.large {
@@ -114,8 +128,22 @@ h1 {
 }
 .tile-glyph[data-suit="z"] {
   color: #333;
-  font-family: "Noto Sans SC", ui-sans-serif, sans-serif;
-  font-weight: 700;
+  font-family: "Apple Symbols", "Segoe UI Symbol", "Noto Sans Symbols 2", sans-serif;
+}
+/* Winds (East/South/West/North) */
+.tile-glyph[data-suit="z"][data-rank="1"],
+.tile-glyph[data-suit="z"][data-rank="2"],
+.tile-glyph[data-suit="z"][data-rank="3"],
+.tile-glyph[data-suit="z"][data-rank="4"] {
+  color: #1a5fb4;
+}
+/* Green Dragon */
+.tile-glyph[data-suit="z"][data-rank="6"] {
+  color: #1a7a3c;
+}
+/* Red Dragon */
+.tile-glyph[data-suit="z"][data-rank="7"] {
+  color: #b3261e;
 }
 
 .tile-picker {
@@ -161,6 +189,9 @@ h1 {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
+  margin-bottom: 1.25rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid #eee;
 }
 
 .algebraic-input label {
@@ -184,54 +215,4 @@ h1 {
 .error {
   color: #b3261e;
   font-size: 0.85rem;
-}
-
-@media (prefers-color-scheme: dark) {
-  .page {
-    color: #eee;
-  }
-  .subtitle {
-    color: #999;
-  }
-  .panel {
-    background: #1c1c1e;
-    border-color: #333;
-  }
-  .panel-header button {
-    background: #2a2a2c;
-    border-color: #444;
-    color: #eee;
-  }
-  .panel-header button:not(:disabled):hover {
-    background: #333;
-  }
-  .hand-display {
-    border-color: #333;
-  }
-  .waits {
-    background: #24231b;
-    border-color: #3a3826;
-  }
-  .waits-label {
-    color: #ccc;
-  }
-  .suit-label {
-    color: #999;
-  }
-  .tile-button {
-    background: #2a2a2c;
-    border-color: #444;
-  }
-  .tile-button:hover:not(:disabled) {
-    background: #333;
-    border-color: #555;
-  }
-  .algebraic-input input {
-    background: #2a2a2c;
-    border-color: #444;
-    color: #eee;
-  }
-  .tile-glyph[data-suit="z"] {
-    color: #ddd;
-  }
 }
