@@ -231,27 +231,45 @@ h1 {
   font-size: 0.85rem;
 }
 
-/* Larger tap targets on phones - the default tile buttons measure well
-   under the ~44px minimum recommended touch target size. */
+/* On phones, lay each suit row out as a fixed 9-column grid instead of a
+   wrapping flex row - every row fills the width evenly with no ragged
+   short rows (e.g. "8m/9m" spilling onto their own line), and honors
+   (only 7 kinds) just leave the last two columns empty rather than
+   starting a new row at a different tile size. */
 @media (max-width: 600px) {
-  .tile-glyph {
-    font-size: 1.9rem;
+  .page {
+    padding: 1.5rem 0.4rem 3rem;
   }
 
-  .tile-glyph.large {
-    font-size: 2.3rem;
-  }
-
-  .tile-button {
-    padding: 0.4rem 0.45rem;
-  }
-
-  .suit-row {
-    gap: 0.2rem;
+  .panel {
+    padding: 0.6rem;
   }
 
   .tile-picker {
     gap: 0.3rem;
+  }
+
+  .suit-row {
+    display: grid;
+    grid-template-columns: repeat(9, 1fr);
+    gap: 0.15rem;
+  }
+
+  .tile-button {
+    width: 100%;
+    aspect-ratio: 3 / 4;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .tile-glyph {
+    font-size: 1.5rem;
+  }
+
+  .tile-glyph.large {
+    font-size: 2.1rem;
   }
 
   .hand-tile-button {
