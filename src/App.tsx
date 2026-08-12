@@ -72,6 +72,7 @@ function App() {
   const [hand, setHand] = useState<Tile[]>([]);
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [sortMode, setSortMode] = useState(true);
 
   const applyHand = (tiles: Tile[]) => {
     setHand(tiles);
@@ -81,21 +82,26 @@ function App() {
 
   const addTile = (tile: Tile) => {
     if (hand.length >= TENPAI_SIZE) return;
-    applyHand(sortTiles([...hand, tile]));
+    const next = [...hand, tile];
+    applyHand(sortMode ? sortTiles(next) : next);
   };
 
   const onTextChange = (value: string) => {
     setText(value);
     try {
       const tiles = parseHand(value);
-      setHand(tiles);
+      setHand(sortMode ? sortTiles(tiles) : tiles);
       setError(null);
     } catch (e) {
       setError(e instanceof ParseError ? e.message : "Could not parse hand");
     }
   };
 
-  const handleSort = () => setHand((h) => sortTiles(h));
+  const toggleSortMode = () => {
+    const next = !sortMode;
+    setSortMode(next);
+    if (next) applyHand(sortTiles(hand));
+  };
   const handleReset = () => applyHand([]);
   const removeTileAt = (index: number) => applyHand(hand.filter((_, i) => i !== index));
 
@@ -147,8 +153,14 @@ function App() {
 
         <div className="panel-header">
           <span className="panel-title">Hand</span>
-          <button type="button" onClick={handleSort} disabled={hand.length === 0}>
-            Sort
+          <button
+            type="button"
+            className={sortMode ? "toggle-on" : undefined}
+            onClick={toggleSortMode}
+            aria-pressed={sortMode}
+            title={sortMode ? "Sort: on — new tiles are kept in order" : "Sort: off — new tiles keep input order"}
+          >
+            Sort: {sortMode ? "On" : "Off"}
           </button>
           <button type="button" onClick={handleReset} disabled={hand.length === 0}>
             Reset

@@ -48,6 +48,16 @@ h1 {
   background: #ececec;
 }
 
+.panel-header button.toggle-on {
+  background: #eaf1fb;
+  border-color: #1a5fb4;
+  color: #1a5fb4;
+}
+
+.panel-header button.toggle-on:not(:disabled):hover {
+  background: #ddebfa;
+}
+
 .tile-count {
   margin-left: auto;
   color: #888;
