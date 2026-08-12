@@ -10,8 +10,8 @@ import {
 
 describe("parseHand / formatHand", () => {
   it("round-trips simple notation", () => {
-    const tiles = parseHand("123m11p22s");
-    expect(formatHand(tiles)).toBe("123m11p22s");
+    const tiles = parseHand("123m11t22s");
+    expect(formatHand(tiles)).toBe("123m11t22s");
   });
 
   it("rejects out-of-range ranks", () => {
@@ -35,7 +35,7 @@ describe("parseHand / formatHand", () => {
   });
 
   it("rejects more than 16 tiles", () => {
-    expect(() => parseHand("123456789m12345678p")).toThrow();
+    expect(() => parseHand("123456789m12345678t")).toThrow();
   });
 });
 
@@ -61,7 +61,7 @@ describe("tileCount", () => {
 describe("isCompleteHand", () => {
   it("accepts 5 triplets/runs + a pair (17 tiles)", () => {
     // 4 triplets of man + pair of pin + one run of sou = 5 melds + pair
-    const tiles = [...parseHand("111222333444m"), ...parseHand("11p345s")];
+    const tiles = [...parseHand("111222333444m"), ...parseHand("11t345s")];
     expect(tiles.length).toBe(17);
     expect(isCompleteHand(tiles)).toBe(true);
   });
@@ -78,42 +78,42 @@ describe("isCompleteHand", () => {
 
   it("rejects an incomplete decomposition", () => {
     // 4 triplets + pair (14 tiles) + 4s,4s,6s, which is not a meld
-    const tiles = [...parseHand("111222333444m"), ...parseHand("11p446s")];
+    const tiles = [...parseHand("111222333444m"), ...parseHand("11t446s")];
     expect(tiles.length).toBe(17);
     expect(isCompleteHand(tiles)).toBe(false);
   });
 
   it("supports a smaller meld count for partial-hand checkpoints", () => {
     // 1 meld + pair (5 tiles) = meldsRequired 1
-    expect(isCompleteHand(parseHand("111m22p"), 1)).toBe(true);
-    expect(isCompleteHand(parseHand("111m23p"), 1)).toBe(false);
+    expect(isCompleteHand(parseHand("111m22t"), 1)).toBe(true);
+    expect(isCompleteHand(parseHand("111m23t"), 1)).toBe(false);
   });
 });
 
 describe("getWaits", () => {
-  it("finds shanpon wait on 1p/2s for a 16-tile hand", () => {
-    const tiles = parseHand("111222333444m11p22s");
+  it("finds shanpon wait on 1t/2s for a 16-tile hand", () => {
+    const tiles = parseHand("111222333444m11t22s");
     expect(tiles.length).toBe(16);
     const waits = getWaits(tiles).map((t) => `${t.rank}${t.suit}`).sort();
-    expect(waits).toEqual(["1p", "2s"]);
+    expect(waits).toEqual(["1t", "2s"]);
   });
 
   it("finds an edge wait (kanchan) on 3s/6s", () => {
-    const tiles = parseHand("111m222m333m444m11p45s");
+    const tiles = parseHand("111m222m333m444m11t45s");
     expect(tiles.length).toBe(16);
     const waits = getWaits(tiles).map((t) => `${t.rank}${t.suit}`).sort();
     expect(waits).toEqual(["3s", "6s"]);
   });
 
   it("returns empty for a hand that is not tenpai", () => {
-    const tiles = parseHand("13579m2468p111z");
+    const tiles = parseHand("13579m2468t111z");
     expect(getWaits(tiles)).toEqual([]);
   });
 
   it("supports smaller checkpoint sizes (4 tiles, 1 meld required)", () => {
-    // 11m pair + 23p partial run -> waits on 1p/4p
-    const tiles = parseHand("11m23p");
+    // 11m pair + 23t partial run -> waits on 1t/4t
+    const tiles = parseHand("11m23t");
     const waits = getWaits(tiles, 1).map((t) => `${t.rank}${t.suit}`).sort();
-    expect(waits).toEqual(["1p", "4p"]);
+    expect(waits).toEqual(["1t", "4t"]);
   });
 });

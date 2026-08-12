@@ -7,12 +7,7 @@
 
 h1 {
   font-size: 1.75rem;
-  margin: 0 0 0.25rem;
-}
-
-.subtitle {
   margin: 0 0 1.5rem;
-  color: #666;
 }
 
 .panel {
@@ -120,7 +115,7 @@ h1 {
 .tile-glyph[data-suit="m"] {
   color: #b3261e;
 }
-.tile-glyph[data-suit="p"] {
+.tile-glyph[data-suit="t"] {
   color: #1a5fb4;
 }
 .tile-glyph[data-suit="s"] {
@@ -137,13 +132,13 @@ h1 {
 .tile-glyph[data-suit="z"][data-rank="4"] {
   color: #1a5fb4;
 }
+/* Red Dragon */
+.tile-glyph[data-suit="z"][data-rank="5"] {
+  color: #b3261e;
+}
 /* Green Dragon */
 .tile-glyph[data-suit="z"][data-rank="6"] {
   color: #1a7a3c;
-}
-/* Red Dragon */
-.tile-glyph[data-suit="z"][data-rank="7"] {
-  color: #b3261e;
 }
 
 .tile-picker {
@@ -158,13 +153,6 @@ h1 {
   align-items: center;
   gap: 0.15rem;
   flex-wrap: wrap;
-}
-
-.suit-label {
-  width: 3.5rem;
-  flex-shrink: 0;
-  font-size: 0.8rem;
-  color: #888;
 }
 
 .tile-button {

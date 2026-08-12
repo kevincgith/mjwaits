@@ -4,11 +4,11 @@
 // A tenpai hand is 16 tiles, one tile short of complete. This module figures
 // out, for a given 16-tile hand, which tiles complete it.
 
-export type Suit = "m" | "p" | "s" | "z";
+export type Suit = "m" | "t" | "s" | "z";
 
 export interface Tile {
   suit: Suit;
-  rank: number; // 1-9 for m/p/s, 1-7 for z (honors)
+  rank: number; // 1-9 for m/t/s, 1-7 for z (honors)
 }
 
 export const MELDS_REQUIRED = 5;
@@ -25,9 +25,8 @@ export function meldsForSize(size: number): number {
   return (size - 1) / 3;
 }
 
-// Honor order/labels follow the common riichi convention:
-// 1 East, 2 South, 3 West, 4 North, 5 White, 6 Green, 7 Red.
-const HONOR_NAMES = ["", "East", "South", "West", "North", "White", "Green", "Red"];
+// Honor order/labels: 1 East, 2 South, 3 West, 4 North, 5 Red, 6 Green, 7 White.
+const HONOR_NAMES = ["", "East", "South", "West", "North", "Red", "Green", "White"];
 
 export function tileKey(t: Tile): string {
   return `${t.suit}${t.rank}`;
@@ -35,7 +34,7 @@ export function tileKey(t: Tile): string {
 
 export function allTileKinds(): Tile[] {
   const tiles: Tile[] = [];
-  for (const suit of ["m", "p", "s"] as const) {
+  for (const suit of ["m", "t", "s"] as const) {
     for (let rank = 1; rank <= 9; rank++) tiles.push({ suit, rank });
   }
   for (let rank = 1; rank <= 7; rank++) tiles.push({ suit: "z", rank });
@@ -44,20 +43,20 @@ export function allTileKinds(): Tile[] {
 
 export function tileLabel(t: Tile): string {
   if (t.suit === "z") return HONOR_NAMES[t.rank];
-  const suitName = t.suit === "m" ? "Man" : t.suit === "p" ? "Pin" : "Sou";
+  const suitName = t.suit === "m" ? "Man" : t.suit === "t" ? "Pin" : "Sou";
   return `${t.rank} ${suitName}`;
 }
 
 // Unicode Mahjong Tiles block glyphs (U+1F000-U+1F02B).
-// Honor order: East South West North (1F000-1F003), White Green Red (1F006,1F005,1F004).
+// Honor order: East South West North (1F000-1F003), Red Green White (1F004,1F005,1F006).
 const HONOR_CODEPOINTS: Record<number, number> = {
   1: 0x1f000,
   2: 0x1f001,
   3: 0x1f002,
   4: 0x1f003,
-  5: 0x1f006,
+  5: 0x1f004,
   6: 0x1f005,
-  7: 0x1f004,
+  7: 0x1f006,
 };
 
 // U+FE0E forces text (not emoji/color) presentation, since some of these
@@ -68,7 +67,7 @@ const TEXT_PRESENTATION = String.fromCodePoint(0xfe0e);
 export function tileGlyph(t: Tile): string {
   if (t.suit === "m") return String.fromCodePoint(0x1f007 + (t.rank - 1)) + TEXT_PRESENTATION;
   if (t.suit === "s") return String.fromCodePoint(0x1f010 + (t.rank - 1)) + TEXT_PRESENTATION;
-  if (t.suit === "p") return String.fromCodePoint(0x1f019 + (t.rank - 1)) + TEXT_PRESENTATION;
+  if (t.suit === "t") return String.fromCodePoint(0x1f019 + (t.rank - 1)) + TEXT_PRESENTATION;
   return String.fromCodePoint(HONOR_CODEPOINTS[t.rank]) + TEXT_PRESENTATION;
 }
 
@@ -78,7 +77,7 @@ export class ParseError extends Error {}
 export function parseHand(input: string): Tile[] {
   const trimmed = input.trim();
   if (trimmed === "") return [];
-  const groupPattern = /(\d+)([mpsz])/g;
+  const groupPattern = /(\d+)([mtsz])/g;
   const tiles: Tile[] = [];
   let matched = "";
   let match: RegExpExecArray | null;
@@ -123,9 +122,9 @@ export function tileCount(tiles: Tile[], tile: Tile): number {
 }
 
 export function formatHand(tiles: Tile[]): string {
-  const bySuit: Record<Suit, number[]> = { m: [], p: [], s: [], z: [] };
+  const bySuit: Record<Suit, number[]> = { m: [], t: [], s: [], z: [] };
   for (const t of tiles) bySuit[t.suit].push(t.rank);
-  const order: Suit[] = ["m", "p", "s", "z"];
+  const order: Suit[] = ["m", "t", "s", "z"];
   return order
     .filter((suit) => bySuit[suit].length > 0)
     .map((suit) => bySuit[suit].sort((a, b) => a - b).join("") + suit)
@@ -133,7 +132,7 @@ export function formatHand(tiles: Tile[]): string {
 }
 
 export function sortTiles(tiles: Tile[]): Tile[] {
-  const order: Record<Suit, number> = { m: 0, p: 1, s: 2, z: 3 };
+  const order: Record<Suit, number> = { m: 0, t: 1, s: 2, z: 3 };
   return [...tiles].sort((a, b) => order[a.suit] - order[b.suit] || a.rank - b.rank);
 }
 
@@ -184,13 +183,13 @@ export function isCompleteHand(tiles: Tile[], meldsRequired: number = MELDS_REQU
   if (tiles.length !== meldsRequired * 3 + 2) return false;
 
   const m = countsForSuit(tiles, "m", 9);
-  const p = countsForSuit(tiles, "p", 9);
+  const t = countsForSuit(tiles, "t", 9);
   const s = countsForSuit(tiles, "s", 9);
   const z = countsForSuit(tiles, "z", 7);
 
   const suitsData: { counts: number[]; allowRuns: boolean }[] = [
     { counts: m, allowRuns: true },
-    { counts: p, allowRuns: true },
+    { counts: t, allowRuns: true },
     { counts: s, allowRuns: true },
     { counts: z, allowRuns: false },
   ];

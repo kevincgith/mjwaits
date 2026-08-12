@@ -16,8 +16,7 @@ import {
 } from "./lib/mahjong";
 import type { Suit, Tile } from "./lib/mahjong";
 
-const SUIT_ORDER: Suit[] = ["m", "p", "s", "z"];
-const SUIT_LABELS: Record<Suit, string> = { m: "Man", p: "Pin", s: "Sou", z: "Honors" };
+const SUIT_ORDER: Suit[] = ["m", "t", "s", "z"];
 const CHECKPOINTS = [1, 4, 7, 10, 13, 16];
 
 function nextCheckpoint(size: number): number | undefined {
@@ -95,13 +94,11 @@ function App() {
   return (
     <div className="page">
       <h1>Mahjong Waits Calculator</h1>
-      <p className="subtitle">Taiwanese rules · 16-tile hand</p>
 
       <section className="panel">
         <div className="tile-picker">
           {SUIT_ORDER.map((suit) => (
             <div className="suit-row" key={suit}>
-              <span className="suit-label">{SUIT_LABELS[suit]}</span>
               {allTileKinds()
                 .filter((t) => t.suit === suit)
                 .map((t) => (
@@ -123,7 +120,7 @@ function App() {
             type="text"
             value={text}
             onChange={(e) => onTextChange(e.target.value)}
-            placeholder="e.g. 111222333444m11p22s"
+            placeholder="e.g. 111222333444m11t22s"
             spellCheck={false}
           />
           {error && <span className="error">{error}</span>}
