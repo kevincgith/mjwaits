@@ -121,13 +121,16 @@ export function tileCount(tiles: Tile[], tile: Tile): number {
   return tiles.filter((t) => t.suit === tile.suit && t.rank === tile.rank).length;
 }
 
+// Groups tiles by suit (required by the notation format) but otherwise
+// preserves the given order of ranks within each suit - callers that want
+// ranks sorted should sort `tiles` first (see sortTiles).
 export function formatHand(tiles: Tile[]): string {
   const bySuit: Record<Suit, number[]> = { m: [], t: [], s: [], z: [] };
   for (const t of tiles) bySuit[t.suit].push(t.rank);
   const order: Suit[] = ["m", "t", "s", "z"];
   return order
     .filter((suit) => bySuit[suit].length > 0)
-    .map((suit) => bySuit[suit].sort((a, b) => a - b).join("") + suit)
+    .map((suit) => bySuit[suit].join("") + suit)
     .join("");
 }
 

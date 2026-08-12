@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import "./App.css";
 import {
   ParseError,
@@ -16,6 +16,13 @@ import {
   tileLabel,
 } from "./lib/mahjong";
 import type { DiscardOption, Suit, Tile } from "./lib/mahjong";
+
+// A stable id per tile instance, so sorting for display never loses track
+// of which underlying tile is which (needed to revert Sort cleanly, and to
+// remove the right instance when several tiles share a suit/rank).
+interface HandTile extends Tile {
+  id: number;
+}
 
 const SUIT_ORDER: Suit[] = ["m", "t", "s", "z"];
 const CHECKPOINTS = [1, 4, 7, 10, 13, 16];
@@ -69,28 +76,33 @@ function DiscardOptionRow({ option }: { option: DiscardOption }) {
 }
 
 function App() {
-  const [hand, setHand] = useState<Tile[]>([]);
+  // `hand` always holds tiles in true input order - Sort never mutates it,
+  // it only changes how `displayHand` (below) is derived for rendering/text.
+  const [hand, setHand] = useState<HandTile[]>([]);
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [sortMode, setSortMode] = useState(true);
+  const nextId = useRef(0);
+  const withIds = (tiles: Tile[]): HandTile[] => tiles.map((t) => ({ ...t, id: nextId.current++ }));
+  const forDisplay = (tiles: HandTile[], sorted: boolean) => (sorted ? (sortTiles(tiles) as HandTile[]) : tiles);
 
-  const applyHand = (tiles: Tile[]) => {
+  const displayHand = useMemo(() => forDisplay(hand, sortMode), [hand, sortMode]);
+
+  const applyHand = (tiles: HandTile[]) => {
     setHand(tiles);
-    setText(formatHand(tiles));
+    setText(formatHand(forDisplay(tiles, sortMode)));
     setError(null);
   };
 
   const addTile = (tile: Tile) => {
     if (hand.length >= TENPAI_SIZE) return;
-    const next = [...hand, tile];
-    applyHand(sortMode ? sortTiles(next) : next);
+    applyHand([...hand, ...withIds([tile])]);
   };
 
   const onTextChange = (value: string) => {
     setText(value);
     try {
-      const tiles = parseHand(value);
-      setHand(sortMode ? sortTiles(tiles) : tiles);
+      setHand(withIds(parseHand(value)));
       setError(null);
     } catch (e) {
       setError(e instanceof ParseError ? e.message : "Could not parse hand");
@@ -100,10 +112,10 @@ function App() {
   const toggleSortMode = () => {
     const next = !sortMode;
     setSortMode(next);
-    if (next) applyHand(sortTiles(hand));
+    setText(formatHand(forDisplay(hand, next)));
   };
   const handleReset = () => applyHand([]);
-  const removeTileAt = (index: number) => applyHand(hand.filter((_, i) => i !== index));
+  const removeTile = (id: number) => applyHand(hand.filter((t) => t.id !== id));
 
   const canCalculate = isCheckpointSize(hand.length);
   const upcoming = nextCheckpoint(hand.length);
@@ -172,8 +184,8 @@ function App() {
 
         <div className="hand-display">
           {hand.length === 0 && <span className="hint">Click tiles above, or type algebraic notation.</span>}
-          {hand.map((t, i) => (
-            <HandTileButton key={i} tile={t} onClick={() => removeTileAt(i)} />
+          {displayHand.map((t) => (
+            <HandTileButton key={t.id} tile={t} onClick={() => removeTile(t.id)} />
           ))}
         </div>
 

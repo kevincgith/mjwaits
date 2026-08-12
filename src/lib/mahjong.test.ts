@@ -17,6 +17,11 @@ describe("parseHand / formatHand", () => {
     expect(formatHand(tiles)).toBe("123m11t22s");
   });
 
+  it("preserves rank order within a suit rather than re-sorting it", () => {
+    const tiles = parseHand("321m");
+    expect(formatHand(tiles)).toBe("321m");
+  });
+
   it("rejects out-of-range ranks", () => {
     expect(() => parseHand("9z")).toThrow();
     expect(() => parseHand("0m")).toThrow();
