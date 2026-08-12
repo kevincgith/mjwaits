@@ -115,9 +115,18 @@ describe("isCompleteHand", () => {
     expect(isCompleteHand(tiles)).toBe(true);
   });
 
-  it("rejects a hand with four copies of one kind instead of a clean triplet", () => {
-    // 1m appears 4 times - not "7 pairs + 1 triplet", even though the total is still 17
-    const tiles = [...parseHand("1111m222t"), ...parseHand("334455s1122z")];
+  it("allows a kind's all 4 copies to count as two of the 8 pairs", () => {
+    // 1m x4 and 2z x4 each count as 2 pairs, plus 1s/3s/5z/6z pairs (4 more) = 8 pairs (16),
+    // and drawing another 1s upgrades that pair into the triplet (17).
+    const tiles = [...parseHand("1111m1133s"), ...parseHand("22225566z1s")];
+    expect(tiles.length).toBe(17);
+    expect(isEightPairsComplete(tiles)).toBe(true);
+    expect(isCompleteHand(tiles)).toBe(true);
+  });
+
+  it("rejects a hand with a lone single tile among otherwise-clean pairs", () => {
+    // 8 clean pairs (16 tiles) plus one unrelated stray 9s - not a valid triplet upgrade
+    const tiles = [...parseHand("114477m1144t11s1122z"), ...parseHand("9s")];
     expect(tiles.length).toBe(17);
     expect(isEightPairsComplete(tiles)).toBe(false);
   });
@@ -167,6 +176,15 @@ describe("getWaits", () => {
     expect(tiles.length).toBe(16);
     const waits = getWaits(tiles).map((t) => `${t.rank}${t.suit}`).sort();
     expect(waits).toEqual(["1m", "4m", "7m", "1t", "4t", "1s", "1z", "2z"].sort());
+  });
+
+  it("narrows the Eight Pairs wait when two kinds are already full quads", () => {
+    // 1m and 2z are already at 4 copies each (2 pairs' worth), so they can't
+    // be drawn again - only the 4 plain pairs (1s/3s/5z/6z) can be upgraded.
+    const tiles = parseHand("1111m1133s22225566z");
+    expect(tiles.length).toBe(16);
+    const waits = getWaits(tiles).map((t) => `${t.rank}${t.suit}`).sort();
+    expect(waits).toEqual(["1s", "3s", "5z", "6z"].sort());
   });
 });
 
