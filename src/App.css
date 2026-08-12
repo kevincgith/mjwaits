@@ -124,6 +124,8 @@ h1 {
 .tile-glyph[data-suit="z"] {
   color: #333;
   font-family: "Apple Symbols", "Segoe UI Symbol", "Noto Sans Symbols 2", sans-serif;
+  position: relative;
+  top: 0.15em;
 }
 /* Winds (East/South/West/North) */
 .tile-glyph[data-suit="z"][data-rank="1"],
