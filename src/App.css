@@ -230,3 +230,41 @@ h1 {
   color: #b3261e;
   font-size: 0.85rem;
 }
+
+/* Larger tap targets on phones - the default tile buttons measure well
+   under the ~44px minimum recommended touch target size. */
+@media (max-width: 600px) {
+  .tile-glyph {
+    font-size: 1.9rem;
+  }
+
+  .tile-glyph.large {
+    font-size: 2.3rem;
+  }
+
+  .tile-button {
+    padding: 0.4rem 0.45rem;
+  }
+
+  .suit-row {
+    gap: 0.2rem;
+  }
+
+  .tile-picker {
+    gap: 0.3rem;
+  }
+
+  .hand-tile-button {
+    padding: 0.2rem;
+  }
+
+  .panel-header button {
+    padding: 0.5rem 0.85rem;
+    font-size: 0.9rem;
+  }
+
+  .algebraic-input input {
+    font-size: 1rem;
+    padding: 0.65rem 0.75rem;
+  }
+}
