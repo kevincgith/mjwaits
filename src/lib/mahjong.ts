@@ -177,10 +177,97 @@ function canDecompose(counts: number[], allowRuns: boolean): boolean {
   return false;
 }
 
+// The 13 "orphan" kinds: the terminal (1/9) of each numbered suit, plus all
+// 7 honors.
+const ORPHAN_TILES: Tile[] = [
+  { suit: "m", rank: 1 },
+  { suit: "m", rank: 9 },
+  { suit: "t", rank: 1 },
+  { suit: "t", rank: 9 },
+  { suit: "s", rank: 1 },
+  { suit: "s", rank: 9 },
+  { suit: "z", rank: 1 },
+  { suit: "z", rank: 2 },
+  { suit: "z", rank: 3 },
+  { suit: "z", rank: 4 },
+  { suit: "z", rank: 5 },
+  { suit: "z", rank: 6 },
+  { suit: "z", rank: 7 },
+];
+const ORPHAN_KEYS = new Set(ORPHAN_TILES.map(tileKey));
+
+function countAll(tiles: Tile[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const t of tiles) {
+    const key = tileKey(t);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return counts;
+}
+
+// After removing one candidate meld, do the remaining 14 tiles consist of
+// exactly the 13 orphan kinds, each once, except one kind twice (the pair)?
+function isOrphanRemainder(counts: Map<string, number>): boolean {
+  let total = 0;
+  let pairs = 0;
+  for (const key of ORPHAN_KEYS) {
+    const c = counts.get(key) ?? 0;
+    if (c < 1 || c > 2) return false;
+    if (c === 2) pairs++;
+    total += c;
+  }
+  if (pairs !== 1 || total !== 14) return false;
+  for (const [key, c] of counts) {
+    if (!ORPHAN_KEYS.has(key) && c > 0) return false;
+  }
+  return true;
+}
+
+function candidateMelds(tiles: Tile[]): Tile[][] {
+  const counts = countAll(tiles);
+  const melds: Tile[][] = [];
+  for (const [key, c] of counts) {
+    if (c >= 3) {
+      const suit = key[0] as Suit;
+      const rank = Number(key.slice(1));
+      melds.push([{ suit, rank }, { suit, rank }, { suit, rank }]);
+    }
+  }
+  for (const suit of ["m", "t", "s"] as const) {
+    for (let rank = 1; rank <= 7; rank++) {
+      const a = `${suit}${rank}`;
+      const b = `${suit}${rank + 1}`;
+      const c = `${suit}${rank + 2}`;
+      if ((counts.get(a) ?? 0) >= 1 && (counts.get(b) ?? 0) >= 1 && (counts.get(c) ?? 0) >= 1) {
+        melds.push([{ suit, rank }, { suit, rank: rank + 1 }, { suit, rank: rank + 2 }]);
+      }
+    }
+  }
+  return melds;
+}
+
+// The Taiwanese 16-tile Thirteen Orphans special hand: all 13 orphan kinds
+// (one of each), one of them doubled to form the pair, plus one ordinary
+// meld (pong or chow) - 13 + 1 + 3 = 17 tiles. Structurally unrelated to the
+// standard "N melds + pair" shape, so it's checked separately.
+export function isThirteenOrphansComplete(tiles: Tile[]): boolean {
+  if (tiles.length !== COMPLETE_SIZE) return false;
+  for (const meld of candidateMelds(tiles)) {
+    const counts = countAll(tiles);
+    for (const t of meld) {
+      const key = tileKey(t);
+      counts.set(key, (counts.get(key) ?? 0) - 1);
+    }
+    if (isOrphanRemainder(counts)) return true;
+  }
+  return false;
+}
+
 // Checks whether `tiles` decomposes into `meldsRequired` melds (triplet/run)
 // plus exactly one pair, i.e. tiles.length must be meldsRequired * 3 + 2.
 export function isCompleteHand(tiles: Tile[], meldsRequired: number = MELDS_REQUIRED): boolean {
   if (tiles.length !== meldsRequired * 3 + 2) return false;
+  if (meldsRequired === MELDS_REQUIRED && isThirteenOrphansComplete(tiles)) return true;
 
   const m = countsForSuit(tiles, "m", 9);
   const t = countsForSuit(tiles, "t", 9);
@@ -220,4 +307,50 @@ export function getWaits(tiles: Tile[], meldsRequired: number = MELDS_REQUIRED):
     }
   }
   return waits;
+}
+
+export interface DiscardOption {
+  discard: Tile;
+  draws: Tile[];
+}
+
+function uniqueTileKinds(tiles: Tile[]): Tile[] {
+  const seen = new Set<string>();
+  const unique: Tile[] = [];
+  for (const t of tiles) {
+    const key = tileKey(t);
+    if (!seen.has(key)) {
+      seen.add(key);
+      unique.push(t);
+    }
+  }
+  return unique;
+}
+
+// For a hand at a checkpoint size (meldsRequired * 3 + 1), and assuming it is
+// NOT already tenpai, finds every (discard, resulting useful draws) pair:
+// for each distinct tile you could discard, which tiles - once drawn - bring
+// the hand back to that size and into tenpai. Options are sorted by number
+// of useful draws, most first.
+export function analyzeDiscards(tiles: Tile[], meldsRequired: number = MELDS_REQUIRED): DiscardOption[] {
+  const size = meldsRequired * 3 + 1;
+  if (tiles.length !== size) return [];
+
+  const options: DiscardOption[] = [];
+  for (const discard of uniqueTileKinds(tiles)) {
+    const discardIndex = tiles.findIndex((t) => t.suit === discard.suit && t.rank === discard.rank);
+    const remaining = [...tiles.slice(0, discardIndex), ...tiles.slice(discardIndex + 1)];
+
+    const draws: Tile[] = [];
+    for (const candidate of allTileKinds()) {
+      if (tileCount(remaining, candidate) >= 4) continue;
+      const redrawn = [...remaining, candidate];
+      if (getWaits(redrawn, meldsRequired).length > 0) {
+        draws.push(candidate);
+      }
+    }
+    options.push({ discard, draws });
+  }
+
+  return options.sort((a, b) => b.draws.length - a.draws.length);
 }

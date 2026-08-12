@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  analyzeDiscards,
   formatHand,
   getWaits,
   isCheckpointSize,
   isCompleteHand,
+  isThirteenOrphansComplete,
   parseHand,
   tileCount,
 } from "./mahjong";
@@ -88,6 +90,21 @@ describe("isCompleteHand", () => {
     expect(isCompleteHand(parseHand("111m22t"), 1)).toBe(true);
     expect(isCompleteHand(parseHand("111m23t"), 1)).toBe(false);
   });
+
+  it("recognizes the Thirteen Orphans special hand via isThirteenOrphansComplete", () => {
+    // 13 orphan singles + an extra 1m (the pair) + a 222m pong (the meld) = 17 tiles
+    const tiles = [...parseHand("112922m19t"), ...parseHand("19s1234567z")];
+    expect(tiles.length).toBe(17);
+    expect(isThirteenOrphansComplete(tiles)).toBe(true);
+    expect(isCompleteHand(tiles)).toBe(true);
+  });
+
+  it("rejects an orphan-looking hand missing one orphan kind", () => {
+    // Same shape but 2z (South) swapped for a second 3z (West) - not all 13 kinds present
+    const tiles = [...parseHand("112922m19t"), ...parseHand("19s1334567z")];
+    expect(tiles.length).toBe(17);
+    expect(isThirteenOrphansComplete(tiles)).toBe(false);
+  });
 });
 
 describe("getWaits", () => {
@@ -115,5 +132,44 @@ describe("getWaits", () => {
     const tiles = parseHand("11m23t");
     const waits = getWaits(tiles, 1).map((t) => `${t.rank}${t.suit}`).sort();
     expect(waits).toEqual(["1t", "4t"]);
+  });
+
+  it("finds the classic 13-way wait for a tenpai Thirteen Orphans hand", () => {
+    // 13 orphan singles + a complete 222m pong = 16 tiles, missing only the pair
+    const tiles = parseHand("19222m19t19s1234567z");
+    expect(tiles.length).toBe(16);
+    const waits = getWaits(tiles).map((t) => `${t.rank}${t.suit}`).sort();
+    expect(waits).toEqual(
+      ["1m", "9m", "1t", "9t", "1s", "9s", "1z", "2z", "3z", "4z", "5z", "6z", "7z"].sort()
+    );
+  });
+});
+
+describe("analyzeDiscards", () => {
+  it("finds discard/draw pairs that reach tenpai, and ranks them by acceptance", () => {
+    // 11m pair + two disconnected stray tiles (1s, 9s) - not tenpai.
+    const tiles = parseHand("11m1s9s");
+    expect(getWaits(tiles, 1)).toEqual([]);
+
+    const options = analyzeDiscards(tiles, 1);
+    const byDiscard = Object.fromEntries(
+      options.map((o) => [`${o.discard.rank}${o.discard.suit}`, o.draws.map((d) => `${d.rank}${d.suit}`).sort()])
+    );
+
+    // Discarding the pair tile leaves nothing to build on.
+    expect(byDiscard["1m"]).toEqual([]);
+    // Discarding 9s leaves 1s as a lone edge tile: 1s/2s/3s extend it into a
+    // partial run, and drawing 1m upgrades the pair into a triplet instead.
+    expect(byDiscard["9s"]).toEqual(["1m", "1s", "2s", "3s"]);
+    // Discarding 1s leaves 9s as a lone edge tile: 7s/8s/9s extend it into a
+    // partial run, and drawing 1m upgrades the pair into a triplet instead.
+    expect(byDiscard["1s"]).toEqual(["1m", "7s", "8s", "9s"]);
+
+    // Best discards (most draws) come first.
+    expect(options[0].draws.length).toBeGreaterThan(options[options.length - 1].draws.length);
+  });
+
+  it("returns nothing for hand sizes that aren't a valid checkpoint", () => {
+    expect(analyzeDiscards(parseHand("11m1s"))).toEqual([]);
   });
 });

@@ -4,6 +4,7 @@ import {
   ParseError,
   TENPAI_SIZE,
   allTileKinds,
+  analyzeDiscards,
   formatHand,
   getWaits,
   isCheckpointSize,
@@ -14,7 +15,7 @@ import {
   tileGlyph,
   tileLabel,
 } from "./lib/mahjong";
-import type { Suit, Tile } from "./lib/mahjong";
+import type { DiscardOption, Suit, Tile } from "./lib/mahjong";
 
 const SUIT_ORDER: Suit[] = ["m", "t", "s", "z"];
 const CHECKPOINTS = [1, 4, 7, 10, 13, 16];
@@ -50,6 +51,20 @@ function HandTileButton({ tile, onClick }: { tile: Tile; onClick: () => void }) 
     <button type="button" className="hand-tile-button" onClick={onClick} title={`Remove ${tileLabel(tile)}`}>
       <TileGlyphSpan tile={tile} large />
     </button>
+  );
+}
+
+function DiscardOptionRow({ option }: { option: DiscardOption }) {
+  return (
+    <div className="discard-row">
+      <TileGlyphSpan tile={option.discard} />
+      <span className="discard-arrow">→</span>
+      {option.draws.length > 0 ? (
+        option.draws.map((t) => <TileGlyphSpan key={tileLabel(t)} tile={t} />)
+      ) : (
+        <span className="hint">no draw reaches tenpai</span>
+      )}
+    </div>
   );
 }
 
@@ -89,6 +104,10 @@ function App() {
   const results = useMemo(
     () => (canCalculate && hand.length > 0 ? getWaits(hand, meldsForSize(hand.length)) : null),
     [hand, canCalculate]
+  );
+  const discardOptions = useMemo(
+    () => (hand.length === TENPAI_SIZE && results?.length === 0 ? analyzeDiscards(hand) : null),
+    [hand, results]
   );
 
   return (
@@ -146,18 +165,25 @@ function App() {
           ))}
         </div>
 
-        {results !== null && (
+        {results !== null && results.length > 0 && (
           <div className="waits">
-            {results.length > 0 ? (
-              <>
-                <span className="waits-label">Waiting for:</span>
-                {results.map((t) => (
-                  <TileGlyphSpan key={tileLabel(t)} tile={t} large />
-                ))}
-              </>
-            ) : (
-              <span className="waits-label">Not tenpai — no winning tile completes this hand.</span>
-            )}
+            <span className="waits-label">Waiting for:</span>
+            {results.map((t) => (
+              <TileGlyphSpan key={tileLabel(t)} tile={t} large />
+            ))}
+          </div>
+        )}
+        {results !== null && results.length === 0 && discardOptions === null && (
+          <div className="waits">
+            <span className="waits-label">Not tenpai — no winning tile completes this hand.</span>
+          </div>
+        )}
+        {discardOptions !== null && (
+          <div className="waits discard-analysis">
+            <span className="waits-label">Not tenpai — discard options and what to draw:</span>
+            {discardOptions.map((o) => (
+              <DiscardOptionRow key={tileLabel(o.discard)} option={o} />
+            ))}
           </div>
         )}
         {results === null && hand.length > 0 && upcoming !== undefined && (
