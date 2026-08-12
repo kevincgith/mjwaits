@@ -176,6 +176,32 @@ h1 {
 .tile-glyph[data-suit="z"][data-rank="6"] {
   color: #1a7a3c;
 }
+/* Joker - a wildcard, so it gets its own distinct color */
+.tile-glyph[data-suit="j"] {
+  color: #8b5cf6;
+  font-family: "Apple Symbols", "Segoe UI Symbol", "Noto Sans Symbols 2", sans-serif;
+  position: relative;
+  top: 0.15em;
+}
+
+.wait-result {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+}
+
+.joker-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.1rem;
+  font-size: 0.75rem;
+  color: #666;
+  background: #f2eefc;
+  border: 1px solid #e0d4f7;
+  border-radius: 4px;
+  padding: 0.1rem 0.3rem;
+  margin-left: 0.15rem;
+}
 
 .tile-picker {
   display: flex;

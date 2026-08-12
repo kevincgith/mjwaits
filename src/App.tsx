@@ -6,7 +6,7 @@ import {
   allTileKinds,
   analyzeDiscards,
   formatHand,
-  getWaits,
+  getWaitsWithJokers,
   isCheckpointSize,
   meldsForSize,
   parseHand,
@@ -15,7 +15,7 @@ import {
   tileGlyph,
   tileLabel,
 } from "./lib/mahjong";
-import type { DiscardOption, Suit, Tile } from "./lib/mahjong";
+import type { DiscardOption, JokerWaitResult, Suit, Tile } from "./lib/mahjong";
 
 // A stable id per tile instance, so sorting for display never loses track
 // of which underlying tile is which (needed to revert Sort cleanly, and to
@@ -24,6 +24,7 @@ interface HandTile extends Tile {
   id: number;
 }
 
+const JOKER_TILE: Tile = { suit: "j", rank: 1 };
 const SUIT_ORDER: Suit[] = ["m", "t", "s", "z"];
 const CHECKPOINTS = [1, 4, 7, 10, 13, 16];
 
@@ -58,6 +59,22 @@ function HandTileButton({ tile, onClick }: { tile: Tile; onClick: () => void }) 
     <button type="button" className="hand-tile-button" onClick={onClick} title={`Remove ${tileLabel(tile)}`}>
       <TileGlyphSpan tile={tile} large />
     </button>
+  );
+}
+
+function WaitResultTile({ result }: { result: JokerWaitResult }) {
+  return (
+    <span className="wait-result">
+      <TileGlyphSpan tile={result.wait} large />
+      {result.jokers.length > 0 && (
+        <span className="joker-hint" title="What the joker(s) resolve to for this wait">
+          <TileGlyphSpan tile={JOKER_TILE} />=
+          {result.jokers.map((j, i) => (
+            <TileGlyphSpan key={i} tile={j} />
+          ))}
+        </span>
+      )}
+    </span>
   );
 }
 
@@ -119,13 +136,17 @@ function App() {
 
   const canCalculate = isCheckpointSize(hand.length);
   const upcoming = nextCheckpoint(hand.length);
-  const results = useMemo(
-    () => (canCalculate && hand.length > 0 ? getWaits(hand, meldsForSize(hand.length)) : null),
+  const hasJokers = useMemo(() => hand.some((t) => t.suit === "j"), [hand]);
+  const outcome = useMemo(
+    () => (canCalculate && hand.length > 0 ? getWaitsWithJokers(hand, meldsForSize(hand.length)) : null),
     [hand, canCalculate]
   );
   const discardOptions = useMemo(
-    () => (hand.length === TENPAI_SIZE && results?.length === 0 ? analyzeDiscards(hand) : null),
-    [hand, results]
+    () =>
+      !hasJokers && hand.length === TENPAI_SIZE && outcome && !outcome.overflowed && outcome.results.length === 0
+        ? analyzeDiscards(hand)
+        : null,
+    [hand, outcome, hasJokers]
   );
 
   return (
@@ -148,6 +169,9 @@ function App() {
                 ))}
             </div>
           ))}
+          <div className="suit-row">
+            <TileButton tile={JOKER_TILE} onClick={() => addTile(JOKER_TILE)} disabled={hand.length >= TENPAI_SIZE} />
+          </div>
         </div>
 
         <div className="algebraic-input">
@@ -189,17 +213,28 @@ function App() {
           ))}
         </div>
 
-        {results !== null && results.length > 0 && (
+        {outcome !== null && outcome.overflowed && (
+          <div className="waits">
+            <span className="waits-label">
+              Too many joker possibilities to calculate exactly (~{outcome.estimatedCombinations.toLocaleString()}{" "}
+              combinations). Try fewer jokers.
+            </span>
+          </div>
+        )}
+        {outcome !== null && !outcome.overflowed && outcome.results.length > 0 && (
           <div className="waits">
             <span className="waits-label">Waiting for:</span>
-            {results.map((t) => (
-              <TileGlyphSpan key={tileLabel(t)} tile={t} large />
+            {outcome.results.map((r) => (
+              <WaitResultTile key={tileLabel(r.wait)} result={r} />
             ))}
           </div>
         )}
-        {results !== null && results.length === 0 && discardOptions === null && (
+        {outcome !== null && !outcome.overflowed && outcome.results.length === 0 && discardOptions === null && (
           <div className="waits">
-            <span className="waits-label">Not tenpai — no winning tile completes this hand.</span>
+            <span className="waits-label">
+              Not tenpai — no winning tile completes this hand{hasJokers ? ", even trying every joker possibility" : ""}.
+            </span>
+            {hasJokers && <span className="hint">Discard analysis isn't available yet for hands with jokers.</span>}
           </div>
         )}
         {discardOptions !== null && (
@@ -210,7 +245,7 @@ function App() {
             ))}
           </div>
         )}
-        {results === null && hand.length > 0 && upcoming !== undefined && (
+        {outcome === null && hand.length > 0 && upcoming !== undefined && (
           <div className="waits">
             <span className="hint">
               Add {upcoming - hand.length} more tile{upcoming - hand.length === 1 ? "" : "s"} to see waits.

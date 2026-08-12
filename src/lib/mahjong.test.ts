@@ -3,6 +3,7 @@ import {
   analyzeDiscards,
   formatHand,
   getWaits,
+  getWaitsWithJokers,
   isCheckpointSize,
   isCompleteHand,
   isEightPairsComplete,
@@ -44,6 +45,12 @@ describe("parseHand / formatHand", () => {
 
   it("rejects more than 16 tiles", () => {
     expect(() => parseHand("123456789m12345678t")).toThrow();
+  });
+
+  it("parses jokers as bare 'j' characters, exempt from the 4-copy cap", () => {
+    const tiles = parseHand("jjjjjj3m");
+    expect(tiles.filter((t) => t.suit === "j").length).toBe(6);
+    expect(formatHand(tiles)).toBe("3mjjjjjj");
   });
 });
 
@@ -190,6 +197,51 @@ describe("getWaits", () => {
     expect(tiles.length).toBe(16);
     const waits = getWaits(tiles).map((t) => `${t.rank}${t.suit}`).sort();
     expect(waits).toEqual(["1s", "3s", "5z", "6z"].sort());
+  });
+});
+
+describe("getWaitsWithJokers", () => {
+  it("matches plain getWaits when the hand has no jokers", () => {
+    const tiles = parseHand("111222333444m11t22s");
+    const outcome = getWaitsWithJokers(tiles);
+    expect(outcome.overflowed).toBe(false);
+    if (outcome.overflowed) throw new Error("unreachable");
+    const waits = outcome.results.map((r) => `${r.wait.rank}${r.wait.suit}`).sort();
+    expect(waits).toEqual(["1t", "2s"]);
+    expect(outcome.results.every((r) => r.jokers.length === 0)).toBe(true);
+  });
+
+  it("finds waits a single joker unlocks, wider than a real tile's own wait shape", () => {
+    // 11m pair + lone 5s + 1 joker. Beyond the joker just extending 5s into a
+    // run (waits 4s/5s/6s/3s/7s via kanchan/ryanmen shapes), it can also
+    // duplicate 5s to pair it, letting 1m/1m + the draw become the triplet
+    // - which is why 1m shows up too.
+    const tiles = parseHand("11m5sj");
+    const outcome = getWaitsWithJokers(tiles, 1);
+    expect(outcome.overflowed).toBe(false);
+    if (outcome.overflowed) throw new Error("unreachable");
+    const waitKeys = outcome.results.map((r) => `${r.wait.rank}${r.wait.suit}`).sort();
+    expect(waitKeys).toEqual(["1m", "3s", "4s", "5s", "6s", "7s"]);
+  });
+
+  it("every returned joker assignment actually completes the hand", () => {
+    const tiles = parseHand("11m5sj");
+    const outcome = getWaitsWithJokers(tiles, 1);
+    expect(outcome.overflowed).toBe(false);
+    if (outcome.overflowed) throw new Error("unreachable");
+    for (const { wait, jokers } of outcome.results) {
+      const nonJokers = tiles.filter((t) => t.suit !== "j");
+      const reconstructed = [...nonJokers, ...jokers, wait];
+      expect(isCompleteHand(reconstructed, 1)).toBe(true);
+    }
+  });
+
+  it("falls back to an overflow result instead of hanging when there are too many jokers", () => {
+    const tiles = parseHand("jjjjjj"); // 6 jokers, C(39,6) ~= 3.26M combinations
+    const outcome = getWaitsWithJokers(tiles, 1);
+    expect(outcome.overflowed).toBe(true);
+    if (!outcome.overflowed) throw new Error("unreachable");
+    expect(outcome.estimatedCombinations).toBeGreaterThan(1_000_000);
   });
 });
 
