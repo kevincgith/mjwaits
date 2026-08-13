@@ -29,6 +29,15 @@ const JOKER_TILE: Tile = { suit: "j", rank: 1 };
 const SUIT_ORDER: Suit[] = ["m", "t", "s", "z"];
 const CHECKPOINTS = [1, 4, 7, 10, 13, 16];
 
+type BreakdownMode = "off" | "on" | "sorted";
+const BREAKDOWN_CYCLE: BreakdownMode[] = ["off", "on", "sorted"];
+const BREAKDOWN_LABEL: Record<BreakdownMode, string> = { off: "Off", on: "On", sorted: "Sorted" };
+const BREAKDOWN_TITLE: Record<BreakdownMode, string> = {
+  off: "Breakdown: off — shows just the waiting tiles",
+  on: "Breakdown: on — shows the meld/pair split for each wait, pair first",
+  sorted: "Breakdown: sorted — shows the meld/pair split in tile order, not pair-first",
+};
+
 function nextCheckpoint(size: number): number | undefined {
   return CHECKPOINTS.find((c) => c > size);
 }
@@ -84,10 +93,12 @@ function WaitBreakdownRow({
   result,
   nonJokerHand,
   meldsRequired,
+  sorted,
 }: {
   result: JokerWaitResult;
   nonJokerHand: Tile[];
   meldsRequired: number;
+  sorted: boolean;
 }) {
   const complete = [...nonJokerHand, ...result.jokers, result.wait];
   const breakdown = decomposeHand(complete, meldsRequired);
@@ -102,10 +113,21 @@ function WaitBreakdownRow({
     );
   }
 
+  const groups = [
+    { tiles: breakdown.pair, key: "pair" },
+    ...breakdown.melds.map((tiles, i) => ({ tiles, key: `meld-${i}` })),
+  ];
+  const ordered = sorted
+    ? [...groups].sort((a, b) => {
+        const [ta, tb] = [a.tiles[0], b.tiles[0]];
+        return SUIT_ORDER.indexOf(ta.suit) - SUIT_ORDER.indexOf(tb.suit) || ta.rank - tb.rank;
+      })
+    : groups;
+
   let waitPlaced = false;
-  const renderGroup = (group: Tile[], key: string) => (
+  const renderGroup = ({ tiles, key }: (typeof groups)[number]) => (
     <span className="breakdown-group" key={key}>
-      {group.map((t, i) => {
+      {tiles.map((t, i) => {
         const isWait = !waitPlaced && t.suit === result.wait.suit && t.rank === result.wait.rank;
         if (isWait) waitPlaced = true;
         return <TileGlyphSpan key={i} tile={t} large highlight={isWait} />;
@@ -117,10 +139,7 @@ function WaitBreakdownRow({
     <div className="breakdown-row">
       <TileGlyphSpan tile={result.wait} large />
       <span className="discard-arrow">→</span>
-      <span className="breakdown-groups">
-        {renderGroup(breakdown.pair, "pair")}
-        {breakdown.melds.map((m, i) => renderGroup(m, `meld-${i}`))}
-      </span>
+      <span className="breakdown-groups">{ordered.map(renderGroup)}</span>
     </div>
   );
 }
@@ -146,7 +165,7 @@ function App() {
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [sortMode, setSortMode] = useState(true);
-  const [breakdownMode, setBreakdownMode] = useState(false);
+  const [breakdownMode, setBreakdownMode] = useState<BreakdownMode>("off");
   const nextId = useRef(0);
   const withIds = (tiles: Tile[]): HandTile[] => tiles.map((t) => ({ ...t, id: nextId.current++ }));
   const forDisplay = (tiles: HandTile[], sorted: boolean) => (sorted ? (sortTiles(tiles) as HandTile[]) : tiles);
@@ -251,16 +270,14 @@ function App() {
           </button>
           <button
             type="button"
-            className={breakdownMode ? "toggle-on" : undefined}
-            onClick={() => setBreakdownMode((v) => !v)}
-            aria-pressed={breakdownMode}
-            title={
-              breakdownMode
-                ? "Breakdown: on — shows the meld/pair split for each wait"
-                : "Breakdown: off — shows just the waiting tiles"
+            className={breakdownMode !== "off" ? "toggle-on" : undefined}
+            onClick={() =>
+              setBreakdownMode((m) => BREAKDOWN_CYCLE[(BREAKDOWN_CYCLE.indexOf(m) + 1) % BREAKDOWN_CYCLE.length])
             }
+            aria-pressed={breakdownMode !== "off"}
+            title={BREAKDOWN_TITLE[breakdownMode]}
           >
-            Breakdown: {breakdownMode ? "On" : "Off"}
+            Breakdown: {BREAKDOWN_LABEL[breakdownMode]}
           </button>
           <span className="tile-count">
             {hand.length} / {TENPAI_SIZE} tiles
@@ -283,18 +300,19 @@ function App() {
           </div>
         )}
         {outcome !== null && !outcome.overflowed && outcome.results.length > 0 && (
-          <div className={breakdownMode ? "waits breakdown-list" : "waits"}>
+          <div className={breakdownMode !== "off" ? "waits breakdown-list" : "waits"}>
             {outcome.results.length === allTileKinds().length && (
               <span className="waits-label universal-wait">Universal wait — any tile completes this hand.</span>
             )}
             <span className="waits-label">Waiting for:</span>
-            {breakdownMode ? (
+            {breakdownMode !== "off" ? (
               outcome.results.map((r) => (
                 <WaitBreakdownRow
                   key={tileLabel(r.wait)}
                   result={r}
                   nonJokerHand={hand.filter((t) => t.suit !== "j")}
                   meldsRequired={meldsForSize(hand.length)}
+                  sorted={breakdownMode === "sorted"}
                 />
               ))
             ) : (
