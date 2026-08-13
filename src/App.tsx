@@ -229,21 +229,34 @@ function App() {
 
   const displayHand = useMemo(() => forDisplay(hand, sortMode), [hand, sortMode]);
 
-  const applyHand = (tiles: HandTile[]) => {
+  // Mirrors `hand`, but updated synchronously (unlike the state, which only
+  // reflects reality once React commits a render). Tapping tiles fast enough
+  // that two taps land before a render commits between them would otherwise
+  // have both addTile calls read the SAME stale `hand` from their closures
+  // and each build their "next hand" from it independently - the second call
+  // clobbering the first, which is what caused rapid taps to drop or
+  // duplicate tiles. Handlers read/write this ref instead so each one always
+  // builds on the one immediately before it, no matter how fast they fire.
+  const handRef = useRef<HandTile[]>([]);
+
+  const commitHand = (tiles: HandTile[]) => {
+    handRef.current = tiles;
     setHand(tiles);
     setText(formatHand(forDisplay(tiles, sortMode)));
     setError(null);
   };
 
   const addTile = (tile: Tile) => {
-    if (hand.length >= TENPAI_SIZE) return;
-    applyHand([...hand, ...withIds([tile])]);
+    if (handRef.current.length >= TENPAI_SIZE) return;
+    commitHand([...handRef.current, ...withIds([tile])]);
   };
 
   const onTextChange = (value: string) => {
     setText(value);
     try {
-      setHand(withIds(parseHand(value)));
+      const parsed = withIds(parseHand(value));
+      handRef.current = parsed;
+      setHand(parsed);
       setError(null);
     } catch (e) {
       setError(e instanceof ParseError ? e.message : "Could not parse hand");
@@ -253,10 +266,10 @@ function App() {
   const toggleSortMode = () => {
     const next = !sortMode;
     setSortMode(next);
-    setText(formatHand(forDisplay(hand, next)));
+    setText(formatHand(forDisplay(handRef.current, next)));
   };
-  const handleReset = () => applyHand([]);
-  const removeTile = (id: number) => applyHand(hand.filter((t) => t.id !== id));
+  const handleReset = () => commitHand([]);
+  const removeTile = (id: number) => commitHand(handRef.current.filter((t) => t.id !== id));
 
   const canCalculate = isCheckpointSize(hand.length);
   const upcoming = nextCheckpoint(hand.length);
