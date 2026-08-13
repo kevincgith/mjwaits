@@ -5,6 +5,7 @@ import {
   TENPAI_SIZE,
   allTileKinds,
   analyzeDiscards,
+  decomposeHand,
   formatHand,
   getWaitsWithJokers,
   isCheckpointSize,
@@ -32,9 +33,10 @@ function nextCheckpoint(size: number): number | undefined {
   return CHECKPOINTS.find((c) => c > size);
 }
 
-function TileGlyphSpan({ tile, large }: { tile: Tile; large?: boolean }) {
+function TileGlyphSpan({ tile, large, highlight }: { tile: Tile; large?: boolean; highlight?: boolean }) {
+  const classes = ["tile-glyph", large && "large", highlight && "wait-highlight"].filter(Boolean).join(" ");
   return (
-    <span className={large ? "tile-glyph large" : "tile-glyph"} data-suit={tile.suit} data-rank={tile.rank}>
+    <span className={classes} data-suit={tile.suit} data-rank={tile.rank}>
       {tileGlyph(tile)}
     </span>
   );
@@ -78,6 +80,51 @@ function WaitResultTile({ result }: { result: JokerWaitResult }) {
   );
 }
 
+function WaitBreakdownRow({
+  result,
+  nonJokerHand,
+  meldsRequired,
+}: {
+  result: JokerWaitResult;
+  nonJokerHand: Tile[];
+  meldsRequired: number;
+}) {
+  const complete = [...nonJokerHand, ...result.jokers, result.wait];
+  const breakdown = decomposeHand(complete, meldsRequired);
+
+  if (!breakdown) {
+    // Special hands (Thirteen Orphans, Eight Pairs) don't decompose into
+    // melds + pair - fall back to the plain wait display for these.
+    return (
+      <div className="breakdown-row">
+        <WaitResultTile result={result} />
+      </div>
+    );
+  }
+
+  let waitPlaced = false;
+  const renderGroup = (group: Tile[], key: string) => (
+    <span className="breakdown-group" key={key}>
+      {group.map((t, i) => {
+        const isWait = !waitPlaced && t.suit === result.wait.suit && t.rank === result.wait.rank;
+        if (isWait) waitPlaced = true;
+        return <TileGlyphSpan key={i} tile={t} large highlight={isWait} />;
+      })}
+    </span>
+  );
+
+  return (
+    <div className="breakdown-row">
+      <TileGlyphSpan tile={result.wait} large />
+      <span className="discard-arrow">→</span>
+      <span className="breakdown-groups">
+        {renderGroup(breakdown.pair, "pair")}
+        {breakdown.melds.map((m, i) => renderGroup(m, `meld-${i}`))}
+      </span>
+    </div>
+  );
+}
+
 function DiscardOptionRow({ option }: { option: DiscardOption }) {
   return (
     <div className="discard-row">
@@ -99,6 +146,7 @@ function App() {
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [sortMode, setSortMode] = useState(true);
+  const [breakdownMode, setBreakdownMode] = useState(false);
   const nextId = useRef(0);
   const withIds = (tiles: Tile[]): HandTile[] => tiles.map((t) => ({ ...t, id: nextId.current++ }));
   const forDisplay = (tiles: HandTile[], sorted: boolean) => (sorted ? (sortTiles(tiles) as HandTile[]) : tiles);
@@ -201,6 +249,19 @@ function App() {
           <button type="button" onClick={handleReset} disabled={hand.length === 0}>
             Reset
           </button>
+          <button
+            type="button"
+            className={breakdownMode ? "toggle-on" : undefined}
+            onClick={() => setBreakdownMode((v) => !v)}
+            aria-pressed={breakdownMode}
+            title={
+              breakdownMode
+                ? "Breakdown: on — shows the meld/pair split for each wait"
+                : "Breakdown: off — shows just the waiting tiles"
+            }
+          >
+            Breakdown: {breakdownMode ? "On" : "Off"}
+          </button>
           <span className="tile-count">
             {hand.length} / {TENPAI_SIZE} tiles
           </span>
@@ -222,14 +283,23 @@ function App() {
           </div>
         )}
         {outcome !== null && !outcome.overflowed && outcome.results.length > 0 && (
-          <div className="waits">
+          <div className={breakdownMode ? "waits breakdown-list" : "waits"}>
             {outcome.results.length === allTileKinds().length && (
               <span className="waits-label universal-wait">Universal wait — any tile completes this hand.</span>
             )}
             <span className="waits-label">Waiting for:</span>
-            {outcome.results.map((r) => (
-              <WaitResultTile key={tileLabel(r.wait)} result={r} />
-            ))}
+            {breakdownMode ? (
+              outcome.results.map((r) => (
+                <WaitBreakdownRow
+                  key={tileLabel(r.wait)}
+                  result={r}
+                  nonJokerHand={hand.filter((t) => t.suit !== "j")}
+                  meldsRequired={meldsForSize(hand.length)}
+                />
+              ))
+            ) : (
+              outcome.results.map((r) => <WaitResultTile key={tileLabel(r.wait)} result={r} />)
+            )}
           </div>
         )}
         {outcome !== null && !outcome.overflowed && outcome.results.length === 0 && discardOptions === null && (

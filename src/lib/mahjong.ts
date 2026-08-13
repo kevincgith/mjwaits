@@ -190,6 +190,53 @@ function canDecompose(counts: number[], allowRuns: boolean): boolean {
   return false;
 }
 
+// Same search as canDecompose, but records the actual meld tiles formed
+// (pushed onto `groups` on the successful path, popped on backtrack).
+function decomposeSuitGroups(counts: number[], allowRuns: boolean, suit: Suit, groups: Tile[][]): boolean {
+  const size = counts.length - 1;
+  let i = 1;
+  while (i <= size && counts[i] === 0) i++;
+  if (i > size) return true;
+
+  if (counts[i] >= 3) {
+    counts[i] -= 3;
+    groups.push([
+      { suit, rank: i },
+      { suit, rank: i },
+      { suit, rank: i },
+    ]);
+    if (decomposeSuitGroups(counts, allowRuns, suit, groups)) {
+      counts[i] += 3;
+      return true;
+    }
+    groups.pop();
+    counts[i] += 3;
+  }
+
+  if (allowRuns && i <= size - 2 && counts[i + 1] > 0 && counts[i + 2] > 0) {
+    counts[i]--;
+    counts[i + 1]--;
+    counts[i + 2]--;
+    groups.push([
+      { suit, rank: i },
+      { suit, rank: i + 1 },
+      { suit, rank: i + 2 },
+    ]);
+    if (decomposeSuitGroups(counts, allowRuns, suit, groups)) {
+      counts[i]++;
+      counts[i + 1]++;
+      counts[i + 2]++;
+      return true;
+    }
+    groups.pop();
+    counts[i]++;
+    counts[i + 1]++;
+    counts[i + 2]++;
+  }
+
+  return false;
+}
+
 // The 13 "orphan" kinds: the terminal (1/9) of each numbered suit, plus all
 // 7 honors.
 const ORPHAN_TILES: Tile[] = [
@@ -322,6 +369,48 @@ export function isCompleteHand(tiles: Tile[], meldsRequired: number = MELDS_REQU
     }
   }
   return false;
+}
+
+export interface HandBreakdown {
+  pair: Tile[];
+  melds: Tile[][];
+}
+
+// Returns one valid meld+pair decomposition of a complete standard-shape
+// hand (special hands like Thirteen Orphans/Eight Pairs don't decompose
+// this way and return null here). For a hand with jokers already resolved
+// to concrete tiles (see getWaitsWithJokers's `jokers` field), this finds
+// SOME valid grouping - not necessarily the exact one the joker search
+// used internally, but an equally valid one, which is all display needs.
+export function decomposeHand(tiles: Tile[], meldsRequired: number = MELDS_REQUIRED): HandBreakdown | null {
+  if (tiles.length !== meldsRequired * 3 + 2) return null;
+
+  const suitsData: { suit: Suit; counts: number[]; allowRuns: boolean }[] = [
+    { suit: "m", counts: countsForSuit(tiles, "m", 9), allowRuns: true },
+    { suit: "t", counts: countsForSuit(tiles, "t", 9), allowRuns: true },
+    { suit: "s", counts: countsForSuit(tiles, "s", 9), allowRuns: true },
+    { suit: "z", counts: countsForSuit(tiles, "z", 7), allowRuns: false },
+  ];
+
+  for (const sd of suitsData) {
+    for (let rank = 1; rank < sd.counts.length; rank++) {
+      if (sd.counts[rank] < 2) continue;
+      sd.counts[rank] -= 2;
+      const melds: Tile[][] = [];
+      const ok = suitsData.every((s2) => decomposeSuitGroups(s2.counts, s2.allowRuns, s2.suit, melds));
+      sd.counts[rank] += 2;
+      if (ok) {
+        return {
+          pair: [
+            { suit: sd.suit, rank },
+            { suit: sd.suit, rank },
+          ],
+          melds,
+        };
+      }
+    }
+  }
+  return null;
 }
 
 // For a hand one tile short of meldsRequired melds + a pair (length

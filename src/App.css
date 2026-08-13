@@ -142,6 +142,47 @@ h1 {
   margin: 0 0.35rem;
 }
 
+.breakdown-list {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.5rem;
+}
+
+.breakdown-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0;
+  border-top: 1px solid #ede9d8;
+}
+
+.breakdown-row:first-of-type {
+  border-top: none;
+}
+
+.breakdown-groups {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+.breakdown-group {
+  display: flex;
+  align-items: center;
+  gap: 0.1rem;
+  padding: 0.15rem 0.25rem;
+  border-radius: 4px;
+}
+
+.tile-glyph.wait-highlight {
+  background: #fff3cd;
+  outline: 2px solid #e8a400;
+  outline-offset: 1px;
+  border-radius: 3px;
+}
+
 .tile-glyph {
   font-size: 1.6rem;
   line-height: 1;

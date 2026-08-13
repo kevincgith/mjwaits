@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  MELDS_REQUIRED,
   allTileKinds,
   analyzeDiscards,
+  decomposeHand,
   formatHand,
   getWaits,
   getWaitsWithJokers,
@@ -228,6 +230,47 @@ describe("getWaits", () => {
     expect(tiles.length).toBe(16);
     const waits = getWaits(tiles).map((t) => `${t.rank}${t.suit}`).sort();
     expect(waits).toEqual(["1s", "3s", "5z", "6z"].sort());
+  });
+});
+
+describe("decomposeHand", () => {
+  it("breaks down 1m completing 1234m as 11m + 234m", () => {
+    const breakdown = decomposeHand(parseHand("11234m"), 1);
+    expect(breakdown).not.toBeNull();
+    const format = (g: { suit: string; rank: number }[]) => g.map((t) => `${t.rank}${t.suit}`).join("");
+    expect(format(breakdown!.pair)).toBe("1m1m");
+    expect(breakdown!.melds.map(format)).toEqual(["2m3m4m"]);
+  });
+
+  it("breaks down 4m completing 1234m as 44m + 123m", () => {
+    const breakdown = decomposeHand(parseHand("12344m"), 1);
+    expect(breakdown).not.toBeNull();
+    const format = (g: { suit: string; rank: number }[]) => g.map((t) => `${t.rank}${t.suit}`).join("");
+    expect(format(breakdown!.pair)).toBe("4m4m");
+    expect(breakdown!.melds.map(format)).toEqual(["1m2m3m"]);
+  });
+
+  it("returns null for the wrong hand size", () => {
+    expect(decomposeHand(parseHand("11234m"), 5)).toBeNull();
+  });
+
+  it("returns null for special hands (they don't decompose into melds+pair)", () => {
+    const orphans = [...parseHand("112922m19t"), ...parseHand("19s1234567z")];
+    expect(isCompleteHand(orphans)).toBe(true);
+    expect(decomposeHand(orphans)).toBeNull();
+  });
+
+  it("finds a valid breakdown for every wait of a larger hand, matching isCompleteHand", () => {
+    const tiles = parseHand("111222333444m11t22s");
+    for (const wait of getWaits(tiles)) {
+      const complete = [...tiles, wait];
+      const breakdown = decomposeHand(complete);
+      expect(breakdown).not.toBeNull();
+      expect(breakdown!.melds.length).toBe(MELDS_REQUIRED);
+      // Reassemble and confirm it's the same multiset as the complete hand.
+      const reassembled = [...breakdown!.pair, ...breakdown!.melds.flat()];
+      expect(reassembled.length).toBe(complete.length);
+    }
   });
 });
 
