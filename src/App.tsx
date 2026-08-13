@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import "./App.css";
 import {
   ParseError,
@@ -44,6 +44,53 @@ function nextCheckpoint(size: number): number | undefined {
   return CHECKPOINTS.find((c) => c > size);
 }
 
+// iOS Safari's native touch->click pipeline gets unreliable under fast
+// successive taps on different elements - under load, its target
+// resolution for the synthesized click can lag behind and fire on the
+// PREVIOUS element's tap instead of the current one, which is what caused
+// rapid tile taps to duplicate an earlier tile. Pointer events sidestep
+// this: a touch pointer has implicit capture, so pointerup always fires on
+// the exact element that got pointerdown, with no separate "which element
+// was this click for" resolution step to get wrong. Mouse and keyboard
+// still go through the plain onClick path (calling preventDefault on
+// pointerdown only suppresses the browser's compatibility click for
+// touch/pen, not a real mouse click), with a flag to stop the touch path's
+// own trailing click from double-firing on browsers that still send one.
+function useTap(onTap: () => void, disabled?: boolean) {
+  const startRef = useRef<{ x: number; y: number } | null>(null);
+  const suppressClickRef = useRef(false);
+
+  const onPointerDown = (e: ReactPointerEvent) => {
+    if (disabled) return;
+    startRef.current = { x: e.clientX, y: e.clientY };
+    if (e.pointerType !== "mouse") e.preventDefault();
+  };
+
+  const onPointerUp = (e: ReactPointerEvent) => {
+    if (disabled || e.pointerType === "mouse") return;
+    const start = startRef.current;
+    startRef.current = null;
+    if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 10) return; // a drag/scroll, not a tap
+    suppressClickRef.current = true;
+    onTap();
+  };
+
+  const onPointerCancel = () => {
+    startRef.current = null;
+  };
+
+  const onClick = () => {
+    if (disabled) return;
+    if (suppressClickRef.current) {
+      suppressClickRef.current = false;
+      return;
+    }
+    onTap();
+  };
+
+  return { onPointerDown, onPointerUp, onPointerCancel, onClick };
+}
+
 function TileGlyphSpan({ tile, large, highlight }: { tile: Tile; large?: boolean; highlight?: boolean }) {
   const classes = ["tile-glyph", large && "large", highlight && "wait-highlight"].filter(Boolean).join(" ");
   return (
@@ -54,22 +101,18 @@ function TileGlyphSpan({ tile, large, highlight }: { tile: Tile; large?: boolean
 }
 
 function TileButton({ tile, onClick, disabled }: { tile: Tile; onClick: () => void; disabled?: boolean }) {
+  const tap = useTap(onClick, disabled);
   return (
-    <button
-      type="button"
-      className="tile-button"
-      onClick={onClick}
-      disabled={disabled}
-      title={tileLabel(tile)}
-    >
+    <button type="button" className="tile-button" disabled={disabled} title={tileLabel(tile)} {...tap}>
       <TileGlyphSpan tile={tile} />
     </button>
   );
 }
 
 function HandTileButton({ tile, onClick }: { tile: Tile; onClick: () => void }) {
+  const tap = useTap(onClick);
   return (
-    <button type="button" className="hand-tile-button" onClick={onClick} title={`Remove ${tileLabel(tile)}`}>
+    <button type="button" className="hand-tile-button" title={`Remove ${tileLabel(tile)}`} {...tap}>
       <TileGlyphSpan tile={tile} large />
     </button>
   );
