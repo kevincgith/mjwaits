@@ -4,6 +4,7 @@ import {
   ParseError,
   TENPAI_SIZE,
   allTileKinds,
+  analyzeDiscardEfficiency,
   analyzeDiscards,
   decomposeHand,
   formatHand,
@@ -17,7 +18,7 @@ import {
   tileGlyph,
   tileLabel,
 } from "./lib/mahjong";
-import type { DiscardOption, JokerWaitResult, Suit, Tile } from "./lib/mahjong";
+import type { DiscardEfficiency, DiscardOption, JokerWaitResult, Suit, Tile } from "./lib/mahjong";
 
 // A stable id per tile instance, so sorting for display never loses track
 // of which underlying tile is which (needed to revert Sort cleanly, and to
@@ -177,6 +178,42 @@ function DiscardOptionRow({ option }: { option: DiscardOption }) {
   );
 }
 
+function DiscardEfficiencyRow({ option }: { option: DiscardEfficiency }) {
+  return (
+    <div className="discard-row discard-efficiency-row">
+      <div className="discard-efficiency-header">
+        <TileGlyphSpan tile={option.discard} />
+        <span className="discard-arrow">→</span>
+        <span
+          className="efficiency-score"
+          title="Sum over each useful draw of (copies of that draw left) × (remaining tiles in the wait it leads to). Higher means more likely to reach a win."
+        >
+          {option.score} pt{option.score === 1 ? "" : "s"}
+        </span>
+      </div>
+      {option.draws.length > 0 ? (
+        <div className="discard-efficiency-draws">
+          {option.draws.map((d) => (
+            <div className="draw-detail-row" key={tileLabel(d.draw)}>
+              <TileGlyphSpan tile={d.draw} />
+              <RemainingCountBadge count={d.drawRemaining} />
+              <span className="discard-arrow">→</span>
+              {d.resultingWaits.map((w) => (
+                <TileGlyphSpan key={tileLabel(w)} tile={w} />
+              ))}
+              <span className="hint">
+                ({d.resultingWaitsTotal} tile{d.resultingWaitsTotal === 1 ? "" : "s"})
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <span className="hint">no draw reaches tenpai</span>
+      )}
+    </div>
+  );
+}
+
 function App() {
   // `hand` always holds tiles in true input order - Sort never mutates it,
   // it only changes how `displayHand` (below) is derived for rendering/text.
@@ -232,12 +269,15 @@ function App() {
     () => (canCalculate && hand.length > 0 && !hasJokers ? shanten(hand, meldsForSize(hand.length)) : null),
     [hand, canCalculate, hasJokers]
   );
+  const notTenpaiCheckpoint =
+    !hasJokers && hand.length === TENPAI_SIZE && outcome !== null && !outcome.overflowed && outcome.results.length === 0;
   const discardOptions = useMemo(
-    () =>
-      !hasJokers && hand.length === TENPAI_SIZE && outcome && !outcome.overflowed && outcome.results.length === 0
-        ? analyzeDiscards(hand)
-        : null,
-    [hand, outcome, hasJokers]
+    () => (notTenpaiCheckpoint ? analyzeDiscards(hand) : null),
+    [notTenpaiCheckpoint, hand]
+  );
+  const discardEfficiency = useMemo(
+    () => (waitsCountMode && notTenpaiCheckpoint ? analyzeDiscardEfficiency(hand) : null),
+    [waitsCountMode, notTenpaiCheckpoint, hand]
   );
   const nonJokerHand = useMemo(() => hand.filter((t) => t.suit !== "j"), [hand]);
   const remainingCounts = useMemo(() => {
@@ -396,10 +436,12 @@ function App() {
         )}
         {discardOptions !== null && (
           <div className="waits discard-analysis">
-            <span className="waits-label">Not tenpai — discard options and what to draw:</span>
-            {discardOptions.map((o) => (
-              <DiscardOptionRow key={tileLabel(o.discard)} option={o} />
-            ))}
+            <span className="waits-label">
+              Not tenpai — discard options{discardEfficiency ? ", ranked by efficiency" : " and what to draw"}:
+            </span>
+            {discardEfficiency
+              ? discardEfficiency.map((o) => <DiscardEfficiencyRow key={tileLabel(o.discard)} option={o} />)
+              : discardOptions.map((o) => <DiscardOptionRow key={tileLabel(o.discard)} option={o} />)}
           </div>
         )}
         {outcome === null && hand.length > 0 && upcoming !== undefined && (

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   MELDS_REQUIRED,
   allTileKinds,
+  analyzeDiscardEfficiency,
   analyzeDiscards,
   decomposeHand,
   formatHand,
@@ -475,5 +476,35 @@ describe("analyzeDiscards", () => {
 
   it("returns nothing for hand sizes that aren't a valid checkpoint", () => {
     expect(analyzeDiscards(parseHand("11m1s"))).toEqual([]);
+  });
+});
+
+describe("analyzeDiscardEfficiency", () => {
+  it("matches the user's worked example: 1278m555t111333777z, discard 1m, draw 2m -> waits 69m (8 tiles)", () => {
+    const tiles = parseHand("1278m555t111333777z");
+    expect(getWaits(tiles, 5)).toEqual([]);
+
+    const options = analyzeDiscardEfficiency(tiles, 5);
+    const discard1m = options.find((o) => o.discard.suit === "m" && o.discard.rank === 1);
+    expect(discard1m).toBeDefined();
+
+    const drawKinds = discard1m!.draws.map((d) => `${d.draw.rank}${d.draw.suit}`).sort();
+    expect(drawKinds).toEqual(["2m", "6m", "9m"]);
+
+    const draw2m = discard1m!.draws.find((d) => d.draw.suit === "m" && d.draw.rank === 2);
+    expect(draw2m).toBeDefined();
+    // Only one 2m is already visible in the hand, so 3 remain.
+    expect(draw2m!.drawRemaining).toBe(3);
+    // Drawing 2m pairs it up, leaving a 7m8m ryanmen waiting on 6m/9m - 4 of each untouched.
+    const waitKinds = draw2m!.resultingWaits.map((t) => `${t.rank}${t.suit}`).sort();
+    expect(waitKinds).toEqual(["6m", "9m"]);
+    expect(draw2m!.resultingWaitsTotal).toBe(8);
+
+    // Best (highest-scoring) discard comes first.
+    expect(options[0].score).toBeGreaterThanOrEqual(options[options.length - 1].score);
+  });
+
+  it("returns nothing for hand sizes that aren't a valid checkpoint", () => {
+    expect(analyzeDiscardEfficiency(parseHand("11m1s"))).toEqual([]);
   });
 });

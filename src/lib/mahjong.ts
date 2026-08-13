@@ -901,3 +901,58 @@ export function analyzeDiscards(tiles: Tile[], meldsRequired: number = MELDS_REQ
 
   return options.sort((a, b) => b.draws.length - a.draws.length);
 }
+
+export interface DiscardDrawDetail {
+  // A tile that, once drawn after this discard, brings the hand to tenpai.
+  draw: Tile;
+  // How many copies of `draw` are left to draw (4 minus copies already visible in hand).
+  drawRemaining: number;
+  // The wait the hand ends up with after drawing `draw`.
+  resultingWaits: Tile[];
+  // Total remaining copies across all of `resultingWaits` (the "waits count" total).
+  resultingWaitsTotal: number;
+}
+
+export interface DiscardEfficiency {
+  discard: Tile;
+  draws: DiscardDrawDetail[];
+  // Sum over draws of drawRemaining * resultingWaitsTotal: a rough weight for
+  // "how many two-step paths (draw, then win-tile) this discard opens up."
+  // Higher is better. Jokers are not supported (matches analyzeDiscards).
+  score: number;
+}
+
+// Like analyzeDiscards, but for each useful draw also looks one step further:
+// the remaining count of that draw tile, and the wait (plus its own remaining
+// count) the hand would have once that tile is drawn. Options are sorted by
+// `score`, a weighted-probability proxy built on the same remaining-count
+// logic as the Waits Count feature, most efficient discard first.
+export function analyzeDiscardEfficiency(tiles: Tile[], meldsRequired: number = MELDS_REQUIRED): DiscardEfficiency[] {
+  const size = meldsRequired * 3 + 1;
+  if (tiles.length !== size) return [];
+
+  const options: DiscardEfficiency[] = [];
+  for (const discard of uniqueTileKinds(tiles)) {
+    const discardIndex = tiles.findIndex((t) => t.suit === discard.suit && t.rank === discard.rank);
+    const remaining = [...tiles.slice(0, discardIndex), ...tiles.slice(discardIndex + 1)];
+
+    const draws: DiscardDrawDetail[] = [];
+    let score = 0;
+    for (const candidate of allTileKinds()) {
+      const drawRemaining = 4 - tileCount(remaining, candidate);
+      if (drawRemaining <= 0) continue;
+      const redrawn = [...remaining, candidate];
+      const resultingWaits = getWaits(redrawn, meldsRequired);
+      if (resultingWaits.length === 0) continue;
+
+      const resultingWaitsTotal = resultingWaits.reduce((sum, w) => sum + (4 - tileCount(redrawn, w)), 0);
+      draws.push({ draw: candidate, drawRemaining, resultingWaits, resultingWaitsTotal });
+      score += drawRemaining * resultingWaitsTotal;
+    }
+
+    draws.sort((a, b) => b.drawRemaining * b.resultingWaitsTotal - a.drawRemaining * a.resultingWaitsTotal);
+    options.push({ discard, draws, score });
+  }
+
+  return options.sort((a, b) => b.score - a.score);
+}
