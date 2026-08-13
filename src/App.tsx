@@ -178,6 +178,17 @@ function WaitResultTile({
   );
 }
 
+// Shared by WaitBreakdownRow and CompleteHandBreakdown: the pair-first (or,
+// in sorted mode, tile-order) arrangement of a decomposed hand's groups.
+function orderBreakdownGroups<T extends { tiles: Tile[] }>(groups: T[], sorted: boolean): T[] {
+  return sorted
+    ? [...groups].sort((a, b) => {
+        const [ta, tb] = [a.tiles[0], b.tiles[0]];
+        return SUIT_ORDER.indexOf(ta.suit) - SUIT_ORDER.indexOf(tb.suit) || ta.rank - tb.rank;
+      })
+    : groups;
+}
+
 function WaitBreakdownRow({
   result,
   nonJokerHand,
@@ -208,12 +219,7 @@ function WaitBreakdownRow({
     { tiles: breakdown.pair, key: "pair" },
     ...breakdown.melds.map((tiles, i) => ({ tiles, key: `meld-${i}` })),
   ];
-  const ordered = sorted
-    ? [...groups].sort((a, b) => {
-        const [ta, tb] = [a.tiles[0], b.tiles[0]];
-        return SUIT_ORDER.indexOf(ta.suit) - SUIT_ORDER.indexOf(tb.suit) || ta.rank - tb.rank;
-      })
-    : groups;
+  const ordered = orderBreakdownGroups(groups, sorted);
 
   let waitPlaced = false;
   const renderGroup = ({ tiles, key }: (typeof groups)[number]) => (
@@ -233,6 +239,43 @@ function WaitBreakdownRow({
       <span className="discard-arrow">→</span>
       <span className="breakdown-groups">{ordered.map(renderGroup)}</span>
     </div>
+  );
+}
+
+// Meld/pair breakdown for a hand that's already complete (no wait tile to
+// highlight, since nothing's missing).
+function CompleteHandBreakdown({
+  hand,
+  meldsRequired,
+  sorted,
+}: {
+  hand: Tile[];
+  meldsRequired: number;
+  sorted: boolean;
+}) {
+  const breakdown = decomposeHand(hand, meldsRequired);
+  if (!breakdown) {
+    // Special hands (Thirteen Orphans, Eight Pairs, Sixteen Unrelated Tiles)
+    // don't decompose into melds + pair.
+    return null;
+  }
+
+  const groups = [
+    { tiles: breakdown.pair, key: "pair" },
+    ...breakdown.melds.map((tiles, i) => ({ tiles, key: `meld-${i}` })),
+  ];
+  const ordered = orderBreakdownGroups(groups, sorted);
+
+  return (
+    <span className="breakdown-groups">
+      {ordered.map(({ tiles, key }) => (
+        <span className="breakdown-group" key={key}>
+          {tiles.map((t, i) => (
+            <TileGlyphSpan key={i} tile={t} large />
+          ))}
+        </span>
+      ))}
+    </span>
   );
 }
 
@@ -567,8 +610,15 @@ function App() {
           </div>
         )}
         {discardChoices !== null && discardChoices.alreadyComplete && (
-          <div className="waits">
+          <div className={breakdownMode !== "off" ? "waits breakdown-list" : "waits"}>
             <span className="waits-label universal-wait">You already have a winning hand!</span>
+            {breakdownMode !== "off" && (
+              <CompleteHandBreakdown
+                hand={nonJokerHand}
+                meldsRequired={meldsForCompleteSize(hand.length)}
+                sorted={breakdownMode === "sorted"}
+              />
+            )}
           </div>
         )}
         {discardChoices !== null && !discardChoices.alreadyComplete && (
