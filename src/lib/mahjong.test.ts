@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   MELDS_REQUIRED,
   allTileKinds,
+  analyzeDiscardChoices,
   analyzeDiscardEfficiency,
   analyzeDiscards,
   decomposeHand,
@@ -105,8 +106,8 @@ describe("parseHand / formatHand", () => {
     expect(() => parseHand("11111z")).toThrow();
   });
 
-  it("rejects more than 16 tiles", () => {
-    expect(() => parseHand("123456789m12345678t")).toThrow();
+  it("rejects more than 17 tiles", () => {
+    expect(() => parseHand("123456789m123456789t")).toThrow();
   });
 
   it("parses jokers as bare 'j' characters, exempt from the 4-copy cap", () => {
@@ -351,6 +352,18 @@ describe("standardShanten / shanten", () => {
     expect(shanten(tiles)).toBe(0);
   });
 
+  it("is 0 for a tanki (single-tile pair) wait, cross-validated against brute force", () => {
+    // 123m complete + a lone 9m - waiting to pair the 9m alone. The block
+    // search only ever tried reserving a *complete* pair (2+ matching
+    // tiles) for the "no penalty" case, never a single leftover tile held
+    // back as a tanki candidate, which overstated shanten by 1 here.
+    const tiles = parseHand("123m9m");
+    expect(getWaits(tiles, 1)).toEqual([{ suit: "m", rank: 9 }]);
+    expect(referenceShanten(tiles, 1, 2)).toBe(0);
+    expect(standardShanten(tiles, 1)).toBe(0);
+    expect(shanten(tiles, 1)).toBe(0);
+  });
+
   it("is 1 for a hand one useful exchange from tenpai, cross-validated against brute force", () => {
     // 11m pair + two disconnected stray tiles (1s, 9s) - already confirmed
     // via analyzeDiscards to be exactly 1 discard+draw from tenpai.
@@ -570,5 +583,59 @@ describe("analyzeDiscardEfficiency", () => {
 
   it("returns nothing for hand sizes that aren't a valid checkpoint", () => {
     expect(analyzeDiscardEfficiency(parseHand("11m1s"))).toEqual([]);
+  });
+});
+
+describe("analyzeDiscardChoices", () => {
+  it("recognizes an already-complete 17-tile hand and offers no discards", () => {
+    // 111m/222m/333m/444m/111t (5 melds) + 22s (pair) = complete.
+    const tiles = parseHand("111222333444m111t22s");
+    expect(tiles.length).toBe(17);
+    expect(isCompleteHand(tiles)).toBe(true);
+
+    const outcome = analyzeDiscardChoices(tiles);
+    expect(outcome.alreadyComplete).toBe(true);
+  });
+
+  it("ranks discards by resulting shanten, tenpai first with its waits", () => {
+    // The tenpai hand from earlier (waits 1t/2s) plus an extra 9m that
+    // isn't one of those waits - not complete, but discarding the extra 9m
+    // exactly reverts to the known-tenpai 16-tile hand.
+    const tenpaiHand = parseHand("123456789m111z11t22s");
+    expect(getWaits(tenpaiHand, 5).map(tileKey).sort()).toEqual(["s2", "t1"]);
+
+    const tiles = parseHand("1234567899m111z11t22s");
+    expect(tiles.length).toBe(17);
+    expect(isCompleteHand(tiles)).toBe(false);
+
+    const outcome = analyzeDiscardChoices(tiles);
+    expect(outcome.alreadyComplete).toBe(false);
+    if (outcome.alreadyComplete) throw new Error("unreachable");
+
+    const discard9m = outcome.choices.find((c) => c.discard.suit === "m" && c.discard.rank === 9);
+    expect(discard9m).toBeDefined();
+    expect(discard9m!.resultingShanten).toBe(0);
+    expect(discard9m!.waits.map(tileKey).sort()).toEqual(["s2", "t1"]);
+    // Two of each already visible in the 16-tile hand, so 2 remain apiece.
+    expect(discard9m!.waitsTotal).toBe(4);
+
+    // Sorted best (lowest shanten) first.
+    for (let i = 1; i < outcome.choices.length; i++) {
+      expect(outcome.choices[i].resultingShanten).toBeGreaterThanOrEqual(outcome.choices[i - 1].resultingShanten);
+    }
+    expect(outcome.choices[0]).toBe(outcome.choices.find((c) => c.resultingShanten === 0));
+
+    // One choice per distinct discardable kind; waits only populated at tenpai.
+    const uniqueKinds = new Set(tiles.map(tileKey)).size;
+    expect(outcome.choices.length).toBe(uniqueKinds);
+    for (const choice of outcome.choices) {
+      expect(choice.waits.length > 0).toBe(choice.resultingShanten === 0);
+      expect(choice.waitsTotal > 0).toBe(choice.resultingShanten === 0);
+    }
+  });
+
+  it("returns nothing for hand sizes that aren't a valid checkpoint", () => {
+    const outcome = analyzeDiscardChoices(parseHand("11m1s"));
+    expect(outcome).toEqual({ alreadyComplete: false, choices: [] });
   });
 });

@@ -389,6 +389,16 @@ h1 {
   margin-left: 0.15rem;
 }
 
+.tenpai-tag {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #1a7a3c;
+  background: #eaf6ee;
+  border: 1px solid #cdeada;
+  border-radius: 4px;
+  padding: 0.15rem 0.5rem;
+}
+
 .tile-picker {
   display: flex;
   flex-direction: column;

@@ -1,15 +1,18 @@
 import { useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import "./App.css";
 import {
+  COMPLETE_SIZE,
   ParseError,
-  TENPAI_SIZE,
   allTileKinds,
+  analyzeDiscardChoices,
   analyzeDiscardEfficiency,
   analyzeDiscards,
   decomposeHand,
   formatHand,
   getWaitsWithJokers,
   isCheckpointSize,
+  isCompleteCheckpointSize,
+  meldsForCompleteSize,
   meldsForSize,
   parseHand,
   shanten,
@@ -18,7 +21,7 @@ import {
   tileGlyph,
   tileLabel,
 } from "./lib/mahjong";
-import type { DiscardEfficiency, DiscardOption, JokerWaitResult, Suit, Tile } from "./lib/mahjong";
+import type { DiscardChoice, DiscardEfficiency, DiscardOption, JokerWaitResult, Suit, Tile } from "./lib/mahjong";
 
 // A stable id per tile instance, so sorting for display never loses track
 // of which underlying tile is which (needed to revert Sort cleanly, and to
@@ -29,7 +32,10 @@ interface HandTile extends Tile {
 
 const JOKER_TILE: Tile = { suit: "j", rank: 1 };
 const SUIT_ORDER: Suit[] = ["m", "t", "s", "z"];
-const CHECKPOINTS = [1, 4, 7, 10, 13, 16];
+// Both kinds of checkpoint interleaved: 3n+1 (waits/shanten/discard-analysis
+// sizes) and 3n+2 (one tile past that - already-complete/discard-choice
+// sizes). Sizes of the form 3n are never a checkpoint (mid-meld).
+const CHECKPOINTS = [1, 2, 4, 5, 7, 8, 10, 11, 13, 14, 16, 17];
 
 type BreakdownMode = "off" | "on" | "sorted";
 const BREAKDOWN_CYCLE: BreakdownMode[] = ["off", "on", "sorted"];
@@ -257,6 +263,28 @@ function DiscardEfficiencyRow({ option }: { option: DiscardEfficiency }) {
   );
 }
 
+function DiscardChoiceRow({ choice }: { choice: DiscardChoice }) {
+  return (
+    <div className="discard-row">
+      <TileGlyphSpan tile={choice.discard} />
+      <span className="discard-arrow">→</span>
+      {choice.resultingShanten === 0 ? (
+        <>
+          <span className="tenpai-tag">Tenpai</span>
+          {choice.waits.map((w) => (
+            <TileGlyphSpan key={tileLabel(w)} tile={w} />
+          ))}
+          <span className="hint">
+            ({choice.waitsTotal} tile{choice.waitsTotal === 1 ? "" : "s"})
+          </span>
+        </>
+      ) : (
+        <span className="shanten-badge">Shanten {choice.resultingShanten}</span>
+      )}
+    </div>
+  );
+}
+
 function App() {
   // `hand` always holds tiles in true input order - Sort never mutates it,
   // it only changes how `displayHand` (below) is derived for rendering/text.
@@ -290,7 +318,7 @@ function App() {
   };
 
   const addTile = (tile: Tile) => {
-    if (handRef.current.length >= TENPAI_SIZE) return;
+    if (handRef.current.length >= COMPLETE_SIZE) return;
     commitHand([...handRef.current, ...withIds([tile])]);
   };
 
@@ -335,6 +363,12 @@ function App() {
     () => (waitsCountMode && notTenpaiCheckpoint ? analyzeDiscardEfficiency(hand, meldsForSize(hand.length)) : null),
     [waitsCountMode, notTenpaiCheckpoint, hand]
   );
+  const atCompleteCheckpoint = isCompleteCheckpointSize(hand.length);
+  const discardChoices = useMemo(
+    () =>
+      !hasJokers && atCompleteCheckpoint ? analyzeDiscardChoices(hand, meldsForCompleteSize(hand.length)) : null,
+    [hasJokers, atCompleteCheckpoint, hand]
+  );
   const nonJokerHand = useMemo(() => hand.filter((t) => t.suit !== "j"), [hand]);
   const remainingCounts = useMemo(() => {
     if (!waitsCountMode || outcome === null || outcome.overflowed) return null;
@@ -362,13 +396,13 @@ function App() {
                     key={tileLabel(t)}
                     tile={t}
                     onClick={() => addTile(t)}
-                    disabled={hand.length >= TENPAI_SIZE || tileCount(hand, t) >= 4}
+                    disabled={hand.length >= COMPLETE_SIZE || tileCount(hand, t) >= 4}
                   />
                 ))}
             </div>
           ))}
           <div className="suit-row">
-            <TileButton tile={JOKER_TILE} onClick={() => addTile(JOKER_TILE)} disabled={hand.length >= TENPAI_SIZE} />
+            <TileButton tile={JOKER_TILE} onClick={() => addTile(JOKER_TILE)} disabled={hand.length >= COMPLETE_SIZE} />
           </div>
         </div>
 
@@ -424,7 +458,7 @@ function App() {
             Waits Count: {waitsCountMode ? "On" : "Off"}
           </button>
           <span className="tile-count">
-            {hand.length} / {TENPAI_SIZE} tiles
+            {hand.length} / {COMPLETE_SIZE} tiles
           </span>
           {shantenValue !== null && (
             <span
@@ -500,10 +534,29 @@ function App() {
               : discardOptions.map((o) => <DiscardOptionRow key={tileLabel(o.discard)} option={o} />)}
           </div>
         )}
-        {outcome === null && hand.length > 0 && upcoming !== undefined && (
+        {atCompleteCheckpoint && hasJokers && (
+          <div className="waits">
+            <span className="waits-label">Discard analysis isn't available yet for hands with jokers.</span>
+          </div>
+        )}
+        {discardChoices !== null && discardChoices.alreadyComplete && (
+          <div className="waits">
+            <span className="waits-label universal-wait">You already have a winning hand!</span>
+          </div>
+        )}
+        {discardChoices !== null && !discardChoices.alreadyComplete && (
+          <div className="waits discard-analysis">
+            <span className="waits-label">Discard options:</span>
+            {discardChoices.choices.map((c) => (
+              <DiscardChoiceRow key={tileLabel(c.discard)} choice={c} />
+            ))}
+          </div>
+        )}
+        {outcome === null && !atCompleteCheckpoint && hand.length > 0 && upcoming !== undefined && (
           <div className="waits">
             <span className="hint">
-              Add {upcoming - hand.length} more tile{upcoming - hand.length === 1 ? "" : "s"} to see waits.
+              Add {upcoming - hand.length} more tile{upcoming - hand.length === 1 ? "" : "s"} to see waits or discard
+              options.
             </span>
           </div>
         )}

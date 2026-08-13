@@ -25,6 +25,17 @@ export function meldsForSize(size: number): number {
   return (size - 1) / 3;
 }
 
+// A hand can be checked for "already complete, or which tile to discard" at
+// sizes of the form 3n + 2 - one tile past a checkpoint, i.e. what you hold
+// right after drawing, before discarding: 2, 5, 8, 11, 14, 17.
+export function isCompleteCheckpointSize(size: number): boolean {
+  return size >= 2 && size <= COMPLETE_SIZE && size % 3 === 2;
+}
+
+export function meldsForCompleteSize(size: number): number {
+  return (size - 2) / 3;
+}
+
 // Honor order/labels: 1 East, 2 South, 3 West, 4 North, 5 Red, 6 Green, 7 White.
 const HONOR_NAMES = ["", "East", "South", "West", "North", "Red", "Green", "White"];
 
@@ -108,8 +119,8 @@ export function parseHand(input: string): Tile[] {
   if (matched.replace(/\s/g, "") !== trimmed.replace(/\s/g, "")) {
     throw new ParseError(`Could not parse: "${trimmed}"`);
   }
-  if (tiles.length > TENPAI_SIZE) {
-    throw new ParseError(`Too many tiles (max ${TENPAI_SIZE})`);
+  if (tiles.length > COMPLETE_SIZE) {
+    throw new ParseError(`Too many tiles (max ${COMPLETE_SIZE})`);
   }
 
   const counts = new Map<string, number>();
@@ -590,6 +601,27 @@ export function standardShanten(tiles: Tile[], meldsRequired: number = MELDS_REQ
     }
   }
 
+  // Try reserving a single tile as a tanki (pair-in-progress) candidate -
+  // not a complete pair yet, but enough that the "no reserve at all"
+  // penalty above shouldn't apply: drawing its match completes the pair for
+  // free. Without this, a lone tile left over after melds/partials (e.g.
+  // 123m9m, one meld plus a tanki wait on 9m) was scored as if nothing were
+  // held back at all, overstating shanten by 1 - the block search above
+  // only ever considers a *complete* pair (>=2 matching), never a single.
+  for (const sd of suitsData) {
+    for (let rank = 1; rank < sd.counts.length; rank++) {
+      if (sd.counts[rank] < 1) continue;
+      sd.counts[rank] -= 1;
+      const combos = combineBlockOptions(suitsData.map((s2) => suitBlockOptions(s2.counts, s2.allowRuns)));
+      sd.counts[rank] += 1;
+      for (const { melds, partials } of combos) {
+        const cappedPartials = Math.min(partials, meldsRequired - melds);
+        const sh = 2 * (meldsRequired - melds) - cappedPartials; // no -1 (pair isn't complete), no +1 (a tile IS held back)
+        overallBest = Math.min(overallBest, sh);
+      }
+    }
+  }
+
   return overallBest;
 }
 
@@ -1056,4 +1088,47 @@ export function analyzeDiscardEfficiency(tiles: Tile[], meldsRequired: number = 
   }
 
   return options.sort((a, b) => b.score - a.score);
+}
+
+export interface DiscardChoice {
+  discard: Tile;
+  // Shanten of the hand that results from this discard (0 = tenpai).
+  resultingShanten: number;
+  // Non-empty only when resultingShanten is 0 - the tiles that win.
+  waits: Tile[];
+  // Total remaining copies across `waits` (the "waits count" total); 0 when
+  // resultingShanten is not 0.
+  waitsTotal: number;
+}
+
+export type DiscardChoicesOutcome =
+  // Already a complete winning hand - no discard needed.
+  | { alreadyComplete: true }
+  // One entry per discardable tile kind, sorted by resultingShanten
+  // ascending (tenpai first, then closest-to-tenpai).
+  | { alreadyComplete: false; choices: DiscardChoice[] };
+
+// For a hand one tile past a checkpoint (meldsRequired * 3 + 2 - what you
+// hold right after drawing, before discarding), figures out whether it's
+// already a complete winning hand, and if not, what discarding each
+// distinct tile kind leaves you with: tenpai (with its waits) or a shanten
+// value if not. Doesn't account for jokers (matches analyzeDiscards).
+export function analyzeDiscardChoices(tiles: Tile[], meldsRequired: number = MELDS_REQUIRED): DiscardChoicesOutcome {
+  const size = meldsRequired * 3 + 2;
+  if (tiles.length !== size) return { alreadyComplete: false, choices: [] };
+  if (isCompleteHand(tiles, meldsRequired)) return { alreadyComplete: true };
+
+  const choices: DiscardChoice[] = [];
+  for (const discard of uniqueTileKinds(tiles)) {
+    const discardIndex = tiles.findIndex((t) => t.suit === discard.suit && t.rank === discard.rank);
+    const remaining = [...tiles.slice(0, discardIndex), ...tiles.slice(discardIndex + 1)];
+
+    const resultingShanten = shanten(remaining, meldsRequired);
+    const waits = resultingShanten === 0 ? getWaits(remaining, meldsRequired) : [];
+    const waitsTotal = waits.reduce((sum, w) => sum + (4 - tileCount(remaining, w)), 0);
+    choices.push({ discard, resultingShanten, waits, waitsTotal });
+  }
+
+  choices.sort((a, b) => a.resultingShanten - b.resultingShanten);
+  return { alreadyComplete: false, choices };
 }
