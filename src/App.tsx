@@ -513,7 +513,7 @@ function App() {
             aria-pressed={sortMode}
             title={sortMode ? "Sort: on — new tiles are kept in order" : "Sort: off — new tiles keep input order"}
           >
-            Sort: {sortMode ? "On" : "Off"}
+            Sort
           </button>
           <button type="button" onClick={handleReset} disabled={hand.length === 0}>
             Reset
