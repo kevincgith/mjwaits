@@ -657,8 +657,10 @@ describe("analyzeDiscardChoices", () => {
     expect(discard1m).toBeDefined();
     expect(discard1m!.resultingShanten).toBe(1);
     const draws = discard1m!.improvingDraws.map((d) => `${d.draw.rank}${d.draw.suit}x${d.remaining}`).sort();
-    expect(draws).toEqual(["1mx4", "1tx2", "2sx2", "4mx3", "7mx3", "9mx2"]);
-    expect(discard1m!.improvingDrawsTotal).toBe(16);
+    // 1m itself is a valid improving draw (redraw it, then discard 4m/7m/etc
+    // instead this time), but only 3 remain: one is the copy just discarded.
+    expect(draws).toEqual(["1mx3", "1tx2", "2sx2", "4mx3", "7mx3", "9mx2"]);
+    expect(discard1m!.improvingDrawsTotal).toBe(15);
 
     // Every improving draw should actually reduce shanten below 1 for some
     // follow-up discard - re-verified independently here (not just trusting
@@ -681,6 +683,30 @@ describe("analyzeDiscardChoices", () => {
       expect(choice.improvingDraws.length > 0 || choice.resultingShanten === 0).toBe(true);
       expect(choice.improvingDrawsTotal > 0).toBe(choice.resultingShanten !== 0 && choice.improvingDraws.length > 0);
     }
+  });
+
+  it("doesn't double-count a tile that was just discarded as still fully available", () => {
+    // 1119m1z: discarding 9m or 1z reaches tenpai directly (111m is already
+    // a complete meld, the other lone tile is a tanki wait) - discarding 1m
+    // is the worst option here, landing at shanten 1. Of its three 1m's,
+    // one was just discarded and two remain in hand - only 1 more truly
+    // exists to draw, not the 2 you'd get from just checking the hand.
+    const tiles = parseHand("1119m1z");
+    expect(tiles.length).toBe(5);
+    const outcome = analyzeDiscardChoices(tiles, 1);
+    expect(outcome.alreadyComplete).toBe(false);
+    if (outcome.alreadyComplete) throw new Error("unreachable");
+
+    const discard9m = outcome.choices.find((c) => c.discard.suit === "m" && c.discard.rank === 9);
+    const discard1z = outcome.choices.find((c) => c.discard.suit === "z" && c.discard.rank === 1);
+    expect(discard9m!.resultingShanten).toBe(0);
+    expect(discard1z!.resultingShanten).toBe(0);
+
+    const discard1m = outcome.choices.find((c) => c.discard.suit === "m" && c.discard.rank === 1);
+    expect(discard1m!.resultingShanten).toBe(1);
+    const oneManDraw = discard1m!.improvingDraws.find((d) => d.draw.suit === "m" && d.draw.rank === 1);
+    expect(oneManDraw).toBeDefined();
+    expect(oneManDraw!.remaining).toBe(1); // 2 held (post-discard) + 1 just discarded = 3 accounted for, 1 truly left
   });
 
   it("stays fast even on a dense hand (many same-suit ranks holding 2 copies)", () => {

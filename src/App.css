@@ -365,6 +365,14 @@ h1 {
   gap: 0.15rem;
 }
 
+/* Flags an improving draw that matches the tile just discarded - it's a
+   real improvement, but only via a *different* follow-up discard next
+   time, not by discarding the redrawn tile again. */
+.redraw-mark {
+  font-size: 0.75rem;
+  color: #8b5cf6;
+}
+
 .joker-hint {
   display: inline-flex;
   align-items: center;

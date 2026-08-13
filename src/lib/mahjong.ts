@@ -1037,6 +1037,21 @@ function uniqueTileKinds(tiles: Tile[]): Tile[] {
   return unique;
 }
 
+// True remaining copies of `candidate` available to draw after discarding
+// `discard` from a hand: 4 minus what's visible in `hand` (the post-discard
+// hand), minus 1 more if `candidate` is the same kind as `discard`. Unlike
+// other players' hands (genuinely unknown, hence the plain "4 minus what's
+// in your hand" convention used elsewhere), a tile you just discarded
+// yourself is *certainly* unavailable - it's sitting right there in the
+// discard pile. Without this, a discard that shares a kind with a draw or
+// resulting wait undercounts how many of it are actually used up, and in
+// the extreme case (discarding your last copy after already holding the
+// other 3) can show a draw as available when all 4 are already spoken for.
+function remainingCopies(hand: Tile[], discard: Tile, candidate: Tile): number {
+  const discardedCopy = discard.suit === candidate.suit && discard.rank === candidate.rank ? 1 : 0;
+  return 4 - tileCount(hand, candidate) - discardedCopy;
+}
+
 // For a hand at a checkpoint size (meldsRequired * 3 + 1), and assuming it is
 // NOT already tenpai, finds every (discard, resulting useful draws) pair:
 // for each distinct tile you could discard, which tiles - once drawn - bring
@@ -1053,7 +1068,7 @@ export function analyzeDiscards(tiles: Tile[], meldsRequired: number = MELDS_REQ
 
     const draws: Tile[] = [];
     for (const candidate of allTileKinds()) {
-      if (tileCount(remaining, candidate) >= 4) continue;
+      if (remainingCopies(remaining, discard, candidate) <= 0) continue;
       const redrawn = [...remaining, candidate];
       if (getWaits(redrawn, meldsRequired).length > 0) {
         draws.push(candidate);
@@ -1102,13 +1117,13 @@ export function analyzeDiscardEfficiency(tiles: Tile[], meldsRequired: number = 
     const draws: DiscardDrawDetail[] = [];
     let score = 0;
     for (const candidate of allTileKinds()) {
-      const drawRemaining = 4 - tileCount(remaining, candidate);
+      const drawRemaining = remainingCopies(remaining, discard, candidate);
       if (drawRemaining <= 0) continue;
       const redrawn = [...remaining, candidate];
-      const resultingWaits = getWaits(redrawn, meldsRequired);
+      const resultingWaits = getWaits(redrawn, meldsRequired).filter((w) => remainingCopies(redrawn, discard, w) > 0);
       if (resultingWaits.length === 0) continue;
 
-      const resultingWaitsTotal = resultingWaits.reduce((sum, w) => sum + (4 - tileCount(redrawn, w)), 0);
+      const resultingWaitsTotal = resultingWaits.reduce((sum, w) => sum + remainingCopies(redrawn, discard, w), 0);
       draws.push({ draw: candidate, drawRemaining, resultingWaits, resultingWaitsTotal });
       score += drawRemaining * resultingWaitsTotal;
     }
@@ -1166,11 +1181,11 @@ export type DiscardChoicesOutcome =
 // every discard" reference across thousands of random hands (including
 // meldsRequired=5 specifically, to cover Eight Pairs/Sixteen Unrelated).
 // This turns what would be an O(draws x discards) search into O(draws).
-function usefulDraws(tiles: Tile[], meldsRequired: number, currentShanten: number): DrawCount[] {
+function usefulDraws(tiles: Tile[], discard: Tile, meldsRequired: number, currentShanten: number): DrawCount[] {
   const results: DrawCount[] = [];
 
   for (const candidate of allTileKinds()) {
-    const remainingCount = 4 - tileCount(tiles, candidate);
+    const remainingCount = remainingCopies(tiles, discard, candidate);
     if (remainingCount <= 0) continue;
     const withDraw = [...tiles, candidate];
     if (shanten(withDraw, meldsRequired) < currentShanten) {
@@ -1198,9 +1213,13 @@ export function analyzeDiscardChoices(tiles: Tile[], meldsRequired: number = MEL
     const remaining = [...tiles.slice(0, discardIndex), ...tiles.slice(discardIndex + 1)];
 
     const resultingShanten = shanten(remaining, meldsRequired);
-    const waits = resultingShanten === 0 ? getWaits(remaining, meldsRequired) : [];
-    const waitsTotal = waits.reduce((sum, w) => sum + (4 - tileCount(remaining, w)), 0);
-    const improvingDraws = resultingShanten > 0 ? usefulDraws(remaining, meldsRequired, resultingShanten) : [];
+    const waits =
+      resultingShanten === 0
+        ? getWaits(remaining, meldsRequired).filter((w) => remainingCopies(remaining, discard, w) > 0)
+        : [];
+    const waitsTotal = waits.reduce((sum, w) => sum + remainingCopies(remaining, discard, w), 0);
+    const improvingDraws =
+      resultingShanten > 0 ? usefulDraws(remaining, discard, meldsRequired, resultingShanten) : [];
     const improvingDrawsTotal = improvingDraws.reduce((sum, d) => sum + d.remaining, 0);
     choices.push({ discard, resultingShanten, waits, waitsTotal, improvingDraws, improvingDrawsTotal });
   }

@@ -314,12 +314,20 @@ function DiscardChoiceRow({ choice }: { choice: DiscardChoice }) {
       {choice.improvingDraws.length > 0 ? (
         <div className="discard-efficiency-draws">
           <div className="draw-detail-row">
-            {choice.improvingDraws.map((d) => (
-              <span className="wait-result" key={tileLabel(d.draw)}>
-                <TileGlyphSpan tile={d.draw} />
-                <RemainingCountBadge count={d.remaining} />
-              </span>
-            ))}
+            {choice.improvingDraws.map((d) => {
+              const isRedraw = d.draw.suit === choice.discard.suit && d.draw.rank === choice.discard.rank;
+              return (
+                <span
+                  className={isRedraw ? "wait-result redraw" : "wait-result"}
+                  key={tileLabel(d.draw)}
+                  title={isRedraw ? "Drawing this back only helps if you discard something different this time" : undefined}
+                >
+                  <TileGlyphSpan tile={d.draw} />
+                  <RemainingCountBadge count={d.remaining} />
+                  {isRedraw && <span className="redraw-mark">↺</span>}
+                </span>
+              );
+            })}
             <span className="hint">
               ({choice.improvingDrawsTotal} tile{choice.improvingDrawsTotal === 1 ? "" : "s"} improve this)
             </span>
