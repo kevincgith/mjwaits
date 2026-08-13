@@ -110,6 +110,13 @@ h1 {
   color: #1a5fb4;
 }
 
+.panel-header button.icon-toggle {
+  padding: 0.3rem 0.5rem;
+  font-size: 1rem;
+  line-height: 1;
+  margin-left: -0.35rem;
+}
+
 .tile-count {
   margin-left: auto;
   color: #888;

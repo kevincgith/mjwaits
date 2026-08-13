@@ -37,12 +37,10 @@ const SUIT_ORDER: Suit[] = ["m", "t", "s", "z"];
 const CHECKPOINTS = [1, 2, 4, 5, 7, 8, 10, 11, 13, 14, 16, 17];
 
 type BreakdownMode = "off" | "on" | "sorted";
-const BREAKDOWN_CYCLE: BreakdownMode[] = ["off", "on", "sorted"];
-const BREAKDOWN_LABEL: Record<BreakdownMode, string> = { off: "Off", on: "On", sorted: "Sorted" };
-const BREAKDOWN_TITLE: Record<BreakdownMode, string> = {
-  off: "Breakdown: off — shows just the waiting tiles",
-  on: "Breakdown: on — shows the meld/pair split for each wait, pair first",
-  sorted: "Breakdown: sorted — shows the meld/pair split in tile order, not pair-first",
+type BreakdownOrder = "on" | "sorted";
+const BREAKDOWN_ORDER_TITLE: Record<BreakdownOrder, string> = {
+  on: "Order: pair first — tap to switch to tile order",
+  sorted: "Order: tile order — tap to switch to pair first",
 };
 
 function nextCheckpoint(size: number): number | undefined {
@@ -383,6 +381,7 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [sortMode, setSortMode] = useState(true);
   const [breakdownMode, setBreakdownMode] = useState<BreakdownMode>("off");
+  const lastBreakdownOrder = useRef<BreakdownOrder>("on");
   const nextId = useRef(0);
   const withIds = (tiles: Tile[]): HandTile[] => tiles.map((t) => ({ ...t, id: nextId.current++ }));
   const forDisplay = (tiles: HandTile[], sorted: boolean) => (sorted ? (sortTiles(tiles) as HandTile[]) : tiles);
@@ -521,14 +520,33 @@ function App() {
           <button
             type="button"
             className={breakdownMode !== "off" ? "toggle-on" : undefined}
-            onClick={() =>
-              setBreakdownMode((m) => BREAKDOWN_CYCLE[(BREAKDOWN_CYCLE.indexOf(m) + 1) % BREAKDOWN_CYCLE.length])
-            }
+            onClick={() => setBreakdownMode((m) => (m === "off" ? lastBreakdownOrder.current : "off"))}
             aria-pressed={breakdownMode !== "off"}
-            title={BREAKDOWN_TITLE[breakdownMode]}
+            title={
+              breakdownMode !== "off"
+                ? "Breakdown: on — shows the meld/pair split for each wait"
+                : "Breakdown: off — shows just the waiting tiles"
+            }
           >
-            Breakdown: {BREAKDOWN_LABEL[breakdownMode]}
+            Breakdown
           </button>
+          {breakdownMode !== "off" && (
+            <button
+              type="button"
+              className="icon-toggle"
+              onClick={() =>
+                setBreakdownMode((m) => {
+                  const next: BreakdownOrder = m === "sorted" ? "on" : "sorted";
+                  lastBreakdownOrder.current = next;
+                  return next;
+                })
+              }
+              aria-pressed={breakdownMode === "sorted"}
+              title={BREAKDOWN_ORDER_TITLE[breakdownMode as BreakdownOrder]}
+            >
+              ↔
+            </button>
+          )}
           <span className="tile-count">
             {hand.length} / {COMPLETE_SIZE} tiles
           </span>
