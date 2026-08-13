@@ -6,7 +6,6 @@ import {
   allTileKinds,
   analyzeDiscardChoices,
   analyzeDiscardEfficiency,
-  analyzeDiscards,
   decomposeHand,
   formatHand,
   getWaitsWithJokers,
@@ -21,7 +20,7 @@ import {
   tileGlyph,
   tileLabel,
 } from "./lib/mahjong";
-import type { DiscardChoice, DiscardEfficiency, DiscardOption, JokerWaitResult, Suit, Tile } from "./lib/mahjong";
+import type { DiscardChoice, DiscardEfficiency, JokerWaitResult, Suit, Tile } from "./lib/mahjong";
 
 // A stable id per tile instance, so sorting for display never loses track
 // of which underlying tile is which (needed to revert Sort cleanly, and to
@@ -237,20 +236,6 @@ function WaitBreakdownRow({
   );
 }
 
-function DiscardOptionRow({ option }: { option: DiscardOption }) {
-  return (
-    <div className="discard-row">
-      <TileGlyphSpan tile={option.discard} />
-      <span className="discard-arrow">→</span>
-      {option.draws.length > 0 ? (
-        option.draws.map((t) => <TileGlyphSpan key={tileLabel(t)} tile={t} />)
-      ) : (
-        <span className="hint">no draw reaches tenpai</span>
-      )}
-    </div>
-  );
-}
-
 function DiscardEfficiencyRow({ option }: { option: DiscardEfficiency }) {
   return (
     <div className="discard-row discard-efficiency-row">
@@ -355,7 +340,6 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [sortMode, setSortMode] = useState(true);
   const [breakdownMode, setBreakdownMode] = useState<BreakdownMode>("off");
-  const [waitsCountMode, setWaitsCountMode] = useState(false);
   const nextId = useRef(0);
   const withIds = (tiles: Tile[]): HandTile[] => tiles.map((t) => ({ ...t, id: nextId.current++ }));
   const forDisplay = (tiles: HandTile[], sorted: boolean) => (sorted ? (sortTiles(tiles) as HandTile[]) : tiles);
@@ -417,13 +401,9 @@ function App() {
   );
   const notTenpaiCheckpoint =
     !hasJokers && canCalculate && hand.length > 0 && outcome !== null && !outcome.overflowed && outcome.results.length === 0;
-  const discardOptions = useMemo(
-    () => (notTenpaiCheckpoint ? analyzeDiscards(hand, meldsForSize(hand.length)) : null),
-    [notTenpaiCheckpoint, hand]
-  );
   const discardEfficiency = useMemo(
-    () => (waitsCountMode && notTenpaiCheckpoint ? analyzeDiscardEfficiency(hand, meldsForSize(hand.length)) : null),
-    [waitsCountMode, notTenpaiCheckpoint, hand]
+    () => (notTenpaiCheckpoint ? analyzeDiscardEfficiency(hand, meldsForSize(hand.length)) : null),
+    [notTenpaiCheckpoint, hand]
   );
   const atCompleteCheckpoint = isCompleteCheckpointSize(hand.length);
   const discardChoices = useMemo(
@@ -433,11 +413,11 @@ function App() {
   );
   const nonJokerHand = useMemo(() => hand.filter((t) => t.suit !== "j"), [hand]);
   const remainingCounts = useMemo(() => {
-    if (!waitsCountMode || outcome === null || outcome.overflowed) return null;
+    if (outcome === null || outcome.overflowed) return null;
     const byKey = new Map<string, number>();
     for (const r of outcome.results) byKey.set(tileLabel(r.wait), 4 - tileCount(nonJokerHand, r.wait));
     return byKey;
-  }, [waitsCountMode, outcome, nonJokerHand]);
+  }, [outcome, nonJokerHand]);
   const totalRemaining = useMemo(
     () => (remainingCounts ? Array.from(remainingCounts.values()).reduce((a, b) => a + b, 0) : null),
     [remainingCounts]
@@ -506,19 +486,6 @@ function App() {
           >
             Breakdown: {BREAKDOWN_LABEL[breakdownMode]}
           </button>
-          <button
-            type="button"
-            className={waitsCountMode ? "toggle-on" : undefined}
-            onClick={() => setWaitsCountMode((v) => !v)}
-            aria-pressed={waitsCountMode}
-            title={
-              waitsCountMode
-                ? "Waits Count: on — shows how many of each waiting tile are left"
-                : "Waits Count: off"
-            }
-          >
-            Waits Count: {waitsCountMode ? "On" : "Off"}
-          </button>
           <span className="tile-count">
             {hand.length} / {COMPLETE_SIZE} tiles
           </span>
@@ -578,7 +545,7 @@ function App() {
             )}
           </div>
         )}
-        {outcome !== null && !outcome.overflowed && outcome.results.length === 0 && discardOptions === null && (
+        {outcome !== null && !outcome.overflowed && outcome.results.length === 0 && !notTenpaiCheckpoint && (
           <div className="waits">
             <span className="waits-label">
               Not tenpai — no winning tile completes this hand{hasJokers ? ", even trying every joker possibility" : ""}.
@@ -586,14 +553,12 @@ function App() {
             {hasJokers && <span className="hint">Discard analysis isn't available yet for hands with jokers.</span>}
           </div>
         )}
-        {discardOptions !== null && (
+        {discardEfficiency !== null && (
           <div className="waits discard-analysis">
-            <span className="waits-label">
-              Not tenpai — discard options{discardEfficiency ? ", ranked by efficiency" : " and what to draw"}:
-            </span>
-            {discardEfficiency
-              ? discardEfficiency.map((o) => <DiscardEfficiencyRow key={tileLabel(o.discard)} option={o} />)
-              : discardOptions.map((o) => <DiscardOptionRow key={tileLabel(o.discard)} option={o} />)}
+            <span className="waits-label">Not tenpai — discard options, ranked by efficiency:</span>
+            {discardEfficiency.map((o) => (
+              <DiscardEfficiencyRow key={tileLabel(o.discard)} option={o} />
+            ))}
           </div>
         )}
         {atCompleteCheckpoint && hasJokers && (
