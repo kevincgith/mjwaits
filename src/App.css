@@ -496,11 +496,20 @@ h1 {
   }
 
   .tile-glyph.large {
-    font-size: 2.1rem;
+    font-size: 2.5rem;
+  }
+
+  /* A single finger's contact area is easily 30-40px across - at the old
+     size (~33x40px buttons, ~2px gaps) it could straddle two adjacent
+     "remove tile" buttons at once, occasionally removing the wrong tile
+     (or, per one report, two tiles at once). Bigger buttons and a real gap
+     between them keeps one tap from ever overlapping two targets. */
+  .hand-display {
+    gap: 0.5rem;
   }
 
   .hand-tile-button {
-    padding: 0.2rem;
+    padding: 0.35rem;
   }
 
   .panel-header button {
