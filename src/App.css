@@ -298,6 +298,14 @@ h1 {
   z-index: -1;
 }
 
+/* Honors/joker use a different font-family (see below) with different ink
+   metrics - its ink sits much closer to the top of its line box than
+   man/pin/sou's does, so the highlight needs its own top to still hug it. */
+.tile-glyph[data-suit="z"].wait-highlight::before,
+.tile-glyph[data-suit="j"].wait-highlight::before {
+  top: 0.02em;
+}
+
 .tile-glyph {
   font-size: 1.6rem;
   line-height: 1;
