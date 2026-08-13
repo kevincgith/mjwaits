@@ -326,13 +326,13 @@ function App() {
     [hand, canCalculate, hasJokers]
   );
   const notTenpaiCheckpoint =
-    !hasJokers && hand.length === TENPAI_SIZE && outcome !== null && !outcome.overflowed && outcome.results.length === 0;
+    !hasJokers && canCalculate && hand.length > 0 && outcome !== null && !outcome.overflowed && outcome.results.length === 0;
   const discardOptions = useMemo(
-    () => (notTenpaiCheckpoint ? analyzeDiscards(hand) : null),
+    () => (notTenpaiCheckpoint ? analyzeDiscards(hand, meldsForSize(hand.length)) : null),
     [notTenpaiCheckpoint, hand]
   );
   const discardEfficiency = useMemo(
-    () => (waitsCountMode && notTenpaiCheckpoint ? analyzeDiscardEfficiency(hand) : null),
+    () => (waitsCountMode && notTenpaiCheckpoint ? analyzeDiscardEfficiency(hand, meldsForSize(hand.length)) : null),
     [waitsCountMode, notTenpaiCheckpoint, hand]
   );
   const nonJokerHand = useMemo(() => hand.filter((t) => t.suit !== "j"), [hand]);
