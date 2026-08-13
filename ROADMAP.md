@@ -10,6 +10,14 @@ Let the user point a camera at their hand and have tiles recognized automaticall
 - Would need either a pretrained/fine-tunable model (TensorFlow.js or ONNX running client-side, to keep the app a static/no-backend site) or a from-scratch dataset — the dataset is the hard part, so a relevant existing repo/model would be a meaningful head start if one turns up.
 - Suggested first step, before any ML: camera feed (`getUserMedia`) + manual tap-to-crop-and-confirm per tile, to validate the input flow independent of recognition accuracy.
 
+## Near-term fixes
+
+Smaller and more concrete than the two feature ideas above.
+
+- **Joker handling is incomplete outside the plain waits list.** Shanten, discard-efficiency, and discard-choice/complete-hand-breakdown analysis all currently bail out entirely when a hand contains jokers (see the `hasJokers` checks in `App.tsx` — no shanten badge, "Discard analysis isn't available yet for hands with jokers"). The plain waits list already shows what each joker resolves to for a given wait (the `joker-hint`, 🀪=tile); the fix is extending that same "what does the joker assume" resolution into shanten/discard-analysis/breakdown instead of just disabling them.
+- **Move the Reset button.** Currently sits between Sort and Breakdown in the hand panel header — revisit where it belongs.
+- **Rethink the Breakdown button further.** The current on/off toggle + `↔` order-icon split (see recent commits) is an improvement over the old 3-way text cycle, but isn't necessarily the final design.
+
 ## Scoring calculator (tai/fan)
 
 Given a winning hand, calculate its actual score under Taiwanese 16-tile scoring rules, not just confirm it's complete.
