@@ -328,8 +328,15 @@ function DiscardChoiceRow({ choice }: { choice: DiscardChoice }) {
                 </span>
               );
             })}
-            <span className="hint">
-              ({choice.improvingDrawsTotal} tile{choice.improvingDrawsTotal === 1 ? "" : "s"} improve this)
+            <span
+              className="hint"
+              title="Second number excludes draws that only help via a different follow-up discard than the one just made"
+            >
+              (
+              {choice.improvingDrawsTotal === choice.improvingDrawsTotalExcludingRedraw
+                ? choice.improvingDrawsTotal
+                : `${choice.improvingDrawsTotal} or ${choice.improvingDrawsTotalExcludingRedraw}↺`}
+              )
             </span>
           </div>
         </div>

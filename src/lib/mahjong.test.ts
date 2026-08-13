@@ -707,6 +707,11 @@ describe("analyzeDiscardChoices", () => {
     const oneManDraw = discard1m!.improvingDraws.find((d) => d.draw.suit === "m" && d.draw.rank === 1);
     expect(oneManDraw).toBeDefined();
     expect(oneManDraw!.remaining).toBe(1); // 2 held (post-discard) + 1 just discarded = 3 accounted for, 1 truly left
+
+    // 1m x1 + 7m x4 + 8m x4 + 9m x3 + 1z x3 = 15; excluding the 1m redraw
+    // itself (the only draw matching the discarded kind) leaves 14.
+    expect(discard1m!.improvingDrawsTotal).toBe(15);
+    expect(discard1m!.improvingDrawsTotalExcludingRedraw).toBe(14);
   });
 
   it("stays fast even on a dense hand (many same-suit ranks holding 2 copies)", () => {

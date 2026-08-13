@@ -1158,6 +1158,11 @@ export interface DiscardChoice {
   // Total remaining copies across `improvingDraws`; 0 when resultingShanten
   // is 0 (waitsTotal covers that case instead).
   improvingDrawsTotal: number;
+  // Same total, but excluding any draw that matches the discarded tile's
+  // own kind - those only help via a different follow-up discard than the
+  // one just made, not a "clean" improvement, so this is the more
+  // conservative number to act on.
+  improvingDrawsTotalExcludingRedraw: number;
 }
 
 export type DiscardChoicesOutcome =
@@ -1221,7 +1226,18 @@ export function analyzeDiscardChoices(tiles: Tile[], meldsRequired: number = MEL
     const improvingDraws =
       resultingShanten > 0 ? usefulDraws(remaining, discard, meldsRequired, resultingShanten) : [];
     const improvingDrawsTotal = improvingDraws.reduce((sum, d) => sum + d.remaining, 0);
-    choices.push({ discard, resultingShanten, waits, waitsTotal, improvingDraws, improvingDrawsTotal });
+    const improvingDrawsTotalExcludingRedraw = improvingDraws
+      .filter((d) => !(d.draw.suit === discard.suit && d.draw.rank === discard.rank))
+      .reduce((sum, d) => sum + d.remaining, 0);
+    choices.push({
+      discard,
+      resultingShanten,
+      waits,
+      waitsTotal,
+      improvingDraws,
+      improvingDrawsTotal,
+      improvingDrawsTotalExcludingRedraw,
+    });
   }
 
   choices.sort((a, b) => a.resultingShanten - b.resultingShanten);
