@@ -70,3 +70,5 @@ npm run build    # typecheck + production build
 The core engine (parsing, shanten, waits, joker resolution, discard analysis) lives in [`src/lib/mahjong.ts`](src/lib/mahjong.ts) and is covered by an extensive test suite in [`src/lib/mahjong.test.ts`](src/lib/mahjong.test.ts), including brute-force cross-validation for the trickier joker and shanten logic.
 
 Built with React, TypeScript, and Vite; deployed to GitHub Pages via GitHub Actions on every push to `main`.
+
+See [ROADMAP.md](ROADMAP.md) for ideas on future work (camera-based tile input, a scoring calculator).
