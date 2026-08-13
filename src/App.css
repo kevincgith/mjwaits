@@ -43,6 +43,27 @@ button {
   }
 }
 
+/* :active gives the same "which tile did I just hit" feedback as the old
+   unconditional :hover did, but tied to the finger actually being down -
+   it releases the instant the tap ends, so it can never linger onto (and
+   interfere with) the next tap the way :hover did on touch devices. */
+.panel-header button:not(:disabled):active {
+  background: #ececec;
+}
+
+.panel-header button.toggle-on:not(:disabled):active {
+  background: #ddebfa;
+}
+
+.hand-tile-button:active {
+  background: #fdecea;
+}
+
+.tile-button:active:not(:disabled) {
+  background: #f2f2f2;
+  border-color: #bbb;
+}
+
 h1 {
   font-size: 1.75rem;
   margin: 0 0 1.5rem;
