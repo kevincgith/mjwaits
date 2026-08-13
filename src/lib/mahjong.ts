@@ -340,14 +340,156 @@ export function getWaits(tiles: Tile[], meldsRequired: number = MELDS_REQUIRED):
 }
 
 // Joker support: a joker tile can stand in for any of the 34 real tile
-// kinds. Rather than exhaustively permuting which joker becomes which kind
-// (34^N), we enumerate DISTINCT MULTISETS of substitutions - jokers are
-// interchangeable with each other, so [5s, White] and [White, 5s] are the
-// same assignment - which is C(34 + N - 1, N) and grows far slower.
-// Benchmarked: ~14us per combination, so 100,000 keeps worst-case runtime
-// under ~1.5s (comfortably covers 4 jokers, C(37,4)=66,045; 5 jokers,
-// C(38,5)=501,942, overflows instead of hanging for ~7s).
-export const MAX_JOKER_COMBINATIONS = 100_000;
+// kinds. Rather than brute-forcing which real tile each joker becomes (kept
+// below, but only as a bounded fallback for special-hand detection), treat
+// joker count as a shared wildcard budget spent during the ordinary
+// meld/pair search - this makes wait-finding O(34 candidate draws x a
+// small bounded search), independent of how many jokers are in the hand.
+
+interface JokerSuitData {
+  suit: Suit;
+  counts: number[];
+  allowRuns: boolean;
+}
+
+// A hard ceiling on recursive search steps, shared across one
+// getWaitsWithJokers call, as a defensive guard against any pathological
+// hand shape. Benchmarked well under 1000 steps for realistic 16-tile
+// hands, so this should never actually trigger.
+const JOKER_SEARCH_STEP_LIMIT = 300_000;
+
+// Tries to fully decompose `suitsData` (from suitIndex onward) into exactly
+// `meldsRemaining` melds, spending from the shared `jokers` budget to pad
+// any shortfall. Runs are tried anchored at each of their 3 possible
+// positions relative to the lowest available real rank (start/mid/end) -
+// once lower ranks are drained to 0, a joker can fill in below a real tile,
+// so only trying "i as the low member" would miss valid decompositions.
+// On success, pushes the resolved tile for every joker spent onto
+// `resolved` (excess jokers beyond what's structurally needed become
+// pure-joker melds, given a placeholder value since any works).
+function decomposeMeldsWithJokers(
+  suitsData: JokerSuitData[],
+  suitIndex: number,
+  meldsRemaining: number,
+  jokers: number,
+  resolved: Tile[],
+  steps: { count: number }
+): boolean {
+  steps.count++;
+  if (steps.count > JOKER_SEARCH_STEP_LIMIT) return false;
+
+  if (suitIndex === suitsData.length) {
+    if (jokers !== meldsRemaining * 3) return false;
+    for (let k = 0; k < meldsRemaining; k++) {
+      resolved.push({ suit: "m", rank: 1 }, { suit: "m", rank: 1 }, { suit: "m", rank: 1 });
+    }
+    return true;
+  }
+
+  const sd = suitsData[suitIndex];
+  const counts = sd.counts;
+  let i = 1;
+  while (i < counts.length && counts[i] === 0) i++;
+  if (i >= counts.length) {
+    return decomposeMeldsWithJokers(suitsData, suitIndex + 1, meldsRemaining, jokers, resolved, steps);
+  }
+  if (meldsRemaining <= 0) return false;
+
+  // Triplet at i.
+  const tripletCost = Math.max(0, 3 - counts[i]);
+  if (tripletCost <= jokers) {
+    const used = Math.min(counts[i], 3);
+    counts[i] -= used;
+    for (let k = 0; k < tripletCost; k++) resolved.push({ suit: sd.suit, rank: i });
+    if (decomposeMeldsWithJokers(suitsData, suitIndex, meldsRemaining - 1, jokers - tripletCost, resolved, steps)) {
+      counts[i] += used;
+      return true;
+    }
+    for (let k = 0; k < tripletCost; k++) resolved.pop();
+    counts[i] += used;
+  }
+
+  // Runs containing i, anchored with i as the low/mid/high member.
+  if (sd.allowRuns) {
+    const patterns: [number, number, number][] = [
+      [i, i + 1, i + 2],
+      [i - 1, i, i + 1],
+      [i - 2, i - 1, i],
+    ];
+    for (const pattern of patterns) {
+      const [a, , c] = pattern;
+      if (a < 1 || c >= counts.length) continue;
+      let cost = 0;
+      for (const r of pattern) if (counts[r] === 0) cost++;
+      if (cost > jokers) continue;
+      const usedReal = pattern.map((r) => (counts[r] > 0 ? 1 : 0));
+      for (let k = 0; k < 3; k++) {
+        counts[pattern[k]] -= usedReal[k];
+        if (usedReal[k] === 0) resolved.push({ suit: sd.suit, rank: pattern[k] });
+      }
+      if (decomposeMeldsWithJokers(suitsData, suitIndex, meldsRemaining - 1, jokers - cost, resolved, steps)) {
+        for (let k = 0; k < 3; k++) counts[pattern[k]] += usedReal[k];
+        return true;
+      }
+      for (let k = 0; k < 3; k++) {
+        if (usedReal[k] === 0) resolved.pop();
+        counts[pattern[k]] += usedReal[k];
+      }
+    }
+  }
+
+  return false;
+}
+
+// Joker-aware standard-shape completeness check for `nonJokerTiles` (no
+// joker suit) plus `jokerCount` wildcards, decomposed into `meldsRequired`
+// melds + 1 pair. Returns a valid resolution for the jokers if possible
+// (one example among possibly several), or null if impossible or the
+// shared step budget ran out.
+function resolveStandardWithJokers(
+  nonJokerTiles: Tile[],
+  jokerCount: number,
+  meldsRequired: number,
+  steps: { count: number }
+): Tile[] | null {
+  if (nonJokerTiles.length + jokerCount !== meldsRequired * 3 + 2) return null;
+
+  const suitsData: JokerSuitData[] = [
+    { suit: "m", counts: countsForSuit(nonJokerTiles, "m", 9), allowRuns: true },
+    { suit: "t", counts: countsForSuit(nonJokerTiles, "t", 9), allowRuns: true },
+    { suit: "s", counts: countsForSuit(nonJokerTiles, "s", 9), allowRuns: true },
+    { suit: "z", counts: countsForSuit(nonJokerTiles, "z", 7), allowRuns: false },
+  ];
+
+  for (const sd of suitsData) {
+    for (let r = 1; r < sd.counts.length; r++) {
+      if (sd.counts[r] === 0) continue;
+      const used = Math.min(sd.counts[r], 2);
+      const cost = 2 - used;
+      if (cost > jokerCount) continue;
+      sd.counts[r] -= used;
+      const resolved: Tile[] = [];
+      for (let k = 0; k < cost; k++) resolved.push({ suit: sd.suit, rank: r });
+      const ok = decomposeMeldsWithJokers(suitsData, 0, meldsRequired, jokerCount - cost, resolved, steps);
+      sd.counts[r] += used;
+      if (ok) return resolved;
+      if (steps.count > JOKER_SEARCH_STEP_LIMIT) return null;
+    }
+  }
+
+  // Pure-joker pair (no real anchor at all).
+  if (jokerCount >= 2) {
+    const resolved: Tile[] = [
+      { suit: "m", rank: 1 },
+      { suit: "m", rank: 1 },
+    ];
+    if (decomposeMeldsWithJokers(suitsData, 0, meldsRequired, jokerCount - 2, resolved, steps)) {
+      return resolved;
+    }
+  }
+
+  return null;
+}
 
 // C(n + k - 1, k), the number of multisets of size k drawn from n kinds.
 function combinationsWithRepetition(n: number, k: number): number {
@@ -361,7 +503,9 @@ function combinationsWithRepetition(n: number, k: number): number {
 // Every distinct multiset of `count` real tiles that could substitute for
 // that many jokers, respecting the 4-copies-per-kind cap against whatever
 // non-joker tiles are already present (`baseCounts`). Returns null if the
-// number of combinations would exceed `cap`.
+// number of combinations would exceed `cap`. Kept as a bounded fallback for
+// special-hand detection (Thirteen Orphans, Eight Pairs), which the fast
+// wildcard search above doesn't know about.
 function jokerSubstitutions(count: number, baseCounts: Map<string, number>, cap: number): Tile[][] | null {
   if (count === 0) return [[]];
   const kinds = allTileKinds();
@@ -390,6 +534,12 @@ function jokerSubstitutions(count: number, baseCounts: Map<string, number>, cap:
   return overflowed ? null : results;
 }
 
+// Special hands are only checked with jokers when there are few enough that
+// the combinatorial fallback stays cheap (benchmarked: 4 jokers is ~66,045
+// combinations, well under a second).
+const SPECIAL_HAND_JOKER_LIMIT = 4;
+export const MAX_JOKER_COMBINATIONS = 100_000;
+
 export interface JokerWaitResult {
   wait: Tile;
   // What each joker resolves to for this particular wait (empty if the hand
@@ -401,9 +551,11 @@ export type JokerWaitsOutcome =
   | { overflowed: false; results: JokerWaitResult[] }
   | { overflowed: true; estimatedCombinations: number };
 
-// Joker-aware version of getWaits: tries every viable joker substitution
-// and unions the resulting waits, each tagged with an example resolution
-// for the jokers. Behaves exactly like getWaits when there are no jokers.
+// Joker-aware version of getWaits. Behaves exactly like getWaits when there
+// are no jokers; otherwise combines the fast wildcard-decomposition search
+// (standard N-melds + pair shape, any joker count) with a small bounded
+// brute-force fallback that also catches special hands (Thirteen Orphans,
+// Eight Pairs) when there are few enough jokers for that to be cheap.
 export function getWaitsWithJokers(
   tiles: Tile[],
   meldsRequired: number = MELDS_REQUIRED
@@ -413,25 +565,38 @@ export function getWaitsWithJokers(
     return { overflowed: false, results: getWaits(tiles, meldsRequired).map((wait) => ({ wait, jokers: [] })) };
   }
 
-  const estimate = combinationsWithRepetition(allTileKinds().length, jokerCount);
-  if (estimate > MAX_JOKER_COMBINATIONS) {
-    return { overflowed: true, estimatedCombinations: estimate };
-  }
-
   const nonJokers = tiles.filter((t) => t.suit !== "j");
-  const baseCounts = countAll(nonJokers);
-  const substitutions = jokerSubstitutions(jokerCount, baseCounts, MAX_JOKER_COMBINATIONS);
-  if (substitutions === null) {
-    return { overflowed: true, estimatedCombinations: estimate };
+  const found = new Map<string, Tile[]>();
+  const steps = { count: 0 };
+  let overflowed = false;
+
+  for (const candidate of allTileKinds()) {
+    if (tileCount(nonJokers, candidate) >= 4) continue;
+    if (steps.count > JOKER_SEARCH_STEP_LIMIT) {
+      overflowed = true;
+      break;
+    }
+    const resolution = resolveStandardWithJokers([...nonJokers, candidate], jokerCount, meldsRequired, steps);
+    if (resolution) found.set(tileKey(candidate), resolution);
   }
 
-  const found = new Map<string, Tile[]>();
-  for (const substitution of substitutions) {
-    const concreteHand = [...nonJokers, ...substitution];
-    for (const wait of getWaits(concreteHand, meldsRequired)) {
-      const key = tileKey(wait);
-      if (!found.has(key)) found.set(key, substitution);
+  if (!overflowed && jokerCount <= SPECIAL_HAND_JOKER_LIMIT) {
+    const baseCounts = countAll(nonJokers);
+    const substitutions = jokerSubstitutions(jokerCount, baseCounts, MAX_JOKER_COMBINATIONS);
+    if (substitutions !== null) {
+      for (const substitution of substitutions) {
+        const concreteHand = [...nonJokers, ...substitution];
+        for (const wait of getWaits(concreteHand, meldsRequired)) {
+          const key = tileKey(wait);
+          if (!found.has(key)) found.set(key, substitution);
+        }
+      }
     }
+  }
+
+  if (overflowed) {
+    const estimate = combinationsWithRepetition(allTileKinds().length, jokerCount);
+    return { overflowed: true, estimatedCombinations: estimate };
   }
 
   const results = Array.from(found.entries()).map(([key, jokers]) => ({

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  allTileKinds,
   analyzeDiscards,
   formatHand,
   getWaits,
@@ -10,7 +11,37 @@ import {
   isThirteenOrphansComplete,
   parseHand,
   tileCount,
+  tileKey,
 } from "./mahjong";
+import type { Tile } from "./mahjong";
+
+// Independent reference oracle for cross-validating getWaitsWithJokers: a
+// plain "try every possible value for every joker" brute force, kept
+// deliberately dumb (full permutation via recursion, not even deduped into
+// multisets) so it shares no logic with the module under test. Only
+// tractable for small joker counts, which is all these tests need.
+function bruteForceWaitKeys(tiles: Tile[], meldsRequired: number): Set<string> {
+  const jokerCount = tiles.filter((t) => t.suit === "j").length;
+  const nonJokers = tiles.filter((t) => t.suit !== "j");
+  const kinds = allTileKinds();
+  const waitKeys = new Set<string>();
+
+  function assign(remaining: number, chosen: Tile[]) {
+    if (remaining === 0) {
+      const concreteHand = [...nonJokers, ...chosen];
+      for (const wait of getWaits(concreteHand, meldsRequired)) waitKeys.add(tileKey(wait));
+      return;
+    }
+    for (const kind of kinds) {
+      chosen.push(kind);
+      assign(remaining - 1, chosen);
+      chosen.pop();
+    }
+  }
+
+  assign(jokerCount, []);
+  return waitKeys;
+}
 
 describe("parseHand / formatHand", () => {
   it("round-trips simple notation", () => {
@@ -236,12 +267,66 @@ describe("getWaitsWithJokers", () => {
     }
   });
 
-  it("falls back to an overflow result instead of hanging when there are too many jokers", () => {
-    const tiles = parseHand("jjjjjj"); // 6 jokers, C(39,6) ~= 3.26M combinations
+  it("solves 16 jokers (all 34 kinds wait) instantly via the wildcard search, not brute force", () => {
+    // The old combinatorial approach would need C(49,16) ~= 3.3 trillion
+    // combinations here - the point of the wildcard-budget search is that
+    // it doesn't need to enumerate joker values at all to see that a
+    // single free joker can always mirror whatever is drawn.
+    const tiles = parseHand("jjjjjjjjjjjjjjjj"); // 16 jokers
+    expect(tiles.length).toBe(16);
+    const start = performance.now();
+    const outcome = getWaitsWithJokers(tiles);
+    const elapsed = performance.now() - start;
+    expect(outcome.overflowed).toBe(false);
+    if (outcome.overflowed) throw new Error("unreachable");
+    expect(outcome.results.length).toBe(34); // every real kind is a valid wait
+    expect(elapsed).toBeLessThan(500);
+  });
+
+  it("every result from a heavy-joker hand still reconstructs to a genuinely complete hand", () => {
+    // 2 real tiles + 14 jokers = 16 (a valid checkpoint size).
+    const hand = parseHand("1m9sjjjjjjjjjjjjjj");
+    expect(hand.length).toBe(16);
+    const outcome = getWaitsWithJokers(hand);
+    expect(outcome.overflowed).toBe(false);
+    if (outcome.overflowed) throw new Error("unreachable");
+    const nonJokers = hand.filter((t) => t.suit !== "j");
+    for (const { wait, jokers } of outcome.results) {
+      const reconstructed = [...nonJokers, ...jokers, wait];
+      expect(reconstructed.length).toBe(17);
+      expect(isCompleteHand(reconstructed)).toBe(true);
+    }
+    expect(outcome.results.length).toBeGreaterThan(0);
+  });
+
+  it("matches an independent brute-force oracle across a range of joker hands", () => {
+    const cases: { notation: string; melds: number }[] = [
+      { notation: "11m5sj", melds: 1 }, // 1 joker
+      { notation: "1122mj", melds: 1 }, // 1 joker, different shape
+      { notation: "23mjj", melds: 1 }, // 2 jokers
+      { notation: "1mjjj", melds: 1 }, // the exact user-reported case: 2 jokers form
+      // a pong with 1m, the 3rd joker is free to pair with anything
+      { notation: "12345678mjj", melds: 3 }, // 2 jokers, larger hand
+    ];
+    for (const { notation, melds } of cases) {
+      const tiles = parseHand(notation);
+      const expected = bruteForceWaitKeys(tiles, melds);
+      const outcome = getWaitsWithJokers(tiles, melds);
+      expect(outcome.overflowed).toBe(false);
+      if (outcome.overflowed) throw new Error("unreachable");
+      const actual = new Set(outcome.results.map((r) => tileKey(r.wait)));
+      expect(actual).toEqual(expected);
+    }
+  });
+
+  it("confirms the user's example: 1mjjj waits on all 34 kinds", () => {
+    // 1m + 2 jokers form a pong (111m); the 3rd joker is entirely free and
+    // can mirror whatever is drawn to form the pair.
+    const tiles = parseHand("1mjjj");
     const outcome = getWaitsWithJokers(tiles, 1);
-    expect(outcome.overflowed).toBe(true);
-    if (!outcome.overflowed) throw new Error("unreachable");
-    expect(outcome.estimatedCombinations).toBeGreaterThan(1_000_000);
+    expect(outcome.overflowed).toBe(false);
+    if (outcome.overflowed) throw new Error("unreachable");
+    expect(outcome.results.length).toBe(34);
   });
 });
 
