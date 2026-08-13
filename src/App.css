@@ -272,17 +272,43 @@ h1 {
   border-radius: 4px;
 }
 
+/* The highlight can't just be background+outline directly on the glyph:
+   position/line-height only ever move the glyph's ink and its own box
+   together as a rigid unit, but the ink sits well off-center *within* that
+   box (font metrics, not something top/line-height can fix), so an outline
+   drawn on the box itself doesn't hug the visible tile. Instead draw it on
+   a separately-positioned ::before, sized/positioned to the glyph's actual
+   ink extent (measured via canvas text metrics at this class's font-size)
+   rather than its line box. */
 .tile-glyph.wait-highlight {
+  position: relative;
+  z-index: 0;
+}
+
+.tile-glyph.wait-highlight::before {
+  content: "";
+  position: absolute;
+  left: -0.08em;
+  right: -0.08em;
+  top: 0.15em;
+  height: 0.97em;
   background: #fff3cd;
   outline: 2px solid #e8a400;
-  outline-offset: 1px;
   border-radius: 3px;
+  z-index: -1;
 }
 
 .tile-glyph {
   font-size: 1.6rem;
   line-height: 1;
   font-variant-emoji: text;
+  /* The Mahjong Tiles Unicode block glyphs (man/pin/sou) sit noticeably low
+     within their own line box - measured via canvas text metrics, their ink
+     is consistently offset about 0.14em below center regardless of font
+     size. Honors/joker (a different font-family, see below) don't have this
+     problem and reset it back to 0. */
+  position: relative;
+  top: -0.145em;
 }
 
 .tile-glyph.large {
@@ -301,8 +327,7 @@ h1 {
 .tile-glyph[data-suit="z"] {
   color: #333;
   font-family: "Apple Symbols", "Segoe UI Symbol", "Noto Sans Symbols 2", sans-serif;
-  position: relative;
-  top: 0.15em;
+  top: 0;
 }
 /* Winds (East/South/West/North) */
 .tile-glyph[data-suit="z"][data-rank="1"],
@@ -323,8 +348,7 @@ h1 {
 .tile-glyph[data-suit="j"] {
   color: #8b5cf6;
   font-family: "Apple Symbols", "Segoe UI Symbol", "Noto Sans Symbols 2", sans-serif;
-  position: relative;
-  top: 0.15em;
+  top: 0;
 }
 
 .wait-result {
@@ -450,7 +474,7 @@ h1 {
   }
 
   .tile-glyph {
-    font-size: 2rem;
+    font-size: 2.3rem;
   }
 
   .tile-glyph.large {
