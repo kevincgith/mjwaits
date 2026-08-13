@@ -12,6 +12,35 @@
    the first tap instead of the one actually under the finger now. */
 button {
   touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* :hover styles only ever go here, gated to devices that have a real
+   pointer to hover with. On touch devices, a tap applies :hover with no
+   corresponding "mouse leave" to clear it - several mobile browsers (iOS
+   Safari in particular) then treat the NEXT tap on a different hoverable
+   element as merely clearing that stuck hover state rather than firing its
+   click, so the tap is silently swallowed instead of registering. This is
+   a well-documented class of "first tap after another element highlights
+   doesn't register" bug, and is exactly what rapid tile-to-tile tapping
+   would trigger over and over. */
+@media (hover: hover) and (pointer: fine) {
+  .panel-header button:not(:disabled):hover {
+    background: #ececec;
+  }
+
+  .panel-header button.toggle-on:not(:disabled):hover {
+    background: #ddebfa;
+  }
+
+  .hand-tile-button:hover {
+    background: #fdecea;
+  }
+
+  .tile-button:hover:not(:disabled) {
+    background: #f2f2f2;
+    border-color: #bbb;
+  }
 }
 
 h1 {
@@ -54,18 +83,10 @@ h1 {
   cursor: default;
 }
 
-.panel-header button:not(:disabled):hover {
-  background: #ececec;
-}
-
 .panel-header button.toggle-on {
   background: #eaf1fb;
   border-color: #1a5fb4;
   color: #1a5fb4;
-}
-
-.panel-header button.toggle-on:not(:disabled):hover {
-  background: #ddebfa;
 }
 
 .tile-count {
@@ -109,10 +130,6 @@ h1 {
   border-radius: 4px;
   cursor: pointer;
   line-height: 0;
-}
-
-.hand-tile-button:hover {
-  background: #fdecea;
 }
 
 .waits {
@@ -339,11 +356,6 @@ h1 {
   background: #fff;
   padding: 0.15rem 0.35rem;
   cursor: pointer;
-}
-
-.tile-button:hover:not(:disabled) {
-  background: #f2f2f2;
-  border-color: #bbb;
 }
 
 .tile-button:disabled {
