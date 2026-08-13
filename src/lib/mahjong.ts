@@ -323,7 +323,7 @@ export function isThirteenOrphansComplete(tiles: Tile[]): boolean {
   return false;
 }
 
-// The Taiwanese 16-tile Eight Pairs special hand ("liuliu"): 8 pairs of
+// The Taiwanese 16-tile Eight Pairs special hand ("Liguligu"): 8 pairs of
 // tile kinds (16 tiles), plus one more tile matching one of those pairs,
 // upgrading it to a triplet - 7*2 + 1*3 = 17 tiles. A kind can also appear
 // as all 4 copies at once, counting as two of the 8 pairs.

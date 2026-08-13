@@ -4,6 +4,8 @@ A waits calculator for Taiwanese (16-tile) Mahjong. Build a hand, and it tells y
 
 **Live app: [app.kevinlhc.com/mjwaits](https://app.kevinlhc.com/mjwaits/)**
 
+![A tenpai hand with breakdown and waits count both enabled](docs/preview.png)
+
 ## Features
 
 ### Hand input
@@ -37,7 +39,7 @@ When a 16-tile hand isn't tenpai, the app suggests discards and shows a two-step
 Beyond the standard 5-melds-plus-a-pair shape, the calculator recognizes:
 
 - **Thirteen Orphans** — all 13 terminal/honor kinds, one doubled as the pair, plus one ordinary meld.
-- **Eight Pairs ("liuliu")** — seven pairs plus one tripled pair (a full quad also counts as two pairs).
+- **Eight Pairs ("Liguligu")** — seven pairs plus one tripled pair (a full quad also counts as two pairs).
 - **Sixteen Unrelated Tiles** — all 7 honors plus 3 mutually "unrelated" ranks from each of man/pin/sou (no two close enough to ever share a chow), plus one tile doubling any of them for the pair.
 
 ## Notation reference
