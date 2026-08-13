@@ -123,8 +123,8 @@ function WaitBreakdownRow({
   const breakdown = decomposeHand(complete, meldsRequired);
 
   if (!breakdown) {
-    // Special hands (Thirteen Orphans, Eight Pairs) don't decompose into
-    // melds + pair - fall back to the plain wait display for these.
+    // Special hands (Thirteen Orphans, Eight Pairs, Sixteen Unrelated Tiles)
+    // don't decompose into melds + pair - fall back to the plain wait display.
     return (
       <div className="breakdown-row">
         <WaitResultTile result={result} remainingCount={remainingCount} />
@@ -373,7 +373,7 @@ function App() {
           {shantenValue !== null && (
             <span
               className="shanten-badge"
-              title="Shanten: minimum discard+draw exchanges from tenpai. Covers the standard shape and Eight Pairs; doesn't yet account for jokers or Thirteen Orphans."
+              title="Shanten: minimum discard+draw exchanges from tenpai. Covers the standard shape, Eight Pairs, and Sixteen Unrelated Tiles; doesn't yet account for jokers or Thirteen Orphans."
             >
               Shanten {shantenValue}
             </span>

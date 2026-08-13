@@ -338,11 +338,52 @@ export function isEightPairsComplete(tiles: Tile[]): boolean {
   return tripleKinds === 1;
 }
 
+// For Sixteen Unrelated Tiles, two same-suit ranks are "unrelated" (could
+// never share a chow, even with a helpful third tile) once they're at least
+// 3 apart - e.g. 1/4/7 all work together, but 1/2 or 1/3 don't, since a
+// drawn 3 or 2 would let them share a run. The tightest such gap fits at
+// most 3 ranks into 1-9 (e.g. 1/4/7), so each numbered suit contributes
+// exactly 3 kinds; combined with all 7 honors (which - having no runs at
+// all - are always mutually unrelated) that's the full 16.
+function unrelatedRanksOk(ranks: number[]): boolean {
+  if (ranks.length !== 3) return false;
+  const sorted = [...ranks].sort((a, b) => a - b);
+  return sorted[1] - sorted[0] >= 3 && sorted[2] - sorted[1] >= 3;
+}
+
+// The Taiwanese 16-tile Sixteen Unrelated Tiles special hand: all 7 honors,
+// plus 3 mutually-unrelated ranks (see unrelatedRanksOk) from each of m/t/s
+// - 7 + 3*3 = 16 distinct kinds - plus one more tile matching one of those
+// 16 to form the pair (15*1 + 1*2 = 17 tiles total).
+export function isSixteenUnrelatedComplete(tiles: Tile[]): boolean {
+  if (tiles.length !== COMPLETE_SIZE) return false;
+  const counts = countAll(tiles);
+  let pairKinds = 0;
+  for (const c of counts.values()) {
+    if (c > 2) return false;
+    if (c === 2) pairKinds++;
+  }
+  if (pairKinds !== 1) return false;
+
+  for (let rank = 1; rank <= 7; rank++) {
+    if ((counts.get(`z${rank}`) ?? 0) < 1) return false;
+  }
+  const bySuit: Record<"m" | "t" | "s", number[]> = { m: [], t: [], s: [] };
+  for (const key of counts.keys()) {
+    const suit = key[0] as Suit;
+    if (suit === "m" || suit === "t" || suit === "s") bySuit[suit].push(Number(key.slice(1)));
+  }
+  return (["m", "t", "s"] as const).every((suit) => unrelatedRanksOk(bySuit[suit]));
+}
+
 // Checks whether `tiles` decomposes into `meldsRequired` melds (triplet/run)
 // plus exactly one pair, i.e. tiles.length must be meldsRequired * 3 + 2.
 export function isCompleteHand(tiles: Tile[], meldsRequired: number = MELDS_REQUIRED): boolean {
   if (tiles.length !== meldsRequired * 3 + 2) return false;
-  if (meldsRequired === MELDS_REQUIRED && (isThirteenOrphansComplete(tiles) || isEightPairsComplete(tiles))) {
+  if (
+    meldsRequired === MELDS_REQUIRED &&
+    (isThirteenOrphansComplete(tiles) || isEightPairsComplete(tiles) || isSixteenUnrelatedComplete(tiles))
+  ) {
     return true;
   }
 
@@ -562,14 +603,74 @@ function eightPairsShanten(tiles: Tile[]): number {
   return 8 - pairUnits;
 }
 
-// Overall shanten: the best of the standard shape and Eight Pairs. Doesn't
-// account for jokers (callers should check for those separately) or
-// Thirteen Orphans (whose shanten interacts with the extra required meld in
-// a way this module doesn't compute yet).
+interface UnrelatedDpState {
+  units: number;
+  // Whether some selection achieving `units` also keeps a spare duplicate of
+  // one of its ranks - the pair can then come "for free" from tiles already
+  // in hand, rather than needing a 17th tile, unlocking a single-tile wait
+  // one slot earlier (see sixteenUnrelatedShanten).
+  hasPair: boolean;
+}
+
+// Best (units, hasPair) achievable for one numbered suit's rank counts, such
+// that every selected pair of ranks is at least 3 apart - a DP over rank,
+// capped at 3 selected ranks (see unrelatedRanksOk for why 3 is the ceiling
+// in 1-9).
+function maxUnrelatedWithPair(counts: number[]): UnrelatedDpState {
+  let prev3: UnrelatedDpState = { units: 0, hasPair: false };
+  let prev2: UnrelatedDpState = { units: 0, hasPair: false };
+  let prev1: UnrelatedDpState = { units: 0, hasPair: false };
+  let current: UnrelatedDpState = { units: 0, hasPair: false };
+  for (let r = 1; r <= 9; r++) {
+    const base = r - 3 >= 0 ? prev3 : { units: 0, hasPair: false };
+    current = prev1; // skip r
+    if (counts[r] > 0) {
+      const use: UnrelatedDpState = { units: base.units + 1, hasPair: base.hasPair || counts[r] >= 2 };
+      if (use.units > current.units) current = use;
+      else if (use.units === current.units) current = { units: current.units, hasPair: current.hasPair || use.hasPair };
+    }
+    prev3 = prev2;
+    prev2 = prev1;
+    prev1 = current;
+  }
+  return current;
+}
+
+// Sixteen Unrelated Tiles shanten: the target shape has 16 "slots" - all 7
+// honors, plus 3 mutually-unrelated ranks in each of m/t/s - so shanten
+// counts how many of those 16 slots still need a discard+draw exchange to
+// fill, minus 1 more if a spare duplicate already in hand can serve as the
+// pair without needing a dedicated 17th tile. Only meaningful at the full
+// 16-tile hand size, matching the special hand itself.
+function sixteenUnrelatedShanten(tiles: Tile[]): number {
+  const mState = maxUnrelatedWithPair(countsForSuit(tiles, "m", 9));
+  const tState = maxUnrelatedWithPair(countsForSuit(tiles, "t", 9));
+  const sState = maxUnrelatedWithPair(countsForSuit(tiles, "s", 9));
+
+  const zCounts = countsForSuit(tiles, "z", 7);
+  let honorUnits = 0;
+  let honorHasPair = false;
+  for (let r = 1; r <= 7; r++) {
+    if (zCounts[r] > 0) {
+      honorUnits++;
+      if (zCounts[r] >= 2) honorHasPair = true;
+    }
+  }
+
+  const units = mState.units + tState.units + sState.units + honorUnits;
+  const hasPair = mState.hasPair || tState.hasPair || sState.hasPair || honorHasPair;
+  return 16 - units - (hasPair ? 1 : 0);
+}
+
+// Overall shanten: the best of the standard shape, Eight Pairs, and Sixteen
+// Unrelated Tiles. Doesn't account for jokers (callers should check for
+// those separately) or Thirteen Orphans (whose shanten interacts with the
+// extra required meld in a way this module doesn't compute yet).
 export function shanten(tiles: Tile[], meldsRequired: number = MELDS_REQUIRED): number {
   let best = standardShanten(tiles, meldsRequired);
   if (meldsRequired === MELDS_REQUIRED) {
     best = Math.min(best, eightPairsShanten(tiles));
+    best = Math.min(best, sixteenUnrelatedShanten(tiles));
   }
   return best;
 }

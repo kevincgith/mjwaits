@@ -11,6 +11,7 @@ import {
   isCheckpointSize,
   isCompleteHand,
   isEightPairsComplete,
+  isSixteenUnrelatedComplete,
   isThirteenOrphansComplete,
   parseHand,
   shanten,
@@ -203,6 +204,29 @@ describe("isCompleteHand", () => {
     expect(tiles.length).toBe(17);
     expect(isEightPairsComplete(tiles)).toBe(false);
   });
+
+  it("recognizes the user's Sixteen Unrelated Tiles example via isSixteenUnrelatedComplete", () => {
+    // All 7 honors + 1/4/7t, 2/5/8m, 3/6/9s (16 kinds, pairwise unrelated),
+    // plus an extra 7t doubling one of them (the pair) = 17 tiles.
+    const tiles = [...parseHand("147t258m369s1234567z"), ...parseHand("7t")];
+    expect(tiles.length).toBe(17);
+    expect(isSixteenUnrelatedComplete(tiles)).toBe(true);
+    expect(isCompleteHand(tiles)).toBe(true);
+  });
+
+  it("rejects a hand where two same-suit ranks are too close together", () => {
+    // 1t/2t are only 1 apart - a drawn 3t would let them share a chow.
+    const tiles = [...parseHand("127t258m369s1234567z"), ...parseHand("7t")];
+    expect(tiles.length).toBe(17);
+    expect(isSixteenUnrelatedComplete(tiles)).toBe(false);
+  });
+
+  it("rejects a hand that isn't shaped as 15 singles + 1 pair", () => {
+    // Two doubled kinds (1z, 2z) instead of exactly one - not a valid pair count.
+    const tiles = [...parseHand("147t258m369s"), ...parseHand("11223456z")];
+    expect(tiles.length).toBe(17);
+    expect(isSixteenUnrelatedComplete(tiles)).toBe(false);
+  });
 });
 
 describe("getWaits", () => {
@@ -211,6 +235,24 @@ describe("getWaits", () => {
     expect(tiles.length).toBe(16);
     const waits = getWaits(tiles).map((t) => `${t.rank}${t.suit}`).sort();
     expect(waits).toEqual(["1t", "2s"]);
+  });
+
+  it("finds the 16-way wait for a tenpai Sixteen Unrelated Tiles hand", () => {
+    const tiles = parseHand("147t258m369s1234567z");
+    expect(tiles.length).toBe(16);
+    const waits = getWaits(tiles).map((t) => tileKey(t)).sort();
+    const expected = Array.from(new Set(tiles.map((t) => tileKey(t)))).sort();
+    expect(waits).toEqual(expected);
+    expect(waits.length).toBe(16);
+  });
+
+  it("finds the single-tile wait when Sixteen Unrelated Tiles already has a pre-formed pair", () => {
+    // Missing 7z, but 1t is already doubled in hand - the pair comes for
+    // free, so this is tenpai waiting on 7z alone, not a 16-way wait.
+    const tiles = parseHand("147t258m369s123456z1t");
+    expect(tiles.length).toBe(16);
+    const waits = getWaits(tiles).map((t) => tileKey(t));
+    expect(waits).toEqual(["z7"]);
   });
 
   it("finds an edge wait (kanchan) on 3s/6s", () => {
@@ -348,6 +390,28 @@ describe("standardShanten / shanten", () => {
     const start = performance.now();
     shanten(tiles);
     expect(performance.now() - start).toBeLessThan(200);
+  });
+
+  it("computes Sixteen Unrelated Tiles shanten and folds it into the overall minimum", () => {
+    // All 16 target kinds already present (7 honors + 3 unrelated ranks per
+    // suit) - tenpai (0), waiting on any of those 16 to form the pair.
+    const tenpai = parseHand("147t258m369s1234567z");
+    expect(tenpai.length).toBe(16);
+    expect(shanten(tenpai)).toBe(0);
+
+    // Missing 7z, but a spare 1t (a duplicate) is already in hand to serve
+    // as the pair "for free" - still tenpai, just now waiting on 7z alone
+    // instead of a 16-way wait.
+    const pairInHand = parseHand("147t258m369s123456z1t");
+    expect(pairInHand.length).toBe(16);
+    expect(shanten(pairInHand)).toBe(0);
+
+    // Missing 7z, and the 16th tile (9m) is genuinely wasted - too close to
+    // 8m to count as another unit, and not a duplicate of anything - so
+    // there's no pre-formed pair either: exactly 1 exchange from tenpai.
+    const oneAway = parseHand("147t258m369s123456z9m");
+    expect(oneAway.length).toBe(16);
+    expect(shanten(oneAway)).toBe(1);
   });
 });
 
