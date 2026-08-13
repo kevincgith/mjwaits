@@ -5,6 +5,15 @@
   color: #1a1a1a;
 }
 
+/* Without this, mobile browsers impose a ~300ms delay on every tap while
+   they wait to see if it's the first half of a double-tap-to-zoom gesture -
+   on a small tap target like a tile button, a second tap that arrives
+   within that window can register on the tile that was still "live" from
+   the first tap instead of the one actually under the finger now. */
+button {
+  touch-action: manipulation;
+}
+
 h1 {
   font-size: 1.75rem;
   margin: 0 0 1.5rem;
