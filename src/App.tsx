@@ -60,11 +60,36 @@ function nextCheckpoint(size: number): number | undefined {
 // was this click for" resolution step to get wrong. Mouse and keyboard
 // still go through the plain onClick path (calling preventDefault on
 // pointerdown only suppresses the browser's compatibility click for
-// touch/pen, not a real mouse click), with a flag to stop the touch path's
-// own trailing click from double-firing on browsers that still send one.
+// touch/pen, not a real mouse click).
+//
+// That compatibility click isn't always fully suppressed, though - and
+// unlike pointerup, it's dispatched via ordinary hit-testing at its
+// coordinates, not routed back to the original element. If our own tap
+// handler already removed a tile and the list reflowed before that
+// trailing click arrives, whatever tile shifted into the tapped tile's old
+// screen position (i.e. the next one) receives it and gets removed too -
+// reported as "tapping the Nth tile also removes the N+1th". A per-element
+// suppression flag can't catch this, since the stray click lands on a
+// DIFFERENT element than the one that was actually tapped. Instead, a
+// single capture-phase listener on the document blocks any click that
+// arrives within a short window of a real touch tap, regardless of which
+// element it targets.
+let lastTouchTapAt = 0;
+if (typeof document !== "undefined") {
+  document.addEventListener(
+    "click",
+    (e) => {
+      if (performance.now() - lastTouchTapAt < 500) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    },
+    true
+  );
+}
+
 function useTap(onTap: () => void, disabled?: boolean) {
   const startRef = useRef<{ x: number; y: number } | null>(null);
-  const suppressClickRef = useRef(false);
 
   const onPointerDown = (e: ReactPointerEvent) => {
     if (disabled) return;
@@ -77,7 +102,7 @@ function useTap(onTap: () => void, disabled?: boolean) {
     const start = startRef.current;
     startRef.current = null;
     if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 10) return; // a drag/scroll, not a tap
-    suppressClickRef.current = true;
+    lastTouchTapAt = performance.now();
     onTap();
   };
 
@@ -86,11 +111,10 @@ function useTap(onTap: () => void, disabled?: boolean) {
   };
 
   const onClick = () => {
+    // The global listener above already blocks any click that follows a
+    // real touch tap, so a click reaching here only ever means a genuine
+    // mouse click or keyboard activation (Enter/Space) - both legitimate.
     if (disabled) return;
-    if (suppressClickRef.current) {
-      suppressClickRef.current = false;
-      return;
-    }
     onTap();
   };
 
