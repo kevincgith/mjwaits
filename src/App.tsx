@@ -74,10 +74,25 @@ function HandTileButton({ tile, onClick }: { tile: Tile; onClick: () => void }) 
   );
 }
 
-function WaitResultTile({ result }: { result: JokerWaitResult }) {
+function RemainingCountBadge({ count }: { count: number }) {
+  return (
+    <span className="remaining-count" title={`${count} of this tile left (4 total, minus what's in your hand)`}>
+      ×{count}
+    </span>
+  );
+}
+
+function WaitResultTile({
+  result,
+  remainingCount,
+}: {
+  result: JokerWaitResult;
+  remainingCount: number | null;
+}) {
   return (
     <span className="wait-result">
       <TileGlyphSpan tile={result.wait} large />
+      {remainingCount !== null && <RemainingCountBadge count={remainingCount} />}
       {result.jokers.length > 0 && (
         <span className="joker-hint" title="What the joker(s) resolve to for this wait">
           <TileGlyphSpan tile={JOKER_TILE} />=
@@ -95,11 +110,13 @@ function WaitBreakdownRow({
   nonJokerHand,
   meldsRequired,
   sorted,
+  remainingCount,
 }: {
   result: JokerWaitResult;
   nonJokerHand: Tile[];
   meldsRequired: number;
   sorted: boolean;
+  remainingCount: number | null;
 }) {
   const complete = [...nonJokerHand, ...result.jokers, result.wait];
   const breakdown = decomposeHand(complete, meldsRequired);
@@ -109,7 +126,7 @@ function WaitBreakdownRow({
     // melds + pair - fall back to the plain wait display for these.
     return (
       <div className="breakdown-row">
-        <WaitResultTile result={result} />
+        <WaitResultTile result={result} remainingCount={remainingCount} />
       </div>
     );
   }
@@ -139,6 +156,7 @@ function WaitBreakdownRow({
   return (
     <div className="breakdown-row">
       <TileGlyphSpan tile={result.wait} large />
+      {remainingCount !== null && <RemainingCountBadge count={remainingCount} />}
       <span className="discard-arrow">→</span>
       <span className="breakdown-groups">{ordered.map(renderGroup)}</span>
     </div>
@@ -167,6 +185,7 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [sortMode, setSortMode] = useState(true);
   const [breakdownMode, setBreakdownMode] = useState<BreakdownMode>("off");
+  const [waitsCountMode, setWaitsCountMode] = useState(false);
   const nextId = useRef(0);
   const withIds = (tiles: Tile[]): HandTile[] => tiles.map((t) => ({ ...t, id: nextId.current++ }));
   const forDisplay = (tiles: HandTile[], sorted: boolean) => (sorted ? (sortTiles(tiles) as HandTile[]) : tiles);
@@ -219,6 +238,17 @@ function App() {
         ? analyzeDiscards(hand)
         : null,
     [hand, outcome, hasJokers]
+  );
+  const nonJokerHand = useMemo(() => hand.filter((t) => t.suit !== "j"), [hand]);
+  const remainingCounts = useMemo(() => {
+    if (!waitsCountMode || outcome === null || outcome.overflowed) return null;
+    const byKey = new Map<string, number>();
+    for (const r of outcome.results) byKey.set(tileLabel(r.wait), 4 - tileCount(nonJokerHand, r.wait));
+    return byKey;
+  }, [waitsCountMode, outcome, nonJokerHand]);
+  const totalRemaining = useMemo(
+    () => (remainingCounts ? Array.from(remainingCounts.values()).reduce((a, b) => a + b, 0) : null),
+    [remainingCounts]
   );
 
   return (
@@ -284,6 +314,19 @@ function App() {
           >
             Breakdown: {BREAKDOWN_LABEL[breakdownMode]}
           </button>
+          <button
+            type="button"
+            className={waitsCountMode ? "toggle-on" : undefined}
+            onClick={() => setWaitsCountMode((v) => !v)}
+            aria-pressed={waitsCountMode}
+            title={
+              waitsCountMode
+                ? "Waits Count: on — shows how many of each waiting tile are left"
+                : "Waits Count: off"
+            }
+          >
+            Waits Count: {waitsCountMode ? "On" : "Off"}
+          </button>
           <span className="tile-count">
             {hand.length} / {TENPAI_SIZE} tiles
           </span>
@@ -317,19 +360,29 @@ function App() {
             {outcome.results.length === allTileKinds().length && (
               <span className="waits-label universal-wait">Universal wait — any tile completes this hand.</span>
             )}
-            <span className="waits-label">Waiting for:</span>
+            <span className="waits-label">
+              Waiting for:
+              {totalRemaining !== null && ` (${totalRemaining} tile${totalRemaining === 1 ? "" : "s"} total)`}
+            </span>
             {breakdownMode !== "off" ? (
               outcome.results.map((r) => (
                 <WaitBreakdownRow
                   key={tileLabel(r.wait)}
                   result={r}
-                  nonJokerHand={hand.filter((t) => t.suit !== "j")}
+                  nonJokerHand={nonJokerHand}
                   meldsRequired={meldsForSize(hand.length)}
                   sorted={breakdownMode === "sorted"}
+                  remainingCount={remainingCounts?.get(tileLabel(r.wait)) ?? null}
                 />
               ))
             ) : (
-              outcome.results.map((r) => <WaitResultTile key={tileLabel(r.wait)} result={r} />)
+              outcome.results.map((r) => (
+                <WaitResultTile
+                  key={tileLabel(r.wait)}
+                  result={r}
+                  remainingCount={remainingCounts?.get(tileLabel(r.wait)) ?? null}
+                />
+              ))
             )}
           </div>
         )}
