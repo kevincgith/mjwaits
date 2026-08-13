@@ -493,26 +493,45 @@ function paretoPrune(options: BlockOption[]): BlockOption[] {
 // decomposing `counts` - not necessarily completely, leftover tiles are
 // simply left unused. `counts` is restored to its original values on return
 // (mutated only transiently during the search).
+//
+// Memoized by the exact remaining counts from position `i` onward: many
+// different branch orderings land on the identical remaining state (e.g.
+// "waste one tile at i, then take a triplet at i" and "take the triplet at
+// i directly" both leave the same counts behind), and without memoizing
+// that, a hand with several same-suit ranks all holding 2+ copies (e.g. a
+// chiitoitsu-shaped 1122334455667788m) branches combinatorially and can
+// take the better part of a second for a single call. Each `search(i)` call
+// returns *deltas* (relative to whatever's already been chosen before
+// position i), which is what makes the memoized value reusable regardless
+// of how much melds/partials had already been accumulated on the way in.
 function suitBlockOptions(counts: number[], allowRuns: boolean): BlockOption[] {
   const size = counts.length - 1;
-  const found: BlockOption[] = [];
+  const memo = new Map<string, BlockOption[]>();
 
-  function search(from: number, melds: number, partials: number) {
+  function search(from: number): BlockOption[] {
     let i = from;
     while (i <= size && counts[i] === 0) i++;
-    if (i > size) {
-      found.push({ melds, partials });
-      return;
-    }
+    if (i > size) return [{ melds: 0, partials: 0 }];
+
+    const key = counts.slice(i, size + 1).join(",");
+    const cached = memo.get(key);
+    if (cached) return cached;
+
+    const found: BlockOption[] = [];
+    const collect = (deltaMelds: number, deltaPartials: number) => {
+      for (const sub of search(i)) {
+        found.push({ melds: sub.melds + deltaMelds, partials: sub.partials + deltaPartials });
+      }
+    };
 
     if (counts[i] >= 3) {
       counts[i] -= 3;
-      search(i, melds + 1, partials);
+      collect(1, 0);
       counts[i] += 3;
     }
     if (counts[i] >= 2) {
       counts[i] -= 2;
-      search(i, melds, partials + 1);
+      collect(0, 1);
       counts[i] += 2;
     }
     if (allowRuns) {
@@ -520,7 +539,7 @@ function suitBlockOptions(counts: number[], allowRuns: boolean): BlockOption[] {
         counts[i]--;
         counts[i + 1]--;
         counts[i + 2]--;
-        search(i, melds + 1, partials);
+        collect(1, 0);
         counts[i]++;
         counts[i + 1]++;
         counts[i + 2]++;
@@ -528,26 +547,28 @@ function suitBlockOptions(counts: number[], allowRuns: boolean): BlockOption[] {
       if (i <= size - 1 && counts[i + 1] > 0) {
         counts[i]--;
         counts[i + 1]--;
-        search(i, melds, partials + 1);
+        collect(0, 1);
         counts[i]++;
         counts[i + 1]++;
       }
       if (i <= size - 2 && counts[i + 2] > 0) {
         counts[i]--;
         counts[i + 2]--;
-        search(i, melds, partials + 1);
+        collect(0, 1);
         counts[i]++;
         counts[i + 2]++;
       }
     }
     // Waste this single tile and move on.
     counts[i]--;
-    search(i, melds, partials);
+    collect(0, 0);
     counts[i]++;
-  }
 
-  search(1, 0, 0);
-  return paretoPrune(found);
+    const pruned = paretoPrune(found);
+    memo.set(key, pruned);
+    return pruned;
+  }
+  return search(1);
 }
 
 // Combine each suit's independent options into the Pareto-optimal set of
@@ -589,15 +610,21 @@ export function standardShanten(tiles: Tile[], meldsRequired: number = MELDS_REQ
     return best;
   };
 
-  let overallBest = scoreCombos(combineBlockOptions(suitsData.map((sd) => suitBlockOptions(sd.counts, sd.allowRuns))), false);
+  // Each suit's options only ever depend on that suit's own counts, so
+  // reserving a pair/tanki in one suit never needs the other 3 suits'
+  // options recomputed - only swap out the one that actually changed.
+  const baseOptions = suitsData.map((sd) => suitBlockOptions(sd.counts, sd.allowRuns));
+  let overallBest = scoreCombos(combineBlockOptions(baseOptions), false);
 
-  for (const sd of suitsData) {
+  for (let i = 0; i < suitsData.length; i++) {
+    const sd = suitsData[i];
     for (let rank = 1; rank < sd.counts.length; rank++) {
       if (sd.counts[rank] < 2) continue;
       sd.counts[rank] -= 2;
-      const combos = combineBlockOptions(suitsData.map((s2) => suitBlockOptions(s2.counts, s2.allowRuns)));
+      const perSuit = baseOptions.slice();
+      perSuit[i] = suitBlockOptions(sd.counts, sd.allowRuns);
       sd.counts[rank] += 2;
-      overallBest = Math.min(overallBest, scoreCombos(combos, true));
+      overallBest = Math.min(overallBest, scoreCombos(combineBlockOptions(perSuit), true));
     }
   }
 
@@ -608,12 +635,15 @@ export function standardShanten(tiles: Tile[], meldsRequired: number = MELDS_REQ
   // 123m9m, one meld plus a tanki wait on 9m) was scored as if nothing were
   // held back at all, overstating shanten by 1 - the block search above
   // only ever considers a *complete* pair (>=2 matching), never a single.
-  for (const sd of suitsData) {
+  for (let i = 0; i < suitsData.length; i++) {
+    const sd = suitsData[i];
     for (let rank = 1; rank < sd.counts.length; rank++) {
       if (sd.counts[rank] < 1) continue;
       sd.counts[rank] -= 1;
-      const combos = combineBlockOptions(suitsData.map((s2) => suitBlockOptions(s2.counts, s2.allowRuns)));
+      const perSuit = baseOptions.slice();
+      perSuit[i] = suitBlockOptions(sd.counts, sd.allowRuns);
       sd.counts[rank] += 1;
+      const combos = combineBlockOptions(perSuit);
       for (const { melds, partials } of combos) {
         const cappedPartials = Math.min(partials, meldsRequired - melds);
         const sh = 2 * (meldsRequired - melds) - cappedPartials; // no -1 (pair isn't complete), no +1 (a tile IS held back)
@@ -1090,6 +1120,13 @@ export function analyzeDiscardEfficiency(tiles: Tile[], meldsRequired: number = 
   return options.sort((a, b) => b.score - a.score);
 }
 
+export interface DrawCount {
+  draw: Tile;
+  // Remaining copies of `draw` (4 minus copies already in the hand it's
+  // being evaluated against).
+  remaining: number;
+}
+
 export interface DiscardChoice {
   discard: Tile;
   // Shanten of the hand that results from this discard (0 = tenpai).
@@ -1099,6 +1136,13 @@ export interface DiscardChoice {
   // Total remaining copies across `waits` (the "waits count" total); 0 when
   // resultingShanten is not 0.
   waitsTotal: number;
+  // Non-empty only when resultingShanten is > 0 - tiles that, once drawn,
+  // let some follow-up discard reduce shanten further (not necessarily all
+  // the way to tenpai).
+  improvingDraws: DrawCount[];
+  // Total remaining copies across `improvingDraws`; 0 when resultingShanten
+  // is 0 (waitsTotal covers that case instead).
+  improvingDrawsTotal: number;
 }
 
 export type DiscardChoicesOutcome =
@@ -1108,11 +1152,41 @@ export type DiscardChoicesOutcome =
   // ascending (tenpai first, then closest-to-tenpai).
   | { alreadyComplete: false; choices: DiscardChoice[] };
 
+// For a hand at a checkpoint (meldsRequired * 3 + 1) with shanten
+// `currentShanten`, finds every tile kind that - if drawn - lets some
+// follow-up discard bring shanten below `currentShanten`. Generalizes
+// analyzeDiscards' "does this draw reach tenpai" check to any shanten
+// level, not just the step immediately before tenpai.
+//
+// Computing shanten() directly on the resulting (meldsRequired*3+2)-tile
+// hand, with no discard applied at all, turns out to already equal the best
+// shanten achievable via *any* single discard - the block search's "waste
+// this tile" fallback already explores leaving one tile unused, so it's
+// discarding in every way but name. Verified against a brute-force "try
+// every discard" reference across thousands of random hands (including
+// meldsRequired=5 specifically, to cover Eight Pairs/Sixteen Unrelated).
+// This turns what would be an O(draws x discards) search into O(draws).
+function usefulDraws(tiles: Tile[], meldsRequired: number, currentShanten: number): DrawCount[] {
+  const results: DrawCount[] = [];
+
+  for (const candidate of allTileKinds()) {
+    const remainingCount = 4 - tileCount(tiles, candidate);
+    if (remainingCount <= 0) continue;
+    const withDraw = [...tiles, candidate];
+    if (shanten(withDraw, meldsRequired) < currentShanten) {
+      results.push({ draw: candidate, remaining: remainingCount });
+    }
+  }
+
+  return results;
+}
+
 // For a hand one tile past a checkpoint (meldsRequired * 3 + 2 - what you
 // hold right after drawing, before discarding), figures out whether it's
 // already a complete winning hand, and if not, what discarding each
-// distinct tile kind leaves you with: tenpai (with its waits) or a shanten
-// value if not. Doesn't account for jokers (matches analyzeDiscards).
+// distinct tile kind leaves you with: tenpai (with its waits), or a shanten
+// value plus which draws would improve it further. Doesn't account for
+// jokers (matches analyzeDiscards).
 export function analyzeDiscardChoices(tiles: Tile[], meldsRequired: number = MELDS_REQUIRED): DiscardChoicesOutcome {
   const size = meldsRequired * 3 + 2;
   if (tiles.length !== size) return { alreadyComplete: false, choices: [] };
@@ -1126,7 +1200,9 @@ export function analyzeDiscardChoices(tiles: Tile[], meldsRequired: number = MEL
     const resultingShanten = shanten(remaining, meldsRequired);
     const waits = resultingShanten === 0 ? getWaits(remaining, meldsRequired) : [];
     const waitsTotal = waits.reduce((sum, w) => sum + (4 - tileCount(remaining, w)), 0);
-    choices.push({ discard, resultingShanten, waits, waitsTotal });
+    const improvingDraws = resultingShanten > 0 ? usefulDraws(remaining, meldsRequired, resultingShanten) : [];
+    const improvingDrawsTotal = improvingDraws.reduce((sum, d) => sum + d.remaining, 0);
+    choices.push({ discard, resultingShanten, waits, waitsTotal, improvingDraws, improvingDrawsTotal });
   }
 
   choices.sort((a, b) => a.resultingShanten - b.resultingShanten);

@@ -405,6 +405,19 @@ describe("standardShanten / shanten", () => {
     expect(performance.now() - start).toBeLessThan(200);
   });
 
+  it("stays fast on a dense hand that used to blow up the block search combinatorially", () => {
+    // Many same-suit ranks all holding 2 copies (chiitoitsu-shaped): the
+    // block search revisits the same rank many times as its count depletes,
+    // and without memoizing by remaining-counts state, different branch
+    // orderings that land on the identical state got re-explored from
+    // scratch - this hand took ~80ms per call before that was fixed.
+    const tiles = parseHand("1122334455667788m");
+    expect(tiles.length).toBe(16);
+    const start = performance.now();
+    shanten(tiles);
+    expect(performance.now() - start).toBeLessThan(50);
+  });
+
   it("computes Sixteen Unrelated Tiles shanten and folds it into the overall minimum", () => {
     // All 16 target kinds already present (7 honors + 3 unrelated ranks per
     // suit) - tenpai (0), waiting on any of those 16 to form the pair.
@@ -632,6 +645,50 @@ describe("analyzeDiscardChoices", () => {
       expect(choice.waits.length > 0).toBe(choice.resultingShanten === 0);
       expect(choice.waitsTotal > 0).toBe(choice.resultingShanten === 0);
     }
+  });
+
+  it("includes improving draws (and their remaining counts) for non-tenpai choices", () => {
+    const tiles = parseHand("1234567899m111z11t22s");
+    const outcome = analyzeDiscardChoices(tiles);
+    expect(outcome.alreadyComplete).toBe(false);
+    if (outcome.alreadyComplete) throw new Error("unreachable");
+
+    const discard1m = outcome.choices.find((c) => c.discard.suit === "m" && c.discard.rank === 1);
+    expect(discard1m).toBeDefined();
+    expect(discard1m!.resultingShanten).toBe(1);
+    const draws = discard1m!.improvingDraws.map((d) => `${d.draw.rank}${d.draw.suit}x${d.remaining}`).sort();
+    expect(draws).toEqual(["1mx4", "1tx2", "2sx2", "4mx3", "7mx3", "9mx2"]);
+    expect(discard1m!.improvingDrawsTotal).toBe(16);
+
+    // Every improving draw should actually reduce shanten below 1 for some
+    // follow-up discard - re-verified independently here (not just trusting
+    // the internal shortcut) by brute-forcing every possible discard.
+    for (const { draw } of discard1m!.improvingDraws) {
+      const discardIndex = tiles.findIndex((t) => t.suit === discard1m!.discard.suit && t.rank === discard1m!.discard.rank);
+      const remaining = [...tiles.slice(0, discardIndex), ...tiles.slice(discardIndex + 1)];
+      const withDraw = [...remaining, draw];
+      let best = Infinity;
+      for (const t of new Set(withDraw.map(tileKey))) {
+        const idx = withDraw.findIndex((x) => tileKey(x) === t);
+        const afterDiscard = [...withDraw.slice(0, idx), ...withDraw.slice(idx + 1)];
+        best = Math.min(best, shanten(afterDiscard, 5));
+      }
+      expect(best).toBeLessThan(1);
+    }
+
+    // Non-tenpai choices never populate waits/waitsTotal, and vice versa.
+    for (const choice of outcome.choices) {
+      expect(choice.improvingDraws.length > 0 || choice.resultingShanten === 0).toBe(true);
+      expect(choice.improvingDrawsTotal > 0).toBe(choice.resultingShanten !== 0 && choice.improvingDraws.length > 0);
+    }
+  });
+
+  it("stays fast even on a dense hand (many same-suit ranks holding 2 copies)", () => {
+    const tiles = parseHand("1122334455667788m9m");
+    expect(tiles.length).toBe(17);
+    const start = performance.now();
+    analyzeDiscardChoices(tiles);
+    expect(performance.now() - start).toBeLessThan(200);
   });
 
   it("returns nothing for hand sizes that aren't a valid checkpoint", () => {

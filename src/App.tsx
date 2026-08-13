@@ -264,22 +264,45 @@ function DiscardEfficiencyRow({ option }: { option: DiscardEfficiency }) {
 }
 
 function DiscardChoiceRow({ choice }: { choice: DiscardChoice }) {
+  if (choice.resultingShanten === 0) {
+    return (
+      <div className="discard-row">
+        <TileGlyphSpan tile={choice.discard} />
+        <span className="discard-arrow">→</span>
+        <span className="tenpai-tag">Tenpai</span>
+        {choice.waits.map((w) => (
+          <TileGlyphSpan key={tileLabel(w)} tile={w} />
+        ))}
+        <span className="hint">
+          ({choice.waitsTotal} tile{choice.waitsTotal === 1 ? "" : "s"})
+        </span>
+      </div>
+    );
+  }
+
   return (
-    <div className="discard-row">
-      <TileGlyphSpan tile={choice.discard} />
-      <span className="discard-arrow">→</span>
-      {choice.resultingShanten === 0 ? (
-        <>
-          <span className="tenpai-tag">Tenpai</span>
-          {choice.waits.map((w) => (
-            <TileGlyphSpan key={tileLabel(w)} tile={w} />
-          ))}
-          <span className="hint">
-            ({choice.waitsTotal} tile{choice.waitsTotal === 1 ? "" : "s"})
-          </span>
-        </>
-      ) : (
+    <div className="discard-row discard-efficiency-row">
+      <div className="discard-efficiency-header">
+        <TileGlyphSpan tile={choice.discard} />
+        <span className="discard-arrow">→</span>
         <span className="shanten-badge">Shanten {choice.resultingShanten}</span>
+      </div>
+      {choice.improvingDraws.length > 0 ? (
+        <div className="discard-efficiency-draws">
+          <div className="draw-detail-row">
+            {choice.improvingDraws.map((d) => (
+              <span className="wait-result" key={tileLabel(d.draw)}>
+                <TileGlyphSpan tile={d.draw} />
+                <RemainingCountBadge count={d.remaining} />
+              </span>
+            ))}
+            <span className="hint">
+              ({choice.improvingDrawsTotal} tile{choice.improvingDrawsTotal === 1 ? "" : "s"} improve this)
+            </span>
+          </div>
+        </div>
+      ) : (
+        <span className="hint">no draw improves this further</span>
       )}
     </div>
   );
