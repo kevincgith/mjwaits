@@ -223,6 +223,9 @@ function App() {
         )}
         {outcome !== null && !outcome.overflowed && outcome.results.length > 0 && (
           <div className="waits">
+            {outcome.results.length === allTileKinds().length && (
+              <span className="waits-label universal-wait">Universal wait — any tile completes this hand.</span>
+            )}
             <span className="waits-label">Waiting for:</span>
             {outcome.results.map((r) => (
               <WaitResultTile key={tileLabel(r.wait)} result={r} />
