@@ -413,6 +413,167 @@ export function decomposeHand(tiles: Tile[], meldsRequired: number = MELDS_REQUI
   return null;
 }
 
+// --- Shanten (distance to tenpai) --------------------------------------
+//
+// Shanten counts the minimum number of discard+draw exchanges needed to
+// reach tenpai (0 = already tenpai). Unlike isCompleteHand/getWaits, which
+// only need to know whether a decomposition exists, shanten needs the BEST
+// achievable decomposition, since a hand rarely decomposes cleanly.
+//
+// A "block" is a complete meld (3 tiles), a partial meld/"taatsu" (2 tiles
+// needing exactly 1 more - a pair-toward-triplet, a two-sided run shape, or
+// a closed/kanchan run shape), or the pair (2 matching tiles, reserved
+// separately, at most one per hand). Leftover tiles are simply wasted.
+
+interface BlockOption {
+  melds: number;
+  partials: number;
+}
+
+function paretoPrune(options: BlockOption[]): BlockOption[] {
+  const unique = Array.from(new Map(options.map((o) => [`${o.melds},${o.partials}`, o])).values());
+  return unique.filter(
+    (a) => !unique.some((b) => b !== a && b.melds >= a.melds && b.partials >= a.partials && (b.melds > a.melds || b.partials > a.partials))
+  );
+}
+
+// Every Pareto-optimal (melds, partials) combination achievable by
+// decomposing `counts` - not necessarily completely, leftover tiles are
+// simply left unused. `counts` is restored to its original values on return
+// (mutated only transiently during the search).
+function suitBlockOptions(counts: number[], allowRuns: boolean): BlockOption[] {
+  const size = counts.length - 1;
+  const found: BlockOption[] = [];
+
+  function search(from: number, melds: number, partials: number) {
+    let i = from;
+    while (i <= size && counts[i] === 0) i++;
+    if (i > size) {
+      found.push({ melds, partials });
+      return;
+    }
+
+    if (counts[i] >= 3) {
+      counts[i] -= 3;
+      search(i, melds + 1, partials);
+      counts[i] += 3;
+    }
+    if (counts[i] >= 2) {
+      counts[i] -= 2;
+      search(i, melds, partials + 1);
+      counts[i] += 2;
+    }
+    if (allowRuns) {
+      if (i <= size - 2 && counts[i + 1] > 0 && counts[i + 2] > 0) {
+        counts[i]--;
+        counts[i + 1]--;
+        counts[i + 2]--;
+        search(i, melds + 1, partials);
+        counts[i]++;
+        counts[i + 1]++;
+        counts[i + 2]++;
+      }
+      if (i <= size - 1 && counts[i + 1] > 0) {
+        counts[i]--;
+        counts[i + 1]--;
+        search(i, melds, partials + 1);
+        counts[i]++;
+        counts[i + 1]++;
+      }
+      if (i <= size - 2 && counts[i + 2] > 0) {
+        counts[i]--;
+        counts[i + 2]--;
+        search(i, melds, partials + 1);
+        counts[i]++;
+        counts[i + 2]++;
+      }
+    }
+    // Waste this single tile and move on.
+    counts[i]--;
+    search(i, melds, partials);
+    counts[i]++;
+  }
+
+  search(1, 0, 0);
+  return paretoPrune(found);
+}
+
+// Combine each suit's independent options into the Pareto-optimal set of
+// achievable (melds, partials) totals across the whole hand.
+function combineBlockOptions(perSuit: BlockOption[][]): BlockOption[] {
+  let combined: BlockOption[] = [{ melds: 0, partials: 0 }];
+  for (const options of perSuit) {
+    const next: BlockOption[] = [];
+    for (const c of combined) {
+      for (const o of options) next.push({ melds: c.melds + o.melds, partials: c.partials + o.partials });
+    }
+    combined = paretoPrune(next);
+  }
+  return combined;
+}
+
+// Standard-shape shanten for a hand at any checkpoint size (works the same
+// way isCheckpointSize/meldsForSize do for smaller practice sizes, not just
+// the full 16-tile hand). Doesn't know about jokers or the special hands
+// (Thirteen Orphans, Eight Pairs) - see shanten() below, which folds in
+// Eight Pairs.
+export function standardShanten(tiles: Tile[], meldsRequired: number = MELDS_REQUIRED): number {
+  const suitsData: { counts: number[]; allowRuns: boolean }[] = [
+    { counts: countsForSuit(tiles, "m", 9), allowRuns: true },
+    { counts: countsForSuit(tiles, "t", 9), allowRuns: true },
+    { counts: countsForSuit(tiles, "s", 9), allowRuns: true },
+    { counts: countsForSuit(tiles, "z", 7), allowRuns: false },
+  ];
+
+  const scoreCombos = (combos: BlockOption[], hasPair: boolean): number => {
+    let best = Infinity;
+    for (const { melds, partials } of combos) {
+      const cappedPartials = Math.min(partials, meldsRequired - melds);
+      const blocksUsed = melds + cappedPartials;
+      let sh = 2 * (meldsRequired - melds) - cappedPartials - (hasPair ? 1 : 0);
+      if (!hasPair && blocksUsed === meldsRequired) sh += 1; // no tiles left in reserve to start a pair
+      best = Math.min(best, sh);
+    }
+    return best;
+  };
+
+  let overallBest = scoreCombos(combineBlockOptions(suitsData.map((sd) => suitBlockOptions(sd.counts, sd.allowRuns))), false);
+
+  for (const sd of suitsData) {
+    for (let rank = 1; rank < sd.counts.length; rank++) {
+      if (sd.counts[rank] < 2) continue;
+      sd.counts[rank] -= 2;
+      const combos = combineBlockOptions(suitsData.map((s2) => suitBlockOptions(s2.counts, s2.allowRuns)));
+      sd.counts[rank] += 2;
+      overallBest = Math.min(overallBest, scoreCombos(combos, true));
+    }
+  }
+
+  return overallBest;
+}
+
+// Eight Pairs shanten: 8 - (number of "pair units", where a kind with 2
+// copies is 1 unit and a kind with all 4 is 2 units). Only meaningful at
+// the full 16-tile hand size, matching how the special hand itself works.
+function eightPairsShanten(tiles: Tile[]): number {
+  const counts = countAll(tiles);
+  let pairUnits = 0;
+  for (const c of counts.values()) pairUnits += Math.floor(c / 2);
+  return 8 - pairUnits;
+}
+
+// Overall shanten: the best of the standard shape and Eight Pairs. Doesn't
+// account for jokers (callers should check for those separately) or
+// Thirteen Orphans (whose shanten interacts with the extra required meld in
+// a way this module doesn't compute yet).
+export function shanten(tiles: Tile[], meldsRequired: number = MELDS_REQUIRED): number {
+  let best = standardShanten(tiles, meldsRequired);
+  if (meldsRequired === MELDS_REQUIRED) {
+    best = Math.min(best, eightPairsShanten(tiles));
+  }
+  return best;
+}
+
 // For a hand one tile short of meldsRequired melds + a pair (length
 // meldsRequired * 3 + 1), returns every tile kind that completes it.
 export function getWaits(tiles: Tile[], meldsRequired: number = MELDS_REQUIRED): Tile[] {

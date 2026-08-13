@@ -11,6 +11,7 @@ import {
   isCheckpointSize,
   meldsForSize,
   parseHand,
+  shanten,
   sortTiles,
   tileCount,
   tileGlyph,
@@ -208,6 +209,10 @@ function App() {
     () => (canCalculate && hand.length > 0 ? getWaitsWithJokers(hand, meldsForSize(hand.length)) : null),
     [hand, canCalculate]
   );
+  const shantenValue = useMemo(
+    () => (canCalculate && hand.length > 0 && !hasJokers ? shanten(hand, meldsForSize(hand.length)) : null),
+    [hand, canCalculate, hasJokers]
+  );
   const discardOptions = useMemo(
     () =>
       !hasJokers && hand.length === TENPAI_SIZE && outcome && !outcome.overflowed && outcome.results.length === 0
@@ -282,6 +287,14 @@ function App() {
           <span className="tile-count">
             {hand.length} / {TENPAI_SIZE} tiles
           </span>
+          {shantenValue !== null && (
+            <span
+              className="shanten-badge"
+              title="Shanten: minimum discard+draw exchanges from tenpai. Covers the standard shape and Eight Pairs; doesn't yet account for jokers or Thirteen Orphans."
+            >
+              Shanten {shantenValue}
+            </span>
+          )}
         </div>
 
         <div className="hand-display">

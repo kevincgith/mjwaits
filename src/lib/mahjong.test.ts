@@ -12,10 +12,37 @@ import {
   isEightPairsComplete,
   isThirteenOrphansComplete,
   parseHand,
+  shanten,
+  standardShanten,
   tileCount,
   tileKey,
 } from "./mahjong";
 import type { Tile } from "./mahjong";
+
+// Independent reference oracle for cross-validating shanten: brute-force
+// search over discard+draw exchanges, correct by definition (shanten(hand)
+// = 0 if already tenpai, else 1 + min over every discard/draw pair of
+// shanten of the result), capped at `maxDepth` exchanges since it's
+// exponential. Shares no logic with the block-counting implementation.
+function referenceShanten(tiles: Tile[], meldsRequired: number, maxDepth: number): number {
+  function solve(hand: Tile[], depth: number): number {
+    if (getWaits(hand, meldsRequired).length > 0) return 0;
+    if (depth >= maxDepth) return Infinity;
+    let best = Infinity;
+    const discardKeys = Array.from(new Set(hand.map(tileKey)));
+    for (const dk of discardKeys) {
+      const idx = hand.findIndex((t) => tileKey(t) === dk);
+      const remaining = [...hand.slice(0, idx), ...hand.slice(idx + 1)];
+      for (const draw of allTileKinds()) {
+        if (tileCount(remaining, draw) >= 4) continue;
+        const sub = solve([...remaining, draw], depth + 1);
+        if (sub + 1 < best) best = sub + 1;
+      }
+    }
+    return best;
+  }
+  return solve(tiles, 0);
+}
 
 // Independent reference oracle for cross-validating getWaitsWithJokers: a
 // plain "try every possible value for every joker" brute force, kept
@@ -271,6 +298,55 @@ describe("decomposeHand", () => {
       const reassembled = [...breakdown!.pair, ...breakdown!.melds.flat()];
       expect(reassembled.length).toBe(complete.length);
     }
+  });
+});
+
+describe("standardShanten / shanten", () => {
+  it("is 0 for a tenpai hand", () => {
+    const tiles = parseHand("111222333444m11t22s"); // shanpon wait, confirmed tenpai elsewhere
+    expect(standardShanten(tiles)).toBe(0);
+    expect(shanten(tiles)).toBe(0);
+  });
+
+  it("is 1 for a hand one useful exchange from tenpai, cross-validated against brute force", () => {
+    // 11m pair + two disconnected stray tiles (1s, 9s) - already confirmed
+    // via analyzeDiscards to be exactly 1 discard+draw from tenpai.
+    const tiles = parseHand("11m1s9s");
+    expect(referenceShanten(tiles, 1, 2)).toBe(1);
+    expect(standardShanten(tiles, 1)).toBe(1);
+  });
+
+  it("is 2 for a hand with no pair and no connected tiles, cross-validated against brute force", () => {
+    // 4 totally isolated tiles: no pair anywhere, nothing adjacent.
+    const tiles = parseHand("1m5s1z4z");
+    expect(referenceShanten(tiles, 1, 2)).toBe(2);
+    expect(standardShanten(tiles, 1)).toBe(2);
+  });
+
+  it("drops by exactly 1 after discarding a useless tile for a useful one", () => {
+    const before = parseHand("11m1s9s");
+    expect(standardShanten(before, 1)).toBe(1);
+    // Discard 9s, draw 1s -> 111s... no, draw 2s for a ryanmen extension.
+    const after = parseHand("11m1s2s");
+    expect(standardShanten(after, 1)).toBe(0);
+  });
+
+  it("computes Eight Pairs shanten and folds it into the overall minimum", () => {
+    // 5 clean pairs (1m,3m,1t,3t,5s) + 6 unrelated honor singles (16 tiles):
+    // Eight Pairs needs 8 - 5 = 3 more pair-units; the standard shape does
+    // worse here (5), so the overall shanten should be Eight Pairs' 3.
+    const tiles = parseHand("1133m1133t55s123456z");
+    expect(tiles.length).toBe(16);
+    expect(standardShanten(tiles)).toBe(5);
+    expect(shanten(tiles)).toBe(3);
+  });
+
+  it("stays fast on a full 16-tile hand", () => {
+    const tiles = parseHand("13579m2468t111z5577s");
+    expect(tiles.length).toBe(16);
+    const start = performance.now();
+    shanten(tiles);
+    expect(performance.now() - start).toBeLessThan(200);
   });
 });
 

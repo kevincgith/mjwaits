@@ -64,6 +64,17 @@ h1 {
   font-size: 0.85rem;
 }
 
+.shanten-badge {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #1a5fb4;
+  background: #eaf1fb;
+  border: 1px solid #cfe0f5;
+  border-radius: 4px;
+  padding: 0.15rem 0.5rem;
+  margin-left: 0.5rem;
+}
+
 .hand-display {
   min-height: 3.5rem;
   display: flex;
