@@ -155,9 +155,14 @@ export function formatHand(tiles: Tile[]): string {
     .join("");
 }
 
+const SUIT_ORDER: Record<Suit, number> = { m: 0, t: 1, s: 2, z: 3, j: 4 };
+
+function compareTiles(a: Tile, b: Tile): number {
+  return SUIT_ORDER[a.suit] - SUIT_ORDER[b.suit] || a.rank - b.rank;
+}
+
 export function sortTiles(tiles: Tile[]): Tile[] {
-  const order: Record<Suit, number> = { m: 0, t: 1, s: 2, z: 3, j: 4 };
-  return [...tiles].sort((a, b) => order[a.suit] - order[b.suit] || a.rank - b.rank);
+  return [...tiles].sort(compareTiles);
 }
 
 function countsForSuit(tiles: Tile[], suit: Suit, size: number): number[] {
@@ -384,6 +389,31 @@ export function isEightPairsComplete(tiles: Tile[]): boolean {
   return tripleKinds === 1;
 }
 
+export interface EightPairsBreakdown {
+  // The one kind held three times - the "upgraded" pair, closest analog to
+  // a standard hand's pair, so it's the group shown first.
+  triple: Tile[];
+  // The other 7 pair kinds, one group per kind - 2 tiles each, or 4 for a
+  // kind held as all four copies (counts as two of the 8 pairs at once).
+  pairs: Tile[][];
+}
+
+export function decomposeEightPairs(tiles: Tile[]): EightPairsBreakdown | null {
+  if (!isEightPairsComplete(tiles)) return null;
+  const counts = countAll(tiles);
+  let triple: Tile[] = [];
+  const pairs: Tile[][] = [];
+  for (const [key, c] of counts) {
+    const suit = key[0] as Suit;
+    const rank = Number(key.slice(1));
+    const group: Tile[] = Array.from({ length: c }, () => ({ suit, rank }));
+    if (c === 3) triple = group;
+    else pairs.push(group);
+  }
+  pairs.sort((a, b) => compareTiles(a[0], b[0]));
+  return { triple, pairs };
+}
+
 // For Sixteen Unrelated Tiles, two same-suit ranks are "unrelated" (could
 // never share a chow, even with a helpful third tile) once they're at least
 // 3 apart - e.g. 1/4/7 all work together, but 1/2 or 1/3 don't, since a
@@ -420,6 +450,28 @@ export function isSixteenUnrelatedComplete(tiles: Tile[]): boolean {
     if (suit === "m" || suit === "t" || suit === "s") bySuit[suit].push(Number(key.slice(1)));
   }
   return (["m", "t", "s"] as const).every((suit) => unrelatedRanksOk(bySuit[suit]));
+}
+
+export interface SixteenUnrelatedBreakdown {
+  // The one kind held twice - the pair.
+  pair: Tile[];
+  // The other 15 kinds, held once each.
+  singles: Tile[];
+}
+
+export function decomposeSixteenUnrelated(tiles: Tile[]): SixteenUnrelatedBreakdown | null {
+  if (!isSixteenUnrelatedComplete(tiles)) return null;
+  const counts = countAll(tiles);
+  const pair: Tile[] = [];
+  const singles: Tile[] = [];
+  for (const [key, c] of counts) {
+    const suit = key[0] as Suit;
+    const rank = Number(key.slice(1));
+    if (c === 2) pair.push({ suit, rank }, { suit, rank });
+    else singles.push({ suit, rank });
+  }
+  singles.sort(compareTiles);
+  return { pair, singles };
 }
 
 // Checks whether `tiles` decomposes into `meldsRequired` melds (triplet/run)

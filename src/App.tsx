@@ -6,7 +6,9 @@ import {
   allTileKinds,
   analyzeDiscardChoices,
   analyzeDiscardEfficiency,
+  decomposeEightPairs,
   decomposeHand,
+  decomposeSixteenUnrelated,
   decomposeThirteenOrphans,
   formatHand,
   getWaitsWithJokers,
@@ -205,11 +207,11 @@ function WaitBreakdownRow({
   const breakdown = decomposeHand(complete, meldsRequired);
   const groups = breakdown
     ? [{ tiles: breakdown.pair, key: "pair" }, ...breakdown.melds.map((tiles, i) => ({ tiles, key: `meld-${i}` }))]
-    : thirteenOrphansGroups(complete);
+    : specialHandGroups(complete);
 
   if (!groups) {
-    // Eight Pairs / Sixteen Unrelated Tiles don't decompose into melds+pair
-    // or the orphan shape - fall back to the plain wait display.
+    // Shouldn't happen for any hand that reaches this component with a wait
+    // - fall back to the plain wait display just in case.
     return (
       <div className="breakdown-row">
         <WaitResultTile result={result} remainingCount={remainingCount} />
@@ -241,17 +243,34 @@ function WaitBreakdownRow({
 }
 
 // Thirteen Orphans has its own shape (pair + 12 singles + 1 unrelated meld,
-// not melds+pair), so it needs its own grouping instead of decomposeHand's.
-// The 12 singles are shown as one contiguous group rather than 12
-// one-tile groups, so they read as "the rest of the hand" at a glance.
-function thirteenOrphansGroups(hand: Tile[]): { tiles: Tile[]; key: string }[] | null {
-  const breakdown = decomposeThirteenOrphans(hand);
-  if (!breakdown) return null;
-  return [
-    { tiles: breakdown.pair, key: "pair" },
-    { tiles: breakdown.singles, key: "singles" },
-    { tiles: breakdown.meld, key: "meld" },
-  ];
+// or Sixteen Unrelated Tiles - not melds+pair), so each needs its own
+// grouping instead of decomposeHand's. Runs of same-kind-or-singles tiles
+// are shown as one contiguous group rather than one group per tile, so
+// they read as "the rest of the hand" at a glance.
+function specialHandGroups(hand: Tile[]): { tiles: Tile[]; key: string }[] | null {
+  const orphans = decomposeThirteenOrphans(hand);
+  if (orphans) {
+    return [
+      { tiles: orphans.pair, key: "pair" },
+      { tiles: orphans.singles, key: "singles" },
+      { tiles: orphans.meld, key: "meld" },
+    ];
+  }
+  const eightPairs = decomposeEightPairs(hand);
+  if (eightPairs) {
+    return [
+      { tiles: eightPairs.triple, key: "triple" },
+      ...eightPairs.pairs.map((tiles, i) => ({ tiles, key: `pair-${i}` })),
+    ];
+  }
+  const sixteenUnrelated = decomposeSixteenUnrelated(hand);
+  if (sixteenUnrelated) {
+    return [
+      { tiles: sixteenUnrelated.pair, key: "pair" },
+      { tiles: sixteenUnrelated.singles, key: "singles" },
+    ];
+  }
+  return null;
 }
 
 // Meld/pair breakdown for a hand that's already complete (no wait tile to
@@ -268,12 +287,8 @@ function CompleteHandBreakdown({
   const breakdown = decomposeHand(hand, meldsRequired);
   const groups = breakdown
     ? [{ tiles: breakdown.pair, key: "pair" }, ...breakdown.melds.map((tiles, i) => ({ tiles, key: `meld-${i}` }))]
-    : thirteenOrphansGroups(hand);
-  if (!groups) {
-    // Eight Pairs / Sixteen Unrelated Tiles don't decompose into melds+pair
-    // or the orphan shape.
-    return null;
-  }
+    : specialHandGroups(hand);
+  if (!groups) return null;
   const ordered = orderBreakdownGroups(groups, sorted);
 
   return (

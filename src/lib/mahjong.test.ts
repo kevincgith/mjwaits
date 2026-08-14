@@ -5,7 +5,9 @@ import {
   analyzeDiscardChoices,
   analyzeDiscardEfficiency,
   analyzeDiscards,
+  decomposeEightPairs,
   decomposeHand,
+  decomposeSixteenUnrelated,
   decomposeThirteenOrphans,
   formatHand,
   getWaits,
@@ -227,6 +229,37 @@ describe("isCompleteHand", () => {
     expect(isEightPairsComplete(tiles)).toBe(false);
   });
 
+  it("decomposeEightPairs puts the tripled kind first, then the other 7 pairs in tile order", () => {
+    const tiles = [...parseHand("11223344m"), ...parseHand("112233444z")];
+    const breakdown = decomposeEightPairs(tiles);
+    expect(breakdown).not.toBeNull();
+    expect(breakdown!.triple.map(tileKey)).toEqual(["z4", "z4", "z4"]);
+    expect(breakdown!.pairs.map((p) => p.map(tileKey))).toEqual([
+      ["m1", "m1"],
+      ["m2", "m2"],
+      ["m3", "m3"],
+      ["m4", "m4"],
+      ["z1", "z1"],
+      ["z2", "z2"],
+      ["z3", "z3"],
+    ]);
+    const regrouped = [...breakdown!.triple, ...breakdown!.pairs.flat()];
+    expect(regrouped.map(tileKey).sort()).toEqual(tiles.map(tileKey).sort());
+  });
+
+  it("decomposeEightPairs groups a kind's all-4-copies as one 4-tile pair group", () => {
+    const tiles = [...parseHand("1111m1133s"), ...parseHand("22225566z1s")];
+    const breakdown = decomposeEightPairs(tiles);
+    expect(breakdown).not.toBeNull();
+    expect(breakdown!.triple.map(tileKey)).toEqual(["s1", "s1", "s1"]);
+    const quad = breakdown!.pairs.find((p) => p.length === 4);
+    expect(quad?.map(tileKey)).toEqual(["m1", "m1", "m1", "m1"]);
+  });
+
+  it("decomposeEightPairs returns null for a non-eight-pairs hand", () => {
+    expect(decomposeEightPairs(parseHand("111222333444m111t22s"))).toBeNull();
+  });
+
   it("recognizes the user's Sixteen Unrelated Tiles example via isSixteenUnrelatedComplete", () => {
     // All 7 honors + 1/4/7t, 2/5/8m, 3/6/9s (16 kinds, pairwise unrelated),
     // plus an extra 7t doubling one of them (the pair) = 17 tiles.
@@ -248,6 +281,20 @@ describe("isCompleteHand", () => {
     const tiles = [...parseHand("147t258m369s"), ...parseHand("11223456z")];
     expect(tiles.length).toBe(17);
     expect(isSixteenUnrelatedComplete(tiles)).toBe(false);
+  });
+
+  it("decomposeSixteenUnrelated groups the doubled kind as the pair, the rest as singles", () => {
+    const tiles = [...parseHand("147t258m369s1234567z"), ...parseHand("7t")];
+    const breakdown = decomposeSixteenUnrelated(tiles);
+    expect(breakdown).not.toBeNull();
+    expect(breakdown!.pair.map(tileKey)).toEqual(["t7", "t7"]);
+    expect(breakdown!.singles.length).toBe(15);
+    const regrouped = [...breakdown!.pair, ...breakdown!.singles];
+    expect(regrouped.map(tileKey).sort()).toEqual(tiles.map(tileKey).sort());
+  });
+
+  it("decomposeSixteenUnrelated returns null for a non-sixteen-unrelated hand", () => {
+    expect(decomposeSixteenUnrelated(parseHand("111222333444m111t22s"))).toBeNull();
   });
 });
 
