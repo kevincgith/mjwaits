@@ -15,7 +15,6 @@ Let the user point a camera at their hand and have tiles recognized automaticall
 Smaller and more concrete than the two feature ideas above.
 
 - **Joker handling is incomplete outside the plain waits list.** Shanten, discard-efficiency, and discard-choice/complete-hand-breakdown analysis all currently bail out entirely when a hand contains jokers (see the `hasJokers` checks in `App.tsx` — no shanten badge, "Discard analysis isn't available yet for hands with jokers"). The plain waits list already shows what each joker resolves to for a given wait (the `joker-hint`, 🀪=tile); the fix is extending that same "what does the joker assume" resolution into shanten/discard-analysis/breakdown instead of just disabling them.
-- **Move the Reset button.** Currently sits between Sort and Breakdown in the hand panel header — revisit where it belongs.
 - **Rethink the Breakdown button further.** The current on/off toggle + `↔` order-icon split (see recent commits) is an improvement over the old 3-way text cycle, but isn't necessarily the final design.
 
 ## Scoring calculator (tai/fan)

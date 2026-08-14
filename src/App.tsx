@@ -505,6 +505,9 @@ function App() {
 
         <div className="panel-header">
           <span className="panel-title">Hand</span>
+          <button type="button" onClick={handleReset} disabled={hand.length === 0}>
+            Reset
+          </button>
           <button
             type="button"
             className={sortMode ? "toggle-on" : undefined}
@@ -513,9 +516,6 @@ function App() {
             title={sortMode ? "Sort: on — new tiles are kept in order" : "Sort: off — new tiles keep input order"}
           >
             Sort
-          </button>
-          <button type="button" onClick={handleReset} disabled={hand.length === 0}>
-            Reset
           </button>
           <button
             type="button"
