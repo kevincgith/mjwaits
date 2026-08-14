@@ -1165,12 +1165,16 @@ export interface DiscardChoice {
   improvingDrawsTotalExcludingRedraw: number;
 }
 
-export type DiscardChoicesOutcome =
-  // Already a complete winning hand - no discard needed.
-  | { alreadyComplete: true }
+export interface DiscardChoicesOutcome {
+  // True when the hand is already a complete winning hand - discarding any
+  // tile below breaks that win, rather than being required to reach one.
+  alreadyComplete: boolean;
   // One entry per discardable tile kind, sorted by resultingShanten
-  // ascending (tenpai first, then closest-to-tenpai).
-  | { alreadyComplete: false; choices: DiscardChoice[] };
+  // ascending (tenpai first, then closest-to-tenpai). Computed even when
+  // alreadyComplete, so a player can see what breaking the win to fish for
+  // something else would look like.
+  choices: DiscardChoice[];
+}
 
 // For a hand at a checkpoint (meldsRequired * 3 + 1) with shanten
 // `currentShanten`, finds every tile kind that - if drawn - lets some
@@ -1203,14 +1207,15 @@ function usefulDraws(tiles: Tile[], discard: Tile, meldsRequired: number, curren
 
 // For a hand one tile past a checkpoint (meldsRequired * 3 + 2 - what you
 // hold right after drawing, before discarding), figures out whether it's
-// already a complete winning hand, and if not, what discarding each
-// distinct tile kind leaves you with: tenpai (with its waits), or a shanten
-// value plus which draws would improve it further. Doesn't account for
-// jokers (matches analyzeDiscards).
+// already a complete winning hand, and what discarding each distinct tile
+// kind leaves you with: tenpai (with its waits), or a shanten value plus
+// which draws would improve it further. Computed even when already
+// complete, since a player may want to see what breaking the win looks
+// like. Doesn't account for jokers (matches analyzeDiscards).
 export function analyzeDiscardChoices(tiles: Tile[], meldsRequired: number = MELDS_REQUIRED): DiscardChoicesOutcome {
   const size = meldsRequired * 3 + 2;
   if (tiles.length !== size) return { alreadyComplete: false, choices: [] };
-  if (isCompleteHand(tiles, meldsRequired)) return { alreadyComplete: true };
+  const alreadyComplete = isCompleteHand(tiles, meldsRequired);
 
   const choices: DiscardChoice[] = [];
   for (const discard of uniqueTileKinds(tiles)) {
@@ -1241,5 +1246,5 @@ export function analyzeDiscardChoices(tiles: Tile[], meldsRequired: number = MEL
   }
 
   choices.sort((a, b) => a.resultingShanten - b.resultingShanten);
-  return { alreadyComplete: false, choices };
+  return { alreadyComplete, choices };
 }

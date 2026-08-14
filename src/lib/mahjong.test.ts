@@ -600,7 +600,7 @@ describe("analyzeDiscardEfficiency", () => {
 });
 
 describe("analyzeDiscardChoices", () => {
-  it("recognizes an already-complete 17-tile hand and offers no discards", () => {
+  it("recognizes an already-complete 17-tile hand, but still analyzes what breaking it would look like", () => {
     // 111m/222m/333m/444m/111t (5 melds) + 22s (pair) = complete.
     const tiles = parseHand("111222333444m111t22s");
     expect(tiles.length).toBe(17);
@@ -608,6 +608,15 @@ describe("analyzeDiscardChoices", () => {
 
     const outcome = analyzeDiscardChoices(tiles);
     expect(outcome.alreadyComplete).toBe(true);
+
+    // One choice per distinct discardable kind, same as the non-complete case.
+    const uniqueKinds = new Set(tiles.map(tileKey)).size;
+    expect(outcome.choices.length).toBe(uniqueKinds);
+
+    // Discarding either 2s leaves a lone 2s tanki - still tenpai, waiting on 2s.
+    const discard2s = outcome.choices.find((c) => c.discard.suit === "s" && c.discard.rank === 2);
+    expect(discard2s!.resultingShanten).toBe(0);
+    expect(discard2s!.waits.map(tileKey)).toEqual(["s2"]);
   });
 
   it("ranks discards by resulting shanten, tenpai first with its waits", () => {

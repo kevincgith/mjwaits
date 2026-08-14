@@ -639,9 +639,11 @@ function App() {
             )}
           </div>
         )}
-        {discardChoices !== null && !discardChoices.alreadyComplete && (
+        {discardChoices !== null && (
           <div className="waits discard-analysis">
-            <span className="waits-label">Discard options:</span>
+            <span className="waits-label">
+              {discardChoices.alreadyComplete ? "If you discarded instead of winning:" : "Discard options:"}
+            </span>
             {discardChoices.choices.map((c) => (
               <DiscardChoiceRow key={tileLabel(c.discard)} choice={c} />
             ))}
