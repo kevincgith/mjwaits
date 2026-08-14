@@ -334,6 +334,41 @@ export function isThirteenOrphansComplete(tiles: Tile[]): boolean {
   return false;
 }
 
+export interface ThirteenOrphansBreakdown {
+  // The one orphan kind held twice - the pair ("eyes"), 2 tiles.
+  pair: Tile[];
+  // The other 12 orphan kinds, held once each.
+  singles: Tile[];
+  // The one ordinary meld (pong or chow) that isn't part of the orphan set.
+  meld: Tile[];
+}
+
+// Same shape of search as isThirteenOrphansComplete, but returns the actual
+// grouping (which orphan kind is the pair, and which meld is the "extra"
+// one) instead of just a yes/no - for display in the breakdown view, which
+// decomposeHand can't help with since this hand shape isn't melds+pair.
+export function decomposeThirteenOrphans(tiles: Tile[]): ThirteenOrphansBreakdown | null {
+  if (tiles.length !== COMPLETE_SIZE) return null;
+  for (const meld of candidateMelds(tiles)) {
+    const counts = countAll(tiles);
+    for (const t of meld) {
+      const key = tileKey(t);
+      counts.set(key, (counts.get(key) ?? 0) - 1);
+    }
+    if (isOrphanRemainder(counts)) {
+      const pair: Tile[] = [];
+      const singles: Tile[] = [];
+      for (const t of ORPHAN_TILES) {
+        const c = counts.get(tileKey(t)) ?? 0;
+        if (c === 2) pair.push(t, t);
+        else if (c === 1) singles.push(t);
+      }
+      return { pair, singles, meld };
+    }
+  }
+  return null;
+}
+
 // The Taiwanese 16-tile Eight Pairs special hand ("Liguligu"): 8 pairs of
 // tile kinds (16 tiles), plus one more tile matching one of those pairs,
 // upgrading it to a triplet - 7*2 + 1*3 = 17 tiles. A kind can also appear

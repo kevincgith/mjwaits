@@ -6,6 +6,7 @@ import {
   analyzeDiscardEfficiency,
   analyzeDiscards,
   decomposeHand,
+  decomposeThirteenOrphans,
   formatHand,
   getWaits,
   getWaitsWithJokers,
@@ -173,6 +174,26 @@ describe("isCompleteHand", () => {
     expect(tiles.length).toBe(17);
     expect(isThirteenOrphansComplete(tiles)).toBe(true);
     expect(isCompleteHand(tiles)).toBe(true);
+  });
+
+  it("decomposeThirteenOrphans groups the pair, the 12 singles, and the extra meld separately", () => {
+    // Same hand as above: 1m doubled is the pair, 222m is the extra meld,
+    // the other 12 orphan kinds (9m,1t,9t,1s,9s,1z-7z) are singles.
+    const tiles = [...parseHand("112922m19t"), ...parseHand("19s1234567z")];
+    const breakdown = decomposeThirteenOrphans(tiles);
+    expect(breakdown).not.toBeNull();
+    expect(breakdown!.pair.map(tileKey).sort()).toEqual(["m1", "m1"]);
+    expect(breakdown!.meld.map(tileKey).sort()).toEqual(["m2", "m2", "m2"]);
+    expect(breakdown!.singles.map(tileKey).sort()).toEqual(
+      ["m9", "t1", "t9", "s1", "s9", "z1", "z2", "z3", "z4", "z5", "z6", "z7"].sort()
+    );
+    // Together they account for all 17 tiles with nothing missing or doubled up.
+    const regrouped = [...breakdown!.pair, ...breakdown!.meld, ...breakdown!.singles];
+    expect(regrouped.map(tileKey).sort()).toEqual(tiles.map(tileKey).sort());
+  });
+
+  it("decomposeThirteenOrphans returns null for a non-orphan hand", () => {
+    expect(decomposeThirteenOrphans(parseHand("111222333444m111t22s"))).toBeNull();
   });
 
   it("rejects an orphan-looking hand missing one orphan kind", () => {
