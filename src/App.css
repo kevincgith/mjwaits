@@ -273,10 +273,12 @@ h1 {
 
 .breakdown-group {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.1rem;
   padding: 0.15rem 0.25rem;
   border-radius: 4px;
+  max-width: 100%;
 }
 
 /* The highlight can't just be background+outline directly on the glyph:
