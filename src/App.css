@@ -264,6 +264,32 @@ h1 {
   border-top: none;
 }
 
+/* A hand can legitimately decompose more than one way (e.g. a hand that's
+   simultaneously a standard 5-melds+pair reading and Eight Pairs) - each
+   reading stacks in its own row, labeled when there's more than one. */
+.breakdown-readings {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.breakdown-reading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.reading-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #6b7280;
+  background: #eef2f7;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
 .breakdown-groups {
   display: flex;
   flex-wrap: wrap;

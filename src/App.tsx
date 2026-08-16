@@ -190,6 +190,76 @@ function orderBreakdownGroups<T extends { tiles: Tile[] }>(groups: T[], sorted: 
     : groups;
 }
 
+interface BreakdownGroup {
+  tiles: Tile[];
+  key: string;
+}
+
+interface BreakdownReading {
+  // Only meaningful (and only shown) when a hand decomposes more than one
+  // way - e.g. 112233m112233s11222z is simultaneously a standard hand
+  // (123m123m123s123s + 222z/11z) and Eight Pairs. Most hands only match
+  // one shape and get a single, unlabeled reading.
+  label: string;
+  groups: BreakdownGroup[];
+}
+
+// Every way `hand` can be read as a complete hand: the standard melds+pair
+// shape, plus any of the three special hands it also happens to satisfy.
+// Usually exactly one of these applies, but a hand can genuinely be
+// ambiguous (see BreakdownReading), in which case every valid reading is
+// returned so the UI can show all of them instead of silently picking one.
+function allBreakdownReadings(hand: Tile[], meldsRequired: number): BreakdownReading[] {
+  const readings: BreakdownReading[] = [];
+
+  const standard = decomposeHand(hand, meldsRequired);
+  if (standard) {
+    readings.push({
+      label: "Standard hand",
+      groups: [
+        { tiles: standard.pair, key: "pair" },
+        ...standard.melds.map((tiles, i) => ({ tiles, key: `meld-${i}` })),
+      ],
+    });
+  }
+
+  const orphans = decomposeThirteenOrphans(hand);
+  if (orphans) {
+    readings.push({
+      label: "Thirteen Orphans",
+      groups: [
+        { tiles: orphans.pair, key: "pair" },
+        { tiles: orphans.singles, key: "singles" },
+        { tiles: orphans.meld, key: "meld" },
+      ],
+    });
+  }
+
+  const eightPairs = decomposeEightPairs(hand);
+  if (eightPairs) {
+    readings.push({
+      label: "Eight Pairs (Liguligu)",
+      groups: [
+        { tiles: eightPairs.triple, key: "triple" },
+        ...eightPairs.pairs.map((tiles, i) => ({ tiles, key: `pair-${i}` })),
+      ],
+    });
+  }
+
+  const sixteenUnrelated = decomposeSixteenUnrelated(hand);
+  if (sixteenUnrelated) {
+    readings.push({
+      label: "Sixteen Unrelated Tiles",
+      groups: [
+        { tiles: sixteenUnrelated.pair, key: "pair" },
+        { tiles: sixteenUnrelated.singles, key: "singles" },
+      ],
+    });
+  }
+
+  return readings;
+}
+
 function WaitBreakdownRow({
   result,
   nonJokerHand,
@@ -204,12 +274,9 @@ function WaitBreakdownRow({
   remainingCount: number | null;
 }) {
   const complete = [...nonJokerHand, ...result.jokers, result.wait];
-  const breakdown = decomposeHand(complete, meldsRequired);
-  const groups = breakdown
-    ? [{ tiles: breakdown.pair, key: "pair" }, ...breakdown.melds.map((tiles, i) => ({ tiles, key: `meld-${i}` }))]
-    : specialHandGroups(complete);
+  const readings = allBreakdownReadings(complete, meldsRequired);
 
-  if (!groups) {
+  if (readings.length === 0) {
     // Shouldn't happen for any hand that reaches this component with a wait
     // - fall back to the plain wait display just in case.
     return (
@@ -219,58 +286,35 @@ function WaitBreakdownRow({
     );
   }
 
-  const ordered = orderBreakdownGroups(groups, sorted);
-
-  let waitPlaced = false;
-  const renderGroup = ({ tiles, key }: (typeof groups)[number]) => (
-    <span className="breakdown-group" key={key}>
-      {tiles.map((t, i) => {
-        const isWait = !waitPlaced && t.suit === result.wait.suit && t.rank === result.wait.rank;
-        if (isWait) waitPlaced = true;
-        return <TileGlyphSpan key={i} tile={t} large highlight={isWait} />;
-      })}
-    </span>
-  );
+  const renderReading = (reading: BreakdownReading) => {
+    let waitPlaced = false;
+    const ordered = orderBreakdownGroups(reading.groups, sorted);
+    return (
+      <span className="breakdown-reading" key={reading.label}>
+        <span className="discard-arrow">→</span>
+        {readings.length > 1 && <span className="reading-label">{reading.label}</span>}
+        <span className="breakdown-groups">
+          {ordered.map(({ tiles, key }) => (
+            <span className="breakdown-group" key={key}>
+              {tiles.map((t, i) => {
+                const isWait = !waitPlaced && t.suit === result.wait.suit && t.rank === result.wait.rank;
+                if (isWait) waitPlaced = true;
+                return <TileGlyphSpan key={i} tile={t} large highlight={isWait} />;
+              })}
+            </span>
+          ))}
+        </span>
+      </span>
+    );
+  };
 
   return (
     <div className="breakdown-row">
       <TileGlyphSpan tile={result.wait} large />
       {remainingCount !== null && <RemainingCountBadge count={remainingCount} />}
-      <span className="discard-arrow">→</span>
-      <span className="breakdown-groups">{ordered.map(renderGroup)}</span>
+      <span className="breakdown-readings">{readings.map(renderReading)}</span>
     </div>
   );
-}
-
-// Thirteen Orphans has its own shape (pair + 12 singles + 1 unrelated meld,
-// or Sixteen Unrelated Tiles - not melds+pair), so each needs its own
-// grouping instead of decomposeHand's. Runs of same-kind-or-singles tiles
-// are shown as one contiguous group rather than one group per tile, so
-// they read as "the rest of the hand" at a glance.
-function specialHandGroups(hand: Tile[]): { tiles: Tile[]; key: string }[] | null {
-  const orphans = decomposeThirteenOrphans(hand);
-  if (orphans) {
-    return [
-      { tiles: orphans.pair, key: "pair" },
-      { tiles: orphans.singles, key: "singles" },
-      { tiles: orphans.meld, key: "meld" },
-    ];
-  }
-  const eightPairs = decomposeEightPairs(hand);
-  if (eightPairs) {
-    return [
-      { tiles: eightPairs.triple, key: "triple" },
-      ...eightPairs.pairs.map((tiles, i) => ({ tiles, key: `pair-${i}` })),
-    ];
-  }
-  const sixteenUnrelated = decomposeSixteenUnrelated(hand);
-  if (sixteenUnrelated) {
-    return [
-      { tiles: sixteenUnrelated.pair, key: "pair" },
-      { tiles: sixteenUnrelated.singles, key: "singles" },
-    ];
-  }
-  return null;
 }
 
 // Meld/pair breakdown for a hand that's already complete (no wait tile to
@@ -284,20 +328,23 @@ function CompleteHandBreakdown({
   meldsRequired: number;
   sorted: boolean;
 }) {
-  const breakdown = decomposeHand(hand, meldsRequired);
-  const groups = breakdown
-    ? [{ tiles: breakdown.pair, key: "pair" }, ...breakdown.melds.map((tiles, i) => ({ tiles, key: `meld-${i}` }))]
-    : specialHandGroups(hand);
-  if (!groups) return null;
-  const ordered = orderBreakdownGroups(groups, sorted);
+  const readings = allBreakdownReadings(hand, meldsRequired);
+  if (readings.length === 0) return null;
 
   return (
-    <span className="breakdown-groups">
-      {ordered.map(({ tiles, key }) => (
-        <span className="breakdown-group" key={key}>
-          {tiles.map((t, i) => (
-            <TileGlyphSpan key={i} tile={t} large />
-          ))}
+    <span className="breakdown-readings">
+      {readings.map((reading) => (
+        <span className="breakdown-reading" key={reading.label}>
+          {readings.length > 1 && <span className="reading-label">{reading.label}</span>}
+          <span className="breakdown-groups">
+            {orderBreakdownGroups(reading.groups, sorted).map(({ tiles, key }) => (
+              <span className="breakdown-group" key={key}>
+                {tiles.map((t, i) => (
+                  <TileGlyphSpan key={i} tile={t} large />
+                ))}
+              </span>
+            ))}
+          </span>
         </span>
       ))}
     </span>

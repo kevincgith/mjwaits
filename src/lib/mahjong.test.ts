@@ -260,6 +260,26 @@ describe("isCompleteHand", () => {
     expect(decomposeEightPairs(parseHand("111222333444m111t22s"))).toBeNull();
   });
 
+  it("a hand can be genuinely ambiguous between the standard shape and Eight Pairs", () => {
+    // 112233m112233s11222z reads as both 123m123m123s123s + 222z/11z (a
+    // standard hand) and 7 pairs + a tripled pair (Eight Pairs). Both
+    // decompositions must be available so callers can show both readings.
+    const tiles = parseHand("112233m112233s11222z");
+    expect(tiles.length).toBe(17);
+    expect(isCompleteHand(tiles)).toBe(true);
+    expect(decomposeHand(tiles)).not.toBeNull();
+    expect(isEightPairsComplete(tiles)).toBe(true);
+    expect(decomposeEightPairs(tiles)).not.toBeNull();
+
+    // One tile short (missing the second 2z), it's tenpai waiting on 2z via
+    // either shape - shanten() takes the better of both, so it should read
+    // as tenpai rather than shanten 1.
+    const tenpaiHand = parseHand("112233m112233s1122z");
+    expect(tenpaiHand.length).toBe(16);
+    expect(shanten(tenpaiHand)).toBe(0);
+    expect(getWaits(tenpaiHand).map(tileKey)).toContain("z2");
+  });
+
   it("recognizes the user's Sixteen Unrelated Tiles example via isSixteenUnrelatedComplete", () => {
     // All 7 honors + 1/4/7t, 2/5/8m, 3/6/9s (16 kinds, pairwise unrelated),
     // plus an extra 7t doubling one of them (the pair) = 17 tiles.
