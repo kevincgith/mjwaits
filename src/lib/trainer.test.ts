@@ -26,6 +26,12 @@ describe("generateTrainerQuestion", () => {
               .sort()
           );
 
+          // Every wait completes a group that already has a tile present in
+          // the question - the UI relies on this to only show suits that are
+          // actually in play, instead of the full 34-kind picker.
+          const suitsInHand = new Set(q.tiles.map((t) => t.suit));
+          for (const w of q.waits) expect(suitsInHand.has(w.suit)).toBe(true);
+
           if (flush) {
             const suits = new Set(q.tiles.map((t) => t.suit));
             expect(suits.size).toBe(1);

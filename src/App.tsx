@@ -781,6 +781,14 @@ function TrainerPanel() {
   useEffect(() => newQuestion(level, flush), [level, flush]);
 
   const waitKeys = useMemo(() => new Set((question?.waits ?? []).map(tileKey)), [question]);
+  // A wait always completes a group that already has at least one tile
+  // present in the question hand (finishing a run/triplet, or pairing up a
+  // single) - so only the suits actually in play are ever worth showing,
+  // saving real estate especially in Flush mode (always exactly one suit).
+  const relevantSuits = useMemo(
+    () => SUIT_ORDER.filter((suit) => question?.tiles.some((t) => t.suit === suit)),
+    [question]
+  );
   const selectedCount = selected.size;
   const isCorrect = submitted && selectedCount === waitKeys.size && [...selected].every((k) => waitKeys.has(k));
 
@@ -854,7 +862,7 @@ function TrainerPanel() {
           </div>
 
           <div className="tile-picker">
-            {SUIT_ORDER.map((suit) => (
+            {relevantSuits.map((suit) => (
               <div className="suit-row" key={suit}>
                 {allTileKinds()
                   .filter((t) => t.suit === suit)
