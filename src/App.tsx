@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import "./App.css";
 import {
   COMPLETE_SIZE,
@@ -21,9 +21,17 @@ import {
   sortTiles,
   tileCount,
   tileGlyph,
+  tileKey,
   tileLabel,
 } from "./lib/mahjong";
 import type { DiscardChoice, DiscardEfficiency, JokerWaitResult, Suit, Tile } from "./lib/mahjong";
+import {
+  MAX_TRAINER_LEVEL,
+  MIN_TRAINER_LEVEL,
+  generateTrainerQuestion,
+  trainerHandSize,
+  type TrainerQuestion,
+} from "./lib/trainer";
 
 // A stable id per tile instance, so sorting for display never loses track
 // of which underlying tile is which (needed to revert Sort cleanly, and to
@@ -130,10 +138,25 @@ function TileGlyphSpan({ tile, large, highlight }: { tile: Tile; large?: boolean
   );
 }
 
-function TileButton({ tile, onClick, disabled }: { tile: Tile; onClick: () => void; disabled?: boolean }) {
+function TileButton({
+  tile,
+  onClick,
+  disabled,
+  selected,
+  extraClass,
+  title,
+}: {
+  tile: Tile;
+  onClick: () => void;
+  disabled?: boolean;
+  selected?: boolean;
+  extraClass?: string;
+  title?: string;
+}) {
   const tap = useTap(onClick, disabled);
+  const classes = ["tile-button", selected && "selected", extraClass].filter(Boolean).join(" ");
   return (
-    <button type="button" className="tile-button" disabled={disabled} title={tileLabel(tile)} {...tap}>
+    <button type="button" className={classes} disabled={disabled} title={title ?? tileLabel(tile)} {...tap}>
       <TileGlyphSpan tile={tile} />
     </button>
   );
@@ -447,7 +470,7 @@ function DiscardChoiceRow({ choice }: { choice: DiscardChoice }) {
   );
 }
 
-function App() {
+function Calculator() {
   // `hand` always holds tiles in true input order - Sort never mutates it,
   // it only changes how `displayHand` (below) is derived for rendering/text.
   const [hand, setHand] = useState<HandTile[]>([]);
@@ -540,10 +563,7 @@ function App() {
   );
 
   return (
-    <div className="page">
-      <h1>Mahjong Waits Calculator</h1>
-
-      <section className="panel">
+    <section className="panel">
         <div className="tile-picker">
           {SUIT_ORDER.map((suit) => (
             <div className="suit-row" key={suit}>
@@ -732,6 +752,188 @@ function App() {
           </div>
         )}
       </section>
+  );
+}
+
+// One tile kind's outcome after the user submits an answer: whether they
+// correctly flagged it as a wait, wrongly flagged a non-wait, or missed a
+// real wait entirely. `null` covers the (usual) case of a tile that's
+// neither a wait nor something the user picked - nothing to call out.
+type TrainerTileStatus = "hit" | "false-positive" | "missed" | null;
+
+function TrainerPanel() {
+  const [level, setLevel] = useState(MIN_TRAINER_LEVEL);
+  const [flush, setFlush] = useState(false);
+  const [question, setQuestion] = useState<TrainerQuestion | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [submitted, setSubmitted] = useState(false);
+
+  const newQuestion = (lvl: number, flushMode: boolean) => {
+    setQuestion(generateTrainerQuestion(lvl, flushMode));
+    setSelected(new Set());
+    setSubmitted(false);
+  };
+
+  // Deliberately omits `newQuestion` - it's re-created every render but
+  // recreating the effect on that basis would regenerate the question on
+  // every unrelated re-render, not just when level/flush actually change.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => newQuestion(level, flush), [level, flush]);
+
+  const waitKeys = useMemo(() => new Set((question?.waits ?? []).map(tileKey)), [question]);
+  const selectedCount = selected.size;
+  const isCorrect = submitted && selectedCount === waitKeys.size && [...selected].every((k) => waitKeys.has(k));
+
+  const toggleSelected = (t: Tile) => {
+    if (submitted) return;
+    const key = tileKey(t);
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const statusFor = (t: Tile): TrainerTileStatus => {
+    if (!submitted) return null;
+    const key = tileKey(t);
+    const isWait = waitKeys.has(key);
+    const isSelected = selected.has(key);
+    if (isWait && isSelected) return "hit";
+    if (isWait && !isSelected) return "missed";
+    if (!isWait && isSelected) return "false-positive";
+    return null;
+  };
+
+  return (
+    <section className="panel trainer-panel">
+      <div className="panel-header">
+        <span className="panel-title">Trainer</span>
+        <div className="trainer-levels">
+          {Array.from({ length: MAX_TRAINER_LEVEL - MIN_TRAINER_LEVEL + 1 }, (_, i) => MIN_TRAINER_LEVEL + i).map(
+            (lvl) => (
+              <button
+                key={lvl}
+                type="button"
+                className={lvl === level ? "toggle-on" : undefined}
+                aria-pressed={lvl === level}
+                onClick={() => setLevel(lvl)}
+                title={`Level ${lvl}: ${trainerHandSize(lvl)} tiles`}
+              >
+                L{lvl}
+              </button>
+            )
+          )}
+        </div>
+        <button
+          type="button"
+          className={flush ? "toggle-on" : undefined}
+          aria-pressed={flush}
+          onClick={() => setFlush((f) => !f)}
+          title="Flush mode: every tile comes from the same suit"
+        >
+          Flush
+        </button>
+        <button type="button" onClick={() => newQuestion(level, flush)}>
+          {submitted ? "Next Question" : "New Hand"}
+        </button>
+      </div>
+
+      {question && (
+        <>
+          <div className="waits">
+            <span className="waits-label">
+              How many distinct tiles is this hand waiting on? Tap your answer below, then submit.
+            </span>
+            <div className="hand-display trainer-hand">
+              {sortTiles(question.tiles).map((t, i) => (
+                <TileGlyphSpan key={i} tile={t} large />
+              ))}
+            </div>
+          </div>
+
+          <div className="tile-picker">
+            {SUIT_ORDER.map((suit) => (
+              <div className="suit-row" key={suit}>
+                {allTileKinds()
+                  .filter((t) => t.suit === suit)
+                  .map((t) => {
+                    const status = statusFor(t);
+                    return (
+                      <TileButton
+                        key={tileLabel(t)}
+                        tile={t}
+                        onClick={() => toggleSelected(t)}
+                        selected={selected.has(tileKey(t))}
+                        extraClass={status ? `trainer-${status}` : undefined}
+                        title={
+                          status === "missed"
+                            ? `${tileLabel(t)} - you missed this wait`
+                            : status === "false-positive"
+                              ? `${tileLabel(t)} - not actually a wait`
+                              : tileLabel(t)
+                        }
+                      />
+                    );
+                  })}
+              </div>
+            ))}
+          </div>
+
+          {!submitted ? (
+            <button type="button" className="trainer-submit" onClick={() => setSubmitted(true)}>
+              Submit ({selectedCount} selected)
+            </button>
+          ) : (
+            <div className={isCorrect ? "waits trainer-result-correct" : "waits trainer-result-incorrect"}>
+              <span className="waits-label">
+                {isCorrect
+                  ? `Correct! This hand waits on ${waitKeys.size} distinct tile${waitKeys.size === 1 ? "" : "s"}.`
+                  : `Not quite - this hand actually waits on ${waitKeys.size} distinct tile${
+                      waitKeys.size === 1 ? "" : "s"
+                    }:`}
+              </span>
+              {!isCorrect && (
+                <div className="draw-detail-row">
+                  {question.waits.map((t) => (
+                    <TileGlyphSpan key={tileLabel(t)} tile={t} large />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
+function App() {
+  const [mode, setMode] = useState<"calculator" | "trainer">("calculator");
+
+  return (
+    <div className="page">
+      <h1>Mahjong Waits Calculator</h1>
+      <div className="mode-tabs">
+        <button
+          type="button"
+          className={mode === "calculator" ? "toggle-on" : undefined}
+          aria-pressed={mode === "calculator"}
+          onClick={() => setMode("calculator")}
+        >
+          Calculator
+        </button>
+        <button
+          type="button"
+          className={mode === "trainer" ? "toggle-on" : undefined}
+          aria-pressed={mode === "trainer"}
+          onClick={() => setMode("trainer")}
+        >
+          Trainer
+        </button>
+      </div>
+      {mode === "calculator" ? <Calculator /> : <TrainerPanel />}
     </div>
   );
 }

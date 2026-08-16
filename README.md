@@ -19,8 +19,8 @@ A waits calculator for Taiwanese (16-tile) Mahjong. Build a hand, and it tells y
 
 - Enter a hand at any checkpoint size (1, 4, 7, 10, 13, 16 tiles) to see what completes it.
 - **Universal wait** is flagged explicitly when literally any of the 34 tile kinds would complete the hand.
-- **Waits Count** toggle: shows how many copies of each waiting tile are still available (4 minus what's already in your hand), plus a running total across all waits.
-- **Breakdown mode** (off / on / sorted): shows the exact meld/pair decomposition for each wait, with the completing tile highlighted. "Sorted" keeps melds in tile order instead of always listing the pair first.
+- Remaining copies of each waiting tile are always shown (4 minus what's already in your hand), plus a running total across all waits.
+- **Breakdown mode** (off / on / sorted): shows the exact meld/pair decomposition for each wait, with the completing tile highlighted. "Sorted" keeps melds in tile order instead of always listing the pair first. A hand that's genuinely ambiguous between two shapes (e.g. a standard hand that's also valid Eight Pairs) shows every valid reading, not just one.
 
 ### Jokers (🀪)
 
@@ -48,6 +48,10 @@ Beyond the standard 5-melds-plus-a-pair shape, the calculator recognizes:
 
 ![A tenpai Sixteen Unrelated Tiles hand (147t258m369s1234567z), waiting on all 16 of its own kinds for 48 tiles total](docs/special-hand.png)
 
+### Trainer
+
+A quiz mode for practicing waits recognition, separate from the calculator (switch between them with the tabs at the top). Each question is a randomly generated hand at one of 5 difficulty levels — Level 1 is 4 tiles (1 meld + pair), Level 5 is the full 16-tile tenpai size — guaranteed to have at least one wait. Tap tiles on the picker to mark your guess, then submit to see which picks were correct, which were wrong, and which waits you missed. **Flush mode** restricts every generated hand to a single random suit for extra difficulty.
+
 ## Notation reference
 
 ```
@@ -67,7 +71,7 @@ npm test         # run the test suite (vitest)
 npm run build    # typecheck + production build
 ```
 
-The core engine (parsing, shanten, waits, joker resolution, discard analysis) lives in [`src/lib/mahjong.ts`](src/lib/mahjong.ts) and is covered by an extensive test suite in [`src/lib/mahjong.test.ts`](src/lib/mahjong.test.ts), including brute-force cross-validation for the trickier joker and shanten logic.
+The core engine (parsing, shanten, waits, joker resolution, discard analysis) lives in [`src/lib/mahjong.ts`](src/lib/mahjong.ts) and is covered by an extensive test suite in [`src/lib/mahjong.test.ts`](src/lib/mahjong.test.ts), including brute-force cross-validation for the trickier joker and shanten logic. Trainer question generation lives in [`src/lib/trainer.ts`](src/lib/trainer.ts), tested with property-based checks across all levels and flush mode in [`src/lib/trainer.test.ts`](src/lib/trainer.test.ts).
 
 Built with React, TypeScript, and Vite; deployed to GitHub Pages via GitHub Actions on every push to `main`.
 

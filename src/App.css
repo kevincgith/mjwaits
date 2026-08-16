@@ -41,6 +41,14 @@ button {
     background: #f2f2f2;
     border-color: #bbb;
   }
+
+  .mode-tabs button:not(.toggle-on):hover {
+    background: #ececec;
+  }
+
+  .trainer-submit:hover {
+    background: #164a8f;
+  }
 }
 
 /* :active gives the same "which tile did I just hit" feedback as the old
@@ -64,9 +72,91 @@ button {
   border-color: #bbb;
 }
 
+.mode-tabs button:not(.toggle-on):active {
+  background: #ececec;
+}
+
+.trainer-submit:active {
+  background: #164a8f;
+}
+
 h1 {
   font-size: 1.75rem;
   margin: 0 0 1.5rem;
+}
+
+.mode-tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.mode-tabs button {
+  border: 1px solid #ccc;
+  background: #f7f7f7;
+  border-radius: 6px;
+  padding: 0.45rem 1.1rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.mode-tabs button.toggle-on {
+  background: #1a5fb4;
+  border-color: #1a5fb4;
+  color: #fff;
+}
+
+.trainer-levels {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.trainer-submit {
+  display: block;
+  margin-top: 0.75rem;
+  padding: 0.6rem 1rem;
+  background: #1a5fb4;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.trainer-result-correct {
+  background: #eafaf0;
+  border-color: #b7e4c7;
+}
+
+.trainer-result-incorrect {
+  background: #fdeceb;
+  border-color: #f3b8b0;
+}
+
+/* Answer picker feedback after submitting - correct pick, wrongly picked
+   non-wait, and a real wait the user didn't pick. Layered on top of (not
+   replacing) .tile-button's base styling, same pattern as .toggle-on. */
+.tile-button.selected {
+  background: #eaf1fb;
+  border-color: #1a5fb4;
+}
+
+.tile-button.trainer-hit {
+  background: #eafaf0;
+  border-color: #2f9e58;
+}
+
+.tile-button.trainer-false-positive {
+  background: #fdeceb;
+  border-color: #d64545;
+}
+
+.tile-button.trainer-missed {
+  background: #fff8e1;
+  border-color: #d69e2e;
+  border-style: dashed;
 }
 
 .panel {
