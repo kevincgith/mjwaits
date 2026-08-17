@@ -60,6 +60,8 @@ Breakdown mode understands all three shapes, not just the standard one — Thirt
 
 A quiz mode for practicing waits recognition, separate from the calculator (switch between them with the tabs at the top). Each question is a randomly generated hand at one of 5 difficulty levels — Level 1 is 4 tiles (1 meld + pair), Level 5 is the full 16-tile tenpai size — guaranteed to have at least one wait. The answer picker only shows suits actually present in the question, since a wait can never come from a suit that isn't already there. Tap tiles to mark your guess, then submit: the picker highlights each pick as a correct hit, a wrong guess, or a wait you missed, and a full breakdown (same as the calculator's) reveals how each actual wait completes the hand. **Flush mode** restricts every generated hand to a single random suit for extra difficulty.
 
+A live timer runs per question and freezes at submit. Results accumulate into a stats table broken down by level and flush mode (since difficulty varies a lot between them) — answered, correct, wrong, % correct, and average time, with an overall total row and a Reset Stats button. Stats persist across switching back to the Calculator tab and back.
+
 ## Notation reference
 
 ```
