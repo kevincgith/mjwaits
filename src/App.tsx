@@ -862,11 +862,21 @@ function TrainerPanel({
     setElapsedMs(0);
   };
 
-  // Deliberately omits `newQuestion` - it's re-created every render but
-  // recreating the effect on that basis would regenerate the question on
-  // every unrelated re-render, not just when level/flush actually change.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => newQuestion(level, flush), [level, flush]);
+  // Clears back to the "press New Hand" placeholder - used both on mount
+  // (so a question doesn't pop up the instant Trainer opens) and whenever
+  // level/flush changes (so the picker never shows a hand that doesn't
+  // match the currently-selected level/flush controls; the user presses
+  // New Hand again to get a question in the new configuration).
+  const clearQuestion = () => {
+    setQuestion(null);
+    selectedRef.current = new Set();
+    setSelected(selectedRef.current);
+    submittedRef.current = false;
+    setSubmitted(false);
+    setElapsedMs(0);
+  };
+
+  useEffect(clearQuestion, [level, flush]);
 
   // Ticks the visible timer while a question is active; stops (freezing the
   // last value) once submitted, and restarts fresh for each new question.
@@ -979,6 +989,12 @@ function TrainerPanel({
         </button>
         {question && <span className="tile-count">Time: {formatSeconds(elapsedMs)}</span>}
       </div>
+
+      {!question && (
+        <div className="waits">
+          <span className="waits-label">Press "New Hand" to start testing your ability!</span>
+        </div>
+      )}
 
       {question && (
         <>
