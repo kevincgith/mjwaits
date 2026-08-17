@@ -11,7 +11,14 @@
   font-family: "Mahjong Tiles";
   src: url("/mjwaits/fonts/mahjong-tiles.woff2") format("woff2");
   font-display: swap;
-  unicode-range: U+1F000-1F02B;
+  /* No unicode-range restriction: Safari/WebKit has a history of rejecting
+     a whole @font-face for a run of text if it doesn't consider every
+     character in that run - including a trailing variation selector like
+     the U+FE0E each tile glyph carries - covered by the declared range,
+     falling straight through to a system fallback font instead. The
+     font-family stack already scopes this face to .tile-glyph elements, so
+     the range restriction was only ever a (Safari-hostile) optimization,
+     never load-bearing. */
 }
 
 .page {
