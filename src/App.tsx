@@ -129,10 +129,22 @@ function useTap(onTap: () => void, disabled?: boolean) {
   return { onPointerDown, onPointerUp, onPointerCancel, onClick };
 }
 
-function TileGlyphSpan({ tile, large, highlight }: { tile: Tile; large?: boolean; highlight?: boolean }) {
-  const classes = ["tile-glyph", large && "large", highlight && "wait-highlight"].filter(Boolean).join(" ");
+function TileGlyphSpan({
+  tile,
+  large,
+  highlight,
+  jokerAssumed,
+}: {
+  tile: Tile;
+  large?: boolean;
+  highlight?: boolean;
+  jokerAssumed?: boolean;
+}) {
+  const classes = ["tile-glyph", large && "large", highlight && "wait-highlight", jokerAssumed && "joker-assumed"]
+    .filter(Boolean)
+    .join(" ");
   return (
-    <span className={classes} data-suit={tile.suit} data-rank={tile.rank}>
+    <span className={classes} data-suit={tile.suit} data-rank={tile.rank} title={jokerAssumed ? "Assumed from a joker" : undefined}>
       {tileGlyph(tile)}
     </span>
   );
@@ -311,6 +323,17 @@ function WaitBreakdownRow({
 
   const renderReading = (reading: BreakdownReading) => {
     let waitPlaced = false;
+    // Jokers resolve to concrete tiles before decomposeHand ever sees them
+    // (see `complete` above), so by the time we have breakdown groups
+    // there's no per-tile record of "this one came from a joker" - just
+    // counts. Rebuild that by kind: each joker used up one occurrence of
+    // its resolved kind, so walking the groups in the same fixed order and
+    // consuming one occurrence per joker (after the wait tile claims its
+    // own occurrence first) lands on the same tiles a joker search would
+    // have used, which is all display needs.
+    const jokerBudget = new Map<string, number>();
+    for (const j of result.jokers) jokerBudget.set(tileKey(j), (jokerBudget.get(tileKey(j)) ?? 0) + 1);
+
     const ordered = orderBreakdownGroups(reading.groups, sorted);
     return (
       <span className="breakdown-reading" key={reading.label}>
@@ -322,7 +345,16 @@ function WaitBreakdownRow({
               {tiles.map((t, i) => {
                 const isWait = !waitPlaced && t.suit === result.wait.suit && t.rank === result.wait.rank;
                 if (isWait) waitPlaced = true;
-                return <TileGlyphSpan key={i} tile={t} large highlight={isWait} />;
+                let isJoker = false;
+                if (!isWait) {
+                  const tk = tileKey(t);
+                  const budget = jokerBudget.get(tk) ?? 0;
+                  if (budget > 0) {
+                    isJoker = true;
+                    jokerBudget.set(tk, budget - 1);
+                  }
+                }
+                return <TileGlyphSpan key={i} tile={t} large highlight={isWait} jokerAssumed={isJoker} />;
               })}
             </span>
           ))}
