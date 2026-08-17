@@ -127,12 +127,20 @@ h1 {
 
 .trainer-result-correct {
   background: #eafaf0;
-  border-color: #b7e4c7;
+  border: 2px solid #2f9e58;
+}
+
+.trainer-result-correct .waits-label {
+  color: #1e7a41;
 }
 
 .trainer-result-incorrect {
   background: #fdeceb;
-  border-color: #f3b8b0;
+  border: 2px solid #d64545;
+}
+
+.trainer-result-incorrect .waits-label {
+  color: #b91c1c;
 }
 
 /* Answer picker feedback after submitting - correct pick, wrongly picked
