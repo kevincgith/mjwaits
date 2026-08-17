@@ -793,17 +793,54 @@ function Calculator() {
 // neither a wait nor something the user picked - nothing to call out.
 type TrainerTileStatus = "hit" | "false-positive" | "missed" | null;
 
-function TrainerPanel() {
+// Accumulated results for one (level, flush) combination - stats are kept
+// separate per combination since difficulty varies a lot between them, and
+// lumping e.g. Level 1 and Level 5 together would wash out both.
+interface TrainerStatsEntry {
+  level: number;
+  flush: boolean;
+  total: number;
+  correct: number;
+  timeTotalMs: number;
+}
+
+function trainerStatsKey(level: number, flush: boolean): string {
+  return `${level}-${flush}`;
+}
+
+function formatSeconds(ms: number): string {
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
+function TrainerPanel({
+  stats,
+  setStats,
+}: {
+  stats: Map<string, TrainerStatsEntry>;
+  setStats: (updater: (prev: Map<string, TrainerStatsEntry>) => Map<string, TrainerStatsEntry>) => void;
+}) {
   const [level, setLevel] = useState(MIN_TRAINER_LEVEL);
   const [flush, setFlush] = useState(false);
   const [question, setQuestion] = useState<TrainerQuestion | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [submitted, setSubmitted] = useState(false);
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const questionStartRef = useRef(performance.now());
+  // Mirrors `selected`, updated synchronously - a tap-tap-tap-then-Submit
+  // sequence fired fast enough that React hasn't re-rendered between them
+  // yet would otherwise have handleSubmit's onClick (bound at the last
+  // completed render) close over a `selected` from before those taps, and
+  // score the answer as whatever it was several taps ago instead of what's
+  // actually on screen. Same fix as Calculator's handRef, same failure mode.
+  const selectedRef = useRef<Set<string>>(new Set());
 
   const newQuestion = (lvl: number, flushMode: boolean) => {
     setQuestion(generateTrainerQuestion(lvl, flushMode));
-    setSelected(new Set());
+    selectedRef.current = new Set();
+    setSelected(selectedRef.current);
     setSubmitted(false);
+    questionStartRef.current = performance.now();
+    setElapsedMs(0);
   };
 
   // Deliberately omits `newQuestion` - it's re-created every render but
@@ -811,6 +848,14 @@ function TrainerPanel() {
   // every unrelated re-render, not just when level/flush actually change.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => newQuestion(level, flush), [level, flush]);
+
+  // Ticks the visible timer while a question is active; stops (freezing the
+  // last value) once submitted, and restarts fresh for each new question.
+  useEffect(() => {
+    if (!question || submitted) return;
+    const id = setInterval(() => setElapsedMs(performance.now() - questionStartRef.current), 100);
+    return () => clearInterval(id);
+  }, [question, submitted]);
 
   const waitKeys = useMemo(() => new Set((question?.waits ?? []).map(tileKey)), [question]);
   // A wait always completes a group that already has at least one tile
@@ -827,13 +872,47 @@ function TrainerPanel() {
   const toggleSelected = (t: Tile) => {
     if (submitted) return;
     const key = tileKey(t);
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
+    const next = new Set(selectedRef.current);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    selectedRef.current = next;
+    setSelected(next);
+  };
+
+  const handleSubmit = () => {
+    if (!question || submitted) return;
+    const current = selectedRef.current;
+    const correct = current.size === waitKeys.size && [...current].every((k) => waitKeys.has(k));
+    const timeMs = performance.now() - questionStartRef.current;
+    const key = trainerStatsKey(level, flush);
+    setStats((prev) => {
+      const next = new Map(prev);
+      const existing = next.get(key) ?? { level, flush, total: 0, correct: 0, timeTotalMs: 0 };
+      next.set(key, {
+        level,
+        flush,
+        total: existing.total + 1,
+        correct: existing.correct + (correct ? 1 : 0),
+        timeTotalMs: existing.timeTotalMs + timeMs,
+      });
       return next;
     });
+    setElapsedMs(timeMs);
+    setSubmitted(true);
   };
+
+  const statsRows = useMemo(
+    () => Array.from(stats.values()).sort((a, b) => a.level - b.level || Number(a.flush) - Number(b.flush)),
+    [stats]
+  );
+  const statsTotal = useMemo(
+    () =>
+      statsRows.reduce(
+        (acc, r) => ({ total: acc.total + r.total, correct: acc.correct + r.correct, timeTotalMs: acc.timeTotalMs + r.timeTotalMs }),
+        { total: 0, correct: 0, timeTotalMs: 0 }
+      ),
+    [statsRows]
+  );
 
   const statusFor = (t: Tile): TrainerTileStatus => {
     if (!submitted) return null;
@@ -878,6 +957,7 @@ function TrainerPanel() {
         <button type="button" onClick={() => newQuestion(level, flush)}>
           {submitted ? "Next Question" : "New Hand"}
         </button>
+        {question && <span className="tile-count">Time: {formatSeconds(elapsedMs)}</span>}
       </div>
 
       {question && (
@@ -919,7 +999,7 @@ function TrainerPanel() {
           </div>
 
           {!submitted ? (
-            <button type="button" className="trainer-submit" onClick={() => setSubmitted(true)}>
+            <button type="button" className="trainer-submit" onClick={handleSubmit}>
               Submit ({selectedCount} selected)
             </button>
           ) : (
@@ -949,12 +1029,64 @@ function TrainerPanel() {
           )}
         </>
       )}
+
+      {statsRows.length > 0 && (
+        <div className="trainer-stats">
+          <div className="panel-header">
+            <span className="panel-title">Stats</span>
+            <button type="button" onClick={() => setStats(() => new Map())}>
+              Reset Stats
+            </button>
+          </div>
+          <div className="trainer-stats-scroll">
+            <table className="trainer-stats-table">
+              <thead>
+                <tr>
+                  <th>Level</th>
+                  <th>Flush</th>
+                  <th>Answered</th>
+                  <th>Correct</th>
+                  <th>Wrong</th>
+                  <th>% Correct</th>
+                  <th>Avg Time</th>
+                </tr>
+              </thead>
+              <tbody>
+                {statsRows.map((r) => (
+                  <tr key={trainerStatsKey(r.level, r.flush)}>
+                    <td>L{r.level}</td>
+                    <td>{r.flush ? "Yes" : "No"}</td>
+                    <td>{r.total}</td>
+                    <td>{r.correct}</td>
+                    <td>{r.total - r.correct}</td>
+                    <td>{Math.round((r.correct / r.total) * 100)}%</td>
+                    <td>{formatSeconds(r.timeTotalMs / r.total)}</td>
+                  </tr>
+                ))}
+                <tr className="trainer-stats-total">
+                  <td colSpan={2}>All</td>
+                  <td>{statsTotal.total}</td>
+                  <td>{statsTotal.correct}</td>
+                  <td>{statsTotal.total - statsTotal.correct}</td>
+                  <td>{statsTotal.total > 0 ? Math.round((statsTotal.correct / statsTotal.total) * 100) : 0}%</td>
+                  <td>{statsTotal.total > 0 ? formatSeconds(statsTotal.timeTotalMs / statsTotal.total) : "0.0s"}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
 
 function App() {
   const [mode, setMode] = useState<"calculator" | "trainer">("calculator");
+  // Lifted above TrainerPanel so stats survive switching back to the
+  // Calculator tab and back - TrainerPanel itself unmounts (and its other
+  // state - the in-progress question, timer, etc. - resets) on every tab
+  // switch, but a session's accumulated stats shouldn't disappear with it.
+  const [trainerStats, setTrainerStats] = useState<Map<string, TrainerStatsEntry>>(new Map());
 
   return (
     <div className="page">
@@ -977,7 +1109,7 @@ function App() {
           Trainer
         </button>
       </div>
-      {mode === "calculator" ? <Calculator /> : <TrainerPanel />}
+      {mode === "calculator" ? <Calculator /> : <TrainerPanel stats={trainerStats} setStats={setTrainerStats} />}
     </div>
   );
 }

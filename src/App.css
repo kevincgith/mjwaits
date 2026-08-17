@@ -143,6 +143,47 @@ h1 {
   color: #b91c1c;
 }
 
+.trainer-stats {
+  margin-top: 1rem;
+}
+
+/* Wide content (7 columns) scrolls within its own container on narrow
+   screens rather than forcing the whole page to scroll horizontally. */
+.trainer-stats-scroll {
+  overflow-x: auto;
+}
+
+.trainer-stats-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.85rem;
+}
+
+.trainer-stats-table th,
+.trainer-stats-table td {
+  padding: 0.35rem 0.6rem;
+  text-align: right;
+  white-space: nowrap;
+  border-bottom: 1px solid #ede9d8;
+}
+
+.trainer-stats-table th:first-child,
+.trainer-stats-table td:first-child {
+  text-align: left;
+}
+
+.trainer-stats-table thead th {
+  color: #888;
+  font-weight: 600;
+  border-bottom: 2px solid #ddd;
+}
+
+.trainer-stats-total td {
+  font-weight: 600;
+  border-top: 2px solid #ddd;
+  border-bottom: none;
+}
+
 /* Answer picker feedback after submitting - correct pick, wrongly picked
    non-wait, and a real wait the user didn't pick. Layered on top of (not
    replacing) .tile-button's base styling, same pattern as .toggle-on. */
