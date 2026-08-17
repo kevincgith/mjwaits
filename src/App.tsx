@@ -851,9 +851,6 @@ function TrainerPanel() {
       {question && (
         <>
           <div className="waits">
-            <span className="waits-label">
-              How many distinct tiles is this hand waiting on? Tap your answer below, then submit.
-            </span>
             <div className="hand-display trainer-hand">
               {sortTiles(question.tiles).map((t, i) => (
                 <TileGlyphSpan key={i} tile={t} large />
