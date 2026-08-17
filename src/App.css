@@ -1,3 +1,19 @@
+/* Self-hosted rather than pulled from Google Fonts at runtime: relying on
+   fonts.googleapis.com/fonts.gstatic.com means the glyphs (and the
+   highlight-box alignment tuned to this font's metrics) silently break for
+   anyone whose browser/network blocks or fails to load a third-party font -
+   Safari's tracking protections and privacy-focused browsers/extensions are
+   common cases. Subsetted to just the Mahjong Tile Unicode block (U+1F000-
+   U+1F02B, the only codepoints tile-glyph ever renders) via fonttools, which
+   keeps the self-hosted file under 12KB instead of the ~230KB full symbols
+   subset Google serves. */
+@font-face {
+  font-family: "Mahjong Tiles";
+  src: url("/mjwaits/fonts/mahjong-tiles.woff2") format("woff2");
+  font-display: swap;
+  unicode-range: U+1F000-1F02B;
+}
+
 .page {
   max-width: 900px;
   margin: 0 auto;
@@ -506,7 +522,7 @@ h1 {
      6 Pin as a 3x2 grid vs. a 2-over-4 layout). The platform-native fonts
      stay listed after it only as a fallback for if the web font fails to
      load (offline, blocked, etc). */
-  font-family: "Noto Sans Symbols 2", "Noto Emoji", "Apple Symbols", "Segoe UI Symbol", sans-serif;
+  font-family: "Mahjong Tiles", "Noto Sans Symbols 2", "Noto Emoji", "Apple Symbols", "Segoe UI Symbol", sans-serif;
   /* Every suit now renders via the same font (Noto Sans Symbols 2) with
      identical ink metrics, so a single offset applies uniformly - measured
      via canvas text metrics (actualBoundingBox vs fontBoundingBox ascent/
