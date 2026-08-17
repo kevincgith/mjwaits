@@ -509,6 +509,12 @@ function Calculator() {
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [sortMode, setSortMode] = useState(true);
+  // Mirrors `sortMode` for toggleSortMode's own read-then-write, same reason
+  // as handRef: a double-tap on Sort fast enough that both taps read the
+  // state closure from before either committed would compute the same
+  // `next` twice, so the second setSortMode(next) is a no-op (same value)
+  // and silently drops what should have been a toggle back.
+  const sortModeRef = useRef(true);
   const [breakdownMode, setBreakdownMode] = useState<BreakdownMode>("off");
   const lastBreakdownOrder = useRef<BreakdownOrder>("on");
   const nextId = useRef(0);
@@ -536,6 +542,12 @@ function Calculator() {
 
   const addTile = (tile: Tile) => {
     if (handRef.current.length >= COMPLETE_SIZE) return;
+    // Mirrors the picker button's own disabled condition (tileCount(hand, t)
+    // >= 4), but checked against handRef instead of the hand state - taps
+    // fast enough to land before a render commits would otherwise see a
+    // stale (still-enabled) button and add a 5th+ copy of the same tile.
+    // Jokers aren't capped (see parseHand), so skip the check for those.
+    if (tile.suit !== "j" && tileCount(handRef.current, tile) >= 4) return;
     commitHand([...handRef.current, ...withIds([tile])]);
   };
 
@@ -552,7 +564,8 @@ function Calculator() {
   };
 
   const toggleSortMode = () => {
-    const next = !sortMode;
+    const next = !sortModeRef.current;
+    sortModeRef.current = next;
     setSortMode(next);
     setText(formatHand(forDisplay(handRef.current, next)));
   };
@@ -833,11 +846,17 @@ function TrainerPanel({
   // score the answer as whatever it was several taps ago instead of what's
   // actually on screen. Same fix as Calculator's handRef, same failure mode.
   const selectedRef = useRef<Set<string>>(new Set());
+  // Mirrors `submitted` for the same reason: handleSubmit's own re-entry
+  // guard must see a double-tap's second call as already-submitted even
+  // before React has re-rendered from the first, or a fast double-tap on
+  // Submit double-records the same question into the stats table.
+  const submittedRef = useRef(false);
 
   const newQuestion = (lvl: number, flushMode: boolean) => {
     setQuestion(generateTrainerQuestion(lvl, flushMode));
     selectedRef.current = new Set();
     setSelected(selectedRef.current);
+    submittedRef.current = false;
     setSubmitted(false);
     questionStartRef.current = performance.now();
     setElapsedMs(0);
@@ -880,7 +899,8 @@ function TrainerPanel({
   };
 
   const handleSubmit = () => {
-    if (!question || submitted) return;
+    if (!question || submittedRef.current) return;
+    submittedRef.current = true;
     const current = selectedRef.current;
     const correct = current.size === waitKeys.size && [...current].every((k) => waitKeys.has(k));
     const timeMs = performance.now() - questionStartRef.current;

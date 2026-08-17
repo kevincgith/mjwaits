@@ -260,6 +260,19 @@ describe("isCompleteHand", () => {
     expect(decomposeEightPairs(parseHand("111222333444m111t22s"))).toBeNull();
   });
 
+  it("shanten() reports -1 (already complete), not 0, for a genuinely complete Eight Pairs hand", () => {
+    // 7 pairs (11m,22m,33m,44m,11z,22z,33z) + a 444z triplet = 17 tiles, complete.
+    const complete = [...parseHand("11223344m"), ...parseHand("112233444z")];
+    expect(isCompleteHand(complete)).toBe(true);
+    expect(isEightPairsComplete(complete)).toBe(true);
+    expect(shanten(complete)).toBe(-1);
+
+    // Same shape one tile short (8 clean pairs, 16 tiles) is tenpai (0), not complete -
+    // distinguishing this from the above is exactly what the -1 case depends on.
+    const tenpai = [...parseHand("11223344m"), ...parseHand("11223344z")];
+    expect(shanten(tenpai)).toBe(0);
+  });
+
   it("a hand can be genuinely ambiguous between the standard shape and Eight Pairs", () => {
     // 112233m112233s11222z reads as both 123m123m123s123s + 222z/11z (a
     // standard hand) and 7 pairs + a tripled pair (Eight Pairs). Both

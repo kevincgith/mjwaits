@@ -743,13 +743,22 @@ export function standardShanten(tiles: Tile[], meldsRequired: number = MELDS_REQ
 }
 
 // Eight Pairs shanten: 8 - (number of "pair units", where a kind with 2
-// copies is 1 unit and a kind with all 4 is 2 units). Only meaningful at
-// the full 16-tile hand size, matching how the special hand itself works.
+// copies is 1 unit and a kind with all 4 is 2 units) - minus 1 more if some
+// kind already has a 3rd (or 4th) copy in hand, the same "-1 for an already-
+// satisfied completion condition" bonus standardShanten and
+// sixteenUnrelatedShanten both apply. Without it, a genuinely complete hand
+// (7 pairs + 1 triple, pairUnits=8 with one kind at count 3) scored the same
+// 8-8=0 as a merely-tenpai one (8 clean pairs, pairUnits=8, no kind past 2) -
+// both need to be distinguishable as -1 vs 0.
 function eightPairsShanten(tiles: Tile[]): number {
   const counts = countAll(tiles);
   let pairUnits = 0;
-  for (const c of counts.values()) pairUnits += Math.floor(c / 2);
-  return 8 - pairUnits;
+  let hasSpare = false;
+  for (const c of counts.values()) {
+    pairUnits += Math.floor(c / 2);
+    if (c >= 3) hasSpare = true;
+  }
+  return 8 - pairUnits - (hasSpare ? 1 : 0);
 }
 
 interface UnrelatedDpState {
