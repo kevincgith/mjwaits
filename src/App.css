@@ -457,8 +457,9 @@ h1 {
    box (font metrics, not something top/line-height can fix), so an outline
    drawn on the box itself doesn't hug the visible tile. Instead draw it on
    a separately-positioned ::before, sized/positioned to the glyph's actual
-   ink extent (measured via canvas text metrics at this class's font-size)
-   rather than its line box. */
+   rendered ink extent (measured directly off the live DOM via
+   Range.getBoundingClientRect - canvas measureText() reports the wrong
+   numbers for this font's picture glyphs) rather than its line box. */
 .tile-glyph.wait-highlight,
 .tile-glyph.joker-assumed {
   position: relative;
@@ -470,8 +471,8 @@ h1 {
   position: absolute;
   left: -0.08em;
   right: -0.08em;
-  top: 0.15em;
-  height: 0.97em;
+  top: -0.04em;
+  height: 0.82em;
   background: #fff3cd;
   outline: 2px solid #e8a400;
   border-radius: 3px;
@@ -486,35 +487,33 @@ h1 {
   position: absolute;
   left: -0.08em;
   right: -0.08em;
-  top: 0.15em;
-  height: 0.97em;
+  top: -0.04em;
+  height: 0.82em;
   background: #f3e8ff;
   outline: 2px solid #8b5cf6;
   border-radius: 3px;
   z-index: -1;
 }
 
-/* Honors/joker use a different font-family (see below) with different ink
-   metrics - its ink sits much closer to the top of its line box than
-   man/pin/sou's does, so the highlight needs its own top to still hug it. */
-.tile-glyph[data-suit="z"].wait-highlight::before,
-.tile-glyph[data-suit="j"].wait-highlight::before,
-.tile-glyph[data-suit="z"].joker-assumed::before,
-.tile-glyph[data-suit="j"].joker-assumed::before {
-  top: 0.02em;
-}
-
 .tile-glyph {
   font-size: 1.6rem;
   line-height: 1;
   font-variant-emoji: text;
-  /* The Mahjong Tiles Unicode block glyphs (man/pin/sou) sit noticeably low
-     within their own line box - measured via canvas text metrics, their ink
-     is consistently offset about 0.14em below center regardless of font
-     size. Honors/joker (a different font-family, see below) don't have this
-     problem and reset it back to 0. */
+  /* Noto Sans Symbols 2 is loaded as a web font in index.html specifically
+     so every tile glyph renders identically everywhere, instead of each
+     browser/OS silently substituting a different fallback font (which can
+     draw the same character with a visibly different glyph design - e.g.
+     6 Pin as a 3x2 grid vs. a 2-over-4 layout). The platform-native fonts
+     stay listed after it only as a fallback for if the web font fails to
+     load (offline, blocked, etc). */
+  font-family: "Noto Sans Symbols 2", "Noto Emoji", "Apple Symbols", "Segoe UI Symbol", sans-serif;
+  /* Every suit now renders via the same font (Noto Sans Symbols 2) with
+     identical ink metrics, so a single offset applies uniformly - measured
+     via canvas text metrics (actualBoundingBox vs fontBoundingBox ascent/
+     descent): this font's glyphs sit about 0.11em above the vertical center
+     of their own line box, so shift down to compensate. */
   position: relative;
-  top: -0.145em;
+  top: 0.11em;
 }
 
 .tile-glyph.large {
@@ -532,8 +531,6 @@ h1 {
 }
 .tile-glyph[data-suit="z"] {
   color: #333;
-  font-family: "Apple Symbols", "Segoe UI Symbol", "Noto Sans Symbols 2", sans-serif;
-  top: 0;
 }
 /* Winds (East/South/West/North) */
 .tile-glyph[data-suit="z"][data-rank="1"],
@@ -553,8 +550,6 @@ h1 {
 /* Joker - a wildcard, so it gets its own distinct color */
 .tile-glyph[data-suit="j"] {
   color: #8b5cf6;
-  font-family: "Apple Symbols", "Segoe UI Symbol", "Noto Sans Symbols 2", sans-serif;
-  top: 0;
 }
 
 .wait-result {
