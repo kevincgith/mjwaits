@@ -3,10 +3,13 @@
    highlight-box alignment tuned to this font's metrics) silently break for
    anyone whose browser/network blocks or fails to load a third-party font -
    Safari's tracking protections and privacy-focused browsers/extensions are
-   common cases. Subsetted to just the Mahjong Tile Unicode block (U+1F000-
-   U+1F02B, the only codepoints tile-glyph ever renders) via fonttools, which
-   keeps the self-hosted file under 12KB instead of the ~230KB full symbols
-   subset Google serves. */
+   common cases. This is the exact "symbols" subset file Google's own CSS
+   serves for Noto Sans Symbols 2 (the one covering the Mahjong Tile block),
+   byte-for-byte, not re-subsetted with a local tool - a fonttools-subsetted
+   copy loaded fine as a FontFace but silently failed to resolve glyphs for
+   these codepoints under Safari/CoreText specifically, falling through to
+   the system fallback font per-character despite the face itself reporting
+   "loaded". */
 @font-face {
   font-family: "Mahjong Tiles";
   src: url("/mjwaits/fonts/mahjong-tiles.woff2") format("woff2");
