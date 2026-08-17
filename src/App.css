@@ -282,6 +282,11 @@ h1 {
   margin-bottom: 0.3rem;
 }
 
+.trainer-result-label {
+  flex-basis: 100%;
+  margin-bottom: 0.3rem;
+}
+
 .discard-analysis {
   flex-direction: column;
   align-items: stretch;

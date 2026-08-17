@@ -925,7 +925,9 @@ function TrainerPanel() {
           ) : (
             <>
               <div className={isCorrect ? "waits trainer-result-correct" : "waits trainer-result-incorrect"}>
-                <span className="waits-label">{isCorrect ? "Correct! This hand waits on:" : "Incorrect! This hand waits on:"}</span>
+                <span className="waits-label trainer-result-label">
+                  {isCorrect ? "Correct! This hand waits on:" : "Incorrect! This hand waits on:"}
+                </span>
                 {question.waits.map((w) => (
                   <TileGlyphSpan key={tileLabel(w)} tile={w} large />
                 ))}
