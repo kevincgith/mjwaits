@@ -894,22 +894,30 @@ function TrainerPanel() {
               Submit ({selectedCount} selected)
             </button>
           ) : (
-            <div className={isCorrect ? "waits trainer-result-correct" : "waits trainer-result-incorrect"}>
-              <span className="waits-label">
-                {isCorrect
-                  ? `Correct! This hand waits on ${waitKeys.size} distinct tile${waitKeys.size === 1 ? "" : "s"}.`
-                  : `Not quite - this hand actually waits on ${waitKeys.size} distinct tile${
-                      waitKeys.size === 1 ? "" : "s"
-                    }:`}
-              </span>
-              {!isCorrect && (
-                <div className="draw-detail-row">
-                  {question.waits.map((t) => (
-                    <TileGlyphSpan key={tileLabel(t)} tile={t} large />
-                  ))}
-                </div>
-              )}
-            </div>
+            <>
+              <div className={isCorrect ? "waits trainer-result-correct" : "waits trainer-result-incorrect"}>
+                <span className="waits-label">
+                  {isCorrect
+                    ? `Correct! This hand waits on ${waitKeys.size} distinct tile${waitKeys.size === 1 ? "" : "s"}.`
+                    : `Not quite - this hand actually waits on ${waitKeys.size} distinct tile${
+                        waitKeys.size === 1 ? "" : "s"
+                      }:`}
+                </span>
+              </div>
+              <div className="waits breakdown-list">
+                <span className="waits-label">Breakdown:</span>
+                {question.waits.map((w) => (
+                  <WaitBreakdownRow
+                    key={tileLabel(w)}
+                    result={{ wait: w, jokers: [] }}
+                    nonJokerHand={question.tiles}
+                    meldsRequired={level}
+                    sorted={false}
+                    remainingCount={null}
+                  />
+                ))}
+              </div>
+            </>
           )}
         </>
       )}
