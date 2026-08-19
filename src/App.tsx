@@ -66,6 +66,10 @@ function nextCheckpoint(size: number): number | undefined {
   return CHECKPOINTS.find((c) => c > size);
 }
 
+function formatMB(bytes: number): string {
+  return (bytes / (1024 * 1024)).toFixed(1);
+}
+
 function loadImageFile(file: File): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
@@ -652,11 +656,22 @@ function Calculator() {
 
   const scanStatusLabel = (p: ScanProgress | null): string => {
     if (!p) return "Scanning…";
-    if (p.phase === "downloading-model") {
-      return p.total ? `Downloading model… ${Math.round((p.loaded / p.total) * 100)}%` : "Downloading model…";
-    }
+    if (p.phase === "downloading-model") return "Downloading model…";
     if (p.phase === "initializing") return "Preparing detector…";
     return "Detecting tiles…";
+  };
+
+  // Byte-level detail shown alongside the progress bar, e.g. "3.2 / 11.5 MB
+  // (28%)" once the server has told us the total size, or just "3.2 MB
+  // downloaded" before that (content-length is missing on some dev servers,
+  // though GitHub Pages always sends it).
+  const scanProgressDetail = (p: ScanProgress | null): string | null => {
+    if (p?.phase !== "downloading-model") return null;
+    if (p.total) {
+      const pct = Math.round((p.loaded / p.total) * 100);
+      return `${formatMB(p.loaded)} / ${formatMB(p.total)} MB (${pct}%)`;
+    }
+    return `${formatMB(p.loaded)} MB downloaded`;
   };
 
   const confirmScan = () => {
@@ -757,30 +772,35 @@ function Calculator() {
             {scanStatus === "loading" ? scanStatusLabel(scanProgress) : "📷 Scan a hand"}
           </button>
           {scanStatus === "loading" && (
-            <div
-              className="scan-progress-track"
-              role="progressbar"
-              aria-label={scanStatusLabel(scanProgress)}
-              aria-valuenow={
-                scanProgress?.phase === "downloading-model" && scanProgress.total
-                  ? Math.round((scanProgress.loaded / scanProgress.total) * 100)
-                  : undefined
-              }
-              aria-valuemin={0}
-              aria-valuemax={100}
-            >
+            <div className="scan-progress">
               <div
-                className={
+                className="scan-progress-track"
+                role="progressbar"
+                aria-label={scanStatusLabel(scanProgress)}
+                aria-valuenow={
                   scanProgress?.phase === "downloading-model" && scanProgress.total
-                    ? "scan-progress-fill"
-                    : "scan-progress-fill indeterminate"
-                }
-                style={
-                  scanProgress?.phase === "downloading-model" && scanProgress.total
-                    ? { width: `${Math.round((scanProgress.loaded / scanProgress.total) * 100)}%` }
+                    ? Math.round((scanProgress.loaded / scanProgress.total) * 100)
                     : undefined
                 }
-              />
+                aria-valuemin={0}
+                aria-valuemax={100}
+              >
+                <div
+                  className={
+                    scanProgress?.phase === "downloading-model" && scanProgress.total
+                      ? "scan-progress-fill"
+                      : "scan-progress-fill indeterminate"
+                  }
+                  style={
+                    scanProgress?.phase === "downloading-model" && scanProgress.total
+                      ? { width: `${Math.round((scanProgress.loaded / scanProgress.total) * 100)}%` }
+                      : undefined
+                  }
+                />
+              </div>
+              {scanProgressDetail(scanProgress) && (
+                <span className="scan-progress-detail">{scanProgressDetail(scanProgress)}</span>
+              )}
             </div>
           )}
           {scanStatus === "error" && scanError && <span className="error">{scanError}</span>}

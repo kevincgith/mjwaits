@@ -694,6 +694,12 @@ h1 {
   cursor: default;
 }
 
+.scan-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
 .scan-progress-track {
   position: relative;
   width: 140px;
@@ -701,6 +707,12 @@ h1 {
   background: #eee;
   border-radius: 2px;
   overflow: hidden;
+}
+
+.scan-progress-detail {
+  font-size: 0.75rem;
+  color: #999;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 .scan-progress-fill {
