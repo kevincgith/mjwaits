@@ -5,6 +5,13 @@
   color: #1a1a1a;
 }
 
+.build-version {
+  margin-top: 2rem;
+  text-align: center;
+  font-size: 0.75rem;
+  color: #bbb;
+}
+
 /* Without this, mobile browsers impose a ~300ms delay on every tap while
    they wait to see if it's the first half of a double-tap-to-zoom gesture -
    on a small tap target like a tile button, a second tap that arrives

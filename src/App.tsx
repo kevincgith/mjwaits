@@ -1272,6 +1272,7 @@ function App() {
         </button>
       </div>
       {mode === "calculator" ? <Calculator /> : <TrainerPanel stats={trainerStats} setStats={setTrainerStats} />}
+      <footer className="build-version">v{__BUILD_TIME__}</footer>
     </div>
   );
 }
