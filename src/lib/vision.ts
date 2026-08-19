@@ -1,7 +1,7 @@
-// Client-side mahjong tile detection: a YOLOv8s model (fine-tuned on the
-// dataset from https://github.com/Andy8647/MahjongVis, MIT licensed) run
-// entirely in the browser via onnxruntime-web (WASM). No image ever leaves
-// the device.
+// Client-side mahjong tile detection: a YOLOv8s model trained on a merged
+// dataset from https://github.com/Andy8647/MahjongVis (MIT) and
+// https://github.com/jaheel/MJOD-2136 (CC BY-NC-SA), run entirely in the
+// browser via onnxruntime-web (WASM). No image ever leaves the device.
 
 import * as ort from "onnxruntime-web";
 import type { Tile } from "./mahjong";
@@ -9,31 +9,26 @@ import type { Tile } from "./mahjong";
 const IMG_SIZE = 640;
 const CONFIDENCE_THRESHOLD = 0.4;
 
-// Class order the model was trained with (see YOLO/data.yaml in the
-// MahjongVis repo). Digit-prefixed suits: B=Bamboo, C=Characters, D=Dots,
-// F=Flower, S=Season (F/S are bonus tiles - not part of a hand's shape).
+// Unified class order the model was trained with: mjwaits's own 34 tile
+// kinds (m/t/s 1-9, honors 1z-7z) followed by 8 bonus classes (flowers,
+// seasons) that mjwaits doesn't represent - a hand's shape never includes
+// them, so they're excluded from the detected hand rather than mapped.
 const CLASS_NAMES = [
-  "1B", "1C", "1D", "1F", "1S", "2B", "2C", "2D", "2F", "2S",
-  "3B", "3C", "3D", "3F", "3S", "4B", "4C", "4D", "4F", "4S",
-  "5B", "5C", "5D", "6B", "6C", "6D", "7B", "7C", "7D", "8B",
-  "8C", "8D", "9B", "9C", "9D", "EW", "GD", "NW", "RD", "SW",
-  "WD", "WW",
+  "1m", "2m", "3m", "4m", "5m", "6m", "7m", "8m", "9m",
+  "1t", "2t", "3t", "4t", "5t", "6t", "7t", "8t", "9t",
+  "1s", "2s", "3s", "4s", "5s", "6s", "7s", "8s", "9s",
+  "1z", "2z", "3z", "4z", "5z", "6z", "7z",
+  "flower1", "flower2", "flower3", "flower4",
+  "season1", "season2", "season3", "season4",
 ] as const;
-
-// mjwaits honor order: 1 East, 2 South, 3 West, 4 North, 5 Red, 6 Green, 7 White.
-const HONOR_RANKS: Record<string, number> = { EW: 1, SW: 2, WW: 3, NW: 4, RD: 5, GD: 6, WD: 7 };
 
 // Maps a model class name to a mjwaits Tile, or null for classes mjwaits
 // doesn't represent (flowers/seasons are bonus tiles set aside on draw -
 // they don't factor into a hand's shape or its waits).
 function classToTile(className: string): Tile | null {
-  if (className in HONOR_RANKS) return { suit: "z", rank: HONOR_RANKS[className] };
-  const suitChar = className[className.length - 1];
-  const rank = Number(className.slice(0, -1));
-  if (suitChar === "C") return { suit: "m", rank };
-  if (suitChar === "D") return { suit: "t", rank };
-  if (suitChar === "B") return { suit: "s", rank };
-  return null;
+  const suit = className[className.length - 1];
+  if (suit !== "m" && suit !== "t" && suit !== "s" && suit !== "z") return null;
+  return { suit, rank: Number(className.slice(0, -1)) };
 }
 
 export interface Detection {
