@@ -694,6 +694,39 @@ h1 {
   cursor: default;
 }
 
+.scan-progress-track {
+  position: relative;
+  width: 140px;
+  height: 4px;
+  background: #eee;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.scan-progress-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  background: #1a5fb4;
+  border-radius: 2px;
+  transition: width 0.15s ease;
+}
+
+.scan-progress-fill.indeterminate {
+  width: 35%;
+  animation: scan-progress-slide 1.1s ease-in-out infinite;
+}
+
+@keyframes scan-progress-slide {
+  0% {
+    left: -35%;
+  }
+  100% {
+    left: 100%;
+  }
+}
+
 .scan-review {
   display: flex;
   flex-direction: column;

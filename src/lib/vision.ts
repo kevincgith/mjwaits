@@ -50,13 +50,49 @@ export interface Letterbox {
   size: number;
 }
 
+// "downloading-model" carries real byte progress (we stream the fetch
+// ourselves to get it); "initializing" covers onnxruntime-web loading and
+// compiling its WASM runtime, which exposes no progress hook, so it's
+// shown as an indeterminate state rather than a fabricated percentage.
+export type ScanProgress =
+  | { phase: "downloading-model"; loaded: number; total: number | null }
+  | { phase: "initializing" }
+  | { phase: "running" };
+
 let sessionPromise: Promise<ort.InferenceSession> | null = null;
 
-function getSession(): Promise<ort.InferenceSession> {
+async function fetchModelBuffer(onProgress?: (loaded: number, total: number | null) => void): Promise<ArrayBuffer> {
+  const response = await fetch(`${import.meta.env.BASE_URL}model/tile-detector.onnx`);
+  if (!response.ok) throw new Error(`Could not download the tile detector (${response.status})`);
+  if (!response.body) return response.arrayBuffer();
+
+  const total = Number(response.headers.get("content-length")) || null;
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let loaded = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    loaded += value.length;
+    onProgress?.(loaded, total);
+  }
+  const buffer = new Uint8Array(loaded);
+  let offset = 0;
+  for (const chunk of chunks) {
+    buffer.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return buffer.buffer;
+}
+
+function getSession(onProgress?: (p: ScanProgress) => void): Promise<ort.InferenceSession> {
   if (!sessionPromise) {
-    sessionPromise = ort.InferenceSession.create(`${import.meta.env.BASE_URL}model/tile-detector.onnx`, {
-      executionProviders: ["wasm"],
-    });
+    sessionPromise = (async () => {
+      const buffer = await fetchModelBuffer((loaded, total) => onProgress?.({ phase: "downloading-model", loaded, total }));
+      onProgress?.({ phase: "initializing" });
+      return ort.InferenceSession.create(buffer, { executionProviders: ["wasm"] });
+    })();
   }
   return sessionPromise;
 }
@@ -92,8 +128,9 @@ function toTensor(canvas: HTMLCanvasElement): ort.Tensor {
 }
 
 // Runs detection on an already-letterboxed canvas (see `letterbox`).
-export async function detectTiles(box: Letterbox): Promise<DetectionResult> {
-  const session = await getSession();
+export async function detectTiles(box: Letterbox, onProgress?: (p: ScanProgress) => void): Promise<DetectionResult> {
+  const session = await getSession(onProgress);
+  onProgress?.({ phase: "running" });
   const outputs = await session.run({ images: toTensor(box.canvas) });
   const out = outputs.output0.data as Float32Array;
   const numDetections = outputs.output0.dims[1];

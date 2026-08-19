@@ -39,7 +39,7 @@ import {
   trainerHandSize,
   type TrainerQuestion,
 } from "./lib/trainer";
-import { detectTiles, letterbox, type Detection } from "./lib/vision";
+import { detectTiles, letterbox, type Detection, type ScanProgress } from "./lib/vision";
 
 // A stable id per tile instance, so sorting for display never loses track
 // of which underlying tile is which (needed to revert Sort cleanly, and to
@@ -623,6 +623,7 @@ function Calculator() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [scanStatus, setScanStatus] = useState<"idle" | "loading" | "review" | "error">("idle");
   const [scanError, setScanError] = useState<string | null>(null);
+  const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null);
   const [scanPreview, setScanPreview] = useState<{ imageUrl: string; tiles: Tile[]; ignoredBonusCount: number } | null>(
     null
   );
@@ -633,17 +634,29 @@ function Calculator() {
     if (!file) return;
     setScanStatus("loading");
     setScanError(null);
+    setScanProgress({ phase: "downloading-model", loaded: 0, total: null });
     try {
       const image = await loadImageFile(file);
       const box = letterbox(image);
-      const { detections, tiles, ignoredBonusCount } = await detectTiles(box);
+      const { detections, tiles, ignoredBonusCount } = await detectTiles(box, setScanProgress);
       drawDetections(box.canvas, detections);
       setScanPreview({ imageUrl: box.canvas.toDataURL(), tiles, ignoredBonusCount });
       setScanStatus("review");
     } catch (err) {
       setScanError(err instanceof Error ? err.message : "Could not scan that photo");
       setScanStatus("error");
+    } finally {
+      setScanProgress(null);
     }
+  };
+
+  const scanStatusLabel = (p: ScanProgress | null): string => {
+    if (!p) return "Scanning…";
+    if (p.phase === "downloading-model") {
+      return p.total ? `Downloading model… ${Math.round((p.loaded / p.total) * 100)}%` : "Downloading model…";
+    }
+    if (p.phase === "initializing") return "Preparing detector…";
+    return "Detecting tiles…";
   };
 
   const confirmScan = () => {
@@ -733,7 +746,6 @@ function Calculator() {
             ref={fileInputRef}
             type="file"
             accept="image/*"
-            capture="environment"
             onChange={handleScanFile}
             style={{ display: "none" }}
           />
@@ -742,8 +754,35 @@ function Calculator() {
             onClick={() => fileInputRef.current?.click()}
             disabled={scanStatus === "loading"}
           >
-            {scanStatus === "loading" ? "Scanning…" : "📷 Scan a hand"}
+            {scanStatus === "loading" ? scanStatusLabel(scanProgress) : "📷 Scan a hand"}
           </button>
+          {scanStatus === "loading" && (
+            <div
+              className="scan-progress-track"
+              role="progressbar"
+              aria-label={scanStatusLabel(scanProgress)}
+              aria-valuenow={
+                scanProgress?.phase === "downloading-model" && scanProgress.total
+                  ? Math.round((scanProgress.loaded / scanProgress.total) * 100)
+                  : undefined
+              }
+              aria-valuemin={0}
+              aria-valuemax={100}
+            >
+              <div
+                className={
+                  scanProgress?.phase === "downloading-model" && scanProgress.total
+                    ? "scan-progress-fill"
+                    : "scan-progress-fill indeterminate"
+                }
+                style={
+                  scanProgress?.phase === "downloading-model" && scanProgress.total
+                    ? { width: `${Math.round((scanProgress.loaded / scanProgress.total) * 100)}%` }
+                    : undefined
+                }
+              />
+            </div>
+          )}
           {scanStatus === "error" && scanError && <span className="error">{scanError}</span>}
         </div>
 
