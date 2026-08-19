@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import "./App.css";
 import {
   COMPLETE_SIZE,
@@ -32,6 +39,7 @@ import {
   trainerHandSize,
   type TrainerQuestion,
 } from "./lib/trainer";
+import { detectTiles, letterbox, type Detection } from "./lib/vision";
 
 // A stable id per tile instance, so sorting for display never loses track
 // of which underlying tile is which (needed to revert Sort cleanly, and to
@@ -56,6 +64,46 @@ const BREAKDOWN_ORDER_TITLE: Record<BreakdownOrder, string> = {
 
 function nextCheckpoint(size: number): number | undefined {
   return CHECKPOINTS.find((c) => c > size);
+}
+
+function loadImageFile(file: File): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(img);
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Could not read that image"));
+    };
+    img.src = url;
+  });
+}
+
+// Draws each detection's box onto the (already letterboxed) canvas it was
+// detected on - green for tiles that make it into the hand, gray/dashed for
+// bonus tiles (flowers/seasons) that are recognized but excluded from it.
+function drawDetections(canvas: HTMLCanvasElement, detections: Detection[]): void {
+  const ctx = canvas.getContext("2d")!;
+  ctx.font = "13px ui-monospace, SFMono-Regular, Menlo, monospace";
+  ctx.textBaseline = "bottom";
+  for (const d of detections) {
+    const [x1, y1, x2, y2] = d.box;
+    const included = d.tile !== null;
+    ctx.strokeStyle = included ? "#2fbf5f" : "#bbb";
+    ctx.lineWidth = 2;
+    ctx.setLineDash(included ? [] : [4, 3]);
+    ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+    const label = included ? d.className : `${d.className} (ignored)`;
+    const textWidth = ctx.measureText(label).width;
+    ctx.setLineDash([]);
+    ctx.fillStyle = included ? "#2fbf5f" : "#999";
+    ctx.fillRect(x1, y1, textWidth + 6, 16);
+    ctx.fillStyle = "#fff";
+    ctx.fillText(label, x1 + 3, y1 + 15);
+  }
 }
 
 // iOS Safari's native touch->click pipeline gets unreliable under fast
@@ -572,6 +620,44 @@ function Calculator() {
   const handleReset = () => commitHand([]);
   const removeTile = (id: number) => commitHand(handRef.current.filter((t) => t.id !== id));
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [scanStatus, setScanStatus] = useState<"idle" | "loading" | "review" | "error">("idle");
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [scanPreview, setScanPreview] = useState<{ imageUrl: string; tiles: Tile[]; ignoredBonusCount: number } | null>(
+    null
+  );
+
+  const handleScanFile = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-selecting the same file next time
+    if (!file) return;
+    setScanStatus("loading");
+    setScanError(null);
+    try {
+      const image = await loadImageFile(file);
+      const box = letterbox(image);
+      const { detections, tiles, ignoredBonusCount } = await detectTiles(box);
+      drawDetections(box.canvas, detections);
+      setScanPreview({ imageUrl: box.canvas.toDataURL(), tiles, ignoredBonusCount });
+      setScanStatus("review");
+    } catch (err) {
+      setScanError(err instanceof Error ? err.message : "Could not scan that photo");
+      setScanStatus("error");
+    }
+  };
+
+  const confirmScan = () => {
+    if (!scanPreview) return;
+    onTextChange(formatHand(scanPreview.tiles));
+    setScanStatus("idle");
+    setScanPreview(null);
+  };
+  const cancelScan = () => {
+    setScanStatus("idle");
+    setScanPreview(null);
+    setScanError(null);
+  };
+
   const canCalculate = isCheckpointSize(hand.length);
   const upcoming = nextCheckpoint(hand.length);
   const hasJokers = useMemo(() => hand.some((t) => t.suit === "j"), [hand]);
@@ -641,6 +727,46 @@ function Calculator() {
           />
           {error && <span className="error">{error}</span>}
         </div>
+
+        <div className="scan-input">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            onChange={handleScanFile}
+            style={{ display: "none" }}
+          />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={scanStatus === "loading"}
+          >
+            {scanStatus === "loading" ? "Scanning…" : "📷 Scan a hand"}
+          </button>
+          {scanStatus === "error" && scanError && <span className="error">{scanError}</span>}
+        </div>
+
+        {scanStatus === "review" && scanPreview && (
+          <div className="scan-review">
+            <img src={scanPreview.imageUrl} alt="Scanned hand with detected tiles boxed" />
+            <div className="scan-review-summary">
+              <span>
+                {scanPreview.tiles.length} tile{scanPreview.tiles.length === 1 ? "" : "s"} detected
+                {scanPreview.ignoredBonusCount > 0 &&
+                  ` (+${scanPreview.ignoredBonusCount} flower/season tile${scanPreview.ignoredBonusCount === 1 ? "" : "s"} ignored)`}
+              </span>
+              <div className="scan-review-actions">
+                <button type="button" onClick={cancelScan}>
+                  Cancel
+                </button>
+                <button type="button" onClick={confirmScan} disabled={scanPreview.tiles.length === 0}>
+                  Use this hand
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="panel-header">
           <span className="panel-title">Hand</span>

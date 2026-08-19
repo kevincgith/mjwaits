@@ -664,6 +664,82 @@ h1 {
   font-size: 0.85rem;
 }
 
+.scan-input {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid #eee;
+}
+
+.scan-input button {
+  border: 1px solid #ccc;
+  background: #f7f7f7;
+  border-radius: 6px;
+  padding: 0.5rem 0.9rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.scan-input button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.scan-review {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-bottom: 1.25rem;
+  padding: 0.85rem;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background: #fafafa;
+}
+
+.scan-review img {
+  width: 100%;
+  max-width: 420px;
+  border-radius: 6px;
+  align-self: center;
+}
+
+.scan-review-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  color: #444;
+}
+
+.scan-review-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.scan-review-actions button {
+  border: 1px solid #ccc;
+  background: #fff;
+  border-radius: 6px;
+  padding: 0.4rem 0.8rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.scan-review-actions button:last-child {
+  border-color: #1a5fb4;
+  background: #1a5fb4;
+  color: #fff;
+}
+
+.scan-review-actions button:last-child:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 /* On phones, lay each suit row out as a fixed 9-column grid instead of a
    wrapping flex row - every row fills the width evenly with no ragged
    short rows (e.g. "8m/9m" spilling onto their own line), and honors
