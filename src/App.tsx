@@ -566,14 +566,39 @@ interface CropRect {
   h: number;
 }
 
-const FULL_CROP: CropRect = { x: 0, y: 0, w: 1, h: 1 };
-// Where a second region starts out when added - a smaller box in the
-// opposite corner from the default (full-frame) first region, so the two
-// don't start out coincident and the user has less to drag apart.
-const SECOND_CROP: CropRect = { x: 0.55, y: 0.55, w: 0.4, h: 0.4 };
+// A hand's tiles are laid out in a row, so a wide, short box centered in
+// the frame is a closer starting point than the full image - the user
+// mostly needs to nudge/resize it rather than shrink it down from
+// scratch. Used both for the lone first region and, offset, for a second.
+const REGION_W = 0.6;
+const REGION_H = 0.22;
+const DEFAULT_CROP: CropRect = { x: (1 - REGION_W) / 2, y: (1 - REGION_H) / 2, w: REGION_W, h: REGION_H };
 const MAX_REGIONS = 2;
 const MIN_CROP_FRACTION = 0.1;
 const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
+const rectsOverlap = (a: CropRect, b: CropRect): boolean =>
+  a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+const fitsInFrame = (r: CropRect): boolean => r.x >= 0 && r.y >= 0 && r.x + r.w <= 1 && r.y + r.h <= 1;
+
+// Picks a spot for a new w x h region that doesn't overlap `existing` -
+// tried directly below, above, right of, then left of it (in that order),
+// each centered on `existing` along the other axis. Falls back to the
+// bottom-right corner (accepting overlap) only if `existing` leaves no
+// clean gap on any side, e.g. because it's been resized to fill the frame.
+function nonOverlappingRegion(existing: CropRect, w: number, h: number): CropRect {
+  const gap = 0.03;
+  const cx = clamp(existing.x + existing.w / 2 - w / 2, 0, 1 - w);
+  const cy = clamp(existing.y + existing.h / 2 - h / 2, 0, 1 - h);
+  const candidates: CropRect[] = [
+    { x: cx, y: existing.y + existing.h + gap, w, h },
+    { x: cx, y: existing.y - gap - h, w, h },
+    { x: existing.x + existing.w + gap, y: cy, w, h },
+    { x: existing.x - gap - w, y: cy, w, h },
+  ];
+  const clear = candidates.find((c) => fitsInFrame(c) && !rectsOverlap(existing, c));
+  if (clear) return clear;
+  return { x: clamp(1 - w - 0.02, 0, 1 - w), y: clamp(1 - h - 0.02, 0, 1 - h), w, h };
+}
 
 type CropDragMode = "move" | "nw" | "ne" | "sw" | "se";
 
@@ -642,7 +667,7 @@ function CropOverlay({
   onConfirm: (canvases: HTMLCanvasElement[]) => void;
   onCancel: () => void;
 }) {
-  const [regions, setRegions] = useState<CropRect[]>([FULL_CROP]);
+  const [regions, setRegions] = useState<CropRect[]>([DEFAULT_CROP]);
   const stageRef = useRef<HTMLDivElement>(null);
   const maskId = useId();
   const dragRef = useRef<{
@@ -689,9 +714,10 @@ function CropOverlay({
     dragRef.current = null;
   };
 
-  const addRegion = () => setRegions((prev) => (prev.length >= MAX_REGIONS ? prev : [...prev, SECOND_CROP]));
+  const addRegion = () =>
+    setRegions((prev) => (prev.length >= MAX_REGIONS ? prev : [...prev, nonOverlappingRegion(prev[0], REGION_W, REGION_H)]));
   const removeRegion = (index: number) => setRegions((prev) => prev.filter((_, i) => i !== index));
-  const resetRegions = () => setRegions([FULL_CROP]);
+  const resetRegions = () => setRegions([DEFAULT_CROP]);
 
   return (
     <div className="crop-overlay">
@@ -747,7 +773,7 @@ function CropOverlay({
       </div>
       <div className="crop-actions">
         <div className="crop-actions-left">
-          <button type="button" onClick={resetRegions} disabled={regions.length === 1 && regions[0] === FULL_CROP}>
+          <button type="button" onClick={resetRegions} disabled={regions.length === 1 && regions[0] === DEFAULT_CROP}>
             Reset
           </button>
           {regions.length < MAX_REGIONS && (
