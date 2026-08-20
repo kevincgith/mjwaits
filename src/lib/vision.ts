@@ -100,16 +100,21 @@ function getSession(onProgress?: (p: ScanProgress) => void): Promise<ort.Inferen
 // Resizes `image` to fit IMG_SIZE x IMG_SIZE without distortion, padding the
 // rest with gray - the same preprocessing the model was trained/exported
 // with. Returned canvas doubles as the base for drawing detection boxes on.
-export function letterbox(image: HTMLImageElement): Letterbox {
+// Accepts a canvas as well as an image so an already-cropped source (see the
+// scan review's crop step in App.tsx) can be letterboxed directly, with no
+// intermediate re-encode.
+export function letterbox(image: HTMLImageElement | HTMLCanvasElement): Letterbox {
   const canvas = document.createElement("canvas");
   canvas.width = IMG_SIZE;
   canvas.height = IMG_SIZE;
   const ctx = canvas.getContext("2d")!;
   ctx.fillStyle = "#727272";
   ctx.fillRect(0, 0, IMG_SIZE, IMG_SIZE);
-  const scale = Math.min(IMG_SIZE / image.naturalWidth, IMG_SIZE / image.naturalHeight);
-  const w = image.naturalWidth * scale;
-  const h = image.naturalHeight * scale;
+  const srcWidth = image instanceof HTMLImageElement ? image.naturalWidth : image.width;
+  const srcHeight = image instanceof HTMLImageElement ? image.naturalHeight : image.height;
+  const scale = Math.min(IMG_SIZE / srcWidth, IMG_SIZE / srcHeight);
+  const w = srcWidth * scale;
+  const h = srcHeight * scale;
   ctx.drawImage(image, (IMG_SIZE - w) / 2, (IMG_SIZE - h) / 2, w, h);
   return { canvas, size: IMG_SIZE };
 }

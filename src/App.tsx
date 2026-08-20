@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -554,6 +555,176 @@ function DiscardChoiceRow({ choice }: { choice: DiscardChoice }) {
   );
 }
 
+// Crop rect in fractions of the source image (0-1), top-left origin. Kept
+// in fractions rather than pixels so it's independent of how big the image
+// is displayed at vs. its natural resolution.
+interface CropRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+const FULL_CROP: CropRect = { x: 0, y: 0, w: 1, h: 1 };
+const MIN_CROP_FRACTION = 0.1;
+const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
+
+type CropDragMode = "move" | "nw" | "ne" | "sw" | "se";
+
+// Applies a pointer delta (in container-fraction units) to `start`, per
+// drag mode. Corner modes keep the opposite edge fixed and clamp so the
+// rect never leaves [0,1] or shrinks below MIN_CROP_FRACTION; move slides
+// the whole rect without resizing it.
+function applyCropDrag(mode: CropDragMode, start: CropRect, dx: number, dy: number): CropRect {
+  if (mode === "move") {
+    return {
+      x: clamp(start.x + dx, 0, 1 - start.w),
+      y: clamp(start.y + dy, 0, 1 - start.h),
+      w: start.w,
+      h: start.h,
+    };
+  }
+  let { x, y, w, h } = start;
+  if (mode === "nw" || mode === "sw") {
+    const right = start.x + start.w;
+    x = clamp(start.x + dx, 0, right - MIN_CROP_FRACTION);
+    w = right - x;
+  } else {
+    w = clamp(start.w + dx, MIN_CROP_FRACTION, 1 - start.x);
+  }
+  if (mode === "nw" || mode === "ne") {
+    const bottom = start.y + start.h;
+    y = clamp(start.y + dy, 0, bottom - MIN_CROP_FRACTION);
+    h = bottom - y;
+  } else {
+    h = clamp(start.h + dy, MIN_CROP_FRACTION, 1 - start.y);
+  }
+  return { x, y, w, h };
+}
+
+// Draws the selected fraction of `image` onto a new canvas at native
+// resolution - the crop is applied before letterboxing, so anything
+// outside it never reaches the detector.
+function cropToCanvas(image: HTMLImageElement, rect: CropRect): HTMLCanvasElement {
+  const sx = rect.x * image.naturalWidth;
+  const sy = rect.y * image.naturalHeight;
+  const sw = rect.w * image.naturalWidth;
+  const sh = rect.h * image.naturalHeight;
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(sw));
+  canvas.height = Math.max(1, Math.round(sh));
+  const ctx = canvas.getContext("2d")!;
+  ctx.drawImage(image, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+  return canvas;
+}
+
+const CROP_HANDLES: CropDragMode[] = ["nw", "ne", "sw", "se"];
+
+// Lets the user crop down to just the hand before it's sent to the
+// detector - a hand photographed alongside other hands, a hand of cards,
+// or a cluttered table can otherwise pick up stray detections. `image` is
+// the already-loaded element from loadImageFile; it's inserted into the DOM
+// directly (rather than re-rendered via a new <img src>) since its object
+// URL was already revoked once it loaded.
+function CropOverlay({
+  image,
+  onConfirm,
+  onCancel,
+}: {
+  image: HTMLImageElement;
+  onConfirm: (canvas: HTMLCanvasElement) => void;
+  onCancel: () => void;
+}) {
+  const [rect, setRect] = useState<CropRect>(FULL_CROP);
+  const stageRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<{ mode: CropDragMode; startX: number; startY: number; startRect: CropRect; w: number; h: number } | null>(
+    null
+  );
+
+  useLayoutEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    image.className = "crop-image";
+    image.draggable = false;
+    image.alt = "Photo to crop before scanning";
+    stage.insertBefore(image, stage.firstChild);
+    return () => {
+      if (image.parentElement === stage) stage.removeChild(image);
+    };
+  }, [image]);
+
+  const beginDrag = (mode: CropDragMode) => (e: ReactPointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const bounds = stageRef.current?.getBoundingClientRect();
+    if (!bounds) return;
+    dragRef.current = { mode, startX: e.clientX, startY: e.clientY, startRect: rect, w: bounds.width, h: bounds.height };
+    (e.currentTarget as Element).setPointerCapture(e.pointerId);
+  };
+
+  const onDragMove = (e: ReactPointerEvent) => {
+    const drag = dragRef.current;
+    if (!drag) return;
+    const dx = (e.clientX - drag.startX) / drag.w;
+    const dy = (e.clientY - drag.startY) / drag.h;
+    setRect(applyCropDrag(drag.mode, drag.startRect, dx, dy));
+  };
+
+  const endDrag = () => {
+    dragRef.current = null;
+  };
+
+  return (
+    <div className="crop-overlay">
+      <span className="hint">Drag to crop out anything that isn't the hand, then tap Scan.</span>
+      <div className="crop-stage" ref={stageRef}>
+        <div className="crop-mask crop-mask-top" style={{ height: `${rect.y * 100}%` }} />
+        <div className="crop-mask crop-mask-bottom" style={{ top: `${(rect.y + rect.h) * 100}%` }} />
+        <div
+          className="crop-mask crop-mask-left"
+          style={{ top: `${rect.y * 100}%`, height: `${rect.h * 100}%`, width: `${rect.x * 100}%` }}
+        />
+        <div
+          className="crop-mask crop-mask-right"
+          style={{ top: `${rect.y * 100}%`, height: `${rect.h * 100}%`, left: `${(rect.x + rect.w) * 100}%` }}
+        />
+        <div
+          className="crop-rect"
+          style={{ left: `${rect.x * 100}%`, top: `${rect.y * 100}%`, width: `${rect.w * 100}%`, height: `${rect.h * 100}%` }}
+          onPointerDown={beginDrag("move")}
+          onPointerMove={onDragMove}
+          onPointerUp={endDrag}
+          onPointerCancel={endDrag}
+        >
+          {CROP_HANDLES.map((corner) => (
+            <span
+              key={corner}
+              className={`crop-handle crop-handle-${corner}`}
+              onPointerDown={beginDrag(corner)}
+              onPointerMove={onDragMove}
+              onPointerUp={endDrag}
+              onPointerCancel={endDrag}
+            />
+          ))}
+        </div>
+      </div>
+      <div className="crop-actions">
+        <button type="button" onClick={() => setRect(FULL_CROP)} disabled={rect === FULL_CROP}>
+          Reset
+        </button>
+        <div className="crop-actions-right">
+          <button type="button" onClick={onCancel}>
+            Cancel
+          </button>
+          <button type="button" onClick={() => onConfirm(cropToCanvas(image, rect))}>
+            Scan
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Calculator() {
   // `hand` always holds tiles in true input order - Sort never mutates it,
   // it only changes how `displayHand` (below) is derived for rendering/text.
@@ -625,23 +796,35 @@ function Calculator() {
   const removeTile = (id: number) => commitHand(handRef.current.filter((t) => t.id !== id));
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [scanStatus, setScanStatus] = useState<"idle" | "loading" | "review" | "error">("idle");
+  const [scanStatus, setScanStatus] = useState<"idle" | "cropping" | "loading" | "review" | "error">("idle");
   const [scanError, setScanError] = useState<string | null>(null);
   const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null);
   const [scanPreview, setScanPreview] = useState<{ imageUrl: string; tiles: Tile[]; ignoredBonusCount: number } | null>(
     null
   );
+  const [cropImage, setCropImage] = useState<HTMLImageElement | null>(null);
 
   const handleScanFile = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = ""; // allow re-selecting the same file next time
     if (!file) return;
+    setScanError(null);
+    try {
+      const image = await loadImageFile(file);
+      setCropImage(image);
+      setScanStatus("cropping");
+    } catch (err) {
+      setScanError(err instanceof Error ? err.message : "Could not read that image");
+      setScanStatus("error");
+    }
+  };
+
+  const runScan = async (source: HTMLImageElement | HTMLCanvasElement) => {
     setScanStatus("loading");
     setScanError(null);
     setScanProgress({ phase: "downloading-model", loaded: 0, total: null });
     try {
-      const image = await loadImageFile(file);
-      const box = letterbox(image);
+      const box = letterbox(source);
       const { detections, tiles, ignoredBonusCount } = await detectTiles(box, setScanProgress);
       drawDetections(box.canvas, detections);
       setScanPreview({ imageUrl: box.canvas.toDataURL(), tiles, ignoredBonusCount });
@@ -651,7 +834,13 @@ function Calculator() {
       setScanStatus("error");
     } finally {
       setScanProgress(null);
+      setCropImage(null);
     }
+  };
+
+  const cancelCrop = () => {
+    setCropImage(null);
+    setScanStatus("idle");
   };
 
   const scanStatusLabel = (p: ScanProgress | null): string => {
@@ -767,7 +956,7 @@ function Calculator() {
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            disabled={scanStatus === "loading"}
+            disabled={scanStatus === "loading" || scanStatus === "cropping"}
           >
             {scanStatus === "loading" ? scanStatusLabel(scanProgress) : "📷 Scan a hand"}
           </button>
@@ -805,6 +994,10 @@ function Calculator() {
           )}
           {scanStatus === "error" && scanError && <span className="error">{scanError}</span>}
         </div>
+
+        {scanStatus === "cropping" && cropImage && (
+          <CropOverlay image={cropImage} onConfirm={runScan} onCancel={cancelCrop} />
+        )}
 
         {scanStatus === "review" && scanPreview && (
           <div className="scan-review">
