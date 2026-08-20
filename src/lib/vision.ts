@@ -61,6 +61,18 @@ export type ScanProgress =
 
 let sessionPromise: Promise<ort.InferenceSession> | null = null;
 
+// Progress listeners aren't tied to whichever call happens to start the
+// fetch - the model can start downloading in the background (see
+// prefetchModel, called as soon as the user opens the scan flow, before
+// they've picked a photo) well before anything is around to show a
+// progress bar for it. Each getSession call registers its own onProgress
+// here for the lifetime of the shared fetch, so a bar that shows up later
+// still gets the remaining progress instead of nothing.
+const progressListeners = new Set<(p: ScanProgress) => void>();
+function emitProgress(p: ScanProgress) {
+  for (const listener of progressListeners) listener(p);
+}
+
 async function fetchModelBuffer(onProgress?: (loaded: number, total: number | null) => void): Promise<ArrayBuffer> {
   const response = await fetch(`${import.meta.env.BASE_URL}model/tile-detector.onnx`);
   if (!response.ok) throw new Error(`Could not download the tile detector (${response.status})`);
@@ -89,12 +101,26 @@ async function fetchModelBuffer(onProgress?: (loaded: number, total: number | nu
 function getSession(onProgress?: (p: ScanProgress) => void): Promise<ort.InferenceSession> {
   if (!sessionPromise) {
     sessionPromise = (async () => {
-      const buffer = await fetchModelBuffer((loaded, total) => onProgress?.({ phase: "downloading-model", loaded, total }));
-      onProgress?.({ phase: "initializing" });
+      const buffer = await fetchModelBuffer((loaded, total) => emitProgress({ phase: "downloading-model", loaded, total }));
+      emitProgress({ phase: "initializing" });
       return ort.InferenceSession.create(buffer, { executionProviders: ["wasm"] });
     })();
   }
+  if (onProgress) {
+    progressListeners.add(onProgress);
+    sessionPromise.finally(() => progressListeners.delete(onProgress));
+  }
   return sessionPromise;
+}
+
+// Kicks off the model download/init ahead of time, so it's already done (or
+// further along) by the time the user finishes cropping and detectTiles
+// actually needs it. Safe to call more than once - getSession only starts
+// the fetch on the first call. Errors are swallowed here; if the fetch is
+// genuinely broken, the later detectTiles call awaits the same rejected
+// sessionPromise and reports it through the normal scan error UI then.
+export function prefetchModel(): void {
+  getSession().catch(() => {});
 }
 
 // Resizes `image` to fit IMG_SIZE x IMG_SIZE without distortion, padding the

@@ -40,7 +40,7 @@ import {
   trainerHandSize,
   type TrainerQuestion,
 } from "./lib/trainer";
-import { detectTiles, letterbox, type Detection, type ScanProgress } from "./lib/vision";
+import { detectTiles, letterbox, prefetchModel, type Detection, type ScanProgress } from "./lib/vision";
 
 // A stable id per tile instance, so sorting for display never loses track
 // of which underlying tile is which (needed to revert Sort cleanly, and to
@@ -955,7 +955,14 @@ function Calculator() {
           />
           <button
             type="button"
-            onClick={() => fileInputRef.current?.click()}
+            onClick={() => {
+              // Starts the (large) model download as soon as the user shows
+              // intent to scan, rather than after they've picked and cropped
+              // a photo - by the time runScan needs it, it's often already
+              // downloaded or well underway.
+              prefetchModel();
+              fileInputRef.current?.click();
+            }}
             disabled={scanStatus === "loading" || scanStatus === "cropping"}
           >
             {scanStatus === "loading" ? scanStatusLabel(scanProgress) : "📷 Scan a hand"}
