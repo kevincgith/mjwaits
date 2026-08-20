@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -566,6 +567,11 @@ interface CropRect {
 }
 
 const FULL_CROP: CropRect = { x: 0, y: 0, w: 1, h: 1 };
+// Where a second region starts out when added - a smaller box in the
+// opposite corner from the default (full-frame) first region, so the two
+// don't start out coincident and the user has less to drag apart.
+const SECOND_CROP: CropRect = { x: 0.55, y: 0.55, w: 0.4, h: 0.4 };
+const MAX_REGIONS = 2;
 const MIN_CROP_FRACTION = 0.1;
 const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
 
@@ -620,26 +626,34 @@ function cropToCanvas(image: HTMLImageElement, rect: CropRect): HTMLCanvasElemen
 
 const CROP_HANDLES: CropDragMode[] = ["nw", "ne", "sw", "se"];
 
-// Lets the user crop down to just the hand before it's sent to the
-// detector - a hand photographed alongside other hands, a hand of cards,
-// or a cluttered table can otherwise pick up stray detections. `image` is
-// the already-loaded element from loadImageFile; it's inserted into the DOM
-// directly (rather than re-rendered via a new <img src>) since its object
-// URL was already revoked once it loaded.
+// Lets the user crop down to just the hand (or two, if a single photo has
+// two separate hands laid out in it - e.g. two players' hands shot
+// together) before it's sent to the detector. Each region gets cropped,
+// letterboxed, and detected independently, then the results are merged -
+// see runScan. `image` is the already-loaded element from loadImageFile;
+// it's inserted into the DOM directly (rather than re-rendered via a new
+// <img src>) since its object URL was already revoked once it loaded.
 function CropOverlay({
   image,
   onConfirm,
   onCancel,
 }: {
   image: HTMLImageElement;
-  onConfirm: (canvas: HTMLCanvasElement) => void;
+  onConfirm: (canvases: HTMLCanvasElement[]) => void;
   onCancel: () => void;
 }) {
-  const [rect, setRect] = useState<CropRect>(FULL_CROP);
+  const [regions, setRegions] = useState<CropRect[]>([FULL_CROP]);
   const stageRef = useRef<HTMLDivElement>(null);
-  const dragRef = useRef<{ mode: CropDragMode; startX: number; startY: number; startRect: CropRect; w: number; h: number } | null>(
-    null
-  );
+  const maskId = useId();
+  const dragRef = useRef<{
+    index: number;
+    mode: CropDragMode;
+    startX: number;
+    startY: number;
+    startRect: CropRect;
+    w: number;
+    h: number;
+  } | null>(null);
 
   useLayoutEffect(() => {
     const stage = stageRef.current;
@@ -653,12 +667,12 @@ function CropOverlay({
     };
   }, [image]);
 
-  const beginDrag = (mode: CropDragMode) => (e: ReactPointerEvent) => {
+  const beginDrag = (index: number, mode: CropDragMode) => (e: ReactPointerEvent) => {
     e.preventDefault();
     e.stopPropagation();
     const bounds = stageRef.current?.getBoundingClientRect();
     if (!bounds) return;
-    dragRef.current = { mode, startX: e.clientX, startY: e.clientY, startRect: rect, w: bounds.width, h: bounds.height };
+    dragRef.current = { index, mode, startX: e.clientX, startY: e.clientY, startRect: regions[index], w: bounds.width, h: bounds.height };
     (e.currentTarget as Element).setPointerCapture(e.pointerId);
   };
 
@@ -667,56 +681,86 @@ function CropOverlay({
     if (!drag) return;
     const dx = (e.clientX - drag.startX) / drag.w;
     const dy = (e.clientY - drag.startY) / drag.h;
-    setRect(applyCropDrag(drag.mode, drag.startRect, dx, dy));
+    const nextRect = applyCropDrag(drag.mode, drag.startRect, dx, dy);
+    setRegions((prev) => prev.map((r, i) => (i === drag.index ? nextRect : r)));
   };
 
   const endDrag = () => {
     dragRef.current = null;
   };
 
+  const addRegion = () => setRegions((prev) => (prev.length >= MAX_REGIONS ? prev : [...prev, SECOND_CROP]));
+  const removeRegion = (index: number) => setRegions((prev) => prev.filter((_, i) => i !== index));
+  const resetRegions = () => setRegions([FULL_CROP]);
+
   return (
     <div className="crop-overlay">
-      <span className="hint">Drag to crop out anything that isn't the hand, then tap Scan.</span>
+      <span className="hint">
+        {regions.length > 1
+          ? "Drag each box to cover one hand, then tap Scan."
+          : "Drag to crop out anything that isn't the hand, then tap Scan."}
+      </span>
       <div className="crop-stage" ref={stageRef}>
-        <div className="crop-mask crop-mask-top" style={{ height: `${rect.y * 100}%` }} />
-        <div className="crop-mask crop-mask-bottom" style={{ top: `${(rect.y + rect.h) * 100}%` }} />
-        <div
-          className="crop-mask crop-mask-left"
-          style={{ top: `${rect.y * 100}%`, height: `${rect.h * 100}%`, width: `${rect.x * 100}%` }}
-        />
-        <div
-          className="crop-mask crop-mask-right"
-          style={{ top: `${rect.y * 100}%`, height: `${rect.h * 100}%`, left: `${(rect.x + rect.w) * 100}%` }}
-        />
-        <div
-          className="crop-rect"
-          style={{ left: `${rect.x * 100}%`, top: `${rect.y * 100}%`, width: `${rect.w * 100}%`, height: `${rect.h * 100}%` }}
-          onPointerDown={beginDrag("move")}
-          onPointerMove={onDragMove}
-          onPointerUp={endDrag}
-          onPointerCancel={endDrag}
-        >
-          {CROP_HANDLES.map((corner) => (
-            <span
-              key={corner}
-              className={`crop-handle crop-handle-${corner}`}
-              onPointerDown={beginDrag(corner)}
-              onPointerMove={onDragMove}
-              onPointerUp={endDrag}
-              onPointerCancel={endDrag}
-            />
-          ))}
-        </div>
+        <svg className="crop-dim" preserveAspectRatio="none">
+          <mask id={maskId}>
+            <rect x="0" y="0" width="100%" height="100%" fill="#fff" />
+            {regions.map((r, i) => (
+              <rect key={i} x={`${r.x * 100}%`} y={`${r.y * 100}%`} width={`${r.w * 100}%`} height={`${r.h * 100}%`} fill="#000" />
+            ))}
+          </mask>
+          <rect x="0" y="0" width="100%" height="100%" fill="rgba(0,0,0,0.55)" mask={`url(#${maskId})`} />
+        </svg>
+        {regions.map((rect, index) => (
+          <div
+            key={index}
+            className={`crop-rect crop-rect-${index}`}
+            style={{ left: `${rect.x * 100}%`, top: `${rect.y * 100}%`, width: `${rect.w * 100}%`, height: `${rect.h * 100}%` }}
+            onPointerDown={beginDrag(index, "move")}
+            onPointerMove={onDragMove}
+            onPointerUp={endDrag}
+            onPointerCancel={endDrag}
+          >
+            {regions.length > 1 && <span className="crop-rect-label">{index + 1}</span>}
+            {regions.length > 1 && (
+              <button
+                type="button"
+                className="crop-rect-remove"
+                title={`Remove region ${index + 1}`}
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={() => removeRegion(index)}
+              >
+                ×
+              </button>
+            )}
+            {CROP_HANDLES.map((corner) => (
+              <span
+                key={corner}
+                className={`crop-handle crop-handle-${corner}`}
+                onPointerDown={beginDrag(index, corner)}
+                onPointerMove={onDragMove}
+                onPointerUp={endDrag}
+                onPointerCancel={endDrag}
+              />
+            ))}
+          </div>
+        ))}
       </div>
       <div className="crop-actions">
-        <button type="button" onClick={() => setRect(FULL_CROP)} disabled={rect === FULL_CROP}>
-          Reset
-        </button>
+        <div className="crop-actions-left">
+          <button type="button" onClick={resetRegions} disabled={regions.length === 1 && regions[0] === FULL_CROP}>
+            Reset
+          </button>
+          {regions.length < MAX_REGIONS && (
+            <button type="button" onClick={addRegion}>
+              + Add region
+            </button>
+          )}
+        </div>
         <div className="crop-actions-right">
           <button type="button" onClick={onCancel}>
             Cancel
           </button>
-          <button type="button" onClick={() => onConfirm(cropToCanvas(image, rect))}>
+          <button type="button" onClick={() => onConfirm(regions.map((r) => cropToCanvas(image, r)))}>
             Scan
           </button>
         </div>
@@ -799,7 +843,7 @@ function Calculator() {
   const [scanStatus, setScanStatus] = useState<"idle" | "cropping" | "loading" | "review" | "error">("idle");
   const [scanError, setScanError] = useState<string | null>(null);
   const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null);
-  const [scanPreview, setScanPreview] = useState<{ imageUrl: string; tiles: Tile[]; ignoredBonusCount: number } | null>(
+  const [scanPreview, setScanPreview] = useState<{ imageUrls: string[]; tiles: Tile[]; ignoredBonusCount: number } | null>(
     null
   );
   const [cropImage, setCropImage] = useState<HTMLImageElement | null>(null);
@@ -819,15 +863,27 @@ function Calculator() {
     }
   };
 
-  const runScan = async (source: HTMLImageElement | HTMLCanvasElement) => {
+  // Each region (1 or 2, from CropOverlay) is letterboxed and detected
+  // independently, then the results are merged into one hand - a tile
+  // detected in either region counts. The (cached) model session is only
+  // fetched/initialized once regardless of region count.
+  const runScan = async (sources: HTMLCanvasElement[]) => {
     setScanStatus("loading");
     setScanError(null);
     setScanProgress({ phase: "downloading-model", loaded: 0, total: null });
     try {
-      const box = letterbox(source);
-      const { detections, tiles, ignoredBonusCount } = await detectTiles(box, setScanProgress);
-      drawDetections(box.canvas, detections);
-      setScanPreview({ imageUrl: box.canvas.toDataURL(), tiles, ignoredBonusCount });
+      const imageUrls: string[] = [];
+      const allTiles: Tile[] = [];
+      let totalIgnoredBonusCount = 0;
+      for (const source of sources) {
+        const box = letterbox(source);
+        const { detections, tiles, ignoredBonusCount } = await detectTiles(box, setScanProgress);
+        drawDetections(box.canvas, detections);
+        imageUrls.push(box.canvas.toDataURL());
+        allTiles.push(...tiles);
+        totalIgnoredBonusCount += ignoredBonusCount;
+      }
+      setScanPreview({ imageUrls, tiles: allTiles, ignoredBonusCount: totalIgnoredBonusCount });
       setScanStatus("review");
     } catch (err) {
       setScanError(err instanceof Error ? err.message : "Could not scan that photo");
@@ -1008,7 +1064,15 @@ function Calculator() {
 
         {scanStatus === "review" && scanPreview && (
           <div className="scan-review">
-            <img src={scanPreview.imageUrl} alt="Scanned hand with detected tiles boxed" />
+            <div className="scan-review-images">
+              {scanPreview.imageUrls.map((url, i) => (
+                <img
+                  key={i}
+                  src={url}
+                  alt={scanPreview.imageUrls.length > 1 ? `Scanned hand region ${i + 1} with detected tiles boxed` : "Scanned hand with detected tiles boxed"}
+                />
+              ))}
+            </div>
             <div className="scan-review-summary">
               <span>
                 {scanPreview.tiles.length} tile{scanPreview.tiles.length === 1 ? "" : "s"} detected

@@ -769,25 +769,12 @@ h1 {
   -webkit-user-drag: none;
 }
 
-.crop-mask {
+.crop-dim {
   position: absolute;
-  left: 0;
+  inset: 0;
   width: 100%;
-  background: rgba(0, 0, 0, 0.55);
+  height: 100%;
   pointer-events: none;
-}
-
-.crop-mask-top {
-  top: 0;
-}
-
-.crop-mask-bottom {
-  bottom: 0;
-}
-
-.crop-mask-left,
-.crop-mask-right {
-  width: auto;
 }
 
 .crop-rect {
@@ -795,6 +782,47 @@ h1 {
   border: 2px solid #1a5fb4;
   box-sizing: border-box;
   cursor: move;
+  touch-action: none;
+}
+
+/* Second region gets a distinct color so two overlapping-ish boxes stay
+   visually distinguishable while dragging. */
+.crop-rect-1 {
+  border-color: #e8871e;
+}
+
+.crop-rect-1 .crop-handle {
+  background: #e8871e;
+}
+
+.crop-rect-label {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  min-width: 1.1rem;
+  padding: 0 0.25rem;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 0.7rem;
+  line-height: 1.3rem;
+  text-align: center;
+  pointer-events: none;
+}
+
+.crop-rect-remove {
+  position: absolute;
+  top: -11px;
+  right: -11px;
+  width: 22px;
+  height: 22px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: #b3261e;
+  color: #fff;
+  font-size: 0.9rem;
+  line-height: 1;
+  cursor: pointer;
   touch-action: none;
 }
 
@@ -853,6 +881,7 @@ h1 {
   cursor: default;
 }
 
+.crop-actions-left,
 .crop-actions-right {
   display: flex;
   gap: 0.5rem;
@@ -875,11 +904,24 @@ h1 {
   background: #fafafa;
 }
 
-.scan-review img {
+.scan-review-images {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.6rem;
+}
+
+.scan-review-images img {
   width: 100%;
   max-width: 420px;
   border-radius: 6px;
-  align-self: center;
+}
+
+/* Two regions side by side share the row instead of each claiming the full
+   420px - shrinks to fit, wrapping back to stacked on narrow screens. */
+.scan-review-images:has(img:nth-child(2)) img {
+  flex: 1 1 200px;
+  max-width: 300px;
 }
 
 .scan-review-summary {
