@@ -45,6 +45,7 @@ import { IMG_SIZE, detectTiles, letterbox, prefetchModel, type ScanProgress } fr
 import {
   ScoringError,
   scoreParsedHand,
+  type BonusTile,
   type GameContext,
   type MeldKind,
   type ParsedScoringHand,
@@ -1850,6 +1851,36 @@ function meldPickerTiles(kind: MeldKind): Tile[] {
   return kind === "run" ? all.filter((t) => t.suit !== "z" && t.rank <= 7) : all;
 }
 
+// Unicode Mahjong Tiles block, immediately after circles (1F019-1F021) and
+// before Joker (1F02A, see mahjong.ts's own tileGlyph) - the 4 flowers
+// (Plum/Orchid/Bamboo/Chrysanthemum) then the 4 seasons (Spring/Summer/
+// Autumn/Winter), each block's rank order matching the seat wind it's
+// conventionally paired with (East/South/West/North).
+const FLOWER_CODEPOINTS: Record<1 | 2 | 3 | 4, number> = { 1: 0x1f022, 2: 0x1f023, 3: 0x1f024, 4: 0x1f025 };
+const SEASON_CODEPOINTS: Record<1 | 2 | 3 | 4, number> = { 1: 0x1f026, 2: 0x1f027, 3: 0x1f028, 4: 0x1f029 };
+const FLOWER_NAMES: Record<1 | 2 | 3 | 4, string> = { 1: "Plum", 2: "Orchid", 3: "Bamboo", 4: "Chrysanthemum" };
+const SEASON_NAMES: Record<1 | 2 | 3 | 4, string> = { 1: "Spring", 2: "Summer", 3: "Autumn", 4: "Winter" };
+const BONUS_TEXT_PRESENTATION = "︎"; // see mahjong.ts's TEXT_PRESENTATION for why
+
+function bonusTileGlyph(tile: BonusTile): string {
+  const codepoint = (tile.kind === "flower" ? FLOWER_CODEPOINTS : SEASON_CODEPOINTS)[tile.rank];
+  return String.fromCodePoint(codepoint) + BONUS_TEXT_PRESENTATION;
+}
+function bonusTileLabel(tile: BonusTile): string {
+  return tile.kind === "flower" ? `Flower: ${FLOWER_NAMES[tile.rank]}` : `Season: ${SEASON_NAMES[tile.rank]}`;
+}
+
+function BonusTileButton({ tile, onClick, disabled }: { tile: BonusTile; onClick: () => void; disabled?: boolean }) {
+  const tap = useTap(onClick, disabled);
+  return (
+    <button type="button" className="tile-button" disabled={disabled} title={bonusTileLabel(tile)} {...tap}>
+      <span className="tile-glyph" data-suit="bonus">
+        {bonusTileGlyph(tile)}
+      </span>
+    </button>
+  );
+}
+
 // This models the table, not a text format: 手牌區 (concealed hand) is a
 // plain multiset of tiles still to be decomposed, and 門前牌區 (declared
 // melds) is a list of already-fixed groups - exactly mahjong.ts's
@@ -1859,6 +1890,13 @@ function meldPickerTiles(kind: MeldKind): Tile[] {
 function ScoringPanel() {
   const [concealedTiles, setConcealedTiles] = useState<HandTile[]>([]);
   const [declaredMelds, setDeclaredMelds] = useState<DeclaredMeldTile[]>([]);
+  // Bonus tiles (flowers/seasons) live in 門前牌區 alongside declared melds
+  // (see BonusTile's doc comment in scoring.ts) but aren't melds themselves
+  // and don't count toward hand completeness - kept as separate state rather
+  // than folded into declaredMelds. A standard set has exactly one physical
+  // copy of each kind+rank, so no counter/id is needed - the pair itself is
+  // a stable enough key.
+  const [bonusTiles, setBonusTiles] = useState<BonusTile[]>([]);
   const [meldKind, setMeldKind] = useState<MeldKind>("triplet");
   const [kongConcealed, setKongConcealed] = useState(true);
   const [seatWind, setSeatWind] = useState<Wind>(1);
@@ -1867,6 +1905,33 @@ function ScoringPanel() {
   const nextTileId = useRef(0);
   const nextMeldId = useRef(0);
 
+  // Mirrors the three state arrays above, updated synchronously - same
+  // reason Calculator's handRef exists (see its comment at handRef's
+  // declaration): two taps landing before a render commits between them
+  // would otherwise both read the same stale state closure and independently
+  // decide "not at the cap yet", letting a rapid double-tap add a 5th copy of
+  // a tile or a duplicate bonus tile past its 1-copy limit. Every add/remove
+  // handler below reads and writes these refs first, then mirrors the result
+  // into state to trigger a render.
+  const concealedRef = useRef<HandTile[]>([]);
+  const declaredRef = useRef<DeclaredMeldTile[]>([]);
+  const bonusRef = useRef<BonusTile[]>([]);
+
+  const totalCopiesUsedRef = (tile: Tile): number => {
+    let n = tileCount(concealedRef.current, tile);
+    for (const meld of declaredRef.current) n += tileCount(meld.tiles, tile);
+    return n;
+  };
+  const atCapRef = (): boolean => {
+    const kongs = declaredRef.current.filter((m) => m.kind === "kong").length;
+    const total = concealedRef.current.length + declaredRef.current.reduce((n, m) => n + m.tiles.length, 0);
+    return total >= COMPLETE_SIZE + kongs;
+  };
+
+  // Render-time counterpart of totalCopiesUsedRef, derived from state - used
+  // only for `disabled` props (a UI hint that's correct as of the last
+  // commit), never for the actual gating decision inside a handler (that's
+  // what the Ref-suffixed versions above are for).
   const totalCopiesUsed = (tile: Tile): number => {
     let n = tileCount(concealedTiles, tile);
     for (const meld of declaredMelds) n += tileCount(meld.tiles, tile);
@@ -1879,29 +1944,55 @@ function ScoringPanel() {
   const atCap = totalTiles >= requiredSize;
 
   const addConcealedTile = (tile: Tile) => {
-    if (atCap || totalCopiesUsed(tile) >= 4) return;
-    setConcealedTiles((prev) => [...prev, { ...tile, id: nextTileId.current++ }]);
+    if (atCapRef() || totalCopiesUsedRef(tile) >= 4) return;
+    const next = [...concealedRef.current, { ...tile, id: nextTileId.current++ }];
+    concealedRef.current = next;
+    setConcealedTiles(next);
   };
-  const removeConcealedTile = (id: number) => setConcealedTiles((prev) => prev.filter((t) => t.id !== id));
+  const removeConcealedTile = (id: number) => {
+    const next = concealedRef.current.filter((t) => t.id !== id);
+    concealedRef.current = next;
+    setConcealedTiles(next);
+  };
 
   const pushMeld = (kind: MeldKind, concealed: boolean, tiles: Tile[]) => {
-    if (atCap) return;
-    setDeclaredMelds((prev) => [...prev, { id: nextMeldId.current++, kind, concealed, tiles }]);
+    if (atCapRef()) return;
+    const next = [...declaredRef.current, { id: nextMeldId.current++, kind, concealed, tiles }];
+    declaredRef.current = next;
+    setDeclaredMelds(next);
   };
   const addMeldStartingAt = (tile: Tile) => {
     if (meldKind === "triplet") {
-      if (totalCopiesUsed(tile) + 3 > 4) return;
+      if (totalCopiesUsedRef(tile) + 3 > 4) return;
       pushMeld("triplet", false, [tile, tile, tile]);
     } else if (meldKind === "kong") {
-      if (totalCopiesUsed(tile) > 0) return;
+      if (totalCopiesUsedRef(tile) > 0) return;
       pushMeld("kong", kongConcealed, [tile, tile, tile, tile]);
     } else {
       const run = [0, 1, 2].map((d) => ({ suit: tile.suit, rank: tile.rank + d }));
-      if (run.some((t) => totalCopiesUsed(t) + 1 > 4)) return;
+      if (run.some((t) => totalCopiesUsedRef(t) + 1 > 4)) return;
       pushMeld("run", false, run);
     }
   };
-  const removeMeld = (id: number) => setDeclaredMelds((prev) => prev.filter((m) => m.id !== id));
+  const removeMeld = (id: number) => {
+    const next = declaredRef.current.filter((m) => m.id !== id);
+    declaredRef.current = next;
+    setDeclaredMelds(next);
+  };
+
+  const hasBonusTileRef = (tile: BonusTile) => bonusRef.current.some((b) => b.kind === tile.kind && b.rank === tile.rank);
+  const hasBonusTile = (tile: BonusTile) => bonusTiles.some((b) => b.kind === tile.kind && b.rank === tile.rank);
+  const addBonusTile = (tile: BonusTile) => {
+    if (hasBonusTileRef(tile)) return;
+    const next = [...bonusRef.current, tile];
+    bonusRef.current = next;
+    setBonusTiles(next);
+  };
+  const removeBonusTile = (tile: BonusTile) => {
+    const next = bonusRef.current.filter((b) => !(b.kind === tile.kind && b.rank === tile.rank));
+    bonusRef.current = next;
+    setBonusTiles(next);
+  };
 
   const canAddMeldTile = (tile: Tile): boolean => {
     if (atCap) return false;
@@ -1912,8 +2003,12 @@ function ScoringPanel() {
   };
 
   const handleReset = () => {
+    concealedRef.current = [];
+    declaredRef.current = [];
+    bonusRef.current = [];
     setConcealedTiles([]);
     setDeclaredMelds([]);
+    setBonusTiles([]);
   };
 
   const ctx: GameContext = { seatWind, roundWind, selfDraw };
@@ -1922,6 +2017,7 @@ function ScoringPanel() {
     const parsed: ParsedScoringHand = {
       declaredMelds: declaredMelds.map(({ kind, concealed, tiles }) => ({ kind, concealed, tiles })),
       freeTiles: concealedTiles.map(({ id: _id, ...tile }) => tile),
+      bonusTiles,
     };
     try {
       return { ok: true as const, result: scoreParsedHand(parsed, ctx) };
@@ -1930,13 +2026,17 @@ function ScoringPanel() {
       return { ok: false as const, message };
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [concealedTiles, declaredMelds, totalTiles, requiredSize, seatWind, roundWind, selfDraw]);
+  }, [concealedTiles, declaredMelds, bonusTiles, totalTiles, requiredSize, seatWind, roundWind, selfDraw]);
 
   return (
     <section className="panel scoring-panel">
       <div className="panel-header">
         <span className="panel-title">Scoring</span>
-        <button type="button" onClick={handleReset} disabled={concealedTiles.length === 0 && declaredMelds.length === 0}>
+        <button
+          type="button"
+          onClick={handleReset}
+          disabled={concealedTiles.length === 0 && declaredMelds.length === 0 && bonusTiles.length === 0}
+        >
           Reset
         </button>
         <span className="tile-count">
@@ -1996,10 +2096,25 @@ function ScoringPanel() {
                 ))}
             </div>
           ))}
+        {/* Bonus tiles (flowers/seasons) - set aside in this same 門前 area the
+            moment they're drawn, but not melds themselves, so they're tapped
+            independently of the Triplet/Run/Kong mode above. */}
+        <div className="suit-row">
+          {([1, 2, 3, 4] as const).map((rank) => {
+            const tile: BonusTile = { kind: "flower", rank };
+            return <BonusTileButton key={`flower${rank}`} tile={tile} onClick={() => addBonusTile(tile)} disabled={hasBonusTile(tile)} />;
+          })}
+        </div>
+        <div className="suit-row">
+          {([1, 2, 3, 4] as const).map((rank) => {
+            const tile: BonusTile = { kind: "season", rank };
+            return <BonusTileButton key={`season${rank}`} tile={tile} onClick={() => addBonusTile(tile)} disabled={hasBonusTile(tile)} />;
+          })}
+        </div>
       </div>
 
-      {declaredMelds.length === 0 ? (
-        <span className="hint">Tap a tile above to add a declared meld (called triplet/run, or a kong).</span>
+      {declaredMelds.length === 0 && bonusTiles.length === 0 ? (
+        <span className="hint">Tap a tile above to add a declared meld (called triplet/run, or a kong) or a bonus tile.</span>
       ) : (
         <div className="hand-display breakdown-groups">
           {declaredMelds.map((meld) => (
@@ -2013,6 +2128,19 @@ function ScoringPanel() {
               {meld.tiles.map((t, j) => (
                 <TileGlyphSpan key={j} tile={t} large />
               ))}
+            </button>
+          ))}
+          {bonusTiles.map((tile) => (
+            <button
+              type="button"
+              key={`${tile.kind}${tile.rank}`}
+              className="breakdown-group meld-remove"
+              onClick={() => removeBonusTile(tile)}
+              title={`${bonusTileLabel(tile)} - tap to remove`}
+            >
+              <span className="tile-glyph large" data-suit="bonus">
+                {bonusTileGlyph(tile)}
+              </span>
             </button>
           ))}
         </div>

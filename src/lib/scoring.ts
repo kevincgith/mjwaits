@@ -24,6 +24,18 @@ export interface MeldDeclaration {
   concealed: boolean;
 }
 
+// Flowers/seasons: bonus tiles revealed and set aside (in the same 門前 area
+// as declared melds) the moment they're drawn, then replaced by a draw from
+// the dead wall. They don't belong to mahjong.ts's Tile model at all (no
+// suit/rank shape, never part of a hand's melds+pair structure) and a
+// standard set has exactly one physical copy of each of the 8 kinds, unlike
+// ordinary tiles' 4-copy cap.
+export type BonusKind = "flower" | "season";
+export interface BonusTile {
+  kind: BonusKind;
+  rank: 1 | 2 | 3 | 4;
+}
+
 export interface ParsedScoringHand {
   // Melds fixed by the notation: exposed triplets/runs/kongs (written in
   // parens) and concealed kongs (a bare 4-of-a-kind - see parseScoringHand).
@@ -31,6 +43,11 @@ export interface ParsedScoringHand {
   // Everything else: ordinary concealed tiles still to be decomposed into
   // melds + the pair (the pair is always concealed - it can't be called).
   freeTiles: Tile[];
+  // Bonus tiles drawn during play - don't count toward hand completeness or
+  // participate in decomposition, just carried through to scoring (no
+  // pattern references them yet). The notation grammar doesn't have syntax
+  // for these yet (see parseScoringHand) - always empty from text input.
+  bonusTiles: BonusTile[];
 }
 
 function validateRank(suit: Suit, rank: number, raw: string): void {
@@ -131,7 +148,7 @@ export function parseScoringHand(input: string): ParsedScoringHand {
     }
   }
 
-  return { declaredMelds, freeTiles: remainingFree };
+  return { declaredMelds, freeTiles: remainingFree, bonusTiles: [] };
 }
 
 export interface ResolvedMeld {
@@ -143,6 +160,7 @@ export interface ResolvedMeld {
 export interface ResolvedHand {
   melds: ResolvedMeld[]; // exactly MELDS_REQUIRED (5)
   pair: Tile[];
+  bonusTiles: BonusTile[];
 }
 
 function countsForSuit(tiles: Tile[], suit: Suit, size: number): number[] {
@@ -339,7 +357,7 @@ export function scoreParsedHand(parsed: ParsedScoringHand, ctx: GameContext): Sc
 
   let best: ScoreResult | null = null;
   for (const free of freeDecompositions) {
-    const hand: ResolvedHand = { melds: [...declaredResolved, ...free.melds], pair: free.pair };
+    const hand: ResolvedHand = { melds: [...declaredResolved, ...free.melds], pair: free.pair, bonusTiles: parsed.bonusTiles };
     const matched = PATTERNS.filter((p) => p.check(hand, ctx)).map((pattern) => ({ pattern, tai: pattern.tai }));
     const total = matched.reduce((sum, m) => sum + m.tai, 0);
     if (!best || total > best.total) best = { total, matched, hand };

@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { decomposeHandAll, isDealer, parseScoringHand, scoreHand, type GameContext } from "./scoring";
+import {
+  decomposeHandAll,
+  isDealer,
+  parseScoringHand,
+  scoreHand,
+  scoreParsedHand,
+  type GameContext,
+} from "./scoring";
 
 const ctx = (overrides: Partial<GameContext> = {}): GameContext => ({
   seatWind: 1,
@@ -9,6 +16,10 @@ const ctx = (overrides: Partial<GameContext> = {}): GameContext => ({
 });
 
 describe("parseScoringHand", () => {
+  it("always returns an empty bonusTiles array (no notation syntax for them yet)", () => {
+    expect(parseScoringHand("123456789m111z234t22b").bonusTiles).toEqual([]);
+  });
+
   it("parses a fully concealed hand as all-free tiles, no declared melds", () => {
     const parsed = parseScoringHand("123456789m111z234t22b");
     expect(parsed.declaredMelds).toEqual([]);
@@ -126,6 +137,15 @@ describe("scoreHand", () => {
     // doesn't crash or double-count across multiple candidate decompositions.
     const result = scoreHand("111222333m111z456b22t", ctx());
     expect(result.matched.filter((m) => m.pattern.id === "concealed-hand")).toHaveLength(1);
+  });
+
+  it("carries bonus tiles through to the result without affecting the tai total", () => {
+    const parsed = parseScoringHand("123456789m111z234t22b");
+    parsed.bonusTiles.push({ kind: "flower", rank: 1 }, { kind: "season", rank: 4 });
+    const withBonus = scoreParsedHand(parsed, ctx());
+    const withoutBonus = scoreHand("123456789m111z234t22b", ctx());
+    expect(withBonus.hand.bonusTiles).toEqual([{ kind: "flower", rank: 1 }, { kind: "season", rank: 4 }]);
+    expect(withBonus.total).toBe(withoutBonus.total);
   });
 });
 
