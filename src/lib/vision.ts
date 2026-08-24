@@ -10,25 +10,33 @@ export const IMG_SIZE = 640;
 const CONFIDENCE_THRESHOLD = 0.4;
 
 // Unified class order the model was trained with: mjwaits's own 34 tile
-// kinds (m/t/s 1-9, honors 1z-7z) followed by 8 bonus classes (flowers,
-// seasons) that mjwaits doesn't represent - a hand's shape never includes
-// them, so they're excluded from the detected hand rather than mapped.
+// kinds (m/t/z 1-9/1-7, bamboo as b to leave "s" free) followed by 8 bonus
+// classes (flowers/seasons) that mjwaits doesn't represent - a hand's shape
+// never includes them, so they're excluded from the detected hand rather
+// than mapped. Kept short (2 chars) since these strings are also what gets
+// drawn as the label on each detected tile's box in the scan review step -
+// "flower2"/"season1" were wide enough to crowd a small box.
 const CLASS_NAMES = [
   "1m", "2m", "3m", "4m", "5m", "6m", "7m", "8m", "9m",
   "1t", "2t", "3t", "4t", "5t", "6t", "7t", "8t", "9t",
-  "1s", "2s", "3s", "4s", "5s", "6s", "7s", "8s", "9s",
+  "1b", "2b", "3b", "4b", "5b", "6b", "7b", "8b", "9b",
   "1z", "2z", "3z", "4z", "5z", "6z", "7z",
-  "flower1", "flower2", "flower3", "flower4",
-  "season1", "season2", "season3", "season4",
+  "1f", "2f", "3f", "4f",
+  "1s", "2s", "3s", "4s",
 ] as const;
 
 // Maps a model class name to a mjwaits Tile, or null for classes mjwaits
 // doesn't represent (flowers/seasons are bonus tiles set aside on draw -
-// they don't factor into a hand's shape or its waits).
+// they don't factor into a hand's shape or its waits). The model's "b"
+// (bamboo) suit maps to mjwaits's own "s" (sou) - same tile, different
+// letter, since mjwaits's Suit already used "s" for sou before the bonus
+// classes needed it for seasons.
 function classToTile(className: string): Tile | null {
-  const suit = className[className.length - 1];
-  if (suit !== "m" && suit !== "t" && suit !== "s" && suit !== "z") return null;
-  return { suit, rank: Number(className.slice(0, -1)) };
+  const c = className[className.length - 1];
+  const rank = Number(className.slice(0, -1));
+  if (c === "m" || c === "t" || c === "z") return { suit: c, rank };
+  if (c === "b") return { suit: "s", rank };
+  return null; // "f" (flower) or "s" (season)
 }
 
 export interface Detection {

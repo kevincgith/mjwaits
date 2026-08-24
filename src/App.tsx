@@ -105,10 +105,12 @@ interface ReviewDetection {
 const sameTile = (a: Tile | null, b: Tile): boolean => a !== null && a.suit === b.suit && a.rank === b.rank;
 
 // Formats a tile the same way the model's class names do (rank then suit
-// letter, e.g. "4t", "1z") so a corrected box's label stays visually
+// letter, e.g. "4t", "1z", and "b" rather than mjwaits's own "s" for sou -
+// see classToTile in vision.ts) so a corrected box's label stays visually
 // consistent with an uncorrected one's raw class name.
 function tileClassLabel(t: Tile): string {
-  return `${t.rank}${t.suit}`;
+  const displaySuit = t.suit === "s" ? "b" : t.suit;
+  return `${t.rank}${displaySuit}`;
 }
 
 // Groups the 34 real tile kinds into suit rows for the correction picker,
