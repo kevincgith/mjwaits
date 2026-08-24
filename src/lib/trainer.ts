@@ -24,7 +24,7 @@ function randomInt(n: number): number {
 
 function randomSuit(flushSuit: Suit | null): Suit {
   if (flushSuit) return flushSuit;
-  const suits: Suit[] = ["m", "t", "s", "z"];
+  const suits: Suit[] = ["m", "t", "b", "z"];
   return suits[randomInt(suits.length)];
 }
 
@@ -82,7 +82,7 @@ function buildCompleteHand(level: number, flushSuit: Suit | null): Tile[] | null
 // flush mode every tile comes from one randomly-chosen numbered suit (no
 // honors); otherwise tiles are drawn from the full 34-kind pool.
 export function generateTrainerQuestion(level: number, flush: boolean): TrainerQuestion {
-  const flushSuits: Suit[] = ["m", "t", "s"];
+  const flushSuits: Suit[] = ["m", "t", "b"];
 
   for (let attempt = 0; attempt < 200; attempt++) {
     const flushSuit = flush ? flushSuits[randomInt(flushSuits.length)] : null;

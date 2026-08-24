@@ -35,7 +35,7 @@ describe("generateTrainerQuestion", () => {
           if (flush) {
             const suits = new Set(q.tiles.map((t) => t.suit));
             expect(suits.size).toBe(1);
-            expect(["m", "t", "s"]).toContain(q.tiles[0].suit);
+            expect(["m", "t", "b"]).toContain(q.tiles[0].suit);
           }
         }
       });

@@ -27,15 +27,11 @@ const CLASS_NAMES = [
 
 // Maps a model class name to a mjwaits Tile, or null for classes mjwaits
 // doesn't represent (flowers/seasons are bonus tiles set aside on draw -
-// they don't factor into a hand's shape or its waits). The model's "b"
-// (bamboo) suit maps to mjwaits's own "s" (sou) - same tile, different
-// letter, since mjwaits's Suit already used "s" for sou before the bonus
-// classes needed it for seasons.
+// they don't factor into a hand's shape or its waits).
 function classToTile(className: string): Tile | null {
   const c = className[className.length - 1];
   const rank = Number(className.slice(0, -1));
-  if (c === "m" || c === "t" || c === "z") return { suit: c, rank };
-  if (c === "b") return { suit: "s", rank };
+  if (c === "m" || c === "t" || c === "b" || c === "z") return { suit: c, rank };
   return null; // "f" (flower) or "s" (season)
 }
 

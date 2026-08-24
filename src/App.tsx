@@ -51,7 +51,7 @@ interface HandTile extends Tile {
 }
 
 const JOKER_TILE: Tile = { suit: "j", rank: 1 };
-const SUIT_ORDER: Suit[] = ["m", "t", "s", "z"];
+const SUIT_ORDER: Suit[] = ["m", "t", "b", "z"];
 // Both kinds of checkpoint interleaved: 3n+1 (waits/shanten/discard-analysis
 // sizes) and 3n+2 (one tile past that - already-complete/discard-choice
 // sizes). Sizes of the form 3n are never a checkpoint (mid-meld).
@@ -105,12 +105,10 @@ interface ReviewDetection {
 const sameTile = (a: Tile | null, b: Tile): boolean => a !== null && a.suit === b.suit && a.rank === b.rank;
 
 // Formats a tile the same way the model's class names do (rank then suit
-// letter, e.g. "4t", "1z", and "b" rather than mjwaits's own "s" for sou -
-// see classToTile in vision.ts) so a corrected box's label stays visually
+// letter, e.g. "4t", "4b", "1z") so a corrected box's label stays visually
 // consistent with an uncorrected one's raw class name.
 function tileClassLabel(t: Tile): string {
-  const displaySuit = t.suit === "s" ? "b" : t.suit;
-  return `${t.rank}${displaySuit}`;
+  return `${t.rank}${t.suit}`;
 }
 
 // Groups the 34 real tile kinds into suit rows for the correction picker,
@@ -411,8 +409,8 @@ interface BreakdownGroup {
 
 interface BreakdownReading {
   // Only meaningful (and only shown) when a hand decomposes more than one
-  // way - e.g. 112233m112233s11222z is simultaneously a standard hand
-  // (123m123m123s123s + 222z/11z) and Eight Pairs. Most hands only match
+  // way - e.g. 112233m112233b11222z is simultaneously a standard hand
+  // (123m123m123b123b + 222z/11z) and Eight Pairs. Most hands only match
   // one shape and get a single, unlabeled reading.
   label: string;
   groups: BreakdownGroup[];
@@ -1207,7 +1205,7 @@ function Calculator() {
             type="text"
             value={text}
             onChange={(e) => onTextChange(e.target.value)}
-            placeholder="e.g. 111222333444m11t22s"
+            placeholder="e.g. 111222333444m11t22b"
             spellCheck={false}
           />
           {error && <span className="error">{error}</span>}

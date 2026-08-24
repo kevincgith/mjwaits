@@ -534,7 +534,7 @@ h1 {
 .tile-glyph[data-suit="t"] {
   color: #1a5fb4;
 }
-.tile-glyph[data-suit="s"] {
+.tile-glyph[data-suit="b"] {
   color: #1a7a3c;
 }
 .tile-glyph[data-suit="z"] {

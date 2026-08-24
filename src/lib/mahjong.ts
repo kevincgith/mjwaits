@@ -4,7 +4,7 @@
 // A tenpai hand is 16 tiles, one tile short of complete. This module figures
 // out, for a given 16-tile hand, which tiles complete it.
 
-export type Suit = "m" | "t" | "s" | "z" | "j";
+export type Suit = "m" | "t" | "b" | "z" | "j";
 
 export interface Tile {
   suit: Suit;
@@ -45,7 +45,7 @@ export function tileKey(t: Tile): string {
 
 export function allTileKinds(): Tile[] {
   const tiles: Tile[] = [];
-  for (const suit of ["m", "t", "s"] as const) {
+  for (const suit of ["m", "t", "b"] as const) {
     for (let rank = 1; rank <= 9; rank++) tiles.push({ suit, rank });
   }
   for (let rank = 1; rank <= 7; rank++) tiles.push({ suit: "z", rank });
@@ -78,7 +78,7 @@ const TEXT_PRESENTATION = String.fromCodePoint(0xfe0e);
 
 export function tileGlyph(t: Tile): string {
   if (t.suit === "m") return String.fromCodePoint(0x1f007 + (t.rank - 1)) + TEXT_PRESENTATION;
-  if (t.suit === "s") return String.fromCodePoint(0x1f010 + (t.rank - 1)) + TEXT_PRESENTATION;
+  if (t.suit === "b") return String.fromCodePoint(0x1f010 + (t.rank - 1)) + TEXT_PRESENTATION;
   if (t.suit === "t") return String.fromCodePoint(0x1f019 + (t.rank - 1)) + TEXT_PRESENTATION;
   if (t.suit === "j") return String.fromCodePoint(0x1f02a) + TEXT_PRESENTATION;
   return String.fromCodePoint(HONOR_CODEPOINTS[t.rank]) + TEXT_PRESENTATION;
@@ -86,13 +86,13 @@ export function tileGlyph(t: Tile): string {
 
 export class ParseError extends Error {}
 
-// Parses algebraic notation like "123456789m11p22s" or "111z" into tiles.
+// Parses algebraic notation like "123456789m11t22b" or "111z" into tiles.
 // Jokers are written as one or more bare "j" characters (no digits, since a
 // joker has no rank), e.g. "jj" for two jokers.
 export function parseHand(input: string): Tile[] {
   const trimmed = input.trim();
   if (trimmed === "") return [];
-  const groupPattern = /(\d+)([mtsz])|(j+)/g;
+  const groupPattern = /(\d+)([mtbz])|(j+)/g;
   const tiles: Tile[] = [];
   let matched = "";
   let match: RegExpExecArray | null;
@@ -146,16 +146,16 @@ export function tileCount(tiles: Tile[], tile: Tile): number {
 // ranks sorted should sort `tiles` first (see sortTiles). Jokers (no rank)
 // are written as a run of bare "j" characters.
 export function formatHand(tiles: Tile[]): string {
-  const bySuit: Record<Suit, number[]> = { m: [], t: [], s: [], z: [], j: [] };
+  const bySuit: Record<Suit, number[]> = { m: [], t: [], b: [], z: [], j: [] };
   for (const t of tiles) bySuit[t.suit].push(t.rank);
-  const order: Suit[] = ["m", "t", "s", "z", "j"];
+  const order: Suit[] = ["m", "t", "b", "z", "j"];
   return order
     .filter((suit) => bySuit[suit].length > 0)
     .map((suit) => (suit === "j" ? "j".repeat(bySuit.j.length) : bySuit[suit].join("") + suit))
     .join("");
 }
 
-const SUIT_ORDER: Record<Suit, number> = { m: 0, t: 1, s: 2, z: 3, j: 4 };
+const SUIT_ORDER: Record<Suit, number> = { m: 0, t: 1, b: 2, z: 3, j: 4 };
 
 function compareTiles(a: Tile, b: Tile): number {
   return SUIT_ORDER[a.suit] - SUIT_ORDER[b.suit] || a.rank - b.rank;
@@ -260,8 +260,8 @@ const ORPHAN_TILES: Tile[] = [
   { suit: "m", rank: 9 },
   { suit: "t", rank: 1 },
   { suit: "t", rank: 9 },
-  { suit: "s", rank: 1 },
-  { suit: "s", rank: 9 },
+  { suit: "b", rank: 1 },
+  { suit: "b", rank: 9 },
   { suit: "z", rank: 1 },
   { suit: "z", rank: 2 },
   { suit: "z", rank: 3 },
@@ -309,7 +309,7 @@ function candidateMelds(tiles: Tile[]): Tile[][] {
       melds.push([{ suit, rank }, { suit, rank }, { suit, rank }]);
     }
   }
-  for (const suit of ["m", "t", "s"] as const) {
+  for (const suit of ["m", "t", "b"] as const) {
     for (let rank = 1; rank <= 7; rank++) {
       const a = `${suit}${rank}`;
       const b = `${suit}${rank + 1}`;
@@ -444,12 +444,12 @@ export function isSixteenUnrelatedComplete(tiles: Tile[]): boolean {
   for (let rank = 1; rank <= 7; rank++) {
     if ((counts.get(`z${rank}`) ?? 0) < 1) return false;
   }
-  const bySuit: Record<"m" | "t" | "s", number[]> = { m: [], t: [], s: [] };
+  const bySuit: Record<"m" | "t" | "b", number[]> = { m: [], t: [], b: [] };
   for (const key of counts.keys()) {
     const suit = key[0] as Suit;
-    if (suit === "m" || suit === "t" || suit === "s") bySuit[suit].push(Number(key.slice(1)));
+    if (suit === "m" || suit === "t" || suit === "b") bySuit[suit].push(Number(key.slice(1)));
   }
-  return (["m", "t", "s"] as const).every((suit) => unrelatedRanksOk(bySuit[suit]));
+  return (["m", "t", "b"] as const).every((suit) => unrelatedRanksOk(bySuit[suit]));
 }
 
 export interface SixteenUnrelatedBreakdown {
@@ -487,13 +487,13 @@ export function isCompleteHand(tiles: Tile[], meldsRequired: number = MELDS_REQU
 
   const m = countsForSuit(tiles, "m", 9);
   const t = countsForSuit(tiles, "t", 9);
-  const s = countsForSuit(tiles, "s", 9);
+  const b = countsForSuit(tiles, "b", 9);
   const z = countsForSuit(tiles, "z", 7);
 
   const suitsData: { counts: number[]; allowRuns: boolean }[] = [
     { counts: m, allowRuns: true },
     { counts: t, allowRuns: true },
-    { counts: s, allowRuns: true },
+    { counts: b, allowRuns: true },
     { counts: z, allowRuns: false },
   ];
 
@@ -527,7 +527,7 @@ export function decomposeHand(tiles: Tile[], meldsRequired: number = MELDS_REQUI
   const suitsData: { suit: Suit; counts: number[]; allowRuns: boolean }[] = [
     { suit: "m", counts: countsForSuit(tiles, "m", 9), allowRuns: true },
     { suit: "t", counts: countsForSuit(tiles, "t", 9), allowRuns: true },
-    { suit: "s", counts: countsForSuit(tiles, "s", 9), allowRuns: true },
+    { suit: "b", counts: countsForSuit(tiles, "b", 9), allowRuns: true },
     { suit: "z", counts: countsForSuit(tiles, "z", 7), allowRuns: false },
   ];
 
@@ -681,7 +681,7 @@ export function standardShanten(tiles: Tile[], meldsRequired: number = MELDS_REQ
   const suitsData: { counts: number[]; allowRuns: boolean }[] = [
     { counts: countsForSuit(tiles, "m", 9), allowRuns: true },
     { counts: countsForSuit(tiles, "t", 9), allowRuns: true },
-    { counts: countsForSuit(tiles, "s", 9), allowRuns: true },
+    { counts: countsForSuit(tiles, "b", 9), allowRuns: true },
     { counts: countsForSuit(tiles, "z", 7), allowRuns: false },
   ];
 
@@ -803,7 +803,7 @@ function maxUnrelatedWithPair(counts: number[]): UnrelatedDpState {
 function sixteenUnrelatedShanten(tiles: Tile[]): number {
   const mState = maxUnrelatedWithPair(countsForSuit(tiles, "m", 9));
   const tState = maxUnrelatedWithPair(countsForSuit(tiles, "t", 9));
-  const sState = maxUnrelatedWithPair(countsForSuit(tiles, "s", 9));
+  const bState = maxUnrelatedWithPair(countsForSuit(tiles, "b", 9));
 
   const zCounts = countsForSuit(tiles, "z", 7);
   let honorUnits = 0;
@@ -815,8 +815,8 @@ function sixteenUnrelatedShanten(tiles: Tile[]): number {
     }
   }
 
-  const units = mState.units + tState.units + sState.units + honorUnits;
-  const hasPair = mState.hasPair || tState.hasPair || sState.hasPair || honorHasPair;
+  const units = mState.units + tState.units + bState.units + honorUnits;
+  const hasPair = mState.hasPair || tState.hasPair || bState.hasPair || honorHasPair;
   return 16 - units - (hasPair ? 1 : 0);
 }
 
@@ -966,7 +966,7 @@ function resolveStandardWithJokers(
   const suitsData: JokerSuitData[] = [
     { suit: "m", counts: countsForSuit(nonJokerTiles, "m", 9), allowRuns: true },
     { suit: "t", counts: countsForSuit(nonJokerTiles, "t", 9), allowRuns: true },
-    { suit: "s", counts: countsForSuit(nonJokerTiles, "s", 9), allowRuns: true },
+    { suit: "b", counts: countsForSuit(nonJokerTiles, "b", 9), allowRuns: true },
     { suit: "z", counts: countsForSuit(nonJokerTiles, "z", 7), allowRuns: false },
   ];
 

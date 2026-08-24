@@ -80,8 +80,8 @@ function bruteForceWaitKeys(tiles: Tile[], meldsRequired: number): Set<string> {
 
 describe("parseHand / formatHand", () => {
   it("round-trips simple notation", () => {
-    const tiles = parseHand("123m11t22s");
-    expect(formatHand(tiles)).toBe("123m11t22s");
+    const tiles = parseHand("123m11t22b");
+    expect(formatHand(tiles)).toBe("123m11t22b");
   });
 
   it("preserves rank order within a suit rather than re-sorting it", () => {
@@ -142,13 +142,13 @@ describe("tileCount", () => {
 describe("isCompleteHand", () => {
   it("accepts 5 triplets/runs + a pair (17 tiles)", () => {
     // 4 triplets of man + pair of pin + one run of sou = 5 melds + pair
-    const tiles = [...parseHand("111222333444m"), ...parseHand("11t345s")];
+    const tiles = [...parseHand("111222333444m"), ...parseHand("11t345b")];
     expect(tiles.length).toBe(17);
     expect(isCompleteHand(tiles)).toBe(true);
   });
 
   it("accepts a hand with honor triplets", () => {
-    const tiles = [...parseHand("111z222z333z444z"), ...parseHand("55z123s")];
+    const tiles = [...parseHand("111z222z333z444z"), ...parseHand("55z123b")];
     expect(tiles.length).toBe(17);
     expect(isCompleteHand(tiles)).toBe(true);
   });
@@ -158,8 +158,8 @@ describe("isCompleteHand", () => {
   });
 
   it("rejects an incomplete decomposition", () => {
-    // 4 triplets + pair (14 tiles) + 4s,4s,6s, which is not a meld
-    const tiles = [...parseHand("111222333444m"), ...parseHand("11t446s")];
+    // 4 triplets + pair (14 tiles) + 4b,4b,6b, which is not a meld
+    const tiles = [...parseHand("111222333444m"), ...parseHand("11t446b")];
     expect(tiles.length).toBe(17);
     expect(isCompleteHand(tiles)).toBe(false);
   });
@@ -172,7 +172,7 @@ describe("isCompleteHand", () => {
 
   it("recognizes the Thirteen Orphans special hand via isThirteenOrphansComplete", () => {
     // 13 orphan singles + an extra 1m (the pair) + a 222m pong (the meld) = 17 tiles
-    const tiles = [...parseHand("112922m19t"), ...parseHand("19s1234567z")];
+    const tiles = [...parseHand("112922m19t"), ...parseHand("19b1234567z")];
     expect(tiles.length).toBe(17);
     expect(isThirteenOrphansComplete(tiles)).toBe(true);
     expect(isCompleteHand(tiles)).toBe(true);
@@ -180,14 +180,14 @@ describe("isCompleteHand", () => {
 
   it("decomposeThirteenOrphans groups the pair, the 12 singles, and the extra meld separately", () => {
     // Same hand as above: 1m doubled is the pair, 222m is the extra meld,
-    // the other 12 orphan kinds (9m,1t,9t,1s,9s,1z-7z) are singles.
-    const tiles = [...parseHand("112922m19t"), ...parseHand("19s1234567z")];
+    // the other 12 orphan kinds (9m,1t,9t,1b,9b,1z-7z) are singles.
+    const tiles = [...parseHand("112922m19t"), ...parseHand("19b1234567z")];
     const breakdown = decomposeThirteenOrphans(tiles);
     expect(breakdown).not.toBeNull();
     expect(breakdown!.pair.map(tileKey).sort()).toEqual(["m1", "m1"]);
     expect(breakdown!.meld.map(tileKey).sort()).toEqual(["m2", "m2", "m2"]);
     expect(breakdown!.singles.map(tileKey).sort()).toEqual(
-      ["m9", "t1", "t9", "s1", "s9", "z1", "z2", "z3", "z4", "z5", "z6", "z7"].sort()
+      ["m9", "t1", "t9", "b1", "b9", "z1", "z2", "z3", "z4", "z5", "z6", "z7"].sort()
     );
     // Together they account for all 17 tiles with nothing missing or doubled up.
     const regrouped = [...breakdown!.pair, ...breakdown!.meld, ...breakdown!.singles];
@@ -195,12 +195,12 @@ describe("isCompleteHand", () => {
   });
 
   it("decomposeThirteenOrphans returns null for a non-orphan hand", () => {
-    expect(decomposeThirteenOrphans(parseHand("111222333444m111t22s"))).toBeNull();
+    expect(decomposeThirteenOrphans(parseHand("111222333444m111t22b"))).toBeNull();
   });
 
   it("rejects an orphan-looking hand missing one orphan kind", () => {
     // Same shape but 2z (South) swapped for a second 3z (West) - not all 13 kinds present
-    const tiles = [...parseHand("112922m19t"), ...parseHand("19s1334567z")];
+    const tiles = [...parseHand("112922m19t"), ...parseHand("19b1334567z")];
     expect(tiles.length).toBe(17);
     expect(isThirteenOrphansComplete(tiles)).toBe(false);
   });
@@ -214,17 +214,17 @@ describe("isCompleteHand", () => {
   });
 
   it("allows a kind's all 4 copies to count as two of the 8 pairs", () => {
-    // 1m x4 and 2z x4 each count as 2 pairs, plus 1s/3s/5z/6z pairs (4 more) = 8 pairs (16),
-    // and drawing another 1s upgrades that pair into the triplet (17).
-    const tiles = [...parseHand("1111m1133s"), ...parseHand("22225566z1s")];
+    // 1m x4 and 2z x4 each count as 2 pairs, plus 1b/3b/5z/6z pairs (4 more) = 8 pairs (16),
+    // and drawing another 1b upgrades that pair into the triplet (17).
+    const tiles = [...parseHand("1111m1133b"), ...parseHand("22225566z1b")];
     expect(tiles.length).toBe(17);
     expect(isEightPairsComplete(tiles)).toBe(true);
     expect(isCompleteHand(tiles)).toBe(true);
   });
 
   it("rejects a hand with a lone single tile among otherwise-clean pairs", () => {
-    // 8 clean pairs (16 tiles) plus one unrelated stray 9s - not a valid triplet upgrade
-    const tiles = [...parseHand("114477m1144t11s1122z"), ...parseHand("9s")];
+    // 8 clean pairs (16 tiles) plus one unrelated stray 9b - not a valid triplet upgrade
+    const tiles = [...parseHand("114477m1144t11b1122z"), ...parseHand("9b")];
     expect(tiles.length).toBe(17);
     expect(isEightPairsComplete(tiles)).toBe(false);
   });
@@ -248,16 +248,16 @@ describe("isCompleteHand", () => {
   });
 
   it("decomposeEightPairs groups a kind's all-4-copies as one 4-tile pair group", () => {
-    const tiles = [...parseHand("1111m1133s"), ...parseHand("22225566z1s")];
+    const tiles = [...parseHand("1111m1133b"), ...parseHand("22225566z1b")];
     const breakdown = decomposeEightPairs(tiles);
     expect(breakdown).not.toBeNull();
-    expect(breakdown!.triple.map(tileKey)).toEqual(["s1", "s1", "s1"]);
+    expect(breakdown!.triple.map(tileKey)).toEqual(["b1", "b1", "b1"]);
     const quad = breakdown!.pairs.find((p) => p.length === 4);
     expect(quad?.map(tileKey)).toEqual(["m1", "m1", "m1", "m1"]);
   });
 
   it("decomposeEightPairs returns null for a non-eight-pairs hand", () => {
-    expect(decomposeEightPairs(parseHand("111222333444m111t22s"))).toBeNull();
+    expect(decomposeEightPairs(parseHand("111222333444m111t22b"))).toBeNull();
   });
 
   it("shanten() reports -1 (already complete), not 0, for a genuinely complete Eight Pairs hand", () => {
@@ -274,10 +274,10 @@ describe("isCompleteHand", () => {
   });
 
   it("a hand can be genuinely ambiguous between the standard shape and Eight Pairs", () => {
-    // 112233m112233s11222z reads as both 123m123m123s123s + 222z/11z (a
+    // 112233m112233b11222z reads as both 123m123m123b123b + 222z/11z (a
     // standard hand) and 7 pairs + a tripled pair (Eight Pairs). Both
     // decompositions must be available so callers can show both readings.
-    const tiles = parseHand("112233m112233s11222z");
+    const tiles = parseHand("112233m112233b11222z");
     expect(tiles.length).toBe(17);
     expect(isCompleteHand(tiles)).toBe(true);
     expect(decomposeHand(tiles)).not.toBeNull();
@@ -287,16 +287,16 @@ describe("isCompleteHand", () => {
     // One tile short (missing the second 2z), it's tenpai waiting on 2z via
     // either shape - shanten() takes the better of both, so it should read
     // as tenpai rather than shanten 1.
-    const tenpaiHand = parseHand("112233m112233s1122z");
+    const tenpaiHand = parseHand("112233m112233b1122z");
     expect(tenpaiHand.length).toBe(16);
     expect(shanten(tenpaiHand)).toBe(0);
     expect(getWaits(tenpaiHand).map(tileKey)).toContain("z2");
   });
 
   it("recognizes the user's Sixteen Unrelated Tiles example via isSixteenUnrelatedComplete", () => {
-    // All 7 honors + 1/4/7t, 2/5/8m, 3/6/9s (16 kinds, pairwise unrelated),
+    // All 7 honors + 1/4/7t, 2/5/8m, 3/6/9b (16 kinds, pairwise unrelated),
     // plus an extra 7t doubling one of them (the pair) = 17 tiles.
-    const tiles = [...parseHand("147t258m369s1234567z"), ...parseHand("7t")];
+    const tiles = [...parseHand("147t258m369b1234567z"), ...parseHand("7t")];
     expect(tiles.length).toBe(17);
     expect(isSixteenUnrelatedComplete(tiles)).toBe(true);
     expect(isCompleteHand(tiles)).toBe(true);
@@ -304,20 +304,20 @@ describe("isCompleteHand", () => {
 
   it("rejects a hand where two same-suit ranks are too close together", () => {
     // 1t/2t are only 1 apart - a drawn 3t would let them share a chow.
-    const tiles = [...parseHand("127t258m369s1234567z"), ...parseHand("7t")];
+    const tiles = [...parseHand("127t258m369b1234567z"), ...parseHand("7t")];
     expect(tiles.length).toBe(17);
     expect(isSixteenUnrelatedComplete(tiles)).toBe(false);
   });
 
   it("rejects a hand that isn't shaped as 15 singles + 1 pair", () => {
     // Two doubled kinds (1z, 2z) instead of exactly one - not a valid pair count.
-    const tiles = [...parseHand("147t258m369s"), ...parseHand("11223456z")];
+    const tiles = [...parseHand("147t258m369b"), ...parseHand("11223456z")];
     expect(tiles.length).toBe(17);
     expect(isSixteenUnrelatedComplete(tiles)).toBe(false);
   });
 
   it("decomposeSixteenUnrelated groups the doubled kind as the pair, the rest as singles", () => {
-    const tiles = [...parseHand("147t258m369s1234567z"), ...parseHand("7t")];
+    const tiles = [...parseHand("147t258m369b1234567z"), ...parseHand("7t")];
     const breakdown = decomposeSixteenUnrelated(tiles);
     expect(breakdown).not.toBeNull();
     expect(breakdown!.pair.map(tileKey)).toEqual(["t7", "t7"]);
@@ -327,20 +327,20 @@ describe("isCompleteHand", () => {
   });
 
   it("decomposeSixteenUnrelated returns null for a non-sixteen-unrelated hand", () => {
-    expect(decomposeSixteenUnrelated(parseHand("111222333444m111t22s"))).toBeNull();
+    expect(decomposeSixteenUnrelated(parseHand("111222333444m111t22b"))).toBeNull();
   });
 });
 
 describe("getWaits", () => {
-  it("finds shanpon wait on 1t/2s for a 16-tile hand", () => {
-    const tiles = parseHand("111222333444m11t22s");
+  it("finds shanpon wait on 1t/2b for a 16-tile hand", () => {
+    const tiles = parseHand("111222333444m11t22b");
     expect(tiles.length).toBe(16);
     const waits = getWaits(tiles).map((t) => `${t.rank}${t.suit}`).sort();
-    expect(waits).toEqual(["1t", "2s"]);
+    expect(waits).toEqual(["1t", "2b"]);
   });
 
   it("finds the 16-way wait for a tenpai Sixteen Unrelated Tiles hand", () => {
-    const tiles = parseHand("147t258m369s1234567z");
+    const tiles = parseHand("147t258m369b1234567z");
     expect(tiles.length).toBe(16);
     const waits = getWaits(tiles).map((t) => tileKey(t)).sort();
     const expected = Array.from(new Set(tiles.map((t) => tileKey(t)))).sort();
@@ -351,17 +351,17 @@ describe("getWaits", () => {
   it("finds the single-tile wait when Sixteen Unrelated Tiles already has a pre-formed pair", () => {
     // Missing 7z, but 1t is already doubled in hand - the pair comes for
     // free, so this is tenpai waiting on 7z alone, not a 16-way wait.
-    const tiles = parseHand("147t258m369s123456z1t");
+    const tiles = parseHand("147t258m369b123456z1t");
     expect(tiles.length).toBe(16);
     const waits = getWaits(tiles).map((t) => tileKey(t));
     expect(waits).toEqual(["z7"]);
   });
 
-  it("finds an edge wait (kanchan) on 3s/6s", () => {
-    const tiles = parseHand("111m222m333m444m11t45s");
+  it("finds an edge wait (kanchan) on 3b/6b", () => {
+    const tiles = parseHand("111m222m333m444m11t45b");
     expect(tiles.length).toBe(16);
     const waits = getWaits(tiles).map((t) => `${t.rank}${t.suit}`).sort();
-    expect(waits).toEqual(["3s", "6s"]);
+    expect(waits).toEqual(["3b", "6b"]);
   });
 
   it("returns empty for a hand that is not tenpai", () => {
@@ -378,30 +378,30 @@ describe("getWaits", () => {
 
   it("finds the classic 13-way wait for a tenpai Thirteen Orphans hand", () => {
     // 13 orphan singles + a complete 222m pong = 16 tiles, missing only the pair
-    const tiles = parseHand("19222m19t19s1234567z");
+    const tiles = parseHand("19222m19t19b1234567z");
     expect(tiles.length).toBe(16);
     const waits = getWaits(tiles).map((t) => `${t.rank}${t.suit}`).sort();
     expect(waits).toEqual(
-      ["1m", "9m", "1t", "9t", "1s", "9s", "1z", "2z", "3z", "4z", "5z", "6z", "7z"].sort()
+      ["1m", "9m", "1t", "9t", "1b", "9b", "1z", "2z", "3z", "4z", "5z", "6z", "7z"].sort()
     );
   });
 
   it("finds the wide 8-way wait for a tenpai Eight Pairs hand", () => {
     // 8 distinct pairs, spaced apart so no standard run/triplet coincides -
     // drawing any of the 8 kinds upgrades that pair into the triplet.
-    const tiles = parseHand("114477m1144t11s1122z");
+    const tiles = parseHand("114477m1144t11b1122z");
     expect(tiles.length).toBe(16);
     const waits = getWaits(tiles).map((t) => `${t.rank}${t.suit}`).sort();
-    expect(waits).toEqual(["1m", "4m", "7m", "1t", "4t", "1s", "1z", "2z"].sort());
+    expect(waits).toEqual(["1m", "4m", "7m", "1t", "4t", "1b", "1z", "2z"].sort());
   });
 
   it("narrows the Eight Pairs wait when two kinds are already full quads", () => {
     // 1m and 2z are already at 4 copies each (2 pairs' worth), so they can't
-    // be drawn again - only the 4 plain pairs (1s/3s/5z/6z) can be upgraded.
-    const tiles = parseHand("1111m1133s22225566z");
+    // be drawn again - only the 4 plain pairs (1b/3b/5z/6z) can be upgraded.
+    const tiles = parseHand("1111m1133b22225566z");
     expect(tiles.length).toBe(16);
     const waits = getWaits(tiles).map((t) => `${t.rank}${t.suit}`).sort();
-    expect(waits).toEqual(["1s", "3s", "5z", "6z"].sort());
+    expect(waits).toEqual(["1b", "3b", "5z", "6z"].sort());
   });
 });
 
@@ -427,13 +427,13 @@ describe("decomposeHand", () => {
   });
 
   it("returns null for special hands (they don't decompose into melds+pair)", () => {
-    const orphans = [...parseHand("112922m19t"), ...parseHand("19s1234567z")];
+    const orphans = [...parseHand("112922m19t"), ...parseHand("19b1234567z")];
     expect(isCompleteHand(orphans)).toBe(true);
     expect(decomposeHand(orphans)).toBeNull();
   });
 
   it("finds a valid breakdown for every wait of a larger hand, matching isCompleteHand", () => {
-    const tiles = parseHand("111222333444m11t22s");
+    const tiles = parseHand("111222333444m11t22b");
     for (const wait of getWaits(tiles)) {
       const complete = [...tiles, wait];
       const breakdown = decomposeHand(complete);
@@ -448,7 +448,7 @@ describe("decomposeHand", () => {
 
 describe("standardShanten / shanten", () => {
   it("is 0 for a tenpai hand", () => {
-    const tiles = parseHand("111222333444m11t22s"); // shanpon wait, confirmed tenpai elsewhere
+    const tiles = parseHand("111222333444m11t22b"); // shanpon wait, confirmed tenpai elsewhere
     expect(standardShanten(tiles)).toBe(0);
     expect(shanten(tiles)).toBe(0);
   });
@@ -466,40 +466,40 @@ describe("standardShanten / shanten", () => {
   });
 
   it("is 1 for a hand one useful exchange from tenpai, cross-validated against brute force", () => {
-    // 11m pair + two disconnected stray tiles (1s, 9s) - already confirmed
+    // 11m pair + two disconnected stray tiles (1b, 9b) - already confirmed
     // via analyzeDiscards to be exactly 1 discard+draw from tenpai.
-    const tiles = parseHand("11m1s9s");
+    const tiles = parseHand("11m1b9b");
     expect(referenceShanten(tiles, 1, 2)).toBe(1);
     expect(standardShanten(tiles, 1)).toBe(1);
   });
 
   it("is 2 for a hand with no pair and no connected tiles, cross-validated against brute force", () => {
     // 4 totally isolated tiles: no pair anywhere, nothing adjacent.
-    const tiles = parseHand("1m5s1z4z");
+    const tiles = parseHand("1m5b1z4z");
     expect(referenceShanten(tiles, 1, 2)).toBe(2);
     expect(standardShanten(tiles, 1)).toBe(2);
   });
 
   it("drops by exactly 1 after discarding a useless tile for a useful one", () => {
-    const before = parseHand("11m1s9s");
+    const before = parseHand("11m1b9b");
     expect(standardShanten(before, 1)).toBe(1);
-    // Discard 9s, draw 1s -> 111s... no, draw 2s for a ryanmen extension.
-    const after = parseHand("11m1s2s");
+    // Discard 9b, draw 1b -> 111b... no, draw 2b for a ryanmen extension.
+    const after = parseHand("11m1b2b");
     expect(standardShanten(after, 1)).toBe(0);
   });
 
   it("computes Eight Pairs shanten and folds it into the overall minimum", () => {
-    // 5 clean pairs (1m,3m,1t,3t,5s) + 6 unrelated honor singles (16 tiles):
+    // 5 clean pairs (1m,3m,1t,3t,5b) + 6 unrelated honor singles (16 tiles):
     // Eight Pairs needs 8 - 5 = 3 more pair-units; the standard shape does
     // worse here (5), so the overall shanten should be Eight Pairs' 3.
-    const tiles = parseHand("1133m1133t55s123456z");
+    const tiles = parseHand("1133m1133t55b123456z");
     expect(tiles.length).toBe(16);
     expect(standardShanten(tiles)).toBe(5);
     expect(shanten(tiles)).toBe(3);
   });
 
   it("stays fast on a full 16-tile hand", () => {
-    const tiles = parseHand("13579m2468t111z5577s");
+    const tiles = parseHand("13579m2468t111z5577b");
     expect(tiles.length).toBe(16);
     const start = performance.now();
     shanten(tiles);
@@ -522,21 +522,21 @@ describe("standardShanten / shanten", () => {
   it("computes Sixteen Unrelated Tiles shanten and folds it into the overall minimum", () => {
     // All 16 target kinds already present (7 honors + 3 unrelated ranks per
     // suit) - tenpai (0), waiting on any of those 16 to form the pair.
-    const tenpai = parseHand("147t258m369s1234567z");
+    const tenpai = parseHand("147t258m369b1234567z");
     expect(tenpai.length).toBe(16);
     expect(shanten(tenpai)).toBe(0);
 
     // Missing 7z, but a spare 1t (a duplicate) is already in hand to serve
     // as the pair "for free" - still tenpai, just now waiting on 7z alone
     // instead of a 16-way wait.
-    const pairInHand = parseHand("147t258m369s123456z1t");
+    const pairInHand = parseHand("147t258m369b123456z1t");
     expect(pairInHand.length).toBe(16);
     expect(shanten(pairInHand)).toBe(0);
 
     // Missing 7z, and the 16th tile (9m) is genuinely wasted - too close to
     // 8m to count as another unit, and not a duplicate of anything - so
     // there's no pre-formed pair either: exactly 1 exchange from tenpai.
-    const oneAway = parseHand("147t258m369s123456z9m");
+    const oneAway = parseHand("147t258m369b123456z9m");
     expect(oneAway.length).toBe(16);
     expect(shanten(oneAway)).toBe(1);
   });
@@ -544,30 +544,30 @@ describe("standardShanten / shanten", () => {
 
 describe("getWaitsWithJokers", () => {
   it("matches plain getWaits when the hand has no jokers", () => {
-    const tiles = parseHand("111222333444m11t22s");
+    const tiles = parseHand("111222333444m11t22b");
     const outcome = getWaitsWithJokers(tiles);
     expect(outcome.overflowed).toBe(false);
     if (outcome.overflowed) throw new Error("unreachable");
     const waits = outcome.results.map((r) => `${r.wait.rank}${r.wait.suit}`).sort();
-    expect(waits).toEqual(["1t", "2s"]);
+    expect(waits).toEqual(["1t", "2b"]);
     expect(outcome.results.every((r) => r.jokers.length === 0)).toBe(true);
   });
 
   it("finds waits a single joker unlocks, wider than a real tile's own wait shape", () => {
-    // 11m pair + lone 5s + 1 joker. Beyond the joker just extending 5s into a
-    // run (waits 4s/5s/6s/3s/7s via kanchan/ryanmen shapes), it can also
-    // duplicate 5s to pair it, letting 1m/1m + the draw become the triplet
+    // 11m pair + lone 5b + 1 joker. Beyond the joker just extending 5b into a
+    // run (waits 4b/5b/6b/3b/7b via kanchan/ryanmen shapes), it can also
+    // duplicate 5b to pair it, letting 1m/1m + the draw become the triplet
     // - which is why 1m shows up too.
-    const tiles = parseHand("11m5sj");
+    const tiles = parseHand("11m5bj");
     const outcome = getWaitsWithJokers(tiles, 1);
     expect(outcome.overflowed).toBe(false);
     if (outcome.overflowed) throw new Error("unreachable");
     const waitKeys = outcome.results.map((r) => `${r.wait.rank}${r.wait.suit}`).sort();
-    expect(waitKeys).toEqual(["1m", "3s", "4s", "5s", "6s", "7s"]);
+    expect(waitKeys).toEqual(["1m", "3b", "4b", "5b", "6b", "7b"]);
   });
 
   it("every returned joker assignment actually completes the hand", () => {
-    const tiles = parseHand("11m5sj");
+    const tiles = parseHand("11m5bj");
     const outcome = getWaitsWithJokers(tiles, 1);
     expect(outcome.overflowed).toBe(false);
     if (outcome.overflowed) throw new Error("unreachable");
@@ -596,7 +596,7 @@ describe("getWaitsWithJokers", () => {
 
   it("every result from a heavy-joker hand still reconstructs to a genuinely complete hand", () => {
     // 2 real tiles + 14 jokers = 16 (a valid checkpoint size).
-    const hand = parseHand("1m9sjjjjjjjjjjjjjj");
+    const hand = parseHand("1m9bjjjjjjjjjjjjjj");
     expect(hand.length).toBe(16);
     const outcome = getWaitsWithJokers(hand);
     expect(outcome.overflowed).toBe(false);
@@ -612,7 +612,7 @@ describe("getWaitsWithJokers", () => {
 
   it("matches an independent brute-force oracle across a range of joker hands", () => {
     const cases: { notation: string; melds: number }[] = [
-      { notation: "11m5sj", melds: 1 }, // 1 joker
+      { notation: "11m5bj", melds: 1 }, // 1 joker
       { notation: "1122mj", melds: 1 }, // 1 joker, different shape
       { notation: "23mjj", melds: 1 }, // 2 jokers
       { notation: "1mjjj", melds: 1 }, // the exact user-reported case: 2 jokers form
@@ -643,8 +643,8 @@ describe("getWaitsWithJokers", () => {
 
 describe("analyzeDiscards", () => {
   it("finds discard/draw pairs that reach tenpai, and ranks them by acceptance", () => {
-    // 11m pair + two disconnected stray tiles (1s, 9s) - not tenpai.
-    const tiles = parseHand("11m1s9s");
+    // 11m pair + two disconnected stray tiles (1b, 9b) - not tenpai.
+    const tiles = parseHand("11m1b9b");
     expect(getWaits(tiles, 1)).toEqual([]);
 
     const options = analyzeDiscards(tiles, 1);
@@ -654,19 +654,19 @@ describe("analyzeDiscards", () => {
 
     // Discarding the pair tile leaves nothing to build on.
     expect(byDiscard["1m"]).toEqual([]);
-    // Discarding 9s leaves 1s as a lone edge tile: 1s/2s/3s extend it into a
+    // Discarding 9b leaves 1b as a lone edge tile: 1b/2b/3b extend it into a
     // partial run, and drawing 1m upgrades the pair into a triplet instead.
-    expect(byDiscard["9s"]).toEqual(["1m", "1s", "2s", "3s"]);
-    // Discarding 1s leaves 9s as a lone edge tile: 7s/8s/9s extend it into a
+    expect(byDiscard["9b"]).toEqual(["1b", "1m", "2b", "3b"]);
+    // Discarding 1b leaves 9b as a lone edge tile: 7b/8b/9b extend it into a
     // partial run, and drawing 1m upgrades the pair into a triplet instead.
-    expect(byDiscard["1s"]).toEqual(["1m", "7s", "8s", "9s"]);
+    expect(byDiscard["1b"]).toEqual(["1m", "7b", "8b", "9b"]);
 
     // Best discards (most draws) come first.
     expect(options[0].draws.length).toBeGreaterThan(options[options.length - 1].draws.length);
   });
 
   it("returns nothing for hand sizes that aren't a valid checkpoint", () => {
-    expect(analyzeDiscards(parseHand("11m1s"))).toEqual([]);
+    expect(analyzeDiscards(parseHand("11m1b"))).toEqual([]);
   });
 });
 
@@ -696,14 +696,14 @@ describe("analyzeDiscardEfficiency", () => {
   });
 
   it("returns nothing for hand sizes that aren't a valid checkpoint", () => {
-    expect(analyzeDiscardEfficiency(parseHand("11m1s"))).toEqual([]);
+    expect(analyzeDiscardEfficiency(parseHand("11m1b"))).toEqual([]);
   });
 });
 
 describe("analyzeDiscardChoices", () => {
   it("recognizes an already-complete 17-tile hand, but still analyzes what breaking it would look like", () => {
-    // 111m/222m/333m/444m/111t (5 melds) + 22s (pair) = complete.
-    const tiles = parseHand("111222333444m111t22s");
+    // 111m/222m/333m/444m/111t (5 melds) + 22b (pair) = complete.
+    const tiles = parseHand("111222333444m111t22b");
     expect(tiles.length).toBe(17);
     expect(isCompleteHand(tiles)).toBe(true);
 
@@ -714,20 +714,20 @@ describe("analyzeDiscardChoices", () => {
     const uniqueKinds = new Set(tiles.map(tileKey)).size;
     expect(outcome.choices.length).toBe(uniqueKinds);
 
-    // Discarding either 2s leaves a lone 2s tanki - still tenpai, waiting on 2s.
-    const discard2s = outcome.choices.find((c) => c.discard.suit === "s" && c.discard.rank === 2);
-    expect(discard2s!.resultingShanten).toBe(0);
-    expect(discard2s!.waits.map(tileKey)).toEqual(["s2"]);
+    // Discarding either 2b leaves a lone 2b tanki - still tenpai, waiting on 2b.
+    const discard2b = outcome.choices.find((c) => c.discard.suit === "b" && c.discard.rank === 2);
+    expect(discard2b!.resultingShanten).toBe(0);
+    expect(discard2b!.waits.map(tileKey)).toEqual(["b2"]);
   });
 
   it("ranks discards by resulting shanten, tenpai first with its waits", () => {
-    // The tenpai hand from earlier (waits 1t/2s) plus an extra 9m that
+    // The tenpai hand from earlier (waits 1t/2b) plus an extra 9m that
     // isn't one of those waits - not complete, but discarding the extra 9m
     // exactly reverts to the known-tenpai 16-tile hand.
-    const tenpaiHand = parseHand("123456789m111z11t22s");
-    expect(getWaits(tenpaiHand, 5).map(tileKey).sort()).toEqual(["s2", "t1"]);
+    const tenpaiHand = parseHand("123456789m111z11t22b");
+    expect(getWaits(tenpaiHand, 5).map(tileKey).sort()).toEqual(["b2", "t1"]);
 
-    const tiles = parseHand("1234567899m111z11t22s");
+    const tiles = parseHand("1234567899m111z11t22b");
     expect(tiles.length).toBe(17);
     expect(isCompleteHand(tiles)).toBe(false);
 
@@ -738,7 +738,7 @@ describe("analyzeDiscardChoices", () => {
     const discard9m = outcome.choices.find((c) => c.discard.suit === "m" && c.discard.rank === 9);
     expect(discard9m).toBeDefined();
     expect(discard9m!.resultingShanten).toBe(0);
-    expect(discard9m!.waits.map(tileKey).sort()).toEqual(["s2", "t1"]);
+    expect(discard9m!.waits.map(tileKey).sort()).toEqual(["b2", "t1"]);
     // Two of each already visible in the 16-tile hand, so 2 remain apiece.
     expect(discard9m!.waitsTotal).toBe(4);
 
@@ -758,7 +758,7 @@ describe("analyzeDiscardChoices", () => {
   });
 
   it("includes improving draws (and their remaining counts) for non-tenpai choices", () => {
-    const tiles = parseHand("1234567899m111z11t22s");
+    const tiles = parseHand("1234567899m111z11t22b");
     const outcome = analyzeDiscardChoices(tiles);
     expect(outcome.alreadyComplete).toBe(false);
     if (outcome.alreadyComplete) throw new Error("unreachable");
@@ -769,7 +769,7 @@ describe("analyzeDiscardChoices", () => {
     const draws = discard1m!.improvingDraws.map((d) => `${d.draw.rank}${d.draw.suit}x${d.remaining}`).sort();
     // 1m itself is a valid improving draw (redraw it, then discard 4m/7m/etc
     // instead this time), but only 3 remain: one is the copy just discarded.
-    expect(draws).toEqual(["1mx3", "1tx2", "2sx2", "4mx3", "7mx3", "9mx2"]);
+    expect(draws).toEqual(["1mx3", "1tx2", "2bx2", "4mx3", "7mx3", "9mx2"]);
     expect(discard1m!.improvingDrawsTotal).toBe(15);
 
     // Every improving draw should actually reduce shanten below 1 for some
@@ -833,7 +833,7 @@ describe("analyzeDiscardChoices", () => {
   });
 
   it("returns nothing for hand sizes that aren't a valid checkpoint", () => {
-    const outcome = analyzeDiscardChoices(parseHand("11m1s"));
+    const outcome = analyzeDiscardChoices(parseHand("11m1b"));
     expect(outcome).toEqual({ alreadyComplete: false, choices: [] });
   });
 });

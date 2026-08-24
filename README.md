@@ -10,8 +10,8 @@ A waits calculator for Taiwanese (16-tile) Mahjong. Build a hand, and it tells y
 
 ### Hand input
 
-- **Tap tiles** on the picker, or **type algebraic notation** directly (e.g. `123456789m111z11t22s`) — the two stay in sync.
-- Suits: `m` (man/characters), `t` (pin/circles), `s` (sou/bamboo), `z` (honors, 1–7 for East/South/West/North/Red/Green/White), `j` (joker).
+- **Tap tiles** on the picker, or **type algebraic notation** directly (e.g. `123456789m111z11t22b`) — the two stay in sync.
+- Suits: `m` (man/characters), `t` (pin/circles), `b` (sou/bamboo), `z` (honors, 1–7 for East/South/West/North/Red/Green/White), `j` (joker).
 - **Sort mode** toggle: on, new tiles are kept in sorted order as you add them; off, they stay exactly in the order you entered them — and toggling back off reverts to that original order.
 - A 4-copies-per-kind cap is enforced automatically (jokers excluded — see below).
 
@@ -73,7 +73,7 @@ A live timer runs per question and freezes at submit. Results accumulate into a 
 ## Notation reference
 
 ```
-123456789m111z11t22s   5 melds + a pair
+123456789m111z11t22b   5 melds + a pair
 1278m555t111333777z    mixed suits and honors
 jjjj                    4 jokers, no rank needed
 ```
