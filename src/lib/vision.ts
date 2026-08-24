@@ -6,7 +6,7 @@
 import * as ort from "onnxruntime-web";
 import type { Tile } from "./mahjong";
 
-const IMG_SIZE = 640;
+export const IMG_SIZE = 640;
 const CONFIDENCE_THRESHOLD = 0.4;
 
 // Unified class order the model was trained with: mjwaits's own 34 tile

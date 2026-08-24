@@ -41,7 +41,7 @@ import {
   trainerHandSize,
   type TrainerQuestion,
 } from "./lib/trainer";
-import { detectTiles, letterbox, prefetchModel, type Detection, type ScanProgress } from "./lib/vision";
+import { IMG_SIZE, detectTiles, letterbox, prefetchModel, type ScanProgress } from "./lib/vision";
 
 // A stable id per tile instance, so sorting for display never loses track
 // of which underlying tile is which (needed to revert Sort cleanly, and to
@@ -88,28 +88,151 @@ function loadImageFile(file: File): Promise<HTMLImageElement> {
   });
 }
 
-// Draws each detection's box onto the (already letterboxed) canvas it was
-// detected on - green for tiles that make it into the hand, gray/dashed for
-// bonus tiles (flowers/seasons) that are recognized but excluded from it.
-function drawDetections(canvas: HTMLCanvasElement, detections: Detection[]): void {
-  const ctx = canvas.getContext("2d")!;
-  ctx.font = "13px ui-monospace, SFMono-Regular, Menlo, monospace";
-  ctx.textBaseline = "bottom";
-  for (const d of detections) {
-    const [x1, y1, x2, y2] = d.box;
-    const included = d.tile !== null;
-    ctx.strokeStyle = included ? "#2fbf5f" : "#bbb";
-    ctx.lineWidth = 2;
-    ctx.setLineDash(included ? [] : [4, 3]);
-    ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
-    const label = included ? d.className : `${d.className} (ignored)`;
-    const textWidth = ctx.measureText(label).width;
-    ctx.setLineDash([]);
-    ctx.fillStyle = included ? "#2fbf5f" : "#999";
-    ctx.fillRect(x1, y1, textWidth + 6, 16);
-    ctx.fillStyle = "#fff";
-    ctx.fillText(label, x1 + 3, y1 + 15);
-  }
+// A detection as shown in the scan review step - same shape as vision.ts's
+// Detection, plus a stable id (so React can track a box across re-renders
+// as it gets corrected or removed) and confidence carried through for the
+// correction panel's header. `tile` is the *current* identity (what's
+// actually counted toward the hand); `originalClassName` never changes -
+// it's the model's raw guess, kept for display even after a correction.
+interface ReviewDetection {
+  id: number;
+  tile: Tile | null;
+  originalClassName: string;
+  confidence: number;
+  box: [number, number, number, number];
+}
+
+const sameTile = (a: Tile | null, b: Tile): boolean => a !== null && a.suit === b.suit && a.rank === b.rank;
+
+// Formats a tile the same way the model's class names do (rank then suit
+// letter, e.g. "4t", "1z") so a corrected box's label stays visually
+// consistent with an uncorrected one's raw class name.
+function tileClassLabel(t: Tile): string {
+  return `${t.rank}${t.suit}`;
+}
+
+// Groups the 34 real tile kinds into suit rows for the correction picker,
+// promoting the row matching the detection's original guess to the front -
+// misclassifications are almost always a same-suit mix-up (e.g. 4t called
+// 5t), so that row is also sorted by closeness to the original rank rather
+// than plain ascending order. Other suits/honors keep their usual order.
+// A detection that was originally a bonus tile (no suit to anchor on) just
+// gets the standard suit order with no promoted row.
+function rankedCorrectionRows(original: Tile | null): { suit: Suit; tiles: Tile[] }[] {
+  const bySuit = (suit: Suit) => allTileKinds().filter((t) => t.suit === suit);
+  const suitsInOrder = original ? [original.suit, ...SUIT_ORDER.filter((s) => s !== original.suit)] : SUIT_ORDER;
+  return suitsInOrder.map((suit) => {
+    const tiles = bySuit(suit);
+    if (original && suit === original.suit) {
+      tiles.sort((a, b) => Math.abs(a.rank - original.rank) - Math.abs(b.rank - original.rank) || a.rank - b.rank);
+    }
+    return { suit, tiles };
+  });
+}
+
+// One detected tile's bounding box, rendered as an interactive SVG group in
+// the same 0-IMG_SIZE coordinate space `letterbox` produced (see the
+// viewBox on DetectionOverlay's <svg>), so it lines up with the image
+// beneath it regardless of how large that image is actually displayed.
+// Tapping it opens the correction picker for that detection. A separate,
+// wider invisible rect beneath the visible outline pads out the tap target
+// for boxes that are small relative to a touchscreen fingertip.
+function DetectionBox({
+  detection,
+  editing,
+  onSelect,
+}: {
+  detection: ReviewDetection;
+  editing: boolean;
+  onSelect: () => void;
+}) {
+  const tap = useTap(onSelect);
+  const [x1, y1, x2, y2] = detection.box;
+  const included = detection.tile !== null;
+  const label = detection.tile ? tileClassLabel(detection.tile) : detection.originalClassName;
+  const labelWidth = label.length * 7.5 + 6;
+  const groupClass = ["detection-box", included ? "included" : "bonus", editing && "editing"].filter(Boolean).join(" ");
+  return (
+    <g className={groupClass} role="button" tabIndex={0} aria-label={`Correct detected tile ${label}`} {...tap}>
+      <rect className="detection-hit" x={x1 - 6} y={y1 - 6} width={x2 - x1 + 12} height={y2 - y1 + 12} />
+      <rect className="detection-outline" x={x1} y={y1} width={x2 - x1} height={y2 - y1} />
+      <rect className="detection-label-bg" x={x1} y={y1} width={labelWidth} height={16} />
+      <text className="detection-label" x={x1 + 3} y={y1 + 15}>
+        {label}
+      </text>
+    </g>
+  );
+}
+
+function DetectionOverlay({
+  detections,
+  editingId,
+  onSelect,
+}: {
+  detections: ReviewDetection[];
+  editingId: number | null;
+  onSelect: (id: number) => void;
+}) {
+  return (
+    <svg className="scan-review-boxes" viewBox={`0 0 ${IMG_SIZE} ${IMG_SIZE}`} preserveAspectRatio="none">
+      {detections.map((d) => (
+        <DetectionBox key={d.id} detection={d} editing={d.id === editingId} onSelect={() => onSelect(d.id)} />
+      ))}
+    </svg>
+  );
+}
+
+// The picker shown when a detected tile's box is tapped: lets the user
+// replace the model's guess with the right tile, mark it as not a real
+// tile (bonus tiles are already excluded from the hand, but the model
+// sometimes calls a real tile a bonus one or vice versa), or remove the
+// box outright for an outright false-positive detection.
+function CorrectionPanel({
+  detection,
+  onPick,
+  onRemove,
+  onCancel,
+}: {
+  detection: ReviewDetection;
+  onPick: (tile: Tile | null) => void;
+  onRemove: () => void;
+  onCancel: () => void;
+}) {
+  const rows = useMemo(() => rankedCorrectionRows(detection.tile), [detection.tile]);
+  const hasPromotedRow = detection.tile !== null;
+  return (
+    <div className="correction-panel">
+      <div className="correction-panel-header">
+        <span>
+          Model guessed <strong>{detection.originalClassName}</strong> ({Math.round(detection.confidence * 100)}%) - tap
+          the right tile:
+        </span>
+        <button type="button" className="correction-panel-close" onClick={onCancel} aria-label="Cancel correction">
+          ✕
+        </button>
+      </div>
+      <div className="tile-picker correction-picker">
+        {rows.map(({ suit, tiles }, i) => (
+          <div key={suit}>
+            {hasPromotedRow && i === 1 && <div className="correction-other-label">Other suits</div>}
+            <div className={`suit-row ${hasPromotedRow && i === 0 ? "correction-row-primary" : ""}`}>
+              {tiles.map((t) => (
+                <TileButton key={tileLabel(t)} tile={t} onClick={() => onPick(t)} selected={sameTile(detection.tile, t)} />
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="correction-panel-actions">
+        <button type="button" onClick={() => onPick(null)}>
+          Not a tile / bonus
+        </button>
+        <button type="button" className="correction-panel-remove" onClick={onRemove}>
+          Remove box
+        </button>
+      </div>
+    </div>
+  );
 }
 
 // iOS Safari's native touch->click pipeline gets unreliable under fast
@@ -869,10 +992,64 @@ function Calculator() {
   const [scanStatus, setScanStatus] = useState<"idle" | "cropping" | "loading" | "review" | "error">("idle");
   const [scanError, setScanError] = useState<string | null>(null);
   const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null);
-  const [scanPreview, setScanPreview] = useState<{ imageUrls: string[]; tiles: Tile[]; ignoredBonusCount: number } | null>(
+  const [scanPreview, setScanPreview] = useState<{ regions: { imageUrl: string; detections: ReviewDetection[] }[] } | null>(
     null
   );
+  const [editingDetectionId, setEditingDetectionId] = useState<number | null>(null);
+  const nextDetectionId = useRef(0);
   const [cropImage, setCropImage] = useState<HTMLImageElement | null>(null);
+
+  // The hand tiles and ignored-bonus count implied by the current review
+  // state, recomputed live as the user corrects or removes detections -
+  // `tile: null` covers both the model's own bonus-tile guesses and a
+  // detection the user has manually marked "not a tile".
+  const scanTiles = useMemo(
+    () =>
+      scanPreview
+        ? scanPreview.regions.flatMap((r) => r.detections.flatMap((d) => (d.tile ? [d.tile] : [])))
+        : [],
+    [scanPreview]
+  );
+  const scanIgnoredBonusCount = useMemo(
+    () => (scanPreview ? scanPreview.regions.reduce((n, r) => n + r.detections.filter((d) => d.tile === null).length, 0) : 0),
+    [scanPreview]
+  );
+  const editingDetection = useMemo(() => {
+    if (editingDetectionId === null || !scanPreview) return null;
+    for (const region of scanPreview.regions) {
+      const found = region.detections.find((d) => d.id === editingDetectionId);
+      if (found) return found;
+    }
+    return null;
+  }, [editingDetectionId, scanPreview]);
+
+  // Applies `updater` to the single detection with matching id across
+  // whichever region it lives in; a null return removes it (used by
+  // "Remove box"), leaving the rest of the preview untouched.
+  const updateDetection = (id: number, updater: (d: ReviewDetection) => ReviewDetection | null) => {
+    setScanPreview((prev) =>
+      prev
+        ? {
+            regions: prev.regions.map((region) => ({
+              ...region,
+              detections: region.detections.flatMap((d) => {
+                if (d.id !== id) return [d];
+                const next = updater(d);
+                return next ? [next] : [];
+              }),
+            })),
+          }
+        : prev
+    );
+  };
+  const correctDetection = (id: number, tile: Tile | null) => {
+    updateDetection(id, (d) => ({ ...d, tile }));
+    setEditingDetectionId(null);
+  };
+  const removeDetection = (id: number) => {
+    updateDetection(id, () => null);
+    setEditingDetectionId(null);
+  };
 
   const handleScanFile = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -898,18 +1075,23 @@ function Calculator() {
     setScanError(null);
     setScanProgress({ phase: "downloading-model", loaded: 0, total: null });
     try {
-      const imageUrls: string[] = [];
-      const allTiles: Tile[] = [];
-      let totalIgnoredBonusCount = 0;
+      const regions: { imageUrl: string; detections: ReviewDetection[] }[] = [];
       for (const source of sources) {
         const box = letterbox(source);
-        const { detections, tiles, ignoredBonusCount } = await detectTiles(box, setScanProgress);
-        drawDetections(box.canvas, detections);
-        imageUrls.push(box.canvas.toDataURL());
-        allTiles.push(...tiles);
-        totalIgnoredBonusCount += ignoredBonusCount;
+        const { detections } = await detectTiles(box, setScanProgress);
+        const imageUrl = box.canvas.toDataURL();
+        regions.push({
+          imageUrl,
+          detections: detections.map((d) => ({
+            id: nextDetectionId.current++,
+            tile: d.tile,
+            originalClassName: d.className,
+            confidence: d.confidence,
+            box: d.box,
+          })),
+        });
       }
-      setScanPreview({ imageUrls, tiles: allTiles, ignoredBonusCount: totalIgnoredBonusCount });
+      setScanPreview({ regions });
       setScanStatus("review");
     } catch (err) {
       setScanError(err instanceof Error ? err.message : "Could not scan that photo");
@@ -947,14 +1129,16 @@ function Calculator() {
 
   const confirmScan = () => {
     if (!scanPreview) return;
-    onTextChange(formatHand(scanPreview.tiles));
+    onTextChange(formatHand(scanTiles));
     setScanStatus("idle");
     setScanPreview(null);
+    setEditingDetectionId(null);
   };
   const cancelScan = () => {
     setScanStatus("idle");
     setScanPreview(null);
     setScanError(null);
+    setEditingDetectionId(null);
   };
 
   const canCalculate = isCheckpointSize(hand.length);
@@ -1091,25 +1275,48 @@ function Calculator() {
         {scanStatus === "review" && scanPreview && (
           <div className="scan-review">
             <div className="scan-review-images">
-              {scanPreview.imageUrls.map((url, i) => (
-                <img
-                  key={i}
-                  src={url}
-                  alt={scanPreview.imageUrls.length > 1 ? `Scanned hand region ${i + 1} with detected tiles boxed` : "Scanned hand with detected tiles boxed"}
-                />
+              {scanPreview.regions.map((region, i) => (
+                <div className="scan-review-region" key={i}>
+                  <img
+                    src={region.imageUrl}
+                    alt={
+                      scanPreview.regions.length > 1
+                        ? `Scanned hand region ${i + 1} with detected tiles boxed`
+                        : "Scanned hand with detected tiles boxed"
+                    }
+                  />
+                  <DetectionOverlay
+                    detections={region.detections}
+                    editingId={editingDetectionId}
+                    onSelect={setEditingDetectionId}
+                  />
+                </div>
               ))}
             </div>
+
+            {editingDetection && (
+              <CorrectionPanel
+                detection={editingDetection}
+                onPick={(tile) => correctDetection(editingDetection.id, tile)}
+                onRemove={() => removeDetection(editingDetection.id)}
+                onCancel={() => setEditingDetectionId(null)}
+              />
+            )}
+
             <div className="scan-review-summary">
-              <span>
-                {scanPreview.tiles.length} tile{scanPreview.tiles.length === 1 ? "" : "s"} detected
-                {scanPreview.ignoredBonusCount > 0 &&
-                  ` (+${scanPreview.ignoredBonusCount} flower/season tile${scanPreview.ignoredBonusCount === 1 ? "" : "s"} ignored)`}
-              </span>
+              <div className="scan-review-info">
+                <span>
+                  {scanTiles.length} tile{scanTiles.length === 1 ? "" : "s"} detected
+                  {scanIgnoredBonusCount > 0 &&
+                    ` (+${scanIgnoredBonusCount} flower/season tile${scanIgnoredBonusCount === 1 ? "" : "s"} ignored)`}
+                </span>
+                <span className="scan-review-hint">Tap a boxed tile to correct it</span>
+              </div>
               <div className="scan-review-actions">
                 <button type="button" onClick={cancelScan}>
                   Cancel
                 </button>
-                <button type="button" onClick={confirmScan} disabled={scanPreview.tiles.length === 0}>
+                <button type="button" onClick={confirmScan} disabled={scanTiles.length === 0}>
                   Use this hand
                 </button>
               </div>

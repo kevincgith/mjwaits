@@ -911,17 +911,139 @@ h1 {
   gap: 0.6rem;
 }
 
-.scan-review-images img {
+.scan-review-region {
+  position: relative;
   width: 100%;
   max-width: 420px;
+  line-height: 0;
+}
+
+.scan-review-region img {
+  display: block;
+  width: 100%;
   border-radius: 6px;
 }
 
 /* Two regions side by side share the row instead of each claiming the full
    420px - shrinks to fit, wrapping back to stacked on narrow screens. */
-.scan-review-images:has(img:nth-child(2)) img {
+.scan-review-images:has(.scan-review-region:nth-child(2)) .scan-review-region {
   flex: 1 1 200px;
   max-width: 300px;
+}
+
+/* Boxes are drawn in the same 0-IMG_SIZE coordinate space the model saw
+   (see DetectionOverlay's viewBox), scaled to overlay the image beneath
+   regardless of its displayed size. The <svg> itself ignores pointer
+   events so taps outside a box fall through to nothing; only the boxes
+   (DetectionBox's own pointer-events: auto) are interactive. */
+.scan-review-boxes {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.detection-box {
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.detection-hit {
+  fill: transparent;
+}
+
+.detection-outline {
+  fill: none;
+  stroke: #2fbf5f;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.detection-box.bonus .detection-outline {
+  stroke: #bbb;
+  stroke-dasharray: 4 3;
+}
+
+.detection-box.editing .detection-outline {
+  stroke: #1a5fb4;
+  stroke-width: 3;
+}
+
+.detection-label-bg {
+  fill: #2fbf5f;
+}
+
+.detection-box.bonus .detection-label-bg {
+  fill: #999;
+}
+
+.detection-box.editing .detection-label-bg {
+  fill: #1a5fb4;
+}
+
+.detection-label {
+  font: 13px ui-monospace, SFMono-Regular, Menlo, monospace;
+  fill: #fff;
+}
+
+.correction-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.65rem;
+  border: 1px solid #1a5fb4;
+  border-radius: 8px;
+  background: #eef4fc;
+}
+
+.correction-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: #333;
+}
+
+.correction-panel-close {
+  border: none;
+  background: none;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  color: #666;
+  padding: 0.15rem 0.4rem;
+}
+
+.correction-row-primary {
+  padding-bottom: 0.3rem;
+  border-bottom: 1px dashed #bcd2ee;
+}
+
+.correction-other-label {
+  font-size: 0.75rem;
+  color: #777;
+  margin: 0.3rem 0 0.1rem;
+}
+
+.correction-panel-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.correction-panel-actions button {
+  border: 1px solid #ccc;
+  background: #fff;
+  border-radius: 6px;
+  padding: 0.35rem 0.7rem;
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+
+.correction-panel-remove {
+  border-color: #b3261e;
+  color: #b3261e;
 }
 
 .scan-review-summary {
@@ -932,6 +1054,17 @@ h1 {
   gap: 0.5rem;
   font-size: 0.9rem;
   color: #444;
+}
+
+.scan-review-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.scan-review-hint {
+  font-size: 0.78rem;
+  color: #777;
 }
 
 .scan-review-actions {
