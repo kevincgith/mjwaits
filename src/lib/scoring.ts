@@ -352,6 +352,47 @@ function pairIsSpareDragon(hand: ResolvedHand, meldRanks: Set<number>): boolean 
 
 const SINGLE_WIND_PATTERN_IDS = ["wrong-seat-wind", "correct-seat-wind", "wrong-round-wind", "correct-round-wind"];
 
+const isAllRuns = (hand: ResolvedHand): boolean => hand.melds.every((m) => m.kind === "run");
+
+const isNoHonorsNoFlowers = (hand: ResolvedHand): boolean =>
+  allHandTiles(hand).every((t) => !isHonorTile(t)) && hand.bonusTiles.length === 0;
+
+// Distinct numbered suits (m/t/b) touched anywhere in the hand - honors
+// don't count as a "suit" for this purpose.
+function numberedSuitsUsed(hand: ResolvedHand): Set<Suit> {
+  const suits = new Set<Suit>();
+  for (const t of allHandTiles(hand)) {
+    if (t.suit === "m" || t.suit === "t" || t.suit === "b") suits.add(t.suit);
+  }
+  return suits;
+}
+
+const hasNoFives = (hand: ResolvedHand): boolean => allHandTiles(hand).every((t) => t.suit !== "z" && t.rank !== 5);
+
+const allTilesInRange = (hand: ResolvedHand, min: number, max: number): boolean =>
+  allHandTiles(hand).every((t) => t.suit !== "z" && t.rank >= min && t.rank <= max);
+
+// The 5 "suits" for 五門齊/七門齊: the 3 numbered suits, plus winds and
+// dragons treated as two further suits of their own (not lumped together
+// as one "honors" suit).
+type FiveSuitCategory = "m" | "t" | "b" | "wind" | "dragon";
+function fiveSuitCategory(t: Tile): FiveSuitCategory {
+  if (t.suit === "m" || t.suit === "t" || t.suit === "b") return t.suit;
+  return t.rank <= 4 ? "wind" : "dragon";
+}
+// Every category touched anywhere in the hand (melds, pair - just needs a
+// single tile of that category to count).
+function categoriesPresent(hand: ResolvedHand): Set<FiveSuitCategory> {
+  return new Set(allHandTiles(hand).map(fiveSuitCategory));
+}
+// Every category with its own complete, dedicated meld - a strictly
+// stronger condition than merely being present (see 大/小五門齊).
+function categoriesWithFullMeld(hand: ResolvedHand): Set<FiveSuitCategory> {
+  return new Set(hand.melds.map((m) => fiveSuitCategory(m.tiles[0])));
+}
+
+const hasBonusKind = (hand: ResolvedHand, kind: BonusKind): boolean => hand.bonusTiles.some((b) => b.kind === kind);
+
 // House tai list, added one pattern at a time as the user supplies them -
 // see the module doc comment on why this stays a plain array of concrete
 // checks rather than a generic rule engine.
@@ -378,7 +419,7 @@ export const PATTERNS: TaiPattern[] = [
   {
     id: "no-honors-no-flowers",
     name: "無字花 (No honors, no flowers)",
-    score: (hand) => (allHandTiles(hand).every((t) => !isHonorTile(t)) && hand.bonusTiles.length === 0 ? 10 : 0),
+    score: (hand) => (isNoHonorsNoFlowers(hand) ? 10 : 0),
   },
   {
     id: "no-honors",
@@ -460,6 +501,70 @@ export const PATTERNS: TaiPattern[] = [
     id: "all-honors",
     name: "字一色 (All honors)",
     score: (hand) => (allHandTiles(hand).every(isHonorTile) ? 160 : 0),
+  },
+  {
+    id: "all-runs",
+    name: "平胡 (All runs)",
+    score: (hand) => (isAllRuns(hand) ? 5 : 0),
+  },
+  {
+    id: "all-runs-no-honors-no-flowers",
+    name: "無字花大平胡 (All runs, no honors, no flowers)",
+    score: (hand) => (isAllRuns(hand) && isNoHonorsNoFlowers(hand) ? 20 : 0),
+    excludes: ["all-runs", "no-honors-no-flowers"],
+  },
+  {
+    id: "missing-one-suit",
+    name: "缺一門 (Missing one suit)",
+    score: (hand) => (numberedSuitsUsed(hand).size === 2 ? 10 : 0),
+  },
+  {
+    id: "no-fives",
+    name: "缺五 (No fives)",
+    score: (hand) => (hasNoFives(hand) ? 10 : 0),
+  },
+  {
+    id: "small-five-suits",
+    name: "小五門齊 (Small five suits complete)",
+    score: (hand) => (categoriesPresent(hand).size === 5 && categoriesWithFullMeld(hand).size < 5 ? 10 : 0),
+  },
+  {
+    id: "big-five-suits",
+    name: "大五門齊 (Big five suits complete)",
+    // Implies categoriesPresent(hand).size === 5 too - 5 melds, 5 categories,
+    // one dedicated meld each covers every category on its own.
+    score: (hand) => (categoriesWithFullMeld(hand).size === 5 ? 15 : 0),
+  },
+  {
+    id: "small-seven-suits",
+    name: "小七門齊 (Small seven suits complete)",
+    score: (hand) =>
+      categoriesPresent(hand).size === 5 &&
+      categoriesWithFullMeld(hand).size < 5 &&
+      hasBonusKind(hand, "flower") &&
+      hasBonusKind(hand, "season")
+        ? 15
+        : 0,
+    excludes: ["small-five-suits"],
+  },
+  {
+    id: "big-seven-suits",
+    name: "大七門齊 (Big seven suits complete)",
+    score: (hand) =>
+      categoriesWithFullMeld(hand).size === 5 && hasBonusKind(hand, "flower") && hasBonusKind(hand, "season") ? 20 : 0,
+    excludes: ["big-five-suits"],
+  },
+  {
+    id: "greater-than-five",
+    name: "大於五 (All 6-9)",
+    score: (hand) => (allTilesInRange(hand, 6, 9) ? 40 : 0),
+    excludes: ["no-fives"],
+  },
+  {
+    id: "less-than-five",
+    name: "小於五 (All 1-4)",
+    score: (hand) => (allTilesInRange(hand, 1, 4) ? 40 : 0),
+    excludes: ["no-fives"],
   },
 ];
 

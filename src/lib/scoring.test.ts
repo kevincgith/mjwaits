@@ -307,6 +307,138 @@ describe("PATTERNS", () => {
       expect(tai(result, "all-honors")).toBe(0);
     });
   });
+
+  describe("平胡 (all-runs) and 無字花大平胡", () => {
+    // 5 runs, no triplet/kong anywhere: 123/456/789m, 123/456t, pair 22b.
+    // Also happens to be no-honors-no-flowers, so it's used below for the
+    // *compound* pattern - 平胡 alone needs a hand that's all-runs but
+    // doesn't also qualify for that stronger pattern (see 11z pair below).
+    const allRunsHand = "123456789m123456t22b";
+    const allRunsHonorPairHand = "123456789m123456t11z";
+
+    it("scores 平胡 for an all-runs hand", () => {
+      expect(tai(scoreHand(allRunsHonorPairHand, ctx()), "all-runs")).toBe(5);
+    });
+
+    it("doesn't score 平胡 once any triplet/kong is present", () => {
+      expect(tai(scoreHand("123456789m111z234t22b", ctx()), "all-runs")).toBe(0);
+    });
+
+    it("scores 無字花大平胡 for an all-runs, no-honors, no-flowers hand, excluding both components", () => {
+      const result = scoreHand(allRunsHand, ctx());
+      expect(tai(result, "all-runs-no-honors-no-flowers")).toBe(20);
+      expect(tai(result, "all-runs")).toBe(0);
+      expect(tai(result, "no-honors-no-flowers")).toBe(0);
+    });
+
+    it("doesn't score 無字花大平胡 when all-runs holds but the pair is an honor", () => {
+      // All 5 melds are runs, but the pair itself (11z) is an honor tile -
+      // fails the no-honors half without breaking all-runs.
+      const result = scoreHand(allRunsHonorPairHand, ctx());
+      expect(tai(result, "all-runs")).toBe(5);
+      expect(tai(result, "all-runs-no-honors-no-flowers")).toBe(0);
+    });
+
+    it("doesn't score 無字花大平胡 when no-honors-no-flowers holds but a triplet is forced", () => {
+      // 111m has no adjacent 2m/3m anywhere, so it can only ever decompose
+      // as a triplet - no ambiguous run reading to exploit.
+      const result = scoreHand("111m22m456t789t234b678b", ctx());
+      expect(tai(result, "no-honors-no-flowers")).toBe(10);
+      expect(tai(result, "all-runs-no-honors-no-flowers")).toBe(0);
+    });
+  });
+
+  describe("缺一門 (missing-one-suit)", () => {
+    it("scores when exactly 2 of the 3 numbered suits are used", () => {
+      const result = scoreHand("123456789m111z234t55t", ctx());
+      expect(tai(result, "missing-one-suit")).toBe(10);
+    });
+
+    it("doesn't score when all 3 numbered suits are used", () => {
+      const result = scoreHand("123456789m111z234t22b", ctx());
+      expect(tai(result, "missing-one-suit")).toBe(0);
+    });
+  });
+
+  describe("缺五 (no-fives)", () => {
+    it("scores when the hand has no honors and no rank-5 tile", () => {
+      const result = scoreHand("123m678m123t789t678b44b", ctx());
+      expect(tai(result, "no-fives")).toBe(10);
+    });
+
+    it("doesn't score once a rank-5 tile or an honor is present", () => {
+      const result = scoreHand("123456789m111z234t22b", ctx());
+      expect(tai(result, "no-fives")).toBe(0);
+    });
+  });
+
+  describe("小五門齊/大五門齊", () => {
+    it("scores 小五門齊 when all 5 categories are present but not all fully melded", () => {
+      // dragon (55z) only shows up as the pair, never a dedicated meld.
+      const result = scoreHand("123m456t789t678b111z55z", ctx());
+      expect(tai(result, "small-five-suits")).toBe(10);
+      expect(tai(result, "big-five-suits")).toBe(0);
+    });
+
+    it("scores 大五門齊 when all 5 categories each have a dedicated meld", () => {
+      const result = scoreHand("123m456t678b111z555z99m", ctx());
+      expect(tai(result, "big-five-suits")).toBe(15);
+      expect(tai(result, "small-five-suits")).toBe(0);
+    });
+
+    it("scores neither when a category is missing entirely", () => {
+      const result = scoreHand("123456789m111z234t22b", ctx()); // no dragon tile anywhere
+      expect(tai(result, "small-five-suits")).toBe(0);
+      expect(tai(result, "big-five-suits")).toBe(0);
+    });
+  });
+
+  describe("小七門齊/大七門齊", () => {
+    it("scores 小七門齊 over 小五門齊 once flower and season are both present", () => {
+      const parsed = parseScoringHand("123m456t789t678b111z55z");
+      parsed.bonusTiles.push({ kind: "flower", rank: 1 }, { kind: "season", rank: 1 });
+      const result = scoreParsedHand(parsed, ctx());
+      expect(tai(result, "small-seven-suits")).toBe(15);
+      expect(tai(result, "small-five-suits")).toBe(0);
+    });
+
+    it("scores 大七門齊 over 大五門齊 once flower and season are both present", () => {
+      const parsed = parseScoringHand("123m456t678b111z555z99m");
+      parsed.bonusTiles.push({ kind: "flower", rank: 1 }, { kind: "season", rank: 1 });
+      const result = scoreParsedHand(parsed, ctx());
+      expect(tai(result, "big-seven-suits")).toBe(20);
+      expect(tai(result, "big-five-suits")).toBe(0);
+    });
+
+    it("falls back to the five-suit pattern when only one of flower/season is present", () => {
+      const parsed = parseScoringHand("123m456t789t678b111z55z");
+      parsed.bonusTiles.push({ kind: "flower", rank: 1 });
+      const result = scoreParsedHand(parsed, ctx());
+      expect(tai(result, "small-seven-suits")).toBe(0);
+      expect(tai(result, "small-five-suits")).toBe(10);
+    });
+  });
+
+  describe("大於五/小於五", () => {
+    it("scores 大於五 for an all-6-to-9 hand, excluding 缺五", () => {
+      const result = scoreHand("678m789m678t789t678b99b", ctx());
+      expect(tai(result, "greater-than-five")).toBe(40);
+      expect(tai(result, "no-fives")).toBe(0);
+    });
+
+    it("scores 小於五 for an all-1-to-4 hand, excluding 缺五", () => {
+      const result = scoreHand("123m234m123t234t123b44b", ctx());
+      expect(tai(result, "less-than-five")).toBe(40);
+      expect(tai(result, "no-fives")).toBe(0);
+    });
+
+    it("scores plain 缺五 for a no-honors no-fives hand outside both ranges", () => {
+      const result = scoreHand("123m678m123t789t678b44b", ctx());
+      expect(tai(result, "no-fives")).toBe(10);
+      expect(tai(result, "greater-than-five")).toBe(0);
+      expect(tai(result, "less-than-five")).toBe(0);
+    });
+  });
 });
 
 describe("isDealer", () => {
