@@ -304,20 +304,162 @@ export function isDealer(ctx: GameContext): boolean {
 export interface TaiPattern {
   id: string;
   name: string;
-  tai: number;
-  check: (hand: ResolvedHand, ctx: GameContext) => boolean;
+  // Tai this pattern contributes for the given hand - 0 means it doesn't
+  // apply. Most patterns are a flat yes/no value (1 or 0); a few (正花, 三元
+  // 牌) stack per matching instance, hence a function rather than a fixed
+  // number.
+  score: (hand: ResolvedHand, ctx: GameContext) => number;
+  // Ids of other patterns suppressed when this one scores > 0 on the same
+  // hand - e.g. holding all three dragon triplets (大三元) already prices in
+  // holding any two of them (小三元) or even just one (三元牌), so those
+  // shouldn't also count once the bigger pattern applies.
+  excludes?: string[];
 }
 
-// One worked pattern to prove the parsing -> decomposition -> scoring
-// pipeline end to end. Tai value is a common default, not yet confirmed
-// against the user's own house rules - everything past this gets added,
-// and adjusted, one pattern at a time.
+function allHandTiles(hand: ResolvedHand): Tile[] {
+  return [...hand.melds.flatMap((m) => m.tiles), ...hand.pair];
+}
+
+const isHonorTile = (t: Tile): boolean => t.suit === "z";
+
+// Ranks (1-4) of every wind meld (triplet/kong of East/South/West/North) in
+// the hand - a kong counts the same as a triplet here, only the tile kind
+// matters.
+function windMeldRanks(hand: ResolvedHand): number[] {
+  return hand.melds.filter((m) => m.tiles[0].suit === "z" && m.tiles[0].rank <= 4).map((m) => m.tiles[0].rank);
+}
+
+// Ranks (5-7) of every dragon meld (triplet/kong of Red/Green/White) in the hand.
+function dragonMeldRanks(hand: ResolvedHand): number[] {
+  return hand.melds.filter((m) => m.tiles[0].suit === "z" && m.tiles[0].rank >= 5).map((m) => m.tiles[0].rank);
+}
+
+// Shared by 小三風/小四喜: is the pair itself a wind tile that's none of the
+// wind kinds already used up by `meldRanks` (the only wind kind left, given
+// there are only 4 total)?
+function pairIsSpareWind(hand: ResolvedHand, meldRanks: Set<number>): boolean {
+  const pair = hand.pair[0];
+  return isHonorTile(pair) && pair.rank <= 4 && !meldRanks.has(pair.rank);
+}
+
+// Shared by 小三元: is the pair a dragon tile that's none of the dragon
+// kinds already used up by `meldRanks` (the only dragon kind left, given
+// there are only 3 total)?
+function pairIsSpareDragon(hand: ResolvedHand, meldRanks: Set<number>): boolean {
+  const pair = hand.pair[0];
+  return isHonorTile(pair) && pair.rank >= 5 && !meldRanks.has(pair.rank);
+}
+
+const SINGLE_WIND_PATTERN_IDS = ["wrong-seat-wind", "correct-seat-wind", "wrong-round-wind", "correct-round-wind"];
+
+// House tai list, added one pattern at a time as the user supplies them -
+// see the module doc comment on why this stays a plain array of concrete
+// checks rather than a generic rule engine.
 export const PATTERNS: TaiPattern[] = [
   {
     id: "concealed-hand",
     name: "門清 (Concealed hand)",
-    tai: 1,
-    check: (hand) => hand.melds.every((m) => m.concealed),
+    // Placeholder value from the initial foundation work, not yet confirmed
+    // against the user's own house rules.
+    score: (hand) => (hand.melds.every((m) => m.concealed) ? 1 : 0),
+  },
+  {
+    id: "no-flowers",
+    name: "無花 (No flowers)",
+    score: (hand) => (hand.bonusTiles.length === 0 ? 2 : 0),
+  },
+  {
+    id: "correct-flower",
+    name: "正花 (Correct flower)",
+    // Stacks: 2 tai for each bonus tile whose rank matches the seat wind
+    // (up to 2 - the flower and the season for that wind position).
+    score: (hand, ctx) => hand.bonusTiles.filter((b) => b.rank === ctx.seatWind).length * 2,
+  },
+  {
+    id: "no-honors-no-flowers",
+    name: "無字花 (No honors, no flowers)",
+    score: (hand) => (allHandTiles(hand).every((t) => !isHonorTile(t)) && hand.bonusTiles.length === 0 ? 10 : 0),
+  },
+  {
+    id: "no-honors",
+    name: "無字 (No honors)",
+    score: (hand) => (allHandTiles(hand).every((t) => !isHonorTile(t)) ? 2 : 0),
+  },
+  {
+    id: "wrong-seat-wind",
+    name: "爛位風 (Wind meld not matching seat wind)",
+    score: (hand, ctx) => (windMeldRanks(hand).some((r) => r !== ctx.seatWind) ? 2 : 0),
+  },
+  {
+    id: "correct-seat-wind",
+    name: "正位風 (Wind meld matching seat wind)",
+    score: (hand, ctx) => (windMeldRanks(hand).some((r) => r === ctx.seatWind) ? 2 : 0),
+  },
+  {
+    id: "wrong-round-wind",
+    name: "爛圈風 (Wind meld not matching round wind)",
+    score: (hand, ctx) => (windMeldRanks(hand).some((r) => r !== ctx.roundWind) ? 2 : 0),
+  },
+  {
+    id: "correct-round-wind",
+    name: "正圈風 (Wind meld matching round wind)",
+    score: (hand, ctx) => (windMeldRanks(hand).some((r) => r === ctx.roundWind) ? 2 : 0),
+  },
+  {
+    id: "small-three-winds",
+    name: "小三風 (Small three winds)",
+    score: (hand) => {
+      const ranks = new Set(windMeldRanks(hand));
+      return ranks.size >= 2 && pairIsSpareWind(hand, ranks) ? 30 : 0;
+    },
+    excludes: SINGLE_WIND_PATTERN_IDS,
+  },
+  {
+    id: "big-three-winds",
+    name: "大三風 (Big three winds)",
+    score: (hand) => (new Set(windMeldRanks(hand)).size >= 3 ? 60 : 0),
+    excludes: [...SINGLE_WIND_PATTERN_IDS, "small-three-winds"],
+  },
+  {
+    id: "small-four-winds",
+    name: "小四喜 (Small four winds)",
+    score: (hand) => {
+      const ranks = new Set(windMeldRanks(hand));
+      return ranks.size >= 3 && pairIsSpareWind(hand, ranks) ? 120 : 0;
+    },
+    excludes: [...SINGLE_WIND_PATTERN_IDS, "small-three-winds", "big-three-winds"],
+  },
+  {
+    id: "big-four-winds",
+    name: "大四喜 (Big four winds)",
+    score: (hand) => (new Set(windMeldRanks(hand)).size >= 4 ? 160 : 0),
+    excludes: [...SINGLE_WIND_PATTERN_IDS, "small-three-winds", "big-three-winds", "small-four-winds"],
+  },
+  {
+    id: "dragon-tile",
+    name: "三元牌 (Dragon meld)",
+    // Stacks: 2 tai for each dragon meld held.
+    score: (hand) => dragonMeldRanks(hand).length * 2,
+  },
+  {
+    id: "small-three-dragons",
+    name: "小三元 (Small three dragons)",
+    score: (hand) => {
+      const ranks = new Set(dragonMeldRanks(hand));
+      return ranks.size >= 2 && pairIsSpareDragon(hand, ranks) ? 40 : 0;
+    },
+    excludes: ["dragon-tile"],
+  },
+  {
+    id: "big-three-dragons",
+    name: "大三元 (Big three dragons)",
+    score: (hand) => (new Set(dragonMeldRanks(hand)).size >= 3 ? 80 : 0),
+    excludes: ["dragon-tile", "small-three-dragons"],
+  },
+  {
+    id: "all-honors",
+    name: "字一色 (All honors)",
+    score: (hand) => (allHandTiles(hand).every(isHonorTile) ? 160 : 0),
   },
 ];
 
@@ -358,7 +500,9 @@ export function scoreParsedHand(parsed: ParsedScoringHand, ctx: GameContext): Sc
   let best: ScoreResult | null = null;
   for (const free of freeDecompositions) {
     const hand: ResolvedHand = { melds: [...declaredResolved, ...free.melds], pair: free.pair, bonusTiles: parsed.bonusTiles };
-    const matched = PATTERNS.filter((p) => p.check(hand, ctx)).map((pattern) => ({ pattern, tai: pattern.tai }));
+    const scored = PATTERNS.map((pattern) => ({ pattern, tai: pattern.score(hand, ctx) })).filter((m) => m.tai > 0);
+    const excludedIds = new Set(scored.flatMap((m) => m.pattern.excludes ?? []));
+    const matched = scored.filter((m) => !excludedIds.has(m.pattern.id));
     const total = matched.reduce((sum, m) => sum + m.tai, 0);
     if (!best || total > best.total) best = { total, matched, hand };
   }
