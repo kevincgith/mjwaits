@@ -56,6 +56,14 @@ Breakdown mode understands all three shapes, not just the standard one — Thirt
 
 ![A tenpai Sixteen Unrelated Tiles hand (147t258m369s1234567z), waiting on all 16 of its own kinds for 48 tiles total](docs/special-hand.png)
 
+### Camera scan (📷)
+
+Point a camera at a hand (or upload a photo) and have the tiles filled in automatically instead of tapping/typing every one. Detection runs entirely client-side — a YOLOv8s model, quantized to INT8 ONNX (11.5MB) and run in-browser via [onnxruntime-web](https://github.com/microsoft/onnxruntime) (WASM). No image is ever uploaded anywhere.
+
+After picking a photo, you can drag to crop out anything that isn't the hand before scanning; the review step shows a box over each detected tile (bonus tiles like flowers/seasons are boxed but greyed out and excluded from the hand) and lets you confirm or cancel before it replaces your current hand.
+
+The model was trained on a merged dataset combining [MahjongVis](https://github.com/Andy8647/MahjongVis) (MIT) and [MJOD-2136](https://github.com/jaheel/MJOD-2136) (CC BY-NC-SA), across 42 tile classes (34 mjwaits recognizes plus 8 bonus-tile classes). On the full validation split, the deployed checkpoint scores mAP50 0.945 / mAP50-95 0.744 / precision 0.969 / recall 0.927. See [training/README.md](training/README.md) for the full training/export pipeline and reproducibility details.
+
 ### Trainer
 
 A quiz mode for practicing waits recognition, separate from the calculator (switch between them with the tabs at the top). Each question is a randomly generated hand at one of 5 difficulty levels — Level 1 is 4 tiles (1 meld + pair), Level 5 is the full 16-tile tenpai size — guaranteed to have at least one wait. The answer picker only shows suits actually present in the question, since a wait can never come from a suit that isn't already there. Tap tiles to mark your guess, then submit: the picker highlights each pick as a correct hit, a wrong guess, or a wait you missed, and a full breakdown (same as the calculator's) reveals how each actual wait completes the hand. **Flush mode** restricts every generated hand to a single random suit for extra difficulty.
@@ -85,4 +93,4 @@ The core engine (parsing, shanten, waits, joker resolution, discard analysis) li
 
 Built with React, TypeScript, and Vite; deployed to GitHub Pages via GitHub Actions on every push to `main`.
 
-See [ROADMAP.md](ROADMAP.md) for ideas on future work (camera-based tile input, a scoring calculator).
+See [ROADMAP.md](ROADMAP.md) for ideas on future work (a scoring calculator, letting users choose between detection model sizes).

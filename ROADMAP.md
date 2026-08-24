@@ -2,13 +2,22 @@
 
 Ideas for future work, roughly in the order they've come up. None of this is committed or scheduled — just a reference so context isn't lost between sessions.
 
-## Camera-based tile input
+## Camera-based tile input — shipped
 
-Let the user point a camera at their hand and have tiles recognized automatically instead of tapping/typing every one.
+Done: see the "Camera scan" section in [README.md](README.md) and
+[training/README.md](training/README.md) for the model/pipeline details.
+Ideas for extending it, not yet started:
 
-- Not really "OCR" — tile faces aren't text, so this is an object-detection/classification problem: segmenting individual tiles from a held (angled, overlapping) hand, then classifying each against the ~40 tile designs (including jokers/flowers, which aren't part of any standard OCR or common tile-recognition training set).
-- Would need either a pretrained/fine-tunable model (TensorFlow.js or ONNX running client-side, to keep the app a static/no-backend site) or a from-scratch dataset — the dataset is the hard part, so a relevant existing repo/model would be a meaningful head start if one turns up.
-- Suggested first step, before any ML: camera feed (`getUserMedia`) + manual tap-to-crop-and-confirm per tile, to validate the input flow independent of recognition accuracy.
+- **Model picker.** A YOLOv8n ("nano") model is being trained on the same
+  merged dataset alongside the deployed YOLOv8s ("small") one, so a visitor
+  could pick nano (smaller download, faster inference, likely lower
+  accuracy) vs. small (current default). Would need `vision.ts` to accept a
+  model path/name instead of a hardcoded one, a small UI control to choose
+  before scanning, and probably a persisted preference (localStorage) so
+  it's not re-chosen every scan.
+- **Live camera feed instead of photo-then-crop**, using `getUserMedia`
+  directly, if the photo-upload-and-crop flow turns out to be more friction
+  than just pointing a live viewfinder at the hand.
 
 ## Near-term fixes
 
