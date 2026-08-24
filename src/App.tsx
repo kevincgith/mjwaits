@@ -42,6 +42,14 @@ import {
   type TrainerQuestion,
 } from "./lib/trainer";
 import { IMG_SIZE, detectTiles, letterbox, prefetchModel, type ScanProgress } from "./lib/vision";
+import {
+  ScoringError,
+  scoreParsedHand,
+  type GameContext,
+  type MeldKind,
+  type ParsedScoringHand,
+  type Wind,
+} from "./lib/scoring";
 
 // A stable id per tile instance, so sorting for display never loses track
 // of which underlying tile is which (needed to revert Sort cleanly, and to
@@ -1798,8 +1806,296 @@ function TrainerPanel({
   );
 }
 
+const WIND_LABELS: Record<Wind, string> = { 1: "East", 2: "South", 3: "West", 4: "North" };
+const WIND_SHORT: Record<Wind, string> = { 1: "E", 2: "S", 3: "W", 4: "N" };
+
+function WindPicker({ label, value, onChange }: { label: string; value: Wind; onChange: (w: Wind) => void }) {
+  return (
+    <div className="wind-picker">
+      <span className="wind-picker-label">{label}</span>
+      {([1, 2, 3, 4] as Wind[]).map((w) => (
+        <button
+          key={w}
+          type="button"
+          className={value === w ? "toggle-on" : undefined}
+          aria-pressed={value === w}
+          onClick={() => onChange(w)}
+          title={WIND_LABELS[w]}
+        >
+          {WIND_SHORT[w]}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// A meld sitting in the 門前牌區 (the melds laid out in front of you on the
+// table - called triplets/runs, plus kongs of either kind, since a kong is
+// always set apart from your hand even when concealed). `id` is only for
+// React keys/removal, same reason HandTile has one.
+interface DeclaredMeldTile {
+  id: number;
+  kind: MeldKind;
+  concealed: boolean;
+  tiles: Tile[];
+}
+
+const MELD_KIND_LABELS: Record<MeldKind, string> = { triplet: "Triplet (碰)", run: "Run (吃)", kong: "Kong (槓)" };
+
+// Whichever suit rows/ranks make sense to offer for the currently-selected
+// meld kind: runs only exist in numbered suits, and only starting low
+// enough to leave room for the next two ranks.
+function meldPickerTiles(kind: MeldKind): Tile[] {
+  const all = allTileKinds();
+  return kind === "run" ? all.filter((t) => t.suit !== "z" && t.rank <= 7) : all;
+}
+
+// This models the table, not a text format: 手牌區 (concealed hand) is a
+// plain multiset of tiles still to be decomposed, and 門前牌區 (declared
+// melds) is a list of already-fixed groups - exactly mahjong.ts's
+// freeTiles/declaredMelds split, just built by tapping instead of typed
+// notation (see scoring.ts's parseScoringHand for the equivalent text
+// grammar, still used by scoreHand/tests).
+function ScoringPanel() {
+  const [concealedTiles, setConcealedTiles] = useState<HandTile[]>([]);
+  const [declaredMelds, setDeclaredMelds] = useState<DeclaredMeldTile[]>([]);
+  const [meldKind, setMeldKind] = useState<MeldKind>("triplet");
+  const [kongConcealed, setKongConcealed] = useState(true);
+  const [seatWind, setSeatWind] = useState<Wind>(1);
+  const [roundWind, setRoundWind] = useState<Wind>(1);
+  const [selfDraw, setSelfDraw] = useState(false);
+  const nextTileId = useRef(0);
+  const nextMeldId = useRef(0);
+
+  const totalCopiesUsed = (tile: Tile): number => {
+    let n = tileCount(concealedTiles, tile);
+    for (const meld of declaredMelds) n += tileCount(meld.tiles, tile);
+    return n;
+  };
+
+  const kongCount = declaredMelds.filter((m) => m.kind === "kong").length;
+  const requiredSize = COMPLETE_SIZE + kongCount;
+  const totalTiles = concealedTiles.length + declaredMelds.reduce((n, m) => n + m.tiles.length, 0);
+  const atCap = totalTiles >= requiredSize;
+
+  const addConcealedTile = (tile: Tile) => {
+    if (atCap || totalCopiesUsed(tile) >= 4) return;
+    setConcealedTiles((prev) => [...prev, { ...tile, id: nextTileId.current++ }]);
+  };
+  const removeConcealedTile = (id: number) => setConcealedTiles((prev) => prev.filter((t) => t.id !== id));
+
+  const pushMeld = (kind: MeldKind, concealed: boolean, tiles: Tile[]) => {
+    if (atCap) return;
+    setDeclaredMelds((prev) => [...prev, { id: nextMeldId.current++, kind, concealed, tiles }]);
+  };
+  const addMeldStartingAt = (tile: Tile) => {
+    if (meldKind === "triplet") {
+      if (totalCopiesUsed(tile) + 3 > 4) return;
+      pushMeld("triplet", false, [tile, tile, tile]);
+    } else if (meldKind === "kong") {
+      if (totalCopiesUsed(tile) > 0) return;
+      pushMeld("kong", kongConcealed, [tile, tile, tile, tile]);
+    } else {
+      const run = [0, 1, 2].map((d) => ({ suit: tile.suit, rank: tile.rank + d }));
+      if (run.some((t) => totalCopiesUsed(t) + 1 > 4)) return;
+      pushMeld("run", false, run);
+    }
+  };
+  const removeMeld = (id: number) => setDeclaredMelds((prev) => prev.filter((m) => m.id !== id));
+
+  const canAddMeldTile = (tile: Tile): boolean => {
+    if (atCap) return false;
+    if (meldKind === "triplet") return totalCopiesUsed(tile) + 3 <= 4;
+    if (meldKind === "kong") return totalCopiesUsed(tile) === 0;
+    const run = [0, 1, 2].map((d) => ({ suit: tile.suit, rank: tile.rank + d }));
+    return run.every((t) => totalCopiesUsed(t) + 1 <= 4);
+  };
+
+  const handleReset = () => {
+    setConcealedTiles([]);
+    setDeclaredMelds([]);
+  };
+
+  const ctx: GameContext = { seatWind, roundWind, selfDraw };
+  const scoring = useMemo(() => {
+    if (totalTiles !== requiredSize) return null;
+    const parsed: ParsedScoringHand = {
+      declaredMelds: declaredMelds.map(({ kind, concealed, tiles }) => ({ kind, concealed, tiles })),
+      freeTiles: concealedTiles.map(({ id: _id, ...tile }) => tile),
+    };
+    try {
+      return { ok: true as const, result: scoreParsedHand(parsed, ctx) };
+    } catch (e) {
+      const message = e instanceof ScoringError ? e.message : "Could not score hand";
+      return { ok: false as const, message };
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [concealedTiles, declaredMelds, totalTiles, requiredSize, seatWind, roundWind, selfDraw]);
+
+  return (
+    <section className="panel scoring-panel">
+      <div className="panel-header">
+        <span className="panel-title">Scoring</span>
+        <button type="button" onClick={handleReset} disabled={concealedTiles.length === 0 && declaredMelds.length === 0}>
+          Reset
+        </button>
+        <span className="tile-count">
+          {totalTiles} / {requiredSize} tiles
+        </span>
+      </div>
+
+      <div className="scoring-context">
+        <WindPicker label="Seat wind" value={seatWind} onChange={setSeatWind} />
+        <WindPicker label="Round wind" value={roundWind} onChange={setRoundWind} />
+        <button
+          type="button"
+          className={selfDraw ? "toggle-on" : undefined}
+          aria-pressed={selfDraw}
+          onClick={() => setSelfDraw((s) => !s)}
+          title="Self-draw vs won off a discard"
+        >
+          Self-draw
+        </button>
+      </div>
+
+      <div className="panel-header">
+        <span className="panel-title">門前牌區 (Declared melds)</span>
+        {(["triplet", "run", "kong"] as MeldKind[]).map((k) => (
+          <button
+            key={k}
+            type="button"
+            className={meldKind === k ? "toggle-on" : undefined}
+            aria-pressed={meldKind === k}
+            onClick={() => setMeldKind(k)}
+          >
+            {MELD_KIND_LABELS[k]}
+          </button>
+        ))}
+        {meldKind === "kong" && (
+          <button
+            type="button"
+            className={kongConcealed ? "toggle-on" : undefined}
+            aria-pressed={kongConcealed}
+            onClick={() => setKongConcealed((c) => !c)}
+            title={kongConcealed ? "Concealed kong (暗槓) - self-drawn, never called" : "Exposed kong (明槓/加槓) - called or added"}
+          >
+            {kongConcealed ? "Concealed" : "Exposed"}
+          </button>
+        )}
+      </div>
+
+      <div className="tile-picker">
+        {(["m", "t", "b", "z"] as Suit[])
+          .filter((suit) => meldKind !== "run" || suit !== "z")
+          .map((suit) => (
+            <div className="suit-row" key={suit}>
+              {meldPickerTiles(meldKind)
+                .filter((t) => t.suit === suit)
+                .map((t) => (
+                  <TileButton key={tileLabel(t)} tile={t} onClick={() => addMeldStartingAt(t)} disabled={!canAddMeldTile(t)} />
+                ))}
+            </div>
+          ))}
+      </div>
+
+      {declaredMelds.length === 0 ? (
+        <span className="hint">Tap a tile above to add a declared meld (called triplet/run, or a kong).</span>
+      ) : (
+        <div className="hand-display breakdown-groups">
+          {declaredMelds.map((meld) => (
+            <button
+              type="button"
+              key={meld.id}
+              className={meld.concealed ? "breakdown-group meld-remove" : "breakdown-group exposed-meld meld-remove"}
+              onClick={() => removeMeld(meld.id)}
+              title={`${meld.kind}${meld.concealed ? "" : " (exposed)"} - tap to remove`}
+            >
+              {meld.tiles.map((t, j) => (
+                <TileGlyphSpan key={j} tile={t} large />
+              ))}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className="panel-header">
+        <span className="panel-title">手牌區 (Concealed hand)</span>
+      </div>
+
+      <div className="tile-picker">
+        {SUIT_ORDER.map((suit) => (
+          <div className="suit-row" key={suit}>
+            {allTileKinds()
+              .filter((t) => t.suit === suit)
+              .map((t) => (
+                <TileButton
+                  key={tileLabel(t)}
+                  tile={t}
+                  onClick={() => addConcealedTile(t)}
+                  disabled={atCap || totalCopiesUsed(t) >= 4}
+                />
+              ))}
+          </div>
+        ))}
+      </div>
+
+      <div className="hand-display">
+        {concealedTiles.length === 0 ? (
+          <span className="hint">Tap tiles above for the tiles still in your hand.</span>
+        ) : (
+          sortTiles(concealedTiles).map((t) => <HandTileButton key={(t as HandTile).id} tile={t} onClick={() => removeConcealedTile((t as HandTile).id)} />)
+        )}
+      </div>
+
+      {scoring && !scoring.ok && <span className="error">{scoring.message}</span>}
+
+      {scoring?.ok && (
+        <>
+          <div className="waits scoring-total">
+            <span className="waits-label">Total:</span>
+            <span className="scoring-total-value">{scoring.result.total} tai</span>
+          </div>
+
+          <div className="waits breakdown-list">
+            <span className="waits-label">Patterns:</span>
+            {scoring.result.matched.length === 0 ? (
+              <span className="hint">No patterns matched yet — this is an early version, more get added over time.</span>
+            ) : (
+              scoring.result.matched.map(({ pattern, tai }) => (
+                <div className="scoring-pattern-row" key={pattern.id}>
+                  <span>{pattern.name}</span>
+                  <span className="scoring-pattern-tai">{tai} tai</span>
+                </div>
+              ))
+            )}
+          </div>
+
+          <div className="hand-display breakdown-groups">
+            {scoring.result.hand.melds.map((meld, i) => (
+              <span
+                className={meld.concealed ? "breakdown-group" : "breakdown-group exposed-meld"}
+                key={i}
+                title={`${meld.kind}${meld.concealed ? "" : " (exposed)"}`}
+              >
+                {meld.tiles.map((t, j) => (
+                  <TileGlyphSpan key={j} tile={t} />
+                ))}
+              </span>
+            ))}
+            <span className="breakdown-group" title="Pair">
+              {scoring.result.hand.pair.map((t, j) => (
+                <TileGlyphSpan key={j} tile={t} />
+              ))}
+            </span>
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
 function App() {
-  const [mode, setMode] = useState<"calculator" | "trainer">("calculator");
+  const [mode, setMode] = useState<"calculator" | "trainer" | "scoring">("calculator");
   // Lifted above TrainerPanel so stats survive switching back to the
   // Calculator tab and back - TrainerPanel itself unmounts (and its other
   // state - the in-progress question, timer, etc. - resets) on every tab
@@ -1826,8 +2122,18 @@ function App() {
         >
           Trainer
         </button>
+        <button
+          type="button"
+          className={mode === "scoring" ? "toggle-on" : undefined}
+          aria-pressed={mode === "scoring"}
+          onClick={() => setMode("scoring")}
+        >
+          Scoring
+        </button>
       </div>
-      {mode === "calculator" ? <Calculator /> : <TrainerPanel stats={trainerStats} setStats={setTrainerStats} />}
+      {mode === "calculator" && <Calculator />}
+      {mode === "trainer" && <TrainerPanel stats={trainerStats} setStats={setTrainerStats} />}
+      {mode === "scoring" && <ScoringPanel />}
       <footer className="build-version">v{__BUILD_TIME__}</footer>
     </div>
   );

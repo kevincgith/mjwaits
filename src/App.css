@@ -458,6 +458,85 @@ h1 {
   max-width: 100%;
 }
 
+/* In the Scoring tab, a declared meld doubles as a remove button - this
+   strips the default button chrome so it still reads as a plain group like
+   .breakdown-group everywhere else, not a form control. Declared *before*
+   .exposed-meld below so that rule's background still wins on the shared
+   element (same specificity - source order decides). */
+.breakdown-group.meld-remove {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Marks a declared/called meld (pon, chi, or a called/added kong) in the
+   Scoring tab's hand display, distinct from an ordinary concealed group -
+   several tai patterns (門清 among them) depend on this distinction. */
+.breakdown-group.exposed-meld {
+  background: #fdf3e7;
+  outline: 1px solid #e8a400;
+}
+
+.scoring-context {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.wind-picker {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.wind-picker-label {
+  font-size: 0.85rem;
+  color: #666;
+  margin-right: 0.2rem;
+}
+
+.wind-picker button {
+  border: 1px solid #ccc;
+  background: #f7f7f7;
+  border-radius: 4px;
+  padding: 0.3rem 0.6rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.wind-picker button.toggle-on {
+  background: #eaf1fb;
+  border-color: #1a5fb4;
+  color: #1a5fb4;
+}
+
+.scoring-total-value {
+  font-weight: 600;
+  color: #1a5fb4;
+}
+
+.scoring-pattern-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.2rem 0;
+  border-top: 1px solid #ede9d8;
+}
+
+.scoring-pattern-row:first-of-type {
+  border-top: none;
+}
+
+.scoring-pattern-tai {
+  font-weight: 600;
+  color: #1a5fb4;
+  white-space: nowrap;
+}
+
 /* The highlight can't just be background+outline directly on the glyph:
    position/line-height only ever move the glyph's ink and its own box
    together as a rigid unit, but the ink sits well off-center *within* that
