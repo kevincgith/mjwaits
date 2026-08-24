@@ -2,13 +2,16 @@
 34 classes with duplicate category ids) into one unified YOLO dataset.
 
 Unified 42-class scheme (mjwaits tile order, honors then flowers/seasons
-appended at the end so the first 34 line up with mjwaits's own 34 kinds):
+appended at the end so the first 34 line up with mjwaits's own 34 kinds).
+Bamboo uses "b" rather than mjwaits's own "s" (sou) so it stays distinct
+from the season classes' "s" suffix - these are just class-name strings
+for the training framework's own logging, not mjwaits's Suit type:
   0-8   : 1m-9m   (Characters)
   9-17  : 1t-9t   (Dots/circle)
-  18-26 : 1s-9s   (Bamboo)
+  18-26 : 1b-9b   (Bamboo)
   27-33 : 1z-7z   (East, South, West, North, Red, Green, White)
-  34-37 : flower 1-4
-  38-41 : season 1-4
+  34-37 : 1f-4f   (Flowers)
+  38-41 : 1s-4s   (Seasons)
 """
 import json
 import os
@@ -22,10 +25,10 @@ OUT = f"{SC}/merged"
 UNIFIED_NAMES = (
     [f"{r}m" for r in range(1, 10)]
     + [f"{r}t" for r in range(1, 10)]
-    + [f"{r}s" for r in range(1, 10)]
+    + [f"{r}b" for r in range(1, 10)]
     + ["1z", "2z", "3z", "4z", "5z", "6z", "7z"]
-    + [f"flower{r}" for r in range(1, 5)]
-    + [f"season{r}" for r in range(1, 5)]
+    + [f"{r}f" for r in range(1, 5)]
+    + [f"{r}s" for r in range(1, 5)]
 )
 NAME_TO_IDX = {n: i for i, n in enumerate(UNIFIED_NAMES)}
 assert len(UNIFIED_NAMES) == 42
@@ -49,11 +52,11 @@ def mahjongvis_name_to_unified(name: str) -> str:
     if suit == "D":
         return f"{rank}t"
     if suit == "B":
-        return f"{rank}s"
+        return f"{rank}b"
     if suit == "F":
-        return f"flower{rank}"
+        return f"{rank}f"
     if suit == "S":
-        return f"season{rank}"
+        return f"{rank}s"
     raise ValueError(name)
 
 
@@ -72,7 +75,7 @@ def mjod_name_to_unified(name: str) -> str:
     if suit == "circle":
         return f"{rank}t"
     if suit == "bamboo":
-        return f"{rank}s"
+        return f"{rank}b"
     raise ValueError(name)
 
 

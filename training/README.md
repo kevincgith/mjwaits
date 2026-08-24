@@ -13,15 +13,17 @@ ever loads the finished ONNX file from `public/model/`.
    - [MJOD-2136](https://github.com/jaheel/MJOD-2136) (CC BY-NC-SA 4.0) — 2,136 real photos, COCO format, 34 classes with duplicate category ids.
 
    Both label schemes are remapped by tile name (not raw index) onto one
-   unified order:
+   unified order. Bamboo uses "b" rather than mjwaits's own "s" (sou) so
+   it stays distinct from the season classes' "s" suffix - these are just
+   class-name strings, not mjwaits's own Suit type:
 
    ```
    0-8   : 1m-9m   (characters)
    9-17  : 1t-9t   (dots/circles)
-   18-26 : 1s-9s   (bamboo)
+   18-26 : 1b-9b   (bamboo)
    27-33 : 1z-7z   (honors: East, South, West, North, Red, Green, White)
-   34-37 : flower1-4
-   38-41 : season1-4
+   34-37 : 1f-4f   (flowers)
+   38-41 : 1s-4s   (seasons)
    ```
 
    Result: 4,859 training images / 990 validation images.
