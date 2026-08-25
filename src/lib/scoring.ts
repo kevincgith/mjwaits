@@ -835,11 +835,15 @@ function hasNoHonorsAndTerminalInEveryMeldAndPair(hand: ResolvedHand): boolean {
 
 // 混老頭: every meld is a triplet/kong, and every tile in the hand (melds
 // and pair) is either a terminal (1/9) or an honor - the two can mix
-// freely.
+// freely. Requires at least one terminal tile somewhere (meld or pair) -
+// an all-honor hand (already 字一色) has no terminals to "mix" at all, so
+// it shouldn't vacuously qualify (same reasoning as 混帶么's guard).
 function isAllTerminalOrHonorTriplets(hand: ResolvedHand): boolean {
+  const tiles = allHandTiles(hand);
   return (
     hand.melds.every((m) => m.kind === "triplet" || m.kind === "kong") &&
-    allHandTiles(hand).every((t) => isHonorTile(t) || t.rank === 1 || t.rank === 9)
+    tiles.every((t) => isHonorTile(t) || t.rank === 1 || t.rank === 9) &&
+    tiles.some((t) => !isHonorTile(t))
   );
 }
 
@@ -2348,6 +2352,8 @@ function scoreEightPairs(parsed: ParsedScoringHand, ctx: GameContext): ScoreResu
   const reusableIds = [
     "all-simples",
     "no-fives",
+    "greater-than-five",
+    "less-than-five",
     "missing-one-suit",
     "pure-terminal-triplets",
     "mixed-terminal-honor-triplets",

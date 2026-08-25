@@ -364,9 +364,10 @@ describe("PATTERNS", () => {
   });
 
   describe("字一色 (all-honors)", () => {
-    it("scores when every tile in the hand is an honor", () => {
+    it("scores when every tile in the hand is an honor, excluding 混老頭 (which needs at least one terminal)", () => {
       const result = scoreHand("(111z)(222z)(333z)(444z)(555z)66z", ctx());
       expect(tai(result, "all-honors")).toBe(160);
+      expect(tai(result, "mixed-terminal-honor-triplets")).toBe(0);
     });
 
     it("doesn't score once any numbered-suit tile is present", () => {
@@ -1578,6 +1579,18 @@ describe("PATTERNS: other patterns reused within 嚦咕嚦咕 (per the user's ow
     expect(tai(result, "no-fives")).toBe(10);
   });
 
+  it("scores 大於五 (excluding 缺五) when every tile is ranked 6-9", () => {
+    const result = scoreHand("66778899m667788999t", ctx());
+    expect(tai(result, "greater-than-five")).toBe(40);
+    expect(tai(result, "no-fives")).toBe(0);
+  });
+
+  it("scores 小於五 (excluding 缺五) when every tile is ranked 1-4", () => {
+    const result = scoreHand("11223344m112233444t", ctx());
+    expect(tai(result, "less-than-five")).toBe(40);
+    expect(tai(result, "no-fives")).toBe(0);
+  });
+
   it("scores 清老頭 (excluding 混老頭) for an all-terminals hand", () => {
     const result = scoreHand("11119999m1199t11999b", ctx());
     expect(tai(result, "pure-terminal-triplets")).toBe(200);
@@ -1599,9 +1612,10 @@ describe("PATTERNS: other patterns reused within 嚦咕嚦咕 (per the user's ow
     expect(tai(result, "full-flush")).toBe(120);
   });
 
-  it("scores 字一色 for an all-honors hand", () => {
+  it("scores 字一色 for an all-honors hand, excluding 混老頭 (which needs at least one terminal)", () => {
     const result = scoreHand("11112233445566777z", ctx());
     expect(tai(result, "all-honors")).toBe(160);
+    expect(tai(result, "mixed-terminal-honor-triplets")).toBe(0);
   });
 
   it("never scores 門清/門前清 for a 嚦咕嚦咕 hand", () => {
