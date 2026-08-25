@@ -190,7 +190,7 @@ the [明/暗 concept](#the-明暗-openconcealed-concept).
 | 小三兄弟 (Same rank across 3 suits, pair at one) | 20 | One rank held as the pair (in its own suit), with the other 2 suits each holding a triplet/kong at that *same* rank — e.g. `33t+333m+3333b`. | 兩兄弟 | Structurally different from 大三兄弟 (needs the pair), so not mutually exclusive with it — same precedent as 小/大三連刻. |
 | 大三兄弟 (Same rank across all 3 suits, all triplets/kongs) | 40 | All 3 suits hold a triplet/kong at the same rank — e.g. `555m+555t+555b`. Pair not involved. | 兩兄弟 | |
 | 小三色連刻 (3 consecutive ranks across 3 suits, pair at one) | 10 | 3 consecutive ranks, one per suit, with the hand's pair sitting at one of the 3 positions (in its own suit) and the other 2 positions each a triplet/kong in one of the other 2 suits — e.g. `33m+444t+555b`. | — | Structurally different from 大三色連刻 (needs the pair), not mutually exclusive. |
-| 大三色連刻 (3 consecutive ranks across 3 suits, all triplets/kongs) | 20 | Same 3-consecutive-rank shape, but all 3 are full triplets/kongs, one per suit — pair not involved — e.g. `333t+4444m+555b`. | — | **Tai value not yet confirmed by the user** — assumed 20 (double the small version, matching the 小/大 doubling convention seen elsewhere, e.g. 小三連刻=15/大三連刻=30). |
+| 大三色連刻 (3 consecutive ranks across 3 suits, all triplets/kongs) | 20 | Same 3-consecutive-rank shape, but all 3 are full triplets/kongs, one per suit — pair not involved — e.g. `333t+4444m+555b`. | — | |
 | 明三色步步高 (3 suits, runs increasing by 1, open) | 5 | 3 suits, each holding one run, with the runs' starting ranks increasing by 1 across suits in some order — e.g. `456t+567m+678b` or `234m+345t+456b`. Instance is 明. | — | |
 | 暗三色步步高 (same, concealed) | 10 | Same shape, instance is 暗. | — | |
 
@@ -233,7 +233,7 @@ concealed — see the [明/暗 concept](#the-明暗-openconcealed-concept). All 
 
 | Pattern | Tai | Criteria | Excludes | Notes |
 |---|---|---|---|---|
-| 缺一門 (Missing one suit) | 10 | Exactly 2 of the 3 numbered suits (m/t/b) appear anywhere in the hand — the third is completely absent. Honors don't affect this. | — | |
+| 缺一門 (Missing one suit) | 10 | Exactly 2 of the 3 numbered suits (m/t/b) appear anywhere in the hand — the third is completely absent — **and** the pair itself is not honors. | — | An honor pair disqualifies the hand even if the melds only touch 2 suits: the shape has to be "2 suits, eyes included," not 2 suits in the melds with honor eyes sitting outside it. |
 | 小五門齊 (Small five suits complete) | 10 | All 5 categories (m, t, b, winds, dragons) are touched *somewhere* in the hand (melds or pair), but **not** every category has its own dedicated complete meld. | — | Excluded by 小七門齊. Mutually exclusive with 大五門齊 by construction (opposite full-meld condition). |
 | 大五門齊 (Big five suits complete) | 15 | Every one of the 5 categories has its own dedicated complete meld — uses all 5 melds, one per category; pair can be anything. | — | Excluded by 大七門齊. |
 | 小七門齊 (Small seven suits complete) | 15 | Same shape as 小五門齊, **plus** at least one flower **and** one season bonus tile present. | 小五門齊 | |
@@ -258,11 +258,6 @@ concealed — see the [明/暗 concept](#the-明暗-openconcealed-concept). All 
 - The 食胡-tile UI only lets you mark a tile in the **concealed** hand — there's no way to mark
   the winning tile as belonging to a declared meld (e.g. robbing a kong), since that scenario
   isn't relevant to any pattern implemented so far.
-- **缺一門's exact definition is under review.** The user flagged that the current
-  `numberedSuitsUsed(hand).size === 2` check (counting m/t/b tiles across melds *and* the pair)
-  might not match the intended house rule, specifically around whether/how the pair's suit should
-  factor in. Not yet changed pending clarification — see [scoring.ts](../src/lib/scoring.ts)'s
-  `numberedSuitsUsed` and the `缺一門` pattern entry.
 
 ### Assumptions made without explicit confirmation (flag if wrong)
 
@@ -280,8 +275,6 @@ worth double-checking:
   needs the pair, one doesn't), not confirmed.
 - **二連刻 stacks** (3 consecutive triplets = 2 instances) - inferred from the same precedent as
   老少上/二步高 rather than stated outright for this specific pattern.
-- **大三色連刻's tai value (20) wasn't given** - assumed as double 小三色連刻's 10, matching the
-  小/大 doubling convention used everywhere else in this list. Flag if wrong.
 - **小/大三色連刻, 明/暗三色步步高, and 小/大三兄弟 don't exclude each other across families**
   (e.g. 小三色連刻 doesn't exclude 兩兄弟) - they check different shapes (consecutive vs. same
   rank, triplet vs. run) that can't structurally overlap, so no exclusion was added between them.

@@ -399,6 +399,11 @@ describe("PATTERNS", () => {
       const result = scoreHand("123456789m111z234t22b", ctx());
       expect(tai(result, "missing-one-suit")).toBe(0);
     });
+
+    it("doesn't score when the pair is honors, even with exactly 2 suits used", () => {
+      const result = scoreHand("123123678678m777b11z", ctx());
+      expect(tai(result, "missing-one-suit")).toBe(0);
+    });
   });
 
   describe("缺五 (no-fives)", () => {
