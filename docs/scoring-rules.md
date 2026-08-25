@@ -15,6 +15,13 @@ highest total tai.
 already prices in the smaller one," not a general limit on stacking. Patterns with no listed
 relationship in either direction stack freely.
 
+**Notation note on 4-of-a-kind**: typing 4 copies of a rank in the concealed portion (e.g.
+`222234t`) doesn't automatically mean a concealed kong — it might instead be a triplet plus one
+tile borrowed into an adjacent run (`222` + `234`). Both readings are tried during decomposition,
+and whichever is actually valid (or scores higher, if both are) wins. This only matters for the
+text-notation path (`scoreHand`/`parseScoringHand`, used in tests) — the Scoring tab's UI always
+declares kongs explicitly via 門前牌區, so this ambiguity never comes up there.
+
 ## The 明/暗 (open/concealed) concept
 
 Several patterns below (兩/三/四/五暗刻, 明清龍/暗清龍, 明雜龍/暗雜龍) care not just about whether a
@@ -33,15 +40,17 @@ Otherwise the meld is **暗**. With no 食胡 tile recorded, the second conditio
 specifically: a kong always counts toward it regardless of open/concealed status (see that
 section) — the 明/暗 distinction there only applies to plain triplets.
 
-## Duplicate-instance counting (清龍/雜龍/老少上/老少碰)
+## Duplicate-instance counting (清龍/雜龍/老少上/老少碰/步步高/二步高)
 
-These four patterns can fire more than once on a single hand when a segment repeats — e.g.
+These patterns can fire more than once on a single hand when a segment repeats — e.g.
 `123m 456m 789m 789m` (an extra 789m) counts as **two** 清龍 instances, not one. The rule: look at
 the melds matching each required segment (e.g. 清龍's three segments are 1-2-3, 4-5-6, 7-8-9 in one
-suit). If every segment has at least one meld, the number of instances equals the **largest**
-count among the segments — the segment(s) with only one copy get reused across every instance,
-while each extra copy of whichever segment repeats forms its own separate instance. Each instance
-is classified independently (open vs. concealed, for the patterns that split that way).
+suit; 步步高's are 3 consecutive starting ranks; 二步高's are 3 starting ranks 2 apart). If every
+segment has at least one meld, the number of instances equals the **largest** count among the
+segments — the segment(s) with only one copy get reused across every instance, while each extra
+copy of whichever segment repeats forms its own separate instance. Each instance is classified
+independently (open vs. concealed, for the patterns that split that way). All of these share one
+`combineSegments` helper in the code.
 
 ## Foundation
 
@@ -74,12 +83,11 @@ A "wind meld" is any triplet or kong of a wind tile — kongs count the same as 
 |---|---|---|---|---|
 | 爛位風 (Wrong seat wind) | 2 | Hand has a wind meld whose rank ≠ seat wind. | — | Excluded by 小三風/大三風/小四喜/大四喜. |
 | 正位風 (Correct seat wind) | 2 | Hand has a wind meld whose rank = seat wind. | — | Same exclusion as above. |
-| 爛圈風 (Wrong round wind) | 2 | Hand has a wind meld whose rank ≠ round wind. | — | Same exclusion as above. |
-| 正圈風 (Correct round wind) | 2 | Hand has a wind meld whose rank = round wind. | — | Same exclusion as above. |
-| 小三風 (Small three winds) | 30 | 2+ distinct wind melds, **and** the pair is the one remaining (4th) wind kind. | 爛位風, 正位風, 爛圈風, 正圈風 | |
-| 大三風 (Big three winds) | 60 | 3+ distinct wind melds (pair unrestricted). | the 4 singles above, 小三風 | |
-| 小四喜 (Small four winds) | 120 | 3+ distinct wind melds, **and** the pair is the one remaining (4th) wind kind. | the 4 singles, 小三風, 大三風 | |
-| 大四喜 (Big four winds) | 160 | All 4 wind kinds each have a complete meld. | the 4 singles, 小三風, 大三風, 小四喜 | Pair is necessarily non-wind (no 5th wind kind exists). |
+| 正圈風 (Correct round wind) | 0 | Hand has a wind meld whose rank = round wind. | — | **Placeholder** — kept in the list (and still wired into the exclusion chain below) but worth 0 tai for now. 爛圈風 (the wrong-round-wind counterpart) was removed entirely rather than zeroed the same way. |
+| 小三風 (Small three winds) | 30 | 2+ distinct wind melds, **and** the pair is the one remaining (4th) wind kind. | 爛位風, 正位風, 正圈風 | |
+| 大三風 (Big three winds) | 60 | 3+ distinct wind melds (pair unrestricted). | the singles above, 小三風 | |
+| 小四喜 (Small four winds) | 120 | 3+ distinct wind melds, **and** the pair is the one remaining (4th) wind kind. | the singles, 小三風, 大三風 | |
+| 大四喜 (Big four winds) | 160 | All 4 wind kinds each have a complete meld. | the singles, 小三風, 大三風, 小四喜 | Pair is necessarily non-wind (no 5th wind kind exists). |
 
 ## Dragon melds (中發白, 5z–7z)
 
@@ -112,11 +120,65 @@ go through the full open/concealed check.
 | 五暗刻 (Five concealed triplets/kongs) | 80 | All 5. | 兩暗刻, 三暗刻, 四暗刻 | Excluded by 坎坎胡 and by 五槓子. |
 | 五槓子 (Five kongs) | 240 | All 5 melds are kongs. | 槓, 四暗刻, 五暗刻 | Does **not** exclude 對對胡 (a kong still satisfies "triplet or kong," so it stacks). |
 
+## Four returns (四歸一/二/四)
+
+The hand holds **all 4 copies** of some rank X (one suit), split across melds a different way each
+time rather than as a kong. 明/暗 here means 明 = at least one of the melds involved is open, 暗 =
+all of them are concealed — see the [明/暗 concept](#the-明暗-openconcealed-concept). The pair
+itself is never "declared," so it never factors into the openness check (only 四歸二 involves the
+pair at all, and only to identify which rank/suit is in play).
+
+| Pattern | Tai | Criteria | Excludes | Notes |
+|---|---|---|---|---|
+| 明四歸一 (Triplet + run, open) | 5 each | A triplet of X plus a run containing X (3 + 1 = the 4 copies), instance is 明. E.g. `123m222m` — the 4th 2m is in the run. | — | **Stacks** — different ranks/suits can each independently form their own pair, hand-size permitting. |
+| 暗四歸一 (Triplet + run, concealed) | 15 each | Same shape, instance is 暗. | — | **Stacks.** |
+| 明四歸二 (Pair + 2 runs, open) | 15 | The pair itself is X, plus 2 runs each containing X (2 + 1 + 1 = the 4 copies), instance is 明. | — | At most 1 instance — a hand only has one pair. |
+| 暗四歸二 (Pair + 2 runs, concealed) | 30 | Same shape, instance is 暗. | — | At most 1 instance. |
+| 明四歸四 (4 runs, open) | 30 | 4 separate runs, each containing X (1×4 = the 4 copies), instance is 明. | — | At most 1 instance — needs 4 of the hand's 5 melds. Doesn't exclude 般高 even though such a group usually contains an identical-run pair too (not yet confirmed whether it should). |
+| 暗四歸四 (4 runs, concealed) | 60 | Same shape, instance is 暗. | — | At most 1 instance. Same open note as above. |
+
+## Identical & ascending sequences
+
+明/暗 again means 明 = at least one meld in the instance is open, 暗 = all are concealed. Several of
+these use [duplicate-instance counting](#duplicate-instance-counting-清龍雜龍老少上老少碰步步高二步高).
+
+| Pattern | Tai | Criteria | Excludes | Notes |
+|---|---|---|---|---|
+| 明般高 (Identical sequences, open) | 5 each | 2 runs that are exact duplicates (same suit, same 3 ranks), instance is 明. | — | **Stacks per instance.** |
+| 暗般高 (Identical sequences, concealed) | 8 each | Same shape, instance is 暗. | — | **Stacks per instance.** |
+| 明小雙般高 (Twin sequences, pair at one end, open) | 10 | E.g. `22334455m` — 2 copies each of 4 consecutive ranks. The pair can be read as *either* end (22 + two 345 runs, or 55 + two 234 runs) — both are genuinely valid decompositions, so scoring just checks whichever pair the current reading actually has against both directions and lets max-tai surface the better one. | 明般高, 暗般高 | At most 1 instance (one pair per hand). |
+| 暗小雙般高 (same, concealed) | 15 | Same shape, instance is 暗. | 明般高, 暗般高 | |
+| 明真雙般高 (2 separate identical-sequence pairs, open) | 20 | Two *different* 般高 pairs at once (4 runs total, 2 shapes) — e.g. `123123m + 678678t`. | 明般高, 暗般高 | |
+| 暗真雙般高 (same, concealed) | 40 | Same shape, instance is 暗. | 明般高, 暗般高 | |
+| 明一色三同順 (3 identical sequences, open) | 30 each | 3 fully identical runs (same suit, same 3 ranks). | — | Excludes 般高 (a 3-identical group contains an identical-run pair too). At most 1 group of 3 per rank/suit (4-copy cap). |
+| 暗一色三同順 (same, concealed) | 60 each | Same shape, instance is 暗. | — | Same exclusion note. |
+| 明一色四同順 (4 identical sequences, open) | 80 each | 4 fully identical runs — the maximum possible. | — | Excludes 般高 and 一色三同順 (both open/concealed). |
+| 暗一色四同順 (same, concealed) | 160 each | Same shape, instance is 暗. | — | Same exclusion note. |
+| 明單色步步高 (3 ascending sequences, gap 1, open) | 15 each | 3 same-suit runs at consecutive starting ranks — e.g. `123m+234m+345m`. | — | **Stacks per instance** — an extra `345m` reuses the shared `123m`/`234m` and forms a 2nd instance. |
+| 暗單色步步高 (same, concealed) | 30 each | Same shape, instance is 暗. | — | **Stacks.** |
+| 明單色二步高 (3 sequences, gap 2, open) | 8 each | 3 same-suit runs 2 apart — e.g. `123m+345m+567m`. | — | **Stacks per instance**, same duplicate-segment logic. |
+| 暗單色二步高 (same, concealed) | 15 each | Same shape, instance is 暗. | — | **Stacks.** |
+
+## Consecutive triplets
+
+| Pattern | Tai | Criteria | Excludes | Notes |
+|---|---|---|---|---|
+| 二連刻 (2 consecutive triplets/kongs) | 5 each | 2 triplets/kongs at consecutive ranks in one suit (e.g. `222m+333m`, triplet/kong mixed freely). No 明/暗 split. | — | **Stacks per adjacent pair** — 3 consecutive triplets (`222+333+444`) counts as 2 instances. |
+| 小三連刻 (3 consecutive ranks, pair at one end) | 15 | 3 consecutive ranks in one suit where the hand's pair sits at one end and the other 2 are triplets/kongs — e.g. `22m+333m+444m`. | — | Structurally different from 大三連刻 (needs the pair), so not mutually exclusive with it. |
+| 大三連刻 (3 consecutive triplets/kongs) | 30 | Same 3-consecutive-rank shape, but all 3 are full triplets/kongs — pair not involved. | — | |
+
+## Flush
+
+| Pattern | Tai | Criteria | Excludes | Notes |
+|---|---|---|---|---|
+| 混一色 (One numbered suit + honors) | 40 | The hand uses exactly one numbered suit (m/t/b) — honors may mix in freely. | — | Excluded by 清一色. |
+| 清一色 (One numbered suit, no honors) | 120 | Same, but **no** honors anywhere. | 混一色 | |
+
 ## Straights
 
 明/暗 here means 明 = at least one meld in the instance is open, 暗 = every meld in the instance is
 concealed — see the [明/暗 concept](#the-明暗-openconcealed-concept). All four patterns use
-[duplicate-instance counting](#duplicate-instance-counting-清龍雜龍老少上老少碰).
+[duplicate-instance counting](#duplicate-instance-counting-清龍雜龍老少上老少碰步步高二步高).
 
 | Pattern | Tai | Criteria | Excludes | Notes |
 |---|---|---|---|---|
@@ -126,6 +188,19 @@ concealed — see the [明/暗 concept](#the-明暗-openconcealed-concept). All 
 | 暗雜龍 (Mixed straight across suits, concealed) | 15 each | Same shape, instance is 暗. | — | **Stacks per instance.** |
 | 老少上 (Terminal runs, 123 + 789) | 3 each | A 1-2-3 run and a 7-8-9 run in the **same suit** — but only if that suit doesn't *also* have a 4-5-6 run (that would be 清龍 instead). | — | **Stacks per instance** (2 segments, not 3 — no 明/暗 split). Self-contained condition rather than an explicit exclude against 清龍. |
 | 老少碰 (Terminal triplets/kongs, 111 + 999) | 5 each | A rank-1 triplet/kong and a rank-9 triplet/kong in the same suit. | — | **Stacks per instance**, no 明/暗 split. In practice can't exceed 1 instance (a suit can only ever hold one rank-1 triplet-or-kong at a time), but uses the same general counting rule. |
+
+## Common rank
+
+| Pattern | Tai | Criteria | Excludes | Notes |
+|---|---|---|---|---|
+| 混帶X (Common rank across every non-honor meld) | 30 | There's some single rank 1–9 that every *non-honor* meld in the hand contains a tile of. E.g. `123234345m333b123t11z` — every meld contains a 3. | — | Excluded by 混帶XY. Honor melds are exempt (no numeric rank to match), and so is the pair — only `hand.melds` is checked. A hand with zero non-honor melds (e.g. 字一色) doesn't vacuously qualify. |
+| 混帶XY (Common rank pair across every non-honor meld) | 50 | There's some pair of distinct ranks that every non-honor meld contains *both* of. E.g. `123234m123t123b11122z` — every meld contains a 2 and a 3. | 混帶X | Same exemptions as 混帶X (honor melds, the pair). |
+| 混帶XYZ (Common rank triple across every non-honor meld) | 60 | There's some triple of distinct ranks every non-honor meld contains all of. E.g. `123m123b123m11122233z` — every meld contains 1, 2, and 3. | 混帶XY | A run always has exactly 3 distinct ranks, so a hand with only a *single* non-honor meld still qualifies trivially (using that meld's own 3 ranks) — but a lone triplet/kong (only 1 distinct rank) never can. |
+| 全帶X (Common rank across every meld and the pair, no honors) | 120 | The ultimate extension: **no** honor meld and **no** honor pair, and every meld *and the pair itself* all contain the same rank X. E.g. `123234m222234t123b22b` — everything contains a 2 (`222234t` splits as triplet 222 + run 234, not a kong — see the notation note below). | 混帶X | |
+| 混帶么 (Honor presence + terminal in every non-honor meld) | 40 | The hand has an honor presence (an honor meld, *or* the pair itself is honors) **and** every non-honor meld contains a terminal (rank 1 or 9). | — | Requires at least one non-honor meld — an all-honor hand (already 字一色) doesn't vacuously qualify. |
+| 全帶么 (No honors, terminal in every meld and the pair) | 80 | **No** honor meld and **no** honor pair, and every meld *and the pair itself* contains a terminal. | — | Mutually exclusive with 混帶么 by construction (that one requires honor presence). |
+| 混老頭 (All triplets/kongs, terminals and/or honors) | 100 | Every meld is a triplet/kong, and every tile in the hand (melds and pair) is a terminal (1/9) or an honor - the two may mix freely. | 混帶么, 全帶么 | Stacks with 對對胡/坎坎胡 (not excluded). |
+| 清老頭 (All triplets/kongs, terminals only) | 200 | Same shape, but **no** honors anywhere - terminals only. | 混帶么, 全帶么, 混老頭 | Every 清老頭 hand is trivially also a 混老頭 hand, so it's excluded here. Same "stacks with 對對胡/坎坎胡" note as above. |
 
 ## Suit coverage
 
@@ -156,3 +231,20 @@ concealed — see the [明/暗 concept](#the-明暗-openconcealed-concept). All 
 - The 食胡-tile UI only lets you mark a tile in the **concealed** hand — there's no way to mark
   the winning tile as belonging to a declared meld (e.g. robbing a kong), since that scenario
   isn't relevant to any pattern implemented so far.
+
+### Assumptions made without explicit confirmation (flag if wrong)
+
+A batch of patterns went in quickly enough that a few exclusion/stacking decisions were made by
+inference from precedent rather than direct confirmation - implemented and tested either way, but
+worth double-checking:
+
+- **明/暗四歸四 doesn't exclude 般高**, even though a 4-runs-all-containing-X group usually also
+  contains an identical-run pair (e.g. two `234m`s) that would independently satisfy 般高 too.
+  Every other "bigger pattern absorbs the smaller ones it's built from" case in this list does
+  exclude - this one was left alone only because it wasn't explicitly mentioned.
+- **清一色 excludes 混一色** - inferred from the same "pure version subsumes the mixed version"
+  pattern as 清老頭/混老頭, not separately confirmed.
+- **小三連刻 and 大三連刻 don't exclude each other** - reasoned as structurally different (one
+  needs the pair, one doesn't), not confirmed.
+- **二連刻 stacks** (3 consecutive triplets = 2 instances) - inferred from the same precedent as
+  老少上/二步高 rather than stated outright for this specific pattern.
