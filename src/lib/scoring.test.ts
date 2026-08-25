@@ -649,8 +649,16 @@ describe("PATTERNS: 混帶X (common rank across every non-honor meld)", () => {
   });
 
   it("an honor meld is exempt from needing the common rank too", () => {
-    const result = scoreHand("123234345m333b111z22t", ctx());
+    const result = scoreHand("123234345m333b111z33t", ctx());
     expect(tai(result, "mixed-common-rank")).toBe(30);
+  });
+
+  it("the pair must also match the shared rank, unless the pair itself is honors", () => {
+    // Same shape as above, but the pair (22t) doesn't match the shared rank
+    // 3 and isn't honors either.
+    expect(tai(scoreHand("123234345m333b111z22t", ctx()), "mixed-common-rank")).toBe(0);
+    // An honor pair is exempt even though it doesn't numerically match.
+    expect(tai(scoreHand("123234345m333b111z22z", ctx()), "mixed-common-rank")).toBe(30);
   });
 });
 
@@ -897,6 +905,102 @@ describe("PATTERNS: 混一色/清一色", () => {
     const result = scoreHand("123456789m123m456m22m", ctx());
     expect(tai(result, "full-flush")).toBe(120);
     expect(tai(result, "half-flush")).toBe(0);
+  });
+});
+
+describe("PATTERNS: 相逢/明三相逢/暗三相逢/明四相逢/暗四相逢/明五相逢/暗五相逢 (same run across suits)", () => {
+  it("scores 相逢 once for 234m+234t (2 suits, same run)", () => {
+    const result = scoreHand("234m234t567b789b111z22z", ctx());
+    expect(tai(result, "cross-suit-same-run")).toBe(3);
+  });
+
+  it("scores 明三相逢 for 567m+567t+567b with one run exposed, excluding 相逢", () => {
+    const result = scoreHand("(567m)567t567b111z222z33z", ctx());
+    expect(tai(result, "three-suit-same-run-open")).toBe(10);
+    expect(tai(result, "three-suit-same-run-hidden")).toBe(0);
+    expect(tai(result, "cross-suit-same-run")).toBe(0);
+  });
+
+  it("scores 暗三相逢 for 567m+567t+567b fully concealed, excluding 相逢", () => {
+    const result = scoreHand("567m567t567b111z222z33z", ctx());
+    expect(tai(result, "three-suit-same-run-hidden")).toBe(20);
+    expect(tai(result, "three-suit-same-run-open")).toBe(0);
+    expect(tai(result, "cross-suit-same-run")).toBe(0);
+  });
+
+  it("scores 明四相逢 for 456m456m456t456b (one suit doubled) with a run exposed, excluding the lower tiers", () => {
+    const result = scoreHand("(456m)456m456t456b111z22z", ctx());
+    expect(tai(result, "four-suit-same-run-open")).toBe(40);
+    expect(tai(result, "three-suit-same-run-open")).toBe(0);
+    expect(tai(result, "cross-suit-same-run")).toBe(0);
+  });
+
+  it("scores 暗四相逢 for 456m456m456t456b fully concealed, excluding the lower tiers", () => {
+    const result = scoreHand("456m456m456t456b111z22z", ctx());
+    expect(tai(result, "four-suit-same-run-hidden")).toBe(80);
+    expect(tai(result, "three-suit-same-run-hidden")).toBe(0);
+    expect(tai(result, "cross-suit-same-run")).toBe(0);
+  });
+
+  it("scores 明五相逢 for 234234m234234t234b (5 runs, 2+2+1) with a run exposed, excluding every lower tier", () => {
+    const result = scoreHand("(234m)234m234t234t234b22z", ctx());
+    expect(tai(result, "five-suit-same-run-open")).toBe(80);
+    expect(tai(result, "four-suit-same-run-open")).toBe(0);
+    expect(tai(result, "three-suit-same-run-open")).toBe(0);
+    expect(tai(result, "cross-suit-same-run")).toBe(0);
+  });
+
+  it("scores 暗五相逢 for 234234234m234t234b (5 runs, 3+1+1) fully concealed, excluding every lower tier", () => {
+    const result = scoreHand("234m234m234m234t234b22z", ctx());
+    expect(tai(result, "five-suit-same-run-hidden")).toBe(160);
+    expect(tai(result, "four-suit-same-run-hidden")).toBe(0);
+    expect(tai(result, "three-suit-same-run-hidden")).toBe(0);
+    expect(tai(result, "cross-suit-same-run")).toBe(0);
+  });
+});
+
+describe("PATTERNS: 兩兄弟/小三兄弟/大三兄弟 (same-rank triplet/kong across suits)", () => {
+  it("scores 兩兄弟 for 555t+555b (2 suits, same rank)", () => {
+    const result = scoreHand("555t555b123m456m111z22z", ctx());
+    expect(tai(result, "cross-suit-same-triplet")).toBe(5);
+  });
+
+  it("scores 小三兄弟 for 33t+333m+3333b (pair at one suit, triplet/kong at the other 2), excluding 兩兄弟", () => {
+    const result = scoreHand("333m3333b456m789t111z33t", ctx());
+    expect(tai(result, "small-three-brothers")).toBe(20);
+    expect(tai(result, "cross-suit-same-triplet")).toBe(0);
+    expect(tai(result, "big-three-brothers")).toBe(0);
+  });
+
+  it("scores 大三兄弟 for 555m+555t+555b (no pair involved), excluding 兩兄弟", () => {
+    const result = scoreHand("555m555t555b111z123b22z", ctx());
+    expect(tai(result, "big-three-brothers")).toBe(40);
+    expect(tai(result, "cross-suit-same-triplet")).toBe(0);
+  });
+});
+
+describe("PATTERNS: 小三色連刻/大三色連刻 (consecutive ranks across suits)", () => {
+  it("scores 小三色連刻 for 33m+444t+555b (pair at one suit, triplets at the other 2, consecutive ranks)", () => {
+    const result = scoreHand("444t555b678m111z222z33m", ctx());
+    expect(tai(result, "small-three-color-consecutive-triplets")).toBe(10);
+  });
+
+  it("scores 大三色連刻 for 333t+4444m+555b (no pair involved, consecutive ranks)", () => {
+    const result = scoreHand("333t4444m555b111z678t22z", ctx());
+    expect(tai(result, "big-three-color-consecutive-triplets")).toBe(20);
+  });
+});
+
+describe("PATTERNS: 明/暗三色步步高 (3 suits, runs increasing by 1)", () => {
+  it("scores 明三色步步高 for 456t+567m+678b with one run exposed", () => {
+    const result = scoreHand("(456t)567m678b111z333z22z", ctx());
+    expect(tai(result, "three-color-step-up-open")).toBe(5);
+  });
+
+  it("scores 暗三色步步高 for 234m+345t+456b fully concealed", () => {
+    const result = scoreHand("234m345t456b111z333z22z", ctx());
+    expect(tai(result, "three-color-step-up-hidden")).toBe(10);
+    expect(tai(result, "three-color-step-up-open")).toBe(0);
   });
 });
 

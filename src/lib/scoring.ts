@@ -537,11 +537,18 @@ function oldYoungTripletInstances(hand: ResolvedHand): number {
 // match), and so is the pair (the pattern is about melds only). Requires at
 // least one non-honor meld to check - a hand with none (e.g. 字一色) has
 // nothing to unify around and shouldn't vacuously qualify.
+// Shared by 混帶X/XY/XYZ: the pair must also be one of the shared ranks
+// (it can only ever match one of them, being a single rank itself), *or*
+// the pair is honors and exempt the same way honor melds are.
+function pairMatchesOrIsHonor(hand: ResolvedHand, ranks: number[]): boolean {
+  return isHonorTile(hand.pair[0]) || ranks.includes(hand.pair[0].rank);
+}
+
 function hasCommonRankAcrossNonHonorMelds(hand: ResolvedHand): boolean {
   const nonHonorMelds = hand.melds.filter((m) => m.tiles[0].suit !== "z");
   if (nonHonorMelds.length === 0) return false;
   for (let rank = 1; rank <= 9; rank++) {
-    if (nonHonorMelds.every((m) => m.tiles.some((t) => t.rank === rank))) return true;
+    if (nonHonorMelds.every((m) => m.tiles.some((t) => t.rank === rank)) && pairMatchesOrIsHonor(hand, [rank])) return true;
   }
   return false;
 }
@@ -553,7 +560,12 @@ function hasCommonRankPairAcrossNonHonorMelds(hand: ResolvedHand): boolean {
   if (nonHonorMelds.length === 0) return false;
   for (let x = 1; x <= 9; x++) {
     for (let y = x + 1; y <= 9; y++) {
-      if (nonHonorMelds.every((m) => m.tiles.some((t) => t.rank === x) && m.tiles.some((t) => t.rank === y))) return true;
+      if (
+        nonHonorMelds.every((m) => m.tiles.some((t) => t.rank === x) && m.tiles.some((t) => t.rank === y)) &&
+        pairMatchesOrIsHonor(hand, [x, y])
+      ) {
+        return true;
+      }
     }
   }
   return false;
@@ -573,7 +585,8 @@ function hasCommonRankTripleAcrossNonHonorMelds(hand: ResolvedHand): boolean {
         if (
           nonHonorMelds.every(
             (m) => m.tiles.some((t) => t.rank === x) && m.tiles.some((t) => t.rank === y) && m.tiles.some((t) => t.rank === z)
-          )
+          ) &&
+          pairMatchesOrIsHonor(hand, [x, y, z])
         ) {
           return true;
         }
@@ -781,6 +794,22 @@ function evenlySpacedRunInstances(hand: ResolvedHand, gap: number): ResolvedMeld
 const isTripletOrKongAt = (hand: ResolvedHand, suit: Suit, rank: number): boolean =>
   hand.melds.some((m) => (m.kind === "triplet" || m.kind === "kong") && m.tiles[0].suit === suit && m.tiles[0].rank === rank);
 
+// 明/暗三色步步高: 3 suits, each holding one run, with the runs' starting
+// ranks increasing by 1 across suits in some order (e.g. 456t + 567m +
+// 678b, or 234m + 345t + 456b) - the cross-suit extension of 單色步步高
+// (same "climb by 1" shape, but confined to a single suit there). Starting
+// rank is capped at 5 (not 7) since the highest of the 3 runs starts 2
+// ranks later and a run can start no later than 7.
+function threeColorStepUpRunMelds(hand: ResolvedHand): ResolvedMeld[] | null {
+  for (let rank = 1; rank <= 5; rank++) {
+    for (const suits of THREE_SUIT_ORDERS) {
+      const melds = suits.map((suit, i) => segmentMelds(hand, suit, rank + i)[0]);
+      if (melds.every((m): m is ResolvedMeld => m !== undefined)) return melds;
+    }
+  }
+  return null;
+}
+
 // 二連刻: 2 triplets/kongs at consecutive ranks in one suit (e.g. 222m+333m,
 // mixing triplet/kong freely). No 明/暗 split. Stacks per adjacent pair
 // found (matches the precedent set by 老少上/二步高-style patterns), so 3
@@ -820,6 +849,135 @@ function hasBigThreeConsecutiveTriplets(hand: ResolvedHand): boolean {
     for (let rank = 1; rank <= 7; rank++) {
       if ([rank, rank + 1, rank + 2].every((r) => isTripletOrKongAt(hand, suit, r))) return true;
     }
+  }
+  return false;
+}
+
+// 相逢: 2 runs with the same 3 ranks but in *different* suits (e.g.
+// 234m+234t). No 明/暗 split. Stacks - grouped by suit-pair rather than a
+// flat count, so a run duplicated within one suit (a 般高 concern) doesn't
+// get miscounted as multiple 相逢 instances against itself.
+const NUMBERED_SUITS: Suit[] = ["m", "t", "b"];
+function crossSuitSameRunInstances(hand: ResolvedHand): [ResolvedMeld, ResolvedMeld][] {
+  const instances: [ResolvedMeld, ResolvedMeld][] = [];
+  for (let rank = 1; rank <= 7; rank++) {
+    for (let i = 0; i < NUMBERED_SUITS.length; i++) {
+      for (let j = i + 1; j < NUMBERED_SUITS.length; j++) {
+        const a = segmentMelds(hand, NUMBERED_SUITS[i], rank);
+        const b = segmentMelds(hand, NUMBERED_SUITS[j], rank);
+        const pairCount = Math.min(a.length, b.length);
+        for (let k = 0; k < pairCount; k++) instances.push([a[k], b[k]]);
+      }
+    }
+  }
+  return instances;
+}
+
+// 明/暗三/四/五相逢: all 3 suits have a run at the same rank, with at least
+// `minRuns` runs total across them (e.g. minRuns=3 for 三相逢: one run per
+// suit; minRuns=5 for 五相逢: 5 runs spread across the 3 suits however they
+// fall, like 2+2+1 or 3+1+1). Returns every run meld found there, which may
+// exceed minRuns - a hand satisfying a higher tier also satisfies the lower
+// ones, and the exclusion chain on each PATTERNS entry decides which tier
+// actually scores.
+function nSuitSameRunMelds(hand: ResolvedHand, minRuns: number): ResolvedMeld[] | null {
+  for (let rank = 1; rank <= 7; rank++) {
+    const groups = NUMBERED_SUITS.map((suit) => segmentMelds(hand, suit, rank));
+    if (groups.some((g) => g.length === 0)) continue;
+    if (groups.reduce((n, g) => n + g.length, 0) >= minRuns) return groups.flat();
+  }
+  return null;
+}
+
+// 兩兄弟: 2 triplets/kongs at the same rank but different suits (e.g.
+// 555t+555b). No 明/暗 split; stacks the same way 相逢 does - paired by
+// suit-index rather than a flat count so a within-suit duplicate isn't
+// double-counted.
+function crossSuitSameTripletInstances(hand: ResolvedHand): [ResolvedMeld, ResolvedMeld][] {
+  const instances: [ResolvedMeld, ResolvedMeld][] = [];
+  const tripletsAt = (suit: Suit, rank: number) =>
+    hand.melds.filter((m) => (m.kind === "triplet" || m.kind === "kong") && m.tiles[0].suit === suit && m.tiles[0].rank === rank);
+  for (let rank = 1; rank <= 9; rank++) {
+    for (let i = 0; i < NUMBERED_SUITS.length; i++) {
+      for (let j = i + 1; j < NUMBERED_SUITS.length; j++) {
+        const a = tripletsAt(NUMBERED_SUITS[i], rank);
+        const b = tripletsAt(NUMBERED_SUITS[j], rank);
+        const pairCount = Math.min(a.length, b.length);
+        for (let k = 0; k < pairCount; k++) instances.push([a[k], b[k]]);
+      }
+    }
+  }
+  return instances;
+}
+
+// 小三色連刻: 3 consecutive ranks across all 3 different suits, with the
+// hand's pair sitting at one of the 3 positions (in its own suit) and the
+// other 2 positions each held as a triplet/kong in one of the other 2
+// suits (e.g. 33m + 444t + 555b). The cross-suit extension of 小三連刻
+// (same shape, but confined to a single suit).
+function hasSmallThreeColorConsecutiveTriplets(hand: ResolvedHand): boolean {
+  const pair = hand.pair[0];
+  if (pair.suit === "z") return false;
+  const otherSuits = NUMBERED_SUITS.filter((s) => s !== pair.suit);
+  const windows = [
+    [pair.rank, pair.rank + 1, pair.rank + 2],
+    [pair.rank - 1, pair.rank, pair.rank + 1],
+    [pair.rank - 2, pair.rank - 1, pair.rank],
+  ];
+  for (const window of windows) {
+    if (window[0] < 1 || window[2] > 9) continue;
+    const others = window.filter((r) => r !== pair.rank);
+    if (
+      (isTripletOrKongAt(hand, otherSuits[0], others[0]) && isTripletOrKongAt(hand, otherSuits[1], others[1])) ||
+      (isTripletOrKongAt(hand, otherSuits[1], others[0]) && isTripletOrKongAt(hand, otherSuits[0], others[1]))
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// 大三色連刻: 3 consecutive ranks, one full triplet/kong per suit (all 3
+// suits used, none reduced to a pair) - e.g. 333t + 4444m + 555b. Not
+// mutually exclusive with the small version: structurally different shapes
+// (one needs the pair at one of the 3 ranks, one doesn't touch the pair at
+// all), same precedent as 小/大三連刻.
+const THREE_SUIT_ORDERS: Suit[][] = [
+  ["m", "t", "b"],
+  ["m", "b", "t"],
+  ["t", "m", "b"],
+  ["t", "b", "m"],
+  ["b", "m", "t"],
+  ["b", "t", "m"],
+];
+function hasBigThreeColorConsecutiveTriplets(hand: ResolvedHand): boolean {
+  for (let rank = 1; rank <= 7; rank++) {
+    const ranks = [rank, rank + 1, rank + 2];
+    for (const suits of THREE_SUIT_ORDERS) {
+      if (ranks.every((r, i) => isTripletOrKongAt(hand, suits[i], r))) return true;
+    }
+  }
+  return false;
+}
+
+// 小三兄弟: the 3-suit extension of 兩兄弟 - one rank held as the pair (in
+// its own suit) with the other 2 suits each holding a triplet/kong at that
+// *same* rank (e.g. 33t + 333m + 3333b). Unlike the consecutive-rank color
+// patterns, this is a single fixed rank, so no sliding window is needed.
+function hasSmallThreeBrothers(hand: ResolvedHand): boolean {
+  const pair = hand.pair[0];
+  if (pair.suit === "z") return false;
+  const otherSuits = NUMBERED_SUITS.filter((s) => s !== pair.suit);
+  return otherSuits.every((s) => isTripletOrKongAt(hand, s, pair.rank));
+}
+
+// 大三兄弟: all 3 suits hold a triplet/kong at the same rank (e.g.
+// 555m+555t+555b) - the pair-free counterpart to 小三兄弟, same precedent
+// as every other small/big pair in this file (structurally different
+// shapes, not mutually exclusive with each other).
+function hasBigThreeBrothers(hand: ResolvedHand): boolean {
+  for (let rank = 1; rank <= 9; rank++) {
+    if (NUMBERED_SUITS.every((suit) => isTripletOrKongAt(hand, suit, rank))) return true;
   }
   return false;
 }
@@ -1310,6 +1468,125 @@ export const PATTERNS: TaiPattern[] = [
     name: "清一色 (One numbered suit, no honors)",
     score: (hand) => (numberedSuitsUsed(hand).size === 1 && allHandTiles(hand).every((t) => !isHonorTile(t)) ? 120 : 0),
     excludes: ["half-flush"],
+  },
+  {
+    id: "cross-suit-same-run",
+    name: "相逢 (Same run, different suits)",
+    // No 明/暗 split; stacks per instance.
+    score: (hand) => crossSuitSameRunInstances(hand).length * 3,
+  },
+  {
+    id: "three-suit-same-run-open",
+    name: "明三相逢 (Same run in all 3 suits, open)",
+    score: (hand, ctx) => {
+      const melds = nSuitSameRunMelds(hand, 3);
+      return melds && melds.some((m) => isMeldOpen(m, ctx)) ? 10 : 0;
+    },
+    excludes: ["cross-suit-same-run"],
+  },
+  {
+    id: "three-suit-same-run-hidden",
+    name: "暗三相逢 (Same run in all 3 suits, concealed)",
+    score: (hand, ctx) => {
+      const melds = nSuitSameRunMelds(hand, 3);
+      return melds && melds.every((m) => !isMeldOpen(m, ctx)) ? 20 : 0;
+    },
+    excludes: ["cross-suit-same-run"],
+  },
+  {
+    id: "four-suit-same-run-open",
+    name: "明四相逢 (4 runs across all 3 suits, one suit doubled, open)",
+    score: (hand, ctx) => {
+      const melds = nSuitSameRunMelds(hand, 4);
+      return melds && melds.some((m) => isMeldOpen(m, ctx)) ? 40 : 0;
+    },
+    excludes: ["cross-suit-same-run", "three-suit-same-run-open", "three-suit-same-run-hidden"],
+  },
+  {
+    id: "four-suit-same-run-hidden",
+    name: "暗四相逢 (4 runs across all 3 suits, one suit doubled, concealed)",
+    score: (hand, ctx) => {
+      const melds = nSuitSameRunMelds(hand, 4);
+      return melds && melds.every((m) => !isMeldOpen(m, ctx)) ? 80 : 0;
+    },
+    excludes: ["cross-suit-same-run", "three-suit-same-run-open", "three-suit-same-run-hidden"],
+  },
+  {
+    id: "five-suit-same-run-open",
+    name: "明五相逢 (5 runs across all 3 suits, open)",
+    score: (hand, ctx) => {
+      const melds = nSuitSameRunMelds(hand, 5);
+      return melds && melds.some((m) => isMeldOpen(m, ctx)) ? 80 : 0;
+    },
+    excludes: [
+      "cross-suit-same-run",
+      "three-suit-same-run-open",
+      "three-suit-same-run-hidden",
+      "four-suit-same-run-open",
+      "four-suit-same-run-hidden",
+    ],
+  },
+  {
+    id: "five-suit-same-run-hidden",
+    name: "暗五相逢 (5 runs across all 3 suits, concealed)",
+    score: (hand, ctx) => {
+      const melds = nSuitSameRunMelds(hand, 5);
+      return melds && melds.every((m) => !isMeldOpen(m, ctx)) ? 160 : 0;
+    },
+    excludes: [
+      "cross-suit-same-run",
+      "three-suit-same-run-open",
+      "three-suit-same-run-hidden",
+      "four-suit-same-run-open",
+      "four-suit-same-run-hidden",
+    ],
+  },
+  {
+    id: "cross-suit-same-triplet",
+    name: "兩兄弟 (Same triplet/kong rank, different suits)",
+    // No 明/暗 split; stacks per instance, same as 相逢.
+    score: (hand) => crossSuitSameTripletInstances(hand).length * 5,
+  },
+  {
+    id: "small-three-color-consecutive-triplets",
+    name: "小三色連刻 (3 consecutive ranks across all 3 suits, pair at one + 2 triplets/kongs)",
+    score: (hand) => (hasSmallThreeColorConsecutiveTriplets(hand) ? 10 : 0),
+  },
+  {
+    id: "big-three-color-consecutive-triplets",
+    name: "大三色連刻 (3 consecutive ranks across all 3 suits, all triplets/kongs)",
+    // Tai value not yet confirmed by the user - assumed 20 (double the small
+    // version, matching the 小/大 doubling convention used elsewhere, e.g.
+    // 小三連刻=15 / 大三連刻=30). Flag for confirmation.
+    score: (hand) => (hasBigThreeColorConsecutiveTriplets(hand) ? 20 : 0),
+  },
+  {
+    id: "small-three-brothers",
+    name: "小三兄弟 (Same rank across all 3 suits, pair at one + 2 triplets/kongs)",
+    score: (hand) => (hasSmallThreeBrothers(hand) ? 20 : 0),
+    excludes: ["cross-suit-same-triplet"],
+  },
+  {
+    id: "big-three-brothers",
+    name: "大三兄弟 (Same rank across all 3 suits, all triplets/kongs)",
+    score: (hand) => (hasBigThreeBrothers(hand) ? 40 : 0),
+    excludes: ["cross-suit-same-triplet"],
+  },
+  {
+    id: "three-color-step-up-open",
+    name: "明三色步步高 (3 suits, runs increasing by 1, open)",
+    score: (hand, ctx) => {
+      const melds = threeColorStepUpRunMelds(hand);
+      return melds && melds.some((m) => isMeldOpen(m, ctx)) ? 5 : 0;
+    },
+  },
+  {
+    id: "three-color-step-up-hidden",
+    name: "暗三色步步高 (3 suits, runs increasing by 1, concealed)",
+    score: (hand, ctx) => {
+      const melds = threeColorStepUpRunMelds(hand);
+      return melds && melds.every((m) => !isMeldOpen(m, ctx)) ? 10 : 0;
+    },
   },
 ];
 

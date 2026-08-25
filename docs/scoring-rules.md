@@ -167,6 +167,33 @@ these use [duplicate-instance counting](#duplicate-instance-counting-清龍雜�
 | 小三連刻 (3 consecutive ranks, pair at one end) | 15 | 3 consecutive ranks in one suit where the hand's pair sits at one end and the other 2 are triplets/kongs — e.g. `22m+333m+444m`. | — | Structurally different from 大三連刻 (needs the pair), so not mutually exclusive with it. |
 | 大三連刻 (3 consecutive triplets/kongs) | 30 | Same 3-consecutive-rank shape, but all 3 are full triplets/kongs — pair not involved. | — | |
 
+## Cross-suit patterns
+
+These are the cross-suit versions of several single-suit patterns above (相逢/相逢's higher tiers
+mirror 般高/一色三同順/一色四同順's "identical run" idea but across suits instead of within one;
+兩兄弟/小三兄弟/大三兄弟 mirror 二連刻/小三連刻/大三連刻's triplet grouping but by same rank across
+suits instead of consecutive ranks in one suit; 小/大三色連刻 are the direct 3-suit extension of
+小/大三連刻; 明/暗三色步步高 is the 3-suit extension of 明/暗單色步步高). 明/暗 splits use the same
+convention as elsewhere: 明 = at least one meld in the group is open, 暗 = all are concealed — see
+the [明/暗 concept](#the-明暗-openconcealed-concept).
+
+| Pattern | Tai | Criteria | Excludes | Notes |
+|---|---|---|---|---|
+| 相逢 (Same run, different suits) | 3 each | 2 runs with the same 3 ranks but in different suits — e.g. `234m+234t`. No 明/暗 split. | — | **Stacks per instance**, paired by suit-index so a within-suit duplicate (a 般高 concern) doesn't get double-counted as 相逢 against itself. |
+| 明三相逢 (Same run in all 3 suits, open) | 10 | All 3 suits have a run at the same rank — e.g. `567m+567t+567b` — instance is 明. | 相逢 | |
+| 暗三相逢 (same, concealed) | 20 | Same shape, instance is 暗. | 相逢 | |
+| 明四相逢 (4 runs across all 3 suits, one suit doubled, open) | 40 | The 3-suit group plus one extra run in whichever suit has it twice — e.g. `456m456m456t456b` — instance is 明. | 相逢, 明三相逢, 暗三相逢 | |
+| 暗四相逢 (same, concealed) | 80 | Same shape, instance is 暗. | 相逢, 明三相逢, 暗三相逢 | |
+| 明五相逢 (5 runs across all 3 suits, open) | 80 | All 3 suits present with 5 runs total spread across them however they fall (2+2+1, 3+1+1, etc.) — e.g. `234234m234234t234b` or `234234234m234t234b` — instance is 明. | 相逢, 明/暗三相逢, 明/暗四相逢 | |
+| 暗五相逢 (same, concealed) | 160 | Same shape, instance is 暗. | 相逢, 明/暗三相逢, 明/暗四相逢 | |
+| 兩兄弟 (Same triplet/kong rank, different suits) | 5 each | 2 triplets/kongs at the same rank but different suits — e.g. `555t+555b`. No 明/暗 split. | — | **Stacks per instance**, same suit-index pairing as 相逢. |
+| 小三兄弟 (Same rank across 3 suits, pair at one) | 20 | One rank held as the pair (in its own suit), with the other 2 suits each holding a triplet/kong at that *same* rank — e.g. `33t+333m+3333b`. | 兩兄弟 | Structurally different from 大三兄弟 (needs the pair), so not mutually exclusive with it — same precedent as 小/大三連刻. |
+| 大三兄弟 (Same rank across all 3 suits, all triplets/kongs) | 40 | All 3 suits hold a triplet/kong at the same rank — e.g. `555m+555t+555b`. Pair not involved. | 兩兄弟 | |
+| 小三色連刻 (3 consecutive ranks across 3 suits, pair at one) | 10 | 3 consecutive ranks, one per suit, with the hand's pair sitting at one of the 3 positions (in its own suit) and the other 2 positions each a triplet/kong in one of the other 2 suits — e.g. `33m+444t+555b`. | — | Structurally different from 大三色連刻 (needs the pair), not mutually exclusive. |
+| 大三色連刻 (3 consecutive ranks across 3 suits, all triplets/kongs) | 20 | Same 3-consecutive-rank shape, but all 3 are full triplets/kongs, one per suit — pair not involved — e.g. `333t+4444m+555b`. | — | **Tai value not yet confirmed by the user** — assumed 20 (double the small version, matching the 小/大 doubling convention seen elsewhere, e.g. 小三連刻=15/大三連刻=30). |
+| 明三色步步高 (3 suits, runs increasing by 1, open) | 5 | 3 suits, each holding one run, with the runs' starting ranks increasing by 1 across suits in some order — e.g. `456t+567m+678b` or `234m+345t+456b`. Instance is 明. | — | |
+| 暗三色步步高 (same, concealed) | 10 | Same shape, instance is 暗. | — | |
+
 ## Flush
 
 | Pattern | Tai | Criteria | Excludes | Notes |
@@ -193,9 +220,9 @@ concealed — see the [明/暗 concept](#the-明暗-openconcealed-concept). All 
 
 | Pattern | Tai | Criteria | Excludes | Notes |
 |---|---|---|---|---|
-| 混帶X (Common rank across every non-honor meld) | 30 | There's some single rank 1–9 that every *non-honor* meld in the hand contains a tile of. E.g. `123234345m333b123t11z` — every meld contains a 3. | — | Excluded by 混帶XY. Honor melds are exempt (no numeric rank to match), and so is the pair — only `hand.melds` is checked. A hand with zero non-honor melds (e.g. 字一色) doesn't vacuously qualify. |
-| 混帶XY (Common rank pair across every non-honor meld) | 50 | There's some pair of distinct ranks that every non-honor meld contains *both* of. E.g. `123234m123t123b11122z` — every meld contains a 2 and a 3. | 混帶X | Same exemptions as 混帶X (honor melds, the pair). |
-| 混帶XYZ (Common rank triple across every non-honor meld) | 60 | There's some triple of distinct ranks every non-honor meld contains all of. E.g. `123m123b123m11122233z` — every meld contains 1, 2, and 3. | 混帶XY | A run always has exactly 3 distinct ranks, so a hand with only a *single* non-honor meld still qualifies trivially (using that meld's own 3 ranks) — but a lone triplet/kong (only 1 distinct rank) never can. |
+| 混帶X (Common rank across every non-honor meld) | 30 | There's some single rank 1–9 that every *non-honor* meld in the hand contains a tile of, **and** the pair also contains that rank (or the pair is itself honors). E.g. `123234345m333b123t11z` — every meld contains a 3, and the pair (`11z`) is honors so it's exempt. | — | Excluded by 混帶XY. Honor melds are exempt from the rank check (no numeric rank to match); the pair must either match the shared rank too or be honors — a non-honor pair that doesn't match the rank fails the whole pattern. A hand with zero non-honor melds (e.g. 字一色) doesn't vacuously qualify. |
+| 混帶XY (Common rank pair across every non-honor meld) | 50 | There's some pair of distinct ranks that every non-honor meld contains *both* of, **and** the pair contains one of those two ranks (or is itself honors). E.g. `123234m123t123b11122z` — every meld contains a 2 and a 3. | 混帶X | Same exemptions as 混帶X (honor melds exempt from the rank check; pair must match one of the shared ranks or be honors). |
+| 混帶XYZ (Common rank triple across every non-honor meld) | 60 | There's some triple of distinct ranks every non-honor meld contains all of, **and** the pair contains one of the three ranks (or is itself honors). E.g. `123m123b123m11122233z` — every meld contains 1, 2, and 3. | 混帶XY | A run always has exactly 3 distinct ranks, so a hand with only a *single* non-honor meld still qualifies trivially (using that meld's own 3 ranks) — but a lone triplet/kong (only 1 distinct rank) never can. Same pair rule as 混帶X/XY. |
 | 全帶X (Common rank across every meld and the pair, no honors) | 120 | The ultimate extension: **no** honor meld and **no** honor pair, and every meld *and the pair itself* all contain the same rank X. E.g. `123234m222234t123b22b` — everything contains a 2 (`222234t` splits as triplet 222 + run 234, not a kong — see the notation note below). | 混帶X | |
 | 混帶么 (Honor presence + terminal in every non-honor meld) | 40 | The hand has an honor presence (an honor meld, *or* the pair itself is honors) **and** every non-honor meld contains a terminal (rank 1 or 9). | — | Requires at least one non-honor meld — an all-honor hand (already 字一色) doesn't vacuously qualify. |
 | 全帶么 (No honors, terminal in every meld and the pair) | 80 | **No** honor meld and **no** honor pair, and every meld *and the pair itself* contains a terminal. | — | Mutually exclusive with 混帶么 by construction (that one requires honor presence). |
@@ -231,6 +258,11 @@ concealed — see the [明/暗 concept](#the-明暗-openconcealed-concept). All 
 - The 食胡-tile UI only lets you mark a tile in the **concealed** hand — there's no way to mark
   the winning tile as belonging to a declared meld (e.g. robbing a kong), since that scenario
   isn't relevant to any pattern implemented so far.
+- **缺一門's exact definition is under review.** The user flagged that the current
+  `numberedSuitsUsed(hand).size === 2` check (counting m/t/b tiles across melds *and* the pair)
+  might not match the intended house rule, specifically around whether/how the pair's suit should
+  factor in. Not yet changed pending clarification — see [scoring.ts](../src/lib/scoring.ts)'s
+  `numberedSuitsUsed` and the `缺一門` pattern entry.
 
 ### Assumptions made without explicit confirmation (flag if wrong)
 
@@ -248,3 +280,8 @@ worth double-checking:
   needs the pair, one doesn't), not confirmed.
 - **二連刻 stacks** (3 consecutive triplets = 2 instances) - inferred from the same precedent as
   老少上/二步高 rather than stated outright for this specific pattern.
+- **大三色連刻's tai value (20) wasn't given** - assumed as double 小三色連刻's 10, matching the
+  小/大 doubling convention used everywhere else in this list. Flag if wrong.
+- **小/大三色連刻, 明/暗三色步步高, and 小/大三兄弟 don't exclude each other across families**
+  (e.g. 小三色連刻 doesn't exclude 兩兄弟) - they check different shapes (consecutive vs. same
+  rank, triplet vs. run) that can't structurally overlap, so no exclusion was added between them.
