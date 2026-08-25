@@ -978,6 +978,27 @@ describe("PATTERNS: 雙姊妹 (2 distinct 相逢 instances)", () => {
   });
 });
 
+describe("PATTERNS: 全姊妹 (every meld is part of a 相逢)", () => {
+  it("scores for 123m123m123t678b678t77z - the 2nd 123m still counts (123t is its partner too)", () => {
+    const result = scoreHand("123m123m123t678b678t77z", ctx());
+    expect(tai(result, "full-cross-suit-runs")).toBe(20);
+    expect(tai(result, "cross-suit-same-run")).toBe(6);
+    expect(tai(result, "twin-cross-suit-runs")).toBe(5);
+  });
+
+  it("scores for 345t345t345b345b345m55z, even though 相逢 itself is excluded by 暗五相逢", () => {
+    const result = scoreHand("345t345t345b345b345m55z", ctx());
+    expect(tai(result, "full-cross-suit-runs")).toBe(20);
+    expect(tai(result, "five-suit-same-run-hidden")).toBe(160);
+    expect(tai(result, "cross-suit-same-run")).toBe(0);
+  });
+
+  it("doesn't score when at least one meld has no same-start-rank partner in another suit", () => {
+    const result = scoreHand("123m123m123t456b111z22z", ctx());
+    expect(tai(result, "full-cross-suit-runs")).toBe(0);
+  });
+});
+
 describe("PATTERNS: 兩兄弟/小三兄弟/大三兄弟 (same-rank triplet/kong across suits)", () => {
   it("scores 兩兄弟 for 555t+555b (2 suits, same rank)", () => {
     const result = scoreHand("555t555b123m456m111z22z", ctx());

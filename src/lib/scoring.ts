@@ -906,6 +906,28 @@ function hasTwoDistinctCrossSuitRuns(hand: ResolvedHand): boolean {
   return false;
 }
 
+// 全姊妹: every one of the 5 melds individually has a same-start-rank run
+// partner in a different suit somewhere in the hand (e.g. 123m+123m+123t -
+// both 123m copies count, even though crossSuitSameRunInstances' min-based
+// pairing only ever forms one *stacking* instance out of them; this is a
+// looser per-meld existence check, not an instance count). A triplet/kong
+// or honor meld can never satisfy this, so 全姊妹 implies an all-runs hand.
+function isPartOfCrossSuitRun(hand: ResolvedHand, meld: ResolvedMeld): boolean {
+  if (meld.kind !== "run") return false;
+  const startRank = Math.min(...meld.tiles.map((t) => t.rank));
+  const suit = meld.tiles[0].suit;
+  return hand.melds.some(
+    (other) =>
+      other !== meld &&
+      other.kind === "run" &&
+      other.tiles[0].suit !== suit &&
+      Math.min(...other.tiles.map((t) => t.rank)) === startRank
+  );
+}
+function hasFullCrossSuitRuns(hand: ResolvedHand): boolean {
+  return hand.melds.every((m) => isPartOfCrossSuitRun(hand, m));
+}
+
 // 兩兄弟: 2 triplets/kongs at the same rank but different suits (e.g.
 // 555t+555b). No 明/暗 split; stacks the same way 相逢 does - paired by
 // suit-index rather than a flat count so a within-suit duplicate isn't
@@ -1501,6 +1523,12 @@ export const PATTERNS: TaiPattern[] = [
     // Additional bonus on top of 相逢 - stacks with it (and with anything
     // else), not an alternative to it. No 明/暗 split.
     score: (hand) => (hasTwoDistinctCrossSuitRuns(hand) ? 5 : 0),
+  },
+  {
+    id: "full-cross-suit-runs",
+    name: "全姊妹 (Every meld is part of a 相逢)",
+    // Additional bonus, same "stacks with everything" framing as 雙姊妹.
+    score: (hand) => (hasFullCrossSuitRuns(hand) ? 20 : 0),
   },
   {
     id: "three-suit-same-run-open",
