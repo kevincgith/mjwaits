@@ -928,6 +928,15 @@ function hasFullCrossSuitRuns(hand: ResolvedHand): boolean {
   return hand.melds.every((m) => isPartOfCrossSuitRun(hand, m));
 }
 
+// 樓梯: all 5 melds are runs whose starting ranks form 5 consecutive
+// numbers (X..X+4) - suit is unrestricted, melds can repeat or vary
+// freely across suits, e.g. 123t+234b+345t+456m+567m. No 明/暗 split.
+function hasStaircase(hand: ResolvedHand): boolean {
+  if (!hand.melds.every((m) => m.kind === "run")) return false;
+  const starts = hand.melds.map((m) => Math.min(...m.tiles.map((t) => t.rank))).sort((a, b) => a - b);
+  return starts.every((s, i) => i === 0 || s === starts[i - 1] + 1);
+}
+
 // 兩兄弟: 2 triplets/kongs at the same rank but different suits (e.g.
 // 555t+555b). No 明/暗 split; stacks the same way 相逢 does - paired by
 // suit-index rather than a flat count so a within-suit duplicate isn't
@@ -1529,6 +1538,13 @@ export const PATTERNS: TaiPattern[] = [
     name: "全姊妹 (Every meld is part of a 相逢)",
     // Additional bonus, same "stacks with everything" framing as 雙姊妹.
     score: (hand) => (hasFullCrossSuitRuns(hand) ? 20 : 0),
+  },
+  {
+    id: "staircase",
+    name: "樓梯 (5 runs, consecutive starting ranks, any suit)",
+    // Additional bonus, same "stacks with everything" framing as 雙/全姊妹 -
+    // doesn't exclude 平胡 even though every 樓梯 hand is also 平胡.
+    score: (hand) => (hasStaircase(hand) ? 20 : 0),
   },
   {
     id: "three-suit-same-run-open",

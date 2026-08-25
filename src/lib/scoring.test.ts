@@ -999,6 +999,24 @@ describe("PATTERNS: 全姊妹 (every meld is part of a 相逢)", () => {
   });
 });
 
+describe("PATTERNS: 樓梯 (5 runs, consecutive starting ranks, any suit)", () => {
+  it("scores for 123t+234b+345t+456m+567m (starts 1-5, suits unrestricted)", () => {
+    const result = scoreHand("123t234b345t456m567m77z", ctx());
+    expect(tai(result, "staircase")).toBe(20);
+    expect(tai(result, "all-runs")).toBe(5);
+  });
+
+  it("doesn't score when the starting ranks aren't consecutive", () => {
+    const result = scoreHand("123456789m123m456m22m", ctx());
+    expect(tai(result, "staircase")).toBe(0);
+  });
+
+  it("doesn't score when a triplet/kong is involved", () => {
+    const result = scoreHand("123m234m345m456m111z22z", ctx());
+    expect(tai(result, "staircase")).toBe(0);
+  });
+});
+
 describe("PATTERNS: 兩兄弟/小三兄弟/大三兄弟 (same-rank triplet/kong across suits)", () => {
   it("scores 兩兄弟 for 555t+555b (2 suits, same rank)", () => {
     const result = scoreHand("555t555b123m456m111z22z", ctx());
