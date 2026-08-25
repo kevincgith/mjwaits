@@ -70,6 +70,18 @@ A quiz mode for practicing waits recognition, separate from the calculator (swit
 
 A live timer runs per question and freezes at submit. Results accumulate into a stats table broken down by level and flush mode (since difficulty varies a lot between them) — answered, correct, wrong, % correct, and average time, with an overall total row and a Reset Stats button. Stats persist across switching back to the Calculator tab and back.
 
+### Scoring calculator
+
+A separate tab (not the waits calculator, which stays always-concealed) for scoring a complete
+winning hand against a house tai (番) list — work in progress, built up one pattern at a time. The
+hand is entered as two tap-based tile regions matching the physical table: 手牌區 for your
+concealed tiles, 門前牌區 for anything laid out in front of you (called melds, kongs of either
+kind, and bonus tiles). Seat wind, round wind, and self-draw are tracked alongside the hand, and
+long-pressing a concealed-hand tile marks it as the 食胡 tile (the one that completed the hand) —
+several patterns score differently depending on whether a meld was completed by a self-drawn tile
+versus one claimed off a discard. See [docs/scoring-rules.md](docs/scoring-rules.md) for the full
+pattern list — tai values, criteria, and which patterns exclude which.
+
 ## Notation reference
 
 ```
@@ -89,8 +101,8 @@ npm test         # run the test suite (vitest)
 npm run build    # typecheck + production build
 ```
 
-The core engine (parsing, shanten, waits, joker resolution, discard analysis) lives in [`src/lib/mahjong.ts`](src/lib/mahjong.ts) and is covered by an extensive test suite in [`src/lib/mahjong.test.ts`](src/lib/mahjong.test.ts), including brute-force cross-validation for the trickier joker and shanten logic. Trainer question generation lives in [`src/lib/trainer.ts`](src/lib/trainer.ts), tested with property-based checks across all levels and flush mode in [`src/lib/trainer.test.ts`](src/lib/trainer.test.ts).
+The core engine (parsing, shanten, waits, joker resolution, discard analysis) lives in [`src/lib/mahjong.ts`](src/lib/mahjong.ts) and is covered by an extensive test suite in [`src/lib/mahjong.test.ts`](src/lib/mahjong.test.ts), including brute-force cross-validation for the trickier joker and shanten logic. Trainer question generation lives in [`src/lib/trainer.ts`](src/lib/trainer.ts), tested with property-based checks across all levels and flush mode in [`src/lib/trainer.test.ts`](src/lib/trainer.test.ts). The scoring engine (notation parsing, decomposition, the tai pattern list) lives in [`src/lib/scoring.ts`](src/lib/scoring.ts), tested in [`src/lib/scoring.test.ts`](src/lib/scoring.test.ts) — see [docs/scoring-rules.md](docs/scoring-rules.md) for what each pattern actually does.
 
 Built with React, TypeScript, and Vite; deployed to GitHub Pages via GitHub Actions on every push to `main`.
 
-See [ROADMAP.md](ROADMAP.md) for ideas on future work (a scoring calculator, letting users choose between detection model sizes).
+See [ROADMAP.md](ROADMAP.md) for ideas on future work (letting users choose between detection model sizes, self-draw/dealer scoring patterns, point conversion for the scoring calculator).

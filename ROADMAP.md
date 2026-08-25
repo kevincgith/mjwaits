@@ -26,10 +26,20 @@ Smaller and more concrete than the two feature ideas above.
 - **Joker handling is incomplete outside the plain waits list.** Shanten, discard-efficiency, and discard-choice/complete-hand-breakdown analysis all currently bail out entirely when a hand contains jokers (see the `hasJokers` checks in `App.tsx` — no shanten badge, "Discard analysis isn't available yet for hands with jokers"). The plain waits list already shows what each joker resolves to for a given wait (the `joker-hint`, 🀪=tile); the fix is extending that same "what does the joker assume" resolution into shanten/discard-analysis/breakdown instead of just disabling them.
 - **Rethink the Breakdown button further.** The current on/off toggle + `↔` order-icon split (see recent commits) is an improvement over the old 3-way text cycle, but isn't necessarily the final design.
 
-## Scoring calculator (tai/fan)
+## Scoring calculator (tai/番) — foundation shipped, patterns in progress
 
-Given a winning hand, calculate its actual score under Taiwanese 16-tile scoring rules, not just confirm it's complete.
+The Scoring tab (separate from the waits calculator) scores a complete hand against a concrete
+house tai list, built up one pattern at a time rather than as a configurable/universal ruleset
+(confirmed as the right call - see [`src/lib/scoring.ts`](src/lib/scoring.ts)'s module doc
+comment). 27 patterns implemented so far; see [docs/scoring-rules.md](docs/scoring-rules.md) for
+the full list with tai values, criteria, and exclusions.
 
-- Biggest complexity driver isn't the individual scoring patterns (~30-40 named tai bonuses, each a fairly simple pattern check) — it's that Taiwanese scoring rules vary by table/region (different tai values, caps, which patterns count at all). Building a configurable/universal ruleset from day one is the trap; better to hard-code one concrete ruleset first and only generalize once that works end to end.
-- Needs game context the app doesn't currently track: seat wind, round wind, self-draw vs. won-off-discard, flowers drawn, kongs declared, dealer status.
-- `decomposeHand` currently returns *one* valid meld/pair decomposition; scoring needs *all* valid decompositions enumerated, since which decomposition you pick can change the tai total (e.g. a triplet read one way vs. folded into a run-based reading), and the correct score is the max over all valid readings.
+Still open:
+
+- **門清's tai value (1) is a placeholder**, not yet confirmed against house rules.
+- **No self-draw (自摸) or dealer-status patterns yet**, despite `GameContext` already tracking
+  both - the house list given so far hasn't needed them.
+- **No point/currency conversion** (base value, dealer doubling, caps) - this only totals tai.
+- **Jokers aren't supported** in the scoring notation/UI at all yet.
+- **Added kong vs. called kong** aren't distinguished (both score as a generic "exposed kong") -
+  only matters for the rare robbing-the-kong (搶槓) pattern, not yet requested.
