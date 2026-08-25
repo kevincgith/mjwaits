@@ -591,6 +591,21 @@ function eightPairsMiddleTilePairCount(hand: ResolvedHand): number {
   return count;
 }
 
+// 三元嚦咕/三風嚦咕/四喜嚦咕: half-tai borrowings of 小三元/小三風/小四喜 for
+// the 嚦咕嚦咕 context - just "is the kind present at all" (confirmed by
+// the user: 5z/6z/7z all present as plain pairs, no triplet or pair-role
+// requirement, already qualifies as 三元嚦咕), since every tile in an
+// eight-pairs hand already belongs to some pair/triple/quad group - no
+// loose leftover tiles the way a normal hand's 小/大 distinction hinges
+// on. Tai values (20, 15, 60) are the user's confirmed half of the normal
+// 小三元 (40), 小三風 (30), and 小四喜 (120).
+function eightPairsDragonRankCount(hand: ResolvedHand): number {
+  return new Set(allHandTiles(hand).filter((t) => t.suit === "z" && t.rank >= 5 && t.rank <= 7).map((t) => t.rank)).size;
+}
+function eightPairsWindRankCount(hand: ResolvedHand): number {
+  return new Set(allHandTiles(hand).filter((t) => t.suit === "z" && t.rank >= 1 && t.rank <= 4).map((t) => t.rank)).size;
+}
+
 // 假獨: the 食胡 tile fills the *middle* rank of some run meld it belongs
 // to (a kanchan/closed-wait shape) - e.g. 12334m completed by 2m can be
 // read as 234m (already complete) + 13m waiting on 2m only, even though
@@ -2112,6 +2127,29 @@ export const PATTERNS: TaiPattern[] = [
     },
     excludes: ["eight-pairs"],
   },
+  {
+    id: "eight-pairs-three-dragons",
+    name: "三元嚦咕 (嚦咕嚦咕: all 3 dragon kinds present)",
+    // Additive bonus, half of 小三元's 40 tai - the user confirmed this
+    // maps to the "small" tier's value even though the condition itself
+    // (mere presence, no meld/pair-role requirement) doesn't structurally
+    // distinguish 小/大 the way normal hands do.
+    score: (hand) => (eightPairsDragonRankCount(hand) === 3 ? 20 : 0),
+  },
+  {
+    id: "eight-pairs-three-winds",
+    name: "三風嚦咕 (嚦咕嚦咕: at least 3 wind kinds present)",
+    // Additive bonus, half of 小三風's 30 tai. Excluded by 四喜嚦咕 below
+    // (all 4 wind kinds trivially includes "at least 3").
+    score: (hand) => (eightPairsWindRankCount(hand) >= 3 ? 15 : 0),
+  },
+  {
+    id: "eight-pairs-four-winds",
+    name: "四喜嚦咕 (嚦咕嚦咕: all 4 wind kinds present)",
+    // Additive bonus, half of 小四喜's 120 tai.
+    score: (hand) => (eightPairsWindRankCount(hand) === 4 ? 60 : 0),
+    excludes: ["eight-pairs-three-winds"],
+  },
 ];
 
 export interface ScoreResult {
@@ -2373,6 +2411,16 @@ function scoreEightPairs(parsed: ParsedScoringHand, ctx: GameContext): ScoreResu
     matched.push({ pattern: PATTERNS.find((p) => p.id === "middle-tile-pair")!, tai: middleTilePairCount * 2 });
   }
 
+  // 三元嚦咕/三風嚦咕/四喜嚦咕: eight-pairs-only bonuses, same raw-score +
+  // exclude-cascade approach as the reusable batch above, just kept
+  // separate since these ids don't exist as normal-hand patterns at all.
+  const honorBonusIds = ["eight-pairs-three-dragons", "eight-pairs-three-winds", "eight-pairs-four-winds"];
+  const honorBonusScored = PATTERNS.filter((p) => honorBonusIds.includes(p.id))
+    .map((pattern) => ({ pattern, tai: pattern.score(hand, ctx) }))
+    .filter((m) => m.tai > 0);
+  const honorBonusExcluded = new Set(honorBonusScored.flatMap((m) => m.pattern.excludes ?? []));
+  matched.push(...honorBonusScored.filter((m) => !honorBonusExcluded.has(m.pattern.id)));
+
   pushSelfDrawAndGenuineSingleWait(hand, ctx, matched);
   return { total: matched.reduce((sum, m) => sum + m.tai, 0), matched, hand };
 }
@@ -2392,6 +2440,9 @@ const SPECIAL_HAND_ONLY_PATTERN_IDS = new Set([
   "sixteen-unrelated-straight",
   "eight-pairs",
   "eight-pairs-flying",
+  "eight-pairs-three-dragons",
+  "eight-pairs-three-winds",
+  "eight-pairs-four-winds",
 ]);
 
 export function scoreParsedHand(parsed: ParsedScoringHand, ctx: GameContext): ScoreResult {

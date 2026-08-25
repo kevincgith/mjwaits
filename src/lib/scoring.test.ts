@@ -1599,6 +1599,26 @@ describe("PATTERNS: other patterns reused within 嚦咕嚦咕 (per the user's ow
     expect(tai(result, "full-flush")).toBe(120);
   });
 
+  it("scores 三元嚦咕 when all 3 dragon kinds are merely present - no triplet or pair-role required", () => {
+    // The user's own example: 5z/6z/7z all sit as plain pairs, nothing
+    // upgraded to a triplet, nothing acting as "the pair" in the 小三元
+    // sense - still qualifies.
+    const result = scoreHand("112233m22333t556677z", ctx());
+    expect(tai(result, "eight-pairs-three-dragons")).toBe(20);
+  });
+
+  it("scores 三風嚦咕 when at least 3 wind kinds are present", () => {
+    const result = scoreHand("11223344555m112233z", ctx());
+    expect(tai(result, "eight-pairs-three-winds")).toBe(15);
+    expect(tai(result, "eight-pairs-four-winds")).toBe(0);
+  });
+
+  it("scores 四喜嚦咕 (excluding 三風嚦咕) when all 4 wind kinds are present", () => {
+    const result = scoreHand("112233444m11223344z", ctx());
+    expect(tai(result, "eight-pairs-four-winds")).toBe(60);
+    expect(tai(result, "eight-pairs-three-winds")).toBe(0);
+  });
+
   it("scores 清老頭 (excluding 混老頭) for an all-terminals hand", () => {
     const result = scoreHand("11119999m1199t11999b", ctx());
     expect(tai(result, "pure-terminal-triplets")).toBe(200);
