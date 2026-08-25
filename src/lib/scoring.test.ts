@@ -47,11 +47,10 @@ describe("parseScoringHand", () => {
     expect(parsed.declaredMelds[0].tiles).toHaveLength(4);
   });
 
-  it("parses a bare 4-of-a-kind as a concealed kong, pulled out of freeTiles", () => {
+  it("leaves a bare 4-of-a-kind as plain free tiles - concealed-kong detection happens during decomposition, not parsing", () => {
     const parsed = parseScoringHand("1111z123456789m11t22b");
-    expect(parsed.declaredMelds).toHaveLength(1);
-    expect(parsed.declaredMelds[0]).toMatchObject({ kind: "kong", concealed: true });
-    expect(parsed.freeTiles.filter((t) => t.suit === "z" && t.rank === 1)).toHaveLength(0);
+    expect(parsed.declaredMelds).toHaveLength(0);
+    expect(parsed.freeTiles.filter((t) => t.suit === "z" && t.rank === 1)).toHaveLength(4);
   });
 
   it("rejects a mismatched parenthesized meld", () => {
@@ -97,6 +96,31 @@ describe("decomposeHandAll", () => {
     const parsed = parseScoringHand("123456789m111z234t23b");
     const results = decomposeHandAll(parsed.freeTiles, 5);
     expect(results).toEqual([]);
+  });
+
+  it("reads a rank held all 4 copies as either a concealed kong or a triplet+run split", () => {
+    // 222234t: 4 copies of 2, one 3, one 4 - valid either as a kong (222234
+    // -> kong 2222 leaves 3,4 stranded, invalid) or as triplet 222 + run
+    // 234 (valid) - only the latter should actually succeed here.
+    const parsed = parseScoringHand("222234t123456789m22b");
+    const results = decomposeHandAll(parsed.freeTiles, 5);
+    expect(results.length).toBeGreaterThan(0);
+    for (const r of results) {
+      const tKinds = r.melds.filter((m) => m.tiles[0].suit === "t").map((m) => m.kind).sort();
+      expect(tKinds).toEqual(["run", "triplet"]);
+    }
+  });
+
+  it("reads a rank held all 4 copies as a genuine concealed kong when no run alternative exists", () => {
+    // 1111z: honors have no runs, so this can only ever be a kong. 18 free
+    // tiles total (the extra tile the kong itself contributes) -> 5 melds
+    // (the kong + 3 m-runs + 1 t-run) + pair.
+    const parsed = parseScoringHand("1111z123456789m234t22b");
+    const results = decomposeHandAll(parsed.freeTiles, 5);
+    expect(results.length).toBeGreaterThan(0);
+    for (const r of results) {
+      expect(r.melds.some((m) => m.kind === "kong" && m.tiles[0].suit === "z")).toBe(true);
+    }
   });
 });
 
@@ -224,31 +248,30 @@ describe("PATTERNS", () => {
     });
   });
 
-  describe("爛位風/正位風/爛圈風/正圈風 (single wind meld vs. seat/round wind)", () => {
+  describe("爛位風/正位風 (single wind meld vs. seat wind)", () => {
     const eastMeldHand = "(111z)123456789m234t22b"; // one wind meld: East.
 
-    it("scores 正位風/正圈風 when the wind meld matches, not the 爛 counterparts", () => {
-      const result = scoreHand(eastMeldHand, ctx({ seatWind: 1, roundWind: 1 }));
+    it("scores 正位風 when the wind meld matches, not 爛位風", () => {
+      const result = scoreHand(eastMeldHand, ctx({ seatWind: 1 }));
       expect(tai(result, "correct-seat-wind")).toBe(2);
       expect(tai(result, "wrong-seat-wind")).toBe(0);
-      expect(tai(result, "correct-round-wind")).toBe(2);
-      expect(tai(result, "wrong-round-wind")).toBe(0);
     });
 
-    it("scores 爛位風/爛圈風 when the wind meld doesn't match, not the 正 counterparts", () => {
-      const result = scoreHand(eastMeldHand, ctx({ seatWind: 2, roundWind: 3 }));
+    it("scores 爛位風 when the wind meld doesn't match, not 正位風", () => {
+      const result = scoreHand(eastMeldHand, ctx({ seatWind: 2 }));
       expect(tai(result, "wrong-seat-wind")).toBe(2);
       expect(tai(result, "correct-seat-wind")).toBe(0);
-      expect(tai(result, "wrong-round-wind")).toBe(2);
-      expect(tai(result, "correct-round-wind")).toBe(0);
     });
 
-    it("scores none of the four with no wind meld at all", () => {
+    it("scores neither with no wind meld at all", () => {
       const result = scoreHand("111222333m444555t22b", ctx()); // no honors anywhere
       expect(tai(result, "correct-seat-wind")).toBe(0);
       expect(tai(result, "wrong-seat-wind")).toBe(0);
-      expect(tai(result, "correct-round-wind")).toBe(0);
-      expect(tai(result, "wrong-round-wind")).toBe(0);
+    });
+
+    it("正圈風 is always 0 tai (placeholder), regardless of round wind match", () => {
+      expect(tai(scoreHand(eastMeldHand, ctx({ roundWind: 1 })), "correct-round-wind")).toBe(0);
+      expect(tai(scoreHand(eastMeldHand, ctx({ roundWind: 3 })), "correct-round-wind")).toBe(0);
     });
   });
 
@@ -258,8 +281,6 @@ describe("PATTERNS", () => {
       expect(tai(result, "small-three-winds")).toBe(30);
       expect(tai(result, "correct-seat-wind")).toBe(0);
       expect(tai(result, "wrong-seat-wind")).toBe(0);
-      expect(tai(result, "correct-round-wind")).toBe(0);
-      expect(tai(result, "wrong-round-wind")).toBe(0);
     });
 
     it("does not score 小三風 when the pair isn't the spare wind", () => {
@@ -613,6 +634,269 @@ describe("PATTERNS: 老少上/老少碰", () => {
   it("a kong of rank 1 or 9 counts toward 老少碰 too", () => {
     const result = scoreHand("1111m999m456t789t234b22b", ctx());
     expect(tai(result, "old-young-triplet")).toBe(5);
+  });
+});
+
+describe("PATTERNS: 混帶X (common rank across every non-honor meld)", () => {
+  it("scores when every non-honor meld shares rank 3 (the pair is exempt)", () => {
+    const result = scoreHand("123234345m333b123t11z", ctx());
+    expect(tai(result, "mixed-common-rank")).toBe(30);
+  });
+
+  it("doesn't score when no single rank is common to every non-honor meld", () => {
+    const result = scoreHand("123456789m111z234t22b", ctx());
+    expect(tai(result, "mixed-common-rank")).toBe(0);
+  });
+
+  it("an honor meld is exempt from needing the common rank too", () => {
+    const result = scoreHand("123234345m333b111z22t", ctx());
+    expect(tai(result, "mixed-common-rank")).toBe(30);
+  });
+});
+
+describe("PATTERNS: 混帶XY (common rank pair across every non-honor meld)", () => {
+  it("scores when every non-honor meld shares ranks 2 and 3, excluding 混帶X", () => {
+    const result = scoreHand("123234m123t123b11122z", ctx());
+    expect(tai(result, "mixed-common-rank-pair")).toBe(50);
+    expect(tai(result, "mixed-common-rank")).toBe(0);
+  });
+
+  it("doesn't score when only a single rank (not a pair) is common to every meld", () => {
+    const result = scoreHand("123234345m333b123t11z", ctx());
+    expect(tai(result, "mixed-common-rank-pair")).toBe(0);
+    expect(tai(result, "mixed-common-rank")).toBe(30);
+  });
+});
+
+describe("PATTERNS: 混帶XYZ (common rank triple across every non-honor meld)", () => {
+  it("scores when every non-honor meld shares ranks 1, 2, and 3, excluding 混帶XY", () => {
+    const result = scoreHand("123m123b123m11122233z", ctx());
+    expect(tai(result, "mixed-common-rank-triple")).toBe(60);
+    expect(tai(result, "mixed-common-rank-pair")).toBe(0);
+    expect(tai(result, "mixed-common-rank")).toBe(0);
+  });
+
+  it("still counts with only a single non-honor meld - a run trivially shares its own 3 ranks", () => {
+    const result = scoreHand("111z222z555z666z123m33z", ctx());
+    expect(tai(result, "mixed-common-rank-triple")).toBe(60);
+  });
+
+  it("a lone triplet/kong never qualifies (only 1 distinct rank, never 3)", () => {
+    const result = scoreHand("111z222z555z666z333t22b", ctx());
+    expect(tai(result, "mixed-common-rank-triple")).toBe(0);
+  });
+});
+
+describe("PATTERNS: 全帶X (common rank across every meld and the pair, no honors)", () => {
+  it("scores when every meld and the pair all share rank 2 - 222234t splits as triplet+run, not a kong - excluding 混帶X", () => {
+    const result = scoreHand("123234m222234t123b22b", ctx());
+    expect(tai(result, "pure-common-rank")).toBe(120);
+    expect(tai(result, "mixed-common-rank")).toBe(0);
+  });
+
+  it("doesn't score once any honor meld or honor pair is present", () => {
+    expect(tai(scoreHand("123456789m111z234t22b", ctx()), "pure-common-rank")).toBe(0);
+  });
+});
+
+describe("PATTERNS: 混帶么 (honor presence + terminal in every non-honor meld)", () => {
+  it("scores with an honor meld and a terminal in every non-honor meld", () => {
+    const result = scoreHand("123m789m123t111z789b22b", ctx());
+    expect(tai(result, "mixed-terminal")).toBe(40);
+  });
+
+  it("doesn't score once any non-honor meld lacks a terminal", () => {
+    const result = scoreHand("123m456m123t111z789b22b", ctx());
+    expect(tai(result, "mixed-terminal")).toBe(0);
+  });
+
+  it("doesn't score without any honor presence, even if every meld has a terminal", () => {
+    const result = scoreHand("123m789m123t789t789b22b", ctx());
+    expect(tai(result, "mixed-terminal")).toBe(0);
+  });
+});
+
+describe("PATTERNS: 全帶么 (no honors, terminal in every meld and the pair)", () => {
+  it("scores when every meld and the pair contain a terminal, no honors anywhere", () => {
+    const result = scoreHand("123m789m123t789t123b99b", ctx());
+    expect(tai(result, "pure-terminal")).toBe(80);
+  });
+
+  it("doesn't score once the pair itself lacks a terminal", () => {
+    const result = scoreHand("123m789m123t789t123b22b", ctx());
+    expect(tai(result, "pure-terminal")).toBe(0);
+  });
+
+  it("doesn't score once any honor meld or honor pair is present", () => {
+    expect(tai(scoreHand("123456789m111z234t22b", ctx()), "pure-terminal")).toBe(0);
+  });
+});
+
+describe("PATTERNS: 混老頭/清老頭 (all triplets/kongs, terminals and/or honors)", () => {
+  it("scores 混老頭 for all-triplet terminal+honor tiles, excluding the 帶么 patterns", () => {
+    const result = scoreHand("111m999m111z555z999t11b", ctx());
+    expect(tai(result, "mixed-terminal-honor-triplets")).toBe(100);
+    expect(tai(result, "mixed-terminal")).toBe(0);
+    expect(tai(result, "pure-terminal")).toBe(0);
+  });
+
+  it("scores 清老頭 for all-triplet terminal-only tiles (no honors), excluding the 帶么 patterns and 混老頭", () => {
+    const result = scoreHand("111m999m111t999t999b11b", ctx());
+    expect(tai(result, "pure-terminal-triplets")).toBe(200);
+    expect(tai(result, "mixed-terminal")).toBe(0);
+    expect(tai(result, "pure-terminal")).toBe(0);
+    expect(tai(result, "mixed-terminal-honor-triplets")).toBe(0);
+  });
+
+  it("stacks with 對對胡 (not excluded)", () => {
+    const result = scoreHand("111m999m111z555z999t11b", ctx());
+    expect(tai(result, "mixed-terminal-honor-triplets")).toBe(100);
+    expect(tai(result, "all-triplets")).toBe(40);
+  });
+
+  it("doesn't score either once any run is present", () => {
+    const result = scoreHand("123m789m123t789t123b99b", ctx());
+    expect(tai(result, "mixed-terminal-honor-triplets")).toBe(0);
+    expect(tai(result, "pure-terminal-triplets")).toBe(0);
+  });
+});
+
+describe("PATTERNS: 明/暗四歸一 (triplet + run using all 4 copies of a rank)", () => {
+  it("scores 暗四歸一 for a fully concealed triplet+run split", () => {
+    const result = scoreHand("123m222m777m999b777t11z", ctx());
+    expect(tai(result, "four-returns-to-one-hidden")).toBe(15);
+    expect(tai(result, "four-returns-to-one-open")).toBe(0);
+  });
+
+  it("scores 明四歸一 once the triplet half is declared", () => {
+    const result = scoreHand("(222m)123m777m999b777t11z", ctx());
+    expect(tai(result, "four-returns-to-one-open")).toBe(5);
+    expect(tai(result, "four-returns-to-one-hidden")).toBe(0);
+  });
+});
+
+describe("PATTERNS: 明/暗四歸二 (pair + 2 runs using all 4 copies of a rank)", () => {
+  it("scores 暗四歸二 for a fully concealed pair+2-runs split", () => {
+    const result = scoreHand("123m234m22m789t789b111z", ctx());
+    expect(tai(result, "four-returns-to-two-hidden")).toBe(30);
+    expect(tai(result, "four-returns-to-two-open")).toBe(0);
+  });
+});
+
+describe("PATTERNS: 明/暗四歸四 (4 runs using all 4 copies of a rank)", () => {
+  it("scores 暗四歸四 for 4 concealed runs all containing the same rank", () => {
+    const result = scoreHand("234m234m345m456m777t99b", ctx());
+    expect(tai(result, "four-returns-to-four-hidden")).toBe(60);
+    expect(tai(result, "four-returns-to-four-open")).toBe(0);
+  });
+});
+
+describe("PATTERNS: 明/暗般高 (identical sequences)", () => {
+  it("scores 暗般高 once for a single pair of identical concealed runs", () => {
+    const result = scoreHand("123m123m456t789t111z22b", ctx());
+    expect(tai(result, "identical-sequences-hidden")).toBe(8);
+    expect(tai(result, "identical-sequences-open")).toBe(0);
+  });
+
+  it("scores 明般高 once one of the two identical runs is declared", () => {
+    const result = scoreHand("(123m)123m456t789t111z22b", ctx());
+    expect(tai(result, "identical-sequences-open")).toBe(5);
+    expect(tai(result, "identical-sequences-hidden")).toBe(0);
+  });
+});
+
+describe("PATTERNS: 明/暗小雙般高 (pair at one end of twin sequences)", () => {
+  it("scores 暗小雙般高 for 22334455m, excluding 般高", () => {
+    const result = scoreHand("22334455m111z789t789b", ctx());
+    expect(tai(result, "small-twin-identical-sequences-hidden")).toBe(15);
+    expect(tai(result, "identical-sequences-hidden")).toBe(0);
+  });
+});
+
+describe("PATTERNS: 明/暗一色三同順 (3 identical sequences)", () => {
+  it("scores 暗一色三同順 for 3 concealed identical runs, excluding 般高", () => {
+    // No honor meld this time (just an honor pair) - keeps the competing
+    // triplet-reading's score (三/四暗刻 + 大三連刻 + 二連刻) below what the
+    // run-reading scores here, so max-tai correctly picks the run reading.
+    const result = scoreHand("123m123m123m456t789b22z", ctx());
+    expect(tai(result, "triple-identical-sequences-hidden")).toBe(60);
+    expect(tai(result, "identical-sequences-hidden")).toBe(0);
+  });
+});
+
+describe("PATTERNS: 明/暗一色四同順 (4 identical sequences)", () => {
+  it("scores 暗一色四同順 for 4 concealed identical runs, excluding 般高 and 三同順", () => {
+    const result = scoreHand("123m123m123m123m111z22b", ctx());
+    expect(tai(result, "quadruple-identical-sequences-hidden")).toBe(160);
+    expect(tai(result, "identical-sequences-hidden")).toBe(0);
+    expect(tai(result, "triple-identical-sequences-hidden")).toBe(0);
+  });
+});
+
+describe("PATTERNS: 明/暗真雙般高 (2 separate identical-sequence pairs)", () => {
+  it("scores 暗真雙般高 for 123123m + 678678t, excluding 般高", () => {
+    const result = scoreHand("123m123m678t678t111z22b", ctx());
+    expect(tai(result, "two-separate-identical-sequences-hidden")).toBe(40);
+    expect(tai(result, "identical-sequences-hidden")).toBe(0);
+  });
+});
+
+describe("PATTERNS: 明/暗單色步步高 (3 ascending sequences, gap 1)", () => {
+  it("scores 暗單色步步高 once for 123m234m345m", () => {
+    const result = scoreHand("123m234m345m789t111z22b", ctx());
+    expect(tai(result, "same-suit-consecutive-hidden")).toBe(30);
+  });
+
+  it("counts twice for 123m234m345m345m (the duplicate 345m reuses 123m/234m)", () => {
+    const result = scoreHand("123m234m345m345m111z22b", ctx());
+    expect(tai(result, "same-suit-consecutive-hidden")).toBe(60);
+  });
+});
+
+describe("PATTERNS: 明/暗單色二步高 (3 sequences, gap 2)", () => {
+  it("scores 暗單色二步高 once for 123m345m567m", () => {
+    const result = scoreHand("123m345m567m111z789t22b", ctx());
+    expect(tai(result, "same-suit-two-step-hidden")).toBe(15);
+  });
+
+  it("counts twice for 123m345m567m567m (the duplicate 567m reuses 123m/345m)", () => {
+    const result = scoreHand("123m345m567m567m111z22b", ctx());
+    expect(tai(result, "same-suit-two-step-hidden")).toBe(30);
+  });
+});
+
+describe("PATTERNS: 二連刻 (2 consecutive triplets/kongs)", () => {
+  it("scores once for 222m333m", () => {
+    expect(tai(scoreHand("222m333m789t456b789b11z", ctx()), "consecutive-triplet-pair")).toBe(5);
+  });
+
+  it("still counts with a kong involved (222m3333m)", () => {
+    expect(tai(scoreHand("222m3333m456t789t789b22b", ctx()), "consecutive-triplet-pair")).toBe(5);
+  });
+});
+
+describe("PATTERNS: 小三連刻/大三連刻", () => {
+  it("scores 小三連刻 for 22m333m444m (pair at the low end)", () => {
+    const result = scoreHand("333m444m789t456b789b22m", ctx());
+    expect(tai(result, "small-three-consecutive-triplets")).toBe(15);
+  });
+
+  it("scores 大三連刻 for 333m444m555m (no pair involved)", () => {
+    const result = scoreHand("333m444m555m789t111z22b", ctx());
+    expect(tai(result, "big-three-consecutive-triplets")).toBe(30);
+  });
+});
+
+describe("PATTERNS: 混一色/清一色", () => {
+  it("scores 混一色 for a hand using only one numbered suit plus honors", () => {
+    const result = scoreHand("123456789m111z555z22m", ctx());
+    expect(tai(result, "half-flush")).toBe(40);
+  });
+
+  it("scores 清一色 for a hand using only one numbered suit and no honors, excluding 混一色", () => {
+    const result = scoreHand("123456789m123m456m22m", ctx());
+    expect(tai(result, "full-flush")).toBe(120);
+    expect(tai(result, "half-flush")).toBe(0);
   });
 });
 

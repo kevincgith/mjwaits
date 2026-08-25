@@ -37,11 +37,17 @@ export interface BonusTile {
 }
 
 export interface ParsedScoringHand {
-  // Melds fixed by the notation: exposed triplets/runs/kongs (written in
-  // parens) and concealed kongs (a bare 4-of-a-kind - see parseScoringHand).
+  // Melds fixed by the notation: exposed triplets/runs/kongs, written in
+  // parens (see parseScoringHand). Concealed kongs are NOT captured here -
+  // a bare 4-of-a-kind among the free tiles isn't necessarily a kong (it
+  // might instead be a triplet plus one tile borrowed into an adjacent run,
+  // e.g. "222234t" as 222t + 234t) - so that ambiguity is left to
+  // decomposeHandAll's search, which tries both readings.
   declaredMelds: MeldDeclaration[];
   // Everything else: ordinary concealed tiles still to be decomposed into
   // melds + the pair (the pair is always concealed - it can't be called).
+  // May include a rank held all 4 copies, which decomposeHandAll will try
+  // reading as a concealed kong.
   freeTiles: Tile[];
   // Bonus tiles drawn during play - don't count toward hand completeness or
   // participate in decomposition, just carried through to scoring (no
@@ -75,9 +81,11 @@ function classifyDeclaredMeld(ranks: number[], suit: Suit, raw: string): MeldKin
 
 // Parses the scoring notation: mahjong.ts's plain digits+suit groups for
 // concealed tiles, plus `(digits+suit)` for a declared exposed meld (triplet,
-// run, or kong) and a bare 4-of-a-kind for a concealed kong - see the module
-// doc comment and README for the full syntax. Jokers aren't supported yet
-// (rejected with a clear error rather than silently scored wrong).
+// run, or kong) - see the module doc comment for the full syntax. A bare
+// 4-of-a-kind among the concealed digits is deliberately NOT treated as an
+// automatic concealed kong here - see ParsedScoringHand's doc comment for
+// why. Jokers aren't supported yet (rejected with a clear error rather than
+// silently scored wrong).
 export function parseScoringHand(input: string): ParsedScoringHand {
   const trimmed = input.trim();
   const groupPattern = /\((\d+)([mtbz])\)|(\d+)([mtbz])|(j+)/g;
@@ -115,31 +123,13 @@ export function parseScoringHand(input: string): ParsedScoringHand {
     throw new ParseError(`Could not parse: "${trimmed}"`);
   }
 
-  // Any rank held 4 times among the free (undeclared) tiles unambiguously
-  // means a concealed kong - a natural hand can only ever hold all 4 copies
-  // of one kind by forming a kong, since the declared-meld syntax above is
-  // the only other way a 4th copy could appear.
-  const bySuitRank = new Map<string, Tile[]>();
-  for (const t of freeTiles) {
-    const key = tileKey(t);
-    const list = bySuitRank.get(key) ?? [];
-    list.push(t);
-    bySuitRank.set(key, list);
-  }
-  const remainingFree: Tile[] = [];
-  for (const tiles of bySuitRank.values()) {
-    if (tiles.length === 4) {
-      declaredMelds.push({ tiles, kind: "kong", concealed: true });
-    } else {
-      remainingFree.push(...tiles);
-    }
-  }
-
   // 4-copies-per-kind cap, counted across declared melds and free tiles
-  // together (a kong already spends all 4 copies of its kind).
+  // together. A rank with exactly 4 free copies isn't extracted as a kong
+  // here (see ParsedScoringHand's doc comment) - it's still just 4 tiles
+  // for this cap check.
   const totalCounts = new Map<string, number>();
   for (const meld of declaredMelds) for (const t of meld.tiles) totalCounts.set(tileKey(t), (totalCounts.get(tileKey(t)) ?? 0) + 1);
-  for (const t of remainingFree) totalCounts.set(tileKey(t), (totalCounts.get(tileKey(t)) ?? 0) + 1);
+  for (const t of freeTiles) totalCounts.set(tileKey(t), (totalCounts.get(tileKey(t)) ?? 0) + 1);
   for (const [key, count] of totalCounts) {
     if (count > 4) {
       const suit = key[0] as Suit;
@@ -148,7 +138,7 @@ export function parseScoringHand(input: string): ParsedScoringHand {
     }
   }
 
-  return { declaredMelds, freeTiles: remainingFree, bonusTiles: [] };
+  return { declaredMelds, freeTiles, bonusTiles: [] };
 }
 
 export interface ResolvedMeld {
@@ -181,11 +171,16 @@ const DECOMPOSE_STEP_LIMIT = 50_000;
 const MAX_DECOMPOSITIONS = 500;
 
 // All ways to decompose one suit's rank counts fully (zero tiles left over)
-// into triplets and, for numbered suits, runs. Unlike mahjong.ts's
-// canDecompose/decomposeSuitGroups (which stop at the first success),
-// this collects every successful branch - the same hand shape can
+// into triplets, concealed kongs, and, for numbered suits, runs. Unlike
+// mahjong.ts's canDecompose/decomposeSuitGroups (which stop at the first
+// success), this collects every successful branch - the same hand shape can
 // legitimately be read multiple ways (e.g. 111222333m as three triplets or
-// three runs), and scoring needs to consider all of them.
+// three runs, or 222234m as a triplet+run vs... nothing else valid, but a
+// rank held all 4 copies genuinely can go either way: a kong outright, or a
+// triplet with the 4th copy spent on an adjacent run - see
+// ParsedScoringHand's doc comment), and scoring needs to consider all of
+// them. A meld found this way is always concealed (an exposed/called kong
+// only ever comes from the notation's declared-meld syntax instead).
 function allSuitDecompositions(
   counts: number[],
   allowRuns: boolean,
@@ -212,6 +207,20 @@ function allSuitDecompositions(
       };
       for (const rest of search()) results.push([meld, ...rest]);
       counts[i] += 3;
+    }
+
+    // Tried alongside (not instead of) the triplet reading above, so a rank
+    // whose 4th copy could go either way - a kong outright, or spent on an
+    // adjacent run instead - gets both valid readings considered.
+    if (counts[i] >= 4) {
+      counts[i] -= 4;
+      const meld: ResolvedMeld = {
+        tiles: [{ suit, rank: i }, { suit, rank: i }, { suit, rank: i }, { suit, rank: i }],
+        kind: "kong",
+        concealed: true,
+      };
+      for (const rest of search()) results.push([meld, ...rest]);
+      counts[i] += 4;
     }
 
     if (allowRuns && i <= size - 2 && counts[i + 1] > 0 && counts[i + 2] > 0) {
@@ -355,7 +364,7 @@ function pairIsSpareDragon(hand: ResolvedHand, meldRanks: Set<number>): boolean 
   return isHonorTile(pair) && pair.rank >= 5 && !meldRanks.has(pair.rank);
 }
 
-const SINGLE_WIND_PATTERN_IDS = ["wrong-seat-wind", "correct-seat-wind", "wrong-round-wind", "correct-round-wind"];
+const SINGLE_WIND_PATTERN_IDS = ["wrong-seat-wind", "correct-seat-wind", "correct-round-wind"];
 
 const isAllRuns = (hand: ResolvedHand): boolean => hand.melds.every((m) => m.kind === "run");
 
@@ -430,7 +439,7 @@ function hiddenTripletOrKongCount(hand: ResolvedHand, ctx: GameContext): number 
 // 3-tile spans a straight needs (1-2-3, 4-5-6, 7-8-9) in a given suit -
 // unlike an ordinary run search, position is fixed, not "any 3 consecutive
 // ranks starting anywhere."
-function segmentMelds(hand: ResolvedHand, suit: Suit, startRank: 1 | 4 | 7): ResolvedMeld[] {
+function segmentMelds(hand: ResolvedHand, suit: Suit, startRank: number): ResolvedMeld[] {
   return hand.melds.filter((m) => m.kind === "run" && m.tiles[0].suit === suit && m.tiles[0].rank === startRank);
 }
 
@@ -523,6 +532,298 @@ function oldYoungTripletInstances(hand: ResolvedHand): number {
   return total;
 }
 
+// 混帶X: is there some single rank 1-9 that every *non-honor* meld contains
+// a tile of? Honor melds are naturally exempt (they have no numeric rank to
+// match), and so is the pair (the pattern is about melds only). Requires at
+// least one non-honor meld to check - a hand with none (e.g. 字一色) has
+// nothing to unify around and shouldn't vacuously qualify.
+function hasCommonRankAcrossNonHonorMelds(hand: ResolvedHand): boolean {
+  const nonHonorMelds = hand.melds.filter((m) => m.tiles[0].suit !== "z");
+  if (nonHonorMelds.length === 0) return false;
+  for (let rank = 1; rank <= 9; rank++) {
+    if (nonHonorMelds.every((m) => m.tiles.some((t) => t.rank === rank))) return true;
+  }
+  return false;
+}
+
+// 混帶XY: same idea as 混帶X, but every non-honor meld must contain BOTH of
+// some pair of distinct ranks (not just one shared rank).
+function hasCommonRankPairAcrossNonHonorMelds(hand: ResolvedHand): boolean {
+  const nonHonorMelds = hand.melds.filter((m) => m.tiles[0].suit !== "z");
+  if (nonHonorMelds.length === 0) return false;
+  for (let x = 1; x <= 9; x++) {
+    for (let y = x + 1; y <= 9; y++) {
+      if (nonHonorMelds.every((m) => m.tiles.some((t) => t.rank === x) && m.tiles.some((t) => t.rank === y))) return true;
+    }
+  }
+  return false;
+}
+
+// 混帶XYZ: same idea again, but every non-honor meld must contain all 3 of
+// some triple of distinct ranks - a run always has exactly 3 distinct
+// ranks, so a hand with only a single non-honor meld (the rest all honor
+// melds) still trivially qualifies using that meld's own 3 ranks; a lone
+// triplet/kong (only 1 distinct rank) never can, on its own or otherwise.
+function hasCommonRankTripleAcrossNonHonorMelds(hand: ResolvedHand): boolean {
+  const nonHonorMelds = hand.melds.filter((m) => m.tiles[0].suit !== "z");
+  if (nonHonorMelds.length === 0) return false;
+  for (let x = 1; x <= 9; x++) {
+    for (let y = x + 1; y <= 9; y++) {
+      for (let z = y + 1; z <= 9; z++) {
+        if (
+          nonHonorMelds.every(
+            (m) => m.tiles.some((t) => t.rank === x) && m.tiles.some((t) => t.rank === y) && m.tiles.some((t) => t.rank === z)
+          )
+        ) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+// 全帶X: the ultimate extension of 混帶X/XY/XYZ - no honor meld AND no honor
+// pair, and every meld *and* the pair itself all contain the same rank X.
+// Checking !isHonorTile on the pair (rather than relying on the rank match
+// alone) matters because an honor tile's rank (1-7, wind/dragon identity)
+// could otherwise coincidentally equal a numbered X and falsely "match".
+function hasCommonRankAcrossAllMeldsAndPair(hand: ResolvedHand): boolean {
+  if (hand.melds.some((m) => m.tiles[0].suit === "z") || isHonorTile(hand.pair[0])) return false;
+  for (let rank = 1; rank <= 9; rank++) {
+    if (hand.melds.every((m) => m.tiles.some((t) => t.rank === rank)) && hand.pair.some((t) => t.rank === rank)) return true;
+  }
+  return false;
+}
+
+// 混帶么: the hand has an honor presence (an honor meld, or the pair itself
+// is honors) AND every non-honor meld contains a terminal (rank 1 or 9).
+// Requires at least one non-honor meld to exist - an all-honor hand has no
+// terminal number melds to speak of, so it shouldn't vacuously qualify
+// (same reasoning as 混帶X's guard).
+function hasHonorMeldOrHonorPair(hand: ResolvedHand): boolean {
+  return hand.melds.some((m) => m.tiles[0].suit === "z") || isHonorTile(hand.pair[0]);
+}
+function everyNonHonorMeldHasTerminal(hand: ResolvedHand): boolean {
+  const nonHonorMelds = hand.melds.filter((m) => m.tiles[0].suit !== "z");
+  return nonHonorMelds.length > 0 && nonHonorMelds.every((m) => m.tiles.some((t) => t.rank === 1 || t.rank === 9));
+}
+
+// 全帶么: the "no honors at all" counterpart to 混帶么 - no honor meld, no
+// honor pair, and every meld *and the pair itself* contains a terminal.
+// Mutually exclusive with 混帶么 by construction (that one requires honor
+// presence), so no explicit exclude needed between them.
+function hasNoHonorsAndTerminalInEveryMeldAndPair(hand: ResolvedHand): boolean {
+  if (hand.melds.some((m) => m.tiles[0].suit === "z") || isHonorTile(hand.pair[0])) return false;
+  const hasTerminal = (tiles: Tile[]) => tiles.some((t) => t.rank === 1 || t.rank === 9);
+  return hand.melds.every((m) => hasTerminal(m.tiles)) && hasTerminal(hand.pair);
+}
+
+// 混老頭: every meld is a triplet/kong, and every tile in the hand (melds
+// and pair) is either a terminal (1/9) or an honor - the two can mix
+// freely.
+function isAllTerminalOrHonorTriplets(hand: ResolvedHand): boolean {
+  return (
+    hand.melds.every((m) => m.kind === "triplet" || m.kind === "kong") &&
+    allHandTiles(hand).every((t) => isHonorTile(t) || t.rank === 1 || t.rank === 9)
+  );
+}
+
+// 清老頭: same all-triplets/kongs shape, but terminals only - no honors
+// anywhere. Every 清老頭 hand is trivially also a 混老頭 hand (honors are
+// merely *allowed* there, not required), so this should probably exclude
+// it - flagged for confirmation rather than assumed.
+function isAllTerminalTriplets(hand: ResolvedHand): boolean {
+  return (
+    hand.melds.every((m) => m.kind === "triplet" || m.kind === "kong") &&
+    allHandTiles(hand).every((t) => t.suit !== "z" && (t.rank === 1 || t.rank === 9))
+  );
+}
+
+// 四歸一/二/四: the hand holds all 4 copies of some rank X (one suit), split
+// across melds in different ways rather than as a kong. 明/暗 classification
+// reuses isMeldOpen on whichever melds are involved (see the 明/暗 concept) -
+// 明 if any of them is open, 暗 if all are concealed. The pair itself is
+// never "declared" so it never factors into that check directly (only
+// 四歸二 involves the pair at all, and only to identify which rank/suit is
+// in play, not to judge its own openness).
+
+// 四歸一: a triplet of X plus a run containing X (3 + 1 = the 4 copies).
+// Can stack - different ranks/suits can each independently form their own
+// triplet+run pair, hand-size permitting.
+function fourReturnsToOneInstances(hand: ResolvedHand): [ResolvedMeld, ResolvedMeld][] {
+  const instances: [ResolvedMeld, ResolvedMeld][] = [];
+  for (const suit of ["m", "t", "b"] as const) {
+    for (let rank = 1; rank <= 9; rank++) {
+      const triplet = hand.melds.find((m) => m.kind === "triplet" && m.tiles[0].suit === suit && m.tiles[0].rank === rank);
+      if (!triplet) continue;
+      const run = hand.melds.find((m) => m.kind === "run" && m.tiles[0].suit === suit && m.tiles.some((t) => t.rank === rank));
+      if (run) instances.push([triplet, run]);
+    }
+  }
+  return instances;
+}
+
+// 四歸二: the pair itself is X, plus 2 runs each containing X (2 + 1 + 1 =
+// the 4 copies). At most one instance possible - a hand only has one pair.
+function fourReturnsToTwoRuns(hand: ResolvedHand): [ResolvedMeld, ResolvedMeld] | null {
+  const pairTile = hand.pair[0];
+  if (pairTile.suit === "z") return null; // honors have no runs
+  const runs = hand.melds.filter(
+    (m) => m.kind === "run" && m.tiles[0].suit === pairTile.suit && m.tiles.some((t) => t.rank === pairTile.rank)
+  );
+  return runs.length >= 2 ? [runs[0], runs[1]] : null;
+}
+
+// 四歸四: 4 separate runs, each containing X (1 + 1 + 1 + 1 = the 4 copies).
+// At most one instance possible - needs 4 of the hand's 5 melds.
+function fourReturnsToFourRuns(hand: ResolvedHand): ResolvedMeld[] | null {
+  for (const suit of ["m", "t", "b"] as const) {
+    for (let rank = 1; rank <= 9; rank++) {
+      const runs = hand.melds.filter((m) => m.kind === "run" && m.tiles[0].suit === suit && m.tiles.some((t) => t.rank === rank));
+      if (runs.length === 4) return runs;
+    }
+  }
+  return null;
+}
+
+// 般高 (identical sequences): pairs of runs that are exact duplicates (same
+// suit, same 3 ranks) - e.g. 234m + 234m. Stacks - multiple such pairs can
+// coexist (a run held 4 times, for instance, forms 2 pairs).
+function identicalRunPairInstances(hand: ResolvedHand): [ResolvedMeld, ResolvedMeld][] {
+  const instances: [ResolvedMeld, ResolvedMeld][] = [];
+  for (const suit of ["m", "t", "b"] as const) {
+    for (let rank = 1; rank <= 7; rank++) {
+      const matching = hand.melds.filter((m) => m.kind === "run" && m.tiles[0].suit === suit && m.tiles[0].rank === rank);
+      const pairCount = Math.floor(matching.length / 2);
+      for (let i = 0; i < pairCount; i++) instances.push([matching[i * 2], matching[i * 2 + 1]]);
+    }
+  }
+  return instances;
+}
+
+// 小雙般高: e.g. 22334455m - 2 copies each of 4 consecutive ranks, where the
+// pair can be read as either end (22 + two 345 runs, or 55 + two 234 runs).
+// Both readings are genuinely valid decompositions of the same tiles, so
+// this only needs to check whichever pair *this* resolved hand actually
+// has against both directions - scoreParsedHand's max-tai-across-
+// decompositions already surfaces whichever reading scores higher. At most
+// one instance possible (one pair per hand).
+function smallTwinIdenticalSequences(hand: ResolvedHand): [ResolvedMeld, ResolvedMeld] | null {
+  const pair = hand.pair[0];
+  if (pair.suit === "z") return null;
+  const runsStartingAt = (startRank: number) =>
+    hand.melds.filter((m) => m.kind === "run" && m.tiles[0].suit === pair.suit && m.tiles[0].rank === startRank);
+
+  if (pair.rank + 3 <= 9) {
+    const runs = runsStartingAt(pair.rank + 1); // pair is the low end
+    if (runs.length >= 2) return [runs[0], runs[1]];
+  }
+  if (pair.rank - 3 >= 1) {
+    const runs = runsStartingAt(pair.rank - 3); // pair is the high end
+    if (runs.length >= 2) return [runs[0], runs[1]];
+  }
+  return null;
+}
+
+// 真雙般高: two *separate* 般高 pairs (4 runs total, two different shapes) -
+// e.g. 123123m + 678678t. Reuses identicalRunPairInstances and just checks
+// there are at least 2 of them; classification looks at all 4 runs across
+// the first two instances found.
+function twoSeparateIdenticalRunPairs(hand: ResolvedHand): [ResolvedMeld, ResolvedMeld, ResolvedMeld, ResolvedMeld] | null {
+  const instances = identicalRunPairInstances(hand);
+  if (instances.length < 2) return null;
+  const [[a, b], [c, d]] = instances;
+  return [a, b, c, d];
+}
+
+// 一色三同順: 3 fully identical runs (same suit, same 3 ranks) - e.g.
+// 123m x3. At most 4 copies of any tile can exist, so at most one such
+// group of 3 (with maybe 1 leftover) is possible per rank/suit.
+function tripleIdenticalRunInstance(hand: ResolvedHand): [ResolvedMeld, ResolvedMeld, ResolvedMeld] | null {
+  for (const suit of ["m", "t", "b"] as const) {
+    for (let rank = 1; rank <= 7; rank++) {
+      const matching = hand.melds.filter((m) => m.kind === "run" && m.tiles[0].suit === suit && m.tiles[0].rank === rank);
+      if (matching.length >= 3) return [matching[0], matching[1], matching[2]];
+    }
+  }
+  return null;
+}
+
+// 一色四同順: 4 fully identical runs - the maximum possible (4 copies of
+// each of the 3 ranks involved).
+function quadrupleIdenticalRunInstance(hand: ResolvedHand): [ResolvedMeld, ResolvedMeld, ResolvedMeld, ResolvedMeld] | null {
+  for (const suit of ["m", "t", "b"] as const) {
+    for (let rank = 1; rank <= 7; rank++) {
+      const matching = hand.melds.filter((m) => m.kind === "run" && m.tiles[0].suit === suit && m.tiles[0].rank === rank);
+      if (matching.length >= 4) return [matching[0], matching[1], matching[2], matching[3]];
+    }
+  }
+  return null;
+}
+
+// 單色步步高 (gap 1: starts X, X+1, X+2, e.g. 123m+234m+345m) and 單色二步高
+// (gap 2: starts X, X+2, X+4, e.g. 123m+345m+567m) - 3 same-suit runs at
+// evenly-spaced starting ranks. Reuses combineSegments exactly like 清龍/
+// 雜龍: a duplicated segment (e.g. an extra 345m) reuses the other two
+// shared runs and forms a second instance - see the worked example in the
+// module's duplicate-instance-counting patterns.
+function evenlySpacedRunInstances(hand: ResolvedHand, gap: number): ResolvedMeld[][] {
+  const result: ResolvedMeld[][] = [];
+  for (const suit of ["m", "t", "b"] as const) {
+    for (let x = 1; x <= 7; x++) {
+      result.push(...combineSegments(segmentMelds(hand, suit, x), segmentMelds(hand, suit, x + gap), segmentMelds(hand, suit, x + 2 * gap)));
+    }
+  }
+  return result;
+}
+
+const isTripletOrKongAt = (hand: ResolvedHand, suit: Suit, rank: number): boolean =>
+  hand.melds.some((m) => (m.kind === "triplet" || m.kind === "kong") && m.tiles[0].suit === suit && m.tiles[0].rank === rank);
+
+// 二連刻: 2 triplets/kongs at consecutive ranks in one suit (e.g. 222m+333m,
+// mixing triplet/kong freely). No 明/暗 split. Stacks per adjacent pair
+// found (matches the precedent set by 老少上/二步高-style patterns), so 3
+// consecutive triplets (222+333+444) counts as 2 instances.
+function consecutiveTripletOrKongPairCount(hand: ResolvedHand): number {
+  let count = 0;
+  for (const suit of ["m", "t", "b"] as const) {
+    for (let rank = 1; rank <= 8; rank++) {
+      if (isTripletOrKongAt(hand, suit, rank) && isTripletOrKongAt(hand, suit, rank + 1)) count++;
+    }
+  }
+  return count;
+}
+
+// 小三連刻: 3 consecutive ranks in one suit where the hand's pair sits at
+// one of the 3 positions and the other 2 are triplets/kongs (e.g. 22m +
+// 333m + 444m). 大三連刻: same 3-consecutive-rank shape, but all 3 are full
+// triplets/kongs (pair not involved at all) - these are structurally
+// different (one needs the pair, one doesn't), so not mutually exclusive.
+function hasSmallThreeConsecutiveTriplets(hand: ResolvedHand): boolean {
+  const pair = hand.pair[0];
+  if (pair.suit === "z") return false;
+  const windows = [
+    [pair.rank, pair.rank + 1, pair.rank + 2],
+    [pair.rank - 1, pair.rank, pair.rank + 1],
+    [pair.rank - 2, pair.rank - 1, pair.rank],
+  ];
+  for (const window of windows) {
+    if (window[0] < 1 || window[2] > 9) continue;
+    const others = window.filter((r) => r !== pair.rank);
+    if (others.length === 2 && others.every((r) => isTripletOrKongAt(hand, pair.suit, r))) return true;
+  }
+  return false;
+}
+function hasBigThreeConsecutiveTriplets(hand: ResolvedHand): boolean {
+  for (const suit of ["m", "t", "b"] as const) {
+    for (let rank = 1; rank <= 7; rank++) {
+      if ([rank, rank + 1, rank + 2].every((r) => isTripletOrKongAt(hand, suit, r))) return true;
+    }
+  }
+  return false;
+}
+
 // House tai list, added one pattern at a time as the user supplies them -
 // see the module doc comment on why this stays a plain array of concrete
 // checks rather than a generic rule engine.
@@ -574,14 +875,12 @@ export const PATTERNS: TaiPattern[] = [
     score: (hand, ctx) => (windMeldRanks(hand).some((r) => r === ctx.seatWind) ? 2 : 0),
   },
   {
-    id: "wrong-round-wind",
-    name: "爛圈風 (Wind meld not matching round wind)",
-    score: (hand, ctx) => (windMeldRanks(hand).some((r) => r !== ctx.roundWind) ? 2 : 0),
-  },
-  {
     id: "correct-round-wind",
     name: "正圈風 (Wind meld matching round wind)",
-    score: (hand, ctx) => (windMeldRanks(hand).some((r) => r === ctx.roundWind) ? 2 : 0),
+    // Placeholder: kept in the list (so the wind-pattern exclusion chain
+    // below stays wired up around it) but worth 0 tai for now. 爛圈風 was
+    // removed entirely rather than zeroed the same way.
+    score: () => 0,
   },
   {
     id: "small-three-winds",
@@ -786,6 +1085,232 @@ export const PATTERNS: TaiPattern[] = [
     name: "老少碰 (Terminal triplets/kongs, 111 + 999)",
     score: (hand) => oldYoungTripletInstances(hand) * 5,
   },
+  {
+    id: "mixed-common-rank",
+    name: "混帶X (Common rank across every non-honor meld)",
+    score: (hand) => (hasCommonRankAcrossNonHonorMelds(hand) ? 30 : 0),
+  },
+  {
+    id: "mixed-common-rank-pair",
+    name: "混帶XY (Common rank pair across every non-honor meld)",
+    score: (hand) => (hasCommonRankPairAcrossNonHonorMelds(hand) ? 50 : 0),
+    excludes: ["mixed-common-rank"],
+  },
+  {
+    id: "mixed-common-rank-triple",
+    name: "混帶XYZ (Common rank triple across every non-honor meld)",
+    score: (hand) => (hasCommonRankTripleAcrossNonHonorMelds(hand) ? 60 : 0),
+    excludes: ["mixed-common-rank-pair"],
+  },
+  {
+    id: "pure-common-rank",
+    name: "全帶X (Common rank across every meld and the pair, no honors)",
+    score: (hand) => (hasCommonRankAcrossAllMeldsAndPair(hand) ? 120 : 0),
+    excludes: ["mixed-common-rank"],
+  },
+  {
+    id: "mixed-terminal",
+    name: "混帶么 (Honor presence + terminal in every non-honor meld)",
+    score: (hand) => (hasHonorMeldOrHonorPair(hand) && everyNonHonorMeldHasTerminal(hand) ? 40 : 0),
+  },
+  {
+    id: "pure-terminal",
+    name: "全帶么 (No honors, terminal in every meld and the pair)",
+    score: (hand) => (hasNoHonorsAndTerminalInEveryMeldAndPair(hand) ? 80 : 0),
+  },
+  {
+    id: "mixed-terminal-honor-triplets",
+    name: "混老頭 (All triplets/kongs, terminals and/or honors)",
+    // Stacks fine with 對對胡/坎坎胡 (not excluded) - just excludes the two
+    // 帶么 patterns it subsumes (every meld here trivially "contains" its
+    // own terminal or honor).
+    score: (hand) => (isAllTerminalOrHonorTriplets(hand) ? 100 : 0),
+    excludes: ["mixed-terminal", "pure-terminal"],
+  },
+  {
+    id: "pure-terminal-triplets",
+    name: "清老頭 (All triplets/kongs, terminals only)",
+    score: (hand) => (isAllTerminalTriplets(hand) ? 200 : 0),
+    excludes: ["mixed-terminal", "pure-terminal", "mixed-terminal-honor-triplets"],
+  },
+  {
+    id: "four-returns-to-one-open",
+    name: "明四歸一 (Triplet + run, open)",
+    score: (hand, ctx) =>
+      fourReturnsToOneInstances(hand).filter(([triplet, run]) => isMeldOpen(triplet, ctx) || isMeldOpen(run, ctx)).length * 5,
+  },
+  {
+    id: "four-returns-to-one-hidden",
+    name: "暗四歸一 (Triplet + run, concealed)",
+    score: (hand, ctx) =>
+      fourReturnsToOneInstances(hand).filter(([triplet, run]) => !isMeldOpen(triplet, ctx) && !isMeldOpen(run, ctx)).length * 15,
+  },
+  {
+    id: "four-returns-to-two-open",
+    name: "明四歸二 (Pair + 2 runs, open)",
+    score: (hand, ctx) => {
+      const runs = fourReturnsToTwoRuns(hand);
+      return runs && (isMeldOpen(runs[0], ctx) || isMeldOpen(runs[1], ctx)) ? 15 : 0;
+    },
+  },
+  {
+    id: "four-returns-to-two-hidden",
+    name: "暗四歸二 (Pair + 2 runs, concealed)",
+    score: (hand, ctx) => {
+      const runs = fourReturnsToTwoRuns(hand);
+      return runs && !isMeldOpen(runs[0], ctx) && !isMeldOpen(runs[1], ctx) ? 30 : 0;
+    },
+  },
+  {
+    id: "four-returns-to-four-open",
+    name: "明四歸四 (4 runs, open)",
+    score: (hand, ctx) => {
+      const runs = fourReturnsToFourRuns(hand);
+      return runs && runs.some((r) => isMeldOpen(r, ctx)) ? 30 : 0;
+    },
+  },
+  {
+    id: "four-returns-to-four-hidden",
+    name: "暗四歸四 (4 runs, concealed)",
+    score: (hand, ctx) => {
+      const runs = fourReturnsToFourRuns(hand);
+      return runs && runs.every((r) => !isMeldOpen(r, ctx)) ? 60 : 0;
+    },
+  },
+  {
+    id: "identical-sequences-open",
+    name: "明般高 (Identical sequences, open)",
+    score: (hand, ctx) => identicalRunPairInstances(hand).filter(([a, b]) => isMeldOpen(a, ctx) || isMeldOpen(b, ctx)).length * 5,
+  },
+  {
+    id: "identical-sequences-hidden",
+    name: "暗般高 (Identical sequences, concealed)",
+    score: (hand, ctx) =>
+      identicalRunPairInstances(hand).filter(([a, b]) => !isMeldOpen(a, ctx) && !isMeldOpen(b, ctx)).length * 8,
+  },
+  {
+    id: "small-twin-identical-sequences-open",
+    name: "明小雙般高 (Pair at one end of twin sequences, open)",
+    score: (hand, ctx) => {
+      const runs = smallTwinIdenticalSequences(hand);
+      return runs && (isMeldOpen(runs[0], ctx) || isMeldOpen(runs[1], ctx)) ? 10 : 0;
+    },
+    excludes: ["identical-sequences-open", "identical-sequences-hidden"],
+  },
+  {
+    id: "small-twin-identical-sequences-hidden",
+    name: "暗小雙般高 (Pair at one end of twin sequences, concealed)",
+    score: (hand, ctx) => {
+      const runs = smallTwinIdenticalSequences(hand);
+      return runs && !isMeldOpen(runs[0], ctx) && !isMeldOpen(runs[1], ctx) ? 15 : 0;
+    },
+    excludes: ["identical-sequences-open", "identical-sequences-hidden"],
+  },
+  {
+    id: "triple-identical-sequences-open",
+    name: "明一色三同順 (3 identical sequences, open)",
+    score: (hand, ctx) => {
+      const runs = tripleIdenticalRunInstance(hand);
+      return runs && runs.some((r) => isMeldOpen(r, ctx)) ? 30 : 0;
+    },
+    excludes: ["identical-sequences-open", "identical-sequences-hidden"],
+  },
+  {
+    id: "triple-identical-sequences-hidden",
+    name: "暗一色三同順 (3 identical sequences, concealed)",
+    score: (hand, ctx) => {
+      const runs = tripleIdenticalRunInstance(hand);
+      return runs && runs.every((r) => !isMeldOpen(r, ctx)) ? 60 : 0;
+    },
+    excludes: ["identical-sequences-open", "identical-sequences-hidden"],
+  },
+  {
+    id: "quadruple-identical-sequences-open",
+    name: "明一色四同順 (4 identical sequences, open)",
+    score: (hand, ctx) => {
+      const runs = quadrupleIdenticalRunInstance(hand);
+      return runs && runs.some((r) => isMeldOpen(r, ctx)) ? 80 : 0;
+    },
+    excludes: ["identical-sequences-open", "identical-sequences-hidden", "triple-identical-sequences-open", "triple-identical-sequences-hidden"],
+  },
+  {
+    id: "quadruple-identical-sequences-hidden",
+    name: "暗一色四同順 (4 identical sequences, concealed)",
+    score: (hand, ctx) => {
+      const runs = quadrupleIdenticalRunInstance(hand);
+      return runs && runs.every((r) => !isMeldOpen(r, ctx)) ? 160 : 0;
+    },
+    excludes: ["identical-sequences-open", "identical-sequences-hidden", "triple-identical-sequences-open", "triple-identical-sequences-hidden"],
+  },
+  {
+    id: "two-separate-identical-sequences-open",
+    name: "明真雙般高 (2 separate identical-sequence pairs, open)",
+    score: (hand, ctx) => {
+      const runs = twoSeparateIdenticalRunPairs(hand);
+      return runs && runs.some((r) => isMeldOpen(r, ctx)) ? 20 : 0;
+    },
+    excludes: ["identical-sequences-open", "identical-sequences-hidden"],
+  },
+  {
+    id: "two-separate-identical-sequences-hidden",
+    name: "暗真雙般高 (2 separate identical-sequence pairs, concealed)",
+    score: (hand, ctx) => {
+      const runs = twoSeparateIdenticalRunPairs(hand);
+      return runs && runs.every((r) => !isMeldOpen(r, ctx)) ? 40 : 0;
+    },
+    excludes: ["identical-sequences-open", "identical-sequences-hidden"],
+  },
+  {
+    id: "same-suit-consecutive-open",
+    name: "明單色步步高 (3 ascending sequences, gap 1, open)",
+    score: (hand, ctx) =>
+      evenlySpacedRunInstances(hand, 1).filter((inst) => inst.some((m) => isMeldOpen(m, ctx))).length * 15,
+  },
+  {
+    id: "same-suit-consecutive-hidden",
+    name: "暗單色步步高 (3 ascending sequences, gap 1, concealed)",
+    score: (hand, ctx) =>
+      evenlySpacedRunInstances(hand, 1).filter((inst) => inst.every((m) => !isMeldOpen(m, ctx))).length * 30,
+  },
+  {
+    id: "same-suit-two-step-open",
+    name: "明單色二步高 (3 sequences, gap 2, open)",
+    score: (hand, ctx) =>
+      evenlySpacedRunInstances(hand, 2).filter((inst) => inst.some((m) => isMeldOpen(m, ctx))).length * 8,
+  },
+  {
+    id: "same-suit-two-step-hidden",
+    name: "暗單色二步高 (3 sequences, gap 2, concealed)",
+    score: (hand, ctx) =>
+      evenlySpacedRunInstances(hand, 2).filter((inst) => inst.every((m) => !isMeldOpen(m, ctx))).length * 15,
+  },
+  {
+    id: "consecutive-triplet-pair",
+    name: "二連刻 (2 consecutive triplets/kongs)",
+    // Stacks per adjacent pair; no 明/暗 split.
+    score: (hand) => consecutiveTripletOrKongPairCount(hand) * 5,
+  },
+  {
+    id: "small-three-consecutive-triplets",
+    name: "小三連刻 (3 consecutive ranks, pair at one end + 2 triplets/kongs)",
+    score: (hand) => (hasSmallThreeConsecutiveTriplets(hand) ? 15 : 0),
+  },
+  {
+    id: "big-three-consecutive-triplets",
+    name: "大三連刻 (3 consecutive triplets/kongs)",
+    score: (hand) => (hasBigThreeConsecutiveTriplets(hand) ? 30 : 0),
+  },
+  {
+    id: "half-flush",
+    name: "混一色 (One numbered suit + honors)",
+    score: (hand) => (numberedSuitsUsed(hand).size === 1 ? 40 : 0),
+  },
+  {
+    id: "full-flush",
+    name: "清一色 (One numbered suit, no honors)",
+    score: (hand) => (numberedSuitsUsed(hand).size === 1 && allHandTiles(hand).every((t) => !isHonorTile(t)) ? 120 : 0),
+    excludes: ["half-flush"],
+  },
 ];
 
 export interface ScoreResult {
@@ -796,24 +1321,26 @@ export interface ScoreResult {
 
 export class ScoringError extends Error {}
 
-// Validates completeness (kong-aware: a complete hand is
-// 17 + declaredKongCount tiles) and scores an already-parsed/already-
-// structured hand against `ctx`, picking the decomposition with the highest
-// total tai (see the module doc comment on why the max over all valid
-// readings is the correct score). Split out from scoreHand so UI that
-// already holds the hand as structured state (declared melds built via a
-// tap picker, not typed notation) can score directly without a round trip
-// through notation text.
+// Validates completeness (kong-aware: a complete hand is 17 + total kong
+// count tiles) and scores an already-parsed/already-structured hand against
+// `ctx`, picking the decomposition with the highest total tai (see the
+// module doc comment on why the max over all valid readings is the correct
+// score). Split out from scoreHand so UI that already holds the hand as
+// structured state (declared melds built via a tap picker, not typed
+// notation) can score directly without a round trip through notation text.
 export function scoreParsedHand(parsed: ParsedScoringHand, ctx: GameContext): ScoreResult {
   const meldsNeeded = MELDS_REQUIRED - parsed.declaredMelds.length;
-  const expectedFreeSize = meldsNeeded * 3 + 2;
+  // Each free meld is 3 tiles (triplet/run) or 4 (a concealed kong
+  // decomposeHandAll's search might find) - since which one isn't known
+  // until decomposition is attempted, completeness is a range here rather
+  // than a single expected size, bounded by "none of the free melds are
+  // kongs" and "all of them are."
+  const minFreeSize = meldsNeeded * 3 + 2;
+  const maxFreeSize = meldsNeeded * 4 + 2;
 
-  if (meldsNeeded < 0 || parsed.freeTiles.length !== expectedFreeSize) {
-    const kongCount = parsed.declaredMelds.filter((m) => m.kind === "kong").length;
+  if (meldsNeeded < 0 || parsed.freeTiles.length < minFreeSize || parsed.freeTiles.length > maxFreeSize) {
     const totalTiles = parsed.freeTiles.length + parsed.declaredMelds.reduce((n, m) => n + m.tiles.length, 0);
-    throw new ScoringError(
-      `Hand isn't complete: expected ${MELDS_REQUIRED * 3 + 2 + kongCount} tiles (17, plus 1 per declared kong), got ${totalTiles}`
-    );
+    throw new ScoringError(`Hand isn't complete: got ${totalTiles} tiles, expected 17 plus 1 per kong (declared or concealed)`);
   }
 
   const declaredResolved: ResolvedMeld[] = parsed.declaredMelds.map((m) => ({ ...m }));
