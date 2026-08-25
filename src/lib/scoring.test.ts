@@ -964,6 +964,20 @@ describe("PATTERNS: 相逢/明三相逢/暗三相逢/明四相逢/暗四相逢/�
   });
 });
 
+describe("PATTERNS: 雙姊妹 (2 distinct 相逢 instances)", () => {
+  it("scores for 123m+123b and 678t+678b (2 distinct instances, no shared meld)", () => {
+    const result = scoreHand("123m123b678t678b111z22z", ctx());
+    expect(tai(result, "cross-suit-same-run")).toBe(6);
+    expect(tai(result, "twin-cross-suit-runs")).toBe(5);
+  });
+
+  it("doesn't score for 123m+123m+123t - only 1 instance forms, the 2nd 123m has nothing to pair with", () => {
+    const result = scoreHand("123m123m123t456b111z22z", ctx());
+    expect(tai(result, "cross-suit-same-run")).toBe(3);
+    expect(tai(result, "twin-cross-suit-runs")).toBe(0);
+  });
+});
+
 describe("PATTERNS: 兩兄弟/小三兄弟/大三兄弟 (same-rank triplet/kong across suits)", () => {
   it("scores 兩兄弟 for 555t+555b (2 suits, same rank)", () => {
     const result = scoreHand("555t555b123m456m111z22z", ctx());

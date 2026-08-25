@@ -889,6 +889,23 @@ function nSuitSameRunMelds(hand: ResolvedHand, minRuns: number): ResolvedMeld[] 
   return null;
 }
 
+// 雙姊妹: a bonus on top of 相逢 - true when 2 *distinct* 相逢 instances
+// exist, sharing no meld between them (e.g. 123m+123b and 678t+678b). A
+// shape like 123m+123m+123t only ever produces one 相逢 instance (the 2nd
+// 123m has no 2nd 123t to pair with - see crossSuitSameRunInstances' min-
+// based pairing), so it doesn't qualify; even if it somehow produced 2
+// instances that both reused the same 123t, they wouldn't count as
+// "distinct" either.
+function hasTwoDistinctCrossSuitRuns(hand: ResolvedHand): boolean {
+  const instances = crossSuitSameRunInstances(hand);
+  for (let i = 0; i < instances.length; i++) {
+    for (let j = i + 1; j < instances.length; j++) {
+      if (!instances[i].some((m) => instances[j].includes(m))) return true;
+    }
+  }
+  return false;
+}
+
 // 兩兄弟: 2 triplets/kongs at the same rank but different suits (e.g.
 // 555t+555b). No 明/暗 split; stacks the same way 相逢 does - paired by
 // suit-index rather than a flat count so a within-suit duplicate isn't
@@ -1477,6 +1494,13 @@ export const PATTERNS: TaiPattern[] = [
     name: "相逢 (Same run, different suits)",
     // No 明/暗 split; stacks per instance.
     score: (hand) => crossSuitSameRunInstances(hand).length * 3,
+  },
+  {
+    id: "twin-cross-suit-runs",
+    name: "雙姊妹 (2 distinct 相逢 instances)",
+    // Additional bonus on top of 相逢 - stacks with it (and with anything
+    // else), not an alternative to it. No 明/暗 split.
+    score: (hand) => (hasTwoDistinctCrossSuitRuns(hand) ? 5 : 0),
   },
   {
     id: "three-suit-same-run-open",

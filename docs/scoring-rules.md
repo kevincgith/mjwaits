@@ -180,6 +180,7 @@ the [明/暗 concept](#the-明暗-openconcealed-concept).
 | Pattern | Tai | Criteria | Excludes | Notes |
 |---|---|---|---|---|
 | 相逢 (Same run, different suits) | 3 each | 2 runs with the same 3 ranks but in different suits — e.g. `234m+234t`. No 明/暗 split. | — | **Stacks per instance**, paired by suit-index so a within-suit duplicate (a 般高 concern) doesn't get double-counted as 相逢 against itself. |
+| 雙姊妹 (2 distinct 相逢 instances) | 5 | A flat bonus on top of 相逢, once per hand, when 2 *distinct* 相逢 instances exist — sharing no meld between them. E.g. `123m+123b` and `678t+678b`. | — | **Additive, not exclusive** — stacks with 相逢 itself (it's a bonus on top, not an alternative reading). A shape like `123m+123m+123t` only ever produces 1 相逢 instance in the first place (the 2nd `123m` has no 2nd `123t` to pair with), so it doesn't qualify — and even if 2 instances both reused the same meld, they wouldn't count as "distinct" either. |
 | 明三相逢 (Same run in all 3 suits, open) | 10 | All 3 suits have a run at the same rank — e.g. `567m+567t+567b` — instance is 明. | 相逢 | |
 | 暗三相逢 (same, concealed) | 20 | Same shape, instance is 暗. | 相逢 | |
 | 明四相逢 (4 runs across all 3 suits, one suit doubled, open) | 40 | The 3-suit group plus one extra run in whichever suit has it twice — e.g. `456m456m456t456b` — instance is 明. | 相逢, 明三相逢, 暗三相逢 | |
