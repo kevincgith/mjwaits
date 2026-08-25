@@ -292,6 +292,11 @@ export interface GameContext {
   seatWind: Wind;
   roundWind: Wind;
   selfDraw: boolean;
+  // The 食胡 tile - whichever tile kind completed the hand. Only its
+  // suit/rank matter (not which physical copy), since every copy of a kind
+  // is interchangeable for scoring purposes. null means unspecified - see
+  // isMeldOpen for how that's treated.
+  winningTile: Tile | null;
 }
 
 // The dealer is whoever's own seat wind is East for the current hand - not
@@ -393,6 +398,131 @@ function categoriesWithFullMeld(hand: ResolvedHand): Set<FiveSuitCategory> {
 
 const hasBonusKind = (hand: ResolvedHand, kind: BonusKind): boolean => hand.bonusTiles.some((b) => b.kind === kind);
 
+const meldHasTileKind = (meld: ResolvedMeld, tile: Tile): boolean =>
+  meld.tiles.some((t) => t.suit === tile.suit && t.rank === tile.rank);
+
+// 明 (open) vs 暗 (concealed/hidden), per the house rule: a meld is 明 if
+// it's declared/exposed, OR if it's the meld the 食胡 tile (winningTile)
+// completed and that win wasn't a self-draw - claiming the last tile of an
+// otherwise-concealed meld off a discard still makes that meld count as
+// open, even though it was never "called" in the usual pon/chi sense. With
+// no winningTile recorded, that second condition just never fires (only
+// physical declaration disqualifies a meld) - see the ScoringPanel UI's
+// 食胡-tile long-press.
+//
+// Kongs are handled specially by the 暗刻-chain patterns below, NOT here:
+// a kong counts toward 兩/三/四/五暗刻 regardless of open/concealed status,
+// so those patterns check `kind === "kong"` directly rather than routing
+// kongs through this function.
+function isMeldOpen(meld: ResolvedMeld, ctx: GameContext): boolean {
+  if (!meld.concealed) return true;
+  return !ctx.selfDraw && ctx.winningTile !== null && meldHasTileKind(meld, ctx.winningTile);
+}
+
+// Count of melds that satisfy the 暗刻-chain's "concealed triplet or kong"
+// condition - a kong always counts (regardless of isMeldOpen), a triplet
+// only counts if isMeldOpen says it's still 暗.
+function hiddenTripletOrKongCount(hand: ResolvedHand, ctx: GameContext): number {
+  return hand.melds.filter((m) => m.kind === "kong" || (m.kind === "triplet" && !isMeldOpen(m, ctx))).length;
+}
+
+// A "segment" meld is a run occupying exactly one of the three fixed
+// 3-tile spans a straight needs (1-2-3, 4-5-6, 7-8-9) in a given suit -
+// unlike an ordinary run search, position is fixed, not "any 3 consecutive
+// ranks starting anywhere."
+function segmentMelds(hand: ResolvedHand, suit: Suit, startRank: 1 | 4 | 7): ResolvedMeld[] {
+  return hand.melds.filter((m) => m.kind === "run" && m.tiles[0].suit === suit && m.tiles[0].rank === startRank);
+}
+
+// Given the meld lists for three segments that must combine 1-to-1 into a
+// straight, returns one meld-triple per instance. When a segment has more
+// copies than another, the extra copies each form their own instance,
+// reusing whichever segment(s) only have a single copy - see the 清龍/雜龍
+// worked examples this was derived from (123m456m789m789m -> 2 instances,
+// one pairing each 789m with the shared 123m/456m). Empty if any segment is
+// missing entirely (no straight at all).
+function combineSegments(segA: ResolvedMeld[], segB: ResolvedMeld[], segC: ResolvedMeld[]): ResolvedMeld[][] {
+  if (segA.length === 0 || segB.length === 0 || segC.length === 0) return [];
+  const instances = Math.max(segA.length, segB.length, segC.length);
+  const result: ResolvedMeld[][] = [];
+  for (let i = 0; i < instances; i++) {
+    result.push([segA[Math.min(i, segA.length - 1)], segB[Math.min(i, segB.length - 1)], segC[Math.min(i, segC.length - 1)]]);
+  }
+  return result;
+}
+
+// Every 清龍 (pure straight, single suit) instance in the hand - see
+// combineSegments for how duplicate segments turn into multiple instances.
+function pureStraightInstances(hand: ResolvedHand): ResolvedMeld[][] {
+  const result: ResolvedMeld[][] = [];
+  for (const suit of ["m", "t", "b"] as const) {
+    result.push(...combineSegments(segmentMelds(hand, suit, 1), segmentMelds(hand, suit, 4), segmentMelds(hand, suit, 7)));
+  }
+  return result;
+}
+
+// All 6 orderings of the 3 numbered suits - used to assign which suit plays
+// which segment's role for 雜龍 (mixed straight, one segment per suit).
+function suitPermutations(): Suit[][] {
+  const suits: Suit[] = ["m", "t", "b"];
+  const result: Suit[][] = [];
+  for (const a of suits) {
+    for (const b of suits) {
+      for (const c of suits) {
+        if (a !== b && b !== c && a !== c) result.push([a, b, c]);
+      }
+    }
+  }
+  return result;
+}
+
+// Every 雜龍 (mixed straight, one segment per suit) instance in the hand.
+// A given meld can only ever fill the role matching its own rank span, so
+// permutations naturally partition without double-counting the same meld
+// under two different roles - see combineSegments for the duplicate-segment
+// instance counting itself.
+function mixedStraightInstances(hand: ResolvedHand): ResolvedMeld[][] {
+  const result: ResolvedMeld[][] = [];
+  for (const [suitA, suitB, suitC] of suitPermutations()) {
+    result.push(...combineSegments(segmentMelds(hand, suitA, 1), segmentMelds(hand, suitB, 4), segmentMelds(hand, suitC, 7)));
+  }
+  return result;
+}
+
+function meldsAtRank(hand: ResolvedHand, kinds: MeldKind[], suit: Suit, rank: number): ResolvedMeld[] {
+  return hand.melds.filter((m) => kinds.includes(m.kind) && m.tiles[0].suit === suit && m.tiles[0].rank === rank);
+}
+
+// 老少上 instances: a 1-2-3 run and a 7-8-9 run in the same suit, as long as
+// that suit doesn't *also* have a 4-5-6 run (that would make it 清龍
+// instead). No 明/暗 split, but still stacks the same "extra copies each
+// form their own instance, reusing the single-copy segment" way 清龍/雜龍 do
+// (see combineSegments) - just with 2 segments instead of 3.
+function oldYoungRunInstances(hand: ResolvedHand): number {
+  let total = 0;
+  for (const suit of ["m", "t", "b"] as const) {
+    if (segmentMelds(hand, suit, 4).length > 0) continue;
+    const ones = segmentMelds(hand, suit, 1);
+    const nines = segmentMelds(hand, suit, 7);
+    if (ones.length === 0 || nines.length === 0) continue;
+    total += Math.max(ones.length, nines.length);
+  }
+  return total;
+}
+
+// 老少碰 instances: a rank-1 triplet/kong and a rank-9 triplet/kong in the
+// same suit. No 明/暗 split, stacks the same way.
+function oldYoungTripletInstances(hand: ResolvedHand): number {
+  let total = 0;
+  for (const suit of ["m", "t", "b"] as const) {
+    const ones = meldsAtRank(hand, ["triplet", "kong"], suit, 1);
+    const nines = meldsAtRank(hand, ["triplet", "kong"], suit, 9);
+    if (ones.length === 0 || nines.length === 0) continue;
+    total += Math.max(ones.length, nines.length);
+  }
+  return total;
+}
+
 // House tai list, added one pattern at a time as the user supplies them -
 // see the module doc comment on why this stays a plain array of concrete
 // checks rather than a generic rule engine.
@@ -403,6 +533,12 @@ export const PATTERNS: TaiPattern[] = [
     // Placeholder value from the initial foundation work, not yet confirmed
     // against the user's own house rules.
     score: (hand) => (hand.melds.every((m) => m.concealed) ? 1 : 0),
+  },
+  {
+    id: "kong",
+    name: "槓 (Kong)",
+    // Stacks: 2 tai per kong held, declared (exposed) or concealed alike.
+    score: (hand) => hand.melds.filter((m) => m.kind === "kong").length * 2,
   },
   {
     id: "no-flowers",
@@ -420,6 +556,7 @@ export const PATTERNS: TaiPattern[] = [
     id: "no-honors-no-flowers",
     name: "無字花 (No honors, no flowers)",
     score: (hand) => (isNoHonorsNoFlowers(hand) ? 10 : 0),
+    excludes: ["no-honors", "no-flowers"],
   },
   {
     id: "no-honors",
@@ -565,6 +702,89 @@ export const PATTERNS: TaiPattern[] = [
     name: "小於五 (All 1-4)",
     score: (hand) => (allTilesInRange(hand, 1, 4) ? 40 : 0),
     excludes: ["no-fives"],
+  },
+  {
+    id: "all-simples",
+    name: "斷么 (All simples)",
+    score: (hand) => (allHandTiles(hand).every((t) => t.suit !== "z" && t.rank >= 2 && t.rank <= 8) ? 10 : 0),
+  },
+  {
+    id: "all-triplets",
+    name: "對對胡 (All triplets)",
+    score: (hand) => (hand.melds.every((m) => m.kind === "triplet" || m.kind === "kong") ? 40 : 0),
+  },
+  {
+    id: "five-concealed-triplets",
+    name: "坎坎胡 (Five concealed triplets, self-draw)",
+    // Kongs aren't eligible here (unlike the 暗刻 chain below) - every meld
+    // must be a plain triplet, physically concealed, and the win must be
+    // self-drawn (which also means isMeldOpen's winningTile carve-out can
+    // never apply, so checking `concealed` directly is equivalent and
+    // simpler).
+    score: (hand, ctx) => (ctx.selfDraw && hand.melds.every((m) => m.kind === "triplet" && m.concealed) ? 160 : 0),
+    excludes: ["all-triplets", "two-hidden-triplets", "three-hidden-triplets", "four-hidden-triplets", "five-hidden-triplets"],
+  },
+  {
+    id: "two-hidden-triplets",
+    name: "兩暗刻 (Two concealed triplets/kongs)",
+    score: (hand, ctx) => (hiddenTripletOrKongCount(hand, ctx) >= 2 ? 5 : 0),
+  },
+  {
+    id: "three-hidden-triplets",
+    name: "三暗刻 (Three concealed triplets/kongs)",
+    score: (hand, ctx) => (hiddenTripletOrKongCount(hand, ctx) >= 3 ? 15 : 0),
+    excludes: ["two-hidden-triplets"],
+  },
+  {
+    id: "four-hidden-triplets",
+    name: "四暗刻 (Four concealed triplets/kongs)",
+    score: (hand, ctx) => (hiddenTripletOrKongCount(hand, ctx) >= 4 ? 30 : 0),
+    excludes: ["two-hidden-triplets", "three-hidden-triplets"],
+  },
+  {
+    id: "five-hidden-triplets",
+    name: "五暗刻 (Five concealed triplets/kongs)",
+    score: (hand, ctx) => (hiddenTripletOrKongCount(hand, ctx) >= 5 ? 80 : 0),
+    excludes: ["two-hidden-triplets", "three-hidden-triplets", "four-hidden-triplets"],
+  },
+  {
+    id: "five-kongs",
+    name: "五槓子 (Five kongs)",
+    score: (hand) => (hand.melds.every((m) => m.kind === "kong") ? 240 : 0),
+    excludes: ["kong", "four-hidden-triplets", "five-hidden-triplets"],
+  },
+  {
+    id: "pure-straight-open",
+    name: "明清龍 (Pure straight, open)",
+    // Stacks per instance - see pureStraightInstances/combineSegments.
+    score: (hand, ctx) => pureStraightInstances(hand).filter((inst) => inst.some((m) => isMeldOpen(m, ctx))).length * 10,
+  },
+  {
+    id: "pure-straight-hidden",
+    name: "暗清龍 (Pure straight, concealed)",
+    score: (hand, ctx) => pureStraightInstances(hand).filter((inst) => inst.every((m) => !isMeldOpen(m, ctx))).length * 20,
+  },
+  {
+    id: "mixed-straight-open",
+    name: "明雜龍 (Mixed straight across suits, open)",
+    score: (hand, ctx) => mixedStraightInstances(hand).filter((inst) => inst.some((m) => isMeldOpen(m, ctx))).length * 8,
+  },
+  {
+    id: "mixed-straight-hidden",
+    name: "暗雜龍 (Mixed straight across suits, concealed)",
+    score: (hand, ctx) => mixedStraightInstances(hand).filter((inst) => inst.every((m) => !isMeldOpen(m, ctx))).length * 15,
+  },
+  {
+    id: "old-young-run",
+    name: "老少上 (Terminal runs, 123 + 789)",
+    // No excludes needed against 清龍 - oldYoungRunInstances already skips
+    // any suit that also has a 4-5-6 run itself.
+    score: (hand) => oldYoungRunInstances(hand) * 3,
+  },
+  {
+    id: "old-young-triplet",
+    name: "老少碰 (Terminal triplets/kongs, 111 + 999)",
+    score: (hand) => oldYoungTripletInstances(hand) * 5,
   },
 ];
 

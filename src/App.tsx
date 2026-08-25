@@ -315,6 +315,66 @@ function useTap(onTap: () => void, disabled?: boolean) {
   return { onPointerDown, onPointerUp, onPointerCancel, onClick };
 }
 
+const LONG_PRESS_MS = 500;
+
+// Same touch/mouse handling as useTap above, plus a timer-based long-press:
+// if the pointer stays down past LONG_PRESS_MS without moving, onLongPress
+// fires instead of onTap. Used by ScoringPanel's concealed-hand tiles,
+// where a plain tap already means "remove this tile" (see HandTileButton) -
+// long-press is the only gesture left for "mark as the 食胡 tile" without
+// colliding with that.
+function useTapAndLongPress(onTap: () => void, onLongPress: () => void, disabled?: boolean) {
+  const startRef = useRef<{ x: number; y: number } | null>(null);
+  const longPressFired = useRef(false);
+  const timerRef = useRef<number | null>(null);
+
+  const clearTimer = () => {
+    if (timerRef.current !== null) {
+      window.clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  };
+
+  const onPointerDown = (e: ReactPointerEvent) => {
+    if (disabled) return;
+    startRef.current = { x: e.clientX, y: e.clientY };
+    longPressFired.current = false;
+    if (e.pointerType !== "mouse") e.preventDefault();
+    clearTimer();
+    timerRef.current = window.setTimeout(() => {
+      longPressFired.current = true;
+      onLongPress();
+    }, LONG_PRESS_MS);
+  };
+
+  const onPointerUp = (e: ReactPointerEvent) => {
+    clearTimer();
+    if (disabled || e.pointerType === "mouse") return;
+    const start = startRef.current;
+    startRef.current = null;
+    if (longPressFired.current) return; // already handled as a long-press
+    if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 10) return; // a drag/scroll, not a tap
+    lastTouchTapAt = performance.now();
+    onTap();
+  };
+
+  const onPointerCancel = () => {
+    clearTimer();
+    startRef.current = null;
+  };
+
+  const onClick = () => {
+    if (disabled) return;
+    if (longPressFired.current) {
+      longPressFired.current = false;
+      return;
+    }
+    onTap();
+  };
+
+  return { onPointerDown, onPointerUp, onPointerCancel, onClick };
+}
+
 function TileGlyphSpan({
   tile,
   large,
@@ -365,6 +425,32 @@ function HandTileButton({ tile, onClick }: { tile: Tile; onClick: () => void }) 
   return (
     <button type="button" className="hand-tile-button" title={`Remove ${tileLabel(tile)}`} {...tap}>
       <TileGlyphSpan tile={tile} large />
+    </button>
+  );
+}
+
+// Scoring tab's concealed-hand tile: tap still removes it (same as
+// HandTileButton), long-press toggles it as the 食胡 tile (the tile that
+// completed the hand) - highlighted the same amber as a wait's completing
+// tile elsewhere in the app, since it's the same idea.
+function WinningTileHandButton({
+  tile,
+  isWinning,
+  onRemove,
+  onToggleWinning,
+}: {
+  tile: Tile;
+  isWinning: boolean;
+  onRemove: () => void;
+  onToggleWinning: () => void;
+}) {
+  const tap = useTapAndLongPress(onRemove, onToggleWinning);
+  const title = isWinning
+    ? `${tileLabel(tile)} - 食胡 tile (tap to remove, long-press to unmark)`
+    : `${tileLabel(tile)} - tap to remove, long-press to mark as the 食胡 tile`;
+  return (
+    <button type="button" className="hand-tile-button" title={title} {...tap}>
+      <TileGlyphSpan tile={tile} large highlight={isWinning} />
     </button>
   );
 }
@@ -1902,6 +1988,10 @@ function ScoringPanel() {
   const [seatWind, setSeatWind] = useState<Wind>(1);
   const [roundWind, setRoundWind] = useState<Wind>(1);
   const [selfDraw, setSelfDraw] = useState(false);
+  // The 食胡 tile - which tile kind (not instance) completed the hand, set
+  // via long-press on a concealed-hand tile (see WinningTileHandButton).
+  // Only its suit/rank matter, matched by kind wherever it appears.
+  const [winningTile, setWinningTile] = useState<Tile | null>(null);
   const nextTileId = useRef(0);
   const nextMeldId = useRef(0);
 
@@ -2009,9 +2099,15 @@ function ScoringPanel() {
     setConcealedTiles([]);
     setDeclaredMelds([]);
     setBonusTiles([]);
+    setWinningTile(null);
   };
 
-  const ctx: GameContext = { seatWind, roundWind, selfDraw };
+  const isWinningTile = (tile: Tile): boolean =>
+    winningTile !== null && winningTile.suit === tile.suit && winningTile.rank === tile.rank;
+  const toggleWinningTile = (tile: Tile) =>
+    setWinningTile((prev) => (prev && prev.suit === tile.suit && prev.rank === tile.rank ? null : tile));
+
+  const ctx: GameContext = { seatWind, roundWind, selfDraw, winningTile };
   const scoring = useMemo(() => {
     if (totalTiles !== requiredSize) return null;
     const parsed: ParsedScoringHand = {
@@ -2026,7 +2122,7 @@ function ScoringPanel() {
       return { ok: false as const, message };
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [concealedTiles, declaredMelds, bonusTiles, totalTiles, requiredSize, seatWind, roundWind, selfDraw]);
+  }, [concealedTiles, declaredMelds, bonusTiles, totalTiles, requiredSize, seatWind, roundWind, selfDraw, winningTile]);
 
   return (
     <section className="panel scoring-panel">
@@ -2171,9 +2267,18 @@ function ScoringPanel() {
         {concealedTiles.length === 0 ? (
           <span className="hint">Tap tiles above for the tiles still in your hand.</span>
         ) : (
-          sortTiles(concealedTiles).map((t) => <HandTileButton key={(t as HandTile).id} tile={t} onClick={() => removeConcealedTile((t as HandTile).id)} />)
+          sortTiles(concealedTiles).map((t) => (
+            <WinningTileHandButton
+              key={(t as HandTile).id}
+              tile={t}
+              isWinning={isWinningTile(t)}
+              onRemove={() => removeConcealedTile((t as HandTile).id)}
+              onToggleWinning={() => toggleWinningTile(t)}
+            />
+          ))
         )}
       </div>
+      {concealedTiles.length > 0 && <span className="hint">Long-press a tile to mark it as the 食胡 tile (the one that completed the hand).</span>}
 
       {scoring && !scoring.ok && <span className="error">{scoring.message}</span>}
 

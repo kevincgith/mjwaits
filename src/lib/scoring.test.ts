@@ -12,6 +12,7 @@ const ctx = (overrides: Partial<GameContext> = {}): GameContext => ({
   seatWind: 1,
   roundWind: 1,
   selfDraw: false,
+  winningTile: null,
   ...overrides,
 });
 
@@ -164,6 +165,24 @@ function tai(result: ReturnType<typeof scoreHand>, id: string): number {
 }
 
 describe("PATTERNS", () => {
+  describe("槓 (kong)", () => {
+    it("scores 0 with no kong in the hand", () => {
+      expect(tai(scoreHand("123456789m111z234t22b", ctx()), "kong")).toBe(0);
+    });
+
+    it("stacks 2 tai for a concealed kong", () => {
+      expect(tai(scoreHand("1111z123456789m234t22b", ctx()), "kong")).toBe(2);
+    });
+
+    it("stacks 2 tai for an exposed kong too", () => {
+      expect(tai(scoreHand("(1111z)123456789m234t22b", ctx()), "kong")).toBe(2);
+    });
+
+    it("stacks across multiple kongs regardless of concealed/exposed mix", () => {
+      expect(tai(scoreHand("1111z2222z123456789m22b", ctx()), "kong")).toBe(4);
+    });
+  });
+
   describe("正花 (correct-flower)", () => {
     it("stacks 2 tai per bonus tile matching the seat wind", () => {
       const parsed = parseScoringHand("123456789m111z234t22b");
@@ -183,10 +202,11 @@ describe("PATTERNS", () => {
   describe("無字 (no-honors) / 無字花 (no-honors-no-flowers)", () => {
     const noHonorHand = "111222333m444555t22b"; // 3 melds in m, 2 in t, pair in b - no z tiles anywhere.
 
-    it("scores 無字 and 無字花 together for an all-numbered hand with no bonus tiles", () => {
+    it("scores only 無字花 (not 無字/無花) for an all-numbered hand with no bonus tiles", () => {
       const result = scoreHand(noHonorHand, ctx());
-      expect(tai(result, "no-honors")).toBe(2);
       expect(tai(result, "no-honors-no-flowers")).toBe(10);
+      expect(tai(result, "no-honors")).toBe(0);
+      expect(tai(result, "no-flowers")).toBe(0);
     });
 
     it("scores 無字 but not 無字花 once a bonus tile is present", () => {
@@ -438,6 +458,161 @@ describe("PATTERNS", () => {
       expect(tai(result, "greater-than-five")).toBe(0);
       expect(tai(result, "less-than-five")).toBe(0);
     });
+  });
+});
+
+describe("PATTERNS: 明/暗 (open/concealed) via the winning tile", () => {
+  // A single concealed pure straight in m, padded with an unrelated pair.
+  const straightHand = "123456789m234t567t22b";
+
+  it("is 暗清龍 with no winning tile recorded", () => {
+    const result = scoreHand(straightHand, ctx());
+    expect(tai(result, "pure-straight-hidden")).toBe(20);
+    expect(tai(result, "pure-straight-open")).toBe(0);
+  });
+
+  it("becomes 明清龍 when the winning tile is part of the straight and wasn't self-drawn", () => {
+    const result = scoreHand(straightHand, ctx({ winningTile: { suit: "m", rank: 8 }, selfDraw: false }));
+    expect(tai(result, "pure-straight-open")).toBe(10);
+    expect(tai(result, "pure-straight-hidden")).toBe(0);
+  });
+
+  it("stays 暗清龍 when the winning tile is part of the straight but WAS self-drawn", () => {
+    const result = scoreHand(straightHand, ctx({ winningTile: { suit: "m", rank: 8 }, selfDraw: true }));
+    expect(tai(result, "pure-straight-hidden")).toBe(20);
+    expect(tai(result, "pure-straight-open")).toBe(0);
+  });
+
+  it("stays 暗清龍 when the winning tile doesn't belong to any meld in the straight", () => {
+    const result = scoreHand(straightHand, ctx({ winningTile: { suit: "t", rank: 5 }, selfDraw: false }));
+    expect(tai(result, "pure-straight-hidden")).toBe(20);
+    expect(tai(result, "pure-straight-open")).toBe(0);
+  });
+});
+
+describe("PATTERNS: 斷么 (all-simples)", () => {
+  it("scores when every tile is ranked 2-8", () => {
+    expect(tai(scoreHand("234m567m234t567t234b66b", ctx()), "all-simples")).toBe(10);
+  });
+
+  it("doesn't score once a terminal or honor is present", () => {
+    expect(tai(scoreHand("123456789m111z234t22b", ctx()), "all-simples")).toBe(0);
+  });
+});
+
+describe("PATTERNS: 對對胡/坎坎胡 and the 暗刻 chain", () => {
+  // 5 concealed triplets (non-adjacent ranks, so no run reading is possible),
+  // all in one suit for simplicity, pair in a different suit.
+  const fiveHiddenTriplets = "111m333m555m777m999m22t";
+
+  it("對對胡 scores for all-triplet/kong hands, not for hands with a run", () => {
+    expect(tai(scoreHand("111m333m555m777t99t999b", ctx()), "all-triplets")).toBe(40);
+    expect(tai(scoreHand("123456789m111z234t22b", ctx()), "all-triplets")).toBe(0);
+  });
+
+  it("坎坎胡 requires self-draw, excluding 對對胡 and the whole 暗刻 chain", () => {
+    const result = scoreHand(fiveHiddenTriplets, ctx({ selfDraw: true }));
+    expect(tai(result, "five-concealed-triplets")).toBe(160);
+    expect(tai(result, "all-triplets")).toBe(0);
+    expect(tai(result, "two-hidden-triplets")).toBe(0);
+    expect(tai(result, "three-hidden-triplets")).toBe(0);
+    expect(tai(result, "four-hidden-triplets")).toBe(0);
+    expect(tai(result, "five-hidden-triplets")).toBe(0);
+  });
+
+  it("without self-draw, 坎坎胡 doesn't fire but 對對胡/五暗刻 still do", () => {
+    const result = scoreHand(fiveHiddenTriplets, ctx({ selfDraw: false }));
+    expect(tai(result, "five-concealed-triplets")).toBe(0);
+    expect(tai(result, "all-triplets")).toBe(40);
+    expect(tai(result, "five-hidden-triplets")).toBe(80);
+  });
+
+  it("a kong disqualifies 坎坎胡 even with self-draw, but still counts toward 五暗刻", () => {
+    const result = scoreHand("1111m999m456t789t234b22b", ctx({ selfDraw: true }));
+    expect(tai(result, "five-concealed-triplets")).toBe(0);
+  });
+
+  it("counts exactly 2/3/4 concealed triplets at the right tiers", () => {
+    const two = scoreHand("111m333m456t789t234b22b", ctx());
+    expect(tai(two, "two-hidden-triplets")).toBe(5);
+    expect(tai(two, "three-hidden-triplets")).toBe(0);
+
+    const three = scoreHand("111m333m555m456t789b22b", ctx());
+    expect(tai(three, "three-hidden-triplets")).toBe(15);
+    expect(tai(three, "two-hidden-triplets")).toBe(0);
+
+    const four = scoreHand("111m333m555m777m456t22t", ctx());
+    expect(tai(four, "four-hidden-triplets")).toBe(30);
+    expect(tai(four, "three-hidden-triplets")).toBe(0);
+  });
+
+  it("a triplet completed by a claimed (non-self-draw) winning tile doesn't count as hidden", () => {
+    // Same shape as the "two" case above, but the winning tile completes
+    // one of the two triplets via a claim, not a self-draw.
+    const result = scoreHand("111m333m456t789t234b22b", ctx({ winningTile: { suit: "m", rank: 3 }, selfDraw: false }));
+    expect(tai(result, "two-hidden-triplets")).toBe(0);
+  });
+});
+
+describe("PATTERNS: 五槓子", () => {
+  it("scores 240 for 5 kongs, excluding 槓/四暗刻/五暗刻 but not 對對胡", () => {
+    const result = scoreHand("1111m2222m3333m4444m5555t66t", ctx());
+    expect(tai(result, "five-kongs")).toBe(240);
+    expect(tai(result, "kong")).toBe(0);
+    expect(tai(result, "four-hidden-triplets")).toBe(0);
+    expect(tai(result, "five-hidden-triplets")).toBe(0);
+    expect(tai(result, "all-triplets")).toBe(40);
+  });
+});
+
+describe("PATTERNS: 明清龍/暗清龍 (pure straight, with duplicate instances)", () => {
+  it("counts 2x 明清龍 when a whole 123-456-789-789 group is all declared", () => {
+    const result = scoreHand("(123m)(456m)(789m)(789m)234t22b", ctx());
+    expect(tai(result, "pure-straight-open")).toBe(20); // 2 instances x 10
+    expect(tai(result, "pure-straight-hidden")).toBe(0);
+  });
+
+  it("splits into 1 暗清龍 + 1 明清龍 when only one duplicate segment is declared", () => {
+    const result = scoreHand("(789m)123456789m234t22b", ctx());
+    expect(tai(result, "pure-straight-hidden")).toBe(20); // 1 instance
+    expect(tai(result, "pure-straight-open")).toBe(10); // 1 instance
+  });
+});
+
+describe("PATTERNS: 明雜龍/暗雜龍 (mixed straight across suits)", () => {
+  it("scores 暗雜龍 for a fully concealed 123m+456t+789b", () => {
+    const result = scoreHand("123m234m456t567t789b99b", ctx());
+    expect(tai(result, "mixed-straight-hidden")).toBe(15);
+    expect(tai(result, "mixed-straight-open")).toBe(0);
+  });
+
+  it("scores 明雜龍 once one of the three segments is declared", () => {
+    const result = scoreHand("(123m)234m456t567t789b99b", ctx());
+    expect(tai(result, "mixed-straight-open")).toBe(8);
+    expect(tai(result, "mixed-straight-hidden")).toBe(0);
+  });
+});
+
+describe("PATTERNS: 老少上/老少碰", () => {
+  it("counts 2x 老少上 for a duplicated 123 paired with a single 789", () => {
+    const result = scoreHand("123m123m789m456t567t22b", ctx());
+    expect(tai(result, "old-young-run")).toBe(6); // 2 instances x 3
+  });
+
+  it("doesn't score 老少上 for a suit that also has the 456 segment (that's 清龍 instead)", () => {
+    const result = scoreHand("123456789m234t567t22b", ctx());
+    expect(tai(result, "old-young-run")).toBe(0);
+    expect(tai(result, "pure-straight-hidden")).toBe(20);
+  });
+
+  it("scores 老少碰 for a rank-1 + rank-9 triplet in one suit", () => {
+    const result = scoreHand("111m999m456t789t234b22b", ctx());
+    expect(tai(result, "old-young-triplet")).toBe(5);
+  });
+
+  it("a kong of rank 1 or 9 counts toward 老少碰 too", () => {
+    const result = scoreHand("1111m999m456t789t234b22b", ctx());
+    expect(tai(result, "old-young-triplet")).toBe(5);
   });
 });
 
