@@ -15,9 +15,11 @@
 // array of concrete checks against one house rule set, added one at a time.
 
 import {
+  decomposeEightPairs,
   decomposeSixteenUnrelated,
   decomposeThirteenOrphans,
   getWaits,
+  isEightPairsComplete,
   isSixteenUnrelatedComplete,
   isThirteenOrphansComplete,
   MELDS_REQUIRED,
@@ -495,6 +497,98 @@ function isGenuineSingleWait(hand: ResolvedHand, ctx: GameContext): boolean {
   if (ctx.winningTile === null) return false;
   const pre = preWinWaitInput(hand, ctx.winningTile);
   return pre !== null && getWaits(pre.tiles, pre.meldsRequired).length === 1;
+}
+
+// 嚦咕嚦咕八飛: the wait count for the pre-completion hand, specific to the
+// 嚦咕嚦咕 shape itself - NOT the general getWaits (that would also count
+// completions via a totally unrelated normal-hand reading, which the user
+// confirmed shouldn't factor in here: a 2-wait example hand's pre-
+// completion tiles happened to also admit several incidental normal-hand
+// waits that don't belong in this count).
+//
+// Two rules, per the user's own examples:
+// 1. If every kind in the pre-completion hand already sits at an EVEN
+//    count (2, or 4 - i.e. a "clean" 8-pairs shape with nothing already
+//    tripled or dangling as a single), it's unconditionally treated as an
+//    8-way wait - even if some of those kinds are already at all 4 copies
+//    and so can't literally be drawn again (e.g. 5555t7777t9999m1177z
+//    "only" has 1z/7z left to literally draw, but still counts as 8).
+// 2. Otherwise, count how many of the 34 tile kinds - skipping any already
+//    at 4 copies, since a 5th can't exist - make
+//    isEightPairsComplete(preTiles + candidate) true when added. This is
+//    deliberately narrower than getWaits: it only recognizes completions
+//    via the 嚦咕嚦咕 shape itself, not any other hand type.
+function eightPairsCountsByKind(tiles: Tile[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const t of tiles) {
+    const key = `${t.suit}${t.rank}`;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return counts;
+}
+function eightPairsWaitCount(preTiles: Tile[]): number {
+  const counts = eightPairsCountsByKind(preTiles);
+  if ([...counts.values()].every((c) => c === 2 || c === 4)) return 8;
+
+  let waitCount = 0;
+  const candidates: Tile[] = [];
+  for (const suit of ["m", "t", "b"] as const) {
+    for (let rank = 1; rank <= 9; rank++) candidates.push({ suit, rank });
+  }
+  for (let rank = 1; rank <= 7; rank++) candidates.push({ suit: "z", rank });
+  for (const candidate of candidates) {
+    const key = `${candidate.suit}${candidate.rank}`;
+    if ((counts.get(key) ?? 0) >= 4) continue;
+    if (isEightPairsComplete([...preTiles, candidate])) waitCount++;
+  }
+  return waitCount;
+}
+
+// null if the wait count can't be determined (no 食胡 tile recorded).
+function preCompletionEightPairsWaitCount(hand: ResolvedHand, ctx: GameContext): number | null {
+  if (ctx.winningTile === null) return null;
+  const pre = preWinWaitInput(hand, ctx.winningTile);
+  return pre === null ? null : eightPairsWaitCount(pre.tiles);
+}
+
+// 明/暗四歸 (嚦咕嚦咕 context): a kind held all 4 copies at once (2 of the 8
+// pairs) - structurally different from orphansQuadKind's "triplet meld +
+// matching single" shape, since a 嚦咕嚦咕 quad is just one 4-tile group.
+// Picks whichever quad kind is found first if more than one exists.
+function eightPairsQuadKind(hand: ResolvedHand): Tile | null {
+  const quadMeld = hand.melds.find((m) => m.tiles.length === 4);
+  return quadMeld ? quadMeld.tiles[0] : null;
+}
+
+// 小五門齊/小七門齊 (嚦咕嚦咕 context): the normal small-five-suits/small-
+// seven-suits patterns can't be reused as-is here - their own "not also
+// big" guard (categoriesWithFullMeld().size < 5) assumes hand.melds holds
+// genuine 3+-tile melds, but every group in a 嚦咕嚦咕 hand independently
+// covers its own category, so that guard would (wrongly) never trip and
+// 大五/七門齊 would fire instead. These check presence only, exactly the
+// "no need to have a meld" shape the user asked for.
+function eightPairsSmallFiveSuitsTai(hand: ResolvedHand): number {
+  return categoriesPresent(hand).size === 5 ? 10 : 0;
+}
+function eightPairsSmallSevenSuitsTai(hand: ResolvedHand): number {
+  return categoriesPresent(hand).size === 5 && hasBonusKind(hand, "flower") && hasBonusKind(hand, "season") ? 15 : 0;
+}
+
+// 將眼 (嚦咕嚦咕 context): the normal pattern only ever checks the single
+// designated `hand.pair`, but a 嚦咕嚦咕 hand really has 7 "eyes"-like pair
+// groups (the triple doesn't count, it's been upgraded) - each one at
+// rank 2/5/8 (not honors) fires its own instance, stacking. A quad (4
+// copies, counting as 2 of the 8 pairs) contributes 2 instances if it
+// qualifies, matching its "2 pairs at once" nature elsewhere.
+function eightPairsMiddleTilePairCount(hand: ResolvedHand): number {
+  const groups: Tile[][] = [hand.pair, ...hand.melds.filter((m) => m.tiles.length !== 3).map((m) => m.tiles)];
+  let count = 0;
+  for (const group of groups) {
+    const t = group[0];
+    if (t.suit === "z" || ![2, 5, 8].includes(t.rank)) continue;
+    count += group.length === 4 ? 2 : 1;
+  }
+  return count;
 }
 
 // 假獨: the 食胡 tile fills the *middle* rank of some run meld it belongs
@@ -1929,20 +2023,23 @@ export const PATTERNS: TaiPattern[] = [
   },
   {
     id: "orphans-four-return-open",
-    name: "明四歸 (Thirteen Orphans: one kind held all 4 copies, open)",
-    // Same reasoning as 十三么 above: only ever reached via
-    // scoreThirteenOrphans' short-circuit, but kept independently correct.
+    name: "明四歸 (Special hand: one kind held all 4 copies, open)",
+    // Only ever reached via scoreThirteenOrphans'/scoreEightPairs' own
+    // short-circuit, but kept independently correct. Despite the id,
+    // applies within either special hand - orphansQuadKind/
+    // eightPairsQuadKind are tried in turn since the two hands' fake-meld
+    // constructions differ structurally.
     score: (hand, ctx) => {
-      const quadTile = orphansQuadKind(hand);
+      const quadTile = orphansQuadKind(hand) ?? eightPairsQuadKind(hand);
       if (!quadTile || ctx.winningTile === null || ctx.selfDraw) return 0;
       return ctx.winningTile.suit === quadTile.suit && ctx.winningTile.rank === quadTile.rank ? 5 : 0;
     },
   },
   {
     id: "orphans-four-return-hidden",
-    name: "暗四歸 (Thirteen Orphans: one kind held all 4 copies, concealed)",
+    name: "暗四歸 (Special hand: one kind held all 4 copies, concealed)",
     score: (hand, ctx) => {
-      const quadTile = orphansQuadKind(hand);
+      const quadTile = orphansQuadKind(hand) ?? eightPairsQuadKind(hand);
       if (!quadTile) return 0;
       const isOpen = ctx.winningTile !== null && !ctx.selfDraw && ctx.winningTile.suit === quadTile.suit && ctx.winningTile.rank === quadTile.rank;
       return isOpen ? 0 : 15;
@@ -1990,12 +2087,40 @@ export const PATTERNS: TaiPattern[] = [
     // explicit exclude since they simply never co-fire.
     score: (hand) => (isSixteenUnrelatedComplete(allHandTiles(hand)) && sixteenUnrelatedRanksSpanOneToNine(hand) ? 20 : 0),
   },
+  {
+    id: "eight-pairs",
+    name: "嚦咕嚦咕 (Eight Pairs)",
+    // Same "only ever reached via scoreEightPairs' short-circuit, but kept
+    // independently correct" reasoning as the other special hands.
+    score: (hand) => (isEightPairsComplete(allHandTiles(hand)) ? 50 : 0),
+  },
+  {
+    id: "eight-pairs-flying",
+    name: "嚦咕嚦咕八飛 (More than 2 waits)",
+    // Upgrade of 嚦咕嚦咕: fires when the pre-completion hand's 嚦咕嚦咕-
+    // specific wait count exceeds 2 - see preCompletionEightPairsWaitCount
+    // for the exact rule (an all-even "clean 8 pairs" shape always counts
+    // as 8, regardless of literal tile availability).
+    score: (hand, ctx) => {
+      if (!isEightPairsComplete(allHandTiles(hand))) return 0;
+      const waits = preCompletionEightPairsWaitCount(hand, ctx);
+      return waits !== null && waits > 2 ? 60 : 0;
+    },
+    excludes: ["eight-pairs"],
+  },
 ];
 
 export interface ScoreResult {
+  // Includes `second`'s tai too, when present.
   total: number;
   matched: { pattern: TaiPattern; tai: number }[];
   hand: ResolvedHand;
+  // 嚦咕雙食: set when the same 17 tiles are *also* validly a normal
+  // melds+pair hand (or vice versa, if this result's primary reading is
+  // the normal one) - the rare double case where 嚦咕嚦咕 and an ordinary
+  // decomposition both apply at once. Both readings are scored and shown
+  // separately in the summary tab; `total` is their sum.
+  second?: { matched: { pattern: TaiPattern; tai: number }[]; hand: ResolvedHand };
 }
 
 export class ScoringError extends Error {}
@@ -2158,11 +2283,116 @@ function scoreSixteenUnrelated(parsed: ParsedScoringHand, ctx: GameContext): Sco
   return { total: matched.reduce((sum, m) => sum + m.tai, 0), matched, hand };
 }
 
+// 嚦咕嚦咕 (Eight Pairs / Liguligu): 8 pairs of tile kinds (16 tiles), one
+// of them upgraded to a triplet by the 食胡 tile - 7*2 + 1*3 = 17 tiles. A
+// kind held all 4 copies counts as two of the 8 pairs. No "ordinary meld"
+// or single designated pair the way 十三么/十六不搭 have one - the display
+// construction below just picks the first (lowest-sorted) pair group's
+// first 2 tiles as `pair`, with everything else (including that group's
+// other 2 tiles, if it was a 4-copy kind) becoming its own "meld"; the
+// split is arbitrary since every 嚦咕嚦咕 hand is fully concealed anyway
+// (so it's all one "Concealed" box in the UI regardless).
+function scoreEightPairs(parsed: ParsedScoringHand, ctx: GameContext): ScoreResult | null {
+  if (parsed.declaredMelds.length > 0) return null;
+  const breakdown = decomposeEightPairs(parsed.freeTiles);
+  if (!breakdown) return null;
+
+  // A quad (4 copies, counting as 2 of the 8 pairs) must stay together as
+  // one 4-tile group - picking whichever pair group happens to be a
+  // genuine 2-tile pair for `pair` instead of always taking the first one,
+  // since the first (lowest-sorted) group could itself be a quad. At least
+  // one genuine 2-tile pair always exists: 7 pair-slots can hold at most 3
+  // quads (6 slots), leaving at least 1 as a real pair.
+  const pairIndex = breakdown.pairs.findIndex((g) => g.length === 2);
+  const pair = breakdown.pairs[pairIndex];
+  const meldGroups = breakdown.pairs.filter((_, i) => i !== pairIndex);
+  const groupMelds: ResolvedMeld[] = [
+    { tiles: breakdown.triple, kind: "triplet", concealed: true },
+    ...meldGroups.map((g): ResolvedMeld => ({ tiles: g, kind: "triplet", concealed: true })),
+  ];
+  const hand: ResolvedHand = { melds: groupMelds, pair, bonusTiles: parsed.bonusTiles };
+
+  const basePattern = PATTERNS.find((p) => p.id === "base-tai")!;
+  const eightPairsPattern = PATTERNS.find((p) => p.id === "eight-pairs")!;
+  const flyingPattern = PATTERNS.find((p) => p.id === "eight-pairs-flying")!;
+  const flyingTai = flyingPattern.score(hand, ctx);
+  const matched = [
+    { pattern: basePattern, tai: basePattern.score(hand, ctx) },
+    flyingTai > 0 ? { pattern: flyingPattern, tai: flyingTai } : { pattern: eightPairsPattern, tai: eightPairsPattern.score(hand, ctx) },
+  ];
+
+  const quadTile = eightPairsQuadKind(hand);
+  if (quadTile) {
+    const isOpen = ctx.winningTile !== null && !ctx.selfDraw && ctx.winningTile.suit === quadTile.suit && ctx.winningTile.rank === quadTile.rank;
+    const quadPattern = PATTERNS.find((p) => p.id === (isOpen ? "orphans-four-return-open" : "orphans-four-return-hidden"))!;
+    matched.push({ pattern: quadPattern, tai: quadPattern.score(hand, ctx) });
+  }
+
+  const smallFiveSuitsTai = eightPairsSmallFiveSuitsTai(hand);
+  const smallSevenSuitsTai = eightPairsSmallSevenSuitsTai(hand);
+  if (smallSevenSuitsTai > 0) {
+    matched.push({ pattern: PATTERNS.find((p) => p.id === "small-seven-suits")!, tai: smallSevenSuitsTai });
+  } else if (smallFiveSuitsTai > 0) {
+    matched.push({ pattern: PATTERNS.find((p) => p.id === "small-five-suits")!, tai: smallFiveSuitsTai });
+  }
+
+  // 斷么/缺一門/清老頭/混老頭/混一色/清一色/字一色: reused as-is (same
+  // ids/tai as their normal-hand definitions), since every one of these
+  // conditions is either purely about the flat tile multiset already, or -
+  // for 清老頭/混老頭's "every meld is a triplet/kong" half - trivially
+  // true here regardless (every group in this hand's construction is
+  // tagged "triplet" no matter its actual tile count). Their own excludes
+  // metadata (e.g. 清一色 excluding 混一色, 清老頭 excluding 混老頭) is
+  // applied the same way the normal per-decomposition loop does, scoped to
+  // just this batch.
+  const reusableIds = ["all-simples", "missing-one-suit", "pure-terminal-triplets", "mixed-terminal-honor-triplets", "half-flush", "full-flush", "all-honors"];
+  const reusableScored = PATTERNS.filter((p) => reusableIds.includes(p.id))
+    .map((pattern) => ({ pattern, tai: pattern.score(hand, ctx) }))
+    .filter((m) => m.tai > 0);
+  const reusableExcluded = new Set(reusableScored.flatMap((m) => m.pattern.excludes ?? []));
+  matched.push(...reusableScored.filter((m) => !reusableExcluded.has(m.pattern.id)));
+
+  const middleTilePairCount = eightPairsMiddleTilePairCount(hand);
+  if (middleTilePairCount > 0) {
+    matched.push({ pattern: PATTERNS.find((p) => p.id === "middle-tile-pair")!, tai: middleTilePairCount * 2 });
+  }
+
+  pushSelfDrawAndGenuineSingleWait(hand, ctx, matched);
+  return { total: matched.reduce((sum, m) => sum + m.tai, 0), matched, hand };
+}
+
+// Patterns whose condition depends only on the flat tile multiset (via
+// allHandTiles), not on which meld structure produced it - meaningful only
+// through their own scoreThirteenOrphans/scoreSixteenUnrelated/
+// scoreEightPairs construction, never as a generic entry in the normal
+// per-decomposition PATTERNS loop (see the comment where this is used).
+const SPECIAL_HAND_ONLY_PATTERN_IDS = new Set([
+  "thirteen-orphans",
+  "orphans-four-return-open",
+  "orphans-four-return-hidden",
+  "sixteen-unrelated",
+  "sixteen-unrelated-flying",
+  "sixteen-unrelated-same-ranks",
+  "sixteen-unrelated-straight",
+  "eight-pairs",
+  "eight-pairs-flying",
+]);
+
 export function scoreParsedHand(parsed: ParsedScoringHand, ctx: GameContext): ScoreResult {
+  // Special-hand readings and the normal melds+pair reading aren't always
+  // mutually exclusive at the tile-count level - e.g. 123m123m123m123m
+  // (four identical runs) also happens to satisfy 嚦咕嚦咕's per-kind-count
+  // check (1m/2m/3m at 4 copies each). Both are collected as candidates
+  // rather than the first successful one short-circuiting, so the usual
+  // "max tai across every valid reading" rule still picks whichever
+  // actually scores higher (三/四同順 well outscores 嚦咕嚦咕 there).
+  const candidates: ScoreResult[] = [];
   const orphans = scoreThirteenOrphans(parsed, ctx);
-  if (orphans) return orphans;
+  if (orphans) candidates.push(orphans);
   const sixteenUnrelated = scoreSixteenUnrelated(parsed, ctx);
-  if (sixteenUnrelated) return sixteenUnrelated;
+  if (sixteenUnrelated) candidates.push(sixteenUnrelated);
+  const eightPairs = scoreEightPairs(parsed, ctx);
+  if (eightPairs) candidates.push(eightPairs);
 
   const meldsNeeded = MELDS_REQUIRED - parsed.declaredMelds.length;
   // Each free meld is 3 tiles (triplet/run) or 4 (a concealed kong
@@ -2172,29 +2402,57 @@ export function scoreParsedHand(parsed: ParsedScoringHand, ctx: GameContext): Sc
   // kongs" and "all of them are."
   const minFreeSize = meldsNeeded * 3 + 2;
   const maxFreeSize = meldsNeeded * 4 + 2;
+  const sizeOk = meldsNeeded >= 0 && parsed.freeTiles.length >= minFreeSize && parsed.freeTiles.length <= maxFreeSize;
 
-  if (meldsNeeded < 0 || parsed.freeTiles.length < minFreeSize || parsed.freeTiles.length > maxFreeSize) {
-    const totalTiles = parsed.freeTiles.length + parsed.declaredMelds.reduce((n, m) => n + m.tiles.length, 0);
-    throw new ScoringError(`Hand isn't complete: got ${totalTiles} tiles, expected 17 plus 1 per kong (declared or concealed)`);
+  const normalCandidates: ScoreResult[] = [];
+  if (sizeOk) {
+    const declaredResolved: ResolvedMeld[] = parsed.declaredMelds.map((m) => ({ ...m }));
+    for (const free of decomposeHandAll(parsed.freeTiles, meldsNeeded)) {
+      const hand: ResolvedHand = { melds: [...declaredResolved, ...free.melds], pair: free.pair, bonusTiles: parsed.bonusTiles };
+      // Skip the special-hand-only patterns here: their conditions read
+      // only the flat tile multiset (allHandTiles), not meld structure, so
+      // they'd otherwise fire on a normal decomposition whenever the same
+      // 17 tiles also happen to satisfy that shape (e.g. 123m123m123m123m,
+      // 4 identical runs, also passes 嚦咕嚦咕's per-kind-count check) -
+      // stacking a reading it isn't actually being scored under. They're
+      // only meaningful via their own scoreXxx short-circuit, which builds
+      // the dedicated hand construction for that shape.
+      const scored = PATTERNS.filter((p) => !SPECIAL_HAND_ONLY_PATTERN_IDS.has(p.id))
+        .map((pattern) => ({ pattern, tai: pattern.score(hand, ctx) }))
+        .filter((m) => m.tai > 0);
+      const excludedIds = new Set(scored.flatMap((m) => m.pattern.excludes ?? []));
+      const matched = scored.filter((m) => !excludedIds.has(m.pattern.id));
+      normalCandidates.push({ total: matched.reduce((sum, m) => sum + m.tai, 0), matched, hand });
+    }
+  }
+  candidates.push(...normalCandidates);
+
+  // 嚦咕雙食: the same 17 tiles are validly *both* 嚦咕嚦咕 and an ordinary
+  // melds+pair hand (e.g. 112233m667788t777z55z - three identical-run
+  // pairs read as either 3 pairs of runs, or 2 runs each - see the user's
+  // own example). When that happens, both readings are scored and shown
+  // together, with `total` as their sum - always at least as good as
+  // either alone, so it naturally wins the max-tai comparison below
+  // without needing special-casing there.
+  if (eightPairs && normalCandidates.length > 0) {
+    const bestNormal = normalCandidates.reduce((best, c) => (c.total > best.total ? c : best));
+    candidates.push({
+      total: eightPairs.total + bestNormal.total,
+      matched: eightPairs.matched,
+      hand: eightPairs.hand,
+      second: { matched: bestNormal.matched, hand: bestNormal.hand },
+    });
   }
 
-  const declaredResolved: ResolvedMeld[] = parsed.declaredMelds.map((m) => ({ ...m }));
-  const freeDecompositions = decomposeHandAll(parsed.freeTiles, meldsNeeded);
-  if (freeDecompositions.length === 0) {
+  if (candidates.length === 0) {
+    if (!sizeOk) {
+      const totalTiles = parsed.freeTiles.length + parsed.declaredMelds.reduce((n, m) => n + m.tiles.length, 0);
+      throw new ScoringError(`Hand isn't complete: got ${totalTiles} tiles, expected 17 plus 1 per kong (declared or concealed)`);
+    }
     throw new ScoringError("Hand isn't a valid complete hand (couldn't decompose into melds and a pair)");
   }
 
-  let best: ScoreResult | null = null;
-  for (const free of freeDecompositions) {
-    const hand: ResolvedHand = { melds: [...declaredResolved, ...free.melds], pair: free.pair, bonusTiles: parsed.bonusTiles };
-    const scored = PATTERNS.map((pattern) => ({ pattern, tai: pattern.score(hand, ctx) })).filter((m) => m.tai > 0);
-    const excludedIds = new Set(scored.flatMap((m) => m.pattern.excludes ?? []));
-    const matched = scored.filter((m) => !excludedIds.has(m.pattern.id));
-    const total = matched.reduce((sum, m) => sum + m.tai, 0);
-    if (!best || total > best.total) best = { total, matched, hand };
-  }
-
-  return best!;
+  return candidates.reduce((best, c) => (c.total > best.total ? c : best));
 }
 
 // Parses notation text, then scores it - see scoreParsedHand.

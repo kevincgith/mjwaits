@@ -600,6 +600,18 @@ h1 {
   color: #1a5fb4;
 }
 
+/* 嚦咕雙食: separates the second reading's breakdown from the primary one
+   above it. */
+.scoring-second-label {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px dashed #ccc;
+}
+.scoring-second-label .waits-label {
+  color: #a33;
+  font-weight: 600;
+}
+
 .scoring-pattern-row {
   display: flex;
   justify-content: space-between;

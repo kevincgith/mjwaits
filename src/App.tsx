@@ -49,6 +49,8 @@ import {
   type GameContext,
   type MeldKind,
   type ParsedScoringHand,
+  type ResolvedHand,
+  type ScoreResult,
   type Wind,
 } from "./lib/scoring";
 
@@ -1967,6 +1969,84 @@ function BonusTileButton({ tile, onClick, disabled }: { tile: BonusTile; onClick
   );
 }
 
+// The patterns list + Declared/Concealed hand-sections for one scored
+// reading - factored out so 嚦咕雙食 (see ScoreResult.second) can render a
+// second reading identically below the primary one, rather than
+// duplicating this whole block.
+function ScoringBreakdown({
+  matched,
+  hand,
+  declaredCount,
+}: {
+  matched: ScoreResult["matched"];
+  hand: ResolvedHand;
+  declaredCount: number;
+}) {
+  return (
+    <>
+      <div className="waits breakdown-list">
+        <span className="waits-label">Patterns:</span>
+        {matched.length === 0 ? (
+          <span className="hint">No patterns matched yet — this is an early version, more get added over time.</span>
+        ) : (
+          matched.map(({ pattern, tai }) => (
+            <div className="scoring-pattern-row" key={pattern.id}>
+              <span>{pattern.name}</span>
+              <span className="scoring-pattern-tai">{tai} tai</span>
+            </div>
+          ))
+        )}
+      </div>
+
+      <div className="hand-sections">
+        <div className="hand-section declared-section">
+          <span className="hand-section-label">Declared</span>
+          <div className="hand-display breakdown-groups">
+            {hand.bonusTiles.length > 0 && (
+              <span className="breakdown-group bonus-tile-group" title="Bonus tiles">
+                {hand.bonusTiles.map((tile, i) => (
+                  <span key={i} className="tile-glyph" data-suit="bonus">
+                    {bonusTileGlyph(tile)}
+                  </span>
+                ))}
+              </span>
+            )}
+            {hand.melds.slice(0, declaredCount).map((meld, i) => (
+              <span
+                className={meld.concealed ? "breakdown-group concealed-kong-meld" : "breakdown-group"}
+                key={i}
+                title={`${meld.kind}${meld.concealed ? " (concealed kong)" : ""}`}
+              >
+                {meld.tiles.map((t, j) => (
+                  <TileGlyphSpan key={j} tile={t} />
+                ))}
+              </span>
+            ))}
+            {declaredCount === 0 && hand.bonusTiles.length === 0 && <span className="hint">None</span>}
+          </div>
+        </div>
+        <div className="hand-section concealed-section">
+          <span className="hand-section-label">Concealed</span>
+          <div className="hand-display breakdown-groups">
+            {hand.melds.slice(declaredCount).map((meld, i) => (
+              <span className="breakdown-group" key={i} title={meld.kind}>
+                {meld.tiles.map((t, j) => (
+                  <TileGlyphSpan key={j} tile={t} />
+                ))}
+              </span>
+            ))}
+            <span className="breakdown-group" title="Pair">
+              {hand.pair.map((t, j) => (
+                <TileGlyphSpan key={j} tile={t} />
+              ))}
+            </span>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
 // This models the table, not a text format: 手牌區 (concealed hand) is a
 // plain multiset of tiles still to be decomposed, and 門前牌區 (declared
 // melds) is a list of already-fixed groups - exactly mahjong.ts's
@@ -2300,67 +2380,16 @@ function ScoringPanel() {
             <span className="scoring-total-value">{scoring.result.total} tai</span>
           </div>
 
-          <div className="waits breakdown-list">
-            <span className="waits-label">Patterns:</span>
-            {scoring.result.matched.length === 0 ? (
-              <span className="hint">No patterns matched yet — this is an early version, more get added over time.</span>
-            ) : (
-              scoring.result.matched.map(({ pattern, tai }) => (
-                <div className="scoring-pattern-row" key={pattern.id}>
-                  <span>{pattern.name}</span>
-                  <span className="scoring-pattern-tai">{tai} tai</span>
-                </div>
-              ))
-            )}
-          </div>
+          <ScoringBreakdown matched={scoring.result.matched} hand={scoring.result.hand} declaredCount={declaredMelds.length} />
 
-          <div className="hand-sections">
-            <div className="hand-section declared-section">
-              <span className="hand-section-label">Declared</span>
-              <div className="hand-display breakdown-groups">
-                {scoring.result.hand.bonusTiles.length > 0 && (
-                  <span className="breakdown-group bonus-tile-group" title="Bonus tiles">
-                    {scoring.result.hand.bonusTiles.map((tile, i) => (
-                      <span key={i} className="tile-glyph" data-suit="bonus">
-                        {bonusTileGlyph(tile)}
-                      </span>
-                    ))}
-                  </span>
-                )}
-                {scoring.result.hand.melds.slice(0, declaredMelds.length).map((meld, i) => (
-                  <span
-                    className={meld.concealed ? "breakdown-group concealed-kong-meld" : "breakdown-group"}
-                    key={i}
-                    title={`${meld.kind}${meld.concealed ? " (concealed kong)" : ""}`}
-                  >
-                    {meld.tiles.map((t, j) => (
-                      <TileGlyphSpan key={j} tile={t} />
-                    ))}
-                  </span>
-                ))}
-                {declaredMelds.length === 0 && scoring.result.hand.bonusTiles.length === 0 && (
-                  <span className="hint">None</span>
-                )}
+          {scoring.result.second && (
+            <>
+              <div className="waits scoring-total scoring-second-label">
+                <span className="waits-label">Also (嚦咕雙食 - also reads as an ordinary hand):</span>
               </div>
-            </div>
-            <div className="hand-section concealed-section">
-              <span className="hand-section-label">Concealed</span>
-              <div className="hand-display breakdown-groups">
-                {scoring.result.hand.melds.slice(declaredMelds.length).map((meld, i) => (
-                  <span className="breakdown-group" key={i} title={meld.kind}>
-                    {meld.tiles.map((t, j) => (
-                      <TileGlyphSpan key={j} tile={t} />
-                    ))}
-                  </span>
-                ))}
-                <span className="breakdown-group" title="Pair">
-                  {scoring.result.hand.pair.map((t, j) => (
-                    <TileGlyphSpan key={j} tile={t} />
-                  ))}
-                </span>
-              </div>
-            </div>
-          </div>
+              <ScoringBreakdown matched={scoring.result.second.matched} hand={scoring.result.second.hand} declaredCount={0} />
+            </>
+          )}
         </>
       )}
     </section>

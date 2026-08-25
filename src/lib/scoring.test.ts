@@ -870,7 +870,7 @@ describe("PATTERNS: 明/暗一色三同順 (3 identical sequences)", () => {
 
 describe("PATTERNS: 明/暗一色四同順 (4 identical sequences)", () => {
   it("scores 暗一色四同順 for 4 concealed identical runs, excluding 般高 and 三同順", () => {
-    const result = scoreHand("123m123m123m123m111z22b", ctx());
+    const result = scoreHand("123m123m123m123m456b22z", ctx());
     expect(tai(result, "quadruple-identical-sequences-hidden")).toBe(160);
     expect(tai(result, "identical-sequences-hidden")).toBe(0);
     expect(tai(result, "triple-identical-sequences-hidden")).toBe(0);
@@ -879,7 +879,7 @@ describe("PATTERNS: 明/暗一色四同順 (4 identical sequences)", () => {
 
 describe("PATTERNS: 明/暗真雙般高 (2 separate identical-sequence pairs)", () => {
   it("scores 暗真雙般高 for 123123m + 678678t, excluding 般高", () => {
-    const result = scoreHand("123m123m678t678t111z22b", ctx());
+    const result = scoreHand("123m123m678t678t456b22z", ctx());
     expect(tai(result, "two-separate-identical-sequences-hidden")).toBe(40);
     expect(tai(result, "identical-sequences-hidden")).toBe(0);
   });
@@ -1472,6 +1472,180 @@ describe("PATTERNS: 自摸/獨獨 apply to the special hands too", () => {
     const result = scoreHand("158m147t369b11234567z", ctx({ winningTile: { suit: "t", rank: 7 } }));
     expect(tai(result, "genuine-single-wait")).toBe(0);
     expect(tai(result, "sixteen-unrelated")).toBe(50);
+  });
+});
+
+describe("PATTERNS: 嚦咕嚦咕/嚦咕嚦咕八飛 (Eight Pairs)", () => {
+  it("scores 底 + 嚦咕嚦咕 (50) when the pre-completion wait count is 2 or fewer", () => {
+    // Pre-completion: 111m 223344m 5566777t - already has two kinds at
+    // count 3 (1m and 7t). Whichever one stays "the triple," the other
+    // must be bumped to 4 (2 pairs) to complete - exactly 2 valid
+    // completions (1m or 7t), matching the user's own worked example.
+    // This hand's own quad (1m) also picks up 明四歸 (5), and its 2m/5t
+    // pairs pick up 將眼 (4), and using only 2 suits with no honors picks
+    // up 缺一門 (10) - all separately-tested elsewhere; only 嚦咕嚦咕
+    // itself is asserted here.
+    const result = scoreHand("1111m223344m5566777t", ctx({ winningTile: { suit: "m", rank: 1 } }));
+    expect(tai(result, "eight-pairs")).toBe(50);
+    expect(tai(result, "eight-pairs-flying")).toBe(0);
+  });
+
+  it("scores 底 + 嚦咕嚦咕 (50) for a genuine single wait too", () => {
+    // Pre-completion: 11223344t 77889m 777z - everything already paired
+    // except 9m (a lone single) and 7z (already the triple) - only 9m
+    // completes it.
+    const result = scoreHand("11223344t778899m777z", ctx({ winningTile: { suit: "m", rank: 9 } }));
+    expect(tai(result, "eight-pairs")).toBe(50);
+    expect(tai(result, "eight-pairs-flying")).toBe(0);
+  });
+
+  it("scores 底 + 嚦咕嚦咕八飛 (60) when the pre-completion hand is all-even (a clean 8-pairs shape)", () => {
+    // Pre-completion: 5555t 7777t 9999m 11z 7z - every kind is at an even
+    // count (4,4,4,2) already, so this counts as an 8-way wait even though
+    // 5t/7t/9m are already at their 4-copy cap and can't literally be
+    // drawn again - only 1z/7z remain drawable, but the shape itself is
+    // what counts per the user's clarified rule.
+    // This hand's 5t quad also picks up 將眼 (4, rank 5) and 暗四歸 (15,
+    // the found quad kind not matching the claimed 1z) - separately
+    // tested elsewhere; only 嚦咕嚦咕八飛 itself is asserted here.
+    const result = scoreHand("5555t7777t9999m111z77z", ctx({ winningTile: { suit: "z", rank: 1 } }));
+    expect(tai(result, "eight-pairs-flying")).toBe(60);
+    expect(tai(result, "eight-pairs")).toBe(0);
+  });
+
+  it("falls back to the base 50 tai when no winning tile is recorded", () => {
+    const result = scoreHand("1111m223344m5566777t", ctx());
+    expect(tai(result, "eight-pairs")).toBe(50);
+    expect(tai(result, "eight-pairs-flying")).toBe(0);
+  });
+
+  it("doesn't fire for an ordinary hand", () => {
+    const result = scoreHand("123456789m111z234t22b", ctx());
+    expect(tai(result, "eight-pairs")).toBe(0);
+    expect(tai(result, "eight-pairs-flying")).toBe(0);
+  });
+
+  it("isn't recognized when any meld is declared", () => {
+    expect(() => scoreHand("(123m)9999m1122334455t", ctx())).toThrow(ScoringError);
+  });
+
+  it("doesn't pollute a normal decomposition's score just because the same tiles also happen to satisfy 嚦咕嚦咕's per-kind-count check", () => {
+    // 4 identical runs - also passes 嚦咕嚦咕's structural check (1m/2m/3m
+    // at 4 copies each) - but 一色四同順 (160) far outscores 嚦咕嚦咕 (50),
+    // so the normal reading should win outright, with no stray
+    // eight-pairs/eight-pairs-flying entries anywhere in the result.
+    const result = scoreHand("123m123m123m123m456b22z", ctx());
+    expect(tai(result, "quadruple-identical-sequences-hidden")).toBe(160);
+    expect(tai(result, "eight-pairs")).toBe(0);
+    expect(tai(result, "eight-pairs-flying")).toBe(0);
+    expect(result.second).toBeUndefined();
+  });
+});
+
+describe("PATTERNS: 明/暗四歸 applies within 嚦咕嚦咕 too", () => {
+  it("scores 明四歸 when the winning tile completed a 4-copy kind, claimed", () => {
+    const result = scoreHand("11112233445566m777z", ctx({ winningTile: { suit: "m", rank: 1 } }));
+    expect(tai(result, "orphans-four-return-open")).toBe(5);
+    expect(tai(result, "orphans-four-return-hidden")).toBe(0);
+  });
+
+  it("scores 暗四歸 for the same shape when concealed", () => {
+    const result = scoreHand("11112233445566m777z", ctx());
+    expect(tai(result, "orphans-four-return-hidden")).toBe(15);
+    expect(tai(result, "orphans-four-return-open")).toBe(0);
+  });
+});
+
+describe("PATTERNS: other patterns reused within 嚦咕嚦咕 (per the user's own list)", () => {
+  it("scores 小五門齊 when all 5 categories are touched, without needing a dedicated meld per category", () => {
+    const result = scoreHand("1199m1199t1199b11z555z", ctx());
+    expect(tai(result, "small-five-suits")).toBe(10);
+    expect(tai(result, "big-five-suits")).toBe(0);
+  });
+
+  it("scores 斷么 when every tile is ranked 2-8 with no honors", () => {
+    const result = scoreHand("223344556677m22t888t", ctx());
+    expect(tai(result, "all-simples")).toBe(10);
+  });
+
+  it("scores 缺一門 when only 2 numbered suits are used and no honors are present", () => {
+    const result = scoreHand("11223344m556677t888t", ctx());
+    expect(tai(result, "missing-one-suit")).toBe(10);
+  });
+
+  it("scores 清老頭 (excluding 混老頭) for an all-terminals hand", () => {
+    const result = scoreHand("11119999m1199t11999b", ctx());
+    expect(tai(result, "pure-terminal-triplets")).toBe(200);
+    expect(tai(result, "mixed-terminal-honor-triplets")).toBe(0);
+  });
+
+  it("scores 混老頭 for a mixed terminals-and-honors hand", () => {
+    const result = scoreHand("11119999m1199t11b111z", ctx());
+    expect(tai(result, "mixed-terminal-honor-triplets")).toBe(100);
+  });
+
+  it("scores 混一色 (excluding nothing extra) for one numbered suit plus honors", () => {
+    const result = scoreHand("1122334455m1122333z", ctx());
+    expect(tai(result, "half-flush")).toBe(40);
+  });
+
+  it("scores 清一色 for a single pure numbered suit", () => {
+    const result = scoreHand("11223344556677888m", ctx());
+    expect(tai(result, "full-flush")).toBe(120);
+  });
+
+  it("scores 字一色 for an all-honors hand", () => {
+    const result = scoreHand("11112233445566777z", ctx());
+    expect(tai(result, "all-honors")).toBe(160);
+  });
+
+  it("never scores 門清/門前清 for a 嚦咕嚦咕 hand", () => {
+    const result = scoreHand("1111m223344m5566777t", ctx());
+    expect(tai(result, "concealed-hand")).toBe(0);
+    expect(tai(result, "concealed-except-kongs")).toBe(0);
+  });
+});
+
+describe("PATTERNS: 將眼 stacks per qualifying pair in 嚦咕嚦咕 (not just one)", () => {
+  it("fires once per pair/quad at rank 2, 5, or 8 - 3 times here for 6 tai total", () => {
+    const result = scoreHand("2255m88t11224447766z", ctx());
+    expect(tai(result, "middle-tile-pair")).toBe(6);
+  });
+
+  it("doesn't count a quad's extra pair-unit if its rank isn't 2/5/8", () => {
+    const result = scoreHand("1111m3344667799t111z", ctx());
+    expect(tai(result, "middle-tile-pair")).toBe(0);
+  });
+});
+
+describe("PATTERNS: 自摸/獨獨 apply to 嚦咕嚦咕 too", () => {
+  it("scores 自摸 for a self-drawn 嚦咕嚦咕", () => {
+    const result = scoreHand("1111m223344m5566777t", ctx({ selfDraw: true }));
+    expect(tai(result, "self-draw")).toBe(1);
+  });
+
+  it("scores 獨獨 when the pre-completion 嚦咕嚦咕 wait was genuinely single", () => {
+    const result = scoreHand("112233445566z777z99m", ctx({ winningTile: { suit: "m", rank: 9 } }));
+    expect(tai(result, "genuine-single-wait")).toBe(2);
+  });
+});
+
+describe("PATTERNS: 嚦咕雙食 (same tiles valid as both 嚦咕嚦咕 and an ordinary hand)", () => {
+  it("sums both readings' totals and exposes both as `matched`/`second`", () => {
+    // 112233m + 667788t + 777z + 55z: reads either as 3 pairs of runs in
+    // m/t (123m+123m, 678t+678t) + 777z + 55z (ordinary hand), or as 7
+    // pairs (1m,2m,3m,6t,7t,8t,5z) + 1 triple (7z) (嚦咕嚦咕).
+    const result = scoreHand("112233m667788t777z55z", ctx());
+    expect(result.second).toBeDefined();
+    expect(tai(result, "eight-pairs")).toBe(50);
+    const secondTai = (id: string) => result.second!.matched.find((m) => m.pattern.id === id)?.tai ?? 0;
+    expect(secondTai("two-separate-identical-sequences-hidden")).toBe(40);
+    expect(result.total).toBe(result.matched.reduce((s, m) => s + m.tai, 0) + result.second!.matched.reduce((s, m) => s + m.tai, 0));
+  });
+
+  it("doesn't set `second` when only one reading is valid", () => {
+    const result = scoreHand("1111m223344m5566777t", ctx());
+    expect(result.second).toBeUndefined();
   });
 });
 
