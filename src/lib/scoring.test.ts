@@ -126,27 +126,6 @@ describe("decomposeHandAll", () => {
 });
 
 describe("scoreHand", () => {
-  it("scores a fully concealed hand as 門清", () => {
-    const result = scoreHand("123456789m111z234t22b", ctx());
-    expect(result.matched.some((m) => m.pattern.id === "concealed-hand")).toBe(true);
-    expect(result.total).toBeGreaterThanOrEqual(1);
-  });
-
-  it("does not score 門清 once any meld is exposed", () => {
-    const result = scoreHand("(111z)123456789m234t22b", ctx());
-    expect(result.matched.some((m) => m.pattern.id === "concealed-hand")).toBe(false);
-  });
-
-  it("a concealed kong does not break 門清", () => {
-    const result = scoreHand("1111z123456789m234t22b", ctx());
-    expect(result.matched.some((m) => m.pattern.id === "concealed-hand")).toBe(true);
-  });
-
-  it("an exposed kong breaks 門清", () => {
-    const result = scoreHand("(1111z)123456789m234t22b", ctx());
-    expect(result.matched.some((m) => m.pattern.id === "concealed-hand")).toBe(false);
-  });
-
   it("scores 無花 when the hand has no bonus tiles", () => {
     const result = scoreHand("(111z)123456789m234t22b", ctx());
     expect(result.matched.some((m) => m.pattern.id === "no-flowers")).toBe(true);
@@ -170,11 +149,11 @@ describe("scoreHand", () => {
   });
 
   it("picks the max-tai decomposition when a hand is genuinely ambiguous", () => {
-    // Every reading of this hand is concealed either way, so 門清 applies
+    // Every reading of this hand is concealed either way, so 門前清 applies
     // regardless of which decomposition wins - this just confirms scoring
     // doesn't crash or double-count across multiple candidate decompositions.
     const result = scoreHand("111222333m111z456b22t", ctx());
-    expect(result.matched.filter((m) => m.pattern.id === "concealed-hand")).toHaveLength(1);
+    expect(result.matched.filter((m) => m.pattern.id === "concealed-except-kongs")).toHaveLength(1);
   });
 
   it("carries bonus tiles through to the result", () => {
@@ -1192,11 +1171,10 @@ describe("PATTERNS: 獨獨/假獨 (genuine vs. fake single wait)", () => {
   });
 });
 
-describe("PATTERNS: 門前清 (no declared run/triplet - exposed kongs allowed)", () => {
+describe("PATTERNS: 門前清 (concealed hand)", () => {
   it("scores when the only declared meld is a kong", () => {
     const result = scoreHand("(1111z)123456789m234t22b", ctx());
     expect(tai(result, "concealed-except-kongs")).toBe(5);
-    expect(tai(result, "concealed-hand")).toBe(0);
   });
 
   it("doesn't score when a declared triplet is present", () => {
@@ -1646,9 +1624,8 @@ describe("PATTERNS: other patterns reused within 嚦咕嚦咕 (per the user's ow
     expect(tai(result, "mixed-terminal-honor-triplets")).toBe(0);
   });
 
-  it("never scores 門清/門前清 for a 嚦咕嚦咕 hand", () => {
+  it("never scores 門前清 for a 嚦咕嚦咕 hand", () => {
     const result = scoreHand("1111m223344m5566777t", ctx());
-    expect(tai(result, "concealed-hand")).toBe(0);
     expect(tai(result, "concealed-except-kongs")).toBe(0);
   });
 });

@@ -57,8 +57,7 @@ independently (open vs. concealed, for the patterns that split that way). All of
 | Pattern | Tai | Criteria | Excludes | Notes |
 |---|---|---|---|---|
 | 底 (Base tai) | 5 | Always — applies unconditionally to every completed hand. | — | No shape requirement at all; this is the floor every hand starts from. |
-| 門清 (Concealed hand) | 1 | Every meld is concealed (no exposed triplet/run/kong). A *concealed* kong doesn't break this — only a called/exposed one does. | — | Placeholder value carried over from the initial foundation work — **not yet confirmed** against house rules. |
-| 門前清 (No declared run/triplet - exposed kongs allowed) | 5 | Looser than 門清: an exposed kong (明槓/加槓) doesn't break this, only a declared run or triplet does. | — | Every 門清 hand is trivially also 門前清, but the two are kept independent/stacking rather than one excluding the other - not explicitly stated by the user, and 門清's own tai value is already flagged as an unconfirmed placeholder, so no new exclusion relationship was inferred on top of that uncertainty. |
+| 門前清 (Concealed hand) | 5 | No declared run or triplet. An exposed kong (明槓/加槓) doesn't break this, only a declared run or triplet does. | — | There used to also be a stricter 門清 ("every meld concealed, kongs included") but that was scaffolding from the initial foundation work, never one of the user's own house rules, and was removed. |
 | 槓 (Kong) | 2 each | Once per kong held, declared/exposed or concealed alike. | — | **Stacks** — up to 4 possible (one per tile kind quadded). Excluded by 五槓子. |
 
 ## Special hands
@@ -319,7 +318,6 @@ concealed — see the [明/暗 concept](#the-明暗-openconcealed-concept). All 
 
 ## Known gaps
 
-- **門清's tai value (1) is a placeholder**, not yet confirmed against house rules.
 - **Jokers** aren't supported by the scoring notation/UI at all yet (rejected with a clear error).
 - **Added kong vs. called kong** aren't distinguished — both parse/score as a generic "exposed
   kong." Only matters for the rare robbing-the-kong (搶槓) pattern, not yet implemented.

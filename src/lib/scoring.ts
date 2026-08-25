@@ -394,8 +394,7 @@ const isAllRuns = (hand: ResolvedHand): boolean => hand.melds.every((m) => m.kin
 const isFullyDeclared = (hand: ResolvedHand): boolean => hand.melds.every((m) => !m.concealed);
 
 // Shared by 門前清/門清自摸: no declared run or triplet - an exposed kong
-// (明槓/加槓) doesn't break this, unlike 門清 which requires every meld
-// concealed, kongs included.
+// (明槓/加槓) doesn't break this.
 const isConcealedExceptKongs = (hand: ResolvedHand): boolean =>
   hand.melds.every((m) => m.concealed || m.kind === "kong");
 
@@ -1290,22 +1289,13 @@ export const PATTERNS: TaiPattern[] = [
     score: () => 5,
   },
   {
-    id: "concealed-hand",
-    name: "門清 (Concealed hand)",
-    // Placeholder value from the initial foundation work, not yet confirmed
-    // against the user's own house rules.
-    score: (hand) => (hand.melds.every((m) => m.concealed) ? 1 : 0),
-  },
-  {
     id: "concealed-except-kongs",
-    name: "門前清 (No declared run/triplet - exposed kongs allowed)",
-    // Looser than 門清: an exposed kong (明槓/加槓) doesn't break this, only
-    // a declared run or triplet does. Every 門清 hand is trivially also
-    // 門前清 (no exposed melds at all, kongs included), but kept
-    // independent/stacking rather than excluding either way - not
-    // explicitly stated by the user, and 門清's own tai value is already
-    // flagged as an unconfirmed placeholder, so no new exclusion
-    // relationship was inferred on top of that uncertainty.
+    name: "門前清 (Concealed hand)",
+    // An exposed kong (明槓/加槓) doesn't break this, only a declared run
+    // or triplet does. (There used to also be a stricter 門清 - "every
+    // meld concealed, kongs included" - but that was scaffolding from the
+    // initial foundation work, never one of the user's own house rules,
+    // and was removed once that came up.)
     score: (hand) => (isConcealedExceptKongs(hand) ? 5 : 0),
   },
   {
