@@ -415,18 +415,23 @@ describe("PATTERNS", () => {
   });
 
   describe("缺一門 (missing-one-suit)", () => {
-    it("scores when exactly 2 of the 3 numbered suits are used", () => {
-      const result = scoreHand("123456789m111z234t55t", ctx());
+    it("scores when exactly 2 of the 3 numbered suits are used and there are no honors", () => {
+      const result = scoreHand("123456789m234t678t55t", ctx());
       expect(tai(result, "missing-one-suit")).toBe(10);
     });
 
     it("doesn't score when all 3 numbered suits are used", () => {
-      const result = scoreHand("123456789m111z234t22b", ctx());
+      const result = scoreHand("123456789m234t678t22b", ctx());
       expect(tai(result, "missing-one-suit")).toBe(0);
     });
 
     it("doesn't score when the pair is honors, even with exactly 2 suits used", () => {
       const result = scoreHand("123123678678m777b11z", ctx());
+      expect(tai(result, "missing-one-suit")).toBe(0);
+    });
+
+    it("doesn't score when an honor meld is present, even with a non-honor pair and exactly 2 suits used", () => {
+      const result = scoreHand("222b444b777b66b444m111z", ctx());
       expect(tai(result, "missing-one-suit")).toBe(0);
     });
   });

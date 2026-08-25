@@ -397,7 +397,7 @@ function hasThreeTreasures(hand: ResolvedHand): boolean {
   const hasRangeRestriction = hasNoFives(hand) || allTilesInRange(hand, 1, 4) || allTilesInRange(hand, 6, 9);
   const isAllSimples = allHandTiles(hand).every((t) => t.suit !== "z" && t.rank >= 2 && t.rank <= 8);
   const isFullFlush = numberedSuitsUsed(hand).size === 1 && allHandTiles(hand).every((t) => !isHonorTile(t));
-  const isMissingOneSuit = numberedSuitsUsed(hand).size === 2 && !isHonorTile(hand.pair[0]);
+  const isMissingOneSuit = numberedSuitsUsed(hand).size === 2 && allHandTiles(hand).every((t) => !isHonorTile(t));
   return hasRangeRestriction && isAllSimples && (isFullFlush || isMissingOneSuit);
 }
 
@@ -1202,10 +1202,10 @@ export const PATTERNS: TaiPattern[] = [
   {
     id: "missing-one-suit",
     name: "缺一門 (Missing one suit)",
-    // The pair can't be honors: an honor pair means the hand isn't actually
-    // "2 suits, eyes included" - it's 2 suits in the melds with the eyes
-    // sitting outside that shape entirely, which doesn't count.
-    score: (hand) => (numberedSuitsUsed(hand).size === 2 && !isHonorTile(hand.pair[0]) ? 10 : 0),
+    // No honor tile anywhere in the hand - melds or pair. Any honor
+    // presence disqualifies the hand from 缺一門 entirely, not just an
+    // honor pair.
+    score: (hand) => (numberedSuitsUsed(hand).size === 2 && allHandTiles(hand).every((t) => !isHonorTile(t)) ? 10 : 0),
   },
   {
     id: "no-fives",

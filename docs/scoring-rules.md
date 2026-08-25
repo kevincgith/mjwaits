@@ -238,7 +238,7 @@ concealed — see the [明/暗 concept](#the-明暗-openconcealed-concept). All 
 
 | Pattern | Tai | Criteria | Excludes | Notes |
 |---|---|---|---|---|
-| 缺一門 (Missing one suit) | 10 | Exactly 2 of the 3 numbered suits (m/t/b) appear anywhere in the hand — the third is completely absent — **and** the pair itself is not honors. | — | An honor pair disqualifies the hand even if the melds only touch 2 suits: the shape has to be "2 suits, eyes included," not 2 suits in the melds with honor eyes sitting outside it. |
+| 缺一門 (Missing one suit) | 10 | Exactly 2 of the 3 numbered suits (m/t/b) appear anywhere in the hand — the third is completely absent — **and** there's no honor tile anywhere in the hand, melds or pair. | — | Any honor presence disqualifies the hand, not just an honor pair — an honor *meld* (e.g. a wind/dragon triplet) alongside 2 non-honor suits still fails, even though the melds' suit-count alone would look like a match. |
 | 小五門齊 (Small five suits complete) | 10 | All 5 categories (m, t, b, winds, dragons) are touched *somewhere* in the hand (melds or pair), but **not** every category has its own dedicated complete meld. | — | Excluded by 小七門齊. Mutually exclusive with 大五門齊 by construction (opposite full-meld condition). |
 | 大五門齊 (Big five suits complete) | 15 | Every one of the 5 categories has its own dedicated complete meld — uses all 5 melds, one per category; pair can be anything. | — | Excluded by 大七門齊. |
 | 小七門齊 (Small seven suits complete) | 15 | Same shape as 小五門齊, **plus** at least one flower **and** one season bonus tile present. | 小五門齊 | |
