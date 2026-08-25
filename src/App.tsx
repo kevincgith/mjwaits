@@ -2220,6 +2220,23 @@ function ScoringPanel() {
         <span className="hint">Tap a tile above to add a declared meld (called triplet/run, or a kong) or a bonus tile.</span>
       ) : (
         <div className="hand-display breakdown-groups">
+          {bonusTiles.length > 0 && (
+            <div className="breakdown-group bonus-tile-group">
+              {bonusTiles.map((tile) => (
+                <button
+                  type="button"
+                  key={`${tile.kind}${tile.rank}`}
+                  className="bonus-tile-remove"
+                  onClick={() => removeBonusTile(tile)}
+                  title={`${bonusTileLabel(tile)} - tap to remove`}
+                >
+                  <span className="tile-glyph large" data-suit="bonus">
+                    {bonusTileGlyph(tile)}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
           {declaredMelds.map((meld) => (
             <button
               type="button"
@@ -2231,19 +2248,6 @@ function ScoringPanel() {
               {meld.tiles.map((t, j) => (
                 <TileGlyphSpan key={j} tile={t} large />
               ))}
-            </button>
-          ))}
-          {bonusTiles.map((tile) => (
-            <button
-              type="button"
-              key={`${tile.kind}${tile.rank}`}
-              className="breakdown-group meld-remove"
-              onClick={() => removeBonusTile(tile)}
-              title={`${bonusTileLabel(tile)} - tap to remove`}
-            >
-              <span className="tile-glyph large" data-suit="bonus">
-                {bonusTileGlyph(tile)}
-              </span>
             </button>
           ))}
         </div>
@@ -2310,23 +2314,52 @@ function ScoringPanel() {
             )}
           </div>
 
-          <div className="hand-display breakdown-groups">
-            {scoring.result.hand.melds.map((meld, i) => (
-              <span
-                className={meld.concealed ? "breakdown-group" : "breakdown-group exposed-meld"}
-                key={i}
-                title={`${meld.kind}${meld.concealed ? "" : " (exposed)"}`}
-              >
-                {meld.tiles.map((t, j) => (
-                  <TileGlyphSpan key={j} tile={t} />
+          <div className="hand-sections">
+            <div className="hand-section declared-section">
+              <span className="hand-section-label">Declared</span>
+              <div className="hand-display breakdown-groups">
+                {scoring.result.hand.bonusTiles.length > 0 && (
+                  <span className="breakdown-group bonus-tile-group" title="Bonus tiles">
+                    {scoring.result.hand.bonusTiles.map((tile, i) => (
+                      <span key={i} className="tile-glyph" data-suit="bonus">
+                        {bonusTileGlyph(tile)}
+                      </span>
+                    ))}
+                  </span>
+                )}
+                {scoring.result.hand.melds.slice(0, declaredMelds.length).map((meld, i) => (
+                  <span
+                    className={meld.concealed ? "breakdown-group concealed-kong-meld" : "breakdown-group"}
+                    key={i}
+                    title={`${meld.kind}${meld.concealed ? " (concealed kong)" : ""}`}
+                  >
+                    {meld.tiles.map((t, j) => (
+                      <TileGlyphSpan key={j} tile={t} />
+                    ))}
+                  </span>
                 ))}
-              </span>
-            ))}
-            <span className="breakdown-group" title="Pair">
-              {scoring.result.hand.pair.map((t, j) => (
-                <TileGlyphSpan key={j} tile={t} />
-              ))}
-            </span>
+                {declaredMelds.length === 0 && scoring.result.hand.bonusTiles.length === 0 && (
+                  <span className="hint">None</span>
+                )}
+              </div>
+            </div>
+            <div className="hand-section concealed-section">
+              <span className="hand-section-label">Concealed</span>
+              <div className="hand-display breakdown-groups">
+                {scoring.result.hand.melds.slice(declaredMelds.length).map((meld, i) => (
+                  <span className="breakdown-group" key={i} title={meld.kind}>
+                    {meld.tiles.map((t, j) => (
+                      <TileGlyphSpan key={j} tile={t} />
+                    ))}
+                  </span>
+                ))}
+                <span className="breakdown-group" title="Pair">
+                  {scoring.result.hand.pair.map((t, j) => (
+                    <TileGlyphSpan key={j} tile={t} />
+                  ))}
+                </span>
+              </div>
+            </div>
           </div>
         </>
       )}

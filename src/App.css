@@ -461,8 +461,8 @@ h1 {
 /* In the Scoring tab, a declared meld doubles as a remove button - this
    strips the default button chrome so it still reads as a plain group like
    .breakdown-group everywhere else, not a form control. Declared *before*
-   .exposed-meld/.concealed-kong-meld below so those rules' background still
-   wins on the shared element (same specificity - source order decides). */
+   .concealed-kong-meld below so that rule's background still wins on the
+   shared element (same specificity - source order decides). */
 .breakdown-group.meld-remove {
   border: none;
   background: transparent;
@@ -471,25 +471,78 @@ h1 {
   -webkit-tap-highlight-color: transparent;
 }
 
-/* Marks a declared/called meld (pon, chi, or a called/added kong) in the
-   final result breakdown's hand display, distinct from an ordinary
-   concealed group - several tai patterns (門清 among them) depend on this
-   distinction. */
-.breakdown-group.exposed-meld {
+/* Bonus tiles (flowers/seasons) sit as their own single group ahead of the
+   melds - unlike melds, there's no gap wanted *between* individual bonus
+   tiles, so this overrides .breakdown-group's usual 0.1rem inner gap down
+   to 0. Each tile is still its own button so it stays individually
+   removable (in 門前牌區's live list; the result breakdown below uses
+   plain spans instead, same as how melds/pair render read-only there). */
+.breakdown-group.bonus-tile-group {
+  gap: 0;
+}
+.bonus-tile-remove {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+  font: inherit;
+  display: flex;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Flags a concealed kong within the Declared box - both in 門前牌區's own
+   live list and in the final result breakdown's Declared section (see
+   .hand-section below). Every other entry there is an ordinary exposed
+   meld, visually obvious as "called," so the concealed kong is the one
+   worth flagging - it's easy to mistake for an ordinary declared meld at a
+   glance despite being structurally concealed (several tai patterns, 門清
+   among them, care about that distinction). */
+.breakdown-group.concealed-kong-meld {
   background: #fdf3e7;
   outline: 1px solid #e8a400;
 }
 
-/* In 門前牌區's own live list (unlike the result breakdown above), every
-   concealed entry is specifically a concealed kong - a plain concealed
-   triplet/run never appears there at all, it lives in 手牌區 instead. That
-   makes the concealed kong the one worth flagging here: exposed melds are
-   already visually obvious as "called," but a concealed kong is easy to
-   mistake for an ordinary declared meld at a glance. Same highlight style
-   as .exposed-meld above, just on the opposite condition. */
-.breakdown-group.concealed-kong-meld {
-  background: #fdf3e7;
-  outline: 1px solid #e8a400;
+/* The result breakdown's two grouping boxes - Declared (everything entered
+   via 門前牌區: exposed melds, concealed kongs, and bonus tiles) vs.
+   Concealed (everything from 手牌區's free tiles: the remaining melds and
+   the pair). Melds are split by array position, not by each meld's own
+   `concealed` flag - a concealed kong is still structurally "declared" in
+   this data model even though it reads as concealed for scoring purposes,
+   so flag-based splitting would put it in the wrong box. */
+.hand-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.hand-section {
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  padding: 0.5rem 0.6rem;
+}
+
+.hand-section .hand-display {
+  min-height: 0;
+  margin: 0.35rem 0 0;
+  padding: 0;
+  border: none;
+}
+
+.hand-section-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.hand-section.declared-section {
+  background: #f1f8f1;
+  border-color: #bfe0bf;
+}
+
+.hand-section.concealed-section {
+  background: #f7f7f7;
 }
 
 .scoring-context {
@@ -498,6 +551,21 @@ h1 {
   align-items: center;
   gap: 0.75rem;
   margin-bottom: 1rem;
+}
+
+.scoring-context > button {
+  border: 1px solid #ccc;
+  background: #f7f7f7;
+  border-radius: 4px;
+  padding: 0.3rem 0.6rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.scoring-context > button.toggle-on {
+  background: #eaf1fb;
+  border-color: #1a5fb4;
+  color: #1a5fb4;
 }
 
 .wind-picker {
