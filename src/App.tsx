@@ -1988,10 +1988,14 @@ function ScoringPanel() {
   const [seatWind, setSeatWind] = useState<Wind>(1);
   const [roundWind, setRoundWind] = useState<Wind>(1);
   const [selfDraw, setSelfDraw] = useState(false);
-  // The 食胡 tile - which tile kind (not instance) completed the hand, set
-  // via long-press on a concealed-hand tile (see WinningTileHandButton).
-  // Only its suit/rank matter, matched by kind wherever it appears.
-  const [winningTile, setWinningTile] = useState<Tile | null>(null);
+  // The 食胡 tile - the specific tile instance (not just its kind) that
+  // completed the hand, set via long-press on a concealed-hand tile (see
+  // WinningTileHandButton). Tracked by id so that long-pressing one of
+  // several same-kind tiles highlights only that one - which instance was
+  // pressed can matter for how a decomposition-sensitive pattern (e.g.
+  // 假獨) reads the hand, even though scoring.ts's GameContext.winningTile
+  // itself is still kind-based (see the ctx construction below).
+  const [winningTile, setWinningTile] = useState<HandTile | null>(null);
   const nextTileId = useRef(0);
   const nextMeldId = useRef(0);
 
@@ -2043,6 +2047,7 @@ function ScoringPanel() {
     const next = concealedRef.current.filter((t) => t.id !== id);
     concealedRef.current = next;
     setConcealedTiles(next);
+    setWinningTile((prev) => (prev && prev.id === id ? null : prev));
   };
 
   const pushMeld = (kind: MeldKind, concealed: boolean, tiles: Tile[]) => {
@@ -2102,11 +2107,13 @@ function ScoringPanel() {
     setWinningTile(null);
   };
 
-  const isWinningTile = (tile: Tile): boolean =>
-    winningTile !== null && winningTile.suit === tile.suit && winningTile.rank === tile.rank;
-  const toggleWinningTile = (tile: Tile) =>
-    setWinningTile((prev) => (prev && prev.suit === tile.suit && prev.rank === tile.rank ? null : tile));
+  const isWinningTile = (tile: HandTile): boolean => winningTile !== null && winningTile.id === tile.id;
+  const toggleWinningTile = (tile: HandTile) =>
+    setWinningTile((prev) => (prev && prev.id === tile.id ? null : tile));
 
+  // scoring.ts only cares about the winning tile's kind (see GameContext's
+  // doc comment there) - the id above exists purely to disambiguate which
+  // instance the UI highlights.
   const ctx: GameContext = { seatWind, roundWind, selfDraw, winningTile };
   const scoring = useMemo(() => {
     if (totalTiles !== requiredSize) return null;
@@ -2267,12 +2274,12 @@ function ScoringPanel() {
         {concealedTiles.length === 0 ? (
           <span className="hint">Tap tiles above for the tiles still in your hand.</span>
         ) : (
-          sortTiles(concealedTiles).map((t) => (
+          (sortTiles(concealedTiles) as HandTile[]).map((t) => (
             <WinningTileHandButton
-              key={(t as HandTile).id}
+              key={t.id}
               tile={t}
               isWinning={isWinningTile(t)}
-              onRemove={() => removeConcealedTile((t as HandTile).id)}
+              onRemove={() => removeConcealedTile(t.id)}
               onToggleWinning={() => toggleWinningTile(t)}
             />
           ))
