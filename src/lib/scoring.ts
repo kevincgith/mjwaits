@@ -14,7 +14,7 @@
 // Deliberately not a generic/configurable rule engine: PATTERNS is a plain
 // array of concrete checks against one house rule set, added one at a time.
 
-import { MELDS_REQUIRED, ParseError, tileKey, tileLabel, type Suit, type Tile } from "./mahjong";
+import { getWaits, MELDS_REQUIRED, ParseError, tileKey, tileLabel, type Suit, type Tile } from "./mahjong";
 
 export type MeldKind = "triplet" | "run" | "kong";
 
@@ -368,6 +368,18 @@ const SINGLE_WIND_PATTERN_IDS = ["wrong-seat-wind", "correct-seat-wind", "correc
 
 const isAllRuns = (hand: ResolvedHand): boolean => hand.melds.every((m) => m.kind === "run");
 
+// Shared by 全求人/半求人: every meld is declared/exposed - no concealed
+// meld of any kind, kongs included. ("No concealed kong" in the user's
+// phrasing is redundant with this in the current data model, since a kong
+// is only ever concealed or exposed, never a third state.)
+const isFullyDeclared = (hand: ResolvedHand): boolean => hand.melds.every((m) => !m.concealed);
+
+// Shared by 門前清/門清自摸: no declared run or triplet - an exposed kong
+// (明槓/加槓) doesn't break this, unlike 門清 which requires every meld
+// concealed, kongs included.
+const isConcealedExceptKongs = (hand: ResolvedHand): boolean =>
+  hand.melds.every((m) => m.concealed || m.kind === "kong");
+
 const isNoHonorsNoFlowers = (hand: ResolvedHand): boolean =>
   allHandTiles(hand).every((t) => !isHonorTile(t)) && hand.bonusTiles.length === 0;
 
@@ -436,6 +448,56 @@ const meldHasTileKind = (meld: ResolvedMeld, tile: Tile): boolean =>
 function isShanponWait(hand: ResolvedHand, ctx: GameContext): boolean {
   if (ctx.winningTile === null) return false;
   return hand.melds.some((m) => m.kind === "triplet" && meldHasTileKind(m, ctx.winningTile!));
+}
+
+// Shared by 獨獨/假獨: the pre-completion tiles (everything except kong
+// melds, which are already fixed and structurally irrelevant to the wait,
+// minus one copy of the 食胡 tile) plus how many melds' worth of flexible
+// tiles that represents - kongs each remove one meld's slot from the count
+// getWaits needs to see. Returns null if the winning tile can't be found
+// among the non-kong tiles (shouldn't happen for a hand actually built
+// around it, but guards against a stale/mismatched marker).
+//
+// Known gap: getWaits only sees these tiles, so it can't tell that some
+// copies of a kong's rank are already locked away - a hand with both a
+// kong and an independent wait on that same rank could over-count how many
+// copies are still available. Rare in practice (needs a kong and a wait on
+// the exact same rank at once), not worth the extra plumbing yet.
+function preWinWaitInput(hand: ResolvedHand, winningTile: Tile): { tiles: Tile[]; meldsRequired: number } | null {
+  const kongCount = hand.melds.filter((m) => m.kind === "kong").length;
+  const nonKongTiles = hand.melds.filter((m) => m.kind !== "kong").flatMap((m) => m.tiles).concat(hand.pair);
+  const idx = nonKongTiles.findIndex((t) => t.suit === winningTile.suit && t.rank === winningTile.rank);
+  if (idx === -1) return null;
+  return { tiles: [...nonKongTiles.slice(0, idx), ...nonKongTiles.slice(idx + 1)], meldsRequired: MELDS_REQUIRED - kongCount };
+}
+
+// 獨獨: the pre-completion hand has exactly one tile kind that would
+// complete it - reuses the Calculator tab's own getWaits rather than
+// reimplementing wait-finding here.
+function isGenuineSingleWait(hand: ResolvedHand, ctx: GameContext): boolean {
+  if (ctx.winningTile === null) return false;
+  const pre = preWinWaitInput(hand, ctx.winningTile);
+  return pre !== null && getWaits(pre.tiles, pre.meldsRequired).length === 1;
+}
+
+// 假獨: the 食胡 tile fills the *middle* rank of some run meld it belongs
+// to (a kanchan/closed-wait shape) - e.g. 12334m completed by 2m can be
+// read as 234m (already complete) + 13m waiting on 2m only, even though
+// the hand's true wait was also open to 5m (123m + 34m). Checked directly
+// against the meld list rather than needing an alternate decomposition:
+// since a duplicated rank can put the same tile kind in more than one meld
+// at once (as in the 12334m example, where 2m sits in both 123m and
+// 234m), scanning every meld for "does it have this kind as its middle
+// rank" already captures the alternate reading without exploring
+// decomposeHandAll's other candidates.
+function isFakeSingleWait(hand: ResolvedHand, ctx: GameContext): boolean {
+  if (ctx.winningTile === null) return false;
+  const winningTile = ctx.winningTile;
+  return hand.melds.some((m) => {
+    if (m.kind !== "run" || !meldHasTileKind(m, winningTile)) return false;
+    const ranks = m.tiles.map((t) => t.rank).sort((a, b) => a - b);
+    return ranks[1] === winningTile.rank;
+  });
 }
 
 // 明 (open) vs 暗 (concealed/hidden), per the house rule: a meld is 明 if
@@ -1072,6 +1134,21 @@ function hasBigThreeBrothers(hand: ResolvedHand): boolean {
   return false;
 }
 
+// Shared by 大雞/大鴨: ids always exempt from their "did anything else
+// fire" check - 底 and the bonus-tile patterns (an allowed single bonus
+// tile still shouldn't disqualify either). Each pattern adds its own extra
+// exemptions on top (see the two PATTERNS entries below) - notably, 大雞
+// does NOT exempt 自摸/門清自摸: a self-drawn win is itself "a pattern
+// detected," so 大雞 can never apply to a self-drawn hand (mirroring
+// 全求人 requiring a claimed win). 大鴨 is the self-drawn counterpart and
+// exempts those two specifically, since self-draw is exactly what it's
+// checking for.
+const BIG_CHICKEN_BASE_EXEMPT_IDS = new Set(["base-tai", "no-flowers", "correct-flower", "wrong-flower"]);
+function anyOtherPatternFires(hand: ResolvedHand, ctx: GameContext, extraExempt: string[]): boolean {
+  const exempt = new Set([...BIG_CHICKEN_BASE_EXEMPT_IDS, ...extraExempt]);
+  return PATTERNS.some((p) => !exempt.has(p.id) && p.score(hand, ctx) > 0);
+}
+
 // House tai list, added one pattern at a time as the user supplies them -
 // see the module doc comment on why this stays a plain array of concrete
 // checks rather than a generic rule engine.
@@ -1088,6 +1165,18 @@ export const PATTERNS: TaiPattern[] = [
     // Placeholder value from the initial foundation work, not yet confirmed
     // against the user's own house rules.
     score: (hand) => (hand.melds.every((m) => m.concealed) ? 1 : 0),
+  },
+  {
+    id: "concealed-except-kongs",
+    name: "門前清 (No declared run/triplet - exposed kongs allowed)",
+    // Looser than 門清: an exposed kong (明槓/加槓) doesn't break this, only
+    // a declared run or triplet does. Every 門清 hand is trivially also
+    // 門前清 (no exposed melds at all, kongs included), but kept
+    // independent/stacking rather than excluding either way - not
+    // explicitly stated by the user, and 門清's own tai value is already
+    // flagged as an unconfirmed placeholder, so no new exclusion
+    // relationship was inferred on top of that uncertainty.
+    score: (hand) => (isConcealedExceptKongs(hand) ? 5 : 0),
   },
   {
     id: "kong",
@@ -1219,6 +1308,11 @@ export const PATTERNS: TaiPattern[] = [
     // presence disqualifies the hand from 缺一門 entirely, not just an
     // honor pair.
     score: (hand) => (numberedSuitsUsed(hand).size === 2 && allHandTiles(hand).every((t) => !isHonorTile(t)) ? 10 : 0),
+  },
+  {
+    id: "middle-tile-pair",
+    name: "將眼 (Pair is 2, 5, or 8 - not honors)",
+    score: (hand) => (!isHonorTile(hand.pair[0]) && [2, 5, 8].includes(hand.pair[0].rank) ? 2 : 0),
   },
   {
     id: "no-fives",
@@ -1736,6 +1830,71 @@ export const PATTERNS: TaiPattern[] = [
     id: "shanpon-wait",
     name: "對碰 (Shanpon: dual-pair wait completed into a triplet)",
     score: (hand, ctx) => (isShanponWait(hand, ctx) ? 2 : 0),
+  },
+  {
+    id: "genuine-single-wait",
+    name: "獨獨 (Genuine single wait)",
+    score: (hand, ctx) => (isGenuineSingleWait(hand, ctx) ? 2 : 0),
+    excludes: ["fake-single-wait"],
+  },
+  {
+    id: "fake-single-wait",
+    name: "假獨 (Fake single wait)",
+    score: (hand, ctx) => (isFakeSingleWait(hand, ctx) ? 2 : 0),
+  },
+  {
+    id: "self-draw",
+    name: "自摸 (Self-drawn win)",
+    score: (_hand, ctx) => (ctx.selfDraw ? 1 : 0),
+  },
+  {
+    id: "concealed-self-draw",
+    name: "門清自摸 (Self-drawn win while 門前清)",
+    // Upgrade of 自摸: excludes plain 自摸, but stacks with 門前清 itself
+    // (the two measure different things - one about melds, one about how
+    // the tile arrived - so both keep contributing).
+    score: (hand, ctx) => (ctx.selfDraw && isConcealedExceptKongs(hand) ? 3 : 0),
+    excludes: ["self-draw"],
+  },
+  {
+    id: "everyone-else-completes-it",
+    name: "全求人 (All melds declared, win claimed not self-drawn)",
+    score: (hand, ctx) => (isFullyDeclared(hand) && !ctx.selfDraw ? 30 : 0),
+  },
+  {
+    id: "half-everyone-else-completes-it",
+    name: "半求人 (All melds declared, win self-drawn)",
+    // Same shape as 全求人, but the winning tile is self-drawn instead of
+    // claimed - mutually exclusive with it by construction (selfDraw can't
+    // be both), so no explicit exclusion is needed either way.
+    score: (hand, ctx) => (isFullyDeclared(hand) && ctx.selfDraw ? 15 : 0),
+  },
+  {
+    id: "big-chicken",
+    name: "大雞 (Nothing but the base + at most one bonus tile)",
+    // Meta pattern: fires only when no other named pattern would score for
+    // this hand (excluding 底 itself and the bonus-tile patterns - "a
+    // single bonus tile or none" is explicitly still allowed). A
+    // self-drawn win is itself "a pattern detected" (自摸 fires), so this
+    // can never apply to a self-drawn hand - mirrors 全求人 requiring a
+    // claimed win. Re-evaluates every other pattern's raw score directly
+    // rather than reading the already-filtered/excluded PATTERNS result,
+    // since this needs to know what *would* fire, not what survives
+    // exclusion.
+    score: (hand, ctx) => (hand.bonusTiles.length > 1 || anyOtherPatternFires(hand, ctx, ["big-chicken"]) ? 0 : 30),
+  },
+  {
+    id: "big-duck",
+    name: "大鴨 (Nothing but the base + at most one bonus tile, self-drawn)",
+    // The self-drawn counterpart to 大雞 (mirrors 全求人/半求人): same
+    // "nothing else fires" shape, but self-drawn, and specifically
+    // exempting 自摸/門清自摸 from that check since being self-drawn is
+    // exactly what this is checking for - it stacks with them rather than
+    // being blocked by them.
+    score: (hand, ctx) =>
+      !ctx.selfDraw || hand.bonusTiles.length > 1 || anyOtherPatternFires(hand, ctx, ["big-duck", "self-draw", "concealed-self-draw"])
+        ? 0
+        : 15,
   },
 ];
 

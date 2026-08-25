@@ -58,6 +58,7 @@ independently (open vs. concealed, for the patterns that split that way). All of
 |---|---|---|---|---|
 | 底 (Base tai) | 5 | Always — applies unconditionally to every completed hand. | — | No shape requirement at all; this is the floor every hand starts from. |
 | 門清 (Concealed hand) | 1 | Every meld is concealed (no exposed triplet/run/kong). A *concealed* kong doesn't break this — only a called/exposed one does. | — | Placeholder value carried over from the initial foundation work — **not yet confirmed** against house rules. |
+| 門前清 (No declared run/triplet - exposed kongs allowed) | 5 | Looser than 門清: an exposed kong (明槓/加槓) doesn't break this, only a declared run or triplet does. | — | Every 門清 hand is trivially also 門前清, but the two are kept independent/stacking rather than one excluding the other - not explicitly stated by the user, and 門清's own tai value is already flagged as an unconfirmed placeholder, so no new exclusion relationship was inferred on top of that uncertainty. |
 | 槓 (Kong) | 2 each | Once per kong held, declared/exposed or concealed alike. | — | **Stacks** — up to 4 possible (one per tile kind quadded). Excluded by 五槓子. |
 
 ## Bonus tiles (flowers/seasons)
@@ -123,14 +124,23 @@ go through the full open/concealed check.
 
 ## Completion shape (how the winning tile completes the hand)
 
-Patterns in this category care about the *wait shape* the hand was in just before the winning
-tile arrived — not the finished hand's shape, and not open/concealed status. They read the 食胡
-tile from `GameContext.winningTile` the same way the [明/暗 concept](#the-明暗-openconcealed-concept)
-does, but the condition itself is independent of self-draw vs. claimed.
+Patterns in this category care about *how* the hand finished — the wait shape just before the
+winning tile arrived, and/or whether it was self-drawn or claimed — rather than the finished
+hand's meld shape. The wait-shape patterns (對碰/獨獨/假獨) read the 食胡 tile from
+`GameContext.winningTile` the same way the [明/暗 concept](#the-明暗-openconcealed-concept) does;
+the self-draw patterns (自摸 and everything below it) read `GameContext.selfDraw` directly.
 
 | Pattern | Tai | Criteria | Excludes | Notes |
 |---|---|---|---|---|
 | 對碰 (Shanpon: dual-pair wait completed into a triplet) | 2 | The 食胡 tile landed in a **plain triplet** meld — e.g. tenpai on `44m+44t`, waiting for either pair to complete into a triplet. | — | Doesn't apply to kongs (that's not a pair-to-triplet completion) or when the winning tile instead completed a run. No self-draw restriction — the wait shape is what matters, not how it was won. A triplet's other 2 tiles are necessarily a pair right before the winning tile arrives, and the hand's actual pair is always a separate group by construction, so no separate "was there really a second pair" check is needed beyond "did the winning tile land in a triplet." |
+| 獨獨 (Genuine single wait) | 2 | The pre-completion hand has **exactly one** tile kind that would complete it — computed by reusing the Calculator tab's own `getWaits` (kong melds excluded from the input and `meldsRequired` reduced accordingly, since kongs are already fixed and irrelevant to the wait). | 假獨 | Requires a 食胡 tile to be set (can't determine the pre-completion hand otherwise). |
+| 假獨 (Fake single wait) | 2 | The 食胡 tile fills the **middle rank** of some run meld it belongs to (a kanchan/closed-wait shape) — e.g. `12334m` completed by `2m` can be read as `234m` (already complete) + `13m` waiting on `2m` only, even though the hand's *true* wait was also open to `5m` (`123m`+`34m`). | — | Checked directly against the meld list, not by exploring alternate decompositions: a duplicated rank can put the same tile kind in more than one meld at once (as in the `12334m` example, where `2m` sits in both `123m` and `234m`), so scanning every meld for "is this kind the middle rank here" already captures the alternate reading. This structural check also matches on a *genuine* kanchan wait (that's exactly what a kanchan is), so 獨獨 excludes it to keep the "genuine" and "fake" labels mutually exclusive on the same hand. |
+| 自摸 (Self-drawn win) | 1 | `selfDraw` is true. | — | Excluded by 門清自摸. |
+| 門清自摸 (Self-drawn win while 門前清) | 3 | Self-drawn **and** 門前清 (see the Foundation section) both hold. | 自摸 | Upgrade of 自摸 - excludes it, but stacks with 門前清 itself (they measure different things: one about melds, one about how the tile arrived). |
+| 全求人 (All melds declared, win claimed not self-drawn) | 30 | Every meld is declared/exposed (no concealed meld at all, kongs included) **and** the win wasn't self-drawn. | — | "No concealed kong" in the user's phrasing is redundant with "every meld declared" in this data model (a kong is only ever concealed or exposed, never a third state). |
+| 半求人 (All melds declared, win self-drawn) | 15 | Same shape as 全求人, but self-drawn instead of claimed. | — | Mutually exclusive with 全求人 by construction (`selfDraw` can't be both), so no explicit exclusion either way. |
+| 大雞 (Nothing but the base + at most one bonus tile) | 30 | No other named pattern would score for this hand, and at most 1 bonus tile is present. | — | Meta pattern: re-evaluates every other `PATTERNS` entry's raw score directly (not the already-filtered/excluded result) to check what *would* fire. Exempts only 底 itself and the bonus-tile patterns (正花/爛花/無花 - an allowed single bonus tile shouldn't disqualify this). Does **not** exempt 自摸/門清自摸: a self-drawn win is itself "a pattern detected," so 大雞 can never apply to a self-drawn hand - mirrors 全求人 requiring a claimed win. |
+| 大鴨 (Nothing but the base + at most one bonus tile, self-drawn) | 15 | Same "nothing else fires" condition as 大雞, but self-drawn instead of claimed. | — | The self-drawn counterpart to 大雞 (mirrors 全求人/半求人) - mutually exclusive with 大雞 by construction, since being self-drawn always blocks 大雞 via 自摸. Its own exempt set specifically carves out 自摸/門清自摸 (since self-draw is exactly what it's checking for), so it stacks with them rather than being blocked. |
 
 ## Four returns (四歸一/二/四)
 
@@ -264,6 +274,12 @@ concealed — see the [明/暗 concept](#the-明暗-openconcealed-concept). All 
 | 大於五 (All 6–9) | 40 | Every tile (melds and pair) is a numbered tile ranked 6–9 — no honors, no ranks 1–5. | 缺五 | |
 | 小於五 (All 1–4) | 40 | Every tile ranked 1–4 — no honors, no ranks 5–9. | 缺五 | |
 
+## Pair shape
+
+| Pattern | Tai | Criteria | Excludes | Notes |
+|---|---|---|---|---|
+| 將眼 (Pair is 2, 5, or 8 - not honors) | 2 | The hand's pair is rank 2, 5, or 8, and isn't an honor tile. | — | The honor exclusion matters because honor ranks overlap these numbers (e.g. rank 2 is also South wind) - the pair must be a genuine numbered tile. |
+
 ## Compound patterns
 
 | Pattern | Tai | Criteria | Excludes | Notes |
@@ -281,6 +297,11 @@ concealed — see the [明/暗 concept](#the-明暗-openconcealed-concept). All 
 - The 食胡-tile UI only lets you mark a tile in the **concealed** hand — there's no way to mark
   the winning tile as belonging to a declared meld (e.g. robbing a kong), since that scenario
   isn't relevant to any pattern implemented so far.
+- **獨獨's wait-count can over-count available copies when a kong is also present.** It feeds only
+  the non-kong tiles into `getWaits`, so `getWaits` can't see that some copies of the kong's rank
+  are already locked away - a hand with both a kong and an independent wait on that exact same
+  rank could think a tile is still available when it isn't. Rare in practice (needs a kong and a
+  wait on the same rank at once); not worth the extra plumbing to fix yet.
 
 ### Assumptions made without explicit confirmation (flag if wrong)
 

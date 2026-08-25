@@ -1153,6 +1153,122 @@ describe("PATTERNS: 對碰 (shanpon: dual-pair wait completed into a triplet)", 
   });
 });
 
+describe("PATTERNS: 將眼 (pair is 2, 5, or 8 - not honors)", () => {
+  it("scores when the pair is 5", () => {
+    const result = scoreHand("123456789m234t678t55b", ctx());
+    expect(tai(result, "middle-tile-pair")).toBe(2);
+  });
+
+  it("doesn't score when the pair's rank isn't 2, 5, or 8", () => {
+    const result = scoreHand("123456789m234t678t11b", ctx());
+    expect(tai(result, "middle-tile-pair")).toBe(0);
+  });
+
+  it("doesn't score when the pair is an honor tile, even at rank 2", () => {
+    const result = scoreHand("123456789m234t678t22z", ctx());
+    expect(tai(result, "middle-tile-pair")).toBe(0);
+  });
+});
+
+describe("PATTERNS: 獨獨/假獨 (genuine vs. fake single wait)", () => {
+  it("scores 假獨 for 12334m completed by 2m - looks like 13m waiting on 2m only, even though the true wait was also open to 5m", () => {
+    const result = scoreHand("123m234m678t111z789b22z", ctx({ winningTile: { suit: "m", rank: 2 } }));
+    expect(tai(result, "fake-single-wait")).toBe(2);
+    expect(tai(result, "genuine-single-wait")).toBe(0);
+  });
+
+  it("scores 獨獨 for a genuine kanchan wait (13m waiting on 2m only, no overlapping alternate reading), excluding 假獨", () => {
+    const result = scoreHand("123m456m789t111z234b22b", ctx({ winningTile: { suit: "m", rank: 2 } }));
+    expect(tai(result, "genuine-single-wait")).toBe(2);
+    expect(tai(result, "fake-single-wait")).toBe(0);
+  });
+
+  it("neither scores when no winning tile is recorded", () => {
+    const result = scoreHand("123m234m678t111z789b22z", ctx());
+    expect(tai(result, "genuine-single-wait")).toBe(0);
+    expect(tai(result, "fake-single-wait")).toBe(0);
+  });
+});
+
+describe("PATTERNS: 門前清 (no declared run/triplet - exposed kongs allowed)", () => {
+  it("scores when the only declared meld is a kong", () => {
+    const result = scoreHand("(1111z)123456789m234t22b", ctx());
+    expect(tai(result, "concealed-except-kongs")).toBe(5);
+    expect(tai(result, "concealed-hand")).toBe(0);
+  });
+
+  it("doesn't score when a declared triplet is present", () => {
+    const result = scoreHand("(111z)123456789m234t22b", ctx());
+    expect(tai(result, "concealed-except-kongs")).toBe(0);
+  });
+});
+
+describe("PATTERNS: 自摸/門清自摸 (self-drawn win)", () => {
+  it("scores plain 自摸 when a declared meld is present, not 門清自摸", () => {
+    const result = scoreHand("(111z)123456789m234t22b", ctx({ selfDraw: true }));
+    expect(tai(result, "self-draw")).toBe(1);
+    expect(tai(result, "concealed-self-draw")).toBe(0);
+  });
+
+  it("scores 門清自摸 when 門前清 holds too, excluding plain 自摸", () => {
+    const result = scoreHand("123456789m234t678t22b", ctx({ selfDraw: true }));
+    expect(tai(result, "concealed-self-draw")).toBe(3);
+    expect(tai(result, "self-draw")).toBe(0);
+    expect(tai(result, "concealed-except-kongs")).toBe(5);
+  });
+
+  it("neither scores when the win wasn't self-drawn", () => {
+    const result = scoreHand("123456789m234t678t22b", ctx());
+    expect(tai(result, "self-draw")).toBe(0);
+    expect(tai(result, "concealed-self-draw")).toBe(0);
+  });
+});
+
+describe("PATTERNS: 全求人/半求人 (all melds declared)", () => {
+  const allDeclaredHand = "(111z)(222z)(123m)(456m)(789m)55t";
+  const oneConcealedHand = "(111z)(222z)(123m)(456m)789m55t";
+
+  it("scores 全求人 when every meld is declared and the win is claimed", () => {
+    const result = scoreHand(allDeclaredHand, ctx());
+    expect(tai(result, "everyone-else-completes-it")).toBe(30);
+    expect(tai(result, "half-everyone-else-completes-it")).toBe(0);
+  });
+
+  it("scores 半求人 when every meld is declared and the win is self-drawn", () => {
+    const result = scoreHand(allDeclaredHand, ctx({ selfDraw: true }));
+    expect(tai(result, "half-everyone-else-completes-it")).toBe(15);
+    expect(tai(result, "everyone-else-completes-it")).toBe(0);
+  });
+
+  it("neither scores when one meld is still concealed", () => {
+    expect(tai(scoreHand(oneConcealedHand, ctx()), "everyone-else-completes-it")).toBe(0);
+    expect(tai(scoreHand(oneConcealedHand, ctx({ selfDraw: true })), "half-everyone-else-completes-it")).toBe(0);
+  });
+});
+
+describe("PATTERNS: 大雞/大鴨 (nothing but the base + at most one bonus tile)", () => {
+  const boringHand = "(123m)222b234t567t789b22z";
+
+  it("scores 大雞 for a hand with no other pattern detected", () => {
+    const result = scoreHand(boringHand, ctx());
+    expect(tai(result, "big-chicken")).toBe(30);
+    expect(tai(result, "big-duck")).toBe(0);
+  });
+
+  it("scores 大鴨 instead (stacking with 自摸, but not 大雞) when that same boring hand is self-drawn", () => {
+    const result = scoreHand(boringHand, ctx({ selfDraw: true }));
+    expect(tai(result, "big-chicken")).toBe(0);
+    expect(tai(result, "big-duck")).toBe(15);
+    expect(tai(result, "self-draw")).toBe(1);
+  });
+
+  it("doesn't score when another pattern is detected", () => {
+    const result = scoreHand("123456789m111z234t22b", ctx());
+    expect(tai(result, "big-chicken")).toBe(0);
+    expect(tai(result, "big-duck")).toBe(0);
+  });
+});
+
 describe("isDealer", () => {
   it("is true only when seat wind is East", () => {
     expect(isDealer(ctx({ seatWind: 1 }))).toBe(true);
