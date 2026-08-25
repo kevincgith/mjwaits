@@ -461,8 +461,8 @@ h1 {
 /* In the Scoring tab, a declared meld doubles as a remove button - this
    strips the default button chrome so it still reads as a plain group like
    .breakdown-group everywhere else, not a form control. Declared *before*
-   .exposed-meld below so that rule's background still wins on the shared
-   element (same specificity - source order decides). */
+   .exposed-meld/.concealed-kong-meld below so those rules' background still
+   wins on the shared element (same specificity - source order decides). */
 .breakdown-group.meld-remove {
   border: none;
   background: transparent;
@@ -472,9 +472,22 @@ h1 {
 }
 
 /* Marks a declared/called meld (pon, chi, or a called/added kong) in the
-   Scoring tab's hand display, distinct from an ordinary concealed group -
-   several tai patterns (門清 among them) depend on this distinction. */
+   final result breakdown's hand display, distinct from an ordinary
+   concealed group - several tai patterns (門清 among them) depend on this
+   distinction. */
 .breakdown-group.exposed-meld {
+  background: #fdf3e7;
+  outline: 1px solid #e8a400;
+}
+
+/* In 門前牌區's own live list (unlike the result breakdown above), every
+   concealed entry is specifically a concealed kong - a plain concealed
+   triplet/run never appears there at all, it lives in 手牌區 instead. That
+   makes the concealed kong the one worth flagging here: exposed melds are
+   already visually obvious as "called," but a concealed kong is easy to
+   mistake for an ordinary declared meld at a glance. Same highlight style
+   as .exposed-meld above, just on the opposite condition. */
+.breakdown-group.concealed-kong-meld {
   background: #fdf3e7;
   outline: 1px solid #e8a400;
 }

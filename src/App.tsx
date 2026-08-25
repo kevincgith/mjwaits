@@ -2217,9 +2217,9 @@ function ScoringPanel() {
             <button
               type="button"
               key={meld.id}
-              className={meld.concealed ? "breakdown-group meld-remove" : "breakdown-group exposed-meld meld-remove"}
+              className={meld.concealed ? "breakdown-group concealed-kong-meld meld-remove" : "breakdown-group meld-remove"}
               onClick={() => removeMeld(meld.id)}
-              title={`${meld.kind}${meld.concealed ? "" : " (exposed)"} - tap to remove`}
+              title={`${meld.kind}${meld.concealed ? " (concealed kong)" : ""} - tap to remove`}
             >
               {meld.tiles.map((t, j) => (
                 <TileGlyphSpan key={j} tile={t} large />
