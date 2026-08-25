@@ -5,6 +5,7 @@ import {
   parseScoringHand,
   scoreHand,
   scoreParsedHand,
+  ScoringError,
   type GameContext,
 } from "./scoring";
 
@@ -1266,6 +1267,25 @@ describe("PATTERNS: 大雞/大鴨 (nothing but the base + at most one bonus tile
     const result = scoreHand("123456789m111z234t22b", ctx());
     expect(tai(result, "big-chicken")).toBe(0);
     expect(tai(result, "big-duck")).toBe(0);
+  });
+});
+
+describe("PATTERNS: 十三么 (Thirteen Orphans)", () => {
+  it("scores 底 + 十三么 only, for all 13 orphan kinds + a doubled pair + one ordinary meld", () => {
+    const result = scoreHand("112349m19t19b1234567z", ctx());
+    expect(tai(result, "thirteen-orphans")).toBe(160);
+    expect(tai(result, "base-tai")).toBe(5);
+    expect(result.total).toBe(165);
+    expect(result.matched).toHaveLength(2);
+  });
+
+  it("doesn't fire for an ordinary hand", () => {
+    const result = scoreHand("123456789m111z234t22b", ctx());
+    expect(tai(result, "thirteen-orphans")).toBe(0);
+  });
+
+  it("isn't recognized when any meld is declared, even if the free tiles alone would qualify", () => {
+    expect(() => scoreHand("(123m)119m19t19b1234567z", ctx())).toThrow(ScoringError);
   });
 });
 

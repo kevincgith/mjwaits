@@ -14,7 +14,17 @@
 // Deliberately not a generic/configurable rule engine: PATTERNS is a plain
 // array of concrete checks against one house rule set, added one at a time.
 
-import { getWaits, MELDS_REQUIRED, ParseError, tileKey, tileLabel, type Suit, type Tile } from "./mahjong";
+import {
+  decomposeThirteenOrphans,
+  getWaits,
+  isThirteenOrphansComplete,
+  MELDS_REQUIRED,
+  ParseError,
+  tileKey,
+  tileLabel,
+  type Suit,
+  type Tile,
+} from "./mahjong";
 
 export type MeldKind = "triplet" | "run" | "kong";
 
@@ -148,7 +158,12 @@ export interface ResolvedMeld {
 }
 
 export interface ResolvedHand {
-  melds: ResolvedMeld[]; // exactly MELDS_REQUIRED (5)
+  // Exactly MELDS_REQUIRED (5) for an ordinary hand - the one documented
+  // exception is 十三么 (see scoreThirteenOrphans), which doesn't fit the
+  // melds+pair shape at all and represents each of its 12 unpaired orphan
+  // tiles as its own 1-tile "meld" purely so the UI has something to
+  // render; PATTERNS is never evaluated against a hand shaped that way.
+  melds: ResolvedMeld[];
   pair: Tile[];
   bonusTiles: BonusTile[];
 }
@@ -1896,6 +1911,20 @@ export const PATTERNS: TaiPattern[] = [
         ? 0
         : 15,
   },
+  {
+    id: "thirteen-orphans",
+    name: "十三么 (Thirteen Orphans)",
+    // In normal play this is only ever reached via scoreThirteenOrphans'
+    // short-circuit (see there), which builds `hand` from the same
+    // breakdown this re-derives from `allHandTiles` - kept as a real,
+    // independently-correct check anyway rather than a `score: () => 0`
+    // stub, so PATTERNS stays the single source of truth for every
+    // pattern's name/tai even for this one. By construction the hand it's
+    // built from has no declared melds and no kongs, so it never coexists
+    // with 門前清 or any kong-related pattern - it's exclusive of every
+    // other pattern except 底 (nothing else is ever evaluated against it).
+    score: (hand) => (isThirteenOrphansComplete(allHandTiles(hand)) ? 160 : 0),
+  },
 ];
 
 export interface ScoreResult {
@@ -1913,7 +1942,38 @@ export class ScoringError extends Error {}
 // score). Split out from scoreHand so UI that already holds the hand as
 // structured state (declared melds built via a tap picker, not typed
 // notation) can score directly without a round trip through notation text.
+// 十三么 (Thirteen Orphans): 13 orphan kinds one each, one doubled as the
+// pair, plus one ordinary meld - 13+1+3 = 17 tiles. Structurally unrelated
+// to the melds+pair shape (see decomposeHandAll's empty result for a hand
+// like this), so it's detected up front and short-circuits the normal
+// per-decomposition PATTERNS loop entirely - reuses mahjong.ts's own
+// Thirteen Orphans detection (already relied on by the Calculator tab)
+// rather than reimplementing it. Only recognized fully concealed (no
+// declared melds): calling tiles doesn't help collect 13 different
+// singles, so that's the only case worth handling.
+function scoreThirteenOrphans(parsed: ParsedScoringHand, ctx: GameContext): ScoreResult | null {
+  if (parsed.declaredMelds.length > 0) return null;
+  const breakdown = decomposeThirteenOrphans(parsed.freeTiles);
+  if (!breakdown) return null;
+
+  const singleMelds: ResolvedMeld[] = breakdown.singles.map((t) => ({ tiles: [t], kind: "triplet", concealed: true }));
+  const isTriplet = breakdown.meld[0].suit === breakdown.meld[1].suit && breakdown.meld[0].rank === breakdown.meld[1].rank;
+  const mainMeld: ResolvedMeld = { tiles: breakdown.meld, kind: isTriplet ? "triplet" : "run", concealed: true };
+  const hand: ResolvedHand = { melds: [...singleMelds, mainMeld], pair: breakdown.pair, bonusTiles: parsed.bonusTiles };
+
+  const basePattern = PATTERNS.find((p) => p.id === "base-tai")!;
+  const orphansPattern = PATTERNS.find((p) => p.id === "thirteen-orphans")!;
+  const matched = [
+    { pattern: basePattern, tai: basePattern.score(hand, ctx) },
+    { pattern: orphansPattern, tai: orphansPattern.score(hand, ctx) },
+  ];
+  return { total: matched.reduce((sum, m) => sum + m.tai, 0), matched, hand };
+}
+
 export function scoreParsedHand(parsed: ParsedScoringHand, ctx: GameContext): ScoreResult {
+  const orphans = scoreThirteenOrphans(parsed, ctx);
+  if (orphans) return orphans;
+
   const meldsNeeded = MELDS_REQUIRED - parsed.declaredMelds.length;
   // Each free meld is 3 tiles (triplet/run) or 4 (a concealed kong
   // decomposeHandAll's search might find) - since which one isn't known

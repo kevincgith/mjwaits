@@ -61,6 +61,16 @@ independently (open vs. concealed, for the patterns that split that way). All of
 | 門前清 (No declared run/triplet - exposed kongs allowed) | 5 | Looser than 門清: an exposed kong (明槓/加槓) doesn't break this, only a declared run or triplet does. | — | Every 門清 hand is trivially also 門前清, but the two are kept independent/stacking rather than one excluding the other - not explicitly stated by the user, and 門清's own tai value is already flagged as an unconfirmed placeholder, so no new exclusion relationship was inferred on top of that uncertainty. |
 | 槓 (Kong) | 2 each | Once per kong held, declared/exposed or concealed alike. | — | **Stacks** — up to 4 possible (one per tile kind quadded). Excluded by 五槓子. |
 
+## Special hands
+
+These don't fit the ordinary "5 melds + pair" shape at all, so they're detected up front in
+`scoreParsedHand` and short-circuit the normal per-decomposition `PATTERNS` loop entirely, rather
+than being one more entry evaluated against a `ResolvedHand` built the usual way.
+
+| Pattern | Tai | Criteria | Excludes | Notes |
+|---|---|---|---|---|
+| 十三么 (Thirteen Orphans) | 160 | All 13 orphan kinds (每個么九牌: 1/9 of each numbered suit, plus all 7 honors), one of them doubled as the pair, plus one ordinary meld (triplet or run) — 13 + 1 + 3 = 17 tiles. | — | Only recognized **fully concealed** (no declared melds at all) — reuses `mahjong.ts`'s own `isThirteenOrphansComplete`/`decomposeThirteenOrphans` (already relied on by the Calculator tab) rather than reimplementing the check. Exclusive of every other pattern except 底 (nothing else is ever evaluated against a hand shaped this way) — in particular it **excludes 門前清** even though the shape trivially satisfies it (no declared melds), since nothing but 底 stacks with it. The `ResolvedHand` built for display represents each of the 12 unpaired orphan tiles as its own 1-tile "meld," a documented exception to the usual "exactly 5 melds" invariant, purely so the UI's Declared/Concealed breakdown has something to render. |
+
 ## Bonus tiles (flowers/seasons)
 
 | Pattern | Tai | Criteria | Excludes | Notes |
@@ -292,6 +302,10 @@ concealed — see the [明/暗 concept](#the-明暗-openconcealed-concept). All 
 - **Jokers** aren't supported by the scoring notation/UI at all yet (rejected with a clear error).
 - **Added kong vs. called kong** aren't distinguished — both parse/score as a generic "exposed
   kong." Only matters for the rare robbing-the-kong (搶槓) pattern, not yet implemented.
+- **十三么 with a declared meld isn't recognized**, even in the (very unusual) case where the
+  "one ordinary meld" was called rather than held concealed — only the fully-concealed case is
+  detected. Calling tiles doesn't help collect 13 different singles, so this shouldn't come up in
+  practice, but it's an intentional scope cut, not a guarantee the shape is impossible.
 - No point/currency conversion (base value, dealer doubling, caps) — this only totals tai.
 - No dealer-status patterns yet, despite `GameContext` already tracking it (via `isDealer`).
 - The 食胡-tile UI only lets you mark a tile in the **concealed** hand — there's no way to mark
