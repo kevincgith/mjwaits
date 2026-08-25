@@ -386,6 +386,21 @@ const hasNoFives = (hand: ResolvedHand): boolean => allHandTiles(hand).every((t)
 const allTilesInRange = (hand: ResolvedHand, min: number, max: number): boolean =>
   allHandTiles(hand).every((t) => t.suit !== "z" && t.rank >= min && t.rank <= max);
 
+// 三寶: a compound bonus requiring all 3 at once: (1) one of 缺五/小於五/
+// 大於五 (a restricted numeric range), (2) 斷么 (no honors, no terminals),
+// and (3) one of 清一色/缺一門 (suit purity or missing-one-suit). Checked
+// directly against each pattern's raw condition rather than the (possibly
+// excluded) PATTERNS results - same reasoning as 全姊妹, since e.g. 清一色
+// scoring 0 because it's excluded by nothing here doesn't mean the shape
+// itself isn't present.
+function hasThreeTreasures(hand: ResolvedHand): boolean {
+  const hasRangeRestriction = hasNoFives(hand) || allTilesInRange(hand, 1, 4) || allTilesInRange(hand, 6, 9);
+  const isAllSimples = allHandTiles(hand).every((t) => t.suit !== "z" && t.rank >= 2 && t.rank <= 8);
+  const isFullFlush = numberedSuitsUsed(hand).size === 1 && allHandTiles(hand).every((t) => !isHonorTile(t));
+  const isMissingOneSuit = numberedSuitsUsed(hand).size === 2 && !isHonorTile(hand.pair[0]);
+  return hasRangeRestriction && isAllSimples && (isFullFlush || isMissingOneSuit);
+}
+
 // The 5 "suits" for 五門齊/七門齊: the 3 numbered suits, plus winds and
 // dragons treated as two further suits of their own (not lumped together
 // as one "honors" suit).
@@ -937,6 +952,20 @@ function hasStaircase(hand: ResolvedHand): boolean {
   return starts.every((s, i) => i === 0 || s === starts[i - 1] + 1);
 }
 
+// 五步高/全碟: a stricter 樓梯 - same 5-consecutive-starting-rank run shape,
+// but the suits (read off in ascending-start order) must either all match,
+// or follow a fixed rotation: the first 3 positions are 3 different suits
+// (all of m/t/b), the 4th repeats the 1st, and the 5th repeats the 2nd -
+// e.g. t,m,b,t,m. No 明/暗 split.
+function hasRotatingStaircase(hand: ResolvedHand): boolean {
+  if (!hasStaircase(hand)) return false;
+  const suits = [...hand.melds]
+    .sort((a, b) => Math.min(...a.tiles.map((t) => t.rank)) - Math.min(...b.tiles.map((t) => t.rank)))
+    .map((m) => m.tiles[0].suit);
+  if (suits.every((s) => s === suits[0])) return true;
+  return new Set(suits.slice(0, 3)).size === 3 && suits[3] === suits[0] && suits[4] === suits[1];
+}
+
 // 兩兄弟: 2 triplets/kongs at the same rank but different suits (e.g.
 // 555t+555b). No 明/暗 split; stacks the same way 相逢 does - paired by
 // suit-index rather than a flat count so a within-suit duplicate isn't
@@ -1035,6 +1064,12 @@ function hasBigThreeBrothers(hand: ResolvedHand): boolean {
 // checks rather than a generic rule engine.
 export const PATTERNS: TaiPattern[] = [
   {
+    id: "base-tai",
+    name: "底 (Base tai)",
+    // Unconditional - every completed hand gets this, no matter its shape.
+    score: () => 5,
+  },
+  {
     id: "concealed-hand",
     name: "門清 (Concealed hand)",
     // Placeholder value from the initial foundation work, not yet confirmed
@@ -1058,6 +1093,15 @@ export const PATTERNS: TaiPattern[] = [
     // Stacks: 2 tai for each bonus tile whose rank matches the seat wind
     // (up to 2 - the flower and the season for that wind position).
     score: (hand, ctx) => hand.bonusTiles.filter((b) => b.rank === ctx.seatWind).length * 2,
+  },
+  {
+    id: "wrong-flower",
+    name: "爛花 (Wrong flower)",
+    // Stacks: 2 tai for each bonus tile whose rank doesn't match the seat
+    // wind - tai value assumed to match 正花 (and 爛位風/正位風's shared
+    // value), not explicitly given. Naturally disjoint from 無花/無字花
+    // (both require zero bonus tiles), so no exclusion needed.
+    score: (hand, ctx) => hand.bonusTiles.filter((b) => b.rank !== ctx.seatWind).length * 2,
   },
   {
     id: "no-honors-no-flowers",
@@ -1215,6 +1259,14 @@ export const PATTERNS: TaiPattern[] = [
     id: "all-simples",
     name: "斷么 (All simples)",
     score: (hand) => (allHandTiles(hand).every((t) => t.suit !== "z" && t.rank >= 2 && t.rank <= 8) ? 10 : 0),
+  },
+  {
+    id: "three-treasures",
+    name: "三寶 (Range restriction + all-simples + suit purity/missing-one-suit)",
+    // Compound pattern - absorbs its 3 constituent conditions, same
+    // precedent as 無字花大平胡 absorbing 平胡+無字花.
+    score: (hand) => (hasThreeTreasures(hand) ? 40 : 0),
+    excludes: ["no-fives", "greater-than-five", "less-than-five", "all-simples", "full-flush", "missing-one-suit"],
   },
   {
     id: "all-triplets",
@@ -1545,6 +1597,15 @@ export const PATTERNS: TaiPattern[] = [
     // Additional bonus, same "stacks with everything" framing as 雙/全姊妹 -
     // doesn't exclude 平胡 even though every 樓梯 hand is also 平胡.
     score: (hand) => (hasStaircase(hand) ? 20 : 0),
+  },
+  {
+    id: "rotating-staircase",
+    name: "五步高/全碟 (Stricter 樓梯: same suit or a fixed rotation)",
+    // Additional bonus, same "stacks with everything" framing as the other
+    // 相逢-family bonuses - doesn't exclude 樓梯 even though every
+    // 五步高/全碟 hand is also a 樓梯 (not explicitly stated either way,
+    // kept consistent with 樓梯/雙姊妹/全姊妹 all being additive).
+    score: (hand) => (hasRotatingStaircase(hand) ? 40 : 0),
   },
   {
     id: "three-suit-same-run-open",

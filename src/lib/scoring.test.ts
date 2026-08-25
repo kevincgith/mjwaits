@@ -189,6 +189,13 @@ function tai(result: ReturnType<typeof scoreHand>, id: string): number {
 }
 
 describe("PATTERNS", () => {
+  describe("底 (base tai)", () => {
+    it("applies unconditionally to every completed hand", () => {
+      expect(tai(scoreHand("123456789m111z234t22b", ctx()), "base-tai")).toBe(5);
+      expect(tai(scoreHand("123m123m123t456b111z22z", ctx()), "base-tai")).toBe(5);
+    });
+  });
+
   describe("槓 (kong)", () => {
     it("scores 0 with no kong in the hand", () => {
       expect(tai(scoreHand("123456789m111z234t22b", ctx()), "kong")).toBe(0);
@@ -220,6 +227,24 @@ describe("PATTERNS", () => {
       parsed.bonusTiles.push({ kind: "flower", rank: 2 });
       const result = scoreParsedHand(parsed, ctx({ seatWind: 1 }));
       expect(tai(result, "correct-flower")).toBe(0);
+    });
+  });
+
+  describe("爛花 (wrong-flower)", () => {
+    it("stacks 2 tai per bonus tile that doesn't match the seat wind", () => {
+      const parsed = parseScoringHand("123456789m111z234t22b");
+      parsed.bonusTiles.push({ kind: "flower", rank: 2 }, { kind: "season", rank: 3 });
+      const result = scoreParsedHand(parsed, ctx({ seatWind: 1 }));
+      expect(tai(result, "wrong-flower")).toBe(4);
+      expect(tai(result, "correct-flower")).toBe(0);
+    });
+
+    it("doesn't count a bonus tile that matches the seat wind", () => {
+      const parsed = parseScoringHand("123456789m111z234t22b");
+      parsed.bonusTiles.push({ kind: "flower", rank: 1 });
+      const result = scoreParsedHand(parsed, ctx({ seatWind: 1 }));
+      expect(tai(result, "wrong-flower")).toBe(0);
+      expect(tai(result, "correct-flower")).toBe(2);
     });
   });
 
@@ -1014,6 +1039,50 @@ describe("PATTERNS: 樓梯 (5 runs, consecutive starting ranks, any suit)", () =
   it("doesn't score when a triplet/kong is involved", () => {
     const result = scoreHand("123m234m345m456m111z22z", ctx());
     expect(tai(result, "staircase")).toBe(0);
+  });
+});
+
+describe("PATTERNS: 五步高/全碟 (stricter 樓梯: same suit or a fixed rotation)", () => {
+  it("scores for 234t345m456b567t678m (rotation t,m,b,t,m - positions 4/5 repeat 1/2)", () => {
+    const result = scoreHand("234t345m456b567t678m55z", ctx());
+    expect(tai(result, "rotating-staircase")).toBe(40);
+    expect(tai(result, "staircase")).toBe(20);
+  });
+
+  it("doesn't score for 234t345m456b567m678t - position 4 (m) doesn't repeat position 1 (t)", () => {
+    const result = scoreHand("234t345m456b567m678t55z", ctx());
+    expect(tai(result, "rotating-staircase")).toBe(0);
+    expect(tai(result, "staircase")).toBe(20);
+  });
+
+  it("scores when all 5 runs are the same suit", () => {
+    const result = scoreHand("123m234m345m456m567m22z", ctx());
+    expect(tai(result, "rotating-staircase")).toBe(40);
+  });
+});
+
+describe("PATTERNS: 三寶 (range restriction + all-simples + suit purity/missing-one-suit)", () => {
+  it("scores via 缺五 + 斷么 + 清一色, excluding all 3 constituents", () => {
+    const result = scoreHand("234t234t678t678t678t33t", ctx());
+    expect(tai(result, "three-treasures")).toBe(40);
+    expect(tai(result, "no-fives")).toBe(0);
+    expect(tai(result, "all-simples")).toBe(0);
+    expect(tai(result, "full-flush")).toBe(0);
+  });
+
+  it("scores via 缺五 + 斷么 + 缺一門, excluding all 3 constituents", () => {
+    const result = scoreHand("234t234t678b678b678b33t", ctx());
+    expect(tai(result, "three-treasures")).toBe(40);
+    expect(tai(result, "no-fives")).toBe(0);
+    expect(tai(result, "all-simples")).toBe(0);
+    expect(tai(result, "missing-one-suit")).toBe(0);
+  });
+
+  it("doesn't score when 斷么 fails (a terminal is present), even though 缺五 and 清一色 both hold", () => {
+    const result = scoreHand("123m123m678m678m678m33m", ctx());
+    expect(tai(result, "three-treasures")).toBe(0);
+    expect(tai(result, "no-fives")).toBe(10);
+    expect(tai(result, "full-flush")).toBe(120);
   });
 });
 

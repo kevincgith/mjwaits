@@ -56,9 +56,9 @@ independently (open vs. concealed, for the patterns that split that way). All of
 
 | Pattern | Tai | Criteria | Excludes | Notes |
 |---|---|---|---|---|
+| 底 (Base tai) | 5 | Always — applies unconditionally to every completed hand. | — | No shape requirement at all; this is the floor every hand starts from. |
 | 門清 (Concealed hand) | 1 | Every meld is concealed (no exposed triplet/run/kong). A *concealed* kong doesn't break this — only a called/exposed one does. | — | Placeholder value carried over from the initial foundation work — **not yet confirmed** against house rules. |
 | 槓 (Kong) | 2 each | Once per kong held, declared/exposed or concealed alike. | — | **Stacks** — up to 4 possible (one per tile kind quadded). Excluded by 五槓子. |
-| 斷么 (All simples) | 10 | Every tile (melds and pair) is ranked 2–8 — no honors, no terminals (1 or 9). | — | |
 
 ## Bonus tiles (flowers/seasons)
 
@@ -66,6 +66,7 @@ independently (open vs. concealed, for the patterns that split that way). All of
 |---|---|---|---|---|
 | 無花 (No flowers) | 2 | Zero bonus tiles in hand. | — | Excluded by 無字花 (and transitively by 無字花大平胡). |
 | 正花 (Correct flower) | 2 each | Once per bonus tile (flower or season) whose rank equals your seat wind. | — | **Stacks** — up to 2 instances possible (the flower and the season for your wind position). |
+| 爛花 (Wrong flower) | 2 each | Once per bonus tile (flower or season) whose rank does **not** equal your seat wind. | — | **Stacks.** Tai value assumed to match 正花 (and the shared 爛位風/正位風 value) — not explicitly given, flag if wrong. Naturally disjoint from 無花/無字花 (both require zero bonus tiles), so no exclusion needed. |
 
 ## Suit purity
 
@@ -183,6 +184,7 @@ the [明/暗 concept](#the-明暗-openconcealed-concept).
 | 雙姊妹 (2 distinct 相逢 instances) | 5 | A flat bonus on top of 相逢, once per hand, when 2 *distinct* 相逢 instances exist — sharing no meld between them. E.g. `123m+123b` and `678t+678b`. | — | **Additive, not exclusive** — stacks with 相逢 itself (it's a bonus on top, not an alternative reading). A shape like `123m+123m+123t` only ever produces 1 相逢 instance in the first place (the 2nd `123m` has no 2nd `123t` to pair with), so it doesn't qualify — and even if 2 instances both reused the same meld, they wouldn't count as "distinct" either. |
 | 全姊妹 (Every meld is part of a 相逢) | 20 | Every one of the hand's 5 melds is individually a run that shares its starting rank with some *other* run, in a different suit, somewhere in the hand — e.g. `123m+123m+123t+678b+678t` (both `123m`s count, since `123t` is a valid partner for either) or `345t+345t+345b+345b+345m`. | — | **Additive, not exclusive** — stacks with 相逢/雙姊妹 and fires independently of whether 相逢 itself ends up excluded (e.g. by 明/暗三/四/五相逢). This is a *per-meld existence* check, looser than the instance-counting used for 相逢's own stacking — a meld can "count" here even if the instance-counting algorithm wouldn't form a fresh stacking instance for it. A triplet/kong or honor meld can never satisfy this, so 全姊妹 implies an all-runs (平胡) hand. **Read "any meld... is part of a 相逢" in the user's phrasing as "every meld"** — matches both worked examples, where every single meld (not just one) qualifies; flag if that's not what was meant. |
 | 樓梯 (5 runs, consecutive starting ranks, any suit) | 20 | All 5 melds are runs, and their starting ranks form 5 consecutive numbers (X..X+4) — suit is unrestricted (can repeat or vary freely across the 5 runs). E.g. `123t+234b+345t+456m+567m` (starts 1-5). | — | **Additive, not exclusive** — same "stacks with everything" framing as 雙/全姊妹, so it doesn't exclude 平胡 even though every 樓梯 hand is trivially also 平胡. Structurally can never overlap with 明/暗清龍/雜龍 (those need starts exactly 1, 4, *and* 7 simultaneously; 樓梯's 5-consecutive-start requirement can reach start 7 only from X=3, which excludes start 1), so no exclusion was needed between them either. |
+| 五步高/全碟 (Stricter 樓梯: same suit or a fixed rotation) | 40 | Same 5-consecutive-starting-rank run shape as 樓梯, but reading the suits off in ascending-start order, they must either all match, or follow a fixed rotation: the first 3 positions are 3 different suits (one of each), the 4th repeats the 1st, and the 5th repeats the 2nd. E.g. `234t+345m+456b+567t+678m` → suits `t,m,b,t,m` (position 4 repeats `t`, position 5 repeats `m`) ✓. `234t+345m+456b+567m+678t` → `t,m,b,m,t` (position 4 is `m`, not `t`) ✗. | — | **Additive, not exclusive** — kept consistent with 樓梯/雙姊妹/全姊妹 (doesn't exclude 樓梯, even though every 五步高/全碟 hand is also a 樓梯); not explicitly confirmed either way, flag if it should exclude. |
 | 明三相逢 (Same run in all 3 suits, open) | 10 | All 3 suits have a run at the same rank — e.g. `567m+567t+567b` — instance is 明. | 相逢 | |
 | 暗三相逢 (same, concealed) | 20 | Same shape, instance is 暗. | 相逢 | |
 | 明四相逢 (4 runs across all 3 suits, one suit doubled, open) | 40 | The 3-suit group plus one extra run in whichever suit has it twice — e.g. `456m456m456t456b` — instance is 明. | 相逢, 明三相逢, 暗三相逢 | |
@@ -246,9 +248,16 @@ concealed — see the [明/暗 concept](#the-明暗-openconcealed-concept). All 
 
 | Pattern | Tai | Criteria | Excludes | Notes |
 |---|---|---|---|---|
+| 斷么 (All simples) | 10 | Every tile (melds and pair) is ranked 2–8 — no honors, no terminals (1 or 9). | — | |
 | 缺五 (No fives) | 10 | No honor tile **and** no rank-5 tile in any numbered suit, anywhere in the hand. | — | Excluded by 大於五/小於五. |
 | 大於五 (All 6–9) | 40 | Every tile (melds and pair) is a numbered tile ranked 6–9 — no honors, no ranks 1–5. | 缺五 | |
 | 小於五 (All 1–4) | 40 | Every tile ranked 1–4 — no honors, no ranks 5–9. | 缺五 | |
+
+## Compound patterns
+
+| Pattern | Tai | Criteria | Excludes | Notes |
+|---|---|---|---|---|
+| 三寶 (Range restriction + all-simples + suit purity/missing-one-suit) | 40 | All 3 at once: (1) one of 缺五/小於五/大於五, (2) 斷么, and (3) one of 清一色/缺一門. | 缺五, 大於五, 小於五, 斷么, 清一色, 缺一門 | Compound pattern - absorbs all 3 constituents, same precedent as 無字花大平胡 absorbing 平胡+無字花. Checked against each constituent's raw condition directly (not the possibly-already-excluded PATTERNS result), same reasoning as 全姊妹. |
 
 ## Known gaps
 
@@ -281,3 +290,11 @@ worth double-checking:
 - **小/大三色連刻, 明/暗三色步步高, and 小/大三兄弟 don't exclude each other across families**
   (e.g. 小三色連刻 doesn't exclude 兩兄弟) - they check different shapes (consecutive vs. same
   rank, triplet vs. run) that can't structurally overlap, so no exclusion was added between them.
+- **五步高/全碟 doesn't exclude 樓梯**, even though every 五步高/全碟 hand is also a 樓梯 - kept
+  additive/stacking to match 樓梯/雙姊妹/全姊妹 (all explicitly framed as "bonus" patterns by the
+  user), but "a stricter version of 樓梯" could also have meant it should exclude 樓梯 instead.
+- **三寶 excludes its 3 constituent patterns**, unlike the 相逢-family bonuses (雙/全姊妹/樓梯/
+  五步高) which all stack additively - treated differently because the user described 三寶 as
+  "the hand has to be fulfilling all these 3 conditions" (a compound-shape definition, same
+  framing as 無字花大平胡) rather than "extra tai" bonus language. Flag if 三寶 was meant to stack
+  instead.
