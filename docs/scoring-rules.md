@@ -66,7 +66,7 @@ independently (open vs. concealed, for the patterns that split that way). All of
 |---|---|---|---|---|
 | 無花 (No flowers) | 2 | Zero bonus tiles in hand. | — | Excluded by 無字花 (and transitively by 無字花大平胡). |
 | 正花 (Correct flower) | 2 each | Once per bonus tile (flower or season) whose rank equals your seat wind. | — | **Stacks** — up to 2 instances possible (the flower and the season for your wind position). |
-| 爛花 (Wrong flower) | 2 each | Once per bonus tile (flower or season) whose rank does **not** equal your seat wind. | — | **Stacks.** Tai value assumed to match 正花 (and the shared 爛位風/正位風 value) — not explicitly given, flag if wrong. Naturally disjoint from 無花/無字花 (both require zero bonus tiles), so no exclusion needed. |
+| 爛花 (Wrong flower) | 2 each | Once per bonus tile (flower or season) whose rank does **not** equal your seat wind. | — | **Stacks.** Naturally disjoint from 無花/無字花 (both require zero bonus tiles), so no exclusion needed. |
 
 ## Suit purity
 
@@ -257,7 +257,7 @@ concealed — see the [明/暗 concept](#the-明暗-openconcealed-concept). All 
 
 | Pattern | Tai | Criteria | Excludes | Notes |
 |---|---|---|---|---|
-| 三寶 (Range restriction + all-simples + suit purity/missing-one-suit) | 40 | All 3 at once: (1) one of 缺五/小於五/大於五, (2) 斷么, and (3) one of 清一色/缺一門. | 缺五, 大於五, 小於五, 斷么, 清一色, 缺一門 | Compound pattern - absorbs all 3 constituents, same precedent as 無字花大平胡 absorbing 平胡+無字花. Checked against each constituent's raw condition directly (not the possibly-already-excluded PATTERNS result), same reasoning as 全姊妹. |
+| 三寶 (Range restriction + all-simples + suit purity/missing-one-suit) | 40 | All 3 at once: (1) one of 缺五/小於五/大於五, (2) 斷么, and (3) one of 清一色/缺一門. | — | **Additive, not exclusive** — a bonus that stacks with all 3 constituent patterns, same "stacks with everything" framing as 雙/全姊妹, 樓梯, and 五步高/全碟. Checked against each constituent's raw condition directly, same reasoning as 全姊妹. |
 
 ## Known gaps
 
@@ -291,10 +291,6 @@ worth double-checking:
   (e.g. 小三色連刻 doesn't exclude 兩兄弟) - they check different shapes (consecutive vs. same
   rank, triplet vs. run) that can't structurally overlap, so no exclusion was added between them.
 - **五步高/全碟 doesn't exclude 樓梯**, even though every 五步高/全碟 hand is also a 樓梯 - kept
-  additive/stacking to match 樓梯/雙姊妹/全姊妹 (all explicitly framed as "bonus" patterns by the
-  user), but "a stricter version of 樓梯" could also have meant it should exclude 樓梯 instead.
-- **三寶 excludes its 3 constituent patterns**, unlike the 相逢-family bonuses (雙/全姊妹/樓梯/
-  五步高) which all stack additively - treated differently because the user described 三寶 as
-  "the hand has to be fulfilling all these 3 conditions" (a compound-shape definition, same
-  framing as 無字花大平胡) rather than "extra tai" bonus language. Flag if 三寶 was meant to stack
-  instead.
+  additive/stacking to match 樓梯/雙姊妹/全姊妹/三寶 (all explicitly confirmed or framed as "bonus"
+  patterns by the user), but "a stricter version of 樓梯" could also have meant it should exclude
+  樓梯 instead.

@@ -1062,20 +1062,20 @@ describe("PATTERNS: 五步高/全碟 (stricter 樓梯: same suit or a fixed rota
 });
 
 describe("PATTERNS: 三寶 (range restriction + all-simples + suit purity/missing-one-suit)", () => {
-  it("scores via 缺五 + 斷么 + 清一色, excluding all 3 constituents", () => {
+  it("scores via 缺五 + 斷么 + 清一色, stacking additively with all 3 constituents", () => {
     const result = scoreHand("234t234t678t678t678t33t", ctx());
     expect(tai(result, "three-treasures")).toBe(40);
-    expect(tai(result, "no-fives")).toBe(0);
-    expect(tai(result, "all-simples")).toBe(0);
-    expect(tai(result, "full-flush")).toBe(0);
+    expect(tai(result, "no-fives")).toBe(10);
+    expect(tai(result, "all-simples")).toBe(10);
+    expect(tai(result, "full-flush")).toBe(120);
   });
 
-  it("scores via 缺五 + 斷么 + 缺一門, excluding all 3 constituents", () => {
+  it("scores via 缺五 + 斷么 + 缺一門, stacking additively with all 3 constituents", () => {
     const result = scoreHand("234t234t678b678b678b33t", ctx());
     expect(tai(result, "three-treasures")).toBe(40);
-    expect(tai(result, "no-fives")).toBe(0);
-    expect(tai(result, "all-simples")).toBe(0);
-    expect(tai(result, "missing-one-suit")).toBe(0);
+    expect(tai(result, "no-fives")).toBe(10);
+    expect(tai(result, "all-simples")).toBe(10);
+    expect(tai(result, "missing-one-suit")).toBe(10);
   });
 
   it("doesn't score when 斷么 fails (a terminal is present), even though 缺五 and 清一色 both hold", () => {

@@ -1263,10 +1263,9 @@ export const PATTERNS: TaiPattern[] = [
   {
     id: "three-treasures",
     name: "三寶 (Range restriction + all-simples + suit purity/missing-one-suit)",
-    // Compound pattern - absorbs its 3 constituent conditions, same
-    // precedent as 無字花大平胡 absorbing 平胡+無字花.
+    // Additional bonus - stacks with all 3 constituent patterns, same
+    // "stacks with everything" framing as 雙/全姊妹, 樓梯, and 五步高/全碟.
     score: (hand) => (hasThreeTreasures(hand) ? 40 : 0),
-    excludes: ["no-fives", "greater-than-five", "less-than-five", "all-simples", "full-flush", "missing-one-suit"],
   },
   {
     id: "all-triplets",
