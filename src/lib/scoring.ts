@@ -2360,6 +2360,7 @@ function scoreEightPairs(parsed: ParsedScoringHand, ctx: GameContext): ScoreResu
     "half-flush",
     "full-flush",
     "all-honors",
+    "three-treasures",
   ];
   const reusableScored = PATTERNS.filter((p) => reusableIds.includes(p.id))
     .map((pattern) => ({ pattern, tai: pattern.score(hand, ctx) }))

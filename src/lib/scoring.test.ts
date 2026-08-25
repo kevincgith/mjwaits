@@ -1591,6 +1591,14 @@ describe("PATTERNS: other patterns reused within 嚦咕嚦咕 (per the user's ow
     expect(tai(result, "no-fives")).toBe(0);
   });
 
+  it("scores 三寶 (stacking with its constituents) when 缺五 + 斷么 + 清一色 all hold at once", () => {
+    const result = scoreHand("22223333446677888m", ctx());
+    expect(tai(result, "three-treasures")).toBe(40);
+    expect(tai(result, "no-fives")).toBe(10);
+    expect(tai(result, "all-simples")).toBe(10);
+    expect(tai(result, "full-flush")).toBe(120);
+  });
+
   it("scores 清老頭 (excluding 混老頭) for an all-terminals hand", () => {
     const result = scoreHand("11119999m1199t11999b", ctx());
     expect(tai(result, "pure-terminal-triplets")).toBe(200);
