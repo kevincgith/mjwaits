@@ -1573,6 +1573,11 @@ describe("PATTERNS: other patterns reused within 嚦咕嚦咕 (per the user's ow
     expect(tai(result, "missing-one-suit")).toBe(10);
   });
 
+  it("scores 缺五 when no tile is ranked 5 and no honors are present", () => {
+    const result = scoreHand("1144m2266999t338877b", ctx());
+    expect(tai(result, "no-fives")).toBe(10);
+  });
+
   it("scores 清老頭 (excluding 混老頭) for an all-terminals hand", () => {
     const result = scoreHand("11119999m1199t11999b", ctx());
     expect(tai(result, "pure-terminal-triplets")).toBe(200);

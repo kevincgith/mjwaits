@@ -2345,7 +2345,16 @@ function scoreEightPairs(parsed: ParsedScoringHand, ctx: GameContext): ScoreResu
   // metadata (e.g. 清一色 excluding 混一色, 清老頭 excluding 混老頭) is
   // applied the same way the normal per-decomposition loop does, scoped to
   // just this batch.
-  const reusableIds = ["all-simples", "missing-one-suit", "pure-terminal-triplets", "mixed-terminal-honor-triplets", "half-flush", "full-flush", "all-honors"];
+  const reusableIds = [
+    "all-simples",
+    "no-fives",
+    "missing-one-suit",
+    "pure-terminal-triplets",
+    "mixed-terminal-honor-triplets",
+    "half-flush",
+    "full-flush",
+    "all-honors",
+  ];
   const reusableScored = PATTERNS.filter((p) => reusableIds.includes(p.id))
     .map((pattern) => ({ pattern, tai: pattern.score(hand, ctx) }))
     .filter((m) => m.tai > 0);
