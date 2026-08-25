@@ -1925,6 +1925,27 @@ export const PATTERNS: TaiPattern[] = [
     // other pattern except 底 (nothing else is ever evaluated against it).
     score: (hand) => (isThirteenOrphansComplete(allHandTiles(hand)) ? 160 : 0),
   },
+  {
+    id: "orphans-four-return-open",
+    name: "明四歸 (Thirteen Orphans: one kind held all 4 copies, open)",
+    // Same reasoning as 十三么 above: only ever reached via
+    // scoreThirteenOrphans' short-circuit, but kept independently correct.
+    score: (hand, ctx) => {
+      const quadTile = orphansQuadKind(hand);
+      if (!quadTile || ctx.winningTile === null || ctx.selfDraw) return 0;
+      return ctx.winningTile.suit === quadTile.suit && ctx.winningTile.rank === quadTile.rank ? 5 : 0;
+    },
+  },
+  {
+    id: "orphans-four-return-hidden",
+    name: "暗四歸 (Thirteen Orphans: one kind held all 4 copies, concealed)",
+    score: (hand, ctx) => {
+      const quadTile = orphansQuadKind(hand);
+      if (!quadTile) return 0;
+      const isOpen = ctx.winningTile !== null && !ctx.selfDraw && ctx.winningTile.suit === quadTile.suit && ctx.winningTile.rank === quadTile.rank;
+      return isOpen ? 0 : 15;
+    },
+  },
 ];
 
 export interface ScoreResult {
@@ -1951,6 +1972,23 @@ export class ScoringError extends Error {}
 // rather than reimplementing it. Only recognized fully concealed (no
 // declared melds): calling tiles doesn't help collect 13 different
 // singles, so that's the only case worth handling.
+// 明/暗四歸 (十三么 only): the "one ordinary meld" 十三么 needs happens to
+// be a triplet of an orphan kind that ALSO shows up among the 12 singles -
+// i.e. that kind is held all 4 copies (3 in the triplet, 1 as its normal
+// single), rather than the meld being an unrelated triplet/run elsewhere.
+// A degenerate cousin of 明/暗四歸一: that pattern's 4th copy always sits in
+// a *run* (only possible for numbered tiles); here the "4th copy" is just
+// another single, since honors can never be part of a run at all. Returns
+// the tile kind held 4 times, or null if the meld isn't that kind of
+// triplet.
+function orphansQuadKind(hand: ResolvedHand): Tile | null {
+  const tripletMeld = hand.melds.find((m) => m.kind === "triplet" && m.tiles.length === 3);
+  if (!tripletMeld) return null;
+  const quadTile = tripletMeld.tiles[0];
+  const hasMatchingSingle = hand.melds.some((m) => m.tiles.length === 1 && m.tiles[0].suit === quadTile.suit && m.tiles[0].rank === quadTile.rank);
+  return hasMatchingSingle ? quadTile : null;
+}
+
 function scoreThirteenOrphans(parsed: ParsedScoringHand, ctx: GameContext): ScoreResult | null {
   if (parsed.declaredMelds.length > 0) return null;
   const breakdown = decomposeThirteenOrphans(parsed.freeTiles);
@@ -1967,6 +2005,14 @@ function scoreThirteenOrphans(parsed: ParsedScoringHand, ctx: GameContext): Scor
     { pattern: basePattern, tai: basePattern.score(hand, ctx) },
     { pattern: orphansPattern, tai: orphansPattern.score(hand, ctx) },
   ];
+
+  const quadTile = orphansQuadKind(hand);
+  if (quadTile) {
+    const isOpen = ctx.winningTile !== null && !ctx.selfDraw && ctx.winningTile.suit === quadTile.suit && ctx.winningTile.rank === quadTile.rank;
+    const quadPattern = PATTERNS.find((p) => p.id === (isOpen ? "orphans-four-return-open" : "orphans-four-return-hidden"))!;
+    matched.push({ pattern: quadPattern, tai: quadPattern.score(hand, ctx) });
+  }
+
   return { total: matched.reduce((sum, m) => sum + m.tai, 0), matched, hand };
 }
 

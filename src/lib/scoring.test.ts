@@ -1289,6 +1289,40 @@ describe("PATTERNS: 十三么 (Thirteen Orphans)", () => {
   });
 });
 
+describe("PATTERNS: 明/暗四歸 (Thirteen Orphans: one kind held all 4 copies)", () => {
+  it("scores 暗四歸 when the quad kind (7z) is concealed - no winning tile recorded", () => {
+    const result = scoreHand("19m19t19b1234567z777z1m", ctx());
+    expect(tai(result, "orphans-four-return-hidden")).toBe(15);
+    expect(tai(result, "orphans-four-return-open")).toBe(0);
+    expect(result.total).toBe(180);
+  });
+
+  it("still scores 暗四歸 when the win is self-drawn, even if the winning tile matches the quad", () => {
+    const result = scoreHand("19m19t19b1234567z777z1m", ctx({ selfDraw: true, winningTile: { suit: "z", rank: 7 } }));
+    expect(tai(result, "orphans-four-return-hidden")).toBe(15);
+    expect(tai(result, "orphans-four-return-open")).toBe(0);
+  });
+
+  it("scores 明四歸 when the winning tile completed the quad and wasn't self-drawn", () => {
+    const result = scoreHand("19m19t19b1234567z777z1m", ctx({ winningTile: { suit: "z", rank: 7 } }));
+    expect(tai(result, "orphans-four-return-open")).toBe(5);
+    expect(tai(result, "orphans-four-return-hidden")).toBe(0);
+    expect(result.total).toBe(170);
+  });
+
+  it("scores 明四歸 for the quad on a numbered tile (9b) too, not just honors", () => {
+    const result = scoreHand("19m19t19b1234567z999b7z", ctx({ winningTile: { suit: "b", rank: 9 } }));
+    expect(tai(result, "orphans-four-return-open")).toBe(5);
+    expect(result.total).toBe(170);
+  });
+
+  it("doesn't score when no orphan kind reaches 4 copies", () => {
+    const result = scoreHand("112349m19t19b1234567z", ctx());
+    expect(tai(result, "orphans-four-return-open")).toBe(0);
+    expect(tai(result, "orphans-four-return-hidden")).toBe(0);
+  });
+});
+
 describe("isDealer", () => {
   it("is true only when seat wind is East", () => {
     expect(isDealer(ctx({ seatWind: 1 }))).toBe(true);
