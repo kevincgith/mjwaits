@@ -1955,6 +1955,25 @@ export const PATTERNS: TaiPattern[] = [
     // but kept independently correct" reasoning as 十三么.
     score: (hand) => (isSixteenUnrelatedComplete(allHandTiles(hand)) ? 50 : 0),
   },
+  {
+    id: "sixteen-unrelated-flying",
+    name: "十六不搭(十六飛) (16-way wait - the 食胡 tile completed the pair)",
+    // Upgrade of 十六不搭: before the 食胡 tile arrived, the hand was 16
+    // genuinely unrelated singles with no pair formed yet at all - any one
+    // of the 16 kinds would complete it by pairing up, hence "十六飛" (a
+    // 16-way wait). Detected by checking whether the winning tile's kind is
+    // the one that ended up as the pair, rather than one of the 15
+    // ordinary singles. Excludes the base 十六不搭 - see
+    // scoreSixteenUnrelated for how the two are chosen between.
+    score: (hand, ctx) =>
+      ctx.winningTile !== null &&
+      isSixteenUnrelatedComplete(allHandTiles(hand)) &&
+      hand.pair[0].suit === ctx.winningTile.suit &&
+      hand.pair[0].rank === ctx.winningTile.rank
+        ? 60
+        : 0,
+    excludes: ["sixteen-unrelated"],
+  },
 ];
 
 export interface ScoreResult {
@@ -2060,9 +2079,11 @@ function scoreSixteenUnrelated(parsed: ParsedScoringHand, ctx: GameContext): Sco
 
   const basePattern = PATTERNS.find((p) => p.id === "base-tai")!;
   const sixteenPattern = PATTERNS.find((p) => p.id === "sixteen-unrelated")!;
+  const flyingPattern = PATTERNS.find((p) => p.id === "sixteen-unrelated-flying")!;
+  const flyingTai = flyingPattern.score(hand, ctx);
   const matched = [
     { pattern: basePattern, tai: basePattern.score(hand, ctx) },
-    { pattern: sixteenPattern, tai: sixteenPattern.score(hand, ctx) },
+    flyingTai > 0 ? { pattern: flyingPattern, tai: flyingTai } : { pattern: sixteenPattern, tai: sixteenPattern.score(hand, ctx) },
   ];
   return { total: matched.reduce((sum, m) => sum + m.tai, 0), matched, hand };
 }

@@ -1383,6 +1383,30 @@ describe("PATTERNS: 十六不搭 (Sixteen Unrelated Tiles)", () => {
   });
 });
 
+describe("PATTERNS: 十六不搭(十六飛) (16-way wait - the 食胡 tile completed the pair)", () => {
+  const hand = "147m258t369b11234567z"; // pair is 1z
+
+  it("scores 60 tai instead of 50 when the winning tile completed the pair", () => {
+    const result = scoreHand(hand, ctx({ winningTile: { suit: "z", rank: 1 } }));
+    expect(tai(result, "sixteen-unrelated-flying")).toBe(60);
+    expect(tai(result, "sixteen-unrelated")).toBe(0);
+    expect(result.total).toBe(65);
+  });
+
+  it("scores the base 50 tai when the winning tile completed one of the 15 singles instead", () => {
+    const result = scoreHand(hand, ctx({ winningTile: { suit: "m", rank: 4 } }));
+    expect(tai(result, "sixteen-unrelated")).toBe(50);
+    expect(tai(result, "sixteen-unrelated-flying")).toBe(0);
+    expect(result.total).toBe(55);
+  });
+
+  it("scores the base 50 tai when no winning tile is recorded", () => {
+    const result = scoreHand(hand, ctx());
+    expect(tai(result, "sixteen-unrelated")).toBe(50);
+    expect(tai(result, "sixteen-unrelated-flying")).toBe(0);
+  });
+});
+
 describe("isDealer", () => {
   it("is true only when seat wind is East", () => {
     expect(isDealer(ctx({ seatWind: 1 }))).toBe(true);
