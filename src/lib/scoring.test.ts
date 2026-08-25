@@ -1294,7 +1294,10 @@ describe("PATTERNS: 明/暗四歸 (Thirteen Orphans: one kind held all 4 copies)
     const result = scoreHand("19m19t19b1234567z777z1m", ctx());
     expect(tai(result, "orphans-four-return-hidden")).toBe(15);
     expect(tai(result, "orphans-four-return-open")).toBe(0);
-    expect(result.total).toBe(180);
+    // A quad on an orphan kind is always also a triplet-of-orphan meld, so
+    // 混老頭 (see the next describe block) fires alongside it here too.
+    expect(tai(result, "mixed-terminal-honor-triplets")).toBe(100);
+    expect(result.total).toBe(280);
   });
 
   it("still scores 暗四歸 when the win is self-drawn, even if the winning tile matches the quad", () => {
@@ -1307,19 +1310,50 @@ describe("PATTERNS: 明/暗四歸 (Thirteen Orphans: one kind held all 4 copies)
     const result = scoreHand("19m19t19b1234567z777z1m", ctx({ winningTile: { suit: "z", rank: 7 } }));
     expect(tai(result, "orphans-four-return-open")).toBe(5);
     expect(tai(result, "orphans-four-return-hidden")).toBe(0);
-    expect(result.total).toBe(170);
+    expect(result.total).toBe(270);
   });
 
   it("scores 明四歸 for the quad on a numbered tile (9b) too, not just honors", () => {
     const result = scoreHand("19m19t19b1234567z999b7z", ctx({ winningTile: { suit: "b", rank: 9 } }));
     expect(tai(result, "orphans-four-return-open")).toBe(5);
-    expect(result.total).toBe(170);
+    expect(result.total).toBe(270);
   });
 
   it("doesn't score when no orphan kind reaches 4 copies", () => {
     const result = scoreHand("112349m19t19b1234567z", ctx());
     expect(tai(result, "orphans-four-return-open")).toBe(0);
     expect(tai(result, "orphans-four-return-hidden")).toBe(0);
+  });
+});
+
+describe("PATTERNS: 混帶么/混老頭 (Thirteen Orphans: the ordinary meld's own shape)", () => {
+  it("scores 混帶么 when the ordinary meld is a run containing a terminal (123m)", () => {
+    const result = scoreHand("111239m19t19b1234567z", ctx());
+    expect(tai(result, "mixed-terminal")).toBe(40);
+    expect(tai(result, "mixed-terminal-honor-triplets")).toBe(0);
+    expect(result.total).toBe(205);
+  });
+
+  it("doesn't score either when the ordinary meld has no terminal and isn't honors (234m)", () => {
+    const result = scoreHand("112349m19t19b1234567z", ctx());
+    expect(tai(result, "mixed-terminal")).toBe(0);
+    expect(tai(result, "mixed-terminal-honor-triplets")).toBe(0);
+    expect(result.total).toBe(165);
+  });
+
+  it("scores 混老頭 (excluding 混帶么) when the ordinary meld is a terminal triplet (111m) - also a quad, so 暗四歸 stacks too", () => {
+    const result = scoreHand("11119m19t19b12345677z", ctx());
+    expect(tai(result, "mixed-terminal-honor-triplets")).toBe(100);
+    expect(tai(result, "mixed-terminal")).toBe(0);
+    expect(tai(result, "orphans-four-return-hidden")).toBe(15);
+    expect(result.total).toBe(280);
+  });
+
+  it("doesn't score when the ordinary meld is an unrelated middle-rank triplet (555b)", () => {
+    const result = scoreHand("119m19t19b555b1234567z", ctx());
+    expect(tai(result, "mixed-terminal")).toBe(0);
+    expect(tai(result, "mixed-terminal-honor-triplets")).toBe(0);
+    expect(result.total).toBe(165);
   });
 });
 

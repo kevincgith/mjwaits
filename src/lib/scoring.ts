@@ -2013,6 +2013,25 @@ function scoreThirteenOrphans(parsed: ParsedScoringHand, ctx: GameContext): Scor
     matched.push({ pattern: quadPattern, tai: quadPattern.score(hand, ctx) });
   }
 
+  // 混帶么/混老頭: reused as-is (same ids/tai as their normal-hand
+  // definitions - see the user's request) rather than special-cased,
+  // because they already happen to evaluate correctly against this special
+  // 13-meld construction: every non-honor "meld" among the 12 singles is
+  // trivially a terminal already, so both checks reduce to just asking
+  // about the one real 3-tile meld - a terminal-containing run only
+  // satisfies 混帶么 (e.g. 123m); a triplet - terminal *or* honor, e.g.
+  // 111m or 777z - satisfies 混老頭 too, which then excludes 混帶么, same
+  // as their normal-hand exclusion relationship.
+  const mixedTerminalPattern = PATTERNS.find((p) => p.id === "mixed-terminal")!;
+  const allTerminalTripletsPattern = PATTERNS.find((p) => p.id === "mixed-terminal-honor-triplets")!;
+  const allTerminalTripletsTai = allTerminalTripletsPattern.score(hand, ctx);
+  if (allTerminalTripletsTai > 0) {
+    matched.push({ pattern: allTerminalTripletsPattern, tai: allTerminalTripletsTai });
+  } else {
+    const mixedTerminalTai = mixedTerminalPattern.score(hand, ctx);
+    if (mixedTerminalTai > 0) matched.push({ pattern: mixedTerminalPattern, tai: mixedTerminalTai });
+  }
+
   return { total: matched.reduce((sum, m) => sum + m.tai, 0), matched, hand };
 }
 
