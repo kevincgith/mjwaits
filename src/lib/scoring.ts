@@ -425,6 +425,19 @@ const hasBonusKind = (hand: ResolvedHand, kind: BonusKind): boolean => hand.bonu
 const meldHasTileKind = (meld: ResolvedMeld, tile: Tile): boolean =>
   meld.tiles.some((t) => t.suit === tile.suit && t.rank === tile.rank);
 
+// 對碰 (shanpon/dual-pair wait): the 食胡 tile completed a plain triplet -
+// e.g. tenpai on 44m+44t, waiting for either pair to become a triplet.
+// This is really just "did the winning tile land in a triplet meld" - a
+// triplet's other 2 tiles are necessarily a pair before that tile arrives,
+// and the hand's actual pair is always a separate group by construction,
+// so no extra "was there really a second pair" check is needed. Doesn't
+// apply to kongs (that's not a pair-to-triplet completion) or to a
+// self-drawn/claimed tile that instead completes a run.
+function isShanponWait(hand: ResolvedHand, ctx: GameContext): boolean {
+  if (ctx.winningTile === null) return false;
+  return hand.melds.some((m) => m.kind === "triplet" && meldHasTileKind(m, ctx.winningTile!));
+}
+
 // 明 (open) vs 暗 (concealed/hidden), per the house rule: a meld is 明 if
 // it's declared/exposed, OR if it's the meld the 食胡 tile (winningTile)
 // completed and that win wasn't a self-draw - claiming the last tile of an
@@ -1718,6 +1731,11 @@ export const PATTERNS: TaiPattern[] = [
       const melds = threeColorStepUpRunMelds(hand);
       return melds && melds.every((m) => !isMeldOpen(m, ctx)) ? 10 : 0;
     },
+  },
+  {
+    id: "shanpon-wait",
+    name: "對碰 (Shanpon: dual-pair wait completed into a triplet)",
+    score: (hand, ctx) => (isShanponWait(hand, ctx) ? 2 : 0),
   },
 ];
 

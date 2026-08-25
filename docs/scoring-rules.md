@@ -121,6 +121,17 @@ go through the full open/concealed check.
 | 五暗刻 (Five concealed triplets/kongs) | 80 | All 5. | 兩暗刻, 三暗刻, 四暗刻 | Excluded by 坎坎胡 and by 五槓子. |
 | 五槓子 (Five kongs) | 240 | All 5 melds are kongs. | 槓, 四暗刻, 五暗刻 | Does **not** exclude 對對胡 (a kong still satisfies "triplet or kong," so it stacks). |
 
+## Completion shape (how the winning tile completes the hand)
+
+Patterns in this category care about the *wait shape* the hand was in just before the winning
+tile arrived — not the finished hand's shape, and not open/concealed status. They read the 食胡
+tile from `GameContext.winningTile` the same way the [明/暗 concept](#the-明暗-openconcealed-concept)
+does, but the condition itself is independent of self-draw vs. claimed.
+
+| Pattern | Tai | Criteria | Excludes | Notes |
+|---|---|---|---|---|
+| 對碰 (Shanpon: dual-pair wait completed into a triplet) | 2 | The 食胡 tile landed in a **plain triplet** meld — e.g. tenpai on `44m+44t`, waiting for either pair to complete into a triplet. | — | Doesn't apply to kongs (that's not a pair-to-triplet completion) or when the winning tile instead completed a run. No self-draw restriction — the wait shape is what matters, not how it was won. A triplet's other 2 tiles are necessarily a pair right before the winning tile arrives, and the hand's actual pair is always a separate group by construction, so no separate "was there really a second pair" check is needed beyond "did the winning tile land in a triplet." |
+
 ## Four returns (四歸一/二/四)
 
 The hand holds **all 4 copies** of some rank X (one suit), split across melds a different way each

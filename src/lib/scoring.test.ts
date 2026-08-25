@@ -1136,6 +1136,23 @@ describe("PATTERNS: 明/暗三色步步高 (3 suits, runs increasing by 1)", () 
   });
 });
 
+describe("PATTERNS: 對碰 (shanpon: dual-pair wait completed into a triplet)", () => {
+  it("scores when the winning tile completes a triplet from what was a pair - e.g. tenpai on 44m+44t", () => {
+    const result = scoreHand("444m123b456b789b111z44t", ctx({ winningTile: { suit: "m", rank: 4 } }));
+    expect(tai(result, "shanpon-wait")).toBe(2);
+  });
+
+  it("doesn't score when the winning tile instead completes a run", () => {
+    const result = scoreHand("444m123b456b789b111z44t", ctx({ winningTile: { suit: "b", rank: 1 } }));
+    expect(tai(result, "shanpon-wait")).toBe(0);
+  });
+
+  it("doesn't score when no winning tile is recorded", () => {
+    const result = scoreHand("444m123b456b789b111z44t", ctx());
+    expect(tai(result, "shanpon-wait")).toBe(0);
+  });
+});
+
 describe("isDealer", () => {
   it("is true only when seat wind is East", () => {
     expect(isDealer(ctx({ seatWind: 1 }))).toBe(true);
