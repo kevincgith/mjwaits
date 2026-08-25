@@ -1974,6 +1974,22 @@ export const PATTERNS: TaiPattern[] = [
         : 0,
     excludes: ["sixteen-unrelated"],
   },
+  {
+    id: "sixteen-unrelated-same-ranks",
+    name: "不搭三相逢 (Same 3 ranks across all 3 suits)",
+    // Additional bonus - stacks with either 十六不搭 or 十六不搭(十六飛),
+    // not an alternative to them.
+    score: (hand) => (isSixteenUnrelatedComplete(allHandTiles(hand)) && sixteenUnrelatedRanksMatchAcrossSuits(hand) ? 20 : 0),
+  },
+  {
+    id: "sixteen-unrelated-straight",
+    name: "不搭雜龍 (Ranks span 1-9 across all 3 suits)",
+    // Additional bonus, same "stacks with everything" framing as
+    // 不搭三相逢 - mutually exclusive with it by construction (the ranks'
+    // union can't be both size 3 and size 9 at once), but not via an
+    // explicit exclude since they simply never co-fire.
+    score: (hand) => (isSixteenUnrelatedComplete(allHandTiles(hand)) && sixteenUnrelatedRanksSpanOneToNine(hand) ? 20 : 0),
+  },
 ];
 
 export interface ScoreResult {
@@ -2060,7 +2076,51 @@ function scoreThirteenOrphans(parsed: ParsedScoringHand, ctx: GameContext): Scor
     if (mixedTerminalTai > 0) matched.push({ pattern: mixedTerminalPattern, tai: mixedTerminalTai });
   }
 
+  pushSelfDrawAndGenuineSingleWait(hand, ctx, matched);
   return { total: matched.reduce((sum, m) => sum + m.tai, 0), matched, hand };
+}
+
+// Shared by both special hands: 自摸 and 獨獨 apply to them generically -
+// 自摸 just reads ctx.selfDraw, and 獨獨's getWaits-based check already
+// generalizes to these special shapes for free, since isCompleteHand
+// (which getWaits calls per candidate tile) already recognizes 十三么/
+// 十六不搭/八仙過海 as valid completions, not just ordinary melds+pair. 假獨
+// isn't wired in here since it wasn't requested for these hands.
+function pushSelfDrawAndGenuineSingleWait(hand: ResolvedHand, ctx: GameContext, matched: { pattern: TaiPattern; tai: number }[]): void {
+  const selfDrawPattern = PATTERNS.find((p) => p.id === "self-draw")!;
+  const selfDrawTai = selfDrawPattern.score(hand, ctx);
+  if (selfDrawTai > 0) matched.push({ pattern: selfDrawPattern, tai: selfDrawTai });
+
+  const genuineSingleWaitPattern = PATTERNS.find((p) => p.id === "genuine-single-wait")!;
+  const genuineSingleWaitTai = genuineSingleWaitPattern.score(hand, ctx);
+  if (genuineSingleWaitTai > 0) matched.push({ pattern: genuineSingleWaitPattern, tai: genuineSingleWaitTai });
+}
+
+// 不搭三相逢 (十六不搭 only): the 3 unrelated ranks chosen are the *same*
+// 3 ranks in all of m/t/b - e.g. 159m+159t+159b. Since that uses up all 9
+// numbered kinds without any repeats, the pair is necessarily one of the 7
+// honor kinds - a consequence of the shape, not a separate condition worth
+// checking on its own.
+function sixteenUnrelatedRanksMatchAcrossSuits(hand: ResolvedHand): boolean {
+  const ranksBySuit: Record<"m" | "t" | "b", Set<number>> = { m: new Set(), t: new Set(), b: new Set() };
+  for (const t of allHandTiles(hand)) {
+    if (t.suit === "m" || t.suit === "t" || t.suit === "b") ranksBySuit[t.suit].add(t.rank);
+  }
+  const [m, t, b] = [ranksBySuit.m, ranksBySuit.t, ranksBySuit.b];
+  return m.size === 3 && t.size === 3 && b.size === 3 && [...m].every((r) => t.has(r) && b.has(r));
+}
+
+// 不搭雜龍 (十六不搭 only): the 3 suits' unrelated ranks collectively span
+// 1-9 with no rank repeated across suits - e.g. 147m+258b+369t. Each suit
+// already contributes exactly 3 distinct ranks in a valid 十六不搭 hand, so
+// the union hitting all 9 possible ranks is only possible with zero
+// overlap between suits (3+3+3 = 9 distinct values).
+function sixteenUnrelatedRanksSpanOneToNine(hand: ResolvedHand): boolean {
+  const ranks = new Set<number>();
+  for (const t of allHandTiles(hand)) {
+    if (t.suit === "m" || t.suit === "t" || t.suit === "b") ranks.add(t.rank);
+  }
+  return ranks.size === 9;
 }
 
 // 十六不搭 (Sixteen Unrelated Tiles): all 7 honors, plus 3 mutually-
@@ -2085,6 +2145,16 @@ function scoreSixteenUnrelated(parsed: ParsedScoringHand, ctx: GameContext): Sco
     { pattern: basePattern, tai: basePattern.score(hand, ctx) },
     flyingTai > 0 ? { pattern: flyingPattern, tai: flyingTai } : { pattern: sixteenPattern, tai: sixteenPattern.score(hand, ctx) },
   ];
+
+  const sameRanksPattern = PATTERNS.find((p) => p.id === "sixteen-unrelated-same-ranks")!;
+  const sameRanksTai = sameRanksPattern.score(hand, ctx);
+  if (sameRanksTai > 0) matched.push({ pattern: sameRanksPattern, tai: sameRanksTai });
+
+  const straightPattern = PATTERNS.find((p) => p.id === "sixteen-unrelated-straight")!;
+  const straightTai = straightPattern.score(hand, ctx);
+  if (straightTai > 0) matched.push({ pattern: straightPattern, tai: straightTai });
+
+  pushSelfDrawAndGenuineSingleWait(hand, ctx, matched);
   return { total: matched.reduce((sum, m) => sum + m.tai, 0), matched, hand };
 }
 

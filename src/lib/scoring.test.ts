@@ -1310,13 +1310,17 @@ describe("PATTERNS: 明/暗四歸 (Thirteen Orphans: one kind held all 4 copies)
     const result = scoreHand("19m19t19b1234567z777z1m", ctx({ winningTile: { suit: "z", rank: 7 } }));
     expect(tai(result, "orphans-four-return-open")).toBe(5);
     expect(tai(result, "orphans-four-return-hidden")).toBe(0);
-    expect(result.total).toBe(270);
+    // Marking the winning tile also makes 獨獨 (genuine single wait, +2)
+    // computable and it turns out to hold for this exact hand - see the
+    // dedicated 自摸/獨獨-in-special-hands describe block below.
+    expect(tai(result, "genuine-single-wait")).toBe(2);
+    expect(result.total).toBe(272);
   });
 
   it("scores 明四歸 for the quad on a numbered tile (9b) too, not just honors", () => {
     const result = scoreHand("19m19t19b1234567z999b7z", ctx({ winningTile: { suit: "b", rank: 9 } }));
     expect(tai(result, "orphans-four-return-open")).toBe(5);
-    expect(result.total).toBe(270);
+    expect(result.total).toBe(272);
   });
 
   it("doesn't score when no orphan kind reaches 4 copies", () => {
@@ -1359,7 +1363,11 @@ describe("PATTERNS: 混帶么/混老頭 (Thirteen Orphans: the ordinary meld's o
 
 describe("PATTERNS: 十六不搭 (Sixteen Unrelated Tiles)", () => {
   it("scores 底 + 十六不搭 only, for all 7 honors + 3 mutually-unrelated ranks per suit + a doubled pair", () => {
-    const result = scoreHand("147m258t369b11234567z", ctx());
+    // m and t happen to share ranks here (1,4,7 each) but b doesn't join
+    // in, so this avoids both 不搭三相逢 (needs all 3 suits to match) and
+    // 不搭雜龍 (needs the ranks to jointly span 1-9) - see their own
+    // describe blocks below for those.
+    const result = scoreHand("147m147t258b11234567z", ctx());
     expect(tai(result, "sixteen-unrelated")).toBe(50);
     expect(tai(result, "base-tai")).toBe(5);
     expect(result.total).toBe(55);
@@ -1384,7 +1392,7 @@ describe("PATTERNS: 十六不搭 (Sixteen Unrelated Tiles)", () => {
 });
 
 describe("PATTERNS: 十六不搭(十六飛) (16-way wait - the 食胡 tile completed the pair)", () => {
-  const hand = "147m258t369b11234567z"; // pair is 1z
+  const hand = "147m147t258b11234567z"; // pair is 1z; avoids 不搭三相逢/不搭雜龍, see above
 
   it("scores 60 tai instead of 50 when the winning tile completed the pair", () => {
     const result = scoreHand(hand, ctx({ winningTile: { suit: "z", rank: 1 } }));
@@ -1397,13 +1405,73 @@ describe("PATTERNS: 十六不搭(十六飛) (16-way wait - the 食胡 tile compl
     const result = scoreHand(hand, ctx({ winningTile: { suit: "m", rank: 4 } }));
     expect(tai(result, "sixteen-unrelated")).toBe(50);
     expect(tai(result, "sixteen-unrelated-flying")).toBe(0);
-    expect(result.total).toBe(55);
+    // This particular hand's 4m happens to also be a genuine single wait
+    // (+2) - see the dedicated 自摸/獨獨-in-special-hands describe block.
+    expect(tai(result, "genuine-single-wait")).toBe(2);
+    expect(result.total).toBe(57);
   });
 
   it("scores the base 50 tai when no winning tile is recorded", () => {
     const result = scoreHand(hand, ctx());
     expect(tai(result, "sixteen-unrelated")).toBe(50);
     expect(tai(result, "sixteen-unrelated-flying")).toBe(0);
+  });
+});
+
+describe("PATTERNS: 不搭三相逢 (十六不搭: same 3 ranks across all 3 suits)", () => {
+  it("scores an extra 20 tai when all 3 suits use the same 3 ranks", () => {
+    const result = scoreHand("159m159t159b12345677z", ctx());
+    expect(tai(result, "sixteen-unrelated-same-ranks")).toBe(20);
+    expect(tai(result, "sixteen-unrelated")).toBe(50);
+    expect(result.total).toBe(75);
+  });
+
+  it("doesn't score when the suits' ranks don't all match", () => {
+    const result = scoreHand("147m147t258b11234567z", ctx());
+    expect(tai(result, "sixteen-unrelated-same-ranks")).toBe(0);
+  });
+});
+
+describe("PATTERNS: 不搭雜龍 (十六不搭: ranks span 1-9 across all 3 suits)", () => {
+  it("scores an extra 20 tai when the 3 suits' ranks jointly cover 1-9 with no overlap", () => {
+    const result = scoreHand("147m258b369t12344567z", ctx());
+    expect(tai(result, "sixteen-unrelated-straight")).toBe(20);
+    expect(tai(result, "sixteen-unrelated")).toBe(50);
+    expect(result.total).toBe(75);
+  });
+
+  it("doesn't score when the suits' ranks overlap instead of jointly spanning 1-9", () => {
+    const result = scoreHand("147m147t258b11234567z", ctx());
+    expect(tai(result, "sixteen-unrelated-straight")).toBe(0);
+  });
+});
+
+describe("PATTERNS: 自摸/獨獨 apply to the special hands too", () => {
+  it("scores 自摸 for a self-drawn 十三么", () => {
+    const result = scoreHand("112349m19t19b1234567z", ctx({ selfDraw: true }));
+    expect(tai(result, "self-draw")).toBe(1);
+    expect(result.total).toBe(166);
+  });
+
+  it("scores 自摸 for a self-drawn 十六不搭", () => {
+    const result = scoreHand("147m147t258b11234567z", ctx({ selfDraw: true }));
+    expect(tai(result, "self-draw")).toBe(1);
+    expect(result.total).toBe(56);
+  });
+
+  it("scores 獨獨 for a 十三么 hand where the 食胡 tile was a genuine single wait", () => {
+    const result = scoreHand("19m19t19b1234567z777z1m", ctx({ winningTile: { suit: "z", rank: 7 } }));
+    expect(tai(result, "genuine-single-wait")).toBe(2);
+  });
+
+  it("doesn't score 獨獨 for a 十六不搭 hand with a genuine multi-way wait", () => {
+    // Pre-completion "158m14t369b..." waits on 7t/8t/9t (t's third rank
+    // just needs to sit >=3 away from both 1 and 4) - a true 3-way wait,
+    // not a single one, even though the completed hand is still a valid
+    // 十六不搭 either way.
+    const result = scoreHand("158m147t369b11234567z", ctx({ winningTile: { suit: "t", rank: 7 } }));
+    expect(tai(result, "genuine-single-wait")).toBe(0);
+    expect(tai(result, "sixteen-unrelated")).toBe(50);
   });
 });
 
