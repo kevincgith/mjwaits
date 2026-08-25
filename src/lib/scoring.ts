@@ -15,8 +15,10 @@
 // array of concrete checks against one house rule set, added one at a time.
 
 import {
+  decomposeSixteenUnrelated,
   decomposeThirteenOrphans,
   getWaits,
+  isSixteenUnrelatedComplete,
   isThirteenOrphansComplete,
   MELDS_REQUIRED,
   ParseError,
@@ -1946,6 +1948,13 @@ export const PATTERNS: TaiPattern[] = [
       return isOpen ? 0 : 15;
     },
   },
+  {
+    id: "sixteen-unrelated",
+    name: "十六不搭 (Sixteen Unrelated Tiles)",
+    // Same "only ever reached via scoreSixteenUnrelated's short-circuit,
+    // but kept independently correct" reasoning as 十三么.
+    score: (hand) => (isSixteenUnrelatedComplete(allHandTiles(hand)) ? 50 : 0),
+  },
 ];
 
 export interface ScoreResult {
@@ -2035,9 +2044,34 @@ function scoreThirteenOrphans(parsed: ParsedScoringHand, ctx: GameContext): Scor
   return { total: matched.reduce((sum, m) => sum + m.tai, 0), matched, hand };
 }
 
+// 十六不搭 (Sixteen Unrelated Tiles): all 7 honors, plus 3 mutually-
+// unrelated ranks (no two within 3 of each other) from each of m/t/b - 16
+// distinct kinds, one doubled as the pair - 15+2 = 17 tiles. No "ordinary
+// meld" at all here (unlike 十三么), so all 15 non-pair kinds become
+// 1-tile "melds" in the display construction. Same fully-concealed-only
+// restriction and short-circuit reasoning as scoreThirteenOrphans.
+function scoreSixteenUnrelated(parsed: ParsedScoringHand, ctx: GameContext): ScoreResult | null {
+  if (parsed.declaredMelds.length > 0) return null;
+  const breakdown = decomposeSixteenUnrelated(parsed.freeTiles);
+  if (!breakdown) return null;
+
+  const singleMelds: ResolvedMeld[] = breakdown.singles.map((t) => ({ tiles: [t], kind: "triplet", concealed: true }));
+  const hand: ResolvedHand = { melds: singleMelds, pair: breakdown.pair, bonusTiles: parsed.bonusTiles };
+
+  const basePattern = PATTERNS.find((p) => p.id === "base-tai")!;
+  const sixteenPattern = PATTERNS.find((p) => p.id === "sixteen-unrelated")!;
+  const matched = [
+    { pattern: basePattern, tai: basePattern.score(hand, ctx) },
+    { pattern: sixteenPattern, tai: sixteenPattern.score(hand, ctx) },
+  ];
+  return { total: matched.reduce((sum, m) => sum + m.tai, 0), matched, hand };
+}
+
 export function scoreParsedHand(parsed: ParsedScoringHand, ctx: GameContext): ScoreResult {
   const orphans = scoreThirteenOrphans(parsed, ctx);
   if (orphans) return orphans;
+  const sixteenUnrelated = scoreSixteenUnrelated(parsed, ctx);
+  if (sixteenUnrelated) return sixteenUnrelated;
 
   const meldsNeeded = MELDS_REQUIRED - parsed.declaredMelds.length;
   // Each free meld is 3 tiles (triplet/run) or 4 (a concealed kong

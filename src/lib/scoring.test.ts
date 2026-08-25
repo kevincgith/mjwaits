@@ -1357,6 +1357,32 @@ describe("PATTERNS: 混帶么/混老頭 (Thirteen Orphans: the ordinary meld's o
   });
 });
 
+describe("PATTERNS: 十六不搭 (Sixteen Unrelated Tiles)", () => {
+  it("scores 底 + 十六不搭 only, for all 7 honors + 3 mutually-unrelated ranks per suit + a doubled pair", () => {
+    const result = scoreHand("147m258t369b11234567z", ctx());
+    expect(tai(result, "sixteen-unrelated")).toBe(50);
+    expect(tai(result, "base-tai")).toBe(5);
+    expect(result.total).toBe(55);
+    expect(result.matched).toHaveLength(2);
+  });
+
+  it("doesn't fire for an ordinary hand", () => {
+    const result = scoreHand("123456789m111z234t22b", ctx());
+    expect(tai(result, "sixteen-unrelated")).toBe(0);
+  });
+
+  it("isn't recognized when two ranks in the same suit are too close together (gap < 3)", () => {
+    // t's ranks are 2,4,8 here - only a gap of 2 between 2 and 4, so this
+    // isn't a valid 十六不搭 shape, and the tiles don't form an ordinary
+    // hand either (that's rather the point of "unrelated" tiles).
+    expect(() => scoreHand("147m248t369b11234567z", ctx())).toThrow(ScoringError);
+  });
+
+  it("isn't recognized when any meld is declared", () => {
+    expect(() => scoreHand("(123m)7m258t369b1234567z", ctx())).toThrow(ScoringError);
+  });
+});
+
 describe("isDealer", () => {
   it("is true only when seat wind is East", () => {
     expect(isDealer(ctx({ seatWind: 1 }))).toBe(true);
