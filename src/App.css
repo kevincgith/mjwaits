@@ -1097,6 +1097,14 @@ h1 {
   line-height: 0;
 }
 
+.scan-review-region-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #444;
+  margin-bottom: 0.2rem;
+  line-height: normal;
+}
+
 .scan-review-region img {
   display: block;
   width: 100%;

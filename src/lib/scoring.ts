@@ -93,6 +93,50 @@ function classifyDeclaredMeld(ranks: number[], suit: Suit, raw: string): MeldKin
   throw new ParseError(`Invalid meld "(${raw})" (must be a triplet, or a run of 3 consecutive tiles)`);
 }
 
+export interface DeclaredGrouping {
+  melds: MeldDeclaration[];
+  // Tiles at the point grouping had to give up - whatever's left starting
+  // from the first tile that didn't fit a kong/triplet/run shape, returned
+  // untouched rather than guessed at.
+  leftover: Tile[];
+}
+
+const isAscendingRun = (a: Tile, b: Tile, c: Tile): boolean =>
+  a.suit !== "z" && a.suit === b.suit && a.suit === c.suit && b.rank === a.rank + 1 && c.rank === a.rank + 2;
+
+// Groups tiles detected in the declared-melds region of a hand-scan photo
+// into melds. Assumes tiles are already in left-to-right table order (the
+// physical tiles of one meld are laid touching each other, so a
+// spatially-sorted detection list has each meld's tiles consecutive) -
+// see HandScanner/CropOverlay's "Declared" region in App.tsx, the only
+// caller. Greedily consumes from the front: 4 identical tiles is a kong
+// (defaulted to exposed - a genuinely concealed kong has 2 tiles face down,
+// which the vision model can't read as their real class anyway, so callers
+// should let the user flip that after the fact), 3 identical is a triplet, 3
+// ascending same-suit is a run. The first tile that doesn't start one of
+// those three shapes, and everything after it, is returned as `leftover`
+// instead of being guessed at.
+export function groupDeclaredTiles(tiles: Tile[]): DeclaredGrouping {
+  const melds: MeldDeclaration[] = [];
+  let i = 0;
+  while (i < tiles.length) {
+    const a = tiles[i];
+    if (i + 3 < tiles.length && [1, 2, 3].every((d) => tileKey(tiles[i + d]) === tileKey(a))) {
+      melds.push({ kind: "kong", concealed: false, tiles: [a, a, a, a] });
+      i += 4;
+    } else if (i + 2 < tiles.length && [1, 2].every((d) => tileKey(tiles[i + d]) === tileKey(a))) {
+      melds.push({ kind: "triplet", concealed: false, tiles: [a, a, a] });
+      i += 3;
+    } else if (i + 2 < tiles.length && isAscendingRun(a, tiles[i + 1], tiles[i + 2])) {
+      melds.push({ kind: "run", concealed: false, tiles: [a, tiles[i + 1], tiles[i + 2]] });
+      i += 3;
+    } else {
+      return { melds, leftover: tiles.slice(i) };
+    }
+  }
+  return { melds, leftover: [] };
+}
+
 // Parses the scoring notation: mahjong.ts's plain digits+suit groups for
 // concealed tiles, plus `(digits+suit)` for a declared exposed meld (triplet,
 // run, or kong) - see the module doc comment for the full syntax. A bare

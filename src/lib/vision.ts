@@ -35,6 +35,19 @@ function classToTile(className: string): Tile | null {
   return null; // "f" (flower) or "s" (season)
 }
 
+// classToTile's counterpart for the two bonus classes it excludes - returns
+// a plain {kind, rank} shape (structurally a scoring.ts BonusTile, without
+// importing that module here) rather than null for "f"/"s" classes, null
+// otherwise. Used by the Scoring tab's declared-region scan, which - unlike
+// the Calculator - actually wants bonus tiles rather than discarding them.
+export function classToBonusTile(className: string): { kind: "flower" | "season"; rank: 1 | 2 | 3 | 4 } | null {
+  const c = className[className.length - 1];
+  const rank = Number(className.slice(0, -1)) as 1 | 2 | 3 | 4;
+  if (c === "f") return { kind: "flower", rank };
+  if (c === "s") return { kind: "season", rank };
+  return null;
+}
+
 export interface Detection {
   tile: Tile | null;
   className: string;

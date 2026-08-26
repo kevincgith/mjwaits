@@ -41,8 +41,9 @@ import {
   trainerHandSize,
   type TrainerQuestion,
 } from "./lib/trainer";
-import { IMG_SIZE, detectTiles, letterbox, prefetchModel, type ScanProgress } from "./lib/vision";
+import { classToBonusTile, IMG_SIZE, detectTiles, letterbox, prefetchModel, type ScanProgress } from "./lib/vision";
 import {
+  groupDeclaredTiles,
   ScoringError,
   scoreParsedHand,
   type BonusTile,
@@ -880,10 +881,16 @@ const CROP_HANDLES: CropDragMode[] = ["nw", "ne", "sw", "se"];
 // <img src>) since its object URL was already revoked once it loaded.
 function CropOverlay({
   image,
+  regionLabels,
   onConfirm,
   onCancel,
 }: {
   image: HTMLImageElement;
+  // Badge text for each crop box once a 2nd region is added, e.g. ["Concealed",
+  // "Declared"] on the scoring tab where the two regions mean different things -
+  // falls back to plain 1-based numbers (the Calculator's case, where both
+  // regions are just different crops of the same hand).
+  regionLabels?: string[];
   onConfirm: (canvases: HTMLCanvasElement[]) => void;
   onCancel: () => void;
 }) {
@@ -943,7 +950,9 @@ function CropOverlay({
     <div className="crop-overlay">
       <span className="hint">
         {regions.length > 1
-          ? "Drag each box to cover one hand, then tap Scan."
+          ? regionLabels
+            ? `Drag each box to cover the ${regionLabels.join(" and ")} tiles, then tap Scan.`
+            : "Drag each box to cover one hand, then tap Scan."
           : "Drag to crop out anything that isn't the hand, then tap Scan."}
       </span>
       <div className="crop-stage" ref={stageRef}>
@@ -966,12 +975,12 @@ function CropOverlay({
             onPointerUp={endDrag}
             onPointerCancel={endDrag}
           >
-            {regions.length > 1 && <span className="crop-rect-label">{index + 1}</span>}
+            {regions.length > 1 && <span className="crop-rect-label">{regionLabels ? regionLabels[index] : index + 1}</span>}
             {regions.length > 1 && (
               <button
                 type="button"
                 className="crop-rect-remove"
-                title={`Remove region ${index + 1}`}
+                title={regionLabels ? `Remove ${regionLabels[index]}` : `Remove region ${index + 1}`}
                 onPointerDown={(e) => e.stopPropagation()}
                 onClick={() => removeRegion(index)}
               >
@@ -1011,6 +1020,297 @@ function CropOverlay({
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// The scan-a-photo flow shared by the Calculator (one hand, optionally split
+// across up to 2 crops of the SAME pile - see CropOverlay's regionLabels doc
+// comment) and the Scoring tab (2 crops of DIFFERENT piles - concealed hand
+// vs declared melds). This component owns the camera/crop/detect/correct
+// machinery only; it hands back each region's corrected detections untouched
+// via onConfirm and lets the caller decide what they mean (flatten into one
+// tile list, or split by region into concealed/declared/bonus - see
+// applyScannedRegions in ScoringPanel for the latter).
+function HandScanner({
+  regionLabels,
+  validateRegion,
+  onConfirm,
+}: {
+  regionLabels?: string[];
+  // Optional per-region check run against a region's current (corrected)
+  // detections - a non-null return is shown next to that region's summary
+  // and blocks the confirm button, e.g. ScoringPanel uses this to refuse a
+  // Declared-region scan that didn't cleanly group into whole melds.
+  validateRegion?: (detections: ReviewDetection[], regionIndex: number) => string | null;
+  onConfirm: (regions: { detections: ReviewDetection[] }[]) => void;
+}) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [scanStatus, setScanStatus] = useState<"idle" | "cropping" | "loading" | "review" | "error">("idle");
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null);
+  const [scanPreview, setScanPreview] = useState<{ regions: { imageUrl: string; detections: ReviewDetection[] }[] } | null>(
+    null
+  );
+  const [editingDetectionId, setEditingDetectionId] = useState<number | null>(null);
+  const nextDetectionId = useRef(0);
+  const [cropImage, setCropImage] = useState<HTMLImageElement | null>(null);
+
+  // Total real (non-bonus) tiles detected across every region, and the
+  // per-region validation errors (if a validator was given) - recomputed
+  // live as the user corrects or removes detections.
+  const totalRealTiles = useMemo(
+    () => (scanPreview ? scanPreview.regions.reduce((n, r) => n + r.detections.filter((d) => d.tile !== null).length, 0) : 0),
+    [scanPreview]
+  );
+  const regionErrors = useMemo(
+    () => (scanPreview && validateRegion ? scanPreview.regions.map((r, i) => validateRegion(r.detections, i)) : null),
+    [scanPreview, validateRegion]
+  );
+  const hasBlockingError = regionErrors?.some((e) => e !== null) ?? false;
+  const editingDetection = useMemo(() => {
+    if (editingDetectionId === null || !scanPreview) return null;
+    for (const region of scanPreview.regions) {
+      const found = region.detections.find((d) => d.id === editingDetectionId);
+      if (found) return found;
+    }
+    return null;
+  }, [editingDetectionId, scanPreview]);
+
+  // Applies `updater` to the single detection with matching id across
+  // whichever region it lives in; a null return removes it (used by
+  // "Remove box"), leaving the rest of the preview untouched.
+  const updateDetection = (id: number, updater: (d: ReviewDetection) => ReviewDetection | null) => {
+    setScanPreview((prev) =>
+      prev
+        ? {
+            regions: prev.regions.map((region) => ({
+              ...region,
+              detections: region.detections.flatMap((d) => {
+                if (d.id !== id) return [d];
+                const next = updater(d);
+                return next ? [next] : [];
+              }),
+            })),
+          }
+        : prev
+    );
+  };
+  const correctDetection = (id: number, tile: Tile | null) => {
+    updateDetection(id, (d) => ({ ...d, tile }));
+    setEditingDetectionId(null);
+  };
+  const removeDetection = (id: number) => {
+    updateDetection(id, () => null);
+    setEditingDetectionId(null);
+  };
+
+  const handleScanFile = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-selecting the same file next time
+    if (!file) return;
+    setScanError(null);
+    try {
+      const image = await loadImageFile(file);
+      setCropImage(image);
+      setScanStatus("cropping");
+    } catch (err) {
+      setScanError(err instanceof Error ? err.message : "Could not read that image");
+      setScanStatus("error");
+    }
+  };
+
+  // Each region (1 or 2, from CropOverlay) is letterboxed and detected
+  // independently. The (cached) model session is only fetched/initialized
+  // once regardless of region count.
+  const runScan = async (sources: HTMLCanvasElement[]) => {
+    setScanStatus("loading");
+    setScanError(null);
+    setScanProgress({ phase: "downloading-model", loaded: 0, total: null });
+    try {
+      const regions: { imageUrl: string; detections: ReviewDetection[] }[] = [];
+      for (const source of sources) {
+        const box = letterbox(source);
+        const { detections } = await detectTiles(box, setScanProgress);
+        const imageUrl = box.canvas.toDataURL();
+        regions.push({
+          imageUrl,
+          detections: detections.map((d) => ({
+            id: nextDetectionId.current++,
+            tile: d.tile,
+            originalClassName: d.className,
+            confidence: d.confidence,
+            box: d.box,
+          })),
+        });
+      }
+      setScanPreview({ regions });
+      setScanStatus("review");
+    } catch (err) {
+      setScanError(err instanceof Error ? err.message : "Could not scan that photo");
+      setScanStatus("error");
+    } finally {
+      setScanProgress(null);
+      setCropImage(null);
+    }
+  };
+
+  const cancelCrop = () => {
+    setCropImage(null);
+    setScanStatus("idle");
+  };
+
+  const scanStatusLabel = (p: ScanProgress | null): string => {
+    if (!p) return "Scanning…";
+    if (p.phase === "downloading-model") return "Downloading model…";
+    if (p.phase === "initializing") return "Preparing detector…";
+    return "Detecting tiles…";
+  };
+
+  // Byte-level detail shown alongside the progress bar, e.g. "3.2 / 11.5 MB
+  // (28%)" once the server has told us the total size, or just "3.2 MB
+  // downloaded" before that (content-length is missing on some dev servers,
+  // though GitHub Pages always sends it).
+  const scanProgressDetail = (p: ScanProgress | null): string | null => {
+    if (p?.phase !== "downloading-model") return null;
+    if (p.total) {
+      const pct = Math.round((p.loaded / p.total) * 100);
+      return `${formatMB(p.loaded)} / ${formatMB(p.total)} MB (${pct}%)`;
+    }
+    return `${formatMB(p.loaded)} MB downloaded`;
+  };
+
+  const confirmScan = () => {
+    if (!scanPreview) return;
+    onConfirm(scanPreview.regions.map((r) => ({ detections: r.detections })));
+    setScanStatus("idle");
+    setScanPreview(null);
+    setEditingDetectionId(null);
+  };
+  const cancelScan = () => {
+    setScanStatus("idle");
+    setScanPreview(null);
+    setScanError(null);
+    setEditingDetectionId(null);
+  };
+
+  return (
+    <div className="scan-input">
+      <input ref={fileInputRef} type="file" accept="image/*" onChange={handleScanFile} style={{ display: "none" }} />
+      <button
+        type="button"
+        onClick={() => {
+          // Starts the (large) model download as soon as the user shows
+          // intent to scan, rather than after they've picked and cropped a
+          // photo - by the time runScan needs it, it's often already
+          // downloaded or well underway.
+          prefetchModel();
+          fileInputRef.current?.click();
+        }}
+        disabled={scanStatus === "loading" || scanStatus === "cropping"}
+      >
+        {scanStatus === "loading" ? scanStatusLabel(scanProgress) : "📷 Scan a hand"}
+      </button>
+      {scanStatus === "loading" && (
+        <div className="scan-progress">
+          <div
+            className="scan-progress-track"
+            role="progressbar"
+            aria-label={scanStatusLabel(scanProgress)}
+            aria-valuenow={
+              scanProgress?.phase === "downloading-model" && scanProgress.total
+                ? Math.round((scanProgress.loaded / scanProgress.total) * 100)
+                : undefined
+            }
+            aria-valuemin={0}
+            aria-valuemax={100}
+          >
+            <div
+              className={
+                scanProgress?.phase === "downloading-model" && scanProgress.total
+                  ? "scan-progress-fill"
+                  : "scan-progress-fill indeterminate"
+              }
+              style={
+                scanProgress?.phase === "downloading-model" && scanProgress.total
+                  ? { width: `${Math.round((scanProgress.loaded / scanProgress.total) * 100)}%` }
+                  : undefined
+              }
+            />
+          </div>
+          {scanProgressDetail(scanProgress) && <span className="scan-progress-detail">{scanProgressDetail(scanProgress)}</span>}
+        </div>
+      )}
+      {scanStatus === "error" && scanError && <span className="error">{scanError}</span>}
+
+      {scanStatus === "cropping" && cropImage && (
+        <CropOverlay image={cropImage} regionLabels={regionLabels} onConfirm={runScan} onCancel={cancelCrop} />
+      )}
+
+      {scanStatus === "review" && scanPreview && (
+        <div className="scan-review">
+          <div className="scan-review-images">
+            {scanPreview.regions.map((region, i) => (
+              <div className="scan-review-region" key={i}>
+                {regionLabels && <div className="scan-review-region-title">{regionLabels[i]}</div>}
+                <img
+                  src={region.imageUrl}
+                  alt={
+                    regionLabels
+                      ? `Scanned ${regionLabels[i]} region with detected tiles boxed`
+                      : scanPreview.regions.length > 1
+                        ? `Scanned hand region ${i + 1} with detected tiles boxed`
+                        : "Scanned hand with detected tiles boxed"
+                  }
+                />
+                <DetectionOverlay detections={region.detections} editingId={editingDetectionId} onSelect={setEditingDetectionId} />
+              </div>
+            ))}
+          </div>
+
+          {editingDetection && (
+            <CorrectionPanel
+              detection={editingDetection}
+              onPick={(tile) => correctDetection(editingDetection.id, tile)}
+              onRemove={() => removeDetection(editingDetection.id)}
+              onCancel={() => setEditingDetectionId(null)}
+            />
+          )}
+
+          <div className="scan-review-summary">
+            <div className="scan-review-info">
+              {regionLabels ? (
+                scanPreview.regions.map((region, i) => {
+                  const tileCount = region.detections.filter((d) => d.tile !== null).length;
+                  const ignoredCount = region.detections.length - tileCount;
+                  return (
+                    <span key={i} className="scan-review-region-count">
+                      <strong>{regionLabels[i]}:</strong> {tileCount} tile{tileCount === 1 ? "" : "s"}
+                      {ignoredCount > 0 && ` (+${ignoredCount} flower/season)`}
+                      {regionErrors?.[i] && <span className="error"> — {regionErrors[i]}</span>}
+                    </span>
+                  );
+                })
+              ) : (
+                <span>
+                  {totalRealTiles} tile{totalRealTiles === 1 ? "" : "s"} detected
+                  {scanPreview.regions.reduce((n, r) => n + r.detections.filter((d) => d.tile === null).length, 0) > 0 &&
+                    ` (+${scanPreview.regions.reduce((n, r) => n + r.detections.filter((d) => d.tile === null).length, 0)} flower/season tile(s) ignored)`}
+                </span>
+              )}
+              <span className="scan-review-hint">Tap a boxed tile to correct it</span>
+            </div>
+            <div className="scan-review-actions">
+              <button type="button" onClick={cancelScan}>
+                Cancel
+              </button>
+              <button type="button" onClick={confirmScan} disabled={totalRealTiles === 0 || hasBlockingError}>
+                Use this hand
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1085,159 +1385,6 @@ function Calculator() {
   const handleReset = () => commitHand([]);
   const removeTile = (id: number) => commitHand(handRef.current.filter((t) => t.id !== id));
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [scanStatus, setScanStatus] = useState<"idle" | "cropping" | "loading" | "review" | "error">("idle");
-  const [scanError, setScanError] = useState<string | null>(null);
-  const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null);
-  const [scanPreview, setScanPreview] = useState<{ regions: { imageUrl: string; detections: ReviewDetection[] }[] } | null>(
-    null
-  );
-  const [editingDetectionId, setEditingDetectionId] = useState<number | null>(null);
-  const nextDetectionId = useRef(0);
-  const [cropImage, setCropImage] = useState<HTMLImageElement | null>(null);
-
-  // The hand tiles and ignored-bonus count implied by the current review
-  // state, recomputed live as the user corrects or removes detections -
-  // `tile: null` covers both the model's own bonus-tile guesses and a
-  // detection the user has manually marked "not a tile".
-  const scanTiles = useMemo(
-    () =>
-      scanPreview
-        ? scanPreview.regions.flatMap((r) => r.detections.flatMap((d) => (d.tile ? [d.tile] : [])))
-        : [],
-    [scanPreview]
-  );
-  const scanIgnoredBonusCount = useMemo(
-    () => (scanPreview ? scanPreview.regions.reduce((n, r) => n + r.detections.filter((d) => d.tile === null).length, 0) : 0),
-    [scanPreview]
-  );
-  const editingDetection = useMemo(() => {
-    if (editingDetectionId === null || !scanPreview) return null;
-    for (const region of scanPreview.regions) {
-      const found = region.detections.find((d) => d.id === editingDetectionId);
-      if (found) return found;
-    }
-    return null;
-  }, [editingDetectionId, scanPreview]);
-
-  // Applies `updater` to the single detection with matching id across
-  // whichever region it lives in; a null return removes it (used by
-  // "Remove box"), leaving the rest of the preview untouched.
-  const updateDetection = (id: number, updater: (d: ReviewDetection) => ReviewDetection | null) => {
-    setScanPreview((prev) =>
-      prev
-        ? {
-            regions: prev.regions.map((region) => ({
-              ...region,
-              detections: region.detections.flatMap((d) => {
-                if (d.id !== id) return [d];
-                const next = updater(d);
-                return next ? [next] : [];
-              }),
-            })),
-          }
-        : prev
-    );
-  };
-  const correctDetection = (id: number, tile: Tile | null) => {
-    updateDetection(id, (d) => ({ ...d, tile }));
-    setEditingDetectionId(null);
-  };
-  const removeDetection = (id: number) => {
-    updateDetection(id, () => null);
-    setEditingDetectionId(null);
-  };
-
-  const handleScanFile = async (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = ""; // allow re-selecting the same file next time
-    if (!file) return;
-    setScanError(null);
-    try {
-      const image = await loadImageFile(file);
-      setCropImage(image);
-      setScanStatus("cropping");
-    } catch (err) {
-      setScanError(err instanceof Error ? err.message : "Could not read that image");
-      setScanStatus("error");
-    }
-  };
-
-  // Each region (1 or 2, from CropOverlay) is letterboxed and detected
-  // independently, then the results are merged into one hand - a tile
-  // detected in either region counts. The (cached) model session is only
-  // fetched/initialized once regardless of region count.
-  const runScan = async (sources: HTMLCanvasElement[]) => {
-    setScanStatus("loading");
-    setScanError(null);
-    setScanProgress({ phase: "downloading-model", loaded: 0, total: null });
-    try {
-      const regions: { imageUrl: string; detections: ReviewDetection[] }[] = [];
-      for (const source of sources) {
-        const box = letterbox(source);
-        const { detections } = await detectTiles(box, setScanProgress);
-        const imageUrl = box.canvas.toDataURL();
-        regions.push({
-          imageUrl,
-          detections: detections.map((d) => ({
-            id: nextDetectionId.current++,
-            tile: d.tile,
-            originalClassName: d.className,
-            confidence: d.confidence,
-            box: d.box,
-          })),
-        });
-      }
-      setScanPreview({ regions });
-      setScanStatus("review");
-    } catch (err) {
-      setScanError(err instanceof Error ? err.message : "Could not scan that photo");
-      setScanStatus("error");
-    } finally {
-      setScanProgress(null);
-      setCropImage(null);
-    }
-  };
-
-  const cancelCrop = () => {
-    setCropImage(null);
-    setScanStatus("idle");
-  };
-
-  const scanStatusLabel = (p: ScanProgress | null): string => {
-    if (!p) return "Scanning…";
-    if (p.phase === "downloading-model") return "Downloading model…";
-    if (p.phase === "initializing") return "Preparing detector…";
-    return "Detecting tiles…";
-  };
-
-  // Byte-level detail shown alongside the progress bar, e.g. "3.2 / 11.5 MB
-  // (28%)" once the server has told us the total size, or just "3.2 MB
-  // downloaded" before that (content-length is missing on some dev servers,
-  // though GitHub Pages always sends it).
-  const scanProgressDetail = (p: ScanProgress | null): string | null => {
-    if (p?.phase !== "downloading-model") return null;
-    if (p.total) {
-      const pct = Math.round((p.loaded / p.total) * 100);
-      return `${formatMB(p.loaded)} / ${formatMB(p.total)} MB (${pct}%)`;
-    }
-    return `${formatMB(p.loaded)} MB downloaded`;
-  };
-
-  const confirmScan = () => {
-    if (!scanPreview) return;
-    onTextChange(formatHand(scanTiles));
-    setScanStatus("idle");
-    setScanPreview(null);
-    setEditingDetectionId(null);
-  };
-  const cancelScan = () => {
-    setScanStatus("idle");
-    setScanPreview(null);
-    setScanError(null);
-    setEditingDetectionId(null);
-  };
-
   const canCalculate = isCheckpointSize(hand.length);
   const upcoming = nextCheckpoint(hand.length);
   const hasJokers = useMemo(() => hand.some((t) => t.suit === "j"), [hand]);
@@ -1308,118 +1455,7 @@ function Calculator() {
           {error && <span className="error">{error}</span>}
         </div>
 
-        <div className="scan-input">
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            onChange={handleScanFile}
-            style={{ display: "none" }}
-          />
-          <button
-            type="button"
-            onClick={() => {
-              // Starts the (large) model download as soon as the user shows
-              // intent to scan, rather than after they've picked and cropped
-              // a photo - by the time runScan needs it, it's often already
-              // downloaded or well underway.
-              prefetchModel();
-              fileInputRef.current?.click();
-            }}
-            disabled={scanStatus === "loading" || scanStatus === "cropping"}
-          >
-            {scanStatus === "loading" ? scanStatusLabel(scanProgress) : "📷 Scan a hand"}
-          </button>
-          {scanStatus === "loading" && (
-            <div className="scan-progress">
-              <div
-                className="scan-progress-track"
-                role="progressbar"
-                aria-label={scanStatusLabel(scanProgress)}
-                aria-valuenow={
-                  scanProgress?.phase === "downloading-model" && scanProgress.total
-                    ? Math.round((scanProgress.loaded / scanProgress.total) * 100)
-                    : undefined
-                }
-                aria-valuemin={0}
-                aria-valuemax={100}
-              >
-                <div
-                  className={
-                    scanProgress?.phase === "downloading-model" && scanProgress.total
-                      ? "scan-progress-fill"
-                      : "scan-progress-fill indeterminate"
-                  }
-                  style={
-                    scanProgress?.phase === "downloading-model" && scanProgress.total
-                      ? { width: `${Math.round((scanProgress.loaded / scanProgress.total) * 100)}%` }
-                      : undefined
-                  }
-                />
-              </div>
-              {scanProgressDetail(scanProgress) && (
-                <span className="scan-progress-detail">{scanProgressDetail(scanProgress)}</span>
-              )}
-            </div>
-          )}
-          {scanStatus === "error" && scanError && <span className="error">{scanError}</span>}
-        </div>
-
-        {scanStatus === "cropping" && cropImage && (
-          <CropOverlay image={cropImage} onConfirm={runScan} onCancel={cancelCrop} />
-        )}
-
-        {scanStatus === "review" && scanPreview && (
-          <div className="scan-review">
-            <div className="scan-review-images">
-              {scanPreview.regions.map((region, i) => (
-                <div className="scan-review-region" key={i}>
-                  <img
-                    src={region.imageUrl}
-                    alt={
-                      scanPreview.regions.length > 1
-                        ? `Scanned hand region ${i + 1} with detected tiles boxed`
-                        : "Scanned hand with detected tiles boxed"
-                    }
-                  />
-                  <DetectionOverlay
-                    detections={region.detections}
-                    editingId={editingDetectionId}
-                    onSelect={setEditingDetectionId}
-                  />
-                </div>
-              ))}
-            </div>
-
-            {editingDetection && (
-              <CorrectionPanel
-                detection={editingDetection}
-                onPick={(tile) => correctDetection(editingDetection.id, tile)}
-                onRemove={() => removeDetection(editingDetection.id)}
-                onCancel={() => setEditingDetectionId(null)}
-              />
-            )}
-
-            <div className="scan-review-summary">
-              <div className="scan-review-info">
-                <span>
-                  {scanTiles.length} tile{scanTiles.length === 1 ? "" : "s"} detected
-                  {scanIgnoredBonusCount > 0 &&
-                    ` (+${scanIgnoredBonusCount} flower/season tile${scanIgnoredBonusCount === 1 ? "" : "s"} ignored)`}
-                </span>
-                <span className="scan-review-hint">Tap a boxed tile to correct it</span>
-              </div>
-              <div className="scan-review-actions">
-                <button type="button" onClick={cancelScan}>
-                  Cancel
-                </button>
-                <button type="button" onClick={confirmScan} disabled={scanTiles.length === 0}>
-                  Use this hand
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        <HandScanner onConfirm={(regions) => onTextChange(formatHand(regions.flatMap((r) => r.detections.flatMap((d) => (d.tile ? [d.tile] : [])))))} />
 
         <div className="panel-header">
           <span className="panel-title">Hand</span>
@@ -2187,6 +2223,73 @@ function ScoringPanel() {
     setWinningTile(null);
   };
 
+  // A scanned detection's meaning for the declared-melds region: a real
+  // tile identity (possibly corrected away from the model's original bonus
+  // guess), a bonus tile (only when the model's original guess was a bonus
+  // class AND it's still uncorrected - see classifyDeclaredDetection's doc
+  // comment below), or excluded (the user explicitly marked a real-tile
+  // detection "not a tile", i.e. a false positive - not a bonus tile).
+  const classifyDeclaredDetection = (
+    d: ReviewDetection
+  ): { kind: "tile"; tile: Tile } | { kind: "bonus"; bonus: BonusTile } | { kind: "excluded" } => {
+    if (d.tile) return { kind: "tile", tile: d.tile };
+    const bonus = classToBonusTile(d.originalClassName);
+    return bonus ? { kind: "bonus", bonus } : { kind: "excluded" };
+  };
+
+  // Sorts a region's detections into table (left-to-right) order - required
+  // by groupDeclaredTiles, which assumes one meld's tiles are consecutive -
+  // then splits them into the real tiles (for grouping) and bonus tiles.
+  const declaredScanTiles = (detections: ReviewDetection[]): { realTiles: Tile[]; bonusTiles: BonusTile[] } => {
+    const sorted = [...detections].sort((a, b) => a.box[0] - b.box[0]);
+    const realTiles: Tile[] = [];
+    const bonusTiles: BonusTile[] = [];
+    for (const d of sorted) {
+      const c = classifyDeclaredDetection(d);
+      if (c.kind === "tile") realTiles.push(c.tile);
+      else if (c.kind === "bonus") bonusTiles.push(c.bonus);
+    }
+    return { realTiles, bonusTiles };
+  };
+
+  // HandScanner's validateRegion: refuses to confirm a Declared-region scan
+  // that didn't cleanly resolve into whole melds, rather than silently
+  // dropping the tiles that didn't fit - see groupDeclaredTiles's own doc
+  // comment for what "didn't fit" means.
+  const validateDeclaredRegion = (detections: ReviewDetection[], regionIndex: number): string | null => {
+    if (regionIndex !== 1) return null;
+    const leftover = groupDeclaredTiles(declaredScanTiles(detections).realTiles).leftover;
+    if (leftover.length === 0) return null;
+    return `${leftover.length} tile${leftover.length === 1 ? "" : "s"} don't form a full meld - correct or remove ${
+      leftover.length === 1 ? "its" : "their"
+    } box${leftover.length === 1 ? "" : "es"} above`;
+  };
+
+  // HandScanner's onConfirm: region 0 is always the concealed hand and fully
+  // replaces concealedTiles (same "scan replaces" behavior as the
+  // Calculator). Region 1, the declared melds, is optional (the crop step
+  // only produces it if the user added a 2nd region) - when present it fully
+  // replaces both declaredMelds and bonusTiles; when absent, those are left
+  // untouched, since the user simply wasn't scanning that part this time.
+  const applyScannedRegions = (regions: { detections: ReviewDetection[] }[]) => {
+    const [concealedRegion, declaredRegion] = regions;
+    if (concealedRegion) {
+      const nextConcealed = concealedRegion.detections.flatMap((d) => (d.tile ? [{ ...d.tile, id: nextTileId.current++ }] : []));
+      concealedRef.current = nextConcealed;
+      setConcealedTiles(nextConcealed);
+      setWinningTile(null);
+    }
+    if (declaredRegion) {
+      const { realTiles, bonusTiles: scannedBonusTiles } = declaredScanTiles(declaredRegion.detections);
+      const { melds } = groupDeclaredTiles(realTiles);
+      const nextDeclared = melds.map((m) => ({ id: nextMeldId.current++, ...m }));
+      declaredRef.current = nextDeclared;
+      setDeclaredMelds(nextDeclared);
+      bonusRef.current = scannedBonusTiles;
+      setBonusTiles(scannedBonusTiles);
+    }
+  };
+
   const isWinningTile = (tile: HandTile): boolean => winningTile !== null && winningTile.id === tile.id;
   const toggleWinningTile = (tile: HandTile) =>
     setWinningTile((prev) => (prev && prev.id === tile.id ? null : tile));
@@ -2226,6 +2329,8 @@ function ScoringPanel() {
           {totalTiles} / {requiredSize} tiles
         </span>
       </div>
+
+      <HandScanner regionLabels={["Concealed", "Declared"]} validateRegion={validateDeclaredRegion} onConfirm={applyScannedRegions} />
 
       <div className="scoring-context">
         <WindPicker label="Seat wind" value={seatWind} onChange={setSeatWind} />

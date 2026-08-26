@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { parseHand } from "./mahjong";
 import {
   decomposeHandAll,
+  groupDeclaredTiles,
   isDealer,
   parseScoringHand,
   scoreHand,
@@ -15,6 +17,55 @@ const ctx = (overrides: Partial<GameContext> = {}): GameContext => ({
   selfDraw: false,
   winningTile: null,
   ...overrides,
+});
+
+describe("groupDeclaredTiles", () => {
+  it("groups three consecutive triplets", () => {
+    const result = groupDeclaredTiles(parseHand("111m333t222b"));
+    expect(result.leftover).toEqual([]);
+    expect(result.melds).toMatchObject([
+      { kind: "triplet", concealed: false },
+      { kind: "triplet", concealed: false },
+      { kind: "triplet", concealed: false },
+    ]);
+  });
+
+  it("groups a kong ahead of a triplet (checks 4-of-a-kind before 3)", () => {
+    const result = groupDeclaredTiles(parseHand("1111m222t"));
+    expect(result.leftover).toEqual([]);
+    expect(result.melds).toMatchObject([
+      { kind: "kong", concealed: false, tiles: [{ suit: "m", rank: 1 }, { suit: "m", rank: 1 }, { suit: "m", rank: 1 }, { suit: "m", rank: 1 }] },
+      { kind: "triplet", concealed: false },
+    ]);
+  });
+
+  it("groups an ascending run", () => {
+    const result = groupDeclaredTiles(parseHand("123m"));
+    expect(result.leftover).toEqual([]);
+    expect(result.melds).toEqual([{ kind: "run", concealed: false, tiles: parseHand("123m") }]);
+  });
+
+  it("does not read a descending or cross-suit triple as a run", () => {
+    const result = groupDeclaredTiles([{ suit: "m", rank: 3 }, { suit: "m", rank: 2 }, { suit: "m", rank: 1 }]);
+    expect(result.melds).toEqual([]);
+    expect(result.leftover).toHaveLength(3);
+  });
+
+  it("bails out at the first tile that does not start a valid meld, leaving the rest as leftover", () => {
+    const result = groupDeclaredTiles(parseHand("111m22t"));
+    expect(result.melds).toMatchObject([{ kind: "triplet" }]);
+    expect(result.leftover).toEqual(parseHand("22t"));
+  });
+
+  it("returns everything as leftover when nothing groups", () => {
+    const result = groupDeclaredTiles(parseHand("19m"));
+    expect(result.melds).toEqual([]);
+    expect(result.leftover).toEqual(parseHand("19m"));
+  });
+
+  it("handles an empty input", () => {
+    expect(groupDeclaredTiles([])).toEqual({ melds: [], leftover: [] });
+  });
 });
 
 describe("parseScoringHand", () => {
