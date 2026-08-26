@@ -1040,7 +1040,9 @@ function CropOverlay({
             onPointerUp={endDrag}
             onPointerCancel={endDrag}
           >
-            {regions.length > 1 && <span className="crop-rect-label">{regionLabels ? regionLabels[index] : index + 1}</span>}
+            {(regions.length > 1 || regionLabels) && (
+              <span className="crop-rect-label">{regionLabels ? regionLabels[index] : index + 1}</span>
+            )}
             {regions.length > 1 && (
               <button
                 type="button"
