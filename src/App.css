@@ -230,6 +230,14 @@ h1 {
   margin-bottom: 1rem;
 }
 
+/* The declared-melds meld-kind buttons (Triplet/Run/Kong, Concealed/
+   Exposed) sit on their own row below the title/collapse-toggle row -
+   pulled up to sit snug under it rather than getting the full 1rem gap
+   twice in a row. */
+.panel-header.meld-kind-row {
+  margin-top: -0.7rem;
+}
+
 .panel-title {
   font-weight: 600;
   color: #a33;

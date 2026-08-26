@@ -2516,6 +2516,10 @@ function ScoringPanel() {
 
       <div className="panel-header">
         <span className="panel-title">門前牌區 (Declared melds)</span>
+        <PickerCollapseToggle collapsed={declaredPickerCollapsed} onToggle={() => setDeclaredPickerCollapsed((c) => !c)} />
+      </div>
+
+      <div className="panel-header meld-kind-row">
         {(["triplet", "run", "kong"] as MeldKind[]).map((k) => (
           <button
             key={k}
@@ -2538,7 +2542,6 @@ function ScoringPanel() {
             {kongConcealed ? "Concealed" : "Exposed"}
           </button>
         )}
-        <PickerCollapseToggle collapsed={declaredPickerCollapsed} onToggle={() => setDeclaredPickerCollapsed((c) => !c)} />
       </div>
 
       {!declaredPickerCollapsed && (
