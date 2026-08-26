@@ -2255,11 +2255,12 @@ function ScoringPanel() {
   // rather than HandScanner's own built-in one - see HandScannerHandle.
   const handScannerRef = useRef<HandScannerHandle>(null);
   const [scanBusy, setScanBusy] = useState(false);
-  // Each tile-picker grid (declared melds, concealed hand) can be
-  // collapsed independently to reclaim vertical space once its tiles are
-  // already picked - the already-added melds/hand display itself stays
-  // visible either way, only the tap-to-add grid hides.
+  // Each tile-picker grid (declared melds, bonus tiles, concealed hand)
+  // can be collapsed independently to reclaim vertical space once its
+  // tiles are already picked - the already-added melds/hand display
+  // itself stays visible either way, only the tap-to-add grid hides.
   const [declaredPickerCollapsed, setDeclaredPickerCollapsed] = useState(false);
+  const [bonusPickerCollapsed, setBonusPickerCollapsed] = useState(false);
   const [concealedPickerCollapsed, setConcealedPickerCollapsed] = useState(false);
 
   // Mirrors the three state arrays above, updated synchronously - same
@@ -2557,9 +2558,20 @@ function ScoringPanel() {
                   ))}
               </div>
             ))}
-          {/* Bonus tiles (flowers/seasons) - set aside in this same 門前 area the
-              moment they're drawn, but not melds themselves, so they're tapped
-              independently of the Triplet/Run/Kong mode above. */}
+        </div>
+      )}
+
+      {/* Bonus tiles (flowers/seasons) - set aside in this same 門前 area the
+          moment they're drawn, but not melds themselves, so they get their
+          own collapsible picker independent of the Triplet/Run/Kong one
+          above. */}
+      <div className="panel-header bonus-tile-row">
+        <span className="panel-subtitle">Bonus tiles</span>
+        <PickerCollapseToggle collapsed={bonusPickerCollapsed} onToggle={() => setBonusPickerCollapsed((c) => !c)} />
+      </div>
+
+      {!bonusPickerCollapsed && (
+        <div className="tile-picker">
           <div className="suit-row">
             {([1, 2, 3, 4] as const).map((rank) => {
               const tile: BonusTile = { kind: "flower", rank };
@@ -2576,7 +2588,7 @@ function ScoringPanel() {
       )}
 
       {declaredMelds.length === 0 && bonusTiles.length === 0 ? (
-        !declaredPickerCollapsed && (
+        (!declaredPickerCollapsed || !bonusPickerCollapsed) && (
           <span className="hint">Tap a tile above to add a declared meld (called triplet/run, or a kong) or a bonus tile.</span>
         )
       ) : (

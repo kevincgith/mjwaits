@@ -244,6 +244,21 @@ h1 {
   margin-right: 0.5rem;
 }
 
+/* A sub-section header within a panel (e.g. "Bonus tiles" under 門前牌區) -
+   deliberately more muted than .panel-title so it doesn't compete with the
+   actual section title above it. */
+.panel-subtitle {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: #888;
+  margin-right: 0.5rem;
+}
+
+.panel-header.bonus-tile-row {
+  margin-top: -0.5rem;
+  margin-bottom: 0.5rem;
+}
+
 .panel-header button {
   border: 1px solid #ccc;
   background: #f7f7f7;
