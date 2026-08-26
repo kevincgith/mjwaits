@@ -761,6 +761,16 @@ describe("PATTERNS: 混帶XY (common rank pair across every non-honor meld)", ()
     expect(tai(result, "mixed-common-rank-pair")).toBe(0);
     expect(tai(result, "mixed-common-rank")).toBe(30);
   });
+
+  it("doesn't score when the pair is non-honor, even if its rank matches one of the two shared ranks", () => {
+    // Same shape as the first test, but the pair (22m) is a plain non-honor
+    // rank-2 pair - it numerically matches one of the shared ranks (2, 3),
+    // but a pair can only ever hold one rank, never "both 2 and 3" the way
+    // a meld does, so unlike 混帶X it can't be exempted this way - only an
+    // honor pair is exempt here.
+    const result = scoreHand("123m234m123t123b111z22m", ctx());
+    expect(tai(result, "mixed-common-rank-pair")).toBe(0);
+  });
 });
 
 describe("PATTERNS: 混帶XYZ (common rank triple across every non-honor meld)", () => {
@@ -780,6 +790,14 @@ describe("PATTERNS: 混帶XYZ (common rank triple across every non-honor meld)",
     const result = scoreHand("111z222z555z666z333t22b", ctx());
     expect(tai(result, "mixed-common-rank-triple")).toBe(0);
   });
+
+  it("doesn't score when the pair is non-honor, even if its rank matches one of the three shared ranks", () => {
+    // Every non-honor meld shares ranks 1, 2, 3, but the pair (11b) is a
+    // plain non-honor rank-1 pair - can only ever hold one rank, never all
+    // 3, so only an honor pair is exempt here (same reasoning as 混帶XY).
+    const result = scoreHand("123m123b123m123t111z11b", ctx());
+    expect(tai(result, "mixed-common-rank-triple")).toBe(0);
+  });
 });
 
 describe("PATTERNS: 全帶X (common rank across every meld and the pair, no honors)", () => {
@@ -794,19 +812,32 @@ describe("PATTERNS: 全帶X (common rank across every meld and the pair, no hono
   });
 });
 
-describe("PATTERNS: 混帶么 (honor presence + terminal in every non-honor meld)", () => {
-  it("scores with an honor meld and a terminal in every non-honor meld", () => {
-    const result = scoreHand("123m789m123t111z789b22b", ctx());
+describe("PATTERNS: 混帶么 (honor presence + terminal in every non-honor meld, and the pair)", () => {
+  it("scores with an honor meld, a terminal in every non-honor meld, and a terminal pair", () => {
+    const result = scoreHand("123m789m123t111z789b11b", ctx());
+    expect(tai(result, "mixed-terminal")).toBe(40);
+  });
+
+  it("scores just as well with an honor pair instead of a terminal one - honor presence can come from the pair alone, no honor meld needed", () => {
+    const result = scoreHand("123m789m123t789b999t22z", ctx());
     expect(tai(result, "mixed-terminal")).toBe(40);
   });
 
   it("doesn't score once any non-honor meld lacks a terminal", () => {
-    const result = scoreHand("123m456m123t111z789b22b", ctx());
+    const result = scoreHand("123m456m123t111z789b11b", ctx());
     expect(tai(result, "mixed-terminal")).toBe(0);
   });
 
   it("doesn't score without any honor presence, even if every meld has a terminal", () => {
-    const result = scoreHand("123m789m123t789t789b22b", ctx());
+    const result = scoreHand("123m789m123t789t789b11b", ctx());
+    expect(tai(result, "mixed-terminal")).toBe(0);
+  });
+
+  it("doesn't score when the pair itself is neither a terminal nor honors, even with an honor meld elsewhere", () => {
+    // Same shape as the first test, but the pair (22b) is a plain middle
+    // rank - an unrelated honor meld (111z) existing elsewhere doesn't
+    // exempt the pair from needing its own terminal-or-honor.
+    const result = scoreHand("123m789m123t111z789b22b", ctx());
     expect(tai(result, "mixed-terminal")).toBe(0);
   });
 });
@@ -824,6 +855,12 @@ describe("PATTERNS: 全帶么 (no honors, terminal in every meld and the pair)",
 
   it("doesn't score once any honor meld or honor pair is present", () => {
     expect(tai(scoreHand("123456789m111z234t22b", ctx()), "pure-terminal")).toBe(0);
+  });
+
+  it("excludes 缺五 - a terminal in every meld and the pair structurally guarantees no fives anywhere", () => {
+    const result = scoreHand("123m789m123t789b999t11b", ctx());
+    expect(tai(result, "pure-terminal")).toBe(80);
+    expect(tai(result, "no-fives")).toBe(0);
   });
 });
 

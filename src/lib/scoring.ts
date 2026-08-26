@@ -860,36 +860,34 @@ function oldYoungTripletInstances(hand: ResolvedHand): number {
 // a tile of? Honor melds are naturally exempt (they have no numeric rank to
 // match), and so is the pair (the pattern is about melds only). Requires at
 // least one non-honor meld to check - a hand with none (e.g. 字一色) has
-// nothing to unify around and shouldn't vacuously qualify.
-// Shared by 混帶X/XY/XYZ: the pair must also be one of the shared ranks
-// (it can only ever match one of them, being a single rank itself), *or*
-// the pair is honors and exempt the same way honor melds are.
-function pairMatchesOrIsHonor(hand: ResolvedHand, ranks: number[]): boolean {
-  return isHonorTile(hand.pair[0]) || ranks.includes(hand.pair[0].rank);
-}
-
+// nothing to unify around and shouldn't vacuously qualify. The pair must
+// also match the shared rank, unless the pair is honors - a pair (2 tiles,
+// 1 rank) can only ever match a *single* rank, which is exactly what 混帶X
+// itself needs, so this works the same way an honor meld's exemption does.
 function hasCommonRankAcrossNonHonorMelds(hand: ResolvedHand): boolean {
   const nonHonorMelds = hand.melds.filter((m) => m.tiles[0].suit !== "z");
   if (nonHonorMelds.length === 0) return false;
+  const pair = hand.pair[0];
   for (let rank = 1; rank <= 9; rank++) {
-    if (nonHonorMelds.every((m) => m.tiles.some((t) => t.rank === rank)) && pairMatchesOrIsHonor(hand, [rank])) return true;
+    if (nonHonorMelds.every((m) => m.tiles.some((t) => t.rank === rank)) && (isHonorTile(pair) || pair.rank === rank)) return true;
   }
   return false;
 }
 
 // 混帶XY: same idea as 混帶X, but every non-honor meld must contain BOTH of
-// some pair of distinct ranks (not just one shared rank).
+// some pair of distinct ranks (not just one shared rank). Unlike 混帶X, a
+// non-honor pair can *never* satisfy this - a pair is 2 identical tiles,
+// only ever one rank, so it structurally can't "contain both X and Y" the
+// way a meld can, regardless of which rank it happens to hold. Only an
+// honor pair is exempt here, the same way an honor meld is; a numerically-
+// matching non-honor pair doesn't count (it can match at most one of the
+// two required ranks, never both).
 function hasCommonRankPairAcrossNonHonorMelds(hand: ResolvedHand): boolean {
   const nonHonorMelds = hand.melds.filter((m) => m.tiles[0].suit !== "z");
-  if (nonHonorMelds.length === 0) return false;
+  if (nonHonorMelds.length === 0 || !isHonorTile(hand.pair[0])) return false;
   for (let x = 1; x <= 9; x++) {
     for (let y = x + 1; y <= 9; y++) {
-      if (
-        nonHonorMelds.every((m) => m.tiles.some((t) => t.rank === x) && m.tiles.some((t) => t.rank === y)) &&
-        pairMatchesOrIsHonor(hand, [x, y])
-      ) {
-        return true;
-      }
+      if (nonHonorMelds.every((m) => m.tiles.some((t) => t.rank === x) && m.tiles.some((t) => t.rank === y))) return true;
     }
   }
   return false;
@@ -900,17 +898,18 @@ function hasCommonRankPairAcrossNonHonorMelds(hand: ResolvedHand): boolean {
 // ranks, so a hand with only a single non-honor meld (the rest all honor
 // melds) still trivially qualifies using that meld's own 3 ranks; a lone
 // triplet/kong (only 1 distinct rank) never can, on its own or otherwise.
+// Same reasoning as 混帶XY for the pair: a non-honor pair can never
+// contain 3 distinct ranks, so only an honor pair is exempt.
 function hasCommonRankTripleAcrossNonHonorMelds(hand: ResolvedHand): boolean {
   const nonHonorMelds = hand.melds.filter((m) => m.tiles[0].suit !== "z");
-  if (nonHonorMelds.length === 0) return false;
+  if (nonHonorMelds.length === 0 || !isHonorTile(hand.pair[0])) return false;
   for (let x = 1; x <= 9; x++) {
     for (let y = x + 1; y <= 9; y++) {
       for (let z = y + 1; z <= 9; z++) {
         if (
           nonHonorMelds.every(
             (m) => m.tiles.some((t) => t.rank === x) && m.tiles.some((t) => t.rank === y) && m.tiles.some((t) => t.rank === z)
-          ) &&
-          pairMatchesOrIsHonor(hand, [x, y, z])
+          )
         ) {
           return true;
         }
@@ -933,13 +932,21 @@ function hasCommonRankAcrossAllMeldsAndPair(hand: ResolvedHand): boolean {
   return false;
 }
 
-// 混帶么: the hand has an honor presence (an honor meld, or the pair itself
-// is honors) AND every non-honor meld contains a terminal (rank 1 or 9).
-// Requires at least one non-honor meld to exist - an all-honor hand has no
-// terminal number melds to speak of, so it shouldn't vacuously qualify
-// (same reasoning as 混帶X's guard).
-function hasHonorMeldOrHonorPair(hand: ResolvedHand): boolean {
+// 混帶么: the hand has an honor presence *somewhere* (an honor meld, or the
+// pair itself is honors) - this is what distinguishes it from the no-
+// honors-at-all 全帶么 below - AND every meld and the pair each contain a
+// terminal or honor: every non-honor meld needs a terminal (rank 1 or 9),
+// and the pair itself must independently be a terminal or honor too - not
+// just exempted by some unrelated honor meld existing elsewhere in the
+// hand. Requires at least one non-honor meld to exist - an all-honor hand
+// has no terminal number melds to speak of, so it shouldn't vacuously
+// qualify (same reasoning as 混帶X's guard).
+function hasHonorPresenceAnywhere(hand: ResolvedHand): boolean {
   return hand.melds.some((m) => m.tiles[0].suit === "z") || isHonorTile(hand.pair[0]);
+}
+function pairIsTerminalOrHonor(hand: ResolvedHand): boolean {
+  const pair = hand.pair[0];
+  return isHonorTile(pair) || pair.rank === 1 || pair.rank === 9;
 }
 function everyNonHonorMeldHasTerminal(hand: ResolvedHand): boolean {
   const nonHonorMelds = hand.melds.filter((m) => m.tiles[0].suit !== "z");
@@ -1732,12 +1739,24 @@ export const PATTERNS: TaiPattern[] = [
   {
     id: "mixed-terminal",
     name: "混帶么 (Honor presence + terminal in every non-honor meld)",
-    score: (hand) => (hasHonorMeldOrHonorPair(hand) && everyNonHonorMeldHasTerminal(hand) ? 40 : 0),
+    // Doesn't need to exclude 缺五 the way 全帶么 does: 缺五 requires no
+    // honors anywhere at all (see hasNoFives), but 混帶么 specifically
+    // requires honor presence somewhere - that's its whole "混" (mixed)
+    // characteristic - so the two are already mutually exclusive by
+    // construction, no explicit exclude needed.
+    score: (hand) => (hasHonorPresenceAnywhere(hand) && pairIsTerminalOrHonor(hand) && everyNonHonorMeldHasTerminal(hand) ? 40 : 0),
   },
   {
     id: "pure-terminal",
     name: "全帶么 (No honors, terminal in every meld and the pair)",
+    // Excludes 缺五: the only runs/triplets containing a terminal are
+    // 1-2-3, 7-8-9, 111, or 999 - none of which can ever contain a 5 - so
+    // every meld (and the pair) containing a terminal already structurally
+    // guarantees the whole hand has no fives at all. Same "stricter
+    // version subsumes the automatically-implied simpler one" precedent as
+    // 大於五/小於五 excluding it.
     score: (hand) => (hasNoHonorsAndTerminalInEveryMeldAndPair(hand) ? 80 : 0),
+    excludes: ["no-fives"],
   },
   {
     id: "mixed-terminal-honor-triplets",
