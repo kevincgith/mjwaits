@@ -939,6 +939,12 @@ describe("PATTERNS: 明/暗真雙般高 (2 separate identical-sequence pairs)", 
     expect(tai(result, "two-separate-identical-sequences-hidden")).toBe(40);
     expect(tai(result, "identical-sequences-hidden")).toBe(0);
   });
+
+  it("doesn't score 暗真雙般高 for 4 identical runs of the same shape (123m x4) - that's 一色四同順, not two separate shapes", () => {
+    const result = scoreHand("123m123m123m123m456t55z", ctx());
+    expect(tai(result, "quadruple-identical-sequences-hidden")).toBe(160);
+    expect(tai(result, "two-separate-identical-sequences-hidden")).toBe(0);
+  });
 });
 
 describe("PATTERNS: 明/暗單色步步高 (3 ascending sequences, gap 1)", () => {

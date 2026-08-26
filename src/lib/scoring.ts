@@ -1058,13 +1058,21 @@ function smallTwinIdenticalSequences(hand: ResolvedHand): [ResolvedMeld, Resolve
 }
 
 // 真雙般高: two *separate* 般高 pairs (4 runs total, two different shapes) -
-// e.g. 123123m + 678678t. Reuses identicalRunPairInstances and just checks
-// there are at least 2 of them; classification looks at all 4 runs across
-// the first two instances found.
+// e.g. 123123m + 678678t. Takes at most one pair per distinct (suit, rank)
+// shape - NOT identicalRunPairInstances directly, since that helper splits
+// a single 4-copy group (e.g. 123m held 4 times) into 2 pairs of the *same*
+// shape for 般高's own stacking, which would wrongly count as "two
+// separate" shapes here and fire alongside 一色四同順 on the same 4 runs.
 function twoSeparateIdenticalRunPairs(hand: ResolvedHand): [ResolvedMeld, ResolvedMeld, ResolvedMeld, ResolvedMeld] | null {
-  const instances = identicalRunPairInstances(hand);
-  if (instances.length < 2) return null;
-  const [[a, b], [c, d]] = instances;
+  const groups: [ResolvedMeld, ResolvedMeld][] = [];
+  for (const suit of ["m", "t", "b"] as const) {
+    for (let rank = 1; rank <= 7; rank++) {
+      const matching = hand.melds.filter((m) => m.kind === "run" && m.tiles[0].suit === suit && m.tiles[0].rank === rank);
+      if (matching.length >= 2) groups.push([matching[0], matching[1]]);
+    }
+  }
+  if (groups.length < 2) return null;
+  const [[a, b], [c, d]] = groups;
   return [a, b, c, d];
 }
 
