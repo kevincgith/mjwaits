@@ -2520,75 +2520,77 @@ function ScoringPanel() {
         <PickerCollapseToggle collapsed={declaredPickerCollapsed} onToggle={() => setDeclaredPickerCollapsed((c) => !c)} />
       </div>
 
-      <div className="panel-header meld-kind-row">
-        {(["run", "triplet", "kong"] as MeldKind[]).map((k) => (
-          <button
-            key={k}
-            type="button"
-            className={meldKind === k ? "toggle-on" : undefined}
-            aria-pressed={meldKind === k}
-            onClick={() => setMeldKind(k)}
-          >
-            {MELD_KIND_LABELS[k]}
-          </button>
-        ))}
-        {meldKind === "kong" && (
-          <button
-            type="button"
-            className={kongConcealed ? "toggle-on" : undefined}
-            aria-pressed={kongConcealed}
-            onClick={() => setKongConcealed((c) => !c)}
-            title={kongConcealed ? "Concealed kong (暗槓) - self-drawn, never called" : "Exposed kong (明槓/加槓) - called or added"}
-          >
-            {kongConcealed ? "Concealed" : "Exposed"}
-          </button>
-        )}
-      </div>
-
       {!declaredPickerCollapsed && (
-        <div className="tile-picker">
-          {(["m", "t", "b", "z"] as Suit[])
-            .filter((suit) => meldKind !== "run" || suit !== "z")
-            .map((suit) => (
-              <div className="suit-row" key={suit}>
-                {meldPickerTiles(meldKind)
-                  .filter((t) => t.suit === suit)
-                  .map((t) => (
-                    <TileButton key={tileLabel(t)} tile={t} onClick={() => addMeldStartingAt(t)} disabled={!canAddMeldTile(t)} />
-                  ))}
-              </div>
+        <>
+          <div className="panel-header meld-kind-row">
+            {(["run", "triplet", "kong"] as MeldKind[]).map((k) => (
+              <button
+                key={k}
+                type="button"
+                className={meldKind === k ? "toggle-on" : undefined}
+                aria-pressed={meldKind === k}
+                onClick={() => setMeldKind(k)}
+              >
+                {MELD_KIND_LABELS[k]}
+              </button>
             ))}
-        </div>
-      )}
-
-      {/* Bonus tiles (flowers/seasons) - set aside in this same 門前 area the
-          moment they're drawn, but not melds themselves, so they get their
-          own collapsible picker independent of the Triplet/Run/Kong one
-          above. */}
-      <div className="panel-header bonus-tile-row">
-        <span className="panel-subtitle">Bonus tiles</span>
-        <PickerCollapseToggle collapsed={bonusPickerCollapsed} onToggle={() => setBonusPickerCollapsed((c) => !c)} />
-      </div>
-
-      {!bonusPickerCollapsed && (
-        <div className="tile-picker">
-          <div className="suit-row">
-            {([1, 2, 3, 4] as const).map((rank) => {
-              const tile: BonusTile = { kind: "flower", rank };
-              return <BonusTileButton key={`flower${rank}`} tile={tile} onClick={() => addBonusTile(tile)} disabled={hasBonusTile(tile)} />;
-            })}
+            {meldKind === "kong" && (
+              <button
+                type="button"
+                className={kongConcealed ? "toggle-on" : undefined}
+                aria-pressed={kongConcealed}
+                onClick={() => setKongConcealed((c) => !c)}
+                title={kongConcealed ? "Concealed kong (暗槓) - self-drawn, never called" : "Exposed kong (明槓/加槓) - called or added"}
+              >
+                {kongConcealed ? "Concealed" : "Exposed"}
+              </button>
+            )}
           </div>
-          <div className="suit-row">
-            {([1, 2, 3, 4] as const).map((rank) => {
-              const tile: BonusTile = { kind: "season", rank };
-              return <BonusTileButton key={`season${rank}`} tile={tile} onClick={() => addBonusTile(tile)} disabled={hasBonusTile(tile)} />;
-            })}
+
+          <div className="tile-picker">
+            {(["m", "t", "b", "z"] as Suit[])
+              .filter((suit) => meldKind !== "run" || suit !== "z")
+              .map((suit) => (
+                <div className="suit-row" key={suit}>
+                  {meldPickerTiles(meldKind)
+                    .filter((t) => t.suit === suit)
+                    .map((t) => (
+                      <TileButton key={tileLabel(t)} tile={t} onClick={() => addMeldStartingAt(t)} disabled={!canAddMeldTile(t)} />
+                    ))}
+                </div>
+              ))}
           </div>
-        </div>
+
+          {/* Bonus tiles (flowers/seasons) - set aside in this same 門前 area the
+              moment they're drawn, but not melds themselves, so they get their
+              own collapsible picker independent of the Triplet/Run/Kong one
+              above. */}
+          <div className="panel-header bonus-tile-row">
+            <span className="panel-subtitle">Bonus tiles</span>
+            <PickerCollapseToggle collapsed={bonusPickerCollapsed} onToggle={() => setBonusPickerCollapsed((c) => !c)} />
+          </div>
+
+          {!bonusPickerCollapsed && (
+            <div className="tile-picker">
+              <div className="suit-row">
+                {([1, 2, 3, 4] as const).map((rank) => {
+                  const tile: BonusTile = { kind: "flower", rank };
+                  return <BonusTileButton key={`flower${rank}`} tile={tile} onClick={() => addBonusTile(tile)} disabled={hasBonusTile(tile)} />;
+                })}
+              </div>
+              <div className="suit-row">
+                {([1, 2, 3, 4] as const).map((rank) => {
+                  const tile: BonusTile = { kind: "season", rank };
+                  return <BonusTileButton key={`season${rank}`} tile={tile} onClick={() => addBonusTile(tile)} disabled={hasBonusTile(tile)} />;
+                })}
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       {declaredMelds.length === 0 && bonusTiles.length === 0 ? (
-        (!declaredPickerCollapsed || !bonusPickerCollapsed) && (
+        !declaredPickerCollapsed && (
           <span className="hint">Tap a tile above to add a declared meld (called triplet/run, or a kong) or a bonus tile.</span>
         )
       ) : (
