@@ -142,20 +142,15 @@ function tileClassLabel(t: Tile): string {
 // Groups the 34 real tile kinds into suit rows for the correction picker,
 // promoting the row matching the detection's original guess to the front -
 // misclassifications are almost always a same-suit mix-up (e.g. 4t called
-// 5t), so that row is also sorted by closeness to the original rank rather
-// than plain ascending order. Other suits/honors keep their usual order.
-// A detection that was originally a bonus tile (no suit to anchor on) just
-// gets the standard suit order with no promoted row.
+// 5t). Every row, including the promoted one, stays in plain ascending
+// rank order so the picker reads like the familiar 123456789 layout; the
+// model's actual guess is highlighted via `selected` instead of moved to
+// the front. A detection that was originally a bonus tile (no suit to
+// anchor on) just gets the standard suit order with no promoted row.
 function rankedCorrectionRows(original: Tile | null): { suit: Suit; tiles: Tile[] }[] {
   const bySuit = (suit: Suit) => allTileKinds().filter((t) => t.suit === suit);
   const suitsInOrder = original ? [original.suit, ...SUIT_ORDER.filter((s) => s !== original.suit)] : SUIT_ORDER;
-  return suitsInOrder.map((suit) => {
-    const tiles = bySuit(suit);
-    if (original && suit === original.suit) {
-      tiles.sort((a, b) => Math.abs(a.rank - original.rank) - Math.abs(b.rank - original.rank) || a.rank - b.rank);
-    }
-    return { suit, tiles };
-  });
+  return suitsInOrder.map((suit) => ({ suit, tiles: bySuit(suit) }));
 }
 
 // One detected tile's bounding box, rendered as an interactive SVG group in
