@@ -2017,11 +2017,27 @@ function ScoringBreakdown({
   matched,
   hand,
   declaredCount,
+  winningTile,
 }: {
   matched: ScoreResult["matched"];
   hand: ResolvedHand;
   declaredCount: number;
+  winningTile: Tile | null;
 }) {
+  // scoring.ts's Tile (unlike the picker's HandTile) has no id to pin down
+  // which physical instance was the 食胡 tile, so this only knows its kind -
+  // matching every tile of the same kind would highlight extras whenever
+  // that kind appears more than once (e.g. inside a quad). `placed` mirrors
+  // the Calculator tab's WaitBreakdownRow: highlight only the first
+  // occurrence found while walking declared-then-concealed order, which is
+  // exactly the winning tile's own group (a repeat elsewhere in the hand
+  // was necessarily already there before it arrived).
+  let placed = false;
+  const isWinningInstance = (t: Tile): boolean => {
+    if (placed || winningTile === null || t.suit !== winningTile.suit || t.rank !== winningTile.rank) return false;
+    placed = true;
+    return true;
+  };
   return (
     <>
       <div className="waits breakdown-list">
@@ -2058,7 +2074,7 @@ function ScoringBreakdown({
                 title={`${meld.kind}${meld.concealed ? " (concealed kong)" : ""}`}
               >
                 {meld.tiles.map((t, j) => (
-                  <TileGlyphSpan key={j} tile={t} />
+                  <TileGlyphSpan key={j} tile={t} highlight={isWinningInstance(t)} />
                 ))}
               </span>
             ))}
@@ -2071,13 +2087,13 @@ function ScoringBreakdown({
             {hand.melds.slice(declaredCount).map((meld, i) => (
               <span className="breakdown-group" key={i} title={meld.kind}>
                 {meld.tiles.map((t, j) => (
-                  <TileGlyphSpan key={j} tile={t} />
+                  <TileGlyphSpan key={j} tile={t} highlight={isWinningInstance(t)} />
                 ))}
               </span>
             ))}
             <span className="breakdown-group" title="Pair">
               {hand.pair.map((t, j) => (
-                <TileGlyphSpan key={j} tile={t} />
+                <TileGlyphSpan key={j} tile={t} highlight={isWinningInstance(t)} />
               ))}
             </span>
           </div>
@@ -2495,14 +2511,24 @@ function ScoringPanel() {
             <span className="scoring-total-value">{scoring.result.total} tai</span>
           </div>
 
-          <ScoringBreakdown matched={scoring.result.matched} hand={scoring.result.hand} declaredCount={declaredMelds.length} />
+          <ScoringBreakdown
+            matched={scoring.result.matched}
+            hand={scoring.result.hand}
+            declaredCount={declaredMelds.length}
+            winningTile={winningTile}
+          />
 
           {scoring.result.second && (
             <>
               <div className="waits scoring-total scoring-second-label">
                 <span className="waits-label">Also (嚦咕雙食 - also reads as an ordinary hand):</span>
               </div>
-              <ScoringBreakdown matched={scoring.result.second.matched} hand={scoring.result.second.hand} declaredCount={0} />
+              <ScoringBreakdown
+                matched={scoring.result.second.matched}
+                hand={scoring.result.second.hand}
+                declaredCount={0}
+                winningTile={winningTile}
+              />
             </>
           )}
         </>

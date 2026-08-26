@@ -303,7 +303,17 @@ h1 {
   padding: 0.1rem;
   border-radius: 4px;
   cursor: pointer;
-  line-height: 0;
+  /* Flex + centered, not the default inline-block/baseline flow: the
+     .wait-highlight box's own offset (see .tile-glyph.wait-highlight::before
+     in the highlight rules below) is tuned against .breakdown-group's
+     flex+align-items:center layout, which centers by content box rather
+     than by baseline. A plain inline-block button positions its glyph via
+     baseline-aligned line-box layout instead, which sits differently -
+     visibly higher for the 食胡-tile highlight in WinningTileHandButton -
+     even with the same line-height. Matching the layout mode keeps both
+     highlight usages hugging the glyph the same way. */
+  display: inline-flex;
+  align-items: center;
 }
 
 .waits {
