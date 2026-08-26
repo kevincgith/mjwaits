@@ -935,6 +935,31 @@ function cropToCanvas(image: HTMLImageElement, rect: CropRect): HTMLCanvasElemen
   return canvas;
 }
 
+// Redraws `source` rotated a quarter turn clockwise onto a canvas (swapping
+// width/height, since a photo shot sideways needs that swap to display
+// upright) and loads the result back into a fresh <img> - phone cameras
+// don't always agree with the browser on which way is up, and unlike a CSS
+// transform, baking the rotation into real pixels means every downstream
+// consumer (crop math, the detector) just sees an already-upright image
+// and needs no rotation-awareness of its own.
+function rotateImageCW(source: HTMLImageElement): Promise<HTMLImageElement> {
+  const w = source.naturalWidth;
+  const h = source.naturalHeight;
+  const canvas = document.createElement("canvas");
+  canvas.width = h;
+  canvas.height = w;
+  const ctx = canvas.getContext("2d")!;
+  ctx.translate(canvas.width / 2, canvas.height / 2);
+  ctx.rotate(Math.PI / 2);
+  ctx.drawImage(source, -w / 2, -h / 2);
+  return new Promise((resolve, reject) => {
+    const rotated = new Image();
+    rotated.onload = () => resolve(rotated);
+    rotated.onerror = () => reject(new Error("Could not rotate image"));
+    rotated.src = canvas.toDataURL();
+  });
+}
+
 const CROP_HANDLES: CropDragMode[] = ["nw", "ne", "sw", "se"];
 
 // Lets the user crop down to just the hand (or two, if a single photo has
@@ -960,6 +985,13 @@ function CropOverlay({
   onCancel: () => void;
 }) {
   const [regions, setRegions] = useState<CropRect[]>([DEFAULT_CROP]);
+  // The image actually shown/measured/cropped - starts as the `image` prop
+  // but is swapped out (via rotateImageCW) whenever the user rotates, never
+  // mutating the prop itself. Rotating changes the aspect ratio for a
+  // quarter or three-quarter turn, so any regions drawn against the old
+  // orientation would land on the wrong area - see handleRotate.
+  const [displayImage, setDisplayImage] = useState(image);
+  const [rotating, setRotating] = useState(false);
   const stageRef = useRef<HTMLDivElement>(null);
   const maskId = useId();
   const dragRef = useRef<{
@@ -975,14 +1007,24 @@ function CropOverlay({
   useLayoutEffect(() => {
     const stage = stageRef.current;
     if (!stage) return;
-    image.className = "crop-image";
-    image.draggable = false;
-    image.alt = "Photo to crop before scanning";
-    stage.insertBefore(image, stage.firstChild);
+    displayImage.className = "crop-image";
+    displayImage.draggable = false;
+    displayImage.alt = "Photo to crop before scanning";
+    stage.insertBefore(displayImage, stage.firstChild);
     return () => {
-      if (image.parentElement === stage) stage.removeChild(image);
+      if (displayImage.parentElement === stage) stage.removeChild(displayImage);
     };
-  }, [image]);
+  }, [displayImage]);
+
+  const handleRotate = async () => {
+    setRotating(true);
+    try {
+      setDisplayImage(await rotateImageCW(displayImage));
+      setRegions([DEFAULT_CROP]);
+    } finally {
+      setRotating(false);
+    }
+  };
 
   const beginDrag = (index: number, mode: CropDragMode) => (e: ReactPointerEvent) => {
     e.preventDefault();
@@ -1069,6 +1111,9 @@ function CropOverlay({
       </div>
       <div className="crop-actions">
         <div className="crop-actions-left">
+          <button type="button" onClick={handleRotate} disabled={rotating} title="Rotate photo 90°">
+            ⟳ Rotate
+          </button>
           <button type="button" onClick={resetRegions} disabled={regions.length === 1 && regions[0] === DEFAULT_CROP}>
             Reset
           </button>
@@ -1082,7 +1127,7 @@ function CropOverlay({
           <button type="button" onClick={onCancel}>
             Cancel
           </button>
-          <button type="button" onClick={() => onConfirm(regions.map((r) => cropToCanvas(image, r)))}>
+          <button type="button" onClick={() => onConfirm(regions.map((r) => cropToCanvas(displayImage, r)))}>
             Scan
           </button>
         </div>
