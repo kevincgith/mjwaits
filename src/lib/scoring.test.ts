@@ -45,8 +45,14 @@ describe("groupDeclaredTiles", () => {
     expect(result.melds).toEqual([{ kind: "run", concealed: false, tiles: parseHand("123m") }]);
   });
 
-  it("does not read a descending or cross-suit triple as a run", () => {
-    const result = groupDeclaredTiles([{ suit: "m", rank: 3 }, { suit: "m", rank: 2 }, { suit: "m", rank: 1 }]);
+  it("reads a run whose cluster wasn't detected in rank order (e.g. \"576t\" for a called 6t)", () => {
+    const result = groupDeclaredTiles([{ suit: "t", rank: 5 }, { suit: "t", rank: 7 }, { suit: "t", rank: 6 }]);
+    expect(result.leftover).toEqual([]);
+    expect(result.melds).toEqual([{ kind: "run", concealed: false, tiles: parseHand("567t") }]);
+  });
+
+  it("does not read a cross-suit triple as a run", () => {
+    const result = groupDeclaredTiles([{ suit: "m", rank: 1 }, { suit: "m", rank: 2 }, { suit: "t", rank: 3 }]);
     expect(result.melds).toEqual([]);
     expect(result.leftover).toHaveLength(3);
   });

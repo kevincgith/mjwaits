@@ -1195,53 +1195,55 @@ function HandScanner({
   };
 
   return (
-    <div className="scan-input">
-      <input ref={fileInputRef} type="file" accept="image/*" onChange={handleScanFile} style={{ display: "none" }} />
-      <button
-        type="button"
-        onClick={() => {
-          // Starts the (large) model download as soon as the user shows
-          // intent to scan, rather than after they've picked and cropped a
-          // photo - by the time runScan needs it, it's often already
-          // downloaded or well underway.
-          prefetchModel();
-          fileInputRef.current?.click();
-        }}
-        disabled={scanStatus === "loading" || scanStatus === "cropping"}
-      >
-        {scanStatus === "loading" ? scanStatusLabel(scanProgress) : "📷 Scan a hand"}
-      </button>
-      {scanStatus === "loading" && (
-        <div className="scan-progress">
-          <div
-            className="scan-progress-track"
-            role="progressbar"
-            aria-label={scanStatusLabel(scanProgress)}
-            aria-valuenow={
-              scanProgress?.phase === "downloading-model" && scanProgress.total
-                ? Math.round((scanProgress.loaded / scanProgress.total) * 100)
-                : undefined
-            }
-            aria-valuemin={0}
-            aria-valuemax={100}
-          >
+    <>
+      <div className="scan-input">
+        <input ref={fileInputRef} type="file" accept="image/*" onChange={handleScanFile} style={{ display: "none" }} />
+        <button
+          type="button"
+          onClick={() => {
+            // Starts the (large) model download as soon as the user shows
+            // intent to scan, rather than after they've picked and cropped a
+            // photo - by the time runScan needs it, it's often already
+            // downloaded or well underway.
+            prefetchModel();
+            fileInputRef.current?.click();
+          }}
+          disabled={scanStatus === "loading" || scanStatus === "cropping"}
+        >
+          {scanStatus === "loading" ? scanStatusLabel(scanProgress) : "📷 Scan a hand"}
+        </button>
+        {scanStatus === "loading" && (
+          <div className="scan-progress">
             <div
-              className={
+              className="scan-progress-track"
+              role="progressbar"
+              aria-label={scanStatusLabel(scanProgress)}
+              aria-valuenow={
                 scanProgress?.phase === "downloading-model" && scanProgress.total
-                  ? "scan-progress-fill"
-                  : "scan-progress-fill indeterminate"
-              }
-              style={
-                scanProgress?.phase === "downloading-model" && scanProgress.total
-                  ? { width: `${Math.round((scanProgress.loaded / scanProgress.total) * 100)}%` }
+                  ? Math.round((scanProgress.loaded / scanProgress.total) * 100)
                   : undefined
               }
-            />
+              aria-valuemin={0}
+              aria-valuemax={100}
+            >
+              <div
+                className={
+                  scanProgress?.phase === "downloading-model" && scanProgress.total
+                    ? "scan-progress-fill"
+                    : "scan-progress-fill indeterminate"
+                }
+                style={
+                  scanProgress?.phase === "downloading-model" && scanProgress.total
+                    ? { width: `${Math.round((scanProgress.loaded / scanProgress.total) * 100)}%` }
+                    : undefined
+                }
+              />
+            </div>
+            {scanProgressDetail(scanProgress) && <span className="scan-progress-detail">{scanProgressDetail(scanProgress)}</span>}
           </div>
-          {scanProgressDetail(scanProgress) && <span className="scan-progress-detail">{scanProgressDetail(scanProgress)}</span>}
-        </div>
-      )}
-      {scanStatus === "error" && scanError && <span className="error">{scanError}</span>}
+        )}
+        {scanStatus === "error" && scanError && <span className="error">{scanError}</span>}
+      </div>
 
       {scanStatus === "cropping" && cropImage && (
         <CropOverlay image={cropImage} regionLabels={regionLabels} onConfirm={runScan} onCancel={cancelCrop} />
@@ -1311,7 +1313,7 @@ function HandScanner({
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }
 
@@ -2274,7 +2276,13 @@ function ScoringPanel() {
   const applyScannedRegions = (regions: { detections: ReviewDetection[] }[]) => {
     const [concealedRegion, declaredRegion] = regions;
     if (concealedRegion) {
-      const nextConcealed = concealedRegion.detections.flatMap((d) => (d.tile ? [{ ...d.tile, id: nextTileId.current++ }] : []));
+      // Unlike the declared region, concealed tiles aren't clustered - each
+      // detection is independent, so the model's raw left-to-right order
+      // carries no meaning (and needn't be perfectly sorted to begin with,
+      // e.g. "576t" instead of "567t" - see groupDeclaredTiles for the
+      // declared region's equivalent). Just sort the whole bag by tile order.
+      const detectedTiles = concealedRegion.detections.flatMap((d) => (d.tile ? [d.tile] : []));
+      const nextConcealed = (sortTiles(detectedTiles) as Tile[]).map((t) => ({ ...t, id: nextTileId.current++ }));
       concealedRef.current = nextConcealed;
       setConcealedTiles(nextConcealed);
       setWinningTile(null);

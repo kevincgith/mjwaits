@@ -101,21 +101,32 @@ export interface DeclaredGrouping {
   leftover: Tile[];
 }
 
-const isAscendingRun = (a: Tile, b: Tile, c: Tile): boolean =>
-  a.suit !== "z" && a.suit === b.suit && a.suit === c.suit && b.rank === a.rank + 1 && c.rank === a.rank + 2;
+// A run cluster's 3 tiles aren't necessarily detected left-to-right in rank
+// order (e.g. "576t" laid out for a called 6t) - only that the 3 tiles
+// belonging to one meld are adjacent in the input, not their order within
+// that group. Returns the 3 tiles sorted into ascending rank order if they
+// form a same-suit run, null otherwise.
+function matchRun(a: Tile, b: Tile, c: Tile): Tile[] | null {
+  if (a.suit === "z" || a.suit !== b.suit || a.suit !== c.suit) return null;
+  const ranks = [a.rank, b.rank, c.rank].sort((x, y) => x - y);
+  if (ranks[1] !== ranks[0] + 1 || ranks[2] !== ranks[1] + 1) return null;
+  return ranks.map((rank) => ({ suit: a.suit, rank }));
+}
 
 // Groups tiles detected in the declared-melds region of a hand-scan photo
 // into melds. Assumes tiles are already in left-to-right table order (the
 // physical tiles of one meld are laid touching each other, so a
-// spatially-sorted detection list has each meld's tiles consecutive) -
-// see HandScanner/CropOverlay's "Declared" region in App.tsx, the only
-// caller. Greedily consumes from the front: 4 identical tiles is a kong
-// (defaulted to exposed - a genuinely concealed kong has 2 tiles face down,
-// which the vision model can't read as their real class anyway, so callers
-// should let the user flip that after the fact), 3 identical is a triplet, 3
-// ascending same-suit is a run. The first tile that doesn't start one of
-// those three shapes, and everything after it, is returned as `leftover`
-// instead of being guessed at.
+// spatially-sorted detection list has each meld's tiles consecutive, even
+// though the tiles WITHIN one meld's cluster aren't necessarily in rank
+// order - see matchRun) - see HandScanner/CropOverlay's "Declared" region in
+// App.tsx, the only caller. Greedily consumes from the front: 4 identical
+// tiles is a kong (defaulted to exposed - a genuinely concealed kong has 2
+// tiles face down, which the vision model can't read as their real class
+// anyway, so callers should let the user flip that after the fact), 3
+// identical is a triplet, 3 same-suit tiles forming a run (any order) is a
+// run. The first tile that doesn't start one of those three shapes, and
+// everything after it, is returned as `leftover` instead of being guessed
+// at.
 export function groupDeclaredTiles(tiles: Tile[]): DeclaredGrouping {
   const melds: MeldDeclaration[] = [];
   let i = 0;
@@ -124,15 +135,20 @@ export function groupDeclaredTiles(tiles: Tile[]): DeclaredGrouping {
     if (i + 3 < tiles.length && [1, 2, 3].every((d) => tileKey(tiles[i + d]) === tileKey(a))) {
       melds.push({ kind: "kong", concealed: false, tiles: [a, a, a, a] });
       i += 4;
-    } else if (i + 2 < tiles.length && [1, 2].every((d) => tileKey(tiles[i + d]) === tileKey(a))) {
+      continue;
+    }
+    if (i + 2 < tiles.length && [1, 2].every((d) => tileKey(tiles[i + d]) === tileKey(a))) {
       melds.push({ kind: "triplet", concealed: false, tiles: [a, a, a] });
       i += 3;
-    } else if (i + 2 < tiles.length && isAscendingRun(a, tiles[i + 1], tiles[i + 2])) {
-      melds.push({ kind: "run", concealed: false, tiles: [a, tiles[i + 1], tiles[i + 2]] });
-      i += 3;
-    } else {
-      return { melds, leftover: tiles.slice(i) };
+      continue;
     }
+    const run = i + 2 < tiles.length ? matchRun(a, tiles[i + 1], tiles[i + 2]) : null;
+    if (run) {
+      melds.push({ kind: "run", concealed: false, tiles: run });
+      i += 3;
+      continue;
+    }
+    return { melds, leftover: tiles.slice(i) };
   }
   return { melds, leftover: [] };
 }
