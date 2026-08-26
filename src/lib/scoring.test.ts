@@ -1509,6 +1509,25 @@ describe("PATTERNS: 自摸/獨獨 apply to the special hands too", () => {
     expect(tai(result, "genuine-single-wait")).toBe(0);
     expect(tai(result, "sixteen-unrelated")).toBe(50);
   });
+
+  it("scores 假獨 for a 十三么 hand where the winning tile doubles as both the ordinary meld's edge and its own single", () => {
+    // Pre-completion "19m1t789t19b12345677z" waits on 6t/9t - either
+    // extends the already-complete 7t8t9t run at one edge or the other.
+    // Winning on 9t specifically also duplicates 9t's own single-kind
+    // requirement, the same "an alternate reading pins down the winning
+    // tile" ambiguity 假獨 captures elsewhere via a duplicated rank.
+    const result = scoreHand("19m1t7899t19b12345677z", ctx({ winningTile: { suit: "t", rank: 9 } }));
+    expect(tai(result, "fake-single-wait")).toBe(2);
+    expect(tai(result, "genuine-single-wait")).toBe(0);
+    expect(tai(result, "thirteen-orphans")).toBe(160);
+  });
+
+  it("doesn't score 假獨 for the same 十三么 shape when won on the other edge (6t)", () => {
+    const result = scoreHand("19m1t6789t19b12345677z", ctx({ winningTile: { suit: "t", rank: 6 } }));
+    expect(tai(result, "fake-single-wait")).toBe(0);
+    expect(tai(result, "genuine-single-wait")).toBe(0);
+    expect(tai(result, "thirteen-orphans")).toBe(160);
+  });
 });
 
 describe("PATTERNS: 嚦咕嚦咕/嚦咕嚦咕八飛 (Eight Pairs)", () => {
@@ -1708,6 +1727,31 @@ describe("PATTERNS: 自摸/獨獨 apply to 嚦咕嚦咕 too", () => {
   it("scores 獨獨 when the pre-completion 嚦咕嚦咕 wait was genuinely single", () => {
     const result = scoreHand("112233445566z777z99m", ctx({ winningTile: { suit: "m", rank: 9 } }));
     expect(tai(result, "genuine-single-wait")).toBe(2);
+  });
+
+  it("scores 假獨 for a 嚦咕嚦咕 hand with two already-tripled kinds - drawing the 4th of either quads it while the other stays a plain triple", () => {
+    // Pre-completion "225577t8844222b111m" already sits at 3 copies of
+    // both 2b and 1m - waits on either's 4th copy (2b or 1m). Whichever
+    // wins becomes a quad while the other stays the fixed "triple" slot.
+    const resultB = scoreHand("225577t8844222b2b111m", ctx({ winningTile: { suit: "b", rank: 2 } }));
+    expect(tai(resultB, "fake-single-wait")).toBe(2);
+    expect(tai(resultB, "genuine-single-wait")).toBe(0);
+    expect(tai(resultB, "eight-pairs")).toBe(50);
+
+    const resultM = scoreHand("225577t8844222b111m1m", ctx({ winningTile: { suit: "m", rank: 1 } }));
+    expect(tai(resultM, "fake-single-wait")).toBe(2);
+    expect(tai(resultM, "genuine-single-wait")).toBe(0);
+    expect(tai(resultM, "eight-pairs")).toBe(50);
+  });
+
+  it("doesn't score 假獨 for the same dual-already-tripled shape without a 食胡 tile set", () => {
+    const result = scoreHand("225577t8844222b2b111m", ctx());
+    expect(tai(result, "fake-single-wait")).toBe(0);
+  });
+
+  it("doesn't score 假獨 for a clean 嚦咕嚦咕 completion (8 pairs, one cleanly upgraded to a triple)", () => {
+    const result = scoreHand("1122334455667788m1m", ctx({ winningTile: { suit: "m", rank: 1 } }));
+    expect(tai(result, "fake-single-wait")).toBe(0);
   });
 });
 

@@ -675,14 +675,38 @@ function eightPairsWindRankCount(hand: ResolvedHand): number {
 // 234m), scanning every meld for "does it have this kind as its middle
 // rank" already captures the alternate reading without exploring
 // decomposeHandAll's other candidates.
+// 十三么-shaped hands add a second way to trigger this: the 12 unpaired
+// orphan kinds are each represented as their own 1-tile "meld" (see
+// scoreThirteenOrphans), and the winning tile's kind can land in BOTH one
+// of those 1-tile placeholders AND the genuine 3-tile ordinary meld at
+// once - e.g. 19m1t789t19b12345677z waits on 6t/9t (either extends the
+// 7t8t run), but 9t specifically also happens to be the pre-existing
+// single's own kind. That's the same "an alternate reading pins the
+// winning tile down to one fixed role" ambiguity the duplicated-rank case
+// above captures, just produced by this special hand's fake single-tile
+// melds instead of a genuinely duplicated rank within one run.
+// A third way applies to any ordinary hand: the winning tile's kind is
+// both the hand's pair AND the edge of a run it belongs to - e.g. 7899m
+// completed by 9m reads as 789m + 99m (the pair), even though the true
+// wait was also open to 6m (99m already the pair, 78m waiting 6/9). Same
+// "identical tiles, two possible roles" ambiguity as the other two checks,
+// just between a run and the pair instead of two melds or a meld and a
+// special-hand single.
 function isFakeSingleWait(hand: ResolvedHand, ctx: GameContext): boolean {
   if (ctx.winningTile === null) return false;
   const winningTile = ctx.winningTile;
-  return hand.melds.some((m) => {
+  const kanchan = hand.melds.some((m) => {
     if (m.kind !== "run" || !meldHasTileKind(m, winningTile)) return false;
     const ranks = m.tiles.map((t) => t.rank).sort((a, b) => a - b);
     return ranks[1] === winningTile.rank;
   });
+  if (kanchan) return true;
+  const inSingleMeld = hand.melds.some((m) => m.tiles.length === 1 && meldHasTileKind(m, winningTile));
+  const inLargerMeld = hand.melds.some((m) => m.tiles.length > 1 && meldHasTileKind(m, winningTile));
+  if (inSingleMeld && inLargerMeld) return true;
+  const inPair = hand.pair.some((t) => t.suit === winningTile.suit && t.rank === winningTile.rank);
+  const inRun = hand.melds.some((m) => m.kind === "run" && meldHasTileKind(m, winningTile));
+  return inPair && inRun;
 }
 
 // 明 (open) vs 暗 (concealed/hidden), per the house rule: a meld is 明 if
@@ -2297,20 +2321,63 @@ function scoreThirteenOrphans(parsed: ParsedScoringHand, ctx: GameContext): Scor
   return { total: matched.reduce((sum, m) => sum + m.tai, 0), matched, hand };
 }
 
-// Shared by both special hands: 自摸 and 獨獨 apply to them generically -
-// 自摸 just reads ctx.selfDraw, and 獨獨's getWaits-based check already
-// generalizes to these special shapes for free, since isCompleteHand
-// (which getWaits calls per candidate tile) already recognizes 十三么/
-// 十六不搭/八仙過海 as valid completions, not just ordinary melds+pair. 假獨
-// isn't wired in here since it wasn't requested for these hands.
-function pushSelfDrawAndGenuineSingleWait(hand: ResolvedHand, ctx: GameContext, matched: { pattern: TaiPattern; tai: number }[]): void {
+// Shared by all three special hands: 自摸, 獨獨, and 假獨 all apply to them
+// generically - 自摸 just reads ctx.selfDraw, and 獨獨's getWaits-based
+// check already generalizes to these special shapes for free, since
+// isCompleteHand (which getWaits calls per candidate tile) already
+// recognizes 十三么/十六不搭/八仙過海 as valid completions, not just ordinary
+// melds+pair. 假獨's extended check (see isFakeSingleWait) only ever fires
+// for 十三么 in practice - 十六不搭 has no multi-tile "ordinary meld" for a
+// single-tile placeholder to collide with - but is safe to check
+// unconditionally here since it's simply never true otherwise. The
+// optional `extraFakeSingleWaitCheck` covers 嚦咕嚦咕's own distinct 假獨
+// shape (see isEightPairsFakeSingleWait) as a separate callback rather
+// than folding it into isFakeSingleWait itself, since that check's
+// "quad + triple coexist" signal would wrongly fire on any ordinary hand
+// holding a genuine kong alongside an unrelated triplet. Both fake-wait
+// paths are kept mutually exclusive with 獨獨 by only checking them when
+// 獨獨 didn't fire, matching genuine-single-wait's own declared `excludes`.
+function pushSelfDrawAndGenuineSingleWait(
+  hand: ResolvedHand,
+  ctx: GameContext,
+  matched: { pattern: TaiPattern; tai: number }[],
+  extraFakeSingleWaitCheck?: (hand: ResolvedHand, ctx: GameContext) => boolean,
+): void {
   const selfDrawPattern = PATTERNS.find((p) => p.id === "self-draw")!;
   const selfDrawTai = selfDrawPattern.score(hand, ctx);
   if (selfDrawTai > 0) matched.push({ pattern: selfDrawPattern, tai: selfDrawTai });
 
   const genuineSingleWaitPattern = PATTERNS.find((p) => p.id === "genuine-single-wait")!;
   const genuineSingleWaitTai = genuineSingleWaitPattern.score(hand, ctx);
-  if (genuineSingleWaitTai > 0) matched.push({ pattern: genuineSingleWaitPattern, tai: genuineSingleWaitTai });
+  if (genuineSingleWaitTai > 0) {
+    matched.push({ pattern: genuineSingleWaitPattern, tai: genuineSingleWaitTai });
+  } else {
+    const fakeSingleWaitPattern = PATTERNS.find((p) => p.id === "fake-single-wait")!;
+    const fakeSingleWaitTai = fakeSingleWaitPattern.score(hand, ctx);
+    if (fakeSingleWaitTai > 0 || (extraFakeSingleWaitCheck?.(hand, ctx) ?? false)) {
+      matched.push({ pattern: fakeSingleWaitPattern, tai: fakeSingleWaitTai > 0 ? fakeSingleWaitTai : 2 });
+    }
+  }
+}
+
+// 嚦咕嚦咕's own 假獨 shape: a genuine "dual already-tripled kind" wait -
+// e.g. 225577t8844222b111m waits on 2b/1m (both sat at 3 copies
+// pre-completion; drawing the 4th of either quads it while the other
+// stays a plain triple). Requires a 食胡 tile to be set, same as every
+// other 假獨 case, and specifically checks that the winning tile is what
+// turned its own kind into the quad - not just that a quad and a triple
+// happen to coexist somewhere in the hand, which (without pinning it to
+// the winning tile) would fire even with no 食胡 tile's completion story
+// behind it at all. Doesn't fire on the "clean" completion (8 pairs, one
+// upgraded to a triple by the winning tile), since that never produces a
+// quad. Same "identical tiles could have landed in either group"
+// ambiguity as the other 假獨 checks, just between two of this special
+// hand's own pair/triple groups.
+function isEightPairsFakeSingleWait(hand: ResolvedHand, ctx: GameContext): boolean {
+  if (ctx.winningTile === null) return false;
+  const quadGroup = hand.melds.find((m) => m.tiles.length === 4);
+  const hasTriple = hand.melds.some((m) => m.tiles.length === 3);
+  return quadGroup !== undefined && hasTriple && meldHasTileKind(quadGroup, ctx.winningTile);
 }
 
 // 不搭三相逢 (十六不搭 only): the 3 unrelated ranks chosen are the *same*
@@ -2471,7 +2538,7 @@ function scoreEightPairs(parsed: ParsedScoringHand, ctx: GameContext): ScoreResu
   const honorBonusExcluded = new Set(honorBonusScored.flatMap((m) => m.pattern.excludes ?? []));
   matched.push(...honorBonusScored.filter((m) => !honorBonusExcluded.has(m.pattern.id)));
 
-  pushSelfDrawAndGenuineSingleWait(hand, ctx, matched);
+  pushSelfDrawAndGenuineSingleWait(hand, ctx, matched, isEightPairsFakeSingleWait);
   return { total: matched.reduce((sum, m) => sum + m.tai, 0), matched, hand };
 }
 
