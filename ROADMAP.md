@@ -6,15 +6,12 @@ Ideas for future work, roughly in the order they've come up. None of this is com
 
 Done: see the "Camera scan" section in [README.md](README.md) and
 [training/README.md](training/README.md) for the model/pipeline details.
-Ideas for extending it, not yet started:
+Currently deployed model is YOLOv8n (nano) — swapped in from the earlier
+YOLOv8s (small) since it matches or beats it on most metrics at under a
+third of the size; the small model's checkpoint is kept in
+`training/checkpoints/` for reference. Ideas for extending the feature
+further, not yet started:
 
-- **Model picker.** A YOLOv8n ("nano") model is being trained on the same
-  merged dataset alongside the deployed YOLOv8s ("small") one, so a visitor
-  could pick nano (smaller download, faster inference, likely lower
-  accuracy) vs. small (current default). Would need `vision.ts` to accept a
-  model path/name instead of a hardcoded one, a small UI control to choose
-  before scanning, and probably a persisted preference (localStorage) so
-  it's not re-chosen every scan.
 - **Live camera feed instead of photo-then-crop**, using `getUserMedia`
   directly, if the photo-upload-and-crop flow turns out to be more friction
   than just pointing a live viewfinder at the hand.

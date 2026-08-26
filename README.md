@@ -58,11 +58,11 @@ Breakdown mode understands all three shapes, not just the standard one — Thirt
 
 ### Camera scan (📷)
 
-Point a camera at a hand (or upload a photo) and have the tiles filled in automatically instead of tapping/typing every one. Detection runs entirely client-side — a YOLOv8s model, quantized to INT8 ONNX (11.5MB) and run in-browser via [onnxruntime-web](https://github.com/microsoft/onnxruntime) (WASM). No image is ever uploaded anywhere.
+Point a camera at a hand (or upload a photo) and have the tiles filled in automatically instead of tapping/typing every one. Detection runs entirely client-side — a YOLOv8n (nano) model, quantized to INT8 ONNX (3.4MB) and run in-browser via [onnxruntime-web](https://github.com/microsoft/onnxruntime) (WASM). No image is ever uploaded anywhere.
 
 After picking a photo, you can drag to crop out anything that isn't the hand before scanning; the review step shows a box over each detected tile (bonus tiles like flowers/seasons are boxed but greyed out and excluded from the hand) and lets you confirm or cancel before it replaces your current hand.
 
-The model was trained on a merged dataset combining [MahjongVis](https://github.com/Andy8647/MahjongVis) (MIT) and [MJOD-2136](https://github.com/jaheel/MJOD-2136) (CC BY-NC-SA), across 42 tile classes (34 mjwaits recognizes plus 8 bonus-tile classes). On the full validation split, the deployed checkpoint scores mAP50 0.945 / mAP50-95 0.744 / precision 0.969 / recall 0.927. See [training/README.md](training/README.md) for the full training/export pipeline and reproducibility details.
+The model was trained on a merged dataset combining [MahjongVis](https://github.com/Andy8647/MahjongVis) (MIT) and [MJOD-2136](https://github.com/jaheel/MJOD-2136) (CC BY-NC-SA), across 42 tile classes (34 mjwaits recognizes plus 8 bonus-tile classes). On the full validation split, the deployed checkpoint scores mAP50 0.945 / mAP50-95 0.749 / precision 0.971 / recall 0.918. See [training/README.md](training/README.md) for the full training/export pipeline and reproducibility details.
 
 ### Trainer
 

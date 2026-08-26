@@ -1,5 +1,5 @@
-// Client-side mahjong tile detection: a YOLOv8s model trained on a merged
-// dataset from https://github.com/Andy8647/MahjongVis (MIT) and
+// Client-side mahjong tile detection: a YOLOv8n (nano) model trained on a
+// merged dataset from https://github.com/Andy8647/MahjongVis (MIT) and
 // https://github.com/jaheel/MJOD-2136 (CC BY-NC-SA), run entirely in the
 // browser via onnxruntime-web (WASM). No image ever leaves the device.
 
