@@ -2025,6 +2025,25 @@ function WindPicker({ label, value, onChange }: { label: string; value: Wind; on
   );
 }
 
+// Collapses/expands a tile-picker grid, placed at the end of that section's
+// panel-header - the already-picked melds/hand display stays visible
+// either way, this only hides the (often multi-row, space-hungry) tap-to-
+// add grid once its tiles are already chosen. A plain chevron icon-toggle,
+// same idiom as the Calculator tab's Breakdown-order icon-toggle.
+function PickerCollapseToggle({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      className="icon-toggle"
+      onClick={onToggle}
+      aria-expanded={!collapsed}
+      title={collapsed ? "Show tile picker" : "Hide tile picker"}
+    >
+      {collapsed ? "▸" : "▾"}
+    </button>
+  );
+}
+
 // A meld sitting in the 門前牌區 (the melds laid out in front of you on the
 // table - called triplets/runs, plus kongs of either kind, since a kong is
 // always set apart from your hand even when concealed). `id` is only for
@@ -2038,12 +2057,16 @@ interface DeclaredMeldTile {
 
 const MELD_KIND_LABELS: Record<MeldKind, string> = { triplet: "Triplet (碰)", run: "Run (吃)", kong: "Kong (槓)" };
 
-// Whichever suit rows/ranks make sense to offer for the currently-selected
-// meld kind: runs only exist in numbered suits, and only starting low
-// enough to leave room for the next two ranks.
+// Whichever suit rows make sense to offer for the currently-selected meld
+// kind: runs only exist in numbered suits, so the honor row is dropped
+// entirely for run mode. Rank 8/9 stay in the row (unlike honors, hiding
+// individual tiles out of an otherwise-populated row reflows the rest of
+// that row, which reads as tiles randomly vanishing) - canAddMeldTile
+// disables them instead, since a run can't start there (no room for the
+// next two ranks within 1-9).
 function meldPickerTiles(kind: MeldKind): Tile[] {
   const all = allTileKinds();
-  return kind === "run" ? all.filter((t) => t.suit !== "z" && t.rank <= 7) : all;
+  return kind === "run" ? all.filter((t) => t.suit !== "z") : all;
 }
 
 // Unicode Mahjong Tiles block, immediately after circles (1F019-1F021) and
@@ -2232,6 +2255,12 @@ function ScoringPanel() {
   // rather than HandScanner's own built-in one - see HandScannerHandle.
   const handScannerRef = useRef<HandScannerHandle>(null);
   const [scanBusy, setScanBusy] = useState(false);
+  // Each tile-picker grid (declared melds, concealed hand) can be
+  // collapsed independently to reclaim vertical space once its tiles are
+  // already picked - the already-added melds/hand display itself stays
+  // visible either way, only the tap-to-add grid hides.
+  const [declaredPickerCollapsed, setDeclaredPickerCollapsed] = useState(false);
+  const [concealedPickerCollapsed, setConcealedPickerCollapsed] = useState(false);
 
   // Mirrors the three state arrays above, updated synchronously - same
   // reason Calculator's handRef exists (see its comment at handRef's
@@ -2327,6 +2356,12 @@ function ScoringPanel() {
     if (atCap) return false;
     if (meldKind === "triplet") return totalCopiesUsed(tile) + 3 <= 4;
     if (meldKind === "kong") return totalCopiesUsed(tile) === 0;
+    // A run starting at rank 8 or 9 would need a rank 10 or 11 tile, which
+    // doesn't exist - meldPickerTiles keeps these tiles visible (rather
+    // than hiding them, which reflows the rest of the row) so this needs
+    // its own explicit range check; totalCopiesUsed alone wouldn't catch
+    // it (an out-of-range rank just always reads as "0 copies used").
+    if (tile.rank > 7) return false;
     const run = [0, 1, 2].map((d) => ({ suit: tile.suit, rank: tile.rank + d }));
     return run.every((t) => totalCopiesUsed(t) + 1 <= 4);
   };
@@ -2503,39 +2538,44 @@ function ScoringPanel() {
             {kongConcealed ? "Concealed" : "Exposed"}
           </button>
         )}
+        <PickerCollapseToggle collapsed={declaredPickerCollapsed} onToggle={() => setDeclaredPickerCollapsed((c) => !c)} />
       </div>
 
-      <div className="tile-picker">
-        {(["m", "t", "b", "z"] as Suit[])
-          .filter((suit) => meldKind !== "run" || suit !== "z")
-          .map((suit) => (
-            <div className="suit-row" key={suit}>
-              {meldPickerTiles(meldKind)
-                .filter((t) => t.suit === suit)
-                .map((t) => (
-                  <TileButton key={tileLabel(t)} tile={t} onClick={() => addMeldStartingAt(t)} disabled={!canAddMeldTile(t)} />
-                ))}
-            </div>
-          ))}
-        {/* Bonus tiles (flowers/seasons) - set aside in this same 門前 area the
-            moment they're drawn, but not melds themselves, so they're tapped
-            independently of the Triplet/Run/Kong mode above. */}
-        <div className="suit-row">
-          {([1, 2, 3, 4] as const).map((rank) => {
-            const tile: BonusTile = { kind: "flower", rank };
-            return <BonusTileButton key={`flower${rank}`} tile={tile} onClick={() => addBonusTile(tile)} disabled={hasBonusTile(tile)} />;
-          })}
+      {!declaredPickerCollapsed && (
+        <div className="tile-picker">
+          {(["m", "t", "b", "z"] as Suit[])
+            .filter((suit) => meldKind !== "run" || suit !== "z")
+            .map((suit) => (
+              <div className="suit-row" key={suit}>
+                {meldPickerTiles(meldKind)
+                  .filter((t) => t.suit === suit)
+                  .map((t) => (
+                    <TileButton key={tileLabel(t)} tile={t} onClick={() => addMeldStartingAt(t)} disabled={!canAddMeldTile(t)} />
+                  ))}
+              </div>
+            ))}
+          {/* Bonus tiles (flowers/seasons) - set aside in this same 門前 area the
+              moment they're drawn, but not melds themselves, so they're tapped
+              independently of the Triplet/Run/Kong mode above. */}
+          <div className="suit-row">
+            {([1, 2, 3, 4] as const).map((rank) => {
+              const tile: BonusTile = { kind: "flower", rank };
+              return <BonusTileButton key={`flower${rank}`} tile={tile} onClick={() => addBonusTile(tile)} disabled={hasBonusTile(tile)} />;
+            })}
+          </div>
+          <div className="suit-row">
+            {([1, 2, 3, 4] as const).map((rank) => {
+              const tile: BonusTile = { kind: "season", rank };
+              return <BonusTileButton key={`season${rank}`} tile={tile} onClick={() => addBonusTile(tile)} disabled={hasBonusTile(tile)} />;
+            })}
+          </div>
         </div>
-        <div className="suit-row">
-          {([1, 2, 3, 4] as const).map((rank) => {
-            const tile: BonusTile = { kind: "season", rank };
-            return <BonusTileButton key={`season${rank}`} tile={tile} onClick={() => addBonusTile(tile)} disabled={hasBonusTile(tile)} />;
-          })}
-        </div>
-      </div>
+      )}
 
       {declaredMelds.length === 0 && bonusTiles.length === 0 ? (
-        <span className="hint">Tap a tile above to add a declared meld (called triplet/run, or a kong) or a bonus tile.</span>
+        !declaredPickerCollapsed && (
+          <span className="hint">Tap a tile above to add a declared meld (called triplet/run, or a kong) or a bonus tile.</span>
+        )
       ) : (
         <div className="hand-display breakdown-groups">
           {bonusTiles.length > 0 && (
@@ -2573,28 +2613,31 @@ function ScoringPanel() {
 
       <div className="panel-header">
         <span className="panel-title">手牌區 (Concealed hand)</span>
+        <PickerCollapseToggle collapsed={concealedPickerCollapsed} onToggle={() => setConcealedPickerCollapsed((c) => !c)} />
       </div>
 
-      <div className="tile-picker">
-        {SUIT_ORDER.map((suit) => (
-          <div className="suit-row" key={suit}>
-            {allTileKinds()
-              .filter((t) => t.suit === suit)
-              .map((t) => (
-                <TileButton
-                  key={tileLabel(t)}
-                  tile={t}
-                  onClick={() => addConcealedTile(t)}
-                  disabled={atCap || totalCopiesUsed(t) >= 4}
-                />
-              ))}
-          </div>
-        ))}
-      </div>
+      {!concealedPickerCollapsed && (
+        <div className="tile-picker">
+          {SUIT_ORDER.map((suit) => (
+            <div className="suit-row" key={suit}>
+              {allTileKinds()
+                .filter((t) => t.suit === suit)
+                .map((t) => (
+                  <TileButton
+                    key={tileLabel(t)}
+                    tile={t}
+                    onClick={() => addConcealedTile(t)}
+                    disabled={atCap || totalCopiesUsed(t) >= 4}
+                  />
+                ))}
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="hand-display">
         {concealedTiles.length === 0 ? (
-          <span className="hint">Tap tiles above for the tiles still in your hand.</span>
+          !concealedPickerCollapsed && <span className="hint">Tap tiles above for the tiles still in your hand.</span>
         ) : (
           (sortTiles(concealedTiles) as HandTile[]).map((t) => (
             <WinningTileHandButton
