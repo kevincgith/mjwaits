@@ -1091,10 +1091,8 @@ h1 {
 }
 
 .scan-review-region {
-  position: relative;
   width: 100%;
   max-width: 420px;
-  line-height: 0;
 }
 
 .scan-review-region-title {
@@ -1102,7 +1100,17 @@ h1 {
   font-weight: 600;
   color: #444;
   margin-bottom: 0.2rem;
-  line-height: normal;
+}
+
+/* The DetectionOverlay <svg> below is absolutely positioned to overlay
+   whatever's inset:0 within the nearest positioned ancestor - that has to
+   be THIS wrapper (just the image), not .scan-review-region itself, or the
+   region title's height above the image would push the image down while
+   the boxes stayed pinned to the region's own top, shifting every box
+   upward relative to the tiles beneath it. */
+.scan-review-region-image {
+  position: relative;
+  line-height: 0;
 }
 
 .scan-review-region img {

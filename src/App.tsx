@@ -1255,17 +1255,19 @@ function HandScanner({
             {scanPreview.regions.map((region, i) => (
               <div className="scan-review-region" key={i}>
                 {regionLabels && <div className="scan-review-region-title">{regionLabels[i]}</div>}
-                <img
-                  src={region.imageUrl}
-                  alt={
-                    regionLabels
-                      ? `Scanned ${regionLabels[i]} region with detected tiles boxed`
-                      : scanPreview.regions.length > 1
-                        ? `Scanned hand region ${i + 1} with detected tiles boxed`
-                        : "Scanned hand with detected tiles boxed"
-                  }
-                />
-                <DetectionOverlay detections={region.detections} editingId={editingDetectionId} onSelect={setEditingDetectionId} />
+                <div className="scan-review-region-image">
+                  <img
+                    src={region.imageUrl}
+                    alt={
+                      regionLabels
+                        ? `Scanned ${regionLabels[i]} region with detected tiles boxed`
+                        : scanPreview.regions.length > 1
+                          ? `Scanned hand region ${i + 1} with detected tiles boxed`
+                          : "Scanned hand with detected tiles boxed"
+                    }
+                  />
+                  <DetectionOverlay detections={region.detections} editingId={editingDetectionId} onSelect={setEditingDetectionId} />
+                </div>
               </div>
             ))}
           </div>
