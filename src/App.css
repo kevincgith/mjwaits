@@ -1136,8 +1136,10 @@ h1 {
   max-width: 300px;
 }
 
-/* Boxes are drawn in the same 0-IMG_SIZE coordinate space the model saw
-   (see DetectionOverlay's viewBox), scaled to overlay the image beneath
+/* Boxes are drawn in the same pixel coordinate space as the (letterbox-
+   padding-cropped) review image itself - see DetectionOverlay's viewBox,
+   sized from each region's own imageWidth/imageHeight rather than the
+   model's fixed square input - scaled to overlay the image beneath
    regardless of its displayed size. The <svg> itself ignores pointer
    events so taps outside a box fall through to nothing; only the boxes
    (DetectionBox's own pointer-events: auto) are interactive. */

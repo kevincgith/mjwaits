@@ -1,6 +1,8 @@
 import {
+  forwardRef,
   useEffect,
   useId,
+  useImperativeHandle,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -114,6 +116,20 @@ interface ReviewDetection {
   box: [number, number, number, number];
 }
 
+// One cropped region's scan review state. `imageUrl` and each detection's
+// `box` are both already cropped down to just the user's selected region
+// (see runScan) - letterbox() pads that region out to a square for the
+// model, but showing that padding in the review UI just wastes space, so
+// it's cropped back off before anything reaches state. `imageWidth`/
+// `imageHeight` (the cropped canvas's own pixel size) size DetectionOverlay's
+// viewBox so the boxes still line up with the image at any display size.
+interface ScanReviewRegion {
+  imageUrl: string;
+  imageWidth: number;
+  imageHeight: number;
+  detections: ReviewDetection[];
+}
+
 const sameTile = (a: Tile | null, b: Tile): boolean => a !== null && a.suit === b.suit && a.rank === b.rank;
 
 // Formats a tile the same way the model's class names do (rank then suit
@@ -143,8 +159,9 @@ function rankedCorrectionRows(original: Tile | null): { suit: Suit; tiles: Tile[
 }
 
 // One detected tile's bounding box, rendered as an interactive SVG group in
-// the same 0-IMG_SIZE coordinate space `letterbox` produced (see the
-// viewBox on DetectionOverlay's <svg>), so it lines up with the image
+// the same pixel coordinate space as the (letterbox-padding-cropped) review
+// image (see the viewBox on DetectionOverlay's <svg>), so it lines up with
+// the image
 // beneath it regardless of how large that image is actually displayed.
 // Tapping it opens the correction picker for that detection. A separate,
 // wider invisible rect beneath the visible outline pads out the tap target
@@ -180,13 +197,17 @@ function DetectionOverlay({
   detections,
   editingId,
   onSelect,
+  imageWidth,
+  imageHeight,
 }: {
   detections: ReviewDetection[];
   editingId: number | null;
   onSelect: (id: number) => void;
+  imageWidth: number;
+  imageHeight: number;
 }) {
   return (
-    <svg className="scan-review-boxes" viewBox={`0 0 ${IMG_SIZE} ${IMG_SIZE}`} preserveAspectRatio="none">
+    <svg className="scan-review-boxes" viewBox={`0 0 ${imageWidth} ${imageHeight}`} preserveAspectRatio="none">
       {detections.map((d) => (
         <DetectionBox key={d.id} detection={d} editing={d.id === editingId} onSelect={() => onSelect(d.id)} />
       ))}
@@ -1032,29 +1053,60 @@ function CropOverlay({
 // via onConfirm and lets the caller decide what they mean (flatten into one
 // tile list, or split by region into concealed/declared/bonus - see
 // applyScannedRegions in ScoringPanel for the latter).
-function HandScanner({
-  regionLabels,
-  validateRegion,
-  onConfirm,
-}: {
-  regionLabels?: string[];
-  // Optional per-region check run against a region's current (corrected)
-  // detections - a non-null return is shown next to that region's summary
-  // and blocks the confirm button, e.g. ScoringPanel uses this to refuse a
-  // Declared-region scan that didn't cleanly group into whole melds.
-  validateRegion?: (detections: ReviewDetection[], regionIndex: number) => string | null;
-  onConfirm: (regions: { detections: ReviewDetection[] }[]) => void;
-}) {
+// Imperative handle for callers that want their own trigger button placed
+// elsewhere in the layout (see ScoringPanel) instead of HandScanner's own
+// built-in one - `hideTrigger` suppresses the internal button while this
+// still drives the same file-picker/prefetch flow.
+export interface HandScannerHandle {
+  trigger: () => void;
+}
+
+const HandScanner = forwardRef<
+  HandScannerHandle,
+  {
+    regionLabels?: string[];
+    // Optional per-region check run against a region's current (corrected)
+    // detections - a non-null return is shown next to that region's summary
+    // and blocks the confirm button, e.g. ScoringPanel uses this to refuse a
+    // Declared-region scan that didn't cleanly group into whole melds.
+    validateRegion?: (detections: ReviewDetection[], regionIndex: number) => string | null;
+    onConfirm: (regions: { detections: ReviewDetection[] }[]) => void;
+    // When set, the built-in trigger button isn't rendered - the caller
+    // drives scanning via the imperative handle's trigger() instead
+    // (still through this same file input/model-prefetch flow), and shows
+    // its own button using onBusyChange to reflect scanStatus.
+    hideTrigger?: boolean;
+    triggerLabel?: string;
+    // Fires whenever scanStatus moves in or out of "busy" (cropping or
+    // loading), so an external trigger button (hideTrigger) can disable
+    // itself for the same span the built-in one would have.
+    onBusyChange?: (busy: boolean) => void;
+  }
+>(function HandScanner({ regionLabels, validateRegion, onConfirm, hideTrigger, triggerLabel = "📷 Scan a hand", onBusyChange }, ref) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [scanStatus, setScanStatus] = useState<"idle" | "cropping" | "loading" | "review" | "error">("idle");
   const [scanError, setScanError] = useState<string | null>(null);
   const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null);
-  const [scanPreview, setScanPreview] = useState<{ regions: { imageUrl: string; detections: ReviewDetection[] }[] } | null>(
-    null
-  );
+  const [scanPreview, setScanPreview] = useState<{ regions: ScanReviewRegion[] } | null>(null);
   const [editingDetectionId, setEditingDetectionId] = useState<number | null>(null);
   const nextDetectionId = useRef(0);
   const [cropImage, setCropImage] = useState<HTMLImageElement | null>(null);
+
+  const triggerScan = () => {
+    // Starts the (large) model download as soon as the user shows intent
+    // to scan, rather than after they've picked and cropped a photo - by
+    // the time runScan needs it, it's often already downloaded or well
+    // underway.
+    prefetchModel();
+    fileInputRef.current?.click();
+  };
+  useImperativeHandle(ref, () => ({ trigger: triggerScan }));
+
+  const busy = scanStatus === "cropping" || scanStatus === "loading";
+  useEffect(() => {
+    onBusyChange?.(busy);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [busy]);
 
   // Total real (non-bonus) tiles detected across every region, and the
   // per-region validation errors (if a validator was given) - recomputed
@@ -1128,19 +1180,37 @@ function HandScanner({
     setScanError(null);
     setScanProgress({ phase: "downloading-model", loaded: 0, total: null });
     try {
-      const regions: { imageUrl: string; detections: ReviewDetection[] }[] = [];
+      const regions: ScanReviewRegion[] = [];
       for (const source of sources) {
         const box = letterbox(source);
         const { detections } = await detectTiles(box, setScanProgress);
-        const imageUrl = box.canvas.toDataURL();
+        // letterbox() centers the (scaled-down) source inside an IMG_SIZE
+        // square, padding the rest gray - the model needs that square, but
+        // showing the padding in the review UI just wastes space. Crop the
+        // padding back off here (same centering math letterbox itself
+        // used, run in reverse) and shift each detection's box by the same
+        // amount, so everything downstream (the <img>, DetectionOverlay's
+        // viewBox, the left-to-right sort in ScoringPanel) just works
+        // against the tighter, padding-free coordinate space.
+        const scale = Math.min(IMG_SIZE / source.width, IMG_SIZE / source.height);
+        const contentW = Math.round(source.width * scale);
+        const contentH = Math.round(source.height * scale);
+        const padX = (IMG_SIZE - contentW) / 2;
+        const padY = (IMG_SIZE - contentH) / 2;
+        const displayCanvas = document.createElement("canvas");
+        displayCanvas.width = contentW;
+        displayCanvas.height = contentH;
+        displayCanvas.getContext("2d")!.drawImage(box.canvas, padX, padY, contentW, contentH, 0, 0, contentW, contentH);
         regions.push({
-          imageUrl,
+          imageUrl: displayCanvas.toDataURL(),
+          imageWidth: contentW,
+          imageHeight: contentH,
           detections: detections.map((d) => ({
             id: nextDetectionId.current++,
             tile: d.tile,
             originalClassName: d.className,
             confidence: d.confidence,
-            box: d.box,
+            box: [d.box[0] - padX, d.box[1] - padY, d.box[2] - padX, d.box[3] - padY],
           })),
         });
       }
@@ -1198,20 +1268,11 @@ function HandScanner({
     <>
       <div className="scan-input">
         <input ref={fileInputRef} type="file" accept="image/*" onChange={handleScanFile} style={{ display: "none" }} />
-        <button
-          type="button"
-          onClick={() => {
-            // Starts the (large) model download as soon as the user shows
-            // intent to scan, rather than after they've picked and cropped a
-            // photo - by the time runScan needs it, it's often already
-            // downloaded or well underway.
-            prefetchModel();
-            fileInputRef.current?.click();
-          }}
-          disabled={scanStatus === "loading" || scanStatus === "cropping"}
-        >
-          {scanStatus === "loading" ? scanStatusLabel(scanProgress) : "📷 Scan a hand"}
-        </button>
+        {!hideTrigger && (
+          <button type="button" onClick={triggerScan} disabled={busy}>
+            {scanStatus === "loading" ? scanStatusLabel(scanProgress) : triggerLabel}
+          </button>
+        )}
         {scanStatus === "loading" && (
           <div className="scan-progress">
             <div
@@ -1266,7 +1327,13 @@ function HandScanner({
                           : "Scanned hand with detected tiles boxed"
                     }
                   />
-                  <DetectionOverlay detections={region.detections} editingId={editingDetectionId} onSelect={setEditingDetectionId} />
+                  <DetectionOverlay
+                    detections={region.detections}
+                    editingId={editingDetectionId}
+                    onSelect={setEditingDetectionId}
+                    imageWidth={region.imageWidth}
+                    imageHeight={region.imageHeight}
+                  />
                 </div>
               </div>
             ))}
@@ -1317,7 +1384,7 @@ function HandScanner({
       )}
     </>
   );
-}
+});
 
 function Calculator() {
   // `hand` always holds tiles in true input order - Sort never mutates it,
@@ -2161,6 +2228,10 @@ function ScoringPanel() {
   const [winningTile, setWinningTile] = useState<HandTile | null>(null);
   const nextTileId = useRef(0);
   const nextMeldId = useRef(0);
+  // The scan trigger button lives in the panel header (next to Reset)
+  // rather than HandScanner's own built-in one - see HandScannerHandle.
+  const handScannerRef = useRef<HandScannerHandle>(null);
+  const [scanBusy, setScanBusy] = useState(false);
 
   // Mirrors the three state arrays above, updated synchronously - same
   // reason Calculator's handRef exists (see its comment at handRef's
@@ -2370,7 +2441,6 @@ function ScoringPanel() {
   return (
     <section className="panel scoring-panel">
       <div className="panel-header">
-        <span className="panel-title">Scoring</span>
         <button
           type="button"
           onClick={handleReset}
@@ -2378,12 +2448,22 @@ function ScoringPanel() {
         >
           Reset
         </button>
+        <button type="button" onClick={() => handScannerRef.current?.trigger()} disabled={scanBusy}>
+          Scan
+        </button>
         <span className="tile-count">
           {totalTiles} / {requiredSize} tiles
         </span>
       </div>
 
-      <HandScanner regionLabels={["Concealed", "Declared"]} validateRegion={validateDeclaredRegion} onConfirm={applyScannedRegions} />
+      <HandScanner
+        ref={handScannerRef}
+        hideTrigger
+        onBusyChange={setScanBusy}
+        regionLabels={["Concealed", "Declared"]}
+        validateRegion={validateDeclaredRegion}
+        onConfirm={applyScannedRegions}
+      />
 
       <div className="scoring-context">
         <WindPicker label="Seat wind" value={seatWind} onChange={setSeatWind} />
