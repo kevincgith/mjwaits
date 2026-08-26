@@ -870,6 +870,12 @@ describe("PATTERNS: 明/暗四歸四 (4 runs using all 4 copies of a rank)", () 
     expect(tai(result, "four-returns-to-four-hidden")).toBe(60);
     expect(tai(result, "four-returns-to-four-open")).toBe(0);
   });
+
+  it("stacks 3 instances for 4 identical runs (123m x4) - one per rank (1m/2m/3m), not capped at 1", () => {
+    const result = scoreHand("123m123m123m123m456t55z", ctx());
+    expect(tai(result, "four-returns-to-four-hidden")).toBe(180);
+    expect(tai(result, "four-returns-to-four-open")).toBe(0);
+  });
 });
 
 describe("PATTERNS: 明/暗般高 (identical sequences)", () => {
@@ -957,14 +963,16 @@ describe("PATTERNS: 二連刻 (2 consecutive triplets/kongs)", () => {
 });
 
 describe("PATTERNS: 小三連刻/大三連刻", () => {
-  it("scores 小三連刻 for 22m333m444m (pair at the low end)", () => {
+  it("scores 小三連刻 for 22m333m444m (pair at the low end), excluding 二連刻", () => {
     const result = scoreHand("333m444m789t456b789b22m", ctx());
     expect(tai(result, "small-three-consecutive-triplets")).toBe(15);
+    expect(tai(result, "consecutive-triplet-pair")).toBe(0);
   });
 
-  it("scores 大三連刻 for 333m444m555m (no pair involved)", () => {
+  it("scores 大三連刻 for 333m444m555m (no pair involved), excluding 二連刻", () => {
     const result = scoreHand("333m444m555m789t111z22b", ctx());
     expect(tai(result, "big-three-consecutive-triplets")).toBe(30);
+    expect(tai(result, "consecutive-triplet-pair")).toBe(0);
   });
 });
 
@@ -1047,11 +1055,11 @@ describe("PATTERNS: 雙姊妹 (2 distinct 相逢 instances)", () => {
 });
 
 describe("PATTERNS: 全姊妹 (every meld is part of a 相逢)", () => {
-  it("scores for 123m123m123t678b678t77z - the 2nd 123m still counts (123t is its partner too)", () => {
+  it("scores for 123m123m123t678b678t77z - the 2nd 123m still counts (123t is its partner too), excluding 雙姊妹", () => {
     const result = scoreHand("123m123m123t678b678t77z", ctx());
     expect(tai(result, "full-cross-suit-runs")).toBe(20);
     expect(tai(result, "cross-suit-same-run")).toBe(6);
-    expect(tai(result, "twin-cross-suit-runs")).toBe(5);
+    expect(tai(result, "twin-cross-suit-runs")).toBe(0);
   });
 
   it("scores for 345t345t345b345b345m55z, even though 相逢 itself is excluded by 暗五相逢", () => {

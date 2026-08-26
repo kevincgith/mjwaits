@@ -992,15 +992,21 @@ function fourReturnsToTwoRuns(hand: ResolvedHand): [ResolvedMeld, ResolvedMeld] 
 }
 
 // 四歸四: 4 separate runs, each containing X (1 + 1 + 1 + 1 = the 4 copies).
-// At most one instance possible - needs 4 of the hand's 5 melds.
-function fourReturnsToFourRuns(hand: ResolvedHand): ResolvedMeld[] | null {
+// A single hand can only ever hold one *group* of 4 runs (needs 4 of its 5
+// melds), but that doesn't cap it at 1 instance the way 四歸二 is capped
+// (a hand only has one pair): 4 *identical* runs (e.g. 123m×4) satisfy this
+// independently for every rank the run spans - 1m, 2m, and 3m here are each
+// also spread as all 4 copies across that same group of 4 runs, so all 3
+// stack rather than only the first rank found.
+function fourReturnsToFourInstances(hand: ResolvedHand): ResolvedMeld[][] {
+  const instances: ResolvedMeld[][] = [];
   for (const suit of ["m", "t", "b"] as const) {
     for (let rank = 1; rank <= 9; rank++) {
       const runs = hand.melds.filter((m) => m.kind === "run" && m.tiles[0].suit === suit && m.tiles.some((t) => t.rank === rank));
-      if (runs.length === 4) return runs;
+      if (runs.length === 4) instances.push(runs);
     }
   }
-  return null;
+  return instances;
 }
 
 // 般高 (identical sequences): pairs of runs that are exact duplicates (same
@@ -1735,18 +1741,14 @@ export const PATTERNS: TaiPattern[] = [
   {
     id: "four-returns-to-four-open",
     name: "明四歸四 (4 runs, open)",
-    score: (hand, ctx) => {
-      const runs = fourReturnsToFourRuns(hand);
-      return runs && runs.some((r) => isMeldOpen(r, ctx)) ? 30 : 0;
-    },
+    score: (hand, ctx) =>
+      fourReturnsToFourInstances(hand).filter((runs) => runs.some((r) => isMeldOpen(r, ctx))).length * 30,
   },
   {
     id: "four-returns-to-four-hidden",
     name: "暗四歸四 (4 runs, concealed)",
-    score: (hand, ctx) => {
-      const runs = fourReturnsToFourRuns(hand);
-      return runs && runs.every((r) => !isMeldOpen(r, ctx)) ? 60 : 0;
-    },
+    score: (hand, ctx) =>
+      fourReturnsToFourInstances(hand).filter((runs) => runs.every((r) => !isMeldOpen(r, ctx))).length * 60,
   },
   {
     id: "identical-sequences-open",
@@ -1865,11 +1867,13 @@ export const PATTERNS: TaiPattern[] = [
     id: "small-three-consecutive-triplets",
     name: "小三連刻 (3 consecutive ranks, pair at one end + 2 triplets/kongs)",
     score: (hand) => (hasSmallThreeConsecutiveTriplets(hand) ? 15 : 0),
+    excludes: ["consecutive-triplet-pair"],
   },
   {
     id: "big-three-consecutive-triplets",
     name: "大三連刻 (3 consecutive triplets/kongs)",
     score: (hand) => (hasBigThreeConsecutiveTriplets(hand) ? 30 : 0),
+    excludes: ["consecutive-triplet-pair"],
   },
   {
     id: "half-flush",
@@ -1898,8 +1902,12 @@ export const PATTERNS: TaiPattern[] = [
   {
     id: "full-cross-suit-runs",
     name: "全姊妹 (Every meld is part of a 相逢)",
-    // Additional bonus, same "stacks with everything" framing as 雙姊妹.
+    // Additional bonus, same "stacks with everything" framing as 雙姊妹 -
+    // except against 雙姊妹 itself, which it excludes: every meld already
+    // being paired off implies (at least) 2 distinct 相逢 instances, so
+    // scoring both would double-count the same underlying structure.
     score: (hand) => (hasFullCrossSuitRuns(hand) ? 20 : 0),
+    excludes: ["twin-cross-suit-runs"],
   },
   {
     id: "staircase",
