@@ -2348,8 +2348,26 @@ function scoreThirteenOrphans(parsed: ParsedScoringHand, ctx: GameContext): Scor
     if (mixedTerminalTai > 0) matched.push({ pattern: mixedTerminalPattern, tai: mixedTerminalTai });
   }
 
+  pushFlowerBonuses(hand, ctx, matched);
   pushSelfDrawAndGenuineSingleWait(hand, ctx, matched);
   return { total: matched.reduce((sum, m) => sum + m.tai, 0), matched, hand };
+}
+
+// Shared by 十三么/十六不搭: 無花/正花/爛花 are purely bonusTiles-based
+// checks, unrelated to meld structure, so they apply unmodified - a
+// 十三么/十六不搭 hand still carries its own bonus tiles the same way any
+// normal hand does. 嚦咕嚦咕 doesn't use this helper - it lumps the same 3
+// ids into its own reusableIds batch instead (see scoreEightPairs),
+// alongside 無字/無字花, so that pattern's exclusion of 無花/無字 is
+// actually honored (無字/無字花 can never fire for 十三么/十六不搭, since
+// both always include all 7 honors by definition, so there's no
+// cross-exclusion to worry about keeping in the same batch for them).
+function pushFlowerBonuses(hand: ResolvedHand, ctx: GameContext, matched: { pattern: TaiPattern; tai: number }[]): void {
+  for (const id of ["no-flowers", "correct-flower", "wrong-flower"]) {
+    const pattern = PATTERNS.find((p) => p.id === id)!;
+    const tai = pattern.score(hand, ctx);
+    if (tai > 0) matched.push({ pattern, tai });
+  }
 }
 
 // Shared by all three special hands: 自摸, 獨獨, and 假獨 all apply to them
@@ -2469,6 +2487,7 @@ function scoreSixteenUnrelated(parsed: ParsedScoringHand, ctx: GameContext): Sco
   const straightTai = straightPattern.score(hand, ctx);
   if (straightTai > 0) matched.push({ pattern: straightPattern, tai: straightTai });
 
+  pushFlowerBonuses(hand, ctx, matched);
   pushSelfDrawAndGenuineSingleWait(hand, ctx, matched);
   return { total: matched.reduce((sum, m) => sum + m.tai, 0), matched, hand };
 }
@@ -2526,15 +2545,21 @@ function scoreEightPairs(parsed: ParsedScoringHand, ctx: GameContext): ScoreResu
     matched.push({ pattern: PATTERNS.find((p) => p.id === "small-five-suits")!, tai: smallFiveSuitsTai });
   }
 
-  // 斷么/缺一門/清老頭/混老頭/混一色/清一色/字一色: reused as-is (same
-  // ids/tai as their normal-hand definitions), since every one of these
-  // conditions is either purely about the flat tile multiset already, or -
-  // for 清老頭/混老頭's "every meld is a triplet/kong" half - trivially
-  // true here regardless (every group in this hand's construction is
-  // tagged "triplet" no matter its actual tile count). Their own excludes
-  // metadata (e.g. 清一色 excluding 混一色, 清老頭 excluding 混老頭) is
-  // applied the same way the normal per-decomposition loop does, scoped to
-  // just this batch.
+  // 斷么/缺一門/清老頭/混老頭/混一色/清一色/字一色/無花/正花/爛花/無字/無字花:
+  // reused as-is (same ids/tai as their normal-hand definitions), since
+  // every one of these conditions is either purely about the flat tile
+  // multiset/bonus tiles already, or - for 清老頭/混老頭's "every meld is a
+  // triplet/kong" half - trivially true here regardless (every group in
+  // this hand's construction is tagged "triplet" no matter its actual tile
+  // count). 無花/正花/爛花/無字/無字花 are lumped into this same batch
+  // (rather than the separate pushFlowerBonuses helper 十三么/十六不搭 use)
+  // specifically so 無字花's exclusion of 無花/無字 is actually honored -
+  // those two special hands always include all 7 honors by definition, so
+  // 無字/無字花 can never fire there and the cross-exclusion doesn't matter,
+  // but 嚦咕嚦咕 can genuinely go honor-free. Their own excludes metadata
+  // (e.g. 清一色 excluding 混一色, 無字花 excluding 無花/無字) is applied
+  // the same way the normal per-decomposition loop does, scoped to just
+  // this batch.
   const reusableIds = [
     "all-simples",
     "no-fives",
@@ -2547,6 +2572,11 @@ function scoreEightPairs(parsed: ParsedScoringHand, ctx: GameContext): ScoreResu
     "full-flush",
     "all-honors",
     "three-treasures",
+    "no-flowers",
+    "correct-flower",
+    "wrong-flower",
+    "no-honors",
+    "no-honors-no-flowers",
   ];
   const reusableScored = PATTERNS.filter((p) => reusableIds.includes(p.id))
     .map((pattern) => ({ pattern, tai: pattern.score(hand, ctx) }))

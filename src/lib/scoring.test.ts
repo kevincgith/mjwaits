@@ -1356,8 +1356,8 @@ describe("PATTERNS: 十三么 (Thirteen Orphans)", () => {
     const result = scoreHand("112349m19t19b1234567z", ctx());
     expect(tai(result, "thirteen-orphans")).toBe(160);
     expect(tai(result, "base-tai")).toBe(5);
-    expect(result.total).toBe(165);
-    expect(result.matched).toHaveLength(2);
+    expect(result.total).toBe(167);
+    expect(result.matched).toHaveLength(3);
   });
 
   it("doesn't fire for an ordinary hand", () => {
@@ -1378,7 +1378,7 @@ describe("PATTERNS: 明/暗四歸 (Thirteen Orphans: one kind held all 4 copies)
     // A quad on an orphan kind is always also a triplet-of-orphan meld, so
     // 混老頭 (see the next describe block) fires alongside it here too.
     expect(tai(result, "mixed-terminal-honor-triplets")).toBe(100);
-    expect(result.total).toBe(280);
+    expect(result.total).toBe(282);
   });
 
   it("still scores 暗四歸 when the win is self-drawn, even if the winning tile matches the quad", () => {
@@ -1395,13 +1395,13 @@ describe("PATTERNS: 明/暗四歸 (Thirteen Orphans: one kind held all 4 copies)
     // computable and it turns out to hold for this exact hand - see the
     // dedicated 自摸/獨獨-in-special-hands describe block below.
     expect(tai(result, "genuine-single-wait")).toBe(2);
-    expect(result.total).toBe(272);
+    expect(result.total).toBe(274);
   });
 
   it("scores 明四歸 for the quad on a numbered tile (9b) too, not just honors", () => {
     const result = scoreHand("19m19t19b1234567z999b7z", ctx({ winningTile: { suit: "b", rank: 9 } }));
     expect(tai(result, "orphans-four-return-open")).toBe(5);
-    expect(result.total).toBe(272);
+    expect(result.total).toBe(274);
   });
 
   it("doesn't score when no orphan kind reaches 4 copies", () => {
@@ -1416,14 +1416,14 @@ describe("PATTERNS: 混帶么/混老頭 (Thirteen Orphans: the ordinary meld's o
     const result = scoreHand("111239m19t19b1234567z", ctx());
     expect(tai(result, "mixed-terminal")).toBe(40);
     expect(tai(result, "mixed-terminal-honor-triplets")).toBe(0);
-    expect(result.total).toBe(205);
+    expect(result.total).toBe(207);
   });
 
   it("doesn't score either when the ordinary meld has no terminal and isn't honors (234m)", () => {
     const result = scoreHand("112349m19t19b1234567z", ctx());
     expect(tai(result, "mixed-terminal")).toBe(0);
     expect(tai(result, "mixed-terminal-honor-triplets")).toBe(0);
-    expect(result.total).toBe(165);
+    expect(result.total).toBe(167);
   });
 
   it("scores 混老頭 (excluding 混帶么) when the ordinary meld is a terminal triplet (111m) - also a quad, so 暗四歸 stacks too", () => {
@@ -1431,14 +1431,14 @@ describe("PATTERNS: 混帶么/混老頭 (Thirteen Orphans: the ordinary meld's o
     expect(tai(result, "mixed-terminal-honor-triplets")).toBe(100);
     expect(tai(result, "mixed-terminal")).toBe(0);
     expect(tai(result, "orphans-four-return-hidden")).toBe(15);
-    expect(result.total).toBe(280);
+    expect(result.total).toBe(282);
   });
 
   it("doesn't score when the ordinary meld is an unrelated middle-rank triplet (555b)", () => {
     const result = scoreHand("119m19t19b555b1234567z", ctx());
     expect(tai(result, "mixed-terminal")).toBe(0);
     expect(tai(result, "mixed-terminal-honor-triplets")).toBe(0);
-    expect(result.total).toBe(165);
+    expect(result.total).toBe(167);
   });
 });
 
@@ -1451,8 +1451,8 @@ describe("PATTERNS: 十六不搭 (Sixteen Unrelated Tiles)", () => {
     const result = scoreHand("147m147t258b11234567z", ctx());
     expect(tai(result, "sixteen-unrelated")).toBe(50);
     expect(tai(result, "base-tai")).toBe(5);
-    expect(result.total).toBe(55);
-    expect(result.matched).toHaveLength(2);
+    expect(result.total).toBe(57);
+    expect(result.matched).toHaveLength(3);
   });
 
   it("doesn't fire for an ordinary hand", () => {
@@ -1479,7 +1479,7 @@ describe("PATTERNS: 十六不搭(十六飛) (16-way wait - the 食胡 tile compl
     const result = scoreHand(hand, ctx({ winningTile: { suit: "z", rank: 1 } }));
     expect(tai(result, "sixteen-unrelated-flying")).toBe(60);
     expect(tai(result, "sixteen-unrelated")).toBe(0);
-    expect(result.total).toBe(65);
+    expect(result.total).toBe(67);
   });
 
   it("scores the base 50 tai when the winning tile completed one of the 15 singles instead", () => {
@@ -1489,7 +1489,7 @@ describe("PATTERNS: 十六不搭(十六飛) (16-way wait - the 食胡 tile compl
     // This particular hand's 4m happens to also be a genuine single wait
     // (+2) - see the dedicated 自摸/獨獨-in-special-hands describe block.
     expect(tai(result, "genuine-single-wait")).toBe(2);
-    expect(result.total).toBe(57);
+    expect(result.total).toBe(59);
   });
 
   it("scores the base 50 tai when no winning tile is recorded", () => {
@@ -1504,7 +1504,7 @@ describe("PATTERNS: 不搭三相逢 (十六不搭: same 3 ranks across all 3 sui
     const result = scoreHand("159m159t159b12345677z", ctx());
     expect(tai(result, "sixteen-unrelated-same-ranks")).toBe(20);
     expect(tai(result, "sixteen-unrelated")).toBe(50);
-    expect(result.total).toBe(75);
+    expect(result.total).toBe(77);
   });
 
   it("doesn't score when the suits' ranks don't all match", () => {
@@ -1518,7 +1518,7 @@ describe("PATTERNS: 不搭雜龍 (十六不搭: ranks span 1-9 across all 3 suit
     const result = scoreHand("147m258b369t12344567z", ctx());
     expect(tai(result, "sixteen-unrelated-straight")).toBe(20);
     expect(tai(result, "sixteen-unrelated")).toBe(50);
-    expect(result.total).toBe(75);
+    expect(result.total).toBe(77);
   });
 
   it("doesn't score when the suits' ranks overlap instead of jointly spanning 1-9", () => {
@@ -1531,13 +1531,13 @@ describe("PATTERNS: 自摸/獨獨 apply to the special hands too", () => {
   it("scores 自摸 for a self-drawn 十三么", () => {
     const result = scoreHand("112349m19t19b1234567z", ctx({ selfDraw: true }));
     expect(tai(result, "self-draw")).toBe(1);
-    expect(result.total).toBe(166);
+    expect(result.total).toBe(168);
   });
 
   it("scores 自摸 for a self-drawn 十六不搭", () => {
     const result = scoreHand("147m147t258b11234567z", ctx({ selfDraw: true }));
     expect(tai(result, "self-draw")).toBe(1);
-    expect(result.total).toBe(56);
+    expect(result.total).toBe(58);
   });
 
   it("scores 獨獨 for a 十三么 hand where the 食胡 tile was a genuine single wait", () => {
@@ -1572,6 +1572,29 @@ describe("PATTERNS: 自摸/獨獨 apply to the special hands too", () => {
     expect(tai(result, "fake-single-wait")).toBe(0);
     expect(tai(result, "genuine-single-wait")).toBe(0);
     expect(tai(result, "thirteen-orphans")).toBe(160);
+  });
+});
+
+describe("PATTERNS: 無花/正花/爛花 apply to 十三么/十六不搭 too", () => {
+  it("scores 無花 for a 十三么 hand with no bonus tiles", () => {
+    const result = scoreHand("112349m19t19b1234567z", ctx());
+    expect(tai(result, "no-flowers")).toBe(2);
+  });
+
+  it("scores 正花 for a 十三么 hand with a seat-wind-matching flower", () => {
+    const parsed = parseScoringHand("112349m19t19b1234567z");
+    parsed.bonusTiles.push({ kind: "flower", rank: 1 });
+    const result = scoreParsedHand(parsed, ctx({ seatWind: 1 }));
+    expect(tai(result, "correct-flower")).toBe(2);
+    expect(tai(result, "no-flowers")).toBe(0);
+  });
+
+  it("scores 爛花 for a 十六不搭 hand with a non-matching flower", () => {
+    const parsed = parseScoringHand("147m147t258b11234567z");
+    parsed.bonusTiles.push({ kind: "flower", rank: 3 });
+    const result = scoreParsedHand(parsed, ctx({ seatWind: 1 }));
+    expect(tai(result, "wrong-flower")).toBe(2);
+    expect(tai(result, "no-flowers")).toBe(0);
   });
 });
 
@@ -1760,6 +1783,21 @@ describe("PATTERNS: 將眼 stacks per qualifying pair in 嚦咕嚦咕 (not just 
   it("doesn't count a quad's extra pair-unit if its rank isn't 2/5/8", () => {
     const result = scoreHand("1111m3344667799t111z", ctx());
     expect(tai(result, "middle-tile-pair")).toBe(0);
+  });
+});
+
+describe("PATTERNS: 無花/正花/爛花/無字/無字花 apply to 嚦咕嚦咕 too", () => {
+  it("scores 無字花 (not just 無花) for an honor-free 嚦咕嚦咕 hand with no bonus tiles", () => {
+    const result = scoreHand("11223344556677m888m", ctx());
+    expect(tai(result, "no-honors-no-flowers")).toBe(10);
+    expect(tai(result, "no-honors")).toBe(0); // excluded by 無字花
+    expect(tai(result, "no-flowers")).toBe(0); // excluded by 無字花
+  });
+
+  it("scores plain 無花 (not 無字花) when honors are present, even with no bonus tiles", () => {
+    const result = scoreHand("112233445566m11z777z", ctx());
+    expect(tai(result, "no-flowers")).toBe(2);
+    expect(tai(result, "no-honors-no-flowers")).toBe(0);
   });
 });
 
