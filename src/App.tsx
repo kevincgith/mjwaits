@@ -105,12 +105,15 @@ function loadImageFile(file: File): Promise<HTMLImageElement> {
 // A detection as shown in the scan review step - same shape as vision.ts's
 // Detection, plus a stable id (so React can track a box across re-renders
 // as it gets corrected or removed) and confidence carried through for the
-// correction panel's header. `tile` is the *current* identity (what's
-// actually counted toward the hand); `originalClassName` never changes -
-// it's the model's raw guess, kept for display even after a correction.
+// correction panel's header. `tile`/`bonus` are the *current* identity
+// (what's actually counted toward the hand) and are mutually exclusive -
+// at most one is non-null, both null means "not a tile" (excluded).
+// `originalClassName` never changes - it's the model's raw guess, kept for
+// display even after a correction.
 interface ReviewDetection {
   id: number;
   tile: Tile | null;
+  bonus: BonusTile | null;
   originalClassName: string;
   confidence: number;
   box: [number, number, number, number];
@@ -131,6 +134,7 @@ interface ScanReviewRegion {
 }
 
 const sameTile = (a: Tile | null, b: Tile): boolean => a !== null && a.suit === b.suit && a.rank === b.rank;
+const sameBonusTile = (a: BonusTile | null, b: BonusTile): boolean => a !== null && a.kind === b.kind && a.rank === b.rank;
 
 // Formats a tile the same way the model's class names do (rank then suit
 // letter, e.g. "4t", "4b", "1z") so a corrected box's label stays visually
@@ -138,6 +142,18 @@ const sameTile = (a: Tile | null, b: Tile): boolean => a !== null && a.suit === 
 function tileClassLabel(t: Tile): string {
   return `${t.rank}${t.suit}`;
 }
+// Same idea as tileClassLabel, for the "f"/"s" bonus classes (see
+// classToBonusTile in vision.ts).
+function bonusClassLabel(b: BonusTile): string {
+  return `${b.rank}${b.kind === "flower" ? "f" : "s"}`;
+}
+
+// All 8 bonus tile kinds (4 flowers then 4 seasons), for the correction
+// picker's bonus row - mirrors the Bonus tiles picker in ScoringPanel.
+const CORRECTION_BONUS_TILES: BonusTile[] = [
+  ...([1, 2, 3, 4] as const).map((rank) => ({ kind: "flower" as const, rank })),
+  ...([1, 2, 3, 4] as const).map((rank) => ({ kind: "season" as const, rank })),
+];
 
 // Groups the 34 real tile kinds into suit rows for the correction picker,
 // promoting the row matching the detection's original guess to the front -
@@ -173,7 +189,11 @@ function DetectionBox({
   const tap = useTap(onSelect);
   const [x1, y1, x2, y2] = detection.box;
   const included = detection.tile !== null;
-  const label = detection.tile ? tileClassLabel(detection.tile) : detection.originalClassName;
+  const label = detection.tile
+    ? tileClassLabel(detection.tile)
+    : detection.bonus
+      ? bonusClassLabel(detection.bonus)
+      : detection.originalClassName;
   const labelWidth = label.length * 7.5 + 6;
   const groupClass = ["detection-box", included ? "included" : "bonus", editing && "editing"].filter(Boolean).join(" ");
   return (
@@ -215,6 +235,10 @@ function DetectionOverlay({
 // tile (bonus tiles are already excluded from the hand, but the model
 // sometimes calls a real tile a bonus one or vice versa), or remove the
 // box outright for an outright false-positive detection.
+// A correction picked in the panel below: a real tile, a specific bonus
+// tile, or null ("not a tile" - an outright false positive).
+type Correction = { tile: Tile } | { bonus: BonusTile } | null;
+
 function CorrectionPanel({
   detection,
   onPick,
@@ -222,12 +246,25 @@ function CorrectionPanel({
   onCancel,
 }: {
   detection: ReviewDetection;
-  onPick: (tile: Tile | null) => void;
+  onPick: (correction: Correction) => void;
   onRemove: () => void;
   onCancel: () => void;
 }) {
   const rows = useMemo(() => rankedCorrectionRows(detection.tile), [detection.tile]);
   const hasPromotedRow = detection.tile !== null;
+  const bonusPromoted = detection.bonus !== null;
+  const bonusRow = (
+    <div className={`suit-row ${bonusPromoted ? "correction-row-primary" : ""}`}>
+      {CORRECTION_BONUS_TILES.map((b) => (
+        <BonusTileButton
+          key={`${b.kind}${b.rank}`}
+          tile={b}
+          onClick={() => onPick({ bonus: b })}
+          selected={sameBonusTile(detection.bonus, b)}
+        />
+      ))}
+    </div>
+  );
   return (
     <div className="correction-panel">
       <div className="correction-panel-header">
@@ -240,20 +277,32 @@ function CorrectionPanel({
         </button>
       </div>
       <div className="tile-picker correction-picker">
+        {bonusPromoted && bonusRow}
         {rows.map(({ suit, tiles }, i) => (
           <div key={suit}>
             {hasPromotedRow && i === 1 && <div className="correction-other-label">Other suits</div>}
             <div className={`suit-row ${hasPromotedRow && i === 0 ? "correction-row-primary" : ""}`}>
               {tiles.map((t) => (
-                <TileButton key={tileLabel(t)} tile={t} onClick={() => onPick(t)} selected={sameTile(detection.tile, t)} />
+                <TileButton
+                  key={tileLabel(t)}
+                  tile={t}
+                  onClick={() => onPick({ tile: t })}
+                  selected={sameTile(detection.tile, t)}
+                />
               ))}
             </div>
           </div>
         ))}
+        {!bonusPromoted && (
+          <div>
+            <div className="correction-other-label">Bonus tiles</div>
+            {bonusRow}
+          </div>
+        )}
       </div>
       <div className="correction-panel-actions">
         <button type="button" onClick={() => onPick(null)}>
-          Not a tile / bonus
+          Not a tile
         </button>
         <button type="button" className="correction-panel-remove" onClick={onRemove}>
           Remove box
@@ -1143,8 +1192,12 @@ const HandScanner = forwardRef<
         : prev
     );
   };
-  const correctDetection = (id: number, tile: Tile | null) => {
-    updateDetection(id, (d) => ({ ...d, tile }));
+  const correctDetection = (id: number, correction: Correction) => {
+    updateDetection(id, (d) => ({
+      ...d,
+      tile: correction && "tile" in correction ? correction.tile : null,
+      bonus: correction && "bonus" in correction ? correction.bonus : null,
+    }));
     setEditingDetectionId(null);
   };
   const removeDetection = (id: number) => {
@@ -1203,6 +1256,7 @@ const HandScanner = forwardRef<
           detections: detections.map((d) => ({
             id: nextDetectionId.current++,
             tile: d.tile,
+            bonus: d.tile ? null : classToBonusTile(d.className),
             originalClassName: d.className,
             confidence: d.confidence,
             box: [d.box[0] - padX, d.box[1] - padY, d.box[2] - padX, d.box[3] - padY],
@@ -1337,7 +1391,7 @@ const HandScanner = forwardRef<
           {editingDetection && (
             <CorrectionPanel
               detection={editingDetection}
-              onPick={(tile) => correctDetection(editingDetection.id, tile)}
+              onPick={(correction) => correctDetection(editingDetection.id, correction)}
               onRemove={() => removeDetection(editingDetection.id)}
               onCancel={() => setEditingDetectionId(null)}
             />
@@ -2083,10 +2137,21 @@ function bonusTileLabel(tile: BonusTile): string {
   return tile.kind === "flower" ? `Flower: ${FLOWER_NAMES[tile.rank]}` : `Season: ${SEASON_NAMES[tile.rank]}`;
 }
 
-function BonusTileButton({ tile, onClick, disabled }: { tile: BonusTile; onClick: () => void; disabled?: boolean }) {
+function BonusTileButton({
+  tile,
+  onClick,
+  disabled,
+  selected,
+}: {
+  tile: BonusTile;
+  onClick: () => void;
+  disabled?: boolean;
+  selected?: boolean;
+}) {
   const tap = useTap(onClick, disabled);
+  const classes = ["tile-button", selected && "selected"].filter(Boolean).join(" ");
   return (
-    <button type="button" className="tile-button" disabled={disabled} title={bonusTileLabel(tile)} {...tap}>
+    <button type="button" className={classes} disabled={disabled} title={bonusTileLabel(tile)} {...tap}>
       <span className="tile-glyph" data-suit="bonus">
         {bonusTileGlyph(tile)}
       </span>
@@ -2374,17 +2439,15 @@ function ScoringPanel() {
   };
 
   // A scanned detection's meaning for the declared-melds region: a real
-  // tile identity (possibly corrected away from the model's original bonus
-  // guess), a bonus tile (only when the model's original guess was a bonus
-  // class AND it's still uncorrected - see classifyDeclaredDetection's doc
-  // comment below), or excluded (the user explicitly marked a real-tile
-  // detection "not a tile", i.e. a false positive - not a bonus tile).
+  // tile, a bonus tile, or excluded (marked "not a tile", i.e. a false
+  // positive) - both `tile` and `bonus` are already resolved as of
+  // detection creation/correction (see ReviewDetection's doc comment).
   const classifyDeclaredDetection = (
     d: ReviewDetection
   ): { kind: "tile"; tile: Tile } | { kind: "bonus"; bonus: BonusTile } | { kind: "excluded" } => {
     if (d.tile) return { kind: "tile", tile: d.tile };
-    const bonus = classToBonusTile(d.originalClassName);
-    return bonus ? { kind: "bonus", bonus } : { kind: "excluded" };
+    if (d.bonus) return { kind: "bonus", bonus: d.bonus };
+    return { kind: "excluded" };
   };
 
   // Sorts a region's detections into table (left-to-right) order - required
