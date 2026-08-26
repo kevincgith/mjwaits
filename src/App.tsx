@@ -200,8 +200,8 @@ function DetectionBox({
     <g className={groupClass} role="button" tabIndex={0} aria-label={`Correct detected tile ${label}`} {...tap}>
       <rect className="detection-hit" x={x1 - 6} y={y1 - 6} width={x2 - x1 + 12} height={y2 - y1 + 12} />
       <rect className="detection-outline" x={x1} y={y1} width={x2 - x1} height={y2 - y1} />
-      <rect className="detection-label-bg" x={x1} y={y1} width={labelWidth} height={16} />
-      <text className="detection-label" x={x1 + 3} y={y1 + 15}>
+      <rect className="detection-label-bg" x={x1} y={y2 - 16} width={labelWidth} height={16} />
+      <text className="detection-label" x={x1 + 3} y={y2 - 1}>
         {label}
       </text>
     </g>
