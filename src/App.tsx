@@ -2009,6 +2009,30 @@ function BonusTileButton({ tile, onClick, disabled }: { tile: BonusTile; onClick
   );
 }
 
+// Which physical tile instance in the resolved hand the 食胡 tile actually
+// is, for highlighting purposes - see the comment in ScoringBreakdown for
+// why this searches in priority order (pair, then triplet/kong, then run)
+// rather than taking whichever group happens to render first.
+function findWinningTileInstance(hand: ResolvedHand, winningTile: Tile | null): Tile | null {
+  if (winningTile === null) return null;
+  const matches = (t: Tile) => t.suit === winningTile.suit && t.rank === winningTile.rank;
+  const pairMatch = hand.pair.find(matches);
+  if (pairMatch) return pairMatch;
+  for (const kind of ["triplet", "kong"] as const) {
+    for (const meld of hand.melds) {
+      if (meld.kind !== kind) continue;
+      const t = meld.tiles.find(matches);
+      if (t) return t;
+    }
+  }
+  for (const meld of hand.melds) {
+    if (meld.kind !== "run") continue;
+    const t = meld.tiles.find(matches);
+    if (t) return t;
+  }
+  return null;
+}
+
 // The patterns list + Declared/Concealed hand-sections for one scored
 // reading - factored out so 嚦咕雙食 (see ScoreResult.second) can render a
 // second reading identically below the primary one, rather than
@@ -2027,17 +2051,20 @@ function ScoringBreakdown({
   // scoring.ts's Tile (unlike the picker's HandTile) has no id to pin down
   // which physical instance was the 食胡 tile, so this only knows its kind -
   // matching every tile of the same kind would highlight extras whenever
-  // that kind appears more than once (e.g. inside a quad). `placed` mirrors
-  // the Calculator tab's WaitBreakdownRow: highlight only the first
-  // occurrence found while walking declared-then-concealed order, which is
-  // exactly the winning tile's own group (a repeat elsewhere in the hand
-  // was necessarily already there before it arrived).
-  let placed = false;
-  const isWinningInstance = (t: Tile): boolean => {
-    if (placed || winningTile === null || t.suit !== winningTile.suit || t.rank !== winningTile.rank) return false;
-    placed = true;
-    return true;
-  };
+  // that kind appears more than once (e.g. inside a quad). When the kind
+  // appears in more than one group, highlighting whichever one renders
+  // first (declared-then-concealed array order) doesn't necessarily land on
+  // the group the scoring actually cared about - e.g. nine gates
+  // (1112345678999m111z) completed by 9m scores 對碰 (shanpon: pair→
+  // triplet), which is about the 999m triplet, but 9m also sits at the edge
+  // of the 789m run that happens to render first, highlighting the wrong
+  // one even though the tai is correct either way. Searching in priority
+  // order instead - pair (單騎/tanki) first, then triplet/kong (對碰/暗刻
+  // chain/quads), then run (嵌張/邊張/ordinary two-sided) - picks whichever
+  // group is the most specific/notable completion role, matching the
+  // pattern that's actually likely to have scored.
+  const winningInstance = findWinningTileInstance(hand, winningTile);
+  const isWinningInstance = (t: Tile): boolean => t === winningInstance;
   return (
     <>
       <div className="waits breakdown-list">
