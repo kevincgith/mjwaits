@@ -2439,6 +2439,7 @@ function ScoringPanel() {
       concealedRef.current = nextConcealed;
       setConcealedTiles(nextConcealed);
       setWinningTile(null);
+      setConcealedPickerCollapsed(true);
     }
     if (declaredRegion) {
       const { realTiles, bonusTiles: scannedBonusTiles } = declaredScanTiles(declaredRegion.detections);
@@ -2448,6 +2449,7 @@ function ScoringPanel() {
       setDeclaredMelds(nextDeclared);
       bonusRef.current = scannedBonusTiles;
       setBonusTiles(scannedBonusTiles);
+      setDeclaredPickerCollapsed(true);
     }
   };
 
