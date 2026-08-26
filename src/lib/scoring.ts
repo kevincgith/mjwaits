@@ -1928,11 +1928,12 @@ export const PATTERNS: TaiPattern[] = [
   {
     id: "rotating-staircase",
     name: "五步高/全碟 (Stricter 樓梯: same suit or a fixed rotation)",
-    // Additional bonus, same "stacks with everything" framing as the other
-    // 相逢-family bonuses - doesn't exclude 樓梯 even though every
-    // 五步高/全碟 hand is also a 樓梯 (not explicitly stated either way,
-    // kept consistent with 樓梯/雙姊妹/全姊妹 all being additive).
+    // Every 五步高/全碟 hand is also a 樓梯 (same 5-consecutive-starting-
+    // rank run shape, just with the added suit constraint) - excludes it
+    // so the stricter version doesn't double-score on top of the version
+    // it subsumes.
     score: (hand) => (hasRotatingStaircase(hand) ? 40 : 0),
+    excludes: ["staircase"],
   },
   {
     id: "three-suit-same-run-open",

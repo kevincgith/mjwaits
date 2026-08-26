@@ -1107,10 +1107,10 @@ describe("PATTERNS: 樓梯 (5 runs, consecutive starting ranks, any suit)", () =
 });
 
 describe("PATTERNS: 五步高/全碟 (stricter 樓梯: same suit or a fixed rotation)", () => {
-  it("scores for 234t345m456b567t678m (rotation t,m,b,t,m - positions 4/5 repeat 1/2)", () => {
+  it("scores for 234t345m456b567t678m (rotation t,m,b,t,m - positions 4/5 repeat 1/2), excluding 樓梯", () => {
     const result = scoreHand("234t345m456b567t678m55z", ctx());
     expect(tai(result, "rotating-staircase")).toBe(40);
-    expect(tai(result, "staircase")).toBe(20);
+    expect(tai(result, "staircase")).toBe(0);
   });
 
   it("doesn't score for 234t345m456b567m678t - position 4 (m) doesn't repeat position 1 (t)", () => {
@@ -1119,9 +1119,10 @@ describe("PATTERNS: 五步高/全碟 (stricter 樓梯: same suit or a fixed rota
     expect(tai(result, "staircase")).toBe(20);
   });
 
-  it("scores when all 5 runs are the same suit", () => {
+  it("scores when all 5 runs are the same suit, excluding 樓梯", () => {
     const result = scoreHand("123m234m345m456m567m22z", ctx());
     expect(tai(result, "rotating-staircase")).toBe(40);
+    expect(tai(result, "staircase")).toBe(0);
   });
 });
 
