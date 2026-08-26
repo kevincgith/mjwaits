@@ -1110,10 +1110,13 @@ const HandScanner = forwardRef<
   {
     regionLabels?: string[];
     // Optional per-region check run against a region's current (corrected)
-    // detections - a non-null return is shown next to that region's summary
-    // and blocks the confirm button, e.g. ScoringPanel uses this to refuse a
-    // Declared-region scan that didn't cleanly group into whole melds.
-    validateRegion?: (detections: ReviewDetection[], regionIndex: number) => string | null;
+    // detections - a non-null return is shown next to that region's summary.
+    // `blocking: true` also disables the confirm button (used only when
+    // there's truly nothing usable to fall back on); otherwise it's shown
+    // as an advisory warning and confirming proceeds anyway, e.g.
+    // ScoringPanel uses this to flag (but not block on) a Declared-region
+    // scan that only partly grouped into whole melds.
+    regionIssue?: (detections: ReviewDetection[], regionIndex: number) => { blocking: boolean; message: string } | null;
     onConfirm: (regions: { detections: ReviewDetection[] }[]) => void;
     // When set, the built-in trigger button isn't rendered - the caller
     // drives scanning via the imperative handle's trigger() instead
@@ -1126,7 +1129,7 @@ const HandScanner = forwardRef<
     // itself for the same span the built-in one would have.
     onBusyChange?: (busy: boolean) => void;
   }
->(function HandScanner({ regionLabels, validateRegion, onConfirm, hideTrigger, triggerLabel = "📷 Scan a hand", onBusyChange }, ref) {
+>(function HandScanner({ regionLabels, regionIssue, onConfirm, hideTrigger, triggerLabel = "📷 Scan a hand", onBusyChange }, ref) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [scanStatus, setScanStatus] = useState<"idle" | "cropping" | "loading" | "review" | "error">("idle");
   const [scanError, setScanError] = useState<string | null>(null);
@@ -1159,11 +1162,11 @@ const HandScanner = forwardRef<
     () => (scanPreview ? scanPreview.regions.reduce((n, r) => n + r.detections.filter((d) => d.tile !== null).length, 0) : 0),
     [scanPreview]
   );
-  const regionErrors = useMemo(
-    () => (scanPreview && validateRegion ? scanPreview.regions.map((r, i) => validateRegion(r.detections, i)) : null),
-    [scanPreview, validateRegion]
+  const regionIssues = useMemo(
+    () => (scanPreview && regionIssue ? scanPreview.regions.map((r, i) => regionIssue(r.detections, i)) : null),
+    [scanPreview, regionIssue]
   );
-  const hasBlockingError = regionErrors?.some((e) => e !== null) ?? false;
+  const hasBlockingError = regionIssues?.some((issue) => issue?.blocking) ?? false;
   const editingDetection = useMemo(() => {
     if (editingDetectionId === null || !scanPreview) return null;
     for (const region of scanPreview.regions) {
@@ -1407,7 +1410,9 @@ const HandScanner = forwardRef<
                     <span key={i} className="scan-review-region-count">
                       <strong>{regionLabels[i]}:</strong> {tileCount} tile{tileCount === 1 ? "" : "s"}
                       {ignoredCount > 0 && ` (+${ignoredCount} flower/season)`}
-                      {regionErrors?.[i] && <span className="error"> — {regionErrors[i]}</span>}
+                      {regionIssues?.[i] && (
+                        <span className={regionIssues[i]!.blocking ? "error" : "warning"}> — {regionIssues[i]!.message}</span>
+                      )}
                     </span>
                   );
                 })
@@ -2465,17 +2470,38 @@ function ScoringPanel() {
     return { realTiles, bonusTiles };
   };
 
-  // HandScanner's validateRegion: refuses to confirm a Declared-region scan
-  // that didn't cleanly resolve into whole melds, rather than silently
-  // dropping the tiles that didn't fit - see groupDeclaredTiles's own doc
-  // comment for what "didn't fit" means.
-  const validateDeclaredRegion = (detections: ReviewDetection[], regionIndex: number): string | null => {
+  // HandScanner's regionIssue for the Declared region. groupDeclaredTiles
+  // assumes melds are laid out left-to-right and consecutive - a photo
+  // grouped some other way (e.g. stacked top-to-bottom) breaks that
+  // assumption partway through, leaving the rest of the tiles as leftover.
+  // That's just an advisory warning (confirming anyway scores the melds
+  // that WERE recognized, silently dropping the leftover - see
+  // applyScannedRegions): the user can always fix the boxes and rescan for
+  // a clean read, but forcing them to before they can even see a score
+  // isn't worth it. The only case actually worth blocking on is zero
+  // melds recognized at all - there's no "best effort" breakdown to fall
+  // back on then, just an empty declared-melds region.
+  const declaredRegionIssue = (
+    detections: ReviewDetection[],
+    regionIndex: number
+  ): { blocking: boolean; message: string } | null => {
     if (regionIndex !== 1) return null;
-    const leftover = groupDeclaredTiles(declaredScanTiles(detections).realTiles).leftover;
+    const { melds, leftover } = groupDeclaredTiles(declaredScanTiles(detections).realTiles);
     if (leftover.length === 0) return null;
-    return `${leftover.length} tile${leftover.length === 1 ? "" : "s"} don't form a full meld - correct or remove ${
-      leftover.length === 1 ? "its" : "their"
-    } box${leftover.length === 1 ? "" : "es"} above`;
+    if (melds.length === 0) {
+      return {
+        blocking: true,
+        message: `${leftover.length} tile${leftover.length === 1 ? "" : "s"} don't form a full meld - correct or remove ${
+          leftover.length === 1 ? "its" : "their"
+        } box${leftover.length === 1 ? "" : "es"} above`,
+      };
+    }
+    return {
+      blocking: false,
+      message: `Grouping isn't clear from this photo (${leftover.length} tile${
+        leftover.length === 1 ? "" : "s"
+      } unmatched) - consider rescanning. Confirming will score using the melds detected so far.`,
+    };
   };
 
   // HandScanner's onConfirm: region 0 is always the concealed hand and fully
@@ -2558,7 +2584,7 @@ function ScoringPanel() {
         hideTrigger
         onBusyChange={setScanBusy}
         regionLabels={["Concealed", "Declared"]}
-        validateRegion={validateDeclaredRegion}
+        regionIssue={declaredRegionIssue}
         onConfirm={applyScannedRegions}
       />
 

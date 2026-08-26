@@ -883,6 +883,11 @@ h1 {
   font-size: 0.85rem;
 }
 
+.warning {
+  color: #9a6700;
+  font-size: 0.85rem;
+}
+
 .scan-input {
   display: flex;
   align-items: center;
