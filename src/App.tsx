@@ -2521,7 +2521,7 @@ function ScoringPanel() {
       </div>
 
       <div className="panel-header meld-kind-row">
-        {(["triplet", "run", "kong"] as MeldKind[]).map((k) => (
+        {(["run", "triplet", "kong"] as MeldKind[]).map((k) => (
           <button
             key={k}
             type="button"
