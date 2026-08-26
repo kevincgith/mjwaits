@@ -2484,7 +2484,7 @@ function ScoringPanel() {
           Reset
         </button>
         <button type="button" onClick={() => handScannerRef.current?.trigger()} disabled={scanBusy}>
-          Scan
+          📷 Scan
         </button>
         <span className="tile-count">
           {totalTiles} / {requiredSize} tiles
