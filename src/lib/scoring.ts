@@ -675,23 +675,34 @@ function eightPairsWindRankCount(hand: ResolvedHand): number {
 // 234m), scanning every meld for "does it have this kind as its middle
 // rank" already captures the alternate reading without exploring
 // decomposeHandAll's other candidates.
-// 十三么-shaped hands add a second way to trigger this: the 12 unpaired
-// orphan kinds are each represented as their own 1-tile "meld" (see
+// The standard rule covers 3 classic narrow/single-tile wait shapes:
+// - 嵌張 (kanchan): the winning tile fills the *middle* rank of a run it
+//   belongs to - e.g. holding 1_3 waiting on 2 only.
+// - 邊張 (penchan/edge wait): a 1-2-3 run completed specifically by the 3
+//   (holding 1-2, which can only ever wait on 3 - there's no 0 to make it
+//   two-sided), or a 7-8-9 run completed specifically by the 7 (holding
+//   8-9, no 10 to extend the other way). Completing a 1-2-3 run via 1, or
+//   a 7-8-9 run via 9, is an ordinary two-sided (兩面) wait instead, not
+//   this shape - those ranks can genuinely extend both directions.
+// - 單騎 (tanki): the winning tile completes the pair.
+// None of these need to check for an alternate/wider reading explicitly -
+// genuine-single-wait already excludes this pattern whenever it fires (see
+// its own `excludes`), so a hand where one of these shapes was actually
+// the *only* possible completion never reaches here already covered by
+// 獨獨 instead; this only needs to recognize the shape itself.
+//
+// Two special-hand-only extensions apply on top (irrelevant to ordinary
+// hands, since neither shape can occur there): 十三么's 12 unpaired orphan
+// kinds are each represented as their own 1-tile "meld" (see
 // scoreThirteenOrphans), and the winning tile's kind can land in BOTH one
 // of those 1-tile placeholders AND the genuine 3-tile ordinary meld at
 // once - e.g. 19m1t789t19b12345677z waits on 6t/9t (either extends the
 // 7t8t run), but 9t specifically also happens to be the pre-existing
-// single's own kind. That's the same "an alternate reading pins the
-// winning tile down to one fixed role" ambiguity the duplicated-rank case
-// above captures, just produced by this special hand's fake single-tile
-// melds instead of a genuinely duplicated rank within one run.
-// A third way applies to any ordinary hand: the winning tile's kind is
-// both the hand's pair AND the edge of a run it belongs to - e.g. 7899m
-// completed by 9m reads as 789m + 99m (the pair), even though the true
-// wait was also open to 6m (99m already the pair, 78m waiting 6/9). Same
-// "identical tiles, two possible roles" ambiguity as the other two checks,
-// just between a run and the pair instead of two melds or a meld and a
-// special-hand single.
+// single's own kind, the same "an alternate reading pins the winning tile
+// down to one fixed role" idea as kanchan, just produced by this special
+// hand's fake single-tile melds instead of a duplicated rank within a run.
+// 嚦咕嚦咕's own extension (isEightPairsFakeSingleWait) is wired in
+// separately by its caller rather than folded in here.
 function isFakeSingleWait(hand: ResolvedHand, ctx: GameContext): boolean {
   if (ctx.winningTile === null) return false;
   const winningTile = ctx.winningTile;
@@ -701,12 +712,17 @@ function isFakeSingleWait(hand: ResolvedHand, ctx: GameContext): boolean {
     return ranks[1] === winningTile.rank;
   });
   if (kanchan) return true;
+  const penchan = hand.melds.some((m) => {
+    if (m.kind !== "run" || !meldHasTileKind(m, winningTile)) return false;
+    const ranks = m.tiles.map((t) => t.rank).sort((a, b) => a - b);
+    return (ranks[0] === 1 && ranks[2] === 3 && winningTile.rank === 3) || (ranks[0] === 7 && ranks[2] === 9 && winningTile.rank === 7);
+  });
+  if (penchan) return true;
+  const tanki = hand.pair.some((t) => t.suit === winningTile.suit && t.rank === winningTile.rank);
+  if (tanki) return true;
   const inSingleMeld = hand.melds.some((m) => m.tiles.length === 1 && meldHasTileKind(m, winningTile));
   const inLargerMeld = hand.melds.some((m) => m.tiles.length > 1 && meldHasTileKind(m, winningTile));
-  if (inSingleMeld && inLargerMeld) return true;
-  const inPair = hand.pair.some((t) => t.suit === winningTile.suit && t.rank === winningTile.rank);
-  const inRun = hand.melds.some((m) => m.kind === "run" && meldHasTileKind(m, winningTile));
-  return inPair && inRun;
+  return inSingleMeld && inLargerMeld;
 }
 
 // 明 (open) vs 暗 (concealed/hidden), per the house rule: a meld is 明 if

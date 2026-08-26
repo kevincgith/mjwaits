@@ -5,6 +5,7 @@ import {
   groupDeclaredTiles,
   isDealer,
   parseScoringHand,
+  PATTERNS,
   scoreHand,
   scoreParsedHand,
   ScoringError,
@@ -1271,6 +1272,35 @@ describe("PATTERNS: 獨獨/假獨 (genuine vs. fake single wait)", () => {
     expect(tai(result, "genuine-single-wait")).toBe(0);
     expect(tai(result, "fake-single-wait")).toBe(0);
   });
+
+  it("scores 假獨 for a genuine 邊張 (penchan/edge) shape - a 1-2-3 run completed by 3, or a 7-8-9 run completed by 7", () => {
+    // Checked against the raw pattern score (bypassing the 獨獨-excludes-假獨
+    // cascade) since these particular hands' completions are also genuinely
+    // single waits on their own - see the note above isFakeSingleWait: the
+    // shape itself is what's being verified here, not the end-to-end
+    // interplay with 獨獨 (already covered by the kanchan tests above and
+    // the 十六飛 test below).
+    const low = scoreHand("123m456m789t111z789b22b", ctx({ winningTile: { suit: "m", rank: 3 } }));
+    expect(PATTERNS.find((p) => p.id === "fake-single-wait")!.score(low.hand, ctx({ winningTile: { suit: "m", rank: 3 } }))).toBe(2);
+
+    const high = scoreHand("789m456m123t111z789b22b", ctx({ winningTile: { suit: "m", rank: 7 } }));
+    expect(PATTERNS.find((p) => p.id === "fake-single-wait")!.score(high.hand, ctx({ winningTile: { suit: "m", rank: 7 } }))).toBe(2);
+  });
+
+  it("doesn't treat a 2-3 waiting on 1 (or an 7-8 waiting on 9) as 邊張 - those are genuine two-sided (兩面) waits, not edge waits", () => {
+    const result = scoreHand("123m456m789t111z789b22b", ctx({ winningTile: { suit: "m", rank: 1 } }));
+    expect(PATTERNS.find((p) => p.id === "fake-single-wait")!.score(result.hand, ctx({ winningTile: { suit: "m", rank: 1 } }))).toBe(0);
+  });
+
+  it("scores 假獨 for 單騎 (tanki): the winning tile completes the pair, but the true wait was much wider - e.g. 1112345678999m111z (nine gates) waits on all of 1m-9m, and drawing 2m specifically makes it the pair", () => {
+    const result = scoreHand("11122345678999m111z", ctx({ winningTile: { suit: "m", rank: 2 } }));
+    expect(tai(result, "fake-single-wait")).toBe(2);
+    expect(tai(result, "genuine-single-wait")).toBe(0);
+    expect(result.hand.pair).toEqual([
+      { suit: "m", rank: 2 },
+      { suit: "m", rank: 2 },
+    ]);
+  });
 });
 
 describe("PATTERNS: 門前清 (concealed hand)", () => {
@@ -1475,11 +1505,12 @@ describe("PATTERNS: 十六不搭 (Sixteen Unrelated Tiles)", () => {
 describe("PATTERNS: 十六不搭(十六飛) (16-way wait - the 食胡 tile completed the pair)", () => {
   const hand = "147m147t258b11234567z"; // pair is 1z; avoids 不搭三相逢/不搭雜龍, see above
 
-  it("scores 60 tai instead of 50 when the winning tile completed the pair", () => {
+  it("scores 60 tai instead of 50 when the winning tile completed the pair, plus 假獨 (a 16-way tanki completion is the textbook fake-single-wait case)", () => {
     const result = scoreHand(hand, ctx({ winningTile: { suit: "z", rank: 1 } }));
     expect(tai(result, "sixteen-unrelated-flying")).toBe(60);
     expect(tai(result, "sixteen-unrelated")).toBe(0);
-    expect(result.total).toBe(67);
+    expect(tai(result, "fake-single-wait")).toBe(2);
+    expect(result.total).toBe(69);
   });
 
   it("scores the base 50 tai when the winning tile completed one of the 15 singles instead", () => {
