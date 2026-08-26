@@ -8,6 +8,9 @@ import type { Tile } from "./mahjong";
 
 export const IMG_SIZE = 640;
 const CONFIDENCE_THRESHOLD = 0.4;
+// How much two boxes may overlap before they're treated as the same
+// physical tile (see nonMaxSuppression) - standard YOLO default.
+const NMS_IOU_THRESHOLD = 0.45;
 
 // Unified class order the model was trained with: mjwaits's own 34 tile
 // kinds (m/t/z 1-9/1-7, bamboo as b to leave "s" free) followed by 8 bonus
@@ -175,6 +178,39 @@ function toTensor(canvas: HTMLCanvasElement): ort.Tensor {
   return new ort.Tensor("float32", floatData, [1, 3, IMG_SIZE, IMG_SIZE]);
 }
 
+function boxArea([x1, y1, x2, y2]: [number, number, number, number]): number {
+  return Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
+}
+
+function boxIou(a: [number, number, number, number], b: [number, number, number, number]): number {
+  const interX1 = Math.max(a[0], b[0]);
+  const interY1 = Math.max(a[1], b[1]);
+  const interX2 = Math.min(a[2], b[2]);
+  const interY2 = Math.min(a[3], b[3]);
+  const interArea = Math.max(0, interX2 - interX1) * Math.max(0, interY2 - interY1);
+  const union = boxArea(a) + boxArea(b) - interArea;
+  return union > 0 ? interArea / union : 0;
+}
+
+// The model can (and does) fire twice on the same physical tile - two
+// overlapping boxes, sometimes even with different guessed classes, both
+// above CONFIDENCE_THRESHOLD. Standard greedy NMS: walk detections
+// highest-confidence first, keeping each one and discarding any
+// not-yet-kept detection that overlaps it past NMS_IOU_THRESHOLD.
+// Deliberately class-agnostic (unlike textbook per-class NMS) - two boxes
+// this close together are almost certainly the same physical tile even
+// when the model guessed different classes for them, and a mahjong hand's
+// tiles are laid out with no legitimate reason for two different tiles to
+// overlap this much.
+export function nonMaxSuppression(detections: Detection[]): Detection[] {
+  const sorted = [...detections].sort((a, b) => b.confidence - a.confidence);
+  const kept: Detection[] = [];
+  for (const d of sorted) {
+    if (kept.every((k) => boxIou(k.box, d.box) <= NMS_IOU_THRESHOLD)) kept.push(d);
+  }
+  return kept;
+}
+
 // Runs detection on an already-letterboxed canvas (see `letterbox`).
 export async function detectTiles(box: Letterbox, onProgress?: (p: ScanProgress) => void): Promise<DetectionResult> {
   const session = await getSession(onProgress);
@@ -183,19 +219,20 @@ export async function detectTiles(box: Letterbox, onProgress?: (p: ScanProgress)
   const out = outputs.output0.data as Float32Array;
   const numDetections = outputs.output0.dims[1];
 
-  const detections: Detection[] = [];
+  const rawDetections: Detection[] = [];
   for (let i = 0; i < numDetections; i++) {
     const off = i * 6;
     const confidence = out[off + 4];
     if (confidence < CONFIDENCE_THRESHOLD) continue;
     const className = CLASS_NAMES[Math.round(out[off + 5])];
-    detections.push({
+    rawDetections.push({
       tile: classToTile(className),
       className,
       confidence,
       box: [out[off], out[off + 1], out[off + 2], out[off + 3]],
     });
   }
+  const detections = nonMaxSuppression(rawDetections);
 
   const tiles: Tile[] = [];
   let ignoredBonusCount = 0;
