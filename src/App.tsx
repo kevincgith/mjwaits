@@ -2300,6 +2300,7 @@ function ScoringPanel() {
   const requiredSize = COMPLETE_SIZE + kongCount;
   const totalTiles = concealedTiles.length + declaredMelds.reduce((n, m) => n + m.tiles.length, 0);
   const atCap = totalTiles >= requiredSize;
+  const meldsFull = declaredMelds.length >= 5;
 
   const addConcealedTile = (tile: Tile) => {
     if (atCapRef() || totalCopiesUsedRef(tile) >= 4) return;
@@ -2315,7 +2316,7 @@ function ScoringPanel() {
   };
 
   const pushMeld = (kind: MeldKind, concealed: boolean, tiles: Tile[]) => {
-    if (atCapRef()) return;
+    if (atCapRef() || declaredRef.current.length >= 5) return;
     const next = [...declaredRef.current, { id: nextMeldId.current++, kind, concealed, tiles }];
     declaredRef.current = next;
     setDeclaredMelds(next);
@@ -2354,7 +2355,7 @@ function ScoringPanel() {
   };
 
   const canAddMeldTile = (tile: Tile): boolean => {
-    if (atCap) return false;
+    if (atCap || meldsFull) return false;
     if (meldKind === "triplet") return totalCopiesUsed(tile) + 3 <= 4;
     if (meldKind === "kong") return totalCopiesUsed(tile) === 0;
     // A run starting at rank 8 or 9 would need a rank 10 or 11 tile, which
