@@ -73,6 +73,42 @@ describe("groupDeclaredTiles", () => {
   it("handles an empty input", () => {
     expect(groupDeclaredTiles([])).toEqual({ melds: [], leftover: [] });
   });
+
+  it("falls back to an order-independent search when the positional read leaves leftover but the whole multiset still resolves", () => {
+    // Detected left-to-right order: 1m 6m 7m 8m 4m 4m 4m 1m 1m 9m 9m 9m -
+    // the positional read fails immediately (1m/6m/7m starts nothing), but
+    // the tiles as a whole multiset resolve cleanly into 111m/444m/678m/999m.
+    const scrambled = [1, 6, 7, 8, 4, 4, 4, 1, 1, 9, 9, 9].map((rank) => ({ suit: "m" as const, rank }));
+    const result = groupDeclaredTiles(scrambled);
+    expect(result.leftover).toEqual([]);
+    expect(result.melds).toHaveLength(4);
+    expect(result.melds.map((m) => m.kind).sort()).toEqual(["run", "triplet", "triplet", "triplet"]);
+  });
+
+  it("still reports leftover when no full decomposition exists, even out of order", () => {
+    // 1m 2m 3t - genuinely irrecoverable regardless of order, not rescued
+    // by the order-independent fallback.
+    const result = groupDeclaredTiles([{ suit: "m", rank: 1 }, { suit: "m", rank: 2 }, { suit: "t", rank: 3 }]);
+    expect(result.melds).toEqual([]);
+    expect(result.leftover).toHaveLength(3);
+  });
+
+  it("prefers a triplet+run reading over a kong when only the former lets everything resolve", () => {
+    // Four 5m plus one 6m and one 7m, detected out of order: an all-kong
+    // reading of the four 5m would strand the 6m/7m with no partner, so
+    // the fallback must find the 555m triplet + 567m run reading instead.
+    const scrambled = [
+      { suit: "m" as const, rank: 5 },
+      { suit: "m" as const, rank: 6 },
+      { suit: "m" as const, rank: 7 },
+      { suit: "m" as const, rank: 5 },
+      { suit: "m" as const, rank: 5 },
+      { suit: "m" as const, rank: 5 },
+    ];
+    const result = groupDeclaredTiles(scrambled);
+    expect(result.leftover).toEqual([]);
+    expect(result.melds.map((m) => m.kind).sort()).toEqual(["run", "triplet"]);
+  });
 });
 
 describe("parseScoringHand", () => {

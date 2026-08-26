@@ -114,20 +114,22 @@ function matchRun(a: Tile, b: Tile, c: Tile): Tile[] | null {
 }
 
 // Groups tiles detected in the declared-melds region of a hand-scan photo
-// into melds. Assumes tiles are already in left-to-right table order (the
+// into melds, assuming they're already in left-to-right table order (the
 // physical tiles of one meld are laid touching each other, so a
 // spatially-sorted detection list has each meld's tiles consecutive, even
 // though the tiles WITHIN one meld's cluster aren't necessarily in rank
-// order - see matchRun) - see HandScanner/CropOverlay's "Declared" region in
-// App.tsx, the only caller. Greedily consumes from the front: 4 identical
-// tiles is a kong (defaulted to exposed - a genuinely concealed kong has 2
-// tiles face down, which the vision model can't read as their real class
-// anyway, so callers should let the user flip that after the fact), 3
-// identical is a triplet, 3 same-suit tiles forming a run (any order) is a
-// run. The first tile that doesn't start one of those three shapes, and
-// everything after it, is returned as `leftover` instead of being guessed
-// at.
-export function groupDeclaredTiles(tiles: Tile[]): DeclaredGrouping {
+// order - see matchRun). This is the primary, order-sensitive pass -
+// groupDeclaredTiles below falls back to an order-independent search when
+// this leaves leftover tiles, since the assumption above doesn't always
+// hold (e.g. melds stacked top-to-bottom in the photo instead of left to
+// right). Greedily consumes from the front: 4 identical tiles is a kong
+// (defaulted to exposed - a genuinely concealed kong has 2 tiles face
+// down, which the vision model can't read as their real class anyway, so
+// callers should let the user flip that after the fact), 3 identical is a
+// triplet, 3 same-suit tiles forming a run (any order) is a run. The
+// first tile that doesn't start one of those three shapes, and everything
+// after it, is returned as `leftover` instead of being guessed at.
+function groupDeclaredTilesPositional(tiles: Tile[]): DeclaredGrouping {
   const melds: MeldDeclaration[] = [];
   let i = 0;
   while (i < tiles.length) {
@@ -151,6 +153,27 @@ export function groupDeclaredTiles(tiles: Tile[]): DeclaredGrouping {
     return { melds, leftover: tiles.slice(i) };
   }
   return { melds, leftover: [] };
+}
+
+// Groups tiles detected in the declared-melds region of a hand-scan photo
+// into melds - see HandScanner/CropOverlay's "Declared" region in App.tsx,
+// the only caller. Tries the order-sensitive positional read first (see
+// groupDeclaredTilesPositional); if that leaves leftover tiles, falls back
+// to allDeclaredDecompositions, a full backtracking search over the whole
+// detected multiset that ignores position entirely - e.g. "1m 6m 7m 8m 4m
+// 4m 4m 1m 1m 9m 9m 9m" (in detected order) fails the positional read
+// immediately (1m/6m/7m starts neither a kong, triplet, nor run) even
+// though the multiset cleanly resolves into 111m/444m/678m/999m once order
+// is ignored. Only actually falls back (rather than reporting the
+// positional leftover) when a full order-independent decomposition
+// exists; a multiset that's genuinely ambiguous between several valid
+// full decompositions just picks the first one found, same as
+// decomposeHandAll already does for the concealed portion of a hand.
+export function groupDeclaredTiles(tiles: Tile[]): DeclaredGrouping {
+  const positional = groupDeclaredTilesPositional(tiles);
+  if (positional.leftover.length === 0) return positional;
+  const full = allDeclaredDecompositions(tiles);
+  return full.length > 0 ? { melds: full[0], leftover: [] } : positional;
 }
 
 // Parses the scoring notation: mahjong.ts's plain digits+suit groups for
@@ -329,6 +352,40 @@ const SUITS: { suit: Suit; allowRuns: boolean }[] = [
   { suit: "b", allowRuns: true },
   { suit: "z", allowRuns: false },
 ];
+
+// Every full decomposition of `tiles` into declared melds (kong/triplet/
+// run), ignoring the order they were detected in - groupDeclaredTiles's
+// fallback for when the positional read doesn't work out. Reuses
+// allSuitDecompositions's backtracking search (built for the free/
+// concealed portion of a hand, but the same shape-exploring logic applies
+// here too - see that function's doc comment for why greedily picking kong
+// over triplet+run, or vice versa, isn't enough) per suit, then combines
+// suits via cartesian product; every candidate meld gets `concealed: false`
+// since anything detected in the declared region is by definition exposed
+// (or, for a kong, at least treated as exposed - see
+// groupDeclaredTilesPositional's doc comment). Empty if even one suit's
+// tiles can't be fully consumed into melds.
+function allDeclaredDecompositions(tiles: Tile[]): MeldDeclaration[][] {
+  const steps = { count: 0 };
+  let combos: MeldDeclaration[][] = [[]];
+  for (const { suit, allowRuns } of SUITS) {
+    if (combos.length === 0) break;
+    const counts = countsForSuit(tiles, suit, suit === "z" ? 7 : 9);
+    const suitDecomps = allSuitDecompositions(counts, allowRuns, suit, steps).map((melds) =>
+      melds.map((m) => ({ ...m, concealed: false }))
+    );
+    const next: MeldDeclaration[][] = [];
+    for (const c of combos) {
+      for (const d of suitDecomps) {
+        next.push([...c, ...d]);
+        if (next.length > MAX_DECOMPOSITIONS) break;
+      }
+      if (next.length > MAX_DECOMPOSITIONS) break;
+    }
+    combos = next;
+  }
+  return combos;
+}
 
 // Every valid (pair, melds) decomposition of the *free* concealed tiles
 // (i.e. excluding whatever's already fixed by declaredMelds) into
