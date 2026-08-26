@@ -671,6 +671,14 @@ describe("PATTERNS: 明清龍/暗清龍 (pure straight, with duplicate instances
     expect(tai(result, "pure-straight-hidden")).toBe(20); // 1 instance
     expect(tai(result, "pure-straight-open")).toBe(10); // 1 instance
   });
+
+  it("counts all 4 combinations when both the low and high segments are duplicated (123m123m456m789m789m) - not just 2 paired by index", () => {
+    // Every one of the 2 low copies can pair with every one of the 2 high
+    // copies while still sharing the single 456m - 2x2 = 4 instances, not
+    // the 2 a naive index-zip would find.
+    const result = scoreHand("123m123m456m789m789m55z", ctx());
+    expect(tai(result, "pure-straight-hidden")).toBe(80); // 4 instances x 20
+  });
 });
 
 describe("PATTERNS: 明雜龍/暗雜龍 (mixed straight across suits)", () => {
@@ -691,6 +699,11 @@ describe("PATTERNS: 老少上/老少碰", () => {
   it("counts 2x 老少上 for a duplicated 123 paired with a single 789", () => {
     const result = scoreHand("123m123m789m456t567t22b", ctx());
     expect(tai(result, "old-young-run")).toBe(6); // 2 instances x 3
+  });
+
+  it("counts all 4 combinations when both 123 and 789 are duplicated (2x2), not just 2 paired by index", () => {
+    const result = scoreHand("123m123m789m789m456t22b", ctx());
+    expect(tai(result, "old-young-run")).toBe(12); // 4 instances x 3
   });
 
   it("doesn't score 老少上 for a suit that also has the 456 segment (that's 清龍 instead)", () => {

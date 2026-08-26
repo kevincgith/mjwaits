@@ -742,19 +742,28 @@ function segmentMelds(hand: ResolvedHand, suit: Suit, startRank: number): Resolv
   return hand.melds.filter((m) => m.kind === "run" && m.tiles[0].suit === suit && m.tiles[0].rank === startRank);
 }
 
-// Given the meld lists for three segments that must combine 1-to-1 into a
-// straight, returns one meld-triple per instance. When a segment has more
-// copies than another, the extra copies each form their own instance,
-// reusing whichever segment(s) only have a single copy - see the 清龍/雜龍
-// worked examples this was derived from (123m456m789m789m -> 2 instances,
-// one pairing each 789m with the shared 123m/456m). Empty if any segment is
-// missing entirely (no straight at all).
+// Given the meld lists for three segments that must combine into a
+// straight, returns one meld-triple per instance - every combination of one
+// meld from each segment, since a segment held only once is reused
+// (shared) across as many instances as the other segments' copies call
+// for, not consumed by forming one. This is the full Cartesian product,
+// not a 1-to-1 pairing: with 2 copies of the low segment, 1 of the mid, and
+// 2 of the high (e.g. 123m123m456m789m789m), pairing by index alone would
+// only ever find 2 instances (123m#1+456m+789m#1, 123m#2+456m+789m#2), but
+// every low copy can pair with every high copy while still sharing the one
+// mid copy, so all 4 combinations count - confirmed against exactly that
+// example. Simpler shapes (e.g. 123m456m789m789m, only one segment
+// duplicated) still reduce to the same 2 instances either way. Empty if any
+// segment is missing entirely (no straight at all).
 function combineSegments(segA: ResolvedMeld[], segB: ResolvedMeld[], segC: ResolvedMeld[]): ResolvedMeld[][] {
   if (segA.length === 0 || segB.length === 0 || segC.length === 0) return [];
-  const instances = Math.max(segA.length, segB.length, segC.length);
   const result: ResolvedMeld[][] = [];
-  for (let i = 0; i < instances; i++) {
-    result.push([segA[Math.min(i, segA.length - 1)], segB[Math.min(i, segB.length - 1)], segC[Math.min(i, segC.length - 1)]]);
+  for (const a of segA) {
+    for (const b of segB) {
+      for (const c of segC) {
+        result.push([a, b, c]);
+      }
+    }
   }
   return result;
 }
@@ -803,17 +812,17 @@ function meldsAtRank(hand: ResolvedHand, kinds: MeldKind[], suit: Suit, rank: nu
 
 // 老少上 instances: a 1-2-3 run and a 7-8-9 run in the same suit, as long as
 // that suit doesn't *also* have a 4-5-6 run (that would make it 清龍
-// instead). No 明/暗 split, but still stacks the same "extra copies each
-// form their own instance, reusing the single-copy segment" way 清龍/雜龍 do
-// (see combineSegments) - just with 2 segments instead of 3.
+// instead). No 明/暗 split, but still stacks the same combineSegments-style
+// full-combination way 清龍/雜龍 do - just with 2 segments instead of 3, so
+// every low copy pairs with every high copy (e.g. 2 copies of each is 4
+// instances, not 2 - same reasoning as combineSegments' own fix).
 function oldYoungRunInstances(hand: ResolvedHand): number {
   let total = 0;
   for (const suit of ["m", "t", "b"] as const) {
     if (segmentMelds(hand, suit, 4).length > 0) continue;
     const ones = segmentMelds(hand, suit, 1);
     const nines = segmentMelds(hand, suit, 7);
-    if (ones.length === 0 || nines.length === 0) continue;
-    total += Math.max(ones.length, nines.length);
+    total += ones.length * nines.length;
   }
   return total;
 }

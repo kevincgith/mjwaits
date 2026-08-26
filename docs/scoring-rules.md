@@ -46,11 +46,17 @@ These patterns can fire more than once on a single hand when a segment repeats �
 `123m 456m 789m 789m` (an extra 789m) counts as **two** 清龍 instances, not one. The rule: look at
 the melds matching each required segment (e.g. 清龍's three segments are 1-2-3, 4-5-6, 7-8-9 in one
 suit; 步步高's are 3 consecutive starting ranks; 二步高's are 3 starting ranks 2 apart). If every
-segment has at least one meld, the number of instances equals the **largest** count among the
-segments — the segment(s) with only one copy get reused across every instance, while each extra
-copy of whichever segment repeats forms its own separate instance. Each instance is classified
-independently (open vs. concealed, for the patterns that split that way). All of these share one
-`combineSegments` helper in the code.
+segment has at least one meld, the number of instances is the **product** of the segments' meld
+counts — every combination of one meld per segment counts as its own instance, since a segment
+held only once is *shared* (reused) across every instance the other segments' copies call for,
+never "consumed" by forming one. With only one segment ever duplicated this reduces to that
+segment's count (matching the `789m789m` example above: 1×1×2 = 2), but when **more than one**
+segment is duplicated at once it's not just the largest count — `123m123m456m789m789m` (both the
+low and high segments doubled, one 456m shared between them) is **4** instances (2×1×2), one for
+every low-high combination, not 2 paired off by index. 老少上/老少碰 (2 segments, no shared middle)
+follow the same product rule. Each instance is classified independently (open vs. concealed, for
+the patterns that split that way). All of the 3-segment patterns share one `combineSegments`
+helper in the code.
 
 ## Foundation
 
