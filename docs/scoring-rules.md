@@ -227,8 +227,8 @@ these use [duplicate-instance counting](#duplicate-instance-counting-清龍雜�
 | Pattern | Tai | Criteria | Excludes | Notes |
 |---|---|---|---|---|
 | 二連刻 (2 consecutive triplets/kongs) | 5 each | 2 triplets/kongs at consecutive ranks in one suit (e.g. `222m+333m`, triplet/kong mixed freely). No 明/暗 split. | — | **Stacks per adjacent pair** — 3 consecutive triplets (`222+333+444`) counts as 2 instances. |
-| 小三連刻 (3 consecutive ranks, pair at one end) | 15 | 3 consecutive ranks in one suit where the hand's pair sits at one end and the other 2 are triplets/kongs — e.g. `22m+333m+444m`. | 二連刻 | Structurally different from 大三連刻 (needs the pair), so not mutually exclusive with it - but does exclude 二連刻, whose 2-consecutive-triplet shape sits entirely inside this one, same precedent as 小三兄弟 excluding 兩兄弟. |
-| 大三連刻 (3 consecutive triplets/kongs) | 30 | Same 3-consecutive-rank shape, but all 3 are full triplets/kongs — pair not involved. | 二連刻 | Excludes 二連刻 for the same reason as 小三連刻 - 3 consecutive triplets would otherwise also score 2 stacked 二連刻 instances on top. |
+| 小三連刻 (3 consecutive ranks, pair at one end) | 15 each | 3 consecutive ranks in one suit where the hand's pair sits at one end and the other 2 are triplets/kongs — e.g. `22m+333m+444m`. | 二連刻 | Structurally different from 大三連刻 (needs the pair), so not mutually exclusive with it - but does exclude 二連刻, whose 2-consecutive-triplet shape sits entirely inside this one, same precedent as 小三兄弟 excluding 兩兄弟. **Stacks** across the pair's up-to-3 sliding windows (pair at the low end, middle, or high end) — e.g. `111m222m444m555m` around a `33m` pair scores 3 instances (all of low/middle/high qualify with triplets flanking on both sides), same reasoning as 大三連刻/清龍. |
+| 大三連刻 (3 consecutive triplets/kongs) | 30 each | Same 3-consecutive-rank shape, but all 3 are full triplets/kongs — pair not involved. | 二連刻 | Excludes 二連刻 for the same reason as 小三連刻 - 3 consecutive triplets would otherwise also score 2 stacked 二連刻 instances on top. **Stacks** across overlapping windows — `111m222m333m444m555m` scores 3 instances (`[1,2,3]`, `[2,3,4]`, `[3,4,5]`), same sliding-window reasoning as 二連刻/清龍. |
 
 ## Cross-suit patterns
 
@@ -372,6 +372,9 @@ worth double-checking:
   needs the pair, one doesn't), not confirmed. Both do exclude 二連刻 though (confirmed).
 - **二連刻 stacks** (3 consecutive triplets = 2 instances) - inferred from the same precedent as
   老少上/二步高 rather than stated outright for this specific pattern.
+- **小三連刻 stacks across its up-to-3 sliding windows** - confirmed for 大三連刻 with a worked
+  example (`111m222m333m444m555m` = 3 instances); 小三連刻 was fixed the same way for consistency
+  (same sliding-window shape, just anchored to the pair) but not itself confirmed with an example.
 - **小/大三色連刻, 明/暗三色步步高, and 小/大三兄弟 don't exclude each other across families**
   (e.g. 小三色連刻 doesn't exclude 兩兄弟) - they check different shapes (consecutive vs. same
   rank, triplet vs. run) that can't structurally overlap, so no exclusion was added between them.

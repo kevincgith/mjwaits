@@ -993,6 +993,16 @@ describe("PATTERNS: 小三連刻/大三連刻", () => {
     expect(tai(result, "big-three-consecutive-triplets")).toBe(30);
     expect(tai(result, "consecutive-triplet-pair")).toBe(0);
   });
+
+  it("stacks 3 instances of 大三連刻 for 111m222m333m444m555m - overlapping windows [1,2,3]/[2,3,4]/[3,4,5]", () => {
+    const result = scoreHand("111m222m333m444m555m22z", ctx());
+    expect(tai(result, "big-three-consecutive-triplets")).toBe(90); // 3 instances x 30
+  });
+
+  it("stacks 3 instances of 小三連刻 when the pair sits in the middle of 4 flanking triplets (1m/2m/4m/5m around a 3m pair)", () => {
+    const result = scoreHand("111m222m444m555m33m789t", ctx());
+    expect(tai(result, "small-three-consecutive-triplets")).toBe(45); // 3 instances x 15
+  });
 });
 
 describe("PATTERNS: 混一色/清一色", () => {

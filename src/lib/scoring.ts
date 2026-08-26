@@ -1161,28 +1161,33 @@ function consecutiveTripletOrKongPairCount(hand: ResolvedHand): number {
 // 333m + 444m). 大三連刻: same 3-consecutive-rank shape, but all 3 are full
 // triplets/kongs (pair not involved at all) - these are structurally
 // different (one needs the pair, one doesn't), so not mutually exclusive.
-function hasSmallThreeConsecutiveTriplets(hand: ResolvedHand): boolean {
+// Both stack: overlapping windows sharing a triplet each count separately -
+// e.g. 大三連刻 on 111m222m333m444m555m is 3 instances ([1,2,3], [2,3,4],
+// [3,4,5]), same sliding-window reasoning as 二連刻/清龍's own stacking.
+function smallThreeConsecutiveTripletCount(hand: ResolvedHand): number {
   const pair = hand.pair[0];
-  if (pair.suit === "z") return false;
+  if (pair.suit === "z") return 0;
   const windows = [
     [pair.rank, pair.rank + 1, pair.rank + 2],
     [pair.rank - 1, pair.rank, pair.rank + 1],
     [pair.rank - 2, pair.rank - 1, pair.rank],
   ];
+  let count = 0;
   for (const window of windows) {
     if (window[0] < 1 || window[2] > 9) continue;
     const others = window.filter((r) => r !== pair.rank);
-    if (others.length === 2 && others.every((r) => isTripletOrKongAt(hand, pair.suit, r))) return true;
+    if (others.length === 2 && others.every((r) => isTripletOrKongAt(hand, pair.suit, r))) count++;
   }
-  return false;
+  return count;
 }
-function hasBigThreeConsecutiveTriplets(hand: ResolvedHand): boolean {
+function bigThreeConsecutiveTripletCount(hand: ResolvedHand): number {
+  let count = 0;
   for (const suit of ["m", "t", "b"] as const) {
     for (let rank = 1; rank <= 7; rank++) {
-      if ([rank, rank + 1, rank + 2].every((r) => isTripletOrKongAt(hand, suit, r))) return true;
+      if ([rank, rank + 1, rank + 2].every((r) => isTripletOrKongAt(hand, suit, r))) count++;
     }
   }
-  return false;
+  return count;
 }
 
 // 相逢: 2 runs with the same 3 ranks but in *different* suits (e.g.
@@ -1889,13 +1894,13 @@ export const PATTERNS: TaiPattern[] = [
   {
     id: "small-three-consecutive-triplets",
     name: "小三連刻 (3 consecutive ranks, pair at one end + 2 triplets/kongs)",
-    score: (hand) => (hasSmallThreeConsecutiveTriplets(hand) ? 15 : 0),
+    score: (hand) => smallThreeConsecutiveTripletCount(hand) * 15,
     excludes: ["consecutive-triplet-pair"],
   },
   {
     id: "big-three-consecutive-triplets",
     name: "大三連刻 (3 consecutive triplets/kongs)",
-    score: (hand) => (hasBigThreeConsecutiveTriplets(hand) ? 30 : 0),
+    score: (hand) => bigThreeConsecutiveTripletCount(hand) * 30,
     excludes: ["consecutive-triplet-pair"],
   },
   {
