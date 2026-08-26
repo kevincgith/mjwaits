@@ -54,7 +54,11 @@ segment's count (matching the `789m789m` example above: 1×1×2 = 2), but when *
 segment is duplicated at once it's not just the largest count — `123m123m456m789m789m` (both the
 low and high segments doubled, one 456m shared between them) is **4** instances (2×1×2), one for
 every low-high combination, not 2 paired off by index. 老少上/老少碰 (2 segments, no shared middle)
-follow the same product rule. Each instance is classified independently (open vs. concealed, for
+follow the same product rule. 三色步步高 additionally slides the *starting rank* across suits (not
+just duplicate copies within one segment) — `123456m234567t34599b` forms 3 instances
+(123m+234t+345b, 234t+345b+456m, 345b+456m+567t), each shifted by 1 rank and sharing the single
+`345b` run, the same reuse principle applied per rank-window rather than per fixed segment. Each
+instance is classified independently (open vs. concealed, for
 the patterns that split that way). All of the 3-segment patterns share one `combineSegments`
 helper in the code.
 
@@ -254,8 +258,8 @@ the [明/暗 concept](#the-明暗-openconcealed-concept).
 | 大三兄弟 (Same rank across all 3 suits, all triplets/kongs) | 40 | All 3 suits hold a triplet/kong at the same rank — e.g. `555m+555t+555b`. Pair not involved. | 兩兄弟 | |
 | 小三色連刻 (3 consecutive ranks across 3 suits, pair at one) | 10 | 3 consecutive ranks, one per suit, with the hand's pair sitting at one of the 3 positions (in its own suit) and the other 2 positions each a triplet/kong in one of the other 2 suits — e.g. `33m+444t+555b`. | — | Structurally different from 大三色連刻 (needs the pair), not mutually exclusive. |
 | 大三色連刻 (3 consecutive ranks across 3 suits, all triplets/kongs) | 20 | Same 3-consecutive-rank shape, but all 3 are full triplets/kongs, one per suit — pair not involved — e.g. `333t+4444m+555b`. | — | |
-| 明三色步步高 (3 suits, runs increasing by 1, open) | 5 | 3 suits, each holding one run, with the runs' starting ranks increasing by 1 across suits in some order — e.g. `456t+567m+678b` or `234m+345t+456b`. Instance is 明. | — | |
-| 暗三色步步高 (same, concealed) | 10 | Same shape, instance is 暗. | — | |
+| 明三色步步高 (3 suits, runs increasing by 1, open) | 5 each | 3 suits, each holding one run, with the runs' starting ranks increasing by 1 across suits in some order — e.g. `456t+567m+678b` or `234m+345t+456b`. Instance is 明. | — | **Stacks** using the same [duplicate-instance counting](#duplicate-instance-counting-清龍雜龍老少上老少碰步步高二步高) as 清龍/雜龍/單色步步高 — e.g. `123456m234567t34599b` (123m+456m, 234t+567t, one 345b) forms 3 overlapping instances shifted by 1 rank each, sharing the lone `345b` run across all of them. |
+| 暗三色步步高 (same, concealed) | 10 each | Same shape, instance is 暗. | — | **Stacks**, same reasoning. |
 
 ## Flush
 

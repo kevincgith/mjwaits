@@ -1194,6 +1194,13 @@ describe("PATTERNS: 明/暗三色步步高 (3 suits, runs increasing by 1)", () 
     expect(tai(result, "three-color-step-up-hidden")).toBe(10);
     expect(tai(result, "three-color-step-up-open")).toBe(0);
   });
+
+  it("stacks 3 instances for 123456m234567t34599b - each shifted by 1 rank, sharing the lone 345b run", () => {
+    // 123m+234t+345b, 234t+345b+456m, and 345b+456m+567t all qualify.
+    const result = scoreHand("123456m234567t34599b", ctx());
+    expect(tai(result, "three-color-step-up-hidden")).toBe(30); // 3 instances x 10
+    expect(tai(result, "three-color-step-up-open")).toBe(0);
+  });
 });
 
 describe("PATTERNS: 對碰 (shanpon: dual-pair wait completed into a triplet)", () => {

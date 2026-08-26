@@ -1117,15 +1117,21 @@ const isTripletOrKongAt = (hand: ResolvedHand, suit: Suit, rank: number): boolea
 // 678b, or 234m + 345t + 456b) - the cross-suit extension of 單色步步高
 // (same "climb by 1" shape, but confined to a single suit there). Starting
 // rank is capped at 5 (not 7) since the highest of the 3 runs starts 2
-// ranks later and a run can start no later than 7.
-function threeColorStepUpRunMelds(hand: ResolvedHand): ResolvedMeld[] | null {
+// ranks later and a run can start no later than 7. Stacks the same
+// combineSegments-style way 清龍/雜龍/步步高 do: e.g. 123456m234567t34599b
+// (123m+456m, 234t+567t, 345b) forms 3 overlapping instances -
+// 123m+234t+345b, 234t+345b+456m, and 345b+456m+567t - each shifted by 1
+// rank, with 345b (the only b-suit run) shared across all three.
+function threeColorStepUpInstances(hand: ResolvedHand): ResolvedMeld[][] {
+  const result: ResolvedMeld[][] = [];
   for (let rank = 1; rank <= 5; rank++) {
     for (const suits of THREE_SUIT_ORDERS) {
-      const melds = suits.map((suit, i) => segmentMelds(hand, suit, rank + i)[0]);
-      if (melds.every((m): m is ResolvedMeld => m !== undefined)) return melds;
+      result.push(
+        ...combineSegments(segmentMelds(hand, suits[0], rank), segmentMelds(hand, suits[1], rank + 1), segmentMelds(hand, suits[2], rank + 2))
+      );
     }
   }
-  return null;
+  return result;
 }
 
 // 二連刻: 2 triplets/kongs at consecutive ranks in one suit (e.g. 222m+333m,
@@ -2035,18 +2041,12 @@ export const PATTERNS: TaiPattern[] = [
   {
     id: "three-color-step-up-open",
     name: "明三色步步高 (3 suits, runs increasing by 1, open)",
-    score: (hand, ctx) => {
-      const melds = threeColorStepUpRunMelds(hand);
-      return melds && melds.some((m) => isMeldOpen(m, ctx)) ? 5 : 0;
-    },
+    score: (hand, ctx) => threeColorStepUpInstances(hand).filter((inst) => inst.some((m) => isMeldOpen(m, ctx))).length * 5,
   },
   {
     id: "three-color-step-up-hidden",
     name: "暗三色步步高 (3 suits, runs increasing by 1, concealed)",
-    score: (hand, ctx) => {
-      const melds = threeColorStepUpRunMelds(hand);
-      return melds && melds.every((m) => !isMeldOpen(m, ctx)) ? 10 : 0;
-    },
+    score: (hand, ctx) => threeColorStepUpInstances(hand).filter((inst) => inst.every((m) => !isMeldOpen(m, ctx))).length * 10,
   },
   {
     id: "shanpon-wait",
