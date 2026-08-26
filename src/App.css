@@ -1104,6 +1104,15 @@ h1 {
   gap: 0.5rem;
 }
 
+/* The left (rotate/add region/reset) and right (cancel/scan) groups now
+   live in their own separate .crop-actions rows (before/after the photo),
+   each the sole flex child of its row - .crop-actions's justify-content:
+   space-between only has an effect with 2+ children, so the right group
+   needs its own push-to-the-end margin to still land on the right. */
+.crop-actions-right {
+  margin-left: auto;
+}
+
 .crop-actions-right button:last-child {
   border-color: #1a5fb4;
   background: #1a5fb4;

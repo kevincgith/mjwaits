@@ -1062,6 +1062,21 @@ function CropOverlay({
             : "Drag each box to cover one hand, then tap Scan."
           : "Drag to crop out anything that isn't the hand, then tap Scan."}
       </span>
+      <div className="crop-actions">
+        <div className="crop-actions-left">
+          <button type="button" onClick={handleRotate} disabled={rotating} title="Rotate photo 90°">
+            ⟳ Rotate
+          </button>
+          {regions.length < MAX_REGIONS && (
+            <button type="button" onClick={addRegion}>
+              + Add region
+            </button>
+          )}
+          <button type="button" onClick={resetRegions} disabled={regions.length === 1 && regions[0] === DEFAULT_CROP}>
+            Reset
+          </button>
+        </div>
+      </div>
       <div className="crop-stage" ref={stageRef}>
         <svg className="crop-dim" preserveAspectRatio="none">
           <mask id={maskId}>
@@ -1110,19 +1125,6 @@ function CropOverlay({
         ))}
       </div>
       <div className="crop-actions">
-        <div className="crop-actions-left">
-          <button type="button" onClick={handleRotate} disabled={rotating} title="Rotate photo 90°">
-            ⟳ Rotate
-          </button>
-          <button type="button" onClick={resetRegions} disabled={regions.length === 1 && regions[0] === DEFAULT_CROP}>
-            Reset
-          </button>
-          {regions.length < MAX_REGIONS && (
-            <button type="button" onClick={addRegion}>
-              + Add region
-            </button>
-          )}
-        </div>
         <div className="crop-actions-right">
           <button type="button" onClick={onCancel}>
             Cancel
