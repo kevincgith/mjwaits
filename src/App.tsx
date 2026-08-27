@@ -51,6 +51,9 @@ import {
   type BonusTile,
   type GameContext,
   type MeldKind,
+  type EarlyWinState,
+  type HeavenlyWinState,
+  type MultiWinState,
   type ParsedScoringHand,
   type ResolvedHand,
   type RiichiState,
@@ -2171,6 +2174,33 @@ const RIICHI_LABELS: Record<RiichiState, string> = {
   "earthly-riichi": "地叮 (Earthly Riichi)",
 };
 
+// Same cycling idiom as RIICHI_CYCLE, for 四子內/七子內/十子內.
+const EARLY_WIN_CYCLE: EarlyWinState[] = ["none", "four", "seven", "ten"];
+const EARLY_WIN_LABELS: Record<EarlyWinState, string> = {
+  none: "四子內",
+  four: "四子內",
+  seven: "七子內",
+  ten: "十子內",
+};
+
+// Same cycling idiom, for 雙響/三響 - only 3 steps (no plain "off" label
+// distinct from a first named step needed beyond "none" itself).
+const MULTI_WIN_CYCLE: MultiWinState[] = ["none", "double", "triple"];
+const MULTI_WIN_LABELS: Record<MultiWinState, string> = {
+  none: "雙響",
+  double: "雙響",
+  triple: "三響",
+};
+
+// Same cycling idiom, for 天胡/地胡/人胡.
+const HEAVENLY_WIN_CYCLE: HeavenlyWinState[] = ["none", "heaven", "earth", "man"];
+const HEAVENLY_WIN_LABELS: Record<HeavenlyWinState, string> = {
+  none: "天胡",
+  heaven: "天胡",
+  earth: "地胡",
+  man: "人胡",
+};
+
 // Whichever suit rows make sense to offer for the currently-selected meld
 // kind: runs only exist in numbered suits, so the honor row is dropped
 // entirely for run mode. Rank 8/9 stay in the row (unlike honors, hiding
@@ -2395,6 +2425,15 @@ function ScoringPanel() {
       return next;
     });
   };
+  const [earlyWin, setEarlyWin] = useState<EarlyWinState>("none");
+  const cycleEarlyWin = () =>
+    setEarlyWin((prev) => EARLY_WIN_CYCLE[(EARLY_WIN_CYCLE.indexOf(prev) + 1) % EARLY_WIN_CYCLE.length]);
+  const [multiWin, setMultiWin] = useState<MultiWinState>("none");
+  const cycleMultiWin = () =>
+    setMultiWin((prev) => MULTI_WIN_CYCLE[(MULTI_WIN_CYCLE.indexOf(prev) + 1) % MULTI_WIN_CYCLE.length]);
+  const [heavenlyWin, setHeavenlyWin] = useState<HeavenlyWinState>("none");
+  const cycleHeavenlyWin = () =>
+    setHeavenlyWin((prev) => HEAVENLY_WIN_CYCLE[(HEAVENLY_WIN_CYCLE.indexOf(prev) + 1) % HEAVENLY_WIN_CYCLE.length]);
   // The 食胡 tile - the specific tile instance (not just its kind) that
   // completed the hand, set via long-press on a concealed-hand tile (see
   // WinningTileHandButton). Tracked by id so that long-pressing one of
@@ -2633,7 +2672,18 @@ function ScoringPanel() {
   // scoring.ts only cares about the winning tile's kind (see GameContext's
   // doc comment there) - the id above exists purely to disambiguate which
   // instance the UI highlights.
-  const ctx: GameContext = { seatWind, roundWind, selfDraw, winningTile, riichi, instantWin, eatRiichi };
+  const ctx: GameContext = {
+    seatWind,
+    roundWind,
+    selfDraw,
+    winningTile,
+    riichi,
+    instantWin,
+    eatRiichi,
+    earlyWin,
+    multiWin,
+    heavenlyWin,
+  };
   const scoring = useMemo(() => {
     if (totalTiles !== requiredSize) return null;
     const parsed: ParsedScoringHand = {
@@ -2660,6 +2710,9 @@ function ScoringPanel() {
     riichi,
     instantWin,
     eatRiichi,
+    earlyWin,
+    multiWin,
+    heavenlyWin,
     winningTile,
   ]);
 
@@ -2890,6 +2943,33 @@ function ScoringPanel() {
             </button>
           </>
         )}
+        <button
+          type="button"
+          className={earlyWin !== "none" ? "toggle-on" : undefined}
+          aria-pressed={earlyWin !== "none"}
+          onClick={cycleEarlyWin}
+          title="Won while the discard count (excluding the completing tile) was still at or under this number - tap to cycle 四子內(60) / 七子內(30) / 十子內(15) / off"
+        >
+          {EARLY_WIN_LABELS[earlyWin]}
+        </button>
+        <button
+          type="button"
+          className={multiWin !== "none" ? "toggle-on" : undefined}
+          aria-pressed={multiWin !== "none"}
+          onClick={cycleMultiWin}
+          title="Multiple players won off the same discard - tap to cycle 雙響(5) / 三響(10) / off"
+        >
+          {MULTI_WIN_LABELS[multiWin]}
+        </button>
+        <button
+          type="button"
+          className={heavenlyWin !== "none" ? "toggle-on" : undefined}
+          aria-pressed={heavenlyWin !== "none"}
+          onClick={cycleHeavenlyWin}
+          title="Tap to cycle 天胡(160) / 地胡(120) / 人胡(80) / off"
+        >
+          {HEAVENLY_WIN_LABELS[heavenlyWin]}
+        </button>
       </div>
 
       {scoring && !scoring.ok && <span className="error">{scoring.message}</span>}

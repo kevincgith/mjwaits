@@ -438,6 +438,23 @@ export type Wind = 1 | 2 | 3 | 4; // East/South/West/North, same order as mahjon
 // a single value, not independent flags.
 export type RiichiState = "none" | "riichi" | "heavenly-riichi" | "earthly-riichi";
 
+// 四子內/七子內/十子內's declared state - another 4-way cycle in the UI
+// (none -> 四子內 -> 七子內 -> 十子內 -> none...), same shape as
+// RiichiState. Means the hand was won while the total discard count
+// (excluding the tile that completed the hand) was still at or under the
+// stated number - the app has no concept of discards/turn count at all,
+// so like `riichi` this is purely what the user declares.
+export type EarlyWinState = "none" | "four" | "seven" | "ten";
+
+// 雙響/三響's declared state - a 3-way cycle in the UI (none -> 雙響 ->
+// 三響 -> none...), same shape as RiichiState/EarlyWinState but with only
+// 2 named steps instead of 3.
+export type MultiWinState = "none" | "double" | "triple";
+
+// 天胡/地胡/人胡's declared state - a 4-way cycle in the UI (none -> 天胡
+// -> 地胡 -> 人胡 -> none...), same shape as RiichiState/EarlyWinState.
+export type HeavenlyWinState = "none" | "heaven" | "earth" | "man";
+
 export interface GameContext {
   seatWind: Wind;
   roundWind: Wind;
@@ -460,6 +477,18 @@ export interface GameContext {
   // entries.
   instantWin: boolean;
   eatRiichi: boolean;
+  // 四子內/七子內/十子內 - independent of riichi, another purely-declared
+  // cycle. See the "early-win-four"/"early-win-seven"/"early-win-ten"
+  // PATTERNS entries.
+  earlyWin: EarlyWinState;
+  // 雙響/三響 - independent of everything else here, another purely-
+  // declared cycle. See the "multi-win-double"/"multi-win-triple"
+  // PATTERNS entries.
+  multiWin: MultiWinState;
+  // 天胡/地胡/人胡 - independent of everything else here, another
+  // purely-declared cycle. See the "heavenly-win"/"earthly-win"/
+  // "human-win" PATTERNS entries.
+  heavenlyWin: HeavenlyWinState;
 }
 
 // The dealer is whoever's own seat wind is East for the current hand - not
@@ -2369,6 +2398,52 @@ export const PATTERNS: TaiPattern[] = [
     // Independent of 即食 - both can be declared at once, each adding
     // their own flat 5 tai.
     score: (_hand, ctx) => (ctx.riichi !== "none" && ctx.eatRiichi ? 5 : 0),
+  },
+  {
+    id: "early-win-four",
+    name: "四子內 (Won within 4 discards)",
+    // Purely a declared state (ctx.earlyWin), same shape as 叮/天叮/地叮 -
+    // independent of riichi entirely.
+    score: (_hand, ctx) => (ctx.earlyWin === "four" ? 60 : 0),
+  },
+  {
+    id: "early-win-seven",
+    name: "七子內 (Won within 7 discards)",
+    score: (_hand, ctx) => (ctx.earlyWin === "seven" ? 30 : 0),
+  },
+  {
+    id: "early-win-ten",
+    name: "十子內 (Won within 10 discards)",
+    score: (_hand, ctx) => (ctx.earlyWin === "ten" ? 15 : 0),
+  },
+  {
+    id: "multi-win-double",
+    name: "雙響",
+    // Purely a declared state (ctx.multiWin), same cycling shape as
+    // 叮/天叮/地叮 and 四子內/七子內/十子內 - independent of both.
+    score: (_hand, ctx) => (ctx.multiWin === "double" ? 5 : 0),
+  },
+  {
+    id: "multi-win-triple",
+    name: "三響",
+    score: (_hand, ctx) => (ctx.multiWin === "triple" ? 10 : 0),
+  },
+  {
+    id: "heavenly-win",
+    name: "天胡",
+    // Purely a declared state (ctx.heavenlyWin), same cycling shape as
+    // every other purely-declared pattern above.
+    score: (_hand, ctx) => (ctx.heavenlyWin === "heaven" ? 160 : 0),
+  },
+  {
+    id: "earthly-win",
+    name: "地胡",
+    score: (_hand, ctx) => (ctx.heavenlyWin === "earth" ? 120 : 0),
+  },
+  {
+    id: "human-win",
+    name: "人胡",
+    score: (_hand, ctx) => (ctx.heavenlyWin === "man" ? 80 : 0),
   },
   {
     id: "concealed-self-draw",

@@ -20,6 +20,9 @@ const ctx = (overrides: Partial<GameContext> = {}): GameContext => ({
   riichi: "none",
   instantWin: false,
   eatRiichi: false,
+  earlyWin: "none",
+  multiWin: "none",
+  heavenlyWin: "none",
   ...overrides,
 });
 
@@ -1599,6 +1602,84 @@ describe("PATTERNS: 即食/食叮 (stack additively on top of any declared 叮 s
     const result = scoreHand("(111z)123456789m234t22b", ctx({ instantWin: true, eatRiichi: true }));
     expect(tai(result, "riichi-instant-win")).toBe(0);
     expect(tai(result, "riichi-eat")).toBe(0);
+  });
+});
+
+describe("PATTERNS: 四子內/七子內/十子內 (won within N discards)", () => {
+  const hand = "(111z)123456789m234t22b";
+
+  it("scores 四子內 (60 tai)", () => {
+    expect(tai(scoreHand(hand, ctx({ earlyWin: "four" })), "early-win-four")).toBe(60);
+  });
+
+  it("scores 七子內 (30 tai)", () => {
+    expect(tai(scoreHand(hand, ctx({ earlyWin: "seven" })), "early-win-seven")).toBe(30);
+  });
+
+  it("scores 十子內 (15 tai)", () => {
+    expect(tai(scoreHand(hand, ctx({ earlyWin: "ten" })), "early-win-ten")).toBe(15);
+  });
+
+  it("none score when not declared", () => {
+    const result = scoreHand(hand, ctx());
+    expect(tai(result, "early-win-four")).toBe(0);
+    expect(tai(result, "early-win-seven")).toBe(0);
+    expect(tai(result, "early-win-ten")).toBe(0);
+  });
+
+  it("are mutually exclusive by construction (earlyWin is a single state)", () => {
+    const result = scoreHand(hand, ctx({ earlyWin: "four" }));
+    expect(tai(result, "early-win-seven")).toBe(0);
+    expect(tai(result, "early-win-ten")).toBe(0);
+  });
+});
+
+describe("PATTERNS: 雙響/三響", () => {
+  const hand = "(111z)123456789m234t22b";
+
+  it("scores 雙響 (5 tai)", () => {
+    expect(tai(scoreHand(hand, ctx({ multiWin: "double" })), "multi-win-double")).toBe(5);
+  });
+
+  it("scores 三響 (10 tai)", () => {
+    expect(tai(scoreHand(hand, ctx({ multiWin: "triple" })), "multi-win-triple")).toBe(10);
+  });
+
+  it("neither scores when not declared", () => {
+    const result = scoreHand(hand, ctx());
+    expect(tai(result, "multi-win-double")).toBe(0);
+    expect(tai(result, "multi-win-triple")).toBe(0);
+  });
+});
+
+describe("PATTERNS: 天胡/地胡/人胡", () => {
+  const hand = "(111z)123456789m234t22b";
+
+  it("scores 天胡 (160 tai)", () => {
+    expect(tai(scoreHand(hand, ctx({ heavenlyWin: "heaven" })), "heavenly-win")).toBe(160);
+  });
+
+  it("scores 地胡 (120 tai)", () => {
+    expect(tai(scoreHand(hand, ctx({ heavenlyWin: "earth" })), "earthly-win")).toBe(120);
+  });
+
+  it("scores 人胡 (80 tai)", () => {
+    expect(tai(scoreHand(hand, ctx({ heavenlyWin: "man" })), "human-win")).toBe(80);
+  });
+
+  it("none score when not declared", () => {
+    const result = scoreHand(hand, ctx());
+    expect(tai(result, "heavenly-win")).toBe(0);
+    expect(tai(result, "earthly-win")).toBe(0);
+    expect(tai(result, "human-win")).toBe(0);
+  });
+
+  it("all three, and every other cycling declaration, can stack together freely - each is fully independent", () => {
+    const result = scoreHand(hand, ctx({ heavenlyWin: "heaven", earlyWin: "four", multiWin: "triple", riichi: "riichi" }));
+    expect(tai(result, "heavenly-win")).toBe(160);
+    expect(tai(result, "early-win-four")).toBe(60);
+    expect(tai(result, "multi-win-triple")).toBe(10);
+    expect(tai(result, "riichi")).toBe(5);
   });
 });
 
