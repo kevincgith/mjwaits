@@ -2221,6 +2221,23 @@ const LAST_TILE_WIN_LABELS: Record<LastTileWinState, string> = {
 const cycleCount = (current: number, max: number) => (current + 1) % (max + 1);
 const countLabel = (base: string, count: number) => (count === 0 ? base : `${base}x${count}`);
 
+// 明絕/絕絕 share a single button - 絕絕 is structurally a strictly stronger
+// finding than 明絕 (see isVisiblyExhaustedMultiWait's doc comment in
+// scoring.ts: whenever the multi-way wait is exhausted, the winning tile's
+// own declared count is necessarily already 3, i.e. 明絕's own condition),
+// so they read naturally as one three-step scale rather than two
+// independent toggles. This state is purely a UI grouping - GameContext
+// still takes the two original manualVisibleTripleWin/
+// manualVisibleExhaustedMultiWait booleans, derived from this below.
+type VisibleExhaustState = "none" | "triple" | "exhausted";
+const VISIBLE_EXHAUST_CYCLE: VisibleExhaustState[] = ["none", "triple", "exhausted"];
+const VISIBLE_EXHAUST_RANK: Record<VisibleExhaustState, number> = { none: 0, triple: 1, exhausted: 2 };
+const VISIBLE_EXHAUST_LABELS: Record<VisibleExhaustState, string> = {
+  none: "明絕/絕絕",
+  triple: "明絕",
+  exhausted: "絕絕",
+};
+
 // Whichever suit rows make sense to offer for the currently-selected meld
 // kind: runs only exist in numbered suits, so the honor row is dropped
 // entirely for run mode. Rank 8/9 stay in the row (unlike honors, hiding
@@ -2460,13 +2477,14 @@ function ScoringPanel() {
   const [flowerDraw, setFlowerDraw] = useState(0);
   const [kongDraw, setKongDraw] = useState(0);
   const [robKong, setRobKong] = useState(0);
-  // 明絕/絕絕's manual override - only togglable by the user when the
-  // auto-detected check is false (see the button's own `disabled` prop);
-  // once true, cycling/removing tiles could make the auto-check start
-  // failing again without this manual flag noticing, so it's left as
-  // whatever the user last set rather than trying to track that.
-  const [manualVisibleTripleWin, setManualVisibleTripleWin] = useState(false);
-  const [manualVisibleExhaustedMultiWait, setManualVisibleExhaustedMultiWait] = useState(false);
+  // 明絕/絕絕's manual override, as one shared tri-state (see
+  // VisibleExhaustState above) - only advanceable by the user past whatever
+  // floor the auto-detect checks already prove (see the button's own
+  // `disabled`/cycle logic below); once set past that floor, cycling/
+  // removing tiles could make the auto-check start failing again without
+  // this manual state noticing, so it's left as whatever the user last set
+  // rather than trying to track that.
+  const [manualVisibleExhaust, setManualVisibleExhaust] = useState<VisibleExhaustState>("none");
   // The 食胡 tile - the specific tile instance (not just its kind) that
   // completed the hand, set via long-press on a concealed-hand tile (see
   // WinningTileHandButton). Tracked by id so that long-pressing one of
@@ -2615,8 +2633,7 @@ function ScoringPanel() {
     setFlowerDraw(0);
     setKongDraw(0);
     setRobKong(0);
-    setManualVisibleTripleWin(false);
-    setManualVisibleExhaustedMultiWait(false);
+    setManualVisibleExhaust("none");
   };
 
   // A scanned detection's meaning for the declared-melds region: a real
@@ -2735,8 +2752,8 @@ function ScoringPanel() {
     flowerDraw,
     kongDraw,
     robKong,
-    manualVisibleTripleWin,
-    manualVisibleExhaustedMultiWait,
+    manualVisibleTripleWin: manualVisibleExhaust !== "none",
+    manualVisibleExhaustedMultiWait: manualVisibleExhaust === "exhausted",
   };
   const scoring = useMemo(() => {
     if (totalTiles !== requiredSize) return null;
@@ -2771,16 +2788,35 @@ function ScoringPanel() {
     flowerDraw,
     kongDraw,
     robKong,
-    manualVisibleTripleWin,
-    manualVisibleExhaustedMultiWait,
+    manualVisibleExhaust,
     winningTile,
   ]);
 
-  // Whether 明絕/絕絕's auto-detect alone (ignoring the manual flag) already
-  // proves the pattern true, purely to decide whether their buttons below
-  // get locked on - see manualVisibleTripleWin's own doc comment.
-  const autoVisibleTripleWin = scoring?.ok ? isVisiblyTripledWinningTile(scoring.result.hand, ctx) : false;
-  const autoVisibleExhaustedMultiWait = scoring?.ok ? isVisiblyExhaustedMultiWait(scoring.result.hand, ctx) : false;
+  // Whether 明絕/絕絕's auto-detect alone (ignoring the manual state) already
+  // proves one of the two true, purely to decide the shared button's floor -
+  // see manualVisibleExhaust's own doc comment. Checked as exhausted first
+  // since it's the strictly stronger finding (see VisibleExhaustState).
+  const visibleExhaustAuto: VisibleExhaustState = scoring?.ok
+    ? isVisiblyExhaustedMultiWait(scoring.result.hand, ctx)
+      ? "exhausted"
+      : isVisiblyTripledWinningTile(scoring.result.hand, ctx)
+        ? "triple"
+        : "none"
+    : "none";
+  // The state actually shown/scored: whichever of the manual declaration and
+  // the auto-detected floor is stronger - the user can only ever cycle
+  // upward from the floor (see cycleVisibleExhaust), so this is just
+  // "whichever one currently has the higher rank."
+  const visibleExhaustEffective: VisibleExhaustState =
+    VISIBLE_EXHAUST_RANK[manualVisibleExhaust] > VISIBLE_EXHAUST_RANK[visibleExhaustAuto] ? manualVisibleExhaust : visibleExhaustAuto;
+  // Steps the shared button to its next state, restricted to states at or
+  // above the auto-detected floor (a floor of "exhausted" leaves only one
+  // reachable state, which is why the button is also `disabled` then).
+  const cycleVisibleExhaust = () => {
+    const reachable = VISIBLE_EXHAUST_CYCLE.filter((s) => VISIBLE_EXHAUST_RANK[s] >= VISIBLE_EXHAUST_RANK[visibleExhaustAuto]);
+    const idx = reachable.indexOf(visibleExhaustEffective);
+    setManualVisibleExhaust(reachable[(idx + 1) % reachable.length]);
+  };
 
   return (
     <section className="panel scoring-panel">
@@ -2803,8 +2839,7 @@ function ScoringPanel() {
             flowerDraw === 0 &&
             kongDraw === 0 &&
             robKong === 0 &&
-            !manualVisibleTripleWin &&
-            !manualVisibleExhaustedMultiWait
+            manualVisibleExhaust === "none"
           }
         >
           Reset
@@ -3091,31 +3126,19 @@ function ScoringPanel() {
         </button>
         <button
           type="button"
-          className={autoVisibleTripleWin || manualVisibleTripleWin ? "toggle-on" : undefined}
-          aria-pressed={autoVisibleTripleWin || manualVisibleTripleWin}
-          disabled={autoVisibleTripleWin}
-          onClick={() => setManualVisibleTripleWin((v) => !v)}
+          className={visibleExhaustEffective !== "none" ? "toggle-on" : undefined}
+          aria-pressed={visibleExhaustEffective !== "none"}
+          disabled={visibleExhaustAuto === "exhausted"}
+          onClick={cycleVisibleExhaust}
           title={
-            autoVisibleTripleWin
-              ? "明絕 - already true from this hand's own declared melds"
-              : "明絕 - declare manually (5 tai) when this hand's own declared melds alone can't prove it (e.g. you saw the other copies discarded)"
-          }
-        >
-          明絕
-        </button>
-        <button
-          type="button"
-          className={autoVisibleExhaustedMultiWait || manualVisibleExhaustedMultiWait ? "toggle-on" : undefined}
-          aria-pressed={autoVisibleExhaustedMultiWait || manualVisibleExhaustedMultiWait}
-          disabled={autoVisibleExhaustedMultiWait}
-          onClick={() => setManualVisibleExhaustedMultiWait((v) => !v)}
-          title={
-            autoVisibleExhaustedMultiWait
+            visibleExhaustAuto === "exhausted"
               ? "絕絕 - already true from this hand's own declared melds"
-              : "絕絕 - declare manually (10 tai) when this hand's own declared melds alone can't prove it"
+              : visibleExhaustAuto === "triple"
+                ? "明絕 already true from this hand's own declared melds - tap to also declare 絕絕(10 tai) manually"
+                : "Tap to cycle 明絕(5) / 絕絕(10) / off - declare manually when this hand's own declared melds alone can't prove it (e.g. you saw the other copies discarded)"
           }
         >
-          絕絕
+          {VISIBLE_EXHAUST_LABELS[visibleExhaustEffective]}
         </button>
       </div>
 
