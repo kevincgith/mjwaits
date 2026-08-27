@@ -837,21 +837,19 @@ function declaredCopiesOfTile(hand: ResolvedHand, tile: Tile): number {
     .reduce((n, m) => n + m.tiles.filter((t) => t.suit === tile.suit && t.rank === tile.rank).length, 0);
 }
 
-// 明絕: by definition, the concealed hand's own genuine pre-completion
-// wait (the same isGenuineSingleWait/獨獨 check) must be a single wait -
-// only then does the 食胡 tile's kind sitting exactly 3 times across this
-// hand's own DECLARED (exposed) melds mean anything (otherwise a
-// completely unrelated, un-exhausted wait candidate could coexist
-// alongside the exhausted one - see 絕絕 below for exactly that shape,
-// which this excludes). The 3 declared copies are most often a single
-// declared triplet of that kind, but just as easily spread across 3
-// separate declared runs each holding one copy, or any other combination
-// of declared melds that happens to sum to exactly 3 (a declared kong of
+// 明絕: the 食胡 tile's kind already sits exactly 3 times across this
+// hand's own DECLARED (exposed) melds - most often a single declared
+// triplet of that kind, but just as easily spread across 3 separate
+// declared runs each holding one copy, or any other combination of
+// declared melds that happens to sum to exactly 3 (a declared kong of
 // that kind would push the total to 4, which falls outside this pattern
 // with no extra kind check needed to exclude it). "明" (visible)
 // specifically: only exposed melds count - an exposed kong counts, but a
 // concealed (self-drawn) kong doesn't, since it isn't visible to anyone
-// else at the table, same as every other concealed meld here.
+// else at the table, same as every other concealed meld here. Does NOT
+// require the concealed wait itself to be single - the concealed hand
+// can still be genuinely waiting on other, un-exhausted kinds too; this
+// only cares about the one kind that actually completed it.
 //
 // CAVEAT (also surfaced in the UI via this pattern's `caveat`, see
 // PATTERNS below): this only ever looks at THIS hand's own declared
@@ -861,7 +859,7 @@ function declaredCopiesOfTile(hand: ResolvedHand, tile: Tile): number {
 // exposed melds already show 3 of them.
 function isVisiblyTripledWinningTile(hand: ResolvedHand, ctx: GameContext): boolean {
   if (ctx.winningTile === null) return false;
-  return declaredCopiesOfTile(hand, ctx.winningTile) === 3 && isGenuineSingleWait(hand, ctx);
+  return declaredCopiesOfTile(hand, ctx.winningTile) === 3;
 }
 
 // 絕絕: an extension of 明絕. The concealed hand's genuine pre-completion
@@ -2284,11 +2282,6 @@ export const PATTERNS: TaiPattern[] = [
   {
     id: "visible-triple-win",
     name: "明絕 (Won on a tile already declared 3 times)",
-    // By definition requires a genuine single wait (see
-    // isVisiblyTripledWinningTile), so 獨獨 is also always true whenever
-    // this fires - but per the user, the two stack rather than one
-    // excluding the other (they're measuring different things: 獨獨 is
-    // about the wait's shape, this is about visible scarcity on top of it).
     score: (hand, ctx) => (isVisiblyTripledWinningTile(hand, ctx) ? 5 : 0),
     caveat:
       "Only checks this hand's own declared melds - it has no knowledge of the discard pile or any other player's declared melds, so it can't confirm this is truly the last copy of the tile anywhere in the game.",
@@ -2297,9 +2290,12 @@ export const PATTERNS: TaiPattern[] = [
     id: "visible-exhausted-multi-wait",
     name: "絕絕 (Multi-way wait narrowed to one visible copy)",
     score: (hand, ctx) => (isVisiblyExhaustedMultiWait(hand, ctx) ? 10 : 0),
-    // Mutually exclusive with 明絕 by construction now too (明絕 requires
-    // exactly 1 wait candidate, this requires 2+), but kept explicit
-    // since it's the same underlying "visibly exhausted" idea either way.
+    // Excludes 明絕 since it's the same underlying "visibly exhausted"
+    // idea, just a stronger, more specific finding when it applies - the
+    // two CAN co-occur (明絕 doesn't require the wait to be single, so it
+    // can still independently fire on the one collided kind even when
+    // the overall wait is genuinely multi-way), so this exclusion is
+    // load-bearing, not just defensive.
     excludes: ["visible-triple-win"],
     caveat:
       "Only checks this hand's own declared melds - it has no knowledge of the discard pile or any other player's declared melds, so it can't confirm these are truly the last copies of the tile anywhere in the game.",

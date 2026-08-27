@@ -1411,12 +1411,28 @@ describe("PATTERNS: 明絕 (won on a tile already declared 3 times)", () => {
     expect(tai(result, "genuine-single-wait")).toBe(2);
   });
 
-  it("doesn't score when the concealed wait is genuinely multi-way, even if the winning tile's kind has 3 declared copies - that's 絕絕's territory instead", () => {
-    // Declared 333m/666m/567m, concealed 45m genuinely waits on both
-    // 3m/6m - 3m has 3 declared copies, but the wait itself isn't single,
-    // so 明絕 doesn't apply (see 絕絕's own describe block for this shape).
+  it("doesn't require the concealed wait to be single - fires standalone even when a second, un-exhausted wait candidate exists", () => {
+    // Declared 333m only (not 666m) - concealed 45m genuinely waits on
+    // both 3m/6m, but only 3m collides with a declared meld; 6m is
+    // untouched. Not 絕絕's shape (that needs the WHOLE wait visibly
+    // exhausted down to one remaining copy - here 6m alone still has all
+    // 4), but 明絕 only cares about the one kind that actually completed
+    // it, so it fires on its own.
+    const result = scoreHand("(333m)(111z)(222z)345m789t44b", ctx({ winningTile: { suit: "m", rank: 3 } }));
+    expect(tai(result, "visible-triple-win")).toBe(5);
+    expect(tai(result, "visible-exhausted-multi-wait")).toBe(0);
+  });
+
+  it("gets excluded by 絕絕 when the WHOLE multi-way wait is visibly exhausted (even though its own raw condition is still true)", () => {
+    // Declared 333m/666m/567m, concealed 45m: this is 絕絕's own worked
+    // example (both 3m and 6m visibly exhausted down to one remaining
+    // copy total) - 明絕's raw score is still 5 here (3m alone has 3
+    // declared copies), but 絕絕's `excludes` suppresses it from the
+    // final result since 絕絕 is the stronger, more specific finding.
     const result = scoreHand("(333m)(666m)(567m)345m789t11z", ctx({ winningTile: { suit: "m", rank: 3 } }));
     expect(tai(result, "visible-triple-win")).toBe(0);
+    expect(tai(result, "visible-exhausted-multi-wait")).toBe(10);
+    expect(PATTERNS.find((p) => p.id === "visible-triple-win")!.score(result.hand, ctx({ winningTile: { suit: "m", rank: 3 } }))).toBe(5);
   });
 
   it("doesn't score when the winning tile's kind doesn't match any declared meld", () => {
@@ -1437,7 +1453,7 @@ describe("PATTERNS: 明絕 (won on a tile already declared 3 times)", () => {
 });
 
 describe("PATTERNS: 絕絕 (multi-way wait narrowed to one visible copy)", () => {
-  it("scores when a two-sided wait's two kinds are visibly exhausted down to one remaining copy total (明絕 doesn't apply here - see its own describe block)", () => {
+  it("scores when a two-sided wait's two kinds are visibly exhausted down to one remaining copy total (excludes 明絕 - see its own describe block)", () => {
     // Declared 333m/666m/567m, concealed 45m waiting on 3m/6m (plus a
     // separate complete 789t and pair 11z to round the hand out): 3m has
     // 3 declared copies (1 left anywhere), 6m has all 4 (666m's triplet
