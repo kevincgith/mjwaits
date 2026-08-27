@@ -2216,20 +2216,32 @@ function BonusTileButton({
 // Which physical tile instance in the resolved hand the 食胡 tile actually
 // is, for highlighting purposes - see the comment in ScoringBreakdown for
 // why this searches in priority order (pair, then triplet/kong, then run)
-// rather than taking whichever group happens to render first.
-function findWinningTileInstance(hand: ResolvedHand, winningTile: Tile | null): Tile | null {
+// rather than taking whichever group happens to render first. Declared
+// melds are never searched at all (see `declaredCount`, used only to slice
+// them off): the 食胡 tile is set via long-press on a CONCEALED-hand tile
+// (see WinningTileHandButton) - a declared meld is entered as a complete,
+// already-exposed group from the start, never "waiting" on a tile, so it
+// can never be the one that actually completed the hand. Without this
+// exclusion, a rank held both in a declared meld and a concealed one (e.g.
+// declared 888t plus a concealed 789t run) would wrongly match the
+// declared copy first, highlighting the wrong section entirely - and since
+// a declared triplet/kong's 3-4 tiles are literally the same object
+// repeated (see pushMeld in ScoringPanel), a reference-equality highlight
+// check would then light up every tile in that meld at once.
+function findWinningTileInstance(hand: ResolvedHand, declaredCount: number, winningTile: Tile | null): Tile | null {
   if (winningTile === null) return null;
   const matches = (t: Tile) => t.suit === winningTile.suit && t.rank === winningTile.rank;
   const pairMatch = hand.pair.find(matches);
   if (pairMatch) return pairMatch;
+  const concealedMelds = hand.melds.slice(declaredCount);
   for (const kind of ["triplet", "kong"] as const) {
-    for (const meld of hand.melds) {
+    for (const meld of concealedMelds) {
       if (meld.kind !== kind) continue;
       const t = meld.tiles.find(matches);
       if (t) return t;
     }
   }
-  for (const meld of hand.melds) {
+  for (const meld of concealedMelds) {
     if (meld.kind !== "run") continue;
     const t = meld.tiles.find(matches);
     if (t) return t;
@@ -2267,7 +2279,7 @@ function ScoringBreakdown({
   // chain/quads), then run (嵌張/邊張/ordinary two-sided) - picks whichever
   // group is the most specific/notable completion role, matching the
   // pattern that's actually likely to have scored.
-  const winningInstance = findWinningTileInstance(hand, winningTile);
+  const winningInstance = findWinningTileInstance(hand, declaredCount, winningTile);
   const isWinningInstance = (t: Tile): boolean => t === winningInstance;
   return (
     <>
