@@ -45,7 +45,10 @@ import {
 } from "./lib/trainer";
 import { classToBonusTile, IMG_SIZE, detectTiles, letterbox, prefetchModel, type ScanProgress } from "./lib/vision";
 import {
+  FIVE_POWER_TAI_TABLE,
   groupDeclaredTiles,
+  isVisiblyExhaustedMultiWait,
+  isVisiblyTripledWinningTile,
   ScoringError,
   scoreParsedHand,
   type BonusTile,
@@ -53,6 +56,7 @@ import {
   type MeldKind,
   type EarlyWinState,
   type HeavenlyWinState,
+  type LastTileWinState,
   type MultiWinState,
   type ParsedScoringHand,
   type ResolvedHand,
@@ -2201,6 +2205,22 @@ const HEAVENLY_WIN_LABELS: Record<HeavenlyWinState, string> = {
   man: "人胡",
 };
 
+// Same cycling idiom, for 河底撈魚/海底撈月/海底撈月(一筒).
+const LAST_TILE_WIN_CYCLE: LastTileWinState[] = ["none", "river-bottom", "sea-bottom", "sea-bottom-one-tong"];
+const LAST_TILE_WIN_LABELS: Record<LastTileWinState, string> = {
+  none: "河底撈魚",
+  "river-bottom": "河底撈魚",
+  "sea-bottom": "海底撈月",
+  "sea-bottom-one-tong": "海底撈月(一筒)",
+};
+
+// 花摸/槓摸/搶槓 cycle through a plain count instead of named states - tap
+// advances 0 -> 1 -> ... -> max -> 0. Label shows "花摸xN" once N > 0, or
+// just the bare name at 0 (matching the other cycling buttons' "off"
+// label being the same text as their first active step).
+const cycleCount = (current: number, max: number) => (current + 1) % (max + 1);
+const countLabel = (base: string, count: number) => (count === 0 ? base : `${base}x${count}`);
+
 // Whichever suit rows make sense to offer for the currently-selected meld
 // kind: runs only exist in numbered suits, so the honor row is dropped
 // entirely for run mode. Rank 8/9 stay in the row (unlike honors, hiding
@@ -2434,6 +2454,19 @@ function ScoringPanel() {
   const [heavenlyWin, setHeavenlyWin] = useState<HeavenlyWinState>("none");
   const cycleHeavenlyWin = () =>
     setHeavenlyWin((prev) => HEAVENLY_WIN_CYCLE[(HEAVENLY_WIN_CYCLE.indexOf(prev) + 1) % HEAVENLY_WIN_CYCLE.length]);
+  const [lastTileWin, setLastTileWin] = useState<LastTileWinState>("none");
+  const cycleLastTileWin = () =>
+    setLastTileWin((prev) => LAST_TILE_WIN_CYCLE[(LAST_TILE_WIN_CYCLE.indexOf(prev) + 1) % LAST_TILE_WIN_CYCLE.length]);
+  const [flowerDraw, setFlowerDraw] = useState(0);
+  const [kongDraw, setKongDraw] = useState(0);
+  const [robKong, setRobKong] = useState(0);
+  // 明絕/絕絕's manual override - only togglable by the user when the
+  // auto-detected check is false (see the button's own `disabled` prop);
+  // once true, cycling/removing tiles could make the auto-check start
+  // failing again without this manual flag noticing, so it's left as
+  // whatever the user last set rather than trying to track that.
+  const [manualVisibleTripleWin, setManualVisibleTripleWin] = useState(false);
+  const [manualVisibleExhaustedMultiWait, setManualVisibleExhaustedMultiWait] = useState(false);
   // The 食胡 tile - the specific tile instance (not just its kind) that
   // completed the hand, set via long-press on a concealed-hand tile (see
   // WinningTileHandButton). Tracked by id so that long-pressing one of
@@ -2578,6 +2611,12 @@ function ScoringPanel() {
     setEarlyWin("none");
     setMultiWin("none");
     setHeavenlyWin("none");
+    setLastTileWin("none");
+    setFlowerDraw(0);
+    setKongDraw(0);
+    setRobKong(0);
+    setManualVisibleTripleWin(false);
+    setManualVisibleExhaustedMultiWait(false);
   };
 
   // A scanned detection's meaning for the declared-melds region: a real
@@ -2692,6 +2731,12 @@ function ScoringPanel() {
     earlyWin,
     multiWin,
     heavenlyWin,
+    lastTileWin,
+    flowerDraw,
+    kongDraw,
+    robKong,
+    manualVisibleTripleWin,
+    manualVisibleExhaustedMultiWait,
   };
   const scoring = useMemo(() => {
     if (totalTiles !== requiredSize) return null;
@@ -2722,8 +2767,20 @@ function ScoringPanel() {
     earlyWin,
     multiWin,
     heavenlyWin,
+    lastTileWin,
+    flowerDraw,
+    kongDraw,
+    robKong,
+    manualVisibleTripleWin,
+    manualVisibleExhaustedMultiWait,
     winningTile,
   ]);
+
+  // Whether 明絕/絕絕's auto-detect alone (ignoring the manual flag) already
+  // proves the pattern true, purely to decide whether their buttons below
+  // get locked on - see manualVisibleTripleWin's own doc comment.
+  const autoVisibleTripleWin = scoring?.ok ? isVisiblyTripledWinningTile(scoring.result.hand, ctx) : false;
+  const autoVisibleExhaustedMultiWait = scoring?.ok ? isVisiblyExhaustedMultiWait(scoring.result.hand, ctx) : false;
 
   return (
     <section className="panel scoring-panel">
@@ -2741,7 +2798,13 @@ function ScoringPanel() {
             riichi === "none" &&
             earlyWin === "none" &&
             multiWin === "none" &&
-            heavenlyWin === "none"
+            heavenlyWin === "none" &&
+            lastTileWin === "none" &&
+            flowerDraw === 0 &&
+            kongDraw === 0 &&
+            robKong === 0 &&
+            !manualVisibleTripleWin &&
+            !manualVisibleExhaustedMultiWait
           }
         >
           Reset
@@ -2989,6 +3052,70 @@ function ScoringPanel() {
           title="Tap to cycle 天胡(160) / 地胡(120) / 人胡(80) / off"
         >
           {HEAVENLY_WIN_LABELS[heavenlyWin]}
+        </button>
+        <button
+          type="button"
+          className={lastTileWin !== "none" ? "toggle-on" : undefined}
+          aria-pressed={lastTileWin !== "none"}
+          onClick={cycleLastTileWin}
+          title="Tap to cycle 河底撈魚(5) / 海底撈月(10) / 海底撈月一筒(20) / off"
+        >
+          {LAST_TILE_WIN_LABELS[lastTileWin]}
+        </button>
+        <button
+          type="button"
+          className={flowerDraw > 0 ? "toggle-on" : undefined}
+          aria-pressed={flowerDraw > 0}
+          onClick={() => setFlowerDraw((c) => cycleCount(c, 8))}
+          title="Tap to cycle 花摸x0-x8 (2 tai each)"
+        >
+          {countLabel("花摸", flowerDraw)}
+        </button>
+        <button
+          type="button"
+          className={kongDraw > 0 ? "toggle-on" : undefined}
+          aria-pressed={kongDraw > 0}
+          onClick={() => setKongDraw((c) => cycleCount(c, 5))}
+          title={`Tap to cycle 槓摸x0-x5 (tai: ${FIVE_POWER_TAI_TABLE.slice(1).join("/")})`}
+        >
+          {countLabel("槓摸", kongDraw)}
+        </button>
+        <button
+          type="button"
+          className={robKong > 0 ? "toggle-on" : undefined}
+          aria-pressed={robKong > 0}
+          onClick={() => setRobKong((c) => cycleCount(c, 5))}
+          title={`Tap to cycle 搶槓x0-x5 (tai: ${FIVE_POWER_TAI_TABLE.slice(1).join("/")})`}
+        >
+          {countLabel("搶槓", robKong)}
+        </button>
+        <button
+          type="button"
+          className={autoVisibleTripleWin || manualVisibleTripleWin ? "toggle-on" : undefined}
+          aria-pressed={autoVisibleTripleWin || manualVisibleTripleWin}
+          disabled={autoVisibleTripleWin}
+          onClick={() => setManualVisibleTripleWin((v) => !v)}
+          title={
+            autoVisibleTripleWin
+              ? "明絕 - already true from this hand's own declared melds"
+              : "明絕 - declare manually (5 tai) when this hand's own declared melds alone can't prove it (e.g. you saw the other copies discarded)"
+          }
+        >
+          明絕
+        </button>
+        <button
+          type="button"
+          className={autoVisibleExhaustedMultiWait || manualVisibleExhaustedMultiWait ? "toggle-on" : undefined}
+          aria-pressed={autoVisibleExhaustedMultiWait || manualVisibleExhaustedMultiWait}
+          disabled={autoVisibleExhaustedMultiWait}
+          onClick={() => setManualVisibleExhaustedMultiWait((v) => !v)}
+          title={
+            autoVisibleExhaustedMultiWait
+              ? "絕絕 - already true from this hand's own declared melds"
+              : "絕絕 - declare manually (10 tai) when this hand's own declared melds alone can't prove it"
+          }
+        >
+          絕絕
         </button>
       </div>
 

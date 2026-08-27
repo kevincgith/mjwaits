@@ -23,6 +23,12 @@ const ctx = (overrides: Partial<GameContext> = {}): GameContext => ({
   earlyWin: "none",
   multiWin: "none",
   heavenlyWin: "none",
+  lastTileWin: "none",
+  flowerDraw: 0,
+  kongDraw: 0,
+  robKong: 0,
+  manualVisibleTripleWin: false,
+  manualVisibleExhaustedMultiWait: false,
   ...overrides,
 });
 
@@ -1683,6 +1689,74 @@ describe("PATTERNS: 天胡/地胡/人胡", () => {
   });
 });
 
+describe("PATTERNS: 河底撈魚/海底撈月/海底撈月(一筒)", () => {
+  const hand = "(111z)123456789m234t22b";
+
+  it("scores 河底撈魚 (5 tai)", () => {
+    expect(tai(scoreHand(hand, ctx({ lastTileWin: "river-bottom" })), "river-bottom-win")).toBe(5);
+  });
+
+  it("scores 海底撈月 (10 tai)", () => {
+    expect(tai(scoreHand(hand, ctx({ lastTileWin: "sea-bottom" })), "sea-bottom-win")).toBe(10);
+  });
+
+  it("scores 海底撈月(一筒) (20 tai)", () => {
+    expect(tai(scoreHand(hand, ctx({ lastTileWin: "sea-bottom-one-tong" })), "sea-bottom-win-one-tong")).toBe(20);
+  });
+
+  it("none score when not declared, and each excludes the others by construction", () => {
+    const result = scoreHand(hand, ctx());
+    expect(tai(result, "river-bottom-win")).toBe(0);
+    expect(tai(result, "sea-bottom-win")).toBe(0);
+    expect(tai(result, "sea-bottom-win-one-tong")).toBe(0);
+    const river = scoreHand(hand, ctx({ lastTileWin: "river-bottom" }));
+    expect(tai(river, "sea-bottom-win")).toBe(0);
+    expect(tai(river, "sea-bottom-win-one-tong")).toBe(0);
+  });
+});
+
+describe("PATTERNS: 花摸/槓摸/搶槓 (declared counts)", () => {
+  const hand = "(111z)123456789m234t22b";
+
+  it("花摸 scores 2 tai per declared count, 0 through 8", () => {
+    for (let n = 0; n <= 8; n++) {
+      expect(tai(scoreHand(hand, ctx({ flowerDraw: n })), "flower-draw")).toBe(n * 2);
+    }
+  });
+
+  it("槓摸 follows the [5, 25, 125, 250, 250] table for counts 1-5, 0 for count 0", () => {
+    const table = [0, 5, 25, 125, 250, 250];
+    for (let n = 0; n <= 5; n++) {
+      expect(tai(scoreHand(hand, ctx({ kongDraw: n })), "kong-draw")).toBe(table[n]);
+    }
+  });
+
+  it("搶槓 follows the same table as 槓摸, fully independently", () => {
+    const result = scoreHand(hand, ctx({ kongDraw: 3, robKong: 5 }));
+    expect(tai(result, "kong-draw")).toBe(125);
+    expect(tai(result, "rob-kong")).toBe(250);
+  });
+});
+
+describe("PATTERNS: 明絕/絕絕 manual override", () => {
+  it("the manual flag alone scores the pattern when the hand's own melds can't prove it", () => {
+    // Ordinary two-sided wait, no declared-meld collision - auto-detect
+    // would be false on its own.
+    const result = scoreHand("(111z)(222z)(333z)345m789t44b", ctx({ winningTile: { suit: "m", rank: 3 }, manualVisibleTripleWin: true }));
+    expect(tai(result, "visible-triple-win")).toBe(5);
+  });
+
+  it("doesn't double-count when the manual flag is set AND the auto-check already proves it", () => {
+    const result = scoreHand("(777t)(888t)(555t)34566789t", ctx({ winningTile: { suit: "t", rank: 8 }, manualVisibleTripleWin: true }));
+    expect(tai(result, "visible-triple-win")).toBe(5);
+  });
+
+  it("same OR-with-auto-detect shape for 絕絕's manual flag", () => {
+    const result = scoreHand("(111z)(222z)(333z)345m789t44b", ctx({ winningTile: { suit: "m", rank: 3 }, manualVisibleExhaustedMultiWait: true }));
+    expect(tai(result, "visible-exhausted-multi-wait")).toBe(10);
+  });
+});
+
 describe("PATTERNS: 全求人/半求人 (all melds declared)", () => {
   const allDeclaredHand = "(111z)(222z)(123m)(456m)(789m)55t";
   const oneConcealedHand = "(111z)(222z)(123m)(456m)789m55t";
@@ -1906,18 +1980,18 @@ describe("PATTERNS: 不搭雜龍 (十六不搭: ranks span 1-9 across all 3 suit
 });
 
 describe("PATTERNS: 自摸/獨獨 apply to the special hands too", () => {
-  it("scores 門清自摸 (not plain 自摸) for a self-drawn 十三么 - always concealed by construction, so the upgrade always wins, per the known-gap note in scoring-rules.md", () => {
+  it("scores plain 自摸 (not 門清自摸) for a self-drawn 十三么 - these special hands deliberately never get the 門清 upgrade, since they're always concealed by construction anyway (see 門前清's own \"trivially true, not meaningful\" exclusion)", () => {
     const result = scoreHand("112349m19t19b1234567z", ctx({ selfDraw: true }));
-    expect(tai(result, "concealed-self-draw")).toBe(3);
-    expect(tai(result, "self-draw")).toBe(0);
-    expect(result.total).toBe(170);
+    expect(tai(result, "self-draw")).toBe(1);
+    expect(tai(result, "concealed-self-draw")).toBe(0);
+    expect(result.total).toBe(168);
   });
 
-  it("scores 門清自摸 (not plain 自摸) for a self-drawn 十六不搭", () => {
+  it("scores plain 自摸 (not 門清自摸) for a self-drawn 十六不搭", () => {
     const result = scoreHand("147m147t258b11234567z", ctx({ selfDraw: true }));
-    expect(tai(result, "concealed-self-draw")).toBe(3);
-    expect(tai(result, "self-draw")).toBe(0);
-    expect(result.total).toBe(60);
+    expect(tai(result, "self-draw")).toBe(1);
+    expect(tai(result, "concealed-self-draw")).toBe(0);
+    expect(result.total).toBe(58);
   });
 
   it("scores 獨獨 for a 十三么 hand where the 食胡 tile was a genuine single wait", () => {
@@ -1956,25 +2030,25 @@ describe("PATTERNS: 自摸/獨獨 apply to the special hands too", () => {
 });
 
 describe("PATTERNS: every purely-declared button pattern applies to the special hands too", () => {
-  it("scores 門清叮 (not plain 叮) for a 十三么 hand - always concealed by construction, so the upgrade always wins, same as 門清自摸; 天叮/地叮 have no concealed-only upgrade of their own, so those apply as-is", () => {
+  it("scores plain 叮 (not 門清叮) for a 十三么 hand - these special hands deliberately never get the 門清 upgrade, same reasoning as 自摸/門清自摸 above; 天叮/地叮 have no concealed-only upgrade of their own, so those apply as-is", () => {
     const plain = scoreHand("112349m19t19b1234567z", ctx({ riichi: "riichi" }));
-    expect(tai(plain, "concealed-riichi")).toBe(10);
-    expect(tai(plain, "riichi")).toBe(0);
+    expect(tai(plain, "riichi")).toBe(5);
+    expect(tai(plain, "concealed-riichi")).toBe(0);
     const heavenly = scoreHand("112349m19t19b1234567z", ctx({ riichi: "heavenly-riichi" }));
     expect(tai(heavenly, "heavenly-riichi")).toBe(60);
     const earthly = scoreHand("112349m19t19b1234567z", ctx({ riichi: "earthly-riichi" }));
     expect(tai(earthly, "earthly-riichi")).toBe(50);
   });
 
-  it("scores 門清叮 (not plain 叮) for a 十六不搭 hand too", () => {
+  it("scores plain 叮 (not 門清叮) for a 十六不搭 hand too", () => {
     const result = scoreHand("147m147t258b11234567z", ctx({ riichi: "riichi" }));
-    expect(tai(result, "concealed-riichi")).toBe(10);
-    expect(tai(result, "riichi")).toBe(0);
+    expect(tai(result, "riichi")).toBe(5);
+    expect(tai(result, "concealed-riichi")).toBe(0);
   });
 
-  it("scores 即食/食叮 stacking on top of 叮 for a 十三么 hand", () => {
+  it("scores 即食/食叮 stacking on top of plain 叮 for a 十三么 hand", () => {
     const result = scoreHand("112349m19t19b1234567z", ctx({ riichi: "riichi", instantWin: true, eatRiichi: true }));
-    expect(tai(result, "concealed-riichi")).toBe(10);
+    expect(tai(result, "riichi")).toBe(5);
     expect(tai(result, "riichi-instant-win")).toBe(5);
     expect(tai(result, "riichi-eat")).toBe(5);
   });
@@ -2237,10 +2311,10 @@ describe("PATTERNS: 無花/正花/爛花/無字/無字花 apply to 嚦咕嚦咕 
 });
 
 describe("PATTERNS: 自摸/獨獨 apply to 嚦咕嚦咕 too", () => {
-  it("scores 門清自摸 (not plain 自摸) for a self-drawn 嚦咕嚦咕 - always concealed by construction", () => {
+  it("scores plain 自摸 (not 門清自摸) for a self-drawn 嚦咕嚦咕 - deliberately never gets the 門清 upgrade, same reasoning as 十三么/十六不搭", () => {
     const result = scoreHand("1111m223344m5566777t", ctx({ selfDraw: true }));
-    expect(tai(result, "concealed-self-draw")).toBe(3);
-    expect(tai(result, "self-draw")).toBe(0);
+    expect(tai(result, "self-draw")).toBe(1);
+    expect(tai(result, "concealed-self-draw")).toBe(0);
   });
 
   it("scores 獨獨 when the pre-completion 嚦咕嚦咕 wait was genuinely single", () => {

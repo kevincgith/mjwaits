@@ -455,6 +455,20 @@ export type MultiWinState = "none" | "double" | "triple";
 // -> 地胡 -> 人胡 -> none...), same shape as RiichiState/EarlyWinState.
 export type HeavenlyWinState = "none" | "heaven" | "earth" | "man";
 
+// 河底撈魚/海底撈月/海底撈月(一筒)'s declared state - a 4-way cycle in the
+// UI (none -> 河底撈魚 -> 海底撈月 -> 海底撈月一筒 -> none...), same shape
+// as RiichiState/EarlyWinState/HeavenlyWinState.
+export type LastTileWinState = "none" | "river-bottom" | "sea-bottom" | "sea-bottom-one-tong";
+
+// 槓摸/搶槓's declared tai lookup: index by the cycled count (0-5) to get
+// that count's tai - 5, 25, 125, 250, 250 for counts 1-5 (0 always means
+// "not declared", i.e. 0 tai). Deliberately a literal table rather than a
+// formula (the user's own description, "min(5^n, 240)", doesn't actually
+// match these numbers - 5^4 and 5^5 both cap at 250, not 240 - so the
+// explicit list is treated as the ground truth over the mismatched
+// formula description).
+export const FIVE_POWER_TAI_TABLE: readonly number[] = [0, 5, 25, 125, 250, 250];
+
 export interface GameContext {
   seatWind: Wind;
   roundWind: Wind;
@@ -489,6 +503,39 @@ export interface GameContext {
   // purely-declared cycle. See the "heavenly-win"/"earthly-win"/
   // "human-win" PATTERNS entries.
   heavenlyWin: HeavenlyWinState;
+  // 河底撈魚/海底撈月/海底撈月(一筒) - independent of everything else here,
+  // another purely-declared cycle. See the "river-bottom-win"/
+  // "sea-bottom-win"/"sea-bottom-win-one-tong" PATTERNS entries.
+  lastTileWin: LastTileWinState;
+  // 花摸 - how many times the user declares a bonus-tile replacement draw
+  // completed/advanced the hand, 0-8 (a standard set has 8 bonus tiles
+  // total). Purely declared - the app has no concept of draw order, so
+  // unlike a real 花摸 ruling (which genuinely depends on exactly when
+  // each bonus tile was revealed relative to the winning tile) this is
+  // just "how many times did it happen, trust the user." Tai is 2 per
+  // count (see the "flower-draw" PATTERNS entry).
+  flowerDraw: number;
+  // 槓摸 - how many times the user declares a kong-replacement draw
+  // completed/advanced the hand, 0-5. Same "purely declared, trust the
+  // user" reasoning as flowerDraw - tai comes from FIVE_POWER_TAI_TABLE
+  // (see the "kong-draw" PATTERNS entry).
+  kongDraw: number;
+  // 搶槓 (robbing the kong) - same shape as kongDraw (0-5, same
+  // FIVE_POWER_TAI_TABLE), fully independent of it. See the "rob-kong"
+  // PATTERNS entry.
+  robKong: number;
+  // 明絕/絕絕's manual override - see isVisiblyTripledWinningTile/
+  // isVisiblyExhaustedMultiWait's own PATTERNS entries. Only meaningful
+  // (and only shown as an interactive toggle in the UI) when the
+  // auto-detected check is false - when auto-detection already proves the
+  // pattern true, the UI locks the toggle on rather than letting the user
+  // turn it off, since the hand's own declared melds already settle it.
+  // When auto-detection can't tell (its whole reason for existing - no
+  // visibility into the discard pile or other players' melds), this lets
+  // the user assert it anyway; the pattern's score is (auto-detected OR
+  // this flag), so there's no double-counting either way.
+  manualVisibleTripleWin: boolean;
+  manualVisibleExhaustedMultiWait: boolean;
 }
 
 // The dealer is whoever's own seat wind is East for the current hand - not
@@ -904,7 +951,12 @@ function declaredCopiesOfTile(hand: ResolvedHand, tile: Tile): number {
 // player's declared melds, so it can't actually confirm the 食胡 tile was
 // the last live copy anywhere in the game - only that this hand's own
 // exposed melds already show 3 of them.
-function isVisiblyTripledWinningTile(hand: ResolvedHand, ctx: GameContext): boolean {
+// Exported (unlike every other auto-detect helper in this file) so the UI
+// can independently ask "does the auto-check alone already prove this?" to
+// decide whether the manual-override button should be locked on - see
+// GameContext.manualVisibleTripleWin's own doc comment for why that needs
+// to be answerable without also depending on the manual flag's own value.
+export function isVisiblyTripledWinningTile(hand: ResolvedHand, ctx: GameContext): boolean {
   if (ctx.winningTile === null) return false;
   return declaredCopiesOfTile(hand, ctx.winningTile) === 3;
 }
@@ -929,7 +981,8 @@ function isVisiblyTripledWinningTile(hand: ResolvedHand, ctx: GameContext): bool
 // own declared melds - no visibility into the discard pile or any other
 // player's declared melds, so it can't confirm these are truly the last
 // copies anywhere in the game.
-function isVisiblyExhaustedMultiWait(hand: ResolvedHand, ctx: GameContext): boolean {
+// Exported for the same reason as isVisiblyTripledWinningTile above.
+export function isVisiblyExhaustedMultiWait(hand: ResolvedHand, ctx: GameContext): boolean {
   if (ctx.winningTile === null) return false;
   const pre = preWinWaitInput(hand, ctx.winningTile);
   if (pre === null) return false;
@@ -2329,14 +2382,19 @@ export const PATTERNS: TaiPattern[] = [
   {
     id: "visible-triple-win",
     name: "明絕 (Won on a tile already declared 3 times)",
-    score: (hand, ctx) => (isVisiblyTripledWinningTile(hand, ctx) ? 5 : 0),
+    // OR'd with the manual override (see GameContext.manualVisibleTripleWin)
+    // rather than added to it - the manual toggle is for asserting this is
+    // true when the auto-check can't see it, not a second independent
+    // instance of the same pattern.
+    score: (hand, ctx) => (isVisiblyTripledWinningTile(hand, ctx) || ctx.manualVisibleTripleWin ? 5 : 0),
     caveat:
       "Only checks this hand's own declared melds - it has no knowledge of the discard pile or any other player's declared melds, so it can't confirm this is truly the last copy of the tile anywhere in the game.",
   },
   {
     id: "visible-exhausted-multi-wait",
     name: "絕絕 (Multi-way wait narrowed to one visible copy)",
-    score: (hand, ctx) => (isVisiblyExhaustedMultiWait(hand, ctx) ? 10 : 0),
+    // Same OR-with-manual-override reasoning as 明絕 above.
+    score: (hand, ctx) => (isVisiblyExhaustedMultiWait(hand, ctx) || ctx.manualVisibleExhaustedMultiWait ? 10 : 0),
     // Excludes 明絕 since it's the same underlying "visibly exhausted"
     // idea, just a stronger, more specific finding when it applies - the
     // two CAN co-occur (明絕 doesn't require the wait to be single, so it
@@ -2444,6 +2502,41 @@ export const PATTERNS: TaiPattern[] = [
     id: "human-win",
     name: "人胡",
     score: (_hand, ctx) => (ctx.heavenlyWin === "man" ? 80 : 0),
+  },
+  {
+    id: "river-bottom-win",
+    name: "河底撈魚",
+    score: (_hand, ctx) => (ctx.lastTileWin === "river-bottom" ? 5 : 0),
+  },
+  {
+    id: "sea-bottom-win",
+    name: "海底撈月",
+    score: (_hand, ctx) => (ctx.lastTileWin === "sea-bottom" ? 10 : 0),
+  },
+  {
+    id: "sea-bottom-win-one-tong",
+    name: "海底撈月(一筒)",
+    score: (_hand, ctx) => (ctx.lastTileWin === "sea-bottom-one-tong" ? 20 : 0),
+  },
+  {
+    id: "flower-draw",
+    name: "花摸",
+    // ctx.flowerDraw is a declared count (0-8, clamped by the UI's cycle),
+    // 2 tai per count - see GameContext.flowerDraw's own doc comment for
+    // why this is a flat per-count multiplier rather than trying to
+    // actually model draw order.
+    score: (_hand, ctx) => ctx.flowerDraw * 2,
+  },
+  {
+    id: "kong-draw",
+    name: "槓摸",
+    score: (_hand, ctx) => FIVE_POWER_TAI_TABLE[ctx.kongDraw] ?? 0,
+  },
+  {
+    id: "rob-kong",
+    name: "搶槓",
+    // Same declared-count/tai-table shape as 槓摸, fully independent of it.
+    score: (_hand, ctx) => FIVE_POWER_TAI_TABLE[ctx.robKong] ?? 0,
   },
   {
     id: "concealed-self-draw",
@@ -2747,23 +2840,26 @@ function pushFlowerBonuses(hand: ResolvedHand, ctx: GameContext, matched: { patt
 }
 
 // Every purely-declared pattern (nothing about the hand's own shape
-// determines these - see each one's own PATTERNS entry): 自摸/門清自摸,
-// 叮/天叮/地叮/門清叮, 即食/食叮, 四子內/七子內/十子內, 雙響/三響, and
-// 天胡/地胡/人胡. Applies unmodified to all 3 special hands via
-// pushSelfDrawAndGenuineSingleWait below - checking each id's own score()
-// and letting the normal `excludes` metadata suppress the weaker sibling
-// (e.g. 門清自摸 excludes 自摸) reproduces the exact same stacking/
-// exclusion behavior an equivalent ordinary hand would get, since all
-// three special hands are always fully concealed by construction (no
-// declared melds ever - see each one's own "declaredMelds.length > 0 ->
-// null" guard), so isConcealedExceptKongs is always true and the 門清
-// variants always win over their plain counterparts when self-draw/叮 is
-// declared. See scoring-rules.md's Known gaps for the caveat this raises.
+// determines these - see each one's own PATTERNS entry) that applies to
+// all 3 special hands: 自摸 (but deliberately NOT its 門清自摸 upgrade),
+// 叮/天叮/地叮 (but deliberately NOT 叮's 門清叮 upgrade), 即食/食叮,
+// 四子內/七子內/十子內, 雙響/三響, 天胡/地胡/人胡, and 河底撈魚/海底撈月/
+// 海底撈月(一筒)/花摸/槓摸/搶槓.
+//
+// 門清自摸/門清叮 are excluded on purpose, per the user: since all 3
+// special hands are always fully concealed by construction (no declared
+// melds ever - see each one's own "declaredMelds.length > 0 -> null"
+// guard), isConcealedExceptKongs is unconditionally true there, so those
+// two would otherwise ALWAYS fire instead of their plain counterparts
+// whenever self-draw/叮 is declared - a self-drawn/叮'd special hand
+// should just get the ordinary 1/5 tai, matching 十三么's own separate
+// choice to treat plain 門前清 itself as "trivially true, not meaningful
+// to list" for these hands (see the Foundation section) rather than
+// stacking an upgrade on top of something that's structurally guaranteed
+// either way.
 const DECLARED_ONLY_PATTERN_IDS = [
   "self-draw",
-  "concealed-self-draw",
   "riichi",
-  "concealed-riichi",
   "heavenly-riichi",
   "earthly-riichi",
   "riichi-instant-win",
@@ -2776,6 +2872,12 @@ const DECLARED_ONLY_PATTERN_IDS = [
   "heavenly-win",
   "earthly-win",
   "human-win",
+  "river-bottom-win",
+  "sea-bottom-win",
+  "sea-bottom-win-one-tong",
+  "flower-draw",
+  "kong-draw",
+  "rob-kong",
 ];
 function pushDeclaredOnlyPatterns(hand: ResolvedHand, ctx: GameContext, matched: { pattern: TaiPattern; tai: number }[]): void {
   const scored = PATTERNS.filter((p) => DECLARED_ONLY_PATTERN_IDS.includes(p.id))
