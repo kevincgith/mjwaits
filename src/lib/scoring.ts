@@ -484,7 +484,7 @@ export interface GameContext {
   // this - it's just what the user cycles through in the UI). See the
   // "riichi"/"heavenly-riichi"/"earthly-riichi" PATTERNS entries.
   riichi: RiichiState;
-  // 即食/食叮 - independent toggles, each only meaningful once `riichi` is
+  // 一發/食叮 - independent toggles, each only meaningful once `riichi` is
   // declared (not "none"); the UI only shows them then, and resets both
   // back to false whenever riichi cycles back to "none" (see
   // ScoringPanel). See the "riichi-instant-win"/"riichi-eat" PATTERNS
@@ -2444,7 +2444,7 @@ export const PATTERNS: TaiPattern[] = [
   },
   {
     id: "riichi-instant-win",
-    name: "即食",
+    name: "一發",
     // Only meaningful once riichi is declared (any of the 3 states) -
     // stacks additively on top of whichever 叮/天叮/地叮/門清叮 tai already
     // applies, same as 食叮 below.
@@ -2453,7 +2453,7 @@ export const PATTERNS: TaiPattern[] = [
   {
     id: "riichi-eat",
     name: "食叮",
-    // Independent of 即食 - both can be declared at once, each adding
+    // Independent of 一發 - both can be declared at once, each adding
     // their own flat 5 tai.
     score: (_hand, ctx) => (ctx.riichi !== "none" && ctx.eatRiichi ? 5 : 0),
   },
@@ -2842,7 +2842,7 @@ function pushFlowerBonuses(hand: ResolvedHand, ctx: GameContext, matched: { patt
 // Every purely-declared pattern (nothing about the hand's own shape
 // determines these - see each one's own PATTERNS entry) that applies to
 // all 3 special hands: 自摸 (but deliberately NOT its 門清自摸 upgrade),
-// 叮/天叮/地叮 (but deliberately NOT 叮's 門清叮 upgrade), 即食/食叮,
+// 叮/天叮/地叮 (but deliberately NOT 叮's 門清叮 upgrade), 一發/食叮,
 // 四子內/七子內/十子內, 雙響/三響, 天胡/地胡/人胡, and 河底撈魚/海底撈月/
 // 海底撈月(一筒)/花摸/槓摸/搶槓.
 //

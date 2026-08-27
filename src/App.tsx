@@ -2188,10 +2188,10 @@ const meldPickerIsConcealed = (k: MeldPickerKind): boolean => k === "concealed-k
 // back to "none" - see the Self-draw row in ScoringPanel.
 const RIICHI_CYCLE: RiichiState[] = ["none", "riichi", "heavenly-riichi", "earthly-riichi"];
 const RIICHI_LABELS: Record<RiichiState, string> = {
-  none: "叮 (Riichi)",
-  riichi: "叮 (Riichi)",
-  "heavenly-riichi": "天叮 (Heavenly Riichi)",
-  "earthly-riichi": "地叮 (Earthly Riichi)",
+  none: "叮",
+  riichi: "叮",
+  "heavenly-riichi": "天叮",
+  "earthly-riichi": "地叮",
 };
 
 // Same cycling idiom as RIICHI_CYCLE, for 四子內/七子內/十子內.
@@ -2464,7 +2464,7 @@ function ScoringPanel() {
   const [instantWin, setInstantWin] = useState(false);
   const [eatRiichi, setEatRiichi] = useState(false);
   // Tapping 叮 advances it through none -> 叮 -> 天叮 -> 地叮 -> none...;
-  // 即食/食叮 only make sense once riichi is declared, so stepping back to
+  // 一發/食叮 only make sense once riichi is declared, so stepping back to
   // "none" resets both rather than leaving a stale true value that could
   // never be un-toggled once their buttons disappear from the UI.
   const cycleRiichi = () => {
@@ -3030,16 +3030,16 @@ function ScoringPanel() {
           className={selfDraw ? "toggle-on" : undefined}
           aria-pressed={selfDraw}
           onClick={() => setSelfDraw((s) => !s)}
-          title="Self-draw vs won off a discard"
+          title="自摸 - self-draw vs won off a discard"
         >
-          Self-draw
+          自摸
         </button>
         <button
           type="button"
           className={riichi !== "none" ? "toggle-on" : undefined}
           aria-pressed={riichi !== "none"}
           onClick={cycleRiichi}
-          title="叮 (Riichi) - tap to cycle 叮 / 天叮 / 地叮 / off"
+          title="叮 - tap to cycle 叮 / 天叮 / 地叮 / off"
         >
           {RIICHI_LABELS[riichi]}
         </button>
@@ -3050,9 +3050,9 @@ function ScoringPanel() {
               className={instantWin ? "toggle-on" : undefined}
               aria-pressed={instantWin}
               onClick={() => setInstantWin((w) => !w)}
-              title="即食 - the hand completed within the immediate round after declaring - adds 5 tai"
+              title="一發 - the hand completed within the immediate round after declaring - adds 5 tai"
             >
-              即食
+              一發
             </button>
             <button
               type="button"

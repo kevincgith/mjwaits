@@ -1584,8 +1584,8 @@ describe("PATTERNS: 天叮/地叮 (Riichi's two upgrades)", () => {
   });
 });
 
-describe("PATTERNS: 即食/食叮 (stack additively on top of any declared 叮 state)", () => {
-  it("即食 adds 5 tai on top of plain 叮", () => {
+describe("PATTERNS: 一發/食叮 (stack additively on top of any declared 叮 state)", () => {
+  it("一發 adds 5 tai on top of plain 叮", () => {
     const result = scoreHand("(111z)123456789m234t22b", ctx({ riichi: "riichi", instantWin: true }));
     expect(tai(result, "riichi")).toBe(5);
     expect(tai(result, "riichi-instant-win")).toBe(5);
@@ -2046,7 +2046,7 @@ describe("PATTERNS: every purely-declared button pattern applies to the special 
     expect(tai(result, "concealed-riichi")).toBe(0);
   });
 
-  it("scores 即食/食叮 stacking on top of plain 叮 for a 十三么 hand", () => {
+  it("scores 一發/食叮 stacking on top of plain 叮 for a 十三么 hand", () => {
     const result = scoreHand("112349m19t19b1234567z", ctx({ riichi: "riichi", instantWin: true, eatRiichi: true }));
     expect(tai(result, "riichi")).toBe(5);
     expect(tai(result, "riichi-instant-win")).toBe(5);
