@@ -380,3 +380,24 @@ worth double-checking:
 - **小/大三色連刻, 明/暗三色步步高, and 小/大三兄弟 don't exclude each other across families**
   (e.g. 小三色連刻 doesn't exclude 兩兄弟) - they check different shapes (consecutive vs. same
   rank, triplet vs. run) that can't structurally overlap, so no exclusion was added between them.
+
+### To do: manual declaration buttons not yet added
+
+Follow-ups the user flagged, not yet implemented:
+
+- **Button for 明絕/絕絕** - both are currently auto-detected purely from the hand's own declared
+  melds (see their own rows above and each pattern's `caveat`), with no manual override. A manual
+  declaration button (matching the 叮/四子內/雙響/天胡-style cycling-button idiom used elsewhere in
+  this file) would let the user assert either pattern independently of what the auto-detection can
+  see, the same way every other declaration-only pattern already works.
+- **Button for 河底撈魚/海底撈月/海底撈月(一筒)** - winning off the very last discard of the game
+  (河底撈魚), winning by self-drawing the very last tile in the wall (海底撈月), and a variant of
+  the latter specifically when that final self-drawn tile is 1 Tong (一筒). None of these are
+  implemented at all yet - the app has no concept of "the wall is empty" or "this is the last
+  possible discard."
+- **Button for 花摸/槓摸** - winning on the replacement tile drawn immediately after revealing a
+  bonus (flower/season) tile (花摸), or immediately after declaring a kong (槓摸). Not implemented.
+- **Button for 搶槓** (robbing the kong: winning by claiming the tile another player just added to
+  upgrade an existing pon into a kong) - ties into the already-noted "added kong vs. called kong"
+  gap above, since 搶槓 specifically only applies to an *added* kong (加槓), not a kong called
+  outright from a discard (明槓). Not implemented.
