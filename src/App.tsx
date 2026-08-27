@@ -2166,7 +2166,23 @@ interface DeclaredMeldTile {
   tiles: Tile[];
 }
 
-const MELD_KIND_LABELS: Record<MeldKind, string> = { triplet: "Triplet (碰)", run: "Run (吃)", kong: "Kong (槓)" };
+// The declared-melds picker's own kind selector - 4 flat peer choices, kong
+// split up front into concealed/exposed rather than a single "Kong" choice
+// plus a same-styled modifier button that only appeared once Kong was
+// picked (that read as a hidden 4th peer option shifting the row in and
+// out, not as a modifier of Kong - see git history). scoring.ts's own
+// MeldKind stays a plain "triplet" | "run" | "kong" (concealed/exposed is
+// a separate `concealed` field there, on MeldDeclaration) - this is a
+// UI-only split, collapsed back via meldPickerUnderlyingKind below.
+type MeldPickerKind = "run" | "triplet" | "concealed-kong" | "exposed-kong";
+const MELD_PICKER_LABELS: Record<MeldPickerKind, string> = {
+  run: "Run (吃)",
+  triplet: "Triplet (碰)",
+  "concealed-kong": "暗槓 (concealed kong)",
+  "exposed-kong": "明槓 (exposed kong)",
+};
+const meldPickerUnderlyingKind = (k: MeldPickerKind): MeldKind => (k === "run" || k === "triplet" ? k : "kong");
+const meldPickerIsConcealed = (k: MeldPickerKind): boolean => k === "concealed-kong";
 
 // 叮's declared state cycles through these 4 steps on each tap, wrapping
 // back to "none" - see the Self-draw row in ScoringPanel.
@@ -2440,8 +2456,7 @@ function ScoringPanel() {
   // copy of each kind+rank, so no counter/id is needed - the pair itself is
   // a stable enough key.
   const [bonusTiles, setBonusTiles] = useState<BonusTile[]>([]);
-  const [meldKind, setMeldKind] = useState<MeldKind>("triplet");
-  const [kongConcealed, setKongConcealed] = useState(true);
+  const [meldKind, setMeldKind] = useState<MeldPickerKind>("triplet");
   const [seatWind, setSeatWind] = useState<Wind>(1);
   const [roundWind, setRoundWind] = useState<Wind>(1);
   const [selfDraw, setSelfDraw] = useState(false);
@@ -2569,9 +2584,9 @@ function ScoringPanel() {
     if (meldKind === "triplet") {
       if (totalCopiesUsedRef(tile) + 3 > 4) return;
       pushMeld("triplet", false, [tile, tile, tile]);
-    } else if (meldKind === "kong") {
+    } else if (meldKind === "concealed-kong" || meldKind === "exposed-kong") {
       if (totalCopiesUsedRef(tile) > 0) return;
-      pushMeld("kong", kongConcealed, [tile, tile, tile, tile]);
+      pushMeld("kong", meldPickerIsConcealed(meldKind), [tile, tile, tile, tile]);
     } else {
       const run = [0, 1, 2].map((d) => ({ suit: tile.suit, rank: tile.rank + d }));
       if (run.some((t) => totalCopiesUsedRef(t) + 1 > 4)) return;
@@ -2601,7 +2616,7 @@ function ScoringPanel() {
   const canAddMeldTile = (tile: Tile): boolean => {
     if (atCap || meldsFull) return false;
     if (meldKind === "triplet") return totalCopiesUsed(tile) + 3 <= 4;
-    if (meldKind === "kong") return totalCopiesUsed(tile) === 0;
+    if (meldKind === "concealed-kong" || meldKind === "exposed-kong") return totalCopiesUsed(tile) === 0;
     // A run starting at rank 8 or 9 would need a rank 10 or 11 tile, which
     // doesn't exist - meldPickerTiles keeps these tiles visible (rather
     // than hiding them, which reflows the rest of the row) so this needs
@@ -2874,7 +2889,7 @@ function ScoringPanel() {
       {!declaredPickerCollapsed && (
         <>
           <div className="panel-header meld-kind-row">
-            {(["run", "triplet", "kong"] as MeldKind[]).map((k) => (
+            {(["run", "triplet", "concealed-kong", "exposed-kong"] as MeldPickerKind[]).map((k) => (
               <button
                 key={k}
                 type="button"
@@ -2882,20 +2897,9 @@ function ScoringPanel() {
                 aria-pressed={meldKind === k}
                 onClick={() => setMeldKind(k)}
               >
-                {MELD_KIND_LABELS[k]}
+                {MELD_PICKER_LABELS[k]}
               </button>
             ))}
-            {meldKind === "kong" && (
-              <button
-                type="button"
-                className={kongConcealed ? "toggle-on" : undefined}
-                aria-pressed={kongConcealed}
-                onClick={() => setKongConcealed((c) => !c)}
-                title={kongConcealed ? "Concealed kong (暗槓) - self-drawn, never called" : "Exposed kong (明槓/加槓) - called or added"}
-              >
-                {kongConcealed ? "Concealed" : "Exposed"}
-              </button>
-            )}
           </div>
 
           <div className="tile-picker">
@@ -2903,7 +2907,7 @@ function ScoringPanel() {
               .filter((suit) => meldKind !== "run" || suit !== "z")
               .map((suit) => (
                 <div className="suit-row" key={suit}>
-                  {meldPickerTiles(meldKind)
+                  {meldPickerTiles(meldPickerUnderlyingKind(meldKind))
                     .filter((t) => t.suit === suit)
                     .map((t) => (
                       <TileButton key={tileLabel(t)} tile={t} onClick={() => addMeldStartingAt(t)} disabled={!canAddMeldTile(t)} />
