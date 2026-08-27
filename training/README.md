@@ -80,10 +80,15 @@ Raw Ultralytics checkpoints for both trained variants are kept here as a
 durable backup of the training runs, in case either model ever needs to be
 re-exported, fine-tuned further, or compared against a future run:
 
-- `checkpoints/yolov8n-epoch102.pt` — the currently deployed model.
-- `checkpoints/yolov8s-epoch99.pt` — the previously deployed model.
+- `checkpoints/yolov8n-epoch102.pt` — the currently deployed model's raw checkpoint.
+- `checkpoints/yolov8s-epoch99.pt` — the previously deployed model's raw checkpoint.
+- `checkpoints/tile-detector-yolov8s-epoch99.onnx` — the exact INT8-quantized
+  ONNX file that was live in `public/model/tile-detector.onnx` before the
+  swap to nano, pulled from git history so it doesn't only exist buried in a
+  past commit. Restore it as the deployed model with:
+  `cp training/checkpoints/tile-detector-yolov8s-epoch99.onnx public/model/tile-detector.onnx`.
 
-Resume training from either with:
+Resume training from either `.pt` with:
 
 ```bash
 yolo detect train model=training/checkpoints/yolov8n-epoch102.pt \
