@@ -2177,7 +2177,7 @@ interface DeclaredMeldTile {
 type MeldPickerKind = "run" | "triplet" | "concealed-kong" | "exposed-kong";
 const MELD_PICKER_LABELS: Record<MeldPickerKind, string> = {
   run: "上 (Chow)",
-  triplet: "Triplet (碰)",
+  triplet: "碰 (Pung)",
   "concealed-kong": "暗槓 (concealed kong)",
   "exposed-kong": "明槓 (exposed kong)",
 };
