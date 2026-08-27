@@ -25,3 +25,6 @@ dist-ssr
 
 # Local Claude Code settings (personal, not project config)
 .claude/settings.local.json
+
+# Stray Ultralytics output if a yolo command is ever run from repo root
+/runs/
