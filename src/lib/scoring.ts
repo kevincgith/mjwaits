@@ -2746,31 +2746,68 @@ function pushFlowerBonuses(hand: ResolvedHand, ctx: GameContext, matched: { patt
   }
 }
 
-// Shared by all three special hands: 自摸, 獨獨, and 假獨 all apply to them
-// generically - 自摸 just reads ctx.selfDraw, and 獨獨's getWaits-based
-// check already generalizes to these special shapes for free, since
-// isCompleteHand (which getWaits calls per candidate tile) already
-// recognizes 十三么/十六不搭/八仙過海 as valid completions, not just ordinary
-// melds+pair. 假獨's extended check (see isFakeSingleWait) only ever fires
-// for 十三么 in practice - 十六不搭 has no multi-tile "ordinary meld" for a
-// single-tile placeholder to collide with - but is safe to check
-// unconditionally here since it's simply never true otherwise. The
-// optional `extraFakeSingleWaitCheck` covers 嚦咕嚦咕's own distinct 假獨
-// shape (see isEightPairsFakeSingleWait) as a separate callback rather
-// than folding it into isFakeSingleWait itself, since that check's
-// "quad + triple coexist" signal would wrongly fire on any ordinary hand
-// holding a genuine kong alongside an unrelated triplet. Both fake-wait
-// paths are kept mutually exclusive with 獨獨 by only checking them when
-// 獨獨 didn't fire, matching genuine-single-wait's own declared `excludes`.
+// Every purely-declared pattern (nothing about the hand's own shape
+// determines these - see each one's own PATTERNS entry): 自摸/門清自摸,
+// 叮/天叮/地叮/門清叮, 即食/食叮, 四子內/七子內/十子內, 雙響/三響, and
+// 天胡/地胡/人胡. Applies unmodified to all 3 special hands via
+// pushSelfDrawAndGenuineSingleWait below - checking each id's own score()
+// and letting the normal `excludes` metadata suppress the weaker sibling
+// (e.g. 門清自摸 excludes 自摸) reproduces the exact same stacking/
+// exclusion behavior an equivalent ordinary hand would get, since all
+// three special hands are always fully concealed by construction (no
+// declared melds ever - see each one's own "declaredMelds.length > 0 ->
+// null" guard), so isConcealedExceptKongs is always true and the 門清
+// variants always win over their plain counterparts when self-draw/叮 is
+// declared. See scoring-rules.md's Known gaps for the caveat this raises.
+const DECLARED_ONLY_PATTERN_IDS = [
+  "self-draw",
+  "concealed-self-draw",
+  "riichi",
+  "concealed-riichi",
+  "heavenly-riichi",
+  "earthly-riichi",
+  "riichi-instant-win",
+  "riichi-eat",
+  "early-win-four",
+  "early-win-seven",
+  "early-win-ten",
+  "multi-win-double",
+  "multi-win-triple",
+  "heavenly-win",
+  "earthly-win",
+  "human-win",
+];
+function pushDeclaredOnlyPatterns(hand: ResolvedHand, ctx: GameContext, matched: { pattern: TaiPattern; tai: number }[]): void {
+  const scored = PATTERNS.filter((p) => DECLARED_ONLY_PATTERN_IDS.includes(p.id))
+    .map((pattern) => ({ pattern, tai: pattern.score(hand, ctx) }))
+    .filter((m) => m.tai > 0);
+  const excluded = new Set(scored.flatMap((m) => m.pattern.excludes ?? []));
+  matched.push(...scored.filter((m) => !excluded.has(m.pattern.id)));
+}
+
+// Shared by all three special hands: the declared-only battery above, plus
+// 獨獨/假獨 - 獨獨's getWaits-based check already generalizes to these
+// special shapes for free, since isCompleteHand (which getWaits calls per
+// candidate tile) already recognizes 十三么/十六不搭/八仙過海 as valid
+// completions, not just ordinary melds+pair. 假獨's extended check (see
+// isFakeSingleWait) only ever fires for 十三么 in practice - 十六不搭 has no
+// multi-tile "ordinary meld" for a single-tile placeholder to collide with
+// - but is safe to check unconditionally here since it's simply never true
+// otherwise. The optional `extraFakeSingleWaitCheck` covers 嚦咕嚦咕's own
+// distinct 假獨 shape (see isEightPairsFakeSingleWait) as a separate
+// callback rather than folding it into isFakeSingleWait itself, since that
+// check's "quad + triple coexist" signal would wrongly fire on any
+// ordinary hand holding a genuine kong alongside an unrelated triplet.
+// Both fake-wait paths are kept mutually exclusive with 獨獨 by only
+// checking them when 獨獨 didn't fire, matching genuine-single-wait's own
+// declared `excludes`.
 function pushSelfDrawAndGenuineSingleWait(
   hand: ResolvedHand,
   ctx: GameContext,
   matched: { pattern: TaiPattern; tai: number }[],
   extraFakeSingleWaitCheck?: (hand: ResolvedHand, ctx: GameContext) => boolean,
 ): void {
-  const selfDrawPattern = PATTERNS.find((p) => p.id === "self-draw")!;
-  const selfDrawTai = selfDrawPattern.score(hand, ctx);
-  if (selfDrawTai > 0) matched.push({ pattern: selfDrawPattern, tai: selfDrawTai });
+  pushDeclaredOnlyPatterns(hand, ctx, matched);
 
   const genuineSingleWaitPattern = PATTERNS.find((p) => p.id === "genuine-single-wait")!;
   const genuineSingleWaitTai = genuineSingleWaitPattern.score(hand, ctx);

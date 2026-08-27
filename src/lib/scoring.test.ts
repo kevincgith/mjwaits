@@ -1906,16 +1906,18 @@ describe("PATTERNS: 不搭雜龍 (十六不搭: ranks span 1-9 across all 3 suit
 });
 
 describe("PATTERNS: 自摸/獨獨 apply to the special hands too", () => {
-  it("scores 自摸 for a self-drawn 十三么", () => {
+  it("scores 門清自摸 (not plain 自摸) for a self-drawn 十三么 - always concealed by construction, so the upgrade always wins, per the known-gap note in scoring-rules.md", () => {
     const result = scoreHand("112349m19t19b1234567z", ctx({ selfDraw: true }));
-    expect(tai(result, "self-draw")).toBe(1);
-    expect(result.total).toBe(168);
+    expect(tai(result, "concealed-self-draw")).toBe(3);
+    expect(tai(result, "self-draw")).toBe(0);
+    expect(result.total).toBe(170);
   });
 
-  it("scores 自摸 for a self-drawn 十六不搭", () => {
+  it("scores 門清自摸 (not plain 自摸) for a self-drawn 十六不搭", () => {
     const result = scoreHand("147m147t258b11234567z", ctx({ selfDraw: true }));
-    expect(tai(result, "self-draw")).toBe(1);
-    expect(result.total).toBe(58);
+    expect(tai(result, "concealed-self-draw")).toBe(3);
+    expect(tai(result, "self-draw")).toBe(0);
+    expect(result.total).toBe(60);
   });
 
   it("scores 獨獨 for a 十三么 hand where the 食胡 tile was a genuine single wait", () => {
@@ -1950,6 +1952,45 @@ describe("PATTERNS: 自摸/獨獨 apply to the special hands too", () => {
     expect(tai(result, "fake-single-wait")).toBe(0);
     expect(tai(result, "genuine-single-wait")).toBe(0);
     expect(tai(result, "thirteen-orphans")).toBe(160);
+  });
+});
+
+describe("PATTERNS: every purely-declared button pattern applies to the special hands too", () => {
+  it("scores 門清叮 (not plain 叮) for a 十三么 hand - always concealed by construction, so the upgrade always wins, same as 門清自摸; 天叮/地叮 have no concealed-only upgrade of their own, so those apply as-is", () => {
+    const plain = scoreHand("112349m19t19b1234567z", ctx({ riichi: "riichi" }));
+    expect(tai(plain, "concealed-riichi")).toBe(10);
+    expect(tai(plain, "riichi")).toBe(0);
+    const heavenly = scoreHand("112349m19t19b1234567z", ctx({ riichi: "heavenly-riichi" }));
+    expect(tai(heavenly, "heavenly-riichi")).toBe(60);
+    const earthly = scoreHand("112349m19t19b1234567z", ctx({ riichi: "earthly-riichi" }));
+    expect(tai(earthly, "earthly-riichi")).toBe(50);
+  });
+
+  it("scores 門清叮 (not plain 叮) for a 十六不搭 hand too", () => {
+    const result = scoreHand("147m147t258b11234567z", ctx({ riichi: "riichi" }));
+    expect(tai(result, "concealed-riichi")).toBe(10);
+    expect(tai(result, "riichi")).toBe(0);
+  });
+
+  it("scores 即食/食叮 stacking on top of 叮 for a 十三么 hand", () => {
+    const result = scoreHand("112349m19t19b1234567z", ctx({ riichi: "riichi", instantWin: true, eatRiichi: true }));
+    expect(tai(result, "concealed-riichi")).toBe(10);
+    expect(tai(result, "riichi-instant-win")).toBe(5);
+    expect(tai(result, "riichi-eat")).toBe(5);
+  });
+
+  it("scores 四子內/雙響/天胡 for a 十六不搭 hand", () => {
+    const result = scoreHand("147m147t258b11234567z", ctx({ earlyWin: "four", multiWin: "double", heavenlyWin: "heaven" }));
+    expect(tai(result, "early-win-four")).toBe(60);
+    expect(tai(result, "multi-win-double")).toBe(5);
+    expect(tai(result, "heavenly-win")).toBe(160);
+  });
+
+  it("scores 七子內/三響/地胡 for a 嚦咕嚦咕 hand", () => {
+    const result = scoreHand("1111m223344m5566777t", ctx({ earlyWin: "seven", multiWin: "triple", heavenlyWin: "earth" }));
+    expect(tai(result, "early-win-seven")).toBe(30);
+    expect(tai(result, "multi-win-triple")).toBe(10);
+    expect(tai(result, "earthly-win")).toBe(120);
   });
 });
 
@@ -2196,9 +2237,10 @@ describe("PATTERNS: 無花/正花/爛花/無字/無字花 apply to 嚦咕嚦咕 
 });
 
 describe("PATTERNS: 自摸/獨獨 apply to 嚦咕嚦咕 too", () => {
-  it("scores 自摸 for a self-drawn 嚦咕嚦咕", () => {
+  it("scores 門清自摸 (not plain 自摸) for a self-drawn 嚦咕嚦咕 - always concealed by construction", () => {
     const result = scoreHand("1111m223344m5566777t", ctx({ selfDraw: true }));
-    expect(tai(result, "self-draw")).toBe(1);
+    expect(tai(result, "concealed-self-draw")).toBe(3);
+    expect(tai(result, "self-draw")).toBe(0);
   });
 
   it("scores 獨獨 when the pre-completion 嚦咕嚦咕 wait was genuinely single", () => {
