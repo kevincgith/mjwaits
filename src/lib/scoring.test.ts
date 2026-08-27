@@ -1781,6 +1781,22 @@ describe("PATTERNS: 明/暗四歸 applies within 嚦咕嚦咕 too", () => {
     expect(tai(result, "orphans-four-return-hidden")).toBe(15);
     expect(tai(result, "orphans-four-return-open")).toBe(0);
   });
+
+  it("stacks both 明四歸 and 暗四歸 at once when the hand holds two separate quads", () => {
+    // 1m and 5t are each held all 4 copies (2 distinct quads, using 4 of
+    // the 8 pairs between them) - the winning tile completes the 1m quad
+    // (claimed, not self-drawn) so only that one is 明; the 5t quad, never
+    // touched by the winning tile, is 暗.
+    const result = scoreHand("1111m223344m5555t777z", ctx({ winningTile: { suit: "m", rank: 1 } }));
+    expect(tai(result, "orphans-four-return-open")).toBe(5);
+    expect(tai(result, "orphans-four-return-hidden")).toBe(15);
+  });
+
+  it("stacks 暗四歸 across three simultaneous quads", () => {
+    const result = scoreHand("1111m5555t9999b22z777z", ctx());
+    expect(tai(result, "orphans-four-return-hidden")).toBe(45);
+    expect(tai(result, "orphans-four-return-open")).toBe(0);
+  });
 });
 
 describe("PATTERNS: other patterns reused within 嚦咕嚦咕 (per the user's own list)", () => {

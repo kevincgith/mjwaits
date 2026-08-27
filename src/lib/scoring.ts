@@ -667,13 +667,26 @@ function preCompletionEightPairsWaitCount(hand: ResolvedHand, ctx: GameContext):
   return pre === null ? null : eightPairsWaitCount(pre.tiles);
 }
 
-// 明/暗四歸 (嚦咕嚦咕 context): a kind held all 4 copies at once (2 of the 8
-// pairs) - structurally different from orphansQuadKind's "triplet meld +
-// matching single" shape, since a 嚦咕嚦咕 quad is just one 4-tile group.
-// Picks whichever quad kind is found first if more than one exists.
-function eightPairsQuadKind(hand: ResolvedHand): Tile | null {
-  const quadMeld = hand.melds.find((m) => m.tiles.length === 4);
-  return quadMeld ? quadMeld.tiles[0] : null;
+// 明/暗四歸 (嚦咕嚦咕 context): every kind held all 4 copies at once (each
+// one uses up 2 of the 8 pairs) - structurally different from
+// orphansQuadKind's single "triplet meld + matching single" shape, since a
+// 嚦咕嚦咕 quad is just one 4-tile group. Unlike 十三么 (at most one quad,
+// since only one triplet ever exists there), a 嚦咕嚦咕 hand can hold
+// several independent quads at once - e.g. two different ranks each held
+// all 4 copies, using 4 of the 8 pairs between them - so every quad found
+// stacks, not just the first.
+function eightPairsQuadKinds(hand: ResolvedHand): Tile[] {
+  return hand.melds.filter((m) => m.tiles.length === 4).map((m) => m.tiles[0]);
+}
+
+// Unifies the two special hands' quad-finding for 明/暗四歸: tries the
+// 十三么 shape (orphansQuadKind, at most one - only one triplet ever
+// exists there) first, falling back to the 嚦咕嚦咕 shape (eightPairsQuadKinds,
+// zero, one, or several) only when there's no 十三么-style quad, since the
+// two special hands' fake-meld constructions never coexist in one `hand`.
+function allFourReturnQuadKinds(hand: ResolvedHand): Tile[] {
+  const orphansQuad = orphansQuadKind(hand);
+  return orphansQuad ? [orphansQuad] : eightPairsQuadKinds(hand);
 }
 
 // 小五門齊/小七門齊 (嚦咕嚦咕 context): the normal small-five-suits/small-
@@ -2242,23 +2255,32 @@ export const PATTERNS: TaiPattern[] = [
     name: "明四歸 (Special hand: one kind held all 4 copies, open)",
     // Only ever reached via scoreThirteenOrphans'/scoreEightPairs' own
     // short-circuit, but kept independently correct. Despite the id,
-    // applies within either special hand - orphansQuadKind/
-    // eightPairsQuadKind are tried in turn since the two hands' fake-meld
-    // constructions differ structurally.
+    // applies within either special hand - see allFourReturnQuadKinds for
+    // why 十三么 contributes at most one quad while 嚦咕嚦咕 can contribute
+    // several, all stacking here. A single winning tile can only ever
+    // match one of them (they're all different kinds), so this is really
+    // just "0 or 5" in practice, but stays a proper stacking sum for
+    // consistency with -hidden below.
     score: (hand, ctx) => {
-      const quadTile = orphansQuadKind(hand) ?? eightPairsQuadKind(hand);
-      if (!quadTile || ctx.winningTile === null || ctx.selfDraw) return 0;
-      return ctx.winningTile.suit === quadTile.suit && ctx.winningTile.rank === quadTile.rank ? 5 : 0;
+      if (ctx.winningTile === null || ctx.selfDraw) return 0;
+      const matches = allFourReturnQuadKinds(hand).filter(
+        (q) => q.suit === ctx.winningTile!.suit && q.rank === ctx.winningTile!.rank
+      ).length;
+      return matches * 5;
     },
   },
   {
     id: "orphans-four-return-hidden",
     name: "暗四歸 (Special hand: one kind held all 4 copies, concealed)",
+    // Stacks once per quad NOT completed by a claimed 食胡 tile - see
+    // -open above for why at most one quad can ever be "open".
     score: (hand, ctx) => {
-      const quadTile = orphansQuadKind(hand) ?? eightPairsQuadKind(hand);
-      if (!quadTile) return 0;
-      const isOpen = ctx.winningTile !== null && !ctx.selfDraw && ctx.winningTile.suit === quadTile.suit && ctx.winningTile.rank === quadTile.rank;
-      return isOpen ? 0 : 15;
+      const quads = allFourReturnQuadKinds(hand);
+      const openCount =
+        ctx.winningTile !== null && !ctx.selfDraw
+          ? quads.filter((q) => q.suit === ctx.winningTile!.suit && q.rank === ctx.winningTile!.rank).length
+          : 0;
+      return (quads.length - openCount) * 15;
     },
   },
   {
@@ -2414,11 +2436,15 @@ function scoreThirteenOrphans(parsed: ParsedScoringHand, ctx: GameContext): Scor
     { pattern: orphansPattern, tai: orphansPattern.score(hand, ctx) },
   ];
 
-  const quadTile = orphansQuadKind(hand);
-  if (quadTile) {
-    const isOpen = ctx.winningTile !== null && !ctx.selfDraw && ctx.winningTile.suit === quadTile.suit && ctx.winningTile.rank === quadTile.rank;
-    const quadPattern = PATTERNS.find((p) => p.id === (isOpen ? "orphans-four-return-open" : "orphans-four-return-hidden"))!;
-    matched.push({ pattern: quadPattern, tai: quadPattern.score(hand, ctx) });
+  // 明/暗四歸: each pattern's own score() already recomputes the relevant
+  // quad(s) via allFourReturnQuadKinds and sums correctly (a 十三么 hand
+  // has at most one, so at most one of the two ever actually fires here,
+  // but calling both and filtering keeps this in sync with scoreEightPairs
+  // below, which genuinely can need both at once).
+  for (const id of ["orphans-four-return-open", "orphans-four-return-hidden"]) {
+    const pattern = PATTERNS.find((p) => p.id === id)!;
+    const tai = pattern.score(hand, ctx);
+    if (tai > 0) matched.push({ pattern, tai });
   }
 
   // 混帶么/混老頭: reused as-is (same ids/tai as their normal-hand
@@ -2622,11 +2648,14 @@ function scoreEightPairs(parsed: ParsedScoringHand, ctx: GameContext): ScoreResu
     flyingTai > 0 ? { pattern: flyingPattern, tai: flyingTai } : { pattern: eightPairsPattern, tai: eightPairsPattern.score(hand, ctx) },
   ];
 
-  const quadTile = eightPairsQuadKind(hand);
-  if (quadTile) {
-    const isOpen = ctx.winningTile !== null && !ctx.selfDraw && ctx.winningTile.suit === quadTile.suit && ctx.winningTile.rank === quadTile.rank;
-    const quadPattern = PATTERNS.find((p) => p.id === (isOpen ? "orphans-four-return-open" : "orphans-four-return-hidden"))!;
-    matched.push({ pattern: quadPattern, tai: quadPattern.score(hand, ctx) });
+  // 明/暗四歸: a 嚦咕嚦咕 hand can hold several independent quads at once
+  // (see eightPairsQuadKinds), so both patterns can genuinely fire
+  // together here (some quads open, others hidden) - each one's own
+  // score() sums across every quad it applies to.
+  for (const id of ["orphans-four-return-open", "orphans-four-return-hidden"]) {
+    const pattern = PATTERNS.find((p) => p.id === id)!;
+    const tai = pattern.score(hand, ctx);
+    if (tai > 0) matched.push({ pattern, tai });
   }
 
   const smallFiveSuitsTai = eightPairsSmallFiveSuitsTai(hand);
