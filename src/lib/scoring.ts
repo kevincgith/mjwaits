@@ -464,6 +464,13 @@ export interface TaiPattern {
   // holding any two of them (小三元) or even just one (三元牌), so those
   // shouldn't also count once the bigger pattern applies.
   excludes?: string[];
+  // Optional disclaimer surfaced in the UI (as a tooltip on the pattern's
+  // row - see ScoringBreakdown) alongside its name, for a pattern whose
+  // check is a narrower proxy for what it's actually named after and
+  // could otherwise read as a stronger claim than it really is - e.g. 明絕
+  // only ever looks at this one hand's own declared melds, not the
+  // discard pile or any other player's melds.
+  caveat?: string;
 }
 
 function allHandTiles(hand: ResolvedHand): Tile[] {
@@ -817,6 +824,32 @@ function isFakeSingleWait(hand: ResolvedHand, ctx: GameContext): boolean {
   const inSingleMeld = hand.melds.some((m) => m.tiles.length === 1 && meldHasTileKind(m, winningTile));
   const inLargerMeld = hand.melds.some((m) => m.tiles.length > 1 && meldHasTileKind(m, winningTile));
   return inSingleMeld && inLargerMeld;
+}
+
+// 明絕: the 食胡 tile's kind already sits exactly 3 times across this
+// hand's own DECLARED (exposed) melds - most often a single declared
+// triplet of that kind, but just as easily spread across 3 separate
+// declared runs each holding one copy, or any other combination of
+// declared melds that happens to sum to exactly 3 (a declared kong of
+// that kind would push the total to 4, which falls outside this pattern
+// with no extra kind check needed to exclude it). "明" (visible)
+// specifically: only exposed melds count - an exposed kong counts, but a
+// concealed (self-drawn) kong doesn't, since it isn't visible to anyone
+// else at the table, same as every other concealed meld here.
+//
+// CAVEAT (also surfaced in the UI via this pattern's `caveat`, see
+// PATTERNS below): this only ever looks at THIS hand's own declared
+// melds. It has no visibility into the discard pile or any other
+// player's declared melds, so it can't actually confirm the 食胡 tile was
+// the last live copy anywhere in the game - only that this hand's own
+// exposed melds already show 3 of them.
+function isVisiblyTripledWinningTile(hand: ResolvedHand, ctx: GameContext): boolean {
+  if (ctx.winningTile === null) return false;
+  const winningTile = ctx.winningTile;
+  const declaredCopies = hand.melds
+    .filter((m) => !m.concealed)
+    .reduce((n, m) => n + m.tiles.filter((t) => t.suit === winningTile.suit && t.rank === winningTile.rank).length, 0);
+  return declaredCopies === 3;
 }
 
 // 明 (open) vs 暗 (concealed/hidden), per the house rule: a meld is 明 if
@@ -2205,6 +2238,13 @@ export const PATTERNS: TaiPattern[] = [
     id: "fake-single-wait",
     name: "假獨 (Fake single wait)",
     score: (hand, ctx) => (isFakeSingleWait(hand, ctx) ? 2 : 0),
+  },
+  {
+    id: "visible-triple-win",
+    name: "明絕 (Won on a tile already declared 3 times)",
+    score: (hand, ctx) => (isVisiblyTripledWinningTile(hand, ctx) ? 5 : 0),
+    caveat:
+      "Only checks this hand's own declared melds - it has no knowledge of the discard pile or any other player's declared melds, so it can't confirm this is truly the last copy of the tile anywhere in the game.",
   },
   {
     id: "self-draw",

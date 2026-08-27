@@ -2290,7 +2290,7 @@ function ScoringBreakdown({
         ) : (
           matched.map(({ pattern, tai }) => (
             <div className="scoring-pattern-row" key={pattern.id}>
-              <span>{pattern.name}</span>
+              <span title={pattern.caveat}>{pattern.name}</span>
               <span className="scoring-pattern-tai">{tai} tai</span>
             </div>
           ))

@@ -1398,6 +1398,34 @@ describe("PATTERNS: 獨獨/假獨 (genuine vs. fake single wait)", () => {
   });
 });
 
+describe("PATTERNS: 明絕 (won on a tile already declared 3 times)", () => {
+  it("scores when the 食胡 tile's kind sits 3 times in a single declared triplet", () => {
+    const result = scoreHand("(777t)(888t)(555t)34566789t", ctx({ winningTile: { suit: "t", rank: 8 } }));
+    expect(tai(result, "visible-triple-win")).toBe(5);
+  });
+
+  it("scores when the 3 copies are spread across 3 separate declared runs instead of one triplet", () => {
+    const result = scoreHand("(345m)(456m)(567m)456789t22b", ctx({ winningTile: { suit: "m", rank: 5 } }));
+    expect(tai(result, "visible-triple-win")).toBe(5);
+  });
+
+  it("doesn't score when the winning tile's kind doesn't match any declared meld", () => {
+    const result = scoreHand("(777t)(888t)(555t)34566789t", ctx({ winningTile: { suit: "t", rank: 9 } }));
+    expect(tai(result, "visible-triple-win")).toBe(0);
+  });
+
+  it("doesn't score when no winning tile is recorded", () => {
+    const result = scoreHand("(777t)(888t)(555t)34566789t", ctx());
+    expect(tai(result, "visible-triple-win")).toBe(0);
+  });
+
+  it("carries a caveat about only checking this hand's own declared melds", () => {
+    const pattern = PATTERNS.find((p) => p.id === "visible-triple-win")!;
+    expect(pattern.caveat).toMatch(/discard pile/);
+    expect(pattern.caveat).toMatch(/other player/);
+  });
+});
+
 describe("PATTERNS: 門前清 (concealed hand)", () => {
   it("scores when the only declared meld is a kong", () => {
     const result = scoreHand("(1111z)123456789m234t22b", ctx());
