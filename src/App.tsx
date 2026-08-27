@@ -2569,6 +2569,15 @@ function ScoringPanel() {
     setDeclaredMelds([]);
     setBonusTiles([]);
     setWinningTile(null);
+    setSeatWind(1);
+    setRoundWind(1);
+    setSelfDraw(false);
+    setRiichi("none");
+    setInstantWin(false);
+    setEatRiichi(false);
+    setEarlyWin("none");
+    setMultiWin("none");
+    setHeavenlyWin("none");
   };
 
   // A scanned detection's meaning for the declared-melds region: a real
@@ -2722,7 +2731,18 @@ function ScoringPanel() {
         <button
           type="button"
           onClick={handleReset}
-          disabled={concealedTiles.length === 0 && declaredMelds.length === 0 && bonusTiles.length === 0}
+          disabled={
+            concealedTiles.length === 0 &&
+            declaredMelds.length === 0 &&
+            bonusTiles.length === 0 &&
+            seatWind === 1 &&
+            roundWind === 1 &&
+            !selfDraw &&
+            riichi === "none" &&
+            earlyWin === "none" &&
+            multiWin === "none" &&
+            heavenlyWin === "none"
+          }
         >
           Reset
         </button>
