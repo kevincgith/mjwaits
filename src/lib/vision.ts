@@ -2,8 +2,16 @@
 // merged dataset from https://github.com/Andy8647/MahjongVis (MIT) and
 // https://github.com/jaheel/MJOD-2136 (CC BY-NC-SA), run entirely in the
 // browser via onnxruntime-web (WASM). No image ever leaves the device.
-
-import * as ort from "onnxruntime-web";
+//
+// Imported from the "/wasm" subpath rather than the package root: the root
+// entry point's bundle registers every backend (WASM, WebGL, WebGPU) and
+// pulls in the JSEP-enabled wasm binary that WebGPU needs, roughly 2x the
+// size of the plain WASM-only binary - getSession only ever passes
+// executionProviders: ["wasm"], so none of that extra code ever runs. This
+// subpath ships the same public API (InferenceSession, Tensor, env) with
+// only the CPU WASM backend registered, cutting the one-time model-load
+// download from ~26 MB to ~13 MB with no behavior change.
+import * as ort from "onnxruntime-web/wasm";
 import type { Tile } from "./mahjong";
 
 export const IMG_SIZE = 640;
