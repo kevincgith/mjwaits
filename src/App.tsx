@@ -2176,7 +2176,7 @@ interface DeclaredMeldTile {
 // UI-only split, collapsed back via meldPickerUnderlyingKind below.
 type MeldPickerKind = "run" | "triplet" | "concealed-kong" | "exposed-kong";
 const MELD_PICKER_LABELS: Record<MeldPickerKind, string> = {
-  run: "Run (吃)",
+  run: "上 (Chow)",
   triplet: "Triplet (碰)",
   "concealed-kong": "暗槓 (concealed kong)",
   "exposed-kong": "明槓 (exposed kong)",
