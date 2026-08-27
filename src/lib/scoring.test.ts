@@ -17,6 +17,9 @@ const ctx = (overrides: Partial<GameContext> = {}): GameContext => ({
   roundWind: 1,
   selfDraw: false,
   winningTile: null,
+  riichi: "none",
+  instantWin: false,
+  eatRiichi: false,
   ...overrides,
 });
 
@@ -1519,6 +1522,83 @@ describe("PATTERNS: 自摸/門清自摸 (self-drawn win)", () => {
     const result = scoreHand("123456789m234t678t22b", ctx());
     expect(tai(result, "self-draw")).toBe(0);
     expect(tai(result, "concealed-self-draw")).toBe(0);
+  });
+});
+
+describe("PATTERNS: 叮/門清叮 (Riichi, plain and while 門前清)", () => {
+  it("scores plain 叮 (5 tai) when a declared meld is present, not 門清叮", () => {
+    const result = scoreHand("(111z)123456789m234t22b", ctx({ riichi: "riichi" }));
+    expect(tai(result, "riichi")).toBe(5);
+    expect(tai(result, "concealed-riichi")).toBe(0);
+  });
+
+  it("scores 門清叮 (10 tai) when 門前清 holds too, excluding plain 叮", () => {
+    const result = scoreHand("123456789m234t678t22b", ctx({ riichi: "riichi" }));
+    expect(tai(result, "concealed-riichi")).toBe(10);
+    expect(tai(result, "riichi")).toBe(0);
+    expect(tai(result, "concealed-except-kongs")).toBe(5);
+  });
+
+  it("doesn't score when not declared", () => {
+    const result = scoreHand("123456789m234t678t22b", ctx());
+    expect(tai(result, "riichi")).toBe(0);
+    expect(tai(result, "concealed-riichi")).toBe(0);
+  });
+
+  it("stacks freely alongside self-draw - purely a declared flag, not derived from the hand's own shape", () => {
+    const result = scoreHand("123456789m234t678t22b", ctx({ selfDraw: true, riichi: "riichi" }));
+    expect(tai(result, "concealed-riichi")).toBe(10);
+    expect(tai(result, "concealed-self-draw")).toBe(3);
+  });
+});
+
+describe("PATTERNS: 天叮/地叮 (Riichi's two upgrades)", () => {
+  it("scores 天叮 (60 tai), excluding 叮 and 門清叮", () => {
+    const result = scoreHand("123456789m234t678t22b", ctx({ riichi: "heavenly-riichi" }));
+    expect(tai(result, "heavenly-riichi")).toBe(60);
+    expect(tai(result, "riichi")).toBe(0);
+    expect(tai(result, "concealed-riichi")).toBe(0);
+  });
+
+  it("scores 地叮 (50 tai), excluding 叮 and 門清叮", () => {
+    const result = scoreHand("123456789m234t678t22b", ctx({ riichi: "earthly-riichi" }));
+    expect(tai(result, "earthly-riichi")).toBe(50);
+    expect(tai(result, "riichi")).toBe(0);
+    expect(tai(result, "concealed-riichi")).toBe(0);
+  });
+
+  it("天叮 and 地叮 are mutually exclusive by construction (riichi is a single state)", () => {
+    const heavenly = scoreHand("123456789m234t678t22b", ctx({ riichi: "heavenly-riichi" }));
+    expect(tai(heavenly, "earthly-riichi")).toBe(0);
+    const earthly = scoreHand("123456789m234t678t22b", ctx({ riichi: "earthly-riichi" }));
+    expect(tai(earthly, "heavenly-riichi")).toBe(0);
+  });
+});
+
+describe("PATTERNS: 即食/食叮 (stack additively on top of any declared 叮 state)", () => {
+  it("即食 adds 5 tai on top of plain 叮", () => {
+    const result = scoreHand("(111z)123456789m234t22b", ctx({ riichi: "riichi", instantWin: true }));
+    expect(tai(result, "riichi")).toBe(5);
+    expect(tai(result, "riichi-instant-win")).toBe(5);
+  });
+
+  it("食叮 adds 5 tai on top of plain 叮", () => {
+    const result = scoreHand("(111z)123456789m234t22b", ctx({ riichi: "riichi", eatRiichi: true }));
+    expect(tai(result, "riichi")).toBe(5);
+    expect(tai(result, "riichi-eat")).toBe(5);
+  });
+
+  it("both stack together on top of 天叮", () => {
+    const result = scoreHand("(111z)123456789m234t22b", ctx({ riichi: "heavenly-riichi", instantWin: true, eatRiichi: true }));
+    expect(tai(result, "heavenly-riichi")).toBe(60);
+    expect(tai(result, "riichi-instant-win")).toBe(5);
+    expect(tai(result, "riichi-eat")).toBe(5);
+  });
+
+  it("neither scores when 叮 isn't declared at all, even if the flags are set", () => {
+    const result = scoreHand("(111z)123456789m234t22b", ctx({ instantWin: true, eatRiichi: true }));
+    expect(tai(result, "riichi-instant-win")).toBe(0);
+    expect(tai(result, "riichi-eat")).toBe(0);
   });
 });
 

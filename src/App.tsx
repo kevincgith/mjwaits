@@ -53,6 +53,7 @@ import {
   type MeldKind,
   type ParsedScoringHand,
   type ResolvedHand,
+  type RiichiState,
   type ScoreResult,
   type Wind,
 } from "./lib/scoring";
@@ -2160,6 +2161,16 @@ interface DeclaredMeldTile {
 
 const MELD_KIND_LABELS: Record<MeldKind, string> = { triplet: "Triplet (碰)", run: "Run (吃)", kong: "Kong (槓)" };
 
+// 叮's declared state cycles through these 4 steps on each tap, wrapping
+// back to "none" - see the Self-draw row in ScoringPanel.
+const RIICHI_CYCLE: RiichiState[] = ["none", "riichi", "heavenly-riichi", "earthly-riichi"];
+const RIICHI_LABELS: Record<RiichiState, string> = {
+  none: "叮 (Riichi)",
+  riichi: "叮 (Riichi)",
+  "heavenly-riichi": "天叮 (Heavenly Riichi)",
+  "earthly-riichi": "地叮 (Earthly Riichi)",
+};
+
 // Whichever suit rows make sense to offer for the currently-selected meld
 // kind: runs only exist in numbered suits, so the honor row is dropped
 // entirely for run mode. Rank 8/9 stay in the row (unlike honors, hiding
@@ -2367,6 +2378,23 @@ function ScoringPanel() {
   const [seatWind, setSeatWind] = useState<Wind>(1);
   const [roundWind, setRoundWind] = useState<Wind>(1);
   const [selfDraw, setSelfDraw] = useState(false);
+  const [riichi, setRiichi] = useState<RiichiState>("none");
+  const [instantWin, setInstantWin] = useState(false);
+  const [eatRiichi, setEatRiichi] = useState(false);
+  // Tapping 叮 advances it through none -> 叮 -> 天叮 -> 地叮 -> none...;
+  // 即食/食叮 only make sense once riichi is declared, so stepping back to
+  // "none" resets both rather than leaving a stale true value that could
+  // never be un-toggled once their buttons disappear from the UI.
+  const cycleRiichi = () => {
+    setRiichi((prev) => {
+      const next = RIICHI_CYCLE[(RIICHI_CYCLE.indexOf(prev) + 1) % RIICHI_CYCLE.length];
+      if (next === "none") {
+        setInstantWin(false);
+        setEatRiichi(false);
+      }
+      return next;
+    });
+  };
   // The 食胡 tile - the specific tile instance (not just its kind) that
   // completed the hand, set via long-press on a concealed-hand tile (see
   // WinningTileHandButton). Tracked by id so that long-pressing one of
@@ -2605,7 +2633,7 @@ function ScoringPanel() {
   // scoring.ts only cares about the winning tile's kind (see GameContext's
   // doc comment there) - the id above exists purely to disambiguate which
   // instance the UI highlights.
-  const ctx: GameContext = { seatWind, roundWind, selfDraw, winningTile };
+  const ctx: GameContext = { seatWind, roundWind, selfDraw, winningTile, riichi, instantWin, eatRiichi };
   const scoring = useMemo(() => {
     if (totalTiles !== requiredSize) return null;
     const parsed: ParsedScoringHand = {
@@ -2620,7 +2648,20 @@ function ScoringPanel() {
       return { ok: false as const, message };
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [concealedTiles, declaredMelds, bonusTiles, totalTiles, requiredSize, seatWind, roundWind, selfDraw, winningTile]);
+  }, [
+    concealedTiles,
+    declaredMelds,
+    bonusTiles,
+    totalTiles,
+    requiredSize,
+    seatWind,
+    roundWind,
+    selfDraw,
+    riichi,
+    instantWin,
+    eatRiichi,
+    winningTile,
+  ]);
 
   return (
     <section className="panel scoring-panel">
@@ -2818,6 +2859,37 @@ function ScoringPanel() {
         >
           Self-draw
         </button>
+        <button
+          type="button"
+          className={riichi !== "none" ? "toggle-on" : undefined}
+          aria-pressed={riichi !== "none"}
+          onClick={cycleRiichi}
+          title="叮 (Riichi) - tap to cycle 叮 / 天叮 / 地叮 / off"
+        >
+          {RIICHI_LABELS[riichi]}
+        </button>
+        {riichi !== "none" && (
+          <>
+            <button
+              type="button"
+              className={instantWin ? "toggle-on" : undefined}
+              aria-pressed={instantWin}
+              onClick={() => setInstantWin((w) => !w)}
+              title="即食 - the hand completed within the immediate round after declaring - adds 5 tai"
+            >
+              即食
+            </button>
+            <button
+              type="button"
+              className={eatRiichi ? "toggle-on" : undefined}
+              aria-pressed={eatRiichi}
+              onClick={() => setEatRiichi((e) => !e)}
+              title="食叮 - adds 5 tai"
+            >
+              食叮
+            </button>
+          </>
+        )}
       </div>
 
       {scoring && !scoring.ok && <span className="error">{scoring.message}</span>}

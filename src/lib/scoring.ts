@@ -433,6 +433,11 @@ export function decomposeHandAll(freeTiles: Tile[], meldsNeeded: number): { pair
 
 export type Wind = 1 | 2 | 3 | 4; // East/South/West/North, same order as mahjong.ts's z honors.
 
+// 叮 (Riichi)'s declared state - a 4-way cycle in the UI (none -> 叮 ->
+// 天叮 -> 地叮 -> none...), mutually exclusive by construction since it's
+// a single value, not independent flags.
+export type RiichiState = "none" | "riichi" | "heavenly-riichi" | "earthly-riichi";
+
 export interface GameContext {
   seatWind: Wind;
   roundWind: Wind;
@@ -442,6 +447,19 @@ export interface GameContext {
   // is interchangeable for scoring purposes. null means unspecified - see
   // isMeldOpen for how that's treated.
   winningTile: Tile | null;
+  // 叮/天叮/地叮 (Riichi and its two upgrades) - a house-rule declaration,
+  // entirely independent of the hand's own shape (unlike every other
+  // GameContext field, nothing about the tiles themselves can derive
+  // this - it's just what the user cycles through in the UI). See the
+  // "riichi"/"heavenly-riichi"/"earthly-riichi" PATTERNS entries.
+  riichi: RiichiState;
+  // 即食/食叮 - independent toggles, each only meaningful once `riichi` is
+  // declared (not "none"); the UI only shows them then, and resets both
+  // back to false whenever riichi cycles back to "none" (see
+  // ScoringPanel). See the "riichi-instant-win"/"riichi-eat" PATTERNS
+  // entries.
+  instantWin: boolean;
+  eatRiichi: boolean;
 }
 
 // The dealer is whoever's own seat wind is East for the current hand - not
@@ -2304,6 +2322,53 @@ export const PATTERNS: TaiPattern[] = [
     id: "self-draw",
     name: "自摸 (Self-drawn win)",
     score: (_hand, ctx) => (ctx.selfDraw ? 1 : 0),
+  },
+  {
+    id: "riichi",
+    name: "叮 (Riichi)",
+    // Purely a declared state (ctx.riichi) - nothing about the hand's own
+    // shape determines this, unlike every other pattern here.
+    score: (_hand, ctx) => (ctx.riichi === "riichi" ? 5 : 0),
+  },
+  {
+    id: "concealed-riichi",
+    name: "門清叮 (Riichi while 門前清)",
+    // Upgrade of 叮: excludes plain 叮, but stacks with 門前清 itself (the
+    // two measure different things - one about melds, one about the
+    // declared state) - same shape as 自摸/門清自摸 just above.
+    score: (hand, ctx) => (ctx.riichi === "riichi" && isConcealedExceptKongs(hand) ? 10 : 0),
+    excludes: ["riichi", "heavenly-riichi", "earthly-riichi"],
+  },
+  {
+    id: "heavenly-riichi",
+    name: "天叮 (Heavenly Riichi)",
+    score: (_hand, ctx) => (ctx.riichi === "heavenly-riichi" ? 60 : 0),
+    // Excludes 叮/門清叮 explicitly per the user, even though ctx.riichi
+    // being a single value already makes them mutually exclusive by
+    // construction - kept for the same defensive-clarity reasons as
+    // elsewhere in this file (e.g. 絕絕/明絕).
+    excludes: ["riichi", "concealed-riichi"],
+  },
+  {
+    id: "earthly-riichi",
+    name: "地叮 (Earthly Riichi)",
+    score: (_hand, ctx) => (ctx.riichi === "earthly-riichi" ? 50 : 0),
+    excludes: ["riichi", "concealed-riichi"],
+  },
+  {
+    id: "riichi-instant-win",
+    name: "即食",
+    // Only meaningful once riichi is declared (any of the 3 states) -
+    // stacks additively on top of whichever 叮/天叮/地叮/門清叮 tai already
+    // applies, same as 食叮 below.
+    score: (_hand, ctx) => (ctx.riichi !== "none" && ctx.instantWin ? 5 : 0),
+  },
+  {
+    id: "riichi-eat",
+    name: "食叮",
+    // Independent of 即食 - both can be declared at once, each adding
+    // their own flat 5 tai.
+    score: (_hand, ctx) => (ctx.riichi !== "none" && ctx.eatRiichi ? 5 : 0),
   },
   {
     id: "concealed-self-draw",
