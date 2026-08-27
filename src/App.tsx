@@ -2233,7 +2233,7 @@ type VisibleExhaustState = "none" | "triple" | "exhausted";
 const VISIBLE_EXHAUST_CYCLE: VisibleExhaustState[] = ["none", "triple", "exhausted"];
 const VISIBLE_EXHAUST_RANK: Record<VisibleExhaustState, number> = { none: 0, triple: 1, exhausted: 2 };
 const VISIBLE_EXHAUST_LABELS: Record<VisibleExhaustState, string> = {
-  none: "明絕/絕絕",
+  none: "明絕",
   triple: "明絕",
   exhausted: "絕絕",
 };
