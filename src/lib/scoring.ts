@@ -582,16 +582,29 @@ const meldHasTileKind = (meld: ResolvedMeld, tile: Tile): boolean =>
 // self-drawn/claimed tile that instead completes a run.
 function isShanponWait(hand: ResolvedHand, ctx: GameContext): boolean {
   if (ctx.winningTile === null) return false;
-  return hand.melds.some((m) => m.kind === "triplet" && meldHasTileKind(m, ctx.winningTile!));
+  // Only a CONCEALED triplet can be what the 食胡 tile completed - a
+  // declared triplet is already a complete, exposed group from the start,
+  // never "waiting" on a tile (see preWinWaitInput's own version of this
+  // rule). A declared triplet is always concealed:false (see pushMeld in
+  // ScoringPanel), so this check alone is enough to exclude it - no
+  // separate declared-meld count needed.
+  return hand.melds.some((m) => m.kind === "triplet" && m.concealed && meldHasTileKind(m, ctx.winningTile!));
 }
 
-// Shared by 獨獨/假獨: the pre-completion tiles (everything except kong
-// melds, which are already fixed and structurally irrelevant to the wait,
-// minus one copy of the 食胡 tile) plus how many melds' worth of flexible
-// tiles that represents - kongs each remove one meld's slot from the count
-// getWaits needs to see. Returns null if the winning tile can't be found
-// among the non-kong tiles (shouldn't happen for a hand actually built
-// around it, but guards against a stale/mismatched marker).
+// Shared by 獨獨/假獨: the pre-completion tiles - everything except kong
+// melds (already fixed and structurally irrelevant to the wait) AND
+// declared melds (also already fixed - a declared meld is entered as a
+// complete, exposed group from the start, never "waiting" on a tile, so
+// it can't be what the 食胡 tile actually completed; see isShanponWait's
+// version of the same rule) - minus one copy of the 食胡 tile, plus how
+// many melds' worth of flexible tiles that represents. A non-kong meld is
+// concealed:true if and only if it came from the free/concealed
+// decomposition rather than the notation's declared-meld syntax (see
+// pushMeld in ScoringPanel / MeldDeclaration's construction), so
+// `m.concealed` alone reliably tells the two apart here. Returns null if
+// the winning tile can't be found among the concealed non-kong tiles
+// (shouldn't happen for a hand actually built around it, but guards
+// against a stale/mismatched marker).
 //
 // Known gap: getWaits only sees these tiles, so it can't tell that some
 // copies of a kong's rank are already locked away - a hand with both a
@@ -600,10 +613,17 @@ function isShanponWait(hand: ResolvedHand, ctx: GameContext): boolean {
 // the exact same rank at once), not worth the extra plumbing yet.
 function preWinWaitInput(hand: ResolvedHand, winningTile: Tile): { tiles: Tile[]; meldsRequired: number } | null {
   const kongCount = hand.melds.filter((m) => m.kind === "kong").length;
-  const nonKongTiles = hand.melds.filter((m) => m.kind !== "kong").flatMap((m) => m.tiles).concat(hand.pair);
-  const idx = nonKongTiles.findIndex((t) => t.suit === winningTile.suit && t.rank === winningTile.rank);
+  const declaredNonKongCount = hand.melds.filter((m) => m.kind !== "kong" && !m.concealed).length;
+  const concealedTiles = hand.melds
+    .filter((m) => m.kind !== "kong" && m.concealed)
+    .flatMap((m) => m.tiles)
+    .concat(hand.pair);
+  const idx = concealedTiles.findIndex((t) => t.suit === winningTile.suit && t.rank === winningTile.rank);
   if (idx === -1) return null;
-  return { tiles: [...nonKongTiles.slice(0, idx), ...nonKongTiles.slice(idx + 1)], meldsRequired: MELDS_REQUIRED - kongCount };
+  return {
+    tiles: [...concealedTiles.slice(0, idx), ...concealedTiles.slice(idx + 1)],
+    meldsRequired: MELDS_REQUIRED - kongCount - declaredNonKongCount,
+  };
 }
 
 // 獨獨: the pre-completion hand has exactly one tile kind that would
@@ -776,14 +796,18 @@ function eightPairsWindRankCount(hand: ResolvedHand): number {
 function isFakeSingleWait(hand: ResolvedHand, ctx: GameContext): boolean {
   if (ctx.winningTile === null) return false;
   const winningTile = ctx.winningTile;
+  // Only a CONCEALED run can be what the 食胡 tile completed - same
+  // declared-melds-are-already-fixed reasoning as isShanponWait/
+  // preWinWaitInput. A declared run is always concealed:false, so this
+  // check alone is enough to exclude it.
   const kanchan = hand.melds.some((m) => {
-    if (m.kind !== "run" || !meldHasTileKind(m, winningTile)) return false;
+    if (m.kind !== "run" || !m.concealed || !meldHasTileKind(m, winningTile)) return false;
     const ranks = m.tiles.map((t) => t.rank).sort((a, b) => a - b);
     return ranks[1] === winningTile.rank;
   });
   if (kanchan) return true;
   const penchan = hand.melds.some((m) => {
-    if (m.kind !== "run" || !meldHasTileKind(m, winningTile)) return false;
+    if (m.kind !== "run" || !m.concealed || !meldHasTileKind(m, winningTile)) return false;
     const ranks = m.tiles.map((t) => t.rank).sort((a, b) => a - b);
     return (ranks[0] === 1 && ranks[2] === 3 && winningTile.rank === 3) || (ranks[0] === 7 && ranks[2] === 9 && winningTile.rank === 7);
   });

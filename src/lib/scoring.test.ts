@@ -1308,6 +1308,14 @@ describe("PATTERNS: 對碰 (shanpon: dual-pair wait completed into a triplet)", 
     const result = scoreHand("444m123b456b789b111z44t", ctx());
     expect(tai(result, "shanpon-wait")).toBe(0);
   });
+
+  it("doesn't score off a DECLARED triplet just because the winning tile also happens to match its rank", () => {
+    // Declared 888t is already a complete, exposed group - it can't be
+    // what a concealed-hand 食胡 tile "completed". Without this exclusion,
+    // isShanponWait would find the declared triplet's 8t and wrongly fire.
+    const result = scoreHand("(888t)123m456m789t111z22b", ctx({ winningTile: { suit: "t", rank: 8 } }));
+    expect(tai(result, "shanpon-wait")).toBe(0);
+  });
 });
 
 describe("PATTERNS: 將眼 (pair is 2, 5, or 8 - not honors)", () => {
@@ -1344,6 +1352,20 @@ describe("PATTERNS: 獨獨/假獨 (genuine vs. fake single wait)", () => {
     const result = scoreHand("123m234m678t111z789b22z", ctx());
     expect(tai(result, "genuine-single-wait")).toBe(0);
     expect(tai(result, "fake-single-wait")).toBe(0);
+  });
+
+  it("scores 獨獨 (not 假獨/對碰) when the winning tile matches a rank in a DECLARED meld too - declared melds must be excluded from the wait computation entirely", () => {
+    // Declared 777t/888t/555t, concealed 34566789t: pre-completion
+    // concealed tiles are 3456679t (removing the concealed 8t only) -
+    // 3/4/5, 6/6 (pair), 7/8/9 is the only decomposition, and no other
+    // tile completes it, so this is a genuine single wait on 8t. 8t also
+    // happens to be the declared 888t triplet's rank, which used to make
+    // preWinWaitInput remove the WRONG (declared) 8t instead, corrupting
+    // the wait computation entirely.
+    const result = scoreHand("(777t)(888t)(555t)34566789t", ctx({ winningTile: { suit: "t", rank: 8 } }));
+    expect(tai(result, "genuine-single-wait")).toBe(2);
+    expect(tai(result, "fake-single-wait")).toBe(0);
+    expect(tai(result, "shanpon-wait")).toBe(0);
   });
 
   it("scores 假獨 for a genuine 邊張 (penchan/edge) shape - a 1-2-3 run completed by 3, or a 7-8-9 run completed by 7", () => {
