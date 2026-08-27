@@ -826,11 +826,27 @@ function isFakeSingleWait(hand: ResolvedHand, ctx: GameContext): boolean {
   return inSingleMeld && inLargerMeld;
 }
 
-// 明絕: the 食胡 tile's kind already sits exactly 3 times across this
-// hand's own DECLARED (exposed) melds - most often a single declared
-// triplet of that kind, but just as easily spread across 3 separate
-// declared runs each holding one copy, or any other combination of
-// declared melds that happens to sum to exactly 3 (a declared kong of
+// Copies of `tile`'s kind sitting in this hand's own DECLARED (exposed)
+// melds - shared by 明絕 and 絕絕 below. Only exposed melds count: a
+// concealed (self-drawn) kong is invisible to the rest of the table (2
+// tiles face down), same as every other concealed meld, so it doesn't
+// factor in even though it's still 4 physical copies.
+function declaredCopiesOfTile(hand: ResolvedHand, tile: Tile): number {
+  return hand.melds
+    .filter((m) => !m.concealed)
+    .reduce((n, m) => n + m.tiles.filter((t) => t.suit === tile.suit && t.rank === tile.rank).length, 0);
+}
+
+// 明絕: by definition, the concealed hand's own genuine pre-completion
+// wait (the same isGenuineSingleWait/獨獨 check) must be a single wait -
+// only then does the 食胡 tile's kind sitting exactly 3 times across this
+// hand's own DECLARED (exposed) melds mean anything (otherwise a
+// completely unrelated, un-exhausted wait candidate could coexist
+// alongside the exhausted one - see 絕絕 below for exactly that shape,
+// which this excludes). The 3 declared copies are most often a single
+// declared triplet of that kind, but just as easily spread across 3
+// separate declared runs each holding one copy, or any other combination
+// of declared melds that happens to sum to exactly 3 (a declared kong of
 // that kind would push the total to 4, which falls outside this pattern
 // with no extra kind check needed to exclude it). "明" (visible)
 // specifically: only exposed melds count - an exposed kong counts, but a
@@ -845,11 +861,37 @@ function isFakeSingleWait(hand: ResolvedHand, ctx: GameContext): boolean {
 // exposed melds already show 3 of them.
 function isVisiblyTripledWinningTile(hand: ResolvedHand, ctx: GameContext): boolean {
   if (ctx.winningTile === null) return false;
-  const winningTile = ctx.winningTile;
-  const declaredCopies = hand.melds
-    .filter((m) => !m.concealed)
-    .reduce((n, m) => n + m.tiles.filter((t) => t.suit === winningTile.suit && t.rank === winningTile.rank).length, 0);
-  return declaredCopies === 3;
+  return declaredCopiesOfTile(hand, ctx.winningTile) === 3 && isGenuineSingleWait(hand, ctx);
+}
+
+// 絕絕: an extension of 明絕. The concealed hand's genuine pre-completion
+// wait (same getWaits computation 獨獨 uses) has 2+ distinct tile kinds -
+// a nominally multi-way wait - but this hand's own DECLARED melds already
+// account for every copy of those waiting kinds except a single one
+// anywhere: summing `4 - declaredCopiesOfTile` across every waiting kind
+// comes out to exactly 1. E.g. waiting on 3m/6m via a 45m two-sided
+// shape, with declared 333m+666m+567m already showing 3 of 3m's 4 copies
+// and all 4 of 6m's (3 from 666m's triplet plus 1 from 567m's own 6m) -
+// 6m is entirely gone, only one 3m is left anywhere. An exposed kong
+// works the same way (e.g. declared 333m + an exposed 6666m kong also
+// accounts for all 4 of 6m's copies) - but a CONCEALED kong doesn't
+// count, same "only what's visible" reasoning as declaredCopiesOfTile
+// itself. Excludes 明絕 (see PATTERNS below) since this is the same
+// underlying "visibly exhausted" idea, just a stronger, more specific
+// finding when it applies.
+//
+// CAVEAT (surfaced in the UI too, same as 明絕): only checks THIS hand's
+// own declared melds - no visibility into the discard pile or any other
+// player's declared melds, so it can't confirm these are truly the last
+// copies anywhere in the game.
+function isVisiblyExhaustedMultiWait(hand: ResolvedHand, ctx: GameContext): boolean {
+  if (ctx.winningTile === null) return false;
+  const pre = preWinWaitInput(hand, ctx.winningTile);
+  if (pre === null) return false;
+  const waits = getWaits(pre.tiles, pre.meldsRequired);
+  if (waits.length < 2) return false;
+  const totalRemaining = waits.reduce((n, w) => n + (4 - declaredCopiesOfTile(hand, w)), 0);
+  return totalRemaining === 1;
 }
 
 // 明 (open) vs 暗 (concealed/hidden), per the house rule: a meld is 明 if
@@ -2242,9 +2284,25 @@ export const PATTERNS: TaiPattern[] = [
   {
     id: "visible-triple-win",
     name: "明絕 (Won on a tile already declared 3 times)",
+    // By definition requires a genuine single wait (see
+    // isVisiblyTripledWinningTile), so 獨獨 is also always true whenever
+    // this fires - but per the user, the two stack rather than one
+    // excluding the other (they're measuring different things: 獨獨 is
+    // about the wait's shape, this is about visible scarcity on top of it).
     score: (hand, ctx) => (isVisiblyTripledWinningTile(hand, ctx) ? 5 : 0),
     caveat:
       "Only checks this hand's own declared melds - it has no knowledge of the discard pile or any other player's declared melds, so it can't confirm this is truly the last copy of the tile anywhere in the game.",
+  },
+  {
+    id: "visible-exhausted-multi-wait",
+    name: "絕絕 (Multi-way wait narrowed to one visible copy)",
+    score: (hand, ctx) => (isVisiblyExhaustedMultiWait(hand, ctx) ? 10 : 0),
+    // Mutually exclusive with 明絕 by construction now too (明絕 requires
+    // exactly 1 wait candidate, this requires 2+), but kept explicit
+    // since it's the same underlying "visibly exhausted" idea either way.
+    excludes: ["visible-triple-win"],
+    caveat:
+      "Only checks this hand's own declared melds - it has no knowledge of the discard pile or any other player's declared melds, so it can't confirm these are truly the last copies of the tile anywhere in the game.",
   },
   {
     id: "self-draw",

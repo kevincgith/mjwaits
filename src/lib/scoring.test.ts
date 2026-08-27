@@ -1399,14 +1399,24 @@ describe("PATTERNS: 獨獨/假獨 (genuine vs. fake single wait)", () => {
 });
 
 describe("PATTERNS: 明絕 (won on a tile already declared 3 times)", () => {
-  it("scores when the 食胡 tile's kind sits 3 times in a single declared triplet", () => {
+  it("scores when the 食胡 tile's kind sits 3 times in a single declared triplet, and stacks with 獨獨 (also a genuine single wait)", () => {
     const result = scoreHand("(777t)(888t)(555t)34566789t", ctx({ winningTile: { suit: "t", rank: 8 } }));
     expect(tai(result, "visible-triple-win")).toBe(5);
+    expect(tai(result, "genuine-single-wait")).toBe(2);
   });
 
-  it("scores when the 3 copies are spread across 3 separate declared runs instead of one triplet", () => {
-    const result = scoreHand("(345m)(456m)(567m)456789t22b", ctx({ winningTile: { suit: "m", rank: 5 } }));
+  it("scores when the 3 copies are spread across 3 separate declared runs instead of one triplet - a genuine kanchan single wait on the shared rank", () => {
+    const result = scoreHand("(345m)(456m)(567m)456m789t22z", ctx({ winningTile: { suit: "m", rank: 5 } }));
     expect(tai(result, "visible-triple-win")).toBe(5);
+    expect(tai(result, "genuine-single-wait")).toBe(2);
+  });
+
+  it("doesn't score when the concealed wait is genuinely multi-way, even if the winning tile's kind has 3 declared copies - that's 絕絕's territory instead", () => {
+    // Declared 333m/666m/567m, concealed 45m genuinely waits on both
+    // 3m/6m - 3m has 3 declared copies, but the wait itself isn't single,
+    // so 明絕 doesn't apply (see 絕絕's own describe block for this shape).
+    const result = scoreHand("(333m)(666m)(567m)345m789t11z", ctx({ winningTile: { suit: "m", rank: 3 } }));
+    expect(tai(result, "visible-triple-win")).toBe(0);
   });
 
   it("doesn't score when the winning tile's kind doesn't match any declared meld", () => {
@@ -1421,6 +1431,43 @@ describe("PATTERNS: 明絕 (won on a tile already declared 3 times)", () => {
 
   it("carries a caveat about only checking this hand's own declared melds", () => {
     const pattern = PATTERNS.find((p) => p.id === "visible-triple-win")!;
+    expect(pattern.caveat).toMatch(/discard pile/);
+    expect(pattern.caveat).toMatch(/other player/);
+  });
+});
+
+describe("PATTERNS: 絕絕 (multi-way wait narrowed to one visible copy)", () => {
+  it("scores when a two-sided wait's two kinds are visibly exhausted down to one remaining copy total (明絕 doesn't apply here - see its own describe block)", () => {
+    // Declared 333m/666m/567m, concealed 45m waiting on 3m/6m (plus a
+    // separate complete 789t and pair 11z to round the hand out): 3m has
+    // 3 declared copies (1 left anywhere), 6m has all 4 (666m's triplet
+    // plus 567m's own 6m - none left) - only one tile, 3m, could ever
+    // actually complete this nominally two-sided wait.
+    const result = scoreHand("(333m)(666m)(567m)345m789t11z", ctx({ winningTile: { suit: "m", rank: 3 } }));
+    expect(tai(result, "visible-exhausted-multi-wait")).toBe(10);
+    expect(tai(result, "visible-triple-win")).toBe(0);
+  });
+
+  it("doesn't score for an ordinary two-sided wait with no declared-meld collision at all", () => {
+    const result = scoreHand("(111z)(222z)(333z)345m789t44b", ctx({ winningTile: { suit: "m", rank: 3 } }));
+    expect(tai(result, "visible-exhausted-multi-wait")).toBe(0);
+  });
+
+  it("doesn't score when only one of the wait's two kinds is exhausted and the other still has plenty left", () => {
+    // 3m has 3 declared copies (1 left), but 6m is untouched (4 left) -
+    // total remaining is 5, not 1, so the wait isn't meaningfully narrowed.
+    const result = scoreHand("(333m)(111z)(222z)345m789t44b", ctx({ winningTile: { suit: "m", rank: 3 } }));
+    expect(tai(result, "visible-exhausted-multi-wait")).toBe(0);
+  });
+
+  it("doesn't score for a genuine single wait (獨獨's territory, not this pattern's)", () => {
+    const result = scoreHand("(333m)(111z)(222z)123m789t44b", ctx({ winningTile: { suit: "m", rank: 2 } }));
+    expect(tai(result, "genuine-single-wait")).toBe(2);
+    expect(tai(result, "visible-exhausted-multi-wait")).toBe(0);
+  });
+
+  it("carries a caveat about only checking this hand's own tiles", () => {
+    const pattern = PATTERNS.find((p) => p.id === "visible-exhausted-multi-wait")!;
     expect(pattern.caveat).toMatch(/discard pile/);
     expect(pattern.caveat).toMatch(/other player/);
   });
