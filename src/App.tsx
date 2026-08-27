@@ -2652,15 +2652,6 @@ function ScoringPanel() {
       <div className="scoring-context">
         <WindPicker label="Seat wind" value={seatWind} onChange={setSeatWind} />
         <WindPicker label="Round wind" value={roundWind} onChange={setRoundWind} />
-        <button
-          type="button"
-          className={selfDraw ? "toggle-on" : undefined}
-          aria-pressed={selfDraw}
-          onClick={() => setSelfDraw((s) => !s)}
-          title="Self-draw vs won off a discard"
-        >
-          Self-draw
-        </button>
       </div>
 
       <div className="panel-header">
@@ -2816,6 +2807,18 @@ function ScoringPanel() {
         )}
       </div>
       {concealedTiles.length > 0 && <span className="hint">Long-press a tile to mark it as the 食胡 tile (the one that completed the hand).</span>}
+
+      <div className="scoring-context">
+        <button
+          type="button"
+          className={selfDraw ? "toggle-on" : undefined}
+          aria-pressed={selfDraw}
+          onClick={() => setSelfDraw((s) => !s)}
+          title="Self-draw vs won off a discard"
+        >
+          Self-draw
+        </button>
+      </div>
 
       {scoring && !scoring.ok && <span className="error">{scoring.message}</span>}
 
