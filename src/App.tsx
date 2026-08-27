@@ -2889,7 +2889,7 @@ function ScoringPanel() {
       {!declaredPickerCollapsed && (
         <>
           <div className="panel-header meld-kind-row">
-            {(["run", "triplet", "concealed-kong", "exposed-kong"] as MeldPickerKind[]).map((k) => (
+            {(["run", "triplet", "exposed-kong", "concealed-kong"] as MeldPickerKind[]).map((k) => (
               <button
                 key={k}
                 type="button"
