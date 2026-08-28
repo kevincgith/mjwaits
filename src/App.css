@@ -1498,13 +1498,14 @@ h1 {
   flex-direction: column-reverse;
 }
 
-/* Fixed-size stacks (never squashed by the gap), outlined with a layout-free
-   box-shadow so neighbours share a 1px line and a gap stays cleanly open. */
+/* Fixed-size stacks (never squashed by the gap), outlined with an inset,
+   layout-free box-shadow: it stays within the stack so perpendicular bars
+   meeting at a corner touch cleanly instead of bleeding over each other. */
 .wall-seg {
   flex: 0 0 var(--seg);
   box-sizing: border-box;
   background: #2b6b3f;
-  box-shadow: 0 0 0 1px #1c4c2b;
+  box-shadow: inset 0 0 0 1px #1c4c2b;
 }
 /* The `sum` stacks counted off clockwise, lightened so the sum | 18-sum split reads. */
 .wall-seg-counted {
