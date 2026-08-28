@@ -2161,7 +2161,7 @@ function TrainerPanel({
 }
 
 const WIND_LABELS: Record<Wind, string> = { 1: "East", 2: "South", 3: "West", 4: "North" };
-const WIND_SHORT: Record<Wind, string> = { 1: "E", 2: "S", 3: "W", 4: "N" };
+const WIND_SHORT: Record<Wind, string> = { 1: "東", 2: "南", 3: "西", 4: "北" };
 
 function WindPicker({ label, value, onChange }: { label: string; value: Wind; onChange: (w: Wind) => void }) {
   return (
