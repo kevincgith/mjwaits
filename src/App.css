@@ -1356,10 +1356,21 @@ h1 {
   border: 1px solid #ccc;
   border-radius: 10px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  cursor: pointer;
 }
 
-.die-empty {
-  background: #f7f7f7;
+.die:disabled {
+  cursor: default;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .die:not(:disabled):hover {
+    border-color: #1a5fb4;
+  }
+}
+
+.die:not(:disabled):active {
+  border-color: #1a5fb4;
 }
 
 .die-cell {
@@ -1399,13 +1410,6 @@ h1 {
   font-size: 1.1rem;
 }
 
-.wall-section-label {
-  margin-top: 1.5rem;
-  text-align: center;
-  font-weight: 600;
-  color: #444;
-}
-
 /* --seg: one stack's width along its wall (a tile seen face-on); --tile: a
    single tile's height, so a bar is 2 * --tile deep (two tiles high). Each bar
    runs 18 * --seg long. --jut is how far each bar pokes past its neighbour in
@@ -1417,11 +1421,13 @@ h1 {
   --bar: calc(2 * var(--tile));
   --len: calc(var(--seg) * 18);
   --jut: calc(3 * var(--seg));
+  --gap: 10px;
   position: relative;
   width: calc(var(--len) + var(--bar) + var(--jut));
   height: calc(var(--len) + var(--bar) + var(--jut));
   max-width: 100%;
-  margin: 0.8rem auto 0;
+  /* extra top room so the break's pointing finger can sit above the top bar */
+  margin: 1.4rem auto 0;
 }
 
 .wall-bar-slot {
@@ -1448,7 +1454,6 @@ h1 {
 .wall-bar {
   display: flex;
   box-sizing: border-box;
-  background: #2b6b3f;
   border: 1px solid #1c4c2b;
 }
 .wall-bar-h {
@@ -1483,12 +1488,68 @@ h1 {
 .wall-seg {
   flex: 1;
   box-sizing: border-box;
+  background: #2b6b3f;
+}
+/* The `sum` stacks counted off clockwise, lightened so the sum | 18-sum split reads. */
+.wall-seg-counted {
+  background: #57a97b;
 }
 .wall-bar-h .wall-seg + .wall-seg {
   border-left: 1px solid rgba(255, 255, 255, 0.55);
 }
 .wall-bar-v .wall-seg + .wall-seg {
   border-top: 1px solid rgba(255, 255, 255, 0.55);
+}
+
+/* The break slot cut into the chosen side, framed on both cut faces, with the
+   pointing finger just off the wall's outer edge. */
+.wall-gap {
+  flex: 0 0 var(--gap);
+  align-self: stretch;
+  position: relative;
+}
+.wall-bar-h .wall-gap {
+  border-left: 1px solid #1c4c2b;
+  border-right: 1px solid #1c4c2b;
+}
+.wall-bar-v .wall-gap {
+  border-top: 1px solid #1c4c2b;
+  border-bottom: 1px solid #1c4c2b;
+}
+
+.wall-break-marker {
+  position: absolute;
+  font-size: 1rem;
+  line-height: 1;
+  pointer-events: none;
+  filter: drop-shadow(0 0 1px rgba(255, 255, 255, 0.85));
+}
+.wall-top .wall-break-marker {
+  left: 50%;
+  bottom: calc(100% + 3px);
+  transform: translateX(-50%) rotate(90deg);
+}
+.wall-bottom .wall-break-marker {
+  left: 50%;
+  top: calc(100% + 3px);
+  transform: translateX(-50%) rotate(-90deg);
+}
+.wall-left .wall-break-marker {
+  top: 50%;
+  right: calc(100% + 3px);
+  transform: translateY(-50%);
+}
+.wall-right .wall-break-marker {
+  top: 50%;
+  left: calc(100% + 3px);
+  transform: translateY(-50%) rotate(180deg);
+}
+
+.wall-break-caption {
+  margin-top: 1rem;
+  text-align: center;
+  font-size: 0.9rem;
+  color: #444;
 }
 
 /* On phones, lay each suit row out as a fixed 9-column grid instead of a

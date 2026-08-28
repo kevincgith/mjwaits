@@ -1,4 +1,5 @@
 import {
+  Fragment,
   forwardRef,
   useEffect,
   useId,
@@ -3367,14 +3368,28 @@ const DIE_PIPS: Record<number, number[]> = {
   6: [1, 3, 4, 6, 7, 9],
 };
 
-function Die({ value }: { value: number }) {
+function Die({
+  value,
+  onBump,
+  disabled,
+}: {
+  value: number;
+  onBump: () => void;
+  disabled: boolean;
+}) {
   const pips = DIE_PIPS[value] ?? [];
   return (
-    <div className="die" role="img" aria-label={`Die showing ${value}`}>
+    <button
+      type="button"
+      className="die"
+      onClick={onBump}
+      disabled={disabled}
+      aria-label={`Die showing ${value} — tap to change`}
+    >
       {Array.from({ length: 9 }, (_, i) => (
         <span key={i} className={pips.includes(i + 1) ? "die-pip" : "die-cell"} />
       ))}
-    </div>
+    </button>
   );
 }
 
@@ -3386,45 +3401,109 @@ function Die({ value }: { value: number }) {
 const WALL_STACKS_PER_SIDE = 18;
 const WALL_BAR_DEPTH = 2;
 
-function WallBar({ orientation }: { orientation: "h" | "v" }) {
+type WallSide = "top" | "right" | "bottom" | "left";
+
+const WALL_SIDE_LABEL: Record<WallSide, string> = {
+  top: "top",
+  right: "right",
+  bottom: "bottom",
+  left: "left",
+};
+
+// Where the dice sum breaks the wall. The seat is (sum mod 4) counted round from
+// the roller; then `sum` stacks are counted clockwise along that side, so the
+// side is split sum | (18 - sum). `domBreak` is how many rendered stacks sit
+// before the gap (segments run in a fixed DOM order per bar, while "clockwise"
+// starts from a different end depending on the side).
+type WallBreak = { side: WallSide; n: number; domBreak: number; countFromStart: boolean };
+
+function wallBreak(total: number | null): WallBreak | null {
+  if (total == null || total < 3 || total > WALL_STACKS_PER_SIDE) return null;
+  // 18 counts the whole right wall and lands exactly on the bottom-right corner,
+  // so the break is drawn on the bottom side, hard against the right wall.
+  if (total === WALL_STACKS_PER_SIDE) {
+    return { side: "bottom", n: total, domBreak: WALL_STACKS_PER_SIDE, countFromStart: false };
+  }
+  const mod = total % 4;
+  const side: WallSide = mod === 3 ? "top" : mod === 0 ? "left" : mod === 1 ? "bottom" : "right";
+  // Top/right bars render in clockwise order already; bottom/left render reversed.
+  const countFromStart = side === "top" || side === "right";
+  const domBreak = countFromStart ? total : WALL_STACKS_PER_SIDE - total;
+  return { side, n: total, domBreak, countFromStart };
+}
+
+function WallGap({ withMarker }: { withMarker: boolean }) {
+  return (
+    <div className="wall-gap">
+      {withMarker && (
+        <span className="wall-break-marker" aria-hidden="true">
+          👉
+        </span>
+      )}
+    </div>
+  );
+}
+
+function WallBar({
+  orientation,
+  brk,
+}: {
+  orientation: "h" | "v";
+  brk: WallBreak | null;
+}) {
+  const breakAt = brk?.domBreak ?? null;
+  // Draw the pointing finger off the outer face of the bar: that is the first
+  // line for the top/left bars, the last line for the bottom/right bars.
+  const markerLine = brk && (brk.side === "bottom" || brk.side === "right") ? WALL_BAR_DEPTH - 1 : 0;
   return (
     <div className={`wall-bar wall-bar-${orientation}`}>
       {Array.from({ length: WALL_BAR_DEPTH }, (_, line) => (
         <div className="wall-bar-line" key={line}>
-          {Array.from({ length: WALL_STACKS_PER_SIDE }, (_, i) => (
-            <div className="wall-seg" key={i} />
-          ))}
+          {Array.from({ length: WALL_STACKS_PER_SIDE }, (_, i) => {
+            // "counted" = the sum stacks on the clockwise-start side of the gap.
+            const counted =
+              brk != null && (brk.countFromStart ? i < brk.domBreak : i >= brk.domBreak);
+            return (
+              <Fragment key={i}>
+                {breakAt === i && <WallGap withMarker={line === markerLine} />}
+                <div className={`wall-seg${counted ? " wall-seg-counted" : ""}`} />
+              </Fragment>
+            );
+          })}
+          {breakAt === WALL_STACKS_PER_SIDE && <WallGap withMarker={line === markerLine} />}
         </div>
       ))}
     </div>
   );
 }
 
-function Wall() {
+function Wall({ total }: { total: number | null }) {
+  const brk = wallBreak(total);
+  const slot = (side: WallSide, orientation: "h" | "v") => (
+    <div className={`wall-bar-slot wall-${side}`}>
+      <WallBar orientation={orientation} brk={brk?.side === side ? brk : null} />
+    </div>
+  );
   return (
     <div
       className="wall"
       role="img"
-      aria-label={`Built mahjong wall: four ${WALL_BAR_DEPTH} by ${WALL_STACKS_PER_SIDE} bars of tile stacks in a pinwheel`}
+      aria-label={
+        brk
+          ? `Mahjong wall broken on the ${WALL_SIDE_LABEL[brk.side]} side, ${brk.n} stacks clockwise`
+          : `Built mahjong wall: four ${WALL_BAR_DEPTH} by ${WALL_STACKS_PER_SIDE} bars of tile stacks in a pinwheel`
+      }
     >
-      <div className="wall-bar-slot wall-top">
-        <WallBar orientation="h" />
-      </div>
-      <div className="wall-bar-slot wall-right">
-        <WallBar orientation="v" />
-      </div>
-      <div className="wall-bar-slot wall-bottom">
-        <WallBar orientation="h" />
-      </div>
-      <div className="wall-bar-slot wall-left">
-        <WallBar orientation="v" />
-      </div>
+      {slot("top", "h")}
+      {slot("right", "v")}
+      {slot("bottom", "h")}
+      {slot("left", "v")}
     </div>
   );
 }
 
 function DicePanel() {
-  const [dice, setDice] = useState<[number, number, number] | null>(null);
+  const [dice, setDice] = useState<[number, number, number]>([1, 1, 1]);
   const [rolling, setRolling] = useState(false);
   const rollTimer = useRef<number | null>(null);
 
@@ -3458,37 +3537,52 @@ function DicePanel() {
     }, 60);
   };
 
-  const total = dice ? dice[0] + dice[1] + dice[2] : null;
+  const bumpDie = (idx: number) => {
+    if (rolling) return;
+    setDice((d) => {
+      const next: [number, number, number] = [d[0], d[1], d[2]];
+      next[idx] = (next[idx] % 6) + 1;
+      return next;
+    });
+  };
+
+  const total = dice[0] + dice[1] + dice[2];
+  const brk = rolling ? null : wallBreak(total);
 
   return (
     <section className="panel dice-panel">
       <div className="dice-tray">
-        {dice ? (
-          dice.map((v, i) => <Die key={i} value={v} />)
-        ) : (
-          <>
-            <div className="die die-empty" />
-            <div className="die die-empty" />
-            <div className="die die-empty" />
-          </>
-        )}
+        {dice.map((v, i) => (
+          <Die key={i} value={v} onBump={() => bumpDie(i)} disabled={rolling} />
+        ))}
       </div>
 
       <button type="button" className="dice-roll" onClick={roll} disabled={rolling}>
         {rolling ? "Rolling…" : "Roll the dice"}
       </button>
 
-      {total !== null && !rolling && (
-        <div className="waits dice-total">
-          <span className="waits-label">Total:</span>
-          <span className="scoring-total-value">{total}</span>
+      <div className="waits dice-total">
+        <span className="waits-label">Total:</span>
+        <span className="scoring-total-value">{total}</span>
+      </div>
+
+      <Wall total={rolling ? null : total} />
+
+      {brk && (
+        <div className="wall-break-caption">
+          {brk.n === WALL_STACKS_PER_SIDE ? (
+            <>
+              Break the <strong>bottom</strong> wall at the right-hand corner (18 lands on the wall’s
+              end)
+            </>
+          ) : (
+            <>
+              Break the <strong>{WALL_SIDE_LABEL[brk.side]}</strong> wall: count {brk.n} clockwise →{" "}
+              <strong>{brk.n}</strong> │ {WALL_STACKS_PER_SIDE - brk.n} left
+            </>
+          )}
         </div>
       )}
-
-      <div className="wall-section-label">
-        Wall ({WALL_STACKS_PER_SIDE} stacks per side, {WALL_BAR_DEPTH} high)
-      </div>
-      <Wall />
     </section>
   );
 }
