@@ -2545,8 +2545,6 @@ function ScoringPanel() {
   const cycleEarlyWin = () =>
     setEarlyWin((prev) => EARLY_WIN_CYCLE[(EARLY_WIN_CYCLE.indexOf(prev) + 1) % EARLY_WIN_CYCLE.length]);
   const [multiWin, setMultiWin] = useState<MultiWinState>("none");
-  const cycleMultiWin = () =>
-    setMultiWin((prev) => MULTI_WIN_CYCLE[(MULTI_WIN_CYCLE.indexOf(prev) + 1) % MULTI_WIN_CYCLE.length]);
   const [heavenlyWin, setHeavenlyWin] = useState<HeavenlyWinState>("none");
   const cycleHeavenlyWin = () =>
     setHeavenlyWin((prev) => HEAVENLY_WIN_CYCLE[(HEAVENLY_WIN_CYCLE.indexOf(prev) + 1) % HEAVENLY_WIN_CYCLE.length]);
@@ -2556,6 +2554,40 @@ function ScoringPanel() {
   const [flowerDraw, setFlowerDraw] = useState(0);
   const [kongDraw, setKongDraw] = useState(0);
   const [robKong, setRobKong] = useState(0);
+  // 自摸 (incl. its 花摸/槓摸-forced form) and {搶槓, 雙響/三響} are mutually
+  // exclusive - both 搶槓 and 雙響/三響 mean the win was claimed off another
+  // player (robbing a kong, or multiple players claiming the same discard),
+  // the opposite of a self-draw. Activating either group clears the other,
+  // rather than letting the two silently coexist as a contradictory state.
+  const deactivateSelfDrawGroup = () => {
+    setSelfDraw(false);
+    setFlowerDraw(0);
+    setKongDraw(0);
+  };
+  const deactivateClaimedWinGroup = () => {
+    setRobKong(0);
+    setMultiWin("none");
+  };
+  const cycleMultiWin = () => {
+    const next = MULTI_WIN_CYCLE[(MULTI_WIN_CYCLE.indexOf(multiWin) + 1) % MULTI_WIN_CYCLE.length];
+    setMultiWin(next);
+    if (multiWin === "none" && next !== "none") deactivateSelfDrawGroup();
+  };
+  const cycleFlowerDraw = () => {
+    const next = cycleCount(flowerDraw, 8);
+    setFlowerDraw(next);
+    if (flowerDraw === 0 && next > 0) deactivateClaimedWinGroup();
+  };
+  const cycleKongDraw = () => {
+    const next = cycleCount(kongDraw, 5);
+    setKongDraw(next);
+    if (kongDraw === 0 && next > 0) deactivateClaimedWinGroup();
+  };
+  const cycleRobKong = () => {
+    const next = cycleCount(robKong, 5);
+    setRobKong(next);
+    if (robKong === 0 && next > 0) deactivateSelfDrawGroup();
+  };
   // 明絕/絕絕's manual override, as one shared tri-state (see
   // VisibleExhaustState above) - only advanceable by the user past whatever
   // floor the auto-detect checks already prove (see the button's own
@@ -3121,9 +3153,10 @@ function ScoringPanel() {
               setKongDraw(0);
             } else {
               setSelfDraw(true);
+              deactivateClaimedWinGroup();
             }
           }}
-          title="自摸 - self-draw vs won off a discard (also turned on by 花摸/槓摸 - turning it off then also turns those off)"
+          title="自摸 - self-draw vs won off a discard (also turned on by 花摸/槓摸, and mutually exclusive with 搶槓/雙響/三響 - turning any one of these on turns the others off)"
         >
           自摸
         </button>
@@ -3172,7 +3205,7 @@ function ScoringPanel() {
           className={multiWin !== "none" ? "toggle-on" : undefined}
           aria-pressed={multiWin !== "none"}
           onClick={cycleMultiWin}
-          title="Multiple players won off the same discard - tap to cycle 雙響(5) / 三響(10) / off"
+          title="Multiple players won off the same discard - tap to cycle 雙響(5) / 三響(10) / off (mutually exclusive with 自摸, same as 搶槓)"
         >
           {MULTI_WIN_LABELS[multiWin]}
         </button>
@@ -3198,8 +3231,8 @@ function ScoringPanel() {
           type="button"
           className={flowerDraw > 0 ? "toggle-on" : undefined}
           aria-pressed={flowerDraw > 0}
-          onClick={() => setFlowerDraw((c) => cycleCount(c, 8))}
-          title="Tap to cycle 花摸x0-x8 (2 tai each)"
+          onClick={cycleFlowerDraw}
+          title="Tap to cycle 花摸x0-x8 (2 tai each) - also turns on 自摸, deactivating 搶槓/雙響/三響"
         >
           {countLabel("花摸", flowerDraw)}
         </button>
@@ -3207,8 +3240,8 @@ function ScoringPanel() {
           type="button"
           className={kongDraw > 0 ? "toggle-on" : undefined}
           aria-pressed={kongDraw > 0}
-          onClick={() => setKongDraw((c) => cycleCount(c, 5))}
-          title={`Tap to cycle 槓摸x0-x5 (tai: ${FIVE_POWER_TAI_TABLE.slice(1).join("/")})`}
+          onClick={cycleKongDraw}
+          title={`Tap to cycle 槓摸x0-x5 (tai: ${FIVE_POWER_TAI_TABLE.slice(1).join("/")}) - also turns on 自摸, deactivating 搶槓/雙響/三響`}
         >
           {countLabel("槓摸", kongDraw)}
         </button>
@@ -3216,8 +3249,8 @@ function ScoringPanel() {
           type="button"
           className={robKong > 0 ? "toggle-on" : undefined}
           aria-pressed={robKong > 0}
-          onClick={() => setRobKong((c) => cycleCount(c, 5))}
-          title={`Tap to cycle 搶槓x0-x5 (tai: ${FIVE_POWER_TAI_TABLE.slice(1).join("/")})`}
+          onClick={cycleRobKong}
+          title={`Tap to cycle 搶槓x0-x5 (tai: ${FIVE_POWER_TAI_TABLE.slice(1).join("/")}) - mutually exclusive with 自摸`}
         >
           {countLabel("搶槓", robKong)}
         </button>
