@@ -1406,16 +1406,18 @@ h1 {
   color: #444;
 }
 
-/* --seg: length of one stack along a wall; --thick: a wall's depth seen from
-   the side. Each bar is 18 * --seg long; the pinwheel offset is one --thick,
-   so the whole figure is (18 * --seg + 2 * --thick) square. */
+/* --seg: length of one stack along a wall; --tile: a single tile's depth seen
+   from the side. Each bar runs 18 * --seg long and is 2 * --tile deep (two
+   tiles high); the pinwheel offset is one bar-depth, so the whole figure is
+   (18 * --seg + 4 * --tile) square. */
 .wall {
-  --seg: 16px;
-  --thick: 16px;
+  --seg: 15px;
+  --tile: 10px;
+  --bar: calc(2 * var(--tile));
   --len: calc(var(--seg) * 18);
   position: relative;
-  width: calc(var(--len) + 2 * var(--thick));
-  height: calc(var(--len) + 2 * var(--thick));
+  width: calc(var(--len) + 2 * var(--bar));
+  height: calc(var(--len) + 2 * var(--bar));
   max-width: 100%;
   margin: 0.8rem auto 0;
 }
@@ -1425,19 +1427,19 @@ h1 {
 }
 
 .wall-top {
-  left: calc(2 * var(--thick));
-  top: var(--thick);
+  left: calc(2 * var(--bar));
+  top: var(--bar);
 }
 .wall-right {
   left: var(--len);
-  top: calc(2 * var(--thick));
+  top: calc(2 * var(--bar));
 }
 .wall-bottom {
   left: 0;
   top: var(--len);
 }
 .wall-left {
-  left: var(--thick);
+  left: var(--bar);
   top: 0;
 }
 
@@ -1448,14 +1450,32 @@ h1 {
   border: 1px solid #1c4c2b;
 }
 .wall-bar-h {
-  flex-direction: row;
+  flex-direction: column;
   width: var(--len);
-  height: var(--thick);
+  height: var(--bar);
 }
 .wall-bar-v {
-  flex-direction: column;
-  width: var(--thick);
+  flex-direction: row;
+  width: var(--bar);
   height: var(--len);
+}
+
+/* One of the two tile-high rows that make up a bar. */
+.wall-bar-line {
+  display: flex;
+  flex: 1;
+}
+.wall-bar-h .wall-bar-line {
+  flex-direction: row;
+}
+.wall-bar-v .wall-bar-line {
+  flex-direction: column;
+}
+.wall-bar-h .wall-bar-line + .wall-bar-line {
+  border-top: 1px solid rgba(255, 255, 255, 0.55);
+}
+.wall-bar-v .wall-bar-line + .wall-bar-line {
+  border-left: 1px solid rgba(255, 255, 255, 0.55);
 }
 
 .wall-seg {

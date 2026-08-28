@@ -3378,18 +3378,23 @@ function Die({ value }: { value: number }) {
   );
 }
 
-// The built wall, playing with bonus tiles: 136 + 8 = 144 tiles, stacked two
-// high into 72 stacks, split evenly across the four seats' walls = 18 stacks
-// per side. The four bars are offset in a pinwheel (each bar's far end juts
-// one wall-thickness past its neighbour, the near end butts against the next),
-// which is how a real wall is pushed together before the deal.
+// The built wall, playing with bonus tiles: 136 + 8 = 144 tiles = 72 stacks of
+// two, split evenly across the four seats' walls = 18 stacks per side, and each
+// bar is drawn two tiles deep (2 x 18). The four bars are offset in a pinwheel
+// (each bar's far end juts one bar-width past its neighbour, the near end butts
+// against the next), which is how a real wall is pushed together before the deal.
 const WALL_STACKS_PER_SIDE = 18;
+const WALL_BAR_DEPTH = 2;
 
 function WallBar({ orientation }: { orientation: "h" | "v" }) {
   return (
     <div className={`wall-bar wall-bar-${orientation}`}>
-      {Array.from({ length: WALL_STACKS_PER_SIDE }, (_, i) => (
-        <div className="wall-seg" key={i} />
+      {Array.from({ length: WALL_BAR_DEPTH }, (_, line) => (
+        <div className="wall-bar-line" key={line}>
+          {Array.from({ length: WALL_STACKS_PER_SIDE }, (_, i) => (
+            <div className="wall-seg" key={i} />
+          ))}
+        </div>
       ))}
     </div>
   );
@@ -3400,7 +3405,7 @@ function Wall() {
     <div
       className="wall"
       role="img"
-      aria-label={`Built mahjong wall: four bars of ${WALL_STACKS_PER_SIDE} tile stacks in a pinwheel`}
+      aria-label={`Built mahjong wall: four ${WALL_BAR_DEPTH} by ${WALL_STACKS_PER_SIDE} bars of tile stacks in a pinwheel`}
     >
       <div className="wall-bar-slot wall-top">
         <WallBar orientation="h" />
@@ -3480,7 +3485,9 @@ function DicePanel() {
         </div>
       )}
 
-      <div className="wall-section-label">Wall ({WALL_STACKS_PER_SIDE} stacks per side)</div>
+      <div className="wall-section-label">
+        Wall ({WALL_STACKS_PER_SIDE} stacks per side, {WALL_BAR_DEPTH} high)
+      </div>
       <Wall />
     </section>
   );
