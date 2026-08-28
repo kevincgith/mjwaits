@@ -57,7 +57,10 @@ ever loads the finished ONNX file from `public/model/`.
    Nano matched or slightly beat the small model on mAP50, mAP50-95, and
    precision, at under a third of the checkpoint size and roughly 3.5x fewer
    parameters (3.2M vs 11.1M), so it replaced the small model as deployed.
-   Metrics are computed on the full 990-image validation split.
+   Metrics are computed on the full 990-image validation split. The small
+   model's checkpoint has since been removed from the repo (nano is the only
+   lineage still being developed) - its final metrics are kept here for
+   the record.
 
 3. **Fine-tuning on a real physical set — currently deployed.** The base
    nano model, while accurate on the held-out split of its own training
@@ -128,9 +131,11 @@ further, or compared against a future run:
 
 - `checkpoints/yolov8n-ft1-epoch13.pt` — the currently deployed model's raw checkpoint (fine-tuned).
 - `checkpoints/yolov8n-epoch102.pt` — the base nano checkpoint the fine-tune started from.
-- `checkpoints/yolov8s-epoch99.pt` — the small model's raw checkpoint (no longer deployed).
 - `checkpoints/tile-detector-yolov8n-epoch102.onnx` — the exact INT8 ONNX that was live before this fine-tuned swap.
-- `checkpoints/tile-detector-yolov8s-epoch99.onnx` — the exact INT8 ONNX that was live before the swap from small to nano.
+
+The small (YOLOv8s) model's checkpoint and deployed ONNX are no longer kept
+here - nano is the only lineage still being developed, and its metrics above
+are enough to compare against if a future run needs the reference point.
 
 Restore any previous deployment with, e.g.:
 `cp training/checkpoints/tile-detector-yolov8n-epoch102.onnx public/model/tile-detector.onnx`

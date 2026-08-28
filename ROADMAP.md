@@ -6,10 +6,10 @@ Ideas for future work, roughly in the order they've come up. None of this is com
 
 Done: see the "Camera scan" section in [README.md](README.md) and
 [training/README.md](training/README.md) for the model/pipeline details.
-Currently deployed model is YOLOv8n (nano) — swapped in from the earlier
-YOLOv8s (small) since it matches or beats it on most metrics at under a
-third of the size; the small model's checkpoint is kept in
-`training/checkpoints/` for reference. Ideas for extending the feature
+Currently deployed model is a fine-tuned YOLOv8n (nano), trained further on
+real photos of a physical set after the base nano model (itself swapped in
+from an earlier YOLOv8s) proved noticeably weaker on unseen tile designs
+than its own validation metrics suggested. Ideas for extending the feature
 further, not yet started:
 
 - **Live camera feed instead of photo-then-crop**, using `getUserMedia`
