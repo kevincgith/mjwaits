@@ -2595,7 +2595,7 @@ function ScoringPanel() {
   // copy of each kind+rank, so no counter/id is needed - the pair itself is
   // a stable enough key.
   const [bonusTiles, setBonusTiles] = useState<BonusTile[]>([]);
-  const [meldKind, setMeldKind] = useState<MeldPickerKind>("triplet");
+  const [meldKind, setMeldKind] = useState<MeldPickerKind>("run");
   const [seatWind, setSeatWind] = useState<Wind>(1);
   const [roundWind, setRoundWind] = useState<Wind>(1);
   const [selfDraw, setSelfDraw] = useState(false);
