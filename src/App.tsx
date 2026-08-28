@@ -14,6 +14,7 @@ import {
 import "./App.css";
 import {
   COMPLETE_SIZE,
+  MELDS_REQUIRED,
   ParseError,
   allTileKinds,
   analyzeDiscardChoices,
@@ -23,6 +24,7 @@ import {
   decomposeSixteenUnrelated,
   decomposeThirteenOrphans,
   formatHand,
+  getWaits,
   getWaitsWithJokers,
   isCheckpointSize,
   isCompleteCheckpointSize,
@@ -2512,6 +2514,71 @@ function ScoringBreakdown({
   );
 }
 
+// One tenpai wait's projected outcome: the tile that would complete the
+// concealed hand, and the score the whole hand lands on if it does (with
+// that tile taken as the 食胡 tile - see the projectedWaits memo). `result`
+// is null only if scoreParsedHand somehow rejects a hand getWaits already
+// vouched for as structurally complete - not expected, but surfaced rather
+// than swallowed.
+interface ProjectedWait {
+  wait: Tile;
+  result: ScoreResult | null;
+  error: string | null;
+}
+
+// One row of the near-complete "if this wait completes the hand" list: a
+// tap-to-expand summary (wait tile + total tai) over the full
+// ScoringBreakdown for that completion, including 嚦咕雙食's second reading
+// when scoreParsedHand returns one. Collapsed by default so a hand with
+// many waits stays scannable.
+function ProjectedWaitRow({ projected, declaredCount }: { projected: ProjectedWait; declaredCount: number }) {
+  const [expanded, setExpanded] = useState(false);
+  const { wait, result, error } = projected;
+  return (
+    <div className="projected-wait">
+      <button
+        type="button"
+        className="projected-wait-head"
+        onClick={() => setExpanded((e) => !e)}
+        aria-expanded={expanded}
+        aria-label={`${tileLabel(wait)} — ${result ? `${result.total} tai` : "not scoreable"}, tap for breakdown`}
+      >
+        <span className="projected-wait-caret" aria-hidden="true">
+          {expanded ? "▾" : "▸"}
+        </span>
+        <TileGlyphSpan tile={wait} large />
+        <span className="projected-wait-tai">{result ? `${result.total} tai` : "—"}</span>
+      </button>
+      {expanded &&
+        (error ? (
+          <span className="error">{error}</span>
+        ) : result ? (
+          <>
+            <ScoringBreakdown
+              matched={result.matched}
+              hand={result.hand}
+              declaredCount={declaredCount}
+              winningTile={wait}
+            />
+            {result.second && (
+              <>
+                <div className="waits scoring-total scoring-second-label">
+                  <span className="waits-label">Also (嚦咕雙食 - also reads as an ordinary hand):</span>
+                </div>
+                <ScoringBreakdown
+                  matched={result.second.matched}
+                  hand={result.second.hand}
+                  declaredCount={0}
+                  winningTile={wait}
+                />
+              </>
+            )}
+          </>
+        ) : null)}
+    </div>
+  );
+}
+
 // This models the table, not a text format: 手牌區 (concealed hand) is a
 // plain multiset of tiles still to be decomposed, and 門前牌區 (declared
 // melds) is a list of already-fixed groups - exactly mahjong.ts's
@@ -2988,6 +3055,69 @@ function ScoringPanel() {
     winningTile,
   ]);
 
+  // "Near-complete" = the concealed hand is exactly one tile short of a full
+  // hand (declared melds are always complete by construction, so the missing
+  // tile is necessarily concealed). Jokers and kongs never enter the picture
+  // here: the concealed tile-picker can't produce a joker, and a concealed
+  // kong isn't scoreable via this tap UI anyway (see the `scoring` memo's
+  // exact-size gate) - so the plain no-wildcard getWaits on the concealed
+  // tiles is all that's needed to enumerate what completes the hand.
+  const nearComplete = totalTiles === requiredSize - 1;
+  const projectedWaits = useMemo<ProjectedWait[] | null>(() => {
+    if (!nearComplete) return null;
+    const meldsNeeded = MELDS_REQUIRED - declaredMelds.length;
+    const concealed = concealedTiles.map(({ id: _id, ...tile }) => tile);
+    const declared = declaredMelds.map(({ kind, concealed: c, tiles }) => ({ kind, concealed: c, tiles }));
+    // getWaits only counts copies within the concealed tiles it's given, so a
+    // wait kind whose remaining copies are all sitting in a declared meld is
+    // structurally suggested but physically impossible to draw - drop those.
+    const waits = getWaits(concealed, meldsNeeded).filter((w) => totalCopiesUsed(w) < 4);
+    return waits
+      .map((wait): ProjectedWait => {
+        const parsed: ParsedScoringHand = {
+          declaredMelds: declared,
+          freeTiles: [...concealed, wait],
+          bonusTiles,
+        };
+        try {
+          // Each wait is, by definition, the tile that completed the hand -
+          // score it as the 食胡 tile regardless of any long-press mark (the
+          // marked tile, if any, isn't the completing one while tenpai).
+          return { wait, result: scoreParsedHand(parsed, { ...ctx, winningTile: wait }), error: null };
+        } catch (e) {
+          return { wait, result: null, error: e instanceof ScoringError ? e.message : "Could not score hand" };
+        }
+      })
+      .sort(
+        (a, b) =>
+          (b.result?.total ?? -1) - (a.result?.total ?? -1) ||
+          SUIT_ORDER.indexOf(a.wait.suit) - SUIT_ORDER.indexOf(b.wait.suit) ||
+          a.wait.rank - b.wait.rank
+      );
+    // Same deps as `scoring` above minus winningTile (overridden per wait); ctx
+    // is rebuilt every render so its primitive inputs are listed individually.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    nearComplete,
+    concealedTiles,
+    declaredMelds,
+    bonusTiles,
+    seatWind,
+    roundWind,
+    selfDraw,
+    riichi,
+    instantWin,
+    eatRiichi,
+    earlyWin,
+    multiWin,
+    heavenlyWin,
+    lastTileWin,
+    flowerDraw,
+    kongDraw,
+    robKong,
+    manualVisibleExhaust,
+  ]);
+
   // Whether 明絕/絕絕's auto-detect alone (ignoring the manual state) already
   // proves one of the two true, purely to decide the shared button's floor -
   // see manualVisibleExhaust's own doc comment. Checked as exhausted first
@@ -3194,18 +3324,28 @@ function ScoringPanel() {
         {concealedTiles.length === 0 ? (
           !concealedPickerCollapsed && <span className="hint">Tap tiles above for the tiles still in your hand.</span>
         ) : (
-          (sortTiles(concealedTiles) as HandTile[]).map((t) => (
-            <WinningTileHandButton
-              key={t.id}
-              tile={t}
-              isWinning={isWinningTile(t)}
-              onRemove={() => removeConcealedTile(t.id)}
-              onToggleWinning={() => toggleWinningTile(t)}
-            />
-          ))
+          // While near-complete, the tile that completes the hand isn't in
+          // hand yet - each projected wait supplies its own 食胡 tile - so the
+          // long-press marker is meaningless here: fall back to plain
+          // tap-to-remove tiles and drop the hint until the hand is whole.
+          (sortTiles(concealedTiles) as HandTile[]).map((t) =>
+            nearComplete ? (
+              <HandTileButton key={t.id} tile={t} onClick={() => removeConcealedTile(t.id)} />
+            ) : (
+              <WinningTileHandButton
+                key={t.id}
+                tile={t}
+                isWinning={isWinningTile(t)}
+                onRemove={() => removeConcealedTile(t.id)}
+                onToggleWinning={() => toggleWinningTile(t)}
+              />
+            )
+          )
         )}
       </div>
-      {concealedTiles.length > 0 && <span className="hint">Long-press a tile to mark it as the 食胡 tile (the one that completed the hand).</span>}
+      {concealedTiles.length > 0 && !nearComplete && (
+        <span className="hint">Long-press a tile to mark it as the 食胡 tile (the one that completed the hand).</span>
+      )}
 
       <div className="scoring-context">
         <button
@@ -3387,6 +3527,27 @@ function ScoringPanel() {
             </>
           )}
         </>
+      )}
+
+      {nearComplete && projectedWaits !== null && (
+        <div className="waits projected-waits">
+          {projectedWaits.length === 0 ? (
+            <span className="waits-label">Not tenpai — no tile completes this hand.</span>
+          ) : (
+            <>
+              <span className="waits-label">
+                If completed — {projectedWaits.length} wait{projectedWaits.length === 1 ? "" : "s"}, best score first
+                (tap a row for its breakdown):
+              </span>
+              {projectedWaits.length === allTileKinds().length && (
+                <span className="waits-label universal-wait">Universal wait — any tile completes this hand.</span>
+              )}
+              {projectedWaits.map((pw) => (
+                <ProjectedWaitRow key={tileKey(pw.wait)} projected={pw} declaredCount={declaredMelds.length} />
+              ))}
+            </>
+          )}
+        </div>
       )}
     </section>
   );

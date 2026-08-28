@@ -25,11 +25,17 @@ Smaller and more concrete than the two feature ideas above.
 
 ## Scoring calculator (tai/番) — foundation shipped, patterns in progress
 
-The Scoring tab (separate from the waits calculator) scores a complete hand against a concrete
-house tai list, built up one pattern at a time rather than as a configurable/universal ruleset
-(confirmed as the right call - see [`src/lib/scoring.ts`](src/lib/scoring.ts)'s module doc
-comment). 27 patterns implemented so far; see [docs/scoring-rules.md](docs/scoring-rules.md) for
-the full list with tai values, criteria, and exclusions.
+The Scoring tab scores a complete hand against a concrete house tai list, built up one pattern
+at a time rather than as a configurable/universal ruleset (confirmed as the right call - see
+[`src/lib/scoring.ts`](src/lib/scoring.ts)'s module doc comment). 27 patterns implemented so
+far; see [docs/scoring-rules.md](docs/scoring-rules.md) for the full list with tai values,
+criteria, and exclusions.
+
+When the concealed hand is exactly one tile short, the Scoring tab now reuses the waits
+calculator's `getWaits` on the concealed tiles and shows, per wait, the score the whole hand
+would land on if that tile completed it (each wait taken as its own 食胡 tile) - a collapsible
+tai-descending list. Kept deliberately narrow: no jokers (the scoring picker can't enter one)
+and no concealed kongs (the exact-size score gate already excludes those).
 
 Still open:
 
