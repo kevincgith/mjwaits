@@ -1413,18 +1413,19 @@ h1 {
 /* --seg: one stack's width along its wall (a tile seen face-on); --tile: a
    single tile's height, so a bar is 2 * --tile deep (two tiles high). Each bar
    runs 18 * --seg long. --jut is how far each bar pokes past its neighbour in
-   the pinwheel - three stacks' worth - so the whole figure is
-   (18 * --seg + --bar + --jut) square. */
+   the pinwheel (three stacks' worth). --gap is the break slot; a broken bar
+   grows by that much toward its clockwise-far end, so the figure carries one
+   --gap of slack on every edge: (18 * --seg + --bar + --jut + 2 * --gap) square. */
 .wall {
   --seg: 14px;
   --tile: 19px;
   --bar: calc(2 * var(--tile));
   --len: calc(var(--seg) * 18);
   --jut: calc(3 * var(--seg));
-  --gap: 10px;
+  --gap: 9px;
   position: relative;
-  width: calc(var(--len) + var(--bar) + var(--jut));
-  height: calc(var(--len) + var(--bar) + var(--jut));
+  width: calc(var(--len) + var(--bar) + var(--jut) + 2 * var(--gap));
+  height: calc(var(--len) + var(--bar) + var(--jut) + 2 * var(--gap));
   max-width: 100%;
   /* extra top room so the break's pointing finger can sit above the top bar */
   margin: 1.4rem auto 0;
@@ -1434,40 +1435,40 @@ h1 {
   position: absolute;
 }
 
+/* The whole pinwheel is inset by one --gap from the top/left so the bottom and
+   left bars (anchored at their far edge) have room to grow when broken. */
 .wall-top {
-  left: calc(var(--bar) + var(--jut));
-  top: var(--jut);
+  left: calc(var(--bar) + var(--jut) + var(--gap));
+  top: calc(var(--jut) + var(--gap));
 }
 .wall-right {
-  left: var(--len);
-  top: calc(var(--bar) + var(--jut));
+  left: calc(var(--len) + var(--gap));
+  top: calc(var(--bar) + var(--jut) + var(--gap));
 }
 .wall-bottom {
-  left: 0;
-  top: var(--len);
+  right: calc(var(--bar) + var(--jut) + var(--gap));
+  top: calc(var(--len) + var(--gap));
 }
 .wall-left {
-  left: var(--jut);
-  top: 0;
+  left: calc(var(--jut) + var(--gap));
+  bottom: calc(var(--bar) + var(--jut) + var(--gap));
 }
 
 .wall-bar {
   display: flex;
   box-sizing: border-box;
-  border: 1px solid #1c4c2b;
 }
 .wall-bar-h {
   flex-direction: column;
-  width: var(--len);
   height: var(--bar);
 }
 .wall-bar-v {
   flex-direction: row;
   width: var(--bar);
-  height: var(--len);
 }
 
-/* One of the two tile-high rows that make up a bar. */
+/* One of the two tile-high rows that make up a bar. Each line lays its stacks
+   out in clockwise order, so the reversed directions go on the bottom/left. */
 .wall-bar-line {
   display: flex;
   flex: 1;
@@ -1478,43 +1479,31 @@ h1 {
 .wall-bar-v .wall-bar-line {
   flex-direction: column;
 }
-.wall-bar-h .wall-bar-line + .wall-bar-line {
-  border-top: 1px solid rgba(255, 255, 255, 0.55);
+.wall-bottom .wall-bar-line {
+  flex-direction: row-reverse;
 }
-.wall-bar-v .wall-bar-line + .wall-bar-line {
-  border-left: 1px solid rgba(255, 255, 255, 0.55);
+.wall-left .wall-bar-line {
+  flex-direction: column-reverse;
 }
 
+/* Fixed-size stacks (never squashed by the gap), outlined with a layout-free
+   box-shadow so neighbours share a 1px line and a gap stays cleanly open. */
 .wall-seg {
-  flex: 1;
+  flex: 0 0 var(--seg);
   box-sizing: border-box;
   background: #2b6b3f;
+  box-shadow: 0 0 0 1px #1c4c2b;
 }
 /* The `sum` stacks counted off clockwise, lightened so the sum | 18-sum split reads. */
 .wall-seg-counted {
   background: #57a97b;
 }
-.wall-bar-h .wall-seg + .wall-seg {
-  border-left: 1px solid rgba(255, 255, 255, 0.55);
-}
-.wall-bar-v .wall-seg + .wall-seg {
-  border-top: 1px solid rgba(255, 255, 255, 0.55);
-}
 
-/* The break slot cut into the chosen side, framed on both cut faces, with the
-   pointing finger just off the wall's outer edge. */
+/* The break: a clean empty slot; a broken bar is one --gap longer than a whole one. */
 .wall-gap {
   flex: 0 0 var(--gap);
   align-self: stretch;
   position: relative;
-}
-.wall-bar-h .wall-gap {
-  border-left: 1px solid #1c4c2b;
-  border-right: 1px solid #1c4c2b;
-}
-.wall-bar-v .wall-gap {
-  border-top: 1px solid #1c4c2b;
-  border-bottom: 1px solid #1c4c2b;
 }
 
 .wall-break-marker {

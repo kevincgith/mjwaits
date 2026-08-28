@@ -3412,24 +3412,22 @@ const WALL_SIDE_LABEL: Record<WallSide, string> = {
 
 // Where the dice sum breaks the wall. The seat is (sum mod 4) counted round from
 // the roller; then `sum` stacks are counted clockwise along that side, so the
-// side is split sum | (18 - sum). `domBreak` is how many rendered stacks sit
-// before the gap (segments run in a fixed DOM order per bar, while "clockwise"
-// starts from a different end depending on the side).
-type WallBreak = { side: WallSide; n: number; domBreak: number; countFromStart: boolean };
+// side is split sum | (18 - sum). Each bar renders its stacks in clockwise order
+// (see the flex-direction per side in the CSS), so `gapAfter` is simply how many
+// stacks precede the gap.
+type WallBreak = { side: WallSide; n: number; gapAfter: number };
 
 function wallBreak(total: number | null): WallBreak | null {
   if (total == null || total < 3 || total > WALL_STACKS_PER_SIDE) return null;
   // 18 counts the whole right wall and lands exactly on the bottom-right corner,
-  // so the break is drawn on the bottom side, hard against the right wall.
+  // so the break is drawn on the bottom side, hard against the right wall (before
+  // its first clockwise stack).
   if (total === WALL_STACKS_PER_SIDE) {
-    return { side: "bottom", n: total, domBreak: WALL_STACKS_PER_SIDE, countFromStart: false };
+    return { side: "bottom", n: total, gapAfter: 0 };
   }
   const mod = total % 4;
   const side: WallSide = mod === 3 ? "top" : mod === 0 ? "left" : mod === 1 ? "bottom" : "right";
-  // Top/right bars render in clockwise order already; bottom/left render reversed.
-  const countFromStart = side === "top" || side === "right";
-  const domBreak = countFromStart ? total : WALL_STACKS_PER_SIDE - total;
-  return { side, n: total, domBreak, countFromStart };
+  return { side, n: total, gapAfter: total };
 }
 
 function WallGap({ withMarker }: { withMarker: boolean }) {
@@ -3451,7 +3449,7 @@ function WallBar({
   orientation: "h" | "v";
   brk: WallBreak | null;
 }) {
-  const breakAt = brk?.domBreak ?? null;
+  const breakAt = brk?.gapAfter ?? null;
   // Draw the pointing finger off the outer face of the bar: that is the first
   // line for the top/left bars, the last line for the bottom/right bars.
   const markerLine = brk && (brk.side === "bottom" || brk.side === "right") ? WALL_BAR_DEPTH - 1 : 0;
@@ -3460,9 +3458,8 @@ function WallBar({
       {Array.from({ length: WALL_BAR_DEPTH }, (_, line) => (
         <div className="wall-bar-line" key={line}>
           {Array.from({ length: WALL_STACKS_PER_SIDE }, (_, i) => {
-            // "counted" = the sum stacks on the clockwise-start side of the gap.
-            const counted =
-              brk != null && (brk.countFromStart ? i < brk.domBreak : i >= brk.domBreak);
+            // Stacks render in clockwise order, so the first `gapAfter` are the counted run.
+            const counted = breakAt != null && i < breakAt;
             return (
               <Fragment key={i}>
                 {breakAt === i && <WallGap withMarker={line === markerLine} />}
@@ -3470,7 +3467,6 @@ function WallBar({
               </Fragment>
             );
           })}
-          {breakAt === WALL_STACKS_PER_SIDE && <WallGap withMarker={line === markerLine} />}
         </div>
       ))}
     </div>
