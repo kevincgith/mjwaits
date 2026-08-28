@@ -3498,11 +3498,14 @@ function Wall({ total }: { total: number | null }) {
   );
 }
 
-// Shared dice-roll state: `count` d6 that start on 1, animate for ~0.6s on
-// roll(), and cycle 1..6 when a die is tapped (bumpDie). Taps are ignored mid-roll.
+// Shared dice-roll state: `count` d6 that start on 1 and cycle 1..6 when a die
+// is tapped (bumpDie). roll() tumbles the dice faces for ~0.6s, then commits one
+// settled result. `dice` is that settled result (stable during a roll, so
+// derived readouts don't flicker); `faces` is what the tray shows - the
+// tumbling values mid-roll, the settled ones otherwise.
 function useDiceRoll(count: number) {
   const [dice, setDice] = useState<number[]>(() => Array<number>(count).fill(1));
-  const [rolling, setRolling] = useState(false);
+  const [tumbling, setTumbling] = useState<number[] | null>(null);
   const rollTimer = useRef<number | null>(null);
 
   useEffect(
@@ -3513,20 +3516,22 @@ function useDiceRoll(count: number) {
   );
 
   const rollOnce = () => Array.from({ length: count }, () => 1 + Math.floor(Math.random() * 6));
+  const rolling = tumbling !== null;
 
   const roll = () => {
     if (rolling) return;
-    setRolling(true);
+    setTumbling(rollOnce());
     let ticks = 0;
     if (rollTimer.current !== null) window.clearInterval(rollTimer.current);
     rollTimer.current = window.setInterval(() => {
-      setDice(rollOnce());
       ticks += 1;
       if (ticks >= 10) {
         if (rollTimer.current !== null) window.clearInterval(rollTimer.current);
         rollTimer.current = null;
         setDice(rollOnce());
-        setRolling(false);
+        setTumbling(null);
+      } else {
+        setTumbling(rollOnce());
       }
     }, 60);
   };
@@ -3536,30 +3541,29 @@ function useDiceRoll(count: number) {
     setDice((d) => d.map((v, i) => (i === idx ? (v % 6) + 1 : v)));
   };
 
-  return { dice, rolling, roll, bumpDie };
+  return { dice, faces: tumbling ?? dice, rolling, roll, bumpDie };
 }
 
 function DicePanel() {
-  const { dice, rolling, roll, bumpDie } = useDiceRoll(3);
+  const { dice, faces, rolling, roll, bumpDie } = useDiceRoll(3);
 
   const total = dice[0] + dice[1] + dice[2];
-  const brk = rolling ? null : wallBreak(total);
+  const brk = wallBreak(total);
 
-  // Highlight two notable rolls once the dice settle: a three-of-a-kind (green)
-  // and a 1-2-3 in any order (red).
+  // Highlight two notable rolls (based on the settled dice): a three-of-a-kind
+  // (green) and a 1-2-3 in any order (red).
   const sortedDice = [...dice].sort((a, b) => a - b);
-  const rollTint = rolling
-    ? ""
-    : sortedDice[0] === sortedDice[2]
+  const rollTint =
+    sortedDice[0] === sortedDice[2]
       ? " dice-total-trips"
       : sortedDice[0] === 1 && sortedDice[1] === 2 && sortedDice[2] === 3
         ? " dice-total-run"
         : "";
 
   return (
-    <section className="panel dice-panel">
+    <>
       <div className="dice-tray">
-        {dice.map((v, i) => (
+        {faces.map((v, i) => (
           <Die key={i} value={v} onBump={() => bumpDie(i)} disabled={rolling} />
         ))}
       </div>
@@ -3573,7 +3577,7 @@ function DicePanel() {
         <span className="scoring-total-value">{total}</span>
       </div>
 
-      <Wall total={rolling ? null : total} />
+      <Wall total={total} />
 
       {brk && (
         <div className="wall-break-caption">
@@ -3590,20 +3594,20 @@ function DicePanel() {
           )}
         </div>
       )}
-    </section>
+    </>
   );
 }
 
 function ExchangePanel() {
-  const { dice, rolling, roll, bumpDie } = useDiceRoll(2);
+  const { dice, faces, rolling, roll, bumpDie } = useDiceRoll(2);
   // The first die picks a round: 1-2 -> 1, 3-4 -> 2, 5-6 -> 3.
   const round = Math.ceil(dice[0] / 2);
   // The second die picks a tile count, with a floor of 3.
   const tiles = Math.max(dice[1], 3);
   return (
-    <section className="panel dice-panel">
+    <>
       <div className="dice-tray">
-        {dice.map((v, i) => (
+        {faces.map((v, i) => (
           <Die key={i} value={v} onBump={() => bumpDie(i)} disabled={rolling} />
         ))}
       </div>
@@ -3622,14 +3626,14 @@ function ExchangePanel() {
           <span className="scoring-total-value">{tiles}</span>
         </div>
       </div>
-    </section>
+    </>
   );
 }
 
 function DiceTab() {
   const [sub, setSub] = useState<"wall" | "exchange">("wall");
   return (
-    <>
+    <section className="panel dice-panel">
       <div className="mode-tabs sub-tabs">
         <button
           type="button"
@@ -3648,9 +3652,8 @@ function DiceTab() {
           Exchange tiles
         </button>
       </div>
-      {sub === "wall" && <DicePanel />}
-      {sub === "exchange" && <ExchangePanel />}
-    </>
+      {sub === "wall" ? <DicePanel /> : <ExchangePanel />}
+    </section>
   );
 }
 

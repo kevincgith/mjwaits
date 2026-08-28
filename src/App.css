@@ -1338,10 +1338,12 @@ h1 {
 
 /* Dice rolling tab */
 
-/* Sub-tab bar inside the Dice rolling tab - lighter than the top mode-tabs so
-   the nesting reads. */
+/* Sub-tab bar - lives inside the panel box, as a header band above the
+   content, lighter than the top mode-tabs so the nesting reads. */
 .sub-tabs {
-  margin-bottom: 0.75rem;
+  margin-bottom: 1rem;
+  padding-bottom: 0.85rem;
+  border-bottom: 1px solid #eee;
 }
 .sub-tabs button {
   font-size: 0.8rem;
