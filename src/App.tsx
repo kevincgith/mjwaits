@@ -2267,6 +2267,10 @@ const HEAVENLY_WIN_LABELS: Record<HeavenlyWinState, string> = {
   earth: "地胡",
   man: "人胡",
 };
+// 天胡 (the dealer's initial deal is already complete, before anyone
+// discards) forces 自摸 on, same reasoning as 花摸/槓摸/海底撈月 above -
+// 地胡/人胡 are deliberately left alone here, not asserted either way.
+const isSelfDrawHeavenlyWin = (s: HeavenlyWinState): boolean => s === "heaven";
 
 // Same cycling idiom, for 河底撈魚/海底撈月/海底撈月(一筒).
 const LAST_TILE_WIN_CYCLE: LastTileWinState[] = ["none", "river-bottom", "sea-bottom", "sea-bottom-one-tong"];
@@ -2276,6 +2280,11 @@ const LAST_TILE_WIN_LABELS: Record<LastTileWinState, string> = {
   "sea-bottom": "海底撈月",
   "sea-bottom-one-tong": "海底撈月(一筒)",
 };
+// The two 海底撈月 variants are self-drawing the last wall tile - inherently
+// a self-draw, same as 花摸/槓摸 - while 河底撈魚 is claiming someone else's
+// last discard, so it's deliberately excluded here (same as 搶槓/雙響/三響
+// are their own separate, mutually-exclusive-with-自摸 case, not this one).
+const isSelfDrawLastTileWin = (s: LastTileWinState): boolean => s === "sea-bottom" || s === "sea-bottom-one-tong";
 
 // 花摸/槓摸/搶槓 cycle through a plain count instead of named states - tap
 // advances 0 -> 1 -> ... -> max -> 0. Label shows "花摸xN" once N > 0, or
@@ -2542,31 +2551,62 @@ function ScoringPanel() {
     });
   };
   const [earlyWin, setEarlyWin] = useState<EarlyWinState>("none");
-  const cycleEarlyWin = () =>
-    setEarlyWin((prev) => EARLY_WIN_CYCLE[(EARLY_WIN_CYCLE.indexOf(prev) + 1) % EARLY_WIN_CYCLE.length]);
+  // 四子內/七子內/十子內 (won within the first N discards) and 河底撈魚/
+  // 海底撈月/海底撈月(一筒) (won on the very last tile) are mutually
+  // exclusive by definition - the wall can't be both nearly full and
+  // exhausted at once - so activating either cycle clears the other back
+  // to "none".
+  const cycleEarlyWin = () => {
+    const next = EARLY_WIN_CYCLE[(EARLY_WIN_CYCLE.indexOf(earlyWin) + 1) % EARLY_WIN_CYCLE.length];
+    if (next !== "none") setLastTileWin("none");
+    setEarlyWin(next);
+  };
   const [multiWin, setMultiWin] = useState<MultiWinState>("none");
   const [heavenlyWin, setHeavenlyWin] = useState<HeavenlyWinState>("none");
-  const cycleHeavenlyWin = () =>
-    setHeavenlyWin((prev) => HEAVENLY_WIN_CYCLE[(HEAVENLY_WIN_CYCLE.indexOf(prev) + 1) % HEAVENLY_WIN_CYCLE.length]);
+  // 天胡 forces 自摸 on (the dealer's initial deal is already a complete
+  // hand - inherently self-drawn); 地胡 forces it off (this house rule's
+  // 地胡 is winning off the very first discard - claimed, not self-drawn,
+  // joining 搶槓/雙響/三響's group); 人胡 is deliberately left unlinked
+  // either way. The deactivate helpers are called before setHeavenlyWin so
+  // this transition's own authoritative next value - set last - always
+  // wins over anything a helper's (stale, pre-transition) heavenlyWin check
+  // might otherwise clear it back to (see deactivateSelfDrawGroup/
+  // deactivateClaimedWinGroup below).
+  const cycleHeavenlyWin = () => {
+    const next = HEAVENLY_WIN_CYCLE[(HEAVENLY_WIN_CYCLE.indexOf(heavenlyWin) + 1) % HEAVENLY_WIN_CYCLE.length];
+    if (next === "heaven") deactivateClaimedWinGroup();
+    else if (next === "earth") deactivateSelfDrawGroup();
+    setHeavenlyWin(next);
+  };
   const [lastTileWin, setLastTileWin] = useState<LastTileWinState>("none");
-  const cycleLastTileWin = () =>
-    setLastTileWin((prev) => LAST_TILE_WIN_CYCLE[(LAST_TILE_WIN_CYCLE.indexOf(prev) + 1) % LAST_TILE_WIN_CYCLE.length]);
+  const cycleLastTileWin = () => {
+    const next = LAST_TILE_WIN_CYCLE[(LAST_TILE_WIN_CYCLE.indexOf(lastTileWin) + 1) % LAST_TILE_WIN_CYCLE.length];
+    if (next !== "none") setEarlyWin("none"); // see cycleEarlyWin's own comment
+    setLastTileWin(next);
+    if (!isSelfDrawLastTileWin(lastTileWin) && isSelfDrawLastTileWin(next)) deactivateClaimedWinGroup();
+  };
   const [flowerDraw, setFlowerDraw] = useState(0);
   const [kongDraw, setKongDraw] = useState(0);
   const [robKong, setRobKong] = useState(0);
-  // 自摸 (incl. its 花摸/槓摸-forced form) and {搶槓, 雙響/三響} are mutually
-  // exclusive - both 搶槓 and 雙響/三響 mean the win was claimed off another
-  // player (robbing a kong, or multiple players claiming the same discard),
-  // the opposite of a self-draw. Activating either group clears the other,
-  // rather than letting the two silently coexist as a contradictory state.
+  // 自摸 (incl. its 花摸/槓摸/海底撈月/天胡-forced form) and {搶槓, 雙響/三響,
+  // 地胡} are mutually exclusive - the latter group all mean the win was
+  // claimed off another player (robbing a kong, multiple players claiming
+  // the same discard, or - per this house rule - 地胡 being won off the
+  // very first discard), the opposite of a self-draw. Activating either
+  // group clears every self-draw-implying/claimed-win-implying field in the
+  // other, rather than letting the two silently coexist as a contradictory
+  // state.
   const deactivateSelfDrawGroup = () => {
     setSelfDraw(false);
     setFlowerDraw(0);
     setKongDraw(0);
+    if (isSelfDrawLastTileWin(lastTileWin)) setLastTileWin("none");
+    if (isSelfDrawHeavenlyWin(heavenlyWin)) setHeavenlyWin("none");
   };
   const deactivateClaimedWinGroup = () => {
     setRobKong(0);
     setMultiWin("none");
+    if (heavenlyWin === "earth") setHeavenlyWin("none");
   };
   const cycleMultiWin = () => {
     const next = MULTI_WIN_CYCLE[(MULTI_WIN_CYCLE.indexOf(multiWin) + 1) % MULTI_WIN_CYCLE.length];
@@ -2852,14 +2892,16 @@ function ScoringPanel() {
   const toggleWinningTile = (tile: HandTile) =>
     setWinningTile((prev) => (prev && prev.id === tile.id ? null : tile));
 
-  // 花摸/槓摸 both mean the winning tile was a replacement tile the player
-  // themselves drew (after a flower, or after a kong) - that's inherently a
-  // self-draw, so either one being declared forces 自摸 on regardless of its
-  // own manual state (but 搶槓 deliberately does NOT - robbing a kong is won
-  // off another player's discard-equivalent declaration, the opposite of a
-  // self-draw). See the 自摸 button below for the other half of this: tapping
-  // it off while forced on this way cascades back to turning 花摸/槓摸 off too.
-  const effectiveSelfDraw = selfDraw || flowerDraw > 0 || kongDraw > 0;
+  // 花摸/槓摸 (declared at all), 海底撈月/海底撈月(一筒) (the two self-drawing
+  // lastTileWin variants, not 河底撈魚), and 天胡 all mean the winning tile
+  // was drawn by the player themselves - inherently a self-draw - so any of
+  // them forces 自摸 on regardless of its own manual state (but 搶槓/雙響/
+  // 三響/地胡 deliberately do NOT - see deactivateSelfDrawGroup/
+  // deactivateClaimedWinGroup above for the full mutual-exclusion wiring).
+  // See the 自摸 button below for the other half of this: tapping it off
+  // while forced on this way cascades back through deactivateSelfDrawGroup.
+  const effectiveSelfDraw =
+    selfDraw || flowerDraw > 0 || kongDraw > 0 || isSelfDrawLastTileWin(lastTileWin) || isSelfDrawHeavenlyWin(heavenlyWin);
 
   // scoring.ts only cares about the winning tile's kind (see GameContext's
   // doc comment there) - the id above exists purely to disambiguate which
@@ -3145,18 +3187,18 @@ function ScoringPanel() {
           aria-pressed={effectiveSelfDraw}
           onClick={() => {
             if (effectiveSelfDraw) {
-              // Turning off while forced/held on by 花摸 or 槓摸 cascades to
-              // turning those off too, not just flip the (possibly already
-              // false) manual flag and leave 自摸 stuck on regardless.
-              setSelfDraw(false);
-              setFlowerDraw(0);
-              setKongDraw(0);
+              // Turning off while forced/held on by 花摸/槓摸/海底撈月/天胡
+              // cascades to turning those off too (see deactivateSelfDrawGroup),
+              // not just flip the (possibly already false) manual flag and
+              // leave 自摸 stuck on regardless. 河底撈魚/人胡 are untouched -
+              // neither forces 自摸 on in the first place.
+              deactivateSelfDrawGroup();
             } else {
               setSelfDraw(true);
               deactivateClaimedWinGroup();
             }
           }}
-          title="自摸 - self-draw vs won off a discard (also turned on by 花摸/槓摸, and mutually exclusive with 搶槓/雙響/三響 - turning any one of these on turns the others off)"
+          title="自摸 - self-draw vs won off a discard (also turned on by 花摸/槓摸/海底撈月/天胡, and mutually exclusive with 搶槓/雙響/三響/地胡 - turning any one of these on turns the others off)"
         >
           自摸
         </button>
@@ -3196,7 +3238,7 @@ function ScoringPanel() {
           className={earlyWin !== "none" ? "toggle-on" : undefined}
           aria-pressed={earlyWin !== "none"}
           onClick={cycleEarlyWin}
-          title="Won while the discard count (excluding the completing tile) was still at or under this number - tap to cycle 四子內(60) / 七子內(30) / 十子內(15) / off"
+          title="Won while the discard count (excluding the completing tile) was still at or under this number - tap to cycle 四子內(60) / 七子內(30) / 十子內(15) / off (mutually exclusive with 河底撈魚/海底撈月/海底撈月(一筒))"
         >
           {EARLY_WIN_LABELS[earlyWin]}
         </button>
@@ -3214,7 +3256,7 @@ function ScoringPanel() {
           className={heavenlyWin !== "none" ? "toggle-on" : undefined}
           aria-pressed={heavenlyWin !== "none"}
           onClick={cycleHeavenlyWin}
-          title="Tap to cycle 天胡(160) / 地胡(120) / 人胡(80) / off"
+          title="Tap to cycle 天胡(160) / 地胡(120) / 人胡(80) / off - 天胡 also turns on 自摸 (deactivating 搶槓/雙響/三響/地胡), 地胡 also turns off 自摸"
         >
           {HEAVENLY_WIN_LABELS[heavenlyWin]}
         </button>
@@ -3223,7 +3265,7 @@ function ScoringPanel() {
           className={lastTileWin !== "none" ? "toggle-on" : undefined}
           aria-pressed={lastTileWin !== "none"}
           onClick={cycleLastTileWin}
-          title="Tap to cycle 河底撈魚(5) / 海底撈月(10) / 海底撈月一筒(20) / off"
+          title="Tap to cycle 河底撈魚(5) / 海底撈月(10) / 海底撈月一筒(20) / off - 海底撈月/海底撈月(一筒) also turn on 自摸 (deactivating 搶槓/雙響/三響/地胡); also mutually exclusive with 四子內/七子內/十子內"
         >
           {LAST_TILE_WIN_LABELS[lastTileWin]}
         </button>
