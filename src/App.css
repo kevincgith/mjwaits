@@ -1410,6 +1410,18 @@ h1 {
   font-size: 1.1rem;
 }
 
+/* Three of a kind. */
+.dice-total-trips {
+  background: #eafaf0;
+  border-color: #86d3a6;
+}
+
+/* 1-2-3 in any order. */
+.dice-total-run {
+  background: #fdecea;
+  border-color: #f0a9a0;
+}
+
 /* --seg: one stack's width along its wall (a tile seen face-on); --tile: a
    single tile's height, so a bar is 2 * --tile deep (two tiles high). Each bar
    runs 18 * --seg long. --jut is how far each bar pokes past its neighbour in

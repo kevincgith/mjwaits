@@ -3545,6 +3545,17 @@ function DicePanel() {
   const total = dice[0] + dice[1] + dice[2];
   const brk = rolling ? null : wallBreak(total);
 
+  // Highlight two notable rolls once the dice settle: a three-of-a-kind (green)
+  // and a 1-2-3 in any order (red).
+  const sortedDice = [...dice].sort((a, b) => a - b);
+  const rollTint = rolling
+    ? ""
+    : sortedDice[0] === sortedDice[2]
+      ? " dice-total-trips"
+      : sortedDice[0] === 1 && sortedDice[1] === 2 && sortedDice[2] === 3
+        ? " dice-total-run"
+        : "";
+
   return (
     <section className="panel dice-panel">
       <div className="dice-tray">
@@ -3557,7 +3568,7 @@ function DicePanel() {
         {rolling ? "Rolling…" : "Roll the dice"}
       </button>
 
-      <div className="waits dice-total">
+      <div className={`waits dice-total${rollTint}`}>
         <span className="waits-label">Total:</span>
         <span className="scoring-total-value">{total}</span>
       </div>
