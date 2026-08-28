@@ -3088,11 +3088,11 @@ function ScoringPanel() {
           return { wait, result: null, error: e instanceof ScoringError ? e.message : "Could not score hand" };
         }
       })
+      // Canonical tile order (suit then rank); the display-order toggle
+      // re-sorts a copy of this without recomputing any scores.
       .sort(
         (a, b) =>
-          (b.result?.total ?? -1) - (a.result?.total ?? -1) ||
-          SUIT_ORDER.indexOf(a.wait.suit) - SUIT_ORDER.indexOf(b.wait.suit) ||
-          a.wait.rank - b.wait.rank
+          SUIT_ORDER.indexOf(a.wait.suit) - SUIT_ORDER.indexOf(b.wait.suit) || a.wait.rank - b.wait.rank
       );
     // Same deps as `scoring` above minus winningTile (overridden per wait); ctx
     // is rebuilt every render so its primitive inputs are listed individually.
@@ -3117,6 +3117,20 @@ function ScoringPanel() {
     robKong,
     manualVisibleExhaust,
   ]);
+
+  // Display order for the projected-waits list: highest tai first, or plain
+  // tile order. Only reorders the already-scored rows, so flipping it is
+  // cheap.
+  const [projectedSort, setProjectedSort] = useState<"score" | "tiles">("score");
+  const displayedProjectedWaits = useMemo(() => {
+    if (!projectedWaits || projectedSort === "tiles") return projectedWaits;
+    return [...projectedWaits].sort(
+      (a, b) =>
+        (b.result?.total ?? -1) - (a.result?.total ?? -1) ||
+        SUIT_ORDER.indexOf(a.wait.suit) - SUIT_ORDER.indexOf(b.wait.suit) ||
+        a.wait.rank - b.wait.rank
+    );
+  }, [projectedWaits, projectedSort]);
 
   // Whether 明絕/絕絕's auto-detect alone (ignoring the manual state) already
   // proves one of the two true, purely to decide the shared button's floor -
@@ -3529,20 +3543,34 @@ function ScoringPanel() {
         </>
       )}
 
-      {nearComplete && projectedWaits !== null && (
+      {nearComplete && displayedProjectedWaits !== null && (
         <div className="waits projected-waits">
-          {projectedWaits.length === 0 ? (
+          {displayedProjectedWaits.length === 0 ? (
             <span className="waits-label">Not tenpai — no tile completes this hand.</span>
           ) : (
             <>
-              <span className="waits-label">
-                If completed — {projectedWaits.length} wait{projectedWaits.length === 1 ? "" : "s"}, best score first
-                (tap a row for its breakdown):
-              </span>
-              {projectedWaits.length === allTileKinds().length && (
+              <div className="projected-waits-header">
+                <span className="waits-label">
+                  If completed — {displayedProjectedWaits.length} wait{displayedProjectedWaits.length === 1 ? "" : "s"}{" "}
+                  (tap a row for its breakdown):
+                </span>
+                <button
+                  type="button"
+                  className="projected-sort-toggle"
+                  onClick={() => setProjectedSort((s) => (s === "score" ? "tiles" : "score"))}
+                  title={
+                    projectedSort === "score"
+                      ? "Sorted by score — tap to sort by tile"
+                      : "Sorted by tile — tap to sort by score"
+                  }
+                >
+                  {projectedSort === "score" ? "Sort: score" : "Sort: tile"}
+                </button>
+              </div>
+              {displayedProjectedWaits.length === allTileKinds().length && (
                 <span className="waits-label universal-wait">Universal wait — any tile completes this hand.</span>
               )}
-              {projectedWaits.map((pw) => (
+              {displayedProjectedWaits.map((pw) => (
                 <ProjectedWaitRow key={tileKey(pw.wait)} projected={pw} declaredCount={declaredMelds.length} />
               ))}
             </>

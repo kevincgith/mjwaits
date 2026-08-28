@@ -672,6 +672,26 @@ h1 {
   gap: 0.4rem;
 }
 
+/* Label + sort-order toggle on one line above the boxed rows. */
+.projected-waits-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.projected-sort-toggle {
+  border: 1px solid #ccc;
+  background: #f7f7f7;
+  border-radius: 4px;
+  padding: 0.2rem 0.6rem;
+  cursor: pointer;
+  font-size: 0.8rem;
+  color: #444;
+  white-space: nowrap;
+}
+
 .projected-wait {
   background: #fff;
   border: 1px solid #ede9d8;
