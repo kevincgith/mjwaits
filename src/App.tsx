@@ -3273,7 +3273,7 @@ function ScoringPanel() {
 
       <div className="hand-display breakdown-groups">
         {declaredMelds.length === 0 && bonusTiles.length === 0 ? (
-          <span className="hint">Tap tiles to add declared melds.</span>
+          <span className="hint">Tap to add declared melds.</span>
         ) : (
           <>
             {bonusTiles.length > 0 && (
@@ -3336,7 +3336,7 @@ function ScoringPanel() {
 
       <div className="hand-display">
         {concealedTiles.length === 0 ? (
-          <span className="hint">Tap tiles above for the tiles still in your hand.</span>
+          <span className="hint">Tap to add concealed tiles.</span>
         ) : (
           // While near-complete, the tile that completes the hand isn't in
           // hand yet - each projected wait supplies its own 食胡 tile - so the
