@@ -1160,6 +1160,13 @@ function CropOverlay({
 // still drives the same file-picker/prefetch flow.
 export interface HandScannerHandle {
   trigger: () => void;
+  // Discards whatever the scan flow is currently doing - mid-crop, mid-
+  // download/detect, or sitting on a finished review - and drops back to
+  // idle. Used by ScoringPanel's Reset button so wiping the hand also
+  // dismisses an in-progress scan rather than leaving it running/showing
+  // underneath the now-empty hand. Doesn't abort the underlying model
+  // fetch itself (see resetScan's own comment) - only the local UI state.
+  reset: () => void;
 }
 
 const HandScanner = forwardRef<
@@ -1185,8 +1192,18 @@ const HandScanner = forwardRef<
     // loading), so an external trigger button (hideTrigger) can disable
     // itself for the same span the built-in one would have.
     onBusyChange?: (busy: boolean) => void;
+    // Fires whenever scanStatus moves in or out of "idle" entirely -
+    // broader than onBusyChange (also true during "review"/"error", not
+    // just "cropping"/"loading"). ScoringPanel uses this to keep its Reset
+    // button enabled while a scan is in progress even when the hand itself
+    // is still empty, since Reset is also this flow's only cancel button
+    // once the scan is running (see HandScannerHandle.reset).
+    onActiveChange?: (active: boolean) => void;
   }
->(function HandScanner({ regionLabels, regionIssue, onConfirm, hideTrigger, triggerLabel = "📷 Scan a hand", onBusyChange }, ref) {
+>(function HandScanner(
+  { regionLabels, regionIssue, onConfirm, hideTrigger, triggerLabel = "📷 Scan a hand", onBusyChange, onActiveChange },
+  ref
+) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [scanStatus, setScanStatus] = useState<"idle" | "cropping" | "loading" | "review" | "error">("idle");
   const [scanError, setScanError] = useState<string | null>(null);
@@ -1195,6 +1212,13 @@ const HandScanner = forwardRef<
   const [editingDetectionId, setEditingDetectionId] = useState<number | null>(null);
   const nextDetectionId = useRef(0);
   const [cropImage, setCropImage] = useState<HTMLImageElement | null>(null);
+  // Bumped by resetScan to invalidate whatever runScan call is currently
+  // in flight - its await'd detectTiles call has no way to actually abort
+  // (and shouldn't: the model fetch it shares is cached module-wide, see
+  // vision.ts's sessionPromise, so aborting would break the *next* scan
+  // too), but this stops its result from clobbering the idle state resetScan
+  // just set once it does resolve.
+  const scanGeneration = useRef(0);
 
   const triggerScan = () => {
     // Starts the (large) model download as soon as the user shows intent
@@ -1204,9 +1228,22 @@ const HandScanner = forwardRef<
     prefetchModel();
     fileInputRef.current?.click();
   };
-  useImperativeHandle(ref, () => ({ trigger: triggerScan }));
+  const resetScan = () => {
+    scanGeneration.current++;
+    setScanStatus("idle");
+    setScanError(null);
+    setScanProgress(null);
+    setScanPreview(null);
+    setEditingDetectionId(null);
+    setCropImage(null);
+  };
+  useImperativeHandle(ref, () => ({ trigger: triggerScan, reset: resetScan }));
 
   const busy = scanStatus === "cropping" || scanStatus === "loading";
+  useEffect(() => {
+    onActiveChange?.(scanStatus !== "idle");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scanStatus]);
   useEffect(() => {
     onBusyChange?.(busy);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1269,12 +1306,15 @@ const HandScanner = forwardRef<
     const file = e.target.files?.[0];
     e.target.value = ""; // allow re-selecting the same file next time
     if (!file) return;
+    const myGeneration = scanGeneration.current;
     setScanError(null);
     try {
       const image = await loadImageFile(file);
+      if (scanGeneration.current !== myGeneration) return; // reset mid-read - drop the result
       setCropImage(image);
       setScanStatus("cropping");
     } catch (err) {
+      if (scanGeneration.current !== myGeneration) return;
       setScanError(err instanceof Error ? err.message : "Could not read that image");
       setScanStatus("error");
     }
@@ -1284,6 +1324,7 @@ const HandScanner = forwardRef<
   // independently. The (cached) model session is only fetched/initialized
   // once regardless of region count.
   const runScan = async (sources: HTMLCanvasElement[]) => {
+    const myGeneration = scanGeneration.current;
     setScanStatus("loading");
     setScanError(null);
     setScanProgress({ phase: "downloading-model", loaded: 0, total: null });
@@ -1291,7 +1332,9 @@ const HandScanner = forwardRef<
       const regions: ScanReviewRegion[] = [];
       for (const source of sources) {
         const box = letterbox(source);
-        const { detections } = await detectTiles(box, setScanProgress);
+        const { detections } = await detectTiles(box, (p) => {
+          if (scanGeneration.current === myGeneration) setScanProgress(p);
+        });
         // letterbox() centers the (scaled-down) source inside an IMG_SIZE
         // square, padding the rest gray - the model needs that square, but
         // showing the padding in the review UI just wastes space. Crop the
@@ -1323,14 +1366,18 @@ const HandScanner = forwardRef<
           })),
         });
       }
+      if (scanGeneration.current !== myGeneration) return; // reset mid-scan - drop the result
       setScanPreview({ regions });
       setScanStatus("review");
     } catch (err) {
+      if (scanGeneration.current !== myGeneration) return;
       setScanError(err instanceof Error ? err.message : "Could not scan that photo");
       setScanStatus("error");
     } finally {
-      setScanProgress(null);
-      setCropImage(null);
+      if (scanGeneration.current === myGeneration) {
+        setScanProgress(null);
+        setCropImage(null);
+      }
     }
   };
 
@@ -2531,6 +2578,12 @@ function ScoringPanel() {
   // rather than HandScanner's own built-in one - see HandScannerHandle.
   const handScannerRef = useRef<HandScannerHandle>(null);
   const [scanBusy, setScanBusy] = useState(false);
+  // Broader than scanBusy - also true while the scan flow is sitting on a
+  // finished review or an error, not just mid-crop/mid-detect. Keeps Reset
+  // enabled through the whole scan flow (see handleReset below, which also
+  // cancels it) even when the hand itself is still empty and would
+  // otherwise leave Reset looking like there's nothing to do.
+  const [scanActive, setScanActive] = useState(false);
   // Each tile-picker grid (declared melds, bonus tiles, concealed hand)
   // can be collapsed independently to reclaim vertical space once its
   // tiles are already picked - the already-added melds/hand display
@@ -2666,6 +2719,7 @@ function ScoringPanel() {
     setKongDraw(0);
     setRobKong(0);
     setManualVisibleExhaust("none");
+    handScannerRef.current?.reset();
   };
 
   // A scanned detection's meaning for the declared-melds region: a real
@@ -2871,7 +2925,8 @@ function ScoringPanel() {
             flowerDraw === 0 &&
             kongDraw === 0 &&
             robKong === 0 &&
-            manualVisibleExhaust === "none"
+            manualVisibleExhaust === "none" &&
+            !scanActive
           }
         >
           Reset
@@ -2888,6 +2943,7 @@ function ScoringPanel() {
         ref={handScannerRef}
         hideTrigger
         onBusyChange={setScanBusy}
+        onActiveChange={setScanActive}
         regionLabels={["Concealed", "Declared"]}
         regionIssue={declaredRegionIssue}
         onConfirm={applyScannedRegions}
