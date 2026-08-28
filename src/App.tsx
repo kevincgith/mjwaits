@@ -2820,13 +2820,22 @@ function ScoringPanel() {
   const toggleWinningTile = (tile: HandTile) =>
     setWinningTile((prev) => (prev && prev.id === tile.id ? null : tile));
 
+  // 花摸/槓摸 both mean the winning tile was a replacement tile the player
+  // themselves drew (after a flower, or after a kong) - that's inherently a
+  // self-draw, so either one being declared forces 自摸 on regardless of its
+  // own manual state (but 搶槓 deliberately does NOT - robbing a kong is won
+  // off another player's discard-equivalent declaration, the opposite of a
+  // self-draw). See the 自摸 button below for the other half of this: tapping
+  // it off while forced on this way cascades back to turning 花摸/槓摸 off too.
+  const effectiveSelfDraw = selfDraw || flowerDraw > 0 || kongDraw > 0;
+
   // scoring.ts only cares about the winning tile's kind (see GameContext's
   // doc comment there) - the id above exists purely to disambiguate which
   // instance the UI highlights.
   const ctx: GameContext = {
     seatWind,
     roundWind,
-    selfDraw,
+    selfDraw: effectiveSelfDraw,
     winningTile,
     riichi,
     instantWin,
@@ -3100,10 +3109,21 @@ function ScoringPanel() {
       <div className="scoring-context">
         <button
           type="button"
-          className={selfDraw ? "toggle-on" : undefined}
-          aria-pressed={selfDraw}
-          onClick={() => setSelfDraw((s) => !s)}
-          title="自摸 - self-draw vs won off a discard"
+          className={effectiveSelfDraw ? "toggle-on" : undefined}
+          aria-pressed={effectiveSelfDraw}
+          onClick={() => {
+            if (effectiveSelfDraw) {
+              // Turning off while forced/held on by 花摸 or 槓摸 cascades to
+              // turning those off too, not just flip the (possibly already
+              // false) manual flag and leave 自摸 stuck on regardless.
+              setSelfDraw(false);
+              setFlowerDraw(0);
+              setKongDraw(0);
+            } else {
+              setSelfDraw(true);
+            }
+          }}
+          title="自摸 - self-draw vs won off a discard (also turned on by 花摸/槓摸 - turning it off then also turns those off)"
         >
           自摸
         </button>
