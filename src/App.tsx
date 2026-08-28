@@ -2280,11 +2280,9 @@ const LAST_TILE_WIN_LABELS: Record<LastTileWinState, string> = {
   "sea-bottom": "海底撈月",
   "sea-bottom-one-tong": "海底撈月(一筒)",
 };
-// The two 海底撈月 variants are self-drawing the last wall tile - inherently
-// a self-draw, same as 花摸/槓摸 - while 河底撈魚 is claiming someone else's
-// last discard, so it's deliberately excluded here (same as 搶槓/雙響/三響
-// are their own separate, mutually-exclusive-with-自摸 case, not this one).
-const isSelfDrawLastTileWin = (s: LastTileWinState): boolean => s === "sea-bottom" || s === "sea-bottom-one-tong";
+// All 3 lastTileWin states (per this house rule, including 河底撈魚) force
+// 自摸 on - only "none" doesn't.
+const isSelfDrawLastTileWin = (s: LastTileWinState): boolean => s !== "none";
 
 // 花摸/槓摸/搶槓 cycle through a plain count instead of named states - tap
 // advances 0 -> 1 -> ... -> max -> 0. Label shows "花摸xN" once N > 0, or
@@ -2537,16 +2535,16 @@ function ScoringPanel() {
   const [instantWin, setInstantWin] = useState(false);
   const [eatRiichi, setEatRiichi] = useState(false);
   // Tapping 叮 advances it through none -> 叮 -> 天叮 -> 地叮 -> none...;
-  // 一發/食叮 only make sense once riichi is declared, so stepping back to
-  // "none" resets both rather than leaving a stale true value that could
-  // never be un-toggled once their buttons disappear from the UI.
+  // 一發 only makes sense once riichi is declared, so stepping back to
+  // "none" resets it rather than leaving a stale true value that could
+  // never be un-toggled once its button disappears from the UI. 食叮 has
+  // its own always-visible button (see below) with no such visibility gap,
+  // so it's left alone here - it just scores 0 while riichi is "none",
+  // same as any other declared-but-inapplicable toggle in this panel.
   const cycleRiichi = () => {
     setRiichi((prev) => {
       const next = RIICHI_CYCLE[(RIICHI_CYCLE.indexOf(prev) + 1) % RIICHI_CYCLE.length];
-      if (next === "none") {
-        setInstantWin(false);
-        setEatRiichi(false);
-      }
+      if (next === "none") setInstantWin(false);
       return next;
     });
   };
@@ -2588,14 +2586,15 @@ function ScoringPanel() {
   const [flowerDraw, setFlowerDraw] = useState(0);
   const [kongDraw, setKongDraw] = useState(0);
   const [robKong, setRobKong] = useState(0);
-  // 自摸 (incl. its 花摸/槓摸/海底撈月/天胡-forced form) and {搶槓, 雙響/三響,
-  // 地胡} are mutually exclusive - the latter group all mean the win was
-  // claimed off another player (robbing a kong, multiple players claiming
-  // the same discard, or - per this house rule - 地胡 being won off the
-  // very first discard), the opposite of a self-draw. Activating either
-  // group clears every self-draw-implying/claimed-win-implying field in the
-  // other, rather than letting the two silently coexist as a contradictory
-  // state.
+  // 自摸 (incl. its 花摸/槓摸/河底撈魚/海底撈月/天胡-forced form) and {搶槓,
+  // 雙響/三響, 地胡, 食叮} are mutually exclusive - the latter group all mean
+  // the win was claimed off another player (robbing a kong, multiple players
+  // claiming the same discard, this house rule's 地胡 being won off the very
+  // first discard, or 食叮 - eating straight into the completed hand off a
+  // discard once 叮 is declared), the opposite of a self-draw. Activating
+  // either group clears every self-draw-implying/claimed-win-implying field
+  // in the other, rather than letting the two silently coexist as a
+  // contradictory state.
   const deactivateSelfDrawGroup = () => {
     setSelfDraw(false);
     setFlowerDraw(0);
@@ -2607,6 +2606,7 @@ function ScoringPanel() {
     setRobKong(0);
     setMultiWin("none");
     if (heavenlyWin === "earth") setHeavenlyWin("none");
+    setEatRiichi(false);
   };
   const cycleMultiWin = () => {
     const next = MULTI_WIN_CYCLE[(MULTI_WIN_CYCLE.indexOf(multiWin) + 1) % MULTI_WIN_CYCLE.length];
@@ -2892,12 +2892,12 @@ function ScoringPanel() {
   const toggleWinningTile = (tile: HandTile) =>
     setWinningTile((prev) => (prev && prev.id === tile.id ? null : tile));
 
-  // 花摸/槓摸 (declared at all), 海底撈月/海底撈月(一筒) (the two self-drawing
-  // lastTileWin variants, not 河底撈魚), and 天胡 all mean the winning tile
-  // was drawn by the player themselves - inherently a self-draw - so any of
-  // them forces 自摸 on regardless of its own manual state (but 搶槓/雙響/
-  // 三響/地胡 deliberately do NOT - see deactivateSelfDrawGroup/
-  // deactivateClaimedWinGroup above for the full mutual-exclusion wiring).
+  // 花摸/槓摸 (declared at all), any of 河底撈魚/海底撈月/海底撈月(一筒), and
+  // 天胡 all force 自摸 on regardless of its own manual state (per this
+  // house rule - see isSelfDrawLastTileWin's own comment for 河底撈魚
+  // specifically) - but 搶槓/雙響/三響/地胡 deliberately do NOT (see
+  // deactivateSelfDrawGroup/deactivateClaimedWinGroup above for the full
+  // mutual-exclusion wiring).
   // See the 自摸 button below for the other half of this: tapping it off
   // while forced on this way cascades back through deactivateSelfDrawGroup.
   const effectiveSelfDraw =
@@ -3187,18 +3187,19 @@ function ScoringPanel() {
           aria-pressed={effectiveSelfDraw}
           onClick={() => {
             if (effectiveSelfDraw) {
-              // Turning off while forced/held on by 花摸/槓摸/海底撈月/天胡
-              // cascades to turning those off too (see deactivateSelfDrawGroup),
-              // not just flip the (possibly already false) manual flag and
-              // leave 自摸 stuck on regardless. 河底撈魚/人胡 are untouched -
-              // neither forces 自摸 on in the first place.
+              // Turning off while forced/held on by 花摸/槓摸/河底撈魚/
+              // 海底撈月/海底撈月(一筒)/天胡 cascades to turning those off
+              // too (see deactivateSelfDrawGroup), not just flip the
+              // (possibly already false) manual flag and leave 自摸 stuck
+              // on regardless. 人胡 is untouched - it doesn't force 自摸 on
+              // in the first place.
               deactivateSelfDrawGroup();
             } else {
               setSelfDraw(true);
               deactivateClaimedWinGroup();
             }
           }}
-          title="自摸 - self-draw vs won off a discard (also turned on by 花摸/槓摸/海底撈月/天胡, and mutually exclusive with 搶槓/雙響/三響/地胡 - turning any one of these on turns the others off)"
+          title="自摸 - self-draw vs won off a discard (also turned on by 花摸/槓摸/河底撈魚/海底撈月/天胡, and mutually exclusive with 搶槓/雙響/三響/地胡/食叮 - turning any one of these on turns the others off)"
         >
           自摸
         </button>
@@ -3212,27 +3213,32 @@ function ScoringPanel() {
           {RIICHI_LABELS[riichi]}
         </button>
         {riichi !== "none" && (
-          <>
-            <button
-              type="button"
-              className={instantWin ? "toggle-on" : undefined}
-              aria-pressed={instantWin}
-              onClick={() => setInstantWin((w) => !w)}
-              title="一發 - the hand completed within the immediate round after declaring - adds 5 tai"
-            >
-              一發
-            </button>
-            <button
-              type="button"
-              className={eatRiichi ? "toggle-on" : undefined}
-              aria-pressed={eatRiichi}
-              onClick={() => setEatRiichi((e) => !e)}
-              title="食叮 - adds 5 tai"
-            >
-              食叮
-            </button>
-          </>
+          <button
+            type="button"
+            className={instantWin ? "toggle-on" : undefined}
+            aria-pressed={instantWin}
+            onClick={() => setInstantWin((w) => !w)}
+            title="一發 - the hand completed within the immediate round after declaring - adds 5 tai"
+          >
+            一發
+          </button>
         )}
+        <button
+          type="button"
+          className={eatRiichi ? "toggle-on" : undefined}
+          aria-pressed={eatRiichi}
+          onClick={() => {
+            const next = !eatRiichi;
+            setEatRiichi(next);
+            // Eating into the completed hand off a discard is a claimed
+            // win, mutually exclusive with self-draw - see
+            // deactivateSelfDrawGroup's own comment.
+            if (next) deactivateSelfDrawGroup();
+          }}
+          title="食叮 - adds 5 tai (only counts while 叮 is declared); mutually exclusive with 自摸/花摸/槓摸/河底撈魚/海底撈月/天胡"
+        >
+          食叮
+        </button>
         <button
           type="button"
           className={earlyWin !== "none" ? "toggle-on" : undefined}
@@ -3265,7 +3271,7 @@ function ScoringPanel() {
           className={lastTileWin !== "none" ? "toggle-on" : undefined}
           aria-pressed={lastTileWin !== "none"}
           onClick={cycleLastTileWin}
-          title="Tap to cycle 河底撈魚(5) / 海底撈月(10) / 海底撈月一筒(20) / off - 海底撈月/海底撈月(一筒) also turn on 自摸 (deactivating 搶槓/雙響/三響/地胡); also mutually exclusive with 四子內/七子內/十子內"
+          title="Tap to cycle 河底撈魚(5) / 海底撈月(10) / 海底撈月一筒(20) / off - any of these also turn on 自摸 (deactivating 搶槓/雙響/三響/地胡); also mutually exclusive with 四子內/七子內/十子內"
         >
           {LAST_TILE_WIN_LABELS[lastTileWin]}
         </button>
