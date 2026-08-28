@@ -3271,44 +3271,44 @@ function ScoringPanel() {
         </>
       )}
 
-      {declaredMelds.length === 0 && bonusTiles.length === 0 ? (
-        !declaredPickerCollapsed && (
-          <span className="hint">Tap a tile above to add a declared meld (called triplet/run, or a kong) or a bonus tile.</span>
-        )
-      ) : (
-        <div className="hand-display breakdown-groups">
-          {bonusTiles.length > 0 && (
-            <div className="breakdown-group bonus-tile-group">
-              {bonusTiles.map((tile) => (
-                <button
-                  type="button"
-                  key={`${tile.kind}${tile.rank}`}
-                  className="bonus-tile-remove"
-                  onClick={() => removeBonusTile(tile)}
-                  title={`${bonusTileLabel(tile)} - tap to remove`}
-                >
-                  <span className="tile-glyph large" data-suit="bonus">
-                    {bonusTileGlyph(tile)}
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
-          {declaredMelds.map((meld) => (
-            <button
-              type="button"
-              key={meld.id}
-              className={meld.concealed ? "breakdown-group concealed-kong-meld meld-remove" : "breakdown-group meld-remove"}
-              onClick={() => removeMeld(meld.id)}
-              title={`${meld.kind}${meld.concealed ? " (concealed kong)" : ""} - tap to remove`}
-            >
-              {meld.tiles.map((t, j) => (
-                <TileGlyphSpan key={j} tile={t} large />
-              ))}
-            </button>
-          ))}
-        </div>
-      )}
+      <div className="hand-display breakdown-groups">
+        {declaredMelds.length === 0 && bonusTiles.length === 0 ? (
+          <span className="hint">Tap tiles to add declared melds.</span>
+        ) : (
+          <>
+            {bonusTiles.length > 0 && (
+              <div className="breakdown-group bonus-tile-group">
+                {bonusTiles.map((tile) => (
+                  <button
+                    type="button"
+                    key={`${tile.kind}${tile.rank}`}
+                    className="bonus-tile-remove"
+                    onClick={() => removeBonusTile(tile)}
+                    title={`${bonusTileLabel(tile)} - tap to remove`}
+                  >
+                    <span className="tile-glyph large" data-suit="bonus">
+                      {bonusTileGlyph(tile)}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {declaredMelds.map((meld) => (
+              <button
+                type="button"
+                key={meld.id}
+                className={meld.concealed ? "breakdown-group concealed-kong-meld meld-remove" : "breakdown-group meld-remove"}
+                onClick={() => removeMeld(meld.id)}
+                title={`${meld.kind}${meld.concealed ? " (concealed kong)" : ""} - tap to remove`}
+              >
+                {meld.tiles.map((t, j) => (
+                  <TileGlyphSpan key={j} tile={t} large />
+                ))}
+              </button>
+            ))}
+          </>
+        )}
+      </div>
 
       <div className="panel-header">
         <span className="panel-title">手牌區 (Concealed hand)</span>
@@ -3336,7 +3336,7 @@ function ScoringPanel() {
 
       <div className="hand-display">
         {concealedTiles.length === 0 ? (
-          !concealedPickerCollapsed && <span className="hint">Tap tiles above for the tiles still in your hand.</span>
+          <span className="hint">Tap tiles above for the tiles still in your hand.</span>
         ) : (
           // While near-complete, the tile that completes the hand isn't in
           // hand yet - each projected wait supplies its own 食胡 tile - so the
