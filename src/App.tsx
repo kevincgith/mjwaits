@@ -2543,11 +2543,11 @@ function ProjectedWaitRow({ projected, declaredCount }: { projected: ProjectedWa
         aria-expanded={expanded}
         aria-label={`${tileLabel(wait)} — ${result ? `${result.total} tai` : "not scoreable"}, tap for breakdown`}
       >
+        <TileGlyphSpan tile={wait} large />
+        <span className="projected-wait-tai">{result ? `${result.total} tai` : "—"}</span>
         <span className="projected-wait-caret" aria-hidden="true">
           {expanded ? "▾" : "▸"}
         </span>
-        <TileGlyphSpan tile={wait} large />
-        <span className="projected-wait-tai">{result ? `${result.total} tai` : "—"}</span>
       </button>
       {expanded &&
         (error ? (

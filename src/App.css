@@ -673,13 +673,10 @@ h1 {
 }
 
 .projected-wait {
-  border-top: 1px solid #ede9d8;
-  padding-top: 0.4rem;
-}
-
-.projected-wait:first-of-type {
-  border-top: none;
-  padding-top: 0;
+  background: #fff;
+  border: 1px solid #ede9d8;
+  border-radius: 6px;
+  padding: 0.35rem 0.6rem;
 }
 
 .projected-wait-head {
@@ -689,11 +686,20 @@ h1 {
   width: 100%;
   background: transparent;
   border: none;
-  padding: 0.2rem 0;
+  padding: 0.15rem 0;
   cursor: pointer;
   font: inherit;
   color: inherit;
   text-align: left;
+}
+
+/* Tai value and the toggle caret sit together at the right edge; the wait
+   tile stays at the left. */
+.projected-wait-tai {
+  margin-left: auto;
+  font-weight: 600;
+  color: #1a5fb4;
+  white-space: nowrap;
 }
 
 .projected-wait-caret {
@@ -701,12 +707,7 @@ h1 {
   font-size: 0.8rem;
   width: 0.9rem;
   flex-shrink: 0;
-}
-
-.projected-wait-tai {
-  font-weight: 600;
-  color: #1a5fb4;
-  white-space: nowrap;
+  text-align: center;
 }
 
 /* The highlight can't just be background+outline directly on the glyph:
