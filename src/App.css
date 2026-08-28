@@ -663,6 +663,52 @@ h1 {
   white-space: nowrap;
 }
 
+/* Near-complete Scoring tab: one collapsible row per tenpai wait, each
+   showing the score the hand would land on if that tile completed it.
+   Stacks vertically full-width, like .discard-analysis. */
+.projected-waits {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.4rem;
+}
+
+.projected-wait {
+  border-top: 1px solid #ede9d8;
+  padding-top: 0.4rem;
+}
+
+.projected-wait:first-of-type {
+  border-top: none;
+  padding-top: 0;
+}
+
+.projected-wait-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  background: transparent;
+  border: none;
+  padding: 0.2rem 0;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+}
+
+.projected-wait-caret {
+  color: #999;
+  font-size: 0.8rem;
+  width: 0.9rem;
+  flex-shrink: 0;
+}
+
+.projected-wait-tai {
+  font-weight: 600;
+  color: #1a5fb4;
+  white-space: nowrap;
+}
+
 /* The highlight can't just be background+outline directly on the glyph:
    position/line-height only ever move the glyph's ink and its own box
    together as a rigid unit, but the ink sits well off-center *within* that
