@@ -376,6 +376,11 @@ concealed — see the [明/暗 concept](#the-明暗-openconcealed-concept). All 
   "other patterns that fit the spirit" named 混老頭 but not 混帶么, and 混帶么's "every non-honor
   meld has a terminal" doesn't reduce as cleanly to a flat check for 嚦咕嚦咕 (there's no "ordinary
   meld" concept there the way 十三么 has one).
+- **To do (open question for later): should 明/暗五雙逢 exclude 明/暗真雙般高?** 明/暗五雙逢 isn't
+  implemented yet; when it is, decide whether it should exclude 明真雙般高/暗真雙般高 (see their own
+  rows above) the way other broader/narrower pattern pairs in this table do, or whether the two
+  measure different enough shapes (逢 across suits at the same rank vs. 般高's same-suit duplicate
+  runs) to legitimately stack. Not resolved yet - flagged here rather than guessed.
 
 ### Assumptions made without explicit confirmation (flag if wrong)
 
