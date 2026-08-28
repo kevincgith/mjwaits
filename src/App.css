@@ -1406,18 +1406,20 @@ h1 {
   color: #444;
 }
 
-/* --seg: length of one stack along a wall; --tile: a single tile's depth seen
-   from the side. Each bar runs 18 * --seg long and is 2 * --tile deep (two
-   tiles high); the pinwheel offset is one bar-depth, so the whole figure is
-   (18 * --seg + 4 * --tile) square. */
+/* --seg: one stack's width along its wall (a tile seen face-on); --tile: a
+   single tile's height, so a bar is 2 * --tile deep (two tiles high). Each bar
+   runs 18 * --seg long. --jut is how far each bar pokes past its neighbour in
+   the pinwheel - three stacks' worth - so the whole figure is
+   (18 * --seg + --bar + --jut) square. */
 .wall {
-  --seg: 15px;
-  --tile: 10px;
+  --seg: 14px;
+  --tile: 19px;
   --bar: calc(2 * var(--tile));
   --len: calc(var(--seg) * 18);
+  --jut: calc(3 * var(--seg));
   position: relative;
-  width: calc(var(--len) + 2 * var(--bar));
-  height: calc(var(--len) + 2 * var(--bar));
+  width: calc(var(--len) + var(--bar) + var(--jut));
+  height: calc(var(--len) + var(--bar) + var(--jut));
   max-width: 100%;
   margin: 0.8rem auto 0;
 }
@@ -1427,19 +1429,19 @@ h1 {
 }
 
 .wall-top {
-  left: calc(2 * var(--bar));
-  top: var(--bar);
+  left: calc(var(--bar) + var(--jut));
+  top: var(--jut);
 }
 .wall-right {
   left: var(--len);
-  top: calc(2 * var(--bar));
+  top: calc(var(--bar) + var(--jut));
 }
 .wall-bottom {
   left: 0;
   top: var(--len);
 }
 .wall-left {
-  left: var(--bar);
+  left: var(--jut);
   top: 0;
 }
 
