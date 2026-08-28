@@ -2566,21 +2566,30 @@ function ScoringPanel() {
   // hand - inherently self-drawn); 地胡 forces it off (this house rule's
   // 地胡 is winning off the very first discard - claimed, not self-drawn,
   // joining 搶槓/雙響/三響's group); 人胡 is deliberately left unlinked
-  // either way. The deactivate helpers are called before setHeavenlyWin so
-  // this transition's own authoritative next value - set last - always
-  // wins over anything a helper's (stale, pre-transition) heavenlyWin check
-  // might otherwise clear it back to (see deactivateSelfDrawGroup/
-  // deactivateClaimedWinGroup below).
+  // either way. All 3 (天胡/地胡/人胡) are also mutually exclusive with
+  // 河底撈魚/海底撈月/海底撈月(一筒) - both describe extreme ends of the
+  // hand (won on essentially the very first tile vs. the very last one),
+  // so activating any of the 3 clears lastTileWin, same shape as
+  // cycleEarlyWin/cycleLastTileWin's own exclusion below. The deactivate
+  // helpers are called before setHeavenlyWin so this transition's own
+  // authoritative next value - set last - always wins over anything a
+  // helper's (stale, pre-transition) heavenlyWin check might otherwise
+  // clear it back to (see deactivateSelfDrawGroup/deactivateClaimedWinGroup
+  // below).
   const cycleHeavenlyWin = () => {
     const next = HEAVENLY_WIN_CYCLE[(HEAVENLY_WIN_CYCLE.indexOf(heavenlyWin) + 1) % HEAVENLY_WIN_CYCLE.length];
     if (next === "heaven") deactivateClaimedWinGroup();
     else if (next === "earth") deactivateSelfDrawGroup();
+    if (next !== "none") setLastTileWin("none");
     setHeavenlyWin(next);
   };
   const [lastTileWin, setLastTileWin] = useState<LastTileWinState>("none");
   const cycleLastTileWin = () => {
     const next = LAST_TILE_WIN_CYCLE[(LAST_TILE_WIN_CYCLE.indexOf(lastTileWin) + 1) % LAST_TILE_WIN_CYCLE.length];
-    if (next !== "none") setEarlyWin("none"); // see cycleEarlyWin's own comment
+    if (next !== "none") {
+      setEarlyWin("none"); // see cycleEarlyWin's own comment
+      setHeavenlyWin("none"); // mutually exclusive with 天胡/地胡/人胡 - see cycleHeavenlyWin's own comment
+    }
     setLastTileWin(next);
     if (!isSelfDrawLastTileWin(lastTileWin) && isSelfDrawLastTileWin(next)) deactivateClaimedWinGroup();
   };
@@ -3263,7 +3272,7 @@ function ScoringPanel() {
           className={heavenlyWin !== "none" ? "toggle-on" : undefined}
           aria-pressed={heavenlyWin !== "none"}
           onClick={cycleHeavenlyWin}
-          title="Tap to cycle 天胡(160) / 地胡(120) / 人胡(80) / off - 天胡 also turns on 自摸 (deactivating 搶槓/雙響/三響/地胡), 地胡 also turns off 自摸"
+          title="Tap to cycle 天胡(160) / 地胡(120) / 人胡(80) / off - 天胡 also turns on 自摸 (deactivating 搶槓/雙響/三響/地胡), 地胡 also turns off 自摸; all 3 are mutually exclusive with 河底撈魚/海底撈月/海底撈月(一筒)"
         >
           {HEAVENLY_WIN_LABELS[heavenlyWin]}
         </button>
@@ -3272,7 +3281,7 @@ function ScoringPanel() {
           className={lastTileWin !== "none" ? "toggle-on" : undefined}
           aria-pressed={lastTileWin !== "none"}
           onClick={cycleLastTileWin}
-          title="Tap to cycle 河底撈魚(5) / 海底撈月(10) / 海底撈月一筒(20) / off - any of these also turn on 自摸 (deactivating 搶槓/雙響/三響/地胡); also mutually exclusive with 四子內/七子內/十子內"
+          title="Tap to cycle 河底撈魚(5) / 海底撈月(10) / 海底撈月一筒(20) / off - any of these also turn on 自摸 (deactivating 搶槓/雙響/三響/地胡); also mutually exclusive with 四子內/七子內/十子內 and with 天胡/地胡/人胡"
         >
           {LAST_TILE_WIN_LABELS[lastTileWin]}
         </button>
