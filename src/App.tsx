@@ -3033,8 +3033,8 @@ function ScoringPanel() {
       />
 
       <div className="scoring-context">
-        <WindPicker label="Seat wind" value={seatWind} onChange={setSeatWind} />
         <WindPicker label="Round wind" value={roundWind} onChange={setRoundWind} />
+        <WindPicker label="Seat wind" value={seatWind} onChange={setSeatWind} />
       </div>
 
       <div className="panel-header">
