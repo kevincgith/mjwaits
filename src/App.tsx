@@ -2770,6 +2770,25 @@ function ScoringPanel() {
     const total = concealedRef.current.length + declaredRef.current.reduce((n, m) => n + m.tiles.length, 0);
     return total >= COMPLETE_SIZE + kongs;
   };
+  // How many tiles of "room" are left before the hand's required size
+  // (COMPLETE_SIZE + however many kongs are already declared) would be
+  // exceeded - unlike atCapRef (a single-tile check, correct for
+  // addConcealedTile which only ever adds one tile at a time), declaring a
+  // new meld adds 3 or 4 tiles in one go, so atCapRef alone isn't enough to
+  // stop one from being started too close to the cap: it only blocks once
+  // the hand is ALREADY full, not once there's merely too little room left
+  // for a WHOLE new meld to fit (e.g. 4 melds already declared plus 3+
+  // concealed tiles leaves only 2 slots for the 5th meld's minimum 3,
+  // but atCapRef alone wouldn't catch that). Every meld costs exactly 3 of
+  // this budget regardless of kind - a kong's 4th tile is exactly offset
+  // by the 1 extra tile it adds to the required size itself, so the "cost"
+  // for room-accounting purposes is the same 3 either way. Used as
+  // `meldRoomRef() < 3` to gate declaring any new meld at all.
+  const meldRoomRef = (): number => {
+    const kongs = declaredRef.current.filter((m) => m.kind === "kong").length;
+    const total = concealedRef.current.length + declaredRef.current.reduce((n, m) => n + m.tiles.length, 0);
+    return COMPLETE_SIZE + kongs - total;
+  };
 
   // Render-time counterpart of totalCopiesUsedRef, derived from state - used
   // only for `disabled` props (a UI hint that's correct as of the last
@@ -2786,6 +2805,8 @@ function ScoringPanel() {
   const totalTiles = concealedTiles.length + declaredMelds.reduce((n, m) => n + m.tiles.length, 0);
   const atCap = totalTiles >= requiredSize;
   const meldsFull = declaredMelds.length >= 5;
+  // Render-time counterpart of meldRoomRef - see its own comment.
+  const meldRoom = requiredSize - totalTiles;
   // Keeps 花摸/槓摸's declared counts from outliving their caps - e.g.
   // removing a declared kong after already cycling 槓摸 up to x2 would
   // otherwise leave a stale x2 sitting above the new (lower) kongCount
@@ -2811,7 +2832,7 @@ function ScoringPanel() {
   };
 
   const pushMeld = (kind: MeldKind, concealed: boolean, tiles: Tile[]) => {
-    if (atCapRef() || declaredRef.current.length >= 5) return;
+    if (meldRoomRef() < 3 || declaredRef.current.length >= 5) return;
     const next = [...declaredRef.current, { id: nextMeldId.current++, kind, concealed, tiles }];
     declaredRef.current = next;
     setDeclaredMelds(next);
@@ -2850,7 +2871,7 @@ function ScoringPanel() {
   };
 
   const canAddMeldTile = (tile: Tile): boolean => {
-    if (atCap || meldsFull) return false;
+    if (meldRoom < 3 || meldsFull) return false;
     if (meldKind === "triplet") return totalCopiesUsed(tile) + 3 <= 4;
     if (meldKind === "concealed-kong" || meldKind === "exposed-kong") return totalCopiesUsed(tile) === 0;
     // A run starting at rank 8 or 9 would need a rank 10 or 11 tile, which
