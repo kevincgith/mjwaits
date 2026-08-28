@@ -3606,10 +3606,15 @@ function ExchangePanel() {
   const tiles = Math.max(dice[1], 3);
   return (
     <>
-      <div className="dice-tray">
-        {faces.map((v, i) => (
-          <Die key={i} value={v} onBump={() => bumpDie(i)} disabled={rolling} />
-        ))}
+      <div className="dice-tray exchange-tray">
+        <div className="exchange-die">
+          <span className="exchange-die-label">Round</span>
+          <Die value={faces[0]} onBump={() => bumpDie(0)} disabled={rolling} />
+        </div>
+        <div className="exchange-die">
+          <span className="exchange-die-label">Tiles</span>
+          <Die value={faces[1]} onBump={() => bumpDie(1)} disabled={rolling} />
+        </div>
       </div>
 
       <button type="button" className="dice-roll" onClick={roll} disabled={rolling}>
@@ -3625,6 +3630,11 @@ function ExchangePanel() {
           <span className="waits-label">Tiles:</span>
           <span className="scoring-total-value">{tiles}</span>
         </div>
+      </div>
+
+      <div className="waits dice-total">
+        <span className="waits-label">Total:</span>
+        <span className="scoring-total-value">{round * tiles}</span>
       </div>
     </>
   );
