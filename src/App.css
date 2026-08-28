@@ -1337,6 +1337,38 @@ h1 {
 }
 
 /* Dice rolling tab */
+
+/* Sub-tab bar inside the Dice rolling tab - lighter than the top mode-tabs so
+   the nesting reads. */
+.sub-tabs {
+  margin-bottom: 0.75rem;
+}
+.sub-tabs button {
+  font-size: 0.8rem;
+  padding: 0.35rem 0.9rem;
+}
+.sub-tabs button.toggle-on {
+  background: #eaf1fb;
+  border-color: #1a5fb4;
+  color: #1a5fb4;
+}
+
+.sub-tab-placeholder {
+  margin: 0;
+  color: #888;
+  text-align: center;
+}
+
+/* Exchange-tiles sub-tab: one box per die, no total. */
+.dice-result-boxes {
+  display: flex;
+  gap: 1rem;
+}
+.dice-result-boxes .dice-total {
+  flex: 1;
+  margin-bottom: 0;
+}
+
 .dice-tray {
   display: flex;
   gap: 1rem;
