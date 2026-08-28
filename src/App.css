@@ -1335,6 +1335,69 @@ h1 {
   cursor: default;
 }
 
+/* Dice rolling tab */
+.dice-tray {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  margin-bottom: 1.25rem;
+}
+
+.die {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+  gap: 0.15rem;
+  width: 64px;
+  height: 64px;
+  padding: 0.5rem;
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 10px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+.die-empty {
+  background: #f7f7f7;
+}
+
+.die-cell {
+  display: block;
+}
+
+.die-pip {
+  display: block;
+  align-self: center;
+  justify-self: center;
+  width: 12px;
+  height: 12px;
+  background: #1a1a1a;
+  border-radius: 50%;
+}
+
+.dice-roll {
+  display: block;
+  margin: 0 auto 1rem;
+  padding: 0.6rem 1.4rem;
+  background: #1a5fb4;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.dice-roll:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.dice-total {
+  justify-content: center;
+  font-size: 1.1rem;
+}
+
 /* On phones, lay each suit row out as a fixed 9-column grid instead of a
    wrapping flex row - every row fills the width evenly with no ragged
    short rows (e.g. "8m/9m" spilling onto their own line), and honors

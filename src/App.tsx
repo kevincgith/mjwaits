@@ -3355,8 +3355,96 @@ function ScoringPanel() {
   );
 }
 
+// The pip layout for each die face, as grid cells (1-9, reading left-to-right,
+// top-to-bottom) that carry a pip. Rendered as a 3x3 grid so the pips land in
+// the familiar positions without a sprite.
+const DIE_PIPS: Record<number, number[]> = {
+  1: [5],
+  2: [3, 7],
+  3: [3, 5, 7],
+  4: [1, 3, 7, 9],
+  5: [1, 3, 5, 7, 9],
+  6: [1, 3, 4, 6, 7, 9],
+};
+
+function Die({ value }: { value: number }) {
+  const pips = DIE_PIPS[value] ?? [];
+  return (
+    <div className="die" role="img" aria-label={`Die showing ${value}`}>
+      {Array.from({ length: 9 }, (_, i) => (
+        <span key={i} className={pips.includes(i + 1) ? "die-pip" : "die-cell"} />
+      ))}
+    </div>
+  );
+}
+
+function DicePanel() {
+  const [dice, setDice] = useState<[number, number, number] | null>(null);
+  const [rolling, setRolling] = useState(false);
+  const rollTimer = useRef<number | null>(null);
+
+  useEffect(
+    () => () => {
+      if (rollTimer.current !== null) window.clearInterval(rollTimer.current);
+    },
+    []
+  );
+
+  const rollOnce = (): [number, number, number] => [
+    1 + Math.floor(Math.random() * 6),
+    1 + Math.floor(Math.random() * 6),
+    1 + Math.floor(Math.random() * 6),
+  ];
+
+  const roll = () => {
+    if (rolling) return;
+    setRolling(true);
+    let ticks = 0;
+    if (rollTimer.current !== null) window.clearInterval(rollTimer.current);
+    rollTimer.current = window.setInterval(() => {
+      setDice(rollOnce());
+      ticks += 1;
+      if (ticks >= 10) {
+        if (rollTimer.current !== null) window.clearInterval(rollTimer.current);
+        rollTimer.current = null;
+        setDice(rollOnce());
+        setRolling(false);
+      }
+    }, 60);
+  };
+
+  const total = dice ? dice[0] + dice[1] + dice[2] : null;
+
+  return (
+    <section className="panel dice-panel">
+      <div className="dice-tray">
+        {dice ? (
+          dice.map((v, i) => <Die key={i} value={v} />)
+        ) : (
+          <>
+            <div className="die die-empty" />
+            <div className="die die-empty" />
+            <div className="die die-empty" />
+          </>
+        )}
+      </div>
+
+      <button type="button" className="dice-roll" onClick={roll} disabled={rolling}>
+        {rolling ? "Rolling…" : "Roll the dice"}
+      </button>
+
+      {total !== null && !rolling && (
+        <div className="waits dice-total">
+          <span className="waits-label">Total:</span>
+          <span className="scoring-total-value">{total}</span>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function App() {
-  const [mode, setMode] = useState<"calculator" | "trainer" | "scoring">("calculator");
+  const [mode, setMode] = useState<"calculator" | "trainer" | "scoring" | "dice">("calculator");
   // Lifted above TrainerPanel so stats survive switching back to the
   // Calculator tab and back - TrainerPanel itself unmounts (and its other
   // state - the in-progress question, timer, etc. - resets) on every tab
@@ -3391,10 +3479,19 @@ function App() {
         >
           Scoring
         </button>
+        <button
+          type="button"
+          className={mode === "dice" ? "toggle-on" : undefined}
+          aria-pressed={mode === "dice"}
+          onClick={() => setMode("dice")}
+        >
+          Dice rolling
+        </button>
       </div>
       {mode === "calculator" && <Calculator />}
       {mode === "trainer" && <TrainerPanel stats={trainerStats} setStats={setTrainerStats} />}
       {mode === "scoring" && <ScoringPanel />}
+      {mode === "dice" && <DicePanel />}
       <footer className="build-version">v{__BUILD_TIME__}</footer>
     </div>
   );
