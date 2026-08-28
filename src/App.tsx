@@ -2266,14 +2266,31 @@ function meldPickerTiles(kind: MeldKind): Tile[] {
   return kind === "run" ? all.filter((t) => t.suit !== "z") : all;
 }
 
-// Unicode Mahjong Tiles block, immediately after circles (1F019-1F021) and
-// before Joker (1F02A, see mahjong.ts's own tileGlyph) - the 4 flowers
-// (Plum/Orchid/Bamboo/Chrysanthemum) then the 4 seasons (Spring/Summer/
-// Autumn/Winter), each block's rank order matching the seat wind it's
-// conventionally paired with (East/South/West/North).
-const FLOWER_CODEPOINTS: Record<1 | 2 | 3 | 4, number> = { 1: 0x1f022, 2: 0x1f023, 3: 0x1f024, 4: 0x1f025 };
+// Glyphs + English names for the 8 bonus tiles, keyed by `rank` = the NUMBER
+// PAINTED ON THE TILE. That painted number is what the vision model reports
+// (class "3f" etc., see classToBonusTile in vision.ts) and what 正花/爛花 pair
+// against the seat wind (scoring.ts) - so `rank` itself must always mean the
+// painted number; only the rank->codepoint map below bends to fit Unicode.
+//
+// Flowers, conventional numbering (as painted on a physical set, and how the
+// MahjongVis training data is labelled):
+//     梅1 Plum   蘭2 Orchid   菊3 Chrysanthemum   竹4 Bamboo
+// Flowers, Unicode "Mahjong Tiles" block order (right after circles 1F019-
+// 1F021, before Joker 1F02A):
+//     1F022 Plum   1F023 Orchid   1F024 Bamboo   1F025 Chrysanthemum
+// i.e. the block puts BAMBOO and CHRYSANTHEMUM in the opposite order to the
+// painted numbers - commonly described as an error in the block's ordering.
+// It's only the ordering: the codepoint *names*, and the fonts that follow
+// them (Apple Symbols / Noto Sans Symbols 2 / Segoe UI Symbol, our stack in
+// App.css), are self-consistent - 1F024 draws 竹, 1F025 draws 菊. So we map
+// rank 3 -> 1F025 and rank 4 -> 1F024 on purpose, so a scanned "3" tile
+// (chrysanthemum) renders as a chrysanthemum rather than as bamboo.
+//
+// Seasons have no such issue: painted 春1 夏2 秋3 冬4 matches the block order
+// 1F026-1F029 one-to-one, so SEASON_CODEPOINTS is a plain sequential map.
+const FLOWER_CODEPOINTS: Record<1 | 2 | 3 | 4, number> = { 1: 0x1f022, 2: 0x1f023, 3: 0x1f025, 4: 0x1f024 };
 const SEASON_CODEPOINTS: Record<1 | 2 | 3 | 4, number> = { 1: 0x1f026, 2: 0x1f027, 3: 0x1f028, 4: 0x1f029 };
-const FLOWER_NAMES: Record<1 | 2 | 3 | 4, string> = { 1: "Plum", 2: "Orchid", 3: "Bamboo", 4: "Chrysanthemum" };
+const FLOWER_NAMES: Record<1 | 2 | 3 | 4, string> = { 1: "Plum", 2: "Orchid", 3: "Chrysanthemum", 4: "Bamboo" };
 const SEASON_NAMES: Record<1 | 2 | 3 | 4, string> = { 1: "Spring", 2: "Summer", 3: "Autumn", 4: "Winter" };
 const BONUS_TEXT_PRESENTATION = "︎"; // see mahjong.ts's TEXT_PRESENTATION for why
 

@@ -110,6 +110,8 @@ readings are simultaneously valid.
 | 正花 (Correct flower) | 2 each | Once per bonus tile (flower or season) whose rank equals your seat wind. | — | **Stacks** — up to 2 instances possible (the flower and the season for your wind position). |
 | 爛花 (Wrong flower) | 2 each | Once per bonus tile (flower or season) whose rank does **not** equal your seat wind. | — | **Stacks.** Naturally disjoint from 無花/無字花 (both require zero bonus tiles), so no exclusion needed. |
 
+A bonus tile's `rank` (1–4) is the **number painted on the tile** — that's what the vision model reports and what the patterns above compare to the seat wind. Rendering it as a glyph has one quirk: the Unicode Mahjong Tiles block orders the flowers Plum/Orchid/**Bamboo**/**Chrysanthemum** (U+1F022–U+1F025), which is the *opposite* order to the conventional painted numbering 梅1/蘭2/**菊3**/**竹4** (Plum/Orchid/Chrysanthemum/Bamboo) — widely regarded as an error in the block's ordering. So `bonusTileGlyph` in `src/App.tsx` deliberately maps flower rank 3→U+1F025 and rank 4→U+1F024; seasons (春1/夏2/秋3/冬4 = U+1F026–U+1F029) need no such swap. None of this affects scoring, which only ever reads `rank`.
+
 ## Suit purity
 
 | Pattern | Tai | Criteria | Excludes | Notes |
