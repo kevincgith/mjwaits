@@ -3379,28 +3379,41 @@ function Die({ value }: { value: number }) {
 }
 
 // The built wall, playing with bonus tiles: 136 + 8 = 144 tiles, stacked two
-// high into 72 stacks, split evenly across the four seats' walls = 4 rows of
-// 18 stacks. U+1F02B is MAHJONG TILE BACK.
-const WALL_ROWS = 4;
-const WALL_STACKS_PER_ROW = 18;
-const TILE_BACK = "\u{1F02B}";
+// high into 72 stacks, split evenly across the four seats' walls = 18 stacks
+// per side. The four bars are offset in a pinwheel (each bar's far end juts
+// one wall-thickness past its neighbour, the near end butts against the next),
+// which is how a real wall is pushed together before the deal.
+const WALL_STACKS_PER_SIDE = 18;
+
+function WallBar({ orientation }: { orientation: "h" | "v" }) {
+  return (
+    <div className={`wall-bar wall-bar-${orientation}`}>
+      {Array.from({ length: WALL_STACKS_PER_SIDE }, (_, i) => (
+        <div className="wall-seg" key={i} />
+      ))}
+    </div>
+  );
+}
 
 function Wall() {
   return (
     <div
       className="wall"
       role="img"
-      aria-label={`Built mahjong wall: ${WALL_ROWS} rows of ${WALL_STACKS_PER_ROW} tile stacks`}
+      aria-label={`Built mahjong wall: four bars of ${WALL_STACKS_PER_SIDE} tile stacks in a pinwheel`}
     >
-      {Array.from({ length: WALL_ROWS }, (_, r) => (
-        <div className="wall-row" key={r}>
-          {Array.from({ length: WALL_STACKS_PER_ROW }, (_, c) => (
-            <span className="wall-tile" key={c}>
-              {TILE_BACK}
-            </span>
-          ))}
-        </div>
-      ))}
+      <div className="wall-bar-slot wall-top">
+        <WallBar orientation="h" />
+      </div>
+      <div className="wall-bar-slot wall-right">
+        <WallBar orientation="v" />
+      </div>
+      <div className="wall-bar-slot wall-bottom">
+        <WallBar orientation="h" />
+      </div>
+      <div className="wall-bar-slot wall-left">
+        <WallBar orientation="v" />
+      </div>
     </div>
   );
 }
@@ -3467,7 +3480,7 @@ function DicePanel() {
         </div>
       )}
 
-      <div className="wall-section-label">Wall ({WALL_ROWS} × {WALL_STACKS_PER_ROW} stacks)</div>
+      <div className="wall-section-label">Wall ({WALL_STACKS_PER_SIDE} stacks per side)</div>
       <Wall />
     </section>
   );

@@ -94,6 +94,7 @@ h1 {
 
 .mode-tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.5rem;
   margin-bottom: 1rem;
 }
@@ -1405,27 +1406,67 @@ h1 {
   color: #444;
 }
 
+/* --seg: length of one stack along a wall; --thick: a wall's depth seen from
+   the side. Each bar is 18 * --seg long; the pinwheel offset is one --thick,
+   so the whole figure is (18 * --seg + 2 * --thick) square. */
 .wall {
-  margin-top: 0.6rem;
+  --seg: 16px;
+  --thick: 16px;
+  --len: calc(var(--seg) * 18);
+  position: relative;
+  width: calc(var(--len) + 2 * var(--thick));
+  height: calc(var(--len) + 2 * var(--thick));
+  max-width: 100%;
+  margin: 0.8rem auto 0;
+}
+
+.wall-bar-slot {
+  position: absolute;
+}
+
+.wall-top {
+  left: calc(2 * var(--thick));
+  top: var(--thick);
+}
+.wall-right {
+  left: var(--len);
+  top: calc(2 * var(--thick));
+}
+.wall-bottom {
+  left: 0;
+  top: var(--len);
+}
+.wall-left {
+  left: var(--thick);
+  top: 0;
+}
+
+.wall-bar {
   display: flex;
+  box-sizing: border-box;
+  background: #2b6b3f;
+  border: 1px solid #1c4c2b;
+}
+.wall-bar-h {
+  flex-direction: row;
+  width: var(--len);
+  height: var(--thick);
+}
+.wall-bar-v {
   flex-direction: column;
-  align-items: center;
-  gap: 0.35rem;
-  overflow-x: auto;
+  width: var(--thick);
+  height: var(--len);
 }
 
-.wall-row {
-  display: flex;
-  flex-wrap: nowrap;
-  gap: 0.05rem;
+.wall-seg {
+  flex: 1;
+  box-sizing: border-box;
 }
-
-.wall-tile {
-  font-family: "Apple Symbols", "Segoe UI Symbol", "Noto Sans Symbols 2", sans-serif;
-  font-size: 2rem;
-  line-height: 1;
-  font-variant-emoji: text;
-  color: #2b6b3f;
+.wall-bar-h .wall-seg + .wall-seg {
+  border-left: 1px solid rgba(255, 255, 255, 0.55);
+}
+.wall-bar-v .wall-seg + .wall-seg {
+  border-top: 1px solid rgba(255, 255, 255, 0.55);
 }
 
 /* On phones, lay each suit row out as a fixed 9-column grid instead of a
