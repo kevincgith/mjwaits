@@ -3378,6 +3378,33 @@ function Die({ value }: { value: number }) {
   );
 }
 
+// The built wall, playing with bonus tiles: 136 + 8 = 144 tiles, stacked two
+// high into 72 stacks, split evenly across the four seats' walls = 4 rows of
+// 18 stacks. U+1F02B is MAHJONG TILE BACK.
+const WALL_ROWS = 4;
+const WALL_STACKS_PER_ROW = 18;
+const TILE_BACK = "\u{1F02B}";
+
+function Wall() {
+  return (
+    <div
+      className="wall"
+      role="img"
+      aria-label={`Built mahjong wall: ${WALL_ROWS} rows of ${WALL_STACKS_PER_ROW} tile stacks`}
+    >
+      {Array.from({ length: WALL_ROWS }, (_, r) => (
+        <div className="wall-row" key={r}>
+          {Array.from({ length: WALL_STACKS_PER_ROW }, (_, c) => (
+            <span className="wall-tile" key={c}>
+              {TILE_BACK}
+            </span>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function DicePanel() {
   const [dice, setDice] = useState<[number, number, number] | null>(null);
   const [rolling, setRolling] = useState(false);
@@ -3439,6 +3466,9 @@ function DicePanel() {
           <span className="scoring-total-value">{total}</span>
         </div>
       )}
+
+      <div className="wall-section-label">Wall ({WALL_ROWS} × {WALL_STACKS_PER_ROW} stacks)</div>
+      <Wall />
     </section>
   );
 }

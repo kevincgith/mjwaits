@@ -1398,6 +1398,36 @@ h1 {
   font-size: 1.1rem;
 }
 
+.wall-section-label {
+  margin-top: 1.5rem;
+  text-align: center;
+  font-weight: 600;
+  color: #444;
+}
+
+.wall {
+  margin-top: 0.6rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  overflow-x: auto;
+}
+
+.wall-row {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0.05rem;
+}
+
+.wall-tile {
+  font-family: "Apple Symbols", "Segoe UI Symbol", "Noto Sans Symbols 2", sans-serif;
+  font-size: 2rem;
+  line-height: 1;
+  font-variant-emoji: text;
+  color: #2b6b3f;
+}
+
 /* On phones, lay each suit row out as a fixed 9-column grid instead of a
    wrapping flex row - every row fills the width evenly with no ragged
    short rows (e.g. "8m/9m" spilling onto their own line), and honors
