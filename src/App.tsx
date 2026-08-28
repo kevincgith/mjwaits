@@ -2623,13 +2623,20 @@ function ScoringPanel() {
     setMultiWin(next);
     if (multiWin === "none" && next !== "none") deactivateSelfDrawGroup();
   };
+  // 花摸's cap is however many bonus tiles are actually in the hand right
+  // now (can't have flowered into more replacement tiles than bonus tiles
+  // drawn), and 槓摸's is however many kongs are actually declared (see
+  // `kongCount` below) - both computed live off the current hand rather
+  // than the fixed 8/5 ceilings used before. A separate effect (below,
+  // after those are computed) clamps the count down if the hand changes
+  // out from under an already-declared value.
   const cycleFlowerDraw = () => {
-    const next = cycleCount(flowerDraw, 8);
+    const next = cycleCount(flowerDraw, bonusTiles.length);
     setFlowerDraw(next);
     if (flowerDraw === 0 && next > 0) deactivateClaimedWinGroup();
   };
   const cycleKongDraw = () => {
-    const next = cycleCount(kongDraw, 5);
+    const next = cycleCount(kongDraw, kongCount);
     setKongDraw(next);
     if (kongDraw === 0 && next > 0) deactivateClaimedWinGroup();
   };
@@ -2712,6 +2719,16 @@ function ScoringPanel() {
   const totalTiles = concealedTiles.length + declaredMelds.reduce((n, m) => n + m.tiles.length, 0);
   const atCap = totalTiles >= requiredSize;
   const meldsFull = declaredMelds.length >= 5;
+  // Keeps 花摸/槓摸's declared counts from outliving their caps - e.g.
+  // removing a declared kong after already cycling 槓摸 up to x2 would
+  // otherwise leave a stale x2 sitting above the new (lower) kongCount
+  // until the button happened to be tapped again.
+  useEffect(() => {
+    setFlowerDraw((c) => Math.min(c, bonusTiles.length));
+  }, [bonusTiles.length]);
+  useEffect(() => {
+    setKongDraw((c) => Math.min(c, kongCount));
+  }, [kongCount]);
 
   const addConcealedTile = (tile: Tile) => {
     if (atCapRef() || totalCopiesUsedRef(tile) >= 4) return;
@@ -3289,8 +3306,13 @@ function ScoringPanel() {
           type="button"
           className={flowerDraw > 0 ? "toggle-on" : undefined}
           aria-pressed={flowerDraw > 0}
+          disabled={bonusTiles.length === 0}
           onClick={cycleFlowerDraw}
-          title="Tap to cycle 花摸x0-x8 (2 tai each) - also turns on 自摸, deactivating 搶槓/雙響/三響"
+          title={
+            bonusTiles.length === 0
+              ? "花摸 - no bonus tiles in hand to have flowered off of"
+              : `Tap to cycle 花摸x0-x${bonusTiles.length} (2 tai each, capped at the ${bonusTiles.length} bonus tile${bonusTiles.length === 1 ? "" : "s"} in hand) - also turns on 自摸, deactivating 搶槓/雙響/三響`
+          }
         >
           {countLabel("花摸", flowerDraw)}
         </button>
@@ -3298,8 +3320,13 @@ function ScoringPanel() {
           type="button"
           className={kongDraw > 0 ? "toggle-on" : undefined}
           aria-pressed={kongDraw > 0}
+          disabled={kongCount === 0}
           onClick={cycleKongDraw}
-          title={`Tap to cycle 槓摸x0-x5 (tai: ${FIVE_POWER_TAI_TABLE.slice(1).join("/")}) - also turns on 自摸, deactivating 搶槓/雙響/三響`}
+          title={
+            kongCount === 0
+              ? "槓摸 - no kongs declared to have drawn a replacement tile for"
+              : `Tap to cycle 槓摸x0-x${kongCount} (tai: ${FIVE_POWER_TAI_TABLE.slice(1, kongCount + 1).join("/")}, capped at the ${kongCount} kong${kongCount === 1 ? "" : "s"} declared) - also turns on 自摸, deactivating 搶槓/雙響/三響`
+          }
         >
           {countLabel("槓摸", kongDraw)}
         </button>
