@@ -310,18 +310,33 @@ export function clusterRows(detections: Detection[]): Detection[][] {
 
 const clamp01 = (v: number): number => Math.min(1, Math.max(0, v));
 
-// A cluster containing 4 copies of the exact same tile is almost certainly
-// a declared kong (a random concealed 16-tile hand holding all 4 copies of
-// one kind, uncalled, is rare) - ignores bonus tiles (d.tile is null for
-// those, see classToTile) since a "kong" of flowers isn't a thing.
-function hasKong(row: Detection[]): boolean {
+// Groups a row's own real (non-bonus) tile detections by kind, counting
+// how many copies of each kind showed up - shared by hasKong/hasPair below,
+// which only differ in which count they're looking for.
+function tileKindCounts(row: Detection[]): number[] {
   const counts = new Map<string, number>();
   for (const d of row) {
     if (!d.tile) continue;
     const key = `${d.tile.suit}${d.tile.rank}`;
     counts.set(key, (counts.get(key) ?? 0) + 1);
   }
-  return [...counts.values()].some((n) => n >= 4);
+  return [...counts.values()];
+}
+
+// A cluster containing 4 copies of the exact same tile is almost certainly
+// a declared kong (a random concealed 16-tile hand holding all 4 copies of
+// one kind, uncalled, is rare).
+function hasKong(row: Detection[]): boolean {
+  return tileKindCounts(row).some((n) => n >= 4);
+}
+
+// The hand's pair (將眼) is always concealed - it's never callable/declared
+// (see scoring.ts's own ParsedScoringHand comment) - so a tile kind
+// appearing exactly twice (not 3+, which would already be a triplet/kong,
+// not a pair) is a signal toward Concealed, the opposite direction of
+// hasKong's own signal toward Declared.
+function hasPair(row: Detection[]): boolean {
+  return tileKindCounts(row).some((n) => n === 2);
 }
 
 // Bonus tiles (flowers/seasons) are always set aside next to the declared
@@ -376,10 +391,11 @@ export function findRotatedOutlier<T extends { box: [number, number, number, num
 
 // How "declared-looking" a row is, from its own detections alone - a kong
 // or a bonus tile each count as one point toward declared, a rotated
-// outlier tile counts one point toward concealed. Exported for direct unit
-// testing alongside the signals it's built from.
+// outlier tile or the hand's own pair each count one point toward
+// concealed. Exported for direct unit testing alongside the signals it's
+// built from.
 export function declarednessScore(row: Detection[]): number {
-  return (hasKong(row) ? 1 : 0) + (hasBonusTile(row) ? 1 : 0) - (findRotatedOutlier(row) ? 1 : 0);
+  return (hasKong(row) ? 1 : 0) + (hasBonusTile(row) ? 1 : 0) - (findRotatedOutlier(row) ? 1 : 0) - (hasPair(row) ? 1 : 0);
 }
 
 export interface DetectedRegions {

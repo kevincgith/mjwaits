@@ -124,6 +124,19 @@ describe("declarednessScore", () => {
     expect(declarednessScore([...upright, rotated])).toBe(-1);
   });
 
+  it("scores a pair (exactly 2 identical tiles) as -1 toward declared", () => {
+    const row = [
+      detection({ tile: { suit: "m", rank: 1 } }),
+      detection({ tile: { suit: "m", rank: 1 }, box: [40, 100, 80, 180] }),
+      detection({ tile: { suit: "m", rank: 2 }, box: [80, 100, 120, 180] }),
+    ];
+    expect(declarednessScore(row)).toBe(-1);
+  });
+
+  it("doesn't double-count a kong's own 4 copies as also being a pair", () => {
+    expect(declarednessScore(rowOfDetections(100, 180, 4))).toBe(1); // same fixture as the kong test above - still +1, not 0
+  });
+
   it("returns 0 for a plain row with no signals", () => {
     const row = [0, 1, 2].map((i) => detection({ tile: { suit: "m", rank: i + 1 }, box: [i * 40, 100, i * 40 + 40, 180] }));
     expect(declarednessScore(row)).toBe(0);
