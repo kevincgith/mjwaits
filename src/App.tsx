@@ -1184,9 +1184,13 @@ function CropOverlay({
             type="button"
             onClick={handleAutoFitClick}
             disabled={busy}
-            title="Re-run row detection against the current photo and re-fit the region(s) to whatever it finds - leaves them alone if it doesn't find a clean fit"
+            title={
+              autoFitting
+                ? "Autofitting…"
+                : "Autofit - re-run row detection against the current photo and re-fit the region(s) to whatever it finds; leaves them alone if it doesn't find a clean fit"
+            }
           >
-            {autoFitting ? "Autofit…" : "🪄 Autofit"}
+            🪄
           </button>
         </div>
         <div className="crop-actions-top-right">
@@ -1208,9 +1212,9 @@ function CropOverlay({
             type="button"
             onClick={swapRegions}
             disabled={busy || regions.length !== 2}
-            title="Swap which box is Concealed and which is Declared, without moving either one"
+            title="Swap regions - swap which box is Concealed and which is Declared, without moving either one"
           >
-            ⇄ Swap regions
+            ⇄
           </button>
           <button
             type="button"
