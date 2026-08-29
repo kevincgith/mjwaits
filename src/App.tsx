@@ -897,6 +897,21 @@ function nonOverlappingRegion(existing: CropRect, w: number, h: number): CropRec
   return { x: clamp(1 - w - 0.02, 0, 1 - w), y: clamp(1 - h - 0.02, 0, 1 - h), w, h };
 }
 
+// The lower of the 2 default boxes, computed once (nonOverlappingRegion is
+// pure, so this is deterministic) - shared by the crop overlay's initial
+// state, Reset, and post-rotate reset, all of which now default to 2
+// regions (most photos have both a concealed and a declared area to crop).
+// Kept as a stable reference, like DEFAULT_CROP itself, so a straight `===`
+// check (see the Reset button's `disabled` prop) still cheaply detects
+// "already at the default" instead of a deep-equality comparison.
+const DEFAULT_LOWER_CROP: CropRect = nonOverlappingRegion(DEFAULT_CROP, REGION_W, REGION_H);
+// Region 0 is always Concealed, region 1 always Declared (see
+// applyScannedRegions/declaredRegionIssue) - independent of that, this
+// controls which one starts on top: Declared (using DEFAULT_CROP's own
+// upper/centered position) above, Concealed (DEFAULT_LOWER_CROP) near the
+// bottom, matching the scan review's own Declared-before-Concealed order.
+const defaultCropRegions = (): CropRect[] => [DEFAULT_LOWER_CROP, DEFAULT_CROP];
+
 type CropDragMode = "move" | "nw" | "ne" | "sw" | "se";
 
 // Applies a pointer delta (in container-fraction units) to `start`, per
@@ -995,7 +1010,7 @@ function CropOverlay({
   onConfirm: (canvases: HTMLCanvasElement[]) => void;
   onCancel: () => void;
 }) {
-  const [regions, setRegions] = useState<CropRect[]>([DEFAULT_CROP]);
+  const [regions, setRegions] = useState<CropRect[]>(defaultCropRegions);
   // The image actually shown/measured/cropped - starts as the `image` prop
   // but is swapped out (via rotateImage) whenever the user rotates, never
   // mutating the prop itself. Rotating changes the aspect ratio for a
@@ -1031,7 +1046,7 @@ function CropOverlay({
     setRotating(true);
     try {
       setDisplayImage(await rotateImage(displayImage, clockwise));
-      setRegions([DEFAULT_CROP]);
+      setRegions(defaultCropRegions());
     } finally {
       setRotating(false);
     }
@@ -1068,7 +1083,7 @@ function CropOverlay({
   const toggleRegionCount = () =>
     setRegions((prev) => (prev.length >= MAX_REGIONS ? [prev[0]] : [...prev, nonOverlappingRegion(prev[0], REGION_W, REGION_H)]));
   const removeRegion = (index: number) => setRegions((prev) => prev.filter((_, i) => i !== index));
-  const resetRegions = () => setRegions([DEFAULT_CROP]);
+  const resetRegions = () => setRegions(defaultCropRegions());
 
   return (
     <div className="crop-overlay">
@@ -1102,7 +1117,11 @@ function CropOverlay({
           >
             {regions.length >= MAX_REGIONS ? "2 regions" : "+ Add region"}
           </button>
-          <button type="button" onClick={resetRegions} disabled={regions.length === 1 && regions[0] === DEFAULT_CROP}>
+          <button
+            type="button"
+            onClick={resetRegions}
+            disabled={regions.length === 2 && regions[0] === DEFAULT_LOWER_CROP && regions[1] === DEFAULT_CROP}
+          >
             Reset
           </button>
         </div>
