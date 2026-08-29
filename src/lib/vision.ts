@@ -274,9 +274,11 @@ const MIN_ROW_DETECTIONS = 3;
 // Slack added around each row's own tight bounding box, as a fraction of
 // that row's own width/height - rows are detected tile-tight, so this
 // gives the user a little visual context and tolerance for a missed edge
-// tile, rather than a razor-exact crop.
-const ROW_PAD_X = 0.03;
-const ROW_PAD_Y = 0.15;
+// tile, rather than a razor-exact crop. Kept generous - a bit of empty
+// margin around the tiles reads a lot easier than a box cropped flush to
+// their edges.
+const ROW_PAD_X = 0.08;
+const ROW_PAD_Y = 0.3;
 
 function detectionCenterY(d: Detection): number {
   return (d.box[1] + d.box[3]) / 2;
@@ -308,20 +310,106 @@ export function clusterRows(detections: Detection[]): Detection[][] {
 
 const clamp01 = (v: number): number => Math.min(1, Math.max(0, v));
 
+// A cluster containing 4 copies of the exact same tile is almost certainly
+// a declared kong (a random concealed 16-tile hand holding all 4 copies of
+// one kind, uncalled, is rare) - ignores bonus tiles (d.tile is null for
+// those, see classToTile) since a "kong" of flowers isn't a thing.
+function hasKong(row: Detection[]): boolean {
+  const counts = new Map<string, number>();
+  for (const d of row) {
+    if (!d.tile) continue;
+    const key = `${d.tile.suit}${d.tile.rank}`;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return [...counts.values()].some((n) => n >= 4);
+}
+
+// Bonus tiles (flowers/seasons) are always set aside next to the declared
+// melds, never mixed into the concealed hand (see App.tsx's own 門前牌區
+// "Bonus tiles" sub-picker) - so seeing one at all is a strong declared signal.
+function hasBonusTile(row: Detection[]): boolean {
+  return row.some((d) => !d.tile);
+}
+
+// How far a detection's own width/height ratio has to differ from the
+// group's median ratio (as a multiple, either direction) to count as a
+// rotated outlier rather than normal photo jitter between upright tiles.
+const ROTATION_OUTLIER_FACTOR = 1.5;
+
+// The model has no concept of tile orientation at all (no "rotated" class -
+// see CLASS_NAMES), so this infers it purely from box shape: real tiles
+// sitting together are all the same physical shape and orientation, so
+// they share roughly the same width/height ratio - a tile turned 90°
+// stands out as the one box with a conspicuously different ratio from the
+// rest. Needs at least 3 items for "the rest" to establish a meaningful
+// median. Generic over anything box-shaped with a `tile` field (both
+// vision.ts's own Detection and App.tsx's ReviewDetection qualify) since
+// this is reused both for the declared/concealed row-labelling signal
+// below and, separately, by App.tsx to guess which concealed-hand tile is
+// the 食胡 tile (a claimed or self-drawn winning tile is often laid at an
+// angle in a photo to mark it apart from the rest of the hand). Returns
+// the single most extreme outlier (there's normally at most one; if
+// somehow more than one candidate qualifies, e.g. a concealed kong's two
+// turned end tiles, only the most extreme is reported - callers that just
+// want a yes/no signal only care whether this returns non-null at all).
+export function findRotatedOutlier<T extends { box: [number, number, number, number]; tile: Tile | null }>(
+  items: T[]
+): T | null {
+  if (items.length < 3) return null;
+  const ratio = (b: T["box"]) => (b[2] - b[0]) / (b[3] - b[1]);
+  const ratios = items.map((d) => ratio(d.box));
+  const sorted = [...ratios].sort((a, b) => a - b);
+  const median = sorted[Math.floor(sorted.length / 2)];
+  if (median <= 0) return null;
+  let best: T | null = null;
+  let bestDeviation = ROTATION_OUTLIER_FACTOR;
+  items.forEach((item, i) => {
+    const r = ratios[i];
+    const deviation = r > median ? r / median : median / r;
+    if (deviation > bestDeviation) {
+      bestDeviation = deviation;
+      best = item;
+    }
+  });
+  return best;
+}
+
+// How "declared-looking" a row is, from its own detections alone - a kong
+// or a bonus tile each count as one point toward declared, a rotated
+// outlier tile counts one point toward concealed. Exported for direct unit
+// testing alongside the signals it's built from.
+export function declarednessScore(row: Detection[]): number {
+  return (hasKong(row) ? 1 : 0) + (hasBonusTile(row) ? 1 : 0) - (findRotatedOutlier(row) ? 1 : 0);
+}
+
+export interface DetectedRegions {
+  declared: RowRegion;
+  concealed: RowRegion;
+}
+
 // Runs detection on the WHOLE uncropped photo (unlike detectTiles' usual
 // per-region callers, which only ever see an already-cropped source) and
 // clusters the results into rows by vertical position - most hand photos
 // lay declared melds and the concealed hand out as two clearly separated
 // rows, so this can seed the crop screen's two regions instead of always
-// starting from fixed guesses. Returns [topRowBox, bottomRowBox] as 0-1
-// fractions of `image`'s own dimensions, or null if it didn't find exactly
-// 2 confident rows - the caller falls back to fixed defaults either way,
-// so this never needs to be "sure," just right often enough to help.
-export async function detectRowRegions(image: HTMLImageElement): Promise<[RowRegion, RowRegion] | null> {
+// starting from fixed guesses. Returns null if it didn't find exactly 2
+// confident rows - the caller falls back to fixed defaults either way, so
+// this never needs to be "sure," just right often enough to help.
+export async function detectRowRegions(image: HTMLImageElement): Promise<DetectedRegions | null> {
   const box = letterbox(image);
   const { detections } = await detectTiles(box);
   const rows = clusterRows(detections);
   if (rows.length !== 2) return null;
+
+  // Which physical row is Declared vs Concealed: position (top = declared)
+  // is only the fallback - declarednessScore's signals can override it
+  // when they clearly disagree (e.g. the bottom row has a kong and the top
+  // doesn't). A tie (most commonly, neither row shows any of the 3
+  // signals) keeps the position-based default.
+  const [rowA, rowB] = rows; // rowA = top, rowB = bottom (clusterRows sorts top-to-bottom)
+  const aIsDeclared = declarednessScore(rowA) >= declarednessScore(rowB);
+  const declaredRow = aIsDeclared ? rowA : rowB;
+  const concealedRow = aIsDeclared ? rowB : rowA;
 
   // Reverses letterbox()'s own centering math (see its own comment) one
   // step further than runScan's existing de-padding does (App.tsx) - this
@@ -352,5 +440,5 @@ export async function detectRowRegions(image: HTMLImageElement): Promise<[RowReg
     return { x: fx1, y: fy1, w: fx2 - fx1, h: fy2 - fy1 };
   };
 
-  return [toRegion(rows[0]), toRegion(rows[1])];
+  return { declared: toRegion(declaredRow), concealed: toRegion(concealedRow) };
 }

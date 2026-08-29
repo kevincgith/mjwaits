@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clusterRows, nonMaxSuppression, type Detection } from "./vision";
+import { clusterRows, declarednessScore, findRotatedOutlier, nonMaxSuppression, type Detection } from "./vision";
 
 const detection = (overrides: Partial<Detection> = {}): Detection => ({
   tile: { suit: "m", rank: 1 },
@@ -84,5 +84,48 @@ describe("clusterRows", () => {
 
   it("handles an empty input", () => {
     expect(clusterRows([])).toEqual([]);
+  });
+});
+
+describe("findRotatedOutlier", () => {
+  it("finds the one tile whose box ratio stands out from the rest", () => {
+    const upright = rowOfDetections(100, 180, 4); // width 40, height 80 -> ratio 0.5
+    const rotated = detection({ box: [200, 100, 280, 140] }); // width 80, height 40 -> ratio 2.0
+    expect(findRotatedOutlier([...upright, rotated])).toBe(rotated);
+  });
+
+  it("returns null when every tile shares roughly the same ratio", () => {
+    expect(findRotatedOutlier(rowOfDetections(100, 180, 5))).toBeNull();
+  });
+
+  it("returns null with fewer than 3 items - not enough to establish a median", () => {
+    const rotated = detection({ box: [200, 100, 280, 140] });
+    expect(findRotatedOutlier([detection(), rotated])).toBeNull();
+  });
+});
+
+describe("declarednessScore", () => {
+  it("scores a kong (4 identical tiles) as +1 toward declared", () => {
+    expect(declarednessScore(rowOfDetections(100, 180, 4))).toBe(1); // rowOfDetections' tiles are all the same kind by default
+  });
+
+  it("scores a bonus tile (tile: null) as +1 toward declared", () => {
+    const row = [
+      detection({ tile: { suit: "m", rank: 1 } }),
+      detection({ tile: { suit: "m", rank: 2 }, box: [40, 100, 80, 180] }),
+      detection({ tile: null, className: "1f", box: [80, 100, 120, 180] }),
+    ];
+    expect(declarednessScore(row)).toBe(1);
+  });
+
+  it("scores a rotated outlier tile as -1 toward declared", () => {
+    const upright = [0, 1, 2].map((i) => detection({ tile: { suit: "m", rank: i + 1 }, box: [i * 40, 100, i * 40 + 40, 180] }));
+    const rotated = detection({ tile: { suit: "m", rank: 9 }, box: [200, 100, 280, 140] });
+    expect(declarednessScore([...upright, rotated])).toBe(-1);
+  });
+
+  it("returns 0 for a plain row with no signals", () => {
+    const row = [0, 1, 2].map((i) => detection({ tile: { suit: "m", rank: i + 1 }, box: [i * 40, 100, i * 40 + 40, 180] }));
+    expect(declarednessScore(row)).toBe(0);
   });
 });

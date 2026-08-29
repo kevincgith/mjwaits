@@ -51,9 +51,10 @@ import {
   IMG_SIZE,
   detectRowRegions,
   detectTiles,
+  findRotatedOutlier,
   letterbox,
   prefetchModel,
-  type RowRegion,
+  type DetectedRegions,
   type ScanProgress,
 } from "./lib/vision";
 import {
@@ -921,6 +922,30 @@ const DEFAULT_LOWER_CROP: CropRect = nonOverlappingRegion(DEFAULT_CROP, REGION_W
 // bottom, matching the scan review's own Declared-before-Concealed order.
 const defaultCropRegions = (): CropRect[] => [DEFAULT_LOWER_CROP, DEFAULT_CROP];
 
+// Converts a detectRowRegions result into the [Concealed, Declared] region
+// order this app uses everywhere else, or null if there's no result or the
+// padded boxes it computed don't actually fit/fail to clear each other -
+// shared by HandScanner's initial pre-crop-screen fit and CropOverlay's own
+// on-demand/post-rotate re-fit, so both apply the exact same sanity check
+// before ever handing a detected layout to the crop screen.
+function fittedRegionsFrom(result: DetectedRegions | null): CropRect[] | null {
+  if (!result) return null;
+  const fitted: CropRect[] = [result.concealed, result.declared];
+  return fitted.every(fitsInFrame) && !rectsOverlap(fitted[0], fitted[1]) ? fitted : null;
+}
+
+// Best-effort wrapper around detectRowRegions - never throws (a slow/broken
+// model shouldn't block whatever's calling this, same "swallow it, the
+// real scan surfaces real errors later" reasoning as prefetchModel), and
+// already applies fittedRegionsFrom's own sanity check.
+async function tryAutoFit(image: HTMLImageElement): Promise<CropRect[] | null> {
+  try {
+    return fittedRegionsFrom(await detectRowRegions(image));
+  } catch {
+    return null;
+  }
+}
+
 type CropDragMode = "move" | "nw" | "ne" | "sw" | "se";
 
 // Applies a pointer delta (in container-fraction units) to `start`, per
@@ -1033,6 +1058,12 @@ function CropOverlay({
   // orientation would land on the wrong area - see handleRotate.
   const [displayImage, setDisplayImage] = useState(image);
   const [rotating, setRotating] = useState(false);
+  // True while a manual or post-rotate re-fit is running (see
+  // handleAutoFitClick/handleRotate) - separate from `rotating` since a
+  // plain Autofit tap doesn't rotate anything, but both block the same set
+  // of buttons below to avoid overlapping mutations of `regions`.
+  const [autoFitting, setAutoFitting] = useState(false);
+  const busy = rotating || autoFitting;
   const stageRef = useRef<HTMLDivElement>(null);
   const maskId = useId();
   const dragRef = useRef<{
@@ -1057,15 +1088,47 @@ function CropOverlay({
     };
   }, [displayImage]);
 
+  // Re-runs row-detection against `img` (see handleAutoFitClick/handleRotate,
+  // its two callers) and applies the result if it found one - unlike the
+  // initial pre-crop-screen fit (HandScanner), this always resolves the
+  // `autoFitting` flag itself so callers can freely `await` it.
+  const runAutoFit = async (img: HTMLImageElement): Promise<CropRect[] | null> => {
+    setAutoFitting(true);
+    const fitted = await tryAutoFit(img);
+    setAutoFitting(false);
+    return fitted;
+  };
+
   const handleRotate = async (clockwise: boolean) => {
     setRotating(true);
     try {
-      setDisplayImage(await rotateImage(displayImage, clockwise));
-      setRegions(defaultCropRegions());
+      const rotated = await rotateImage(displayImage, clockwise);
+      setDisplayImage(rotated);
+      // The old regions are invalid regardless (rotating changes the
+      // aspect ratio) - re-fit against the now-upright photo, falling back
+      // to the fixed defaults same as before if that doesn't find a clean
+      // 2-row split.
+      setRegions((await runAutoFit(rotated)) ?? defaultCropRegions());
     } finally {
       setRotating(false);
     }
   };
+
+  // Unlike handleRotate's forced fallback, a manual re-fit request that
+  // doesn't find a clean 2-row split leaves the current regions alone -
+  // the user may have already hand-positioned them, and an on-demand
+  // "improve this" action shouldn't silently discard that when it can't.
+  const handleAutoFitClick = async () => {
+    const fitted = await runAutoFit(displayImage);
+    if (fitted) setRegions(fitted);
+  };
+
+  // Swaps which existing box is labelled Concealed vs Declared without
+  // moving either one - region 0 is always Concealed and region 1 always
+  // Declared (see applyScannedRegions/declaredRegionIssue), so fixing a
+  // labelling mistake (whether from auto-fit's own guess or the user's own
+  // framing) only ever means reordering the array, never redrawing boxes.
+  const swapRegions = () => setRegions((prev) => (prev.length === 2 ? [prev[1], prev[0]] : prev));
 
   const beginDrag = (index: number, mode: CropDragMode) => (e: ReactPointerEvent) => {
     e.preventDefault();
@@ -1111,11 +1174,19 @@ function CropOverlay({
       </span>
       <div className="crop-actions">
         <div className="crop-actions-left">
-          <button type="button" onClick={() => handleRotate(false)} disabled={rotating} title="Rotate photo 90° counterclockwise">
+          <button type="button" onClick={() => handleRotate(false)} disabled={busy} title="Rotate photo 90° counterclockwise">
             ⟲
           </button>
-          <button type="button" onClick={() => handleRotate(true)} disabled={rotating} title="Rotate photo 90° clockwise">
+          <button type="button" onClick={() => handleRotate(true)} disabled={busy} title="Rotate photo 90° clockwise">
             ⟳
+          </button>
+          <button
+            type="button"
+            onClick={handleAutoFitClick}
+            disabled={busy}
+            title="Re-run row detection against the current photo and re-fit the region(s) to whatever it finds - leaves them alone if it doesn't find a clean fit"
+          >
+            {autoFitting ? "Autofit…" : "🪄 Autofit"}
           </button>
         </div>
         <div className="crop-actions-top-right">
@@ -1124,6 +1195,7 @@ function CropOverlay({
             className={regions.length >= MAX_REGIONS ? "toggle-on" : undefined}
             aria-pressed={regions.length >= MAX_REGIONS}
             onClick={toggleRegionCount}
+            disabled={busy}
             title={
               regions.length >= MAX_REGIONS
                 ? "Tap to go back to 1 region"
@@ -1134,8 +1206,16 @@ function CropOverlay({
           </button>
           <button
             type="button"
+            onClick={swapRegions}
+            disabled={busy || regions.length !== 2}
+            title="Swap which box is Concealed and which is Declared, without moving either one"
+          >
+            ⇄ Swap regions
+          </button>
+          <button
+            type="button"
             onClick={resetRegions}
-            disabled={regions.length === 2 && regions[0] === DEFAULT_LOWER_CROP && regions[1] === DEFAULT_CROP}
+            disabled={busy || (regions.length === 2 && regions[0] === DEFAULT_LOWER_CROP && regions[1] === DEFAULT_CROP)}
           >
             Reset
           </button>
@@ -1378,20 +1458,10 @@ const HandScanner = forwardRef<
       // Best-effort: run detection on the whole photo to see if it already
       // splits into 2 clear rows (declared melds, concealed hand) worth
       // seeding the crop regions with - never lets a slow/broken model
-      // block the crop screen from appearing, same "swallow it, the real
-      // scan surfaces real errors later" reasoning as prefetchModel.
-      let rows: [RowRegion, RowRegion] | null = null;
-      try {
-        rows = await detectRowRegions(image);
-      } catch {
-        rows = null;
-      }
+      // block the crop screen from appearing (see tryAutoFit's own comment).
+      const fitted = await tryAutoFit(image);
       if (scanGeneration.current !== myGeneration) return; // reset mid-analyze - drop the result
-      if (rows) {
-        const [declared, concealed] = rows; // top row = Declared, bottom row = Concealed
-        const fitted: CropRect[] = [concealed, declared]; // region 0 = Concealed, region 1 = Declared
-        if (fitted.every(fitsInFrame) && !rectsOverlap(fitted[0], fitted[1])) setAutoFitRegions(fitted);
-      }
+      if (fitted) setAutoFitRegions(fitted);
       setScanStatus("cropping");
     } catch (err) {
       if (scanGeneration.current !== myGeneration) return;
@@ -3084,7 +3154,18 @@ function ScoringPanel() {
       const nextConcealed = (sortTiles(detectedTiles) as Tile[]).map((t) => ({ ...t, id: nextTileId.current++ }));
       concealedRef.current = nextConcealed;
       setConcealedTiles(nextConcealed);
-      setWinningTile(null);
+      // If one tile in the concealed hand photo comes back conspicuously
+      // rotated relative to the rest (see findRotatedOutlier's own
+      // reasoning - a claimed or self-drawn winning tile is often laid at
+      // an angle to mark it apart), assume it's the 食胡 tile. Matched back
+      // to `nextConcealed` by kind only (post-sort, the original detection
+      // order is gone) - any instance of that kind works, since scoring
+      // only ever cares about the winning tile's kind, not which physical
+      // copy. Falls back to no pre-selected winning tile (as before) when
+      // nothing stands out.
+      const outlier = findRotatedOutlier(concealedRegion.detections);
+      const winningMatch = outlier?.tile ? nextConcealed.find((t) => t.suit === outlier.tile!.suit && t.rank === outlier.tile!.rank) : undefined;
+      setWinningTile(winningMatch ?? null);
       setConcealedPickerCollapsed(true);
     }
     if (declaredRegion) {
