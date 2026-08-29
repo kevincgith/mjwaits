@@ -946,14 +946,14 @@ function cropToCanvas(image: HTMLImageElement, rect: CropRect): HTMLCanvasElemen
   return canvas;
 }
 
-// Redraws `source` rotated a quarter turn clockwise onto a canvas (swapping
-// width/height, since a photo shot sideways needs that swap to display
-// upright) and loads the result back into a fresh <img> - phone cameras
-// don't always agree with the browser on which way is up, and unlike a CSS
-// transform, baking the rotation into real pixels means every downstream
-// consumer (crop math, the detector) just sees an already-upright image
-// and needs no rotation-awareness of its own.
-function rotateImageCW(source: HTMLImageElement): Promise<HTMLImageElement> {
+// Redraws `source` rotated a quarter turn (clockwise or counterclockwise)
+// onto a canvas (swapping width/height, since a photo shot sideways needs
+// that swap to display upright) and loads the result back into a fresh
+// <img> - phone cameras don't always agree with the browser on which way is
+// up, and unlike a CSS transform, baking the rotation into real pixels
+// means every downstream consumer (crop math, the detector) just sees an
+// already-upright image and needs no rotation-awareness of its own.
+function rotateImage(source: HTMLImageElement, clockwise: boolean): Promise<HTMLImageElement> {
   const w = source.naturalWidth;
   const h = source.naturalHeight;
   const canvas = document.createElement("canvas");
@@ -961,7 +961,7 @@ function rotateImageCW(source: HTMLImageElement): Promise<HTMLImageElement> {
   canvas.height = w;
   const ctx = canvas.getContext("2d")!;
   ctx.translate(canvas.width / 2, canvas.height / 2);
-  ctx.rotate(Math.PI / 2);
+  ctx.rotate(clockwise ? Math.PI / 2 : -Math.PI / 2);
   ctx.drawImage(source, -w / 2, -h / 2);
   return new Promise((resolve, reject) => {
     const rotated = new Image();
@@ -997,7 +997,7 @@ function CropOverlay({
 }) {
   const [regions, setRegions] = useState<CropRect[]>([DEFAULT_CROP]);
   // The image actually shown/measured/cropped - starts as the `image` prop
-  // but is swapped out (via rotateImageCW) whenever the user rotates, never
+  // but is swapped out (via rotateImage) whenever the user rotates, never
   // mutating the prop itself. Rotating changes the aspect ratio for a
   // quarter or three-quarter turn, so any regions drawn against the old
   // orientation would land on the wrong area - see handleRotate.
@@ -1027,10 +1027,10 @@ function CropOverlay({
     };
   }, [displayImage]);
 
-  const handleRotate = async () => {
+  const handleRotate = async (clockwise: boolean) => {
     setRotating(true);
     try {
-      setDisplayImage(await rotateImageCW(displayImage));
+      setDisplayImage(await rotateImage(displayImage, clockwise));
       setRegions([DEFAULT_CROP]);
     } finally {
       setRotating(false);
@@ -1075,8 +1075,11 @@ function CropOverlay({
       </span>
       <div className="crop-actions">
         <div className="crop-actions-left">
-          <button type="button" onClick={handleRotate} disabled={rotating} title="Rotate photo 90°">
-            ⟳ Rotate
+          <button type="button" onClick={() => handleRotate(false)} disabled={rotating} title="Rotate photo 90° counterclockwise">
+            ⟲
+          </button>
+          <button type="button" onClick={() => handleRotate(true)} disabled={rotating} title="Rotate photo 90° clockwise">
+            ⟳
           </button>
           {regions.length < MAX_REGIONS && (
             <button type="button" onClick={addRegion}>
