@@ -1059,8 +1059,14 @@ function CropOverlay({
     dragRef.current = null;
   };
 
-  const addRegion = () =>
-    setRegions((prev) => (prev.length >= MAX_REGIONS ? prev : [...prev, nonOverlappingRegion(prev[0], REGION_W, REGION_H)]));
+  // With MAX_REGIONS fixed at 2, "add a region" and "remove down to 1" are
+  // really just the two states of one toggle - a user only ever has 1 hand
+  // or 2 hands to crop, never a variable count worth an open-ended "add
+  // another" button. Dropping back to 1 always keeps the first region (the
+  // per-rect remove button below still lets you remove either one
+  // specifically if the second one was actually the one worth keeping).
+  const toggleRegionCount = () =>
+    setRegions((prev) => (prev.length >= MAX_REGIONS ? [prev[0]] : [...prev, nonOverlappingRegion(prev[0], REGION_W, REGION_H)]));
   const removeRegion = (index: number) => setRegions((prev) => prev.filter((_, i) => i !== index));
   const resetRegions = () => setRegions([DEFAULT_CROP]);
 
@@ -1081,11 +1087,21 @@ function CropOverlay({
           <button type="button" onClick={() => handleRotate(true)} disabled={rotating} title="Rotate photo 90° clockwise">
             ⟳
           </button>
-          {regions.length < MAX_REGIONS && (
-            <button type="button" onClick={addRegion}>
-              + Add region
-            </button>
-          )}
+        </div>
+        <div className="crop-actions-top-right">
+          <button
+            type="button"
+            className={regions.length >= MAX_REGIONS ? "toggle-on" : undefined}
+            aria-pressed={regions.length >= MAX_REGIONS}
+            onClick={toggleRegionCount}
+            title={
+              regions.length >= MAX_REGIONS
+                ? "Tap to go back to 1 region"
+                : "Tap to add a 2nd region (e.g. two separate hands in one photo)"
+            }
+          >
+            {regions.length >= MAX_REGIONS ? "2 regions" : "+ Add region"}
+          </button>
           <button type="button" onClick={resetRegions} disabled={regions.length === 1 && regions[0] === DEFAULT_CROP}>
             Reset
           </button>

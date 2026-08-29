@@ -1165,17 +1165,28 @@ h1 {
   cursor: default;
 }
 
+.crop-actions button.toggle-on {
+  background: #eaf1fb;
+  border-color: #1a5fb4;
+  color: #1a5fb4;
+}
+
 .crop-actions-left,
+.crop-actions-top-right,
 .crop-actions-right {
   display: flex;
   gap: 0.5rem;
 }
 
-/* The left (rotate/add region/reset) and right (cancel/scan) groups now
-   live in their own separate .crop-actions rows (before/after the photo),
-   each the sole flex child of its row - .crop-actions's justify-content:
-   space-between only has an effect with 2+ children, so the right group
-   needs its own push-to-the-end margin to still land on the right. */
+/* Top row (before the photo): rotate on the left, add-region/reset on the
+   right - both are real siblings within the same .crop-actions row here,
+   so its justify-content: space-between alone pushes them to opposite
+   ends, no extra margin needed. */
+
+/* Bottom row (after the photo): cancel/scan is the sole child of its own
+   separate .crop-actions row, so justify-content: space-between (which
+   only has an effect with 2+ children) does nothing for it - it needs its
+   own push-to-the-end margin to still land on the right. */
 .crop-actions-right {
   margin-left: auto;
 }
