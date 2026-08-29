@@ -46,7 +46,16 @@ import {
   trainerHandSize,
   type TrainerQuestion,
 } from "./lib/trainer";
-import { classToBonusTile, IMG_SIZE, detectTiles, letterbox, prefetchModel, type ScanProgress } from "./lib/vision";
+import {
+  classToBonusTile,
+  IMG_SIZE,
+  detectRowRegions,
+  detectTiles,
+  letterbox,
+  prefetchModel,
+  type RowRegion,
+  type ScanProgress,
+} from "./lib/vision";
 import {
   FIVE_POWER_TAI_TABLE,
   groupDeclaredTiles,
@@ -997,11 +1006,17 @@ const CROP_HANDLES: CropDragMode[] = ["nw", "ne", "sw", "se"];
 // <img src>) since its object URL was already revoked once it loaded.
 function CropOverlay({
   image,
+  initialRegions,
   regionLabels,
   onConfirm,
   onCancel,
 }: {
   image: HTMLImageElement;
+  // The regions to start with - either a row-detection auto-fit result or
+  // defaultCropRegions(), decided by the caller (see handleScanFile) before
+  // this ever mounts, so this component doesn't need its own opinion on
+  // when detection succeeded vs. should fall back.
+  initialRegions: CropRect[];
   // Badge text for each crop box once a 2nd region is added, e.g. ["Concealed",
   // "Declared"] on the scoring tab where the two regions mean different things -
   // falls back to plain 1-based numbers (the Calculator's case, where both
@@ -1010,7 +1025,7 @@ function CropOverlay({
   onConfirm: (canvases: HTMLCanvasElement[]) => void;
   onCancel: () => void;
 }) {
-  const [regions, setRegions] = useState<CropRect[]>(defaultCropRegions);
+  const [regions, setRegions] = useState<CropRect[]>(initialRegions);
   // The image actually shown/measured/cropped - starts as the `image` prop
   // but is swapped out (via rotateImage) whenever the user rotates, never
   // mutating the prop itself. Rotating changes the aspect ratio for a
@@ -1246,13 +1261,18 @@ const HandScanner = forwardRef<
   ref
 ) {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [scanStatus, setScanStatus] = useState<"idle" | "cropping" | "loading" | "review" | "error">("idle");
+  const [scanStatus, setScanStatus] = useState<"idle" | "analyzing" | "cropping" | "loading" | "review" | "error">("idle");
   const [scanError, setScanError] = useState<string | null>(null);
   const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null);
   const [scanPreview, setScanPreview] = useState<{ regions: ScanReviewRegion[] } | null>(null);
   const [editingDetectionId, setEditingDetectionId] = useState<number | null>(null);
   const nextDetectionId = useRef(0);
   const [cropImage, setCropImage] = useState<HTMLImageElement | null>(null);
+  // Row-detection's guess at where the 2 crop regions should start (see
+  // handleScanFile) - null falls back to defaultCropRegions() untouched,
+  // either because detection hasn't run yet, found something other than a
+  // clean 2-row split, or failed outright.
+  const [autoFitRegions, setAutoFitRegions] = useState<CropRect[] | null>(null);
   // Bumped by resetScan to invalidate whatever runScan call is currently
   // in flight - its await'd detectTiles call has no way to actually abort
   // (and shouldn't: the model fetch it shares is cached module-wide, see
@@ -1277,10 +1297,11 @@ const HandScanner = forwardRef<
     setScanPreview(null);
     setEditingDetectionId(null);
     setCropImage(null);
+    setAutoFitRegions(null);
   };
   useImperativeHandle(ref, () => ({ trigger: triggerScan, reset: resetScan }));
 
-  const busy = scanStatus === "cropping" || scanStatus === "loading";
+  const busy = scanStatus === "cropping" || scanStatus === "loading" || scanStatus === "analyzing";
   useEffect(() => {
     onActiveChange?.(scanStatus !== "idle");
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1353,6 +1374,24 @@ const HandScanner = forwardRef<
       const image = await loadImageFile(file);
       if (scanGeneration.current !== myGeneration) return; // reset mid-read - drop the result
       setCropImage(image);
+      setScanStatus("analyzing");
+      // Best-effort: run detection on the whole photo to see if it already
+      // splits into 2 clear rows (declared melds, concealed hand) worth
+      // seeding the crop regions with - never lets a slow/broken model
+      // block the crop screen from appearing, same "swallow it, the real
+      // scan surfaces real errors later" reasoning as prefetchModel.
+      let rows: [RowRegion, RowRegion] | null = null;
+      try {
+        rows = await detectRowRegions(image);
+      } catch {
+        rows = null;
+      }
+      if (scanGeneration.current !== myGeneration) return; // reset mid-analyze - drop the result
+      if (rows) {
+        const [declared, concealed] = rows; // top row = Declared, bottom row = Concealed
+        const fitted: CropRect[] = [concealed, declared]; // region 0 = Concealed, region 1 = Declared
+        if (fitted.every(fitsInFrame) && !rectsOverlap(fitted[0], fitted[1])) setAutoFitRegions(fitted);
+      }
       setScanStatus("cropping");
     } catch (err) {
       if (scanGeneration.current !== myGeneration) return;
@@ -1467,8 +1506,15 @@ const HandScanner = forwardRef<
         <input ref={fileInputRef} type="file" accept="image/*" onChange={handleScanFile} style={{ display: "none" }} />
         {!hideTrigger && (
           <button type="button" onClick={triggerScan} disabled={busy}>
-            {scanStatus === "loading" ? scanStatusLabel(scanProgress) : triggerLabel}
+            {scanStatus === "loading" ? scanStatusLabel(scanProgress) : scanStatus === "analyzing" ? "Analyzing layout…" : triggerLabel}
           </button>
+        )}
+        {scanStatus === "analyzing" && (
+          <div className="scan-progress">
+            <div className="scan-progress-track" role="progressbar" aria-label="Analyzing photo layout…" aria-valuemin={0} aria-valuemax={100}>
+              <div className="scan-progress-fill indeterminate" />
+            </div>
+          </div>
         )}
         {scanStatus === "loading" && (
           <div className="scan-progress">
@@ -1504,7 +1550,13 @@ const HandScanner = forwardRef<
       </div>
 
       {scanStatus === "cropping" && cropImage && (
-        <CropOverlay image={cropImage} regionLabels={regionLabels} onConfirm={runScan} onCancel={cancelCrop} />
+        <CropOverlay
+          image={cropImage}
+          initialRegions={autoFitRegions ?? defaultCropRegions()}
+          regionLabels={regionLabels}
+          onConfirm={runScan}
+          onCancel={cancelCrop}
+        />
       )}
 
       {scanStatus === "review" && scanPreview && (

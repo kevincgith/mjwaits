@@ -251,3 +251,106 @@ export async function detectTiles(box: Letterbox, onProgress?: (p: ScanProgress)
 
   return { detections, tiles, ignoredBonusCount };
 }
+
+// Fraction of the source image (0-1), top-left origin - same convention as
+// App.tsx's own CropRect (kept as a separate, structurally-identical type
+// here rather than importing CropRect, so this module doesn't depend on
+// App.tsx - TypeScript's structural typing makes the two interchangeable
+// wherever a CropRect-shaped value is expected).
+export interface RowRegion {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+// How much vertical gap between two detections' centers (relative to the
+// median detection height in the photo) counts as "a new row" rather than
+// just normal jitter within the same row.
+const ROW_GAP_FACTOR = 0.6;
+// A cluster smaller than this is treated as stray noise (a misdetection or
+// a lone stray tile), not a real row - real rows have several tiles.
+const MIN_ROW_DETECTIONS = 3;
+// Slack added around each row's own tight bounding box, as a fraction of
+// that row's own width/height - rows are detected tile-tight, so this
+// gives the user a little visual context and tolerance for a missed edge
+// tile, rather than a razor-exact crop.
+const ROW_PAD_X = 0.03;
+const ROW_PAD_Y = 0.15;
+
+function detectionCenterY(d: Detection): number {
+  return (d.box[1] + d.box[3]) / 2;
+}
+
+// Splits `detections` into vertically-separated groups ("rows"), sorted
+// top-to-bottom, dropping any group too small to be a real row. Purely a
+// function of box positions - classification correctness doesn't matter
+// here, only "is there a tile-shaped thing here," so bonus-tile detections
+// count too (they normally sit right alongside whichever row they belong
+// to, and a wrong tile-kind guess doesn't change a box's position).
+// Exported for direct unit testing (see vision.test.ts) - detectRowRegions
+// itself needs a real model/canvas to test end-to-end, but the row-
+// splitting logic is pure and worth testing against synthetic Detection[]
+// fixtures on its own.
+export function clusterRows(detections: Detection[]): Detection[][] {
+  if (detections.length === 0) return [];
+  const sorted = [...detections].sort((a, b) => detectionCenterY(a) - detectionCenterY(b));
+  const heights = sorted.map((d) => d.box[3] - d.box[1]).sort((a, b) => a - b);
+  const medianHeight = heights[Math.floor(heights.length / 2)];
+  const rows: Detection[][] = [[sorted[0]]];
+  for (let i = 1; i < sorted.length; i++) {
+    const gap = detectionCenterY(sorted[i]) - detectionCenterY(sorted[i - 1]);
+    if (gap > medianHeight * ROW_GAP_FACTOR) rows.push([]);
+    rows[rows.length - 1].push(sorted[i]);
+  }
+  return rows.filter((r) => r.length >= MIN_ROW_DETECTIONS);
+}
+
+const clamp01 = (v: number): number => Math.min(1, Math.max(0, v));
+
+// Runs detection on the WHOLE uncropped photo (unlike detectTiles' usual
+// per-region callers, which only ever see an already-cropped source) and
+// clusters the results into rows by vertical position - most hand photos
+// lay declared melds and the concealed hand out as two clearly separated
+// rows, so this can seed the crop screen's two regions instead of always
+// starting from fixed guesses. Returns [topRowBox, bottomRowBox] as 0-1
+// fractions of `image`'s own dimensions, or null if it didn't find exactly
+// 2 confident rows - the caller falls back to fixed defaults either way,
+// so this never needs to be "sure," just right often enough to help.
+export async function detectRowRegions(image: HTMLImageElement): Promise<[RowRegion, RowRegion] | null> {
+  const box = letterbox(image);
+  const { detections } = await detectTiles(box);
+  const rows = clusterRows(detections);
+  if (rows.length !== 2) return null;
+
+  // Reverses letterbox()'s own centering math (see its own comment) one
+  // step further than runScan's existing de-padding does (App.tsx) - this
+  // also divides by `scale` to land on a fraction of the original image's
+  // own dimensions, since that's what a CropRect needs, rather than
+  // stopping at de-padded pixel coordinates in the letterboxed frame.
+  const srcWidth = image.naturalWidth;
+  const srcHeight = image.naturalHeight;
+  const scale = Math.min(IMG_SIZE / srcWidth, IMG_SIZE / srcHeight);
+  const padX = (IMG_SIZE - srcWidth * scale) / 2;
+  const padY = (IMG_SIZE - srcHeight * scale) / 2;
+
+  const toRegion = (row: Detection[]): RowRegion => {
+    const x1 = Math.min(...row.map((d) => d.box[0]));
+    const y1 = Math.min(...row.map((d) => d.box[1]));
+    const x2 = Math.max(...row.map((d) => d.box[2]));
+    const y2 = Math.max(...row.map((d) => d.box[3]));
+    let fx1 = (x1 - padX) / scale / srcWidth;
+    let fy1 = (y1 - padY) / scale / srcHeight;
+    let fx2 = (x2 - padX) / scale / srcWidth;
+    let fy2 = (y2 - padY) / scale / srcHeight;
+    const w = fx2 - fx1;
+    const h = fy2 - fy1;
+    fx1 = clamp01(fx1 - w * ROW_PAD_X);
+    fx2 = clamp01(fx2 + w * ROW_PAD_X);
+    fy1 = clamp01(fy1 - h * ROW_PAD_Y);
+    fy2 = clamp01(fy2 + h * ROW_PAD_Y);
+    return { x: fx1, y: fy1, w: fx2 - fx1, h: fy2 - fy1 };
+  };
+
+  return [toRegion(rows[0]), toRegion(rows[1])];
+}
