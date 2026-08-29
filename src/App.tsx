@@ -1491,7 +1491,13 @@ const HandScanner = forwardRef<
       {scanStatus === "review" && scanPreview && (
         <div className="scan-review">
           <div className="scan-review-images">
-            {scanPreview.regions.map((region, i) => (
+            {/* Displayed last-to-first (Declared before Concealed, for the
+                Scoring tab's 2-region case) - purely a display-order choice,
+                region indices/labels/regionIssues below are still keyed by
+                their real index (0 = Concealed, 1 = Declared), untouched
+                everywhere else (applyScannedRegions, declaredRegionIssue,
+                the crop step itself). */}
+            {[...scanPreview.regions.entries()].reverse().map(([i, region]) => (
               <div className="scan-review-region" key={i}>
                 {regionLabels && <div className="scan-review-region-title">{regionLabels[i]}</div>}
                 <div className="scan-review-region-image">
@@ -1529,7 +1535,7 @@ const HandScanner = forwardRef<
           <div className="scan-review-summary">
             <div className="scan-review-info">
               {regionLabels ? (
-                scanPreview.regions.map((region, i) => {
+                [...scanPreview.regions.entries()].reverse().map(([i, region]) => {
                   const tileCount = region.detections.filter((d) => d.tile !== null).length;
                   const ignoredCount = region.detections.length - tileCount;
                   return (
