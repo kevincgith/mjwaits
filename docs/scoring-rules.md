@@ -40,6 +40,15 @@ Otherwise the meld is **暗**. With no 食胡 tile recorded, the second conditio
 specifically: a kong always counts toward it regardless of open/concealed status (see that
 section) — the 明/暗 distinction there only applies to plain triplets.
 
+**Exactly one meld can ever be "the one the 食胡 tile completed"** — never more, however many other
+melds happen to hold the exact same tile kind already. E.g. a hand with two identical `123m` runs,
+where the winning tile was a claimed `1m`: only the specific `123m` that tile actually completed
+counts as 明 — the other `123m` was already sitting fully-formed in the concealed hand from the
+start, and stays 暗. Picking *which* meld is "the one" when several share the winning tile's kind
+follows the same priority order as picking which tile to highlight in the UI: the hand's own pair
+first (if the winning tile could be read as completing it instead, no meld counts as open at all),
+then a triplet/kong, then a run.
+
 ## Duplicate-instance counting (清龍/雜龍/老少上/老少碰/步步高/二步高)
 
 These patterns can fire more than once on a single hand when a segment repeats — e.g.
@@ -281,8 +290,8 @@ the [明/暗 concept](#the-明暗-openconcealed-concept).
 | 兩兄弟 (Same triplet/kong rank, different suits) | 5 each | 2 triplets/kongs at the same rank but different suits — e.g. `555t+555b`. No 明/暗 split. | — | **Stacks per instance**, same suit-index pairing as 相逢. |
 | 小三兄弟 (Same rank across 3 suits, pair at one) | 20 | One rank held as the pair (in its own suit), with the other 2 suits each holding a triplet/kong at that *same* rank — e.g. `33t+333m+3333b`. | 兩兄弟 | Structurally different from 大三兄弟 (needs the pair), so not mutually exclusive with it — same precedent as 小/大三連刻. |
 | 大三兄弟 (Same rank across all 3 suits, all triplets/kongs) | 40 | All 3 suits hold a triplet/kong at the same rank — e.g. `555m+555t+555b`. Pair not involved. | 兩兄弟 | |
-| 小三色連刻 (3 consecutive ranks across 3 suits, pair at one) | 10 | 3 consecutive ranks, one per suit, with the hand's pair sitting at one of the 3 positions (in its own suit) and the other 2 positions each a triplet/kong in one of the other 2 suits — e.g. `33m+444t+555b`. | — | Structurally different from 大三色連刻 (needs the pair), not mutually exclusive. |
-| 大三色連刻 (3 consecutive ranks across 3 suits, all triplets/kongs) | 20 | Same 3-consecutive-rank shape, but all 3 are full triplets/kongs, one per suit — pair not involved — e.g. `333t+4444m+555b`. | — | |
+| 小三色連刻 (3 consecutive ranks across 3 suits, pair at one) | 10 each | 3 consecutive ranks, one per suit, with the hand's pair sitting at one of the 3 positions (in its own suit) and the other 2 positions each a triplet/kong in one of the other 2 suits — e.g. `33m+444t+555b`. | — | Structurally different from 大三色連刻 (needs the pair), not mutually exclusive. **Stacks**: since the pair's own rank is fixed, this slides the same 3-rank window against it (rank-1..rank+1, rank-2..rank, rank..rank+2) rather than against an arbitrary starting point - e.g. pair at `44b` plus triplets at `2m/3t/5m/6t` satisfies all 3 windows (`234`, `345`, `456`) at once, since the wider spread of triplets around the pair lets it anchor more than one window simultaneously. Each window only counts once regardless of which of the 2 other-suit assignments satisfies it. |
+| 大三色連刻 (3 consecutive ranks across 3 suits, all triplets/kongs) | 20 each | Same 3-consecutive-rank shape, but all 3 are full triplets/kongs, one per suit — pair not involved — e.g. `333t+4444m+555b`. | — | **Stacks** per qualifying rank-window found (e.g. a hand with triplets covering a wide enough run of ranks across all 3 suits could satisfy more than one window at once), same "count the window once" rule as 小三色連刻 above. |
 | 明三色步步高 (3 suits, runs increasing by 1, open) | 5 each | 3 suits, each holding one run, with the runs' starting ranks increasing by 1 across suits in some order — e.g. `456t+567m+678b` or `234m+345t+456b`. Instance is 明. | — | **Stacks** using the same [duplicate-instance counting](#duplicate-instance-counting-清龍雜龍老少上老少碰步步高二步高) as 清龍/雜龍/單色步步高 — e.g. `123456m234567t34599b` (123m+456m, 234t+567t, one 345b) forms 3 overlapping instances shifted by 1 rank each, sharing the lone `345b` run across all of them. |
 | 暗三色步步高 (same, concealed) | 10 each | Same shape, instance is 暗. | — | **Stacks**, same reasoning. |
 

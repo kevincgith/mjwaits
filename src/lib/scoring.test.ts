@@ -1284,6 +1284,17 @@ describe("PATTERNS: 小三色連刻/大三色連刻 (consecutive ranks across su
     const result = scoreHand("333t4444m555b111z678t22z", ctx());
     expect(tai(result, "big-three-color-consecutive-triplets")).toBe(20);
   });
+
+  it("stacks 3 小三色連刻 instances (sliding the pair-anchored window) and 1 大三色連刻 instance in the same hand", () => {
+    // Pair at 44b anchors 3 overlapping small windows: [2,3,4] (222m+333t),
+    // [3,4,5] (333t+555m), and [4,5,6] (555m+666t) - all 3 fire since the
+    // hand holds triplets at 2,3,5,6 spanning wide enough around the pair.
+    // Separately, 555m+666t+777b (ranks 5,6,7, one triplet per suit, no
+    // pair involved) is its own single 大三色連刻 instance.
+    const result = scoreHand("222m333t44b555m666t777b", ctx({ winningTile: { suit: "b", rank: 4 } }));
+    expect(tai(result, "small-three-color-consecutive-triplets")).toBe(30); // 3 instances x 10
+    expect(tai(result, "big-three-color-consecutive-triplets")).toBe(20); // 1 instance x 20
+  });
 });
 
 describe("PATTERNS: 明/暗三色步步高 (3 suits, runs increasing by 1)", () => {
@@ -1303,6 +1314,20 @@ describe("PATTERNS: 明/暗三色步步高 (3 suits, runs increasing by 1)", () 
     const result = scoreHand("123456m234567t34599b", ctx());
     expect(tai(result, "three-color-step-up-hidden")).toBe(30); // 3 instances x 10
     expect(tai(result, "three-color-step-up-open")).toBe(0);
+  });
+
+  it("only opens the ONE specific 123m run the claimed tile actually completed, leaving an identical second 123m run (and the 234t+345b+456m instance) genuinely hidden", () => {
+    // Two identical 123m runs: 123m+234t+345b qualifies twice (once per
+    // 123m copy), and 234t+345b+456m qualifies once more. Before this was
+    // fixed, isMeldOpen marked BOTH 123m copies as open just because the
+    // claimed 1m matches their kind - a single physical tile can only
+    // ever have completed ONE of them, so exactly one 123m+234t+345b
+    // reading is genuinely open (the one using the claimed tile) and the
+    // other two readings (the second 123m copy, and 234t+345b+456m) are
+    // still fully concealed.
+    const result = scoreHand("123m123m456m234t345b11z", ctx({ winningTile: { suit: "m", rank: 1 } }));
+    expect(tai(result, "three-color-step-up-open")).toBe(5); // 1 instance x 5
+    expect(tai(result, "three-color-step-up-hidden")).toBe(20); // 2 instances x 10
   });
 });
 

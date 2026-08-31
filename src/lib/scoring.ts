@@ -1067,29 +1067,55 @@ export function isGenuineMultiWait(hand: ResolvedHand, ctx: GameContext): boolea
   return getWaits(pre.tiles, pre.meldsRequired).length >= 2;
 }
 
+// The single meld (if any) that the winning tile actually completed - the
+// winning tile might instead have completed the hand's own pair, in which
+// case no meld here counts as open at all. Same priority order and "pick
+// one canonical instance" reasoning as App.tsx's own
+// findWinningTileInstance (pair first, then triplet/kong, then run),
+// reused here so isMeldOpen (below) doesn't mark EVERY meld holding the
+// same tile KIND as open just because more than one happens to share it -
+// a single physical tile can only ever have completed ONE specific group,
+// never two at once, however many other melds already held the exact
+// same kind before it arrived (e.g. a hand with two identical 123m runs,
+// only one of which was actually completed by a claimed 1m - the other
+// was already sitting fully-formed in the concealed hand from the
+// start). Only ever searches CONCEALED melds, same as isMeldOpen's own
+// early-return below - a declared meld is already unconditionally open
+// regardless of this.
+function winningMeld(hand: ResolvedHand, ctx: GameContext): ResolvedMeld | null {
+  if (ctx.winningTile === null) return null;
+  const matches = (t: Tile) => t.suit === ctx.winningTile!.suit && t.rank === ctx.winningTile!.rank;
+  if (hand.pair.some(matches)) return null;
+  for (const kind of ["triplet", "kong", "run"] as const) {
+    const meld = hand.melds.find((m) => m.kind === kind && m.concealed && meldHasTileKind(m, ctx.winningTile!));
+    if (meld) return meld;
+  }
+  return null;
+}
+
 // 明 (open) vs 暗 (concealed/hidden), per the house rule: a meld is 明 if
 // it's declared/exposed, OR if it's the meld the 食胡 tile (winningTile)
-// completed and that win wasn't a self-draw - claiming the last tile of an
-// otherwise-concealed meld off a discard still makes that meld count as
-// open, even though it was never "called" in the usual pon/chi sense. With
-// no winningTile recorded, that second condition just never fires (only
-// physical declaration disqualifies a meld) - see the ScoringPanel UI's
-// 食胡-tile long-press.
+// completed (see winningMeld above) and that win wasn't a self-draw -
+// claiming the last tile of an otherwise-concealed meld off a discard
+// still makes that meld count as open, even though it was never "called"
+// in the usual pon/chi sense. With no winningTile recorded, that second
+// condition just never fires (only physical declaration disqualifies a
+// meld) - see the ScoringPanel UI's 食胡-tile long-press.
 //
 // Kongs are handled specially by the 暗刻-chain patterns below, NOT here:
 // a kong counts toward 兩/三/四/五暗刻 regardless of open/concealed status,
 // so those patterns check `kind === "kong"` directly rather than routing
 // kongs through this function.
-function isMeldOpen(meld: ResolvedMeld, ctx: GameContext): boolean {
+function isMeldOpen(meld: ResolvedMeld, ctx: GameContext, hand: ResolvedHand): boolean {
   if (!meld.concealed) return true;
-  return !ctx.selfDraw && ctx.winningTile !== null && meldHasTileKind(meld, ctx.winningTile);
+  return !ctx.selfDraw && meld === winningMeld(hand, ctx);
 }
 
 // Count of melds that satisfy the 暗刻-chain's "concealed triplet or kong"
 // condition - a kong always counts (regardless of isMeldOpen), a triplet
 // only counts if isMeldOpen says it's still 暗.
 function hiddenTripletOrKongCount(hand: ResolvedHand, ctx: GameContext): number {
-  return hand.melds.filter((m) => m.kind === "kong" || (m.kind === "triplet" && !isMeldOpen(m, ctx))).length;
+  return hand.melds.filter((m) => m.kind === "kong" || (m.kind === "triplet" && !isMeldOpen(m, ctx, hand))).length;
 }
 
 // A "segment" meld is a run occupying exactly one of the three fixed
@@ -1679,15 +1705,26 @@ function crossSuitSameTripletInstances(hand: ResolvedHand): [ResolvedMeld, Resol
 // other 2 positions each held as a triplet/kong in one of the other 2
 // suits (e.g. 33m + 444t + 555b). The cross-suit extension of 小三連刻
 // (same shape, but confined to a single suit).
-function hasSmallThreeColorConsecutiveTriplets(hand: ResolvedHand): boolean {
+//
+// Stacks per qualifying window found (same precedent as
+// consecutiveTripletOrKongPairCount's own overlapping-window counting for
+// the single-suit version) - the hand's pair is fixed, but it can still
+// anchor more than one window at once if the hand holds enough triplets
+// spanning a wider run of ranks (e.g. pair at 4 plus triplets at
+// 2,3,5,6 satisfies both the [2,3,4] and [4,5,6] windows). Each window is
+// counted at most once regardless of which of the 2 suit-to-rank
+// assignments satisfies it - those aren't 2 separate instances, just 2
+// ways of describing the same one.
+function smallThreeColorConsecutiveTripletsCount(hand: ResolvedHand): number {
   const pair = hand.pair[0];
-  if (pair.suit === "z") return false;
+  if (pair.suit === "z") return 0;
   const otherSuits = NUMBERED_SUITS.filter((s) => s !== pair.suit);
   const windows = [
     [pair.rank, pair.rank + 1, pair.rank + 2],
     [pair.rank - 1, pair.rank, pair.rank + 1],
     [pair.rank - 2, pair.rank - 1, pair.rank],
   ];
+  let count = 0;
   for (const window of windows) {
     if (window[0] < 1 || window[2] > 9) continue;
     const others = window.filter((r) => r !== pair.rank);
@@ -1695,10 +1732,10 @@ function hasSmallThreeColorConsecutiveTriplets(hand: ResolvedHand): boolean {
       (isTripletOrKongAt(hand, otherSuits[0], others[0]) && isTripletOrKongAt(hand, otherSuits[1], others[1])) ||
       (isTripletOrKongAt(hand, otherSuits[1], others[0]) && isTripletOrKongAt(hand, otherSuits[0], others[1]))
     ) {
-      return true;
+      count++;
     }
   }
-  return false;
+  return count;
 }
 
 // 大三色連刻: 3 consecutive ranks, one full triplet/kong per suit (all 3
@@ -1714,14 +1751,16 @@ const THREE_SUIT_ORDERS: Suit[][] = [
   ["b", "m", "t"],
   ["b", "t", "m"],
 ];
-function hasBigThreeColorConsecutiveTriplets(hand: ResolvedHand): boolean {
+// Stacks per qualifying rank-window found, same reasoning and same
+// "count the window once regardless of which suit assignment satisfies
+// it" rule as smallThreeColorConsecutiveTripletsCount above.
+function bigThreeColorConsecutiveTripletsCount(hand: ResolvedHand): number {
+  let count = 0;
   for (let rank = 1; rank <= 7; rank++) {
     const ranks = [rank, rank + 1, rank + 2];
-    for (const suits of THREE_SUIT_ORDERS) {
-      if (ranks.every((r, i) => isTripletOrKongAt(hand, suits[i], r))) return true;
-    }
+    if (THREE_SUIT_ORDERS.some((suits) => ranks.every((r, i) => isTripletOrKongAt(hand, suits[i], r)))) count++;
   }
-  return false;
+  return count;
 }
 
 // 小三兄弟: the 3-suit extension of 兩兄弟 - one rank held as the pair (in
@@ -2026,22 +2065,22 @@ export const PATTERNS: TaiPattern[] = [
     id: "pure-straight-open",
     name: "明清龍 (Pure straight, open)",
     // Stacks per instance - see pureStraightInstances/combineSegments.
-    score: (hand, ctx) => pureStraightInstances(hand).filter((inst) => inst.some((m) => isMeldOpen(m, ctx))).length * 10,
+    score: (hand, ctx) => pureStraightInstances(hand).filter((inst) => inst.some((m) => isMeldOpen(m, ctx, hand))).length * 10,
   },
   {
     id: "pure-straight-hidden",
     name: "暗清龍 (Pure straight, concealed)",
-    score: (hand, ctx) => pureStraightInstances(hand).filter((inst) => inst.every((m) => !isMeldOpen(m, ctx))).length * 20,
+    score: (hand, ctx) => pureStraightInstances(hand).filter((inst) => inst.every((m) => !isMeldOpen(m, ctx, hand))).length * 20,
   },
   {
     id: "mixed-straight-open",
     name: "明雜龍 (Mixed straight across suits, open)",
-    score: (hand, ctx) => mixedStraightInstances(hand).filter((inst) => inst.some((m) => isMeldOpen(m, ctx))).length * 8,
+    score: (hand, ctx) => mixedStraightInstances(hand).filter((inst) => inst.some((m) => isMeldOpen(m, ctx, hand))).length * 8,
   },
   {
     id: "mixed-straight-hidden",
     name: "暗雜龍 (Mixed straight across suits, concealed)",
-    score: (hand, ctx) => mixedStraightInstances(hand).filter((inst) => inst.every((m) => !isMeldOpen(m, ctx))).length * 15,
+    score: (hand, ctx) => mixedStraightInstances(hand).filter((inst) => inst.every((m) => !isMeldOpen(m, ctx, hand))).length * 15,
   },
   {
     id: "old-young-run",
@@ -2119,20 +2158,20 @@ export const PATTERNS: TaiPattern[] = [
     id: "four-returns-to-one-open",
     name: "明四歸一 (Triplet + run, open)",
     score: (hand, ctx) =>
-      fourReturnsToOneInstances(hand).filter(([triplet, run]) => isMeldOpen(triplet, ctx) || isMeldOpen(run, ctx)).length * 5,
+      fourReturnsToOneInstances(hand).filter(([triplet, run]) => isMeldOpen(triplet, ctx, hand) || isMeldOpen(run, ctx, hand)).length * 5,
   },
   {
     id: "four-returns-to-one-hidden",
     name: "暗四歸一 (Triplet + run, concealed)",
     score: (hand, ctx) =>
-      fourReturnsToOneInstances(hand).filter(([triplet, run]) => !isMeldOpen(triplet, ctx) && !isMeldOpen(run, ctx)).length * 15,
+      fourReturnsToOneInstances(hand).filter(([triplet, run]) => !isMeldOpen(triplet, ctx, hand) && !isMeldOpen(run, ctx, hand)).length * 15,
   },
   {
     id: "four-returns-to-two-open",
     name: "明四歸二 (Pair + 2 runs, open)",
     score: (hand, ctx) => {
       const runs = fourReturnsToTwoRuns(hand);
-      return runs && (isMeldOpen(runs[0], ctx) || isMeldOpen(runs[1], ctx)) ? 15 : 0;
+      return runs && (isMeldOpen(runs[0], ctx, hand) || isMeldOpen(runs[1], ctx, hand)) ? 15 : 0;
     },
   },
   {
@@ -2140,38 +2179,38 @@ export const PATTERNS: TaiPattern[] = [
     name: "暗四歸二 (Pair + 2 runs, concealed)",
     score: (hand, ctx) => {
       const runs = fourReturnsToTwoRuns(hand);
-      return runs && !isMeldOpen(runs[0], ctx) && !isMeldOpen(runs[1], ctx) ? 30 : 0;
+      return runs && !isMeldOpen(runs[0], ctx, hand) && !isMeldOpen(runs[1], ctx, hand) ? 30 : 0;
     },
   },
   {
     id: "four-returns-to-four-open",
     name: "明四歸四 (4 runs, open)",
     score: (hand, ctx) =>
-      fourReturnsToFourInstances(hand).filter((runs) => runs.some((r) => isMeldOpen(r, ctx))).length * 30,
+      fourReturnsToFourInstances(hand).filter((runs) => runs.some((r) => isMeldOpen(r, ctx, hand))).length * 30,
   },
   {
     id: "four-returns-to-four-hidden",
     name: "暗四歸四 (4 runs, concealed)",
     score: (hand, ctx) =>
-      fourReturnsToFourInstances(hand).filter((runs) => runs.every((r) => !isMeldOpen(r, ctx))).length * 60,
+      fourReturnsToFourInstances(hand).filter((runs) => runs.every((r) => !isMeldOpen(r, ctx, hand))).length * 60,
   },
   {
     id: "identical-sequences-open",
     name: "明般高 (Identical sequences, open)",
-    score: (hand, ctx) => identicalRunPairInstances(hand).filter(([a, b]) => isMeldOpen(a, ctx) || isMeldOpen(b, ctx)).length * 5,
+    score: (hand, ctx) => identicalRunPairInstances(hand).filter(([a, b]) => isMeldOpen(a, ctx, hand) || isMeldOpen(b, ctx, hand)).length * 5,
   },
   {
     id: "identical-sequences-hidden",
     name: "暗般高 (Identical sequences, concealed)",
     score: (hand, ctx) =>
-      identicalRunPairInstances(hand).filter(([a, b]) => !isMeldOpen(a, ctx) && !isMeldOpen(b, ctx)).length * 8,
+      identicalRunPairInstances(hand).filter(([a, b]) => !isMeldOpen(a, ctx, hand) && !isMeldOpen(b, ctx, hand)).length * 8,
   },
   {
     id: "small-twin-identical-sequences-open",
     name: "明小雙般高 (Pair at one end of twin sequences, open)",
     score: (hand, ctx) => {
       const runs = smallTwinIdenticalSequences(hand);
-      return runs && (isMeldOpen(runs[0], ctx) || isMeldOpen(runs[1], ctx)) ? 10 : 0;
+      return runs && (isMeldOpen(runs[0], ctx, hand) || isMeldOpen(runs[1], ctx, hand)) ? 10 : 0;
     },
     excludes: ["identical-sequences-open", "identical-sequences-hidden"],
   },
@@ -2180,7 +2219,7 @@ export const PATTERNS: TaiPattern[] = [
     name: "暗小雙般高 (Pair at one end of twin sequences, concealed)",
     score: (hand, ctx) => {
       const runs = smallTwinIdenticalSequences(hand);
-      return runs && !isMeldOpen(runs[0], ctx) && !isMeldOpen(runs[1], ctx) ? 15 : 0;
+      return runs && !isMeldOpen(runs[0], ctx, hand) && !isMeldOpen(runs[1], ctx, hand) ? 15 : 0;
     },
     excludes: ["identical-sequences-open", "identical-sequences-hidden"],
   },
@@ -2189,7 +2228,7 @@ export const PATTERNS: TaiPattern[] = [
     name: "明一色三同順 (3 identical sequences, open)",
     score: (hand, ctx) => {
       const runs = tripleIdenticalRunInstance(hand);
-      return runs && runs.some((r) => isMeldOpen(r, ctx)) ? 30 : 0;
+      return runs && runs.some((r) => isMeldOpen(r, ctx, hand)) ? 30 : 0;
     },
     excludes: ["identical-sequences-open", "identical-sequences-hidden"],
   },
@@ -2198,7 +2237,7 @@ export const PATTERNS: TaiPattern[] = [
     name: "暗一色三同順 (3 identical sequences, concealed)",
     score: (hand, ctx) => {
       const runs = tripleIdenticalRunInstance(hand);
-      return runs && runs.every((r) => !isMeldOpen(r, ctx)) ? 60 : 0;
+      return runs && runs.every((r) => !isMeldOpen(r, ctx, hand)) ? 60 : 0;
     },
     excludes: ["identical-sequences-open", "identical-sequences-hidden"],
   },
@@ -2207,7 +2246,7 @@ export const PATTERNS: TaiPattern[] = [
     name: "明一色四同順 (4 identical sequences, open)",
     score: (hand, ctx) => {
       const runs = quadrupleIdenticalRunInstance(hand);
-      return runs && runs.some((r) => isMeldOpen(r, ctx)) ? 80 : 0;
+      return runs && runs.some((r) => isMeldOpen(r, ctx, hand)) ? 80 : 0;
     },
     excludes: ["identical-sequences-open", "identical-sequences-hidden", "triple-identical-sequences-open", "triple-identical-sequences-hidden"],
   },
@@ -2216,7 +2255,7 @@ export const PATTERNS: TaiPattern[] = [
     name: "暗一色四同順 (4 identical sequences, concealed)",
     score: (hand, ctx) => {
       const runs = quadrupleIdenticalRunInstance(hand);
-      return runs && runs.every((r) => !isMeldOpen(r, ctx)) ? 160 : 0;
+      return runs && runs.every((r) => !isMeldOpen(r, ctx, hand)) ? 160 : 0;
     },
     excludes: ["identical-sequences-open", "identical-sequences-hidden", "triple-identical-sequences-open", "triple-identical-sequences-hidden"],
   },
@@ -2225,7 +2264,7 @@ export const PATTERNS: TaiPattern[] = [
     name: "明真雙般高 (2 separate identical-sequence pairs, open)",
     score: (hand, ctx) => {
       const runs = twoSeparateIdenticalRunPairs(hand);
-      return runs && runs.some((r) => isMeldOpen(r, ctx)) ? 20 : 0;
+      return runs && runs.some((r) => isMeldOpen(r, ctx, hand)) ? 20 : 0;
     },
     excludes: ["identical-sequences-open", "identical-sequences-hidden"],
   },
@@ -2234,7 +2273,7 @@ export const PATTERNS: TaiPattern[] = [
     name: "暗真雙般高 (2 separate identical-sequence pairs, concealed)",
     score: (hand, ctx) => {
       const runs = twoSeparateIdenticalRunPairs(hand);
-      return runs && runs.every((r) => !isMeldOpen(r, ctx)) ? 40 : 0;
+      return runs && runs.every((r) => !isMeldOpen(r, ctx, hand)) ? 40 : 0;
     },
     excludes: ["identical-sequences-open", "identical-sequences-hidden"],
   },
@@ -2242,25 +2281,25 @@ export const PATTERNS: TaiPattern[] = [
     id: "same-suit-consecutive-open",
     name: "明單色步步高 (3 ascending sequences, gap 1, open)",
     score: (hand, ctx) =>
-      evenlySpacedRunInstances(hand, 1).filter((inst) => inst.some((m) => isMeldOpen(m, ctx))).length * 15,
+      evenlySpacedRunInstances(hand, 1).filter((inst) => inst.some((m) => isMeldOpen(m, ctx, hand))).length * 15,
   },
   {
     id: "same-suit-consecutive-hidden",
     name: "暗單色步步高 (3 ascending sequences, gap 1, concealed)",
     score: (hand, ctx) =>
-      evenlySpacedRunInstances(hand, 1).filter((inst) => inst.every((m) => !isMeldOpen(m, ctx))).length * 30,
+      evenlySpacedRunInstances(hand, 1).filter((inst) => inst.every((m) => !isMeldOpen(m, ctx, hand))).length * 30,
   },
   {
     id: "same-suit-two-step-open",
     name: "明單色二步高 (3 sequences, gap 2, open)",
     score: (hand, ctx) =>
-      evenlySpacedRunInstances(hand, 2).filter((inst) => inst.some((m) => isMeldOpen(m, ctx))).length * 8,
+      evenlySpacedRunInstances(hand, 2).filter((inst) => inst.some((m) => isMeldOpen(m, ctx, hand))).length * 8,
   },
   {
     id: "same-suit-two-step-hidden",
     name: "暗單色二步高 (3 sequences, gap 2, concealed)",
     score: (hand, ctx) =>
-      evenlySpacedRunInstances(hand, 2).filter((inst) => inst.every((m) => !isMeldOpen(m, ctx))).length * 15,
+      evenlySpacedRunInstances(hand, 2).filter((inst) => inst.every((m) => !isMeldOpen(m, ctx, hand))).length * 15,
   },
   {
     id: "consecutive-triplet-pair",
@@ -2336,7 +2375,7 @@ export const PATTERNS: TaiPattern[] = [
     name: "明三相逢 (Same run in all 3 suits, open)",
     score: (hand, ctx) => {
       const melds = nSuitSameRunMelds(hand, 3);
-      return melds && melds.some((m) => isMeldOpen(m, ctx)) ? 10 : 0;
+      return melds && melds.some((m) => isMeldOpen(m, ctx, hand)) ? 10 : 0;
     },
     excludes: ["cross-suit-same-run"],
   },
@@ -2345,7 +2384,7 @@ export const PATTERNS: TaiPattern[] = [
     name: "暗三相逢 (Same run in all 3 suits, concealed)",
     score: (hand, ctx) => {
       const melds = nSuitSameRunMelds(hand, 3);
-      return melds && melds.every((m) => !isMeldOpen(m, ctx)) ? 20 : 0;
+      return melds && melds.every((m) => !isMeldOpen(m, ctx, hand)) ? 20 : 0;
     },
     excludes: ["cross-suit-same-run"],
   },
@@ -2354,7 +2393,7 @@ export const PATTERNS: TaiPattern[] = [
     name: "明四相逢 (4 runs across all 3 suits, one suit doubled, open)",
     score: (hand, ctx) => {
       const melds = nSuitSameRunMelds(hand, 4);
-      return melds && melds.some((m) => isMeldOpen(m, ctx)) ? 40 : 0;
+      return melds && melds.some((m) => isMeldOpen(m, ctx, hand)) ? 40 : 0;
     },
     excludes: ["cross-suit-same-run", "three-suit-same-run-open", "three-suit-same-run-hidden"],
   },
@@ -2363,7 +2402,7 @@ export const PATTERNS: TaiPattern[] = [
     name: "暗四相逢 (4 runs across all 3 suits, one suit doubled, concealed)",
     score: (hand, ctx) => {
       const melds = nSuitSameRunMelds(hand, 4);
-      return melds && melds.every((m) => !isMeldOpen(m, ctx)) ? 80 : 0;
+      return melds && melds.every((m) => !isMeldOpen(m, ctx, hand)) ? 80 : 0;
     },
     excludes: ["cross-suit-same-run", "three-suit-same-run-open", "three-suit-same-run-hidden"],
   },
@@ -2372,7 +2411,7 @@ export const PATTERNS: TaiPattern[] = [
     name: "明五相逢 (5 runs across all 3 suits, open)",
     score: (hand, ctx) => {
       const melds = nSuitSameRunMelds(hand, 5);
-      return melds && melds.some((m) => isMeldOpen(m, ctx)) ? 80 : 0;
+      return melds && melds.some((m) => isMeldOpen(m, ctx, hand)) ? 80 : 0;
     },
     excludes: [
       "cross-suit-same-run",
@@ -2387,7 +2426,7 @@ export const PATTERNS: TaiPattern[] = [
     name: "暗五相逢 (5 runs across all 3 suits, concealed)",
     score: (hand, ctx) => {
       const melds = nSuitSameRunMelds(hand, 5);
-      return melds && melds.every((m) => !isMeldOpen(m, ctx)) ? 160 : 0;
+      return melds && melds.every((m) => !isMeldOpen(m, ctx, hand)) ? 160 : 0;
     },
     excludes: [
       "cross-suit-same-run",
@@ -2406,7 +2445,9 @@ export const PATTERNS: TaiPattern[] = [
   {
     id: "small-three-color-consecutive-triplets",
     name: "小三色連刻 (3 consecutive ranks across all 3 suits, pair at one + 2 triplets/kongs)",
-    score: (hand) => (hasSmallThreeColorConsecutiveTriplets(hand) ? 10 : 0),
+    // Stacks per instance - see smallThreeColorConsecutiveTripletsCount's
+    // own comment.
+    score: (hand) => smallThreeColorConsecutiveTripletsCount(hand) * 10,
   },
   {
     id: "big-three-color-consecutive-triplets",
@@ -2414,7 +2455,9 @@ export const PATTERNS: TaiPattern[] = [
     // Tai value not yet confirmed by the user - assumed 20 (double the small
     // version, matching the 小/大 doubling convention used elsewhere, e.g.
     // 小三連刻=15 / 大三連刻=30). Flag for confirmation.
-    score: (hand) => (hasBigThreeColorConsecutiveTriplets(hand) ? 20 : 0),
+    // Stacks per instance - see bigThreeColorConsecutiveTripletsCount's own
+    // comment.
+    score: (hand) => bigThreeColorConsecutiveTripletsCount(hand) * 20,
   },
   {
     id: "small-three-brothers",
@@ -2431,12 +2474,12 @@ export const PATTERNS: TaiPattern[] = [
   {
     id: "three-color-step-up-open",
     name: "明三色步步高 (3 suits, runs increasing by 1, open)",
-    score: (hand, ctx) => threeColorStepUpInstances(hand).filter((inst) => inst.some((m) => isMeldOpen(m, ctx))).length * 5,
+    score: (hand, ctx) => threeColorStepUpInstances(hand).filter((inst) => inst.some((m) => isMeldOpen(m, ctx, hand))).length * 5,
   },
   {
     id: "three-color-step-up-hidden",
     name: "暗三色步步高 (3 suits, runs increasing by 1, concealed)",
-    score: (hand, ctx) => threeColorStepUpInstances(hand).filter((inst) => inst.every((m) => !isMeldOpen(m, ctx))).length * 10,
+    score: (hand, ctx) => threeColorStepUpInstances(hand).filter((inst) => inst.every((m) => !isMeldOpen(m, ctx, hand))).length * 10,
   },
   {
     id: "shanpon-wait",
