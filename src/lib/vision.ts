@@ -12,7 +12,7 @@
 // only the CPU WASM backend registered, cutting the one-time model-load
 // download from ~26 MB to ~13 MB with no behavior change.
 import * as ort from "onnxruntime-web/wasm";
-import { COMPLETE_SIZE, MELDS_REQUIRED, type Tile } from "./mahjong";
+import { COMPLETE_SIZE, MELDS_REQUIRED, type Suit, type Tile } from "./mahjong";
 
 export const IMG_SIZE = 640;
 const CONFIDENCE_THRESHOLD = 0.4;
@@ -319,14 +319,67 @@ function detectionCenterY(d: Detection): number {
   return (d.box[1] + d.box[3]) / 2;
 }
 
+// Whether `tile`'s own box shape stands out as rotated specifically
+// relative to `row`'s own typical shape - same ratio-outlier math as
+// findRotatedOutlier, just checked against a row `tile` isn't already a
+// member of. Used by rescueRotatedStrays below to decide whether an
+// otherwise-too-small lone-tile cluster is really the 食胡 marker tile
+// pulled away from its own row (rather than a coincidental misdetection
+// with an unremarkable, non-rotated shape, which should stay dropped as
+// ordinary noise).
+function isRotatedRelativeTo(tile: Detection, row: Detection[]): boolean {
+  return row.length >= 3 && findRotatedOutlier([...row, tile]) === tile;
+}
+
+// Rescues a lone tile that the gap-based pass below split into its own
+// too-small cluster (see MIN_ROW_DETECTIONS) purely because it sits far
+// enough from the rest of its actual row to trip the gap threshold - the
+// way a 食胡 marker tile is often deliberately set apart, turned sideways,
+// from the rest of the hand (see findRotatedOutlier's own reasoning).
+// Without this, that tile would simply vanish from the crop entirely once
+// MIN_ROW_DETECTIONS drops its now-orphaned 1-tile cluster, not just end
+// up under-padded at the row's edge.
+//
+// Merges any single-detection, non-bonus cluster that looks rotated
+// relative to its nearest OTHER cluster back into that cluster, before
+// the usual size floor gets a chance to drop it. Only ever considers
+// clusters of exactly 1 - a genuine stray real tile is never smaller than
+// that, and a 2+-tile cluster (a real small row, or a genuine pair) isn't
+// the "single marker tile pulled away" shape this is looking for.
+function rescueRotatedStrays(rawRows: Detection[][]): Detection[][] {
+  const centerOf = (row: Detection[]): number => row.reduce((sum, d) => sum + detectionCenterY(d), 0) / row.length;
+  const result = rawRows.map((r) => [...r]);
+  for (let i = 0; i < result.length; i++) {
+    const row = result[i];
+    if (row.length !== 1 || !row[0].tile) continue; // only a single stray REAL tile is a candidate
+    let nearestIdx = -1;
+    let nearestDist = Infinity;
+    for (let j = 0; j < result.length; j++) {
+      if (j === i || result[j].length === 0) continue;
+      const dist = Math.abs(centerOf(result[j]) - centerOf(row));
+      if (dist < nearestDist) {
+        nearestDist = dist;
+        nearestIdx = j;
+      }
+    }
+    if (nearestIdx !== -1 && isRotatedRelativeTo(row[0], result[nearestIdx])) {
+      result[nearestIdx].push(row[0]);
+      result[i] = [];
+    }
+  }
+  return result.filter((r) => r.length > 0);
+}
+
 // Splits `detections` into vertically-separated groups ("rows"), sorted
 // top-to-bottom, dropping any group too small to be a real row - except an
 // all-bonus-tile group or a matching pair (see MIN_ROW_DETECTIONS' own
-// comment for both exceptions), each kept regardless of size. Purely a
-// function of box positions - classification correctness doesn't matter
-// here, only "is there a tile-shaped thing here," so bonus-tile detections
-// count too (they normally sit right alongside whichever row they belong
-// to, and a wrong tile-kind guess doesn't change a box's position).
+// comment for both exceptions), each kept regardless of size, and except a
+// lone tile rescued back into a neighboring row for looking rotated
+// relative to it (see rescueRotatedStrays). Purely a function of box
+// positions - classification correctness doesn't matter here, only "is
+// there a tile-shaped thing here," so bonus-tile detections count too
+// (they normally sit right alongside whichever row they belong to, and a
+// wrong tile-kind guess doesn't change a box's position).
 // Exported for direct unit testing (see vision.test.ts) - detectRowRegions
 // itself needs a real model/canvas to test end-to-end, but the row-
 // splitting logic is pure and worth testing against synthetic Detection[]
@@ -336,12 +389,13 @@ export function clusterRows(detections: Detection[]): Detection[][] {
   const sorted = [...detections].sort((a, b) => detectionCenterY(a) - detectionCenterY(b));
   const heights = sorted.map((d) => d.box[3] - d.box[1]).sort((a, b) => a - b);
   const medianHeight = heights[Math.floor(heights.length / 2)];
-  const rows: Detection[][] = [[sorted[0]]];
+  const rawRows: Detection[][] = [[sorted[0]]];
   for (let i = 1; i < sorted.length; i++) {
     const gap = detectionCenterY(sorted[i]) - detectionCenterY(sorted[i - 1]);
-    if (gap > medianHeight * ROW_GAP_FACTOR) rows.push([]);
-    rows[rows.length - 1].push(sorted[i]);
+    if (gap > medianHeight * ROW_GAP_FACTOR) rawRows.push([]);
+    rawRows[rawRows.length - 1].push(sorted[i]);
   }
+  const rows = rescueRotatedStrays(rawRows);
   return rows.filter((r) => r.length >= MIN_ROW_DETECTIONS || isAllBonusTiles(r) || isPairOnlyRow(r));
 }
 
@@ -463,14 +517,130 @@ export function declarednessScore(row: Detection[]): number {
   return (hasKong(row) ? 1 : 0) + (hasBonusTile(row) ? 1 : 0) - (findRotatedOutlier(row) ? 1 : 0) - (hasPair(row) ? 1 : 0);
 }
 
-// Decides which of the two detected rows is Declared vs Concealed.
-// isAllBonusTiles pre-empts everything else: a row made up ENTIRELY of
-// bonus tiles is unambiguously Declared regardless of what the OTHER
-// row's own kong/pair/rotation signals say (it settles the call outright,
-// rather than just adding its own +1 the way hasBonusTile does inside
-// declarednessScore) - a real concealed hand never holds bonus tiles, so
-// there's nothing for the other row's signals to legitimately outweigh.
-// Only once neither row (or both) qualifies does this fall through to
+// Backtracking search: can `counts` (1-indexed, index 0 unused) be fully
+// grouped into triplets, kongs, and (if `allowRuns`) runs, with nothing
+// left over? Same shape of search as mahjong.ts's own (private)
+// canDecompose, reimplemented here rather than imported from there since
+// this ALSO needs to accept a kong-sized (4-tile) group - mahjong.ts's
+// own scoring decomposition always takes a kong as its own explicit meld
+// straight from parsing, never as "4 of a kind found by this same
+// search," so it has no reason to check for one itself.
+function canGroupIntoMelds(counts: number[], allowRuns: boolean): boolean {
+  const size = counts.length - 1;
+  let i = 1;
+  while (i <= size && counts[i] === 0) i++;
+  if (i > size) return true; // nothing left, fully grouped
+
+  if (counts[i] >= 4) {
+    counts[i] -= 4;
+    if (canGroupIntoMelds(counts, allowRuns)) {
+      counts[i] += 4;
+      return true;
+    }
+    counts[i] += 4;
+  }
+  if (counts[i] >= 3) {
+    counts[i] -= 3;
+    if (canGroupIntoMelds(counts, allowRuns)) {
+      counts[i] += 3;
+      return true;
+    }
+    counts[i] += 3;
+  }
+  if (allowRuns && i <= size - 2 && counts[i + 1] > 0 && counts[i + 2] > 0) {
+    counts[i]--;
+    counts[i + 1]--;
+    counts[i + 2]--;
+    if (canGroupIntoMelds(counts, allowRuns)) {
+      counts[i]++;
+      counts[i + 1]++;
+      counts[i + 2]++;
+      return true;
+    }
+    counts[i]++;
+    counts[i + 1]++;
+    counts[i + 2]++;
+  }
+  return false;
+}
+
+// Whether every tile in `tiles` groups into a complete triplet, run, or
+// kong, with nothing at all left over - true declared melds are always
+// complete groups by construction (you can't declare a partial one), so
+// this checks whether a row's real tiles COULD legitimately be a
+// complete set of declared melds, as opposed to the loose, ungrouped
+// tiles a discard pile produces by chance. Honors (z) never form runs,
+// only triplets/kongs, same as mahjong.ts's own rules. Trivially true for
+// an empty input (nothing to group) - callers needing a non-empty row
+// check that separately (see looksLikeDeclaredMelds).
+function canFormOnlyMelds(tiles: Tile[]): boolean {
+  const bySuit = new Map<Suit, number[]>();
+  for (const t of tiles) {
+    if (!bySuit.has(t.suit)) bySuit.set(t.suit, new Array((t.suit === "z" ? 7 : 9) + 1).fill(0));
+    bySuit.get(t.suit)![t.rank]++;
+  }
+  for (const [suit, counts] of bySuit) {
+    if (!canGroupIntoMelds(counts, suit !== "z")) return false;
+  }
+  return true;
+}
+
+function realTiles(row: Detection[]): Tile[] {
+  return row.flatMap((d) => (d.tile ? [d.tile] : []));
+}
+
+function realTileCount(row: Detection[]): number {
+  return row.reduce((n, d) => n + (d.tile ? 1 : 0), 0);
+}
+
+// canFormOnlyMelds, but tolerant of exactly one leftover tile that isn't
+// part of any complete group - either the whole set decomposes cleanly,
+// or removing any ONE tile leaves a (still non-empty, ≥3-tile) remainder
+// that does. Guards looksLikeDeclaredMelds against a stray tile that
+// isn't really part of the declared melds at all but ended up counted in
+// the same row anyway - most notably a rotated 食胡 marker tile that
+// rescueRotatedStrays (see clusterRows) merged into the declared row
+// instead of the concealed one, when it happened to sit closer to that
+// row than to its own. A genuine discard pile essentially never
+// recovers this way - removing just one tile from a truly chaotic pile
+// practically never leaves the rest cleanly grouped, since there's no
+// reason for 14 of its 15 tiles to already be arranged into complete
+// melds by chance.
+function canFormMeldsAllowingOneStray(tiles: Tile[]): boolean {
+  if (tiles.length >= 3 && canFormOnlyMelds(tiles)) return true;
+  for (let i = 0; i < tiles.length; i++) {
+    const rest = [...tiles.slice(0, i), ...tiles.slice(i + 1)];
+    if (rest.length >= 3 && canFormOnlyMelds(rest)) return true;
+  }
+  return false;
+}
+
+// Whether `row`'s own real tiles (bonus tiles set aside, same as
+// hasBonusTile elsewhere) fully decompose into complete melds, tolerating
+// one stray leftover tile (see canFormMeldsAllowingOneStray) - a much
+// stronger, decisive signal than declarednessScore's own soft kong/pair/
+// rotation-based weighing, since true declared melds are always whole
+// groups while a discard pile's loose tiles essentially never happen to
+// form one by chance. Used both to pre-empt isRowADeclared's own additive
+// comparison below, and by selectHandRows to spot which of 3+ candidate
+// rows is genuinely the declared side.
+// Exported for direct unit testing.
+export function looksLikeDeclaredMelds(row: Detection[]): boolean {
+  return canFormMeldsAllowingOneStray(realTiles(row));
+}
+
+// Decides which of the two detected rows is Declared vs Concealed, most
+// decisive signals first:
+//  1. isAllBonusTiles - a row made up ENTIRELY of bonus tiles is
+//     unambiguously Declared, however few tiles it has (a real concealed
+//     hand never holds bonus tiles at all).
+//  2. looksLikeDeclaredMelds - a row whose real tiles fully decompose
+//     into complete melds is unambiguously Declared too (a discard pile's
+//     loose tiles essentially never do this by chance).
+// Each of these settles the call outright regardless of what the OTHER
+// row's own signals say, rather than just contributing its own +1 the
+// way hasKong/hasBonusTile do inside declarednessScore. Only once neither
+// row (or both) qualifies on either count does this fall through to
 // declarednessScore's own additive comparison, with position (rowA = top)
 // as its final tiebreak on a plain 0-0/tied score.
 // Exported for direct unit testing alongside declarednessScore itself.
@@ -478,34 +648,65 @@ export function isRowADeclared(rowA: Detection[], rowB: Detection[]): boolean {
   const aAllBonus = isAllBonusTiles(rowA);
   const bAllBonus = isAllBonusTiles(rowB);
   if (aAllBonus !== bAllBonus) return aAllBonus;
+
+  const aMelds = looksLikeDeclaredMelds(rowA);
+  const bMelds = looksLikeDeclaredMelds(rowB);
+  if (aMelds !== bMelds) return aMelds;
+
   return declarednessScore(rowA) >= declarednessScore(rowB);
 }
 
-// Whether `row` could plausibly be part of the hand itself (either a
-// concealed-hand fragment or a set of declared melds), rather than
-// something else entirely showing up as its own row - almost always a
-// discard pile, the one other loose pile of tiles that regularly ends up
-// in the same photo. Doesn't try to actually decompose the row into melds
-// (a discard pile's own tiles are perfectly valid tile kinds, same as any
-// other - the only thing setting it apart is sheer quantity, not shape) -
-// just rules out a row with more real tiles than the hand's own fixed
-// tile-count ceiling (see MAX_PLAUSIBLE_HAND_ROW_TILES) could ever
-// legitimately produce.
+// Whether `row` could plausibly be part of the hand itself at all, rather
+// than something else entirely showing up as its own row - almost always
+// a discard pile, the one other loose pile of tiles that regularly ends
+// up in the same photo. Just rules out a row with more real tiles than
+// the hand's own fixed tile-count ceiling (see MAX_PLAUSIBLE_HAND_ROW_TILES)
+// could ever legitimately produce - a cheap pre-filter ahead of
+// selectHandRows' own sharper, shape-based check (looksLikeDeclaredMelds),
+// which doesn't need a size cutoff of its own since a genuinely enormous
+// discard pile essentially never happens to fully decompose into melds by
+// chance either way.
 function isPlausibleHandRow(row: Detection[]): boolean {
-  const realTileCount = row.reduce((n, d) => n + (d.tile ? 1 : 0), 0);
-  return realTileCount <= MAX_PLAUSIBLE_HAND_ROW_TILES;
+  return realTileCount(row) <= MAX_PLAUSIBLE_HAND_ROW_TILES;
 }
 
 // When clusterRows finds 3+ distinct rows, at least one of them is very
-// likely not part of the hand at all (see isPlausibleHandRow) - drops any
-// such row, leaving whatever's left for detectRowRegions' normal 1-or-2-
-// row handling to work with below. Never touches the exactly-2-rows (or
-// fewer) case - there's no third row to be suspicious of in the first
-// place, so both are trusted as-is.
-// Exported for direct unit testing alongside isPlausibleHandRow's own
-// reasoning.
-export function dropImplausibleRows(rows: Detection[][]): Detection[][] {
-  return rows.length > 2 ? rows.filter(isPlausibleHandRow) : rows;
+// likely not part of the hand at all - picks out (at most) 2 that are, for
+// detectRowRegions' normal 1-or-2-row handling to work with below. Never
+// touches the exactly-2-rows (or fewer) case - there's no third row to be
+// suspicious of in the first place, so both are trusted as-is and left for
+// isRowADeclared to label.
+//
+// Two passes: first drops anything larger than the hand's own tile-count
+// ceiling could ever produce (isPlausibleHandRow) - a discard pile has no
+// such ceiling, so it just keeps growing as the game goes on. Then, among
+// what's left, looks for a row whose real tiles fully decompose into
+// complete melds (looksLikeDeclaredMelds) - if EXACTLY one does, that's
+// confidently the declared row, paired with the single largest of
+// whatever remains as the concealed-hand candidate (dropping everything
+// else, e.g. a same-sized-or-smaller discard pile that doesn't decompose
+// either). If no single row settles it that way (none decompose, or more
+// than one ambiguously does), falls back to just the single largest
+// surviving row as the sole concealed-hand candidate - detectRowRegions'
+// own 1-row handling (splitMixedRow) decides what, if anything, to do
+// with it from there.
+// Exported for direct unit testing alongside isPlausibleHandRow's and
+// looksLikeDeclaredMelds's own reasoning.
+export function selectHandRows(rows: Detection[][]): Detection[][] {
+  if (rows.length <= 2) return rows;
+  const plausible = rows.filter(isPlausibleHandRow);
+  if (plausible.length <= 2) return plausible;
+
+  const largest = (candidates: Detection[][]): Detection[] =>
+    candidates.reduce((a, b) => (realTileCount(b) > realTileCount(a) ? b : a));
+
+  const meldRows = plausible.filter(looksLikeDeclaredMelds);
+  if (meldRows.length === 1) {
+    const declared = meldRows[0];
+    const rest = plausible.filter((r) => r !== declared);
+    return [declared, largest(rest)];
+  }
+  return [largest(plausible)];
 }
 
 // A single physical row can itself mix bonus tiles in with the concealed
@@ -581,6 +782,29 @@ export function rowToRegion(row: Detection[], image: ImageSize, padXFraction: nu
   return { x: fx1, y: fy1, w: fx2 - fx1, h: fy2 - fy1 };
 }
 
+function rectsOverlapVertically(a: RowRegion, b: RowRegion): boolean {
+  return a.y < b.y + b.h && b.y < a.y + a.h;
+}
+
+// If `a` and `b` end up overlapping vertically after padding - most
+// likely because the padded rows sit close enough together that
+// ROW_PAD_Y/ROTATED_TILE_ROW_PAD_Y on each side eats further into their
+// actual gap than the gap itself allows - trims both back to meet at the
+// midpoint of their combined span, rather than let the whole autofit
+// result get rejected outright by the caller's own overlap check (see
+// fittedRegionsFrom in App.tsx). Whichever region sits on top gets its
+// bottom edge trimmed up to the midpoint; the other's top edge trimmed
+// down to meet it. A no-op when they don't actually overlap.
+// Exported for direct unit testing.
+export function resolveVerticalOverlap(a: RowRegion, b: RowRegion): [RowRegion, RowRegion] {
+  if (!rectsOverlapVertically(a, b)) return [a, b];
+  const [top, bottom] = a.y <= b.y ? [a, b] : [b, a];
+  const midpoint = (top.y + top.h + bottom.y) / 2;
+  const trimmedTop: RowRegion = { ...top, h: midpoint - top.y };
+  const trimmedBottom: RowRegion = { ...bottom, y: midpoint, h: bottom.y + bottom.h - midpoint };
+  return a.y <= b.y ? [trimmedTop, trimmedBottom] : [trimmedBottom, trimmedTop];
+}
+
 // Runs detection on the WHOLE uncropped photo (unlike detectTiles' usual
 // per-region callers, which only ever see an already-cropped source) and
 // clusters the results into rows by vertical position - most hand photos
@@ -593,7 +817,7 @@ export function rowToRegion(row: Detection[], image: ImageSize, padXFraction: nu
 export async function detectRowRegions(image: HTMLImageElement): Promise<DetectedRegions | null> {
   const box = letterbox(image);
   const { detections } = await detectTiles(box);
-  const rows = dropImplausibleRows(clusterRows(detections));
+  const rows = selectHandRows(clusterRows(detections));
 
   if (rows.length === 2) {
     // Which physical row is Declared vs Concealed - see isRowADeclared.
@@ -601,7 +825,8 @@ export async function detectRowRegions(image: HTMLImageElement): Promise<Detecte
     const aIsDeclared = isRowADeclared(rowA, rowB);
     const declaredRow = aIsDeclared ? rowA : rowB;
     const concealedRow = aIsDeclared ? rowB : rowA;
-    return { declared: rowToRegion(declaredRow, image), concealed: rowToRegion(concealedRow, image) };
+    const [declared, concealed] = resolveVerticalOverlap(rowToRegion(declaredRow, image), rowToRegion(concealedRow, image));
+    return { declared, concealed };
   }
 
   if (rows.length === 1) {
@@ -610,10 +835,11 @@ export async function detectRowRegions(image: HTMLImageElement): Promise<Detecte
     // see splitMixedRow.
     const split = splitMixedRow(rows[0]);
     if (!split) return null;
-    return {
-      declared: rowToRegion(split.declared, image, SPLIT_PAD_X),
-      concealed: rowToRegion(split.concealed, image, SPLIT_PAD_X),
-    };
+    const [declared, concealed] = resolveVerticalOverlap(
+      rowToRegion(split.declared, image, SPLIT_PAD_X),
+      rowToRegion(split.concealed, image, SPLIT_PAD_X)
+    );
+    return { declared, concealed };
   }
 
   return null;

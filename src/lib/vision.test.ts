@@ -2,13 +2,15 @@ import { describe, expect, it } from "vitest";
 import {
   clusterRows,
   declarednessScore,
-  dropImplausibleRows,
   findRotatedOutlier,
   IMG_SIZE,
   isPairOnlyRow,
   isRowADeclared,
+  looksLikeDeclaredMelds,
   nonMaxSuppression,
+  resolveVerticalOverlap,
   rowToRegion,
+  selectHandRows,
   splitMixedRow,
   type Detection,
 } from "./vision";
@@ -26,6 +28,22 @@ const detection = (overrides: Partial<Detection> = {}): Detection => ({
 // default 80px height unless overridden.
 const rowOfDetections = (y1: number, y2: number, count: number): Detection[] =>
   Array.from({ length: count }, (_, i) => detection({ box: [i * 40, y1, i * 40 + 40, y2] }));
+
+// A row of `count` DISTINCT, non-adjacent-rank tiles (cycling ranks
+// 1,3,5,7,9 within m, then t, then b, before repeating) - unlike
+// rowOfDetections' own all-identical tiles, this never accidentally forms
+// a meld/kong/pair OR a run (every rank is 2 apart from the next within
+// its own suit), useful for simulating a discard pile or other row whose
+// tiles genuinely don't group into anything.
+const rowOfDistinctTiles = (y1: number, y2: number, count: number): Detection[] => {
+  const suits = ["m", "t", "b"] as const;
+  const ranks = [1, 3, 5, 7, 9];
+  return Array.from({ length: count }, (_, i) => {
+    const suit = suits[Math.floor(i / ranks.length) % suits.length];
+    const rank = ranks[i % ranks.length];
+    return detection({ tile: { suit, rank }, className: `${rank}${suit}`, box: [i * 40, y1, i * 40 + 40, y2] });
+  });
+};
 
 describe("nonMaxSuppression", () => {
   it("keeps a single detection untouched", () => {
@@ -88,6 +106,34 @@ describe("clusterRows", () => {
     const top = rowOfDetections(100, 180, 4);
     const bottom = rowOfDetections(400, 480, 4);
     const stray = detection({ box: [0, 1000, 40, 1080] }); // alone, far from both real rows
+    const rows = clusterRows([...top, ...bottom, stray]);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toEqual(top);
+    expect(rows[1]).toEqual(bottom);
+  });
+
+  it("rescues a lone rotated-looking tile into its nearest neighboring row, instead of dropping it as noise", () => {
+    // Sits closer to `top` (center 140, distance 130) than to `bottom`
+    // (center 440, distance 170), and its ratio (2.0) is a clear outlier
+    // against either row's own upright ratio (0.5) - simulates a 食胡
+    // marker tile pulled far enough from its row's main line to trip the
+    // gap threshold on its own.
+    const top = rowOfDetections(100, 180, 4);
+    const bottom = rowOfDetections(400, 480, 4);
+    const rotated = detection({ box: [0, 250, 80, 290] }); // width 80, height 40 -> ratio 2.0
+    const rows = clusterRows([...top, ...bottom, rotated]);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toEqual([...top, rotated]);
+    expect(rows[1]).toEqual(bottom);
+  });
+
+  it("does NOT rescue a lone tile that isn't actually rotated relative to its neighbor - stays dropped as ordinary noise", () => {
+    // Same position as the rescue case above, but an upright ratio (0.5)
+    // matching the rest of the photo - nothing marks this as the 食胡
+    // tile rather than a run-of-the-mill stray misdetection.
+    const top = rowOfDetections(100, 180, 4);
+    const bottom = rowOfDetections(400, 480, 4);
+    const stray = detection({ box: [0, 210, 40, 290] }); // width 40, height 80 -> ratio 0.5, matching top/bottom
     const rows = clusterRows([...top, ...bottom, stray]);
     expect(rows).toHaveLength(2);
     expect(rows[0]).toEqual(top);
@@ -216,13 +262,24 @@ describe("declarednessScore", () => {
 });
 
 describe("isRowADeclared", () => {
-  it("falls through to declarednessScore's own comparison when neither row is all-bonus", () => {
-    const kongRow = rowOfDetections(100, 180, 4); // hasKong -> +1
+  it("falls through to declarednessScore's own comparison when neither row is all-bonus or melds-complete", () => {
+    // A kong (hasKong -> +1) plus 2 unrelated leftover singles - scores
+    // toward declared via declarednessScore, but does NOT fully decompose
+    // (even with looksLikeDeclaredMelds' 1-stray tolerance, since there
+    // are 2 leftovers here, not 1) - so this exercises the score
+    // fallback specifically, not the melds-decisive branch.
+    const kongRow = [
+      ...rowOfDetections(100, 180, 4),
+      detection({ tile: { suit: "m", rank: 2 }, box: [160, 100, 200, 180] }),
+      detection({ tile: { suit: "z", rank: 3 }, box: [200, 100, 240, 180] }),
+    ];
     const pairRow = [
       detection({ tile: { suit: "b", rank: 5 } }),
       detection({ tile: { suit: "b", rank: 5 }, box: [40, 100, 80, 180] }),
       detection({ tile: { suit: "b", rank: 9 }, box: [80, 100, 120, 180] }),
     ]; // hasPair -> -1
+    expect(looksLikeDeclaredMelds(kongRow)).toBe(false);
+    expect(looksLikeDeclaredMelds(pairRow)).toBe(false);
     expect(isRowADeclared(kongRow, pairRow)).toBe(true);
     expect(isRowADeclared(pairRow, kongRow)).toBe(false);
   });
@@ -234,6 +291,31 @@ describe("isRowADeclared", () => {
     expect(isRowADeclared(kongRow, bonusOnly)).toBe(false);
   });
 
+  it("decisively picks a melds-complete row as Declared even when the other row has a stronger declarednessScore", () => {
+    // The would-be-declared row here has neither a kong nor a bonus tile
+    // (declarednessScore alone would score it 0), while the OTHER row has
+    // a bonus tile (+1, via hasBonusTile) but no complete meld of its own
+    // (2 unrelated real tiles, well short of the 3 needed even with the
+    // 1-stray tolerance) - yet the melds-complete row still wins, since
+    // looksLikeDeclaredMelds is checked before declarednessScore.
+    const run = [
+      detection({ tile: { suit: "t", rank: 5 } }),
+      detection({ tile: { suit: "t", rank: 6 }, box: [40, 100, 80, 180] }),
+      detection({ tile: { suit: "t", rank: 7 }, box: [80, 100, 120, 180] }),
+    ];
+    const bonusButNoMeld = [
+      detection({ tile: null, className: "1f", box: [0, 400, 40, 480] }),
+      detection({ tile: { suit: "m", rank: 2 }, box: [40, 400, 80, 480] }),
+      detection({ tile: { suit: "z", rank: 5 }, box: [80, 400, 120, 480] }),
+    ];
+    expect(looksLikeDeclaredMelds(run)).toBe(true);
+    expect(declarednessScore(run)).toBe(0);
+    expect(looksLikeDeclaredMelds(bonusButNoMeld)).toBe(false);
+    expect(declarednessScore(bonusButNoMeld)).toBe(1);
+    expect(isRowADeclared(run, bonusButNoMeld)).toBe(true);
+    expect(isRowADeclared(bonusButNoMeld, run)).toBe(false);
+  });
+
   it("falls through to position (rowA wins the tie) when both rows are all-bonus", () => {
     const bonusA = [detection({ tile: null, className: "1f" })];
     const bonusB = [detection({ tile: null, className: "2f" })];
@@ -241,23 +323,105 @@ describe("isRowADeclared", () => {
   });
 });
 
-describe("dropImplausibleRows", () => {
+describe("looksLikeDeclaredMelds", () => {
+  it("recognizes a complete run", () => {
+    const run = [
+      detection({ tile: { suit: "t", rank: 5 } }),
+      detection({ tile: { suit: "t", rank: 6 }, box: [40, 100, 80, 180] }),
+      detection({ tile: { suit: "t", rank: 7 }, box: [80, 100, 120, 180] }),
+    ];
+    expect(looksLikeDeclaredMelds(run)).toBe(true);
+  });
+
+  it("recognizes a complete triplet", () => {
+    expect(looksLikeDeclaredMelds(rowOfDetections(100, 180, 3))).toBe(true);
+  });
+
+  it("recognizes a complete kong (4 of a kind)", () => {
+    expect(looksLikeDeclaredMelds(rowOfDetections(100, 180, 4))).toBe(true);
+  });
+
+  it("recognizes an honor triplet, but not an honor run (honors never form runs)", () => {
+    const honorTriplet = [
+      detection({ tile: { suit: "z", rank: 3 } }),
+      detection({ tile: { suit: "z", rank: 3 }, box: [40, 100, 80, 180] }),
+      detection({ tile: { suit: "z", rank: 3 }, box: [80, 100, 120, 180] }),
+    ];
+    const honorRun = [
+      detection({ tile: { suit: "z", rank: 3 } }),
+      detection({ tile: { suit: "z", rank: 4 }, box: [40, 100, 80, 180] }),
+      detection({ tile: { suit: "z", rank: 5 }, box: [80, 100, 120, 180] }),
+    ];
+    expect(looksLikeDeclaredMelds(honorTriplet)).toBe(true);
+    expect(looksLikeDeclaredMelds(honorRun)).toBe(false);
+  });
+
+  it("ignores bonus tiles when checking decomposition - a run plus its own flower still counts", () => {
+    const runWithFlower = [
+      detection({ tile: { suit: "t", rank: 5 } }),
+      detection({ tile: { suit: "t", rank: 6 }, box: [40, 100, 80, 180] }),
+      detection({ tile: { suit: "t", rank: 7 }, box: [80, 100, 120, 180] }),
+      detection({ tile: null, className: "2f", box: [120, 100, 160, 180] }),
+    ];
+    expect(looksLikeDeclaredMelds(runWithFlower)).toBe(true);
+  });
+
+  it("tolerates exactly ONE leftover stray tile alongside a complete run - e.g. a 食胡 marker tile that got merged into the wrong row", () => {
+    const runWithStray = [
+      detection({ tile: { suit: "t", rank: 5 } }),
+      detection({ tile: { suit: "t", rank: 6 }, box: [40, 100, 80, 180] }),
+      detection({ tile: { suit: "t", rank: 7 }, box: [80, 100, 120, 180] }),
+      detection({ tile: { suit: "m", rank: 3 }, box: [120, 100, 160, 180] }), // unrelated stray
+    ];
+    expect(looksLikeDeclaredMelds(runWithStray)).toBe(true);
+  });
+
+  it("rejects 2+ leftover stray tiles - the tolerance only covers exactly one", () => {
+    const runWithTwoStrays = [
+      detection({ tile: { suit: "t", rank: 5 } }),
+      detection({ tile: { suit: "t", rank: 6 }, box: [40, 100, 80, 180] }),
+      detection({ tile: { suit: "t", rank: 7 }, box: [80, 100, 120, 180] }),
+      detection({ tile: { suit: "m", rank: 3 }, box: [120, 100, 160, 180] }),
+      detection({ tile: { suit: "z", rank: 1 }, box: [160, 100, 200, 180] }),
+    ];
+    expect(looksLikeDeclaredMelds(runWithTwoStrays)).toBe(false);
+  });
+
+  it("rejects a lone stray tile with no real meld at all", () => {
+    expect(looksLikeDeclaredMelds([detection({ tile: { suit: "t", rank: 5 } })])).toBe(false);
+  });
+
+  it("rejects a bag of distinct, non-grouping tiles", () => {
+    expect(looksLikeDeclaredMelds(rowOfDistinctTiles(100, 180, 7))).toBe(false);
+  });
+
+  it("rejects an all-bonus row - nothing real to decompose", () => {
+    const bonusOnly = [detection({ tile: null, className: "1f" }), detection({ tile: null, className: "2f" })];
+    expect(looksLikeDeclaredMelds(bonusOnly)).toBe(false);
+  });
+
+  it("handles an empty input", () => {
+    expect(looksLikeDeclaredMelds([])).toBe(false);
+  });
+});
+
+describe("selectHandRows", () => {
   it("leaves rows untouched when there are only 2, however large one is", () => {
     const huge = rowOfDetections(100, 180, 30);
     const normal = rowOfDetections(400, 480, 4);
-    expect(dropImplausibleRows([huge, normal])).toEqual([huge, normal]);
+    expect(selectHandRows([huge, normal])).toEqual([huge, normal]);
   });
 
   it("leaves a single row untouched too", () => {
     const normal = rowOfDetections(100, 180, 4);
-    expect(dropImplausibleRows([normal])).toEqual([normal]);
+    expect(selectHandRows([normal])).toEqual([normal]);
   });
 
-  it("drops an implausibly large row (more real tiles than any hand could hold) when 3+ rows are found", () => {
+  it("drops an implausibly large row (more real tiles than any hand could hold) when 3+ rows are found, short-circuiting before the melds check", () => {
     const declared = rowOfDetections(100, 180, 4);
     const concealed = rowOfDetections(400, 480, 4);
     const discardPile = rowOfDetections(700, 780, 30); // way past COMPLETE_SIZE + MELDS_REQUIRED (22)
-    const rows = dropImplausibleRows([declared, concealed, discardPile]);
+    const rows = selectHandRows([declared, concealed, discardPile]);
     expect(rows).toEqual([declared, concealed]);
   });
 
@@ -265,11 +429,35 @@ describe("dropImplausibleRows", () => {
     const concealed = rowOfDetections(400, 480, 4);
     const discardA = rowOfDetections(100, 180, 30);
     const discardB = rowOfDetections(700, 780, 30);
-    expect(dropImplausibleRows([discardA, concealed, discardB])).toEqual([concealed]);
+    expect(selectHandRows([discardA, concealed, discardB])).toEqual([concealed]);
   });
 
   it("handles an empty input", () => {
-    expect(dropImplausibleRows([])).toEqual([]);
+    expect(selectHandRows([])).toEqual([]);
+  });
+
+  it("picks the one melds-decomposable row as declared, pairing it with the largest of the rest, when 3+ rows survive the size filter", () => {
+    // Mirrors a real photo: a discard-like row of distinct singles, a
+    // small declared row that decomposes into a complete run (plus its
+    // own bonus tile), and a larger concealed-hand row that - like most
+    // genuine concealed fragments - doesn't happen to fully decompose on
+    // its own either.
+    const discard = rowOfDistinctTiles(100, 180, 7);
+    const declaredMeld = [
+      detection({ tile: { suit: "t", rank: 5 }, box: [0, 400, 40, 480] }),
+      detection({ tile: { suit: "t", rank: 6 }, box: [40, 400, 80, 480] }),
+      detection({ tile: { suit: "t", rank: 7 }, box: [80, 400, 120, 480] }),
+      detection({ tile: null, className: "2f", box: [120, 400, 160, 480] }),
+    ];
+    const concealed = rowOfDistinctTiles(700, 780, 13);
+    expect(selectHandRows([discard, declaredMeld, concealed])).toEqual([declaredMeld, concealed]);
+  });
+
+  it("falls back to just the single largest row when no row decomposes into melds at all", () => {
+    const junkA = rowOfDistinctTiles(100, 180, 4);
+    const junkB = rowOfDistinctTiles(400, 480, 5);
+    const junkC = rowOfDistinctTiles(700, 780, 13); // the largest - presumably the real hand
+    expect(selectHandRows([junkA, junkB, junkC])).toEqual([junkC]);
   });
 });
 
@@ -316,6 +504,41 @@ describe("rowToRegion", () => {
     const region = rowToRegion(row, squareImage);
     expect(region.y).toBeGreaterThanOrEqual(0);
     expect(region.y + region.h).toBeLessThanOrEqual(1);
+  });
+});
+
+describe("resolveVerticalOverlap", () => {
+  it("leaves two non-overlapping regions untouched", () => {
+    const top = { x: 0, y: 0.1, w: 1, h: 0.2 }; // spans y:[0.1,0.3]
+    const bottom = { x: 0, y: 0.5, w: 1, h: 0.2 }; // spans y:[0.5,0.7]
+    expect(resolveVerticalOverlap(top, bottom)).toEqual([top, bottom]);
+  });
+
+  it("trims two overlapping regions to meet at the midpoint of their combined span, regardless of argument order", () => {
+    // top spans y:[0.3,0.5], bottom spans y:[0.4,0.8] - they overlap on
+    // [0.4,0.5]; midpoint of top's bottom edge (0.5) and bottom's top
+    // edge (0.4) is 0.45.
+    const top = { x: 0, y: 0.3, w: 1, h: 0.2 };
+    const bottom = { x: 0.2, y: 0.4, w: 0.5, h: 0.4 };
+    const [a, b] = resolveVerticalOverlap(top, bottom);
+    expect(a.y).toBeCloseTo(0.3);
+    expect(a.h).toBeCloseTo(0.15); // trimmed to end at 0.45
+    expect(b.y).toBeCloseTo(0.45);
+    expect(b.h).toBeCloseTo(0.35); // trimmed to start at 0.45, still ending at 0.8
+    // Passing them in the other order produces the same resolved pair, just swapped back.
+    const [b2, a2] = resolveVerticalOverlap(bottom, top);
+    expect(a2).toEqual(a);
+    expect(b2).toEqual(b);
+  });
+
+  it("leaves x/w untouched - only y/h are ever trimmed", () => {
+    const top = { x: 0.1, y: 0.3, w: 0.6, h: 0.3 };
+    const bottom = { x: 0.2, y: 0.5, w: 0.4, h: 0.3 };
+    const [a, b] = resolveVerticalOverlap(top, bottom);
+    expect(a.x).toBe(0.1);
+    expect(a.w).toBe(0.6);
+    expect(b.x).toBe(0.2);
+    expect(b.w).toBe(0.4);
   });
 });
 
