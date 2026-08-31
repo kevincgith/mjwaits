@@ -2465,6 +2465,14 @@ const isSelfDrawLastTileWin = (s: LastTileWinState): boolean => s !== "none";
 const cycleCount = (current: number, max: number) => (current + 1) % (max + 1);
 const countLabel = (base: string, count: number) => (count === 0 ? base : `${base}x${count}`);
 
+// 莊's own label - doesn't fit countLabel's "base"/"basexN" shape: n<=1
+// reads as plain "莊" (off at n=0, just-activated-with-no-streak-yet at
+// n=1 - same label either way, distinguished only by toggle-on styling),
+// n>=2 reads as "莊連(n-1)" (an (n-1)-win streak) - see GameContext's own
+// dealerStreak comment for why n and the displayed streak number differ
+// by 1.
+const dealerStreakLabel = (n: number): string => (n <= 1 ? "莊" : `莊連${n - 1}`);
+
 // 明絕/絕絕 share a single button - 絕絕 is structurally a strictly stronger
 // finding than 明絕 (see isVisiblyExhaustedMultiWait's doc comment in
 // scoring.ts: whenever the multi-way wait is exhausted, the winning tile's
@@ -2837,7 +2845,11 @@ function ScoringPanel() {
   // (a dealer can extend their streak by either self-drawing or claiming a
   // discard, so this has no business joining either mutual-exclusion
   // group). Tapping the button itself toggles between inactive (0) and
-  // x1; +/- then step it further - see toggleDealerStreak/bumpDealerStreak.
+  // just-active-with-no-streak-yet (1, shown as plain "莊", 1 tai); +/- then
+  // step it further into 莊連1/莊連2/... (shown with the streak number,
+  // 2n-1 tai) - see dealerStreakLabel and toggleDealerStreak/
+  // bumpDealerStreak, and GameContext.dealerStreak's own comment in
+  // scoring.ts for the full n-to-label-to-tai mapping.
   const [dealerStreak, setDealerStreak] = useState(0);
   const toggleDealerStreak = () => setDealerStreak((n) => (n > 0 ? 0 : 1));
   const bumpDealerStreak = (delta: 1 | -1) => setDealerStreak((n) => Math.max(0, n + delta));
@@ -3582,9 +3594,9 @@ function ScoringPanel() {
           className={dealerStreak > 0 ? "toggle-on" : undefined}
           aria-pressed={dealerStreak > 0}
           onClick={toggleDealerStreak}
-          title={dealerStreak > 0 ? "莊 - tap to turn off (0 tai)" : "莊 (連莊) - tap to declare a 1-win dealer streak (3 tai); use +/- to adjust further"}
+          title={dealerStreak > 0 ? "莊 - tap to turn off (0 tai)" : "莊 - tap to declare (1 tai); use +/- to build up a 連莊 streak from there"}
         >
-          {countLabel("莊", dealerStreak)}
+          {dealerStreakLabel(dealerStreak)}
         </button>
         {dealerStreak > 0 && (
           <>

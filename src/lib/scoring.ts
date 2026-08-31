@@ -527,12 +527,14 @@ export interface GameContext {
   // FIVE_POWER_TAI_TABLE), fully independent of it. See the "rob-kong"
   // PATTERNS entry.
   robKong: number;
-  // 莊 (連莊 - consecutive dealer wins) - a plain declared count, 0
-  // meaning "not declared" (0 tai). Purely declared, same "trust the
-  // user" reasoning as flowerDraw/kongDraw/robKong - tai is 2n+1 per count
-  // (see the "dealer-streak" PATTERNS entry), uncapped above 0 (unlike
-  // those 3, there's no fixed lookup table or physical-tile ceiling behind
-  // this one - a dealer can in principle keep winning indefinitely).
+  // 莊/連莊 - a plain declared count, purely declared, same "trust the
+  // user" reasoning as flowerDraw/kongDraw/robKong, uncapped above 0
+  // (unlike those 3, there's no fixed lookup table or physical-tile
+  // ceiling behind this one - a dealer can in principle keep winning
+  // indefinitely). 0 means "not declared" (0 tai); 1 means "just 莊, no
+  // streak yet" (1 tai); n >= 2 means "莊連(n-1)" - an (n-1)-win
+  // consecutive dealer streak, at 2(n-1)+1 = 2n-1 tai. See the
+  // "dealer-streak" PATTERNS entry.
   dealerStreak: number;
   // 明絕/絕絕's manual override - see isVisiblyTripledWinningTile/
   // isVisiblyExhaustedMultiWait's own PATTERNS entries. Only meaningful
@@ -2563,9 +2565,12 @@ export const PATTERNS: TaiPattern[] = [
   {
     id: "dealer-streak",
     name: "莊",
-    // Declared count, but a linear formula (2n+1) rather than a lookup
-    // table like 槓摸/搶槓's - see dealerStreak's own comment.
-    score: (_hand, ctx) => (ctx.dealerStreak > 0 ? 2 * ctx.dealerStreak + 1 : 0),
+    // Declared count, but a linear formula (2n-1) rather than a lookup
+    // table like 槓摸/搶槓's - see dealerStreak's own comment for what n
+    // means (1 = just 莊 with no streak yet, at 1 tai; n >= 2 = 莊連(n-1)
+    // at 2(n-1)+1 = 2n-1 tai - the same formula, just re-expressed in
+    // terms of the raw declared count instead of the displayed streak).
+    score: (_hand, ctx) => (ctx.dealerStreak > 0 ? 2 * ctx.dealerStreak - 1 : 0),
   },
   {
     id: "concealed-self-draw",
