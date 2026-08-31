@@ -12,6 +12,7 @@ import {
   looksLikeDeclaredMelds,
   nonMaxSuppression,
   resolveVerticalOverlap,
+  ROW_PAD_X,
   rowToRegion,
   selectHandRows,
   splitMixedRow,
@@ -717,6 +718,21 @@ describe("rowToRegion", () => {
     const wideRow = rowOfDetections(100, 180, 10); // raw width 400/640 = 0.625, way over 0.1
     const region = rowToRegion(wideRow, squareImage);
     expect(region.w).toBeGreaterThan(0.1);
+  });
+
+  it("floors the horizontal padding at one tile's own width (minEdgePadTiles) when ROW_PAD_X's proportional padding would be smaller", () => {
+    const row = rowOfDetections(100, 180, 3); // raw bbox x:[0,120], each tile 40px wide (40/640 = 0.0625 fraction)
+    const withoutFloor = rowToRegion(row, squareImage); // default ROW_PAD_X padding: 0.08 * 0.1875 = 0.015 - smaller than a tile's own width
+    const withFloor = rowToRegion(row, squareImage, ROW_PAD_X, 1);
+    expect(withFloor.w).toBeGreaterThan(withoutFloor.w);
+    expect(withFloor.w).toBeCloseTo(0.25); // 0.1875 raw + 0.0625 pad on each side
+  });
+
+  it("leaves the padding at ROW_PAD_X's own (already larger) amount when minEdgePadTiles's floor wouldn't add anything", () => {
+    const row = rowOfDetections(100, 180, 20); // raw width fraction 1.25 - ROW_PAD_X's own padding (0.1) already exceeds one tile's width (0.0625)
+    const withoutFloor = rowToRegion(row, squareImage);
+    const withFloor = rowToRegion(row, squareImage, ROW_PAD_X, 1);
+    expect(withFloor.w).toBeCloseTo(withoutFloor.w);
   });
 });
 

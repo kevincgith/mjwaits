@@ -297,7 +297,9 @@ const MIN_ROW_DETECTIONS = 3;
 // tile, rather than a razor-exact crop. Kept generous - a bit of empty
 // margin around the tiles reads a lot easier than a box cropped flush to
 // their edges.
-const ROW_PAD_X = 0.08;
+// Exported for direct unit testing (rowToRegion's minEdgePadTiles tests
+// compare against this default explicitly).
+export const ROW_PAD_X = 0.08;
 const ROW_PAD_Y = 0.3;
 // Much tighter horizontal padding used only when splitting a single
 // physical row into its bonus-tile (declared) and real-tile (concealed)
@@ -330,6 +332,18 @@ const ROTATED_TILE_ROW_PAD_Y = 0.35;
 // a crop box down to) - kept as vision.ts's own separate constant rather
 // than importing that one, so this module doesn't depend on App.tsx.
 const MIN_REGION_WIDTH = 0.1;
+// A declared row's tiles (individual melds, often with a rotated claimed
+// tile right at one end) sit closer to the row's own raw edge than a
+// concealed row's do, and ROW_PAD_X's flat proportional padding thins out
+// fast on a declared row with plenty of tiles (its "row width" denominator
+// gets large while each individual tile stays the same size). Guarantee at
+// least one whole tile's own width of padding at each horizontal end for a
+// declared row specifically, on top of (not instead of) ROW_PAD_X - taking
+// whichever of the two ends up more generous - so there's always real room
+// to grab and nudge the crop without immediately clipping an edge tile.
+// Not applied to the concealed row or to a split-row half (see
+// DECLARED_ROW_MIN_EDGE_PAD_TILES's own call site).
+const DECLARED_ROW_MIN_EDGE_PAD_TILES = 1;
 // The most real (non-bonus) tiles any single hand-related row could ever
 // legitimately contain: a full hand already caps out at COMPLETE_SIZE,
 // and each of its up to MELDS_REQUIRED melds being a kong (the maximum
@@ -888,7 +902,11 @@ export interface ImageSize {
 // contrast, is always decided from the row's own content: a row
 // containing a rotated outlier (see findRotatedOutlier) gets
 // ROTATED_TILE_ROW_PAD_Y's larger margin instead of the normal ROW_PAD_Y,
-// regardless of which caller reached here.
+// regardless of which caller reached here. `minEdgePadTiles` (see
+// DECLARED_ROW_MIN_EDGE_PAD_TILES) additionally floors the horizontal
+// padding at that many tile-widths, measured from the row's own
+// detections - only the declared-row caller in detectRowRegions passes
+// this; every other caller leaves it at 0 (no floor beyond padXFraction).
 // Exported for direct unit testing - detectRowRegions itself still needs
 // a real model/canvas to test end-to-end.
 // Widens [x1, x2] out to MIN_REGION_WIDTH (symmetrically, around its own
@@ -911,7 +929,12 @@ function ensureMinWidth(x1: number, x2: number): [number, number] {
   return [clamp01(newX1), clamp01(newX2)];
 }
 
-export function rowToRegion(row: Detection[], image: ImageSize, padXFraction: number = ROW_PAD_X): RowRegion {
+export function rowToRegion(
+  row: Detection[],
+  image: ImageSize,
+  padXFraction: number = ROW_PAD_X,
+  minEdgePadTiles: number = 0
+): RowRegion {
   const srcWidth = image.naturalWidth;
   const srcHeight = image.naturalHeight;
   const scale = Math.min(IMG_SIZE / srcWidth, IMG_SIZE / srcHeight);
@@ -928,8 +951,15 @@ export function rowToRegion(row: Detection[], image: ImageSize, padXFraction: nu
   const w = fx2 - fx1;
   const h = fy2 - fy1;
   const padYFraction = findRotatedOutlier(row) ? ROTATED_TILE_ROW_PAD_Y : ROW_PAD_Y;
-  fx1 = clamp01(fx1 - w * padXFraction);
-  fx2 = clamp01(fx2 + w * padXFraction);
+  let padXAmount = w * padXFraction;
+  if (minEdgePadTiles > 0) {
+    const widths = row.map((d) => d.box[2] - d.box[0]).sort((a, b) => a - b);
+    const medianTileWidthBox = widths[Math.floor(widths.length / 2)];
+    const tileWidthFraction = medianTileWidthBox / scale / srcWidth;
+    padXAmount = Math.max(padXAmount, tileWidthFraction * minEdgePadTiles);
+  }
+  fx1 = clamp01(fx1 - padXAmount);
+  fx2 = clamp01(fx2 + padXAmount);
   fy1 = clamp01(fy1 - h * padYFraction);
   fy2 = clamp01(fy2 + h * padYFraction);
   // Only the normal (default ROW_PAD_X) case gets the minimum-width floor
@@ -986,7 +1016,10 @@ export async function detectRowRegions(image: HTMLImageElement): Promise<Detecte
     const aIsDeclared = isRowADeclared(rowA, rowB);
     const declaredRow = aIsDeclared ? rowA : rowB;
     const concealedRow = aIsDeclared ? rowB : rowA;
-    const [declared, concealed] = resolveVerticalOverlap(rowToRegion(declaredRow, image), rowToRegion(concealedRow, image));
+    const [declared, concealed] = resolveVerticalOverlap(
+      rowToRegion(declaredRow, image, ROW_PAD_X, DECLARED_ROW_MIN_EDGE_PAD_TILES),
+      rowToRegion(concealedRow, image)
+    );
     return { declared, concealed };
   }
 
