@@ -1990,6 +1990,17 @@ describe("PATTERNS: 不搭三相逢 (十六不搭: same 3 ranks across all 3 sui
     const result = scoreHand("147m147t258b11234567z", ctx());
     expect(tai(result, "sixteen-unrelated-same-ranks")).toBe(0);
   });
+
+  it("doesn't score when the pair isn't an honor, even if all 3 suits' ranks still match", () => {
+    // Same 1/5/9-across-all-3-suits shape as the worked example above, but
+    // the doubled tile (the pair) is 5b instead of an honor - the ranks
+    // used per suit are still {1,5,9} either way (a Set, so doubling an
+    // existing rank doesn't add a 4th), so this would have wrongly scored
+    // under the old (pair-blind) condition.
+    const result = scoreHand("159m159t1559b1234567z", ctx());
+    expect(tai(result, "sixteen-unrelated-same-ranks")).toBe(0);
+    expect(tai(result, "sixteen-unrelated")).toBe(50);
+  });
 });
 
 describe("PATTERNS: 不搭雜龍 (十六不搭: ranks span 1-9 across all 3 suits)", () => {
@@ -2003,6 +2014,14 @@ describe("PATTERNS: 不搭雜龍 (十六不搭: ranks span 1-9 across all 3 suit
   it("doesn't score when the suits' ranks overlap instead of jointly spanning 1-9", () => {
     const result = scoreHand("147m147t258b11234567z", ctx());
     expect(tai(result, "sixteen-unrelated-straight")).toBe(0);
+  });
+
+  it("doesn't score when the pair isn't an honor, even if the suits' ranks still jointly span 1-9", () => {
+    // Same 147m/258b/369t shape as the worked example above, but the
+    // doubled tile (the pair) is 4m instead of an honor.
+    const result = scoreHand("1447m258b369t1234567z", ctx());
+    expect(tai(result, "sixteen-unrelated-straight")).toBe(0);
+    expect(tai(result, "sixteen-unrelated")).toBe(50);
   });
 });
 

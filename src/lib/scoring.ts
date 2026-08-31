@@ -2679,17 +2679,25 @@ export const PATTERNS: TaiPattern[] = [
     id: "sixteen-unrelated-same-ranks",
     name: "不搭三相逢 (Same 3 ranks across all 3 suits)",
     // Additional bonus - stacks with either 十六不搭 or 十六不搭(十六飛),
-    // not an alternative to them.
-    score: (hand) => (isSixteenUnrelatedComplete(allHandTiles(hand)) && sixteenUnrelatedRanksMatchAcrossSuits(hand) ? 20 : 0),
+    // not an alternative to them. Per the user, only fires when the hand's
+    // own pair is an honor tile - decomposeSixteenUnrelated doesn't
+    // actually favor honors when picking which kind gets doubled (it's
+    // whichever kind happens to hold 2 copies), so a numbered pair CAN
+    // otherwise satisfy the same rank-matching condition; this check makes
+    // the house rule's intent explicit rather than assuming it away.
+    score: (hand) =>
+      isSixteenUnrelatedComplete(allHandTiles(hand)) && isHonorTile(hand.pair[0]) && sixteenUnrelatedRanksMatchAcrossSuits(hand) ? 20 : 0,
   },
   {
     id: "sixteen-unrelated-straight",
     name: "不搭雜龍 (Ranks span 1-9 across all 3 suits)",
-    // Additional bonus, same "stacks with everything" framing as
-    // 不搭三相逢 - mutually exclusive with it by construction (the ranks'
-    // union can't be both size 3 and size 9 at once), but not via an
-    // explicit exclude since they simply never co-fire.
-    score: (hand) => (isSixteenUnrelatedComplete(allHandTiles(hand)) && sixteenUnrelatedRanksSpanOneToNine(hand) ? 20 : 0),
+    // Additional bonus, same "stacks with everything" framing and same
+    // honor-pair requirement as 不搭三相逢 above - mutually exclusive with
+    // it by construction (the ranks' union can't be both size 3 and size 9
+    // at once), but not via an explicit exclude since they simply never
+    // co-fire.
+    score: (hand) =>
+      isSixteenUnrelatedComplete(allHandTiles(hand)) && isHonorTile(hand.pair[0]) && sixteenUnrelatedRanksSpanOneToNine(hand) ? 20 : 0,
   },
   {
     id: "eight-pairs",
