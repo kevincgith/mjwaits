@@ -5,6 +5,7 @@ import {
   dropImplausibleRows,
   findRotatedOutlier,
   IMG_SIZE,
+  isPairOnlyRow,
   isRowADeclared,
   nonMaxSuppression,
   rowToRegion,
@@ -144,6 +145,34 @@ describe("findRotatedOutlier", () => {
   it("returns null with fewer than 3 items - not enough to establish a median", () => {
     const rotated = detection({ box: [200, 100, 280, 140] });
     expect(findRotatedOutlier([detection(), rotated])).toBeNull();
+  });
+});
+
+describe("isPairOnlyRow", () => {
+  it("recognizes a matching pair", () => {
+    const pair = [detection({ tile: { suit: "b", rank: 5 } }), detection({ tile: { suit: "b", rank: 5 }, box: [40, 100, 80, 180] })];
+    expect(isPairOnlyRow(pair)).toBe(true);
+  });
+
+  it("rejects 2 tiles of different kinds", () => {
+    const notAPair = [detection({ tile: { suit: "b", rank: 5 } }), detection({ tile: { suit: "b", rank: 6 }, box: [40, 100, 80, 180] })];
+    expect(isPairOnlyRow(notAPair)).toBe(false);
+  });
+
+  it("rejects a bonus tile even if it happens to pair up with a real tile's array position", () => {
+    const row = [detection({ tile: { suit: "b", rank: 5 } }), detection({ tile: null, className: "1f", box: [40, 100, 80, 180] })];
+    expect(isPairOnlyRow(row)).toBe(false);
+  });
+
+  it("rejects any size other than exactly 2", () => {
+    expect(isPairOnlyRow([detection()])).toBe(false);
+    expect(isPairOnlyRow(rowOfDetections(100, 180, 3))).toBe(false);
+    expect(isPairOnlyRow([])).toBe(false);
+  });
+
+  it("works generically on a minimal {tile} shape, same as App.tsx's own ReviewDetection", () => {
+    const minimalPair = [{ tile: { suit: "z" as const, rank: 3 } }, { tile: { suit: "z" as const, rank: 3 } }];
+    expect(isPairOnlyRow(minimalPair)).toBe(true);
   });
 });
 

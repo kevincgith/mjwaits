@@ -52,6 +52,7 @@ import {
   detectRowRegions,
   detectTiles,
   findRotatedOutlier,
+  isPairOnlyRow,
   letterbox,
   prefetchModel,
   type DetectedRegions,
@@ -3236,14 +3237,21 @@ function ScoringPanel() {
       // If one tile in the concealed hand photo comes back conspicuously
       // rotated relative to the rest (see findRotatedOutlier's own
       // reasoning - a claimed or self-drawn winning tile is often laid at
-      // an angle to mark it apart), assume it's the 食胡 tile. Matched back
-      // to `nextConcealed` by kind only (post-sort, the original detection
-      // order is gone) - any instance of that kind works, since scoring
-      // only ever cares about the winning tile's kind, not which physical
-      // copy. Falls back to no pre-selected winning tile (as before) when
-      // nothing stands out.
+      // an angle to mark it apart), assume it's the 食胡 tile. Failing
+      // that, a concealed region that's JUST the hand's own pair (將眼,
+      // once every meld is declared elsewhere - see isPairOnlyRow) needs
+      // no rotation signal at all: findRotatedOutlier can't tell anything
+      // apart from only 2 tiles (not enough for its median comparison to
+      // mean anything), but both tiles ARE the exact same kind here, so
+      // either one is safely the 食胡 tile regardless. Either way, matched
+      // back to `nextConcealed` by kind only (post-sort, the original
+      // detection order is gone) - any instance of that kind works, since
+      // scoring only ever cares about the winning tile's kind, not which
+      // physical copy. Falls back to no pre-selected winning tile (as
+      // before) when neither signal finds anything.
       const outlier = findRotatedOutlier(concealedRegion.detections);
-      const winningMatch = outlier?.tile ? nextConcealed.find((t) => t.suit === outlier.tile!.suit && t.rank === outlier.tile!.rank) : undefined;
+      const winningKind = outlier?.tile ?? (isPairOnlyRow(concealedRegion.detections) ? concealedRegion.detections[0].tile : null);
+      const winningMatch = winningKind ? nextConcealed.find((t) => t.suit === winningKind.suit && t.rank === winningKind.rank) : undefined;
       setWinningTile(winningMatch ?? null);
       setConcealedPickerCollapsed(true);
     }

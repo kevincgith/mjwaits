@@ -398,8 +398,14 @@ function isAllBonusTiles(row: Detection[]): boolean {
 // every meld is declared elsewhere, only the pair/將眼 itself is left
 // concealed). Used by clusterRows to exempt this specific shape from the
 // usual noise-size floor - unlike an arbitrary 1-2-tile stray, a matching
-// pair is a meaningfully complete row on its own.
-function isPairOnlyRow(row: Detection[]): boolean {
+// pair is a meaningfully complete row on its own. Generic over anything
+// with a `tile` field (same reason findRotatedOutlier above is generic) -
+// App.tsx's own 食胡 auto-selection reuses this directly on a scanned
+// region's ReviewDetection[]: findRotatedOutlier can't identify a rotated
+// outlier from just 2 tiles (not enough for its median comparison to mean
+// anything), but a matching pair needs no rotation signal at all - both
+// tiles are the exact same kind, so either one is safely the 食胡 tile.
+export function isPairOnlyRow<T extends { tile: Tile | null }>(row: T[]): boolean {
   if (row.length !== 2) return false;
   const [a, b] = row;
   return a.tile !== null && b.tile !== null && a.tile.suit === b.tile.suit && a.tile.rank === b.tile.rank;
