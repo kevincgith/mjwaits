@@ -16,10 +16,21 @@
    they wait to see if it's the first half of a double-tap-to-zoom gesture -
    on a small tap target like a tile button, a second tap that arrives
    within that window can register on the tile that was still "live" from
-   the first tap instead of the one actually under the finger now. */
+   the first tap instead of the one actually under the finger now.
+
+   The user-select/touch-callout trio below stops iOS Safari's own
+   long-press handling (the text-selection loupe, and the copy/select
+   callout menu) from kicking in on top of ours - without it, holding a
+   finger on a tile long enough to trigger useTapAndLongPress (see
+   WinningTileHandButton/DeclaredMeldButton) also pops up Safari's native
+   selection UI over the button, since a <button>'s label text is
+   otherwise still selectable like any other text. */
 button {
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 /* :hover styles only ever go here, gated to devices that have a real
@@ -1067,6 +1078,12 @@ h1 {
   box-sizing: border-box;
   cursor: move;
   touch-action: none;
+  /* Same reasoning as the global button rule above: a finger held on this
+     region while dragging it can otherwise trigger iOS Safari's own
+     long-press text-selection UI on top of the drag. */
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 /* Second region gets a distinct color so two overlapping-ish boxes stay
@@ -1119,6 +1136,9 @@ h1 {
   border-radius: 50%;
   touch-action: none;
   transform: translate(-50%, -50%);
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .crop-handle-nw {
