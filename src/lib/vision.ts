@@ -527,10 +527,14 @@ export function declarednessScore(row: Detection[]): number {
 // any care, so one of them landing at a rotated-looking angle by pure
 // accident is entirely plausible, whereas a genuine matching pair
 // coincidentally showing up among a pile of otherwise-independent
-// discards is far less likely. Only used to break a tie/decide between
-// candidates, not as a general-purpose declared/concealed classifier the
-// way declarednessScore itself is - see mostConcealedLooking below.
-function concealednessScore(row: Detection[]): number {
+// discards is far less likely. Only ever used as selectHandRows' own
+// fallback when looksLikeConcealedFragment's stronger structural check
+// can't settle it (that check should be preferred first - even this
+// pair-weighted score can still pick a discard pile that happens to
+// combine a coincidental pair AND a coincidental rotation at once, since
+// it's still just an additive heuristic, not a structural guarantee).
+// Exported for direct unit testing.
+export function concealednessScore(row: Detection[]): number {
   return declarednessScore(row) - (hasPair(row) ? 1 : 0);
 }
 
@@ -646,6 +650,42 @@ export function looksLikeDeclaredMelds(row: Detection[]): boolean {
   return canFormMeldsAllowingOneStray(realTiles(row));
 }
 
+// Whether `row`'s own real tiles decompose into any number of complete
+// melds PLUS exactly one pair (trying every tile kind that appears 2+
+// times as the candidate pair, in turn) - tolerating one leftover stray
+// tile the same way looksLikeDeclaredMelds does. A genuine concealed-hand
+// fragment always has EXACTLY one pair (將眼) holding everything else
+// together as complete melds; a discard pile's tiles, even when they
+// happen to include a coincidental pair (or even a coincidental rotated-
+// looking tile ALONGSIDE one - see concealednessScore's own comment on
+// why that combination can happen), essentially never ALSO have
+// everything else cleanly grouped this way. This is the concealed-side
+// counterpart to looksLikeDeclaredMelds - a decisive structural check
+// selectHandRows prefers over concealednessScore's softer weighing,
+// which is only a fallback for when no candidate cleanly qualifies here.
+// Exported for direct unit testing.
+export function looksLikeConcealedFragment(row: Detection[]): boolean {
+  const tiles = realTiles(row);
+  const countByKind = new Map<string, number>();
+  for (const t of tiles) {
+    const key = `${t.suit}${t.rank}`;
+    countByKind.set(key, (countByKind.get(key) ?? 0) + 1);
+  }
+  for (const [key, count] of countByKind) {
+    if (count < 2) continue;
+    const suit = key[0] as Suit;
+    const rank = Number(key.slice(1));
+    let removed = 0;
+    const rest: Tile[] = [];
+    for (const t of tiles) {
+      if (removed < 2 && t.suit === suit && t.rank === rank) removed++;
+      else rest.push(t);
+    }
+    if (rest.length === 0 || canFormMeldsAllowingOneStray(rest)) return true;
+  }
+  return false;
+}
+
 // Decides which of the two detected rows is Declared vs Concealed, most
 // decisive signals first:
 //  1. isAllBonusTiles - a row made up ENTIRELY of bonus tiles is
@@ -699,20 +739,18 @@ function isPlausibleHandRow(row: Detection[]): boolean {
 // such ceiling, so it just keeps growing as the game goes on. Then, among
 // what's left, looks for a row whose real tiles fully decompose into
 // complete melds (looksLikeDeclaredMelds) - if EXACTLY one does, that's
-// confidently the declared row, paired with whichever of the rest scores
-// LOWEST on concealednessScore (most concealed-looking - see that
-// function's own comment for why it weighs the hand's own pair more
-// heavily than a rotated 食胡 marker tile specifically for this decision)
-// as the concealed-hand candidate, dropping everything else. Size is
-// deliberately NOT the tiebreak here: a heavily-declared hand can leave a
-// genuinely tiny concealed remainder (e.g. just one run plus the pair)
-// that's smaller than an ordinary discard pile sitting in the same photo,
-// so "the bigger leftover row" can easily pick the wrong one. If no
-// single row settles which is declared (none decompose, or more than one
-// ambiguously does), falls back to just the single most concealed-looking
-// row (by the same measure) as the sole concealed-hand candidate -
-// detectRowRegions' own 1-row handling (splitMixedRow) decides what, if
-// anything, to do with it from there.
+// confidently the declared row, paired with whichever of the rest is
+// picked by pickConcealedCandidate below as the concealed-hand candidate,
+// dropping everything else. Size is deliberately never the tiebreak
+// anywhere in here: a heavily-declared hand can leave a genuinely tiny
+// concealed remainder (e.g. just one run plus the pair) that's smaller
+// than an ordinary discard pile sitting in the same photo, so "the bigger
+// leftover row" can easily pick the wrong one. If no single row settles
+// which is declared (none decompose, or more than one ambiguously does),
+// falls back to running the same concealed-candidate pick across ALL
+// plausible rows, taking just the one result as the sole concealed-hand
+// candidate - detectRowRegions' own 1-row handling (splitMixedRow)
+// decides what, if anything, to do with it from there.
 // Exported for direct unit testing alongside isPlausibleHandRow's and
 // looksLikeDeclaredMelds's own reasoning.
 export function selectHandRows(rows: Detection[][]): Detection[][] {
@@ -720,16 +758,30 @@ export function selectHandRows(rows: Detection[][]): Detection[][] {
   const plausible = rows.filter(isPlausibleHandRow);
   if (plausible.length <= 2) return plausible;
 
-  const mostConcealedLooking = (candidates: Detection[][]): Detection[] =>
-    candidates.reduce((a, b) => (concealednessScore(b) < concealednessScore(a) ? b : a));
+  // Prefers looksLikeConcealedFragment's decisive structural check (melds
+  // + exactly one pair) when EXACTLY one candidate qualifies; only falls
+  // back to concealednessScore's softer weighing when that check is
+  // ambiguous (none or 2+ candidates qualify) - see both functions' own
+  // comments for why the structural check is the more reliable of the
+  // two. A discard pile can score just as "concealed-looking" as the real
+  // hand under concealednessScore alone if it happens to carry BOTH a
+  // coincidental pair and a coincidentally-rotated tile at once, but it
+  // essentially never ALSO has everything else cleanly grouped into
+  // complete melds around that pair the way a genuine concealed fragment
+  // does.
+  const pickConcealedCandidate = (candidates: Detection[][]): Detection[] => {
+    const fragments = candidates.filter(looksLikeConcealedFragment);
+    if (fragments.length === 1) return fragments[0];
+    return candidates.reduce((a, b) => (concealednessScore(b) < concealednessScore(a) ? b : a));
+  };
 
   const meldRows = plausible.filter(looksLikeDeclaredMelds);
   if (meldRows.length === 1) {
     const declared = meldRows[0];
     const rest = plausible.filter((r) => r !== declared);
-    return [declared, mostConcealedLooking(rest)];
+    return [declared, pickConcealedCandidate(rest)];
   }
-  return [mostConcealedLooking(plausible)];
+  return [pickConcealedCandidate(plausible)];
 }
 
 // A single physical row can itself mix bonus tiles in with the concealed

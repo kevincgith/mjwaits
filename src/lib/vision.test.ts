@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   clusterRows,
+  concealednessScore,
   declarednessScore,
   findRotatedOutlier,
   IMG_SIZE,
   isPairOnlyRow,
   isRowADeclared,
+  looksLikeConcealedFragment,
   looksLikeDeclaredMelds,
   nonMaxSuppression,
   resolveVerticalOverlap,
@@ -405,6 +407,74 @@ describe("looksLikeDeclaredMelds", () => {
   });
 });
 
+describe("looksLikeConcealedFragment", () => {
+  it("recognizes a run plus its own pair - the classic 'most of the hand is declared' remainder", () => {
+    const runPlusPair = [
+      detection({ tile: { suit: "m", rank: 7 } }),
+      detection({ tile: { suit: "m", rank: 8 }, box: [40, 100, 80, 180] }),
+      detection({ tile: { suit: "m", rank: 9 }, box: [80, 100, 120, 180] }),
+      detection({ tile: { suit: "b", rank: 7 }, box: [120, 100, 160, 180] }),
+      detection({ tile: { suit: "b", rank: 7 }, box: [160, 100, 200, 180] }),
+    ];
+    expect(looksLikeConcealedFragment(runPlusPair)).toBe(true);
+  });
+
+  it("recognizes a row that's ENTIRELY just the pair - the smallest legitimate concealed fragment", () => {
+    const pairOnly = [
+      detection({ tile: { suit: "z", rank: 2 } }),
+      detection({ tile: { suit: "z", rank: 2 }, box: [40, 100, 80, 180] }),
+    ];
+    expect(looksLikeConcealedFragment(pairOnly)).toBe(true);
+  });
+
+  it("tries every candidate pair kind, not just the first duplicate found", () => {
+    // 666m has count 3 (also >= 2, so it's tried as a candidate pair
+    // first, in insertion order) but removing 2 of them leaves an
+    // ungroupable leftover 6m - only trying 44t as the pair instead
+    // leaves a clean 666m triplet behind. Confirms the search doesn't
+    // stop at the first duplicate kind it finds.
+    const tiles = [
+      detection({ tile: { suit: "m", rank: 6 } }),
+      detection({ tile: { suit: "m", rank: 6 }, box: [40, 100, 80, 180] }),
+      detection({ tile: { suit: "m", rank: 6 }, box: [80, 100, 120, 180] }), // 666m triplet
+      detection({ tile: { suit: "t", rank: 4 }, box: [120, 100, 160, 180] }),
+      detection({ tile: { suit: "t", rank: 4 }, box: [160, 100, 200, 180] }), // 44t pair (the real one)
+    ];
+    expect(looksLikeConcealedFragment(tiles)).toBe(true);
+  });
+
+  it("tolerates exactly one leftover stray tile alongside melds + a pair, same as looksLikeDeclaredMelds", () => {
+    const withStray = [
+      detection({ tile: { suit: "m", rank: 7 } }),
+      detection({ tile: { suit: "m", rank: 8 }, box: [40, 100, 80, 180] }),
+      detection({ tile: { suit: "m", rank: 9 }, box: [80, 100, 120, 180] }),
+      detection({ tile: { suit: "b", rank: 7 }, box: [120, 100, 160, 180] }),
+      detection({ tile: { suit: "b", rank: 7 }, box: [160, 100, 200, 180] }),
+      detection({ tile: { suit: "z", rank: 3 }, box: [200, 100, 240, 180] }), // unrelated stray
+    ];
+    expect(looksLikeConcealedFragment(withStray)).toBe(true);
+  });
+
+  it("rejects a row with no pair at all - every kind appears exactly once", () => {
+    expect(looksLikeConcealedFragment(rowOfDistinctTiles(100, 180, 7))).toBe(false);
+  });
+
+  it("rejects a discard-pile-like row that merely happens to contain a coincidental pair, with everything else left over ungrouped", () => {
+    const discardWithIncidentalPair = [
+      detection({ tile: { suit: "m", rank: 2 }, box: [0, 100, 40, 180] }),
+      detection({ tile: { suit: "t", rank: 6 }, box: [40, 100, 80, 180] }),
+      detection({ tile: { suit: "b", rank: 9 }, box: [80, 100, 120, 180] }),
+      detection({ tile: { suit: "z", rank: 1 }, box: [120, 100, 160, 180] }),
+      detection({ tile: { suit: "z", rank: 1 }, box: [160, 100, 200, 180] }),
+    ];
+    expect(looksLikeConcealedFragment(discardWithIncidentalPair)).toBe(false);
+  });
+
+  it("handles an empty input", () => {
+    expect(looksLikeConcealedFragment([])).toBe(false);
+  });
+});
+
 describe("selectHandRows", () => {
   it("leaves rows untouched when there are only 2, however large one is", () => {
     const huge = rowOfDetections(100, 180, 30);
@@ -485,6 +555,39 @@ describe("selectHandRows", () => {
     expect(declarednessScore(discardWithRotatedTile)).toBe(-1);
     expect(declarednessScore(concealedPairOnly)).toBe(-1);
     expect(selectHandRows([discardWithRotatedTile, declaredMeld, concealedPairOnly])).toEqual([declaredMeld, concealedPairOnly]);
+  });
+
+  it("picks the structurally-correct concealed fragment even when a discard pile scores LOWER (more concealed-looking) on concealednessScore alone - a real photo can have BOTH a coincidental pair AND a coincidentally-rotated tile in the same discard pile", () => {
+    // The discard row has a coincidental pair (1z x2) AND a coincidentally
+    // -rotated tile (6z) at once - concealednessScore -3, actually LOWER
+    // (more "concealed-looking") than the genuine concealed fragment's own
+    // -2. Picking by score alone would get this backwards; the true
+    // concealed row still wins because it's the only one that actually
+    // decomposes into melds + exactly one pair (looksLikeConcealedFragment).
+    const discardWithPairAndRotation = [
+      detection({ tile: { suit: "m", rank: 2 }, box: [0, 100, 40, 180] }),
+      detection({ tile: { suit: "t", rank: 6 }, box: [40, 100, 80, 180] }),
+      detection({ tile: { suit: "b", rank: 9 }, box: [80, 100, 120, 180] }),
+      detection({ tile: { suit: "z", rank: 1 }, box: [120, 100, 160, 180] }),
+      detection({ tile: { suit: "z", rank: 1 }, box: [160, 100, 200, 180] }),
+      detection({ tile: { suit: "z", rank: 6 }, box: [200, 60, 280, 100] }), // width 80, height 40 -> ratio 2.0, a rotated outlier
+    ];
+    const declaredMeld = [
+      detection({ tile: { suit: "t", rank: 5 }, box: [0, 400, 40, 480] }),
+      detection({ tile: { suit: "t", rank: 6 }, box: [40, 400, 80, 480] }),
+      detection({ tile: { suit: "t", rank: 7 }, box: [80, 400, 120, 480] }),
+    ];
+    const concealedFragment = [
+      detection({ tile: { suit: "m", rank: 7 }, box: [0, 700, 40, 780] }),
+      detection({ tile: { suit: "m", rank: 8 }, box: [40, 700, 80, 780] }),
+      detection({ tile: { suit: "m", rank: 9 }, box: [80, 700, 120, 780] }),
+      detection({ tile: { suit: "b", rank: 7 }, box: [120, 700, 160, 780] }),
+      detection({ tile: { suit: "b", rank: 7 }, box: [160, 700, 200, 780] }),
+    ];
+    expect(concealednessScore(discardWithPairAndRotation)).toBeLessThan(concealednessScore(concealedFragment));
+    expect(looksLikeConcealedFragment(discardWithPairAndRotation)).toBe(false);
+    expect(looksLikeConcealedFragment(concealedFragment)).toBe(true);
+    expect(selectHandRows([discardWithPairAndRotation, declaredMeld, concealedFragment])).toEqual([declaredMeld, concealedFragment]);
   });
 
   it("falls back to the single most CONCEALED-LOOKING row (not necessarily largest) when no row decomposes into melds at all", () => {
