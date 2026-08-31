@@ -1040,6 +1040,33 @@ export function isVisiblyExhaustedMultiWait(hand: ResolvedHand, ctx: GameContext
   return totalRemaining === 1;
 }
 
+// Whether the pre-completion concealed hand's genuine wait (same getWaits
+// computation isVisiblyExhaustedMultiWait's own auto-detect above uses) has
+// 2+ distinct tile kinds - i.e. this hand's own concealed shape really was
+// a multi-way wait before the winning tile landed, independent of anything
+// declared.
+//
+// Only ever used to gate 絕絕's MANUAL override (see PATTERNS below), not
+// 明絕's - 明絕 explicitly doesn't care whether the wait was single or
+// multi (see isVisiblyTripledWinningTile's own doc comment), so this check
+// has nothing to say about it. For 絕絕 specifically, though, "the wait was
+// genuinely multi-way" is one of the pattern's own two defining halves -
+// and unlike the *other* half (how many copies are already visibly
+// declared, which genuinely needs the discard pile / other players' melds
+// the manual override exists to cover), whether the wait was multi-way to
+// begin with is entirely a fact about THIS hand's own concealed tiles,
+// which this tool already has full visibility into. So a manual "絕絕"
+// claim on a hand whose own concealed wait was only ever a genuine single
+// wait is directly contradicted by data already in hand, same reasoning as
+// isWinningTileHeldConcealedElsewhere above, and gets blocked regardless of
+// what the user says they saw declared or discarded elsewhere.
+export function isGenuineMultiWait(hand: ResolvedHand, ctx: GameContext): boolean {
+  if (ctx.winningTile === null) return false;
+  const pre = preWinWaitInput(hand, ctx.winningTile);
+  if (pre === null) return false;
+  return getWaits(pre.tiles, pre.meldsRequired).length >= 2;
+}
+
 // 明 (open) vs 暗 (concealed/hidden), per the house rule: a meld is 明 if
 // it's declared/exposed, OR if it's the meld the 食胡 tile (winningTile)
 // completed and that win wasn't a self-draw - claiming the last tile of an
@@ -2445,9 +2472,13 @@ export const PATTERNS: TaiPattern[] = [
   {
     id: "visible-exhausted-multi-wait",
     name: "絕絕 (Multi-way wait narrowed to one visible copy)",
-    // Same OR-with-gated-manual-override reasoning as 明絕 above.
+    // Same OR-with-gated-manual-override reasoning as 明絕 above, plus one
+    // more gate of its own: the manual half also requires isGenuineMultiWait
+    // - see that function's own doc comment for why 絕絕 (unlike 明絕) needs
+    // this second check too.
     score: (hand, ctx) =>
-      isVisiblyExhaustedMultiWait(hand, ctx) || (ctx.manualVisibleExhaustedMultiWait && !isWinningTileHeldConcealedElsewhere(hand, ctx))
+      isVisiblyExhaustedMultiWait(hand, ctx) ||
+      (ctx.manualVisibleExhaustedMultiWait && isGenuineMultiWait(hand, ctx) && !isWinningTileHeldConcealedElsewhere(hand, ctx))
         ? 10
         : 0,
     // Excludes 明絕 since it's the same underlying "visibly exhausted"

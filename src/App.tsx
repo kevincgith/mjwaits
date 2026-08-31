@@ -60,6 +60,7 @@ import {
 import {
   FIVE_POWER_TAI_TABLE,
   groupDeclaredTiles,
+  isGenuineMultiWait,
   isVisiblyExhaustedMultiWait,
   isVisiblyTripledWinningTile,
   isWinningTileHeldConcealedElsewhere,
@@ -3371,20 +3372,34 @@ function ScoringPanel() {
         : "none"
     : "none";
   // Whether the winning tile's kind is ALSO sitting elsewhere in this
-  // hand's own concealed tiles - if so, the MANUAL half of 明絕/絕絕 is
-  // blocked (see isWinningTileHeldConcealedElsewhere's doc comment in
-  // scoring.ts: unlike the auto-detect floor above, the manual override
-  // isn't derived from declared-meld counts, so it isn't automatically
-  // safe from this collision, and this tool CAN see the player's own
-  // concealed hand even though it can't see the discard pile or other
-  // players' melds). Caps the reachable ceiling at the auto floor instead
-  // of just disabling the button outright, since the auto-detected floor
-  // itself is never affected by this.
+  // hand's own concealed tiles - if so, the MANUAL half of 明絕/絕絕 (both
+  // of them - see isWinningTileHeldConcealedElsewhere's own doc comment) is
+  // blocked entirely: unlike the auto-detect floor above, the manual
+  // override isn't derived from declared-meld counts, so it isn't
+  // automatically safe from this collision, and this tool CAN see the
+  // player's own concealed hand even though it can't see the discard pile
+  // or other players' melds.
   const visibleExhaustManualBlocked = scoring?.ok ? isWinningTileHeldConcealedElsewhere(scoring.result.hand, ctx) : false;
-  const visibleExhaustCeiling: VisibleExhaustState = visibleExhaustManualBlocked ? visibleExhaustAuto : "exhausted";
+  // Whether this hand's own concealed pre-completion wait genuinely was
+  // multi-way - if not, the MANUAL half of 絕絕 specifically is blocked
+  // (see isGenuineMultiWait's own doc comment: 明絕 doesn't care about wait
+  // count, so this only caps escalation to "exhausted", not to "triple").
+  const visibleExhaustGenuineMultiWait = scoring?.ok ? isGenuineMultiWait(scoring.result.hand, ctx) : false;
+  // The manual override's ceiling, folding both blocks above into a single
+  // reachable top state: pinned to the auto floor when the concealed-
+  // duplicate block applies (blocks both 明絕 and 絕絕 manually), else
+  // capped at "triple" when the wait wasn't genuinely multi-way (blocks
+  // only 絕絕 manually - 明絕 stays reachable), else uncapped.
+  const visibleExhaustCeiling: VisibleExhaustState = visibleExhaustManualBlocked
+    ? visibleExhaustAuto
+    : visibleExhaustGenuineMultiWait
+      ? "exhausted"
+      : VISIBLE_EXHAUST_RANK[visibleExhaustAuto] > VISIBLE_EXHAUST_RANK.triple
+        ? visibleExhaustAuto
+        : "triple";
   // Every state the shared button can currently land on: at or above the
   // auto-detected floor, at or below the manual ceiling above. A floor of
-  // "exhausted" (or a floor pinned to the ceiling by the block above)
+  // "exhausted" (or a floor pinned to the ceiling by either block above)
   // leaves only one reachable state, which is why the button is also
   // `disabled` then.
   const visibleExhaustReachable = VISIBLE_EXHAUST_CYCLE.filter(
@@ -3780,7 +3795,9 @@ function ScoringPanel() {
                 ? "明絕 already true from this hand's own declared melds - tap to also declare 絕絕(10 tai) manually"
                 : visibleExhaustManualBlocked
                   ? "Can't declare manually - the winning tile is also sitting elsewhere in this hand's own concealed tiles, so it wasn't the last copy anywhere"
-                  : "Tap to cycle 明絕(5) / 絕絕(10) / off - declare manually when this hand's own declared melds alone can't prove it (e.g. you saw the other copies discarded)"
+                  : !visibleExhaustGenuineMultiWait
+                    ? "明絕(5) can still be declared manually, but 絕絕(10) can't - this hand's own concealed wait was only ever a single wait, not genuinely multi-way"
+                    : "Tap to cycle 明絕(5) / 絕絕(10) / off - declare manually when this hand's own declared melds alone can't prove it (e.g. you saw the other copies discarded)"
           }
         >
           {VISIBLE_EXHAUST_LABELS[visibleExhaustEffective]}

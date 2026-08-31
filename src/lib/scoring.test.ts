@@ -1797,6 +1797,24 @@ describe("PATTERNS: 明絕/絕絕 manual override", () => {
     expect(tai(result, "visible-exhausted-multi-wait")).toBe(10);
   });
 
+  it("blocks 絕絕's manual flag when the hand's own concealed pre-completion wait was only ever a genuine single wait", () => {
+    // Declared 111m222m333m456t, concealed 123t11z completed by 3t: before
+    // 3t, the concealed hand is only 12t11z, a genuine single wait on 3t
+    // alone (getWaits returns exactly 1 candidate) - nothing about that is
+    // multi-way, regardless of what's separately declared. 絕絕 specifically
+    // claims a multi-way wait got narrowed down to one visible copy, so
+    // asserting it manually here is contradicted by the hand's own shape,
+    // which this tool can already see directly - same reasoning as the
+    // concealed-duplicate gate above, just checking a different fact.
+    const result = scoreHand("(111m)(222m)(333m)(456t)123t11z", ctx({ winningTile: { suit: "t", rank: 3 }, manualVisibleExhaustedMultiWait: true }));
+    expect(tai(result, "visible-exhausted-multi-wait")).toBe(0);
+  });
+
+  it("still allows 明絕's manual flag on that same single-wait hand - 明絕 doesn't care about wait count", () => {
+    const result = scoreHand("(111m)(222m)(333m)(456t)123t11z", ctx({ winningTile: { suit: "t", rank: 3 }, manualVisibleTripleWin: true }));
+    expect(tai(result, "visible-triple-win")).toBe(5);
+  });
+
   it("blocks the manual flag when the winning tile's kind is ALSO sitting elsewhere in this hand's own concealed tiles", () => {
     // The declared honor triplets have nothing to do with 8b, so auto-detect
     // is false here - only the manual flag is at play. But the winning tile
@@ -2174,38 +2192,47 @@ describe("PATTERNS: every purely-declared button pattern applies to the special 
     expect(tai(scoreHand("1111m223344m5566777t", ctx({ dealerStreak: 1 })), "dealer-streak")).toBe(1);
   });
 
-  it("scores 明絕/絕絕 for 十三么/十六不搭 via the manual override - auto-detect is structurally always false here since these hands always have zero declared melds", () => {
-    // Each flag tested on its own (rather than together) since 絕絕 excludes
-    // 明絕 whenever both actually fire - same exclusion relationship the
-    // normal-hand manual-override tests rely on above, nothing special-hand
-    // specific about it. The chosen winning tile isn't the hand's own
-    // duplicated (pair) kind in either case, so the new concealed-duplicate
-    // gate (see the 明絕/絕絕 manual override describe block above) doesn't
-    // block it here.
+  it("scores 明絕 for 十三么/十六不搭 via the manual override - auto-detect is structurally always false here since these hands always have zero declared melds", () => {
+    // The chosen winning tile isn't the hand's own duplicated (pair) kind
+    // in either case, so the concealed-duplicate gate (see the 明絕/絕絕
+    // manual override describe block above) doesn't block it here.
     const thirteenOrphans = scoreHand("112349m19t19b1234567z", ctx({ winningTile: { suit: "m", rank: 3 }, manualVisibleTripleWin: true }));
     expect(tai(thirteenOrphans, "visible-triple-win")).toBe(5);
-    const thirteenOrphansExhausted = scoreHand(
-      "112349m19t19b1234567z",
-      ctx({ winningTile: { suit: "m", rank: 3 }, manualVisibleExhaustedMultiWait: true }),
-    );
-    expect(tai(thirteenOrphansExhausted, "visible-exhausted-multi-wait")).toBe(10);
 
     const sixteenUnrelated = scoreHand("147m147t258b11234567z", ctx({ winningTile: { suit: "m", rank: 1 }, manualVisibleTripleWin: true }));
     expect(tai(sixteenUnrelated, "visible-triple-win")).toBe(5);
-    const sixteenUnrelatedExhausted = scoreHand(
+  });
+
+  it("blocks 絕絕's manual override for all 3 special hands, for two different reasons", () => {
+    // 十三么/十六不搭: both always reduce to a genuine SINGLE wait right
+    // before completion (whichever one orphan/unrelated kind's slot the
+    // winning tile fills, or the one meld 十三么 tacks on, is the only
+    // thing left open - the other 11-15 kinds are already locked in as
+    // singles) - so isGenuineMultiWait is always false here, blocking 絕絕
+    // specifically while leaving 明絕 (which doesn't care about wait count)
+    // still reachable, per the test above.
+    const thirteenOrphans = scoreHand(
+      "112349m19t19b1234567z",
+      ctx({ winningTile: { suit: "m", rank: 3 }, manualVisibleExhaustedMultiWait: true }),
+    );
+    expect(tai(thirteenOrphans, "visible-exhausted-multi-wait")).toBe(0);
+
+    const sixteenUnrelated = scoreHand(
       "147m147t258b11234567z",
       ctx({ winningTile: { suit: "m", rank: 1 }, manualVisibleExhaustedMultiWait: true }),
     );
-    expect(tai(sixteenUnrelatedExhausted, "visible-exhausted-multi-wait")).toBe(10);
-  });
+    expect(tai(sixteenUnrelated, "visible-exhausted-multi-wait")).toBe(0);
 
-  it("blocks the manual override for 嚦咕嚦咕 (eight pairs) entirely - every tile kind in a valid pairs hand is held at least twice concealed by construction, so any winning tile choice always collides with the new concealed-duplicate gate", () => {
-    const result = scoreHand(
+    // 嚦咕嚦咕 (eight pairs): blocked for the OTHER reason instead (or as
+    // well) - every tile kind in a valid pairs hand is held at least twice
+    // concealed by construction, so any winning tile choice always
+    // collides with the concealed-duplicate gate regardless of wait count.
+    const eightPairs = scoreHand(
       "1111m223344m5566777t",
       ctx({ winningTile: { suit: "m", rank: 1 }, manualVisibleTripleWin: true, manualVisibleExhaustedMultiWait: true }),
     );
-    expect(tai(result, "visible-triple-win")).toBe(0);
-    expect(tai(result, "visible-exhausted-multi-wait")).toBe(0);
+    expect(tai(eightPairs, "visible-triple-win")).toBe(0);
+    expect(tai(eightPairs, "visible-exhausted-multi-wait")).toBe(0);
   });
 });
 
