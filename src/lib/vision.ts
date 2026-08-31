@@ -317,6 +317,19 @@ const SPLIT_PAD_X = 0.015;
 // imprecision in the model's own box for that tile, not a full second
 // safety margin on top of an already-generous one.
 const ROTATED_TILE_ROW_PAD_Y = 0.35;
+// The narrowest a region is ever allowed to end up, as a fraction of the
+// whole photo's width, regardless of how little padXFraction's own
+// proportional padding would otherwise give it. ROW_PAD_X/SPLIT_PAD_X are
+// both proportional to the row's OWN raw width, so a row with very few
+// real tiles (the extreme case: a single bonus tile, with no declared
+// melds at all) still ends up a sliver-thin box even after padding - too
+// narrow for a person to actually grab a specific corner handle to
+// resize it, since a real hand photo's full width usually spans many
+// tiles, dwarfing a single tile's own width by comparison. Matches
+// App.tsx's own MIN_CROP_FRACTION (the smallest a user can manually drag
+// a crop box down to) - kept as vision.ts's own separate constant rather
+// than importing that one, so this module doesn't depend on App.tsx.
+const MIN_REGION_WIDTH = 0.1;
 // The most real (non-bonus) tiles any single hand-related row could ever
 // legitimately contain: a full hand already caps out at COMPLETE_SIZE,
 // and each of its up to MELDS_REQUIRED melds being a kong (the maximum
@@ -841,9 +854,15 @@ export function splitMixedRow(row: Detection[]): { declared: Detection[]; concea
   return declared.length > 0 && concealed.length > 0 ? { declared, concealed } : null;
 }
 
+// `declared` is optional: a single detected row with no bonus tiles to
+// split it by content (see splitMixedRow) has nothing to confidently call
+// Declared at all - most often a fully concealed hand with no declared
+// melds and no bonus tiles either. detectRowRegions still fits the sole
+// Concealed region around it in that case rather than giving up entirely
+// - see its own comment.
 export interface DetectedRegions {
-  declared: RowRegion;
   concealed: RowRegion;
+  declared?: RowRegion;
 }
 
 // A structural subset of HTMLImageElement (its two natural dimensions),
@@ -872,6 +891,26 @@ export interface ImageSize {
 // regardless of which caller reached here.
 // Exported for direct unit testing - detectRowRegions itself still needs
 // a real model/canvas to test end-to-end.
+// Widens [x1, x2] out to MIN_REGION_WIDTH (symmetrically, around its own
+// center) if it's narrower than that - shifting the whole span rather
+// than clamping each edge independently, so a region sitting right at
+// the frame's edge still reaches the full minimum width by expanding
+// away from that edge instead of silently staying too narrow.
+function ensureMinWidth(x1: number, x2: number): [number, number] {
+  if (x2 - x1 >= MIN_REGION_WIDTH) return [x1, x2];
+  const center = (x1 + x2) / 2;
+  let newX1 = center - MIN_REGION_WIDTH / 2;
+  let newX2 = center + MIN_REGION_WIDTH / 2;
+  if (newX1 < 0) {
+    newX2 -= newX1;
+    newX1 = 0;
+  } else if (newX2 > 1) {
+    newX1 -= newX2 - 1;
+    newX2 = 1;
+  }
+  return [clamp01(newX1), clamp01(newX2)];
+}
+
 export function rowToRegion(row: Detection[], image: ImageSize, padXFraction: number = ROW_PAD_X): RowRegion {
   const srcWidth = image.naturalWidth;
   const srcHeight = image.naturalHeight;
@@ -893,6 +932,14 @@ export function rowToRegion(row: Detection[], image: ImageSize, padXFraction: nu
   fx2 = clamp01(fx2 + w * padXFraction);
   fy1 = clamp01(fy1 - h * padYFraction);
   fy2 = clamp01(fy2 + h * padYFraction);
+  // Only the normal (default ROW_PAD_X) case gets the minimum-width floor
+  // - a caller passing SPLIT_PAD_X is fitting one of splitMixedRow's two
+  // side-by-side halves, deliberately packed tight against each other
+  // with no vertical gap to lean on; widening either one out to
+  // MIN_REGION_WIDTH there could make the pair overlap, with no
+  // horizontal-overlap resolver (unlike resolveVerticalOverlap) to fix it
+  // back up afterward.
+  if (padXFraction === ROW_PAD_X) [fx1, fx2] = ensureMinWidth(fx1, fx2);
   return { x: fx1, y: fy1, w: fx2 - fx1, h: fy2 - fy1 };
 }
 
@@ -948,12 +995,19 @@ export async function detectRowRegions(image: HTMLImageElement): Promise<Detecte
     // forms) can still carry its own bonus tiles within that one row -
     // see splitMixedRow.
     const split = splitMixedRow(rows[0]);
-    if (!split) return null;
-    const [declared, concealed] = resolveVerticalOverlap(
-      rowToRegion(split.declared, image, SPLIT_PAD_X),
-      rowToRegion(split.concealed, image, SPLIT_PAD_X)
-    );
-    return { declared, concealed };
+    if (split) {
+      const [declared, concealed] = resolveVerticalOverlap(
+        rowToRegion(split.declared, image, SPLIT_PAD_X),
+        rowToRegion(split.concealed, image, SPLIT_PAD_X)
+      );
+      return { declared, concealed };
+    }
+    // Nothing to split the row by content (no bonus tiles at all) - most
+    // likely a fully concealed hand with nothing declared and no bonus
+    // tiles either. Still worth fitting the sole Concealed region around
+    // it rather than giving up entirely - the caller can always add a
+    // Declared region by hand afterward if this guess turns out wrong.
+    return { concealed: rowToRegion(rows[0], image) };
   }
 
   return null;

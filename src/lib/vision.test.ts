@@ -693,6 +693,31 @@ describe("rowToRegion", () => {
     expect(region.y).toBeGreaterThanOrEqual(0);
     expect(region.y + region.h).toBeLessThanOrEqual(1);
   });
+
+  it("widens a sliver-thin region (e.g. a single bonus tile, no declared melds at all) up to MIN_REGION_WIDTH", () => {
+    const oneTile = [detection({ box: [300, 100, 340, 180] })]; // raw width 40/640 = 0.0625, well under 0.1 even padded
+    const region = rowToRegion(oneTile, squareImage);
+    expect(region.w).toBeCloseTo(0.1);
+  });
+
+  it("widens by shifting away from the frame edge rather than clamping short of MIN_REGION_WIDTH", () => {
+    const nearEdge = [detection({ box: [0, 100, 20, 180] })]; // sits right at x=0
+    const region = rowToRegion(nearEdge, squareImage);
+    expect(region.x).toBeCloseTo(0);
+    expect(region.w).toBeCloseTo(0.1); // still reaches the full minimum, expanding rightward only
+  });
+
+  it("does NOT apply the minimum-width floor when a caller passes a custom padXFraction (e.g. SPLIT_PAD_X) - widening either of splitMixedRow's tightly-packed halves could make them overlap", () => {
+    const oneTile = [detection({ box: [300, 100, 340, 180] })];
+    const region = rowToRegion(oneTile, squareImage, 0.015);
+    expect(region.w).toBeLessThan(0.1);
+  });
+
+  it("leaves an already-wide region untouched by the minimum-width floor", () => {
+    const wideRow = rowOfDetections(100, 180, 10); // raw width 400/640 = 0.625, way over 0.1
+    const region = rowToRegion(wideRow, squareImage);
+    expect(region.w).toBeGreaterThan(0.1);
+  });
 });
 
 describe("resolveVerticalOverlap", () => {

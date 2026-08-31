@@ -966,12 +966,21 @@ const defaultCropRegions = (): CropRect[] => [DEFAULT_LOWER_CROP, DEFAULT_CROP];
 
 // Converts a detectRowRegions result into the [Concealed, Declared] region
 // order this app uses everywhere else, or null if there's no result or the
-// padded boxes it computed don't actually fit/fail to clear each other -
+// padded box(es) it computed don't actually fit/fail to clear each other -
 // shared by HandScanner's initial pre-crop-screen fit and CropOverlay's own
 // on-demand/post-rotate re-fit, so both apply the exact same sanity check
 // before ever handing a detected layout to the crop screen.
+//
+// A result with no `declared` (see DetectedRegions' own comment - a fully
+// concealed hand with no bonus tiles at all to split it by) fits a
+// single-region [Concealed] array instead of the usual 2 - CropOverlay
+// already supports starting in this 1-region mode (see its own "+ Add
+// region" affordance), so this still gives the user a real head start
+// instead of falling back to both fixed defaults over one confidently
+// detected box.
 function fittedRegionsFrom(result: DetectedRegions | null): CropRect[] | null {
   if (!result) return null;
+  if (!result.declared) return fitsInFrame(result.concealed) ? [result.concealed] : null;
   const fitted: CropRect[] = [result.concealed, result.declared];
   return fitted.every(fitsInFrame) && !rectsOverlap(fitted[0], fitted[1]) ? fitted : null;
 }
