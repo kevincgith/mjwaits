@@ -1700,8 +1700,22 @@ describe("PATTERNS: 河底撈魚/海底撈月/海底撈月(一筒)", () => {
     expect(tai(scoreHand(hand, ctx({ lastTileWin: "sea-bottom" })), "sea-bottom-win")).toBe(10);
   });
 
-  it("scores 海底撈月(一筒) (20 tai)", () => {
-    expect(tai(scoreHand(hand, ctx({ lastTileWin: "sea-bottom-one-tong" })), "sea-bottom-win-one-tong")).toBe(20);
+  it("scores 海底撈月(一筒) (20 tai) as an automatic upgrade of 海底撈月 - self-drawn win on exactly 1 Tong, not a separate declared state", () => {
+    const result = scoreHand(hand, ctx({ lastTileWin: "sea-bottom", selfDraw: true, winningTile: { suit: "t", rank: 1 } }));
+    expect(tai(result, "sea-bottom-win-one-tong")).toBe(20);
+    expect(tai(result, "sea-bottom-win")).toBe(0); // excluded by the upgrade, not stacked
+  });
+
+  it("doesn't upgrade to 海底撈月(一筒) without a self-draw", () => {
+    const result = scoreHand(hand, ctx({ lastTileWin: "sea-bottom", selfDraw: false, winningTile: { suit: "t", rank: 1 } }));
+    expect(tai(result, "sea-bottom-win-one-tong")).toBe(0);
+    expect(tai(result, "sea-bottom-win")).toBe(10);
+  });
+
+  it("doesn't upgrade to 海底撈月(一筒) on any winning tile other than 1 Tong", () => {
+    const result = scoreHand(hand, ctx({ lastTileWin: "sea-bottom", selfDraw: true, winningTile: { suit: "t", rank: 2 } }));
+    expect(tai(result, "sea-bottom-win-one-tong")).toBe(0);
+    expect(tai(result, "sea-bottom-win")).toBe(10);
   });
 
   it("none score when not declared, and each excludes the others by construction", () => {

@@ -455,10 +455,13 @@ export type MultiWinState = "none" | "double" | "triple";
 // -> 地胡 -> 人胡 -> none...), same shape as RiichiState/EarlyWinState.
 export type HeavenlyWinState = "none" | "heaven" | "earth" | "man";
 
-// 河底撈魚/海底撈月/海底撈月(一筒)'s declared state - a 4-way cycle in the
-// UI (none -> 河底撈魚 -> 海底撈月 -> 海底撈月一筒 -> none...), same shape
-// as RiichiState/EarlyWinState/HeavenlyWinState.
-export type LastTileWinState = "none" | "river-bottom" | "sea-bottom" | "sea-bottom-one-tong";
+// 河底撈魚/海底撈月's declared state - a 3-way cycle in the UI (none ->
+// 河底撈魚 -> 海底撈月 -> none...), same shape as RiichiState/
+// EarlyWinState/HeavenlyWinState. 海底撈月(一筒) is NOT a 4th state here -
+// it's an automatic upgrade of "sea-bottom" (see the "sea-bottom-win-one-
+// tong" PATTERNS entry), the same way 門清自摸/門清叮 auto-upgrade 自摸/叮
+// rather than being their own declared states.
+export type LastTileWinState = "none" | "river-bottom" | "sea-bottom";
 
 // 槓摸/搶槓's declared tai lookup: index by the cycled count (0-5) to get
 // that count's tai - 5, 25, 125, 250, 250 for counts 1-5 (0 always means
@@ -2516,7 +2519,17 @@ export const PATTERNS: TaiPattern[] = [
   {
     id: "sea-bottom-win-one-tong",
     name: "海底撈月(一筒)",
-    score: (_hand, ctx) => (ctx.lastTileWin === "sea-bottom-one-tong" ? 20 : 0),
+    // Upgrade of 海底撈月, not its own declared state (see
+    // LastTileWinState) - fires automatically when the self-drawn
+    // last-wall-tile win happens to be exactly 1 Tong, same "auto-upgrade
+    // excludes the base" shape as 門清自摸/門清叮. ctx.selfDraw is checked
+    // explicitly rather than assumed from lastTileWin === "sea-bottom"
+    // alone - the UI happens to always force selfDraw true alongside
+    // sea-bottom, but scoring.ts doesn't rely on any particular UI's
+    // wiring to stay correct on its own.
+    score: (_hand, ctx) =>
+      ctx.lastTileWin === "sea-bottom" && ctx.selfDraw && ctx.winningTile?.suit === "t" && ctx.winningTile?.rank === 1 ? 20 : 0,
+    excludes: ["sea-bottom-win"],
   },
   {
     id: "flower-draw",
