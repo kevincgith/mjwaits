@@ -1935,6 +1935,19 @@ describe("PATTERNS: 十六不搭 (Sixteen Unrelated Tiles)", () => {
   it("isn't recognized when any meld is declared", () => {
     expect(() => scoreHand("(123m)7m258t369b1234567z", ctx())).toThrow(ScoringError);
   });
+
+  it("also scores 將眼 when the hand's own pair lands on 2, 5, or 8", () => {
+    // Same shape as the main worked example above, but the doubled tile
+    // (the pair) is 2b instead of 1z - a numbered, non-honor rank of 2.
+    const result = scoreHand("147m147t2258b1234567z", ctx());
+    expect(tai(result, "sixteen-unrelated")).toBe(50);
+    expect(tai(result, "middle-tile-pair")).toBe(2);
+  });
+
+  it("doesn't score 將眼 when the pair is an honor, even at a matching-looking rank", () => {
+    const result = scoreHand("147m147t258b11234567z", ctx()); // pair is 1z - an honor
+    expect(tai(result, "middle-tile-pair")).toBe(0);
+  });
 });
 
 describe("PATTERNS: 十六不搭(十六飛) (16-way wait - the 食胡 tile completed the pair)", () => {

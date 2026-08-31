@@ -343,7 +343,7 @@ concealed — see the [明/暗 concept](#the-明暗-openconcealed-concept). All 
 
 | Pattern | Tai | Criteria | Excludes | Notes |
 |---|---|---|---|---|
-| 將眼 (Pair is 2, 5, or 8 - not honors) | 2 | The hand's pair is rank 2, 5, or 8, and isn't an honor tile. | — | The honor exclusion matters because honor ranks overlap these numbers (e.g. rank 2 is also South wind) - the pair must be a genuine numbered tile. |
+| 將眼 (Pair is 2, 5, or 8 - not honors) | 2 | The hand's pair is rank 2, 5, or 8, and isn't an honor tile. | — | The honor exclusion matters because honor ranks overlap these numbers (e.g. rank 2 is also South wind) - the pair must be a genuine numbered tile. Also applies to 十六不搭, unmodified - that hand has one genuine designated pair (unlike 嚦咕嚦咕's 8 pair-like groups, which needed its own stacking `將眼 (嚦咕嚦咕 context)` variant above), so this same `hand.pair[0]` check already works there as-is. Doesn't apply to 十三么 (its "pair" is always an orphan kind - 1/9/honor - which can never be rank 2/5/8). |
 
 ## Compound patterns
 

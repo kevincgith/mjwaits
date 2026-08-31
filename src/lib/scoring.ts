@@ -3017,6 +3017,15 @@ function scoreSixteenUnrelated(parsed: ParsedScoringHand, ctx: GameContext): Sco
   const straightTai = straightPattern.score(hand, ctx);
   if (straightTai > 0) matched.push({ pattern: straightPattern, tai: straightTai });
 
+  // 將眼: reused as-is (same id/tai/condition as the normal-hand
+  // definition) - a 十六不搭 hand has one genuine designated pair
+  // (`breakdown.pair`, unlike 嚦咕嚦咕's 8 pair-like groups, which needed
+  // its own eightPairsMiddleTilePairCount variant), so the normal pattern's
+  // plain `hand.pair[0]` check already works unmodified here.
+  const middleTilePairPattern = PATTERNS.find((p) => p.id === "middle-tile-pair")!;
+  const middleTilePairTai = middleTilePairPattern.score(hand, ctx);
+  if (middleTilePairTai > 0) matched.push({ pattern: middleTilePairPattern, tai: middleTilePairTai });
+
   pushFlowerBonuses(hand, ctx, matched);
   pushSelfDrawAndGenuineSingleWait(hand, ctx, matched);
   return { total: matched.reduce((sum, m) => sum + m.tai, 0), matched, hand };
