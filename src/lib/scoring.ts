@@ -957,6 +957,17 @@ function declaredCopiesOfTile(hand: ResolvedHand, tile: Tile): number {
 // can still be genuinely waiting on other, un-exhausted kinds too; this
 // only cares about the one kind that actually completed it.
 //
+// Deliberately does NOT also check whether the 食胡 tile sits elsewhere in
+// the player's own concealed hand: given the game's fixed 4-copies-per-kind
+// limit, `declaredCopiesOfTile === 3` already leaves room for exactly one
+// more copy of that kind anywhere else in the game, and since the winning
+// tile itself has to be found within the concealed hand to even complete
+// it, that one remaining copy IS the winning tile - there's no room left
+// for a second, independent concealed copy to also exist. (See
+// isWinningTileHeldConcealedElsewhere below for where that check actually
+// matters - the manual override, which isn't bound by this same math since
+// it's not derived from `declaredCopiesOfTile` at all.)
+//
 // CAVEAT (also surfaced in the UI via this pattern's `caveat`, see
 // PATTERNS below): this only ever looks at THIS hand's own declared
 // melds. It has no visibility into the discard pile or any other
@@ -971,6 +982,31 @@ function declaredCopiesOfTile(hand: ResolvedHand, tile: Tile): number {
 export function isVisiblyTripledWinningTile(hand: ResolvedHand, ctx: GameContext): boolean {
   if (ctx.winningTile === null) return false;
   return declaredCopiesOfTile(hand, ctx.winningTile) === 3;
+}
+
+// Whether the 食胡 tile's kind ALSO sits elsewhere in the player's own
+// concealed hand, beyond the one copy that completes the hand - i.e. the
+// pre-completion concealed hand (see preWinWaitInput) still holds *another*
+// copy of that kind after setting aside the winning one itself (e.g. the
+// winning tile completed a concealed pair, and the player was already
+// holding the pair's other tile).
+//
+// This only ever gates 明絕/絕絕's MANUAL override (see PATTERNS below), not
+// the auto-detect halves above - the auto-detect can never actually collide
+// with this (see isVisiblyTripledWinningTile's own doc comment for why), but
+// the manual override exists precisely because the auto-detect can't see
+// other players' declared melds or the discard pile, so it isn't tied to
+// `declaredCopiesOfTile` and isn't bound by that same 4-copy accounting. The
+// player's own concealed hand, unlike the discard pile or other players'
+// melds, IS something this tool can see directly - so if another copy is
+// sitting right there, the manual claim "this was the last copy anywhere"
+// is directly contradicted by data already in hand, and gets blocked
+// regardless of what the user says they saw elsewhere.
+export function isWinningTileHeldConcealedElsewhere(hand: ResolvedHand, ctx: GameContext): boolean {
+  if (ctx.winningTile === null) return false;
+  const pre = preWinWaitInput(hand, ctx.winningTile);
+  if (pre === null) return false; // the winning tile isn't in the concealed hand at all - nothing to compare against
+  return pre.tiles.some((t) => t.suit === ctx.winningTile!.suit && t.rank === ctx.winningTile!.rank);
 }
 
 // 絕絕: an extension of 明絕. The concealed hand's genuine pre-completion
@@ -2397,16 +2433,23 @@ export const PATTERNS: TaiPattern[] = [
     // OR'd with the manual override (see GameContext.manualVisibleTripleWin)
     // rather than added to it - the manual toggle is for asserting this is
     // true when the auto-check can't see it, not a second independent
-    // instance of the same pattern.
-    score: (hand, ctx) => (isVisiblyTripledWinningTile(hand, ctx) || ctx.manualVisibleTripleWin ? 5 : 0),
+    // instance of the same pattern. The manual half is further gated on
+    // isWinningTileHeldConcealedElsewhere - see that function's own doc
+    // comment for why this only applies to the manual override and not the
+    // auto-detect half.
+    score: (hand, ctx) =>
+      isVisiblyTripledWinningTile(hand, ctx) || (ctx.manualVisibleTripleWin && !isWinningTileHeldConcealedElsewhere(hand, ctx)) ? 5 : 0,
     caveat:
       "Only checks this hand's own declared melds - it has no knowledge of the discard pile or any other player's declared melds, so it can't confirm this is truly the last copy of the tile anywhere in the game.",
   },
   {
     id: "visible-exhausted-multi-wait",
     name: "絕絕 (Multi-way wait narrowed to one visible copy)",
-    // Same OR-with-manual-override reasoning as 明絕 above.
-    score: (hand, ctx) => (isVisiblyExhaustedMultiWait(hand, ctx) || ctx.manualVisibleExhaustedMultiWait ? 10 : 0),
+    // Same OR-with-gated-manual-override reasoning as 明絕 above.
+    score: (hand, ctx) =>
+      isVisiblyExhaustedMultiWait(hand, ctx) || (ctx.manualVisibleExhaustedMultiWait && !isWinningTileHeldConcealedElsewhere(hand, ctx))
+        ? 10
+        : 0,
     // Excludes 明絕 since it's the same underlying "visibly exhausted"
     // idea, just a stronger, more specific finding when it applies - the
     // two CAN co-occur (明絕 doesn't require the wait to be single, so it
@@ -2899,6 +2942,25 @@ function pushFlowerBonuses(hand: ResolvedHand, ctx: GameContext, matched: { patt
 // to list" for these hands (see the Foundation section) rather than
 // stacking an upgrade on top of something that's structurally guaranteed
 // either way.
+//
+// 明絕/絕絕 are also included here, per the user - not because they're
+// purely declared (they're not: isVisiblyTripledWinningTile/
+// isVisiblyExhaustedMultiWait both do real hand-shape auto-detection),
+// but because their auto-detect half is structurally always false for
+// these 3 hands specifically: both depend on this hand's own DECLARED
+// (exposed) melds, and all 3 special hands require zero declared melds by
+// construction (same guard as above). Running their full score() here -
+// unmodified, same "autoCheck OR (gated manualFlag)" shape as the
+// normal-hand case - correctly reduces to "only the (still gated) manual
+// flag matters" for these 3, letting the user still assert either one from
+// outside knowledge the hand's own tiles can never confirm, exactly like
+// the normal-hand button already does. The concealed-duplicate gate (see
+// isWinningTileHeldConcealedElsewhere) still applies in full here too,
+// since it's a check against THIS hand's own concealed tiles - which these
+// 3 special hands very much have, even with zero declared melds. For
+// 嚦咕嚦咕 specifically this gate always blocks the manual flag: a valid
+// pairs hand holds every tile kind at least twice concealed by
+// construction, so any winning-tile choice always collides.
 const DECLARED_ONLY_PATTERN_IDS = [
   "self-draw",
   "riichi",
@@ -2921,6 +2983,8 @@ const DECLARED_ONLY_PATTERN_IDS = [
   "kong-draw",
   "rob-kong",
   "dealer-streak",
+  "visible-triple-win",
+  "visible-exhausted-multi-wait",
 ];
 function pushDeclaredOnlyPatterns(hand: ResolvedHand, ctx: GameContext, matched: { pattern: TaiPattern; tai: number }[]): void {
   const scored = PATTERNS.filter((p) => DECLARED_ONLY_PATTERN_IDS.includes(p.id))

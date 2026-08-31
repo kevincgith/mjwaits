@@ -62,6 +62,7 @@ import {
   groupDeclaredTiles,
   isVisiblyExhaustedMultiWait,
   isVisiblyTripledWinningTile,
+  isWinningTileHeldConcealedElsewhere,
   ScoringError,
   scoreParsedHand,
   type BonusTile,
@@ -3369,19 +3370,43 @@ function ScoringPanel() {
         ? "triple"
         : "none"
     : "none";
-  // The state actually shown/scored: whichever of the manual declaration and
-  // the auto-detected floor is stronger - the user can only ever cycle
-  // upward from the floor (see cycleVisibleExhaust), so this is just
-  // "whichever one currently has the higher rank."
+  // Whether the winning tile's kind is ALSO sitting elsewhere in this
+  // hand's own concealed tiles - if so, the MANUAL half of 明絕/絕絕 is
+  // blocked (see isWinningTileHeldConcealedElsewhere's doc comment in
+  // scoring.ts: unlike the auto-detect floor above, the manual override
+  // isn't derived from declared-meld counts, so it isn't automatically
+  // safe from this collision, and this tool CAN see the player's own
+  // concealed hand even though it can't see the discard pile or other
+  // players' melds). Caps the reachable ceiling at the auto floor instead
+  // of just disabling the button outright, since the auto-detected floor
+  // itself is never affected by this.
+  const visibleExhaustManualBlocked = scoring?.ok ? isWinningTileHeldConcealedElsewhere(scoring.result.hand, ctx) : false;
+  const visibleExhaustCeiling: VisibleExhaustState = visibleExhaustManualBlocked ? visibleExhaustAuto : "exhausted";
+  // Every state the shared button can currently land on: at or above the
+  // auto-detected floor, at or below the manual ceiling above. A floor of
+  // "exhausted" (or a floor pinned to the ceiling by the block above)
+  // leaves only one reachable state, which is why the button is also
+  // `disabled` then.
+  const visibleExhaustReachable = VISIBLE_EXHAUST_CYCLE.filter(
+    (s) => VISIBLE_EXHAUST_RANK[s] >= VISIBLE_EXHAUST_RANK[visibleExhaustAuto] && VISIBLE_EXHAUST_RANK[s] <= VISIBLE_EXHAUST_RANK[visibleExhaustCeiling],
+  );
+  // The manual declaration, clamped to the reachable ceiling - matters when
+  // the winning tile changes out from under an already-declared manual
+  // state (e.g. it now collides with a concealed duplicate that didn't
+  // exist a moment ago), so the button never displays a state the scoring
+  // engine has actually stopped counting.
+  const visibleExhaustManualClamped: VisibleExhaustState =
+    VISIBLE_EXHAUST_RANK[manualVisibleExhaust] > VISIBLE_EXHAUST_RANK[visibleExhaustCeiling] ? visibleExhaustCeiling : manualVisibleExhaust;
+  // The state actually shown/scored: whichever of the (clamped) manual
+  // declaration and the auto-detected floor is stronger - the user can only
+  // ever cycle upward from the floor (see cycleVisibleExhaust), so this is
+  // just "whichever one currently has the higher rank."
   const visibleExhaustEffective: VisibleExhaustState =
-    VISIBLE_EXHAUST_RANK[manualVisibleExhaust] > VISIBLE_EXHAUST_RANK[visibleExhaustAuto] ? manualVisibleExhaust : visibleExhaustAuto;
-  // Steps the shared button to its next state, restricted to states at or
-  // above the auto-detected floor (a floor of "exhausted" leaves only one
-  // reachable state, which is why the button is also `disabled` then).
+    VISIBLE_EXHAUST_RANK[visibleExhaustManualClamped] > VISIBLE_EXHAUST_RANK[visibleExhaustAuto] ? visibleExhaustManualClamped : visibleExhaustAuto;
+  // Steps the shared button to its next reachable state.
   const cycleVisibleExhaust = () => {
-    const reachable = VISIBLE_EXHAUST_CYCLE.filter((s) => VISIBLE_EXHAUST_RANK[s] >= VISIBLE_EXHAUST_RANK[visibleExhaustAuto]);
-    const idx = reachable.indexOf(visibleExhaustEffective);
-    setManualVisibleExhaust(reachable[(idx + 1) % reachable.length]);
+    const idx = visibleExhaustReachable.indexOf(visibleExhaustEffective);
+    setManualVisibleExhaust(visibleExhaustReachable[(idx + 1) % visibleExhaustReachable.length]);
   };
 
   return (
@@ -3746,14 +3771,16 @@ function ScoringPanel() {
           type="button"
           className={visibleExhaustEffective !== "none" ? "toggle-on" : undefined}
           aria-pressed={visibleExhaustEffective !== "none"}
-          disabled={visibleExhaustAuto === "exhausted"}
+          disabled={visibleExhaustReachable.length <= 1}
           onClick={cycleVisibleExhaust}
           title={
             visibleExhaustAuto === "exhausted"
               ? "絕絕 - already true from this hand's own declared melds"
               : visibleExhaustAuto === "triple"
                 ? "明絕 already true from this hand's own declared melds - tap to also declare 絕絕(10 tai) manually"
-                : "Tap to cycle 明絕(5) / 絕絕(10) / off - declare manually when this hand's own declared melds alone can't prove it (e.g. you saw the other copies discarded)"
+                : visibleExhaustManualBlocked
+                  ? "Can't declare manually - the winning tile is also sitting elsewhere in this hand's own concealed tiles, so it wasn't the last copy anywhere"
+                  : "Tap to cycle 明絕(5) / 絕絕(10) / off - declare manually when this hand's own declared melds alone can't prove it (e.g. you saw the other copies discarded)"
           }
         >
           {VISIBLE_EXHAUST_LABELS[visibleExhaustEffective]}

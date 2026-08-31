@@ -1796,6 +1796,34 @@ describe("PATTERNS: 明絕/絕絕 manual override", () => {
     const result = scoreHand("(111z)(222z)(333z)345m789t44b", ctx({ winningTile: { suit: "m", rank: 3 }, manualVisibleExhaustedMultiWait: true }));
     expect(tai(result, "visible-exhausted-multi-wait")).toBe(10);
   });
+
+  it("blocks the manual flag when the winning tile's kind is ALSO sitting elsewhere in this hand's own concealed tiles", () => {
+    // The declared honor triplets have nothing to do with 8b, so auto-detect
+    // is false here - only the manual flag is at play. But the winning tile
+    // completes an 88b tanki pair: the player was already holding the
+    // pair's other 8b concealed before winning, so this tool can directly
+    // see the manual claim ("this was the last copy anywhere") doesn't hold
+    // up, and blocks it - regardless of what the user says they saw
+    // declared or discarded elsewhere.
+    const result = scoreHand(
+      "(111z)(222z)(333z)345m789m88b",
+      ctx({ winningTile: { suit: "b", rank: 8 }, manualVisibleTripleWin: true, manualVisibleExhaustedMultiWait: true }),
+    );
+    expect(tai(result, "visible-triple-win")).toBe(0);
+    expect(tai(result, "visible-exhausted-multi-wait")).toBe(0);
+  });
+
+  it("still allows the manual flag when the winning tile completes a meld instead, with no concealed duplicate", () => {
+    // Same hand shape as above, but the winning tile is the 9m that
+    // completes the 789m run instead of the 88b pair - no other copy of
+    // 9m's kind sits concealed anywhere else in the hand, so the manual
+    // flag isn't blocked.
+    const result = scoreHand(
+      "(111z)(222z)(333z)345m789m88b",
+      ctx({ winningTile: { suit: "m", rank: 9 }, manualVisibleTripleWin: true }),
+    );
+    expect(tai(result, "visible-triple-win")).toBe(5);
+  });
 });
 
 describe("PATTERNS: 全求人/半求人 (all melds declared)", () => {
@@ -2144,6 +2172,40 @@ describe("PATTERNS: every purely-declared button pattern applies to the special 
     expect(tai(scoreHand("112349m19t19b1234567z", ctx({ dealerStreak: 2 })), "dealer-streak")).toBe(3);
     expect(tai(scoreHand("147m147t258b11234567z", ctx({ dealerStreak: 3 })), "dealer-streak")).toBe(5);
     expect(tai(scoreHand("1111m223344m5566777t", ctx({ dealerStreak: 1 })), "dealer-streak")).toBe(1);
+  });
+
+  it("scores 明絕/絕絕 for 十三么/十六不搭 via the manual override - auto-detect is structurally always false here since these hands always have zero declared melds", () => {
+    // Each flag tested on its own (rather than together) since 絕絕 excludes
+    // 明絕 whenever both actually fire - same exclusion relationship the
+    // normal-hand manual-override tests rely on above, nothing special-hand
+    // specific about it. The chosen winning tile isn't the hand's own
+    // duplicated (pair) kind in either case, so the new concealed-duplicate
+    // gate (see the 明絕/絕絕 manual override describe block above) doesn't
+    // block it here.
+    const thirteenOrphans = scoreHand("112349m19t19b1234567z", ctx({ winningTile: { suit: "m", rank: 3 }, manualVisibleTripleWin: true }));
+    expect(tai(thirteenOrphans, "visible-triple-win")).toBe(5);
+    const thirteenOrphansExhausted = scoreHand(
+      "112349m19t19b1234567z",
+      ctx({ winningTile: { suit: "m", rank: 3 }, manualVisibleExhaustedMultiWait: true }),
+    );
+    expect(tai(thirteenOrphansExhausted, "visible-exhausted-multi-wait")).toBe(10);
+
+    const sixteenUnrelated = scoreHand("147m147t258b11234567z", ctx({ winningTile: { suit: "m", rank: 1 }, manualVisibleTripleWin: true }));
+    expect(tai(sixteenUnrelated, "visible-triple-win")).toBe(5);
+    const sixteenUnrelatedExhausted = scoreHand(
+      "147m147t258b11234567z",
+      ctx({ winningTile: { suit: "m", rank: 1 }, manualVisibleExhaustedMultiWait: true }),
+    );
+    expect(tai(sixteenUnrelatedExhausted, "visible-exhausted-multi-wait")).toBe(10);
+  });
+
+  it("blocks the manual override for 嚦咕嚦咕 (eight pairs) entirely - every tile kind in a valid pairs hand is held at least twice concealed by construction, so any winning tile choice always collides with the new concealed-duplicate gate", () => {
+    const result = scoreHand(
+      "1111m223344m5566777t",
+      ctx({ winningTile: { suit: "m", rank: 1 }, manualVisibleTripleWin: true, manualVisibleExhaustedMultiWait: true }),
+    );
+    expect(tai(result, "visible-triple-win")).toBe(0);
+    expect(tai(result, "visible-exhausted-multi-wait")).toBe(0);
   });
 });
 
