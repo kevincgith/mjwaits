@@ -2457,8 +2457,10 @@ export const PATTERNS: TaiPattern[] = [
     id: "riichi-eat",
     name: "食叮",
     // Independent of 一發 - both can be declared at once, each adding
-    // their own flat 5 tai.
-    score: (_hand, ctx) => (ctx.riichi !== "none" && ctx.eatRiichi ? 5 : 0),
+    // their own flat 5 tai. Unlike 一發, this scores regardless of
+    // whether 叮 itself is declared - purely `eatRiichi` on its own, per
+    // the user's own house rule (the UI button matches: always enabled).
+    score: (_hand, ctx) => (ctx.eatRiichi ? 5 : 0),
   },
   {
     id: "early-win-four",

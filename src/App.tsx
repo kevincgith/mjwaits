@@ -2774,12 +2774,12 @@ function ScoringPanel() {
   const [instantWin, setInstantWin] = useState(false);
   const [eatRiichi, setEatRiichi] = useState(false);
   // Tapping 叮 advances it through none -> 叮 -> 天叮 -> 地叮 -> none...;
-  // 一發 only makes sense once riichi is declared, so stepping back to
-  // "none" resets it rather than leaving a stale true value that could
-  // never be un-toggled once its button disappears from the UI. 食叮 has
-  // its own always-visible button (see below) with no such visibility gap,
-  // so it's left alone here - it just scores 0 while riichi is "none",
-  // same as any other declared-but-inapplicable toggle in this panel.
+  // 一發 only makes sense (and only scores) once riichi is declared, so
+  // stepping back to "none" resets it rather than leaving a stale true
+  // value stuck behind its own disabled button with no way to un-toggle
+  // it. 食叮 is left alone here - unlike 一發, it scores its flat 5 tai
+  // regardless of whether 叮 is declared at all, per the user's own house
+  // rule, so there's no "riichi went back to none" case to reset it for.
   const cycleRiichi = () => {
     setRiichi((prev) => {
       const next = RIICHI_CYCLE[(RIICHI_CYCLE.indexOf(prev) + 1) % RIICHI_CYCLE.length];
@@ -3621,7 +3621,7 @@ function ScoringPanel() {
             // deactivateSelfDrawGroup's own comment.
             if (next) deactivateSelfDrawGroup();
           }}
-          title="食叮 - adds 5 tai (only counts while 叮 is declared); mutually exclusive with 自摸/花摸/槓摸/河底撈魚/海底撈月/天胡"
+          title="食叮 - adds 5 tai regardless of whether 叮 is declared; mutually exclusive with 自摸/花摸/槓摸/河底撈魚/海底撈月/天胡"
         >
           食叮
         </button>

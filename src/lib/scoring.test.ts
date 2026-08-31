@@ -1604,10 +1604,10 @@ describe("PATTERNS: 一發/食叮 (stack additively on top of any declared 叮 s
     expect(tai(result, "riichi-eat")).toBe(5);
   });
 
-  it("neither scores when 叮 isn't declared at all, even if the flags are set", () => {
+  it("一發 doesn't score when 叮 isn't declared, but 食叮 does - it's independent of 叮 entirely", () => {
     const result = scoreHand("(111z)123456789m234t22b", ctx({ instantWin: true, eatRiichi: true }));
     expect(tai(result, "riichi-instant-win")).toBe(0);
-    expect(tai(result, "riichi-eat")).toBe(0);
+    expect(tai(result, "riichi-eat")).toBe(5);
   });
 });
 
