@@ -2833,6 +2833,14 @@ function ScoringPanel() {
   const [flowerDraw, setFlowerDraw] = useState(0);
   const [kongDraw, setKongDraw] = useState(0);
   const [robKong, setRobKong] = useState(0);
+  // 莊 (連莊) - independent of every self-draw/claimed-win signal above
+  // (a dealer can extend their streak by either self-drawing or claiming a
+  // discard, so this has no business joining either mutual-exclusion
+  // group). Tapping the button itself toggles between inactive (0) and
+  // x1; +/- then step it further - see toggleDealerStreak/bumpDealerStreak.
+  const [dealerStreak, setDealerStreak] = useState(0);
+  const toggleDealerStreak = () => setDealerStreak((n) => (n > 0 ? 0 : 1));
+  const bumpDealerStreak = (delta: 1 | -1) => setDealerStreak((n) => Math.max(0, n + delta));
   // 自摸 (incl. its 花摸/槓摸/河底撈魚/海底撈月/天胡-forced form) and {搶槓,
   // 雙響/三響, 地胡, 食叮} are mutually exclusive - the latter group all mean
   // the win was claimed off another player (robbing a kong, multiple players
@@ -3075,6 +3083,7 @@ function ScoringPanel() {
     setFlowerDraw(0);
     setKongDraw(0);
     setRobKong(0);
+    setDealerStreak(0);
     setManualVisibleExhaust("none");
     handScannerRef.current?.reset();
   };
@@ -3217,6 +3226,7 @@ function ScoringPanel() {
     flowerDraw,
     kongDraw,
     robKong,
+    dealerStreak,
     manualVisibleTripleWin: manualVisibleExhaust !== "none",
     manualVisibleExhaustedMultiWait: manualVisibleExhaust === "exhausted",
   };
@@ -3253,6 +3263,7 @@ function ScoringPanel() {
     flowerDraw,
     kongDraw,
     robKong,
+    dealerStreak,
     manualVisibleExhaust,
     winningTile,
   ]);
@@ -3317,6 +3328,7 @@ function ScoringPanel() {
     flowerDraw,
     kongDraw,
     robKong,
+    dealerStreak,
     manualVisibleExhaust,
   ]);
 
@@ -3381,6 +3393,7 @@ function ScoringPanel() {
             flowerDraw === 0 &&
             kongDraw === 0 &&
             robKong === 0 &&
+            dealerStreak === 0 &&
             manualVisibleExhaust === "none" &&
             !scanActive
           }
@@ -3564,6 +3577,25 @@ function ScoringPanel() {
       )}
 
       <div className="scoring-context">
+        <button
+          type="button"
+          className={dealerStreak > 0 ? "toggle-on" : undefined}
+          aria-pressed={dealerStreak > 0}
+          onClick={toggleDealerStreak}
+          title={dealerStreak > 0 ? "莊 - tap to turn off (0 tai)" : "莊 (連莊) - tap to declare a 1-win dealer streak (3 tai); use +/- to adjust further"}
+        >
+          {countLabel("莊", dealerStreak)}
+        </button>
+        {dealerStreak > 0 && (
+          <>
+            <button type="button" onClick={() => bumpDealerStreak(-1)} title="莊 - decrease the streak by 1">
+              −
+            </button>
+            <button type="button" onClick={() => bumpDealerStreak(1)} title="莊 - increase the streak by 1">
+              +
+            </button>
+          </>
+        )}
         <button
           type="button"
           className={effectiveSelfDraw ? "toggle-on" : undefined}

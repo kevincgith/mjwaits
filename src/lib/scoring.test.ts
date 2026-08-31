@@ -27,6 +27,7 @@ const ctx = (overrides: Partial<GameContext> = {}): GameContext => ({
   flowerDraw: 0,
   kongDraw: 0,
   robKong: 0,
+  dealerStreak: 0,
   manualVisibleTripleWin: false,
   manualVisibleExhaustedMultiWait: false,
   ...overrides,
@@ -1752,6 +1753,28 @@ describe("PATTERNS: 花摸/槓摸/搶槓 (declared counts)", () => {
   });
 });
 
+describe("PATTERNS: 莊 (連莊, declared count, 2n+1 tai)", () => {
+  const hand = "(111z)123456789m234t22b";
+
+  it("scores 0 when not declared", () => {
+    expect(tai(scoreHand(hand, ctx()), "dealer-streak")).toBe(0);
+  });
+
+  it("follows the 2n+1 formula for counts 1-5", () => {
+    for (let n = 1; n <= 5; n++) {
+      expect(tai(scoreHand(hand, ctx({ dealerStreak: n })), "dealer-streak")).toBe(2 * n + 1);
+    }
+  });
+
+  it("is uncapped and fully independent of 花摸/槓摸/搶槓", () => {
+    const result = scoreHand(hand, ctx({ dealerStreak: 10, flowerDraw: 2, kongDraw: 1, robKong: 1 }));
+    expect(tai(result, "dealer-streak")).toBe(21);
+    expect(tai(result, "flower-draw")).toBe(4);
+    expect(tai(result, "kong-draw")).toBe(5);
+    expect(tai(result, "rob-kong")).toBe(5);
+  });
+});
+
 describe("PATTERNS: 明絕/絕絕 manual override", () => {
   it("the manual flag alone scores the pattern when the hand's own melds can't prove it", () => {
     // Ordinary two-sided wait, no declared-meld collision - auto-detect
@@ -2111,6 +2134,12 @@ describe("PATTERNS: every purely-declared button pattern applies to the special 
     expect(tai(result, "early-win-seven")).toBe(30);
     expect(tai(result, "multi-win-triple")).toBe(10);
     expect(tai(result, "earthly-win")).toBe(120);
+  });
+
+  it("scores 莊 for all 3 special hands", () => {
+    expect(tai(scoreHand("112349m19t19b1234567z", ctx({ dealerStreak: 2 })), "dealer-streak")).toBe(5);
+    expect(tai(scoreHand("147m147t258b11234567z", ctx({ dealerStreak: 3 })), "dealer-streak")).toBe(7);
+    expect(tai(scoreHand("1111m223344m5566777t", ctx({ dealerStreak: 1 })), "dealer-streak")).toBe(3);
   });
 });
 

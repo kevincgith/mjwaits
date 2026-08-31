@@ -527,6 +527,13 @@ export interface GameContext {
   // FIVE_POWER_TAI_TABLE), fully independent of it. See the "rob-kong"
   // PATTERNS entry.
   robKong: number;
+  // 莊 (連莊 - consecutive dealer wins) - a plain declared count, 0
+  // meaning "not declared" (0 tai). Purely declared, same "trust the
+  // user" reasoning as flowerDraw/kongDraw/robKong - tai is 2n+1 per count
+  // (see the "dealer-streak" PATTERNS entry), uncapped above 0 (unlike
+  // those 3, there's no fixed lookup table or physical-tile ceiling behind
+  // this one - a dealer can in principle keep winning indefinitely).
+  dealerStreak: number;
   // 明絕/絕絕's manual override - see isVisiblyTripledWinningTile/
   // isVisiblyExhaustedMultiWait's own PATTERNS entries. Only meaningful
   // (and only shown as an interactive toggle in the UI) when the
@@ -2554,6 +2561,13 @@ export const PATTERNS: TaiPattern[] = [
     score: (_hand, ctx) => FIVE_POWER_TAI_TABLE[ctx.robKong] ?? 0,
   },
   {
+    id: "dealer-streak",
+    name: "莊",
+    // Declared count, but a linear formula (2n+1) rather than a lookup
+    // table like 槓摸/搶槓's - see dealerStreak's own comment.
+    score: (_hand, ctx) => (ctx.dealerStreak > 0 ? 2 * ctx.dealerStreak + 1 : 0),
+  },
+  {
     id: "concealed-self-draw",
     name: "門清自摸 (Self-drawn win while 門前清)",
     // Upgrade of 自摸: excludes plain 自摸, but stacks with 門前清 itself
@@ -2866,8 +2880,8 @@ function pushFlowerBonuses(hand: ResolvedHand, ctx: GameContext, matched: { patt
 // determines these - see each one's own PATTERNS entry) that applies to
 // all 3 special hands: 自摸 (but deliberately NOT its 門清自摸 upgrade),
 // 叮/天叮/地叮 (but deliberately NOT 叮's 門清叮 upgrade), 一發/食叮,
-// 四子內/七子內/十子內, 雙響/三響, 天胡/地胡/人胡, and 河底撈魚/海底撈月/
-// 海底撈月(一筒)/花摸/槓摸/搶槓.
+// 四子內/七子內/十子內, 雙響/三響, 天胡/地胡/人胡, 河底撈魚/海底撈月/
+// 海底撈月(一筒)/花摸/槓摸/搶槓, and 莊.
 //
 // 門清自摸/門清叮 are excluded on purpose, per the user: since all 3
 // special hands are always fully concealed by construction (no declared
@@ -2901,6 +2915,7 @@ const DECLARED_ONLY_PATTERN_IDS = [
   "flower-draw",
   "kong-draw",
   "rob-kong",
+  "dealer-streak",
 ];
 function pushDeclaredOnlyPatterns(hand: ResolvedHand, ctx: GameContext, matched: { pattern: TaiPattern; tai: number }[]): void {
   const scored = PATTERNS.filter((p) => DECLARED_ONLY_PATTERN_IDS.includes(p.id))
