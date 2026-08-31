@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { parseHand } from "./mahjong";
 import {
   clusterRows,
   concealednessScore,
@@ -46,6 +47,15 @@ const rowOfDistinctTiles = (y1: number, y2: number, count: number): Detection[] 
     return detection({ tile: { suit, rank }, className: `${rank}${suit}`, box: [i * 40, y1, i * 40 + 40, y2] });
   });
 };
+
+// A row built straight from algebraic notation (same hand strings used
+// throughout scoring.test.ts), one detection per tile with sequential
+// boxes - handy for the special-hand fixtures below, where writing out
+// each Tile literal by hand would be unwieldy.
+const rowFromHand = (hand: string, y1: number, y2: number): Detection[] =>
+  parseHand(hand).map((tile, i) =>
+    detection({ tile, className: `${tile.rank}${tile.suit}`, box: [i * 40, y1, i * 40 + 40, y2] })
+  );
 
 describe("nonMaxSuppression", () => {
   it("keeps a single detection untouched", () => {
@@ -473,6 +483,32 @@ describe("looksLikeConcealedFragment", () => {
   it("handles an empty input", () => {
     expect(looksLikeConcealedFragment([])).toBe(false);
   });
+
+  // 十三么/十六不搭/嚦咕嚦咕 are always fully concealed by construction
+  // (scoring.ts guards all 3 on zero declared melds) and don't decompose
+  // into "melds + one pair" the ordinary way at all - looksLikeSpecialHand
+  // is the separate path that recognizes them. Same hand strings used
+  // throughout scoring.test.ts.
+  it("recognizes a complete 十三么 (thirteen orphans) hand", () => {
+    expect(looksLikeConcealedFragment(rowFromHand("112349m19t19b1234567z", 100, 180))).toBe(true);
+  });
+
+  it("recognizes a complete 十六不搭 (sixteen unrelated) hand", () => {
+    expect(looksLikeConcealedFragment(rowFromHand("147m147t258b11234567z", 100, 180))).toBe(true);
+  });
+
+  it("recognizes a complete 嚦咕嚦咕 (eight pairs) hand", () => {
+    expect(looksLikeConcealedFragment(rowFromHand("1111m223344m5566777t", 100, 180))).toBe(true);
+  });
+
+  it("tolerates one extra stray tile on a special hand too - e.g. a 食胡 marker merged in from elsewhere", () => {
+    const withStray = [...rowFromHand("112349m19t19b1234567z", 100, 180), detection({ tile: { suit: "b", rank: 5 }, box: [700, 100, 740, 180] })];
+    expect(looksLikeConcealedFragment(withStray)).toBe(true);
+  });
+
+  it("still rejects a discard pile that happens to be exactly 17 tiles but doesn't actually form any special hand", () => {
+    expect(looksLikeConcealedFragment(rowOfDistinctTiles(100, 180, 17))).toBe(false);
+  });
 });
 
 describe("selectHandRows", () => {
@@ -598,6 +634,18 @@ describe("selectHandRows", () => {
       detection({ tile: { suit: "z", rank: 2 }, box: [40, 700, 80, 780] }),
     ]; // smaller, but carries the hand's own pair signal
     expect(selectHandRows([discardA, discardB, concealedGuess])).toEqual([concealedGuess]);
+  });
+
+  it("picks a special hand (十六不搭 here) as the sole concealed candidate over 2 discard piles, even though it never registers as a declared-melds row itself", () => {
+    // 十三么/十六不搭/嚦咕嚦咕 are always fully concealed (zero declared
+    // melds by construction) - with no separate declared row to pair
+    // against, this exercises selectHandRows' "no clear declared row"
+    // fallback branch, which must still correctly single out the special
+    // hand over unrelated discard piles sitting in the same photo.
+    const discardA = rowOfDistinctTiles(400, 480, 8);
+    const discardB = rowOfDistinctTiles(700, 780, 8);
+    const sixteenUnrelated = rowFromHand("147m147t258b11234567z", 100, 180);
+    expect(selectHandRows([discardA, sixteenUnrelated, discardB])).toEqual([sixteenUnrelated]);
   });
 });
 

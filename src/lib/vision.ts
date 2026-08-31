@@ -12,7 +12,15 @@
 // only the CPU WASM backend registered, cutting the one-time model-load
 // download from ~26 MB to ~13 MB with no behavior change.
 import * as ort from "onnxruntime-web/wasm";
-import { COMPLETE_SIZE, MELDS_REQUIRED, type Suit, type Tile } from "./mahjong";
+import {
+  COMPLETE_SIZE,
+  isEightPairsComplete,
+  isSixteenUnrelatedComplete,
+  isThirteenOrphansComplete,
+  MELDS_REQUIRED,
+  type Suit,
+  type Tile,
+} from "./mahjong";
 
 export const IMG_SIZE = 640;
 const CONFIDENCE_THRESHOLD = 0.4;
@@ -650,22 +658,51 @@ export function looksLikeDeclaredMelds(row: Detection[]): boolean {
   return canFormMeldsAllowingOneStray(realTiles(row));
 }
 
+// Whether `tiles` forms a complete 十三么/十六不搭/嚦咕嚦咕 hand -
+// scoring.ts's own scoreThirteenOrphans/scoreSixteenUnrelated/
+// scoreEightPairs all guard on zero declared melds (see their own
+// "declaredMelds.length > 0 -> null" checks), meaning any hand of one of
+// these 3 shapes is ALWAYS fully concealed - there's no separate declared
+// row for it to ever be split from at all. None of them decompose into
+// "melds + one pair" the ordinary way (that's the whole point of being a
+// special hand), so looksLikeConcealedFragment needs this as a separate
+// path to recognize one when a discard pile is also sitting in the same
+// photo. Tolerates one extra stray tile the same way the ordinary-hand
+// checks do (e.g. a marker tile merged in from elsewhere by
+// rescueRotatedStrays) by trying every single-tile removal against the
+// exact COMPLETE_SIZE the underlying isXComplete checks require - doesn't
+// attempt to tolerate a MISSING tile, since there's no way to conjure one
+// back from a merely-undersized set.
+function looksLikeSpecialHand(tiles: Tile[]): boolean {
+  const isComplete = (t: Tile[]): boolean => isThirteenOrphansComplete(t) || isSixteenUnrelatedComplete(t) || isEightPairsComplete(t);
+  if (tiles.length === COMPLETE_SIZE) return isComplete(tiles);
+  if (tiles.length === COMPLETE_SIZE + 1) {
+    for (let i = 0; i < tiles.length; i++) {
+      if (isComplete([...tiles.slice(0, i), ...tiles.slice(i + 1)])) return true;
+    }
+  }
+  return false;
+}
+
 // Whether `row`'s own real tiles decompose into any number of complete
 // melds PLUS exactly one pair (trying every tile kind that appears 2+
 // times as the candidate pair, in turn) - tolerating one leftover stray
-// tile the same way looksLikeDeclaredMelds does. A genuine concealed-hand
-// fragment always has EXACTLY one pair (將眼) holding everything else
-// together as complete melds; a discard pile's tiles, even when they
-// happen to include a coincidental pair (or even a coincidental rotated-
-// looking tile ALONGSIDE one - see concealednessScore's own comment on
-// why that combination can happen), essentially never ALSO have
-// everything else cleanly grouped this way. This is the concealed-side
-// counterpart to looksLikeDeclaredMelds - a decisive structural check
-// selectHandRows prefers over concealednessScore's softer weighing,
-// which is only a fallback for when no candidate cleanly qualifies here.
+// tile the same way looksLikeDeclaredMelds does - OR form one of the 3
+// special hands outright (see looksLikeSpecialHand). A genuine concealed-
+// hand fragment always has EXACTLY one pair (將眼) holding everything else
+// together as complete melds (or is itself a complete special hand); a
+// discard pile's tiles, even when they happen to include a coincidental
+// pair (or even a coincidental rotated-looking tile ALONGSIDE one - see
+// concealednessScore's own comment on why that combination can happen),
+// essentially never ALSO have everything else cleanly grouped this way.
+// This is the concealed-side counterpart to looksLikeDeclaredMelds - a
+// decisive structural check selectHandRows prefers over
+// concealednessScore's softer weighing, which is only a fallback for when
+// no candidate cleanly qualifies here.
 // Exported for direct unit testing.
 export function looksLikeConcealedFragment(row: Detection[]): boolean {
   const tiles = realTiles(row);
+  if (looksLikeSpecialHand(tiles)) return true;
   const countByKind = new Map<string, number>();
   for (const t of tiles) {
     const key = `${t.suit}${t.rank}`;
