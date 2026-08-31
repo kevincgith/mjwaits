@@ -517,6 +517,23 @@ export function declarednessScore(row: Detection[]): number {
   return (hasKong(row) ? 1 : 0) + (hasBonusTile(row) ? 1 : 0) - (findRotatedOutlier(row) ? 1 : 0) - (hasPair(row) ? 1 : 0);
 }
 
+// A specialized variant of declarednessScore for selectHandRows' own
+// "which of these LEFTOVER rows is most likely the concealed hand"
+// decision - weighs hasPair (the hand's own pair/將眼, which the rules
+// themselves guarantee can never be declared - see hasPair's own comment)
+// more heavily than a rotated-outlier tile. Both signals point toward
+// concealed in declarednessScore, but rotation alone is a weaker signal
+// for THIS specific decision: a discard pile's tiles aren't laid out with
+// any care, so one of them landing at a rotated-looking angle by pure
+// accident is entirely plausible, whereas a genuine matching pair
+// coincidentally showing up among a pile of otherwise-independent
+// discards is far less likely. Only used to break a tie/decide between
+// candidates, not as a general-purpose declared/concealed classifier the
+// way declarednessScore itself is - see mostConcealedLooking below.
+function concealednessScore(row: Detection[]): number {
+  return declarednessScore(row) - (hasPair(row) ? 1 : 0);
+}
+
 // Backtracking search: can `counts` (1-indexed, index 0 unused) be fully
 // grouped into triplets, kongs, and (if `allowRuns`) runs, with nothing
 // left over? Same shape of search as mahjong.ts's own (private)
@@ -682,14 +699,20 @@ function isPlausibleHandRow(row: Detection[]): boolean {
 // such ceiling, so it just keeps growing as the game goes on. Then, among
 // what's left, looks for a row whose real tiles fully decompose into
 // complete melds (looksLikeDeclaredMelds) - if EXACTLY one does, that's
-// confidently the declared row, paired with the single largest of
-// whatever remains as the concealed-hand candidate (dropping everything
-// else, e.g. a same-sized-or-smaller discard pile that doesn't decompose
-// either). If no single row settles it that way (none decompose, or more
-// than one ambiguously does), falls back to just the single largest
-// surviving row as the sole concealed-hand candidate - detectRowRegions'
-// own 1-row handling (splitMixedRow) decides what, if anything, to do
-// with it from there.
+// confidently the declared row, paired with whichever of the rest scores
+// LOWEST on concealednessScore (most concealed-looking - see that
+// function's own comment for why it weighs the hand's own pair more
+// heavily than a rotated 食胡 marker tile specifically for this decision)
+// as the concealed-hand candidate, dropping everything else. Size is
+// deliberately NOT the tiebreak here: a heavily-declared hand can leave a
+// genuinely tiny concealed remainder (e.g. just one run plus the pair)
+// that's smaller than an ordinary discard pile sitting in the same photo,
+// so "the bigger leftover row" can easily pick the wrong one. If no
+// single row settles which is declared (none decompose, or more than one
+// ambiguously does), falls back to just the single most concealed-looking
+// row (by the same measure) as the sole concealed-hand candidate -
+// detectRowRegions' own 1-row handling (splitMixedRow) decides what, if
+// anything, to do with it from there.
 // Exported for direct unit testing alongside isPlausibleHandRow's and
 // looksLikeDeclaredMelds's own reasoning.
 export function selectHandRows(rows: Detection[][]): Detection[][] {
@@ -697,16 +720,16 @@ export function selectHandRows(rows: Detection[][]): Detection[][] {
   const plausible = rows.filter(isPlausibleHandRow);
   if (plausible.length <= 2) return plausible;
 
-  const largest = (candidates: Detection[][]): Detection[] =>
-    candidates.reduce((a, b) => (realTileCount(b) > realTileCount(a) ? b : a));
+  const mostConcealedLooking = (candidates: Detection[][]): Detection[] =>
+    candidates.reduce((a, b) => (concealednessScore(b) < concealednessScore(a) ? b : a));
 
   const meldRows = plausible.filter(looksLikeDeclaredMelds);
   if (meldRows.length === 1) {
     const declared = meldRows[0];
     const rest = plausible.filter((r) => r !== declared);
-    return [declared, largest(rest)];
+    return [declared, mostConcealedLooking(rest)];
   }
-  return [largest(plausible)];
+  return [mostConcealedLooking(plausible)];
 }
 
 // A single physical row can itself mix bonus tiles in with the concealed

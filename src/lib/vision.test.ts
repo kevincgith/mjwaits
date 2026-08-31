@@ -436,28 +436,65 @@ describe("selectHandRows", () => {
     expect(selectHandRows([])).toEqual([]);
   });
 
-  it("picks the one melds-decomposable row as declared, pairing it with the largest of the rest, when 3+ rows survive the size filter", () => {
-    // Mirrors a real photo: a discard-like row of distinct singles, a
-    // small declared row that decomposes into a complete run (plus its
-    // own bonus tile), and a larger concealed-hand row that - like most
-    // genuine concealed fragments - doesn't happen to fully decompose on
-    // its own either.
-    const discard = rowOfDistinctTiles(100, 180, 7);
+  it("picks the one melds-decomposable row as declared, pairing it with the most CONCEALED-LOOKING (not necessarily largest) of the rest", () => {
+    // A real photo can leave a genuinely tiny concealed remainder when
+    // most of the hand is declared elsewhere - smaller than an ordinary
+    // discard pile sitting in the same photo. Here the discard row (12
+    // distinct tiles, no declared/concealed signals at all) is far
+    // bigger than the true concealed row (just the hand's own pair, 2
+    // tiles) - size alone would pick the discard pile, but the pair's
+    // own hasPair signal (declarednessScore -1) correctly identifies it
+    // as the more concealed-looking of the two.
+    const discard = rowOfDistinctTiles(100, 180, 12);
     const declaredMeld = [
       detection({ tile: { suit: "t", rank: 5 }, box: [0, 400, 40, 480] }),
       detection({ tile: { suit: "t", rank: 6 }, box: [40, 400, 80, 480] }),
       detection({ tile: { suit: "t", rank: 7 }, box: [80, 400, 120, 480] }),
       detection({ tile: null, className: "2f", box: [120, 400, 160, 480] }),
     ];
-    const concealed = rowOfDistinctTiles(700, 780, 13);
+    const concealed = [
+      detection({ tile: { suit: "b", rank: 7 }, box: [0, 700, 40, 780] }),
+      detection({ tile: { suit: "b", rank: 7 }, box: [40, 700, 80, 780] }),
+    ];
     expect(selectHandRows([discard, declaredMeld, concealed])).toEqual([declaredMeld, concealed]);
   });
 
-  it("falls back to just the single largest row when no row decomposes into melds at all", () => {
-    const junkA = rowOfDistinctTiles(100, 180, 4);
-    const junkB = rowOfDistinctTiles(400, 480, 5);
-    const junkC = rowOfDistinctTiles(700, 780, 13); // the largest - presumably the real hand
-    expect(selectHandRows([junkA, junkB, junkC])).toEqual([junkC]);
+  it("prefers a genuine pair over a merely-rotated tile when picking the concealed candidate - a discard pile can have an accidentally-rotated tile too, but a matching pair is a stronger signal", () => {
+    // The discard row has ONE tile that happens to look rotated (people
+    // toss discards carelessly - this is plausible by pure accident,
+    // unlike a genuine pair coincidentally appearing among otherwise-
+    // independent discards) but no pair. Under plain declarednessScore
+    // this would tie with a pair-only concealed candidate (both score
+    // -1) - concealednessScore's extra pair weighting breaks that tie
+    // correctly in the pair's favor.
+    const discardWithRotatedTile = [
+      detection({ tile: { suit: "m", rank: 1 }, box: [0, 100, 40, 180] }),
+      detection({ tile: { suit: "t", rank: 3 }, box: [40, 100, 80, 180] }),
+      detection({ tile: { suit: "b", rank: 9 }, box: [80, 100, 120, 180] }),
+      detection({ tile: { suit: "z", rank: 5 }, box: [120, 60, 200, 100] }), // width 80, height 40 -> ratio 2.0, an outlier vs the rest's 0.5
+    ];
+    const declaredMeld = [
+      detection({ tile: { suit: "t", rank: 5 }, box: [0, 400, 40, 480] }),
+      detection({ tile: { suit: "t", rank: 6 }, box: [40, 400, 80, 480] }),
+      detection({ tile: { suit: "t", rank: 7 }, box: [80, 400, 120, 480] }),
+    ];
+    const concealedPairOnly = [
+      detection({ tile: { suit: "b", rank: 7 }, box: [0, 700, 40, 780] }),
+      detection({ tile: { suit: "b", rank: 7 }, box: [40, 700, 80, 780] }),
+    ];
+    expect(declarednessScore(discardWithRotatedTile)).toBe(-1);
+    expect(declarednessScore(concealedPairOnly)).toBe(-1);
+    expect(selectHandRows([discardWithRotatedTile, declaredMeld, concealedPairOnly])).toEqual([declaredMeld, concealedPairOnly]);
+  });
+
+  it("falls back to the single most CONCEALED-LOOKING row (not necessarily largest) when no row decomposes into melds at all", () => {
+    const discardA = rowOfDistinctTiles(100, 180, 4);
+    const discardB = rowOfDistinctTiles(400, 480, 13); // larger, but no concealed-leaning signal at all
+    const concealedGuess = [
+      detection({ tile: { suit: "z", rank: 2 }, box: [0, 700, 40, 780] }),
+      detection({ tile: { suit: "z", rank: 2 }, box: [40, 700, 80, 780] }),
+    ]; // smaller, but carries the hand's own pair signal
+    expect(selectHandRows([discardA, discardB, concealedGuess])).toEqual([concealedGuess]);
   });
 });
 
