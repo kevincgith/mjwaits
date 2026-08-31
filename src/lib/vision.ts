@@ -12,7 +12,7 @@
 // only the CPU WASM backend registered, cutting the one-time model-load
 // download from ~26 MB to ~13 MB with no behavior change.
 import * as ort from "onnxruntime-web/wasm";
-import type { Tile } from "./mahjong";
+import { COMPLETE_SIZE, MELDS_REQUIRED, type Tile } from "./mahjong";
 
 export const IMG_SIZE = 640;
 const CONFIDENCE_THRESHOLD = 0.4;
@@ -270,6 +270,18 @@ export interface RowRegion {
 const ROW_GAP_FACTOR = 0.6;
 // A cluster smaller than this is treated as stray noise (a misdetection or
 // a lone stray tile), not a real row - real rows have several tiles.
+// clusterRows carves out two specific exceptions to this floor, each kept
+// regardless of size: a row made up ENTIRELY of bonus tiles (see
+// isAllBonusTiles) - bonus tiles are rare, deliberate, and always set
+// aside apart from the concealed hand, so even a single one sitting alone
+// is a real row worth keeping, not noise the way a single stray real-tile
+// misdetection would be - and a row of exactly 2 IDENTICAL real tiles
+// (see isPairOnlyRow) - the smallest a concealed row can ever legitimately
+// be is just its own pair (將眼) once every meld is declared elsewhere, so
+// a genuine 2-tile pair row must never be mistaken for 1-2-tile stray
+// noise either. A single stray real tile on its own is still always
+// noise, though - the smallest legitimate real-tile row is exactly 2 (the
+// pair), never 1.
 const MIN_ROW_DETECTIONS = 3;
 // Slack added around each row's own tight bounding box, as a fraction of
 // that row's own width/height - rows are detected tile-tight, so this
@@ -279,13 +291,38 @@ const MIN_ROW_DETECTIONS = 3;
 // their edges.
 const ROW_PAD_X = 0.08;
 const ROW_PAD_Y = 0.3;
+// Much tighter horizontal padding used only when splitting a single
+// physical row into its bonus-tile (declared) and real-tile (concealed)
+// halves side by side (see splitMixedRow) - unlike the normal 2-separate-
+// rows case, the two halves sit right next to each other with no gap to
+// lean on at all, so ROW_PAD_X's generous fraction (applied to what's
+// often a narrow bonus-only sub-region) would blow straight through the
+// midpoint and eat into the other half's own tiles.
+const SPLIT_PAD_X = 0.015;
+// Vertical padding used instead of ROW_PAD_Y for a row that contains a
+// rotated outlier (see findRotatedOutlier) - the tile marking the 食胡
+// tile is often turned sideways and set slightly apart from the row's
+// main line, closer to the row's own tight-bounding-box edge than an
+// upright tile normally sits, leaving it less padding margin than the
+// rest of the row gets. A generous bump keeps that tile from ending up
+// right at (or just past) the crop's edge.
+const ROTATED_TILE_ROW_PAD_Y = 0.5;
+// The most real (non-bonus) tiles any single hand-related row could ever
+// legitimately contain: a full hand already caps out at COMPLETE_SIZE,
+// and each of its up to MELDS_REQUIRED melds being a kong (the maximum
+// possible, one extra tile per kong) pushes that no higher than
+// COMPLETE_SIZE + MELDS_REQUIRED. A row with more real tiles than this
+// can't be part of the hand itself at all - see isPlausibleHandRow.
+const MAX_PLAUSIBLE_HAND_ROW_TILES = COMPLETE_SIZE + MELDS_REQUIRED;
 
 function detectionCenterY(d: Detection): number {
   return (d.box[1] + d.box[3]) / 2;
 }
 
 // Splits `detections` into vertically-separated groups ("rows"), sorted
-// top-to-bottom, dropping any group too small to be a real row. Purely a
+// top-to-bottom, dropping any group too small to be a real row - except an
+// all-bonus-tile group or a matching pair (see MIN_ROW_DETECTIONS' own
+// comment for both exceptions), each kept regardless of size. Purely a
 // function of box positions - classification correctness doesn't matter
 // here, only "is there a tile-shaped thing here," so bonus-tile detections
 // count too (they normally sit right alongside whichever row they belong
@@ -305,7 +342,7 @@ export function clusterRows(detections: Detection[]): Detection[][] {
     if (gap > medianHeight * ROW_GAP_FACTOR) rows.push([]);
     rows[rows.length - 1].push(sorted[i]);
   }
-  return rows.filter((r) => r.length >= MIN_ROW_DETECTIONS);
+  return rows.filter((r) => r.length >= MIN_ROW_DETECTIONS || isAllBonusTiles(r) || isPairOnlyRow(r));
 }
 
 const clamp01 = (v: number): number => Math.min(1, Math.max(0, v));
@@ -344,6 +381,28 @@ function hasPair(row: Detection[]): boolean {
 // "Bonus tiles" sub-picker) - so seeing one at all is a strong declared signal.
 function hasBonusTile(row: Detection[]): boolean {
   return row.some((d) => !d.tile);
+}
+
+// A row consisting ENTIRELY of bonus tiles - a stronger, decisive version
+// of hasBonusTile's own soft +1 signal (see isRowADeclared below, and
+// clusterRows' own use of this to exempt such a row from the usual
+// noise-size filter). A real hand's concealed portion never holds bonus
+// tiles at all, so a row with nothing BUT bonus tiles couldn't be
+// anything other than the declared side, however few tiles it has.
+function isAllBonusTiles(row: Detection[]): boolean {
+  return row.length > 0 && row.every((d) => !d.tile);
+}
+
+// A row of exactly 2 identical real tiles - the smallest a concealed row
+// can ever legitimately be (see MIN_ROW_DETECTIONS' own comment: once
+// every meld is declared elsewhere, only the pair/將眼 itself is left
+// concealed). Used by clusterRows to exempt this specific shape from the
+// usual noise-size floor - unlike an arbitrary 1-2-tile stray, a matching
+// pair is a meaningfully complete row on its own.
+function isPairOnlyRow(row: Detection[]): boolean {
+  if (row.length !== 2) return false;
+  const [a, b] = row;
+  return a.tile !== null && b.tile !== null && a.tile.suit === b.tile.suit && a.tile.rank === b.tile.rank;
 }
 
 // How far a detection's own width/height ratio has to differ from the
@@ -398,9 +457,122 @@ export function declarednessScore(row: Detection[]): number {
   return (hasKong(row) ? 1 : 0) + (hasBonusTile(row) ? 1 : 0) - (findRotatedOutlier(row) ? 1 : 0) - (hasPair(row) ? 1 : 0);
 }
 
+// Decides which of the two detected rows is Declared vs Concealed.
+// isAllBonusTiles pre-empts everything else: a row made up ENTIRELY of
+// bonus tiles is unambiguously Declared regardless of what the OTHER
+// row's own kong/pair/rotation signals say (it settles the call outright,
+// rather than just adding its own +1 the way hasBonusTile does inside
+// declarednessScore) - a real concealed hand never holds bonus tiles, so
+// there's nothing for the other row's signals to legitimately outweigh.
+// Only once neither row (or both) qualifies does this fall through to
+// declarednessScore's own additive comparison, with position (rowA = top)
+// as its final tiebreak on a plain 0-0/tied score.
+// Exported for direct unit testing alongside declarednessScore itself.
+export function isRowADeclared(rowA: Detection[], rowB: Detection[]): boolean {
+  const aAllBonus = isAllBonusTiles(rowA);
+  const bAllBonus = isAllBonusTiles(rowB);
+  if (aAllBonus !== bAllBonus) return aAllBonus;
+  return declarednessScore(rowA) >= declarednessScore(rowB);
+}
+
+// Whether `row` could plausibly be part of the hand itself (either a
+// concealed-hand fragment or a set of declared melds), rather than
+// something else entirely showing up as its own row - almost always a
+// discard pile, the one other loose pile of tiles that regularly ends up
+// in the same photo. Doesn't try to actually decompose the row into melds
+// (a discard pile's own tiles are perfectly valid tile kinds, same as any
+// other - the only thing setting it apart is sheer quantity, not shape) -
+// just rules out a row with more real tiles than the hand's own fixed
+// tile-count ceiling (see MAX_PLAUSIBLE_HAND_ROW_TILES) could ever
+// legitimately produce.
+function isPlausibleHandRow(row: Detection[]): boolean {
+  const realTileCount = row.reduce((n, d) => n + (d.tile ? 1 : 0), 0);
+  return realTileCount <= MAX_PLAUSIBLE_HAND_ROW_TILES;
+}
+
+// When clusterRows finds 3+ distinct rows, at least one of them is very
+// likely not part of the hand at all (see isPlausibleHandRow) - drops any
+// such row, leaving whatever's left for detectRowRegions' normal 1-or-2-
+// row handling to work with below. Never touches the exactly-2-rows (or
+// fewer) case - there's no third row to be suspicious of in the first
+// place, so both are trusted as-is.
+// Exported for direct unit testing alongside isPlausibleHandRow's own
+// reasoning.
+export function dropImplausibleRows(rows: Detection[][]): Detection[][] {
+  return rows.length > 2 ? rows.filter(isPlausibleHandRow) : rows;
+}
+
+// A single physical row can itself mix bonus tiles in with the concealed
+// hand - the edge case of a fully concealed hand (no declared melds at
+// all, so clusterRows never has a second row to split off) that still has
+// its own bonus tiles set aside within that same row. Splits such a row
+// by CONTENT instead of position: every bonus-tile detection becomes the
+// Declared half (bonus tiles are never part of the concealed hand,
+// however few there are - see isAllBonusTiles's own reasoning), every
+// real tile becomes the Concealed half. Returns null when there's nothing
+// to split (no bonus tiles at all, or - degenerately - no real tiles
+// either) - detectRowRegions has no 2-region-shaped result to build from
+// a row that's entirely one or the other.
+// Exported for direct unit testing.
+export function splitMixedRow(row: Detection[]): { declared: Detection[]; concealed: Detection[] } | null {
+  const declared = row.filter((d) => !d.tile);
+  const concealed = row.filter((d) => d.tile);
+  return declared.length > 0 && concealed.length > 0 ? { declared, concealed } : null;
+}
+
 export interface DetectedRegions {
   declared: RowRegion;
   concealed: RowRegion;
+}
+
+// A structural subset of HTMLImageElement (its two natural dimensions),
+// so this can be unit tested against a plain object instead of a real
+// loaded <img>.
+export interface ImageSize {
+  naturalWidth: number;
+  naturalHeight: number;
+}
+
+// Converts one row's raw box-space bounding box (in the IMG_SIZE x
+// IMG_SIZE letterboxed frame `letterbox` produced) back into a padded
+// fraction of the original photo. Reverses letterbox()'s own centering
+// math (see its own comment) one step further than runScan's existing
+// de-padding does (App.tsx) - this also divides by `scale` to land on a
+// fraction of the original image's own dimensions, since that's what a
+// CropRect needs, rather than stopping at de-padded pixel coordinates in
+// the letterboxed frame.
+//
+// `padXFraction` defaults to the normal ROW_PAD_X, but a caller splitting
+// a single row into side-by-side halves (see splitMixedRow) passes
+// SPLIT_PAD_X's much tighter margin instead. The vertical padding, by
+// contrast, is always decided from the row's own content: a row
+// containing a rotated outlier (see findRotatedOutlier) gets
+// ROTATED_TILE_ROW_PAD_Y's larger margin instead of the normal ROW_PAD_Y,
+// regardless of which caller reached here.
+// Exported for direct unit testing - detectRowRegions itself still needs
+// a real model/canvas to test end-to-end.
+export function rowToRegion(row: Detection[], image: ImageSize, padXFraction: number = ROW_PAD_X): RowRegion {
+  const srcWidth = image.naturalWidth;
+  const srcHeight = image.naturalHeight;
+  const scale = Math.min(IMG_SIZE / srcWidth, IMG_SIZE / srcHeight);
+  const padX = (IMG_SIZE - srcWidth * scale) / 2;
+  const padY = (IMG_SIZE - srcHeight * scale) / 2;
+  const x1 = Math.min(...row.map((d) => d.box[0]));
+  const y1 = Math.min(...row.map((d) => d.box[1]));
+  const x2 = Math.max(...row.map((d) => d.box[2]));
+  const y2 = Math.max(...row.map((d) => d.box[3]));
+  let fx1 = (x1 - padX) / scale / srcWidth;
+  let fy1 = (y1 - padY) / scale / srcHeight;
+  let fx2 = (x2 - padX) / scale / srcWidth;
+  let fy2 = (y2 - padY) / scale / srcHeight;
+  const w = fx2 - fx1;
+  const h = fy2 - fy1;
+  const padYFraction = findRotatedOutlier(row) ? ROTATED_TILE_ROW_PAD_Y : ROW_PAD_Y;
+  fx1 = clamp01(fx1 - w * padXFraction);
+  fx2 = clamp01(fx2 + w * padXFraction);
+  fy1 = clamp01(fy1 - h * padYFraction);
+  fy2 = clamp01(fy2 + h * padYFraction);
+  return { x: fx1, y: fy1, w: fx2 - fx1, h: fy2 - fy1 };
 }
 
 // Runs detection on the WHOLE uncropped photo (unlike detectTiles' usual
@@ -408,53 +580,35 @@ export interface DetectedRegions {
 // clusters the results into rows by vertical position - most hand photos
 // lay declared melds and the concealed hand out as two clearly separated
 // rows, so this can seed the crop screen's two regions instead of always
-// starting from fixed guesses. Returns null if it didn't find exactly 2
-// confident rows - the caller falls back to fixed defaults either way, so
-// this never needs to be "sure," just right often enough to help.
+// starting from fixed guesses. Returns null if it can't turn what it found
+// into exactly 2 confident regions - the caller falls back to fixed
+// defaults either way, so this never needs to be "sure," just right often
+// enough to help.
 export async function detectRowRegions(image: HTMLImageElement): Promise<DetectedRegions | null> {
   const box = letterbox(image);
   const { detections } = await detectTiles(box);
-  const rows = clusterRows(detections);
-  if (rows.length !== 2) return null;
+  const rows = dropImplausibleRows(clusterRows(detections));
 
-  // Which physical row is Declared vs Concealed: position (top = declared)
-  // is only the fallback - declarednessScore's signals can override it
-  // when they clearly disagree (e.g. the bottom row has a kong and the top
-  // doesn't). A tie (most commonly, neither row shows any of the 3
-  // signals) keeps the position-based default.
-  const [rowA, rowB] = rows; // rowA = top, rowB = bottom (clusterRows sorts top-to-bottom)
-  const aIsDeclared = declarednessScore(rowA) >= declarednessScore(rowB);
-  const declaredRow = aIsDeclared ? rowA : rowB;
-  const concealedRow = aIsDeclared ? rowB : rowA;
+  if (rows.length === 2) {
+    // Which physical row is Declared vs Concealed - see isRowADeclared.
+    const [rowA, rowB] = rows; // rowA = top, rowB = bottom (clusterRows sorts top-to-bottom)
+    const aIsDeclared = isRowADeclared(rowA, rowB);
+    const declaredRow = aIsDeclared ? rowA : rowB;
+    const concealedRow = aIsDeclared ? rowB : rowA;
+    return { declared: rowToRegion(declaredRow, image), concealed: rowToRegion(concealedRow, image) };
+  }
 
-  // Reverses letterbox()'s own centering math (see its own comment) one
-  // step further than runScan's existing de-padding does (App.tsx) - this
-  // also divides by `scale` to land on a fraction of the original image's
-  // own dimensions, since that's what a CropRect needs, rather than
-  // stopping at de-padded pixel coordinates in the letterboxed frame.
-  const srcWidth = image.naturalWidth;
-  const srcHeight = image.naturalHeight;
-  const scale = Math.min(IMG_SIZE / srcWidth, IMG_SIZE / srcHeight);
-  const padX = (IMG_SIZE - srcWidth * scale) / 2;
-  const padY = (IMG_SIZE - srcHeight * scale) / 2;
+  if (rows.length === 1) {
+    // A fully concealed hand (nothing declared, so no second row ever
+    // forms) can still carry its own bonus tiles within that one row -
+    // see splitMixedRow.
+    const split = splitMixedRow(rows[0]);
+    if (!split) return null;
+    return {
+      declared: rowToRegion(split.declared, image, SPLIT_PAD_X),
+      concealed: rowToRegion(split.concealed, image, SPLIT_PAD_X),
+    };
+  }
 
-  const toRegion = (row: Detection[]): RowRegion => {
-    const x1 = Math.min(...row.map((d) => d.box[0]));
-    const y1 = Math.min(...row.map((d) => d.box[1]));
-    const x2 = Math.max(...row.map((d) => d.box[2]));
-    const y2 = Math.max(...row.map((d) => d.box[3]));
-    let fx1 = (x1 - padX) / scale / srcWidth;
-    let fy1 = (y1 - padY) / scale / srcHeight;
-    let fx2 = (x2 - padX) / scale / srcWidth;
-    let fy2 = (y2 - padY) / scale / srcHeight;
-    const w = fx2 - fx1;
-    const h = fy2 - fy1;
-    fx1 = clamp01(fx1 - w * ROW_PAD_X);
-    fx2 = clamp01(fx2 + w * ROW_PAD_X);
-    fy1 = clamp01(fy1 - h * ROW_PAD_Y);
-    fy2 = clamp01(fy2 + h * ROW_PAD_Y);
-    return { x: fx1, y: fy1, w: fx2 - fx1, h: fy2 - fy1 };
-  };
-
-  return { declared: toRegion(declaredRow), concealed: toRegion(concealedRow) };
+  return null;
 }
