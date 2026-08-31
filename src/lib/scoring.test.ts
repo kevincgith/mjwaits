@@ -729,6 +729,18 @@ describe("PATTERNS: 明清龍/暗清龍 (pure straight, with duplicate instances
     const result = scoreHand("123m123m456m789m789m55z", ctx());
     expect(tai(result, "pure-straight-hidden")).toBe(80); // 4 instances x 20
   });
+
+  it("only opens the ONE specific 789m copy the claimed tile actually completed, leaving the other 789m copy (and both 123m+456m+789m readings through it) genuinely hidden", () => {
+    // Two identical 789m runs sharing the single 123m+456m: raw instances
+    // are 123m+456m+789m(copy A) and 123m+456m+789m(copy B) - 2 in total.
+    // A claimed 9m can only have completed ONE physical 789m, so exactly
+    // one reading is open and the other stays fully concealed - not both,
+    // as the pre-fix isMeldOpen (matching by tile kind, not identity)
+    // would have marked.
+    const result = scoreHand("123m456m789m789m234t22z", ctx({ winningTile: { suit: "m", rank: 9 } }));
+    expect(tai(result, "pure-straight-open")).toBe(10); // 1 instance x 10
+    expect(tai(result, "pure-straight-hidden")).toBe(20); // 1 instance x 20
+  });
 });
 
 describe("PATTERNS: 明雜龍/暗雜龍 (mixed straight across suits)", () => {
