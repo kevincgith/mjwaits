@@ -252,13 +252,15 @@ function DetectionOverlay({
 }
 
 // The picker shown when a detected tile's box is tapped: lets the user
-// replace the model's guess with the right tile, mark it as not a real
-// tile (bonus tiles are already excluded from the hand, but the model
-// sometimes calls a real tile a bonus one or vice versa), or remove the
-// box outright for an outright false-positive detection.
-// A correction picked in the panel below: a real tile, a specific bonus
-// tile, or null ("not a tile" - an outright false positive).
-type Correction = { tile: Tile } | { bonus: BonusTile } | null;
+// replace the model's guess with the right tile or a specific bonus tile
+// (the model sometimes calls a real tile a bonus one or vice versa), or
+// remove the box outright for an outright false-positive detection - a
+// false positive has no "keep the box but mark it excluded" state, since
+// a box that isn't a tile at all shouldn't still show as a lingering grey
+// box on the review image; removing it is the only outcome that makes
+// sense, so there's a single "Remove box" action for it, not a separate
+// "not a tile" pick that leaves a phantom box behind.
+type Correction = { tile: Tile } | { bonus: BonusTile };
 
 function CorrectionPanel({
   detection,
@@ -322,11 +324,8 @@ function CorrectionPanel({
         )}
       </div>
       <div className="correction-panel-actions">
-        <button type="button" onClick={() => onPick(null)}>
-          Not a tile
-        </button>
         <button type="button" className="correction-panel-remove" onClick={onRemove}>
-          Remove box
+          Not a tile - remove box
         </button>
       </div>
     </div>
@@ -1438,8 +1437,8 @@ const HandScanner = forwardRef<
   const correctDetection = (id: number, correction: Correction) => {
     updateDetection(id, (d) => ({
       ...d,
-      tile: correction && "tile" in correction ? correction.tile : null,
-      bonus: correction && "bonus" in correction ? correction.bonus : null,
+      tile: "tile" in correction ? correction.tile : null,
+      bonus: "bonus" in correction ? correction.bonus : null,
     }));
     setEditingDetectionId(null);
   };
