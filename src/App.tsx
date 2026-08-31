@@ -3594,17 +3594,20 @@ function ScoringPanel() {
         >
           {RIICHI_LABELS[riichi]}
         </button>
-        {riichi !== "none" && (
-          <button
-            type="button"
-            className={instantWin ? "toggle-on" : undefined}
-            aria-pressed={instantWin}
-            onClick={() => setInstantWin((w) => !w)}
-            title="一發 - the hand completed within the immediate round after declaring - adds 5 tai"
-          >
-            一發
-          </button>
-        )}
+        <button
+          type="button"
+          className={instantWin ? "toggle-on" : undefined}
+          aria-pressed={instantWin}
+          disabled={riichi === "none"}
+          onClick={() => setInstantWin((w) => !w)}
+          title={
+            riichi === "none"
+              ? "一發 - only counts once 叮 is declared"
+              : "一發 - the hand completed within the immediate round after declaring - adds 5 tai"
+          }
+        >
+          一發
+        </button>
         <button
           type="button"
           className={eatRiichi ? "toggle-on" : undefined}
