@@ -1062,6 +1062,12 @@ h1 {
   height: auto;
   user-select: none;
   -webkit-user-drag: none;
+  /* Without this, long-pressing the photo itself while adjusting a crop
+     region triggers iOS Safari's native "Save Photo"/"Copy" menu for the
+     <img> underneath - user-select/-webkit-user-drag above stop it being
+     selected/dragged as content, but only -webkit-touch-callout stops
+     that specific image context menu from popping up over the drag. */
+  -webkit-touch-callout: none;
 }
 
 .crop-dim {

@@ -669,8 +669,8 @@ describe("rowToRegion", () => {
     const upright = rowOfDetections(100, 180, 3); // ratio 0.5 each
     const rotated = detection({ box: [200, 100, 280, 140] }); // ratio 2.0 - a clear outlier
     const region = rowToRegion([...upright, rotated], squareImage);
-    expect(region.y).toBeCloseTo(0.09375);
-    expect(region.h).toBeCloseTo(0.25);
+    expect(region.y).toBeCloseTo(0.1125);
+    expect(region.h).toBeCloseTo(0.2125);
   });
 
   it("uses a caller-supplied padXFraction (e.g. SPLIT_PAD_X) instead of the default ROW_PAD_X", () => {

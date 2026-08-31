@@ -308,13 +308,15 @@ const ROW_PAD_Y = 0.3;
 // midpoint and eat into the other half's own tiles.
 const SPLIT_PAD_X = 0.015;
 // Vertical padding used instead of ROW_PAD_Y for a row that contains a
-// rotated outlier (see findRotatedOutlier) - the tile marking the 食胡
-// tile is often turned sideways and set slightly apart from the row's
-// main line, closer to the row's own tight-bounding-box edge than an
-// upright tile normally sits, leaving it less padding margin than the
-// rest of the row gets. A generous bump keeps that tile from ending up
-// right at (or just past) the crop's edge.
-const ROTATED_TILE_ROW_PAD_Y = 0.5;
+// rotated outlier (see findRotatedOutlier). Only a modest bump over the
+// normal ROW_PAD_Y, not a dramatic one: rescueRotatedStrays (see
+// clusterRows) already pulls a rotated marker tile that sits apart from
+// the row's main line back INTO the row's own raw bounding box before
+// this padding is even applied, so the box already fully contains the
+// tile on its own - this just adds a little extra breathing room for
+// imprecision in the model's own box for that tile, not a full second
+// safety margin on top of an already-generous one.
+const ROTATED_TILE_ROW_PAD_Y = 0.35;
 // The most real (non-bonus) tiles any single hand-related row could ever
 // legitimately contain: a full hand already caps out at COMPLETE_SIZE,
 // and each of its up to MELDS_REQUIRED melds being a kong (the maximum
