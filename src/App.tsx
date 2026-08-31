@@ -407,6 +407,11 @@ function useTap(onTap: () => void, disabled?: boolean) {
 
 const LONG_PRESS_MS = 500;
 
+// A literal no-op, for a useTapAndLongPress caller that wants its
+// long-press gesture to genuinely do nothing (see DeclaredMeldButton) -
+// one shared reference rather than a fresh arrow function per render.
+const NOOP = () => {};
+
 // Same touch/mouse handling as useTap above, plus a timer-based long-press:
 // if the pointer stays down past LONG_PRESS_MS without moving, onLongPress
 // fires instead of onTap. Used by ScoringPanel's concealed-hand tiles,
@@ -549,9 +554,9 @@ function WinningTileHandButton({
 // for a kong specifically, long-press instead flips it between 暗槓
 // (concealed) and 明槓 (exposed), same tap/long-press split as
 // WinningTileHandButton above. Non-kong melds have no concealed/exposed
-// distinction to flip, so their long-press is wired to the same onRemove
-// as the tap - functionally identical to a plain tap-only button, just
-// without a second hook/branch to keep in sync with the kong case.
+// distinction to flip, so their long-press is a deliberate no-op (not
+// wired to onRemove either) - holding past LONG_PRESS_MS on a
+// triplet/run does nothing at all, same as it would on a static label.
 function DeclaredMeldButton({
   meld,
   onRemove,
@@ -562,7 +567,7 @@ function DeclaredMeldButton({
   onToggleConcealed: () => void;
 }) {
   const isKong = meld.kind === "kong";
-  const tap = useTapAndLongPress(onRemove, isKong ? onToggleConcealed : onRemove);
+  const tap = useTapAndLongPress(onRemove, isKong ? onToggleConcealed : NOOP);
   const title = isKong
     ? `${meld.kind} (${meld.concealed ? "concealed" : "exposed"} kong) - tap to remove, long-press to turn ${meld.concealed ? "exposed (明槓)" : "concealed (暗槓)"}`
     : `${meld.kind} - tap to remove`;
