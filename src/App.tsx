@@ -545,6 +545,41 @@ function WinningTileHandButton({
   );
 }
 
+// 門前牌區's declared-meld group: tap still removes it, same as before -
+// for a kong specifically, long-press instead flips it between 暗槓
+// (concealed) and 明槓 (exposed), same tap/long-press split as
+// WinningTileHandButton above. Non-kong melds have no concealed/exposed
+// distinction to flip, so their long-press is wired to the same onRemove
+// as the tap - functionally identical to a plain tap-only button, just
+// without a second hook/branch to keep in sync with the kong case.
+function DeclaredMeldButton({
+  meld,
+  onRemove,
+  onToggleConcealed,
+}: {
+  meld: DeclaredMeldTile;
+  onRemove: () => void;
+  onToggleConcealed: () => void;
+}) {
+  const isKong = meld.kind === "kong";
+  const tap = useTapAndLongPress(onRemove, isKong ? onToggleConcealed : onRemove);
+  const title = isKong
+    ? `${meld.kind} (${meld.concealed ? "concealed" : "exposed"} kong) - tap to remove, long-press to turn ${meld.concealed ? "exposed (明槓)" : "concealed (暗槓)"}`
+    : `${meld.kind} - tap to remove`;
+  return (
+    <button
+      type="button"
+      className={meld.concealed ? "breakdown-group concealed-kong-meld meld-remove" : "breakdown-group meld-remove"}
+      title={title}
+      {...tap}
+    >
+      {meld.tiles.map((t, j) => (
+        <TileGlyphSpan key={j} tile={t} large />
+      ))}
+    </button>
+  );
+}
+
 function RemainingCountBadge({ count }: { count: number }) {
   return (
     <span className="remaining-count" title={`${count} of this tile left (4 total, minus what's in your hand)`}>
@@ -3047,6 +3082,18 @@ function ScoringPanel() {
     declaredRef.current = next;
     setDeclaredMelds(next);
   };
+  // Flips a declared kong between 暗槓 (concealed) and 明槓 (exposed) in
+  // place - see DeclaredMeldButton's long-press wiring. DeclaredMeldButton
+  // only ever wires this to a kong's long-press (a non-kong meld's
+  // long-press calls onRemove instead) - this doesn't re-check `kind`
+  // itself, so it must stay that way: flipping `concealed` on a
+  // triplet/run isn't inert, it actually feeds hiddenTripletOrKongCount's
+  // own 暗刻-chain scoring the same as a kong would.
+  const toggleMeldConcealed = (id: number) => {
+    const next = declaredRef.current.map((m) => (m.id === id ? { ...m, concealed: !m.concealed } : m));
+    declaredRef.current = next;
+    setDeclaredMelds(next);
+  };
 
   const hasBonusTileRef = (tile: BonusTile) => bonusRef.current.some((b) => b.kind === tile.kind && b.rank === tile.rank);
   const hasBonusTile = (tile: BonusTile) => bonusTiles.some((b) => b.kind === tile.kind && b.rank === tile.rank);
@@ -3561,17 +3608,12 @@ function ScoringPanel() {
               </div>
             )}
             {declaredMelds.map((meld) => (
-              <button
-                type="button"
+              <DeclaredMeldButton
                 key={meld.id}
-                className={meld.concealed ? "breakdown-group concealed-kong-meld meld-remove" : "breakdown-group meld-remove"}
-                onClick={() => removeMeld(meld.id)}
-                title={`${meld.kind}${meld.concealed ? " (concealed kong)" : ""} - tap to remove`}
-              >
-                {meld.tiles.map((t, j) => (
-                  <TileGlyphSpan key={j} tile={t} large />
-                ))}
-              </button>
+                meld={meld}
+                onRemove={() => removeMeld(meld.id)}
+                onToggleConcealed={() => toggleMeldConcealed(meld.id)}
+              />
             ))}
           </>
         )}
