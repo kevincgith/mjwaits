@@ -4130,13 +4130,14 @@ function DicePanel() {
   const { dice, faces, rolling, roll, bumpDie } = useDiceRoll(3);
 
   const total = dice[0] + dice[1] + dice[2];
-  const brk = wallBreak(total);
+  const brk = rolling ? null : wallBreak(total);
 
   // Highlight two notable rolls (based on the settled dice): a three-of-a-kind
   // (green) and a 1-2-3 in any order (red).
   const sortedDice = [...dice].sort((a, b) => a - b);
-  const rollTint =
-    sortedDice[0] === sortedDice[2]
+  const rollTint = rolling
+    ? ""
+    : sortedDice[0] === sortedDice[2]
       ? " dice-total-trips"
       : sortedDice[0] === 1 && sortedDice[1] === 2 && sortedDice[2] === 3
         ? " dice-total-run"
@@ -4156,10 +4157,10 @@ function DicePanel() {
 
       <div className={`waits dice-total${rollTint}`}>
         <span className="waits-label">Total:</span>
-        <span className="scoring-total-value">{total}</span>
+        <span className="scoring-total-value">{rolling ? "–" : total}</span>
       </div>
 
-      <Wall total={total} />
+      <Wall total={rolling ? null : total} />
 
       {brk && (
         <div className="wall-break-caption">
@@ -4206,17 +4207,17 @@ function ExchangePanel() {
       <div className="dice-result-boxes">
         <div className="waits dice-total">
           <span className="waits-label">Round:</span>
-          <span className="scoring-total-value">{round}</span>
+          <span className="scoring-total-value">{rolling ? "–" : round}</span>
         </div>
         <div className="waits dice-total">
           <span className="waits-label">Tiles:</span>
-          <span className="scoring-total-value">{tiles}</span>
+          <span className="scoring-total-value">{rolling ? "–" : tiles}</span>
         </div>
       </div>
 
       <div className="waits dice-total">
         <span className="waits-label">Total:</span>
-        <span className="scoring-total-value">{round * tiles}</span>
+        <span className="scoring-total-value">{rolling ? "–" : round * tiles}</span>
       </div>
     </>
   );
