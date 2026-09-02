@@ -1,9 +1,13 @@
 :root {
-  color-scheme: light;
+  /* Lets the browser paint its own UI (scrollbars, form controls) in
+     whichever theme matches - the actual page background/colors below are
+     driven by the --surface etc. custom properties defined in App.css,
+     which react to prefers-color-scheme the same way. */
+  color-scheme: light dark;
   font: 16px/1.5 system-ui, "Segoe UI", Roboto, sans-serif;
 }
 
 body {
   margin: 0;
-  background: #fff;
+  background: var(--surface);
 }

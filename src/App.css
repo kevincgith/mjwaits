@@ -1,15 +1,169 @@
+/* Color tokens: every color below is a CSS custom property so dark mode
+   (driven purely by the OS/browser prefers-color-scheme - no manual
+   toggle) can override them in one place. Light values here are exactly
+   the hardcoded colors this file used before tokenization; the dark
+   media query below only lists the ones that actually need to change -
+   a handful of decorative/self-contained colors (the dice-wall diagram,
+   the 2nd crop-region orange, on-accent white) look fine unchanged. */
+:root {
+  /* Text */
+  --text: #1a1a1a;
+  --text-strong: #333;
+  --text-secondary: #444;
+  --text-tertiary: #666;
+  --text-muted: #888;
+  --text-subtle: #999;
+  --text-faint: #777;
+  --faint: #bbb;
+  /* Surfaces */
+  --surface: #fff;
+  --surface-sunken: #f7f7f7;
+  --surface-sunken-2: #fafafa;
+  --surface-warm: #fafaf5;
+  --hover-bg: #ececec;
+  --hover-bg-2: #f2f2f2;
+  /* Borders */
+  --border: #ccc;
+  --border-2: #ddd;
+  --border-3: #eee;
+  --border-warm: #ede9d8;
+  /* Accent (blue) */
+  --accent: #1a5fb4;
+  --accent-hover-bg: #ddebfa;
+  --accent-active: #164a8f;
+  --accent-bg: #eaf1fb;
+  --accent-bg-2: #eef4fc;
+  --accent-border-light: #cfe0f5;
+  --accent-border-dashed: #bcd2ee;
+  --on-accent: #fff;
+  /* Success (green, non-suit) */
+  --success-bg-1: #eafaf0;
+  --success-border-1: #2f9e58;
+  --success-text-1: #1e7a41;
+  --success-bg-2: #f1f8f1;
+  --success-border-2: #bfe0bf;
+  /* Danger / error (red, non-suit) */
+  --danger-bg-1: #fdecea;
+  --danger-bg-2: #fdeceb;
+  --danger-border-1: #d64545;
+  --danger-text-1: #b91c1c;
+  /* Warning (amber) */
+  --warning-bg-1: #fdf3e7;
+  --warning-bg-2: #fff3cd;
+  --warning-bg-3: #fff8e1;
+  --warning-accent-1: #e8a400;
+  --warning-border: #d69e2e;
+  --warning-text: #9a6700;
+  /* Purple (joker) */
+  --purple: #8b5cf6;
+  --purple-bg: #f2eefc;
+  --purple-bg-2: #f3e8ff;
+  --purple-border: #e0d4f7;
+  /* Tile-suit identity colors */
+  --red: #b3261e;
+  --green: #1a7a3c;
+  --cyan: #0891b2;
+  /* Misc labels / badges */
+  --title-accent: #a33;
+  --label-gray-text: #6b7280;
+  --label-gray-bg: #eef2f7;
+  --green-bg: #eaf6ee;
+  --green-border: #cdeada;
+  --orange: #e8871e;
+  /* Scan / detection overlay */
+  --detect-green: #2fbf5f;
+  /* Dice-rolling tab */
+  --dice-trips-border: #86d3a6;
+  --dice-run-border: #f0a9a0;
+  --wall-seg: #2b6b3f;
+  --wall-seg-outline: #1c4c2b;
+  --wall-seg-counted: #57a97b;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* Text */
+    --text: #e8e6e1;
+    --text-strong: #e4e4e4;
+    --text-secondary: #cfcfcf;
+    --text-tertiary: #a8a8a8;
+    --text-muted: #9a9a9a;
+    --text-subtle: #8a8a8a;
+    --text-faint: #8a8a8a;
+    --faint: #5a5a5a;
+    /* Surfaces */
+    --surface: #1e1e1e;
+    --surface-sunken: #232323;
+    --surface-sunken-2: #242424;
+    --surface-warm: #221f1a;
+    --hover-bg: #2a2a2a;
+    --hover-bg-2: #2f2f2f;
+    /* Borders */
+    --border: #4a4a4a;
+    --border-2: #454545;
+    --border-3: #3a3a3a;
+    --border-warm: #3a3730;
+    /* Accent (blue) */
+    --accent: #5b9bd5;
+    --accent-hover-bg: #14304d;
+    --accent-active: #0d3568;
+    --accent-bg: #16304d;
+    --accent-bg-2: #16283a;
+    --accent-border-light: #2d4a6b;
+    --accent-border-dashed: #2d4a6b;
+    /* Success (green, non-suit) */
+    --success-bg-1: #16301f;
+    --success-border-1: #3ecf72;
+    --success-text-1: #6fcf97;
+    --success-bg-2: #1a2b1c;
+    --success-border-2: #3a5c3f;
+    /* Danger / error (red, non-suit) */
+    --danger-bg-1: #3a201d;
+    --danger-bg-2: #3a1f1d;
+    --danger-border-1: #e2685f;
+    --danger-text-1: #ff8a80;
+    /* Warning (amber) */
+    --warning-bg-1: #3a331f;
+    --warning-bg-2: #3a331f;
+    --warning-bg-3: #332c18;
+    --warning-accent-1: #d9a53a;
+    --warning-border: #c99a3e;
+    --warning-text: #d9a53a;
+    /* Purple (joker) */
+    --purple: #a98cf7;
+    --purple-bg: #2a2338;
+    --purple-bg-2: #2a2338;
+    --purple-border: #4a3d68;
+    /* Tile-suit identity colors */
+    --red: #e2645a;
+    --green: #4caf6d;
+    --cyan: #22b8d4;
+    /* Misc labels / badges */
+    --title-accent: #d97a72;
+    --label-gray-text: #a3aab5;
+    --label-gray-bg: #2a2f38;
+    --green-bg: #17301f;
+    --green-border: #2e5c3d;
+    /* Scan / detection overlay */
+    --detect-green: #3ecf72;
+    /* Dice-rolling tab */
+    --dice-trips-border: #3ecf72;
+    --dice-run-border: #e2685f;
+  }
+}
+
 .page {
   max-width: 900px;
   margin: 0 auto;
   padding: 2.5rem 1.5rem 4rem;
-  color: #1a1a1a;
+  color: var(--text);
 }
 
 .build-version {
   margin-top: 2rem;
   text-align: center;
   font-size: 0.75rem;
-  color: #bbb;
+  color: var(--faint);
 }
 
 /* Without this, mobile browsers impose a ~300ms delay on every tap while
@@ -44,28 +198,28 @@ button {
    would trigger over and over. */
 @media (hover: hover) and (pointer: fine) {
   .panel-header button:not(:disabled):hover {
-    background: #ececec;
+    background: var(--hover-bg);
   }
 
   .panel-header button.toggle-on:not(:disabled):hover {
-    background: #ddebfa;
+    background: var(--accent-hover-bg);
   }
 
   .hand-tile-button:hover {
-    background: #fdecea;
+    background: var(--danger-bg-1);
   }
 
   .tile-button:hover:not(:disabled) {
-    background: #f2f2f2;
-    border-color: #bbb;
+    background: var(--hover-bg-2);
+    border-color: var(--faint);
   }
 
   .mode-tabs button:not(.toggle-on):hover {
-    background: #ececec;
+    background: var(--hover-bg);
   }
 
   .trainer-submit:hover {
-    background: #164a8f;
+    background: var(--accent-active);
   }
 }
 
@@ -74,28 +228,28 @@ button {
    it releases the instant the tap ends, so it can never linger onto (and
    interfere with) the next tap the way :hover did on touch devices. */
 .panel-header button:not(:disabled):active {
-  background: #ececec;
+  background: var(--hover-bg);
 }
 
 .panel-header button.toggle-on:not(:disabled):active {
-  background: #ddebfa;
+  background: var(--accent-hover-bg);
 }
 
 .hand-tile-button:active {
-  background: #fdecea;
+  background: var(--danger-bg-1);
 }
 
 .tile-button:active:not(:disabled) {
-  background: #f2f2f2;
-  border-color: #bbb;
+  background: var(--hover-bg-2);
+  border-color: var(--faint);
 }
 
 .mode-tabs button:not(.toggle-on):active {
-  background: #ececec;
+  background: var(--hover-bg);
 }
 
 .trainer-submit:active {
-  background: #164a8f;
+  background: var(--accent-active);
 }
 
 h1 {
@@ -111,8 +265,8 @@ h1 {
 }
 
 .mode-tabs button {
-  border: 1px solid #ccc;
-  background: #f7f7f7;
+  border: 1px solid var(--border);
+  background: var(--surface-sunken);
   border-radius: 6px;
   padding: 0.45rem 1.1rem;
   font-size: 0.9rem;
@@ -121,9 +275,9 @@ h1 {
 }
 
 .mode-tabs button.toggle-on {
-  background: #1a5fb4;
-  border-color: #1a5fb4;
-  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
 }
 
 .trainer-levels {
@@ -135,8 +289,8 @@ h1 {
   display: block;
   margin-top: 0.75rem;
   padding: 0.6rem 1rem;
-  background: #1a5fb4;
-  color: #fff;
+  background: var(--accent);
+  color: var(--on-accent);
   border: none;
   border-radius: 6px;
   font-size: 0.95rem;
@@ -145,21 +299,21 @@ h1 {
 }
 
 .trainer-result-correct {
-  background: #eafaf0;
-  border: 2px solid #2f9e58;
+  background: var(--success-bg-1);
+  border: 2px solid var(--success-border-1);
 }
 
 .trainer-result-correct .waits-label {
-  color: #1e7a41;
+  color: var(--success-text-1);
 }
 
 .trainer-result-incorrect {
-  background: #fdeceb;
-  border: 2px solid #d64545;
+  background: var(--danger-bg-2);
+  border: 2px solid var(--danger-border-1);
 }
 
 .trainer-result-incorrect .waits-label {
-  color: #b91c1c;
+  color: var(--danger-text-1);
 }
 
 .trainer-stats {
@@ -183,7 +337,7 @@ h1 {
   padding: 0.35rem 0.6rem;
   text-align: right;
   white-space: nowrap;
-  border-bottom: 1px solid #ede9d8;
+  border-bottom: 1px solid var(--border-warm);
 }
 
 .trainer-stats-table th:first-child,
@@ -192,14 +346,14 @@ h1 {
 }
 
 .trainer-stats-table thead th {
-  color: #888;
+  color: var(--text-muted);
   font-weight: 600;
-  border-bottom: 2px solid #ddd;
+  border-bottom: 2px solid var(--border-2);
 }
 
 .trainer-stats-total td {
   font-weight: 600;
-  border-top: 2px solid #ddd;
+  border-top: 2px solid var(--border-2);
   border-bottom: none;
 }
 
@@ -207,31 +361,31 @@ h1 {
    non-wait, and a real wait the user didn't pick. Layered on top of (not
    replacing) .tile-button's base styling, same pattern as .toggle-on. */
 .tile-button.selected {
-  background: #eaf1fb;
-  border-color: #1a5fb4;
+  background: var(--accent-bg);
+  border-color: var(--accent);
 }
 
 .tile-button.trainer-hit {
-  background: #eafaf0;
-  border-color: #2f9e58;
+  background: var(--success-bg-1);
+  border-color: var(--success-border-1);
 }
 
 .tile-button.trainer-false-positive {
-  background: #fdeceb;
-  border-color: #d64545;
+  background: var(--danger-bg-2);
+  border-color: var(--danger-border-1);
 }
 
 .tile-button.trainer-missed {
-  background: #fff8e1;
-  border-color: #d69e2e;
+  background: var(--warning-bg-3);
+  border-color: var(--warning-border);
   border-style: dashed;
 }
 
 .panel {
-  border: 1px solid #ddd;
+  border: 1px solid var(--border-2);
   border-radius: 8px;
   padding: 1.25rem;
-  background: #fff;
+  background: var(--surface);
 }
 
 .panel-header {
@@ -257,7 +411,7 @@ h1 {
 
 .panel-title {
   font-weight: 600;
-  color: #a33;
+  color: var(--title-accent);
   margin-right: 0.5rem;
 }
 
@@ -267,7 +421,7 @@ h1 {
 .panel-subtitle {
   font-weight: 600;
   font-size: 0.85rem;
-  color: #888;
+  color: var(--text-muted);
   margin-right: 0.5rem;
 }
 
@@ -277,8 +431,8 @@ h1 {
 }
 
 .panel-header button {
-  border: 1px solid #ccc;
-  background: #f7f7f7;
+  border: 1px solid var(--border);
+  background: var(--surface-sunken);
   border-radius: 4px;
   padding: 0.3rem 0.7rem;
   cursor: pointer;
@@ -291,9 +445,9 @@ h1 {
 }
 
 .panel-header button.toggle-on {
-  background: #eaf1fb;
-  border-color: #1a5fb4;
-  color: #1a5fb4;
+  background: var(--accent-bg);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 /* The caret glyph stays a plain "▸" always - .open rotates it to face down
@@ -361,16 +515,16 @@ h1 {
 
 .tile-count {
   margin-left: auto;
-  color: #888;
+  color: var(--text-muted);
   font-size: 0.85rem;
 }
 
 .shanten-badge {
   font-size: 0.8rem;
   font-weight: 600;
-  color: #1a5fb4;
-  background: #eaf1fb;
-  border: 1px solid #cfe0f5;
+  color: var(--accent);
+  background: var(--accent-bg);
+  border: 1px solid var(--accent-border-light);
   border-radius: 4px;
   padding: 0.15rem 0.5rem;
   margin-left: 0.5rem;
@@ -383,13 +537,13 @@ h1 {
   align-items: center;
   gap: 0.15rem;
   padding: 0.75rem;
-  border: 1px solid #eee;
+  border: 1px solid var(--border-3);
   border-radius: 6px;
   margin-bottom: 0.75rem;
 }
 
 .hint {
-  color: #999;
+  color: var(--text-subtle);
   font-size: 0.9rem;
 }
 
@@ -418,8 +572,8 @@ h1 {
   align-items: center;
   gap: 0.3rem;
   padding: 0.75rem;
-  background: #fafaf5;
-  border: 1px solid #ede9d8;
+  background: var(--surface-warm);
+  border: 1px solid var(--border-warm);
   border-radius: 6px;
   margin-bottom: 1rem;
 }
@@ -427,12 +581,12 @@ h1 {
 .waits-label {
   font-weight: 600;
   margin-right: 0.4rem;
-  color: #444;
+  color: var(--text-secondary);
 }
 
 .universal-wait {
   flex-basis: 100%;
-  color: #8b5cf6;
+  color: var(--purple);
   margin-bottom: 0.3rem;
 }
 
@@ -453,7 +607,7 @@ h1 {
   align-items: center;
   gap: 0.2rem;
   padding: 0.25rem 0;
-  border-top: 1px solid #ede9d8;
+  border-top: 1px solid var(--border-warm);
 }
 
 .discard-row:first-of-type {
@@ -461,7 +615,7 @@ h1 {
 }
 
 .discard-arrow {
-  color: #999;
+  color: var(--text-subtle);
   margin: 0 0.35rem;
 }
 
@@ -480,9 +634,9 @@ h1 {
 .efficiency-score {
   font-size: 0.8rem;
   font-weight: 600;
-  color: #8b5cf6;
-  background: #f2eefc;
-  border: 1px solid #e0d4f7;
+  color: var(--purple);
+  background: var(--purple-bg);
+  border: 1px solid var(--purple-border);
   border-radius: 4px;
   padding: 0.15rem 0.5rem;
 }
@@ -514,7 +668,7 @@ h1 {
   align-items: center;
   gap: 0.4rem;
   padding: 0.3rem 0;
-  border-top: 1px solid #ede9d8;
+  border-top: 1px solid var(--border-warm);
 }
 
 .breakdown-row:first-of-type {
@@ -540,8 +694,8 @@ h1 {
 .reading-label {
   font-size: 0.75rem;
   font-weight: 600;
-  color: #6b7280;
-  background: #eef2f7;
+  color: var(--label-gray-text);
+  background: var(--label-gray-bg);
   padding: 0.1rem 0.5rem;
   border-radius: 999px;
   white-space: nowrap;
@@ -604,8 +758,8 @@ h1 {
    glance despite being structurally concealed (several tai patterns, 門清
    among them, care about that distinction). */
 .breakdown-group.concealed-kong-meld {
-  background: #fdf3e7;
-  outline: 1px solid #e8a400;
+  background: var(--warning-bg-1);
+  outline: 1px solid var(--warning-accent-1);
 }
 
 /* The result breakdown's two grouping boxes - Declared (everything entered
@@ -622,7 +776,7 @@ h1 {
 }
 
 .hand-section {
-  border: 1px solid #ddd;
+  border: 1px solid var(--border-2);
   border-radius: 6px;
   padding: 0.5rem 0.6rem;
 }
@@ -637,18 +791,18 @@ h1 {
 .hand-section-label {
   font-size: 0.75rem;
   font-weight: 600;
-  color: #666;
+  color: var(--text-tertiary);
   text-transform: uppercase;
   letter-spacing: 0.03em;
 }
 
 .hand-section.declared-section {
-  background: #f1f8f1;
-  border-color: #bfe0bf;
+  background: var(--success-bg-2);
+  border-color: var(--success-border-2);
 }
 
 .hand-section.concealed-section {
-  background: #f7f7f7;
+  background: var(--surface-sunken);
 }
 
 .scoring-context {
@@ -660,8 +814,8 @@ h1 {
 }
 
 .scoring-context > button {
-  border: 1px solid #ccc;
-  background: #f7f7f7;
+  border: 1px solid var(--border);
+  background: var(--surface-sunken);
   border-radius: 4px;
   padding: 0.3rem 0.6rem;
   font-size: 0.85rem;
@@ -669,9 +823,9 @@ h1 {
 }
 
 .scoring-context > button.toggle-on {
-  background: #eaf1fb;
-  border-color: #1a5fb4;
-  color: #1a5fb4;
+  background: var(--accent-bg);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .wind-picker {
@@ -682,13 +836,13 @@ h1 {
 
 .wind-picker-label {
   font-size: 0.85rem;
-  color: #666;
+  color: var(--text-tertiary);
   margin-right: 0.2rem;
 }
 
 .wind-picker button {
-  border: 1px solid #ccc;
-  background: #f7f7f7;
+  border: 1px solid var(--border);
+  background: var(--surface-sunken);
   border-radius: 4px;
   padding: 0.3rem 0.6rem;
   font-size: 0.85rem;
@@ -696,14 +850,14 @@ h1 {
 }
 
 .wind-picker button.toggle-on {
-  background: #eaf1fb;
-  border-color: #1a5fb4;
-  color: #1a5fb4;
+  background: var(--accent-bg);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .scoring-total-value {
   font-weight: 600;
-  color: #1a5fb4;
+  color: var(--accent);
 }
 
 /* 嚦咕雙食: separates the second reading's breakdown from the primary one
@@ -711,10 +865,10 @@ h1 {
 .scoring-second-label {
   margin-top: 1rem;
   padding-top: 0.75rem;
-  border-top: 1px dashed #ccc;
+  border-top: 1px dashed var(--border);
 }
 .scoring-second-label .waits-label {
-  color: #a33;
+  color: var(--title-accent);
   font-weight: 600;
 }
 
@@ -726,7 +880,7 @@ h1 {
    border on the always-one-per-row wrapper keeps :first-of-type correct
    regardless of which shape a given row takes. */
 .pattern-row {
-  border-top: 1px solid #ede9d8;
+  border-top: 1px solid var(--border-warm);
 }
 
 .pattern-row:first-of-type {
@@ -778,7 +932,7 @@ button.scoring-pattern-row {
 
 .scoring-pattern-tai {
   font-weight: 600;
-  color: #1a5fb4;
+  color: var(--accent);
   white-space: nowrap;
 }
 
@@ -814,13 +968,13 @@ button.scoring-pattern-row {
 }
 
 .projected-sort-toggle {
-  border: 1px solid #ccc;
-  background: #f7f7f7;
+  border: 1px solid var(--border);
+  background: var(--surface-sunken);
   border-radius: 4px;
   padding: 0.2rem 0.6rem;
   cursor: pointer;
   font-size: 0.8rem;
-  color: #444;
+  color: var(--text-secondary);
   white-space: nowrap;
   position: relative;
 }
@@ -836,8 +990,8 @@ button.scoring-pattern-row {
 }
 
 .projected-wait {
-  background: #fff;
-  border: 1px solid #ede9d8;
+  background: var(--surface);
+  border: 1px solid var(--border-warm);
   border-radius: 6px;
   padding: 0.35rem 0.6rem;
 }
@@ -861,12 +1015,12 @@ button.scoring-pattern-row {
 .projected-wait-tai {
   margin-left: auto;
   font-weight: 600;
-  color: #1a5fb4;
+  color: var(--accent);
   white-space: nowrap;
 }
 
 .projected-wait-caret {
-  color: #999;
+  color: var(--text-subtle);
   font-size: 0.8rem;
   width: 0.9rem;
   flex-shrink: 0;
@@ -900,8 +1054,8 @@ button.scoring-pattern-row {
   right: -0.08em;
   top: 0.15em;
   height: 0.97em;
-  background: #fff3cd;
-  outline: 2px solid #e8a400;
+  background: var(--warning-bg-2);
+  outline: 2px solid var(--warning-accent-1);
   border-radius: 3px;
   z-index: -1;
 }
@@ -916,8 +1070,8 @@ button.scoring-pattern-row {
   right: -0.08em;
   top: 0.15em;
   height: 0.97em;
-  background: #f3e8ff;
-  outline: 2px solid #8b5cf6;
+  background: var(--purple-bg-2);
+  outline: 2px solid var(--purple);
   border-radius: 3px;
   z-index: -1;
 }
@@ -950,16 +1104,16 @@ button.scoring-pattern-row {
 }
 
 .tile-glyph[data-suit="m"] {
-  color: #b3261e;
+  color: var(--red);
 }
 .tile-glyph[data-suit="t"] {
-  color: #1a5fb4;
+  color: var(--accent);
 }
 .tile-glyph[data-suit="b"] {
-  color: #1a7a3c;
+  color: var(--green);
 }
 .tile-glyph[data-suit="z"] {
-  color: #333;
+  color: var(--text-strong);
   font-family: "Apple Symbols", "Segoe UI Symbol", "Noto Sans Symbols 2", sans-serif;
   top: 0;
 }
@@ -968,26 +1122,26 @@ button.scoring-pattern-row {
 .tile-glyph[data-suit="z"][data-rank="2"],
 .tile-glyph[data-suit="z"][data-rank="3"],
 .tile-glyph[data-suit="z"][data-rank="4"] {
-  color: #1a5fb4;
+  color: var(--accent);
 }
 /* Red Dragon */
 .tile-glyph[data-suit="z"][data-rank="5"] {
-  color: #b3261e;
+  color: var(--red);
 }
 /* Green Dragon */
 .tile-glyph[data-suit="z"][data-rank="6"] {
-  color: #1a7a3c;
+  color: var(--green);
 }
 /* Joker - a wildcard, so it gets its own distinct color */
 .tile-glyph[data-suit="j"] {
-  color: #8b5cf6;
+  color: var(--purple);
   font-family: "Apple Symbols", "Segoe UI Symbol", "Noto Sans Symbols 2", sans-serif;
   top: 0;
 }
 /* Bonus tiles (flowers/seasons) - same Unicode block/font quirks as
    honors/joker above, own color since they're neither a suit nor a wild. */
 .tile-glyph[data-suit="bonus"] {
-  color: #0891b2;
+  color: var(--cyan);
   font-family: "Apple Symbols", "Segoe UI Symbol", "Noto Sans Symbols 2", sans-serif;
   top: 0;
 }
@@ -1003,7 +1157,7 @@ button.scoring-pattern-row {
    time, not by discarding the redrawn tile again. */
 .redraw-mark {
   font-size: 0.75rem;
-  color: #8b5cf6;
+  color: var(--purple);
 }
 
 .joker-hint {
@@ -1011,9 +1165,9 @@ button.scoring-pattern-row {
   align-items: center;
   gap: 0.1rem;
   font-size: 0.75rem;
-  color: #666;
-  background: #f2eefc;
-  border: 1px solid #e0d4f7;
+  color: var(--text-tertiary);
+  background: var(--purple-bg);
+  border: 1px solid var(--purple-border);
   border-radius: 4px;
   padding: 0.1rem 0.3rem;
   margin-left: 0.15rem;
@@ -1022,9 +1176,9 @@ button.scoring-pattern-row {
 .remaining-count {
   font-size: 0.75rem;
   font-weight: 600;
-  color: #1a7a3c;
-  background: #eaf6ee;
-  border: 1px solid #cdeada;
+  color: var(--green);
+  background: var(--green-bg);
+  border: 1px solid var(--green-border);
   border-radius: 4px;
   padding: 0.05rem 0.3rem;
   margin-left: 0.15rem;
@@ -1033,9 +1187,9 @@ button.scoring-pattern-row {
 .tenpai-tag {
   font-size: 0.8rem;
   font-weight: 600;
-  color: #1a7a3c;
-  background: #eaf6ee;
-  border: 1px solid #cdeada;
+  color: var(--green);
+  background: var(--green-bg);
+  border: 1px solid var(--green-border);
   border-radius: 4px;
   padding: 0.15rem 0.5rem;
 }
@@ -1055,9 +1209,9 @@ button.scoring-pattern-row {
 }
 
 .tile-button {
-  border: 1px solid #ddd;
+  border: 1px solid var(--border-2);
   border-radius: 4px;
-  background: #fff;
+  background: var(--surface);
   padding: 0.15rem 0.35rem;
   cursor: pointer;
 }
@@ -1073,34 +1227,34 @@ button.scoring-pattern-row {
   gap: 0.35rem;
   margin-bottom: 1.25rem;
   padding-bottom: 1.25rem;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--border-3);
 }
 
 .algebraic-input label {
   font-size: 0.8rem;
-  color: #888;
+  color: var(--text-muted);
 }
 
 .algebraic-input input {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.95rem;
   padding: 0.5rem 0.65rem;
-  border: 1px solid #ccc;
+  border: 1px solid var(--border);
   border-radius: 6px;
 }
 
 .algebraic-input input:focus {
-  outline: 2px solid #1a5fb4;
+  outline: 2px solid var(--accent);
   outline-offset: -1px;
 }
 
 .error {
-  color: #b3261e;
+  color: var(--red);
   font-size: 0.85rem;
 }
 
 .warning {
-  color: #9a6700;
+  color: var(--warning-text);
   font-size: 0.85rem;
 }
 
@@ -1110,7 +1264,7 @@ button.scoring-pattern-row {
   gap: 0.75rem;
   margin-bottom: 1.25rem;
   padding-bottom: 1.25rem;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--border-3);
 }
 
 /* hideTrigger + idle: nothing in this row is visible (just the always-
@@ -1123,8 +1277,8 @@ button.scoring-pattern-row {
 }
 
 .scan-input button {
-  border: 1px solid #ccc;
-  background: #f7f7f7;
+  border: 1px solid var(--border);
+  background: var(--surface-sunken);
   border-radius: 6px;
   padding: 0.5rem 0.9rem;
   font-size: 0.9rem;
@@ -1146,14 +1300,14 @@ button.scoring-pattern-row {
   position: relative;
   width: 140px;
   height: 4px;
-  background: #eee;
+  background: var(--border-3);
   border-radius: 2px;
   overflow: hidden;
 }
 
 .scan-progress-detail {
   font-size: 0.75rem;
-  color: #999;
+  color: var(--text-subtle);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
@@ -1162,7 +1316,7 @@ button.scoring-pattern-row {
   top: 0;
   left: 0;
   height: 100%;
-  background: #1a5fb4;
+  background: var(--accent);
   border-radius: 2px;
   transition: width 0.15s ease;
 }
@@ -1187,9 +1341,9 @@ button.scoring-pattern-row {
   gap: 0.6rem;
   margin-bottom: 1.25rem;
   padding: 0.85rem;
-  border: 1px solid #ddd;
+  border: 1px solid var(--border-2);
   border-radius: 8px;
-  background: #fafafa;
+  background: var(--surface-sunken-2);
 }
 
 .crop-stage {
@@ -1227,7 +1381,7 @@ button.scoring-pattern-row {
 
 .crop-rect {
   position: absolute;
-  border: 2px solid #1a5fb4;
+  border: 2px solid var(--accent);
   box-sizing: border-box;
   cursor: move;
   touch-action: none;
@@ -1242,11 +1396,11 @@ button.scoring-pattern-row {
 /* Second region gets a distinct color so two overlapping-ish boxes stay
    visually distinguishable while dragging. */
 .crop-rect-1 {
-  border-color: #e8871e;
+  border-color: var(--orange);
 }
 
 .crop-rect-1 .crop-handle {
-  background: #e8871e;
+  background: var(--orange);
 }
 
 .crop-rect-label {
@@ -1257,7 +1411,7 @@ button.scoring-pattern-row {
   padding: 0 0.25rem;
   border-radius: 4px;
   background: rgba(0, 0, 0, 0.6);
-  color: #fff;
+  color: var(--on-accent);
   font-size: 0.7rem;
   line-height: 1.3rem;
   text-align: center;
@@ -1270,10 +1424,10 @@ button.scoring-pattern-row {
   right: -11px;
   width: 22px;
   height: 22px;
-  border: 2px solid #fff;
+  border: 2px solid var(--on-accent);
   border-radius: 50%;
-  background: #b3261e;
-  color: #fff;
+  background: var(--red);
+  color: var(--on-accent);
   font-size: 0.9rem;
   line-height: 1;
   cursor: pointer;
@@ -1284,8 +1438,8 @@ button.scoring-pattern-row {
   position: absolute;
   width: 22px;
   height: 22px;
-  background: #1a5fb4;
-  border: 2px solid #fff;
+  background: var(--accent);
+  border: 2px solid var(--on-accent);
   border-radius: 50%;
   touch-action: none;
   transform: translate(-50%, -50%);
@@ -1325,8 +1479,8 @@ button.scoring-pattern-row {
 }
 
 .crop-actions button {
-  border: 1px solid #ccc;
-  background: #fff;
+  border: 1px solid var(--border);
+  background: var(--surface);
   border-radius: 6px;
   padding: 0.4rem 0.8rem;
   cursor: pointer;
@@ -1339,9 +1493,9 @@ button.scoring-pattern-row {
 }
 
 .crop-actions button.toggle-on {
-  background: #eaf1fb;
-  border-color: #1a5fb4;
-  color: #1a5fb4;
+  background: var(--accent-bg);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .crop-actions-left,
@@ -1365,9 +1519,9 @@ button.scoring-pattern-row {
 }
 
 .crop-actions-right button:last-child {
-  border-color: #1a5fb4;
-  background: #1a5fb4;
-  color: #fff;
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
 }
 
 .scan-review {
@@ -1376,9 +1530,9 @@ button.scoring-pattern-row {
   gap: 0.6rem;
   margin-bottom: 1.25rem;
   padding: 0.85rem;
-  border: 1px solid #ddd;
+  border: 1px solid var(--border-2);
   border-radius: 8px;
-  background: #fafafa;
+  background: var(--surface-sunken-2);
 }
 
 .scan-review-images {
@@ -1396,7 +1550,7 @@ button.scoring-pattern-row {
 .scan-review-region-title {
   font-size: 0.8rem;
   font-weight: 600;
-  color: #444;
+  color: var(--text-secondary);
   margin-bottom: 0.2rem;
 }
 
@@ -1450,36 +1604,36 @@ button.scoring-pattern-row {
 
 .detection-outline {
   fill: none;
-  stroke: #2fbf5f;
+  stroke: var(--detect-green);
   stroke-width: 2;
   vector-effect: non-scaling-stroke;
 }
 
 .detection-box.bonus .detection-outline {
-  stroke: #bbb;
+  stroke: var(--faint);
   stroke-dasharray: 4 3;
 }
 
 .detection-box.editing .detection-outline {
-  stroke: #1a5fb4;
+  stroke: var(--accent);
   stroke-width: 3;
 }
 
 .detection-label-bg {
-  fill: #2fbf5f;
+  fill: var(--detect-green);
 }
 
 .detection-box.bonus .detection-label-bg {
-  fill: #999;
+  fill: var(--text-subtle);
 }
 
 .detection-box.editing .detection-label-bg {
-  fill: #1a5fb4;
+  fill: var(--accent);
 }
 
 .detection-label {
   font: 13px ui-monospace, SFMono-Regular, Menlo, monospace;
-  fill: #fff;
+  fill: var(--on-accent);
 }
 
 .correction-panel {
@@ -1487,9 +1641,9 @@ button.scoring-pattern-row {
   flex-direction: column;
   gap: 0.5rem;
   padding: 0.65rem;
-  border: 1px solid #1a5fb4;
+  border: 1px solid var(--accent);
   border-radius: 8px;
-  background: #eef4fc;
+  background: var(--accent-bg-2);
 }
 
 .correction-panel-header {
@@ -1498,7 +1652,7 @@ button.scoring-pattern-row {
   justify-content: space-between;
   gap: 0.5rem;
   font-size: 0.85rem;
-  color: #333;
+  color: var(--text-strong);
 }
 
 .correction-panel-close {
@@ -1507,18 +1661,18 @@ button.scoring-pattern-row {
   font-size: 1rem;
   line-height: 1;
   cursor: pointer;
-  color: #666;
+  color: var(--text-tertiary);
   padding: 0.15rem 0.4rem;
 }
 
 .correction-row-primary {
   padding-bottom: 0.3rem;
-  border-bottom: 1px dashed #bcd2ee;
+  border-bottom: 1px dashed var(--accent-border-dashed);
 }
 
 .correction-other-label {
   font-size: 0.75rem;
-  color: #777;
+  color: var(--text-faint);
   margin: 0.3rem 0 0.1rem;
 }
 
@@ -1528,8 +1682,8 @@ button.scoring-pattern-row {
 }
 
 .correction-panel-actions button {
-  border: 1px solid #ccc;
-  background: #fff;
+  border: 1px solid var(--border);
+  background: var(--surface);
   border-radius: 6px;
   padding: 0.35rem 0.7rem;
   cursor: pointer;
@@ -1537,8 +1691,8 @@ button.scoring-pattern-row {
 }
 
 .correction-panel-remove {
-  border-color: #b3261e;
-  color: #b3261e;
+  border-color: var(--red);
+  color: var(--red);
 }
 
 .scan-review-summary {
@@ -1548,7 +1702,7 @@ button.scoring-pattern-row {
   justify-content: space-between;
   gap: 0.5rem;
   font-size: 0.9rem;
-  color: #444;
+  color: var(--text-secondary);
 }
 
 .scan-review-info {
@@ -1559,7 +1713,7 @@ button.scoring-pattern-row {
 
 .scan-review-hint {
   font-size: 0.78rem;
-  color: #777;
+  color: var(--text-faint);
 }
 
 .scan-review-actions {
@@ -1568,8 +1722,8 @@ button.scoring-pattern-row {
 }
 
 .scan-review-actions button {
-  border: 1px solid #ccc;
-  background: #fff;
+  border: 1px solid var(--border);
+  background: var(--surface);
   border-radius: 6px;
   padding: 0.4rem 0.8rem;
   cursor: pointer;
@@ -1577,9 +1731,9 @@ button.scoring-pattern-row {
 }
 
 .scan-review-actions button:last-child {
-  border-color: #1a5fb4;
-  background: #1a5fb4;
-  color: #fff;
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
 }
 
 .scan-review-actions button:last-child:disabled {
@@ -1594,21 +1748,21 @@ button.scoring-pattern-row {
 .sub-tabs {
   margin-bottom: 1rem;
   padding-bottom: 0.85rem;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--border-3);
 }
 .sub-tabs button {
   font-size: 0.8rem;
   padding: 0.35rem 0.9rem;
 }
 .sub-tabs button.toggle-on {
-  background: #eaf1fb;
-  border-color: #1a5fb4;
-  color: #1a5fb4;
+  background: var(--accent-bg);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .sub-tab-placeholder {
   margin: 0;
-  color: #888;
+  color: var(--text-muted);
   text-align: center;
 }
 
@@ -1623,14 +1777,14 @@ button.scoring-pattern-row {
   align-items: center;
   gap: 0.5rem;
   padding: 0.75rem;
-  border: 1px solid #ddd;
+  border: 1px solid var(--border-2);
   border-radius: 10px;
-  background: #fafafa;
+  background: var(--surface-sunken-2);
 }
 .exchange-die-label {
   font-size: 0.8rem;
   font-weight: 600;
-  color: #666;
+  color: var(--text-tertiary);
 }
 
 /* One box per die result, then a combined total below. */
@@ -1659,8 +1813,8 @@ button.scoring-pattern-row {
   width: 64px;
   height: 64px;
   padding: 0.5rem;
-  background: #fff;
-  border: 1px solid #ccc;
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: 10px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
   cursor: pointer;
@@ -1672,12 +1826,12 @@ button.scoring-pattern-row {
 
 @media (hover: hover) and (pointer: fine) {
   .die:not(:disabled):hover {
-    border-color: #1a5fb4;
+    border-color: var(--accent);
   }
 }
 
 .die:not(:disabled):active {
-  border-color: #1a5fb4;
+  border-color: var(--accent);
 }
 
 .die-cell {
@@ -1690,7 +1844,7 @@ button.scoring-pattern-row {
   justify-self: center;
   width: 12px;
   height: 12px;
-  background: #1a1a1a;
+  background: var(--text);
   border-radius: 50%;
 }
 
@@ -1698,8 +1852,8 @@ button.scoring-pattern-row {
   display: block;
   margin: 0 auto 1rem;
   padding: 0.6rem 1.4rem;
-  background: #1a5fb4;
-  color: #fff;
+  background: var(--accent);
+  color: var(--on-accent);
   border: none;
   border-radius: 6px;
   font-size: 0.95rem;
@@ -1719,14 +1873,14 @@ button.scoring-pattern-row {
 
 /* Three of a kind. */
 .dice-total-trips {
-  background: #eafaf0;
-  border-color: #86d3a6;
+  background: var(--success-bg-1);
+  border-color: var(--dice-trips-border);
 }
 
 /* 1-2-3 in any order. */
 .dice-total-run {
-  background: #fdecea;
-  border-color: #f0a9a0;
+  background: var(--danger-bg-1);
+  border-color: var(--dice-run-border);
 }
 
 /* --seg: one stack's width along its wall (a tile seen face-on); --tile: a
@@ -1811,12 +1965,12 @@ button.scoring-pattern-row {
 .wall-seg {
   flex: 0 0 var(--seg);
   box-sizing: border-box;
-  background: #2b6b3f;
-  box-shadow: inset 0 0 0 1px #1c4c2b;
+  background: var(--wall-seg);
+  box-shadow: inset 0 0 0 1px var(--wall-seg-outline);
 }
 /* The `sum` stacks counted off clockwise, lightened so the sum | 18-sum split reads. */
 .wall-seg-counted {
-  background: #57a97b;
+  background: var(--wall-seg-counted);
 }
 
 /* The break: a clean empty slot; a broken bar is one --gap longer than a whole one. */
@@ -1858,7 +2012,7 @@ button.scoring-pattern-row {
   margin-top: 1rem;
   text-align: center;
   font-size: 0.9rem;
-  color: #444;
+  color: var(--text-secondary);
 }
 
 /* On phones, lay each suit row out as a fixed 9-column grid instead of a
