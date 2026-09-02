@@ -703,22 +703,51 @@ h1 {
   font-weight: 600;
 }
 
+/* Wraps one Patterns-list row (the .scoring-pattern-row row itself, plus
+   its CollapsiblePanel when it has one) - the divider lives here rather
+   than on .scoring-pattern-row directly, since that inner element is
+   sometimes a <button> nested inside this wrapper (a tappable row) and
+   sometimes the row itself (a plain non-expandable one); putting the
+   border on the always-one-per-row wrapper keeps :first-of-type correct
+   regardless of which shape a given row takes. */
+.pattern-row {
+  border-top: 1px solid #ede9d8;
+}
+
+.pattern-row:first-of-type {
+  border-top: none;
+}
+
 .scoring-pattern-row {
   display: flex;
   justify-content: space-between;
   gap: 1rem;
   padding: 0.2rem 0;
-  border-top: 1px solid #ede9d8;
 }
 
-.scoring-pattern-row:first-of-type {
-  border-top: none;
+/* Button-chrome reset for a tappable row - a plain (non-expandable)
+   row uses a <div> instead, which needs none of this. */
+button.scoring-pattern-row {
+  width: 100%;
+  border: none;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
 .scoring-pattern-tai {
   font-weight: 600;
   color: #1a5fb4;
   white-space: nowrap;
+}
+
+/* Padding for the tile-group breakdown revealed under a tapped pattern
+   row - .breakdown-groups itself has no padding of its own outside its
+   usual .hand-display parent. */
+.scoring-pattern-tiles {
+  padding: 0.4rem 0 0.6rem;
 }
 
 /* Near-complete Scoring tab: one collapsible row per tenpai wait, each

@@ -79,6 +79,7 @@ import {
   type ResolvedHand,
   type RiichiState,
   type ScoreResult,
+  type TaiPattern,
   type Wind,
 } from "./lib/scoring";
 
@@ -2687,16 +2688,68 @@ function findWinningTileInstance(hand: ResolvedHand, declaredCount: number, winn
 // reading - factored out so 嚦咕雙食 (see ScoreResult.second) can render a
 // second reading identically below the primary one, rather than
 // duplicating this whole block.
+// One row of the Patterns list - tappable to expand the specific tiles
+// behind that pattern's tai, when it has any (see TaiPattern.tiles). A
+// pure game-context pattern (自摸, riichi, dealer streak, and similar)
+// has no `tiles` at all - nothing to point at - so it just renders as a
+// plain, non-interactive row, same look as before this feature existed.
+// Same tap-to-expand idiom as ProjectedWaitRow (own collapsed-by-default
+// state, CollapsiblePanel for the animated reveal).
+function PatternRow({ pattern, tai, hand, ctx }: { pattern: TaiPattern; tai: number; hand: ResolvedHand; ctx: GameContext }) {
+  const [expanded, setExpanded] = useState(false);
+  const groups = pattern.tiles?.(hand, ctx);
+  if (!groups || groups.length === 0) {
+    return (
+      <div className="pattern-row">
+        <div className="scoring-pattern-row" title={pattern.caveat}>
+          <span>{pattern.name}</span>
+          <span className="scoring-pattern-tai">{tai} tai</span>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="pattern-row">
+      <button
+        type="button"
+        className="scoring-pattern-row"
+        onClick={() => setExpanded((e) => !e)}
+        aria-expanded={expanded}
+        title={pattern.caveat}
+      >
+        <span>{pattern.name}</span>
+        <span className="scoring-pattern-tai">{tai} tai</span>
+        <span className={`projected-wait-caret${expanded ? " open" : ""}`} aria-hidden="true">
+          ▸
+        </span>
+      </button>
+      <CollapsiblePanel open={expanded}>
+        <div className="breakdown-groups scoring-pattern-tiles">
+          {groups.map((group, i) => (
+            <span className="breakdown-group" key={i}>
+              {group.map((t, j) => (
+                <TileGlyphSpan key={j} tile={t} />
+              ))}
+            </span>
+          ))}
+        </div>
+      </CollapsiblePanel>
+    </div>
+  );
+}
+
 function ScoringBreakdown({
   matched,
   hand,
   declaredCount,
   winningTile,
+  ctx,
 }: {
   matched: ScoreResult["matched"];
   hand: ResolvedHand;
   declaredCount: number;
   winningTile: Tile | null;
+  ctx: GameContext;
 }) {
   // scoring.ts's Tile (unlike the picker's HandTile) has no id to pin down
   // which physical instance was the 食胡 tile, so this only knows its kind -
@@ -2722,12 +2775,7 @@ function ScoringBreakdown({
         {matched.length === 0 ? (
           <span className="hint">No patterns matched yet — this is an early version, more get added over time.</span>
         ) : (
-          matched.map(({ pattern, tai }) => (
-            <div className="scoring-pattern-row" key={pattern.id}>
-              <span title={pattern.caveat}>{pattern.name}</span>
-              <span className="scoring-pattern-tai">{tai} tai</span>
-            </div>
-          ))
+          matched.map(({ pattern, tai }) => <PatternRow key={pattern.id} pattern={pattern} tai={tai} hand={hand} ctx={ctx} />)
         )}
       </div>
 
@@ -2797,9 +2845,22 @@ interface ProjectedWait {
 // ScoringBreakdown for that completion, including 嚦咕雙食's second reading
 // when scoreParsedHand returns one. Collapsed by default so a hand with
 // many waits stays scannable.
-function ProjectedWaitRow({ projected, declaredCount }: { projected: ProjectedWait; declaredCount: number }) {
+function ProjectedWaitRow({
+  projected,
+  declaredCount,
+  ctx,
+}: {
+  projected: ProjectedWait;
+  declaredCount: number;
+  ctx: GameContext;
+}) {
   const [expanded, setExpanded] = useState(false);
   const { wait, result, error } = projected;
+  // Each wait's own effective context - same override the projectedWaits
+  // memo itself applies before scoring (see ScoringPanel), since PatternRow
+  // needs a ctx with winningTile pinned to THIS row's wait, not whatever
+  // the ambient hand's own marked 食胡 tile happens to be.
+  const waitCtx: GameContext = { ...ctx, winningTile: wait };
   return (
     <div className="projected-wait">
       <button
@@ -2825,6 +2886,7 @@ function ProjectedWaitRow({ projected, declaredCount }: { projected: ProjectedWa
               hand={result.hand}
               declaredCount={declaredCount}
               winningTile={wait}
+              ctx={waitCtx}
             />
             {result.second && (
               <>
@@ -2836,6 +2898,7 @@ function ProjectedWaitRow({ projected, declaredCount }: { projected: ProjectedWa
                   hand={result.second.hand}
                   declaredCount={0}
                   winningTile={wait}
+                  ctx={waitCtx}
                 />
               </>
             )}
@@ -3916,6 +3979,7 @@ function ScoringPanel() {
             hand={scoring.result.hand}
             declaredCount={declaredMelds.length}
             winningTile={winningTile}
+            ctx={ctx}
           />
 
           {scoring.result.second && (
@@ -3928,6 +3992,7 @@ function ScoringPanel() {
                 hand={scoring.result.second.hand}
                 declaredCount={0}
                 winningTile={winningTile}
+                ctx={ctx}
               />
             </>
           )}
@@ -3962,7 +4027,7 @@ function ScoringPanel() {
                 <span className="waits-label universal-wait">Universal wait — any tile completes this hand.</span>
               )}
               {displayedProjectedWaits.map((pw) => (
-                <ProjectedWaitRow key={tileKey(pw.wait)} projected={pw} declaredCount={declaredMelds.length} />
+                <ProjectedWaitRow key={tileKey(pw.wait)} projected={pw} declaredCount={declaredMelds.length} ctx={ctx} />
               ))}
             </>
           )}

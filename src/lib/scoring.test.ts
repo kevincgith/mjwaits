@@ -2578,3 +2578,80 @@ describe("isDealer", () => {
     expect(isDealer(ctx({ seatWind: 2 }))).toBe(false);
   });
 });
+
+// Representative sample across TaiPattern.tiles' implementation
+// categories, per the feature's own scoping (not exhaustive over all
+// ~110 patterns that implement it - see docs/scoring-rules.md and the
+// PatternRow UI in App.tsx for the full picture).
+function patternTiles(result: ReturnType<typeof scoreHand>, id: string, gameCtx: GameContext) {
+  return result.matched.find((m) => m.pattern.id === id)?.pattern.tiles?.(result.hand, gameCtx);
+}
+
+describe("PATTERNS: TaiPattern.tiles (tap-to-expand tile breakdowns)", () => {
+  it("將眼: points at just the pair, e.g. 55t out of 123456789m111222z55t", () => {
+    const c = ctx();
+    const result = scoreHand("123456789m111222z55t", c);
+    expect(tai(result, "middle-tile-pair")).toBe(2);
+    expect(patternTiles(result, "middle-tile-pair", c)).toEqual([
+      [
+        { suit: "t", rank: 5 },
+        { suit: "t", rank: 5 },
+      ],
+    ]);
+  });
+
+  it("三元牌: points at each dragon meld individually, stacking", () => {
+    const c = ctx();
+    const result = scoreHand("555z666z123m456m789m22b", c);
+    expect(tai(result, "dragon-tile")).toBe(4); // 2 dragon melds x 2
+    expect(patternTiles(result, "dragon-tile", c)).toEqual([
+      [{ suit: "z", rank: 5 }, { suit: "z", rank: 5 }, { suit: "z", rank: 5 }],
+      [{ suit: "z", rank: 6 }, { suit: "z", rank: 6 }, { suit: "z", rank: 6 }],
+    ]);
+  });
+
+  it("明清龍/暗清龍: a ResolvedMeld[][]-backed stacking pattern - only the specific 789m copy the claimed tile completed shows under -open, the other under -hidden", () => {
+    // Same duplicate-789m-segment hand used to verify the isMeldOpen fix
+    // (see the 明清龍/暗清龍 describe block above).
+    const c = ctx({ winningTile: { suit: "m", rank: 9 } });
+    const result = scoreHand("123m456m789m789m234t22z", c);
+    expect(tai(result, "pure-straight-open")).toBe(10);
+    expect(tai(result, "pure-straight-hidden")).toBe(20);
+    const expectedInstanceTiles = [
+      [{ suit: "m", rank: 1 }, { suit: "m", rank: 2 }, { suit: "m", rank: 3 }],
+      [{ suit: "m", rank: 4 }, { suit: "m", rank: 5 }, { suit: "m", rank: 6 }],
+      [{ suit: "m", rank: 7 }, { suit: "m", rank: 8 }, { suit: "m", rank: 9 }],
+    ];
+    expect(patternTiles(result, "pure-straight-open", c)).toEqual(expectedInstanceTiles);
+    expect(patternTiles(result, "pure-straight-hidden", c)).toEqual(expectedInstanceTiles);
+  });
+
+  it("老少上: a count-only stacking pattern (no ResolvedMeld[][] helper) - recomputes the contributing 123m/789m melds directly", () => {
+    const c = ctx();
+    const result = scoreHand("123m789m456t567t345b22z", c);
+    expect(tai(result, "old-young-run")).toBe(3); // 1 instance x 3
+    expect(patternTiles(result, "old-young-run", c)).toEqual([
+      [{ suit: "m", rank: 1 }, { suit: "m", rank: 2 }, { suit: "m", rank: 3 }],
+      [{ suit: "m", rank: 7 }, { suit: "m", rank: 8 }, { suit: "m", rank: 9 }],
+    ]);
+  });
+
+  it("混一色: a whole-hand structural pattern - every meld plus the pair, via wholeHandGroups", () => {
+    const c = ctx();
+    const result = scoreHand("123m456m789m123m111z22z", c);
+    expect(tai(result, "half-flush")).toBe(40);
+    const groups = patternTiles(result, "half-flush", c);
+    expect(groups).toHaveLength(6); // 5 melds + the pair
+    expect(groups?.at(-1)).toEqual([{ suit: "z", rank: 2 }, { suit: "z", rank: 2 }]); // the pair is always last
+  });
+
+  it("context-only patterns (自摸, riichi, dealer streak, ...) have no tiles function at all", () => {
+    // A declared meld keeps this from also being 門前清 - concealed-self-
+    // draw's own excludes: ["self-draw"] would otherwise suppress the very
+    // pattern this test wants to check.
+    const c = ctx({ selfDraw: true });
+    const result = scoreHand("(123m)456m789m111z234t22b", c);
+    expect(tai(result, "self-draw")).toBe(1);
+    expect(patternTiles(result, "self-draw", c)).toBeUndefined();
+  });
+});

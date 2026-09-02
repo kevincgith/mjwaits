@@ -577,10 +577,32 @@ export interface TaiPattern {
   // only ever looks at this one hand's own declared melds, not the
   // discard pile or any other player's melds.
   caveat?: string;
+  // Which tiles this pattern's tai actually came from, for the UI's tap-
+  // to-expand breakdown (see PatternRow in App.tsx) - absent for patterns
+  // that aren't about specific tiles at all (game-context flags like
+  // self-draw/riichi/dealer-streak, and the 3 bonus-tile patterns, a
+  // different type entirely from Tile). Returns one group per relevant
+  // "unit" (typically one meld, or the pair) rather than a flat list, so a
+  // stacking pattern with several instances renders as visually distinct
+  // clusters instead of one undifferentiated row. Deliberately kept
+  // independent of `score` (recomputes rather than threading data through)
+  // so each stays a plain, obviously-correct-on-its-own function, same
+  // spirit as the rest of this file's "concrete checks, not a shared
+  // engine" approach.
+  tiles?: (hand: ResolvedHand, ctx: GameContext) => Tile[][];
 }
 
 function allHandTiles(hand: ResolvedHand): Tile[] {
   return [...hand.melds.flatMap((m) => m.tiles), ...hand.pair];
+}
+
+// Every meld's own tiles, plus the pair, each as its own group - the
+// generic "relevant tiles" answer for a pattern whose condition is
+// inherently about the whole hand's shape (suit purity, all-runs, and
+// similar) rather than some smaller identifiable subset. See
+// TaiPattern.tiles.
+function wholeHandGroups(hand: ResolvedHand): Tile[][] {
+  return [...hand.melds.map((m) => m.tiles), hand.pair];
 }
 
 const isHonorTile = (t: Tile): boolean => t.suit === "z";
@@ -1819,12 +1841,14 @@ export const PATTERNS: TaiPattern[] = [
     // initial foundation work, never one of the user's own house rules,
     // and was removed once that came up.)
     score: (hand) => (isConcealedExceptKongs(hand) ? 5 : 0),
+    tiles: wholeHandGroups,
   },
   {
     id: "kong",
     name: "槓 (Kong)",
     // Stacks: 2 tai per kong held, declared (exposed) or concealed alike.
     score: (hand) => hand.melds.filter((m) => m.kind === "kong").length * 2,
+    tiles: (hand) => hand.melds.filter((m) => m.kind === "kong").map((m) => m.tiles),
   },
   {
     id: "no-flowers",
@@ -1852,21 +1876,25 @@ export const PATTERNS: TaiPattern[] = [
     name: "無字花 (No honors, no flowers)",
     score: (hand) => (isNoHonorsNoFlowers(hand) ? 10 : 0),
     excludes: ["no-honors", "no-flowers"],
+    tiles: wholeHandGroups,
   },
   {
     id: "no-honors",
     name: "無字 (No honors)",
     score: (hand) => (allHandTiles(hand).every((t) => !isHonorTile(t)) ? 2 : 0),
+    tiles: wholeHandGroups,
   },
   {
     id: "wrong-seat-wind",
     name: "爛位風 (Wind meld not matching seat wind)",
     score: (hand, ctx) => (windMeldRanks(hand).some((r) => r !== ctx.seatWind) ? 2 : 0),
+    tiles: (hand, ctx) => hand.melds.filter((m) => m.tiles[0].suit === "z" && m.tiles[0].rank <= 4 && m.tiles[0].rank !== ctx.seatWind).map((m) => m.tiles),
   },
   {
     id: "correct-seat-wind",
     name: "正位風 (Wind meld matching seat wind)",
     score: (hand, ctx) => (windMeldRanks(hand).some((r) => r === ctx.seatWind) ? 2 : 0),
+    tiles: (hand, ctx) => hand.melds.filter((m) => m.tiles[0].suit === "z" && m.tiles[0].rank === ctx.seatWind).map((m) => m.tiles),
   },
   {
     id: "correct-round-wind",
@@ -1884,12 +1912,19 @@ export const PATTERNS: TaiPattern[] = [
       return ranks.size >= 2 && pairIsSpareWind(hand, ranks) ? 30 : 0;
     },
     excludes: SINGLE_WIND_PATTERN_IDS,
+    tiles: (hand) => {
+      const windMelds = hand.melds.filter((m) => m.tiles[0].suit === "z" && m.tiles[0].rank <= 4);
+      const groups = windMelds.map((m) => m.tiles);
+      if (pairIsSpareWind(hand, new Set(windMelds.map((m) => m.tiles[0].rank)))) groups.push(hand.pair);
+      return groups;
+    },
   },
   {
     id: "big-three-winds",
     name: "大三風 (Big three winds)",
     score: (hand) => (new Set(windMeldRanks(hand)).size >= 3 ? 60 : 0),
     excludes: [...SINGLE_WIND_PATTERN_IDS, "small-three-winds"],
+    tiles: (hand) => hand.melds.filter((m) => m.tiles[0].suit === "z" && m.tiles[0].rank <= 4).map((m) => m.tiles),
   },
   {
     id: "small-four-winds",
@@ -1899,18 +1934,26 @@ export const PATTERNS: TaiPattern[] = [
       return ranks.size >= 3 && pairIsSpareWind(hand, ranks) ? 120 : 0;
     },
     excludes: [...SINGLE_WIND_PATTERN_IDS, "small-three-winds", "big-three-winds"],
+    tiles: (hand) => {
+      const windMelds = hand.melds.filter((m) => m.tiles[0].suit === "z" && m.tiles[0].rank <= 4);
+      const groups = windMelds.map((m) => m.tiles);
+      if (pairIsSpareWind(hand, new Set(windMelds.map((m) => m.tiles[0].rank)))) groups.push(hand.pair);
+      return groups;
+    },
   },
   {
     id: "big-four-winds",
     name: "大四喜 (Big four winds)",
     score: (hand) => (new Set(windMeldRanks(hand)).size >= 4 ? 160 : 0),
     excludes: [...SINGLE_WIND_PATTERN_IDS, "small-three-winds", "big-three-winds", "small-four-winds"],
+    tiles: (hand) => hand.melds.filter((m) => m.tiles[0].suit === "z" && m.tiles[0].rank <= 4).map((m) => m.tiles),
   },
   {
     id: "dragon-tile",
     name: "三元牌 (Dragon meld)",
     // Stacks: 2 tai for each dragon meld held.
     score: (hand) => dragonMeldRanks(hand).length * 2,
+    tiles: (hand) => hand.melds.filter((m) => m.tiles[0].suit === "z" && m.tiles[0].rank >= 5).map((m) => m.tiles),
   },
   {
     id: "small-three-dragons",
@@ -1920,28 +1963,38 @@ export const PATTERNS: TaiPattern[] = [
       return ranks.size >= 2 && pairIsSpareDragon(hand, ranks) ? 40 : 0;
     },
     excludes: ["dragon-tile"],
+    tiles: (hand) => {
+      const dragonMelds = hand.melds.filter((m) => m.tiles[0].suit === "z" && m.tiles[0].rank >= 5);
+      const groups = dragonMelds.map((m) => m.tiles);
+      if (pairIsSpareDragon(hand, new Set(dragonMelds.map((m) => m.tiles[0].rank)))) groups.push(hand.pair);
+      return groups;
+    },
   },
   {
     id: "big-three-dragons",
     name: "大三元 (Big three dragons)",
     score: (hand) => (new Set(dragonMeldRanks(hand)).size >= 3 ? 80 : 0),
     excludes: ["dragon-tile", "small-three-dragons"],
+    tiles: (hand) => hand.melds.filter((m) => m.tiles[0].suit === "z" && m.tiles[0].rank >= 5).map((m) => m.tiles),
   },
   {
     id: "all-honors",
     name: "字一色 (All honors)",
     score: (hand) => (allHandTiles(hand).every(isHonorTile) ? 160 : 0),
+    tiles: wholeHandGroups,
   },
   {
     id: "all-runs",
     name: "平胡 (All runs)",
     score: (hand) => (isAllRuns(hand) ? 5 : 0),
+    tiles: wholeHandGroups,
   },
   {
     id: "all-runs-no-honors-no-flowers",
     name: "無字花大平胡 (All runs, no honors, no flowers)",
     score: (hand) => (isAllRuns(hand) && isNoHonorsNoFlowers(hand) ? 20 : 0),
     excludes: ["all-runs", "no-honors-no-flowers"],
+    tiles: wholeHandGroups,
   },
   {
     id: "missing-one-suit",
@@ -1950,21 +2003,35 @@ export const PATTERNS: TaiPattern[] = [
     // presence disqualifies the hand from 缺一門 entirely, not just an
     // honor pair.
     score: (hand) => (numberedSuitsUsed(hand).size === 2 && allHandTiles(hand).every((t) => !isHonorTile(t)) ? 10 : 0),
+    tiles: wholeHandGroups,
   },
   {
     id: "middle-tile-pair",
     name: "將眼 (Pair is 2, 5, or 8 - not honors)",
     score: (hand) => (!isHonorTile(hand.pair[0]) && [2, 5, 8].includes(hand.pair[0].rank) ? 2 : 0),
+    // This same pattern object is reused for 嚦咕嚦咕's own stacking variant
+    // (see eightPairsMiddleTilePairCount/scoreEightPairs, which computes a
+    // different tai but pushes it under this same id) - a 嚦咕嚦咕-shaped
+    // hand is recognizable by having 2-tile "melds" (the pair-groups
+    // upgraded to triplet-kind placeholders), which an ordinary hand's
+    // melds never have. Only the ordinary case is just `[hand.pair]`.
+    tiles: (hand) => {
+      if (!hand.melds.some((m) => m.tiles.length === 2)) return [hand.pair];
+      const groups = [hand.pair, ...hand.melds.filter((m) => m.tiles.length !== 3).map((m) => m.tiles)];
+      return groups.filter((g) => g[0].suit !== "z" && [2, 5, 8].includes(g[0].rank));
+    },
   },
   {
     id: "no-fives",
     name: "缺五 (No fives)",
     score: (hand) => (hasNoFives(hand) ? 10 : 0),
+    tiles: wholeHandGroups,
   },
   {
     id: "small-five-suits",
     name: "小五門齊 (Small five suits complete)",
     score: (hand) => (categoriesPresent(hand).size === 5 && categoriesWithFullMeld(hand).size < 5 ? 10 : 0),
+    tiles: wholeHandGroups,
   },
   {
     id: "big-five-suits",
@@ -1972,6 +2039,7 @@ export const PATTERNS: TaiPattern[] = [
     // Implies categoriesPresent(hand).size === 5 too - 5 melds, 5 categories,
     // one dedicated meld each covers every category on its own.
     score: (hand) => (categoriesWithFullMeld(hand).size === 5 ? 15 : 0),
+    tiles: wholeHandGroups,
   },
   {
     id: "small-seven-suits",
@@ -1984,6 +2052,7 @@ export const PATTERNS: TaiPattern[] = [
         ? 15
         : 0,
     excludes: ["small-five-suits"],
+    tiles: wholeHandGroups,
   },
   {
     id: "big-seven-suits",
@@ -1991,23 +2060,27 @@ export const PATTERNS: TaiPattern[] = [
     score: (hand) =>
       categoriesWithFullMeld(hand).size === 5 && hasBonusKind(hand, "flower") && hasBonusKind(hand, "season") ? 20 : 0,
     excludes: ["big-five-suits"],
+    tiles: wholeHandGroups,
   },
   {
     id: "greater-than-five",
     name: "大於五 (All 6-9)",
     score: (hand) => (allTilesInRange(hand, 6, 9) ? 40 : 0),
     excludes: ["no-fives"],
+    tiles: wholeHandGroups,
   },
   {
     id: "less-than-five",
     name: "小於五 (All 1-4)",
     score: (hand) => (allTilesInRange(hand, 1, 4) ? 40 : 0),
     excludes: ["no-fives"],
+    tiles: wholeHandGroups,
   },
   {
     id: "all-simples",
     name: "斷么 (All simples)",
     score: (hand) => (allHandTiles(hand).every((t) => t.suit !== "z" && t.rank >= 2 && t.rank <= 8) ? 10 : 0),
+    tiles: wholeHandGroups,
   },
   {
     id: "three-treasures",
@@ -2015,11 +2088,13 @@ export const PATTERNS: TaiPattern[] = [
     // Additional bonus - stacks with all 3 constituent patterns, same
     // "stacks with everything" framing as 雙/全姊妹, 樓梯, and 五步高/全碟.
     score: (hand) => (hasThreeTreasures(hand) ? 40 : 0),
+    tiles: wholeHandGroups,
   },
   {
     id: "all-triplets",
     name: "對對胡 (All triplets)",
     score: (hand) => (hand.melds.every((m) => m.kind === "triplet" || m.kind === "kong") ? 40 : 0),
+    tiles: wholeHandGroups,
   },
   {
     id: "five-concealed-triplets",
@@ -2031,56 +2106,66 @@ export const PATTERNS: TaiPattern[] = [
     // simpler).
     score: (hand, ctx) => (ctx.selfDraw && hand.melds.every((m) => m.kind === "triplet" && m.concealed) ? 160 : 0),
     excludes: ["all-triplets", "two-hidden-triplets", "three-hidden-triplets", "four-hidden-triplets", "five-hidden-triplets"],
+    tiles: (hand) => hand.melds.map((m) => m.tiles),
   },
   {
     id: "two-hidden-triplets",
     name: "兩暗刻 (Two concealed triplets/kongs)",
     score: (hand, ctx) => (hiddenTripletOrKongCount(hand, ctx) >= 2 ? 5 : 0),
+    tiles: (hand, ctx) => hand.melds.filter((m) => m.kind === "kong" || (m.kind === "triplet" && !isMeldOpen(m, ctx, hand))).map((m) => m.tiles),
   },
   {
     id: "three-hidden-triplets",
     name: "三暗刻 (Three concealed triplets/kongs)",
     score: (hand, ctx) => (hiddenTripletOrKongCount(hand, ctx) >= 3 ? 15 : 0),
     excludes: ["two-hidden-triplets"],
+    tiles: (hand, ctx) => hand.melds.filter((m) => m.kind === "kong" || (m.kind === "triplet" && !isMeldOpen(m, ctx, hand))).map((m) => m.tiles),
   },
   {
     id: "four-hidden-triplets",
     name: "四暗刻 (Four concealed triplets/kongs)",
     score: (hand, ctx) => (hiddenTripletOrKongCount(hand, ctx) >= 4 ? 30 : 0),
     excludes: ["two-hidden-triplets", "three-hidden-triplets"],
+    tiles: (hand, ctx) => hand.melds.filter((m) => m.kind === "kong" || (m.kind === "triplet" && !isMeldOpen(m, ctx, hand))).map((m) => m.tiles),
   },
   {
     id: "five-hidden-triplets",
     name: "五暗刻 (Five concealed triplets/kongs)",
     score: (hand, ctx) => (hiddenTripletOrKongCount(hand, ctx) >= 5 ? 80 : 0),
     excludes: ["two-hidden-triplets", "three-hidden-triplets", "four-hidden-triplets"],
+    tiles: (hand, ctx) => hand.melds.filter((m) => m.kind === "kong" || (m.kind === "triplet" && !isMeldOpen(m, ctx, hand))).map((m) => m.tiles),
   },
   {
     id: "five-kongs",
     name: "五槓子 (Five kongs)",
     score: (hand) => (hand.melds.every((m) => m.kind === "kong") ? 240 : 0),
     excludes: ["kong", "four-hidden-triplets", "five-hidden-triplets"],
+    tiles: (hand) => hand.melds.map((m) => m.tiles),
   },
   {
     id: "pure-straight-open",
     name: "明清龍 (Pure straight, open)",
     // Stacks per instance - see pureStraightInstances/combineSegments.
     score: (hand, ctx) => pureStraightInstances(hand).filter((inst) => inst.some((m) => isMeldOpen(m, ctx, hand))).length * 10,
+    tiles: (hand, ctx) => pureStraightInstances(hand).filter((inst) => inst.some((m) => isMeldOpen(m, ctx, hand))).flatMap((inst) => inst.map((m) => m.tiles)),
   },
   {
     id: "pure-straight-hidden",
     name: "暗清龍 (Pure straight, concealed)",
     score: (hand, ctx) => pureStraightInstances(hand).filter((inst) => inst.every((m) => !isMeldOpen(m, ctx, hand))).length * 20,
+    tiles: (hand, ctx) => pureStraightInstances(hand).filter((inst) => inst.every((m) => !isMeldOpen(m, ctx, hand))).flatMap((inst) => inst.map((m) => m.tiles)),
   },
   {
     id: "mixed-straight-open",
     name: "明雜龍 (Mixed straight across suits, open)",
     score: (hand, ctx) => mixedStraightInstances(hand).filter((inst) => inst.some((m) => isMeldOpen(m, ctx, hand))).length * 8,
+    tiles: (hand, ctx) => mixedStraightInstances(hand).filter((inst) => inst.some((m) => isMeldOpen(m, ctx, hand))).flatMap((inst) => inst.map((m) => m.tiles)),
   },
   {
     id: "mixed-straight-hidden",
     name: "暗雜龍 (Mixed straight across suits, concealed)",
     score: (hand, ctx) => mixedStraightInstances(hand).filter((inst) => inst.every((m) => !isMeldOpen(m, ctx, hand))).length * 15,
+    tiles: (hand, ctx) => mixedStraightInstances(hand).filter((inst) => inst.every((m) => !isMeldOpen(m, ctx, hand))).flatMap((inst) => inst.map((m) => m.tiles)),
   },
   {
     id: "old-young-run",
@@ -2088,34 +2173,94 @@ export const PATTERNS: TaiPattern[] = [
     // No excludes needed against 清龍 - oldYoungRunInstances already skips
     // any suit that also has a 4-5-6 run itself.
     score: (hand) => oldYoungRunInstances(hand) * 3,
+    // oldYoungRunInstances only tracks a count (see its own comment on why
+    // pairing multiplicity isn't tracked) - recompute which melds actually
+    // contribute rather than trying to reconstruct exact pairings.
+    tiles: (hand) => {
+      const groups: Tile[][] = [];
+      for (const suit of ["m", "t", "b"] as const) {
+        if (segmentMelds(hand, suit, 4).length > 0) continue;
+        const ones = segmentMelds(hand, suit, 1);
+        const nines = segmentMelds(hand, suit, 7);
+        if (ones.length > 0 && nines.length > 0) groups.push(...ones.map((m) => m.tiles), ...nines.map((m) => m.tiles));
+      }
+      return groups;
+    },
   },
   {
     id: "old-young-triplet",
     name: "老少碰 (Terminal triplets/kongs, 111 + 999)",
     score: (hand) => oldYoungTripletInstances(hand) * 5,
+    tiles: (hand) => {
+      const groups: Tile[][] = [];
+      for (const suit of ["m", "t", "b"] as const) {
+        const ones = meldsAtRank(hand, ["triplet", "kong"], suit, 1);
+        const nines = meldsAtRank(hand, ["triplet", "kong"], suit, 9);
+        if (ones.length > 0 && nines.length > 0) groups.push(...ones.map((m) => m.tiles), ...nines.map((m) => m.tiles));
+      }
+      return groups;
+    },
   },
   {
     id: "mixed-common-rank",
     name: "混帶X (Common rank across every non-honor meld)",
     score: (hand) => (hasCommonRankAcrossNonHonorMelds(hand) ? 30 : 0),
+    tiles: (hand) => {
+      const nonHonorMelds = hand.melds.filter((m) => m.tiles[0].suit !== "z");
+      const pair = hand.pair[0];
+      for (let rank = 1; rank <= 9; rank++) {
+        if (nonHonorMelds.length > 0 && nonHonorMelds.every((m) => m.tiles.some((t) => t.rank === rank)) && (isHonorTile(pair) || pair.rank === rank)) {
+          const groups = nonHonorMelds.map((m) => m.tiles);
+          if (!isHonorTile(pair)) groups.push(hand.pair);
+          return groups;
+        }
+      }
+      return [];
+    },
   },
   {
     id: "mixed-common-rank-pair",
     name: "混帶XY (Common rank pair across every non-honor meld)",
     score: (hand) => (hasCommonRankPairAcrossNonHonorMelds(hand) ? 50 : 0),
     excludes: ["mixed-common-rank"],
+    tiles: (hand) => {
+      const nonHonorMelds = hand.melds.filter((m) => m.tiles[0].suit !== "z");
+      if (nonHonorMelds.length === 0 || !isHonorTile(hand.pair[0])) return [];
+      for (let x = 1; x <= 9; x++) {
+        for (let y = x + 1; y <= 9; y++) {
+          if (nonHonorMelds.every((m) => m.tiles.some((t) => t.rank === x) && m.tiles.some((t) => t.rank === y))) return nonHonorMelds.map((m) => m.tiles);
+        }
+      }
+      return [];
+    },
   },
   {
     id: "mixed-common-rank-triple",
     name: "混帶XYZ (Common rank triple across every non-honor meld)",
     score: (hand) => (hasCommonRankTripleAcrossNonHonorMelds(hand) ? 60 : 0),
     excludes: ["mixed-common-rank-pair"],
+    tiles: (hand) => {
+      const nonHonorMelds = hand.melds.filter((m) => m.tiles[0].suit !== "z");
+      if (nonHonorMelds.length === 0 || !isHonorTile(hand.pair[0])) return [];
+      for (let x = 1; x <= 9; x++) {
+        for (let y = x + 1; y <= 9; y++) {
+          for (let z = y + 1; z <= 9; z++) {
+            if (nonHonorMelds.every((m) => m.tiles.some((t) => t.rank === x) && m.tiles.some((t) => t.rank === y) && m.tiles.some((t) => t.rank === z))) {
+              return nonHonorMelds.map((m) => m.tiles);
+            }
+          }
+        }
+      }
+      return [];
+    },
   },
   {
     id: "pure-common-rank",
     name: "全帶X (Common rank across every meld and the pair, no honors)",
     score: (hand) => (hasCommonRankAcrossAllMeldsAndPair(hand) ? 120 : 0),
     excludes: ["mixed-common-rank"],
+    // Every meld and the pair contain the shared rank - the whole hand.
+    tiles: wholeHandGroups,
   },
   {
     id: "mixed-terminal",
@@ -2126,6 +2271,7 @@ export const PATTERNS: TaiPattern[] = [
     // characteristic - so the two are already mutually exclusive by
     // construction, no explicit exclude needed.
     score: (hand) => (hasHonorPresenceAnywhere(hand) && pairIsTerminalOrHonor(hand) && everyNonHonorMeldHasTerminal(hand) ? 40 : 0),
+    tiles: wholeHandGroups,
   },
   {
     id: "pure-terminal",
@@ -2138,6 +2284,7 @@ export const PATTERNS: TaiPattern[] = [
     // 大於五/小於五 excluding it.
     score: (hand) => (hasNoHonorsAndTerminalInEveryMeldAndPair(hand) ? 80 : 0),
     excludes: ["no-fives"],
+    tiles: wholeHandGroups,
   },
   {
     id: "mixed-terminal-honor-triplets",
@@ -2147,24 +2294,34 @@ export const PATTERNS: TaiPattern[] = [
     // own terminal or honor).
     score: (hand) => (isAllTerminalOrHonorTriplets(hand) ? 100 : 0),
     excludes: ["mixed-terminal", "pure-terminal"],
+    tiles: wholeHandGroups,
   },
   {
     id: "pure-terminal-triplets",
     name: "清老頭 (All triplets/kongs, terminals only)",
     score: (hand) => (isAllTerminalTriplets(hand) ? 200 : 0),
     excludes: ["mixed-terminal", "pure-terminal", "mixed-terminal-honor-triplets"],
+    tiles: wholeHandGroups,
   },
   {
     id: "four-returns-to-one-open",
     name: "明四歸一 (Triplet + run, open)",
     score: (hand, ctx) =>
       fourReturnsToOneInstances(hand).filter(([triplet, run]) => isMeldOpen(triplet, ctx, hand) || isMeldOpen(run, ctx, hand)).length * 5,
+    tiles: (hand, ctx) =>
+      fourReturnsToOneInstances(hand)
+        .filter(([triplet, run]) => isMeldOpen(triplet, ctx, hand) || isMeldOpen(run, ctx, hand))
+        .flatMap(([triplet, run]) => [triplet.tiles, run.tiles]),
   },
   {
     id: "four-returns-to-one-hidden",
     name: "暗四歸一 (Triplet + run, concealed)",
     score: (hand, ctx) =>
       fourReturnsToOneInstances(hand).filter(([triplet, run]) => !isMeldOpen(triplet, ctx, hand) && !isMeldOpen(run, ctx, hand)).length * 15,
+    tiles: (hand, ctx) =>
+      fourReturnsToOneInstances(hand)
+        .filter(([triplet, run]) => !isMeldOpen(triplet, ctx, hand) && !isMeldOpen(run, ctx, hand))
+        .flatMap(([triplet, run]) => [triplet.tiles, run.tiles]),
   },
   {
     id: "four-returns-to-two-open",
@@ -2172,6 +2329,10 @@ export const PATTERNS: TaiPattern[] = [
     score: (hand, ctx) => {
       const runs = fourReturnsToTwoRuns(hand);
       return runs && (isMeldOpen(runs[0], ctx, hand) || isMeldOpen(runs[1], ctx, hand)) ? 15 : 0;
+    },
+    tiles: (hand, ctx) => {
+      const runs = fourReturnsToTwoRuns(hand);
+      return runs && (isMeldOpen(runs[0], ctx, hand) || isMeldOpen(runs[1], ctx, hand)) ? [runs[0].tiles, runs[1].tiles, hand.pair] : [];
     },
   },
   {
@@ -2181,29 +2342,41 @@ export const PATTERNS: TaiPattern[] = [
       const runs = fourReturnsToTwoRuns(hand);
       return runs && !isMeldOpen(runs[0], ctx, hand) && !isMeldOpen(runs[1], ctx, hand) ? 30 : 0;
     },
+    tiles: (hand, ctx) => {
+      const runs = fourReturnsToTwoRuns(hand);
+      return runs && !isMeldOpen(runs[0], ctx, hand) && !isMeldOpen(runs[1], ctx, hand) ? [runs[0].tiles, runs[1].tiles, hand.pair] : [];
+    },
   },
   {
     id: "four-returns-to-four-open",
     name: "明四歸四 (4 runs, open)",
     score: (hand, ctx) =>
       fourReturnsToFourInstances(hand).filter((runs) => runs.some((r) => isMeldOpen(r, ctx, hand))).length * 30,
+    tiles: (hand, ctx) =>
+      fourReturnsToFourInstances(hand).filter((runs) => runs.some((r) => isMeldOpen(r, ctx, hand))).flatMap((runs) => runs.map((r) => r.tiles)),
   },
   {
     id: "four-returns-to-four-hidden",
     name: "暗四歸四 (4 runs, concealed)",
     score: (hand, ctx) =>
       fourReturnsToFourInstances(hand).filter((runs) => runs.every((r) => !isMeldOpen(r, ctx, hand))).length * 60,
+    tiles: (hand, ctx) =>
+      fourReturnsToFourInstances(hand).filter((runs) => runs.every((r) => !isMeldOpen(r, ctx, hand))).flatMap((runs) => runs.map((r) => r.tiles)),
   },
   {
     id: "identical-sequences-open",
     name: "明般高 (Identical sequences, open)",
     score: (hand, ctx) => identicalRunPairInstances(hand).filter(([a, b]) => isMeldOpen(a, ctx, hand) || isMeldOpen(b, ctx, hand)).length * 5,
+    tiles: (hand, ctx) =>
+      identicalRunPairInstances(hand).filter(([a, b]) => isMeldOpen(a, ctx, hand) || isMeldOpen(b, ctx, hand)).flatMap(([a, b]) => [a.tiles, b.tiles]),
   },
   {
     id: "identical-sequences-hidden",
     name: "暗般高 (Identical sequences, concealed)",
     score: (hand, ctx) =>
       identicalRunPairInstances(hand).filter(([a, b]) => !isMeldOpen(a, ctx, hand) && !isMeldOpen(b, ctx, hand)).length * 8,
+    tiles: (hand, ctx) =>
+      identicalRunPairInstances(hand).filter(([a, b]) => !isMeldOpen(a, ctx, hand) && !isMeldOpen(b, ctx, hand)).flatMap(([a, b]) => [a.tiles, b.tiles]),
   },
   {
     id: "small-twin-identical-sequences-open",
@@ -2213,6 +2386,10 @@ export const PATTERNS: TaiPattern[] = [
       return runs && (isMeldOpen(runs[0], ctx, hand) || isMeldOpen(runs[1], ctx, hand)) ? 10 : 0;
     },
     excludes: ["identical-sequences-open", "identical-sequences-hidden"],
+    tiles: (hand, ctx) => {
+      const runs = smallTwinIdenticalSequences(hand);
+      return runs && (isMeldOpen(runs[0], ctx, hand) || isMeldOpen(runs[1], ctx, hand)) ? [runs[0].tiles, runs[1].tiles, hand.pair] : [];
+    },
   },
   {
     id: "small-twin-identical-sequences-hidden",
@@ -2222,6 +2399,10 @@ export const PATTERNS: TaiPattern[] = [
       return runs && !isMeldOpen(runs[0], ctx, hand) && !isMeldOpen(runs[1], ctx, hand) ? 15 : 0;
     },
     excludes: ["identical-sequences-open", "identical-sequences-hidden"],
+    tiles: (hand, ctx) => {
+      const runs = smallTwinIdenticalSequences(hand);
+      return runs && !isMeldOpen(runs[0], ctx, hand) && !isMeldOpen(runs[1], ctx, hand) ? [runs[0].tiles, runs[1].tiles, hand.pair] : [];
+    },
   },
   {
     id: "triple-identical-sequences-open",
@@ -2231,6 +2412,10 @@ export const PATTERNS: TaiPattern[] = [
       return runs && runs.some((r) => isMeldOpen(r, ctx, hand)) ? 30 : 0;
     },
     excludes: ["identical-sequences-open", "identical-sequences-hidden"],
+    tiles: (hand, ctx) => {
+      const runs = tripleIdenticalRunInstance(hand);
+      return runs && runs.some((r) => isMeldOpen(r, ctx, hand)) ? runs.map((r) => r.tiles) : [];
+    },
   },
   {
     id: "triple-identical-sequences-hidden",
@@ -2240,6 +2425,10 @@ export const PATTERNS: TaiPattern[] = [
       return runs && runs.every((r) => !isMeldOpen(r, ctx, hand)) ? 60 : 0;
     },
     excludes: ["identical-sequences-open", "identical-sequences-hidden"],
+    tiles: (hand, ctx) => {
+      const runs = tripleIdenticalRunInstance(hand);
+      return runs && runs.every((r) => !isMeldOpen(r, ctx, hand)) ? runs.map((r) => r.tiles) : [];
+    },
   },
   {
     id: "quadruple-identical-sequences-open",
@@ -2249,6 +2438,10 @@ export const PATTERNS: TaiPattern[] = [
       return runs && runs.some((r) => isMeldOpen(r, ctx, hand)) ? 80 : 0;
     },
     excludes: ["identical-sequences-open", "identical-sequences-hidden", "triple-identical-sequences-open", "triple-identical-sequences-hidden"],
+    tiles: (hand, ctx) => {
+      const runs = quadrupleIdenticalRunInstance(hand);
+      return runs && runs.some((r) => isMeldOpen(r, ctx, hand)) ? runs.map((r) => r.tiles) : [];
+    },
   },
   {
     id: "quadruple-identical-sequences-hidden",
@@ -2258,6 +2451,10 @@ export const PATTERNS: TaiPattern[] = [
       return runs && runs.every((r) => !isMeldOpen(r, ctx, hand)) ? 160 : 0;
     },
     excludes: ["identical-sequences-open", "identical-sequences-hidden", "triple-identical-sequences-open", "triple-identical-sequences-hidden"],
+    tiles: (hand, ctx) => {
+      const runs = quadrupleIdenticalRunInstance(hand);
+      return runs && runs.every((r) => !isMeldOpen(r, ctx, hand)) ? runs.map((r) => r.tiles) : [];
+    },
   },
   {
     id: "two-separate-identical-sequences-open",
@@ -2267,6 +2464,10 @@ export const PATTERNS: TaiPattern[] = [
       return runs && runs.some((r) => isMeldOpen(r, ctx, hand)) ? 20 : 0;
     },
     excludes: ["identical-sequences-open", "identical-sequences-hidden"],
+    tiles: (hand, ctx) => {
+      const runs = twoSeparateIdenticalRunPairs(hand);
+      return runs && runs.some((r) => isMeldOpen(r, ctx, hand)) ? runs.map((r) => r.tiles) : [];
+    },
   },
   {
     id: "two-separate-identical-sequences-hidden",
@@ -2276,65 +2477,119 @@ export const PATTERNS: TaiPattern[] = [
       return runs && runs.every((r) => !isMeldOpen(r, ctx, hand)) ? 40 : 0;
     },
     excludes: ["identical-sequences-open", "identical-sequences-hidden"],
+    tiles: (hand, ctx) => {
+      const runs = twoSeparateIdenticalRunPairs(hand);
+      return runs && runs.every((r) => !isMeldOpen(r, ctx, hand)) ? runs.map((r) => r.tiles) : [];
+    },
   },
   {
     id: "same-suit-consecutive-open",
     name: "明單色步步高 (3 ascending sequences, gap 1, open)",
     score: (hand, ctx) =>
       evenlySpacedRunInstances(hand, 1).filter((inst) => inst.some((m) => isMeldOpen(m, ctx, hand))).length * 15,
+    tiles: (hand, ctx) => evenlySpacedRunInstances(hand, 1).filter((inst) => inst.some((m) => isMeldOpen(m, ctx, hand))).flatMap((inst) => inst.map((m) => m.tiles)),
   },
   {
     id: "same-suit-consecutive-hidden",
     name: "暗單色步步高 (3 ascending sequences, gap 1, concealed)",
     score: (hand, ctx) =>
       evenlySpacedRunInstances(hand, 1).filter((inst) => inst.every((m) => !isMeldOpen(m, ctx, hand))).length * 30,
+    tiles: (hand, ctx) => evenlySpacedRunInstances(hand, 1).filter((inst) => inst.every((m) => !isMeldOpen(m, ctx, hand))).flatMap((inst) => inst.map((m) => m.tiles)),
   },
   {
     id: "same-suit-two-step-open",
     name: "明單色二步高 (3 sequences, gap 2, open)",
     score: (hand, ctx) =>
       evenlySpacedRunInstances(hand, 2).filter((inst) => inst.some((m) => isMeldOpen(m, ctx, hand))).length * 8,
+    tiles: (hand, ctx) => evenlySpacedRunInstances(hand, 2).filter((inst) => inst.some((m) => isMeldOpen(m, ctx, hand))).flatMap((inst) => inst.map((m) => m.tiles)),
   },
   {
     id: "same-suit-two-step-hidden",
     name: "暗單色二步高 (3 sequences, gap 2, concealed)",
     score: (hand, ctx) =>
       evenlySpacedRunInstances(hand, 2).filter((inst) => inst.every((m) => !isMeldOpen(m, ctx, hand))).length * 15,
+    tiles: (hand, ctx) => evenlySpacedRunInstances(hand, 2).filter((inst) => inst.every((m) => !isMeldOpen(m, ctx, hand))).flatMap((inst) => inst.map((m) => m.tiles)),
   },
   {
     id: "consecutive-triplet-pair",
     name: "二連刻 (2 consecutive triplets/kongs)",
     // Stacks per adjacent pair; no 明/暗 split.
     score: (hand) => consecutiveTripletOrKongPairCount(hand) * 5,
+    tiles: (hand) => {
+      const meldAt = (suit: Suit, rank: number) =>
+        hand.melds.find((m) => (m.kind === "triplet" || m.kind === "kong") && m.tiles[0].suit === suit && m.tiles[0].rank === rank);
+      const groups: Tile[][] = [];
+      for (const suit of ["m", "t", "b"] as const) {
+        for (let rank = 1; rank <= 8; rank++) {
+          const a = meldAt(suit, rank);
+          const b = meldAt(suit, rank + 1);
+          if (a && b) groups.push(a.tiles, b.tiles);
+        }
+      }
+      return groups;
+    },
   },
   {
     id: "small-three-consecutive-triplets",
     name: "小三連刻 (3 consecutive ranks, pair at one end + 2 triplets/kongs)",
     score: (hand) => smallThreeConsecutiveTripletCount(hand) * 15,
     excludes: ["consecutive-triplet-pair"],
+    tiles: (hand) => {
+      const pair = hand.pair[0];
+      if (pair.suit === "z") return [];
+      const meldAt = (rank: number) =>
+        hand.melds.find((m) => (m.kind === "triplet" || m.kind === "kong") && m.tiles[0].suit === pair.suit && m.tiles[0].rank === rank);
+      const windows = [
+        [pair.rank, pair.rank + 1, pair.rank + 2],
+        [pair.rank - 1, pair.rank, pair.rank + 1],
+        [pair.rank - 2, pair.rank - 1, pair.rank],
+      ];
+      const groups: Tile[][] = [];
+      for (const window of windows) {
+        if (window[0] < 1 || window[2] > 9) continue;
+        const melds = window.filter((r) => r !== pair.rank).map(meldAt);
+        if (melds.length === 2 && melds.every((m): m is ResolvedMeld => !!m)) groups.push(hand.pair, ...melds.map((m) => m.tiles));
+      }
+      return groups;
+    },
   },
   {
     id: "big-three-consecutive-triplets",
     name: "大三連刻 (3 consecutive triplets/kongs)",
     score: (hand) => bigThreeConsecutiveTripletCount(hand) * 30,
     excludes: ["consecutive-triplet-pair"],
+    tiles: (hand) => {
+      const meldAt = (suit: Suit, rank: number) =>
+        hand.melds.find((m) => (m.kind === "triplet" || m.kind === "kong") && m.tiles[0].suit === suit && m.tiles[0].rank === rank);
+      const groups: Tile[][] = [];
+      for (const suit of ["m", "t", "b"] as const) {
+        for (let rank = 1; rank <= 7; rank++) {
+          const melds = [rank, rank + 1, rank + 2].map((r) => meldAt(suit, r));
+          if (melds.every((m): m is ResolvedMeld => !!m)) groups.push(...melds.map((m) => m.tiles));
+        }
+      }
+      return groups;
+    },
   },
   {
     id: "half-flush",
     name: "混一色 (One numbered suit + honors)",
     score: (hand) => (numberedSuitsUsed(hand).size === 1 ? 40 : 0),
+    tiles: wholeHandGroups,
   },
   {
     id: "full-flush",
     name: "清一色 (One numbered suit, no honors)",
     score: (hand) => (numberedSuitsUsed(hand).size === 1 && allHandTiles(hand).every((t) => !isHonorTile(t)) ? 120 : 0),
     excludes: ["half-flush"],
+    tiles: wholeHandGroups,
   },
   {
     id: "cross-suit-same-run",
     name: "相逢 (Same run, different suits)",
     // No 明/暗 split; stacks per instance.
     score: (hand) => crossSuitSameRunInstances(hand).length * 3,
+    tiles: (hand) => crossSuitSameRunInstances(hand).flatMap(([a, b]) => [a.tiles, b.tiles]),
   },
   {
     id: "twin-cross-suit-runs",
@@ -2342,6 +2597,17 @@ export const PATTERNS: TaiPattern[] = [
     // Additional bonus on top of 相逢 - stacks with it (and with anything
     // else), not an alternative to it. No 明/暗 split.
     score: (hand) => (hasTwoDistinctCrossSuitRuns(hand) ? 5 : 0),
+    tiles: (hand) => {
+      const instances = crossSuitSameRunInstances(hand);
+      for (let i = 0; i < instances.length; i++) {
+        for (let j = i + 1; j < instances.length; j++) {
+          if (!instances[i].some((m) => instances[j].includes(m))) {
+            return [...instances[i].map((m) => m.tiles), ...instances[j].map((m) => m.tiles)];
+          }
+        }
+      }
+      return [];
+    },
   },
   {
     id: "full-cross-suit-runs",
@@ -2352,6 +2618,7 @@ export const PATTERNS: TaiPattern[] = [
     // scoring both would double-count the same underlying structure.
     score: (hand) => (hasFullCrossSuitRuns(hand) ? 20 : 0),
     excludes: ["twin-cross-suit-runs"],
+    tiles: (hand) => hand.melds.map((m) => m.tiles),
   },
   {
     id: "staircase",
@@ -2359,6 +2626,7 @@ export const PATTERNS: TaiPattern[] = [
     // Additional bonus, same "stacks with everything" framing as 雙/全姊妹 -
     // doesn't exclude 平胡 even though every 樓梯 hand is also 平胡.
     score: (hand) => (hasStaircase(hand) ? 20 : 0),
+    tiles: (hand) => hand.melds.map((m) => m.tiles),
   },
   {
     id: "rotating-staircase",
@@ -2369,6 +2637,7 @@ export const PATTERNS: TaiPattern[] = [
     // it subsumes.
     score: (hand) => (hasRotatingStaircase(hand) ? 40 : 0),
     excludes: ["staircase"],
+    tiles: (hand) => hand.melds.map((m) => m.tiles),
   },
   {
     id: "three-suit-same-run-open",
@@ -2378,6 +2647,10 @@ export const PATTERNS: TaiPattern[] = [
       return melds && melds.some((m) => isMeldOpen(m, ctx, hand)) ? 10 : 0;
     },
     excludes: ["cross-suit-same-run"],
+    tiles: (hand, ctx) => {
+      const melds = nSuitSameRunMelds(hand, 3);
+      return melds && melds.some((m) => isMeldOpen(m, ctx, hand)) ? melds.map((m) => m.tiles) : [];
+    },
   },
   {
     id: "three-suit-same-run-hidden",
@@ -2387,6 +2660,10 @@ export const PATTERNS: TaiPattern[] = [
       return melds && melds.every((m) => !isMeldOpen(m, ctx, hand)) ? 20 : 0;
     },
     excludes: ["cross-suit-same-run"],
+    tiles: (hand, ctx) => {
+      const melds = nSuitSameRunMelds(hand, 3);
+      return melds && melds.every((m) => !isMeldOpen(m, ctx, hand)) ? melds.map((m) => m.tiles) : [];
+    },
   },
   {
     id: "four-suit-same-run-open",
@@ -2396,6 +2673,10 @@ export const PATTERNS: TaiPattern[] = [
       return melds && melds.some((m) => isMeldOpen(m, ctx, hand)) ? 40 : 0;
     },
     excludes: ["cross-suit-same-run", "three-suit-same-run-open", "three-suit-same-run-hidden"],
+    tiles: (hand, ctx) => {
+      const melds = nSuitSameRunMelds(hand, 4);
+      return melds && melds.some((m) => isMeldOpen(m, ctx, hand)) ? melds.map((m) => m.tiles) : [];
+    },
   },
   {
     id: "four-suit-same-run-hidden",
@@ -2405,6 +2686,10 @@ export const PATTERNS: TaiPattern[] = [
       return melds && melds.every((m) => !isMeldOpen(m, ctx, hand)) ? 80 : 0;
     },
     excludes: ["cross-suit-same-run", "three-suit-same-run-open", "three-suit-same-run-hidden"],
+    tiles: (hand, ctx) => {
+      const melds = nSuitSameRunMelds(hand, 4);
+      return melds && melds.every((m) => !isMeldOpen(m, ctx, hand)) ? melds.map((m) => m.tiles) : [];
+    },
   },
   {
     id: "five-suit-same-run-open",
@@ -2420,6 +2705,10 @@ export const PATTERNS: TaiPattern[] = [
       "four-suit-same-run-open",
       "four-suit-same-run-hidden",
     ],
+    tiles: (hand, ctx) => {
+      const melds = nSuitSameRunMelds(hand, 5);
+      return melds && melds.some((m) => isMeldOpen(m, ctx, hand)) ? melds.map((m) => m.tiles) : [];
+    },
   },
   {
     id: "five-suit-same-run-hidden",
@@ -2435,12 +2724,17 @@ export const PATTERNS: TaiPattern[] = [
       "four-suit-same-run-open",
       "four-suit-same-run-hidden",
     ],
+    tiles: (hand, ctx) => {
+      const melds = nSuitSameRunMelds(hand, 5);
+      return melds && melds.every((m) => !isMeldOpen(m, ctx, hand)) ? melds.map((m) => m.tiles) : [];
+    },
   },
   {
     id: "cross-suit-same-triplet",
     name: "兩兄弟 (Same triplet/kong rank, different suits)",
     // No 明/暗 split; stacks per instance, same as 相逢.
     score: (hand) => crossSuitSameTripletInstances(hand).length * 5,
+    tiles: (hand) => crossSuitSameTripletInstances(hand).flatMap(([a, b]) => [a.tiles, b.tiles]),
   },
   {
     id: "small-three-color-consecutive-triplets",
@@ -2448,6 +2742,29 @@ export const PATTERNS: TaiPattern[] = [
     // Stacks per instance - see smallThreeColorConsecutiveTripletsCount's
     // own comment.
     score: (hand) => smallThreeColorConsecutiveTripletsCount(hand) * 10,
+    tiles: (hand) => {
+      const pair = hand.pair[0];
+      if (pair.suit === "z") return [];
+      const otherSuits = NUMBERED_SUITS.filter((s) => s !== pair.suit);
+      const meldAt = (suit: Suit, rank: number) =>
+        hand.melds.find((m) => (m.kind === "triplet" || m.kind === "kong") && m.tiles[0].suit === suit && m.tiles[0].rank === rank);
+      const windows = [
+        [pair.rank, pair.rank + 1, pair.rank + 2],
+        [pair.rank - 1, pair.rank, pair.rank + 1],
+        [pair.rank - 2, pair.rank - 1, pair.rank],
+      ];
+      const groups: Tile[][] = [];
+      for (const window of windows) {
+        if (window[0] < 1 || window[2] > 9) continue;
+        const others = window.filter((r) => r !== pair.rank);
+        const orderA = [meldAt(otherSuits[0], others[0]), meldAt(otherSuits[1], others[1])];
+        const orderB = [meldAt(otherSuits[1], others[0]), meldAt(otherSuits[0], others[1])];
+        const isFull = (arr: (ResolvedMeld | undefined)[]): arr is ResolvedMeld[] => arr.every((m) => !!m);
+        const chosen = isFull(orderA) ? orderA : isFull(orderB) ? orderB : null;
+        if (chosen) groups.push(hand.pair, ...chosen.map((m) => m.tiles));
+      }
+      return groups;
+    },
   },
   {
     id: "big-three-color-consecutive-triplets",
@@ -2458,44 +2775,122 @@ export const PATTERNS: TaiPattern[] = [
     // Stacks per instance - see bigThreeColorConsecutiveTripletsCount's own
     // comment.
     score: (hand) => bigThreeColorConsecutiveTripletsCount(hand) * 20,
+    tiles: (hand) => {
+      const meldAt = (suit: Suit, rank: number) =>
+        hand.melds.find((m) => (m.kind === "triplet" || m.kind === "kong") && m.tiles[0].suit === suit && m.tiles[0].rank === rank);
+      const groups: Tile[][] = [];
+      for (let rank = 1; rank <= 7; rank++) {
+        const ranks = [rank, rank + 1, rank + 2];
+        for (const suits of THREE_SUIT_ORDERS) {
+          const melds = ranks.map((r, i) => meldAt(suits[i], r));
+          if (melds.every((m): m is ResolvedMeld => !!m)) {
+            groups.push(...melds.map((m) => m.tiles));
+            break;
+          }
+        }
+      }
+      return groups;
+    },
   },
   {
     id: "small-three-brothers",
     name: "小三兄弟 (Same rank across all 3 suits, pair at one + 2 triplets/kongs)",
     score: (hand) => (hasSmallThreeBrothers(hand) ? 20 : 0),
     excludes: ["cross-suit-same-triplet"],
+    tiles: (hand) => {
+      const pair = hand.pair[0];
+      if (pair.suit === "z") return [];
+      const otherSuits = NUMBERED_SUITS.filter((s) => s !== pair.suit);
+      const melds = otherSuits.map((suit) => hand.melds.find((m) => (m.kind === "triplet" || m.kind === "kong") && m.tiles[0].suit === suit && m.tiles[0].rank === pair.rank));
+      return melds.every((m): m is ResolvedMeld => !!m) ? [hand.pair, ...melds.map((m) => m.tiles)] : [];
+    },
   },
   {
     id: "big-three-brothers",
     name: "大三兄弟 (Same rank across all 3 suits, all triplets/kongs)",
     score: (hand) => (hasBigThreeBrothers(hand) ? 40 : 0),
     excludes: ["cross-suit-same-triplet"],
+    tiles: (hand) => {
+      for (let rank = 1; rank <= 9; rank++) {
+        const melds = NUMBERED_SUITS.map((suit) => hand.melds.find((m) => (m.kind === "triplet" || m.kind === "kong") && m.tiles[0].suit === suit && m.tiles[0].rank === rank));
+        if (melds.every((m): m is ResolvedMeld => !!m)) return melds.map((m) => m.tiles);
+      }
+      return [];
+    },
   },
   {
     id: "three-color-step-up-open",
     name: "明三色步步高 (3 suits, runs increasing by 1, open)",
     score: (hand, ctx) => threeColorStepUpInstances(hand).filter((inst) => inst.some((m) => isMeldOpen(m, ctx, hand))).length * 5,
+    tiles: (hand, ctx) => threeColorStepUpInstances(hand).filter((inst) => inst.some((m) => isMeldOpen(m, ctx, hand))).flatMap((inst) => inst.map((m) => m.tiles)),
   },
   {
     id: "three-color-step-up-hidden",
     name: "暗三色步步高 (3 suits, runs increasing by 1, concealed)",
     score: (hand, ctx) => threeColorStepUpInstances(hand).filter((inst) => inst.every((m) => !isMeldOpen(m, ctx, hand))).length * 10,
+    tiles: (hand, ctx) => threeColorStepUpInstances(hand).filter((inst) => inst.every((m) => !isMeldOpen(m, ctx, hand))).flatMap((inst) => inst.map((m) => m.tiles)),
   },
   {
     id: "shanpon-wait",
     name: "對碰 (Shanpon: dual-pair wait completed into a triplet)",
     score: (hand, ctx) => (isShanponWait(hand, ctx) ? 2 : 0),
+    tiles: (hand, ctx) => {
+      if (ctx.winningTile === null) return [];
+      const meld = hand.melds.find((m) => m.kind === "triplet" && m.concealed && meldHasTileKind(m, ctx.winningTile!));
+      return meld ? [meld.tiles] : [];
+    },
   },
   {
     id: "genuine-single-wait",
     name: "獨獨 (Genuine single wait)",
     score: (hand, ctx) => (isGenuineSingleWait(hand, ctx) ? 2 : 0),
     excludes: ["fake-single-wait"],
+    // The group the 食胡 tile actually completed - same pair-first, then
+    // concealed triplet/kong/run priority as winningMeld itself (獨獨's own
+    // check is a global wait-count computation, not tied to one specific
+    // meld, so this points at the group that's most directly "the wait"
+    // rather than trying to visualize the wait-count computation itself).
+    tiles: (hand, ctx) => {
+      if (ctx.winningTile === null) return [];
+      const matches = (t: Tile) => t.suit === ctx.winningTile!.suit && t.rank === ctx.winningTile!.rank;
+      if (hand.pair.some(matches)) return [hand.pair];
+      const meld = winningMeld(hand, ctx);
+      return meld ? [meld.tiles] : [];
+    },
   },
   {
     id: "fake-single-wait",
     name: "假獨 (Fake single wait)",
     score: (hand, ctx) => (isFakeSingleWait(hand, ctx) ? 2 : 0),
+    // Mirrors isFakeSingleWait's own shape checks, returning the specific
+    // group that creates the narrow wait instead of a boolean.
+    tiles: (hand, ctx) => {
+      if (ctx.winningTile === null) return [];
+      const winningTile = ctx.winningTile;
+      const kanchan = hand.melds.find((m) => {
+        if (m.kind !== "run" || !m.concealed || !meldHasTileKind(m, winningTile)) return false;
+        const ranks = m.tiles.map((t) => t.rank).sort((a, b) => a - b);
+        return ranks[1] === winningTile.rank;
+      });
+      if (kanchan) return [kanchan.tiles];
+      const penchan = hand.melds.find((m) => {
+        if (m.kind !== "run" || !m.concealed || !meldHasTileKind(m, winningTile)) return false;
+        const ranks = m.tiles.map((t) => t.rank).sort((a, b) => a - b);
+        return (ranks[0] === 1 && ranks[2] === 3 && winningTile.rank === 3) || (ranks[0] === 7 && ranks[2] === 9 && winningTile.rank === 7);
+      });
+      if (penchan) return [penchan.tiles];
+      if (hand.pair.some((t) => t.suit === winningTile.suit && t.rank === winningTile.rank)) return [hand.pair];
+      const singleMeld = hand.melds.find((m) => m.tiles.length === 1 && meldHasTileKind(m, winningTile));
+      const largerMeld = hand.melds.find((m) => m.tiles.length > 1 && meldHasTileKind(m, winningTile));
+      if (singleMeld && largerMeld) return [singleMeld.tiles, largerMeld.tiles];
+      // 嚦咕嚦咕's own 假獨 shape (see isEightPairsFakeSingleWait, which
+      // reuses this same pattern object via a hardcoded tai rather than
+      // its own score()) - the winning tile turned its own kind into a
+      // quad while another kind sits as a plain triple.
+      const quadGroup = hand.melds.find((m) => m.tiles.length === 4);
+      if (quadGroup && hand.melds.some((m) => m.tiles.length === 3) && meldHasTileKind(quadGroup, winningTile)) return [quadGroup.tiles];
+      return [];
+    },
   },
   {
     id: "visible-triple-win",
@@ -2511,6 +2906,11 @@ export const PATTERNS: TaiPattern[] = [
       isVisiblyTripledWinningTile(hand, ctx) || (ctx.manualVisibleTripleWin && !isWinningTileHeldConcealedElsewhere(hand, ctx)) ? 5 : 0,
     caveat:
       "Only checks this hand's own declared melds - it has no knowledge of the discard pile or any other player's declared melds, so it can't confirm this is truly the last copy of the tile anywhere in the game.",
+    // The declared melds actually holding the winning tile's kind - empty
+    // for a manual declaration backed by nothing visible in this hand
+    // (e.g. the user saw the other copies discarded), which correctly
+    // leaves the row non-expandable rather than showing something.
+    tiles: (hand, ctx) => (ctx.winningTile === null ? [] : hand.melds.filter((m) => !m.concealed && meldHasTileKind(m, ctx.winningTile!)).map((m) => m.tiles)),
   },
   {
     id: "visible-exhausted-multi-wait",
@@ -2533,6 +2933,15 @@ export const PATTERNS: TaiPattern[] = [
     excludes: ["visible-triple-win"],
     caveat:
       "Only checks this hand's own declared melds - it has no knowledge of the discard pile or any other player's declared melds, so it can't confirm these are truly the last copies of the tile anywhere in the game.",
+    // The declared melds covering the (pre-completion) waiting kinds -
+    // same "empty for a manual-only declaration" reasoning as 明絕 above.
+    tiles: (hand, ctx) => {
+      if (ctx.winningTile === null) return [];
+      const pre = preWinWaitInput(hand, ctx.winningTile);
+      if (!pre) return [];
+      const waits = getWaits(pre.tiles, pre.meldsRequired);
+      return hand.melds.filter((m) => !m.concealed && waits.some((w) => meldHasTileKind(m, w))).map((m) => m.tiles);
+    },
   },
   {
     id: "self-draw",
@@ -2658,6 +3067,7 @@ export const PATTERNS: TaiPattern[] = [
     score: (_hand, ctx) =>
       ctx.lastTileWin === "sea-bottom" && ctx.selfDraw && ctx.winningTile?.suit === "t" && ctx.winningTile?.rank === 1 ? 20 : 0,
     excludes: ["sea-bottom-win"],
+    tiles: (_hand, ctx) => (ctx.winningTile ? [[ctx.winningTile]] : []),
   },
   {
     id: "flower-draw",
@@ -2697,11 +3107,13 @@ export const PATTERNS: TaiPattern[] = [
     // the tile arrived - so both keep contributing).
     score: (hand, ctx) => (ctx.selfDraw && isConcealedExceptKongs(hand) ? 3 : 0),
     excludes: ["self-draw"],
+    tiles: wholeHandGroups,
   },
   {
     id: "everyone-else-completes-it",
     name: "全求人 (All melds declared, win claimed not self-drawn)",
     score: (hand, ctx) => (isFullyDeclared(hand) && !ctx.selfDraw ? 30 : 0),
+    tiles: (hand) => hand.melds.map((m) => m.tiles),
   },
   {
     id: "half-everyone-else-completes-it",
@@ -2710,6 +3122,7 @@ export const PATTERNS: TaiPattern[] = [
     // claimed - mutually exclusive with it by construction (selfDraw can't
     // be both), so no explicit exclusion is needed either way.
     score: (hand, ctx) => (isFullyDeclared(hand) && ctx.selfDraw ? 15 : 0),
+    tiles: (hand) => hand.melds.map((m) => m.tiles),
   },
   {
     id: "big-chicken",
@@ -2751,6 +3164,7 @@ export const PATTERNS: TaiPattern[] = [
     // with 門前清 or any kong-related pattern - it's exclusive of every
     // other pattern except 底 (nothing else is ever evaluated against it).
     score: (hand) => (isThirteenOrphansComplete(allHandTiles(hand)) ? 160 : 0),
+    tiles: wholeHandGroups,
   },
   {
     id: "orphans-four-return-open",
@@ -2770,6 +3184,11 @@ export const PATTERNS: TaiPattern[] = [
       ).length;
       return matches * 5;
     },
+    tiles: (hand, ctx) => {
+      if (ctx.winningTile === null || ctx.selfDraw) return [];
+      const matches = allFourReturnQuadKinds(hand).filter((q) => q.suit === ctx.winningTile!.suit && q.rank === ctx.winningTile!.rank);
+      return matches.flatMap((q) => hand.melds.filter((m) => m.tiles[0].suit === q.suit && m.tiles[0].rank === q.rank).map((m) => m.tiles));
+    },
   },
   {
     id: "orphans-four-return-hidden",
@@ -2784,6 +3203,11 @@ export const PATTERNS: TaiPattern[] = [
           : 0;
       return (quads.length - openCount) * 15;
     },
+    tiles: (hand, ctx) => {
+      const quads = allFourReturnQuadKinds(hand);
+      const isOpen = (q: Tile) => ctx.winningTile !== null && !ctx.selfDraw && q.suit === ctx.winningTile.suit && q.rank === ctx.winningTile.rank;
+      return quads.filter((q) => !isOpen(q)).flatMap((q) => hand.melds.filter((m) => m.tiles[0].suit === q.suit && m.tiles[0].rank === q.rank).map((m) => m.tiles));
+    },
   },
   {
     id: "sixteen-unrelated",
@@ -2791,6 +3215,7 @@ export const PATTERNS: TaiPattern[] = [
     // Same "only ever reached via scoreSixteenUnrelated's short-circuit,
     // but kept independently correct" reasoning as 十三么.
     score: (hand) => (isSixteenUnrelatedComplete(allHandTiles(hand)) ? 50 : 0),
+    tiles: wholeHandGroups,
   },
   {
     id: "sixteen-unrelated-flying",
@@ -2810,6 +3235,7 @@ export const PATTERNS: TaiPattern[] = [
         ? 60
         : 0,
     excludes: ["sixteen-unrelated"],
+    tiles: wholeHandGroups,
   },
   {
     id: "sixteen-unrelated-same-ranks",
@@ -2823,6 +3249,7 @@ export const PATTERNS: TaiPattern[] = [
     // the house rule's intent explicit rather than assuming it away.
     score: (hand) =>
       isSixteenUnrelatedComplete(allHandTiles(hand)) && isHonorTile(hand.pair[0]) && sixteenUnrelatedRanksMatchAcrossSuits(hand) ? 20 : 0,
+    tiles: wholeHandGroups,
   },
   {
     id: "sixteen-unrelated-straight",
@@ -2834,6 +3261,7 @@ export const PATTERNS: TaiPattern[] = [
     // co-fire.
     score: (hand) =>
       isSixteenUnrelatedComplete(allHandTiles(hand)) && isHonorTile(hand.pair[0]) && sixteenUnrelatedRanksSpanOneToNine(hand) ? 20 : 0,
+    tiles: wholeHandGroups,
   },
   {
     id: "eight-pairs",
@@ -2841,6 +3269,7 @@ export const PATTERNS: TaiPattern[] = [
     // Same "only ever reached via scoreEightPairs' short-circuit, but kept
     // independently correct" reasoning as the other special hands.
     score: (hand) => (isEightPairsComplete(allHandTiles(hand)) ? 50 : 0),
+    tiles: wholeHandGroups,
   },
   {
     id: "eight-pairs-flying",
@@ -2855,6 +3284,7 @@ export const PATTERNS: TaiPattern[] = [
       return waits !== null && waits > 2 ? 60 : 0;
     },
     excludes: ["eight-pairs"],
+    tiles: wholeHandGroups,
   },
   {
     id: "eight-pairs-three-dragons",
@@ -2864,6 +3294,7 @@ export const PATTERNS: TaiPattern[] = [
     // (mere presence, no meld/pair-role requirement) doesn't structurally
     // distinguish 小/大 the way normal hands do.
     score: (hand) => (eightPairsDragonRankCount(hand) === 3 ? 20 : 0),
+    tiles: (hand) => wholeHandGroups(hand).filter((group) => group[0].suit === "z" && group[0].rank >= 5),
   },
   {
     id: "eight-pairs-three-winds",
@@ -2871,6 +3302,7 @@ export const PATTERNS: TaiPattern[] = [
     // Additive bonus, half of 小三風's 30 tai. Excluded by 四喜嚦咕 below
     // (all 4 wind kinds trivially includes "at least 3").
     score: (hand) => (eightPairsWindRankCount(hand) >= 3 ? 15 : 0),
+    tiles: (hand) => wholeHandGroups(hand).filter((group) => group[0].suit === "z" && group[0].rank >= 1 && group[0].rank <= 4),
   },
   {
     id: "eight-pairs-four-winds",
@@ -2878,6 +3310,7 @@ export const PATTERNS: TaiPattern[] = [
     // Additive bonus, half of 小四喜's 120 tai.
     score: (hand) => (eightPairsWindRankCount(hand) === 4 ? 60 : 0),
     excludes: ["eight-pairs-three-winds"],
+    tiles: (hand) => wholeHandGroups(hand).filter((group) => group[0].suit === "z" && group[0].rank >= 1 && group[0].rank <= 4),
   },
 ];
 
