@@ -2788,14 +2788,34 @@ function ScoringBreakdown({
   // pattern that's actually likely to have scored.
   const winningInstance = findWinningTileInstance(hand, declaredCount, winningTile);
   const isWinningInstance = (t: Tile): boolean => t === winningInstance;
+  // Declaration order (the default) already reads as a rough thematic
+  // grouping - PATTERNS is authored one related family at a time - so
+  // sorting by tai is opt-in rather than the default, same "toggle changes
+  // the view, doesn't change what fired" spirit as the projected-waits
+  // list's own score/tile sort toggle. Tai-descending ties keep their
+  // original relative order for free (Array.prototype.sort is stable).
+  const [patternSort, setPatternSort] = useState<"order" | "tai">("order");
+  const displayedMatched = patternSort === "order" ? matched : [...matched].sort((a, b) => b.tai - a.tai);
   return (
     <>
       <div className="waits breakdown-list">
-        <span className="waits-label">Patterns:</span>
+        <div className="projected-waits-header">
+          <span className="waits-label">Patterns:</span>
+          {matched.length > 1 && (
+            <button
+              type="button"
+              className="projected-sort-toggle"
+              onClick={() => setPatternSort((s) => (s === "order" ? "tai" : "order"))}
+              title={patternSort === "order" ? "Sorted in the order they were checked - tap to sort by tai" : "Sorted by tai, highest first - tap to sort by the order they were checked"}
+            >
+              {patternSort === "order" ? "Sort: order" : "Sort: tai"}
+            </button>
+          )}
+        </div>
         {matched.length === 0 ? (
           <span className="hint">No patterns matched yet — this is an early version, more get added over time.</span>
         ) : (
-          matched.map(({ pattern, tai }) => <PatternRow key={pattern.id} pattern={pattern} tai={tai} hand={hand} ctx={ctx} />)
+          displayedMatched.map(({ pattern, tai }) => <PatternRow key={pattern.id} pattern={pattern} tai={tai} hand={hand} ctx={ctx} />)
         )}
       </div>
 
