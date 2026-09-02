@@ -1626,9 +1626,19 @@ const HandScanner = forwardRef<
     setEditingDetectionId(null);
   };
 
+  // With hideTrigger (an external button drives this instead - see the
+  // Scoring tab's own Scan button), .scan-input renders nothing visible at
+  // all while idle - just the always-present hidden file input. Its
+  // divider/spacing styling still applied unconditionally, though, leaving
+  // a bare horizontal rule floating in a chunk of empty margin+padding
+  // above whatever comes next. Drop that styling in exactly this "nothing
+  // to show" case so the section that follows just gets the normal single
+  // gap.
+  const scanInputEmpty = hideTrigger && scanStatus !== "analyzing" && scanStatus !== "loading" && scanStatus !== "error";
+
   return (
     <>
-      <div className="scan-input">
+      <div className={`scan-input${scanInputEmpty ? " empty" : ""}`}>
         <input ref={fileInputRef} type="file" accept="image/*" onChange={handleScanFile} style={{ display: "none" }} />
         {!hideTrigger && (
           <button type="button" onClick={triggerScan} disabled={busy}>
@@ -2435,9 +2445,17 @@ function PickerCollapseToggle({ collapsed, onToggle }: { collapsed: boolean; onT
 // transition would, since these sections' content is variable - a
 // different number of declared melds, waits, etc). See .collapsible-panel
 // in App.css.
-function CollapsiblePanel({ open, children }: { open: boolean; children: ReactNode }) {
+function CollapsiblePanel({
+  open,
+  className,
+  children,
+}: {
+  open: boolean;
+  className?: string;
+  children: ReactNode;
+}) {
   return (
-    <div className={`collapsible-panel${open ? " open" : ""}`}>
+    <div className={`collapsible-panel${open ? " open" : ""}${className ? ` ${className}` : ""}`}>
       <div className="collapsible-panel-inner">{children}</div>
     </div>
   );
@@ -3567,7 +3585,7 @@ function ScoringPanel() {
         <PickerCollapseToggle collapsed={declaredPickerCollapsed} onToggle={() => setDeclaredPickerCollapsed((c) => !c)} />
       </div>
 
-      <CollapsiblePanel open={!declaredPickerCollapsed}>
+      <CollapsiblePanel open={!declaredPickerCollapsed} className="meld-kind-collapsible">
         <div className="panel-header meld-kind-row">
           {(["run", "triplet", "exposed-kong", "concealed-kong"] as MeldPickerKind[]).map((k) => (
             <button

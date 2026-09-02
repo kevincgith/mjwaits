@@ -242,10 +242,16 @@ h1 {
   margin-bottom: 1rem;
 }
 
-/* The declared-melds meld-kind buttons (Run/Triplet/暗槓/明槓) sit on
-   their own row below the title/collapse-toggle row - pulled up to sit
-   snug under it rather than getting the full 1rem gap twice in a row. */
-.panel-header.meld-kind-row {
+/* The declared-melds meld-kind buttons (Run/Triplet/暗槓/明槓) sit on their
+   own row below the title/collapse-toggle row - pulled up to sit snug
+   under it rather than getting the full 1rem gap twice in a row. This has
+   to live on .collapsible-panel itself (a plain sibling of .panel-header,
+   where normal adjacent-sibling margin collapsing still applies) rather
+   than on .meld-kind-row directly - .meld-kind-row is nested inside
+   .collapsible-panel-inner now, and margins never collapse across a grid
+   container's boundary (nor through its overflow: hidden child), so a
+   margin-top set there wouldn't reach .panel-header at all. */
+.collapsible-panel.meld-kind-collapsible {
   margin-top: -0.7rem;
 }
 
@@ -1020,6 +1026,15 @@ h1 {
   margin-bottom: 1.25rem;
   padding-bottom: 1.25rem;
   border-bottom: 1px solid #eee;
+}
+
+/* hideTrigger + idle: nothing in this row is visible (just the always-
+   present hidden file input) - drop the divider/spacing so a bare
+   horizontal rule doesn't sit in the middle of empty space. */
+.scan-input.empty {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
 }
 
 .scan-input button {
