@@ -22,6 +22,16 @@
   --surface-warm: #fafaf5;
   --hover-bg: #ececec;
   --hover-bg-2: #f2f2f2;
+  /* Tiles/dice keep looking like physical ivory pieces regardless of
+     theme - unlike --surface (which darkens with everything else), this
+     one is deliberately absent from the dark-mode block below. */
+  --tile-bg: #fff;
+  /* Ink that has to stay dark because it sits on the always-white
+     --tile-bg above (a die's pips, and the White Dragon tile's glyph,
+     which isn't a wind or dragon color override so it'd otherwise follow
+     --text-strong into a barely-visible light gray in dark mode). */
+  --tile-ink: #1a1a1a;
+  --honor-ink: #333;
   /* Borders */
   --border: #ccc;
   --border-2: #ddd;
@@ -95,7 +105,6 @@
     --surface: #1e1e1e;
     --surface-sunken: #232323;
     --surface-sunken-2: #242424;
-    --surface-warm: #221f1a;
     --hover-bg: #2a2a2a;
     --hover-bg-2: #2f2f2f;
     /* Borders */
@@ -540,6 +549,9 @@ h1 {
   border: 1px solid var(--border-3);
   border-radius: 6px;
   margin-bottom: 0.75rem;
+  /* Tiles read as physical ivory pieces - keep them on a white backdrop
+     even in dark mode, same reasoning as --tile-bg's other uses below. */
+  background: var(--tile-bg);
 }
 
 .hint {
@@ -990,7 +1002,7 @@ button.scoring-pattern-row {
 }
 
 .projected-wait {
-  background: var(--surface);
+  background: var(--tile-bg);
   border: 1px solid var(--border-warm);
   border-radius: 6px;
   padding: 0.35rem 0.6rem;
@@ -1113,7 +1125,7 @@ button.scoring-pattern-row {
   color: var(--green);
 }
 .tile-glyph[data-suit="z"] {
-  color: var(--text-strong);
+  color: var(--honor-ink);
   font-family: "Apple Symbols", "Segoe UI Symbol", "Noto Sans Symbols 2", sans-serif;
   top: 0;
 }
@@ -1211,7 +1223,7 @@ button.scoring-pattern-row {
 .tile-button {
   border: 1px solid var(--border-2);
   border-radius: 4px;
-  background: var(--surface);
+  background: var(--tile-bg);
   padding: 0.15rem 0.35rem;
   cursor: pointer;
 }
@@ -1813,7 +1825,7 @@ button.scoring-pattern-row {
   width: 64px;
   height: 64px;
   padding: 0.5rem;
-  background: var(--surface);
+  background: var(--tile-bg);
   border: 1px solid var(--border);
   border-radius: 10px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
@@ -1844,7 +1856,7 @@ button.scoring-pattern-row {
   justify-self: center;
   width: 12px;
   height: 12px;
-  background: var(--text);
+  background: var(--tile-ink);
   border-radius: 50%;
 }
 
