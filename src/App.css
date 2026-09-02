@@ -306,7 +306,22 @@ h1 {
   line-height: 1;
   margin-left: -0.35rem;
   display: inline-flex;
+  position: relative;
   transition: transform 0.2s ease;
+}
+
+/* Extends the actual tappable area out to roughly Apple's 44x44pt minimum
+   without touching layout or making the glyph itself any bigger - this
+   button's own visible box is tiny (just the caret + a little padding),
+   but it sits alone with plenty of empty space around it (nothing else
+   competes for taps nearby), so there's no adjacent control to
+   accidentally steal taps from by reaching this far out. Unlike, say, the
+   wind-picker or meld-kind buttons, which sit shoulder-to-shoulder with
+   siblings and can't safely do this. */
+.panel-header button.icon-toggle::before {
+  content: "";
+  position: absolute;
+  inset: -0.6rem;
 }
 
 .panel-header button.icon-toggle.open {
@@ -807,6 +822,17 @@ button.scoring-pattern-row {
   font-size: 0.8rem;
   color: #444;
   white-space: nowrap;
+  position: relative;
+}
+
+/* Same invisible-hitbox-extension idea as .icon-toggle above - this
+   button's own visible box is short (small font, tight padding), but it
+   sits alone at the end of its header row with nothing else nearby to
+   steal taps from. */
+.projected-sort-toggle::before {
+  content: "";
+  position: absolute;
+  inset: -0.6rem -0.4rem;
 }
 
 .projected-wait {
