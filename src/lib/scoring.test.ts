@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseHand } from "./mahjong";
+import { parseHand, tileKey } from "./mahjong";
 import {
   decomposeHandAll,
   groupDeclaredTiles,
@@ -2700,5 +2700,272 @@ describe("PATTERNS: TaiPattern.tiles (tap-to-expand tile breakdowns)", () => {
     const result = scoreHand("(123m)456m789m111z234t22b", c);
     expect(tai(result, "self-draw")).toBe(1);
     expect(patternTiles(result, "self-draw", c)).toBeUndefined();
+  });
+});
+
+// A broad corpus of hand notations already exercised precisely elsewhere in
+// this file - reused here as-is (not hand-picked for this purpose) for one
+// broad, unopinionated sweep: for every pattern that matches on any of
+// these hands, its tiles() (if it has one) must not throw and must only
+// ever point at tiles that are genuinely part of that hand. This is a
+// smoke test, not a precision one - it won't catch one *specific* tile
+// being wrong (the tests above already do that for a representative
+// sample), just a crash or a tile that doesn't belong to the hand at all
+// (e.g. a stray suit/rank typo in one of TaiPattern.tiles' ~110
+// implementations, most of which were mechanically edited together - see
+// the "Show each stacking instance's tiles on its own row" change).
+const SMOKE_TEST_HANDS = [
+  "(1111z)123456789m234t22b",
+  "(111m)(222m)(333m)(456t)123t11z",
+  "(111z)(222z)(333z)(444z)(555z)66z",
+  "(111z)(222z)(333z)(444z)123b22t",
+  "(111z)(222z)(333z)123456t22b",
+  "(111z)(222z)(333z)123456t44z",
+  "(111z)(222z)(333z)345m789m88b",
+  "(111z)(222z)(333z)345m789t44b",
+  "(111z)(222z)123456789m22b",
+  "(111z)(222z)123456789m33z",
+  "(111z)123456789m234t22b",
+  "(123m)(456m)(789m)(789m)234t22b",
+  "(123m)119m19t19b1234567z",
+  "(123m)123m456t789t111z22b",
+  "(123m)234m456t567t789b99b",
+  "(123m)456m789m111z234t22b",
+  "(123m)7m258t369b1234567z",
+  "(123m)9999m1122334455t",
+  "(222m)123m777m999b777t11z",
+  "(234m)234m234t234t234b22z",
+  "(333m)(111z)(222z)123m789t44b",
+  "(333m)(111z)(222z)345m789t44b",
+  "(333m)(666m)(567m)345m789t11z",
+  "(345m)(456m)(567m)456m789t22z",
+  "(456m)456m456t456b111z22z",
+  "(456t)567m678b111z333z22z",
+  "(555z)(666z)(777z)123456t22b",
+  "(555z)(666z)123456789m22b",
+  "(555z)(666z)123456789m77z",
+  "(567m)567t567b111z222z33z",
+  "(777t)(888t)(555t)34566789t",
+  "(789m)123456789m234t22b",
+  "(888t)123m456m789t111z22b",
+  "11112233445566777z",
+  "11112233445566m777z",
+  "11119999m1199t11999b",
+  "11119999m1199t11b111z",
+  "11119m19t19b12345677z",
+  "1111m2222m3333m4444m5555t66t",
+  "1111m223344m5555t777z",
+  "1111m223344m5566777t",
+  "1111m3344667799t111z",
+  "1111m5555t9999b22z777z",
+  "1111m999m456t789t234b22b",
+  "1111z123456789m234t22b",
+  "1111z2222z123456789m22b",
+  "111222333m111z456b22t",
+  "111222333m444555t22b",
+  "11122345678999m111z",
+  "111239m19t19b1234567z",
+  "111m111t111b777m777b11z",
+  "111m222m333m444m555m22z",
+  "111m222m333m555t666t22b",
+  "111m222m444m555m33m789t",
+  "111m22m456t789t234b678b",
+  "111m333m456t789t234b22b",
+  "111m333m555m456t789b22b",
+  "111m333m555m777m456t22t",
+  "111m333m555m777t99t999b",
+  "111m999m111t999t999b11b",
+  "111m999m111z555z999t11b",
+  "111m999m456t789t234b22b",
+  "111z222z555z666z123m33z",
+  "111z222z555z666z333t22b",
+  "112233444m11223344z",
+  "11223344555m112233z",
+  "11223344556677888m",
+  "1122334455667788m1m",
+  "11223344556677m888m",
+  "112233445566m11z777z",
+  "112233445566z777z99m",
+  "1122334455m1122333z",
+  "11223344m112233444t",
+  "11223344m556677t888t",
+  "11223344t778899m777z",
+  "112233m22333t556677z",
+  "112233m667788t777z55z",
+  "112349m19t19b1234567z",
+  "1144m2266999t338877b",
+  "1199m1199t1199b11z555z",
+  "119m19t19b555b1234567z",
+  "123123678678m777b11z",
+  "123234345m333b111z22t",
+  "123234345m333b111z22z",
+  "123234345m333b111z33t",
+  "123234345m333b123t11z",
+  "123234m123t123b11122z",
+  "123234m222234t123b22b",
+  "123456789m111222z55t",
+  "123456789m111z234t22b",
+  "123456789m111z555z22m",
+  "123456789m123m456m22m",
+  "123456789m234t567t22b",
+  "123456789m234t678t11b",
+  "123456789m234t678t22b",
+  "123456789m234t678t22z",
+  "123456789m234t678t55b",
+  "123456789m234t678t55t",
+  "123456m234567t34599b",
+  "123m11t22b",
+  "123m123b123m11122233z",
+  "123m123b123m123t111z11b",
+  "123m123b678t678b111z22z",
+  "123m123m123m123m456b22z",
+  "123m123m123m123m456t55z",
+  "123m123m123m456t789b22z",
+  "123m123m123t456b111z22z",
+  "123m123m123t456b789b11z",
+  "123m123m123t678b678t77z",
+  "123m123m456m234t345b11z",
+  "123m123m456m789m789m55z",
+  "123m123m456t789t111z22b",
+  "123m123m678m678m678m33m",
+  "123m123m678t678t456b22z",
+  "123m123m789m456t567t22b",
+  "123m123m789m789m456t22b",
+  "123m222m777m999b777t11z",
+  "123m234m123t123b111z22m",
+  "123m234m123t234t123b44b",
+  "123m234m22m789t789b111z",
+  "123m234m345m345m111z22b",
+  "123m234m345m456m111z22z",
+  "123m234m345m456m567m11z",
+  "123m234m345m456m567m22z",
+  "123m234m345m789t111z22b",
+  "123m234m456t567t789b99b",
+  "123m234m678t111z789b22z",
+  "123m345m567m111z789t22b",
+  "123m345m567m567m111z22b",
+  "123m456m123t111z789b11b",
+  "123m456m789m123m111z22z",
+  "123m456m789m789m234t22z",
+  "123m456m789t111z234b22b",
+  "123m456m789t111z789b22b",
+  "123m456t678b111z555z99m",
+  "123m456t789t678b111z55z",
+  "123m678m123t789t678b44b",
+  "123m789m123t111z789b11b",
+  "123m789m123t111z789b22b",
+  "123m789m123t789b999t11b",
+  "123m789m123t789b999t22z",
+  "123m789m123t789t123b22b",
+  "123m789m123t789t123b55z",
+  "123m789m123t789t123b99b",
+  "123m789m123t789t789b11b",
+  "123m789m456t567t345b22z",
+  "123t234b345t456m567m77z",
+  "1447m258b369t1234567z",
+  "147m147t2258b1234567z",
+  "147m147t258b11234567z",
+  "147m248t369b11234567z",
+  "147m258b369t12344567z",
+  "158m147t369b11234567z",
+  "159m159t1559b1234567z",
+  "159m159t159b12345677z",
+  "19m19t19b1234567z777z1m",
+  "19m19t19b1234567z999b7z",
+  "19m1t6789t19b12345677z",
+  "19m1t7899t19b12345677z",
+  "22223333446677888m",
+  "222b444b777b66b444m111z",
+  "222m3333m456t789t789b22b",
+  "222m333m789t456b789b11z",
+  "222m333t44b555m666t777b",
+  "223344556677m22t888t",
+  "22334455m111z789t789b",
+  "225577t8844222b111m1m",
+  "225577t8844222b2b111m",
+  "2255m88t11224447766z",
+  "234m234m234m234t234b22z",
+  "234m234m345m456m777t99b",
+  "234m234t567b789b111z22z",
+  "234m345t456b111z333z22z",
+  "234m567m234t567t234b66b",
+  "234t234t678b678b678b33t",
+  "234t234t678t678t678t33t",
+  "234t345m456b567m678t55z",
+  "234t345m456b567t678m55z",
+  "333m3333b456m789t111z33t",
+  "333m444m555m789t111z22b",
+  "333m444m789t456b789b22m",
+  "333t4444m555b111z678t22z",
+  "345t345t345b345b345m55z",
+  "444m123b456b789b111z44t",
+  "444t555b678m111z222z33m",
+  "456m456m456t456b111z22z",
+  "5555t7777t9999m111z77z",
+  "555m555t555b111z123b22z",
+  "555t555b123m456m111z22z",
+  "555z666z123m456m789m22b",
+  "567m567t567b111z222z33z",
+  "66778899m667788999t",
+  "678m789m678t789t678b99b",
+  "789m456m123t111z789b22b",];
+
+describe("PATTERNS: TaiPattern.tiles - smoke test across every pattern", () => {
+  it("never throws, and only ever points at tiles genuinely part of the hand", () => {
+    let checkedPatterns = 0;
+    const seenPatternIds = new Set<string>();
+    for (const notation of SMOKE_TEST_HANDS) {
+      // A handful of patterns only ever fire under a non-default ctx (a
+      // 食胡 tile set, or a self-drawn win) - try a small spread of ctx
+      // variants per hand, deriving a plausible winningTile from the
+      // hand's own pair, so this sweep's coverage isn't limited to
+      // whatever happens to fire under ctx()'s all-defaults alone.
+      let pairTile = null;
+      try {
+        pairTile = scoreHand(notation, ctx()).hand.pair[0] ?? null;
+      } catch {
+        continue; // unparseable under default ctx - not this test's concern
+      }
+      const ctxVariants = [ctx(), ctx({ selfDraw: true })];
+      if (pairTile) {
+        ctxVariants.push(ctx({ winningTile: pairTile }), ctx({ winningTile: pairTile, selfDraw: true }));
+      }
+      for (const c of ctxVariants) {
+        let result: ReturnType<typeof scoreHand>;
+        try {
+          result = scoreHand(notation, c);
+        } catch {
+          continue;
+        }
+        const readings = [result, result.second].filter((r): r is NonNullable<typeof r> => !!r);
+        for (const reading of readings) {
+          const handTileKeys = new Set([...reading.hand.melds.flatMap((m) => m.tiles), ...reading.hand.pair].map(tileKey));
+          for (const { pattern } of reading.matched) {
+            const tilesFn = pattern.tiles;
+            if (!tilesFn) continue;
+            checkedPatterns++;
+            seenPatternIds.add(pattern.id);
+            let rows: ReturnType<NonNullable<typeof tilesFn>> = [];
+            expect(() => {
+              rows = tilesFn(reading.hand, c);
+            }, `${pattern.id} threw for ${notation}`).not.toThrow();
+            for (const row of rows) {
+              expect(row.length, `${pattern.id} returned an empty row for ${notation}`).toBeGreaterThan(0);
+              for (const group of row) {
+                expect(group.length, `${pattern.id} returned an empty group for ${notation}`).toBeGreaterThan(0);
+                for (const tile of group) {
+                  expect(handTileKeys.has(tileKey(tile)), `${pattern.id} pointed at a tile not in the hand for ${notation}`).toBe(true);
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    // Sanity on the smoke test itself - if either of these drops far
+    // below what this corpus is known to reach, the corpus or matching
+    // broke silently rather than the coverage being genuine.
+    expect(checkedPatterns).toBeGreaterThan(900);
+    expect(seenPatternIds.size).toBeGreaterThan(95);
   });
 });
