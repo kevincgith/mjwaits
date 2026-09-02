@@ -2792,10 +2792,21 @@ function ScoringBreakdown({
   // grouping - PATTERNS is authored one related family at a time - so
   // sorting by tai is opt-in rather than the default, same "toggle changes
   // the view, doesn't change what fired" spirit as the projected-waits
-  // list's own score/tile sort toggle. Tai-descending ties keep their
-  // original relative order for free (Array.prototype.sort is stable).
-  const [patternSort, setPatternSort] = useState<"order" | "tai">("order");
-  const displayedMatched = patternSort === "order" ? matched : [...matched].sort((a, b) => b.tai - a.tai);
+  // list's own score/tile sort toggle. Both tai directions keep their ties
+  // in original order for free (Array.prototype.sort is stable).
+  const patternSortCycle = ["order", "tai-desc", "tai-asc"] as const;
+  type PatternSort = (typeof patternSortCycle)[number];
+  const [patternSort, setPatternSort] = useState<PatternSort>("order");
+  const displayedMatched =
+    patternSort === "order"
+      ? matched
+      : [...matched].sort((a, b) => (patternSort === "tai-desc" ? b.tai - a.tai : a.tai - b.tai));
+  const patternSortLabel: Record<PatternSort, string> = { order: "Sort: order", "tai-desc": "Sort: tai ↓", "tai-asc": "Sort: tai ↑" };
+  const patternSortTitle: Record<PatternSort, string> = {
+    order: "Sorted in the order they were checked - tap to sort by tai, highest first",
+    "tai-desc": "Sorted by tai, highest first - tap to sort by tai, lowest first",
+    "tai-asc": "Sorted by tai, lowest first - tap to sort by the order they were checked",
+  };
   return (
     <>
       <div className="waits breakdown-list">
@@ -2805,10 +2816,10 @@ function ScoringBreakdown({
             <button
               type="button"
               className="projected-sort-toggle"
-              onClick={() => setPatternSort((s) => (s === "order" ? "tai" : "order"))}
-              title={patternSort === "order" ? "Sorted in the order they were checked - tap to sort by tai" : "Sorted by tai, highest first - tap to sort by the order they were checked"}
+              onClick={() => setPatternSort((s) => patternSortCycle[(patternSortCycle.indexOf(s) + 1) % patternSortCycle.length])}
+              title={patternSortTitle[patternSort]}
             >
-              {patternSort === "order" ? "Sort: order" : "Sort: tai"}
+              {patternSortLabel[patternSort]}
             </button>
           )}
         </div>
