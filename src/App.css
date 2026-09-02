@@ -549,9 +549,6 @@ h1 {
   border: 1px solid var(--border-3);
   border-radius: 6px;
   margin-bottom: 0.75rem;
-  /* Tiles read as physical ivory pieces - keep them on a white backdrop
-     even in dark mode, same reasoning as --tile-bg's other uses below. */
-  background: var(--tile-bg);
 }
 
 .hint {
@@ -1002,7 +999,7 @@ button.scoring-pattern-row {
 }
 
 .projected-wait {
-  background: var(--tile-bg);
+  background: var(--surface);
   border: 1px solid var(--border-warm);
   border-radius: 6px;
   padding: 0.35rem 0.6rem;
@@ -1109,6 +1106,34 @@ button.scoring-pattern-row {
      problem and reset it back to 0. */
   position: relative;
   top: -0.145em;
+  /* Establishes this glyph's own stacking context so ::after below (and
+     ::before, for wait-highlight/joker-assumed) stay confined to hugging
+     just this one tile, instead of a negative z-index escaping out to
+     whatever real stacking context sits further up the tree. */
+  z-index: 0;
+}
+
+/* However dark the surrounding box gets, the tile itself stays a little
+   ivory-white chip snugly behind the glyph's own ink - same ink-hugging
+   geometry as .wait-highlight/.joker-assumed below (measured via canvas
+   text metrics), just always on and a layer further back (-2, vs. their
+   -1) so a highlight still paints on top of it rather than under it. */
+.tile-glyph::after {
+  content: "";
+  position: absolute;
+  left: -0.08em;
+  right: -0.08em;
+  top: 0.15em;
+  height: 0.97em;
+  background: var(--tile-bg);
+  border-radius: 3px;
+  z-index: -2;
+}
+
+.tile-glyph[data-suit="z"]::after,
+.tile-glyph[data-suit="j"]::after,
+.tile-glyph[data-suit="bonus"]::after {
+  top: 0.02em;
 }
 
 .tile-glyph.large {
@@ -1223,7 +1248,7 @@ button.scoring-pattern-row {
 .tile-button {
   border: 1px solid var(--border-2);
   border-radius: 4px;
-  background: var(--tile-bg);
+  background: var(--surface);
   padding: 0.15rem 0.35rem;
   cursor: pointer;
 }
