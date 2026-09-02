@@ -94,9 +94,9 @@
    kept rather than deleted in case it's worth revisiting later. The
    "and (min-width: 999999px)" clause is a deliberately-impossible-to-match
    condition that keeps this block from ever applying without touching its
-   contents (a real CSS comment can't wrap it - it's full of its own
-   `/* ... */` section headers, which would close early) - to re-enable,
-   just delete that clause. */
+   contents (a real CSS comment can't wrap it instead - it's full of its
+   own section-header comments, any one of which would close a wrapping
+   comment early) - to re-enable, just delete that clause. */
 @media (prefers-color-scheme: dark) and (min-width: 999999px) {
   :root {
     /* Text */
