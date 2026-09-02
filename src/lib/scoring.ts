@@ -1558,16 +1558,11 @@ function threeColorStepUpInstances(hand: ResolvedHand): ResolvedMeld[][] {
 // 二連刻: 2 triplets/kongs at consecutive ranks in one suit (e.g. 222m+333m,
 // mixing triplet/kong freely). No 明/暗 split. Stacks per adjacent pair
 // found (matches the precedent set by 老少上/二步高-style patterns), so 3
-// consecutive triplets (222+333+444) counts as 2 instances.
-function consecutiveTripletOrKongPairCount(hand: ResolvedHand): number {
-  let count = 0;
-  for (const suit of ["m", "t", "b"] as const) {
-    for (let rank = 1; rank <= 8; rank++) {
-      if (isTripletOrKongAt(hand, suit, rank) && isTripletOrKongAt(hand, suit, rank + 1)) count++;
-    }
-  }
-  return count;
-}
+// consecutive triplets (222+333+444) counts as 2 instances. See its own
+// PATTERNS entry (consecutive-triplet-pair) for the actual meld-finding
+// logic - inlined there since it also needs to filter out melds claimed
+// by 小/大三連刻 (see claimedConsecutiveTripletMelds), which a plain count
+// couldn't do.
 
 // 小三連刻: 3 consecutive ranks in one suit where the hand's pair sits at
 // one of the 3 positions and the other 2 are triplets/kongs (e.g. 22m +
@@ -1603,20 +1598,66 @@ function bigThreeConsecutiveTripletCount(hand: ResolvedHand): number {
   return count;
 }
 
+// Which specific melds belong to every qualifying 大三連刻 window (3
+// consecutive ranks, all triplets/kongs) or 小三連刻 window (anchored on
+// the pair) - both already stack across multiple windows themselves, so
+// this unions every one found rather than just the first. Used only to
+// scope 二連刻's own exclusion (see consecutive-triplet-pair below) to the
+// melds those patterns are actually about - a genuinely separate
+// adjacent-triplet pair using up the hand's *other* melds should still
+// earn its own tai, e.g. 111m222m333m555t666t22b claims 大三連刻 for the
+// m-suit window, but 555t+666t is an unrelated pair and still counts.
+function claimedConsecutiveTripletMelds(hand: ResolvedHand): ResolvedMeld[] {
+  const claimed: ResolvedMeld[] = [];
+  const meldAt = (suit: Suit, rank: number) =>
+    hand.melds.find((m) => (m.kind === "triplet" || m.kind === "kong") && m.tiles[0].suit === suit && m.tiles[0].rank === rank);
+  for (const suit of ["m", "t", "b"] as const) {
+    for (let rank = 1; rank <= 7; rank++) {
+      const melds = [rank, rank + 1, rank + 2].map((r) => meldAt(suit, r));
+      if (melds.every((m): m is ResolvedMeld => !!m)) claimed.push(...melds);
+    }
+  }
+  const pair = hand.pair[0];
+  if (pair.suit !== "z") {
+    const windows = [
+      [pair.rank, pair.rank + 1, pair.rank + 2],
+      [pair.rank - 1, pair.rank, pair.rank + 1],
+      [pair.rank - 2, pair.rank - 1, pair.rank],
+    ];
+    for (const window of windows) {
+      if (window[0] < 1 || window[2] > 9) continue;
+      const melds = window.filter((r) => r !== pair.rank).map((r) => meldAt(pair.suit, r));
+      if (melds.length === 2 && melds.every((m): m is ResolvedMeld => !!m)) claimed.push(...melds);
+    }
+  }
+  return claimed;
+}
+
 // 相逢: 2 runs with the same 3 ranks but in *different* suits (e.g.
 // 234m+234t). No 明/暗 split. Stacks - grouped by suit-pair rather than a
 // flat count, so a run duplicated within one suit (a 般高 concern) doesn't
 // get miscounted as multiple 相逢 instances against itself.
 const NUMBERED_SUITS: Suit[] = ["m", "t", "b"];
+// Given two suits' meld lists for the same rank, returns one pair per
+// combination - a meld held only once in one suit is reused (shared)
+// across as many instances as the other suit's copies call for, not
+// consumed by forming one. Same non-exclusive-pairing principle as
+// combineSegments (see its own comment, which fixed the identical bug for
+// 清龍/雜龍/步步高): e.g. 123m123m123t forms 2 相逢 instances (each 123m
+// paired with the one shared 123t), not 1 - a naive index-zip (pairing by
+// position, i.e. Math.min(a.length, b.length) pairs) would only find 1.
+function crossPairs(segA: ResolvedMeld[], segB: ResolvedMeld[]): [ResolvedMeld, ResolvedMeld][] {
+  const result: [ResolvedMeld, ResolvedMeld][] = [];
+  for (const a of segA) for (const b of segB) result.push([a, b]);
+  return result;
+}
+
 function crossSuitSameRunInstances(hand: ResolvedHand): [ResolvedMeld, ResolvedMeld][] {
   const instances: [ResolvedMeld, ResolvedMeld][] = [];
   for (let rank = 1; rank <= 7; rank++) {
     for (let i = 0; i < NUMBERED_SUITS.length; i++) {
       for (let j = i + 1; j < NUMBERED_SUITS.length; j++) {
-        const a = segmentMelds(hand, NUMBERED_SUITS[i], rank);
-        const b = segmentMelds(hand, NUMBERED_SUITS[j], rank);
-        const pairCount = Math.min(a.length, b.length);
-        for (let k = 0; k < pairCount; k++) instances.push([a[k], b[k]]);
+        instances.push(...crossPairs(segmentMelds(hand, NUMBERED_SUITS[i], rank), segmentMelds(hand, NUMBERED_SUITS[j], rank)));
       }
     }
   }
@@ -1637,6 +1678,24 @@ function nSuitSameRunMelds(hand: ResolvedHand, minRuns: number): ResolvedMeld[] 
     if (groups.reduce((n, g) => n + g.length, 0) >= minRuns) return groups.flat();
   }
   return null;
+}
+
+// Which specific melds (if any) belong to whichever 明/暗三/四/五相逢 tier
+// actually fires for this hand - checked strongest-first (5, then 4, then
+// 3), matching those patterns' own exclusion hierarchy (五 excludes 四+三,
+// 四 excludes 三), so this always lines up with whichever tier's row
+// actually survives in `matched`. Used only to scope 相逢's own exclusion
+// (see cross-suit-same-run below) to the melds that tier is actually
+// about - a hand can have a genuinely separate same-run pairing at a
+// *different* rank that has nothing to do with that tier, and that
+// pairing should still earn its own 相逢 tai rather than being wiped out
+// just because some other rank elsewhere qualified for a stronger tier.
+function claimedSameRunMelds(hand: ResolvedHand): ResolvedMeld[] {
+  for (const minRuns of [5, 4, 3]) {
+    const melds = nSuitSameRunMelds(hand, minRuns);
+    if (melds) return melds;
+  }
+  return [];
 }
 
 // 雙姊妹: a bonus on top of 相逢 - true when 2 *distinct* 相逢 instances
@@ -1720,6 +1779,33 @@ function crossSuitSameTripletInstances(hand: ResolvedHand): [ResolvedMeld, Resol
     }
   }
   return instances;
+}
+
+// Which specific melds (if any) belong to 小三兄弟 and/or 大三兄弟 for this
+// hand - unlike the 相逢 family's tiers, these two don't exclude each
+// other (structurally different shapes: one needs the pair, one doesn't),
+// so both are checked and their claimed melds combined. Used only to
+// scope 兩兄弟's own exclusion (see cross-suit-same-triplet below) to the
+// melds those patterns are actually about - a genuinely separate same-
+// rank pairing at a different rank should still earn its own 兩兄弟 tai.
+function claimedThreeBrothersMelds(hand: ResolvedHand): ResolvedMeld[] {
+  const claimed: ResolvedMeld[] = [];
+  const meldAt = (suit: Suit, rank: number) =>
+    hand.melds.find((m) => (m.kind === "triplet" || m.kind === "kong") && m.tiles[0].suit === suit && m.tiles[0].rank === rank);
+  for (let rank = 1; rank <= 9; rank++) {
+    const melds = NUMBERED_SUITS.map((suit) => meldAt(suit, rank));
+    if (melds.every((m): m is ResolvedMeld => !!m)) {
+      claimed.push(...melds);
+      break; // hasBigThreeBrothers itself only ever reports the first qualifying rank
+    }
+  }
+  const pair = hand.pair[0];
+  if (pair.suit !== "z") {
+    const otherSuits = NUMBERED_SUITS.filter((s) => s !== pair.suit);
+    const melds = otherSuits.map((s) => meldAt(s, pair.rank));
+    if (melds.every((m): m is ResolvedMeld => !!m)) claimed.push(...melds);
+  }
+  return claimed;
 }
 
 // 小三色連刻: 3 consecutive ranks across all 3 different suits, with the
@@ -2513,9 +2599,28 @@ export const PATTERNS: TaiPattern[] = [
   {
     id: "consecutive-triplet-pair",
     name: "二連刻 (2 consecutive triplets/kongs)",
-    // Stacks per adjacent pair; no 明/暗 split.
-    score: (hand) => consecutiveTripletOrKongPairCount(hand) * 5,
+    // Stacks per adjacent pair; no 明/暗 split. Only discounts the pairs
+    // actually subsumed by 小/大三連刻 (see claimedConsecutiveTripletMelds)
+    // - a genuinely separate adjacent pair using up the hand's *other*
+    // melds still earns its own tai, e.g. 111m222m333m555t666t22b claims
+    // 大三連刻 for the m-suit window, but 555t+666t is an unrelated pair
+    // and still counts here.
+    score: (hand) => {
+      const claimed = claimedConsecutiveTripletMelds(hand);
+      const meldAt = (suit: Suit, rank: number) =>
+        hand.melds.find((m) => (m.kind === "triplet" || m.kind === "kong") && m.tiles[0].suit === suit && m.tiles[0].rank === rank);
+      let count = 0;
+      for (const suit of ["m", "t", "b"] as const) {
+        for (let rank = 1; rank <= 8; rank++) {
+          const a = meldAt(suit, rank);
+          const b = meldAt(suit, rank + 1);
+          if (a && b && !claimed.includes(a) && !claimed.includes(b)) count++;
+        }
+      }
+      return count * 5;
+    },
     tiles: (hand) => {
+      const claimed = claimedConsecutiveTripletMelds(hand);
       const meldAt = (suit: Suit, rank: number) =>
         hand.melds.find((m) => (m.kind === "triplet" || m.kind === "kong") && m.tiles[0].suit === suit && m.tiles[0].rank === rank);
       const groups: Tile[][] = [];
@@ -2523,7 +2628,7 @@ export const PATTERNS: TaiPattern[] = [
         for (let rank = 1; rank <= 8; rank++) {
           const a = meldAt(suit, rank);
           const b = meldAt(suit, rank + 1);
-          if (a && b) groups.push(a.tiles, b.tiles);
+          if (a && b && !claimed.includes(a) && !claimed.includes(b)) groups.push(a.tiles, b.tiles);
         }
       }
       return groups;
@@ -2533,7 +2638,6 @@ export const PATTERNS: TaiPattern[] = [
     id: "small-three-consecutive-triplets",
     name: "小三連刻 (3 consecutive ranks, pair at one end + 2 triplets/kongs)",
     score: (hand) => smallThreeConsecutiveTripletCount(hand) * 15,
-    excludes: ["consecutive-triplet-pair"],
     tiles: (hand) => {
       const pair = hand.pair[0];
       if (pair.suit === "z") return [];
@@ -2557,7 +2661,6 @@ export const PATTERNS: TaiPattern[] = [
     id: "big-three-consecutive-triplets",
     name: "大三連刻 (3 consecutive triplets/kongs)",
     score: (hand) => bigThreeConsecutiveTripletCount(hand) * 30,
-    excludes: ["consecutive-triplet-pair"],
     tiles: (hand) => {
       const meldAt = (suit: Suit, rank: number) =>
         hand.melds.find((m) => (m.kind === "triplet" || m.kind === "kong") && m.tiles[0].suit === suit && m.tiles[0].rank === rank);
@@ -2587,9 +2690,22 @@ export const PATTERNS: TaiPattern[] = [
   {
     id: "cross-suit-same-run",
     name: "相逢 (Same run, different suits)",
-    // No 明/暗 split; stacks per instance.
-    score: (hand) => crossSuitSameRunInstances(hand).length * 3,
-    tiles: (hand) => crossSuitSameRunInstances(hand).flatMap(([a, b]) => [a.tiles, b.tiles]),
+    // No 明/暗 split; stacks per instance. Only discounts the instances
+    // actually subsumed by whichever 明/暗三/四/五相逢 tier fires (see
+    // claimedSameRunMelds) - a separate same-run pairing at a different
+    // rank still earns its own tai, e.g. 123789m123789t123b55z scores
+    // 暗三相逢 for the 123-triple at rank 1, but 789m+789t at rank 7 is an
+    // unrelated pairing and still counts here.
+    score: (hand) => {
+      const claimed = claimedSameRunMelds(hand);
+      return crossSuitSameRunInstances(hand).filter(([a, b]) => !claimed.includes(a) && !claimed.includes(b)).length * 3;
+    },
+    tiles: (hand) => {
+      const claimed = claimedSameRunMelds(hand);
+      return crossSuitSameRunInstances(hand)
+        .filter(([a, b]) => !claimed.includes(a) && !claimed.includes(b))
+        .flatMap(([a, b]) => [a.tiles, b.tiles]);
+    },
   },
   {
     id: "twin-cross-suit-runs",
@@ -2646,7 +2762,6 @@ export const PATTERNS: TaiPattern[] = [
       const melds = nSuitSameRunMelds(hand, 3);
       return melds && melds.some((m) => isMeldOpen(m, ctx, hand)) ? 10 : 0;
     },
-    excludes: ["cross-suit-same-run"],
     tiles: (hand, ctx) => {
       const melds = nSuitSameRunMelds(hand, 3);
       return melds && melds.some((m) => isMeldOpen(m, ctx, hand)) ? melds.map((m) => m.tiles) : [];
@@ -2659,7 +2774,6 @@ export const PATTERNS: TaiPattern[] = [
       const melds = nSuitSameRunMelds(hand, 3);
       return melds && melds.every((m) => !isMeldOpen(m, ctx, hand)) ? 20 : 0;
     },
-    excludes: ["cross-suit-same-run"],
     tiles: (hand, ctx) => {
       const melds = nSuitSameRunMelds(hand, 3);
       return melds && melds.every((m) => !isMeldOpen(m, ctx, hand)) ? melds.map((m) => m.tiles) : [];
@@ -2672,7 +2786,7 @@ export const PATTERNS: TaiPattern[] = [
       const melds = nSuitSameRunMelds(hand, 4);
       return melds && melds.some((m) => isMeldOpen(m, ctx, hand)) ? 40 : 0;
     },
-    excludes: ["cross-suit-same-run", "three-suit-same-run-open", "three-suit-same-run-hidden"],
+    excludes: ["three-suit-same-run-open", "three-suit-same-run-hidden"],
     tiles: (hand, ctx) => {
       const melds = nSuitSameRunMelds(hand, 4);
       return melds && melds.some((m) => isMeldOpen(m, ctx, hand)) ? melds.map((m) => m.tiles) : [];
@@ -2685,7 +2799,7 @@ export const PATTERNS: TaiPattern[] = [
       const melds = nSuitSameRunMelds(hand, 4);
       return melds && melds.every((m) => !isMeldOpen(m, ctx, hand)) ? 80 : 0;
     },
-    excludes: ["cross-suit-same-run", "three-suit-same-run-open", "three-suit-same-run-hidden"],
+    excludes: ["three-suit-same-run-open", "three-suit-same-run-hidden"],
     tiles: (hand, ctx) => {
       const melds = nSuitSameRunMelds(hand, 4);
       return melds && melds.every((m) => !isMeldOpen(m, ctx, hand)) ? melds.map((m) => m.tiles) : [];
@@ -2699,7 +2813,6 @@ export const PATTERNS: TaiPattern[] = [
       return melds && melds.some((m) => isMeldOpen(m, ctx, hand)) ? 80 : 0;
     },
     excludes: [
-      "cross-suit-same-run",
       "three-suit-same-run-open",
       "three-suit-same-run-hidden",
       "four-suit-same-run-open",
@@ -2718,7 +2831,6 @@ export const PATTERNS: TaiPattern[] = [
       return melds && melds.every((m) => !isMeldOpen(m, ctx, hand)) ? 160 : 0;
     },
     excludes: [
-      "cross-suit-same-run",
       "three-suit-same-run-open",
       "three-suit-same-run-hidden",
       "four-suit-same-run-open",
@@ -2732,9 +2844,22 @@ export const PATTERNS: TaiPattern[] = [
   {
     id: "cross-suit-same-triplet",
     name: "兩兄弟 (Same triplet/kong rank, different suits)",
-    // No 明/暗 split; stacks per instance, same as 相逢.
-    score: (hand) => crossSuitSameTripletInstances(hand).length * 5,
-    tiles: (hand) => crossSuitSameTripletInstances(hand).flatMap(([a, b]) => [a.tiles, b.tiles]),
+    // No 明/暗 split; stacks per instance, same as 相逢. Only discounts the
+    // instances actually subsumed by 小/大三兄弟 (see
+    // claimedThreeBrothersMelds) - a separate same-rank pairing at a
+    // different rank still earns its own tai, e.g.
+    // 111m111t111b777m777b11z scores 大三兄弟 for the rank-1 triple, but
+    // 777m+777b at rank 7 is an unrelated pairing and still counts here.
+    score: (hand) => {
+      const claimed = claimedThreeBrothersMelds(hand);
+      return crossSuitSameTripletInstances(hand).filter(([a, b]) => !claimed.includes(a) && !claimed.includes(b)).length * 5;
+    },
+    tiles: (hand) => {
+      const claimed = claimedThreeBrothersMelds(hand);
+      return crossSuitSameTripletInstances(hand)
+        .filter(([a, b]) => !claimed.includes(a) && !claimed.includes(b))
+        .flatMap(([a, b]) => [a.tiles, b.tiles]);
+    },
   },
   {
     id: "small-three-color-consecutive-triplets",
@@ -2796,7 +2921,6 @@ export const PATTERNS: TaiPattern[] = [
     id: "small-three-brothers",
     name: "小三兄弟 (Same rank across all 3 suits, pair at one + 2 triplets/kongs)",
     score: (hand) => (hasSmallThreeBrothers(hand) ? 20 : 0),
-    excludes: ["cross-suit-same-triplet"],
     tiles: (hand) => {
       const pair = hand.pair[0];
       if (pair.suit === "z") return [];
@@ -2809,7 +2933,6 @@ export const PATTERNS: TaiPattern[] = [
     id: "big-three-brothers",
     name: "大三兄弟 (Same rank across all 3 suits, all triplets/kongs)",
     score: (hand) => (hasBigThreeBrothers(hand) ? 40 : 0),
-    excludes: ["cross-suit-same-triplet"],
     tiles: (hand) => {
       for (let rank = 1; rank <= 9; rank++) {
         const melds = NUMBERED_SUITS.map((suit) => hand.melds.find((m) => (m.kind === "triplet" || m.kind === "kong") && m.tiles[0].suit === suit && m.tiles[0].rank === rank));

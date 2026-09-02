@@ -1102,6 +1102,12 @@ describe("PATTERNS: 小三連刻/大三連刻", () => {
     const result = scoreHand("111m222m444m555m33m789t", ctx());
     expect(tai(result, "small-three-consecutive-triplets")).toBe(45); // 3 instances x 15
   });
+
+  it("still counts a genuinely separate 二連刻 pair that 大三連刻 doesn't claim - 111m222m333m (big window) + 555t666t (unrelated pair, different suit)", () => {
+    const result = scoreHand("111m222m333m555t666t22b", ctx());
+    expect(tai(result, "big-three-consecutive-triplets")).toBe(30); // 1 instance x 30 - only the m-suit window
+    expect(tai(result, "consecutive-triplet-pair")).toBe(5); // 1 instance x 5 - 555t+666t, unrelated to the m-suit window
+  });
 });
 
 describe("PATTERNS: 混一色/清一色", () => {
@@ -1121,6 +1127,17 @@ describe("PATTERNS: 相逢/明三相逢/暗三相逢/明四相逢/暗四相逢/�
   it("scores 相逢 once for 234m+234t (2 suits, same run)", () => {
     const result = scoreHand("234m234t567b789b111z22z", ctx());
     expect(tai(result, "cross-suit-same-run")).toBe(3);
+  });
+
+  it("scores 相逢 twice for 123m123m123t - the single 123t is shared (not consumed) by both 123m copies, same non-exclusive-pairing principle as combineSegments", () => {
+    const result = scoreHand("123m123m123t456b789b11z", ctx());
+    expect(tai(result, "cross-suit-same-run")).toBe(6); // 2 instances x 3
+  });
+
+  it("still counts a genuinely separate 相逢 pair that 暗三相逢 doesn't claim - 123m123t123b (rank-1 triple) + 789m789t (unrelated pair, different rank)", () => {
+    const result = scoreHand("123m789m123t789t123b55z", ctx());
+    expect(tai(result, "three-suit-same-run-hidden")).toBe(20); // the rank-1 triple only
+    expect(tai(result, "cross-suit-same-run")).toBe(3); // 1 instance x 3 - 789m+789t, unrelated to the rank-1 triple
   });
 
   it("scores 明三相逢 for 567m+567t+567b with one run exposed, excluding 相逢", () => {
@@ -1175,19 +1192,23 @@ describe("PATTERNS: 雙姊妹 (2 distinct 相逢 instances)", () => {
     expect(tai(result, "twin-cross-suit-runs")).toBe(5);
   });
 
-  it("doesn't score for 123m+123m+123t - only 1 instance forms, the 2nd 123m has nothing to pair with", () => {
+  it("doesn't score for 123m+123m+123t - the single 123t is shared (not consumed) by both 123m copies, forming 2 相逢 instances that both include it, so no 2 DISTINCT instances exist", () => {
+    // Same non-exclusive-pairing principle as combineSegments (清龍/雜龍/
+    // 步步高): a meld held once by one suit still pairs with every copy
+    // the other suit holds, rather than being "used up" by the first
+    // pairing - see crossPairs' own comment.
     const result = scoreHand("123m123m123t456b111z22z", ctx());
-    expect(tai(result, "cross-suit-same-run")).toBe(3);
-    expect(tai(result, "twin-cross-suit-runs")).toBe(0);
+    expect(tai(result, "cross-suit-same-run")).toBe(6); // 2 instances x 3 - both 123m copies pair with the one 123t
+    expect(tai(result, "twin-cross-suit-runs")).toBe(0); // both instances share the same 123t, so not 2 DISTINCT instances
   });
 });
 
 describe("PATTERNS: 全姊妹 (every meld is part of a 相逢)", () => {
-  it("scores for 123m123m123t678b678t77z - the 2nd 123m still counts (123t is its partner too), excluding 雙姊妹", () => {
+  it("scores for 123m123m123t678b678t77z - both 123m copies pair with the shared 123t (2 instances) plus 678t+678b (1 instance) = 3, excluding 雙姊妹", () => {
     const result = scoreHand("123m123m123t678b678t77z", ctx());
     expect(tai(result, "full-cross-suit-runs")).toBe(20);
-    expect(tai(result, "cross-suit-same-run")).toBe(6);
-    expect(tai(result, "twin-cross-suit-runs")).toBe(0);
+    expect(tai(result, "cross-suit-same-run")).toBe(9); // 3 instances x 3
+    expect(tai(result, "twin-cross-suit-runs")).toBe(0); // excluded by 全姊妹, not because its own check is false (it is true: 678t+678b is distinct from either 123m+123t pairing)
   });
 
   it("scores for 345t345t345b345b345m55z, even though 相逢 itself is excluded by 暗五相逢", () => {
@@ -1283,6 +1304,12 @@ describe("PATTERNS: 兩兄弟/小三兄弟/大三兄弟 (same-rank triplet/kong 
     const result = scoreHand("555m555t555b111z123b22z", ctx());
     expect(tai(result, "big-three-brothers")).toBe(40);
     expect(tai(result, "cross-suit-same-triplet")).toBe(0);
+  });
+
+  it("still counts a genuinely separate 兩兄弟 pair that 大三兄弟 doesn't claim - 111m111t111b (rank-1 triple) + 777m777b (unrelated pair, different rank)", () => {
+    const result = scoreHand("111m111t111b777m777b11z", ctx());
+    expect(tai(result, "big-three-brothers")).toBe(40); // the rank-1 triple only
+    expect(tai(result, "cross-suit-same-triplet")).toBe(5); // 1 instance x 5 - 777m+777b, unrelated to the rank-1 triple
   });
 });
 

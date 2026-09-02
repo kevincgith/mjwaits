@@ -2702,8 +2702,17 @@ function PatternRow({ pattern, tai, hand, ctx }: { pattern: TaiPattern; tai: num
     return (
       <div className="pattern-row">
         <div className="scoring-pattern-row" title={pattern.caveat}>
-          <span>{pattern.name}</span>
-          <span className="scoring-pattern-tai">{tai} tai</span>
+          <span className="scoring-pattern-name">{pattern.name}</span>
+          <span className="scoring-pattern-meta">
+            <span className="scoring-pattern-tai">{tai} tai</span>
+            {/* Reserves the same width a caret takes on a tappable row,
+                invisibly, so the tai column still lines up between plain
+                and tappable rows instead of a non-expandable row's tai
+                sitting further right with nothing after it. */}
+            <span className="projected-wait-caret" aria-hidden="true" style={{ visibility: "hidden" }}>
+              ▸
+            </span>
+          </span>
         </div>
       </div>
     );
@@ -2717,10 +2726,12 @@ function PatternRow({ pattern, tai, hand, ctx }: { pattern: TaiPattern; tai: num
         aria-expanded={expanded}
         title={pattern.caveat}
       >
-        <span>{pattern.name}</span>
-        <span className="scoring-pattern-tai">{tai} tai</span>
-        <span className={`projected-wait-caret${expanded ? " open" : ""}`} aria-hidden="true">
-          ▸
+        <span className="scoring-pattern-name">{pattern.name}</span>
+        <span className="scoring-pattern-meta">
+          <span className="scoring-pattern-tai">{tai} tai</span>
+          <span className={`projected-wait-caret${expanded ? " open" : ""}`} aria-hidden="true">
+            ▸
+          </span>
         </span>
       </button>
       <CollapsiblePanel open={expanded}>

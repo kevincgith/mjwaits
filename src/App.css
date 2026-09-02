@@ -718,12 +718,38 @@ h1 {
   border-top: none;
 }
 
+/* flex-wrap, not nowrap: a long pattern name and the tai+caret group are
+   meant to share one line when they fit, but when they don't, the whole
+   tai+caret unit should drop to its own line below the name rather than
+   squeezing the name's own text into a wrap while tai/caret float
+   somewhere in the resulting gap (align-items: center against a 2-line-
+   tall name looked like it was floating in no-man's-land between the two
+   lines - not actually broken, just visually awkward). min-width on the
+   name keeps it from shrinking to make room first, so it's always the
+   name that "wins" a shared line and tai+caret that concedes to a new
+   one. */
 .scoring-pattern-row {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
-  gap: 1rem;
+  gap: 0.2rem 1rem;
   padding: 0.2rem 0;
+}
+
+.scoring-pattern-name {
+  flex: 1 1 auto;
+  min-width: 65%;
+}
+
+/* Always its own flush-right unit - margin-left: auto keeps it pinned to
+   the right edge whether it's sharing the name's line or has wrapped to
+   its own line underneath. */
+.scoring-pattern-meta {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-left: auto;
 }
 
 /* Button-chrome reset for a tappable row - a plain (non-expandable)
