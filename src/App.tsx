@@ -2697,8 +2697,8 @@ function findWinningTileInstance(hand: ResolvedHand, declaredCount: number, winn
 // state, CollapsiblePanel for the animated reveal).
 function PatternRow({ pattern, tai, hand, ctx }: { pattern: TaiPattern; tai: number; hand: ResolvedHand; ctx: GameContext }) {
   const [expanded, setExpanded] = useState(false);
-  const groups = pattern.tiles?.(hand, ctx);
-  if (!groups || groups.length === 0) {
+  const rows = pattern.tiles?.(hand, ctx);
+  if (!rows || rows.length === 0) {
     return (
       <div className="pattern-row">
         <div className="scoring-pattern-row" title={pattern.caveat}>
@@ -2735,13 +2735,22 @@ function PatternRow({ pattern, tai, hand, ctx }: { pattern: TaiPattern; tai: num
         </span>
       </button>
       <CollapsiblePanel open={expanded}>
-        <div className="breakdown-groups scoring-pattern-tiles">
-          {groups.map((group, i) => (
-            <span className="breakdown-group" key={i}>
-              {group.map((t, j) => (
-                <TileGlyphSpan key={j} tile={t} />
+        <div className="scoring-pattern-tiles">
+          {/* One row per matched instance (see TaiPattern.tiles) - a
+              stacking pattern with several instances (e.g. 3 separate
+              步步高 windows) renders as 3 separate rows, rather than every
+              instance's melds all wrapping together into one undifferentiated
+              block. */}
+          {rows.map((row, i) => (
+            <div className="breakdown-groups" key={i}>
+              {row.map((group, j) => (
+                <span className="breakdown-group" key={j}>
+                  {group.map((t, k) => (
+                    <TileGlyphSpan key={k} tile={t} />
+                  ))}
+                </span>
               ))}
-            </span>
+            </div>
           ))}
         </div>
       </CollapsiblePanel>

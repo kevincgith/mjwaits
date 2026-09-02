@@ -767,10 +767,16 @@ button.scoring-pattern-row {
   white-space: nowrap;
 }
 
-/* Padding for the tile-group breakdown revealed under a tapped pattern
-   row - .breakdown-groups itself has no padding of its own outside its
-   usual .hand-display parent. */
+/* The tile-group breakdown revealed under a tapped pattern row - one
+   .breakdown-groups row per matched instance (see TaiPattern.tiles),
+   stacked vertically so a stacking pattern's several instances read as
+   visually separate rows instead of all wrapping together into one
+   undifferentiated block. Padding since .breakdown-groups itself has none
+   of its own outside its usual .hand-display parent. */
 .scoring-pattern-tiles {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
   padding: 0.4rem 0 0.6rem;
 }
 

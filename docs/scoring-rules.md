@@ -23,14 +23,16 @@ text-notation path (`scoreHand`/`parseScoringHand`, used in tests) — the Scori
 declares kongs explicitly via 門前牌區, so this ambiguity never comes up there.
 
 **Tile breakdown (`TaiPattern.tiles`)**: most patterns also carry an optional `tiles(hand, ctx)`
-function returning the specific melds/pair the pattern's tai actually came from, grouped one array
-per relevant unit — the Scoring tab's Patterns list uses this to let the user tap a pattern's name
-and see just those tiles expand underneath it (e.g. tapping 將眼 on a hand paired on `55t` reveals
-only `55t`, not the whole hand). It's absent for pure game-context flags with no tiles to point at
-(自摸, riichi, dealer streak, sea/river-bottom win, and similar) and for the 3 bonus-tile-only
-patterns (無花/正花/爛花 — a different type from `Tile` entirely) — those rows just render as
-plain, non-expandable text. A whole-hand-structural pattern (suit purity, all-runs, and similar)
-returns every meld plus the pair via the shared `wholeHandGroups` helper, rather than nothing.
+function returning one **row** per matched instance, each row itself one array per relevant unit
+(meld/pair) within that instance — the Scoring tab's Patterns list uses this to let the user tap a
+pattern's name and see just those tiles expand underneath it, one line per instance (e.g. tapping
+將眼 on a hand paired on `55t` reveals only `55t`; tapping a 3-instance 步步高 on
+`123234345456567m11z` reveals 3 separate rows, one per overlapping window). It's absent for pure
+game-context flags with no tiles to point at (自摸, riichi, dealer streak, sea/river-bottom win,
+and similar) and for the 3 bonus-tile-only patterns (無花/正花/爛花 — a different type from `Tile`
+entirely) — those rows just render as plain, non-expandable text. A whole-hand-structural pattern
+(suit purity, all-runs, and similar) returns everything as one single row (every meld plus the
+pair) via the shared `wholeHandGroups` helper, rather than nothing.
 
 ## The 明/暗 (open/concealed) concept
 
