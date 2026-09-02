@@ -718,38 +718,35 @@ h1 {
   border-top: none;
 }
 
-/* flex-wrap, not nowrap: a long pattern name and the tai+caret group are
-   meant to share one line when they fit, but when they don't, the whole
-   tai+caret unit should drop to its own line below the name rather than
-   squeezing the name's own text into a wrap while tai/caret float
-   somewhere in the resulting gap (align-items: center against a 2-line-
-   tall name looked like it was floating in no-man's-land between the two
-   lines - not actually broken, just visually awkward). min-width on the
-   name keeps it from shrinking to make room first, so it's always the
-   name that "wins" a shared line and tai+caret that concedes to a new
-   one. */
+/* Deliberately NOT flex-wrap - the row stays a single flex line always,
+   with the name free to shrink and wrap its own text internally as
+   needed (a fixed min-width reservation on the name to force tai+caret
+   onto their own line looked right for long names, but wasted a whole
+   extra line's height under every short one-line name too, i.e. wrapping
+   never should have been happening for those in the first place).
+   align-items: flex-end instead anchors tai+caret to the BOTTOM of
+   whatever height the name ends up needing, landing them next to the
+   name's own last line when it wraps - reads naturally, and costs
+   nothing extra when the name is short (a single line has no top/bottom
+   difference to align against). */
 .scoring-pattern-row {
   display: flex;
-  flex-wrap: wrap;
   justify-content: space-between;
-  align-items: center;
-  gap: 0.2rem 1rem;
+  align-items: flex-end;
+  gap: 1rem;
   padding: 0.2rem 0;
 }
 
 .scoring-pattern-name {
   flex: 1 1 auto;
-  min-width: 65%;
+  min-width: 0;
 }
 
-/* Always its own flush-right unit - margin-left: auto keeps it pinned to
-   the right edge whether it's sharing the name's line or has wrapped to
-   its own line underneath. */
 .scoring-pattern-meta {
   display: flex;
   align-items: center;
   gap: 1rem;
-  margin-left: auto;
+  flex-shrink: 0;
 }
 
 /* Button-chrome reset for a tappable row - a plain (non-expandable)
