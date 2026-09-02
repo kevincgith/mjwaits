@@ -290,11 +290,52 @@ h1 {
   color: #1a5fb4;
 }
 
+/* The caret glyph stays a plain "▸" always - .open rotates it to face down
+   instead of swapping glyphs, so the collapse/expand reads as one smooth
+   turn in sync with .collapsible-panel's own transition below, rather than
+   an instant flip. */
 .panel-header button.icon-toggle {
   padding: 0.3rem 0.5rem;
   font-size: 1rem;
   line-height: 1;
   margin-left: -0.35rem;
+  display: inline-flex;
+  transition: transform 0.2s ease;
+}
+
+.panel-header button.icon-toggle.open {
+  transform: rotate(90deg);
+}
+
+/* A grid-rows animation: 0fr collapses the track to zero height exactly
+   like height: 0 would, but - unlike a plain height transition - doesn't
+   need the content's own height known up front, so it still animates
+   correctly as the content itself changes (more/fewer declared melds,
+   waits, etc). The inner wrapper clips the content while it's collapsing
+   and gives the grid track something with real (not auto) height to
+   measure against. Content stays mounted the whole time; .open is what
+   actually shows/hides it. */
+.collapsible-panel {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.22s ease;
+}
+
+.collapsible-panel.open {
+  grid-template-rows: 1fr;
+}
+
+.collapsible-panel-inner {
+  overflow: hidden;
+  min-height: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .collapsible-panel,
+  .panel-header button.icon-toggle,
+  .projected-wait-caret {
+    transition: none;
+  }
 }
 
 .tile-count {
@@ -739,6 +780,12 @@ h1 {
   width: 0.9rem;
   flex-shrink: 0;
   text-align: center;
+  display: inline-block;
+  transition: transform 0.2s ease;
+}
+
+.projected-wait-caret.open {
+  transform: rotate(90deg);
 }
 
 /* The highlight can't just be background+outline directly on the glyph:

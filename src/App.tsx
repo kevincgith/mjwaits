@@ -10,6 +10,7 @@ import {
   useState,
   type ChangeEvent,
   type PointerEvent as ReactPointerEvent,
+  type ReactNode,
 } from "react";
 import "./App.css";
 import {
@@ -2416,13 +2417,29 @@ function PickerCollapseToggle({ collapsed, onToggle }: { collapsed: boolean; onT
   return (
     <button
       type="button"
-      className="icon-toggle"
+      className={`icon-toggle${collapsed ? "" : " open"}`}
       onClick={onToggle}
       aria-expanded={!collapsed}
       title={collapsed ? "Show tile picker" : "Hide tile picker"}
     >
-      {collapsed ? "▸" : "▾"}
+      ▸
     </button>
+  );
+}
+
+// Wraps a collapsible section's content so toggling it animates smoothly
+// instead of the content just popping in/out. Content stays mounted at all
+// times (collapsed just drives the CSS) - grid-template-rows: 0fr collapses
+// a track to zero height the same way height: 0 would, but without needing
+// to know the content's own height up front (which a plain height
+// transition would, since these sections' content is variable - a
+// different number of declared melds, waits, etc). See .collapsible-panel
+// in App.css.
+function CollapsiblePanel({ open, children }: { open: boolean; children: ReactNode }) {
+  return (
+    <div className={`collapsible-panel${open ? " open" : ""}`}>
+      <div className="collapsible-panel-inner">{children}</div>
+    </div>
   );
 }
 
@@ -2776,12 +2793,12 @@ function ProjectedWaitRow({ projected, declaredCount }: { projected: ProjectedWa
       >
         <TileGlyphSpan tile={wait} large />
         <span className="projected-wait-tai">{result ? `${result.total} tai` : "—"}</span>
-        <span className="projected-wait-caret" aria-hidden="true">
-          {expanded ? "▾" : "▸"}
+        <span className={`projected-wait-caret${expanded ? " open" : ""}`} aria-hidden="true">
+          ▸
         </span>
       </button>
-      {expanded &&
-        (error ? (
+      <CollapsiblePanel open={expanded}>
+        {error ? (
           <span className="error">{error}</span>
         ) : result ? (
           <>
@@ -2805,7 +2822,8 @@ function ProjectedWaitRow({ projected, declaredCount }: { projected: ProjectedWa
               </>
             )}
           </>
-        ) : null)}
+        ) : null}
+      </CollapsiblePanel>
     </div>
   );
 }
@@ -3549,63 +3567,61 @@ function ScoringPanel() {
         <PickerCollapseToggle collapsed={declaredPickerCollapsed} onToggle={() => setDeclaredPickerCollapsed((c) => !c)} />
       </div>
 
-      {!declaredPickerCollapsed && (
-        <>
-          <div className="panel-header meld-kind-row">
-            {(["run", "triplet", "exposed-kong", "concealed-kong"] as MeldPickerKind[]).map((k) => (
-              <button
-                key={k}
-                type="button"
-                className={meldKind === k ? "toggle-on" : undefined}
-                aria-pressed={meldKind === k}
-                onClick={() => setMeldKind(k)}
-              >
-                {MELD_PICKER_LABELS[k]}
-              </button>
+      <CollapsiblePanel open={!declaredPickerCollapsed}>
+        <div className="panel-header meld-kind-row">
+          {(["run", "triplet", "exposed-kong", "concealed-kong"] as MeldPickerKind[]).map((k) => (
+            <button
+              key={k}
+              type="button"
+              className={meldKind === k ? "toggle-on" : undefined}
+              aria-pressed={meldKind === k}
+              onClick={() => setMeldKind(k)}
+            >
+              {MELD_PICKER_LABELS[k]}
+            </button>
+          ))}
+        </div>
+
+        <div className="tile-picker">
+          {(["m", "t", "b", "z"] as Suit[])
+            .filter((suit) => meldKind !== "run" || suit !== "z")
+            .map((suit) => (
+              <div className="suit-row" key={suit}>
+                {meldPickerTiles(meldPickerUnderlyingKind(meldKind))
+                  .filter((t) => t.suit === suit)
+                  .map((t) => (
+                    <TileButton key={tileLabel(t)} tile={t} onClick={() => addMeldStartingAt(t)} disabled={!canAddMeldTile(t)} />
+                  ))}
+              </div>
             ))}
-          </div>
+        </div>
 
+        {/* Bonus tiles (flowers/seasons) - set aside in this same 門前 area the
+            moment they're drawn, but not melds themselves, so they get their
+            own collapsible picker independent of the Triplet/Run/Kong one
+            above. */}
+        <div className="panel-header bonus-tile-row">
+          <span className="panel-subtitle">Bonus tiles</span>
+          <PickerCollapseToggle collapsed={bonusPickerCollapsed} onToggle={() => setBonusPickerCollapsed((c) => !c)} />
+        </div>
+
+        <CollapsiblePanel open={!bonusPickerCollapsed}>
           <div className="tile-picker">
-            {(["m", "t", "b", "z"] as Suit[])
-              .filter((suit) => meldKind !== "run" || suit !== "z")
-              .map((suit) => (
-                <div className="suit-row" key={suit}>
-                  {meldPickerTiles(meldPickerUnderlyingKind(meldKind))
-                    .filter((t) => t.suit === suit)
-                    .map((t) => (
-                      <TileButton key={tileLabel(t)} tile={t} onClick={() => addMeldStartingAt(t)} disabled={!canAddMeldTile(t)} />
-                    ))}
-                </div>
-              ))}
-          </div>
-
-          {/* Bonus tiles (flowers/seasons) - set aside in this same 門前 area the
-              moment they're drawn, but not melds themselves, so they get their
-              own collapsible picker independent of the Triplet/Run/Kong one
-              above. */}
-          <div className="panel-header bonus-tile-row">
-            <span className="panel-subtitle">Bonus tiles</span>
-            <PickerCollapseToggle collapsed={bonusPickerCollapsed} onToggle={() => setBonusPickerCollapsed((c) => !c)} />
-          </div>
-
-          {!bonusPickerCollapsed && (
-            <div className="tile-picker">
-              <div className="suit-row">
-                {([1, 2, 3, 4] as const).map((rank) => {
-                  const tile: BonusTile = { kind: "flower", rank };
-                  return <BonusTileButton key={`flower${rank}`} tile={tile} onClick={() => addBonusTile(tile)} disabled={hasBonusTile(tile)} />;
-                })}
-              </div>
-              <div className="suit-row">
-                {([1, 2, 3, 4] as const).map((rank) => {
-                  const tile: BonusTile = { kind: "season", rank };
-                  return <BonusTileButton key={`season${rank}`} tile={tile} onClick={() => addBonusTile(tile)} disabled={hasBonusTile(tile)} />;
-                })}
-              </div>
+            <div className="suit-row">
+              {([1, 2, 3, 4] as const).map((rank) => {
+                const tile: BonusTile = { kind: "flower", rank };
+                return <BonusTileButton key={`flower${rank}`} tile={tile} onClick={() => addBonusTile(tile)} disabled={hasBonusTile(tile)} />;
+              })}
             </div>
-          )}
-        </>
-      )}
+            <div className="suit-row">
+              {([1, 2, 3, 4] as const).map((rank) => {
+                const tile: BonusTile = { kind: "season", rank };
+                return <BonusTileButton key={`season${rank}`} tile={tile} onClick={() => addBonusTile(tile)} disabled={hasBonusTile(tile)} />;
+              })}
+            </div>
+          </div>
+        </CollapsiblePanel>
+      </CollapsiblePanel>
 
       <div className="hand-display breakdown-groups">
         {declaredMelds.length === 0 && bonusTiles.length === 0 ? (
@@ -3646,7 +3662,7 @@ function ScoringPanel() {
         <PickerCollapseToggle collapsed={concealedPickerCollapsed} onToggle={() => setConcealedPickerCollapsed((c) => !c)} />
       </div>
 
-      {!concealedPickerCollapsed && (
+      <CollapsiblePanel open={!concealedPickerCollapsed}>
         <div className="tile-picker">
           {SUIT_ORDER.map((suit) => (
             <div className="suit-row" key={suit}>
@@ -3663,7 +3679,7 @@ function ScoringPanel() {
             </div>
           ))}
         </div>
-      )}
+      </CollapsiblePanel>
 
       <div className="hand-display">
         {concealedTiles.length === 0 ? (
