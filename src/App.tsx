@@ -478,13 +478,21 @@ function TileGlyphSpan({
   large,
   highlight,
   jokerAssumed,
+  patternHighlight,
 }: {
   tile: Tile;
   large?: boolean;
   highlight?: boolean;
   jokerAssumed?: boolean;
+  patternHighlight?: boolean;
 }) {
-  const classes = ["tile-glyph", large && "large", highlight && "wait-highlight", jokerAssumed && "joker-assumed"]
+  const classes = [
+    "tile-glyph",
+    large && "large",
+    highlight && "wait-highlight",
+    jokerAssumed && "joker-assumed",
+    patternHighlight && "pattern-highlight",
+  ]
     .filter(Boolean)
     .join(" ");
   return (
@@ -2724,7 +2732,33 @@ function findWinningTileInstance(hand: ResolvedHand, declaredCount: number, winn
 // plain, non-interactive row, same look as before this feature existed.
 // Same tap-to-expand idiom as ProjectedWaitRow (own collapsed-by-default
 // state, CollapsiblePanel for the animated reveal).
-function PatternRow({ pattern, tai, hand, ctx }: { pattern: TaiPattern; tai: number; hand: ResolvedHand; ctx: GameContext }) {
+//
+// Separately, while the row is actively pressed (not the same as
+// expanded - a momentary press, gone the instant the finger/mouse lifts),
+// onPressStart/onPressEnd light up this pattern's own tiles back in the
+// DECLARED/CONCEALED summary below (see ScoringBreakdown's pressedTiles) -
+// a quick way to see where a pattern's tai actually came from without
+// needing to expand it. onPointerLeave is a mouse-only safety net: a touch
+// pointer has implicit capture (see the useTap comment above) so it always
+// still gets pointerup/pointercancel here even if the finger drifts off
+// the button first, but a mouse has no such capture - button-mashing then
+// dragging off before releasing would otherwise leave the highlight stuck
+// on with no pointerup ever landing on this element to clear it.
+function PatternRow({
+  pattern,
+  tai,
+  hand,
+  ctx,
+  onPressStart,
+  onPressEnd,
+}: {
+  pattern: TaiPattern;
+  tai: number;
+  hand: ResolvedHand;
+  ctx: GameContext;
+  onPressStart: () => void;
+  onPressEnd: () => void;
+}) {
   const [expanded, setExpanded] = useState(false);
   const rows = pattern.tiles?.(hand, ctx);
   if (!rows || rows.length === 0) {
@@ -2752,6 +2786,10 @@ function PatternRow({ pattern, tai, hand, ctx }: { pattern: TaiPattern; tai: num
         type="button"
         className="scoring-pattern-row"
         onClick={() => setExpanded((e) => !e)}
+        onPointerDown={onPressStart}
+        onPointerUp={onPressEnd}
+        onPointerCancel={onPressEnd}
+        onPointerLeave={onPressEnd}
         aria-expanded={expanded}
         title={pattern.caveat}
       >
@@ -2817,6 +2855,19 @@ function ScoringBreakdown({
   // pattern that's actually likely to have scored.
   const winningInstance = findWinningTileInstance(hand, declaredCount, winningTile);
   const isWinningInstance = (t: Tile): boolean => t === winningInstance;
+  // Which pattern (if any) is currently being pressed in the Patterns list
+  // below - momentary, not the same as that row's own expanded/collapsed
+  // state (see PatternRow's own comment). Every TaiPattern.tiles
+  // implementation derives its groups by filtering hand.melds/hand.pair's
+  // own arrays rather than fabricating new Tile objects (see e.g.
+  // wholeHandGroupsFlat and the rest of scoring.ts), so the tiles a
+  // pressed pattern points at are literally the same object references
+  // living in `hand` - a plain reference-equality Set membership check
+  // below is enough to find them again here, no id/key scheme needed.
+  const [pressedPatternId, setPressedPatternId] = useState<string | null>(null);
+  const pressedPattern = pressedPatternId ? matched.find((m) => m.pattern.id === pressedPatternId)?.pattern : undefined;
+  const pressedTiles = pressedPattern?.tiles ? new Set(pressedPattern.tiles(hand, ctx).flat(2)) : null;
+  const isPatternHighlighted = (t: Tile): boolean => pressedTiles?.has(t) ?? false;
   // Declaration order (the default) already reads as a rough thematic
   // grouping - PATTERNS is authored one related family at a time - so
   // sorting by tai is opt-in rather than the default, same "toggle changes
@@ -2855,7 +2906,17 @@ function ScoringBreakdown({
         {matched.length === 0 ? (
           <span className="hint">No patterns matched yet — this is an early version, more get added over time.</span>
         ) : (
-          displayedMatched.map(({ pattern, tai }) => <PatternRow key={pattern.id} pattern={pattern} tai={tai} hand={hand} ctx={ctx} />)
+          displayedMatched.map(({ pattern, tai }) => (
+            <PatternRow
+              key={pattern.id}
+              pattern={pattern}
+              tai={tai}
+              hand={hand}
+              ctx={ctx}
+              onPressStart={() => setPressedPatternId(pattern.id)}
+              onPressEnd={() => setPressedPatternId((id) => (id === pattern.id ? null : id))}
+            />
+          ))
         )}
       </div>
 
@@ -2879,7 +2940,7 @@ function ScoringBreakdown({
                 title={`${meld.kind}${meld.concealed ? " (concealed kong)" : ""}`}
               >
                 {meld.tiles.map((t, j) => (
-                  <TileGlyphSpan key={j} tile={t} highlight={isWinningInstance(t)} />
+                  <TileGlyphSpan key={j} tile={t} highlight={isWinningInstance(t)} patternHighlight={isPatternHighlighted(t)} />
                 ))}
               </span>
             ))}
@@ -2892,13 +2953,13 @@ function ScoringBreakdown({
             {hand.melds.slice(declaredCount).map((meld, i) => (
               <span className="breakdown-group" key={i} title={meld.kind}>
                 {meld.tiles.map((t, j) => (
-                  <TileGlyphSpan key={j} tile={t} highlight={isWinningInstance(t)} />
+                  <TileGlyphSpan key={j} tile={t} highlight={isWinningInstance(t)} patternHighlight={isPatternHighlighted(t)} />
                 ))}
               </span>
             ))}
             <span className="breakdown-group" title="Pair">
               {hand.pair.map((t, j) => (
-                <TileGlyphSpan key={j} tile={t} highlight={isWinningInstance(t)} />
+                <TileGlyphSpan key={j} tile={t} highlight={isWinningInstance(t)} patternHighlight={isPatternHighlighted(t)} />
               ))}
             </span>
           </div>
