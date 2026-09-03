@@ -2862,6 +2862,19 @@ function findWinningTileInstance(hand: ResolvedHand, declaredCount: number, winn
 // such capture - button-mashing then dragging off before releasing would
 // otherwise leave the highlight stuck on with no pointerup ever landing
 // on this element to clear it.
+//
+// onGroupPressEnd takes no argument and unconditionally clears - it used
+// to compare the specific group being released against whatever's
+// currently pressed (only clearing on a match, to avoid a stale release
+// clobbering a newer press), but pattern.tiles(hand, ctx) above is called
+// fresh on every render, including the very render onGroupPressStart's
+// own setPressedGroup triggers - by the time the finger/mouse actually
+// lifts, the onPointerUp handler already bound to a *new* `group` array
+// (same tiles, different object) than what got stored in state on
+// pointerdown, so the old "does this match?" guard silently never matched
+// and the highlight never cleared. A single pointer can only ever be
+// pressing one thing at a time, so there's nothing to protect against
+// here - always clearing is correct.
 function PatternRow({
   pattern,
   tai,
@@ -2875,7 +2888,7 @@ function PatternRow({
   hand: ResolvedHand;
   ctx: GameContext;
   onGroupPressStart: (group: Tile[]) => void;
-  onGroupPressEnd: (group: Tile[]) => void;
+  onGroupPressEnd: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const rows = pattern.tiles?.(hand, ctx);
@@ -2923,9 +2936,9 @@ function PatternRow({
                   className="breakdown-group"
                   key={j}
                   onPointerDown={() => onGroupPressStart(group)}
-                  onPointerUp={() => onGroupPressEnd(group)}
-                  onPointerCancel={() => onGroupPressEnd(group)}
-                  onPointerLeave={() => onGroupPressEnd(group)}
+                  onPointerUp={onGroupPressEnd}
+                  onPointerCancel={onGroupPressEnd}
+                  onPointerLeave={onGroupPressEnd}
                 >
                   {group.map((t, k) => (
                     <TileGlyphSpan key={k} tile={t} />
@@ -3049,7 +3062,7 @@ function ScoringBreakdown({
               hand={hand}
               ctx={ctx}
               onGroupPressStart={setPressedGroup}
-              onGroupPressEnd={(group) => setPressedGroup((g) => (g === group ? null : g))}
+              onGroupPressEnd={() => setPressedGroup(null)}
             />
           ))
         )}

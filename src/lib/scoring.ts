@@ -2128,23 +2128,18 @@ export const PATTERNS: TaiPattern[] = [
     tiles: (hand) => {
       if (!isEightPairsHand(hand)) return [[hand.pair]];
       const groups = [hand.pair, ...hand.melds.filter((m) => m.tiles.length !== 3).map((m) => m.tiles)];
-      // Each qualifying group is its own stacking instance (2 tai each) in
-      // the 嚦咕嚦咕 context, so gets its own row - unlike the ordinary
-      // case just above, which is always exactly one pair. A quad (4
-      // copies of the same kind) stays together as one 4-tile group in
-      // hand.melds (see scoreEightPairs), but counts as *two* of the 8
-      // pairs - eightPairsMiddleTilePairCount already doubles its tai for
-      // that, so this needs to split it into 2 separate 2-tile rows too,
-      // or the row count silently stops matching the tai shown.
+      // Each qualifying kind is its own stacking instance in the 嚦咕嚦咕
+      // context, so gets its own row - unlike the ordinary case just
+      // above, which is always exactly one pair. A quad (4 copies of the
+      // same kind) stays together as one 4-tile group in hand.melds (see
+      // scoreEightPairs) and counts as *two* of the 8 pairs - shown as one
+      // row of all 4 tiles, split into its 2 constituent pairs as 2
+      // groups within that row, rather than 2 separate rows: it's one
+      // kind held all 4 copies, not two independent pair instances.
       const rows: Tile[][][] = [];
       for (const g of groups) {
         if (g[0].suit === "z" || ![2, 5, 8].includes(g[0].rank)) continue;
-        if (g.length === 4) {
-          rows.push([g.slice(0, 2)]);
-          rows.push([g.slice(2, 4)]);
-        } else {
-          rows.push([g]);
-        }
+        rows.push(g.length === 4 ? [g.slice(0, 2), g.slice(2, 4)] : [g]);
       }
       return rows;
     },

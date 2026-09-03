@@ -2543,20 +2543,19 @@ describe("PATTERNS: 將眼 stacks per qualifying pair in 嚦咕嚦咕 (not just 
   });
 
   // A quad (4 copies of one kind) stays a single 4-tile meld in the data
-  // model (see scoreEightPairs), but counts as *two* of the 8 pairs - the
-  // tiles() breakdown has to split it into 2 separate 2-tile rows to match,
-  // or the row count silently stops matching the tai shown (previously
-  // rendered as one row of 4 tiles here, worth only "1 instance" visually
-  // despite scoring 2).
-  it("splits each qualifying quad into 2 rows of 2, not 1 row of 4 - 555t22225555m2222t99t has 3 quads at rank 2/5/8", () => {
+  // model (see scoreEightPairs) and counts as *two* of the 8 pairs - one
+  // row of all 4 tiles (it's one kind, not two independent instances),
+  // split into its 2 constituent pairs as 2 groups within that row.
+  it("shows each qualifying quad as one row of 4 tiles, split into its 2 pairs - 555t22225555m2222t99t has 3 quads at rank 2/5/8", () => {
     const c = ctx();
     const result = scoreHand("555t22225555m2222t99t", c);
     expect(tai(result, "middle-tile-pair")).toBe(12); // 6 pair-units x 2
     const rows = patternTiles(result, "middle-tile-pair", c);
-    expect(rows).toHaveLength(6);
+    expect(rows).toHaveLength(3); // one row per qualifying kind (2m, 5m, 2t), not per pair-unit
     for (const row of rows ?? []) {
-      expect(row).toHaveLength(1);
-      expect(row[0]).toHaveLength(2); // every row is a 2-tile pair, never the full quad
+      expect(row).toHaveLength(2); // each quad's row is 2 groups...
+      expect(row[0]).toHaveLength(2); // ...of 2 tiles each (never the full 4-tile block as one group)
+      expect(row[1]).toHaveLength(2);
     }
   });
 });
