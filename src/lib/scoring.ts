@@ -1925,7 +1925,7 @@ function anyOtherPatternFires(hand: ResolvedHand, ctx: GameContext, extraExempt:
 export const PATTERNS: TaiPattern[] = [
   {
     id: "base-tai",
-    name: "底 (Base tai)",
+    name: "底 (Base)",
     // Unconditional - every completed hand gets this, no matter its shape.
     score: () => 5,
   },
@@ -1983,19 +1983,19 @@ export const PATTERNS: TaiPattern[] = [
   },
   {
     id: "wrong-seat-wind",
-    name: "爛位風 (Wind meld not matching seat wind)",
+    name: "爛風 (Wrong wind)",
     score: (hand, ctx) => (windMeldRanks(hand).some((r) => r !== ctx.seatWind) ? 2 : 0),
     tiles: (hand, ctx) => [hand.melds.filter((m) => m.tiles[0].suit === "z" && m.tiles[0].rank <= 4 && m.tiles[0].rank !== ctx.seatWind).map((m) => m.tiles)],
   },
   {
     id: "correct-seat-wind",
-    name: "正位風 (Wind meld matching seat wind)",
+    name: "正位風 (Seat wind)",
     score: (hand, ctx) => (windMeldRanks(hand).some((r) => r === ctx.seatWind) ? 2 : 0),
     tiles: (hand, ctx) => [hand.melds.filter((m) => m.tiles[0].suit === "z" && m.tiles[0].rank === ctx.seatWind).map((m) => m.tiles)],
   },
   {
     id: "correct-round-wind",
-    name: "正圈風 (Wind meld matching round wind)",
+    name: "正圈風 (Round wind)",
     // Placeholder: kept in the list (so the wind-pattern exclusion chain
     // below stays wired up around it) but worth 0 tai for now. 爛圈風 was
     // removed entirely rather than zeroed the same way.
@@ -2047,7 +2047,7 @@ export const PATTERNS: TaiPattern[] = [
   },
   {
     id: "dragon-tile",
-    name: "三元牌 (Dragon meld)",
+    name: "三元牌 (Dragon)",
     // Stacks: 2 tai for each dragon meld held.
     score: (hand) => dragonMeldRanks(hand).length * 2,
     tiles: (hand) => hand.melds.filter((m) => m.tiles[0].suit === "z" && m.tiles[0].rank >= 5).map((m) => [m.tiles]),
@@ -2088,7 +2088,7 @@ export const PATTERNS: TaiPattern[] = [
   },
   {
     id: "all-runs-no-honors-no-flowers",
-    name: "無字花大平胡 (All runs, no honors, no flowers)",
+    name: "無字花大平胡 (All runs, without honors and flowers)",
     score: (hand) => (isAllRuns(hand) && isNoHonorsNoFlowers(hand) ? 20 : 0),
     excludes: ["all-runs", "no-honors-no-flowers"],
     tiles: wholeHandGroups,
@@ -2104,7 +2104,7 @@ export const PATTERNS: TaiPattern[] = [
   },
   {
     id: "middle-tile-pair",
-    name: "將眼 (Pair is 2, 5, or 8 - not honors)",
+    name: "將眼 (Two, five, or eight as eyes)",
     score: (hand) => (!isHonorTile(hand.pair[0]) && [2, 5, 8].includes(hand.pair[0].rank) ? 2 : 0),
     // This same pattern object is reused for 嚦咕嚦咕's own stacking variant
     // (see eightPairsMiddleTilePairCount/scoreEightPairs, which computes a
@@ -2129,13 +2129,13 @@ export const PATTERNS: TaiPattern[] = [
   },
   {
     id: "small-five-suits",
-    name: "小五門齊 (Small five suits complete)",
+    name: "小五門齊 (Small five suits)",
     score: (hand) => (categoriesPresent(hand).size === 5 && categoriesWithFullMeld(hand).size < 5 ? 10 : 0),
     tiles: wholeHandGroups,
   },
   {
     id: "big-five-suits",
-    name: "大五門齊 (Big five suits complete)",
+    name: "大五門齊 (Big five suits)",
     // Implies categoriesPresent(hand).size === 5 too - 5 melds, 5 categories,
     // one dedicated meld each covers every category on its own.
     score: (hand) => (categoriesWithFullMeld(hand).size === 5 ? 15 : 0),
@@ -2143,7 +2143,7 @@ export const PATTERNS: TaiPattern[] = [
   },
   {
     id: "small-seven-suits",
-    name: "小七門齊 (Small seven suits complete)",
+    name: "小七門齊 (Small seven suits)",
     score: (hand) =>
       categoriesPresent(hand).size === 5 &&
       categoriesWithFullMeld(hand).size < 5 &&
@@ -2156,7 +2156,7 @@ export const PATTERNS: TaiPattern[] = [
   },
   {
     id: "big-seven-suits",
-    name: "大七門齊 (Big seven suits complete)",
+    name: "大七門齊 (Big seven suits)",
     score: (hand) =>
       categoriesWithFullMeld(hand).size === 5 && hasBonusKind(hand, "flower") && hasBonusKind(hand, "season") ? 20 : 0,
     excludes: ["big-five-suits"],
@@ -2164,14 +2164,14 @@ export const PATTERNS: TaiPattern[] = [
   },
   {
     id: "greater-than-five",
-    name: "大於五 (All 6-9)",
+    name: "大於五 (Greater than five)",
     score: (hand) => (allTilesInRange(hand, 6, 9) ? 40 : 0),
     excludes: ["no-fives"],
     tiles: wholeHandGroups,
   },
   {
     id: "less-than-five",
-    name: "小於五 (All 1-4)",
+    name: "小於五 (Smaller than five)",
     score: (hand) => (allTilesInRange(hand, 1, 4) ? 40 : 0),
     excludes: ["no-fives"],
     tiles: wholeHandGroups,
@@ -2184,7 +2184,7 @@ export const PATTERNS: TaiPattern[] = [
   },
   {
     id: "three-treasures",
-    name: "三寶 (Range restriction + all-simples + suit purity/missing-one-suit)",
+    name: "三寶 (Missing one suit/Full flush + All simples + No fives/Greater than five/Smaller than five)",
     // Additional bonus - stacks with all 3 constituent patterns, same
     // "stacks with everything" framing as 雙/全姊妹, 樓梯, and 五步高/全碟.
     score: (hand) => (hasThreeTreasures(hand) ? 40 : 0),
@@ -2192,7 +2192,7 @@ export const PATTERNS: TaiPattern[] = [
   },
   {
     id: "all-triplets",
-    name: "對對胡 (All triplets)",
+    name: "對對胡 (All triplets/kongs)",
     score: (hand) => (hand.melds.every((m) => m.kind === "triplet" || m.kind === "kong") ? 40 : 0),
     tiles: wholeHandGroups,
   },
@@ -2257,19 +2257,19 @@ export const PATTERNS: TaiPattern[] = [
   },
   {
     id: "mixed-straight-open",
-    name: "明雜龍 (Mixed straight across suits, open)",
+    name: "明雜龍 (Mixed straight, open)",
     score: (hand, ctx) => mixedStraightInstances(hand).filter((inst) => inst.some((m) => isMeldOpen(m, ctx, hand))).length * 8,
     tiles: (hand, ctx) => mixedStraightInstances(hand).filter((inst) => inst.some((m) => isMeldOpen(m, ctx, hand))).map((inst) => inst.map((m) => m.tiles)),
   },
   {
     id: "mixed-straight-hidden",
-    name: "暗雜龍 (Mixed straight across suits, concealed)",
+    name: "暗雜龍 (Mixed straight, concealed)",
     score: (hand, ctx) => mixedStraightInstances(hand).filter((inst) => inst.every((m) => !isMeldOpen(m, ctx, hand))).length * 15,
     tiles: (hand, ctx) => mixedStraightInstances(hand).filter((inst) => inst.every((m) => !isMeldOpen(m, ctx, hand))).map((inst) => inst.map((m) => m.tiles)),
   },
   {
     id: "old-young-run",
-    name: "老少上 (Terminal runs, 123 + 789)",
+    name: "老少上 (Terminal runs)",
     // No excludes needed against 清龍 - oldYoungRunInstances already skips
     // any suit that also has a 4-5-6 run itself.
     score: (hand) => oldYoungRunInstances(hand) * 3,
@@ -2293,7 +2293,7 @@ export const PATTERNS: TaiPattern[] = [
   },
   {
     id: "old-young-triplet",
-    name: "老少碰 (Terminal triplets/kongs, 111 + 999)",
+    name: "老少碰 (Terminal triplets/kongs)",
     score: (hand) => oldYoungTripletInstances(hand) * 5,
     tiles: (hand) => {
       const rows: Tile[][][] = [];
@@ -2360,7 +2360,7 @@ export const PATTERNS: TaiPattern[] = [
   },
   {
     id: "pure-common-rank",
-    name: "全帶X (Common rank across every meld and the pair, no honors)",
+    name: "全帶X (Common rank across every meld and the pair)",
     score: (hand) => (hasCommonRankAcrossAllMeldsAndPair(hand) ? 120 : 0),
     excludes: ["mixed-common-rank"],
     // Every meld and the pair contain the shared rank - the whole hand.
@@ -2368,7 +2368,7 @@ export const PATTERNS: TaiPattern[] = [
   },
   {
     id: "mixed-terminal",
-    name: "混帶么 (Honor presence + terminal in every non-honor meld)",
+    name: "混帶么 (Terminal in every non-honor meld)",
     // Doesn't need to exclude 缺五 the way 全帶么 does: 缺五 requires no
     // honors anywhere at all (see hasNoFives), but 混帶么 specifically
     // requires honor presence somewhere - that's its whole "混" (mixed)
@@ -2379,7 +2379,7 @@ export const PATTERNS: TaiPattern[] = [
   },
   {
     id: "pure-terminal",
-    name: "全帶么 (No honors, terminal in every meld and the pair)",
+    name: "全帶么 (Terminal in every meld)",
     // Excludes 缺五: the only runs/triplets containing a terminal are
     // 1-2-3, 7-8-9, 111, or 999 - none of which can ever contain a 5 - so
     // every meld (and the pair) containing a terminal already structurally
@@ -2469,14 +2469,14 @@ export const PATTERNS: TaiPattern[] = [
   },
   {
     id: "identical-sequences-open",
-    name: "明般高 (Identical sequences, open)",
+    name: "明般高 (Identical runs, open)",
     score: (hand, ctx) => identicalRunPairInstances(hand).filter(([a, b]) => isMeldOpen(a, ctx, hand) || isMeldOpen(b, ctx, hand)).length * 5,
     tiles: (hand, ctx) =>
       identicalRunPairInstances(hand).filter(([a, b]) => isMeldOpen(a, ctx, hand) || isMeldOpen(b, ctx, hand)).map(([a, b]) => [a.tiles, b.tiles]),
   },
   {
     id: "identical-sequences-hidden",
-    name: "暗般高 (Identical sequences, concealed)",
+    name: "暗般高 (Identical runs, concealed)",
     score: (hand, ctx) =>
       identicalRunPairInstances(hand).filter(([a, b]) => !isMeldOpen(a, ctx, hand) && !isMeldOpen(b, ctx, hand)).length * 8,
     tiles: (hand, ctx) =>
@@ -2484,7 +2484,7 @@ export const PATTERNS: TaiPattern[] = [
   },
   {
     id: "small-twin-identical-sequences-open",
-    name: "明小雙般高 (Pair at one end of twin sequences, open)",
+    name: "明小雙般高 (Pair at one end of twin runs, open)",
     score: (hand, ctx) => {
       const runs = smallTwinIdenticalSequences(hand);
       return runs && (isMeldOpen(runs[0], ctx, hand) || isMeldOpen(runs[1], ctx, hand)) ? 10 : 0;
@@ -2497,7 +2497,7 @@ export const PATTERNS: TaiPattern[] = [
   },
   {
     id: "small-twin-identical-sequences-hidden",
-    name: "暗小雙般高 (Pair at one end of twin sequences, concealed)",
+    name: "暗小雙般高 (Pair at one end of twin runs, concealed)",
     score: (hand, ctx) => {
       const runs = smallTwinIdenticalSequences(hand);
       return runs && !isMeldOpen(runs[0], ctx, hand) && !isMeldOpen(runs[1], ctx, hand) ? 15 : 0;
@@ -2510,7 +2510,7 @@ export const PATTERNS: TaiPattern[] = [
   },
   {
     id: "triple-identical-sequences-open",
-    name: "明一色三同順 (3 identical sequences, open)",
+    name: "明一色三同順 (3 identical runs, open)",
     score: (hand, ctx) => {
       const runs = tripleIdenticalRunInstance(hand);
       return runs && runs.some((r) => isMeldOpen(r, ctx, hand)) ? 30 : 0;
@@ -2523,7 +2523,7 @@ export const PATTERNS: TaiPattern[] = [
   },
   {
     id: "triple-identical-sequences-hidden",
-    name: "暗一色三同順 (3 identical sequences, concealed)",
+    name: "暗一色三同順 (3 identical runs, concealed)",
     score: (hand, ctx) => {
       const runs = tripleIdenticalRunInstance(hand);
       return runs && runs.every((r) => !isMeldOpen(r, ctx, hand)) ? 60 : 0;
@@ -2536,7 +2536,7 @@ export const PATTERNS: TaiPattern[] = [
   },
   {
     id: "quadruple-identical-sequences-open",
-    name: "明一色四同順 (4 identical sequences, open)",
+    name: "明一色四同順 (4 identical runs, open)",
     score: (hand, ctx) => {
       const runs = quadrupleIdenticalRunInstance(hand);
       return runs && runs.some((r) => isMeldOpen(r, ctx, hand)) ? 80 : 0;
@@ -2549,7 +2549,7 @@ export const PATTERNS: TaiPattern[] = [
   },
   {
     id: "quadruple-identical-sequences-hidden",
-    name: "暗一色四同順 (4 identical sequences, concealed)",
+    name: "暗一色四同順 (4 identical runs, concealed)",
     score: (hand, ctx) => {
       const runs = quadrupleIdenticalRunInstance(hand);
       return runs && runs.every((r) => !isMeldOpen(r, ctx, hand)) ? 160 : 0;
@@ -2562,7 +2562,7 @@ export const PATTERNS: TaiPattern[] = [
   },
   {
     id: "two-separate-identical-sequences-open",
-    name: "明真雙般高 (2 separate identical-sequence pairs, open)",
+    name: "明真雙般高 (2 separate identical-run pairs, open)",
     score: (hand, ctx) => {
       const runs = twoSeparateIdenticalRunPairs(hand);
       return runs && runs.some((r) => isMeldOpen(r, ctx, hand)) ? 20 : 0;
@@ -2575,7 +2575,7 @@ export const PATTERNS: TaiPattern[] = [
   },
   {
     id: "two-separate-identical-sequences-hidden",
-    name: "暗真雙般高 (2 separate identical-sequence pairs, concealed)",
+    name: "暗真雙般高 (2 separate identical-run pairs, concealed)",
     score: (hand, ctx) => {
       const runs = twoSeparateIdenticalRunPairs(hand);
       return runs && runs.every((r) => !isMeldOpen(r, ctx, hand)) ? 40 : 0;
@@ -2799,7 +2799,7 @@ export const PATTERNS: TaiPattern[] = [
   },
   {
     id: "four-suit-same-run-open",
-    name: "明四相逢 (4 runs across all 3 suits, one suit doubled, open)",
+    name: "明四相逢 (4 runs across all 3 suits, open)",
     score: (hand, ctx) => {
       const melds = nSuitSameRunMelds(hand, 4);
       return melds && melds.some((m) => isMeldOpen(m, ctx, hand)) ? 40 : 0;
@@ -2812,7 +2812,7 @@ export const PATTERNS: TaiPattern[] = [
   },
   {
     id: "four-suit-same-run-hidden",
-    name: "暗四相逢 (4 runs across all 3 suits, one suit doubled, concealed)",
+    name: "暗四相逢 (4 runs across all 3 suits, concealed)",
     score: (hand, ctx) => {
       const melds = nSuitSameRunMelds(hand, 4);
       return melds && melds.every((m) => !isMeldOpen(m, ctx, hand)) ? 80 : 0;
@@ -2973,7 +2973,7 @@ export const PATTERNS: TaiPattern[] = [
   },
   {
     id: "shanpon-wait",
-    name: "對碰 (Shanpon: dual-pair wait completed into a triplet)",
+    name: "對碰 (Shanpon)",
     score: (hand, ctx) => (isShanponWait(hand, ctx) ? 2 : 0),
     tiles: (hand, ctx) => {
       if (ctx.winningTile === null) return [];
@@ -3086,7 +3086,7 @@ export const PATTERNS: TaiPattern[] = [
   },
   {
     id: "self-draw",
-    name: "自摸 (Self-drawn win)",
+    name: "自摸 (Self-draw)",
     score: (_hand, ctx) => (ctx.selfDraw ? 1 : 0),
   },
   {
@@ -3098,7 +3098,7 @@ export const PATTERNS: TaiPattern[] = [
   },
   {
     id: "concealed-riichi",
-    name: "門清叮 (Riichi while 門前清)",
+    name: "門清叮 (Concealed hand riichi)",
     // Upgrade of 叮: excludes plain 叮, but stacks with 門前清 itself (the
     // two measure different things - one about melds, one about the
     // declared state) - same shape as 自摸/門清自摸 just above.
@@ -3140,63 +3140,63 @@ export const PATTERNS: TaiPattern[] = [
   },
   {
     id: "early-win-four",
-    name: "四子內 (Won within 4 discards)",
+    name: "四子內 (Within 4 discards)",
     // Purely a declared state (ctx.earlyWin), same shape as 叮/天叮/地叮 -
     // independent of riichi entirely.
     score: (_hand, ctx) => (ctx.earlyWin === "four" ? 60 : 0),
   },
   {
     id: "early-win-seven",
-    name: "七子內 (Won within 7 discards)",
+    name: "七子內 (Within 7 discards)",
     score: (_hand, ctx) => (ctx.earlyWin === "seven" ? 30 : 0),
   },
   {
     id: "early-win-ten",
-    name: "十子內 (Won within 10 discards)",
+    name: "十子內 (Within 10 discards)",
     score: (_hand, ctx) => (ctx.earlyWin === "ten" ? 15 : 0),
   },
   {
     id: "multi-win-double",
-    name: "雙響",
+    name: "雙響 (Double win)",
     // Purely a declared state (ctx.multiWin), same cycling shape as
     // 叮/天叮/地叮 and 四子內/七子內/十子內 - independent of both.
     score: (_hand, ctx) => (ctx.multiWin === "double" ? 5 : 0),
   },
   {
     id: "multi-win-triple",
-    name: "三響",
+    name: "三響 (Triple win)",
     score: (_hand, ctx) => (ctx.multiWin === "triple" ? 10 : 0),
   },
   {
     id: "heavenly-win",
-    name: "天胡",
+    name: "天胡 (Heavenly Hand)",
     // Purely a declared state (ctx.heavenlyWin), same cycling shape as
     // every other purely-declared pattern above.
     score: (_hand, ctx) => (ctx.heavenlyWin === "heaven" ? 160 : 0),
   },
   {
     id: "earthly-win",
-    name: "地胡",
+    name: "地胡 (Earthly hand)",
     score: (_hand, ctx) => (ctx.heavenlyWin === "earth" ? 120 : 0),
   },
   {
     id: "human-win",
-    name: "人胡",
+    name: "人胡 (Humanly hand)",
     score: (_hand, ctx) => (ctx.heavenlyWin === "man" ? 80 : 0),
   },
   {
     id: "river-bottom-win",
-    name: "河底撈魚",
+    name: "河底撈魚 (Winning off the final discard)",
     score: (_hand, ctx) => (ctx.lastTileWin === "river-bottom" ? 5 : 0),
   },
   {
     id: "sea-bottom-win",
-    name: "海底撈月",
+    name: "海底撈月 (Winning off the final tile, self draw)",
     score: (_hand, ctx) => (ctx.lastTileWin === "sea-bottom" ? 10 : 0),
   },
   {
     id: "sea-bottom-win-one-tong",
-    name: "海底撈月(一筒)",
+    name: "海底撈月(一筒) (Winning off the final tile, self draw, one tung)",
     // Upgrade of 海底撈月, not its own declared state (see
     // LastTileWinState) - fires automatically when the self-drawn
     // last-wall-tile win happens to be exactly 1 Tong, same "auto-upgrade
@@ -3212,7 +3212,7 @@ export const PATTERNS: TaiPattern[] = [
   },
   {
     id: "flower-draw",
-    name: "花摸",
+    name: "花摸 (Self draw after flowers)",
     // ctx.flowerDraw is a declared count (0-8, clamped by the UI's cycle),
     // 2 tai per count - see GameContext.flowerDraw's own doc comment for
     // why this is a flat per-count multiplier rather than trying to
@@ -3221,18 +3221,18 @@ export const PATTERNS: TaiPattern[] = [
   },
   {
     id: "kong-draw",
-    name: "槓摸",
+    name: "槓摸 (Self draw after kongs)",
     score: (_hand, ctx) => FIVE_POWER_TAI_TABLE[ctx.kongDraw] ?? 0,
   },
   {
     id: "rob-kong",
-    name: "搶槓",
+    name: "搶槓 (Robbing a kong)",
     // Same declared-count/tai-table shape as 槓摸, fully independent of it.
     score: (_hand, ctx) => FIVE_POWER_TAI_TABLE[ctx.robKong] ?? 0,
   },
   {
     id: "dealer-streak",
-    name: "莊",
+    name: "莊 (Dealer)",
     // Declared count, but a linear formula (2n-1) rather than a lookup
     // table like 槓摸/搶槓's - see dealerStreak's own comment for what n
     // means (1 = just 莊 with no streak yet, at 1 tai; n >= 2 = 莊連(n-1)
@@ -3360,7 +3360,7 @@ export const PATTERNS: TaiPattern[] = [
   },
   {
     id: "sixteen-unrelated-flying",
-    name: "十六不搭(十六飛) (16-way wait - the 食胡 tile completed the pair)",
+    name: "十六不搭(十六飛) (16 Unrelated Tiles, 16 waits)",
     // Upgrade of 十六不搭: before the 食胡 tile arrived, the hand was 16
     // genuinely unrelated singles with no pair formed yet at all - any one
     // of the 16 kinds would complete it by pairing up, hence "十六飛" (a
