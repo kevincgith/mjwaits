@@ -2979,12 +2979,21 @@ function ScoringBreakdown({
   // each returned group is always exactly one meld's own tiles array or
   // hand.pair itself, never a hand-built combination of pieces from more
   // than one (see TaiPattern.tiles' own doc comment - "one group per
-  // relevant unit"). So a pressed group is the very same array reference
-  // as some meld.tiles/hand.pair below - plain reference equality is
-  // enough to find which one, lighting up that whole meld as one box
-  // (same idea as .concealed-kong-meld) rather than each tile separately.
+  // relevant unit"). So a pressed group's *tiles* are the very same Tile
+  // object references as some meld.tiles/hand.pair below, even when the
+  // outer array isn't (e.g. 將眼's 嚦咕嚦咕 variant and displayGroupsFor
+  // below both independently slice() the same quad meld.tiles into 2
+  // halves - two different array objects, but slice() carries the
+  // original elements through unchanged, so each half's 2 Tile objects
+  // are still the exact same instances either way). Matching by tile
+  // membership rather than whole-array identity catches that case too,
+  // while staying just as precise as reference equality for two
+  // genuinely distinct melds that happen to hold equal-*valued* tiles
+  // (e.g. two separate 123m runs) - those are still different Tile
+  // object instances, so this can't confuse them.
   const [pressedGroup, setPressedGroup] = useState<Tile[] | null>(null);
-  const isGroupHighlighted = (group: Tile[]): boolean => group === pressedGroup;
+  const isGroupHighlighted = (group: Tile[]): boolean =>
+    pressedGroup !== null && group.length === pressedGroup.length && group.every((t) => pressedGroup.includes(t));
   // In a 嚦咕嚦咕 hand (see isEightPairsHand), a quad (4 copies of one kind,
   // counting as 2 of the 8 pairs - see scoreEightPairs) stays a single
   // 4-tile meld in the data model, but displaying it as one block reads
