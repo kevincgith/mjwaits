@@ -728,6 +728,19 @@ h1 {
   padding: 0.15rem 0.25rem;
   border-radius: 4px;
   max-width: 100%;
+  /* Same reasoning as the global button rule above: a plain <span> full of
+     tile glyphs is otherwise still selectable text, so pressing and
+     holding one (see PatternRow's press-to-highlight groups) pops up
+     Safari's native selection loupe/callout over it instead of just
+     lighting up DECLARED/CONCEALED. Harmless on every other, non-pressable
+     .breakdown-group too (DECLARED/CONCEALED's own, the plain expanded
+     breakdown elsewhere) - a tile display was never meant to be selectable
+     text in the first place. */
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 /* In the Scoring tab, a declared meld doubles as a remove button - this
