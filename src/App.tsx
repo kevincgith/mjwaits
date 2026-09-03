@@ -4517,6 +4517,14 @@ function App() {
       <div className="mode-tabs">
         <button
           type="button"
+          className={mode === "scoring" ? "toggle-on" : undefined}
+          aria-pressed={mode === "scoring"}
+          onClick={() => setMode("scoring")}
+        >
+          Scoring
+        </button>
+        <button
+          type="button"
           className={mode === "calculator" ? "toggle-on" : undefined}
           aria-pressed={mode === "calculator"}
           onClick={() => setMode("calculator")}
@@ -4533,14 +4541,6 @@ function App() {
         </button>
         <button
           type="button"
-          className={mode === "scoring" ? "toggle-on" : undefined}
-          aria-pressed={mode === "scoring"}
-          onClick={() => setMode("scoring")}
-        >
-          Scoring
-        </button>
-        <button
-          type="button"
           className={mode === "dice" ? "toggle-on" : undefined}
           aria-pressed={mode === "dice"}
           onClick={() => setMode("dice")}
@@ -4548,9 +4548,9 @@ function App() {
           Dice rolling
         </button>
       </div>
+      {mode === "scoring" && <ScoringPanel />}
       {mode === "calculator" && <Calculator />}
       {mode === "trainer" && <TrainerPanel stats={trainerStats} setStats={setTrainerStats} />}
-      {mode === "scoring" && <ScoringPanel />}
       {mode === "dice" && <DiceTab />}
       <footer className="build-version">v{__BUILD_TIME__}</footer>
     </div>
