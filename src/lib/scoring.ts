@@ -1976,7 +1976,7 @@ export const PATTERNS: TaiPattern[] = [
   },
   {
     id: "wrong-seat-wind",
-    name: "爛風 (Wrong wind)",
+    name: "爛位風 (Wrong wind)",
     // Stacks: 2 tai per wind meld that isn't the seat wind - unlike 正位風
     // (which can only ever match the one seat-wind rank, so never stacks),
     // a hand can hold up to 2 different "wrong" wind melds at once.
