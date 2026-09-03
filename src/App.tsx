@@ -1640,7 +1640,14 @@ const HandScanner = forwardRef<
   return (
     <>
       <div className={`scan-input${scanInputEmpty ? " empty" : ""}`}>
-        <input ref={fileInputRef} type="file" accept="image/*" onChange={handleScanFile} style={{ display: "none" }} />
+        {/* capture="environment" skips straight to the rear camera on
+            mobile instead of the OS's Photo Library/Camera/Browse action
+            sheet - the camera UI itself still has its own thumbnail/gallery
+            button for picking an existing photo, so nothing is lost, just a
+            tap saved on the common case of scanning a hand right in front
+            of you. Desktop browsers ignore capture entirely and fall back
+            to a plain file picker either way. */}
+        <input ref={fileInputRef} type="file" accept="image/*" capture="environment" onChange={handleScanFile} style={{ display: "none" }} />
         {!hideTrigger && (
           <button type="button" onClick={triggerScan} disabled={busy}>
             {scanStatus === "loading" ? scanStatusLabel(scanProgress) : scanStatus === "analyzing" ? "Analyzing layout…" : triggerLabel}
