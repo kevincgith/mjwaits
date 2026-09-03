@@ -769,9 +769,14 @@ describe("PATTERNS: 明雜龍/暗雜龍 (mixed straight across suits)", () => {
 });
 
 describe("PATTERNS: 老少上/老少碰", () => {
-  it("counts 2x 老少上 for a duplicated 123 paired with a single 789", () => {
-    const result = scoreHand("123m123m789m456t567t22b", ctx());
+  it("counts 2x 老少上 for a duplicated 123 paired with a single 789, as 2 separate rows", () => {
+    const c = ctx();
+    const result = scoreHand("123m123m789m456t567t22b", c);
     expect(tai(result, "old-young-run")).toBe(6); // 2 instances x 3
+    expect(patternTiles(result, "old-young-run", c)).toEqual([
+      [[{ suit: "m", rank: 1 }, { suit: "m", rank: 2 }, { suit: "m", rank: 3 }], [{ suit: "m", rank: 7 }, { suit: "m", rank: 8 }, { suit: "m", rank: 9 }]],
+      [[{ suit: "m", rank: 1 }, { suit: "m", rank: 2 }, { suit: "m", rank: 3 }], [{ suit: "m", rank: 7 }, { suit: "m", rank: 8 }, { suit: "m", rank: 9 }]],
+    ]);
   });
 
   it("counts all 4 combinations when both 123 and 789 are duplicated (2x2), not just 2 paired by index", () => {
@@ -2690,6 +2695,17 @@ describe("PATTERNS: TaiPattern.tiles (tap-to-expand tile breakdowns)", () => {
         [{ suit: "m", rank: 1 }, { suit: "m", rank: 2 }, { suit: "m", rank: 3 }],
         [{ suit: "m", rank: 7 }, { suit: "m", rank: 8 }, { suit: "m", rank: 9 }],
       ],
+    ]);
+  });
+
+  it("老少上: 2 duplicated 123m instances plus a 123t/789t one span 2 suits - 3 separate rows, not 2 rows lumped by suit", () => {
+    const c = ctx();
+    const result = scoreHand("123m123m789m123t789t11z", c);
+    expect(tai(result, "old-young-run")).toBe(9); // 3 instances x 3
+    expect(patternTiles(result, "old-young-run", c)).toEqual([
+      [[{ suit: "m", rank: 1 }, { suit: "m", rank: 2 }, { suit: "m", rank: 3 }], [{ suit: "m", rank: 7 }, { suit: "m", rank: 8 }, { suit: "m", rank: 9 }]],
+      [[{ suit: "m", rank: 1 }, { suit: "m", rank: 2 }, { suit: "m", rank: 3 }], [{ suit: "m", rank: 7 }, { suit: "m", rank: 8 }, { suit: "m", rank: 9 }]],
+      [[{ suit: "t", rank: 1 }, { suit: "t", rank: 2 }, { suit: "t", rank: 3 }], [{ suit: "t", rank: 7 }, { suit: "t", rank: 8 }, { suit: "t", rank: 9 }]],
     ]);
   });
 

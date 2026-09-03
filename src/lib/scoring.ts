@@ -2255,20 +2255,19 @@ export const PATTERNS: TaiPattern[] = [
     // No excludes needed against 清龍 - oldYoungRunInstances already skips
     // any suit that also has a 4-5-6 run itself.
     score: (hand) => oldYoungRunInstances(hand) * 3,
-    // oldYoungRunInstances only tracks a count (see its own comment on why
-    // pairing multiplicity isn't tracked) - recompute which melds actually
-    // contribute rather than trying to reconstruct exact pairings.
-    // oldYoungRunInstances only tracks a count, not exact per-instance
-    // pairings (see its own comment) - one row per contributing suit, with
-    // all its ones/nines melds together, rather than trying to reconstruct
-    // exact instance-level pairings.
+    // oldYoungRunInstances counts the full ones x nines cross-product (see
+    // its own comment - 2 copies of 123m pairing with a single 789m is 2
+    // instances, not 1), so one row per contributing SUIT lumping every
+    // ones/nines meld together undercounted the same way crossSuitSameRun
+    // used to - crossPairs is the same fix here, one row per actual
+    // pairing rather than one row per suit.
     tiles: (hand) => {
       const rows: Tile[][][] = [];
       for (const suit of ["m", "t", "b"] as const) {
         if (segmentMelds(hand, suit, 4).length > 0) continue;
         const ones = segmentMelds(hand, suit, 1);
         const nines = segmentMelds(hand, suit, 7);
-        if (ones.length > 0 && nines.length > 0) rows.push([...ones.map((m) => m.tiles), ...nines.map((m) => m.tiles)]);
+        for (const [a, b] of crossPairs(ones, nines)) rows.push([a.tiles, b.tiles]);
       }
       return rows;
     },
