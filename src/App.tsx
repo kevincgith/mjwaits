@@ -1669,8 +1669,13 @@ const HandScanner = forwardRef<
               {scanStatus === "loading" ? scanStatusLabel(scanProgress) : scanStatus === "analyzing" ? "Analyzing layout…" : triggerLabel}
             </button>
             {scanStatus !== "loading" && scanStatus !== "analyzing" && (
-              <button type="button" className="scan-library-link" onClick={triggerScanLibrary} disabled={busy}>
-                or choose from Photos
+              <button
+                type="button"
+                onClick={triggerScanLibrary}
+                disabled={busy}
+                title="Choose an existing photo instead of the camera"
+              >
+                🏞️ Photos
               </button>
             )}
           </span>

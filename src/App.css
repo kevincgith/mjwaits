@@ -1342,24 +1342,6 @@ button.scoring-pattern-row {
   flex-wrap: wrap;
 }
 
-/* The camera-direct button above is the main action; this is the quieter
-   escape hatch to an existing photo (see triggerScanLibrary) - a plain
-   underlined link reads as secondary without competing for attention. */
-.scan-input button.scan-library-link {
-  border: none;
-  background: none;
-  padding: 0;
-  font-size: 0.85rem;
-  color: var(--accent);
-  text-decoration: underline;
-  cursor: pointer;
-}
-
-.scan-input button.scan-library-link:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
 .scan-progress {
   display: flex;
   flex-direction: column;
