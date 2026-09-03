@@ -4631,7 +4631,7 @@ function DiceTab() {
 }
 
 function App() {
-  const [mode, setMode] = useState<"calculator" | "trainer" | "scoring" | "dice">("calculator");
+  const [mode, setMode] = useState<"calculator" | "trainer" | "scoring" | "dice">("scoring");
   // Lifted above TrainerPanel so stats survive switching back to the
   // Calculator tab and back - TrainerPanel itself unmounts (and its other
   // state - the in-progress question, timer, etc. - resets) on every tab
