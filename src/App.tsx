@@ -1721,8 +1721,13 @@ const HandScanner = forwardRef<
     setScanPreview(null);
     setEditingDetectionId(null);
   };
-  const cancelScan = () => {
-    setScanStatus("idle");
+  // Review's own "back" action - one step to region selection, not all the
+  // way out (the crop screen still has its own real Cancel for that,
+  // landing on the banner or idle per cancelCrop's own appliedOnceRef
+  // check). cropImage/autoFitRegions both survive past review (see
+  // runScan's own comment) specifically so this has something to reopen.
+  const backToRegionSelection = () => {
+    setScanStatus("cropping");
     setScanPreview(null);
     setScanError(null);
     setEditingDetectionId(null);
@@ -1821,24 +1826,22 @@ const HandScanner = forwardRef<
       {/* Shown once a scan has applied a hand - automatically (autoApply's
           streamlined path) or after a manual review confirm (see
           confirmScan) alike, so there's always a way back to "change your
-          mind" rather than a one-way door either way. "Adjust" re-enters
+          mind" rather than a one-way door either way. Deliberately
+          persistent (no dismiss control) - it only goes away via Adjust
+          (which itself returns to this same banner on Cancel - see
+          cancelCrop) or a real Reset/new scan, never just "hide this and
+          forget a scan produced the current hand." "Adjust" re-enters
           region selection (cropImage/autoFitRegions both survive past a
           successful apply - see runScan/tryAutoScanAndApply's own
           comments - specifically so this can reopen it) rather than tile
           correction: the far more common adjustment is "the crop missed
-          part of the hand," not "one tile's prediction was wrong." The ×
-          is resetScan itself: it only clears this component's own preview/
-          status, never anything already applied to the caller's hand, so
-          dismissing leaves the result exactly as it is. */}
+          part of the hand," not "one tile's prediction was wrong." */}
       {scanStatus === "auto-applied" && (
         <div className="scan-auto-banner">
           <span>✅ Hand applied from scan</span>
           <div className="scan-auto-banner-actions">
             <button type="button" onClick={() => setScanStatus("cropping")}>
               Adjust
-            </button>
-            <button type="button" onClick={resetScan} title="Dismiss">
-              ✕
             </button>
           </div>
         </div>
@@ -1914,8 +1917,8 @@ const HandScanner = forwardRef<
               <span className="scan-review-hint">Tap a boxed tile to correct it</span>
             </div>
             <div className="scan-review-actions">
-              <button type="button" onClick={cancelScan}>
-                Cancel
+              <button type="button" onClick={backToRegionSelection}>
+                Select region
               </button>
               <button type="button" onClick={confirmScan} disabled={totalRealTiles === 0 || hasBlockingError}>
                 Use this hand
