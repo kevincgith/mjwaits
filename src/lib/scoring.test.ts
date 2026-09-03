@@ -360,7 +360,7 @@ describe("PATTERNS", () => {
     });
   });
 
-  describe("爛位風/正位風 (single wind meld vs. seat wind)", () => {
+  describe("爛風/正位風 (wind meld(s) vs. seat wind)", () => {
     const eastMeldHand = "(111z)123456789m234t22b"; // one wind meld: East.
 
     it("scores 正位風 when the wind meld matches, not 爛位風", () => {
@@ -369,10 +369,21 @@ describe("PATTERNS", () => {
       expect(tai(result, "wrong-seat-wind")).toBe(0);
     });
 
-    it("scores 爛位風 when the wind meld doesn't match, not 正位風", () => {
+    it("scores 爛風 when the wind meld doesn't match, not 正位風", () => {
       const result = scoreHand(eastMeldHand, ctx({ seatWind: 2 }));
       expect(tai(result, "wrong-seat-wind")).toBe(2);
       expect(tai(result, "correct-seat-wind")).toBe(0);
+    });
+
+    it("爛風 stacks: 2 wrong-wind melds score 4, one row each", () => {
+      const c = ctx({ seatWind: 1 }); // East - neither South nor West matches.
+      const result = scoreHand("(222z)(333z)123456789m44b", c);
+      expect(tai(result, "wrong-seat-wind")).toBe(4);
+      expect(tai(result, "correct-seat-wind")).toBe(0);
+      expect(patternTiles(result, "wrong-seat-wind", c)).toEqual([
+        [[{ suit: "z", rank: 2 }, { suit: "z", rank: 2 }, { suit: "z", rank: 2 }]],
+        [[{ suit: "z", rank: 3 }, { suit: "z", rank: 3 }, { suit: "z", rank: 3 }]],
+      ]);
     });
 
     it("scores neither with no wind meld at all", () => {

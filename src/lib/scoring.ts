@@ -1977,8 +1977,11 @@ export const PATTERNS: TaiPattern[] = [
   {
     id: "wrong-seat-wind",
     name: "爛風 (Wrong wind)",
-    score: (hand, ctx) => (windMeldRanks(hand).some((r) => r !== ctx.seatWind) ? 2 : 0),
-    tiles: (hand, ctx) => [hand.melds.filter((m) => m.tiles[0].suit === "z" && m.tiles[0].rank <= 4 && m.tiles[0].rank !== ctx.seatWind).map((m) => m.tiles)],
+    // Stacks: 2 tai per wind meld that isn't the seat wind - unlike 正位風
+    // (which can only ever match the one seat-wind rank, so never stacks),
+    // a hand can hold up to 2 different "wrong" wind melds at once.
+    score: (hand, ctx) => windMeldRanks(hand).filter((r) => r !== ctx.seatWind).length * 2,
+    tiles: (hand, ctx) => hand.melds.filter((m) => m.tiles[0].suit === "z" && m.tiles[0].rank <= 4 && m.tiles[0].rank !== ctx.seatWind).map((m) => [m.tiles]),
   },
   {
     id: "correct-seat-wind",
