@@ -478,21 +478,13 @@ function TileGlyphSpan({
   large,
   highlight,
   jokerAssumed,
-  patternHighlight,
 }: {
   tile: Tile;
   large?: boolean;
   highlight?: boolean;
   jokerAssumed?: boolean;
-  patternHighlight?: boolean;
 }) {
-  const classes = [
-    "tile-glyph",
-    large && "large",
-    highlight && "wait-highlight",
-    jokerAssumed && "joker-assumed",
-    patternHighlight && "pattern-highlight",
-  ]
+  const classes = ["tile-glyph", large && "large", highlight && "wait-highlight", jokerAssumed && "joker-assumed"]
     .filter(Boolean)
     .join(" ");
   return (
@@ -2858,13 +2850,16 @@ function ScoringBreakdown({
   // row's own expanded/collapsed state (see PatternRow's own comment).
   // Every TaiPattern.tiles implementation derives its groups by filtering
   // hand.melds/hand.pair's own arrays rather than fabricating new Tile
-  // objects (see e.g. wholeHandGroupsFlat and the rest of scoring.ts), so
-  // a pressed group's tiles are literally the same object references
-  // living in `hand` - a plain reference-equality Set membership check
-  // below is enough to find them again here, no id/key scheme needed.
+  // objects (see e.g. wholeHandGroupsFlat and the rest of scoring.ts), and
+  // each returned group is always exactly one meld's own tiles array or
+  // hand.pair itself, never a hand-built combination of pieces from more
+  // than one (see TaiPattern.tiles' own doc comment - "one group per
+  // relevant unit"). So a pressed group is the very same array reference
+  // as some meld.tiles/hand.pair below - plain reference equality is
+  // enough to find which one, lighting up that whole meld as one box
+  // (same idea as .concealed-kong-meld) rather than each tile separately.
   const [pressedGroup, setPressedGroup] = useState<Tile[] | null>(null);
-  const pressedTiles = pressedGroup ? new Set(pressedGroup) : null;
-  const isPatternHighlighted = (t: Tile): boolean => pressedTiles?.has(t) ?? false;
+  const isGroupHighlighted = (group: Tile[]): boolean => group === pressedGroup;
   // Declaration order (the default) already reads as a rough thematic
   // grouping - PATTERNS is authored one related family at a time - so
   // sorting by tai is opt-in rather than the default, same "toggle changes
@@ -2932,12 +2927,14 @@ function ScoringBreakdown({
             )}
             {hand.melds.slice(0, declaredCount).map((meld, i) => (
               <span
-                className={meld.concealed ? "breakdown-group concealed-kong-meld" : "breakdown-group"}
+                className={["breakdown-group", meld.concealed && "concealed-kong-meld", isGroupHighlighted(meld.tiles) && "pattern-highlighted"]
+                  .filter(Boolean)
+                  .join(" ")}
                 key={i}
                 title={`${meld.kind}${meld.concealed ? " (concealed kong)" : ""}`}
               >
                 {meld.tiles.map((t, j) => (
-                  <TileGlyphSpan key={j} tile={t} highlight={isWinningInstance(t)} patternHighlight={isPatternHighlighted(t)} />
+                  <TileGlyphSpan key={j} tile={t} highlight={isWinningInstance(t)} />
                 ))}
               </span>
             ))}
@@ -2948,15 +2945,19 @@ function ScoringBreakdown({
           <span className="hand-section-label">Concealed</span>
           <div className="hand-display breakdown-groups">
             {hand.melds.slice(declaredCount).map((meld, i) => (
-              <span className="breakdown-group" key={i} title={meld.kind}>
+              <span
+                className={`breakdown-group${isGroupHighlighted(meld.tiles) ? " pattern-highlighted" : ""}`}
+                key={i}
+                title={meld.kind}
+              >
                 {meld.tiles.map((t, j) => (
-                  <TileGlyphSpan key={j} tile={t} highlight={isWinningInstance(t)} patternHighlight={isPatternHighlighted(t)} />
+                  <TileGlyphSpan key={j} tile={t} highlight={isWinningInstance(t)} />
                 ))}
               </span>
             ))}
-            <span className="breakdown-group" title="Pair">
+            <span className={`breakdown-group${isGroupHighlighted(hand.pair) ? " pattern-highlighted" : ""}`} title="Pair">
               {hand.pair.map((t, j) => (
-                <TileGlyphSpan key={j} tile={t} highlight={isWinningInstance(t)} patternHighlight={isPatternHighlighted(t)} />
+                <TileGlyphSpan key={j} tile={t} highlight={isWinningInstance(t)} />
               ))}
             </span>
           </div>

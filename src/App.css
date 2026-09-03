@@ -787,6 +787,16 @@ h1 {
   outline: 1px solid var(--warning-accent-1);
 }
 
+/* Momentary: lit up only while a meld/pair group under an expanded
+   pattern's breakdown is actively pressed (see PatternRow's pointer
+   handlers on .breakdown-group, and ScoringBreakdown's pressedGroup) -
+   the whole meld as one box, same idea as .concealed-kong-meld above,
+   rather than each tile separately. Gone the instant the press ends. */
+.breakdown-group.pattern-highlighted {
+  background: var(--accent-bg);
+  outline: 2px solid var(--accent);
+}
+
 /* The result breakdown's two grouping boxes - Declared (everything entered
    via 門前牌區: exposed melds, concealed kongs, and bonus tiles) vs.
    Concealed (everything from 手牌區's free tiles: the remaining melds and
@@ -1067,8 +1077,7 @@ button.scoring-pattern-row {
    ink extent (measured via canvas text metrics at this class's font-size)
    rather than its line box. */
 .tile-glyph.wait-highlight,
-.tile-glyph.joker-assumed,
-.tile-glyph.pattern-highlight {
+.tile-glyph.joker-assumed {
   position: relative;
   z-index: 0;
 }
@@ -1102,36 +1111,13 @@ button.scoring-pattern-row {
   z-index: -1;
 }
 
-/* Same box again, blue instead of amber/purple, on ::after rather than
-   ::before (both being on the same element at once is a real case here -
-   pressing a pattern while its own tile also happens to be the 食胡 tile -
-   ::before is already spoken for by .wait-highlight above). Momentary: lit
-   up only while a Patterns-list row is actively pressed (see PatternRow's
-   pointer handlers), not tied to that row's own expand/collapse state -
-   marks which tiles in DECLARED/CONCEALED belong to whichever pattern is
-   currently being pressed. */
-.tile-glyph.pattern-highlight::after {
-  content: "";
-  position: absolute;
-  left: -0.08em;
-  right: -0.08em;
-  top: 0.15em;
-  height: 0.97em;
-  background: var(--accent-bg);
-  outline: 2px solid var(--accent);
-  border-radius: 3px;
-  z-index: -1;
-}
-
 /* Honors/joker use a different font-family (see below) with different ink
    metrics - its ink sits much closer to the top of its line box than
    man/pin/sou's does, so the highlight needs its own top to still hug it. */
 .tile-glyph[data-suit="z"].wait-highlight::before,
 .tile-glyph[data-suit="j"].wait-highlight::before,
 .tile-glyph[data-suit="z"].joker-assumed::before,
-.tile-glyph[data-suit="j"].joker-assumed::before,
-.tile-glyph[data-suit="z"].pattern-highlight::after,
-.tile-glyph[data-suit="j"].pattern-highlight::after {
+.tile-glyph[data-suit="j"].joker-assumed::before {
   top: 0.02em;
 }
 
