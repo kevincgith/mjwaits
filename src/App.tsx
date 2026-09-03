@@ -2733,31 +2733,32 @@ function findWinningTileInstance(hand: ResolvedHand, declaredCount: number, winn
 // Same tap-to-expand idiom as ProjectedWaitRow (own collapsed-by-default
 // state, CollapsiblePanel for the animated reveal).
 //
-// Separately, while the row is actively pressed (not the same as
-// expanded - a momentary press, gone the instant the finger/mouse lifts),
-// onPressStart/onPressEnd light up this pattern's own tiles back in the
-// DECLARED/CONCEALED summary below (see ScoringBreakdown's pressedTiles) -
-// a quick way to see where a pattern's tai actually came from without
-// needing to expand it. onPointerLeave is a mouse-only safety net: a touch
-// pointer has implicit capture (see the useTap comment above) so it always
-// still gets pointerup/pointercancel here even if the finger drifts off
-// the button first, but a mouse has no such capture - button-mashing then
-// dragging off before releasing would otherwise leave the highlight stuck
-// on with no pointerup ever landing on this element to clear it.
+// Separately, once expanded, each individual meld/pair group shown in the
+// breakdown is itself press-able: press and hold one and it lights up
+// back in the DECLARED/CONCEALED summary below (see ScoringBreakdown's
+// pressedGroup) - momentary, gone the instant the finger/mouse lifts, and
+// independent of the row's own expanded/collapsed state (which stays
+// exactly as it was, driven only by the row's onClick). onPointerLeave is
+// a mouse-only safety net: a touch pointer has implicit capture (see the
+// useTap comment above) so it always still gets pointerup/pointercancel
+// here even if the finger drifts off the group first, but a mouse has no
+// such capture - button-mashing then dragging off before releasing would
+// otherwise leave the highlight stuck on with no pointerup ever landing
+// on this element to clear it.
 function PatternRow({
   pattern,
   tai,
   hand,
   ctx,
-  onPressStart,
-  onPressEnd,
+  onGroupPressStart,
+  onGroupPressEnd,
 }: {
   pattern: TaiPattern;
   tai: number;
   hand: ResolvedHand;
   ctx: GameContext;
-  onPressStart: () => void;
-  onPressEnd: () => void;
+  onGroupPressStart: (group: Tile[]) => void;
+  onGroupPressEnd: (group: Tile[]) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const rows = pattern.tiles?.(hand, ctx);
@@ -2782,17 +2783,7 @@ function PatternRow({
   }
   return (
     <div className="pattern-row">
-      <button
-        type="button"
-        className="scoring-pattern-row"
-        onClick={() => setExpanded((e) => !e)}
-        onPointerDown={onPressStart}
-        onPointerUp={onPressEnd}
-        onPointerCancel={onPressEnd}
-        onPointerLeave={onPressEnd}
-        aria-expanded={expanded}
-        title={pattern.caveat}
-      >
+      <button type="button" className="scoring-pattern-row" onClick={() => setExpanded((e) => !e)} aria-expanded={expanded} title={pattern.caveat}>
         <span className="scoring-pattern-name">{pattern.name}</span>
         <span className="scoring-pattern-meta">
           <span className="scoring-pattern-tai">{tai} tai</span>
@@ -2811,7 +2802,14 @@ function PatternRow({
           {rows.map((row, i) => (
             <div className="breakdown-groups" key={i}>
               {row.map((group, j) => (
-                <span className="breakdown-group" key={j}>
+                <span
+                  className="breakdown-group"
+                  key={j}
+                  onPointerDown={() => onGroupPressStart(group)}
+                  onPointerUp={() => onGroupPressEnd(group)}
+                  onPointerCancel={() => onGroupPressEnd(group)}
+                  onPointerLeave={() => onGroupPressEnd(group)}
+                >
                   {group.map((t, k) => (
                     <TileGlyphSpan key={k} tile={t} />
                   ))}
@@ -2855,18 +2853,17 @@ function ScoringBreakdown({
   // pattern that's actually likely to have scored.
   const winningInstance = findWinningTileInstance(hand, declaredCount, winningTile);
   const isWinningInstance = (t: Tile): boolean => t === winningInstance;
-  // Which pattern (if any) is currently being pressed in the Patterns list
-  // below - momentary, not the same as that row's own expanded/collapsed
-  // state (see PatternRow's own comment). Every TaiPattern.tiles
-  // implementation derives its groups by filtering hand.melds/hand.pair's
-  // own arrays rather than fabricating new Tile objects (see e.g.
-  // wholeHandGroupsFlat and the rest of scoring.ts), so the tiles a
-  // pressed pattern points at are literally the same object references
+  // The one meld/pair group (if any) currently being pressed under an
+  // expanded pattern's breakdown below - momentary, not the same as that
+  // row's own expanded/collapsed state (see PatternRow's own comment).
+  // Every TaiPattern.tiles implementation derives its groups by filtering
+  // hand.melds/hand.pair's own arrays rather than fabricating new Tile
+  // objects (see e.g. wholeHandGroupsFlat and the rest of scoring.ts), so
+  // a pressed group's tiles are literally the same object references
   // living in `hand` - a plain reference-equality Set membership check
   // below is enough to find them again here, no id/key scheme needed.
-  const [pressedPatternId, setPressedPatternId] = useState<string | null>(null);
-  const pressedPattern = pressedPatternId ? matched.find((m) => m.pattern.id === pressedPatternId)?.pattern : undefined;
-  const pressedTiles = pressedPattern?.tiles ? new Set(pressedPattern.tiles(hand, ctx).flat(2)) : null;
+  const [pressedGroup, setPressedGroup] = useState<Tile[] | null>(null);
+  const pressedTiles = pressedGroup ? new Set(pressedGroup) : null;
   const isPatternHighlighted = (t: Tile): boolean => pressedTiles?.has(t) ?? false;
   // Declaration order (the default) already reads as a rough thematic
   // grouping - PATTERNS is authored one related family at a time - so
@@ -2913,8 +2910,8 @@ function ScoringBreakdown({
               tai={tai}
               hand={hand}
               ctx={ctx}
-              onPressStart={() => setPressedPatternId(pattern.id)}
-              onPressEnd={() => setPressedPatternId((id) => (id === pattern.id ? null : id))}
+              onGroupPressStart={setPressedGroup}
+              onGroupPressEnd={(group) => setPressedGroup((g) => (g === group ? null : g))}
             />
           ))
         )}
