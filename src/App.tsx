@@ -62,6 +62,7 @@ import {
 import {
   FIVE_POWER_TAI_TABLE,
   groupDeclaredTiles,
+  isEightPairsHand,
   isGenuineMultiWait,
   isVisiblyExhaustedMultiWait,
   isVisiblyTripledWinningTile,
@@ -2984,6 +2985,15 @@ function ScoringBreakdown({
   // (same idea as .concealed-kong-meld) rather than each tile separately.
   const [pressedGroup, setPressedGroup] = useState<Tile[] | null>(null);
   const isGroupHighlighted = (group: Tile[]): boolean => group === pressedGroup;
+  // In a 嚦咕嚦咕 hand (see isEightPairsHand), a quad (4 copies of one kind,
+  // counting as 2 of the 8 pairs - see scoreEightPairs) stays a single
+  // 4-tile meld in the data model, but displaying it as one block reads
+  // like a kong, not the two independent pairs it actually is - split it
+  // into 2 groups of 2 for DECLARED/CONCEALED below, to fit the shape of
+  // the hand itself. A real kong elsewhere (ordinary hands) is unaffected -
+  // isEightPairsHand only ever fires for this one special construction.
+  const displayGroupsFor = (tiles: Tile[]): Tile[][] =>
+    isEightPairsHand(hand) && tiles.length === 4 ? [tiles.slice(0, 2), tiles.slice(2, 4)] : [tiles];
   // Declaration order (the default) already reads as a rough thematic
   // grouping - PATTERNS is authored one related family at a time - so
   // sorting by tai is opt-in rather than the default, same "toggle changes
@@ -3049,36 +3059,40 @@ function ScoringBreakdown({
                 ))}
               </span>
             )}
-            {hand.melds.slice(0, declaredCount).map((meld, i) => (
-              <span
-                className={["breakdown-group", meld.concealed && "concealed-kong-meld", isGroupHighlighted(meld.tiles) && "pattern-highlighted"]
-                  .filter(Boolean)
-                  .join(" ")}
-                key={i}
-                title={`${meld.kind}${meld.concealed ? " (concealed kong)" : ""}`}
-              >
-                {meld.tiles.map((t, j) => (
-                  <TileGlyphSpan key={j} tile={t} highlight={isWinningInstance(t)} />
-                ))}
-              </span>
-            ))}
+            {hand.melds.slice(0, declaredCount).flatMap((meld, i) =>
+              displayGroupsFor(meld.tiles).map((group, j) => (
+                <span
+                  className={["breakdown-group", meld.concealed && "concealed-kong-meld", isGroupHighlighted(group) && "pattern-highlighted"]
+                    .filter(Boolean)
+                    .join(" ")}
+                  key={`${i}-${j}`}
+                  title={`${meld.kind}${meld.concealed ? " (concealed kong)" : ""}`}
+                >
+                  {group.map((t, k) => (
+                    <TileGlyphSpan key={k} tile={t} highlight={isWinningInstance(t)} />
+                  ))}
+                </span>
+              ))
+            )}
             {declaredCount === 0 && hand.bonusTiles.length === 0 && <span className="hint">None</span>}
           </div>
         </div>
         <div className="hand-section concealed-section">
           <span className="hand-section-label">Concealed</span>
           <div className="hand-display breakdown-groups">
-            {hand.melds.slice(declaredCount).map((meld, i) => (
-              <span
-                className={`breakdown-group${isGroupHighlighted(meld.tiles) ? " pattern-highlighted" : ""}`}
-                key={i}
-                title={meld.kind}
-              >
-                {meld.tiles.map((t, j) => (
-                  <TileGlyphSpan key={j} tile={t} highlight={isWinningInstance(t)} />
-                ))}
-              </span>
-            ))}
+            {hand.melds.slice(declaredCount).flatMap((meld, i) =>
+              displayGroupsFor(meld.tiles).map((group, j) => (
+                <span
+                  className={`breakdown-group${isGroupHighlighted(group) ? " pattern-highlighted" : ""}`}
+                  key={`${i}-${j}`}
+                  title={meld.kind}
+                >
+                  {group.map((t, k) => (
+                    <TileGlyphSpan key={k} tile={t} highlight={isWinningInstance(t)} />
+                  ))}
+                </span>
+              ))
+            )}
             <span className={`breakdown-group${isGroupHighlighted(hand.pair) ? " pattern-highlighted" : ""}`} title="Pair">
               {hand.pair.map((t, j) => (
                 <TileGlyphSpan key={j} tile={t} highlight={isWinningInstance(t)} />

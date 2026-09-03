@@ -2541,6 +2541,24 @@ describe("PATTERNS: 將眼 stacks per qualifying pair in 嚦咕嚦咕 (not just 
     const result = scoreHand("1111m3344667799t111z", ctx());
     expect(tai(result, "middle-tile-pair")).toBe(0);
   });
+
+  // A quad (4 copies of one kind) stays a single 4-tile meld in the data
+  // model (see scoreEightPairs), but counts as *two* of the 8 pairs - the
+  // tiles() breakdown has to split it into 2 separate 2-tile rows to match,
+  // or the row count silently stops matching the tai shown (previously
+  // rendered as one row of 4 tiles here, worth only "1 instance" visually
+  // despite scoring 2).
+  it("splits each qualifying quad into 2 rows of 2, not 1 row of 4 - 555t22225555m2222t99t has 3 quads at rank 2/5/8", () => {
+    const c = ctx();
+    const result = scoreHand("555t22225555m2222t99t", c);
+    expect(tai(result, "middle-tile-pair")).toBe(12); // 6 pair-units x 2
+    const rows = patternTiles(result, "middle-tile-pair", c);
+    expect(rows).toHaveLength(6);
+    for (const row of rows ?? []) {
+      expect(row).toHaveLength(1);
+      expect(row[0]).toHaveLength(2); // every row is a 2-tile pair, never the full quad
+    }
+  });
 });
 
 describe("PATTERNS: 無花/正花/爛花/無字/無字花 apply to 嚦咕嚦咕 too", () => {

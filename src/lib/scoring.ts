@@ -865,6 +865,28 @@ function eightPairsSmallSevenSuitsTai(hand: ResolvedHand): number {
   return categoriesPresent(hand).size === 5 && hasBonusKind(hand, "flower") && hasBonusKind(hand, "season") ? 15 : 0;
 }
 
+// Whether `hand` is shaped like scoreEightPairs' own construction, for
+// callers (like middle-tile-pair's tiles() below, and App.tsx's
+// DECLARED/CONCEALED display) that get handed a hand of unknown origin and
+// need to render it differently for 嚦咕嚦咕 specifically. Every meld
+// scoreEightPairs builds is tagged kind: "triplet" regardless of its real
+// tile count (see its own comment) - length 2 (a genuine pair used as a
+// meld placeholder) is unambiguous on its own (nothing else ever produces
+// that), but length 4 needs the kind check too, since an ordinary hand's
+// length-4 meld is a real kong. Deliberately NOT just "some meld has
+// length 2" (the previous version of this check) - a hand where every
+// pair-group happens to be a quad (e.g. 555t22225555m2222t99t: 3 quads +
+// one genuine pair, which becomes hand.pair and so is never IN
+// hand.melds at all) has no length-2 meld, only length-4 ones, and would
+// otherwise misread as an ordinary hand. Also correctly never fires for
+// 十三么/十六不搭's own melds-of-1 construction (a different special shape
+// that reuses this same pattern object - see scoreThirteenOrphans/
+// scoreSixteenUnrelated) - those never produce length 2 or (real-kong-
+// tagged-as-triplet) length 4 either.
+export function isEightPairsHand(hand: ResolvedHand): boolean {
+  return hand.melds.some((m) => m.tiles.length === 2 || (m.tiles.length === 4 && m.kind !== "kong"));
+}
+
 // 將眼 (嚦咕嚦咕 context): the normal pattern only ever checks the single
 // designated `hand.pair`, but a 嚦咕嚦咕 hand really has 7 "eyes"-like pair
 // groups (the triple doesn't count, it's been upgraded) - each one at
@@ -2100,17 +2122,31 @@ export const PATTERNS: TaiPattern[] = [
     score: (hand) => (!isHonorTile(hand.pair[0]) && [2, 5, 8].includes(hand.pair[0].rank) ? 2 : 0),
     // This same pattern object is reused for 嚦咕嚦咕's own stacking variant
     // (see eightPairsMiddleTilePairCount/scoreEightPairs, which computes a
-    // different tai but pushes it under this same id) - a 嚦咕嚦咕-shaped
-    // hand is recognizable by having 2-tile "melds" (the pair-groups
-    // upgraded to triplet-kind placeholders), which an ordinary hand's
-    // melds never have. Only the ordinary case is just `[hand.pair]`.
+    // different tai but pushes it under this same id - see isEightPairsHand
+    // for how that shape is recognized). Only the ordinary case is just
+    // `[hand.pair]`.
     tiles: (hand) => {
-      if (!hand.melds.some((m) => m.tiles.length === 2)) return [[hand.pair]];
+      if (!isEightPairsHand(hand)) return [[hand.pair]];
       const groups = [hand.pair, ...hand.melds.filter((m) => m.tiles.length !== 3).map((m) => m.tiles)];
       // Each qualifying group is its own stacking instance (2 tai each) in
       // the 嚦咕嚦咕 context, so gets its own row - unlike the ordinary
-      // case just above, which is always exactly one pair.
-      return groups.filter((g) => g[0].suit !== "z" && [2, 5, 8].includes(g[0].rank)).map((g) => [g]);
+      // case just above, which is always exactly one pair. A quad (4
+      // copies of the same kind) stays together as one 4-tile group in
+      // hand.melds (see scoreEightPairs), but counts as *two* of the 8
+      // pairs - eightPairsMiddleTilePairCount already doubles its tai for
+      // that, so this needs to split it into 2 separate 2-tile rows too,
+      // or the row count silently stops matching the tai shown.
+      const rows: Tile[][][] = [];
+      for (const g of groups) {
+        if (g[0].suit === "z" || ![2, 5, 8].includes(g[0].rank)) continue;
+        if (g.length === 4) {
+          rows.push([g.slice(0, 2)]);
+          rows.push([g.slice(2, 4)]);
+        } else {
+          rows.push([g]);
+        }
+      }
+      return rows;
     },
   },
   {
