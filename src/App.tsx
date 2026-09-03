@@ -3770,7 +3770,7 @@ function ScoringPanel() {
             to the OS's own photo picker for someone who already has the
             shot taken. */}
         <button type="button" onClick={() => handScannerRef.current?.triggerLibrary()} disabled={scanBusy} title="Choose an existing photo instead of the camera">
-          🖼️ Photos
+          🏞️ Photos
         </button>
         <span className="tile-count">
           {totalTiles} / {requiredSize} tiles
