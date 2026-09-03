@@ -1576,6 +1576,41 @@ button.scoring-pattern-row {
   color: var(--on-accent);
 }
 
+/* The streamlined-scan path's result banner (see HandScanner's autoApply)
+   - the hand's already applied by the time this shows, so this reads as a
+   confirmation, not a decision point (unlike .scan-review, which blocks on
+   one). */
+.scan-auto-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin-bottom: 1.25rem;
+  padding: 0.6rem 0.85rem;
+  border: 1px solid var(--success-border-1);
+  border-radius: 8px;
+  background: var(--success-bg-1);
+  color: var(--success-text-1);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.scan-auto-banner-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.scan-auto-banner-actions button {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 6px;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--text);
+}
+
 .scan-review {
   display: flex;
   flex-direction: column;

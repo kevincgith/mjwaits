@@ -70,6 +70,7 @@ import {
   scoreParsedHand,
   type BonusTile,
   type GameContext,
+  type MeldDeclaration,
   type MeldKind,
   type EarlyWinState,
   type HeavenlyWinState,
@@ -1383,6 +1384,15 @@ const HandScanner = forwardRef<
     // scan that only partly grouped into whole melds.
     regionIssue?: (detections: ReviewDetection[], regionIndex: number) => { blocking: boolean; message: string } | null;
     onConfirm: (regions: { detections: ReviewDetection[] }[]) => void;
+    // When given, a photo whose auto-fit regions (see handleScanFile) run
+    // straight through detection - skipping the crop screen entirely - and
+    // come back winning per this check gets applied immediately via
+    // onConfirm, with no crop/review step shown at all. A false result (or
+    // no usable auto-fit regions to try in the first place) falls back to
+    // today's flow: the crop screen, pre-filled with whatever regions were
+    // auto-fit. Absent entirely (Calculator's usage), the crop screen
+    // always shows, unchanged from before this existed.
+    autoApply?: (regions: { detections: ReviewDetection[] }[]) => boolean;
     // When set, the built-in trigger button isn't rendered - the caller
     // drives scanning via the imperative handle's trigger() instead
     // (still through this same file input/model-prefetch flow), and shows
@@ -1402,12 +1412,14 @@ const HandScanner = forwardRef<
     onActiveChange?: (active: boolean) => void;
   }
 >(function HandScanner(
-  { regionLabels, regionIssue, onConfirm, hideTrigger, triggerLabel = "📷 Scan a hand", onBusyChange, onActiveChange },
+  { regionLabels, regionIssue, onConfirm, hideTrigger, triggerLabel = "📷 Scan a hand", onBusyChange, onActiveChange, autoApply },
   ref
 ) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const libraryFileInputRef = useRef<HTMLInputElement>(null);
-  const [scanStatus, setScanStatus] = useState<"idle" | "analyzing" | "cropping" | "loading" | "review" | "error">("idle");
+  const [scanStatus, setScanStatus] = useState<"idle" | "analyzing" | "cropping" | "loading" | "review" | "auto-applied" | "error">(
+    "idle"
+  );
   const [scanError, setScanError] = useState<string | null>(null);
   const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null);
   const [scanPreview, setScanPreview] = useState<{ regions: ScanReviewRegion[] } | null>(null);
@@ -1532,7 +1544,18 @@ const HandScanner = forwardRef<
       const fitted = await tryAutoFit(image);
       if (scanGeneration.current !== myGeneration) return; // reset mid-analyze - drop the result
       if (fitted) setAutoFitRegions(fitted);
-      setScanStatus("cropping");
+      // Fully streamlined path (see autoApply's own doc comment): a caller
+      // that wants it (only ScoringPanel does) gets one shot at running the
+      // *actual* detection against these same auto-fit regions before the
+      // crop screen ever appears - if that comes back a genuinely complete
+      // hand, apply it immediately and skip crop+review altogether. No
+      // usable auto-fit regions at all means nothing to try this against,
+      // so straight to cropping either way.
+      if (fitted && autoApply) {
+        await tryAutoScanAndApply(image, fitted, myGeneration);
+      } else {
+        setScanStatus("cropping");
+      }
     } catch (err) {
       if (scanGeneration.current !== myGeneration) return;
       setScanError(err instanceof Error ? err.message : "Could not read that image");
@@ -1540,52 +1563,60 @@ const HandScanner = forwardRef<
     }
   };
 
-  // Each region (1 or 2, from CropOverlay) is letterboxed and detected
-  // independently. The (cached) model session is only fetched/initialized
-  // once regardless of region count.
+  // Shared detection core for both runScan (user-confirmed crop) and
+  // tryAutoScanAndApply (the streamlined path) - each region (1 or 2) is
+  // letterboxed and detected independently. The (cached) model session is
+  // only fetched/initialized once regardless of region count. Throws on
+  // failure; callers decide what that means (an "error" state for the
+  // former, a silent fall-back to cropping for the latter).
+  const detectRegions = async (sources: HTMLCanvasElement[], onProgress: (p: ScanProgress) => void): Promise<ScanReviewRegion[]> => {
+    const regions: ScanReviewRegion[] = [];
+    for (const source of sources) {
+      const box = letterbox(source);
+      const { detections } = await detectTiles(box, onProgress);
+      // letterbox() centers the (scaled-down) source inside an IMG_SIZE
+      // square, padding the rest gray - the model needs that square, but
+      // showing the padding in the review UI just wastes space. Crop the
+      // padding back off here (same centering math letterbox itself used,
+      // run in reverse) and shift each detection's box by the same amount,
+      // so everything downstream (the <img>, DetectionOverlay's viewBox,
+      // the left-to-right sort in ScoringPanel) just works against the
+      // tighter, padding-free coordinate space.
+      const scale = Math.min(IMG_SIZE / source.width, IMG_SIZE / source.height);
+      const contentW = Math.round(source.width * scale);
+      const contentH = Math.round(source.height * scale);
+      const padX = (IMG_SIZE - contentW) / 2;
+      const padY = (IMG_SIZE - contentH) / 2;
+      const displayCanvas = document.createElement("canvas");
+      displayCanvas.width = contentW;
+      displayCanvas.height = contentH;
+      displayCanvas.getContext("2d")!.drawImage(box.canvas, padX, padY, contentW, contentH, 0, 0, contentW, contentH);
+      regions.push({
+        imageUrl: displayCanvas.toDataURL(),
+        imageWidth: contentW,
+        imageHeight: contentH,
+        detections: detections.map((d) => ({
+          id: nextDetectionId.current++,
+          tile: d.tile,
+          bonus: d.tile ? null : classToBonusTile(d.className),
+          originalClassName: d.className,
+          confidence: d.confidence,
+          box: [d.box[0] - padX, d.box[1] - padY, d.box[2] - padX, d.box[3] - padY],
+        })),
+      });
+    }
+    return regions;
+  };
+
   const runScan = async (sources: HTMLCanvasElement[]) => {
     const myGeneration = scanGeneration.current;
     setScanStatus("loading");
     setScanError(null);
     setScanProgress({ phase: "downloading-model", loaded: 0, total: null });
     try {
-      const regions: ScanReviewRegion[] = [];
-      for (const source of sources) {
-        const box = letterbox(source);
-        const { detections } = await detectTiles(box, (p) => {
-          if (scanGeneration.current === myGeneration) setScanProgress(p);
-        });
-        // letterbox() centers the (scaled-down) source inside an IMG_SIZE
-        // square, padding the rest gray - the model needs that square, but
-        // showing the padding in the review UI just wastes space. Crop the
-        // padding back off here (same centering math letterbox itself
-        // used, run in reverse) and shift each detection's box by the same
-        // amount, so everything downstream (the <img>, DetectionOverlay's
-        // viewBox, the left-to-right sort in ScoringPanel) just works
-        // against the tighter, padding-free coordinate space.
-        const scale = Math.min(IMG_SIZE / source.width, IMG_SIZE / source.height);
-        const contentW = Math.round(source.width * scale);
-        const contentH = Math.round(source.height * scale);
-        const padX = (IMG_SIZE - contentW) / 2;
-        const padY = (IMG_SIZE - contentH) / 2;
-        const displayCanvas = document.createElement("canvas");
-        displayCanvas.width = contentW;
-        displayCanvas.height = contentH;
-        displayCanvas.getContext("2d")!.drawImage(box.canvas, padX, padY, contentW, contentH, 0, 0, contentW, contentH);
-        regions.push({
-          imageUrl: displayCanvas.toDataURL(),
-          imageWidth: contentW,
-          imageHeight: contentH,
-          detections: detections.map((d) => ({
-            id: nextDetectionId.current++,
-            tile: d.tile,
-            bonus: d.tile ? null : classToBonusTile(d.className),
-            originalClassName: d.className,
-            confidence: d.confidence,
-            box: [d.box[0] - padX, d.box[1] - padY, d.box[2] - padX, d.box[3] - padY],
-          })),
-        });
-      }
+      const regions = await detectRegions(sources, (p) => {
+        if (scanGeneration.current === myGeneration) setScanProgress(p);
+      });
       if (scanGeneration.current !== myGeneration) return; // reset mid-scan - drop the result
       setScanPreview({ regions });
       setScanStatus("review");
@@ -1598,6 +1629,43 @@ const HandScanner = forwardRef<
         setScanProgress(null);
         setCropImage(null);
       }
+    }
+  };
+
+  // The streamlined path handleScanFile falls into when a caller opted in
+  // via autoApply and auto-fit found usable regions: runs detection against
+  // those regions with no crop screen shown at all, and either applies the
+  // result immediately (autoApply says it's a genuinely complete hand) or
+  // falls back to cropping - silently, on a non-winning result *or* any
+  // detection failure alike, per the "just fall back to region selection"
+  // spec this was built to (an error here isn't yet something the user
+  // asked to see - they haven't even confirmed a crop). scanPreview is
+  // still populated on the winning path (not cleared to idle) so the
+  // "Adjust" banner below can reopen review against the exact same
+  // detections rather than needing to rescan.
+  const tryAutoScanAndApply = async (image: HTMLImageElement, fitted: CropRect[], myGeneration: number) => {
+    setScanStatus("loading");
+    setScanProgress({ phase: "downloading-model", loaded: 0, total: null });
+    try {
+      const canvases = fitted.map((rect) => cropToCanvas(image, rect));
+      const regions = await detectRegions(canvases, (p) => {
+        if (scanGeneration.current === myGeneration) setScanProgress(p);
+      });
+      if (scanGeneration.current !== myGeneration) return;
+      const plain = regions.map((r) => ({ detections: r.detections }));
+      if (autoApply!(plain)) {
+        onConfirm(plain);
+        setScanPreview({ regions });
+        setScanStatus("auto-applied");
+        setCropImage(null); // no longer needed - same as runScan's own successful-review cleanup
+      } else {
+        setScanStatus("cropping"); // keeps cropImage/autoFitRegions - the crop screen needs both
+      }
+    } catch {
+      if (scanGeneration.current !== myGeneration) return;
+      setScanStatus("cropping");
+    } finally {
+      if (scanGeneration.current === myGeneration) setScanProgress(null);
     }
   };
 
@@ -1728,6 +1796,28 @@ const HandScanner = forwardRef<
           onConfirm={runScan}
           onCancel={cancelCrop}
         />
+      )}
+
+      {/* The streamlined path (see autoApply) already applied the scan by
+          the time this shows - "Adjust" reopens review against the exact
+          same detections scanPreview still holds (tryAutoScanAndApply
+          never cleared it), so correcting a tile there and confirming just
+          overwrites the hand again. The × is resetScan itself: it only
+          clears this component's own preview/status, never anything
+          already applied to the caller's hand, so dismissing leaves the
+          auto-filled result exactly as it is. */}
+      {scanStatus === "auto-applied" && (
+        <div className="scan-auto-banner">
+          <span>✅ Auto-filled from scan</span>
+          <div className="scan-auto-banner-actions">
+            <button type="button" onClick={() => setScanStatus("review")}>
+              Adjust
+            </button>
+            <button type="button" onClick={resetScan} title="Dismiss">
+              ✕
+            </button>
+          </div>
+        </div>
       )}
 
       {scanStatus === "review" && scanPreview && (
@@ -3558,6 +3648,42 @@ function ScoringPanel() {
     manualVisibleTripleWin: manualVisibleExhaust !== "none",
     manualVisibleExhaustedMultiWait: manualVisibleExhaust === "exhausted",
   };
+
+  // autoApply for HandScanner's streamlined scan path (see its own doc
+  // comment) - mirrors applyScannedRegions' own declared/concealed split
+  // and "region 1 absent means untouched" rule, but as a pure check: would
+  // applying this scan result in a genuine, complete, scoreable hand?
+  // Reuses scoreParsedHand's own validation (its only 2 throw sites are
+  // both about hand completeness, nothing ctx-dependent that could throw
+  // for an unrelated reason) rather than reimplementing that logic. A
+  // declared-region grouping with leftover tiles is also treated as "no" -
+  // the same bar declaredRegionIssue already blocks review's own confirm
+  // button on, so the streamlined path never applies something the manual
+  // one would have flagged as broken.
+  const isScannedHandWinning = (regions: { detections: ReviewDetection[] }[]): boolean => {
+    const [concealedRegion, declaredRegion] = regions;
+    if (!concealedRegion) return false;
+    const freeTiles = concealedRegion.detections.flatMap((d) => (d.tile ? [d.tile] : []));
+    let nextDeclaredMelds: MeldDeclaration[];
+    let nextBonusTiles: BonusTile[];
+    if (declaredRegion) {
+      const { realTiles, bonusTiles: scannedBonusTiles } = declaredScanTiles(declaredRegion.detections);
+      const { melds, leftover } = groupDeclaredTiles(realTiles);
+      if (leftover.length > 0) return false;
+      nextDeclaredMelds = melds;
+      nextBonusTiles = scannedBonusTiles;
+    } else {
+      nextDeclaredMelds = declaredMelds.map(({ kind, concealed, tiles }) => ({ kind, concealed, tiles }));
+      nextBonusTiles = bonusTiles;
+    }
+    try {
+      scoreParsedHand({ declaredMelds: nextDeclaredMelds, freeTiles, bonusTiles: nextBonusTiles }, ctx);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
   const scoring = useMemo(() => {
     if (totalTiles !== requiredSize) return null;
     const parsed: ParsedScoringHand = {
@@ -3790,6 +3916,7 @@ function ScoringPanel() {
         regionLabels={["Concealed", "Declared"]}
         regionIssue={declaredRegionIssue}
         onConfirm={applyScannedRegions}
+        autoApply={isScannedHandWinning}
       />
 
       <div className="panel-header">
