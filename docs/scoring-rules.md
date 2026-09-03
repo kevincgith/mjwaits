@@ -7,8 +7,21 @@ implemented, kept in sync as patterns are added or adjusted.
 
 Every pattern is evaluated against a fully resolved hand: 5 melds (each a triplet, run, or kong,
 each concealed or exposed) + 1 pair, plus whatever bonus tiles (flowers/seasons) were drawn. Where
-a hand has more than one valid meld/pair decomposition, scoring picks whichever reading yields the
-highest total tai.
+a hand has more than one valid meld/pair decomposition (e.g. `111222333m` as three triplets vs.
+three runs, or a rank held all 4 copies as a kong vs. a triplet plus one tile borrowed into an
+adjacent run), scoring picks whichever reading yields the highest total tai.
+
+**This is a genuine global max, not a greedy/local choice.** `allSuitDecompositions`
+([scoring.ts](../src/lib/scoring.ts)) is an exhaustive backtracking search: at every branch point it
+tries every structurally valid option (triplet, kong, run) and recurses into each rather than
+committing to one, so *every* full decomposition of the hand gets enumerated as its own candidate -
+not just whichever one a first-choice heuristic happens to reach first. `scoreParsedHand` then scores
+every candidate and keeps the one with the highest `total` (a plain `reduce` over the whole set) - so
+the answer is always the actual best-scoring reading, never an accident of search order. The cost of
+that exhaustiveness is combinatorial in the worst case, which is why `DECOMPOSE_STEP_LIMIT` (50,000
+search steps) and `MAX_DECOMPOSITIONS` (500 collected candidates) exist as defensive ceilings - never
+hit on realistic hands, but there so a pathological shape degrades to "best found so far" rather than
+hanging.
 
 **Exclusion**: when a pattern in the "Excludes" column matches the same hand, it's suppressed
 (doesn't add its tai) in favor of the pattern that names it — this models "the bigger pattern
