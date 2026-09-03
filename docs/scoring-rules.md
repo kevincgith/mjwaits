@@ -29,10 +29,12 @@ pattern's name and see just those tiles expand underneath it, one line per insta
 將眼 on a hand paired on `55t` reveals only `55t`; tapping a 3-instance 步步高 on
 `123234345456567m11z` reveals 3 separate rows, one per overlapping window). It's absent for pure
 game-context flags with no tiles to point at (自摸, riichi, dealer streak, sea/river-bottom win,
-and similar) and for the 3 bonus-tile-only patterns (無花/正花/爛花 — a different type from `Tile`
-entirely) — those rows just render as plain, non-expandable text. A whole-hand-structural pattern
-(suit purity, all-runs, and similar) returns everything as one single row (every meld plus the
-pair) via the shared `wholeHandGroups` helper, rather than nothing.
+and similar), for the 3 bonus-tile-only patterns (無花/正花/爛花 — a different type from `Tile`
+entirely), and for whole-hand-structural patterns (suit purity, all-runs, and similar, via the
+shared `wholeHandGroupsFlat` helper used internally by the few patterns that need to *filter* it —
+see e.g. `eight-pairs-three-dragons`) — a pattern whose condition spans the entire hand has nothing
+smaller to point at, and expanding it would just repeat the hand display already visible above, so
+these all render as plain, non-expandable text too.
 
 ## The 明/暗 (open/concealed) concept
 

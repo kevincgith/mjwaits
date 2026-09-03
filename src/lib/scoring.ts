@@ -600,20 +600,16 @@ function allHandTiles(hand: ResolvedHand): Tile[] {
   return [...hand.melds.flatMap((m) => m.tiles), ...hand.pair];
 }
 
-// Every meld's own tiles, plus the pair, each as its own group, all on the
-// hand's one single row - the generic "relevant tiles" answer for a
-// pattern whose condition is inherently about the whole hand's shape
-// (suit purity, all-runs, and similar) rather than some smaller
-// identifiable subset, or some stacking count of instances. See
-// TaiPattern.tiles. wholeHandGroupsFlat is the same thing pre-wrapping,
-// for the handful of patterns that need to filter the flat group list
-// down to a subset (see e.g. eight-pairs-three-dragons) rather than using
-// the whole thing as-is.
+// Every meld's own tiles, plus the pair, each as its own group - used to
+// filter down to a subset for the handful of patterns that need only part
+// of the hand (see e.g. eight-pairs-three-dragons). Patterns whose
+// condition is inherently about the whole hand's shape (suit purity,
+// all-runs, and similar) don't use this for their own TaiPattern.tiles at
+// all: showing literally everything back to the user (already visible in
+// the hand display above) isn't a breakdown, so those are left as plain,
+// non-expandable rows instead.
 function wholeHandGroupsFlat(hand: ResolvedHand): Tile[][] {
   return [...hand.melds.map((m) => m.tiles), hand.pair];
-}
-function wholeHandGroups(hand: ResolvedHand): Tile[][][] {
-  return [wholeHandGroupsFlat(hand)];
 }
 
 const isHonorTile = (t: Tile): boolean => t.suit === "z";
@@ -1938,7 +1934,6 @@ export const PATTERNS: TaiPattern[] = [
     // initial foundation work, never one of the user's own house rules,
     // and was removed once that came up.)
     score: (hand) => (isConcealedExceptKongs(hand) ? 5 : 0),
-    tiles: wholeHandGroups,
   },
   {
     id: "kong",
@@ -1973,13 +1968,11 @@ export const PATTERNS: TaiPattern[] = [
     name: "無字花 (No honors, no flowers)",
     score: (hand) => (isNoHonorsNoFlowers(hand) ? 10 : 0),
     excludes: ["no-honors", "no-flowers"],
-    tiles: wholeHandGroups,
   },
   {
     id: "no-honors",
     name: "無字 (No honors)",
     score: (hand) => (allHandTiles(hand).every((t) => !isHonorTile(t)) ? 2 : 0),
-    tiles: wholeHandGroups,
   },
   {
     id: "wrong-seat-wind",
@@ -2078,20 +2071,17 @@ export const PATTERNS: TaiPattern[] = [
     id: "all-honors",
     name: "字一色 (All honors)",
     score: (hand) => (allHandTiles(hand).every(isHonorTile) ? 160 : 0),
-    tiles: wholeHandGroups,
   },
   {
     id: "all-runs",
     name: "平胡 (All runs)",
     score: (hand) => (isAllRuns(hand) ? 5 : 0),
-    tiles: wholeHandGroups,
   },
   {
     id: "all-runs-no-honors-no-flowers",
     name: "無字花大平胡 (All runs, without honors and flowers)",
     score: (hand) => (isAllRuns(hand) && isNoHonorsNoFlowers(hand) ? 20 : 0),
     excludes: ["all-runs", "no-honors-no-flowers"],
-    tiles: wholeHandGroups,
   },
   {
     id: "missing-one-suit",
@@ -2100,7 +2090,6 @@ export const PATTERNS: TaiPattern[] = [
     // presence disqualifies the hand from 缺一門 entirely, not just an
     // honor pair.
     score: (hand) => (numberedSuitsUsed(hand).size === 2 && allHandTiles(hand).every((t) => !isHonorTile(t)) ? 10 : 0),
-    tiles: wholeHandGroups,
   },
   {
     id: "middle-tile-pair",
@@ -2125,13 +2114,11 @@ export const PATTERNS: TaiPattern[] = [
     id: "no-fives",
     name: "缺五 (No fives)",
     score: (hand) => (hasNoFives(hand) ? 10 : 0),
-    tiles: wholeHandGroups,
   },
   {
     id: "small-five-suits",
     name: "小五門齊 (Small five suits)",
     score: (hand) => (categoriesPresent(hand).size === 5 && categoriesWithFullMeld(hand).size < 5 ? 10 : 0),
-    tiles: wholeHandGroups,
   },
   {
     id: "big-five-suits",
@@ -2139,7 +2126,6 @@ export const PATTERNS: TaiPattern[] = [
     // Implies categoriesPresent(hand).size === 5 too - 5 melds, 5 categories,
     // one dedicated meld each covers every category on its own.
     score: (hand) => (categoriesWithFullMeld(hand).size === 5 ? 15 : 0),
-    tiles: wholeHandGroups,
   },
   {
     id: "small-seven-suits",
@@ -2152,7 +2138,6 @@ export const PATTERNS: TaiPattern[] = [
         ? 15
         : 0,
     excludes: ["small-five-suits"],
-    tiles: wholeHandGroups,
   },
   {
     id: "big-seven-suits",
@@ -2160,27 +2145,23 @@ export const PATTERNS: TaiPattern[] = [
     score: (hand) =>
       categoriesWithFullMeld(hand).size === 5 && hasBonusKind(hand, "flower") && hasBonusKind(hand, "season") ? 20 : 0,
     excludes: ["big-five-suits"],
-    tiles: wholeHandGroups,
   },
   {
     id: "greater-than-five",
     name: "大於五 (Greater than five)",
     score: (hand) => (allTilesInRange(hand, 6, 9) ? 40 : 0),
     excludes: ["no-fives"],
-    tiles: wholeHandGroups,
   },
   {
     id: "less-than-five",
     name: "小於五 (Smaller than five)",
     score: (hand) => (allTilesInRange(hand, 1, 4) ? 40 : 0),
     excludes: ["no-fives"],
-    tiles: wholeHandGroups,
   },
   {
     id: "all-simples",
     name: "斷么 (All simples)",
     score: (hand) => (allHandTiles(hand).every((t) => t.suit !== "z" && t.rank >= 2 && t.rank <= 8) ? 10 : 0),
-    tiles: wholeHandGroups,
   },
   {
     id: "three-treasures",
@@ -2188,13 +2169,11 @@ export const PATTERNS: TaiPattern[] = [
     // Additional bonus - stacks with all 3 constituent patterns, same
     // "stacks with everything" framing as 雙/全姊妹, 樓梯, and 五步高/全碟.
     score: (hand) => (hasThreeTreasures(hand) ? 40 : 0),
-    tiles: wholeHandGroups,
   },
   {
     id: "all-triplets",
     name: "對對胡 (All triplets/kongs)",
     score: (hand) => (hand.melds.every((m) => m.kind === "triplet" || m.kind === "kong") ? 40 : 0),
-    tiles: wholeHandGroups,
   },
   {
     id: "five-concealed-triplets",
@@ -2364,7 +2343,6 @@ export const PATTERNS: TaiPattern[] = [
     score: (hand) => (hasCommonRankAcrossAllMeldsAndPair(hand) ? 120 : 0),
     excludes: ["mixed-common-rank"],
     // Every meld and the pair contain the shared rank - the whole hand.
-    tiles: wholeHandGroups,
   },
   {
     id: "mixed-terminal",
@@ -2375,7 +2353,6 @@ export const PATTERNS: TaiPattern[] = [
     // characteristic - so the two are already mutually exclusive by
     // construction, no explicit exclude needed.
     score: (hand) => (hasHonorPresenceAnywhere(hand) && pairIsTerminalOrHonor(hand) && everyNonHonorMeldHasTerminal(hand) ? 40 : 0),
-    tiles: wholeHandGroups,
   },
   {
     id: "pure-terminal",
@@ -2388,7 +2365,6 @@ export const PATTERNS: TaiPattern[] = [
     // 大於五/小於五 excluding it.
     score: (hand) => (hasNoHonorsAndTerminalInEveryMeldAndPair(hand) ? 80 : 0),
     excludes: ["no-fives"],
-    tiles: wholeHandGroups,
   },
   {
     id: "mixed-terminal-honor-triplets",
@@ -2398,14 +2374,12 @@ export const PATTERNS: TaiPattern[] = [
     // own terminal or honor).
     score: (hand) => (isAllTerminalOrHonorTriplets(hand) ? 100 : 0),
     excludes: ["mixed-terminal", "pure-terminal"],
-    tiles: wholeHandGroups,
   },
   {
     id: "pure-terminal-triplets",
     name: "清老頭 (All triplets/kongs, terminals only)",
     score: (hand) => (isAllTerminalTriplets(hand) ? 200 : 0),
     excludes: ["mixed-terminal", "pure-terminal", "mixed-terminal-honor-triplets"],
-    tiles: wholeHandGroups,
   },
   {
     id: "four-returns-to-one-open",
@@ -2696,14 +2670,12 @@ export const PATTERNS: TaiPattern[] = [
     id: "half-flush",
     name: "混一色 (One numbered suit + honors)",
     score: (hand) => (numberedSuitsUsed(hand).size === 1 ? 40 : 0),
-    tiles: wholeHandGroups,
   },
   {
     id: "full-flush",
     name: "清一色 (One numbered suit, no honors)",
     score: (hand) => (numberedSuitsUsed(hand).size === 1 && allHandTiles(hand).every((t) => !isHonorTile(t)) ? 120 : 0),
     excludes: ["half-flush"],
-    tiles: wholeHandGroups,
   },
   {
     id: "cross-suit-same-run",
@@ -3248,7 +3220,6 @@ export const PATTERNS: TaiPattern[] = [
     // the tile arrived - so both keep contributing).
     score: (hand, ctx) => (ctx.selfDraw && isConcealedExceptKongs(hand) ? 3 : 0),
     excludes: ["self-draw"],
-    tiles: wholeHandGroups,
   },
   {
     id: "everyone-else-completes-it",
@@ -3305,7 +3276,6 @@ export const PATTERNS: TaiPattern[] = [
     // with 門前清 or any kong-related pattern - it's exclusive of every
     // other pattern except 底 (nothing else is ever evaluated against it).
     score: (hand) => (isThirteenOrphansComplete(allHandTiles(hand)) ? 160 : 0),
-    tiles: wholeHandGroups,
   },
   {
     id: "orphans-four-return-open",
@@ -3356,7 +3326,6 @@ export const PATTERNS: TaiPattern[] = [
     // Same "only ever reached via scoreSixteenUnrelated's short-circuit,
     // but kept independently correct" reasoning as 十三么.
     score: (hand) => (isSixteenUnrelatedComplete(allHandTiles(hand)) ? 50 : 0),
-    tiles: wholeHandGroups,
   },
   {
     id: "sixteen-unrelated-flying",
@@ -3376,7 +3345,6 @@ export const PATTERNS: TaiPattern[] = [
         ? 60
         : 0,
     excludes: ["sixteen-unrelated"],
-    tiles: wholeHandGroups,
   },
   {
     id: "sixteen-unrelated-same-ranks",
@@ -3390,7 +3358,6 @@ export const PATTERNS: TaiPattern[] = [
     // the house rule's intent explicit rather than assuming it away.
     score: (hand) =>
       isSixteenUnrelatedComplete(allHandTiles(hand)) && isHonorTile(hand.pair[0]) && sixteenUnrelatedRanksMatchAcrossSuits(hand) ? 20 : 0,
-    tiles: wholeHandGroups,
   },
   {
     id: "sixteen-unrelated-straight",
@@ -3402,7 +3369,6 @@ export const PATTERNS: TaiPattern[] = [
     // co-fire.
     score: (hand) =>
       isSixteenUnrelatedComplete(allHandTiles(hand)) && isHonorTile(hand.pair[0]) && sixteenUnrelatedRanksSpanOneToNine(hand) ? 20 : 0,
-    tiles: wholeHandGroups,
   },
   {
     id: "eight-pairs",
@@ -3410,7 +3376,6 @@ export const PATTERNS: TaiPattern[] = [
     // Same "only ever reached via scoreEightPairs' short-circuit, but kept
     // independently correct" reasoning as the other special hands.
     score: (hand) => (isEightPairsComplete(allHandTiles(hand)) ? 50 : 0),
-    tiles: wholeHandGroups,
   },
   {
     id: "eight-pairs-flying",
@@ -3425,7 +3390,6 @@ export const PATTERNS: TaiPattern[] = [
       return waits !== null && waits > 2 ? 60 : 0;
     },
     excludes: ["eight-pairs"],
-    tiles: wholeHandGroups,
   },
   {
     id: "eight-pairs-three-dragons",

@@ -2682,14 +2682,11 @@ describe("PATTERNS: TaiPattern.tiles (tap-to-expand tile breakdowns)", () => {
     ]);
   });
 
-  it("混一色: a whole-hand structural pattern - every meld plus the pair, all on one row, via wholeHandGroups", () => {
+  it("混一色: a whole-hand structural pattern has no tiles function - showing the whole hand back isn't a breakdown", () => {
     const c = ctx();
     const result = scoreHand("123m456m789m123m111z22z", c);
     expect(tai(result, "half-flush")).toBe(40);
-    const rows = patternTiles(result, "half-flush", c);
-    expect(rows).toHaveLength(1); // one row...
-    expect(rows?.[0]).toHaveLength(6); // ...containing 5 melds + the pair
-    expect(rows?.[0]?.at(-1)).toEqual([{ suit: "z", rank: 2 }, { suit: "z", rank: 2 }]); // the pair is always last
+    expect(patternTiles(result, "half-flush", c)).toBeUndefined();
   });
 
   it("context-only patterns (自摸, riichi, dealer streak, ...) have no tiles function at all", () => {
@@ -2964,8 +2961,11 @@ describe("PATTERNS: TaiPattern.tiles - smoke test across every pattern", () => {
     }
     // Sanity on the smoke test itself - if either of these drops far
     // below what this corpus is known to reach, the corpus or matching
-    // broke silently rather than the coverage being genuine.
+    // broke silently rather than the coverage being genuine. (Whole-hand-
+    // structural patterns dropped their tiles function entirely - see
+    // "Drop the whole-hand tiles breakdown" - shrinking the reachable
+    // pattern count from ~99 to ~71.)
     expect(checkedPatterns).toBeGreaterThan(900);
-    expect(seenPatternIds.size).toBeGreaterThan(95);
+    expect(seenPatternIds.size).toBeGreaterThan(65);
   });
 });
