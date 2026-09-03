@@ -408,6 +408,16 @@ h1 {
   margin-bottom: 1rem;
 }
 
+/* The Scoring tab's top row (Reset/Scan/Photos/tile-count) - same divider
+   convention as .algebraic-input/.scan-input below, separating it from
+   the round/seat wind pickers that used to sit directly under it and now
+   sit further down, after the winning-tile hint. */
+.panel-header.hand-actions-row {
+  margin-bottom: 1.25rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--border-3);
+}
+
 /* The declared-melds meld-kind buttons (Run/Triplet/暗槓/明槓) sit on their
    own row below the title/collapse-toggle row - pulled up to sit snug
    under it rather than getting the full 1rem gap twice in a row. This has

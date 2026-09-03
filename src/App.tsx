@@ -2267,7 +2267,6 @@ function TrainerPanel({
   return (
     <section className="panel trainer-panel">
       <div className="panel-header">
-        <span className="panel-title">Trainer</span>
         <div className="trainer-levels">
           {Array.from({ length: MAX_TRAINER_LEVEL - MIN_TRAINER_LEVEL + 1 }, (_, i) => MIN_TRAINER_LEVEL + i).map(
             (lvl) => (
@@ -2293,6 +2292,9 @@ function TrainerPanel({
         >
           Flush
         </button>
+      </div>
+
+      <div className="panel-header">
         <button type="button" onClick={() => newQuestion(level, flush)}>
           {submitted ? "Next Question" : "New Hand"}
         </button>
@@ -3733,7 +3735,7 @@ function ScoringPanel() {
 
   return (
     <section className="panel scoring-panel">
-      <div className="panel-header">
+      <div className="panel-header hand-actions-row">
         <button
           type="button"
           onClick={handleReset}
@@ -3757,7 +3759,7 @@ function ScoringPanel() {
             !scanActive
           }
         >
-          Reset
+          🔄 Reset
         </button>
         <button type="button" onClick={() => handScannerRef.current?.trigger()} disabled={scanBusy}>
           📷 Scan
@@ -3784,11 +3786,6 @@ function ScoringPanel() {
         regionIssue={declaredRegionIssue}
         onConfirm={applyScannedRegions}
       />
-
-      <div className="scoring-context">
-        <WindPicker label="Round wind" value={roundWind} onChange={setRoundWind} />
-        <WindPicker label="Seat wind" value={seatWind} onChange={setSeatWind} />
-      </div>
 
       <div className="panel-header">
         <span className="panel-title">門前牌區 (Declared melds)</span>
@@ -3933,8 +3930,13 @@ function ScoringPanel() {
         )}
       </div>
       {concealedTiles.length > 0 && !nearComplete && (
-        <span className="hint">Long-press a tile to mark it as the 食胡 tile (the one that completed the hand).</span>
+        <span className="hint">Long press the winning tile.</span>
       )}
+
+      <div className="scoring-context">
+        <WindPicker label="Round wind" value={roundWind} onChange={setRoundWind} />
+        <WindPicker label="Seat wind" value={seatWind} onChange={setSeatWind} />
+      </div>
 
       <div className="scoring-context">
         <button
