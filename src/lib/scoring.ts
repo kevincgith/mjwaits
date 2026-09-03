@@ -3225,7 +3225,6 @@ export const PATTERNS: TaiPattern[] = [
     id: "everyone-else-completes-it",
     name: "全求人 (All melds declared, win claimed not self-drawn)",
     score: (hand, ctx) => (isFullyDeclared(hand) && !ctx.selfDraw ? 30 : 0),
-    tiles: (hand) => [hand.melds.map((m) => m.tiles)],
   },
   {
     id: "half-everyone-else-completes-it",
@@ -3234,7 +3233,6 @@ export const PATTERNS: TaiPattern[] = [
     // claimed - mutually exclusive with it by construction (selfDraw can't
     // be both), so no explicit exclusion is needed either way.
     score: (hand, ctx) => (isFullyDeclared(hand) && ctx.selfDraw ? 15 : 0),
-    tiles: (hand) => [hand.melds.map((m) => m.tiles)],
   },
   {
     id: "big-chicken",
