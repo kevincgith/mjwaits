@@ -1353,6 +1353,14 @@ function CropOverlay({
 // still drives the same file-picker/prefetch flow.
 export interface HandScannerHandle {
   trigger: () => void;
+  // capture="environment" on `trigger`'s file input skips straight to the
+  // camera on mobile, which is what most scans want - but that camera
+  // sheet is camera-only on iOS Safari, with no way back to an existing
+  // photo from inside it. triggerLibrary opens a second, capture-less
+  // file input instead, landing on the OS's own Photo Library/Browse
+  // picker (or its full Camera/Library/Browse action sheet, depending on
+  // platform) for the person who already has the photo taken.
+  triggerLibrary: () => void;
   // Discards whatever the scan flow is currently doing - mid-crop, mid-
   // download/detect, or sitting on a finished review - and drops back to
   // idle. Used by ScoringPanel's Reset button so wiping the hand also
@@ -1398,6 +1406,7 @@ const HandScanner = forwardRef<
   ref
 ) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const libraryFileInputRef = useRef<HTMLInputElement>(null);
   const [scanStatus, setScanStatus] = useState<"idle" | "analyzing" | "cropping" | "loading" | "review" | "error">("idle");
   const [scanError, setScanError] = useState<string | null>(null);
   const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null);
@@ -1426,6 +1435,10 @@ const HandScanner = forwardRef<
     prefetchModel();
     fileInputRef.current?.click();
   };
+  const triggerScanLibrary = () => {
+    prefetchModel();
+    libraryFileInputRef.current?.click();
+  };
   const resetScan = () => {
     scanGeneration.current++;
     setScanStatus("idle");
@@ -1436,7 +1449,7 @@ const HandScanner = forwardRef<
     setCropImage(null);
     setAutoFitRegions(null);
   };
-  useImperativeHandle(ref, () => ({ trigger: triggerScan, reset: resetScan }));
+  useImperativeHandle(ref, () => ({ trigger: triggerScan, triggerLibrary: triggerScanLibrary, reset: resetScan }));
 
   const busy = scanStatus === "cropping" || scanStatus === "loading" || scanStatus === "analyzing";
   useEffect(() => {
@@ -1642,16 +1655,25 @@ const HandScanner = forwardRef<
       <div className={`scan-input${scanInputEmpty ? " empty" : ""}`}>
         {/* capture="environment" skips straight to the rear camera on
             mobile instead of the OS's Photo Library/Camera/Browse action
-            sheet - the camera UI itself still has its own thumbnail/gallery
-            button for picking an existing photo, so nothing is lost, just a
-            tap saved on the common case of scanning a hand right in front
-            of you. Desktop browsers ignore capture entirely and fall back
-            to a plain file picker either way. */}
+            sheet - a tap saved on the common case of scanning a hand right
+            in front of you. That camera sheet is camera-only on iOS Safari
+            though, with no way back to an existing photo from inside it -
+            libraryFileInputRef (no capture) is the escape hatch for someone
+            who already has the photo taken, wired to its own trigger below.
+            Desktop browsers ignore capture entirely either way. */}
         <input ref={fileInputRef} type="file" accept="image/*" capture="environment" onChange={handleScanFile} style={{ display: "none" }} />
+        <input ref={libraryFileInputRef} type="file" accept="image/*" onChange={handleScanFile} style={{ display: "none" }} />
         {!hideTrigger && (
-          <button type="button" onClick={triggerScan} disabled={busy}>
-            {scanStatus === "loading" ? scanStatusLabel(scanProgress) : scanStatus === "analyzing" ? "Analyzing layout…" : triggerLabel}
-          </button>
+          <span className="scan-trigger-group">
+            <button type="button" onClick={triggerScan} disabled={busy}>
+              {scanStatus === "loading" ? scanStatusLabel(scanProgress) : scanStatus === "analyzing" ? "Analyzing layout…" : triggerLabel}
+            </button>
+            {scanStatus !== "loading" && scanStatus !== "analyzing" && (
+              <button type="button" className="scan-library-link" onClick={triggerScanLibrary} disabled={busy}>
+                or choose from Photos
+              </button>
+            )}
+          </span>
         )}
         {scanStatus === "analyzing" && (
           <div className="scan-progress">
@@ -3680,6 +3702,14 @@ function ScoringPanel() {
         </button>
         <button type="button" onClick={() => handScannerRef.current?.trigger()} disabled={scanBusy}>
           📷 Scan
+        </button>
+        {/* The camera sheet 📷 Scan opens (capture="environment") is
+            camera-only on iOS Safari - no way back to an existing photo
+            from inside it - so this is the separate escape hatch straight
+            to the OS's own photo picker for someone who already has the
+            shot taken. */}
+        <button type="button" onClick={() => handScannerRef.current?.triggerLibrary()} disabled={scanBusy} title="Choose an existing photo instead of the camera">
+          🖼️ Photos
         </button>
         <span className="tile-count">
           {totalTiles} / {requiredSize} tiles
