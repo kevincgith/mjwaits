@@ -1438,6 +1438,11 @@ const HandScanner = forwardRef<
   // too), but this stops its result from clobbering the idle state resetScan
   // just set once it does resolve.
   const scanGeneration = useRef(0);
+  // Whether onConfirm has fired at least once this scan session (auto or
+  // manual) - lets cancelCrop tell "adjusting an already-applied hand"
+  // apart from "backing out of a fresh photo that was never applied" (see
+  // cancelCrop's own comment).
+  const appliedOnceRef = useRef(false);
 
   const triggerScan = () => {
     // Starts the (large) model download as soon as the user shows intent
@@ -1453,6 +1458,7 @@ const HandScanner = forwardRef<
   };
   const resetScan = () => {
     scanGeneration.current++;
+    appliedOnceRef.current = false;
     setScanStatus("idle");
     setScanError(null);
     setScanProgress(null);
@@ -1625,10 +1631,11 @@ const HandScanner = forwardRef<
       setScanError(err instanceof Error ? err.message : "Could not scan that photo");
       setScanStatus("error");
     } finally {
-      if (scanGeneration.current === myGeneration) {
-        setScanProgress(null);
-        setCropImage(null);
-      }
+      // cropImage deliberately survives past this point (unlike scanProgress) -
+      // confirming out of review can still land back on "Adjust" (see
+      // confirmScan), which re-enters cropping and needs the original image
+      // again. Only resetScan (a genuine end to this scan session) clears it.
+      if (scanGeneration.current === myGeneration) setScanProgress(null);
     }
   };
 
@@ -1639,10 +1646,7 @@ const HandScanner = forwardRef<
   // falls back to cropping - silently, on a non-winning result *or* any
   // detection failure alike, per the "just fall back to region selection"
   // spec this was built to (an error here isn't yet something the user
-  // asked to see - they haven't even confirmed a crop). scanPreview is
-  // still populated on the winning path (not cleared to idle) so the
-  // "Adjust" banner below can reopen review against the exact same
-  // detections rather than needing to rescan.
+  // asked to see - they haven't even confirmed a crop).
   const tryAutoScanAndApply = async (image: HTMLImageElement, fitted: CropRect[], myGeneration: number) => {
     setScanStatus("loading");
     setScanProgress({ phase: "downloading-model", loaded: 0, total: null });
@@ -1655,9 +1659,8 @@ const HandScanner = forwardRef<
       const plain = regions.map((r) => ({ detections: r.detections }));
       if (autoApply!(plain)) {
         onConfirm(plain);
-        setScanPreview({ regions });
+        appliedOnceRef.current = true;
         setScanStatus("auto-applied");
-        setCropImage(null); // no longer needed - same as runScan's own successful-review cleanup
       } else {
         setScanStatus("cropping"); // keeps cropImage/autoFitRegions - the crop screen needs both
       }
@@ -1669,9 +1672,19 @@ const HandScanner = forwardRef<
     }
   };
 
+  // Backing out of cropping lands on the banner instead of idle if this
+  // session already applied a hand at least once (i.e. cropping was
+  // re-entered via the banner's own "Adjust", not a fresh photo pick) - the
+  // hand is still applied either way, so losing the only way back to
+  // "Adjust" here would be a dead end for someone who just wanted to back
+  // out of the re-crop attempt itself, not undo the apply.
   const cancelCrop = () => {
-    setCropImage(null);
-    setScanStatus("idle");
+    if (appliedOnceRef.current) {
+      setScanStatus("auto-applied");
+    } else {
+      setCropImage(null);
+      setScanStatus("idle");
+    }
   };
 
   const scanStatusLabel = (p: ScanProgress | null): string => {
@@ -1697,7 +1710,14 @@ const HandScanner = forwardRef<
   const confirmScan = () => {
     if (!scanPreview) return;
     onConfirm(scanPreview.regions.map((r) => ({ detections: r.detections })));
-    setScanStatus("idle");
+    // A caller that opted into the streamlined path (autoApply given) also
+    // gets its "Adjust" banner here, not just after an automatic apply - so
+    // confirming out of a manually-reviewed scan still leaves an easy way
+    // back to cropping if the user changes their mind, rather than a
+    // one-way door. Calculator's plain scan-to-notation flow (no autoApply)
+    // keeps going straight to idle, unchanged.
+    if (autoApply) appliedOnceRef.current = true;
+    setScanStatus(autoApply ? "auto-applied" : "idle");
     setScanPreview(null);
     setEditingDetectionId(null);
   };
@@ -1798,19 +1818,23 @@ const HandScanner = forwardRef<
         />
       )}
 
-      {/* The streamlined path (see autoApply) already applied the scan by
-          the time this shows - "Adjust" reopens review against the exact
-          same detections scanPreview still holds (tryAutoScanAndApply
-          never cleared it), so correcting a tile there and confirming just
-          overwrites the hand again. The × is resetScan itself: it only
-          clears this component's own preview/status, never anything
-          already applied to the caller's hand, so dismissing leaves the
-          auto-filled result exactly as it is. */}
+      {/* Shown once a scan has applied a hand - automatically (autoApply's
+          streamlined path) or after a manual review confirm (see
+          confirmScan) alike, so there's always a way back to "change your
+          mind" rather than a one-way door either way. "Adjust" re-enters
+          region selection (cropImage/autoFitRegions both survive past a
+          successful apply - see runScan/tryAutoScanAndApply's own
+          comments - specifically so this can reopen it) rather than tile
+          correction: the far more common adjustment is "the crop missed
+          part of the hand," not "one tile's prediction was wrong." The ×
+          is resetScan itself: it only clears this component's own preview/
+          status, never anything already applied to the caller's hand, so
+          dismissing leaves the result exactly as it is. */}
       {scanStatus === "auto-applied" && (
         <div className="scan-auto-banner">
-          <span>✅ Auto-filled from scan</span>
+          <span>✅ Hand applied from scan</span>
           <div className="scan-auto-banner-actions">
-            <button type="button" onClick={() => setScanStatus("review")}>
+            <button type="button" onClick={() => setScanStatus("cropping")}>
               Adjust
             </button>
             <button type="button" onClick={resetScan} title="Dismiss">
