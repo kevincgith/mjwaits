@@ -4696,22 +4696,15 @@ const SEAT_ANCHORS = [
   { left: "0%", top: "50%" },
 ];
 
-const d6 = () => 1 + Math.floor(Math.random() * 6);
-const roll3 = (): [number, number, number] => [d6(), d6(), d6()];
-
-interface Ceremony {
-  order: number[]; // permutation of 0..5 into CEREMONY_TILES - the shuffled row
-  throw1: [number, number, number];
-  throw2: [number, number, number];
-}
-
-function newCeremony(): Ceremony {
+// The shuffled row: a permutation of 0..5 into CEREMONY_TILES. (The two dice
+// throws use the shared useDiceRoll hook, same as the other Dice-rolling tabs.)
+function newShuffle(): number[] {
   const order = [0, 1, 2, 3, 4, 5];
   for (let i = order.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [order[i], order[j]] = [order[j], order[i]];
   }
-  return { order, throw1: roll3(), throw2: roll3() };
+  return order;
 }
 
 const sum3 = (t: readonly number[]) => t[0] + t[1] + t[2];
@@ -4781,29 +4774,22 @@ function windFlyTransform(slot: number, posIdx: number): string {
 }
 
 function SeatingPanel() {
-  const [ceremony, setCeremony] = useState<Ceremony>(() => newCeremony());
+  const [order, setOrder] = useState<number[]>(newShuffle);
   const [provEast, setProvEast] = useState<number | null>(null);
   const [step, setStep] = useState(0);
 
-  // Entering a throw step (1 or 3), the dice "shake" for a beat (CSS only - see
-  // .seat-dice.is-throwing) and the sum shows "–" until they settle.
-  const [throwing, setThrowing] = useState(false);
-  useEffect(() => {
-    if (step !== 1 && step !== 3) {
-      setThrowing(false);
-      return;
-    }
-    setThrowing(true);
-    const t = window.setTimeout(() => setThrowing(false), 650);
-    return () => window.clearTimeout(t);
-  }, [step]);
+  // The two throws reuse the shared dice-roll hook (value-cycling animation,
+  // same as Dice & wall / Exchange tiles).
+  const throw1 = useDiceRoll(3);
+  const throw2 = useDiceRoll(3);
+  const rollingNow = step === 1 ? throw1.rolling : step === 3 ? throw2.rolling : false;
 
-  const revealed = useMemo(() => ceremony.order.map((i) => CEREMONY_TILES[i]), [ceremony]);
+  const revealed = useMemo(() => order.map((i) => CEREMONY_TILES[i]), [order]);
   const edged = useMemo(() => edgePins(revealed), [revealed]);
   const edgedRow = useMemo(() => [edged.left, ...edged.winds, edged.right], [edged]);
 
-  const sum1 = sum3(ceremony.throw1);
-  const sum2 = sum3(ceremony.throw2);
+  const sum1 = sum3(throw1.dice);
+  const sum2 = sum3(throw2.dice);
   const realEast = provEast === null ? null : countAround(provEast, sum1);
   const firstPerson = realEast === null ? null : countAround(realEast, sum2);
   const dealt = firstPerson === null ? null : dealWinds(edged, sum2, firstPerson);
@@ -4814,12 +4800,18 @@ function SeatingPanel() {
   const dealFromTwoPin = sum2 % 2 === 0;
 
   const reset = () => {
-    setCeremony(newCeremony());
+    setOrder(newShuffle());
     setProvEast(null);
     setStep(0);
   };
+  const advance = () => {
+    const ns = step + 1;
+    if (ns === 1) throw1.roll();
+    else if (ns === 3) throw2.roll();
+    setStep(ns);
+  };
   const canNext =
-    !throwing && step < SEATING_STEPS - 1 && !(step === 0 && provEast === null);
+    !rollingNow && step < SEATING_STEPS - 1 && !(step === 0 && provEast === null);
 
   // Which position each player token occupies right now.
   const tokenPos = (p: number) => (step >= 8 && finalPos ? finalPos[p] : p);
@@ -4859,9 +4851,9 @@ function SeatingPanel() {
   const eastAt = step >= 8 ? eastHolder : step >= 2 ? realEast : provEast;
 
   const diceFaces =
-    step === 0 ? null : step <= 2 ? ceremony.throw1 : ceremony.throw2;
+    step === 0 ? null : step <= 2 ? throw1.faces : throw2.faces;
   const throwSum: number | "–" | null =
-    step === 0 ? null : throwing ? "–" : diceFaces!.reduce((a, b) => a + b, 0);
+    step === 0 ? null : rollingNow ? "–" : diceFaces!.reduce((a, b) => a + b, 0);
 
   const caption = (() => {
     const L = SEAT_LABELS;
@@ -4871,11 +4863,11 @@ function SeatingPanel() {
           ? "Pick the provisional East."
           : `Provisional East: ${L[provEast]}.`;
       case 1:
-        return throwing ? "First throw…" : `First throw: ${sum1}.`;
+        return rollingNow ? "First throw…" : `First throw: ${sum1}.`;
       case 2:
         return `Count ${sum1} from ${L[provEast!]} → real East seat: ${L[realEast!]}.`;
       case 3:
-        return throwing
+        return rollingNow
           ? "Second throw…"
           : `Second throw: ${sum2} (${sum2 % 2 === 0 ? "even" : "odd"}).`;
       case 4:
@@ -4950,7 +4942,7 @@ function SeatingPanel() {
         </div>
       </div>
 
-      <div className={`dice-tray seat-dice${throwing ? " is-throwing" : ""}`}>
+      <div className="dice-tray seat-dice">
         {diceFaces
           ? diceFaces.map((v, i) => (
               <Die key={i} value={v} onBump={() => {}} disabled />
@@ -4960,11 +4952,16 @@ function SeatingPanel() {
       {throwSum !== null && <div className="seat-throw-sum">Sum: {throwSum}</div>}
 
       <div className="seat-controls">
-        <button type="button" className="dice-roll" onClick={() => setStep((s) => s + 1)} disabled={!canNext}>
+        <button
+          type="button"
+          className="dice-roll seat-next"
+          onClick={advance}
+          disabled={!canNext}
+        >
           {step < SEATING_STEPS - 1 ? "Next" : "Done"}
         </button>
         <button type="button" className="seat-reset" onClick={reset}>
-          Reset
+          Start over
         </button>
       </div>
     </div>

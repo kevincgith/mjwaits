@@ -2262,27 +2262,6 @@ button.scoring-pattern-row {
 .seat-dice {
   margin-bottom: 0.4rem;
 }
-.seat-dice.is-throwing .die {
-  animation: seat-die-shake 0.22s ease-in-out infinite;
-}
-.seat-dice.is-throwing .die:nth-child(2) {
-  animation-delay: 0.06s;
-}
-.seat-dice.is-throwing .die:nth-child(3) {
-  animation-delay: 0.12s;
-}
-@keyframes seat-die-shake {
-  0%,
-  100% {
-    transform: translateY(0) rotate(0deg);
-  }
-  25% {
-    transform: translateY(-4px) rotate(-8deg);
-  }
-  75% {
-    transform: translateY(3px) rotate(8deg);
-  }
-}
 .seat-throw-sum {
   margin-bottom: 1rem;
   font-weight: 700;
@@ -2291,17 +2270,26 @@ button.scoring-pattern-row {
 
 .seat-controls {
   display: flex;
-  gap: 0.75rem;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+}
+.seat-next {
+  min-width: 150px;
 }
 .seat-reset {
-  padding: 0.6rem 1.2rem;
-  border: 1px solid var(--border);
-  background: var(--surface-sunken);
-  border-radius: 6px;
-  font-size: 0.95rem;
-  font-weight: 600;
+  border: none;
+  background: none;
+  padding: 0.2rem 0.4rem;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  text-decoration: underline;
   cursor: pointer;
+}
+@media (hover: hover) and (pointer: fine) {
+  .seat-reset:hover {
+    color: var(--text-secondary);
+  }
 }
 
 /* On phones, lay each suit row out as a fixed 9-column grid instead of a
