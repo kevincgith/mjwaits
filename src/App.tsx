@@ -4763,11 +4763,11 @@ function windFlyTransform(slot: number, posIdx: number): string {
   const a = SEAT_ANCHORS[posIdx];
   const fx = parseFloat(a.left) / 100;
   const fy = parseFloat(a.top) / 100;
-  // Land just outside the token (in the direction away from the table centre),
-  // so the player's letter stays readable - like a card held in front of them.
-  const OUT = 15;
-  const tokenX = SEAT_TABLE_LEFT + fx * SEAT_TABLE_PX + Math.sign(fx - 0.5) * OUT;
-  const tokenY = fy * SEAT_TABLE_PX + Math.sign(fy - 0.5) * OUT;
+  // Land just inside the token, on the table felt in front of the player, so
+  // it clears the player's letter - like their tile placed on the table.
+  const IN = 28;
+  const tokenX = SEAT_TABLE_LEFT + fx * SEAT_TABLE_PX - Math.sign(fx - 0.5) * IN;
+  const tokenY = fy * SEAT_TABLE_PX - Math.sign(fy - 0.5) * IN;
   const tileX = slot * SEAT_TILE_PITCH + SEAT_TILE_W / 2;
   const tileY = SEAT_TABLE_PX + SEAT_STAGE_GAP + SEAT_TILE_H / 2;
   return `translate(${tokenX - tileX}px, ${tokenY - tileY}px) scale(0.62)`;
