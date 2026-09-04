@@ -1,161 +1,247 @@
 # mjwaits
 
-A toolkit for Taiwanese (16-tile) Mahjong, built around a waits calculator: build a hand and it tells you what you're waiting on, how close you are, and which discard gives you the best odds of getting there. Four tabs across the top switch between the **Calculator**, a **Trainer** quiz mode, a **Scoring** (tai/番) calculator for completed hands, and a **Dice rolling** tab that also draws the wall and the break.
+A browser toolkit for Taiwanese (16-tile) Mahjong. It started as a waits calculator — build a
+hand, see what completes it and which discard gives the best odds — and has grown four tabs:
+
+- **Scoring** — score a finished hand against a concrete house tai (番) list (~140 patterns).
+- **Calculator** — the original: waits, shanten, joker resolution, and discard analysis.
+- **Trainer** — a timed quiz for drilling waits recognition.
+- **Dice rolling** — roll for the wall, and see exactly where it breaks.
+
+Everything runs client-side, including the camera tile scanner. No hand ever leaves the browser.
 
 **Live app: [app.kevinlhc.com/mjwaits](https://app.kevinlhc.com/mjwaits/)**
 
-![A tenpai hand — 123456789m111z11t22b — with breakdown and waits count both enabled, showing a shanpon (dual pair) wait on 1 Pin / 2 Sou](docs/preview.png)
+![The Scoring tab: a fully concealed pure-flush self-draw scored at 198 tai, with the matched-pattern list — 底, 門前清, 清一色, 暗清龍, 暗四歸一… — each row expandable to the exact tiles behind it](docs/scoring.png)
 
-## Features
+## Scoring calculator (tai / 番)
+
+The Scoring tab (the default on load) scores a **complete** winning hand against one concrete
+house tai list — nearly 140 patterns, built up one at a time rather than as a configurable
+ruleset. It totals tai; there's no point/currency conversion yet.
+
+### Entering the hand
+
+The input models the table, not a text string:
+
+- **門前牌區 (Declared melds)** — everything laid in front of you. Pick a kind — 上 (chow), 碰
+  (pung), 暗槓 (concealed kong), 明槓 (exposed kong) — then tap a tile to drop that meld in; a
+  separate collapsible sub-picker adds bonus tiles (flowers / seasons). Invalid run starts grey
+  out, and the picker disables itself once five melds are declared.
+- **手牌區 (Concealed hand)** — the tiles still in hand, as a plain multiset the scorer
+  decomposes. **Long-press** a concealed tile to mark it as the **食胡 tile** (the one that
+  completed the hand); several patterns depend on whether the completing meld was self-drawn or
+  claimed off a discard.
+- **Round wind** and **seat wind** (東 / 南 / 西 / 北, round shown first), a **莊** (dealer)
+  button that steps up a 連莊 streak with +/−, a **自摸** (self-draw) toggle, and a strip of
+  situational-declaration buttons that the tiles alone can't show. Most cycle on each tap:
+  **叮 → 天叮 → 地叮** (riichi and its upgrades) with **一發** and **食叮** alongside;
+  **四子內 / 七子內 / 十子內** (won within the first N discards); **雙響 / 三響** (multiple
+  winners on one discard); **天胡 / 地胡 / 人胡**; **河底撈魚 / 海底撈月 / 海底撈月(一筒)** (won
+  on the very last tile); count-based **花摸 / 槓摸 / 搶槓** (×N, each capped at the bonus tiles
+  or kongs actually present); and a shared **明絕 / 絕絕**. These buttons wire each other up the
+  way the rules interact — e.g. 自摸 auto-activates with 花摸 / 槓摸, any last-tile win, or 天胡,
+  and is mutually exclusive with 搶槓 / 雙響 / 三響 / 地胡 / 食叮.
+
+**Reset** clears the hand, the winds, and every one of these toggles, and cancels a scan that's
+still running.
+
+### Scoring
+
+Special hands — 十三么 (Thirteen Orphans), 嚦咕嚦咕 (Eight Pairs), 十六不搭 (Sixteen Unrelated) —
+are detected up front and scored by their own dedicated logic. Everything else is run through
+**every** valid meld/pair decomposition of the hand, and the reading with the **highest total
+tai** wins — which decomposition you pick genuinely changes the score. When a pattern lists an
+exclusion, a matching "bigger" pattern suppresses the smaller one it names; unrelated patterns
+stack freely, and several (清龍, 步步高, 四歸, …) fire more than once when a segment repeats
+(the count is the product of the repeated segments' meld counts). A hand that is simultaneously
+a valid Eight Pairs and a valid ordinary hand (嚦咕雙食) is shown scored both ways.
+
+The result is the **tai total** plus a **matched-pattern list**: each row is a pattern name and
+its tai, and tapping a row expands it to the exact tiles behind that pattern — one sub-row per
+stacking instance. A sort toggle cycles the list through check-order / tai ↓ / tai ↑, and
+pressing and holding a row lights up its tiles in the DECLARED / CONCEALED display below.
+
+### Projected scores
+
+When the concealed hand is exactly one tile short of complete, the tab reuses the waits
+calculator on it and shows, per wait, the score the whole hand would land on if that tile
+completed it (each wait taken as its own 食胡 tile) — a collapsible list, sortable by score or by
+tile. Kept deliberately narrow: no jokers, no concealed kongs.
+
+[`docs/scoring-rules.md`](docs/scoring-rules.md) is the full reference — every tai value, its
+criteria and exclusions, the 明 / 暗 (open / concealed) distinction, and the duplicate-instance
+counting rules — kept in sync with the code.
+
+## Calculator
+
+![A tenpai hand — 123456789m111z11t22b — with Breakdown on, showing a shanpon (dual-pair) wait on 1 Pin / 2 Sou and both meld/pair readings](docs/preview.png)
 
 ### Hand input
 
-- **Tap tiles** on the picker, or **type algebraic notation** directly (e.g. `123456789m111z11t22b`) — the two stay in sync.
-- Suits: `m` (man/characters), `t` (pin/circles), `b` (sou/bamboo), `z` (honors, 1–7 for East/South/West/North/Red/Green/White), `j` (joker).
-- **Sort mode** toggle: on, new tiles are kept in sorted order as you add them; off, they stay exactly in the order you entered them — and toggling back off reverts to that original order.
+- **Tap tiles** on the picker, or **type algebraic notation** directly
+  (e.g. `123456789m111z11t22b`) — the two stay in sync.
+- Suits: `m` (man / characters), `t` (pin / circles), `b` (sou / bamboo), `z` (honors, 1–7 for
+  East / South / West / North / Red / Green / White), `j` (joker).
+- **Sort** toggle: on, new tiles are kept in sorted order as you add them; off, they stay in the
+  order you entered them — and toggling back off restores that original order.
 - A 4-copies-per-kind cap is enforced automatically (jokers excluded — see below).
 
 ### Waits
 
 - Enter a hand at any checkpoint size (1, 4, 7, 10, 13, 16 tiles) to see what completes it.
-- **Universal wait** is flagged explicitly when literally any of the 34 tile kinds would complete the hand.
-- Remaining copies of each waiting tile are always shown (4 minus what's already in your hand), plus a running total across all waits.
-- **Breakdown** toggle shows the exact meld/pair decomposition for each wait, with the completing tile highlighted; a small `↔` button (shown once Breakdown is on) switches between pair-first and tile-order display. A hand that's genuinely ambiguous between two shapes (e.g. a standard hand that's also valid Eight Pairs) shows every valid reading, not just one.
-
-### Jokers (🀪)
-
-Jokers are wildcards standing in for any tile. Add any number of them to a hand and the calculator works out every wait they unlock, along with what each joker resolves to for a given wait — using a wildcard-budget search rather than brute-forcing every possible substitution, so it stays fast even with many jokers in hand. With Breakdown on, the tile a joker is assumed to be is highlighted in purple within its meld/pair group, distinct from the amber highlight on the tile you'd actually draw.
-
-![1m + 3 jokers, showing the universal wait banner and all 34 waits with joker resolution hints](docs/jokers.png)
-
-Discard analysis (both kinds, below) isn't available yet for hands containing jokers.
+- A **universal wait** is flagged explicitly when any of the 34 tile kinds would complete the hand.
+- Remaining copies of each waiting tile are always shown (4 minus what's already in hand), plus a
+  running total across all waits.
+- **Breakdown** shows the exact meld/pair decomposition for each wait, completing tile
+  highlighted; a small `↔` button (once Breakdown is on) switches between pair-first and
+  tile-order display. A hand genuinely ambiguous between two shapes (e.g. a standard hand that's
+  also valid Eight Pairs) shows every valid reading, not just one.
 
 ### Shanten
 
-A full numeric shanten calculator (not just tenpai/not-tenpai) — the minimum number of discard+draw exchanges needed to reach tenpai. Covers the standard meld+pair shape plus Eight Pairs and Sixteen Unrelated Tiles.
+A full numeric shanten count — not just tenpai / not-tenpai — for the minimum number of
+discard+draw exchanges needed to reach tenpai. Covers the standard meld+pair shape plus Eight
+Pairs and Sixteen Unrelated Tiles, and shows as a badge next to the hand.
 
 ### Discard analysis
 
-Two related but distinct tools, depending on where you are in the hand:
+Two related tools, depending on where you are in the hand:
 
-- **Discard efficiency** — at any checkpoint size that *isn't* tenpai, the app ranks every discard by a weighted score: for each one, a two-step lookahead shows every useful follow-up draw (with how many copies remain) and what the hand would then be waiting on (with its own remaining count). This surfaces the discard with the best actual odds of reaching a win, not just whichever reaches tenpai fastest.
+![A 1-shanten hand, 1278m555t111333555z, with discards ranked by efficiency: each option shows a two-step lookahead — draw 3m (4 left) then wait on 6m/9m (8 tiles), etc.](docs/discard-efficiency.png)
 
-  ![Discarding 5 Pin from 1278m555t111333777z scores highest: drawing 3m (4 copies left) leads to a wait on 6m/9m worth 8 tiles](docs/discard-efficiency.png)
+- **Discard efficiency** — at any checkpoint size that *isn't* tenpai, every discard is ranked by
+  a weighted score. For each one, a two-step lookahead lists every useful follow-up draw (with
+  copies remaining) and what the hand would then wait on (with its own remaining count). This
+  surfaces the discard with the best actual odds of a win, not just whichever reaches tenpai
+  fastest.
+- **Discard options** — one tile past a checkpoint (i.e. right after drawing), each distinct
+  discard is shown with what it leaves you: tenpai and its waits, or a shanten value and which
+  draws would improve it, each with remaining-copy counts. A winning hand is called out as such —
+  and, with Breakdown on, still shows its full decomposition plus what discarding anyway would
+  leave you waiting on.
 
-- **Discard options** — right after drawing (one tile past a checkpoint), the app shows what discarding each distinct tile leaves you with: tenpai and its waits, or a shanten value and which draws would improve it further, each with remaining-copy counts. If you already have a winning hand, it says so — and, with Breakdown on, still shows the full decomposition plus what discarding anyway (instead of winning) would leave you waiting on.
+### Jokers (🀪)
+
+![1 man plus 3 jokers: the universal-wait banner, all 34 tile kinds listed, and for each one the "🀪 = …" hint showing what the jokers resolve to](docs/jokers.png)
+
+Jokers are wildcards standing in for any tile. Add any number to a hand and the calculator works
+out every wait they unlock, plus what each joker resolves to for a given wait — using a
+wildcard-budget search rather than brute-forcing every substitution, so it stays fast with many
+jokers in hand. With Breakdown on, the tile a joker stands in for is highlighted in purple within
+its meld/pair group, distinct from the amber highlight on the tile you'd actually draw. (Discard
+analysis isn't available yet for hands containing jokers.)
 
 ### Special hands
 
-Beyond the standard 5-melds-plus-a-pair shape, the calculator recognizes:
+![A tenpai Sixteen Unrelated Tiles hand, 147t258m369b1234567z, waiting on all 16 of its own kinds for 48 tiles total](docs/special-hand.png)
+
+Beyond the standard five-melds-plus-a-pair shape, the calculator recognizes:
 
 - **Thirteen Orphans** — all 13 terminal/honor kinds, one doubled as the pair, plus one ordinary meld.
-- **Eight Pairs ("Liguligu")** — seven pairs plus one tripled pair (a full quad also counts as two pairs).
-- **Sixteen Unrelated Tiles** — all 7 honors plus 3 mutually "unrelated" ranks from each of man/pin/sou (no two close enough to ever share a chow), plus one tile doubling any of them for the pair.
+- **Eight Pairs ("Liguligu")** — seven pairs plus one tripled pair (a full quad counts as two pairs).
+- **Sixteen Unrelated Tiles** — all 7 honors plus 3 mutually "unrelated" ranks from each of
+  man/pin/sou (no two close enough to ever share a chow), plus one tile doubling any of them for
+  the pair.
 
-Breakdown mode understands all three shapes, not just the standard one — Thirteen Orphans groups the pair, the 12 remaining singles, and the extra meld separately; Eight Pairs shows the tripled kind first, then the other 7 pairs; Sixteen Unrelated shows the pair and the other 15 singles.
-
-![A tenpai Sixteen Unrelated Tiles hand (147t258m369b1234567z), waiting on all 16 of its own kinds for 48 tiles total](docs/special-hand.png)
+Breakdown mode understands all three: Thirteen Orphans groups the pair, the 12 remaining singles,
+and the extra meld; Eight Pairs shows the tripled kind first, then the other seven pairs;
+Sixteen Unrelated shows the pair and the other 15 singles.
 
 ### Camera scan (📷)
 
-Point a camera at a hand (or upload a photo) and have the tiles filled in automatically instead of tapping/typing every one. Detection runs entirely client-side — a YOLOv8n (nano) model, quantized to INT8 ONNX (3.4MB) and run in-browser via [onnxruntime-web](https://github.com/microsoft/onnxruntime) (WASM). No image is ever uploaded anywhere.
+Point a camera at a hand (or pick a photo) and have the tiles filled in automatically. Detection
+runs entirely in-browser — a YOLOv8n (nano) model quantized to INT8 ONNX (3.4 MB), run via
+[onnxruntime-web](https://github.com/microsoft/onnxruntime) (WASM). No image is uploaded anywhere.
 
-After picking a photo, you can drag to crop out anything that isn't the hand (with counterclockwise/clockwise rotate buttons for sideways shots) before scanning; overlapping duplicate detections are dropped with non-max suppression, and the review step shows a box over each detected tile (bonus tiles like flowers/seasons are boxed but greyed out and excluded from the hand) and lets you confirm or cancel before it replaces your current hand.
+The Scan button opens the camera directly (there's a separate 🏞️ Photos button for an existing
+shot). You then drag to crop out anything that isn't the hand, with a rotate control for sideways
+photos; overlapping duplicate detections are dropped with non-max suppression, and a review step
+draws a box over each detected tile (bonus tiles like flowers/seasons are boxed but greyed out
+and excluded) before it replaces your hand. The **Scoring** tab uses the same scanner with two
+crops — one for the 手牌區 concealed pile, one for the 門前牌區 declared pile — each labelled and
+read back into the right region; if a scan of a Scoring hand comes back a genuine complete hand,
+it's applied straight away with a persistent "✅ Hand applied from scan" banner and an **Adjust**
+button back to the crop.
 
-The **Scoring** tab has the same scanner, extended to two crops for the two physical piles — one for the 手牌區 concealed hand, one for the 門前牌區 declared melds — each labelled on its box, and each read back into the right region. Before the crop screen appears, a quick "Analyzing photo layout…" pass runs detection on the whole photo and, if it finds two clearly separated rows of tiles, seeds the two crop boxes to already roughly cover them instead of always starting from fixed default positions — silently falling back to those defaults if the photo doesn't split cleanly into two rows. Which row is which isn't just "top = declared" — a kong (4 identical tiles) or a bonus tile in a row is a strong declared-hand signal, and a pair (exactly 2 identical tiles - the hand's own 將眼, which is always concealed) or a tile whose box comes back rotated relative to the rest of its row is a strong concealed-hand signal, so these can override the plain top/bottom guess when they disagree with it. A 🪄 **Autofit** button re-runs this same detection on demand (e.g. after manually repositioning things), and rotating the photo re-runs it automatically since rotation invalidates whatever fit was there before; an **⇄ Swap regions** button relabels which existing box is Concealed vs. Declared without moving either one, for when the guess still comes out backwards. If the concealed-hand scan finds one tile rotated relative to the rest, it's also pre-selected as the 食胡 tile (the one that completed the hand) once you confirm the scan. The Scoring tab's Reset button also cancels a scan that's still in progress.
+The model was trained on a merged dataset combining
+[MahjongVis](https://github.com/Andy8647/MahjongVis) (MIT) and
+[MJOD-2136](https://github.com/jaheel/MJOD-2136) (CC BY-NC-SA) across 42 tile classes (the 34
+mjwaits recognizes plus 8 bonus-tile classes), then fine-tuned on real photos of a physical set
+to close the gap between the training data's tile designs and a visitor's actual tiles. On the
+full validation split the deployed checkpoint scores mAP50 0.944 / mAP50-95 0.752 / precision
+0.973 / recall 0.913. See [training/README.md](training/README.md) for the full pipeline.
 
-The model was trained on a merged dataset combining [MahjongVis](https://github.com/Andy8647/MahjongVis) (MIT) and [MJOD-2136](https://github.com/jaheel/MJOD-2136) (CC BY-NC-SA), across 42 tile classes (34 mjwaits recognizes plus 8 bonus-tile classes), then fine-tuned on real photos of a physical set to close the gap between the training data's tile designs and what a visitor's actual tiles look like. On the full validation split, the deployed checkpoint scores mAP50 0.944 / mAP50-95 0.752 / precision 0.973 / recall 0.913. See [training/README.md](training/README.md) for the full training/export pipeline and reproducibility details.
+## Trainer
 
-### Trainer
+![A Level 4 quiz question answered: the answer picker marks one correct hit (green), one missed wait (amber), and one wrong guess (red), with the full breakdown and a per-level stats table below](docs/trainer.png)
 
-A quiz mode for practicing waits recognition, separate from the calculator (switch between them with the tabs at the top). Each question is a randomly generated hand at one of 5 difficulty levels — Level 1 is 4 tiles (1 meld + pair), Level 5 is the full 16-tile tenpai size — guaranteed to have at least one wait. The answer picker only shows suits actually present in the question, since a wait can never come from a suit that isn't already there. Tap tiles to mark your guess, then submit: the picker highlights each pick as a correct hit, a wrong guess, or a wait you missed, and a full breakdown (same as the calculator's) reveals how each actual wait completes the hand. **Flush mode** restricts every generated hand to a single random suit for extra difficulty.
+A timed quiz for practicing waits recognition. Each question is a randomly generated hand at one
+of five levels — Level 1 is 4 tiles (1 meld + pair), Level 5 the full 16-tile tenpai size —
+guaranteed to have at least one wait. The answer picker only shows suits actually present in the
+question, since a wait can never come from a suit that isn't already there. Mark your guess, then
+submit: the picker flags each pick as a correct hit, a wrong guess, or a wait you missed, and a
+full breakdown (same as the Calculator's) shows how each real wait completes the hand. **Flush
+mode** restricts every generated hand to one random suit for extra difficulty.
 
-A live timer runs per question and freezes at submit. Results accumulate into a stats table broken down by level and flush mode (since difficulty varies a lot between them) — answered, correct, wrong, % correct, and average time, with an overall total row and a Reset Stats button. Stats persist across switching back to the Calculator tab and back.
+A per-question timer runs and freezes at submit. Results accumulate into a stats table broken
+down by level and flush mode — answered, correct, wrong, % correct, average time — with an
+overall row and a Reset Stats button. Stats survive switching tabs and back.
 
-### Scoring calculator
+## Dice rolling
 
-A separate tab (the waits Calculator itself stays always-concealed) that scores a complete winning
-hand against one concrete house tai (番) list — nearly 140 patterns, built up one at a time rather
-than as a configurable ruleset. It totals tai only; there's no point/currency conversion yet.
+![The Dice & wall sub-tab: three dice showing 4, 5, 3 (total 12), the built wall drawn as a four-bar pinwheel, and a 👉 marking where a count of 12 breaks the left wall](docs/dice.png)
 
-**Entering the hand.** The input models the physical table rather than a text string, as two
-tap-based tile regions plus a row of declaration buttons:
+Two sub-tabs:
 
-- **門前牌區 (Declared melds)** — anything laid out in front of you. Pick a kind (上 chow / 碰 pung
-  / 暗槓 concealed kong / 明槓 exposed kong), then tap a tile to add that meld; a separate
-  collapsible sub-picker adds bonus tiles (flowers/seasons). The picker greys out invalid run
-  starts, disables itself once 5 melds are declared, and collapses once you're done with it.
-- **手牌區 (Concealed hand)** — the tiles still in your hand, as a plain multiset the scorer
-  decomposes. **Long-press** a tile here to mark it as the **食胡 tile** (the one that completed
-  the hand); several patterns score differently depending on whether the completing meld was
-  self-drawn or claimed off a discard.
-- **Round wind** and **seat wind** (東 / 南 / 西 / 北 buttons, round shown first), a **自摸**
-  (self-draw) toggle, and a strip of manual declaration buttons for situational patterns that the
-  tiles alone can't show. Most cycle through their states on each tap: **叮 → 天叮 → 地叮** (riichi
-  and its upgrades) with a **一發** and a **食叮** button, **四子內 / 七子內 / 十子內** (won within
-  the first N discards), **雙響 / 三響** (multiple winners on one discard), **天胡 / 地胡 / 人胡**,
-  **河底撈魚 / 海底撈月 / 海底撈月(一筒)** (won on the very last tile), count-based **花摸 / 槓摸 /
-  搶槓** (×N, capped at the bonus tiles / kongs actually in the hand), and a shared **明絕 / 絕絕**
-  button. These buttons wire each other up the way the real rules interact — e.g. 自摸
-  auto-activates with 花摸/槓摸, any last-tile win, or 天胡, and is mutually exclusive with
-  搶槓/雙響/三響/地胡/食叮 (turning one on turns the others off); 天胡/地胡/人胡 exclude the
-  last-tile group; and so on. **Reset** clears the hand, the winds, and every one of these toggles,
-  and cancels an in-progress scan.
-
-**Scoring.** Special hands (十三么 Thirteen Orphans, 嚦咕嚦咕 Eight Pairs, 十六不搭 Sixteen
-Unrelated) are detected and scored by their own dedicated logic; everything else is run through
-every valid meld/pair decomposition of the hand, and the **highest total tai over all readings**
-wins — which reading you pick can change the score. When a pattern lists an exclusion, a matching
-"bigger" pattern suppresses the smaller one it names; unrelated patterns stack freely, and several
-(清龍, 步步高, 四歸, …) can fire more than once when a segment repeats. A hand that's
-simultaneously a valid Eight Pairs and a valid ordinary hand (嚦咕雙食) shows both scored
-readings. The result shows the tai total and a full meld/pair breakdown with the 食胡 tile
-highlighted.
-
-**Projected scores.** When the concealed hand is exactly one tile short of complete, the tab
-reuses the waits calculator on it and shows, per wait, the score the whole hand would land on if
-that tile completed it (each wait taken as its own 食胡 tile) — a collapsible list, best score
-first. Kept deliberately narrow: no jokers, no concealed kongs.
-
-See [docs/scoring-rules.md](docs/scoring-rules.md) for the full pattern list — every tai value,
-its criteria, its exclusions, the 明/暗 (open/concealed) distinction, and the duplicate-instance
-counting rules — kept in sync with the code.
-
-### Dice rolling
-
-A standalone tab with two sub-tabs:
-
-- **Dice & wall** — three tappable d6 (tap a die to nudge its face, or hit **Roll the dice** for
-  an animated tumble that settles on one result). The total is shown in a box tinted green for a
-  three-of-a-kind and red for a 1-2-3. Below it, the full built wall is drawn as four 2×18
-  tile-back bars in a pinwheel offset, and the dice sum breaks it: the app counts round to the
-  right seat and marks where the wall opens, with a 👉 on the break and a caption spelling out
-  which side and how many stacks are counted off.
-- **Exchange tiles** — a two-die roller for the pre-deal tile exchange. One die (in a labelled
-  "Round" box) picks a round 1–3, the other ("Tiles") a count with a floor of 3, and the tab shows
-  Round, Tiles, and their product.
+- **Dice & wall** — three tappable d6 (tap a die to nudge its face, or roll for an animated
+  tumble that settles on one result). The total sits in a box tinted green for a three-of-a-kind
+  and red for a 1-2-3. Below it the full built wall is drawn as four 2×18 tile-back bars in a
+  pinwheel offset, and the dice sum breaks it: the app counts round to the right seat, marks the
+  opening with a 👉, and captions which side is broken and how many stacks are counted off.
+- **Exchange tiles** — a two-die roller for the pre-deal exchange. One die (a labelled "Round"
+  box) picks a round 1–3, the other ("Tiles") a count with a floor of 3, and it shows Round,
+  Tiles, and their product.
 
 ## Notation reference
 
 ```
 123456789m111z11t22b   5 melds + a pair
 1278m555t111333777z    mixed suits and honors
-jjjj                    4 jokers, no rank needed
+jjjj                   4 jokers, no rank needed
 ```
 
-Digits before a suit letter are that many tiles of that suit; jokers are written as a run of bare `j` characters since they have no rank.
+Digits before a suit letter are that many tiles of that suit; jokers are written as a run of bare
+`j` characters since they have no rank.
 
 ## Development
 
 ```bash
 npm install
-npm run dev      # start the dev server
+npm run dev      # start the dev server (http://localhost:5173/mjwaits/)
 npm test         # run the test suite (vitest)
+npm run lint     # oxlint
 npm run build    # typecheck + production build
 ```
 
-The core engine (parsing, shanten, waits, joker resolution, discard analysis) lives in [`src/lib/mahjong.ts`](src/lib/mahjong.ts) and is covered by an extensive test suite in [`src/lib/mahjong.test.ts`](src/lib/mahjong.test.ts), including brute-force cross-validation for the trickier joker and shanten logic. Trainer question generation lives in [`src/lib/trainer.ts`](src/lib/trainer.ts), tested with property-based checks across all levels and flush mode in [`src/lib/trainer.test.ts`](src/lib/trainer.test.ts). The scoring engine (notation parsing, the all-decompositions search, the `PATTERNS` tai list) lives in [`src/lib/scoring.ts`](src/lib/scoring.ts), tested in [`src/lib/scoring.test.ts`](src/lib/scoring.test.ts) — see [docs/scoring-rules.md](docs/scoring-rules.md) for what each pattern actually does. The client-side tile detector (letterboxing, ONNX inference, non-max suppression) lives in [`src/lib/vision.ts`](src/lib/vision.ts).
+The core engine (parsing, shanten, waits, joker resolution, discard analysis) lives in
+[`src/lib/mahjong.ts`](src/lib/mahjong.ts), covered by an extensive suite in
+[`src/lib/mahjong.test.ts`](src/lib/mahjong.test.ts) including brute-force cross-validation for
+the trickier joker and shanten logic. Trainer question generation is in
+[`src/lib/trainer.ts`](src/lib/trainer.ts) with property-based checks across all levels and flush
+mode. The scoring engine — notation parsing, the all-decompositions search, and the `PATTERNS`
+tai list — is in [`src/lib/scoring.ts`](src/lib/scoring.ts), tested in
+[`src/lib/scoring.test.ts`](src/lib/scoring.test.ts); see
+[`docs/scoring-rules.md`](docs/scoring-rules.md) for what each pattern does. The client-side tile
+detector (letterboxing, ONNX inference, non-max suppression) is in
+[`src/lib/vision.ts`](src/lib/vision.ts).
 
-Built with React, TypeScript, and Vite; deployed to GitHub Pages via GitHub Actions on every push to `main`.
+The README screenshots are regenerated from a running dev server with
+[`scripts/shoot-readme-screenshots.mjs`](scripts/shoot-readme-screenshots.mjs) (needs
+`npm i puppeteer-core --no-save` and a local Google Chrome).
 
-See [ROADMAP.md](ROADMAP.md) for ideas on future work (a live camera viewfinder instead of photo-then-crop, extending joker resolution into shanten/discard analysis, and point/currency conversion for the scoring calculator).
+Built with React, TypeScript, and Vite; deployed to GitHub Pages via GitHub Actions on every push
+to `main`.
+
+See [ROADMAP.md](ROADMAP.md) for future ideas (a live camera viewfinder, extending joker
+resolution into shanten and discard analysis, point/currency conversion for scoring).
