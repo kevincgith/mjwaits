@@ -4666,8 +4666,279 @@ function ExchangePanel() {
   );
 }
 
+// --- Seating ceremony ------------------------------------------------------
+//
+// Four players A/B/C/D sit at four fixed table positions in counter-clockwise
+// order (A -> B -> C -> D -> A). "Count n from player x" lands on player
+// (x + n - 1) mod 4, so n = 1,5,9,13,17 comes back to the roller.
+
+const SEAT_LABELS = ["A", "B", "C", "D"] as const;
+
+// The six ceremony tiles: 東 南 西 北 + 一筒 (odd) 二筒 (even).
+const CEREMONY_TILES: Tile[] = [
+  { suit: "z", rank: 1 },
+  { suit: "z", rank: 2 },
+  { suit: "z", rank: 3 },
+  { suit: "z", rank: 4 },
+  { suit: "t", rank: 1 },
+  { suit: "t", rank: 2 },
+];
+
+// Screen anchor (percent of the square table) for each position index, laid
+// out so 0 -> 1 -> 2 -> 3 reads counter-clockwise: bottom, left, top, right.
+const SEAT_ANCHORS = [
+  { left: "50%", top: "100%" },
+  { left: "0%", top: "50%" },
+  { left: "50%", top: "0%" },
+  { left: "100%", top: "50%" },
+];
+
+const d6 = () => 1 + Math.floor(Math.random() * 6);
+const roll3 = (): [number, number, number] => [d6(), d6(), d6()];
+
+interface Ceremony {
+  order: number[]; // permutation of 0..5 into CEREMONY_TILES - the shuffled row
+  throw1: [number, number, number];
+  throw2: [number, number, number];
+}
+
+function newCeremony(): Ceremony {
+  const order = [0, 1, 2, 3, 4, 5];
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+  return { order, throw1: roll3(), throw2: roll3() };
+}
+
+const sum3 = (t: readonly number[]) => t[0] + t[1] + t[2];
+const countAround = (from: number, n: number) => (from + n - 1) % 4;
+
+// Step 8: the 筒 that appears first in the revealed row goes to the left edge,
+// the other to the right; the winds keep their revealed order in the middle.
+function edgePins(revealed: Tile[]) {
+  const pins = revealed.filter((t) => t.suit === "t");
+  const winds = revealed.filter((t) => t.suit === "z");
+  return { left: pins[0], right: pins[1], winds };
+}
+
+// Step 10: read the four middle winds from the parity-chosen edge (even -> 二筒
+// edge, odd -> 一筒 edge) and hand them out counter-clockwise from `firstPerson`.
+function dealWinds(
+  edged: { left: Tile; right: Tile; winds: Tile[] },
+  secondSum: number,
+  firstPerson: number
+): Wind[] {
+  const twoPinIsLeft = edged.left.rank === 2;
+  const fromLeftEdge = secondSum % 2 === 0 ? twoPinIsLeft : !twoPinIsLeft;
+  const ordered = fromLeftEdge ? edged.winds : [...edged.winds].reverse();
+  const out: Wind[] = [1, 1, 1, 1];
+  for (let k = 0; k < 4; k++) out[(firstPerson + k) % 4] = ordered[k].rank as Wind;
+  return out;
+}
+
+const SEATING_STEPS = 9; // 0..8
+const SEATING_CAPTIONS_HELP = [
+  "Pick the provisional East, then press Next.",
+  "The provisional East makes the first throw.",
+  "The first throw's total picks the real East seat.",
+  "The player now at the real East seat makes the second throw.",
+  "Turn all six tiles face up.",
+  "一筒 / 二筒 slide out to the edges; the winds keep their order.",
+  "The second throw's total picks who takes the first wind.",
+  "Deal the four winds out from the parity edge.",
+  "Everyone moves to the seat of the wind they were dealt.",
+];
+
 function SeatingPanel() {
-  return <p className="sub-tab-placeholder">Nothing here yet.</p>;
+  const [ceremony, setCeremony] = useState<Ceremony>(() => newCeremony());
+  const [provEast, setProvEast] = useState<number | null>(null);
+  const [step, setStep] = useState(0);
+
+  // Cosmetic dice tumble when entering the two throw steps (1 and 3).
+  const [tumble, setTumble] = useState<[number, number, number] | null>(null);
+  const tumbleTimer = useRef<number | null>(null);
+  useEffect(() => () => {
+    if (tumbleTimer.current !== null) window.clearInterval(tumbleTimer.current);
+  }, []);
+  useEffect(() => {
+    if (step !== 1 && step !== 3) {
+      setTumble(null);
+      return;
+    }
+    let ticks = 0;
+    setTumble(roll3());
+    if (tumbleTimer.current !== null) window.clearInterval(tumbleTimer.current);
+    tumbleTimer.current = window.setInterval(() => {
+      ticks += 1;
+      if (ticks >= 10) {
+        if (tumbleTimer.current !== null) window.clearInterval(tumbleTimer.current);
+        tumbleTimer.current = null;
+        setTumble(null);
+      } else {
+        setTumble(roll3());
+      }
+    }, 60);
+    return () => {
+      if (tumbleTimer.current !== null) window.clearInterval(tumbleTimer.current);
+      tumbleTimer.current = null;
+    };
+  }, [step]);
+  const tumbling = tumble !== null;
+
+  const revealed = useMemo(() => ceremony.order.map((i) => CEREMONY_TILES[i]), [ceremony]);
+  const edged = useMemo(() => edgePins(revealed), [revealed]);
+  const edgedRow = useMemo(() => [edged.left, ...edged.winds, edged.right], [edged]);
+
+  const sum1 = sum3(ceremony.throw1);
+  const sum2 = sum3(ceremony.throw2);
+  const realEast = provEast === null ? null : countAround(provEast, sum1);
+  const firstPerson = realEast === null ? null : countAround(realEast, sum2);
+  const dealt = firstPerson === null ? null : dealWinds(edged, sum2, firstPerson);
+  const finalPos =
+    dealt === null || realEast === null
+      ? null
+      : dealt.map((w) => (realEast + (w - 1)) % 4);
+  const dealFromTwoPin = sum2 % 2 === 0;
+
+  const reset = () => {
+    setCeremony(newCeremony());
+    setProvEast(null);
+    setStep(0);
+  };
+  const canNext =
+    !tumbling && step < SEATING_STEPS - 1 && !(step === 0 && provEast === null);
+
+  // Which position each player token occupies right now.
+  const tokenPos = (p: number) => (step >= 8 && finalPos ? finalPos[p] : p);
+  // Which slot each tile occupies right now.
+  const tileSlot = (t: Tile) => (step < 5 ? revealed.indexOf(t) : edgedRow.indexOf(t));
+
+  const eastHolder = dealt ? dealt.indexOf(1) : null; // player dealt 東
+  const highlighted =
+    step === 1
+      ? provEast
+      : step === 2 || step === 3
+        ? realEast
+        : step === 6
+          ? firstPerson
+          : step === 8
+            ? eastHolder
+            : null;
+  // Through the throws the 東 badge marks the real-East seat (the 2nd thrower);
+  // once everyone has re-seated it marks whoever actually holds 東.
+  const eastAt = step >= 8 ? eastHolder : step >= 2 ? realEast : provEast;
+
+  const diceFaces = tumbling
+    ? tumble
+    : step === 0
+      ? null
+      : step <= 2
+        ? ceremony.throw1
+        : ceremony.throw2;
+
+  const caption = (() => {
+    const L = SEAT_LABELS;
+    switch (step) {
+      case 0:
+        return provEast === null
+          ? "Pick the provisional East."
+          : `Provisional East: ${L[provEast]}.`;
+      case 1:
+        return tumbling ? "First throw…" : `First throw: ${sum1}.`;
+      case 2:
+        return `Count ${sum1} from ${L[provEast!]} → real East seat: ${L[realEast!]}.`;
+      case 3:
+        return tumbling
+          ? "Second throw…"
+          : `Second throw: ${sum2} (${sum2 % 2 === 0 ? "even" : "odd"}).`;
+      case 4:
+        return "Reveal the six tiles.";
+      case 5:
+        return "一筒 / 二筒 to the edges; winds keep their order.";
+      case 6:
+        return `Count ${sum2} from ${L[realEast!]} → first pick: ${L[firstPerson!]}.`;
+      case 7:
+        return `Deal the winds from the ${dealFromTwoPin ? "二筒" : "一筒"} edge.`;
+      case 8:
+        return "Final seating.";
+      default:
+        return "";
+    }
+  })();
+
+  return (
+    <div className="seat-sim">
+      <div className="seat-caption">
+        <span className="seat-step-n">
+          {step + 1}/{SEATING_STEPS}
+        </span>
+        <span>{caption}</span>
+      </div>
+      <p className="seat-help">{SEATING_CAPTIONS_HELP[step]}</p>
+
+      <div className="seat-table">
+        {SEAT_LABELS.map((label, p) => {
+          const pos = tokenPos(p);
+          const wind = step >= 7 && dealt ? dealt[p] : null;
+          const pickable = step === 0;
+          return (
+            <button
+              key={label}
+              type="button"
+              className={`seat-token seat-token-${label.toLowerCase()}${
+                highlighted === p ? " is-active" : ""
+              }`}
+              style={SEAT_ANCHORS[pos]}
+              disabled={!pickable}
+              onClick={() => pickable && setProvEast(p)}
+              aria-label={
+                pickable ? `Make ${label} the provisional East` : `Player ${label}`
+              }
+            >
+              <span className="seat-token-label">{label}</span>
+              {eastAt === p && (
+                <span className={`seat-token-east${step < 2 ? " is-provisional" : ""}`}>東</span>
+              )}
+              {wind !== null && <span className="seat-token-wind">{WIND_SHORT[wind]}</span>}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="seat-tile-row">
+        {revealed.map((t) => (
+          <div
+            key={`${t.suit}${t.rank}`}
+            className={`seat-tile${step >= 4 ? " is-face-up" : ""}`}
+            style={{ transform: `translateX(calc(${tileSlot(t)} * (var(--seat-tile-w) + var(--seat-tile-gap))))` }}
+          >
+            <span className="seat-tile-back" />
+            <span className="seat-tile-face">
+              <TileGlyphSpan tile={t} />
+            </span>
+          </div>
+        ))}
+      </div>
+
+      <div className="dice-tray seat-dice">
+        {diceFaces
+          ? diceFaces.map((v, i) => (
+              <Die key={i} value={v} onBump={() => {}} disabled />
+            ))
+          : [0, 1, 2].map((i) => <div key={i} className="die die-empty" />)}
+      </div>
+
+      <div className="seat-controls">
+        <button type="button" className="dice-roll" onClick={() => setStep((s) => s + 1)} disabled={!canNext}>
+          {step < SEATING_STEPS - 1 ? "Next" : "Done"}
+        </button>
+        <button type="button" className="seat-reset" onClick={reset}>
+          Reset
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function DiceTab() {
