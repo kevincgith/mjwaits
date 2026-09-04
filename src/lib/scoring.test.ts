@@ -2434,6 +2434,23 @@ describe("PATTERNS: 明/暗四歸 applies within 嚦咕嚦咕 too", () => {
     expect(tai(result, "orphans-four-return-hidden")).toBe(45);
     expect(tai(result, "orphans-four-return-open")).toBe(0);
   });
+
+  // A 嚦咕嚦咕 quad is a single 4-tile meld (see eightPairsQuadKinds) -
+  // shown split into its 2 constituent pairs as 2 groups within one row,
+  // same treatment as middle-tile-pair's own quad row (not one row of all
+  // 4 tiles bundled together).
+  it("shows each quad's row split into its 2 pairs - 11122223333445555m has 3 quads (2m, 3m, 5m)", () => {
+    const c = ctx();
+    const result = scoreHand("11122223333445555m", c);
+    expect(tai(result, "orphans-four-return-hidden")).toBe(45); // 3 quads x 15
+    const rows = patternTiles(result, "orphans-four-return-hidden", c);
+    expect(rows).toHaveLength(3);
+    for (const row of rows ?? []) {
+      expect(row).toHaveLength(2);
+      expect(row[0]).toHaveLength(2);
+      expect(row[1]).toHaveLength(2);
+    }
+  });
 });
 
 describe("PATTERNS: other patterns reused within 嚦咕嚦咕 (per the user's own list)", () => {

@@ -851,6 +851,21 @@ function allFourReturnQuadKinds(hand: ResolvedHand): Tile[] {
   return orphansQuad ? [orphansQuad] : eightPairsQuadKinds(hand);
 }
 
+// Display groups for one quad kind, for 明/暗四歸's own tiles() below - a
+// 嚦咕嚦咕 quad is a single 4-tile meld (see eightPairsQuadKinds), shown
+// split into its 2 constituent pairs as 2 groups, same treatment as
+// middle-tile-pair's own quad row. A 十三么 quad is structurally different
+// (a 3-tile "triplet" meld + a separate matching 1-tile single - see
+// orphansQuadKind) and already naturally forms 2 groups this way, just
+// uneven ones (3 tiles + 1), so it's returned as-is.
+function fourReturnGroupsFor(hand: ResolvedHand, q: Tile): Tile[][] {
+  const melds = hand.melds.filter((m) => m.tiles[0].suit === q.suit && m.tiles[0].rank === q.rank);
+  if (melds.length === 1 && melds[0].tiles.length === 4) {
+    return [melds[0].tiles.slice(0, 2), melds[0].tiles.slice(2, 4)];
+  }
+  return melds.map((m) => m.tiles);
+}
+
 // 小五門齊/小七門齊 (嚦咕嚦咕 context): the normal small-five-suits/small-
 // seven-suits patterns can't be reused as-is here - their own "not also
 // big" guard (categoriesWithFullMeld().size < 5) assumes hand.melds holds
@@ -3329,7 +3344,7 @@ export const PATTERNS: TaiPattern[] = [
     tiles: (hand, ctx) => {
       if (ctx.winningTile === null || ctx.selfDraw) return [];
       const matches = allFourReturnQuadKinds(hand).filter((q) => q.suit === ctx.winningTile!.suit && q.rank === ctx.winningTile!.rank);
-      return matches.map((q) => hand.melds.filter((m) => m.tiles[0].suit === q.suit && m.tiles[0].rank === q.rank).map((m) => m.tiles));
+      return matches.map((q) => fourReturnGroupsFor(hand, q));
     },
   },
   {
@@ -3348,7 +3363,7 @@ export const PATTERNS: TaiPattern[] = [
     tiles: (hand, ctx) => {
       const quads = allFourReturnQuadKinds(hand);
       const isOpen = (q: Tile) => ctx.winningTile !== null && !ctx.selfDraw && q.suit === ctx.winningTile.suit && q.rank === ctx.winningTile.rank;
-      return quads.filter((q) => !isOpen(q)).map((q) => hand.melds.filter((m) => m.tiles[0].suit === q.suit && m.tiles[0].rank === q.rank).map((m) => m.tiles));
+      return quads.filter((q) => !isOpen(q)).map((q) => fourReturnGroupsFor(hand, q));
     },
   },
   {
