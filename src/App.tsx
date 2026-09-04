@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
   type ChangeEvent,
+  type CSSProperties,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
@@ -4685,12 +4686,14 @@ const CEREMONY_TILES: Tile[] = [
 ];
 
 // Screen anchor (percent of the square table) for each position index, laid
-// out so 0 -> 1 -> 2 -> 3 reads counter-clockwise: bottom, left, top, right.
+// out so stepping 0 -> 1 -> 2 -> 3 goes counter-clockwise on screen (bottom,
+// right, top, left) - i.e. mahjong turn order, with each seat's CCW neighbour
+// to its "right". Every "count round the players" helper steps +index.
 const SEAT_ANCHORS = [
   { left: "50%", top: "100%" },
-  { left: "0%", top: "50%" },
-  { left: "50%", top: "0%" },
   { left: "100%", top: "50%" },
+  { left: "50%", top: "0%" },
+  { left: "0%", top: "50%" },
 ];
 
 const d6 = () => 1 + Math.floor(Math.random() * 6);
@@ -4750,41 +4753,50 @@ const SEATING_CAPTIONS_HELP = [
   "Everyone moves to the seat of the wind they were dealt.",
 ];
 
+// Fixed geometry for the seating diagram (must match the .seat-* CSS). Kept in
+// px so the deal animation can be computed analytically - no DOM measuring.
+const SEAT_TILE_W = 32;
+const SEAT_TILE_GAP = 6;
+const SEAT_TILE_PITCH = SEAT_TILE_W + SEAT_TILE_GAP;
+const SEAT_TILE_H = SEAT_TILE_W * 1.35;
+const SEAT_TABLE_PX = 132;
+const SEAT_STAGE_GAP = 22;
+const SEAT_STAGE_W = SEAT_TILE_W * 6 + SEAT_TILE_GAP * 5;
+const SEAT_TABLE_LEFT = (SEAT_STAGE_W - SEAT_TABLE_PX) / 2;
+
+// translate() to fly the wind tile at row-slot `slot` onto the token at
+// position `posIdx`, in the shared stage coordinate space.
+function windFlyTransform(slot: number, posIdx: number): string {
+  const a = SEAT_ANCHORS[posIdx];
+  const fx = parseFloat(a.left) / 100;
+  const fy = parseFloat(a.top) / 100;
+  // Land just outside the token (in the direction away from the table centre),
+  // so the player's letter stays readable - like a card held in front of them.
+  const OUT = 15;
+  const tokenX = SEAT_TABLE_LEFT + fx * SEAT_TABLE_PX + Math.sign(fx - 0.5) * OUT;
+  const tokenY = fy * SEAT_TABLE_PX + Math.sign(fy - 0.5) * OUT;
+  const tileX = slot * SEAT_TILE_PITCH + SEAT_TILE_W / 2;
+  const tileY = SEAT_TABLE_PX + SEAT_STAGE_GAP + SEAT_TILE_H / 2;
+  return `translate(${tokenX - tileX}px, ${tokenY - tileY}px) scale(0.62)`;
+}
+
 function SeatingPanel() {
   const [ceremony, setCeremony] = useState<Ceremony>(() => newCeremony());
   const [provEast, setProvEast] = useState<number | null>(null);
   const [step, setStep] = useState(0);
 
-  // Cosmetic dice tumble when entering the two throw steps (1 and 3).
-  const [tumble, setTumble] = useState<[number, number, number] | null>(null);
-  const tumbleTimer = useRef<number | null>(null);
-  useEffect(() => () => {
-    if (tumbleTimer.current !== null) window.clearInterval(tumbleTimer.current);
-  }, []);
+  // Entering a throw step (1 or 3), the dice "shake" for a beat (CSS only - see
+  // .seat-dice.is-throwing) and the sum shows "–" until they settle.
+  const [throwing, setThrowing] = useState(false);
   useEffect(() => {
     if (step !== 1 && step !== 3) {
-      setTumble(null);
+      setThrowing(false);
       return;
     }
-    let ticks = 0;
-    setTumble(roll3());
-    if (tumbleTimer.current !== null) window.clearInterval(tumbleTimer.current);
-    tumbleTimer.current = window.setInterval(() => {
-      ticks += 1;
-      if (ticks >= 10) {
-        if (tumbleTimer.current !== null) window.clearInterval(tumbleTimer.current);
-        tumbleTimer.current = null;
-        setTumble(null);
-      } else {
-        setTumble(roll3());
-      }
-    }, 60);
-    return () => {
-      if (tumbleTimer.current !== null) window.clearInterval(tumbleTimer.current);
-      tumbleTimer.current = null;
-    };
+    setThrowing(true);
+    const t = window.setTimeout(() => setThrowing(false), 650);
+    return () => window.clearTimeout(t);
   }, [step]);
-  const tumbling = tumble !== null;
 
   const revealed = useMemo(() => ceremony.order.map((i) => CEREMONY_TILES[i]), [ceremony]);
   const edged = useMemo(() => edgePins(revealed), [revealed]);
@@ -4807,12 +4819,29 @@ function SeatingPanel() {
     setStep(0);
   };
   const canNext =
-    !tumbling && step < SEATING_STEPS - 1 && !(step === 0 && provEast === null);
+    !throwing && step < SEATING_STEPS - 1 && !(step === 0 && provEast === null);
 
   // Which position each player token occupies right now.
   const tokenPos = (p: number) => (step >= 8 && finalPos ? finalPos[p] : p);
   // Which slot each tile occupies right now.
   const tileSlot = (t: Tile) => (step < 5 ? revealed.indexOf(t) : edgedRow.indexOf(t));
+
+  // From step 7 the four middle winds are "dealt": each flies from its slot in
+  // the row onto its player's token (following it to the final seat at step 8),
+  // staggered like dealing a hand. Purely computed - see windFlyTransform.
+  const windStyle = (t: Tile): CSSProperties | undefined => {
+    if (t.suit !== "z" || step < 7 || !dealt || !finalPos) return undefined;
+    const player = dealt.indexOf(t.rank as Wind);
+    const posIdx = step >= 8 ? finalPos[player] : player;
+    return {
+      transform: windFlyTransform(edgedRow.indexOf(t), posIdx),
+      transitionDelay:
+        step === 7 && firstPerson !== null
+          ? `${((player - firstPerson + 4) % 4) * 90}ms`
+          : "0ms",
+      zIndex: 5,
+    };
+  };
 
   const eastHolder = dealt ? dealt.indexOf(1) : null; // player dealt 東
   const highlighted =
@@ -4829,13 +4858,10 @@ function SeatingPanel() {
   // once everyone has re-seated it marks whoever actually holds 東.
   const eastAt = step >= 8 ? eastHolder : step >= 2 ? realEast : provEast;
 
-  const diceFaces = tumbling
-    ? tumble
-    : step === 0
-      ? null
-      : step <= 2
-        ? ceremony.throw1
-        : ceremony.throw2;
+  const diceFaces =
+    step === 0 ? null : step <= 2 ? ceremony.throw1 : ceremony.throw2;
+  const throwSum: number | "–" | null =
+    step === 0 ? null : throwing ? "–" : diceFaces!.reduce((a, b) => a + b, 0);
 
   const caption = (() => {
     const L = SEAT_LABELS;
@@ -4845,11 +4871,11 @@ function SeatingPanel() {
           ? "Pick the provisional East."
           : `Provisional East: ${L[provEast]}.`;
       case 1:
-        return tumbling ? "First throw…" : `First throw: ${sum1}.`;
+        return throwing ? "First throw…" : `First throw: ${sum1}.`;
       case 2:
         return `Count ${sum1} from ${L[provEast!]} → real East seat: ${L[realEast!]}.`;
       case 3:
-        return tumbling
+        return throwing
           ? "Second throw…"
           : `Second throw: ${sum2} (${sum2 % 2 === 0 ? "even" : "odd"}).`;
       case 4:
@@ -4877,57 +4903,61 @@ function SeatingPanel() {
       </div>
       <p className="seat-help">{SEATING_CAPTIONS_HELP[step]}</p>
 
-      <div className="seat-table">
-        {SEAT_LABELS.map((label, p) => {
-          const pos = tokenPos(p);
-          const wind = step >= 7 && dealt ? dealt[p] : null;
-          const pickable = step === 0;
-          return (
-            <button
-              key={label}
-              type="button"
-              className={`seat-token seat-token-${label.toLowerCase()}${
-                highlighted === p ? " is-active" : ""
-              }`}
-              style={SEAT_ANCHORS[pos]}
-              disabled={!pickable}
-              onClick={() => pickable && setProvEast(p)}
-              aria-label={
-                pickable ? `Make ${label} the provisional East` : `Player ${label}`
-              }
+      <div className="seat-stage">
+        <div className="seat-table">
+          {SEAT_LABELS.map((label, p) => {
+            const pos = tokenPos(p);
+            const pickable = step === 0;
+            return (
+              <button
+                key={label}
+                type="button"
+                className={`seat-token seat-token-${label.toLowerCase()}${
+                  highlighted === p ? " is-active" : ""
+                }`}
+                style={SEAT_ANCHORS[pos]}
+                disabled={!pickable}
+                onClick={() => pickable && setProvEast(p)}
+                aria-label={
+                  pickable ? `Make ${label} the provisional East` : `Player ${label}`
+                }
+              >
+                <span className="seat-token-label">{label}</span>
+                {eastAt === p && (
+                  <span className={`seat-token-east${step < 2 ? " is-provisional" : ""}`}>東</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="seat-tile-row">
+          {revealed.map((t) => (
+            <div
+              key={`${t.suit}${t.rank}`}
+              className={`seat-tile${step >= 4 ? " is-face-up" : ""}`}
+              style={{
+                left: `calc(${tileSlot(t)} * (var(--seat-tile-w) + var(--seat-tile-gap)))`,
+                ...windStyle(t),
+              }}
             >
-              <span className="seat-token-label">{label}</span>
-              {eastAt === p && (
-                <span className={`seat-token-east${step < 2 ? " is-provisional" : ""}`}>東</span>
-              )}
-              {wind !== null && <span className="seat-token-wind">{WIND_SHORT[wind]}</span>}
-            </button>
-          );
-        })}
+              <span className="seat-tile-back" />
+              <span className="seat-tile-face">
+                <TileGlyphSpan tile={t} />
+              </span>
+            </div>
+          ))}
+        </div>
       </div>
 
-      <div className="seat-tile-row">
-        {revealed.map((t) => (
-          <div
-            key={`${t.suit}${t.rank}`}
-            className={`seat-tile${step >= 4 ? " is-face-up" : ""}`}
-            style={{ transform: `translateX(calc(${tileSlot(t)} * (var(--seat-tile-w) + var(--seat-tile-gap))))` }}
-          >
-            <span className="seat-tile-back" />
-            <span className="seat-tile-face">
-              <TileGlyphSpan tile={t} />
-            </span>
-          </div>
-        ))}
-      </div>
-
-      <div className="dice-tray seat-dice">
+      <div className={`dice-tray seat-dice${throwing ? " is-throwing" : ""}`}>
         {diceFaces
           ? diceFaces.map((v, i) => (
               <Die key={i} value={v} onBump={() => {}} disabled />
             ))
           : [0, 1, 2].map((i) => <div key={i} className="die die-empty" />)}
       </div>
+      {throwSum !== null && <div className="seat-throw-sum">Sum: {throwSum}</div>}
 
       <div className="seat-controls">
         <button type="button" className="dice-roll" onClick={() => setStep((s) => s + 1)} disabled={!canNext}>

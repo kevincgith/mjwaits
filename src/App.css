@@ -2104,8 +2104,12 @@ button.scoring-pattern-row {
 
 /* Seating ceremony sub-tab */
 .seat-sim {
+  /* These four MUST match the SEAT_* constants in App.tsx (the deal animation
+     is computed from them, not measured). */
   --seat-tile-w: 32px;
   --seat-tile-gap: 6px;
+  --seat-table: 132px;
+  --seat-stage-gap: 22px;
   text-align: center;
 }
 
@@ -2132,22 +2136,32 @@ button.scoring-pattern-row {
   color: var(--text-muted);
 }
 
-.seat-table {
+.seat-stage {
   position: relative;
-  width: min(240px, 68vw);
-  aspect-ratio: 1;
-  margin: 2.75rem auto;
+  width: calc(var(--seat-tile-w) * 6 + var(--seat-tile-gap) * 5);
+  height: calc(var(--seat-table) + var(--seat-stage-gap) + var(--seat-tile-w) * 1.35);
+  margin: 2.25rem auto 1.25rem;
+}
+
+.seat-table {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  transform: translateX(-50%);
+  width: var(--seat-table);
+  height: var(--seat-table);
   background: var(--wall-seg);
   border: 2px solid var(--wall-seg-outline);
-  border-radius: 8px;
+  border-radius: 6px;
+  box-sizing: border-box;
 }
 
 .seat-token {
   position: absolute;
   transform: translate(-50%, -50%);
   transition: left 0.45s ease, top 0.45s ease, box-shadow 0.2s ease;
-  width: 40px;
-  height: 40px;
+  width: 34px;
+  height: 34px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2202,21 +2216,14 @@ button.scoring-pattern-row {
 .seat-token-east.is-provisional {
   background: var(--text-muted);
 }
-.seat-token-wind {
-  position: absolute;
-  top: calc(100% + 2px);
-  left: 50%;
-  transform: translateX(-50%);
-  font-size: 0.9rem;
-  font-weight: 700;
-  color: var(--text-strong);
-}
 
 .seat-tile-row {
-  position: relative;
+  position: absolute;
+  left: 50%;
+  top: calc(var(--seat-table) + var(--seat-stage-gap));
+  transform: translateX(-50%);
   height: calc(var(--seat-tile-w) * 1.35);
   width: calc(var(--seat-tile-w) * 6 + var(--seat-tile-gap) * 5);
-  margin: 0 auto 1rem;
 }
 .seat-tile {
   position: absolute;
@@ -2224,7 +2231,7 @@ button.scoring-pattern-row {
   left: 0;
   width: var(--seat-tile-w);
   height: calc(var(--seat-tile-w) * 1.35);
-  transition: transform 0.4s ease;
+  transition: left 0.4s ease, transform 0.55s cubic-bezier(0.2, 0.7, 0.3, 1);
 }
 .seat-tile > span {
   position: absolute;
@@ -2253,7 +2260,33 @@ button.scoring-pattern-row {
 }
 
 .seat-dice {
+  margin-bottom: 0.4rem;
+}
+.seat-dice.is-throwing .die {
+  animation: seat-die-shake 0.22s ease-in-out infinite;
+}
+.seat-dice.is-throwing .die:nth-child(2) {
+  animation-delay: 0.06s;
+}
+.seat-dice.is-throwing .die:nth-child(3) {
+  animation-delay: 0.12s;
+}
+@keyframes seat-die-shake {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  25% {
+    transform: translateY(-4px) rotate(-8deg);
+  }
+  75% {
+    transform: translateY(3px) rotate(8deg);
+  }
+}
+.seat-throw-sum {
   margin-bottom: 1rem;
+  font-weight: 700;
+  color: var(--text-strong);
 }
 
 .seat-controls {
