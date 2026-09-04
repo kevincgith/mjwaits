@@ -4666,8 +4666,12 @@ function ExchangePanel() {
   );
 }
 
+function SeatingPanel() {
+  return <p className="sub-tab-placeholder">Nothing here yet.</p>;
+}
+
 function DiceTab() {
-  const [sub, setSub] = useState<"wall" | "exchange">("wall");
+  const [sub, setSub] = useState<"wall" | "exchange" | "seating">("wall");
   return (
     <section className="panel dice-panel">
       <div className="mode-tabs sub-tabs">
@@ -4687,8 +4691,18 @@ function DiceTab() {
         >
           Exchange tiles
         </button>
+        <button
+          type="button"
+          className={sub === "seating" ? "toggle-on" : undefined}
+          aria-pressed={sub === "seating"}
+          onClick={() => setSub("seating")}
+        >
+          Seating
+        </button>
       </div>
-      {sub === "wall" ? <DicePanel /> : <ExchangePanel />}
+      {sub === "wall" && <DicePanel />}
+      {sub === "exchange" && <ExchangePanel />}
+      {sub === "seating" && <SeatingPanel />}
     </section>
   );
 }
