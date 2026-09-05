@@ -62,9 +62,9 @@ ever loads the finished ONNX file from `public/model/`.
    lineage still being developed) - its final metrics are kept here for
    the record.
 
-3. **Fine-tuning on a real physical set — currently deployed.** The base
-   nano model, while accurate on the held-out split of its own training
-   data, measurably underperformed on tiles it had never seen: bonus tiles
+3. **Fine-tuning round 1 (ft1) on a real physical set.** The base nano
+   model, while accurate on the held-out split of its own training data,
+   measurably underperformed on tiles it had never seen: bonus tiles
    (flowers/seasons) especially vary a lot between manufacturers, and even
    an honor tile (White Dragon, often a blank tile) can differ from set to
    set. Real photos of one physical set (53 photos, mixed angles/lighting/
@@ -90,7 +90,7 @@ ever loads the finished ONNX file from `public/model/`.
    (not resumed - a fresh run with the checkpoint as pretrained weights, a
    low learning rate (`lr0=0.001`), and its own epoch/patience budget) over
    two sessions totaling 29 epochs before early-stopping. Best checkpoint:
-   **epoch 13** (of the second, 60-epoch-budgeted session).
+   **epoch 13**.
 
    | Metric | Full validation (998 imgs) | This set's 8 held-out photos |
    |---|---|---|
@@ -104,20 +104,49 @@ ever loads the finished ONNX file from `public/model/`.
    0.98 after fine-tuning - confirming the base model really was weaker on
    real, unseen tile designs than the blended validation metrics suggested.
 
-   17 of the original 53 photos never made it into this round (a Roboflow
-   annotation-job mechanic capped how many images could be pulled from the
-   upload batch into one job) - a second fine-tuning round on those,
-   following the same process, is a natural next step.
+4. **Fine-tuning round 2 (ft2) — broad photos, then a targeted redo.** A
+   much larger batch (245 photos of the same physical set) was collected
+   and corrected the same way. Merged broadly (oversampled into the full
+   training set) and trained for 84 epochs across several resumed sessions,
+   it plateaued almost immediately and never clearly beat ft1 - the model
+   had already adapted to this set in round 1, so more general-purpose
+   photos of the same tiles had little new gap left to close. A dedicated
+   check against round 1's photos (unseen by this run) even showed a
+   temporary *regression* on flower classes mid-training, which partly
+   recovered but never fully closed. Concluded as not worth deploying.
 
-4. **Export & quantize** — the checkpoint is exported to ONNX
+   The photos themselves were still useful, just not used broadly: of the
+   245 + the original 35, 112 contained at least one bonus tile (flower or
+   season). A second attempt trained on **only** those 112 images (90
+   oversampled 3x into training, 22 held out) starting fresh from the
+   **ft1** checkpoint - not from ft2's plateaued weights - for a full
+   40 epochs (`patience=0`, no early stop). This is the model that shipped.
+   Best checkpoint: **epoch 27**.
+
+   | Metric | Full validation (1012 imgs) | Bonus tiles only, 22 held-out photos |
+   |---|---|---|
+   | mAP50 | 0.946 | 0.995 |
+   | mAP50-95 | 0.758 | 0.967 |
+   | Precision | 0.973 | 0.979 |
+   | Recall | 0.920 | 0.991 |
+
+   The class that mattered most: **1s (season 1) recall went from 0.704
+   (ft1) to 0.922** on the held-out bonus photos, with no regression on any
+   other class - a real, targeted fix, unlike the broad round which mostly
+   added noise. The lesson: once a model has adapted to a set, further
+   *broad* photos of it return little; a *targeted* batch of just the
+   still-weak classes, fine-tuned from the last good checkpoint rather than
+   whatever the broad run drifted to, is what actually moved the number
+   that mattered.
+
+5. **Export & quantize** — the checkpoint is exported to ONNX
    (`imgsz=640`, `nms=True`, `opset=12`) then quantized to INT8
    (`onnxruntime.quantization.quantize_dynamic`, `QUInt8` weights). This
    shrinks 11.8MB (FP32) to 3.4MB, with only a small accuracy drop
-   re-validated on the exported ONNX graph itself (full validation: mAP50
-   0.926 → 0.925, mAP50-95 0.738 → 0.737; the base nano and small model saw
-   similarly negligible quantization loss).
+   re-validated on the exported ONNX graph itself each time (negligible
+   quantization loss has held across every checkpoint deployed so far).
 
-5. **Deploy** — the quantized `.onnx` is committed straight into
+6. **Deploy** — the quantized `.onnx` is committed straight into
    `public/model/tile-detector.onnx`, where
    [`src/lib/vision.ts`](../src/lib/vision.ts) fetches and runs it
    client-side via onnxruntime-web (WASM). No image or model inference ever
@@ -129,21 +158,25 @@ Raw Ultralytics checkpoints and deployed ONNX artifacts are kept here as a
 durable backup, in case any of them ever needs to be re-exported, fine-tuned
 further, or compared against a future run:
 
-- `checkpoints/yolov8n-ft1-epoch13.pt` — the currently deployed model's raw checkpoint (fine-tuned).
-- `checkpoints/yolov8n-epoch102.pt` — the base nano checkpoint the fine-tune started from.
-- `checkpoints/tile-detector-yolov8n-epoch102.onnx` — the exact INT8 ONNX that was live before this fine-tuned swap.
+- `checkpoints/yolov8n-bonusft-epoch27.pt` — the currently deployed model's raw checkpoint (ft2's targeted bonus-tile redo, fine-tuned from ft1).
+- `checkpoints/yolov8n-ft1-epoch13.pt` — round 1's fine-tuned checkpoint, the one this deployment was fine-tuned from.
+- `checkpoints/yolov8n-epoch102.pt` — the base nano checkpoint ft1 started from.
+- `checkpoints/tile-detector-yolov8n-ft1-epoch13.onnx` — the exact INT8 ONNX that was live before this swap.
+- `checkpoints/tile-detector-yolov8n-epoch102.onnx` — the exact INT8 ONNX that was live before the swap to ft1.
 
-The small (YOLOv8s) model's checkpoint and deployed ONNX are no longer kept
-here - nano is the only lineage still being developed, and its metrics above
-are enough to compare against if a future run needs the reference point.
+The broad ft2 run's checkpoint isn't kept - it was superseded by the
+targeted bonus-tile redo trained from ft1, and never deployed. The small
+(YOLOv8s) model's checkpoint and deployed ONNX are also no longer kept
+here - nano is the only lineage still being developed, and its metrics
+earlier in this doc are enough to compare against if needed.
 
 Restore any previous deployment with, e.g.:
-`cp training/checkpoints/tile-detector-yolov8n-epoch102.onnx public/model/tile-detector.onnx`
+`cp training/checkpoints/tile-detector-yolov8n-ft1-epoch13.onnx public/model/tile-detector.onnx`
 
 Resume training from any `.pt` with:
 
 ```bash
-yolo detect train model=training/checkpoints/yolov8n-ft1-epoch13.pt \
+yolo detect train model=training/checkpoints/yolov8n-bonusft-epoch27.pt \
   data=<path-to-merged-data.yaml> resume=True
 ```
 

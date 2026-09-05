@@ -168,9 +168,11 @@ The model was trained on a merged dataset combining
 [MahjongVis](https://github.com/Andy8647/MahjongVis) (MIT) and
 [MJOD-2136](https://github.com/jaheel/MJOD-2136) (CC BY-NC-SA) across 42 tile classes (the 34
 mjwaits recognizes plus 8 bonus-tile classes), then fine-tuned on real photos of a physical set
-to close the gap between the training data's tile designs and a visitor's actual tiles. On the
-full validation split the deployed checkpoint scores mAP50 0.944 / mAP50-95 0.752 / precision
-0.973 / recall 0.913. See [training/README.md](training/README.md) for the full pipeline.
+to close the gap between the training data's tile designs and a visitor's actual tiles - most
+recently with a round targeted specifically at the bonus-tile classes (flowers/seasons), which
+had lagged behind on real photos more than the suit and honor tiles. On the full validation
+split the deployed checkpoint scores mAP50 0.946 / mAP50-95 0.758 / precision 0.973 / recall
+0.920. See [training/README.md](training/README.md) for the full pipeline.
 
 ## Trainer
 
