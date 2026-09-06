@@ -1523,6 +1523,23 @@ describe("PATTERNS: 獨獨/假獨 (genuine vs. fake single wait)", () => {
   });
 });
 
+describe("PATTERNS: winning tile whose rank sits in two distinct concealed melds (345b and 456b both holding a 4b)", () => {
+  it("doesn't wrongly credit 假獨 off the OTHER meld's incidental kanchan shape, and picks the higher-scoring 暗三色步步高 reading over 明", () => {
+    // 456m + 234t + 234t + 345b + 456b + 11z, won by claiming 4b. Naively
+    // attributing the claim to 345b (a kanchan gap, 3_5) makes 假獨 fire
+    // and forces 三色步步高 (234t/345b/456m) open - but 345b was already
+    // fully complete before the win under the OTHER attribution (456b
+    // received the claim, completing a genuine two-sided 56b wait on 4 or
+    // 7), which is neither a fake single wait at all, AND lets 步步高
+    // count concealed. That reading scores higher, so it should win.
+    const result = scoreHand("456m234234t345b456b11z", ctx({ winningTile: { suit: "b", rank: 4 }, selfDraw: false }));
+    expect(tai(result, "fake-single-wait")).toBe(0);
+    expect(tai(result, "three-color-step-up-open")).toBe(0);
+    expect(tai(result, "three-color-step-up-hidden")).toBe(20);
+    expect(result.total).toBe(78);
+  });
+});
+
 describe("PATTERNS: 明絕 (won on a tile already declared 3 times)", () => {
   it("scores when the 食胡 tile's kind sits 3 times in a single declared triplet, and stacks with 獨獨 (also a genuine single wait)", () => {
     const result = scoreHand("(777t)(888t)(555t)34566789t", ctx({ winningTile: { suit: "t", rank: 8 } }));

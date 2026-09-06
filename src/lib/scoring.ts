@@ -975,22 +975,24 @@ function eightPairsWindRankCount(hand: ResolvedHand): number {
 function isFakeSingleWait(hand: ResolvedHand, ctx: GameContext): boolean {
   if (ctx.winningTile === null) return false;
   const winningTile = ctx.winningTile;
-  // Only a CONCEALED run can be what the 食胡 tile completed - same
-  // declared-melds-are-already-fixed reasoning as isShanponWait/
-  // preWinWaitInput. A declared run is always concealed:false, so this
-  // check alone is enough to exclude it.
-  const kanchan = hand.melds.some((m) => {
-    if (m.kind !== "run" || !m.concealed || !meldHasTileKind(m, winningTile)) return false;
-    const ranks = m.tiles.map((t) => t.rank).sort((a, b) => a - b);
-    return ranks[1] === winningTile.rank;
-  });
-  if (kanchan) return true;
-  const penchan = hand.melds.some((m) => {
-    if (m.kind !== "run" || !m.concealed || !meldHasTileKind(m, winningTile)) return false;
-    const ranks = m.tiles.map((t) => t.rank).sort((a, b) => a - b);
-    return (ranks[0] === 1 && ranks[2] === 3 && winningTile.rank === 3) || (ranks[0] === 7 && ranks[2] === 9 && winningTile.rank === 7);
-  });
-  if (penchan) return true;
+  // Must be the SPECIFIC meld winningMeld() designates as the one the 食胡
+  // tile completed - same declared-melds-are-already-fixed reasoning as
+  // isShanponWait/preWinWaitInput (a declared run is always
+  // concealed:false, which winningMeld already excludes), but also NOT
+  // just any concealed run that happens to hold a tile of that rank: when
+  // the winning tile's rank appears in two different runs (e.g. 345b and
+  // 456b both containing a 4b), only one of them actually received it -
+  // the other was already complete before the win and had nothing to do
+  // with it. Checking every matching run instead of just the designated
+  // one would wrongly credit a genuinely two-sided completion (56b waiting
+  // on 4 or 7, via 456b) with an unrelated run's incidental kanchan shape
+  // (345b's own 3_5 gap), which was never actually in play for this win.
+  const meld = winningMeld(hand, ctx);
+  if (meld && meld.kind === "run") {
+    const ranks = meld.tiles.map((t) => t.rank).sort((a, b) => a - b);
+    if (ranks[1] === winningTile.rank) return true; // kanchan
+    if ((ranks[0] === 1 && ranks[2] === 3 && winningTile.rank === 3) || (ranks[0] === 7 && ranks[2] === 9 && winningTile.rank === 7)) return true; // penchan
+  }
   const tanki = hand.pair.some((t) => t.suit === winningTile.suit && t.rank === winningTile.rank);
   if (tanki) return true;
   const inSingleMeld = hand.melds.some((m) => m.tiles.length === 1 && meldHasTileKind(m, winningTile));
@@ -1135,19 +1137,29 @@ export function isGenuineMultiWait(hand: ResolvedHand, ctx: GameContext): boolea
 
 // The single meld (if any) that the winning tile actually completed - the
 // winning tile might instead have completed the hand's own pair, in which
-// case no meld here counts as open at all. Same priority order and "pick
-// one canonical instance" reasoning as App.tsx's own
-// findWinningTileInstance (pair first, then triplet/kong, then run),
-// reused here so isMeldOpen (below) doesn't mark EVERY meld holding the
-// same tile KIND as open just because more than one happens to share it -
-// a single physical tile can only ever have completed ONE specific group,
-// never two at once, however many other melds already held the exact
-// same kind before it arrived (e.g. a hand with two identical 123m runs,
-// only one of which was actually completed by a claimed 1m - the other
-// was already sitting fully-formed in the concealed hand from the
-// start). Only ever searches CONCEALED melds, same as isMeldOpen's own
-// early-return below - a declared meld is already unconditionally open
-// regardless of this.
+// case no meld here counts as open at all. Same priority order as App.tsx's
+// own findWinningTileInstance (pair first, then triplet/kong, then run) -
+// that copy exists purely to highlight one tile instance in the UI, an
+// unrelated concern from this one.
+//
+// A single physical tile can only ever have completed ONE specific group,
+// never two at once, however many other melds already held the exact same
+// kind before it arrived (e.g. two identical 123m runs, only one of which
+// was actually completed by a claimed 1m - the other was already sitting
+// fully-formed from the start). But WHICH one that was genuinely can't be
+// recovered from the notation alone, so this function doesn't try to guess
+// correctly on its own - it just deterministically picks the first
+// candidate (by kind priority, then hand.melds order) for a GIVEN hand.
+// scoreParsedHand's own winningMeldCandidateHands is what actually resolves
+// the ambiguity: whenever more than one *distinct* meld could be the one,
+// it hands back one hand variant per candidate (this function then picking
+// a different, unambiguous one out of each), and the usual max-tai-across-
+// candidates selection picks whichever attribution actually scores best -
+// exactly the same "try every legal reading" treatment already given to
+// pair-choice ambiguity (see smallTwinIdenticalSequences' own comment).
+// Only ever searches CONCEALED melds, same as isMeldOpen's own early-return
+// below - a declared meld is already unconditionally open regardless of
+// this.
 function winningMeld(hand: ResolvedHand, ctx: GameContext): ResolvedMeld | null {
   if (ctx.winningTile === null) return null;
   const matches = (t: Tile) => t.suit === ctx.winningTile!.suit && t.rank === ctx.winningTile!.rank;
@@ -1157,6 +1169,36 @@ function winningMeld(hand: ResolvedHand, ctx: GameContext): ResolvedMeld | null 
     if (meld) return meld;
   }
   return null;
+}
+
+// One ResolvedHand per genuinely distinct meld that could be "the" one
+// winningMeld() designates - see that function's own comment. Only branches
+// when there's real ambiguity: 2+ *differently-shaped* concealed melds of
+// the same kind (the first kind, in winningMeld's own priority order, that
+// has any match at all) both holding a tile of the winning kind. Melds of
+// identical shape (e.g. two 123m runs) don't need separate variants -
+// swapping which identical object winningMeld happens to pick can't change
+// any pattern's score. Returns just `[hand]` unchanged whenever there's no
+// such ambiguity, so callers can always iterate the result the same way.
+function winningMeldCandidateHands(hand: ResolvedHand, ctx: GameContext): ResolvedHand[] {
+  if (ctx.winningTile === null) return [hand];
+  const winningTile = ctx.winningTile;
+  if (hand.pair.some((t) => t.suit === winningTile.suit && t.rank === winningTile.rank)) return [hand];
+  for (const kind of ["triplet", "kong", "run"] as const) {
+    const candidates = hand.melds.filter((m) => m.kind === kind && m.concealed && meldHasTileKind(m, winningTile));
+    if (candidates.length === 0) continue;
+    const distinctByShape = new Map<string, ResolvedMeld>();
+    for (const c of candidates) distinctByShape.set(c.tiles.map((t) => `${t.suit}${t.rank}`).join(","), c);
+    if (distinctByShape.size <= 1) return [hand];
+    // Move each candidate to the front in turn, so winningMeld's own
+    // find() (which only ever looks within this same kind, at this same
+    // priority position) lands on it instead of whichever was first.
+    return [...distinctByShape.values()].map((chosen) => ({
+      ...hand,
+      melds: [chosen, ...hand.melds.filter((m) => m !== chosen)],
+    }));
+  }
+  return [hand];
 }
 
 // 明 (open) vs 暗 (concealed/hidden), per the house rule: a meld is 明 if
@@ -3057,18 +3099,16 @@ export const PATTERNS: TaiPattern[] = [
     tiles: (hand, ctx) => {
       if (ctx.winningTile === null) return [];
       const winningTile = ctx.winningTile;
-      const kanchan = hand.melds.find((m) => {
-        if (m.kind !== "run" || !m.concealed || !meldHasTileKind(m, winningTile)) return false;
-        const ranks = m.tiles.map((t) => t.rank).sort((a, b) => a - b);
-        return ranks[1] === winningTile.rank;
-      });
-      if (kanchan) return [[kanchan.tiles]];
-      const penchan = hand.melds.find((m) => {
-        if (m.kind !== "run" || !m.concealed || !meldHasTileKind(m, winningTile)) return false;
-        const ranks = m.tiles.map((t) => t.rank).sort((a, b) => a - b);
-        return (ranks[0] === 1 && ranks[2] === 3 && winningTile.rank === 3) || (ranks[0] === 7 && ranks[2] === 9 && winningTile.rank === 7);
-      });
-      if (penchan) return [[penchan.tiles]];
+      // Mirrors isFakeSingleWait's own fix: only the SPECIFIC meld
+      // winningMeld() designates, not any run that merely happens to hold
+      // a same-rank tile - see that function's comment.
+      const meld = winningMeld(hand, ctx);
+      if (meld && meld.kind === "run") {
+        const ranks = meld.tiles.map((t) => t.rank).sort((a, b) => a - b);
+        const kanchan = ranks[1] === winningTile.rank;
+        const penchan = (ranks[0] === 1 && ranks[2] === 3 && winningTile.rank === 3) || (ranks[0] === 7 && ranks[2] === 9 && winningTile.rank === 7);
+        if (kanchan || penchan) return [[meld.tiles]];
+      }
       if (hand.pair.some((t) => t.suit === winningTile.suit && t.rank === winningTile.rank)) return [[hand.pair]];
       const singleMeld = hand.melds.find((m) => m.tiles.length === 1 && meldHasTileKind(m, winningTile));
       const largerMeld = hand.melds.find((m) => m.tiles.length > 1 && meldHasTileKind(m, winningTile));
@@ -3974,21 +4014,29 @@ export function scoreParsedHand(parsed: ParsedScoringHand, ctx: GameContext): Sc
   if (sizeOk) {
     const declaredResolved: ResolvedMeld[] = parsed.declaredMelds.map((m) => ({ ...m }));
     for (const free of decomposeHandAll(parsed.freeTiles, meldsNeeded)) {
-      const hand: ResolvedHand = { melds: [...declaredResolved, ...free.melds], pair: free.pair, bonusTiles: parsed.bonusTiles };
-      // Skip the special-hand-only patterns here: their conditions read
-      // only the flat tile multiset (allHandTiles), not meld structure, so
-      // they'd otherwise fire on a normal decomposition whenever the same
-      // 17 tiles also happen to satisfy that shape (e.g. 123m123m123m123m,
-      // 4 identical runs, also passes 嚦咕嚦咕's per-kind-count check) -
-      // stacking a reading it isn't actually being scored under. They're
-      // only meaningful via their own scoreXxx short-circuit, which builds
-      // the dedicated hand construction for that shape.
-      const scored = PATTERNS.filter((p) => !SPECIAL_HAND_ONLY_PATTERN_IDS.has(p.id))
-        .map((pattern) => ({ pattern, tai: pattern.score(hand, ctx) }))
-        .filter((m) => m.tai > 0);
-      const excludedIds = new Set(scored.flatMap((m) => m.pattern.excludes ?? []));
-      const matched = scored.filter((m) => !excludedIds.has(m.pattern.id));
-      normalCandidates.push({ total: matched.reduce((sum, m) => sum + m.tai, 0), matched, hand });
+      const baseHand: ResolvedHand = { melds: [...declaredResolved, ...free.melds], pair: free.pair, bonusTiles: parsed.bonusTiles };
+      // When the winning tile's rank sits in more than one distinct
+      // concealed meld (e.g. 345b and 456b both holding a 4b), which one it
+      // actually completed can't be recovered from the notation alone - so
+      // every plausible attribution gets its own candidate hand here, same
+      // "try every legal reading" treatment as decomposeHandAll's own
+      // pair-choice ambiguity (see winningMeldCandidateHands).
+      for (const hand of winningMeldCandidateHands(baseHand, ctx)) {
+        // Skip the special-hand-only patterns here: their conditions read
+        // only the flat tile multiset (allHandTiles), not meld structure, so
+        // they'd otherwise fire on a normal decomposition whenever the same
+        // 17 tiles also happen to satisfy that shape (e.g. 123m123m123m123m,
+        // 4 identical runs, also passes 嚦咕嚦咕's per-kind-count check) -
+        // stacking a reading it isn't actually being scored under. They're
+        // only meaningful via their own scoreXxx short-circuit, which builds
+        // the dedicated hand construction for that shape.
+        const scored = PATTERNS.filter((p) => !SPECIAL_HAND_ONLY_PATTERN_IDS.has(p.id))
+          .map((pattern) => ({ pattern, tai: pattern.score(hand, ctx) }))
+          .filter((m) => m.tai > 0);
+        const excludedIds = new Set(scored.flatMap((m) => m.pattern.excludes ?? []));
+        const matched = scored.filter((m) => !excludedIds.has(m.pattern.id));
+        normalCandidates.push({ total: matched.reduce((sum, m) => sum + m.tai, 0), matched, hand });
+      }
     }
   }
   candidates.push(...normalCandidates);
