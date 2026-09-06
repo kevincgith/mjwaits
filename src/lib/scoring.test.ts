@@ -1026,6 +1026,38 @@ describe("PATTERNS: 明/暗小雙般高 (pair at one end of twin sequences)", ()
     expect(tai(result, "small-twin-identical-sequences-hidden")).toBe(15);
     expect(tai(result, "identical-sequences-hidden")).toBe(0);
   });
+
+  it("doesn't fire at all when one of the twin runs is a declared meld - no genuine dual reading exists", () => {
+    // (345m) is fixed/declared, so the concealed remainder (22345m) only
+    // ever reads one way - pair 22m + run 345m - there's no alternate
+    // pair-55m/run-234m reading available anywhere, since the declared
+    // meld's tiles were never part of the shared, ambiguous pool. Only
+    // plain 明般高 (one declared + one concealed identical run) should
+    // fire here, not either 小雙般高 variant.
+    const result = scoreHand("(345m)22345m111z789t789b", ctx({ winningTile: { suit: "m", rank: 2 }, selfDraw: false }));
+    expect(tai(result, "small-twin-identical-sequences-open")).toBe(0);
+    expect(tai(result, "small-twin-identical-sequences-hidden")).toBe(0);
+    expect(tai(result, "identical-sequences-open")).toBe(5);
+  });
+
+  it("counts as 明, not 暗, when the claimed winning tile completed the pair, not either run", () => {
+    // Fully concealed 22334455m, won by claiming 2m off a discard. Read as
+    // pair 22m + runs 345m/345m, the winning tile completed the *pair* -
+    // isMeldOpen alone would call both runs concealed (it deliberately
+    // never looks at the pair), but the pair is just as much a part of
+    // this pattern's own 8-tile shape as the runs are, so a claim landing
+    // there still means the whole shape depended on someone else's
+    // discard. Must score as 明小雙般高, not 暗小雙般高.
+    const result = scoreHand("22334455m111z789t789b", ctx({ winningTile: { suit: "m", rank: 2 }, selfDraw: false }));
+    expect(tai(result, "small-twin-identical-sequences-open")).toBe(10);
+    expect(tai(result, "small-twin-identical-sequences-hidden")).toBe(0);
+  });
+
+  it("still counts as 暗 when that same pair-completing tile was self-drawn", () => {
+    const result = scoreHand("22334455m111z789t789b", ctx({ winningTile: { suit: "m", rank: 2 }, selfDraw: true }));
+    expect(tai(result, "small-twin-identical-sequences-hidden")).toBe(15);
+    expect(tai(result, "small-twin-identical-sequences-open")).toBe(0);
+  });
 });
 
 describe("PATTERNS: 明/暗一色三同順 (3 identical sequences)", () => {

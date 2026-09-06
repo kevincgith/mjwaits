@@ -1497,11 +1497,21 @@ function identicalRunPairInstances(hand: ResolvedHand): [ResolvedMeld, ResolvedM
 // has against both directions - scoreParsedHand's max-tai-across-
 // decompositions already surfaces whichever reading scores higher. At most
 // one instance possible (one pair per hand).
+//
+// Both matched runs must be m.concealed - i.e. genuinely produced by the
+// free-tile decomposition search, not an independently DECLARED (chi'd)
+// run. A declared run's identity is fixed the moment it's called, so it
+// could never have been part of the shared, ambiguous tile pool this
+// pattern's whole duality depends on: a declared 345m plus an unrelated
+// concealed 22345m (which only ever reads one way - pair 22 + run 345, no
+// alternate 55/234 reading possible at all) would otherwise still
+// structurally match "pair adjacent to two identical runs" and wrongly
+// fire despite there being no genuine dual interpretation anywhere.
 function smallTwinIdenticalSequences(hand: ResolvedHand): [ResolvedMeld, ResolvedMeld] | null {
   const pair = hand.pair[0];
   if (pair.suit === "z") return null;
   const runsStartingAt = (startRank: number) =>
-    hand.melds.filter((m) => m.kind === "run" && m.tiles[0].suit === pair.suit && m.tiles[0].rank === startRank);
+    hand.melds.filter((m) => m.kind === "run" && m.concealed && m.tiles[0].suit === pair.suit && m.tiles[0].rank === startRank);
 
   if (pair.rank + 3 <= 9) {
     const runs = runsStartingAt(pair.rank + 1); // pair is the low end
@@ -1512,6 +1522,25 @@ function smallTwinIdenticalSequences(hand: ResolvedHand): [ResolvedMeld, Resolve
     if (runs.length >= 2) return [runs[0], runs[1]];
   }
   return null;
+}
+
+// Whether this pattern's own 8-tile shape - both runs AND the pair, since
+// the pair is just as integral to this specific shape as the runs are (see
+// smallTwinIdenticalSequences' own comment) - counts as open. Unlike plain
+// 般高 (which only ever asks whether one of its two runs is open), this
+// can't just defer to isMeldOpen on the two runs alone: isMeldOpen
+// deliberately never looks at the pair (winningMeld returns null whenever
+// the 食胡 tile completed the pair, precisely so pair-completion doesn't
+// wrongly "open" some unrelated meld elsewhere in the hand) - but that gap
+// is exactly wrong here, since the pair isn't unrelated for this pattern,
+// it's part of the very same 8-tile block the duality depends on. A
+// claimed win that completed the pair still made this shape depend on
+// someone else's discard just as much as claiming into either run would
+// have, so it must count as 明, not 暗.
+function isSmallTwinIdenticalSequencesOpen(hand: ResolvedHand, ctx: GameContext, runs: [ResolvedMeld, ResolvedMeld]): boolean {
+  if (isMeldOpen(runs[0], ctx, hand) || isMeldOpen(runs[1], ctx, hand)) return true;
+  if (ctx.winningTile === null || ctx.selfDraw) return false;
+  return hand.pair.some((t) => t.suit === ctx.winningTile!.suit && t.rank === ctx.winningTile!.rank);
 }
 
 // 真雙般高: two *separate* 般高 pairs (4 runs total, two different shapes) -
@@ -2509,12 +2538,12 @@ export const PATTERNS: TaiPattern[] = [
     name: "明小雙般高 (Pair at one end of twin runs, open)",
     score: (hand, ctx) => {
       const runs = smallTwinIdenticalSequences(hand);
-      return runs && (isMeldOpen(runs[0], ctx, hand) || isMeldOpen(runs[1], ctx, hand)) ? 10 : 0;
+      return runs && isSmallTwinIdenticalSequencesOpen(hand, ctx, runs) ? 10 : 0;
     },
     excludes: ["identical-sequences-open", "identical-sequences-hidden"],
     tiles: (hand, ctx) => {
       const runs = smallTwinIdenticalSequences(hand);
-      return runs && (isMeldOpen(runs[0], ctx, hand) || isMeldOpen(runs[1], ctx, hand)) ? [[runs[0].tiles, runs[1].tiles, hand.pair]] : [];
+      return runs && isSmallTwinIdenticalSequencesOpen(hand, ctx, runs) ? [[runs[0].tiles, runs[1].tiles, hand.pair]] : [];
     },
   },
   {
@@ -2522,12 +2551,12 @@ export const PATTERNS: TaiPattern[] = [
     name: "暗小雙般高 (Pair at one end of twin runs, concealed)",
     score: (hand, ctx) => {
       const runs = smallTwinIdenticalSequences(hand);
-      return runs && !isMeldOpen(runs[0], ctx, hand) && !isMeldOpen(runs[1], ctx, hand) ? 15 : 0;
+      return runs && !isSmallTwinIdenticalSequencesOpen(hand, ctx, runs) ? 15 : 0;
     },
     excludes: ["identical-sequences-open", "identical-sequences-hidden"],
     tiles: (hand, ctx) => {
       const runs = smallTwinIdenticalSequences(hand);
-      return runs && !isMeldOpen(runs[0], ctx, hand) && !isMeldOpen(runs[1], ctx, hand) ? [[runs[0].tiles, runs[1].tiles, hand.pair]] : [];
+      return runs && !isSmallTwinIdenticalSequencesOpen(hand, ctx, runs) ? [[runs[0].tiles, runs[1].tiles, hand.pair]] : [];
     },
   },
   {
