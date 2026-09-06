@@ -3348,10 +3348,22 @@ function ScoringPanel() {
     setKongDraw(next);
     if (kongDraw === 0 && next > 0) deactivateClaimedWinGroup();
   };
+  // Robbing a kong means the robbed tile was already 3 copies deep into
+  // someone else's kong declaration - 明絕's own condition ("won on a tile
+  // already declared 3 times") is trivially true whenever 搶槓 applies, so
+  // turning 搶槓 on also turns 明絕 on if nothing already has it on (auto-
+  // detection or a stronger existing manual 絕絕) - and if it's already on
+  // some other way, there's nothing to add, so the manual override is left
+  // alone rather than needlessly overwriting it (see visibleExhaustEffective
+  // below, referenced here via closure - defined later in this same
+  // component body, but not read until this handler is actually called).
   const cycleRobKong = () => {
     const next = cycleCount(robKong, 5);
     setRobKong(next);
-    if (robKong === 0 && next > 0) deactivateSelfDrawGroup();
+    if (robKong === 0 && next > 0) {
+      deactivateSelfDrawGroup();
+      if (visibleExhaustEffective === "none") setManualVisibleExhaust("triple");
+    }
   };
   // 明絕/絕絕's manual override, as one shared tri-state (see
   // VisibleExhaustState above) - only advanceable by the user past whatever
@@ -3925,7 +3937,16 @@ function ScoringPanel() {
   // Steps the shared button to its next reachable state.
   const cycleVisibleExhaust = () => {
     const idx = visibleExhaustReachable.indexOf(visibleExhaustEffective);
-    setManualVisibleExhaust(visibleExhaustReachable[(idx + 1) % visibleExhaustReachable.length]);
+    const next = visibleExhaustReachable[(idx + 1) % visibleExhaustReachable.length];
+    setManualVisibleExhaust(next);
+    // The reverse of cycleRobKong's own linkage: 搶槓 depends on 明絕 always
+    // being true, so if this cycle actually turns 明絕 off - checked as the
+    // *effective* state (auto-detect OR manual), not just this manual step
+    // alone, since auto-detection can still be holding it on regardless of
+    // what the user just cycled to - 搶槓 no longer has a leg to stand on
+    // either.
+    const nextEffective = VISIBLE_EXHAUST_RANK[next] > VISIBLE_EXHAUST_RANK[visibleExhaustAuto] ? next : visibleExhaustAuto;
+    if (nextEffective === "none" && robKong > 0) setRobKong(0);
   };
 
   return (
