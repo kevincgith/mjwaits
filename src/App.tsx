@@ -2637,13 +2637,18 @@ function DiscardTrainer({
   const [level, setLevel] = useState(MIN_TRAINER_LEVEL);
   const [flush, setFlush] = useState(false);
   const [question, setQuestion] = useState<DiscardTrainerQuestion | null>(null);
-  const [selected, setSelected] = useState<string | null>(null);
+  // Index into `sortedTiles` of the tile the user tapped - a specific instance,
+  // so only that copy highlights, even though grading is per tile kind.
+  const [selected, setSelected] = useState<number | null>(null);
   const [submitted, setSubmitted] = useState(false);
   const [elapsedMs, setElapsedMs] = useState(0);
   const questionStartRef = useRef(performance.now());
   // Same synchronous mirrors as WaitsTrainer, for fast tap-then-Submit sequences.
-  const selectedRef = useRef<string | null>(null);
+  const selectedRef = useRef<number | null>(null);
   const submittedRef = useRef(false);
+
+  const sortedTiles = useMemo(() => (question ? sortTiles(question.tiles) : []), [question]);
+  const selectedKind = selected === null ? null : tileKey(sortedTiles[selected]);
 
   const newQuestion = (lvl: number, flushMode: boolean) => {
     setQuestion(generateDiscardQuestion(lvl, flushMode));
@@ -2672,16 +2677,16 @@ function DiscardTrainer({
     return () => clearInterval(id);
   }, [question, submitted]);
 
-  const pick = (t: Tile) => {
+  const pick = (index: number) => {
     if (submittedRef.current) return;
-    selectedRef.current = tileKey(t);
-    setSelected(selectedRef.current);
+    selectedRef.current = index;
+    setSelected(index);
   };
 
   const handleSubmit = () => {
     if (!question || submittedRef.current || selectedRef.current === null) return;
     submittedRef.current = true;
-    const picked = selectedRef.current;
+    const picked = tileKey(sortedTiles[selectedRef.current]);
     const regret = discardRegret(question, picked);
     const correct = isOptimalDiscard(question, picked);
     const timeMs = performance.now() - questionStartRef.current;
@@ -2721,14 +2726,20 @@ function DiscardTrainer({
     [statsRows]
   );
 
-  const pickedRegret = submitted && question && selected ? discardRegret(question, selected) : 0;
-  const pickedOptimal = submitted && question != null && selected != null && isOptimalDiscard(question, selected);
+  const pickedRegret =
+    submitted && question && selectedKind !== null ? discardRegret(question, selectedKind) : 0;
+  const pickedOptimal =
+    submitted && question != null && selectedKind !== null && isOptimalDiscard(question, selectedKind);
 
-  const tileStatus = (tileKind: string): TrainerTileStatus => {
+  // Only the tapped instance highlights; after submit the *other* copies of a
+  // best discard kind are flagged too (unless the pick was already that kind).
+  const tileStatus = (displayIndex: number, t: Tile): TrainerTileStatus => {
     if (!submitted || !question) return null;
-    const isBest = question.optimalKeys.has(tileKind);
-    if (tileKind === selected) return isBest ? "hit" : "false-positive";
-    return isBest ? "missed" : null;
+    const kind = tileKey(t);
+    const isBest = question.optimalKeys.has(kind);
+    if (displayIndex === selected) return isBest ? "hit" : "false-positive";
+    if (isBest && kind !== selectedKind) return "missed";
+    return null;
   };
 
   return (
@@ -2778,20 +2789,20 @@ function DiscardTrainer({
         <>
           <div className="waits">
             <div className="hand-display trainer-hand trainer-discard-hand">
-              {sortTiles(question.tiles).map((t, i) => {
-                const status = tileStatus(tileKey(t));
+              {sortedTiles.map((t, i) => {
+                const status = tileStatus(i, t);
                 return (
                   <button
                     key={i}
                     type="button"
                     className={[
                       "trainer-discard-tile",
-                      tileKey(t) === selected ? "selected" : "",
+                      i === selected ? "selected" : "",
                       status ? `trainer-${status}` : "",
                     ]
                       .filter(Boolean)
                       .join(" ")}
-                    onClick={() => pick(t)}
+                    onClick={() => pick(i)}
                     disabled={submitted}
                     title={tileLabel(t)}
                   >
