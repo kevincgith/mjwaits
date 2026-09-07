@@ -2023,6 +2023,39 @@ function anyOtherPatternFires(hand: ResolvedHand, ctx: GameContext, extraExempt:
   return PATTERNS.some((p) => !exempt.has(p.id) && p.score(hand, ctx) > 0);
 }
 
+// Also shared by 大雞/大鴨, on top of the base exemptions above: purely
+// declared/context state that doesn't reflect anything about the HAND's
+// own shape, so it shouldn't disqualify "otherwise the plainest possible
+// hand" the way an actual scoring shape (平胡, 對對胡, a wind meld, etc.)
+// does - 莊, the whole 叮 family (叮/門清叮/天叮/地叮) plus 一發/食叮, 四/
+// 七/十子內, 雙響/三響, 天胡/地胡/人胡, 河底撈魚/海底撈月 (and its
+// one-tong upgrade), 搶槓, and 明絕/絕絕. Per the user, both patterns get
+// the identical list - only their own self-draw-specific exemptions differ
+// (see each PATTERNS entry below).
+const BIG_CHICKEN_DUCK_EXTRA_EXEMPT_IDS = [
+  "dealer-streak",
+  "riichi",
+  "concealed-riichi",
+  "heavenly-riichi",
+  "earthly-riichi",
+  "riichi-instant-win",
+  "riichi-eat",
+  "early-win-four",
+  "early-win-seven",
+  "early-win-ten",
+  "multi-win-double",
+  "multi-win-triple",
+  "heavenly-win",
+  "earthly-win",
+  "human-win",
+  "river-bottom-win",
+  "sea-bottom-win",
+  "sea-bottom-win-one-tong",
+  "rob-kong",
+  "visible-triple-win",
+  "visible-exhausted-multi-wait",
+];
+
 // House tai list, added one pattern at a time as the user supplies them -
 // see the module doc comment on why this stays a plain array of concrete
 // checks rather than a generic rule engine.
@@ -3357,46 +3390,19 @@ export const PATTERNS: TaiPattern[] = [
     // Meta pattern: fires only when no other named pattern would score for
     // this hand (excluding 底 itself and the bonus-tile patterns - "a
     // single bonus tile or none" is explicitly still allowed), plus a
-    // house-rule list of extra exemptions per the user: purely
-    // declared/context state that doesn't reflect anything about the
-    // HAND's own shape, so it shouldn't disqualify "otherwise the plainest
-    // possible hand" the way an actual scoring shape (平胡, 對對胡, a wind
-    // meld, etc.) does - 莊, the whole 叮 family (叮/門清叮/天叮/地叮) plus
-    // 一發/食叮, 四/七/十子內, 雙響/三響, 天胡/地胡/人胡, 河底撈魚/海底撈月
-    // (and its one-tong upgrade), 搶槓, and 明絕/絕絕. A self-drawn win is
-    // still itself "a pattern detected" (自摸 fires, and isn't in this
-    // list), so this can never apply to a self-drawn hand - still mirrors
-    // 全求人 requiring a claimed win, even though 天胡/地胡 (inherently
-    // self-drawn) are now exempt in their own right. Re-evaluates every
-    // other pattern's raw score directly rather than reading the
-    // already-filtered/excluded PATTERNS result, since this needs to know
-    // what *would* fire, not what survives exclusion.
+    // house-rule list of extra exemptions per the user for purely declared/
+    // context state that doesn't reflect anything about the HAND's own
+    // shape (see BIG_CHICKEN_DUCK_EXTRA_EXEMPT_IDS' own comment for the
+    // full list and why). A self-drawn win is still itself "a pattern
+    // detected" (自摸 fires, and isn't in that list), so this can never
+    // apply to a self-drawn hand - still mirrors 全求人 requiring a claimed
+    // win, even though 天胡/地胡 (inherently self-drawn) are now exempt in
+    // their own right. Re-evaluates every other pattern's raw score
+    // directly rather than reading the already-filtered/excluded PATTERNS
+    // result, since this needs to know what *would* fire, not what
+    // survives exclusion.
     score: (hand, ctx) =>
-      hand.bonusTiles.length > 1 ||
-      anyOtherPatternFires(hand, ctx, [
-        "big-chicken",
-        "dealer-streak",
-        "riichi",
-        "concealed-riichi",
-        "heavenly-riichi",
-        "earthly-riichi",
-        "riichi-instant-win",
-        "riichi-eat",
-        "early-win-four",
-        "early-win-seven",
-        "early-win-ten",
-        "multi-win-double",
-        "multi-win-triple",
-        "heavenly-win",
-        "earthly-win",
-        "human-win",
-        "river-bottom-win",
-        "sea-bottom-win",
-        "sea-bottom-win-one-tong",
-        "rob-kong",
-        "visible-triple-win",
-        "visible-exhausted-multi-wait",
-      ])
+      hand.bonusTiles.length > 1 || anyOtherPatternFires(hand, ctx, ["big-chicken", ...BIG_CHICKEN_DUCK_EXTRA_EXEMPT_IDS])
         ? 0
         : 30,
   },
@@ -3404,12 +3410,15 @@ export const PATTERNS: TaiPattern[] = [
     id: "big-duck",
     name: "大鴨 (Nothing but the base + at most one bonus tile, self-drawn)",
     // The self-drawn counterpart to 大雞 (mirrors 全求人/半求人): same
-    // "nothing else fires" shape, but self-drawn, and specifically
+    // "nothing else fires" shape plus the same house-rule exemption list
+    // (BIG_CHICKEN_DUCK_EXTRA_EXEMPT_IDS), but self-drawn, and specifically
     // exempting 自摸/門清自摸 from that check since being self-drawn is
     // exactly what this is checking for - it stacks with them rather than
     // being blocked by them.
     score: (hand, ctx) =>
-      !ctx.selfDraw || hand.bonusTiles.length > 1 || anyOtherPatternFires(hand, ctx, ["big-duck", "self-draw", "concealed-self-draw"])
+      !ctx.selfDraw ||
+      hand.bonusTiles.length > 1 ||
+      anyOtherPatternFires(hand, ctx, ["big-duck", "self-draw", "concealed-self-draw", ...BIG_CHICKEN_DUCK_EXTRA_EXEMPT_IDS])
         ? 0
         : 15,
   },

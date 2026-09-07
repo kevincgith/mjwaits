@@ -2049,6 +2049,27 @@ describe("PATTERNS: 大雞/大鴨 (nothing but the base + at most one bonus tile
     expect(tai(withJuejue, "visible-exhausted-multi-wait")).toBe(10);
     expect(tai(withJuejue, "big-chicken")).toBe(30);
   });
+
+  it("大鴨 gets the identical relaxation, self-drawn - 天胡/地胡/海底撈月 now stack naturally since they're inherently self-drawn too", () => {
+    const selfDrawCtx = (overrides: Partial<GameContext> = {}) => ctx({ selfDraw: true, ...overrides });
+    expect(tai(scoreHand(boringHand, selfDrawCtx({ dealerStreak: 1 })), "big-duck")).toBe(15);
+    expect(tai(scoreHand(boringHand, selfDrawCtx({ riichi: "riichi" })), "big-duck")).toBe(15);
+    expect(tai(scoreHand(boringHand, selfDrawCtx({ earlyWin: "four" })), "big-duck")).toBe(15);
+    expect(tai(scoreHand(boringHand, selfDrawCtx({ multiWin: "double" })), "big-duck")).toBe(15);
+    // Unlike 大雞, 天胡/地胡 don't need to be avoided here - self-draw is
+    // required either way, so their own inherent self-draw is no obstacle.
+    expect(tai(scoreHand(boringHand, selfDrawCtx({ heavenlyWin: "heaven" })), "big-duck")).toBe(15);
+    expect(tai(scoreHand(boringHand, selfDrawCtx({ lastTileWin: "sea-bottom" })), "big-duck")).toBe(15);
+    expect(tai(scoreHand(boringHand, selfDrawCtx({ robKong: 1 })), "big-duck")).toBe(15);
+
+    const withMingjue = scoreHand(boringHand, selfDrawCtx({ winningTile: { suit: "t", rank: 5 }, manualVisibleTripleWin: true }));
+    expect(tai(withMingjue, "visible-triple-win")).toBe(5);
+    expect(tai(withMingjue, "big-duck")).toBe(15);
+
+    const withJuejue2 = scoreHand(boringHand, selfDrawCtx({ winningTile: { suit: "t", rank: 7 }, manualVisibleExhaustedMultiWait: true }));
+    expect(tai(withJuejue2, "visible-exhausted-multi-wait")).toBe(10);
+    expect(tai(withJuejue2, "big-duck")).toBe(15);
+  });
 });
 
 describe("PATTERNS: 十三么 (Thirteen Orphans)", () => {
