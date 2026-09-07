@@ -2356,6 +2356,34 @@ const EMPTY_ENDLESS_STATS: EndlessStats = {
   turnsToWinTotal: 0,
 };
 
+// Adds (sign +1) or subtracts (sign -1) one EndlessStats from another - used to
+// apply a turn's deltas and to roll them back on undo. regretTotal is clamped so
+// float residue can't drive it negative.
+function addEndlessStats(a: EndlessStats, b: EndlessStats, sign: 1 | -1 = 1): EndlessStats {
+  return {
+    hands: a.hands + sign * b.hands,
+    handsWon: a.handsWon + sign * b.handsWon,
+    turns: a.turns + sign * b.turns,
+    optimalCount: a.optimalCount + sign * b.optimalCount,
+    regretTotal: Math.max(0, a.regretTotal + sign * b.regretTotal),
+    turnsToTenpaiTotal: a.turnsToTenpaiTotal + sign * b.turnsToTenpaiTotal,
+    tenpaiReachedCount: a.tenpaiReachedCount + sign * b.tenpaiReachedCount,
+    turnsToWinTotal: a.turnsToWinTotal + sign * b.turnsToWinTotal,
+  };
+}
+
+// The graded analysis of the hand as it stood right before the most recent
+// Endless discard, shown to the user each turn.
+interface EndlessTrainerLastMove {
+  outcome: DiscardChoicesOutcome;
+  pickedKey: string;
+  bestKeys: Set<string>;
+  regret: number;
+  optimal: boolean;
+  shantenLost: number; // resulting shanten of the pick minus the best achievable
+  drawn: Tile | null;
+}
+
 function trainerStatsKey(level: number, flush: boolean): string {
   return `${level}-${flush}`;
 }
@@ -2948,22 +2976,24 @@ function EndlessTrainer({
   const [discards, setDiscards] = useState<{ tile: Tile; optimal: boolean }[]>([]);
   const [phase, setPhase] = useState<"idle" | "playing" | "won">("idle");
   const [lastWin, setLastWin] = useState<{ turns: number; optimal: number } | null>(null);
-  // The graded analysis of the hand as it stood before the most recent discard,
-  // shown to the user each turn.
-  const [lastMove, setLastMove] = useState<{
-    outcome: DiscardChoicesOutcome;
-    pickedKey: string;
-    bestKeys: Set<string>;
-    regret: number;
-    optimal: boolean;
-    shantenLost: number; // resulting shanten of the pick minus the best achievable
-    drawn: Tile | null;
-  } | null>(null);
+  const [lastMove, setLastMove] = useState<EndlessTrainerLastMove | null>(null);
   // Per-hand counters kept in refs so a fast double-tap can't race them.
   const handTurnsRef = useRef(0);
   const handOptimalRef = useRef(0);
   const reachedTenpaiRef = useRef(false);
   const busyRef = useRef(false);
+  // One level of undo: everything needed to put the most recent discard back
+  // (cleared on a new hand, so undo never crosses hands).
+  const [undoSnap, setUndoSnap] = useState<{
+    hand: Tile[];
+    wall: Tile[];
+    discards: { tile: Tile; optimal: boolean }[];
+    handTurns: number;
+    handOptimal: number;
+    reachedTenpai: boolean;
+    lastMove: EndlessTrainerLastMove | null;
+    statsDelta: EndlessStats;
+  } | null>(null);
 
   const HAND_SIZE = MELDS_REQUIRED * 3 + 2; // 17
 
@@ -2975,6 +3005,7 @@ function EndlessTrainer({
     handOptimalRef.current = 0;
     reachedTenpaiRef.current = false;
     busyRef.current = false;
+    setUndoSnap(null);
     setDiscards([]);
     setLastWin(null);
     setLastMove(null);
@@ -3008,30 +3039,30 @@ function EndlessTrainer({
     const kind = tileKey(sortedTiles[index]);
     const optimal = grade.optimalKeys.has(kind);
     const regret = regretForOutcome(outcome, grade.bestWinProbability, kind);
-    handTurnsRef.current += 1;
-    if (optimal) handOptimalRef.current += 1;
-    const handTurns = handTurnsRef.current;
+    const handTurns = handTurnsRef.current + 1;
 
     const removeIdx = hand.findIndex((t) => tileKey(t) === kind);
     const after = [...hand.slice(0, removeIdx), ...hand.slice(removeIdx + 1)];
     const reachedTenpaiNow = !reachedTenpaiRef.current && shanten(after, MELDS_REQUIRED) === 0;
-    if (reachedTenpaiNow) reachedTenpaiRef.current = true;
-
-    setDiscards((d) => [...d, { tile: sortedTiles[index], optimal }]);
-    setStats((s) => ({
-      ...s,
-      turns: s.turns + 1,
-      optimalCount: s.optimalCount + (optimal ? 1 : 0),
-      regretTotal: s.regretTotal + regret,
-      turnsToTenpaiTotal: s.turnsToTenpaiTotal + (reachedTenpaiNow ? handTurns : 0),
-      tenpaiReachedCount: s.tenpaiReachedCount + (reachedTenpaiNow ? 1 : 0),
-    }));
 
     const minShanten = Math.min(...outcome.choices.map((c) => c.resultingShanten));
     const pickedShanten =
       outcome.choices.find((c) => tileKey(c.discard) === kind)?.resultingShanten ?? minShanten;
     const drawn = drawFromWall(wall);
-    setLastMove({
+    const next = drawn.tile ? [...after, drawn.tile] : after;
+    const won = drawn.tile != null && isCompleteHand(next, MELDS_REQUIRED);
+
+    const statsDelta: EndlessStats = {
+      hands: 0,
+      handsWon: won ? 1 : 0,
+      turns: 1,
+      optimalCount: optimal ? 1 : 0,
+      regretTotal: regret,
+      turnsToTenpaiTotal: reachedTenpaiNow ? handTurns : 0,
+      tenpaiReachedCount: reachedTenpaiNow ? 1 : 0,
+      turnsToWinTotal: won ? handTurns : 0,
+    };
+    const move: EndlessTrainerLastMove = {
       outcome,
       pickedKey: kind,
       bestKeys: grade.optimalKeys,
@@ -3039,21 +3070,55 @@ function EndlessTrainer({
       optimal,
       shantenLost: pickedShanten - minShanten,
       drawn: drawn.tile,
-    });
+    };
+
+    setDiscards((d) => [...d, { tile: sortedTiles[index], optimal }]);
+    setStats((s) => addEndlessStats(s, statsDelta));
+    setLastMove(move);
+
     if (!drawn.tile) {
-      deal(); // wall exhausted - keep the session going with a fresh hand
+      deal(); // wall exhausted - fresh hand; this turn isn't undoable
       return;
     }
-    const next = [...after, drawn.tile];
+
+    setUndoSnap({
+      hand,
+      wall,
+      discards,
+      handTurns: handTurnsRef.current,
+      handOptimal: handOptimalRef.current,
+      reachedTenpai: reachedTenpaiRef.current,
+      lastMove,
+      statsDelta,
+    });
+    handTurnsRef.current = handTurns;
+    if (optimal) handOptimalRef.current += 1;
+    if (reachedTenpaiNow) reachedTenpaiRef.current = true;
+
     setWall(drawn.wall);
     setHand(next);
-    if (isCompleteHand(next, MELDS_REQUIRED)) {
-      setStats((s) => ({ ...s, handsWon: s.handsWon + 1, turnsToWinTotal: s.turnsToWinTotal + handTurns }));
+    if (won) {
       setLastWin({ turns: handTurns, optimal: handOptimalRef.current });
       setPhase("won");
     } else {
       busyRef.current = false;
     }
+  };
+
+  const undo = () => {
+    if (!undoSnap) return;
+    setStats((s) => addEndlessStats(s, undoSnap.statsDelta, -1));
+    handTurnsRef.current = undoSnap.handTurns;
+    handOptimalRef.current = undoSnap.handOptimal;
+    reachedTenpaiRef.current = undoSnap.reachedTenpai;
+    busyRef.current = false;
+    setHand(undoSnap.hand);
+    setWall(undoSnap.wall);
+    setDiscards(undoSnap.discards);
+    setLastMove(undoSnap.lastMove);
+    setLastWin(null);
+    setPhase("playing");
+    setUndoSnap(null);
   };
 
   const pct = stats.turns > 0 ? Math.round((stats.optimalCount / stats.turns) * 100) : 0;
@@ -3067,6 +3132,11 @@ function EndlessTrainer({
         <button type="button" onClick={deal}>
           {phase === "idle" ? "Start" : "New hand"}
         </button>
+        {undoSnap && (
+          <button type="button" onClick={undo} title="Take back the last discard and draw">
+            Undo
+          </button>
+        )}
         {stats.turns > 0 && (
           <button type="button" onClick={() => setStats(() => EMPTY_ENDLESS_STATS)}>
             Reset Stats

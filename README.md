@@ -224,7 +224,9 @@ first reach tenpai, turns to win, hands won. After every discard the full analys
 is shown: which tile was best, how much win probability the pick gave up (or, too far from tenpai
 for that to separate them, whether it needlessly raised shanten), and the complete ranked list of
 every discard with the best ones flagged. Discards pile up below the hand, tinted by whether each
-was a best pick. Completing a hand flashes a win summary; one tap deals the next.
+was a best pick. Completing a hand flashes a win summary; one tap deals the next. **Undo** takes
+back the last discard and draw — hand, wall, discard pile and every stat — one step (cleared when
+a new hand is dealt).
 
 ## Dice rolling
 
