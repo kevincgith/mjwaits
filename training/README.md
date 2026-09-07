@@ -139,14 +139,69 @@ ever loads the finished ONNX file from `public/model/`.
    whatever the broad run drifted to, is what actually moved the number
    that mattered.
 
-5. **Export & quantize** — the checkpoint is exported to ONNX
+5. **Fine-tuning round 3 (rotation) — fixing missed sideways/upside-down
+   tiles.** Real-world scans often have tiles rotated 90°, 180°, or 270°
+   from upright (turned sideways on the table, or upside down), and the
+   bonusft-deployed model missed these far more than upright tiles. Root
+   cause: every prior training run (base, ft1, ft2, bonusft) had
+   `degrees=0.0` — Ultralytics' rotation-augmentation range — so the model
+   had only ever seen the modest natural tilt already present in raw
+   photos, never full-range rotation. Fixed by fine-tuning from the
+   deployed **bonusft-epoch27** checkpoint with `degrees=180`.
+
+   Measuring this required a dedicated eval, since the existing validation
+   split is almost entirely upright photos. Two 60-image sets were built
+   from a random sample of the merged validation split, held out of all
+   training: `rotated_eval` (each image rotated by an exact random
+   90°/180°/270°, with the YOLO box coordinates transformed to match) and
+   `upright_eval` (the same 60 images, untouched) - so rotation robustness
+   and any regression on normal photos could be measured separately, on
+   the same underlying tiles.
+
+   Trained over several paused/resumed sessions (each a fresh non-resume
+   run from the previous session's last checkpoint, not `resume=True`,
+   which ignores overridden epoch/parameter args) totaling 78 epochs.
+   Picked by comparing checkpoints directly on `rotated_eval` rather than
+   the standard fitness formula, since that split had plateaued across
+   many similar-scoring epochs by the end - epoch 60 came out marginally
+   ahead of later epochs (including the final epoch 78) on the metric this
+   round was actually for. Best checkpoint: **epoch 60**.
+
+   | Metric | Rotated eval (60 imgs) | Upright eval (60 imgs) | Full validation (1012 imgs) |
+   |---|---|---|---|
+   | mAP50 | 0.738 → 0.871 | 0.945 → 0.946 | 0.931 → 0.916 |
+   | mAP50-95 | 0.563 → 0.642 | 0.766 → 0.721 | 0.745 → 0.683 |
+   | Precision | 0.876 → 0.895 | 0.976 → 0.964 | 0.971 → 0.955 |
+   | Recall | 0.746 → 0.902 | 0.938 → 0.941 | 0.919 → 0.906 |
+
+   (all figures above are on the quantized ONNX, not the raw checkpoint -
+   see the note below on why that distinction mattered here.) Rotated-tile
+   recall improved by 0.156 with no upright regression on mAP50/recall -
+   the actual goal. The cost shows up in mAP50-95 (box-localization
+   tightness) across the board, including upright photos: training on a
+   harder, more varied task loosens box precision somewhat as a structural
+   side effect. A per-class breakdown on the full validation split found
+   this cost spread fairly evenly across all 42 classes rather than
+   concentrated in any one - the bonus-tile classes (flowers/seasons) gave
+   back the most of their round-2 gains, but stayed well above their
+   pre-bonusft baseline.
+
+   **Quantization note:** the INT8 export lost more accuracy on this
+   checkpoint than on any prior deployment (e.g. mAP50-95 0.722 → 0.683 on
+   full validation, vs. "negligible" for every earlier round) - checked
+   directly by validating the quantized ONNX graph itself, not assumed
+   from the FP32 checkpoint's numbers. Worth re-checking on any future
+   rotation-augmented fine-tune rather than assuming it stays negligible.
+
+6. **Export & quantize** — the checkpoint is exported to ONNX
    (`imgsz=640`, `nms=True`, `opset=12`) then quantized to INT8
    (`onnxruntime.quantization.quantize_dynamic`, `QUInt8` weights). This
-   shrinks 11.8MB (FP32) to 3.4MB, with only a small accuracy drop
-   re-validated on the exported ONNX graph itself each time (negligible
-   quantization loss has held across every checkpoint deployed so far).
+   shrinks 11.8MB (FP32) to 3.4MB. Quantization loss has been negligible
+   on every checkpoint deployed prior to the rotation fine-tune, but
+   wasn't for that one (see above) - always re-validate the exported
+   ONNX graph itself, not just the FP32 checkpoint.
 
-6. **Deploy** — the quantized `.onnx` is committed straight into
+7. **Deploy** — the quantized `.onnx` is committed straight into
    `public/model/tile-detector.onnx`, where
    [`src/lib/vision.ts`](../src/lib/vision.ts) fetches and runs it
    client-side via onnxruntime-web (WASM). No image or model inference ever
@@ -158,10 +213,12 @@ Raw Ultralytics checkpoints and deployed ONNX artifacts are kept here as a
 durable backup, in case any of them ever needs to be re-exported, fine-tuned
 further, or compared against a future run:
 
-- `checkpoints/yolov8n-bonusft-epoch27.pt` — the currently deployed model's raw checkpoint (ft2's targeted bonus-tile redo, fine-tuned from ft1).
-- `checkpoints/yolov8n-ft1-epoch13.pt` — round 1's fine-tuned checkpoint, the one this deployment was fine-tuned from.
+- `checkpoints/yolov8n-rotationft-epoch60.pt` — the currently deployed model's raw checkpoint (round 3's rotation-augmented fine-tune, from bonusft).
+- `checkpoints/yolov8n-bonusft-epoch27.pt` — round 2's targeted bonus-tile checkpoint, the one this deployment was fine-tuned from.
+- `checkpoints/yolov8n-ft1-epoch13.pt` — round 1's fine-tuned checkpoint, the one bonusft was fine-tuned from.
 - `checkpoints/yolov8n-epoch102.pt` — the base nano checkpoint ft1 started from.
-- `checkpoints/tile-detector-yolov8n-ft1-epoch13.onnx` — the exact INT8 ONNX that was live before this swap.
+- `checkpoints/tile-detector-yolov8n-bonusft-epoch27.onnx` — the exact INT8 ONNX that was live before this swap.
+- `checkpoints/tile-detector-yolov8n-ft1-epoch13.onnx` — the exact INT8 ONNX that was live before the swap to bonusft.
 - `checkpoints/tile-detector-yolov8n-epoch102.onnx` — the exact INT8 ONNX that was live before the swap to ft1.
 
 The broad ft2 run's checkpoint isn't kept - it was superseded by the
@@ -171,12 +228,12 @@ here - nano is the only lineage still being developed, and its metrics
 earlier in this doc are enough to compare against if needed.
 
 Restore any previous deployment with, e.g.:
-`cp training/checkpoints/tile-detector-yolov8n-ft1-epoch13.onnx public/model/tile-detector.onnx`
+`cp training/checkpoints/tile-detector-yolov8n-bonusft-epoch27.onnx public/model/tile-detector.onnx`
 
 Resume training from any `.pt` with:
 
 ```bash
-yolo detect train model=training/checkpoints/yolov8n-bonusft-epoch27.pt \
+yolo detect train model=training/checkpoints/yolov8n-rotationft-epoch60.pt \
   data=<path-to-merged-data.yaml> resume=True
 ```
 

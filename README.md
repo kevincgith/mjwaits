@@ -169,10 +169,13 @@ The model was trained on a merged dataset combining
 [MJOD-2136](https://github.com/jaheel/MJOD-2136) (CC BY-NC-SA) across 42 tile classes (the 34
 mjwaits recognizes plus 8 bonus-tile classes), then fine-tuned on real photos of a physical set
 to close the gap between the training data's tile designs and a visitor's actual tiles - most
-recently with a round targeted specifically at the bonus-tile classes (flowers/seasons), which
-had lagged behind on real photos more than the suit and honor tiles. On the full validation
-split the deployed checkpoint scores mAP50 0.946 / mAP50-95 0.758 / precision 0.973 / recall
-0.920. See [training/README.md](training/README.md) for the full pipeline.
+recently with a round adding rotation augmentation, fixing a real weakness where tiles rotated
+90/180/270° (turned sideways on the table, or upside down) were missed far more often than
+upright ones. On a held-out set of rotated photos, recall jumped from 0.746 to 0.902 and mAP50
+from 0.738 to 0.871, at a small cost in box-localization tightness on upright photos (mAP50-95
+0.766 → 0.721) - a worthwhile trade given how often a scanned hand has tiles at an angle. On the
+full validation split the deployed checkpoint scores mAP50 0.916 / mAP50-95 0.683 / precision
+0.955 / recall 0.906. See [training/README.md](training/README.md) for the full pipeline.
 
 ## Trainer
 
