@@ -219,11 +219,12 @@ answer gave up versus the best.
 
 Press **Start** and you're dealt a full random hand, then play it out one draw at a time with no
 prompts: tap a tile, it's discarded and graded, a replacement is drawn, repeat. A HUD tracks the
-current turn and shanten, your best-discard rate and average regret (same grading as the Discards
-drill), and race stats — turns to first reach tenpai, turns to win, hands won. Discards pile up
-below the hand, tinted by whether each was a best pick. Completing a hand flashes a win summary;
-one tap deals the next. (Discards from a hand still 2+ shanten aren't scored — the win-probability
-model doesn't reach that far — so early throws count as free.)
+current turn and shanten, your best-discard rate and average regret, and race stats — turns to
+first reach tenpai, turns to win, hands won. After every discard the full analysis of that turn
+is shown: which tile was best, how much win probability the pick gave up (or, too far from tenpai
+for that to separate them, whether it needlessly raised shanten), and the complete ranked list of
+every discard with the best ones flagged. Discards pile up below the hand, tinted by whether each
+was a best pick. Completing a hand flashes a win summary; one tap deals the next.
 
 ## Dice rolling
 

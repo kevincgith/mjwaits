@@ -412,6 +412,41 @@ h1 {
   background: var(--danger-bg-2);
 }
 
+.endless-analysis-wrap {
+  gap: 0.35rem;
+}
+
+.endless-verdict-good {
+  color: var(--success-text-1);
+  font-weight: 600;
+}
+
+.endless-verdict-bad {
+  color: var(--danger-text-1);
+  font-weight: 600;
+}
+
+/* The per-turn ranked list scrolls within itself so a scattered hand's ~14
+   rows don't push the tiles off-screen. */
+.endless-analysis {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+  max-height: 15rem;
+  overflow-y: auto;
+}
+
+.discard-row-picked {
+  border-left: 3px solid var(--danger-border-1);
+  padding-left: 0.4rem;
+}
+
+.discard-row-best {
+  border-left: 3px solid var(--success-border-1);
+  padding-left: 0.4rem;
+}
+
 /* Wide content (7 columns) scrolls within its own container on narrow
    screens rather than forcing the whole page to scroll horizontally. */
 .trainer-stats-scroll {

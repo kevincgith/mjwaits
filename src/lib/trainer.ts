@@ -187,12 +187,27 @@ export function generateDiscardQuestion(level: number, flush: boolean): DiscardT
 // winProbability across its choices, and the set of tile kinds achieving it
 // (any of which is a zero-regret discard). Shared by the Discards and Endless
 // modes.
+//
+// When no discard is close enough to tenpai for the win-probability model to
+// separate them (bestWinProbability is 0 - the hand is 2+ shanten), fall back
+// to "keeps the hand closest to tenpai": the optimal set becomes every discard
+// achieving the minimum resulting shanten, so a needlessly wasteful discard is
+// still flagged even this far out.
 export function gradeDiscardOutcome(outcome: DiscardChoicesOutcome): {
   bestWinProbability: number;
   optimalKeys: Set<string>;
 } {
   if (outcome.choices.length === 0) return { bestWinProbability: 0, optimalKeys: new Set() };
   const bestWinProbability = Math.max(...outcome.choices.map((c) => c.winProbability));
+
+  if (bestWinProbability <= 0) {
+    const minShanten = Math.min(...outcome.choices.map((c) => c.resultingShanten));
+    const optimalKeys = new Set(
+      outcome.choices.filter((c) => c.resultingShanten === minShanten).map((c) => tileKey(c.discard))
+    );
+    return { bestWinProbability, optimalKeys };
+  }
+
   const optimalKeys = new Set(
     outcome.choices
       .filter((c) => bestWinProbability - c.winProbability <= DISCARD_OPTIMAL_EPSILON)

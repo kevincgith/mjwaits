@@ -42,7 +42,14 @@ import {
   tileKey,
   tileLabel,
 } from "./lib/mahjong";
-import type { DiscardChoice, DiscardEfficiency, JokerWaitResult, Suit, Tile } from "./lib/mahjong";
+import type {
+  DiscardChoice,
+  DiscardChoicesOutcome,
+  DiscardEfficiency,
+  JokerWaitResult,
+  Suit,
+  Tile,
+} from "./lib/mahjong";
 import {
   MAX_TRAINER_LEVEL,
   MIN_TRAINER_LEVEL,
@@ -903,10 +910,11 @@ function DiscardEfficiencyRow({ option }: { option: DiscardEfficiency }) {
   );
 }
 
-function DiscardChoiceRow({ choice }: { choice: DiscardChoice }) {
+function DiscardChoiceRow({ choice, tone }: { choice: DiscardChoice; tone?: "picked" | "best" }) {
+  const toneClass = tone ? ` discard-row-${tone}` : "";
   if (choice.resultingShanten === 0) {
     return (
-      <div className="discard-row">
+      <div className={`discard-row${toneClass}`}>
         <TileGlyphSpan tile={choice.discard} />
         <span className="discard-arrow">→</span>
         <span className="tenpai-tag">Tenpai</span>
@@ -925,7 +933,7 @@ function DiscardChoiceRow({ choice }: { choice: DiscardChoice }) {
   }
 
   return (
-    <div className="discard-row discard-efficiency-row">
+    <div className={`discard-row discard-efficiency-row${toneClass}`}>
       <div className="discard-efficiency-header">
         <TileGlyphSpan tile={choice.discard} />
         <span className="discard-arrow">→</span>
@@ -2940,6 +2948,17 @@ function EndlessTrainer({
   const [discards, setDiscards] = useState<{ tile: Tile; optimal: boolean }[]>([]);
   const [phase, setPhase] = useState<"idle" | "playing" | "won">("idle");
   const [lastWin, setLastWin] = useState<{ turns: number; optimal: number } | null>(null);
+  // The graded analysis of the hand as it stood before the most recent discard,
+  // shown to the user each turn.
+  const [lastMove, setLastMove] = useState<{
+    outcome: DiscardChoicesOutcome;
+    pickedKey: string;
+    bestKeys: Set<string>;
+    regret: number;
+    optimal: boolean;
+    shantenLost: number; // resulting shanten of the pick minus the best achievable
+    drawn: Tile | null;
+  } | null>(null);
   // Per-hand counters kept in refs so a fast double-tap can't race them.
   const handTurnsRef = useRef(0);
   const handOptimalRef = useRef(0);
@@ -2958,6 +2977,7 @@ function EndlessTrainer({
     busyRef.current = false;
     setDiscards([]);
     setLastWin(null);
+    setLastMove(null);
     setHand(start);
     setWall(drawn.wall);
     setStats((s) => ({ ...s, hands: s.hands + 1 }));
@@ -3007,7 +3027,19 @@ function EndlessTrainer({
       tenpaiReachedCount: s.tenpaiReachedCount + (reachedTenpaiNow ? 1 : 0),
     }));
 
+    const minShanten = Math.min(...outcome.choices.map((c) => c.resultingShanten));
+    const pickedShanten =
+      outcome.choices.find((c) => tileKey(c.discard) === kind)?.resultingShanten ?? minShanten;
     const drawn = drawFromWall(wall);
+    setLastMove({
+      outcome,
+      pickedKey: kind,
+      bestKeys: grade.optimalKeys,
+      regret,
+      optimal,
+      shantenLost: pickedShanten - minShanten,
+      drawn: drawn.tile,
+    });
     if (!drawn.tile) {
       deal(); // wall exhausted - keep the session going with a fresh hand
       return;
@@ -3086,6 +3118,62 @@ function EndlessTrainer({
                 <TileGlyphSpan tile={t} large />
               </button>
             ))}
+          </div>
+        </div>
+      )}
+
+      {lastMove && (
+        <div className="waits discard-analysis endless-analysis-wrap">
+          <span className="waits-label">
+            Last discard:{" "}
+            <TileGlyphSpan
+              tile={
+                lastMove.outcome.choices.find((c) => tileKey(c.discard) === lastMove.pickedKey)?.discard ??
+                lastMove.outcome.choices[0].discard
+              }
+            />{" "}
+            {lastMove.optimal ? (
+              <span className="endless-verdict-good">
+                {lastMove.bestKeys.size >= lastMove.outcome.choices.length ? "no bad discard here" : "best pick ✓"}
+              </span>
+            ) : lastMove.regret > 0 ? (
+              <span className="endless-verdict-bad">gave up {formatRegret(lastMove.regret)} win prob</span>
+            ) : (
+              <span className="endless-verdict-bad">
+                loose — raises shanten{lastMove.shantenLost > 1 ? ` by ${lastMove.shantenLost}` : ""}
+              </span>
+            )}
+            {!lastMove.optimal && lastMove.bestKeys.size < lastMove.outcome.choices.length && (
+              <>
+                {" · best: "}
+                {lastMove.outcome.choices
+                  .filter((c) => lastMove.bestKeys.has(tileKey(c.discard)))
+                  .slice(0, 4)
+                  .map((c) => (
+                    <TileGlyphSpan key={tileLabel(c.discard)} tile={c.discard} />
+                  ))}
+              </>
+            )}
+            {lastMove.drawn && (
+              <>
+                {" · drew "}
+                <TileGlyphSpan tile={lastMove.drawn} />
+              </>
+            )}
+          </span>
+          <div className="endless-analysis">
+            {lastMove.outcome.choices.map((c) => {
+              const k = tileKey(c.discard);
+              const tone =
+                k === lastMove.pickedKey
+                  ? lastMove.optimal
+                    ? "best"
+                    : "picked"
+                  : lastMove.bestKeys.has(k)
+                    ? "best"
+                    : undefined;
+              return <DiscardChoiceRow key={tileLabel(c.discard)} choice={c} tone={tone} />;
+            })}
           </div>
         </div>
       )}
