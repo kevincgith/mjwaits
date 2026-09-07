@@ -841,7 +841,19 @@ export function selectHandRows(rows: Detection[][]): Detection[][] {
     return candidates.reduce((a, b) => (concealednessScore(b) < concealednessScore(a) ? b : a));
   };
 
-  const meldRows = plausible.filter(looksLikeDeclaredMelds);
+  // isAllBonusTiles counts too, alongside looksLikeDeclaredMelds - the
+  // same unambiguous signal isRowADeclared itself leads with (see its own
+  // comment). Without it, a row of ONLY bonus tiles never registers here:
+  // looksLikeDeclaredMelds decomposes realTiles(row), which is empty for
+  // an all-bonus row, and canFormMeldsAllowingOneStray( [] ) returns
+  // false for an empty input - so a real declared side that happens to be
+  // just 2 flowers (no melds at all, e.g. everything else was self-drawn)
+  // would otherwise never win this check, and - with no OTHER row
+  // decomposing into melds either - selectHandRows would fall all the way
+  // through to its no-clear-declared-row branch and return the concealed
+  // hand ALONE, silently dropping the bonus-tile row entirely rather than
+  // pairing the two.
+  const meldRows = plausible.filter((row) => looksLikeDeclaredMelds(row) || isAllBonusTiles(row));
   if (meldRows.length === 1) {
     const declared = meldRows[0];
     const rest = plausible.filter((r) => r !== declared);

@@ -566,6 +566,33 @@ describe("selectHandRows", () => {
     expect(selectHandRows([discard, declaredMeld, concealed])).toEqual([declaredMeld, concealed]);
   });
 
+  it("picks an all-bonus-tile row as declared even with zero real tiles to decompose into melds - looksLikeDeclaredMelds alone would miss this (canFormMeldsAllowingOneStray on an empty array is false, not true), so this must also be caught via isAllBonusTiles, same as isRowADeclared's own leading check", () => {
+    const pile = rowOfDistinctTiles(100, 180, 6); // an unrelated pile of loose tiles, plausible-sized but with no melds/pair/bonus signal of its own
+    const bonusOnly = [
+      detection({ tile: null, className: "1f", box: [0, 400, 40, 480] }),
+      detection({ tile: null, className: "2s", box: [40, 400, 80, 480] }),
+    ];
+    const concealed = [
+      detection({ tile: { suit: "m", rank: 5 }, box: [0, 700, 40, 780] }),
+      detection({ tile: { suit: "m", rank: 6 }, box: [40, 700, 80, 780] }),
+      detection({ tile: { suit: "m", rank: 7 }, box: [80, 700, 120, 780] }),
+      detection({ tile: { suit: "b", rank: 7 }, box: [120, 700, 160, 780] }),
+      detection({ tile: { suit: "b", rank: 7 }, box: [160, 700, 200, 780] }),
+    ];
+    expect(looksLikeDeclaredMelds(bonusOnly)).toBe(false);
+    expect(selectHandRows([pile, bonusOnly, concealed])).toEqual([bonusOnly, concealed]);
+  });
+
+  it("does the same for just a SINGLE bonus tile declared, not only a 2+-tile bonus row - isAllBonusTiles doesn't care about count", () => {
+    const pile = rowOfDistinctTiles(100, 180, 6);
+    const oneBonusTile = [detection({ tile: null, className: "3s", box: [0, 400, 40, 480] })];
+    // A genuine complete 17-tile hand (COMPLETE_SIZE) - the case this
+    // matters most for: nothing else in the photo hints "declared" except
+    // the single bonus tile itself.
+    const concealed = rowFromHand("123456789m123456b1z1z", 700, 780);
+    expect(selectHandRows([pile, oneBonusTile, concealed])).toEqual([oneBonusTile, concealed]);
+  });
+
   it("prefers a genuine pair over a merely-rotated tile when picking the concealed candidate - a discard pile can have an accidentally-rotated tile too, but a matching pair is a stronger signal", () => {
     // The discard row has ONE tile that happens to look rotated (people
     // toss discards carelessly - this is plausible by pure accident,
