@@ -2016,6 +2016,39 @@ describe("PATTERNS: 大雞/大鴨 (nothing but the base + at most one bonus tile
     expect(tai(result, "big-chicken")).toBe(0);
     expect(tai(result, "big-duck")).toBe(0);
   });
+
+  it("stacks with 莊, 叮, N子內, 雙響/三響, 天胡/地胡/人胡, 河底撈魚/海底撈月, and 搶槓 - all purely declared/context state, not a hand shape", () => {
+    expect(tai(scoreHand(boringHand, ctx({ dealerStreak: 1 })), "big-chicken")).toBe(30);
+    expect(tai(scoreHand(boringHand, ctx({ riichi: "riichi" })), "big-chicken")).toBe(30);
+    expect(tai(scoreHand(boringHand, ctx({ earlyWin: "four" })), "big-chicken")).toBe(30);
+    expect(tai(scoreHand(boringHand, ctx({ multiWin: "double" })), "big-chicken")).toBe(30);
+    // 人胡 specifically (not 天胡/地胡) since it's the one of the three that
+    // isn't inherently self-drawn - 天胡/地胡 would still block 大雞 via
+    // 自摸 itself, which stays un-exempted (a claimed win is still required
+    // - see the pattern's own comment).
+    expect(tai(scoreHand(boringHand, ctx({ heavenlyWin: "man", selfDraw: false })), "big-chicken")).toBe(30);
+    expect(tai(scoreHand(boringHand, ctx({ lastTileWin: "river-bottom" })), "big-chicken")).toBe(30);
+    expect(tai(scoreHand(boringHand, ctx({ robKong: 1 })), "big-chicken")).toBe(30);
+  });
+
+  it("stacks with 明絕/絕絕 declared manually, with nothing in this hand's own shape to conflict", () => {
+    // The manual override path (see visible-triple-win/visible-exhausted-
+    // multi-wait's own comments) doesn't require any particular hand shape
+    // - unlike the auto-detected path, which needs a declared triplet plus
+    // a matching run and so always also trips 明/暗四歸一 (mathematically
+    // unavoidable: 3 declared copies leave exactly 1 more, and a 4th copy
+    // of an already-tripled rank can only complete a run, never the pair -
+    // that would need 2 more copies, exceeding the 4 that exist). So this
+    // specifically exercises the manual path, which the boring hand's own
+    // shape doesn't structurally interfere with either way.
+    const withMingjue = scoreHand(boringHand, ctx({ winningTile: { suit: "t", rank: 5 }, manualVisibleTripleWin: true }));
+    expect(tai(withMingjue, "visible-triple-win")).toBe(5);
+    expect(tai(withMingjue, "big-chicken")).toBe(30);
+
+    const withJuejue = scoreHand(boringHand, ctx({ winningTile: { suit: "t", rank: 7 }, manualVisibleExhaustedMultiWait: true }));
+    expect(tai(withJuejue, "visible-exhausted-multi-wait")).toBe(10);
+    expect(tai(withJuejue, "big-chicken")).toBe(30);
+  });
 });
 
 describe("PATTERNS: 十三么 (Thirteen Orphans)", () => {

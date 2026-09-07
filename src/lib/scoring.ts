@@ -3356,14 +3356,49 @@ export const PATTERNS: TaiPattern[] = [
     name: "大雞 (Nothing but the base + at most one bonus tile)",
     // Meta pattern: fires only when no other named pattern would score for
     // this hand (excluding 底 itself and the bonus-tile patterns - "a
-    // single bonus tile or none" is explicitly still allowed). A
-    // self-drawn win is itself "a pattern detected" (自摸 fires), so this
-    // can never apply to a self-drawn hand - mirrors 全求人 requiring a
-    // claimed win. Re-evaluates every other pattern's raw score directly
-    // rather than reading the already-filtered/excluded PATTERNS result,
-    // since this needs to know what *would* fire, not what survives
-    // exclusion.
-    score: (hand, ctx) => (hand.bonusTiles.length > 1 || anyOtherPatternFires(hand, ctx, ["big-chicken"]) ? 0 : 30),
+    // single bonus tile or none" is explicitly still allowed), plus a
+    // house-rule list of extra exemptions per the user: purely
+    // declared/context state that doesn't reflect anything about the
+    // HAND's own shape, so it shouldn't disqualify "otherwise the plainest
+    // possible hand" the way an actual scoring shape (平胡, 對對胡, a wind
+    // meld, etc.) does - 莊, the whole 叮 family (叮/門清叮/天叮/地叮) plus
+    // 一發/食叮, 四/七/十子內, 雙響/三響, 天胡/地胡/人胡, 河底撈魚/海底撈月
+    // (and its one-tong upgrade), 搶槓, and 明絕/絕絕. A self-drawn win is
+    // still itself "a pattern detected" (自摸 fires, and isn't in this
+    // list), so this can never apply to a self-drawn hand - still mirrors
+    // 全求人 requiring a claimed win, even though 天胡/地胡 (inherently
+    // self-drawn) are now exempt in their own right. Re-evaluates every
+    // other pattern's raw score directly rather than reading the
+    // already-filtered/excluded PATTERNS result, since this needs to know
+    // what *would* fire, not what survives exclusion.
+    score: (hand, ctx) =>
+      hand.bonusTiles.length > 1 ||
+      anyOtherPatternFires(hand, ctx, [
+        "big-chicken",
+        "dealer-streak",
+        "riichi",
+        "concealed-riichi",
+        "heavenly-riichi",
+        "earthly-riichi",
+        "riichi-instant-win",
+        "riichi-eat",
+        "early-win-four",
+        "early-win-seven",
+        "early-win-ten",
+        "multi-win-double",
+        "multi-win-triple",
+        "heavenly-win",
+        "earthly-win",
+        "human-win",
+        "river-bottom-win",
+        "sea-bottom-win",
+        "sea-bottom-win-one-tong",
+        "rob-kong",
+        "visible-triple-win",
+        "visible-exhausted-multi-wait",
+      ])
+        ? 0
+        : 30,
   },
   {
     id: "big-duck",
