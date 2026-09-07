@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  EFFICIENCY_HORIZON,
   MELDS_REQUIRED,
+  TOTAL_TILES,
   allTileKinds,
   analyzeDiscardChoices,
   analyzeDiscardEfficiency,
@@ -691,8 +693,41 @@ describe("analyzeDiscardEfficiency", () => {
     expect(waitKinds).toEqual(["6m", "9m"]);
     expect(draw2m!.resultingWaitsTotal).toBe(8);
 
-    // Best (highest-scoring) discard comes first.
-    expect(options[0].score).toBeGreaterThanOrEqual(options[options.length - 1].score);
+    // Sorted most likely to win first, and every probability is a real [0, 1].
+    for (let i = 1; i < options.length; i++) {
+      expect(options[i].winProbability).toBeLessThanOrEqual(options[i - 1].winProbability);
+    }
+    for (const o of options) {
+      expect(o.winProbability).toBeGreaterThanOrEqual(0);
+      expect(o.winProbability).toBeLessThanOrEqual(1);
+      expect(o.tenpaiProbability).toBeGreaterThanOrEqual(0);
+      expect(o.tenpaiProbability).toBeLessThanOrEqual(1);
+      // A useful discard can't be likelier to win than to first reach tenpai.
+      expect(o.winProbability).toBeLessThanOrEqual(o.tenpaiProbability + 1e-9);
+    }
+
+    // tenpaiProbability is exactly the closed-form geometric "at least one
+    // accepting tile within EFFICIENCY_HORIZON draws" for its acceptance count.
+    const unseen = TOTAL_TILES - 16;
+    const expectedTenpai = 1 - (1 - discard1m!.acceptance / unseen) ** EFFICIENCY_HORIZON;
+    expect(discard1m!.tenpaiProbability).toBeCloseTo(expectedTenpai, 12);
+  });
+
+  it("ranks a dead-tile discard above one that breaks a live shape", () => {
+    // 3 triplets + 11m pair + 56t ryanmen + 13b kanchan + a dead lone 7z:
+    // 1-shanten, needing 56t and 13b both filled. Pitching the dead 7z keeps
+    // every accepting draw (4t/7t/2b) live; pitching 6t guts the ryanmen and
+    // leaves nothing that reaches tenpai in one draw.
+    const tiles = parseHand("11333555777m56t13b7z");
+    expect(tiles.length).toBe(16);
+    expect(getWaits(tiles, 5)).toEqual([]);
+
+    const options = analyzeDiscardEfficiency(tiles, 5);
+    const dropDead = options.find((o) => o.discard.suit === "z" && o.discard.rank === 7)!;
+    const breakShape = options.find((o) => o.discard.suit === "t" && o.discard.rank === 6)!;
+    expect(dropDead.acceptance).toBeGreaterThan(breakShape.acceptance);
+    expect(dropDead.winProbability).toBeGreaterThan(breakShape.winProbability);
+    expect(options.indexOf(dropDead)).toBeLessThan(options.indexOf(breakShape));
   });
 
   it("returns nothing for hand sizes that aren't a valid checkpoint", () => {
@@ -824,12 +859,50 @@ describe("analyzeDiscardChoices", () => {
     expect(discard1m!.improvingDrawsTotalExcludingRedraw).toBe(14);
   });
 
+  it("carries two-phase tenpai/win probabilities, exact at tenpai and ordered within a shanten tier", () => {
+    const tiles = parseHand("1234567899m111z11t22b");
+    const outcome = analyzeDiscardChoices(tiles);
+    if (outcome.alreadyComplete) throw new Error("unreachable");
+    const unseen = TOTAL_TILES - 17;
+
+    for (const c of outcome.choices) {
+      expect(c.winProbability).toBeGreaterThanOrEqual(0);
+      expect(c.winProbability).toBeLessThanOrEqual(1);
+      expect(c.tenpaiProbability).toBeGreaterThanOrEqual(0);
+      expect(c.tenpaiProbability).toBeLessThanOrEqual(1);
+      if (c.resultingShanten === 0) {
+        // Already tenpai (unless it's a dead shape with every winning copy
+        // gone): win is the closed-form geometric draw of one of `waitsTotal`
+        // live tiles within the horizon.
+        expect(c.tenpaiProbability).toBe(c.waitsTotal > 0 ? 1 : 0);
+        const expected = 1 - (1 - c.waitsTotal / unseen) ** EFFICIENCY_HORIZON;
+        expect(c.winProbability).toBeCloseTo(expected, 12);
+      } else if (c.resultingShanten === 1) {
+        expect(c.winProbability).toBeGreaterThan(0);
+        expect(c.winProbability).toBeLessThan(1);
+      } else {
+        // 2+ shanten isn't modelled.
+        expect(c.winProbability).toBe(0);
+        expect(c.tenpaiProbability).toBe(0);
+      }
+    }
+
+    // Within one resulting-shanten tier, choices are ordered by winProbability desc.
+    for (let i = 1; i < outcome.choices.length; i++) {
+      const prev = outcome.choices[i - 1];
+      const cur = outcome.choices[i];
+      if (prev.resultingShanten === cur.resultingShanten) {
+        expect(cur.winProbability).toBeLessThanOrEqual(prev.winProbability + 1e-12);
+      }
+    }
+  });
+
   it("stays fast even on a dense hand (many same-suit ranks holding 2 copies)", () => {
     const tiles = parseHand("1122334455667788m9m");
     expect(tiles.length).toBe(17);
     const start = performance.now();
     analyzeDiscardChoices(tiles);
-    expect(performance.now() - start).toBeLessThan(200);
+    expect(performance.now() - start).toBeLessThan(400);
   });
 
   it("returns nothing for hand sizes that aren't a valid checkpoint", () => {

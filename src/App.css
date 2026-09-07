@@ -310,6 +310,49 @@ h1 {
   cursor: pointer;
 }
 
+.trainer-submit:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* Discard trainer: the hand tiles are themselves the answer buttons - tap one
+   to choose the discard. Status colours after submit mirror the waits picker. */
+.trainer-discard-tile {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15rem 0.25rem;
+  background: transparent;
+  border: 2px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.trainer-discard-tile:disabled {
+  cursor: default;
+}
+
+.trainer-discard-tile.selected {
+  background: var(--accent-bg);
+  border-color: var(--accent);
+}
+
+.trainer-discard-tile.trainer-hit {
+  background: var(--success-bg-1);
+  border-color: var(--success-border-1);
+}
+
+.trainer-discard-tile.trainer-false-positive {
+  background: var(--danger-bg-2);
+  border-color: var(--danger-border-1);
+}
+
+.trainer-discard-tile.trainer-missed {
+  background: var(--warning-bg-3);
+  border-color: var(--warning-border);
+  border-style: dashed;
+}
+
 .trainer-result-correct {
   background: var(--success-bg-1);
   border: 2px solid var(--success-border-1);
@@ -654,6 +697,9 @@ h1 {
 }
 
 .efficiency-score {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.4rem;
   font-size: 0.8rem;
   font-weight: 600;
   color: var(--purple);
@@ -661,6 +707,13 @@ h1 {
   border: 1px solid var(--purple-border);
   border-radius: 4px;
   padding: 0.15rem 0.5rem;
+  white-space: nowrap;
+}
+
+.efficiency-score-sub {
+  font-weight: 500;
+  font-size: 0.72rem;
+  opacity: 0.75;
 }
 
 .discard-efficiency-draws {

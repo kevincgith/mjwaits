@@ -16,6 +16,7 @@ import {
 import "./App.css";
 import {
   COMPLETE_SIZE,
+  EFFICIENCY_HORIZON,
   MELDS_REQUIRED,
   ParseError,
   allTileKinds,
@@ -44,8 +45,12 @@ import type { DiscardChoice, DiscardEfficiency, JokerWaitResult, Suit, Tile } fr
 import {
   MAX_TRAINER_LEVEL,
   MIN_TRAINER_LEVEL,
+  discardRegret,
+  generateDiscardQuestion,
   generateTrainerQuestion,
+  isOptimalDiscard,
   trainerHandSize,
+  type DiscardTrainerQuestion,
   type TrainerQuestion,
 } from "./lib/trainer";
 import {
@@ -814,18 +819,61 @@ function CompleteHandBreakdown({
   );
 }
 
+function formatProbability(p: number): string {
+  if (p <= 0) return "0%";
+  if (p >= 0.9995) return "100%";
+  if (p < 0.01) return "<1%";
+  return `${Math.round(p * 100)}%`;
+}
+
+// Shared tenpai/win probability chip for the two discard blocks. `modelled` is
+// false for post-discard hands 2+ shanten, where the probability model doesn't
+// apply and only a "—" is shown.
+function WinProbabilityBadge({
+  tenpaiProbability,
+  winProbability,
+  modelled = true,
+}: {
+  tenpaiProbability: number;
+  winProbability: number;
+  modelled?: boolean;
+}) {
+  return (
+    <span
+      className="efficiency-score"
+      title={
+        modelled
+          ? `Chance within the next ${EFFICIENCY_HORIZON} self-draws of reaching tenpai, and of self-drawing the win. Two-phase estimate: advance to tenpai at (accepting tiles ÷ unseen tiles) per draw, then win at (wait tiles ÷ unseen) per draw. Self-draw only, no opponent model — a ranking signal, not table odds.`
+          : "The win-probability model only covers hands that are tenpai or one draw away after the discard."
+      }
+    >
+      {modelled ? (
+        <>
+          <span className="efficiency-score-main">{formatProbability(tenpaiProbability)} tenpai</span>
+          <span className="efficiency-score-sub">{formatProbability(winProbability)} win</span>
+        </>
+      ) : (
+        "—"
+      )}
+    </span>
+  );
+}
+
 function DiscardEfficiencyRow({ option }: { option: DiscardEfficiency }) {
   return (
     <div className="discard-row discard-efficiency-row">
       <div className="discard-efficiency-header">
         <TileGlyphSpan tile={option.discard} />
         <span className="discard-arrow">→</span>
-        <span
-          className="efficiency-score"
-          title="Sum over each useful draw of (copies of that draw left) × (remaining tiles in the wait it leads to). Higher means more likely to reach a win."
-        >
-          {option.score} pt{option.score === 1 ? "" : "s"}
-        </span>
+        <WinProbabilityBadge
+          tenpaiProbability={option.tenpaiProbability}
+          winProbability={option.winProbability}
+        />
+        {option.acceptance > 0 && (
+          <span className="hint">
+            reaches tenpai: {option.acceptance} tile{option.acceptance === 1 ? "" : "s"}
+          </span>
+        )}
       </div>
       {option.draws.length > 0 ? (
         <div className="discard-efficiency-draws">
@@ -863,6 +911,10 @@ function DiscardChoiceRow({ choice }: { choice: DiscardChoice }) {
         <span className="hint">
           ({choice.waitsTotal} tile{choice.waitsTotal === 1 ? "" : "s"})
         </span>
+        <WinProbabilityBadge
+          tenpaiProbability={choice.tenpaiProbability}
+          winProbability={choice.winProbability}
+        />
       </div>
     );
   }
@@ -873,6 +925,11 @@ function DiscardChoiceRow({ choice }: { choice: DiscardChoice }) {
         <TileGlyphSpan tile={choice.discard} />
         <span className="discard-arrow">→</span>
         <span className="shanten-badge">Shanten {choice.resultingShanten}</span>
+        <WinProbabilityBadge
+          tenpaiProbability={choice.tenpaiProbability}
+          winProbability={choice.winProbability}
+          modelled={choice.resultingShanten === 1}
+        />
       </div>
       {choice.improvingDraws.length > 0 ? (
         <div className="discard-efficiency-draws">
@@ -2250,6 +2307,18 @@ interface TrainerStatsEntry {
   timeTotalMs: number;
 }
 
+// Same shape as TrainerStatsEntry plus regretTotal: the discard trainer grades
+// on how much win probability an answer gave up versus the best discard, not
+// just right/wrong, so it also tracks the running sum of that regret.
+interface DiscardTrainerStatsEntry {
+  level: number;
+  flush: boolean;
+  total: number;
+  correct: number;
+  timeTotalMs: number;
+  regretTotal: number;
+}
+
 function trainerStatsKey(level: number, flush: boolean): string {
   return `${level}-${flush}`;
 }
@@ -2258,7 +2327,11 @@ function formatSeconds(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
-function TrainerPanel({
+function formatRegret(fraction: number): string {
+  return `${(fraction * 100).toFixed(1)} pts`;
+}
+
+function WaitsTrainer({
   stats,
   setStats,
 }: {
@@ -2389,7 +2462,7 @@ function TrainerPanel({
   };
 
   return (
-    <section className="panel trainer-panel">
+    <>
       <div className="panel-header">
         <div className="trainer-levels">
           {Array.from({ length: MAX_TRAINER_LEVEL - MIN_TRAINER_LEVEL + 1 }, (_, i) => MIN_TRAINER_LEVEL + i).map(
@@ -2546,6 +2619,308 @@ function TrainerPanel({
             </table>
           </div>
         </div>
+      )}
+    </>
+  );
+}
+
+// "You just drew - which tile do you throw?" Shows a random 3n+2 hand (a tenpai
+// hand plus one drawn tile); the user taps one tile and is graded on how much
+// win probability the pick gave up versus the best discard (analyzeDiscardChoices).
+function DiscardTrainer({
+  stats,
+  setStats,
+}: {
+  stats: Map<string, DiscardTrainerStatsEntry>;
+  setStats: (updater: (prev: Map<string, DiscardTrainerStatsEntry>) => Map<string, DiscardTrainerStatsEntry>) => void;
+}) {
+  const [level, setLevel] = useState(MIN_TRAINER_LEVEL);
+  const [flush, setFlush] = useState(false);
+  const [question, setQuestion] = useState<DiscardTrainerQuestion | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [submitted, setSubmitted] = useState(false);
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const questionStartRef = useRef(performance.now());
+  // Same synchronous mirrors as WaitsTrainer, for fast tap-then-Submit sequences.
+  const selectedRef = useRef<string | null>(null);
+  const submittedRef = useRef(false);
+
+  const newQuestion = (lvl: number, flushMode: boolean) => {
+    setQuestion(generateDiscardQuestion(lvl, flushMode));
+    selectedRef.current = null;
+    setSelected(null);
+    submittedRef.current = false;
+    setSubmitted(false);
+    questionStartRef.current = performance.now();
+    setElapsedMs(0);
+  };
+
+  const clearQuestion = () => {
+    setQuestion(null);
+    selectedRef.current = null;
+    setSelected(null);
+    submittedRef.current = false;
+    setSubmitted(false);
+    setElapsedMs(0);
+  };
+
+  useEffect(clearQuestion, [level, flush]);
+
+  useEffect(() => {
+    if (!question || submitted) return;
+    const id = setInterval(() => setElapsedMs(performance.now() - questionStartRef.current), 100);
+    return () => clearInterval(id);
+  }, [question, submitted]);
+
+  const pick = (t: Tile) => {
+    if (submittedRef.current) return;
+    selectedRef.current = tileKey(t);
+    setSelected(selectedRef.current);
+  };
+
+  const handleSubmit = () => {
+    if (!question || submittedRef.current || selectedRef.current === null) return;
+    submittedRef.current = true;
+    const picked = selectedRef.current;
+    const regret = discardRegret(question, picked);
+    const correct = isOptimalDiscard(question, picked);
+    const timeMs = performance.now() - questionStartRef.current;
+    const key = trainerStatsKey(level, flush);
+    setStats((prev) => {
+      const next = new Map(prev);
+      const existing = next.get(key) ?? { level, flush, total: 0, correct: 0, timeTotalMs: 0, regretTotal: 0 };
+      next.set(key, {
+        level,
+        flush,
+        total: existing.total + 1,
+        correct: existing.correct + (correct ? 1 : 0),
+        timeTotalMs: existing.timeTotalMs + timeMs,
+        regretTotal: existing.regretTotal + regret,
+      });
+      return next;
+    });
+    setElapsedMs(timeMs);
+    setSubmitted(true);
+  };
+
+  const statsRows = useMemo(
+    () => Array.from(stats.values()).sort((a, b) => a.level - b.level || Number(a.flush) - Number(b.flush)),
+    [stats]
+  );
+  const statsTotal = useMemo(
+    () =>
+      statsRows.reduce(
+        (acc, r) => ({
+          total: acc.total + r.total,
+          correct: acc.correct + r.correct,
+          timeTotalMs: acc.timeTotalMs + r.timeTotalMs,
+          regretTotal: acc.regretTotal + r.regretTotal,
+        }),
+        { total: 0, correct: 0, timeTotalMs: 0, regretTotal: 0 }
+      ),
+    [statsRows]
+  );
+
+  const pickedRegret = submitted && question && selected ? discardRegret(question, selected) : 0;
+  const pickedOptimal = submitted && question != null && selected != null && isOptimalDiscard(question, selected);
+
+  const tileStatus = (tileKind: string): TrainerTileStatus => {
+    if (!submitted || !question) return null;
+    const isBest = question.optimalKeys.has(tileKind);
+    if (tileKind === selected) return isBest ? "hit" : "false-positive";
+    return isBest ? "missed" : null;
+  };
+
+  return (
+    <>
+      <div className="panel-header">
+        <div className="trainer-levels">
+          {Array.from({ length: MAX_TRAINER_LEVEL - MIN_TRAINER_LEVEL + 1 }, (_, i) => MIN_TRAINER_LEVEL + i).map((lvl) => (
+            <button
+              key={lvl}
+              type="button"
+              className={lvl === level ? "toggle-on" : undefined}
+              aria-pressed={lvl === level}
+              onClick={() => setLevel(lvl)}
+              title={`Level ${lvl}: ${trainerHandSize(lvl) + 1} tiles`}
+            >
+              L{lvl}
+            </button>
+          ))}
+        </div>
+        <button
+          type="button"
+          className={flush ? "toggle-on" : undefined}
+          aria-pressed={flush}
+          onClick={() => setFlush((f) => !f)}
+          title="Flush mode: every tile comes from the same suit"
+        >
+          Flush
+        </button>
+      </div>
+
+      <div className="panel-header">
+        <button type="button" onClick={() => newQuestion(level, flush)}>
+          {submitted ? "Next Question" : "New Hand"}
+        </button>
+        {question && <span className="tile-count">Time: {formatSeconds(elapsedMs)}</span>}
+      </div>
+
+      {!question && (
+        <div className="waits">
+          <span className="waits-label">
+            Press "New Hand" — you've just drawn, so tap the single best tile to discard.
+          </span>
+        </div>
+      )}
+
+      {question && (
+        <>
+          <div className="waits">
+            <div className="hand-display trainer-hand trainer-discard-hand">
+              {sortTiles(question.tiles).map((t, i) => {
+                const status = tileStatus(tileKey(t));
+                return (
+                  <button
+                    key={i}
+                    type="button"
+                    className={[
+                      "trainer-discard-tile",
+                      tileKey(t) === selected ? "selected" : "",
+                      status ? `trainer-${status}` : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                    onClick={() => pick(t)}
+                    disabled={submitted}
+                    title={tileLabel(t)}
+                  >
+                    <TileGlyphSpan tile={t} large />
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {!submitted ? (
+            <button type="button" className="trainer-submit" onClick={handleSubmit} disabled={selected === null}>
+              {selected === null ? "Tap a tile to discard" : "Submit discard"}
+            </button>
+          ) : (
+            <>
+              <div className={pickedOptimal ? "waits trainer-result-correct" : "waits trainer-result-incorrect"}>
+                <span className="waits-label trainer-result-label">
+                  {pickedOptimal
+                    ? "Best discard!"
+                    : `Gave up ${formatRegret(pickedRegret)} of win probability. Best:`}
+                </span>
+                {!pickedOptimal &&
+                  question.outcome.choices
+                    .filter((c) => question.optimalKeys.has(tileKey(c.discard)))
+                    .map((c) => <TileGlyphSpan key={tileLabel(c.discard)} tile={c.discard} large />)}
+              </div>
+              <div className="waits breakdown-list discard-analysis">
+                <span className="waits-label">Every discard, ranked:</span>
+                {question.outcome.choices.map((c) => (
+                  <DiscardChoiceRow key={tileLabel(c.discard)} choice={c} />
+                ))}
+              </div>
+            </>
+          )}
+        </>
+      )}
+
+      {statsRows.length > 0 && (
+        <div className="trainer-stats">
+          <div className="panel-header">
+            <span className="panel-title">Stats</span>
+            <button type="button" onClick={() => setStats(() => new Map())}>
+              Reset Stats
+            </button>
+          </div>
+          <div className="trainer-stats-scroll">
+            <table className="trainer-stats-table">
+              <thead>
+                <tr>
+                  <th>Level</th>
+                  <th>Flush</th>
+                  <th>Answered</th>
+                  <th>Best</th>
+                  <th>Off</th>
+                  <th>% Best</th>
+                  <th>Avg Regret</th>
+                  <th>Avg Time</th>
+                </tr>
+              </thead>
+              <tbody>
+                {statsRows.map((r) => (
+                  <tr key={trainerStatsKey(r.level, r.flush)}>
+                    <td>L{r.level}</td>
+                    <td>{r.flush ? "Yes" : "No"}</td>
+                    <td>{r.total}</td>
+                    <td>{r.correct}</td>
+                    <td>{r.total - r.correct}</td>
+                    <td>{Math.round((r.correct / r.total) * 100)}%</td>
+                    <td>{formatRegret(r.regretTotal / r.total)}</td>
+                    <td>{formatSeconds(r.timeTotalMs / r.total)}</td>
+                  </tr>
+                ))}
+                <tr className="trainer-stats-total">
+                  <td colSpan={2}>All</td>
+                  <td>{statsTotal.total}</td>
+                  <td>{statsTotal.correct}</td>
+                  <td>{statsTotal.total - statsTotal.correct}</td>
+                  <td>{statsTotal.total > 0 ? Math.round((statsTotal.correct / statsTotal.total) * 100) : 0}%</td>
+                  <td>{statsTotal.total > 0 ? formatRegret(statsTotal.regretTotal / statsTotal.total) : "0.0 pts"}</td>
+                  <td>{statsTotal.total > 0 ? formatSeconds(statsTotal.timeTotalMs / statsTotal.total) : "0.0s"}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+// Trainer tab shell: two sub-tabs, each its own drill with its own stats table.
+// Stats live in App so they survive switching sub-tabs (and the top tab) and back.
+function TrainerPanel({
+  waitsStats,
+  setWaitsStats,
+  discardStats,
+  setDiscardStats,
+}: {
+  waitsStats: Map<string, TrainerStatsEntry>;
+  setWaitsStats: (updater: (prev: Map<string, TrainerStatsEntry>) => Map<string, TrainerStatsEntry>) => void;
+  discardStats: Map<string, DiscardTrainerStatsEntry>;
+  setDiscardStats: (updater: (prev: Map<string, DiscardTrainerStatsEntry>) => Map<string, DiscardTrainerStatsEntry>) => void;
+}) {
+  const [sub, setSub] = useState<"waits" | "discards">("waits");
+  return (
+    <section className="panel trainer-panel">
+      <div className="mode-tabs sub-tabs">
+        <button
+          type="button"
+          className={sub === "waits" ? "toggle-on" : undefined}
+          aria-pressed={sub === "waits"}
+          onClick={() => setSub("waits")}
+        >
+          Waits
+        </button>
+        <button
+          type="button"
+          className={sub === "discards" ? "toggle-on" : undefined}
+          aria-pressed={sub === "discards"}
+          onClick={() => setSub("discards")}
+        >
+          Discards
+        </button>
+      </div>
+      {sub === "waits" ? (
+        <WaitsTrainer stats={waitsStats} setStats={setWaitsStats} />
+      ) : (
+        <DiscardTrainer stats={discardStats} setStats={setDiscardStats} />
       )}
     </section>
   );
@@ -5029,10 +5404,12 @@ function DiceTab() {
 function App() {
   const [mode, setMode] = useState<"calculator" | "trainer" | "scoring" | "dice">("scoring");
   // Lifted above TrainerPanel so stats survive switching back to the
-  // Calculator tab and back - TrainerPanel itself unmounts (and its other
+  // Calculator tab and back - the trainers themselves unmount (and their other
   // state - the in-progress question, timer, etc. - resets) on every tab
   // switch, but a session's accumulated stats shouldn't disappear with it.
-  const [trainerStats, setTrainerStats] = useState<Map<string, TrainerStatsEntry>>(new Map());
+  // One map per sub-tab (Waits / Discards), each with its own stats table.
+  const [waitsTrainerStats, setWaitsTrainerStats] = useState<Map<string, TrainerStatsEntry>>(new Map());
+  const [discardTrainerStats, setDiscardTrainerStats] = useState<Map<string, DiscardTrainerStatsEntry>>(new Map());
 
   return (
     <div className="page">
@@ -5073,7 +5450,14 @@ function App() {
       </div>
       {mode === "scoring" && <ScoringPanel />}
       {mode === "calculator" && <Calculator />}
-      {mode === "trainer" && <TrainerPanel stats={trainerStats} setStats={setTrainerStats} />}
+      {mode === "trainer" && (
+        <TrainerPanel
+          waitsStats={waitsTrainerStats}
+          setWaitsStats={setWaitsTrainerStats}
+          discardStats={discardTrainerStats}
+          setDiscardStats={setDiscardTrainerStats}
+        />
+      )}
       {mode === "dice" && <DiceTab />}
       <footer className="build-version">v{__BUILD_TIME__}</footer>
     </div>

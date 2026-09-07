@@ -5,7 +5,8 @@ hand, see what completes it and which discard gives the best odds — and has gr
 
 - **Scoring** — score a finished hand against a concrete house tai (番) list (~140 patterns).
 - **Calculator** — the original: waits, shanten, joker resolution, and discard analysis.
-- **Trainer** — a timed quiz for drilling waits recognition.
+- **Trainer** — timed quizzes: a **Waits** drill (name every tile that completes a hand) and a
+  **Discards** drill (just drew — pick the single best tile to throw).
 - **Dice rolling** — roll for the wall, and see exactly where it breaks.
 
 Everything runs client-side, including the camera tile scanner. No hand ever leaves the browser.
@@ -108,18 +109,24 @@ Pairs and Sixteen Unrelated Tiles, and shows as a badge next to the hand.
 
 Two related tools, depending on where you are in the hand:
 
-![A 1-shanten hand, 1278m555t111333555z, with discards ranked by efficiency: each option shows a two-step lookahead — draw 3m (4 left) then wait on 6m/9m (8 tiles), etc.](docs/discard-efficiency.png)
+![A 1-shanten hand, 1278m555t111333555z, with discards ranked by win probability: each option shows its chance of reaching tenpai and of self-drawing the win within the next 8 draws, plus a two-step lookahead — draw 3m (4 left) then wait on 6m/9m (8 tiles), etc.](docs/discard-efficiency.png)
+
+Both blocks rate a discard with the same model: over the next **8 self-draws**, a two-phase
+estimate of the chance to reach tenpai, and then to self-draw the win. Phase one advances to
+tenpai at (accepting tiles ÷ unseen tiles) per draw; phase two wins at (wait tiles ÷ unseen) per
+draw. Self-draw only — there's no opponent or discard-pile model — so the numbers read low and
+are meant for *ranking*, not as table odds.
 
 - **Discard efficiency** — at any checkpoint size that *isn't* tenpai, every discard is ranked by
-  a weighted score. For each one, a two-step lookahead lists every useful follow-up draw (with
-  copies remaining) and what the hand would then wait on (with its own remaining count). This
-  surfaces the discard with the best actual odds of a win, not just whichever reaches tenpai
-  fastest.
+  that win probability. Each one shows its tenpai/win percentages, how many tiles bring it to
+  tenpai, and a two-step lookahead: every useful follow-up draw (with copies remaining) and what
+  the hand would then wait on (with its own remaining count).
 - **Discard options** — one tile past a checkpoint (i.e. right after drawing), each distinct
   discard is shown with what it leaves you: tenpai and its waits, or a shanten value and which
-  draws would improve it, each with remaining-copy counts. A winning hand is called out as such —
-  and, with Breakdown on, still shows its full decomposition plus what discarding anyway would
-  leave you waiting on.
+  draws would improve it, each with remaining-copy counts — plus the same tenpai/win percentages
+  (a `—` for hands still 2+ shanten after the discard, which the model doesn't cover). A winning
+  hand is called out as such — and, with Breakdown on, still shows its full decomposition plus
+  what discarding anyway would leave you waiting on.
 
 ### Jokers (🀪)
 
@@ -179,19 +186,33 @@ full validation split the deployed checkpoint scores mAP50 0.916 / mAP50-95 0.68
 
 ## Trainer
 
+Two timed drills, on their own sub-tabs. Both have five levels — Level 1 is a 1-meld hand, Level
+5 the full 16-tile size — a **Flush mode** that restricts every generated hand to one random
+suit, a per-question timer that freezes at submit, and their own stats table (broken down by
+level and flush mode, with an overall row and a Reset button) that survives switching tabs.
+
+### Waits
+
 ![A Level 4 quiz question answered: the answer picker marks one correct hit (green), one missed wait (amber), and one wrong guess (red), with the full breakdown and a per-level stats table below](docs/trainer.png)
 
-A timed quiz for practicing waits recognition. Each question is a randomly generated hand at one
-of five levels — Level 1 is 4 tiles (1 meld + pair), Level 5 the full 16-tile tenpai size —
-guaranteed to have at least one wait. The answer picker only shows suits actually present in the
-question, since a wait can never come from a suit that isn't already there. Mark your guess, then
-submit: the picker flags each pick as a correct hit, a wrong guess, or a wait you missed, and a
-full breakdown (same as the Calculator's) shows how each real wait completes the hand. **Flush
-mode** restricts every generated hand to one random suit for extra difficulty.
+Each question is a randomly generated hand (3·level + 1 tiles) guaranteed to have at least one
+wait. The answer picker only shows suits actually present in the question, since a wait can never
+come from a suit that isn't already there. Mark your guess, then submit: the picker flags each
+pick as a correct hit, a wrong guess, or a wait you missed, and a full breakdown (same as the
+Calculator's) shows how each real wait completes the hand. Stats: answered, correct, wrong,
+% correct, average time.
 
-A per-question timer runs and freezes at submit. Results accumulate into a stats table broken
-down by level and flush mode — answered, correct, wrong, % correct, average time — with an
-overall row and a Reset Stats button. Stats survive switching tabs and back.
+### Discards
+
+![A Level 3 discard question answered: an 11-tile hand with the picked tile outlined red and the best discards highlighted amber, a "gave up 14.6 pts of win probability" banner, and the full ranked list of every discard below](docs/discard-trainer.png)
+
+Each question is a random "just drew" hand (3·level + 2 tiles — a tenpai hand plus one drawn
+tile). Tap the single tile you'd throw, then submit. It's graded against the Calculator's
+*Discard options* analysis: the best discard is the one with the highest win probability over the
+next 8 draws. Your pick and every equally-best discard are highlighted on the hand, and the full
+list of every discard — ranked, with tenpai/win percentages — is shown below. Stats track how
+often you found a best discard and your **average regret**: the win probability (in points) an
+answer gave up versus the best.
 
 ## Dice rolling
 

@@ -15,6 +15,16 @@ export const MELDS_REQUIRED = 5;
 export const TENPAI_SIZE = MELDS_REQUIRED * 3 + 1; // 16
 export const COMPLETE_SIZE = MELDS_REQUIRED * 3 + 2; // 17
 
+// Total tiles in the set this engine models: 34 kinds x 4 copies. No flowers.
+export const TOTAL_TILES = 136;
+
+// How many future draws the discard-analysis probabilities look ahead over
+// (see shapeProbability / analyzeDiscardEfficiency / analyzeDiscardChoices).
+// Roughly the next third of a hand; rankings are insensitive to the exact
+// value across a wide band, so this is a plain tunable constant rather than
+// something derived from a turn counter the calculator doesn't track.
+export const EFFICIENCY_HORIZON = 8;
+
 // A hand can only be checked for waits at sizes of the form 3n + 1 (one tile
 // short of some number of complete melds plus a pair): 1, 4, 7, 10, 13, 16.
 export function isCheckpointSize(size: number): boolean {
@@ -1187,23 +1197,102 @@ export interface DiscardDrawDetail {
   resultingWaitsTotal: number;
 }
 
+// --- Discard-probability model ------------------------------------------------
+//
+// Both discard blocks (analyzeDiscardEfficiency and analyzeDiscardChoices) rate
+// a discard with the same two-phase model over the next EFFICIENCY_HORIZON
+// self-draws:
+//
+//   phase 1 (not yet tenpai): each draw advances the hand to tenpai with
+//     probability a = acceptance / U, where `acceptance` is the total live
+//     copies of tiles that do so and U is the count of tiles unseen from this
+//     player's view (TOTAL_TILES minus the tiles held).
+//   phase 2 (tenpai): each draw self-draws the win with probability
+//     q = waitTotal / U.
+//
+// P(win within H draws) sums, over the turn t at which phase 1 completes via a
+// particular entry tile, the geometric chance of still being in phase 1 at t
+// times the chance phase 2 then wins within the remaining H - t draws. Entry
+// tiles are kept separate because the wait each leads to - hence q - differs.
+//
+// Simplifications, consistent with the rest of this file:
+//  - drawing a non-advancing tile is taken to leave `acceptance` unchanged;
+//  - draws that only improve wait shape (without advancing shanten) are ignored;
+//  - wins are self-draw only - there is no opponent / discard-pile model, so the
+//    absolute numbers read low and are meant for ranking, not as table odds.
+
+// P(at least one of `waitTotal` live tiles is drawn within `horizon` draws out
+// of `unseen` unseen tiles).
+function drawWithinHorizon(waitTotal: number, unseen: number, horizon: number): number {
+  if (waitTotal <= 0 || unseen <= 0) return 0;
+  const missOne = Math.max(0, 1 - waitTotal / unseen);
+  return 1 - missOne ** horizon;
+}
+
+interface ShapeProbability {
+  tenpaiProbability: number;
+  winProbability: number;
+  acceptance: number;
+}
+
+// One entry tile of a 1-shanten shape: `copies` live copies advance the hand to
+// tenpai, landing on a wait worth `waitTotal` live tiles.
+interface TenpaiEntry {
+  copies: number;
+  waitTotal: number;
+}
+
+// Two-phase tenpai/win probability for a hand that still needs exactly one
+// advancing draw (1-shanten), given its entry tiles. See the model comment above.
+function shapeProbabilityFromEntries(
+  entries: TenpaiEntry[],
+  unseen: number,
+  horizon: number
+): ShapeProbability {
+  const acceptance = entries.reduce((sum, e) => sum + e.copies, 0);
+  if (acceptance <= 0 || unseen <= 0) {
+    return { tenpaiProbability: 0, winProbability: 0, acceptance: 0 };
+  }
+  const a = acceptance / unseen;
+  const stayPhase1 = Math.max(0, 1 - a);
+
+  let winProbability = 0;
+  for (const entry of entries) {
+    const enterOnDraw = entry.copies / unseen;
+    const q = Math.min(1, Math.max(0, entry.waitTotal / unseen));
+    for (let t = 1; t <= horizon - 1; t++) {
+      const drawsLeft = horizon - t;
+      winProbability += stayPhase1 ** (t - 1) * enterOnDraw * (1 - (1 - q) ** drawsLeft);
+    }
+  }
+
+  return { tenpaiProbability: 1 - stayPhase1 ** horizon, winProbability, acceptance };
+}
+
 export interface DiscardEfficiency {
   discard: Tile;
   draws: DiscardDrawDetail[];
-  // Sum over draws of drawRemaining * resultingWaitsTotal: a rough weight for
-  // "how many two-step paths (draw, then win-tile) this discard opens up."
-  // Higher is better. Jokers are not supported (matches analyzeDiscards).
-  score: number;
+  // P(win within EFFICIENCY_HORIZON self-draws) via the two-phase model in the
+  // "Discard-probability model" comment above. Options are sorted by this, best
+  // first. Self-draw only, no opponent model - a ranking signal, not table odds.
+  // Jokers unsupported (matches analyzeDiscards).
+  winProbability: number;
+  // P(this discard's hand reaches tenpai within EFFICIENCY_HORIZON draws).
+  tenpaiProbability: number;
+  // Ukeire: total live copies of tiles that bring the post-discard hand to tenpai.
+  acceptance: number;
 }
 
 // Like analyzeDiscards, but for each useful draw also looks one step further:
 // the remaining count of that draw tile, and the wait (plus its own remaining
-// count) the hand would have once that tile is drawn. Options are sorted by
-// `score`, a weighted-probability proxy built on the same remaining-count
-// logic as the Waits Count feature, most efficient discard first.
+// count) the hand would have once that tile is drawn. Each option also carries
+// two-phase tenpai/win probabilities over EFFICIENCY_HORIZON draws (see the
+// "Discard-probability model" comment). Options are sorted by winProbability,
+// most likely to win first.
 export function analyzeDiscardEfficiency(tiles: Tile[], meldsRequired: number = MELDS_REQUIRED): DiscardEfficiency[] {
   const size = meldsRequired * 3 + 1;
   if (tiles.length !== size) return [];
+  const unseen = TOTAL_TILES - size;
 
   const options: DiscardEfficiency[] = [];
   for (const discard of uniqueTileKinds(tiles)) {
@@ -1211,7 +1300,7 @@ export function analyzeDiscardEfficiency(tiles: Tile[], meldsRequired: number = 
     const remaining = [...tiles.slice(0, discardIndex), ...tiles.slice(discardIndex + 1)];
 
     const draws: DiscardDrawDetail[] = [];
-    let score = 0;
+    const entries: TenpaiEntry[] = [];
     for (const candidate of allTileKinds()) {
       const drawRemaining = remainingCopies(remaining, discard, candidate);
       if (drawRemaining <= 0) continue;
@@ -1221,14 +1310,24 @@ export function analyzeDiscardEfficiency(tiles: Tile[], meldsRequired: number = 
 
       const resultingWaitsTotal = resultingWaits.reduce((sum, w) => sum + remainingCopies(redrawn, discard, w), 0);
       draws.push({ draw: candidate, drawRemaining, resultingWaits, resultingWaitsTotal });
-      score += drawRemaining * resultingWaitsTotal;
+      entries.push({ copies: drawRemaining, waitTotal: resultingWaitsTotal });
     }
 
+    const { winProbability, tenpaiProbability, acceptance } = shapeProbabilityFromEntries(
+      entries,
+      unseen,
+      EFFICIENCY_HORIZON
+    );
     draws.sort((a, b) => b.drawRemaining * b.resultingWaitsTotal - a.drawRemaining * a.resultingWaitsTotal);
-    options.push({ discard, draws, score });
+    options.push({ discard, draws, winProbability, tenpaiProbability, acceptance });
   }
 
-  return options.sort((a, b) => b.score - a.score);
+  return options.sort(
+    (a, b) =>
+      b.winProbability - a.winProbability ||
+      b.acceptance - a.acceptance ||
+      tileKey(a.discard).localeCompare(tileKey(b.discard))
+  );
 }
 
 export interface DrawCount {
@@ -1259,6 +1358,19 @@ export interface DiscardChoice {
   // one just made, not a "clean" improvement, so this is the more
   // conservative number to act on.
   improvingDrawsTotalExcludingRedraw: number;
+  // P(this discard's resulting hand reaches tenpai within EFFICIENCY_HORIZON
+  // self-draws): 1 when resultingShanten is 0, a two-phase estimate when it is
+  // 1 (see the "Discard-probability model" comment), and 0 for 2+ (not
+  // modelled - the UI shows a bare shanten badge there).
+  tenpaiProbability: number;
+  // P(the resulting hand self-draws its winning tile within EFFICIENCY_HORIZON
+  // draws). Ranking signal only - self-draw wins, no opponent model. 0 for 2+
+  // shanten.
+  winProbability: number;
+  // Live copies of tiles that immediately advance the resulting hand toward
+  // tenpai (the redraw of the just-discarded kind excluded, matching
+  // improvingDrawsTotalExcludingRedraw). 0 when already tenpai or 2+ shanten.
+  acceptance: number;
 }
 
 export interface DiscardChoicesOutcome {
@@ -1266,10 +1378,60 @@ export interface DiscardChoicesOutcome {
   // tile below breaks that win, rather than being required to reach one.
   alreadyComplete: boolean;
   // One entry per discardable tile kind, sorted by resultingShanten
-  // ascending (tenpai first, then closest-to-tenpai). Computed even when
-  // alreadyComplete, so a player can see what breaking the win to fish for
-  // something else would look like.
+  // ascending (tenpai first, then closest-to-tenpai), then by winProbability
+  // descending within a tier. Computed even when alreadyComplete, so a player
+  // can see what breaking the win to fish for something else would look like.
   choices: DiscardChoice[];
+}
+
+function sortedHandKey(tiles: Tile[]): string {
+  return tiles.map(tileKey).sort().join(",");
+}
+
+// getWaits memoized by hand contents - the discard-analysis functions call it
+// on heavily overlapping sub-hands (every follow-up discard of every improving
+// draw), so caching by multiset key pays off. Bounded, cleared wholesale when
+// it grows past a session-scale cap.
+const getWaitsMemo = new Map<string, Tile[]>();
+function getWaitsCached(tiles: Tile[], meldsRequired: number): Tile[] {
+  const key = `${meldsRequired}|${sortedHandKey(tiles)}`;
+  const cached = getWaitsMemo.get(key);
+  if (cached !== undefined) return cached;
+  const waits = getWaits(tiles, meldsRequired);
+  if (getWaitsMemo.size > 20000) getWaitsMemo.clear();
+  getWaitsMemo.set(key, waits);
+  return waits;
+}
+
+// For a (meldsRequired*3+2)-tile hand that is shanten 0, the fattest wait total
+// any single follow-up discard can leave - i.e. how good the tenpai you land in
+// after this draw can be with best play. `pileDiscard` is the tile already gone
+// to the pile this turn, threaded through to remainingCopies. Memoized: the
+// resultingShanten===1 branch of analyzeDiscardChoices calls this across every
+// improving draw.
+const bestWaitTotalMemo = new Map<string, number>();
+function bestWaitTotalAfterDiscard(
+  hand: Tile[],
+  pileDiscard: Tile,
+  meldsRequired: number
+): number {
+  const key = `${meldsRequired}|${tileKey(pileDiscard)}|${sortedHandKey(hand)}`;
+  const cached = bestWaitTotalMemo.get(key);
+  if (cached !== undefined) return cached;
+
+  let best = 0;
+  for (const follow of uniqueTileKinds(hand)) {
+    const idx = hand.findIndex((t) => t.suit === follow.suit && t.rank === follow.rank);
+    const rest = [...hand.slice(0, idx), ...hand.slice(idx + 1)];
+    const waits = getWaitsCached(rest, meldsRequired).filter((w) => remainingCopies(rest, pileDiscard, w) > 0);
+    if (waits.length === 0) continue;
+    const total = waits.reduce((sum, w) => sum + remainingCopies(rest, pileDiscard, w), 0);
+    if (total > best) best = total;
+  }
+
+  if (bestWaitTotalMemo.size > 20000) bestWaitTotalMemo.clear();
+  bestWaitTotalMemo.set(key, best);
+  return best;
 }
 
 // For a hand at a checkpoint (meldsRequired * 3 + 1) with shanten
@@ -1312,6 +1474,7 @@ export function analyzeDiscardChoices(tiles: Tile[], meldsRequired: number = MEL
   const size = meldsRequired * 3 + 2;
   if (tiles.length !== size) return { alreadyComplete: false, choices: [] };
   const alreadyComplete = isCompleteHand(tiles, meldsRequired);
+  const unseen = TOTAL_TILES - size;
 
   const choices: DiscardChoice[] = [];
   for (const discard of uniqueTileKinds(tiles)) {
@@ -1330,6 +1493,42 @@ export function analyzeDiscardChoices(tiles: Tile[], meldsRequired: number = MEL
     const improvingDrawsTotalExcludingRedraw = improvingDraws
       .filter((d) => !(d.draw.suit === discard.suit && d.draw.rank === discard.rank))
       .reduce((sum, d) => sum + d.remaining, 0);
+
+    // Two-phase tenpai/win probability (see the "Discard-probability model"
+    // comment). Exact when this discard already leaves tenpai; a two-phase
+    // estimate at 1-shanten, where each clean improving draw (redraw of the
+    // just-discarded kind excluded, as with improvingDrawsTotalExcludingRedraw)
+    // is an entry tile landing on the fattest wait a follow-up discard allows;
+    // not modelled at 2+ shanten.
+    let tenpaiProbability = 0;
+    let winProbability = 0;
+    let acceptance = 0;
+    if (resultingShanten === 0) {
+      // A tenpai whose every winning copy is already accounted for is a dead
+      // shape - report it as such rather than "100% tenpai, 0% win".
+      tenpaiProbability = waitsTotal > 0 ? 1 : 0;
+      winProbability = drawWithinHorizon(waitsTotal, unseen, EFFICIENCY_HORIZON);
+    } else if (resultingShanten === 1) {
+      // Clean improving draws only (a redraw of the just-discarded kind helps
+      // via a *different* follow-up discard, matching
+      // improvingDrawsTotalExcludingRedraw). Every one leads to a 3n+2 hand at
+      // shanten 0; rather than costing a nested best-discard search per draw,
+      // sample the fattest reachable wait once, off the draw with the most live
+      // copies, and reuse it as q for the whole 1-shanten shape.
+      const clean = improvingDraws.filter((d) => !(d.draw.suit === discard.suit && d.draw.rank === discard.rank));
+      if (clean.length > 0) {
+        const sample = clean.reduce((a, b) => (b.remaining > a.remaining ? b : a));
+        const waitTotal = bestWaitTotalAfterDiscard([...remaining, sample.draw], discard, meldsRequired);
+        if (waitTotal > 0) {
+          const entries: TenpaiEntry[] = clean.map((d) => ({ copies: d.remaining, waitTotal }));
+          const p = shapeProbabilityFromEntries(entries, unseen, EFFICIENCY_HORIZON);
+          tenpaiProbability = p.tenpaiProbability;
+          winProbability = p.winProbability;
+          acceptance = p.acceptance;
+        }
+      }
+    }
+
     choices.push({
       discard,
       resultingShanten,
@@ -1338,9 +1537,17 @@ export function analyzeDiscardChoices(tiles: Tile[], meldsRequired: number = MEL
       improvingDraws,
       improvingDrawsTotal,
       improvingDrawsTotalExcludingRedraw,
+      tenpaiProbability,
+      winProbability,
+      acceptance,
     });
   }
 
-  choices.sort((a, b) => a.resultingShanten - b.resultingShanten);
+  choices.sort(
+    (a, b) =>
+      a.resultingShanten - b.resultingShanten ||
+      b.winProbability - a.winProbability ||
+      tileKey(a.discard).localeCompare(tileKey(b.discard))
+  );
   return { alreadyComplete, choices };
 }
