@@ -215,17 +215,18 @@ further, or compared against a future run:
 
 - `checkpoints/yolov8n-rotationft-epoch60.pt` — the currently deployed model's raw checkpoint (round 3's rotation-augmented fine-tune, from bonusft).
 - `checkpoints/yolov8n-bonusft-epoch27.pt` — round 2's targeted bonus-tile checkpoint, the one this deployment was fine-tuned from.
-- `checkpoints/yolov8n-ft1-epoch13.pt` — round 1's fine-tuned checkpoint, the one bonusft was fine-tuned from.
-- `checkpoints/yolov8n-epoch102.pt` — the base nano checkpoint ft1 started from.
 - `checkpoints/tile-detector-yolov8n-bonusft-epoch27.onnx` — the exact INT8 ONNX that was live before this swap.
-- `checkpoints/tile-detector-yolov8n-ft1-epoch13.onnx` — the exact INT8 ONNX that was live before the swap to bonusft.
-- `checkpoints/tile-detector-yolov8n-epoch102.onnx` — the exact INT8 ONNX that was live before the swap to ft1.
 
-The broad ft2 run's checkpoint isn't kept - it was superseded by the
-targeted bonus-tile redo trained from ft1, and never deployed. The small
-(YOLOv8s) model's checkpoint and deployed ONNX are also no longer kept
-here - nano is the only lineage still being developed, and its metrics
-earlier in this doc are enough to compare against if needed.
+Only the immediately-prior generation is kept on each side (raw `.pt` and
+deployed `.onnx`) - older ones (the base nano checkpoint, ft1, ft2) are
+dropped once nothing currently deployed still traces back to needing them
+restored or resumed from directly; they remain in git history if ever
+needed again. The broad ft2 run's checkpoint was never kept in the first
+place - it was superseded by the targeted bonus-tile redo trained from
+ft1, and never deployed. The small (YOLOv8s) model's checkpoint and
+deployed ONNX are also no longer kept here - nano is the only lineage
+still being developed, and its metrics earlier in this doc are enough to
+compare against if needed.
 
 Restore any previous deployment with, e.g.:
 `cp training/checkpoints/tile-detector-yolov8n-bonusft-epoch27.onnx public/model/tile-detector.onnx`
