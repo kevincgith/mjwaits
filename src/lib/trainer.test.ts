@@ -159,6 +159,32 @@ describe("gradeDiscardOutcome / regretForOutcome", () => {
       expect(regretForOutcome(q.outcome, bestWinProbability, "z9")).toBe(bestWinProbability);
     }
   });
+
+  it("falls back to closest-to-tenpai, most-ukeire discards when nothing is near tenpai", () => {
+    // Random full hands are almost always 2+ shanten under every discard, so
+    // bestWinProbability is 0 and the shanten/ukeire fallback drives optimalKeys.
+    let checked = 0;
+    for (let trial = 0; trial < 30 && checked < 5; trial++) {
+      const dealt = dealEndlessHand();
+      const drew = drawFromWall(dealt.wall);
+      const hand = [...dealt.hand, drew.tile!];
+      const outcome = analyzeDiscardChoices(hand, 5);
+      const { bestWinProbability, optimalKeys } = gradeDiscardOutcome(outcome);
+      if (bestWinProbability > 0) continue;
+      checked++;
+
+      expect(optimalKeys.size).toBeGreaterThan(0);
+      const minShanten = Math.min(...outcome.choices.map((c) => c.resultingShanten));
+      const closest = outcome.choices.filter((c) => c.resultingShanten === minShanten);
+      const maxAccept = Math.max(...closest.map((c) => c.improvingDrawsTotalExcludingRedraw));
+      for (const c of outcome.choices) {
+        expect(optimalKeys.has(tileKey(c.discard))).toBe(
+          c.resultingShanten === minShanten && c.improvingDrawsTotalExcludingRedraw === maxAccept
+        );
+      }
+    }
+    expect(checked).toBeGreaterThan(0);
+  });
 });
 
 describe("dealEndlessHand / drawFromWall", () => {

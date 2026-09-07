@@ -201,9 +201,16 @@ export function gradeDiscardOutcome(outcome: DiscardChoicesOutcome): {
   const bestWinProbability = Math.max(...outcome.choices.map((c) => c.winProbability));
 
   if (bestWinProbability <= 0) {
+    // Too far from tenpai for win% to separate discards: best = keeps the hand
+    // closest to tenpai, and among those the ones leaving the most tiles working
+    // toward it.
     const minShanten = Math.min(...outcome.choices.map((c) => c.resultingShanten));
+    const closest = outcome.choices.filter((c) => c.resultingShanten === minShanten);
+    const maxAccept = Math.max(...closest.map((c) => c.improvingDrawsTotalExcludingRedraw));
     const optimalKeys = new Set(
-      outcome.choices.filter((c) => c.resultingShanten === minShanten).map((c) => tileKey(c.discard))
+      closest
+        .filter((c) => c.improvingDrawsTotalExcludingRedraw === maxAccept)
+        .map((c) => tileKey(c.discard))
     );
     return { bestWinProbability, optimalKeys };
   }

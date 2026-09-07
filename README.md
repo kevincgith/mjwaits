@@ -219,16 +219,22 @@ answer gave up versus the best.
 
 Press **Start** and you're dealt a full random hand, then play it out one draw at a time with no
 prompts: tap a tile, it's discarded and graded, a replacement is drawn, repeat. A HUD tracks the
-current turn and shanten, your best-discard rate and average regret, and race stats — turns to
-first reach tenpai, turns to win, hands won. The analysis accounts for your own discard pile —
-tiles you've already thrown are gone from the wall, so wait counts and probabilities tighten as
-the hand goes on rather than assuming a fresh wall. After every discard the full analysis of that
-turn is shown: which tile was best, how much win probability the pick gave up (or, too far from
-tenpai for that to separate them, whether it needlessly raised shanten), and the complete ranked
-list of every discard with the best ones flagged. Discards pile up below the hand, tinted by whether each
-was a best pick. Completing a hand flashes a win summary; one tap deals the next. **Undo** takes
-back the last discard and draw — hand, wall, discard pile and every stat — one step (cleared when
-a new hand is dealt).
+current turn and shanten, your best-discard rate, how many discards were **loose** (needlessly
+raised shanten), average regret, and race stats — turns to first reach tenpai, turns to win,
+hands won. When the hand is too far out for win probability to mean much, the HUD shows how many
+tiles advance it instead.
+
+The analysis accounts for your own discard pile *and* how much wall is left — tiles you've thrown
+are gone, and the draw horizon shrinks as the wall runs down, so wait counts and probabilities
+tighten as the hand goes on rather than assuming a fresh, full wall. After every discard the full
+analysis of that turn is shown: which tile was best, how much win probability the pick gave up
+(or, too far from tenpai for that to separate them, whether it raised shanten), and the complete
+ranked list of every discard with the best ones flagged. Discards pile up below the hand, tinted
+by whether each was a best pick.
+
+Completing a hand flashes a win summary; one tap deals the next. **Undo** / **Redo** step back
+and forward through the current hand — hand, wall, discard pile and every stat — as far as you
+like (cleared when a new hand is dealt). A hand in progress survives switching sub-tabs.
 
 ## Dice rolling
 

@@ -25,7 +25,7 @@ import {
   tileCount,
   tileKey,
 } from "./mahjong";
-import type { Tile } from "./mahjong";
+import type { DiscardChoice, Tile } from "./mahjong";
 
 // Independent reference oracle for cross-validating shanten: brute-force
 // search over discard+draw exchanges, correct by definition (shanten(hand)
@@ -885,6 +885,52 @@ describe("analyzeDiscardChoices", () => {
 
     // No `seen` argument is unchanged from before.
     expect(analyzeDiscardChoices(tiles, 5).choices).toEqual(fresh.choices);
+  });
+
+  it("takes a shorter `horizon` and reports lower odds over it", () => {
+    const tiles = parseHand("1234567899m111z11t22b");
+    const short = analyzeDiscardChoices(tiles, 5, [], 3);
+    const shortDiscard9m = short.choices.find((c) => c.discard.suit === "m" && c.discard.rank === 9)!;
+    expect(shortDiscard9m.resultingShanten).toBe(0);
+    const unseen = TOTAL_TILES - 17;
+    expect(shortDiscard9m.winProbability).toBeCloseTo(1 - (1 - shortDiscard9m.waitsTotal / unseen) ** 3, 12);
+
+    const long = analyzeDiscardChoices(tiles, 5).choices.find(
+      (c) => c.discard.suit === "m" && c.discard.rank === 9
+    )!;
+    expect(shortDiscard9m.winProbability).toBeLessThan(long.winProbability);
+  });
+
+  it("orders every choice by the full comparator (shanten, then win prob, then ukeire)", () => {
+    const cmp = (a: DiscardChoice, b: DiscardChoice) =>
+      a.resultingShanten - b.resultingShanten ||
+      b.winProbability - a.winProbability ||
+      b.improvingDrawsTotalExcludingRedraw - a.improvingDrawsTotalExcludingRedraw ||
+      tileKey(a.discard).localeCompare(tileKey(b.discard));
+
+    let sawTwoShantenTier = false;
+    for (let trial = 0; trial < 60; trial++) {
+      const wall: Tile[] = [];
+      for (const k of allTileKinds()) for (let i = 0; i < 4; i++) wall.push({ ...k });
+      for (let i = wall.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [wall[i], wall[j]] = [wall[j], wall[i]];
+      }
+      const outcome = analyzeDiscardChoices(wall.slice(0, 17));
+      for (let i = 1; i < outcome.choices.length; i++) {
+        expect(cmp(outcome.choices[i - 1], outcome.choices[i])).toBeLessThanOrEqual(0);
+      }
+      // Random 17-tile hands are almost always 2+ shanten under every discard,
+      // where ordering rests entirely on the ukeire tiebreak.
+      if (
+        outcome.choices.length > 1 &&
+        outcome.choices.every((c) => c.resultingShanten >= 2) &&
+        new Set(outcome.choices.map((c) => c.improvingDrawsTotalExcludingRedraw)).size > 1
+      ) {
+        sawTwoShantenTier = true;
+      }
+    }
+    expect(sawTwoShantenTier).toBe(true);
   });
 
   it("carries two-phase tenpai/win probabilities, exact at tenpai and ordered within a shanten tier", () => {

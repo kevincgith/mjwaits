@@ -1485,15 +1485,22 @@ function usefulDraws(
 // a player's own discard pile. It shrinks the drawable count for every wait,
 // improving draw, and the unseen-tile denominator, so the probabilities track
 // what's actually still available rather than assuming a fresh wall.
+//
+// `horizon` is how many future draws the tenpai/win probabilities look ahead
+// over. Defaults to EFFICIENCY_HORIZON; a caller that knows the wall is running
+// low (the Endless trainer) can pass a smaller number so the odds turn
+// pessimistic as fewer draws remain.
 export function analyzeDiscardChoices(
   tiles: Tile[],
   meldsRequired: number = MELDS_REQUIRED,
-  seen: Tile[] = []
+  seen: Tile[] = [],
+  horizon: number = EFFICIENCY_HORIZON
 ): DiscardChoicesOutcome {
   const size = meldsRequired * 3 + 2;
   if (tiles.length !== size) return { alreadyComplete: false, choices: [] };
   const alreadyComplete = isCompleteHand(tiles, meldsRequired);
   const unseen = Math.max(1, TOTAL_TILES - size - seen.length);
+  const steps = Math.max(1, Math.round(horizon));
 
   const choices: DiscardChoice[] = [];
   for (const discard of uniqueTileKinds(tiles)) {
@@ -1526,7 +1533,7 @@ export function analyzeDiscardChoices(
       // A tenpai whose every winning copy is already accounted for is a dead
       // shape - report it as such rather than "100% tenpai, 0% win".
       tenpaiProbability = waitsTotal > 0 ? 1 : 0;
-      winProbability = drawWithinHorizon(waitsTotal, unseen, EFFICIENCY_HORIZON);
+      winProbability = drawWithinHorizon(waitsTotal, unseen, steps);
     } else if (resultingShanten === 1) {
       // Clean improving draws only (a redraw of the just-discarded kind helps
       // via a *different* follow-up discard, matching
@@ -1540,7 +1547,7 @@ export function analyzeDiscardChoices(
         const waitTotal = bestWaitTotalAfterDiscard([...remaining, sample.draw], discard, meldsRequired, seen);
         if (waitTotal > 0) {
           const entries: TenpaiEntry[] = clean.map((d) => ({ copies: d.remaining, waitTotal }));
-          const p = shapeProbabilityFromEntries(entries, unseen, EFFICIENCY_HORIZON);
+          const p = shapeProbabilityFromEntries(entries, unseen, steps);
           tenpaiProbability = p.tenpaiProbability;
           winProbability = p.winProbability;
           acceptance = p.acceptance;
@@ -1566,6 +1573,9 @@ export function analyzeDiscardChoices(
     (a, b) =>
       a.resultingShanten - b.resultingShanten ||
       b.winProbability - a.winProbability ||
+      // Keeps 2+-shanten choices (all at winProbability 0) meaningfully ordered:
+      // the one that leaves the most tiles working toward tenpai ranks first.
+      b.improvingDrawsTotalExcludingRedraw - a.improvingDrawsTotalExcludingRedraw ||
       tileKey(a.discard).localeCompare(tileKey(b.discard))
   );
   return { alreadyComplete, choices };
