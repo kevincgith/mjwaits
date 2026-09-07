@@ -375,6 +375,43 @@ h1 {
   margin-top: 1rem;
 }
 
+/* Endless challenge HUD + discard pile */
+.endless-hud {
+  margin: 0.5rem 0 0.75rem;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.endless-hud-session {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.endless-discard-pile {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem;
+  margin-top: 0.35rem;
+}
+
+.endless-discard-good,
+.endless-discard-bad {
+  display: inline-flex;
+  border-bottom: 2px solid transparent;
+  border-radius: 3px;
+  padding: 0 0.1rem;
+}
+
+.endless-discard-good {
+  border-bottom-color: var(--success-border-1);
+  background: var(--success-bg-1);
+}
+
+.endless-discard-bad {
+  border-bottom-color: var(--danger-border-1);
+  background: var(--danger-bg-2);
+}
+
 /* Wide content (7 columns) scrolls within its own container on narrow
    screens rather than forcing the whole page to scroll horizontally. */
 .trainer-stats-scroll {

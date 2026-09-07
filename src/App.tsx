@@ -31,6 +31,7 @@ import {
   getWaitsWithJokers,
   isCheckpointSize,
   isCompleteCheckpointSize,
+  isCompleteHand,
   meldsForCompleteSize,
   meldsForSize,
   parseHand,
@@ -45,10 +46,14 @@ import type { DiscardChoice, DiscardEfficiency, JokerWaitResult, Suit, Tile } fr
 import {
   MAX_TRAINER_LEVEL,
   MIN_TRAINER_LEVEL,
+  dealEndlessHand,
   discardRegret,
+  drawFromWall,
   generateDiscardQuestion,
   generateTrainerQuestion,
+  gradeDiscardOutcome,
   isOptimalDiscard,
+  regretForOutcome,
   trainerHandSize,
   type DiscardTrainerQuestion,
   type TrainerQuestion,
@@ -2319,6 +2324,30 @@ interface DiscardTrainerStatsEntry {
   regretTotal: number;
 }
 
+// Endless mode is one running session, not per-level buckets: cumulative counts
+// across every hand played this session.
+interface EndlessStats {
+  hands: number;
+  handsWon: number;
+  turns: number; // discards made
+  optimalCount: number; // discards that were a best pick
+  regretTotal: number; // summed win-probability given up
+  turnsToTenpaiTotal: number; // summed over hands that reached tenpai
+  tenpaiReachedCount: number;
+  turnsToWinTotal: number; // summed over won hands
+}
+
+const EMPTY_ENDLESS_STATS: EndlessStats = {
+  hands: 0,
+  handsWon: 0,
+  turns: 0,
+  optimalCount: 0,
+  regretTotal: 0,
+  turnsToTenpaiTotal: 0,
+  tenpaiReachedCount: 0,
+  turnsToWinTotal: 0,
+};
+
 function trainerStatsKey(level: number, flush: boolean): string {
   return `${level}-${flush}`;
 }
@@ -2894,20 +2923,213 @@ function DiscardTrainer({
   );
 }
 
-// Trainer tab shell: two sub-tabs, each its own drill with its own stats table.
+// Endless challenge: dealt a full random hand, the player discards non-stop as a
+// tile is drawn each turn - no per-question prompt. Every discard is graded live
+// against analyzeDiscardChoices (best-pick rate + regret), alongside race stats
+// (turns to tenpai / to win, hands won). A completed hand flashes, then one tap
+// deals the next.
+function EndlessTrainer({
+  stats,
+  setStats,
+}: {
+  stats: EndlessStats;
+  setStats: (updater: (prev: EndlessStats) => EndlessStats) => void;
+}) {
+  const [hand, setHand] = useState<Tile[]>([]);
+  const [wall, setWall] = useState<Tile[]>([]);
+  const [discards, setDiscards] = useState<{ tile: Tile; optimal: boolean }[]>([]);
+  const [phase, setPhase] = useState<"idle" | "playing" | "won">("idle");
+  const [lastWin, setLastWin] = useState<{ turns: number; optimal: number } | null>(null);
+  // Per-hand counters kept in refs so a fast double-tap can't race them.
+  const handTurnsRef = useRef(0);
+  const handOptimalRef = useRef(0);
+  const reachedTenpaiRef = useRef(false);
+  const busyRef = useRef(false);
+
+  const HAND_SIZE = MELDS_REQUIRED * 3 + 2; // 17
+
+  const deal = () => {
+    const dealt = dealEndlessHand();
+    const drawn = drawFromWall(dealt.wall);
+    const start = drawn.tile ? [...dealt.hand, drawn.tile] : dealt.hand;
+    handTurnsRef.current = 0;
+    handOptimalRef.current = 0;
+    reachedTenpaiRef.current = false;
+    busyRef.current = false;
+    setDiscards([]);
+    setLastWin(null);
+    setHand(start);
+    setWall(drawn.wall);
+    setStats((s) => ({ ...s, hands: s.hands + 1 }));
+    if (isCompleteHand(start, MELDS_REQUIRED)) {
+      setStats((s) => ({ ...s, handsWon: s.handsWon + 1 }));
+      setLastWin({ turns: 0, optimal: 0 });
+      setPhase("won");
+    } else {
+      setPhase("playing");
+    }
+  };
+
+  const outcome = useMemo(
+    () => (phase === "playing" && hand.length === HAND_SIZE ? analyzeDiscardChoices(hand, MELDS_REQUIRED) : null),
+    [phase, hand, HAND_SIZE]
+  );
+  const grade = useMemo(() => (outcome ? gradeDiscardOutcome(outcome) : null), [outcome]);
+  const handShanten = useMemo(
+    () => (phase === "playing" && hand.length === HAND_SIZE ? shanten(hand, MELDS_REQUIRED) : null),
+    [phase, hand, HAND_SIZE]
+  );
+  const sortedTiles = useMemo(() => sortTiles(hand), [hand]);
+
+  const discardAt = (index: number) => {
+    if (phase !== "playing" || busyRef.current || !outcome || !grade) return;
+    busyRef.current = true;
+
+    const kind = tileKey(sortedTiles[index]);
+    const optimal = grade.optimalKeys.has(kind);
+    const regret = regretForOutcome(outcome, grade.bestWinProbability, kind);
+    handTurnsRef.current += 1;
+    if (optimal) handOptimalRef.current += 1;
+    const handTurns = handTurnsRef.current;
+
+    const removeIdx = hand.findIndex((t) => tileKey(t) === kind);
+    const after = [...hand.slice(0, removeIdx), ...hand.slice(removeIdx + 1)];
+    const reachedTenpaiNow = !reachedTenpaiRef.current && shanten(after, MELDS_REQUIRED) === 0;
+    if (reachedTenpaiNow) reachedTenpaiRef.current = true;
+
+    setDiscards((d) => [...d, { tile: sortedTiles[index], optimal }]);
+    setStats((s) => ({
+      ...s,
+      turns: s.turns + 1,
+      optimalCount: s.optimalCount + (optimal ? 1 : 0),
+      regretTotal: s.regretTotal + regret,
+      turnsToTenpaiTotal: s.turnsToTenpaiTotal + (reachedTenpaiNow ? handTurns : 0),
+      tenpaiReachedCount: s.tenpaiReachedCount + (reachedTenpaiNow ? 1 : 0),
+    }));
+
+    const drawn = drawFromWall(wall);
+    if (!drawn.tile) {
+      deal(); // wall exhausted - keep the session going with a fresh hand
+      return;
+    }
+    const next = [...after, drawn.tile];
+    setWall(drawn.wall);
+    setHand(next);
+    if (isCompleteHand(next, MELDS_REQUIRED)) {
+      setStats((s) => ({ ...s, handsWon: s.handsWon + 1, turnsToWinTotal: s.turnsToWinTotal + handTurns }));
+      setLastWin({ turns: handTurns, optimal: handOptimalRef.current });
+      setPhase("won");
+    } else {
+      busyRef.current = false;
+    }
+  };
+
+  const pct = stats.turns > 0 ? Math.round((stats.optimalCount / stats.turns) * 100) : 0;
+  const avgTenpai =
+    stats.tenpaiReachedCount > 0 ? (stats.turnsToTenpaiTotal / stats.tenpaiReachedCount).toFixed(1) : "—";
+  const avgWin = stats.handsWon > 0 ? (stats.turnsToWinTotal / stats.handsWon).toFixed(1) : "—";
+
+  return (
+    <>
+      <div className="panel-header">
+        <button type="button" onClick={deal}>
+          {phase === "idle" ? "Start" : "New hand"}
+        </button>
+        {stats.turns > 0 && (
+          <button type="button" onClick={() => setStats(() => EMPTY_ENDLESS_STATS)}>
+            Reset Stats
+          </button>
+        )}
+      </div>
+
+      {phase === "idle" && (
+        <div className="waits">
+          <span className="waits-label">
+            Press "Start" — you'll get a full hand and keep discarding, one draw at a time, with no
+            prompts. Every discard is scored against the best play.
+          </span>
+        </div>
+      )}
+
+      {phase !== "idle" && (
+        <div className="endless-hud">
+          <div>
+            {phase === "won" ? (
+              <strong>Win{lastWin ? ` — ${lastWin.turns} turns, ${lastWin.optimal}/${lastWin.turns} best` : ""}</strong>
+            ) : (
+              <>
+                Turn {handTurnsRef.current + 1} · Shanten {handShanten ?? "—"} · best win{" "}
+                {grade ? formatProbability(grade.bestWinProbability) : "—"}
+              </>
+            )}
+          </div>
+          <div className="endless-hud-session">
+            Hands {stats.hands} · Won {stats.handsWon} · Best discards {stats.optimalCount}/{stats.turns} ({pct}%) ·
+            Avg regret {stats.turns > 0 ? formatRegret(stats.regretTotal / stats.turns) : "—"} · Turns→tenpai{" "}
+            {avgTenpai} · Turns→win {avgWin}
+          </div>
+        </div>
+      )}
+
+      {phase !== "idle" && (
+        <div className="waits">
+          <div className="hand-display trainer-hand trainer-discard-hand">
+            {sortedTiles.map((t, i) => (
+              <button
+                key={i}
+                type="button"
+                className="trainer-discard-tile"
+                onClick={() => discardAt(i)}
+                disabled={phase !== "playing"}
+                title={phase === "playing" ? `Discard ${tileLabel(t)}` : tileLabel(t)}
+              >
+                <TileGlyphSpan tile={t} large />
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {phase === "won" && (
+        <button type="button" className="trainer-submit" onClick={deal}>
+          Deal next hand
+        </button>
+      )}
+
+      {discards.length > 0 && (
+        <div className="waits">
+          <span className="waits-label">Discards this hand:</span>
+          <div className="endless-discard-pile">
+            {discards.map((d, i) => (
+              <span key={i} className={d.optimal ? "endless-discard-good" : "endless-discard-bad"}>
+                <TileGlyphSpan tile={d.tile} />
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+// Trainer tab shell: three sub-tabs, each its own drill with its own stats.
 // Stats live in App so they survive switching sub-tabs (and the top tab) and back.
 function TrainerPanel({
   waitsStats,
   setWaitsStats,
   discardStats,
   setDiscardStats,
+  endlessStats,
+  setEndlessStats,
 }: {
   waitsStats: Map<string, TrainerStatsEntry>;
   setWaitsStats: (updater: (prev: Map<string, TrainerStatsEntry>) => Map<string, TrainerStatsEntry>) => void;
   discardStats: Map<string, DiscardTrainerStatsEntry>;
   setDiscardStats: (updater: (prev: Map<string, DiscardTrainerStatsEntry>) => Map<string, DiscardTrainerStatsEntry>) => void;
+  endlessStats: EndlessStats;
+  setEndlessStats: (updater: (prev: EndlessStats) => EndlessStats) => void;
 }) {
-  const [sub, setSub] = useState<"waits" | "discards">("waits");
+  const [sub, setSub] = useState<"waits" | "discards" | "endless">("waits");
   return (
     <section className="panel trainer-panel">
       <div className="mode-tabs sub-tabs">
@@ -2927,12 +3149,18 @@ function TrainerPanel({
         >
           Discards
         </button>
+        <button
+          type="button"
+          className={sub === "endless" ? "toggle-on" : undefined}
+          aria-pressed={sub === "endless"}
+          onClick={() => setSub("endless")}
+        >
+          Endless
+        </button>
       </div>
-      {sub === "waits" ? (
-        <WaitsTrainer stats={waitsStats} setStats={setWaitsStats} />
-      ) : (
-        <DiscardTrainer stats={discardStats} setStats={setDiscardStats} />
-      )}
+      {sub === "waits" && <WaitsTrainer stats={waitsStats} setStats={setWaitsStats} />}
+      {sub === "discards" && <DiscardTrainer stats={discardStats} setStats={setDiscardStats} />}
+      {sub === "endless" && <EndlessTrainer stats={endlessStats} setStats={setEndlessStats} />}
     </section>
   );
 }
@@ -5418,9 +5646,10 @@ function App() {
   // Calculator tab and back - the trainers themselves unmount (and their other
   // state - the in-progress question, timer, etc. - resets) on every tab
   // switch, but a session's accumulated stats shouldn't disappear with it.
-  // One map per sub-tab (Waits / Discards), each with its own stats table.
+  // One store per sub-tab (Waits / Discards / Endless), each with its own stats.
   const [waitsTrainerStats, setWaitsTrainerStats] = useState<Map<string, TrainerStatsEntry>>(new Map());
   const [discardTrainerStats, setDiscardTrainerStats] = useState<Map<string, DiscardTrainerStatsEntry>>(new Map());
+  const [endlessTrainerStats, setEndlessTrainerStats] = useState<EndlessStats>(EMPTY_ENDLESS_STATS);
 
   return (
     <div className="page">
@@ -5467,6 +5696,8 @@ function App() {
           setWaitsStats={setWaitsTrainerStats}
           discardStats={discardTrainerStats}
           setDiscardStats={setDiscardTrainerStats}
+          endlessStats={endlessTrainerStats}
+          setEndlessStats={setEndlessTrainerStats}
         />
       )}
       {mode === "dice" && <DiceTab />}

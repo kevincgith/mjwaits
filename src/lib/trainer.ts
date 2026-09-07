@@ -4,11 +4,15 @@
 //    that completes the hand.
 //  - Discards: random "just drew" hands (3*level + 2 tiles) where the user picks
 //    the single best tile to throw, graded against analyzeDiscardChoices.
+//  - Endless: deal a full random hand and play it out one draw at a time - no
+//    per-question prompt, the hand just keeps evolving.
 
 import {
   type DiscardChoicesOutcome,
   type Suit,
   type Tile,
+  MELDS_REQUIRED,
+  allTileKinds,
   analyzeDiscardChoices,
   getWaits,
   tileKey,
@@ -167,12 +171,7 @@ export function generateDiscardQuestion(level: number, flush: boolean): DiscardT
     const outcome = analyzeDiscardChoices(tiles, level);
     if (outcome.alreadyComplete || outcome.choices.length === 0) continue;
 
-    const bestWinProbability = Math.max(...outcome.choices.map((c) => c.winProbability));
-    const optimalKeys = new Set(
-      outcome.choices
-        .filter((c) => bestWinProbability - c.winProbability <= DISCARD_OPTIMAL_EPSILON)
-        .map((c) => tileKey(c.discard))
-    );
+    const { bestWinProbability, optimalKeys } = gradeDiscardOutcome(outcome);
     const question: DiscardTrainerQuestion = { level, flush, tiles, outcome, bestWinProbability, optimalKeys };
 
     const distinct = new Set(outcome.choices.map((c) => c.winProbability.toFixed(6)));
@@ -184,15 +183,79 @@ export function generateDiscardQuestion(level: number, flush: boolean): DiscardT
   throw new Error(`Failed to generate a discard question for level ${level} (flush=${flush})`);
 }
 
-// Win-probability lost by discarding `pickedKey` instead of the best option
-// (>= 0; 0 exactly for an optimal discard). A key not among the hand's choices
-// is treated as the worst case.
+// The "best discard" grade for a hand's DiscardChoicesOutcome: the highest
+// winProbability across its choices, and the set of tile kinds achieving it
+// (any of which is a zero-regret discard). Shared by the Discards and Endless
+// modes.
+export function gradeDiscardOutcome(outcome: DiscardChoicesOutcome): {
+  bestWinProbability: number;
+  optimalKeys: Set<string>;
+} {
+  if (outcome.choices.length === 0) return { bestWinProbability: 0, optimalKeys: new Set() };
+  const bestWinProbability = Math.max(...outcome.choices.map((c) => c.winProbability));
+  const optimalKeys = new Set(
+    outcome.choices
+      .filter((c) => bestWinProbability - c.winProbability <= DISCARD_OPTIMAL_EPSILON)
+      .map((c) => tileKey(c.discard))
+  );
+  return { bestWinProbability, optimalKeys };
+}
+
+// Win-probability given up by discarding `pickedKey` rather than a best option
+// (>= 0; 0 for an optimal discard). A key not among the choices is worst-case.
+export function regretForOutcome(
+  outcome: DiscardChoicesOutcome,
+  bestWinProbability: number,
+  pickedKey: string
+): number {
+  const choice = outcome.choices.find((c) => tileKey(c.discard) === pickedKey);
+  if (!choice) return bestWinProbability;
+  return Math.max(0, bestWinProbability - choice.winProbability);
+}
+
 export function discardRegret(question: DiscardTrainerQuestion, pickedKey: string): number {
-  const choice = question.outcome.choices.find((c) => tileKey(c.discard) === pickedKey);
-  if (!choice) return question.bestWinProbability;
-  return Math.max(0, question.bestWinProbability - choice.winProbability);
+  return regretForOutcome(question.outcome, question.bestWinProbability, pickedKey);
 }
 
 export function isOptimalDiscard(question: DiscardTrainerQuestion, pickedKey: string): boolean {
   return question.optimalKeys.has(pickedKey);
+}
+
+// --- Endless challenge ----------------------------------------------------
+
+// The full 136-tile set: 4 of each of the 34 kinds.
+function fullWall(): Tile[] {
+  const wall: Tile[] = [];
+  for (const kind of allTileKinds()) {
+    for (let i = 0; i < 4; i++) wall.push({ ...kind });
+  }
+  return wall;
+}
+
+// Fisher-Yates, in place.
+function shuffle<T>(arr: T[]): T[] {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = randomInt(i + 1);
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+// Deals a fresh full concealed hand (MELDS_REQUIRED * 3 + 1 = 16 tiles) off a
+// shuffled wall; `wall` is the rest of the live tiles, to draw from one at a
+// time. The Endless mode draws once immediately to reach the 17-tile
+// "just drew" state.
+export function dealEndlessHand(): { hand: Tile[]; wall: Tile[] } {
+  const wall = shuffle(fullWall());
+  const hand = wall.splice(0, MELDS_REQUIRED * 3 + 1);
+  return { hand, wall };
+}
+
+// Draws the next tile off the wall (mutating a copy - returns the shortened
+// wall). `tile` is null once the wall is exhausted.
+export function drawFromWall(wall: Tile[]): { tile: Tile | null; wall: Tile[] } {
+  if (wall.length === 0) return { tile: null, wall };
+  const next = wall.slice();
+  const tile = next.pop() as Tile;
+  return { tile, wall: next };
 }

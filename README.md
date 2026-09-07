@@ -186,10 +186,11 @@ full validation split the deployed checkpoint scores mAP50 0.916 / mAP50-95 0.68
 
 ## Trainer
 
-Two timed drills, on their own sub-tabs. Both have five levels — Level 1 is a 1-meld hand, Level
-5 the full 16-tile size — a **Flush mode** that restricts every generated hand to one random
-suit, a per-question timer that freezes at submit, and their own stats table (broken down by
-level and flush mode, with an overall row and a Reset button) that survives switching tabs.
+Three drills, on their own sub-tabs. **Waits** and **Discards** are timed one-shot quizzes with
+five levels (Level 1 is a 1-meld hand, Level 5 the full 16-tile size), a **Flush mode** that
+restricts every generated hand to one random suit, and their own stats table (broken down by
+level and flush mode). **Endless** plays a single hand out non-stop. All stats survive switching
+tabs; each has a Reset button.
 
 ### Waits
 
@@ -213,6 +214,16 @@ next 8 draws. Your pick and every equally-best discard are highlighted on the ha
 list of every discard — ranked, with tenpai/win percentages — is shown below. Stats track how
 often you found a best discard and your **average regret**: the win probability (in points) an
 answer gave up versus the best.
+
+### Endless
+
+Press **Start** and you're dealt a full random hand, then play it out one draw at a time with no
+prompts: tap a tile, it's discarded and graded, a replacement is drawn, repeat. A HUD tracks the
+current turn and shanten, your best-discard rate and average regret (same grading as the Discards
+drill), and race stats — turns to first reach tenpai, turns to win, hands won. Discards pile up
+below the hand, tinted by whether each was a best pick. Completing a hand flashes a win summary;
+one tap deals the next. (Discards from a hand still 2+ shanten aren't scored — the win-probability
+model doesn't reach that far — so early throws count as free.)
 
 ## Dice rolling
 
