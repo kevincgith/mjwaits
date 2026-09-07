@@ -1153,9 +1153,12 @@ function uniqueTileKinds(tiles: Tile[]): Tile[] {
 // resulting wait undercounts how many of it are actually used up, and in
 // the extreme case (discarding your last copy after already holding the
 // other 3) can show a draw as available when all 4 are already spoken for.
-function remainingCopies(hand: Tile[], discard: Tile, candidate: Tile): number {
+// `seen` is any further tiles known to be gone from the live pool but not in
+// `hand` - in practice a player's own discard pile. Passing it makes counts
+// reflect what's genuinely still drawable, not just "4 minus what I hold".
+function remainingCopies(hand: Tile[], discard: Tile, candidate: Tile, seen: Tile[] = []): number {
   const discardedCopy = discard.suit === candidate.suit && discard.rank === candidate.rank ? 1 : 0;
-  return 4 - tileCount(hand, candidate) - discardedCopy;
+  return 4 - tileCount(hand, candidate) - discardedCopy - tileCount(seen, candidate);
 }
 
 // For a hand at a checkpoint size (meldsRequired * 3 + 1), and assuming it is
@@ -1413,9 +1416,10 @@ const bestWaitTotalMemo = new Map<string, number>();
 function bestWaitTotalAfterDiscard(
   hand: Tile[],
   pileDiscard: Tile,
-  meldsRequired: number
+  meldsRequired: number,
+  seen: Tile[] = []
 ): number {
-  const key = `${meldsRequired}|${tileKey(pileDiscard)}|${sortedHandKey(hand)}`;
+  const key = `${meldsRequired}|${tileKey(pileDiscard)}|${sortedHandKey(hand)}|${sortedHandKey(seen)}`;
   const cached = bestWaitTotalMemo.get(key);
   if (cached !== undefined) return cached;
 
@@ -1423,9 +1427,9 @@ function bestWaitTotalAfterDiscard(
   for (const follow of uniqueTileKinds(hand)) {
     const idx = hand.findIndex((t) => t.suit === follow.suit && t.rank === follow.rank);
     const rest = [...hand.slice(0, idx), ...hand.slice(idx + 1)];
-    const waits = getWaitsCached(rest, meldsRequired).filter((w) => remainingCopies(rest, pileDiscard, w) > 0);
+    const waits = getWaitsCached(rest, meldsRequired).filter((w) => remainingCopies(rest, pileDiscard, w, seen) > 0);
     if (waits.length === 0) continue;
-    const total = waits.reduce((sum, w) => sum + remainingCopies(rest, pileDiscard, w), 0);
+    const total = waits.reduce((sum, w) => sum + remainingCopies(rest, pileDiscard, w, seen), 0);
     if (total > best) best = total;
   }
 
@@ -1448,11 +1452,17 @@ function bestWaitTotalAfterDiscard(
 // every discard" reference across thousands of random hands (including
 // meldsRequired=5 specifically, to cover Eight Pairs/Sixteen Unrelated).
 // This turns what would be an O(draws x discards) search into O(draws).
-function usefulDraws(tiles: Tile[], discard: Tile, meldsRequired: number, currentShanten: number): DrawCount[] {
+function usefulDraws(
+  tiles: Tile[],
+  discard: Tile,
+  meldsRequired: number,
+  currentShanten: number,
+  seen: Tile[] = []
+): DrawCount[] {
   const results: DrawCount[] = [];
 
   for (const candidate of allTileKinds()) {
-    const remainingCount = remainingCopies(tiles, discard, candidate);
+    const remainingCount = remainingCopies(tiles, discard, candidate, seen);
     if (remainingCount <= 0) continue;
     const withDraw = [...tiles, candidate];
     if (shanten(withDraw, meldsRequired) < currentShanten) {
@@ -1470,11 +1480,20 @@ function usefulDraws(tiles: Tile[], discard: Tile, meldsRequired: number, curren
 // which draws would improve it further. Computed even when already
 // complete, since a player may want to see what breaking the win looks
 // like. Doesn't account for jokers (matches analyzeDiscards).
-export function analyzeDiscardChoices(tiles: Tile[], meldsRequired: number = MELDS_REQUIRED): DiscardChoicesOutcome {
+//
+// `seen` is extra tiles known to be out of the live pool but not in `tiles` -
+// a player's own discard pile. It shrinks the drawable count for every wait,
+// improving draw, and the unseen-tile denominator, so the probabilities track
+// what's actually still available rather than assuming a fresh wall.
+export function analyzeDiscardChoices(
+  tiles: Tile[],
+  meldsRequired: number = MELDS_REQUIRED,
+  seen: Tile[] = []
+): DiscardChoicesOutcome {
   const size = meldsRequired * 3 + 2;
   if (tiles.length !== size) return { alreadyComplete: false, choices: [] };
   const alreadyComplete = isCompleteHand(tiles, meldsRequired);
-  const unseen = TOTAL_TILES - size;
+  const unseen = Math.max(1, TOTAL_TILES - size - seen.length);
 
   const choices: DiscardChoice[] = [];
   for (const discard of uniqueTileKinds(tiles)) {
@@ -1484,11 +1503,11 @@ export function analyzeDiscardChoices(tiles: Tile[], meldsRequired: number = MEL
     const resultingShanten = shanten(remaining, meldsRequired);
     const waits =
       resultingShanten === 0
-        ? getWaits(remaining, meldsRequired).filter((w) => remainingCopies(remaining, discard, w) > 0)
+        ? getWaits(remaining, meldsRequired).filter((w) => remainingCopies(remaining, discard, w, seen) > 0)
         : [];
-    const waitsTotal = waits.reduce((sum, w) => sum + remainingCopies(remaining, discard, w), 0);
+    const waitsTotal = waits.reduce((sum, w) => sum + remainingCopies(remaining, discard, w, seen), 0);
     const improvingDraws =
-      resultingShanten > 0 ? usefulDraws(remaining, discard, meldsRequired, resultingShanten) : [];
+      resultingShanten > 0 ? usefulDraws(remaining, discard, meldsRequired, resultingShanten, seen) : [];
     const improvingDrawsTotal = improvingDraws.reduce((sum, d) => sum + d.remaining, 0);
     const improvingDrawsTotalExcludingRedraw = improvingDraws
       .filter((d) => !(d.draw.suit === discard.suit && d.draw.rank === discard.rank))
@@ -1518,7 +1537,7 @@ export function analyzeDiscardChoices(tiles: Tile[], meldsRequired: number = MEL
       const clean = improvingDraws.filter((d) => !(d.draw.suit === discard.suit && d.draw.rank === discard.rank));
       if (clean.length > 0) {
         const sample = clean.reduce((a, b) => (b.remaining > a.remaining ? b : a));
-        const waitTotal = bestWaitTotalAfterDiscard([...remaining, sample.draw], discard, meldsRequired);
+        const waitTotal = bestWaitTotalAfterDiscard([...remaining, sample.draw], discard, meldsRequired, seen);
         if (waitTotal > 0) {
           const entries: TenpaiEntry[] = clean.map((d) => ({ copies: d.remaining, waitTotal }));
           const p = shapeProbabilityFromEntries(entries, unseen, EFFICIENCY_HORIZON);

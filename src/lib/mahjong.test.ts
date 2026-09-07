@@ -859,6 +859,34 @@ describe("analyzeDiscardChoices", () => {
     expect(discard1m!.improvingDrawsTotalExcludingRedraw).toBe(14);
   });
 
+  it("shrinks waits, drawable counts and the unseen denominator by the `seen` pile", () => {
+    // Discarding 9m leaves 123456789m 111z 11t 22b tenpai on 1t / 2b - two of
+    // each already held, so waitsTotal 4 on a fresh wall.
+    const tiles = parseHand("1234567899m111z11t22b");
+    const fresh = analyzeDiscardChoices(tiles, 5);
+    const freshDiscard9m = fresh.choices.find((c) => c.discard.suit === "m" && c.discard.rank === 9)!;
+    expect(freshDiscard9m.resultingShanten).toBe(0);
+    expect(freshDiscard9m.waits.map(tileKey).sort()).toEqual(["b2", "t1"]);
+    expect(freshDiscard9m.waitsTotal).toBe(4);
+
+    // Put both remaining 1t in the discard pile: 1t is now dead (2 held + 2
+    // seen = 4), so the wait collapses to 2b alone, worth 2.
+    const seen = parseHand("11t");
+    const withPile = analyzeDiscardChoices(tiles, 5, seen);
+    const pileDiscard9m = withPile.choices.find((c) => c.discard.suit === "m" && c.discard.rank === 9)!;
+    expect(pileDiscard9m.waits.map(tileKey)).toEqual(["b2"]);
+    expect(pileDiscard9m.waitsTotal).toBe(2);
+
+    // Win probability uses the pile-shrunk wait total over a pile-shrunk
+    // unseen count (TOTAL_TILES - 17 - seen.length).
+    const unseen = TOTAL_TILES - 17 - seen.length;
+    expect(pileDiscard9m.winProbability).toBeCloseTo(1 - (1 - 2 / unseen) ** EFFICIENCY_HORIZON, 12);
+    expect(pileDiscard9m.winProbability).toBeLessThan(freshDiscard9m.winProbability);
+
+    // No `seen` argument is unchanged from before.
+    expect(analyzeDiscardChoices(tiles, 5).choices).toEqual(fresh.choices);
+  });
+
   it("carries two-phase tenpai/win probabilities, exact at tenpai and ordered within a shanten tier", () => {
     const tiles = parseHand("1234567899m111z11t22b");
     const outcome = analyzeDiscardChoices(tiles);

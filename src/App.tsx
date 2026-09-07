@@ -3021,9 +3021,16 @@ function EndlessTrainer({
     }
   };
 
+  // Tiles this player has already thrown are genuinely gone from the wall, so
+  // feed the pile into the analysis - the deeper into a hand, the more the
+  // probabilities differ from a fresh-wall assumption.
+  const seenPile = useMemo(() => discards.map((d) => d.tile), [discards]);
   const outcome = useMemo(
-    () => (phase === "playing" && hand.length === HAND_SIZE ? analyzeDiscardChoices(hand, MELDS_REQUIRED) : null),
-    [phase, hand, HAND_SIZE]
+    () =>
+      phase === "playing" && hand.length === HAND_SIZE
+        ? analyzeDiscardChoices(hand, MELDS_REQUIRED, seenPile)
+        : null,
+    [phase, hand, HAND_SIZE, seenPile]
   );
   const grade = useMemo(() => (outcome ? gradeDiscardOutcome(outcome) : null), [outcome]);
   const handShanten = useMemo(
