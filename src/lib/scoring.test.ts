@@ -2598,6 +2598,23 @@ describe("PATTERNS: other patterns reused within 嚦咕嚦咕 (per the user's ow
     expect(tai(result, "full-flush")).toBe(120);
   });
 
+  it("scores 混帶X when every non-honor pair/quad group shares a rank with the pair - reuses hasCommonRankAcrossNonHonorMelds as-is", () => {
+    // 2222m/2222t/2222b (3 quads, all rank 2) + 111z/22z (the tripled kind
+    // + the pair). Every non-honor group here is single-rank by
+    // construction, so "every non-honor meld contains rank 2" is trivially
+    // checkable the same way it is for an ordinary hand's triplets - this
+    // was previously missing entirely from scoreEightPairs' own reused-
+    // pattern list, so it never fired for any 嚦咕嚦咕 hand at all.
+    const result = scoreHand("2222m2222t2222b11122z", ctx());
+    expect(tai(result, "mixed-common-rank")).toBe(30);
+    expect(tai(result, "eight-pairs")).toBe(50);
+  });
+
+  it("doesn't score 混帶X for a 嚦咕嚦咕 hand with no shared rank across its non-honor groups", () => {
+    const result = scoreHand("1122m3344t5566b11122z", ctx());
+    expect(tai(result, "mixed-common-rank")).toBe(0);
+  });
+
   it("scores 三元嚦咕 when all 3 dragon kinds are merely present - no triplet or pair-role required", () => {
     // The user's own example: 5z/6z/7z all sit as plain pairs, nothing
     // upgraded to a triplet, nothing acting as "the pair" in the 小三元
