@@ -2146,10 +2146,15 @@ export const PATTERNS: TaiPattern[] = [
       return ranks.size >= 2 && pairIsSpareWind(hand, ranks) ? 30 : 0;
     },
     excludes: SINGLE_WIND_PATTERN_IDS,
+    // Sorted by rank (1z East .. 4z North), not raw hand.melds order (which
+    // is declared-first-then-concealed and has nothing to do with wind
+    // order) - the spare-wind pair slots in by its own rank too, same as
+    // every other group, rather than always trailing at the end.
     tiles: (hand) => {
       const windMelds = hand.melds.filter((m) => m.tiles[0].suit === "z" && m.tiles[0].rank <= 4);
       const groups = windMelds.map((m) => m.tiles);
       if (pairIsSpareWind(hand, new Set(windMelds.map((m) => m.tiles[0].rank)))) groups.push(hand.pair);
+      groups.sort((a, b) => a[0].rank - b[0].rank);
       return [groups];
     },
   },
@@ -2158,7 +2163,14 @@ export const PATTERNS: TaiPattern[] = [
     name: "大三風 (Big three winds)",
     score: (hand) => (new Set(windMeldRanks(hand)).size >= 3 ? 60 : 0),
     excludes: [...SINGLE_WIND_PATTERN_IDS, "small-three-winds"],
-    tiles: (hand) => [hand.melds.filter((m) => m.tiles[0].suit === "z" && m.tiles[0].rank <= 4).map((m) => m.tiles)],
+    // Sorted by rank - see 小三風's own tiles() comment above.
+    tiles: (hand) => [
+      hand.melds
+        .filter((m) => m.tiles[0].suit === "z" && m.tiles[0].rank <= 4)
+        .slice()
+        .sort((a, b) => a.tiles[0].rank - b.tiles[0].rank)
+        .map((m) => m.tiles),
+    ],
   },
   {
     id: "small-four-winds",
@@ -2168,10 +2180,12 @@ export const PATTERNS: TaiPattern[] = [
       return ranks.size >= 3 && pairIsSpareWind(hand, ranks) ? 120 : 0;
     },
     excludes: [...SINGLE_WIND_PATTERN_IDS, "small-three-winds", "big-three-winds"],
+    // Sorted by rank - see 小三風's own tiles() comment above.
     tiles: (hand) => {
       const windMelds = hand.melds.filter((m) => m.tiles[0].suit === "z" && m.tiles[0].rank <= 4);
       const groups = windMelds.map((m) => m.tiles);
       if (pairIsSpareWind(hand, new Set(windMelds.map((m) => m.tiles[0].rank)))) groups.push(hand.pair);
+      groups.sort((a, b) => a[0].rank - b[0].rank);
       return [groups];
     },
   },
@@ -2180,7 +2194,14 @@ export const PATTERNS: TaiPattern[] = [
     name: "大四喜 (Big four winds)",
     score: (hand) => (new Set(windMeldRanks(hand)).size >= 4 ? 160 : 0),
     excludes: [...SINGLE_WIND_PATTERN_IDS, "small-three-winds", "big-three-winds", "small-four-winds"],
-    tiles: (hand) => [hand.melds.filter((m) => m.tiles[0].suit === "z" && m.tiles[0].rank <= 4).map((m) => m.tiles)],
+    // Sorted by rank - see 小三風's own tiles() comment above.
+    tiles: (hand) => [
+      hand.melds
+        .filter((m) => m.tiles[0].suit === "z" && m.tiles[0].rank <= 4)
+        .slice()
+        .sort((a, b) => a.tiles[0].rank - b.tiles[0].rank)
+        .map((m) => m.tiles),
+    ],
   },
   {
     id: "dragon-tile",
@@ -2197,10 +2218,13 @@ export const PATTERNS: TaiPattern[] = [
       return ranks.size >= 2 && pairIsSpareDragon(hand, ranks) ? 40 : 0;
     },
     excludes: ["dragon-tile"],
+    // Sorted by rank (5z Red .. 7z White), not raw hand.melds order - same
+    // reasoning as 小/大三風/四喜's own tiles() comments above.
     tiles: (hand) => {
       const dragonMelds = hand.melds.filter((m) => m.tiles[0].suit === "z" && m.tiles[0].rank >= 5);
       const groups = dragonMelds.map((m) => m.tiles);
       if (pairIsSpareDragon(hand, new Set(dragonMelds.map((m) => m.tiles[0].rank)))) groups.push(hand.pair);
+      groups.sort((a, b) => a[0].rank - b[0].rank);
       return [groups];
     },
   },
@@ -2209,7 +2233,14 @@ export const PATTERNS: TaiPattern[] = [
     name: "大三元 (Big three dragons)",
     score: (hand) => (new Set(dragonMeldRanks(hand)).size >= 3 ? 80 : 0),
     excludes: ["dragon-tile", "small-three-dragons"],
-    tiles: (hand) => [hand.melds.filter((m) => m.tiles[0].suit === "z" && m.tiles[0].rank >= 5).map((m) => m.tiles)],
+    // Sorted by rank - see 小三元's own tiles() comment above.
+    tiles: (hand) => [
+      hand.melds
+        .filter((m) => m.tiles[0].suit === "z" && m.tiles[0].rank >= 5)
+        .slice()
+        .sort((a, b) => a.tiles[0].rank - b.tiles[0].rank)
+        .map((m) => m.tiles),
+    ],
   },
   {
     id: "all-honors",

@@ -418,6 +418,26 @@ describe("PATTERNS", () => {
       expect(tai(result, "correct-seat-wind")).toBe(0);
       expect(tai(result, "wrong-seat-wind")).toBe(0);
     });
+
+    it("breaks 大三風/小三風 down sorted 1z/2z/3z(/4z), not declared-first-then-concealed order", () => {
+      // Declared 3z sits first in hand.melds, with 1z/2z concealed after -
+      // the breakdown must still read East, South, West.
+      const big = scoreHand("(333z)111z222z456m789t22b", ctx());
+      const bigPattern = PATTERNS.find((p) => p.id === "big-three-winds")!;
+      expect(bigPattern.tiles!(big.hand, ctx())[0].map((g) => g.map((t) => `${t.rank}${t.suit}`).join(""))).toEqual([
+        "1z1z1z",
+        "2z2z2z",
+        "3z3z3z",
+      ]);
+
+      const small = scoreHand("(333z)111z44z456m789t123b", ctx());
+      const smallPattern = PATTERNS.find((p) => p.id === "small-three-winds")!;
+      expect(smallPattern.tiles!(small.hand, ctx())[0].map((g) => g.map((t) => `${t.rank}${t.suit}`).join(""))).toEqual([
+        "1z1z1z",
+        "3z3z3z",
+        "4z4z",
+      ]);
+    });
   });
 
   describe("小四喜/大四喜 and exclusion of the smaller wind patterns", () => {
@@ -436,6 +456,26 @@ describe("PATTERNS", () => {
       expect(tai(result, "big-three-winds")).toBe(0);
       expect(tai(result, "small-three-winds")).toBe(0);
       expect(tai(result, "correct-seat-wind")).toBe(0);
+    });
+
+    it("breaks 大四喜/小四喜 down sorted 1z/2z/3z/4z, not declared-first-then-concealed order", () => {
+      const big = scoreHand("(333z)111z222z444z678m55m", ctx());
+      const bigPattern = PATTERNS.find((p) => p.id === "big-four-winds")!;
+      expect(bigPattern.tiles!(big.hand, ctx())[0].map((g) => g.map((t) => `${t.rank}${t.suit}`).join(""))).toEqual([
+        "1z1z1z",
+        "2z2z2z",
+        "3z3z3z",
+        "4z4z4z",
+      ]);
+
+      const small = scoreHand("(333z)111z222z44z456m789t", ctx());
+      const smallPattern = PATTERNS.find((p) => p.id === "small-four-winds")!;
+      expect(smallPattern.tiles!(small.hand, ctx())[0].map((g) => g.map((t) => `${t.rank}${t.suit}`).join(""))).toEqual([
+        "1z1z1z",
+        "2z2z2z",
+        "3z3z3z",
+        "4z4z",
+      ]);
     });
   });
 
@@ -457,6 +497,24 @@ describe("PATTERNS", () => {
       expect(tai(result, "big-three-dragons")).toBe(80);
       expect(tai(result, "small-three-dragons")).toBe(0);
       expect(tai(result, "dragon-tile")).toBe(0);
+    });
+
+    it("breaks 大三元/小三元 down sorted 5z/6z/7z, not declared-first-then-concealed order", () => {
+      const big = scoreHand("(777z)555z666z123456t22b", ctx());
+      const bigPattern = PATTERNS.find((p) => p.id === "big-three-dragons")!;
+      expect(bigPattern.tiles!(big.hand, ctx())[0].map((g) => g.map((t) => `${t.rank}${t.suit}`).join(""))).toEqual([
+        "5z5z5z",
+        "6z6z6z",
+        "7z7z7z",
+      ]);
+
+      const small = scoreHand("(777z)555z66z123456t123b", ctx());
+      const smallPattern = PATTERNS.find((p) => p.id === "small-three-dragons")!;
+      expect(smallPattern.tiles!(small.hand, ctx())[0].map((g) => g.map((t) => `${t.rank}${t.suit}`).join(""))).toEqual([
+        "5z5z5z",
+        "6z6z",
+        "7z7z7z",
+      ]);
     });
   });
 
