@@ -2827,7 +2827,11 @@ export const PATTERNS: TaiPattern[] = [
       for (const window of windows) {
         if (window[0] < 1 || window[2] > 9) continue;
         const melds = window.filter((r) => r !== pair.rank).map(meldAt);
-        if (melds.length === 2 && melds.every((m): m is ResolvedMeld => !!m)) rows.push([hand.pair, ...melds.map((m) => m.tiles)]);
+        // Sorted by rank (the pair included) rather than pair-always-first
+        // - see 小三色連刻's own tiles() comment for the same fix.
+        if (melds.length === 2 && melds.every((m): m is ResolvedMeld => !!m)) {
+          rows.push([hand.pair, ...melds.map((m) => m.tiles)].sort((a, b) => a[0].rank - b[0].rank));
+        }
       }
       return rows;
     },
@@ -3066,7 +3070,10 @@ export const PATTERNS: TaiPattern[] = [
         const orderB = [meldAt(otherSuits[1], others[0]), meldAt(otherSuits[0], others[1])];
         const isFull = (arr: (ResolvedMeld | undefined)[]): arr is ResolvedMeld[] => arr.every((m) => !!m);
         const chosen = isFull(orderA) ? orderA : isFull(orderB) ? orderB : null;
-        if (chosen) rows.push([hand.pair, ...chosen.map((m) => m.tiles)]);
+        // Sorted by rank (the pair included) rather than pair-always-first
+        // - e.g. pair 5t + triplets at 4/6 should read 4,5,6 in order, not
+        // 5,4,6 just because the pair happens to be built first above.
+        if (chosen) rows.push([hand.pair, ...chosen.map((m) => m.tiles)].sort((a, b) => a[0].rank - b[0].rank));
       }
       return rows;
     },

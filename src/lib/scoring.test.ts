@@ -1214,6 +1214,18 @@ describe("PATTERNS: 小三連刻/大三連刻", () => {
     expect(tai(result, "big-three-consecutive-triplets")).toBe(30); // 1 instance x 30 - only the m-suit window
     expect(tai(result, "consecutive-triplet-pair")).toBe(5); // 1 instance x 5 - 555t+666t, unrelated to the m-suit window
   });
+
+  it("breaks 小三連刻 down sorted by rank, not pair-always-first", () => {
+    // Pair 4m sits between triplets at 3m and 5m - the breakdown should
+    // read 3m, 4m, 5m in order, not 4m (the pair, built first) then 3m/5m.
+    const result = scoreHand("333m555m789t456b789b44m", ctx());
+    const pattern = PATTERNS.find((p) => p.id === "small-three-consecutive-triplets")!;
+    expect(pattern.tiles!(result.hand, ctx())[0].map((g) => g.map((t) => `${t.rank}${t.suit}`).join(""))).toEqual([
+      "3m3m3m",
+      "4m4m",
+      "5m5m5m",
+    ]);
+  });
 });
 
 describe("PATTERNS: 混一色/清一色", () => {
@@ -1457,6 +1469,17 @@ describe("PATTERNS: 小三色連刻/大三色連刻 (consecutive ranks across su
     const result = scoreHand("222m333t44b555m666t777b", ctx({ winningTile: { suit: "b", rank: 4 } }));
     expect(tai(result, "small-three-color-consecutive-triplets")).toBe(30); // 3 instances x 10
     expect(tai(result, "big-three-color-consecutive-triplets")).toBe(20); // 1 instance x 20
+  });
+
+  it("breaks 小三色連刻 down sorted by rank, not pair-always-first - declared 4444m/777m, concealed 333b/666b/111z/55t", () => {
+    // Pair 5t anchors window [4,5,6]: kong 4444m (declared, suit m) +
+    // triplet 666b (suit b). The breakdown should read 4m,5t,6b in order,
+    // not 5t (the pair, built first) then 4m/6b.
+    const result = scoreHand("(4444m)(777m)333b666b111z55t", ctx());
+    const pattern = PATTERNS.find((p) => p.id === "small-three-color-consecutive-triplets")!;
+    const rows = pattern.tiles!(result.hand, ctx());
+    const window456 = rows.find((row) => row.some((g) => g[0].rank === 4) && row.some((g) => g[0].rank === 6));
+    expect(window456!.map((g) => g.map((t) => `${t.rank}${t.suit}`).join(""))).toEqual(["4m4m4m4m", "5t5t", "6b6b6b"]);
   });
 });
 
