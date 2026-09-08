@@ -3216,7 +3216,7 @@ function EndlessTrainer({
                 Turn {game.handTurns + 1} · Shanten {handShanten ?? "—"} ·{" "}
                 {grade && grade.bestWinProbability > 0
                   ? `best win ${formatProbability(grade.bestWinProbability)}`
-                  : `${bestAdvance} tile${bestAdvance === 1 ? "" : "s"} advance`}
+                  : `${bestAdvance} tile${bestAdvance === 1 ? "" : "s"} toward tenpai`}
               </>
             )}
           </div>

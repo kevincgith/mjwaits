@@ -222,7 +222,7 @@ prompts: tap a tile, it's discarded and graded, a replacement is drawn, repeat. 
 current turn and shanten, your best-discard rate, how many discards were **loose** (needlessly
 raised shanten), average regret, and race stats — turns to first reach tenpai, turns to win,
 hands won. When the hand is too far out for win probability to mean much, the HUD shows how many
-tiles advance it instead.
+tiles would move it toward tenpai instead.
 
 The analysis accounts for your own discard pile *and* how much wall is left — tiles you've thrown
 are gone, and the draw horizon shrinks as the wall runs down, so wait counts and probabilities
