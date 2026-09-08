@@ -375,7 +375,14 @@ export function decomposeThirteenOrphans(tiles: Tile[]): ThirteenOrphansBreakdow
       const singles: Tile[] = [];
       for (const t of ORPHAN_TILES) {
         const c = counts.get(tileKey(t)) ?? 0;
-        if (c === 2) pair.push(t, t);
+        // Two DISTINCT objects, not the same `t` pushed twice - callers
+        // (e.g. App.tsx's findWinningTileInstance) pick out one specific
+        // physical tile via reference equality for highlighting purposes,
+        // same as decomposeEightPairs' own group-building already does
+        // below; sharing one object for both eyes would make that
+        // highlight check match both positions at once instead of just
+        // the one actually chosen.
+        if (c === 2) pair.push({ ...t }, { ...t });
         else if (c === 1) singles.push(t);
       }
       return { pair, singles, meld };

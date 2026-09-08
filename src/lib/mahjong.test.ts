@@ -200,6 +200,18 @@ describe("isCompleteHand", () => {
     expect(decomposeThirteenOrphans(parseHand("111222333444m111t22b"))).toBeNull();
   });
 
+  it("decomposeThirteenOrphans' pair is 2 distinct objects, not the same tile pushed twice", () => {
+    // App.tsx highlights the 食胡 tile by reference equality against one
+    // specific Tile object (findWinningTileInstance) - if both eyes shared
+    // the same object (as this used to push), marking either one as the
+    // winning tile would light up both eye positions at once instead of
+    // just the one actually chosen.
+    const tiles = [...parseHand("112922m19t"), ...parseHand("19b1234567z")];
+    const breakdown = decomposeThirteenOrphans(tiles)!;
+    expect(breakdown.pair[0]).not.toBe(breakdown.pair[1]);
+    expect(breakdown.pair[0]).toEqual(breakdown.pair[1]);
+  });
+
   it("rejects an orphan-looking hand missing one orphan kind", () => {
     // Same shape but 2z (South) swapped for a second 3z (West) - not all 13 kinds present
     const tiles = [...parseHand("112922m19t"), ...parseHand("19b1334567z")];
