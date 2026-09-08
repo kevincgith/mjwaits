@@ -233,9 +233,11 @@ list of discards with the best ones flagged — collapsed to just those while th
 shanten (the rows barely differ that far out), expandable to all of them. Discards pile up below
 the hand, tinted by whether each was a best pick.
 
-Completing a hand flashes a win summary; one tap deals the next. **Undo** / **Redo** step back
-and forward through the current hand — hand, wall, discard pile and every stat — as far as you
-like (cleared when a new hand is dealt). A hand in progress survives switching sub-tabs.
+Completing a hand flashes a win summary; one tap deals the next. **Undo** / **Redo** (also
+⌘/Ctrl+Z and ⇧⌘/Ctrl+Z) step back and forward through the current hand — hand, wall, discard pile
+and every stat — as far as you like; **N** deals a new one, asking first if the current hand has
+real progress to lose. History is cleared when a new hand is dealt, and a hand in progress
+survives switching sub-tabs.
 
 ## Dice rolling
 

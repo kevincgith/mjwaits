@@ -332,6 +332,17 @@ h1 {
   cursor: default;
 }
 
+@media (hover: hover) and (pointer: fine) {
+  .trainer-discard-tile:not(:disabled):hover {
+    background: var(--accent-bg);
+    border-color: var(--border-2);
+  }
+}
+
+.trainer-discard-tile:not(:disabled):active {
+  transform: translateY(1px);
+}
+
 .trainer-discard-tile.selected {
   background: var(--accent-bg);
   border-color: var(--accent);
@@ -382,24 +393,88 @@ h1 {
   line-height: 1.5;
 }
 
+/* Labelled cells instead of a `·`-joined run-on line, which wrapped to three
+   lines of grey text on a phone. */
 .endless-hud-session {
-  font-size: 0.78rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 1.1rem;
+  margin: 0.4rem 0 0;
+}
+
+.endless-hud-session > div {
+  display: flex;
+  flex-direction: column;
+}
+
+.endless-hud-session dt {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
   color: var(--text-muted);
+}
+
+.endless-hud-session dd {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.endless-stat-note {
+  font-weight: 400;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.endless-reset-stats {
+  margin-top: 0.5rem;
+  font-size: 0.72rem;
+  padding: 0.2rem 0.55rem;
+  background: none;
+  border: 1px solid var(--border-3);
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+/* Hand and the pile of what's been thrown sit in one "table" block, since they
+   are read together. The inner .hand-display carries the frame, so the usual
+   .waits box drops its own border/background rather than stacking two. */
+.endless-table {
+  display: block;
+  padding: 0;
+  background: none;
+  border: none;
+}
+
+.endless-table .hand-display {
+  margin-bottom: 0.5rem;
+}
+
+.endless-confirm {
+  border-color: var(--danger-border-1) !important;
+  color: var(--danger-text-1);
 }
 
 .endless-discard-pile {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.15rem;
-  margin-top: 0.35rem;
+  gap: 0.2rem;
 }
 
 .endless-discard-good,
 .endless-discard-bad {
   display: inline-flex;
+  align-items: center;
+  gap: 0.05rem;
   border-bottom: 2px solid transparent;
   border-radius: 3px;
-  padding: 0 0.1rem;
+  padding: 0 0.15rem;
+}
+
+.endless-discard-mark {
+  font-size: 0.62rem;
+  font-weight: 700;
 }
 
 .endless-discard-good {
@@ -407,9 +482,41 @@ h1 {
   background: var(--success-bg-1);
 }
 
+.endless-discard-good .endless-discard-mark {
+  color: var(--success-text-1);
+}
+
 .endless-discard-bad {
   border-bottom-color: var(--danger-border-1);
   background: var(--danger-bg-2);
+  border-bottom-style: dashed;
+}
+
+.endless-discard-bad .endless-discard-mark {
+  color: var(--danger-text-1);
+}
+
+/* Last-move verdict: labelled cells, so inline tile glyphs never wrap inside a
+   running sentence. */
+.endless-verdict {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 1.1rem;
+  align-items: center;
+  margin-bottom: 0.4rem;
+}
+
+.endless-verdict-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.endless-verdict-key {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
 }
 
 .endless-analysis-wrap {
@@ -426,15 +533,22 @@ h1 {
   font-weight: 600;
 }
 
-/* The per-turn ranked list scrolls within itself so a scattered hand's ~14
-   rows don't push the tiles off-screen. */
+/* Sizes to content - the collapsed view is only a few rows - and only caps
+   height once the full list is expanded. */
 .endless-analysis {
   display: flex;
   flex-direction: column;
   align-items: stretch;
   width: 100%;
-  max-height: 15rem;
+  min-width: 0;
+  max-height: 22rem;
+  overflow-x: hidden;
   overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.endless-analysis .discard-row {
+  min-width: 0;
 }
 
 .endless-analysis-toggle {
@@ -449,14 +563,42 @@ h1 {
   cursor: pointer;
 }
 
+/* Best vs. picked carries a glyph as well as a border colour/style, so the
+   distinction survives colour-blindness and greyscale printing. */
 .discard-row-picked {
-  border-left: 3px solid var(--danger-border-1);
+  border-left: 3px dashed var(--danger-border-1);
   padding-left: 0.4rem;
 }
 
 .discard-row-best {
   border-left: 3px solid var(--success-border-1);
   padding-left: 0.4rem;
+}
+
+.discard-tone-mark {
+  font-weight: 700;
+  font-size: 0.85rem;
+  line-height: 1;
+}
+
+.discard-tone-best {
+  color: var(--success-text-1);
+}
+
+.discard-tone-picked {
+  color: var(--danger-text-1);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }
 
 /* Wide content (7 columns) scrolls within its own container on narrow
@@ -776,8 +918,10 @@ h1 {
 
 .discard-efficiency-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.2rem;
+  min-width: 0;
 }
 
 .efficiency-score {
@@ -2519,6 +2663,58 @@ button.scoring-pattern-row {
     width: 100%;
     padding: 0.15rem 0;
     justify-content: center;
+  }
+
+  /* Stats tables have up to 8 columns; rather than scrolling them sideways,
+     stack each row as label/value pairs. */
+  .trainer-stats-table thead {
+    display: none;
+  }
+
+  .trainer-stats-table,
+  .trainer-stats-table tbody,
+  .trainer-stats-table tr {
+    display: block;
+  }
+
+  .trainer-stats-table tr {
+    border: 1px solid var(--border-3);
+    border-radius: 6px;
+    padding: 0.35rem 0.5rem;
+    margin-bottom: 0.4rem;
+  }
+
+  .trainer-stats-table td {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    border: none;
+    padding: 0.15rem 0;
+    text-align: right;
+  }
+
+  .trainer-stats-table td::before {
+    content: attr(data-label);
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    text-align: left;
+  }
+
+  /* Keep the top-level tabs on one row instead of orphaning the last one. */
+  .mode-tabs {
+    flex-wrap: nowrap;
+  }
+
+  .mode-tabs button {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 0.5rem 0.3rem;
+    font-size: 0.82rem;
+    white-space: nowrap;
+  }
+
+  .sub-tabs button {
+    flex: 0 1 auto;
   }
 
   .panel-header button {

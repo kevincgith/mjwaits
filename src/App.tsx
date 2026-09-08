@@ -507,8 +507,18 @@ function TileGlyphSpan({
   const classes = ["tile-glyph", large && "large", highlight && "wait-highlight", jokerAssumed && "joker-assumed"]
     .filter(Boolean)
     .join(" ");
+  // role/aria-label so assistive tech reads "3 Sou" rather than the bare
+  // Mahjong Tiles codepoint. A button wrapping this can override with its own
+  // aria-label to describe the action instead.
   return (
-    <span className={classes} data-suit={tile.suit} data-rank={tile.rank} title={jokerAssumed ? "Assumed from a joker" : undefined}>
+    <span
+      className={classes}
+      data-suit={tile.suit}
+      data-rank={tile.rank}
+      role="img"
+      aria-label={jokerAssumed ? `${tileLabel(tile)} (assumed from a joker)` : tileLabel(tile)}
+      title={jokerAssumed ? "Assumed from a joker" : undefined}
+    >
       {tileGlyph(tile)}
     </span>
   );
@@ -532,7 +542,14 @@ function TileButton({
   const tap = useTap(onClick, disabled);
   const classes = ["tile-button", selected && "selected", extraClass].filter(Boolean).join(" ");
   return (
-    <button type="button" className={classes} disabled={disabled} title={title ?? tileLabel(tile)} {...tap}>
+    <button
+      type="button"
+      className={classes}
+      disabled={disabled}
+      title={title ?? tileLabel(tile)}
+      aria-label={title ?? tileLabel(tile)}
+      {...tap}
+    >
       <TileGlyphSpan tile={tile} />
     </button>
   );
@@ -934,11 +951,27 @@ function DiscardTotalBadge({
   );
 }
 
+// Marks a row as a best discard or the (suboptimal) one the player picked.
+// Carries a glyph and text as well as the colour, so the distinction survives
+// colour-blindness and greyscale.
+function DiscardToneMark({ tone }: { tone: "picked" | "best" }) {
+  return tone === "best" ? (
+    <span className="discard-tone-mark discard-tone-best" title="One of the best discards">
+      ✓<span className="visually-hidden"> best discard</span>
+    </span>
+  ) : (
+    <span className="discard-tone-mark discard-tone-picked" title="What you discarded - not one of the best">
+      ✗<span className="visually-hidden"> your pick, not a best discard</span>
+    </span>
+  );
+}
+
 function DiscardChoiceRow({ choice, tone }: { choice: DiscardChoice; tone?: "picked" | "best" }) {
   const toneClass = tone ? ` discard-row-${tone}` : "";
   if (choice.resultingShanten === 0) {
     return (
       <div className={`discard-row${toneClass}`}>
+        {tone && <DiscardToneMark tone={tone} />}
         <TileGlyphSpan tile={choice.discard} />
         <span className="discard-arrow">→</span>
         <span className="tenpai-tag">Tenpai</span>
@@ -957,6 +990,7 @@ function DiscardChoiceRow({ choice, tone }: { choice: DiscardChoice; tone?: "pic
   return (
     <div className={`discard-row discard-efficiency-row${toneClass}`}>
       <div className="discard-efficiency-header">
+        {tone && <DiscardToneMark tone={tone} />}
         <TileGlyphSpan tile={choice.discard} />
         <span className="discard-arrow">→</span>
         <span className="shanten-badge">Shanten {choice.resultingShanten}</span>
@@ -2710,22 +2744,28 @@ function WaitsTrainer({
               <tbody>
                 {statsRows.map((r) => (
                   <tr key={trainerStatsKey(r.level, r.flush)}>
-                    <td>L{r.level}</td>
-                    <td>{r.flush ? "Yes" : "No"}</td>
-                    <td>{r.total}</td>
-                    <td>{r.correct}</td>
-                    <td>{r.total - r.correct}</td>
-                    <td>{Math.round((r.correct / r.total) * 100)}%</td>
-                    <td>{formatSeconds(r.timeTotalMs / r.total)}</td>
+                    <td data-label="Level">L{r.level}</td>
+                    <td data-label="Flush">{r.flush ? "Yes" : "No"}</td>
+                    <td data-label="Answered">{r.total}</td>
+                    <td data-label="Correct">{r.correct}</td>
+                    <td data-label="Wrong">{r.total - r.correct}</td>
+                    <td data-label="% Correct">{Math.round((r.correct / r.total) * 100)}%</td>
+                    <td data-label="Avg Time">{formatSeconds(r.timeTotalMs / r.total)}</td>
                   </tr>
                 ))}
                 <tr className="trainer-stats-total">
-                  <td colSpan={2}>All</td>
-                  <td>{statsTotal.total}</td>
-                  <td>{statsTotal.correct}</td>
-                  <td>{statsTotal.total - statsTotal.correct}</td>
-                  <td>{statsTotal.total > 0 ? Math.round((statsTotal.correct / statsTotal.total) * 100) : 0}%</td>
-                  <td>{statsTotal.total > 0 ? formatSeconds(statsTotal.timeTotalMs / statsTotal.total) : "0.0s"}</td>
+                  <td colSpan={2} data-label="Level">
+                    All
+                  </td>
+                  <td data-label="Answered">{statsTotal.total}</td>
+                  <td data-label="Correct">{statsTotal.correct}</td>
+                  <td data-label="Wrong">{statsTotal.total - statsTotal.correct}</td>
+                  <td data-label="% Correct">
+                    {statsTotal.total > 0 ? Math.round((statsTotal.correct / statsTotal.total) * 100) : 0}%
+                  </td>
+                  <td data-label="Avg Time">
+                    {statsTotal.total > 0 ? formatSeconds(statsTotal.timeTotalMs / statsTotal.total) : "0.0s"}
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -2978,24 +3018,32 @@ function DiscardTrainer({
               <tbody>
                 {statsRows.map((r) => (
                   <tr key={trainerStatsKey(r.level, r.flush)}>
-                    <td>L{r.level}</td>
-                    <td>{r.flush ? "Yes" : "No"}</td>
-                    <td>{r.total}</td>
-                    <td>{r.correct}</td>
-                    <td>{r.total - r.correct}</td>
-                    <td>{Math.round((r.correct / r.total) * 100)}%</td>
-                    <td>{formatRegret(r.regretTotal / r.total)}</td>
-                    <td>{formatSeconds(r.timeTotalMs / r.total)}</td>
+                    <td data-label="Level">L{r.level}</td>
+                    <td data-label="Flush">{r.flush ? "Yes" : "No"}</td>
+                    <td data-label="Answered">{r.total}</td>
+                    <td data-label="Best">{r.correct}</td>
+                    <td data-label="Off">{r.total - r.correct}</td>
+                    <td data-label="% Best">{Math.round((r.correct / r.total) * 100)}%</td>
+                    <td data-label="Avg Regret">{formatRegret(r.regretTotal / r.total)}</td>
+                    <td data-label="Avg Time">{formatSeconds(r.timeTotalMs / r.total)}</td>
                   </tr>
                 ))}
                 <tr className="trainer-stats-total">
-                  <td colSpan={2}>All</td>
-                  <td>{statsTotal.total}</td>
-                  <td>{statsTotal.correct}</td>
-                  <td>{statsTotal.total - statsTotal.correct}</td>
-                  <td>{statsTotal.total > 0 ? Math.round((statsTotal.correct / statsTotal.total) * 100) : 0}%</td>
-                  <td>{statsTotal.total > 0 ? formatRegret(statsTotal.regretTotal / statsTotal.total) : "0.0 pts"}</td>
-                  <td>{statsTotal.total > 0 ? formatSeconds(statsTotal.timeTotalMs / statsTotal.total) : "0.0s"}</td>
+                  <td colSpan={2} data-label="Level">
+                    All
+                  </td>
+                  <td data-label="Answered">{statsTotal.total}</td>
+                  <td data-label="Best">{statsTotal.correct}</td>
+                  <td data-label="Off">{statsTotal.total - statsTotal.correct}</td>
+                  <td data-label="% Best">
+                    {statsTotal.total > 0 ? Math.round((statsTotal.correct / statsTotal.total) * 100) : 0}%
+                  </td>
+                  <td data-label="Avg Regret">
+                    {statsTotal.total > 0 ? formatRegret(statsTotal.regretTotal / statsTotal.total) : "0.0 pts"}
+                  </td>
+                  <td data-label="Avg Time">
+                    {statsTotal.total > 0 ? formatSeconds(statsTotal.timeTotalMs / statsTotal.total) : "0.0s"}
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -3014,9 +3062,13 @@ function DiscardTrainer({
 function EndlessTrainer({
   stats,
   setStats,
+  active,
 }: {
   stats: EndlessStats;
   setStats: (updater: (prev: EndlessStats) => EndlessStats) => void;
+  // The component stays mounted while other sub-tabs are shown (so a hand in
+  // progress survives), so keyboard shortcuts must only bind when it's visible.
+  active: boolean;
 }) {
   const [game, setGame] = useState<EndlessGame | null>(null);
   // Undo/redo history. Refs are the source of truth (mutated synchronously so a
@@ -3030,6 +3082,9 @@ function EndlessTrainer({
   // analysis is a dozen near-identical rows, so it collapses to just the best
   // discards and the one you picked until the user asks for the rest.
   const [showAllAnalysis, setShowAllAnalysis] = useState(false);
+  // Two-step guard on "New hand": abandoning a hand with real progress can't be
+  // undone (history is per-hand), and the button sits next to Undo.
+  const [confirmNewHand, setConfirmNewHand] = useState(false);
   const busyRef = useRef(false);
 
   const HAND_SIZE = MELDS_REQUIRED * 3 + 2; // 17
@@ -3093,6 +3148,7 @@ function EndlessTrainer({
   const discardAt = (index: number) => {
     if (!game || game.phase !== "playing" || busyRef.current || !outcome || !grade) return;
     busyRef.current = true;
+    setConfirmNewHand(false);
 
     const kind = tileKey(sortedTiles[index]);
     const optimal = grade.optimalKeys.has(kind);
@@ -3164,6 +3220,7 @@ function EndlessTrainer({
   const undo = () => {
     const entry = undoStackRef.current[undoStackRef.current.length - 1];
     if (!entry) return;
+    setConfirmNewHand(false);
     undoStackRef.current = undoStackRef.current.slice(0, -1);
     redoStackRef.current = [...redoStackRef.current, entry];
     setUndoDepth(undoStackRef.current.length);
@@ -3176,6 +3233,7 @@ function EndlessTrainer({
   const redo = () => {
     const entry = redoStackRef.current[redoStackRef.current.length - 1];
     if (!entry) return;
+    setConfirmNewHand(false);
     redoStackRef.current = redoStackRef.current.slice(0, -1);
     undoStackRef.current = [...undoStackRef.current, entry].slice(-ENDLESS_HISTORY_CAP);
     setUndoDepth(undoStackRef.current.length);
@@ -3184,6 +3242,36 @@ function EndlessTrainer({
     setGame(entry.next);
     busyRef.current = false;
   };
+
+  const startNewHand = () => {
+    if (game && game.phase === "playing" && game.handTurns >= 5 && !confirmNewHand) {
+      setConfirmNewHand(true);
+      return;
+    }
+    setConfirmNewHand(false);
+    deal();
+  };
+
+  // Keyboard shortcuts, bound only while this sub-tab is the visible one. No
+  // dependency array: rebinding each render keeps the handler closed over the
+  // current undo/redo/deal, which is cheaper than memoising all three.
+  useEffect(() => {
+    if (!active) return;
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return;
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        if (e.shiftKey) redo();
+        else undo();
+      } else if (!e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === "n") {
+        e.preventDefault();
+        startNewHand();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
 
   const phase = game ? game.phase : "idle";
   const pct = stats.turns > 0 ? Math.round((stats.optimalCount / stats.turns) * 100) : 0;
@@ -3216,25 +3304,29 @@ function EndlessTrainer({
 
   return (
     <>
-      <div className="panel-header">
-        <button type="button" onClick={deal}>
-          {phase === "idle" ? "Start" : "New hand"}
+      {/* Undo/Redo keep their slots even when unavailable: they'd otherwise
+          appear and vanish mid-session, sliding the neighbouring buttons under
+          the user's thumb. */}
+      <div className="panel-header endless-controls">
+        <button type="button" onClick={startNewHand} className={confirmNewHand ? "endless-confirm" : undefined}>
+          {phase === "idle" ? "Start" : confirmNewHand ? "Discard this hand?" : "New hand"}
         </button>
-        {undoDepth > 0 && (
-          <button type="button" onClick={undo} title="Take back the last discard and draw">
-            Undo
-          </button>
-        )}
-        {redoDepth > 0 && (
-          <button type="button" onClick={redo} title="Replay the discard you took back">
-            Redo
-          </button>
-        )}
-        {stats.turns > 0 && (
-          <button type="button" onClick={() => setStats(() => EMPTY_ENDLESS_STATS)}>
-            Reset Stats
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={undo}
+          disabled={undoDepth === 0}
+          title="Take back the last discard and draw (⌘/Ctrl+Z)"
+        >
+          Undo
+        </button>
+        <button
+          type="button"
+          onClick={redo}
+          disabled={redoDepth === 0}
+          title="Replay the discard you took back (⇧⌘/Ctrl+Z)"
+        >
+          Redo
+        </button>
       </div>
 
       {phase === "idle" && (
@@ -3265,16 +3357,46 @@ function EndlessTrainer({
               </>
             )}
           </div>
-          <div className="endless-hud-session">
-            Hands {stats.hands} · Won {stats.handsWon} · Best discards {stats.optimalCount}/{stats.turns} ({pct}%) ·
-            Loose {stats.looseCount} · Avg regret {stats.turns > 0 ? formatRegret(stats.regretTotal / stats.turns) : "—"} ·
-            Turns→tenpai {avgTenpai} · Turns→win {avgWin}
-          </div>
+          <dl className="endless-hud-session">
+            <div>
+              <dt>Hands</dt>
+              <dd>
+                {stats.hands} <span className="endless-stat-note">({stats.handsWon} won)</span>
+              </dd>
+            </div>
+            <div>
+              <dt>Best discards</dt>
+              <dd>
+                {pct}% <span className="endless-stat-note">({stats.optimalCount}/{stats.turns})</span>
+              </dd>
+            </div>
+            <div>
+              <dt>Loose</dt>
+              <dd>{stats.looseCount}</dd>
+            </div>
+            <div>
+              <dt>Avg regret</dt>
+              <dd>{stats.turns > 0 ? formatRegret(stats.regretTotal / stats.turns) : "—"}</dd>
+            </div>
+            <div>
+              <dt>Turns→tenpai</dt>
+              <dd>{avgTenpai}</dd>
+            </div>
+            <div>
+              <dt>Turns→win</dt>
+              <dd>{avgWin}</dd>
+            </div>
+          </dl>
+          {stats.turns > 0 && (
+            <button type="button" className="endless-reset-stats" onClick={() => setStats(() => EMPTY_ENDLESS_STATS)}>
+              Reset stats
+            </button>
+          )}
         </div>
       )}
 
       {game && (
-        <div className="waits">
+        <div className="waits endless-table">
           <div className="hand-display trainer-hand trainer-discard-hand">
             {sortedTiles.map((t, i) => (
               <button
@@ -3284,53 +3406,74 @@ function EndlessTrainer({
                 onClick={() => discardAt(i)}
                 disabled={game.phase !== "playing"}
                 title={game.phase === "playing" ? `Discard ${tileLabel(t)}` : tileLabel(t)}
+                aria-label={game.phase === "playing" ? `Discard ${tileLabel(t)}` : tileLabel(t)}
               >
                 <TileGlyphSpan tile={t} large />
               </button>
             ))}
           </div>
+          {game.discards.length > 0 && (
+            <div className="endless-discard-pile" aria-label="Discards this hand">
+              {game.discards.map((d, i) => (
+                <span
+                  key={i}
+                  className={d.optimal ? "endless-discard-good" : "endless-discard-bad"}
+                  title={d.optimal ? `${tileLabel(d.tile)} — a best discard` : `${tileLabel(d.tile)} — not a best discard`}
+                >
+                  <TileGlyphSpan tile={d.tile} />
+                  <span className="endless-discard-mark" aria-hidden="true">
+                    {d.optimal ? "✓" : "✗"}
+                  </span>
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
       {lastMove && (
         <div className="waits discard-analysis endless-analysis-wrap">
-          <span className="waits-label">
-            Last discard:{" "}
-            <TileGlyphSpan
-              tile={
-                lastMove.outcome.choices.find((c) => tileKey(c.discard) === lastMove.pickedKey)?.discard ??
-                lastMove.outcome.choices[0].discard
-              }
-            />{" "}
-            {lastMove.optimal ? (
-              <span className="endless-verdict-good">
-                {lastMove.bestKeys.size >= lastMove.outcome.choices.length ? "no bad discard here" : "best pick ✓"}
-              </span>
-            ) : lastMove.regret > 0 ? (
-              <span className="endless-verdict-bad">gave up {formatRegret(lastMove.regret)} win prob</span>
-            ) : (
-              <span className="endless-verdict-bad">
-                loose — raises shanten{lastMove.shantenLost > 1 ? ` by ${lastMove.shantenLost}` : ""}
-              </span>
-            )}
+          {/* Labelled cells rather than one `·`-joined sentence: inline tile
+              glyphs inside running text wrapped mid-phrase on narrow screens. */}
+          <div className="endless-verdict">
+            <div className="endless-verdict-cell">
+              <span className="endless-verdict-key">Threw</span>
+              <TileGlyphSpan
+                tile={
+                  lastMove.outcome.choices.find((c) => tileKey(c.discard) === lastMove.pickedKey)?.discard ??
+                  lastMove.outcome.choices[0].discard
+                }
+              />
+              {lastMove.optimal ? (
+                <span className="endless-verdict-good">
+                  {lastMove.bestKeys.size >= lastMove.outcome.choices.length ? "any discard is fine" : "best ✓"}
+                </span>
+              ) : lastMove.regret > 0 ? (
+                <span className="endless-verdict-bad">✗ gave up {formatRegret(lastMove.regret)} win prob</span>
+              ) : (
+                <span className="endless-verdict-bad">
+                  ✗ loose — raises shanten{lastMove.shantenLost > 1 ? ` by ${lastMove.shantenLost}` : ""}
+                </span>
+              )}
+            </div>
             {!lastMove.optimal && lastMove.bestKeys.size < lastMove.outcome.choices.length && (
-              <>
-                {" · best: "}
+              <div className="endless-verdict-cell">
+                <span className="endless-verdict-key">Best</span>
                 {lastMove.outcome.choices
                   .filter((c) => lastMove.bestKeys.has(tileKey(c.discard)))
-                  .slice(0, 4)
+                  .slice(0, 5)
                   .map((c) => (
                     <TileGlyphSpan key={tileLabel(c.discard)} tile={c.discard} />
                   ))}
-              </>
+              </div>
             )}
             {lastMove.drawn && (
-              <>
-                {" · drew "}
+              <div className="endless-verdict-cell">
+                <span className="endless-verdict-key">Drew</span>
                 <TileGlyphSpan tile={lastMove.drawn} />
-              </>
+              </div>
             )}
-          </span>
+          </div>
           <div className="endless-analysis">
             {analysisRows.map(({ choice, tone }) => (
               <DiscardChoiceRow key={tileLabel(choice.discard)} choice={choice} tone={tone} />
@@ -3354,19 +3497,6 @@ function EndlessTrainer({
         <button type="button" className="trainer-submit" onClick={deal}>
           Deal next hand
         </button>
-      )}
-
-      {game && game.discards.length > 0 && (
-        <div className="waits">
-          <span className="waits-label">Discards this hand:</span>
-          <div className="endless-discard-pile">
-            {game.discards.map((d, i) => (
-              <span key={i} className={d.optimal ? "endless-discard-good" : "endless-discard-bad"}>
-                <TileGlyphSpan tile={d.tile} />
-              </span>
-            ))}
-          </div>
-        </div>
       )}
     </>
   );
@@ -3423,7 +3553,7 @@ function TrainerPanel({
       {/* Endless stays mounted so a hand in progress survives a sub-tab switch;
           `display: contents` keeps its children laid out as if direct siblings. */}
       <div style={{ display: sub === "endless" ? "contents" : "none" }}>
-        <EndlessTrainer stats={endlessStats} setStats={setEndlessStats} />
+        <EndlessTrainer stats={endlessStats} setStats={setEndlessStats} active={sub === "endless"} />
       </div>
     </section>
   );
