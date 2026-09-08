@@ -2500,24 +2500,24 @@ button.scoring-pattern-row {
   }
 
   /* Trainer hands are read as a hand, not tapped one-at-a-time out of a picker,
-     so the bigger touch sizing above would wrap 16-17 tiles onto four ragged
-     rows. Lay them out on the same 9-column grid as .suit-row instead: two even
-     rows, still comfortably tappable. */
+     so free-flowing wrap puts 16-17 tiles on four ragged rows. A 6-column grid
+     gives even rows AND wider columns (~50px at 375px) than the tiles need, so
+     the glyphs can go bigger than the mobile default rather than smaller. */
   .trainer-hand,
   .trainer-discard-hand {
     display: grid;
-    grid-template-columns: repeat(9, 1fr);
-    gap: 0.2rem;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 0.3rem;
     justify-items: center;
   }
 
   .trainer-hand .tile-glyph.large {
-    font-size: 1.9rem;
+    font-size: 3rem;
   }
 
   .trainer-discard-tile {
     width: 100%;
-    padding: 0.1rem 0;
+    padding: 0.15rem 0;
     justify-content: center;
   }
 
