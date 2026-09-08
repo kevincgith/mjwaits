@@ -881,11 +881,7 @@ function DiscardEfficiencyRow({ option }: { option: DiscardEfficiency }) {
           tenpaiProbability={option.tenpaiProbability}
           winProbability={option.winProbability}
         />
-        {option.acceptance > 0 && (
-          <span className="hint">
-            reaches tenpai: {option.acceptance} tile{option.acceptance === 1 ? "" : "s"}
-          </span>
-        )}
+        {option.acceptance > 0 && <DiscardTotalBadge total={option.acceptance} label="reach tenpai" />}
       </div>
       {option.draws.length > 0 ? (
         <div className="discard-efficiency-draws">
@@ -910,6 +906,34 @@ function DiscardEfficiencyRow({ option }: { option: DiscardEfficiency }) {
   );
 }
 
+// The headline tile count for a discard row - how many live tiles the choice is
+// playing for. Sits up front with the shanten/probability badges rather than
+// trailing the tile list, since it's the number that separates two rows at a
+// glance.
+function DiscardTotalBadge({
+  total,
+  cleanTotal,
+  label,
+}: {
+  total: number;
+  cleanTotal?: number;
+  label: string;
+}) {
+  const split = cleanTotal !== undefined && cleanTotal !== total;
+  return (
+    <span
+      className="discard-total"
+      title={
+        split
+          ? `${total} live tiles ${label}; ${cleanTotal} of them without redrawing the tile just discarded`
+          : `${total} live tiles ${label}`
+      }
+    >
+      <strong>{split ? `${total}/${cleanTotal}↺` : total}</strong> {label}
+    </span>
+  );
+}
+
 function DiscardChoiceRow({ choice, tone }: { choice: DiscardChoice; tone?: "picked" | "best" }) {
   const toneClass = tone ? ` discard-row-${tone}` : "";
   if (choice.resultingShanten === 0) {
@@ -918,16 +942,14 @@ function DiscardChoiceRow({ choice, tone }: { choice: DiscardChoice; tone?: "pic
         <TileGlyphSpan tile={choice.discard} />
         <span className="discard-arrow">→</span>
         <span className="tenpai-tag">Tenpai</span>
-        {choice.waits.map((w) => (
-          <TileGlyphSpan key={tileLabel(w)} tile={w} />
-        ))}
-        <span className="hint">
-          ({choice.waitsTotal} tile{choice.waitsTotal === 1 ? "" : "s"})
-        </span>
         <WinProbabilityBadge
           tenpaiProbability={choice.tenpaiProbability}
           winProbability={choice.winProbability}
         />
+        <DiscardTotalBadge total={choice.waitsTotal} label="to win" />
+        {choice.waits.map((w) => (
+          <TileGlyphSpan key={tileLabel(w)} tile={w} />
+        ))}
       </div>
     );
   }
@@ -943,6 +965,13 @@ function DiscardChoiceRow({ choice, tone }: { choice: DiscardChoice; tone?: "pic
           winProbability={choice.winProbability}
           modelled={choice.resultingShanten === 1}
         />
+        {choice.improvingDraws.length > 0 && (
+          <DiscardTotalBadge
+            total={choice.improvingDrawsTotal}
+            cleanTotal={choice.improvingDrawsTotalExcludingRedraw}
+            label="toward tenpai"
+          />
+        )}
       </div>
       {choice.improvingDraws.length > 0 ? (
         <div className="discard-efficiency-draws">
@@ -961,16 +990,6 @@ function DiscardChoiceRow({ choice, tone }: { choice: DiscardChoice; tone?: "pic
                 </span>
               );
             })}
-            <span
-              className="hint"
-              title="Second number excludes draws that only help via a different follow-up discard than the one just made"
-            >
-              (
-              {choice.improvingDrawsTotal === choice.improvingDrawsTotalExcludingRedraw
-                ? choice.improvingDrawsTotal
-                : `${choice.improvingDrawsTotal} or ${choice.improvingDrawsTotalExcludingRedraw}↺`}
-              )
-            </span>
           </div>
         </div>
       ) : (
@@ -3007,6 +3026,10 @@ function EndlessTrainer({
   const redoStackRef = useRef<EndlessHistoryEntry[]>([]);
   const [undoDepth, setUndoDepth] = useState(0);
   const [redoDepth, setRedoDepth] = useState(0);
+  // Sticky preference: while the hand is still far from tenpai the per-turn
+  // analysis is a dozen near-identical rows, so it collapses to just the best
+  // discards and the one you picked until the user asks for the rest.
+  const [showAllAnalysis, setShowAllAnalysis] = useState(false);
   const busyRef = useRef(false);
 
   const HAND_SIZE = MELDS_REQUIRED * 3 + 2; // 17
@@ -3169,6 +3192,28 @@ function EndlessTrainer({
   const avgWin = stats.handsWon > 0 ? (stats.turnsToWinTotal / stats.handsWon).toFixed(1) : "—";
   const lastMove = game ? game.lastMove : null;
 
+  // Once the hand is tenpai or one away the rows genuinely differ and all of
+  // them are worth reading; further out they're a dozen near-identical
+  // "Shanten N" lines, so show only the best discards plus the one picked.
+  const analysisCollapsible = lastMove != null && (lastMove.outcome.choices[0]?.resultingShanten ?? 0) >= 2;
+  const analysisRows = useMemo(() => {
+    if (!lastMove) return [];
+    const rows = lastMove.outcome.choices.map((choice) => {
+      const k = tileKey(choice.discard);
+      const tone: "picked" | "best" | undefined =
+        k === lastMove.pickedKey
+          ? lastMove.optimal
+            ? "best"
+            : "picked"
+          : lastMove.bestKeys.has(k)
+            ? "best"
+            : undefined;
+      return { choice, tone };
+    });
+    const collapse = (lastMove.outcome.choices[0]?.resultingShanten ?? 0) >= 2 && !showAllAnalysis;
+    return collapse ? rows.filter((r) => r.tone !== undefined) : rows;
+  }, [lastMove, showAllAnalysis]);
+
   return (
     <>
       <div className="panel-header">
@@ -3287,19 +3332,21 @@ function EndlessTrainer({
             )}
           </span>
           <div className="endless-analysis">
-            {lastMove.outcome.choices.map((c) => {
-              const k = tileKey(c.discard);
-              const tone =
-                k === lastMove.pickedKey
-                  ? lastMove.optimal
-                    ? "best"
-                    : "picked"
-                  : lastMove.bestKeys.has(k)
-                    ? "best"
-                    : undefined;
-              return <DiscardChoiceRow key={tileLabel(c.discard)} choice={c} tone={tone} />;
-            })}
+            {analysisRows.map(({ choice, tone }) => (
+              <DiscardChoiceRow key={tileLabel(choice.discard)} choice={choice} tone={tone} />
+            ))}
           </div>
+          {analysisCollapsible && (
+            <button
+              type="button"
+              className="endless-analysis-toggle"
+              onClick={() => setShowAllAnalysis((v) => !v)}
+            >
+              {showAllAnalysis
+                ? "Show only the best discards"
+                : `Show all ${lastMove.outcome.choices.length} discards`}
+            </button>
+          )}
         </div>
       )}
 

@@ -437,6 +437,18 @@ h1 {
   overflow-y: auto;
 }
 
+.endless-analysis-toggle {
+  align-self: flex-start;
+  margin-top: 0.35rem;
+  font-size: 0.78rem;
+  padding: 0.25rem 0.6rem;
+  background: none;
+  border: 1px solid var(--border-3);
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
 .discard-row-picked {
   border-left: 3px solid var(--danger-border-1);
   padding-left: 0.4rem;
@@ -786,6 +798,22 @@ h1 {
   font-weight: 500;
   font-size: 0.72rem;
   opacity: 0.75;
+}
+
+/* Headline "how many tiles is this discard playing for" count, sitting with the
+   shanten/probability badges rather than trailing the tile list. */
+.discard-total {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  border: 1px solid var(--border-3);
+  border-radius: 4px;
+  padding: 0.15rem 0.45rem;
+  white-space: nowrap;
+}
+
+.discard-total strong {
+  font-size: 0.85rem;
+  color: var(--text);
 }
 
 .discard-efficiency-draws {
@@ -2469,6 +2497,28 @@ button.scoring-pattern-row {
 
   .hand-tile-button {
     padding: 0.35rem;
+  }
+
+  /* Trainer hands are read as a hand, not tapped one-at-a-time out of a picker,
+     so the bigger touch sizing above would wrap 16-17 tiles onto four ragged
+     rows. Lay them out on the same 9-column grid as .suit-row instead: two even
+     rows, still comfortably tappable. */
+  .trainer-hand,
+  .trainer-discard-hand {
+    display: grid;
+    grid-template-columns: repeat(9, 1fr);
+    gap: 0.2rem;
+    justify-items: center;
+  }
+
+  .trainer-hand .tile-glyph.large {
+    font-size: 1.9rem;
+  }
+
+  .trainer-discard-tile {
+    width: 100%;
+    padding: 0.1rem 0;
+    justify-content: center;
   }
 
   .panel-header button {

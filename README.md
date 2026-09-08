@@ -228,9 +228,10 @@ The analysis accounts for your own discard pile *and* how much wall is left — 
 are gone, and the draw horizon shrinks as the wall runs down, so wait counts and probabilities
 tighten as the hand goes on rather than assuming a fresh, full wall. After every discard the full
 analysis of that turn is shown: which tile was best, how much win probability the pick gave up
-(or, too far from tenpai for that to separate them, whether it raised shanten), and the complete
-ranked list of every discard with the best ones flagged. Discards pile up below the hand, tinted
-by whether each was a best pick.
+(or, too far from tenpai for that to separate them, whether it raised shanten), and the ranked
+list of discards with the best ones flagged — collapsed to just those while the hand is still 2+
+shanten (the rows barely differ that far out), expandable to all of them. Discards pile up below
+the hand, tinted by whether each was a best pick.
 
 Completing a hand flashes a win summary; one tap deals the next. **Undo** / **Redo** step back
 and forward through the current hand — hand, wall, discard pile and every stat — as far as you
