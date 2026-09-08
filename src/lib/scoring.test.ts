@@ -1288,6 +1288,24 @@ describe("PATTERNS: 樓梯 (5 runs, consecutive starting ranks, any suit)", () =
     const result = scoreHand("123m234m345m456m111z22z", ctx());
     expect(tai(result, "staircase")).toBe(0);
   });
+
+  it("breaks down sorted by starting rank, not by declared-first-then-suit hand.melds order", () => {
+    // Declared 456b sits first in hand.melds, and the concealed melds are
+    // grouped by suit (m, then t, then b) - neither order matches the
+    // climb's own 3/4/5/6/7 sequence, so the breakdown must re-sort rather
+    // than reading hand.melds off directly.
+    const result = scoreHand("(456b)567m345t678t789b99m", ctx({ winningTile: { suit: "t", rank: 5 } }));
+    expect(tai(result, "staircase")).toBe(0); // subsumed by 五步高/全碟 below
+    const pattern = PATTERNS.find((p) => p.id === "rotating-staircase")!;
+    const rows = pattern.tiles!(result.hand, ctx({ winningTile: { suit: "t", rank: 5 } }));
+    expect(rows[0].map((group) => group.map((t) => `${t.rank}${t.suit}`).join(""))).toEqual([
+      "3t4t5t",
+      "4b5b6b",
+      "5m6m7m",
+      "6t7t8t",
+      "7b8b9b",
+    ]);
+  });
 });
 
 describe("PATTERNS: 五步高/全碟 (stricter 樓梯: same suit or a fixed rotation)", () => {

@@ -2884,7 +2884,13 @@ export const PATTERNS: TaiPattern[] = [
     // Additional bonus, same "stacks with everything" framing as 雙/全姊妹 -
     // doesn't exclude 平胡 even though every 樓梯 hand is also 平胡.
     score: (hand) => (hasStaircase(hand) ? 20 : 0),
-    tiles: (hand) => [hand.melds.map((m) => m.tiles)],
+    // Sorted by starting rank (same ordering hasStaircase itself checks
+    // against), not raw hand.melds order - that order reflects declared-
+    // melds-first-then-concealed-by-suit, which has nothing to do with the
+    // climb itself and can scatter the steps out of sequence (e.g. a
+    // declared 456b sorting before a concealed 345t just because declared
+    // melds come first).
+    tiles: (hand) => [[...hand.melds].sort((a, b) => Math.min(...a.tiles.map((t) => t.rank)) - Math.min(...b.tiles.map((t) => t.rank))).map((m) => m.tiles)],
   },
   {
     id: "rotating-staircase",
@@ -2895,7 +2901,8 @@ export const PATTERNS: TaiPattern[] = [
     // it subsumes.
     score: (hand) => (hasRotatingStaircase(hand) ? 40 : 0),
     excludes: ["staircase"],
-    tiles: (hand) => [hand.melds.map((m) => m.tiles)],
+    // Same starting-rank sort as 樓梯's own tiles() above - see its comment.
+    tiles: (hand) => [[...hand.melds].sort((a, b) => Math.min(...a.tiles.map((t) => t.rank)) - Math.min(...b.tiles.map((t) => t.rank))).map((m) => m.tiles)],
   },
   {
     id: "three-suit-same-run-open",
