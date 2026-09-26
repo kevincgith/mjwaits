@@ -4,13 +4,16 @@ import {
   clusterRows,
   concealednessScore,
   declarednessScore,
+  detailWindows,
   findRotatedOutlier,
   IMG_SIZE,
   isPairOnlyRow,
   isRowADeclared,
   looksLikeConcealedFragment,
   looksLikeDeclaredMelds,
+  mapWindowDetections,
   nonMaxSuppression,
+  regionsFromRows,
   resolveVerticalOverlap,
   ROW_PAD_X,
   rowToRegion,
@@ -787,6 +790,15 @@ describe("resolveVerticalOverlap", () => {
     expect(b2).toEqual(b);
   });
 
+  it("leaves side-by-side regions at the same height untouched - e.g. splitMixedRow's two halves of one row", () => {
+    // Same vertical span (one physical row, slightly tilted), separated
+    // horizontally - they don't actually overlap, so neither should be
+    // sliced into a horizontal strip.
+    const concealed = { x: 0.066, y: 0.5, w: 0.757, h: 0.295 };
+    const declared = { x: 0.848, y: 0.51, w: 0.071, h: 0.188 };
+    expect(resolveVerticalOverlap(declared, concealed)).toEqual([declared, concealed]);
+  });
+
   it("leaves x/w untouched - only y/h are ever trimmed", () => {
     const top = { x: 0.1, y: 0.3, w: 0.6, h: 0.3 };
     const bottom = { x: 0.2, y: 0.5, w: 0.4, h: 0.3 };
@@ -817,5 +829,75 @@ describe("splitMixedRow", () => {
 
   it("handles an empty input", () => {
     expect(splitMixedRow([])).toBeNull();
+  });
+});
+
+describe("detailWindows", () => {
+  it("splits a wide 16:9 frame into just left/right halves - splitting its height too wouldn't enlarge the tiles any further", () => {
+    expect(detailWindows({ naturalWidth: 1188, naturalHeight: 668 })).toEqual([
+      { x: 0, y: 0, w: 713, h: 668 },
+      { x: 475, y: 0, w: 713, h: 668 },
+    ]);
+  });
+
+  it("splits a tall 9:16 frame into just top/bottom halves", () => {
+    expect(detailWindows({ naturalWidth: 668, naturalHeight: 1188 })).toEqual([
+      { x: 0, y: 0, w: 668, h: 713 },
+      { x: 0, y: 475, w: 668, h: 713 },
+    ]);
+  });
+
+  it("uses the full overlapping 2x2 grid for a near-square 4:3 phone photo, where splitting one axis alone barely helps", () => {
+    const windows = detailWindows({ naturalWidth: 4032, naturalHeight: 3024 });
+    expect(windows).toHaveLength(4);
+    expect(windows).toContainEqual({ x: 0, y: 0, w: 2419, h: 1814 });
+    expect(windows).toContainEqual({ x: 1613, y: 1210, w: 2419, h: 1814 });
+  });
+});
+
+describe("mapWindowDetections", () => {
+  // 1280x640: the whole photo letterboxes at scale 0.5 with 160px of
+  // padding top and bottom. The window is its right 60% (768x640), which
+  // letterboxes at scale 640/768 with ~53.3px of padding top and bottom.
+  const image = { naturalWidth: 1280, naturalHeight: 640 };
+  const win = { x: 512, y: 0, w: 768, h: 640 };
+
+  it("maps a box from the window's letterboxed frame into the whole photo's letterboxed frame", () => {
+    const [mapped] = mapWindowDetections([detection({ box: [100, 200, 140, 260] })], win, image);
+    // x: window px 100 -> source 512 + 100 / (640/768) = 632 -> whole frame 632 * 0.5 = 316
+    // y: window px 200 -> source (200 - 53.33) / (640/768) = 176 -> whole frame 160 + 176 * 0.5 = 248
+    expect(mapped.box[0]).toBeCloseTo(316);
+    expect(mapped.box[1]).toBeCloseTo(248);
+    expect(mapped.box[2]).toBeCloseTo(0.5 * (512 + 140 * 1.2));
+    expect(mapped.box[3]).toBeCloseTo(160 + 0.5 * ((260 - 160 / 3) * 1.2));
+  });
+
+  it("drops a tile cut off at the window's inner edge, but keeps one touching an edge that's also the photo's own border", () => {
+    const cutAtInnerLeft = detection({ box: [0, 200, 30, 260] }); // window's left edge is inside the photo
+    const atPhotoRight = detection({ box: [600, 200, 640, 260] }); // window's right edge IS the photo's right edge
+    expect(mapWindowDetections([cutAtInnerLeft, atPhotoRight], win, image)).toHaveLength(1);
+    expect(mapWindowDetections([cutAtInnerLeft], win, image)).toEqual([]);
+  });
+});
+
+describe("regionsFromRows", () => {
+  it("keeps a split row's two halves whole instead of slicing them into horizontal strips, even when the row is tilted", () => {
+    // One tilted row (IMG_SIZE square image, so box px / 640 = fraction):
+    // real tiles on the left sit lower, the bonus tile on the right sits
+    // higher - the two halves share a vertical span but sit side by side.
+    const image = { naturalWidth: IMG_SIZE, naturalHeight: IMG_SIZE };
+    const row = [
+      detection({ tile: { suit: "m", rank: 1 }, box: [40, 420, 80, 500] }),
+      detection({ tile: { suit: "m", rank: 2 }, box: [80, 415, 120, 495] }),
+      detection({ tile: { suit: "m", rank: 3 }, box: [120, 410, 160, 490] }),
+      detection({ tile: null, className: "3f", box: [500, 380, 540, 460] }),
+    ];
+    const regions = regionsFromRows([row], image)!;
+    const { declared, concealed } = regions;
+    // Each region still fully covers its own tiles vertically.
+    expect(declared!.y).toBeLessThanOrEqual(380 / IMG_SIZE);
+    expect(declared!.y + declared!.h).toBeGreaterThanOrEqual(460 / IMG_SIZE);
+    expect(concealed.y).toBeLessThanOrEqual(410 / IMG_SIZE);
+    expect(concealed.y + concealed.h).toBeGreaterThanOrEqual(500 / IMG_SIZE);
   });
 });

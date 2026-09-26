@@ -985,27 +985,129 @@ export function rowToRegion(
   return { x: fx1, y: fy1, w: fx2 - fx1, h: fy2 - fy1 };
 }
 
-function rectsOverlapVertically(a: RowRegion, b: RowRegion): boolean {
-  return a.y < b.y + b.h && b.y < a.y + a.h;
+function rectsOverlap(a: RowRegion, b: RowRegion): boolean {
+  return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 }
 
-// If `a` and `b` end up overlapping vertically after padding - most
-// likely because the padded rows sit close enough together that
+// If `a` and `b` end up overlapping after padding - most likely because
+// the padded rows sit close enough together that
 // ROW_PAD_Y/ROTATED_TILE_ROW_PAD_Y on each side eats further into their
 // actual gap than the gap itself allows - trims both back to meet at the
 // midpoint of their combined span, rather than let the whole autofit
 // result get rejected outright by the caller's own overlap check (see
 // fittedRegionsFrom in App.tsx). Whichever region sits on top gets its
 // bottom edge trimmed up to the midpoint; the other's top edge trimmed
-// down to meet it. A no-op when they don't actually overlap.
+// down to meet it. A no-op when they don't actually overlap - checked in
+// BOTH axes, not just vertically: splitMixedRow's two halves come from
+// the same physical row, so they always share a vertical span while
+// sitting side by side with a horizontal gap between them. Trimming those
+// on vertical overlap alone sliced each half into a horizontal strip,
+// cutting the tiles in half.
 // Exported for direct unit testing.
 export function resolveVerticalOverlap(a: RowRegion, b: RowRegion): [RowRegion, RowRegion] {
-  if (!rectsOverlapVertically(a, b)) return [a, b];
+  if (!rectsOverlap(a, b)) return [a, b];
   const [top, bottom] = a.y <= b.y ? [a, b] : [b, a];
   const midpoint = (top.y + top.h + bottom.y) / 2;
   const trimmedTop: RowRegion = { ...top, h: midpoint - top.y };
   const trimmedBottom: RowRegion = { ...bottom, y: midpoint, h: bottom.y + bottom.h - midpoint };
   return a.y <= b.y ? [trimmedTop, trimmedBottom] : [trimmedBottom, trimmedTop];
+}
+
+// A rectangle of the source photo, in whole source-image pixels.
+export interface ImageWindow {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+// Each detail window's size as a fraction of the photo, in both
+// dimensions (along whichever axes detailWindows splits). Two windows
+// along an axis at this size overlap by 20% of the photo in the middle -
+// far wider than any one tile, so every tile sits
+// wholly inside at least one window even after mapWindowDetections drops
+// the ones cut off at a window's inner edge. Letterboxing a 60% window
+// instead of the whole photo makes every tile up to ~1.7x larger in the
+// model's input frame.
+const DETAIL_WINDOW_FRACTION = 0.6;
+// How close (in the window's own letterboxed frame, i.e. model-input
+// pixels) a detection's box may come to one of the window's INNER edges
+// before it's treated as a tile cut off by that edge rather than a whole
+// one. The overlapping neighbor window sees that tile whole instead.
+const WINDOW_EDGE_MARGIN = 3;
+
+// The overlapping windows detectRowRegions' detail pass runs detection on
+// - see DETAIL_WINDOW_FRACTION. Each axis is split into 2 windows only if
+// that actually enlarges the tiles: a wide photo (e.g. a 16:9 video frame)
+// is letterboxed by its width alone, so splitting its height too would
+// double the model runs for no gain - left/right halves alone reach the
+// same scale. A near-square photo (e.g. a 4:3 phone shot) needs both
+// axes split for any real gain, so it gets the full 2x2 grid. Rounded to
+// whole pixels so the cropped canvas (see cropToWindow) is exactly the
+// window's size and mapWindowDetections' coordinate math lines up with it
+// exactly.
+// Exported for direct unit testing.
+export function detailWindows(image: ImageSize): ImageWindow[] {
+  const W = image.naturalWidth;
+  const H = image.naturalHeight;
+  const splitW = Math.round(W * DETAIL_WINDOW_FRACTION);
+  const splitH = Math.round(H * DETAIL_WINDOW_FRACTION);
+  const scaleOf = (w: number, h: number) => Math.min(IMG_SIZE / w, IMG_SIZE / h);
+  // Fewest windows first, so a tie on scale keeps the cheaper layout.
+  const layouts = [
+    { splitX: true, splitY: false },
+    { splitX: false, splitY: true },
+    { splitX: true, splitY: true },
+  ];
+  const best = layouts.reduce((a, b) => {
+    const scaleA = scaleOf(a.splitX ? splitW : W, a.splitY ? splitH : H);
+    const scaleB = scaleOf(b.splitX ? splitW : W, b.splitY ? splitH : H);
+    return scaleB > scaleA * 1.001 ? b : a;
+  });
+  const w = best.splitX ? splitW : W;
+  const h = best.splitY ? splitH : H;
+  const xs = best.splitX ? [0, W - w] : [0];
+  const ys = best.splitY ? [0, H - h] : [0];
+  return ys.flatMap((y) => xs.map((x) => ({ x, y, w, h })));
+}
+
+// Maps detections from one detail window's own letterboxed frame into the
+// WHOLE photo's letterboxed frame (the frame every Detection in
+// detectRowRegions is otherwise in, and that rowToRegion expects),
+// dropping any whose box touches one of the window's inner edges (edges
+// that aren't also the photo's own border) - that's a tile cut off by the
+// window, whose truncated box wouldn't reliably NMS away against the
+// whole-tile box the neighboring window sees for it.
+// Exported for direct unit testing.
+export function mapWindowDetections(detections: Detection[], win: ImageWindow, image: ImageSize): Detection[] {
+  const W = image.naturalWidth;
+  const H = image.naturalHeight;
+  const winScale = Math.min(IMG_SIZE / win.w, IMG_SIZE / win.h);
+  const winPadX = (IMG_SIZE - win.w * winScale) / 2;
+  const winPadY = (IMG_SIZE - win.h * winScale) / 2;
+  const scale = Math.min(IMG_SIZE / W, IMG_SIZE / H);
+  const padX = (IMG_SIZE - W * scale) / 2;
+  const padY = (IMG_SIZE - H * scale) / 2;
+  const innerLeft = win.x > 0 ? winPadX + WINDOW_EDGE_MARGIN : -Infinity;
+  const innerTop = win.y > 0 ? winPadY + WINDOW_EDGE_MARGIN : -Infinity;
+  const innerRight = win.x + win.w < W ? IMG_SIZE - winPadX - WINDOW_EDGE_MARGIN : Infinity;
+  const innerBottom = win.y + win.h < H ? IMG_SIZE - winPadY - WINDOW_EDGE_MARGIN : Infinity;
+  return detections
+    .filter(({ box: [x1, y1, x2, y2] }) => x1 > innerLeft && y1 > innerTop && x2 < innerRight && y2 < innerBottom)
+    .map((d) => {
+      const [x1, y1, x2, y2] = d.box;
+      const toX = (bx: number) => padX + (win.x + (bx - winPadX) / winScale) * scale;
+      const toY = (by: number) => padY + (win.y + (by - winPadY) / winScale) * scale;
+      return { ...d, box: [toX(x1), toY(y1), toX(x2), toY(y2)] };
+    });
+}
+
+function cropToWindow(image: HTMLImageElement, win: ImageWindow): HTMLCanvasElement {
+  const canvas = document.createElement("canvas");
+  canvas.width = win.w;
+  canvas.height = win.h;
+  canvas.getContext("2d")!.drawImage(image, win.x, win.y, win.w, win.h, 0, 0, win.w, win.h);
+  return canvas;
 }
 
 // Runs detection on the WHOLE uncropped photo (unlike detectTiles' usual
@@ -1017,11 +1119,39 @@ export function resolveVerticalOverlap(a: RowRegion, b: RowRegion): [RowRegion, 
 // into exactly 2 confident regions - the caller falls back to fixed
 // defaults either way, so this never needs to be "sure," just right often
 // enough to help.
+//
+// Shrinking the whole photo to IMG_SIZE can leave tiles too small for the
+// model to find at all - a row set further back from the camera (often
+// the declared melds, in a photo shot from the player's own seat) comes
+// out noticeably smaller and more foreshortened than the row nearest the
+// lens, and can drop out of the detections entirely while the near row
+// is found fine. So when the whole-photo pass finds fewer than 2 rows,
+// this re-runs detection on an overlapping grid of detail windows (see
+// detailWindows), where every tile is larger, and merges those detections
+// in - keeping the merged result only if it actually finds more rows.
+// The extra passes only ever run on that fallback path, so a photo the
+// first pass already handles costs nothing more.
 export async function detectRowRegions(image: HTMLImageElement): Promise<DetectedRegions | null> {
-  const box = letterbox(image);
-  const { detections } = await detectTiles(box);
-  const rows = selectHandRows(clusterRows(detections));
+  const { detections } = await detectTiles(letterbox(image));
+  let rows = selectHandRows(clusterRows(detections));
+  if (rows.length < 2) {
+    const detailed = [...detections];
+    for (const win of detailWindows(image)) {
+      const { detections: windowDetections } = await detectTiles(letterbox(cropToWindow(image, win)));
+      detailed.push(...mapWindowDetections(windowDetections, win, image));
+    }
+    const detailedRows = selectHandRows(clusterRows(nonMaxSuppression(detailed)));
+    if (detailedRows.length > rows.length) rows = detailedRows;
+  }
+  return regionsFromRows(rows, image);
+}
 
+// The pure second half of detectRowRegions - turns selectHandRows' chosen
+// rows into padded, labelled regions, or null if there's nothing usable.
+// Split out so the whole post-detection pipeline can be unit tested
+// against recorded detections, without a real model or canvas.
+// Exported for direct unit testing.
+export function regionsFromRows(rows: Detection[][], image: ImageSize): DetectedRegions | null {
   if (rows.length === 2) {
     // Which physical row is Declared vs Concealed - see isRowADeclared.
     const [rowA, rowB] = rows; // rowA = top, rowB = bottom (clusterRows sorts top-to-bottom)
