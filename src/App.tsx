@@ -5769,7 +5769,7 @@ function dealWinds(
 
 const SEATING_STEPS = 9; // 0..8
 const SEATING_CAPTIONS_HELP = [
-  "Pick the provisional East, then press Next. Long-press a player to rename them.",
+  "Tap: provisional East · Double-tap: swap seats · Long-press: rename",
   "The provisional East makes the first throw.",
   "The first throw's total picks the real East seat.",
   "The player now at the real East seat makes the second throw.",
@@ -5807,18 +5807,25 @@ function windFlyTransform(slot: number, posIdx: number): string {
   return `translate(${tokenX - tileX}px, ${tokenY - tileY}px) scale(0.62)`;
 }
 
-// One player on the seating table. A tap picks them as the provisional East
-// (only while `pickable`, i.e. step 0); a long-press - or right-click / the
-// context-menu key on desktop - opens the rename picker at any step. Never
-// `disabled`, since a disabled button wouldn't receive the long-press.
+// Two taps on the same player within this window count as a double-tap
+// (select for a seat swap) rather than two single taps.
+const DOUBLE_TAP_MS = 250;
+
+// One player on the seating table. While `interactive` (step 0 only) its
+// taps go to `onTap`, which SeatingPanel sorts into single-tap (provisional
+// East / complete a swap) vs double-tap (select for a swap). A long-press -
+// or right-click / the context-menu key on desktop - opens the rename picker
+// at any step. Never `disabled`, since a disabled button wouldn't receive
+// the long-press.
 function SeatToken({
   name,
   colorKey,
   pos,
   active,
   eastMark,
-  pickable,
-  onPick,
+  interactive,
+  swapSelected,
+  onTap,
   onRename,
 }: {
   name: string;
@@ -5826,16 +5833,18 @@ function SeatToken({
   pos: number;
   active: boolean;
   eastMark: "real" | "provisional" | null;
-  pickable: boolean;
-  onPick: () => void;
+  interactive: boolean;
+  swapSelected: boolean;
+  onTap: () => void;
   onRename: () => void;
 }) {
-  const press = useTapAndLongPress(pickable ? onPick : NOOP, onRename);
+  const press = useTapAndLongPress(interactive ? onTap : NOOP, onRename);
   const classes = [
     "seat-token",
     `seat-token-${colorKey}`,
     active && "is-active",
-    pickable && "is-pickable",
+    interactive && "is-pickable",
+    swapSelected && "is-swap-selected",
     name.length > 1 && "is-long",
   ]
     .filter(Boolean)
@@ -5846,9 +5855,11 @@ function SeatToken({
       className={classes}
       style={SEAT_ANCHORS[pos]}
       aria-label={
-        pickable
-          ? `Make ${name} the provisional East (long-press to rename)`
-          : `Player ${name} (long-press to rename)`
+        swapSelected
+          ? `${name}, selected to swap: tap another player to swap seats, or tap ${name} again to cancel`
+          : interactive
+            ? `${name}: tap for provisional East, double-tap to swap seats, long-press to rename`
+            : `Player ${name} (long-press to rename)`
       }
       onContextMenu={(e) => {
         e.preventDefault();
@@ -5966,18 +5977,91 @@ function SeatRenamePicker({
   );
 }
 
+// Positions vs players: the ceremony works entirely in table *positions*
+// (0..3, counter-clockwise) - provEast, realEast, firstPerson, the dealt/finalPos
+// arrays are all positional. `seatOrder[pos]` says which player sits there
+// (players are indexed by their default name A..D, which also keys their
+// colour and `names`), so swapping two players just swaps two seatOrder
+// entries and none of the ceremony maths changes.
 function SeatingPanel({
   names,
+  seatOrder,
   onRename,
+  onSwap,
 }: {
   names: readonly string[];
+  seatOrder: readonly number[];
   onRename: (player: number, name: string) => void;
+  onSwap: (posA: number, posB: number) => void;
 }) {
   const [order, setOrder] = useState<number[]>(newShuffle);
-  // Which player's rename picker is open (index), if any.
+  // Which player's rename picker is open (player index), if any.
   const [renaming, setRenaming] = useState<number | null>(null);
-  const [provEast, setProvEast] = useState<number | null>(null);
   const [step, setStep] = useState(0);
+
+  // provEast (a position) and swapFrom (the position selected for a swap) are
+  // each mirrored in a ref, same idea as ScoringPanel's handRef: the tap
+  // handlers below commit from a timer (see onTokenTap), so they read the
+  // refs rather than a possibly-stale render's state.
+  const [provEast, setProvEastState] = useState<number | null>(null);
+  const provEastRef = useRef<number | null>(null);
+  const setProvEast = (pos: number | null) => {
+    provEastRef.current = pos;
+    setProvEastState(pos);
+  };
+  const [swapFrom, setSwapFromState] = useState<number | null>(null);
+  const swapFromRef = useRef<number | null>(null);
+  const setSwapFrom = (pos: number | null) => {
+    swapFromRef.current = pos;
+    setSwapFromState(pos);
+  };
+
+  // Single vs double tap. A tap waits DOUBLE_TAP_MS for a second tap on the
+  // same player: if one comes it's a double-tap (select for swap), otherwise
+  // it commits as a single tap (provisional East, or finish a pending swap).
+  // A tap on a different player drops the pending one - last tap wins.
+  const pendingTap = useRef<{ pos: number; timer: number } | null>(null);
+  const cancelPendingTap = () => {
+    if (pendingTap.current) window.clearTimeout(pendingTap.current.timer);
+    pendingTap.current = null;
+  };
+  useEffect(() => cancelPendingTap, []);
+
+  const swapSeats = (a: number, b: number) => {
+    onSwap(a, b);
+    // The provisional East is a person, so it moves with them.
+    const pe = provEastRef.current;
+    if (pe === a) setProvEast(b);
+    else if (pe === b) setProvEast(a);
+  };
+  const commitSingleTap = (pos: number) => {
+    const from = swapFromRef.current;
+    if (from === null) setProvEast(pos);
+    else if (from === pos) setSwapFrom(null); // tapping the selected player again cancels
+    else {
+      swapSeats(from, pos);
+      setSwapFrom(null);
+    }
+  };
+  const onTokenTap = (pos: number) => {
+    const pending = pendingTap.current;
+    cancelPendingTap();
+    if (pending && pending.pos === pos) {
+      // Double-tap: select this player for a swap (or deselect if already selected).
+      setSwapFrom(swapFromRef.current === pos ? null : pos);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      pendingTap.current = null;
+      commitSingleTap(pos);
+    }, DOUBLE_TAP_MS);
+    pendingTap.current = { pos, timer };
+  };
+  const openRename = (player: number) => {
+    cancelPendingTap();
+    setRenaming(player);
+  };
+  const nameAt = (pos: number) => names[seatOrder[pos]];
 
   // The two throws reuse the shared dice-roll hook (value-cycling animation,
   // same as Dice & wall / Exchange tiles).
@@ -6001,11 +6085,17 @@ function SeatingPanel({
   const dealFromTwoPin = sum2 % 2 === 0;
 
   const reset = () => {
+    cancelPendingTap();
     setOrder(newShuffle());
     setProvEast(null);
+    setSwapFrom(null);
     setStep(0);
   };
   const advance = () => {
+    // A tap still waiting on its double-tap window must not land after the
+    // ceremony has moved on (e.g. change the provisional East mid-throw).
+    cancelPendingTap();
+    setSwapFrom(null);
     const ns = step + 1;
     if (ns === 1) throw1.roll();
     else if (ns === 3) throw2.roll();
@@ -6014,7 +6104,8 @@ function SeatingPanel({
   const canNext =
     !rollingNow && step < SEATING_STEPS - 1 && !(step === 0 && provEast === null);
 
-  // Which position each player token occupies right now.
+  // Where the token that started at position `p` is drawn right now (its
+  // final seat once everyone has re-seated at step 8).
   const tokenPos = (p: number) => (step >= 8 && finalPos ? finalPos[p] : p);
   // Which slot each tile occupies right now.
   const tileSlot = (t: Tile) => (step < 5 ? revealed.indexOf(t) : edgedRow.indexOf(t));
@@ -6057,16 +6148,17 @@ function SeatingPanel({
     step === 0 ? null : rollingNow ? "–" : diceFaces!.reduce((a, b) => a + b, 0);
 
   const caption = (() => {
-    const L = names;
+    const L = nameAt;
     switch (step) {
       case 0:
+        if (swapFrom !== null) return `${L(swapFrom)} selected — tap another player to swap.`;
         return provEast === null
           ? "Pick the provisional East."
-          : `Provisional East: ${L[provEast]}.`;
+          : `Provisional East: ${L(provEast)}.`;
       case 1:
         return rollingNow ? "First throw…" : `First throw: ${sum1}.`;
       case 2:
-        return `Count ${sum1} from ${L[provEast!]} → real East seat: ${L[realEast!]}.`;
+        return `Count ${sum1} from ${L(provEast!)} → real East seat: ${L(realEast!)}.`;
       case 3:
         return rollingNow
           ? "Second throw…"
@@ -6076,7 +6168,7 @@ function SeatingPanel({
       case 5:
         return "一筒 / 二筒 to the edges; winds keep their order.";
       case 6:
-        return `Count ${sum2} from ${L[realEast!]} → first pick: ${L[firstPerson!]}.`;
+        return `Count ${sum2} from ${L(realEast!)} → first pick: ${L(firstPerson!)}.`;
       case 7:
         return `Deal the winds from the ${dealFromTwoPin ? "二筒" : "一筒"} edge.`;
       case 8:
@@ -6098,21 +6190,29 @@ function SeatingPanel({
 
       <div className="seat-stage">
         <div className="seat-table">
-          {DEFAULT_SEAT_NAMES.map((defaultName, p) => (
-            <SeatToken
-              key={defaultName}
-              name={names[p]}
-              colorKey={defaultName.toLowerCase()}
-              pos={tokenPos(p)}
-              active={highlighted === p}
-              eastMark={eastAt === p ? (step < 2 ? "provisional" : "real") : null}
-              // Not while a rename is open: a long-press that opened it via
-              // the context-menu path mustn't also land as a tap on release.
-              pickable={step === 0 && renaming === null}
-              onPick={() => setProvEast(p)}
-              onRename={() => setRenaming(p)}
-            />
-          ))}
+          {/* Rendered in fixed player order (keyed by player), with each one's
+              position looked up - so a swap just changes two tokens' left/top
+              and they slide, rather than React reordering DOM nodes (which
+              would drop the CSS transition and make them jump). */}
+          {DEFAULT_SEAT_NAMES.map((defaultName, player) => {
+            const seat = seatOrder.indexOf(player);
+            return (
+              <SeatToken
+                key={defaultName}
+                name={names[player]}
+                colorKey={defaultName.toLowerCase()}
+                pos={tokenPos(seat)}
+                active={highlighted === seat}
+                eastMark={eastAt === seat ? (step < 2 ? "provisional" : "real") : null}
+                // Not while a rename is open: a long-press that opened it via
+                // the context-menu path mustn't also land as a tap on release.
+                interactive={step === 0 && renaming === null}
+                swapSelected={step === 0 && swapFrom === seat}
+                onTap={() => onTokenTap(seat)}
+                onRename={() => openRename(player)}
+              />
+            );
+          })}
         </div>
 
         <div className="seat-tile-row">
@@ -6176,10 +6276,14 @@ function SeatingPanel({
 
 function DiceTab({
   seatNames,
+  seatOrder,
   onRenameSeat,
+  onSwapSeats,
 }: {
   seatNames: readonly string[];
+  seatOrder: readonly number[];
   onRenameSeat: (player: number, name: string) => void;
+  onSwapSeats: (posA: number, posB: number) => void;
 }) {
   const [sub, setSub] = useState<"wall" | "exchange" | "seating">("wall");
   return (
@@ -6212,7 +6316,14 @@ function DiceTab({
       </div>
       {sub === "wall" && <DicePanel />}
       {sub === "exchange" && <ExchangePanel />}
-      {sub === "seating" && <SeatingPanel names={seatNames} onRename={onRenameSeat} />}
+      {sub === "seating" && (
+        <SeatingPanel
+          names={seatNames}
+          seatOrder={seatOrder}
+          onRename={onRenameSeat}
+          onSwap={onSwapSeats}
+        />
+      )}
     </section>
   );
 }
@@ -6233,6 +6344,12 @@ function App() {
   const [seatNames, setSeatNames] = useState<readonly string[]>(DEFAULT_SEAT_NAMES);
   const renameSeat = (player: number, name: string) =>
     setSeatNames((prev) => prev.map((n, i) => (i === player ? name : n)));
+  // Who sits at each table position (seatOrder[pos] = player index), changed
+  // by double-tap-then-tap swaps on the Seating tab. Kept here with the names
+  // so a rearranged table also survives tab switches and "Start over".
+  const [seatOrder, setSeatOrder] = useState<readonly number[]>([0, 1, 2, 3]);
+  const swapSeats = (a: number, b: number) =>
+    setSeatOrder((prev) => prev.map((player, pos) => (pos === a ? prev[b] : pos === b ? prev[a] : player)));
 
   return (
     <div className="page">
@@ -6283,7 +6400,14 @@ function App() {
           setEndlessStats={setEndlessTrainerStats}
         />
       )}
-      {mode === "dice" && <DiceTab seatNames={seatNames} onRenameSeat={renameSeat} />}
+      {mode === "dice" && (
+        <DiceTab
+          seatNames={seatNames}
+          seatOrder={seatOrder}
+          onRenameSeat={renameSeat}
+          onSwapSeats={swapSeats}
+        />
+      )}
       <footer className="build-version">v{__BUILD_TIME__}</footer>
     </div>
   );
