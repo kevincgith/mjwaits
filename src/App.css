@@ -2456,7 +2456,7 @@ button.scoring-pattern-row {
 .seat-token {
   position: absolute;
   transform: translate(-50%, -50%);
-  transition: left 0.45s ease, top 0.45s ease, box-shadow 0.2s ease;
+  transition: left 0.45s ease, top 0.45s ease, box-shadow 0.2s ease, transform 0.15s ease;
   width: 34px;
   height: 34px;
   display: flex;
@@ -2495,6 +2495,14 @@ button.scoring-pattern-row {
 }
 .seat-token.is-active {
   box-shadow: 0 0 0 4px var(--accent);
+}
+/* Double-tapped, waiting for a second player to swap seats with: lifted and
+   ringed with a dashed outline so it reads differently from .is-active. */
+.seat-token.is-swap-selected {
+  transform: translate(-50%, -50%) scale(1.15);
+  outline: 2px dashed var(--accent);
+  outline-offset: 3px;
+  z-index: 2;
 }
 @media (hover: hover) and (pointer: fine) {
   .seat-token.is-pickable:hover {
