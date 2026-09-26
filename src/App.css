@@ -2471,8 +2471,15 @@ button.scoring-pattern-row {
   opacity: 1;
   cursor: default;
 }
-.seat-token:not(:disabled) {
+/* Tokens are never disabled (they always take a long-press to rename), so
+   "tappable" is its own class: only at step 0, when a tap picks the East. */
+.seat-token.is-pickable {
   cursor: pointer;
+}
+/* Two-letter initials (AA..ZZ) have to fit the same 34px circle. */
+.seat-token.is-long {
+  font-size: 0.78rem;
+  letter-spacing: -0.02em;
 }
 .seat-token.seat-token-a {
   background: var(--accent-bg);
@@ -2490,7 +2497,7 @@ button.scoring-pattern-row {
   box-shadow: 0 0 0 4px var(--accent);
 }
 @media (hover: hover) and (pointer: fine) {
-  .seat-token:not(:disabled):hover {
+  .seat-token.is-pickable:hover {
     box-shadow: 0 0 0 3px var(--accent-border-light);
   }
 }
@@ -2512,6 +2519,123 @@ button.scoring-pattern-row {
 }
 .seat-token-east.is-provisional {
   background: var(--text-muted);
+}
+
+/* Rename picker: a modal card (styled after .correction-panel) with a 7-wide
+   A-Z grid. Fixed + high z-index so it sits over the dealt wind tiles. */
+.seat-rename-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.35);
+}
+.seat-rename {
+  width: min(340px, 100%);
+  padding: 0.85rem;
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.25);
+  text-align: center;
+}
+.seat-rename:focus {
+  outline: none;
+}
+.seat-rename-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-weight: 700;
+  color: var(--text-strong);
+}
+.seat-rename-close {
+  border: none;
+  background: none;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--text-tertiary);
+  padding: 0.15rem 0.4rem;
+}
+.seat-rename-preview {
+  display: flex;
+  justify-content: center;
+  gap: 0.4rem;
+  margin: 0.6rem 0 0.3rem;
+}
+.seat-rename-slot {
+  width: 2.2rem;
+  height: 2.6rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--border);
+  border-radius: 6px;
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--text-strong);
+}
+/* The slot the next tap will fill. */
+.seat-rename-slot.is-current {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+}
+.seat-rename-prompt {
+  margin: 0 0 0.55rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+.seat-rename-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 5px;
+}
+.seat-rename-letter {
+  aspect-ratio: 1;
+  min-height: 36px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-sunken);
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-strong);
+  cursor: pointer;
+}
+.seat-rename-letter:disabled {
+  opacity: 0.3;
+  cursor: default;
+  text-decoration: line-through;
+}
+.seat-rename-letter:not(:disabled):active {
+  background: var(--accent-bg);
+  border-color: var(--accent);
+}
+@media (hover: hover) and (pointer: fine) {
+  .seat-rename-letter:not(:disabled):hover {
+    background: var(--accent-bg);
+    border-color: var(--accent);
+  }
+}
+.seat-rename-actions {
+  display: flex;
+  justify-content: center;
+  min-height: 1.7rem;
+  margin-top: 0.55rem;
+}
+.seat-rename-actions button {
+  border: none;
+  background: none;
+  padding: 0.2rem 0.4rem;
+  font-size: 0.85rem;
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
 }
 
 .seat-tile-row {

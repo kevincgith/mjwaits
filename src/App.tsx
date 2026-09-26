@@ -5702,7 +5702,12 @@ function ExchangePanel() {
 // order (A -> B -> C -> D -> A). "Count n from player x" lands on player
 // (x + n - 1) mod 4, so n = 1,5,9,13,17 comes back to the roller.
 
-const SEAT_LABELS = ["A", "B", "C", "D"] as const;
+// Default player names. Any player can be renamed to two-letter initials
+// (AA..ZZ) by long-pressing their token - see SeatRenamePicker. The default
+// also keys the token's colour (seat-token-a..d), so colours follow the
+// player, not whatever name they've chosen.
+const DEFAULT_SEAT_NAMES = ["A", "B", "C", "D"] as const;
+const ALPHABET = Array.from({ length: 26 }, (_, i) => String.fromCharCode(65 + i));
 
 // The six ceremony tiles: 東 南 西 北 + 一筒 (odd) 二筒 (even).
 const CEREMONY_TILES: Tile[] = [
@@ -5764,7 +5769,7 @@ function dealWinds(
 
 const SEATING_STEPS = 9; // 0..8
 const SEATING_CAPTIONS_HELP = [
-  "Pick the provisional East, then press Next.",
+  "Pick the provisional East, then press Next. Long-press a player to rename them.",
   "The provisional East makes the first throw.",
   "The first throw's total picks the real East seat.",
   "The player now at the real East seat makes the second throw.",
@@ -5802,8 +5807,175 @@ function windFlyTransform(slot: number, posIdx: number): string {
   return `translate(${tokenX - tileX}px, ${tokenY - tileY}px) scale(0.62)`;
 }
 
-function SeatingPanel() {
+// One player on the seating table. A tap picks them as the provisional East
+// (only while `pickable`, i.e. step 0); a long-press - or right-click / the
+// context-menu key on desktop - opens the rename picker at any step. Never
+// `disabled`, since a disabled button wouldn't receive the long-press.
+function SeatToken({
+  name,
+  colorKey,
+  pos,
+  active,
+  eastMark,
+  pickable,
+  onPick,
+  onRename,
+}: {
+  name: string;
+  colorKey: string;
+  pos: number;
+  active: boolean;
+  eastMark: "real" | "provisional" | null;
+  pickable: boolean;
+  onPick: () => void;
+  onRename: () => void;
+}) {
+  const press = useTapAndLongPress(pickable ? onPick : NOOP, onRename);
+  const classes = [
+    "seat-token",
+    `seat-token-${colorKey}`,
+    active && "is-active",
+    pickable && "is-pickable",
+    name.length > 1 && "is-long",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return (
+    <button
+      type="button"
+      className={classes}
+      style={SEAT_ANCHORS[pos]}
+      aria-label={
+        pickable
+          ? `Make ${name} the provisional East (long-press to rename)`
+          : `Player ${name} (long-press to rename)`
+      }
+      onContextMenu={(e) => {
+        e.preventDefault();
+        onRename();
+      }}
+      {...press}
+    >
+      <span className="seat-token-label">{name}</span>
+      {eastMark && (
+        <span className={`seat-token-east${eastMark === "provisional" ? " is-provisional" : ""}`}>
+          東
+        </span>
+      )}
+    </button>
+  );
+}
+
+// Modal letter picker for a player's initials - tap a first letter, then a
+// second, giving AA..ZZ with no typing. At the second step any combination
+// another player already uses is disabled, so the four names stay distinct
+// (the captions refer to players by name). Escape, ✕ or tapping outside
+// cancels; Back re-picks the first letter; "Reset to A" restores the default.
+function SeatRenamePicker({
+  currentName,
+  defaultName,
+  takenNames,
+  onPick,
+  onClose,
+}: {
+  currentName: string;
+  defaultName: string;
+  takenNames: readonly string[];
+  onPick: (name: string) => void;
+  onClose: () => void;
+}) {
+  const [first, setFirst] = useState<string | null>(null);
+  const titleId = useId();
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    cardRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      className="seat-rename-backdrop"
+      onClick={(e) => {
+        // Only a click on the backdrop itself - clicks inside the card bubble here too.
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div
+        ref={cardRef}
+        className="seat-rename"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+      >
+        <div className="seat-rename-header">
+          <span id={titleId}>Rename {currentName}</span>
+          <button type="button" className="seat-rename-close" onClick={onClose} aria-label="Cancel">
+            ✕
+          </button>
+        </div>
+
+        <div className="seat-rename-preview" aria-hidden="true">
+          <span className={`seat-rename-slot${first === null ? " is-current" : ""}`}>{first ?? ""}</span>
+          <span className={`seat-rename-slot${first === null ? "" : " is-current"}`} />
+        </div>
+        <p className="seat-rename-prompt">
+          {first === null ? "Tap the first letter" : "Tap the second letter"}
+        </p>
+
+        <div className="seat-rename-grid">
+          {ALPHABET.map((letter) => {
+            const candidate = first === null ? null : first + letter;
+            const taken = candidate !== null && takenNames.includes(candidate);
+            return (
+              <button
+                key={letter}
+                type="button"
+                className="seat-rename-letter"
+                disabled={taken}
+                aria-label={taken ? `${candidate}, already used` : (candidate ?? letter)}
+                onClick={() => (first === null ? setFirst(letter) : onPick(first + letter))}
+              >
+                {letter}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="seat-rename-actions">
+          {first !== null ? (
+            <button type="button" onClick={() => setFirst(null)}>
+              ← Back
+            </button>
+          ) : currentName !== defaultName ? (
+            <button type="button" onClick={() => onPick(defaultName)}>
+              Reset to {defaultName}
+            </button>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SeatingPanel({
+  names,
+  onRename,
+}: {
+  names: readonly string[];
+  onRename: (player: number, name: string) => void;
+}) {
   const [order, setOrder] = useState<number[]>(newShuffle);
+  // Which player's rename picker is open (index), if any.
+  const [renaming, setRenaming] = useState<number | null>(null);
   const [provEast, setProvEast] = useState<number | null>(null);
   const [step, setStep] = useState(0);
 
@@ -5885,7 +6057,7 @@ function SeatingPanel() {
     step === 0 ? null : rollingNow ? "–" : diceFaces!.reduce((a, b) => a + b, 0);
 
   const caption = (() => {
-    const L = SEAT_LABELS;
+    const L = names;
     switch (step) {
       case 0:
         return provEast === null
@@ -5926,30 +6098,21 @@ function SeatingPanel() {
 
       <div className="seat-stage">
         <div className="seat-table">
-          {SEAT_LABELS.map((label, p) => {
-            const pos = tokenPos(p);
-            const pickable = step === 0;
-            return (
-              <button
-                key={label}
-                type="button"
-                className={`seat-token seat-token-${label.toLowerCase()}${
-                  highlighted === p ? " is-active" : ""
-                }`}
-                style={SEAT_ANCHORS[pos]}
-                disabled={!pickable}
-                onClick={() => pickable && setProvEast(p)}
-                aria-label={
-                  pickable ? `Make ${label} the provisional East` : `Player ${label}`
-                }
-              >
-                <span className="seat-token-label">{label}</span>
-                {eastAt === p && (
-                  <span className={`seat-token-east${step < 2 ? " is-provisional" : ""}`}>東</span>
-                )}
-              </button>
-            );
-          })}
+          {DEFAULT_SEAT_NAMES.map((defaultName, p) => (
+            <SeatToken
+              key={defaultName}
+              name={names[p]}
+              colorKey={defaultName.toLowerCase()}
+              pos={tokenPos(p)}
+              active={highlighted === p}
+              eastMark={eastAt === p ? (step < 2 ? "provisional" : "real") : null}
+              // Not while a rename is open: a long-press that opened it via
+              // the context-menu path mustn't also land as a tap on release.
+              pickable={step === 0 && renaming === null}
+              onPick={() => setProvEast(p)}
+              onRename={() => setRenaming(p)}
+            />
+          ))}
         </div>
 
         <div className="seat-tile-row">
@@ -5993,11 +6156,31 @@ function SeatingPanel() {
           Start over
         </button>
       </div>
+
+      {renaming !== null && (
+        <SeatRenamePicker
+          key={renaming}
+          currentName={names[renaming]}
+          defaultName={DEFAULT_SEAT_NAMES[renaming]}
+          takenNames={names.filter((_, i) => i !== renaming)}
+          onPick={(name) => {
+            onRename(renaming, name);
+            setRenaming(null);
+          }}
+          onClose={() => setRenaming(null)}
+        />
+      )}
     </div>
   );
 }
 
-function DiceTab() {
+function DiceTab({
+  seatNames,
+  onRenameSeat,
+}: {
+  seatNames: readonly string[];
+  onRenameSeat: (player: number, name: string) => void;
+}) {
   const [sub, setSub] = useState<"wall" | "exchange" | "seating">("wall");
   return (
     <section className="panel dice-panel">
@@ -6029,7 +6212,7 @@ function DiceTab() {
       </div>
       {sub === "wall" && <DicePanel />}
       {sub === "exchange" && <ExchangePanel />}
-      {sub === "seating" && <SeatingPanel />}
+      {sub === "seating" && <SeatingPanel names={seatNames} onRename={onRenameSeat} />}
     </section>
   );
 }
@@ -6044,6 +6227,12 @@ function App() {
   const [waitsTrainerStats, setWaitsTrainerStats] = useState<Map<string, TrainerStatsEntry>>(new Map());
   const [discardTrainerStats, setDiscardTrainerStats] = useState<Map<string, DiscardTrainerStatsEntry>>(new Map());
   const [endlessTrainerStats, setEndlessTrainerStats] = useState<EndlessStats>(EMPTY_ENDLESS_STATS);
+  // Seating tab player names, lifted here for the same reason: custom initials
+  // should survive switching sub-tabs / tabs and "Start over" - it's the same
+  // four people at the table.
+  const [seatNames, setSeatNames] = useState<readonly string[]>(DEFAULT_SEAT_NAMES);
+  const renameSeat = (player: number, name: string) =>
+    setSeatNames((prev) => prev.map((n, i) => (i === player ? name : n)));
 
   return (
     <div className="page">
@@ -6094,7 +6283,7 @@ function App() {
           setEndlessStats={setEndlessTrainerStats}
         />
       )}
-      {mode === "dice" && <DiceTab />}
+      {mode === "dice" && <DiceTab seatNames={seatNames} onRenameSeat={renameSeat} />}
       <footer className="build-version">v{__BUILD_TIME__}</footer>
     </div>
   );
