@@ -13,7 +13,9 @@
 // download from ~26 MB to ~13 MB with no behavior change.
 import * as ort from "onnxruntime-web/wasm";
 import {
+  allTileKinds,
   COMPLETE_SIZE,
+  isCompleteHand,
   isEightPairsComplete,
   isSixteenUnrelatedComplete,
   isThirteenOrphansComplete,
@@ -797,14 +799,35 @@ function isPlausibleHandRow(row: Detection[]): boolean {
 }
 
 // Whether `row`'s real tiles (bonus tiles set aside) form a complete
-// winning hand all on their own - exactly COMPLETE_SIZE tiles that group
-// into melds plus one pair, or one of the special hands (see
-// looksLikeConcealedFragment). Such a row can only be a fully concealed
-// hand: with all 17 tiles already concealed there's nothing left to have
-// been declared, so the hand's declared side can hold bonus tiles at most.
+// winning hand all on their own (isCompleteHand: melds plus one pair, or
+// a special hand) - allowing for ONE detection mistake, since a whole row
+// of 17 is a lot of tiles to read perfectly: one tile missed (16 read),
+// one misread (17 read, one of them wrong), or one extra (18 read). A
+// photo of a real hand came out each way under nothing more than a
+// slightly different framing, and demanding a perfect read dropped it
+// back onto the old labelling, which got that photo backwards. A discard
+// pile essentially never lands within one tile of a complete hand by
+// chance, so the tolerance costs nothing there.
+//
+// Such a row can only be a fully concealed hand: with all 17 tiles
+// already concealed there's nothing left to have been declared, so the
+// hand's declared side can hold bonus tiles at most.
 // Exported for direct unit testing.
 export function isCompleteHandRow(row: Detection[]): boolean {
-  return realTileCount(row) === COMPLETE_SIZE && looksLikeConcealedFragment(row);
+  const tiles = realTiles(row);
+  const n = tiles.length;
+  if (n < COMPLETE_SIZE - 1 || n > COMPLETE_SIZE + 1) return false;
+  const copies = (t: Tile, of: Tile[]) => of.filter((x) => x.suit === t.suit && x.rank === t.rank).length;
+  // Every tile kind that could stand in for a missed/misread tile - never
+  // a 5th copy of a kind, which no set has.
+  const withOneMore = (base: Tile[]) =>
+    allTileKinds()
+      .filter((k) => copies(k, base) < 4)
+      .some((k) => isCompleteHand([...base, k]));
+  const without = (i: number) => [...tiles.slice(0, i), ...tiles.slice(i + 1)];
+  if (n === COMPLETE_SIZE - 1) return withOneMore(tiles); // one missed
+  if (n === COMPLETE_SIZE + 1) return tiles.some((_, i) => isCompleteHand(without(i))); // one extra
+  return isCompleteHand(tiles) || tiles.some((_, i) => withOneMore(without(i))); // perfect, or one misread
 }
 
 // Picks out (at most) 2 rows that are actually part of the hand, for

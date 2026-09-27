@@ -1003,8 +1003,18 @@ describe("isCompleteHandRow / selectHandRows with a complete concealed hand", ()
   it("recognises a row whose real tiles form a complete hand, ignoring bonus tiles in it", () => {
     const row = [bonus("2f", 0), bonus("4s", 40), bonus("1s", 80), ...completeHand().map((d) => ({ ...d, box: [d.box[0] + 120, d.box[1], d.box[2] + 120, d.box[3]] as Detection["box"] }))];
     expect(isCompleteHandRow(row)).toBe(true);
-    expect(isCompleteHandRow(completeHand().slice(1))).toBe(false); // 16 tiles
     expect(isCompleteHandRow(rowOfDistinctTiles(400, 480, 17))).toBe(false); // 17, but no hand shape
+  });
+
+  it("tolerates one detection mistake - a tile missed, misread, or extra - but not two", () => {
+    const hand = completeHand();
+    expect(isCompleteHandRow(hand.slice(1))).toBe(true); // one missed (16)
+    const misread = hand.map((d, i) => (i === 4 ? { ...d, tile: { suit: "b" as const, rank: 5 }, className: "5b" } : d));
+    expect(isCompleteHandRow(misread)).toBe(true); // one misread (17)
+    expect(isCompleteHandRow([...hand, detection({ tile: { suit: "t", rank: 9 }, className: "9t", box: [900, 400, 940, 480] })])).toBe(true); // one extra (18)
+    expect(isCompleteHandRow(hand.slice(2))).toBe(false); // two missed (15)
+    const twoMisread = misread.map((d, i) => (i === 10 ? { ...d, tile: { suit: "m" as const, rank: 1 }, className: "1m" } : d));
+    expect(isCompleteHandRow(twoMisread)).toBe(false); // two misread
   });
 
   it("drops a discard pile next to a complete hand, even with only 2 rows - the discard pile can't be declared melds", () => {
