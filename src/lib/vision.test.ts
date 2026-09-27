@@ -7,6 +7,7 @@ import {
   detailWindows,
   findRotatedOutlier,
   isCompleteHandRow,
+  isHandLikeRow,
   IMG_SIZE,
   isPairOnlyRow,
   isRowADeclared,
@@ -521,10 +522,16 @@ describe("looksLikeConcealedFragment", () => {
 });
 
 describe("selectHandRows", () => {
-  it("leaves rows untouched when there are only 2, however large one is", () => {
+  it("leaves 2 hand-like rows untouched", () => {
+    const declared = rowOfDetections(100, 180, 4); // a kong
+    const concealed = rowFromHand("123m55t", 400, 480);
+    expect(selectHandRows([declared, concealed])).toEqual([declared, concealed]);
+  });
+
+  it("drops a messy row even when there are only 2 - a row with more tiles than any hand could hold never gets a box", () => {
     const huge = rowOfDetections(100, 180, 30);
     const normal = rowOfDetections(400, 480, 4);
-    expect(selectHandRows([huge, normal])).toEqual([huge, normal]);
+    expect(selectHandRows([huge, normal])).toEqual([normal]);
   });
 
   it("leaves a single row untouched too", () => {
@@ -1066,5 +1073,38 @@ describe("regionsFromRows with bonus tiles in the same row as the hand", () => {
     expect(regions.declared).toBeUndefined();
     expect(regions.concealed.x).toBeLessThanOrEqual(20 / IMG_SIZE);
     expect(regions.concealed.x + regions.concealed.w).toBeGreaterThanOrEqual(300 / IMG_SIZE);
+  });
+});
+
+describe("isHandLikeRow (messy rows get no box)", () => {
+  it("rejects a discard pile, however neatly it's laid out - the tiles don't group into anything", () => {
+    // The real discard row from a test photo: 9b 5z 9m 9b 2m 4b 7t 5b 2z.
+    expect(isHandLikeRow(rowFromHand("9b5z9m9b2m4b7t5b2z", 100, 180))).toBe(false);
+    expect(isHandLikeRow(rowOfDistinctTiles(100, 180, 8))).toBe(false);
+  });
+
+  it("accepts every kind of row a hand is made of", () => {
+    expect(isHandLikeRow(rowFromHand("123m555t789b", 100, 180))).toBe(true); // declared melds
+    expect(isHandLikeRow(rowFromHand("123m456t77z", 100, 180))).toBe(true); // melds + pair
+    expect(isHandLikeRow(rowFromHand("123m456t789b11z2z", 100, 180))).toBe(true); // one tile short - waiting
+    expect(isHandLikeRow(rowFromHand("123456789m123456b1z", 100, 180))).toBe(true); // a 16-tile waiting hand
+    expect(isHandLikeRow(rowFromHand("33b", 100, 180))).toBe(true); // just the pair
+    expect(isHandLikeRow([detection({ tile: null, className: "1f" })])).toBe(true); // bonus only
+  });
+
+  it("still accepts a real row read with one mistake", () => {
+    // 123m 456t 789b + 11z, with the 5t misread as 5b
+    expect(isHandLikeRow(rowFromHand("123m4t5b6t789b11z", 100, 180))).toBe(true);
+  });
+
+  it("drops a messy row between the two real ones", () => {
+    const discards = rowFromHand("9b5z9m9b2m4b7t5b2z", 100, 180);
+    const declared = rowFromHand("123m555t", 400, 480);
+    const concealed = rowFromHand("456b77z", 700, 780);
+    expect(selectHandRows([discards, declared, concealed])).toEqual([declared, concealed]);
+  });
+
+  it("returns nothing when every row is messy - the caller falls back to its default boxes", () => {
+    expect(selectHandRows([rowOfDistinctTiles(100, 180, 7), rowOfDistinctTiles(400, 480, 9)])).toEqual([]);
   });
 });

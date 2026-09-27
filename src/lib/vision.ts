@@ -830,10 +830,47 @@ export function isCompleteHandRow(row: Detection[]): boolean {
   return isCompleteHand(tiles) || tiles.some((_, i) => withOneMore(without(i))); // perfect, or one misread
 }
 
+// Whether `row` makes sense as any part of a hand at all - a "messy" row
+// that doesn't (in practice a discard pile, however neatly it happens to
+// be laid out) gets no box. Judged by what the tiles ARE rather than how
+// they're arranged: a discard pile can be a perfectly straight line, but
+// its tiles are just whatever got thrown away, so they almost never group
+// into anything. A row belonging to a hand always does - it's one of:
+//  - bonus tiles only (the declared side's flowers/seasons);
+//  - just the hand's pair (the smallest possible concealed row);
+//  - complete melds (the declared side - looksLikeDeclaredMelds);
+//  - melds plus one pair (a concealed portion - looksLikeConcealedFragment),
+//    or ONE tile short of that: a concealed hand waiting on its last tile,
+//    which is exactly what the Calculator scans;
+//  - a complete hand on its own (isCompleteHandRow).
+// Each of those already tolerates one stray/misread tile, so a real row
+// read with a single detection mistake still passes; two or more mistakes
+// in one row can make it fail and lose its box - the user can always draw
+// that one by hand. Anything with more real tiles than any hand could
+// hold (see isPlausibleHandRow) is messy outright.
+// Exported for direct unit testing.
+export function isHandLikeRow(row: Detection[]): boolean {
+  if (isAllBonusTiles(row) || isPairOnlyRow(row)) return true;
+  if (!isPlausibleHandRow(row)) return false;
+  if (looksLikeDeclaredMelds(row) || looksLikeConcealedFragment(row) || isCompleteHandRow(row)) return true;
+  // One tile short of melds + pair - a waiting concealed hand (or portion).
+  const tiles = realTiles(row);
+  const copies = (k: Tile) => tiles.filter((t) => t.suit === k.suit && t.rank === k.rank).length;
+  const asRow = (ts: Tile[]): Detection[] => ts.map((tile) => ({ tile, className: `${tile.rank}${tile.suit}`, confidence: 1, box: [0, 0, 0, 0] }));
+  return allTileKinds()
+    .filter((k) => copies(k) < 4)
+    .some((k) => looksLikeConcealedFragment(asRow([...tiles, k])));
+}
+
 // Picks out (at most) 2 rows that are actually part of the hand, for
 // detectRowRegions' normal 1-or-2-row handling to work with below.
 //
-// Checked first, whatever the row count: if exactly one row is a complete
+// Before anything else, every "messy" row - one that can't be any part of
+// a hand (see isHandLikeRow), in practice a discard pile - is dropped, so
+// it never gets a box, whatever the row count. If nothing's left, the
+// caller falls back to its default boxes.
+//
+// Then, whatever the row count: if exactly one row is a complete
 // hand on its own (see isCompleteHandRow), that row IS the whole hand, so
 // no other row of real tiles can be part of it - it's a discard pile, and
 // is dropped. The only other row kept is one made up entirely of bonus
@@ -869,7 +906,14 @@ export function isCompleteHandRow(row: Detection[]): boolean {
 // decides what, if anything, to do with it from there.
 // Exported for direct unit testing alongside isPlausibleHandRow's and
 // looksLikeDeclaredMelds's own reasoning.
-export function selectHandRows(rows: Detection[][]): Detection[][] {
+export function selectHandRows(
+  allRows: Detection[][],
+  // Which rows are messy - defaults to judging each row's own detections
+  // (isHandLikeRow); detectRowRegions passes confirmMessyRows' verdicts
+  // instead, which take a closer look first.
+  isMessy: (row: Detection[]) => boolean = (row) => !isHandLikeRow(row)
+): Detection[][] {
+  const rows = allRows.filter((row) => !isMessy(row));
   const completeRows = rows.filter(isCompleteHandRow);
   if (completeRows.length === 1) {
     const bonusRows = rows.filter(isAllBonusTiles);
@@ -1189,7 +1233,9 @@ function cropToWindow(image: HTMLImageElement, win: ImageWindow): HTMLCanvasElem
 // first pass already handles costs nothing more.
 export async function detectRowRegions(image: HTMLImageElement): Promise<DetectedRegions | null> {
   const { detections } = await detectTiles(letterbox(image));
-  let rows = selectHandRows(clusterRows(detections));
+  const clustered = clusterRows(detections);
+  const messy = await confirmMessyRows(image, clustered);
+  let rows = selectHandRows(clustered, (row) => messy.has(row));
   // A lone row that's already a complete hand needs no second look - see
   // isCompleteHandRow.
   if (rows.length < 2 && !(rows.length === 1 && isCompleteHandRow(rows[0]))) {
@@ -1198,10 +1244,39 @@ export async function detectRowRegions(image: HTMLImageElement): Promise<Detecte
       const { detections: windowDetections } = await detectTiles(letterbox(cropToWindow(image, win)));
       detailed.push(...mapWindowDetections(windowDetections, win, image));
     }
-    const detailedRows = selectHandRows(clusterRows(nonMaxSuppression(detailed)));
+    const detailedClustered = clusterRows(nonMaxSuppression(detailed));
+    const detailedMessy = await confirmMessyRows(image, detailedClustered);
+    const detailedRows = selectHandRows(detailedClustered, (row) => detailedMessy.has(row));
     if (detailedRows.length > rows.length) rows = detailedRows;
   }
   return regionsFromRows(rows, image);
+}
+
+// Which of `rows` are messy (see isHandLikeRow) - judged on a proper read,
+// not just the whole-photo one. Auto-fit's whole-photo detections are low
+// resolution and often only catch part of a row (4 of a real concealed
+// row's 8 tiles, in one photo), and a partial read of a real row doesn't
+// group into anything either - it'd look exactly as messy as a discard
+// pile. So a row that fails on its whole-photo read is re-detected from a
+// crop of just that row (rowToRegion - about how the scan itself will see
+// it), and only called messy if that closer read still doesn't make sense
+// as part of a hand. Costs one extra model run per suspicious row; a row
+// with more real tiles than any hand could hold is messy outright.
+async function confirmMessyRows(image: HTMLImageElement, rows: Detection[][]): Promise<Set<Detection[]>> {
+  const messy = new Set<Detection[]>();
+  for (const row of rows) {
+    if (isHandLikeRow(row)) continue;
+    if (!isPlausibleHandRow(row)) {
+      messy.add(row);
+      continue;
+    }
+    const { detections } = await detectTiles(letterbox(cropRegion(image, rowToRegion(row, image))));
+    // The crop's padding can catch the edge of a neighbouring row - judge
+    // the biggest row within it, which is this one.
+    const closer = clusterRows(detections).reduce<Detection[]>((a, b) => (b.length > a.length ? b : a), []);
+    if (!isHandLikeRow(closer)) messy.add(row);
+  }
+  return messy;
 }
 
 // The pure second half of detectRowRegions - turns selectHandRows' chosen
