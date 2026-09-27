@@ -1724,15 +1724,16 @@ const HandScanner = forwardRef<
   // returning: a tile sitting close to the model's confidence cutoff can
   // flip between found and missed on crop changes as small as nudging the
   // box by hand, so recheckRegion re-runs detection on a few variations of
-  // each region and merges them by vote. `rechecked` reports whether that
-  // actually changed anything - such tiles carry a `recovery` flag, and a
-  // result that relied on one is never applied without the user seeing it
-  // (see tryAutoScanAndApply).
+  // each region and merges them by vote. Tiles the re-check added or
+  // renamed carry a `recovery` flag, drawn dashed wherever review is shown.
+  // A streamlined scan (see tryAutoScanAndApply) that comes back a legal
+  // winning hand is still applied straight away either way, re-checked
+  // tiles or not.
   const detectRegions = async (
     image: HTMLImageElement,
     rects: CropRect[],
     onProgress: (p: ScanProgress) => void
-  ): Promise<{ regions: ScanReviewRegion[]; rechecked: boolean }> => {
+  ): Promise<ScanReviewRegion[]> => {
     const firstPass: { rect: CropRect; crop: HTMLCanvasElement; box: Letterbox; detections: RecheckedDetection[] }[] = [];
     for (const rect of rects) {
       const crop = cropRegion(image, rect);
@@ -1740,14 +1741,12 @@ const HandScanner = forwardRef<
       const { detections } = await detectTiles(box, onProgress);
       firstPass.push({ rect, crop, box, detections: detections.map((d) => ({ ...d, recovery: null })) });
     }
-    let regions = firstPass.map(({ crop, box, detections }) => toReviewRegion(crop, box, detections));
-    if (!recheckUnless || recheckUnless(regions)) return { regions, rechecked: false };
+    const regions = firstPass.map(({ crop, box, detections }) => toReviewRegion(crop, box, detections));
+    if (!recheckUnless || recheckUnless(regions)) return regions;
 
     const merged: RecheckedDetection[][] = [];
     for (const { rect, detections } of firstPass) merged.push(await recheckRegion(image, rect, detections, onProgress));
-    const rechecked = merged.some((ds) => ds.some((d) => d.recovery));
-    if (rechecked) regions = firstPass.map(({ crop, box }, i) => toReviewRegion(crop, box, merged[i]));
-    return { regions, rechecked };
+    return firstPass.map(({ crop, box }, i) => toReviewRegion(crop, box, merged[i]));
   };
 
   // Builds one region's review state from its letterboxed canvas and
@@ -1791,7 +1790,7 @@ const HandScanner = forwardRef<
     setScanError(null);
     setScanProgress({ phase: "downloading-model", loaded: 0, total: null });
     try {
-      const { regions } = await detectRegions(image, rects, (p) => {
+      const regions = await detectRegions(image, rects, (p) => {
         if (scanGeneration.current === myGeneration) setScanProgress(p);
       });
       if (scanGeneration.current !== myGeneration) return; // reset mid-scan - drop the result
@@ -1822,18 +1821,12 @@ const HandScanner = forwardRef<
     setScanStatus("loading");
     setScanProgress({ phase: "downloading-model", loaded: 0, total: null });
     try {
-      const { regions, rechecked } = await detectRegions(image, fitted, (p) => {
+      const regions = await detectRegions(image, fitted, (p) => {
         if (scanGeneration.current === myGeneration) setScanProgress(p);
       });
       if (scanGeneration.current !== myGeneration) return;
       const plain = regions.map((r) => ({ detections: r.detections }));
-      if (autoApply!(plain) && rechecked) {
-        // Only wins thanks to tiles the re-check added or renamed - show
-        // review (those tiles dashed) rather than apply it unseen: one
-        // misread tile can still make a legal, but wrong, winning hand.
-        setScanPreview({ regions });
-        setScanStatus("review");
-      } else if (autoApply!(plain)) {
+      if (autoApply!(plain)) {
         onConfirm(plain);
         appliedOnceRef.current = true;
         setScanStatus("auto-applied");
