@@ -67,6 +67,7 @@ import {
 } from "./lib/trainer";
 import {
   classToBonusTile,
+  cropRegion,
   IMG_SIZE,
   detectRowRegions,
   detectTiles,
@@ -74,7 +75,10 @@ import {
   isPairOnlyRow,
   letterbox,
   prefetchModel,
+  recheckRegion,
   type DetectedRegions,
+  type Letterbox,
+  type RecheckedDetection,
   type ScanProgress,
 } from "./lib/vision";
 import {
@@ -155,7 +159,10 @@ function loadImageFile(file: File): Promise<HTMLImageElement> {
 // (what's actually counted toward the hand) and are mutually exclusive -
 // at most one is non-null, both null means "not a tile" (excluded).
 // `originalClassName` never changes - it's the model's raw guess, kept for
-// display even after a correction.
+// display even after a correction. `recovery` is non-null when the re-check
+// pass (see HandScanner's detectRegions) added this tile or changed its
+// name - drawn dashed in review so the user knows to double-check it, and
+// cleared once they tap and pick a tile for it themselves.
 interface ReviewDetection {
   id: number;
   tile: Tile | null;
@@ -163,6 +170,7 @@ interface ReviewDetection {
   originalClassName: string;
   confidence: number;
   box: [number, number, number, number];
+  recovery: RecheckedDetection["recovery"];
 }
 
 // One cropped region's scan review state. `imageUrl` and each detection's
@@ -241,9 +249,14 @@ function DetectionBox({
       ? bonusClassLabel(detection.bonus)
       : detection.originalClassName;
   const labelWidth = label.length * 7.5 + 6;
-  const groupClass = ["detection-box", included ? "included" : "bonus", editing && "editing"].filter(Boolean).join(" ");
+  const groupClass = ["detection-box", included ? "included" : "bonus", detection.recovery && "recovered", editing && "editing"]
+    .filter(Boolean)
+    .join(" ");
+  const ariaLabel = detection.recovery
+    ? `Check tile ${label} - ${detection.recovery === "added" ? "found" : "renamed"} on a second look`
+    : `Correct detected tile ${label}`;
   return (
-    <g className={groupClass} role="button" tabIndex={0} aria-label={`Correct detected tile ${label}`} {...tap}>
+    <g className={groupClass} role="button" tabIndex={0} aria-label={ariaLabel} {...tap}>
       <rect className="detection-hit" x={x1 - 6} y={y1 - 6} width={x2 - x1 + 12} height={y2 - y1 + 12} />
       <rect className="detection-outline" x={x1} y={y1} width={x2 - x1} height={y2 - y1} />
       <rect className="detection-label-bg" x={x1} y={y2 - 16} width={labelWidth} height={16} />
@@ -1158,22 +1171,6 @@ function applyCropDrag(mode: CropDragMode, start: CropRect, dx: number, dy: numb
   return { x, y, w, h };
 }
 
-// Draws the selected fraction of `image` onto a new canvas at native
-// resolution - the crop is applied before letterboxing, so anything
-// outside it never reaches the detector.
-function cropToCanvas(image: HTMLImageElement, rect: CropRect): HTMLCanvasElement {
-  const sx = rect.x * image.naturalWidth;
-  const sy = rect.y * image.naturalHeight;
-  const sw = rect.w * image.naturalWidth;
-  const sh = rect.h * image.naturalHeight;
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.max(1, Math.round(sw));
-  canvas.height = Math.max(1, Math.round(sh));
-  const ctx = canvas.getContext("2d")!;
-  ctx.drawImage(image, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
-  return canvas;
-}
-
 // Redraws `source` rotated a quarter turn (clockwise or counterclockwise)
 // onto a canvas (swapping width/height, since a photo shot sideways needs
 // that swap to display upright) and loads the result back into a fresh
@@ -1226,7 +1223,10 @@ function CropOverlay({
   // falls back to plain 1-based numbers (the Calculator's case, where both
   // regions are just different crops of the same hand).
   regionLabels?: string[];
-  onConfirm: (canvases: HTMLCanvasElement[]) => void;
+  // The (possibly rotated) photo and the regions chosen on it - not
+  // pre-cut canvases, since the scan's re-check pass (see HandScanner's
+  // detectRegions) needs to crop the photo itself a few different ways.
+  onConfirm: (image: HTMLImageElement, regions: CropRect[]) => void;
   onCancel: () => void;
 }) {
   const [regions, setRegions] = useState<CropRect[]>(initialRegions);
@@ -1456,7 +1456,7 @@ function CropOverlay({
           <button type="button" onClick={onCancel}>
             Cancel
           </button>
-          <button type="button" onClick={() => onConfirm(regions.map((r) => cropToCanvas(displayImage, r)))}>
+          <button type="button" onClick={() => onConfirm(displayImage, regions)}>
             Scan
           </button>
         </div>
@@ -1518,6 +1518,12 @@ const HandScanner = forwardRef<
     // auto-fit. Absent entirely (Calculator's usage), the crop screen
     // always shows, unchanged from before this existed.
     autoApply?: (regions: { detections: ReviewDetection[] }[]) => boolean;
+    // "Does this scan add up?" - when the first detection pass fails it,
+    // each region is re-checked (see detectRegions) before anything is
+    // shown or applied. Defaults to autoApply (ScoringPanel: is it a legal
+    // winning hand?); the Calculator, which has no autoApply, passes its
+    // own tile-count check instead.
+    recheckUnless?: (regions: { detections: ReviewDetection[] }[]) => boolean;
     // When set, the built-in trigger button isn't rendered - the caller
     // drives scanning via the imperative handle's trigger() instead
     // (still through this same file input/model-prefetch flow), and shows
@@ -1537,7 +1543,17 @@ const HandScanner = forwardRef<
     onActiveChange?: (active: boolean) => void;
   }
 >(function HandScanner(
-  { regionLabels, regionIssue, onConfirm, hideTrigger, triggerLabel = "📷 Scan a hand", onBusyChange, onActiveChange, autoApply },
+  {
+    regionLabels,
+    regionIssue,
+    onConfirm,
+    hideTrigger,
+    triggerLabel = "📷 Scan a hand",
+    onBusyChange,
+    onActiveChange,
+    autoApply,
+    recheckUnless = autoApply,
+  },
   ref
 ) {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1649,6 +1665,7 @@ const HandScanner = forwardRef<
       ...d,
       tile: "tile" in correction ? correction.tile : null,
       bonus: "bonus" in correction ? correction.bonus : null,
+      recovery: null, // the user has now looked at it and picked it themselves
     }));
     setEditingDetectionId(null);
   };
@@ -1696,56 +1713,85 @@ const HandScanner = forwardRef<
 
   // Shared detection core for both runScan (user-confirmed crop) and
   // tryAutoScanAndApply (the streamlined path) - each region (1 or 2) is
-  // letterboxed and detected independently. The (cached) model session is
-  // only fetched/initialized once regardless of region count. Throws on
-  // failure; callers decide what that means (an "error" state for the
-  // former, a silent fall-back to cropping for the latter).
-  const detectRegions = async (sources: HTMLCanvasElement[], onProgress: (p: ScanProgress) => void): Promise<ScanReviewRegion[]> => {
-    const regions: ScanReviewRegion[] = [];
-    for (const source of sources) {
-      const box = letterbox(source);
+  // cropped from the photo, letterboxed and detected independently. The
+  // (cached) model session is only fetched/initialized once regardless of
+  // region count. Throws on failure; callers decide what that means (an
+  // "error" state for the former, a silent fall-back to cropping for the
+  // latter).
+  //
+  // If the first pass fails recheckUnless (not a legal winning hand, a tile
+  // count the Calculator can't use), every region is re-checked before
+  // returning: a tile sitting close to the model's confidence cutoff can
+  // flip between found and missed on crop changes as small as nudging the
+  // box by hand, so recheckRegion re-runs detection on a few variations of
+  // each region and merges them by vote. `rechecked` reports whether that
+  // actually changed anything - such tiles carry a `recovery` flag, and a
+  // result that relied on one is never applied without the user seeing it
+  // (see tryAutoScanAndApply).
+  const detectRegions = async (
+    image: HTMLImageElement,
+    rects: CropRect[],
+    onProgress: (p: ScanProgress) => void
+  ): Promise<{ regions: ScanReviewRegion[]; rechecked: boolean }> => {
+    const firstPass: { rect: CropRect; crop: HTMLCanvasElement; box: Letterbox; detections: RecheckedDetection[] }[] = [];
+    for (const rect of rects) {
+      const crop = cropRegion(image, rect);
+      const box = letterbox(crop);
       const { detections } = await detectTiles(box, onProgress);
-      // letterbox() centers the (scaled-down) source inside an IMG_SIZE
-      // square, padding the rest gray - the model needs that square, but
-      // showing the padding in the review UI just wastes space. Crop the
-      // padding back off here (same centering math letterbox itself used,
-      // run in reverse) and shift each detection's box by the same amount,
-      // so everything downstream (the <img>, DetectionOverlay's viewBox,
-      // the left-to-right sort in ScoringPanel) just works against the
-      // tighter, padding-free coordinate space.
-      const scale = Math.min(IMG_SIZE / source.width, IMG_SIZE / source.height);
-      const contentW = Math.round(source.width * scale);
-      const contentH = Math.round(source.height * scale);
-      const padX = (IMG_SIZE - contentW) / 2;
-      const padY = (IMG_SIZE - contentH) / 2;
-      const displayCanvas = document.createElement("canvas");
-      displayCanvas.width = contentW;
-      displayCanvas.height = contentH;
-      displayCanvas.getContext("2d")!.drawImage(box.canvas, padX, padY, contentW, contentH, 0, 0, contentW, contentH);
-      regions.push({
-        imageUrl: displayCanvas.toDataURL(),
-        imageWidth: contentW,
-        imageHeight: contentH,
-        detections: detections.map((d) => ({
-          id: nextDetectionId.current++,
-          tile: d.tile,
-          bonus: d.tile ? null : classToBonusTile(d.className),
-          originalClassName: d.className,
-          confidence: d.confidence,
-          box: [d.box[0] - padX, d.box[1] - padY, d.box[2] - padX, d.box[3] - padY],
-        })),
-      });
+      firstPass.push({ rect, crop, box, detections: detections.map((d) => ({ ...d, recovery: null })) });
     }
-    return regions;
+    let regions = firstPass.map(({ crop, box, detections }) => toReviewRegion(crop, box, detections));
+    if (!recheckUnless || recheckUnless(regions)) return { regions, rechecked: false };
+
+    const merged: RecheckedDetection[][] = [];
+    for (const { rect, detections } of firstPass) merged.push(await recheckRegion(image, rect, detections, onProgress));
+    const rechecked = merged.some((ds) => ds.some((d) => d.recovery));
+    if (rechecked) regions = firstPass.map(({ crop, box }, i) => toReviewRegion(crop, box, merged[i]));
+    return { regions, rechecked };
   };
 
-  const runScan = async (sources: HTMLCanvasElement[]) => {
+  // Builds one region's review state from its letterboxed canvas and
+  // detections. letterbox() centers the (scaled-down) source inside an
+  // IMG_SIZE square, padding the rest gray - the model needs that square,
+  // but showing the padding in the review UI just wastes space. Crop the
+  // padding back off here (same centering math letterbox itself used, run
+  // in reverse) and shift each detection's box by the same amount, so
+  // everything downstream (the <img>, DetectionOverlay's viewBox, the
+  // left-to-right sort in ScoringPanel) just works against the tighter,
+  // padding-free coordinate space.
+  const toReviewRegion = (source: HTMLCanvasElement, box: Letterbox, detections: RecheckedDetection[]): ScanReviewRegion => {
+    const scale = Math.min(IMG_SIZE / source.width, IMG_SIZE / source.height);
+    const contentW = Math.round(source.width * scale);
+    const contentH = Math.round(source.height * scale);
+    const padX = (IMG_SIZE - contentW) / 2;
+    const padY = (IMG_SIZE - contentH) / 2;
+    const displayCanvas = document.createElement("canvas");
+    displayCanvas.width = contentW;
+    displayCanvas.height = contentH;
+    displayCanvas.getContext("2d")!.drawImage(box.canvas, padX, padY, contentW, contentH, 0, 0, contentW, contentH);
+    return {
+      imageUrl: displayCanvas.toDataURL(),
+      imageWidth: contentW,
+      imageHeight: contentH,
+      detections: detections.map((d) => ({
+        id: nextDetectionId.current++,
+        tile: d.tile,
+        bonus: d.tile ? null : classToBonusTile(d.className),
+        originalClassName: d.className,
+        confidence: d.confidence,
+        box: [d.box[0] - padX, d.box[1] - padY, d.box[2] - padX, d.box[3] - padY],
+        recovery: d.recovery,
+      })),
+    };
+  };
+
+  const runScan = async (image: HTMLImageElement, rects: CropRect[]) => {
     const myGeneration = scanGeneration.current;
     setScanStatus("loading");
     setScanError(null);
     setScanProgress({ phase: "downloading-model", loaded: 0, total: null });
     try {
-      const regions = await detectRegions(sources, (p) => {
+      const { regions } = await detectRegions(image, rects, (p) => {
         if (scanGeneration.current === myGeneration) setScanProgress(p);
       });
       if (scanGeneration.current !== myGeneration) return; // reset mid-scan - drop the result
@@ -1776,13 +1822,18 @@ const HandScanner = forwardRef<
     setScanStatus("loading");
     setScanProgress({ phase: "downloading-model", loaded: 0, total: null });
     try {
-      const canvases = fitted.map((rect) => cropToCanvas(image, rect));
-      const regions = await detectRegions(canvases, (p) => {
+      const { regions, rechecked } = await detectRegions(image, fitted, (p) => {
         if (scanGeneration.current === myGeneration) setScanProgress(p);
       });
       if (scanGeneration.current !== myGeneration) return;
       const plain = regions.map((r) => ({ detections: r.detections }));
-      if (autoApply!(plain)) {
+      if (autoApply!(plain) && rechecked) {
+        // Only wins thanks to tiles the re-check added or renamed - show
+        // review (those tiles dashed) rather than apply it unseen: one
+        // misread tile can still make a legal, but wrong, winning hand.
+        setScanPreview({ regions });
+        setScanStatus("review");
+      } else if (autoApply!(plain)) {
         onConfirm(plain);
         appliedOnceRef.current = true;
         setScanStatus("auto-applied");
@@ -1816,6 +1867,7 @@ const HandScanner = forwardRef<
     if (!p) return "Scanning…";
     if (p.phase === "downloading-model") return "Downloading model…";
     if (p.phase === "initializing") return "Preparing detector…";
+    if (p.phase === "rechecking") return "Double-checking tiles…";
     return "Detecting tiles…";
   };
 
@@ -2040,6 +2092,11 @@ const HandScanner = forwardRef<
                 </span>
               )}
               <span className="scan-review-hint">Tap a boxed tile to correct it</span>
+              {scanPreview.regions.some((r) => r.detections.some((d) => d.recovery)) && (
+                <span className="scan-review-hint recovered">
+                  Dashed boxes were found or renamed on a second look - please check them
+                </span>
+              )}
             </div>
             <div className="scan-review-actions">
               <button type="button" onClick={backToRegionSelection}>
@@ -2196,7 +2253,13 @@ function Calculator() {
           {error && <span className="error">{error}</span>}
         </div>
 
-        <HandScanner onConfirm={(regions) => onTextChange(formatHand(regions.flatMap((r) => r.detections.flatMap((d) => (d.tile ? [d.tile] : [])))))} />
+        <HandScanner
+          onConfirm={(regions) => onTextChange(formatHand(regions.flatMap((r) => r.detections.flatMap((d) => (d.tile ? [d.tile] : [])))))}
+          // A tile count the Calculator can't check waits for (see
+          // isCheckpointSize) almost always means a tile was missed or
+          // doubled - worth the scan's re-check pass.
+          recheckUnless={(regions) => isCheckpointSize(regions.reduce((n, r) => n + r.detections.filter((d) => d.tile).length, 0))}
+        />
 
         <div className="panel-header">
           <span className="panel-title">Hand</span>

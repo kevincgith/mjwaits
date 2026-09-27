@@ -93,7 +93,10 @@ export interface Letterbox {
 export type ScanProgress =
   | { phase: "downloading-model"; loaded: number; total: number | null }
   | { phase: "initializing" }
-  | { phase: "running" };
+  | { phase: "running" }
+  // The re-check pass (see recheckRegion) - re-running detection on a few
+  // variations of each region because the first pass didn't add up.
+  | { phase: "rechecking" };
 
 let sessionPromise: Promise<ort.InferenceSession> | null = null;
 
@@ -1186,4 +1189,256 @@ export function regionsFromRows(rows: Detection[][], image: ImageSize): Detected
   }
 
   return null;
+}
+
+// A crop of the source photo exactly as the scan feeds it to the model:
+// `x`/`y`/`w`/`h` are the source-photo pixels it covers (fractional - a
+// region's own fractions times the photo's size), `canvasWidth`/
+// `canvasHeight` the whole-pixel canvas those pixels get drawn into
+// before letterboxing. Everything the re-check pass maps between crops is
+// expressed against one of these, so a detection from one crop's
+// letterboxed frame lands on exactly the same photo pixels in another's.
+export interface PhotoCrop {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  canvasWidth: number;
+  canvasHeight: number;
+}
+
+// Describes (without drawing anything) the crop cropRegion makes for
+// `rect` - pure, so the mapping math that depends on it is unit testable.
+// Exported for direct unit testing.
+export function photoCrop(rect: RowRegion, image: ImageSize): PhotoCrop {
+  const w = rect.w * image.naturalWidth;
+  const h = rect.h * image.naturalHeight;
+  return {
+    x: rect.x * image.naturalWidth,
+    y: rect.y * image.naturalHeight,
+    w,
+    h,
+    canvasWidth: Math.max(1, Math.round(w)),
+    canvasHeight: Math.max(1, Math.round(h)),
+  };
+}
+
+// Draws the selected fraction of `image` onto a new canvas at native
+// resolution - the crop is applied before letterboxing, so anything
+// outside it never reaches the detector. The one place every scan crop
+// (first pass and re-check alike) is made, so they all share photoCrop's
+// exact geometry.
+export function cropRegion(image: HTMLImageElement, rect: RowRegion): HTMLCanvasElement {
+  const crop = photoCrop(rect, image);
+  const canvas = document.createElement("canvas");
+  canvas.width = crop.canvasWidth;
+  canvas.height = crop.canvasHeight;
+  canvas.getContext("2d")!.drawImage(image, crop.x, crop.y, crop.w, crop.h, 0, 0, canvas.width, canvas.height);
+  return canvas;
+}
+
+// letterbox()'s own centering math for a crop, plus how many source-photo
+// pixels each canvas pixel covers (a hair off 1 once photoCrop rounds the
+// canvas to whole pixels).
+function letterboxFrame(crop: PhotoCrop) {
+  const scale = Math.min(IMG_SIZE / crop.canvasWidth, IMG_SIZE / crop.canvasHeight);
+  return {
+    scale,
+    padX: (IMG_SIZE - crop.canvasWidth * scale) / 2,
+    padY: (IMG_SIZE - crop.canvasHeight * scale) / 2,
+    pxX: crop.w / crop.canvasWidth,
+    pxY: crop.h / crop.canvasHeight,
+  };
+}
+
+// Maps detections from one crop's letterboxed frame into another's, via
+// the source photo's own pixels, keeping only those whose center falls
+// inside `to` - a re-check crop that reaches further out than the region
+// the user actually chose (see recheckRects) can pick up tiles from next
+// to it (the other row, the discard pile), and those must never be added
+// to this region.
+// Exported for direct unit testing.
+export function remapDetections(detections: Detection[], from: PhotoCrop, to: PhotoCrop): Detection[] {
+  const f = letterboxFrame(from);
+  const t = letterboxFrame(to);
+  const srcX = (bx: number) => from.x + ((bx - f.padX) / f.scale) * f.pxX;
+  const srcY = (by: number) => from.y + ((by - f.padY) / f.scale) * f.pxY;
+  const dstX = (sx: number) => t.padX + ((sx - to.x) / t.pxX) * t.scale;
+  const dstY = (sy: number) => t.padY + ((sy - to.y) / t.pxY) * t.scale;
+  return detections.flatMap((d) => {
+    const [x1, y1, x2, y2] = d.box;
+    const cx = srcX((x1 + x2) / 2);
+    const cy = srcY((y1 + y2) / 2);
+    if (cx < to.x || cx > to.x + to.w || cy < to.y || cy > to.y + to.h) return [];
+    return [{ ...d, box: [dstX(srcX(x1)), dstY(srcY(y1)), dstX(srcX(x2)), dstY(srcY(y2))] }];
+  });
+}
+
+// How far (as fractions of the whole photo: left, top, right, bottom)
+// each re-check crop reaches beyond the region the user chose. A tile
+// sitting close to the model's confidence cutoff - the 1b's fine line-art
+// bird is the example this was built for - can flip between found and
+// missed on crop changes this small: moving a region's edges by up to 3%
+// swung it anywhere from 0.00 to 0.83 in testing, with no one direction
+// consistently better. So rather than guess a "better" crop, the re-check
+// samples several that each resize and frame the tiles a little
+// differently, and lets them vote (see mergeRecheckRuns). Every crop only
+// ever grows outward, never cutting into the chosen region, so no tile
+// the user included is ever cropped off in any of them.
+const RECHECK_PADDINGS: [number, number, number, number][] = [
+  [0.02, 0.02, 0.02, 0.02], // a little more room all round
+  [0.04, 0, 0.04, 0], // wider only - resizes the tiles differently
+  [0.03, 0.03, 0, 0], // shifted up and left
+  [0, 0, 0.03, 0.03], // shifted down and right
+];
+
+// The re-check crops for `rect` (see RECHECK_PADDINGS), clamped to the
+// photo. Drops any that clamping leaves identical to `rect` itself or to
+// an earlier one (a region already touching the photo's edges has less
+// room to grow), since those would just repeat a run for no new vote.
+// Exported for direct unit testing.
+export function recheckRects(rect: RowRegion): RowRegion[] {
+  const same = (a: RowRegion, b: RowRegion) =>
+    Math.abs(a.x - b.x) < 1e-9 && Math.abs(a.y - b.y) < 1e-9 && Math.abs(a.w - b.w) < 1e-9 && Math.abs(a.h - b.h) < 1e-9;
+  const out: RowRegion[] = [];
+  for (const [l, t, r, b] of RECHECK_PADDINGS) {
+    const x1 = clamp01(rect.x - l);
+    const y1 = clamp01(rect.y - t);
+    const x2 = clamp01(rect.x + rect.w + r);
+    const y2 = clamp01(rect.y + rect.h + b);
+    const next = { x: x1, y: y1, w: x2 - x1, h: y2 - y1 };
+    if (!same(next, rect) && !out.some((o) => same(o, next))) out.push(next);
+  }
+  return out;
+}
+
+// Share of the darkest and brightest pixels (per color channel) that
+// autoContrast clips when stretching the rest to the full 0-255 range.
+const AUTO_CONTRAST_CUTOFF = 0.02;
+
+// A copy of `canvas` with each color channel stretched so its darkest/
+// brightest AUTO_CONTRAST_CUTOFF lands on 0/255. Brings back fine dark
+// strokes that overexposure has washed toward white - in testing, a 1b
+// the model had lost at +20% brightness came back at 0.72 this way. Can't
+// recover detail the camera clipped outright, though; at +40% nothing
+// came back.
+export function autoContrast(canvas: HTMLCanvasElement): HTMLCanvasElement {
+  const out = document.createElement("canvas");
+  out.width = canvas.width;
+  out.height = canvas.height;
+  const ctx = out.getContext("2d")!;
+  ctx.drawImage(canvas, 0, 0);
+  const image = ctx.getImageData(0, 0, out.width, out.height);
+  const px = image.data;
+  const count = px.length / 4;
+  for (let c = 0; c < 3; c++) {
+    const hist = new Array(256).fill(0);
+    for (let i = c; i < px.length; i += 4) hist[px[i]]++;
+    const cut = count * AUTO_CONTRAST_CUTOFF;
+    let lo = 0;
+    for (let seen = 0; lo < 255 && seen + hist[lo] <= cut; lo++) seen += hist[lo];
+    let hi = 255;
+    for (let seen = 0; hi > 0 && seen + hist[hi] <= cut; hi--) seen += hist[hi];
+    if (hi - lo < 1) continue;
+    const k = 255 / (hi - lo);
+    for (let i = c; i < px.length; i += 4) px[i] = Math.min(255, Math.max(0, Math.round((px[i] - lo) * k)));
+  }
+  ctx.putImageData(image, 0, 0);
+  return out;
+}
+
+// How much two runs' boxes must overlap to count as the same physical
+// tile when merging re-check runs - looser than NMS_IOU_THRESHOLD since
+// the same tile's box shifts a little between differently-sized crops.
+const RECHECK_MATCH_IOU = 0.5;
+
+// A tile after the re-check pass. `recovery` marks what the re-check
+// changed, so the review step can ask the user to double-check exactly
+// those: "added" - the first pass missed it entirely; "reclassified" - the
+// first pass found it but the re-check runs mostly read it as a different
+// tile. null - unchanged.
+export interface RecheckedDetection extends Detection {
+  recovery: "added" | "reclassified" | null;
+}
+
+// Merges the first pass's detections with the re-check runs' (all already
+// in the first pass's own frame - see remapDetections) by voting, tile by
+// tile:
+//  - Each first-pass tile is always kept. Its name becomes whichever class
+//    has the highest total confidence across every run that found it -
+//    so a first-pass misread that most re-check runs disagree with gets
+//    corrected, and marked "reclassified".
+//  - A tile the first pass missed is added (marked "added") only if a
+//    MAJORITY of the re-check runs found it. That's what stops the
+//    re-check from inventing tiles: a one-off false detection in a single
+//    run never makes it in. It deliberately doesn't ask whether an added
+//    tile would complete the hand - picking tiles by "does this make it
+//    win" could just as easily land on a wrong hand that happens to win.
+// Exported for direct unit testing.
+export function mergeRecheckRuns(first: Detection[], runs: Detection[][]): RecheckedDetection[] {
+  type Cluster = { anchor: Detection["box"]; firstPass: Detection | null; members: { run: number; d: Detection }[] };
+  const clusters: Cluster[] = first.map((d) => ({ anchor: d.box, firstPass: d, members: [{ run: -1, d }] }));
+  runs.forEach((detections, run) => {
+    for (const d of [...detections].sort((a, b) => b.confidence - a.confidence)) {
+      let best: Cluster | null = null;
+      let bestIou = RECHECK_MATCH_IOU;
+      for (const c of clusters) {
+        if (c.members.some((m) => m.run === run)) continue; // one vote per run per tile
+        const iou = boxIou(c.anchor, d.box);
+        if (iou >= bestIou) {
+          best = c;
+          bestIou = iou;
+        }
+      }
+      if (best) best.members.push({ run, d });
+      else clusters.push({ anchor: d.box, firstPass: null, members: [{ run, d }] });
+    }
+  });
+
+  const majority = Math.floor(runs.length / 2) + 1;
+  return clusters.flatMap((c) => {
+    if (!c.firstPass && c.members.length < majority) return [];
+    const scoreByClass = new Map<string, number>();
+    for (const { d } of c.members) scoreByClass.set(d.className, (scoreByClass.get(d.className) ?? 0) + d.confidence);
+    const className = [...scoreByClass.entries()].reduce((a, b) => (b[1] > a[1] ? b : a))[0];
+    const best = c.members.filter((m) => m.d.className === className).reduce((a, b) => (b.d.confidence > a.d.confidence ? b : a)).d;
+    const recovery = !c.firstPass ? "added" : className !== c.firstPass.className ? "reclassified" : null;
+    return [
+      {
+        className,
+        tile: classToTile(className),
+        confidence: best.confidence,
+        // A first-pass tile keeps its own box (it's what the user's
+        // review image was drawn around); an added one takes its best
+        // run's.
+        box: c.firstPass ? c.firstPass.box : best.box,
+        recovery,
+      },
+    ];
+  });
+}
+
+// The re-check pass for one scanned region: runs detection again on each
+// of recheckRects' crops plus an auto-contrast copy of the region itself,
+// maps every run's tiles back into the first pass's frame, and merges them
+// with the first pass by vote (see mergeRecheckRuns). Only meant to run
+// when the first pass didn't add up (the caller decides - a hand that
+// isn't a legal winning hand, a tile count the Calculator can't use) -
+// it's several extra model runs per region.
+export async function recheckRegion(
+  image: HTMLImageElement,
+  rect: RowRegion,
+  first: Detection[],
+  onProgress?: (p: ScanProgress) => void
+): Promise<RecheckedDetection[]> {
+  onProgress?.({ phase: "rechecking" });
+  const base = photoCrop(rect, image);
+  const runs: Detection[][] = [];
+  for (const variant of recheckRects(rect)) {
+    const { detections } = await detectTiles(letterbox(cropRegion(image, variant)));
+    runs.push(remapDetections(detections, photoCrop(variant, image), base));
+  }
+  // Same geometry as the first pass, so its boxes are already in its frame.
+  runs.push((await detectTiles(letterbox(autoContrast(cropRegion(image, rect))))).detections);
+  return mergeRecheckRuns(first, runs);
 }

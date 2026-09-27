@@ -1998,6 +1998,15 @@ button.scoring-pattern-row {
   stroke-dasharray: 4 3;
 }
 
+/* Added or renamed by the scan's re-check pass - the user should look at
+   these before trusting them. Declared before .editing so tapping one
+   still shows the normal editing highlight. */
+.detection-box.recovered .detection-outline {
+  stroke: var(--warning-accent-1);
+  stroke-width: 3;
+  stroke-dasharray: 6 4;
+}
+
 .detection-box.editing .detection-outline {
   stroke: var(--accent);
   stroke-width: 3;
@@ -2009,6 +2018,10 @@ button.scoring-pattern-row {
 
 .detection-box.bonus .detection-label-bg {
   fill: var(--text-subtle);
+}
+
+.detection-box.recovered .detection-label-bg {
+  fill: var(--warning-accent-1);
 }
 
 .detection-box.editing .detection-label-bg {
@@ -2098,6 +2111,10 @@ button.scoring-pattern-row {
 .scan-review-hint {
   font-size: 0.78rem;
   color: var(--text-faint);
+}
+
+.scan-review-hint.recovered {
+  color: var(--warning-text);
 }
 
 .scan-review-actions {
