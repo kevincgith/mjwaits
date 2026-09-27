@@ -1515,8 +1515,11 @@ const HandScanner = forwardRef<
     // onConfirm, with no crop/review step shown at all. A false result (or
     // no usable auto-fit regions to try in the first place) falls back to
     // today's flow: the crop screen, pre-filled with whatever regions were
-    // auto-fit. Absent entirely (Calculator's usage), the crop screen
-    // always shows, unchanged from before this existed.
+    // auto-fit. The same check also applies after a scan from the crop
+    // screen: a winning result is applied straight away there too, instead
+    // of stopping at the review step. Absent entirely (Calculator's usage),
+    // the crop screen always shows and every scan goes to review, unchanged
+    // from before this existed.
     autoApply?: (regions: { detections: ReviewDetection[] }[]) => boolean;
     // "Does this scan add up?" - when the first detection pass fails it,
     // each region is re-checked (see detectRegions) before anything is
@@ -1794,8 +1797,20 @@ const HandScanner = forwardRef<
         if (scanGeneration.current === myGeneration) setScanProgress(p);
       });
       if (scanGeneration.current !== myGeneration) return; // reset mid-scan - drop the result
-      setScanPreview({ regions });
-      setScanStatus("review");
+      // Same rule as the streamlined path (see tryAutoScanAndApply): a
+      // caller with autoApply (ScoringPanel) gets a legal winning hand
+      // applied straight away - re-checked tiles or not - with no "Use
+      // this hand" review step. Anything else (not winning, or no
+      // autoApply at all - the Calculator) goes to review as before.
+      const plain = regions.map((r) => ({ detections: r.detections }));
+      if (autoApply?.(plain)) {
+        onConfirm(plain);
+        appliedOnceRef.current = true;
+        setScanStatus("auto-applied");
+      } else {
+        setScanPreview({ regions });
+        setScanStatus("review");
+      }
     } catch (err) {
       if (scanGeneration.current !== myGeneration) return;
       setScanError(err instanceof Error ? err.message : "Could not scan that photo");
