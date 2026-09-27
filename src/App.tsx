@@ -4681,6 +4681,24 @@ function ScoringPanel() {
     return { realTiles, bonusTiles };
   };
 
+  // Bonus tiles are never part of the concealed hand, so any the Concealed
+  // region's scan picked up (one big box drawn around a hand with its
+  // flowers in the same row, say) count as declared bonus tiles, merged
+  // with the Declared region's own (`declaredBonus`, null when there's no
+  // Declared region). Each bonus tile exists only once in a set, so one
+  // seen in both regions - a split crop's neighbouring edges can both catch
+  // it - is counted once. Returns null when there's no Declared region and
+  // the Concealed one had no bonus tiles either: bonusTiles is then left
+  // untouched, same as before ("region 1 absent means untouched" - see
+  // applyScannedRegions).
+  const scannedBonusTiles = (concealedDetections: ReviewDetection[], declaredBonus: BonusTile[] | null): BonusTile[] | null => {
+    const fromConcealed = concealedDetections.flatMap((d) => (d.tile === null && d.bonus ? [d.bonus] : []));
+    if (declaredBonus === null && fromConcealed.length === 0) return null;
+    const merged: BonusTile[] = [];
+    for (const b of [...(declaredBonus ?? []), ...fromConcealed]) if (!merged.some((m) => sameBonusTile(m, b))) merged.push(b);
+    return merged;
+  };
+
   // HandScanner's regionIssue for the Declared region. groupDeclaredTiles
   // assumes melds are laid out left-to-right and consecutive - a photo
   // grouped some other way (e.g. stacked top-to-bottom) breaks that
@@ -4721,6 +4739,8 @@ function ScoringPanel() {
   // only produces it if the user added a 2nd region) - when present it fully
   // replaces both declaredMelds and bonusTiles; when absent, those are left
   // untouched, since the user simply wasn't scanning that part this time.
+  // Bonus tiles found in the concealed region always count as declared
+  // ones though (see scannedBonusTiles), with or without region 1.
   const applyScannedRegions = (regions: { detections: ReviewDetection[] }[]) => {
     const [concealedRegion, declaredRegion] = regions;
     if (concealedRegion) {
@@ -4754,15 +4774,20 @@ function ScoringPanel() {
       setWinningTile(winningMatch ?? null);
       setConcealedPickerCollapsed(true);
     }
+    let declaredBonus: BonusTile[] | null = null;
     if (declaredRegion) {
-      const { realTiles, bonusTiles: scannedBonusTiles } = declaredScanTiles(declaredRegion.detections);
+      const { realTiles, bonusTiles } = declaredScanTiles(declaredRegion.detections);
       const { melds } = groupDeclaredTiles(realTiles);
       const nextDeclared = melds.map((m) => ({ id: nextMeldId.current++, ...m }));
       declaredRef.current = nextDeclared;
       setDeclaredMelds(nextDeclared);
-      bonusRef.current = scannedBonusTiles;
-      setBonusTiles(scannedBonusTiles);
+      declaredBonus = bonusTiles;
       setDeclaredPickerCollapsed(true);
+    }
+    const nextBonus = scannedBonusTiles(concealedRegion?.detections ?? [], declaredBonus);
+    if (nextBonus) {
+      bonusRef.current = nextBonus;
+      setBonusTiles(nextBonus);
     }
   };
 
@@ -4822,14 +4847,14 @@ function ScoringPanel() {
     let nextDeclaredMelds: MeldDeclaration[];
     let nextBonusTiles: BonusTile[];
     if (declaredRegion) {
-      const { realTiles, bonusTiles: scannedBonusTiles } = declaredScanTiles(declaredRegion.detections);
+      const { realTiles, bonusTiles: declaredBonus } = declaredScanTiles(declaredRegion.detections);
       const { melds, leftover } = groupDeclaredTiles(realTiles);
       if (leftover.length > 0) return false;
       nextDeclaredMelds = melds;
-      nextBonusTiles = scannedBonusTiles;
+      nextBonusTiles = scannedBonusTiles(concealedRegion.detections, declaredBonus)!;
     } else {
       nextDeclaredMelds = declaredMelds.map(({ kind, concealed, tiles }) => ({ kind, concealed, tiles }));
-      nextBonusTiles = bonusTiles;
+      nextBonusTiles = scannedBonusTiles(concealedRegion.detections, null) ?? bonusTiles;
     }
     try {
       scoreParsedHand({ declaredMelds: nextDeclaredMelds, freeTiles, bonusTiles: nextBonusTiles }, ctx);

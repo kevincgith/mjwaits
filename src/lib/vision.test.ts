@@ -6,6 +6,7 @@ import {
   declarednessScore,
   detailWindows,
   findRotatedOutlier,
+  isCompleteHandRow,
   IMG_SIZE,
   isPairOnlyRow,
   isRowADeclared,
@@ -991,5 +992,69 @@ describe("mergeRecheckRuns", () => {
     expect(only.recovery).toBe("reclassified");
     expect(only.box).toEqual(first[0].box); // keeps the first pass's own box
     expect(mergeRecheckRuns([tile("4b", 200)], [[], []])).toEqual([{ ...tile("4b", 200), recovery: null }]);
+  });
+});
+
+describe("isCompleteHandRow / selectHandRows with a complete concealed hand", () => {
+  // 南南南 西西西 白白白 東東東 北北北 + 七萬 pair - a complete 17-tile hand.
+  const completeHand = () => rowFromHand("222333555111444z77m", 400, 480);
+  const bonus = (className: string, x: number, y1 = 400, y2 = 480) => detection({ tile: null, className, box: [x, y1, x + 40, y2] });
+
+  it("recognises a row whose real tiles form a complete hand, ignoring bonus tiles in it", () => {
+    const row = [bonus("2f", 0), bonus("4s", 40), bonus("1s", 80), ...completeHand().map((d) => ({ ...d, box: [d.box[0] + 120, d.box[1], d.box[2] + 120, d.box[3]] as Detection["box"] }))];
+    expect(isCompleteHandRow(row)).toBe(true);
+    expect(isCompleteHandRow(completeHand().slice(1))).toBe(false); // 16 tiles
+    expect(isCompleteHandRow(rowOfDistinctTiles(400, 480, 17))).toBe(false); // 17, but no hand shape
+  });
+
+  it("drops a discard pile next to a complete hand, even with only 2 rows - the discard pile can't be declared melds", () => {
+    const discards = rowOfDistinctTiles(100, 180, 9);
+    const hand = completeHand();
+    expect(selectHandRows([discards, hand])).toEqual([hand]);
+  });
+
+  it("keeps a separate all-bonus row alongside a complete hand as the declared side, dropping the discard pile", () => {
+    const discards = rowOfDistinctTiles(100, 180, 9);
+    const flowers = [bonus("1f", 0, 250, 330), bonus("2f", 40, 250, 330)];
+    const hand = completeHand();
+    expect(selectHandRows([discards, flowers, hand])).toEqual([flowers, hand]);
+  });
+});
+
+describe("regionsFromRows with bonus tiles in the same row as the hand", () => {
+  const image = { naturalWidth: IMG_SIZE, naturalHeight: IMG_SIZE };
+  const real = (x: number) => detection({ tile: { suit: "z", rank: 2 }, box: [x, 400, x + 40, 480] });
+  const bonus = (x: number) => detection({ tile: null, className: "2f", box: [x, 400, x + 40, 480] });
+
+  it("draws two side-by-side boxes when the bonus tiles sit together at one end", () => {
+    const row = [bonus(20), bonus(60), real(140), real(180), real(220)];
+    const { declared, concealed } = regionsFromRows([row], image)!;
+    expect(declared).toBeDefined();
+    expect(declared!.x + declared!.w).toBeLessThanOrEqual(concealed.x);
+  });
+
+  it("still draws two boxes when the bonus tiles touch the hand, meeting halfway between the touching tiles", () => {
+    const row = [bonus(20), bonus(60), real(100), real(140), real(180)]; // 2nd bonus tile's right edge = 1st real tile's left edge
+    const { declared, concealed } = regionsFromRows([row], image)!;
+    expect(declared).toBeDefined();
+    expect(declared!.x + declared!.w).toBeCloseTo(100 / IMG_SIZE);
+    expect(concealed.x).toBeCloseTo(100 / IMG_SIZE);
+    expect(declared!.x).toBeLessThanOrEqual(20 / IMG_SIZE);
+    expect(concealed.x + concealed.w).toBeGreaterThanOrEqual(220 / IMG_SIZE);
+  });
+
+  it("works with the bonus tiles at the right-hand end too", () => {
+    const row = [real(20), real(60), real(100), bonus(140), bonus(180)];
+    const { declared, concealed } = regionsFromRows([row], image)!;
+    expect(declared!.x).toBeCloseTo(140 / IMG_SIZE);
+    expect(concealed.x + concealed.w).toBeCloseTo(140 / IMG_SIZE);
+  });
+
+  it("falls back to one Concealed box around the whole row when bonus tiles are at both ends - no clean split", () => {
+    const row = [bonus(20), real(100), real(140), real(180), bonus(260)];
+    const regions = regionsFromRows([row], image)!;
+    expect(regions.declared).toBeUndefined();
+    expect(regions.concealed.x).toBeLessThanOrEqual(20 / IMG_SIZE);
+    expect(regions.concealed.x + regions.concealed.w).toBeGreaterThanOrEqual(300 / IMG_SIZE);
   });
 });

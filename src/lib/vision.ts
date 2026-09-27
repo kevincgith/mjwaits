@@ -796,11 +796,35 @@ function isPlausibleHandRow(row: Detection[]): boolean {
   return realTileCount(row) <= MAX_PLAUSIBLE_HAND_ROW_TILES;
 }
 
-// When clusterRows finds 3+ distinct rows, at least one of them is very
-// likely not part of the hand at all - picks out (at most) 2 that are, for
-// detectRowRegions' normal 1-or-2-row handling to work with below. Never
-// touches the exactly-2-rows (or fewer) case - there's no third row to be
-// suspicious of in the first place, so both are trusted as-is and left for
+// Whether `row`'s real tiles (bonus tiles set aside) form a complete
+// winning hand all on their own - exactly COMPLETE_SIZE tiles that group
+// into melds plus one pair, or one of the special hands (see
+// looksLikeConcealedFragment). Such a row can only be a fully concealed
+// hand: with all 17 tiles already concealed there's nothing left to have
+// been declared, so the hand's declared side can hold bonus tiles at most.
+// Exported for direct unit testing.
+export function isCompleteHandRow(row: Detection[]): boolean {
+  return realTileCount(row) === COMPLETE_SIZE && looksLikeConcealedFragment(row);
+}
+
+// Picks out (at most) 2 rows that are actually part of the hand, for
+// detectRowRegions' normal 1-or-2-row handling to work with below.
+//
+// Checked first, whatever the row count: if exactly one row is a complete
+// hand on its own (see isCompleteHandRow), that row IS the whole hand, so
+// no other row of real tiles can be part of it - it's a discard pile, and
+// is dropped. The only other row kept is one made up entirely of bonus
+// tiles (isAllBonusTiles), as the declared side; if there isn't exactly
+// one such row, the complete row comes back alone (and any bonus tiles in
+// that same row are split out by regionsFromRows). Without this, a
+// discard pile beside a fully concealed hand with its flowers in the same
+// row got labelled the concealed hand, with the real hand called declared
+// - the flowers tipped declarednessScore that way.
+//
+// Otherwise, when clusterRows finds 3+ distinct rows, at least one of them
+// is very likely not part of the hand at all. Never touches the
+// exactly-2-rows (or fewer) case - there's no third row to be suspicious
+// of in the first place, so both are trusted as-is and left for
 // isRowADeclared to label.
 //
 // Two passes: first drops anything larger than the hand's own tile-count
@@ -823,6 +847,12 @@ function isPlausibleHandRow(row: Detection[]): boolean {
 // Exported for direct unit testing alongside isPlausibleHandRow's and
 // looksLikeDeclaredMelds's own reasoning.
 export function selectHandRows(rows: Detection[][]): Detection[][] {
+  const completeRows = rows.filter(isCompleteHandRow);
+  if (completeRows.length === 1) {
+    const bonusRows = rows.filter(isAllBonusTiles);
+    const keep = bonusRows.length === 1 ? [completeRows[0], bonusRows[0]] : [completeRows[0]];
+    return rows.filter((r) => keep.includes(r)); // keeps clusterRows' top-to-bottom order
+  }
   if (rows.length <= 2) return rows;
   const plausible = rows.filter(isPlausibleHandRow);
   if (plausible.length <= 2) return plausible;
@@ -1137,7 +1167,9 @@ function cropToWindow(image: HTMLImageElement, win: ImageWindow): HTMLCanvasElem
 export async function detectRowRegions(image: HTMLImageElement): Promise<DetectedRegions | null> {
   const { detections } = await detectTiles(letterbox(image));
   let rows = selectHandRows(clusterRows(detections));
-  if (rows.length < 2) {
+  // A lone row that's already a complete hand needs no second look - see
+  // isCompleteHandRow.
+  if (rows.length < 2 && !(rows.length === 1 && isCompleteHandRow(rows[0]))) {
     const detailed = [...detections];
     for (const win of detailWindows(image)) {
       const { detections: windowDetections } = await detectTiles(letterbox(cropToWindow(image, win)));
@@ -1174,10 +1206,30 @@ export function regionsFromRows(rows: Detection[][], image: ImageSize): Detected
     // see splitMixedRow.
     const split = splitMixedRow(rows[0]);
     if (split) {
-      const [declared, concealed] = resolveVerticalOverlap(
-        rowToRegion(split.declared, image, SPLIT_PAD_X),
-        rowToRegion(split.concealed, image, SPLIT_PAD_X)
-      );
+      // Only a clean side-by-side split if every bonus tile sits on the same
+      // side of every real tile. Bonus tiles at both ends of the row, or in
+      // among the real tiles, get one Concealed box around the whole row
+      // instead - the Scoring tab counts any bonus tile scanned in the
+      // Concealed region as declared anyway.
+      const centerX = (d: Detection) => (d.box[0] + d.box[2]) / 2;
+      const bonusXs = split.declared.map(centerX);
+      const realXs = split.concealed.map(centerX);
+      const bonusOnLeft = Math.max(...bonusXs) < Math.min(...realXs);
+      if (!bonusOnLeft && Math.min(...bonusXs) <= Math.max(...realXs)) return { concealed: rowToRegion(rows[0], image) };
+      // Bonus tiles often sit right up against the hand on the rack, so the
+      // two halves' padded boxes can overlap by a few pixels - meet them
+      // at the midpoint between the tiles' own facing edges instead.
+      const [leftTiles, rightTiles] = bonusOnLeft ? [split.declared, split.concealed] : [split.concealed, split.declared];
+      const leftTight = rowToRegion(leftTiles, image, 0);
+      const rightTight = rowToRegion(rightTiles, image, 0);
+      const boundary = (leftTight.x + leftTight.w + rightTight.x) / 2;
+      const left = rowToRegion(leftTiles, image, SPLIT_PAD_X);
+      const right = rowToRegion(rightTiles, image, SPLIT_PAD_X);
+      const trimmedLeft = { ...left, w: Math.min(left.x + left.w, boundary) - left.x };
+      const rightX = Math.max(right.x, boundary);
+      const trimmedRight = { ...right, x: rightX, w: right.x + right.w - rightX };
+      const [declaredHalf, concealedHalf] = bonusOnLeft ? [trimmedLeft, trimmedRight] : [trimmedRight, trimmedLeft];
+      const [declared, concealed] = resolveVerticalOverlap(declaredHalf, concealedHalf);
       return { declared, concealed };
     }
     // Nothing to split the row by content (no bonus tiles at all) - most
