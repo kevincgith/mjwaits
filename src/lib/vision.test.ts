@@ -12,8 +12,12 @@ import {
   looksLikeConcealedFragment,
   looksLikeDeclaredMelds,
   mapWindowDetections,
+  mergeRecheckRuns,
   nonMaxSuppression,
+  photoCrop,
+  recheckRects,
   regionsFromRows,
+  remapDetections,
   resolveVerticalOverlap,
   ROW_PAD_X,
   rowToRegion,
@@ -899,5 +903,93 @@ describe("regionsFromRows", () => {
     expect(declared!.y + declared!.h).toBeGreaterThanOrEqual(460 / IMG_SIZE);
     expect(concealed.y).toBeLessThanOrEqual(410 / IMG_SIZE);
     expect(concealed.y + concealed.h).toBeGreaterThanOrEqual(500 / IMG_SIZE);
+  });
+});
+
+describe("recheckRects", () => {
+  it("only ever grows the region outward, so no tile the user included is ever cropped off", () => {
+    const rect = { x: 0.3, y: 0.3, w: 0.4, h: 0.2 };
+    const variants = recheckRects(rect);
+    expect(variants.length).toBeGreaterThan(0);
+    for (const v of variants) {
+      expect(v.x).toBeLessThanOrEqual(rect.x);
+      expect(v.y).toBeLessThanOrEqual(rect.y);
+      expect(v.x + v.w).toBeGreaterThanOrEqual(rect.x + rect.w - 1e-9);
+      expect(v.y + v.h).toBeGreaterThanOrEqual(rect.y + rect.h - 1e-9);
+    }
+  });
+
+  it("clamps to the photo and drops variants that clamping makes identical to the region or to each other", () => {
+    const full = { x: 0, y: 0, w: 1, h: 1 };
+    expect(recheckRects(full)).toEqual([]); // nowhere left to grow
+    const variants = recheckRects({ x: 0, y: 0.3, w: 1, h: 0.2 }); // already full-width
+    for (const v of variants) expect(v.x >= 0 && v.x + v.w <= 1 + 1e-9).toBe(true);
+    const keys = variants.map((v) => [v.x, v.y, v.w, v.h].map((n) => n.toFixed(6)).join());
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+});
+
+describe("remapDetections", () => {
+  const image = { naturalWidth: 1000, naturalHeight: 500 };
+
+  it("round-trips a box through the photo: crop A's frame -> crop B's frame lands on the same photo pixels", () => {
+    const a = photoCrop({ x: 0.1, y: 0.2, w: 0.5, h: 0.4 }, image); // 500x200 px at (100,100)
+    const b = photoCrop({ x: 0.05, y: 0.1, w: 0.7, h: 0.6 }, image); // 700x300 px at (50,50)
+    // In A's letterbox frame (scale 640/500 = 1.28, padY = (640-256)/2 = 192),
+    // box [128, 256, 192, 320] covers photo px x 200-250, y 150-200.
+    const [mapped] = remapDetections([detection({ box: [128, 256, 192, 320] })], a, b);
+    // In B's frame (scale 640/700, padY = (640 - 300*640/700)/2):
+    const s = 640 / 700;
+    const padY = (640 - 300 * s) / 2;
+    expect(mapped.box[0]).toBeCloseTo((200 - 50) * s);
+    expect(mapped.box[1]).toBeCloseTo(padY + (150 - 50) * s);
+    expect(mapped.box[2]).toBeCloseTo((250 - 50) * s);
+    expect(mapped.box[3]).toBeCloseTo(padY + (200 - 50) * s);
+  });
+
+  it("drops a tile whose center falls outside the target crop - a wider re-check crop mustn't pull in the neighbouring row", () => {
+    const wide = photoCrop({ x: 0, y: 0, w: 1, h: 1 }, image);
+    const region = photoCrop({ x: 0.2, y: 0.4, w: 0.6, h: 0.2 }, image); // photo y 200-300
+    // Whole-photo frame: scale 0.64, padY 160. A tile at photo y 100-150 (above the region):
+    const outside = detection({ box: [200, 160 + 64, 230, 160 + 96] });
+    // ...and one at photo y 220-280 (inside it):
+    const inside = detection({ box: [200, 160 + 140.8, 230, 160 + 179.2] });
+    expect(remapDetections([outside, inside], wide, region)).toHaveLength(1);
+  });
+});
+
+describe("mergeRecheckRuns", () => {
+  const tile = (className: string, x: number, confidence = 0.8): Detection =>
+    detection({ className, tile: { suit: className.slice(-1) as "b", rank: Number(className[0]) }, confidence, box: [x, 100, x + 40, 180] });
+
+  it("adds a tile the first pass missed only when a majority of re-check runs found it", () => {
+    const first = [tile("2b", 100), tile("3b", 140)];
+    const runs = [
+      [tile("1b", 60), tile("2b", 100), tile("3b", 140)],
+      [tile("1b", 61), tile("2b", 100)],
+      [tile("1b", 59), tile("3b", 140)],
+      [tile("2b", 100), tile("3b", 140)],
+      [tile("2b", 100), tile("5z", 400)], // a one-off stray in a single run
+    ];
+    const merged = mergeRecheckRuns(first, runs);
+    expect(merged.map((d) => d.className).sort()).toEqual(["1b", "2b", "3b"]);
+    expect(merged.find((d) => d.className === "1b")!.recovery).toBe("added");
+    expect(merged.filter((d) => d.recovery === null)).toHaveLength(2);
+  });
+
+  it("does not add a tile found by only half the re-check runs", () => {
+    const runs = [[tile("1b", 60)], [tile("1b", 60)], [], []];
+    expect(mergeRecheckRuns([], runs)).toEqual([]);
+  });
+
+  it("always keeps a first-pass tile, and renames it when the re-check runs mostly read it as something else", () => {
+    const first = [tile("1z", 60, 0.45)];
+    const runs = [[tile("1b", 60, 0.7)], [tile("1b", 61, 0.72)], [tile("1z", 60, 0.5)], []];
+    const [only] = mergeRecheckRuns(first, runs);
+    expect(only.className).toBe("1b");
+    expect(only.tile).toEqual({ suit: "b", rank: 1 });
+    expect(only.recovery).toBe("reclassified");
+    expect(only.box).toEqual(first[0].box); // keeps the first pass's own box
+    expect(mergeRecheckRuns([tile("4b", 200)], [[], []])).toEqual([{ ...tile("4b", 200), recovery: null }]);
   });
 });
