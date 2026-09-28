@@ -1320,7 +1320,91 @@ export async function detectRowRegions(image: HTMLImageElement): Promise<Detecte
     const detailedRows = selectHandRows(detailedClustered, (row) => detailedMessy.has(row));
     if (detailedRows.length > rows.length) rows = detailedRows;
   }
-  return regionsFromRows(rows, image);
+  // Look just past each chosen row's ends for tiles the low-resolution
+  // read missed (see growRowEnds), so the box doesn't stop short of them -
+  // but only when some are evidently missing: a complete hand has
+  // COMPLETE_SIZE real tiles, so rows already holding that many between
+  // them have nothing left to find, and the extra model runs (2 per row,
+  // noticeable on the CPU engine) are skipped.
+  if (rows.flat().filter((d) => d.tile).length >= COMPLETE_SIZE) return regionsFromRows(rows, image);
+  const grown: Detection[][] = [];
+  for (const row of rows) grown.push(await growRowEnds(image, row, rows.filter((r) => r !== row).flat()));
+  return regionsFromRows(grown, image);
+}
+
+// How far past a row's box each of growRowEnds' two looks is shifted, in
+// tile widths, and the widest gap between one tile and the next that still
+// counts as the same row (gaps between melds are well under this).
+const GROW_SHIFT_TILES = 2.5;
+const GROW_MAX_GAP_TILES = 2;
+
+// Adds to `row` any of `candidates` (detections from looks past its ends,
+// already in the whole-photo frame) that continue it outward: centered
+// within the row's own height band, not already one of its tiles or one of
+// `taken` (tiles belonging to another row - e.g. a bonus-tile row sitting
+// just above), and each within GROW_MAX_GAP_TILES of the tile before it,
+// tile by tile, so it can't jump across the table to something unrelated.
+// Exported for direct unit testing.
+export function extendRowEnds(row: Detection[], candidates: Detection[], taken: Detection[] = []): Detection[] {
+  if (row.length === 0) return row;
+  const widths = row.map((d) => d.box[2] - d.box[0]).sort((a, b) => a - b);
+  const tileW = widths[Math.floor(widths.length / 2)];
+  const top = Math.min(...row.map((d) => d.box[1]));
+  const bottom = Math.max(...row.map((d) => d.box[3]));
+  const overlaps = (d: Detection, list: Detection[]) => list.some((e) => boxIou(e.box, d.box) > 0.3);
+  const pool = candidates.filter((d) => {
+    const cy = (d.box[1] + d.box[3]) / 2;
+    return cy >= top && cy <= bottom && !overlaps(d, row) && !overlaps(d, taken);
+  });
+  const result = [...row];
+  let left = Math.min(...row.map((d) => d.box[0]));
+  let right = Math.max(...row.map((d) => d.box[2]));
+  const maxGap = GROW_MAX_GAP_TILES * tileW;
+  for (;;) {
+    const next = pool
+      .filter((d) => !result.includes(d) && d.box[0] < left && d.box[2] <= left + tileW / 2 && d.box[2] >= left - maxGap)
+      .sort((a, b) => b.box[2] - a.box[2])[0];
+    if (!next || overlaps(next, result)) break;
+    result.push(next);
+    left = next.box[0];
+  }
+  for (;;) {
+    const next = pool
+      .filter((d) => !result.includes(d) && d.box[2] > right && d.box[0] >= right - tileW / 2 && d.box[0] <= right + maxGap)
+      .sort((a, b) => a.box[0] - b.box[0])[0];
+    if (!next || overlaps(next, result)) break;
+    result.push(next);
+    right = next.box[2];
+  }
+  return result;
+}
+
+// A row's box is drawn around the tiles auto-fit's low-resolution whole-
+// photo read actually FOUND, and the tiles at a row's ends are the ones it
+// most often misses - on one phone, a real concealed row's two leftmost
+// tiles (1b, 2b) went undetected, and since the rest (3b 66b 789b) still
+// looked like a sensible concealed fragment nothing flagged it: the box
+// just stopped at the 3b. So this takes a second look past each end: the
+// row's own box shifted GROW_SHIFT_TILES outward, the SAME size so the
+// tiles stay the same size to the model (simply widening the box instead
+// made them smaller, and the scan then read only half the row), and adds
+// whatever continues the row (see extendRowEnds). Two model runs per row.
+async function growRowEnds(image: HTMLImageElement, row: Detection[], taken: Detection[]): Promise<Detection[]> {
+  if (row.length === 0) return row;
+  const base = rowToRegion(row, image);
+  const scale = Math.min(IMG_SIZE / image.naturalWidth, IMG_SIZE / image.naturalHeight);
+  const widths = row.map((d) => d.box[2] - d.box[0]).sort((a, b) => a - b);
+  const shift = (GROW_SHIFT_TILES * widths[Math.floor(widths.length / 2)]) / scale / image.naturalWidth;
+  const whole = photoCrop({ x: 0, y: 0, w: 1, h: 1 }, image);
+  const candidates: Detection[] = [];
+  for (const dir of [-1, 1]) {
+    const x = Math.min(Math.max(0, base.x + dir * shift), 1 - base.w);
+    if (Math.abs(x - base.x) < 1e-6) continue; // already at the photo's edge on this side
+    const look = { ...base, x };
+    const { detections } = await detectTiles(letterbox(cropRegion(image, look)));
+    candidates.push(...remapDetections(detections, photoCrop(look, image), whole));
+  }
+  return extendRowEnds(row, candidates, taken);
 }
 
 // Which of `rows` are messy (see isHandLikeRow) - judged on a proper read,
