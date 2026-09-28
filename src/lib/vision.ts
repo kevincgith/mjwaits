@@ -1,17 +1,25 @@
 // Client-side mahjong tile detection: a YOLOv8n (nano) model trained on a
 // merged dataset from https://github.com/Andy8647/MahjongVis (MIT) and
 // https://github.com/jaheel/MJOD-2136 (CC BY-NC-SA), run entirely in the
-// browser via onnxruntime-web (WASM). No image ever leaves the device.
+// browser via onnxruntime-web. No image ever leaves the device.
 //
-// Imported from the "/wasm" subpath rather than the package root: the root
-// entry point's bundle registers every backend (WASM, WebGL, WebGPU) and
-// pulls in the JSEP-enabled wasm binary that WebGPU needs, roughly 2x the
-// size of the plain WASM-only binary - getSession only ever passes
-// executionProviders: ["wasm"], so none of that extra code ever runs. This
-// subpath ships the same public API (InferenceSession, Tensor, env) with
-// only the CPU WASM backend registered, cutting the one-time model-load
-// download from ~26 MB to ~13 MB with no behavior change.
-import * as ort from "onnxruntime-web/wasm";
+// Two engines, picked once per page load (see getEngine):
+//  - GPU (WebGPU), where the browser supports it: onnxruntime-web's
+//    "/webgpu" build plus the full-precision model (tile-detector-fp32.onnx).
+//    ~8x faster per model run than the CPU engine (~28ms vs ~230ms on an
+//    Apple M2), at the cost of a larger one-time download (~24 MB engine +
+//    ~12 MB model). The 8-bit model is NOT used here: the GPU engine can't
+//    run its integer ops natively and bounces them back to the CPU, which
+//    made it slower than the CPU engine itself.
+//  - CPU (WASM) everywhere else: the "/wasm" build plus the 8-bit model
+//    (tile-detector.onnx), ~13 MB + ~3.4 MB. Imported from the "/wasm"
+//    subpath rather than the package root, whose bundle registers every
+//    backend and pulls in a binary roughly 2x the size.
+// The GPU build is only ever loaded via a dynamic import, so a device
+// without WebGPU never downloads it. Both models come from the same
+// trained checkpoint (see training/README.md), so they find the same tiles
+// up to 8-bit rounding.
+import * as ortWasm from "onnxruntime-web/wasm";
 import {
   allTileKinds,
   COMPLETE_SIZE,
@@ -100,13 +108,20 @@ export type ScanProgress =
   // variations of each region because the first pass didn't add up.
   | { phase: "rechecking" };
 
-let sessionPromise: Promise<ort.InferenceSession> | null = null;
+type Ort = typeof ortWasm;
+interface Engine {
+  ort: Ort;
+  session: ortWasm.InferenceSession;
+  backend: "webgpu" | "wasm";
+}
+
+let enginePromise: Promise<Engine> | null = null;
 
 // Progress listeners aren't tied to whichever call happens to start the
 // fetch - the model can start downloading in the background (see
 // prefetchModel, called as soon as the user opens the scan flow, before
 // they've picked a photo) well before anything is around to show a
-// progress bar for it. Each getSession call registers its own onProgress
+// progress bar for it. Each getEngine call registers its own onProgress
 // here for the lifetime of the shared fetch, so a bar that shows up later
 // still gets the remaining progress instead of nothing.
 const progressListeners = new Set<(p: ScanProgress) => void>();
@@ -114,8 +129,8 @@ function emitProgress(p: ScanProgress) {
   for (const listener of progressListeners) listener(p);
 }
 
-async function fetchModelBuffer(onProgress?: (loaded: number, total: number | null) => void): Promise<ArrayBuffer> {
-  const response = await fetch(`${import.meta.env.BASE_URL}model/tile-detector.onnx`);
+async function fetchModelBuffer(file: string, onProgress?: (loaded: number, total: number | null) => void): Promise<ArrayBuffer> {
+  const response = await fetch(`${import.meta.env.BASE_URL}model/${file}`);
   if (!response.ok) throw new Error(`Could not download the tile detector (${response.status})`);
   if (!response.body) return response.arrayBuffer();
 
@@ -139,19 +154,65 @@ async function fetchModelBuffer(onProgress?: (loaded: number, total: number | nu
   return buffer.buffer;
 }
 
-function getSession(onProgress?: (p: ScanProgress) => void): Promise<ort.InferenceSession> {
-  if (!sessionPromise) {
-    sessionPromise = (async () => {
-      const buffer = await fetchModelBuffer((loaded, total) => emitProgress({ phase: "downloading-model", loaded, total }));
-      emitProgress({ phase: "initializing" });
-      return ort.InferenceSession.create(buffer, { executionProviders: ["wasm"] });
-    })();
+const reportDownload = (loaded: number, total: number | null) => emitProgress({ phase: "downloading-model", loaded, total });
+
+async function createWasmEngine(): Promise<Engine> {
+  const buffer = await fetchModelBuffer("tile-detector.onnx", reportDownload);
+  emitProgress({ phase: "initializing" });
+  const session = await ortWasm.InferenceSession.create(buffer, { executionProviders: ["wasm"] });
+  return { ort: ortWasm, session, backend: "wasm" };
+}
+
+// The GPU engine, or null if this browser can't give us one - no WebGPU at
+// all, no usable GPU adapter, or anything along the way failing (the
+// engine download, creating the session, or the warm-up run below). Never
+// throws: the caller just falls back to the CPU engine.
+async function createWebGpuEngine(): Promise<Engine | null> {
+  const gpu = (navigator as Navigator & { gpu?: { requestAdapter(): Promise<unknown> } }).gpu;
+  if (!gpu) return null;
+  try {
+    if (!(await gpu.requestAdapter())) return null;
+    const ort = (await import("onnxruntime-web/webgpu")) as unknown as Ort;
+    const buffer = await fetchModelBuffer("tile-detector-fp32.onnx", reportDownload);
+    emitProgress({ phase: "initializing" });
+    // logSeverityLevel 3 (errors only): the GPU engine otherwise logs a
+    // warning on every load that a few small shape-calculation steps run
+    // on the CPU instead - expected and harmless, but it shows up in the
+    // browser console looking like an error.
+    const session = await ort.InferenceSession.create(buffer, { executionProviders: ["webgpu"], logSeverityLevel: 3 });
+    // The GPU compiles its programs on the first run (~0.8s on an M2) -
+    // pay that here, during prefetchModel (while the user is still picking
+    // a photo), rather than on the first real scan. Also proves the engine
+    // actually runs before we commit to it.
+    const blank = new ort.Tensor("float32", new Float32Array(3 * IMG_SIZE * IMG_SIZE), [1, 3, IMG_SIZE, IMG_SIZE]);
+    await session.run({ images: blank });
+    return { ort, session, backend: "webgpu" };
+  } catch {
+    return null;
+  }
+}
+
+// "?backend=cpu" in the page URL skips the GPU engine - for checking
+// whether a problem seen on one device is GPU-specific.
+function cpuForced(): boolean {
+  return typeof location !== "undefined" && new URLSearchParams(location.search).get("backend") === "cpu";
+}
+
+function getEngine(onProgress?: (p: ScanProgress) => void): Promise<Engine> {
+  if (!enginePromise) {
+    enginePromise = (async () => (!cpuForced() && (await createWebGpuEngine())) || createWasmEngine())();
   }
   if (onProgress) {
     progressListeners.add(onProgress);
-    sessionPromise.finally(() => progressListeners.delete(onProgress));
+    enginePromise.finally(() => progressListeners.delete(onProgress));
   }
-  return sessionPromise;
+  return enginePromise;
+}
+
+// Which engine this page is running the model on - "webgpu" or "wasm" -
+// once it's loaded. For diagnostics only.
+export async function detectorBackend(): Promise<"webgpu" | "wasm"> {
+  return (await getEngine()).backend;
 }
 
 // Kicks off the model download/init ahead of time, so it's already done (or
@@ -161,7 +222,7 @@ function getSession(onProgress?: (p: ScanProgress) => void): Promise<ort.Inferen
 // genuinely broken, the later detectTiles call awaits the same rejected
 // sessionPromise and reports it through the normal scan error UI then.
 export function prefetchModel(): void {
-  getSession().catch(() => {});
+  getEngine().catch(() => {});
 }
 
 // Resizes `image` to fit IMG_SIZE x IMG_SIZE without distortion, padding the
@@ -186,7 +247,7 @@ export function letterbox(image: HTMLImageElement | HTMLCanvasElement): Letterbo
   return { canvas, size: IMG_SIZE };
 }
 
-function toTensor(canvas: HTMLCanvasElement): ort.Tensor {
+function toTensor(ort: Ort, canvas: HTMLCanvasElement): ortWasm.Tensor {
   const ctx = canvas.getContext("2d")!;
   const { data } = ctx.getImageData(0, 0, IMG_SIZE, IMG_SIZE);
   const plane = IMG_SIZE * IMG_SIZE;
@@ -234,9 +295,19 @@ export function nonMaxSuppression(detections: Detection[]): Detection[] {
 
 // Runs detection on an already-letterboxed canvas (see `letterbox`).
 export async function detectTiles(box: Letterbox, onProgress?: (p: ScanProgress) => void): Promise<DetectionResult> {
-  const session = await getSession(onProgress);
+  let engine = await getEngine(onProgress);
   onProgress?.({ phase: "running" });
-  const outputs = await session.run({ images: toTensor(box.canvas) });
+  let outputs: ortWasm.InferenceSession.OnnxValueMapType;
+  try {
+    outputs = await engine.session.run({ images: toTensor(engine.ort, box.canvas) });
+  } catch (err) {
+    if (engine.backend !== "webgpu") throw err;
+    // The GPU engine failed mid-session (a lost device, a driver
+    // hiccup) - switch this page to the CPU engine for good and retry.
+    enginePromise = createWasmEngine();
+    engine = await getEngine(onProgress);
+    outputs = await engine.session.run({ images: toTensor(engine.ort, box.canvas) });
+  }
   const out = outputs.output0.data as Float32Array;
   const numDetections = outputs.output0.dims[1];
 

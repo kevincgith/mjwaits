@@ -158,8 +158,11 @@ Sixteen Unrelated shows the pair and the other 15 singles.
 ### Camera scan (📷)
 
 Point a camera at a hand (or pick a photo) and have the tiles filled in automatically. Detection
-runs entirely in-browser — a YOLOv8n (nano) model quantized to INT8 ONNX (3.4 MB), run via
-[onnxruntime-web](https://github.com/microsoft/onnxruntime) (WASM). No image is uploaded anywhere.
+runs entirely in-browser via [onnxruntime-web](https://github.com/microsoft/onnxruntime), using a
+YOLOv8n (nano) model. No image is uploaded anywhere. Browsers with WebGPU run the full-precision
+model (12.3 MB) on the GPU, about 8x faster per detection pass; everywhere else runs the same
+model quantized to INT8 (3.4 MB) on the CPU (WASM). Add `?backend=cpu` to the page URL to force the
+CPU path.
 
 The Scan button opens the camera directly (there's a separate 🏞️ Photos button for an existing
 shot). You then drag to crop out anything that isn't the hand, with a rotate control for sideways

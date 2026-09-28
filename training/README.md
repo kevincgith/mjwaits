@@ -199,13 +199,24 @@ ever loads the finished ONNX file from `public/model/`.
    shrinks 11.8MB (FP32) to 3.4MB. Quantization loss has been negligible
    on every checkpoint deployed prior to the rotation fine-tune, but
    wasn't for that one (see above) - always re-validate the exported
-   ONNX graph itself, not just the FP32 checkpoint.
+   ONNX graph itself, not just the FP32 checkpoint. **Keep the
+   unquantized FP32 export too** - it's deployed as well (see below).
 
-7. **Deploy** — the quantized `.onnx` is committed straight into
-   `public/model/tile-detector.onnx`, where
-   [`src/lib/vision.ts`](../src/lib/vision.ts) fetches and runs it
-   client-side via onnxruntime-web (WASM). No image or model inference ever
-   touches a server.
+7. **Deploy** — two files, both from the **same** checkpoint, committed
+   into `public/model/`:
+   - `tile-detector.onnx` — the INT8 export, run on the CPU (WASM) by
+     browsers without WebGPU.
+   - `tile-detector-fp32.onnx` — the unquantized FP32 export, run on the
+     GPU by browsers with WebGPU (~8x faster per pass than the CPU
+     engine on an Apple M2). The INT8 model is NOT used on the GPU: the
+     WebGPU engine can't run its integer ops natively and bounces them
+     back to the CPU, which made it slower than the CPU engine itself.
+
+   [`src/lib/vision.ts`](../src/lib/vision.ts) picks the engine at load
+   time (see its header comment) and falls back to the CPU one if the GPU
+   path fails. Always update both files together - shipping a new INT8
+   model without its matching FP32 export would leave GPU devices on the
+   old model. No image or model inference ever touches a server.
 
 ## Checkpoints
 
