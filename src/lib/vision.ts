@@ -385,6 +385,9 @@ const ROW_PAD_Y = 0.3;
 // often a narrow bonus-only sub-region) would blow straight through the
 // midpoint and eat into the other half's own tiles.
 const SPLIT_PAD_X = 0.015;
+// The hairline gap (as a fraction of the photo's width) left between a
+// split row's two side-by-side halves - see regionsFromRows.
+const SPLIT_GAP = 1e-6;
 // Vertical padding used instead of ROW_PAD_Y for a row that contains a
 // rotated outlier (see findRotatedOutlier). Only a modest bump over the
 // normal ROW_PAD_Y, not a dramatic one: rescueRotatedStrays (see
@@ -420,6 +423,18 @@ const MIN_REGION_WIDTH = 0.1;
 // Not applied to the concealed row or to a split-row half (see
 // DECLARED_ROW_MIN_EDGE_PAD_TILES's own call site).
 const DECLARED_ROW_MIN_EDGE_PAD_TILES = 1;
+// The least padding, in tile widths, a split row's bonus-tile half (see
+// regionsFromRows) gets at its outer end - its inner end still meets the
+// concealed half at the boundary between them. Bonus tiles are the ones
+// the whole-photo read most often misses (the outermost one especially,
+// e.g. an upside-down flower), so this keeps a missed outer bonus tile
+// inside the box. It also helps the scan itself read them: such a box is
+// tiny (~13% of the photo's width for 3 tiles), which blows each tile up
+// far larger than the model is used to, and in testing the same 3 bonus
+// tiles read 3 of 3 from a ~25%-wide crop but only 2 of 3 from the tight
+// one. Unlike a wide concealed row, where extra width only makes the
+// tiles smaller and harder to read, a little more room here helps.
+const BONUS_SPLIT_MIN_EDGE_PAD_TILES = 1.5;
 // The most real (non-bonus) tiles any single hand-related row could ever
 // legitimately contain: a full hand already caps out at COMPLETE_SIZE,
 // and each of its up to MELDS_REQUIRED melds being a kong (the maximum
@@ -1321,12 +1336,11 @@ export async function detectRowRegions(image: HTMLImageElement): Promise<Detecte
     if (detailedRows.length > rows.length) rows = detailedRows;
   }
   // Look just past each chosen row's ends for tiles the low-resolution
-  // read missed (see growRowEnds), so the box doesn't stop short of them -
-  // but only when some are evidently missing: a complete hand has
-  // COMPLETE_SIZE real tiles, so rows already holding that many between
-  // them have nothing left to find, and the extra model runs (2 per row,
-  // noticeable on the CPU engine) are skipped.
-  if (rows.flat().filter((d) => d.tile).length >= COMPLETE_SIZE) return regionsFromRows(rows, image);
+  // read missed (see growRowEnds), so the box doesn't stop short of them.
+  // Always - even when the rows already hold a complete hand's worth of
+  // real tiles, since that says nothing about bonus tiles: on one phone a
+  // fully concealed hand's 17 tiles were all read but the flowers beside
+  // them weren't, and skipping this left them out of every box.
   const grown: Detection[][] = [];
   for (const row of rows) grown.push(await growRowEnds(image, row, rows.filter((r) => r !== row).flat()));
   return regionsFromRows(grown, image);
@@ -1471,19 +1485,39 @@ export function regionsFromRows(rows: Detection[][], image: ImageSize): Detected
       if (!bonusOnLeft && Math.min(...bonusXs) <= Math.max(...realXs)) return { concealed: rowToRegion(rows[0], image) };
       // Bonus tiles often sit right up against the hand on the rack, so the
       // two halves' padded boxes can overlap by a few pixels - meet them
-      // at the midpoint between the tiles' own facing edges instead.
+      // at the midpoint between the tiles' own facing edges instead. But a
+      // gap of half a tile or more between the two groups most likely
+      // hides a tile the read missed there - and a bonus tile, since those
+      // are what the model misses (the hand's own tiles read reliably) -
+      // so then the whole gap goes to the bonus half, the boundary sitting
+      // right at the hand's own edge, instead of the midpoint cutting that
+      // missed tile in half and leaving it half-visible to both scans.
       const [leftTiles, rightTiles] = bonusOnLeft ? [split.declared, split.concealed] : [split.concealed, split.declared];
       const leftTight = rowToRegion(leftTiles, image, 0);
       const rightTight = rowToRegion(rightTiles, image, 0);
-      const boundary = (leftTight.x + leftTight.w + rightTight.x) / 2;
-      const left = rowToRegion(leftTiles, image, SPLIT_PAD_X);
-      const right = rowToRegion(rightTiles, image, SPLIT_PAD_X);
-      const trimmedLeft = { ...left, w: Math.min(left.x + left.w, boundary) - left.x };
+      const gap = rightTight.x - (leftTight.x + leftTight.w);
+      const scale = Math.min(IMG_SIZE / image.naturalWidth, IMG_SIZE / image.naturalHeight);
+      const widths = rows[0].map((d) => d.box[2] - d.box[0]).sort((a, b) => a - b);
+      const tileW = widths[Math.floor(widths.length / 2)] / scale / image.naturalWidth;
+      const boundary =
+        gap < tileW / 2 ? (leftTight.x + leftTight.w + rightTight.x) / 2 : bonusOnLeft ? rightTight.x : leftTight.x + leftTight.w;
+      // The bonus half gets extra room at its outer end (see
+      // BONUS_SPLIT_MIN_EDGE_PAD_TILES); the concealed half doesn't.
+      const bonusPad = (half: Detection[]) => (half === split.declared ? BONUS_SPLIT_MIN_EDGE_PAD_TILES : 0);
+      const left = rowToRegion(leftTiles, image, SPLIT_PAD_X, bonusPad(leftTiles));
+      const right = rowToRegion(rightTiles, image, SPLIT_PAD_X, bonusPad(rightTiles));
+      // The left half stops a hair short of the boundary: floating-point
+      // rounding could otherwise leave its right edge a fraction past the
+      // right half's left edge, which counts as an overlap - both for
+      // App.tsx's own overlap check (rejecting the whole fit) and, before
+      // this, for resolveVerticalOverlap (which then sliced the bonus box
+      // into a thin strip under its tiles). Seen on a real photo.
+      const trimmedLeft = { ...left, w: Math.min(left.x + left.w, boundary - SPLIT_GAP) - left.x };
       const rightX = Math.max(right.x, boundary);
       const trimmedRight = { ...right, x: rightX, w: right.x + right.w - rightX };
       const [declaredHalf, concealedHalf] = bonusOnLeft ? [trimmedLeft, trimmedRight] : [trimmedRight, trimmedLeft];
-      const [declared, concealed] = resolveVerticalOverlap(declaredHalf, concealedHalf);
-      return { declared, concealed };
+      // Side by side by construction - never trimmed vertically.
+      return { declared: declaredHalf, concealed: concealedHalf };
     }
     // Nothing to split the row by content (no bonus tiles at all) - most
     // likely a fully concealed hand with nothing declared and no bonus
