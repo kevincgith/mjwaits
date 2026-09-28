@@ -5,6 +5,7 @@ import {
   concealednessScore,
   declarednessScore,
   detailWindows,
+  extendRowEnds,
   findRotatedOutlier,
   isCompleteHandRow,
   isHandLikeRow,
@@ -1106,5 +1107,46 @@ describe("isHandLikeRow (messy rows get no box)", () => {
 
   it("returns nothing when every row is messy - the caller falls back to its default boxes", () => {
     expect(selectHandRows([rowOfDistinctTiles(100, 180, 7), rowOfDistinctTiles(400, 480, 9)])).toEqual([]);
+  });
+});
+
+describe("extendRowEnds (tiles missed at a row's ends)", () => {
+  // Tiles 40 wide, 80 tall, sitting side by side along y 400-480.
+  const t = (className: string, x: number, y1 = 400, y2 = 480) =>
+    detection({ className, tile: { suit: className.slice(-1) as "b", rank: Number(className[0]) }, box: [x, y1, x + 40, y2] });
+
+  it("adds the missed end tiles, tile by tile - e.g. a concealed row's 1b and 2b", () => {
+    const row = [t("3b", 200), t("6b", 260), t("7b", 300)];
+    const grown = extendRowEnds(row, [t("2b", 160), t("1b", 120), t("3b", 201)]); // 3b again = the same tile, seen twice
+    expect(grown.map((d) => d.className).sort()).toEqual(["1b", "2b", "3b", "6b", "7b"]);
+  });
+
+  it("grows the right-hand end too, and across an ordinary gap between melds", () => {
+    const row = [t("1m", 100), t("2m", 140), t("3m", 180)];
+    const grown = extendRowEnds(row, [t("4t", 250), t("5t", 290)]); // 30px gap after 3m - under 2 tiles
+    expect(grown).toHaveLength(5);
+  });
+
+  it("doesn't jump to something further than 2 tile-widths away", () => {
+    const row = [t("1m", 100), t("2m", 140), t("3m", 180)];
+    expect(extendRowEnds(row, [t("9t", 320)])).toEqual(row); // 100px gap = 2.5 tiles
+  });
+
+  it("changes nothing for one big row with nothing past its ends", () => {
+    const row = [t("1f", 0), t("2f", 40), t("1m", 80), t("2m", 120), t("3m", 160)];
+    expect(extendRowEnds(row, [])).toEqual(row);
+    expect(extendRowEnds(row, row.map((d) => ({ ...d })))).toHaveLength(5); // the look re-finds the same tiles - no duplicates
+  });
+
+  it("never pulls in a bonus-tile row sitting just above the concealed row", () => {
+    const concealed = [t("3b", 200), t("4b", 240), t("5b", 280)];
+    const bonusAbove = [detection({ tile: null, className: "1f", box: [150, 330, 190, 395] }), detection({ tile: null, className: "2f", box: [110, 330, 150, 395] })];
+    expect(extendRowEnds(concealed, bonusAbove)).toEqual(concealed); // centres above the row's own band
+  });
+
+  it("never takes a tile that already belongs to another row, even if it's in line", () => {
+    const concealed = [t("3b", 200), t("4b", 240), t("5b", 280)];
+    const bonus = detection({ tile: null, className: "1f", box: [160, 400, 200, 480] }); // tight against the row, same height
+    expect(extendRowEnds(concealed, [bonus], [bonus])).toEqual(concealed);
   });
 });
