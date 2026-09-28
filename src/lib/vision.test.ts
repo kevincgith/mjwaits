@@ -1061,6 +1061,33 @@ describe("regionsFromRows with bonus tiles in the same row as the hand", () => {
     expect(concealed.x + concealed.w).toBeGreaterThanOrEqual(220 / IMG_SIZE);
   });
 
+  it("gives the bonus-tile box at least 1.5 tiles of room at its outer end, so a missed outer bonus tile stays inside it", () => {
+    const row = [bonus(200), bonus(240), real(280), real(320), real(360)]; // tiles 40 wide
+    const { declared } = regionsFromRows([row], image)!;
+    expect(declared!.x).toBeLessThanOrEqual((200 - 1.5 * 40) / IMG_SIZE + 1e-9);
+  });
+
+  it("never lets the two halves overlap by a rounding error, and never slices the bonus box - across many tile positions", () => {
+    for (let i = 0; i < 400; i++) {
+      const x0 = 3 + i * 1.37; // assorted fractional positions
+      const w = 38 + (i % 7) * 0.61;
+      const row = [0, 1, 2].map((k) => bonus(x0 + k * w)).concat([3, 4, 5, 6].map((k) => real(x0 + k * w)));
+      row.forEach((d) => (d.box[2] = d.box[0] + w));
+      const { declared, concealed } = regionsFromRows([row], { naturalWidth: 1000, naturalHeight: 640 })!;
+      expect(declared).toBeDefined();
+      expect(declared!.x + declared!.w).toBeLessThanOrEqual(concealed.x);
+      // bonus box still spans its tiles top to bottom (tiles span y 400-480 of 640, frame padded to 1000 wide)
+      expect(declared!.h).toBeGreaterThan(concealed.h * 0.9);
+    }
+  });
+
+  it("gives a tile-sized gap between the bonus tiles and the hand to the bonus box - a missed bonus tile most likely sits there", () => {
+    const row = [bonus(20), bonus(60), real(140), real(180), real(220)]; // a 40px (1 tile) gap after the 2nd bonus tile
+    const { declared, concealed } = regionsFromRows([row], image)!;
+    expect(declared!.x + declared!.w).toBeCloseTo(140 / IMG_SIZE, 4); // boundary at the hand's own edge, not the midpoint (120)
+    expect(concealed.x).toBeCloseTo(140 / IMG_SIZE, 4);
+  });
+
   it("works with the bonus tiles at the right-hand end too", () => {
     const row = [real(20), real(60), real(100), bonus(140), bonus(180)];
     const { declared, concealed } = regionsFromRows([row], image)!;
