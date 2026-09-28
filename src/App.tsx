@@ -136,9 +136,9 @@ function formatMB(bytes: number): string {
   return (bytes / (1024 * 1024)).toFixed(1);
 }
 
-function loadImageFile(file: File): Promise<HTMLImageElement> {
+function loadImageBlob(blob: Blob): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file);
+    const url = URL.createObjectURL(blob);
     const img = new Image();
     img.onload = () => {
       URL.revokeObjectURL(url);
@@ -150,6 +150,35 @@ function loadImageFile(file: File): Promise<HTMLImageElement> {
     };
     img.src = url;
   });
+}
+
+// The longest side, in pixels, a scanned photo is kept at. A phone photo
+// can be 4000+ px across (12+ megapixels), and every step of a scan works
+// from it - auto-fit's crops, the scan's own crops and re-check variants,
+// rotateImage's full re-encode - while the model itself only ever sees
+// IMG_SIZE (640) px. Even a small region (a Declared box around a few
+// bonus tiles, ~13% of the photo's width) still has ~250 px of real
+// detail at this size, so shrinking once up front costs nothing the model
+// could use, and makes every later canvas operation work on a quarter or
+// less of the pixels.
+const MAX_PHOTO_SIDE = 2048;
+
+// Loads `file`, shrunk (once, with high-quality smoothing) to fit
+// MAX_PHOTO_SIDE if it's bigger - see MAX_PHOTO_SIDE. Smaller photos come
+// back untouched.
+async function loadImageFile(file: File): Promise<HTMLImageElement> {
+  const img = await loadImageBlob(file);
+  const longest = Math.max(img.naturalWidth, img.naturalHeight);
+  if (longest <= MAX_PHOTO_SIDE) return img;
+  const scale = MAX_PHOTO_SIDE / longest;
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(img.naturalWidth * scale);
+  canvas.height = Math.round(img.naturalHeight * scale);
+  const ctx = canvas.getContext("2d")!;
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.92));
+  return blob ? loadImageBlob(blob) : img;
 }
 
 // A detection as shown in the scan review step - same shape as vision.ts's
