@@ -2650,6 +2650,7 @@ button.scoring-pattern-row {
 .seat-rename-actions {
   display: flex;
   justify-content: center;
+  gap: 1rem;
   min-height: 1.7rem;
   margin-top: 0.55rem;
 }
@@ -2661,6 +2662,15 @@ button.scoring-pattern-row {
   color: var(--accent);
   text-decoration: underline;
   cursor: pointer;
+}
+.seat-rename-actions .seat-rename-single {
+  font-weight: 700;
+}
+.seat-rename-actions button:disabled {
+  color: var(--text-muted);
+  text-decoration: none;
+  opacity: 0.5;
+  cursor: default;
 }
 
 .seat-tile-row {
@@ -2732,10 +2742,20 @@ button.scoring-pattern-row {
   text-decoration: underline;
   cursor: pointer;
 }
+.seat-reset.is-confirming {
+  color: var(--danger-text-1);
+  font-weight: 700;
+}
 @media (hover: hover) and (pointer: fine) {
-  .seat-reset:hover {
+  .seat-reset:not(.is-confirming):hover {
     color: var(--text-secondary);
   }
+}
+.seat-secondary {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
 }
 
 /* On phones, lay each suit row out as a fixed 9-column grid instead of a

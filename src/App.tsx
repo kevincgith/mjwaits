@@ -5798,12 +5798,45 @@ function ExchangePanel() {
 // order (A -> B -> C -> D -> A). "Count n from player x" lands on player
 // (x + n - 1) mod 4, so n = 1,5,9,13,17 comes back to the roller.
 
-// Default player names. Any player can be renamed to two-letter initials
-// (AA..ZZ) by long-pressing their token - see SeatRenamePicker. The default
-// also keys the token's colour (seat-token-a..d), so colours follow the
-// player, not whatever name they've chosen.
+// Default player names. Any player can be renamed to one- or two-letter
+// initials (A..Z, AA..ZZ) by long-pressing their token - see SeatRenamePicker.
+// The default also keys the token's colour (seat-token-a..d), so colours
+// follow the player, not whatever name they've chosen.
 const DEFAULT_SEAT_NAMES = ["A", "B", "C", "D"] as const;
 const ALPHABET = Array.from({ length: 26 }, (_, i) => String.fromCharCode(65 + i));
+
+// Custom names persist across reloads in localStorage (the only thing in the
+// app that does). Anything unexpected in storage - wrong shape, bad letters,
+// duplicate names, unreadable storage - falls back to the defaults.
+const SEAT_NAMES_KEY = "mjwaits.seatNames";
+const isSeatName = (s: unknown): s is string => typeof s === "string" && /^[A-Z]{1,2}$/.test(s);
+const isDefaultSeatNames = (names: readonly string[]) =>
+  names.every((n, i) => n === DEFAULT_SEAT_NAMES[i]);
+
+function loadSeatNames(): readonly string[] {
+  try {
+    const raw = window.localStorage.getItem(SEAT_NAMES_KEY);
+    if (raw !== null) {
+      const saved: unknown = JSON.parse(raw);
+      if (Array.isArray(saved) && saved.length === 4 && saved.every(isSeatName) && new Set(saved).size === 4) {
+        return saved;
+      }
+    }
+  } catch {
+    // Storage blocked (private mode etc.) or corrupt JSON - use the defaults.
+  }
+  return DEFAULT_SEAT_NAMES;
+}
+
+function saveSeatNames(names: readonly string[]): void {
+  try {
+    // Back at the defaults there's nothing worth keeping - clear the entry.
+    if (isDefaultSeatNames(names)) window.localStorage.removeItem(SEAT_NAMES_KEY);
+    else window.localStorage.setItem(SEAT_NAMES_KEY, JSON.stringify(names));
+  } catch {
+    // Storage unavailable - names just won't survive a reload this time.
+  }
+}
 
 // The six ceremony tiles: 東 南 西 北 + 一筒 (odd) 二筒 (even).
 const CEREMONY_TILES: Tile[] = [
@@ -5973,11 +6006,13 @@ function SeatToken({
   );
 }
 
-// Modal letter picker for a player's initials - tap a first letter, then a
-// second, giving AA..ZZ with no typing. At the second step any combination
-// another player already uses is disabled, so the four names stay distinct
-// (the captions refer to players by name). Escape, ✕ or tapping outside
-// cancels; Back re-picks the first letter; "Reset to A" restores the default.
+// Modal letter picker for a player's initials - tap a first letter, then
+// either a second (AA..ZZ) or "Use just K" for a single letter, with no
+// typing. Anything another player already uses - including a single letter
+// that's someone's default, like "B" - is disabled, so the four names stay
+// distinct (the captions refer to players by name). Escape, ✕ or tapping
+// outside cancels; Back re-picks the first letter; "Reset to A" restores the
+// default (disabled if another player has since taken that letter).
 function SeatRenamePicker({
   currentName,
   defaultName,
@@ -6035,7 +6070,7 @@ function SeatRenamePicker({
           <span className={`seat-rename-slot${first === null ? "" : " is-current"}`} />
         </div>
         <p className="seat-rename-prompt">
-          {first === null ? "Tap the first letter" : "Tap the second letter"}
+          {first === null ? "Tap the first letter" : `Tap a second letter, or use just ${first}`}
         </p>
 
         <div className="seat-rename-grid">
@@ -6059,11 +6094,27 @@ function SeatRenamePicker({
 
         <div className="seat-rename-actions">
           {first !== null ? (
-            <button type="button" onClick={() => setFirst(null)}>
-              ← Back
-            </button>
+            <>
+              <button type="button" onClick={() => setFirst(null)}>
+                ← Back
+              </button>
+              <button
+                type="button"
+                className="seat-rename-single"
+                disabled={takenNames.includes(first)}
+                title={takenNames.includes(first) ? `${first} is already used` : undefined}
+                onClick={() => onPick(first)}
+              >
+                Use just {first}
+              </button>
+            </>
           ) : currentName !== defaultName ? (
-            <button type="button" onClick={() => onPick(defaultName)}>
+            <button
+              type="button"
+              disabled={takenNames.includes(defaultName)}
+              title={takenNames.includes(defaultName) ? `${defaultName} is used by another player` : undefined}
+              onClick={() => onPick(defaultName)}
+            >
               Reset to {defaultName}
             </button>
           ) : null}
@@ -6084,16 +6135,36 @@ function SeatingPanel({
   seatOrder,
   onRename,
   onSwap,
+  onResetNames,
 }: {
   names: readonly string[];
   seatOrder: readonly number[];
   onRename: (player: number, name: string) => void;
   onSwap: (posA: number, posB: number) => void;
+  onResetNames: () => void;
 }) {
   const [order, setOrder] = useState<number[]>(newShuffle);
   // Which player's rename picker is open (player index), if any.
   const [renaming, setRenaming] = useState<number | null>(null);
   const [step, setStep] = useState(0);
+
+  // "Reset names" sits right next to "Start over" and wipes names that now
+  // persist, so it takes a second tap to confirm; the armed state lapses by
+  // itself after a few seconds.
+  const [confirmingResetNames, setConfirmingResetNames] = useState(false);
+  useEffect(() => {
+    if (!confirmingResetNames) return;
+    const t = window.setTimeout(() => setConfirmingResetNames(false), 3000);
+    return () => window.clearTimeout(t);
+  }, [confirmingResetNames]);
+  const onResetNamesClick = () => {
+    if (!confirmingResetNames) {
+      setConfirmingResetNames(true);
+      return;
+    }
+    setConfirmingResetNames(false);
+    onResetNames();
+  };
 
   // provEast (a position) and swapFrom (the position selected for a swap) are
   // each mirrored in a ref, same idea as ScoringPanel's handRef: the tap
@@ -6348,9 +6419,20 @@ function SeatingPanel({
         >
           {step < SEATING_STEPS - 1 ? "Next" : "Done"}
         </button>
-        <button type="button" className="seat-reset" onClick={reset}>
-          Start over
-        </button>
+        <div className="seat-secondary">
+          <button type="button" className="seat-reset" onClick={reset}>
+            Start over
+          </button>
+          {!isDefaultSeatNames(names) && (
+            <button
+              type="button"
+              className={`seat-reset${confirmingResetNames ? " is-confirming" : ""}`}
+              onClick={onResetNamesClick}
+            >
+              {confirmingResetNames ? "Tap again to reset names" : "Reset names"}
+            </button>
+          )}
+        </div>
       </div>
 
       {renaming !== null && (
@@ -6375,11 +6457,13 @@ function DiceTab({
   seatOrder,
   onRenameSeat,
   onSwapSeats,
+  onResetSeatNames,
 }: {
   seatNames: readonly string[];
   seatOrder: readonly number[];
   onRenameSeat: (player: number, name: string) => void;
   onSwapSeats: (posA: number, posB: number) => void;
+  onResetSeatNames: () => void;
 }) {
   const [sub, setSub] = useState<"wall" | "exchange" | "seating">("wall");
   return (
@@ -6418,6 +6502,7 @@ function DiceTab({
           seatOrder={seatOrder}
           onRename={onRenameSeat}
           onSwap={onSwapSeats}
+          onResetNames={onResetSeatNames}
         />
       )}
     </section>
@@ -6436,8 +6521,11 @@ function App() {
   const [endlessTrainerStats, setEndlessTrainerStats] = useState<EndlessStats>(EMPTY_ENDLESS_STATS);
   // Seating tab player names, lifted here for the same reason: custom initials
   // should survive switching sub-tabs / tabs and "Start over" - it's the same
-  // four people at the table.
-  const [seatNames, setSeatNames] = useState<readonly string[]>(DEFAULT_SEAT_NAMES);
+  // four people at the table. Unlike everything else here they're also saved
+  // to localStorage, so they survive a page reload too.
+  const [seatNames, setSeatNames] = useState<readonly string[]>(loadSeatNames);
+  useEffect(() => saveSeatNames(seatNames), [seatNames]);
+  const resetSeatNames = () => setSeatNames(DEFAULT_SEAT_NAMES);
   const renameSeat = (player: number, name: string) =>
     setSeatNames((prev) => prev.map((n, i) => (i === player ? name : n)));
   // Who sits at each table position (seatOrder[pos] = player index), changed
@@ -6502,6 +6590,7 @@ function App() {
           seatOrder={seatOrder}
           onRenameSeat={renameSeat}
           onSwapSeats={swapSeats}
+          onResetSeatNames={resetSeatNames}
         />
       )}
       <footer className="build-version">v{__BUILD_TIME__}</footer>
