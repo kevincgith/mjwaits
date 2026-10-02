@@ -657,6 +657,13 @@ const isFullyDeclared = (hand: ResolvedHand): boolean => hand.melds.every((m) =>
 const isConcealedExceptKongs = (hand: ResolvedHand): boolean =>
   hand.melds.every((m) => m.concealed || m.kind === "kong");
 
+// Shared by 天叮/地叮/天胡/地胡/人胡: no declared meld AT ALL, kongs
+// included - unlike isConcealedExceptKongs above, a declared kong still
+// means some call happened at some point (even 加槓 starts from an
+// already-pon'd triplet), which contradicts every one of these being an
+// untouched initial-turn win.
+const isFullyConcealed = (hand: ResolvedHand): boolean => hand.melds.every((m) => m.concealed);
+
 const isNoHonorsNoFlowers = (hand: ResolvedHand): boolean =>
   allHandTiles(hand).every((t) => !isHonorTile(t)) && hand.bonusTiles.length === 0;
 
@@ -3275,13 +3282,12 @@ export const PATTERNS: TaiPattern[] = [
   {
     id: "heavenly-riichi",
     name: "天叮 (Heavenly Riichi)",
-    // A declared run/triplet means a call happened at some point, which
-    // contradicts this being the dealer's untouched initial deal - per the
-    // user, blocked outright rather than just left to the player's own
-    // declaration. A declared KONG is left alone (unlike a run/triplet, it
-    // can come from upgrading your own already-concealed meld with a
-    // self-drawn tile - 加槓 - which doesn't imply any call happened).
-    score: (hand, ctx) => (ctx.riichi === "heavenly-riichi" && isConcealedExceptKongs(hand) ? 60 : 0),
+    // Any declared meld - including a kong - means a call happened at some
+    // point, which contradicts this being the dealer's untouched initial
+    // deal; per the user, blocked outright rather than just left to the
+    // player's own declaration (see isFullyConcealed's own comment on why
+    // a kong isn't exempt here the way it is for 門前清).
+    score: (hand, ctx) => (ctx.riichi === "heavenly-riichi" && isFullyConcealed(hand) ? 60 : 0),
     // Excludes 叮/門清叮 explicitly per the user, even though ctx.riichi
     // being a single value already makes them mutually exclusive by
     // construction - kept for the same defensive-clarity reasons as
@@ -3294,8 +3300,8 @@ export const PATTERNS: TaiPattern[] = [
   {
     id: "earthly-riichi",
     name: "地叮 (Earthly Riichi)",
-    // Same declared-run/triplet guard as 天叮 above.
-    score: (hand, ctx) => (ctx.riichi === "earthly-riichi" && isConcealedExceptKongs(hand) ? 50 : 0),
+    // Same declared-meld (kong included) guard as 天叮 above.
+    score: (hand, ctx) => (ctx.riichi === "earthly-riichi" && isFullyConcealed(hand) ? 50 : 0),
     excludes: ["riichi", "concealed-riichi", "concealed-except-kongs"],
   },
   {
@@ -3351,24 +3357,24 @@ export const PATTERNS: TaiPattern[] = [
     // every other purely-declared pattern above. Excludes 門前清 itself per
     // the user, same reasoning as 天叮/地叮's own exclusion of it - this
     // pattern's own tai shouldn't also pick up the plain concealed-hand
-    // bonus on top. Also blocked by a declared run/triplet, same guard
-    // (and same reasoning) as 天叮/地叮 above - a call contradicts this
-    // being the dealer's untouched initial deal.
-    score: (hand, ctx) => (ctx.heavenlyWin === "heaven" && isConcealedExceptKongs(hand) ? 160 : 0),
+    // bonus on top. Also blocked by any declared meld (kong included),
+    // same guard (and same reasoning) as 天叮/地叮 above - a call
+    // contradicts this being the dealer's untouched initial deal.
+    score: (hand, ctx) => (ctx.heavenlyWin === "heaven" && isFullyConcealed(hand) ? 160 : 0),
     excludes: ["concealed-except-kongs"],
   },
   {
     id: "earthly-win",
     name: "地胡 (Earthly hand)",
-    // Same declared-run/triplet guard as 天胡 above.
-    score: (hand, ctx) => (ctx.heavenlyWin === "earth" && isConcealedExceptKongs(hand) ? 120 : 0),
+    // Same declared-meld (kong included) guard as 天胡 above.
+    score: (hand, ctx) => (ctx.heavenlyWin === "earth" && isFullyConcealed(hand) ? 120 : 0),
     excludes: ["concealed-except-kongs"],
   },
   {
     id: "human-win",
     name: "人胡 (Humanly hand)",
-    // Same declared-run/triplet guard as 天胡 above.
-    score: (hand, ctx) => (ctx.heavenlyWin === "man" && isConcealedExceptKongs(hand) ? 80 : 0),
+    // Same declared-meld (kong included) guard as 天胡 above.
+    score: (hand, ctx) => (ctx.heavenlyWin === "man" && isFullyConcealed(hand) ? 80 : 0),
     excludes: ["concealed-except-kongs"],
   },
   {

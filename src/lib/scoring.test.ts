@@ -1814,16 +1814,13 @@ describe("PATTERNS: 天叮/地叮 (Riichi's two upgrades)", () => {
     expect(tai(earthly, "heavenly-riichi")).toBe(0);
   });
 
-  it("a declared run or triplet blocks both outright - a call contradicts an untouched initial deal", () => {
+  it("any declared meld blocks both outright - a call contradicts an untouched initial deal", () => {
     const withDeclaredTriplet = scoreHand("(111z)123456789m234t22b", ctx({ riichi: "heavenly-riichi" }));
     expect(tai(withDeclaredTriplet, "heavenly-riichi")).toBe(0);
     const withDeclaredRun = scoreHand("(123t)123456789m678t22b", ctx({ riichi: "earthly-riichi" }));
     expect(tai(withDeclaredRun, "earthly-riichi")).toBe(0);
-  });
-
-  it("a declared KONG does NOT block them - unlike a call, it can come from upgrading your own concealed meld (加槓)", () => {
-    const result = scoreHand("(1111z)123456789m234t22t", ctx({ riichi: "heavenly-riichi" }));
-    expect(tai(result, "heavenly-riichi")).toBe(60);
+    const withDeclaredKong = scoreHand("(1111z)123456789m234t22t", ctx({ riichi: "heavenly-riichi" }));
+    expect(tai(withDeclaredKong, "heavenly-riichi")).toBe(0);
   });
 });
 
@@ -1946,7 +1943,7 @@ describe("PATTERNS: 天胡/地胡/人胡", () => {
     expect(tai(scoreHand(concealedHand, ctx({ heavenlyWin: "man" })), "concealed-except-kongs")).toBe(0);
   });
 
-  it("a declared run or triplet blocks all 3 outright - a call contradicts an untouched initial-turn win", () => {
+  it("any declared meld blocks all 3 outright - a call contradicts an untouched initial-turn win", () => {
     const declaredTriplet = "(111z)123456789m234t22b";
     expect(tai(scoreHand(declaredTriplet, ctx({ heavenlyWin: "heaven" })), "heavenly-win")).toBe(0);
     expect(tai(scoreHand(declaredTriplet, ctx({ heavenlyWin: "earth" })), "earthly-win")).toBe(0);
@@ -1954,11 +1951,9 @@ describe("PATTERNS: 天胡/地胡/人胡", () => {
 
     const declaredRun = "(123t)123456789m678t22b";
     expect(tai(scoreHand(declaredRun, ctx({ heavenlyWin: "heaven" })), "heavenly-win")).toBe(0);
-  });
 
-  it("a declared KONG does NOT block them - unlike a call, it can come from upgrading your own concealed meld (加槓)", () => {
-    const result = scoreHand("(1111z)123456789m234t22t", ctx({ heavenlyWin: "heaven" }));
-    expect(tai(result, "heavenly-win")).toBe(160);
+    const declaredKong = "(1111z)123456789m234t22t";
+    expect(tai(scoreHand(declaredKong, ctx({ heavenlyWin: "heaven" })), "heavenly-win")).toBe(0);
   });
 });
 
