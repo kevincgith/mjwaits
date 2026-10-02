@@ -459,6 +459,23 @@ function isRotatedRelativeTo(tile: Detection, row: Detection[]): boolean {
   return row.length >= 3 && findRotatedOutlier([...row, tile]) === tile;
 }
 
+// How far (in the row's own median tile heights) a lone tile's box may sit
+// above or below a row's boxes and still be rescued into it. A 食胡 tile
+// set apart sits right beside its row; without this limit, a face-up
+// sideways tile lying near the wall at the bottom of one photo, ten tile
+// heights below the hand, was merged into it as its "rotated" tile and
+// stretched the concealed box down over everything in between.
+const STRAY_MAX_GAP_TILES = 1;
+
+function isNearRow(tile: Detection, row: Detection[]): boolean {
+  const heights = row.map((d) => d.box[3] - d.box[1]).sort((a, b) => a - b);
+  const medianHeight = heights[Math.floor(heights.length / 2)];
+  const top = Math.min(...row.map((d) => d.box[1]));
+  const bottom = Math.max(...row.map((d) => d.box[3]));
+  const gap = Math.max(top - tile.box[3], tile.box[1] - bottom, 0);
+  return gap <= medianHeight * STRAY_MAX_GAP_TILES;
+}
+
 // Rescues a lone tile that the gap-based pass below split into its own
 // too-small cluster (see MIN_ROW_DETECTIONS) purely because it sits far
 // enough from the rest of its actual row to trip the gap threshold - the
@@ -490,7 +507,7 @@ function rescueRotatedStrays(rawRows: Detection[][]): Detection[][] {
         nearestIdx = j;
       }
     }
-    if (nearestIdx !== -1 && isRotatedRelativeTo(row[0], result[nearestIdx])) {
+    if (nearestIdx !== -1 && isNearRow(row[0], result[nearestIdx]) && isRotatedRelativeTo(row[0], result[nearestIdx])) {
       result[nearestIdx].push(row[0]);
       result[i] = [];
     }
@@ -1205,6 +1222,10 @@ export function resolveVerticalOverlap(a: RowRegion, b: RowRegion): [RowRegion, 
   const midpoint = (top.y + top.h + bottom.y) / 2;
   const trimmedTop: RowRegion = { ...top, h: midpoint - top.y };
   const trimmedBottom: RowRegion = { ...bottom, y: midpoint, h: bottom.y + bottom.h - midpoint };
+  // One box spanning the other's whole height can't be split at a
+  // midpoint - trimming would turn one inside out (negative height). Leave
+  // both as they are for the caller's own overlap check to reject.
+  if (trimmedTop.h <= 0 || trimmedBottom.h <= 0) return [a, b];
   return a.y <= b.y ? [trimmedTop, trimmedBottom] : [trimmedBottom, trimmedTop];
 }
 

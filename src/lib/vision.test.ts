@@ -163,6 +163,16 @@ describe("clusterRows", () => {
     expect(rows[1]).toEqual(bottom);
   });
 
+  it("does NOT rescue a rotated-looking tile lying far from every row - e.g. a face-up tile by the wall", () => {
+    // Same rotated shape as the rescue case above, but well over a tile
+    // height below `bottom` - not a 食胡 tile set beside its row.
+    const top = rowOfDetections(100, 180, 4);
+    const bottom = rowOfDetections(400, 480, 4);
+    const farAway = detection({ box: [0, 800, 80, 840] }); // ratio 2.0, 320px (4 tile heights) below `bottom`
+    const rows = clusterRows([...top, ...bottom, farAway]);
+    expect(rows).toEqual([top, bottom]);
+  });
+
   it("keeps a lone single bonus tile as its own row, unlike an equally-alone stray real tile", () => {
     const top = rowOfDetections(100, 180, 4);
     const bottom = rowOfDetections(400, 480, 4);
@@ -827,6 +837,15 @@ describe("resolveVerticalOverlap", () => {
     const [b2, a2] = resolveVerticalOverlap(bottom, top);
     expect(a2).toEqual(a);
     expect(b2).toEqual(b);
+  });
+
+  it("leaves the pair untouched rather than inverting one when a box spans the other's whole height", () => {
+    // From a real photo: a stray tile far below stretched the concealed
+    // box over the declared row, and trimming gave the declared box a
+    // negative height. Untouched, the caller's own overlap check rejects them.
+    const concealed = { x: 0, y: 0.15, w: 1, h: 0.48 };
+    const declared = { x: 0.34, y: 0.27, w: 0.36, h: 0.08 };
+    expect(resolveVerticalOverlap(declared, concealed)).toEqual([declared, concealed]);
   });
 
   it("leaves side-by-side regions at the same height untouched - e.g. splitMixedRow's two halves of one row", () => {
