@@ -3275,7 +3275,13 @@ export const PATTERNS: TaiPattern[] = [
   {
     id: "heavenly-riichi",
     name: "天叮 (Heavenly Riichi)",
-    score: (_hand, ctx) => (ctx.riichi === "heavenly-riichi" ? 60 : 0),
+    // A declared run/triplet means a call happened at some point, which
+    // contradicts this being the dealer's untouched initial deal - per the
+    // user, blocked outright rather than just left to the player's own
+    // declaration. A declared KONG is left alone (unlike a run/triplet, it
+    // can come from upgrading your own already-concealed meld with a
+    // self-drawn tile - 加槓 - which doesn't imply any call happened).
+    score: (hand, ctx) => (ctx.riichi === "heavenly-riichi" && isConcealedExceptKongs(hand) ? 60 : 0),
     // Excludes 叮/門清叮 explicitly per the user, even though ctx.riichi
     // being a single value already makes them mutually exclusive by
     // construction - kept for the same defensive-clarity reasons as
@@ -3288,7 +3294,8 @@ export const PATTERNS: TaiPattern[] = [
   {
     id: "earthly-riichi",
     name: "地叮 (Earthly Riichi)",
-    score: (_hand, ctx) => (ctx.riichi === "earthly-riichi" ? 50 : 0),
+    // Same declared-run/triplet guard as 天叮 above.
+    score: (hand, ctx) => (ctx.riichi === "earthly-riichi" && isConcealedExceptKongs(hand) ? 50 : 0),
     excludes: ["riichi", "concealed-riichi", "concealed-except-kongs"],
   },
   {
@@ -3344,20 +3351,24 @@ export const PATTERNS: TaiPattern[] = [
     // every other purely-declared pattern above. Excludes 門前清 itself per
     // the user, same reasoning as 天叮/地叮's own exclusion of it - this
     // pattern's own tai shouldn't also pick up the plain concealed-hand
-    // bonus on top.
-    score: (_hand, ctx) => (ctx.heavenlyWin === "heaven" ? 160 : 0),
+    // bonus on top. Also blocked by a declared run/triplet, same guard
+    // (and same reasoning) as 天叮/地叮 above - a call contradicts this
+    // being the dealer's untouched initial deal.
+    score: (hand, ctx) => (ctx.heavenlyWin === "heaven" && isConcealedExceptKongs(hand) ? 160 : 0),
     excludes: ["concealed-except-kongs"],
   },
   {
     id: "earthly-win",
     name: "地胡 (Earthly hand)",
-    score: (_hand, ctx) => (ctx.heavenlyWin === "earth" ? 120 : 0),
+    // Same declared-run/triplet guard as 天胡 above.
+    score: (hand, ctx) => (ctx.heavenlyWin === "earth" && isConcealedExceptKongs(hand) ? 120 : 0),
     excludes: ["concealed-except-kongs"],
   },
   {
     id: "human-win",
     name: "人胡 (Humanly hand)",
-    score: (_hand, ctx) => (ctx.heavenlyWin === "man" ? 80 : 0),
+    // Same declared-run/triplet guard as 天胡 above.
+    score: (hand, ctx) => (ctx.heavenlyWin === "man" && isConcealedExceptKongs(hand) ? 80 : 0),
     excludes: ["concealed-except-kongs"],
   },
   {

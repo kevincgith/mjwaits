@@ -1813,6 +1813,18 @@ describe("PATTERNS: 天叮/地叮 (Riichi's two upgrades)", () => {
     const earthly = scoreHand("123456789m234t678t22b", ctx({ riichi: "earthly-riichi" }));
     expect(tai(earthly, "heavenly-riichi")).toBe(0);
   });
+
+  it("a declared run or triplet blocks both outright - a call contradicts an untouched initial deal", () => {
+    const withDeclaredTriplet = scoreHand("(111z)123456789m234t22b", ctx({ riichi: "heavenly-riichi" }));
+    expect(tai(withDeclaredTriplet, "heavenly-riichi")).toBe(0);
+    const withDeclaredRun = scoreHand("(123t)123456789m678t22b", ctx({ riichi: "earthly-riichi" }));
+    expect(tai(withDeclaredRun, "earthly-riichi")).toBe(0);
+  });
+
+  it("a declared KONG does NOT block them - unlike a call, it can come from upgrading your own concealed meld (加槓)", () => {
+    const result = scoreHand("(1111z)123456789m234t22t", ctx({ riichi: "heavenly-riichi" }));
+    expect(tai(result, "heavenly-riichi")).toBe(60);
+  });
 });
 
 describe("PATTERNS: 一發/食叮 (stack additively on top of any declared 叮 state)", () => {
@@ -1829,7 +1841,9 @@ describe("PATTERNS: 一發/食叮 (stack additively on top of any declared 叮 s
   });
 
   it("both stack together on top of 天叮", () => {
-    const result = scoreHand("(111z)123456789m234t22b", ctx({ riichi: "heavenly-riichi", instantWin: true, eatRiichi: true }));
+    // Concealed (not a declared run/triplet) - 天叮 now requires that; see
+    // its own describe block's dedicated test for the block itself.
+    const result = scoreHand("123456789m234t678t22b", ctx({ riichi: "heavenly-riichi", instantWin: true, eatRiichi: true }));
     expect(tai(result, "heavenly-riichi")).toBe(60);
     expect(tai(result, "riichi-instant-win")).toBe(5);
     expect(tai(result, "riichi-eat")).toBe(5);
@@ -1890,7 +1904,10 @@ describe("PATTERNS: 雙響/三響", () => {
 });
 
 describe("PATTERNS: 天胡/地胡/人胡", () => {
-  const hand = "(111z)123456789m234t22b";
+  // Fully concealed - a declared meld would now block all 3 (see the
+  // dedicated test below), so these base scoring tests need a hand that
+  // doesn't trip that guard.
+  const hand = "123456789m234t678t22b";
 
   it("scores 天胡 (160 tai)", () => {
     expect(tai(scoreHand(hand, ctx({ heavenlyWin: "heaven" })), "heavenly-win")).toBe(160);
@@ -1916,7 +1933,10 @@ describe("PATTERNS: 天胡/地胡/人胡", () => {
     expect(tai(result, "heavenly-win")).toBe(160);
     expect(tai(result, "early-win-four")).toBe(60);
     expect(tai(result, "multi-win-triple")).toBe(10);
-    expect(tai(result, "riichi")).toBe(5);
+    // 門清叮 (not plain 叮) since `hand` is fully concealed - unrelated to
+    // this turn's own guard, just a side effect of switching this shared
+    // hand to a concealed one above.
+    expect(tai(result, "concealed-riichi")).toBe(10);
   });
 
   it("each excludes 門前清 - its own tai shouldn't also pick up the plain concealed-hand bonus", () => {
@@ -1924,6 +1944,21 @@ describe("PATTERNS: 天胡/地胡/人胡", () => {
     expect(tai(scoreHand(concealedHand, ctx({ heavenlyWin: "heaven" })), "concealed-except-kongs")).toBe(0);
     expect(tai(scoreHand(concealedHand, ctx({ heavenlyWin: "earth" })), "concealed-except-kongs")).toBe(0);
     expect(tai(scoreHand(concealedHand, ctx({ heavenlyWin: "man" })), "concealed-except-kongs")).toBe(0);
+  });
+
+  it("a declared run or triplet blocks all 3 outright - a call contradicts an untouched initial-turn win", () => {
+    const declaredTriplet = "(111z)123456789m234t22b";
+    expect(tai(scoreHand(declaredTriplet, ctx({ heavenlyWin: "heaven" })), "heavenly-win")).toBe(0);
+    expect(tai(scoreHand(declaredTriplet, ctx({ heavenlyWin: "earth" })), "earthly-win")).toBe(0);
+    expect(tai(scoreHand(declaredTriplet, ctx({ heavenlyWin: "man" })), "human-win")).toBe(0);
+
+    const declaredRun = "(123t)123456789m678t22b";
+    expect(tai(scoreHand(declaredRun, ctx({ heavenlyWin: "heaven" })), "heavenly-win")).toBe(0);
+  });
+
+  it("a declared KONG does NOT block them - unlike a call, it can come from upgrading your own concealed meld (加槓)", () => {
+    const result = scoreHand("(1111z)123456789m234t22t", ctx({ heavenlyWin: "heaven" }));
+    expect(tai(result, "heavenly-win")).toBe(160);
   });
 });
 
