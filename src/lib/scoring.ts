@@ -3279,14 +3279,17 @@ export const PATTERNS: TaiPattern[] = [
     // Excludes 叮/門清叮 explicitly per the user, even though ctx.riichi
     // being a single value already makes them mutually exclusive by
     // construction - kept for the same defensive-clarity reasons as
-    // elsewhere in this file (e.g. 絕絕/明絕).
-    excludes: ["riichi", "concealed-riichi"],
+    // elsewhere in this file (e.g. 絕絕/明絕). Also excludes 門前清 itself,
+    // per the user - unlike 門清叮 (which deliberately stacks with 門前清,
+    // see that pattern's own comment), 天叮/地叮's own tai shouldn't also
+    // pick up the plain concealed-hand bonus on top.
+    excludes: ["riichi", "concealed-riichi", "concealed-except-kongs"],
   },
   {
     id: "earthly-riichi",
     name: "地叮 (Earthly Riichi)",
     score: (_hand, ctx) => (ctx.riichi === "earthly-riichi" ? 50 : 0),
-    excludes: ["riichi", "concealed-riichi"],
+    excludes: ["riichi", "concealed-riichi", "concealed-except-kongs"],
   },
   {
     id: "riichi-instant-win",
@@ -3338,18 +3341,24 @@ export const PATTERNS: TaiPattern[] = [
     id: "heavenly-win",
     name: "天胡 (Heavenly Hand)",
     // Purely a declared state (ctx.heavenlyWin), same cycling shape as
-    // every other purely-declared pattern above.
+    // every other purely-declared pattern above. Excludes 門前清 itself per
+    // the user, same reasoning as 天叮/地叮's own exclusion of it - this
+    // pattern's own tai shouldn't also pick up the plain concealed-hand
+    // bonus on top.
     score: (_hand, ctx) => (ctx.heavenlyWin === "heaven" ? 160 : 0),
+    excludes: ["concealed-except-kongs"],
   },
   {
     id: "earthly-win",
     name: "地胡 (Earthly hand)",
     score: (_hand, ctx) => (ctx.heavenlyWin === "earth" ? 120 : 0),
+    excludes: ["concealed-except-kongs"],
   },
   {
     id: "human-win",
     name: "人胡 (Humanly hand)",
     score: (_hand, ctx) => (ctx.heavenlyWin === "man" ? 80 : 0),
+    excludes: ["concealed-except-kongs"],
   },
   {
     id: "river-bottom-win",

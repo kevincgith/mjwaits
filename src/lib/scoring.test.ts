@@ -1791,18 +1791,20 @@ describe("PATTERNS: 叮/門清叮 (Riichi, plain and while 門前清)", () => {
 });
 
 describe("PATTERNS: 天叮/地叮 (Riichi's two upgrades)", () => {
-  it("scores 天叮 (60 tai), excluding 叮 and 門清叮", () => {
+  it("scores 天叮 (60 tai), excluding 叮, 門清叮, and (unlike 門清叮) 門前清 itself", () => {
     const result = scoreHand("123456789m234t678t22b", ctx({ riichi: "heavenly-riichi" }));
     expect(tai(result, "heavenly-riichi")).toBe(60);
     expect(tai(result, "riichi")).toBe(0);
     expect(tai(result, "concealed-riichi")).toBe(0);
+    expect(tai(result, "concealed-except-kongs")).toBe(0);
   });
 
-  it("scores 地叮 (50 tai), excluding 叮 and 門清叮", () => {
+  it("scores 地叮 (50 tai), excluding 叮, 門清叮, and (unlike 門清叮) 門前清 itself", () => {
     const result = scoreHand("123456789m234t678t22b", ctx({ riichi: "earthly-riichi" }));
     expect(tai(result, "earthly-riichi")).toBe(50);
     expect(tai(result, "riichi")).toBe(0);
     expect(tai(result, "concealed-riichi")).toBe(0);
+    expect(tai(result, "concealed-except-kongs")).toBe(0);
   });
 
   it("天叮 and 地叮 are mutually exclusive by construction (riichi is a single state)", () => {
@@ -1915,6 +1917,13 @@ describe("PATTERNS: 天胡/地胡/人胡", () => {
     expect(tai(result, "early-win-four")).toBe(60);
     expect(tai(result, "multi-win-triple")).toBe(10);
     expect(tai(result, "riichi")).toBe(5);
+  });
+
+  it("each excludes 門前清 - its own tai shouldn't also pick up the plain concealed-hand bonus", () => {
+    const concealedHand = "123456789m234t678t22b";
+    expect(tai(scoreHand(concealedHand, ctx({ heavenlyWin: "heaven" })), "concealed-except-kongs")).toBe(0);
+    expect(tai(scoreHand(concealedHand, ctx({ heavenlyWin: "earth" })), "concealed-except-kongs")).toBe(0);
+    expect(tai(scoreHand(concealedHand, ctx({ heavenlyWin: "man" })), "concealed-except-kongs")).toBe(0);
   });
 });
 
