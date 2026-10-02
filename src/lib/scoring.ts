@@ -3371,23 +3371,31 @@ export const PATTERNS: TaiPattern[] = [
     // pattern's own tai shouldn't also pick up the plain concealed-hand
     // bonus on top. Also blocked by any declared meld (kong included),
     // same guard (and same reasoning) as 天叮/地叮 above - a call
-    // contradicts this being the dealer's untouched initial deal.
+    // contradicts this being the dealer's untouched initial deal. Also
+    // excludes the whole 叮 family per the user: winning on the very
+    // initial deal means no turn (let alone a discard) has happened yet,
+    // so a riichi declaration couldn't have happened either - same logic
+    // applies to 地胡 (won on your own first draw, before your first
+    // discard) and 人胡 (won off the very first discard in the game,
+    // before even your own first turn).
     score: (hand, ctx) => (ctx.heavenlyWin === "heaven" && isFullyConcealed(hand) ? 160 : 0),
-    excludes: ["concealed-except-kongs"],
+    excludes: ["concealed-except-kongs", "riichi", "concealed-riichi", "heavenly-riichi", "earthly-riichi"],
   },
   {
     id: "earthly-win",
     name: "地胡 (Earthly hand)",
-    // Same declared-meld (kong included) guard as 天胡 above.
+    // Same declared-meld (kong included) guard as 天胡 above, and same 叮
+    // family exclusion.
     score: (hand, ctx) => (ctx.heavenlyWin === "earth" && isFullyConcealed(hand) ? 120 : 0),
-    excludes: ["concealed-except-kongs"],
+    excludes: ["concealed-except-kongs", "riichi", "concealed-riichi", "heavenly-riichi", "earthly-riichi"],
   },
   {
     id: "human-win",
     name: "人胡 (Humanly hand)",
-    // Same declared-meld (kong included) guard as 天胡 above.
+    // Same declared-meld (kong included) guard as 天胡 above, and same 叮
+    // family exclusion.
     score: (hand, ctx) => (ctx.heavenlyWin === "man" && isFullyConcealed(hand) ? 80 : 0),
-    excludes: ["concealed-except-kongs"],
+    excludes: ["concealed-except-kongs", "riichi", "concealed-riichi", "heavenly-riichi", "earthly-riichi"],
   },
   {
     id: "river-bottom-win",

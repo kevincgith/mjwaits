@@ -1931,15 +1931,11 @@ describe("PATTERNS: 天胡/地胡/人胡", () => {
     expect(tai(result, "human-win")).toBe(0);
   });
 
-  it("all three, and every other cycling declaration, can stack together freely - each is fully independent", () => {
-    const result = scoreHand(hand, ctx({ heavenlyWin: "heaven", earlyWin: "four", multiWin: "triple", riichi: "riichi" }));
+  it("stacks freely with 四/七/十子內 and 雙/三響 - those are fully independent", () => {
+    const result = scoreHand(hand, ctx({ heavenlyWin: "heaven", earlyWin: "four", multiWin: "triple" }));
     expect(tai(result, "heavenly-win")).toBe(160);
     expect(tai(result, "early-win-four")).toBe(60);
     expect(tai(result, "multi-win-triple")).toBe(10);
-    // 門清叮 (not plain 叮) since `hand` is fully concealed - unrelated to
-    // this turn's own guard, just a side effect of switching this shared
-    // hand to a concealed one above.
-    expect(tai(result, "concealed-riichi")).toBe(10);
   });
 
   it("each excludes 門前清 - its own tai shouldn't also pick up the plain concealed-hand bonus", () => {
@@ -1947,6 +1943,21 @@ describe("PATTERNS: 天胡/地胡/人胡", () => {
     expect(tai(scoreHand(concealedHand, ctx({ heavenlyWin: "heaven" })), "concealed-except-kongs")).toBe(0);
     expect(tai(scoreHand(concealedHand, ctx({ heavenlyWin: "earth" })), "concealed-except-kongs")).toBe(0);
     expect(tai(scoreHand(concealedHand, ctx({ heavenlyWin: "man" })), "concealed-except-kongs")).toBe(0);
+  });
+
+  it("each blocks the whole 叮 family - winning on the very first opportunity means riichi couldn't have been declared yet", () => {
+    const result = scoreHand(hand, ctx({ heavenlyWin: "heaven", riichi: "riichi" }));
+    expect(tai(result, "heavenly-win")).toBe(160);
+    expect(tai(result, "riichi")).toBe(0);
+    expect(tai(result, "concealed-riichi")).toBe(0);
+
+    const earth = scoreHand(hand, ctx({ heavenlyWin: "earth", riichi: "heavenly-riichi" }));
+    expect(tai(earth, "earthly-win")).toBe(120);
+    expect(tai(earth, "heavenly-riichi")).toBe(0);
+
+    const man = scoreHand(hand, ctx({ heavenlyWin: "man", riichi: "earthly-riichi" }));
+    expect(tai(man, "human-win")).toBe(80);
+    expect(tai(man, "earthly-riichi")).toBe(0);
   });
 
   it("any declared meld blocks all 3 outright - a call contradicts an untouched initial-turn win", () => {
