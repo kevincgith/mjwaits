@@ -294,7 +294,54 @@ export function nonMaxSuppression(detections: Detection[]): Detection[] {
 }
 
 // Runs detection on an already-letterboxed canvas (see `letterbox`).
+// Tiles much bigger in the model's input than in the photos it was trained
+// on read badly - a crop only a tile or two wide (a declared box holding
+// just a flower, a lone pair) fills the input with each tile. Measured on
+// six bonus tiles across three photos: filling the input read 1 of 6
+// right (a 梅 flower came back as a season, 竹 as 北), while the same
+// crops shrunk onto the gray background read all 6 right at 60, 90 and
+// 130 px wide alike. So when the read's tiles come out wider than
+// MAX_TILE_INPUT_PX, detectTiles reads again with them shrunk to
+// TARGET_TILE_INPUT_PX. A tile that big can also go unread entirely (a 竹
+// flower cropped a tile and a half wide came back empty), leaving no size
+// to go by - an empty read is retried at EMPTY_RETRY_FACTOR, which brings
+// a tile filling the input down to about TARGET_TILE_INPUT_PX.
+const MAX_TILE_INPUT_PX = 160;
+const TARGET_TILE_INPUT_PX = 100;
+const EMPTY_RETRY_FACTOR = 0.25;
+
+// `box`'s content shrunk by `factor` around its center, on the same gray.
+function shrinkLetterbox(box: Letterbox, factor: number): Letterbox {
+  const canvas = document.createElement("canvas");
+  canvas.width = IMG_SIZE;
+  canvas.height = IMG_SIZE;
+  const ctx = canvas.getContext("2d")!;
+  ctx.fillStyle = "#727272";
+  ctx.fillRect(0, 0, IMG_SIZE, IMG_SIZE);
+  const side = IMG_SIZE * factor;
+  ctx.drawImage(box.canvas, (IMG_SIZE - side) / 2, (IMG_SIZE - side) / 2, side, side);
+  return { canvas, size: IMG_SIZE };
+}
+
+// Detections in `box`'s frame - read again shrunk, see MAX_TILE_INPUT_PX,
+// when the tiles fill too much of it or nothing was read.
 export async function detectTiles(box: Letterbox, onProgress?: (p: ScanProgress) => void): Promise<DetectionResult> {
+  const result = await detectTilesOnce(box, onProgress);
+  const widths = result.detections.map((d) => d.box[2] - d.box[0]).sort((a, b) => a - b);
+  const tileWidth = widths[Math.floor(widths.length / 2)];
+  if (widths.length > 0 && tileWidth <= MAX_TILE_INPUT_PX) return result;
+  const factor = widths.length > 0 ? TARGET_TILE_INPUT_PX / tileWidth : EMPTY_RETRY_FACTOR;
+  const shrunk = await detectTilesOnce(shrinkLetterbox(box, factor), onProgress);
+  if (shrunk.detections.length === 0) return result;
+  const center = IMG_SIZE / 2;
+  const unshrink = (v: number) => center + (v - center) / factor;
+  return {
+    ...shrunk,
+    detections: shrunk.detections.map((d) => ({ ...d, box: d.box.map(unshrink) as Detection["box"] })),
+  };
+}
+
+async function detectTilesOnce(box: Letterbox, onProgress?: (p: ScanProgress) => void): Promise<DetectionResult> {
   let engine = await getEngine(onProgress);
   onProgress?.({ phase: "running" });
   let outputs: ortWasm.InferenceSession.OnnxValueMapType;
@@ -459,6 +506,23 @@ function isRotatedRelativeTo(tile: Detection, row: Detection[]): boolean {
   return row.length >= 3 && findRotatedOutlier([...row, tile]) === tile;
 }
 
+// How far (in the row's own median tile heights) a lone tile's box may sit
+// above or below a row's boxes and still be rescued into it. A 食胡 tile
+// set apart sits right beside its row; without this limit, a face-up
+// sideways tile lying near the wall at the bottom of one photo, ten tile
+// heights below the hand, was merged into it as its "rotated" tile and
+// stretched the concealed box down over everything in between.
+const STRAY_MAX_GAP_TILES = 1;
+
+function isNearRow(tile: Detection, row: Detection[]): boolean {
+  const heights = row.map((d) => d.box[3] - d.box[1]).sort((a, b) => a - b);
+  const medianHeight = heights[Math.floor(heights.length / 2)];
+  const top = Math.min(...row.map((d) => d.box[1]));
+  const bottom = Math.max(...row.map((d) => d.box[3]));
+  const gap = Math.max(top - tile.box[3], tile.box[1] - bottom, 0);
+  return gap <= medianHeight * STRAY_MAX_GAP_TILES;
+}
+
 // Rescues a lone tile that the gap-based pass below split into its own
 // too-small cluster (see MIN_ROW_DETECTIONS) purely because it sits far
 // enough from the rest of its actual row to trip the gap threshold - the
@@ -490,7 +554,7 @@ function rescueRotatedStrays(rawRows: Detection[][]): Detection[][] {
         nearestIdx = j;
       }
     }
-    if (nearestIdx !== -1 && isRotatedRelativeTo(row[0], result[nearestIdx])) {
+    if (nearestIdx !== -1 && isNearRow(row[0], result[nearestIdx]) && isRotatedRelativeTo(row[0], result[nearestIdx])) {
       result[nearestIdx].push(row[0]);
       result[i] = [];
     }
@@ -598,6 +662,16 @@ export function isPairOnlyRow<T extends { tile: Tile | null }>(row: T[]): boolea
 // rotated outlier rather than normal photo jitter between upright tiles.
 const ROTATION_OUTLIER_FACTOR = 1.5;
 
+// A tile turned sideways doesn't always clear ROTATION_OUTLIER_FACTOR: on
+// one photo a sideways winning tile at the end of a 14-tile row measured
+// anywhere from 1.37 to 1.66 depending on how the box was cropped, so it
+// was named the winning tile only some of the time. Upright tiles in the
+// same row never strayed past 1.16, though, so a tile from this lower
+// factor still counts when it stands this many times further out than any
+// other tile in the group - clearly the odd one out, not just jitter.
+const ROTATION_OUTLIER_MIN_FACTOR = 1.3;
+const ROTATION_OUTLIER_MARGIN = 1.15;
+
 // The model has no concept of tile orientation at all (no "rotated" class -
 // see CLASS_NAMES), so this infers it purely from box shape: real tiles
 // sitting together are all the same physical shape and orientation, so
@@ -623,17 +697,16 @@ export function findRotatedOutlier<T extends { box: [number, number, number, num
   const sorted = [...ratios].sort((a, b) => a - b);
   const median = sorted[Math.floor(sorted.length / 2)];
   if (median <= 0) return null;
-  let best: T | null = null;
-  let bestDeviation = ROTATION_OUTLIER_FACTOR;
-  items.forEach((item, i) => {
-    const r = ratios[i];
-    const deviation = r > median ? r / median : median / r;
-    if (deviation > bestDeviation) {
-      bestDeviation = deviation;
-      best = item;
-    }
+  const deviations = ratios.map((r) => (r > median ? r / median : median / r));
+  let bestIndex = 0;
+  deviations.forEach((d, i) => {
+    if (d > deviations[bestIndex]) bestIndex = i;
   });
-  return best;
+  const best = deviations[bestIndex];
+  const runnerUp = Math.max(1, ...deviations.filter((_, i) => i !== bestIndex));
+  if (best > ROTATION_OUTLIER_FACTOR) return items[bestIndex];
+  if (best > ROTATION_OUTLIER_MIN_FACTOR && best >= runnerUp * ROTATION_OUTLIER_MARGIN) return items[bestIndex];
+  return null;
 }
 
 // How "declared-looking" a row is, from its own detections alone - a kong
@@ -1066,6 +1139,48 @@ export function splitMixedRow(row: Detection[]): { declared: Detection[]; concea
   return declared.length > 0 && concealed.length > 0 ? { declared, concealed } : null;
 }
 
+// How wide a gap between two neighbouring tiles in a row (in tile widths)
+// counts as deliberate - wider than the jitter between tiles sitting side
+// by side, which on real photos stays under 0.06. See
+// extendDeclaredToGap.
+const DECLARED_GAP_MIN_TILES = 0.15;
+
+// A row whose bonus tiles sit at one end can also hold declared melds
+// between them and the concealed hand, set apart from it by a gap: one
+// photo had "1f 345p | 456p 22m 33m 44m 55m 3s 5s" with the 4s laid
+// sideways above. Moves the real tiles between the bonus tiles and the
+// widest such gap over to the declared side, but only when they form
+// complete melds - a concealed hand can have gaps of its own between
+// groups, and without the bonus tiles marking which end is declared, or
+// the melds check, a gap alone says nothing. `real` must be the row's real
+// tiles, `bonusOnLeft` which end the bonus tiles sit at. Returns the real
+// tiles that move to the declared side (possibly none).
+// Exported for direct unit testing.
+export function extendDeclaredToGap(real: Detection[], bonusOnLeft: boolean): Detection[] {
+  if (real.length < 3) return [];
+  const centerX = (d: Detection) => (d.box[0] + d.box[2]) / 2;
+  // Ordered starting from the bonus end.
+  const ordered = [...real].sort((a, b) => (bonusOnLeft ? centerX(a) - centerX(b) : centerX(b) - centerX(a)));
+  const widths = real.map((d) => d.box[2] - d.box[0]).sort((a, b) => a - b);
+  const minGap = widths[Math.floor(widths.length / 2)] * DECLARED_GAP_MIN_TILES;
+  let best: Detection[] = [];
+  let bestGap = minGap;
+  // Edge of everything so far nearest the concealed side - a running
+  // max/min, since boxes of neighbouring tiles overlap a little.
+  let edge = bonusOnLeft ? -Infinity : Infinity;
+  for (let k = 0; k < ordered.length - 2; k++) {
+    edge = bonusOnLeft ? Math.max(edge, ordered[k].box[2]) : Math.min(edge, ordered[k].box[0]);
+    const next = ordered[k + 1];
+    const gap = bonusOnLeft ? next.box[0] - edge : edge - next.box[2];
+    const segment = ordered.slice(0, k + 1);
+    if (gap > bestGap && canFormOnlyMelds(realTiles(segment))) {
+      bestGap = gap;
+      best = segment;
+    }
+  }
+  return best;
+}
+
 // `declared` is optional: a single detected row with no bonus tiles to
 // split it by content (see splitMixedRow) has nothing to confidently call
 // Declared at all - most often a fully concealed hand with no declared
@@ -1196,6 +1311,10 @@ export function resolveVerticalOverlap(a: RowRegion, b: RowRegion): [RowRegion, 
   const midpoint = (top.y + top.h + bottom.y) / 2;
   const trimmedTop: RowRegion = { ...top, h: midpoint - top.y };
   const trimmedBottom: RowRegion = { ...bottom, y: midpoint, h: bottom.y + bottom.h - midpoint };
+  // One box spanning the other's whole height can't be split at a
+  // midpoint - trimming would turn one inside out (negative height). Leave
+  // both as they are for the caller's own overlap check to reject.
+  if (trimmedTop.h <= 0 || trimmedBottom.h <= 0) return [a, b];
   return a.y <= b.y ? [trimmedTop, trimmedBottom] : [trimmedBottom, trimmedTop];
 }
 
@@ -1483,6 +1602,11 @@ export function regionsFromRows(rows: Detection[][], image: ImageSize): Detected
       const realXs = split.concealed.map(centerX);
       const bonusOnLeft = Math.max(...bonusXs) < Math.min(...realXs);
       if (!bonusOnLeft && Math.min(...bonusXs) <= Math.max(...realXs)) return { concealed: rowToRegion(rows[0], image) };
+      // Declared melds set apart beside the bonus tiles join them - see
+      // extendDeclaredToGap.
+      const declaredMelds = extendDeclaredToGap(split.concealed, bonusOnLeft);
+      split.declared.push(...declaredMelds);
+      split.concealed = split.concealed.filter((d) => !declaredMelds.includes(d));
       // Bonus tiles often sit right up against the hand on the rack, so the
       // two halves' padded boxes can overlap by a few pixels - meet them
       // at the midpoint between the tiles' own facing edges instead. But a

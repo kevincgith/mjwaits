@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { parseHand } from "./mahjong";
+import { parseHand, type Suit } from "./mahjong";
 import {
   clusterRows,
   concealednessScore,
   declarednessScore,
   detailWindows,
+  extendDeclaredToGap,
   extendRowEnds,
   findRotatedOutlier,
   isCompleteHandRow,
@@ -163,6 +164,16 @@ describe("clusterRows", () => {
     expect(rows[1]).toEqual(bottom);
   });
 
+  it("does NOT rescue a rotated-looking tile lying far from every row - e.g. a face-up tile by the wall", () => {
+    // Same rotated shape as the rescue case above, but well over a tile
+    // height below `bottom` - not a 食胡 tile set beside its row.
+    const top = rowOfDetections(100, 180, 4);
+    const bottom = rowOfDetections(400, 480, 4);
+    const farAway = detection({ box: [0, 800, 80, 840] }); // ratio 2.0, 320px (4 tile heights) below `bottom`
+    const rows = clusterRows([...top, ...bottom, farAway]);
+    expect(rows).toEqual([top, bottom]);
+  });
+
   it("keeps a lone single bonus tile as its own row, unlike an equally-alone stray real tile", () => {
     const top = rowOfDetections(100, 180, 4);
     const bottom = rowOfDetections(400, 480, 4);
@@ -214,6 +225,32 @@ describe("findRotatedOutlier", () => {
   it("returns null with fewer than 3 items - not enough to establish a median", () => {
     const rotated = detection({ box: [200, 100, 280, 140] });
     expect(findRotatedOutlier([detection(), rotated])).toBeNull();
+  });
+
+  // Box sizes from a real photo: a sideways winning 1b at the end of a
+  // 14-tile concealed row whose box came back only ~1.4x the row's
+  // median ratio, while the upright tiles strayed no further than ~1.1x.
+  const sidewaysWinRow = () => {
+    const widths = [48, 47, 45, 42, 40, 39, 37, 38, 37, 40, 39, 41, 40];
+    const heights = [40, 40, 37, 38, 36, 36, 36, 37, 36, 37, 37, 38, 37];
+    let x = 0;
+    const upright = widths.map((w, i) => detection({ box: [(x += w) - w, 300, x, 300 + heights[i]] }));
+    return { upright, sideways: detection({ box: [x, 302, x + 46, 333] }) }; // ratio 1.48 vs median ~1.08
+  };
+
+  it("finds a sideways tile under the usual factor when it's clearly the odd one out", () => {
+    const { upright, sideways } = sidewaysWinRow();
+    expect(findRotatedOutlier([...upright, sideways])).toBe(sideways);
+  });
+
+  it("doesn't pick a mild outlier when another tile strays nearly as far", () => {
+    const { upright, sideways } = sidewaysWinRow();
+    const jittery = detection({ box: [1000, 300, 1050, 337] }); // ratio 1.35 -> ~1.25x the median
+    expect(findRotatedOutlier([...upright, jittery, sideways])).toBeNull();
+  });
+
+  it("ignores ordinary jitter between upright tiles", () => {
+    expect(findRotatedOutlier(sidewaysWinRow().upright)).toBeNull();
   });
 });
 
@@ -803,6 +840,15 @@ describe("resolveVerticalOverlap", () => {
     expect(b2).toEqual(b);
   });
 
+  it("leaves the pair untouched rather than inverting one when a box spans the other's whole height", () => {
+    // From a real photo: a stray tile far below stretched the concealed
+    // box over the declared row, and trimming gave the declared box a
+    // negative height. Untouched, the caller's own overlap check rejects them.
+    const concealed = { x: 0, y: 0.15, w: 1, h: 0.48 };
+    const declared = { x: 0.34, y: 0.27, w: 0.36, h: 0.08 };
+    expect(resolveVerticalOverlap(declared, concealed)).toEqual([declared, concealed]);
+  });
+
   it("leaves side-by-side regions at the same height untouched - e.g. splitMixedRow's two halves of one row", () => {
     // Same vertical span (one physical row, slightly tilted), separated
     // horizontally - they don't actually overlap, so neither should be
@@ -1175,5 +1221,59 @@ describe("extendRowEnds (tiles missed at a row's ends)", () => {
     const concealed = [t("3b", 200), t("4b", 240), t("5b", 280)];
     const bonus = detection({ tile: null, className: "1f", box: [160, 400, 200, 480] }); // tight against the row, same height
     expect(extendRowEnds(concealed, [bonus], [bonus])).toEqual(concealed);
+  });
+});
+
+describe("extendDeclaredToGap", () => {
+  // Tiles 38 wide sitting edge to edge from `x`, each `spec` a tile code
+  // like "3t"; a number in the list inserts that many px of gap instead.
+  const lay = (x: number, specs: (string | number)[]): Detection[] => {
+    const out: Detection[] = [];
+    for (const spec of specs) {
+      if (typeof spec === "number") {
+        x += spec;
+        continue;
+      }
+      out.push(detection({ tile: { suit: spec[1] as Suit, rank: Number(spec[0]) }, className: spec, box: [x, 300, x + 38, 340] }));
+      x += 38;
+    }
+    return out;
+  };
+
+  it("moves the melds set apart beside the bonus tiles over to the declared side", () => {
+    // From a real photo: "1f 345p | 456p 22m 33m 44m 55m 3s 5s" - the 1f itself isn't passed in.
+    const real = lay(60, ["3t", "4t", "5t", 10, "4t", "5t", "6t", "2m", "2m", "3m", "3m", "4m", "4m", "5m", "5m", "3b", "5b"]);
+    expect(extendDeclaredToGap(real, true).map((d) => d.className)).toEqual(["3t", "4t", "5t"]);
+  });
+
+  it("works from the right end too, when the bonus tiles sit there", () => {
+    const real = lay(60, ["2m", "2m", "3m", "4m", "5m", 10, "7b", "8b", "9b"]);
+    expect(extendDeclaredToGap(real, false).map((d) => d.className)).toEqual(["9b", "8b", "7b"]);
+  });
+
+  it("moves nothing when the tiles before the gap don't form complete melds", () => {
+    const real = lay(60, ["3t", "4t", 10, "4t", "5t", "6t", "2m", "2m"]);
+    expect(extendDeclaredToGap(real, true)).toEqual([]);
+  });
+
+  it("moves nothing when there's no gap wider than normal jitter", () => {
+    const real = lay(60, ["3t", "4t", "5t", 2, "4t", "5t", "6t", "2m", "2m"]);
+    expect(extendDeclaredToGap(real, true)).toEqual([]);
+  });
+
+  it("splits at the widest qualifying gap when there's more than one", () => {
+    const real = lay(60, ["3t", "4t", "5t", 8, "4t", "5t", "6t", 20, "2m", "3m", "4m", "5m", "5m"]);
+    expect(extendDeclaredToGap(real, true).map((d) => d.className)).toEqual(["3t", "4t", "5t", "4t", "5t", "6t"]);
+  });
+
+  it("puts the declared melds in the declared box in the whole-photo fit", () => {
+    const real = lay(60, ["3t", "4t", "5t", 10, "4t", "5t", "6t", "2m", "2m", "3m", "3m", "4m", "4m", "5m", "5m", "3b", "5b"]);
+    const flower = detection({ tile: null, className: "1f", box: [20, 300, 58, 340] });
+    const { declared, concealed } = regionsFromRows([[flower, ...real]], { naturalWidth: IMG_SIZE, naturalHeight: IMG_SIZE })!;
+    const fifthTileRight = (60 + 3 * 38) / IMG_SIZE; // right edge of the 5t
+    const sixthTileLeft = (60 + 3 * 38 + 10) / IMG_SIZE; // left edge of the next 4t
+    expect(declared!.x + declared!.w).toBeGreaterThanOrEqual(fifthTileRight);
+    expect(declared!.x + declared!.w).toBeLessThanOrEqual(sixthTileLeft);
+    expect(concealed.x).toBeGreaterThanOrEqual(fifthTileRight);
   });
 });
