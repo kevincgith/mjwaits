@@ -4367,12 +4367,16 @@ function ScoringPanel() {
   // their own tai zeroed - see scoring.ts) since they're unreachable: the
   // cycle only ever lands on none/叮 in that case, rather than disabling
   // the whole button, since plain 叮 is still perfectly legal with a call.
+  // The button itself is fully disabled whenever 天胡/地胡/人胡 is active
+  // (see its own JSX below), so this branch is mostly defensive - mirrors
+  // cycleHeavenlyWin's own reciprocal clearing of riichi.
   const cycleRiichi = () => {
     const reachable: RiichiState[] = hasOpenDeclaredMeld ? ["none", "riichi"] : RIICHI_CYCLE;
     setRiichi((prev) => {
       const fromIdx = reachable.indexOf(prev);
       const next = reachable[(fromIdx === -1 ? 0 : fromIdx + 1) % reachable.length];
       if (next === "none") setInstantWin(false);
+      else setHeavenlyWin("none");
       return next;
     });
   };
@@ -4406,7 +4410,14 @@ function ScoringPanel() {
     const next = HEAVENLY_WIN_CYCLE[(HEAVENLY_WIN_CYCLE.indexOf(heavenlyWin) + 1) % HEAVENLY_WIN_CYCLE.length];
     if (next === "heaven") deactivateClaimedWinGroup();
     else if (next === "earth") deactivateSelfDrawGroup();
-    if (next !== "none") setLastTileWin("none");
+    if (next !== "none") {
+      setLastTileWin("none");
+      // 天胡/地胡/人胡 block the whole 叮 family (see scoring.ts) - winning
+      // on the very first opportunity leaves no prior turn to have
+      // declared riichi on at all, not even plain 叮.
+      setRiichi("none");
+      setInstantWin(false);
+    }
     setHeavenlyWin(next);
   };
   const [lastTileWin, setLastTileWin] = useState<LastTileWinState>("none");
@@ -5365,11 +5376,14 @@ function ScoringPanel() {
           type="button"
           className={riichi !== "none" ? "toggle-on" : undefined}
           aria-pressed={riichi !== "none"}
+          disabled={heavenlyWin !== "none"}
           onClick={cycleRiichi}
           title={
-            hasOpenDeclaredMeld
-              ? "叮 - tap to cycle 叮 / off (天叮/地叮 need a fully concealed hand - a declared meld rules them out)"
-              : "叮 - tap to cycle 叮 / 天叮 / 地叮 / off"
+            heavenlyWin !== "none"
+              ? "叮 - blocked by 天胡/地胡/人胡: winning on the very first opportunity leaves no prior turn to have declared riichi on"
+              : hasOpenDeclaredMeld
+                ? "叮 - tap to cycle 叮 / off (天叮/地叮 need a fully concealed hand - a declared meld rules them out)"
+                : "叮 - tap to cycle 叮 / 天叮 / 地叮 / off"
           }
         >
           {RIICHI_LABELS[riichi]}
@@ -5426,12 +5440,14 @@ function ScoringPanel() {
           type="button"
           className={heavenlyWin !== "none" ? "toggle-on" : undefined}
           aria-pressed={heavenlyWin !== "none"}
-          disabled={hasOpenDeclaredMeld}
+          disabled={hasOpenDeclaredMeld || riichi !== "none"}
           onClick={cycleHeavenlyWin}
           title={
             hasOpenDeclaredMeld
               ? "天胡/地胡/人胡 all need a fully concealed hand (an untouched initial-turn win) - a declared meld rules them out"
-              : "Tap to cycle 天胡(160) / 地胡(120) / 人胡(80) / off - 天胡 also turns on 自摸 (deactivating 搶槓/雙響/三響/地胡), 地胡 also turns off 自摸; all 3 are mutually exclusive with 河底撈魚/海底撈月"
+              : riichi !== "none"
+                ? "天胡/地胡/人胡 - blocked by 叮: these describe winning before any turn, which couldn't have happened once riichi was already declared"
+                : "Tap to cycle 天胡(160) / 地胡(120) / 人胡(80) / off - 天胡 also turns on 自摸 (deactivating 搶槓/雙響/三響/地胡), 地胡 also turns off 自摸; all 3 are mutually exclusive with 河底撈魚/海底撈月"
           }
         >
           {HEAVENLY_WIN_LABELS[heavenlyWin]}
