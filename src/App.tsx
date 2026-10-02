@@ -4326,6 +4326,13 @@ function ProjectedWaitRow({
 function ScoringPanel() {
   const [concealedTiles, setConcealedTiles] = useState<HandTile[]>([]);
   const [declaredMelds, setDeclaredMelds] = useState<DeclaredMeldTile[]>([]);
+  // 天叮/地叮/天胡/地胡/人胡 all require a fully concealed hand (see
+  // isFullyConcealed in scoring.ts) - a call means a declared OPEN meld, so
+  // this only looks at `concealed: false` entries. A concealed kong (暗槓,
+  // meldKind "concealed-kong") doesn't count: it comes from upgrading your
+  // own already-held meld with a self-drawn tile, not a call, matching
+  // scoring.ts's own `m.concealed` check exactly.
+  const hasOpenDeclaredMeld = declaredMelds.some((m) => !m.concealed);
   // Bonus tiles (flowers/seasons) live in 門前牌區 alongside declared melds
   // (see BonusTile's doc comment in scoring.ts) but aren't melds themselves
   // and don't count toward hand completeness - kept as separate state rather
@@ -4347,9 +4354,15 @@ function ScoringPanel() {
   // it. 食叮 is left alone here - unlike 一發, it scores its flat 5 tai
   // regardless of whether 叮 is declared at all, per the user's own house
   // rule, so there's no "riichi went back to none" case to reset it for.
+  // With an open declared meld, 天叮/地叮 are skipped entirely (not just
+  // their own tai zeroed - see scoring.ts) since they're unreachable: the
+  // cycle only ever lands on none/叮 in that case, rather than disabling
+  // the whole button, since plain 叮 is still perfectly legal with a call.
   const cycleRiichi = () => {
+    const reachable: RiichiState[] = hasOpenDeclaredMeld ? ["none", "riichi"] : RIICHI_CYCLE;
     setRiichi((prev) => {
-      const next = RIICHI_CYCLE[(RIICHI_CYCLE.indexOf(prev) + 1) % RIICHI_CYCLE.length];
+      const fromIdx = reachable.indexOf(prev);
+      const next = reachable[(fromIdx === -1 ? 0 : fromIdx + 1) % reachable.length];
       if (next === "none") setInstantWin(false);
       return next;
     });
@@ -4578,6 +4591,15 @@ function ScoringPanel() {
   useEffect(() => {
     setKongDraw((c) => Math.min(c, kongCount));
   }, [kongCount]);
+  // Same clamp idiom as flowerDraw/kongDraw above: adding an open declared
+  // meld AFTER 天叮/地叮/天胡/地胡/人胡 was already set (rather than being
+  // blocked by the disabled button/skipped cycle step up front) would
+  // otherwise leave a stale, now-invalid value in place.
+  useEffect(() => {
+    if (!hasOpenDeclaredMeld) return;
+    setRiichi((r) => (r === "heavenly-riichi" || r === "earthly-riichi" ? "riichi" : r));
+    setHeavenlyWin("none");
+  }, [hasOpenDeclaredMeld]);
 
   const addConcealedTile = (tile: Tile) => {
     if (atCapRef() || totalCopiesUsedRef(tile) >= 4) return;
@@ -5335,7 +5357,11 @@ function ScoringPanel() {
           className={riichi !== "none" ? "toggle-on" : undefined}
           aria-pressed={riichi !== "none"}
           onClick={cycleRiichi}
-          title="叮 - tap to cycle 叮 / 天叮 / 地叮 / off"
+          title={
+            hasOpenDeclaredMeld
+              ? "叮 - tap to cycle 叮 / off (天叮/地叮 need a fully concealed hand - a declared meld rules them out)"
+              : "叮 - tap to cycle 叮 / 天叮 / 地叮 / off"
+          }
         >
           {RIICHI_LABELS[riichi]}
         </button>
@@ -5391,8 +5417,13 @@ function ScoringPanel() {
           type="button"
           className={heavenlyWin !== "none" ? "toggle-on" : undefined}
           aria-pressed={heavenlyWin !== "none"}
+          disabled={hasOpenDeclaredMeld}
           onClick={cycleHeavenlyWin}
-          title="Tap to cycle 天胡(160) / 地胡(120) / 人胡(80) / off - 天胡 also turns on 自摸 (deactivating 搶槓/雙響/三響/地胡), 地胡 also turns off 自摸; all 3 are mutually exclusive with 河底撈魚/海底撈月"
+          title={
+            hasOpenDeclaredMeld
+              ? "天胡/地胡/人胡 all need a fully concealed hand (an untouched initial-turn win) - a declared meld rules them out"
+              : "Tap to cycle 天胡(160) / 地胡(120) / 人胡(80) / off - 天胡 also turns on 自摸 (deactivating 搶槓/雙響/三響/地胡), 地胡 also turns off 自摸; all 3 are mutually exclusive with 河底撈魚/海底撈月"
+          }
         >
           {HEAVENLY_WIN_LABELS[heavenlyWin]}
         </button>
