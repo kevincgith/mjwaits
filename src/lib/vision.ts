@@ -294,7 +294,54 @@ export function nonMaxSuppression(detections: Detection[]): Detection[] {
 }
 
 // Runs detection on an already-letterboxed canvas (see `letterbox`).
+// Tiles much bigger in the model's input than in the photos it was trained
+// on read badly - a crop only a tile or two wide (a declared box holding
+// just a flower, a lone pair) fills the input with each tile. Measured on
+// six bonus tiles across three photos: filling the input read 1 of 6
+// right (a 梅 flower came back as a season, 竹 as 北), while the same
+// crops shrunk onto the gray background read all 6 right at 60, 90 and
+// 130 px wide alike. So when the read's tiles come out wider than
+// MAX_TILE_INPUT_PX, detectTiles reads again with them shrunk to
+// TARGET_TILE_INPUT_PX. A tile that big can also go unread entirely (a 竹
+// flower cropped a tile and a half wide came back empty), leaving no size
+// to go by - an empty read is retried at EMPTY_RETRY_FACTOR, which brings
+// a tile filling the input down to about TARGET_TILE_INPUT_PX.
+const MAX_TILE_INPUT_PX = 160;
+const TARGET_TILE_INPUT_PX = 100;
+const EMPTY_RETRY_FACTOR = 0.25;
+
+// `box`'s content shrunk by `factor` around its center, on the same gray.
+function shrinkLetterbox(box: Letterbox, factor: number): Letterbox {
+  const canvas = document.createElement("canvas");
+  canvas.width = IMG_SIZE;
+  canvas.height = IMG_SIZE;
+  const ctx = canvas.getContext("2d")!;
+  ctx.fillStyle = "#727272";
+  ctx.fillRect(0, 0, IMG_SIZE, IMG_SIZE);
+  const side = IMG_SIZE * factor;
+  ctx.drawImage(box.canvas, (IMG_SIZE - side) / 2, (IMG_SIZE - side) / 2, side, side);
+  return { canvas, size: IMG_SIZE };
+}
+
+// Detections in `box`'s frame - read again shrunk, see MAX_TILE_INPUT_PX,
+// when the tiles fill too much of it or nothing was read.
 export async function detectTiles(box: Letterbox, onProgress?: (p: ScanProgress) => void): Promise<DetectionResult> {
+  const result = await detectTilesOnce(box, onProgress);
+  const widths = result.detections.map((d) => d.box[2] - d.box[0]).sort((a, b) => a - b);
+  const tileWidth = widths[Math.floor(widths.length / 2)];
+  if (widths.length > 0 && tileWidth <= MAX_TILE_INPUT_PX) return result;
+  const factor = widths.length > 0 ? TARGET_TILE_INPUT_PX / tileWidth : EMPTY_RETRY_FACTOR;
+  const shrunk = await detectTilesOnce(shrinkLetterbox(box, factor), onProgress);
+  if (shrunk.detections.length === 0) return result;
+  const center = IMG_SIZE / 2;
+  const unshrink = (v: number) => center + (v - center) / factor;
+  return {
+    ...shrunk,
+    detections: shrunk.detections.map((d) => ({ ...d, box: d.box.map(unshrink) as Detection["box"] })),
+  };
+}
+
+async function detectTilesOnce(box: Letterbox, onProgress?: (p: ScanProgress) => void): Promise<DetectionResult> {
   let engine = await getEngine(onProgress);
   onProgress?.({ phase: "running" });
   let outputs: ortWasm.InferenceSession.OnnxValueMapType;
