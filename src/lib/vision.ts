@@ -1092,6 +1092,48 @@ export function splitMixedRow(row: Detection[]): { declared: Detection[]; concea
   return declared.length > 0 && concealed.length > 0 ? { declared, concealed } : null;
 }
 
+// How wide a gap between two neighbouring tiles in a row (in tile widths)
+// counts as deliberate - wider than the jitter between tiles sitting side
+// by side, which on real photos stays under 0.06. See
+// extendDeclaredToGap.
+const DECLARED_GAP_MIN_TILES = 0.15;
+
+// A row whose bonus tiles sit at one end can also hold declared melds
+// between them and the concealed hand, set apart from it by a gap: one
+// photo had "1f 345p | 456p 22m 33m 44m 55m 3s 5s" with the 4s laid
+// sideways above. Moves the real tiles between the bonus tiles and the
+// widest such gap over to the declared side, but only when they form
+// complete melds - a concealed hand can have gaps of its own between
+// groups, and without the bonus tiles marking which end is declared, or
+// the melds check, a gap alone says nothing. `real` must be the row's real
+// tiles, `bonusOnLeft` which end the bonus tiles sit at. Returns the real
+// tiles that move to the declared side (possibly none).
+// Exported for direct unit testing.
+export function extendDeclaredToGap(real: Detection[], bonusOnLeft: boolean): Detection[] {
+  if (real.length < 3) return [];
+  const centerX = (d: Detection) => (d.box[0] + d.box[2]) / 2;
+  // Ordered starting from the bonus end.
+  const ordered = [...real].sort((a, b) => (bonusOnLeft ? centerX(a) - centerX(b) : centerX(b) - centerX(a)));
+  const widths = real.map((d) => d.box[2] - d.box[0]).sort((a, b) => a - b);
+  const minGap = widths[Math.floor(widths.length / 2)] * DECLARED_GAP_MIN_TILES;
+  let best: Detection[] = [];
+  let bestGap = minGap;
+  // Edge of everything so far nearest the concealed side - a running
+  // max/min, since boxes of neighbouring tiles overlap a little.
+  let edge = bonusOnLeft ? -Infinity : Infinity;
+  for (let k = 0; k < ordered.length - 2; k++) {
+    edge = bonusOnLeft ? Math.max(edge, ordered[k].box[2]) : Math.min(edge, ordered[k].box[0]);
+    const next = ordered[k + 1];
+    const gap = bonusOnLeft ? next.box[0] - edge : edge - next.box[2];
+    const segment = ordered.slice(0, k + 1);
+    if (gap > bestGap && canFormOnlyMelds(realTiles(segment))) {
+      bestGap = gap;
+      best = segment;
+    }
+  }
+  return best;
+}
+
 // `declared` is optional: a single detected row with no bonus tiles to
 // split it by content (see splitMixedRow) has nothing to confidently call
 // Declared at all - most often a fully concealed hand with no declared
@@ -1513,6 +1555,11 @@ export function regionsFromRows(rows: Detection[][], image: ImageSize): Detected
       const realXs = split.concealed.map(centerX);
       const bonusOnLeft = Math.max(...bonusXs) < Math.min(...realXs);
       if (!bonusOnLeft && Math.min(...bonusXs) <= Math.max(...realXs)) return { concealed: rowToRegion(rows[0], image) };
+      // Declared melds set apart beside the bonus tiles join them - see
+      // extendDeclaredToGap.
+      const declaredMelds = extendDeclaredToGap(split.concealed, bonusOnLeft);
+      split.declared.push(...declaredMelds);
+      split.concealed = split.concealed.filter((d) => !declaredMelds.includes(d));
       // Bonus tiles often sit right up against the hand on the rack, so the
       // two halves' padded boxes can overlap by a few pixels - meet them
       // at the midpoint between the tiles' own facing edges instead. But a

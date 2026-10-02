@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { parseHand } from "./mahjong";
+import { parseHand, type Suit } from "./mahjong";
 import {
   clusterRows,
   concealednessScore,
   declarednessScore,
   detailWindows,
+  extendDeclaredToGap,
   extendRowEnds,
   findRotatedOutlier,
   isCompleteHandRow,
@@ -1220,5 +1221,59 @@ describe("extendRowEnds (tiles missed at a row's ends)", () => {
     const concealed = [t("3b", 200), t("4b", 240), t("5b", 280)];
     const bonus = detection({ tile: null, className: "1f", box: [160, 400, 200, 480] }); // tight against the row, same height
     expect(extendRowEnds(concealed, [bonus], [bonus])).toEqual(concealed);
+  });
+});
+
+describe("extendDeclaredToGap", () => {
+  // Tiles 38 wide sitting edge to edge from `x`, each `spec` a tile code
+  // like "3t"; a number in the list inserts that many px of gap instead.
+  const lay = (x: number, specs: (string | number)[]): Detection[] => {
+    const out: Detection[] = [];
+    for (const spec of specs) {
+      if (typeof spec === "number") {
+        x += spec;
+        continue;
+      }
+      out.push(detection({ tile: { suit: spec[1] as Suit, rank: Number(spec[0]) }, className: spec, box: [x, 300, x + 38, 340] }));
+      x += 38;
+    }
+    return out;
+  };
+
+  it("moves the melds set apart beside the bonus tiles over to the declared side", () => {
+    // From a real photo: "1f 345p | 456p 22m 33m 44m 55m 3s 5s" - the 1f itself isn't passed in.
+    const real = lay(60, ["3t", "4t", "5t", 10, "4t", "5t", "6t", "2m", "2m", "3m", "3m", "4m", "4m", "5m", "5m", "3b", "5b"]);
+    expect(extendDeclaredToGap(real, true).map((d) => d.className)).toEqual(["3t", "4t", "5t"]);
+  });
+
+  it("works from the right end too, when the bonus tiles sit there", () => {
+    const real = lay(60, ["2m", "2m", "3m", "4m", "5m", 10, "7b", "8b", "9b"]);
+    expect(extendDeclaredToGap(real, false).map((d) => d.className)).toEqual(["9b", "8b", "7b"]);
+  });
+
+  it("moves nothing when the tiles before the gap don't form complete melds", () => {
+    const real = lay(60, ["3t", "4t", 10, "4t", "5t", "6t", "2m", "2m"]);
+    expect(extendDeclaredToGap(real, true)).toEqual([]);
+  });
+
+  it("moves nothing when there's no gap wider than normal jitter", () => {
+    const real = lay(60, ["3t", "4t", "5t", 2, "4t", "5t", "6t", "2m", "2m"]);
+    expect(extendDeclaredToGap(real, true)).toEqual([]);
+  });
+
+  it("splits at the widest qualifying gap when there's more than one", () => {
+    const real = lay(60, ["3t", "4t", "5t", 8, "4t", "5t", "6t", 20, "2m", "3m", "4m", "5m", "5m"]);
+    expect(extendDeclaredToGap(real, true).map((d) => d.className)).toEqual(["3t", "4t", "5t", "4t", "5t", "6t"]);
+  });
+
+  it("puts the declared melds in the declared box in the whole-photo fit", () => {
+    const real = lay(60, ["3t", "4t", "5t", 10, "4t", "5t", "6t", "2m", "2m", "3m", "3m", "4m", "4m", "5m", "5m", "3b", "5b"]);
+    const flower = detection({ tile: null, className: "1f", box: [20, 300, 58, 340] });
+    const { declared, concealed } = regionsFromRows([[flower, ...real]], { naturalWidth: IMG_SIZE, naturalHeight: IMG_SIZE })!;
+    const fifthTileRight = (60 + 3 * 38) / IMG_SIZE; // right edge of the 5t
+    const sixthTileLeft = (60 + 3 * 38 + 10) / IMG_SIZE; // left edge of the next 4t
+    expect(declared!.x + declared!.w).toBeGreaterThanOrEqual(fifthTileRight);
+    expect(declared!.x + declared!.w).toBeLessThanOrEqual(sixthTileLeft);
+    expect(concealed.x).toBeGreaterThanOrEqual(fifthTileRight);
   });
 });
