@@ -2977,7 +2977,11 @@ export const PATTERNS: TaiPattern[] = [
       const melds = nSuitSameRunMelds(hand, 4);
       return melds && melds.some((m) => isMeldOpen(m, ctx, hand)) ? 40 : 0;
     },
-    excludes: ["three-suit-same-run-open", "three-suit-same-run-hidden"],
+    // 4 runs spread across only 3 suits always leaves at least one suit
+    // holding 2 of them (pigeonhole), which is itself exactly 般高's own
+    // shape (2 identical runs, same suit) - excluded per the user so that
+    // same pair doesn't ALSO separately score 明/暗般高 on top of this.
+    excludes: ["three-suit-same-run-open", "three-suit-same-run-hidden", "identical-sequences-open", "identical-sequences-hidden"],
     tiles: (hand, ctx) => {
       const melds = nSuitSameRunMelds(hand, 4);
       return melds && melds.some((m) => isMeldOpen(m, ctx, hand)) ? [melds.map((m) => m.tiles)] : [];
@@ -2990,7 +2994,8 @@ export const PATTERNS: TaiPattern[] = [
       const melds = nSuitSameRunMelds(hand, 4);
       return melds && melds.every((m) => !isMeldOpen(m, ctx, hand)) ? 80 : 0;
     },
-    excludes: ["three-suit-same-run-open", "three-suit-same-run-hidden"],
+    // Same 般高 exclusion as the open tier above.
+    excludes: ["three-suit-same-run-open", "three-suit-same-run-hidden", "identical-sequences-open", "identical-sequences-hidden"],
     tiles: (hand, ctx) => {
       const melds = nSuitSameRunMelds(hand, 4);
       return melds && melds.every((m) => !isMeldOpen(m, ctx, hand)) ? [melds.map((m) => m.tiles)] : [];
@@ -3003,11 +3008,15 @@ export const PATTERNS: TaiPattern[] = [
       const melds = nSuitSameRunMelds(hand, 5);
       return melds && melds.some((m) => isMeldOpen(m, ctx, hand)) ? 80 : 0;
     },
+    // Same 般高 overlap as 四相逢 (even more likely with 5 runs across only
+    // 3 suits) - same exclusion, for the same reason.
     excludes: [
       "three-suit-same-run-open",
       "three-suit-same-run-hidden",
       "four-suit-same-run-open",
       "four-suit-same-run-hidden",
+      "identical-sequences-open",
+      "identical-sequences-hidden",
     ],
     tiles: (hand, ctx) => {
       const melds = nSuitSameRunMelds(hand, 5);
@@ -3021,11 +3030,14 @@ export const PATTERNS: TaiPattern[] = [
       const melds = nSuitSameRunMelds(hand, 5);
       return melds && melds.every((m) => !isMeldOpen(m, ctx, hand)) ? 160 : 0;
     },
+    // Same 般高 exclusion as the open tier above.
     excludes: [
       "three-suit-same-run-open",
       "three-suit-same-run-hidden",
       "four-suit-same-run-open",
       "four-suit-same-run-hidden",
+      "identical-sequences-open",
+      "identical-sequences-hidden",
     ],
     tiles: (hand, ctx) => {
       const melds = nSuitSameRunMelds(hand, 5);

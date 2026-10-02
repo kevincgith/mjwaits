@@ -1272,34 +1272,40 @@ describe("PATTERNS: 相逢/明三相逢/暗三相逢/明四相逢/暗四相逢/�
     expect(tai(result, "cross-suit-same-run")).toBe(0);
   });
 
-  it("scores 明四相逢 for 456m456m456t456b (one suit doubled) with a run exposed, excluding the lower tiers", () => {
+  it("scores 明四相逢 for 456m456m456t456b (one suit doubled) with a run exposed, excluding the lower tiers AND 般高 (the doubled m-suit pair is also an identical-run pair)", () => {
     const result = scoreHand("(456m)456m456t456b111z22z", ctx());
     expect(tai(result, "four-suit-same-run-open")).toBe(40);
     expect(tai(result, "three-suit-same-run-open")).toBe(0);
     expect(tai(result, "cross-suit-same-run")).toBe(0);
+    expect(tai(result, "identical-sequences-open")).toBe(0);
+    expect(tai(result, "identical-sequences-hidden")).toBe(0);
   });
 
-  it("scores 暗四相逢 for 456m456m456t456b fully concealed, excluding the lower tiers", () => {
+  it("scores 暗四相逢 for 456m456m456t456b fully concealed, excluding the lower tiers AND 般高", () => {
     const result = scoreHand("456m456m456t456b111z22z", ctx());
     expect(tai(result, "four-suit-same-run-hidden")).toBe(80);
     expect(tai(result, "three-suit-same-run-hidden")).toBe(0);
     expect(tai(result, "cross-suit-same-run")).toBe(0);
+    expect(tai(result, "identical-sequences-hidden")).toBe(0);
   });
 
-  it("scores 明五相逢 for 234234m234234t234b (5 runs, 2+2+1) with a run exposed, excluding every lower tier", () => {
+  it("scores 明五相逢 for 234234m234234t234b (5 runs, 2+2+1) with a run exposed, excluding every lower tier AND 般高 (both doubled suits)", () => {
     const result = scoreHand("(234m)234m234t234t234b22z", ctx());
     expect(tai(result, "five-suit-same-run-open")).toBe(80);
     expect(tai(result, "four-suit-same-run-open")).toBe(0);
     expect(tai(result, "three-suit-same-run-open")).toBe(0);
     expect(tai(result, "cross-suit-same-run")).toBe(0);
+    expect(tai(result, "identical-sequences-open")).toBe(0);
+    expect(tai(result, "identical-sequences-hidden")).toBe(0);
   });
 
-  it("scores 暗五相逢 for 234234234m234t234b (5 runs, 3+1+1) fully concealed, excluding every lower tier", () => {
+  it("scores 暗五相逢 for 234234234m234t234b (5 runs, 3+1+1) fully concealed, excluding every lower tier AND 般高", () => {
     const result = scoreHand("234m234m234m234t234b22z", ctx());
     expect(tai(result, "five-suit-same-run-hidden")).toBe(160);
     expect(tai(result, "four-suit-same-run-hidden")).toBe(0);
     expect(tai(result, "three-suit-same-run-hidden")).toBe(0);
     expect(tai(result, "cross-suit-same-run")).toBe(0);
+    expect(tai(result, "identical-sequences-hidden")).toBe(0);
   });
 });
 
