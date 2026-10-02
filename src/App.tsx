@@ -3889,6 +3889,15 @@ function bonusTileLabel(tile: BonusTile): string {
   return tile.kind === "flower" ? `Flower: ${FLOWER_NAMES[tile.rank]}` : `Season: ${SEASON_NAMES[tile.rank]}`;
 }
 
+// Canonical display order for the declared-melds box's bonus-tile row -
+// all 4 flowers (by rank) then all 4 seasons (by rank), same order as the
+// picker itself (CORRECTION_BONUS_TILES above) and independent of
+// whatever order the tiles were actually added in (tap order, or a scanned
+// photo's own detection order).
+function sortBonusTiles(tiles: BonusTile[]): BonusTile[] {
+  return [...tiles].sort((a, b) => (a.kind === b.kind ? a.rank - b.rank : a.kind === "flower" ? -1 : 1));
+}
+
 function BonusTileButton({
   tile,
   onClick,
@@ -4183,7 +4192,7 @@ function ScoringBreakdown({
           <div className="hand-display breakdown-groups">
             {hand.bonusTiles.length > 0 && (
               <span className="breakdown-group bonus-tile-group" title="Bonus tiles">
-                {hand.bonusTiles.map((tile, i) => (
+                {sortBonusTiles(hand.bonusTiles).map((tile, i) => (
                   <span key={i} className="tile-glyph" data-suit="bonus">
                     {bonusTileGlyph(tile)}
                   </span>
@@ -5227,7 +5236,7 @@ function ScoringPanel() {
           <>
             {bonusTiles.length > 0 && (
               <div className="breakdown-group bonus-tile-group">
-                {bonusTiles.map((tile) => (
+                {sortBonusTiles(bonusTiles).map((tile) => (
                   <button
                     type="button"
                     key={`${tile.kind}${tile.rank}`}
