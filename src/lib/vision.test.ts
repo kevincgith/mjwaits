@@ -215,6 +215,32 @@ describe("findRotatedOutlier", () => {
     const rotated = detection({ box: [200, 100, 280, 140] });
     expect(findRotatedOutlier([detection(), rotated])).toBeNull();
   });
+
+  // Box sizes from a real photo: a sideways winning 1b at the end of a
+  // 14-tile concealed row whose box came back only ~1.4x the row's
+  // median ratio, while the upright tiles strayed no further than ~1.1x.
+  const sidewaysWinRow = () => {
+    const widths = [48, 47, 45, 42, 40, 39, 37, 38, 37, 40, 39, 41, 40];
+    const heights = [40, 40, 37, 38, 36, 36, 36, 37, 36, 37, 37, 38, 37];
+    let x = 0;
+    const upright = widths.map((w, i) => detection({ box: [(x += w) - w, 300, x, 300 + heights[i]] }));
+    return { upright, sideways: detection({ box: [x, 302, x + 46, 333] }) }; // ratio 1.48 vs median ~1.08
+  };
+
+  it("finds a sideways tile under the usual factor when it's clearly the odd one out", () => {
+    const { upright, sideways } = sidewaysWinRow();
+    expect(findRotatedOutlier([...upright, sideways])).toBe(sideways);
+  });
+
+  it("doesn't pick a mild outlier when another tile strays nearly as far", () => {
+    const { upright, sideways } = sidewaysWinRow();
+    const jittery = detection({ box: [1000, 300, 1050, 337] }); // ratio 1.35 -> ~1.25x the median
+    expect(findRotatedOutlier([...upright, jittery, sideways])).toBeNull();
+  });
+
+  it("ignores ordinary jitter between upright tiles", () => {
+    expect(findRotatedOutlier(sidewaysWinRow().upright)).toBeNull();
+  });
 });
 
 describe("isPairOnlyRow", () => {

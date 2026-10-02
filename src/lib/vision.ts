@@ -598,6 +598,16 @@ export function isPairOnlyRow<T extends { tile: Tile | null }>(row: T[]): boolea
 // rotated outlier rather than normal photo jitter between upright tiles.
 const ROTATION_OUTLIER_FACTOR = 1.5;
 
+// A tile turned sideways doesn't always clear ROTATION_OUTLIER_FACTOR: on
+// one photo a sideways winning tile at the end of a 14-tile row measured
+// anywhere from 1.37 to 1.66 depending on how the box was cropped, so it
+// was named the winning tile only some of the time. Upright tiles in the
+// same row never strayed past 1.16, though, so a tile from this lower
+// factor still counts when it stands this many times further out than any
+// other tile in the group - clearly the odd one out, not just jitter.
+const ROTATION_OUTLIER_MIN_FACTOR = 1.3;
+const ROTATION_OUTLIER_MARGIN = 1.15;
+
 // The model has no concept of tile orientation at all (no "rotated" class -
 // see CLASS_NAMES), so this infers it purely from box shape: real tiles
 // sitting together are all the same physical shape and orientation, so
@@ -623,17 +633,16 @@ export function findRotatedOutlier<T extends { box: [number, number, number, num
   const sorted = [...ratios].sort((a, b) => a - b);
   const median = sorted[Math.floor(sorted.length / 2)];
   if (median <= 0) return null;
-  let best: T | null = null;
-  let bestDeviation = ROTATION_OUTLIER_FACTOR;
-  items.forEach((item, i) => {
-    const r = ratios[i];
-    const deviation = r > median ? r / median : median / r;
-    if (deviation > bestDeviation) {
-      bestDeviation = deviation;
-      best = item;
-    }
+  const deviations = ratios.map((r) => (r > median ? r / median : median / r));
+  let bestIndex = 0;
+  deviations.forEach((d, i) => {
+    if (d > deviations[bestIndex]) bestIndex = i;
   });
-  return best;
+  const best = deviations[bestIndex];
+  const runnerUp = Math.max(1, ...deviations.filter((_, i) => i !== bestIndex));
+  if (best > ROTATION_OUTLIER_FACTOR) return items[bestIndex];
+  if (best > ROTATION_OUTLIER_MIN_FACTOR && best >= runnerUp * ROTATION_OUTLIER_MARGIN) return items[bestIndex];
+  return null;
 }
 
 // How "declared-looking" a row is, from its own detections alone - a kong
