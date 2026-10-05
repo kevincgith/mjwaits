@@ -784,7 +784,12 @@ h1 {
 .collapsible-panel {
   display: grid;
   grid-template-rows: 0fr;
-  transition: grid-template-rows 0.22s ease;
+  /* Layout is re-run for everything below the panel on every frame of this
+     transition, so keep it short and cheap. The inner wrapper below also
+     drops its content from painting/hit-testing/tab order once fully
+     collapsed (visibility flips AFTER the close finishes, and immediately
+     on open). */
+  transition: grid-template-rows 0.18s cubic-bezier(0.2, 0, 0, 1);
 }
 
 .collapsible-panel.open {
@@ -794,10 +799,24 @@ h1 {
 .collapsible-panel-inner {
   overflow: hidden;
   min-height: 0;
+  visibility: hidden;
+  opacity: 0;
+  transition:
+    opacity 0.18s ease,
+    visibility 0s linear 0.18s;
+}
+
+.collapsible-panel.open > .collapsible-panel-inner {
+  visibility: visible;
+  opacity: 1;
+  transition:
+    opacity 0.18s ease,
+    visibility 0s;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .collapsible-panel,
+  .collapsible-panel-inner,
   .panel-header button.icon-toggle,
   .projected-wait-caret {
     transition: none;
