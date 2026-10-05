@@ -267,6 +267,18 @@ button {
 h1 {
   font-size: 1.75rem;
   margin: 0 0 1.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 0.5rem;
+}
+
+/* The app icon (same file as the favicon) in front of the name. Decorative:
+   the name right after it already says what it is. */
+.app-logo {
+  width: 2.25rem;
+  height: 2.25rem;
+  flex-shrink: 0;
 }
 
 /* Plain-words description beside the brand name, so the tagline (not the
@@ -276,7 +288,6 @@ h1 {
   font-size: 0.95rem;
   font-weight: 400;
   color: var(--text-muted);
-  margin-left: 0.4rem;
 }
 
 .mode-tabs {

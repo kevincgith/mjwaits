@@ -6623,6 +6623,7 @@ function App() {
   return (
     <div className="page">
       <h1>
+        <img className="app-logo" src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" />
         16waits <span className="app-tagline">HKTW mahjong scoring, waits &amp; trainer</span>
       </h1>
       <div className="mode-tabs">
