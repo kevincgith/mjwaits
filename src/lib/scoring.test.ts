@@ -2254,7 +2254,8 @@ describe("PATTERNS: 明/暗四歸 (Thirteen Orphans: one kind held all 4 copies)
     // A quad on an orphan kind is always also a triplet-of-orphan meld, so
     // 混老頭 (see the next describe block) fires alongside it here too.
     expect(tai(result, "mixed-terminal-honor-triplets")).toBe(100);
-    expect(result.total).toBe(282);
+    expect(tai(result, "dragon-tile")).toBe(2); // the 777z triplet, as an honor meld
+    expect(result.total).toBe(284);
   });
 
   it("still scores 暗四歸 when the win is self-drawn, even if the winning tile matches the quad", () => {
@@ -2271,7 +2272,8 @@ describe("PATTERNS: 明/暗四歸 (Thirteen Orphans: one kind held all 4 copies)
     // computable and it turns out to hold for this exact hand - see the
     // dedicated 自摸/獨獨-in-special-hands describe block below.
     expect(tai(result, "genuine-single-wait")).toBe(2);
-    expect(result.total).toBe(274);
+    expect(tai(result, "dragon-tile")).toBe(2); // the 777z triplet, as an honor meld
+    expect(result.total).toBe(276);
   });
 
   it("scores 明四歸 for the quad on a numbered tile (9b) too, not just honors", () => {
@@ -3303,5 +3305,27 @@ describe("PATTERNS: TaiPattern.tiles - smoke test across every pattern", () => {
     // pattern count from ~99 to ~71.)
     expect(checkedPatterns).toBeGreaterThan(900);
     expect(seenPatternIds.size).toBeGreaterThan(65);
+  });
+});
+
+describe("PATTERNS: 十三么/嚦咕嚦咕's 3-tile group, when honors, earns 2 tai like any honor meld", () => {
+  it("十三么: a dragon triplet picks up 三元牌, the seat wind 正位風, another wind 爛位風", () => {
+    expect(tai(scoreHand("119m19t19b1234567z777z", ctx()), "dragon-tile")).toBe(2);
+    expect(tai(scoreHand("119m19t19b1234567z111z", ctx({ seatWind: 1 })), "correct-seat-wind")).toBe(2);
+    expect(tai(scoreHand("119m19t19b1234567z222z", ctx({ seatWind: 1 })), "wrong-seat-wind")).toBe(2);
+  });
+
+  it("十三么: the 12 single-tile placeholders never count as honor melds of their own, and a non-honor meld earns nothing", () => {
+    const result = scoreHand("119m19t19b1234567z123m", ctx());
+    expect(tai(result, "dragon-tile")).toBe(0);
+    expect(tai(result, "correct-seat-wind")).toBe(0);
+    expect(tai(result, "wrong-seat-wind")).toBe(0);
+  });
+
+  it("嚦咕嚦咕: the tripled kind earns it too when it's honors, but not the plain pairs/quads", () => {
+    expect(tai(scoreHand("2222m2222t2222b55566z", ctx()), "dragon-tile")).toBe(2);
+    expect(tai(scoreHand("2222m2222t2222b11122z", ctx({ seatWind: 1 })), "correct-seat-wind")).toBe(2);
+    expect(tai(scoreHand("2222m2222t2222b33322z", ctx({ seatWind: 1 })), "wrong-seat-wind")).toBe(2);
+    expect(tai(scoreHand("112233m22333t556677z", ctx()), "dragon-tile")).toBe(0);
   });
 });

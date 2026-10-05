@@ -3764,9 +3764,31 @@ function scoreThirteenOrphans(parsed: ParsedScoringHand, ctx: GameContext): Scor
     if (mixedTerminalTai > 0) matched.push({ pattern: mixedTerminalPattern, tai: mixedTerminalTai });
   }
 
+  pushHonorTripleBonus(hand, mainMeld, ctx, matched);
   pushFlowerBonuses(hand, ctx, matched);
   pushSelfDrawAndGenuineSingleWait(hand, ctx, matched);
   return { total: matched.reduce((sum, m) => sum + m.tai, 0), matched, hand };
+}
+
+// 十三么/嚦咕嚦咕's one real 3-tile group, when it's honors (a wind or
+// dragon triplet): earns the same 2 tai an ordinary honor meld does - 三元牌
+// for a dragon, 正位風/爛位風 for a wind. Scored against a hand holding only
+// that meld, since these two special constructions otherwise fill
+// hand.melds with 1-tile/pair/quad placeholders that the ordinary wind/
+// dragon patterns would wrongly read as melds of their own.
+function pushHonorTripleBonus(
+  hand: ResolvedHand,
+  triple: ResolvedMeld,
+  ctx: GameContext,
+  matched: { pattern: TaiPattern; tai: number }[],
+): void {
+  if (triple.tiles.length !== 3 || !isHonorTile(triple.tiles[0])) return;
+  const tripleOnly: ResolvedHand = { ...hand, melds: [triple] };
+  for (const id of ["dragon-tile", "correct-seat-wind", "wrong-seat-wind"]) {
+    const pattern = PATTERNS.find((p) => p.id === id)!;
+    const tai = pattern.score(tripleOnly, ctx);
+    if (tai > 0) matched.push({ pattern, tai });
+  }
 }
 
 // Shared by 十三么/十六不搭: 無花/正花/爛花 are purely bonusTiles-based
@@ -4091,6 +4113,8 @@ function scoreEightPairs(parsed: ParsedScoringHand, ctx: GameContext): ScoreResu
   if (middleTilePairCount > 0) {
     matched.push({ pattern: PATTERNS.find((p) => p.id === "middle-tile-pair")!, tai: middleTilePairCount * 2 });
   }
+
+  pushHonorTripleBonus(hand, groupMelds[0], ctx, matched);
 
   // 三元嚦咕/三風嚦咕/四喜嚦咕: eight-pairs-only bonuses, same raw-score +
   // exclude-cascade approach as the reusable batch above, just kept
