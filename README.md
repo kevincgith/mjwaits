@@ -1,6 +1,8 @@
-# mjwaits
+# 16waits
 
-A browser toolkit for Taiwanese (16-tile) Mahjong. It started as a waits calculator — build a
+<img src="public/favicon.svg" width="64" alt="16waits logo: a glass 白板 tile beside an empty glass tile (the wait) on green" align="right">
+
+A browser toolkit for 16-tile (Taiwanese / Hong Kong house rules) Mahjong. Formerly *mjwaits*. It started as a waits calculator — build a
 hand, see what completes it and which discard gives the best odds — and has grown four tabs:
 
 - **Scoring** — score a finished hand against a concrete house tai (番) list (~140 patterns).
@@ -177,7 +179,7 @@ button back to the crop.
 The model was trained on a merged dataset combining
 [MahjongVis](https://github.com/Andy8647/MahjongVis) (MIT) and
 [MJOD-2136](https://github.com/jaheel/MJOD-2136) (CC BY-NC-SA) across 42 tile classes (the 34
-mjwaits recognizes plus 8 bonus-tile classes), then fine-tuned on real photos of a physical set
+16waits recognizes plus 8 bonus-tile classes), then fine-tuned on real photos of a physical set
 to close the gap between the training data's tile designs and a visitor's actual tiles - most
 recently with a round adding rotation augmentation, fixing a real weakness where tiles rotated
 90/180/270° (turned sideways on the table, or upside down) were missed far more often than

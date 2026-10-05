@@ -6622,7 +6622,9 @@ function App() {
 
   return (
     <div className="page">
-      <h1>Mahjong Waits Calculator</h1>
+      <h1>
+        16waits <span className="app-tagline">HKTW mahjong scoring, waits &amp; trainer</span>
+      </h1>
       <div className="mode-tabs">
         <button
           type="button"

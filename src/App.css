@@ -269,6 +269,16 @@ h1 {
   margin: 0 0 1.5rem;
 }
 
+/* Plain-words description beside the brand name, so the tagline (not the
+   name) carries what the app does. Wraps under the name on narrow screens. */
+.app-tagline {
+  display: inline-block;
+  font-size: 0.95rem;
+  font-weight: 400;
+  color: var(--text-muted);
+  margin-left: 0.4rem;
+}
+
 .mode-tabs {
   display: flex;
   flex-wrap: wrap;
