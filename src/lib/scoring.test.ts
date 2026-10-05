@@ -3329,3 +3329,28 @@ describe("PATTERNS: 十三么/嚦咕嚦咕's 3-tile group, when honors, earns 2 
     expect(tai(scoreHand("112233m22333t556677z", ctx()), "dragon-tile")).toBe(0);
   });
 });
+
+describe("PATTERNS: honor-meld breakdowns in 十三么/嚦咕嚦咕 show only the group that scored", () => {
+  const rows = (result: ReturnType<typeof scoreHand>, id: string) =>
+    PATTERNS.find((p) => p.id === id)!
+      .tiles!(result.hand, ctx())
+      .map((row) => row.map((g) => g.map((t) => `${t.rank}${t.suit}`).join("")));
+
+  it("十三么: 三元牌 lists just the 777z triplet, not the 5z/6z/7z single-tile placeholders", () => {
+    const result = scoreHand("119m19t19b1234567z777z", ctx());
+    expect(tai(result, "dragon-tile")).toBe(2);
+    expect(rows(result, "dragon-tile")).toEqual([["7z7z7z"]]);
+  });
+
+  it("嚦咕嚦咕: 正位風 lists just the tripled 1z, not the honor quads", () => {
+    const result = scoreHand("2222z3333z4444z111z22m", ctx({ seatWind: 1 }));
+    expect(tai(result, "correct-seat-wind")).toBe(2);
+    expect(rows(result, "correct-seat-wind")).toEqual([["1z1z1z"]]);
+  });
+
+  it("嚦咕嚦咕: 三元牌 lists just the tripled dragon, not a dragon quad or pair", () => {
+    const result = scoreHand("6666z2222m3333t555z77b", ctx());
+    expect(tai(result, "dragon-tile")).toBe(2);
+    expect(rows(result, "dragon-tile")).toEqual([["5z5z5z"]]);
+  });
+});

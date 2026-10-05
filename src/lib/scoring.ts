@@ -614,6 +614,15 @@ function wholeHandGroupsFlat(hand: ResolvedHand): Tile[][] {
 
 const isHonorTile = (t: Tile): boolean => t.suit === "z";
 
+// The melds the single-wind/dragon patterns' breakdowns should show: in
+// 十三么/嚦咕嚦咕's special constructions hand.melds also holds 1-tile/pair/
+// quad placeholders (see pushHonorTripleBonus), which aren't melds that
+// scored - only the one real 3-tile group is.
+function honorScoringMelds(hand: ResolvedHand): ResolvedMeld[] {
+  const eightPairs = isEightPairsHand(hand);
+  return hand.melds.filter((m) => m.tiles.length > 1 && !(eightPairs && m.tiles.length !== 3));
+}
+
 // Ranks (1-4) of every wind meld (triplet/kong of East/South/West/North) in
 // the hand - a kong counts the same as a triplet here, only the tile kind
 // matters.
@@ -2129,13 +2138,13 @@ export const PATTERNS: TaiPattern[] = [
     // (which can only ever match the one seat-wind rank, so never stacks),
     // a hand can hold up to 2 different "wrong" wind melds at once.
     score: (hand, ctx) => windMeldRanks(hand).filter((r) => r !== ctx.seatWind).length * 2,
-    tiles: (hand, ctx) => hand.melds.filter((m) => m.tiles[0].suit === "z" && m.tiles[0].rank <= 4 && m.tiles[0].rank !== ctx.seatWind).map((m) => [m.tiles]),
+    tiles: (hand, ctx) => honorScoringMelds(hand).filter((m) => m.tiles[0].suit === "z" && m.tiles[0].rank <= 4 && m.tiles[0].rank !== ctx.seatWind).map((m) => [m.tiles]),
   },
   {
     id: "correct-seat-wind",
     name: "正位風 (Seat wind)",
     score: (hand, ctx) => (windMeldRanks(hand).some((r) => r === ctx.seatWind) ? 2 : 0),
-    tiles: (hand, ctx) => [hand.melds.filter((m) => m.tiles[0].suit === "z" && m.tiles[0].rank === ctx.seatWind).map((m) => m.tiles)],
+    tiles: (hand, ctx) => [honorScoringMelds(hand).filter((m) => m.tiles[0].suit === "z" && m.tiles[0].rank === ctx.seatWind).map((m) => m.tiles)],
   },
   {
     id: "correct-round-wind",
@@ -2215,7 +2224,7 @@ export const PATTERNS: TaiPattern[] = [
     name: "三元牌 (Dragon)",
     // Stacks: 2 tai for each dragon meld held.
     score: (hand) => dragonMeldRanks(hand).length * 2,
-    tiles: (hand) => hand.melds.filter((m) => m.tiles[0].suit === "z" && m.tiles[0].rank >= 5).map((m) => [m.tiles]),
+    tiles: (hand) => honorScoringMelds(hand).filter((m) => m.tiles[0].suit === "z" && m.tiles[0].rank >= 5).map((m) => [m.tiles]),
   },
   {
     id: "small-three-dragons",
