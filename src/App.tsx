@@ -4255,6 +4255,122 @@ interface ProjectedWait {
   wait: Tile;
   result: ScoreResult | null;
   error: string | null;
+  live: number; // copies of `wait` not already in this hand or its discard
+}
+
+// Every tile that completes `concealed` (alongside the declared melds),
+// each scored as the 食胡 tile. `copiesUsed` counts how many of a kind the
+// player can already see in their own hand (plus the discard, when
+// projecting a discard) - getWaits only counts copies within the concealed
+// tiles it's given, so a wait kind whose remaining copies are all sitting
+// in a declared meld is structurally suggested but physically impossible to
+// draw; those are dropped. Returned in canonical tile order (suit then rank).
+function projectWaits(
+  concealed: Tile[],
+  declaredMelds: ParsedScoringHand["declaredMelds"],
+  bonusTiles: ParsedScoringHand["bonusTiles"],
+  ctx: GameContext,
+  copiesUsed: (tile: Tile) => number
+): ProjectedWait[] {
+  return getWaits(concealed, MELDS_REQUIRED - declaredMelds.length)
+    .filter((w) => copiesUsed(w) < 4)
+    .map((wait): ProjectedWait => {
+      const live = 4 - copiesUsed(wait);
+      const parsed: ParsedScoringHand = { declaredMelds, freeTiles: [...concealed, wait], bonusTiles };
+      try {
+        // Each wait is, by definition, the tile that completed the hand -
+        // score it as the 食胡 tile regardless of any long-press mark (the
+        // marked tile, if any, isn't the completing one while tenpai).
+        return { wait, result: scoreParsedHand(parsed, { ...ctx, winningTile: wait }), error: null, live };
+      } catch (e) {
+        return { wait, result: null, error: e instanceof ScoringError ? e.message : "Could not score hand", live };
+      }
+    })
+    .sort((a, b) => SUIT_ORDER.indexOf(a.wait.suit) - SUIT_ORDER.indexOf(b.wait.suit) || a.wait.rank - b.wait.rank);
+}
+
+// Highest tai first, ties in tile order. Re-sorts a copy, so callers can
+// keep the canonically ordered original.
+function sortByScore(waits: ProjectedWait[]): ProjectedWait[] {
+  return [...waits].sort(
+    (a, b) =>
+      (b.result?.total ?? -1) - (a.result?.total ?? -1) ||
+      SUIT_ORDER.indexOf(a.wait.suit) - SUIT_ORDER.indexOf(b.wait.suit) ||
+      a.wait.rank - b.wait.rank
+  );
+}
+
+// One discard from a full hand that leaves it tenpai, with each resulting
+// wait already scored. `liveTotal` is how many tiles left in the wall could
+// complete it (as far as this hand can see); `topTai` the best of those
+// completions.
+interface DiscardOption {
+  discard: Tile;
+  waits: ProjectedWait[]; // sorted by score
+  liveTotal: number;
+  topTai: number;
+}
+
+// One row of the full-hand "discard options" list: discard tile → its waits,
+// live tile count and best tai, expanding to a ProjectedWaitRow per wait.
+// Same collapsed-by-default idiom as ProjectedWaitRow itself.
+function DiscardOptionRow({
+  option,
+  declaredCount,
+  ctx,
+}: {
+  option: DiscardOption;
+  declaredCount: number;
+  ctx: GameContext;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  // CollapsiblePanel keeps its content mounted, and each wait row carries a
+  // full ScoringBreakdown - across every discard that's dozens of hidden
+  // breakdowns re-rendering on each context toggle. So the waits only mount
+  // on first open, then stay mounted so collapsing still animates.
+  const [opened, setOpened] = useState(false);
+  const { discard, waits, liveTotal, topTai } = option;
+  // A long wait list (e.g. 十三么's 13-way wait) would swamp the summary
+  // line - fall back to a count past what fits on one line at phone width.
+  const showGlyphs = waits.length <= 6;
+  return (
+    <div className="projected-wait">
+      <button
+        type="button"
+        className="projected-wait-head discard-option-head"
+        onClick={() => {
+          setExpanded((e) => !e);
+          setOpened(true);
+        }}
+        aria-expanded={expanded}
+        aria-label={`Discard ${tileLabel(discard)}: ${waits.length} wait${waits.length === 1 ? "" : "s"}, ${liveTotal} live tile${liveTotal === 1 ? "" : "s"}, up to ${topTai} tai, tap for waits`}
+      >
+        <TileGlyphSpan tile={discard} large />
+        <span className="discard-arrow">→</span>
+        <span className="discard-option-waits">
+          {showGlyphs
+            ? waits.map((pw) => <TileGlyphSpan key={tileKey(pw.wait)} tile={pw.wait} />)
+            : `${waits.length} waits`}
+        </span>
+        <span className="discard-option-score">
+          <span className="discard-option-live">{liveTotal} live</span>
+          <span className="projected-wait-tai">up to {topTai} tai</span>
+          <span className={`projected-wait-caret${expanded ? " open" : ""}`} aria-hidden="true">
+            ▸
+          </span>
+        </span>
+      </button>
+      <CollapsiblePanel open={expanded}>
+        {opened && (
+          <div className="discard-option-detail">
+            {waits.map((pw) => (
+              <ProjectedWaitRow key={tileKey(pw.wait)} projected={pw} declaredCount={declaredCount} ctx={ctx} />
+            ))}
+          </div>
+        )}
+      </CollapsiblePanel>
+    </div>
+  );
 }
 
 // One row of the near-complete "if this wait completes the hand" list: a
@@ -4272,7 +4388,7 @@ function ProjectedWaitRow({
   ctx: GameContext;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const { wait, result, error } = projected;
+  const { wait, result, error, live } = projected;
   // Each wait's own effective context - same override the projectedWaits
   // memo itself applies before scoring (see ScoringPanel), since PatternRow
   // needs a ctx with winningTile pinned to THIS row's wait, not whatever
@@ -4285,9 +4401,10 @@ function ProjectedWaitRow({
         className="projected-wait-head"
         onClick={() => setExpanded((e) => !e)}
         aria-expanded={expanded}
-        aria-label={`${tileLabel(wait)} — ${result ? `${result.total} tai` : "not scoreable"}, tap for breakdown`}
+        aria-label={`${tileLabel(wait)} (${live} left) — ${result ? `${result.total} tai` : "not scoreable"}, tap for breakdown`}
       >
         <TileGlyphSpan tile={wait} large />
+        <span className="projected-wait-live">{live} left</span>
         <span className="projected-wait-tai">{result ? `${result.total} tai` : "—"}</span>
         <span className={`projected-wait-caret${expanded ? " open" : ""}`} aria-hidden="true">
           ▸
@@ -4983,40 +5100,69 @@ function ScoringPanel() {
   const nearComplete = totalTiles === requiredSize - 1;
   const projectedWaits = useMemo<ProjectedWait[] | null>(() => {
     if (!nearComplete) return null;
-    const meldsNeeded = MELDS_REQUIRED - declaredMelds.length;
     const concealed = concealedTiles.map(({ id: _id, ...tile }) => tile);
     const declared = declaredMelds.map(({ kind, concealed: c, tiles }) => ({ kind, concealed: c, tiles }));
-    // getWaits only counts copies within the concealed tiles it's given, so a
-    // wait kind whose remaining copies are all sitting in a declared meld is
-    // structurally suggested but physically impossible to draw - drop those.
-    const waits = getWaits(concealed, meldsNeeded).filter((w) => totalCopiesUsed(w) < 4);
-    return waits
-      .map((wait): ProjectedWait => {
-        const parsed: ParsedScoringHand = {
-          declaredMelds: declared,
-          freeTiles: [...concealed, wait],
-          bonusTiles,
-        };
-        try {
-          // Each wait is, by definition, the tile that completed the hand -
-          // score it as the 食胡 tile regardless of any long-press mark (the
-          // marked tile, if any, isn't the completing one while tenpai).
-          return { wait, result: scoreParsedHand(parsed, { ...ctx, winningTile: wait }), error: null };
-        } catch (e) {
-          return { wait, result: null, error: e instanceof ScoringError ? e.message : "Could not score hand" };
-        }
-      })
-      // Canonical tile order (suit then rank); the display-order toggle
-      // re-sorts a copy of this without recomputing any scores.
-      .sort(
-        (a, b) =>
-          SUIT_ORDER.indexOf(a.wait.suit) - SUIT_ORDER.indexOf(b.wait.suit) || a.wait.rank - b.wait.rank
-      );
+    // Canonical tile order; the display-order toggle re-sorts a copy of
+    // this without recomputing any scores.
+    return projectWaits(concealed, declared, bonusTiles, ctx, totalCopiesUsed);
     // Same deps as `scoring` above minus winningTile (overridden per wait); ctx
     // is rebuilt every render so its primitive inputs are listed individually.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     nearComplete,
+    concealedTiles,
+    declaredMelds,
+    bonusTiles,
+    seatWind,
+    roundWind,
+    selfDraw,
+    riichi,
+    instantWin,
+    eatRiichi,
+    earlyWin,
+    multiWin,
+    heavenlyWin,
+    lastTileWin,
+    flowerDraw,
+    kongDraw,
+    robKong,
+    dealerStreak,
+    manualVisibleExhaust,
+  ]);
+
+  // Full hand: for each distinct concealed tile kind, what discarding one
+  // copy leaves - only the discards that keep the hand tenpai, each with its
+  // waits scored exactly as the near-complete list above would score them.
+  // Declared melds are fixed, so only concealed tiles are candidates. The
+  // discarded copy stays counted in totalCopiesUsed: it's on the table, so
+  // it's as dead as a copy still in hand.
+  const fullHand = totalTiles === requiredSize;
+  const discardOptions = useMemo<DiscardOption[] | null>(() => {
+    if (!fullHand || concealedTiles.length === 0) return null;
+    const concealed = concealedTiles.map(({ id: _id, ...tile }) => tile);
+    const declared = declaredMelds.map(({ kind, concealed: c, tiles }) => ({ kind, concealed: c, tiles }));
+    const options: DiscardOption[] = [];
+    for (const discard of sortTiles(concealed)) {
+      if (options.some((o) => tileKey(o.discard) === tileKey(discard))) continue;
+      const rest = [...concealed];
+      rest.splice(
+        rest.findIndex((t) => tileKey(t) === tileKey(discard)),
+        1
+      );
+      const waits = projectWaits(rest, declared, bonusTiles, ctx, totalCopiesUsed);
+      if (waits.length === 0) continue;
+      options.push({
+        discard,
+        waits: sortByScore(waits),
+        liveTotal: waits.reduce((n, w) => n + w.live, 0),
+        topTai: Math.max(...waits.map((w) => w.result?.total ?? 0)),
+      });
+    }
+    return options;
+    // Same deps as projectedWaits above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    fullHand,
     concealedTiles,
     declaredMelds,
     bonusTiles,
@@ -5043,13 +5189,21 @@ function ScoringPanel() {
   const [projectedSort, setProjectedSort] = useState<"score" | "tiles">("score");
   const displayedProjectedWaits = useMemo(() => {
     if (!projectedWaits || projectedSort === "tiles") return projectedWaits;
-    return [...projectedWaits].sort(
-      (a, b) =>
-        (b.result?.total ?? -1) - (a.result?.total ?? -1) ||
-        SUIT_ORDER.indexOf(a.wait.suit) - SUIT_ORDER.indexOf(b.wait.suit) ||
-        a.wait.rank - b.wait.rank
-    );
+    return sortByScore(projectedWaits);
   }, [projectedWaits, projectedSort]);
+
+  // Display order for the discard-options list: best tai first (ties to more
+  // live tiles), or most live tiles first (ties to better tai) - payout vs
+  // odds. discardOptions itself stays in tile order.
+  const [discardSort, setDiscardSort] = useState<"score" | "live">("score");
+  const displayedDiscardOptions = useMemo(() => {
+    if (!discardOptions) return null;
+    return [...discardOptions].sort((a, b) =>
+      discardSort === "score"
+        ? b.topTai - a.topTai || b.liveTotal - a.liveTotal
+        : b.liveTotal - a.liveTotal || b.topTai - a.topTai
+    );
+  }, [discardOptions, discardSort]);
 
   // Whether 明絕/絕絕's auto-detect alone (ignoring the manual state) already
   // proves one of the two true, purely to decide the shared button's floor -
@@ -5583,6 +5737,39 @@ function ScoringPanel() {
               )}
               {displayedProjectedWaits.map((pw) => (
                 <ProjectedWaitRow key={tileKey(pw.wait)} projected={pw} declaredCount={declaredMelds.length} ctx={ctx} />
+              ))}
+            </>
+          )}
+        </div>
+      )}
+
+      {displayedDiscardOptions !== null && (
+        <div className="waits projected-waits">
+          {displayedDiscardOptions.length === 0 ? (
+            <span className="waits-label">No discard leaves this hand tenpai.</span>
+          ) : (
+            <>
+              <div className="projected-waits-header">
+                <span className="waits-label">
+                  {scoring?.ok ? "If you discarded instead of winning — " : "Discard options — "}
+                  {displayedDiscardOptions.length} keep{displayedDiscardOptions.length === 1 ? "s" : ""} you tenpai
+                  (tap a row for its waits):
+                </span>
+                <button
+                  type="button"
+                  className="projected-sort-toggle"
+                  onClick={() => setDiscardSort((s) => (s === "score" ? "live" : "score"))}
+                  title={
+                    discardSort === "score"
+                      ? "Sorted by best tai — tap to sort by live tiles"
+                      : "Sorted by live tiles — tap to sort by best tai"
+                  }
+                >
+                  {discardSort === "score" ? "Sort: tai" : "Sort: live"}
+                </button>
+              </div>
+              {displayedDiscardOptions.map((o) => (
+                <DiscardOptionRow key={tileKey(o.discard)} option={o} declaredCount={declaredMelds.length} ctx={ctx} />
               ))}
             </>
           )}

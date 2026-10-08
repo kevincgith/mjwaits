@@ -1401,6 +1401,55 @@ button.scoring-pattern-row {
   white-space: nowrap;
 }
 
+/* How many copies of a wait (or of all of a discard's waits) are still
+   unseen - quieter than the tai so the score stays the headline. It takes
+   the right-edge auto margin, so the tai just follows it. */
+.projected-wait-live,
+.discard-option-live {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.projected-wait-live + .projected-wait-tai,
+.discard-option-live + .projected-wait-tai {
+  margin-left: 0;
+}
+
+/* A discard row carries more than a wait row (discard → waits, then live
+   count and best tai), so at phone width the score group wraps under the
+   tiles, still right-aligned, instead of overflowing. */
+.discard-option-head {
+  flex-wrap: wrap;
+  row-gap: 0.15rem;
+}
+
+.discard-option-score {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
+.discard-option-waits {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.1rem;
+  white-space: nowrap;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+
+/* A discard's expanded waits nest one level in, so set them off from the
+   row's own summary line. */
+.discard-option-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.35rem 0 0.15rem 0.6rem;
+}
+
 .projected-wait-caret {
   color: var(--text-subtle);
   font-size: 0.8rem;
