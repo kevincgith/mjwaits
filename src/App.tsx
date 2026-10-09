@@ -89,6 +89,7 @@ import {
   isVisiblyExhaustedMultiWait,
   isVisiblyTripledWinningTile,
   isWinningTileHeldConcealedElsewhere,
+  patternDisplayName,
   ScoringError,
   scoreParsedHand,
   type BonusTile,
@@ -4014,7 +4015,7 @@ function PatternRow({
     return (
       <div className="pattern-row">
         <div className="scoring-pattern-row" title={pattern.caveat}>
-          <span className="scoring-pattern-name">{pattern.name}</span>
+          <span className="scoring-pattern-name">{patternDisplayName(pattern, hand)}</span>
           <span className="scoring-pattern-meta">
             <span className="scoring-pattern-tai">{tai}<span className="visually-hidden"> tai</span></span>
             {/* Reserves the same width a caret takes on a tappable row,
@@ -4032,7 +4033,7 @@ function PatternRow({
   return (
     <div className="pattern-row">
       <button type="button" className="scoring-pattern-row" onClick={() => setExpanded((e) => !e)} aria-expanded={expanded} title={pattern.caveat}>
-        <span className="scoring-pattern-name">{pattern.name}</span>
+        <span className="scoring-pattern-name">{patternDisplayName(pattern, hand)}</span>
         <span className="scoring-pattern-meta">
           <span className="scoring-pattern-tai">{tai}<span className="visually-hidden"> tai</span></span>
           <span className={`projected-wait-caret${expanded ? " open" : ""}`} aria-hidden="true">

@@ -594,6 +594,22 @@ export interface TaiPattern {
   // the rest of this file's "concrete checks, not a shared engine"
   // approach.
   tiles?: (hand: ResolvedHand, ctx: GameContext) => Tile[][][];
+  // For the 帶X family (混帶X/XY/XYZ, 全帶X): the actual rank(s) X/XY/XYZ
+  // resolved to on this hand, ascending, so the UI can show e.g. 全帶X(1)
+  // or 混帶XYZ(3,4,5) - see patternDisplayName. Null when the pattern
+  // doesn't apply.
+  ranks?: (hand: ResolvedHand) => number[] | null;
+}
+
+// A pattern's name with its resolved ranks (see TaiPattern.ranks) slotted
+// in right after the Chinese name - "全帶X (Common rank...)" becomes
+// "全帶X(1) (Common rank...)". Unchanged for every other pattern.
+export function patternDisplayName(pattern: TaiPattern, hand: ResolvedHand): string {
+  const ranks = pattern.ranks?.(hand);
+  if (!ranks || ranks.length === 0) return pattern.name;
+  const split = pattern.name.indexOf(" (");
+  const head = split === -1 ? pattern.name : pattern.name.slice(0, split);
+  return `${head}(${ranks.join(",")})${split === -1 ? "" : pattern.name.slice(split)}`;
 }
 
 function allHandTiles(hand: ResolvedHand): Tile[] {
@@ -1356,14 +1372,15 @@ function oldYoungTripletInstances(hand: ResolvedHand): number {
 // also match the shared rank, unless the pair is honors - a pair (2 tiles,
 // 1 rank) can only ever match a *single* rank, which is exactly what 混帶X
 // itself needs, so this works the same way an honor meld's exemption does.
-function hasCommonRankAcrossNonHonorMelds(hand: ResolvedHand): boolean {
+// Returns the matching rank(s) - the first fit, lowest rank first - or null.
+function commonRankAcrossNonHonorMelds(hand: ResolvedHand): number[] | null {
   const nonHonorMelds = hand.melds.filter((m) => m.tiles[0].suit !== "z");
-  if (nonHonorMelds.length === 0) return false;
+  if (nonHonorMelds.length === 0) return null;
   const pair = hand.pair[0];
   for (let rank = 1; rank <= 9; rank++) {
-    if (nonHonorMelds.every((m) => m.tiles.some((t) => t.rank === rank)) && (isHonorTile(pair) || pair.rank === rank)) return true;
+    if (nonHonorMelds.every((m) => m.tiles.some((t) => t.rank === rank)) && (isHonorTile(pair) || pair.rank === rank)) return [rank];
   }
-  return false;
+  return null;
 }
 
 // 混帶XY: same idea as 混帶X, but every non-honor meld must contain BOTH of
@@ -1374,15 +1391,15 @@ function hasCommonRankAcrossNonHonorMelds(hand: ResolvedHand): boolean {
 // honor pair is exempt here, the same way an honor meld is; a numerically-
 // matching non-honor pair doesn't count (it can match at most one of the
 // two required ranks, never both).
-function hasCommonRankPairAcrossNonHonorMelds(hand: ResolvedHand): boolean {
+function commonRankPairAcrossNonHonorMelds(hand: ResolvedHand): number[] | null {
   const nonHonorMelds = hand.melds.filter((m) => m.tiles[0].suit !== "z");
-  if (nonHonorMelds.length === 0 || !isHonorTile(hand.pair[0])) return false;
+  if (nonHonorMelds.length === 0 || !isHonorTile(hand.pair[0])) return null;
   for (let x = 1; x <= 9; x++) {
     for (let y = x + 1; y <= 9; y++) {
-      if (nonHonorMelds.every((m) => m.tiles.some((t) => t.rank === x) && m.tiles.some((t) => t.rank === y))) return true;
+      if (nonHonorMelds.every((m) => m.tiles.some((t) => t.rank === x) && m.tiles.some((t) => t.rank === y))) return [x, y];
     }
   }
-  return false;
+  return null;
 }
 
 // 混帶XYZ: same idea again, but every non-honor meld must contain all 3 of
@@ -1392,9 +1409,9 @@ function hasCommonRankPairAcrossNonHonorMelds(hand: ResolvedHand): boolean {
 // triplet/kong (only 1 distinct rank) never can, on its own or otherwise.
 // Same reasoning as 混帶XY for the pair: a non-honor pair can never
 // contain 3 distinct ranks, so only an honor pair is exempt.
-function hasCommonRankTripleAcrossNonHonorMelds(hand: ResolvedHand): boolean {
+function commonRankTripleAcrossNonHonorMelds(hand: ResolvedHand): number[] | null {
   const nonHonorMelds = hand.melds.filter((m) => m.tiles[0].suit !== "z");
-  if (nonHonorMelds.length === 0 || !isHonorTile(hand.pair[0])) return false;
+  if (nonHonorMelds.length === 0 || !isHonorTile(hand.pair[0])) return null;
   for (let x = 1; x <= 9; x++) {
     for (let y = x + 1; y <= 9; y++) {
       for (let z = y + 1; z <= 9; z++) {
@@ -1403,12 +1420,12 @@ function hasCommonRankTripleAcrossNonHonorMelds(hand: ResolvedHand): boolean {
             (m) => m.tiles.some((t) => t.rank === x) && m.tiles.some((t) => t.rank === y) && m.tiles.some((t) => t.rank === z)
           )
         ) {
-          return true;
+          return [x, y, z];
         }
       }
     }
   }
-  return false;
+  return null;
 }
 
 // 全帶X: the ultimate extension of 混帶X/XY/XYZ - no honor meld AND no honor
@@ -1416,12 +1433,12 @@ function hasCommonRankTripleAcrossNonHonorMelds(hand: ResolvedHand): boolean {
 // Checking !isHonorTile on the pair (rather than relying on the rank match
 // alone) matters because an honor tile's rank (1-7, wind/dragon identity)
 // could otherwise coincidentally equal a numbered X and falsely "match".
-function hasCommonRankAcrossAllMeldsAndPair(hand: ResolvedHand): boolean {
-  if (hand.melds.some((m) => m.tiles[0].suit === "z") || isHonorTile(hand.pair[0])) return false;
+function commonRankAcrossAllMeldsAndPair(hand: ResolvedHand): number[] | null {
+  if (hand.melds.some((m) => m.tiles[0].suit === "z") || isHonorTile(hand.pair[0])) return null;
   for (let rank = 1; rank <= 9; rank++) {
-    if (hand.melds.every((m) => m.tiles.some((t) => t.rank === rank)) && hand.pair.some((t) => t.rank === rank)) return true;
+    if (hand.melds.every((m) => m.tiles.some((t) => t.rank === rank)) && hand.pair.some((t) => t.rank === rank)) return [rank];
   }
-  return false;
+  return null;
 }
 
 // 混帶么: the hand has an honor presence *somewhere* (an honor meld, or the
@@ -2486,61 +2503,39 @@ export const PATTERNS: TaiPattern[] = [
   {
     id: "mixed-common-rank",
     name: "混帶X (Common rank across every non-honor meld)",
-    score: (hand) => (hasCommonRankAcrossNonHonorMelds(hand) ? 30 : 0),
+    score: (hand) => (commonRankAcrossNonHonorMelds(hand) ? 30 : 0),
+    ranks: commonRankAcrossNonHonorMelds,
     tiles: (hand) => {
-      const nonHonorMelds = hand.melds.filter((m) => m.tiles[0].suit !== "z");
-      const pair = hand.pair[0];
-      for (let rank = 1; rank <= 9; rank++) {
-        if (nonHonorMelds.length > 0 && nonHonorMelds.every((m) => m.tiles.some((t) => t.rank === rank)) && (isHonorTile(pair) || pair.rank === rank)) {
-          const groups = nonHonorMelds.map((m) => m.tiles);
-          if (!isHonorTile(pair)) groups.push(hand.pair);
-          return [groups];
-        }
-      }
-      return [];
+      if (!commonRankAcrossNonHonorMelds(hand)) return [];
+      const groups = hand.melds.filter((m) => m.tiles[0].suit !== "z").map((m) => m.tiles);
+      if (!isHonorTile(hand.pair[0])) groups.push(hand.pair);
+      return [groups];
     },
   },
   {
     id: "mixed-common-rank-pair",
     name: "混帶XY (Common rank pair across every non-honor meld)",
-    score: (hand) => (hasCommonRankPairAcrossNonHonorMelds(hand) ? 50 : 0),
+    score: (hand) => (commonRankPairAcrossNonHonorMelds(hand) ? 50 : 0),
     excludes: ["mixed-common-rank"],
-    tiles: (hand) => {
-      const nonHonorMelds = hand.melds.filter((m) => m.tiles[0].suit !== "z");
-      if (nonHonorMelds.length === 0 || !isHonorTile(hand.pair[0])) return [];
-      for (let x = 1; x <= 9; x++) {
-        for (let y = x + 1; y <= 9; y++) {
-          if (nonHonorMelds.every((m) => m.tiles.some((t) => t.rank === x) && m.tiles.some((t) => t.rank === y))) return [nonHonorMelds.map((m) => m.tiles)];
-        }
-      }
-      return [];
-    },
+    ranks: commonRankPairAcrossNonHonorMelds,
+    tiles: (hand) =>
+      commonRankPairAcrossNonHonorMelds(hand) ? [hand.melds.filter((m) => m.tiles[0].suit !== "z").map((m) => m.tiles)] : [],
   },
   {
     id: "mixed-common-rank-triple",
     name: "混帶XYZ (Common rank triple across every non-honor meld)",
-    score: (hand) => (hasCommonRankTripleAcrossNonHonorMelds(hand) ? 60 : 0),
+    score: (hand) => (commonRankTripleAcrossNonHonorMelds(hand) ? 60 : 0),
     excludes: ["mixed-common-rank-pair"],
-    tiles: (hand) => {
-      const nonHonorMelds = hand.melds.filter((m) => m.tiles[0].suit !== "z");
-      if (nonHonorMelds.length === 0 || !isHonorTile(hand.pair[0])) return [];
-      for (let x = 1; x <= 9; x++) {
-        for (let y = x + 1; y <= 9; y++) {
-          for (let z = y + 1; z <= 9; z++) {
-            if (nonHonorMelds.every((m) => m.tiles.some((t) => t.rank === x) && m.tiles.some((t) => t.rank === y) && m.tiles.some((t) => t.rank === z))) {
-              return [nonHonorMelds.map((m) => m.tiles)];
-            }
-          }
-        }
-      }
-      return [];
-    },
+    ranks: commonRankTripleAcrossNonHonorMelds,
+    tiles: (hand) =>
+      commonRankTripleAcrossNonHonorMelds(hand) ? [hand.melds.filter((m) => m.tiles[0].suit !== "z").map((m) => m.tiles)] : [],
   },
   {
     id: "pure-common-rank",
     name: "全帶X (Common rank across every meld and the pair)",
-    score: (hand) => (hasCommonRankAcrossAllMeldsAndPair(hand) ? 120 : 0),
+    score: (hand) => (commonRankAcrossAllMeldsAndPair(hand) ? 120 : 0),
     excludes: ["mixed-common-rank"],
+    ranks: commonRankAcrossAllMeldsAndPair,
     // Every meld and the pair contain the shared rank - the whole hand.
   },
   {
@@ -4080,7 +4075,7 @@ function scoreEightPairs(parsed: ParsedScoringHand, ctx: GameContext): ScoreResu
   // non-honor meld shares a rank" half - trivially checkable regardless
   // (every group in this hand's construction is tagged "triplet" no matter
   // its actual tile count, and each one is single-rank by construction, so
-  // hasCommonRankAcrossNonHonorMelds' own logic already handles a
+  // commonRankAcrossNonHonorMelds' own logic already handles a
   // quad/pair group exactly like an ordinary triplet). 混帶XY/XYZ are
   // deliberately NOT included: they need a non-honor meld holding 2 or 3
   // *distinct* ranks, which a single-rank pair/quad group can never do, so

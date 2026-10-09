@@ -5,6 +5,7 @@ import {
   groupDeclaredTiles,
   isDealer,
   parseScoringHand,
+  patternDisplayName,
   PATTERNS,
   scoreHand,
   scoreParsedHand,
@@ -944,6 +945,42 @@ describe("PATTERNS: 全帶X (common rank across every meld and the pair, no hono
 
   it("doesn't score once any honor meld or honor pair is present", () => {
     expect(tai(scoreHand("123456789m111z234t22b", ctx()), "pure-common-rank")).toBe(0);
+  });
+});
+
+describe("patternDisplayName: the 帶X family shows its resolved ranks", () => {
+  const displayName = (notation: string, id: string) => {
+    const result = scoreHand(notation, ctx());
+    const match = result.matched.find((m) => m.pattern.id === id);
+    if (!match) throw new Error(`${id} didn't score`);
+    return patternDisplayName(match.pattern, result.hand);
+  };
+
+  it("混帶X shows its single rank", () => {
+    expect(displayName("123234345m333b123t11z", "mixed-common-rank")).toBe("混帶X(3) (Common rank across every non-honor meld)");
+  });
+
+  it("混帶XY shows both ranks", () => {
+    expect(displayName("123234m123t123b11122z", "mixed-common-rank-pair")).toBe(
+      "混帶XY(2,3) (Common rank pair across every non-honor meld)"
+    );
+  });
+
+  it("混帶XYZ shows all three ranks", () => {
+    expect(displayName("123m123b123m11122233z", "mixed-common-rank-triple")).toBe(
+      "混帶XYZ(1,2,3) (Common rank triple across every non-honor meld)"
+    );
+  });
+
+  it("全帶X shows its single rank", () => {
+    expect(displayName("123234m222234t123b22b", "pure-common-rank")).toBe("全帶X(2) (Common rank across every meld and the pair)");
+  });
+
+  it("leaves every other pattern's name alone", () => {
+    const result = scoreHand("123234m222234t123b22b", ctx());
+    for (const { pattern } of result.matched) {
+      if (!pattern.ranks) expect(patternDisplayName(pattern, result.hand)).toBe(pattern.name);
+    }
   });
 });
 
@@ -2755,7 +2792,7 @@ describe("PATTERNS: other patterns reused within 嚦咕嚦咕 (per the user's ow
     expect(tai(result, "full-flush")).toBe(120);
   });
 
-  it("scores 混帶X when every non-honor pair/quad group shares a rank with the pair - reuses hasCommonRankAcrossNonHonorMelds as-is", () => {
+  it("scores 混帶X when every non-honor pair/quad group shares a rank with the pair - reuses commonRankAcrossNonHonorMelds as-is", () => {
     // 2222m/2222t/2222b (3 quads, all rank 2) + 111z/22z (the tripled kind
     // + the pair). Every non-honor group here is single-rank by
     // construction, so "every non-honor meld contains rank 2" is trivially
