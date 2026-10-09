@@ -1417,6 +1417,21 @@ button.scoring-pattern-row {
   margin-left: 0;
 }
 
+/* A wait (or a discard whose waits are all) with no copies left to draw:
+   still listed so it doesn't look missing, but greyed out. Nested dead
+   rows/glyphs inside an already-dead row don't fade a second time. */
+.dead-wait {
+  opacity: 0.45;
+}
+
+.projected-wait.dead-wait {
+  border-style: dashed;
+}
+
+.dead-wait .dead-wait {
+  opacity: 1;
+}
+
 /* A discard row carries more than a wait row (discard → waits, then live
    count and best tai), so at phone width the score group wraps under the
    tiles, still right-aligned, instead of overflowing. */

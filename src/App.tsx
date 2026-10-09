@@ -4263,8 +4263,10 @@ interface ProjectedWait {
 // player can already see in their own hand (plus the discard, when
 // projecting a discard) - getWaits only counts copies within the concealed
 // tiles it's given, so a wait kind whose remaining copies are all sitting
-// in a declared meld is structurally suggested but physically impossible to
-// draw; those are dropped. Returned in canonical tile order (suit then rank).
+// in a declared meld (or the discard) is structurally a wait but physically
+// impossible to draw. Those dead waits are kept with `live` 0 rather than
+// dropped, so the UI can grey them out instead of leaving a wait mysteriously
+// missing. Returned in canonical tile order (suit then rank).
 function projectWaits(
   concealed: Tile[],
   declaredMelds: ParsedScoringHand["declaredMelds"],
@@ -4273,9 +4275,8 @@ function projectWaits(
   copiesUsed: (tile: Tile) => number
 ): ProjectedWait[] {
   return getWaits(concealed, MELDS_REQUIRED - declaredMelds.length)
-    .filter((w) => copiesUsed(w) < 4)
     .map((wait): ProjectedWait => {
-      const live = 4 - copiesUsed(wait);
+      const live = Math.max(0, 4 - copiesUsed(wait));
       const parsed: ParsedScoringHand = { declaredMelds, freeTiles: [...concealed, wait], bonusTiles };
       try {
         // Each wait is, by definition, the tile that completed the hand -
@@ -4289,11 +4290,13 @@ function projectWaits(
     .sort((a, b) => SUIT_ORDER.indexOf(a.wait.suit) - SUIT_ORDER.indexOf(b.wait.suit) || a.wait.rank - b.wait.rank);
 }
 
-// Highest tai first, ties in tile order. Re-sorts a copy, so callers can
-// keep the canonically ordered original.
+// Highest tai first, ties in tile order, with dead waits (0 left) sunk to
+// the bottom whatever they'd score. Re-sorts a copy, so callers can keep
+// the canonically ordered original.
 function sortByScore(waits: ProjectedWait[]): ProjectedWait[] {
   return [...waits].sort(
     (a, b) =>
+      Number(b.live > 0) - Number(a.live > 0) ||
       (b.result?.total ?? -1) - (a.result?.total ?? -1) ||
       SUIT_ORDER.indexOf(a.wait.suit) - SUIT_ORDER.indexOf(b.wait.suit) ||
       a.wait.rank - b.wait.rank
@@ -4302,13 +4305,13 @@ function sortByScore(waits: ProjectedWait[]): ProjectedWait[] {
 
 // One discard from a full hand that leaves it tenpai, with each resulting
 // wait already scored. `liveTotal` is how many tiles left in the wall could
-// complete it (as far as this hand can see); `topTai` the best of those
-// completions.
+// complete it (as far as this hand can see); `topTai` the best of the live
+// completions, null when every wait is dead.
 interface DiscardOption {
   discard: Tile;
   waits: ProjectedWait[]; // sorted by score
   liveTotal: number;
-  topTai: number;
+  topTai: number | null;
 }
 
 // One row of the full-hand "discard options" list: discard tile → its waits,
@@ -4334,7 +4337,7 @@ function DiscardOptionRow({
   // line - fall back to a count past what fits on one line at phone width.
   const showGlyphs = waits.length <= 6;
   return (
-    <div className="projected-wait">
+    <div className={`projected-wait${topTai === null ? " dead-wait" : ""}`}>
       <button
         type="button"
         className="projected-wait-head discard-option-head"
@@ -4343,18 +4346,28 @@ function DiscardOptionRow({
           setOpened(true);
         }}
         aria-expanded={expanded}
-        aria-label={`Discard ${tileLabel(discard)}: ${waits.length} wait${waits.length === 1 ? "" : "s"}, ${liveTotal} live tile${liveTotal === 1 ? "" : "s"}, up to ${topTai} tai, tap for waits`}
+        aria-label={`Discard ${tileLabel(discard)}: ${waits.length} wait${waits.length === 1 ? "" : "s"}, ${liveTotal} live tile${liveTotal === 1 ? "" : "s"}, ${topTai === null ? "all waits dead" : `up to ${topTai} tai`}, tap for waits`}
       >
         <TileGlyphSpan tile={discard} large />
         <span className="discard-arrow">→</span>
         <span className="discard-option-waits">
           {showGlyphs
-            ? waits.map((pw) => <TileGlyphSpan key={tileKey(pw.wait)} tile={pw.wait} />)
+            ? waits.map((pw) => (
+                <span key={tileKey(pw.wait)} className={pw.live === 0 ? "dead-wait" : undefined}>
+                  <TileGlyphSpan tile={pw.wait} />
+                </span>
+              ))
             : `${waits.length} waits`}
         </span>
         <span className="discard-option-score">
-          <span className="discard-option-live">{liveTotal} live</span>
-          <span className="projected-wait-tai">up to {topTai} tai</span>
+          {/* Bare numbers to keep the rows quiet - the muted one is live
+              tiles, the bold one tai; the titles and aria-label spell it out. */}
+          <span className="discard-option-live" title="Live tiles across these waits">
+            {liveTotal}
+          </span>
+          <span className="projected-wait-tai" title={topTai === null ? "Every wait is dead" : "Best tai among the live waits"}>
+            {topTai === null ? "dead" : topTai}
+          </span>
           <span className={`projected-wait-caret${expanded ? " open" : ""}`} aria-hidden="true">
             ▸
           </span>
@@ -4395,17 +4408,28 @@ function ProjectedWaitRow({
   // the ambient hand's own marked 食胡 tile happens to be.
   const waitCtx: GameContext = { ...ctx, winningTile: wait };
   return (
-    <div className="projected-wait">
+    <div className={`projected-wait${live === 0 ? " dead-wait" : ""}`}>
       <button
         type="button"
         className="projected-wait-head"
         onClick={() => setExpanded((e) => !e)}
         aria-expanded={expanded}
-        aria-label={`${tileLabel(wait)} (${live} left) — ${result ? `${result.total} tai` : "not scoreable"}, tap for breakdown`}
+        aria-label={`${tileLabel(wait)} (${live === 0 ? "dead, no copies left to draw" : `${live} left`}) — ${result ? `${result.total} tai` : "not scoreable"}, tap for breakdown`}
       >
         <TileGlyphSpan tile={wait} large />
-        <span className="projected-wait-live">{live} left</span>
-        <span className="projected-wait-tai">{result ? `${result.total} tai` : "—"}</span>
+        <span
+          className="projected-wait-live"
+          title={
+            live === 0
+              ? "Dead wait - all 4 copies are already in your hand (or the tile just discarded)"
+              : "Copies left to draw"
+          }
+        >
+          {live}
+        </span>
+        <span className="projected-wait-tai" title="Tai">
+          {result ? result.total : "—"}
+        </span>
         <span className={`projected-wait-caret${expanded ? " open" : ""}`} aria-hidden="true">
           ▸
         </span>
@@ -5155,7 +5179,9 @@ function ScoringPanel() {
         discard,
         waits: sortByScore(waits),
         liveTotal: waits.reduce((n, w) => n + w.live, 0),
-        topTai: Math.max(...waits.map((w) => w.result?.total ?? 0)),
+        topTai: waits.some((w) => w.live > 0)
+          ? Math.max(...waits.filter((w) => w.live > 0).map((w) => w.result?.total ?? 0))
+          : null,
       });
     }
     return options;
@@ -5200,8 +5226,8 @@ function ScoringPanel() {
     if (!discardOptions) return null;
     return [...discardOptions].sort((a, b) =>
       discardSort === "score"
-        ? b.topTai - a.topTai || b.liveTotal - a.liveTotal
-        : b.liveTotal - a.liveTotal || b.topTai - a.topTai
+        ? (b.topTai ?? -1) - (a.topTai ?? -1) || b.liveTotal - a.liveTotal
+        : b.liveTotal - a.liveTotal || (b.topTai ?? -1) - (a.topTai ?? -1)
     );
   }, [discardOptions, discardSort]);
 
