@@ -4016,7 +4016,7 @@ function PatternRow({
         <div className="scoring-pattern-row" title={pattern.caveat}>
           <span className="scoring-pattern-name">{pattern.name}</span>
           <span className="scoring-pattern-meta">
-            <span className="scoring-pattern-tai">{tai} tai</span>
+            <span className="scoring-pattern-tai">{tai}<span className="visually-hidden"> tai</span></span>
             {/* Reserves the same width a caret takes on a tappable row,
                 invisibly, so the tai column still lines up between plain
                 and tappable rows instead of a non-expandable row's tai
@@ -4034,7 +4034,7 @@ function PatternRow({
       <button type="button" className="scoring-pattern-row" onClick={() => setExpanded((e) => !e)} aria-expanded={expanded} title={pattern.caveat}>
         <span className="scoring-pattern-name">{pattern.name}</span>
         <span className="scoring-pattern-meta">
-          <span className="scoring-pattern-tai">{tai} tai</span>
+          <span className="scoring-pattern-tai">{tai}<span className="visually-hidden"> tai</span></span>
           <span className={`projected-wait-caret${expanded ? " open" : ""}`} aria-hidden="true">
             ▸
           </span>
@@ -4360,13 +4360,13 @@ function DiscardOptionRow({
             : `${waits.length} waits`}
         </span>
         <span className="discard-option-score">
-          {/* Bare numbers to keep the rows quiet - the muted one is live
-              tiles, the bold one tai; the titles and aria-label spell it out. */}
+          {/* No "tai" unit, to keep the rows quiet - the title and
+              aria-label spell it out. */}
           <span className="discard-option-live" title="Live tiles across these waits">
-            {liveTotal}
+            {liveTotal} live
           </span>
           <span className="projected-wait-tai" title={topTai === null ? "Every wait is dead" : "Best tai among the live waits"}>
-            {topTai === null ? "dead" : topTai}
+            {topTai === null ? "dead" : `up to ${topTai}`}
           </span>
           <span className={`projected-wait-caret${expanded ? " open" : ""}`} aria-hidden="true">
             ▸
@@ -4425,7 +4425,7 @@ function ProjectedWaitRow({
               : "Copies left to draw"
           }
         >
-          {live}
+          {live} left
         </span>
         <span className="projected-wait-tai" title="Tai">
           {result ? result.total : "—"}
@@ -5706,7 +5706,7 @@ function ScoringPanel() {
         <>
           <div className="waits scoring-total">
             <span className="waits-label">Total:</span>
-            <span className="scoring-total-value">{scoring.result.total} tai</span>
+            <span className="scoring-total-value">{scoring.result.total}<span className="visually-hidden"> tai</span></span>
           </div>
 
           <ScoringBreakdown
