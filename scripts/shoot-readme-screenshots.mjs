@@ -122,31 +122,40 @@ const main = async () => {
   const page = await browser.newPage();
   await page.goto(BASE, { waitUntil: "networkidle0" });
 
-  const NOTATION = 'label[for="algebraic"]';
+  // Calculator shots start at the hand card, with the picker collapsed so
+  // the hand and its results sit together (typing needs it open first).
+  const CALC_HAND = ".calculator-panel .hand-card";
+  const calcShot = async (name, maxH) => {
+    await page.evaluate(() => document.querySelector('.calculator-panel button[title="Hide tile picker"]')?.click());
+    await sleep(300);
+    await shoot(page, name, { startAt: CALC_HAND, maxH });
+    await page.evaluate(() => document.querySelector('.calculator-panel button[title="Show tile picker"]')?.click());
+    await sleep(300);
+  };
 
   // 1. Hero: Calculator with a shanpon tenpai hand + Breakdown on.
   await setMode(page, "Calculator");
   await typeNotation(page, "123456789m111z11t22b");
   await clickText(page, "Breakdown");
   await sleep(300);
-  await shoot(page, "preview.png", { startAt: NOTATION, maxH: 780 });
+  await calcShot("preview.png", 780);
 
   // 2. Jokers: 1 man + 3 jokers -> universal wait + joker resolution hints.
   await clickText(page, "Breakdown"); // back off - the list itself is the point
   await typeNotation(page, "1mjjj");
   await sleep(300);
-  await shoot(page, "jokers.png", { startAt: NOTATION, maxH: 900 });
+  await calcShot("jokers.png", 900);
 
   // 3. Discard efficiency: a non-tenpai hand, discards ranked by a two-step
   //    lookahead (555z = 中 renders cleanly; 白/777z shows as a near-blank tile).
   await typeNotation(page, "1278m555t111333555z");
   await sleep(300);
-  await shoot(page, "discard-efficiency.png", { startAt: NOTATION, maxH: 950 });
+  await calcShot("discard-efficiency.png", 950);
 
   // 4. Special hand: a tenpai Sixteen Unrelated Tiles hand.
   await typeNotation(page, "147t258m369b1234567z");
   await sleep(300);
-  await shoot(page, "special-hand.png", { startAt: NOTATION, maxH: 820 });
+  await calcShot("special-hand.png", 820);
 
   // 5. Scoring: a fully concealed pure-flush self-draw, big tai total.
   await setMode(page, "Scoring");

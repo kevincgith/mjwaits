@@ -92,11 +92,14 @@ counting rules — kept in sync with the code.
 ### Hand input
 
 - **Tap tiles** on the picker, or **type algebraic notation** directly
-  (e.g. `123456789m111z11t22b`) — the two stay in sync.
+  (e.g. `123456789m111z11t22b`) — the two stay in sync. Laid out like the Scoring tab: Reset /
+  Scan / Photos in a sticky toolbar, and the hand above the picker, pinned while the picker
+  scrolls beneath it.
 - Suits: `m` (man / characters), `t` (pin / circles), `b` (sou / bamboo), `z` (honors, 1–7 for
   East / South / West / North / Red / Green / White), `j` (joker).
-- **Sort** toggle: on, new tiles are kept in sorted order as you add them; off, they stay in the
-  order you entered them — and toggling back off restores that original order.
+- **Sort** toggle (in the hand's header, beside the shanten count): on, new tiles are kept in
+  sorted order as you add them; off, they stay in the order you entered them — and toggling back
+  off restores that original order.
 - A 4-copies-per-kind cap is enforced automatically (jokers excluded — see below).
 
 ### Waits
@@ -105,7 +108,7 @@ counting rules — kept in sync with the code.
 - A **universal wait** is flagged explicitly when any of the 34 tile kinds would complete the hand.
 - Remaining copies of each waiting tile are always shown (4 minus what's already in hand), plus a
   running total across all waits.
-- **Breakdown** shows the exact meld/pair decomposition for each wait, completing tile
+- **Breakdown** (in the 聽牌 WAITS caption) shows the exact meld/pair decomposition for each wait, completing tile
   highlighted; a small `↔` button (once Breakdown is on) switches between pair-first and
   tile-order display. A hand genuinely ambiguous between two shapes (e.g. a standard hand that's
   also valid Eight Pairs) shows every valid reading, not just one.

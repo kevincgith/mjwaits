@@ -542,6 +542,60 @@ button {
   font-weight: 600;
 }
 
+/* The muted detail after a caption's title, e.g. "聽牌 WAITS  4 tiles left". */
+.section-meta {
+  margin-left: 0.5rem;
+  font-size: var(--text-sm);
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+/* A small view-option toggle in a caption or region header (Sort,
+   Breakdown, ↔): grey pill, tinted green while on - same rule as every
+   other toggle. */
+.region-toggle {
+  position: relative;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: var(--fill);
+  color: var(--text-secondary);
+  padding: 0.25rem 0.75rem;
+  font-family: inherit;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.region-toggle.toggle-on {
+  background: var(--accent-tint);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* Tap area out to ~44px tall without growing the header row. */
+.region-toggle::before {
+  content: "";
+  position: absolute;
+  inset: -0.5rem -0.15rem;
+}
+
+/* Calculator results: the waits as a wrapping row of tiles, or (Breakdown
+   on, discards) a column of rows. */
+.card.wait-tiles {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem 0.5rem;
+}
+
+.card.breakdown-list,
+.card.discard-analysis {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.5rem;
+}
+
 /* A small text action at the right of a section caption (iOS "Edit" style),
    e.g. the Situation card's Reset. */
 .section-action {
@@ -1330,9 +1384,27 @@ button.icon-toggle.open {
 
 .breakdown-reading {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
+  flex-wrap: nowrap;
+  align-items: flex-start;
   gap: 0.5rem;
+}
+
+/* A wait's breakdown sits on its own full-width line under the wait tile,
+   with the arrow kept beside the groups (which wrap among themselves)
+   instead of stranded alone on a line. */
+.breakdown-row > .breakdown-readings {
+  flex-basis: 100%;
+}
+
+.breakdown-reading > .discard-arrow,
+.breakdown-reading > .reading-label {
+  flex-shrink: 0;
+  align-self: center;
+}
+
+.breakdown-reading > .breakdown-groups {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .reading-label {
@@ -3536,6 +3608,20 @@ button.scoring-pattern-row {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
+}
+
+/* In the hand header shanten is plain text, not a pill - next to the Sort
+   toggle a tinted pill would read as a second control. */
+.hand-region-head .shanten-badge {
+  margin-left: auto;
+  padding: 0 0.25rem;
+  background: none;
+  color: var(--text-tertiary);
+  font-size: var(--text-sm);
+}
+
+.hand-region-head .shanten-badge + .region-toggle {
+  margin-left: 0;
 }
 
 .hand-region-head {

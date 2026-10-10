@@ -2262,187 +2262,265 @@ function Calculator() {
     [remainingCounts]
   );
 
+  const handScannerRef = useRef<HandScannerHandle>(null);
+  const [scanBusy, setScanBusy] = useState(false);
+  const [pickerCollapsed, setPickerCollapsed] = useState(false);
+  // Breakdown on/off, plus its ↔ order toggle while on - shown in the caption
+  // of whichever result it changes (the waits, or a complete hand).
+  const breakdownToggles = (
+    <span className="section-head-actions">
+      {breakdownMode !== "off" && (
+        <button
+          type="button"
+          className={`region-toggle${breakdownMode === "sorted" ? " toggle-on" : ""}`}
+          onClick={() =>
+            setBreakdownMode((m) => {
+              const next: BreakdownOrder = m === "sorted" ? "on" : "sorted";
+              lastBreakdownOrder.current = next;
+              return next;
+            })
+          }
+          aria-pressed={breakdownMode === "sorted"}
+          title={BREAKDOWN_ORDER_TITLE[breakdownMode as BreakdownOrder]}
+        >
+          ↔
+        </button>
+      )}
+      <button
+        type="button"
+        className={`region-toggle${breakdownMode !== "off" ? " toggle-on" : ""}`}
+        onClick={() => setBreakdownMode((m) => (m === "off" ? lastBreakdownOrder.current : "off"))}
+        aria-pressed={breakdownMode !== "off"}
+        title={
+          breakdownMode !== "off"
+            ? "Breakdown: on — shows the meld/pair split for each wait"
+            : "Breakdown: off — shows just the waiting tiles"
+        }
+      >
+        Breakdown
+      </button>
+    </span>
+  );
+
   return (
-    <section className="panel">
-        <div className="card">
-          <div className="tile-picker">
-            {SUIT_ORDER.map((suit) => (
-              <div className="suit-row" key={suit}>
-                {allTileKinds()
-                  .filter((t) => t.suit === suit)
-                  .map((t) => (
-                    <TileButton
-                      key={tileLabel(t)}
-                      tile={t}
-                      onClick={() => addTile(t)}
-                      disabled={hand.length >= COMPLETE_SIZE || tileCount(hand, t) >= 4}
-                    />
-                  ))}
-                {/* The joker shares the honors row, pinned to the last column
-                    (under 9) with one empty slot after 白, rather than taking
-                    a row of its own. */}
-                {suit === "z" && (
-                  <TileButton
-                    tile={JOKER_TILE}
-                    onClick={() => addTile(JOKER_TILE)}
-                    disabled={hand.length >= COMPLETE_SIZE}
-                    extraClass="joker-slot"
-                  />
-                )}
-              </div>
-            ))}
-          </div>
+    <section className="panel calculator-panel">
+      {/* Same sticky toolbar as the Scoring tab: Reset / Scan / Photos, then
+          the tile count. */}
+      <div className="scoring-toolbar">
+        <button type="button" className="toolbar-button toolbar-reset" onClick={handleReset} disabled={hand.length === 0} title="Clear the hand">
+          <ToolbarIcon kind="reset" />
+          <span className="toolbar-label">Reset</span>
+        </button>
+        <button type="button" className="toolbar-button" onClick={() => handScannerRef.current?.trigger()} disabled={scanBusy}>
+          <ToolbarIcon kind="camera" />
+          <span className="toolbar-label">Scan</span>
+        </button>
+        <button
+          type="button"
+          className="toolbar-button toolbar-photos"
+          onClick={() => handScannerRef.current?.triggerLibrary()}
+          disabled={scanBusy}
+          title="Choose an existing photo instead of the camera"
+        >
+          <ToolbarIcon kind="photos" />
+          <span className="toolbar-label">Photos</span>
+        </button>
+        <span className="toolbar-status">
+          <span className={`tile-count-pill${hand.length >= COMPLETE_SIZE - 1 ? " is-full" : ""}`}>
+            {hand.length}/{COMPLETE_SIZE}
+          </span>
+        </span>
+      </div>
 
-          <div className="algebraic-input">
-            <label htmlFor="algebraic">Algebraic notation</label>
-            <input
-              id="algebraic"
-              type="text"
-              value={text}
-              onChange={(e) => onTextChange(e.target.value)}
-              placeholder="e.g. 111222333444m11t22b"
-              spellCheck={false}
-            />
-            {error && <span className="error">{error}</span>}
-          </div>
+      <HandScanner
+        ref={handScannerRef}
+        hideTrigger
+        onBusyChange={setScanBusy}
+        onConfirm={(regions) => onTextChange(formatHand(regions.flatMap((r) => r.detections.flatMap((d) => (d.tile ? [d.tile] : [])))))}
+        // A tile count the Calculator can't check waits for (see
+        // isCheckpointSize) almost always means a tile was missed or
+        // doubled - worth the scan's re-check pass.
+        recheckUnless={(regions) => isCheckpointSize(regions.reduce((n, r) => n + r.detections.filter((d) => d.tile).length, 0))}
+      />
 
-          <HandScanner
-            onConfirm={(regions) => onTextChange(formatHand(regions.flatMap((r) => r.detections.flatMap((d) => (d.tile ? [d.tile] : [])))))}
-            // A tile count the Calculator can't check waits for (see
-            // isCheckpointSize) almost always means a tile was missed or
-            // doubled - worth the scan's re-check pass.
-            recheckUnless={(regions) => isCheckpointSize(regions.reduce((n, r) => n + r.detections.filter((d) => d.tile).length, 0))}
-          />
-
-        </div>
-        <div className="card">
-          <div className="panel-header">
-            <span className="panel-title">Hand</span>
-            <button type="button" onClick={handleReset} disabled={hand.length === 0}>
-              Reset
-            </button>
-            <button
-              type="button"
-              className={sortMode ? "toggle-on" : undefined}
-              onClick={toggleSortMode}
-              aria-pressed={sortMode}
-              title={sortMode ? "Sort: on — new tiles are kept in order" : "Sort: off — new tiles keep input order"}
-            >
-              Sort
-            </button>
-            <button
-              type="button"
-              className={breakdownMode !== "off" ? "toggle-on" : undefined}
-              onClick={() => setBreakdownMode((m) => (m === "off" ? lastBreakdownOrder.current : "off"))}
-              aria-pressed={breakdownMode !== "off"}
-              title={
-                breakdownMode !== "off"
-                  ? "Breakdown: on — shows the meld/pair split for each wait"
-                  : "Breakdown: off — shows just the waiting tiles"
-              }
-            >
-              Breakdown
-            </button>
-            {breakdownMode !== "off" && (
+      {/* The input area, laid out like the Scoring tab's: the hand first and
+          sticky while the picker scrolls beneath it, at a fixed size so a
+          tap never moves the picker. */}
+      <div className="input-zone">
+        <div className="card hand-card">
+          <div className="hand-region is-target">
+            <div className="hand-region-head">
+              <span className="hand-region-label">手牌 Hand</span>
+              {/* Once the hand is a size it can be checked at. */}
+              {shantenValue !== null && (
+                <span
+                  className="shanten-badge"
+                  title="Shanten: minimum discard+draw exchanges from tenpai. Covers the standard shape, Eight Pairs, and Sixteen Unrelated Tiles; doesn't yet account for jokers or Thirteen Orphans."
+                >
+                  Shanten {shantenValue}
+                </span>
+              )}
               <button
                 type="button"
-                className="icon-toggle"
-                onClick={() =>
-                  setBreakdownMode((m) => {
-                    const next: BreakdownOrder = m === "sorted" ? "on" : "sorted";
-                    lastBreakdownOrder.current = next;
-                    return next;
-                  })
-                }
-                aria-pressed={breakdownMode === "sorted"}
-                title={BREAKDOWN_ORDER_TITLE[breakdownMode as BreakdownOrder]}
+                className={`region-toggle${sortMode ? " toggle-on" : ""}`}
+                onClick={toggleSortMode}
+                aria-pressed={sortMode}
+                title={sortMode ? "Sort: on — new tiles are kept in order" : "Sort: off — new tiles keep input order"}
               >
-                ↔
+                Sort
               </button>
-            )}
-            <span className="tile-count">
-              {hand.length} / {COMPLETE_SIZE} tiles
-            </span>
-            {shantenValue !== null && (
-              <span
-                className="shanten-badge"
-                title="Shanten: minimum discard+draw exchanges from tenpai. Covers the standard shape, Eight Pairs, and Sixteen Unrelated Tiles; doesn't yet account for jokers or Thirteen Orphans."
-              >
-                Shanten {shantenValue}
-              </span>
-            )}
-          </div>
-
-          <div className="hand-display">
-            {hand.length === 0 && <span className="hint">Tap tiles above, or type algebraic notation.</span>}
-            {displayHand.map((t) => (
-              <HandTileButton key={t.id} tile={t} onClick={() => removeTile(t.id)} />
-            ))}
+            </div>
+            <div className="hand-display">
+              {hand.length === 0 ? (
+                <span className="hint">None — tap tiles below, or type notation</span>
+              ) : (
+                displayHand.map((t) => <HandTileButton key={t.id} tile={t} onClick={() => removeTile(t.id)} />)
+              )}
+            </div>
           </div>
         </div>
 
-        {outcome !== null && outcome.overflowed && (
-          <div className="waits">
-            <span className="waits-label">
-              Too many joker possibilities to calculate exactly (~{outcome.estimatedCombinations.toLocaleString()}{" "}
-              combinations). Try fewer jokers.
-            </span>
+        <div className="section-head">
+          <span className="section-title">
+            選牌 <span className="section-title-en">Add tiles</span>
+          </span>
+          <PickerCollapseToggle collapsed={pickerCollapsed} onToggle={() => setPickerCollapsed((c) => !c)} />
+        </div>
+
+        <CollapsiblePanel open={!pickerCollapsed}>
+          <div className="card picker-card">
+            <div className="tile-picker">
+              {SUIT_ORDER.map((suit) => (
+                <div className="suit-row" key={suit}>
+                  {allTileKinds()
+                    .filter((t) => t.suit === suit)
+                    .map((t) => (
+                      <TileButton
+                        key={tileLabel(t)}
+                        tile={t}
+                        onClick={() => addTile(t)}
+                        disabled={hand.length >= COMPLETE_SIZE || tileCount(hand, t) >= 4}
+                      />
+                    ))}
+                  {/* The joker shares the honors row, pinned to the last column
+                      (under 9) with one empty slot after 白, rather than taking
+                      a row of its own. */}
+                  {suit === "z" && (
+                    <TileButton
+                      tile={JOKER_TILE}
+                      onClick={() => addTile(JOKER_TILE)}
+                      disabled={hand.length >= COMPLETE_SIZE}
+                      extraClass="joker-slot"
+                    />
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <div className="algebraic-input">
+              <label htmlFor="algebraic">Algebraic notation</label>
+              <input
+                id="algebraic"
+                type="text"
+                value={text}
+                onChange={(e) => onTextChange(e.target.value)}
+                placeholder="e.g. 111222333444m11t22b"
+                spellCheck={false}
+              />
+              {error && <span className="error">{error}</span>}
+            </div>
           </div>
-        )}
-        {outcome !== null && !outcome.overflowed && outcome.results.length > 0 && (
-          <div className={breakdownMode !== "off" ? "waits breakdown-list" : "waits"}>
+        </CollapsiblePanel>
+      </div>
+
+      {outcome !== null && outcome.overflowed && (
+        <div className="card">
+          <span className="hint">
+            Too many joker possibilities to calculate exactly (~{outcome.estimatedCombinations.toLocaleString()}{" "}
+            combinations). Try fewer jokers.
+          </span>
+        </div>
+      )}
+
+      {outcome !== null && !outcome.overflowed && outcome.results.length > 0 && (
+        <>
+          <div className="section-head">
+            <span className="section-title">
+              聽牌 <span className="section-title-en">Waits</span>
+              {totalRemaining !== null && (
+                <span className="section-meta">
+                  {totalRemaining} tile{totalRemaining === 1 ? "" : "s"} left
+                </span>
+              )}
+            </span>
+            {breakdownToggles}
+          </div>
+          <div className={`card${breakdownMode !== "off" ? " breakdown-list" : " wait-tiles"}`}>
             {outcome.results.length === allTileKinds().length && (
               <span className="waits-label universal-wait">Universal wait — any tile completes this hand.</span>
             )}
-            <span className="waits-label">
-              Waiting for:
-              {totalRemaining !== null && ` (${totalRemaining} tile${totalRemaining === 1 ? "" : "s"} total)`}
-            </span>
-            {breakdownMode !== "off" ? (
-              outcome.results.map((r) => (
-                <WaitBreakdownRow
-                  key={tileLabel(r.wait)}
-                  result={r}
-                  nonJokerHand={nonJokerHand}
-                  meldsRequired={meldsForSize(hand.length)}
-                  sorted={breakdownMode === "sorted"}
-                  remainingCount={remainingCounts?.get(tileLabel(r.wait)) ?? null}
-                />
-              ))
-            ) : (
-              outcome.results.map((r) => (
-                <WaitResultTile
-                  key={tileLabel(r.wait)}
-                  result={r}
-                  remainingCount={remainingCounts?.get(tileLabel(r.wait)) ?? null}
-                />
-              ))
-            )}
+            {breakdownMode !== "off"
+              ? outcome.results.map((r) => (
+                  <WaitBreakdownRow
+                    key={tileLabel(r.wait)}
+                    result={r}
+                    nonJokerHand={nonJokerHand}
+                    meldsRequired={meldsForSize(hand.length)}
+                    sorted={breakdownMode === "sorted"}
+                    remainingCount={remainingCounts?.get(tileLabel(r.wait)) ?? null}
+                  />
+                ))
+              : outcome.results.map((r) => (
+                  <WaitResultTile
+                    key={tileLabel(r.wait)}
+                    result={r}
+                    remainingCount={remainingCounts?.get(tileLabel(r.wait)) ?? null}
+                  />
+                ))}
           </div>
-        )}
-        {outcome !== null && !outcome.overflowed && outcome.results.length === 0 && !notTenpaiCheckpoint && (
-          <div className="waits">
-            <span className="waits-label">
-              Not tenpai — no winning tile completes this hand{hasJokers ? ", even trying every joker possibility" : ""}.
+        </>
+      )}
+
+      {outcome !== null && !outcome.overflowed && outcome.results.length === 0 && !notTenpaiCheckpoint && (
+        <div className="card">
+          <span className="hint">
+            Not tenpai — no winning tile completes this hand{hasJokers ? ", even trying every joker possibility" : ""}.
+            {hasJokers && " Discard analysis isn't available yet for hands with jokers."}
+          </span>
+        </div>
+      )}
+
+      {discardEfficiency !== null && (
+        <>
+          <div className="section-head">
+            <span className="section-title">
+              打牌 <span className="section-title-en">Discards</span>
+              <span className="section-meta">not tenpai · ranked by efficiency</span>
             </span>
-            {hasJokers && <span className="hint">Discard analysis isn't available yet for hands with jokers.</span>}
           </div>
-        )}
-        {discardEfficiency !== null && (
-          <div className="waits discard-analysis">
-            <span className="waits-label">Not tenpai — discard options, ranked by efficiency:</span>
+          <div className="card discard-analysis">
             {discardEfficiency.map((o) => (
               <DiscardEfficiencyRow key={tileLabel(o.discard)} option={o} />
             ))}
           </div>
-        )}
-        {atCompleteCheckpoint && hasJokers && (
-          <div className="waits">
-            <span className="waits-label">Discard analysis isn't available yet for hands with jokers.</span>
+        </>
+      )}
+
+      {atCompleteCheckpoint && hasJokers && (
+        <div className="card">
+          <span className="hint">Discard analysis isn't available yet for hands with jokers.</span>
+        </div>
+      )}
+
+      {discardChoices !== null && discardChoices.alreadyComplete && (
+        <>
+          <div className="section-head">
+            <span className="section-title">
+              食糊 <span className="section-title-en">Winning hand</span>
+            </span>
+            {breakdownToggles}
           </div>
-        )}
-        {discardChoices !== null && discardChoices.alreadyComplete && (
-          <div className={breakdownMode !== "off" ? "waits breakdown-list" : "waits"}>
+          <div className={`card${breakdownMode !== "off" ? " breakdown-list" : ""}`}>
             <span className="waits-label universal-wait">You already have a winning hand!</span>
             {breakdownMode !== "off" && (
               <CompleteHandBreakdown
@@ -2452,26 +2530,34 @@ function Calculator() {
               />
             )}
           </div>
-        )}
-        {discardChoices !== null && (
-          <div className="waits discard-analysis">
-            <span className="waits-label">
-              {discardChoices.alreadyComplete ? "If you discarded instead of winning:" : "Discard options:"}
+        </>
+      )}
+
+      {discardChoices !== null && (
+        <>
+          <div className="section-head">
+            <span className="section-title">
+              打牌 <span className="section-title-en">Discards</span>
+              {discardChoices.alreadyComplete && <span className="section-meta">if you discarded instead of winning</span>}
             </span>
+          </div>
+          <div className="card discard-analysis">
             {discardChoices.choices.map((c) => (
               <DiscardChoiceRow key={tileLabel(c.discard)} choice={c} />
             ))}
           </div>
-        )}
-        {outcome === null && !atCompleteCheckpoint && hand.length > 0 && upcoming !== undefined && (
-          <div className="waits">
-            <span className="hint">
-              Add {upcoming - hand.length} more tile{upcoming - hand.length === 1 ? "" : "s"} to see waits or discard
-              options.
-            </span>
-          </div>
-        )}
-      </section>
+        </>
+      )}
+
+      {outcome === null && !atCompleteCheckpoint && hand.length > 0 && upcoming !== undefined && (
+        <div className="card">
+          <span className="hint">
+            Add {upcoming - hand.length} more tile{upcoming - hand.length === 1 ? "" : "s"} to see waits or discard
+            options.
+          </span>
+        </div>
+      )}
+    </section>
   );
 }
 
