@@ -688,7 +688,7 @@ function WaitResultTile({
 }) {
   return (
     <span className="wait-result">
-      <TileGlyphSpan tile={result.wait} large />
+      <TileGlyphSpan tile={result.wait} />
       {remainingCount !== null && <RemainingCountBadge count={remainingCount} />}
       {result.jokers.length > 0 && (
         <span className="joker-hint" title="What the joker(s) resolve to for this wait">
@@ -842,7 +842,7 @@ function WaitBreakdownRow({
                     jokerBudget.set(tk, budget - 1);
                   }
                 }
-                return <TileGlyphSpan key={i} tile={t} large highlight={isWait} jokerAssumed={isJoker} />;
+                return <TileGlyphSpan key={i} tile={t} highlight={isWait} jokerAssumed={isJoker} />;
               })}
             </span>
           ))}
@@ -853,7 +853,7 @@ function WaitBreakdownRow({
 
   return (
     <div className="breakdown-row">
-      <TileGlyphSpan tile={result.wait} large />
+      <TileGlyphSpan tile={result.wait} />
       {remainingCount !== null && <RemainingCountBadge count={remainingCount} />}
       <span className="breakdown-readings">{readings.map(renderReading)}</span>
     </div>
@@ -883,7 +883,7 @@ function CompleteHandBreakdown({
             {orderBreakdownGroups(reading.groups, sorted).map(({ tiles, key }) => (
               <span className="breakdown-group" key={key}>
                 {tiles.map((t, i) => (
-                  <TileGlyphSpan key={i} tile={t} large />
+                  <TileGlyphSpan key={i} tile={t} />
                 ))}
               </span>
             ))}
@@ -2818,7 +2818,7 @@ function WaitsTrainer({
                   {isCorrect ? "Correct! This hand waits on:" : "Incorrect! This hand waits on:"}
                 </span>
                 {question.waits.map((w) => (
-                  <TileGlyphSpan key={tileLabel(w)} tile={w} large />
+                  <TileGlyphSpan key={tileLabel(w)} tile={w} />
                 ))}
               </div>
               <div className="waits breakdown-list">
@@ -3099,7 +3099,7 @@ function DiscardTrainer({
                 {!pickedOptimal &&
                   question.outcome.choices
                     .filter((c) => question.optimalKeys.has(tileKey(c.discard)))
-                    .map((c) => <TileGlyphSpan key={tileLabel(c.discard)} tile={c.discard} large />)}
+                    .map((c) => <TileGlyphSpan key={tileLabel(c.discard)} tile={c.discard} />)}
               </div>
               <div className="waits breakdown-list discard-analysis">
                 <span className="waits-label">Every discard, ranked:</span>
@@ -4392,7 +4392,7 @@ function DiscardOptionRow({
         aria-expanded={expanded}
         aria-label={`Discard ${tileLabel(discard)}: ${waits.length} wait${waits.length === 1 ? "" : "s"}, ${liveTotal} live tile${liveTotal === 1 ? "" : "s"}, ${topTai === null ? "all waits dead" : `up to ${topTai} tai`}, tap for waits`}
       >
-        <TileGlyphSpan tile={discard} large />
+        <TileGlyphSpan tile={discard} />
         <span className="discard-arrow">→</span>
         <span className="discard-option-waits">
           {showGlyphs
@@ -4460,7 +4460,7 @@ function ProjectedWaitRow({
         aria-expanded={expanded}
         aria-label={`${tileLabel(wait)} (${live === 0 ? "dead, no copies left to draw" : `${live} left`}) — ${result ? `${result.total} tai` : "not scoreable"}, tap for breakdown`}
       >
-        <TileGlyphSpan tile={wait} large />
+        <TileGlyphSpan tile={wait} />
         <span
           className="projected-wait-live"
           title={

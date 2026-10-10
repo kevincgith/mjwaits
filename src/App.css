@@ -100,6 +100,15 @@
   --wall-seg: #2b6b3f;
   --wall-seg-outline: #1c4c2b;
   --wall-seg-counted: #57a97b;
+  /* Tile glyph sizes - three jobs, one size each (phones override below):
+     input = the picker; hand = a hand being edited or played; row = any
+     tiles shown in a row (results, patterns, discard/wait rows, the hand
+     strip, lists) - every tile in a row the same size. hero = the trainer's
+     question hand, the one thing on its screen. */
+  --tile-input: 2.4rem;
+  --tile-hand: 2.3rem;
+  --tile-row: 1.75rem;
+  --tile-hero: 2.6rem;
   /* Fixed phone tab bar height (excluding the home-indicator safe area). */
   --tab-bar-h: 56px;
   /* Scoring tab's sticky toolbar height (excluding the top safe area). */
@@ -1879,7 +1888,7 @@ button.scoring-pattern-row {
 }
 
 .tile-glyph {
-  font-size: 1.6rem;
+  font-size: var(--tile-row);
   line-height: 1;
   font-variant-emoji: text;
   /* The Mahjong Tiles Unicode block glyphs (man/pin/sou) sit noticeably low
@@ -1892,7 +1901,11 @@ button.scoring-pattern-row {
 }
 
 .tile-glyph.large {
-  font-size: 2.1rem;
+  font-size: var(--tile-hand);
+}
+
+.trainer-hand .tile-glyph.large {
+  font-size: var(--tile-hero);
 }
 
 .tile-glyph[data-suit="m"] {
@@ -2012,7 +2025,7 @@ button.scoring-pattern-row {
 }
 
 .suit-row .tile-glyph {
-  font-size: 2.4rem;
+  font-size: var(--tile-input);
 }
 
 .suit-row .joker-slot {
@@ -3293,7 +3306,7 @@ button.scoring-pattern-row {
 }
 
 .hand-strip .tile-glyph {
-  font-size: 1.75rem;
+  font-size: var(--tile-row);
 }
 
 /* A 嚦咕雙食 hand's second reading: "or" sits centred on the divider
@@ -3482,7 +3495,7 @@ button.scoring-pattern-row {
 }
 
 .panel .hand-card .tile-glyph.large {
-  font-size: 1.95rem;
+  font-size: var(--tile-hand);
 }
 
 /* Wide screens: the card has room for all 17 on one line, so 手牌 packs its
@@ -3503,9 +3516,6 @@ button.scoring-pattern-row {
     padding: 0 0.1rem;
   }
 
-  .panel .hand-card .tile-glyph.large {
-    font-size: 2.3rem;
-  }
 }
 
 .hand-region {
@@ -3730,12 +3740,11 @@ button.scoring-pattern-row {
     gap: 0.2rem;
   }
 
-  .tile-glyph {
-    font-size: 2.3rem;
-  }
-
-  .tile-glyph.large {
-    font-size: 2.5rem;
+  /* The hand card's 9-column grid caps the hand size on phones. */
+  :root {
+    --tile-hand: 1.95rem;
+    --tile-row: 1.875rem;
+    --tile-hero: 3rem;
   }
 
   /* A single finger's contact area is easily 30-40px across - at the old
@@ -3763,9 +3772,6 @@ button.scoring-pattern-row {
     justify-items: center;
   }
 
-  .trainer-hand .tile-glyph.large {
-    font-size: 3rem;
-  }
 
   .trainer-discard-tile {
     width: 100%;
