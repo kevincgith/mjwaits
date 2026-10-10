@@ -3284,6 +3284,29 @@ button.scoring-pattern-row {
   font-size: 1.75rem;
 }
 
+/* A 嚦咕雙食 hand's second reading: "or" sits centred on the divider
+   above it, legend-style, breaking the line - so it reads as a separator,
+   not as a tile in the row. The extra top padding keeps the label's lower
+   half clear of the tiles. */
+.hand-strip-row.hand-strip-alt {
+  position: relative;
+  margin-top: 0.15rem;
+  padding-top: 0.6rem;
+}
+
+.hand-strip-tag {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  padding: 0 0.5rem;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
 /* A concealed kong gets the same amber flag here as in the hand card and
    the result's DECLARED box, so it doesn't pass for an exposed kong. */
 .hand-strip-group.concealed-kong-meld {

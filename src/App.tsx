@@ -4102,6 +4102,24 @@ function PatternRow({
   );
 }
 
+// In a 嚦咕嚦咕 hand (see isEightPairsHand), a quad (4 copies of one kind,
+// counting as 2 of the 8 pairs - see scoreEightPairs) stays a single 4-tile
+// meld in the data model, but displaying it as one block reads like a kong,
+// not the two independent pairs it actually is - split it into 2 groups of
+// 2, to fit the shape of the hand itself. A real kong elsewhere (ordinary
+// hands) is unaffected - isEightPairsHand only ever fires for this one
+// special construction.
+function displayGroupsFor(hand: ResolvedHand, tiles: Tile[]): Tile[][] {
+  return isEightPairsHand(hand) && tiles.length === 4 ? [tiles.slice(0, 2), tiles.slice(2, 4)] : [tiles];
+}
+
+// The scored hand's concealed part as display groups - its melds (after the
+// declared ones), then the pair - the same split the result's CONCEALED box
+// shows.
+function concealedDisplayGroups(hand: ResolvedHand, declaredCount: number): Tile[][] {
+  return [...hand.melds.slice(declaredCount).flatMap((meld) => displayGroupsFor(hand, meld.tiles)), hand.pair];
+}
+
 function ScoringBreakdown({
   matched,
   hand,
@@ -4156,15 +4174,6 @@ function ScoringBreakdown({
   const [pressedGroup, setPressedGroup] = useState<Tile[] | null>(null);
   const isGroupHighlighted = (group: Tile[]): boolean =>
     pressedGroup !== null && group.length === pressedGroup.length && group.every((t) => pressedGroup.includes(t));
-  // In a 嚦咕嚦咕 hand (see isEightPairsHand), a quad (4 copies of one kind,
-  // counting as 2 of the 8 pairs - see scoreEightPairs) stays a single
-  // 4-tile meld in the data model, but displaying it as one block reads
-  // like a kong, not the two independent pairs it actually is - split it
-  // into 2 groups of 2 for DECLARED/CONCEALED below, to fit the shape of
-  // the hand itself. A real kong elsewhere (ordinary hands) is unaffected -
-  // isEightPairsHand only ever fires for this one special construction.
-  const displayGroupsFor = (tiles: Tile[]): Tile[][] =>
-    isEightPairsHand(hand) && tiles.length === 4 ? [tiles.slice(0, 2), tiles.slice(2, 4)] : [tiles];
   // Declaration order (the default) already reads as a rough thematic
   // grouping - PATTERNS is authored one related family at a time - so
   // sorting by tai is opt-in rather than the default, same "toggle changes
@@ -4200,7 +4209,7 @@ function ScoringBreakdown({
               </span>
             )}
             {hand.melds.slice(0, declaredCount).flatMap((meld, i) =>
-              displayGroupsFor(meld.tiles).map((group, j) => (
+              displayGroupsFor(hand, meld.tiles).map((group, j) => (
                 <span
                   className={["breakdown-group", meld.concealed && "concealed-kong-meld", isGroupHighlighted(group) && "pattern-highlighted"]
                     .filter(Boolean)
@@ -4221,7 +4230,7 @@ function ScoringBreakdown({
           <span className="hand-section-label">Concealed</span>
           <div className="hand-display breakdown-groups">
             {hand.melds.slice(declaredCount).flatMap((meld, i) =>
-              displayGroupsFor(meld.tiles).map((group, j) => (
+              displayGroupsFor(hand, meld.tiles).map((group, j) => (
                 <span
                   className={`breakdown-group${isGroupHighlighted(group) ? " pattern-highlighted" : ""}`}
                   key={`${i}-${j}`}
@@ -5419,6 +5428,15 @@ function ScoringPanel() {
     if (nextEffective === "none" && robKong > 0) setRobKong(0);
   };
 
+  // The 食胡 tile's own instance within the scored decomposition, for the hand
+  // strip's grouped 手牌 row (same lookup the result breakdown uses).
+  const scoredWinningInstance = scoring?.ok
+    ? findWinningTileInstance(scoring.result.hand, declaredMelds.length, winningTile)
+    : null;
+  const secondWinningInstance = scoring?.ok && scoring.result.second
+    ? findWinningTileInstance(scoring.result.second.hand, 0, winningTile)
+    : null;
+
   // What the collapsed Situation card lists: each declaration that's on, by
   // the same label its chip shows.
   const activeConditionLabels = [
@@ -5531,13 +5549,46 @@ function ScoringPanel() {
                 ))}
               </span>
             )}
-            {concealedTiles.length > 0 && (
-              <span className="hand-strip-row">
-                {(sortTiles(concealedTiles) as HandTile[]).map((t) => (
-                  <TileGlyphSpan key={t.id} tile={t} highlight={!nearComplete && isWinningTile(t)} />
-                ))}
-              </span>
-            )}
+            {/* Once the hand scores, 手牌 shows the scored decomposition -
+                melds, then the pair - like the result's CONCEALED box; a
+                嚦咕雙食 hand, which also reads as an ordinary hand, gets a
+                second row for that reading, under an "or" divider. Until the hand scores,
+                just the sorted tiles. */}
+            {concealedTiles.length > 0 &&
+              (scoring?.ok ? (
+                <>
+                  <span className="hand-strip-row hand-strip-melds">
+                    {concealedDisplayGroups(scoring.result.hand, declaredMelds.length).map((group, i) => (
+                      <span key={i} className="hand-strip-group">
+                        {group.map((t, j) => (
+                          <TileGlyphSpan key={j} tile={t} highlight={t === scoredWinningInstance} />
+                        ))}
+                      </span>
+                    ))}
+                  </span>
+                  {scoring.result.second && (
+                    <span className="hand-strip-row hand-strip-melds hand-strip-alt">
+                      {/* Sits on the divider between the two readings. */}
+                      <span className="hand-strip-tag" title="嚦咕雙食 - also reads as an ordinary hand">
+                        or
+                      </span>
+                      {concealedDisplayGroups(scoring.result.second.hand, 0).map((group, i) => (
+                        <span key={i} className="hand-strip-group">
+                          {group.map((t, j) => (
+                            <TileGlyphSpan key={j} tile={t} highlight={t === secondWinningInstance} />
+                          ))}
+                        </span>
+                      ))}
+                    </span>
+                  )}
+                </>
+              ) : (
+                <span className="hand-strip-row">
+                  {(sortTiles(concealedTiles) as HandTile[]).map((t) => (
+                    <TileGlyphSpan key={t.id} tile={t} highlight={!nearComplete && isWinningTile(t)} />
+                  ))}
+                </span>
+              ))}
           </button>
         </CollapsiblePanel>
       </div>
