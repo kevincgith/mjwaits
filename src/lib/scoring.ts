@@ -51,12 +51,14 @@ export interface BonusTile {
 }
 
 export interface ParsedScoringHand {
-  // Melds fixed by the notation: exposed triplets/runs/kongs, written in
-  // parens (see parseScoringHand). Concealed kongs are NOT captured here -
-  // a bare 4-of-a-kind among the free tiles isn't necessarily a kong (it
-  // might instead be a triplet plus one tile borrowed into an adjacent run,
-  // e.g. "222234t" as 222t + 234t) - so that ambiguity is left to
-  // decomposeHandAll's search, which tries both readings.
+  // Melds fixed by the notation (see parseScoringHand): exposed
+  // triplets/runs/kongs written in parens, and concealed kongs (暗槓)
+  // written in square brackets - declared like any other meld, just with
+  // `concealed: true`, the same way the app's 門前 area holds them. A bare
+  // 4-of-a-kind among the free tiles is NOT read as a kong here - it isn't
+  // necessarily one (it might be a triplet plus one tile borrowed into an
+  // adjacent run, e.g. "222234t" as 222t + 234t) - so that ambiguity is
+  // left to decomposeHandAll's search, which tries both readings.
   declaredMelds: MeldDeclaration[];
   // Everything else: ordinary concealed tiles still to be decomposed into
   // melds + the pair (the pair is always concealed - it can't be called).
@@ -177,15 +179,16 @@ export function groupDeclaredTiles(tiles: Tile[]): DeclaredGrouping {
 }
 
 // Parses the scoring notation: mahjong.ts's plain digits+suit groups for
-// concealed tiles, plus `(digits+suit)` for a declared exposed meld (triplet,
-// run, or kong) - see the module doc comment for the full syntax. A bare
-// 4-of-a-kind among the concealed digits is deliberately NOT treated as an
-// automatic concealed kong here - see ParsedScoringHand's doc comment for
-// why. Jokers aren't supported yet (rejected with a clear error rather than
-// silently scored wrong).
+// concealed tiles, `(digits+suit)` for a declared exposed meld (triplet,
+// run, or kong), and `[digits+suit]` for a declared concealed kong (暗槓) -
+// exactly four of one tile, e.g. "[1111z]". A bare 4-of-a-kind among the
+// concealed digits is deliberately NOT treated as an automatic concealed
+// kong here - see ParsedScoringHand's doc comment for why; write it in
+// square brackets to declare it. Jokers aren't supported yet (rejected with
+// a clear error rather than silently scored wrong).
 export function parseScoringHand(input: string): ParsedScoringHand {
   const trimmed = input.trim();
-  const groupPattern = /\((\d+)([mtbz])\)|(\d+)([mtbz])|(j+)/g;
+  const groupPattern = /\((\d+)([mtbz])\)|\[(\d+)([mtbz])\]|(\d+)([mtbz])|(j+)/g;
   const declaredMelds: MeldDeclaration[] = [];
   const freeTiles: Tile[] = [];
   let matched = "";
@@ -193,7 +196,7 @@ export function parseScoringHand(input: string): ParsedScoringHand {
 
   while ((match = groupPattern.exec(trimmed)) !== null) {
     matched += match[0];
-    const [, declDigits, declSuit, freeDigits, freeSuit, jokers] = match;
+    const [, declDigits, declSuit, kongDigits, kongSuit, freeDigits, freeSuit, jokers] = match;
 
     if (jokers !== undefined) {
       throw new ParseError("Jokers aren't supported in the scoring calculator yet");
@@ -205,6 +208,17 @@ export function parseScoringHand(input: string): ParsedScoringHand {
       const ranks = Array.from(declDigits, Number).sort((a, b) => a - b);
       const kind = classifyDeclaredMeld(ranks, suit, `${declDigits}${suit}`);
       declaredMelds.push({ tiles: ranks.map((rank) => ({ suit, rank })), kind, concealed: false });
+      continue;
+    }
+
+    if (kongDigits !== undefined) {
+      const suit = kongSuit as Suit;
+      for (const d of kongDigits) validateRank(suit, Number(d), `${d}${suit}`);
+      if (kongDigits.length !== 4 || new Set(kongDigits).size !== 1) {
+        throw new ParseError(`"[${kongDigits}${suit}]" isn't a concealed kong - write four of one tile, e.g. "[1111${suit}]"`);
+      }
+      const rank = Number(kongDigits[0]);
+      declaredMelds.push({ tiles: [1, 2, 3, 4].map(() => ({ suit, rank })), kind: "kong", concealed: true });
       continue;
     }
 

@@ -63,9 +63,9 @@ async function clickText(page, label, { nth = 0 } = {}) {
   await el.click();
 }
 
-// Click a tile in the Scoring tab's concealed-hand picker (the last .tile-picker
-// on the page). Tiles there carry a `title` like "1 Sou" and a glyph <span>
-// with data-suit / data-rank.
+// Click a tile in the Scoring tab's shared tile picker (with 手牌, the default
+// add-to target, selected). Tiles there carry a `title` like "1 Sou" and a
+// glyph <span> with data-suit / data-rank.
 async function addConcealed(page, suit, rank) {
   const ok = await page.evaluate(
     (suit, rank) => {
@@ -86,7 +86,7 @@ async function addConcealed(page, suit, rank) {
 
 async function setMode(page, label) {
   await page.evaluate((label) => {
-    [...document.querySelectorAll(".mode-tabs button")]
+    [...document.querySelectorAll(".tab-bar button")]
       .find((b) => b.textContent.trim() === label)
       ?.click();
   }, label);
@@ -122,35 +122,44 @@ const main = async () => {
   const page = await browser.newPage();
   await page.goto(BASE, { waitUntil: "networkidle0" });
 
-  const NOTATION = 'label[for="algebraic"]';
+  // Calculator shots start at the hand card, with the picker collapsed so
+  // the hand and its results sit together (typing needs it open first).
+  const CALC_HAND = ".calculator-panel .hand-card";
+  const calcShot = async (name, maxH) => {
+    await page.evaluate(() => document.querySelector('.calculator-panel button[title="Hide tile picker"]')?.click());
+    await sleep(300);
+    await shoot(page, name, { startAt: CALC_HAND, maxH });
+    await page.evaluate(() => document.querySelector('.calculator-panel button[title="Show tile picker"]')?.click());
+    await sleep(300);
+  };
 
   // 1. Hero: Calculator with a shanpon tenpai hand + Breakdown on.
   await setMode(page, "Calculator");
   await typeNotation(page, "123456789m111z11t22b");
   await clickText(page, "Breakdown");
   await sleep(300);
-  await shoot(page, "preview.png", { startAt: NOTATION, maxH: 780 });
+  await calcShot("preview.png", 780);
 
   // 2. Jokers: 1 man + 3 jokers -> universal wait + joker resolution hints.
   await clickText(page, "Breakdown"); // back off - the list itself is the point
   await typeNotation(page, "1mjjj");
   await sleep(300);
-  await shoot(page, "jokers.png", { startAt: NOTATION, maxH: 900 });
+  await calcShot("jokers.png", 900);
 
   // 3. Discard efficiency: a non-tenpai hand, discards ranked by a two-step
   //    lookahead (555z = 中 renders cleanly; 白/777z shows as a near-blank tile).
   await typeNotation(page, "1278m555t111333555z");
   await sleep(300);
-  await shoot(page, "discard-efficiency.png", { startAt: NOTATION, maxH: 950 });
+  await calcShot("discard-efficiency.png", 950);
 
   // 4. Special hand: a tenpai Sixteen Unrelated Tiles hand.
   await typeNotation(page, "147t258m369b1234567z");
   await sleep(300);
-  await shoot(page, "special-hand.png", { startAt: NOTATION, maxH: 820 });
+  await calcShot("special-hand.png", 820);
 
   // 5. Scoring: a fully concealed pure-flush self-draw, big tai total.
   await setMode(page, "Scoring");
-  await clickText(page, "🔄 Reset").catch(() => {});
+  await clickText(page, "Reset").catch(() => {});
   await sleep(150);
   // 123b 456b 789b 111b 555b 99b, all in the concealed region.
   const sou = [1, 1, 1, 1, 2, 3, 4, 5, 5, 5, 5, 6, 7, 8, 9, 9, 9];
@@ -167,10 +176,10 @@ const main = async () => {
       });
   });
   await sleep(250);
-  await shoot(page, "scoring.png", { maxH: 1180 });
+  await shoot(page, "scoring.png", { startAt: ".result-hero", maxH: 1180 });
 
   // 6. Dice & wall: three dice set to 4 / 5 / 3 = 12, wall broken on the left.
-  await setMode(page, "Dice rolling");
+  await setMode(page, "Dice");
   await page.evaluate(() => {
     const dice = [...document.querySelectorAll("button")].filter((b) =>
       (b.getAttribute("aria-label") || "").startsWith("Die showing"),
@@ -198,7 +207,7 @@ const main = async () => {
     };
   });
   await clickText(page, "L4");
-  await clickText(page, "New Hand");
+  await clickText(page, "New hand");
   await sleep(300);
   // Let the per-question timer accrue a realistic few seconds.
   await sleep(3500);

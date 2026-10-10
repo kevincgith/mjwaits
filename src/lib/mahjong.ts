@@ -167,7 +167,7 @@ export function formatHand(tiles: Tile[]): string {
 
 const SUIT_ORDER: Record<Suit, number> = { m: 0, t: 1, b: 2, z: 3, j: 4 };
 
-function compareTiles(a: Tile, b: Tile): number {
+export function compareTiles(a: Tile, b: Tile): number {
   return SUIT_ORDER[a.suit] - SUIT_ORDER[b.suit] || a.rank - b.rank;
 }
 

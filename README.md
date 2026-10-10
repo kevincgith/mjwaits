@@ -9,7 +9,11 @@ hand, see what completes it and which discard gives the best odds — and has gr
 - **Calculator** — the original: waits, shanten, joker resolution, and discard analysis.
 - **Trainer** — timed quizzes: a **Waits** drill (name every tile that completes a hand) and a
   **Discards** drill (just drew — pick the single best tile to throw).
-- **Dice rolling** — roll for the wall, and see exactly where it breaks.
+- **Dice** — roll for the wall, and see exactly where it breaks.
+
+On a phone the four tabs sit in a bottom tab bar; on wider screens they're a segmented control
+under the title. In the Scoring tab a sticky toolbar keeps Reset / Scan / Photos, the tile count
+(or, once the hand scores, the total — tap it to jump to the breakdown) in view while scrolling.
 
 Everything runs client-side, including the camera tile scanner. No hand ever leaves the browser.
 
@@ -27,16 +31,21 @@ ruleset. It totals tai; there's no point/currency conversion yet.
 
 The input models the table, not a text string:
 
-- **門前牌區 (Declared melds)** — everything laid in front of you. Pick a kind — 上 (chow), 碰
-  (pung), 暗槓 (concealed kong), 明槓 (exposed kong) — then tap a tile to drop that meld in; a
-  separate collapsible sub-picker adds bonus tiles (flowers / seasons). Invalid run starts grey
-  out, and the picker disables itself once five melds are declared.
-- **手牌區 (Concealed hand)** — the tiles still in hand, as a plain multiset the scorer
-  decomposes. **Long-press** a concealed tile to mark it as the **食胡 tile** (the one that
+- **One shared tile picker** feeds both regions. A segmented control above it picks where a tap
+  lands: **手牌** adds a single concealed tile; **上** (chow), **碰** (pung), **明槓** (exposed
+  kong) or **暗槓** (concealed kong) drops that whole declared meld starting at the tapped tile.
+  Tiles that can't start the chosen meld grey out in place (the grid never reflows), and the
+  flowers / seasons sit in their own row underneath and always go to 門前. The picker collapses
+  once the hand is entered.
+- **Your hand** shows both regions in one card: **門前 (Declared)** — everything laid in front of
+  you — and **手牌 (Concealed)**, the tiles still in hand, as a plain multiset the scorer
+  decomposes. Tap a tile or meld to remove it; each region has its own **Clear**. While the card is
+  scrolled out of view, a compact copy of the hand slides in under the toolbar — tap it to jump
+  back. **Long-press** a concealed tile to mark it as the **食胡 tile** (the one that
   completed the hand); several patterns depend on whether the completing meld was self-drawn or
   claimed off a discard.
-- **Round wind** and **seat wind** (東 / 南 / 西 / 北, round shown first), a **莊** (dealer)
-  button that steps up a 連莊 streak with +/−, a **自摸** (self-draw) toggle, and a strip of
+- **Round wind** and **seat wind** (圈風 / 門風), each a row of the four wind tiles — tap one to
+  stand it up — then a **莊** (dealer) button that steps up a 連莊 streak with +/−, a **自摸** (self-draw) toggle, and a strip of
   situational-declaration buttons that the tiles alone can't show. Most cycle on each tap:
   **叮 → 天叮 → 地叮** (riichi and its upgrades) with **一發** and **食叮** alongside;
   **四子內 / 七子內 / 十子內** (won within the first N discards); **雙響 / 三響** (multiple
@@ -83,11 +92,14 @@ counting rules — kept in sync with the code.
 ### Hand input
 
 - **Tap tiles** on the picker, or **type algebraic notation** directly
-  (e.g. `123456789m111z11t22b`) — the two stay in sync.
+  (e.g. `123456789m111z11t22b`) — the two stay in sync. Laid out like the Scoring tab: Reset /
+  Scan / Photos in a sticky toolbar, and the hand above the picker, pinned while the picker
+  scrolls beneath it.
 - Suits: `m` (man / characters), `t` (pin / circles), `b` (sou / bamboo), `z` (honors, 1–7 for
   East / South / West / North / Red / Green / White), `j` (joker).
-- **Sort** toggle: on, new tiles are kept in sorted order as you add them; off, they stay in the
-  order you entered them — and toggling back off restores that original order.
+- **Sort** toggle (in the hand's header, beside the shanten count): on, new tiles are kept in
+  sorted order as you add them; off, they stay in the order you entered them — and toggling back
+  off restores that original order.
 - A 4-copies-per-kind cap is enforced automatically (jokers excluded — see below).
 
 ### Waits
@@ -96,7 +108,7 @@ counting rules — kept in sync with the code.
 - A **universal wait** is flagged explicitly when any of the 34 tile kinds would complete the hand.
 - Remaining copies of each waiting tile are always shown (4 minus what's already in hand), plus a
   running total across all waits.
-- **Breakdown** shows the exact meld/pair decomposition for each wait, completing tile
+- **Breakdown** (in the 聽牌 WAITS caption) shows the exact meld/pair decomposition for each wait, completing tile
   highlighted; a small `↔` button (once Breakdown is on) switches between pair-first and
   tile-order display. A hand genuinely ambiguous between two shapes (e.g. a standard hand that's
   also valid Eight Pairs) shows every valid reading, not just one.
@@ -244,7 +256,7 @@ and every stat — as far as you like; **N** deals a new one, asking first if th
 real progress to lose. History is cleared when a new hand is dealt, and a hand in progress
 survives switching sub-tabs.
 
-## Dice rolling
+## Dice
 
 ![The Dice & wall sub-tab: three dice showing 4, 5, 3 (total 12), the built wall drawn as a four-bar pinwheel, and a 👉 marking where a count of 12 breaks the left wall](docs/dice.png)
 

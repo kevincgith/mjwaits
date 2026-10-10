@@ -3,10 +3,11 @@
      the browser's own UI (scrollbars, form controls) to light too so
      nothing there goes dark while the page itself stays light. */
   color-scheme: light;
-  font: 16px/1.5 system-ui, "Segoe UI", Roboto, sans-serif;
+  font: 16px/1.5 -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", Roboto, sans-serif;
 }
 
 body {
   margin: 0;
-  background: var(--surface);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
 }
