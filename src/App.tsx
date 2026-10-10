@@ -16,6 +16,7 @@ import {
 import "./App.css";
 import {
   COMPLETE_SIZE,
+  compareTiles,
   EFFICIENCY_HORIZON,
   MELDS_REQUIRED,
   ParseError,
@@ -89,6 +90,7 @@ import {
   isVisiblyExhaustedMultiWait,
   isVisiblyTripledWinningTile,
   isWinningTileHeldConcealedElsewhere,
+  parseScoringHand,
   patternDisplayName,
   ScoringError,
   scoreParsedHand,
@@ -107,6 +109,7 @@ import {
   type TaiPattern,
   type Wind,
 } from "./lib/scoring";
+import { TEST_HAND_BASE_CONTEXT, TEST_HANDS, type TestHand } from "./lib/testHands";
 
 // A stable id per tile instance, so sorting for display never loses track
 // of which underlying tile is which (needed to revert Sort cleanly, and to
@@ -4113,11 +4116,20 @@ function displayGroupsFor(hand: ResolvedHand, tiles: Tile[]): Tile[][] {
   return isEightPairsHand(hand) && tiles.length === 4 ? [tiles.slice(0, 2), tiles.slice(2, 4)] : [tiles];
 }
 
-// The scored hand's concealed part as display groups - its melds (after the
-// declared ones), then the pair - the same split the result's CONCEALED box
-// shows.
-function concealedDisplayGroups(hand: ResolvedHand, declaredCount: number): Tile[][] {
-  return [...hand.melds.slice(declaredCount).flatMap((meld) => displayGroupsFor(hand, meld.tiles)), hand.pair];
+// The scored hand's concealed part as display groups, shared by the result's
+// CONCEALED box and the hand strip so the two always match. An ordinary
+// hand reads melds (after the declared ones) then the pair. In 嚦咕嚦咕 every
+// pair is alike - which one the scorer keeps as `pair` is arbitrary - so
+// there all the groups are put in plain tile order instead of tacking that
+// one pair onto the end.
+function concealedDisplayGroups(hand: ResolvedHand, declaredCount: number): { tiles: Tile[]; title: string }[] {
+  const groups = [
+    ...hand.melds
+      .slice(declaredCount)
+      .flatMap((meld) => displayGroupsFor(hand, meld.tiles).map((tiles) => ({ tiles, title: meld.kind as string }))),
+    { tiles: hand.pair, title: "Pair" },
+  ];
+  return isEightPairsHand(hand) ? groups.sort((a, b) => compareTiles(a.tiles[0], b.tiles[0])) : groups;
 }
 
 function ScoringBreakdown({
@@ -4229,24 +4241,17 @@ function ScoringBreakdown({
         <div className="hand-section concealed-section">
           <span className="hand-section-label">Concealed</span>
           <div className="hand-display breakdown-groups">
-            {hand.melds.slice(declaredCount).flatMap((meld, i) =>
-              displayGroupsFor(hand, meld.tiles).map((group, j) => (
-                <span
-                  className={`breakdown-group${isGroupHighlighted(group) ? " pattern-highlighted" : ""}`}
-                  key={`${i}-${j}`}
-                  title={meld.kind}
-                >
-                  {group.map((t, k) => (
-                    <TileGlyphSpan key={k} tile={t} highlight={isWinningInstance(t)} />
-                  ))}
-                </span>
-              ))
-            )}
-            <span className={`breakdown-group${isGroupHighlighted(hand.pair) ? " pattern-highlighted" : ""}`} title="Pair">
-              {hand.pair.map((t, j) => (
-                <TileGlyphSpan key={j} tile={t} highlight={isWinningInstance(t)} />
-              ))}
-            </span>
+            {concealedDisplayGroups(hand, declaredCount).map(({ tiles, title }, i) => (
+              <span
+                className={`breakdown-group${isGroupHighlighted(tiles) ? " pattern-highlighted" : ""}`}
+                key={i}
+                title={title}
+              >
+                {tiles.map((t, k) => (
+                  <TileGlyphSpan key={k} tile={t} highlight={isWinningInstance(t)} />
+                ))}
+              </span>
+            ))}
           </div>
         </div>
       </div>
@@ -4539,7 +4544,20 @@ function ToolbarIcon({ kind }: { kind: "reset" | "camera" | "photos" }) {
   );
 }
 
-function ScoringPanel() {
+// A test hand the hidden Test hands sheet asked the Scoring tab to load; the
+// nonce makes picking the same hand twice still count as a new request.
+interface TestHandRequest {
+  hand: TestHand;
+  nonce: number;
+}
+
+function ScoringPanel({
+  testHandRequest,
+  onTestHandLoaded,
+}: {
+  testHandRequest: TestHandRequest | null;
+  onTestHandLoaded: () => void;
+}) {
   const [concealedTiles, setConcealedTiles] = useState<HandTile[]>([]);
   const [declaredMelds, setDeclaredMelds] = useState<DeclaredMeldTile[]>([]);
   // 天叮/地叮/天胡/地胡/人胡 all require a fully concealed hand (see
@@ -4737,8 +4755,7 @@ function ScoringPanel() {
   const resultRef = useRef<HTMLDivElement>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
   // The "Your hand" card, watched so the toolbar's compact hand strip only
-  // shows while the card itself is out of view (scrolled up past it, or
-  // still below the picker on a short phone) - never the hand twice.
+  // shows once the card has scrolled up out of view - never the hand twice.
   const handCardRef = useRef<HTMLDivElement>(null);
   const [handCardVisible, setHandCardVisible] = useState(true);
   useEffect(() => {
@@ -4747,9 +4764,15 @@ function ScoringPanel() {
     // Insets roughly cover the sticky toolbar above and the phone tab bar
     // below, so a card hidden behind either still counts as out of view; a
     // sliver peeking out doesn't count as seen either.
+    // Only scrolled off the *top* counts as out of view - the card sits
+    // first, right under the toolbar, so it's never below the screen.
     const observer = new IntersectionObserver(
-      ([entry]) => setHandCardVisible(entry.isIntersecting && entry.intersectionRect.height > 64),
-      { rootMargin: "-72px 0px -96px 0px", threshold: [0, 0.1, 0.25, 0.5, 1] }
+      ([entry]) =>
+        setHandCardVisible(
+          (entry.isIntersecting && entry.intersectionRect.height > 64) ||
+            entry.boundingClientRect.top > (entry.rootBounds?.top ?? 0)
+        ),
+      { rootMargin: "-72px 0px 0px 0px", threshold: [0, 0.1, 0.25, 0.5, 1] }
     );
     observer.observe(el);
     return () => observer.disconnect();
@@ -4988,7 +5011,58 @@ function ScoringPanel() {
     resetConcealed();
     resetConditions();
     handScannerRef.current?.reset();
+    setLoadedTestHand(null);
   };
+
+  // Loads one of the scoring tests' hands (the hidden Test hands sheet):
+  // replaces the tiles, then resets the Situation card and applies that
+  // test's own situation on top. Set straight into state, without the
+  // toggles' usual cascades - each test's situation is already consistent.
+  const [loadedTestHand, setLoadedTestHand] = useState<{ hand: TestHand; total: number } | null>(null);
+  const loadTestHand = (t: TestHand) => {
+    const testCtx: GameContext = { ...TEST_HAND_BASE_CONTEXT, ...t.ctx };
+    // The notation declares concealed kongs as "[1111z]" - they land in 門前
+    // as 暗槓 (concealed: true), exactly as if picked with the 暗槓 button.
+    const parsed = parseScoringHand(t.hand);
+    handScannerRef.current?.reset();
+    const nextDeclared = parsed.declaredMelds.map((m) => ({ id: nextMeldId.current++, kind: m.kind, concealed: m.concealed, tiles: m.tiles }));
+    const nextConcealed = (sortTiles(parsed.freeTiles) as Tile[]).map((tile) => ({ ...tile, id: nextTileId.current++ }));
+    declaredRef.current = nextDeclared;
+    concealedRef.current = nextConcealed;
+    bonusRef.current = [];
+    setDeclaredMelds(nextDeclared);
+    setConcealedTiles(nextConcealed);
+    setBonusTiles([]);
+    resetConditions();
+    const c = t.ctx;
+    if (c.seatWind) setSeatWind(c.seatWind);
+    if (c.roundWind) setRoundWind(c.roundWind);
+    if (c.selfDraw) setSelfDraw(true);
+    if (c.riichi) setRiichi(c.riichi);
+    if (c.instantWin) setInstantWin(true);
+    if (c.eatRiichi) setEatRiichi(true);
+    if (c.earlyWin) setEarlyWin(c.earlyWin);
+    if (c.multiWin) setMultiWin(c.multiWin);
+    if (c.heavenlyWin) setHeavenlyWin(c.heavenlyWin);
+    if (c.lastTileWin) setLastTileWin(c.lastTileWin);
+    if (c.flowerDraw) setFlowerDraw(c.flowerDraw);
+    if (c.kongDraw) setKongDraw(c.kongDraw);
+    if (c.robKong) setRobKong(c.robKong);
+    if (c.dealerStreak) setDealerStreak(c.dealerStreak);
+    if (c.manualVisibleExhaustedMultiWait) setManualVisibleExhaust("exhausted");
+    else if (c.manualVisibleTripleWin) setManualVisibleExhaust("triple");
+    // The 食胡 tile can only be marked among the concealed tiles here.
+    const w = c.winningTile;
+    setWinningTile(w ? (nextConcealed.find((x) => x.suit === w.suit && x.rank === w.rank) ?? null) : null);
+    setLoadedTestHand({ hand: t, total: scoreParsedHand(parsed, testCtx).total });
+  };
+  useEffect(() => {
+    if (!testHandRequest) return;
+    loadTestHand(testHandRequest.hand);
+    onTestHandLoaded();
+    // Only a new request should load - loadTestHand itself changes every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [testHandRequest]);
 
   // A scanned detection's meaning for the declared-melds region: a real
   // tile, a bonus tile, or excluded (marked "not a tile", i.e. a false
@@ -5558,9 +5632,9 @@ function ScoringPanel() {
               (scoring?.ok ? (
                 <>
                   <span className="hand-strip-row hand-strip-melds">
-                    {concealedDisplayGroups(scoring.result.hand, declaredMelds.length).map((group, i) => (
+                    {concealedDisplayGroups(scoring.result.hand, declaredMelds.length).map(({ tiles }, i) => (
                       <span key={i} className="hand-strip-group">
-                        {group.map((t, j) => (
+                        {tiles.map((t, j) => (
                           <TileGlyphSpan key={j} tile={t} highlight={t === scoredWinningInstance} />
                         ))}
                       </span>
@@ -5572,9 +5646,9 @@ function ScoringPanel() {
                       <span className="hand-strip-tag" title="嚦咕雙食 - also reads as an ordinary hand">
                         or
                       </span>
-                      {concealedDisplayGroups(scoring.result.second.hand, 0).map((group, i) => (
+                      {concealedDisplayGroups(scoring.result.second.hand, 0).map(({ tiles }, i) => (
                         <span key={i} className="hand-strip-group">
-                          {group.map((t, j) => (
+                          {tiles.map((t, j) => (
                             <TileGlyphSpan key={j} tile={t} highlight={t === secondWinningInstance} />
                           ))}
                         </span>
@@ -5604,195 +5678,216 @@ function ScoringPanel() {
         autoApply={isScannedHandWinning}
       />
 
-      <div className="section-head">
-        <span className="section-title">
-          選牌 <span className="section-title-en">Add tiles</span>
-        </span>
-        <PickerCollapseToggle collapsed={pickerCollapsed} onToggle={() => setPickerCollapsed((c) => !c)} />
-      </div>
+      {loadedTestHand && (
+        <div className="test-hand-banner">
+          <span className="test-hand-banner-text">
+            <span className="test-hand-banner-kicker">Test hand · {testHandGroupLabel(loadedTestHand.hand.group)}</span>
+            {loadedTestHand.hand.name}
+            <span className="test-hand-banner-total">
+              Test total {loadedTestHand.total}
+              {scoring?.ok && scoring.result.total !== loadedTestHand.total && (
+                <>
+                  {" "}
+                  · app shows {scoring.result.total}: this test sets a situation the app's buttons don't allow, so the
+                  app adjusts it
+                </>
+              )}
+            </span>
+          </span>
+          <button type="button" onClick={() => setLoadedTestHand(null)} aria-label="Dismiss" title="Dismiss">
+            ✕
+          </button>
+        </div>
+      )}
 
-      <CollapsiblePanel open={!pickerCollapsed}>
-        <div className="card picker-card">
-          {/* Where a tap lands, as two separate groups: 手牌 adds one
-              concealed tile; the 門前 group's four meld kinds drop a whole
-              declared meld starting at the tapped tile. Still one tap to any
-              choice - the split and the captions are what keep the two
-              apart. */}
-          <div className="add-to-row">
-            <div className="add-to-group add-to-concealed">
-              <span className="add-to-caption">Concealed</span>
-              <div className="segmented" role="group" aria-label="Add to concealed hand">
+      {/* The input area: the hand card and the picker. Inside it the hand
+          card is sticky under the toolbar, so the picker scrolls beneath it
+          and every picker row can be reached with the hand still in view;
+          once scrolled past the picker the card leaves with the area, and
+          the toolbar's compact strip takes over. */}
+      <div className="input-zone">
+        <div className="card hand-card" ref={handCardRef}>
+          <div className={`hand-region${addTo === "hand" ? "" : " is-target"}`}>
+            <div className="hand-region-head">
+              <span className="hand-region-label">門前 Declared</span>
+              {!declaredEmpty && (
                 <button
                   type="button"
-                  className={addTo === "hand" ? "toggle-on" : undefined}
-                  aria-pressed={addTo === "hand"}
-                  onClick={() => setAddTo("hand")}
-                  title="Tap a tile to add it to the concealed hand"
+                  className="section-action region-action"
+                  onClick={resetDeclared}
+                  title="Clear the declared melds and bonus tiles"
                 >
-                  手牌
+                  Clear
                 </button>
-              </div>
+              )}
             </div>
-            <div className="add-to-group add-to-declared">
-              <span className="add-to-caption">門前 Declared</span>
-              <div className="segmented" role="group" aria-label="Declare a meld">
-                {(["run", "triplet", "exposed-kong", "concealed-kong"] as MeldPickerKind[]).map((k) => (
-                  <button
-                    key={k}
-                    type="button"
-                    className={addTo === k ? "toggle-on" : undefined}
-                    aria-pressed={addTo === k}
-                    onClick={() => {
-                      setAddTo(k);
-                      setMeldKind(k);
-                    }}
-                    title={`Tap a tile to declare a ${MELD_PICKER_LABELS[k]} starting at it`}
-                  >
-                    {MELD_PICKER_LABELS[k]}
-                  </button>
-                ))}
-              </div>
+            <div className="hand-display breakdown-groups">
+              {declaredMelds.length === 0 && bonusTiles.length === 0 ? (
+                <span className="hint">None — pick 上 / 碰 / 明槓 / 暗槓 below, or tap a flower</span>
+              ) : (
+                <>
+                  {bonusTiles.length > 0 && (
+                    <div className="breakdown-group bonus-tile-group">
+                      {sortBonusTiles(bonusTiles).map((tile) => (
+                        <button
+                          type="button"
+                          key={`${tile.kind}${tile.rank}`}
+                          className="bonus-tile-remove"
+                          onClick={() => removeBonusTile(tile)}
+                          title={`${bonusTileLabel(tile)} - tap to remove`}
+                        >
+                          <span className="tile-glyph large" data-suit="bonus">
+                            {bonusTileGlyph(tile)}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {declaredMelds.map((meld) => (
+                    <DeclaredMeldButton
+                      key={meld.id}
+                      meld={meld}
+                      onRemove={() => removeMeld(meld.id)}
+                      onToggleConcealed={() => toggleMeldConcealed(meld.id)}
+                    />
+                  ))}
+                </>
+              )}
             </div>
           </div>
-
-          <div className="tile-picker">
-            {SUIT_ORDER.map((suit) => (
-              <div className="suit-row" key={suit}>
-                {allTileKinds()
-                  .filter((t) => t.suit === suit)
-                  .map((t) =>
-                    addTo === "hand" ? (
-                      <TileButton
-                        key={tileLabel(t)}
-                        tile={t}
-                        onClick={() => addConcealedTile(t)}
-                        disabled={atCap || totalCopiesUsed(t) >= 4}
-                      />
-                    ) : (
-                      // Honors stay in place (just disabled) for a run, so
-                      // switching kinds never reflows the grid under the finger.
-                      <TileButton
-                        key={tileLabel(t)}
-                        tile={t}
-                        onClick={() => addMeldStartingAt(t)}
-                        disabled={(addTo === "run" && suit === "z") || !canAddMeldTile(t)}
-                      />
-                    )
-                  )}
-              </div>
-            ))}
-            {/* Bonus tiles (flowers/seasons) always go to 門前 - they're set
-                aside the moment they're drawn - whatever `addTo` says. */}
-            <div className="suit-row bonus-row">
-              {(["flower", "season"] as const).flatMap((kind) =>
-                ([1, 2, 3, 4] as const).map((rank) => {
-                  const tile: BonusTile = { kind, rank };
-                  return (
-                    <BonusTileButton key={`${kind}${rank}`} tile={tile} onClick={() => addBonusTile(tile)} disabled={hasBonusTile(tile)} />
-                  );
-                })
+          <div className={`hand-region${addTo === "hand" ? " is-target" : ""}`}>
+            <div className="hand-region-head">
+              <span className="hand-region-label">手牌 Concealed</span>
+              {concealedTiles.length > 0 && !nearComplete && <span className="hand-region-hint">Long-press = 食胡</span>}
+              {concealedTiles.length > 0 && (
+                <button
+                  type="button"
+                  className="section-action region-action"
+                  onClick={resetConcealed}
+                  title="Clear the concealed tiles"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+            <div className="hand-display">
+              {concealedTiles.length === 0 ? (
+                <span className="hint">None — pick 手牌 below and tap tiles</span>
+              ) : (
+                // While near-complete, the tile that completes the hand isn't in
+                // hand yet - each projected wait supplies its own 食胡 tile - so the
+                // long-press marker is meaningless here: fall back to plain
+                // tap-to-remove tiles and drop the hint until the hand is whole.
+                (sortTiles(concealedTiles) as HandTile[]).map((t) =>
+                  nearComplete ? (
+                    <HandTileButton key={t.id} tile={t} onClick={() => removeConcealedTile(t.id)} />
+                  ) : (
+                    <WinningTileHandButton
+                      key={t.id}
+                      tile={t}
+                      isWinning={isWinningTile(t)}
+                      onRemove={() => removeConcealedTile(t.id)}
+                      onToggleWinning={() => toggleWinningTile(t)}
+                    />
+                  )
+                )
               )}
             </div>
           </div>
         </div>
-      </CollapsiblePanel>
 
-      <div className="section-head">
-        <span className="section-title">
-          你的牌 <span className="section-title-en">Your hand</span>
-        </span>
-      </div>
+        <div className="section-head">
+          <span className="section-title">
+            選牌 <span className="section-title-en">Add tiles</span>
+          </span>
+          <PickerCollapseToggle collapsed={pickerCollapsed} onToggle={() => setPickerCollapsed((c) => !c)} />
+        </div>
 
-      <div className="card hand-card" ref={handCardRef}>
-        <div className={`hand-region${addTo === "hand" ? "" : " is-target"}`}>
-          <div className="hand-region-head">
-            <span className="hand-region-label">門前 Declared</span>
-            {!declaredEmpty && (
-              <button
-                type="button"
-                className="section-action region-action"
-                onClick={resetDeclared}
-                title="Clear the declared melds and bonus tiles"
-              >
-                Clear
-              </button>
-            )}
-          </div>
-          <div className="hand-display breakdown-groups">
-            {declaredMelds.length === 0 && bonusTiles.length === 0 ? (
-              <span className="hint">None — pick 上 / 碰 / 明槓 / 暗槓 above, or tap a flower.</span>
-            ) : (
-              <>
-                {bonusTiles.length > 0 && (
-                  <div className="breakdown-group bonus-tile-group">
-                    {sortBonusTiles(bonusTiles).map((tile) => (
-                      <button
-                        type="button"
-                        key={`${tile.kind}${tile.rank}`}
-                        className="bonus-tile-remove"
-                        onClick={() => removeBonusTile(tile)}
-                        title={`${bonusTileLabel(tile)} - tap to remove`}
-                      >
-                        <span className="tile-glyph large" data-suit="bonus">
-                          {bonusTileGlyph(tile)}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
+        <CollapsiblePanel open={!pickerCollapsed}>
+          <div className="card picker-card">
+            {/* Where a tap lands, as two separate groups: 手牌 adds one
+                concealed tile; the 門前 group's four meld kinds drop a whole
+                declared meld starting at the tapped tile. Still one tap to any
+                choice - the split and the captions are what keep the two
+                apart. */}
+            <div className="add-to-row">
+              <div className="add-to-group add-to-concealed">
+                <span className="add-to-caption">Concealed</span>
+                <div className="segmented" role="group" aria-label="Add to concealed hand">
+                  <button
+                    type="button"
+                    className={addTo === "hand" ? "toggle-on" : undefined}
+                    aria-pressed={addTo === "hand"}
+                    onClick={() => setAddTo("hand")}
+                    title="Tap a tile to add it to the concealed hand"
+                  >
+                    手牌
+                  </button>
+                </div>
+              </div>
+              <div className="add-to-group add-to-declared">
+                <span className="add-to-caption">門前 Declared</span>
+                <div className="segmented" role="group" aria-label="Declare a meld">
+                  {(["run", "triplet", "exposed-kong", "concealed-kong"] as MeldPickerKind[]).map((k) => (
+                    <button
+                      key={k}
+                      type="button"
+                      className={addTo === k ? "toggle-on" : undefined}
+                      aria-pressed={addTo === k}
+                      onClick={() => {
+                        setAddTo(k);
+                        setMeldKind(k);
+                      }}
+                      title={`Tap a tile to declare a ${MELD_PICKER_LABELS[k]} starting at it`}
+                    >
+                      {MELD_PICKER_LABELS[k]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="tile-picker">
+              {SUIT_ORDER.map((suit) => (
+                <div className="suit-row" key={suit}>
+                  {allTileKinds()
+                    .filter((t) => t.suit === suit)
+                    .map((t) =>
+                      addTo === "hand" ? (
+                        <TileButton
+                          key={tileLabel(t)}
+                          tile={t}
+                          onClick={() => addConcealedTile(t)}
+                          disabled={atCap || totalCopiesUsed(t) >= 4}
+                        />
+                      ) : (
+                        // Honors stay in place (just disabled) for a run, so
+                        // switching kinds never reflows the grid under the finger.
+                        <TileButton
+                          key={tileLabel(t)}
+                          tile={t}
+                          onClick={() => addMeldStartingAt(t)}
+                          disabled={(addTo === "run" && suit === "z") || !canAddMeldTile(t)}
+                        />
+                      )
+                    )}
+                </div>
+              ))}
+              {/* Bonus tiles (flowers/seasons) always go to 門前 - they're set
+                  aside the moment they're drawn - whatever `addTo` says. */}
+              <div className="suit-row bonus-row">
+                {(["flower", "season"] as const).flatMap((kind) =>
+                  ([1, 2, 3, 4] as const).map((rank) => {
+                    const tile: BonusTile = { kind, rank };
+                    return (
+                      <BonusTileButton key={`${kind}${rank}`} tile={tile} onClick={() => addBonusTile(tile)} disabled={hasBonusTile(tile)} />
+                    );
+                  })
                 )}
-                {declaredMelds.map((meld) => (
-                  <DeclaredMeldButton
-                    key={meld.id}
-                    meld={meld}
-                    onRemove={() => removeMeld(meld.id)}
-                    onToggleConcealed={() => toggleMeldConcealed(meld.id)}
-                  />
-                ))}
-              </>
-            )}
+              </div>
+            </div>
           </div>
-        </div>
-        <div className={`hand-region${addTo === "hand" ? " is-target" : ""}`}>
-          <div className="hand-region-head">
-            <span className="hand-region-label">手牌 Concealed</span>
-            {concealedTiles.length > 0 && (
-              <button
-                type="button"
-                className="section-action region-action"
-                onClick={resetConcealed}
-                title="Clear the concealed tiles"
-              >
-                Clear
-              </button>
-            )}
-          </div>
-          <div className="hand-display">
-            {concealedTiles.length === 0 ? (
-              <span className="hint">None — pick 手牌 above and tap tiles.</span>
-            ) : (
-              // While near-complete, the tile that completes the hand isn't in
-              // hand yet - each projected wait supplies its own 食胡 tile - so the
-              // long-press marker is meaningless here: fall back to plain
-              // tap-to-remove tiles and drop the hint until the hand is whole.
-              (sortTiles(concealedTiles) as HandTile[]).map((t) =>
-                nearComplete ? (
-                  <HandTileButton key={t.id} tile={t} onClick={() => removeConcealedTile(t.id)} />
-                ) : (
-                  <WinningTileHandButton
-                    key={t.id}
-                    tile={t}
-                    isWinning={isWinningTile(t)}
-                    onRemove={() => removeConcealedTile(t.id)}
-                    onToggleWinning={() => toggleWinningTile(t)}
-                  />
-                )
-              )
-            )}
-          </div>
-        </div>
-        {concealedTiles.length > 0 && !nearComplete && (
-          <span className="hint card-footnote">Long press the winning tile.</span>
-        )}
+        </CollapsiblePanel>
       </div>
 
       <div className="section-head">
@@ -7170,6 +7265,76 @@ function DiceTab({
   );
 }
 
+// "PATTERNS: 清一色 (one suit)" -> "清一色 (one suit)": the test file's own
+// describe() prefix carries nothing for a reader.
+const testHandGroupLabel = (group: string): string => group.replace(/^PATTERNS:\s*/, "");
+
+// The hidden developer sheet (five taps on the logo): every winning hand from
+// the scoring tests, grouped by test section and searchable, plus a Random
+// pick - for trying the scorer against known decompositions by hand.
+function TestHandsSheet({ onPick, onClose }: { onPick: (hand: TestHand) => void; onClose: () => void }) {
+  const [query, setQuery] = useState("");
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  const q = query.trim().toLowerCase();
+  const matches = q
+    ? TEST_HANDS.filter((t) => `${t.group} ${t.name} ${t.hand}`.toLowerCase().includes(q))
+    : TEST_HANDS;
+  const groups: [string, TestHand[]][] = [];
+  for (const t of matches) {
+    const last = groups[groups.length - 1];
+    if (last && last[0] === t.group) last[1].push(t);
+    else groups.push([t.group, [t]]);
+  }
+  return (
+    <div className="sheet-backdrop" onClick={onClose}>
+      <div className="sheet" role="dialog" aria-modal="true" aria-label="Test hands" onClick={(e) => e.stopPropagation()}>
+        <div className="sheet-header">
+          <span className="sheet-title">Test hands</span>
+          <span className="sheet-subtitle">{TEST_HANDS.length} hands from the scoring tests</span>
+          <button type="button" className="sheet-close" onClick={onClose} aria-label="Close">
+            ✕
+          </button>
+        </div>
+        <button
+          type="button"
+          className="btn-primary sheet-random"
+          onClick={() => onPick(TEST_HANDS[Math.floor(Math.random() * TEST_HANDS.length)])}
+        >
+          Random hand
+        </button>
+        <input
+          className="sheet-search"
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search by pattern, test or tiles (e.g. 嚦咕, 清一色, 111z)"
+          spellCheck={false}
+        />
+        <div className="sheet-list">
+          {groups.length === 0 && <span className="hint">No test hands match.</span>}
+          {groups.map(([group, hands]) => (
+            <div className="test-hand-group" key={group}>
+              <div className="test-hand-group-title">{testHandGroupLabel(group)}</div>
+              {hands.map((t) => (
+                <button type="button" className="test-hand-row" key={t.hand + JSON.stringify(t.ctx)} onClick={() => onPick(t)}>
+                  <span className="test-hand-name">{t.name}</span>
+                  <span className="test-hand-notation">{t.hand}</span>
+                </button>
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 type AppMode = "scoring" | "calculator" | "trainer" | "dice";
 
 // Tab-bar glyphs: 24px line icons drawn in currentColor, so they pick up the
@@ -7259,10 +7424,37 @@ function App() {
   const swapSeats = (a: number, b: number) =>
     setSeatOrder((prev) => prev.map((player, pos) => (pos === a ? prev[b] : pos === b ? prev[a] : player)));
 
+  // Hidden Test hands sheet: five quick taps on the logo (each within 800ms
+  // of the last) open it; picking a hand switches to Scoring and loads it.
+  const [testHandsOpen, setTestHandsOpen] = useState(false);
+  const [testHandRequest, setTestHandRequest] = useState<TestHandRequest | null>(null);
+  const logoTaps = useRef({ count: 0, last: 0 });
+  const onLogoTap = () => {
+    const now = Date.now();
+    const taps = logoTaps.current;
+    taps.count = now - taps.last < 800 ? taps.count + 1 : 1;
+    taps.last = now;
+    if (taps.count >= 5) {
+      taps.count = 0;
+      setTestHandsOpen(true);
+    }
+  };
+  const pickTestHand = (hand: TestHand) => {
+    setTestHandRequest({ hand, nonce: Date.now() });
+    setMode("scoring");
+    setTestHandsOpen(false);
+  };
+
   return (
     <div className="page">
       <header className="app-header">
-        <img className="app-logo" src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" />
+        <img
+          className="app-logo"
+          src={`${import.meta.env.BASE_URL}favicon.svg`}
+          alt=""
+          onClick={onLogoTap}
+          draggable={false}
+        />
         <div className="app-title">
           <h1>MJWaits</h1>
           <span className="app-tagline">HKTW mahjong scoring, waits &amp; trainer</span>
@@ -7287,7 +7479,9 @@ function App() {
           </button>
         ))}
       </nav>
-      {mode === "scoring" && <ScoringPanel />}
+      {mode === "scoring" && (
+        <ScoringPanel testHandRequest={testHandRequest} onTestHandLoaded={() => setTestHandRequest(null)} />
+      )}
       {mode === "calculator" && <Calculator />}
       {mode === "trainer" && (
         <TrainerPanel
@@ -7309,6 +7503,7 @@ function App() {
         />
       )}
       <footer className="build-version">v{__BUILD_TIME__}</footer>
+      {testHandsOpen && <TestHandsSheet onPick={pickTestHand} onClose={() => setTestHandsOpen(false)} />}
     </div>
   );
 }
