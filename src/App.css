@@ -3485,6 +3485,29 @@ button.scoring-pattern-row {
   font-size: 1.95rem;
 }
 
+/* Wide screens: the card has room for all 17 on one line, so 手牌 packs its
+   tiles together and reserves just that one line - still a fixed height,
+   it just never needs the phone layout's second row. */
+@media (min-width: 701px) {
+  .panel .hand-card .hand-display:not(.breakdown-groups) {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 0.15rem;
+    height: 3.1rem;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .panel .hand-card .hand-display:not(.breakdown-groups) .hand-tile-button {
+    width: auto;
+    padding: 0 0.1rem;
+  }
+
+  .panel .hand-card .tile-glyph.large {
+    font-size: 2.3rem;
+  }
+}
+
 .hand-region {
   display: flex;
   flex-direction: column;
