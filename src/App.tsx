@@ -1581,7 +1581,7 @@ const HandScanner = forwardRef<
     regionIssue,
     onConfirm,
     hideTrigger,
-    triggerLabel = "📷 Scan a hand",
+    triggerLabel = "Scan a hand",
     onBusyChange,
     onActiveChange,
     autoApply,
@@ -1973,7 +1973,8 @@ const HandScanner = forwardRef<
         <input ref={libraryFileInputRef} type="file" accept="image/*" onChange={handleScanFile} style={{ display: "none" }} />
         {!hideTrigger && (
           <span className="scan-trigger-group">
-            <button type="button" onClick={triggerScan} disabled={busy}>
+            <button type="button" className="icon-label-button" onClick={triggerScan} disabled={busy}>
+              <ToolbarIcon kind="camera" />
               {scanStatus === "loading" ? scanStatusLabel(scanProgress) : scanStatus === "analyzing" ? "Analyzing layout…" : triggerLabel}
             </button>
             {scanStatus !== "loading" && scanStatus !== "analyzing" && (
@@ -1982,8 +1983,10 @@ const HandScanner = forwardRef<
                 onClick={triggerScanLibrary}
                 disabled={busy}
                 title="Choose an existing photo instead of the camera"
+                className="icon-label-button"
               >
-                🏞️ Photos
+                <ToolbarIcon kind="photos" />
+                Photos
               </button>
             )}
           </span>
@@ -2258,109 +2261,121 @@ function Calculator() {
 
   return (
     <section className="panel">
-        <div className="tile-picker">
-          {SUIT_ORDER.map((suit) => (
-            <div className="suit-row" key={suit}>
-              {allTileKinds()
-                .filter((t) => t.suit === suit)
-                .map((t) => (
+        <div className="card">
+          <div className="tile-picker">
+            {SUIT_ORDER.map((suit) => (
+              <div className="suit-row" key={suit}>
+                {allTileKinds()
+                  .filter((t) => t.suit === suit)
+                  .map((t) => (
+                    <TileButton
+                      key={tileLabel(t)}
+                      tile={t}
+                      onClick={() => addTile(t)}
+                      disabled={hand.length >= COMPLETE_SIZE || tileCount(hand, t) >= 4}
+                    />
+                  ))}
+                {/* The joker shares the honors row, pinned to the last column
+                    (under 9) with one empty slot after 白, rather than taking
+                    a row of its own. */}
+                {suit === "z" && (
                   <TileButton
-                    key={tileLabel(t)}
-                    tile={t}
-                    onClick={() => addTile(t)}
-                    disabled={hand.length >= COMPLETE_SIZE || tileCount(hand, t) >= 4}
+                    tile={JOKER_TILE}
+                    onClick={() => addTile(JOKER_TILE)}
+                    disabled={hand.length >= COMPLETE_SIZE}
+                    extraClass="joker-slot"
                   />
-                ))}
-            </div>
-          ))}
-          <div className="suit-row">
-            <TileButton tile={JOKER_TILE} onClick={() => addTile(JOKER_TILE)} disabled={hand.length >= COMPLETE_SIZE} />
+                )}
+              </div>
+            ))}
           </div>
-        </div>
 
-        <div className="algebraic-input">
-          <label htmlFor="algebraic">Algebraic notation</label>
-          <input
-            id="algebraic"
-            type="text"
-            value={text}
-            onChange={(e) => onTextChange(e.target.value)}
-            placeholder="e.g. 111222333444m11t22b"
-            spellCheck={false}
+          <div className="algebraic-input">
+            <label htmlFor="algebraic">Algebraic notation</label>
+            <input
+              id="algebraic"
+              type="text"
+              value={text}
+              onChange={(e) => onTextChange(e.target.value)}
+              placeholder="e.g. 111222333444m11t22b"
+              spellCheck={false}
+            />
+            {error && <span className="error">{error}</span>}
+          </div>
+
+          <HandScanner
+            onConfirm={(regions) => onTextChange(formatHand(regions.flatMap((r) => r.detections.flatMap((d) => (d.tile ? [d.tile] : [])))))}
+            // A tile count the Calculator can't check waits for (see
+            // isCheckpointSize) almost always means a tile was missed or
+            // doubled - worth the scan's re-check pass.
+            recheckUnless={(regions) => isCheckpointSize(regions.reduce((n, r) => n + r.detections.filter((d) => d.tile).length, 0))}
           />
-          {error && <span className="error">{error}</span>}
+
         </div>
-
-        <HandScanner
-          onConfirm={(regions) => onTextChange(formatHand(regions.flatMap((r) => r.detections.flatMap((d) => (d.tile ? [d.tile] : [])))))}
-          // A tile count the Calculator can't check waits for (see
-          // isCheckpointSize) almost always means a tile was missed or
-          // doubled - worth the scan's re-check pass.
-          recheckUnless={(regions) => isCheckpointSize(regions.reduce((n, r) => n + r.detections.filter((d) => d.tile).length, 0))}
-        />
-
-        <div className="panel-header">
-          <span className="panel-title">Hand</span>
-          <button type="button" onClick={handleReset} disabled={hand.length === 0}>
-            Reset
-          </button>
-          <button
-            type="button"
-            className={sortMode ? "toggle-on" : undefined}
-            onClick={toggleSortMode}
-            aria-pressed={sortMode}
-            title={sortMode ? "Sort: on — new tiles are kept in order" : "Sort: off — new tiles keep input order"}
-          >
-            Sort
-          </button>
-          <button
-            type="button"
-            className={breakdownMode !== "off" ? "toggle-on" : undefined}
-            onClick={() => setBreakdownMode((m) => (m === "off" ? lastBreakdownOrder.current : "off"))}
-            aria-pressed={breakdownMode !== "off"}
-            title={
-              breakdownMode !== "off"
-                ? "Breakdown: on — shows the meld/pair split for each wait"
-                : "Breakdown: off — shows just the waiting tiles"
-            }
-          >
-            Breakdown
-          </button>
-          {breakdownMode !== "off" && (
+        <div className="card">
+          <div className="panel-header">
+            <span className="panel-title">Hand</span>
+            <button type="button" onClick={handleReset} disabled={hand.length === 0}>
+              Reset
+            </button>
             <button
               type="button"
-              className="icon-toggle"
-              onClick={() =>
-                setBreakdownMode((m) => {
-                  const next: BreakdownOrder = m === "sorted" ? "on" : "sorted";
-                  lastBreakdownOrder.current = next;
-                  return next;
-                })
-              }
-              aria-pressed={breakdownMode === "sorted"}
-              title={BREAKDOWN_ORDER_TITLE[breakdownMode as BreakdownOrder]}
+              className={sortMode ? "toggle-on" : undefined}
+              onClick={toggleSortMode}
+              aria-pressed={sortMode}
+              title={sortMode ? "Sort: on — new tiles are kept in order" : "Sort: off — new tiles keep input order"}
             >
-              ↔
+              Sort
             </button>
-          )}
-          <span className="tile-count">
-            {hand.length} / {COMPLETE_SIZE} tiles
-          </span>
-          {shantenValue !== null && (
-            <span
-              className="shanten-badge"
-              title="Shanten: minimum discard+draw exchanges from tenpai. Covers the standard shape, Eight Pairs, and Sixteen Unrelated Tiles; doesn't yet account for jokers or Thirteen Orphans."
+            <button
+              type="button"
+              className={breakdownMode !== "off" ? "toggle-on" : undefined}
+              onClick={() => setBreakdownMode((m) => (m === "off" ? lastBreakdownOrder.current : "off"))}
+              aria-pressed={breakdownMode !== "off"}
+              title={
+                breakdownMode !== "off"
+                  ? "Breakdown: on — shows the meld/pair split for each wait"
+                  : "Breakdown: off — shows just the waiting tiles"
+              }
             >
-              Shanten {shantenValue}
+              Breakdown
+            </button>
+            {breakdownMode !== "off" && (
+              <button
+                type="button"
+                className="icon-toggle"
+                onClick={() =>
+                  setBreakdownMode((m) => {
+                    const next: BreakdownOrder = m === "sorted" ? "on" : "sorted";
+                    lastBreakdownOrder.current = next;
+                    return next;
+                  })
+                }
+                aria-pressed={breakdownMode === "sorted"}
+                title={BREAKDOWN_ORDER_TITLE[breakdownMode as BreakdownOrder]}
+              >
+                ↔
+              </button>
+            )}
+            <span className="tile-count">
+              {hand.length} / {COMPLETE_SIZE} tiles
             </span>
-          )}
-        </div>
+            {shantenValue !== null && (
+              <span
+                className="shanten-badge"
+                title="Shanten: minimum discard+draw exchanges from tenpai. Covers the standard shape, Eight Pairs, and Sixteen Unrelated Tiles; doesn't yet account for jokers or Thirteen Orphans."
+              >
+                Shanten {shantenValue}
+              </span>
+            )}
+          </div>
 
-        <div className="hand-display">
-          {hand.length === 0 && <span className="hint">Click tiles above, or type algebraic notation.</span>}
-          {displayHand.map((t) => (
-            <HandTileButton key={t.id} tile={t} onClick={() => removeTile(t.id)} />
-          ))}
+          <div className="hand-display">
+            {hand.length === 0 && <span className="hint">Click tiles above, or type algebraic notation.</span>}
+            {displayHand.map((t) => (
+              <HandTileButton key={t.id} tile={t} onClick={() => removeTile(t.id)} />
+            ))}
+          </div>
         </div>
 
         {outcome !== null && outcome.overflowed && (
@@ -2711,7 +2726,7 @@ function WaitsTrainer({
   return (
     <>
       <div className="panel-header">
-        <div className="trainer-levels">
+        <div className="segmented trainer-levels">
           {Array.from({ length: MAX_TRAINER_LEVEL - MIN_TRAINER_LEVEL + 1 }, (_, i) => MIN_TRAINER_LEVEL + i).map(
             (lvl) => (
               <button
@@ -2739,7 +2754,7 @@ function WaitsTrainer({
       </div>
 
       <div className="panel-header">
-        <button type="button" onClick={() => newQuestion(level, flush)}>
+        <button type="button" className="btn-primary" onClick={() => newQuestion(level, flush)}>
           {submitted ? "Next Question" : "New Hand"}
         </button>
         {question && <span className="tile-count">Time: {formatSeconds(elapsedMs)}</span>}
@@ -2998,7 +3013,7 @@ function DiscardTrainer({
   return (
     <>
       <div className="panel-header">
-        <div className="trainer-levels">
+        <div className="segmented trainer-levels">
           {Array.from({ length: MAX_TRAINER_LEVEL - MIN_TRAINER_LEVEL + 1 }, (_, i) => MIN_TRAINER_LEVEL + i).map((lvl) => (
             <button
               key={lvl}
@@ -3024,7 +3039,7 @@ function DiscardTrainer({
       </div>
 
       <div className="panel-header">
-        <button type="button" onClick={() => newQuestion(level, flush)}>
+        <button type="button" className="btn-primary" onClick={() => newQuestion(level, flush)}>
           {submitted ? "Next Question" : "New Hand"}
         </button>
         {question && <span className="tile-count">Time: {formatSeconds(elapsedMs)}</span>}
@@ -3623,7 +3638,7 @@ function TrainerPanel({
   const [sub, setSub] = useState<"waits" | "discards" | "endless">("waits");
   return (
     <section className="panel trainer-panel">
-      <div className="mode-tabs sub-tabs">
+      <div className="segmented sub-tabs">
         <button
           type="button"
           className={sub === "waits" ? "toggle-on" : undefined}
@@ -3649,12 +3664,14 @@ function TrainerPanel({
           Endless
         </button>
       </div>
-      {sub === "waits" && <WaitsTrainer stats={waitsStats} setStats={setWaitsStats} />}
-      {sub === "discards" && <DiscardTrainer stats={discardStats} setStats={setDiscardStats} />}
-      {/* Endless stays mounted so a hand in progress survives a sub-tab switch;
-          `display: contents` keeps its children laid out as if direct siblings. */}
-      <div style={{ display: sub === "endless" ? "contents" : "none" }}>
-        <EndlessTrainer stats={endlessStats} setStats={setEndlessStats} active={sub === "endless"} />
+      <div className="card">
+        {sub === "waits" && <WaitsTrainer stats={waitsStats} setStats={setWaitsStats} />}
+        {sub === "discards" && <DiscardTrainer stats={discardStats} setStats={setDiscardStats} />}
+        {/* Endless stays mounted so a hand in progress survives a sub-tab switch;
+            `display: contents` keeps its children laid out as if direct siblings. */}
+        <div style={{ display: sub === "endless" ? "contents" : "none" }}>
+          <EndlessTrainer stats={endlessStats} setStats={setEndlessStats} active={sub === "endless"} />
+        </div>
       </div>
     </section>
   );
@@ -3663,22 +3680,40 @@ function TrainerPanel({
 const WIND_LABELS: Record<Wind, string> = { 1: "East", 2: "South", 3: "West", 4: "North" };
 const WIND_SHORT: Record<Wind, string> = { 1: "東", 2: "南", 3: "西", 4: "北" };
 
-function WindPicker({ label, value, onChange }: { label: string; value: Wind; onChange: (w: Wind) => void }) {
+// Round / seat wind: a caption over an iOS segmented control of the four
+// wind characters - one tap picks.
+function WindPicker({
+  label,
+  zh,
+  value,
+  onChange,
+}: {
+  label: string;
+  zh: string;
+  value: Wind;
+  onChange: (w: Wind) => void;
+}) {
   return (
-    <div className="wind-picker">
-      <span className="wind-picker-label">{label}</span>
-      {([1, 2, 3, 4] as Wind[]).map((w) => (
-        <button
-          key={w}
-          type="button"
-          className={value === w ? "toggle-on" : undefined}
-          aria-pressed={value === w}
-          onClick={() => onChange(w)}
-          title={WIND_LABELS[w]}
-        >
-          {WIND_SHORT[w]}
-        </button>
-      ))}
+    <div className="wind-picker" role="group" aria-label={label}>
+      <span className="wind-picker-label">
+        <span className="wind-picker-zh">{zh}</span>
+        <span className="wind-picker-en">{label}</span>
+      </span>
+      <div className="segmented wind-segmented">
+        {([1, 2, 3, 4] as Wind[]).map((w) => (
+          <button
+            key={w}
+            type="button"
+            className={value === w ? "toggle-on" : undefined}
+            aria-pressed={value === w}
+            aria-label={`${label}: ${WIND_LABELS[w]}`}
+            onClick={() => onChange(w)}
+            title={`${WIND_SHORT[w]} ${WIND_LABELS[w]}`}
+          >
+            {WIND_SHORT[w]}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -3688,14 +3723,22 @@ function WindPicker({ label, value, onChange }: { label: string; value: Wind; on
 // either way, this only hides the (often multi-row, space-hungry) tap-to-
 // add grid once its tiles are already chosen. A plain chevron icon-toggle,
 // same idiom as the Calculator tab's Breakdown-order icon-toggle.
-function PickerCollapseToggle({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
+function PickerCollapseToggle({
+  collapsed,
+  onToggle,
+  label = "tile picker",
+}: {
+  collapsed: boolean;
+  onToggle: () => void;
+  label?: string;
+}) {
   return (
     <button
       type="button"
       className={`icon-toggle${collapsed ? "" : " open"}`}
       onClick={onToggle}
       aria-expanded={!collapsed}
-      title={collapsed ? "Show tile picker" : "Hide tile picker"}
+      title={collapsed ? `Show ${label}` : `Hide ${label}`}
     >
       ▸
     </button>
@@ -3744,7 +3787,7 @@ interface DeclaredMeldTile {
 // out, not as a modifier of Kong - see git history). scoring.ts's own
 // MeldKind stays a plain "triplet" | "run" | "kong" (concealed/exposed is
 // a separate `concealed` field there, on MeldDeclaration) - this is a
-// UI-only split, collapsed back via meldPickerUnderlyingKind below.
+// UI-only split, collapsed back in addMeldStartingAt.
 type MeldPickerKind = "run" | "triplet" | "concealed-kong" | "exposed-kong";
 const MELD_PICKER_LABELS: Record<MeldPickerKind, string> = {
   run: "上",
@@ -3752,7 +3795,6 @@ const MELD_PICKER_LABELS: Record<MeldPickerKind, string> = {
   "concealed-kong": "暗槓",
   "exposed-kong": "明槓",
 };
-const meldPickerUnderlyingKind = (k: MeldPickerKind): MeldKind => (k === "run" || k === "triplet" ? k : "kong");
 const meldPickerIsConcealed = (k: MeldPickerKind): boolean => k === "concealed-kong";
 
 // 叮's declared state cycles through these 4 steps on each tap, wrapping
@@ -3841,18 +3883,6 @@ const VISIBLE_EXHAUST_LABELS: Record<VisibleExhaustState, string> = {
   triple: "明絕",
   exhausted: "絕絕",
 };
-
-// Whichever suit rows make sense to offer for the currently-selected meld
-// kind: runs only exist in numbered suits, so the honor row is dropped
-// entirely for run mode. Rank 8/9 stay in the row (unlike honors, hiding
-// individual tiles out of an otherwise-populated row reflows the rest of
-// that row, which reads as tiles randomly vanishing) - canAddMeldTile
-// disables them instead, since a run can't start there (no room for the
-// next two ranks within 1-9).
-function meldPickerTiles(kind: MeldKind): Tile[] {
-  const all = allTileKinds();
-  return kind === "run" ? all.filter((t) => t.suit !== "z") : all;
-}
 
 // Glyphs + English names for the 8 bonus tiles, keyed by `rank` = the NUMBER
 // PAINTED ON THE TILE. That painted number is what the vision model reports
@@ -4156,37 +4186,6 @@ function ScoringBreakdown({
   };
   return (
     <>
-      <div className="waits breakdown-list">
-        <div className="projected-waits-header">
-          <span className="waits-label">Patterns:</span>
-          {matched.length > 1 && (
-            <button
-              type="button"
-              className="projected-sort-toggle"
-              onClick={() => setPatternSort((s) => patternSortCycle[(patternSortCycle.indexOf(s) + 1) % patternSortCycle.length])}
-              title={patternSortTitle[patternSort]}
-            >
-              {patternSortLabel[patternSort]}
-            </button>
-          )}
-        </div>
-        {matched.length === 0 ? (
-          <span className="hint">No patterns matched yet — this is an early version, more get added over time.</span>
-        ) : (
-          displayedMatched.map(({ pattern, tai }) => (
-            <PatternRow
-              key={pattern.id}
-              pattern={pattern}
-              tai={tai}
-              hand={hand}
-              ctx={ctx}
-              onGroupPressStart={setPressedGroup}
-              onGroupPressEnd={() => setPressedGroup(null)}
-            />
-          ))
-        )}
-      </div>
-
       <div className="hand-sections">
         <div className="hand-section declared-section">
           <span className="hand-section-label">Declared</span>
@@ -4241,6 +4240,36 @@ function ScoringBreakdown({
             </span>
           </div>
         </div>
+      </div>
+      <div className="waits breakdown-list">
+        <div className="projected-waits-header">
+          <span className="waits-label">Patterns</span>
+          {matched.length > 1 && (
+            <button
+              type="button"
+              className="projected-sort-toggle"
+              onClick={() => setPatternSort((s) => patternSortCycle[(patternSortCycle.indexOf(s) + 1) % patternSortCycle.length])}
+              title={patternSortTitle[patternSort]}
+            >
+              {patternSortLabel[patternSort]}
+            </button>
+          )}
+        </div>
+        {matched.length === 0 ? (
+          <span className="hint">No patterns matched yet — this is an early version, more get added over time.</span>
+        ) : (
+          displayedMatched.map(({ pattern, tai }) => (
+            <PatternRow
+              key={pattern.id}
+              pattern={pattern}
+              tai={tai}
+              hand={hand}
+              ctx={ctx}
+              onGroupPressStart={setPressedGroup}
+              onGroupPressEnd={() => setPressedGroup(null)}
+            />
+          ))
+        )}
       </div>
     </>
   );
@@ -4474,6 +4503,33 @@ function ProjectedWaitRow({
 // freeTiles/declaredMelds split, just built by tapping instead of typed
 // notation (see scoring.ts's parseScoringHand for the equivalent text
 // grammar, still used by scoreHand/tests).
+// Small line icons for the Scoring toolbar's Reset / Scan / Photos buttons.
+function ToolbarIcon({ kind }: { kind: "reset" | "camera" | "photos" }) {
+  return (
+    <svg className="toolbar-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {kind === "reset" && (
+        <>
+          <path d="M4 12a8 8 0 1 0 2.4-5.7" />
+          <path d="M4 4v4.5h4.5" />
+        </>
+      )}
+      {kind === "camera" && (
+        <>
+          <path d="M4 8.5A1.5 1.5 0 0 1 5.5 7h2.2l1.5-2h5.6l1.5 2h2.2A1.5 1.5 0 0 1 20 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17.5z" />
+          <circle cx="12" cy="13" r="3.3" />
+        </>
+      )}
+      {kind === "photos" && (
+        <>
+          <rect x="3.5" y="5" width="17" height="14" rx="2" />
+          <circle cx="9" cy="10" r="1.6" />
+          <path d="M20.5 16l-5-5-8 8" />
+        </>
+      )}
+    </svg>
+  );
+}
+
 function ScoringPanel() {
   const [concealedTiles, setConcealedTiles] = useState<HandTile[]>([]);
   const [declaredMelds, setDeclaredMelds] = useState<DeclaredMeldTile[]>([]);
@@ -4669,6 +4725,26 @@ function ScoringPanel() {
   // The scan trigger button lives in the panel header (next to Reset)
   // rather than HandScanner's own built-in one - see HandScannerHandle.
   const handScannerRef = useRef<HandScannerHandle>(null);
+  const resultRef = useRef<HTMLDivElement>(null);
+  const toolbarRef = useRef<HTMLDivElement>(null);
+  // The "Your hand" card, watched so the toolbar's compact hand strip only
+  // shows while the card itself is out of view (scrolled up past it, or
+  // still below the picker on a short phone) - never the hand twice.
+  const handCardRef = useRef<HTMLDivElement>(null);
+  const [handCardVisible, setHandCardVisible] = useState(true);
+  useEffect(() => {
+    const el = handCardRef.current;
+    if (!el || typeof IntersectionObserver === "undefined") return;
+    // Insets roughly cover the sticky toolbar above and the phone tab bar
+    // below, so a card hidden behind either still counts as out of view; a
+    // sliver peeking out doesn't count as seen either.
+    const observer = new IntersectionObserver(
+      ([entry]) => setHandCardVisible(entry.isIntersecting && entry.intersectionRect.height > 64),
+      { rootMargin: "-72px 0px -96px 0px", threshold: [0, 0.1, 0.25, 0.5, 1] }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
   const [scanBusy, setScanBusy] = useState(false);
   // Broader than scanBusy - also true while the scan flow is sitting on a
   // finished review or an error, not just mid-crop/mid-detect. Keeps Reset
@@ -4676,13 +4752,13 @@ function ScoringPanel() {
   // cancels it) even when the hand itself is still empty and would
   // otherwise leave Reset looking like there's nothing to do.
   const [scanActive, setScanActive] = useState(false);
-  // Each tile-picker grid (declared melds, bonus tiles, concealed hand)
-  // can be collapsed independently to reclaim vertical space once its
-  // tiles are already picked - the already-added melds/hand display
-  // itself stays visible either way, only the tap-to-add grid hides.
-  const [declaredPickerCollapsed, setDeclaredPickerCollapsed] = useState(false);
-  const [bonusPickerCollapsed, setBonusPickerCollapsed] = useState(false);
-  const [concealedPickerCollapsed, setConcealedPickerCollapsed] = useState(false);
+  // One shared tile picker feeds both regions: `addTo` says whether a tap
+  // adds a concealed tile ("hand") or starts a declared meld of that kind.
+  // The whole picker collapses to reclaim vertical space once the tiles are
+  // picked - the 門前/手牌 display below it stays visible either way.
+  const [addTo, setAddTo] = useState<"hand" | MeldPickerKind>("hand");
+  const [pickerCollapsed, setPickerCollapsed] = useState(false);
+  const [situationCollapsed, setSituationCollapsed] = useState(false);
 
   // Mirrors the three state arrays above, updated synchronously - same
   // reason Calculator's handRef exists (see its comment at handRef's
@@ -4832,7 +4908,7 @@ function ScoringPanel() {
     if (meldKind === "triplet") return totalCopiesUsed(tile) + 3 <= 4;
     if (meldKind === "concealed-kong" || meldKind === "exposed-kong") return totalCopiesUsed(tile) === 0;
     // A run starting at rank 8 or 9 would need a rank 10 or 11 tile, which
-    // doesn't exist - meldPickerTiles keeps these tiles visible (rather
+    // doesn't exist - the picker keeps these tiles visible (rather
     // than hiding them, which reflows the rest of the row) so this needs
     // its own explicit range check; totalCopiesUsed alone wouldn't catch
     // it (an out-of-range rank just always reads as "0 copies used").
@@ -4841,14 +4917,10 @@ function ScoringPanel() {
     return run.every((t) => totalCopiesUsed(t) + 1 <= 4);
   };
 
-  const handleReset = () => {
-    concealedRef.current = [];
-    declaredRef.current = [];
-    bonusRef.current = [];
-    setConcealedTiles([]);
-    setDeclaredMelds([]);
-    setBonusTiles([]);
-    setWinningTile(null);
+  // Everything in the Situation card - both winds back to 東 and every
+  // situational declaration (莊, 自摸, 叮, … 明絕) off. Shared by that card's
+  // own Reset and the toolbar's full Reset.
+  const resetConditions = () => {
     setSeatWind(1);
     setRoundWind(1);
     setSelfDraw(false);
@@ -4864,6 +4936,48 @@ function ScoringPanel() {
     setRobKong(0);
     setDealerStreak(0);
     setManualVisibleExhaust("none");
+  };
+  const conditionsAtDefault =
+    seatWind === 1 &&
+    roundWind === 1 &&
+    !selfDraw &&
+    riichi === "none" &&
+    !instantWin &&
+    !eatRiichi &&
+    earlyWin === "none" &&
+    multiWin === "none" &&
+    heavenlyWin === "none" &&
+    lastTileWin === "none" &&
+    flowerDraw === 0 &&
+    kongDraw === 0 &&
+    robKong === 0 &&
+    dealerStreak === 0 &&
+    manualVisibleExhaust === "none";
+
+  // Per-region clears for the "Your hand" card. 門前 = the declared melds
+  // plus bonus tiles; 手牌 = the concealed tiles plus their 食胡 mark. The
+  // Situation card is left alone - 花摸/槓摸 clamp themselves to whatever
+  // bonus tiles/kongs remain on their own (see the effect above).
+  const resetDeclared = () => {
+    declaredRef.current = [];
+    bonusRef.current = [];
+    setDeclaredMelds([]);
+    setBonusTiles([]);
+  };
+  const resetConcealed = () => {
+    concealedRef.current = [];
+    setConcealedTiles([]);
+    setWinningTile(null);
+  };
+  const declaredEmpty = declaredMelds.length === 0 && bonusTiles.length === 0;
+  const handEmpty = declaredEmpty && concealedTiles.length === 0;
+
+  // Everything, plus any scan in progress (which would otherwise drop its
+  // tiles straight back in).
+  const handleReset = () => {
+    resetDeclared();
+    resetConcealed();
+    resetConditions();
     handScannerRef.current?.reset();
   };
 
@@ -4985,7 +5099,7 @@ function ScoringPanel() {
       const winningKind = outlier?.tile ?? (isPairOnlyRow(concealedRegion.detections) ? concealedRegion.detections[0].tile : null);
       const winningMatch = winningKind ? nextConcealed.find((t) => t.suit === winningKind.suit && t.rank === winningKind.rank) : undefined;
       setWinningTile(winningMatch ?? null);
-      setConcealedPickerCollapsed(true);
+      setPickerCollapsed(true);
     }
     let declaredBonus: BonusTile[] | null = null;
     if (declaredRegion) {
@@ -4995,7 +5109,7 @@ function ScoringPanel() {
       declaredRef.current = nextDeclared;
       setDeclaredMelds(nextDeclared);
       declaredBonus = bonusTiles;
-      setDeclaredPickerCollapsed(true);
+      setPickerCollapsed(true);
     }
     const nextBonus = scannedBonusTiles(concealedRegion?.detections ?? [], declaredBonus);
     if (nextBonus) {
@@ -5305,48 +5419,127 @@ function ScoringPanel() {
     if (nextEffective === "none" && robKong > 0) setRobKong(0);
   };
 
+  // What the collapsed Situation card lists: each declaration that's on, by
+  // the same label its chip shows.
+  const activeConditionLabels = [
+    dealerStreak > 0 && dealerStreakLabel(dealerStreak),
+    effectiveSelfDraw && "自摸",
+    riichi !== "none" && RIICHI_LABELS[riichi],
+    instantWin && "一發",
+    eatRiichi && "食叮",
+    earlyWin !== "none" && EARLY_WIN_LABELS[earlyWin],
+    multiWin !== "none" && MULTI_WIN_LABELS[multiWin],
+    heavenlyWin !== "none" && HEAVENLY_WIN_LABELS[heavenlyWin],
+    lastTileWin !== "none" && LAST_TILE_WIN_LABELS[lastTileWin],
+    flowerDraw > 0 && countLabel("花摸", flowerDraw),
+    kongDraw > 0 && countLabel("槓摸", kongDraw),
+    robKong > 0 && countLabel("搶槓", robKong),
+    visibleExhaustEffective !== "none" && VISIBLE_EXHAUST_LABELS[visibleExhaustEffective],
+  ].filter((l): l is string => typeof l === "string");
+
   return (
     <section className="panel scoring-panel">
-      <div className="panel-header hand-actions-row">
+      <div className="scoring-toolbar" ref={toolbarRef}>
         <button
           type="button"
+          className="toolbar-button toolbar-reset"
+          title="Reset the hand, winds and declarations"
           onClick={handleReset}
-          disabled={
-            concealedTiles.length === 0 &&
-            declaredMelds.length === 0 &&
-            bonusTiles.length === 0 &&
-            seatWind === 1 &&
-            roundWind === 1 &&
-            !selfDraw &&
-            riichi === "none" &&
-            earlyWin === "none" &&
-            multiWin === "none" &&
-            heavenlyWin === "none" &&
-            lastTileWin === "none" &&
-            flowerDraw === 0 &&
-            kongDraw === 0 &&
-            robKong === 0 &&
-            dealerStreak === 0 &&
-            manualVisibleExhaust === "none" &&
-            !scanActive
-          }
+          disabled={handEmpty && conditionsAtDefault && !scanActive}
         >
-          🔄 Reset
+          <ToolbarIcon kind="reset" />
+          <span className="toolbar-label">Reset</span>
         </button>
-        <button type="button" onClick={() => handScannerRef.current?.trigger()} disabled={scanBusy}>
-          📷 Scan
+        <button type="button" className="toolbar-button" onClick={() => handScannerRef.current?.trigger()} disabled={scanBusy}>
+          <ToolbarIcon kind="camera" />
+          <span className="toolbar-label">Scan</span>
         </button>
         {/* The camera sheet 📷 Scan opens (capture="environment") is
             camera-only on iOS Safari - no way back to an existing photo
             from inside it - so this is the separate escape hatch straight
             to the OS's own photo picker for someone who already has the
             shot taken. */}
-        <button type="button" onClick={() => handScannerRef.current?.triggerLibrary()} disabled={scanBusy} title="Choose an existing photo instead of the camera">
-          🏞️ Photos
+        <button
+          type="button"
+          className="toolbar-button toolbar-photos"
+          onClick={() => handScannerRef.current?.triggerLibrary()}
+          disabled={scanBusy}
+          title="Choose an existing photo instead of the camera"
+        >
+          <ToolbarIcon kind="photos" />
+          <span className="toolbar-label">Photos</span>
         </button>
-        <span className="tile-count">
-          {totalTiles} / {requiredSize} tiles
+        <span className="toolbar-status">
+          {/* The tile count while entering, then the total in its place once
+              the hand scores (a scored hand is always complete, so the count
+              would only repeat it). The total stays in reach while scrolled
+              up at the picker; tapping it jumps down to the full result. */}
+          {!scoring?.ok && (
+            <span className={`tile-count-pill${totalTiles === requiredSize ? " is-full" : ""}`}>
+              {totalTiles}/{requiredSize}
+            </span>
+          )}
+          {scoring?.ok && (
+            <button
+              type="button"
+              className="toolbar-total"
+              onClick={() => {
+                // Lands the total just below whatever is pinned above it - the
+                // toolbar plus the hand strip, whose height varies with the
+                // hand - measured now rather than guessed with a fixed offset.
+                const hero = resultRef.current;
+                if (!hero) return;
+                const pinned = [toolbarRef.current, toolbarRef.current?.querySelector(".hand-strip-wrap.open")];
+                const pinnedBottom = Math.max(0, ...pinned.map((el) => el?.getBoundingClientRect().bottom ?? 0));
+                window.scrollBy({ top: hero.getBoundingClientRect().top - pinnedBottom - 12, behavior: "smooth" });
+              }}
+              title="Jump to the score breakdown"
+            >
+              {scoring.result.total}
+              <span className="visually-hidden"> tai</span>
+            </button>
+          )}
         </span>
+        <CollapsiblePanel open={!handCardVisible && totalTiles > 0} className="hand-strip-wrap">
+          <button
+            type="button"
+            className="hand-strip"
+            onClick={() => handCardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
+            title="Jump to your hand"
+            tabIndex={handCardVisible ? -1 : undefined}
+          >
+            {/* One row per region, in table order: bonus tiles, then the
+                declared melds, then the concealed tiles (wrapping onto a
+                second line when the hand is long). */}
+            {bonusTiles.length > 0 && (
+              <span className="hand-strip-row">
+                {sortBonusTiles(bonusTiles).map((tile) => (
+                  <span key={`${tile.kind}${tile.rank}`} className="tile-glyph" data-suit="bonus" role="img" aria-label={bonusTileLabel(tile)}>
+                    {bonusTileGlyph(tile)}
+                  </span>
+                ))}
+              </span>
+            )}
+            {declaredMelds.length > 0 && (
+              <span className="hand-strip-row hand-strip-melds">
+                {declaredMelds.map((meld) => (
+                  <span key={meld.id} className={`hand-strip-group${meld.concealed ? " concealed-kong-meld" : ""}`}>
+                    {meld.tiles.map((t, i) => (
+                      <TileGlyphSpan key={i} tile={t} />
+                    ))}
+                  </span>
+                ))}
+              </span>
+            )}
+            {concealedTiles.length > 0 && (
+              <span className="hand-strip-row">
+                {(sortTiles(concealedTiles) as HandTile[]).map((t) => (
+                  <TileGlyphSpan key={t.id} tile={t} highlight={!nearComplete && isWinningTile(t)} />
+                ))}
+              </span>
+            )}
+          </button>
+        </CollapsiblePanel>
       </div>
 
       <HandScanner
@@ -5360,354 +5553,470 @@ function ScoringPanel() {
         autoApply={isScannedHandWinning}
       />
 
-      <div className="panel-header">
-        <span className="panel-title">門前牌區 (Declared melds)</span>
-        <PickerCollapseToggle collapsed={declaredPickerCollapsed} onToggle={() => setDeclaredPickerCollapsed((c) => !c)} />
+      <div className="section-head">
+        <span className="section-title">
+          選牌 <span className="section-title-en">Add tiles</span>
+        </span>
+        <PickerCollapseToggle collapsed={pickerCollapsed} onToggle={() => setPickerCollapsed((c) => !c)} />
       </div>
 
-      <CollapsiblePanel open={!declaredPickerCollapsed} className="meld-kind-collapsible">
-        <div className="panel-header meld-kind-row">
-          {(["run", "triplet", "exposed-kong", "concealed-kong"] as MeldPickerKind[]).map((k) => (
-            <button
-              key={k}
-              type="button"
-              className={meldKind === k ? "toggle-on" : undefined}
-              aria-pressed={meldKind === k}
-              onClick={() => setMeldKind(k)}
-            >
-              {MELD_PICKER_LABELS[k]}
-            </button>
-          ))}
-        </div>
-
-        <div className="tile-picker">
-          {(["m", "t", "b", "z"] as Suit[])
-            .filter((suit) => meldKind !== "run" || suit !== "z")
-            .map((suit) => (
-              <div className="suit-row" key={suit}>
-                {meldPickerTiles(meldPickerUnderlyingKind(meldKind))
-                  .filter((t) => t.suit === suit)
-                  .map((t) => (
-                    <TileButton key={tileLabel(t)} tile={t} onClick={() => addMeldStartingAt(t)} disabled={!canAddMeldTile(t)} />
-                  ))}
+      <CollapsiblePanel open={!pickerCollapsed}>
+        <div className="card picker-card">
+          {/* Where a tap lands, as two separate groups: 手牌 adds one
+              concealed tile; the 門前 group's four meld kinds drop a whole
+              declared meld starting at the tapped tile. Still one tap to any
+              choice - the split and the captions are what keep the two
+              apart. */}
+          <div className="add-to-row">
+            <div className="add-to-group add-to-concealed">
+              <span className="add-to-caption">Concealed</span>
+              <div className="segmented" role="group" aria-label="Add to concealed hand">
+                <button
+                  type="button"
+                  className={addTo === "hand" ? "toggle-on" : undefined}
+                  aria-pressed={addTo === "hand"}
+                  onClick={() => setAddTo("hand")}
+                  title="Tap a tile to add it to the concealed hand"
+                >
+                  手牌
+                </button>
               </div>
-            ))}
-        </div>
-
-        {/* Bonus tiles (flowers/seasons) - set aside in this same 門前 area the
-            moment they're drawn, but not melds themselves, so they get their
-            own collapsible picker independent of the Triplet/Run/Kong one
-            above. */}
-        <div className="panel-header bonus-tile-row">
-          <span className="panel-subtitle">Bonus tiles</span>
-          <PickerCollapseToggle collapsed={bonusPickerCollapsed} onToggle={() => setBonusPickerCollapsed((c) => !c)} />
-        </div>
-
-        <CollapsiblePanel open={!bonusPickerCollapsed}>
-          <div className="tile-picker">
-            <div className="suit-row">
-              {([1, 2, 3, 4] as const).map((rank) => {
-                const tile: BonusTile = { kind: "flower", rank };
-                return <BonusTileButton key={`flower${rank}`} tile={tile} onClick={() => addBonusTile(tile)} disabled={hasBonusTile(tile)} />;
-              })}
             </div>
-            <div className="suit-row">
-              {([1, 2, 3, 4] as const).map((rank) => {
-                const tile: BonusTile = { kind: "season", rank };
-                return <BonusTileButton key={`season${rank}`} tile={tile} onClick={() => addBonusTile(tile)} disabled={hasBonusTile(tile)} />;
-              })}
-            </div>
-          </div>
-        </CollapsiblePanel>
-      </CollapsiblePanel>
-
-      <div className="hand-display breakdown-groups">
-        {declaredMelds.length === 0 && bonusTiles.length === 0 ? (
-          <span className="hint">Tap to add declared melds.</span>
-        ) : (
-          <>
-            {bonusTiles.length > 0 && (
-              <div className="breakdown-group bonus-tile-group">
-                {sortBonusTiles(bonusTiles).map((tile) => (
+            <div className="add-to-group add-to-declared">
+              <span className="add-to-caption">門前 Declared</span>
+              <div className="segmented" role="group" aria-label="Declare a meld">
+                {(["run", "triplet", "exposed-kong", "concealed-kong"] as MeldPickerKind[]).map((k) => (
                   <button
+                    key={k}
                     type="button"
-                    key={`${tile.kind}${tile.rank}`}
-                    className="bonus-tile-remove"
-                    onClick={() => removeBonusTile(tile)}
-                    title={`${bonusTileLabel(tile)} - tap to remove`}
+                    className={addTo === k ? "toggle-on" : undefined}
+                    aria-pressed={addTo === k}
+                    onClick={() => {
+                      setAddTo(k);
+                      setMeldKind(k);
+                    }}
+                    title={`Tap a tile to declare a ${MELD_PICKER_LABELS[k]} starting at it`}
                   >
-                    <span className="tile-glyph large" data-suit="bonus">
-                      {bonusTileGlyph(tile)}
-                    </span>
+                    {MELD_PICKER_LABELS[k]}
                   </button>
                 ))}
               </div>
-            )}
-            {declaredMelds.map((meld) => (
-              <DeclaredMeldButton
-                key={meld.id}
-                meld={meld}
-                onRemove={() => removeMeld(meld.id)}
-                onToggleConcealed={() => toggleMeldConcealed(meld.id)}
-              />
-            ))}
-          </>
-        )}
-      </div>
-
-      <div className="panel-header">
-        <span className="panel-title">手牌區 (Concealed hand)</span>
-        <PickerCollapseToggle collapsed={concealedPickerCollapsed} onToggle={() => setConcealedPickerCollapsed((c) => !c)} />
-      </div>
-
-      <CollapsiblePanel open={!concealedPickerCollapsed}>
-        <div className="tile-picker">
-          {SUIT_ORDER.map((suit) => (
-            <div className="suit-row" key={suit}>
-              {allTileKinds()
-                .filter((t) => t.suit === suit)
-                .map((t) => (
-                  <TileButton
-                    key={tileLabel(t)}
-                    tile={t}
-                    onClick={() => addConcealedTile(t)}
-                    disabled={atCap || totalCopiesUsed(t) >= 4}
-                  />
-                ))}
             </div>
-          ))}
+          </div>
+
+          <div className="tile-picker">
+            {SUIT_ORDER.map((suit) => (
+              <div className="suit-row" key={suit}>
+                {allTileKinds()
+                  .filter((t) => t.suit === suit)
+                  .map((t) =>
+                    addTo === "hand" ? (
+                      <TileButton
+                        key={tileLabel(t)}
+                        tile={t}
+                        onClick={() => addConcealedTile(t)}
+                        disabled={atCap || totalCopiesUsed(t) >= 4}
+                      />
+                    ) : (
+                      // Honors stay in place (just disabled) for a run, so
+                      // switching kinds never reflows the grid under the finger.
+                      <TileButton
+                        key={tileLabel(t)}
+                        tile={t}
+                        onClick={() => addMeldStartingAt(t)}
+                        disabled={(addTo === "run" && suit === "z") || !canAddMeldTile(t)}
+                      />
+                    )
+                  )}
+              </div>
+            ))}
+            {/* Bonus tiles (flowers/seasons) always go to 門前 - they're set
+                aside the moment they're drawn - whatever `addTo` says. */}
+            <div className="suit-row bonus-row">
+              {(["flower", "season"] as const).flatMap((kind) =>
+                ([1, 2, 3, 4] as const).map((rank) => {
+                  const tile: BonusTile = { kind, rank };
+                  return (
+                    <BonusTileButton key={`${kind}${rank}`} tile={tile} onClick={() => addBonusTile(tile)} disabled={hasBonusTile(tile)} />
+                  );
+                })
+              )}
+            </div>
+          </div>
         </div>
       </CollapsiblePanel>
 
-      <div className="hand-display">
-        {concealedTiles.length === 0 ? (
-          <span className="hint">Tap to add concealed tiles.</span>
-        ) : (
-          // While near-complete, the tile that completes the hand isn't in
-          // hand yet - each projected wait supplies its own 食胡 tile - so the
-          // long-press marker is meaningless here: fall back to plain
-          // tap-to-remove tiles and drop the hint until the hand is whole.
-          (sortTiles(concealedTiles) as HandTile[]).map((t) =>
-            nearComplete ? (
-              <HandTileButton key={t.id} tile={t} onClick={() => removeConcealedTile(t.id)} />
+      <div className="section-head">
+        <span className="section-title">
+          你的牌 <span className="section-title-en">Your hand</span>
+        </span>
+      </div>
+
+      <div className="card hand-card" ref={handCardRef}>
+        <div className={`hand-region${addTo === "hand" ? "" : " is-target"}`}>
+          <div className="hand-region-head">
+            <span className="hand-region-label">門前 Declared</span>
+            {!declaredEmpty && (
+              <button
+                type="button"
+                className="section-action region-action"
+                onClick={resetDeclared}
+                title="Clear the declared melds and bonus tiles"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+          <div className="hand-display breakdown-groups">
+            {declaredMelds.length === 0 && bonusTiles.length === 0 ? (
+              <span className="hint">None — pick 上 / 碰 / 明槓 / 暗槓 above, or tap a flower.</span>
             ) : (
-              <WinningTileHandButton
-                key={t.id}
-                tile={t}
-                isWinning={isWinningTile(t)}
-                onRemove={() => removeConcealedTile(t.id)}
-                onToggleWinning={() => toggleWinningTile(t)}
-              />
-            )
-          )
+              <>
+                {bonusTiles.length > 0 && (
+                  <div className="breakdown-group bonus-tile-group">
+                    {sortBonusTiles(bonusTiles).map((tile) => (
+                      <button
+                        type="button"
+                        key={`${tile.kind}${tile.rank}`}
+                        className="bonus-tile-remove"
+                        onClick={() => removeBonusTile(tile)}
+                        title={`${bonusTileLabel(tile)} - tap to remove`}
+                      >
+                        <span className="tile-glyph large" data-suit="bonus">
+                          {bonusTileGlyph(tile)}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {declaredMelds.map((meld) => (
+                  <DeclaredMeldButton
+                    key={meld.id}
+                    meld={meld}
+                    onRemove={() => removeMeld(meld.id)}
+                    onToggleConcealed={() => toggleMeldConcealed(meld.id)}
+                  />
+                ))}
+              </>
+            )}
+          </div>
+        </div>
+        <div className={`hand-region${addTo === "hand" ? " is-target" : ""}`}>
+          <div className="hand-region-head">
+            <span className="hand-region-label">手牌 Concealed</span>
+            {concealedTiles.length > 0 && (
+              <button
+                type="button"
+                className="section-action region-action"
+                onClick={resetConcealed}
+                title="Clear the concealed tiles"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+          <div className="hand-display">
+            {concealedTiles.length === 0 ? (
+              <span className="hint">None — pick 手牌 above and tap tiles.</span>
+            ) : (
+              // While near-complete, the tile that completes the hand isn't in
+              // hand yet - each projected wait supplies its own 食胡 tile - so the
+              // long-press marker is meaningless here: fall back to plain
+              // tap-to-remove tiles and drop the hint until the hand is whole.
+              (sortTiles(concealedTiles) as HandTile[]).map((t) =>
+                nearComplete ? (
+                  <HandTileButton key={t.id} tile={t} onClick={() => removeConcealedTile(t.id)} />
+                ) : (
+                  <WinningTileHandButton
+                    key={t.id}
+                    tile={t}
+                    isWinning={isWinningTile(t)}
+                    onRemove={() => removeConcealedTile(t.id)}
+                    onToggleWinning={() => toggleWinningTile(t)}
+                  />
+                )
+              )
+            )}
+          </div>
+        </div>
+        {concealedTiles.length > 0 && !nearComplete && (
+          <span className="hint card-footnote">Long press the winning tile.</span>
         )}
       </div>
-      {concealedTiles.length > 0 && !nearComplete && (
-        <span className="hint">Long press the winning tile.</span>
-      )}
 
-      <div className="scoring-context">
-        <WindPicker label="Round wind" value={roundWind} onChange={setRoundWind} />
-        <WindPicker label="Seat wind" value={seatWind} onChange={setSeatWind} />
+      <div className="section-head">
+        <span className="section-title">
+          情況 <span className="section-title-en">Situation</span>
+        </span>
+        <span className="section-head-actions">
+          {/* The scoped resets only appear once their block has something to
+              clear, so a fresh screen shows just the toolbar's ↺. */}
+          {!conditionsAtDefault && (
+            <button
+              type="button"
+              className="section-action"
+              onClick={resetConditions}
+              title="Set both winds back to 東 and turn off every declaration (莊, 自摸, 叮 …)"
+            >
+              Reset
+            </button>
+          )}
+          <PickerCollapseToggle
+            collapsed={situationCollapsed}
+            onToggle={() => setSituationCollapsed((c) => !c)}
+            label="situation"
+          />
+        </span>
       </div>
 
-      <div className="scoring-context">
+      {/* Collapsed: one line of what's set - the winds, then whatever is
+          switched on - so the conditions stay visible; tap to expand. */}
+      <CollapsiblePanel open={situationCollapsed}>
         <button
           type="button"
-          className={dealerStreak > 0 ? "toggle-on" : undefined}
-          aria-pressed={dealerStreak > 0}
-          onClick={toggleDealerStreak}
-          title={dealerStreak > 0 ? "莊 - tap to turn off (0 tai)" : "莊 - tap to declare (1 tai); use +/- to build up a 連莊 streak from there"}
+          className="card situation-summary"
+          onClick={() => setSituationCollapsed(false)}
+          title="Show the situation controls"
+          tabIndex={situationCollapsed ? undefined : -1}
         >
-          {dealerStreakLabel(dealerStreak)}
+          <span className="situation-summary-winds">
+            {WIND_SHORT[roundWind]}圈 · {WIND_SHORT[seatWind]}位
+          </span>
+          {activeConditionLabels.length > 0 ? (
+            activeConditionLabels.map((label) => (
+              <span key={label} className="situation-summary-chip">
+                {label}
+              </span>
+            ))
+          ) : (
+            <span className="hint">No declarations</span>
+          )}
         </button>
-        {dealerStreak > 0 && (
-          <>
-            <button type="button" onClick={() => bumpDealerStreak(-1)} title="莊 - decrease the streak by 1">
-              −
+      </CollapsiblePanel>
+
+      <CollapsiblePanel open={!situationCollapsed}>
+        <div className="card">
+          <div className="wind-pickers">
+            <WindPicker label="Round wind" zh="圈風" value={roundWind} onChange={setRoundWind} />
+            <WindPicker label="Seat wind" zh="門風" value={seatWind} onChange={setSeatWind} />
+          </div>
+
+          <div className="scoring-context chip-grid">
+            {/* 莊 and its 連莊 streak as one stepper, first in the grid and
+                two chips wide: 0 = not dealer (莊 in grey), 1 = 莊, n = 莊連(n-1).
+                A fixed slot, so turning it on never reshuffles the chips. */}
+            <div className="stepper chip-stepper" role="group" aria-label="Dealer streak">
+              <button
+                type="button"
+                className="stepper-step"
+                onClick={() => bumpDealerStreak(-1)}
+                disabled={dealerStreak === 0}
+                aria-label="Decrease dealer streak"
+                title="莊 - step the streak down by 1 (to off at 0)"
+              >
+                −
+              </button>
+              <button
+                type="button"
+                className={`stepper-value${dealerStreak > 0 ? " toggle-on" : ""}`}
+                aria-pressed={dealerStreak > 0}
+                onClick={toggleDealerStreak}
+                title={dealerStreak > 0 ? "莊 - tap to turn off (0 tai)" : "莊 - tap to declare (1 tai); use + / − to build up a 連莊 streak"}
+              >
+                {dealerStreakLabel(dealerStreak)}
+              </button>
+              <button
+                type="button"
+                className="stepper-step"
+                onClick={() => bumpDealerStreak(1)}
+                aria-label="Increase dealer streak"
+                title={dealerStreak > 0 ? "莊 - step the streak up by 1 (連莊)" : "莊 - declare dealer (1 tai)"}
+              >
+                +
+              </button>
+            </div>
+            <button
+              type="button"
+              className={effectiveSelfDraw ? "toggle-on" : undefined}
+              aria-pressed={effectiveSelfDraw}
+              onClick={() => {
+                if (effectiveSelfDraw) {
+                  // Turning off while forced/held on by 花摸/槓摸/河底撈魚/
+                  // 海底撈月/天胡 cascades to turning those off too (see
+                  // deactivateSelfDrawGroup), not just flip the
+                  // (possibly already false) manual flag and leave 自摸 stuck
+                  // on regardless. 人胡 is untouched - it doesn't force 自摸 on
+                  // in the first place.
+                  deactivateSelfDrawGroup();
+                } else {
+                  setSelfDraw(true);
+                  deactivateClaimedWinGroup();
+                }
+              }}
+              title="自摸 - self-draw vs won off a discard (also turned on by 花摸/槓摸/河底撈魚/海底撈月/天胡, and mutually exclusive with 搶槓/雙響/三響/地胡/食叮 - turning any one of these on turns the others off)"
+            >
+              自摸
             </button>
-            <button type="button" onClick={() => bumpDealerStreak(1)} title="莊 - increase the streak by 1">
-              +
+            <button
+              type="button"
+              className={riichi !== "none" ? "toggle-on" : undefined}
+              aria-pressed={riichi !== "none"}
+              disabled={heavenlyWin !== "none"}
+              onClick={cycleRiichi}
+              title={
+                heavenlyWin !== "none"
+                  ? "叮 - blocked by 天胡/地胡/人胡: winning on the very first opportunity leaves no prior turn to have declared riichi on"
+                  : hasOpenDeclaredMeld
+                    ? "叮 - tap to cycle 叮 / off (天叮/地叮 need a fully concealed hand - a declared meld rules them out)"
+                    : "叮 - tap to cycle 叮 / 天叮 / 地叮 / off"
+              }
+            >
+              {RIICHI_LABELS[riichi]}
             </button>
-          </>
-        )}
-        <button
-          type="button"
-          className={effectiveSelfDraw ? "toggle-on" : undefined}
-          aria-pressed={effectiveSelfDraw}
-          onClick={() => {
-            if (effectiveSelfDraw) {
-              // Turning off while forced/held on by 花摸/槓摸/河底撈魚/
-              // 海底撈月/天胡 cascades to turning those off too (see
-              // deactivateSelfDrawGroup), not just flip the
-              // (possibly already false) manual flag and leave 自摸 stuck
-              // on regardless. 人胡 is untouched - it doesn't force 自摸 on
-              // in the first place.
-              deactivateSelfDrawGroup();
-            } else {
-              setSelfDraw(true);
-              deactivateClaimedWinGroup();
-            }
-          }}
-          title="自摸 - self-draw vs won off a discard (also turned on by 花摸/槓摸/河底撈魚/海底撈月/天胡, and mutually exclusive with 搶槓/雙響/三響/地胡/食叮 - turning any one of these on turns the others off)"
-        >
-          自摸
-        </button>
-        <button
-          type="button"
-          className={riichi !== "none" ? "toggle-on" : undefined}
-          aria-pressed={riichi !== "none"}
-          disabled={heavenlyWin !== "none"}
-          onClick={cycleRiichi}
-          title={
-            heavenlyWin !== "none"
-              ? "叮 - blocked by 天胡/地胡/人胡: winning on the very first opportunity leaves no prior turn to have declared riichi on"
-              : hasOpenDeclaredMeld
-                ? "叮 - tap to cycle 叮 / off (天叮/地叮 need a fully concealed hand - a declared meld rules them out)"
-                : "叮 - tap to cycle 叮 / 天叮 / 地叮 / off"
-          }
-        >
-          {RIICHI_LABELS[riichi]}
-        </button>
-        <button
-          type="button"
-          className={instantWin ? "toggle-on" : undefined}
-          aria-pressed={instantWin}
-          disabled={riichi === "none"}
-          onClick={() => setInstantWin((w) => !w)}
-          title={
-            riichi === "none"
-              ? "一發 - only counts once 叮 is declared"
-              : "一發 - the hand completed within the immediate round after declaring - adds 5 tai"
-          }
-        >
-          一發
-        </button>
-        <button
-          type="button"
-          className={eatRiichi ? "toggle-on" : undefined}
-          aria-pressed={eatRiichi}
-          onClick={() => {
-            const next = !eatRiichi;
-            setEatRiichi(next);
-            // Eating into the completed hand off a discard is a claimed
-            // win, mutually exclusive with self-draw - see
-            // deactivateSelfDrawGroup's own comment.
-            if (next) deactivateSelfDrawGroup();
-          }}
-          title="食叮 - adds 5 tai regardless of whether 叮 is declared; mutually exclusive with 自摸/花摸/槓摸/河底撈魚/海底撈月/天胡"
-        >
-          食叮
-        </button>
-        <button
-          type="button"
-          className={earlyWin !== "none" ? "toggle-on" : undefined}
-          aria-pressed={earlyWin !== "none"}
-          onClick={cycleEarlyWin}
-          title="Won while the discard count (excluding the completing tile) was still at or under this number - tap to cycle 四子內(60) / 七子內(30) / 十子內(15) / off (mutually exclusive with 河底撈魚/海底撈月)"
-        >
-          {EARLY_WIN_LABELS[earlyWin]}
-        </button>
-        <button
-          type="button"
-          className={multiWin !== "none" ? "toggle-on" : undefined}
-          aria-pressed={multiWin !== "none"}
-          onClick={cycleMultiWin}
-          title="Multiple players won off the same discard - tap to cycle 雙響(5) / 三響(10) / off (mutually exclusive with 自摸, same as 搶槓)"
-        >
-          {MULTI_WIN_LABELS[multiWin]}
-        </button>
-        <button
-          type="button"
-          className={heavenlyWin !== "none" ? "toggle-on" : undefined}
-          aria-pressed={heavenlyWin !== "none"}
-          disabled={hasOpenDeclaredMeld || riichi !== "none"}
-          onClick={cycleHeavenlyWin}
-          title={
-            hasOpenDeclaredMeld
-              ? "天胡/地胡/人胡 all need a fully concealed hand (an untouched initial-turn win) - a declared meld rules them out"
-              : riichi !== "none"
-                ? "天胡/地胡/人胡 - blocked by 叮: these describe winning before any turn, which couldn't have happened once riichi was already declared"
-                : "Tap to cycle 天胡(160) / 地胡(120) / 人胡(80) / off - 天胡 also turns on 自摸 (deactivating 搶槓/雙響/三響/地胡), 地胡 also turns off 自摸; all 3 are mutually exclusive with 河底撈魚/海底撈月"
-          }
-        >
-          {HEAVENLY_WIN_LABELS[heavenlyWin]}
-        </button>
-        <button
-          type="button"
-          className={lastTileWin !== "none" ? "toggle-on" : undefined}
-          aria-pressed={lastTileWin !== "none"}
-          onClick={cycleLastTileWin}
-          title="Tap to cycle 河底撈魚(5) / 海底撈月(10) / off - 海底撈月 auto-upgrades to 海底撈月(一筒)(20) if the winning tile is 1 Tong, no separate declaration needed; either state also turns on 自摸 (deactivating 搶槓/雙響/三響/地胡); also mutually exclusive with 四子內/七子內/十子內 and with 天胡/地胡/人胡"
-        >
-          {LAST_TILE_WIN_LABELS[lastTileWin]}
-        </button>
-        <button
-          type="button"
-          className={flowerDraw > 0 ? "toggle-on" : undefined}
-          aria-pressed={flowerDraw > 0}
-          disabled={bonusTiles.length === 0}
-          onClick={cycleFlowerDraw}
-          title={
-            bonusTiles.length === 0
-              ? "花摸 - no bonus tiles in hand to have flowered off of"
-              : `Tap to cycle 花摸x0-x${bonusTiles.length} (2 tai each, capped at the ${bonusTiles.length} bonus tile${bonusTiles.length === 1 ? "" : "s"} in hand) - also turns on 自摸, deactivating 搶槓/雙響/三響`
-          }
-        >
-          {countLabel("花摸", flowerDraw)}
-        </button>
-        <button
-          type="button"
-          className={kongDraw > 0 ? "toggle-on" : undefined}
-          aria-pressed={kongDraw > 0}
-          disabled={kongCount === 0}
-          onClick={cycleKongDraw}
-          title={
-            kongCount === 0
-              ? "槓摸 - no kongs declared to have drawn a replacement tile for"
-              : `Tap to cycle 槓摸x0-x${kongCount} (tai: ${FIVE_POWER_TAI_TABLE.slice(1, kongCount + 1).join("/")}, capped at the ${kongCount} kong${kongCount === 1 ? "" : "s"} declared) - also turns on 自摸, deactivating 搶槓/雙響/三響`
-          }
-        >
-          {countLabel("槓摸", kongDraw)}
-        </button>
-        <button
-          type="button"
-          className={robKong > 0 ? "toggle-on" : undefined}
-          aria-pressed={robKong > 0}
-          onClick={cycleRobKong}
-          title={`Tap to cycle 搶槓x0-x5 (tai: ${FIVE_POWER_TAI_TABLE.slice(1).join("/")}) - mutually exclusive with 自摸`}
-        >
-          {countLabel("搶槓", robKong)}
-        </button>
-        <button
-          type="button"
-          className={visibleExhaustEffective !== "none" ? "toggle-on" : undefined}
-          aria-pressed={visibleExhaustEffective !== "none"}
-          disabled={visibleExhaustReachable.length <= 1}
-          onClick={cycleVisibleExhaust}
-          title={
-            visibleExhaustAuto === "exhausted"
-              ? "絕絕 - already true from this hand's own declared melds"
-              : visibleExhaustAuto === "triple"
-                ? "明絕 already true from this hand's own declared melds - tap to also declare 絕絕(10 tai) manually"
-                : visibleExhaustManualBlocked
-                  ? "Can't declare manually - the winning tile is also sitting elsewhere in this hand's own concealed tiles, so it wasn't the last copy anywhere"
-                  : !visibleExhaustGenuineMultiWait
-                    ? "明絕(5) can still be declared manually, but 絕絕(10) can't - this hand's own concealed wait was only ever a single wait, not genuinely multi-way"
-                    : "Tap to cycle 明絕(5) / 絕絕(10) / off - declare manually when this hand's own declared melds alone can't prove it (e.g. you saw the other copies discarded)"
-          }
-        >
-          {VISIBLE_EXHAUST_LABELS[visibleExhaustEffective]}
-        </button>
-      </div>
+            <button
+              type="button"
+              className={instantWin ? "toggle-on" : undefined}
+              aria-pressed={instantWin}
+              disabled={riichi === "none"}
+              onClick={() => setInstantWin((w) => !w)}
+              title={
+                riichi === "none"
+                  ? "一發 - only counts once 叮 is declared"
+                  : "一發 - the hand completed within the immediate round after declaring - adds 5 tai"
+              }
+            >
+              一發
+            </button>
+            <button
+              type="button"
+              className={eatRiichi ? "toggle-on" : undefined}
+              aria-pressed={eatRiichi}
+              onClick={() => {
+                const next = !eatRiichi;
+                setEatRiichi(next);
+                // Eating into the completed hand off a discard is a claimed
+                // win, mutually exclusive with self-draw - see
+                // deactivateSelfDrawGroup's own comment.
+                if (next) deactivateSelfDrawGroup();
+              }}
+              title="食叮 - adds 5 tai regardless of whether 叮 is declared; mutually exclusive with 自摸/花摸/槓摸/河底撈魚/海底撈月/天胡"
+            >
+              食叮
+            </button>
+            <button
+              type="button"
+              className={earlyWin !== "none" ? "toggle-on" : undefined}
+              aria-pressed={earlyWin !== "none"}
+              onClick={cycleEarlyWin}
+              title="Won while the discard count (excluding the completing tile) was still at or under this number - tap to cycle 四子內(60) / 七子內(30) / 十子內(15) / off (mutually exclusive with 河底撈魚/海底撈月)"
+            >
+              {EARLY_WIN_LABELS[earlyWin]}
+            </button>
+            <button
+              type="button"
+              className={multiWin !== "none" ? "toggle-on" : undefined}
+              aria-pressed={multiWin !== "none"}
+              onClick={cycleMultiWin}
+              title="Multiple players won off the same discard - tap to cycle 雙響(5) / 三響(10) / off (mutually exclusive with 自摸, same as 搶槓)"
+            >
+              {MULTI_WIN_LABELS[multiWin]}
+            </button>
+            <button
+              type="button"
+              className={heavenlyWin !== "none" ? "toggle-on" : undefined}
+              aria-pressed={heavenlyWin !== "none"}
+              disabled={hasOpenDeclaredMeld || riichi !== "none"}
+              onClick={cycleHeavenlyWin}
+              title={
+                hasOpenDeclaredMeld
+                  ? "天胡/地胡/人胡 all need a fully concealed hand (an untouched initial-turn win) - a declared meld rules them out"
+                  : riichi !== "none"
+                    ? "天胡/地胡/人胡 - blocked by 叮: these describe winning before any turn, which couldn't have happened once riichi was already declared"
+                    : "Tap to cycle 天胡(160) / 地胡(120) / 人胡(80) / off - 天胡 also turns on 自摸 (deactivating 搶槓/雙響/三響/地胡), 地胡 also turns off 自摸; all 3 are mutually exclusive with 河底撈魚/海底撈月"
+              }
+            >
+              {HEAVENLY_WIN_LABELS[heavenlyWin]}
+            </button>
+            <button
+              type="button"
+              className={lastTileWin !== "none" ? "toggle-on" : undefined}
+              aria-pressed={lastTileWin !== "none"}
+              onClick={cycleLastTileWin}
+              title="Tap to cycle 河底撈魚(5) / 海底撈月(10) / off - 海底撈月 auto-upgrades to 海底撈月(一筒)(20) if the winning tile is 1 Tong, no separate declaration needed; either state also turns on 自摸 (deactivating 搶槓/雙響/三響/地胡); also mutually exclusive with 四子內/七子內/十子內 and with 天胡/地胡/人胡"
+            >
+              {LAST_TILE_WIN_LABELS[lastTileWin]}
+            </button>
+            <button
+              type="button"
+              className={flowerDraw > 0 ? "toggle-on" : undefined}
+              aria-pressed={flowerDraw > 0}
+              disabled={bonusTiles.length === 0}
+              onClick={cycleFlowerDraw}
+              title={
+                bonusTiles.length === 0
+                  ? "花摸 - no bonus tiles in hand to have flowered off of"
+                  : `Tap to cycle 花摸x0-x${bonusTiles.length} (2 tai each, capped at the ${bonusTiles.length} bonus tile${bonusTiles.length === 1 ? "" : "s"} in hand) - also turns on 自摸, deactivating 搶槓/雙響/三響`
+              }
+            >
+              {countLabel("花摸", flowerDraw)}
+            </button>
+            <button
+              type="button"
+              className={kongDraw > 0 ? "toggle-on" : undefined}
+              aria-pressed={kongDraw > 0}
+              disabled={kongCount === 0}
+              onClick={cycleKongDraw}
+              title={
+                kongCount === 0
+                  ? "槓摸 - no kongs declared to have drawn a replacement tile for"
+                  : `Tap to cycle 槓摸x0-x${kongCount} (tai: ${FIVE_POWER_TAI_TABLE.slice(1, kongCount + 1).join("/")}, capped at the ${kongCount} kong${kongCount === 1 ? "" : "s"} declared) - also turns on 自摸, deactivating 搶槓/雙響/三響`
+              }
+            >
+              {countLabel("槓摸", kongDraw)}
+            </button>
+            <button
+              type="button"
+              className={robKong > 0 ? "toggle-on" : undefined}
+              aria-pressed={robKong > 0}
+              onClick={cycleRobKong}
+              title={`Tap to cycle 搶槓x0-x5 (tai: ${FIVE_POWER_TAI_TABLE.slice(1).join("/")}) - mutually exclusive with 自摸`}
+            >
+              {countLabel("搶槓", robKong)}
+            </button>
+            <button
+              type="button"
+              className={visibleExhaustEffective !== "none" ? "toggle-on" : undefined}
+              aria-pressed={visibleExhaustEffective !== "none"}
+              disabled={visibleExhaustReachable.length <= 1}
+              onClick={cycleVisibleExhaust}
+              title={
+                visibleExhaustAuto === "exhausted"
+                  ? "絕絕 - already true from this hand's own declared melds"
+                  : visibleExhaustAuto === "triple"
+                    ? "明絕 already true from this hand's own declared melds - tap to also declare 絕絕(10 tai) manually"
+                    : visibleExhaustManualBlocked
+                      ? "Can't declare manually - the winning tile is also sitting elsewhere in this hand's own concealed tiles, so it wasn't the last copy anywhere"
+                      : !visibleExhaustGenuineMultiWait
+                        ? "明絕(5) can still be declared manually, but 絕絕(10) can't - this hand's own concealed wait was only ever a single wait, not genuinely multi-way"
+                        : "Tap to cycle 明絕(5) / 絕絕(10) / off - declare manually when this hand's own declared melds alone can't prove it (e.g. you saw the other copies discarded)"
+              }
+            >
+              {VISIBLE_EXHAUST_LABELS[visibleExhaustEffective]}
+            </button>
+          </div>
+        </div>
+      </CollapsiblePanel>
 
       {scoring && !scoring.ok && <span className="error">{scoring.message}</span>}
 
       {scoring?.ok && (
         <>
-          <div className="waits scoring-total">
-            <span className="waits-label">Total:</span>
-            <span className="scoring-total-value">{scoring.result.total}<span className="visually-hidden"> tai</span></span>
+          <div className="result-hero" ref={resultRef}>
+            <span className="result-hero-label">Total</span>
+            <span className="result-hero-value">
+              {scoring.result.total}
+              <span className="visually-hidden"> tai</span>
+            </span>
           </div>
 
           <ScoringBreakdown
@@ -6767,7 +7076,7 @@ function DiceTab({
   const [sub, setSub] = useState<"wall" | "exchange" | "seating">("wall");
   return (
     <section className="panel dice-panel">
-      <div className="mode-tabs sub-tabs">
+      <div className="segmented sub-tabs">
         <button
           type="button"
           className={sub === "wall" ? "toggle-on" : undefined}
@@ -6793,23 +7102,88 @@ function DiceTab({
           Seating
         </button>
       </div>
-      {sub === "wall" && <DicePanel />}
-      {sub === "exchange" && <ExchangePanel />}
-      {sub === "seating" && (
-        <SeatingPanel
-          names={seatNames}
-          seatOrder={seatOrder}
-          onRename={onRenameSeat}
-          onSwap={onSwapSeats}
-          onResetNames={onResetSeatNames}
-        />
-      )}
+      <div className="card">
+        {sub === "wall" && <DicePanel />}
+        {sub === "exchange" && <ExchangePanel />}
+        {sub === "seating" && (
+          <SeatingPanel
+            names={seatNames}
+            seatOrder={seatOrder}
+            onRename={onRenameSeat}
+            onSwap={onSwapSeats}
+            onResetNames={onResetSeatNames}
+          />
+        )}
+      </div>
     </section>
   );
 }
 
+type AppMode = "scoring" | "calculator" | "trainer" | "dice";
+
+// Tab-bar glyphs: 24px line icons drawn in currentColor, so they pick up the
+// tab's selected/unselected colour like the label does.
+const TAB_ICON_PROPS = {
+  width: 24,
+  height: 24,
+  viewBox: "0 0 24 24",
+  fill: "none",
+  stroke: "currentColor",
+  strokeWidth: 1.8,
+  strokeLinecap: "round",
+  strokeLinejoin: "round",
+} as const;
+
+const TAB_ITEMS: { id: AppMode; label: string; icon: ReactNode }[] = [
+  {
+    id: "scoring",
+    label: "Scoring",
+    icon: (
+      <svg {...TAB_ICON_PROPS}>
+        <path d="M7 4h10v5a5 5 0 0 1-10 0z" />
+        <path d="M7 6H4.5a2.5 2.5 0 0 0 2.6 3.6M17 6h2.5a2.5 2.5 0 0 1-2.6 3.6" />
+        <path d="M12 14v3M8.5 20h7M10 17h4l.5 3h-5z" />
+      </svg>
+    ),
+  },
+  {
+    id: "calculator",
+    label: "Calculator",
+    icon: (
+      <svg {...TAB_ICON_PROPS}>
+        <rect x="5" y="3" width="14" height="18" rx="2.5" />
+        <rect x="8" y="6" width="8" height="3.5" rx="0.8" />
+        <path d="M8.5 13h.01M12 13h.01M15.5 13h.01M8.5 16.5h.01M12 16.5h.01M15.5 16.5h.01" strokeWidth={2.6} />
+      </svg>
+    ),
+  },
+  {
+    id: "trainer",
+    label: "Trainer",
+    icon: (
+      <svg {...TAB_ICON_PROPS}>
+        <circle cx="12" cy="12" r="8.5" />
+        <circle cx="12" cy="12" r="5" />
+        <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none" />
+      </svg>
+    ),
+  },
+  {
+    id: "dice",
+    label: "Dice",
+    icon: (
+      <svg {...TAB_ICON_PROPS}>
+        <rect x="4" y="4" width="16" height="16" rx="3.5" />
+        <circle cx="8.5" cy="8.5" r="1.3" fill="currentColor" stroke="none" />
+        <circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none" />
+        <circle cx="15.5" cy="15.5" r="1.3" fill="currentColor" stroke="none" />
+      </svg>
+    ),
+  },
+];
+
 function App() {
-  const [mode, setMode] = useState<"calculator" | "trainer" | "scoring" | "dice">("scoring");
+  const [mode, setMode] = useState<AppMode>("scoring");
   // Lifted above TrainerPanel so stats survive switching back to the
   // Calculator tab and back - the trainers themselves unmount (and their other
   // state - the in-progress question, timer, etc. - resets) on every tab
@@ -6836,44 +7210,32 @@ function App() {
 
   return (
     <div className="page">
-      <h1>
+      <header className="app-header">
         <img className="app-logo" src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" />
-        MJWaits <span className="app-tagline">HKTW mahjong scoring, waits &amp; trainer</span>
-      </h1>
-      <div className="mode-tabs">
-        <button
-          type="button"
-          className={mode === "scoring" ? "toggle-on" : undefined}
-          aria-pressed={mode === "scoring"}
-          onClick={() => setMode("scoring")}
-        >
-          Scoring
-        </button>
-        <button
-          type="button"
-          className={mode === "calculator" ? "toggle-on" : undefined}
-          aria-pressed={mode === "calculator"}
-          onClick={() => setMode("calculator")}
-        >
-          Calculator
-        </button>
-        <button
-          type="button"
-          className={mode === "trainer" ? "toggle-on" : undefined}
-          aria-pressed={mode === "trainer"}
-          onClick={() => setMode("trainer")}
-        >
-          Trainer
-        </button>
-        <button
-          type="button"
-          className={mode === "dice" ? "toggle-on" : undefined}
-          aria-pressed={mode === "dice"}
-          onClick={() => setMode("dice")}
-        >
-          Dice rolling
-        </button>
-      </div>
+        <div className="app-title">
+          <h1>MJWaits</h1>
+          <span className="app-tagline">HKTW mahjong scoring, waits &amp; trainer</span>
+        </div>
+      </header>
+      {/* Top-level navigation: a segmented control under the title on wide
+          screens, a fixed translucent iOS-style tab bar on phones (see
+          .tab-bar in App.css). Same buttons either way. */}
+      <nav className="tab-bar" aria-label="Sections">
+        {TAB_ITEMS.map(({ id, label, icon }) => (
+          <button
+            key={id}
+            type="button"
+            className={mode === id ? "toggle-on" : undefined}
+            aria-pressed={mode === id}
+            onClick={() => setMode(id)}
+          >
+            <span className="tab-bar-icon" aria-hidden="true">
+              {icon}
+            </span>
+            <span className="tab-bar-label">{label}</span>
+          </button>
+        ))}
+      </nav>
       {mode === "scoring" && <ScoringPanel />}
       {mode === "calculator" && <Calculator />}
       {mode === "trainer" && (

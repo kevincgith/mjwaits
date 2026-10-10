@@ -63,9 +63,9 @@ async function clickText(page, label, { nth = 0 } = {}) {
   await el.click();
 }
 
-// Click a tile in the Scoring tab's concealed-hand picker (the last .tile-picker
-// on the page). Tiles there carry a `title` like "1 Sou" and a glyph <span>
-// with data-suit / data-rank.
+// Click a tile in the Scoring tab's shared tile picker (with 手牌, the default
+// add-to target, selected). Tiles there carry a `title` like "1 Sou" and a
+// glyph <span> with data-suit / data-rank.
 async function addConcealed(page, suit, rank) {
   const ok = await page.evaluate(
     (suit, rank) => {
@@ -86,7 +86,7 @@ async function addConcealed(page, suit, rank) {
 
 async function setMode(page, label) {
   await page.evaluate((label) => {
-    [...document.querySelectorAll(".mode-tabs button")]
+    [...document.querySelectorAll(".tab-bar button")]
       .find((b) => b.textContent.trim() === label)
       ?.click();
   }, label);
@@ -150,7 +150,7 @@ const main = async () => {
 
   // 5. Scoring: a fully concealed pure-flush self-draw, big tai total.
   await setMode(page, "Scoring");
-  await clickText(page, "🔄 Reset").catch(() => {});
+  await clickText(page, "Reset").catch(() => {});
   await sleep(150);
   // 123b 456b 789b 111b 555b 99b, all in the concealed region.
   const sou = [1, 1, 1, 1, 2, 3, 4, 5, 5, 5, 5, 6, 7, 8, 9, 9, 9];
@@ -167,10 +167,10 @@ const main = async () => {
       });
   });
   await sleep(250);
-  await shoot(page, "scoring.png", { maxH: 1180 });
+  await shoot(page, "scoring.png", { startAt: ".result-hero", maxH: 1180 });
 
   // 6. Dice & wall: three dice set to 4 / 5 / 3 = 12, wall broken on the left.
-  await setMode(page, "Dice rolling");
+  await setMode(page, "Dice");
   await page.evaluate(() => {
     const dice = [...document.querySelectorAll("button")].filter((b) =>
       (b.getAttribute("aria-label") || "").startsWith("Die showing"),
