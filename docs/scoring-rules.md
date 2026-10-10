@@ -28,12 +28,13 @@ hanging.
 already prices in the smaller one," not a general limit on stacking. Patterns with no listed
 relationship in either direction stack freely.
 
-**Notation note on 4-of-a-kind**: typing 4 copies of a rank in the concealed portion (e.g.
-`222234t`) doesn't automatically mean a concealed kong — it might instead be a triplet plus one
-tile borrowed into an adjacent run (`222` + `234`). Both readings are tried during decomposition,
-and whichever is actually valid (or scores higher, if both are) wins. This only matters for the
-text-notation path (`scoreHand`/`parseScoringHand`, used in tests) — the Scoring tab's UI always
-declares kongs explicitly via 門前牌區, so this ambiguity never comes up there.
+**Notation note on 4-of-a-kind**: in the text notation (`scoreHand`/`parseScoringHand`, used in
+tests), `(111z)` is a declared exposed meld and `[1111z]` a declared concealed kong (暗槓) — it
+sits in 門前 like any declared meld, with `concealed: true`, exactly as the Scoring tab's 暗槓
+button records one. Four loose copies of a rank in the concealed portion (e.g. `222234t`) are
+**not automatically** a kong: they might be a triplet plus one tile borrowed into an adjacent run
+(`222` + `234`), or two pairs in 嚦咕嚦咕, and the decomposition search tries each reading that's
+valid. Write a concealed kong in square brackets to declare it — every test hand does.
 
 **Tile breakdown (`TaiPattern.tiles`)**: most patterns also carry an optional `tiles(hand, ctx)`
 function returning one **row** per matched instance, each row itself one array per relevant unit

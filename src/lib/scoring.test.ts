@@ -162,6 +162,26 @@ describe("parseScoringHand", () => {
     expect(parsed.freeTiles.filter((t) => t.suit === "z" && t.rank === 1)).toHaveLength(4);
   });
 
+  it("parses a square-bracketed 4-of-a-kind as a declared concealed kong (暗槓)", () => {
+    const parsed = parseScoringHand("[1111z]123456789m234t22b");
+    expect(parsed.declaredMelds).toEqual([
+      { kind: "kong", concealed: true, tiles: parseHand("1111z") },
+    ]);
+    expect(parsed.freeTiles).toEqual(parseHand("123456789m234t22b"));
+  });
+
+  it("rejects square brackets around anything but four of one tile", () => {
+    expect(() => parseScoringHand("[111z]123456789m234t22b")).toThrow(/concealed kong/);
+    expect(() => parseScoringHand("[1112z]123456789m234t22b")).toThrow(/concealed kong/);
+    expect(() => parseScoringHand("[1234m]123456789m234t22b")).toThrow(/concealed kong/);
+  });
+
+  it("leaves four loose copies loose - only square brackets declare a concealed kong", () => {
+    const parsed = parseScoringHand("1111z123456789m234t22b");
+    expect(parsed.declaredMelds).toEqual([]);
+    expect(parsed.freeTiles).toHaveLength(18);
+  });
+
   it("rejects a mismatched parenthesized meld", () => {
     expect(() => parseScoringHand("(1357z)11t22b")).toThrow();
     expect(() => parseScoringHand("(135m)11t22b")).toThrow(); // not consecutive
@@ -249,7 +269,7 @@ describe("scoreHand", () => {
   it("accounts for extra tiles from declared kongs in the completeness check", () => {
     // 2 concealed kongs (8 tiles) + 3 melds (9 tiles) + pair (2) = 19 tiles
     // total (17, plus 1 per kong).
-    expect(() => scoreHand("1111z2222z123456789m22b", ctx())).not.toThrow();
+    expect(() => scoreHand("[1111z][2222z]123456789m22b", ctx())).not.toThrow();
   });
 
   it("throws ScoringError on an incomplete hand", () => {
@@ -290,7 +310,7 @@ describe("PATTERNS", () => {
     });
 
     it("stacks 2 tai for a concealed kong", () => {
-      expect(tai(scoreHand("1111z123456789m234t22b", ctx()), "kong")).toBe(2);
+      expect(tai(scoreHand("[1111z]123456789m234t22b", ctx()), "kong")).toBe(2);
     });
 
     it("stacks 2 tai for an exposed kong too", () => {
@@ -298,7 +318,7 @@ describe("PATTERNS", () => {
     });
 
     it("stacks across multiple kongs regardless of concealed/exposed mix", () => {
-      expect(tai(scoreHand("1111z2222z123456789m22b", ctx()), "kong")).toBe(4);
+      expect(tai(scoreHand("[1111z][2222z]123456789m22b", ctx()), "kong")).toBe(4);
     });
   });
 
@@ -742,7 +762,7 @@ describe("PATTERNS: 對對胡/坎坎胡 and the 暗刻 chain", () => {
   });
 
   it("a kong disqualifies 坎坎胡 even with self-draw, but still counts toward 五暗刻", () => {
-    const result = scoreHand("1111m999m456t789t234b22b", ctx({ selfDraw: true }));
+    const result = scoreHand("[1111m]999m456t789t234b22b", ctx({ selfDraw: true }));
     expect(tai(result, "five-concealed-triplets")).toBe(0);
   });
 
@@ -770,7 +790,7 @@ describe("PATTERNS: 對對胡/坎坎胡 and the 暗刻 chain", () => {
 
 describe("PATTERNS: 五槓子", () => {
   it("scores 240 for 5 kongs, excluding 槓/四暗刻/五暗刻 but not 對對胡", () => {
-    const result = scoreHand("1111m2222m3333m4444m5555t66t", ctx());
+    const result = scoreHand("[1111m][2222m][3333m][4444m][5555t]66t", ctx());
     expect(tai(result, "five-kongs")).toBe(240);
     expect(tai(result, "kong")).toBe(0);
     expect(tai(result, "four-hidden-triplets")).toBe(0);
@@ -855,7 +875,7 @@ describe("PATTERNS: 老少上/老少碰", () => {
   });
 
   it("a kong of rank 1 or 9 counts toward 老少碰 too", () => {
-    const result = scoreHand("1111m999m456t789t234b22b", ctx());
+    const result = scoreHand("[1111m]999m456t789t234b22b", ctx());
     expect(tai(result, "old-young-triplet")).toBe(5);
   });
 });
@@ -1219,7 +1239,7 @@ describe("PATTERNS: 二連刻 (2 consecutive triplets/kongs)", () => {
   });
 
   it("still counts with a kong involved (222m3333m)", () => {
-    expect(tai(scoreHand("222m3333m456t789t789b22b", ctx()), "consecutive-triplet-pair")).toBe(5);
+    expect(tai(scoreHand("222m[3333m]456t789t789b22b", ctx()), "consecutive-triplet-pair")).toBe(5);
   });
 });
 
@@ -1473,7 +1493,7 @@ describe("PATTERNS: 兩兄弟/小三兄弟/大三兄弟 (same-rank triplet/kong 
   });
 
   it("scores 小三兄弟 for 33t+333m+3333b (pair at one suit, triplet/kong at the other 2), excluding 兩兄弟", () => {
-    const result = scoreHand("333m3333b456m789t111z33t", ctx());
+    const result = scoreHand("333m[3333b]456m789t111z33t", ctx());
     expect(tai(result, "small-three-brothers")).toBe(20);
     expect(tai(result, "cross-suit-same-triplet")).toBe(0);
     expect(tai(result, "big-three-brothers")).toBe(0);
@@ -1499,7 +1519,7 @@ describe("PATTERNS: 小三色連刻/大三色連刻 (consecutive ranks across su
   });
 
   it("scores 大三色連刻 for 333t+4444m+555b (no pair involved, consecutive ranks)", () => {
-    const result = scoreHand("333t4444m555b111z678t22z", ctx());
+    const result = scoreHand("333t[4444m]555b111z678t22z", ctx());
     expect(tai(result, "big-three-color-consecutive-triplets")).toBe(20);
   });
 
@@ -3125,14 +3145,14 @@ const SMOKE_TEST_HANDS = [
   "11119999m1199t11999b",
   "11119999m1199t11b111z",
   "11119m19t19b12345677z",
-  "1111m2222m3333m4444m5555t66t",
+  "[1111m][2222m][3333m][4444m][5555t]66t",
   "1111m223344m5555t777z",
   "1111m223344m5566777t",
   "1111m3344667799t111z",
   "1111m5555t9999b22z777z",
-  "1111m999m456t789t234b22b",
-  "1111z123456789m234t22b",
-  "1111z2222z123456789m22b",
+  "[1111m]999m456t789t234b22b",
+  "[1111z]123456789m234t22b",
+  "[1111z][2222z]123456789m22b",
   "111222333m111z456b22t",
   "111222333m444555t22b",
   "11122345678999m111z",
@@ -3248,7 +3268,7 @@ const SMOKE_TEST_HANDS = [
   "19m1t7899t19b12345677z",
   "22223333446677888m",
   "222b444b777b66b444m111z",
-  "222m3333m456t789t789b22b",
+  "222m[3333m]456t789t789b22b",
   "222m333m789t456b789b11z",
   "222m333t44b555m666t777b",
   "223344556677m22t888t",
@@ -3265,10 +3285,10 @@ const SMOKE_TEST_HANDS = [
   "234t234t678t678t678t33t",
   "234t345m456b567m678t55z",
   "234t345m456b567t678m55z",
-  "333m3333b456m789t111z33t",
+  "333m[3333b]456m789t111z33t",
   "333m444m555m789t111z22b",
   "333m444m789t456b789b22m",
-  "333t4444m555b111z678t22z",
+  "333t[4444m]555b111z678t22z",
   "345t345t345b345b345m55z",
   "444m123b456b789b111z44t",
   "444t555b678m111z222z33m",
