@@ -2374,7 +2374,7 @@ function Calculator() {
           </div>
 
           <div className="hand-display">
-            {hand.length === 0 && <span className="hint">Click tiles above, or type algebraic notation.</span>}
+            {hand.length === 0 && <span className="hint">Tap tiles above, or type algebraic notation.</span>}
             {displayHand.map((t) => (
               <HandTileButton key={t.id} tile={t} onClick={() => removeTile(t.id)} />
             ))}
@@ -2633,11 +2633,11 @@ function WaitsTrainer({
     setElapsedMs(0);
   };
 
-  // Clears back to the "press New Hand" placeholder - used both on mount
+  // Clears back to the "tap New hand" placeholder - used both on mount
   // (so a question doesn't pop up the instant Trainer opens) and whenever
   // level/flush changes (so the picker never shows a hand that doesn't
   // match the currently-selected level/flush controls; the user presses
-  // New Hand again to get a question in the new configuration).
+  // New hand again to get a question in the new configuration).
   const clearQuestion = () => {
     setQuestion(null);
     selectedRef.current = new Set();
@@ -2758,14 +2758,14 @@ function WaitsTrainer({
 
       <div className="panel-header">
         <button type="button" className="btn-primary" onClick={() => newQuestion(level, flush)}>
-          {submitted ? "Next Question" : "New Hand"}
+          {submitted ? "Next hand" : "New hand"}
         </button>
         {question && <span className="tile-count">Time: {formatSeconds(elapsedMs)}</span>}
       </div>
 
       {!question && (
         <div className="waits">
-          <span className="waits-label">Press "New Hand" to start testing your ability!</span>
+          <span className="waits-label">Tap "New hand" for a hand, then pick every tile it waits on.</span>
         </div>
       )}
 
@@ -2844,7 +2844,7 @@ function WaitsTrainer({
           <div className="panel-header">
             <span className="panel-title">Stats</span>
             <button type="button" onClick={() => setStats(() => new Map())}>
-              Reset Stats
+              Reset stats
             </button>
           </div>
           <div className="trainer-stats-scroll">
@@ -3043,7 +3043,7 @@ function DiscardTrainer({
 
       <div className="panel-header">
         <button type="button" className="btn-primary" onClick={() => newQuestion(level, flush)}>
-          {submitted ? "Next Question" : "New Hand"}
+          {submitted ? "Next hand" : "New hand"}
         </button>
         {question && <span className="tile-count">Time: {formatSeconds(elapsedMs)}</span>}
       </div>
@@ -3051,7 +3051,7 @@ function DiscardTrainer({
       {!question && (
         <div className="waits">
           <span className="waits-label">
-            Press "New Hand" — you've just drawn, so tap the single best tile to discard.
+            Tap "New hand" — you've just drawn, so tap the single best tile to discard.
           </span>
         </div>
       )}
@@ -3117,7 +3117,7 @@ function DiscardTrainer({
           <div className="panel-header">
             <span className="panel-title">Stats</span>
             <button type="button" onClick={() => setStats(() => new Map())}>
-              Reset Stats
+              Reset stats
             </button>
           </div>
           <div className="trainer-stats-scroll">
@@ -3428,7 +3428,7 @@ function EndlessTrainer({
           the user's thumb. */}
       <div className="panel-header endless-controls">
         <button type="button" onClick={startNewHand} className={confirmNewHand ? "endless-confirm" : undefined}>
-          {phase === "idle" ? "Start" : confirmNewHand ? "Discard this hand?" : "New hand"}
+          {confirmNewHand ? "Discard this hand?" : "New hand"}
         </button>
         <button
           type="button"
@@ -3451,7 +3451,7 @@ function EndlessTrainer({
       {phase === "idle" && (
         <div className="waits">
           <span className="waits-label">
-            Press "Start" — you'll get a full hand and keep discarding, one draw at a time, with no
+            Tap "New hand" — you'll get a full hand and keep discarding, one draw at a time, with no
             prompts. Every discard is scored against the best play.
           </span>
         </div>
@@ -6902,7 +6902,7 @@ function SeatingPanel({
   const [renaming, setRenaming] = useState<number | null>(null);
   const [step, setStep] = useState(0);
 
-  // "Reset names" sits right next to "Start over" and wipes names that now
+  // "Reset names" sits right next to "Reset" and wipes names that now
   // persist, so it takes a second tap to confirm; the armed state lapses by
   // itself after a few seconds.
   const [confirmingResetNames, setConfirmingResetNames] = useState(false);
@@ -7175,7 +7175,7 @@ function SeatingPanel({
         </button>
         <div className="seat-secondary">
           <button type="button" className="seat-reset" onClick={reset}>
-            Start over
+            Reset
           </button>
           {!isDefaultSeatNames(names) && (
             <button
@@ -7409,7 +7409,7 @@ function App() {
   const [discardTrainerStats, setDiscardTrainerStats] = useState<Map<string, DiscardTrainerStatsEntry>>(new Map());
   const [endlessTrainerStats, setEndlessTrainerStats] = useState<EndlessStats>(EMPTY_ENDLESS_STATS);
   // Seating tab player names, lifted here for the same reason: custom initials
-  // should survive switching sub-tabs / tabs and "Start over" - it's the same
+  // should survive switching sub-tabs / tabs and the seating Reset - it's the same
   // four people at the table. Unlike everything else here they're also saved
   // to localStorage, so they survive a page reload too.
   const [seatNames, setSeatNames] = useState<readonly string[]>(loadSeatNames);
@@ -7419,7 +7419,7 @@ function App() {
     setSeatNames((prev) => prev.map((n, i) => (i === player ? name : n)));
   // Who sits at each table position (seatOrder[pos] = player index), changed
   // by double-tap-then-tap swaps on the Seating tab. Kept here with the names
-  // so a rearranged table also survives tab switches and "Start over".
+  // so a rearranged table also survives tab switches and the seating Reset.
   const [seatOrder, setSeatOrder] = useState<readonly number[]>([0, 1, 2, 3]);
   const swapSeats = (a: number, b: number) =>
     setSeatOrder((prev) => prev.map((player, pos) => (pos === a ? prev[b] : pos === b ? prev[a] : player)));

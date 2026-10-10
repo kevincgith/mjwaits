@@ -198,7 +198,7 @@ const main = async () => {
     };
   });
   await clickText(page, "L4");
-  await clickText(page, "New Hand");
+  await clickText(page, "New hand");
   await sleep(300);
   // Let the per-question timer accrue a realistic few seconds.
   await sleep(3500);
