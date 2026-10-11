@@ -534,7 +534,7 @@ button {
 .situation-summary-winds {
   margin-right: 0.25rem;
   font-weight: 600;
-  color: var(--suit-blue);
+  color: var(--accent);
 }
 
 .situation-summary-chip {

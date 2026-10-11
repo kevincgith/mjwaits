@@ -1,7 +1,8 @@
 # Tile art
 
 These tile faces are adapted from the oblique mahjong tile set on Wikimedia
-Commons (files `MJw1-.svg` ... `MJj1-.svg`), drawn by **Cangjie6**; the
+Commons (files `MJw1-.svg` ... `MJj1-.svg`; the flowers and seasons are
+the `MJh1j-.svg` ... `MJh8j-.svg` variant), drawn by **Cangjie6**; the
 circle tiles build on an original by **Jerry Crimson Mann** with work by
 **User:Dewcl**.
 
