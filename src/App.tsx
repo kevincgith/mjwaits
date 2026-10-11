@@ -4090,8 +4090,9 @@ function findWinningTileInstance(hand: ResolvedHand, declaredCount: number, winn
 //
 // Separately, once expanded, each individual meld/pair group shown in the
 // breakdown is itself press-able: press and hold one and it lights up
-// back in the DECLARED/CONCEALED summary below (see ScoringBreakdown's
-// pressedGroup) - momentary, gone the instant the finger/mouse lifts, and
+// back in the DECLARED/CONCEALED summary below - or, in the main Scoring
+// result, which has no summary, in the hand strip (see ScoringBreakdown's
+// pressedGroup and onPressedGroupChange) - momentary, gone the instant the finger/mouse lifts, and
 // independent of the row's own expanded/collapsed state (which stays
 // exactly as it was, driven only by the row's onClick). onPointerLeave is
 // a mouse-only safety net: a touch pointer has implicit capture (see the
@@ -4218,18 +4219,32 @@ function concealedDisplayGroups(hand: ResolvedHand, declaredCount: number): { ti
   return isEightPairsHand(hand) ? groups.sort((a, b) => compareTiles(a.tiles[0], b.tiles[0])) : groups;
 }
 
+// Whether `group` is the pressed one: by tile membership, not array
+// identity - see ScoringBreakdown's pressedGroup comment for why.
+function isSameGroup(group: Tile[], pressed: Tile[] | null): boolean {
+  return pressed !== null && group.length === pressed.length && group.every((t) => pressed.includes(t));
+}
+
 function ScoringBreakdown({
   matched,
   hand,
   declaredCount,
   winningTile,
   ctx,
+  showHand = true,
+  onPressedGroupChange,
 }: {
   matched: ScoreResult["matched"];
   hand: ResolvedHand;
   declaredCount: number;
   winningTile: Tile | null;
   ctx: GameContext;
+  /** Render the DECLARED/CONCEALED boxes. The main Scoring result turns
+      them off - the hand strip above already shows that decomposition. */
+  showHand?: boolean;
+  /** Told of every pressed group too, so a breakdown without its own boxes
+      can light the group up somewhere else (the hand strip). */
+  onPressedGroupChange?: (group: Tile[] | null) => void;
 }) {
   // scoring.ts's Tile (unlike the picker's HandTile) has no id to pin down
   // which physical instance was the 食胡 tile, so this only knows its kind -
@@ -4269,9 +4284,12 @@ function ScoringBreakdown({
   // genuinely distinct melds that happen to hold equal-*valued* tiles
   // (e.g. two separate 123m runs) - those are still different Tile
   // object instances, so this can't confuse them.
-  const [pressedGroup, setPressedGroup] = useState<Tile[] | null>(null);
-  const isGroupHighlighted = (group: Tile[]): boolean =>
-    pressedGroup !== null && group.length === pressedGroup.length && group.every((t) => pressedGroup.includes(t));
+  const [pressedGroup, setPressedGroupState] = useState<Tile[] | null>(null);
+  const setPressedGroup = (group: Tile[] | null) => {
+    setPressedGroupState(group);
+    onPressedGroupChange?.(group);
+  };
+  const isGroupHighlighted = (group: Tile[]): boolean => isSameGroup(group, pressedGroup);
   // Declaration order (the default) already reads as a rough thematic
   // grouping - PATTERNS is authored one related family at a time - so
   // sorting by tai is opt-in rather than the default, same "toggle changes
@@ -4293,6 +4311,7 @@ function ScoringBreakdown({
   };
   return (
     <>
+      {showHand && (
       <div className="hand-sections">
         <div className="hand-section declared-section">
           <span className="hand-section-label">Declared</span>
@@ -4341,6 +4360,7 @@ function ScoringBreakdown({
           </div>
         </div>
       </div>
+      )}
       <div className="waits breakdown-list">
         <div className="projected-waits-header">
           <span className="waits-label">Patterns</span>
@@ -5596,6 +5616,25 @@ function ScoringPanel({
   const secondWinningInstance = scoring?.ok && scoring.result.second
     ? findWinningTileInstance(scoring.result.second.hand, 0, winningTile)
     : null;
+  // Tapping the strip goes back to entering tiles: the picker opens if it
+  // was collapsed, and the page scrolls to the top of the input area, so
+  // the hand card sits under the toolbar with the picker right below it.
+  // Measured from the input area rather than the card itself - the card is
+  // sticky, so its own position isn't where it sits in the page.
+  const jumpToPicker = () => {
+    setPickerCollapsed(false);
+    const zone = handCardRef.current?.parentElement;
+    if (!zone) return;
+    const toolbarBottom = toolbarRef.current?.getBoundingClientRect().bottom ?? 0;
+    window.scrollTo({ top: zone.getBoundingClientRect().top + window.scrollY - toolbarBottom, behavior: "smooth" });
+  };
+
+  // The group held down in a result pattern's breakdown. The result has no
+  // DECLARED/CONCEALED boxes of its own (the strip shows the hand), so it
+  // lights up here in the strip instead.
+  const [pressedResultGroup, setPressedResultGroup] = useState<Tile[] | null>(null);
+  const stripGroupClass = (tiles: Tile[], extra = "") =>
+    ["hand-strip-group", extra, isSameGroup(tiles, pressedResultGroup) && "pattern-highlighted"].filter(Boolean).join(" ");
 
   // What the collapsed Situation card lists: each declaration that's on, by
   // the same label its chip shows.
@@ -5682,15 +5721,16 @@ function ScoringPanel({
           <button
             type="button"
             className="hand-strip"
-            onClick={() => handCardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
-            title="Jump to your hand"
+            onClick={jumpToPicker}
+            title="Back to the tile picker"
             tabIndex={handCardVisible ? -1 : undefined}
           >
-            {/* One row per region, in table order: bonus tiles, then the
-                declared melds, then the concealed tiles (wrapping onto a
-                second line when the hand is long). */}
+            {/* One tinted panel per region, in table order: bonus tiles,
+                then the declared melds (both green, as in the result's
+                DECLARED box), then the concealed tiles (grey; 8 a line, so a
+                long hand wraps). */}
             {bonusTiles.length > 0 && (
-              <span className="hand-strip-row">
+              <span className="hand-strip-row hand-strip-tint is-declared">
                 {sortBonusTiles(bonusTiles).map((tile) => (
                   <span key={`${tile.kind}${tile.rank}`} className="tile-glyph" data-suit="bonus" role="img" aria-label={bonusTileLabel(tile)}>
                     {bonusTileGlyph(tile)}
@@ -5698,8 +5738,23 @@ function ScoringPanel({
                 ))}
               </span>
             )}
-            {declaredMelds.length > 0 && (
-              <span className="hand-strip-row hand-strip-melds">
+            {/* Scored, the declared melds come from the decomposition too,
+                so a pattern's pressed group can light up here. */}
+            {declaredMelds.length > 0 && scoring?.ok && (
+              <span className="hand-strip-row hand-strip-melds hand-strip-tint is-declared">
+                {scoring.result.hand.melds.slice(0, declaredMelds.length).flatMap((meld, i) =>
+                  displayGroupsFor(scoring.result.hand, meld.tiles).map((tiles, j) => (
+                    <span key={`${i}-${j}`} className={stripGroupClass(tiles, meld.concealed ? "concealed-kong-meld" : "")}>
+                      {tiles.map((t, k) => (
+                        <TileGlyphSpan key={k} tile={t} highlight={t === scoredWinningInstance} />
+                      ))}
+                    </span>
+                  ))
+                )}
+              </span>
+            )}
+            {declaredMelds.length > 0 && !scoring?.ok && (
+              <span className="hand-strip-row hand-strip-melds hand-strip-tint is-declared">
                 {declaredMelds.map((meld) => (
                   <span key={meld.id} className={`hand-strip-group${meld.concealed ? " concealed-kong-meld" : ""}`}>
                     {meld.tiles.map((t, i) => (
@@ -5716,10 +5771,10 @@ function ScoringPanel({
                 just the sorted tiles. */}
             {concealedTiles.length > 0 &&
               (scoring?.ok ? (
-                <>
+                <span className="hand-strip-tint is-concealed">
                   <span className="hand-strip-row hand-strip-melds">
                     {concealedDisplayGroups(scoring.result.hand, declaredMelds.length).map(({ tiles }, i) => (
-                      <span key={i} className="hand-strip-group">
+                      <span key={i} className={stripGroupClass(tiles)}>
                         {tiles.map((t, j) => (
                           <TileGlyphSpan key={j} tile={t} highlight={t === scoredWinningInstance} />
                         ))}
@@ -5733,7 +5788,7 @@ function ScoringPanel({
                         or
                       </span>
                       {concealedDisplayGroups(scoring.result.second.hand, 0).map(({ tiles }, i) => (
-                        <span key={i} className="hand-strip-group">
+                        <span key={i} className={stripGroupClass(tiles)}>
                           {tiles.map((t, j) => (
                             <TileGlyphSpan key={j} tile={t} highlight={t === secondWinningInstance} />
                           ))}
@@ -5741,9 +5796,9 @@ function ScoringPanel({
                       ))}
                     </span>
                   )}
-                </>
+                </span>
               ) : (
-                <span className="hand-strip-row">
+                <span className="hand-strip-row hand-strip-concealed hand-strip-tint is-concealed">
                   {(sortTiles(concealedTiles) as HandTile[]).map((t) => (
                     <TileGlyphSpan key={t.id} tile={t} highlight={!nearComplete && isWinningTile(t)} />
                   ))}
@@ -6035,7 +6090,7 @@ function ScoringPanel({
 
           <div className="scoring-context chip-grid">
             {/* 莊 and its 連莊 streak as one stepper, first in the grid and
-                two chips wide: 0 = not dealer (莊 in grey), 1 = 莊, n = 莊連(n-1).
+                two chips wide: 0 = not dealer (莊 unhighlighted), 1 = 莊, n = 莊連(n-1).
                 A fixed slot, so turning it on never reshuffles the chips. */}
             <div className="stepper chip-stepper" role="group" aria-label="Dealer streak">
               <button
@@ -6257,6 +6312,8 @@ function ScoringPanel({
             declaredCount={declaredMelds.length}
             winningTile={winningTile}
             ctx={ctx}
+            showHand={false}
+            onPressedGroupChange={setPressedResultGroup}
           />
 
           {scoring.result.second && (
@@ -6270,6 +6327,8 @@ function ScoringPanel({
                 declaredCount={0}
                 winningTile={winningTile}
                 ctx={ctx}
+                showHand={false}
+                onPressedGroupChange={setPressedResultGroup}
               />
             </>
           )}

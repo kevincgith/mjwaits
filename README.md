@@ -72,7 +72,8 @@ a valid Eight Pairs and a valid ordinary hand (嚦咕雙食) is shown scored bot
 The result is the **tai total** plus a **matched-pattern list**: each row is a pattern name and
 its tai, and tapping a row expands it to the exact tiles behind that pattern — one sub-row per
 stacking instance. A sort toggle cycles the list through check-order / tai ↓ / tai ↑, and
-pressing and holding a row lights up its tiles in the DECLARED / CONCEALED display below.
+pressing and holding one of an expanded row's groups lights it up in the hand strip under the
+toolbar, which shows the scored decomposition (so the result doesn't repeat it).
 
 ### Projected scores
 
