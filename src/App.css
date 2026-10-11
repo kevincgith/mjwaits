@@ -223,6 +223,10 @@
   color: var(--faint);
 }
 
+.build-version a {
+  color: inherit;
+}
+
 /* Without this, mobile browsers impose a ~300ms delay on every tap while
    they wait to see if it's the first half of a double-tap-to-zoom gesture -
    on a small tap target like a tile button, a second tap that arrives
@@ -257,7 +261,7 @@ button {
 /* The app icon (same file as the favicon) in front of the name. Decorative:
    the name right after it already says what it is. */
 .app-logo {
-  /* Also the hidden Test hands trigger (five quick taps) - no tap delay or
+  /* Also the hidden Test hands trigger (three quick taps) - no tap delay or
      selection callout getting in the way of rapid taps. */
   touch-action: manipulation;
   -webkit-user-select: none;
@@ -1498,8 +1502,17 @@ button.icon-toggle.open {
    rather than each tile separately. Gone the instant the press ends. */
 .breakdown-group.pattern-highlighted,
 .hand-strip-group.pattern-highlighted {
+  /* A ring a few px outside the group rather than an outline on its edge:
+     clear of a 食胡 tile's own highlight box (which reaches just past the
+     tile), and painted under the tiles, without moving anything. */
+  /* Lifted above the neighbouring tiles, which sit closer than the ring
+     reaches (rows are ~3px apart). */
+  position: relative;
+  z-index: 1;
   background: var(--accent-bg);
-  outline: 2px solid var(--accent);
+  box-shadow:
+    0 0 0 3px var(--accent-bg),
+    0 0 0 5px var(--accent);
 }
 
 /* The result breakdown's two grouping boxes - Declared (everything entered
@@ -1693,14 +1706,23 @@ button.icon-toggle.open {
   font-variant-numeric: tabular-nums;
 }
 
-/* 嚦咕雙食: separates the second reading's breakdown from the primary one
-   above it. */
-.scoring-second-label {
-  margin-top: 0.5rem;
-}
-.scoring-second-label .waits-label {
-  color: var(--title-accent);
+/* 嚦咕雙食: "and" centred on a hairline between the two readings'
+   breakdowns (both score), like the hand strip's divider. */
+.reading-and {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0.6rem 0;
+  font-size: var(--text-sm);
   font-weight: 600;
+  color: var(--text-muted);
+}
+
+.reading-and::before,
+.reading-and::after {
+  content: "";
+  flex: 1;
+  border-top: 0.5px solid var(--separator);
 }
 
 /* Wraps one Patterns-list row (the .scoring-pattern-row row itself, plus
@@ -1910,7 +1932,24 @@ button.scoring-pattern-row {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
-  padding: 0.35rem 0 0.15rem 0.6rem;
+  padding: 0.35rem 0 0.15rem;
+}
+
+/* Nested boxes alternate grey and white, so each level's edge shows: a
+   grey row's breakdown gets a white CONCEALED box; a discard's waits are
+   white cards inside its grey row, and their CONCEALED box goes grey
+   again. */
+.projected-wait .hand-section.concealed-section {
+  background: var(--surface);
+}
+
+.discard-option-detail .projected-wait {
+  background: var(--surface);
+  box-shadow: 0 0.5px 1.5px rgba(0, 0, 0, 0.12);
+}
+
+.discard-option-detail .projected-wait .hand-section.concealed-section {
+  background: var(--bg-inset);
 }
 
 .projected-wait-caret {
@@ -2015,6 +2054,45 @@ button.scoring-pattern-row {
   font-family: "Apple Symbols", "Segoe UI Symbol", "Noto Sans Symbols 2", sans-serif;
   top: 0;
 }
+/* Tile art (see tileArt.ts): an image in the font glyph's 0.78em x 1em
+   box, without the font's baseline offset. */
+.tile-glyph.tile-art {
+  display: inline-block;
+  top: 0;
+  width: 0.78em;
+  height: 1em;
+  vertical-align: middle;
+}
+
+/* The tile art's faces are plain white, so they need their own edge to
+   show on a white card: a hairline plus a slightly heavier bottom, like
+   a tile seen face-on. */
+img.tile-face {
+  display: block;
+  /* A little inside the 0.78em x 1em box (at the art's own 149:189
+     proportions), so tiles in a row don't touch. */
+  width: 0.72em;
+  height: 0.913em;
+  margin: 0.043em auto 0;
+  border-radius: 0.08em;
+  background: #fff;
+  box-shadow:
+    0 0 0 0.5px rgba(0, 0, 0, 0.3),
+    0 0.035em 0 0.5px rgba(0, 0, 0, 0.14);
+  -webkit-user-drag: none;
+  user-select: none;
+}
+
+.tile-glyph.tile-art.wait-highlight::before,
+.tile-glyph.tile-art.joker-assumed::before {
+  /* Hugs the face (inset 0.03em at the sides, 0.043em at the top, 0.913em
+     tall - see img.tile-face) with an even 0.05em margin all round. */
+  top: -0.007em;
+  height: 1.013em;
+  left: -0.02em;
+  right: -0.02em;
+}
+
 /* Winds (East/South/West/North) */
 .tile-glyph[data-suit="z"][data-rank="1"],
 .tile-glyph[data-suit="z"][data-rank="2"],
@@ -3424,7 +3502,7 @@ button.scoring-pattern-row {
   grid-template-columns: repeat(8, max-content);
 }
 
-/* A 嚦咕雙食 hand's second reading: "or" sits centred on the divider
+/* A 嚦咕雙食 hand's second reading: "and" sits centred on the divider
    above it, legend-style, breaking the line - so it reads as a separator,
    not as a tile in the row. The extra top padding keeps the label's lower
    half clear of the tiles. */
@@ -3691,35 +3769,64 @@ button.scoring-pattern-row {
   box-shadow: inset 0 0 0 1.5px var(--accent-border-light);
 }
 
-/* Big total at the top of the result. */
-.result-hero {
+/* The Patterns card's header: the label with its sort pill beside it. */
+.patterns-header {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 0.1rem;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.patterns-header .waits-label {
+  margin-right: 0;
+}
+
+.patterns-subtotal-meta {
+  margin-left: auto;
+}
+
+/* Right-aligned over the rows' tai column, a size up and in a deep green
+   pill (like the toolbar's total) so it reads as their sum. */
+.patterns-subtotal {
+  padding: 0.15rem 0.6rem;
+  margin-right: -0.6rem;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  font-size: var(--text-xl);
+  line-height: 1.2;
+  font-weight: 700;
+  color: var(--on-accent);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The result's total: one deep-green row above the patterns. */
+.result-total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
   margin: 1.25rem 0 0.75rem;
-  padding: 1.1rem 1rem 1rem;
-  background: var(--surface);
+  padding: 0.85rem 1.1rem;
   border-radius: var(--radius-lg);
+  background: var(--accent);
+  color: var(--on-accent);
   /* Fallback only - the toolbar's total pill measures the pinned toolbar
      and hand strip itself when it scrolls here. */
   scroll-margin-top: 7rem;
 }
 
-.result-hero-label {
-  font-size: var(--text-sm);
+.result-total-label {
+  font-size: var(--text-md);
   font-weight: 600;
-  text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--text-muted);
+  text-transform: uppercase;
 }
 
-.result-hero-value {
-  font-size: var(--text-display);
-  line-height: 1.05;
+.result-total-value {
+  font-size: var(--text-title);
+  line-height: 1;
   font-weight: 700;
   letter-spacing: -0.02em;
-  color: var(--accent);
   font-variant-numeric: tabular-nums;
 }
 
@@ -4039,7 +4146,7 @@ button.scoring-pattern-row {
   }
 }
 
-/* ---- Hidden Test hands sheet (five taps on the logo) ---------------------- */
+/* ---- Hidden Test hands sheet (three taps on the logo) ---------------------- */
 
 .sheet-backdrop {
   position: fixed;
@@ -4094,6 +4201,22 @@ button.scoring-pattern-row {
 
 .sheet-random {
   width: 100%;
+}
+
+.sheet-setting {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.sheet-setting-label {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.sheet-setting .segmented {
+  flex: 1;
 }
 
 /* Only the list may shrink to fit the sheet - iOS Safari otherwise squashes

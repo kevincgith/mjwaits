@@ -15,6 +15,16 @@ import {
 } from "react";
 import "./App.css";
 import {
+  bonusArtUrl,
+  loadTileStyle,
+  saveTileStyle,
+  tileArtUrl,
+  TILE_STYLES,
+  TileStyleContext,
+  useTileStyle,
+  type TileStyle,
+} from "./tileArt";
+import {
   COMPLETE_SIZE,
   compareTiles,
   EFFICIENCY_HORIZON,
@@ -550,7 +560,8 @@ function TileGlyphSpan({
   highlight?: boolean;
   jokerAssumed?: boolean;
 }) {
-  const classes = ["tile-glyph", large && "large", highlight && "wait-highlight", jokerAssumed && "joker-assumed"]
+  const art = useTileStyle() === "art";
+  const classes = ["tile-glyph", art && "tile-art", large && "large", highlight && "wait-highlight", jokerAssumed && "joker-assumed"]
     .filter(Boolean)
     .join(" ");
   // role/aria-label so assistive tech reads "3 Sou" rather than the bare
@@ -565,7 +576,7 @@ function TileGlyphSpan({
       aria-label={jokerAssumed ? `${tileLabel(tile)} (assumed from a joker)` : tileLabel(tile)}
       title={jokerAssumed ? "Assumed from a joker" : undefined}
     >
-      {tileGlyph(tile)}
+      {art ? <img className="tile-face" src={tileArtUrl(tile)} alt="" draggable={false} /> : tileGlyph(tile)}
     </span>
   );
 }
@@ -4009,6 +4020,20 @@ function bonusTileLabel(tile: BonusTile): string {
   return tile.kind === "flower" ? `Flower: ${FLOWER_NAMES[tile.rank]}` : `Season: ${SEASON_NAMES[tile.rank]}`;
 }
 
+// A flower/season tile, in the current tile style (see TileGlyphSpan).
+function BonusGlyphSpan({ tile, large, label }: { tile: BonusTile; large?: boolean; label?: boolean }) {
+  const art = useTileStyle() === "art";
+  return (
+    <span
+      className={["tile-glyph", art && "tile-art", large && "large"].filter(Boolean).join(" ")}
+      data-suit="bonus"
+      {...(label ? { role: "img", "aria-label": bonusTileLabel(tile) } : {})}
+    >
+      {art ? <img className="tile-face" src={bonusArtUrl(tile)} alt="" draggable={false} /> : bonusTileGlyph(tile)}
+    </span>
+  );
+}
+
 // Canonical display order for the declared-melds box's bonus-tile row -
 // all 4 flowers (by rank) then all 4 seasons (by rank), same order as the
 // picker itself (CORRECTION_BONUS_TILES above) and independent of
@@ -4033,9 +4058,7 @@ function BonusTileButton({
   const classes = ["tile-button", selected && "selected"].filter(Boolean).join(" ");
   return (
     <button type="button" className={classes} disabled={disabled} title={bonusTileLabel(tile)} {...tap}>
-      <span className="tile-glyph" data-suit="bonus">
-        {bonusTileGlyph(tile)}
-      </span>
+      <BonusGlyphSpan tile={tile} />
     </button>
   );
 }
@@ -4233,6 +4256,7 @@ function ScoringBreakdown({
   ctx,
   showHand = true,
   onPressedGroupChange,
+  title = "Patterns",
 }: {
   matched: ScoreResult["matched"];
   hand: ResolvedHand;
@@ -4245,6 +4269,9 @@ function ScoringBreakdown({
   /** Told of every pressed group too, so a breakdown without its own boxes
       can light the group up somewhere else (the hand strip). */
   onPressedGroupChange?: (group: Tile[] | null) => void;
+  /** The card's header label - a 嚦咕雙食 hand's second reading names
+      itself here rather than in a separate caption. */
+  title?: string;
 }) {
   // scoring.ts's Tile (unlike the picker's HandTile) has no id to pin down
   // which physical instance was the 食胡 tile, so this only knows its kind -
@@ -4319,9 +4346,7 @@ function ScoringBreakdown({
             {hand.bonusTiles.length > 0 && (
               <span className="breakdown-group bonus-tile-group" title="Bonus tiles">
                 {sortBonusTiles(hand.bonusTiles).map((tile, i) => (
-                  <span key={i} className="tile-glyph" data-suit="bonus">
-                    {bonusTileGlyph(tile)}
-                  </span>
+                  <BonusGlyphSpan key={i} tile={tile} />
                 ))}
               </span>
             )}
@@ -4362,8 +4387,8 @@ function ScoringBreakdown({
       </div>
       )}
       <div className="waits breakdown-list">
-        <div className="projected-waits-header">
-          <span className="waits-label">Patterns</span>
+        <div className="patterns-header">
+          <span className="waits-label">{title}</span>
           {matched.length > 1 && (
             <button
               type="button"
@@ -4374,6 +4399,19 @@ function ScoringBreakdown({
               {patternSortLabel[patternSort]}
             </button>
           )}
+          {/* This reading's own sum - the hand's total for an ordinary hand,
+              one reading's share for 嚦咕雙食. */}
+          {/* Laid out like a pattern row's tai + caret, so the subtotal
+              sits right above the tai column. */}
+          <span className="scoring-pattern-meta patterns-subtotal-meta">
+            <span className="patterns-subtotal" title="Sum of these patterns">
+              {matched.reduce((sum, m) => sum + m.tai, 0)}
+              <span className="visually-hidden"> tai</span>
+            </span>
+            <span className="projected-wait-caret" aria-hidden="true" style={{ visibility: "hidden" }}>
+              ▸
+            </span>
+          </span>
         </div>
         {matched.length === 0 ? (
           <span className="hint">No patterns matched yet — this is an early version, more get added over time.</span>
@@ -4598,8 +4636,8 @@ function ProjectedWaitRow({
             />
             {result.second && (
               <>
-                <div className="waits scoring-total scoring-second-label">
-                  <span className="waits-label">Also (嚦咕雙食 - also reads as an ordinary hand):</span>
+                <div className="reading-and" title="嚦咕雙食 - the same tiles also read as an ordinary hand, and both readings score">
+                  and
                 </div>
                 <ScoringBreakdown
                   matched={result.second.matched}
@@ -5701,14 +5739,20 @@ function ScoringPanel({
               type="button"
               className="toolbar-total"
               onClick={() => {
-                // Lands the total just below whatever is pinned above it - the
-                // toolbar plus the hand strip, whose height varies with the
+                // Lands the result card just below whatever is pinned above it -
+                // the toolbar plus the hand strip, whose height varies with the
                 // hand - measured now rather than guessed with a fixed offset.
-                const hero = resultRef.current;
-                if (!hero) return;
-                const pinned = [toolbarRef.current, toolbarRef.current?.querySelector(".hand-strip-wrap.open")];
-                const pinnedBottom = Math.max(0, ...pinned.map((el) => el?.getBoundingClientRect().bottom ?? 0));
-                window.scrollBy({ top: hero.getBoundingClientRect().top - pinnedBottom - 12, behavior: "smooth" });
+                // The strip counts even while still closed: it opens once the
+                // hand card scrolls away, which this scroll is about to do.
+                const card = resultRef.current;
+                const toolbar = toolbarRef.current;
+                if (!card || !toolbar) return;
+                const strip = toolbar.querySelector<HTMLElement>(".hand-strip");
+                const stripHeight = strip ? strip.scrollHeight + 8 : 0; // + its 0.5rem bottom margin
+                // Where the toolbar sits once pinned, not where it is now (at the
+                // top of the page it's still below the app header).
+                const pinnedBottom = parseFloat(getComputedStyle(toolbar).top) + toolbar.offsetHeight + stripHeight;
+                window.scrollBy({ top: card.getBoundingClientRect().top - pinnedBottom - 12, behavior: "smooth" });
               }}
               title="Jump to the score breakdown"
             >
@@ -5732,9 +5776,7 @@ function ScoringPanel({
             {bonusTiles.length > 0 && (
               <span className="hand-strip-row hand-strip-tint is-declared">
                 {sortBonusTiles(bonusTiles).map((tile) => (
-                  <span key={`${tile.kind}${tile.rank}`} className="tile-glyph" data-suit="bonus" role="img" aria-label={bonusTileLabel(tile)}>
-                    {bonusTileGlyph(tile)}
-                  </span>
+                  <BonusGlyphSpan key={`${tile.kind}${tile.rank}`} tile={tile} label />
                 ))}
               </span>
             )}
@@ -5767,7 +5809,8 @@ function ScoringPanel({
             {/* Once the hand scores, 手牌 shows the scored decomposition -
                 melds, then the pair - like the result's CONCEALED box; a
                 嚦咕雙食 hand, which also reads as an ordinary hand, gets a
-                second row for that reading, under an "or" divider. Until the hand scores,
+                second row for that reading, under an "and" divider (嚦咕雙食
+                scores both readings). Until the hand scores,
                 just the sorted tiles. */}
             {concealedTiles.length > 0 &&
               (scoring?.ok ? (
@@ -5784,8 +5827,8 @@ function ScoringPanel({
                   {scoring.result.second && (
                     <span className="hand-strip-row hand-strip-melds hand-strip-alt">
                       {/* Sits on the divider between the two readings. */}
-                      <span className="hand-strip-tag" title="嚦咕雙食 - also reads as an ordinary hand">
-                        or
+                      <span className="hand-strip-tag" title="嚦咕雙食 - also reads as an ordinary hand, and both readings score">
+                        and
                       </span>
                       {concealedDisplayGroups(scoring.result.second.hand, 0).map(({ tiles }, i) => (
                         <span key={i} className={stripGroupClass(tiles)}>
@@ -5877,9 +5920,7 @@ function ScoringPanel({
                           onClick={() => removeBonusTile(tile)}
                           title={`${bonusTileLabel(tile)} - tap to remove`}
                         >
-                          <span className="tile-glyph large" data-suit="bonus">
-                            {bonusTileGlyph(tile)}
-                          </span>
+                          <BonusGlyphSpan tile={tile} large />
                         </button>
                       ))}
                     </div>
@@ -6298,9 +6339,11 @@ function ScoringPanel({
 
       {scoring?.ok && (
         <>
-          <div className="result-hero" ref={resultRef}>
-            <span className="result-hero-label">Total</span>
-            <span className="result-hero-value">
+          {/* One-row total above the patterns - the toolbar pill's jump
+              target. */}
+          <div className="result-total" ref={resultRef}>
+            <span className="result-total-label">Total</span>
+            <span className="result-total-value">
               {scoring.result.total}
               <span className="visually-hidden"> tai</span>
             </span>
@@ -6318,8 +6361,10 @@ function ScoringPanel({
 
           {scoring.result.second && (
             <>
-              <div className="waits scoring-total scoring-second-label">
-                <span className="waits-label">Also (嚦咕雙食 - also reads as an ordinary hand):</span>
+              {/* 嚦咕雙食: the same tiles also read as an ordinary hand, and
+                  both readings score - so "and", not "or". */}
+              <div className="reading-and" title="嚦咕雙食 - the same tiles also read as an ordinary hand, and both readings score">
+                and
               </div>
               <ScoringBreakdown
                 matched={scoring.result.second.matched}
@@ -7414,10 +7459,20 @@ function DiceTab({
 // describe() prefix carries nothing for a reader.
 const testHandGroupLabel = (group: string): string => group.replace(/^PATTERNS:\s*/, "");
 
-// The hidden developer sheet (five taps on the logo): every winning hand from
+// The hidden developer sheet (three taps on the logo): every winning hand from
 // the scoring tests, grouped by test section and searchable, plus a Random
 // pick - for trying the scorer against known decompositions by hand.
-function TestHandsSheet({ onPick, onClose }: { onPick: (hand: TestHand) => void; onClose: () => void }) {
+function TestHandsSheet({
+  onPick,
+  onClose,
+  tileStyle,
+  onTileStyleChange,
+}: {
+  onPick: (hand: TestHand) => void;
+  onClose: () => void;
+  tileStyle: TileStyle;
+  onTileStyleChange: (style: TileStyle) => void;
+}) {
   const [query, setQuery] = useState("");
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -7445,6 +7500,22 @@ function TestHandsSheet({ onPick, onClose }: { onPick: (hand: TestHand) => void;
           <button type="button" className="sheet-close" onClick={onClose} aria-label="Close">
             ✕
           </button>
+        </div>
+        <div className="sheet-setting">
+          <span className="sheet-setting-label">Tile style</span>
+          <div className="segmented" role="group" aria-label="Tile style">
+            {TILE_STYLES.map(({ value, label }) => (
+              <button
+                key={value}
+                type="button"
+                className={tileStyle === value ? "toggle-on" : undefined}
+                aria-pressed={tileStyle === value}
+                onClick={() => onTileStyleChange(value)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
         <button
           type="button"
@@ -7569,9 +7640,14 @@ function App() {
   const swapSeats = (a: number, b: number) =>
     setSeatOrder((prev) => prev.map((player, pos) => (pos === a ? prev[b] : pos === b ? prev[a] : player)));
 
-  // Hidden Test hands sheet: five quick taps on the logo (each within 800ms
+  // Hidden Test hands sheet: three quick taps on the logo (each within 800ms
   // of the last) open it; picking a hand switches to Scoring and loads it.
   const [testHandsOpen, setTestHandsOpen] = useState(false);
+  const [tileStyle, setTileStyle] = useState<TileStyle>(loadTileStyle);
+  const changeTileStyle = (style: TileStyle) => {
+    setTileStyle(style);
+    saveTileStyle(style);
+  };
   const [testHandRequest, setTestHandRequest] = useState<TestHandRequest | null>(null);
   const logoTaps = useRef({ count: 0, last: 0 });
   const onLogoTap = () => {
@@ -7579,7 +7655,7 @@ function App() {
     const taps = logoTaps.current;
     taps.count = now - taps.last < 800 ? taps.count + 1 : 1;
     taps.last = now;
-    if (taps.count >= 5) {
+    if (taps.count >= 3) {
       taps.count = 0;
       setTestHandsOpen(true);
     }
@@ -7591,6 +7667,7 @@ function App() {
   };
 
   return (
+    <TileStyleContext.Provider value={tileStyle}>
     <div className="page">
       <header className="app-header">
         <img
@@ -7647,9 +7724,32 @@ function App() {
           onResetSeatNames={resetSeatNames}
         />
       )}
-      <footer className="build-version">v{__BUILD_TIME__}</footer>
-      {testHandsOpen && <TestHandsSheet onPick={pickTestHand} onClose={() => setTestHandsOpen(false)} />}
+      <footer className="build-version">
+        v{__BUILD_TIME__}
+        {tileStyle === "art" && (
+          <>
+            {" · Tile art by Cangjie6 et al., "}
+            <a href="https://commons.wikimedia.org/wiki/Category:SVG_Oblique_illustrations_of_Mahjong_tiles" target="_blank" rel="noreferrer">
+              Wikimedia Commons
+            </a>
+            {", "}
+            <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noreferrer">
+              CC BY-SA 4.0
+            </a>
+            {" (cropped)"}
+          </>
+        )}
+      </footer>
+      {testHandsOpen && (
+        <TestHandsSheet
+          onPick={pickTestHand}
+          onClose={() => setTestHandsOpen(false)}
+          tileStyle={tileStyle}
+          onTileStyleChange={changeTileStyle}
+        />
+      )}
     </div>
+    </TileStyleContext.Provider>
   );
 }
 
