@@ -2852,8 +2852,11 @@ function WaitsTrainer({
           Flush
         </button>
       </div>
+      <p className="trainer-hint">
+        Level = hand size ({trainerHandSize(MIN_TRAINER_LEVEL)}–{trainerHandSize(MAX_TRAINER_LEVEL)} tiles) · Flush = one suit
+      </p>
 
-      <div className="panel-header">
+      <div className="panel-header trainer-actions">
         <button type="button" className="btn-primary" onClick={() => newQuestion(level, flush)}>
           {submitted ? "Next hand" : "New hand"}
         </button>
@@ -3137,8 +3140,12 @@ function DiscardTrainer({
           Flush
         </button>
       </div>
+      <p className="trainer-hint">
+        Level = hand size ({trainerHandSize(MIN_TRAINER_LEVEL) + 1}–{trainerHandSize(MAX_TRAINER_LEVEL) + 1} tiles) · Flush =
+        one suit
+      </p>
 
-      <div className="panel-header">
+      <div className="panel-header trainer-actions">
         <button type="button" className="btn-primary" onClick={() => newQuestion(level, flush)}>
           {submitted ? "Next hand" : "New hand"}
         </button>
@@ -4103,6 +4110,21 @@ function findWinningTileInstance(hand: ResolvedHand, declaredCount: number, winn
 // reading - factored out so 嚦咕雙食 (see ScoreResult.second) can render a
 // second reading identically below the primary one, rather than
 // duplicating this whole block.
+// A pattern's name as the Chinese on one line and its English gloss -
+// the "(…)" part of names like "暗清龍 (Pure straight, concealed)" - smaller
+// and grey underneath, like the section captions, rather than both wrapping
+// together on one line.
+function PatternName({ name }: { name: string }) {
+  const split = name.indexOf(" (");
+  if (split === -1 || !name.endsWith(")")) return <span className="scoring-pattern-name">{name}</span>;
+  return (
+    <span className="scoring-pattern-name">
+      {name.slice(0, split)}
+      <span className="scoring-pattern-name-en">{name.slice(split + 2, -1)}</span>
+    </span>
+  );
+}
+
 // One row of the Patterns list - tappable to expand the specific tiles
 // behind that pattern's tai, when it has any (see TaiPattern.tiles). A
 // pure game-context pattern (自摸, riichi, dealer streak, and similar)
@@ -4158,7 +4180,7 @@ function PatternRow({
     return (
       <div className="pattern-row">
         <div className="scoring-pattern-row" title={pattern.caveat}>
-          <span className="scoring-pattern-name">{patternDisplayName(pattern, hand)}</span>
+          <PatternName name={patternDisplayName(pattern, hand)} />
           <span className="scoring-pattern-meta">
             <span className="scoring-pattern-tai">{tai}<span className="visually-hidden"> tai</span></span>
             {/* Reserves the same width a caret takes on a tappable row,
@@ -4176,7 +4198,7 @@ function PatternRow({
   return (
     <div className="pattern-row">
       <button type="button" className="scoring-pattern-row" onClick={() => setExpanded((e) => !e)} aria-expanded={expanded} title={pattern.caveat}>
-        <span className="scoring-pattern-name">{patternDisplayName(pattern, hand)}</span>
+        <PatternName name={patternDisplayName(pattern, hand)} />
         <span className="scoring-pattern-meta">
           <span className="scoring-pattern-tai">{tai}<span className="visually-hidden"> tai</span></span>
           <span className={`projected-wait-caret${expanded ? " open" : ""}`} aria-hidden="true">
@@ -4505,6 +4527,9 @@ interface DiscardOption {
 // One row of the full-hand "discard options" list: discard tile → its waits,
 // live tile count and best tai, expanding to a ProjectedWaitRow per wait.
 // Same collapsed-by-default idiom as ProjectedWaitRow itself.
+// How many discard options show before "Show all".
+const DISCARDS_SHOWN = 5;
+
 function DiscardOptionRow({
   option,
   declaredCount,
@@ -5564,6 +5589,7 @@ function ScoringPanel({
   // live tiles), or most live tiles first (ties to better tai) - payout vs
   // odds. discardOptions itself stays in tile order.
   const [discardSort, setDiscardSort] = useState<"score" | "live">("score");
+  const [showAllDiscards, setShowAllDiscards] = useState(false);
   const displayedDiscardOptions = useMemo(() => {
     if (!discardOptions) return null;
     return [...discardOptions].sort((a, b) =>
@@ -5907,7 +5933,7 @@ function ScoringPanel({
             </div>
             <div className="hand-display breakdown-groups">
               {declaredMelds.length === 0 && bonusTiles.length === 0 ? (
-                <span className="hint">None — pick 上 / 碰 / 明槓 / 暗槓 below, or tap a flower</span>
+                <span className="hint">Pick a meld type below, or tap a flower</span>
               ) : (
                 <>
                   {bonusTiles.length > 0 && (
@@ -5954,7 +5980,7 @@ function ScoringPanel({
             </div>
             <div className="hand-display">
               {concealedTiles.length === 0 ? (
-                <span className="hint">None — pick 手牌 below and tap tiles</span>
+                <span className="hint">Pick 手牌 below, then tap tiles</span>
               ) : (
                 // While near-complete, the tile that completes the hand isn't in
                 // hand yet - each projected wait supplies its own 食胡 tile - so the
@@ -6381,71 +6407,87 @@ function ScoringPanel({
       )}
 
       {nearComplete && displayedProjectedWaits !== null && (
-        <div className="waits projected-waits">
-          {displayedProjectedWaits.length === 0 ? (
-            <span className="waits-label">Not tenpai — no tile completes this hand.</span>
-          ) : (
-            <>
-              <div className="projected-waits-header">
-                <span className="waits-label">
-                  If completed — {displayedProjectedWaits.length} wait{displayedProjectedWaits.length === 1 ? "" : "s"}{" "}
-                  (tap a row for its breakdown):
-                </span>
-                <button
-                  type="button"
-                  className="projected-sort-toggle"
-                  onClick={() => setProjectedSort((s) => (s === "score" ? "tiles" : "score"))}
-                  title={
-                    projectedSort === "score"
-                      ? "Sorted by score — tap to sort by tile"
-                      : "Sorted by tile — tap to sort by score"
-                  }
-                >
-                  {projectedSort === "score" ? "Sort: score" : "Sort: tile"}
-                </button>
-              </div>
-              {displayedProjectedWaits.length === allTileKinds().length && (
-                <span className="waits-label universal-wait">Universal wait — any tile completes this hand.</span>
-              )}
-              {displayedProjectedWaits.map((pw) => (
-                <ProjectedWaitRow key={tileKey(pw.wait)} projected={pw} declaredCount={declaredMelds.length} ctx={ctx} />
-              ))}
-            </>
-          )}
-        </div>
+        <>
+          <div className="section-head">
+            <span className="section-title">
+              聽牌 <span className="section-title-en">Waits</span>
+              {displayedProjectedWaits.length > 0 && <span className="section-meta">tap a wait for its score</span>}
+            </span>
+            {displayedProjectedWaits.length > 1 && (
+              <button
+                type="button"
+                className="projected-sort-toggle"
+                onClick={() => setProjectedSort((s) => (s === "score" ? "tiles" : "score"))}
+                title={
+                  projectedSort === "score" ? "Sorted by score — tap to sort by tile" : "Sorted by tile — tap to sort by score"
+                }
+              >
+                {projectedSort === "score" ? "Sort: score" : "Sort: tile"}
+              </button>
+            )}
+          </div>
+          <div className="waits projected-waits">
+            {displayedProjectedWaits.length === 0 ? (
+              <span className="waits-label">Not tenpai — no tile completes this hand.</span>
+            ) : (
+              <>
+                {displayedProjectedWaits.length === allTileKinds().length && (
+                  <span className="waits-label universal-wait">Universal wait — any tile completes this hand.</span>
+                )}
+                {displayedProjectedWaits.map((pw) => (
+                  <ProjectedWaitRow key={tileKey(pw.wait)} projected={pw} declaredCount={declaredMelds.length} ctx={ctx} />
+                ))}
+              </>
+            )}
+          </div>
+        </>
       )}
 
       {displayedDiscardOptions !== null && (
-        <div className="waits projected-waits">
-          {displayedDiscardOptions.length === 0 ? (
-            <span className="waits-label">No discard leaves this hand tenpai.</span>
-          ) : (
-            <>
-              <div className="projected-waits-header">
-                <span className="waits-label">
-                  {scoring?.ok ? "If you discarded instead of winning — " : "Discard options — "}
-                  {displayedDiscardOptions.length} keep{displayedDiscardOptions.length === 1 ? "s" : ""} you tenpai
-                  (tap a row for its waits):
+        <>
+          <div className="section-head">
+            <span className="section-title">
+              打牌 <span className="section-title-en">Discards</span>
+              {displayedDiscardOptions.length > 0 && (
+                <span className="section-meta">
+                  {displayedDiscardOptions.length} keep tenpai
                 </span>
-                <button
-                  type="button"
-                  className="projected-sort-toggle"
-                  onClick={() => setDiscardSort((s) => (s === "score" ? "live" : "score"))}
-                  title={
-                    discardSort === "score"
-                      ? "Sorted by best tai — tap to sort by live tiles"
-                      : "Sorted by live tiles — tap to sort by best tai"
-                  }
-                >
-                  {discardSort === "score" ? "Sort: tai" : "Sort: live"}
-                </button>
-              </div>
-              {displayedDiscardOptions.map((o) => (
-                <DiscardOptionRow key={tileKey(o.discard)} option={o} declaredCount={declaredMelds.length} ctx={ctx} />
-              ))}
-            </>
-          )}
-        </div>
+              )}
+            </span>
+            {displayedDiscardOptions.length > 1 && (
+              <button
+                type="button"
+                className="projected-sort-toggle"
+                onClick={() => setDiscardSort((s) => (s === "score" ? "live" : "score"))}
+                title={
+                  discardSort === "score"
+                    ? "Sorted by best tai — tap to sort by live tiles"
+                    : "Sorted by live tiles — tap to sort by best tai"
+                }
+              >
+                {discardSort === "score" ? "Sort: tai" : "Sort: live"}
+              </button>
+            )}
+          </div>
+          <div className="waits projected-waits">
+            {displayedDiscardOptions.length === 0 ? (
+              <span className="waits-label">No discard leaves this hand tenpai.</span>
+            ) : (
+              <>
+                {/* The best few, then the rest on request - a long list would
+                    otherwise bury everything below it. */}
+                {(showAllDiscards ? displayedDiscardOptions : displayedDiscardOptions.slice(0, DISCARDS_SHOWN)).map((o) => (
+                  <DiscardOptionRow key={tileKey(o.discard)} option={o} declaredCount={declaredMelds.length} ctx={ctx} />
+                ))}
+                {displayedDiscardOptions.length > DISCARDS_SHOWN && (
+                  <button type="button" className="show-more-row" onClick={() => setShowAllDiscards((v) => !v)}>
+                    {showAllDiscards ? "Show fewer" : `Show all ${displayedDiscardOptions.length}`}
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        </>
       )}
     </section>
   );
@@ -6530,7 +6572,11 @@ function WallGap({ withMarker }: { withMarker: boolean }) {
     <div className="wall-gap">
       {withMarker && (
         <span className="wall-break-marker" aria-hidden="true">
-          👉
+          {/* An arrowhead pointing right, rotated per wall in CSS - drawn
+              rather than an emoji, so it matches the app's icons. */}
+          <svg viewBox="0 0 10 12" width="10" height="12">
+            <path d="M1 1 L9 6 L1 11 Z" />
+          </svg>
         </span>
       )}
     </div>
@@ -6679,13 +6725,15 @@ function DicePanel() {
         <div className="wall-break-caption">
           {brk.n === WALL_STACKS_PER_SIDE ? (
             <>
-              Break the <strong>bottom</strong> wall at the right-hand corner (18 lands on the wall’s
-              end)
+              <strong>Break the bottom wall</strong>
+              <span className="wall-break-detail">at its right-hand corner - 18 lands on the wall’s end</span>
             </>
           ) : (
             <>
-              Break the <strong>{WALL_SIDE_LABEL[brk.side]}</strong> wall: count {brk.n} clockwise →{" "}
-              <strong>{brk.n}</strong> │ {WALL_STACKS_PER_SIDE - brk.n} left
+              <strong>Break the {WALL_SIDE_LABEL[brk.side]} wall</strong>
+              <span className="wall-break-detail">
+                count {brk.n} stacks clockwise · {WALL_STACKS_PER_SIDE - brk.n} stay on that wall
+              </span>
             </>
           )}
         </div>
@@ -7728,15 +7776,17 @@ function App() {
         v{__BUILD_TIME__}
         {tileStyle === "art" && (
           <>
-            {" · Tile art by Cangjie6 et al., "}
-            <a href="https://commons.wikimedia.org/wiki/Category:SVG_Oblique_illustrations_of_Mahjong_tiles" target="_blank" rel="noreferrer">
-              Wikimedia Commons
+            {" · "}
+            {/* The CC BY-SA credit: author, licence, and the source (which
+                links on to the licence); "cropped" notes the change. */}
+            <a
+              href="https://commons.wikimedia.org/wiki/Category:SVG_Oblique_illustrations_of_Mahjong_tiles"
+              target="_blank"
+              rel="noreferrer"
+              title="Tile art by Cangjie6 et al. on Wikimedia Commons, CC BY-SA 4.0, cropped to the face"
+            >
+              Tiles © Cangjie6, CC BY-SA 4.0
             </a>
-            {", "}
-            <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noreferrer">
-              CC BY-SA 4.0
-            </a>
-            {" (cropped)"}
           </>
         )}
       </footer>

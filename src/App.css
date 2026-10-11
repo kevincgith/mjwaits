@@ -1,10 +1,8 @@
-/* Color tokens: every color below is a CSS custom property so dark mode
-   (driven purely by the OS/browser prefers-color-scheme - no manual
-   toggle) can override them in one place. The palette follows iOS's
-   grouped-list look: a light grey page (--bg) with white cards (--surface),
-   translucent grey fills for controls (--fill), and a single green accent
-   taken from the app logo. The dark media query below only lists the
-   tokens that actually need to change. */
+/* Color tokens: every color is a CSS custom property, defined once here.
+   The palette follows iOS's grouped-list look: a light grey page (--bg)
+   with white cards (--surface), translucent grey fills for controls
+   (--fill), and a single green accent taken from the app logo. The app is
+   light only. */
 :root {
   /* Text */
   --text: #1c1c1e;
@@ -20,8 +18,6 @@
   --bg-inset: #f6f6f9;
   --surface: #fff;
   --surface-sunken: #f2f2f7;
-  --surface-sunken-2: #f6f6f9;
-  --surface-warm: #f6f6f9;
   --hover-bg: #e5e5ea;
   --hover-bg-2: #f2f2f7;
   /* Control fills (iOS "tertiary system fill") - the default button and
@@ -29,10 +25,7 @@
   --fill: rgba(118, 118, 128, 0.12);
   --fill-strong: rgba(118, 118, 128, 0.24);
   --separator: rgba(60, 60, 67, 0.13);
-  /* The die keeps looking like a physical white piece regardless of theme
-     - unlike --surface (which darkens with everything else), this one is
-     deliberately absent from the dark-mode block below. --tile-ink is its
-     pips, which have to stay dark for the same reason. */
+  /* The die is drawn as a physical white piece; --tile-ink is its pips. */
   --tile-bg: #fff;
   --tile-ink: #1a1a1a;
   --tile-edge: #d9d9de;
@@ -40,7 +33,6 @@
   --border: #d1d1d6;
   --border-2: #e0e0e5;
   --border-3: #ececf0;
-  --border-warm: rgba(60, 60, 67, 0.12);
   /* Accent (green, from the logo) */
   --accent: #1d7f45;
   --accent-hover-bg: #d5ecdd;
@@ -62,7 +54,6 @@
   --text-lg: 1.0625rem; /* 17px - body, primary buttons */
   --text-xl: 1.375rem; /* 22px - small headings, symbols */
   --text-title: 1.875rem; /* 30px - the app title */
-  --text-display: 3rem; /* 48px - the score */
   /* Radius scale - every corner is one of these (plus 50% circles and the
      logo's squircle). A control nested in a track uses the track's radius
      minus its inset, so the curves stay concentric. */
@@ -77,7 +68,6 @@
   --success-border-1: #34a862;
   --success-text-1: #1e7a41;
   --success-bg-2: #eef7f1;
-  --success-border-2: #c6e6d1;
   /* Danger / error (red, non-suit) */
   --danger-bg-1: #fdecea;
   --danger-bg-2: #fdeceb;
@@ -94,7 +84,6 @@
   --purple: #8b5cf6;
   --purple-bg: #f2eefc;
   --purple-bg-2: #f3e8ff;
-  --purple-border: #e0d4f7;
   /* Tile-suit identity colors - kept apart from --accent so the UI accent
      can change without recolouring the 筒 suit and the winds. */
   --red: #b3261e;
@@ -102,17 +91,12 @@
   --suit-blue: #1a5fb4;
   --cyan: #0891b2;
   /* Misc labels / badges */
-  --title-accent: #a33;
   --label-gray-text: #6b7280;
   --label-gray-bg: #eef0f4;
-  --green-bg: #eaf6ee;
-  --green-border: #cdeada;
   --orange: #e8871e;
   /* Scan / detection overlay */
   --detect-green: #2fbf5f;
   /* Dice-rolling tab */
-  --dice-trips-border: #86d3a6;
-  --dice-run-border: #f0a9a0;
   --wall-seg: #2b6b3f;
   --wall-seg-outline: #1c4c2b;
   --wall-seg-counted: #57a97b;
@@ -131,84 +115,6 @@
   --toolbar-h: 52px;
 }
 
-/* Dark mode: disabled for now (tried it live and decided against it), but
-   kept rather than deleted in case it's worth revisiting later. The
-   "and (min-width: 999999px)" clause is a deliberately-impossible-to-match
-   condition that keeps this block from ever applying without touching its
-   contents (a real CSS comment can't wrap it instead - it's full of its
-   own section-header comments, any one of which would close a wrapping
-   comment early) - to re-enable, just delete that clause. */
-@media (prefers-color-scheme: dark) and (min-width: 999999px) {
-  :root {
-    /* Text */
-    --text: #e8e6e1;
-    --text-strong: #e4e4e4;
-    --text-secondary: #cfcfcf;
-    --text-tertiary: #a8a8a8;
-    --text-muted: #9a9a9a;
-    --text-subtle: #8a8a8a;
-    --text-faint: #8a8a8a;
-    --faint: #5a5a5a;
-    /* Surfaces */
-    --surface: #1e1e1e;
-    --surface-sunken: #232323;
-    --surface-sunken-2: #242424;
-    --hover-bg: #2a2a2a;
-    --hover-bg-2: #2f2f2f;
-    /* Borders */
-    --border: #4a4a4a;
-    --border-2: #454545;
-    --border-3: #3a3a3a;
-    --border-warm: #3a3730;
-    /* Accent (blue) */
-    --accent: #5b9bd5;
-    --accent-hover-bg: #14304d;
-    --accent-active: #0d3568;
-    --accent-bg: #16304d;
-    --accent-bg-2: #16283a;
-    --accent-border-light: #2d4a6b;
-    --accent-border-dashed: #2d4a6b;
-    /* Success (green, non-suit) */
-    --success-bg-1: #16301f;
-    --success-border-1: #3ecf72;
-    --success-text-1: #6fcf97;
-    --success-bg-2: #1a2b1c;
-    --success-border-2: #3a5c3f;
-    /* Danger / error (red, non-suit) */
-    --danger-bg-1: #3a201d;
-    --danger-bg-2: #3a1f1d;
-    --danger-border-1: #e2685f;
-    --danger-text-1: #ff8a80;
-    /* Warning (amber) */
-    --warning-bg-1: #3a331f;
-    --warning-bg-2: #3a331f;
-    --warning-bg-3: #332c18;
-    --warning-accent-1: #d9a53a;
-    --warning-border: #c99a3e;
-    --warning-text: #d9a53a;
-    /* Purple (joker) */
-    --purple: #a98cf7;
-    --purple-bg: #2a2338;
-    --purple-bg-2: #2a2338;
-    --purple-border: #4a3d68;
-    /* Tile-suit identity colors */
-    --red: #e2645a;
-    --green: #4caf6d;
-    --cyan: #22b8d4;
-    /* Misc labels / badges */
-    --title-accent: #d97a72;
-    --label-gray-text: #a3aab5;
-    --label-gray-bg: #2a2f38;
-    --green-bg: #17301f;
-    --green-border: #2e5c3d;
-    /* Scan / detection overlay */
-    --detect-green: #3ecf72;
-    /* Dice-rolling tab */
-    --dice-trips-border: #3ecf72;
-    --dice-run-border: #e2685f;
-  }
-}
-
 .page {
   max-width: 760px;
   margin: 0 auto;
@@ -225,6 +131,7 @@
 
 .build-version a {
   color: inherit;
+  text-decoration: none;
 }
 
 /* Without this, mobile browsers impose a ~300ms delay on every tap while
@@ -622,19 +529,6 @@ button {
 
 .section-action:not(:disabled):active {
   opacity: 0.5;
-}
-
-.card-subhead {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin: 0.25rem 0 0.5rem;
-}
-
-.card-footnote {
-  display: block;
-  margin-top: 0.6rem;
-  font-size: var(--text-sm);
 }
 
 /* ---- Hover / active ------------------------------------------------------
@@ -1070,15 +964,6 @@ button {
   font-weight: 600;
   color: var(--text);
   font-size: var(--text-lg);
-  margin-right: 0.5rem;
-}
-
-/* A sub-section header within a card (e.g. "Bonus tiles") - deliberately
-   more muted than .panel-title so it doesn't compete with it. */
-.panel-subtitle {
-  font-weight: 600;
-  font-size: var(--text-sm);
-  color: var(--text-muted);
   margin-right: 0.5rem;
 }
 
@@ -1594,7 +1479,7 @@ button.icon-toggle.open {
 /* A fixed height so both wind pickers line up exactly. */
 .wind-segmented {
   box-sizing: border-box;
-  height: 41px;
+  height: 42px;
 }
 
 .wind-segmented > button {
@@ -1754,7 +1639,7 @@ button.icon-toggle.open {
 .scoring-pattern-row {
   display: flex;
   justify-content: space-between;
-  align-items: flex-end;
+  align-items: center;
   gap: 1rem;
   padding: 0.55rem 0;
 }
@@ -1762,6 +1647,13 @@ button.icon-toggle.open {
 .scoring-pattern-name {
   flex: 1 1 auto;
   min-width: 0;
+}
+
+.scoring-pattern-name-en {
+  display: block;
+  margin-top: 0.05rem;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
 }
 
 .scoring-pattern-meta {
@@ -1812,15 +1704,6 @@ button.scoring-pattern-row {
   gap: 0.4rem;
 }
 
-/* Label + sort-order toggle on one line above the boxed rows. */
-.projected-waits-header {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
-
 .projected-sort-toggle {
   padding: 0.3rem 0.7rem;
   font-size: var(--text-sm);
@@ -1838,6 +1721,35 @@ button.scoring-pattern-row {
   content: "";
   position: absolute;
   inset: -0.6rem -0.4rem;
+}
+
+/* Trainer: what the level and Flush controls mean, under them. */
+.trainer-hint {
+  margin: -0.25rem 0 0.75rem;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+/* The trainer's one primary action spans the row, like Dice's Roll; the
+   timer sits beside it once a hand is dealt. */
+.trainer-actions .btn-primary {
+  flex: 1;
+}
+
+/* "Show all N" under a capped list: a quiet full-width text button. */
+.show-more-row {
+  min-height: 44px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.show-more-row:active {
+  background: var(--fill);
 }
 
 .projected-wait {
@@ -1949,6 +1861,20 @@ button.scoring-pattern-row {
 }
 
 .discard-option-detail .projected-wait .hand-section.concealed-section {
+  background: var(--bg-inset);
+}
+
+/* A wait's Patterns list gets the same box as its CONCEALED one, so the
+   whole breakdown reads as boxes on the row - not some boxed and some
+   straight on the row's own background. */
+.projected-wait .breakdown-list {
+  margin: 0.6rem 0 0.15rem;
+  padding: 0.55rem 0.7rem;
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.discard-option-detail .projected-wait .breakdown-list {
   background: var(--bg-inset);
 }
 
@@ -2735,12 +2661,6 @@ img.tile-face {
   margin-bottom: 0.75rem;
 }
 
-.sub-tab-placeholder {
-  margin: 0;
-  color: var(--text-muted);
-  text-align: center;
-}
-
 /* Exchange-tiles sub-tab: each die sits in its own labelled box so the Round
    die and Tiles die are easy to tell apart. */
 .exchange-tray {
@@ -2838,13 +2758,11 @@ img.tile-face {
 /* Three of a kind. */
 .dice-total-trips {
   background: var(--success-bg-1);
-  box-shadow: inset 0 0 0 1px var(--dice-trips-border);
 }
 
 /* 1-2-3 in any order. */
 .dice-total-run {
   background: var(--danger-bg-1);
-  box-shadow: inset 0 0 0 1px var(--dice-run-border);
 }
 
 /* --seg: one stack's width along its wall (a tile seen face-on); --tile: a
@@ -2946,10 +2864,14 @@ img.tile-face {
 
 .wall-break-marker {
   position: absolute;
-  font-size: var(--text-lg);
+  display: flex;
   line-height: 1;
   pointer-events: none;
-  filter: drop-shadow(0 0 1px rgba(255, 255, 255, 0.85));
+}
+
+.wall-break-marker svg {
+  display: block;
+  fill: var(--red);
 }
 .wall-top .wall-break-marker {
   left: 50%;
@@ -2973,10 +2895,18 @@ img.tile-face {
 }
 
 .wall-break-caption {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
   margin-top: 1rem;
   text-align: center;
   font-size: var(--text-md);
-  color: var(--text-secondary);
+  color: var(--text);
+}
+
+.wall-break-detail {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
 }
 
 /* Seating ceremony sub-tab */
@@ -3748,6 +3678,12 @@ img.tile-face {
   font-size: var(--text-sm);
 }
 
+/* Smaller than a caption's action, so its tap area reaches further to
+   stay ~44px tall. */
+.section-action.region-action::before {
+  inset: -0.7rem -0.4rem;
+}
+
 .hand-region-label {
   font-size: var(--text-sm);
   font-weight: 600;
@@ -3830,15 +3766,6 @@ img.tile-face {
   font-variant-numeric: tabular-nums;
 }
 
-/* The result's DECLARED / CONCEALED boxes sit in their own card between the
-   total and the pattern list. */
-.scoring-panel > .hand-sections {
-  background: var(--surface);
-  border-radius: var(--radius-lg);
-  padding: 0.75rem;
-  margin-bottom: 0.75rem;
-}
-
 .scoring-panel > .error {
   display: block;
   margin: 1rem 0.25rem 0;
@@ -3897,6 +3824,30 @@ img.tile-face {
    short rows (e.g. "8m/9m" spilling onto their own line), and honors
    (only 7 kinds) just leave the last two columns empty rather than
    starting a new row at a different tile size. */
+/* Phones: tap targets to ~40px+ (iOS asks for 44pt) without changing
+   how the controls look - just a little more height. A segmented control's
+   2px track padding counts toward its total. */
+@media (max-width: 600px) {
+  .segmented > button,
+  .panel-header .segmented > button {
+    min-height: 38px;
+  }
+
+  .chip-grid > button,
+  .chip-grid > .chip-stepper {
+    min-height: 40px;
+  }
+
+  .projected-wait-head {
+    min-height: 40px;
+  }
+
+  /* Flush sits beside the level control - same height as its track. */
+  .trainer-levels + button {
+    align-self: stretch;
+  }
+}
+
 @media (max-width: 600px) {
   .page {
     padding-left: 0.75rem;
