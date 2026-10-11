@@ -72,7 +72,8 @@ a valid Eight Pairs and a valid ordinary hand (嚦咕雙食) is shown scored bot
 The result is the **tai total** plus a **matched-pattern list**: each row is a pattern name and
 its tai, and tapping a row expands it to the exact tiles behind that pattern — one sub-row per
 stacking instance. A sort toggle cycles the list through check-order / tai ↓ / tai ↑, and
-pressing and holding a row lights up its tiles in the DECLARED / CONCEALED display below.
+pressing and holding one of an expanded row's groups lights it up in the hand strip under the
+toolbar, which shows the scored decomposition (so the result doesn't repeat it).
 
 ### Projected scores
 
@@ -313,3 +314,11 @@ to `main`.
 
 See [ROADMAP.md](ROADMAP.md) for future ideas (a live camera viewfinder, extending joker
 resolution into shanten and discard analysis, point/currency conversion for scoring).
+
+## Credits
+
+The tile art is adapted (cropped to the tile face) from the oblique mahjong tile set on
+[Wikimedia Commons](https://commons.wikimedia.org/wiki/Category:SVG_Oblique_illustrations_of_Mahjong_tiles)
+by Cangjie6 et al., licensed [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) - see
+[src/assets/tiles/CREDITS.md](src/assets/tiles/CREDITS.md). The hidden Test hands sheet (tap the logo
+three times) can switch back to the Unicode tile glyphs.

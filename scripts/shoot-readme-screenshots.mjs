@@ -176,7 +176,7 @@ const main = async () => {
       });
   });
   await sleep(250);
-  await shoot(page, "scoring.png", { startAt: ".result-hero", maxH: 1180 });
+  await shoot(page, "scoring.png", { startAt: ".result-total", maxH: 1180 });
 
   // 6. Dice & wall: three dice set to 4 / 5 / 3 = 12, wall broken on the left.
   await setMode(page, "Dice");

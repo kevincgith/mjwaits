@@ -223,6 +223,10 @@
   color: var(--faint);
 }
 
+.build-version a {
+  color: inherit;
+}
+
 /* Without this, mobile browsers impose a ~300ms delay on every tap while
    they wait to see if it's the first half of a double-tap-to-zoom gesture -
    on a small tap target like a tile button, a second tap that arrives
@@ -257,7 +261,7 @@ button {
 /* The app icon (same file as the favicon) in front of the name. Decorative:
    the name right after it already says what it is. */
 .app-logo {
-  /* Also the hidden Test hands trigger (five quick taps) - no tap delay or
+  /* Also the hidden Test hands trigger (three quick taps) - no tap delay or
      selection callout getting in the way of rapid taps. */
   touch-action: manipulation;
   -webkit-user-select: none;
@@ -530,7 +534,7 @@ button {
 .situation-summary-winds {
   margin-right: 0.25rem;
   font-weight: 600;
-  color: var(--suit-blue);
+  color: var(--accent);
 }
 
 .situation-summary-chip {
@@ -1496,9 +1500,19 @@ button.icon-toggle.open {
    handlers on .breakdown-group, and ScoringBreakdown's pressedGroup) -
    the whole meld as one box, same idea as .concealed-kong-meld above,
    rather than each tile separately. Gone the instant the press ends. */
-.breakdown-group.pattern-highlighted {
+.breakdown-group.pattern-highlighted,
+.hand-strip-group.pattern-highlighted {
+  /* A ring a few px outside the group rather than an outline on its edge:
+     clear of a 食胡 tile's own highlight box (which reaches just past the
+     tile), and painted under the tiles, without moving anything. */
+  /* Lifted above the neighbouring tiles, which sit closer than the ring
+     reaches (rows are ~3px apart). */
+  position: relative;
+  z-index: 1;
   background: var(--accent-bg);
-  outline: 2px solid var(--accent);
+  box-shadow:
+    0 0 0 3px var(--accent-bg),
+    0 0 0 5px var(--accent);
 }
 
 /* The result breakdown's two grouping boxes - Declared (everything entered
@@ -1588,7 +1602,7 @@ button.icon-toggle.open {
 }
 
 .wind-segmented > button.toggle-on {
-  color: var(--suit-blue);
+  color: var(--accent);
 }
 
 /* Round + seat wind always share one row - each is only four small tiles. */
@@ -1642,8 +1656,9 @@ button.icon-toggle.open {
   min-width: 4rem;
   padding: 0 0.75rem;
   font-size: var(--text-md);
-  font-weight: 600;
-  color: var(--text-muted);
+  font-weight: 500;
+  /* Off reads like an off chip - black, not greyed out as if disabled. */
+  color: var(--text);
   font-variant-numeric: tabular-nums;
 }
 
@@ -1691,14 +1706,23 @@ button.icon-toggle.open {
   font-variant-numeric: tabular-nums;
 }
 
-/* 嚦咕雙食: separates the second reading's breakdown from the primary one
-   above it. */
-.scoring-second-label {
-  margin-top: 0.5rem;
-}
-.scoring-second-label .waits-label {
-  color: var(--title-accent);
+/* 嚦咕雙食: "and" centred on a hairline between the two readings'
+   breakdowns (both score), like the hand strip's divider. */
+.reading-and {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0.6rem 0;
+  font-size: var(--text-sm);
   font-weight: 600;
+  color: var(--text-muted);
+}
+
+.reading-and::before,
+.reading-and::after {
+  content: "";
+  flex: 1;
+  border-top: 0.5px solid var(--separator);
 }
 
 /* Wraps one Patterns-list row (the .scoring-pattern-row row itself, plus
@@ -1908,7 +1932,24 @@ button.scoring-pattern-row {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
-  padding: 0.35rem 0 0.15rem 0.6rem;
+  padding: 0.35rem 0 0.15rem;
+}
+
+/* Nested boxes alternate grey and white, so each level's edge shows: a
+   grey row's breakdown gets a white CONCEALED box; a discard's waits are
+   white cards inside its grey row, and their CONCEALED box goes grey
+   again. */
+.projected-wait .hand-section.concealed-section {
+  background: var(--surface);
+}
+
+.discard-option-detail .projected-wait {
+  background: var(--surface);
+  box-shadow: 0 0.5px 1.5px rgba(0, 0, 0, 0.12);
+}
+
+.discard-option-detail .projected-wait .hand-section.concealed-section {
+  background: var(--bg-inset);
 }
 
 .projected-wait-caret {
@@ -2013,6 +2054,45 @@ button.scoring-pattern-row {
   font-family: "Apple Symbols", "Segoe UI Symbol", "Noto Sans Symbols 2", sans-serif;
   top: 0;
 }
+/* Tile art (see tileArt.ts): an image in the font glyph's 0.78em x 1em
+   box, without the font's baseline offset. */
+.tile-glyph.tile-art {
+  display: inline-block;
+  top: 0;
+  width: 0.78em;
+  height: 1em;
+  vertical-align: middle;
+}
+
+/* The tile art's faces are plain white, so they need their own edge to
+   show on a white card: a hairline plus a slightly heavier bottom, like
+   a tile seen face-on. */
+img.tile-face {
+  display: block;
+  /* A little inside the 0.78em x 1em box (at the art's own 149:189
+     proportions), so tiles in a row don't touch. */
+  width: 0.72em;
+  height: 0.913em;
+  margin: 0.043em auto 0;
+  border-radius: 0.08em;
+  background: #fff;
+  box-shadow:
+    0 0 0 0.5px rgba(0, 0, 0, 0.3),
+    0 0.035em 0 0.5px rgba(0, 0, 0, 0.14);
+  -webkit-user-drag: none;
+  user-select: none;
+}
+
+.tile-glyph.tile-art.wait-highlight::before,
+.tile-glyph.tile-art.joker-assumed::before {
+  /* Hugs the face (inset 0.03em at the sides, 0.043em at the top, 0.913em
+     tall - see img.tile-face) with an even 0.05em margin all round. */
+  top: -0.007em;
+  height: 1.013em;
+  left: -0.02em;
+  right: -0.02em;
+}
+
 /* Winds (East/South/West/North) */
 .tile-glyph[data-suit="z"][data-rank="1"],
 .tile-glyph[data-suit="z"][data-rank="2"],
@@ -3354,9 +3434,9 @@ button.scoring-pattern-row {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 0.35rem;
+  gap: 0.3rem;
   width: 100%;
-  padding: 0.45rem 0.7rem 0.55rem;
+  padding: 0.4rem;
   border: none;
   border-radius: var(--radius-md);
   background: var(--surface);
@@ -3365,8 +3445,8 @@ button.scoring-pattern-row {
   cursor: pointer;
 }
 
-/* One region per row; a long concealed hand wraps onto a second line
-   rather than shrinking the tiles. */
+/* One region per row, at the picker's tile size; a long row wraps onto
+   another line rather than shrinking the tiles. */
 .hand-strip-row {
   display: flex;
   flex-wrap: wrap;
@@ -3374,9 +3454,29 @@ button.scoring-pattern-row {
   gap: 0.15rem 0.1rem;
 }
 
-.hand-strip-row + .hand-strip-row {
-  padding-top: 0.35rem;
-  border-top: 0.5px solid var(--separator);
+/* Each region is its own tinted panel - the result card's DECLARED /
+   CONCEALED colours: green for bonus and declared, grey for concealed - so
+   the three read apart at a glance. */
+.hand-strip-tint {
+  display: block;
+  padding: 0.3rem 0.4rem;
+  border-radius: var(--radius-sm);
+}
+
+.hand-strip-row.hand-strip-tint {
+  display: flex;
+}
+
+.hand-strip-row.hand-strip-concealed.hand-strip-tint {
+  display: grid;
+}
+
+.hand-strip-tint.is-declared {
+  background: var(--success-bg-2);
+}
+
+.hand-strip-tint.is-concealed {
+  background: var(--bg-inset);
 }
 
 /* Declared melds: tiles within a meld sit together, melds apart. */
@@ -3392,17 +3492,25 @@ button.scoring-pattern-row {
 }
 
 .hand-strip .tile-glyph {
-  font-size: var(--tile-row);
+  font-size: var(--tile-input);
 }
 
-/* A 嚦咕雙食 hand's second reading: "or" sits centred on the divider
+/* The unscored concealed tiles: 8 a line - a full hand reads as two even
+   lines (plus one) rather than a ragged wrap. */
+.hand-strip-row.hand-strip-concealed {
+  display: grid;
+  grid-template-columns: repeat(8, max-content);
+}
+
+/* A 嚦咕雙食 hand's second reading: "and" sits centred on the divider
    above it, legend-style, breaking the line - so it reads as a separator,
    not as a tile in the row. The extra top padding keeps the label's lower
    half clear of the tiles. */
 .hand-strip-row.hand-strip-alt {
   position: relative;
-  margin-top: 0.15rem;
+  margin-top: 0.5rem;
   padding-top: 0.6rem;
+  border-top: 0.5px solid var(--separator);
 }
 
 .hand-strip-tag {
@@ -3411,7 +3519,8 @@ button.scoring-pattern-row {
   left: 50%;
   transform: translate(-50%, -50%);
   padding: 0 0.5rem;
-  background: var(--surface);
+  /* The concealed panel's grey, so the divider breaks cleanly around it. */
+  background: var(--bg-inset);
   color: var(--text-muted);
   font-size: var(--text-sm);
   font-weight: 600;
@@ -3496,9 +3605,9 @@ button.scoring-pattern-row {
 
 /* The hand card sits right above the picker, so it must never change height
    as tiles go in - that would slide the picker out from under the finger
-   mid-tapping. Every region has a fixed size: 門前 one line (scrolling
-   sideways if it ever overflows), 手牌 a 9-column x 2-row grid matching the
-   picker's columns (17 tiles max). The `.panel` prefix outranks the phone
+   mid-tapping. So every region grows only in whole rows: 門前 one line of
+   melds, wrapping to a second only when they overflow, 手牌 9 tiles a line
+   (the 10th starts the second), all at the picker's tile size. The `.panel` prefix outranks the phone
    tile-size rules. */
 /* Sticky within .input-zone only: pinned under the toolbar while the picker
    scrolls past, released once the picker is behind. The bg-coloured shadow
@@ -3540,17 +3649,13 @@ button.scoring-pattern-row {
   font-size: var(--text-sm);
 }
 
-/* 門前: one line, melds kept apart. */
+/* 門前: one line, melds kept apart, wrapping whole melds to a second line
+   rather than scrolling sideways. */
 .panel .hand-card .hand-display.breakdown-groups {
-  flex-wrap: nowrap;
-  gap: 0.6rem;
-  height: 2.6rem;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-
-.panel .hand-card .hand-display.breakdown-groups::-webkit-scrollbar {
-  display: none;
+  flex-wrap: wrap;
+  align-content: center;
+  gap: 0.15rem 0.6rem;
+  min-height: 2.9rem;
 }
 
 .panel .hand-card .breakdown-group {
@@ -3558,12 +3663,15 @@ button.scoring-pattern-row {
   flex-shrink: 0;
 }
 
-/* 手牌: the picker's 9 columns, two rows reserved. */
+/* 手牌: 9 tiles a line, the picker's columns - one line until the hand
+   needs a second (17 tiles max, so never a third). The columns share the
+   box's width, so each tile sits apart from its neighbours as its own
+   tap-to-remove target. */
 .panel .hand-card .hand-display:not(.breakdown-groups) {
   display: grid;
-  grid-template-columns: repeat(9, minmax(0, 2.9rem));
-  grid-template-rows: repeat(2, 2.45rem);
-  gap: 0.05rem 0.2rem;
+  grid-template-columns: repeat(9, minmax(0, 1fr));
+  grid-auto-rows: 2.75rem;
+  gap: 0.2rem 0.25rem;
   align-items: center;
 }
 
@@ -3581,7 +3689,7 @@ button.scoring-pattern-row {
 }
 
 .panel .hand-card .tile-glyph.large {
-  font-size: var(--tile-hand);
+  font-size: var(--tile-input);
 }
 
 /* Wide screens: the card has room for all 17 on one line, so 手牌 packs its
@@ -3591,7 +3699,7 @@ button.scoring-pattern-row {
   .panel .hand-card .hand-display:not(.breakdown-groups) {
     display: flex;
     flex-wrap: nowrap;
-    gap: 0.15rem;
+    gap: 0.4rem;
     height: 3.1rem;
     overflow-x: auto;
     scrollbar-width: none;
@@ -3661,35 +3769,64 @@ button.scoring-pattern-row {
   box-shadow: inset 0 0 0 1.5px var(--accent-border-light);
 }
 
-/* Big total at the top of the result. */
-.result-hero {
+/* The Patterns card's header: the label with its sort pill beside it. */
+.patterns-header {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 0.1rem;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.patterns-header .waits-label {
+  margin-right: 0;
+}
+
+.patterns-subtotal-meta {
+  margin-left: auto;
+}
+
+/* Right-aligned over the rows' tai column, a size up and in a deep green
+   pill (like the toolbar's total) so it reads as their sum. */
+.patterns-subtotal {
+  padding: 0.15rem 0.6rem;
+  margin-right: -0.6rem;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  font-size: var(--text-xl);
+  line-height: 1.2;
+  font-weight: 700;
+  color: var(--on-accent);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The result's total: one deep-green row above the patterns. */
+.result-total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
   margin: 1.25rem 0 0.75rem;
-  padding: 1.1rem 1rem 1rem;
-  background: var(--surface);
+  padding: 0.85rem 1.1rem;
   border-radius: var(--radius-lg);
+  background: var(--accent);
+  color: var(--on-accent);
   /* Fallback only - the toolbar's total pill measures the pinned toolbar
      and hand strip itself when it scrolls here. */
   scroll-margin-top: 7rem;
 }
 
-.result-hero-label {
-  font-size: var(--text-sm);
+.result-total-label {
+  font-size: var(--text-md);
   font-weight: 600;
-  text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--text-muted);
+  text-transform: uppercase;
 }
 
-.result-hero-value {
-  font-size: var(--text-display);
-  line-height: 1.05;
+.result-total-value {
+  font-size: var(--text-title);
+  line-height: 1;
   font-weight: 700;
   letter-spacing: -0.02em;
-  color: var(--accent);
   font-variant-numeric: tabular-nums;
 }
 
@@ -3840,7 +3977,7 @@ button.scoring-pattern-row {
     gap: 0.2rem;
   }
 
-  /* The hand card's 9-column grid caps the hand size on phones. */
+  /* The hand tile size for phones. */
   :root {
     --tile-hand: 1.95rem;
     --tile-row: 1.875rem;
@@ -3987,6 +4124,11 @@ button.scoring-pattern-row {
 /* The very narrowest phones (iPhone SE 1st gen, 320px): Photos goes
    icon-only too, so Scan - the main way in - keeps its label. */
 @media (max-width: 360px) {
+  /* 9 picker-size tiles don't fit the 手牌 box this narrow - drop to 8. */
+  .panel .hand-card .hand-display:not(.breakdown-groups) {
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+  }
+
   .toolbar-photos {
     width: 44px;
     padding: 0;
@@ -4004,7 +4146,7 @@ button.scoring-pattern-row {
   }
 }
 
-/* ---- Hidden Test hands sheet (five taps on the logo) ---------------------- */
+/* ---- Hidden Test hands sheet (three taps on the logo) ---------------------- */
 
 .sheet-backdrop {
   position: fixed;
@@ -4059,6 +4201,28 @@ button.scoring-pattern-row {
 
 .sheet-random {
   width: 100%;
+}
+
+.sheet-setting {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.sheet-setting-label {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.sheet-setting .segmented {
+  flex: 1;
+}
+
+/* Only the list may shrink to fit the sheet - iOS Safari otherwise squashes
+   the Random button (and the search) down to nothing under a long list. */
+.sheet > :not(.sheet-list) {
+  flex-shrink: 0;
 }
 
 .sheet-search {
@@ -4194,6 +4358,7 @@ button.scoring-pattern-row {
   .sheet {
     width: 100%;
     max-height: 85vh;
+    max-height: 85dvh;
     padding-bottom: calc(1rem + env(safe-area-inset-bottom));
     border-radius: var(--radius-xl) var(--radius-xl) 0 0;
   }
