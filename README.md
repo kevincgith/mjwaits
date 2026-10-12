@@ -20,7 +20,8 @@ Everything runs client-side, including the camera tile scanner. No hand ever lea
 **Install it** from the browser's menu (Safari: Share → Add to Home Screen): it opens full screen
 like an app and **works offline** — after one visit with a connection, it loads with no signal,
 and the tile scanner too once it has been used once. Updates arrive the next time it's opened
-online.
+online, and an app left open (or paused in the background, as iPhone does) shows a
+**New version available · Reload** bar once a newer build is live.
 
 **Live app: [app.kevinlhc.com/mjwaits](https://app.kevinlhc.com/mjwaits/)**
 
@@ -340,7 +341,7 @@ question; the last scan's raw detections with confidences; device info (viewport
 safe area, home-screen mode); and a reset for everything the app saved in the browser.
 
 Offline support is a small hand-written service worker, [`public/sw.js`](public/sw.js) (registered in
-production builds only): the page network-first, Vite's hashed `assets/` cache-first, everything
+production builds only): the page network-first (revalidated past GitHub Pages' 10-minute HTTP cache), Vite's hashed `assets/` cache-first, everything
 else (the detector model, icons) served from cache and re-checked in the background. The install
 icons, the link-preview image and the iPhone / iPad launch screens (`public/splash/`, one per screen
 size, listed in `index.html`) are rendered by [`scripts/make-icons.mjs`](scripts/make-icons.mjs). Opened from the
