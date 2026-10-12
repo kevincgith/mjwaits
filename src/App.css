@@ -170,7 +170,7 @@
 
 /* "Open github.com?" before a link leaves the app: a small centred alert,
    above any sheet it was opened from. */
-.link-confirm-backdrop {
+.sheet-backdrop.link-confirm-backdrop {
   z-index: 120;
 }
 

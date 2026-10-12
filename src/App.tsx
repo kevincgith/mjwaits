@@ -9306,9 +9306,15 @@ function ExternalLinkConfirm() {
   }, []);
   useEffect(() => {
     if (!href) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setHref(null);
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    // Captured first and stopped, so Escape closes only this - not the
+    // sheet it was opened from as well.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.stopImmediatePropagation();
+      setHref(null);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
   }, [href]);
   if (!href) return null;
   const host = new URL(href).hostname.replace(/^www\./, "");
@@ -9581,7 +9587,6 @@ function App() {
       </footer>
       {debug.layoutOverlay && <LayoutOverlay />}
       <UpdateBar />
-      <ExternalLinkConfirm />
       {creditsOpen && <CreditsSheet onClose={() => setCreditsOpen(false)} />}
       {testHandsOpen && (
         <TestHandsSheet
@@ -9591,6 +9596,8 @@ function App() {
           onTileStyleChange={changeTileStyle}
         />
       )}
+      {/* Last, so it sits above any sheet a link was tapped in. */}
+      <ExternalLinkConfirm />
     </div>
     </TileStyleContext.Provider>
   );
