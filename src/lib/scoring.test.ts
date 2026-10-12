@@ -982,18 +982,18 @@ describe("patternDisplayName: the 帶X family shows its resolved ranks", () => {
 
   it("混帶XY shows both ranks", () => {
     expect(displayName("123234m123t123b11122z", "mixed-common-rank-pair")).toBe(
-      "混帶XY(2,3) (Common rank pair across every non-honor meld)"
+      "混帶XY(2,3) (Shared rank pair in every suit meld)"
     );
   });
 
   it("混帶XYZ shows all three ranks", () => {
     expect(displayName("123m123b123m11122233z", "mixed-common-rank-triple")).toBe(
-      "混帶XYZ(1,2,3) (Common rank triple across every non-honor meld)"
+      "混帶XYZ(1,2,3) (Shared rank triple in every suit meld)"
     );
   });
 
   it("全帶X shows its single rank", () => {
-    expect(displayName("123234m222234t123b22b", "pure-common-rank")).toBe("全帶X(2) (Common rank across every meld and the pair)");
+    expect(displayName("123234m222234t123b22b", "pure-common-rank")).toBe("全帶X(2) (Common rank across every meld and the eyes)");
   });
 
   it("leaves every other pattern's name alone", () => {

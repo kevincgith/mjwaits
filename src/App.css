@@ -1114,7 +1114,12 @@ button.icon-toggle.open {
   grid-template-rows: 1fr;
 }
 
+/* position: relative so the clip also holds absolutely positioned content
+   (the screen-reader-only .visually-hidden labels) - otherwise those escape
+   it, and a folded panel's hidden labels still stretch the page, leaving
+   blank space to scroll into below the footer. */
 .collapsible-panel-inner {
+  position: relative;
   overflow: hidden;
   min-height: 0;
   visibility: hidden;
@@ -1745,18 +1750,21 @@ button.icon-toggle.open {
   justify-content: space-between;
   align-items: center;
   gap: 1rem;
-  padding: 0.55rem 0;
+  padding: 0.4rem 0;
 }
 
+/* Two tight lines - the Chinese name over its English gloss - so a long
+   Patterns list stays short. */
 .scoring-pattern-name {
   flex: 1 1 auto;
   min-width: 0;
+  line-height: 1.25;
 }
 
 .scoring-pattern-name-en {
   display: block;
-  margin-top: 0.05rem;
-  font-size: var(--text-sm);
+  font-size: var(--text-xs);
+  line-height: 1.2;
   color: var(--text-muted);
 }
 
@@ -3438,7 +3446,8 @@ img.tile-face {
   padding: 0.35rem 0.65rem;
 }
 
-.tile-count-pill.is-full {
+.tile-count-pill.is-full,
+.tile-count-pill.is-ready {
   color: var(--accent);
   background: var(--accent-bg);
 }
@@ -3516,10 +3525,6 @@ img.tile-face {
   display: flex;
 }
 
-.hand-strip-row.hand-strip-concealed.hand-strip-tint {
-  display: grid;
-}
-
 .hand-strip-tint.is-declared {
   background: var(--success-bg-2);
 }
@@ -3542,13 +3547,6 @@ img.tile-face {
 
 .hand-strip .tile-glyph {
   font-size: var(--tile-input);
-}
-
-/* The unscored concealed tiles: 8 a line - a full hand reads as two even
-   lines (plus one) rather than a ragged wrap. */
-.hand-strip-row.hand-strip-concealed {
-  display: grid;
-  grid-template-columns: repeat(8, max-content);
 }
 
 /* A 嚦咕雙食 hand's second reading: "and" sits centred on the divider
