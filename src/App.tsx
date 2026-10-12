@@ -1461,14 +1461,29 @@ function CropOverlay({
       </span>
       <div className="crop-actions">
         <div className="crop-actions-left">
-          <button type="button" onClick={() => handleRotate(false)} disabled={busy} title="Rotate photo 90° counterclockwise">
-            ⟲
-          </button>
-          <button type="button" onClick={() => handleRotate(true)} disabled={busy} title="Rotate photo 90° clockwise">
-            ⟳
+          <button
+            type="button"
+            className="crop-icon-button"
+            onClick={() => handleRotate(false)}
+            disabled={busy}
+            title="Rotate photo 90° counterclockwise"
+            aria-label="Rotate left"
+          >
+            <ToolbarIcon kind="rotate-left" />
           </button>
           <button
             type="button"
+            className="crop-icon-button"
+            onClick={() => handleRotate(true)}
+            disabled={busy}
+            title="Rotate photo 90° clockwise"
+            aria-label="Rotate right"
+          >
+            <ToolbarIcon kind="rotate-right" />
+          </button>
+          <button
+            type="button"
+            className="crop-icon-button"
             onClick={handleAutoFitClick}
             disabled={busy}
             title={
@@ -1476,8 +1491,9 @@ function CropOverlay({
                 ? "Autofitting…"
                 : "Autofit - re-run row detection against the current photo and re-fit the region(s) to whatever it finds; leaves them alone if it doesn't find a clean fit"
             }
+            aria-label="Autofit"
           >
-            🪄
+            <ToolbarIcon kind="wand" />
           </button>
         </div>
         <div className="crop-actions-top-right">
@@ -1497,11 +1513,13 @@ function CropOverlay({
           </button>
           <button
             type="button"
+            className="crop-icon-button"
             onClick={swapRegions}
             disabled={busy || regions.length !== 2}
             title="Swap regions - swap which box is Concealed and which is Declared, without moving either one"
+            aria-label="Swap regions"
           >
-            ⇄
+            <ToolbarIcon kind="swap" />
           </button>
           <button
             type="button"
@@ -4956,7 +4974,7 @@ function ConfirmButton({ label, onConfirm, className, title }: { label: string; 
   );
 }
 
-function ToolbarIcon({ kind }: { kind: "reset" | "camera" | "photos" }) {
+function ToolbarIcon({ kind }: { kind: "reset" | "camera" | "photos" | "wand" | "rotate-left" | "rotate-right" | "swap" }) {
   return (
     <svg className="toolbar-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       {kind === "reset" && (
@@ -4976,6 +4994,33 @@ function ToolbarIcon({ kind }: { kind: "reset" | "camera" | "photos" }) {
           <rect x="3.5" y="5" width="17" height="14" rx="2" />
           <circle cx="9" cy="10" r="1.6" />
           <path d="M20.5 16l-5-5-8 8" />
+        </>
+      )}
+      {kind === "rotate-left" && (
+        <>
+          <path d="M5 13a7 7 0 1 0 2.1-5" />
+          <path d="M5 4v4h4" />
+        </>
+      )}
+      {kind === "rotate-right" && (
+        <>
+          <path d="M19 13a7 7 0 1 1-2.1-5" />
+          <path d="M19 4v4h-4" />
+        </>
+      )}
+      {kind === "swap" && (
+        <>
+          <path d="M4 8h15M15.5 4.5L19 8l-3.5 3.5" />
+          <path d="M20 16H5M8.5 12.5L5 16l3.5 3.5" />
+        </>
+      )}
+      {kind === "wand" && (
+        <>
+          <path d="M4 20L15 9" />
+          <path d="M13.5 7.5l3 3" />
+          <path d="M18 2.5v4M16 4.5h4" />
+          <path d="M9 3v3M7.5 4.5h3" />
+          <path d="M19.5 11v3M18 12.5h3" />
         </>
       )}
     </svg>
