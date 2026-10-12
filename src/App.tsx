@@ -4505,13 +4505,22 @@ function findWinningTileInstance(hand: ResolvedHand, declaredCount: number, winn
 // the "(…)" part of names like "暗清龍 (Pure straight, concealed)" - smaller
 // and grey underneath, like the section captions, rather than both wrapping
 // together on one line.
-function PatternName({ name }: { name: string }) {
+// A pattern's name: the Chinese, then its English gloss on a line below.
+// `expand` marks a row that opens to show its tiles - a small chevron after
+// the Chinese, turned down while open - so the tai column stays clear.
+function PatternName({ name, expand }: { name: string; expand?: "closed" | "open" }) {
   const split = name.indexOf(" (");
-  if (split === -1 || !name.endsWith(")")) return <span className="scoring-pattern-name">{name}</span>;
+  const plain = split === -1 || !name.endsWith(")");
+  const hint = expand && (
+    <svg className={`pattern-expand-hint${expand === "open" ? " open" : ""}`} width="8" height="8" viewBox="0 0 8 8" aria-hidden="true">
+      <path d="M2.5 1.5L5.5 4l-3 2.5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
   return (
     <span className="scoring-pattern-name">
-      {name.slice(0, split)}
-      <span className="scoring-pattern-name-en">{name.slice(split + 2, -1)}</span>
+      {plain ? name : name.slice(0, split)}
+      {hint}
+      {!plain && <span className="scoring-pattern-name-en">{name.slice(split + 2, -1)}</span>}
     </span>
   );
 }
@@ -4574,13 +4583,6 @@ function PatternRow({
           <PatternName name={patternDisplayName(pattern, hand)} />
           <span className="scoring-pattern-meta">
             <span className="scoring-pattern-tai">{tai}<span className="visually-hidden"> tai</span></span>
-            {/* Reserves the same width a caret takes on a tappable row,
-                invisibly, so the tai column still lines up between plain
-                and tappable rows instead of a non-expandable row's tai
-                sitting further right with nothing after it. */}
-            <span className="projected-wait-caret" aria-hidden="true" style={{ visibility: "hidden" }}>
-              ▸
-            </span>
           </span>
         </div>
       </div>
@@ -4589,12 +4591,9 @@ function PatternRow({
   return (
     <div className="pattern-row">
       <button type="button" className="scoring-pattern-row" onClick={() => setExpanded((e) => !e)} aria-expanded={expanded} title={pattern.caveat}>
-        <PatternName name={patternDisplayName(pattern, hand)} />
+        <PatternName name={patternDisplayName(pattern, hand)} expand={expanded ? "open" : "closed"} />
         <span className="scoring-pattern-meta">
           <span className="scoring-pattern-tai">{tai}<span className="visually-hidden"> tai</span></span>
-          <span className={`projected-wait-caret${expanded ? " open" : ""}`} aria-hidden="true">
-            ▸
-          </span>
         </span>
       </button>
       <CollapsiblePanel open={expanded}>
@@ -4845,15 +4844,12 @@ function ScoringBreakdown({
           )}
           {/* This reading's own sum - the hand's total for an ordinary hand,
               one reading's share for 嚦咕雙食. */}
-          {/* Laid out like a pattern row's tai + caret, so the subtotal
-              sits right above the tai column. */}
+          {/* Laid out like a pattern row's tai, so the subtotal sits right
+              above the tai column. */}
           <span className="scoring-pattern-meta patterns-subtotal-meta">
             <span className="patterns-subtotal" title="Sum of these patterns">
               {matched.reduce((sum, m) => sum + m.tai, 0)}
               <span className="visually-hidden"> tai</span>
-            </span>
-            <span className="projected-wait-caret" aria-hidden="true" style={{ visibility: "hidden" }}>
-              ▸
             </span>
           </span>
         </div>
@@ -6631,6 +6627,25 @@ function ScoringPanel({
     saveRecentHands([]);
   };
 
+  // Scrolls to the TOTAL card - from the toolbar's total pill, or a tap on
+  // the card itself.
+  const jumpToResult = () => {
+    // Lands the result card just below whatever is pinned above it -
+    // the toolbar plus the hand strip, whose height varies with the
+    // hand - measured now rather than guessed with a fixed offset.
+    // The strip counts even while still closed: it opens once the
+    // hand card scrolls away, which this scroll is about to do.
+    const card = resultRef.current;
+    const toolbar = toolbarRef.current;
+    if (!card || !toolbar) return;
+    const strip = toolbar.querySelector<HTMLElement>(".hand-strip");
+    const stripHeight = strip ? strip.scrollHeight + 8 : 0; // + its 0.5rem bottom margin
+    // Where the toolbar sits once pinned, not where it is now (at the
+    // top of the page it's still below the app header).
+    const pinnedBottom = parseFloat(getComputedStyle(toolbar).top) + toolbar.offsetHeight + stripHeight;
+    window.scrollBy({ top: card.getBoundingClientRect().top - pinnedBottom - 12, behavior: "smooth" });
+  };
+
   // Once the hand scores, every picker tile is spent - fold the picker away
   // so the result comes up; reopen it if a tile comes off and the hand no
   // longer scores. (Tapping a box or the ▸ reopens it any time.)
@@ -6952,22 +6967,7 @@ function ScoringPanel({
             <button
               type="button"
               className="toolbar-total"
-              onClick={() => {
-                // Lands the result card just below whatever is pinned above it -
-                // the toolbar plus the hand strip, whose height varies with the
-                // hand - measured now rather than guessed with a fixed offset.
-                // The strip counts even while still closed: it opens once the
-                // hand card scrolls away, which this scroll is about to do.
-                const card = resultRef.current;
-                const toolbar = toolbarRef.current;
-                if (!card || !toolbar) return;
-                const strip = toolbar.querySelector<HTMLElement>(".hand-strip");
-                const stripHeight = strip ? strip.scrollHeight + 8 : 0; // + its 0.5rem bottom margin
-                // Where the toolbar sits once pinned, not where it is now (at the
-                // top of the page it's still below the app header).
-                const pinnedBottom = parseFloat(getComputedStyle(toolbar).top) + toolbar.offsetHeight + stripHeight;
-                window.scrollBy({ top: card.getBoundingClientRect().top - pinnedBottom - 12, behavior: "smooth" });
-              }}
+              onClick={jumpToResult}
               title="Jump to the score breakdown"
             >
               {scoring.result.total}
@@ -7558,7 +7558,15 @@ function ScoringPanel({
         <>
           {/* One-row total above the patterns - the toolbar pill's jump
               target. */}
-          <div className="result-total" ref={resultRef}>
+          {/* Tapping the card does what the toolbar's total pill does - except
+              on its share button and menu. */}
+          <div
+            className="result-total"
+            ref={resultRef}
+            onClick={(e) => {
+              if (!(e.target as HTMLElement).closest(".share-wrap")) jumpToResult();
+            }}
+          >
             <span className="result-total-label">Total</span>
             <ShareButton
               url={() => shareUrl({ hand: notation, bonus: bonusTiles, ctx: situationDiff(ctx) })}

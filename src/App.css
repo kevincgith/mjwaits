@@ -1259,6 +1259,12 @@ button.icon-toggle.open {
   padding: 1rem;
 }
 
+/* The Patterns card: names and tai run edge to edge, so it gets a little
+   more room at the sides than the other cards. */
+.panel > .waits.breakdown-list {
+  padding-inline: 1.25rem;
+}
+
 .waits-label {
   font-weight: 600;
   margin-right: 0.4rem;
@@ -1789,6 +1795,20 @@ button.icon-toggle.open {
   line-height: 1.25;
 }
 
+/* The expandable-row hint: a small grey chevron right after the Chinese
+   name, turned down while the row is open. */
+.pattern-expand-hint {
+  display: inline-block;
+  margin-left: 0.3rem;
+  vertical-align: 0.1em;
+  color: var(--text-subtle);
+  transition: transform 0.2s ease;
+}
+
+.pattern-expand-hint.open {
+  transform: rotate(90deg);
+}
+
 .scoring-pattern-name-en {
   display: block;
   font-size: var(--text-xs);
@@ -2009,7 +2029,7 @@ button.scoring-pattern-row {
    straight on the row's own background. */
 .projected-wait .breakdown-list {
   margin: 0.6rem 0 0.15rem;
-  padding: 0.55rem 0.7rem;
+  padding: 0.55rem 0.9rem;
   border-radius: var(--radius-md);
   background: var(--surface);
 }
@@ -4041,6 +4061,7 @@ img.tile-face {
 
 /* The result's total: one deep-green row above the patterns. */
 .result-total {
+  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -4330,6 +4351,10 @@ img.tile-face {
 
   .panel > .waits {
     padding: 0.85rem 0.75rem;
+  }
+
+  .panel > .waits.breakdown-list {
+    padding-inline: 1.1rem;
   }
 
   /* A slim title bar on phones: every pixel above the hand and picker
