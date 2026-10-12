@@ -123,6 +123,10 @@
 }
 
 .build-version {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
   margin-top: 1.25rem;
   text-align: center;
   font-size: var(--text-sm);
@@ -132,6 +136,25 @@
 .build-version a {
   color: inherit;
   text-decoration: none;
+}
+
+/* The maker's line: a size up and in the body text colour, with the GitHub
+   mark - clearly the author, not fine print. */
+.build-version a.footer-credit {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: var(--text-md);
+  color: var(--text-secondary);
+}
+
+.footer-credit strong {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.footer-fine {
+  font-size: var(--text-xs);
 }
 
 /* Without this, mobile browsers impose a ~300ms delay on every tap while
