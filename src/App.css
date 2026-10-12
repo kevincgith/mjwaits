@@ -118,7 +118,7 @@
 .page {
   max-width: 760px;
   margin: 0 auto;
-  padding: calc(1.75rem + env(safe-area-inset-top)) 1.25rem 4rem;
+  padding: calc(1.75rem + env(safe-area-inset-top)) 1.25rem 1.25rem;
   color: var(--text);
 }
 

@@ -5005,7 +5005,10 @@ function ScoringPanel({
   const pickerScrollTarget = (card: HTMLElement, cardHeight: number, row: HTMLElement): number => {
     const pinnedBottom = parseFloat(getComputedStyle(card).top) + cardHeight;
     const target = Math.max(0, window.scrollY + row.getBoundingClientRect().top - (pinnedBottom + 20));
-    const room = scrollRoomRef.current;
+    // Phones only: on a wide screen the page is usually shorter than the
+    // window, so the room would just show as a big blank below the footer -
+    // there the scroll simply goes as far as the page allows.
+    const room = window.matchMedia("(max-width: 700px)").matches ? scrollRoomRef.current : null;
     for (let pass = 0; room && pass < 4; pass++) {
       const shortfall = target - (document.documentElement.scrollHeight - window.innerHeight);
       if (shortfall <= 0) break;
@@ -5078,8 +5081,11 @@ function ScoringPanel({
     state.height = height;
     state.tiles = totalTiles;
     // Only a tile going in grows it on purpose - not the first render, a
-    // window resize, or a collapsed picker with nothing to keep in view.
+    // window resize, or a collapsed picker with nothing to keep in view -
+    // and only on phones, where the picker is under a finger (on a wide
+    // screen the hand fits one line and the pointer isn't in the way).
     if (!from || height - from < 4 || !addedTiles || pickerCollapsed || !row) return;
+    if (!window.matchMedia("(max-width: 700px)").matches) return;
 
     // Where everything ends up, measured now at the final layout.
     const target = pickerScrollTarget(card, height, row);
