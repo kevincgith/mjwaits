@@ -16,6 +16,22 @@ import {
 import "./App.css";
 import { usePickerLayout, type PickerLayout } from "./pickerLayout";
 import {
+  calcShareUrl,
+  loadRecentCalc,
+  loadRecentHands,
+  readCalcHand,
+  readSharedHand,
+  saveRecentCalc,
+  withRecentCalc,
+  type RecentCalcHand,
+  saveRecentHands,
+  shareUrl,
+  situationDiff,
+  withRecent,
+  type RecentHand,
+} from "./sharedHands";
+import { getDebug, recordTiming, setDebug, timed, useDebug, type ScanDebugRegion } from "./debug";
+import {
   bonusArtUrl,
   loadTileStyle,
   saveTileStyle,
@@ -582,6 +598,17 @@ function TileGlyphSpan({
   );
 }
 
+// A short buzz for a tile tap (longer for a long-press), where the browser
+// supports it - Android Chrome does; iPhone browsers don't vibrate for web
+// pages at all, so there it's silently nothing.
+function haptic(ms = 8): void {
+  try {
+    navigator.vibrate?.(ms);
+  } catch {
+    // Not allowed here - skip it.
+  }
+}
+
 function TileButton({
   tile,
   onClick,
@@ -597,7 +624,10 @@ function TileButton({
   extraClass?: string;
   title?: string;
 }) {
-  const tap = useTap(onClick, disabled);
+  const tap = useTap(() => {
+    haptic();
+    onClick();
+  }, disabled);
   const classes = ["tile-button", selected && "selected", extraClass].filter(Boolean).join(" ");
   return (
     <button
@@ -642,7 +672,17 @@ function LongPressTileButton({
   disabled?: boolean;
   title?: string;
 }) {
-  const tap = useTapAndLongPress(onTap, onLongPress, disabled);
+  const tap = useTapAndLongPress(
+    () => {
+      haptic();
+      onTap();
+    },
+    () => {
+      haptic(25);
+      onLongPress();
+    },
+    disabled
+  );
   return (
     <button type="button" className="tile-button" disabled={disabled} title={title} aria-label={title} {...tap}>
       <TileGlyphSpan tile={tile} />
@@ -1865,12 +1905,17 @@ const HandScanner = forwardRef<
     onProgress: (p: ScanProgress) => void
   ): Promise<ScanReviewRegion[]> => {
     const firstPass: { rect: CropRect; crop: HTMLCanvasElement; box: Letterbox; detections: RecheckedDetection[] }[] = [];
+    const start = performance.now();
     for (const rect of rects) {
       const crop = cropRegion(image, rect);
       const box = letterbox(crop);
       const { detections } = await detectTiles(box, onProgress);
       firstPass.push({ rect, crop, box, detections: detections.map((d) => ({ ...d, recovery: null })) });
     }
+    // For the developer sheet's Scan section: what the model saw and found.
+    const ms = performance.now() - start;
+    recordTiming("Scan · detect", ms);
+    setDebug({ lastScan: { at: Date.now(), ms, regions: firstPass.map(({ box, detections }) => ({ canvas: box.canvas, detections })) } });
     const regions = firstPass.map(({ crop, box, detections }) => toReviewRegion(crop, box, detections));
     if (!recheckUnless || recheckUnless(regions)) return regions;
 
@@ -2251,7 +2296,13 @@ const HandScanner = forwardRef<
   );
 });
 
-function Calculator() {
+function Calculator({
+  initialHand,
+  onInitialHandLoaded,
+}: {
+  initialHand?: string | null;
+  onInitialHandLoaded?: () => void;
+}) {
   // `hand` always holds tiles in true input order - Sort never mutates it,
   // it only changes how `displayHand` (below) is derived for rendering/text.
   const [hand, setHand] = useState<HandTile[]>([]);
@@ -2327,7 +2378,8 @@ function Calculator() {
   const upcoming = nextCheckpoint(hand.length);
   const hasJokers = useMemo(() => hand.some((t) => t.suit === "j"), [hand]);
   const outcome = useMemo(
-    () => (canCalculate && hand.length > 0 ? getWaitsWithJokers(hand, meldsForSize(hand.length)) : null),
+    () =>
+      canCalculate && hand.length > 0 ? timed("Calculator · waits", () => getWaitsWithJokers(hand, meldsForSize(hand.length))) : null,
     [hand, canCalculate]
   );
   const shantenValue = useMemo(
@@ -2337,13 +2389,15 @@ function Calculator() {
   const notTenpaiCheckpoint =
     !hasJokers && canCalculate && hand.length > 0 && outcome !== null && !outcome.overflowed && outcome.results.length === 0;
   const discardEfficiency = useMemo(
-    () => (notTenpaiCheckpoint ? analyzeDiscardEfficiency(hand, meldsForSize(hand.length)) : null),
+    () => (notTenpaiCheckpoint ? timed("Calculator · discards", () => analyzeDiscardEfficiency(hand, meldsForSize(hand.length))) : null),
     [notTenpaiCheckpoint, hand]
   );
   const atCompleteCheckpoint = isCompleteCheckpointSize(hand.length);
   const discardChoices = useMemo(
     () =>
-      !hasJokers && atCompleteCheckpoint ? analyzeDiscardChoices(hand, meldsForCompleteSize(hand.length)) : null,
+      !hasJokers && atCompleteCheckpoint
+        ? timed("Calculator · discards", () => analyzeDiscardChoices(hand, meldsForCompleteSize(hand.length)))
+        : null,
     [hasJokers, atCompleteCheckpoint, hand]
   );
   const nonJokerHand = useMemo(() => hand.filter((t) => t.suit !== "j"), [hand]);
@@ -2361,6 +2415,53 @@ function Calculator() {
   const handScannerRef = useRef<HandScannerHandle>(null);
   const [scanBusy, setScanBusy] = useState(false);
   const [pickerCollapsed, setPickerCollapsed] = useState(false);
+
+  // A share link opened on the Calculator (?calc=…) loads its hand once.
+  useEffect(() => {
+    if (!initialHand) return;
+    commitHand(withIds(parseHand(initialHand)));
+    onInitialHandLoaded?.();
+    // Only the hand the tab opened with.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // The hand as notation (sorted, so the same tiles always read the same) and
+  // a one-line summary of what was found - for share links and Recent.
+  const notation = useMemo(() => formatHand(sortTiles(hand)), [hand]);
+  const summary: string | null =
+    discardChoices?.alreadyComplete
+      ? "winning hand"
+      : outcome !== null && !outcome.overflowed && outcome.results.length > 0
+        ? outcome.results.length === allTileKinds().length
+          ? "any tile wins"
+          : `${outcome.results.length} wait${outcome.results.length === 1 ? "" : "s"}`
+        : shantenValue !== null && (discardEfficiency !== null || discardChoices !== null)
+          ? `shanten ${shantenValue}`
+          : null;
+  // The share icon rides in the first result caption (waits, discards, or
+  // a winning hand) - the 選牌 header has no room left on a phone.
+  const shareControl =
+    summary !== null ? (
+      <ShareButton url={() => calcShareUrl(notation)} text={`A Calculator hand on MJWaits: ${summary}`} className="section-share" />
+    ) : null;
+
+  // Recent: hands the Calculator analysed, newest first; building a hand up
+  // tile by tile (or trimming it) keeps updating one entry (withRecentCalc).
+  const [recentCalc, setRecentCalc] = useState<RecentCalcHand[]>(loadRecentCalc);
+  const [recentCollapsed, setRecentCollapsed] = useState(false);
+  useEffect(() => {
+    if (summary === null) return;
+    setRecentCalc((prev) => {
+      const next = withRecentCalc(prev, { hand: notation, summary, at: Date.now() });
+      if (next !== prev) saveRecentCalc(next);
+      return next;
+    });
+  }, [notation, summary]);
+  const loadRecentCalcHand = (r: RecentCalcHand) => {
+    commitHand(withIds(parseHand(r.hand)));
+    window.scrollTo(0, 0);
+  };
+
   // Breakdown on/off, plus its ↔ order toggle while on - shown in the caption
   // of whichever result it changes (the waits, or a complete hand).
   const breakdownToggles = (
@@ -2395,6 +2496,7 @@ function Calculator() {
       >
         Breakdown
       </button>
+      {shareControl}
     </span>
   );
 
@@ -2480,9 +2582,15 @@ function Calculator() {
         </div>
 
         <div className="section-head">
-          <span className="section-title">
+          <button
+            type="button"
+            className="section-title section-title-toggle"
+            onClick={() => setPickerCollapsed((c) => !c)}
+            aria-expanded={!pickerCollapsed}
+            title={pickerCollapsed ? "Show tile picker" : "Hide tile picker"}
+          >
             選牌 <span className="section-title-en">Add tiles</span>
-          </span>
+          </button>
           <PickerLayoutToggle />
           <span className="section-head-actions">
             <button
@@ -2603,6 +2711,7 @@ function Calculator() {
                 {shantenValue !== null ? `shanten ${shantenValue}` : "not tenpai"} · best first
               </span>
             </span>
+            <span className="section-head-actions">{shareControl}</span>
           </div>
           <div className="card discard-analysis">
             {discardEfficiency.map((o) => (
@@ -2657,6 +2766,8 @@ function Calculator() {
                 )
               )}
             </span>
+            {/* A winning hand's own caption above already carries Share. */}
+            {!discardChoices.alreadyComplete && <span className="section-head-actions">{shareControl}</span>}
           </div>
           <div className="card discard-analysis">
             {discardChoices.choices.map((c) => (
@@ -2673,6 +2784,43 @@ function Calculator() {
             options.
           </span>
         </div>
+      )}
+
+      {recentCalc.length > 0 && (
+        <>
+          <div className="section-head">
+            <button
+              type="button"
+              className="section-title section-title-toggle"
+              onClick={() => setRecentCollapsed((c) => !c)}
+              aria-expanded={!recentCollapsed}
+              title={recentCollapsed ? "Show recent hands" : "Hide recent hands"}
+            >
+              最近 <span className="section-title-en">Recent</span>
+              {recentCollapsed && <span className="section-meta">{recentCalc.length}</span>}
+            </button>
+            <span className="section-head-actions">
+              {!recentCollapsed && (
+                <ConfirmTextAction
+                  label="Clear"
+                  onConfirm={() => {
+                    setRecentCalc([]);
+                    saveRecentCalc([]);
+                  }}
+                  title="Forget every recent hand"
+                />
+              )}
+              <PickerCollapseToggle collapsed={recentCollapsed} onToggle={() => setRecentCollapsed((c) => !c)} label="recent hands" />
+            </span>
+          </div>
+          <CollapsiblePanel open={!recentCollapsed}>
+            <div className="card recent-list">
+              {recentCalc.map((r) => (
+                <RecentCalcRow key={`${r.hand}|${r.at}`} entry={r} onLoad={() => loadRecentCalcHand(r)} />
+              ))}
+            </div>
+          </CollapsiblePanel>
+        </>
       )}
     </section>
   );
@@ -2732,6 +2880,45 @@ const EMPTY_ENDLESS_STATS: EndlessStats = {
   tenpaiReachedCount: 0,
   turnsToWinTotal: 0,
 };
+
+// Trainer stats survive a reload: all three stores saved together under one
+// key, the per-level ones as their entries (keyed by trainerStatsKey).
+const TRAINER_STATS_KEY = "mjwaits.trainerStats";
+
+interface SavedTrainerStats {
+  waits: TrainerStatsEntry[];
+  discards: DiscardTrainerStatsEntry[];
+  endless: EndlessStats;
+}
+
+function loadTrainerStats(): SavedTrainerStats {
+  const empty: SavedTrainerStats = { waits: [], discards: [], endless: EMPTY_ENDLESS_STATS };
+  try {
+    const raw = window.localStorage.getItem(TRAINER_STATS_KEY);
+    if (!raw) return empty;
+    const saved = JSON.parse(raw) as Partial<SavedTrainerStats>;
+    return {
+      waits: Array.isArray(saved.waits) ? saved.waits : [],
+      discards: Array.isArray(saved.discards) ? saved.discards : [],
+      endless: { ...EMPTY_ENDLESS_STATS, ...saved.endless },
+    };
+  } catch {
+    return empty;
+  }
+}
+
+function saveTrainerStats(stats: SavedTrainerStats): void {
+  try {
+    const empty = !stats.waits.length && !stats.discards.length && stats.endless.hands === 0 && stats.endless.turns === 0;
+    if (empty) window.localStorage.removeItem(TRAINER_STATS_KEY);
+    else window.localStorage.setItem(TRAINER_STATS_KEY, JSON.stringify(stats));
+  } catch {
+    // Storage unavailable - the stats just won't survive a reload.
+  }
+}
+
+const statsMap = <T extends { level: number; flush: boolean }>(entries: T[]): Map<string, T> =>
+  new Map(entries.map((e) => [trainerStatsKey(e.level, e.flush), e]));
 
 // Adds (sign +1) or subtracts (sign -1) one EndlessStats from another - used to
 // apply a turn's deltas and to roll them back on undo/redo. regretTotal is
@@ -2826,8 +3013,10 @@ function WaitsTrainer({
   // Submit double-records the same question into the stats table.
   const submittedRef = useRef(false);
 
+  const debug = useDebug();
   const newQuestion = (lvl: number, flushMode: boolean) => {
-    setQuestion(generateTrainerQuestion(lvl, flushMode));
+    // The developer sheet's "Repeat question" asks the same hand again.
+    setQuestion(debug.trainerRepeat && question ? question : generateTrainerQuestion(lvl, flushMode));
     selectedRef.current = new Set();
     setSelected(selectedRef.current);
     submittedRef.current = false;
@@ -2998,7 +3187,13 @@ function WaitsTrainer({
                         tile={t}
                         onClick={() => toggleSelected(t)}
                         selected={selected.has(tileKey(t))}
-                        extraClass={status ? `trainer-${status}` : undefined}
+                        extraClass={
+                          status
+                            ? `trainer-${status}`
+                            : debug.trainerReveal && !submitted && waitKeys.has(tileKey(t))
+                              ? "trainer-reveal"
+                              : undefined
+                        }
                         title={
                           status === "missed"
                             ? `${tileLabel(t)} - you missed this wait`
@@ -3124,8 +3319,10 @@ function DiscardTrainer({
   const sortedTiles = useMemo(() => (question ? sortTiles(question.tiles) : []), [question]);
   const selectedKind = selected === null ? null : tileKey(sortedTiles[selected]);
 
+  const debug = useDebug();
   const newQuestion = (lvl: number, flushMode: boolean) => {
-    setQuestion(generateDiscardQuestion(lvl, flushMode));
+    // The developer sheet's "Repeat question" asks the same hand again.
+    setQuestion(debug.trainerRepeat && question ? question : generateDiscardQuestion(lvl, flushMode));
     selectedRef.current = null;
     setSelected(null);
     submittedRef.current = false;
@@ -3277,6 +3474,8 @@ function DiscardTrainer({
                       "trainer-discard-tile",
                       i === selected ? "selected" : "",
                       status ? `trainer-${status}` : "",
+                      // The developer sheet's "Reveal answers": the best discards, outlined.
+                      debug.trainerReveal && !submitted && question.optimalKeys.has(tileKey(t)) ? "trainer-reveal" : "",
                     ]
                       .filter(Boolean)
                       .join(" ")}
@@ -4268,7 +4467,10 @@ function BonusTileButton({
   disabled?: boolean;
   selected?: boolean;
 }) {
-  const tap = useTap(onClick, disabled);
+  const tap = useTap(() => {
+    haptic();
+    onClick();
+  }, disabled);
   const classes = ["tile-button", selected && "selected"].filter(Boolean).join(" ");
   return (
     <button type="button" className={classes} disabled={disabled} title={bonusTileLabel(tile)} {...tap}>
@@ -4477,6 +4679,77 @@ function isSameGroup(group: Tile[], pressed: Tile[] | null): boolean {
   return pressed !== null && group.length === pressed.length && group.every((t) => pressed.includes(t));
 }
 
+// A resolved hand as its 門前 Declared and 手牌 Concealed boxes, tiles
+// grouped meld by meld - the breakdowns' hand view, also used by the
+// Recent list.
+function HandSections({
+  hand,
+  declaredCount,
+  isWinningInstance,
+  isGroupHighlighted = () => false,
+  labels = true,
+}: {
+  hand: ResolvedHand;
+  declaredCount: number;
+  isWinningInstance: (t: Tile) => boolean;
+  isGroupHighlighted?: (group: Tile[]) => boolean;
+  /** Recent leaves both boxes unlabelled - green 門前 over grey 手牌 already
+      says which is which. */
+  labels?: boolean;
+}) {
+  return (
+    <div className="hand-sections">
+      {/* Nothing declared (and no bonus tiles): skip the box rather than
+          spend a row saying "None". */}
+      {(declaredCount > 0 || hand.bonusTiles.length > 0) && (
+        <div className="hand-section declared-section">
+          {labels && <span className="hand-section-label">Declared</span>}
+          <div className="hand-display breakdown-groups">
+            {hand.bonusTiles.length > 0 && (
+              <span className="breakdown-group bonus-tile-group" title="Bonus tiles">
+                {sortBonusTiles(hand.bonusTiles).map((tile, i) => (
+                  <BonusGlyphSpan key={i} tile={tile} />
+                ))}
+              </span>
+            )}
+            {hand.melds.slice(0, declaredCount).flatMap((meld, i) =>
+              displayGroupsFor(hand, meld.tiles).map((group, j) => (
+                <span
+                  className={["breakdown-group", meld.concealed && "concealed-kong-meld", isGroupHighlighted(group) && "pattern-highlighted"]
+                    .filter(Boolean)
+                    .join(" ")}
+                  key={`${i}-${j}`}
+                  title={`${meld.kind}${meld.concealed ? " (concealed kong)" : ""}`}
+                >
+                  {group.map((t, k) => (
+                    <TileGlyphSpan key={k} tile={t} highlight={isWinningInstance(t)} />
+                  ))}
+                </span>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+      <div className="hand-section concealed-section">
+        {labels && <span className="hand-section-label">Concealed</span>}
+        <div className="hand-display breakdown-groups">
+          {concealedDisplayGroups(hand, declaredCount).map(({ tiles, title }, i) => (
+            <span
+              className={`breakdown-group${isGroupHighlighted(tiles) ? " pattern-highlighted" : ""}`}
+              key={i}
+              title={title}
+            >
+              {tiles.map((t, k) => (
+                <TileGlyphSpan key={k} tile={t} highlight={isWinningInstance(t)} />
+              ))}
+            </span>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ScoringBreakdown({
   matched,
   hand,
@@ -4568,55 +4841,12 @@ function ScoringBreakdown({
   return (
     <>
       {showHand && (
-      <div className="hand-sections">
-        {/* Nothing declared (and no bonus tiles): skip the box rather than
-            spend a row saying "None". */}
-        {(declaredCount > 0 || hand.bonusTiles.length > 0) && (
-        <div className="hand-section declared-section">
-          <span className="hand-section-label">Declared</span>
-          <div className="hand-display breakdown-groups">
-            {hand.bonusTiles.length > 0 && (
-              <span className="breakdown-group bonus-tile-group" title="Bonus tiles">
-                {sortBonusTiles(hand.bonusTiles).map((tile, i) => (
-                  <BonusGlyphSpan key={i} tile={tile} />
-                ))}
-              </span>
-            )}
-            {hand.melds.slice(0, declaredCount).flatMap((meld, i) =>
-              displayGroupsFor(hand, meld.tiles).map((group, j) => (
-                <span
-                  className={["breakdown-group", meld.concealed && "concealed-kong-meld", isGroupHighlighted(group) && "pattern-highlighted"]
-                    .filter(Boolean)
-                    .join(" ")}
-                  key={`${i}-${j}`}
-                  title={`${meld.kind}${meld.concealed ? " (concealed kong)" : ""}`}
-                >
-                  {group.map((t, k) => (
-                    <TileGlyphSpan key={k} tile={t} highlight={isWinningInstance(t)} />
-                  ))}
-                </span>
-              ))
-            )}
-          </div>
-        </div>
-        )}
-        <div className="hand-section concealed-section">
-          <span className="hand-section-label">Concealed</span>
-          <div className="hand-display breakdown-groups">
-            {concealedDisplayGroups(hand, declaredCount).map(({ tiles, title }, i) => (
-              <span
-                className={`breakdown-group${isGroupHighlighted(tiles) ? " pattern-highlighted" : ""}`}
-                key={i}
-                title={title}
-              >
-                {tiles.map((t, k) => (
-                  <TileGlyphSpan key={k} tile={t} highlight={isWinningInstance(t)} />
-                ))}
-              </span>
-            ))}
-          </div>
-        </div>
-      </div>
+        <HandSections
+          hand={hand}
+          declaredCount={declaredCount}
+          isWinningInstance={isWinningInstance}
+          isGroupHighlighted={isGroupHighlighted}
+        />
       )}
       <div className="waits breakdown-list">
         <div className="patterns-header">
@@ -5092,6 +5322,209 @@ function ConfirmButton({ label, onConfirm, className, title }: { label: string; 
   );
 }
 
+// Copies `text`, reporting whether it worked. The Clipboard API only exists
+// on a secure (https) page - the dev server on a phone is plain http - so
+// without it this falls back to the old select-and-copy, which still works
+// there (it must run inside the tap, before any await).
+async function copyText(text: string): Promise<boolean> {
+  if (!window.isSecureContext || !navigator.clipboard) {
+    const area = document.createElement("textarea");
+    area.value = text;
+    area.setAttribute("readonly", "");
+    area.style.cssText = "position:fixed;top:0;left:0;opacity:0;font-size:16px";
+    document.body.appendChild(area);
+    area.focus();
+    area.setSelectionRange(0, text.length);
+    let ok = false;
+    try {
+      ok = document.execCommand("copy");
+    } catch {
+      ok = false;
+    }
+    area.remove();
+    return ok;
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Shares a Scoring hand as a link. Tapping the icon opens a small menu:
+// Copy link (one tap, then it says "Copied") and, where the system has a
+// share sheet (phones), Share… for messages, AirDrop and the rest.
+function ShareButton({ url, text, className }: { url: () => string; text: string; className?: string }) {
+  // Where the menu goes, on screen: fixed rather than absolute, so the
+  // Recent list's collapsible panel (which clips its content) can't cut it
+  // off. It closes on scroll rather than following the icon.
+  const [menuAt, setMenuAt] = useState<{ top?: number; bottom?: number; right: number } | null>(null);
+  const open = menuAt !== null;
+  const [copied, setCopied] = useState(false);
+  const wrapRef = useRef<HTMLSpanElement>(null);
+  const toggle = () => {
+    if (open) return setMenuAt(null);
+    const r = wrapRef.current!.getBoundingClientRect();
+    const right = window.innerWidth - r.right;
+    // Opens upward when there's no room below (the phone tab bar takes the
+    // screen's last ~90px).
+    const roomBelow = window.innerHeight - r.bottom;
+    setMenuAt(roomBelow < 200 ? { bottom: window.innerHeight - r.top + 6, right } : { top: r.bottom + 6, right });
+  };
+  const setOpen = (o: boolean) => !o && setMenuAt(null);
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (e: PointerEvent) => {
+      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    const onScroll = () => setOpen(false);
+    document.addEventListener("pointerdown", onPointerDown, true);
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("scroll", onScroll);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+  const copy = async () => {
+    const link = url();
+    if (await copyText(link)) {
+      setCopied(true);
+      window.setTimeout(() => {
+        setCopied(false);
+        setOpen(false);
+      }, 1200);
+    } else {
+      setOpen(false);
+      window.prompt("Copy this link", link);
+    }
+  };
+  const systemShare = async () => {
+    setOpen(false);
+    try {
+      await navigator.share({ title: "MJWaits hand", text, url: url() });
+    } catch {
+      // Dismissed - nothing to do.
+    }
+  };
+  return (
+    <span className={["share-wrap", className].filter(Boolean).join(" ")} ref={wrapRef}>
+      <button
+        type="button"
+        className="share-button"
+        onClick={toggle}
+        aria-label="Share this hand"
+        aria-expanded={open}
+        title="Share this hand as a link"
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M12 3v12" />
+          <path d="M8 7l4-4 4 4" />
+          <path d="M6 11H5.5A1.5 1.5 0 0 0 4 12.5v7A1.5 1.5 0 0 0 5.5 21h13a1.5 1.5 0 0 0 1.5-1.5v-7a1.5 1.5 0 0 0-1.5-1.5H18" />
+        </svg>
+      </button>
+      {open && (
+        <span className="share-menu" role="menu" style={menuAt}>
+          <button type="button" role="menuitem" className={copied ? "is-done" : undefined} onClick={copy}>
+            {copied ? "Copied ✓" : "Copy link"}
+          </button>
+          {"share" in navigator && (
+            <button type="button" role="menuitem" onClick={systemShare}>
+              Share…
+            </button>
+          )}
+        </span>
+      )}
+    </span>
+  );
+}
+
+// One row of the Recent list: the hand decomposed into its 門前 / 手牌
+// boxes (the same view as the breakdowns), with its total, age and share
+// button in a column beside them. Tap the boxes to load the hand back.
+function RecentHandRow({ entry, onLoad }: { entry: RecentHand; onLoad: () => void }) {
+  const resolved = useMemo(() => {
+    try {
+      const parsed = parseScoringHand(entry.hand);
+      const ctx: GameContext = { ...TEST_HAND_BASE_CONTEXT, ...entry.ctx };
+      const hand = scoreParsedHand({ ...parsed, bonusTiles: entry.bonus }, ctx).hand;
+      const declaredCount = parsed.declaredMelds.length;
+      return { hand, declaredCount, winning: findWinningTileInstance(hand, declaredCount, ctx.winningTile) };
+    } catch {
+      return null; // Saved by an older version and no longer scores - shown without boxes.
+    }
+  }, [entry]);
+  const when = timeAgo(entry.at);
+  return (
+    <div className="recent-row">
+      <button type="button" className="recent-load" onClick={onLoad} title="Load this hand" aria-label={`Load this ${entry.total}-tai hand`}>
+        {resolved ? (
+          <HandSections
+            hand={resolved.hand}
+            declaredCount={resolved.declaredCount}
+            isWinningInstance={(t) => t === resolved.winning}
+            labels={false}
+          />
+        ) : (
+          <code className="dev-code">{entry.hand}</code>
+        )}
+      </button>
+      <div className="recent-meta">
+        <span className="recent-total">{entry.total}</span>
+        <span className="recent-when">{when}</span>
+        <ShareButton url={() => shareUrl(entry)} text={`A ${entry.total}-tai hand on MJWaits`} className="recent-share" />
+      </div>
+    </div>
+  );
+}
+
+// How long ago, short: "just now", "5m ago", "3h ago", then the date.
+function timeAgo(at: number): string {
+  const minutes = Math.round((Date.now() - at) / 60000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 1440) return `${Math.round(minutes / 60)}h ago`;
+  return new Date(at).toLocaleDateString();
+}
+
+// One row of the Calculator's Recent list: the tiles in a grey box (tap to
+// load them back), with what the Calculator found, how long ago, and share.
+function RecentCalcRow({ entry, onLoad }: { entry: RecentCalcHand; onLoad: () => void }) {
+  const tiles = useMemo(() => {
+    try {
+      return sortTiles(parseHand(entry.hand));
+    } catch {
+      return [];
+    }
+  }, [entry.hand]);
+  return (
+    <div className="recent-row">
+      <button type="button" className="recent-load" onClick={onLoad} title="Load this hand" aria-label="Load this hand">
+        <div className="hand-sections">
+          <div className="hand-section concealed-section">
+            <div className="hand-display breakdown-groups">
+              <span className="breakdown-group">
+                {tiles.map((t, i) => (
+                  <TileGlyphSpan key={i} tile={t} />
+                ))}
+              </span>
+            </div>
+          </div>
+        </div>
+      </button>
+      <div className="recent-meta">
+        <span className="recent-summary">{entry.summary}</span>
+        <span className="recent-when">{timeAgo(entry.at)}</span>
+        <ShareButton url={() => calcShareUrl(entry.hand)} text={`A Calculator hand on MJWaits: ${entry.summary}`} className="recent-share" />
+      </div>
+    </div>
+  );
+}
+
 function ToolbarIcon({ kind }: { kind: "reset" | "camera" | "photos" | "wand" | "rotate-left" | "rotate-right" | "swap" }) {
   return (
     <svg className="toolbar-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -5145,10 +5578,12 @@ function ToolbarIcon({ kind }: { kind: "reset" | "camera" | "photos" | "wand" | 
   );
 }
 
-// A test hand the hidden Test hands sheet asked the Scoring tab to load; the
+// A test hand the hidden developer sheet asked the Scoring tab to load; the
 // nonce makes picking the same hand twice still count as a new request.
 interface TestHandRequest {
   hand: TestHand;
+  /** Flowers / seasons to set too - a shared or recent hand can have them. */
+  bonus?: BonusTile[];
   nonce: number;
 }
 
@@ -5790,12 +6225,12 @@ function ScoringPanel({
     setLoadedTestHand(null);
   };
 
-  // Loads one of the scoring tests' hands (the hidden Test hands sheet):
+  // Loads one of the scoring tests' hands (the hidden developer sheet):
   // replaces the tiles, then resets the Situation card and applies that
   // test's own situation on top. Set straight into state, without the
   // toggles' usual cascades - each test's situation is already consistent.
   const [loadedTestHand, setLoadedTestHand] = useState<{ hand: TestHand; total: number } | null>(null);
-  const loadTestHand = (t: TestHand) => {
+  const loadTestHand = (t: TestHand, bonus: BonusTile[] = []) => {
     const testCtx: GameContext = { ...TEST_HAND_BASE_CONTEXT, ...t.ctx };
     // The notation declares concealed kongs as "[1111z]" - they land in 門前
     // as 暗槓 (concealed: true), exactly as if picked with the 暗槓 button.
@@ -5805,10 +6240,10 @@ function ScoringPanel({
     const nextConcealed = (sortTiles(parsed.freeTiles) as Tile[]).map((tile) => ({ ...tile, id: nextTileId.current++ }));
     declaredRef.current = nextDeclared;
     concealedRef.current = nextConcealed;
-    bonusRef.current = [];
+    bonusRef.current = bonus;
     setDeclaredMelds(nextDeclared);
     setConcealedTiles(nextConcealed);
-    setBonusTiles([]);
+    setBonusTiles(bonus);
     resetConditions();
     const c = t.ctx;
     if (c.seatWind) setSeatWind(c.seatWind);
@@ -5830,11 +6265,13 @@ function ScoringPanel({
     // The 食胡 tile can only be marked among the concealed tiles here.
     const w = c.winningTile;
     setWinningTile(w ? (nextConcealed.find((x) => x.suit === w.suit && x.rank === w.rank) ?? null) : null);
-    setLoadedTestHand({ hand: t, total: scoreParsedHand(parsed, testCtx).total });
+    // A hand pasted into the developer sheet has no test behind it (and no
+    // expected total), so no banner.
+    setLoadedTestHand(t.group ? { hand: t, total: scoreParsedHand(parsed, testCtx).total } : null);
   };
   useEffect(() => {
     if (!testHandRequest) return;
-    loadTestHand(testHandRequest.hand);
+    loadTestHand(testHandRequest.hand, testHandRequest.bonus);
     onTestHandLoaded();
     // Only a new request should load - loadTestHand itself changes every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -6058,7 +6495,7 @@ function ScoringPanel({
       bonusTiles,
     };
     try {
-      return { ok: true as const, result: scoreParsedHand(parsed, ctx) };
+      return { ok: true as const, result: timed("Scoring · score", () => scoreParsedHand(parsed, ctx)) };
     } catch (e) {
       const message = e instanceof ScoringError ? e.message : "Could not score hand";
       return { ok: false as const, message };
@@ -6127,6 +6564,46 @@ function ScoringPanel({
   );
   const [pickerLayout] = usePickerLayout();
 
+  // The tiles as notation - declared melds as "(123m)", a 暗槓 as
+  // "[1111z]", then the concealed tiles - for share links, the Recent list
+  // and the developer sheet's Copy.
+  const notation = useMemo(
+    () =>
+      declaredMelds.map((m) => (m.concealed ? `[${formatHand(m.tiles)}]` : `(${formatHand(m.tiles)})`)).join("") +
+      // Sorted, so the same hand reads the same however it was entered.
+      formatHand(sortTiles(concealedTiles)),
+    [declaredMelds, concealedTiles]
+  );
+  useEffect(() => {
+    if (getDebug().scoringNotation !== notation) setDebug({ scoringNotation: notation });
+  }, [notation]);
+
+  // Recent: every hand that scores, newest first (see withRecent for how a
+  // re-scored hand replaces its own entry). Test hands from the developer
+  // sheet stay out of it.
+  const [recentHands, setRecentHands] = useState<RecentHand[]>(loadRecentHands);
+  useEffect(() => {
+    if (!scoring?.ok || loadedTestHand) return;
+    const entry: RecentHand = { hand: notation, bonus: bonusTiles, ctx: situationDiff(ctx), total: scoring.result.total, at: Date.now() };
+    setRecentHands((prev) => {
+      const next = withRecent(prev, entry);
+      if (next !== prev) saveRecentHands(next);
+      return next;
+    });
+    // `scoring` changes whenever the tiles or situation do; ctx is rebuilt
+    // every render, so it isn't a dependency itself.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scoring, loadedTestHand]);
+  const loadRecentHand = (r: RecentHand) => {
+    loadTestHand({ group: "", name: "Recent hand", hand: r.hand, ctx: r.ctx }, r.bonus);
+    window.scrollTo(0, 0);
+  };
+  const [recentCollapsed, setRecentCollapsed] = useState(false);
+  const clearRecentHands = () => {
+    setRecentHands([]);
+    saveRecentHands([]);
+  };
+
   // Once the hand scores, every picker tile is spent - fold the picker away
   // so the result comes up; reopen it if a tile comes off and the hand no
   // longer scores. (Tapping a box or the ▸ reopens it any time.)
@@ -6152,7 +6629,7 @@ function ScoringPanel({
     const declared = declaredMelds.map(({ kind, concealed: c, tiles }) => ({ kind, concealed: c, tiles }));
     // Canonical tile order; the display-order toggle re-sorts a copy of
     // this without recomputing any scores.
-    return projectWaits(concealed, declared, bonusTiles, ctx, totalCopiesUsed);
+    return timed("Scoring · waits", () => projectWaits(concealed, declared, bonusTiles, ctx, totalCopiesUsed));
     // Same deps as `scoring` above minus winningTile (overridden per wait); ctx
     // is rebuilt every render so its primitive inputs are listed individually.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -6190,6 +6667,7 @@ function ScoringPanel({
     const concealed = concealedTiles.map(({ id: _id, ...tile }) => tile);
     const declared = declaredMelds.map(({ kind, concealed: c, tiles }) => ({ kind, concealed: c, tiles }));
     const options: DiscardOption[] = [];
+    const start = performance.now();
     for (const discard of sortTiles(concealed)) {
       if (options.some((o) => tileKey(o.discard) === tileKey(discard))) continue;
       const rest = [...concealed];
@@ -6208,6 +6686,7 @@ function ScoringPanel({
           : null,
       });
     }
+    recordTiming("Scoring · discards", performance.now() - start);
     return options;
     // Same deps as projectedWaits above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -6253,7 +6732,8 @@ function ScoringPanel({
   useEffect(() => {
     if (scoredOk) setWhatIfOpen(false);
   }, [scoredOk]);
-  const discardsFolded = scoredOk && !whatIfOpen;
+  const discardsFoldable = scoredOk && !!discardOptions && discardOptions.length > 0;
+  const discardsFolded = discardsFoldable && !whatIfOpen;
   // "Show fewer" takes rows out above the button, so the page shrinks under
   // the finger and would leave the view on empty space at the bottom. Keep
   // the button where it was on screen instead (the remaining rows land
@@ -6674,9 +7154,15 @@ function ScoringPanel({
         </div>
 
         <div className="section-head">
-          <span className="section-title">
+          <button
+            type="button"
+            className="section-title section-title-toggle"
+            onClick={() => setPickerCollapsed((c) => !c)}
+            aria-expanded={!pickerCollapsed}
+            title={pickerCollapsed ? "Show tile picker" : "Hide tile picker"}
+          >
             選牌 <span className="section-title-en">Add tiles</span>
-          </span>
+          </button>
           <PickerLayoutToggle />
           <span className="section-head-actions">
             {/* Empties both 門前 and 手牌 at once (the situation stays) -
@@ -6769,9 +7255,15 @@ function ScoringPanel({
       </div>
 
       <div className="section-head">
-        <span className="section-title">
+        <button
+          type="button"
+          className="section-title section-title-toggle"
+          onClick={() => setSituationCollapsed((c) => !c)}
+          aria-expanded={!situationCollapsed}
+          title={situationCollapsed ? "Show situation" : "Hide situation"}
+        >
           情況 <span className="section-title-en">Situation</span>
-        </span>
+        </button>
         <span className="section-head-actions">
           {/* The scoped resets only appear once their block has something to
               clear, so a fresh screen shows just the toolbar's ↺. */}
@@ -7036,6 +7528,11 @@ function ScoringPanel({
               target. */}
           <div className="result-total" ref={resultRef}>
             <span className="result-total-label">Total</span>
+            <ShareButton
+              url={() => shareUrl({ hand: notation, bonus: bonusTiles, ctx: situationDiff(ctx) })}
+              text={`A ${scoring.result.total}-tai hand on MJWaits`}
+              className="result-share"
+            />
             <span className="result-total-value">
               {scoring.result.total}
               <span className="visually-hidden"> tai</span>
@@ -7113,28 +7610,52 @@ function ScoringPanel({
       {displayedDiscardOptions !== null && (
         <>
           <div className="section-head">
-            <span className="section-title">
-              打牌 <span className="section-title-en">Discards</span>
-              {displayedDiscardOptions.length > 0 && (
-                <span className="section-meta">
-                  {displayedDiscardOptions.length} keep tenpai
-                </span>
+            {(() => {
+              const caption = (
+                <>
+                  打牌 <span className="section-title-en">Discards</span>
+                  {displayedDiscardOptions.length > 0 && (
+                    <span className="section-meta">
+                      {displayedDiscardOptions.length} keep tenpai
+                    </span>
+                  )}
+                </>
+              );
+              // On a winning hand the list is a what-if that folds - so, like
+              // the other folding sections, its title and ▾ fold it again.
+              return discardsFoldable ? (
+                <button
+                  type="button"
+                  className="section-title section-title-toggle"
+                  onClick={() => setWhatIfOpen((o) => !o)}
+                  aria-expanded={whatIfOpen}
+                  title={whatIfOpen ? "Hide discards" : "Show discards"}
+                >
+                  {caption}
+                </button>
+              ) : (
+                <span className="section-title">{caption}</span>
+              );
+            })()}
+            <span className="section-head-actions">
+              {displayedDiscardOptions.length > 1 && !discardsFolded && (
+                <button
+                  type="button"
+                  className="projected-sort-toggle"
+                  onClick={() => setDiscardSort((s) => (s === "score" ? "live" : "score"))}
+                  title={
+                    discardSort === "score"
+                      ? "Sorted by best tai — tap to sort by live tiles"
+                      : "Sorted by live tiles — tap to sort by best tai"
+                  }
+                >
+                  {discardSort === "score" ? "Sort: tai" : "Sort: left"}
+                </button>
+              )}
+              {discardsFoldable && (
+                <PickerCollapseToggle collapsed={!whatIfOpen} onToggle={() => setWhatIfOpen((o) => !o)} label="discards" />
               )}
             </span>
-            {displayedDiscardOptions.length > 1 && !discardsFolded && (
-              <button
-                type="button"
-                className="projected-sort-toggle"
-                onClick={() => setDiscardSort((s) => (s === "score" ? "live" : "score"))}
-                title={
-                  discardSort === "score"
-                    ? "Sorted by best tai — tap to sort by live tiles"
-                    : "Sorted by live tiles — tap to sort by best tai"
-                }
-              >
-                {discardSort === "score" ? "Sort: tai" : "Sort: left"}
-              </button>
-            )}
           </div>
           <div className="waits projected-waits">
             {discardsFolded && displayedDiscardOptions.length > 0 ? (
@@ -7158,6 +7679,37 @@ function ScoringPanel({
               </>
             )}
           </div>
+        </>
+      )}
+      {recentHands.length > 0 && (
+        <>
+          <div className="section-head">
+            <button
+              type="button"
+              className="section-title section-title-toggle"
+              onClick={() => setRecentCollapsed((c) => !c)}
+              aria-expanded={!recentCollapsed}
+              title={recentCollapsed ? "Show recent hands" : "Hide recent hands"}
+            >
+              最近 <span className="section-title-en">Recent</span>
+              {recentCollapsed && <span className="section-meta">{recentHands.length}</span>}
+            </button>
+            <span className="section-head-actions">
+              {!recentCollapsed && <ConfirmTextAction label="Clear" onConfirm={clearRecentHands} title="Forget every recent hand" />}
+              <PickerCollapseToggle
+                collapsed={recentCollapsed}
+                onToggle={() => setRecentCollapsed((c) => !c)}
+                label="recent hands"
+              />
+            </span>
+          </div>
+          <CollapsiblePanel open={!recentCollapsed}>
+            <div className="card recent-list">
+              {recentHands.map((r) => (
+                <RecentHandRow key={`${r.hand}|${r.at}`} entry={r} onLoad={() => loadRecentHand(r)} />
+              ))}
+            </div>
+          </CollapsiblePanel>
         </>
       )}
       <div className="scroll-room" ref={scrollRoomRef} aria-hidden="true" />
@@ -8182,6 +8734,283 @@ const testHandGroupLabel = (group: string): string => group.replace(/^PATTERNS:\
 // The hidden developer sheet (three taps on the logo): every winning hand from
 // the scoring tests, grouped by test section and searchable, plus a Random
 // pick - for trying the scorer against known decompositions by hand.
+function SheetSwitch({ on, onChange, label }: { on: boolean; onChange: (on: boolean) => void; label: string }) {
+  return (
+    <button type="button" className={`sheet-switch${on ? " toggle-on" : ""}`} aria-pressed={on} onClick={() => onChange(!on)}>
+      {label}
+    </button>
+  );
+}
+
+// The developer sheet's Tools tab: layout and device diagnostics, hand
+// notation in and out of Scoring, calculation timings, Trainer switches,
+// the last scan's raw detections, and a reset for everything saved.
+function DeveloperTools({
+  onLoadNotation,
+  tileStyle,
+  onTileStyleChange,
+}: {
+  onLoadNotation: (notation: string) => void;
+  tileStyle: TileStyle;
+  onTileStyleChange: (style: TileStyle) => void;
+}) {
+  const debug = useDebug();
+  const [notation, setNotation] = useState("");
+  const [notationError, setNotationError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const loadNotation = () => {
+    try {
+      parseScoringHand(notation);
+    } catch (e) {
+      setNotationError(e instanceof Error ? e.message : "Couldn't read that notation");
+      return;
+    }
+    setNotationError(null);
+    onLoadNotation(notation.trim());
+  };
+  const copyNotation = async () => {
+    if (await copyText(debug.scoringNotation)) {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } else {
+      setNotation(debug.scoringNotation); // No clipboard access - put it in the box to copy by hand.
+    }
+  };
+
+  // Safe-area insets can only be read through CSS, so measure a probe.
+  const [insets, setInsets] = useState("–");
+  useEffect(() => {
+    const probe = document.createElement("div");
+    probe.style.cssText =
+      "position:fixed;visibility:hidden;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)";
+    document.body.appendChild(probe);
+    const cs = getComputedStyle(probe);
+    setInsets([cs.paddingTop, cs.paddingRight, cs.paddingBottom, cs.paddingLeft].map((v) => parseFloat(v)).join(" / "));
+    probe.remove();
+  }, []);
+  const standalone =
+    window.matchMedia("(display-mode: standalone)").matches || (navigator as Navigator & { standalone?: boolean }).standalone === true;
+  const device: [string, string][] = [
+    ["Viewport", `${window.innerWidth} × ${window.innerHeight}`],
+    ["Screen", `${window.screen.width} × ${window.screen.height} @${window.devicePixelRatio}x`],
+    ["Safe area", `${insets} (top / right / bottom / left)`],
+    ["Home screen", standalone ? "yes" : "no"],
+    ["Touch", navigator.maxTouchPoints > 0 ? `${navigator.maxTouchPoints} points` : "no"],
+    ["Reduced motion", window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "on" : "off"],
+    ["Build", __BUILD_TIME__],
+  ];
+
+  const savedKeys: string[] = [];
+  try {
+    for (let i = 0; i < window.localStorage.length; i++) {
+      const key = window.localStorage.key(i);
+      if (key?.startsWith("mjwaits.")) savedKeys.push(key);
+    }
+  } catch {
+    // Storage blocked - nothing saved to list.
+  }
+  const resetSaved = () => {
+    try {
+      savedKeys.forEach((k) => window.localStorage.removeItem(k));
+    } catch {
+      // Storage blocked - nothing to clear.
+    }
+    window.location.reload();
+  };
+
+  const timings = Object.entries(debug.timings).sort(([a], [b]) => a.localeCompare(b));
+  const scan = debug.lastScan;
+
+  return (
+    <div className="dev-tools">
+      <section className="dev-section">
+        <h3 className="dev-heading">Display</h3>
+        <div className="sheet-setting">
+          <span className="sheet-setting-label">Tile style</span>
+          <div className="segmented" role="group" aria-label="Tile style">
+            {TILE_STYLES.map(({ value, label }) => (
+              <button
+                key={value}
+                type="button"
+                className={tileStyle === value ? "toggle-on" : undefined}
+                aria-pressed={tileStyle === value}
+                onClick={() => onTileStyleChange(value)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <SheetSwitch on={debug.layoutOverlay} onChange={(on) => setDebug({ layoutOverlay: on })} label="Layout overlay" />
+        <span className="dev-note">Page height, bottom spacer and space below the footer, live; the spacer shows striped.</span>
+      </section>
+
+      <section className="dev-section">
+        <h3 className="dev-heading">Scoring hand</h3>
+        <div className="dev-row">
+          <input
+            className="sheet-search dev-notation"
+            type="text"
+            value={notation}
+            onChange={(e) => setNotation(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && loadNotation()}
+            placeholder="e.g. (123m)[1111z]456t77b"
+            spellCheck={false}
+            autoCapitalize="off"
+            aria-label="Hand notation"
+          />
+          <button type="button" className="btn-primary" onClick={loadNotation} disabled={!notation.trim()}>
+            Load
+          </button>
+        </div>
+        {notationError && <span className="error">{notationError}</span>}
+        <div className="dev-row">
+          <code className="dev-code">{debug.scoringNotation || "(no tiles)"}</code>
+          <button type="button" className="sheet-switch" onClick={copyNotation} disabled={!debug.scoringNotation}>
+            {copied ? "Copied" : "Copy"}
+          </button>
+        </div>
+        <span className="dev-note">"(…)" declared, "[…]" 暗槓, the rest concealed. Load resets the situation; flowers aren't included.</span>
+      </section>
+
+      <section className="dev-section">
+        <h3 className="dev-heading">Timings</h3>
+        {timings.length === 0 ? (
+          <span className="dev-note">Nothing calculated yet.</span>
+        ) : (
+          <dl className="dev-table">
+            {timings.map(([name, ms]) => (
+              <Fragment key={name}>
+                <dt>{name}</dt>
+                <dd>{ms < 10 ? ms.toFixed(1) : Math.round(ms)} ms</dd>
+              </Fragment>
+            ))}
+          </dl>
+        )}
+        <span className="dev-note">The latest run of each, this session.</span>
+      </section>
+
+      <section className="dev-section">
+        <h3 className="dev-heading">Trainer</h3>
+        <div className="dev-row">
+          <SheetSwitch on={debug.trainerReveal} onChange={(on) => setDebug({ trainerReveal: on })} label="Reveal answers" />
+          <SheetSwitch on={debug.trainerRepeat} onChange={(on) => setDebug({ trainerRepeat: on })} label="Repeat question" />
+        </div>
+        <span className="dev-note">Waits and Discards: answers outlined before you submit; New hand asks the same hand again.</span>
+      </section>
+
+      <section className="dev-section">
+        <h3 className="dev-heading">Last scan</h3>
+        {!scan ? (
+          <span className="dev-note">No scan yet this session.</span>
+        ) : (
+          <>
+            <span className="dev-note">
+              {new Date(scan.at).toLocaleTimeString()} · {Math.round(scan.ms)} ms ·{" "}
+              {scan.regions.reduce((n, r) => n + r.detections.length, 0)} detections (first pass, before re-checks)
+            </span>
+            {scan.regions.map((r, i) => (
+              <ScanDebugRegionView key={`${scan.at}-${i}`} region={r} />
+            ))}
+          </>
+        )}
+      </section>
+
+      <section className="dev-section">
+        <h3 className="dev-heading">Device</h3>
+        <dl className="dev-table">
+          {device.map(([k, v]) => (
+            <Fragment key={k}>
+              <dt>{k}</dt>
+              <dd>{v}</dd>
+            </Fragment>
+          ))}
+        </dl>
+      </section>
+
+      <section className="dev-section">
+        <h3 className="dev-heading">Saved settings</h3>
+        <span className="dev-note">{savedKeys.length ? savedKeys.join(", ") : "Nothing saved."}</span>
+        <ConfirmButton
+          label="Reset saved settings"
+          onConfirm={resetSaved}
+          className="sheet-switch"
+          title="Clear everything this app saved in the browser, then reload"
+        />
+      </section>
+    </div>
+  );
+}
+
+// One scanned region as the model saw it (the letterboxed square), with
+// each raw detection boxed and labelled with its class and confidence.
+function ScanDebugRegionView({ region }: { region: ScanDebugRegion }) {
+  const src = useMemo(() => region.canvas.toDataURL("image/jpeg", 0.8), [region.canvas]);
+  const sorted = [...region.detections].sort((a, b) => a.box[0] - b.box[0]);
+  return (
+    <div className="dev-scan">
+      <div className="dev-scan-image">
+        <img src={src} alt="" />
+        <svg viewBox={`0 0 ${IMG_SIZE} ${IMG_SIZE}`} preserveAspectRatio="none" aria-hidden="true">
+          {sorted.map((d, i) => (
+            <g key={i} className={d.confidence < 0.6 ? "is-low" : undefined}>
+              <rect x={d.box[0]} y={d.box[1]} width={d.box[2] - d.box[0]} height={d.box[3] - d.box[1]} />
+              <text x={d.box[0] + 2} y={d.box[1] - 3}>
+                {Math.round(d.confidence * 100)}
+              </text>
+            </g>
+          ))}
+        </svg>
+      </div>
+      <span className="dev-note">
+        {sorted.map((d) => `${d.className} ${Math.round(d.confidence * 100)}%`).join(" · ") || "No tiles found."}
+      </span>
+    </div>
+  );
+}
+
+// The developer sheet's "Layout overlay": a small live readout of the
+// page's heights - for chasing blank space below the footer - with the
+// Scoring tab's bottom spacer striped (see .debug-layout in App.css).
+function LayoutOverlay() {
+  const [m, setM] = useState({ vw: 0, vh: 0, y: 0, page: 0, spacer: 0, belowFooter: 0 });
+  useEffect(() => {
+    document.documentElement.classList.add("debug-layout");
+    const measure = () => {
+      const footer = document.querySelector(".build-version");
+      const room = document.querySelector<HTMLElement>(".scroll-room");
+      const page = document.documentElement.scrollHeight;
+      const footerBottom = footer ? footer.getBoundingClientRect().bottom + window.scrollY : page;
+      setM({
+        vw: window.innerWidth,
+        vh: window.innerHeight,
+        y: Math.round(window.scrollY),
+        page,
+        spacer: room ? Math.round(room.getBoundingClientRect().height) : 0,
+        belowFooter: Math.round(page - footerBottom),
+      });
+    };
+    measure();
+    const id = window.setInterval(measure, 250);
+    window.addEventListener("scroll", measure, { passive: true });
+    return () => {
+      window.clearInterval(id);
+      window.removeEventListener("scroll", measure);
+      document.documentElement.classList.remove("debug-layout");
+    };
+  }, []);
+  return (
+    <div className="layout-overlay" aria-hidden="true">
+      <span>
+        {m.vw}×{m.vh} · y {m.y}
+      </span>
+      <span>page {m.page}</span>
+      <span>spacer {m.spacer}</span>
+      <span>below footer {m.belowFooter}</span>
+    </div>
+  );
+}
+
 function TestHandsSheet({
   onPick,
   onClose,
@@ -8194,6 +9023,7 @@ function TestHandsSheet({
   onTileStyleChange: (style: TileStyle) => void;
 }) {
   const [query, setQuery] = useState("");
+  const [tab, setTab] = useState<"hands" | "tools">("hands");
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -8213,30 +9043,40 @@ function TestHandsSheet({
   }
   return (
     <div className="sheet-backdrop" onClick={onClose}>
-      <div className="sheet" role="dialog" aria-modal="true" aria-label="Test hands" onClick={(e) => e.stopPropagation()}>
+      <div className="sheet" role="dialog" aria-modal="true" aria-label="Developer" onClick={(e) => e.stopPropagation()}>
         <div className="sheet-header">
-          <span className="sheet-title">Test hands</span>
-          <span className="sheet-subtitle">{TEST_HANDS.length} hands from the scoring tests</span>
+          <span className="sheet-title">Developer</span>
+          <span className="sheet-subtitle">
+            {tab === "hands" ? `${TEST_HANDS.length} hands from the scoring tests` : "Diagnostics and switches"}
+          </span>
           <button type="button" className="sheet-close" onClick={onClose} aria-label="Close">
             ✕
           </button>
         </div>
-        <div className="sheet-setting">
-          <span className="sheet-setting-label">Tile style</span>
-          <div className="segmented" role="group" aria-label="Tile style">
-            {TILE_STYLES.map(({ value, label }) => (
-              <button
-                key={value}
-                type="button"
-                className={tileStyle === value ? "toggle-on" : undefined}
-                aria-pressed={tileStyle === value}
-                onClick={() => onTileStyleChange(value)}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+        <div className="segmented" role="tablist" aria-label="Developer sections">
+          {(["hands", "tools"] as const).map((t) => (
+            <button
+              key={t}
+              type="button"
+              role="tab"
+              aria-selected={tab === t}
+              className={tab === t ? "toggle-on" : undefined}
+              onClick={() => setTab(t)}
+            >
+              {t === "hands" ? "Test hands" : "Tools"}
+            </button>
+          ))}
         </div>
+        {tab === "tools" ? (
+          <div className="sheet-list">
+            <DeveloperTools
+              onLoadNotation={(hand) => onPick({ group: "", name: "Pasted hand", hand, ctx: {} })}
+              tileStyle={tileStyle}
+              onTileStyleChange={onTileStyleChange}
+            />
+          </div>
+        ) : (
+        <>
         <button
           type="button"
           className="btn-primary sheet-random"
@@ -8266,6 +9106,8 @@ function TestHandsSheet({
             </div>
           ))}
         </div>
+        </>
+        )}
       </div>
     </div>
   );
@@ -8335,15 +9177,28 @@ const TAB_ITEMS: { id: AppMode; label: string; icon: ReactNode }[] = [
 ];
 
 function App() {
-  const [mode, setMode] = useState<AppMode>("scoring");
+  const [mode, setMode] = useState<AppMode>(() => (readCalcHand(window.location.search) ? "calculator" : "scoring"));
   // Lifted above TrainerPanel so stats survive switching back to the
   // Calculator tab and back - the trainers themselves unmount (and their other
   // state - the in-progress question, timer, etc. - resets) on every tab
   // switch, but a session's accumulated stats shouldn't disappear with it.
   // One store per sub-tab (Waits / Discards / Endless), each with its own stats.
-  const [waitsTrainerStats, setWaitsTrainerStats] = useState<Map<string, TrainerStatsEntry>>(new Map());
-  const [discardTrainerStats, setDiscardTrainerStats] = useState<Map<string, DiscardTrainerStatsEntry>>(new Map());
-  const [endlessTrainerStats, setEndlessTrainerStats] = useState<EndlessStats>(EMPTY_ENDLESS_STATS);
+  // Saved too (see loadTrainerStats), so a reload keeps them.
+  const [savedStats] = useState(loadTrainerStats);
+  const [waitsTrainerStats, setWaitsTrainerStats] = useState<Map<string, TrainerStatsEntry>>(() => statsMap(savedStats.waits));
+  const [discardTrainerStats, setDiscardTrainerStats] = useState<Map<string, DiscardTrainerStatsEntry>>(() =>
+    statsMap(savedStats.discards)
+  );
+  const [endlessTrainerStats, setEndlessTrainerStats] = useState<EndlessStats>(savedStats.endless);
+  useEffect(
+    () =>
+      saveTrainerStats({
+        waits: [...waitsTrainerStats.values()],
+        discards: [...discardTrainerStats.values()],
+        endless: endlessTrainerStats,
+      }),
+    [waitsTrainerStats, discardTrainerStats, endlessTrainerStats]
+  );
   // Seating tab player names, lifted here for the same reason: custom initials
   // should survive switching sub-tabs / tabs and the seating Reset - it's the same
   // four people at the table. Unlike everything else here they're also saved
@@ -8360,7 +9215,7 @@ function App() {
   const swapSeats = (a: number, b: number) =>
     setSeatOrder((prev) => prev.map((player, pos) => (pos === a ? prev[b] : pos === b ? prev[a] : player)));
 
-  // Hidden Test hands sheet: three quick taps on the logo (each within 800ms
+  // Hidden developer sheet: three quick taps on the logo (each within 800ms
   // of the last) open it; picking a hand switches to Scoring and loads it.
   const [testHandsOpen, setTestHandsOpen] = useState(false);
   const [tileStyle, setTileStyle] = useState<TileStyle>(loadTileStyle);
@@ -8368,7 +9223,24 @@ function App() {
     setTileStyle(style);
     saveTileStyle(style);
   };
-  const [testHandRequest, setTestHandRequest] = useState<TestHandRequest | null>(null);
+  // A Calculator share link (?calc=…) opens on the Calculator with its hand.
+  const [calcLinkHand, setCalcLinkHand] = useState(() => readCalcHand(window.location.search));
+  // A share link (?h=…) opens straight into Scoring with that hand loaded.
+  const [testHandRequest, setTestHandRequest] = useState<TestHandRequest | null>(() => {
+    const shared = readSharedHand(window.location.search);
+    return shared
+      ? { hand: { group: "", name: "Shared hand", hand: shared.hand, ctx: shared.ctx }, bonus: shared.bonus, nonce: Date.now() }
+      : null;
+  });
+  // Then the hand comes off the address bar, so a reload doesn't load it
+  // over whatever was entered since.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.has("h") || params.has("calc")) {
+      window.history.replaceState(null, "", window.location.pathname + window.location.hash);
+    }
+  }, []);
+  const debug = useDebug();
   const logoTaps = useRef({ count: 0, last: 0 });
   const onLogoTap = () => {
     const now = Date.now();
@@ -8424,7 +9296,7 @@ function App() {
       {mode === "scoring" && (
         <ScoringPanel testHandRequest={testHandRequest} onTestHandLoaded={() => setTestHandRequest(null)} />
       )}
-      {mode === "calculator" && <Calculator />}
+      {mode === "calculator" && <Calculator initialHand={calcLinkHand} onInitialHandLoaded={() => setCalcLinkHand(null)} />}
       {mode === "trainer" && (
         <TrainerPanel
           waitsStats={waitsTrainerStats}
@@ -8446,6 +9318,10 @@ function App() {
       )}
       <footer className="build-version">
         v{__BUILD_TIME__}
+        {" · "}
+        <a href="https://github.com/kevincgith/mjwaits" target="_blank" rel="noreferrer" title="Source code on GitHub">
+          Made by kevincgith
+        </a>
         {tileStyle === "art" && (
           <>
             {" · "}
@@ -8462,6 +9338,7 @@ function App() {
           </>
         )}
       </footer>
+      {debug.layoutOverlay && <LayoutOverlay />}
       {testHandsOpen && (
         <TestHandsSheet
           onPick={pickTestHand}
