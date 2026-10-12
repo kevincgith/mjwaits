@@ -2477,7 +2477,7 @@ function Calculator({
   );
 
   // One picker tile, shared by the Classic rows and the Numpad keypad.
-  const [pickerLayout] = usePickerLayout();
+  const [pickerLayout, setPickerLayout] = usePickerLayout();
   const renderPickerTile = (t: Tile): ReactNode => (
     <TileButton
       key={tileLabel(t)}
@@ -2502,7 +2502,15 @@ function Calculator({
           the tile count. */}
       <div className="scoring-toolbar">
         <ToolbarLogo />
-        <ConfirmResetButton title="Clear the hand" onConfirm={handleReset} disabled={hand.length === 0} />
+        {/* Reset also puts the picker back to its Classic rows. */}
+        <ConfirmResetButton
+          title="Clear the hand"
+          onConfirm={() => {
+            handleReset();
+            setPickerLayout("classic");
+          }}
+          disabled={hand.length === 0 && pickerLayout === "classic"}
+        />
         <button type="button" className="toolbar-button" onClick={() => handScannerRef.current?.trigger()} disabled={scanBusy}>
           <ToolbarIcon kind="camera" />
           <span className="toolbar-label">Scan</span>
@@ -5326,9 +5334,26 @@ async function copyText(text: string): Promise<boolean> {
   }
 }
 
-// Shares a Scoring hand as a link. Tapping the icon opens a small menu:
-// Copy link (one tap, then it says "Copied") and, where the system has a
-// share sheet (phones), Share… for messages, AirDrop and the rest.
+// Direct share targets for the share menu, each a web address that opens
+// the service with the message filled in. Shown on computers (a mouse or
+// trackpad) and wherever the browser has no share sheet; a phone's share
+// sheet already reaches all of these.
+const SHARE_TARGETS: { label: string; href: (url: string, text: string) => string }[] = [
+  { label: "WhatsApp", href: (url, text) => `https://wa.me/?text=${encodeURIComponent(`${text} ${url}`)}` },
+  { label: "Telegram", href: (url, text) => `https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}` },
+  {
+    label: "Email",
+    href: (url, text) => `mailto:?subject=${encodeURIComponent("MJWaits hand")}&body=${encodeURIComponent(`${text}\n${url}`)}`,
+  },
+  { label: "X", href: (url, text) => `https://x.com/intent/post?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}` },
+];
+const SHARE_TARGETS_SHOWN =
+  typeof window !== "undefined" && (window.matchMedia("(pointer: fine)").matches || !("share" in navigator));
+
+// Shares a hand as a link. Tapping the icon opens a small menu: Copy link
+// (one tap, then it says "Copied"); Share… where the system has a share
+// sheet (messages, AirDrop and the rest); and on computers, or without a
+// share sheet, direct WhatsApp / Telegram / Email / X (SHARE_TARGETS).
 function ShareButton({ url, text, className }: { url: () => string; text: string; className?: string }) {
   // Where the menu goes, on screen: fixed rather than absolute, so the
   // Recent list's collapsible panel (which clips its content) can't cut it
@@ -5341,10 +5366,11 @@ function ShareButton({ url, text, className }: { url: () => string; text: string
     if (open) return setMenuAt(null);
     const r = wrapRef.current!.getBoundingClientRect();
     const right = window.innerWidth - r.right;
-    // Opens upward when there's no room below (the phone tab bar takes the
-    // screen's last ~90px).
+    // Opens upward when there's no room below for it (the phone tab bar
+    // takes the screen's last ~90px).
+    const items = 1 + ("share" in navigator ? 1 : 0) + (SHARE_TARGETS_SHOWN ? SHARE_TARGETS.length : 0);
     const roomBelow = window.innerHeight - r.bottom;
-    setMenuAt(roomBelow < 200 ? { bottom: window.innerHeight - r.top + 6, right } : { top: r.bottom + 6, right });
+    setMenuAt(roomBelow < items * 46 + 100 ? { bottom: window.innerHeight - r.top + 6, right } : { top: r.bottom + 6, right });
   };
   const setOpen = (o: boolean) => !o && setMenuAt(null);
   useEffect(() => {
@@ -5411,6 +5437,22 @@ function ShareButton({ url, text, className }: { url: () => string; text: string
               Share…
             </button>
           )}
+          {SHARE_TARGETS_SHOWN &&
+            SHARE_TARGETS.map((t) => (
+              <button
+                key={t.label}
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setOpen(false);
+                  const href = t.href(url(), text);
+                  if (href.startsWith("mailto:")) window.location.href = href;
+                  else window.open(href, "_blank", "noopener");
+                }}
+              >
+                {t.label}
+              </button>
+            ))}
         </span>
       )}
     </span>
@@ -6547,7 +6589,7 @@ function ScoringPanel({
   const renderPickerBonus = (tile: BonusTile): ReactNode => (
     <BonusTileButton key={`${tile.kind}${tile.rank}`} tile={tile} onClick={() => addBonusTile(tile)} disabled={hasBonusTile(tile)} />
   );
-  const [pickerLayout] = usePickerLayout();
+  const [pickerLayout, setPickerLayout] = usePickerLayout();
 
   // The tiles as notation - declared melds as "(123m)", a 暗槓 as
   // "[1111z]", then the concealed tiles - for share links, the Recent list
@@ -6866,10 +6908,14 @@ function ScoringPanel({
     <section className="panel scoring-panel">
       <div className="scoring-toolbar" ref={toolbarRef}>
         <ToolbarLogo />
+        {/* Reset also puts the picker back to its Classic rows. */}
         <ConfirmResetButton
           title="Reset the hand, winds and declarations"
-          onConfirm={handleReset}
-          disabled={handEmpty && conditionsAtDefault && !scanActive}
+          onConfirm={() => {
+            handleReset();
+            setPickerLayout("classic");
+          }}
+          disabled={handEmpty && conditionsAtDefault && !scanActive && pickerLayout === "classic"}
         />
         <button type="button" className="toolbar-button" onClick={() => handScannerRef.current?.trigger()} disabled={scanBusy}>
           <ToolbarIcon kind="camera" />
@@ -7278,9 +7324,9 @@ function ScoringPanel({
           title="Show the situation controls"
           tabIndex={situationCollapsed ? undefined : -1}
         >
-          <span className="situation-summary-winds">
-            {WIND_SHORT[roundWind]}圈 · {WIND_SHORT[seatWind]}位
-          </span>
+          {/* The winds are pills too, like every switched-on declaration. */}
+          <span className="situation-summary-chip">{WIND_SHORT[roundWind]}圈</span>
+          <span className="situation-summary-chip">{WIND_SHORT[seatWind]}位</span>
           {activeConditionLabels.length > 0 ? (
             activeConditionLabels.map((label) => (
               <span key={label} className="situation-summary-chip">
