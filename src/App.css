@@ -3815,18 +3815,6 @@ img.tile-face {
   font-size: var(--tile-input);
 }
 
-/* Wide screens: the picker spreads to (nearly) the card's width with bigger
-   tiles - easier to click, and no half-empty card. Centred, since 9
-   columns at the cap don't quite reach the edges. */
-@media (min-width: 701px) {
-  .suit-row {
-    --tile-input: 4.3rem;
-    grid-template-columns: repeat(9, minmax(0, 4.2rem));
-    gap: 0.4rem;
-    justify-content: center;
-  }
-}
-
 /* Wide screens: the card has room for all 17 on one line, so 手牌 packs its
    tiles together and reserves just that one line - still a fixed height,
    it just never needs the phone layout's second row. */
