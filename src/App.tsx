@@ -459,9 +459,6 @@ if (typeof document !== "undefined") {
   document.addEventListener(
     "click",
     (e) => {
-      // The hidden haptic switch's own clicks (see haptic) - on its label,
-      // then the one the label passes on to the switch - must go through.
-      if (hapticLabel && (e.target === hapticLabel || e.target === hapticLabel.control)) return;
       if (performance.now() - lastTouchTapAt < 500) {
         e.preventDefault();
         e.stopPropagation();
@@ -601,39 +598,6 @@ function TileGlyphSpan({
   );
 }
 
-// A short buzz for a tile tap (longer for a long-press, where it can).
-// Android: the Vibration API. iPhone browsers have no such API, but Safari 18
-// plays the system "tick" when an <input type="checkbox" switch> toggles - so
-// a hidden one, toggled through its label, gives the same feel (the trick
-// use-haptic uses; one shared switch here rather than one per button). It
-// has to happen inside a tap, so a long-press timer can't tick on iOS.
-const IS_IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
-let hapticLabel: HTMLLabelElement | null = null;
-function haptic(ms = 8): void {
-  try {
-    if (!IS_IOS) {
-      navigator.vibrate?.(ms);
-      return;
-    }
-    if (!hapticLabel) {
-      const input = document.createElement("input");
-      input.type = "checkbox";
-      input.id = "haptic-switch";
-      input.setAttribute("switch", "");
-      input.setAttribute("aria-hidden", "true");
-      input.tabIndex = -1;
-      input.style.display = "none";
-      hapticLabel = document.createElement("label");
-      hapticLabel.htmlFor = input.id;
-      hapticLabel.style.display = "none";
-      document.body.append(input, hapticLabel);
-    }
-    hapticLabel.click();
-  } catch {
-    // Not allowed here - skip it.
-  }
-}
-
 function TileButton({
   tile,
   onClick,
@@ -649,10 +613,7 @@ function TileButton({
   extraClass?: string;
   title?: string;
 }) {
-  const tap = useTap(() => {
-    haptic();
-    onClick();
-  }, disabled);
+  const tap = useTap(onClick, disabled);
   const classes = ["tile-button", selected && "selected", extraClass].filter(Boolean).join(" ");
   return (
     <button
@@ -697,17 +658,7 @@ function LongPressTileButton({
   disabled?: boolean;
   title?: string;
 }) {
-  const tap = useTapAndLongPress(
-    () => {
-      haptic();
-      onTap();
-    },
-    () => {
-      haptic(25);
-      onLongPress();
-    },
-    disabled
-  );
+  const tap = useTapAndLongPress(onTap, onLongPress, disabled);
   return (
     <button type="button" className="tile-button" disabled={disabled} title={title} aria-label={title} {...tap}>
       <TileGlyphSpan tile={tile} />
@@ -2550,6 +2501,7 @@ function Calculator({
       {/* Same sticky toolbar as the Scoring tab: Reset / Scan / Photos, then
           the tile count. */}
       <div className="scoring-toolbar">
+        <ToolbarLogo />
         <ConfirmResetButton title="Clear the hand" onConfirm={handleReset} disabled={hand.length === 0} />
         <button type="button" className="toolbar-button" onClick={() => handScannerRef.current?.trigger()} disabled={scanBusy}>
           <ToolbarIcon kind="camera" />
@@ -4492,10 +4444,7 @@ function BonusTileButton({
   disabled?: boolean;
   selected?: boolean;
 }) {
-  const tap = useTap(() => {
-    haptic();
-    onClick();
-  }, disabled);
+  const tap = useTap(onClick, disabled);
   const classes = ["tile-button", selected && "selected"].filter(Boolean).join(" ");
   return (
     <button type="button" className={classes} disabled={disabled} title={bonusTileLabel(tile)} {...tap}>
@@ -5547,6 +5496,17 @@ function RecentCalcRow({ entry, onLoad }: { entry: RecentCalcHand; onLoad: () =>
         <ShareButton url={() => calcShareUrl(entry.hand)} text={`A Calculator hand on MJWaits: ${entry.summary}`} className="recent-share" />
       </div>
     </div>
+  );
+}
+
+// The app's name, centred in the sticky toolbar once the page's own header
+// has scrolled away (html.header-hidden, set by App) - like an iOS title
+// bar. Tapping it goes back to the top.
+function ToolbarLogo() {
+  return (
+    <button type="button" className="toolbar-logo" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })} aria-label="Back to top" tabIndex={-1}>
+      MJWaits
+    </button>
   );
 }
 
@@ -6905,6 +6865,7 @@ function ScoringPanel({
   return (
     <section className="panel scoring-panel">
       <div className="scoring-toolbar" ref={toolbarRef}>
+        <ToolbarLogo />
         <ConfirmResetButton
           title="Reset the hand, winds and declarations"
           onConfirm={handleReset}
@@ -9266,6 +9227,24 @@ function App() {
     }
   }, []);
   const debug = useDebug();
+  // Once the header (logo + name) has scrolled off the top of the screen,
+  // html gets .header-hidden: the toolbar then shows the logo, centred, and
+  // on phones folds Scan / Photos to icons to make room for it.
+  const headerRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const header = headerRef.current;
+    if (!header) return;
+    // The toolbar only reaches the top of the screen once the header has
+    // scrolled past it, so "gone" is simply "off the screen".
+    const observer = new IntersectionObserver(([entry]) =>
+      document.documentElement.classList.toggle("header-hidden", !entry.isIntersecting)
+    );
+    observer.observe(header);
+    return () => {
+      observer.disconnect();
+      document.documentElement.classList.remove("header-hidden");
+    };
+  }, []);
   const logoTaps = useRef({ count: 0, last: 0 });
   const onLogoTap = () => {
     const now = Date.now();
@@ -9286,7 +9265,7 @@ function App() {
   return (
     <TileStyleContext.Provider value={tileStyle}>
     <div className="page">
-      <header className="app-header">
+      <header className="app-header" ref={headerRef}>
         <img
           className="app-logo"
           src={`${import.meta.env.BASE_URL}favicon.svg`}
