@@ -14,6 +14,7 @@ import {
   type ReactNode,
 } from "react";
 import "./App.css";
+import { usePickerLayout, type PickerLayout } from "./pickerLayout";
 import {
   bonusArtUrl,
   loadTileStyle,
@@ -2397,6 +2398,26 @@ function Calculator() {
     </span>
   );
 
+  // One picker tile, shared by the Classic rows and the Numpad keypad.
+  const [pickerLayout] = usePickerLayout();
+  const renderPickerTile = (t: Tile): ReactNode => (
+    <TileButton
+      key={tileLabel(t)}
+      tile={t}
+      onClick={() => addTile(t)}
+      disabled={hand.length >= COMPLETE_SIZE || tileCount(hand, t) >= 4}
+    />
+  );
+  const jokerButton = (
+    <TileButton
+      key="joker"
+      tile={JOKER_TILE}
+      onClick={() => addTile(JOKER_TILE)}
+      disabled={hand.length >= COMPLETE_SIZE}
+      extraClass="joker-slot"
+    />
+  );
+
   return (
     <section className="panel calculator-panel">
       {/* Same sticky toolbar as the Scoring tab: Reset / Scan / Photos, then
@@ -2462,6 +2483,7 @@ function Calculator() {
           <span className="section-title">
             選牌 <span className="section-title-en">Add tiles</span>
           </span>
+          <PickerLayoutToggle />
           <span className="section-head-actions">
             <button
               type="button"
@@ -2478,33 +2500,23 @@ function Calculator() {
 
         <CollapsiblePanel open={!pickerCollapsed}>
           <div className="card picker-card">
+            {pickerLayout === "numpad" ? (
+              <NumpadPicker renderTile={renderPickerTile} extraHonor={jokerButton} />
+            ) : (
             <div className="tile-picker">
               {SUIT_ORDER.map((suit) => (
                 <div className="suit-row" key={suit}>
                   {allTileKinds()
                     .filter((t) => t.suit === suit)
-                    .map((t) => (
-                      <TileButton
-                        key={tileLabel(t)}
-                        tile={t}
-                        onClick={() => addTile(t)}
-                        disabled={hand.length >= COMPLETE_SIZE || tileCount(hand, t) >= 4}
-                      />
-                    ))}
+                    .map(renderPickerTile)}
                   {/* The joker shares the honors row, pinned to the last column
                       (under 9) with one empty slot after 白, rather than taking
                       a row of its own. */}
-                  {suit === "z" && (
-                    <TileButton
-                      tile={JOKER_TILE}
-                      onClick={() => addTile(JOKER_TILE)}
-                      disabled={hand.length >= COMPLETE_SIZE}
-                      extraClass="joker-slot"
-                    />
-                  )}
+                  {suit === "z" && jokerButton}
                 </div>
               ))}
             </div>
+            )}
 
             <div className="algebraic-input">
               <label htmlFor="algebraic">Algebraic notation</label>
@@ -3941,6 +3953,109 @@ function PickerCollapseToggle({
     >
       ▸
     </button>
+  );
+}
+
+// The 選牌 header's Classic / Numpad switch (see pickerLayout.ts) - two
+// small icons rather than words, since the header is already full on a
+// phone: rows of tiles for Classic, a 3x3 keypad for Numpad.
+function PickerLayoutToggle() {
+  const [layout, setLayout] = usePickerLayout();
+  const options: { value: PickerLayout; label: string; icon: ReactNode }[] = [
+    {
+      value: "classic",
+      label: "Classic - every suit at once",
+      icon: [3, 7, 11].map((y) => <rect key={y} x="1.5" y={y} width="13" height="2.4" rx="1.2" />),
+    },
+    {
+      value: "numpad",
+      label: "Numpad - one suit at a time, in a 3x3 keypad",
+      icon: [2, 6.75, 11.5].flatMap((y) =>
+        [2, 6.75, 11.5].map((x) => <rect key={`${x}-${y}`} x={x} y={y} width="2.5" height="2.5" rx="0.6" />)
+      ),
+    },
+  ];
+  return (
+    <div className="segmented layout-toggle" role="group" aria-label="Tile picker layout">
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          className={layout === o.value ? "toggle-on" : undefined}
+          aria-pressed={layout === o.value}
+          aria-label={o.label}
+          title={o.label}
+          onClick={() => setLayout(o.value)}
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+            {o.icon}
+          </svg>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+type NumpadGroup = "bonus" | "z" | "m" | "t" | "b";
+
+const NUMPAD_GROUP_LABELS: Record<NumpadGroup, string> = { bonus: "花", z: "字", m: "萬", t: "筒", b: "索" };
+
+const BONUS_TILES: BonusTile[] = (["flower", "season"] as const).flatMap((kind) =>
+  ([1, 2, 3, 4] as const).map((rank) => ({ kind, rank }))
+);
+
+// The picker's Numpad layout: tabs for 花 字 萬 筒 索, then that one group's
+// tiles as a keypad: 3x3 for a suit (1 2 3 / 4 5 6 / 7 8 9), 2x4 for 字
+// (the winds over the dragons) and 花 (the flowers over the seasons). The tiles come from the caller - `renderTile` / `renderBonus`
+// return the same buttons the Classic rows use, so taps and long-presses
+// behave the same in both layouts. 花 only shows when `renderBonus` is
+// given; `extraHonor` (the Calculator's joker) takes the cell after 白.
+function NumpadPicker({
+  renderTile,
+  renderBonus,
+  extraHonor,
+}: {
+  renderTile: (tile: Tile) => ReactNode;
+  renderBonus?: (tile: BonusTile) => ReactNode;
+  extraHonor?: ReactNode;
+}) {
+  // With 花 (Scoring) the tabs split like the add-to row above them - 花 字
+  // under 手牌, 萬 筒 索 under 門前's four - so the three bars line up.
+  const tabGroups: NumpadGroup[][] = renderBonus ? [["bonus", "z"], ["m", "t", "b"]] : [["z", "m", "t", "b"]];
+  const [group, setGroup] = useState<NumpadGroup>("m");
+  const cells: ReactNode[] =
+    group === "bonus"
+      ? BONUS_TILES.map((t) => renderBonus?.(t))
+      : allTileKinds()
+          .filter((t) => t.suit === group)
+          .map(renderTile);
+  if (group === "z" && extraHonor) cells.push(extraHonor);
+  return (
+    <div className="numpad-picker">
+      <div className={`numpad-tabs${tabGroups.length > 1 ? " is-split" : ""}`} role="tablist" aria-label="Tile group">
+        {tabGroups.map((tabs) => (
+          <div className="numpad-tab-group" key={tabs.join()}>
+            <div className="segmented">
+              {tabs.map((g) => (
+                <button
+                  key={g}
+                  type="button"
+                  role="tab"
+                  aria-selected={group === g}
+                  className={group === g ? "toggle-on" : undefined}
+                  onClick={() => setGroup(g)}
+                >
+                  {NUMPAD_GROUP_LABELS[g]}
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className={`numpad-grid${group === "bonus" || group === "z" ? " is-four" : ""}`} role="tabpanel">
+        {cells}
+      </div>
+    </div>
   );
 }
 
@@ -5974,6 +6089,44 @@ function ScoringPanel({
     winningTile,
   ]);
 
+  // One picker tile - shared by the Classic rows and the Numpad keypad, so
+  // both layouts tap and long-press the same way.
+  const renderPickerTile = (t: Tile): ReactNode =>
+    addTo === "hand" ? (
+      <LongPressTileButton
+        key={tileLabel(t)}
+        tile={t}
+        onTap={() => addConcealedTile(t)}
+        onLongPress={() => addWinningTile(t)}
+        disabled={atCap || totalCopiesUsed(t) >= 4}
+        title={`${tileLabel(t)} - tap to add, long-press to add as the 食胡 tile`}
+      />
+    ) : addTo === "exposed-kong" ? (
+      <LongPressTileButton
+        key={tileLabel(t)}
+        tile={t}
+        onTap={() => addMeldStartingAt(t)}
+        onLongPress={() => addConcealedKongAt(t)}
+        disabled={!canAddMeldTile(t)}
+        title={`${tileLabel(t)} - tap to declare a 明槓, long-press for a 暗槓`}
+      />
+    ) : (
+      // Honors stay in place (just disabled) for a run, so switching kinds
+      // never reflows the grid under the finger.
+      <TileButton
+        key={tileLabel(t)}
+        tile={t}
+        onClick={() => addMeldStartingAt(t)}
+        disabled={(addTo === "run" && t.suit === "z") || !canAddMeldTile(t)}
+      />
+    );
+  // Bonus tiles (flowers/seasons) always go to 門前 - they're set aside the
+  // moment they're drawn - whatever `addTo` says.
+  const renderPickerBonus = (tile: BonusTile): ReactNode => (
+    <BonusTileButton key={`${tile.kind}${tile.rank}`} tile={tile} onClick={() => addBonusTile(tile)} disabled={hasBonusTile(tile)} />
+  );
+  const [pickerLayout] = usePickerLayout();
+
   // Once the hand scores, every picker tile is spent - fold the picker away
   // so the result comes up; reopen it if a tile comes off and the hand no
   // longer scores. (Tapping a box or the ▸ reopens it any time.)
@@ -6524,6 +6677,7 @@ function ScoringPanel({
           <span className="section-title">
             選牌 <span className="section-title-en">Add tiles</span>
           </span>
+          <PickerLayoutToggle />
           <span className="section-head-actions">
             {/* Empties both 門前 and 手牌 at once (the situation stays) -
                 shown only when there's something to clear. */}
@@ -6596,56 +6750,20 @@ function ScoringPanel({
               </div>
             </div>
 
+            {pickerLayout === "numpad" ? (
+              <NumpadPicker renderTile={renderPickerTile} renderBonus={renderPickerBonus} />
+            ) : (
             <div className="tile-picker">
               {SUIT_ORDER.map((suit) => (
                 <div className="suit-row" key={suit}>
                   {allTileKinds()
                     .filter((t) => t.suit === suit)
-                    .map((t) =>
-                      addTo === "hand" ? (
-                        <LongPressTileButton
-                          key={tileLabel(t)}
-                          tile={t}
-                          onTap={() => addConcealedTile(t)}
-                          onLongPress={() => addWinningTile(t)}
-                          disabled={atCap || totalCopiesUsed(t) >= 4}
-                          title={`${tileLabel(t)} - tap to add, long-press to add as the 食胡 tile`}
-                        />
-                      ) : addTo === "exposed-kong" ? (
-                        <LongPressTileButton
-                          key={tileLabel(t)}
-                          tile={t}
-                          onTap={() => addMeldStartingAt(t)}
-                          onLongPress={() => addConcealedKongAt(t)}
-                          disabled={!canAddMeldTile(t)}
-                          title={`${tileLabel(t)} - tap to declare a 明槓, long-press for a 暗槓`}
-                        />
-                      ) : (
-                        // Honors stay in place (just disabled) for a run, so
-                        // switching kinds never reflows the grid under the finger.
-                        <TileButton
-                          key={tileLabel(t)}
-                          tile={t}
-                          onClick={() => addMeldStartingAt(t)}
-                          disabled={(addTo === "run" && suit === "z") || !canAddMeldTile(t)}
-                        />
-                      )
-                    )}
+                    .map(renderPickerTile)}
                 </div>
               ))}
-              {/* Bonus tiles (flowers/seasons) always go to 門前 - they're set
-                  aside the moment they're drawn - whatever `addTo` says. */}
-              <div className="suit-row bonus-row">
-                {(["flower", "season"] as const).flatMap((kind) =>
-                  ([1, 2, 3, 4] as const).map((rank) => {
-                    const tile: BonusTile = { kind, rank };
-                    return (
-                      <BonusTileButton key={`${kind}${rank}`} tile={tile} onClick={() => addBonusTile(tile)} disabled={hasBonusTile(tile)} />
-                    );
-                  })
-                )}
-              </div>
+              <div className="suit-row bonus-row">{BONUS_TILES.map(renderPickerBonus)}</div>
             </div>
+            )}
           </div>
         </CollapsiblePanel>
       </div>
