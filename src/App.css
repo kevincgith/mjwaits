@@ -157,6 +157,118 @@
   font-size: var(--text-xs);
 }
 
+.footer-link {
+  border: none;
+  padding: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+/* "Open github.com?" before a link leaves the app: a small centred alert,
+   above any sheet it was opened from. */
+.link-confirm-backdrop {
+  z-index: 120;
+}
+
+.link-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  width: min(300px, 100%);
+  padding: 1.1rem 1rem 0.9rem;
+  border-radius: var(--radius-xl);
+  background: var(--surface);
+  box-shadow: var(--shadow-float);
+  text-align: center;
+}
+
+.link-confirm-title {
+  font-size: var(--text-lg);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.link-confirm-body {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.link-confirm-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+}
+
+.link-confirm-actions > button {
+  flex: 1;
+  border: none;
+  border-radius: var(--radius-md);
+  padding: 0.65rem;
+  background: var(--fill);
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.link-confirm-actions > button.is-primary {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* The Credits sheet: one row per work - name and author, licence, note. */
+.credits-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+  padding-bottom: 0.5rem;
+}
+
+.credit-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.1rem 0.75rem;
+  align-self: stretch;
+  padding: 0.5rem 0;
+  border-top: 0.5px solid var(--separator);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.credit-name {
+  font-weight: 600;
+}
+
+.credit-by {
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.credit-licence {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.credit-note {
+  grid-column: 1 / -1;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.credits-own {
+  margin: 0;
+}
+
+.credits-own a {
+  color: var(--accent);
+}
+
 /* Without this, mobile browsers impose a ~300ms delay on every tap while
    they wait to see if it's the first half of a double-tap-to-zoom gesture -
    on a small tap target like a tile button, a second tap that arrives
