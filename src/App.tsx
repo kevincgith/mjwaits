@@ -459,9 +459,6 @@ if (typeof document !== "undefined") {
   document.addEventListener(
     "click",
     (e) => {
-      // The hidden haptic switch's own clicks (see haptic) - on its label,
-      // then the one the label passes on to the switch - must go through.
-      if (hapticLabel && (e.target === hapticLabel || e.target === hapticLabel.control)) return;
       if (performance.now() - lastTouchTapAt < 500) {
         e.preventDefault();
         e.stopPropagation();
@@ -601,39 +598,6 @@ function TileGlyphSpan({
   );
 }
 
-// A short buzz for a tile tap (longer for a long-press, where it can).
-// Android: the Vibration API. iPhone browsers have no such API, but Safari 18
-// plays the system "tick" when an <input type="checkbox" switch> toggles - so
-// a hidden one, toggled through its label, gives the same feel (the trick
-// use-haptic uses; one shared switch here rather than one per button). It
-// has to happen inside a tap, so a long-press timer can't tick on iOS.
-const IS_IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
-let hapticLabel: HTMLLabelElement | null = null;
-function haptic(ms = 8): void {
-  try {
-    if (!IS_IOS) {
-      navigator.vibrate?.(ms);
-      return;
-    }
-    if (!hapticLabel) {
-      const input = document.createElement("input");
-      input.type = "checkbox";
-      input.id = "haptic-switch";
-      input.setAttribute("switch", "");
-      input.setAttribute("aria-hidden", "true");
-      input.tabIndex = -1;
-      input.style.display = "none";
-      hapticLabel = document.createElement("label");
-      hapticLabel.htmlFor = input.id;
-      hapticLabel.style.display = "none";
-      document.body.append(input, hapticLabel);
-    }
-    hapticLabel.click();
-  } catch {
-    // Not allowed here - skip it.
-  }
-}
-
 function TileButton({
   tile,
   onClick,
@@ -649,10 +613,7 @@ function TileButton({
   extraClass?: string;
   title?: string;
 }) {
-  const tap = useTap(() => {
-    haptic();
-    onClick();
-  }, disabled);
+  const tap = useTap(onClick, disabled);
   const classes = ["tile-button", selected && "selected", extraClass].filter(Boolean).join(" ");
   return (
     <button
@@ -697,17 +658,7 @@ function LongPressTileButton({
   disabled?: boolean;
   title?: string;
 }) {
-  const tap = useTapAndLongPress(
-    () => {
-      haptic();
-      onTap();
-    },
-    () => {
-      haptic(25);
-      onLongPress();
-    },
-    disabled
-  );
+  const tap = useTapAndLongPress(onTap, onLongPress, disabled);
   return (
     <button type="button" className="tile-button" disabled={disabled} title={title} aria-label={title} {...tap}>
       <TileGlyphSpan tile={tile} />
@@ -4492,10 +4443,7 @@ function BonusTileButton({
   disabled?: boolean;
   selected?: boolean;
 }) {
-  const tap = useTap(() => {
-    haptic();
-    onClick();
-  }, disabled);
+  const tap = useTap(onClick, disabled);
   const classes = ["tile-button", selected && "selected"].filter(Boolean).join(" ");
   return (
     <button type="button" className={classes} disabled={disabled} title={bonusTileLabel(tile)} {...tap}>
