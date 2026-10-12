@@ -824,12 +824,16 @@ function WaitBreakdownRow({
   meldsRequired,
   sorted,
   remainingCount,
+  bare,
 }: {
   result: JokerWaitResult;
   nonJokerHand: Tile[];
   meldsRequired: number;
   sorted: boolean;
   remainingCount: number | null;
+  /** Just the groups - no leading wait tile or arrow (a row that already
+      shows the wait, like the trainer's). */
+  bare?: boolean;
 }) {
   const complete = [...nonJokerHand, ...result.jokers, result.wait];
   const readings = allBreakdownReadings(complete, meldsRequired);
@@ -860,7 +864,7 @@ function WaitBreakdownRow({
     const ordered = orderBreakdownGroups(reading.groups, sorted);
     return (
       <span className="breakdown-reading" key={reading.label}>
-        <span className="discard-arrow">→</span>
+        {!bare && <span className="discard-arrow">→</span>}
         {readings.length > 1 && <span className="reading-label">{reading.label}</span>}
         <span className="breakdown-groups">
           {ordered.map(({ tiles, key }) => (
@@ -886,11 +890,47 @@ function WaitBreakdownRow({
     );
   };
 
+  if (bare) return <span className="breakdown-readings">{readings.map(renderReading)}</span>;
   return (
     <div className="breakdown-row">
       <TileGlyphSpan tile={result.wait} />
       {remainingCount !== null && <RemainingCountBadge count={remainingCount} />}
       <span className="breakdown-readings">{readings.map(renderReading)}</span>
+    </div>
+  );
+}
+
+// One of the Waits trainer's answers, in the Scoring waits-list style: the
+// wait tile in a row, tap to open how the hand completes with it.
+function TrainerWaitRow({ wait, hand, meldsRequired }: { wait: Tile; hand: Tile[]; meldsRequired: number }) {
+  // Open from the start - after submitting, the breakdown is the point.
+  const [expanded, setExpanded] = useState(true);
+  return (
+    <div className="projected-wait">
+      <button
+        type="button"
+        className="projected-wait-head"
+        onClick={() => setExpanded((e) => !e)}
+        aria-expanded={expanded}
+        aria-label={`${tileLabel(wait)} - tap for its breakdown`}
+      >
+        <TileGlyphSpan tile={wait} />
+        <span className={`projected-wait-caret${expanded ? " open" : ""}`} aria-hidden="true" style={{ marginLeft: "auto" }}>
+          ▸
+        </span>
+      </button>
+      <CollapsiblePanel open={expanded}>
+        <div className="trainer-wait-body">
+          <WaitBreakdownRow
+            result={{ wait, jokers: [] }}
+            nonJokerHand={hand}
+            meldsRequired={meldsRequired}
+            sorted={false}
+            remainingCount={null}
+            bare
+          />
+        </div>
+      </CollapsiblePanel>
     </div>
   );
 }
@@ -2260,6 +2300,8 @@ function Calculator() {
     setText(formatHand(forDisplay(handRef.current, next)));
   };
   const handleReset = () => commitHand([]);
+  // Long-press the hand box to be asked whether to clear it.
+  const handClear = useBoxClear("手牌", hand.length === 0, handleReset);
   const removeTile = (id: number) => commitHand(handRef.current.filter((t) => t.id !== id));
 
   const canCalculate = isCheckpointSize(hand.length);
@@ -2342,10 +2384,7 @@ function Calculator() {
       {/* Same sticky toolbar as the Scoring tab: Reset / Scan / Photos, then
           the tile count. */}
       <div className="scoring-toolbar">
-        <button type="button" className="toolbar-button toolbar-reset" onClick={handleReset} disabled={hand.length === 0} title="Clear the hand">
-          <ToolbarIcon kind="reset" />
-          <span className="toolbar-label">Reset</span>
-        </button>
+        <ConfirmResetButton title="Clear the hand" onConfirm={handleReset} disabled={hand.length === 0} />
         <button type="button" className="toolbar-button" onClick={() => handScannerRef.current?.trigger()} disabled={scanBusy}>
           <ToolbarIcon kind="camera" />
           <span className="toolbar-label">Scan</span>
@@ -2383,31 +2422,17 @@ function Calculator() {
           tap never moves the picker. */}
       <div className="input-zone">
         <div className="card hand-card">
+          {/* Like Scoring's card: just the box, its label inside while
+              empty. Sort lives on the 選牌 header; the shanten count on the
+              打牌 caption, where it explains the discards. */}
           <div className="hand-region is-target">
-            <div className="hand-region-head">
-              <span className="hand-region-label">手牌 Hand</span>
-              {/* Once the hand is a size it can be checked at. */}
-              {shantenValue !== null && (
-                <span
-                  className="shanten-badge"
-                  title="Shanten: minimum discard+draw exchanges from tenpai. Covers the standard shape, Eight Pairs, and Sixteen Unrelated Tiles; doesn't yet account for jokers or Thirteen Orphans."
-                >
-                  Shanten {shantenValue}
-                </span>
-              )}
-              <button
-                type="button"
-                className={`region-toggle${sortMode ? " toggle-on" : ""}`}
-                onClick={toggleSortMode}
-                aria-pressed={sortMode}
-                title={sortMode ? "Sort: on — new tiles are kept in order" : "Sort: off — new tiles keep input order"}
-              >
-                Sort
-              </button>
-            </div>
-            <div className="hand-display">
+            <div className="hand-display is-clearable" {...handClear.handlers}>
+              {handClear.prompt}
               {hand.length === 0 ? (
-                <span className="hint">None — tap tiles below, or type notation</span>
+                <span className="hand-region-empty">
+                  <span className="hand-region-label hand-region-label-inset">手牌 Hand</span>
+                  <span className="hand-region-hint">or type notation</span>
+                </span>
               ) : (
                 displayHand.map((t) => <HandTileButton key={t.id} tile={t} onClick={() => removeTile(t.id)} />)
               )}
@@ -2419,7 +2444,18 @@ function Calculator() {
           <span className="section-title">
             選牌 <span className="section-title-en">Add tiles</span>
           </span>
-          <PickerCollapseToggle collapsed={pickerCollapsed} onToggle={() => setPickerCollapsed((c) => !c)} />
+          <span className="section-head-actions">
+            <button
+              type="button"
+              className={`region-toggle${sortMode ? " toggle-on" : ""}`}
+              onClick={toggleSortMode}
+              aria-pressed={sortMode}
+              title={sortMode ? "Sort: on — new tiles are kept in order" : "Sort: off — new tiles keep input order"}
+            >
+              Sort
+            </button>
+            <PickerCollapseToggle collapsed={pickerCollapsed} onToggle={() => setPickerCollapsed((c) => !c)} />
+          </span>
         </div>
 
         <CollapsiblePanel open={!pickerCollapsed}>
@@ -2530,7 +2566,12 @@ function Calculator() {
           <div className="section-head">
             <span className="section-title">
               打牌 <span className="section-title-en">Discards</span>
-              <span className="section-meta">not tenpai · ranked by efficiency</span>
+              <span
+                className="section-meta"
+                title="Shanten: minimum discard+draw exchanges from tenpai. Covers the standard shape, Eight Pairs, and Sixteen Unrelated Tiles; doesn't yet account for jokers or Thirteen Orphans."
+              >
+                {shantenValue !== null ? `shanten ${shantenValue}` : "not tenpai"} · best first
+              </span>
             </span>
           </div>
           <div className="card discard-analysis">
@@ -2573,7 +2614,18 @@ function Calculator() {
           <div className="section-head">
             <span className="section-title">
               打牌 <span className="section-title-en">Discards</span>
-              {discardChoices.alreadyComplete && <span className="section-meta">if you discarded instead of winning</span>}
+              {discardChoices.alreadyComplete ? (
+                <span className="section-meta">if you discarded instead of winning</span>
+              ) : (
+                shantenValue !== null && (
+                  <span
+                    className="section-meta"
+                    title="Shanten: minimum discard+draw exchanges from tenpai. Covers the standard shape, Eight Pairs, and Sixteen Unrelated Tiles; doesn't yet account for jokers or Thirteen Orphans."
+                  >
+                    shanten {shantenValue}
+                  </span>
+                )
+              )}
             </span>
           </div>
           <div className="card discard-analysis">
@@ -2884,7 +2936,7 @@ function WaitsTrainer({
         <button type="button" className="btn-primary" onClick={() => newQuestion(level, flush)}>
           {submitted ? "Next hand" : "New hand"}
         </button>
-        {question && <span className="tile-count">Time: {formatSeconds(elapsedMs)}</span>}
+        {question && <span className="tile-count trainer-timer">{formatSeconds(elapsedMs)}</span>}
       </div>
 
       {!question && (
@@ -2932,8 +2984,14 @@ function WaitsTrainer({
           </div>
 
           {!submitted ? (
-            <button type="button" className="trainer-submit" onClick={handleSubmit}>
-              Submit ({selectedCount} selected)
+            <button
+              type="button"
+              className="trainer-submit"
+              onClick={handleSubmit}
+              disabled={selectedCount === 0}
+              title={selectedCount === 0 ? "Pick at least one tile first" : undefined}
+            >
+              {selectedCount === 0 ? "Pick the waits" : `Submit (${selectedCount} selected)`}
             </button>
           ) : (
             <>
@@ -2945,17 +3003,10 @@ function WaitsTrainer({
                   <TileGlyphSpan key={tileLabel(w)} tile={w} />
                 ))}
               </div>
-              <div className="waits breakdown-list">
-                <span className="waits-label">Breakdown:</span>
+              <div className="waits projected-waits trainer-waits">
+                <span className="waits-label">Breakdown</span>
                 {question.waits.map((w) => (
-                  <WaitBreakdownRow
-                    key={tileLabel(w)}
-                    result={{ wait: w, jokers: [] }}
-                    nonJokerHand={question.tiles}
-                    meldsRequired={level}
-                    sorted={false}
-                    remainingCount={null}
-                  />
+                  <TrainerWaitRow key={tileLabel(w)} wait={w} hand={question.tiles} meldsRequired={level} />
                 ))}
               </div>
             </>
@@ -2967,9 +3018,7 @@ function WaitsTrainer({
         <div className="trainer-stats">
           <div className="panel-header">
             <span className="panel-title">Stats</span>
-            <button type="button" onClick={() => setStats(() => new Map())}>
-              Reset stats
-            </button>
+            <ConfirmButton label="Reset" onConfirm={() => setStats(() => new Map())} title="Clear these stats" />
           </div>
           <div className="trainer-stats-scroll">
             <table className="trainer-stats-table">
@@ -3173,7 +3222,7 @@ function DiscardTrainer({
         <button type="button" className="btn-primary" onClick={() => newQuestion(level, flush)}>
           {submitted ? "Next hand" : "New hand"}
         </button>
-        {question && <span className="tile-count">Time: {formatSeconds(elapsedMs)}</span>}
+        {question && <span className="tile-count trainer-timer">{formatSeconds(elapsedMs)}</span>}
       </div>
 
       {!question && (
@@ -3244,9 +3293,7 @@ function DiscardTrainer({
         <div className="trainer-stats">
           <div className="panel-header">
             <span className="panel-title">Stats</span>
-            <button type="button" onClick={() => setStats(() => new Map())}>
-              Reset stats
-            </button>
+            <ConfirmButton label="Reset" onConfirm={() => setStats(() => new Map())} title="Clear these stats" />
           </div>
           <div className="trainer-stats-scroll">
             <table className="trainer-stats-table">
@@ -3635,9 +3682,12 @@ function EndlessTrainer({
             </div>
           </dl>
           {stats.turns > 0 && (
-            <button type="button" className="endless-reset-stats" onClick={() => setStats(() => EMPTY_ENDLESS_STATS)}>
-              Reset stats
-            </button>
+            <ConfirmButton
+              label="Reset"
+              className="endless-reset-stats"
+              onConfirm={() => setStats(() => EMPTY_ENDLESS_STATS)}
+              title="Clear these stats"
+            />
           )}
         </div>
       )}
@@ -4600,10 +4650,10 @@ function DiscardOptionRow({
           {/* No "tai" unit, to keep the rows quiet - the title and
               aria-label spell it out. */}
           <span className="discard-option-live" title="Live tiles across these waits">
-            {liveTotal} live
+            {liveTotal} left
           </span>
           <span className="projected-wait-tai" title={topTai === null ? "Every wait is dead" : "Best tai among the live waits"}>
-            {topTai === null ? "dead" : `up to ${topTai}`}
+            {topTai === null ? "dead" : `best ${topTai}`}
           </span>
           <span className={`projected-wait-caret${expanded ? " open" : ""}`} aria-hidden="true">
             ▸
@@ -4711,6 +4761,201 @@ function ProjectedWaitRow({
 // notation (see scoring.ts's parseScoringHand for the equivalent text
 // grammar, still used by scoreHand/tests).
 // Small line icons for the Scoring toolbar's Reset / Scan / Photos buttons.
+// The toolbar's Reset, with a second-tap confirmation: the first tap arms
+// it (red, "Confirm"), a second tap within a few seconds resets. Disarms on
+// its own after that, or on a tap anywhere else - a stray tap never wipes a
+// hand.
+const RESET_ARM_MS = 3000;
+
+// Two-tap confirmation shared by the destructive buttons: `press` arms on
+// the first tap and runs `onConfirm` on the second; it disarms after
+// RESET_ARM_MS, on a tap anywhere else, or when the button disables.
+function useArmedConfirm(disabled?: boolean) {
+  const [armed, setArmed] = useState(false);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!armed) return;
+    const timer = window.setTimeout(() => setArmed(false), RESET_ARM_MS);
+    const onPointerDown = (e: PointerEvent) => {
+      if (!buttonRef.current?.contains(e.target as Node)) setArmed(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown, true);
+    return () => {
+      window.clearTimeout(timer);
+      document.removeEventListener("pointerdown", onPointerDown, true);
+    };
+  }, [armed]);
+  useEffect(() => {
+    if (disabled) setArmed(false);
+  }, [disabled]);
+  const press = (onConfirm: () => void) => {
+    if (armed) {
+      setArmed(false);
+      onConfirm();
+    } else setArmed(true);
+  };
+  return { armed, buttonRef, press };
+}
+
+function ConfirmResetButton({ onConfirm, disabled, title }: { onConfirm: () => void; disabled?: boolean; title: string }) {
+  const { armed, buttonRef, press } = useArmedConfirm(disabled);
+  return (
+    <button
+      ref={buttonRef}
+      type="button"
+      className={`toolbar-button toolbar-reset${armed ? " is-armed" : ""}`}
+      title={armed ? "Tap again to reset" : title}
+      aria-label={armed ? "Tap again to reset" : "Reset"}
+      onClick={() => press(onConfirm)}
+      disabled={disabled}
+    >
+      <ToolbarIcon kind="reset" />
+      <span className="toolbar-label">{armed ? "Confirm" : "Reset"}</span>
+    </button>
+  );
+}
+
+// A caption's text action (like 選牌's Clear) with the same two-tap
+// confirmation: the first tap turns it into a red "Confirm" pill.
+function ConfirmTextAction({ label, onConfirm, title }: { label: string; onConfirm: () => void; title: string }) {
+  const { armed, buttonRef, press } = useArmedConfirm();
+  return (
+    <button
+      ref={buttonRef}
+      type="button"
+      className={`section-action${armed ? " is-armed" : ""}`}
+      onClick={() => press(onConfirm)}
+      title={armed ? "Tap again to confirm" : title}
+    >
+      {armed ? "Confirm" : label}
+    </button>
+  );
+}
+
+// Long-press a filled hand box (not a tile in it - tiles have their own
+// long-presses) to be asked, in a small prompt over the box, whether to
+// clear just that box. The hand cards have no label line or Clear links to
+// spare the room. Spread `handlers` on the box and render `prompt` inside
+// it; a box that also has a tap action checks `consumeLongPress()` first,
+// since the click that ends a long-press isn't a tap.
+function useBoxClear(label: string, empty: boolean, onClear: () => void) {
+  const [open, setOpen] = useState(false);
+  const press = useRef<{ timer: number | null; x: number; y: number; fired: boolean }>({ timer: null, x: 0, y: 0, fired: false });
+  const cancel = () => {
+    if (press.current.timer !== null) window.clearTimeout(press.current.timer);
+    press.current.timer = null;
+  };
+  const handlers = {
+    onPointerDown: (e: ReactPointerEvent) => {
+      cancel();
+      press.current.fired = false;
+      if (empty || (e.target as Element).closest("button")) return;
+      press.current.x = e.clientX;
+      press.current.y = e.clientY;
+      press.current.timer = window.setTimeout(() => {
+        press.current.timer = null;
+        press.current.fired = true;
+        setOpen(true);
+      }, LONG_PRESS_MS);
+    },
+    onPointerMove: (e: ReactPointerEvent) => {
+      if (Math.hypot(e.clientX - press.current.x, e.clientY - press.current.y) > 10) cancel();
+    },
+    onPointerUp: cancel,
+    onPointerCancel: cancel,
+    onPointerLeave: cancel,
+    // No iOS/desktop context menu over the hold.
+    onContextMenu: (e: React.MouseEvent) => e.preventDefault(),
+  };
+  const consumeLongPress = () => {
+    const fired = press.current.fired;
+    press.current.fired = false;
+    return fired;
+  };
+  const prompt = open && !empty && (
+    <div className="box-clear-prompt" onClick={(e) => e.stopPropagation()} role="alertdialog" aria-label={`Clear ${label}?`}>
+      <span className="box-clear-question">Clear {label}?</span>
+      <button type="button" className="box-clear-cancel" onClick={() => setOpen(false)}>
+        Cancel
+      </button>
+      <button
+        type="button"
+        className="box-clear-confirm"
+        onClick={() => {
+          onClear();
+          setOpen(false);
+        }}
+      >
+        Clear
+      </button>
+    </div>
+  );
+  return { handlers, prompt, consumeLongPress };
+}
+
+// The Scoring tab's gestures in one place (the ? on the 選牌 header) -
+// several are long-presses, which nothing on screen can show.
+const GESTURES: { gesture: string; where: string; does: string }[] = [
+  { gesture: "Tap", where: "a picker tile", does: "Add it to 手牌, or declare the picked meld (上 碰 明槓 暗槓) starting at it" },
+  { gesture: "Long-press", where: "a picker tile", does: "手牌: add it as the 食胡 (winning) tile · 明槓: declare a 暗槓 instead" },
+  { gesture: "Tap", where: "a tile in your hand", does: "Remove it" },
+  { gesture: "Long-press", where: "a tile in 手牌", does: "Mark or unmark it as the 食胡 tile" },
+  { gesture: "Long-press", where: "a declared kong", does: "Flip it between 明槓 and 暗槓" },
+  { gesture: "Tap", where: "an empty part of 門前 / 手牌", does: "Point the picker at that box" },
+  { gesture: "Long-press", where: "an empty part of 門前 / 手牌", does: "Clear just that box" },
+  { gesture: "Tap twice", where: "Reset / Clear", does: "The first tap turns it red; the second confirms" },
+];
+
+function GesturesSheet({ onClose }: { onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return (
+    <div className="sheet-backdrop" onClick={onClose}>
+      <div className="sheet gestures-sheet" role="dialog" aria-modal="true" aria-label="Gestures" onClick={(e) => e.stopPropagation()}>
+        <div className="sheet-header">
+          <span className="sheet-title">Gestures</span>
+          <button type="button" className="sheet-close" onClick={onClose} aria-label="Close">
+            ✕
+          </button>
+        </div>
+        <div className="sheet-list">
+          {GESTURES.map((g, i) => (
+            <div className="gesture-row" key={i}>
+              <span className="gesture-name">{g.gesture}</span>
+              <span className="gesture-text">
+                <span className="gesture-where">{g.where}</span>
+                {g.does}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// A plain button with the two-tap confirmation (the trainers' stats Reset):
+// the first tap turns it red and reads "Confirm".
+function ConfirmButton({ label, onConfirm, className, title }: { label: string; onConfirm: () => void; className?: string; title: string }) {
+  const { armed, buttonRef, press } = useArmedConfirm();
+  return (
+    <button
+      ref={buttonRef}
+      type="button"
+      className={[className, "confirm-button", armed && "is-armed"].filter(Boolean).join(" ")}
+      onClick={() => press(onConfirm)}
+      title={armed ? "Tap again to confirm" : title}
+    >
+      {armed ? "Confirm" : label}
+    </button>
+  );
+}
+
 function ToolbarIcon({ kind }: { kind: "reset" | "camera" | "photos" }) {
   return (
     <svg className="toolbar-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -5005,7 +5250,10 @@ function ScoringPanel({
   const pickerScrollTarget = (card: HTMLElement, cardHeight: number, row: HTMLElement): number => {
     const pinnedBottom = parseFloat(getComputedStyle(card).top) + cardHeight;
     const target = Math.max(0, window.scrollY + row.getBoundingClientRect().top - (pinnedBottom + 20));
-    const room = scrollRoomRef.current;
+    // Phones only: on a wide screen the page is usually shorter than the
+    // window, so the room would just show as a big blank below the footer -
+    // there the scroll simply goes as far as the page allows.
+    const room = window.matchMedia("(max-width: 700px)").matches ? scrollRoomRef.current : null;
     for (let pass = 0; room && pass < 4; pass++) {
       const shortfall = target - (document.documentElement.scrollHeight - window.innerHeight);
       if (shortfall <= 0) break;
@@ -5078,8 +5326,11 @@ function ScoringPanel({
     state.height = height;
     state.tiles = totalTiles;
     // Only a tile going in grows it on purpose - not the first render, a
-    // window resize, or a collapsed picker with nothing to keep in view.
+    // window resize, or a collapsed picker with nothing to keep in view -
+    // and only on phones, where the picker is under a finger (on a wide
+    // screen the hand fits one line and the pointer isn't in the way).
     if (!from || height - from < 4 || !addedTiles || pickerCollapsed || !row) return;
+    if (!window.matchMedia("(max-width: 700px)").matches) return;
 
     // Where everything ends up, measured now at the final layout.
     const target = pickerScrollTarget(card, height, row);
@@ -5110,7 +5361,15 @@ function ScoringPanel({
   // the picker at that region and brings it up under the card: 手牌 for
   // the concealed box; for the declared box, 上 - unless a declared meld
   // kind is already picked, which is kept.
+  // Long-pressing a filled box (not a tile in it) asks whether to clear
+  // just that box - see useBoxClear.
+  const [gesturesOpen, setGesturesOpen] = useState(false);
+  const declaredClear = useBoxClear("門前", declaredMelds.length === 0 && bonusTiles.length === 0, () => resetDeclared());
+  const concealedClear = useBoxClear("手牌", concealedTiles.length === 0, () => resetConcealed());
+
   const focusPicker = (region: "declared" | "concealed") => (e: React.MouseEvent) => {
+    // The click that ends a long-press isn't a tap.
+    if ((region === "declared" ? declaredClear : concealedClear).consumeLongPress()) return;
     if ((e.target as Element).closest("button")) return;
     if (region === "concealed") setAddTo("hand");
     else if (addTo === "hand") {
@@ -5643,6 +5902,7 @@ function ScoringPanel({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
+
     concealedTiles,
     declaredMelds,
     bonusTiles,
@@ -5665,6 +5925,17 @@ function ScoringPanel({
     manualVisibleExhaust,
     winningTile,
   ]);
+
+  // Once the hand scores, every picker tile is spent - fold the picker away
+  // so the result comes up; reopen it if a tile comes off and the hand no
+  // longer scores. (Tapping a box or the ▸ reopens it any time.)
+  const scoredOk = !!scoring?.ok;
+  const wasScored = useRef(false);
+  useEffect(() => {
+    if (scoredOk && !wasScored.current) setPickerCollapsed(true);
+    else if (!scoredOk && wasScored.current) setPickerCollapsed(false);
+    wasScored.current = scoredOk;
+  }, [scoredOk]);
 
   // "Near-complete" = the concealed hand is exactly one tile short of a full
   // hand (declared melds are always complete by construction, so the missing
@@ -5921,16 +6192,11 @@ function ScoringPanel({
   return (
     <section className="panel scoring-panel">
       <div className="scoring-toolbar" ref={toolbarRef}>
-        <button
-          type="button"
-          className="toolbar-button toolbar-reset"
+        <ConfirmResetButton
           title="Reset the hand, winds and declarations"
-          onClick={handleReset}
+          onConfirm={handleReset}
           disabled={handEmpty && conditionsAtDefault && !scanActive}
-        >
-          <ToolbarIcon kind="reset" />
-          <span className="toolbar-label">Reset</span>
-        </button>
+        />
         <button type="button" className="toolbar-button" onClick={() => handScannerRef.current?.trigger()} disabled={scanBusy}>
           <ToolbarIcon kind="camera" />
           <span className="toolbar-label">Scan</span>
@@ -6123,22 +6389,19 @@ function ScoringPanel({
       <div className="input-zone">
         <div className="card hand-card" ref={handCardRef}>
           <div className={`hand-region${addTo === "hand" ? "" : " is-target"}`}>
-            <div className="hand-region-head">
-              <span className="hand-region-label">門前 Declared</span>
-              {!declaredEmpty && (
-                <button
-                  type="button"
-                  className="section-action region-action"
-                  onClick={resetDeclared}
-                  title="Clear the declared melds and bonus tiles"
-                >
-                  Clear
-                </button>
-              )}
-            </div>
-            <div className="hand-display breakdown-groups is-focusable" onClick={focusPicker("declared")}>
+            {/* No label line: the sticky card is kept to just its two boxes.
+                An empty box carries its label inside; once filled, its tiles
+                speak for it. Clearing is the 選牌 header's Clear (both boxes)
+                or a tap on a tile. */}
+            <div
+              className="hand-display breakdown-groups is-focusable"
+              onClick={focusPicker("declared")}
+              {...declaredClear.handlers}
+              title={declaredEmpty ? "門前 - tap to declare a meld (上 / 碰 / 明槓 / 暗槓), or tap a flower below" : undefined}
+            >
+              {declaredClear.prompt}
               {declaredMelds.length === 0 && bonusTiles.length === 0 ? (
-                <span className="hint">Pick a meld type below, or tap a flower</span>
+                <span className="hand-region-label hand-region-label-inset">門前 Declared</span>
               ) : (
                 <>
                   {bonusTiles.length > 0 && (
@@ -6169,23 +6432,19 @@ function ScoringPanel({
             </div>
           </div>
           <div className={`hand-region${addTo === "hand" ? " is-target" : ""}`}>
-            <div className="hand-region-head">
-              <span className="hand-region-label">手牌 Concealed</span>
-              {!nearComplete && <span className="hand-region-hint">Long-press = 食胡</span>}
-              {concealedTiles.length > 0 && (
-                <button
-                  type="button"
-                  className="section-action region-action"
-                  onClick={resetConcealed}
-                  title="Clear the concealed tiles"
-                >
-                  Clear
-                </button>
-              )}
-            </div>
-            <div className="hand-display is-focusable" onClick={focusPicker("concealed")}>
+            {/* Same as 門前: empty, the label sits inside the box (the
+                long-presses are listed under the 選牌 header's ?). */}
+            <div
+              className="hand-display is-focusable"
+              onClick={focusPicker("concealed")}
+              {...concealedClear.handlers}
+              title={concealedTiles.length === 0 ? "手牌 - tap to pick tiles below" : undefined}
+            >
+              {concealedClear.prompt}
               {concealedTiles.length === 0 ? (
-                <span className="hint">Pick 手牌 below, then tap tiles</span>
+                <span className="hand-region-empty">
+                  <span className="hand-region-label hand-region-label-inset">手牌 Concealed</span>
+                </span>
               ) : (
                 // While near-complete, the tile that completes the hand isn't in
                 // hand yet - each projected wait supplies its own 食胡 tile - so the
@@ -6217,22 +6476,29 @@ function ScoringPanel({
             {/* Empties both 門前 and 手牌 at once (the situation stays) -
                 shown only when there's something to clear. */}
             {!handEmpty && (
-              <button
-                type="button"
-                className="section-action"
-                onClick={() => {
+              <ConfirmTextAction
+                label="Clear"
+                onConfirm={() => {
                   resetDeclared();
                   resetConcealed();
                   setLoadedTestHand(null);
                 }}
                 title="Remove every tile - 門前 and 手牌 - and keep the situation"
-              >
-                Clear
-              </button>
+              />
             )}
+            <button
+              type="button"
+              className="help-toggle"
+              onClick={() => setGesturesOpen(true)}
+              aria-label="Gestures"
+              title="Taps and long-presses"
+            >
+              ?
+            </button>
             <PickerCollapseToggle collapsed={pickerCollapsed} onToggle={() => setPickerCollapsed((c) => !c)} />
           </span>
         </div>
+        {gesturesOpen && <GesturesSheet onClose={() => setGesturesOpen(false)} />}
 
         <CollapsiblePanel open={!pickerCollapsed}>
           <div className="card picker-card">
@@ -6340,14 +6606,11 @@ function ScoringPanel({
           {/* The scoped resets only appear once their block has something to
               clear, so a fresh screen shows just the toolbar's ↺. */}
           {!conditionsAtDefault && (
-            <button
-              type="button"
-              className="section-action"
-              onClick={resetConditions}
+            <ConfirmTextAction
+              label="Reset"
+              onConfirm={resetConditions}
               title="Set both winds back to 東 and turn off every declaration (莊, 自摸, 叮 …)"
-            >
-              Reset
-            </button>
+            />
           )}
           <PickerCollapseToggle
             collapsed={situationCollapsed}
@@ -6699,7 +6962,7 @@ function ScoringPanel({
                     : "Sorted by live tiles — tap to sort by best tai"
                 }
               >
-                {discardSort === "score" ? "Sort: tai" : "Sort: live"}
+                {discardSort === "score" ? "Sort: tai" : "Sort: left"}
               </button>
             )}
           </div>

@@ -36,11 +36,13 @@ The input models the table, not a text string:
   kong) or **暗槓** (concealed kong) drops that whole declared meld starting at the tapped tile
   (with 明槓 picked, a long-press declares a 暗槓 instead).
   Tiles that can't start the chosen meld grey out in place (the grid never reflows), and the
-  flowers / seasons sit in their own row underneath and always go to 門前. The picker collapses
-  once the hand is entered.
+  flowers / seasons sit in their own row underneath and always go to 門前. The picker folds away
+  by itself once the hand scores (and comes back if a tile comes off). The **?** on its header
+  lists every tap and long-press; **Clear** there empties every tile, after a second, confirming
+  tap.
 - **Your hand** shows both regions in one card: **門前 (Declared)** — everything laid in front of
   you — and **手牌 (Concealed)**, the tiles still in hand, as a plain multiset the scorer
-  decomposes. Tap a tile or meld to remove it; each region has its own **Clear**. While the card is
+  decomposes. Tap a tile or meld to remove it, or **Clear** in the 選牌 header to empty both regions; tap an empty part of a region to point the picker at it, or long-press it to clear just that region. While the card is
   scrolled out of view, a compact copy of the hand slides in under the toolbar — tap it to jump
   back. **Long-press** a concealed tile to mark it as the **食胡 tile** (the one that
   completed the hand) - or long-press a tile in the picker to add it already marked; several
@@ -99,9 +101,10 @@ counting rules — kept in sync with the code.
   scrolls beneath it.
 - Suits: `m` (man / characters), `t` (pin / circles), `b` (sou / bamboo), `z` (honors, 1–7 for
   East / South / West / North / Red / Green / White), `j` (joker).
-- **Sort** toggle (in the hand's header, beside the shanten count): on, new tiles are kept in
+- **Sort** toggle (in the 選牌 header; the shanten count shows in the 打牌 discards caption): on, new tiles are kept in
   sorted order as you add them; off, they stay in the order you entered them — and toggling back
-  off restores that original order.
+  off restores that original order. Tap a hand tile to remove it, or long-press an empty part
+  of the hand box to clear the whole hand.
 - A 4-copies-per-kind cap is enforced automatically (jokers excluded — see below).
 
 ### Waits
