@@ -17,6 +17,11 @@ under the title. In the Scoring tab a sticky toolbar keeps Reset / Scan / Photos
 
 Everything runs client-side, including the camera tile scanner. No hand ever leaves the browser.
 
+**Install it** from the browser's menu (Safari: Share → Add to Home Screen): it opens full screen
+like an app and **works offline** — after one visit with a connection, it loads with no signal,
+and the tile scanner too once it has been used once. Updates arrive the next time it's opened
+online. Picker taps give a light haptic tick on phones that allow it (Android; iPhone on iOS 18+).
+
 **Live app: [app.kevinlhc.com/mjwaits](https://app.kevinlhc.com/mjwaits/)**
 
 ![The Scoring tab: a fully concealed pure-flush self-draw scored at 198 tai, with the matched-pattern list — 底, 門前清, 清一色, 暗清龍, 暗四歸一… — each row expandable to the exact tiles behind it](docs/scoring.png)
@@ -333,6 +338,12 @@ from the scoring tests (or a random one). **Tools** has: the tile style; a live 
 notation; the latest calculation timings; Trainer switches to reveal the answers or repeat a
 question; the last scan's raw detections with confidences; device info (viewport, pixel ratio,
 safe area, home-screen mode); and a reset for everything the app saved in the browser.
+
+Offline support is a small hand-written service worker, [`public/sw.js`](public/sw.js) (registered in
+production builds only): the page network-first, Vite's hashed `assets/` cache-first, everything
+else (the detector model, icons) served from cache and re-checked in the background. The install
+icons and the link-preview image are rendered by
+[`scripts/make-icons.mjs`](scripts/make-icons.mjs).
 
 The README screenshots are regenerated from a running dev server with
 [`scripts/shoot-readme-screenshots.mjs`](scripts/shoot-readme-screenshots.mjs) (needs

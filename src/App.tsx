@@ -459,6 +459,9 @@ if (typeof document !== "undefined") {
   document.addEventListener(
     "click",
     (e) => {
+      // The hidden haptic switch's own clicks (see haptic) - on its label,
+      // then the one the label passes on to the switch - must go through.
+      if (hapticLabel && (e.target === hapticLabel || e.target === hapticLabel.control)) return;
       if (performance.now() - lastTouchTapAt < 500) {
         e.preventDefault();
         e.stopPropagation();
@@ -598,12 +601,34 @@ function TileGlyphSpan({
   );
 }
 
-// A short buzz for a tile tap (longer for a long-press), where the browser
-// supports it - Android Chrome does; iPhone browsers don't vibrate for web
-// pages at all, so there it's silently nothing.
+// A short buzz for a tile tap (longer for a long-press, where it can).
+// Android: the Vibration API. iPhone browsers have no such API, but Safari 18
+// plays the system "tick" when an <input type="checkbox" switch> toggles - so
+// a hidden one, toggled through its label, gives the same feel (the trick
+// use-haptic uses; one shared switch here rather than one per button). It
+// has to happen inside a tap, so a long-press timer can't tick on iOS.
+const IS_IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+let hapticLabel: HTMLLabelElement | null = null;
 function haptic(ms = 8): void {
   try {
-    navigator.vibrate?.(ms);
+    if (!IS_IOS) {
+      navigator.vibrate?.(ms);
+      return;
+    }
+    if (!hapticLabel) {
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.id = "haptic-switch";
+      input.setAttribute("switch", "");
+      input.setAttribute("aria-hidden", "true");
+      input.tabIndex = -1;
+      input.style.display = "none";
+      hapticLabel = document.createElement("label");
+      hapticLabel.htmlFor = input.id;
+      hapticLabel.style.display = "none";
+      document.body.append(input, hapticLabel);
+    }
+    hapticLabel.click();
   } catch {
     // Not allowed here - skip it.
   }
