@@ -17,6 +17,11 @@ under the title. In the Scoring tab a sticky toolbar keeps Reset / Scan / Photos
 
 Everything runs client-side, including the camera tile scanner. No hand ever leaves the browser.
 
+**Install it** from the browser's menu (Safari: Share → Add to Home Screen): it opens full screen
+like an app and **works offline** — after one visit with a connection, it loads with no signal,
+and the tile scanner too once it has been used once. Updates arrive the next time it's opened
+online. Picker taps give a light haptic tick on phones that allow it (Android; iPhone on iOS 18+).
+
 **Live app: [app.kevinlhc.com/mjwaits](https://app.kevinlhc.com/mjwaits/)**
 
 ![The Scoring tab: a fully concealed pure-flush self-draw scored at 198 tai, with the matched-pattern list — 底, 門前清, 清一色, 暗清龍, 暗四歸一… — each row expandable to the exact tiles behind it](docs/scoring.png)
@@ -88,6 +93,20 @@ When the concealed hand is exactly one tile short of complete, the tab reuses th
 calculator on it and shows, per wait, the score the whole hand would land on if that tile
 completed it (each wait taken as its own 食胡 tile) — a collapsible list, sortable by score or by
 tile. Kept deliberately narrow: no jokers, no concealed kongs.
+
+### Sharing and recent hands
+
+- **Share** on the green TOTAL card sends the hand as a link - the phone's share sheet, or the
+  clipboard elsewhere. The link carries the tiles, any flowers / seasons, and the situation
+  (winds, 自摸 and the rest - only what differs from the defaults), so it opens to the same score.
+  Opening one loads it into Scoring, then tidies the address bar.
+- **最近 Recent**, at the bottom of the tab, keeps the last 10 hands that scored, on this device.
+  Tap one to load it back, or share it from its row; changing only a hand's situation updates its
+  entry rather than adding another. **Clear** (two taps) forgets them.
+- The **Calculator** has the same: a share icon in its result caption (聽牌 Waits, 打牌 Discards or
+  食糊) whose link opens on the Calculator with that hand, and its own **最近 Recent** list - each
+  entry with what was found (waits, shanten, or a winning hand). Building a hand up tile by tile, or
+  trimming it, keeps updating one entry.
 
 [`docs/scoring-rules.md`](docs/scoring-rules.md) is the full reference — every tai value, its
 criteria and exclusions, the 明 / 暗 (open / concealed) distinction, and the duplicate-instance
@@ -215,8 +234,8 @@ full validation split the deployed checkpoint scores mAP50 0.916 / mAP50-95 0.68
 Three drills, on their own sub-tabs. **Waits** and **Discards** are timed one-shot quizzes with
 five levels (Level 1 is a 1-meld hand, Level 5 the full 16-tile size), a **Flush mode** that
 restricts every generated hand to one random suit, and their own stats table (broken down by
-level and flush mode). **Endless** plays a single hand out non-stop. All stats survive switching
-tabs; each has a Reset button.
+level and flush mode). **Endless** plays a single hand out non-stop. All stats are saved on the
+device, so they survive switching tabs and reloading; each has a Reset button.
 
 ### Waits
 
@@ -313,6 +332,19 @@ tai list — is in [`src/lib/scoring.ts`](src/lib/scoring.ts), tested in
 detector (letterboxing, ONNX inference, non-max suppression) is in
 [`src/lib/vision.ts`](src/lib/vision.ts).
 
+A hidden developer sheet opens on three quick taps of the logo. **Test hands** loads any hand
+from the scoring tests (or a random one). **Tools** has: the tile style; a live layout overlay
+(page height, the bottom spacer, space below the footer); loading or copying the Scoring hand as
+notation; the latest calculation timings; Trainer switches to reveal the answers or repeat a
+question; the last scan's raw detections with confidences; device info (viewport, pixel ratio,
+safe area, home-screen mode); and a reset for everything the app saved in the browser.
+
+Offline support is a small hand-written service worker, [`public/sw.js`](public/sw.js) (registered in
+production builds only): the page network-first, Vite's hashed `assets/` cache-first, everything
+else (the detector model, icons) served from cache and re-checked in the background. The install
+icons and the link-preview image are rendered by
+[`scripts/make-icons.mjs`](scripts/make-icons.mjs).
+
 The README screenshots are regenerated from a running dev server with
 [`scripts/shoot-readme-screenshots.mjs`](scripts/shoot-readme-screenshots.mjs) (needs
 `npm i puppeteer-core --no-save` and a local Google Chrome).
@@ -328,5 +360,5 @@ resolution into shanten and discard analysis, point/currency conversion for scor
 The tile art is adapted (cropped to the tile face) from the oblique mahjong tile set on
 [Wikimedia Commons](https://commons.wikimedia.org/wiki/Category:SVG_Oblique_illustrations_of_Mahjong_tiles)
 by Cangjie6 et al., licensed [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) - see
-[src/assets/tiles/CREDITS.md](src/assets/tiles/CREDITS.md). The hidden Test hands sheet (tap the logo
+[src/assets/tiles/CREDITS.md](src/assets/tiles/CREDITS.md). The hidden developer sheet (tap the logo
 three times) can switch back to the Unicode tile glyphs.

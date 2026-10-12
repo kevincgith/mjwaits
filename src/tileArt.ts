@@ -1,4 +1,4 @@
-// How tiles are drawn, switchable from the hidden Test hands sheet:
+// How tiles are drawn, switchable from the hidden developer sheet:
 //   "art"     - the SVG tile faces in assets/tiles (see CREDITS.md there)
 //   "unicode" - the Mahjong Tiles Unicode glyphs, in the system symbol font
 // The choice is per browser (localStorage); the default is "art".
