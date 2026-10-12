@@ -4879,6 +4879,53 @@ img.tile-face {
   fill: var(--red);
 }
 
+/* "New version available · Reload": a dark pill floating above the phone
+   tab bar (or near the bottom on desktop). */
+.update-bar {
+  position: fixed;
+  left: 50%;
+  bottom: calc(env(safe-area-inset-bottom) + 1.25rem);
+  z-index: 70;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.4rem 0.4rem 1rem;
+  border-radius: var(--radius-pill);
+  background: rgba(28, 28, 30, 0.92);
+  color: #fff;
+  font-size: var(--text-md);
+  font-weight: 500;
+  white-space: nowrap;
+  box-shadow: var(--shadow-float);
+}
+
+.update-bar-reload {
+  border: none;
+  border-radius: var(--radius-pill);
+  padding: 0.45rem 0.9rem;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.update-bar-close {
+  border: none;
+  padding: 0.45rem 0.55rem;
+  background: none;
+  color: rgba(255, 255, 255, 0.7);
+  font: inherit;
+  cursor: pointer;
+}
+
+@media (max-width: 700px) {
+  .update-bar {
+    bottom: calc(env(safe-area-inset-bottom) + 4.75rem);
+  }
+}
+
 /* The Layout overlay's live readout, above the tab bar, out of the way of
    taps. */
 .layout-overlay {

@@ -1,7 +1,8 @@
 // MJWaits' service worker: keeps the app working with no signal at the table.
 //
-//  - The page itself (any navigation): network first, so an update shows up
-//    as soon as there's a connection; the last copy is used when offline.
+//  - The page itself (any navigation): network first - revalidated with the
+//    server, past the HTTP cache - so an update shows up as soon as there's a
+//    connection; the last copy is used when offline.
 //  - /assets/* (Vite's hashed, never-changing files - JS, CSS, tile art, the
 //    detector's engine): cache first, stored the first time they're used.
 //    When a newer build's file comes in, older copies of the same file (same
@@ -53,7 +54,11 @@ async function cacheFirst(request) {
 async function networkFirst(request) {
   const cache = await caches.open(CACHE);
   try {
-    const response = await fetch(request);
+    // "no-cache": revalidate with the server rather than take the browser's
+    // own HTTP-cached copy (GitHub Pages allows 10 minutes), so a deploy
+    // shows up on the very next launch. (A navigation Request can't take
+    // options itself, hence fetching its URL.)
+    const response = await fetch(request.url, { cache: "no-cache", credentials: "same-origin" });
     if (response.ok) await cache.put(SCOPE, response.clone());
     return response;
   } catch {
@@ -77,6 +82,9 @@ self.addEventListener("fetch", (event) => {
   const { request } = event;
   const url = new URL(request.url);
   if (request.method !== "GET" || url.origin !== self.location.origin || !url.pathname.startsWith(SCOPE)) return;
+  // The app's own "is there a new version?" check asks for no-store - let
+  // it go straight to the network, untouched and uncached.
+  if (request.cache === "no-store") return;
   if (request.mode === "navigate") event.respondWith(networkFirst(request));
   else if (url.pathname.startsWith(`${SCOPE}assets/`)) event.respondWith(cacheFirst(request));
   else event.respondWith(staleWhileRevalidate(request));

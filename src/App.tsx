@@ -9153,6 +9153,60 @@ function TestHandsSheet({
   );
 }
 
+// Whether a newer build is live than the one running. iPhone keeps a home
+// screen app paused in memory, so coming back to it doesn't reload - this
+// checks whenever the app comes back into view (at most once a minute) and
+// every 30 minutes while it stays open: it fetches the page and compares
+// its main script's hashed name with the running one's. Production only.
+function useNewVersionAvailable(): boolean {
+  const [available, setAvailable] = useState(false);
+  useEffect(() => {
+    if (!import.meta.env.PROD) return;
+    const running = document.querySelector<HTMLScriptElement>('script[type="module"][src*="/assets/index-"]');
+    if (!running) return;
+    const runningPath = new URL(running.src).pathname;
+    let lastCheck = Date.now(); // this launch already loaded the latest page
+    const check = async () => {
+      if (document.visibilityState !== "visible" || Date.now() - lastCheck < 60_000) return;
+      lastCheck = Date.now();
+      try {
+        // no-store: straight from the server, past every cache (sw.js lets it through).
+        const html = await (await fetch(import.meta.env.BASE_URL, { cache: "no-store" })).text();
+        const latest = html.match(/\/assets\/index-[\w-]+\.js/)?.[0];
+        if (latest && !runningPath.endsWith(latest)) setAvailable(true);
+      } catch {
+        // Offline - try again next time.
+      }
+    };
+    document.addEventListener("visibilitychange", check);
+    const id = window.setInterval(check, 30 * 60_000);
+    return () => {
+      document.removeEventListener("visibilitychange", check);
+      window.clearInterval(id);
+    };
+  }, []);
+  return available;
+}
+
+// The bar a new build brings up (see useNewVersionAvailable). It doesn't
+// reload by itself, so a hand being entered is never lost; ✕ hides it.
+function UpdateBar() {
+  const available = useNewVersionAvailable();
+  const [dismissed, setDismissed] = useState(false);
+  if (!available || dismissed) return null;
+  return (
+    <div className="update-bar" role="status">
+      <span>New version available</span>
+      <button type="button" className="update-bar-reload" onClick={() => window.location.reload()}>
+        Reload
+      </button>
+      <button type="button" className="update-bar-close" onClick={() => setDismissed(true)} aria-label="Dismiss">
+        ✕
+      </button>
+    </div>
+  );
+}
+
 type AppMode = "scoring" | "calculator" | "trainer" | "dice";
 
 // Tab-bar glyphs: 24px line icons drawn in currentColor, so they pick up the
@@ -9397,6 +9451,7 @@ function App() {
         )}
       </footer>
       {debug.layoutOverlay && <LayoutOverlay />}
+      <UpdateBar />
       {testHandsOpen && (
         <TestHandsSheet
           onPick={pickTestHand}
