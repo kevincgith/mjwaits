@@ -5,7 +5,7 @@
   "start_url": "/mjwaits/",
   "scope": "/mjwaits/",
   "display": "standalone",
-  "background_color": "#f2f2f7",
+  "background_color": "#123f28",
   "theme_color": "#f2f2f7",
   "icons": [
     { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },

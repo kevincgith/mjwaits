@@ -343,7 +343,9 @@ Offline support is a small hand-written service worker, [`public/sw.js`](public/
 production builds only): the page network-first, Vite's hashed `assets/` cache-first, everything
 else (the detector model, icons) served from cache and re-checked in the background. The install
 icons, the link-preview image and the iPhone / iPad launch screens (`public/splash/`, one per screen
-size, listed in `index.html`) are rendered by [`scripts/make-icons.mjs`](scripts/make-icons.mjs).
+size, listed in `index.html`) are rendered by [`scripts/make-icons.mjs`](scripts/make-icons.mjs). Opened from the
+home screen, the page also draws the same splash itself (`#splash` in `index.html`, faded out by
+`src/main.tsx`), since iOS shows a launch image only when one matches the screen exactly.
 
 The README screenshots are regenerated from a running dev server with
 [`scripts/shoot-readme-screenshots.mjs`](scripts/shoot-readme-screenshots.mjs) (needs

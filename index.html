@@ -46,8 +46,51 @@
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>MJWaits — HKTW mahjong scoring, waits &amp; trainer</title>
+    <!-- The in-app splash: drawn by the page itself, so it shows on any device
+         (iOS's launch images above only appear when one matches the screen
+         exactly). Only when opened from the home screen; main.tsx fades it out. -->
+    <style>
+      #splash {
+        display: none;
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 20px;
+        background: radial-gradient(90% 60% at 50% 45%, #1f6b43 0%, #123f28 60%, #0a2416 100%);
+        color: #fff;
+        font: 800 40px/1 -apple-system, BlinkMacSystemFont, system-ui, "Helvetica Neue", sans-serif;
+        letter-spacing: -0.02em;
+        transition: opacity 0.35s ease;
+      }
+      #splash img {
+        width: 128px;
+        height: 128px;
+        border-radius: 29px;
+        box-shadow: 0 0 60px rgba(120, 230, 160, 0.45), 0 14px 34px rgba(0, 0, 0, 0.45);
+      }
+      #splash.is-done {
+        opacity: 0;
+        pointer-events: none;
+      }
+      @media (display-mode: standalone) {
+        #splash {
+          display: flex;
+        }
+      }
+    </style>
   </head>
   <body ontouchstart="">
+    <div id="splash" aria-hidden="true">
+      <img src="/favicon.svg" alt="" />
+      <span>MJWaits</span>
+    </div>
+    <script>
+      // Older iOS doesn't report display-mode: standalone - it has navigator.standalone.
+      if (navigator.standalone) document.getElementById("splash").style.display = "flex";
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
