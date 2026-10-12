@@ -1,4 +1,8 @@
 :root {
+  /* No browser scroll anchoring: the Scoring hand card scrolls the page
+     itself when it grows (see ScoringPanel), and Chrome's anchoring would
+     add its own correction on top - doubling it. Safari has none anyway. */
+  overflow-anchor: none;
   /* The app is light only - pin the browser's own UI (scrollbars, form
      controls) to light too so nothing there goes dark. */
   color-scheme: light;

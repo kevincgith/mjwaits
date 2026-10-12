@@ -625,6 +625,30 @@ function HandTileButton({ tile, onClick }: { tile: Tile; onClick: () => void }) 
 // HandTileButton), long-press toggles it as the 食胡 tile (the tile that
 // completed the hand) - highlighted the same amber as a wait's completing
 // tile elsewhere in the app, since it's the same idea.
+// A picker tile that also takes a long-press - Scoring's 手牌 picker, where
+// tap adds the tile and long-press adds it as the 食胡 (winning) tile, the
+// same gesture that marks one already in the hand.
+function LongPressTileButton({
+  tile,
+  onTap,
+  onLongPress,
+  disabled,
+  title,
+}: {
+  tile: Tile;
+  onTap: () => void;
+  onLongPress: () => void;
+  disabled?: boolean;
+  title?: string;
+}) {
+  const tap = useTapAndLongPress(onTap, onLongPress, disabled);
+  return (
+    <button type="button" className="tile-button" disabled={disabled} title={title} aria-label={title} {...tap}>
+      <TileGlyphSpan tile={tile} />
+    </button>
+  );
+}
+
 function WinningTileHandButton({
   tile,
   isWinning,
@@ -4961,6 +4985,147 @@ function ScoringPanel({
   const [pickerCollapsed, setPickerCollapsed] = useState(false);
   const [situationCollapsed, setSituationCollapsed] = useState(false);
 
+  // The hand card grows a line as the hand needs one (手牌's second line,
+  // 門前 wrapping). It's sticky and in the page's flow, so growing pushes
+  // the picker down - or, once pinned, covers more of it. So when a tile
+  // makes it grow, the card eases open to its new height while the page
+  // scrolls in step, ending with the picker's add-to row (Concealed / 門前
+  // Declared) just under the card - past the 選牌 heading - and the whole
+  // picker showing below it. The scroll is animated here rather than with
+  // scrollTo's "smooth", which iOS Safari can skip mid-tap or cut short on
+  // the next one.
+  const addToRowRef = useRef<HTMLDivElement>(null);
+  // Empty room at the bottom of the panel, grown just enough when the page
+  // is too short for that scroll to reach (little below the picker yet).
+  const scrollRoomRef = useRef<HTMLDivElement>(null);
+  // The scroll position that puts the add-to row 20px under the pinned hand
+  // card (of the given height), growing the bottom room until the page can
+  // actually scroll that far - a few passes, since the page's minimum
+  // height can absorb part of each one.
+  const pickerScrollTarget = (card: HTMLElement, cardHeight: number, row: HTMLElement): number => {
+    const pinnedBottom = parseFloat(getComputedStyle(card).top) + cardHeight;
+    const target = Math.max(0, window.scrollY + row.getBoundingClientRect().top - (pinnedBottom + 20));
+    const room = scrollRoomRef.current;
+    for (let pass = 0; room && pass < 4; pass++) {
+      const shortfall = target - (document.documentElement.scrollHeight - window.innerHeight);
+      if (shortfall <= 0) break;
+      room.style.height = `${(parseFloat(room.style.height) || 0) + shortfall + 1}px`;
+    }
+    return target;
+  };
+  // Eases the page to `target`, calling `onFrame` with the progress (0-1)
+  // each frame - frame by frame rather than scrollTo's "smooth", which iOS
+  // Safari can skip mid-tap or cut short on the next one.
+  const scrollAnimating = useRef(false);
+  const animateScroll = (target: number, onFrame?: (k: number) => void, onDone?: () => void) => {
+    scrollAnimating.current = true;
+    const duration = 240;
+    const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
+    const startY = window.scrollY;
+    const start = performance.now();
+    const step = (now: number) => {
+      const t = Math.min(1, (now - start) / duration);
+      const k = ease(t);
+      onFrame?.(k);
+      window.scrollTo(0, startY + (target - startY) * k);
+      if (t < 1) requestAnimationFrame(step);
+      else {
+        scrollAnimating.current = false;
+        onDone?.();
+      }
+    };
+    requestAnimationFrame(step);
+  };
+  // Keeps the bottom room down to what's actually holding the page where
+  // it is: whatever of it sits below the screen's bottom edge is given
+  // back, so there's never empty space to scroll down into. Runs after
+  // each render and on scroll; skipped while an animation is moving the
+  // page (it grows the room for that on purpose).
+  const trimScrollRoom = () => {
+    const room = scrollRoomRef.current;
+    const height = room ? parseFloat(room.style.height) || 0 : 0;
+    if (!room || !height || scrollAnimating.current) return;
+    const below = document.documentElement.scrollHeight - (window.scrollY + window.innerHeight);
+    if (below <= 0) return;
+    const next = Math.max(0, height - below);
+    room.style.height = next ? `${next}px` : "";
+  };
+  useEffect(() => {
+    let frame = 0;
+    const onScroll = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(trimScrollRoom);
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      cancelAnimationFrame(frame);
+    };
+  });
+  useEffect(() => {
+    trimScrollRoom();
+  });
+
+  const cardGrowth = useRef({ height: 0, tiles: 0, animating: false });
+  useLayoutEffect(() => {
+    const card = handCardRef.current;
+    const row = addToRowRef.current;
+    const state = cardGrowth.current;
+    if (!card || state.animating) return;
+    const height = card.offsetHeight;
+    const from = state.height;
+    const addedTiles = totalTiles > state.tiles;
+    state.height = height;
+    state.tiles = totalTiles;
+    // Only a tile going in grows it on purpose - not the first render, a
+    // window resize, or a collapsed picker with nothing to keep in view.
+    if (!from || height - from < 4 || !addedTiles || pickerCollapsed || !row) return;
+
+    // Where everything ends up, measured now at the final layout.
+    const target = pickerScrollTarget(card, height, row);
+
+    // Ease the card from its old height to the new one (clipping the new
+    // line as it opens), and the scroll from here to the target, together.
+    state.animating = true;
+    // Heights here are measured with padding, so animate them that way.
+    card.style.boxSizing = "border-box";
+    card.style.overflow = "hidden";
+    card.style.height = `${from}px`;
+    animateScroll(
+      target,
+      (k) => {
+        card.style.height = `${from + (height - from) * k}px`;
+      },
+      () => {
+        card.style.height = "";
+        card.style.overflow = "";
+        card.style.boxSizing = "";
+        state.animating = false;
+        state.height = card.offsetHeight;
+      }
+    );
+  });
+
+  // Tapping the 門前 or 手牌 box (not a tile in it - those remove) points
+  // the picker at that region and brings it up under the card: 手牌 for
+  // the concealed box; for the declared box, 上 - unless a declared meld
+  // kind is already picked, which is kept.
+  const focusPicker = (region: "declared" | "concealed") => (e: React.MouseEvent) => {
+    if ((e.target as Element).closest("button")) return;
+    if (region === "concealed") setAddTo("hand");
+    else if (addTo === "hand") {
+      setAddTo("run");
+      setMeldKind("run");
+    }
+    setPickerCollapsed(false);
+    // After the render (and the picker opening, if it was collapsed).
+    requestAnimationFrame(() => {
+      const card = handCardRef.current;
+      const row = addToRowRef.current;
+      if (card && row) animateScroll(pickerScrollTarget(card, card.offsetHeight, row));
+    });
+  };
+
   // Mirrors the three state arrays above, updated synchronously - same
   // reason Calculator's handRef exists (see its comment at handRef's
   // declaration): two taps landing before a render commits between them
@@ -5016,6 +5181,10 @@ function ScoringPanel({
   const kongCount = declaredMelds.filter((m) => m.kind === "kong").length;
   const requiredSize = COMPLETE_SIZE + kongCount;
   const totalTiles = concealedTiles.length + declaredMelds.reduce((n, m) => n + m.tiles.length, 0);
+  // An emptied hand needs no scroll room - give it back.
+  useEffect(() => {
+    if (totalTiles === 0 && scrollRoomRef.current) scrollRoomRef.current.style.height = "";
+  }, [totalTiles]);
   const atCap = totalTiles >= requiredSize;
   const meldsFull = declaredMelds.length >= 5;
   // Render-time counterpart of meldRoomRef - see its own comment.
@@ -5046,6 +5215,16 @@ function ScoringPanel({
     concealedRef.current = next;
     setConcealedTiles(next);
   };
+  // Long-press in the picker: add the tile and make it the 食胡 tile in one
+  // go (replacing any earlier mark).
+  const addWinningTile = (tile: Tile) => {
+    if (atCapRef() || totalCopiesUsedRef(tile) >= 4) return;
+    const added: HandTile = { ...tile, id: nextTileId.current++ };
+    const next = [...concealedRef.current, added];
+    concealedRef.current = next;
+    setConcealedTiles(next);
+    setWinningTile(added);
+  };
   const removeConcealedTile = (id: number) => {
     const next = concealedRef.current.filter((t) => t.id !== id);
     concealedRef.current = next;
@@ -5071,6 +5250,12 @@ function ScoringPanel({
       if (run.some((t) => totalCopiesUsedRef(t) + 1 > 4)) return;
       pushMeld("run", false, run);
     }
+  };
+  // Long-press with 明槓 picked: declare the kong as 暗槓 instead - the
+  // other kong in one gesture, without switching segments.
+  const addConcealedKongAt = (tile: Tile) => {
+    if (totalCopiesUsedRef(tile) > 0) return;
+    pushMeld("kong", true, [tile, tile, tile, tile]);
   };
   const removeMeld = (id: number) => {
     const next = declaredRef.current.filter((m) => m.id !== id);
@@ -5590,6 +5775,21 @@ function ScoringPanel({
   // odds. discardOptions itself stays in tile order.
   const [discardSort, setDiscardSort] = useState<"score" | "live">("score");
   const [showAllDiscards, setShowAllDiscards] = useState(false);
+  // "Show fewer" takes rows out above the button, so the page shrinks under
+  // the finger and would leave the view on empty space at the bottom. Keep
+  // the button where it was on screen instead (the remaining rows land
+  // just above it), and give back any scroll room - a result is tall enough.
+  const toggleShowAllDiscards = (e: React.MouseEvent<HTMLButtonElement>) => {
+    const button = e.currentTarget;
+    const before = button.getBoundingClientRect().top;
+    const collapsing = showAllDiscards;
+    setShowAllDiscards(!showAllDiscards);
+    if (!collapsing) return;
+    requestAnimationFrame(() => {
+      if (scrollRoomRef.current) scrollRoomRef.current.style.height = "";
+      window.scrollBy(0, button.getBoundingClientRect().top - before);
+    });
+  };
   const displayedDiscardOptions = useMemo(() => {
     if (!discardOptions) return null;
     return [...discardOptions].sort((a, b) =>
@@ -5867,7 +6067,12 @@ function ScoringPanel({
                   )}
                 </span>
               ) : (
-                <span className="hand-strip-row hand-strip-concealed hand-strip-tint is-concealed">
+                // 8 a line while the hand is being entered; once it's full (but
+                // didn't score) the lines fill instead, rather than leaving most
+                // of each line empty.
+                <span
+                  className={`hand-strip-row${totalTiles < requiredSize ? " hand-strip-concealed" : ""} hand-strip-tint is-concealed`}
+                >
                   {(sortTiles(concealedTiles) as HandTile[]).map((t) => (
                     <TileGlyphSpan key={t.id} tile={t} highlight={!nearComplete && isWinningTile(t)} />
                   ))}
@@ -5931,7 +6136,7 @@ function ScoringPanel({
                 </button>
               )}
             </div>
-            <div className="hand-display breakdown-groups">
+            <div className="hand-display breakdown-groups is-focusable" onClick={focusPicker("declared")}>
               {declaredMelds.length === 0 && bonusTiles.length === 0 ? (
                 <span className="hint">Pick a meld type below, or tap a flower</span>
               ) : (
@@ -5966,7 +6171,7 @@ function ScoringPanel({
           <div className={`hand-region${addTo === "hand" ? " is-target" : ""}`}>
             <div className="hand-region-head">
               <span className="hand-region-label">手牌 Concealed</span>
-              {concealedTiles.length > 0 && !nearComplete && <span className="hand-region-hint">Long-press = 食胡</span>}
+              {!nearComplete && <span className="hand-region-hint">Long-press = 食胡</span>}
               {concealedTiles.length > 0 && (
                 <button
                   type="button"
@@ -5978,7 +6183,7 @@ function ScoringPanel({
                 </button>
               )}
             </div>
-            <div className="hand-display">
+            <div className="hand-display is-focusable" onClick={focusPicker("concealed")}>
               {concealedTiles.length === 0 ? (
                 <span className="hint">Pick 手牌 below, then tap tiles</span>
               ) : (
@@ -6008,7 +6213,25 @@ function ScoringPanel({
           <span className="section-title">
             選牌 <span className="section-title-en">Add tiles</span>
           </span>
-          <PickerCollapseToggle collapsed={pickerCollapsed} onToggle={() => setPickerCollapsed((c) => !c)} />
+          <span className="section-head-actions">
+            {/* Empties both 門前 and 手牌 at once (the situation stays) -
+                shown only when there's something to clear. */}
+            {!handEmpty && (
+              <button
+                type="button"
+                className="section-action"
+                onClick={() => {
+                  resetDeclared();
+                  resetConcealed();
+                  setLoadedTestHand(null);
+                }}
+                title="Remove every tile - 門前 and 手牌 - and keep the situation"
+              >
+                Clear
+              </button>
+            )}
+            <PickerCollapseToggle collapsed={pickerCollapsed} onToggle={() => setPickerCollapsed((c) => !c)} />
+          </span>
         </div>
 
         <CollapsiblePanel open={!pickerCollapsed}>
@@ -6018,9 +6241,9 @@ function ScoringPanel({
                 declared meld starting at the tapped tile. Still one tap to any
                 choice - the split and the captions are what keep the two
                 apart. */}
-            <div className="add-to-row">
+            <div className="add-to-row" ref={addToRowRef}>
               <div className="add-to-group add-to-concealed">
-                <span className="add-to-caption">Concealed</span>
+                <span className="add-to-caption">手牌 Concealed</span>
                 <div className="segmented" role="group" aria-label="Add to concealed hand">
                   <button
                     type="button"
@@ -6062,11 +6285,22 @@ function ScoringPanel({
                     .filter((t) => t.suit === suit)
                     .map((t) =>
                       addTo === "hand" ? (
-                        <TileButton
+                        <LongPressTileButton
                           key={tileLabel(t)}
                           tile={t}
-                          onClick={() => addConcealedTile(t)}
+                          onTap={() => addConcealedTile(t)}
+                          onLongPress={() => addWinningTile(t)}
                           disabled={atCap || totalCopiesUsed(t) >= 4}
+                          title={`${tileLabel(t)} - tap to add, long-press to add as the 食胡 tile`}
+                        />
+                      ) : addTo === "exposed-kong" ? (
+                        <LongPressTileButton
+                          key={tileLabel(t)}
+                          tile={t}
+                          onTap={() => addMeldStartingAt(t)}
+                          onLongPress={() => addConcealedKongAt(t)}
+                          disabled={!canAddMeldTile(t)}
+                          title={`${tileLabel(t)} - tap to declare a 明槓, long-press for a 暗槓`}
                         />
                       ) : (
                         // Honors stay in place (just disabled) for a run, so
@@ -6480,7 +6714,7 @@ function ScoringPanel({
                   <DiscardOptionRow key={tileKey(o.discard)} option={o} declaredCount={declaredMelds.length} ctx={ctx} />
                 ))}
                 {displayedDiscardOptions.length > DISCARDS_SHOWN && (
-                  <button type="button" className="show-more-row" onClick={() => setShowAllDiscards((v) => !v)}>
+                  <button type="button" className="show-more-row" onClick={toggleShowAllDiscards}>
                     {showAllDiscards ? "Show fewer" : `Show all ${displayedDiscardOptions.length}`}
                   </button>
                 )}
@@ -6489,6 +6723,7 @@ function ScoringPanel({
           </div>
         </>
       )}
+      <div className="scroll-room" ref={scrollRoomRef} aria-hidden="true" />
     </section>
   );
 }
