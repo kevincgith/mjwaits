@@ -33,7 +33,8 @@ The input models the table, not a text string:
 
 - **One shared tile picker** feeds both regions. A segmented control above it picks where a tap
   lands: **手牌** adds a single concealed tile; **上** (chow), **碰** (pung), **明槓** (exposed
-  kong) or **暗槓** (concealed kong) drops that whole declared meld starting at the tapped tile.
+  kong) or **暗槓** (concealed kong) drops that whole declared meld starting at the tapped tile
+  (with 明槓 picked, a long-press declares a 暗槓 instead).
   Tiles that can't start the chosen meld grey out in place (the grid never reflows), and the
   flowers / seasons sit in their own row underneath and always go to 門前. The picker collapses
   once the hand is entered.
@@ -42,8 +43,8 @@ The input models the table, not a text string:
   decomposes. Tap a tile or meld to remove it; each region has its own **Clear**. While the card is
   scrolled out of view, a compact copy of the hand slides in under the toolbar — tap it to jump
   back. **Long-press** a concealed tile to mark it as the **食胡 tile** (the one that
-  completed the hand); several patterns depend on whether the completing meld was self-drawn or
-  claimed off a discard.
+  completed the hand) - or long-press a tile in the picker to add it already marked; several
+  patterns depend on whether the completing meld was self-drawn or claimed off a discard.
 - **Round wind** and **seat wind** (圈風 / 門風), each a row of the four wind tiles — tap one to
   stand it up — then a **莊** (dealer) button that steps up a 連莊 streak with +/−, a **自摸** (self-draw) toggle, and a strip of
   situational-declaration buttons that the tiles alone can't show. Most cycle on each tap:
