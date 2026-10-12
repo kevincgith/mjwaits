@@ -488,12 +488,6 @@ button {
   cursor: pointer;
 }
 
-.situation-summary-winds {
-  margin-right: 0.25rem;
-  font-weight: 600;
-  color: var(--accent);
-}
-
 .situation-summary-chip {
   padding: 0.15rem 0.6rem;
   border-radius: var(--radius-pill);
