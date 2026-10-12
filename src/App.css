@@ -3406,6 +3406,21 @@ img.tile-face {
   color: inherit;
 }
 
+/* The crop screen's icon buttons (rotate, Autofit, swap) take the button's
+   own colour, so a disabled one greys out like the text buttons. */
+.crop-actions .toolbar-icon {
+  display: block;
+  color: inherit;
+}
+
+.crop-actions button.crop-icon-button {
+  min-width: 2.5rem;
+  padding-inline: 0.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .toolbar-status {
   margin-left: auto;
   display: flex;
