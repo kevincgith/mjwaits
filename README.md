@@ -40,6 +40,10 @@ The input models the table, not a text string:
   by itself once the hand scores (and comes back if a tile comes off). The **?** on its header
   lists every tap and long-press; **Clear** there empties every tile, after a second, confirming
   tap.
+- **Classic or Numpad** — the two icons next to 選牌 switch the picker's layout (remembered,
+  and shared with the Calculator). Classic shows every suit at once; Numpad shows one group at a
+  time — tabs for 花 字 | 萬 筒 索, lined up under 手牌 | 門前 — as a keypad of bigger keys: 1–9
+  in a 3×3 grid for a suit, 東南西北 over 中發白 for the honors, the flowers over the seasons.
 - **Your hand** shows both regions in one card: **門前 (Declared)** — everything laid in front of
   you — and **手牌 (Concealed)**, the tiles still in hand, as a plain multiset the scorer
   decomposes. Tap a tile or meld to remove it, or **Clear** in the 選牌 header to empty both regions; tap an empty part of a region to point the picker at it, or long-press it to clear just that region. While the card is
