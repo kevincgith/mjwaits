@@ -3509,6 +3509,40 @@ img.tile-face {
   backdrop-filter: saturate(180%) blur(18px);
 }
 
+/* The toolbar's title: the app's name, hidden while the page header (big
+   logo and name) is on screen, then fading in at the toolbar's centre once
+   it scrolls away (html.header-hidden, set by App). */
+.toolbar-logo {
+  position: absolute;
+  left: 50%;
+  top: calc(env(safe-area-inset-top) + var(--toolbar-h) / 2);
+  padding: 0.25rem 0.4rem;
+  border: none;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -50%) scale(0.9);
+  /* Leaving: fades out at once, before the buttons open back up. */
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.header-hidden .toolbar-logo {
+  /* Arriving: waits for the buttons to fold out of its way first. */
+  transition-delay: 0.18s;
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(-50%, -50%) scale(1);
+}
+
 .toolbar-button {
   display: inline-flex;
   align-items: center;
@@ -4477,6 +4511,58 @@ img.tile-face {
     justify-content: center;
   }
 
+  /* Scrolled down, Scan and Photos fold to round icons like Reset (all a
+     touch smaller and closer together), leaving the centre free for the
+     title - as a morph: each pill narrows to its circle while its word
+     slides shut and fades, and opens back out on the way up. */
+  .scoring-toolbar {
+    transition: gap 0.25s ease;
+  }
+
+  /* Opening back out (scrolling up) waits a beat for the title to fade
+     first; folding (scrolling down) starts at once - see .header-hidden. */
+  .scoring-toolbar .toolbar-button {
+    transition:
+      padding 0.25s ease 0.12s,
+      gap 0.25s ease 0.12s,
+      width 0.25s ease 0.12s,
+      min-height 0.25s ease 0.12s;
+  }
+
+  .scoring-toolbar .toolbar-button:not(.toolbar-reset) .toolbar-label {
+    display: inline-block;
+    max-width: 6em;
+    overflow: hidden;
+    white-space: nowrap;
+    transition:
+      max-width 0.25s ease 0.12s,
+      opacity 0.2s ease 0.12s;
+  }
+
+  .header-hidden .scoring-toolbar .toolbar-button,
+  .header-hidden .scoring-toolbar .toolbar-button .toolbar-label {
+    transition-delay: 0s;
+  }
+
+  /* Folded, each is a 44px circle - the counter pill's own height. */
+  .header-hidden .scoring-toolbar {
+    gap: 0.25rem;
+  }
+
+  .header-hidden .scoring-toolbar .toolbar-button {
+    padding: 0 12px;
+    gap: 0;
+  }
+
+  .header-hidden .scoring-toolbar .toolbar-reset {
+    padding: 0;
+  }
+
+  .header-hidden .scoring-toolbar .toolbar-button .toolbar-label {
+    max-width: 0;
+    opacity: 0;
+  }
+
   .toolbar-reset .toolbar-label {
     position: absolute;
     width: 1px;
@@ -4520,6 +4606,25 @@ img.tile-face {
     width: 44px;
     padding: 0;
     justify-content: center;
+  }
+
+  /* Photos is icon-only here even at the top - keep its word shut. */
+  .scoring-toolbar .toolbar-photos .toolbar-label {
+    max-width: 0;
+    opacity: 0;
+  }
+
+  /* Scrolled down, the three folded buttons are 40px circles this narrow,
+     so the centred title still has clear space beside them. */
+  .header-hidden .scoring-toolbar .toolbar-button {
+    min-height: 40px;
+    padding: 0 10px;
+  }
+
+  .header-hidden .scoring-toolbar .toolbar-reset,
+  .header-hidden .scoring-toolbar .toolbar-photos {
+    width: 40px;
+    padding: 0;
   }
 
   .toolbar-photos .toolbar-label {

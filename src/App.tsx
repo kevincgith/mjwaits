@@ -2501,6 +2501,7 @@ function Calculator({
       {/* Same sticky toolbar as the Scoring tab: Reset / Scan / Photos, then
           the tile count. */}
       <div className="scoring-toolbar">
+        <ToolbarLogo />
         <ConfirmResetButton title="Clear the hand" onConfirm={handleReset} disabled={hand.length === 0} />
         <button type="button" className="toolbar-button" onClick={() => handScannerRef.current?.trigger()} disabled={scanBusy}>
           <ToolbarIcon kind="camera" />
@@ -5498,6 +5499,17 @@ function RecentCalcRow({ entry, onLoad }: { entry: RecentCalcHand; onLoad: () =>
   );
 }
 
+// The app's name, centred in the sticky toolbar once the page's own header
+// has scrolled away (html.header-hidden, set by App) - like an iOS title
+// bar. Tapping it goes back to the top.
+function ToolbarLogo() {
+  return (
+    <button type="button" className="toolbar-logo" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })} aria-label="Back to top" tabIndex={-1}>
+      MJWaits
+    </button>
+  );
+}
+
 function ToolbarIcon({ kind }: { kind: "reset" | "camera" | "photos" | "wand" | "rotate-left" | "rotate-right" | "swap" }) {
   return (
     <svg className="toolbar-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -6853,6 +6865,7 @@ function ScoringPanel({
   return (
     <section className="panel scoring-panel">
       <div className="scoring-toolbar" ref={toolbarRef}>
+        <ToolbarLogo />
         <ConfirmResetButton
           title="Reset the hand, winds and declarations"
           onConfirm={handleReset}
@@ -9214,6 +9227,24 @@ function App() {
     }
   }, []);
   const debug = useDebug();
+  // Once the header (logo + name) has scrolled off the top of the screen,
+  // html gets .header-hidden: the toolbar then shows the logo, centred, and
+  // on phones folds Scan / Photos to icons to make room for it.
+  const headerRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const header = headerRef.current;
+    if (!header) return;
+    // The toolbar only reaches the top of the screen once the header has
+    // scrolled past it, so "gone" is simply "off the screen".
+    const observer = new IntersectionObserver(([entry]) =>
+      document.documentElement.classList.toggle("header-hidden", !entry.isIntersecting)
+    );
+    observer.observe(header);
+    return () => {
+      observer.disconnect();
+      document.documentElement.classList.remove("header-hidden");
+    };
+  }, []);
   const logoTaps = useRef({ count: 0, last: 0 });
   const onLogoTap = () => {
     const now = Date.now();
@@ -9234,7 +9265,7 @@ function App() {
   return (
     <TileStyleContext.Provider value={tileStyle}>
     <div className="page">
-      <header className="app-header">
+      <header className="app-header" ref={headerRef}>
         <img
           className="app-logo"
           src={`${import.meta.env.BASE_URL}favicon.svg`}
