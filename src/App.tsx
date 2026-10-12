@@ -9207,6 +9207,136 @@ function UpdateBar() {
   );
 }
 
+// What the app is built on, and the credit / licence each asks for - opened
+// from "Credits" in the footer, so the attributions are one tap away without
+// taking room on any screen.
+const CREDITS: { title: string; items: { name: string; by: string; licence: string; href: string; note?: string }[] }[] = [
+  {
+    title: "Tile art",
+    items: [
+      {
+        name: "Oblique mahjong tiles",
+        by: "Cangjie6 et al., Wikimedia Commons",
+        licence: "CC BY-SA 4.0",
+        href: "https://commons.wikimedia.org/wiki/Category:SVG_Oblique_illustrations_of_Mahjong_tiles",
+        note: "Cropped to the tile face.",
+      },
+    ],
+  },
+  {
+    title: "Tile scanner",
+    items: [
+      { name: "YOLOv8", by: "Ultralytics", licence: "AGPL-3.0", href: "https://github.com/ultralytics/ultralytics", note: "The detection model, trained with it." },
+      { name: "MahjongVis", by: "Andy8647", licence: "MIT", href: "https://github.com/Andy8647/MahjongVis", note: "Training images." },
+      {
+        name: "MJOD-2136",
+        by: "jaheel",
+        licence: "CC BY-NC-SA 4.0",
+        href: "https://github.com/jaheel/MJOD-2136",
+        note: "Training images, merged with MahjongVis and relabelled.",
+      },
+      { name: "ONNX Runtime Web", by: "Microsoft", licence: "MIT", href: "https://github.com/microsoft/onnxruntime", note: "Runs the model in the browser." },
+    ],
+  },
+  {
+    title: "App",
+    items: [{ name: "React", by: "Meta", licence: "MIT", href: "https://react.dev" }],
+  },
+];
+
+function CreditsSheet({ onClose }: { onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return (
+    <div className="sheet-backdrop" onClick={onClose}>
+      <div className="sheet" role="dialog" aria-modal="true" aria-label="Credits" onClick={(e) => e.stopPropagation()}>
+        <div className="sheet-header">
+          <span className="sheet-title">Credits</span>
+          <button type="button" className="sheet-close" onClick={onClose} aria-label="Close">
+            ✕
+          </button>
+        </div>
+        <div className="sheet-list credits-list">
+          {CREDITS.map((section) => (
+            <section className="dev-section" key={section.title}>
+              <h3 className="dev-heading">{section.title}</h3>
+              {section.items.map((c) => (
+                <a className="credit-row" key={c.name} href={c.href} target="_blank" rel="noreferrer">
+                  <span className="credit-name">
+                    {c.name} <span className="credit-by">· {c.by}</span>
+                  </span>
+                  <span className="credit-licence">{c.licence}</span>
+                  {c.note && <span className="credit-note">{c.note}</span>}
+                </a>
+              ))}
+            </section>
+          ))}
+          <p className="credit-note credits-own">
+            MJWaits by Kevin Chan —{" "}
+            <a href="https://github.com/kevincgith/mjwaits" target="_blank" rel="noreferrer">
+              source on GitHub
+            </a>
+            .
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Asks before any link leaves the app (the footer's GitHub link, the
+// Credits rows), so a stray tap doesn't throw the user out to another site.
+// One capture-phase listener catches every external <a>; the share menu's
+// WhatsApp / Telegram / X open by their own deliberate choice, not links.
+function ExternalLinkConfirm() {
+  const [href, setHref] = useState<string | null>(null);
+  useEffect(() => {
+    const onClick = (e: MouseEvent) => {
+      const a = (e.target as HTMLElement).closest?.("a[href]") as HTMLAnchorElement | null;
+      if (!a || a.hostname === window.location.hostname || !/^https?:$/.test(a.protocol)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setHref(a.href);
+    };
+    document.addEventListener("click", onClick, true);
+    return () => document.removeEventListener("click", onClick, true);
+  }, []);
+  useEffect(() => {
+    if (!href) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setHref(null);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [href]);
+  if (!href) return null;
+  const host = new URL(href).hostname.replace(/^www\./, "");
+  return (
+    <div className="sheet-backdrop link-confirm-backdrop" onClick={() => setHref(null)}>
+      <div className="link-confirm" role="alertdialog" aria-modal="true" aria-label={`Open ${host}?`} onClick={(e) => e.stopPropagation()}>
+        <span className="link-confirm-title">Open {host}?</span>
+        <span className="link-confirm-body">This leaves MJWaits for another site.</span>
+        <div className="link-confirm-actions">
+          <button type="button" onClick={() => setHref(null)}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="is-primary"
+            onClick={() => {
+              window.open(href, "_blank", "noopener");
+              setHref(null);
+            }}
+          >
+            Open
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 type AppMode = "scoring" | "calculator" | "trainer" | "dice";
 
 // Tab-bar glyphs: 24px line icons drawn in currentColor, so they pick up the
@@ -9312,6 +9442,7 @@ function App() {
   // Hidden developer sheet: three quick taps on the logo (each within 800ms
   // of the last) open it; picking a hand switches to Scoring and loads it.
   const [testHandsOpen, setTestHandsOpen] = useState(false);
+  const [creditsOpen, setCreditsOpen] = useState(false);
   const [tileStyle, setTileStyle] = useState<TileStyle>(loadTileStyle);
   const changeTileStyle = (style: TileStyle) => {
     setTileStyle(style);
@@ -9429,8 +9560,8 @@ function App() {
         />
       )}
       {/* The maker's credit first and clearest (linking to the source on
-          GitHub), then the build and the tile art's CC BY-SA credit small
-          beneath it. */}
+          GitHub), then the build and a Credits link - every attribution the
+          tile art and the scanner ask for - small beneath it. */}
       <footer className="build-version">
         <a className="footer-credit" href="https://github.com/kevincgith/mjwaits" target="_blank" rel="noreferrer" title="Source code on GitHub">
           <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
@@ -9442,25 +9573,16 @@ function App() {
         </a>
         <span className="footer-fine">
           v{__BUILD_TIME__}
-          {tileStyle === "art" && (
-            <>
-              {" · "}
-              {/* The CC BY-SA credit: author, licence, and the source (which
-                  links on to the licence); "cropped" notes the change. */}
-              <a
-                href="https://commons.wikimedia.org/wiki/Category:SVG_Oblique_illustrations_of_Mahjong_tiles"
-                target="_blank"
-                rel="noreferrer"
-                title="Tile art by Cangjie6 et al. on Wikimedia Commons, CC BY-SA 4.0, cropped to the face"
-              >
-                Tiles © Cangjie6, CC BY-SA 4.0
-              </a>
-            </>
-          )}
+          {" · "}
+          <button type="button" className="footer-link" onClick={() => setCreditsOpen(true)}>
+            Credits
+          </button>
         </span>
       </footer>
       {debug.layoutOverlay && <LayoutOverlay />}
       <UpdateBar />
+      <ExternalLinkConfirm />
+      {creditsOpen && <CreditsSheet onClose={() => setCreditsOpen(false)} />}
       {testHandsOpen && (
         <TestHandsSheet
           onPick={pickTestHand}

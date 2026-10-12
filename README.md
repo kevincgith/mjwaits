@@ -365,3 +365,14 @@ The tile art is adapted (cropped to the tile face) from the oblique mahjong tile
 by Cangjie6 et al., licensed [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) - see
 [src/assets/tiles/CREDITS.md](src/assets/tiles/CREDITS.md). The hidden developer sheet (tap the logo
 three times) can switch back to the Unicode tile glyphs.
+
+The camera scanner's tile detector is a [YOLOv8](https://github.com/ultralytics/ultralytics) model
+by Ultralytics ([AGPL-3.0](https://www.gnu.org/licenses/agpl-3.0.html)), trained on
+[MahjongVis](https://github.com/Andy8647/MahjongVis) by Andy8647 (MIT) and
+[MJOD-2136](https://github.com/jaheel/MJOD-2136) by jaheel
+([CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/); merged with MahjongVis and
+relabelled - see [training/README.md](training/README.md)), and runs in the browser on
+[ONNX Runtime Web](https://github.com/microsoft/onnxruntime) (MIT). The app is built with
+[React](https://react.dev) (MIT).
+
+In the app, **Credits** in the footer lists all of these with their licences.
