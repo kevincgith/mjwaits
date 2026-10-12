@@ -2396,7 +2396,7 @@ export const PATTERNS: TaiPattern[] = [
   },
   {
     id: "three-treasures",
-    name: "三寶 (Missing one suit/Full flush + All simples + No fives/Greater than five/Smaller than five)",
+    name: "三寶 (Missing one suit + All Simples + No Fives)",
     // Additional bonus - stacks with all 3 constituent patterns, same
     // "stacks with everything" framing as 雙/全姊妹, 樓梯, and 五步高/全碟.
     score: (hand) => (hasThreeTreasures(hand) ? 40 : 0),
@@ -2528,7 +2528,7 @@ export const PATTERNS: TaiPattern[] = [
   },
   {
     id: "mixed-common-rank-pair",
-    name: "混帶XY (Common rank pair across every non-honor meld)",
+    name: "混帶XY (Shared rank pair in every suit meld)",
     score: (hand) => (commonRankPairAcrossNonHonorMelds(hand) ? 50 : 0),
     excludes: ["mixed-common-rank"],
     ranks: commonRankPairAcrossNonHonorMelds,
@@ -2537,7 +2537,7 @@ export const PATTERNS: TaiPattern[] = [
   },
   {
     id: "mixed-common-rank-triple",
-    name: "混帶XYZ (Common rank triple across every non-honor meld)",
+    name: "混帶XYZ (Shared rank triple in every suit meld)",
     score: (hand) => (commonRankTripleAcrossNonHonorMelds(hand) ? 60 : 0),
     excludes: ["mixed-common-rank-pair"],
     ranks: commonRankTripleAcrossNonHonorMelds,
@@ -2546,7 +2546,7 @@ export const PATTERNS: TaiPattern[] = [
   },
   {
     id: "pure-common-rank",
-    name: "全帶X (Common rank across every meld and the pair)",
+    name: "全帶X (Common rank across every meld and the eyes)",
     score: (hand) => (commonRankAcrossAllMeldsAndPair(hand) ? 120 : 0),
     excludes: ["mixed-common-rank"],
     ranks: commonRankAcrossAllMeldsAndPair,
@@ -3143,7 +3143,7 @@ export const PATTERNS: TaiPattern[] = [
   },
   {
     id: "small-three-brothers",
-    name: "小三兄弟 (Same rank across all 3 suits, pair at one + 2 triplets/kongs)",
+    name: "小三兄弟 (Same rank in 3 suits: pair + 2 sets)",
     score: (hand) => (hasSmallThreeBrothers(hand) ? 20 : 0),
     tiles: (hand) => {
       const pair = hand.pair[0];
@@ -3517,7 +3517,7 @@ export const PATTERNS: TaiPattern[] = [
   },
   {
     id: "big-duck",
-    name: "大鴨 (Nothing but the base + at most one bonus tile, self-drawn)",
+    name: "大鴨 (Base only, at most 1 bonus, self-drawn)",
     // The self-drawn counterpart to 大雞 (mirrors 全求人/半求人): same
     // "nothing else fires" shape plus the same house-rule exemption list
     // (BIG_CHICKEN_DUCK_EXTRA_EXEMPT_IDS), but self-drawn, and specifically
@@ -3571,7 +3571,7 @@ export const PATTERNS: TaiPattern[] = [
   },
   {
     id: "orphans-four-return-hidden",
-    name: "暗四歸 (Special hand: one kind held all 4 copies, concealed)",
+    name: "暗四歸 (All 4 of a tile, concealed)",
     // Stacks once per quad NOT completed by a claimed 食胡 tile - see
     // -open above for why at most one quad can ever be "open".
     score: (hand, ctx) => {

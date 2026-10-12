@@ -4454,6 +4454,9 @@ function ScoringBreakdown({
     <>
       {showHand && (
       <div className="hand-sections">
+        {/* Nothing declared (and no bonus tiles): skip the box rather than
+            spend a row saying "None". */}
+        {(declaredCount > 0 || hand.bonusTiles.length > 0) && (
         <div className="hand-section declared-section">
           <span className="hand-section-label">Declared</span>
           <div className="hand-display breakdown-groups">
@@ -4479,9 +4482,9 @@ function ScoringBreakdown({
                 </span>
               ))
             )}
-            {declaredCount === 0 && hand.bonusTiles.length === 0 && <span className="hint">None</span>}
           </div>
         </div>
+        )}
         <div className="hand-section concealed-section">
           <span className="hand-section-label">Concealed</span>
           <div className="hand-display breakdown-groups">
@@ -6091,6 +6094,13 @@ function ScoringPanel({
   // odds. discardOptions itself stays in tile order.
   const [discardSort, setDiscardSort] = useState<"score" | "live">("score");
   const [showAllDiscards, setShowAllDiscards] = useState(false);
+  // On a hand that already wins, the discard list is only a what-if, so it
+  // starts folded behind one row; it folds again each time the hand wins.
+  const [whatIfOpen, setWhatIfOpen] = useState(false);
+  useEffect(() => {
+    if (scoredOk) setWhatIfOpen(false);
+  }, [scoredOk]);
+  const discardsFolded = scoredOk && !whatIfOpen;
   // "Show fewer" takes rows out above the button, so the page shrinks under
   // the finger and would leave the view on empty space at the bottom. Keep
   // the button where it was on screen instead (the remaining rows land
@@ -6267,7 +6277,9 @@ function ScoringPanel({
               would only repeat it). The total stays in reach while scrolled
               up at the picker; tapping it jumps down to the full result. */}
           {!scoring?.ok && (
-            <span className={`tile-count-pill${totalTiles === requiredSize ? " is-full" : ""}`}>
+            // Tinted once the hand is ready - one tile from a win, with
+            // waits listed below.
+            <span className={`tile-count-pill${projectedWaits && projectedWaits.length > 0 ? " is-ready" : ""}`}>
               {totalTiles}/{requiredSize}
             </span>
           )}
@@ -6378,12 +6390,7 @@ function ScoringPanel({
                   )}
                 </span>
               ) : (
-                // 8 a line while the hand is being entered; once it's full (but
-                // didn't score) the lines fill instead, rather than leaving most
-                // of each line empty.
-                <span
-                  className={`hand-strip-row${totalTiles < requiredSize ? " hand-strip-concealed" : ""} hand-strip-tint is-concealed`}
-                >
+                <span className="hand-strip-row hand-strip-tint is-concealed">
                   {(sortTiles(concealedTiles) as HandTile[]).map((t) => (
                     <TileGlyphSpan key={t.id} tile={t} highlight={!nearComplete && isWinningTile(t)} />
                   ))}
@@ -6996,7 +7003,7 @@ function ScoringPanel({
                 </span>
               )}
             </span>
-            {displayedDiscardOptions.length > 1 && (
+            {displayedDiscardOptions.length > 1 && !discardsFolded && (
               <button
                 type="button"
                 className="projected-sort-toggle"
@@ -7012,7 +7019,11 @@ function ScoringPanel({
             )}
           </div>
           <div className="waits projected-waits">
-            {displayedDiscardOptions.length === 0 ? (
+            {discardsFolded && displayedDiscardOptions.length > 0 ? (
+              <button type="button" className="show-more-row" onClick={() => setWhatIfOpen(true)}>
+                What if I discard…
+              </button>
+            ) : displayedDiscardOptions.length === 0 ? (
               <span className="waits-label">No discard leaves this hand tenpai.</span>
             ) : (
               <>
