@@ -97,7 +97,7 @@ tile. Kept deliberately narrow: no jokers, no concealed kongs.
 
 ### Sharing and recent hands
 
-- **Share** on the green TOTAL card sends the hand as a link: **Copy link**, the system's **Share…**
+- **Share** - the icon on each **最近 Recent** row (the hand just scored is always the top one) - sends the hand as a link: **Copy link**, the system's **Share…**
   sheet where there is one, and on computers direct **WhatsApp**, **Telegram**, **Email** and **X**. The link carries the tiles, any flowers / seasons, and the situation
   (winds, 自摸 and the rest - only what differs from the defaults), so it opens to the same score.
   Opening one loads it into Scoring, then tidies the address bar.
