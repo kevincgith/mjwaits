@@ -1399,7 +1399,7 @@ button.icon-toggle.open {
 /* The Patterns card: names and tai run edge to edge, so it gets a little
    more room at the sides than the other cards. */
 .panel > .waits.breakdown-list {
-  padding-inline: 1.25rem;
+  padding-inline: 1.75rem;
 }
 
 .waits-label {
@@ -2166,7 +2166,7 @@ button.scoring-pattern-row {
    straight on the row's own background. */
 .projected-wait .breakdown-list {
   margin: 0.6rem 0 0.15rem;
-  padding: 0.55rem 0.9rem;
+  padding: 0.55rem 1.1rem;
   border-radius: var(--radius-md);
   background: var(--surface);
 }
@@ -4186,7 +4186,6 @@ img.tile-face {
    reads as their sum without competing with the green TOTAL bar above. */
 .patterns-subtotal {
   padding: 0.15rem 0.6rem;
-  margin-right: -0.6rem;
   border-radius: var(--radius-pill);
   background: var(--fill);
   font-size: var(--text-xl);
@@ -4221,34 +4220,31 @@ img.tile-face {
 }
 
 /* Share, sitting between TOTAL and the number: white on the green card. */
+/* Deliberately quiet: a light icon with no fill around it, so it's there
+   when wanted without pulling the eye (the padding keeps the tap target). */
 .share-button {
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
   border: none;
   border-radius: var(--radius-pill);
-  padding: 0.45rem;
-  background: var(--fill);
-  color: var(--accent);
+  padding: 0.5rem;
+  background: none;
+  color: var(--text-subtle);
   font: inherit;
   font-size: var(--text-sm);
   font-weight: 600;
   cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.share-button:active {
+  background: var(--fill);
 }
 
 .share-wrap {
   position: relative;
   display: inline-flex;
-}
-
-.share-wrap.result-share {
-  margin-left: auto;
-}
-
-.result-share .share-button {
-  padding: 0.45rem 0.6rem;
-  background: rgba(255, 255, 255, 0.16);
-  color: var(--on-accent);
 }
 
 /* The menu under the share icon: Copy link, then Share… where the system
@@ -4360,6 +4356,11 @@ img.tile-face {
 /* Share in a result caption sits with the caption's other actions. */
 .section-share .share-button {
   padding: 0.4rem;
+}
+
+.share-button svg {
+  width: 17px;
+  height: 17px;
 }
 
 .recent-when {
@@ -4491,7 +4492,7 @@ img.tile-face {
   }
 
   .panel > .waits.breakdown-list {
-    padding-inline: 1.1rem;
+    padding-inline: 1.5rem;
   }
 
   /* A slim title bar on phones: every pixel above the hand and picker

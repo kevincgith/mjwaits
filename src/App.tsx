@@ -7558,21 +7558,10 @@ function ScoringPanel({
         <>
           {/* One-row total above the patterns - the toolbar pill's jump
               target. */}
-          {/* Tapping the card does what the toolbar's total pill does - except
-              on its share button and menu. */}
-          <div
-            className="result-total"
-            ref={resultRef}
-            onClick={(e) => {
-              if (!(e.target as HTMLElement).closest(".share-wrap")) jumpToResult();
-            }}
-          >
+          {/* Tapping the card does what the toolbar's total pill does. (To
+              share the hand, it's the top row of Recent below.) */}
+          <div className="result-total" ref={resultRef} onClick={jumpToResult}>
             <span className="result-total-label">Total</span>
-            <ShareButton
-              url={() => shareUrl({ hand: notation, bonus: bonusTiles, ctx: situationDiff(ctx) })}
-              text={`A ${scoring.result.total}-tai hand on MJWaits`}
-              className="result-share"
-            />
             <span className="result-total-value">
               {scoring.result.total}
               <span className="visually-hidden"> tai</span>
