@@ -623,11 +623,13 @@ button {
   cursor: pointer;
 }
 
+/* Grey, not green: green is kept for what can be tapped or is selected
+   (and the TOTAL bar) - these just report what's set. */
 .situation-summary-chip {
   padding: 0.15rem 0.6rem;
   border-radius: var(--radius-pill);
-  background: var(--accent-tint);
-  color: var(--accent);
+  background: var(--fill);
+  color: var(--text);
   font-size: var(--text-sm);
   font-weight: 600;
 }
@@ -1972,7 +1974,7 @@ button.scoring-pattern-row {
 
 .scoring-pattern-tai {
   font-weight: 600;
-  color: var(--accent);
+  color: var(--text);
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
@@ -4180,17 +4182,17 @@ img.tile-face {
   margin-left: auto;
 }
 
-/* Right-aligned over the rows' tai column, a size up and in a deep green
-   pill (like the toolbar's total) so it reads as their sum. */
+/* Right-aligned over the rows' tai column, a size up in a grey pill, so it
+   reads as their sum without competing with the green TOTAL bar above. */
 .patterns-subtotal {
   padding: 0.15rem 0.6rem;
   margin-right: -0.6rem;
   border-radius: var(--radius-pill);
-  background: var(--accent);
+  background: var(--fill);
   font-size: var(--text-xl);
   line-height: 1.2;
   font-weight: 700;
-  color: var(--on-accent);
+  color: var(--text);
   font-variant-numeric: tabular-nums;
 }
 
@@ -4343,7 +4345,7 @@ img.tile-face {
   font-size: var(--text-title);
   line-height: 1;
   font-weight: 700;
-  color: var(--accent);
+  color: var(--text);
   font-variant-numeric: tabular-nums;
 }
 
@@ -4351,7 +4353,7 @@ img.tile-face {
 .recent-summary {
   font-size: var(--text-sm);
   font-weight: 600;
-  color: var(--accent);
+  color: var(--text);
   white-space: nowrap;
 }
 
