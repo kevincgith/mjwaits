@@ -9731,7 +9731,9 @@ const TAB_ITEMS: { id: Exclude<AppMode, "play">; label: string; icon: ReactNode 
     label: "Scores",
     icon: (
       <svg {...TAB_ICON_PROPS}>
-        <path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />
+        {/* A podium: 1st in the middle with a star, 2nd and 3rd either side. */}
+        <path d="M9 21V9h6v12M3 21v-7h6M15 21v-5h6v5M2 21h20" />
+        <path d="M12 3.5l.9 1.8 2 .3-1.45 1.4.35 2-1.8-.95-1.8.95.35-2L9.1 5.6l2-.3z" />
       </svg>
     ),
   },

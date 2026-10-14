@@ -7,17 +7,20 @@
 // is owned by App (so the Scoring tab can send a hand here) and saved to
 // localStorage on every change.
 
-import { useEffect, useMemo, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import {
   DEFAULT_SETTINGS,
   PLAYER_COLORS,
   SEATS,
   newGame,
   previewWin,
+  canRedo,
+  redoEvent,
   replay,
   settle,
   undoEvent,
   withEvent,
+  type HandResult,
   type PatternNote,
   type ReplayState,
   type ScoreEvent,
@@ -26,20 +29,33 @@ import {
   type ScoreStore,
   type WinnerEntry,
 } from "./lib/ledger";
-import {
-  careerStats,
-  headToHead,
-  marks,
-  patternCounts,
-  playerStats,
-  trend,
-  type PlayerStats,
-} from "./lib/scoreStats";
+import { careerStats, headToHead, marks, patternCounts, playerStats, trend, type PlayerStats } from "./lib/scoreStats";
 
 const WIND_CHARS = ["東", "南", "西", "北"];
 // Where each seat sits on the board, by seat index (turn order runs
-// counter-clockwise: you along the bottom, then right, top, left).
+// counter-clockwise: seat 0 along the bottom, then right, top, left).
 const SEAT_AREAS = ["bottom", "right", "top", "left"] as const;
+// Each area's place on the table, for pointing from one seat at another.
+const AREA_XY: Record<(typeof SEAT_AREAS)[number], [number, number]> = { bottom: [0, 1], right: [1, 0], top: [0, -1], left: [-1, 0] };
+
+// Which side of seat `from`'s card faces seat `to` - always one of the four
+// sides, never a corner. The top and bottom cards point sideways at the side
+// seats and straight down/up at each other; the side cards point up/down at
+// the top and bottom seats and across at each other. So each of a card's
+// three other players gets a side of its own.
+function facing(from: number, to: number): "top" | "bottom" | "left" | "right" {
+  const [ax, ay] = AREA_XY[SEAT_AREAS[from]];
+  const [bx, by] = AREA_XY[SEAT_AREAS[to]];
+  const dx = bx - ax;
+  const dy = by - ay;
+  const sideways = ax === 0 ? dx !== 0 : dy === 0;
+  return sideways ? (dx < 0 ? "left" : "right") : dy < 0 ? "top" : "bottom";
+}
+
+// The board view fits the screen when at least this much height is left for
+// it (px), keeping FIT_GAP clear above the tab bar.
+const FIT_MIN = 470;
+const FIT_GAP = 10;
 
 // A hand sent from the Scoring tab, waiting to be recorded.
 export interface RecordRequest {
@@ -51,23 +67,163 @@ export interface RecordRequest {
   nonce: number;
 }
 
-const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
+// Numbers: a true minus sign, one decimal only when 整數模式 is off.
+const fmt = (n: number) => {
+  const s = Number.isInteger(n) ? String(Math.abs(n)) : Math.abs(n).toFixed(1);
+  return n < 0 ? `−${s}` : s;
+};
 const signed = (n: number) => (n > 0 ? `+${fmt(n)}` : fmt(n));
 const pct = (r: number | null) => (r === null ? "–" : `${Math.round(r * 100)}%`);
+const tone = (n: number) => (n > 0 ? "is-pos" : n < 0 ? "is-neg" : "is-zero");
 
-// A player's palette slot; "x" (no colour class, so a neutral dot) for a
-// name typed in a sheet that isn't on the roster yet.
+// A player's palette slot; "x" (no colour class, so neutral) for a name
+// typed in a sheet that isn't on the roster yet.
 function colorOf(store: ScoreStore, player: string): number | "x" {
   return store.roster.find((p) => p.name === player)?.color ?? "x";
 }
 
+// ---- Icons (24px line art, the same stroke style as the tab bar) -----------
+
+const ICON = {
+  width: 22,
+  height: 22,
+  viewBox: "0 0 24 24",
+  fill: "none",
+  stroke: "currentColor",
+  strokeWidth: 1.8,
+  strokeLinecap: "round",
+  strokeLinejoin: "round",
+  "aria-hidden": true,
+} as const;
+
+const Icons = {
+  newGame: (
+    <svg {...ICON}>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 8.5v7M8.5 12h7" />
+    </svg>
+  ),
+  undo: (
+    <svg {...ICON}>
+      <path d="M9 14 4 9l5-5" />
+      <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />
+    </svg>
+  ),
+  redo: (
+    <svg {...ICON}>
+      <path d="M15 14l5-5-5-5" />
+      <path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13" />
+    </svg>
+  ),
+  swap: (
+    <svg {...ICON}>
+      <path d="M7 4 3.5 7.5 7 11M3.5 7.5H17" />
+      <path d="M17 13l3.5 3.5L17 20M20.5 16.5H7" />
+    </svg>
+  ),
+  lah: (
+    <svg {...ICON}>
+      <path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1" />
+      <path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1" />
+    </svg>
+  ),
+  settings: (
+    <svg {...ICON}>
+      <path d="M4 7h9M17 7h3M4 12h3M11 12h9M4 17h11M19 17h1" />
+      <circle cx="15" cy="7" r="2" />
+      <circle cx="9" cy="12" r="2" />
+      <circle cx="17" cy="17" r="2" />
+    </svg>
+  ),
+  recent: (
+    <svg {...ICON} width={18} height={18}>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 7.5V12l3 2" />
+    </svg>
+  ),
+  close: (
+    <svg {...ICON} width={18} height={18}>
+      <path d="M6 6l12 12M18 6 6 18" />
+    </svg>
+  ),
+  back: (
+    <svg {...ICON} width={18} height={18}>
+      <path d="M15 5l-7 7 7 7" />
+    </svg>
+  ),
+  forward: (
+    <svg {...ICON} width={18} height={18}>
+      <path d="M9 5l7 7-7 7" />
+    </svg>
+  ),
+  backspace: (
+    <svg {...ICON}>
+      <path d="M9 5h10.5A1.5 1.5 0 0 1 21 6.5v11a1.5 1.5 0 0 1-1.5 1.5H9l-6-7z" />
+      <path d="M12 9.5l5 5M17 9.5l-5 5" />
+    </svg>
+  ),
+};
+
 // ---- Small building blocks ---------------------------------------------------
 
-function Sheet({ title, onClose, children, actions }: { title: ReactNode; onClose: () => void; children: ReactNode; actions?: ReactNode }) {
+function SectionHead({ zh, en, children }: { zh: string; en?: string; children?: ReactNode }) {
   return (
-    <div className="sc-backdrop" onClick={onClose}>
-      <div className="sc-sheet" role="dialog" aria-label={typeof title === "string" ? title : undefined} onClick={(e) => e.stopPropagation()}>
-        <h2 className="sc-sheet-title">{title}</h2>
+    <div className="section-head sc-section-head">
+      <span className="section-title">
+        {zh}
+        {en && <span className="section-title-en">{en}</span>}
+      </span>
+      {children && <span className="section-head-actions">{children}</span>}
+    </div>
+  );
+}
+
+// A round monogram in the player's colour - names and colours, no avatars.
+function Monogram({ store, player, size = "md" }: { store: ScoreStore; player: string; size?: "sm" | "md" | "lg" }) {
+  return (
+    <span className={`sc-mono sc-mono-${size} sc-c${colorOf(store, player)}`} aria-hidden="true">
+      {[...player][0]?.toUpperCase()}
+    </span>
+  );
+}
+
+function Sheet({
+  title,
+  subtitle,
+  onClose,
+  children,
+  actions,
+  tabs,
+  still,
+}: {
+  title: ReactNode;
+  subtitle?: ReactNode;
+  onClose: () => void;
+  children: ReactNode;
+  actions?: ReactNode;
+  tabs?: ReactNode;
+  // Already on screen (switching 食胡 / 特別獎罰): skip the entrance animation.
+  still?: boolean;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return (
+    <div className={`sc-backdrop${still ? " is-still" : ""}`} onClick={onClose}>
+      <div className="sc-sheet" role="dialog" aria-modal="true" aria-label={typeof title === "string" ? title : undefined} onClick={(e) => e.stopPropagation()}>
+        <span className="sc-grabber" aria-hidden="true" />
+        <div className="sc-sheet-head">
+          <div className="sc-sheet-heading">
+            <h2 className="sc-sheet-title">{title}</h2>
+            {subtitle && <div className="sc-sheet-subtitle">{subtitle}</div>}
+          </div>
+          <button type="button" className="sc-icon-button" onClick={onClose} aria-label="Close">
+            {Icons.close}
+          </button>
+        </div>
+        {tabs}
         <div className="sc-sheet-body">{children}</div>
         {actions && <div className="sc-sheet-actions">{actions}</div>}
       </div>
@@ -75,22 +231,32 @@ function Sheet({ title, onClose, children, actions }: { title: ReactNode; onClos
   );
 }
 
-function Keypad({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+// A number pad. With `max` (the score cap), a key that would push the number
+// past it is refused - the pad gives a short shake instead.
+function Keypad({ value, onChange, max }: { value: string; onChange: (v: string) => void; max?: number | null }) {
+  const [refused, setRefused] = useState(0);
   const press = (k: string) => {
-    if (k === "⌫") onChange(value.slice(0, -1));
-    else onChange(value === "0" ? k : (value + k).slice(0, 5));
+    if (k === "⌫") return onChange(value.slice(0, -1));
+    const next = value === "0" ? k : (value + k).slice(0, 5);
+    if (max !== undefined && max !== null && Number(next) > max) {
+      setRefused((n) => n + 1);
+      return;
+    }
+    onChange(next);
   };
   return (
-    <div className="sc-keypad">
-      {["1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "⌫"].map((k, i) =>
-        k ? (
-          <button key={i} type="button" onClick={() => press(k)} aria-label={k === "⌫" ? "Delete" : k}>
-            {k}
-          </button>
-        ) : (
-          <span key={i} />
-        )
-      )}
+    <div key={refused} className={`sc-keypad${refused ? " is-refused" : ""}`}>
+      {["1", "2", "3", "4", "5", "6", "7", "8", "9", "C", "0", "⌫"].map((k) => (
+        <button
+          key={k}
+          type="button"
+          className={k === "C" || k === "⌫" ? "is-aux" : undefined}
+          onClick={() => (k === "C" ? onChange("") : press(k))}
+          aria-label={k === "⌫" ? "Delete" : k === "C" ? "Clear" : k}
+        >
+          {k === "⌫" ? Icons.backspace : k}
+        </button>
+      ))}
     </div>
   );
 }
@@ -103,10 +269,10 @@ function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: 
   );
 }
 
-function Stepper({ value, onChange, min = 0 }: { value: number; onChange: (v: number) => void; min?: number }) {
+function Stepper({ value, onChange, min = 0, label }: { value: number; onChange: (v: number) => void; min?: number; label?: string }) {
   return (
-    <span className="sc-stepper">
-      <button type="button" onClick={() => onChange(Math.max(min, value - 1))} aria-label="Less">
+    <span className="sc-stepper" role="group" aria-label={label}>
+      <button type="button" onClick={() => onChange(Math.max(min, value - 1))} aria-label="Less" disabled={value <= min}>
         −
       </button>
       <span className="sc-stepper-value">{value}</span>
@@ -117,58 +283,160 @@ function Stepper({ value, onChange, min = 0 }: { value: number; onChange: (v: nu
   );
 }
 
-function PlayerChip({ store, player, selected, onClick, children }: { store: ScoreStore; player: string; selected?: boolean; onClick?: () => void; children?: ReactNode }) {
+function NumberField({ value, onChange, label }: { value: number; onChange: (v: number) => void; label: string }) {
+  const [text, setText] = useState(String(value));
+  useEffect(() => setText(String(value)), [value]);
   return (
-    <button type="button" className={`sc-chip sc-c${colorOf(store, player)}${selected ? " is-on" : ""}`} aria-pressed={selected} onClick={onClick}>
-      <span className="sc-dot" />
-      {player}
+    <input
+      className="sc-input sc-input-short"
+      inputMode="numeric"
+      value={text}
+      aria-label={label}
+      onChange={(e) => {
+        const t = e.target.value.replace(/[^0-9]/g, "").slice(0, 5);
+        setText(t);
+        if (t !== "") onChange(Number(t));
+      }}
+      onBlur={() => setText(String(value))}
+    />
+  );
+}
+
+function Segmented<T extends string | number>({ value, options, onChange, small }: { value: T; options: { value: T; label: ReactNode }[]; onChange: (v: T) => void; small?: boolean }) {
+  return (
+    <div className={`segmented sc-seg${small ? " sc-seg-small" : ""}`}>
+      {options.map((o) => (
+        <button key={String(o.value)} type="button" className={value === o.value ? "toggle-on" : undefined} aria-pressed={value === o.value} onClick={() => onChange(o.value)}>
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// A player as a selectable option: monogram + name.
+function PlayerOption({ store, player, selected, onClick, disabled, children }: { store: ScoreStore; player: string; selected?: boolean; onClick?: () => void; disabled?: boolean; children?: ReactNode }) {
+  return (
+    <button type="button" className={`sc-option${selected ? " is-on" : ""}`} aria-pressed={selected} onClick={onClick} disabled={disabled}>
+      <Monogram store={store} player={player} size="sm" />
+      <span className="sc-option-name">{player}</span>
       {children}
     </button>
   );
 }
 
+function Sparkline({ values, className }: { values: (number | null)[]; className: string }) {
+  const pts = values.map((v, i) => [i, v] as const).filter((p): p is readonly [number, number] => p[1] !== null);
+  if (pts.length < 2) return <svg className="sc-spark" viewBox="0 0 64 22" aria-hidden="true" />;
+  const xs = pts.map((p) => p[0]);
+  const ys = pts.map((p) => p[1]);
+  const [x0, x1] = [Math.min(...xs), Math.max(...xs)];
+  const lo = Math.min(0, ...ys);
+  const hi = Math.max(0, ...ys);
+  const x = (i: number) => 1 + ((i - x0) / (x1 - x0 || 1)) * 62;
+  const y = (v: number) => 20 - ((v - lo) / (hi - lo || 1)) * 18;
+  return (
+    <svg className={`sc-spark ${className}`} viewBox="0 0 64 22" aria-hidden="true">
+      <line x1="1" x2="63" y1={y(0)} y2={y(0)} className="sc-spark-zero" />
+      <polyline points={pts.map(([i, v]) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ")} />
+    </svg>
+  );
+}
+
 // ---- Setup -------------------------------------------------------------------
 
-function Setup({ store, suggestion, onStart }: { store: ScoreStore; suggestion: readonly string[]; onStart: (seats: string[], dealer: number) => void }) {
+function Setup({ store, suggestion, onStart, waitingHand }: { store: ScoreStore; suggestion: readonly string[]; onStart: (seats: string[], dealer: number) => void; waitingHand: boolean }) {
   const last = store.history[0]?.seats;
   const [names, setNames] = useState<string[]>(() => (last ?? suggestion).slice(0, SEATS).map(String));
   const [dealer, setDealer] = useState(0);
   const trimmed = names.map((n) => n.trim());
   const valid = trimmed.every(Boolean) && new Set(trimmed).size === SEATS;
   return (
-    <div className="card sc-setup">
-      <h2 className="sc-h">新局 New game</h2>
-      <p className="sc-muted">Players in turn order (counter-clockwise). Tap 莊 for who deals first.</p>
-      {names.map((n, i) => (
-        <div key={i} className="sc-setup-row">
-          <span className="sc-setup-wind">{WIND_CHARS[(i - dealer + SEATS) % SEATS]}</span>
-          <input
-            className="sc-input"
-            value={n}
-            maxLength={12}
-            onChange={(e) => setNames((prev) => prev.map((x, j) => (j === i ? e.target.value : x)))}
-            aria-label={`Player ${i + 1}`}
-            list="sc-roster"
-          />
-          <button type="button" className={`sc-dealer-pick${dealer === i ? " is-on" : ""}`} aria-pressed={dealer === i} onClick={() => setDealer(i)}>
-            莊
-          </button>
-        </div>
-      ))}
-      <datalist id="sc-roster">
-        {store.roster.map((p) => (
-          <option key={p.name} value={p.name} />
+    <>
+      <SectionHead zh="新局" en="New game" />
+      <div className="card sc-setup">
+        {waitingHand && <p className="sc-note">Start a game and the hand from Scoring opens to record.</p>}
+        <p className="sc-help">Players in turn order, counter-clockwise round the table. Pick who deals first.</p>
+        {names.map((n, i) => (
+          <div key={i} className="sc-setup-row">
+            <span className="sc-setup-wind" aria-hidden="true">
+              {WIND_CHARS[(i - dealer + SEATS) % SEATS]}
+            </span>
+            <input
+              className="sc-input"
+              value={n}
+              maxLength={12}
+              autoComplete="off"
+              onChange={(e) => setNames((prev) => prev.map((x, j) => (j === i ? e.target.value : x)))}
+              aria-label={`Player ${i + 1}`}
+              list="sc-roster"
+            />
+            <button type="button" className={`sc-dealer-pick${dealer === i ? " is-on" : ""}`} aria-pressed={dealer === i} aria-label={`${trimmed[i] || `Player ${i + 1}`} deals first`} onClick={() => setDealer(i)}>
+              莊
+            </button>
+          </div>
         ))}
-      </datalist>
-      {!valid && <p className="sc-warn">Four different names, please.</p>}
-      <button type="button" className="sc-primary" disabled={!valid} onClick={() => onStart(trimmed, dealer)}>
-        開始 Start
-      </button>
-    </div>
+        <datalist id="sc-roster">
+          {store.roster.map((p) => (
+            <option key={p.name} value={p.name} />
+          ))}
+        </datalist>
+        {!valid && <p className="sc-warn">Four different names, please.</p>}
+        <button type="button" className="sc-primary sc-wide" disabled={!valid} onClick={() => onStart(trimmed, dealer)}>
+          開始 Start game
+        </button>
+      </div>
+    </>
   );
 }
 
-// ---- The 食胡 sheet ------------------------------------------------------------
+// ---- Recording a hand: the 食胡 / 特別獎罰 sheet --------------------------------
+
+type HandInitial = { selfDraw: boolean; tai: number; patterns: PatternNote[]; note?: string };
+
+function HandSheet({
+  store,
+  state,
+  seat,
+  initial,
+  onDone,
+  onClose,
+}: {
+  store: ScoreStore;
+  state: ReplayState;
+  seat: number;
+  initial?: HandInitial;
+  onDone: (ev: ScoreEvent) => void;
+  onClose: () => void;
+}) {
+  const [mode, setMode] = useState<"win" | "bonus">("win");
+  const [switched, setSwitched] = useState(false);
+  const player = state.seats[seat];
+  const switchTo = (m: "win" | "bonus") => {
+    setSwitched(true);
+    setMode(m);
+  };
+  return mode === "win" ? (
+    <WinSheet store={store} state={state} winnerSeat={seat} initial={initial} onDone={onDone} onClose={onClose} onBonus={() => switchTo("bonus")} still={switched} />
+  ) : (
+    <BonusSheet store={store} state={state} seat={seat} onDone={onDone} onClose={onClose} onWin={() => switchTo("win")} player={player} still={switched} />
+  );
+}
+
+function ModeTabs({ mode, onWin, onBonus }: { mode: "win" | "bonus"; onWin?: () => void; onBonus?: () => void }) {
+  return (
+    <div className="sc-sheet-tabs">
+      <Segmented
+        value={mode}
+        onChange={(v) => (v === "win" ? onWin?.() : onBonus?.())}
+        options={[
+          { value: "win", label: "食胡 Win" },
+          { value: "bonus", label: "特別獎罰 Bonus" },
+        ]}
+      />
+    </div>
+  );
+}
 
 function WinSheet({
   store,
@@ -177,17 +445,20 @@ function WinSheet({
   initial,
   onDone,
   onClose,
+  onBonus,
+  still,
 }: {
   store: ScoreStore;
   state: ReplayState;
   winnerSeat: number;
-  initial?: { selfDraw: boolean; tai: number; patterns: PatternNote[]; note?: string };
+  initial?: HandInitial;
   onDone: (ev: ScoreEvent) => void;
   onClose: () => void;
+  onBonus: () => void;
+  still?: boolean;
 }) {
   const seats = state.seats;
   const [multi, setMulti] = useState<1 | 2 | 3>(1);
-  const [askMulti, setAskMulti] = useState(false);
   // -1 = not picked yet.
   const [from, setFrom] = useState<number | null>(initial?.selfDraw ? null : -1);
   // Each winner's tai as typed; the first is the tapped player.
@@ -195,30 +466,45 @@ function WinSheet({
   const [focus, setFocus] = useState(0);
   const [jackpot, setJackpot] = useState(false);
 
-  const others = [0, 1, 2, 3].filter((s) => s !== winnerSeat);
-  const setMultiCount = (n: 1 | 2 | 3) => {
+  // 三響: once the discarder is known, everyone else won - no one to pick.
+  const allBut = (discarder: number, prev: { seat: number; tai: string }[]) =>
+    [0, 1, 2, 3]
+      .filter((x) => x !== discarder)
+      .sort((a, b) => (a === winnerSeat ? -1 : b === winnerSeat ? 1 : 0))
+      .map((x) => prev.find((e) => e.seat === x) ?? { seat: x, tai: "" });
+  const changeMulti = (n: 1 | 2 | 3) => {
     setMulti(n);
-    setAskMulti(false);
+    setFocus(0);
     if (n === 1) setEntries((e) => e.slice(0, 1));
-    else if (from === null) setFrom(-1);
+    else {
+      if (from === null) setFrom(-1);
+      if (n === 3 && from !== null && from >= 0) setEntries((e) => allBut(from, e));
+      else setEntries((e) => e.slice(0, n));
+    }
   };
-  // Extra winners for 雙響/三響: picked from whoever isn't the discarder.
-  const extraCandidates = [0, 1, 2, 3].filter((s) => s !== winnerSeat && s !== from);
-  const toggleExtra = (seat: number) => {
+  const pickFrom = (s: number | null) => {
+    setFrom(s);
+    if (multi === 3 && s !== null && s >= 0) setEntries((e) => allBut(s, e));
+    else setEntries((e) => (multi === 3 ? e.slice(0, 1) : e.filter((x, i) => i === 0 || x.seat !== s)));
+  };
+  // Extra winners for 雙響/三響 (the picker never offers the first winner or the discarder).
+  const toggleExtra = (s: number) =>
     setEntries((prev) => {
-      if (prev.some((e) => e.seat === seat)) return prev.filter((e) => e.seat !== seat);
-      if (prev.length >= multi) return prev;
-      return [...prev, { seat, tai: "" }];
+      if (prev.some((e) => e.seat === s)) return prev.filter((e) => e.seat !== s);
+      if (prev.length >= multi) return [...prev.slice(0, -1), { seat: s, tai: "" }];
+      const next = [...prev, { seat: s, tai: "" }];
+      setFocus(next.length - 1);
+      return next;
     });
-  };
   const winners: WinnerEntry[] = entries.map((e, i) => ({
     seat: e.seat,
     tai: Number(e.tai || 0),
     ...(i === 0 && initial?.patterns.length ? { patterns: initial.patterns } : {}),
   }));
   const fromValid = from === null ? multi === 1 : from >= 0;
-  const complete = fromValid && entries.length === multi && entries.every((e) => e.tai !== "") && !entries.some((e) => e.seat === from);
-  const pairs = complete ? previewWin(state, winners, from) : [];
+  const complete = fromValid && entries.length === multi && entries.every((e) => e.tai !== "");
+  const pairs = fromValid && entries.length === multi ? previewWin(state, winners, from) : [];
+  const total = pairs.reduce((s, p) => s + p.worth, 0);
   const high = state.settings.highScore !== null && pairs.some((p) => p.worth >= state.settings.highScore!);
 
   const submit = () => {
@@ -233,214 +519,341 @@ function WinSheet({
     });
   };
 
-  if (askMulti) {
-    return (
-      <Sheet title="一炮多響！" onClose={() => setAskMulti(false)}>
-        <div className="sc-two">
-          <button type="button" className="sc-primary" onClick={() => setMultiCount(2)}>
-            雙響
-          </button>
-          <button type="button" className="sc-primary" onClick={() => setMultiCount(3)}>
-            三響
-          </button>
-        </div>
-        <button type="button" className="sc-link" onClick={() => setMultiCount(1)}>
-          Back to one winner
-        </button>
-      </Sheet>
-    );
-  }
+  const verb = multi === 1 ? (from === null ? "自摸" : "食胡") : multi === 2 ? "雙響" : "三響";
 
   return (
     <Sheet
       title={
-        <>
-          {seats[winnerSeat]} {multi === 1 ? (from === null ? "自摸！" : "食胡！") : multi === 2 ? "雙響！" : "三響！"}
-          <button type="button" className="sc-multi-button" onClick={() => setAskMulti(true)}>
-            一炮多響
-          </button>
-        </>
+        <span className="sc-sheet-who">
+          <Monogram store={store} player={seats[winnerSeat]} />
+          {seats[winnerSeat]}
+          <span className="sc-sheet-verb">{verb}</span>
+        </span>
       }
       onClose={onClose}
+      still={still}
+      tabs={<ModeTabs mode="win" onBonus={onBonus} />}
       actions={
         <>
           <button type="button" className="sc-secondary" onClick={onClose}>
             取消
           </button>
           <button type="button" className="sc-primary" disabled={!complete} onClick={submit}>
-            確定
+            {complete ? `確定 · ${fmt(total)}` : "確定"}
           </button>
         </>
       }
     >
       {initial?.note && <p className="sc-note">{initial.note}</p>}
+
       <div className="sc-field">
-        <span className="sc-label">輸家</span>
-        <div className="sc-chips">
-          {multi === 1 && (
-            <button type="button" className={`sc-chip${from === null ? " is-on" : ""}`} aria-pressed={from === null} onClick={() => setFrom(null)}>
-              自摸
-            </button>
-          )}
-          {others.map((s) => (
-            <PlayerChip key={s} store={store} player={seats[s]} selected={from === s} onClick={() => { setFrom(s); setEntries((e) => e.filter((x) => x.seat !== s)); }} />
-          ))}
+        <div className="sc-field-head">
+          <span className="sc-label">輸家 Paid by</span>
+          <Segmented
+            small
+            value={multi}
+            onChange={changeMulti}
+            options={[
+              { value: 1, label: "單" },
+              { value: 2, label: "雙響" },
+              { value: 3, label: "三響" },
+            ]}
+          />
         </div>
+        <TablePicker
+          store={store}
+          seats={seats}
+          self={winnerSeat}
+          selfLabel="胡"
+          selfTone="win"
+          isOn={(seat) => from === seat || (multi > 1 && entries.some((e) => e.seat === seat))}
+          onPick={(seat) => {
+            if (multi === 1) return pickFrom(seat);
+            if (from === seat) return pickFrom(-1);
+            if (multi === 3 || from === null || from < 0) return pickFrom(seat);
+            toggleExtra(seat);
+          }}
+          tagFor={(seat) =>
+            seat === from && from !== null && from >= 0
+              ? { text: "銃", tone: "discard" }
+              : multi > 1 && entries.some((e) => e.seat === seat)
+                ? { text: "胡", tone: "win" }
+                : undefined
+          }
+          center={
+            multi === 1
+              ? { label: "自摸", sub: "Self-draw", on: from === null, onPick: () => pickFrom(null) }
+              : { label: multi === 2 ? "雙響" : "三響", sub: from === null || from < 0 ? (multi === 3 ? "Tap 銃" : "Tap 銃 first") : `胡 ${entries.length}/${multi}`, on: false }
+          }
+        />
       </div>
-      {multi > 1 && (
-        <div className="sc-field">
-          <span className="sc-label">也胡</span>
-          <div className="sc-chips">
-            {extraCandidates.map((s) => (
-              <PlayerChip key={s} store={store} player={seats[s]} selected={entries.some((e) => e.seat === s)} onClick={() => toggleExtra(s)} />
-            ))}
-          </div>
-        </div>
-      )}
-      <div className="sc-field">
-        <span className="sc-label">番</span>
+
+      <div className="sc-tai-row">
+        <span className="sc-label">番 Tai</span>
         <div className="sc-tai-fields">
           {entries.map((e, i) => (
-            <button key={e.seat} type="button" className={`sc-tai${focus === i ? " is-focus" : ""}`} onClick={() => setFocus(i)}>
+            <button key={e.seat} type="button" className={`sc-tai${focus === i ? " is-focus" : ""}`} onClick={() => setFocus(i)} aria-label={`${seats[e.seat]}'s tai`}>
               {multi > 1 && <span className="sc-tai-who">{seats[e.seat]}</span>}
-              <span className="sc-tai-value">{e.tai || "0"}</span>
+              <span className={`sc-tai-value${e.tai ? "" : " is-empty"}`}>{e.tai || "0"}</span>
             </button>
           ))}
         </div>
+        {state.pot > 0 && (
+          <button type="button" className={`sc-jp-pill${jackpot ? " is-on" : ""}`} aria-pressed={jackpot} onClick={() => setJackpot((j) => !j)} title={`${seats[winnerSeat]} takes the Jackpot`}>
+            JP {fmt(state.pot)}
+          </button>
+        )}
       </div>
-      <Keypad value={entries[focus]?.tai ?? ""} onChange={(v) => setEntries((prev) => prev.map((e, i) => (i === focus ? { ...e, tai: v } : e)))} />
-      {state.pot > 0 && (
-        <label className="sc-row">
-          <span>Jackpot {fmt(state.pot)} → {seats[winnerSeat]}</span>
-          <Toggle checked={jackpot} onChange={setJackpot} label="Winner takes the Jackpot" />
-        </label>
-      )}
+      <Keypad max={state.settings.scoreCap} value={entries[focus]?.tai ?? ""} onChange={(v) => setEntries((prev) => prev.map((e, i) => (i === focus ? { ...e, tai: v } : e)))} />
+
       {pairs.length > 0 && (
-        <table className="sc-breakdown">
-          <thead>
-            <tr>
-              <th />
-              <th>底</th>
-              <th>番</th>
-              <th>莊</th>
-              <th>拉</th>
-              <th>總</th>
-            </tr>
-          </thead>
-          <tbody>
-            {pairs.map((p, i) => (
-              <tr key={i} className={state.settings.highScore !== null && p.worth >= state.settings.highScore ? "is-high" : undefined}>
-                <th>
-                  {multi > 1 ? `${p.winner} ← ` : ""}
+        <ul className="sc-paylines" aria-label="What each payer owes">
+          {pairs.map((p, i) => {
+            const parts = [
+              p.base ? `底${fmt(p.base)}` : null,
+              `番${fmt(p.tai)}`,
+              p.dealer ? `莊${fmt(p.dealer)}` : null,
+              p.lahKind ? `${p.lahKind}${fmt(p.lah)}` : null,
+            ].filter(Boolean);
+            const isHigh = state.settings.highScore !== null && p.worth >= state.settings.highScore;
+            return (
+              <li key={i} className={isHigh ? "is-high" : undefined}>
+                <span className="sc-payline-who">
+                  {multi > 1 && <span className="sc-help">{p.winner} ← </span>}
                   {p.payer}
-                </th>
-                <td>{fmt(p.base)}</td>
-                <td>{fmt(p.tai)}</td>
-                <td>{fmt(p.dealer)}</td>
-                <td title={p.lahKind ? `${p.lahKind} on ${fmt(p.lahBefore)}` : undefined}>
-                  {p.lahKind ? `${p.lahKind === "踢" ? "踢" : ""}${fmt(p.lah)}` : 0}
-                </td>
-                <td className="sc-strong">{fmt(p.worth)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                </span>
+                <span className="sc-payline-parts">{parts.join(" · ")}</span>
+                <strong className="sc-payline-total">{fmt(p.worth)}</strong>
+              </li>
+            );
+          })}
+        </ul>
       )}
-      {high && <p className="sc-warn">高分 – a payment of {state.settings.highScore} or more. Double-check the tai.</p>}
+      {high && <p className="sc-warn">高分 — a payment of {state.settings.highScore} or more. Double-check the tai.</p>}
     </Sheet>
   );
 }
 
-// ---- Other sheets --------------------------------------------------------------
-
-function BonusSheet({ state, seat, onDone, onClose }: { state: ReplayState; seat: number; onDone: (ev: ScoreEvent) => void; onClose: () => void }) {
+function BonusSheet({
+  store,
+  state,
+  seat,
+  player,
+  onDone,
+  onClose,
+  onWin,
+  still,
+}: {
+  store: ScoreStore;
+  state: ReplayState;
+  seat: number;
+  player: string;
+  onDone: (ev: ScoreEvent) => void;
+  onClose: () => void;
+  onWin: () => void;
+  still?: boolean;
+}) {
   const [kind, setKind] = useState<"獎" | "罰">("獎");
+  // null = everyone else.
+  const [other, setOther] = useState<number | null>(null);
   const [amount, setAmount] = useState("");
   const n = Number(amount || 0);
+  const count = other === null ? 3 : 1;
+  const who = other === null ? "everyone else" : state.seats[other];
   return (
     <Sheet
-      title={`${state.seats[seat]} 特別獎罰`}
+      title={
+        <span className="sc-sheet-who">
+          <Monogram store={store} player={player} />
+          {player}
+          <span className={`sc-sheet-verb${kind === "罰" ? " is-penalty" : ""}`}>特別{kind}</span>
+        </span>
+      }
       onClose={onClose}
+      still={still}
+      tabs={<ModeTabs mode="bonus" onWin={onWin} />}
       actions={
         <>
           <button type="button" className="sc-secondary" onClick={onClose}>
             取消
           </button>
-          <button type="button" className="sc-primary" disabled={n <= 0} onClick={() => onDone({ t: "bonus", at: Date.now(), seat, amount: n, kind })}>
+          <button
+            type="button"
+            className={kind === "獎" ? "sc-primary" : "sc-danger"}
+            disabled={n <= 0}
+            onClick={() => onDone({ t: "bonus", at: Date.now(), seat, amount: n, kind, ...(other !== null ? { other } : {}) })}
+          >
             確定
           </button>
         </>
       }
     >
-      <div className="segmented sc-seg">
-        {(["獎", "罰"] as const).map((k) => (
-          <button key={k} type="button" className={kind === k ? "toggle-on" : undefined} aria-pressed={kind === k} onClick={() => setKind(k)}>
-            {k === "獎" ? "獎 – each other player pays" : "罰 – pays each other player"}
-          </button>
-        ))}
+      <Segmented
+        value={kind}
+        onChange={setKind}
+        options={[
+          { value: "獎", label: "獎 Reward" },
+          { value: "罰", label: "罰 Penalty" },
+        ]}
+      />
+      <div className="sc-field">
+        <span className="sc-label">{kind === "獎" ? "From" : "To"}</span>
+        <TablePicker
+          store={store}
+          seats={state.seats}
+          self={seat}
+          selfLabel={kind}
+          selfTone={kind === "罰" ? "lose" : "win"}
+          isOn={(s2) => other === s2}
+          onPick={setOther}
+          tagFor={(s2) => (other === s2 ? (kind === "獎" ? { text: "付", tone: "discard" } : { text: "收", tone: "win" }) : undefined)}
+          center={{ label: "全", sub: "Everyone", on: other === null, onPick: () => setOther(null), tone: kind === "罰" ? "lose" : "win" }}
+        />
       </div>
-      <div className="sc-tai sc-tai-wide">
-        <span className="sc-tai-value">{amount || "0"}</span>
+      <div className="sc-tai-row">
+        <span className="sc-label">{other === null ? "Each" : "Amount"}</span>
+        <div className="sc-tai-fields">
+          <div className="sc-tai sc-tai-static is-focus">
+            <span className={`sc-tai-value${amount ? "" : " is-empty"}`}>{amount || "0"}</span>
+          </div>
+        </div>
       </div>
-      <Keypad value={amount} onChange={setAmount} />
+      <Keypad max={state.settings.scoreCap} value={amount} onChange={setAmount} />
       {n > 0 && (
-        <p className="sc-muted">
-          {kind === "獎" ? `${state.seats[seat]} +${n * 3}, everyone else −${n}` : `${state.seats[seat]} −${n * 3}, everyone else +${n}`}
+        <p className="sc-summary-line">
+          {kind === "獎" ? (
+            <>
+              <strong>{player}</strong> <span className="is-pos">+{fmt(n * count)}</span> · {who} <span className="is-neg">−{fmt(n)}</span>
+              {count > 1 && " each"}
+            </>
+          ) : (
+            <>
+              <strong>{player}</strong> <span className="is-neg">−{fmt(n * count)}</span> · {who} <span className="is-pos">+{fmt(n)}</span>
+              {count > 1 && " each"}
+            </>
+          )}
         </p>
       )}
     </Sheet>
   );
 }
 
-function DealerSheet({ store, state, onDone, onClose }: { store: ScoreStore; state: ReplayState; onDone: (ev: ScoreEvent) => void; onClose: () => void }) {
-  const [seat, setSeat] = useState(state.dealer);
-  const [streak, setStreak] = useState(state.streak);
-  const [reset, setReset] = useState(false);
+// ---- The other sheets --------------------------------------------------------
+
+// Pick a player by where they sit: the four seats as on the board (seat 0
+// along the bottom, then right, top, left), with an optional button in the
+// middle of the table (自摸 / Everyone). `self` is the seat the sheet is about
+// - shown, marked, not pickable.
+function TablePicker({
+  store,
+  seats,
+  self,
+  selfLabel,
+  isOn,
+  isDisabled,
+  onPick,
+  center,
+  tagFor,
+  selfTone,
+}: {
+  store: ScoreStore;
+  seats: string[];
+  self?: number;
+  selfLabel?: string;
+  isOn: (seat: number) => boolean;
+  isDisabled?: (seat: number) => boolean;
+  onPick: (seat: number) => void;
+  center?: { label: ReactNode; sub?: ReactNode; on: boolean; onPick?: () => void; tone?: "win" | "lose" };
+  selfTone?: "win" | "lose";
+  tagFor?: (seat: number) => { text: string; tone: "win" | "discard" } | undefined;
+}) {
   return (
-    <Sheet
-      title="莊家設定"
-      onClose={onClose}
-      actions={
-        <>
-          <button type="button" className="sc-secondary" onClick={onClose}>
-            取消
+    <div className="sc-table-pick">
+      {seats.map((player, seat) => {
+        const area = SEAT_AREAS[seat];
+        if (seat === self)
+          return (
+            <span key={seat} className={`sc-pick sc-pick-self sc-area-${area}${selfTone ? ` is-self-${selfTone}` : ""}`}>
+              <Monogram store={store} player={player} size="sm" />
+              <span className="sc-pick-name">{player}</span>
+              {selfLabel && <span className={`sc-pick-tag${selfTone === "lose" ? " is-discard" : ""}`}>{selfLabel}</span>}
+            </span>
+          );
+        return (
+          <button
+            key={seat}
+            type="button"
+            className={`sc-pick sc-area-${area}${isOn(seat) ? " is-on" : ""}${tagFor?.(seat)?.tone === "discard" ? " is-lose" : ""}`}
+            aria-pressed={isOn(seat)}
+            disabled={isDisabled?.(seat)}
+            onClick={() => onPick(seat)}
+          >
+            <Monogram store={store} player={player} size="sm" />
+            <span className="sc-pick-name">{player}</span>
+            {tagFor?.(seat) && <span className={`sc-pick-tag is-${tagFor(seat)!.tone}`}>{tagFor(seat)!.text}</span>}
           </button>
-          <button type="button" className="sc-primary" onClick={() => onDone({ t: "dealer", at: Date.now(), seat, streak, resetRound: reset })}>
-            確定
+        );
+      })}
+      {center &&
+        (center.onPick ? (
+          <button type="button" className={`sc-pick-center${center.on ? " is-on" : ""}${center.on && center.tone === "lose" ? " is-lose" : ""}`} aria-pressed={center.on} onClick={center.onPick}>
+            <span className="sc-pick-center-label">{center.label}</span>
+            {center.sub && <span className="sc-pick-center-sub">{center.sub}</span>}
           </button>
-        </>
-      }
-    >
-      <div className="sc-mini-board">
-        {state.seats.map((p, s) => (
-          <div key={s} className={`sc-mini sc-area-${SEAT_AREAS[s]}`}>
-            <PlayerChip store={store} player={p} selected={seat === s} onClick={() => setSeat(s)}>
-              {seat === s && <span className="sc-zhuang">莊</span>}
-            </PlayerChip>
-          </div>
+        ) : (
+          <span className="sc-pick-center is-label">
+            <span className="sc-pick-center-label">{center.label}</span>
+            {center.sub && <span className="sc-pick-center-sub">{center.sub}</span>}
+          </span>
         ))}
-      </div>
-      <label className="sc-row">
-        <span>重置風局 (back to 東風東局)</span>
-        <Toggle checked={reset} onChange={setReset} label="Reset the round" />
-      </label>
-      <div className="sc-row">
-        <span>連莊</span>
-        <Stepper value={streak} onChange={setStreak} />
-      </div>
-    </Sheet>
+    </div>
   );
 }
 
-function SwapSheet({ store, state, onDone, onClose }: { store: ScoreStore; state: ReplayState; onDone: (seats: string[], newNames: string[]) => void; onClose: () => void }) {
+// A seat picker laid out like the table.
+function SeatDiamond({ children }: { children: (seat: number) => ReactNode }) {
+  return (
+    <div className="sc-diamond">
+      {[0, 1, 2, 3].map((s) => (
+        <div key={s} className={`sc-diamond-seat sc-area-${SEAT_AREAS[s]}`}>
+          {children(s)}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// 座位: who sits where (換人) and who's dealing (莊家). One draft across both
+// tabs - a swap made under 換人 shows straight away under 莊家 - and one 確定
+// that applies the lot (each change still lands as its own entry, so 還原
+// takes them back one at a time).
+function SeatsSheet({
+  store,
+  state,
+  onDone,
+  onClose,
+}: {
+  store: ScoreStore;
+  state: ReplayState;
+  onDone: (change: { seats: string[] | null; newNames: string[]; dealer: ScoreEvent | null }) => void;
+  onClose: () => void;
+}) {
+  const [tab, setTab] = useState<"swap" | "dealer">("swap");
+  const [switched, setSwitched] = useState(false);
+  // Seating draft.
   const [seats, setSeats] = useState(state.seats.slice());
   const [picked, setPicked] = useState<number | null>(null);
   const [newName, setNewName] = useState("");
   const [added, setAdded] = useState<string[]>([]);
+  // Dealer draft - a seat, so it reads whoever the draft seating puts there.
+  const [dealer, setDealer] = useState(state.dealer);
+  const [streak, setStreak] = useState(state.streak);
+  const [reset, setReset] = useState(false);
+
   const bench = [...new Set([...store.roster.map((p) => p.name), ...state.players, ...added])].filter((p) => !seats.includes(p));
-  const tapSeat = (s: number) => {
-    if (picked === null) return setPicked(s);
-    if (picked !== s) setSeats((prev) => prev.map((p, i) => (i === s ? prev[picked] : i === picked ? prev[s] : p)));
+  const tapSeat = (s2: number) => {
+    if (picked === null) return setPicked(s2);
+    if (picked !== s2) setSeats((prev) => prev.map((p, i) => (i === s2 ? prev[picked] : i === picked ? prev[s2] : p)));
     setPicked(null);
   };
   const tapBench = (name: string) => {
@@ -454,72 +867,154 @@ function SwapSheet({ store, state, onDone, onClose }: { store: ScoreStore; state
     setAdded((a) => [...a, n]);
     setNewName("");
   };
+
+  const seatsChanged = seats.some((p, i) => p !== state.seats[i]);
+  const dealerChanged = dealer !== state.dealer || streak !== state.streak || reset;
+  const anything = seatsChanged || dealerChanged || added.length > 0;
+  const submit = () =>
+    onDone({
+      seats: seatsChanged ? seats : null,
+      newNames: added,
+      dealer: dealerChanged ? { t: "dealer", at: Date.now(), seat: dealer, streak, resetRound: reset } : null,
+    });
+
+  const pending = [seatsChanged && "seating", dealerChanged && "dealer"].filter(Boolean).join(" and ");
+
   return (
     <Sheet
-      title="換人"
+      title="座位 Seats"
+      subtitle={
+        tab === "swap"
+          ? picked === null
+            ? "Tap a seat to move or replace that player"
+            : `Now tap another seat, or a 候補 player, for ${seats[picked]}'s place`
+          : "Who's dealing, the 連莊, or restart the round"
+      }
       onClose={onClose}
+      still={switched}
+      tabs={
+        <div className="sc-sheet-tabs">
+          <Segmented
+            value={tab}
+            onChange={(v) => {
+              setSwitched(true);
+              setPicked(null);
+              setTab(v);
+            }}
+            options={[
+              { value: "swap", label: `換人 Players${seatsChanged ? " •" : ""}` },
+              { value: "dealer", label: `莊家 Dealer${dealerChanged ? " •" : ""}` },
+            ]}
+          />
+        </div>
+      }
       actions={
         <>
           <button type="button" className="sc-secondary" onClick={onClose}>
             取消
           </button>
-          <button type="button" className="sc-primary" onClick={() => onDone(seats, added)}>
-            確定
+          <button type="button" className="sc-primary" disabled={!anything} onClick={submit}>
+            {pending ? `確定 ${pending}` : "確定"}
           </button>
         </>
       }
     >
-      <p className="sc-muted">Tap a seat, then another seat to swap them, or a 候補 player to sit them there.</p>
-      <div className="sc-mini-board">
-        {seats.map((p, s) => (
-          <div key={s} className={`sc-mini sc-area-${SEAT_AREAS[s]}`}>
-            <PlayerChip store={store} player={p} selected={picked === s} onClick={() => tapSeat(s)} />
+      {tab === "swap" ? (
+        <>
+          <SeatDiamond>{(s2) => <PlayerOption store={store} player={seats[s2]} selected={picked === s2} onClick={() => tapSeat(s2)} />}</SeatDiamond>
+          <div className="sc-field">
+            <span className="sc-label">候補 Bench</span>
+            <div className="sc-options">
+              {bench.map((p) => (
+                <PlayerOption key={p} store={store} player={p} onClick={() => tapBench(p)} disabled={picked === null} />
+              ))}
+              {bench.length === 0 && <span className="sc-help">Nobody on the bench yet.</span>}
+            </div>
+            <div className="sc-add">
+              <input className="sc-input" value={newName} maxLength={12} placeholder="Add a player" onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addName()} aria-label="New player name" />
+              <button type="button" className="sc-secondary" onClick={addName} disabled={!newName.trim()}>
+                Add
+              </button>
+            </div>
           </div>
-        ))}
-      </div>
-      <div className="sc-field">
-        <span className="sc-label">候補玩家</span>
-        <div className="sc-chips">
-          {bench.map((p) => (
-            <PlayerChip key={p} store={store} player={p} onClick={() => tapBench(p)} />
-          ))}
-          <span className="sc-add">
-            <input className="sc-input" value={newName} maxLength={12} placeholder="New player" onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addName()} aria-label="New player name" />
-            <button type="button" className="sc-chip" onClick={addName} aria-label="Add player">
-              ＋
-            </button>
-          </span>
-        </div>
-      </div>
+        </>
+      ) : (
+        <>
+          <SeatDiamond>
+            {(s2) => (
+              <PlayerOption store={store} player={seats[s2]} selected={dealer === s2} onClick={() => setDealer(s2)}>
+                {dealer === s2 && <span className="sc-zhuang">莊</span>}
+              </PlayerOption>
+            )}
+          </SeatDiamond>
+          <div className="sc-list">
+            <div className="sc-row">
+              <span>連莊</span>
+              <Stepper value={streak} onChange={setStreak} label="連莊" />
+            </div>
+            <label className="sc-row">
+              <span>
+                重置風局
+                <span className="sc-help"> · back to 東風東局</span>
+              </span>
+              <Toggle checked={reset} onChange={setReset} label="Reset the round" />
+            </label>
+          </div>
+        </>
+      )}
     </Sheet>
   );
 }
 
-function LahSheet({ state, onSurrender, onClose }: { state: ReplayState; onSurrender: (holder: string, pulled: string) => void; onClose: () => void }) {
+function LahSheet({ store, state, onSurrender, onClose }: { store: ScoreStore; state: ReplayState; onSurrender: (holder: string, pulled: string) => void; onClose: () => void }) {
+  const holders = [...new Set(state.lahs.map((l) => l.holder))];
+  // 投降 takes two taps: the first arms it, the second ends the 拉.
+  const [armed, setArmed] = useState<string | null>(null);
   return (
     <Sheet
       title="拉踢"
+      subtitle="Every 拉 on the table. 投降 ends one with nothing paid."
       onClose={onClose}
       actions={
         <button type="button" className="sc-primary" onClick={onClose}>
-          確定
+          完成 Done
         </button>
       }
     >
-      {state.lahs.length === 0 && <p className="sc-muted">No 拉 on the table.</p>}
-      {[...new Set(state.lahs.map((l) => l.holder))].map((holder) => (
-        <div key={holder} className="sc-lah-group">
-          <div className="sc-lah-holder">{holder} 拉</div>
+      {holders.length === 0 && <p className="sc-empty">No 拉 on the table.</p>}
+      {holders.map((holder) => (
+        <div key={holder} className="sc-list">
+          <div className="sc-list-head">
+            <Monogram store={store} player={holder} size="sm" />
+            <strong>{holder}</strong> 拉
+          </div>
           {state.lahs
             .filter((l) => l.holder === holder)
             .map((l) => (
-              <div key={l.pulled} className="sc-lah-row">
-                <span>
-                  {l.pulled}: {fmt(l.value)}分 ({l.count}次)
+              <div key={l.pulled} className="sc-row">
+                <span className="sc-row-main">
+                  {l.pulled}
+                  <span className="sc-help">
+                    {" "}
+                    · {l.count}次 · next win adds {fmt(Math.ceil(l.value / 2))}
+                  </span>
                 </span>
-                <button type="button" className="sc-outline" onClick={() => onSurrender(l.holder, l.pulled)}>
-                  投降
-                </button>
+                <span className="sc-row-end">
+                  <strong className="sc-num">{fmt(l.value)}</strong>
+                  <button
+                    type="button"
+                    className={`sc-outline${armed === `${l.holder}>${l.pulled}` ? " is-armed" : ""}`}
+                    onClick={() => {
+                      const key = `${l.holder}>${l.pulled}`;
+                      if (armed !== key) return setArmed(key);
+                      setArmed(null);
+                      onSurrender(l.holder, l.pulled);
+                    }}
+                    aria-label={armed === `${l.holder}>${l.pulled}` ? `Tap again to confirm ${l.pulled} surrenders` : `${l.pulled} surrenders`}
+                  >
+                    {armed === `${l.holder}>${l.pulled}` ? "Tap again to confirm" : "投降"}
+                  </button>
+                </span>
               </div>
             ))}
         </div>
@@ -538,6 +1033,7 @@ function JackpotSheet({ store, state, onDone, onClose }: { store: ScoreStore; st
   return (
     <Sheet
       title={`Jackpot ${fmt(state.pot)}`}
+      subtitle="Tap a player to give them all of it, or set each share"
       onClose={onClose}
       actions={
         <>
@@ -550,19 +1046,24 @@ function JackpotSheet({ store, state, onDone, onClose }: { store: ScoreStore; st
             disabled={total <= 0 || total > state.pot}
             onClick={() => onDone({ t: "jackpot", at: Date.now(), shares: state.seats.map((player, i) => ({ player, amount: shares[i] })).filter((s) => s.amount > 0) })}
           >
-            確定
+            {total > 0 ? `Hand out ${fmt(total)}` : "Hand out"}
           </button>
         </>
       }
     >
-      {state.seats.map((p, i) => (
-        <div key={p} className="sc-row">
-          <PlayerChip store={store} player={p} onClick={() => setShares((prev) => prev.map((_, j) => (j === i ? state.pot : 0)))} />
-          <Stepper value={shares[i]} onChange={(v) => setShares((prev) => prev.map((x, j) => (j === i ? v : x)))} />
-        </div>
-      ))}
+      <div className="sc-list">
+        {state.seats.map((p, i) => (
+          <div key={p} className="sc-row">
+            <button type="button" className="sc-row-main sc-row-button" onClick={() => setShares(state.seats.map((_, j) => (j === i ? state.pot : 0)))}>
+              <Monogram store={store} player={p} size="sm" />
+              {p}
+            </button>
+            <Stepper value={shares[i]} onChange={(v) => setShares((prev) => prev.map((x, j) => (j === i ? v : x)))} label={`${p}'s share`} />
+          </div>
+        ))}
+      </div>
       <div className="sc-row">
-        <span className={total > state.pot ? "sc-warn" : "sc-muted"}>
+        <span className={total > state.pot ? "sc-warn" : "sc-help"}>
           {fmt(total)} of {fmt(state.pot)} handed out
         </span>
         <button type="button" className="sc-outline" onClick={evenly}>
@@ -573,40 +1074,89 @@ function JackpotSheet({ store, state, onDone, onClose }: { store: ScoreStore; st
   );
 }
 
-function SettleSheet({ state, onEnd, onClose }: { state: ReplayState; onEnd: () => void; onClose: () => void }) {
+function SettleSheet({ store, state, onEnd, onClose }: { store: ScoreStore; state: ReplayState; onEnd: () => void; onClose: () => void }) {
   const [multiplier, setMultiplier] = useState("1");
   const m = Number(multiplier) || 0;
   const payments = settle(state.totals, m);
+  const [confirm, setConfirm] = useState(false);
+  const [copied, setCopied] = useState(false);
+  // The settlement as plain text, for the group chat.
+  const text = [
+    `MJWaits 結帳 · ${state.label} · ${state.hands.length}局${m !== 1 ? ` · ×${multiplier}` : ""}`,
+    ...state.players
+      .filter((p) => state.hands.some((h) => h.seatsAfter.includes(p)))
+      .sort((a, b) => (state.totals[b] ?? 0) - (state.totals[a] ?? 0))
+      .map((p) => `${p} ${signed(state.totals[p] ?? 0)}`),
+    "",
+    ...(payments.length ? payments.map((p) => `${p.from} → ${p.to} $${fmt(p.amount)}`) : ["Everyone is level."]),
+  ].join("\n");
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      window.prompt("Copy the settlement", text);
+    }
+  };
+  const share = async () => {
+    try {
+      await navigator.share({ title: "MJWaits 結帳", text });
+    } catch {
+      // Dismissed.
+    }
+  };
   return (
     <Sheet
-      title="結帳詳情"
+      title="結帳 · 新局"
+      subtitle="Settle up, then end this game and start a new one"
       onClose={onClose}
       actions={
         <>
           <button type="button" className="sc-secondary" onClick={onClose}>
             取消
           </button>
-          <button type="button" className="sc-primary" onClick={onEnd}>
-            完場 End game
+          <button type="button" className={confirm ? "sc-danger" : "sc-primary"} onClick={() => (confirm ? onEnd() : setConfirm(true))}>
+            {confirm ? "Tap again to confirm" : "End game · 新局"}
           </button>
         </>
       }
     >
-      <label className="sc-row">
-        <span>倍數</span>
+      <div className="sc-row sc-row-boxed">
+        <span>
+          倍數<span className="sc-help"> · $ per tai</span>
+        </span>
         <input className="sc-input sc-input-short" inputMode="decimal" value={multiplier} onChange={(e) => setMultiplier(e.target.value.replace(/[^0-9.]/g, ""))} aria-label="Multiplier" />
-      </label>
-      {state.pot > 0 && <p className="sc-muted">Jackpot {fmt(state.pot)} still in the pot – hand it out first if it should count.</p>}
-      <div className="sc-settle">
-        {payments.length === 0 && <p className="sc-muted">Everyone is level.</p>}
+      </div>
+      {state.pot > 0 && <p className="sc-note">Jackpot {fmt(state.pot)} is still in the pot — hand it out first if it should count.</p>}
+      <div className="sc-share-row">
+        <button type="button" className="sc-outline" onClick={copy}>
+          {copied ? "Copied ✓" : "Copy as text"}
+        </button>
+        {"share" in navigator && (
+          <button type="button" className="sc-outline" onClick={share}>
+            Share…
+          </button>
+        )}
+      </div>
+      <div className="sc-list">
+        {payments.length === 0 && <p className="sc-empty">Everyone is level.</p>}
         {payments.map((p, i) => (
-          <div key={i} className="sc-settle-row">
-            <span>{p.from}</span>
-            <span className="sc-settle-amount">
-              ${fmt(p.amount)}
-              <span aria-hidden="true">→</span>
+          <div key={i} className="sc-pay">
+            <span className="sc-pay-who">
+              <Monogram store={store} player={p.from} size="sm" />
+              {p.from}
             </span>
-            <span>{p.to}</span>
+            <span className="sc-pay-arrow">
+              <strong>${fmt(p.amount)}</strong>
+              <svg width="44" height="10" viewBox="0 0 44 10" aria-hidden="true">
+                <path d="M1 5h40M36 1l5 4-5 4" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </span>
+            <span className="sc-pay-who is-to">
+              <Monogram store={store} player={p.to} size="sm" />
+              {p.to}
+            </span>
           </div>
         ))}
       </div>
@@ -614,22 +1164,44 @@ function SettleSheet({ state, onEnd, onClose }: { state: ReplayState; onEnd: () 
   );
 }
 
-const SETTING_ROWS: { key: keyof ScoreSettings; label: string; kind: "number" | "bool" | "nullable" | "round" }[] = [
-  { key: "base", label: "自動計算底", kind: "number" },
-  { key: "dealerTai", label: "自動計算莊", kind: "number" },
-  { key: "streakTai", label: "自動計算連莊 (per 連)", kind: "number" },
-  { key: "fanXue", label: "反雪", kind: "bool" },
-  { key: "fanXueBonus", label: "反雪 extra", kind: "number" },
-  { key: "drawKeepsDealer", label: "流局留莊", kind: "bool" },
-  { key: "jackpot", label: "Jackpot", kind: "bool" },
-  { key: "jackpotPerDraw", label: "Jackpot per player per 流局", kind: "number" },
-  { key: "integerMode", label: "整數模式", kind: "bool" },
-  { key: "lahRound", label: "拉 half", kind: "round" },
-  { key: "tiRound", label: "踢 half", kind: "round" },
-  { key: "showLah", label: "拉數提示", kind: "bool" },
-  { key: "seatReminder", label: "執位提示", kind: "bool" },
-  { key: "selfDrawKey", label: "自摸鍵", kind: "bool" },
-  { key: "highScore", label: "高分提示", kind: "nullable" },
+const SETTING_GROUPS: { title: string; rows: { key: keyof ScoreSettings; label: string; help?: string; kind: "number" | "bool" | "nullable" | "round" }[] }[] = [
+  {
+    title: "計分 Scoring",
+    rows: [
+      { key: "base", label: "自動計算底", help: "Added to every payment", kind: "number" },
+      { key: "dealerTai", label: "自動計算莊", help: "When the dealer wins or pays", kind: "number" },
+      { key: "streakTai", label: "自動計算連莊", help: "Per 連莊", kind: "number" },
+      { key: "drawKeepsDealer", label: "流局留莊", kind: "bool" },
+      { key: "scoreCap", label: "封頂", help: "The highest tai or amount you can type", kind: "nullable" },
+    ],
+  },
+  {
+    title: "拉踢 Pull & kick",
+    rows: [
+      { key: "integerMode", label: "整數模式", help: "Whole numbers only", kind: "bool" },
+      { key: "lahRound", label: "拉 half", kind: "round" },
+      { key: "tiRound", label: "踢 half", kind: "round" },
+      { key: "fanXue", label: "反雪", help: "Paid back by each winner", kind: "bool" },
+      { key: "fanXueDouble", label: "反雪 after 雙響", kind: "number" },
+      { key: "fanXueTriple", label: "反雪 after 三響", kind: "number" },
+    ],
+  },
+  {
+    title: "Jackpot",
+    rows: [
+      { key: "jackpot", label: "Jackpot", kind: "bool" },
+      { key: "jackpotPerDraw", label: "Per player per 流局", kind: "number" },
+    ],
+  },
+  {
+    title: "顯示 Display",
+    rows: [
+      { key: "showLah", label: "拉數提示", help: "拉 on the player cards", kind: "bool" },
+      { key: "seatReminder", label: "執位提示", help: "When the round wind moves", kind: "bool" },
+      { key: "selfDrawKey", label: "自摸鍵", help: "A 自摸 button on each card", kind: "bool" },
+      { key: "highScore", label: "高分提示", help: "Flag a payment this big", kind: "nullable" },
+    ],
+  },
 ];
 
 function SettingsSheet({ settings, onSave, onClose }: { settings: ScoreSettings; onSave: (s: ScoreSettings) => void; onClose: () => void }) {
@@ -637,65 +1209,80 @@ function SettingsSheet({ settings, onSave, onClose }: { settings: ScoreSettings;
   const set = <K extends keyof ScoreSettings>(key: K, value: ScoreSettings[K]) => setS((prev) => ({ ...prev, [key]: value }));
   return (
     <Sheet
-      title="港式台牌 設定"
+      title="設定"
+      subtitle="港式台牌 house rules · applies from the next entry"
       onClose={onClose}
       actions={
         <>
-          <button type="button" className="sc-secondary" onClick={onClose}>
-            取消
+          <button type="button" className="sc-secondary" onClick={() => setS(DEFAULT_SETTINGS)}>
+            Defaults
           </button>
           <button type="button" className="sc-primary" onClick={() => onSave(s)}>
-            保存
+            保存 Save
           </button>
         </>
       }
     >
-      {SETTING_ROWS.map(({ key, label, kind }) => {
-        if (kind === "bool")
-          return (
-            <label key={key} className="sc-row">
-              <span>{label}</span>
-              <Toggle checked={s[key] as boolean} onChange={(v) => set(key, v as never)} label={label} />
-            </label>
-          );
-        if (kind === "round")
-          return (
-            <div key={key} className="sc-row">
-              <span>{label}</span>
-              <span className="segmented sc-seg-small">
-                {(["up", "down"] as const).map((r) => (
-                  <button key={r} type="button" className={s[key] === r ? "toggle-on" : undefined} aria-pressed={s[key] === r} disabled={!s.integerMode} onClick={() => set(key, r as never)}>
-                    {r === "up" ? "0.5進1" : "捨去"}
-                  </button>
-                ))}
-              </span>
-            </div>
-          );
-        if (kind === "nullable")
-          return (
-            <div key={key} className="sc-row">
-              <span>{label}</span>
-              <span className="sc-row-end">
-                {s.highScore !== null && <Stepper value={s.highScore} onChange={(v) => set("highScore", v)} />}
-                <Toggle checked={s.highScore !== null} onChange={(v) => set("highScore", v ? 50 : null)} label={label} />
-              </span>
-            </div>
-          );
-        return (
-          <div key={key} className="sc-row">
-            <span>{label}</span>
-            <Stepper value={s[key] as number} onChange={(v) => set(key, v as never)} />
+      {SETTING_GROUPS.map((g) => (
+        <div key={g.title} className="sc-settings-group">
+          <div className="sc-settings-title">{g.title}</div>
+          <div className="sc-list">
+            {g.rows.map(({ key, label, help, kind }) => {
+              const text = (
+                <span className="sc-row-main sc-row-stack">
+                  {label}
+                  {help && <span className="sc-help">{help}</span>}
+                </span>
+              );
+              if (kind === "bool")
+                return (
+                  <label key={key} className="sc-row">
+                    {text}
+                    <Toggle checked={s[key] as boolean} onChange={(v) => set(key, v as never)} label={label} />
+                  </label>
+                );
+              if (kind === "round")
+                return (
+                  <div key={key} className="sc-row">
+                    {text}
+                    <Segmented
+                      small
+                      value={s[key] as "up" | "down"}
+                      onChange={(v) => set(key, v as never)}
+                      options={[
+                        { value: "up", label: "0.5進1" },
+                        { value: "down", label: "捨去" },
+                      ]}
+                    />
+                  </div>
+                );
+              if (kind === "nullable") {
+                const value = s[key] as number | null;
+                return (
+                  <div key={key} className="sc-row">
+                    {text}
+                    <span className="sc-row-end">
+                      {value !== null && <NumberField value={value} onChange={(v) => set(key, v as never)} label={label} />}
+                      <Toggle checked={value !== null} onChange={(v) => set(key, (v ? DEFAULT_SETTINGS[key] ?? 50 : null) as never)} label={label} />
+                    </span>
+                  </div>
+                );
+              }
+              return (
+                <div key={key} className="sc-row">
+                  {text}
+                  <Stepper value={s[key] as number} onChange={(v) => set(key, v as never)} label={label} />
+                </div>
+              );
+            })}
           </div>
-        );
-      })}
-      <button type="button" className="sc-link" onClick={() => setS(DEFAULT_SETTINGS)}>
-        Reset to defaults
-      </button>
+        </div>
+      ))}
     </Sheet>
   );
 }
 
-function Confirm({ title, detail, onYes, onClose, yes = "確定" }: { title: string; detail?: string; onYes: () => void; onClose: () => void; yes?: string }) {
+function Confirm({ title, detail, onYes, onClose, yes = "確定", danger }: { title: string; detail?: string; onYes: () => void; onClose: () => void; yes?: string; danger?: boolean }) {
   return (
     <Sheet
       title={title}
@@ -705,13 +1292,13 @@ function Confirm({ title, detail, onYes, onClose, yes = "確定" }: { title: str
           <button type="button" className="sc-secondary" onClick={onClose}>
             取消
           </button>
-          <button type="button" className="sc-primary" onClick={onYes}>
+          <button type="button" className={danger ? "sc-danger" : "sc-primary"} onClick={onYes}>
             {yes}
           </button>
         </>
       }
     >
-      {detail && <p className="sc-muted">{detail}</p>}
+      {detail && <p className="sc-help sc-help-block">{detail}</p>}
     </Sheet>
   );
 }
@@ -719,17 +1306,110 @@ function Confirm({ title, detail, onYes, onClose, yes = "確定" }: { title: str
 // ---- The board (戰況) -----------------------------------------------------------
 
 type BoardSheet =
-  | { kind: "card"; seat: number }
-  | { kind: "win"; seat: number; initial?: { selfDraw: boolean; tai: number; patterns: PatternNote[]; note?: string } }
-  | { kind: "bonus"; seat: number }
+  | { kind: "hand"; seat: number; initial?: HandInitial }
+  | { kind: "recent" }
   | { kind: "draw" }
-  | { kind: "dealer" }
-  | { kind: "swap" }
+  | { kind: "seats" }
   | { kind: "lah" }
   | { kind: "jackpot" }
   | { kind: "settle" }
   | { kind: "settings" }
-  | { kind: "newGame" };
+;
+
+// One non-hand entry (特別獎罰, 投降, 換人, 莊家, Jackpot, 設定) in the Recent list,
+// with whatever it changed.
+function EventRow({ ev, deltas }: { ev: ScoreEvent; deltas: Record<string, number> }) {
+  const label =
+    ev.t === "bonus"
+      ? `特別${ev.kind} · ${fmt(ev.amount)}${ev.other === undefined ? " each" : ""}`
+      : ev.t === "surrender"
+        ? `${ev.pulled} 投降 · ${ev.holder}'s 拉 ended`
+        : ev.t === "swap"
+          ? `換人 · ${ev.seats.join(" · ")}`
+          : ev.t === "dealer"
+            ? `莊家設定${ev.streak > 0 ? ` · 連${ev.streak}` : ""}${ev.resetRound ? " · back to 東風東局" : ""}`
+            : ev.t === "jackpot"
+              ? "Jackpot handed out"
+              : "設定 changed";
+  const moved = Object.entries(deltas).filter(([, d]) => d !== 0);
+  return (
+    <div className="sc-hand sc-event">
+      <span className="sc-hand-no">
+        <span className="sc-event-dot" aria-hidden="true" />
+      </span>
+      <span className="sc-hand-main">
+        <span className="sc-hand-what">
+          <span className="sc-hand-how">{label}</span>
+        </span>
+      </span>
+      {moved.length > 0 && (
+        <span className="sc-hand-deltas">
+          {moved
+            .sort((a, b) => b[1] - a[1])
+            .map(([p, d]) => (
+              <span key={p} className={tone(d)}>
+                <span className="sc-hand-delta-who">{p}</span> {signed(d)}
+              </span>
+            ))}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function RecentSheet({
+  store,
+  game,
+  state,
+  onUndo,
+  onClose,
+  onSeeStats,
+}: {
+  store: ScoreStore;
+  game: ScoreGame;
+  state: ReplayState;
+  onUndo: () => void;
+  onClose: () => void;
+  onSeeStats: () => void;
+}) {
+  const lastIndex = game.events.length - 1;
+  const undoLabel = lastIndex >= 0 ? describeEvent(game.events[lastIndex], state, lastIndex) : "";
+  const rows = game.events
+    .map((ev, i) => ({ ev, i }))
+    .reverse()
+    .map(({ ev, i }) => {
+      if (ev.t === "win" || ev.t === "draw") {
+        const h = state.hands.find((x) => x.eventIndex === i);
+        return h ? <HandRow key={i} h={h} store={store} /> : null;
+      }
+      const step = state.steps.find((x) => x.eventIndex === i);
+      return <EventRow key={i} ev={ev} deltas={step?.deltas ?? {}} />;
+    });
+  return (
+    <Sheet
+      title="最近 Recent"
+      subtitle={game.events.length ? `${state.hands.length}局 · ${game.events.length} entries · newest first` : "Nothing recorded yet"}
+      onClose={onClose}
+      actions={
+        <>
+          <button type="button" className="sc-secondary sc-undo-button" onClick={onUndo} disabled={lastIndex < 0}>
+            還原
+            {undoLabel && <span className="sc-undo-what">{undoLabel}</span>}
+          </button>
+          <button type="button" className="sc-primary" onClick={onSeeStats}>
+            統計 Stats
+          </button>
+        </>
+      }
+    >
+      {game.events.length === 0 ? (
+        <p className="sc-empty">Tap the winner on the table to record a hand, or 流局 for a draw.</p>
+      ) : (
+        <div className="sc-list sc-list-hands">{rows}</div>
+      )}
+    </Sheet>
+  );
+}
 
 function describeEvent(ev: ScoreEvent, state: ReplayState, i: number): string {
   if (ev.t === "win" || ev.t === "draw") {
@@ -738,7 +1418,11 @@ function describeEvent(ev: ScoreEvent, state: ReplayState, i: number): string {
     if (h.kind === "draw") return `第${h.hand}局 流局`;
     return `第${h.hand}局 ${h.winners.map((w) => w.player).join("、")} ${h.selfDraw ? "自摸" : `食 ${h.from}`}`;
   }
-  if (ev.t === "bonus") return `${state.seats[ev.seat] ?? ""} 特別${ev.kind}`;
+  if (ev.t === "bonus") {
+    const step = state.steps.find((x) => x.eventIndex === i);
+    const me = Object.entries(step?.deltas ?? {}).find(([, d]) => (ev.kind === "獎" ? d > 0 : d < 0))?.[0];
+    return `${me ?? ""} 特別${ev.kind} ${fmt(ev.amount)}`.trim();
+  }
   if (ev.t === "surrender") return `${ev.pulled} 投降`;
   if (ev.t === "jackpot") return "Jackpot handed out";
   if (ev.t === "swap") return "換人";
@@ -754,6 +1438,7 @@ function Board({
   onEndGame,
   request,
   onRequestDone,
+  onSeeAll,
 }: {
   store: ScoreStore;
   game: ScoreGame;
@@ -762,17 +1447,27 @@ function Board({
   onEndGame: () => void;
   request: RecordRequest | null;
   onRequestDone: () => void;
+  onSeeAll: () => void;
 }) {
   const [sheet, setSheet] = useState<BoardSheet | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ text: string; id: number } | null>(null);
+  const [reminderHidden, setReminderHidden] = useState(false);
   const close = () => setSheet(null);
-  const add = (ev: ScoreEvent) => {
+  const flash = (text: string) => {
+    const id = Date.now();
+    setToast({ text, id });
+    window.setTimeout(() => setToast((t) => (t?.id === id ? null : t)), 2200);
+  };
+  const add = (ev: ScoreEvent, message?: string) => {
     update(withEvent(game, ev));
     close();
-  };
-  const flash = (text: string) => {
-    setToast(text);
-    window.setTimeout(() => setToast((t) => (t === text ? null : t)), 1800);
+    if (message) flash(message);
+    // A short buzz to confirm it went in - phones that support it only.
+    try {
+      navigator.vibrate?.(12);
+    } catch {
+      // Not available here.
+    }
   };
 
   // A hand sent from Scoring opens the 食胡 sheet for whoever has that 門風.
@@ -780,157 +1475,304 @@ function Board({
     if (!request) return;
     const seat = [0, 1, 2, 3].find((s) => ((s - state.dealer + SEATS) % SEATS) + 1 === request.seatWind) ?? 0;
     setSheet({
-      kind: "win",
+      kind: "hand",
       seat,
       initial: {
         selfDraw: request.selfDraw,
         tai: request.tai,
         patterns: request.patterns,
-        note: `From Scoring: ${request.tai} tai${request.removedDealerTai ? ` (莊 ${request.removedDealerTai} taken out – Scores adds it)` : ""}. Winner picked by 門風 ${WIND_CHARS[request.seatWind - 1]}.`,
+        note: `From Scoring: ${request.tai} tai${request.removedDealerTai ? ` (莊 ${request.removedDealerTai} taken out — Scores adds its own)` : ""}. Winner picked by 門風 ${WIND_CHARS[request.seatWind - 1]}.`,
       },
     });
     onRequestDone();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [request]);
 
+  // The table fills exactly the space between the header and the tab bar, so
+  // the board view never scrolls: measure what's left and hand it to the
+  // .sc-fit column, which shares it out (the seats take the rest). On a
+  // screen too short for that (under FIT_MIN) it just scrolls as normal.
+  const fitRef = useRef<HTMLDivElement>(null);
+  const [fitHeight, setFitHeight] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    const el = fitRef.current;
+    if (!el) return;
+    const root = document.documentElement;
+    const measure = () => {
+      const top = el.getBoundingClientRect().top + window.scrollY;
+      const bar = document.querySelector<HTMLElement>(".tab-bar");
+      const barHeight = bar && getComputedStyle(bar).position === "fixed" ? bar.getBoundingClientRect().height : 0;
+      const room = Math.floor(window.innerHeight - top - barHeight - FIT_GAP);
+      const fits = room >= FIT_MIN;
+      setFitHeight(fits ? room : null);
+      root.classList.toggle("sc-fit-mode", fits);
+    };
+    window.scrollTo(0, 0);
+    measure();
+    window.addEventListener("resize", measure);
+    return () => {
+      window.removeEventListener("resize", measure);
+      root.classList.remove("sc-fit-mode");
+    };
+  }, []);
+
+  // The 執位 reminder comes back each time the round moves on.
+  useEffect(() => setReminderHidden(false), [state.roundWind]);
+
   const undo = () => {
     if (game.events.length === 0) return;
     const i = game.events.length - 1;
-    flash(`還原: ${describeEvent(game.events[i], state, i)}`);
+    flash(`還原 · ${describeEvent(game.events[i], state, i)}`);
     update(undoEvent(game));
   };
+  const redo = () => {
+    const next = game.undone?.[game.undone.length - 1];
+    if (!next) return;
+    const redone = redoEvent(game);
+    const after = replay(redone);
+    flash(`重做 · ${describeEvent(next, after, redone.events.length - 1)}`);
+    update(redone);
+  };
 
-  const tools: { label: string; icon: string; onClick: () => void; disabled?: boolean }[] = [
-    { label: "新局", icon: "＋", onClick: () => setSheet({ kind: "newGame" }) },
-    { label: "還原", icon: "↶", onClick: undo, disabled: game.events.length === 0 },
-    { label: "莊家", icon: "莊", onClick: () => setSheet({ kind: "dealer" }) },
-    { label: "換人", icon: "⇄", onClick: () => setSheet({ kind: "swap" }) },
-    { label: "拉踢", icon: "拉", onClick: () => setSheet({ kind: "lah" }) },
-    { label: "結帳", icon: "$", onClick: () => setSheet({ kind: "settle" }) },
-    { label: "設定", icon: "⚙", onClick: () => setSheet({ kind: "settings" }) },
+  const last = state.hands[state.hands.length - 1];
+  // This game's 胡 / 摸 / 銃 per player, for the line at the foot of each card.
+  const counts = useMemo(() => {
+    const m = new Map<string, { wins: number; selfDraws: number; dealIns: number }>();
+    const get = (p: string) => m.get(p) ?? m.set(p, { wins: 0, selfDraws: 0, dealIns: 0 }).get(p)!;
+    for (const h of state.hands) {
+      if (h.kind !== "win") continue;
+      for (const w of h.winners) {
+        get(w.player).wins++;
+        if (h.selfDraw) get(w.player).selfDraws++;
+      }
+      if (h.from) get(h.from).dealIns++;
+    }
+    return m;
+  }, [state.hands]);
+
+  const tools: { label: string; icon: ReactNode; onClick: () => void; disabled?: boolean; badge?: number }[] = [
+    { label: "還原", icon: Icons.undo, onClick: undo, disabled: game.events.length === 0 },
+    { label: "重做", icon: Icons.redo, onClick: redo, disabled: !canRedo(game) },
+    { label: "座位", icon: Icons.swap, onClick: () => setSheet({ kind: "seats" }) },
+    { label: "拉踢", icon: Icons.lah, onClick: () => setSheet({ kind: "lah" }), badge: state.lahs.length || undefined },
+    { label: "設定", icon: Icons.settings, onClick: () => setSheet({ kind: "settings" }) },
+    { label: "新局", icon: Icons.newGame, onClick: () => setSheet({ kind: "settle" }) },
   ];
 
   return (
     <>
-      <div className="sc-toolbar">
+      <div className="sc-fit" ref={fitRef} style={fitHeight !== null ? { height: fitHeight } : undefined}>
+      {/* Where the game is: round and deal, the 局 count, 連莊 and the Jackpot. */}
+      <div className="card sc-status">
+        <div className="sc-status-main">
+          <span className="sc-status-round">{state.label}</span>
+          <span className="sc-status-meta">第{state.hands.length + 1}局</span>
+          {state.streak > 0 && <span className="sc-chip-gold">連{state.streak}</span>}
+        </div>
+        <span className="sc-status-side">
+        <button type="button" className="sc-recent-button" onClick={() => setSheet({ kind: "recent" })} aria-label={`Recent hands (${state.hands.length})`}>
+          {Icons.recent}
+          <span>最近</span>
+          {state.hands.length > 0 && <span className="sc-recent-count">{state.hands.length}</span>}
+        </button>
+        </span>
+      </div>
+
+      <div className="sc-toolbar" role="toolbar" aria-label="Game actions">
         {tools.map((t) => (
           <button key={t.label} type="button" onClick={t.onClick} disabled={t.disabled}>
-            <span className="sc-tool-icon" aria-hidden="true">
+            <span className="sc-tool-icon">
               {t.icon}
+              {t.badge && <span className="sc-tool-badge">{t.badge}</span>}
             </span>
-            {t.label}
+            <span className="sc-tool-label">{t.label}</span>
           </button>
         ))}
       </div>
 
-      <h2 className="sc-round">
-        {state.label}
-        {state.streak > 0 && <span className="sc-round-streak">連{state.streak}</span>}
-        <span className="sc-round-hand">第{state.hands.length + 1}局</span>
-      </h2>
-      {state.seatChangeDue && <p className="sc-reminder">執位 – the round has moved on. Re-seat (換人) if you change places.</p>}
+      {state.seatChangeDue && !reminderHidden && (
+        <div className="sc-banner" role="status">
+          <span>
+            <strong>執位</strong> · Now {WIND_CHARS[state.roundWind]}風 — re-seat with 座位
+          </span>
+          <button type="button" className="sc-icon-button" onClick={() => setReminderHidden(true)} aria-label="Dismiss">
+            {Icons.close}
+          </button>
+        </div>
+      )}
 
       <div className="sc-board">
         {state.seats.map((player, seat) => {
           const total = state.totals[player] ?? 0;
-          const holds = state.lahs.filter((l) => l.holder === player);
+          const tally = counts.get(player) ?? { wins: 0, selfDraws: 0, dealIns: 0 };
+          // Every 拉 this player is in, either side, with the seat of the other player.
+          const pins = state.lahs
+            .filter((l) => l.holder === player || l.pulled === player)
+            .map((l) => {
+              const mine = l.holder === player;
+              const other = mine ? l.pulled : l.holder;
+              return { other, otherSeat: state.seats.indexOf(other), sign: mine ? 1 : -1, value: l.value, count: l.count };
+            })
+            .filter((pin) => pin.otherSeat >= 0);
+          const delta = last?.deltas[player];
+          const isDealer = seat === state.dealer;
           return (
-            <div key={seat} className={`sc-card-wrap sc-area-${SEAT_AREAS[seat]}`}>
-              <button type="button" className={`sc-card sc-c${colorOf(store, player)}`} onClick={() => setSheet({ kind: "card", seat })}>
-                <span className="sc-card-name">
-                  <span className="sc-card-wind">{WIND_CHARS[(seat - state.dealer + SEATS) % SEATS]}</span>
-                  {player}
+            <div key={seat} className={`sc-seat sc-area-${SEAT_AREAS[seat]}`}>
+              <div className="sc-card-box">
+              <button type="button" className={`sc-card sc-c${colorOf(store, player)}${isDealer ? " is-dealer" : ""}`} onClick={() => setSheet({ kind: "hand", seat })} aria-label={`${player}, ${fmt(total)}. Record a hand for ${player}`}>
+                <span className="sc-card-top">
+                  <span className="sc-card-name">{player}</span>
+                  {isDealer && (
+                    <span className="sc-zhuang-tag" title={state.streak > 0 ? `莊 · 連${state.streak}` : "莊"}>
+                      莊
+                    </span>
+                  )}
                 </span>
-                {seat === state.dealer && (
-                  <span className="sc-zhuang">
-                    莊{state.streak > 0 && <small>{state.streak}</small>}
-                  </span>
-                )}
-                <span className={`sc-card-total${total < 0 ? " is-neg" : ""}`}>{fmt(total)}</span>
-                {state.settings.showLah && holds.length > 0 && (
-                  <span className="sc-lah-badges">
-                    {holds.map((l) => (
-                      <span key={l.pulled} className="sc-lah-badge" title={`${player} 拉 ${l.pulled} ${fmt(l.value)} (${l.count}次)`}>
-                        拉{l.pulled} {fmt(l.value)}
-                      </span>
-                    ))}
+                <span className="sc-card-score" data-anchor="score">
+                  <span className={`sc-card-total ${tone(total)}`}>{fmt(total)}</span>
+                  {delta !== undefined && delta !== 0 && (
+                    <span key={last.eventIndex} className={`sc-delta ${tone(delta)}`} title="Last hand">
+                      <span className="sc-delta-label">上局</span> {signed(delta)}
+                    </span>
+                  )}
+                </span>
+                {state.hands.length > 0 && (
+                  <span className="sc-card-tally" aria-label={`${tally.wins} wins, ${tally.selfDraws} self-draws, ${tally.dealIns} deal-ins`}>
+                    <span>
+                      胡<strong>{tally.wins}</strong>
+                    </span>
+                    <span>
+                      摸<strong>{tally.selfDraws}</strong>
+                    </span>
+                    <span>
+                      銃<strong>{tally.dealIns}</strong>
+                    </span>
                   </span>
                 )}
               </button>
+              {/* 拉 pins on the edge facing the other player: + on the holder's card,
+                  − on the pulled player's. */}
+              {state.settings.showLah &&
+                pins.map((pin) => (
+                  <span
+                    key={`${pin.other}`}
+                    className={`sc-pin at-${facing(seat, pin.otherSeat)} ${pin.sign > 0 ? "is-pos" : "is-neg"}`}
+                    title={pin.sign > 0 ? `${player} 拉 ${pin.other}: ${fmt(pin.value)} (${pin.count}次)` : `${pin.other} 拉 ${player}: ${fmt(pin.value)} (${pin.count}次)`}
+                    aria-label={pin.sign > 0 ? `${player} has 拉 ${fmt(pin.value)} on ${pin.other}` : `${pin.other} has 拉 ${fmt(pin.value)} on ${player}`}
+                  >
+                    {pin.sign > 0 ? "+" : "−"}
+                    {fmt(pin.value)}
+                  </span>
+                ))}
+              </div>
               {state.settings.selfDrawKey && (
-                <button type="button" className="sc-selfdraw-key" onClick={() => setSheet({ kind: "win", seat, initial: { selfDraw: true, tai: 0, patterns: [] } })}>
+                <button type="button" className="sc-selfdraw-key" onClick={() => setSheet({ kind: "hand", seat, initial: { selfDraw: true, tai: 0, patterns: [] } })}>
                   自摸
                 </button>
               )}
             </div>
           );
         })}
-        <button type="button" className="sc-draw" onClick={() => setSheet({ kind: "draw" })}>
-          流局
-        </button>
-        {state.settings.jackpot && (
-          <button type="button" className="sc-jackpot" onClick={() => state.pot > 0 && setSheet({ kind: "jackpot" })} disabled={state.pot <= 0}>
-            <span>Jackpot</span>
-            <strong>{fmt(state.pot)}</strong>
+        {/* The middle of the table: 流局, and the Jackpot under it. */}
+        <div className="sc-center">
+          <button type="button" className="sc-draw" onClick={() => setSheet({ kind: "draw" })}>
+            <span className="sc-draw-zh">流局</span>
+            <span className="sc-draw-en">Draw</span>
           </button>
-        )}
+          {state.settings.jackpot && (
+            <button type="button" className={`sc-jackpot${state.pot > 0 ? " is-live" : ""}`} onClick={() => state.pot > 0 && setSheet({ kind: "jackpot" })} disabled={state.pot <= 0} aria-label={`Jackpot ${state.pot}${state.pot > 0 ? ", tap to hand it out" : ""}`}>
+              <span className="sc-jackpot-label">Jackpot</span>
+              <span className="sc-jackpot-value">{fmt(state.pot)}</span>
+            </button>
+          )}
+        </div>
+      </div>
+      {state.hands.length === 0 && <p className="sc-hint">Tap the winner to record a hand · 流局 for a draw</p>}
       </div>
 
-      <RecentEvents game={game} state={state} store={store} />
-
-      {toast && <div className="sc-toast">{toast}</div>}
-
-      {sheet?.kind === "card" && (
-        <Sheet title={state.seats[sheet.seat]} onClose={close}>
-          <div className="sc-two">
-            <button type="button" className="sc-primary" onClick={() => setSheet({ kind: "win", seat: sheet.seat })}>
-              食胡
+      {toast && (
+        <div key={toast.id} className="sc-toast" role="status">
+          {toast.text}
+          {toast.text.startsWith("Recorded") && (
+            <button type="button" onClick={undo}>
+              還原
             </button>
-            <button type="button" className="sc-danger" onClick={() => setSheet({ kind: "bonus", seat: sheet.seat })}>
-              特別獎罰
+          )}
+          {toast.text.startsWith("還原") && canRedo(game) && (
+            <button type="button" onClick={redo}>
+              重做
             </button>
-          </div>
-        </Sheet>
+          )}
+        </div>
       )}
-      {sheet?.kind === "win" && (
-        <WinSheet
+
+      {sheet?.kind === "hand" && (
+        <HandSheet
+          key={sheet.seat}
           store={store}
           state={state}
-          winnerSeat={sheet.seat}
+          seat={sheet.seat}
           initial={sheet.initial}
           onClose={close}
-          onDone={(ev) => {
-            add(ev);
-            flash("Recorded ✓");
+          onDone={(ev) => add(ev, ev.t === "bonus" ? `Recorded 特別${ev.kind}` : "Recorded ✓")}
+        />
+      )}
+      {sheet?.kind === "recent" && (
+        <RecentSheet
+          store={store}
+          game={game}
+          state={state}
+          onUndo={undo}
+          onClose={close}
+          onSeeStats={() => {
+            close();
+            onSeeAll();
           }}
         />
       )}
-      {sheet?.kind === "bonus" && <BonusSheet state={state} seat={sheet.seat} onDone={add} onClose={close} />}
       {sheet?.kind === "draw" && (
         <Confirm
           title="流局？"
-          detail={state.settings.jackpot && state.settings.jackpotPerDraw > 0 ? `Each player puts ${state.settings.jackpotPerDraw} into the Jackpot.` : undefined}
-          onYes={() => add({ t: "draw", at: Date.now() })}
+          detail={
+            (state.settings.jackpot && state.settings.jackpotPerDraw > 0 ? `Each player puts ${state.settings.jackpotPerDraw} into the Jackpot. ` : "") +
+            (state.settings.drawKeepsDealer ? `${state.seats[state.dealer]} stays dealer (連${state.streak + 1}).` : `The deal passes to ${state.seats[(state.dealer + 1) % SEATS]}.`)
+          }
+          yes="流局"
+          onYes={() => add({ t: "draw", at: Date.now() }, "Recorded 流局")}
           onClose={close}
         />
       )}
-      {sheet?.kind === "dealer" && <DealerSheet store={store} state={state} onDone={add} onClose={close} />}
-      {sheet?.kind === "swap" && (
-        <SwapSheet
+      {sheet?.kind === "seats" && (
+        <SeatsSheet
           store={store}
           state={state}
           onClose={close}
-          onDone={(seats, newNames) => {
-            const roster = withRoster(store, [...seats, ...newNames]);
-            update(seats.every((p, i) => p === state.seats[i]) ? game : withEvent(game, { t: "swap", at: Date.now(), seats }), { roster });
+          onDone={({ seats, newNames, dealer }) => {
+            const roster = withRoster(store, [...(seats ?? state.seats), ...newNames]);
+            let next = game;
+            if (seats) next = withEvent(next, { t: "swap", at: Date.now(), seats });
+            if (dealer) next = withEvent(next, dealer);
+            update(next, { roster });
             close();
+            if (seats || dealer) flash(seats && dealer ? "座位 and 莊家 updated" : seats ? "座位 updated" : "莊家 updated");
           }}
         />
       )}
-      {sheet?.kind === "lah" && <LahSheet state={state} onClose={close} onSurrender={(holder, pulled) => update(withEvent(game, { t: "surrender", at: Date.now(), holder, pulled }))} />}
-      {sheet?.kind === "jackpot" && <JackpotSheet store={store} state={state} onDone={add} onClose={close} />}
+      {sheet?.kind === "lah" && (
+        <LahSheet
+          store={store}
+          state={state}
+          onClose={close}
+          onSurrender={(holder, pulled) => {
+            update(withEvent(game, { t: "surrender", at: Date.now(), holder, pulled }));
+            flash(`${pulled} 投降`);
+          }}
+        />
+      )}
+      {sheet?.kind === "jackpot" && <JackpotSheet store={store} state={state} onDone={(ev) => add(ev, "Jackpot handed out")} onClose={close} />}
       {sheet?.kind === "settle" && (
         <SettleSheet
+          store={store}
           state={state}
           onClose={close}
           onEnd={() => {
@@ -946,74 +1788,63 @@ function Board({
           onSave={(settings) => {
             update(withEvent(game, { t: "settings", at: Date.now(), settings }), { settings });
             close();
+            flash("設定 saved");
           }}
-        />
-      )}
-      {sheet?.kind === "newGame" && (
-        <Confirm
-          title="新局？"
-          detail="This game is saved to History and a new one starts."
-          yes="新局"
-          onYes={() => {
-            close();
-            onEndGame();
-          }}
-          onClose={close}
         />
       )}
     </>
   );
 }
 
-function RecentEvents({ game, state, store }: { game: ScoreGame; state: ReplayState; store: ScoreStore }) {
-  const rows = state.hands.slice(-5).reverse();
-  if (rows.length === 0) return <p className="sc-muted sc-center">Tap a player when they win, or 流局 for a draw.</p>;
+function HandRow({ h, store }: { h: HandResult; store: ScoreStore }) {
+  const tags = [
+    h.multi > 1 ? (h.multi === 2 ? "雙響" : "三響") : null,
+    h.pairs.some((p) => p.lahKind === "拉") ? "拉" : null,
+    h.pairs.some((p) => p.lahKind === "踢") ? "踢" : null,
+    h.fanXue.length > 0 ? "反雪" : null,
+    h.jackpotWon ? `Jackpot ${fmt(h.jackpotWon.amount)}` : null,
+    h.jackpotFed > 0 ? `Jackpot +${fmt(h.jackpotFed)}` : null,
+  ].filter(Boolean);
   return (
-    <div className="card sc-recent">
-      {rows.map((h) => (
-        <HandRow key={h.eventIndex} h={h} store={store} />
-      ))}
-      {game.events.length > 0 && <p className="sc-muted sc-small">Latest first · 還原 undoes the last entry</p>}
-    </div>
-  );
-}
-
-function HandRow({ h, store }: { h: ReplayState["hands"][number]; store: ScoreStore }) {
-  return (
-    <div className="sc-hand-row">
+    <div className="sc-hand">
       <span className="sc-hand-no">
-        第{h.hand}局
+        <strong>{h.hand}</strong>
         <small>{h.label}</small>
       </span>
-      <span className="sc-hand-what">
-        {h.kind === "draw" ? (
-          <>流局{h.jackpotFed > 0 && <small> · Jackpot +{fmt(h.jackpotFed)}</small>}</>
-        ) : (
-          <>
-            {h.winners.map((w) => (
-              <span key={w.player} className={`sc-name sc-c${colorOf(store, w.player)}`}>
-                {w.player}
+      <span className="sc-hand-main">
+        <span className="sc-hand-what">
+          {h.kind === "draw" ? (
+            <span className="sc-hand-draw">流局</span>
+          ) : (
+            <>
+              {h.winners.map((w) => (
+                <span key={w.player} className="sc-hand-winner">
+                  <Monogram store={store} player={w.player} size="sm" />
+                  {w.player}
+                </span>
+              ))}
+              <span className="sc-hand-how">{h.selfDraw ? "自摸" : `食 ${h.from}`}</span>
+              <span className="sc-hand-tai">{h.winners.map((w) => `${fmt(w.tai)}番`).join(" / ")}</span>
+            </>
+          )}
+        </span>
+        {tags.length > 0 && (
+          <span className="sc-tags">
+            {tags.map((t) => (
+              <span key={t} className="sc-tag">
+                {t}
               </span>
-            ))}{" "}
-            {h.selfDraw ? "自摸" : `食 ${h.from}`}
-            {h.multi > 1 && <small> · {h.multi === 2 ? "雙響" : "三響"}</small>}
-            <small>
-              {" "}
-              · {h.winners.map((w) => `${fmt(w.tai)}番`).join(" / ")}
-              {h.pairs.some((p) => p.lahKind === "拉") && " · 拉"}
-              {h.pairs.some((p) => p.lahKind === "踢") && " · 踢"}
-              {h.fanXue.length > 0 && " · 反雪"}
-              {h.jackpotWon && ` · Jackpot ${fmt(h.jackpotWon.amount)}`}
-            </small>
-          </>
+            ))}
+          </span>
         )}
       </span>
       <span className="sc-hand-deltas">
         {Object.entries(h.deltas)
           .filter(([, d]) => d !== 0)
+          .sort((a, b) => b[1] - a[1])
           .map(([p, d]) => (
-            <span key={p} className={d > 0 ? "is-pos" : "is-neg"}>
-              {p} {signed(d)}
+            <span key={p} className={tone(d)}>
+              <span className="sc-hand-delta-who">{p}</span> {signed(d)}
             </span>
           ))}
       </span>
@@ -1035,14 +1866,13 @@ function TrendChart({ store, state }: { store: ScoreStore; state: ReplayState })
     observer.observe(box);
     return () => observer.disconnect();
   }, [box]);
-  if (hands === 0) return <p className="sc-muted">No hands yet.</p>;
+  if (hands === 0) return <p className="sc-empty">No hands yet.</p>;
   const H = Math.round(Math.min(320, Math.max(220, W * 0.62)));
   const pad = { l: 40, r: 56, t: 12, b: 26 };
   const all = series.flatMap((s) => s.values.filter((v): v is number => v !== null));
   const lo = Math.min(0, ...all);
   const hi = Math.max(0, ...all);
-  const span = hi - lo || 1;
-  const step = niceStep(span / 4);
+  const step = niceStep((hi - lo || 1) / 4);
   const yTicks: number[] = [];
   for (let v = Math.floor(lo / step) * step; v <= Math.ceil(hi / step) * step + 1e-9; v += step) yTicks.push(v);
   const yMin = Math.min(lo, yTicks[0]);
@@ -1071,14 +1901,13 @@ function TrendChart({ store, state }: { store: ScoreStore; state: ReplayState })
 
   const onMove = (e: ReactPointerEvent<SVGRectElement>) => {
     const r = e.currentTarget.getBoundingClientRect();
-    const px = ((e.clientX - r.left) / r.width) * W;
-    const i = Math.round(((px - pad.l) / (W - pad.l - pad.r)) * hands);
-    setHover(Math.max(0, Math.min(hands, i)));
+    const px = ((e.clientX - r.left) / r.width) * (W - pad.l - pad.r);
+    setHover(Math.max(0, Math.min(hands, Math.round((px / (W - pad.l - pad.r)) * hands))));
   };
 
   return (
     <div className="sc-chart" ref={setBox}>
-      <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`Running totals over ${hands} hands`}>
+      <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} role="img" aria-label={`Running totals over ${hands} hands`}>
         {yTicks.map((v) => (
           <g key={v}>
             <line x1={pad.l} x2={W - pad.r} y1={y(v)} y2={y(v)} className={v === 0 ? "sc-axis-zero" : "sc-grid"} />
@@ -1104,16 +1933,14 @@ function TrendChart({ store, state }: { store: ScoreStore; state: ReplayState })
           <g>
             <line x1={x(hover)} x2={x(hover)} y1={pad.t} y2={H - pad.b} className="sc-crosshair" />
             {series.map((s) =>
-              s.values[hover] !== null && s.values[hover] !== undefined ? (
-                <circle key={s.player} cx={x(hover)} cy={y(s.values[hover] as number)} r={4.5} className={`sc-marker sc-c${colorOf(store, s.player)}`} />
-              ) : null
+              s.values[hover] !== null && s.values[hover] !== undefined ? <circle key={s.player} cx={x(hover)} cy={y(s.values[hover] as number)} r={4.5} className={`sc-marker sc-c${colorOf(store, s.player)}`} /> : null
             )}
           </g>
         )}
         <rect x={pad.l} y={0} width={W - pad.l - pad.r} height={H} fill="transparent" onPointerMove={onMove} onPointerDown={onMove} onPointerLeave={() => setHover(null)} />
       </svg>
       {hover !== null && (
-        <div className="sc-tooltip" style={{ left: `${(x(hover) / W) * 100}%` }}>
+        <div className={`sc-tooltip${x(hover) > W * 0.6 ? " is-left" : ""}`} style={{ left: x(hover) }}>
           <strong>{hover === 0 ? "Start" : `第${hover}局`}</strong>
           {series
             .filter((s) => s.values[hover] !== null && s.values[hover] !== undefined)
@@ -1121,23 +1948,12 @@ function TrendChart({ store, state }: { store: ScoreStore; state: ReplayState })
             .map((s) => (
               <span key={s.player}>
                 <span className={`sc-dot sc-c${colorOf(store, s.player)}`} />
-                {s.player} {fmt(s.values[hover] as number)}
+                {s.player}
+                <span className="sc-num">{fmt(s.values[hover] as number)}</span>
               </span>
             ))}
         </div>
       )}
-      <div className="sc-legend">
-        {series
-          .map((s) => ({ s, v: state.totals[s.player] ?? 0 }))
-          .sort((a, b) => b.v - a.v)
-          .map(({ s, v }) => (
-            <span key={s.player} className="sc-legend-chip">
-              <span className={`sc-dot sc-c${colorOf(store, s.player)}`} />
-              {s.player}
-              <strong className={v < 0 ? "is-neg" : "is-pos"}>{signed(v)}</strong>
-            </span>
-          ))}
-      </div>
     </div>
   );
 }
@@ -1149,151 +1965,201 @@ function niceStep(raw: number): number {
   return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * mag;
 }
 
-const STAT_ROWS: { key: keyof PlayerStats; label: string; show: (s: PlayerStats) => string }[] = [
-  { key: "wins", label: "食胡", show: (s) => String(s.wins) },
-  { key: "selfDraws", label: "自摸", show: (s) => String(s.selfDraws) },
-  { key: "dealIns", label: "出銃", show: (s) => String(s.dealIns) },
-  { key: "bonus", label: "獎罰", show: (s) => signed(s.bonus) },
-  { key: "jackpot", label: "彩池", show: (s) => fmt(s.jackpot) },
-  { key: "maxTai", label: "最高番數", show: (s) => (s.maxTai ? `${fmt(s.maxTai.value)} (第${s.maxTai.hand}局)` : "–") },
-  { key: "avgWinTai", label: "平均食胡番", show: (s) => (s.avgWinTai === null ? "–" : s.avgWinTai.toFixed(1)) },
-  { key: "avgDealInTai", label: "平均出銃番", show: (s) => (s.avgDealInTai === null ? "–" : s.avgDealInTai.toFixed(1)) },
-  { key: "pulls", label: "拉人", show: (s) => String(s.pulls) },
-  { key: "maxPull", label: "最高拉數", show: (s) => (s.maxPull ? `${s.maxPull.count} (${s.maxPull.times}次)` : "–") },
-  { key: "pulled", label: "被拉", show: (s) => String(s.pulled) },
-  { key: "maxPulled", label: "最高被拉", show: (s) => (s.maxPulled ? `${s.maxPulled.count} (${s.maxPulled.times}次)` : "–") },
-  { key: "kicks", label: "踢人", show: (s) => String(s.kicks) },
-  { key: "maxKicks", label: "最高踢數", show: (s) => (s.maxKicks ? `${s.maxKicks.count} (${s.maxKicks.times}次)` : "–") },
-  { key: "kicked", label: "被踢", show: (s) => String(s.kicked) },
-  { key: "maxKicked", label: "最高被踢", show: (s) => (s.maxKicked ? `${s.maxKicked.count} (${s.maxKicked.times}次)` : "–") },
-  { key: "multiWins", label: "多響", show: (s) => String(s.multiWins) },
-  { key: "fanXue", label: "反雪", show: (s) => String(s.fanXue) },
-  { key: "bestHand", label: "最高得分", show: (s) => (s.bestHand ? `${fmt(s.bestHand.value)} (第${s.bestHand.hand}局)` : "–") },
-  { key: "worstHand", label: "最高失分", show: (s) => (s.worstHand ? `${fmt(s.worstHand.value)} (第${s.worstHand.hand}局)` : "–") },
-  { key: "selfDrawGain", label: "總自摸得分", show: (s) => fmt(s.selfDrawGain) },
-  { key: "selfDrawLoss", label: "總自摸失分", show: (s) => fmt(s.selfDrawLoss) },
-  { key: "discardGain", label: "總出銃得分", show: (s) => fmt(s.discardGain) },
-  { key: "discardLoss", label: "總出銃失分", show: (s) => fmt(s.discardLoss) },
-  { key: "winStreak", label: "連勝", show: (s) => String(s.winStreak) },
-  { key: "assists", label: "助攻", show: (s) => String(s.assists) },
-  { key: "assistRate", label: "助攻率", show: (s) => pct(s.assistRate) },
-  { key: "positiveRate", label: "正分率", show: (s) => pct(s.positiveRate) },
-  { key: "firstRate", label: "首名率", show: (s) => pct(s.firstRate) },
+type StatRow = { key: keyof PlayerStats; label: string; show: (s: PlayerStats) => string; tone?: (s: PlayerStats) => number };
+
+const STAT_GROUPS: { title: string; rows: StatRow[] }[] = [
+  {
+    title: "戰績 Record",
+    rows: [
+      { key: "wins", label: "食胡", show: (s) => String(s.wins) },
+      { key: "selfDraws", label: "自摸", show: (s) => String(s.selfDraws) },
+      { key: "dealIns", label: "出銃", show: (s) => String(s.dealIns) },
+      { key: "multiWins", label: "多響", show: (s) => String(s.multiWins) },
+      { key: "winStreak", label: "連勝", show: (s) => String(s.winStreak) },
+      { key: "assists", label: "助攻", show: (s) => String(s.assists) },
+    ],
+  },
+  {
+    title: "番數 Tai",
+    rows: [
+      { key: "maxTai", label: "最高番數", show: (s) => (s.maxTai ? `${fmt(s.maxTai.value)} · 第${s.maxTai.hand}局` : "–") },
+      { key: "avgWinTai", label: "平均食胡番", show: (s) => (s.avgWinTai === null ? "–" : s.avgWinTai.toFixed(1)) },
+      { key: "avgDealInTai", label: "平均出銃番", show: (s) => (s.avgDealInTai === null ? "–" : s.avgDealInTai.toFixed(1)) },
+    ],
+  },
+  {
+    title: "拉踢 Pull & kick",
+    rows: [
+      { key: "pulls", label: "拉人", show: (s) => String(s.pulls) },
+      { key: "pulled", label: "被拉", show: (s) => String(s.pulled) },
+      { key: "maxPull", label: "最高拉數", show: (s) => (s.maxPull ? `${s.maxPull.count} · ${s.maxPull.times}次` : "–") },
+      { key: "maxPulled", label: "最高被拉", show: (s) => (s.maxPulled ? `${s.maxPulled.count} · ${s.maxPulled.times}次` : "–") },
+      { key: "kicks", label: "踢人", show: (s) => String(s.kicks) },
+      { key: "kicked", label: "被踢", show: (s) => String(s.kicked) },
+      { key: "maxKicks", label: "最高踢數", show: (s) => (s.maxKicks ? `${s.maxKicks.count} · ${s.maxKicks.times}次` : "–") },
+      { key: "maxKicked", label: "最高被踢", show: (s) => (s.maxKicked ? `${s.maxKicked.count} · ${s.maxKicked.times}次` : "–") },
+      { key: "fanXue", label: "反雪", show: (s) => String(s.fanXue) },
+    ],
+  },
+  {
+    title: "得失分 Points",
+    rows: [
+      { key: "bestHand", label: "最高得分", show: (s) => (s.bestHand ? `${signed(s.bestHand.value)} · 第${s.bestHand.hand}局` : "–"), tone: () => 1 },
+      { key: "worstHand", label: "最高失分", show: (s) => (s.worstHand ? `${fmt(s.worstHand.value)} · 第${s.worstHand.hand}局` : "–"), tone: () => -1 },
+      { key: "selfDrawGain", label: "總自摸得分", show: (s) => signed(s.selfDrawGain), tone: (s) => s.selfDrawGain },
+      { key: "selfDrawLoss", label: "總自摸失分", show: (s) => fmt(s.selfDrawLoss), tone: (s) => s.selfDrawLoss },
+      { key: "discardGain", label: "總出銃得分", show: (s) => signed(s.discardGain), tone: (s) => s.discardGain },
+      { key: "discardLoss", label: "總出銃失分", show: (s) => fmt(s.discardLoss), tone: (s) => s.discardLoss },
+      { key: "bonus", label: "獎罰", show: (s) => signed(s.bonus), tone: (s) => s.bonus },
+      { key: "jackpot", label: "彩池", show: (s) => fmt(s.jackpot) },
+    ],
+  },
+  {
+    title: "比率 Rates",
+    rows: [
+      { key: "positiveRate", label: "正分率", show: (s) => pct(s.positiveRate) },
+      { key: "firstRate", label: "首名率", show: (s) => pct(s.firstRate) },
+      { key: "assistRate", label: "助攻率", show: (s) => pct(s.assistRate) },
+    ],
+  },
 ];
 
-function PlayerCard({ store, stats, index, onIndex }: { store: ScoreStore; stats: PlayerStats[]; index: number; onIndex: (i: number) => void }) {
+function PlayerCard({ store, stats, state, index, onIndex }: { store: ScoreStore; stats: PlayerStats[]; state: ReplayState; index: number; onIndex: (i: number) => void }) {
   const s = stats[index];
-  const markFor = useMemo(() => Object.fromEntries(STAT_ROWS.map((r) => [r.key, marks(stats, r.key)])), [stats]);
+  const markFor = useMemo(() => Object.fromEntries(STAT_GROUPS.flatMap((g) => g.rows).map((r) => [r.key, marks(stats, r.key)])), [stats]);
+  const series = trend(state).series.find((x) => x.player === s.player);
+  const rank = stats.slice().sort((a, b) => b.net - a.net).findIndex((x) => x.player === s.player) + 1;
   return (
-    <div className="card sc-player">
-      <div className="sc-player-head">
-        <button type="button" className="sc-arrow" onClick={() => onIndex((index - 1 + stats.length) % stats.length)} aria-label="Previous player">
-          ‹
+    <div className="card sc-profile">
+      <div className="sc-profile-head">
+        <button type="button" className="sc-icon-button sc-icon-button-fill" onClick={() => onIndex((index - 1 + stats.length) % stats.length)} aria-label="Previous player">
+          {Icons.back}
         </button>
-        <div className={`sc-player-name sc-c${colorOf(store, s.player)}`}>
-          <span className="sc-dot" />
-          {s.player}
-          <span className={`sc-player-net${s.net < 0 ? " is-neg" : ""}`}>分數 {fmt(s.net)}</span>
+        <div className="sc-profile-id">
+          <Monogram store={store} player={s.player} size="lg" />
+          <span className="sc-profile-name">{s.player}</span>
+          <span className="sc-profile-sub">
+            #{rank} of {stats.length} · {s.hands}局
+          </span>
         </div>
-        <button type="button" className="sc-arrow" onClick={() => onIndex((index + 1) % stats.length)} aria-label="Next player">
-          ›
+        <button type="button" className="sc-icon-button sc-icon-button-fill" onClick={() => onIndex((index + 1) % stats.length)} aria-label="Next player">
+          {Icons.forward}
         </button>
       </div>
-      <div className="sc-stat-grid">
-        {STAT_ROWS.map((r) => {
-          const m = markFor[r.key]?.get(s.player);
-          return (
-            <div key={r.key} className="sc-stat">
-              <span>
-                {r.label}
-                {m && <span title={m === "best" ? "Best at the table" : "Worst at the table"}>{m === "best" ? " 👑" : " 💀"}</span>}
-              </span>
-              <strong>{r.show(s)}</strong>
-            </div>
-          );
-        })}
+      <div className="sc-profile-score">
+        <span className={`sc-profile-net ${tone(s.net)}`}>{signed(s.net)}</span>
+        {series && <Sparkline values={series.values} className={`sc-c${colorOf(store, s.player)}`} />}
       </div>
-      <p className="sc-muted sc-small">{s.hands} 局 played · 👑 best and 💀 worst at the table</p>
+      <div className="sc-kpis">
+        <span>
+          <strong>{s.wins + s.selfDraws}</strong>胡
+        </span>
+        <span>
+          <strong>{s.selfDraws}</strong>摸
+        </span>
+        <span>
+          <strong>{s.dealIns}</strong>銃
+        </span>
+        <span>
+          <strong>{pct(s.firstRate)}</strong>首名
+        </span>
+      </div>
+      {STAT_GROUPS.map((g) => (
+        <div key={g.title} className="sc-stat-group">
+          <div className="sc-stat-title">{g.title}</div>
+          <div className="sc-stat-grid">
+            {g.rows.map((r) => {
+              const m = markFor[r.key]?.get(s.player);
+              const t = r.tone?.(s);
+              return (
+                <div key={r.key} className="sc-stat">
+                  <span className="sc-stat-label">
+                    {r.label}
+                    {m && (
+                      <span className="sc-mark" title={m === "best" ? "Best at the table" : "Worst at the table"}>
+                        {m === "best" ? "👑" : "💀"}
+                      </span>
+                    )}
+                  </span>
+                  <strong className={t !== undefined ? tone(t) : undefined}>{r.show(s)}</strong>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+      <p className="sc-help sc-help-block">👑 best and 💀 worst at the table for that stat.</p>
     </div>
   );
 }
 
-type StatsView = "list" | "trend" | "patterns" | "player" | "history";
+type StatsView = "trend" | "hands" | "player" | "patterns" | "history";
 
-function StatsPanel({ store, setStore }: { store: ScoreStore; setStore: (s: ScoreStore) => void }) {
+function StatsPanel({ store, setStore, view, setView }: { store: ScoreStore; setStore: (s: ScoreStore) => void; view: StatsView; setView: (v: StatsView) => void }) {
   const games = useMemo(() => [...(store.active ? [store.active] : []), ...store.history], [store]);
   const [gameId, setGameId] = useState<string | null>(null);
   const game = games.find((g) => g.id === gameId) ?? games[0] ?? null;
-  const [view, setView] = useState<StatsView>("trend");
   const [playerIndex, setPlayerIndex] = useState(0);
   const state = useMemo(() => (game ? replay(game) : null), [game]);
   const stats = useMemo(() => (game && state ? playerStats(state, game).filter((s) => s.hands > 0) : []), [game, state]);
+  const series = useMemo(() => (state ? trend(state).series : []), [state]);
 
-  if (!game || !state) return <p className="sc-muted sc-center">No games yet – start one on 戰況.</p>;
+  if (!game || !state)
+    return (
+      <div className="card sc-empty-card">
+        <p className="sc-empty">No games yet — start one on 戰況.</p>
+      </div>
+    );
 
-  const views: { id: StatsView; label: string }[] = [
-    { id: "list", label: "≡ 局" },
-    { id: "trend", label: "↗ 走勢" },
-    { id: "patterns", label: "牌型" },
-    { id: "player", label: "玩家" },
-    { id: "history", label: "🏆 紀錄" },
+  const views: { value: StatsView; label: string }[] = [
+    { value: "trend", label: "走勢" },
+    { value: "hands", label: "局" },
+    { value: "player", label: "玩家" },
+    { value: "patterns", label: "牌型" },
+    { value: "history", label: "紀錄" },
   ];
+  const ranked = stats.slice().sort((a, b) => b.net - a.net);
+  const isActive = game === store.active;
 
   return (
     <>
-      <div className="sc-stats-head">
-        <h2 className="sc-h">玩家統計</h2>
-        <span className="sc-muted">
-          {game === store.active ? "This game" : new Date(game.startedAt).toLocaleDateString()} · 局數 {state.hands.length}
-        </span>
-      </div>
-      <div className="sc-summary">
-        {stats
-          .slice()
-          .sort((a, b) => b.net - a.net)
-          .map((s) => (
-            <button
-              key={s.player}
-              type="button"
-              className={`sc-summary-card sc-c${colorOf(store, s.player)}`}
-              onClick={() => {
-                setPlayerIndex(stats.findIndex((x) => x.player === s.player));
-                setView("player");
-              }}
-            >
-              <span className="sc-summary-name">
-                <span className="sc-dot" />
-                {s.player}
-                <span className={s.net < 0 ? "is-neg" : "is-pos"}>({fmt(s.net)})</span>
+      <SectionHead zh="玩家統計" en={isActive ? "This game" : new Date(game.startedAt).toLocaleDateString()}>
+        <span className="sc-help">{state.hands.length}局</span>
+      </SectionHead>
+      <div className="card sc-board-table">
+        {ranked.length === 0 && <p className="sc-empty">No hands yet.</p>}
+        {ranked.map((s, i) => (
+          <button
+            key={s.player}
+            type="button"
+            className="sc-leader"
+            onClick={() => {
+              setPlayerIndex(stats.findIndex((x) => x.player === s.player));
+              setView("player");
+            }}
+          >
+            <span className={`sc-leader-rank is-${i + 1}`}>{i + 1}</span>
+            <Monogram store={store} player={s.player} />
+            <span className="sc-leader-id">
+              <span className="sc-leader-name">{s.player}</span>
+              <span className="sc-leader-sub">
+                胡{s.wins + s.selfDraws} 摸{s.selfDraws} 銃{s.dealIns}
+                {s.bonus !== 0 && ` 獎${signed(s.bonus)}`}
               </span>
-              <span className="sc-summary-nums">
-                <span>
-                  胡<strong>{s.wins + s.selfDraws}</strong>
-                </span>
-                <span>
-                  摸<strong>{s.selfDraws}</strong>
-                </span>
-                <span>
-                  銃<strong>{s.dealIns}</strong>
-                </span>
-                <span>
-                  獎<strong>{fmt(s.bonus)}</strong>
-                </span>
-              </span>
-            </button>
-          ))}
-      </div>
-      <div className="segmented sub-tabs sc-views">
-        {views.map((v) => (
-          <button key={v.id} type="button" className={view === v.id ? "toggle-on" : undefined} aria-pressed={view === v.id} onClick={() => setView(v.id)}>
-            {v.label}
+            </span>
+            <Sparkline values={series.find((x) => x.player === s.player)?.values ?? []} className={`sc-c${colorOf(store, s.player)}`} />
+            <span className={`sc-leader-net ${tone(s.net)}`}>{signed(s.net)}</span>
           </button>
         ))}
       </div>
 
-      {view === "list" && (
-        <div className="card sc-recent">
-          {state.hands.length === 0 && <p className="sc-muted">No hands yet.</p>}
+      <div className="sc-views">
+        <Segmented value={view} onChange={setView} options={views} />
+      </div>
+
+      {view === "hands" && (
+        <div className="card sc-list-card">
+          {state.hands.length === 0 && <p className="sc-empty">No hands yet.</p>}
           {state.hands
             .slice()
             .reverse()
@@ -1305,14 +2171,23 @@ function StatsPanel({ store, setStore }: { store: ScoreStore; setStore: (s: Scor
       {view === "trend" && (
         <div className="card">
           <div className="sc-card-head">
-            <h3>走勢</h3>
-            <span className="sc-pill">{state.hands.length}局</span>
+            <h3>走勢 Trend</h3>
+            <span className="sc-help">Running totals · touch for 局 detail</span>
           </div>
           <TrendChart store={store} state={state} />
+          <div className="sc-legend">
+            {ranked.map((s) => (
+              <span key={s.player} className="sc-legend-item">
+                <span className={`sc-dot sc-c${colorOf(store, s.player)}`} />
+                {s.player}
+                <strong className={tone(s.net)}>{signed(s.net)}</strong>
+              </span>
+            ))}
+          </div>
         </div>
       )}
-      {view === "patterns" && <PatternsCard state={state} />}
-      {view === "player" && stats.length > 0 && <PlayerCard store={store} stats={stats} index={Math.min(playerIndex, stats.length - 1)} onIndex={setPlayerIndex} />}
+      {view === "patterns" && <PatternsCard state={state} store={store} />}
+      {view === "player" && stats.length > 0 && <PlayerCard store={store} stats={stats} state={state} index={Math.min(playerIndex, stats.length - 1)} onIndex={setPlayerIndex} />}
       {view === "history" && (
         <HistoryCard
           store={store}
@@ -1329,26 +2204,34 @@ function StatsPanel({ store, setStore }: { store: ScoreStore; setStore: (s: Scor
   );
 }
 
-function PatternsCard({ state }: { state: ReplayState }) {
+function PatternsCard({ state, store }: { state: ReplayState; store: ScoreStore }) {
   const rows = patternCounts(state);
+  const max = Math.max(1, ...rows.map((r) => r.count));
   return (
     <div className="card">
       <div className="sc-card-head">
-        <h3>牌型</h3>
+        <h3>牌型 Patterns</h3>
+        <span className="sc-help">From hands sent from Scoring</span>
       </div>
       {rows.length === 0 ? (
-        <p className="sc-muted">Patterns show up here for hands sent from the Scoring tab (Record to Scores).</p>
+        <p className="sc-empty">Use Record to Scores on the Scoring tab, and the patterns behind each hand show up here.</p>
       ) : (
         <ul className="sc-patterns">
           {rows.map((r) => (
             <li key={r.name}>
-              <span>{r.name}</span>
-              <span className="sc-muted">
-                {Object.entries(r.byPlayer)
-                  .map(([p, n]) => `${p} ${n}`)
-                  .join(" · ")}
+              <span className="sc-pattern-name">{r.name}</span>
+              <span className="sc-pattern-bar" aria-hidden="true">
+                <span style={{ width: `${(r.count / max) * 100}%` }} />
               </span>
-              <strong>{r.count}</strong>
+              <strong className="sc-num">{r.count}</strong>
+              <span className="sc-pattern-who">
+                {Object.entries(r.byPlayer).map(([p, n]) => (
+                  <span key={p}>
+                    <span className={`sc-dot sc-c${colorOf(store, p)}`} />
+                    {p} {n}
+                  </span>
+                ))}
+              </span>
             </li>
           ))}
         </ul>
@@ -1357,61 +2240,45 @@ function PatternsCard({ state }: { state: ReplayState }) {
   );
 }
 
-function HistoryCard({
-  store,
-  games,
-  current,
-  onPick,
-  onDelete,
-}: {
-  store: ScoreStore;
-  games: ScoreGame[];
-  current: string;
-  onPick: (id: string) => void;
-  onDelete: (id: string) => void;
-}) {
+function HistoryCard({ store, games, current, onPick, onDelete }: { store: ScoreStore; games: ScoreGame[]; current: string; onPick: (id: string) => void; onDelete: (id: string) => void }) {
   const [confirm, setConfirm] = useState<string | null>(null);
   const career = useMemo(() => careerStats(games), [games]);
   const h2h = useMemo(() => headToHead(games), [games]);
   const names = career.map((c) => c.player);
   return (
     <>
-      <div className="card">
-        <div className="sc-card-head">
-          <h3>紀錄 Games</h3>
-        </div>
+      <div className="card sc-list-card">
         {games.map((g) => {
           const st = replay(g);
           const ranked = st.players.filter((p) => st.hands.some((h) => h.seatsAfter.includes(p))).sort((a, b) => (st.totals[b] ?? 0) - (st.totals[a] ?? 0));
           return (
-            <div key={g.id} className={`sc-history-row${g.id === current ? " is-current" : ""}`}>
-              <button type="button" className="sc-history-main" onClick={() => onPick(g.id)}>
-                <span className="sc-history-date">
-                  {g === store.active ? "In progress" : new Date(g.startedAt).toLocaleDateString()}
-                  <small>{st.hands.length}局</small>
+            <div key={g.id} className={`sc-game${g.id === current ? " is-current" : ""}`}>
+              <button type="button" className="sc-game-main" onClick={() => onPick(g.id)}>
+                <span className="sc-game-date">
+                  {g === store.active ? "In progress" : new Date(g.startedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+                  <span className="sc-help"> · {st.hands.length}局</span>
+                  {g.id === current && <span className="sc-chip-accent">Showing</span>}
                 </span>
-                <span className="sc-history-totals">
+                <span className="sc-game-totals">
                   {ranked.map((p, i) => (
-                    <span key={p} className={i === 0 ? "sc-strong" : undefined}>
-                      {p} {signed(st.totals[p] ?? 0)}
+                    <span key={p} className={i === 0 ? "is-first" : undefined}>
+                      {i === 0 && "🏆 "}
+                      {p} <span className={tone(st.totals[p] ?? 0)}>{signed(st.totals[p] ?? 0)}</span>
                     </span>
                   ))}
                 </span>
               </button>
               {g !== store.active && (
-                <button type="button" className={`sc-outline${confirm === g.id ? " is-armed" : ""}`} onClick={() => (confirm === g.id ? onDelete(g.id) : setConfirm(g.id))}>
-                  {confirm === g.id ? "Delete?" : "✕"}
+                <button type="button" className={`sc-icon-button${confirm === g.id ? " is-armed" : ""}`} onClick={() => (confirm === g.id ? onDelete(g.id) : setConfirm(g.id))} aria-label={confirm === g.id ? "Tap again to delete this game" : "Delete this game"}>
+                  {confirm === g.id ? <span className="sc-armed-text">Delete</span> : Icons.close}
                 </button>
               )}
             </div>
           );
         })}
       </div>
-      <div className="card">
-        <div className="sc-card-head">
-          <h3>Career</h3>
-          <span className="sc-muted">{games.length} games</span>
-        </div>
+      <SectionHead zh="生涯" en="Career" />
+      <div className="card sc-table-card">
         <div className="sc-table-wrap">
           <table className="sc-table">
             <thead>
@@ -1419,27 +2286,29 @@ function HistoryCard({
                 <th>Player</th>
                 <th>Games</th>
                 <th>Net</th>
-                <th>Avg</th>
+                <th className="sc-opt">Avg</th>
                 <th>1st</th>
-                <th>Win%</th>
-                <th>銃%</th>
-                <th>Best</th>
+                <th>Win</th>
+                <th>銃</th>
+                <th className="sc-opt">Best</th>
               </tr>
             </thead>
             <tbody>
               {career.map((c) => (
                 <tr key={c.player}>
                   <th>
-                    <span className={`sc-dot sc-c${colorOf(store, c.player)}`} />
-                    {c.player}
+                    <span className="sc-table-player">
+                      <Monogram store={store} player={c.player} size="sm" />
+                      {c.player}
+                    </span>
                   </th>
                   <td>{c.games}</td>
-                  <td className={c.net < 0 ? "is-neg" : "is-pos"}>{signed(c.net)}</td>
-                  <td>{c.avgNet.toFixed(1)}</td>
+                  <td className={tone(c.net)}>{signed(c.net)}</td>
+                  <td className="sc-opt">{fmt(Math.round(c.avgNet * 10) / 10)}</td>
                   <td>{c.firsts}</td>
                   <td>{pct(c.winRate)}</td>
                   <td>{pct(c.dealInRate)}</td>
-                  <td>{c.bestHand === null ? "–" : fmt(c.bestHand)}</td>
+                  <td className="sc-opt">{c.bestHand === null ? "–" : fmt(c.bestHand)}</td>
                 </tr>
               ))}
             </tbody>
@@ -1447,39 +2316,45 @@ function HistoryCard({
         </div>
       </div>
       {names.length > 1 && (
-        <div className="card">
-          <div className="sc-card-head">
-            <h3>Head-to-head</h3>
-            <span className="sc-muted">row vs column, net tai</span>
-          </div>
-          <div className="sc-table-wrap">
-            <table className="sc-table sc-h2h">
-              <thead>
-                <tr>
-                  <th />
-                  {names.map((n) => (
-                    <th key={n}>{n}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {names.map((a) => (
-                  <tr key={a}>
-                    <th>{a}</th>
-                    {names.map((b) => {
-                      const v = a === b ? null : (h2h[a]?.[b] ?? 0);
-                      return (
-                        <td key={b} className={v === null ? "sc-muted" : v < 0 ? "is-neg" : v > 0 ? "is-pos" : undefined}>
-                          {v === null ? "–" : signed(v)}
-                        </td>
-                      );
-                    })}
+        <>
+          <SectionHead zh="對戰" en="Head-to-head">
+            <span className="sc-help">Row vs column</span>
+          </SectionHead>
+          <div className="card sc-table-card">
+            <div className="sc-table-wrap">
+              <table className="sc-table sc-h2h">
+                <thead>
+                  <tr>
+                    <th />
+                    {names.map((n) => (
+                      <th key={n}>{n}</th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {names.map((a) => (
+                    <tr key={a}>
+                      <th>
+                        <span className="sc-table-player">
+                          <Monogram store={store} player={a} size="sm" />
+                          {a}
+                        </span>
+                      </th>
+                      {names.map((b) => {
+                        const v = a === b ? null : (h2h[a]?.[b] ?? 0);
+                        return (
+                          <td key={b} className={v === null ? "sc-cell-self" : tone(v)}>
+                            {v === null ? "" : signed(v)}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
+        </>
       )}
     </>
   );
@@ -1512,6 +2387,7 @@ export function ScoresPanel({
   onRequestDone: () => void;
 }) {
   const [sub, setSub] = useState<"board" | "stats">("board");
+  const [view, setView] = useState<StatsView>("trend");
   useEffect(() => {
     if (request) setSub("board");
   }, [request]);
@@ -1524,29 +2400,37 @@ export function ScoresPanel({
     const finished = { ...game, endedAt: Date.now() };
     setStore({ ...store, active: null, history: game.events.length > 0 ? [finished, ...store.history] : store.history });
   };
-  const start = (seats: string[], dealer: number) =>
-    setStore({ ...store, roster: withRoster(store, seats), active: newGame(seats, dealer, store.settings) });
+  const start = (seats: string[], dealer: number) => setStore({ ...store, roster: withRoster(store, seats), active: newGame(seats, dealer, store.settings) });
 
   return (
     <section className="panel scores-panel">
       <div className="segmented sub-tabs">
         <button type="button" className={sub === "board" ? "toggle-on" : undefined} aria-pressed={sub === "board"} onClick={() => setSub("board")}>
-          戰況
+          戰況 Table
         </button>
         <button type="button" className={sub === "stats" ? "toggle-on" : undefined} aria-pressed={sub === "stats"} onClick={() => setSub("stats")}>
-          統計
+          統計 Stats
         </button>
       </div>
       {sub === "board" &&
         (game && state ? (
-          <Board store={store} game={game} state={state} update={update} onEndGame={endGame} request={request} onRequestDone={onRequestDone} />
+          <Board
+            store={store}
+            game={game}
+            state={state}
+            update={update}
+            onEndGame={endGame}
+            request={request}
+            onRequestDone={onRequestDone}
+            onSeeAll={() => {
+              setView("hands");
+              setSub("stats");
+            }}
+          />
         ) : (
-          <>
-            {request && <p className="sc-note">Start a game and the hand from Scoring opens to record.</p>}
-            <Setup store={store} suggestion={seatNames} onStart={start} />
-          </>
+          <Setup store={store} suggestion={seatNames} onStart={start} waitingHand={request !== null} />
         ))}
-      {sub === "stats" && <StatsPanel store={store} setStore={setStore} />}
+      {sub === "stats" && <StatsPanel store={store} setStore={setStore} view={view} setView={setView} />}
     </section>
   );
 }

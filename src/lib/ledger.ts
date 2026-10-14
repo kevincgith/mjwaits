@@ -21,8 +21,8 @@
 // "Half" is rounded by 整數模式 (0.5進1 = up), or left exact when it's off.
 //
 // 反雪: a player who dealt into a 雙響/三響 and then self-draws the very next
-// hand gets back, from each of those winners, what that winner took off them
-// (plus an optional fixed extra).
+// hand is paid a fixed amount by each of those winners - fanXueDouble after a
+// 雙響 (5), fanXueTriple after a 三響 (10).
 //
 // Jackpot: each draw, every seated player puts jackpotPerDraw into the pot;
 // a win can take it (jackpotTo), or it can be handed out by hand.
@@ -35,7 +35,9 @@ export interface ScoreSettings {
   dealerTai: number; // 自動計算莊 - 0 = off
   streakTai: number; // 自動計算連莊, per 連莊 - 0 = off
   fanXue: boolean; // 反雪
-  fanXueBonus: number; // a fixed extra on top of the payback
+  fanXueDouble: number; // what each 雙響 winner pays back
+  fanXueTriple: number; // what each 三響 winner pays back
+  scoreCap: number | null; // 封頂 - the highest tai / amount the keypad lets you type; null = no limit. Input only - never changes a payment.
   drawKeepsDealer: boolean; // 流局留莊
   jackpot: boolean;
   jackpotPerDraw: number; // from each seated player, per draw
@@ -53,7 +55,9 @@ export const DEFAULT_SETTINGS: ScoreSettings = {
   dealerTai: 1,
   streakTai: 2,
   fanXue: true,
-  fanXueBonus: 0,
+  fanXueDouble: 5,
+  fanXueTriple: 10,
+  scoreCap: 999,
   drawKeepsDealer: true,
   jackpot: true,
   jackpotPerDraw: 5,
@@ -83,9 +87,10 @@ export type ScoreEvent =
   // each winner (one = 食胡, two or three = 雙響 / 三響).
   | { t: "win"; at: number; winners: WinnerEntry[]; from: number | null; jackpotTo?: string; source: "quick" | "scoring" }
   | { t: "draw"; at: number }
-  // 特別獎罰: 獎 - each other seated player pays `amount` to the seat's player;
-  // 罰 - the seat's player pays each of them `amount`.
-  | { t: "bonus"; at: number; seat: number; amount: number; kind: "獎" | "罰" }
+  // 特別獎罰: 獎 - the seat's player is paid `amount`; 罰 - they pay it. With
+  // `other`, just that one player pays (獎) or is paid (罰); without it, each
+  // of the other three does.
+  | { t: "bonus"; at: number; seat: number; amount: number; kind: "獎" | "罰"; other?: number }
   | { t: "surrender"; at: number; holder: string; pulled: string }
   | { t: "jackpot"; at: number; shares: { player: string; amount: number }[] }
   | { t: "swap"; at: number; seats: string[] } // the whole new seating
@@ -100,6 +105,8 @@ export interface ScoreGame {
   firstDealer: number;
   settings: ScoreSettings; // as at the start - later changes are events
   events: ScoreEvent[];
+  // Entries taken back by 還原, newest last, for 重做 (redo). Any new entry clears it.
+  undone?: ScoreEvent[];
 }
 
 export interface Lah {
@@ -235,7 +242,7 @@ export function replay(game: ScoreGame): ReplayState {
     label: "",
   };
   // The 雙響/三響 the next hand's 自摸 could 反雪.
-  let lastMulti: { loser: string; paid: { winner: string; amount: number }[] } | null = null;
+  let lastMulti: { loser: string; winners: string[] } | null = null;
 
   const passDeal = () => {
     state.dealer = (state.dealer + 1) % SEATS;
@@ -270,7 +277,8 @@ export function replay(game: ScoreGame): ReplayState {
           next.set(lahKey(pair.winner, pair.payer), {
             holder: pair.winner,
             pulled: pair.payer,
-            value: pair.lahKind === "拉" ? pair.lahBefore + pair.worth : pair.worth - pair.lah,
+            // A fresh 拉 (or a 踢's) starts at the plain value.
+            value: pair.lahKind === "拉" ? pair.lahBefore + pair.worth : pair.base + pair.tai + pair.dealer,
             count: pair.lahKind === "拉" && prev ? prev.count + 1 : 1,
           });
         }
@@ -279,9 +287,9 @@ export function replay(game: ScoreGame): ReplayState {
         // 反雪.
         const fanXue: HandResult["fanXue"] = [];
         if (state.settings.fanXue && ev.from === null && lastMulti && state.seats[ev.winners[0].seat] === lastMulti.loser) {
-          for (const { winner, amount } of lastMulti.paid) {
-            if (!state.seats.includes(winner)) continue;
-            const back = amount + state.settings.fanXueBonus;
+          const back = lastMulti.winners.length >= 3 ? state.settings.fanXueTriple : state.settings.fanXueDouble;
+          for (const winner of lastMulti.winners) {
+            if (!state.seats.includes(winner) || back <= 0) continue;
             add(deltas, lastMulti.loser, back);
             add(deltas, winner, -back);
             fanXue.push({ from: winner, to: lastMulti.loser, amount: back });
@@ -289,7 +297,7 @@ export function replay(game: ScoreGame): ReplayState {
         }
         lastMulti =
           ev.from !== null && ev.winners.length > 1
-            ? { loser: state.seats[ev.from], paid: pairs.map((p) => ({ winner: p.winner, amount: p.worth })) }
+            ? { loser: state.seats[ev.from], winners: pairs.map((p) => p.winner) }
             : null;
 
         let jackpotWon: HandResult["jackpotWon"] = null;
@@ -357,7 +365,8 @@ export function replay(game: ScoreGame): ReplayState {
       }
       case "bonus": {
         const me = state.seats[ev.seat];
-        for (const other of state.seats) {
+        const counterparts = ev.other !== undefined && ev.other !== ev.seat ? [state.seats[ev.other]] : state.seats;
+        for (const other of counterparts) {
           if (other === me) continue;
           const amount = ev.kind === "獎" ? ev.amount : -ev.amount;
           add(deltas, me, amount);
@@ -485,5 +494,20 @@ export function newGame(seats: string[], firstDealer: number, settings: ScoreSet
   return { id: `g${now.toString(36)}`, startedAt: now, seats: seats.slice(), firstDealer, settings, events: [] };
 }
 
-export const withEvent = (game: ScoreGame, ev: ScoreEvent): ScoreGame => ({ ...game, events: [...game.events, ev] });
-export const undoEvent = (game: ScoreGame): ScoreGame => ({ ...game, events: game.events.slice(0, -1) });
+// A new entry - which also drops anything waiting to be redone.
+export const withEvent = (game: ScoreGame, ev: ScoreEvent): ScoreGame => ({ ...game, events: [...game.events, ev], undone: [] });
+
+// 還原: take the last entry back, keeping it for 重做.
+export const undoEvent = (game: ScoreGame): ScoreGame =>
+  game.events.length === 0
+    ? game
+    : { ...game, events: game.events.slice(0, -1), undone: [...(game.undone ?? []), game.events[game.events.length - 1]] };
+
+// 重做: put the most recently undone entry back.
+export const redoEvent = (game: ScoreGame): ScoreGame => {
+  const undone = game.undone ?? [];
+  if (undone.length === 0) return game;
+  return { ...game, events: [...game.events, undone[undone.length - 1]], undone: undone.slice(0, -1) };
+};
+
+export const canRedo = (game: ScoreGame) => (game.undone?.length ?? 0) > 0;

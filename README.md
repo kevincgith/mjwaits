@@ -294,15 +294,24 @@ game. Everything is kept on this device (localStorage `mjwaits.scores`): the gam
 progress, finished games and the player roster.
 
 **戰況 (the board).** Set up four players in turn order (Seating's names are the starting
-suggestion) and who deals first. The board shows them as a diamond of cards: name, seat
-wind, running total, a 莊 badge with the 連莊 count, and the 拉 each player holds. Tap a player
-when they win:
+suggestion) and who deals first. The board fits the screen - it never scrolls. A slim status
+row on top shows the round and deal (東風東局), the 局 count and 連莊, with a **最近** button
+that opens every hand so far (newest first, with 還原); the actions sit underneath as one row
+of icons. The players sit as a diamond of cards, each in its own colour: name, a 莊 tag on the
+dealer, the running total in the middle (green up, red down) and the last hand's change
+(上局). A **拉** shows on both cards, on the side facing the other player: +29 in green on the
+card of whoever holds it, −29 in red on the one being pulled. 流局 and the Jackpot sit in the
+middle. Tap a player to record for them - one sheet (rising from the bottom on a phone) with
+two tabs:
 
 - **食胡** — pick the 輸家 (or 自摸) and type the tai on the keypad. A breakdown shows what
   each payer owes, split into 底 · 番 · 莊 · 拉 · 總, and flags a payment over the 高分
   threshold. **一炮多響** switches to 雙響 / 三響: pick the discarder, the other winners and
   each one's tai. A **Jackpot** toggle appears when the pot has something in it.
-- **特別獎罰** — a free-form 獎 (each other player pays the amount) or 罰 (pays each of them).
+- **特別獎罰** — a free-form 獎 (reward) or 罰 (penalty), either with everyone (each of the
+  other three pays, or is paid, the amount) or with one player picked as From / To.
+
+After each entry a toast offers a one-tap 還原.
 
 The centre **流局** button records a draw. The toolbar: **新局** (file this game in History and
 start another), **還原** (undo the last entry), **莊家** (set the dealer and 連莊, optionally
@@ -311,7 +320,9 @@ back to 東風東局), **換人** (swap seats, or bring in a 候補 player - tot
 × 倍數, and End game) and **設定**.
 
 **How a payment is worked out.** One payer owes one winner: 底 + 番 + 莊 (自動計算莊 + 連莊 ×
-自動計算連莊, only when one of the two is the dealer) + the pair's 拉/踢:
+自動計算連莊, only when one of the two is the dealer) + the pair's 拉/踢. (**封頂**, 999 by
+default, only limits what the keypad accepts - no tai or 獎罰 amount above it can be typed - and
+never changes a payment.)
 
 - **拉** — once you've won off someone, the next hand you win off them is worth its value +
   half the 拉 (0.5進1 by default), and the 拉 grows by that worth: 11, then a 20 is worth
@@ -321,8 +332,8 @@ back to 東風東局), **換人** (swap seats, or bring in a 候補 player - tot
   and their 拉 is 20.
 - A 自摸 counts pair by pair. A 流局 keeps every 拉; a hand the holder doesn't win ends theirs;
   投降 ends one with nothing paid.
-- **反雪** — a player who dealt into a 雙響/三響 and 自摸s the very next hand takes back from each
-  of those winners what they won off them (plus an optional fixed extra).
+- **反雪** — a player who dealt into a 雙響/三響 and 自摸s the very next hand is paid back by each
+  of those winners: 5 after a 雙響, 10 after a 三響 (both settings).
 - **Jackpot** — each 流局 every player puts the set amount in; a win can take it, or tap the
   pot to hand it out by hand.
 - The dealer stays on a dealer win, or on a 流局 with 流局留莊; otherwise the deal moves on, and

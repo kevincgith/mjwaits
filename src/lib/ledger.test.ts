@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_SETTINGS,
+  canRedo,
   newGame,
+  redoEvent,
   replay,
   settle,
   undoEvent,
@@ -85,17 +87,24 @@ describe("一炮多響 and 反雪", () => {
     expect(s.totals).toMatchObject({ A: 8, B: 5, C: 0, D: -13 });
   });
 
-  it("反雪: the 雙響 victim's 自摸 next hand takes back what each winner took", () => {
+  it("反雪: the 雙響 victim's 自摸 next hand - each winner pays back 5", () => {
     const s = replay(game([multi(3, [0, 8], [1, 5]), win(3, 2, null)]));
     expect(s.hands[1].fanXue).toEqual([
-      { from: "A", to: "D", amount: 8 },
+      { from: "A", to: "D", amount: 5 },
       { from: "B", to: "D", amount: 5 },
     ]);
     // The 自摸 is also a 踢 on each winner's 拉: A pays 2 + ceil(8/2), B 2 + ceil(5/2),
-    // C a plain 2 - then 13 back on top.
+    // C a plain 2 - then 5 back from each of A and B on top.
     expect(s.hands[1].pairs.map((p) => [p.payer, p.worth])).toEqual([["A", 6], ["B", 5], ["C", 2]]);
-    expect(s.hands[1].deltas.D).toBe(6 + 5 + 2 + 13);
+    expect(s.hands[1].deltas.D).toBe(6 + 5 + 2 + 10);
     sumsToZero(s);
+  });
+
+  it("反雪 after a 三響 is 10 from each winner, and both amounts are settings", () => {
+    const triple = multi(3, [0, 4], [1, 4], [2, 4]);
+    expect(replay(game([triple, win(3, 1, null)])).hands[1].fanXue.map((f) => f.amount)).toEqual([10, 10, 10]);
+    expect(replay(game([triple, win(3, 1, null)], { fanXueTriple: 7 })).hands[1].fanXue.map((f) => f.amount)).toEqual([7, 7, 7]);
+    expect(replay(game([multi(3, [0, 8], [1, 5]), win(3, 2, null)], { fanXueDouble: 3 })).hands[1].fanXue[0].amount).toBe(3);
   });
 
   it("no 反雪 when a hand comes between, or when it's off", () => {
@@ -158,10 +167,30 @@ describe("Jackpot, bonuses, seats, undo", () => {
     expect(replay(game([{ t: "bonus", at: 0, seat: 1, amount: 3, kind: "罰" }])).totals).toMatchObject({ A: 3, B: -9 });
   });
 
+  it("特別獎罰 to or from one player", () => {
+    // 獎 from C only: C pays B.
+    expect(replay(game([{ t: "bonus", at: 0, seat: 1, amount: 5, kind: "獎", other: 2 }])).totals).toEqual({ A: 0, B: 5, C: -5, D: 0 });
+    // 罰 to D only: B pays D.
+    expect(replay(game([{ t: "bonus", at: 0, seat: 1, amount: 5, kind: "罰", other: 3 }])).totals).toEqual({ A: 0, B: -5, C: 0, D: 5 });
+  });
+
   it("換人 keeps totals per player, and a substitute starts at 0", () => {
     const s = replay(game([win(0, 10, 1), { t: "swap", at: 0, seats: ["A", "E", "C", "D"] }, win(1, 4, 0)]));
     expect(s.totals).toMatchObject({ A: 6, B: -10, E: 4 });
     expect(s.players).toEqual(["A", "B", "C", "D", "E"]);
+  });
+
+  it("重做 brings back what 還原 took, in order; a new entry clears it", () => {
+    const g = game([win(0, 10, 1), win(2, 4, 3)]);
+    const twice = undoEvent(undoEvent(g));
+    expect(twice.events).toHaveLength(0);
+    expect(canRedo(twice)).toBe(true);
+    const back = redoEvent(redoEvent(twice));
+    expect(back.events).toEqual(g.events);
+    expect(canRedo(back)).toBe(false);
+    const branched = withEvent(undoEvent(g), draw);
+    expect(canRedo(branched)).toBe(false);
+    expect(redoEvent(branched)).toBe(branched);
   });
 
   it("還原 drops the last event; totals always sum to zero", () => {
@@ -182,5 +211,15 @@ describe("結帳", () => {
       { from: "C", to: "A", amount: 12 },
       { from: "B", to: "A", amount: 8 },
     ]);
+  });
+});
+
+describe("封頂 is an input limit only", () => {
+  it("never changes what's paid - hands, 拉 and 特別獎罰 go through in full", () => {
+    expect(replay(game([win(0, 1200, 1)])).totals).toMatchObject({ A: 1200, B: -1200 });
+    // 900, then 200 + ceil(900/2): the 拉 isn't limited by the cap either.
+    const s = replay(game([win(0, 900, 1), win(0, 800, 1)]));
+    expect(s.hands[1].pairs[0].worth).toBe(800 + 450);
+    expect(replay(game([{ t: "bonus", at: 0, seat: 1, amount: 1200, kind: "獎", other: 2 }])).totals).toMatchObject({ B: 1200, C: -1200 });
   });
 });
