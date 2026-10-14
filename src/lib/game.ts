@@ -63,7 +63,9 @@ export interface Player {
 
 export type Phase =
   // `seat` holds a full hand (3k+2 tiles) and must discard, kong or win.
-  | { kind: "turn"; seat: number; drawn: Tile | null; replacement: "flower" | "kong" | null }
+  // `forbidden`: 食替 - tiles that can't be discarded straight after a chow or
+  // pung (see swapDiscardBan). Optional so games saved before it load as "none".
+  | { kind: "turn"; seat: number; drawn: Tile | null; replacement: "flower" | "kong" | null; forbidden?: Tile[] }
   // `seat` just discarded `tile`; the others may claim it.
   | { kind: "claims"; from: number; tile: Tile }
   | { kind: "over"; result: HandResult };
@@ -286,6 +288,7 @@ export function applyTurnMove(state: GameState, move: TurnMove): GameState {
 
   switch (move.kind) {
     case "discard": {
+      if (forbiddenDiscards(state).some((t) => sameTile(t, move.tile))) throw new Error("食替: can't discard that now");
       p.hand = removeTiles(p.hand, [move.tile]);
       p.discards.push(move.tile);
       s.discardsMade++;
@@ -330,6 +333,37 @@ export function winningClaimSeat(state: GameState, decisions: (Claim | null)[]):
   return best;
 }
 
+// 食替: straight after a call you can't throw the tile you just claimed - nor,
+// after a chow taken at one end of the run, the tile at the run's far side
+// that the same two tiles also wait on (claim 7 with 89: 6 is barred too;
+// claim 7 with 68: only 7). Pass `with` only for a chow.
+export function swapDiscardBan(claimed: Tile, withTiles?: Tile[]): Tile[] {
+  const ban = [claimed];
+  if (withTiles) {
+    const ranks = withTiles.map((t) => t.rank).sort((a, b) => a - b);
+    const far = claimed.rank < ranks[0] ? claimed.rank + 3 : claimed.rank > ranks[1] ? claimed.rank - 3 : null;
+    if (far !== null && far >= 1 && far <= 9) ban.push({ suit: claimed.suit, rank: far });
+  }
+  return ban;
+}
+
+// The discards barred right now - empty unless the seat to act just called.
+// Waived when it would leave nothing legal to throw.
+export function forbiddenDiscards(s: GameState): Tile[] {
+  if (s.phase.kind !== "turn" || !s.phase.forbidden?.length) return [];
+  const ban = s.phase.forbidden;
+  const hand = s.players[s.phase.seat].hand;
+  return hand.every((t) => ban.some((b) => sameTile(b, t))) ? [] : ban;
+}
+
+const WIND_CHARS = ["", "東", "南", "西", "北"];
+
+// "東圈南局": the round wind, then which of the four deals in it this is -
+// counted from seat 0, who deals first in every round.
+export function roundLabel(s: GameState): string {
+  return `${WIND_CHARS[s.roundWind]}圈${WIND_CHARS[s.dealer + 1]}局`;
+}
+
 export function resolveClaims(state: GameState, decisions: (Claim | null)[]): GameState {
   if (state.phase.kind !== "claims") throw new Error("No discard to claim");
   const { from, tile } = state.phase;
@@ -353,13 +387,13 @@ export function resolveClaims(state: GameState, decisions: (Claim | null)[]): Ga
   if (claim.kind === "chow") {
     p.hand = removeTiles(p.hand, claim.tiles);
     p.melds.push({ kind: "run", tiles: sortTiles([...claim.tiles, tile]), concealed: false, from });
-    s.phase = { kind: "turn", seat: best, drawn: null, replacement: null };
+    s.phase = { kind: "turn", seat: best, drawn: null, replacement: null, forbidden: swapDiscardBan(tile, claim.tiles) };
     return s;
   }
   if (claim.kind === "pung") {
     p.hand = removeTiles(p.hand, [tile, tile]);
     p.melds.push({ kind: "triplet", tiles: [tile, tile, tile], concealed: false, from });
-    s.phase = { kind: "turn", seat: best, drawn: null, replacement: null };
+    s.phase = { kind: "turn", seat: best, drawn: null, replacement: null, forbidden: [tile] };
     return s;
   }
   // Exposed kong: replacement draw.
@@ -485,8 +519,9 @@ export function rateDiscards(s: GameState, seat: number): DiscardRating[] {
   const unseen = unseenCounts(s, seat);
   const out: DiscardRating[] = [];
   const seen = new Set<string>();
+  const forbidden = s.phase.kind === "turn" && s.phase.seat === seat ? forbiddenDiscards(s) : [];
   for (const t of p.hand) {
-    if (seen.has(tileKey(t))) continue;
+    if (seen.has(tileKey(t)) || forbidden.some((f) => sameTile(f, t))) continue;
     seen.add(tileKey(t));
     const rest = removeTiles(p.hand, [t]);
     const sh = shanten(rest, melds);
