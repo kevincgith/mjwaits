@@ -41,6 +41,8 @@ import {
 } from "./tileArt";
 import { BonusGlyphSpan, TileGlyphSpan } from "./TileGlyphs";
 import { PlayPanel } from "./PlayPanel";
+import { ScoresPanel, type RecordRequest } from "./ScoresPanel";
+import { loadScores, saveScores } from "./lib/ledger";
 import {
   COMPLETE_SIZE,
   compareTiles,
@@ -5538,9 +5540,14 @@ interface TestHandRequest {
 function ScoringPanel({
   testHandRequest,
   onTestHandLoaded,
+  canRecord,
+  onRecord,
 }: {
   testHandRequest: TestHandRequest | null;
   onTestHandLoaded: () => void;
+  // A Scores game is in progress, so a scored hand can be sent to it.
+  canRecord: boolean;
+  onRecord: (request: Omit<RecordRequest, "nonce">) => void;
 }) {
   const [concealedTiles, setConcealedTiles] = useState<HandTile[]>([]);
   const [declaredMelds, setDeclaredMelds] = useState<DeclaredMeldTile[]>([]);
@@ -7492,6 +7499,33 @@ function ScoringPanel({
               <span className="visually-hidden"> tai</span>
             </span>
           </div>
+          {canRecord && (
+            <button
+              type="button"
+              className="record-to-scores"
+              onClick={() => {
+                // Scores adds 莊/連莊 itself, so that pattern's tai comes out here.
+                const readings = [scoring.result, ...(scoring.result.second ? [scoring.result.second] : [])];
+                const removedDealerTai = readings
+                  .flatMap((r) => r.matched)
+                  .filter((m) => m.pattern.id === "dealer-streak")
+                  .reduce((sum, m) => sum + m.tai, 0);
+                onRecord({
+                  seatWind,
+                  selfDraw: effectiveSelfDraw,
+                  tai: scoring.result.total - removedDealerTai,
+                  removedDealerTai,
+                  patterns: readings.flatMap((r) =>
+                    r.matched
+                      .filter((m) => m.pattern.id !== "dealer-streak")
+                      .map((m) => ({ id: m.pattern.id, name: patternDisplayName(m.pattern, r.hand), tai: m.tai }))
+                  ),
+                });
+              }}
+            >
+              Record to Scores
+            </button>
+          )}
 
           <ScoringBreakdown
             matched={scoring.result.matched}
@@ -9641,7 +9675,7 @@ function ExternalLinkConfirm() {
   );
 }
 
-type AppMode = "scoring" | "calculator" | "trainer" | "play" | "dice";
+type AppMode = "scoring" | "calculator" | "trainer" | "scores" | "play" | "dice";
 
 // Tab-bar glyphs: 24px line icons drawn in currentColor, so they pick up the
 // tab's selected/unselected colour like the label does.
@@ -9693,6 +9727,15 @@ const TAB_ITEMS: { id: Exclude<AppMode, "play">; label: string; icon: ReactNode 
     ),
   },
   {
+    id: "scores",
+    label: "Scores",
+    icon: (
+      <svg {...TAB_ICON_PROPS}>
+        <path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />
+      </svg>
+    ),
+  },
+  {
     id: "dice",
     label: "Dice",
     icon: (
@@ -9708,6 +9751,11 @@ const TAB_ITEMS: { id: Exclude<AppMode, "play">; label: string; icon: ReactNode 
 
 function App() {
   const [mode, setMode] = useState<AppMode>(() => (readCalcHand(window.location.search) ? "calculator" : "scoring"));
+  // The Scores tab's games and roster - here so the Scoring tab can send a
+  // hand to the game in progress. Saved on every change.
+  const [scoreStore, setScoreStore] = useState(loadScores);
+  useEffect(() => saveScores(scoreStore), [scoreStore]);
+  const [recordRequest, setRecordRequest] = useState<RecordRequest | null>(null);
   // Where the Play table's Leave button goes back to.
   const lastNonPlayMode = useRef<AppMode>("scoring");
   if (mode !== "play") lastNonPlayMode.current = mode;
@@ -9851,7 +9899,15 @@ function App() {
         ))}
       </nav>
       {mode === "scoring" && (
-        <ScoringPanel testHandRequest={testHandRequest} onTestHandLoaded={() => setTestHandRequest(null)} />
+        <ScoringPanel
+          testHandRequest={testHandRequest}
+          onTestHandLoaded={() => setTestHandRequest(null)}
+          canRecord={scoreStore.active !== null}
+          onRecord={(request) => {
+            setRecordRequest({ ...request, nonce: Date.now() });
+            setMode("scores");
+          }}
+        />
       )}
       {mode === "calculator" && <Calculator initialHand={calcLinkHand} onInitialHandLoaded={() => setCalcLinkHand(null)} />}
       {mode === "trainer" && (
@@ -9862,6 +9918,15 @@ function App() {
           setDiscardStats={setDiscardTrainerStats}
           endlessStats={endlessTrainerStats}
           setEndlessStats={setEndlessTrainerStats}
+        />
+      )}
+      {mode === "scores" && (
+        <ScoresPanel
+          store={scoreStore}
+          setStore={setScoreStore}
+          seatNames={seatOrder.map((player) => seatNames[player])}
+          request={recordRequest}
+          onRequestDone={() => setRecordRequest(null)}
         />
       )}
       {mode === "play" && <PlayPanel onExit={() => setMode(lastNonPlayMode.current)} />}

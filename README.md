@@ -3,15 +3,17 @@
 <img src="public/favicon.svg" width="64" alt="MJWaits logo: a glass 白板 tile beside an empty glass tile (the wait) on green" align="right">
 
 A browser toolkit for 16-tile (Taiwanese / Hong Kong house rules) Mahjong. It started as a waits calculator — build a
-hand, see what completes it and which discard gives the best odds — and has grown four tabs:
+hand, see what completes it and which discard gives the best odds — and has grown five tabs:
 
 - **Scoring** — score a finished hand against a concrete house tai (番) list (~140 patterns).
 - **Calculator** — the original: waits, shanten, joker resolution, and discard analysis.
 - **Trainer** — timed quizzes: a **Waits** drill (name every tile that completes a hand) and a
   **Discards** drill (just drew — pick the single best tile to throw).
+- **Scores** — keep score of a real game at the table (港式台牌 rules: 莊/連莊, 拉/踢, 一炮多響,
+  反雪, Jackpot), with a stats page per player.
 - **Dice** — roll for the wall, and see exactly where it breaks.
 
-On a phone the four tabs sit in a bottom tab bar; on wider screens they're a segmented control
+On a phone the five tabs sit in a bottom tab bar; on wider screens they're a segmented control
 under the title. In the Scoring tab a sticky toolbar keeps Reset / Scan / Photos, the tile count
 (or, once the hand scores, the total — tap it to jump to the breakdown) in view while scrolling.
 
@@ -284,6 +286,59 @@ Completing a hand flashes a win summary; one tap deals the next. **Undo** / **Re
 and every stat — as far as you like; **N** deals a new one, asking first if the current hand has
 real progress to lose. History is cleared when a new hand is dealt, and a hand in progress
 survives switching sub-tabs.
+
+## Scores (計分)
+
+A score keeper for a real game at the table, in tai, with the house rules of a 港式台牌
+game. Everything is kept on this device (localStorage `mjwaits.scores`): the game in
+progress, finished games and the player roster.
+
+**戰況 (the board).** Set up four players in turn order (Seating's names are the starting
+suggestion) and who deals first. The board shows them as a diamond of cards: name, seat
+wind, running total, a 莊 badge with the 連莊 count, and the 拉 each player holds. Tap a player
+when they win:
+
+- **食胡** — pick the 輸家 (or 自摸) and type the tai on the keypad. A breakdown shows what
+  each payer owes, split into 底 · 番 · 莊 · 拉 · 總, and flags a payment over the 高分
+  threshold. **一炮多響** switches to 雙響 / 三響: pick the discarder, the other winners and
+  each one's tai. A **Jackpot** toggle appears when the pot has something in it.
+- **特別獎罰** — a free-form 獎 (each other player pays the amount) or 罰 (pays each of them).
+
+The centre **流局** button records a draw. The toolbar: **新局** (file this game in History and
+start another), **還原** (undo the last entry), **莊家** (set the dealer and 連莊, optionally
+back to 東風東局), **換人** (swap seats, or bring in a 候補 player - totals stay with the player),
+**拉踢** (every live 拉, each with 投降), **結帳** (the fewest payments that settle everyone,
+× 倍數, and End game) and **設定**.
+
+**How a payment is worked out.** One payer owes one winner: 底 + 番 + 莊 (自動計算莊 + 連莊 ×
+自動計算連莊, only when one of the two is the dealer) + the pair's 拉/踢:
+
+- **拉** — once you've won off someone, the next hand you win off them is worth its value +
+  half the 拉 (0.5進1 by default), and the 拉 grows by that worth: 11, then a 20 is worth
+  26, and the 拉 is 37.
+- **踢** — when they win back off you, that hand is worth its value + half your 拉 on them;
+  your 拉 is gone and theirs starts at the plain value: 拉 29, then a 20 back is worth 35,
+  and their 拉 is 20.
+- A 自摸 counts pair by pair. A 流局 keeps every 拉; a hand the holder doesn't win ends theirs;
+  投降 ends one with nothing paid.
+- **反雪** — a player who dealt into a 雙響/三響 and 自摸s the very next hand takes back from each
+  of those winners what they won off them (plus an optional fixed extra).
+- **Jackpot** — each 流局 every player puts the set amount in; a win can take it, or tap the
+  pot to hand it out by hand.
+- The dealer stays on a dealer win, or on a 流局 with 流局留莊; otherwise the deal moves on, and
+  a full lap moves the round wind (執位提示 reminds you to re-seat).
+
+The **Scoring** tab's result gets a **Record to Scores** button while a game is in progress:
+it opens the 食胡 sheet with the winner picked by 門風, 自摸 set, and the tai minus any 莊/連莊
+(the ledger adds its own), and keeps the hand's patterns for the stats.
+
+**統計.** 玩家統計 cards (net, 胡 / 摸 / 銃 / 獎) over five views: **局** (every hand with each
+player's change), **走勢** (running totals hand by hand, with a crosshair tooltip and
+end-of-line labels), **牌型** (patterns from hands sent from Scoring), **玩家** (one player's
+full grid - 食胡, 自摸, 出銃, 獎罰, 彩池, 最高番數, 平均食胡番 / 出銃番, 拉人 / 被拉 / 踢人 / 被踢 and
+their records, 多響, 反雪, 最高得分 / 失分, 總自摸 / 出銃 得分 and 失分, 連勝, 助攻 and 助攻率, 正分率,
+首名率 - with 👑 for the best at the table and 💀 the worst) and **紀錄** (every game, career
+stats per player and head-to-head net tai).
 
 ## Play (hidden, in progress)
 
