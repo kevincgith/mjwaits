@@ -3,16 +3,15 @@
 <img src="public/favicon.svg" width="64" alt="MJWaits logo: a glass 白板 tile beside an empty glass tile (the wait) on green" align="right">
 
 A browser toolkit for 16-tile (Taiwanese / Hong Kong house rules) Mahjong. It started as a waits calculator — build a
-hand, see what completes it and which discard gives the best odds — and has grown five tabs:
+hand, see what completes it and which discard gives the best odds — and has grown four tabs:
 
 - **Scoring** — score a finished hand against a concrete house tai (番) list (~140 patterns).
 - **Calculator** — the original: waits, shanten, joker resolution, and discard analysis.
 - **Trainer** — timed quizzes: a **Waits** drill (name every tile that completes a hand) and a
   **Discards** drill (just drew — pick the single best tile to throw).
-- **Play** — play full hands against three local bots, on a landscape table.
 - **Dice** — roll for the wall, and see exactly where it breaks.
 
-On a phone the five tabs sit in a bottom tab bar; on wider screens they're a segmented control
+On a phone the four tabs sit in a bottom tab bar; on wider screens they're a segmented control
 under the title. In the Scoring tab a sticky toolbar keeps Reset / Scan / Photos, the tile count
 (or, once the hand scores, the total — tap it to jump to the breakdown) in view while scrolling.
 
@@ -286,30 +285,48 @@ and every stat — as far as you like; **N** deals a new one, asking first if th
 real progress to lose. History is cleared when a new hand is dealt, and a hand in progress
 survives switching sub-tabs.
 
-## Play
+## Play (hidden, in progress)
 
-A full hand of 16-tile mahjong against three bots that run in the browser — you along the
-bottom, the bots right / across / left in turn order. It's a landscape table: it fills the
-screen, and a phone held upright is asked to turn sideways.
+Not in the tab bar while it's being built: **long-press the logo** to open it (‹ on the table
+goes back). A full hand of 16-tile mahjong against three bots that run in the browser, laid
+out like a commercial 16-tile app on the same felt as the Dice wall. It's a landscape table: it
+fills the screen, and a phone held upright is asked to turn sideways.
 
+- **The table:** each bot's concealed tiles are drawn edge-on along its side, with its
+  melds and flowers beside them and its pond in front of it. You're along the bottom, your
+  melds and flowers inline before your hand and the tile you just drew set apart at the right.
+  A wind compass in the middle shows each seat's wind where that seat sits and lights whoever
+  is to act; its read-out is the live tiles left, or the countdown when the timer is on. The
+  newest discard carries a gold pin, and while it can be claimed it also shows large in a
+  spotlight on the discarder's side. A call (吃 / 碰 / 槓 / 胡 / 自摸) bursts up by whoever
+  made it. The bar along the bottom has your wind, 莊, your running total, the round and deal
+  (e.g. 東圈南局, with any 連莊) and 剩:N張.
 - **Rules:** 144 tiles with the 8 flowers/seasons (set aside and replaced from the back of
   the wall), 16 each, chow from the player on your left, pung, exposed / concealed / added
   kong with a replacement draw, win off a discard or by self-draw, and an exhaustive draw at
   the last 16 tiles. Win beats pung/kong beats chow; two wins off one discard go to the first
-  in turn order. No robbing the kong or 叮.
-- **Playing:** tap a tile to lift it, tap again to discard. When you can call a discard the
-  options (胡 / 槓 / 碰 / 上, each chow shape shown) appear with 過 to pass; 自摸 and kongs show
-  on your own turn.
+  in turn order. **食替:** straight after a call you can't throw the tile you claimed, nor,
+  after a chow taken at one end of the run, the tile at its far side (take 7 with 56: 4 is
+  barred too); barred tiles are greyed. No robbing the kong or 叮.
+- **Playing:** tap a tile to lift it, tap again to discard. When you can call a discard,
+  round call buttons (胡 / 槓 / 碰 / 吃) appear above your hand with 過 to pass. 吃 with more
+  than one fitting shape asks which; 自摸 and kongs show on your own turn.
+- **Menu (≡):** Hints on/off, a **turn timer** (Off by default, or 10s / 20s per decision; at
+  zero it passes on a call, or throws the drawn tile, or the hint's pick after a call), and
+  New game. **記牌器** beside it lists how many of each tile you haven't seen yet.
 - **Scoring:** a win is scored by the same tai list as the Scoring tab, with what the table
   knows filled in (seat and round wind, self-draw, the winning tile, last-tile and
   replacement-draw wins, 天胡/地胡/人胡, 莊 and 連莊). The discarder pays the tai; on a
-  self-draw all three do. Running totals sit on each seat badge.
+  self-draw all three do. Running totals sit on each seat badge. The result card's **View
+  table** hides it to look over the final table and the revealed hands; **Show result** brings
+  it back.
 - **Bots** pick the discard that leaves the fewest tiles from ready (shanten), then the one
   with the most unseen tiles that would improve it; they call only when a call gets them
-  closer (or for a pung of a scoring honor). **Hints** (the ⋯ menu) underline the same pick
-  in your hand and show how far you are from ready.
+  closer (or for a pung of a scoring honor). **Hints** underline that same pick in your hand
+  and show how far you are from ready.
 - The dealer stays on a dealer win or a draw; a full lap of dealers moves the round wind. The
-  game in progress is kept on this device, so leaving the tab or reloading picks it back up.
+  game in progress, and the hint and timer settings, are kept on this device, so leaving the
+  table or reloading picks it back up.
 
 ## Dice
 
@@ -359,7 +376,7 @@ tai list — is in [`src/lib/scoring.ts`](src/lib/scoring.ts), tested in
 detector (letterboxing, ONNX inference, non-max suppression) is in
 [`src/lib/vision.ts`](src/lib/vision.ts).
 
-A hidden developer sheet opens on three quick taps of the logo. **Test hands** loads any hand
+A hidden developer sheet opens on three quick taps of the logo (a long-press opens the hidden Play table instead). **Test hands** loads any hand
 from the scoring tests (or a random one). **Tools** has: the tile style; a live layout overlay
 (page height, the bottom spacer, space below the footer); loading or copying the Scoring hand as
 notation; the latest calculation timings; Trainer switches to reveal the answers or repeat a

@@ -9656,7 +9656,9 @@ const TAB_ICON_PROPS = {
   strokeLinejoin: "round",
 } as const;
 
-const TAB_ITEMS: { id: AppMode; label: string; icon: ReactNode }[] = [
+// Play isn't in the tab bar while it's being worked on: a long-press on the
+// logo opens it (see logoPress in App).
+const TAB_ITEMS: { id: Exclude<AppMode, "play">; label: string; icon: ReactNode }[] = [
   {
     id: "scoring",
     label: "Scoring",
@@ -9687,17 +9689,6 @@ const TAB_ITEMS: { id: AppMode; label: string; icon: ReactNode }[] = [
         <circle cx="12" cy="12" r="8.5" />
         <circle cx="12" cy="12" r="5" />
         <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none" />
-      </svg>
-    ),
-  },
-  {
-    id: "play",
-    label: "Play",
-    icon: (
-      <svg {...TAB_ICON_PROPS}>
-        <rect x="3" y="7" width="7" height="10" rx="1.6" />
-        <rect x="14" y="7" width="7" height="10" rx="1.6" />
-        <path d="M6.5 10.5v3M17.5 10.5v3M16 12h3" />
       </svg>
     ),
   },
@@ -9817,6 +9808,7 @@ function App() {
       setTestHandsOpen(true);
     }
   };
+  const logoPress = useTapAndLongPress(onLogoTap, () => setMode("play"));
   const pickTestHand = (hand: TestHand) => {
     setTestHandRequest({ hand, nonce: Date.now() });
     setMode("scoring");
@@ -9831,7 +9823,7 @@ function App() {
           className="app-logo"
           src={`${import.meta.env.BASE_URL}favicon.svg`}
           alt=""
-          onClick={onLogoTap}
+          {...logoPress}
           draggable={false}
         />
         <div className="app-title">

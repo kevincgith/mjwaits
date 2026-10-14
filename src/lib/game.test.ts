@@ -4,6 +4,9 @@ import {
   botClaim,
   botTurnMove,
   claimOptions,
+  forbiddenDiscards,
+  roundLabel,
+  swapDiscardBan,
   meldsNeeded,
   newGame,
   nextHand,
@@ -11,7 +14,10 @@ import {
   SEATS,
   type GameState,
 } from "./game";
-import { parseHand } from "./mahjong";
+import { parseHand, type Tile } from "./mahjong";
+
+const sameTile = (a: Tile, b: Tile) => a.suit === b.suit && a.rank === b.rank;
+const m = (rank: number): Tile => ({ suit: "m", rank });
 
 function tilesInPlay(s: GameState): number {
   return (
@@ -28,7 +34,9 @@ function playOut(s: GameState): GameState {
     if (s.phase.kind === "turn") {
       const p = s.players[s.phase.seat];
       expect(p.hand.length).toBe(meldsNeeded(p) * 3 + 2);
-      s = applyTurnMove(s, botTurnMove(s));
+      const move = botTurnMove(s);
+      if (move.kind === "discard") expect(forbiddenDiscards(s).some((t) => sameTile(t, move.tile))).toBe(false);
+      s = applyTurnMove(s, move);
     } else {
       const decisions = Array.from({ length: SEATS }, (_, seat) => botClaim(s, seat));
       s = resolveClaims(s, decisions);
@@ -82,5 +90,38 @@ describe("game", () => {
     expect(after.phase).toMatchObject({ kind: "turn", seat: 2 });
     expect(after.players[2].melds[0].kind).toBe("triplet");
     expect(after.players[0].discards).toEqual([]);
+  });
+
+  it("bars 食替 discards after a call", () => {
+    // Pung: just the claimed tile.
+    expect(swapDiscardBan(m(5))).toEqual([m(5)]);
+    // Chow at the high end: 56 + 7 also waited on 4.
+    expect(swapDiscardBan(m(7), [m(5), m(6)])).toEqual([m(7), m(4)]);
+    // Chow at the low end: 34 + 2 also waited on 5.
+    expect(swapDiscardBan(m(2), [m(3), m(4)])).toEqual([m(2), m(5)]);
+    // Edge and middle chows have no far side: 89 + 7, 68 + 7.
+    expect(swapDiscardBan(m(7), [m(8), m(9)])).toEqual([m(7)]);
+    expect(swapDiscardBan(m(7), [m(6), m(8)])).toEqual([m(7)]);
+  });
+
+  it("applies 食替 after a chow, and waives it when nothing else is left", () => {
+    const s0 = newGame();
+    s0.players[0].hand = parseHand("12347m111222333t5b");
+    s0.players[1].hand = parseHand("56m111222333t12345b");
+    const s = applyTurnMove(s0, { kind: "discard", tile: m(7) });
+    const after = resolveClaims(s, [null, claimOptions(s, 1)[0], null, null]);
+    expect(forbiddenDiscards(after)).toEqual([m(7), m(4)]);
+    expect(() => applyTurnMove(after, { kind: "discard", tile: m(4) })).toThrow();
+    expect(botTurnMove(after)).not.toMatchObject({ kind: "discard", tile: m(4) });
+    // A hand of only barred tiles may throw one anyway.
+    const stuck = { ...after, players: after.players.map((p, i) => (i === 1 ? { ...p, hand: [m(4), m(4)] } : p)) };
+    expect(forbiddenDiscards(stuck)).toEqual([]);
+  });
+
+  it("labels the round and deal", () => {
+    const s = newGame();
+    expect(roundLabel(s)).toBe("東圈東局");
+    expect(roundLabel({ ...s, dealer: 2 })).toBe("東圈西局");
+    expect(roundLabel({ ...s, roundWind: 2, dealer: 3 })).toBe("南圈北局");
   });
 });
