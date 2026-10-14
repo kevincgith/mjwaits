@@ -32,15 +32,15 @@ import {
 } from "./sharedHands";
 import { getDebug, recordTiming, setDebug, timed, useDebug, type ScanDebugRegion } from "./debug";
 import {
-  bonusArtUrl,
+  bonusTileLabel,
   loadTileStyle,
   saveTileStyle,
-  tileArtUrl,
   TILE_STYLES,
   TileStyleContext,
-  useTileStyle,
   type TileStyle,
 } from "./tileArt";
+import { BonusGlyphSpan, TileGlyphSpan } from "./TileGlyphs";
+import { PlayPanel } from "./PlayPanel";
 import {
   COMPLETE_SIZE,
   compareTiles,
@@ -66,7 +66,6 @@ import {
   shanten,
   sortTiles,
   tileCount,
-  tileGlyph,
   tileKey,
   tileLabel,
 } from "./lib/mahjong";
@@ -564,38 +563,6 @@ function useTapAndLongPress(onTap: () => void, onLongPress: () => void, disabled
   };
 
   return { onPointerDown, onPointerUp, onPointerCancel, onClick };
-}
-
-function TileGlyphSpan({
-  tile,
-  large,
-  highlight,
-  jokerAssumed,
-}: {
-  tile: Tile;
-  large?: boolean;
-  highlight?: boolean;
-  jokerAssumed?: boolean;
-}) {
-  const art = useTileStyle() === "art";
-  const classes = ["tile-glyph", art && "tile-art", large && "large", highlight && "wait-highlight", jokerAssumed && "joker-assumed"]
-    .filter(Boolean)
-    .join(" ");
-  // role/aria-label so assistive tech reads "3 Sou" rather than the bare
-  // Mahjong Tiles codepoint. A button wrapping this can override with its own
-  // aria-label to describe the action instead.
-  return (
-    <span
-      className={classes}
-      data-suit={tile.suit}
-      data-rank={tile.rank}
-      role="img"
-      aria-label={jokerAssumed ? `${tileLabel(tile)} (assumed from a joker)` : tileLabel(tile)}
-      title={jokerAssumed ? "Assumed from a joker" : undefined}
-    >
-      {art ? <img className="tile-face" src={tileArtUrl(tile)} alt="" draggable={false} /> : tileGlyph(tile)}
-    </span>
-  );
 }
 
 function TileButton({
@@ -2526,7 +2493,15 @@ function Calculator({
           <span className="toolbar-label">Photos</span>
         </button>
         <span className="toolbar-status">
-          <span className={`tile-count-pill${hand.length >= COMPLETE_SIZE - 1 ? " is-full" : ""}`}>
+          {/* Tinted once the hand is ready - waits found, or already a win -
+              the same rule as Scoring's pill. */}
+          <span
+            className={`tile-count-pill${
+              (outcome !== null && !outcome.overflowed && outcome.results.length > 0) || discardChoices?.alreadyComplete
+                ? " is-ready"
+                : ""
+            }`}
+          >
             {hand.length}/{COMPLETE_SIZE}
           </span>
         </span>
@@ -4381,56 +4356,6 @@ const VISIBLE_EXHAUST_LABELS: Record<VisibleExhaustState, string> = {
   triple: "明絕",
   exhausted: "絕絕",
 };
-
-// Glyphs + English names for the 8 bonus tiles, keyed by `rank` = the NUMBER
-// PAINTED ON THE TILE. That painted number is what the vision model reports
-// (class "3f" etc., see classToBonusTile in vision.ts) and what 正花/爛花 pair
-// against the seat wind (scoring.ts) - so `rank` itself must always mean the
-// painted number; only the rank->codepoint map below bends to fit Unicode.
-//
-// Flowers, conventional numbering (as painted on a physical set, and how the
-// MahjongVis training data is labelled):
-//     梅1 Plum   蘭2 Orchid   菊3 Chrysanthemum   竹4 Bamboo
-// Flowers, Unicode "Mahjong Tiles" block order (right after circles 1F019-
-// 1F021, before Joker 1F02A):
-//     1F022 Plum   1F023 Orchid   1F024 Bamboo   1F025 Chrysanthemum
-// i.e. the block puts BAMBOO and CHRYSANTHEMUM in the opposite order to the
-// painted numbers - commonly described as an error in the block's ordering.
-// It's only the ordering: the codepoint *names*, and the fonts that follow
-// them (Apple Symbols / Noto Sans Symbols 2 / Segoe UI Symbol, our stack in
-// App.css), are self-consistent - 1F024 draws 竹, 1F025 draws 菊. So we map
-// rank 3 -> 1F025 and rank 4 -> 1F024 on purpose, so a scanned "3" tile
-// (chrysanthemum) renders as a chrysanthemum rather than as bamboo.
-//
-// Seasons have no such issue: painted 春1 夏2 秋3 冬4 matches the block order
-// 1F026-1F029 one-to-one, so SEASON_CODEPOINTS is a plain sequential map.
-const FLOWER_CODEPOINTS: Record<1 | 2 | 3 | 4, number> = { 1: 0x1f022, 2: 0x1f023, 3: 0x1f025, 4: 0x1f024 };
-const SEASON_CODEPOINTS: Record<1 | 2 | 3 | 4, number> = { 1: 0x1f026, 2: 0x1f027, 3: 0x1f028, 4: 0x1f029 };
-const FLOWER_NAMES: Record<1 | 2 | 3 | 4, string> = { 1: "Plum", 2: "Orchid", 3: "Chrysanthemum", 4: "Bamboo" };
-const SEASON_NAMES: Record<1 | 2 | 3 | 4, string> = { 1: "Spring", 2: "Summer", 3: "Autumn", 4: "Winter" };
-const BONUS_TEXT_PRESENTATION = "︎"; // see mahjong.ts's TEXT_PRESENTATION for why
-
-function bonusTileGlyph(tile: BonusTile): string {
-  const codepoint = (tile.kind === "flower" ? FLOWER_CODEPOINTS : SEASON_CODEPOINTS)[tile.rank];
-  return String.fromCodePoint(codepoint) + BONUS_TEXT_PRESENTATION;
-}
-function bonusTileLabel(tile: BonusTile): string {
-  return tile.kind === "flower" ? `Flower: ${FLOWER_NAMES[tile.rank]}` : `Season: ${SEASON_NAMES[tile.rank]}`;
-}
-
-// A flower/season tile, in the current tile style (see TileGlyphSpan).
-function BonusGlyphSpan({ tile, large, label }: { tile: BonusTile; large?: boolean; label?: boolean }) {
-  const art = useTileStyle() === "art";
-  return (
-    <span
-      className={["tile-glyph", art && "tile-art", large && "large"].filter(Boolean).join(" ")}
-      data-suit="bonus"
-      {...(label ? { role: "img", "aria-label": bonusTileLabel(tile) } : {})}
-    >
-      {art ? <img className="tile-face" src={bonusArtUrl(tile)} alt="" draggable={false} /> : bonusTileGlyph(tile)}
-    </span>
-  );
-}
 
 // Canonical display order for the declared-melds box's bonus-tile row -
 // all 4 flowers (by rank) then all 4 seasons (by rank), same order as the
@@ -7758,6 +7683,9 @@ const DIE_PIPS: Record<number, number[]> = {
   6: [1, 3, 4, 6, 7, 9],
 };
 
+// Chinese dice: the 1 and the 4 have red pips (and the 1's is big).
+const DIE_RED: Record<number, boolean> = { 1: true, 4: true };
+
 function Die({
   value,
   onBump,
@@ -7771,10 +7699,10 @@ function Die({
   return (
     <button
       type="button"
-      className="die"
+      className={`die${DIE_RED[value] ? " is-red" : ""}${value === 1 ? " is-one" : ""}`}
       onClick={onBump}
       disabled={disabled}
-      aria-label={`Die showing ${value} — tap to change`}
+      aria-label={value ? `Die showing ${value} — tap to change` : "Die not rolled yet — tap to set it"}
     >
       {Array.from({ length: 9 }, (_, i) => (
         <span key={i} className={pips.includes(i + 1) ? "die-pip" : "die-cell"} />
@@ -7867,7 +7795,7 @@ function WallBar({
   );
 }
 
-function Wall({ total }: { total: number | null }) {
+function Wall({ total, children }: { total: number | null; children?: ReactNode }) {
   const brk = wallBreak(total);
   const slot = (side: WallSide, orientation: "h" | "v") => (
     <div className={`wall-bar-slot wall-${side}`}>
@@ -7888,18 +7816,384 @@ function Wall({ total }: { total: number | null }) {
       {slot("right", "v")}
       {slot("bottom", "h")}
       {slot("left", "v")}
+      {children}
     </div>
   );
 }
 
-// Shared dice-roll state: `count` d6 that start on 1 and cycle 1..6 when a die
-// is tapped (bumpDie). roll() tumbles the dice faces for ~0.6s, then commits one
-// settled result. `dice` is that settled result (stable during a roll, so
-// derived readouts don't flicker); `faces` is what the tray shows - the
-// tumbling values mid-roll, the settled ones otherwise.
-function useDiceRoll(count: number) {
-  const [dice, setDice] = useState<number[]>(() => Array<number>(count).fill(1));
+// The dice on the table inside the wall, as 3D cubes thrown by a small
+// physics simulation (simulateThrow): in from the roller's edge, rolling and
+// slowing on the felt, bouncing off the walls and off each other. Each die
+// turns exactly as far as it rolls, about the level axis square to its path,
+// and comes to rest showing its rolled value at a slight angle. Set by
+// tapping instead, they just appear.
+const WALL_DIE_SIDES = [1, 2, 3, 4, 5, 6] as const;
+// The rotation that turns each value's face up toward the viewer.
+const WALL_DIE_REST: Record<number, string> = {
+  1: "rotateX(0deg)",
+  2: "rotateX(-90deg)",
+  3: "rotateY(-90deg)",
+  4: "rotateY(90deg)",
+  5: "rotateX(90deg)",
+  6: "rotateY(180deg)",
+};
+const WALL_DIE_SIZE = 30; // must match .wall-die's --size
+// How much bigger a die is drawn per px of height: scale 1 + z / WALL_DIE_LIFT.
+const WALL_DIE_LIFT = 110;
+// The longest a throw lasts; the result shows as it ends (see useDiceRoll).
+const WALL_THROW_MS = 1300;
+// The rounded edges and corners, as a small mesh around the six faces: each
+// edge is a quarter-circle of radius WALL_DIE_BEVEL made of two flat strips,
+// each corner the matching eighth of a sphere made of four triangles - all
+// worked out once in the cube's own px (centre at 0). A piece is a 100x100px
+// element mapped onto its strip or triangle by a matrix3d (origin at its top
+// left), so the pieces meet exactly.
+const WALL_DIE_BEVEL = 4; // must match .wall-die-cube's --c
+type Vec3 = [number, number, number];
+const WALL_DIE_MESH: { transform: string; clipPath?: string; part: string }[] = (() => {
+  const h = WALL_DIE_SIZE / 2;
+  const c = WALL_DIE_BEVEL;
+  const add = (a: Vec3, b: Vec3, k = 1): Vec3 => [a[0] + b[0] * k, a[1] + b[1] * k, a[2] + b[2] * k];
+  const sub = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+  const norm = (a: Vec3): Vec3 => {
+    const l = Math.hypot(...a);
+    return [a[0] / l, a[1] / l, a[2] / l];
+  };
+  const cross = (a: Vec3, b: Vec3): Vec3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const f = (v: number) => +v.toFixed(4);
+  // Maps the element's (0,0) to A, (100,0) to B and (0,100) to C.
+  const piece = (A: Vec3, B: Vec3, C: Vec3, triangle: boolean, part: string) => {
+    const u = sub(B, A).map((v) => v / 100);
+    const v = sub(C, A).map((x) => x / 100);
+    const n = norm(cross(sub(B, A), sub(C, A)));
+    return {
+      transform: `matrix3d(${[...u, 0, ...v, 0, ...n, 0, ...A, 1].map(f).join(",")})`,
+      clipPath: triangle ? "polygon(0 0, 100% 0, 0 100%)" : undefined,
+      part,
+    };
+  };
+  const axes: Vec3[] = [
+    [1, 0, 0],
+    [0, 1, 0],
+    [0, 0, 1],
+  ];
+  const out: { transform: string; clipPath?: string; part: string }[] = [];
+  const grow = 0.35; // each piece a hair bigger, so no seam shows between them
+  // Edges: for each pair of face directions (n1, n2), along the third axis.
+  for (let i = 0; i < 3; i++)
+    for (let j = i + 1; j < 3; j++) {
+      const len = axes[3 - i - j];
+      for (const s1 of [1, -1])
+        for (const s2 of [1, -1]) {
+          const n1 = axes[i].map((x) => x * s1) as Vec3;
+          const n2 = axes[j].map((x) => x * s2) as Vec3;
+          const centre = add(n1, n2).map((x) => x * (h - c)) as Vec3;
+          const at = (deg: number, t: number) =>
+            add(add(centre, n1, c * Math.cos((deg * Math.PI) / 180)), n2, c * Math.sin((deg * Math.PI) / 180)).map(
+              (x, k) => x + len[k] * t
+            ) as Vec3;
+          const half = h - c + grow;
+          // Two strips per edge; each is shaded from its face side (matching
+          // the face's edge) to the middle of the curve - see .wall-die-bevel.
+          out.push(piece(at(-4, -half), at(-4, half), at(49, -half), false, "edge-in"));
+          out.push(piece(at(41, -half), at(41, half), at(94, -half), false, "edge-out"));
+        }
+    }
+  // Corners: an eighth of a sphere, from the four triangles of a split octant.
+  for (const sx of [1, -1])
+    for (const sy of [1, -1])
+      for (const sz of [1, -1]) {
+        const k: Vec3 = [sx * (h - c), sy * (h - c), sz * (h - c)];
+        const pt = (a: number, b: number) => add(k, norm([sx * a, sy * b, sz * (2 - a - b)]), c + grow * 0.5);
+        for (const [p, q, r] of [
+          [[0, 0], [1, 0], [0, 1]],
+          [[1, 0], [2, 0], [1, 1]],
+          [[0, 1], [1, 1], [0, 2]],
+          [[1, 0], [1, 1], [0, 1]],
+        ] as [number, number][][]) {
+          out.push(piece(pt(...p), pt(...q), pt(...r), true, "corner"));
+        }
+      }
+  return out;
+})();
+
+// Rotations as quaternions [w, x, y, z], in CSS's axes (x right, y down, z
+// toward the viewer).
+type Quat = [number, number, number, number];
+const qMul = (a: Quat, b: Quat): Quat => [
+  a[0] * b[0] - a[1] * b[1] - a[2] * b[2] - a[3] * b[3],
+  a[0] * b[1] + a[1] * b[0] + a[2] * b[3] - a[3] * b[2],
+  a[0] * b[2] - a[1] * b[3] + a[2] * b[0] + a[3] * b[1],
+  a[0] * b[3] + a[1] * b[2] - a[2] * b[1] + a[3] * b[0],
+];
+const qAxis = (x: number, y: number, z: number, angle: number): Quat => {
+  const h = Math.sin(angle / 2);
+  return [Math.cos(angle / 2), x * h, y * h, z * h];
+};
+const qConj = (q: Quat): Quat => [q[0], -q[1], -q[2], -q[3]];
+const qCss = ([w, x, y, z]: Quat): string => {
+  const m = [
+    1 - 2 * (y * y + z * z), 2 * (x * y + w * z), 2 * (x * z - w * y), 0,
+    2 * (x * y - w * z), 1 - 2 * (x * x + z * z), 2 * (y * z + w * x), 0,
+    2 * (x * z + w * y), 2 * (y * z - w * x), 1 - 2 * (x * x + y * y), 0,
+    0, 0, 0, 1,
+  ];
+  return `matrix3d(${m.map((v) => +v.toFixed(5)).join(",")})`;
+};
+
+interface ThrowFrame {
+  x: number;
+  y: number;
+  /** Height above the felt, px. */
+  z: number;
+  q: Quat;
+}
+
+// Simulates `n` dice thrown up the table from its bottom edge, inside
+// `bounds` (px): they leave the hand in the air, spinning freely, drop and
+// bounce on the felt, then roll - friction slows them, walls and each other
+// bounce them.
+// Returns each die's positions and rotations at 60 frames a second, until all
+// have stopped.
+function simulateThrow(bounds: { l: number; t: number; r: number; b: number }, n: number): ThrowFrame[][] {
+  const rad = WALL_DIE_SIZE * 0.62; // collision radius (a cube's half-diagonal-ish)
+  const W = bounds.r - bounds.l;
+  const H = bounds.b - bounds.t;
+  const dice = Array.from({ length: n }, (_, i) => {
+    // Up the table, fanned out by position (left die a little left, right a
+    // little right) so they don't converge in the air, plus some scatter.
+    const lane = i - (n - 1) / 2;
+    const angle = -Math.PI / 2 + lane * 0.28 + (Math.random() - 0.5) * 0.4;
+    const speed = H * (2.1 + Math.random() * 1.1);
+    // A random axis to spin about while in the air.
+    const sa = Math.random() * Math.PI * 2;
+    const sb = Math.acos(2 * Math.random() - 1);
+    return {
+      // Released almost two die-widths apart - in the air they're drawn bigger.
+      x: bounds.l + W / 2 + lane * WALL_DIE_SIZE * 1.9 + (Math.random() - 0.5) * 6,
+      y: bounds.b - rad - 1,
+      z: 38 + Math.random() * 14,
+      vz: 40 + Math.random() * 60,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      spin: [Math.sin(sb) * Math.cos(sa), Math.sin(sb) * Math.sin(sa), Math.cos(sb)] as const,
+      q: qAxis(0, 0, 1, (Math.random() - 0.5) * Math.PI) as Quat,
+    };
+  });
+  const frames: ThrowFrame[][] = dice.map(() => []);
+  const dt = 1 / 240;
+  for (let step = 0; step < (240 * WALL_THROW_MS) / 1000; step++) {
+    for (const d of dice) {
+      // In the air: gravity, and a landing bounce that dies away.
+      if (d.z > 0 || d.vz > 0) {
+        d.vz -= 1100 * dt;
+        d.z += d.vz * dt;
+        if (d.z <= 0) {
+          d.z = 0;
+          d.vz = -d.vz * 0.38;
+          if (d.vz < 45) d.vz = 0;
+        }
+      }
+      const flying = d.z > 0.5;
+      // Rolling resistance on the felt (none in the air): a share of the speed
+      // plus a constant drag.
+      const v = Math.hypot(d.vx, d.vy);
+      const nv = flying ? v : Math.max(0, v * (1 - 1.5 * dt) - 160 * dt);
+      if (v > 0) {
+        d.vx *= nv / v;
+        d.vy *= nv / v;
+      }
+      d.x += d.vx * dt;
+      d.y += d.vy * dt;
+      // Walls: bounce back, losing some speed.
+      if (d.x < bounds.l + rad) { d.x = bounds.l + rad; d.vx = Math.abs(d.vx) * 0.6; }
+      if (d.x > bounds.r - rad) { d.x = bounds.r - rad; d.vx = -Math.abs(d.vx) * 0.6; }
+      if (d.y < bounds.t + rad) { d.y = bounds.t + rad; d.vy = Math.abs(d.vy) * 0.6; }
+      if (d.y > bounds.b - rad) { d.y = bounds.b - rad; d.vy = -Math.abs(d.vy) * 0.6; }
+      // In the air it spins freely; on the felt it rolls without sliding -
+      // turning by distance / radius about (n x v).
+      const dist = nv * dt;
+      if (flying) d.q = qMul(qAxis(d.spin[0], d.spin[1], d.spin[2], 16 * dt), d.q);
+      else if (dist > 0) d.q = qMul(qAxis(-d.vy / nv, d.vx / nv, 0, dist / (WALL_DIE_SIZE / 2)), d.q);
+    }
+    // Dice knock into each other: push apart, trade speed along the hit.
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        const a = dice[i];
+        const b = dice[j];
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const d = Math.hypot(dx, dy) || 0.01;
+        // A die in the air is drawn bigger (see WALL_DIE_LIFT), so it collides
+        // bigger too.
+        const reach = rad * (2 + a.z / WALL_DIE_LIFT + b.z / WALL_DIE_LIFT);
+        if (d >= reach) continue;
+        const nx = dx / d;
+        const ny = dy / d;
+        const push = (reach - d) / 2;
+        a.x -= nx * push;
+        a.y -= ny * push;
+        b.x += nx * push;
+        b.y += ny * push;
+        const closing = (a.vx - b.vx) * nx + (a.vy - b.vy) * ny;
+        if (closing > 0) {
+          const k = (closing * (1 + 0.75)) / 2;
+          a.vx -= k * nx;
+          a.vy -= k * ny;
+          b.vx += k * nx;
+          b.vy += k * ny;
+        }
+      }
+    }
+    if (step % 4 === 0) dice.forEach((d, i) => frames[i].push({ x: d.x, y: d.y, z: d.z, q: d.q }));
+    if (step > 60 && dice.every((d) => d.z === 0 && d.vz === 0 && Math.hypot(d.vx, d.vy) < 4)) break;
+  }
+  dice.forEach((d, i) => frames[i].push({ x: d.x, y: d.y, z: 0, q: d.q }));
+  return frames;
+}
+
+function WallDice({ faces, target, rollCount }: { faces: number[]; target: number[] | null; rollCount: number }) {
+  // Mid-throw the cube already heads for the result (decided at the roll's
+  // start), so it lands showing exactly what the tray will.
+  const values = target ?? faces;
+  const layerRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    const layer = layerRef.current;
+    const wall = layer?.parentElement;
+    if (!layer || !wall) return;
+    // The table: inside the four bars, in the layer's own px.
+    const box = layer.getBoundingClientRect();
+    const bar = (side: string) => wall.querySelector(`.wall-${side}`)!.getBoundingClientRect();
+    const bounds = {
+      l: bar("left").right - box.left + 2,
+      r: bar("right").left - box.left - 2,
+      t: bar("top").bottom - box.top + 2,
+      b: bar("bottom").top - box.top - 2,
+    };
+    const dice = [...layer.querySelectorAll<HTMLElement>(".wall-die")];
+    const place = (die: HTMLElement, x: number, y: number, rest: Quat) => {
+      die.style.left = `${x}px`;
+      die.style.top = `${y}px`;
+      die.querySelector<HTMLElement>(".wall-die-roll")!.style.transform = qCss(rest);
+    };
+    const yaw = () => qAxis(0, 0, 1, ((Math.random() - 0.5) * 70 * Math.PI) / 180);
+    const still = rollCount === 0 || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    // At rest only the top face is ever seen; showing just that one keeps the
+    // rounded corners clean (the sides' edges would peek past them).
+    const setResting = (die: HTMLElement, resting: boolean) => die.classList.toggle("is-resting", resting);
+    if (still) {
+      dice.forEach((die) => setResting(die, true));
+      // Set by tapping (or no motion wanted): just lay them out across the middle.
+      dice.forEach((die, i) => {
+        const x = bounds.l + ((i + 0.5) / dice.length) * (bounds.r - bounds.l);
+        place(die, x, (bounds.t + bounds.b) / 2 + (i % 2 ? 10 : -10), yaw());
+      });
+      return;
+    }
+    const paths = simulateThrow(bounds, dice.length);
+    const anims: Animation[] = [];
+    dice.forEach((die, i) => {
+      const path = paths[i];
+      const end = path[path.length - 1];
+      const rest = yaw();
+      // So the last frame is exactly `rest` (face up, at an angle), every frame
+      // carries the same correction - the rolling itself is untouched.
+      const fix = qMul(qConj(end.q), rest);
+      place(die, end.x, end.y, rest);
+      setResting(die, false);
+      const duration = (path.length - 1) * (1000 / 60);
+      const last = path.length - 1;
+      // Height reads as size (nearer the eye) and as the shadow falling
+      // further away and softer.
+      const before = anims.length;
+      anims.push(
+        die.animate(
+          path.map((f, k) => ({
+            transform: `translate(${f.x - end.x}px, ${f.y - end.y}px) scale(${1 + f.z / WALL_DIE_LIFT})`,
+            opacity: k === 0 ? 0 : 1,
+            offset: k / last,
+          })),
+          { duration }
+        ),
+        die.querySelector<HTMLElement>(".wall-die-shadow")!.animate(
+          path.map((f, k) => ({
+            transform: `translate(${f.z * 0.45}px, ${f.z * 0.7}px) scale(${1 / (1 + f.z / WALL_DIE_LIFT)})`,
+            opacity: 1 - Math.min(0.6, f.z / 80),
+            offset: k / last,
+          })),
+          { duration }
+        ),
+        die.querySelector<HTMLElement>(".wall-die-roll")!.animate(
+          path.map((f, k) => ({ transform: qCss(qMul(f.q, fix)), offset: k / last })),
+          { duration }
+        )
+      );
+      Promise.all(anims.slice(before).map((a) => a.finished))
+        .then(() => setResting(die, true))
+        .catch(() => {
+          // Cancelled by the next roll - it sets its own state.
+        });
+    });
+    return () => anims.forEach((a) => a.cancel());
+    // One throw per roll; values only re-face the cubes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rollCount, values.length]);
+
+  return (
+    <div className="wall-dice" ref={layerRef} aria-hidden="true">
+      {values.map((v, i) => (
+        <span key={`${rollCount}-${i}`} className="wall-die">
+          <span className="wall-die-shadow" />
+          <span className="wall-die-roll">
+            <span className="wall-die-cube" style={{ transform: WALL_DIE_REST[v] }}>
+              {/* A rounded cube: the edge and corner mesh, then the six faces. */}
+              {WALL_DIE_MESH.map((m) => (
+                <span key={m.transform} className={`wall-die-bevel is-${m.part}`} style={{ transform: m.transform, clipPath: m.clipPath }} />
+              ))}
+              {WALL_DIE_SIDES.map((side) => (
+                <span key={side} className={`wall-die-side wall-die-side-${side}${side === v ? " is-up" : ""}${DIE_RED[side] ? " is-red" : ""}${side === 1 ? " is-one" : ""}`}>
+                  {Array.from({ length: 9 }, (_, k) => (
+                    <span key={k} className={DIE_PIPS[side].includes(k + 1) ? "die-pip" : "die-cell"} />
+                  ))}
+                </span>
+              ))}
+            </span>
+            {/* At rest the cube fades into this flat, fully rounded die, set at
+                the cube's top face so it lines up exactly - no 3D corners left
+                to catch the eye once it has landed. */}
+            <span className={`wall-die-flat${DIE_RED[v] ? " is-red" : ""}${v === 1 ? " is-one" : ""}`}>
+              {Array.from({ length: 9 }, (_, k) => (
+                <span key={k} className={DIE_PIPS[v].includes(k + 1) ? "die-pip" : "die-cell"} />
+              ))}
+            </span>
+          </span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+// Shared dice-roll state: `count` d6 that cycle 1..6 when a die is tapped
+// (bumpDie). roll() tumbles the dice faces for ~0.6s, then commits one settled
+// result. `dice` is that settled result (stable during a roll, so derived
+// readouts don't flicker); `faces` is what the tray shows - the tumbling values
+// mid-roll, the settled ones otherwise. With `blankUntilRolled`, there is no
+// result until the first roll (or a tap): `ready` is false and the faces are
+// blank (0), so no total or wall break shows before anything has been rolled.
+// (The Seating ceremony keeps dice that start on 1 - it only reads them after
+// its own throws.) `rollMs` is how long a roll lasts - Dice & wall's matches
+// its dice landing on the table (WALL_THROW_MS).
+function useDiceRoll(count: number, blankUntilRolled = false, rollMs = 600) {
+  const [dice, setDice] = useState<number[]>(() => Array<number>(count).fill(blankUntilRolled ? 0 : 1));
+  const ready = dice.every((v) => v > 0);
   const [tumbling, setTumbling] = useState<number[] | null>(null);
+  // Bumped on every roll, so a per-roll animation (the dice thrown onto the
+  // table, see WallDice) can restart.
+  const [rollCount, setRollCount] = useState(0);
+  // The result is decided when the roll starts (and committed when it ends),
+  // so an animation can land on it - see WallDice.
+  const [target, setTarget] = useState<number[] | null>(null);
   const rollTimer = useRef<number | null>(null);
 
   useEffect(
@@ -7914,15 +8208,19 @@ function useDiceRoll(count: number) {
 
   const roll = () => {
     if (rolling) return;
+    const result = rollOnce();
+    setTarget(result);
+    setRollCount((n) => n + 1);
     setTumbling(rollOnce());
     let ticks = 0;
     if (rollTimer.current !== null) window.clearInterval(rollTimer.current);
     rollTimer.current = window.setInterval(() => {
       ticks += 1;
-      if (ticks >= 10) {
+      if (ticks >= Math.round(rollMs / 60)) {
         if (rollTimer.current !== null) window.clearInterval(rollTimer.current);
         rollTimer.current = null;
-        setDice(rollOnce());
+        setDice(result);
+        setTarget(null);
         setTumbling(null);
       } else {
         setTumbling(rollOnce());
@@ -7932,22 +8230,26 @@ function useDiceRoll(count: number) {
 
   const bumpDie = (idx: number) => {
     if (rolling) return;
-    setDice((d) => d.map((v, i) => (i === idx ? (v % 6) + 1 : v)));
+    // The first tap on unrolled dice sets them all to 1; after that a tap
+    // cycles just that die.
+    setDice((d) => (d.every((v) => v > 0) ? d.map((v, i) => (i === idx ? (v % 6) + 1 : v)) : d.map(() => 1)));
   };
 
-  return { dice, faces: tumbling ?? dice, rolling, roll, bumpDie };
+  return { dice, faces: tumbling ?? dice, rolling, ready, rollCount, target, roll, bumpDie };
 }
 
 function DicePanel() {
-  const { dice, faces, rolling, roll, bumpDie } = useDiceRoll(3);
+  const { dice, faces, rolling, ready, rollCount, target, roll, bumpDie } = useDiceRoll(3, true, WALL_THROW_MS);
 
   const total = dice[0] + dice[1] + dice[2];
-  const brk = rolling ? null : wallBreak(total);
+  // Nothing to show until there's a result: no total, no break.
+  const shown = ready && !rolling;
+  const brk = shown ? wallBreak(total) : null;
 
   // Highlight two notable rolls (based on the settled dice): a three-of-a-kind
   // (green) and a 1-2-3 in any order (red).
   const sortedDice = [...dice].sort((a, b) => a - b);
-  const rollTint = rolling
+  const rollTint = !shown
     ? ""
     : sortedDice[0] === sortedDice[2]
       ? " dice-total-trips"
@@ -7969,10 +8271,15 @@ function DicePanel() {
 
       <div className={`waits dice-total${rollTint}`}>
         <span className="waits-label">Total:</span>
-        <span className="scoring-total-value">{rolling ? "–" : total}</span>
+        <span className="scoring-total-value">{shown ? total : "–"}</span>
       </div>
 
-      <Wall total={rolling ? null : total} />
+      <Wall total={shown ? total : null}>{(ready || rolling) && <WallDice faces={dice} target={target} rollCount={rollCount} />}</Wall>
+      {!ready && !rolling && (
+        <div className="wall-break-caption">
+          <span className="wall-break-detail">Roll the dice, or tap a die to set it</span>
+        </div>
+      )}
 
       {brk && (
         <div className="wall-break-caption">
@@ -7996,7 +8303,8 @@ function DicePanel() {
 }
 
 function ExchangePanel() {
-  const { dice, faces, rolling, roll, bumpDie } = useDiceRoll(2);
+  const { dice, faces, rolling, ready, roll, bumpDie } = useDiceRoll(2, true);
+  const shown = ready && !rolling;
   // The first die picks a round: 1-2 -> 1, 3-4 -> 2, 5-6 -> 3.
   const round = Math.ceil(dice[0] / 2);
   // The second die picks a tile count, with a floor of 3.
@@ -8021,18 +8329,19 @@ function ExchangePanel() {
       <div className="dice-result-boxes">
         <div className="waits dice-total">
           <span className="waits-label">Round:</span>
-          <span className="scoring-total-value">{rolling ? "–" : round}</span>
+          <span className="scoring-total-value">{shown ? round : "–"}</span>
         </div>
         <div className="waits dice-total">
           <span className="waits-label">Tiles:</span>
-          <span className="scoring-total-value">{rolling ? "–" : tiles}</span>
+          <span className="scoring-total-value">{shown ? tiles : "–"}</span>
         </div>
       </div>
 
       <div className="waits dice-total">
         <span className="waits-label">Total:</span>
-        <span className="scoring-total-value">{rolling ? "–" : round * tiles}</span>
+        <span className="scoring-total-value">{shown ? round * tiles : "–"}</span>
       </div>
+      {!ready && !rolling && <p className="dice-hint">Roll the dice, or tap a die to set it</p>}
     </>
   );
 }
@@ -9332,7 +9641,7 @@ function ExternalLinkConfirm() {
   );
 }
 
-type AppMode = "scoring" | "calculator" | "trainer" | "dice";
+type AppMode = "scoring" | "calculator" | "trainer" | "play" | "dice";
 
 // Tab-bar glyphs: 24px line icons drawn in currentColor, so they pick up the
 // tab's selected/unselected colour like the label does.
@@ -9382,6 +9691,17 @@ const TAB_ITEMS: { id: AppMode; label: string; icon: ReactNode }[] = [
     ),
   },
   {
+    id: "play",
+    label: "Play",
+    icon: (
+      <svg {...TAB_ICON_PROPS}>
+        <rect x="3" y="7" width="7" height="10" rx="1.6" />
+        <rect x="14" y="7" width="7" height="10" rx="1.6" />
+        <path d="M6.5 10.5v3M17.5 10.5v3M16 12h3" />
+      </svg>
+    ),
+  },
+  {
     id: "dice",
     label: "Dice",
     icon: (
@@ -9397,6 +9717,13 @@ const TAB_ITEMS: { id: AppMode; label: string; icon: ReactNode }[] = [
 
 function App() {
   const [mode, setMode] = useState<AppMode>(() => (readCalcHand(window.location.search) ? "calculator" : "scoring"));
+  // Where the Play table's Leave button goes back to.
+  const lastNonPlayMode = useRef<AppMode>("scoring");
+  if (mode !== "play") lastNonPlayMode.current = mode;
+  // The table fills the screen; html.playing hides the page around it.
+  useEffect(() => {
+    document.documentElement.classList.toggle("playing", mode === "play");
+  }, [mode]);
   // Lifted above TrainerPanel so stats survive switching back to the
   // Calculator tab and back - the trainers themselves unmount (and their other
   // state - the in-progress question, timer, etc. - resets) on every tab
@@ -9545,6 +9872,7 @@ function App() {
           setEndlessStats={setEndlessTrainerStats}
         />
       )}
+      {mode === "play" && <PlayPanel onExit={() => setMode(lastNonPlayMode.current)} />}
       {mode === "dice" && (
         <DiceTab
           seatNames={seatNames}

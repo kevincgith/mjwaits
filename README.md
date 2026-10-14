@@ -3,15 +3,16 @@
 <img src="public/favicon.svg" width="64" alt="MJWaits logo: a glass 白板 tile beside an empty glass tile (the wait) on green" align="right">
 
 A browser toolkit for 16-tile (Taiwanese / Hong Kong house rules) Mahjong. It started as a waits calculator — build a
-hand, see what completes it and which discard gives the best odds — and has grown four tabs:
+hand, see what completes it and which discard gives the best odds — and has grown five tabs:
 
 - **Scoring** — score a finished hand against a concrete house tai (番) list (~140 patterns).
 - **Calculator** — the original: waits, shanten, joker resolution, and discard analysis.
 - **Trainer** — timed quizzes: a **Waits** drill (name every tile that completes a hand) and a
   **Discards** drill (just drew — pick the single best tile to throw).
+- **Play** — play full hands against three local bots, on a landscape table.
 - **Dice** — roll for the wall, and see exactly where it breaks.
 
-On a phone the four tabs sit in a bottom tab bar; on wider screens they're a segmented control
+On a phone the five tabs sit in a bottom tab bar; on wider screens they're a segmented control
 under the title. In the Scoring tab a sticky toolbar keeps Reset / Scan / Photos, the tile count
 (or, once the hand scores, the total — tap it to jump to the breakdown) in view while scrolling.
 
@@ -284,6 +285,31 @@ Completing a hand flashes a win summary; one tap deals the next. **Undo** / **Re
 and every stat — as far as you like; **N** deals a new one, asking first if the current hand has
 real progress to lose. History is cleared when a new hand is dealt, and a hand in progress
 survives switching sub-tabs.
+
+## Play
+
+A full hand of 16-tile mahjong against three bots that run in the browser — you along the
+bottom, the bots right / across / left in turn order. It's a landscape table: it fills the
+screen, and a phone held upright is asked to turn sideways.
+
+- **Rules:** 144 tiles with the 8 flowers/seasons (set aside and replaced from the back of
+  the wall), 16 each, chow from the player on your left, pung, exposed / concealed / added
+  kong with a replacement draw, win off a discard or by self-draw, and an exhaustive draw at
+  the last 16 tiles. Win beats pung/kong beats chow; two wins off one discard go to the first
+  in turn order. No robbing the kong or 叮.
+- **Playing:** tap a tile to lift it, tap again to discard. When you can call a discard the
+  options (胡 / 槓 / 碰 / 上, each chow shape shown) appear with 過 to pass; 自摸 and kongs show
+  on your own turn.
+- **Scoring:** a win is scored by the same tai list as the Scoring tab, with what the table
+  knows filled in (seat and round wind, self-draw, the winning tile, last-tile and
+  replacement-draw wins, 天胡/地胡/人胡, 莊 and 連莊). The discarder pays the tai; on a
+  self-draw all three do. Running totals sit on each seat badge.
+- **Bots** pick the discard that leaves the fewest tiles from ready (shanten), then the one
+  with the most unseen tiles that would improve it; they call only when a call gets them
+  closer (or for a pung of a scoring honor). **Hints** (the ⋯ menu) underline the same pick
+  in your hand and show how far you are from ready.
+- The dealer stays on a dealer win or a draw; a full lap of dealers moves the round wind. The
+  game in progress is kept on this device, so leaving the tab or reloading picks it back up.
 
 ## Dice
 
