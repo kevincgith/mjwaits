@@ -50,3 +50,12 @@ export function tileArtUrl(tile: Tile): string {
 export function bonusArtUrl(tile: BonusTile): string {
   return artUrl(`${tile.kind}${tile.rank}`);
 }
+
+// English names for the 8 bonus tiles, keyed by the number painted on the
+// tile (see the glyph notes in TileGlyphs.tsx).
+const FLOWER_NAMES: Record<1 | 2 | 3 | 4, string> = { 1: "Plum", 2: "Orchid", 3: "Chrysanthemum", 4: "Bamboo" };
+const SEASON_NAMES: Record<1 | 2 | 3 | 4, string> = { 1: "Spring", 2: "Summer", 3: "Autumn", 4: "Winter" };
+
+export function bonusTileLabel(tile: BonusTile): string {
+  return tile.kind === "flower" ? `Flower: ${FLOWER_NAMES[tile.rank]}` : `Season: ${SEASON_NAMES[tile.rank]}`;
+}
