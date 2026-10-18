@@ -16,8 +16,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   applyTurnMove,
-  botClaim,
-  botTurnMove,
   claimOptions,
   forbiddenDiscards,
   HUMAN,
@@ -27,8 +25,9 @@ import {
   meldsNeeded,
   newGame,
   nextHand,
-  rateDiscards,
   resolveClaims,
+  riichiDiscards,
+  riichiForcedDiscard,
   roundLabel,
   sameTile,
   SEATS,
@@ -43,14 +42,27 @@ import {
 import { allTileKinds, shanten, sortTiles, tileKey, tileLabel, type Tile } from "./lib/mahjong";
 import { patternDisplayName, type BonusTile } from "./lib/scoring";
 import { BonusGlyphSpan, TileGlyphSpan } from "./TileGlyphs";
+import { botClaimFor, botTurnMoveFor, profileById, rateDiscardsFor, type BotProfile } from "./lib/bots";
 
 const WIND_CHARS = ["", "東", "南", "西", "北"];
-const SEAT_NAMES = ["You", "Right", "Across", "Left"];
+// Who sits at Right / Across / Left (seats 1-3) for each table choice.
+const TABLES = {
+  mixed: { label: "Mixed", bots: ["veteran", "hunter", "speedster"] },
+  tough: { label: "Tough", bots: ["veteran", "veteran", "veteran"] },
+  friendly: { label: "Friendly", bots: ["casual", "casual", "casual"] },
+} as const;
+type TableChoice = keyof typeof TABLES;
+// Hints and the timer's fallback throw judge the way the Veteran does.
+const ADVISOR = profileById("veteran");
 // Where each seat sits on screen, by seat index.
 const SIDES = ["bottom", "right", "top", "left"] as const;
 type Side = (typeof SIDES)[number];
-// How long a bot "thinks" before each move, so the table can be followed.
-const BOT_DELAY_MS = 650;
+// How long a bot "thinks" before each move, so the table can be followed:
+// never the same beat twice, like a person, and a little longer after a
+// call (someone weighing what to throw from a changed hand).
+const botDelay = (afterCall: boolean) => 420 + Math.random() * 480 + (afterCall ? 350 : 0);
+// A discard nobody can claim moves on after a short pause.
+const PASS_DELAY_MS = 380;
 const BURST_MS = 1200;
 const TIMER_CHOICES = [0, 10, 20] as const;
 type TimerSetting = (typeof TIMER_CHOICES)[number];
@@ -62,6 +74,7 @@ interface Saved {
   totals: number[];
   hint: boolean;
   timer?: TimerSetting;
+  table?: TableChoice;
 }
 
 function loadSaved(): Saved | null {
@@ -84,7 +97,7 @@ function save(saved: Saved): void {
   }
 }
 
-const claimLabel = (c: Claim) => (c.kind === "win" ? "胡" : c.kind === "kong" ? "槓" : c.kind === "pung" ? "碰" : "吃");
+const claimLabel = (c: Claim) => (c.kind === "win" ? "胡" : c.kind === "kong" ? "槓" : c.kind === "pung" ? "碰" : "上");
 
 // ---- Pieces of the table ----------------------------------------------------
 
@@ -99,13 +112,16 @@ function EdgeTiles({ count, side }: { count: number; side: Side }) {
   );
 }
 
-function Melds({ melds }: { melds: GameMeld[] }) {
+// `hideConcealed`: a bot's concealed kong lies fully face down - nothing
+// about it shows until the hand is over. Your own shows its two middle
+// tiles, so you can see what you've set aside.
+function Melds({ melds, hideConcealed }: { melds: GameMeld[]; hideConcealed?: boolean }) {
   return (
     <>
       {melds.map((m, i) => (
         <span key={i} className="play-meld">
           {m.tiles.map((t, j) =>
-            m.concealed && (j === 0 || j === 3) ? <span key={j} className="play-back" /> : <TileGlyphSpan key={j} tile={t} />
+            m.concealed && (hideConcealed || j === 0 || j === 3) ? <span key={j} className="play-back" /> : <TileGlyphSpan key={j} tile={t} />
           )}
         </span>
       ))}
@@ -138,13 +154,14 @@ function RevealedHand({ tiles, winningTile }: { tiles: Tile[]; winningTile: Tile
 }
 
 // A seat's discards, in front of it; the newest one carries a gold pin.
-function Pond({ tiles, side, pinLast }: { tiles: Tile[]; side: Side; pinLast: boolean }) {
+// `riichiAt`: the pond index of the tile that declared 叮, laid sideways.
+function Pond({ tiles, side, pinLast, riichiAt }: { tiles: Tile[]; side: Side; pinLast: boolean; riichiAt?: number }) {
   return (
     <div className={`play-pond play-pond-${side}`}>
       {tiles.map((t, i) => {
         const last = pinLast && i === tiles.length - 1;
         return (
-          <span key={i} className={last ? "play-pond-tile is-latest" : "play-pond-tile"}>
+          <span key={i} className={["play-pond-tile", last && "is-latest", i === riichiAt && "is-riichi"].filter(Boolean).join(" ")}>
             <TileGlyphSpan tile={t} />
           </span>
         );
@@ -213,14 +230,34 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
   const [totals, setTotals] = useState<number[]>(() => saved?.totals ?? [0, 0, 0, 0]);
   const [hint, setHint] = useState(() => saved?.hint ?? false);
   const [timer, setTimer] = useState<TimerSetting>(() => saved?.timer ?? 0);
+  const [table, setTable] = useState<TableChoice>(() => (saved?.table && saved.table in TABLES ? saved.table : "mixed"));
+  const bots = useMemo<(BotProfile | null)[]>(() => [null, ...TABLES[table].bots.map(profileById)], [table]);
+  // "You", or the bot's English name (老手 Veteran -> Veteran).
+  const nameOf = (seat: number) => (seat === HUMAN ? "You" : bots[seat]!.name.split(" ").slice(1).join(" "));
   const [selected, setSelected] = useState<number | null>(null);
   const [burst, setBurst] = useState<{ seat: number; label: string; id: number } | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  // New game wipes the running totals, so it takes a second tap.
+  const [confirmNew, setConfirmNew] = useState(false);
   const [trackerOpen, setTrackerOpen] = useState(false);
   const [chowChoice, setChowChoice] = useState(false);
+  // 叮 armed: the next discard declares it (only tiles that leave you ready).
+  const [riichiArmed, setRiichiArmed] = useState(false);
   const [resultHidden, setResultHidden] = useState(false);
 
-  useEffect(() => save({ game, totals, hint, timer }), [game, totals, hint, timer]);
+  useEffect(() => save({ game, totals, hint, timer, table }), [game, totals, hint, timer, table]);
+
+  // The menu closes on a tap anywhere outside it, and disarms New game.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const close = (e: PointerEvent) => {
+      if ((e.target as Element).closest(".play-corner")) return;
+      setMenuOpen(false);
+      setConfirmNew(false);
+    };
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
+  }, [menuOpen]);
 
   // Every state change goes through here, so a finished hand's tai lands in
   // the running totals exactly once.
@@ -231,6 +268,7 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
     }
     setSelected(null);
     setChowChoice(false);
+    setRiichiArmed(false);
     setResultHidden(false);
     setGame(next);
   };
@@ -246,8 +284,8 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
   // The bots' claims on the current discard are decided as soon as it lands
   // (they can't see what the human will do).
   const botDecisions = useMemo(
-    () => (game.phase.kind === "claims" ? Array.from({ length: SEATS }, (_, seat) => (seat === HUMAN ? null : botClaim(game, seat))) : null),
-    [game]
+    () => (game.phase.kind === "claims" ? Array.from({ length: SEATS }, (_, seat) => (seat === HUMAN ? null : botClaimFor(game, seat, bots[seat]!))) : null),
+    [game, bots]
   );
 
   const resolve = (humanClaim: Claim | null) => {
@@ -263,31 +301,43 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
   const myTurn = game.phase.kind === "turn" && game.phase.seat === HUMAN;
   const drawn = myTurn && game.phase.kind === "turn" ? game.phase.drawn : null;
   const forbidden = myTurn ? forbiddenDiscards(game) : [];
-  const isForbidden = (t: Tile) => forbidden.some((f) => sameTile(f, t));
+  // Tiles you can't throw right now: 食替, a locked 叮 hand's anything-but-
+  // the-draw, and, with 叮 armed, anything that wouldn't leave you ready.
+  const forced = myTurn ? riichiForcedDiscard(game) : null;
+  const riichiTiles = useMemo(() => (myTurn ? riichiDiscards(game, HUMAN) : []), [game, myTurn]);
+  const isForbidden = (t: Tile) =>
+    forbidden.some((f) => sameTile(f, t)) || (forced !== null && !sameTile(forced, t)) || (riichiArmed && !riichiTiles.some((r) => sameTile(r, t)));
 
   const doTurn = (move: TurnMove) => {
     if (move.kind === "selfDraw") showBurst(HUMAN, "自摸");
+    else if (move.kind === "discard" && move.riichi) showBurst(HUMAN, "叮");
     else if (move.kind !== "discard") showBurst(HUMAN, "槓");
     advance(applyTurnMove(game, move));
   };
 
-  // Bot pacing: one move per BOT_DELAY_MS, and a discard nobody (the human
+  // Bot pacing: one move per botDelay(), and a discard nobody (the human
   // included) can claim moves on by itself.
   useEffect(() => {
     const phase = game.phase;
     let move: (() => void) | null = null;
     if (phase.kind === "turn" && phase.seat !== HUMAN) {
       move = () => {
-        const m = botTurnMove(game);
+        const m = botTurnMoveFor(game, bots[phase.seat]!);
         if (m.kind === "selfDraw") showBurst(phase.seat, "自摸");
+        else if (m.kind === "discard" && m.riichi) showBurst(phase.seat, "叮");
         else if (m.kind !== "discard") showBurst(phase.seat, "槓");
         advance(applyTurnMove(game, m));
       };
+    } else if (phase.kind === "turn" && game.players[HUMAN].riichi && !isWinningHand(game.players[HUMAN])) {
+      // Your locked 叮 hand throws the draw by itself.
+      const tile = riichiForcedDiscard(game);
+      if (tile) move = () => advance(applyTurnMove(game, { kind: "discard", tile }));
     } else if (phase.kind === "claims" && humanClaims.length === 0) {
       move = () => resolve(null);
     }
     if (!move) return;
-    const id = window.setTimeout(move, BOT_DELAY_MS);
+    const delay = phase.kind === "turn" ? botDelay(phase.drawn === null) : PASS_DELAY_MS;
+    const id = window.setTimeout(move, delay);
     return () => window.clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [game]);
@@ -311,7 +361,7 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
       if (game.phase.kind === "claims") {
         resolve(null);
       } else if (game.phase.kind === "turn") {
-        const tile = drawn && !isForbidden(drawn) ? drawn : rateDiscards(game, HUMAN)[0].tile;
+        const tile = drawn && !isForbidden(drawn) ? drawn : rateDiscardsFor(game, HUMAN, ADVISOR)[0].tile;
         advance(applyTurnMove(game, { kind: "discard", tile }));
       }
     }, 250);
@@ -331,7 +381,7 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
   }, [me.hand, drawn]);
   const handTiles = handView.drawnTile ? [...handView.sorted, handView.drawnTile] : handView.sorted;
 
-  const ratings = useMemo(() => (myTurn && hint ? rateDiscards(game, HUMAN) : null), [game, myTurn, hint]);
+  const ratings = useMemo(() => (myTurn && hint && !me.riichi ? rateDiscardsFor(game, HUMAN, ADVISOR) : null), [game, myTurn, hint, me.riichi]);
   const bestDiscard = ratings?.[0]?.tile ?? null;
   // Hints underline one copy - the drawn tile when that's the pick.
   const hintIndex = bestDiscard
@@ -350,7 +400,7 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
 
   const tapTile = (index: number) => {
     if (!myTurn || isForbidden(handTiles[index])) return;
-    if (selected === index) doTurn({ kind: "discard", tile: handTiles[index] });
+    if (selected === index) doTurn({ kind: "discard", tile: handTiles[index], ...(riichiArmed ? { riichi: true } : {}) });
     else setSelected(index);
   };
 
@@ -373,26 +423,30 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
     <span className={`play-total${totals[seat] < 0 ? " is-neg" : ""}`}>{totals[seat] > 0 ? `+${totals[seat]}` : totals[seat]}</span>
   );
 
-  const opponent = (seat: number) => {
+  // A bot's name card - flat, over the corner of the table like a HUD.
+  const badge = (seat: number) => (
+    <span className={`play-badge at-${SIDES[seat]}${activeSeat === seat ? " is-active" : ""}`}>
+      <span className="play-badge-wind">{WIND_CHARS[seatWind(seat, game.dealer)]}</span>
+      <span className="play-badge-name">
+        {nameOf(seat)}
+        {seat === game.dealer && <span className="play-dealer">莊</span>}
+        {game.players[seat].riichi && <span className="play-riichi">叮</span>}
+      </span>
+      {total(seat)}
+    </span>
+  );
+
+  // A bot's tiles, standing along its edge of the (tilted) table.
+  const wall = (seat: number) => {
     const side = SIDES[seat];
     const p = game.players[seat];
     return (
-      <div className={`play-seat play-seat-${side}${activeSeat === seat ? " is-active" : ""}`}>
-        <span className="play-badge">
-          <span className="play-badge-wind">{WIND_CHARS[seatWind(seat, game.dealer)]}</span>
-          <span className="play-badge-name">
-            {SEAT_NAMES[seat]}
-            {seat === game.dealer && <span className="play-dealer">莊</span>}
-          </span>
-          {total(seat)}
+      <div className={`play-seat play-seat-${side}`}>
+        {over ? <RevealedHand tiles={p.hand} winningTile={null} /> : <EdgeTiles count={p.hand.length} side={side} />}
+        <span className="play-seat-melds">
+          <Melds melds={p.melds} hideConcealed={!over} />
         </span>
-        <span className="play-seat-tiles">
-          {over ? <RevealedHand tiles={p.hand} winningTile={null} /> : <EdgeTiles count={p.hand.length} side={side} />}
-          <span className="play-seat-melds">
-            <Melds melds={p.melds} />
-          </span>
-          <Flowers flowers={p.flowers} />
-        </span>
+        <Flowers flowers={p.flowers} />
       </div>
     );
   };
@@ -420,7 +474,10 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
               <path d="M15 5l-7 7 7 7" />
             </svg>
           </button>
-          <button type="button" className="play-icon-button" onClick={() => setMenuOpen((o) => !o)} aria-label="Game menu" aria-expanded={menuOpen}>
+          <button type="button" className="play-icon-button" onClick={() => {
+              setMenuOpen((o) => !o);
+              setConfirmNew(false);
+            }} aria-label="Game menu" aria-expanded={menuOpen}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
               <path d="M5 7h14M5 12h14M5 17h14" />
             </svg>
@@ -430,9 +487,26 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
           </button>
           {menuOpen && (
             <div className="play-menu">
-              <button type="button" className={hint ? "toggle-on" : undefined} aria-pressed={hint} onClick={() => setHint((h) => !h)}>
-                Hints {hint ? "on" : "off"}
-              </button>
+              <div className="play-menu-row">
+                <span>Hints</span>
+                <span className="play-menu-seg">
+                  {[false, true].map((on) => (
+                    <button key={String(on)} type="button" className={hint === on ? "toggle-on" : undefined} aria-pressed={hint === on} onClick={() => setHint(on)}>
+                      {on ? "On" : "Off"}
+                    </button>
+                  ))}
+                </span>
+              </div>
+              <div className="play-menu-row">
+                <span>Opponents</span>
+                <span className="play-menu-seg">
+                  {(Object.keys(TABLES) as TableChoice[]).map((t) => (
+                    <button key={t} type="button" className={table === t ? "toggle-on" : undefined} aria-pressed={table === t} onClick={() => setTable(t)}>
+                      {TABLES[t].label}
+                    </button>
+                  ))}
+                </span>
+              </div>
               <div className="play-menu-row">
                 <span>Turn timer</span>
                 <span className="play-menu-seg">
@@ -443,118 +517,148 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
                   ))}
                 </span>
               </div>
-              <button type="button" onClick={startNewGame}>
-                New game
+              <button type="button" className={confirmNew ? "is-armed" : undefined} onClick={() => (confirmNew ? startNewGame() : setConfirmNew(true))}>
+                {confirmNew ? "Tap again to reset totals" : "New game"}
               </button>
             </div>
           )}
         </div>
 
-        {opponent(2)}
-        {opponent(3)}
-        {opponent(1)}
+        {badge(2)}
+        {badge(3)}
+        {badge(1)}
 
-        <div className="play-pond-slot play-pond-slot-top">
-          <Pond tiles={game.players[2].discards} side="top" pinLast={discardFrom === 2} />
-        </div>
-        <div className="play-pond-slot play-pond-slot-left">
-          <Pond tiles={game.players[3].discards} side="left" pinLast={discardFrom === 3} />
-        </div>
-        <div className="play-middle">
-          <Compass game={game} active={over ? null : activeSeat} center={compassCenter} />
-          {game.phase.kind === "claims" && (
-            <span className={`play-spotlight from-${SIDES[game.phase.from]}`}>
-              <TileGlyphSpan tile={game.phase.tile} />
-            </span>
-          )}
-        </div>
-        <div className="play-pond-slot play-pond-slot-right">
-          <Pond tiles={game.players[1].discards} side="right" pinLast={discardFrom === 1} />
-        </div>
-        <div className="play-pond-slot play-pond-slot-bottom">
-          <Pond tiles={me.discards} side="bottom" pinLast={discardFrom === HUMAN} />
+        {/* The table itself, tipped away from you in perspective; your hand
+            and the bar stay flat in front of it. */}
+        <div className="play-stage">
+          <div className="play-felt">
+            {wall(2)}
+            {wall(3)}
+            {wall(1)}
+            <div className="play-pond-slot play-pond-slot-top">
+              <Pond tiles={game.players[2].discards} riichiAt={game.players[2].riichi?.discard} side="top" pinLast={discardFrom === 2} />
+            </div>
+            <div className="play-pond-slot play-pond-slot-left">
+              <Pond tiles={game.players[3].discards} riichiAt={game.players[3].riichi?.discard} side="left" pinLast={discardFrom === 3} />
+            </div>
+            <div className="play-middle">
+              <Compass game={game} active={over ? null : activeSeat} center={compassCenter} />
+              {game.phase.kind === "claims" && (
+                <span className={`play-spotlight from-${SIDES[game.phase.from]}`}>
+                  <TileGlyphSpan tile={game.phase.tile} />
+                </span>
+              )}
+            </div>
+            <div className="play-pond-slot play-pond-slot-right">
+              <Pond tiles={game.players[1].discards} riichiAt={game.players[1].riichi?.discard} side="right" pinLast={discardFrom === 1} />
+            </div>
+            <div className="play-pond-slot play-pond-slot-bottom">
+              <Pond tiles={me.discards} riichiAt={me.riichi?.discard} side="bottom" pinLast={discardFrom === HUMAN} />
+            </div>
+          </div>
         </div>
 
         <div className="play-me">
-          <div className="play-calls">
-            {chowChoice ? (
-              <>
-                {chows.map((c, i) => (
-                  <button key={i} type="button" className="play-call is-chow-shape" onClick={() => resolve(c)} aria-label={`Chow with ${c.tiles.map(tileLabel).join(" and ")}`}>
-                    {sortTiles([...c.tiles, game.phase.kind === "claims" ? game.phase.tile : c.tiles[0]]).map((t, j) => (
-                      <TileGlyphSpan key={j} tile={t} />
-                    ))}
-                  </button>
-                ))}
-                <button type="button" className="play-call is-pass" onClick={() => setChowChoice(false)} aria-label="Back">
-                  ‹
+          <div className="play-hand-wrap">
+            <div className="play-calls">
+              {result && resultHidden && (
+                <button type="button" className="play-show-result" onClick={() => setResultHidden(false)}>
+                  Show result
                 </button>
-              </>
-            ) : (
-              <>
-                {canSelfDraw && (
-                  <button type="button" className="play-call is-win is-long" onClick={() => doTurn({ kind: "selfDraw" })}>
-                    自摸
+              )}
+              {chowChoice ? (
+                <>
+                  {chows.map((c, i) => (
+                    <button key={i} type="button" className="play-call is-chow-shape" onClick={() => resolve(c)} aria-label={`Chow with ${c.tiles.map(tileLabel).join(" and ")}`}>
+                      {sortTiles([...c.tiles, game.phase.kind === "claims" ? game.phase.tile : c.tiles[0]]).map((t, j) => (
+                        <TileGlyphSpan key={j} tile={t} />
+                      ))}
+                    </button>
+                  ))}
+                  <button type="button" className="play-call is-pass" onClick={() => setChowChoice(false)} aria-label="Back">
+                    ‹
                   </button>
-                )}
-                {myKongs.map((k) => (
-                  <button key={`${k.kind}${tileKey(k.tile)}`} type="button" className="play-call has-tile" onClick={() => doTurn(k)} aria-label={`Kong ${tileLabel(k.tile)}`}>
-                    槓
-                    <span className="play-call-tile">
-                      <TileGlyphSpan tile={k.tile} />
-                    </span>
+                </>
+              ) : (
+                <>
+                  {canSelfDraw && (
+                    <button type="button" className="play-call is-win is-long" onClick={() => doTurn({ kind: "selfDraw" })}>
+                      自摸
+                    </button>
+                  )}
+                  {riichiTiles.length > 0 && (
+                    <button
+                      type="button"
+                      className={`play-call is-riichi${riichiArmed ? " is-armed" : ""}`}
+                      aria-pressed={riichiArmed}
+                      aria-label={riichiArmed ? "Cancel 叮" : "Declare 叮 - then choose the tile to throw"}
+                      onClick={() => {
+                        setSelected(null);
+                        setRiichiArmed((a) => !a);
+                      }}
+                    >
+                      叮
+                    </button>
+                  )}
+                  {myKongs.map((k) => (
+                    <button key={`${k.kind}${tileKey(k.tile)}`} type="button" className="play-call has-tile" onClick={() => doTurn(k)} aria-label={`Kong ${tileLabel(k.tile)}`}>
+                      槓
+                      <span className="play-call-tile">
+                        <TileGlyphSpan tile={k.tile} />
+                      </span>
+                    </button>
+                  ))}
+                  {otherClaims.map((c, i) => (
+                    <button key={i} type="button" className={`play-call${c.kind === "win" ? " is-win" : ""}`} onClick={() => resolve(c)}>
+                      {claimLabel(c)}
+                    </button>
+                  ))}
+                  {chows.length > 0 && (
+                    <button type="button" className="play-call" onClick={() => (chows.length === 1 ? resolve(chows[0]) : setChowChoice(true))}>
+                      上
+                    </button>
+                  )}
+                  {humanClaims.length > 0 && (
+                    <button type="button" className="play-call is-pass" onClick={() => resolve(null)}>
+                      過
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+            <div className={`play-hand${myTurn ? " is-turn" : ""}`}>
+              {(me.melds.length > 0 || me.flowers.length > 0) && (
+                <span className="play-my-melds">
+                  <Melds melds={me.melds} />
+                  <Flowers flowers={me.flowers} />
+                </span>
+              )}
+              {handTiles.map((t, i) => {
+                const isDrawn = handView.drawnTile !== null && i === handTiles.length - 1;
+                const barred = isForbidden(t);
+                return (
+                  <button
+                    key={i}
+                    type="button"
+                    className={[
+                      "play-hand-tile",
+                      isDrawn && "is-drawn",
+                      selected === i && "is-selected",
+                      i === hintIndex && "is-hint",
+                      barred && "is-barred",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                    disabled={!myTurn || barred}
+                    onClick={() => tapTile(i)}
+                    title={barred ? "食替 – can't discard this now" : undefined}
+                    aria-label={barred ? `${tileLabel(t)} (食替 – can't discard this now)` : selected === i ? `Discard ${tileLabel(t)}` : tileLabel(t)}
+                  >
+                    <TileGlyphSpan tile={t} />
                   </button>
-                ))}
-                {otherClaims.map((c, i) => (
-                  <button key={i} type="button" className={`play-call${c.kind === "win" ? " is-win" : ""}`} onClick={() => resolve(c)}>
-                    {claimLabel(c)}
-                  </button>
-                ))}
-                {chows.length > 0 && (
-                  <button type="button" className="play-call" onClick={() => (chows.length === 1 ? resolve(chows[0]) : setChowChoice(true))}>
-                    吃
-                  </button>
-                )}
-                {humanClaims.length > 0 && (
-                  <button type="button" className="play-call is-pass" onClick={() => resolve(null)}>
-                    過
-                  </button>
-                )}
-              </>
-            )}
-          </div>
-          <div className={`play-hand${myTurn ? " is-turn" : ""}`}>
-            {(me.melds.length > 0 || me.flowers.length > 0) && (
-              <span className="play-my-melds">
-                <Melds melds={me.melds} />
-                <Flowers flowers={me.flowers} />
-              </span>
-            )}
-            {handTiles.map((t, i) => {
-              const isDrawn = handView.drawnTile !== null && i === handTiles.length - 1;
-              const barred = isForbidden(t);
-              return (
-                <button
-                  key={i}
-                  type="button"
-                  className={[
-                    "play-hand-tile",
-                    isDrawn && "is-drawn",
-                    selected === i && "is-selected",
-                    i === hintIndex && "is-hint",
-                    barred && "is-barred",
-                  ]
-                    .filter(Boolean)
-                    .join(" ")}
-                  disabled={!myTurn || barred}
-                  onClick={() => tapTile(i)}
-                  title={barred ? "食替 – can't discard this now" : undefined}
-                  aria-label={barred ? `${tileLabel(t)} (食替 – can't discard this now)` : selected === i ? `Discard ${tileLabel(t)}` : tileLabel(t)}
-                >
-                  <TileGlyphSpan tile={t} />
-                </button>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
         </div>
 
@@ -563,6 +667,7 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
             <span className="play-badge-wind">{WIND_CHARS[seatWind(HUMAN, game.dealer)]}</span>
             You
             {game.dealer === HUMAN && <span className="play-dealer">莊</span>}
+            {me.riichi && <span className="play-riichi">叮</span>}
           </span>
           {total(HUMAN)}
           <span className="play-bar-round">
@@ -573,20 +678,24 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
           {myShanten !== null && (
             <span className="play-bar-shanten">{myShanten <= 0 ? (myShanten < 0 ? "Complete" : "Ready (聽)") : `${myShanten} from ready`}</span>
           )}
-          {myTurn && !over && (
-            <span className="play-bar-prompt">{selected === null ? "Tap a tile, then again to discard" : "Tap again to discard"}</span>
+          {myTurn && !over && !forced && (
+            <span className="play-bar-prompt">
+              {riichiArmed
+                ? selected === null
+                  ? "叮: choose the tile to throw"
+                  : "Tap again to declare 叮"
+                : selected === null
+                  ? "Tap a tile, then again to discard"
+                  : "Tap again to discard"}
+            </span>
           )}
+          {me.riichi && !over && <span className="play-bar-prompt">叮 - your hand is locked</span>}
         </div>
 
         {burst && <CallBurst key={burst.id} seat={burst.seat} label={burst.label} />}
 
         {trackerOpen && <TileTracker game={game} onClose={() => setTrackerOpen(false)} />}
 
-        {result && resultHidden && (
-          <button type="button" className="play-show-result" onClick={() => setResultHidden(false)}>
-            Show result
-          </button>
-        )}
         {result && !resultHidden && (
           <div className="play-result" role="dialog" aria-label="Hand result">
             <div className="play-result-card">
@@ -596,8 +705,8 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
                   : result.winner === HUMAN
                     ? result.from === null
                       ? "You won by self-draw! (自摸)"
-                      : `You won off ${SEAT_NAMES[result.from]}'s discard!`
-                    : `${SEAT_NAMES[result.winner]} won${result.from === null ? " by self-draw" : result.from === HUMAN ? " off your discard" : ` off ${SEAT_NAMES[result.from]}`}`}
+                      : `You won off ${nameOf(result.from)}'s discard!`
+                    : `${nameOf(result.winner)} won${result.from === null ? " by self-draw" : result.from === HUMAN ? " off your discard" : ` off ${nameOf(result.from)}`}`}
               </h2>
               {result.winner !== null && (
                 <div className="play-result-hand">
@@ -630,7 +739,7 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
               <div className="play-result-deltas">
                 {result.deltas.map((d, seat) => (
                   <span key={seat} className={d < 0 ? "is-neg" : d > 0 ? "is-pos" : undefined}>
-                    {SEAT_NAMES[seat]} {d > 0 ? `+${d}` : d}
+                    {nameOf(seat)} {d > 0 ? `+${d}` : d}
                   </span>
                 ))}
               </div>

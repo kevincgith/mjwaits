@@ -11,6 +11,9 @@ import {
   newGame,
   nextHand,
   resolveClaims,
+  riichiDiscards,
+  riichiForcedDiscard,
+  kongOptions,
   SEATS,
   type GameState,
 } from "./game";
@@ -123,5 +126,64 @@ describe("game", () => {
     expect(roundLabel(s)).toBe("東圈東局");
     expect(roundLabel({ ...s, dealer: 2 })).toBe("東圈西局");
     expect(roundLabel({ ...s, roundWind: 2, dealer: 3 })).toBe("南圈北局");
+  });
+
+  describe("叮", () => {
+    const t = (suit: Tile["suit"], rank: number): Tile => ({ suit, rank });
+    // Dealer (seat 0): five melds + a single 3t and a spare 5z - throwing
+    // either leaves the hand ready.
+    function declared() {
+      const s0 = newGame();
+      s0.dealer = 0;
+      s0.players[0].hand = parseHand("123456789m111222t3t5z");
+      s0.phase = { kind: "turn", seat: 0, drawn: t("z", 5), replacement: null };
+      expect(riichiDiscards(s0, 0).map((x) => x.suit + x.rank).sort()).toEqual(["t3", "z5"]);
+      return applyTurnMove(s0, { kind: "discard", tile: t("z", 5), riichi: true });
+    }
+
+    it("declares with a discard that leaves the hand ready - 天叮 on the dealer's first", () => {
+      const s = declared();
+      expect(s.players[0].riichi).toEqual({ state: "heavenly-riichi", discard: 0, ippatsu: true });
+      const s0 = newGame();
+      s0.players[0].hand = parseHand("123456789m111222t3t5z");
+      s0.phase = { kind: "turn", seat: 0, drawn: t("z", 5), replacement: null };
+      // A discard that leaves the hand short of ready can't declare.
+      expect(() => applyTurnMove(s0, { kind: "discard", tile: m(1), riichi: true })).toThrow();
+    });
+
+    it("locks the hand: only the drawn tile goes, no kongs, only a win can be called", () => {
+      const s = declared();
+      const turn: GameState = {
+        ...s,
+        players: s.players.map((p, i) => (i === 0 ? { ...p, hand: [...p.hand, t("b", 9)] } : p)),
+        phase: { kind: "turn", seat: 0, drawn: t("b", 9), replacement: null },
+      };
+      expect(riichiForcedDiscard(turn)).toEqual(t("b", 9));
+      expect(() => applyTurnMove(turn, { kind: "discard", tile: m(1) })).toThrow();
+      expect(kongOptions(turn.players[0])).toEqual([]);
+      expect(botTurnMove(turn)).toEqual({ kind: "discard", tile: t("b", 9) });
+      const after = applyTurnMove(turn, { kind: "discard", tile: t("b", 9) });
+      // The first discard after declaring ends 一發.
+      expect(after.players[0].riichi?.ippatsu).toBe(false);
+      // Seat 3 throws 1m (a pair-and-run shape would let others pung); seat 0 may only win.
+      const claim: GameState = { ...s, players: s.players.map((p, i) => (i === 0 ? { ...p, hand: [...p.hand, m(1), m(1)].slice(2) } : p)), phase: { kind: "claims", from: 3, tile: m(1) } };
+      expect(claimOptions(claim, 0).every((c) => c.kind === "win")).toBe(true);
+    });
+
+    it("scores 天叮 and 一發 on a win before the next discard, and 食叮 off a declared player", () => {
+      const s = declared();
+      // Seat 1 throws the 3t; seat 0 wins with 一發.
+      const s1: GameState = { ...s, players: s.players.map((p, i) => (i === 1 ? { ...p, discards: [t("t", 3)] } : p)), phase: { kind: "claims", from: 1, tile: t("t", 3) } };
+      const won = resolveClaims(s1, [{ kind: "win" }, null, null, null]);
+      const ids = won.phase.kind === "over" ? won.phase.result.score?.matched.map((x) => x.pattern.id) : [];
+      expect(ids).toContain("heavenly-riichi");
+      expect(ids).toContain("riichi-instant-win");
+      expect(ids).not.toContain("riichi-eat");
+      // Seat 1, ready on 5z, wins off seat 0's declaring discard: 食叮.
+      const s2: GameState = { ...s, players: s.players.map((p, i) => (i === 1 ? { ...p, hand: parseHand("123456789m111222t5z") } : p)) };
+      const eaten = resolveClaims(s2, [null, { kind: "win" }, null, null]);
+      const eatIds = eaten.phase.kind === "over" ? eaten.phase.result.score?.matched.map((x) => x.pattern.id) : [];
+      expect(eatIds).toContain("riichi-eat");
+    });
   });
 });

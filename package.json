@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "arena": "vite build --ssr scripts/arena.ts --outDir .arena --emptyOutDir --logLevel warn && node .arena/arena.js"
   },
   "dependencies": {
     "onnxruntime-web": "^1.27.0",

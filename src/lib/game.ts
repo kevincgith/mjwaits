@@ -11,8 +11,9 @@
 // replacement draw, win off a discard or by self-draw, and an exhaustive draw
 // once the live wall is down to its last DEAD_WALL_SIZE tiles. Claim priority
 // is win > pung/kong > chow; two wins off one discard go to the first winner
-// in turn order (截胡). Not modelled: robbing a kong, 叮 (riichi), and other
-// purely declared house calls.
+// in turn order (截胡). 叮 (riichi): a ready player may declare with a
+// discard, which locks the hand (see Riichi). Not modelled: robbing a kong
+// and other purely declared house calls.
 //
 // Scoring hands the finished hand to scoring.ts's scoreParsedHand, with the
 // context the table actually knows (seat/round wind, self-draw, the winning
@@ -33,6 +34,7 @@ import {
   type BonusTile,
   type GameContext,
   type MeldDeclaration,
+  type RiichiState,
   type ScoreResult,
   type Wind,
 } from "./scoring";
@@ -54,11 +56,24 @@ export interface GameMeld {
   from: number | null;
 }
 
+// 叮: declared with a discard that leaves the hand ready. From then on the
+// hand is locked - every draw that doesn't win is thrown, and the player can
+// call only a win. `state` is 天叮 (dealer) / 地叮 when declared with the
+// player's first discard before any call, else plain 叮. `discard` is the
+// index in the pond of the declaring tile (drawn sideways). `ippatsu` (一發)
+// holds until the player's next discard or any call at the table.
+export interface Riichi {
+  state: Exclude<RiichiState, "none">;
+  discard: number;
+  ippatsu: boolean;
+}
+
 export interface Player {
   hand: Tile[];
   melds: GameMeld[];
   flowers: BonusTile[];
   discards: Tile[];
+  riichi?: Riichi;
 }
 
 export type Phase =
@@ -142,6 +157,7 @@ function cloneState(s: GameState): GameState {
       melds: p.melds.map((m) => ({ ...m, tiles: m.tiles.slice() })),
       flowers: p.flowers.slice(),
       discards: p.discards.slice(),
+      ...(p.riichi ? { riichi: { ...p.riichi } } : {}),
     })),
     log: s.log.slice(),
   };
@@ -209,7 +225,8 @@ export function isWinningHand(p: Player, extra?: Tile): boolean {
 }
 
 export type TurnMove =
-  | { kind: "discard"; tile: Tile }
+  // `riichi`: declare 叮 with this discard (see riichiDiscards).
+  | { kind: "discard"; tile: Tile; riichi?: boolean }
   | { kind: "selfDraw" }
   | { kind: "concealedKong"; tile: Tile }
   | { kind: "addedKong"; tile: Tile };
@@ -218,6 +235,8 @@ export type KongMove = Extract<TurnMove, { kind: "concealedKong" | "addedKong" }
 
 export function kongOptions(p: Player): KongMove[] {
   const moves: KongMove[] = [];
+  // A locked 叮 hand can't kong.
+  if (p.riichi) return moves;
   const seen = new Set<string>();
   for (const t of p.hand) {
     const key = tileKey(t);
@@ -242,8 +261,9 @@ export function claimOptions(s: GameState, seat: number): Claim[] {
   const p = s.players[seat];
   const opts: Claim[] = [];
   if (isWinningHand(p, tile)) opts.push({ kind: "win" });
-  // Claims other than a win need a tile left to draw afterwards.
-  if (liveTilesLeft(s) === 0) return opts;
+  // Claims other than a win need a tile left to draw afterwards, and a
+  // locked 叮 hand can only win.
+  if (liveTilesLeft(s) === 0 || p.riichi) return opts;
   const held = tileCount(p.hand, tile);
   if (held >= 3) opts.push({ kind: "kong" });
   if (held >= 2) opts.push({ kind: "pung" });
@@ -259,6 +279,32 @@ export function claimOptions(s: GameState, seat: number): Claim[] {
     }
   }
   return opts;
+}
+
+// ---- 叮 ----------------------------------------------------------------------
+
+// The discards that would leave `seat` ready, i.e. the tiles it may declare
+// 叮 with - empty if it isn't its turn, it has already declared, or no tile
+// is left to draw after it.
+export function riichiDiscards(s: GameState, seat: number): Tile[] {
+  if (s.phase.kind !== "turn" || s.phase.seat !== seat || liveTilesLeft(s) === 0) return [];
+  const p = s.players[seat];
+  if (p.riichi) return [];
+  const forbidden = forbiddenDiscards(s);
+  const out: Tile[] = [];
+  for (const t of p.hand) {
+    if (out.some((o) => sameTile(o, t)) || forbidden.some((f) => sameTile(f, t))) continue;
+    if (shanten(removeTiles(p.hand, [t]), meldsNeeded(p)) === 0) out.push(t);
+  }
+  return out;
+}
+
+// The tile a locked 叮 hand must throw: the one just drawn.
+export function riichiForcedDiscard(s: GameState): Tile | null {
+  if (s.phase.kind !== "turn") return null;
+  const p = s.players[s.phase.seat];
+  if (!p.riichi) return null;
+  return s.phase.drawn ?? p.hand[p.hand.length - 1];
 }
 
 // ---- Transitions ----------------------------------------------------------
@@ -289,6 +335,17 @@ export function applyTurnMove(state: GameState, move: TurnMove): GameState {
   switch (move.kind) {
     case "discard": {
       if (forbiddenDiscards(state).some((t) => sameTile(t, move.tile))) throw new Error("食替: can't discard that now");
+      if (p.riichi) {
+        const forced = riichiForcedDiscard(state);
+        if (!forced || !sameTile(forced, move.tile)) throw new Error("叮: a locked hand throws what it draws");
+        // The first discard after declaring ends 一發.
+        p.riichi.ippatsu = false;
+      }
+      if (move.riichi && !riichiDiscards(state, seat).some((t) => sameTile(t, move.tile))) throw new Error("叮: that discard doesn't leave the hand ready");
+      if (move.riichi) {
+        const first = p.discards.length === 0 && p.melds.length === 0 && s.firstGoAround;
+        p.riichi = { state: first ? (seat === s.dealer ? "heavenly-riichi" : "earthly-riichi") : "riichi", discard: p.discards.length, ippatsu: true };
+      }
       p.hand = removeTiles(p.hand, [move.tile]);
       p.discards.push(move.tile);
       s.discardsMade++;
@@ -302,6 +359,9 @@ export function applyTurnMove(state: GameState, move: TurnMove): GameState {
     }
     case "concealedKong":
     case "addedKong": {
+      if (p.riichi) throw new Error("叮: a locked hand can't kong");
+      // Any kong ends everyone's 一發.
+      for (const pl of s.players) if (pl.riichi) pl.riichi.ippatsu = false;
       if (move.kind === "concealedKong") {
         p.hand = removeTiles(p.hand, [move.tile, move.tile, move.tile, move.tile]);
         p.melds.push({ kind: "kong", tiles: [move.tile, move.tile, move.tile, move.tile], concealed: true, from: null });
@@ -380,6 +440,8 @@ export function resolveClaims(state: GameState, decisions: (Claim | null)[]): Ga
   // The claimed tile leaves the discarder's pond.
   s.players[from].discards.pop();
   s.firstGoAround = false;
+  // A call ends everyone's 一發 (a win ends the hand anyway).
+  if (claim.kind !== "win") for (const pl of s.players) if (pl.riichi) pl.riichi.ippatsu = false;
   if (claim.kind === "win") {
     p.hand.push(tile);
     return finishWin(s, best, from, tile, null);
@@ -422,9 +484,10 @@ export function scoreWin(
     roundWind: s.roundWind,
     selfDraw,
     winningTile: tile,
-    riichi: "none",
-    instantWin: false,
-    eatRiichi: false,
+    riichi: p.riichi?.state ?? "none",
+    instantWin: p.riichi?.ippatsu ?? false,
+    // 食叮: winning off a discard from a player who has declared 叮.
+    eatRiichi: from !== null && !!s.players[from].riichi,
     earlyWin: "none",
     multiWin: "none",
     heavenlyWin:
@@ -548,6 +611,8 @@ export function botTurnMove(s: GameState): TurnMove {
   if (s.phase.kind !== "turn") throw new Error("Not a turn");
   const p = s.players[s.phase.seat];
   if (isWinningHand(p)) return { kind: "selfDraw" };
+  const forced = riichiForcedDiscard(s);
+  if (forced) return { kind: "discard", tile: forced };
   const best = rateDiscards(s, s.phase.seat);
   if (liveTilesLeft(s) > 0) {
     // Kong when it doesn't set the hand back.

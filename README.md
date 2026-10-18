@@ -355,43 +355,114 @@ stats per player and head-to-head net tai).
 
 Not in the tab bar while it's being built: **long-press the logo** to open it (‹ on the table
 goes back). A full hand of 16-tile mahjong against three bots that run in the browser, laid
-out like a commercial 16-tile app on the same felt as the Dice wall. It's a landscape table: it
-fills the screen, and a phone held upright is asked to turn sideways.
+out like a commercial 16-tile app. It's a landscape table: it fills the screen, and a phone
+held upright is asked to turn sideways.
 
-- **The table:** each bot's concealed tiles are drawn edge-on along its side, with its
-  melds and flowers beside them and its pond in front of it. You're along the bottom, your
-  melds and flowers inline before your hand and the tile you just drew set apart at the right.
+- **The table:** a green felt top in a dark wooden rim, tipped away from you in perspective
+  so it narrows toward the far side. Each bot's concealed tiles stand along its edge - jade
+  backs across the top, slanted walls down the sides - with its melds and flowers beside them
+  and its pond out in front of it; their name cards sit flat over the table's corners. Tiles
+  on the felt show their thickness (the ivory body and jade back below the face); in your
+  hand the jade back peeks over the top. You're along the bottom, your melds and flowers
+  inline before your hand and the tile you just drew set apart at the right.
   A wind compass in the middle shows each seat's wind where that seat sits and lights whoever
   is to act; its read-out is the live tiles left, or the countdown when the timer is on. The
   newest discard carries a gold pin, and while it can be claimed it also shows large in a
-  spotlight on the discarder's side. A call (吃 / 碰 / 槓 / 胡 / 自摸) bursts up by whoever
-  made it. The bar along the bottom has your wind, 莊, your running total, the round and deal
-  (e.g. 東圈南局, with any 連莊) and 剩:N張.
+  spotlight beside the compass on the discarder's side. A call (上 / 碰 / 槓 / 胡 / 自摸) bursts up by whoever
+  made it. The band along the bottom has your wind, 莊, your running total, the round and
+  deal (e.g. 東圈南局, with any 連莊) and 剩:N張.
 - **Rules:** 144 tiles with the 8 flowers/seasons (set aside and replaced from the back of
   the wall), 16 each, chow from the player on your left, pung, exposed / concealed / added
-  kong with a replacement draw, win off a discard or by self-draw, and an exhaustive draw at
+  kong with a replacement draw (a bot's concealed kong lies fully face down until the hand
+  ends, and the 記牌器 and the bots count its tiles as unseen), win off a discard or by self-draw, and an exhaustive draw at
   the last 16 tiles. Win beats pung/kong beats chow; two wins off one discard go to the first
   in turn order. **食替:** straight after a call you can't throw the tile you claimed, nor,
   after a chow taken at one end of the run, the tile at its far side (take 7 with 56: 4 is
-  barred too); barred tiles are greyed. No robbing the kong or 叮.
+  barred too); barred tiles are greyed. No robbing the kong.
+- **叮 (riichi):**
+  - **Declaring:** when one of your discards would leave you ready, a red **叮** button
+    appears. Tap it, then throw one of the tiles it leaves bright. That tile lies sideways in
+    your pond and a 叮 tag goes on your name.
+  - **After declaring** the hand is locked: each draw that doesn't win is thrown for you,
+    and you can't call or kong, only win.
+  - **Tai** (from the Scoring tab's list):
+    - 叮 5, or 門清叮 10 with a concealed hand;
+    - 天叮 60 (dealer) or 地叮 50, when declared with your first discard before any call;
+    - 一發 5, a win before your next discard with no call in between;
+    - 食叮 5 to whoever wins off a declared player's discard.
+  - **Bots** declare too, by personality, when their wait is decent, and treat a declared
+    player as certainly ready.
 - **Playing:** tap a tile to lift it, tap again to discard. When you can call a discard,
-  round call buttons (胡 / 槓 / 碰 / 吃) appear above your hand with 過 to pass. 吃 with more
+  round call buttons (胡 / 槓 / 碰 / 上) appear above your hand with 過 to pass. 上 with more
   than one fitting shape asks which; 自摸 and kongs show on your own turn.
-- **Menu (≡):** Hints on/off, a **turn timer** (Off by default, or 10s / 20s per decision; at
+- **Menu (≡):** Hints Off / On, **Opponents** (Mixed: Veteran, Hunter and Speedster;
+  Tough: three Veterans; Friendly: three Casuals), a **turn timer** (Off by default, or 10s / 20s per decision; at
   zero it passes on a call, or throws the drawn tile, or the hint's pick after a call), and
-  New game. **記牌器** beside it lists how many of each tile you haven't seen yet.
+  New game, which takes a second tap since it resets the totals. **記牌器** beside it lists how many of each tile you haven't seen yet.
 - **Scoring:** a win is scored by the same tai list as the Scoring tab, with what the table
   knows filled in (seat and round wind, self-draw, the winning tile, last-tile and
   replacement-draw wins, 天胡/地胡/人胡, 莊 and 連莊). The discarder pays the tai; on a
   self-draw all three do. Running totals sit on each seat badge. The result card's **View
   table** hides it to look over the final table and the revealed hands; **Show result** brings
   it back.
-- **Bots** pick the discard that leaves the fewest tiles from ready (shanten), then the one
-  with the most unseen tiles that would improve it; they call only when a call gets them
-  closer (or for a pung of a scoring honor). **Hints** underline that same pick in your hand
-  and show how far you are from ready.
+- **Bots** (`src/lib/bots.ts`) all run one decision engine, and a personality sets its
+  weights. A discard is ranked first on building the hand: shanten, then the unseen tiles
+  that would improve it, then where its tai are heading (flushes, all-pungs, honour pungs,
+  門清). Expected value then trades that against danger. A step toward ready is worth what it
+  adds to the chance of winning × the hand's worth, and a throw costs its chance of dealing
+  in × what that costs. So a far-off hand against a hot table simply throws safe tiles,
+  with no separate fold switch.
+  - **Threat:** how likely each opponent is to be ready. This is a fit to measured play,
+    from melds called, discards made, a flush taking shape and a late run of middle tiles.
+  - **Tile risk** reads, each kept because it measurably helps:
+    - honours dead or nearly dead;
+    - the tile already in that player's pond (safer, not safe, since there's no 振聽 here);
+    - 壁 walls, where every copy of a neighbour is visible;
+    - few copies left;
+    - a weak flush read.
+  - **Suji (筋) is left off on purpose.** With no furiten it measured no safer than any
+    other tile.
+  - **Calls** weigh the step gained, the value gained, the 門清 given up and 食替.
+  - **Human feel:** a softmax "noise" picks among near-equal moves, the occasional lazy
+    "slip" happens, and the pause before each move varies.
+  - **Personalities:**
+    - **老手 Veteran:** the strongest: fast, always declares 叮, defends lightly.
+    - **快手 Speedster:** calls everything and races.
+    - **大牌 Hunter:** chases flushes, all-pungs and honours, and passes on small wins early.
+    - **鐵壁 Iron Wall:** keeps 門清 and defends hard.
+    - **賭徒 Gambler:** never folds.
+    - **街坊 Casual:** loose reads, the odd lazy throw.
+  - **What the arena found** (1,200-hand runs, original bot as yardstick):
+    - **Before 叮, speed beat everything.** Every win carries a solid 底 and about a third
+      are self-draws, which every player pays, so every defensive setting lost more wins
+      than it saved deal-ins.
+    - **Declaring 叮 pays.** Always declaring when ready: +2.3 tai a hand, against −2.0 for
+      never declaring.
+    - **With 叮 in play, moderate defence pays too,** because a declared player is known to
+      be ready. Caution 0.35: +1.2, against −1.3 for none and −0.4 for heavy.
+    - **Defending only against clearly-ready players** (a `focus` setting) did worse than
+      the light all-round caution.
+    - **The Veteran** (always 叮, caution 0.35, eager calls, a little human noise) scores
+      **+2.5 tai a hand to the original bot's +0.2**.
+  - **Hints** use the Veteran's judgement.
+- **Arena** (`npm run arena`): the bots play each other headless and a results table prints:
+  - net tai per hand;
+  - win, self-draw and deal-in rates;
+  - average win and loss;
+  - win speed, calls per hand and biggest win.
+
+  Each wall is dealt four times with the bots rotated a seat each time, so the luck of the
+  deal largely cancels out. Work is split across CPU cores. Options:
+  - `--bots a,b,c,d`;
+  - `--walls N`;
+  - `--seed`;
+  - `--list`;
+  - `--tweak "v2:veteran.caution=0.4"`, to try a variant against the original;
+  - `--calibrate`, which prints how often seats are really ready by melds × discards, and
+    how often each risk read's buckets really won. That's where the threat and risk numbers
+    come from.
 - The dealer stays on a dealer win or a draw; a full lap of dealers moves the round wind. The
-  game in progress, and the hint and timer settings, are kept on this device, so leaving the
+  game in progress, and the hint, opponents and timer settings, are kept on this device, so leaving the
   table or reloading picks it back up.
 
 ## Dice
