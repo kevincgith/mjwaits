@@ -42,6 +42,9 @@ export interface PlayerStats {
   assistRate: number | null; // 助攻率
   positiveRate: number | null; // 正分率 - hands ending with a running total above 0
   firstRate: number | null; // 首名率 - hands ending in first place (ties count)
+  winRate: number | null; // hands won (食胡 or 自摸), of those sat in
+  dealInRate: number | null; // hands dealt in, of those sat in
+  perHand: number | null; // net per hand sat in
 }
 
 // Which way is good, for the 👑 (best at the table) and 💀 (worst) marks.
@@ -67,6 +70,9 @@ export const STAT_DIRECTION: Partial<Record<keyof PlayerStats, "high" | "low">> 
   assistRate: "low",
   positiveRate: "high",
   firstRate: "high",
+  winRate: "high",
+  dealInRate: "low",
+  perHand: "high",
 };
 
 const rate = (n: number, of: number) => (of > 0 ? n / of : null);
@@ -187,6 +193,9 @@ export function playerStats(state: ReplayState, game: ScoreGame): PlayerStats[] 
       assistRate: rate(paidSelfDraw.length, seated.length),
       positiveRate: rate(positive, seated.length),
       firstRate: rate(first, seated.length),
+      winRate: rate(won.length, seated.length),
+      dealInRate: rate(dealtIn.length, seated.length),
+      perHand: rate(state.totals[player] ?? 0, seated.length),
     };
   });
 }

@@ -187,11 +187,23 @@ function SectionHead({ zh, en, children }: { zh: string; en?: string; children?:
   );
 }
 
+// The monogram's letters: the first, or the first two when someone else at
+// the table (or on the roster) starts with the same one - Kevin "Ke", KY "KY".
+function initials(store: ScoreStore, player: string): string {
+  const first = (n: string) => [...n][0]?.toUpperCase() ?? "";
+  const others = new Set([...store.roster.map((p) => p.name), ...(store.active?.seats ?? [])]);
+  others.delete(player);
+  const clash = [...others].some((n) => first(n) === first(player));
+  const chars = [...player];
+  return clash && chars.length > 1 ? chars[0].toUpperCase() + chars[1] : first(player);
+}
+
 // A round monogram in the player's colour - names and colours, no avatars.
 function Monogram({ store, player, size = "md" }: { store: ScoreStore; player: string; size?: "sm" | "md" | "lg" }) {
+  const text = initials(store, player);
   return (
-    <span className={`sc-mono sc-mono-${size} sc-c${colorOf(store, player)}`} aria-hidden="true">
-      {[...player][0]?.toUpperCase()}
+    <span className={`sc-mono sc-mono-${size} sc-c${colorOf(store, player)}${[...text].length > 1 ? " is-two" : ""}`} aria-hidden="true">
+      {text}
     </span>
   );
 }
@@ -278,14 +290,14 @@ function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: 
   );
 }
 
-function Stepper({ value, onChange, min = 0, label }: { value: number; onChange: (v: number) => void; min?: number; label?: string }) {
+function Stepper({ value, onChange, min = 0, max, step = 1, label }: { value: number; onChange: (v: number) => void; min?: number; max?: number; step?: number; label?: string }) {
   return (
     <span className="sc-stepper" role="group" aria-label={label}>
-      <button type="button" onClick={() => onChange(Math.max(min, value - 1))} aria-label="Less" disabled={value <= min}>
+      <button type="button" onClick={() => onChange(Math.max(min, value - step))} aria-label="Less" disabled={value <= min}>
         −
       </button>
       <span className="sc-stepper-value">{value}</span>
-      <button type="button" onClick={() => onChange(value + 1)} aria-label="More">
+      <button type="button" onClick={() => onChange(max === undefined ? value + step : Math.min(max, value + step))} aria-label="More" disabled={max !== undefined && value >= max}>
         +
       </button>
     </span>
@@ -535,11 +547,8 @@ function WinSheet({
       tabs={<ModeTabs mode="win" onBonus={onBonus} />}
       actions={
         <>
-          <button type="button" className="sc-secondary" onClick={onClose}>
-            取消
-          </button>
           <button type="button" className="sc-primary" disabled={!complete} onClick={submit}>
-            {complete ? `確定 · ${fmt(total)}` : "確定"}
+            {complete ? `Confirm · ${fmt(total)}` : "Confirm"}
           </button>
         </>
       }
@@ -586,8 +595,19 @@ function WinSheet({
           ))}
         </div>
         {state.pot > 0 && (
-          <button type="button" className={`sc-jp-pill${jackpot ? " is-on" : ""}`} aria-pressed={jackpot} onClick={() => setJackpot((j) => !j)} title={`${seats[winnerSeat]} takes the Jackpot`}>
-            JP {fmt(state.pot)}
+          // A checkbox, so it reads as "this win takes the Jackpot" on or off.
+          <button type="button" role="switch" className={`sc-jp-pill${jackpot ? " is-on" : ""}`} aria-checked={jackpot} onClick={() => setJackpot((j) => !j)} aria-label={`${seats[winnerSeat]} takes the Jackpot of ${fmt(state.pot)}`}>
+            <span className="sc-jp-box" aria-hidden="true">
+              {jackpot && (
+                <svg viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M2.5 6.2 5 8.5l4.5-5" />
+                </svg>
+              )}
+            </span>
+            <span className="sc-jp-text">
+              <span className="sc-jp-label">Take JP</span>
+              <span className="sc-jp-amount">{fmt(state.pot)}</span>
+            </span>
           </button>
         )}
       </div>
@@ -663,16 +683,13 @@ function BonusSheet({
       tabs={<ModeTabs mode="bonus" onWin={onWin} />}
       actions={
         <>
-          <button type="button" className="sc-secondary" onClick={onClose}>
-            取消
-          </button>
           <button
             type="button"
             className={kind === "獎" ? "sc-primary" : "sc-danger"}
             disabled={n <= 0}
             onClick={() => onDone({ t: "bonus", at: Date.now(), seat, amount: n, kind, ...(other !== null ? { other } : {}) })}
           >
-            確定
+            Confirm
           </button>
         </>
       }
@@ -700,7 +717,8 @@ function BonusSheet({
         />
       </div>
       <div className="sc-tai-row">
-        <span className="sc-label">{other === null ? "Each" : "Amount"}</span>
+        {/* Fixed width, so the field doesn't shift as "Each" ↔ "Amount" swap. */}
+        <span className="sc-label sc-label-fixed">{other === null ? "Each" : "Amount"}</span>
         <div className="sc-tai-fields">
           <div className="sc-tai sc-tai-static is-focus">
             <span className={`sc-tai-value${amount ? "" : " is-empty"}`}>{amount || "0"}</span>
@@ -933,11 +951,8 @@ function SeatsSheet({
       }
       actions={
         <>
-          <button type="button" className="sc-secondary" onClick={onClose}>
-            取消
-          </button>
           <button type="button" className="sc-primary" disabled={!anything} onClick={submit}>
-            {pending ? `確定 ${pending}` : "確定"}
+            {pending ? `Confirm ${pending}` : "Confirm"}
           </button>
         </>
       }
@@ -1013,11 +1028,6 @@ function LahSheet({ store, state, onSurrender, onClose }: { store: ScoreStore; s
     <Sheet
       title="拉踢"
       onClose={onClose}
-      actions={
-        <button type="button" className="sc-primary" onClick={onClose}>
-          Done
-        </button>
-      }
     >
       {groups.length === 0 && <p className="sc-empty">No 拉 on the table.</p>}
       {groups.map(({ holder, rows, total }) => (
@@ -1081,6 +1091,9 @@ function LahSheet({ store, state, onSurrender, onClose }: { store: ScoreStore; s
 function JackpotSheet({ store, state, onDone, onClose }: { store: ScoreStore; state: ReplayState; onDone: (ev: ScoreEvent) => void; onClose: () => void }) {
   const [shares, setShares] = useState<number[]>(() => state.seats.map(() => 0));
   const total = shares.reduce((a, b) => a + b, 0);
+  // ± move in the pot's own unit (what each player puts in per 流局), and +
+  // stops at what's left to hand out.
+  const step = Math.max(1, state.settings.jackpotPerDraw || 1);
   const evenly = () => {
     const each = Math.floor(state.pot / SEATS);
     setShares(state.seats.map((_, i) => each + (i === 0 ? state.pot - each * SEATS : 0)));
@@ -1088,13 +1101,10 @@ function JackpotSheet({ store, state, onDone, onClose }: { store: ScoreStore; st
   return (
     <Sheet
       title={`Jackpot ${fmt(state.pot)}`}
-      subtitle="Tap a player to give them all of it, or set each share"
+      subtitle={`Tap a player to give them all of it, or set shares in steps of ${fmt(step)}`}
       onClose={onClose}
       actions={
         <>
-          <button type="button" className="sc-secondary" onClick={onClose}>
-            取消
-          </button>
           <button
             type="button"
             className="sc-primary"
@@ -1113,7 +1123,13 @@ function JackpotSheet({ store, state, onDone, onClose }: { store: ScoreStore; st
               <Monogram store={store} player={p} size="sm" />
               {p}
             </button>
-            <Stepper value={shares[i]} onChange={(v) => setShares((prev) => prev.map((x, j) => (j === i ? v : x)))} label={`${p}'s share`} />
+            <Stepper
+              value={shares[i]}
+              step={step}
+              max={shares[i] + Math.max(0, state.pot - total)}
+              onChange={(v) => setShares((prev) => prev.map((x, j) => (j === i ? v : x)))}
+              label={`${p}'s share`}
+            />
           </div>
         ))}
       </div>
@@ -1168,11 +1184,8 @@ function SettleSheet({ store, state, onEnd, onClose }: { store: ScoreStore; stat
       onClose={onClose}
       actions={
         <>
-          <button type="button" className="sc-secondary" onClick={onClose}>
-            取消
-          </button>
           <button type="button" className={confirm ? "sc-danger" : "sc-primary"} onClick={() => (confirm ? onEnd() : setConfirm(true))}>
-            {confirm ? "Tap again to confirm" : "End game · 新局"}
+            {confirm ? "Tap again to confirm" : "End game"}
           </button>
         </>
       }
@@ -1272,7 +1285,7 @@ function SettingsSheet({ settings, onSave, onClose }: { settings: ScoreSettings;
             Defaults
           </button>
           <button type="button" className="sc-primary" onClick={() => onSave(s)}>
-            保存 Save
+            Save
           </button>
         </>
       }
@@ -1336,16 +1349,13 @@ function SettingsSheet({ settings, onSave, onClose }: { settings: ScoreSettings;
   );
 }
 
-function Confirm({ title, detail, onYes, onClose, yes = "確定", danger }: { title: string; detail?: string; onYes: () => void; onClose: () => void; yes?: string; danger?: boolean }) {
+function Confirm({ title, detail, onYes, onClose, yes = "Confirm", danger }: { title: string; detail?: string; onYes: () => void; onClose: () => void; yes?: string; danger?: boolean }) {
   return (
     <Sheet
       title={title}
       onClose={onClose}
       actions={
         <>
-          <button type="button" className="sc-secondary" onClick={onClose}>
-            取消
-          </button>
           <button type="button" className={danger ? "sc-danger" : "sc-primary"} onClick={onYes}>
             {yes}
           </button>
@@ -1605,13 +1615,13 @@ function Board({
   }, [state.hands]);
 
   const tools: { label: string; icon: ReactNode; onClick: () => void; disabled?: boolean; badge?: number }[] = [
+    { label: "新局", icon: Icons.newGame, onClick: () => setSheet({ kind: "settle" }) },
     { label: "還原", icon: Icons.undo, onClick: undo, disabled: game.events.length === 0 },
     { label: "重做", icon: Icons.redo, onClick: redo, disabled: !canRedo(game) },
     { label: "座位", icon: Icons.swap, onClick: () => setSheet({ kind: "seats" }) },
     { label: "拉踢", icon: Icons.lah, onClick: () => setSheet({ kind: "lah" }), badge: state.lahs.length || undefined },
     { label: "最近", icon: Icons.recent, onClick: () => setSheet({ kind: "recent" }) },
     { label: "設定", icon: Icons.settings, onClick: () => setSheet({ kind: "settings" }) },
-    { label: "新局", icon: Icons.newGame, onClick: () => setSheet({ kind: "settle" }) },
   ];
 
   return (
@@ -2019,62 +2029,123 @@ function niceStep(raw: number): number {
 
 type StatRow = { key: keyof PlayerStats; label: string; show: (s: PlayerStats) => string; tone?: (s: PlayerStats) => number };
 
+// Which hand a stat happened on, and how many times a chain record was hit.
+const atHand = (h: { value: number; hand: number }, show: (v: number) => string) => `${show(h.value)} · hand ${h.hand}`;
+const chain = (c: { count: number; times: number } | null) => (c ? `${c.count}${c.times > 1 ? ` ×${c.times}` : ""}` : "–");
+
+// English for the words, Chinese for the mahjong terms.
 const STAT_GROUPS: { title: string; rows: StatRow[] }[] = [
   {
-    title: "戰績 Record",
+    title: "Record",
     rows: [
       { key: "wins", label: "食胡", show: (s) => String(s.wins) },
       { key: "selfDraws", label: "自摸", show: (s) => String(s.selfDraws) },
       { key: "dealIns", label: "出銃", show: (s) => String(s.dealIns) },
-      { key: "multiWins", label: "多響", show: (s) => String(s.multiWins) },
-      { key: "winStreak", label: "連勝", show: (s) => String(s.winStreak) },
-      { key: "assists", label: "助攻", show: (s) => String(s.assists) },
+      { key: "multiWins", label: "雙響 / 三響", show: (s) => String(s.multiWins) },
+      { key: "winStreak", label: "Win streak", show: (s) => String(s.winStreak) },
+      { key: "assists", label: "Others' 自摸", show: (s) => String(s.assists) },
     ],
   },
   {
-    title: "番數 Tai",
+    title: "Rates",
     rows: [
-      { key: "maxTai", label: "最高番數", show: (s) => (s.maxTai ? `${fmt(s.maxTai.value)} · 第${s.maxTai.hand}局` : "–") },
-      { key: "avgWinTai", label: "平均食胡番", show: (s) => (s.avgWinTai === null ? "–" : s.avgWinTai.toFixed(1)) },
-      { key: "avgDealInTai", label: "平均出銃番", show: (s) => (s.avgDealInTai === null ? "–" : s.avgDealInTai.toFixed(1)) },
+      { key: "winRate", label: "Win rate", show: (s) => pct(s.winRate) },
+      { key: "dealInRate", label: "Deal-in rate", show: (s) => pct(s.dealInRate) },
+      { key: "perHand", label: "Per hand", show: (s) => (s.perHand === null ? "–" : signed(Math.round(s.perHand * 10) / 10)), tone: (s) => s.perHand ?? 0 },
+      { key: "firstRate", label: "In 1st", show: (s) => pct(s.firstRate) },
+      { key: "positiveRate", label: "In the plus", show: (s) => pct(s.positiveRate) },
+      { key: "assistRate", label: "Others' 自摸 rate", show: (s) => pct(s.assistRate) },
     ],
   },
   {
-    title: "拉踢 Pull & kick",
+    title: "Tai",
     rows: [
-      { key: "pulls", label: "拉人", show: (s) => String(s.pulls) },
-      { key: "pulled", label: "被拉", show: (s) => String(s.pulled) },
-      { key: "maxPull", label: "最高拉數", show: (s) => (s.maxPull ? `${s.maxPull.count} · ${s.maxPull.times}次` : "–") },
-      { key: "maxPulled", label: "最高被拉", show: (s) => (s.maxPulled ? `${s.maxPulled.count} · ${s.maxPulled.times}次` : "–") },
-      { key: "kicks", label: "踢人", show: (s) => String(s.kicks) },
-      { key: "kicked", label: "被踢", show: (s) => String(s.kicked) },
-      { key: "maxKicks", label: "最高踢數", show: (s) => (s.maxKicks ? `${s.maxKicks.count} · ${s.maxKicks.times}次` : "–") },
-      { key: "maxKicked", label: "最高被踢", show: (s) => (s.maxKicked ? `${s.maxKicked.count} · ${s.maxKicked.times}次` : "–") },
+      { key: "maxTai", label: "Top tai", show: (s) => (s.maxTai ? atHand(s.maxTai, fmt) : "–") },
+      { key: "avgWinTai", label: "Avg tai won", show: (s) => (s.avgWinTai === null ? "–" : s.avgWinTai.toFixed(1)) },
+      { key: "avgDealInTai", label: "Avg tai dealt in", show: (s) => (s.avgDealInTai === null ? "–" : s.avgDealInTai.toFixed(1)) },
+    ],
+  },
+  {
+    title: "Points",
+    rows: [
+      { key: "bestHand", label: "Best hand", show: (s) => (s.bestHand ? atHand(s.bestHand, signed) : "–"), tone: () => 1 },
+      { key: "worstHand", label: "Worst hand", show: (s) => (s.worstHand ? atHand(s.worstHand, fmt) : "–"), tone: () => -1 },
+      { key: "selfDrawGain", label: "Won by 自摸", show: (s) => signed(s.selfDrawGain), tone: (s) => s.selfDrawGain },
+      { key: "selfDrawLoss", label: "Paid on 自摸", show: (s) => fmt(s.selfDrawLoss), tone: (s) => s.selfDrawLoss },
+      { key: "discardGain", label: "Won by 食胡", show: (s) => signed(s.discardGain), tone: (s) => s.discardGain },
+      { key: "discardLoss", label: "Lost to 出銃", show: (s) => fmt(s.discardLoss), tone: (s) => s.discardLoss },
+      { key: "bonus", label: "獎罰", show: (s) => signed(s.bonus), tone: (s) => s.bonus },
+      { key: "jackpot", label: "Jackpot", show: (s) => fmt(s.jackpot) },
+    ],
+  },
+  {
+    title: "拉踢",
+    rows: [
+      { key: "pulls", label: "拉 others", show: (s) => String(s.pulls) },
+      { key: "pulled", label: "Got 拉", show: (s) => String(s.pulled) },
+      { key: "maxPull", label: "Longest 拉", show: (s) => chain(s.maxPull) },
+      { key: "maxPulled", label: "Longest got 拉", show: (s) => chain(s.maxPulled) },
+      { key: "kicks", label: "踢 others", show: (s) => String(s.kicks) },
+      { key: "kicked", label: "Got 踢", show: (s) => String(s.kicked) },
+      { key: "maxKicks", label: "Most 踢 at once", show: (s) => chain(s.maxKicks) },
+      { key: "maxKicked", label: "Most got 踢", show: (s) => chain(s.maxKicked) },
       { key: "fanXue", label: "反雪", show: (s) => String(s.fanXue) },
     ],
   },
-  {
-    title: "得失分 Points",
-    rows: [
-      { key: "bestHand", label: "最高得分", show: (s) => (s.bestHand ? `${signed(s.bestHand.value)} · 第${s.bestHand.hand}局` : "–"), tone: () => 1 },
-      { key: "worstHand", label: "最高失分", show: (s) => (s.worstHand ? `${fmt(s.worstHand.value)} · 第${s.worstHand.hand}局` : "–"), tone: () => -1 },
-      { key: "selfDrawGain", label: "總自摸得分", show: (s) => signed(s.selfDrawGain), tone: (s) => s.selfDrawGain },
-      { key: "selfDrawLoss", label: "總自摸失分", show: (s) => fmt(s.selfDrawLoss), tone: (s) => s.selfDrawLoss },
-      { key: "discardGain", label: "總出銃得分", show: (s) => signed(s.discardGain), tone: (s) => s.discardGain },
-      { key: "discardLoss", label: "總出銃失分", show: (s) => fmt(s.discardLoss), tone: (s) => s.discardLoss },
-      { key: "bonus", label: "獎罰", show: (s) => signed(s.bonus), tone: (s) => s.bonus },
-      { key: "jackpot", label: "彩池", show: (s) => fmt(s.jackpot) },
-    ],
-  },
-  {
-    title: "比率 Rates",
-    rows: [
-      { key: "positiveRate", label: "正分率", show: (s) => pct(s.positiveRate) },
-      { key: "firstRate", label: "首名率", show: (s) => pct(s.firstRate) },
-      { key: "assistRate", label: "助攻率", show: (s) => pct(s.assistRate) },
-    ],
-  },
 ];
+
+// Where a player's points came from and went: gains to the right of the
+// middle, losses to the left, each split by how.
+function PointsBar({ s }: { s: PlayerStats }) {
+  const gains = [
+    { label: "自摸", value: s.selfDrawGain, cls: "is-g1" },
+    { label: "食胡", value: s.discardGain, cls: "is-g2" },
+    { label: "獎罰", value: Math.max(0, s.bonus), cls: "is-g3" },
+  ].filter((x) => x.value > 0);
+  const losses = [
+    { label: "出銃", value: -s.discardLoss, cls: "is-l1" },
+    { label: "Paid 自摸", value: -s.selfDrawLoss, cls: "is-l2" },
+    { label: "獎罰", value: Math.max(0, -s.bonus), cls: "is-l3" },
+  ].filter((x) => x.value > 0);
+  const gain = gains.reduce((t, x) => t + x.value, 0);
+  const loss = losses.reduce((t, x) => t + x.value, 0);
+  const scale = Math.max(gain, loss, 1);
+  if (gain === 0 && loss === 0) return null;
+  return (
+    <div className="sc-pointsbar">
+      <div className="sc-pointsbar-track" role="img" aria-label={`Won ${fmt(gain)}, lost ${fmt(loss)}`}>
+        <div className="sc-pointsbar-half is-loss">
+          {losses.map((x) => (
+            <span key={x.label} className={x.cls} style={{ width: `${(x.value / scale) * 100}%` }} />
+          ))}
+        </div>
+        <div className="sc-pointsbar-half is-gain">
+          {gains.map((x) => (
+            <span key={x.label} className={x.cls} style={{ width: `${(x.value / scale) * 100}%` }} />
+          ))}
+        </div>
+      </div>
+      <div className="sc-pointsbar-legend">
+        <span className="is-neg">
+          {losses.map((x) => (
+            <span key={x.label}>
+              <i className={x.cls} />
+              {x.label} {fmt(x.value)}
+            </span>
+          ))}
+        </span>
+        <span className="is-pos">
+          {gains.map((x) => (
+            <span key={x.label}>
+              <i className={x.cls} />
+              {x.label} {fmt(x.value)}
+            </span>
+          ))}
+        </span>
+      </div>
+    </div>
+  );
+}
 
 function PlayerCard({ store, stats, state, index, onIndex }: { store: ScoreStore; stats: PlayerStats[]; state: ReplayState; index: number; onIndex: (i: number) => void }) {
   const s = stats[index];
@@ -2113,12 +2184,15 @@ function PlayerCard({ store, stats, state, index, onIndex }: { store: ScoreStore
           <strong>{s.dealIns}</strong>銃
         </span>
         <span>
-          <strong>{pct(s.firstRate)}</strong>首名
+          <strong>{pct(s.firstRate)}</strong>1st
         </span>
       </div>
-      {STAT_GROUPS.map((g) => (
-        <div key={g.title} className="sc-stat-group">
-          <div className="sc-stat-title">{g.title}</div>
+      <PointsBar s={s} />
+      <p className="sc-help sc-stat-key">👑 best and 💀 lowest at the table for that stat</p>
+      {/* The first two groups open; the rest fold away until wanted. */}
+      {STAT_GROUPS.map((g, gi) => (
+        <details key={g.title} className="sc-stat-group" open={gi < 2}>
+          <summary className="sc-stat-title">{g.title}</summary>
           <div className="sc-stat-grid">
             {g.rows.map((r) => {
               const m = markFor[r.key]?.get(s.player);
@@ -2128,7 +2202,7 @@ function PlayerCard({ store, stats, state, index, onIndex }: { store: ScoreStore
                   <span className="sc-stat-label">
                     {r.label}
                     {m && (
-                      <span className="sc-mark" title={m === "best" ? "Best at the table" : "Worst at the table"}>
+                      <span className="sc-mark" title={m === "best" ? "Best at the table" : "Lowest at the table"}>
                         {m === "best" ? "👑" : "💀"}
                       </span>
                     )}
@@ -2138,9 +2212,8 @@ function PlayerCard({ store, stats, state, index, onIndex }: { store: ScoreStore
               );
             })}
           </div>
-        </div>
+        </details>
       ))}
-      <p className="sc-help sc-help-block">👑 best and 💀 worst at the table for that stat.</p>
     </div>
   );
 }
@@ -2302,8 +2375,10 @@ function StatsPanel({ store, setStore, view, setView }: { store: ScoreStore; set
             <span className="sc-leader-id">
               <span className="sc-leader-name">{s.player}</span>
               <span className="sc-leader-sub">
-                胡{s.wins + s.selfDraws} 摸{s.selfDraws} 銃{s.dealIns}
-                {s.bonus !== 0 && ` 獎${signed(s.bonus)}`}
+                <span>
+                  胡{s.wins + s.selfDraws} 摸{s.selfDraws} 銃{s.dealIns}
+                </span>
+                {s.bonus !== 0 && <span>獎{signed(s.bonus)}</span>}
               </span>
             </span>
             <Sparkline values={series.find((x) => x.player === s.player)?.values ?? []} className={`sc-c${colorOf(store, s.player)}`} />
@@ -2334,15 +2409,6 @@ function StatsPanel({ store, setStore, view, setView }: { store: ScoreStore; set
             <span className="sc-help">Running totals · touch for 局 detail</span>
           </div>
           <TrendChart store={store} state={state} />
-          <div className="sc-legend">
-            {ranked.map((s) => (
-              <span key={s.player} className="sc-legend-item">
-                <span className={`sc-dot sc-c${colorOf(store, s.player)}`} />
-                {s.player}
-                <strong className={tone(s.net)}>{signed(s.net)}</strong>
-              </span>
-            ))}
-          </div>
         </div>
       )}
       {view === "patterns" && <PatternsCard state={state} store={store} />}
