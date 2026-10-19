@@ -42,27 +42,37 @@ import {
 import { allTileKinds, shanten, sortTiles, tileKey, tileLabel, type Tile } from "./lib/mahjong";
 import { patternDisplayName, type BonusTile } from "./lib/scoring";
 import { BonusGlyphSpan, TileGlyphSpan } from "./TileGlyphs";
-import { botClaimFor, botTurnMoveFor, profileById, rateDiscardsFor, type BotProfile } from "./lib/bots";
+import { BOT_PROFILES, botClaimFor, botTurnFor, profileById, rateDiscardsFor, voiceOf, type BotProfile, type Voice } from "./lib/bots";
 
 const WIND_CHARS = ["", "東", "南", "西", "北"];
-// Who sits at Right / Across / Left (seats 1-3) for each table choice.
-const TABLES = {
-  mixed: { label: "Mixed", bots: ["veteran", "hunter", "speedster"] },
-  tough: { label: "Tough", bots: ["veteran", "veteran", "veteran"] },
-  friendly: { label: "Friendly", bots: ["casual", "casual", "casual"] },
-} as const;
-type TableChoice = keyof typeof TABLES;
+// Ready-made tables: who sits at Right / Across / Left (seats 1-3).
+const PRESETS = [
+  { label: "Mixed", bots: ["veteran", "hunter", "speedster"] },
+  { label: "Tough", bots: ["grandmaster", "veteran", "grandmaster"] },
+  { label: "Styles", bots: ["wall", "gambler", "hunter"] },
+  { label: "Friendly", bots: ["casual", "casual", "casual"] },
+] as const;
+const DEFAULT_OPPONENTS = [...PRESETS[0].bots];
+// Seats 1-3 as the opponents sheet names them.
+const SEAT_LABELS = ["", "Right", "Across", "Left"];
+// "老手 Veteran" -> "老手" / "Veteran".
+const shortName = (p: BotProfile) => p.name.split(" ")[0];
+const englishName = (p: BotProfile) => p.name.split(" ").slice(1).join(" ");
 // Hints and the timer's fallback throw judge the way the Veteran does.
 const ADVISOR = profileById("veteran");
 // Where each seat sits on screen, by seat index.
 const SIDES = ["bottom", "right", "top", "left"] as const;
 type Side = (typeof SIDES)[number];
-// How long a bot "thinks" before each move, so the table can be followed:
-// never the same beat twice, like a person, and a little longer after a
-// call (someone weighing what to throw from a changed hand).
-const botDelay = (afterCall: boolean) => 420 + Math.random() * 480 + (afterCall ? 350 : 0);
-// A discard nobody can claim moves on after a short pause.
+// How long a bot "thinks" before a move, like a person: an obvious throw
+// goes almost at once, a close or risky one gets a real pause (difficulty
+// 0..1 from botTurnFor), with a little jitter, and a beat more after a
+// call while it re-plans its hand.
+const botDelay = (difficulty: number, afterCall: boolean) => 300 + difficulty * 1300 + Math.random() * 260 + (afterCall ? 300 : 0);
+// A discard nobody can claim moves on after a short pause - longer when a
+// bot had a call to weigh and passed (a tell, as at a real table).
 const PASS_DELAY_MS = 380;
+const PONDER_DELAY_MS = 900;
+const BUBBLE_MS = 2200;
 const BURST_MS = 1200;
 const TIMER_CHOICES = [0, 10, 20] as const;
 type TimerSetting = (typeof TIMER_CHOICES)[number];
@@ -74,7 +84,8 @@ interface Saved {
   totals: number[];
   hint: boolean;
   timer?: TimerSetting;
-  table?: TableChoice;
+  // The bot ids at seats 1-3.
+  opponents?: string[];
 }
 
 function loadSaved(): Saved | null {
@@ -222,6 +233,60 @@ function TileTracker({ game, onClose }: { game: GameState; onClose: () => void }
   );
 }
 
+// Who you play against: a ready-made table, or a bot per seat from the
+// whole roster. Changes take effect from the next move.
+function OpponentsSheet({ opponents, onChange, onClose }: { opponents: string[]; onChange: (ids: string[]) => void; onClose: () => void }) {
+  return (
+    <div className="play-sheet-backdrop" onClick={onClose}>
+      <div className="play-sheet play-opponents" role="dialog" aria-label="Opponents" onClick={(e) => e.stopPropagation()}>
+        <div className="play-sheet-head">
+          <h2>對手 Opponents</h2>
+          <span>Pick a table, or a bot for each seat</span>
+          <button type="button" className="play-sheet-close" onClick={onClose} aria-label="Close">
+            ×
+          </button>
+        </div>
+        <div className="play-presets">
+          {PRESETS.map((p) => {
+            const on = p.bots.every((id, i) => opponents[i] === id);
+            return (
+              <button key={p.label} type="button" className={on ? "toggle-on" : undefined} aria-pressed={on} onClick={() => onChange([...p.bots])}>
+                {p.label}
+              </button>
+            );
+          })}
+        </div>
+        {[1, 2, 3].map((seat) => {
+          const current = profileById(opponents[seat - 1]);
+          return (
+            <div key={seat} className="play-opponent-row">
+              <span className="play-opponent-seat">{SEAT_LABELS[seat]}</span>
+              <div className="play-opponent-chips">
+                {BOT_PROFILES.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    className={p.id === current.id ? "toggle-on" : undefined}
+                    aria-pressed={p.id === current.id}
+                    title={englishName(p)}
+                    aria-label={`${SEAT_LABELS[seat]}: ${englishName(p)}`}
+                    onClick={() => onChange(opponents.map((id, i) => (i === seat - 1 ? p.id : id)))}
+                  >
+                    {shortName(p)}
+                  </button>
+                ))}
+              </div>
+              <span className="play-opponent-blurb">
+                <b>{englishName(current)}</b> {current.blurb}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ---- The table ------------------------------------------------------------
 
 export function PlayPanel({ onExit }: { onExit: () => void }) {
@@ -230,10 +295,23 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
   const [totals, setTotals] = useState<number[]>(() => saved?.totals ?? [0, 0, 0, 0]);
   const [hint, setHint] = useState(() => saved?.hint ?? false);
   const [timer, setTimer] = useState<TimerSetting>(() => saved?.timer ?? 0);
-  const [table, setTable] = useState<TableChoice>(() => (saved?.table && saved.table in TABLES ? saved.table : "mixed"));
-  const bots = useMemo<(BotProfile | null)[]>(() => [null, ...TABLES[table].bots.map(profileById)], [table]);
+  const [opponents, setOpponents] = useState<string[]>(() =>
+    saved?.opponents?.length === 3 && saved.opponents.every((id) => BOT_PROFILES.some((p) => p.id === id)) ? saved.opponents : DEFAULT_OPPONENTS
+  );
+  const [opponentsOpen, setOpponentsOpen] = useState(false);
+  const bots = useMemo<(BotProfile | null)[]>(() => [null, ...opponents.map(profileById)], [opponents]);
+  // What each bot is saying, by seat (a speech bubble by its name card).
+  const [bubbles, setBubbles] = useState<Record<number, { text: string; id: number }>>({});
+  const say = (seat: number, line: keyof Voice) => {
+    const bot = bots[seat];
+    if (!bot) return;
+    const lines = voiceOf(bot)[line];
+    const id = Date.now() + seat;
+    setBubbles((b) => ({ ...b, [seat]: { text: lines[Math.floor(Math.random() * lines.length)], id } }));
+    window.setTimeout(() => setBubbles((b) => (b[seat]?.id === id ? Object.fromEntries(Object.entries(b).filter(([k]) => Number(k) !== seat)) : b)), BUBBLE_MS);
+  };
   // "You", or the bot's English name (老手 Veteran -> Veteran).
-  const nameOf = (seat: number) => (seat === HUMAN ? "You" : bots[seat]!.name.split(" ").slice(1).join(" "));
+  const nameOf = (seat: number) => (seat === HUMAN ? "You" : englishName(bots[seat]!));
   const [selected, setSelected] = useState<number | null>(null);
   const [burst, setBurst] = useState<{ seat: number; label: string; id: number } | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -245,7 +323,7 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
   const [riichiArmed, setRiichiArmed] = useState(false);
   const [resultHidden, setResultHidden] = useState(false);
 
-  useEffect(() => save({ game, totals, hint, timer, table }), [game, totals, hint, timer, table]);
+  useEffect(() => save({ game, totals, hint, timer, opponents }), [game, totals, hint, timer, opponents]);
 
   // The menu closes on a tap anywhere outside it, and disarms New game.
   useEffect(() => {
@@ -293,7 +371,13 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
     const decisions = botDecisions.slice();
     decisions[HUMAN] = humanClaim;
     const seat = winningClaimSeat(game, decisions);
-    if (seat !== null) showBurst(seat, claimLabel(decisions[seat]!));
+    if (seat !== null) {
+      showBurst(seat, claimLabel(decisions[seat]!));
+      if (decisions[seat]!.kind === "win") {
+        say(seat, "win");
+        if (game.phase.kind === "claims") say(game.phase.from, "dealIn");
+      } else say(seat, "call");
+    }
     advance(resolveClaims(game, decisions));
   };
 
@@ -320,23 +404,33 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
   useEffect(() => {
     const phase = game.phase;
     let move: (() => void) | null = null;
+    let delay = PASS_DELAY_MS;
     if (phase.kind === "turn" && phase.seat !== HUMAN) {
+      // Decide now, so the pause can match how hard the choice was.
+      const { move: m, difficulty } = botTurnFor(game, bots[phase.seat]!);
+      delay = botDelay(difficulty, phase.drawn === null);
       move = () => {
-        const m = botTurnMoveFor(game, bots[phase.seat]!);
-        if (m.kind === "selfDraw") showBurst(phase.seat, "自摸");
-        else if (m.kind === "discard" && m.riichi) showBurst(phase.seat, "叮");
-        else if (m.kind !== "discard") showBurst(phase.seat, "槓");
+        if (m.kind === "selfDraw") {
+          showBurst(phase.seat, "自摸");
+          say(phase.seat, "selfDraw");
+        } else if (m.kind === "discard" && m.riichi) {
+          showBurst(phase.seat, "叮");
+          say(phase.seat, "riichi");
+        } else if (m.kind !== "discard") showBurst(phase.seat, "槓");
         advance(applyTurnMove(game, m));
       };
     } else if (phase.kind === "turn" && game.players[HUMAN].riichi && !isWinningHand(game.players[HUMAN])) {
       // Your locked 叮 hand throws the draw by itself.
       const tile = riichiForcedDiscard(game);
       if (tile) move = () => advance(applyTurnMove(game, { kind: "discard", tile }));
+      delay = 700;
     } else if (phase.kind === "claims" && humanClaims.length === 0) {
       move = () => resolve(null);
+      // Someone had a call to weigh: they take a moment either way.
+      const pondered = [1, 2, 3].some((seat) => seat !== phase.from && claimOptions(game, seat).length > 0);
+      delay = pondered ? PONDER_DELAY_MS + Math.random() * 300 : PASS_DELAY_MS;
     }
     if (!move) return;
-    const delay = phase.kind === "turn" ? botDelay(phase.drawn === null) : PASS_DELAY_MS;
     const id = window.setTimeout(move, delay);
     return () => window.clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -431,6 +525,11 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
         {nameOf(seat)}
         {seat === game.dealer && <span className="play-dealer">莊</span>}
         {game.players[seat].riichi && <span className="play-riichi">叮</span>}
+        {bubbles[seat] && (
+          <span key={bubbles[seat].id} className="play-bubble" role="status">
+            {bubbles[seat].text}
+          </span>
+        )}
       </span>
       {total(seat)}
     </span>
@@ -497,16 +596,17 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
                   ))}
                 </span>
               </div>
-              <div className="play-menu-row">
+              <button
+                type="button"
+                className="play-menu-link"
+                onClick={() => {
+                  setMenuOpen(false);
+                  setOpponentsOpen(true);
+                }}
+              >
                 <span>Opponents</span>
-                <span className="play-menu-seg">
-                  {(Object.keys(TABLES) as TableChoice[]).map((t) => (
-                    <button key={t} type="button" className={table === t ? "toggle-on" : undefined} aria-pressed={table === t} onClick={() => setTable(t)}>
-                      {TABLES[t].label}
-                    </button>
-                  ))}
-                </span>
-              </div>
+                <span className="play-menu-value">{opponents.map((id) => shortName(profileById(id))).join(" · ")} ›</span>
+              </button>
               <div className="play-menu-row">
                 <span>Turn timer</span>
                 <span className="play-menu-seg">
@@ -695,6 +795,7 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
         {burst && <CallBurst key={burst.id} seat={burst.seat} label={burst.label} />}
 
         {trackerOpen && <TileTracker game={game} onClose={() => setTrackerOpen(false)} />}
+        {opponentsOpen && <OpponentsSheet opponents={opponents} onChange={setOpponents} onClose={() => setOpponentsOpen(false)} />}
 
         {result && !resultHidden && (
           <div className="play-result" role="dialog" aria-label="Hand result">

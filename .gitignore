@@ -29,3 +29,5 @@ dist-ssr
 # Stray Ultralytics output if a yolo command is ever run from repo root
 /runs/
 .arena
+.evolve
+evolution

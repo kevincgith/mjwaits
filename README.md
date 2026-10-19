@@ -395,10 +395,11 @@ held upright is asked to turn sideways.
 - **Playing:** tap a tile to lift it, tap again to discard. When you can call a discard,
   round call buttons (胡 / 槓 / 碰 / 上) appear above your hand with 過 to pass. 上 with more
   than one fitting shape asks which; 自摸 and kongs show on your own turn.
-- **Menu (≡):** Hints Off / On, **Opponents** (Mixed: Veteran, Hunter and Speedster;
-  Tough: three Veterans; Friendly: three Casuals), a **turn timer** (Off by default, or 10s / 20s per decision; at
+- **Menu (≡):** Hints Off / On, **Opponents**, a **turn timer** (Off by default, or 10s / 20s per decision; at
   zero it passes on a call, or throws the drawn tile, or the hint's pick after a call), and
   New game, which takes a second tap since it resets the totals. **記牌器** beside it lists how many of each tile you haven't seen yet.
+- **Opponents (對手):** pick a ready-made table (Mixed, Tough, Styles, Friendly) or any bot
+  for each seat - Right, Across, Left - from the full roster, with each one's style shown.
 - **Scoring:** a win is scored by the same tai list as the Scoring tab, with what the table
   knows filled in (seat and round wind, self-draw, the winning tile, last-tile and
   replacement-draw wins, 天胡/地胡/人胡, 莊 and 連莊). The discarder pays the tai; on a
@@ -423,10 +424,20 @@ held upright is asked to turn sideways.
   - **Suji (筋) is left off on purpose.** With no furiten it measured no safer than any
     other tile.
   - **Calls** weigh the step gained, the value gained, the 門清 given up and 食替.
-  - **Human feel:** a softmax "noise" picks among near-equal moves, the occasional lazy
-    "slip" happens, and the pause before each move varies.
+  - **Human feel:**
+    - a softmax "noise" picks among near-equal moves, and the occasional lazy "slip" happens;
+    - **thinking time follows the decision:** an obvious throw goes almost at once, a close
+      or risky one gets a real pause, and a bot that had a call to weigh takes a moment
+      before passing - a tell, as at a real table;
+    - **memory:** the looser personalities remember only the most recent discards in each
+      pond (the Casual about the last 8), so their reads and tile counts go fuzzy on early
+      tiles the way a person's do;
+    - **voices:** each personality says something in a speech bubble by its name when it
+      calls, wins, self-draws, declares 叮 or deals in - the Speedster's 「要！要！」, the
+      Iron Wall's 「……碰。」.
   - **Personalities:**
-    - **老手 Veteran:** the strongest: fast, always declares 叮, defends lightly.
+    - **宗師 Grandmaster:** whatever evolution found strongest, free of any style.
+    - **老手 Veteran:** fast, always declares 叮, defends lightly.
     - **快手 Speedster:** calls everything and races.
     - **大牌 Hunter:** chases flushes, all-pungs and honours, and passes on small wins early.
     - **鐵壁 Iron Wall:** keeps 門清 and defends hard.
@@ -461,6 +472,22 @@ held upright is asked to turn sideways.
   - `--calibrate`, which prints how often seats are really ready by melds × discards, and
     how often each risk read's buckets really won. That's where the threat and risk numbers
     come from.
+- **Evolution** (`npm run evolve`): the bots improve themselves by self-play, one species per
+  style. Each species keeps its settings within its style's limits (a Hunter stays greedy,
+  an Iron Wall stays careful), so evolution finds the strongest version of each style rather
+  than turning every bot into the same one; the Grandmaster species has no limits.
+  - **Each generation:** the whole population is shuffled into mixed tables of four and
+    plays duplicate-dealt hands. Within each species the best half (by lifetime net tai a
+    hand, shrunk while a bot has few hands) survive, and the rest are replaced by children
+    of two survivors - each setting from one parent, then mutated within the limits.
+  - **Benchmark:** every few generations each species' champion plays a fixed table of the
+    original Veteran, the original efficiency-only bot and the original Speedster, so
+    progress is measured against bots that don't evolve.
+  - **Dashboard:** `node scripts/evolve-report.mjs evolution/<run>` writes a report page:
+    each species' champion, the benchmark trend, the best-in-species trend, where each
+    style's settings drifted, and a sortable leaderboard of every bot alive.
+  - The engine is fast enough for this because hand-distance (shanten) results are cached
+    per suit shape and the pruning of meld options is linear; together about 4× faster.
 - The dealer stays on a dealer win or a draw; a full lap of dealers moves the round wind. The
   game in progress, and the hint, opponents and timer settings, are kept on this device, so leaving the
   table or reloading picks it back up.

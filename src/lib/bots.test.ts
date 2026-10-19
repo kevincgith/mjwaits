@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BOT_PROFILES, botClaimFor, botTurnMoveFor, danger, profileById, seededRng, threat, tileRisk } from "./bots";
+import { BOT_PROFILES, botClaimFor, botTurnFor, botTurnMoveFor, danger, profileById, rememberedView, seededRng, threat, tileRisk, VOICES, voiceOf } from "./bots";
 import { runArena } from "./arena";
 import { applyTurnMove, dealHand, resolveClaims, SEATS, unseenCounts, type GameMeld, type GameState } from "./game";
 import type { Tile } from "./mahjong";
@@ -97,4 +97,33 @@ describe("arena", () => {
     // Repeatable for a seed.
     expect(runArena(bots, 1, 3).stats).toEqual(r.stats);
   }, 120_000);
+});
+
+describe("human touches", () => {
+  it("rates how hard a turn was, 0..1, and an obvious one as easy", () => {
+    const s = dealHand({ dealer: 0, roundWind: 1, dealerStreak: 0 });
+    const { move, difficulty } = botTurnFor(s, profileById("veteran"), seededRng(2));
+    expect(move.kind).toBeDefined();
+    expect(difficulty).toBeGreaterThanOrEqual(0);
+    expect(difficulty).toBeLessThanOrEqual(1);
+  });
+
+  it("gives every personality a voice for every moment", () => {
+    for (const p of BOT_PROFILES) {
+      const v = voiceOf(p);
+      expect(VOICES[p.id]).toBeDefined();
+      for (const lines of Object.values(v)) expect(lines.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("forgets old discards with a short memory, never its own", () => {
+    const s0 = dealHand({ dealer: 0, roundWind: 1, dealerStreak: 0 });
+    const pond = Array.from({ length: 15 }, (_, i) => t("t", (i % 9) + 1));
+    const s = { ...s0, players: s0.players.map((p) => ({ ...p, discards: pond })) };
+    const view = rememberedView(s, 0, 0);
+    expect(view.players[0].discards).toHaveLength(15);
+    expect(view.players[1].discards).toHaveLength(3);
+    expect(view.players[1].discards).toEqual(pond.slice(-3));
+    expect(rememberedView(s, 0, 1)).toBe(s);
+  });
 });

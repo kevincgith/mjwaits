@@ -59,6 +59,11 @@ export interface BotProfile {
   // Defend only against opponents at least this likely to be ready (0 =
   // everyone; 0.99 = only a declared 叮). Optional, default 0.
   focus?: number;
+  // 0..1: how much of the other players' ponds it remembers (1 = every
+  // discard; lower keeps only the most recent ones, as a person would).
+  // Forgotten tiles count as unseen and can't inform its reads. Optional,
+  // default 1.
+  memory?: number;
   // ---- Human feel ----
   // Softmax temperature over near-equal choices (0 = always the top pick).
   noise: number;
@@ -68,6 +73,22 @@ export interface BotProfile {
 }
 
 export const BOT_PROFILES: BotProfile[] = [
+  {
+    // Placeholder settings until the species evolution names a champion.
+    id: "grandmaster",
+    name: "宗師 Grandmaster",
+    blurb: "The strongest bot evolution found, free of any style - plays whatever wins.",
+    speed: 1,
+    greed: 0,
+    minTai: 0,
+    riichi: 1,
+    callAppetite: 1,
+    caution: 0.35,
+    foldAt: 0.6,
+    read: 0.95,
+    noise: 0.04,
+    slip: 0.01,
+  },
   {
     id: "veteran",
     name: "老手 Veteran",
@@ -97,6 +118,7 @@ export const BOT_PROFILES: BotProfile[] = [
     read: 0.5,
     noise: 0.08,
     slip: 0.03,
+    memory: 0.7,
   },
   {
     id: "hunter",
@@ -142,6 +164,7 @@ export const BOT_PROFILES: BotProfile[] = [
     read: 0.2,
     noise: 0.15,
     slip: 0.04,
+    memory: 0.5,
   },
   {
     id: "casual",
@@ -157,10 +180,75 @@ export const BOT_PROFILES: BotProfile[] = [
     read: 0.3,
     noise: 0.35,
     slip: 0.08,
+    memory: 0.3,
   },
 ];
 
-export const profileById = (id: string) => BOT_PROFILES.find((p) => p.id === id) ?? BOT_PROFILES[0];
+// What each personality says at the table (shown in a bubble by its name):
+// on a call, a win off a discard, a self-draw, declaring 叮, and dealing in.
+export interface Voice {
+  call: string[];
+  win: string[];
+  selfDraw: string[];
+  riichi: string[];
+  dealIn: string[];
+}
+
+export const VOICES: Record<string, Voice> = {
+  grandmaster: {
+    call: ["嗯。", "要。", "碰得。"],
+    win: ["承讓。", "見笑。", "多謝晒。"],
+    selfDraw: ["摸到喇。", "自摸，承讓。"],
+    riichi: ["叮。", "聽緊。"],
+    dealIn: ["好牌。", "算你嘅。"],
+  },
+  veteran: {
+    call: ["碰！", "要佢！", "上啦。"],
+    win: ["食糊！", "唔好意思喇。", "又係我。"],
+    selfDraw: ["自摸！", "摸翻嚟！"],
+    riichi: ["叮！小心喇。", "叮！"],
+    dealIn: ["哎，俾你捉到。", "好眼光。"],
+  },
+  speedster: {
+    call: ["碰！快啲！", "上！", "要！要！"],
+    win: ["食咗先講！", "快手！", "雞糊都係糊！"],
+    selfDraw: ["自摸！快過你哋！"],
+    riichi: ["叮！跟住就到！"],
+    dealIn: ["慢咗少少…", "下鋪再嚟！"],
+  },
+  hunter: {
+    call: ["呢隻我要。", "碰，等大牌。"],
+    win: ["大牌嚟喇！", "番數夠晒！", "清一色呀！"],
+    selfDraw: ["自摸大牌！", "值得等！"],
+    riichi: ["叮，等大嘢。"],
+    dealIn: ["細糊都要？", "冇所謂，等大嘅。"],
+  },
+  wall: {
+    call: ["……碰。"],
+    win: ["穩陣。", "一早睇住。"],
+    selfDraw: ["自摸，安全第一。"],
+    riichi: ["叮。"],
+    dealIn: ["點會……", "唔應該㗎……"],
+  },
+  gambler: {
+    call: ["碰！搏！", "全部要！", "衝呀！"],
+    win: ["搏到喇！", "邊個話唔得？", "爽！"],
+    selfDraw: ["自摸！今晚旺！"],
+    riichi: ["叮！照衝！", "叮！搏一鋪！"],
+    dealIn: ["哈，冇所謂！", "再搏過！"],
+  },
+  casual: {
+    call: ["咦，碰！", "呢隻啱我！", "上，上。"],
+    win: ["吓？我食咗？", "好彩好彩！", "食糊喇～"],
+    selfDraw: ["自摸！今日好手氣！"],
+    riichi: ["叮！應該係咁講…？"],
+    dealIn: ["唉呀，又出銃。", "我都唔知你等呢隻！"],
+  },
+};
+
+export const voiceOf = (p: BotProfile): Voice => VOICES[p.id] ?? VOICES.veteran;
+
+export const profileById = (id: string): BotProfile => BOT_PROFILES.find((p) => p.id === id) ?? BOT_PROFILES.find((p) => p.id === "veteran")!;
 
 // ---- Helpers ------------------------------------------------------------
 
@@ -337,16 +425,28 @@ export function tileRisk(s: GameState, viewer: number, o: number, tile: Tile, re
 // The total danger of throwing `tile`: each opponent's risk weighted by how
 // likely they are to be ready, and by how much they'd collect (the dealer
 // adds 莊).
-export function danger(s: GameState, seat: number, tile: Tile, read: number, unseen: Map<string, number>, focus = 0): number {
+// `view`: the table as this player remembers it (see rememberedView) - pond
+// reads come from it, while threat still counts every discard (how long a
+// pond is, anyone can see).
+export function danger(s: GameState, seat: number, tile: Tile, read: number, unseen: Map<string, number>, focus = 0, view: GameState = s): number {
   let d = 0;
   for (let o = 0; o < SEATS; o++) {
     if (o === seat) continue;
     const t = threat(s, o, read);
     if (t <= Math.max(0.02, focus)) continue;
     const stake = o === s.dealer || seat === s.dealer ? 1.25 : 1;
-    d += t * stake * tileRisk(s, seat, o, tile, read, unseen);
+    d += t * stake * tileRisk(view, seat, o, tile, read, unseen);
   }
   return d;
+}
+
+// The table as a player with imperfect memory sees it: everyone else's
+// pond cut to its most recent discards (memory 1 keeps all; 0 keeps the
+// last 3). Your own pond, your hand and every called meld stay in view.
+export function rememberedView(s: GameState, seat: number, memory = 1): GameState {
+  if (memory >= 1) return s;
+  const keep = Math.max(3, Math.round(3 + memory * 17));
+  return { ...s, players: s.players.map((p, i) => (i === seat || p.discards.length <= keep ? p : { ...p, discards: p.discards.slice(-keep) })) };
 }
 
 // ---- Decisions ----------------------------------------------------------
@@ -442,7 +542,8 @@ const DEAL_IN_PER_DANGER = 0.11;
 export function rateDiscardsFor(s: GameState, seat: number, profile: BotProfile): DiscardChoice[] {
   const p = s.players[seat];
   const melds = meldsNeeded(p);
-  const unseen = unseenCounts(s, seat);
+  const view = rememberedView(s, seat, profile.memory);
+  const unseen = unseenCounts(view, seat);
   let unseenTotal = 0;
   for (const v of unseen.values()) unseenTotal += Math.max(0, v);
   const forbidden = s.phase.kind === "turn" && s.phase.seat === seat ? forbiddenDiscards(s) : [];
@@ -455,7 +556,7 @@ export function rateDiscardsFor(s: GameState, seat: number, profile: BotProfile)
     const sh = shanten(rest, melds);
     const acc = acceptance(rest, melds, sh, unseen);
     const value = handValue(s, seat, rest, p);
-    const d = danger(s, seat, t, profile.read, unseen, profile.focus);
+    const d = danger(s, seat, t, profile.read, unseen, profile.focus, view);
     // In shanten steps: one step = 1.
     const build = -sh + 0.5 * profile.speed * (acc / (acc + 25)) + 0.07 * profile.greed * value;
     out.push({ tile: t, shanten: sh, acceptance: acc, value, danger: d, score: 0, build });
@@ -472,24 +573,37 @@ export function rateDiscardsFor(s: GameState, seat: number, profile: BotProfile)
 
 
 export function botTurnMoveFor(s: GameState, profile: BotProfile, rng: Rng = Math.random): TurnMove {
+  return botTurnFor(s, profile, rng).move;
+}
+
+// The move, and how hard it was to choose, 0..1 - the Play table uses it to
+// pace the bot like a person: an obvious throw goes at once, a close or
+// dangerous one gets a pause.
+export function botTurnFor(s: GameState, profile: BotProfile, rng: Rng = Math.random): { move: TurnMove; difficulty: number } {
   if (s.phase.kind !== "turn") throw new Error("Not a turn");
   const seat = s.phase.seat;
   const p = s.players[seat];
-  if (isWinningHand(p)) return { kind: "selfDraw" };
+  if (isWinningHand(p)) return { move: { kind: "selfDraw" }, difficulty: 0.2 };
   const forced = riichiForcedDiscard(s);
-  if (forced) return { kind: "discard", tile: forced };
+  if (forced) return { move: { kind: "discard", tile: forced }, difficulty: 0 };
   const options = rateDiscardsFor(s, seat, profile);
   const best = options[0];
   if (liveTilesLeft(s) > 0 && !folding(s, seat, best.shanten, profile)) {
     for (const k of kongOptions(p)) {
       // An added kong costs nothing; a concealed one only if it doesn't set the hand back.
-      if (k.kind === "addedKong") return k;
+      if (k.kind === "addedKong") return { move: k, difficulty: 0.3 };
       const rest = removeTiles(p.hand, [k.tile, k.tile, k.tile, k.tile]);
-      if (shanten(rest, meldsNeeded(p) - 1) <= best.shanten) return k;
+      if (shanten(rest, meldsNeeded(p) - 1) <= best.shanten) return { move: k, difficulty: 0.6 };
     }
   }
   const choice = pick(options, profile, rng);
-  return { kind: "discard", tile: choice.tile, ...(shouldRiichi(s, seat, choice, profile, rng) ? { riichi: true } : {}) };
+  const riichi = shouldRiichi(s, seat, choice, profile, rng);
+  // Close: the top two options nearly tied. Tense: the pick is a risky throw.
+  const gap = options.length > 1 ? options[0].score - options[1].score : 9;
+  const close = Math.max(0, 1 - gap / 1.2);
+  const tense = Math.min(1, choice.danger * 1.5);
+  const difficulty = Math.min(1, 0.65 * close + 0.35 * tense + (riichi ? 0.5 : 0));
+  return { move: { kind: "discard", tile: choice.tile, ...(riichi ? { riichi: true } : {}) }, difficulty };
 }
 
 // Declare 叮 with this discard? Only when it leaves the hand ready on a

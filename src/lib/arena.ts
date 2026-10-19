@@ -23,6 +23,8 @@ export interface BotStats {
   // Discards made before winning, summed (for the average win speed).
   winTurns: number;
   calls: number;
+  // Hands in which it declared 叮.
+  riichis: number;
   biggestWin: number;
 }
 
@@ -72,7 +74,7 @@ export function playHand(wall: WallTile[], dealer: number, seats: BotProfile[], 
 }
 
 export function emptyStats(p: BotProfile): BotStats {
-  return { id: p.id, name: p.name, hands: 0, wins: 0, selfDraws: 0, dealIns: 0, taiWon: 0, taiLost: 0, dealInTai: 0, winTurns: 0, calls: 0, biggestWin: 0 };
+  return { id: p.id, name: p.name, hands: 0, wins: 0, selfDraws: 0, dealIns: 0, taiWon: 0, taiLost: 0, dealInTai: 0, winTurns: 0, calls: 0, riichis: 0, biggestWin: 0 };
 }
 
 // `walls` deals, each played under 4 rotations: 4 x walls hands in all.
@@ -96,6 +98,7 @@ export function runArena(bots: BotProfile[], walls: number, seed = 1, observe?: 
         const st = stats[botAt(seat)];
         st.hands++;
         st.calls += calls[seat];
+        if (end.players[seat].riichi) st.riichis++;
       }
       if (end.phase.kind !== "over") continue;
       const r = end.phase.result;
@@ -125,14 +128,14 @@ export function runArena(bots: BotProfile[], walls: number, seed = 1, observe?: 
 }
 
 export function mergeResults(parts: ArenaResult[]): ArenaResult {
-  const out: ArenaResult = { hands: 0, draws: 0, stats: parts[0].stats.map((s) => ({ ...s, hands: 0, wins: 0, selfDraws: 0, dealIns: 0, taiWon: 0, taiLost: 0, dealInTai: 0, winTurns: 0, calls: 0, biggestWin: 0 })), ms: 0 };
+  const out: ArenaResult = { hands: 0, draws: 0, stats: parts[0].stats.map((s) => ({ ...s, hands: 0, wins: 0, selfDraws: 0, dealIns: 0, taiWon: 0, taiLost: 0, dealInTai: 0, winTurns: 0, calls: 0, riichis: 0, biggestWin: 0 })), ms: 0 };
   for (const p of parts) {
     out.hands += p.hands;
     out.draws += p.draws;
     out.ms = Math.max(out.ms, p.ms);
     p.stats.forEach((s, i) => {
       const o = out.stats[i];
-      for (const k of ["hands", "wins", "selfDraws", "dealIns", "taiWon", "taiLost", "dealInTai", "winTurns", "calls"] as const) o[k] += s[k];
+      for (const k of ["hands", "wins", "selfDraws", "dealIns", "taiWon", "taiLost", "dealInTai", "winTurns", "calls", "riichis"] as const) o[k] += s[k];
       o.biggestWin = Math.max(o.biggestWin, s.biggestWin);
     });
   }
@@ -157,9 +160,10 @@ export function formatArena(r: ArenaResult): string {
       avg(s.dealInTai, s.dealIns),
       avg(s.winTurns, s.wins),
       avg(s.calls, s.hands),
+      pct(s.riichis, s.hands),
       String(s.biggestWin),
     ]);
-  const head = ["Bot", "Net/hand", "Win", "Tsumo", "Deal-in", "Avg win", "Avg loss", "Win turn", "Calls/hand", "Best"];
+  const head = ["Bot", "Net/hand", "Win", "Tsumo", "Deal-in", "Avg win", "Avg loss", "Win turn", "Calls/hand", "叮", "Best"];
   const table = [head, ...rows];
   const widths = head.map((_, c) => Math.max(...table.map((row) => [...row[c]].length + (c === 0 ? 2 : 0))));
   const line = (row: string[]) => row.map((cell, c) => (c === 0 ? cell.padEnd(widths[c]) : cell.padStart(widths[c]))).join("  ");

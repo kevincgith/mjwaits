@@ -5687,6 +5687,19 @@ html.playing body {
   padding: 0.35rem 0.4rem 0.35rem 0.7rem;
 }
 
+/* A menu row that opens a sheet: label, current value, chevron. */
+.play-menu > button.play-menu-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.play-menu-value {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
 .play-menu-seg {
   display: inline-flex;
   padding: 2px;
@@ -6560,6 +6573,135 @@ html.playing body {
 .play-bar-shanten,
 .play-bar-prompt {
   color: var(--play-on-felt-muted);
+}
+
+/* ---- A bot's speech bubble, by its name card ---- */
+
+.play-badge {
+  position: relative;
+}
+
+.play-bubble {
+  position: absolute;
+  top: calc(100% + 0.45rem);
+  left: 0.4rem;
+  z-index: 6;
+  padding: 0.3rem 0.6rem;
+  border-radius: 0.7rem;
+  background: #fffaf0;
+  color: #3a2717;
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: 0 0.2rem 0.6rem rgba(0, 0, 0, 0.35);
+  animation: play-bubble 2.2s ease-out forwards;
+  pointer-events: none;
+}
+
+.play-bubble::before {
+  content: "";
+  position: absolute;
+  bottom: 100%;
+  left: 0.8rem;
+  border: 0.35rem solid transparent;
+  border-bottom-color: #fffaf0;
+}
+
+.play-badge.at-right .play-bubble {
+  left: auto;
+  right: 0.4rem;
+}
+
+.play-badge.at-right .play-bubble::before {
+  left: auto;
+  right: 0.8rem;
+}
+
+.play-badge.at-top .play-bubble {
+  left: 50%;
+  translate: -50% 0;
+}
+
+.play-badge.at-top .play-bubble::before {
+  left: calc(50% - 0.35rem);
+}
+
+@keyframes play-bubble {
+  0% {
+    opacity: 0;
+    transform: translateY(-0.3rem) scale(0.9);
+  }
+  10% {
+    opacity: 1;
+    transform: none;
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* ---- Opponents sheet ---- */
+
+.play-opponents {
+  width: min(40rem, 100%);
+}
+
+.play-presets {
+  display: flex;
+  gap: 0.35rem;
+  margin-bottom: 0.6rem;
+}
+
+.play-presets button,
+.play-opponent-chips button {
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 0.3rem 0.65rem;
+  background: var(--fill);
+  color: var(--text);
+  font-size: 0.85rem !important;
+}
+
+.play-presets button.toggle-on,
+.play-opponent-chips button.toggle-on {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+.play-opponent-row {
+  display: grid;
+  grid-template-columns: 3.6rem 1fr;
+  align-items: center;
+  gap: 0.15rem 0.5rem;
+  padding: 0.4rem 0;
+  border-top: 1px solid var(--separator, rgba(0, 0, 0, 0.08));
+}
+
+.play-opponent-seat {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.play-opponent-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.play-opponent-blurb {
+  grid-column: 2;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.play-opponent-blurb b {
+  color: var(--text);
 }
 
 /* ---- 記牌器 sheet ---- */

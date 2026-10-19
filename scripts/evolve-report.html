@@ -1,0 +1,312 @@
+<meta charset="utf-8">
+<title>MJWaits Bot Evolution</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Noto+Serif+TC:wght@600;800&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: a lab notebook for a mahjong table - one column of panels on a
+   felt-tinted ground; champions first, then the trends, then the raw table. */
+:root {
+  --bg: #f3f5f1;
+  --panel: #fcfdfb;
+  --ink: #121a15;
+  --ink-2: #4b564f;
+  --ink-3: #78837b;
+  --rule: #dfe5df;
+  --grid: #e8ece7;
+  --accent: #1d6b45;
+  --pos: #1d6b45;
+  --neg: #b33b2e;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --s7: #6250d6;
+  --display: "Noto Serif TC", "Songti TC", serif;
+  --body: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1411; --panel: #161c18; --ink: #edf1ec; --ink-2: #b4bdb6; --ink-3: #87918a; --rule: #2a332d; --grid: #222a25;
+    --accent: #4cc48a; --pos: #4cc48a; --neg: #ef7a6c;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #2f9b2f; --s7: #9085e9;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1411; --panel: #161c18; --ink: #edf1ec; --ink-2: #b4bdb6; --ink-3: #87918a; --rule: #2a332d; --grid: #222a25;
+  --accent: #4cc48a; --pos: #4cc48a; --neg: #ef7a6c;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #2f9b2f; --s7: #9085e9;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.5; }
+.wrap { max-width: 1120px; margin: 0 auto; padding-block: 28px 56px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 28px; }
+h1 { font-family: var(--display); font-weight: 800; font-size: clamp(28px, 4.6vw, 44px); line-height: 1.1; margin: 0; text-wrap: balance; letter-spacing: 0.01em; }
+h1 small { display: block; font-family: var(--body); font-weight: 500; font-size: 15px; color: var(--ink-2); margin-top: 8px; letter-spacing: 0; }
+h2 { font-family: var(--body); font-size: 18px; font-weight: 700; margin: 0; text-wrap: balance; }
+.eyebrow { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; }
+.lede { color: var(--ink-2); max-width: 68ch; margin: 4px 0 0; }
+.facts { display: flex; flex-wrap: wrap; gap: 8px 28px; margin-top: 16px; }
+.facts div { display: grid; }
+.facts b { font-family: var(--mono); font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.facts span { font-size: 12px; color: var(--ink-3); }
+.panel { background: var(--panel); border: 1px solid var(--rule); border-radius: 14px; padding: 20px; display: grid; gap: 14px; min-width: 0; }
+.panel-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; }
+.note { color: var(--ink-3); font-size: 13px; max-width: 70ch; margin: 0; }
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.pos { color: var(--pos); } .neg { color: var(--neg); }
+
+/* Champions */
+.champs { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+.champ { border: 1px solid var(--rule); border-radius: 12px; padding: 14px; display: grid; gap: 8px; align-content: start; background: var(--bg); }
+.champ-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.champ .sp { font-family: var(--display); font-weight: 800; font-size: 20px; display: flex; align-items: center; gap: 8px; }
+.dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex: none; }
+.champ .who { font-size: 13px; color: var(--ink-2); }
+.champ .score { font-family: var(--mono); font-size: 20px; font-weight: 600; }
+.champ .style { font-size: 12px; color: var(--ink-3); }
+.kv { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px 8px; font-size: 12px; }
+.kv div { display: grid; }
+.kv span { color: var(--ink-3); }
+.kv b { font-family: var(--mono); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* Charts */
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; color: var(--ink-2); }
+.legend label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; }
+.legend input { accent-color: var(--accent); }
+.chart { position: relative; width: 100%; }
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.chart text { fill: var(--ink-3); font-family: var(--mono); font-size: 11px; }
+.tip { position: absolute; pointer-events: none; background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; padding: 8px 10px; font-size: 12px; box-shadow: 0 6px 20px rgba(0,0,0,0.12); min-width: 170px; z-index: 2; }
+.tip b { font-family: var(--mono); }
+.tip .row { display: flex; align-items: center; gap: 6px; justify-content: space-between; }
+.tip .row span:first-child { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); }
+
+/* Bench table */
+.bench { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.bench div { border: 1px solid var(--rule); border-radius: 10px; padding: 8px 10px; display: grid; }
+.bench span { font-size: 12px; color: var(--ink-3); }
+
+/* Leaderboard */
+.table-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { padding: 7px 8px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--grid); }
+th:first-child, td:first-child, th:nth-child(2), td:nth-child(2), td:nth-child(3), th:nth-child(3) { text-align: left; }
+th { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; cursor: pointer; user-select: none; }
+th:focus-visible, button:focus-visible, label:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+th[aria-sort] { color: var(--ink); }
+td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+td .style { color: var(--ink-3); font-size: 12px; }
+
+/* Genes */
+.genes { display: grid; gap: 14px; }
+.gene { display: grid; grid-template-columns: 120px 1fr; align-items: center; gap: 12px; min-height: 30px; }
+.gene-name { font-size: 13px; color: var(--ink-2); }
+.gene-name small { display: block; font-size: 11px; color: var(--ink-3); }
+.strip { position: relative; height: 22px; border-bottom: 1px solid var(--grid); }
+.strip .mk { position: absolute; top: 4px; width: 12px; height: 12px; margin-left: -6px; border-radius: 50%; border: 2px solid var(--panel); cursor: default; }
+.strip .mk.start { background: transparent !important; border: 2px solid; width: 10px; height: 10px; margin-left: -5px; top: 5px; opacity: 0.55; }
+.strip .lo, .strip .hi { position: absolute; bottom: -16px; font-size: 10px; color: var(--ink-3); font-family: var(--mono); }
+.strip .hi { right: 0; }
+.genes-wrap { padding-bottom: 14px; }
+@media (max-width: 560px) { .gene { grid-template-columns: 92px 1fr; } .kv { grid-template-columns: repeat(2, 1fr); } }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">MJWaits · 16-tile bots · self-play</div>
+    <h1>Bot Evolution<small id="sub"></small></h1>
+    <p class="lede">Seven species of bot, one per playing style, played each other generation after generation. The best half of each species survived and the rest were replaced by mutated crosses of the survivors, each kept inside its style's limits. The Grandmaster species has no limits at all.</p>
+    <div class="facts" id="facts"></div>
+  </header>
+
+  <section class="panel" aria-labelledby="h-champs">
+    <div class="panel-head"><h2 id="h-champs">Current champions</h2><span class="note">Best bot alive in each species · net tai a hand over its whole life</span></div>
+    <div class="champs" id="champs"></div>
+  </section>
+
+  <section class="panel" aria-labelledby="h-bench">
+    <div class="panel-head"><h2 id="h-bench">Against the original bots</h2><span class="note">Each species' champion at a fixed table with the original Veteran, the original efficiency-only bot and the original Speedster · net tai a hand</span></div>
+    <div class="legend" id="legend-bench"></div>
+    <div class="chart" id="chart-bench"></div>
+    <div class="bench" id="bench-now"></div>
+    <p class="note" id="bench-cap"></p>
+  </section>
+
+  <section class="panel" aria-labelledby="h-rank">
+    <div class="panel-head"><h2 id="h-rank">Best in species, generation by generation</h2><span class="note">Top lifetime net tai a hand within each species, against the whole mixed population</span></div>
+    <div class="legend" id="legend-rank"></div>
+    <div class="chart" id="chart-rank"></div>
+  </section>
+
+  <section class="panel" aria-labelledby="h-genes">
+    <div class="panel-head"><h2 id="h-genes">Where each style's settings went</h2><span class="note">Filled dot: each species' champion now · ring: where that species started · hover a dot for its value</span></div>
+    <div class="genes-wrap"><div class="genes" id="genes"></div></div>
+  </section>
+
+  <section class="panel" aria-labelledby="h-board">
+    <div class="panel-head"><h2 id="h-board">Leaderboard · everyone alive</h2><span class="note">Click a column to sort</span></div>
+    <div class="table-wrap"><table id="board"></table></div>
+  </section>
+</div>
+
+<script>
+const DATA = /*DATA*/null;
+const SP = DATA.config.species;
+const COLOR = Object.fromEntries(SP.map((s, i) => [s.id, `var(--s${i + 1})`]));
+const NAME = Object.fromEntries(SP.map((s) => [s.id, s.name]));
+const zh = (id) => NAME[id].split(" ")[0];
+const en = (id) => NAME[id].split(" ").slice(1).join(" ");
+const fmt = (x, d = 2) => (x === null || x === undefined ? "–" : (x > 0 ? "+" : "") + x.toFixed(d));
+const pct = (x) => (x === null ? "–" : (x * 100).toFixed(1) + "%");
+const cls = (x) => (x > 0 ? "pos" : x < 0 ? "neg" : "");
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+
+document.getElementById("sub").textContent = `${DATA.generations} generations · updated ${DATA.updated}`;
+document.getElementById("facts").innerHTML = [
+  [DATA.generations, "generations"],
+  [DATA.totalHands.toLocaleString(), "hands played"],
+  [DATA.living.length, "bots alive"],
+  [`${Math.floor(DATA.minutes / 60)}h ${DATA.minutes % 60}m`, "of play"],
+].map(([v, l]) => `<div><b>${v}</b><span>${l}</span></div>`).join("");
+
+// ---- Champions ----
+const champs = SP.map((s) => DATA.living.filter((b) => b.species === s.id).sort((a, b) => (b.net ?? -99) - (a.net ?? -99))[0]);
+document.getElementById("champs").innerHTML = champs.map((b) => `
+  <article class="champ">
+    <div class="champ-top">
+      <span class="sp"><span class="dot" style="background:${COLOR[b.species]}"></span>${zh(b.species)}</span>
+      <span class="score ${cls(b.net)}">${fmt(b.net)}</span>
+    </div>
+    <div class="who">${esc(en(b.species))} · <b>${esc(b.name)}</b>, born gen ${b.born}</div>
+    <div class="style">${esc(b.style)}</div>
+    <div class="kv">
+      <div><span>Win</span><b>${pct(b.win)}</b></div>
+      <div><span>Deal-in</span><b>${pct(b.dealIn)}</b></div>
+      <div><span>Self-draw</span><b>${pct(b.tsumo)}</b></div>
+      <div><span>Avg win</span><b>${b.avgWin ?? "–"}</b></div>
+      <div><span>Calls/hand</span><b>${b.calls}</b></div>
+      <div><span>叮</span><b>${pct(b.riichi)}</b></div>
+    </div>
+    <div class="style">${b.hands.toLocaleString()} hands</div>
+  </article>`).join("");
+
+// ---- Line charts ----
+function lineChart(el, legendEl, series, { label }) {
+  const hidden = new Set();
+  const W = 1000, H = 360, M = { l: 48, r: 16, t: 14, b: 30 };
+  const all = series.flatMap((s) => s.points).filter((p) => p[1] !== null);
+  if (!all.length) { el.innerHTML = `<p class="note">No data yet.</p>`; return; }
+  const xs = all.map((p) => p[0]);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs, x0 + 1);
+  legendEl.innerHTML = series.map((s) => `<label><input type="checkbox" id="lg-${el.id}-${s.id}" checked data-id="${s.id}"><span class="dot" style="background:${COLOR[s.id]}"></span>${esc(NAME[s.id])}</label>`).join("");
+  legendEl.querySelectorAll("input").forEach((i) => i.addEventListener("change", () => { i.checked ? hidden.delete(i.dataset.id) : hidden.add(i.dataset.id); draw(); }));
+  const tip = document.createElement("div");
+  tip.className = "tip"; tip.hidden = true;
+  function draw() {
+    const vis = series.filter((s) => !hidden.has(s.id));
+    const ys = vis.flatMap((s) => s.points.map((p) => p[1])).filter((v) => v !== null);
+    let y0 = Math.min(0, ...ys), y1 = Math.max(0, ...ys);
+    if (y1 - y0 < 1) { y0 -= 0.5; y1 += 0.5; }
+    const pad = (y1 - y0) * 0.08; y0 -= pad; y1 += pad;
+    const X = (v) => M.l + ((v - x0) / (x1 - x0)) * (W - M.l - M.r);
+    const Y = (v) => M.t + (1 - (v - y0) / (y1 - y0)) * (H - M.t - M.b);
+    const step = niceStep((y1 - y0) / 5);
+    let grid = "";
+    for (let v = Math.ceil(y0 / step) * step; v <= y1; v += step) {
+      const zero = Math.abs(v) < 1e-9;
+      grid += `<line x1="${M.l}" x2="${W - M.r}" y1="${Y(v)}" y2="${Y(v)}" stroke="${zero ? "var(--ink-3)" : "var(--grid)"}" stroke-width="${zero ? 1.2 : 1}"/>`;
+      grid += `<text x="${M.l - 8}" y="${Y(v) + 4}" text-anchor="end">${zero ? "0" : (v > 0 ? "+" : "") + +v.toFixed(2)}</text>`;
+    }
+    const xstep = Math.max(1, niceStep((x1 - x0) / 8));
+    for (let v = Math.ceil(x0 / xstep) * xstep; v <= x1; v += xstep) grid += `<text x="${X(v)}" y="${H - 8}" text-anchor="middle">${v}</text>`;
+    const lines = vis.map((s) => {
+      const pts = s.points.filter((p) => p[1] !== null);
+      const d = pts.map((p, i) => `${i ? "L" : "M"}${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`).join("");
+      const lastP = pts[pts.length - 1];
+      return `<path d="${d}" fill="none" stroke="${COLOR[s.id]}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>` +
+        (lastP ? `<circle cx="${X(lastP[0])}" cy="${Y(lastP[1])}" r="4" fill="${COLOR[s.id]}" stroke="var(--panel)" stroke-width="2"/>` : "");
+    }).join("");
+    el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(label)}">${grid}${lines}<line class="xh" x1="0" x2="0" y1="${M.t}" y2="${H - M.b}" stroke="var(--ink-3)" stroke-dasharray="3 3" visibility="hidden"/><rect x="${M.l}" y="${M.t}" width="${W - M.l - M.r}" height="${H - M.t - M.b}" fill="transparent"/></svg>`;
+    el.appendChild(tip);
+    const svg = el.querySelector("svg"), xh = el.querySelector(".xh");
+    const gensAll = [...new Set(all.map((p) => p[0]))].sort((a, b) => a - b);
+    svg.addEventListener("pointermove", (e) => {
+      const r = svg.getBoundingClientRect();
+      const vx = ((e.clientX - r.left) / r.width) * W;
+      const g = gensAll.reduce((a, b) => (Math.abs(X(b) - vx) < Math.abs(X(a) - vx) ? b : a));
+      xh.setAttribute("x1", X(g)); xh.setAttribute("x2", X(g)); xh.setAttribute("visibility", "visible");
+      const rows = vis.map((s) => [s.id, (s.points.find((p) => p[0] === g) || [])[1]]).filter((r) => r[1] !== undefined && r[1] !== null).sort((a, b) => b[1] - a[1]);
+      tip.innerHTML = `<div class="eyebrow">Generation ${g}</div>` + rows.map(([id, v]) => `<div class="row"><span><span class="dot" style="background:${COLOR[id]}"></span>${esc(NAME[id])}</span><b class="${cls(v)}">${fmt(v)}</b></div>`).join("");
+      tip.hidden = false;
+      const px = (X(g) / W) * r.width;
+      tip.style.left = Math.min(Math.max(0, px + 14), r.width - 190) + "px";
+      tip.style.top = "8px";
+    });
+    svg.addEventListener("pointerleave", () => { tip.hidden = true; xh.setAttribute("visibility", "hidden"); });
+  }
+  draw();
+}
+function niceStep(raw) {
+  if (!(raw > 0)) return 1;
+  const p = 10 ** Math.floor(Math.log10(raw)), f = raw / p;
+  return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * p;
+}
+lineChart(document.getElementById("chart-bench"), document.getElementById("legend-bench"), DATA.benchTrend, { label: "Benchmark net tai a hand by generation" });
+lineChart(document.getElementById("chart-rank"), document.getElementById("legend-rank"), DATA.rankTrend, { label: "Best lifetime net tai a hand in each species by generation" });
+
+if (DATA.lastBench) {
+  const lb = DATA.lastBench;
+  document.getElementById("bench-now").innerHTML =
+    lb.rows.slice().sort((a, b) => b.net - a.net).map((r) => `<div><span><span class="dot" style="background:${COLOR[r.species]}"></span> ${esc(zh(r.species))} ${esc(r.name)}</span><b class="num ${cls(r.net)}">${fmt(r.net)}</b></div>`).join("");
+  document.getElementById("bench-cap").textContent = `Latest benchmark, generation ${lb.gen}: ${lb.rows[0].hands} hands for each champion. One benchmark is noisy; read the trend above.`;
+}
+
+// ---- Genes ----
+const GENE_INFO = {
+  speed: "weight on improving tiles", greed: "chases big hands", minTai: "smallest win taken early", callAppetite: "eagerness to call",
+  caution: "fear of dealing in", foldAt: "threat that makes it fold", read: "table reading", noise: "randomness among close choices",
+  slip: "chance of a lazy move", riichi: "appetite for 叮", focus: "defends only vs likely-ready",
+};
+const ranges = DATA.config.genes;
+document.getElementById("genes").innerHTML = Object.keys(ranges).map((g) => {
+  const [lo, hi] = ranges[g];
+  const pos = (v) => ((v - lo) / (hi - lo || 1)) * 100;
+  const marks = champs.map((b) => {
+    const start = DATA.startGenes[b.species]?.[g];
+    return (start !== undefined ? `<span class="mk start" style="left:${pos(start)}%;border-color:${COLOR[b.species]}" title="${esc(en(b.species))} started at ${start}"></span>` : "") +
+      `<span class="mk" style="left:${pos(b.genes[g])}%;background:${COLOR[b.species]}" title="${esc(en(b.species))} champion: ${b.genes[g]}"></span>`;
+  }).join("");
+  return `<div class="gene"><div class="gene-name">${g}<small>${GENE_INFO[g] ?? ""}</small></div><div class="strip">${marks}<span class="lo">${lo}</span><span class="hi">${hi}</span></div></div>`;
+}).join("");
+
+// ---- Leaderboard ----
+const COLS = [
+  ["name", "Bot", "text"], ["species", "Species", "text"], ["style", "Style", "text"], ["net", "Net/hand", "num"], ["hands", "Hands", "num"],
+  ["win", "Win", "pct"], ["tsumo", "Self-draw", "pct"], ["dealIn", "Deal-in", "pct"], ["avgWin", "Avg win", "num"], ["avgLoss", "Avg loss", "num"],
+  ["calls", "Calls", "num"], ["riichi", "叮", "pct"], ["best", "Best", "num"], ["born", "Born", "num"],
+];
+let sortKey = "net", sortDir = -1;
+function drawBoard() {
+  const rows = DATA.living.slice().sort((a, b) => {
+    const A = a[sortKey], B = b[sortKey];
+    return (typeof A === "string" ? A.localeCompare(B) : (A ?? -1e9) - (B ?? -1e9)) * sortDir;
+  });
+  document.getElementById("board").innerHTML =
+    `<thead><tr>${COLS.map(([k, l]) => `<th tabindex="0" data-k="${k}" ${k === sortKey ? `aria-sort="${sortDir < 0 ? "descending" : "ascending"}"` : ""}>${l}${k === sortKey ? (sortDir < 0 ? " ↓" : " ↑") : ""}</th>`).join("")}</tr></thead><tbody>` +
+    rows.map((b) => `<tr>${COLS.map(([k, , t]) => {
+      const v = b[k];
+      if (k === "species") return `<td><span class="dot" style="background:${COLOR[v]}"></span> ${esc(zh(v))}</td>`;
+      if (k === "style") return `<td><span class="style">${esc(v)}</span></td>`;
+      if (k === "net") return `<td class="num ${cls(v)}">${fmt(v)}</td>`;
+      if (t === "pct") return `<td class="num">${pct(v)}</td>`;
+      if (t === "num") return `<td class="num">${v ?? "–"}</td>`;
+      return `<td>${esc(v)}</td>`;
+    }).join("")}</tr>`).join("") + `</tbody>`;
+  document.querySelectorAll("#board th").forEach((th) => {
+    const go = () => { const k = th.dataset.k; sortDir = sortKey === k ? -sortDir : (k === "name" || k === "species" || k === "style" ? 1 : -1); sortKey = k; drawBoard(); };
+    th.addEventListener("click", go);
+    th.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
+  });
+}
+drawBoard();
+</script>

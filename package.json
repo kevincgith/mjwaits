@@ -9,7 +9,8 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "test": "vitest run",
-    "arena": "vite build --ssr scripts/arena.ts --outDir .arena --emptyOutDir --logLevel warn && node .arena/arena.js"
+    "arena": "vite build --ssr scripts/arena.ts --outDir .arena --emptyOutDir --logLevel warn && node .arena/arena.js",
+    "evolve": "vite build --ssr scripts/evolve.ts --outDir .evolve --emptyOutDir --logLevel warn && node .evolve/evolve.js"
   },
   "dependencies": {
     "onnxruntime-web": "^1.27.0",
