@@ -68,6 +68,27 @@ export interface RecordRequest {
   tai: number; // without 莊 - the ledger adds that
   patterns: PatternNote[];
   removedDealerTai: number;
+  // Set when the hand was started from a Scores 食胡 sheet (ScoreHandRequest):
+  // straight back to that winner, with who dealt in and the Jackpot as picked.
+  seat?: number;
+  from?: number | null;
+  jackpot?: boolean;
+  // Cancelled on Scoring: just reopen that sheet as it was, with no tai.
+  reopenOnly?: boolean;
+  nonce: number;
+}
+
+// A hand to work out on the Scoring tab, asked for from a Scores 食胡 sheet -
+// Scoring opens set up for it, and sends the result back as a RecordRequest.
+export interface ScoreHandRequest {
+  seat: number;
+  player: string;
+  from: number | null; // null = 自摸, -1 = not picked yet
+  fromName: string | null;
+  jackpot: boolean;
+  roundWind: 1 | 2 | 3 | 4;
+  seatWind: 1 | 2 | 3 | 4;
+  scan: boolean; // open the camera straight away
   nonce: number;
 }
 
@@ -137,6 +158,19 @@ const Icons = {
       <circle cx="15" cy="7" r="2" />
       <circle cx="9" cy="12" r="2" />
       <circle cx="17" cy="17" r="2" />
+    </svg>
+  ),
+  camera: (
+    <svg {...ICON} width={16} height={16}>
+      <path d="M4 8.5A1.5 1.5 0 0 1 5.5 7h2l1.5-2h6l1.5 2h2A1.5 1.5 0 0 1 20 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17.5z" />
+      <circle cx="12" cy="13" r="3.5" />
+    </svg>
+  ),
+  tiles: (
+    <svg {...ICON} width={16} height={16}>
+      <rect x="4" y="5" width="7" height="10" rx="1.5" />
+      <rect x="13" y="5" width="7" height="10" rx="1.5" />
+      <path d="M4 19h16" />
     </svg>
   ),
   plusMinus: (
@@ -413,7 +447,10 @@ function Setup({ store, suggestion, onStart, waitingHand }: { store: ScoreStore;
 
 // ---- Recording a hand: the 食胡 / 特別獎罰 sheet --------------------------------
 
-type HandInitial = { selfDraw: boolean; tai: number; patterns: PatternNote[]; note?: string };
+type HandInitial = { selfDraw: boolean; tai?: number; patterns: PatternNote[]; note?: string; from?: number | null; jackpot?: boolean };
+
+// What the 食胡 sheet hands over when asking Scoring to work a hand out.
+type ScoreHandAsk = { from: number | null; jackpot: boolean; scan: boolean };
 
 function HandSheet({
   store,
@@ -423,6 +460,7 @@ function HandSheet({
   startMode = "win",
   onDone,
   onClose,
+  onScoreHand,
 }: {
   store: ScoreStore;
   state: ReplayState;
@@ -431,6 +469,7 @@ function HandSheet({
   startMode?: "win" | "bonus";
   onDone: (ev: ScoreEvent) => void;
   onClose: () => void;
+  onScoreHand?: (ask: ScoreHandAsk) => void;
 }) {
   const [mode, setMode] = useState<"win" | "bonus">(startMode);
   const [switched, setSwitched] = useState(false);
@@ -440,7 +479,7 @@ function HandSheet({
     setMode(m);
   };
   return mode === "win" ? (
-    <WinSheet store={store} state={state} winnerSeat={seat} initial={initial} onDone={onDone} onClose={onClose} onBonus={() => switchTo("bonus")} still={switched} />
+    <WinSheet store={store} state={state} winnerSeat={seat} initial={initial} onDone={onDone} onClose={onClose} onBonus={() => switchTo("bonus")} onScoreHand={onScoreHand} still={switched} />
   ) : (
     <BonusSheet store={store} state={state} seat={seat} onDone={onDone} onClose={onClose} onWin={() => switchTo("win")} player={player} still={switched} />
   );
@@ -469,6 +508,7 @@ function WinSheet({
   onDone,
   onClose,
   onBonus,
+  onScoreHand,
   still,
 }: {
   store: ScoreStore;
@@ -478,15 +518,16 @@ function WinSheet({
   onDone: (ev: ScoreEvent) => void;
   onClose: () => void;
   onBonus: () => void;
+  onScoreHand?: (ask: ScoreHandAsk) => void;
   still?: boolean;
 }) {
   const seats = state.seats;
   // -1 = not picked yet.
-  const [from, setFrom] = useState<number | null>(initial?.selfDraw ? null : -1);
+  const [from, setFrom] = useState<number | null>(initial?.from !== undefined ? initial.from : initial?.selfDraw ? null : -1);
   // Each winner's tai as typed; the first is the tapped player.
-  const [entries, setEntries] = useState<{ seat: number; tai: string }[]>([{ seat: winnerSeat, tai: initial ? String(initial.tai) : "" }]);
+  const [entries, setEntries] = useState<{ seat: number; tai: string }[]>([{ seat: winnerSeat, tai: initial?.tai !== undefined ? String(initial.tai) : "" }]);
   const [focus, setFocus] = useState(0);
-  const [jackpot, setJackpot] = useState(false);
+  const [jackpot, setJackpot] = useState(initial?.jackpot ?? false);
 
   // One winner, or two or three (雙響/三響) - however many have been picked.
   const multi = entries.length;
@@ -611,6 +652,20 @@ function WinSheet({
           </button>
         )}
       </div>
+      {/* Work the tai out on the Scoring tab instead - by photo or by tiles -
+          and come back here with it filled in. One winner only. */}
+      {onScoreHand && multi === 1 && (
+        <div className="sc-score-hand">
+          <button type="button" className="sc-outline" onClick={() => onScoreHand({ from, jackpot, scan: true })}>
+            {Icons.camera}
+            Scan hand
+          </button>
+          <button type="button" className="sc-secondary" onClick={() => onScoreHand({ from, jackpot, scan: false })}>
+            {Icons.tiles}
+            Score tiles
+          </button>
+        </div>
+      )}
       <Keypad max={state.settings.scoreCap} value={entries[focus]?.tai ?? ""} onChange={(v) => setEntries((prev) => prev.map((e, i) => (i === focus ? { ...e, tai: v } : e)))} />
 
       {/* One row of what each payer owes, always there and always the same
@@ -1503,6 +1558,7 @@ function Board({
   request,
   onRequestDone,
   onSeeAll,
+  onScoreHand,
 }: {
   store: ScoreStore;
   game: ScoreGame;
@@ -1512,6 +1568,7 @@ function Board({
   request: RecordRequest | null;
   onRequestDone: () => void;
   onSeeAll: () => void;
+  onScoreHand?: (req: Omit<ScoreHandRequest, "nonce">) => void;
 }) {
   const [sheet, setSheet] = useState<BoardSheet | null>(null);
   const [toast, setToast] = useState<{ text: string; id: number } | null>(null);
@@ -1537,7 +1594,15 @@ function Board({
   // A hand sent from Scoring opens the 食胡 sheet for whoever has that 門風.
   useEffect(() => {
     if (!request) return;
-    const seat = [0, 1, 2, 3].find((s) => ((s - state.dealer + SEATS) % SEATS) + 1 === request.seatWind) ?? 0;
+    // Started from this sheet: back to the same winner. Otherwise the winner
+    // is whoever has the 門風 entered in Scoring.
+    const seat = request.seat ?? [0, 1, 2, 3].find((s) => ((s - state.dealer + SEATS) % SEATS) + 1 === request.seatWind) ?? 0;
+    const dealerNote = request.removedDealerTai ? ` (莊 ${request.removedDealerTai} taken out — Scores adds its own)` : "";
+    if (request.reopenOnly) {
+      setSheet({ kind: "hand", seat, initial: { selfDraw: request.from === null, patterns: [], from: request.from ?? -1, jackpot: request.jackpot } });
+      onRequestDone();
+      return;
+    }
     setSheet({
       kind: "hand",
       seat,
@@ -1545,7 +1610,12 @@ function Board({
         selfDraw: request.selfDraw,
         tai: request.tai,
         patterns: request.patterns,
-        note: `From Scoring: ${request.tai} tai${request.removedDealerTai ? ` (莊 ${request.removedDealerTai} taken out — Scores adds its own)` : ""}. Winner picked by 門風 ${WIND_CHARS[request.seatWind - 1]}.`,
+        // Scoring has the last word on 自摸; who dealt in carries over otherwise.
+        ...(request.seat !== undefined ? { from: request.selfDraw ? null : request.from === null || request.from === undefined ? -1 : request.from, jackpot: request.jackpot } : {}),
+        note:
+          request.seat !== undefined
+            ? `From Scoring: ${request.tai} tai${dealerNote}.`
+            : `From Scoring: ${request.tai} tai${dealerNote}. Winner picked by 門風 ${WIND_CHARS[request.seatWind - 1]}.`,
       },
     });
     onRequestDone();
@@ -1775,6 +1845,23 @@ function Board({
           seat={sheet.seat}
           initial={sheet.initial}
           startMode={sheet.mode}
+          onScoreHand={
+            onScoreHand &&
+            ((ask) => {
+              const seat = sheet.seat;
+              onScoreHand({
+                seat,
+                player: state.seats[seat],
+                from: ask.from,
+                fromName: ask.from !== null && ask.from >= 0 ? state.seats[ask.from] : null,
+                jackpot: ask.jackpot,
+                roundWind: (state.roundWind + 1) as 1 | 2 | 3 | 4,
+                seatWind: (((seat - state.dealer + SEATS) % SEATS) + 1) as 1 | 2 | 3 | 4,
+                scan: ask.scan,
+              });
+              close();
+            })
+          }
           onClose={close}
           onDone={(ev) => add(ev, ev.t === "bonus" ? `Recorded 特別${ev.kind}` : "Recorded ✓")}
         />
@@ -2605,12 +2692,14 @@ export function ScoresPanel({
   seatNames,
   request,
   onRequestDone,
+  onScoreHand,
 }: {
   store: ScoreStore;
   setStore: (s: ScoreStore) => void;
   seatNames: readonly string[];
   request: RecordRequest | null;
   onRequestDone: () => void;
+  onScoreHand?: (req: Omit<ScoreHandRequest, "nonce">) => void;
 }) {
   const [sub, setSub] = useState<"board" | "stats">("board");
   const [view, setView] = useState<StatsView>("trend");
@@ -2648,6 +2737,7 @@ export function ScoresPanel({
             onEndGame={endGame}
             request={request}
             onRequestDone={onRequestDone}
+            onScoreHand={onScoreHand}
             onSeeAll={() => {
               setView("hands");
               setSub("stats");

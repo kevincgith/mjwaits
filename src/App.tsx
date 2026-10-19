@@ -41,7 +41,7 @@ import {
 } from "./tileArt";
 import { BonusGlyphSpan, TileGlyphSpan } from "./TileGlyphs";
 import { PlayPanel } from "./PlayPanel";
-import { ScoresPanel, type RecordRequest } from "./ScoresPanel";
+import { ScoresPanel, type RecordRequest, type ScoreHandRequest } from "./ScoresPanel";
 import { loadScores, saveScores } from "./lib/ledger";
 import {
   COMPLETE_SIZE,
@@ -5542,12 +5542,19 @@ function ScoringPanel({
   onTestHandLoaded,
   canRecord,
   onRecord,
+  forScores,
+  onCancelForScores,
 }: {
   testHandRequest: TestHandRequest | null;
   onTestHandLoaded: () => void;
   // A Scores game is in progress, so a scored hand can be sent to it.
   canRecord: boolean;
   onRecord: (request: Omit<RecordRequest, "nonce">) => void;
+  // Opened from a Scores 食胡 sheet to work out one winner's hand: start
+  // fresh with that game's winds (and 自摸), say who it's for, and send the
+  // result straight back.
+  forScores?: ScoreHandRequest | null;
+  onCancelForScores?: () => void;
 }) {
   const [concealedTiles, setConcealedTiles] = useState<HandTile[]>([]);
   const [declaredMelds, setDeclaredMelds] = useState<DeclaredMeldTile[]>([]);
@@ -6179,6 +6186,19 @@ function ScoringPanel({
     handScannerRef.current?.reset();
     setLoadedTestHand(null);
   };
+
+  // Arriving from Scores: a fresh hand with that game's winds, 自摸 if it
+  // was picked there, and the camera straight away for Scan hand (a phone
+  // may refuse that without a tap here - then the Scan button is lit).
+  useEffect(() => {
+    if (!forScores) return;
+    handleReset();
+    setSeatWind(forScores.seatWind);
+    setRoundWind(forScores.roundWind);
+    if (forScores.from === null) setSelfDraw(true);
+    if (forScores.scan) handScannerRef.current?.trigger();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [forScores?.nonce]);
 
   // Loads one of the scoring tests' hands (the hidden developer sheet):
   // replaces the tiles, then resets the Situation card and applies that
@@ -6853,6 +6873,21 @@ function ScoringPanel({
 
   return (
     <section className="panel scoring-panel">
+      {forScores && (
+        <div className="for-scores-banner" role="status">
+          <span className="for-scores-text">
+            <span>
+              <strong>For Scores:</strong> {forScores.player} {forScores.from === null ? "自摸" : forScores.fromName ? `食 ${forScores.fromName}` : "食胡"}
+            </span>
+            <span className="for-scores-sub">
+              Winds set: {"東南西北"[forScores.roundWind - 1]}圈 · {"東南西北"[forScores.seatWind - 1]}家
+            </span>
+          </span>
+          <button type="button" className="for-scores-cancel" onClick={onCancelForScores}>
+            Cancel
+          </button>
+        </div>
+      )}
       <div className="scoring-toolbar" ref={toolbarRef}>
         <ToolbarLogo />
         {/* Reset also puts the picker back to its Classic rows. */}
@@ -6864,7 +6899,12 @@ function ScoringPanel({
           }}
           disabled={handEmpty && conditionsAtDefault && !scanActive && pickerLayout === "classic"}
         />
-        <button type="button" className="toolbar-button" onClick={() => handScannerRef.current?.trigger()} disabled={scanBusy}>
+        <button
+          type="button"
+          className={`toolbar-button${forScores?.scan && handEmpty && !scanActive ? " is-attention" : ""}`}
+          onClick={() => handScannerRef.current?.trigger()}
+          disabled={scanBusy}
+        >
           <ToolbarIcon kind="camera" />
           <span className="toolbar-label">Scan</span>
         </button>
@@ -7502,7 +7542,7 @@ function ScoringPanel({
           {canRecord && (
             <button
               type="button"
-              className="record-to-scores"
+              className={`record-to-scores${forScores ? "" : " is-quiet"}`}
               onClick={() => {
                 // Scores adds 莊/連莊 itself, so that pattern's tai comes out here.
                 const readings = [scoring.result, ...(scoring.result.second ? [scoring.result.second] : [])];
@@ -7523,7 +7563,7 @@ function ScoringPanel({
                 });
               }}
             >
-              Record to Scores
+              {forScores ? "Back to Scores" : "Record to Scores ›"}
             </button>
           )}
 
@@ -9758,6 +9798,12 @@ function App() {
   const [scoreStore, setScoreStore] = useState(loadScores);
   useEffect(() => saveScores(scoreStore), [scoreStore]);
   const [recordRequest, setRecordRequest] = useState<RecordRequest | null>(null);
+  // A Scores 食胡 sheet asked Scoring to work a hand out (see ScoreHandRequest).
+  // Dropped if you leave Scoring any other way than Back to Scores / Cancel.
+  const [scoreFor, setScoreFor] = useState<ScoreHandRequest | null>(null);
+  useEffect(() => {
+    if (mode !== "scoring" && scoreFor) setScoreFor(null);
+  }, [mode, scoreFor]);
   // Where the Play table's Leave button goes back to.
   const lastNonPlayMode = useRef<AppMode>("scoring");
   if (mode !== "play") lastNonPlayMode.current = mode;
@@ -9906,7 +9952,29 @@ function App() {
           onTestHandLoaded={() => setTestHandRequest(null)}
           canRecord={scoreStore.active !== null}
           onRecord={(request) => {
-            setRecordRequest({ ...request, nonce: Date.now() });
+            // Back to the sheet it came from: same winner, 銃 and Jackpot.
+            const back = scoreFor ? { seat: scoreFor.seat, from: scoreFor.from, jackpot: scoreFor.jackpot } : {};
+            setRecordRequest({ ...request, ...back, nonce: Date.now() });
+            setScoreFor(null);
+            setMode("scores");
+          }}
+          forScores={scoreFor}
+          onCancelForScores={() => {
+            // Back to the 食胡 sheet it came from, as it was.
+            if (scoreFor)
+              setRecordRequest({
+                seatWind: scoreFor.seatWind,
+                selfDraw: scoreFor.from === null,
+                tai: 0,
+                patterns: [],
+                removedDealerTai: 0,
+                seat: scoreFor.seat,
+                from: scoreFor.from,
+                jackpot: scoreFor.jackpot,
+                reopenOnly: true,
+                nonce: Date.now(),
+              });
+            setScoreFor(null);
             setMode("scores");
           }}
         />
@@ -9929,6 +9997,10 @@ function App() {
           seatNames={seatOrder.map((player) => seatNames[player])}
           request={recordRequest}
           onRequestDone={() => setRecordRequest(null)}
+          onScoreHand={(req) => {
+            setScoreFor({ ...req, nonce: Date.now() });
+            setMode("scoring");
+          }}
         />
       )}
       {mode === "play" && <PlayPanel onExit={() => setMode(lastNonPlayMode.current)} />}

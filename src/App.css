@@ -8789,6 +8789,63 @@ details.sc-stat-group:not([open]) {
 }
 
 /* Scoring tab: send the scored hand to the Scores game in progress. */
+/* Plain scoring: sending the hand to Scores is a side option - a small
+   link, not the full-width button Back to Scores gets. */
+.record-to-scores.is-quiet {
+  display: block;
+  width: auto;
+  margin: -0.35rem 0 0.6rem auto;
+  padding: 0.3rem 0.2rem;
+  background: none;
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+/* Scoring opened from a Scores 食胡 sheet: who it's for, and a way back. */
+.for-scores-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.6rem;
+  padding: 0.55rem 0.6rem 0.55rem 0.85rem;
+  border-radius: var(--radius-lg);
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.for-scores-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  font-size: var(--text-md);
+}
+
+.for-scores-sub {
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+
+.for-scores-cancel {
+  flex-shrink: 0;
+  min-height: 2.25rem;
+  padding: 0 0.85rem;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* Scan hand asked for the camera: the Scan button is lit until a photo. */
+.toolbar-button.is-attention {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
 .record-to-scores {
   display: block;
   width: 100%;
@@ -8950,6 +9007,23 @@ html.sc-fit-mode .build-version {
   .sc-fit .sc-card-box > .sc-card {
     padding-bottom: calc(0.35rem + var(--sc-bonus-h));
   }
+}
+
+/* 食胡: work the tai out on the Scoring tab - by photo or by tiles. */
+.sc-score-hand {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.sc-score-hand > button {
+  display: inline-flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  min-height: 2.1rem;
+  padding: 0.3rem 0.6rem;
+  font-size: var(--text-sm);
 }
 
 /* A picker whose players can be held (雙響): no text selection or iOS
