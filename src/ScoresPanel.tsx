@@ -462,7 +462,6 @@ function WinSheet({
   still?: boolean;
 }) {
   const seats = state.seats;
-  const [multi, setMulti] = useState<1 | 2 | 3>(1);
   // -1 = not picked yet.
   const [from, setFrom] = useState<number | null>(initial?.selfDraw ? null : -1);
   // Each winner's tai as typed; the first is the tapped player.
@@ -470,44 +469,35 @@ function WinSheet({
   const [focus, setFocus] = useState(0);
   const [jackpot, setJackpot] = useState(false);
 
-  // 三響: once the discarder is known, everyone else won - no one to pick.
-  const allBut = (discarder: number, prev: { seat: number; tai: string }[]) =>
-    [0, 1, 2, 3]
-      .filter((x) => x !== discarder)
-      .sort((a, b) => (a === winnerSeat ? -1 : b === winnerSeat ? 1 : 0))
-      .map((x) => prev.find((e) => e.seat === x) ?? { seat: x, tai: "" });
-  const changeMulti = (n: 1 | 2 | 3) => {
-    setMulti(n);
-    setFocus(0);
-    if (n === 1) setEntries((e) => e.slice(0, 1));
-    else {
-      if (from === null) setFrom(-1);
-      if (n === 3 && from !== null && from >= 0) setEntries((e) => allBut(from, e));
-      else setEntries((e) => e.slice(0, n));
-    }
-  };
+  // One winner, or two or three (雙響/三響) - however many have been picked.
+  const multi = entries.length;
+  // A tap picks (or moves) who dealt in; 自摸 (null) is one winner only.
   const pickFrom = (s: number | null) => {
     setFrom(s);
-    if (multi === 3 && s !== null && s >= 0) setEntries((e) => allBut(s, e));
-    else setEntries((e) => (multi === 3 ? e.slice(0, 1) : e.filter((x, i) => i === 0 || x.seat !== s)));
+    setEntries((e) => (s === null ? e.slice(0, 1) : e.filter((x, i) => i === 0 || x.seat !== s)));
+    setFocus(0);
   };
-  // Extra winners for 雙響/三響 (the picker never offers the first winner or the discarder).
-  const toggleExtra = (s: number) =>
-    setEntries((prev) => {
-      if (prev.some((e) => e.seat === s)) return prev.filter((e) => e.seat !== s);
-      if (prev.length >= multi) return [...prev.slice(0, -1), { seat: s, tai: "" }];
-      const next = [...prev, { seat: s, tai: "" }];
-      setFocus(next.length - 1);
-      return next;
-    });
+  // A long-press adds (or drops) another winner off the same discard - rarer
+  // than a mis-tapped 銃, so it doesn't take a plain tap. With three winners
+  // the last player must be the one who dealt in.
+  const toggleExtra = (s: number) => {
+    if (s === from) return;
+    const has = entries.some((e) => e.seat === s);
+    if (!has && entries.length >= 3) return;
+    const next = has ? entries.filter((e) => e.seat !== s) : [...entries, { seat: s, tai: "" }];
+    setEntries(next);
+    setFocus(has ? 0 : next.length - 1);
+    if (next.length === 3) setFrom([0, 1, 2, 3].find((x) => !next.some((e) => e.seat === x))!);
+    else if (from === null) setFrom(-1);
+  };
   const winners: WinnerEntry[] = entries.map((e, i) => ({
     seat: e.seat,
     tai: Number(e.tai || 0),
     ...(i === 0 && initial?.patterns.length ? { patterns: initial.patterns } : {}),
   }));
   const fromValid = from === null ? multi === 1 : from >= 0;
-  const complete = fromValid && entries.length === multi && entries.every((e) => e.tai !== "");
-  const pairs = fromValid && entries.length === multi ? previewWin(state, winners, from) : [];
+  const complete = fromValid && entries.every((e) => e.tai !== "");
+  const pairs = fromValid ? previewWin(state, winners, from) : [];
   const total = pairs.reduce((s, p) => s + p.worth, 0);
 
   const submit = () => {
@@ -551,17 +541,8 @@ function WinSheet({
 
       <div className="sc-field">
         <div className="sc-field-head">
-          <span className="sc-label">輸家 Paid by</span>
-          <Segmented
-            small
-            value={multi}
-            onChange={changeMulti}
-            options={[
-              { value: 1, label: "單" },
-              { value: 2, label: "雙響" },
-              { value: 3, label: "三響" },
-            ]}
-          />
+          <span className="sc-label">Who dealt in?</span>
+          <span className="sc-help">Hold a player for 雙響</span>
         </div>
         <TablePicker
           store={store}
@@ -569,24 +550,20 @@ function WinSheet({
           self={winnerSeat}
           selfLabel="胡"
           selfTone="win"
-          isOn={(seat) => from === seat || (multi > 1 && entries.some((e) => e.seat === seat))}
-          onPick={(seat) => {
-            if (multi === 1) return pickFrom(seat);
-            if (from === seat) return pickFrom(-1);
-            if (multi === 3 || from === null || from < 0) return pickFrom(seat);
-            toggleExtra(seat);
-          }}
+          isOn={(seat) => from === seat || entries.some((e) => e.seat === seat)}
+          onPick={(seat) => pickFrom(from === seat ? -1 : seat)}
+          onLongPress={toggleExtra}
           tagFor={(seat) =>
             seat === from && from !== null && from >= 0
               ? { text: "銃", tone: "discard" }
-              : multi > 1 && entries.some((e) => e.seat === seat)
+              : entries.some((e) => e.seat === seat)
                 ? { text: "胡", tone: "win" }
                 : undefined
           }
           center={
             multi === 1
               ? { label: "自摸", sub: "Self-draw", on: from === null, onPick: () => pickFrom(null) }
-              : { label: multi === 2 ? "雙響" : "三響", sub: from === null || from < 0 ? (multi === 3 ? "Tap 銃" : "Tap 銃 first") : `胡 ${entries.length}/${multi}`, on: false }
+              : { label: multi === 2 ? "雙響" : "三響", sub: from === null || from < 0 ? "Tap who dealt in" : `${multi} winners`, on: false }
           }
         />
       </div>
@@ -612,7 +589,7 @@ function WinSheet({
       {/* One row of what each payer owes, always there and always the same
           height, so nothing above it moves as the hand is filled in. */}
       <ul className="sc-paylines" aria-label="What each payer owes" aria-live="polite">
-        {pairs.length === 0 && <li className="is-empty">Pick 輸家 to see who pays what</li>}
+        {pairs.length === 0 && <li className="is-empty">Pick who dealt in to see who pays what</li>}
         {pairs.map((p, i) => {
           const parts = [
             p.base ? `底${fmt(p.base)}` : null,
@@ -757,6 +734,7 @@ function TablePicker({
   isOn,
   isDisabled,
   onPick,
+  onLongPress,
   center,
   tagFor,
   selfTone,
@@ -768,12 +746,36 @@ function TablePicker({
   isOn: (seat: number) => boolean;
   isDisabled?: (seat: number) => boolean;
   onPick: (seat: number) => void;
+  // A held press (about half a second) - its tap is then swallowed.
+  onLongPress?: (seat: number) => void;
   center?: { label: ReactNode; sub?: ReactNode; on: boolean; onPick?: () => void; tone?: "win" | "lose" };
   selfTone?: "win" | "lose";
   tagFor?: (seat: number) => { text: string; tone: "win" | "discard" } | undefined;
 }) {
+  const hold = useRef<{ timer: number; fired: boolean } | null>(null);
+  const release = () => {
+    if (hold.current) window.clearTimeout(hold.current.timer);
+  };
+  const press = (seat: number) =>
+    onLongPress
+      ? {
+          onPointerDown: () => {
+            release();
+            const h = { timer: 0, fired: false };
+            h.timer = window.setTimeout(() => {
+              h.fired = true;
+              onLongPress(seat);
+            }, 450);
+            hold.current = h;
+          },
+          onPointerUp: release,
+          onPointerLeave: release,
+          onPointerCancel: release,
+          onContextMenu: (e: { preventDefault: () => void }) => e.preventDefault(),
+        }
+      : {};
   return (
-    <div className="sc-table-pick">
+    <div className={`sc-table-pick${onLongPress ? " can-hold" : ""}`}>
       {seats.map((player, seat) => {
         const area = SEAT_AREAS[seat];
         if (seat === self)
@@ -791,7 +793,14 @@ function TablePicker({
             className={`sc-pick sc-area-${area}${isOn(seat) ? " is-on" : ""}${tagFor?.(seat)?.tone === "discard" ? " is-lose" : ""}`}
             aria-pressed={isOn(seat)}
             disabled={isDisabled?.(seat)}
-            onClick={() => onPick(seat)}
+            {...press(seat)}
+            onClick={() => {
+              if (hold.current?.fired) {
+                hold.current = null;
+                return;
+              }
+              onPick(seat);
+            }}
           >
             <Monogram store={store} player={player} size="sm" />
             <span className="sc-pick-name">{player}</span>
@@ -1600,12 +1609,8 @@ function Board({
   return (
     <>
       <div className="sc-fit" ref={fitRef} style={fitHeight !== null ? { height: fitHeight } : undefined}>
-      {/* One card: where the game is (round and deal, the 局 count) over the game actions - 連莊 is on the dealer's badge. */}
+      {/* The game actions. Where the game is sits in the table's corner. */}
       <div className="sc-toolbar">
-        <div className="sc-status">
-          <span className="sc-status-round">{state.label}</span>
-          <span className="sc-status-meta">第{state.hands.length + 1}局</span>
-        </div>
         <div className="sc-tools" role="toolbar" aria-label="Game actions">
           {tools.map((t) => (
             <button key={t.label} type="button" onClick={t.onClick} disabled={t.disabled}>
@@ -1631,6 +1636,12 @@ function Board({
       )}
 
       <div className="sc-board">
+        {/* Where the game is - round and deal, the 局 count (連莊 is on the
+            dealer's badge) - in the empty corner beside the top seat. */}
+        <div className="sc-status">
+          <span className="sc-status-round">{state.label}</span>
+          <span className="sc-status-meta">第{state.hands.length + 1}局</span>
+        </div>
         {state.seats.map((player, seat) => {
           const total = state.totals[player] ?? 0;
           const tally = counts.get(player) ?? { wins: 0, selfDraws: 0, dealIns: 0 };
