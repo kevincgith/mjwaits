@@ -2,9 +2,14 @@
 // is tallied per bot. Each wall is dealt four times with the bots rotated a
 // seat each time ("duplicate" style), so every bot plays every seat on the
 // same tiles and the luck of the deal largely cancels out.
+//
+// With `session` > 1 the walls are played in sessions of that many hands:
+// 拉, the dealer and 連莊 carry from hand to hand (and bots may 投降 between
+// hands), as at a real table; each whole session is replayed under the four
+// seatings.
 
-import { botClaim, botTurnMove, applyTurnMove, dealHand, fullWall, resolveClaims, SEATS, type Claim, type GameState, type TurnMove, type WallTile } from "./game";
-import { botClaimFor, botTurnMoveFor, profileById, seededRng, type BotProfile, type Rng } from "./bots";
+import { botClaim, botTurnMove, applyTurnMove, dealHand, fullWall, nextHand, resolveClaims, SEATS, surrender, type Claim, type GameState, type TurnMove, type WallTile } from "./game";
+import { botClaimFor, botSurrenders, botTurnMoveFor, profileById, seededRng, type BotProfile, type Rng } from "./bots";
 
 // The original single-minded bot, kept as a yardstick.
 export const BASELINE: BotProfile = { ...profileById("veteran"), id: "basic", name: "基本 Basic", blurb: "The original bot: tile efficiency only, no defence." };
@@ -23,6 +28,12 @@ export interface BotStats {
   // Discards made before winning, summed (for the average win speed).
   winTurns: number;
   calls: number;
+  // Hands in which it declared 叮.
+  riichis: number;
+  // 拉/踢 add-ons collected and paid, and 拉 it conceded (投降).
+  lahWon: number;
+  lahLost: number;
+  surrenders: number;
   biggestWin: number;
 }
 
@@ -56,7 +67,12 @@ function claim(s: GameState, seat: number, profile: BotProfile, rng: Rng): Claim
 export type Observer = (s: GameState) => void;
 
 export function playHand(wall: WallTile[], dealer: number, seats: BotProfile[], rng: Rng, observe?: Observer): { end: GameState; calls: number[] } {
-  let s = dealHand({ dealer, roundWind: 1, dealerStreak: 0 }, wall.slice());
+  return playFrom(dealHand({ dealer, roundWind: 1, dealerStreak: 0 }, wall.slice()), seats, rng, observe);
+}
+
+// Plays a dealt hand to its end.
+export function playFrom(start: GameState, seats: BotProfile[], rng: Rng, observe?: Observer): { end: GameState; calls: number[] } {
+  let s = start;
   const calls = [0, 0, 0, 0];
   for (let steps = 0; s.phase.kind !== "over" && steps < 2000; steps++) {
     if (s.phase.kind === "turn") {
@@ -72,67 +88,89 @@ export function playHand(wall: WallTile[], dealer: number, seats: BotProfile[], 
 }
 
 export function emptyStats(p: BotProfile): BotStats {
-  return { id: p.id, name: p.name, hands: 0, wins: 0, selfDraws: 0, dealIns: 0, taiWon: 0, taiLost: 0, dealInTai: 0, winTurns: 0, calls: 0, biggestWin: 0 };
+  return { id: p.id, name: p.name, hands: 0, wins: 0, selfDraws: 0, dealIns: 0, taiWon: 0, taiLost: 0, dealInTai: 0, winTurns: 0, calls: 0, riichis: 0, lahWon: 0, lahLost: 0, surrenders: 0, biggestWin: 0 };
 }
 
-// `walls` deals, each played under 4 rotations: 4 x walls hands in all.
-export function runArena(bots: BotProfile[], walls: number, seed = 1, observe?: Observer): ArenaResult {
+// `walls` deals, each played under 4 rotations: 4 x walls hands in all,
+// in sessions of `session` hands (see the top of this file).
+export function runArena(bots: BotProfile[], walls: number, seed = 1, observe?: Observer, session = 1): ArenaResult {
   if (bots.length !== SEATS) throw new Error("The arena needs four bots");
   const t0 = Date.now();
   const rng = seededRng(seed);
   const stats = bots.map(emptyStats);
   let hands = 0;
   let draws = 0;
-  for (let w = 0; w < walls; w++) {
-    const wall = shuffledWall(rng);
-    const dealer = w % SEATS;
+  for (let w = 0; w < walls; w += session) {
+    const sessionWalls = Array.from({ length: Math.min(session, walls - w) }, () => shuffledWall(rng));
+    const firstDealer = (w / session) % SEATS;
     for (let rot = 0; rot < SEATS; rot++) {
       // Bot b sits at seat (b + rot) % 4.
       const seats = Array.from({ length: SEATS }, (_, seat) => bots[(seat - rot + SEATS) % SEATS]);
       const botAt = (seat: number) => (seat - rot + SEATS) % SEATS;
-      const { end, calls } = playHand(wall, dealer, seats, rng, observe);
-      hands++;
-      for (let seat = 0; seat < SEATS; seat++) {
-        const st = stats[botAt(seat)];
-        st.hands++;
-        st.calls += calls[seat];
-      }
-      if (end.phase.kind !== "over") continue;
-      const r = end.phase.result;
-      if (r.winner === null) {
-        draws++;
-        continue;
-      }
-      const win = stats[botAt(r.winner)];
-      win.wins++;
-      if (r.from === null) win.selfDraws++;
-      win.winTurns += end.players[r.winner].discards.length;
-      win.biggestWin = Math.max(win.biggestWin, r.score?.total ?? 0);
-      for (let seat = 0; seat < SEATS; seat++) {
-        const d = r.deltas[seat];
-        const st = stats[botAt(seat)];
-        if (d > 0) st.taiWon += d;
-        if (d < 0) st.taiLost -= d;
-      }
-      if (r.from !== null) {
-        const loser = stats[botAt(r.from)];
-        loser.dealIns++;
-        loser.dealInTai -= r.deltas[r.from];
+      let start = dealHand({ dealer: firstDealer, roundWind: 1, dealerStreak: 0 }, sessionWalls[0].slice());
+      for (let h = 0; h < sessionWalls.length; h++) {
+        const { end, calls } = playFrom(start, seats, rng, observe);
+        hands++;
+        for (let seat = 0; seat < SEATS; seat++) {
+          const st = stats[botAt(seat)];
+          st.hands++;
+          st.calls += calls[seat];
+          if (end.players[seat].riichi) st.riichis++;
+        }
+        if (end.phase.kind !== "over") break;
+        tally(end, botAt, stats);
+        if (end.phase.result.winner === null) draws++;
+        if (h === sessionWalls.length - 1) break;
+        // Between hands: anyone allowed to 投降 decides, then the next deal.
+        let between = end;
+        for (let seat = 0; seat < SEATS; seat++)
+          for (const holder of botSurrenders(between, seat, seats[seat])) {
+            between = surrender(between, holder, seat);
+            stats[botAt(seat)].surrenders++;
+          }
+        start = nextHand(between, sessionWalls[h + 1].slice());
       }
     }
   }
   return { hands, draws, stats, ms: Date.now() - t0 };
 }
 
+function tally(end: GameState, botAt: (seat: number) => number, stats: BotStats[]) {
+  if (end.phase.kind !== "over") return;
+  const r = end.phase.result;
+  if (r.winner === null) return;
+  const win = stats[botAt(r.winner)];
+  win.wins++;
+  if (r.from === null) win.selfDraws++;
+  win.winTurns += end.players[r.winner].discards.length;
+  win.biggestWin = Math.max(win.biggestWin, r.score?.total ?? 0);
+  for (let seat = 0; seat < SEATS; seat++) {
+    const d = r.deltas[seat];
+    const st = stats[botAt(seat)];
+    if (d > 0) st.taiWon += d;
+    if (d < 0) st.taiLost -= d;
+  }
+  for (const p of r.pairs ?? []) {
+    if (!p.lah) continue;
+    stats[botAt(Number(p.winner))].lahWon += p.lah;
+    stats[botAt(Number(p.payer))].lahLost += p.lah;
+  }
+  if (r.from !== null) {
+    const loser = stats[botAt(r.from)];
+    loser.dealIns++;
+    loser.dealInTai -= r.deltas[r.from];
+  }
+}
+
 export function mergeResults(parts: ArenaResult[]): ArenaResult {
-  const out: ArenaResult = { hands: 0, draws: 0, stats: parts[0].stats.map((s) => ({ ...s, hands: 0, wins: 0, selfDraws: 0, dealIns: 0, taiWon: 0, taiLost: 0, dealInTai: 0, winTurns: 0, calls: 0, biggestWin: 0 })), ms: 0 };
+  const out: ArenaResult = { hands: 0, draws: 0, stats: parts[0].stats.map((s) => ({ ...s, hands: 0, wins: 0, selfDraws: 0, dealIns: 0, taiWon: 0, taiLost: 0, dealInTai: 0, winTurns: 0, calls: 0, riichis: 0, lahWon: 0, lahLost: 0, surrenders: 0, biggestWin: 0 })), ms: 0 };
   for (const p of parts) {
     out.hands += p.hands;
     out.draws += p.draws;
     out.ms = Math.max(out.ms, p.ms);
     p.stats.forEach((s, i) => {
       const o = out.stats[i];
-      for (const k of ["hands", "wins", "selfDraws", "dealIns", "taiWon", "taiLost", "dealInTai", "winTurns", "calls"] as const) o[k] += s[k];
+      for (const k of ["hands", "wins", "selfDraws", "dealIns", "taiWon", "taiLost", "dealInTai", "winTurns", "calls", "riichis", "lahWon", "lahLost", "surrenders"] as const) o[k] += s[k];
       o.biggestWin = Math.max(o.biggestWin, s.biggestWin);
     });
   }
@@ -157,9 +195,12 @@ export function formatArena(r: ArenaResult): string {
       avg(s.dealInTai, s.dealIns),
       avg(s.winTurns, s.wins),
       avg(s.calls, s.hands),
+      pct(s.riichis, s.hands),
+      ((s.lahWon - s.lahLost) / s.hands).toFixed(2),
+      String(s.surrenders),
       String(s.biggestWin),
     ]);
-  const head = ["Bot", "Net/hand", "Win", "Tsumo", "Deal-in", "Avg win", "Avg loss", "Win turn", "Calls/hand", "Best"];
+  const head = ["Bot", "Net/hand", "Win", "Tsumo", "Deal-in", "Avg win", "Avg loss", "Win turn", "Calls/hand", "叮", "拉 net", "投降", "Best"];
   const table = [head, ...rows];
   const widths = head.map((_, c) => Math.max(...table.map((row) => [...row[c]].length + (c === 0 ? 2 : 0))));
   const line = (row: string[]) => row.map((cell, c) => (c === 0 ? cell.padEnd(widths[c]) : cell.padStart(widths[c]))).join("  ");

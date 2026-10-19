@@ -331,7 +331,9 @@ never changes a payment.)
   your 拉 is gone and theirs starts at the plain value: 拉 29, then a 20 back is worth 35,
   and their 拉 is 20.
 - A 自摸 counts pair by pair. A 流局 keeps every 拉; a hand the holder doesn't win ends theirs;
-  投降 ends one with nothing paid.
+  投降 ends one with nothing paid. **投降提示** (a setting, on at 3) puts a prompt above the
+  table once anyone's 拉 has run that many hands in a row; it's only a reminder - 投降 itself
+  is never restricted here, since house rules differ.
 - **反雪** — a player who dealt into a 雙響/三響 and 自摸s the very next hand is paid back by each
   of those winners: 5 after a 雙響, 10 after a 三響 (both settings).
 - **Jackpot** — each 流局 every player puts the set amount in; a win can take it, or tap the
@@ -395,14 +397,26 @@ held upright is asked to turn sideways.
 - **Playing:** tap a tile to lift it, tap again to discard. When you can call a discard,
   round call buttons (胡 / 槓 / 碰 / 上) appear above your hand with 過 to pass. 上 with more
   than one fitting shape asks which; 自摸 and kongs show on your own turn.
-- **Menu (≡):** Hints Off / On, **Opponents** (Mixed: Veteran, Hunter and Speedster;
-  Tough: three Veterans; Friendly: three Casuals), a **turn timer** (Off by default, or 10s / 20s per decision; at
+- **Menu (≡):** Hints Off / On, **Opponents**, a **turn timer** (Off by default, or 10s / 20s per decision; at
   zero it passes on a call, or throws the drawn tile, or the hint's pick after a call), and
   New game, which takes a second tap since it resets the totals. **記牌器** beside it lists how many of each tile you haven't seen yet.
+- **Opponents (對手):** pick a ready-made table (Mixed; Tough, with two Grandmasters and a
+  Veteran; Styles; Friendly) or any bot
+  for each seat - Right, Across, Left - from the full roster, with each one's style shown.
 - **Scoring:** a win is scored by the same tai list as the Scoring tab, with what the table
   knows filled in (seat and round wind, self-draw, the winning tile, last-tile and
   replacement-draw wins, 天胡/地胡/人胡, 莊 and 連莊). The discarder pays the tai; on a
-  self-draw all three do. Running totals sit on each seat badge. The result card's **View
+  self-draw all three do. Running totals sit on each seat badge.
+- **拉 / 踢** carry from hand to hand by the same house rules as the Scores tab (shared code in
+  `ledger.ts`): a repeat win off the same player adds half the 拉 and grows it, winning it back
+  (踢) adds half and takes over at the plain value, a draw keeps every 拉, and any other win
+  ends the holder's. Each name card shows the 拉 that player holds - 「拉你 78」 in red when
+  it's on you, green when it's yours - and the result card lists each add-on paid.
+- **投降:** at this table you may concede a 拉 only once it has run **3 or more hands in a
+  row**, and only straight after a hand that involved you (the holder has just won from you).
+  The result card then offers it (two taps); it ends that 拉 with nothing paid. Bots decide
+  their own by personality before the next deal - the Iron Wall concedes early, the Gambler
+  never - and say so. The result card's **View
   table** hides it to look over the final table and the revealed hands; **Show result** brings
   it back.
 - **Bots** (`src/lib/bots.ts`) all run one decision engine, and a personality sets its
@@ -423,15 +437,38 @@ held upright is asked to turn sideways.
   - **Suji (筋) is left off on purpose.** With no furiten it measured no safer than any
     other tile.
   - **Calls** weigh the step gained, the value gained, the 門清 given up and 食替.
-  - **Human feel:** a softmax "noise" picks among near-equal moves, the occasional lazy
-    "slip" happens, and the pause before each move varies.
+  - **拉 shapes defence:** dealing into a particular player is weighted by what it would
+    really cost - their 拉 on you adds half its value; your 拉 on them is a 踢, adding half
+    and losing the 拉 itself - so a tile that player might want is far more dangerous than
+    the same tile against someone with no 拉 on you. Wins count the 拉 they'd collect too.
+    In 16-hand sessions, 拉-aware bots beat 拉-blind copies of themselves by about 2 tai a
+    hand (the Iron Wall, which already folds against everyone, showed no gain).
+  - **Human feel:**
+    - a softmax "noise" picks among near-equal moves, and the occasional lazy "slip" happens;
+    - **thinking time follows the decision:** an obvious throw goes almost at once, a close
+      or risky one gets a real pause, and a bot that had a call to weigh takes a moment
+      before passing - a tell, as at a real table;
+    - **memory:** the looser personalities remember only the most recent discards in each
+      pond (the Casual about the last 8), so their reads and tile counts go fuzzy on early
+      tiles the way a person's do;
+    - **voices:** each personality says something in a speech bubble by its name when it
+      calls, wins, self-draws, declares 叮 or deals in - the Speedster's 「要！要！」, the
+      Iron Wall's 「……碰。」.
   - **Personalities:**
-    - **老手 Veteran:** the strongest: fast, always declares 叮, defends lightly.
-    - **快手 Speedster:** calls everything and races.
+    - **宗師 Grandmaster:** the strongest bot evolution found - full speed, free calls,
+      chases value, declares 叮 almost every time, barely defends, reads every discard.
+    - **老手 Veteran:** quick and sharp; usually declares 叮, lets a small win go early in a
+      hand, defends a little.
+    - **快手 Speedster:** races to ready and calls almost everything; always declares 叮;
+      defends only against a player who looks ready.
     - **大牌 Hunter:** chases flushes, all-pungs and honours, and passes on small wins early.
-    - **鐵壁 Iron Wall:** keeps 門清 and defends hard.
-    - **賭徒 Gambler:** never folds.
-    - **街坊 Casual:** loose reads, the odd lazy throw.
+    - **鐵壁 Iron Wall:** keeps 門清, rarely declares 叮, shuts down against anyone who looks
+      ready.
+    - **賭徒 Gambler:** never folds; chases big hands at full speed and ignores everyone
+      else's discards.
+    - **街坊 Casual:** calls freely and loves 叮, but forgets older discards and makes the
+      odd lazy throw.
+    - All but the Hunter carry their species' evolved settings (see **Evolution** below).
   - **What the arena found** (1,200-hand runs, original bot as yardstick):
     - **Before 叮, speed beat everything.** Every win carries a solid 底 and about a third
       are self-draws, which every player pays, so every defensive setting lost more wins
@@ -461,6 +498,33 @@ held upright is asked to turn sideways.
   - `--calibrate`, which prints how often seats are really ready by melds × discards, and
     how often each risk read's buckets really won. That's where the threat and risk numbers
     come from.
+- **Evolution** (`npm run evolve`): the bots improve themselves by self-play, one species per
+  style. Each species keeps its settings within its style's limits (a Hunter stays greedy,
+  an Iron Wall stays careful), so evolution finds the strongest version of each style rather
+  than turning every bot into the same one; the Grandmaster species has no limits.
+  - **Each generation:** the whole population is shuffled into mixed tables of four and
+    plays duplicate-dealt hands. Within each species the best half (by lifetime net tai a
+    hand, shrunk while a bot has few hands) survive, and the rest are replaced by children
+    of two survivors - each setting from one parent, then mutated within the limits.
+  - **Benchmark:** every few generations each species' champion plays a fixed table of the
+    original Veteran, the original efficiency-only bot and the original Speedster, so
+    progress is measured against bots that don't evolve.
+  - **Dashboard:** `node scripts/evolve-report.mjs evolution/<run>` writes a report page:
+    each species' champion, the benchmark trend, the best-in-species trend, where each
+    style's settings drifted, and a sortable leaderboard of every bot alive.
+  - **First run** (`evolution/species1`, 112 generations, about 230,000 hands, ~4.5 hours):
+    - The fast, calling, 叮-declaring styles led throughout; heavy defence never paid.
+    - In 1,200-hand tournaments every evolved champion beat its own original personality
+      (Gambler +7.7 vs −2.8, Iron Wall +1.8 vs −3.1, Speedster +1.5 vs −3.2, Veteran +1.8
+      vs −0.1, Casual −0.3 vs −4.6) except the Hunter, which tied (+0.6 vs +0.7) and keeps
+      its original settings.
+    - The strongest line was the evolved **Gambler**: fast, greedy, 叮 almost every time,
+      almost no defence. With full memory and table reading added it became the
+      **Grandmaster**. The two are about level - each won one of two 1,200-hand tables
+      against the evolved roster - so the reads add little; against three copies of the
+      original efficiency-only bot the Grandmaster scores **+2.4 tai a hand**.
+  - The engine is fast enough for this because hand-distance (shanten) results are cached
+    per suit shape and the pruning of meld options is linear; together about 4× faster.
 - The dealer stays on a dealer win or a draw; a full lap of dealers moves the round wind. The
   game in progress, and the hint, opponents and timer settings, are kept on this device, so leaving the
   table or reloading picks it back up.

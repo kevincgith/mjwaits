@@ -47,6 +47,7 @@ export interface ScoreSettings {
   showLah: boolean; // 拉數提示 - 拉 badges on the cards
   seatReminder: boolean; // 執位提示 - remind to re-seat after 北風北局
   highScore: number | null; // 高分提示 - flag a payment at or above this
+  surrenderPrompt: number | null; // 投降提示 - prompt once a 拉 runs this many hands in a row; null = off. A prompt only - 投降 itself is never restricted.
 }
 
 export const DEFAULT_SETTINGS: ScoreSettings = {
@@ -66,6 +67,7 @@ export const DEFAULT_SETTINGS: ScoreSettings = {
   showLah: true,
   seatReminder: true,
   highScore: 50,
+  surrenderPrompt: 3,
 };
 
 export interface PatternNote {
@@ -218,6 +220,29 @@ export function previewWin(
   return pairs;
 }
 
+// The 拉 map after a win: every 拉 whose holder won survives (unless
+// replaced below); each winner-payer pair then gets a 拉 of the winner on
+// the payer - grown by this hand's worth if it continued one, or the plain
+// value if it's fresh or a 踢 - and the payer's 拉 on the winner, if any,
+// is gone. A 拉 whose holder didn't win this hand ends.
+export function nextLahs(before: Lah[], pairs: PairPayment[], winnerNames: Set<string>): Lah[] {
+  const lahs = new Map(before.map((l) => [lahKey(l.holder, l.pulled), l]));
+  const next = new Map<string, Lah>();
+  for (const l of before) if (winnerNames.has(l.holder)) next.set(lahKey(l.holder, l.pulled), l);
+  for (const pair of pairs) {
+    const prev = lahs.get(lahKey(pair.winner, pair.payer));
+    next.delete(lahKey(pair.payer, pair.winner));
+    next.set(lahKey(pair.winner, pair.payer), {
+      holder: pair.winner,
+      pulled: pair.payer,
+      // A fresh 拉 (or a 踢's) starts at the plain value.
+      value: pair.lahKind === "拉" ? pair.lahBefore + pair.worth : pair.base + pair.tai + pair.dealer,
+      count: pair.lahKind === "拉" && prev ? prev.count + 1 : 1,
+    });
+  }
+  return [...next.values()];
+}
+
 const add = (rec: Record<string, number>, player: string, amount: number) => {
   rec[player] = (rec[player] ?? 0) + amount;
 };
@@ -263,25 +288,12 @@ export function replay(game: ScoreGame): ReplayState {
     switch (ev.t) {
       case "win": {
         const pairs = previewWin(state, ev.winners, ev.from);
-        const lahs = new Map(state.lahs.map((l) => [lahKey(l.holder, l.pulled), l]));
         const winnerNames = new Set(ev.winners.map((w) => state.seats[w.seat]));
-        const next = new Map<string, Lah>();
-        // Every 拉 whose holder won this hand survives unless it's replaced below.
-        for (const l of state.lahs) if (winnerNames.has(l.holder)) next.set(lahKey(l.holder, l.pulled), l);
         for (const pair of pairs) {
           add(deltas, pair.winner, pair.worth);
           add(deltas, pair.payer, -pair.worth);
-          const prev = lahs.get(lahKey(pair.winner, pair.payer));
-          next.delete(lahKey(pair.payer, pair.winner));
-          next.set(lahKey(pair.winner, pair.payer), {
-            holder: pair.winner,
-            pulled: pair.payer,
-            // A fresh 拉 (or a 踢's) starts at the plain value.
-            value: pair.lahKind === "拉" ? pair.lahBefore + pair.worth : pair.base + pair.tai + pair.dealer,
-            count: pair.lahKind === "拉" && prev ? prev.count + 1 : 1,
-          });
         }
-        state.lahs = [...next.values()];
+        state.lahs = nextLahs(state.lahs, pairs, winnerNames);
 
         // 反雪.
         const fanXue: HandResult["fanXue"] = [];
