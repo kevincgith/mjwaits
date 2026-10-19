@@ -134,14 +134,24 @@ describe("莊 and the deal", () => {
     expect(replay(game([draw], { drawKeepsDealer: false })).dealer).toBe(1);
   });
 
-  it("moves the round wind after a full lap of dealers, and flags 執位", () => {
+  it("moves the round wind after a full lap of dealers", () => {
     const s = replay(game([win(1, 1, 0), win(2, 1, 0), win(3, 1, 0)]));
     expect(s.label).toBe("東風北局");
-    const lapGame = game([win(1, 1, 0), win(2, 1, 0), win(3, 1, 0), win(1, 1, 0)]);
-    const lap = replay(lapGame);
+    const lap = replay(game([win(1, 1, 0), win(2, 1, 0), win(3, 1, 0), win(1, 1, 0)]));
     expect(lap.label).toBe("南風東局");
-    expect(lap.seatChangeDue).toBe(true);
-    expect(replay(withEvent(lapGame, draw)).seatChangeDue).toBe(false);
+    expect(lap.seatChangeDue).toBe(false);
+  });
+
+  it("flags 執位 only after 北風北局, until the next hand", () => {
+    // Each non-dealer win passes the deal: 4 hands a wind, 16 a 圈.
+    const pass = (n: number) => Array.from({ length: n }, (_, i) => win((i + 1) % 4, 1, i % 4));
+    for (const n of [4, 8, 12]) expect(replay(game(pass(n))).seatChangeDue).toBe(false);
+    expect(replay(game(pass(15))).label).toBe("北風北局");
+    const full = game(pass(16));
+    expect(replay(full).label).toBe("東風東局");
+    expect(replay(full).seatChangeDue).toBe(true);
+    expect(replay(withEvent(full, draw)).seatChangeDue).toBe(false);
+    expect(replay(game(pass(16), { seatReminder: false })).seatChangeDue).toBe(false);
   });
 
   it("莊家設定 sets dealer and streak, and can restart the round", () => {

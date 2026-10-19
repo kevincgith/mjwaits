@@ -45,8 +45,7 @@ export interface ScoreSettings {
   lahRound: "up" | "down"; // 拉's half: 0.5進1 (up) or drop it
   tiRound: "up" | "down"; // 踢's half
   showLah: boolean; // 拉數提示 - 拉 badges on the cards
-  seatReminder: boolean; // 執位提示 - remind to re-seat when the round wind moves
-  selfDrawKey: boolean; // 自摸鍵 - a one-tap 自摸 on each card
+  seatReminder: boolean; // 執位提示 - remind to re-seat after 北風北局
   highScore: number | null; // 高分提示 - flag a payment at or above this
 }
 
@@ -66,7 +65,6 @@ export const DEFAULT_SETTINGS: ScoreSettings = {
   tiRound: "up",
   showLah: true,
   seatReminder: true,
-  selfDrawKey: false,
   highScore: 50,
 };
 
@@ -164,7 +162,7 @@ export interface ReplayState {
   // Every event's own deltas (hands, bonuses, jackpot hand-outs alike), for
   // the running-totals chart and the hand list.
   steps: { eventIndex: number; deltas: Record<string, number>; totalsAfter: Record<string, number> }[];
-  seatChangeDue: boolean; // the round wind just moved and 執位提示 is on
+  seatChangeDue: boolean; // 北風北局 just ended and 執位提示 is on
   label: string;
 }
 
@@ -249,7 +247,8 @@ export function replay(game: ScoreGame): ReplayState {
     state.streak = 0;
     if (state.dealer === state.roundStartDealer) {
       state.roundWind = (state.roundWind + 1) % 4;
-      state.seatChangeDue = state.settings.seatReminder;
+      // 執位 once a whole 圈 is done: after 北風北局, back round to 東.
+      if (state.roundWind === 0) state.seatChangeDue = state.settings.seatReminder;
     }
   };
 

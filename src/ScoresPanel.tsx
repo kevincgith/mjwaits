@@ -508,7 +508,6 @@ function WinSheet({
   const complete = fromValid && entries.length === multi && entries.every((e) => e.tai !== "");
   const pairs = fromValid && entries.length === multi ? previewWin(state, winners, from) : [];
   const total = pairs.reduce((s, p) => s + p.worth, 0);
-  const high = state.settings.highScore !== null && pairs.some((p) => p.worth >= state.settings.highScore!);
 
   const submit = () => {
     if (!complete) return;
@@ -609,30 +608,32 @@ function WinSheet({
       </div>
       <Keypad max={state.settings.scoreCap} value={entries[focus]?.tai ?? ""} onChange={(v) => setEntries((prev) => prev.map((e, i) => (i === focus ? { ...e, tai: v } : e)))} />
 
-      {pairs.length > 0 && (
-        <ul className="sc-paylines" aria-label="What each payer owes">
-          {pairs.map((p, i) => {
-            const parts = [
-              p.base ? `底${fmt(p.base)}` : null,
-              `番${fmt(p.tai)}`,
-              p.dealer ? `莊${fmt(p.dealer)}` : null,
-              p.lahKind ? `${p.lahKind}${fmt(p.lah)}` : null,
-            ].filter(Boolean);
-            const isHigh = state.settings.highScore !== null && p.worth >= state.settings.highScore;
-            return (
-              <li key={i} className={isHigh ? "is-high" : undefined}>
+      {/* One row of what each payer owes, always there and always the same
+          height, so nothing above it moves as the hand is filled in. */}
+      <ul className="sc-paylines" aria-label="What each payer owes" aria-live="polite">
+        {pairs.length === 0 && <li className="is-empty">Pick 輸家 to see who pays what</li>}
+        {pairs.map((p, i) => {
+          const parts = [
+            p.base ? `底${fmt(p.base)}` : null,
+            `番${fmt(p.tai)}`,
+            p.dealer ? `莊${fmt(p.dealer)}` : null,
+            p.lahKind ? `${p.lahKind}${fmt(p.lah)}` : null,
+          ].filter(Boolean);
+          const isHigh = state.settings.highScore !== null && p.worth >= state.settings.highScore;
+          return (
+            <li key={i} className={isHigh ? "is-high" : undefined} title={isHigh ? `高分 — ${state.settings.highScore} or more. Double-check the tai.` : undefined}>
+              <span className="sc-payline-top">
                 <span className="sc-payline-who">
-                  {multi > 1 && <span className="sc-help">{p.winner} ← </span>}
                   {p.payer}
+                  {multi > 1 && <span className="sc-help"> → {p.winner}</span>}
                 </span>
-                <span className="sc-payline-parts">{parts.join(" · ")}</span>
                 <strong className="sc-payline-total">{fmt(p.worth)}</strong>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-      {high && <p className="sc-warn">高分 — a payment of {state.settings.highScore} or more. Double-check the tai.</p>}
+              </span>
+              <span className="sc-payline-parts">{isHigh ? `高分 · ${parts.join(" · ")}` : parts.join(" · ")}</span>
+            </li>
+          );
+        })}
+      </ul>
     </Sheet>
   );
 }
@@ -1200,8 +1201,7 @@ const SETTING_GROUPS: { title: string; rows: { key: keyof ScoreSettings; label: 
     title: "顯示 Display",
     rows: [
       { key: "showLah", label: "拉數提示", help: "拉 on the player cards", kind: "bool" },
-      { key: "seatReminder", label: "執位提示", help: "When the round wind moves", kind: "bool" },
-      { key: "selfDrawKey", label: "自摸鍵", help: "A 自摸 button on each card", kind: "bool" },
+      { key: "seatReminder", label: "執位提示", help: "After 北風北局", kind: "bool" },
       { key: "highScore", label: "高分提示", help: "Flag a payment this big", kind: "nullable" },
     ],
   },
@@ -1519,7 +1519,7 @@ function Board({
     };
   }, []);
 
-  // The 執位 reminder comes back each time the round moves on.
+  // The 執位 reminder comes back after each 北風北局.
   useEffect(() => setReminderHidden(false), [state.roundWind]);
 
   const undo = () => {
@@ -1558,6 +1558,7 @@ function Board({
     { label: "重做", icon: Icons.redo, onClick: redo, disabled: !canRedo(game) },
     { label: "座位", icon: Icons.swap, onClick: () => setSheet({ kind: "seats" }) },
     { label: "拉踢", icon: Icons.lah, onClick: () => setSheet({ kind: "lah" }), badge: state.lahs.length || undefined },
+    { label: "最近", icon: Icons.recent, onClick: () => setSheet({ kind: "recent" }) },
     { label: "設定", icon: Icons.settings, onClick: () => setSheet({ kind: "settings" }) },
     { label: "新局", icon: Icons.newGame, onClick: () => setSheet({ kind: "settle" }) },
   ];
@@ -1565,38 +1566,30 @@ function Board({
   return (
     <>
       <div className="sc-fit" ref={fitRef} style={fitHeight !== null ? { height: fitHeight } : undefined}>
-      {/* Where the game is: round and deal, the 局 count, 連莊 and the Jackpot. */}
-      <div className="card sc-status">
-        <div className="sc-status-main">
+      {/* One card: where the game is (round and deal, the 局 count, 連莊) over the game actions. */}
+      <div className="sc-toolbar">
+        <div className="sc-status">
           <span className="sc-status-round">{state.label}</span>
           <span className="sc-status-meta">第{state.hands.length + 1}局</span>
           {state.streak > 0 && <span className="sc-chip-gold">連{state.streak}</span>}
         </div>
-        <span className="sc-status-side">
-        <button type="button" className="sc-recent-button" onClick={() => setSheet({ kind: "recent" })} aria-label={`Recent hands (${state.hands.length})`}>
-          {Icons.recent}
-          <span>最近</span>
-          {state.hands.length > 0 && <span className="sc-recent-count">{state.hands.length}</span>}
-        </button>
-        </span>
-      </div>
-
-      <div className="sc-toolbar" role="toolbar" aria-label="Game actions">
-        {tools.map((t) => (
-          <button key={t.label} type="button" onClick={t.onClick} disabled={t.disabled}>
-            <span className="sc-tool-icon">
-              {t.icon}
-              {t.badge && <span className="sc-tool-badge">{t.badge}</span>}
-            </span>
-            <span className="sc-tool-label">{t.label}</span>
-          </button>
-        ))}
+        <div className="sc-tools" role="toolbar" aria-label="Game actions">
+          {tools.map((t) => (
+            <button key={t.label} type="button" onClick={t.onClick} disabled={t.disabled}>
+              <span className="sc-tool-icon">
+                {t.icon}
+                {t.badge && <span className="sc-tool-badge">{t.badge}</span>}
+              </span>
+              <span className="sc-tool-label">{t.label}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
       {state.seatChangeDue && !reminderHidden && (
         <div className="sc-banner" role="status">
           <span>
-            <strong>執位</strong> · Now {WIND_CHARS[state.roundWind]}風 — re-seat with 座位
+            <strong>執位</strong> · 北風北 done — re-seat with 座位
           </span>
           <button type="button" className="sc-icon-button" onClick={() => setReminderHidden(true)} aria-label="Dismiss">
             {Icons.close}
@@ -1668,11 +1661,6 @@ function Board({
                   </span>
                 ))}
               </div>
-              {state.settings.selfDrawKey && (
-                <button type="button" className="sc-selfdraw-key" onClick={() => setSheet({ kind: "hand", seat, initial: { selfDraw: true, tai: 0, patterns: [] } })}>
-                  自摸
-                </button>
-              )}
             </div>
           );
         })}
@@ -2539,7 +2527,10 @@ export function ScoresPanel({
             }}
           />
         ) : (
-          <Setup store={store} suggestion={seatNames} onStart={start} waitingHand={request !== null} />
+          <>
+            <Setup store={store} suggestion={seatNames} onStart={start} waitingHand={request !== null} />
+            <BackupCard store={store} setStore={setStore} />
+          </>
         ))}
       {sub === "stats" && <StatsPanel store={store} setStore={setStore} view={view} setView={setView} />}
     </section>
