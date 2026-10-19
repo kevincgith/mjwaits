@@ -465,17 +465,21 @@ const isGame = (g: unknown): g is ScoreGame =>
   (g as ScoreGame).seats.length === SEATS &&
   Array.isArray((g as ScoreGame).events);
 
+// Whatever was saved (or imported), trimmed to what this version can use.
+function normalizeStore(saved: Partial<ScoreStore>): ScoreStore {
+  return {
+    active: isGame(saved.active) ? saved.active : null,
+    history: Array.isArray(saved.history) ? saved.history.filter(isGame) : [],
+    roster: Array.isArray(saved.roster) ? saved.roster.filter((p) => p && typeof p.name === "string") : [],
+    settings: { ...DEFAULT_SETTINGS, ...(saved.settings ?? {}) },
+  };
+}
+
 export function loadScores(): ScoreStore {
   try {
     const raw = window.localStorage.getItem(SCORES_KEY);
     if (!raw) return emptyStore();
-    const saved = JSON.parse(raw) as Partial<ScoreStore>;
-    return {
-      active: isGame(saved.active) ? saved.active : null,
-      history: Array.isArray(saved.history) ? saved.history.filter(isGame) : [],
-      roster: Array.isArray(saved.roster) ? saved.roster.filter((p) => p && typeof p.name === "string") : [],
-      settings: { ...DEFAULT_SETTINGS, ...(saved.settings ?? {}) },
-    };
+    return normalizeStore(JSON.parse(raw) as Partial<ScoreStore>);
   } catch {
     return emptyStore();
   }
@@ -487,6 +491,55 @@ export function saveScores(store: ScoreStore): void {
   } catch {
     // Storage unavailable - scores just won't survive a reload.
   }
+}
+
+// ---- Backup --------------------------------------------------------------
+// A backup file is the whole store, wrapped so an import can tell it apart
+// from any other JSON. Older or newer versions read it the same way a saved
+// store is read (normalizeStore), so a backup outlives app updates.
+
+const BACKUP_KIND = "mjwaits.scores";
+const BACKUP_VERSION = 1;
+
+export function exportScores(store: ScoreStore, now = Date.now()): string {
+  return JSON.stringify({ kind: BACKUP_KIND, version: BACKUP_VERSION, exportedAt: now, store }, null, 1);
+}
+
+// The store in a backup file, or null if the text isn't one. A bare store
+// (what localStorage itself holds) is accepted too.
+export function parseBackup(text: string): ScoreStore | null {
+  let data: unknown;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (!data || typeof data !== "object") return null;
+  const wrapped = (data as { kind?: unknown }).kind === BACKUP_KIND;
+  const saved = (wrapped ? (data as { store?: unknown }).store : data) as Partial<ScoreStore> | undefined;
+  if (!saved || typeof saved !== "object") return null;
+  if (!wrapped && !("history" in saved) && !("active" in saved)) return null;
+  return normalizeStore(saved);
+}
+
+// A backup folded into what's here: every game from both (by id - the copy
+// with more entries wins), the roster joined, this device's settings kept.
+// This device's game in progress stays in progress; the backup's, if it's a
+// different game, goes to the history like any other.
+export function mergeScores(here: ScoreStore, backup: ScoreStore): ScoreStore {
+  const byId = new Map<string, ScoreGame>();
+  const add = (g: ScoreGame | null) => {
+    if (!g) return;
+    const prev = byId.get(g.id);
+    if (!prev || g.events.length > prev.events.length) byId.set(g.id, g);
+  };
+  [here.active, ...here.history, backup.active, ...backup.history].forEach(add);
+  const activeId = here.active?.id ?? backup.active?.id ?? null;
+  const active = activeId ? (byId.get(activeId) ?? null) : null;
+  const history = [...byId.values()].filter((g) => g.id !== activeId).sort((a, b) => b.startedAt - a.startedAt);
+  const roster = here.roster.slice();
+  for (const p of backup.roster) if (!roster.some((r) => r.name === p.name)) roster.push(p);
+  return { active, history, roster, settings: here.settings };
 }
 
 export function newGame(seats: string[], firstDealer: number, settings: ScoreSettings): ScoreGame {

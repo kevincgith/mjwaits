@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_SETTINGS,
   canRedo,
+  exportScores,
+  mergeScores,
   newGame,
+  parseBackup,
   redoEvent,
   replay,
   settle,
@@ -11,6 +14,7 @@ import {
   type ScoreEvent,
   type ScoreGame,
   type ScoreSettings,
+  type ScoreStore,
 } from "./ledger";
 
 // No 莊 / Jackpot noise unless a test asks for it: A, B, C, D at seats 0-3, A deals.
@@ -221,5 +225,49 @@ describe("封頂 is an input limit only", () => {
     const s = replay(game([win(0, 900, 1), win(0, 800, 1)]));
     expect(s.hands[1].pairs[0].worth).toBe(800 + 450);
     expect(replay(game([{ t: "bonus", at: 0, seat: 1, amount: 1200, kind: "獎", other: 2 }])).totals).toMatchObject({ B: 1200, C: -1200 });
+  });
+});
+
+describe("Backup", () => {
+  const g = (id: string, startedAt: number, events: ScoreEvent[]): ScoreGame => ({ ...game(events), id, startedAt });
+  const store = (over: Partial<ScoreStore>): ScoreStore => ({ active: null, history: [], roster: [], settings: PLAIN, ...over });
+
+  it("round-trips a store through a backup file", () => {
+    const s = store({ active: g("a", 3, [win(0, 3, 1)]), history: [g("b", 1, [draw])], roster: [{ name: "A", color: 2 }] });
+    expect(parseBackup(exportScores(s))).toEqual(s);
+  });
+
+  it("reads a bare store too, and rejects anything else", () => {
+    const s = store({ history: [g("b", 1, [draw])] });
+    expect(parseBackup(JSON.stringify(s))?.history).toHaveLength(1);
+    expect(parseBackup("not json")).toBeNull();
+    expect(parseBackup("[1,2]")).toBeNull();
+    expect(parseBackup('{"hello":1}')).toBeNull();
+  });
+
+  it("fills in settings a backup predates", () => {
+    const old = JSON.stringify({ kind: "mjwaits.scores", version: 1, store: { history: [], settings: { base: 2 } } });
+    expect(parseBackup(old)?.settings).toEqual({ ...DEFAULT_SETTINGS, base: 2 });
+  });
+
+  it("merges by game id, keeping the longer copy and this device's game in progress", () => {
+    const here = store({ active: g("live", 5, [draw]), history: [g("x", 2, [draw])], roster: [{ name: "A", color: 0 }] });
+    const backup = store({
+      active: g("other", 4, [draw]),
+      history: [g("x", 2, [draw, draw]), g("y", 1, [])],
+      roster: [{ name: "A", color: 5 }, { name: "E", color: 1 }],
+      settings: { ...PLAIN, base: 9 },
+    });
+    const m = mergeScores(here, backup);
+    expect(m.active?.id).toBe("live");
+    expect(m.history.map((h) => h.id)).toEqual(["other", "x", "y"]);
+    expect(m.history[1].events).toHaveLength(2);
+    expect(m.roster).toEqual([{ name: "A", color: 0 }, { name: "E", color: 1 }]);
+    expect(m.settings).toBe(here.settings);
+  });
+
+  it("restores the backup's game in progress onto an empty device", () => {
+    const backup = store({ active: g("live", 5, [draw]) });
+    expect(mergeScores(store({}), backup).active?.id).toBe("live");
   });
 });
