@@ -15,6 +15,9 @@ import {
   newGame,
   previewWin,
   canRedo,
+  exportScores,
+  mergeScores,
+  parseBackup,
   redoEvent,
   replay,
   settle,
@@ -2095,6 +2098,110 @@ function PlayerCard({ store, stats, state, index, onIndex }: { store: ScoreStore
 
 type StatsView = "trend" | "hands" | "player" | "patterns" | "history";
 
+// 備份: the whole store as a file to keep, and a file to bring back - for a
+// new phone, or if an update ever loses something.
+const BACKED_UP_KEY = "mjwaits.scoresBackedUpAt";
+
+function readBackedUpAt(): number | null {
+  try {
+    const n = Number(window.localStorage.getItem(BACKED_UP_KEY));
+    return n > 0 ? n : null;
+  } catch {
+    return null;
+  }
+}
+
+function BackupCard({ store, setStore }: { store: ScoreStore; setStore: (s: ScoreStore) => void }) {
+  const [backedUpAt, setBackedUpAt] = useState(readBackedUpAt);
+  const [incoming, setIncoming] = useState<{ name: string; store: ScoreStore } | null>(null);
+  const [message, setMessage] = useState<{ text: string; bad?: boolean } | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const count = (s: ScoreStore) => s.history.length + (s.active ? 1 : 0);
+  const games = (n: number) => `${n} game${n === 1 ? "" : "s"}`;
+  const players = (n: number) => `${n} player${n === 1 ? "" : "s"}`;
+
+  const download = () => {
+    const now = Date.now();
+    const blob = new Blob([exportScores(store, now)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const d = new Date(now);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    a.href = url;
+    a.download = `mjwaits-scores-${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    try {
+      window.localStorage.setItem(BACKED_UP_KEY, String(now));
+    } catch {
+      // Just the reminder - the file is saved either way.
+    }
+    setBackedUpAt(now);
+    setMessage(null);
+  };
+
+  const pick = async (file: File | undefined) => {
+    if (fileRef.current) fileRef.current.value = "";
+    if (!file) return;
+    const parsed = parseBackup(await file.text());
+    if (!parsed) return setMessage({ text: `${file.name} isn't a Scores backup.`, bad: true });
+    setIncoming({ name: file.name, store: parsed });
+  };
+
+  const apply = (next: ScoreStore, how: string) => {
+    setStore(next);
+    setIncoming(null);
+    setMessage({ text: `${how} · ${games(count(next))} here now.` });
+  };
+
+  return (
+    <>
+      <SectionHead zh="備份" en="Backup" />
+      <div className="card">
+        <p className="sc-help sc-backup-status">
+          {games(count(store))} · {players(store.roster.length)} ·{" "}
+          {backedUpAt ? `last saved ${new Date(backedUpAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}` : "never backed up"}
+        </p>
+        <div className="sc-backup-actions">
+          <button type="button" className="sc-primary" onClick={download} disabled={count(store) === 0 && store.roster.length === 0}>
+            儲存 Save file
+          </button>
+          <button type="button" className="sc-secondary" onClick={() => fileRef.current?.click()}>
+            還原 Restore
+          </button>
+          <input ref={fileRef} type="file" accept="application/json,.json" hidden onChange={(e) => void pick(e.target.files?.[0])} />
+        </div>
+        {message && <p className={message.bad ? "sc-warn sc-backup-message" : "sc-help sc-backup-message"}>{message.text}</p>}
+      </div>
+      {incoming && (
+        <Sheet
+          title="還原 Restore"
+          subtitle={incoming.name}
+          onClose={() => setIncoming(null)}
+          actions={
+            <>
+              <button type="button" className="sc-danger" onClick={() => apply(incoming.store, "Replaced")}>
+                取代 Replace
+              </button>
+              <button type="button" className="sc-primary" onClick={() => apply(mergeScores(store, incoming.store), "Merged")}>
+                合併 Merge
+              </button>
+            </>
+          }
+        >
+          <p className="sc-note">
+            The file has {games(count(incoming.store))} and {players(incoming.store.roster.length)}; this phone has {games(count(store))}.
+            <br />
+            <strong>Merge</strong> keeps everything from both. <strong>Replace</strong> throws away what's here and uses only the file.
+          </p>
+        </Sheet>
+      )}
+    </>
+  );
+}
+
 function StatsPanel({ store, setStore, view, setView }: { store: ScoreStore; setStore: (s: ScoreStore) => void; view: StatsView; setView: (v: StatsView) => void }) {
   const games = useMemo(() => [...(store.active ? [store.active] : []), ...store.history], [store]);
   const [gameId, setGameId] = useState<string | null>(null);
@@ -2106,9 +2213,12 @@ function StatsPanel({ store, setStore, view, setView }: { store: ScoreStore; set
 
   if (!game || !state)
     return (
-      <div className="card sc-empty-card">
-        <p className="sc-empty">No games yet — start one on 戰況.</p>
-      </div>
+      <>
+        <div className="card sc-empty-card">
+          <p className="sc-empty">No games yet — start one on 戰況.</p>
+        </div>
+        <BackupCard store={store} setStore={setStore} />
+      </>
     );
 
   const views: { value: StatsView; label: string }[] = [
@@ -2200,6 +2310,7 @@ function StatsPanel({ store, setStore, view, setView }: { store: ScoreStore; set
           onDelete={(id) => setStore({ ...store, history: store.history.filter((g) => g.id !== id) })}
         />
       )}
+      {view === "history" && <BackupCard store={store} setStore={setStore} />}
     </>
   );
 }
