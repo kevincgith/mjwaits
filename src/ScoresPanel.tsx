@@ -16,6 +16,7 @@ import {
   previewWin,
   canRedo,
   exportScores,
+  half,
   mergeScores,
   parseBackup,
   redoEvent,
@@ -969,58 +970,93 @@ function SeatsSheet({
 }
 
 function LahSheet({ store, state, onSurrender, onClose }: { store: ScoreStore; state: ReplayState; onSurrender: (holder: string, pulled: string) => void; onClose: () => void }) {
-  const holders = [...new Set(state.lahs.map((l) => l.holder))];
-  // 投降 takes two taps: the first arms it, the second ends the 拉.
+  // One table per holder, biggest first. Usually there's just one (the last
+  // winner); a 雙響/三響 can leave several, each also keeping what they held.
+  const groups = [...new Set(state.lahs.map((l) => l.holder))]
+    .map((holder) => {
+      const rows = state.lahs.filter((l) => l.holder === holder).sort((x, y) => y.value - x.value);
+      return { holder, rows, total: rows.reduce((t, l) => t + l.value, 0) };
+    })
+    .sort((x, y) => y.total - x.total);
+  // What the next hand between the two adds, whoever wins it: half the 拉
+  // (拉 and 踢 take the same half, give or take a rounding setting).
+  const next = (value: number) => half(value, state.settings.lahRound, state.settings.integerMode);
+  // 投降 takes two taps: the first arms it, the second ends that 拉. A tap
+  // anywhere else disarms it.
   const [armed, setArmed] = useState<string | null>(null);
+  useEffect(() => {
+    if (!armed) return;
+    const disarm = (e: PointerEvent) => {
+      if (!(e.target as Element).closest?.(".sc-lah-surrender.is-armed")) setArmed(null);
+    };
+    document.addEventListener("pointerdown", disarm, true);
+    return () => document.removeEventListener("pointerdown", disarm, true);
+  }, [armed]);
   return (
     <Sheet
       title="拉踢"
-      subtitle="Every 拉 on the table. 投降 ends one with nothing paid."
       onClose={onClose}
       actions={
         <button type="button" className="sc-primary" onClick={onClose}>
-          完成 Done
+          Done
         </button>
       }
     >
-      {holders.length === 0 && <p className="sc-empty">No 拉 on the table.</p>}
-      {holders.map((holder) => (
-        <div key={holder} className="sc-list">
-          <div className="sc-list-head">
+      {groups.length === 0 && <p className="sc-empty">No 拉 on the table.</p>}
+      {groups.map(({ holder, rows, total }) => (
+        <div key={holder} className="sc-lah-group">
+          <div className="sc-lah-head">
             <Monogram store={store} player={holder} size="sm" />
-            <strong>{holder}</strong> 拉
+            <strong>{holder}</strong>
+            <span className="sc-help">holds {fmt(total)}</span>
           </div>
-          {state.lahs
-            .filter((l) => l.holder === holder)
-            .map((l) => (
-              <div key={l.pulled} className="sc-row">
-                <span className="sc-row-main">
-                  {l.pulled}
-                  <span className="sc-help">
-                    {" "}
-                    · {l.count}次 · next win adds {fmt(Math.ceil(l.value / 2))}
+          {groups.length === 1 && <p className="sc-lah-note">Ends unless {holder} wins the next hand</p>}
+          <div className="sc-lah-table" role="table" aria-label={`${holder}'s 拉`}>
+            <div className="sc-lah-row is-head" role="row">
+              <span role="columnheader">On</span>
+              <span role="columnheader">拉</span>
+              <span role="columnheader">Streak</span>
+              <span role="columnheader">Next</span>
+              <span role="columnheader" />
+            </div>
+            {rows.map((l) => {
+              const key = `${l.holder}>${l.pulled}`;
+              const isArmed = armed === key;
+              return (
+                <div key={key} role="row" className="sc-lah-row">
+                  <span className="sc-lah-who" role="cell">
+                    <span className={`sc-dot sc-c${colorOf(store, l.pulled)}`} aria-hidden="true" />
+                    {l.pulled}
                   </span>
-                </span>
-                <span className="sc-row-end">
-                  <strong className="sc-num">{fmt(l.value)}</strong>
-                  <button
-                    type="button"
-                    className={`sc-outline${armed === `${l.holder}>${l.pulled}` ? " is-armed" : ""}`}
-                    onClick={() => {
-                      const key = `${l.holder}>${l.pulled}`;
-                      if (armed !== key) return setArmed(key);
-                      setArmed(null);
-                      onSurrender(l.holder, l.pulled);
-                    }}
-                    aria-label={armed === `${l.holder}>${l.pulled}` ? `Tap again to confirm ${l.pulled} surrenders` : `${l.pulled} surrenders`}
-                  >
-                    {armed === `${l.holder}>${l.pulled}` ? "Confirm?" : "投降"}
-                  </button>
-                </span>
-              </div>
-            ))}
+                  <strong role="cell">{fmt(l.value)}</strong>
+                  <span role="cell">{l.count}</span>
+                  <span role="cell">+{fmt(next(l.value))}</span>
+                  <span role="cell">
+                    <button
+                      type="button"
+                      className={`sc-outline sc-lah-surrender${isArmed ? " is-armed" : ""}`}
+                      onClick={() => {
+                        if (!isArmed) return setArmed(key);
+                        setArmed(null);
+                        onSurrender(l.holder, l.pulled);
+                      }}
+                      aria-label={isArmed ? `Confirm ${l.pulled} surrenders to ${l.holder}` : `${l.pulled} surrenders to ${l.holder}`}
+                    >
+                      {isArmed ? "Confirm?" : "投降"}
+                    </button>
+                  </span>
+                </div>
+              );
+            })}
+          </div>
         </div>
       ))}
+      {groups.length > 0 && (
+        <p className="sc-help sc-lah-key">
+          {groups.length > 1 && "A holder's 拉 end when they don't win the next hand. "}
+          Next is what the next hand between the two adds, whoever wins it.
+        </p>
+      )}
     </Sheet>
   );
 }
