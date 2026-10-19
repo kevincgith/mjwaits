@@ -5793,6 +5793,43 @@ html.playing body {
   font-weight: 700;
 }
 
+/* A bot's avatar: its title's first character on its personality colour. */
+.play-avatar {
+  display: inline-grid;
+  place-items: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 0.35rem;
+  background: var(--play-avatar, #5c6b63);
+  color: #fffaf0;
+  font-family: var(--play-calligraphy);
+  font-size: 0.85rem;
+  font-weight: 800;
+  box-shadow: inset 0 -0.1rem 0 rgba(0, 0, 0, 0.25);
+}
+
+.play-avatar.is-grandmaster {
+  --play-avatar: #7a4fb0;
+}
+.play-avatar.is-veteran {
+  --play-avatar: #2f6fb5;
+}
+.play-avatar.is-speedster {
+  --play-avatar: #d2691e;
+}
+.play-avatar.is-hunter {
+  --play-avatar: #b8860b;
+}
+.play-avatar.is-wall {
+  --play-avatar: #5b6670;
+}
+.play-avatar.is-gambler {
+  --play-avatar: #b3261e;
+}
+.play-avatar.is-casual {
+  --play-avatar: #2e8b57;
+}
+
 /* 叮 declared: a red tag beside the name. */
 .play-riichi {
   display: inline-grid;

@@ -58,6 +58,13 @@ const SEAT_LABELS = ["", "Right", "Across", "Left"];
 // "老手 Veteran" -> "老手" / "Veteran".
 const shortName = (p: BotProfile) => p.name.split(" ")[0];
 const englishName = (p: BotProfile) => p.name.split(" ").slice(1).join(" ");
+// Each personality's avatar: the first character of its title on its own
+// colour (see .play-avatar.is-<id>).
+const Avatar = ({ bot }: { bot: BotProfile }) => (
+  <span className={`play-avatar is-${bot.id}`} aria-hidden="true">
+    {bot.name[0]}
+  </span>
+);
 // Hints and the timer's fallback throw judge the way the Veteran does.
 const ADVISOR = profileById("veteran");
 // Where each seat sits on screen, by seat index.
@@ -521,6 +528,7 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
   const badge = (seat: number) => (
     <span className={`play-badge at-${SIDES[seat]}${activeSeat === seat ? " is-active" : ""}`}>
       <span className="play-badge-wind">{WIND_CHARS[seatWind(seat, game.dealer)]}</span>
+      {bots[seat] && <Avatar bot={bots[seat]!} />}
       <span className="play-badge-name">
         {nameOf(seat)}
         {seat === game.dealer && <span className="play-dealer">莊</span>}
