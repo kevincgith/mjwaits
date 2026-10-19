@@ -7496,7 +7496,7 @@ html.playing body {
 
 /* ---- 戰況: the board ---- */
 
-/* The toolbar card's heading line: round · 局 · 連. */
+/* The toolbar card's heading line: round · 局. */
 .sc-status {
   display: flex;
   align-items: baseline;
@@ -8741,10 +8741,6 @@ html.sc-fit-mode .build-version {
   padding: 0 0.85rem;
 }
 
-.sc-status .sc-chip-gold {
-  margin-left: 0;
-}
-
 .sc-jackpot {
   flex-direction: row;
   align-items: center;
@@ -9019,13 +9015,30 @@ html.sc-fit-mode .build-version {
   align-items: baseline;
   flex-shrink: 0;
   gap: 0.2rem;
-  padding: 0.1rem 0.4rem;
+  padding: 0.1rem 0.3rem;
   border-radius: var(--radius-xs);
   background: var(--sc-gold);
   color: var(--sc-gold-ink);
   font-size: var(--text-sm);
   font-weight: 800;
   line-height: 1.25;
+}
+
+/* 起莊: a plain gold corner folded over the card's top-left, under the name. */
+.sc-qi-corner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-top-left-radius: var(--radius-lg);
+  background: var(--sc-gold);
+  clip-path: polygon(0 0, 100% 0, 0 100%);
+  pointer-events: none;
+}
+
+.sc-qi-corner + .sc-card-top {
+  position: relative;
 }
 
 .sc-zhuang-tag small {

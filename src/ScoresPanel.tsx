@@ -852,7 +852,7 @@ function SeatsSheet({
   // Dealer draft - a seat, so it reads whoever the draft seating puts there.
   const [dealer, setDealer] = useState(state.dealer);
   const [streak, setStreak] = useState(state.streak);
-  const [reset, setReset] = useState(false);
+  const [reset, setReset] = useState(true);
 
   const bench = [...new Set([...store.roster.map((p) => p.name), ...state.players, ...added])].filter((p) => !seats.includes(p));
   const tapSeat = (s2: number) => {
@@ -873,7 +873,8 @@ function SeatsSheet({
   };
 
   const seatsChanged = seats.some((p, i) => p !== state.seats[i]);
-  const dealerChanged = dealer !== state.dealer || streak !== state.streak || reset;
+  // 重置風局 (on by default) only rides along with a real dealer or 連莊 change.
+  const dealerChanged = dealer !== state.dealer || streak !== state.streak;
   const anything = seatsChanged || dealerChanged || added.length > 0;
   const submit = () =>
     onDone({
@@ -957,10 +958,7 @@ function SeatsSheet({
               <Stepper value={streak} onChange={setStreak} label="連莊" />
             </div>
             <label className="sc-row">
-              <span>
-                重置風局
-                <span className="sc-help"> · back to 東風東局</span>
-              </span>
+              <span>重置風局</span>
               <Toggle checked={reset} onChange={setReset} label="Reset the round" />
             </label>
           </div>
@@ -1016,7 +1014,7 @@ function LahSheet({ store, state, onSurrender, onClose }: { store: ScoreStore; s
                     }}
                     aria-label={armed === `${l.holder}>${l.pulled}` ? `Tap again to confirm ${l.pulled} surrenders` : `${l.pulled} surrenders`}
                   >
-                    {armed === `${l.holder}>${l.pulled}` ? "Tap again to confirm" : "投降"}
+                    {armed === `${l.holder}>${l.pulled}` ? "Confirm?" : "投降"}
                   </button>
                 </span>
               </div>
@@ -1566,12 +1564,11 @@ function Board({
   return (
     <>
       <div className="sc-fit" ref={fitRef} style={fitHeight !== null ? { height: fitHeight } : undefined}>
-      {/* One card: where the game is (round and deal, the 局 count, 連莊) over the game actions. */}
+      {/* One card: where the game is (round and deal, the 局 count) over the game actions - 連莊 is on the dealer's badge. */}
       <div className="sc-toolbar">
         <div className="sc-status">
           <span className="sc-status-round">{state.label}</span>
           <span className="sc-status-meta">第{state.hands.length + 1}局</span>
-          {state.streak > 0 && <span className="sc-chip-gold">連{state.streak}</span>}
         </div>
         <div className="sc-tools" role="toolbar" aria-label="Game actions">
           {tools.map((t) => (
@@ -1612,15 +1609,18 @@ function Board({
             .filter((pin) => pin.otherSeat >= 0);
           const delta = last?.deltas[player];
           const isDealer = seat === state.dealer;
+          const isQi = seat === state.roundStartDealer;
           return (
             <div key={seat} className={`sc-seat sc-area-${SEAT_AREAS[seat]}`}>
               <div className="sc-card-box">
               <button type="button" className={`sc-card sc-c${colorOf(store, player)}${isDealer ? " is-dealer" : ""}`} onClick={() => setSheet({ kind: "hand", seat })} aria-label={`${player}, ${fmt(total)}. Record a hand for ${player}`}>
+                {/* 起莊: a gold corner on the seat this 圈 started from, so it's clear when 北風北 comes. */}
+                {isQi && (
+                  <span className="sc-qi-corner" role="img" aria-label="起莊" title="起莊 - this 圈 started here" />
+                )}
                 <span className="sc-card-top">
                   <span className="sc-card-name">{player}</span>
-                  {isDealer && (
-                    <span className="sc-zhuang-tag">{state.streak > 0 ? `莊連${state.streak}` : "莊"}</span>
-                  )}
+                  {isDealer && <span className="sc-zhuang-tag">{state.streak > 0 ? `莊連${state.streak}` : "莊"}</span>}
                 </span>
                 <span className="sc-card-score" data-anchor="score">
                   <span className={`sc-card-total ${tone(total)}`}>{fmt(total)}</span>
