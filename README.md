@@ -502,7 +502,9 @@ held upright is asked to turn sideways.
       its original settings.
     - The strongest line was the evolved **Gambler**: fast, greedy, 叮 almost every time,
       almost no defence. With full memory and table reading added it became the
-      **Grandmaster**, which won the final table of evolved champions.
+      **Grandmaster**. The two are about level - each won one of two 1,200-hand tables
+      against the evolved roster - so the reads add little; against three copies of the
+      original efficiency-only bot the Grandmaster scores **+2.4 tai a hand**.
   - The engine is fast enough for this because hand-distance (shanten) results are cached
     per suit shape and the pruning of meld options is linear; together about 4× faster.
 - The dealer stays on a dealer win or a draw; a full lap of dealers moves the round wind. The

@@ -75,9 +75,10 @@ export interface BotProfile {
 export const BOT_PROFILES: BotProfile[] = [
   {
     // From the species evolution (evolution/species1, 112 generations):
-    // the evolved Gambler's settings with full memory and table reading,
-    // which won the final 1,200-hand tournament against every evolved
-    // champion. Veteran, Speedster, Iron Wall, Gambler and Casual below are
+    // the evolved Gambler's settings with full memory and table reading.
+    // It and the evolved Gambler are about level (each won one of two
+    // 1,200-hand tables against the evolved roster); against three original
+    // efficiency-only bots it scores +2.4 tai a hand. Veteran, Speedster, Iron Wall, Gambler and Casual below are
     // their species' evolved champions; the Hunter keeps its original
     // settings (its evolved champion only tied them).
     id: "grandmaster",
