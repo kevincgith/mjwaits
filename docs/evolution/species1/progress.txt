@@ -1,0 +1,137 @@
+Evolving 28 bots for 130 generations: 2016 hands a generation, results in evolution/species1/log.json
+gen   0  100s  top 阿明 [grandmaster] (caller, 叮-happy) 9.57/hand over 288
+         bench: grandmaster 7.32  veteran -1.95  speedster 0.17  hunter -2.98  wall -5.83  gambler -1.73  casual -1.63
+gen   1  127s  top 阿偉 [veteran] (caller, 叮-happy, fast) 6.42/hand over 576
+gen   2  125s  top 阿強 [grandmaster] (caller, 叮-happy) 5.74/hand over 864
+gen   3  125s  top 阿強 [grandmaster] (caller, 叮-happy) 5.88/hand over 1152
+gen   4  172s  top 阿彬3 [speedster] (caller, reckless, 叮-happy) 8.27/hand over 576
+gen   5  163s  top 阿彬3 [speedster] (caller, reckless, 叮-happy) 6.95/hand over 864
+         bench: grandmaster 0.72  veteran 0.52  speedster -0.60  hunter -0.75  wall -7.70  gambler 2.58  casual -5.02
+gen   6  129s  top 阿彬3 [speedster] (caller, reckless, 叮-happy) 6.27/hand over 1152
+gen   7  140s  top 阿彬3 [speedster] (caller, reckless, 叮-happy) 6.58/hand over 1440
+gen   8  146s  top 阿偉6 [grandmaster] (caller, 叮-happy) 10.84/hand over 288
+gen   9  158s  top 阿彬3 [speedster] (caller, reckless, 叮-happy) 5.45/hand over 2016
+gen  10  213s  top 阿德5 [grandmaster] (caller, 叮-happy) 5.69/hand over 1152
+         bench: grandmaster 0.05  veteran 2.27  speedster -0.24  hunter -3.51  wall -6.49  gambler 0.65  casual -5.31
+gen  11  164s  top 阿琪 [speedster] (caller, reckless, 叮-happy) 4.97/hand over 3456
+gen  12  165s  top 阿琪 [speedster] (caller, reckless, 叮-happy) 5.09/hand over 3744
+gen  13  164s  top 阿琪 [speedster] (caller, reckless, 叮-happy) 5.01/hand over 4032
+gen  14  163s  top 阿美9 [grandmaster] (caller, 叮-happy) 9.30/hand over 288
+gen  15  215s  top 阿美9 [grandmaster] (caller, 叮-happy) 7.48/hand over 576
+         bench: grandmaster -4.29  veteran 4.04  speedster -0.48  hunter -6.70  wall -4.22  gambler 2.73  casual -6.04
+gen  16  161s  top 阿美9 [grandmaster] (caller, 叮-happy) 7.03/hand over 864
+gen  17  163s  top 阿美9 [grandmaster] (caller, 叮-happy) 5.93/hand over 1152
+gen  18  167s  top 阿琪 [speedster] (caller, reckless, 叮-happy) 4.82/hand over 5472
+gen  19  170s  top 阿琪 [speedster] (caller, reckless, 叮-happy) 4.74/hand over 5760
+gen  20  218s  top 阿琪 [speedster] (caller, reckless, 叮-happy) 4.73/hand over 6048
+         bench: grandmaster -1.69  veteran -4.24  speedster 0.74  hunter -2.71  wall -0.99  gambler -0.69  casual -5.04
+gen  21  162s  top 阿琪 [speedster] (caller, reckless, 叮-happy) 4.64/hand over 6336
+gen  22  163s  top 阿琪 [speedster] (caller, reckless, 叮-happy) 4.60/hand over 6624
+gen  23  168s  top 阿琪 [speedster] (caller, reckless, 叮-happy) 4.45/hand over 6912
+gen  24  170s  top 阿琪 [speedster] (caller, reckless, 叮-happy) 4.49/hand over 7200
+gen  25  225s  top 阿琪 [speedster] (caller, reckless, 叮-happy) 4.45/hand over 7488
+         bench: grandmaster 0.45  veteran -4.24  speedster 8.88  hunter -3.92  wall 1.33  gambler -0.29  casual -2.93
+gen  26  149s  top 阿琪 [speedster] (caller, reckless, 叮-happy) 4.34/hand over 7776
+gen  27  138s  top 阿琪 [speedster] (caller, reckless, 叮-happy) 4.28/hand over 8064
+gen  28  135s  top 阿琪 [speedster] (caller, reckless, 叮-happy) 4.24/hand over 8352
+gen  29  126s  top 阿琪 [speedster] (caller, reckless, 叮-happy) 4.20/hand over 8640
+gen  30  175s  top 阿琪 [speedster] (caller, reckless, 叮-happy) 4.29/hand over 8928
+         bench: grandmaster 3.19  veteran -1.80  speedster 1.21  hunter 0.82  wall -0.26  gambler 3.05  casual 2.22
+gen  31  132s  top 阿琪 [speedster] (caller, reckless, 叮-happy) 4.38/hand over 9216
+gen  32  127s  top 阿玲20 [gambler] (caller, reckless, greedy) 6.45/hand over 576
+gen  33  128s  top 阿玲20 [gambler] (caller, reckless, greedy) 6.03/hand over 864
+gen  34  126s  top 阿琪 [speedster] (caller, reckless, 叮-happy) 4.17/hand over 10080
+gen  35  173s  top 阿琪 [speedster] (caller, reckless, 叮-happy) 4.13/hand over 10368
+         bench: grandmaster 1.46  veteran 3.43  speedster 6.69  hunter -1.60  wall -4.04  gambler -0.89  casual -6.27
+gen  36  127s  top 阿琪 [speedster] (caller, reckless, 叮-happy) 4.03/hand over 10656
+gen  37  124s  top 阿明22 [grandmaster] (caller, reckless, 叮-happy) 5.47/hand over 864
+gen  38  120s  top 阿琪 [speedster] (caller, reckless, 叮-happy) 3.95/hand over 11232
+gen  39  121s  top 阿琪 [speedster] (caller, reckless, 叮-happy) 3.89/hand over 11520
+gen  40  163s  top 阿明22 [grandmaster] (caller, reckless, 叮-happy) 4.58/hand over 1728
+         bench: grandmaster 3.03  veteran 0.14  speedster -2.84  hunter 1.24  wall 0.93  gambler -1.48  casual -3.55
+gen  41  124s  top 阿琪 [speedster] (caller, reckless, 叮-happy) 3.80/hand over 12096
+gen  42  121s  top 阿彬26 [gambler] (caller, reckless, greedy) 8.18/hand over 288
+gen  43  126s  top 阿彬26 [gambler] (caller, reckless, greedy) 6.10/hand over 576
+gen  44  123s  top 阿彬26 [gambler] (caller, reckless, greedy) 4.91/hand over 864
+gen  45  165s  top 阿琪 [speedster] (caller, reckless, 叮-happy) 3.74/hand over 13248
+         bench: grandmaster 2.10  veteran 1.30  speedster 2.70  hunter -1.28  wall -5.18  gambler 9.30  casual -4.75
+gen  46  124s  top 阿琪 [speedster] (caller, reckless, 叮-happy) 3.71/hand over 13536
+gen  47  126s  top 阿鳳28 [gambler] (caller, reckless, greedy) 5.82/hand over 576
+gen  48  120s  top 阿琪 [speedster] (caller, reckless, 叮-happy) 3.73/hand over 14112
+gen  49  120s  top 阿琪 [speedster] (caller, reckless, 叮-happy) 3.73/hand over 14400
+gen  50  163s  top 阿琪 [speedster] (caller, reckless, 叮-happy) 3.62/hand over 14688
+         bench: grandmaster 2.98  veteran 1.02  speedster 1.06  hunter -5.46  wall -1.15  gambler 0.59  casual -0.88
+gen  51  124s  top 阿明22 [grandmaster] (caller, reckless, 叮-happy) 3.85/hand over 4896
+gen  52  124s  top 阿賢32 [gambler] (caller, reckless, greedy) 7.69/hand over 288
+gen  53  122s  top 阿明22 [grandmaster] (caller, reckless, 叮-happy) 3.75/hand over 5472
+gen  54  122s  top 阿琪 [speedster] (caller, reckless, 叮-happy) 3.53/hand over 15840
+gen  55  163s  top 阿琪 [speedster] (caller, reckless, 叮-happy) 3.44/hand over 16128
+         bench: grandmaster 7.42  veteran -1.23  speedster 1.50  hunter -0.18  wall -1.19  gambler 3.49  casual -4.06
+gen  56  119s  top 阿琪 [speedster] (caller, reckless, 叮-happy) 3.44/hand over 16416
+gen  57  121s  top 阿龍33 [speedster] (caller, reckless, 叮-happy) 4.76/hand over 864
+gen  58  121s  top 阿強35 [speedster] (caller, reckless, 叮-happy) 8.06/hand over 576
+gen  59  119s  top 阿強35 [speedster] (caller, reckless, 叮-happy) 5.14/hand over 864
+gen  60  160s  top 阿龍33 [speedster] (caller, reckless, 叮-happy) 3.67/hand over 1728
+         bench: grandmaster -0.47  veteran -1.93  speedster 1.79  hunter -1.86  wall 1.34  gambler 2.00  casual -4.88
+gen  61  124s  top 阿龍33 [speedster] (caller, reckless, 叮-happy) 3.71/hand over 2016
+gen  62  127s  top 阿龍33 [speedster] (caller, reckless, 叮-happy) 3.56/hand over 2304
+gen  63  120s  top 阿強35 [speedster] (caller, reckless, 叮-happy) 3.76/hand over 2016
+gen  64  120s  top 阿明22 [grandmaster] (caller, reckless, 叮-happy) 3.40/hand over 8640
+gen  65  162s  top 阿彬39 [grandmaster] (caller, reckless, 叮-happy) 7.29/hand over 288
+         bench: grandmaster 2.29  veteran -1.23  speedster 1.70  hunter -5.07  wall -3.38  gambler -1.85  casual -5.33
+gen  66  117s  top 阿彬39 [grandmaster] (caller, reckless, 叮-happy) 7.45/hand over 576
+gen  67  117s  top 阿彬39 [grandmaster] (caller, reckless, 叮-happy) 5.37/hand over 864
+gen  68  118s  top 阿彬39 [grandmaster] (caller, reckless, 叮-happy) 5.08/hand over 1152
+gen  69  114s  top 阿慧41 [gambler] (caller, reckless, greedy) 5.95/hand over 576
+gen  70  161s  top 阿明22 [grandmaster] (caller, reckless, 叮-happy) 3.28/hand over 10368
+         bench: grandmaster -2.09  veteran 1.31  speedster -1.74  hunter 4.81  wall 1.15  gambler 5.79  casual -4.73
+gen  71  117s  top 阿娟41 [speedster] (caller, reckless, 叮-happy) 4.22/hand over 1152
+gen  72  117s  top 阿明44 [gambler] (caller, reckless, 叮-happy) 6.41/hand over 288
+gen  73  120s  top 阿標44 [speedster] (caller, reckless, 叮-happy) 8.62/hand over 288
+gen  74  118s  top 阿標44 [speedster] (caller, reckless, 叮-happy) 5.38/hand over 576
+gen  75  159s  top 阿華44 [speedster] (caller, reckless, 叮-happy) 6.02/hand over 576
+         bench: grandmaster -1.21  veteran 2.94  speedster -4.19  hunter -2.18  wall -0.88  gambler 3.27  casual -0.93
+gen  76  118s  top 阿華44 [speedster] (caller, reckless, 叮-happy) 5.04/hand over 864
+gen  77  114s  top 阿華44 [speedster] (caller, reckless, 叮-happy) 5.10/hand over 1152
+gen  78  117s  top 阿華44 [speedster] (caller, reckless, 叮-happy) 4.58/hand over 1440
+gen  79  119s  top 阿珍48 [gambler] (caller, reckless, 叮-happy) 7.11/hand over 288
+gen  80  157s  top 阿珍48 [gambler] (caller, reckless, 叮-happy) 6.38/hand over 576
+         bench: grandmaster 9.23  veteran 2.48  speedster 1.73  hunter -6.48  wall -2.16  gambler 0.23  casual -3.34
+gen  81  115s  top 阿珍48 [gambler] (caller, reckless, 叮-happy) 5.64/hand over 864
+gen  82  117s  top 阿珍48 [gambler] (caller, reckless, 叮-happy) 5.61/hand over 1152
+gen  83  115s  top 阿珍48 [gambler] (caller, reckless, 叮-happy) 5.30/hand over 1440
+gen  84  115s  top 阿珍48 [gambler] (caller, reckless, 叮-happy) 5.09/hand over 1728
+gen  85  160s  top 阿珍48 [gambler] (caller, reckless, 叮-happy) 4.36/hand over 2016
+         bench: grandmaster 7.45  veteran 1.78  speedster 4.61  hunter -2.47  wall 0.18  gambler 0.89  casual -2.70
+gen  86  116s  top 阿華44 [speedster] (caller, reckless, 叮-happy) 3.61/hand over 3744
+gen  87  117s  top 阿娟52 [veteran] (caller, 叮-happy, fast) 7.34/hand over 288
+gen  88  115s  top 阿珍53 [speedster] (caller, reckless, 叮-happy) 7.70/hand over 288
+gen  89  115s  top 阿華44 [speedster] (caller, reckless, 叮-happy) 3.83/hand over 4608
+gen  90  156s  top 阿華44 [speedster] (caller, reckless, 叮-happy) 3.72/hand over 4896
+         bench: grandmaster -0.54  veteran 10.54  speedster 8.99  hunter 1.13  wall 2.10  gambler 4.31  casual -3.19
+gen  91  113s  top 阿華44 [speedster] (caller, reckless, 叮-happy) 3.56/hand over 5184
+gen  92  115s  top 阿珍48 [gambler] (caller, reckless, 叮-happy) 3.63/hand over 4032
+gen  93  116s  top 阿珍48 [gambler] (caller, reckless, 叮-happy) 3.83/hand over 4320
+gen  94  115s  top 阿慧54 [grandmaster] (caller, reckless, 叮-happy) 5.31/hand over 1152
+gen  95  156s  top 阿明57 [grandmaster] (caller, reckless, 叮-happy) 8.45/hand over 288
+         bench: grandmaster 4.75  veteran 5.18  speedster 2.35  hunter -3.01  wall -4.11  gambler 8.94  casual 0.75
+gen  96  118s  top 阿明57 [grandmaster] (caller, reckless, 叮-happy) 6.45/hand over 576
+gen  97  113s  top 阿珍48 [gambler] (caller, reckless, 叮-happy) 3.86/hand over 5472
+gen  98  115s  top 阿敏58 [gambler] (caller, reckless, 叮-happy) 6.71/hand over 576
+gen  99  115s  top 阿珍48 [gambler] (caller, reckless, 叮-happy) 3.54/hand over 6048
+gen 100  158s  top 阿敏58 [gambler] (caller, reckless, 叮-happy) 4.31/hand over 1152
+         bench: grandmaster 5.23  veteran 6.20  speedster 1.06  hunter -1.44  wall -4.06  gambler 2.73  casual 1.51
+gen 101  114s  top 阿明57 [grandmaster] (caller, reckless, 叮-happy) 4.25/hand over 2016
+gen 102  113s  top 阿明57 [grandmaster] (caller, reckless, 叮-happy) 4.16/hand over 2304
+gen 103  112s  top 阿明57 [grandmaster] (caller, reckless, 叮-happy) 4.16/hand over 2592
+gen 104  119s  top 阿明57 [grandmaster] (caller, reckless, 叮-happy) 4.26/hand over 2880
+gen 105  159s  top 阿美61 [veteran] (caller, greedy, 叮-happy) 6.23/hand over 864
+         bench: grandmaster 8.36  veteran -0.78  speedster 5.52  hunter -1.95  wall -3.15  gambler 0.27  casual 1.71
+gen 106  119s  top 阿美61 [veteran] (caller, greedy, 叮-happy) 5.43/hand over 1152
+gen 107  116s  top 阿美61 [veteran] (caller, greedy, 叮-happy) 4.41/hand over 1440
+gen 108  117s  top 阿珍48 [gambler] (caller, reckless, 叮-happy) 3.72/hand over 8640
+gen 109  118s  top 阿珍48 [gambler] (caller, reckless, 叮-happy) 3.77/hand over 8928
+gen 110  158s  top 阿珍48 [gambler] (caller, reckless, 叮-happy) 3.78/hand over 9216
+         bench: grandmaster 2.65  veteran 7.41  speedster 1.33  hunter 2.06  wall 4.01  gambler 5.34  casual -4.52
+gen 111  115s  top 阿珍48 [gambler] (caller, reckless, 叮-happy) 3.86/hand over 9504
+gen 112  115s  top 阿珍67 [speedster] (caller, 叮-happy) 7.97/hand over 288

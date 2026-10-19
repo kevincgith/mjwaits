@@ -1,0 +1,342 @@
+<meta charset="utf-8">
+<title>MJWaits Bot Evolution</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Noto+Serif+TC:wght@600;800&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: a lab notebook for a mahjong table - one column of panels on a
+   felt-tinted ground; champions first, then the trends, then the raw table. */
+:root {
+  --bg: #f3f5f1;
+  --panel: #fcfdfb;
+  --ink: #121a15;
+  --ink-2: #4b564f;
+  --ink-3: #78837b;
+  --rule: #dfe5df;
+  --grid: #e8ece7;
+  --accent: #1d6b45;
+  --pos: #1d6b45;
+  --neg: #b33b2e;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --s7: #6250d6;
+  --display: "Noto Serif TC", "Songti TC", serif;
+  --body: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1411; --panel: #161c18; --ink: #edf1ec; --ink-2: #b4bdb6; --ink-3: #87918a; --rule: #2a332d; --grid: #222a25;
+    --accent: #4cc48a; --pos: #4cc48a; --neg: #ef7a6c;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #2f9b2f; --s7: #9085e9;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1411; --panel: #161c18; --ink: #edf1ec; --ink-2: #b4bdb6; --ink-3: #87918a; --rule: #2a332d; --grid: #222a25;
+  --accent: #4cc48a; --pos: #4cc48a; --neg: #ef7a6c;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #2f9b2f; --s7: #9085e9;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.5; }
+.wrap { max-width: 1120px; margin: 0 auto; padding-block: 28px 56px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 28px; }
+h1 { font-family: var(--display); font-weight: 800; font-size: clamp(28px, 4.6vw, 44px); line-height: 1.1; margin: 0; text-wrap: balance; letter-spacing: 0.01em; }
+h1 small { display: block; font-family: var(--body); font-weight: 500; font-size: 15px; color: var(--ink-2); margin-top: 8px; letter-spacing: 0; }
+h2 { font-family: var(--body); font-size: 18px; font-weight: 700; margin: 0; text-wrap: balance; }
+.eyebrow { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; }
+.lede { color: var(--ink-2); max-width: 68ch; margin: 4px 0 0; }
+.facts { display: flex; flex-wrap: wrap; gap: 8px 28px; margin-top: 16px; }
+.facts div { display: grid; }
+.facts b { font-family: var(--mono); font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.facts span { font-size: 12px; color: var(--ink-3); }
+.panel { background: var(--panel); border: 1px solid var(--rule); border-radius: 14px; padding: 20px; display: grid; gap: 14px; min-width: 0; }
+.panel-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; }
+.note { color: var(--ink-3); font-size: 13px; max-width: 70ch; margin: 0; }
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.pos { color: var(--pos); } .neg { color: var(--neg); }
+
+/* Champions */
+.champs { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+.champ { border: 1px solid var(--rule); border-radius: 12px; padding: 14px; display: grid; gap: 8px; align-content: start; background: var(--bg); }
+.champ-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.champ .sp { font-family: var(--display); font-weight: 800; font-size: 20px; display: flex; align-items: center; gap: 8px; }
+.dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex: none; }
+.champ .who { font-size: 13px; color: var(--ink-2); }
+.champ .score { font-family: var(--mono); font-size: 20px; font-weight: 600; }
+.champ .style { font-size: 12px; color: var(--ink-3); }
+.kv { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px 8px; font-size: 12px; }
+.kv div { display: grid; }
+.kv span { color: var(--ink-3); }
+.kv b { font-family: var(--mono); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* Charts */
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; color: var(--ink-2); }
+.legend label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; }
+.legend input { accent-color: var(--accent); }
+.chart { position: relative; width: 100%; }
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.chart text { fill: var(--ink-3); font-family: var(--mono); font-size: 11px; }
+.tip { position: absolute; pointer-events: none; background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; padding: 8px 10px; font-size: 12px; box-shadow: 0 6px 20px rgba(0,0,0,0.12); min-width: 170px; z-index: 2; }
+.tip b { font-family: var(--mono); }
+.tip .row { display: flex; align-items: center; gap: 6px; justify-content: space-between; }
+.tip .row span:first-child { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); }
+
+/* Final tournament */
+.finals { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr)); gap: 20px 24px; }
+.final-table { display: grid; gap: 6px; min-width: 0; overflow-x: auto; }
+.final-table th:nth-child(2), .final-table td:nth-child(2) { text-align: right; }
+
+/* Bench table */
+.bench { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.bench div { border: 1px solid var(--rule); border-radius: 10px; padding: 8px 10px; display: grid; }
+.bench span { font-size: 12px; color: var(--ink-3); }
+
+/* Leaderboard */
+.table-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { padding: 7px 8px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--grid); }
+th:first-child, td:first-child, th:nth-child(2), td:nth-child(2), td:nth-child(3), th:nth-child(3) { text-align: left; }
+th { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; cursor: pointer; user-select: none; }
+th:focus-visible, button:focus-visible, label:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+th[aria-sort] { color: var(--ink); }
+td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+td .style { color: var(--ink-3); font-size: 12px; }
+
+/* Genes */
+.genes { display: grid; gap: 14px; }
+.gene { display: grid; grid-template-columns: 120px 1fr; align-items: center; gap: 12px; min-height: 30px; }
+.gene-name { font-size: 13px; color: var(--ink-2); }
+.gene-name small { display: block; font-size: 11px; color: var(--ink-3); }
+.strip { position: relative; height: 22px; border-bottom: 1px solid var(--grid); }
+.strip .mk { position: absolute; top: 4px; width: 12px; height: 12px; margin-left: -6px; border-radius: 50%; border: 2px solid var(--panel); cursor: default; }
+.strip .mk.start { background: transparent !important; border: 2px solid; width: 10px; height: 10px; margin-left: -5px; top: 5px; opacity: 0.55; }
+.strip .lo, .strip .hi { position: absolute; bottom: -16px; font-size: 10px; color: var(--ink-3); font-family: var(--mono); }
+.strip .hi { right: 0; }
+.genes-wrap { padding-bottom: 14px; }
+@media (max-width: 560px) { .gene { grid-template-columns: 92px 1fr; } .kv { grid-template-columns: repeat(2, 1fr); } }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">MJWaits · 16-tile bots · self-play</div>
+    <h1>Bot Evolution<small id="sub"></small></h1>
+    <p class="lede">Seven species of bot, one per playing style, played each other generation after generation. The best half of each species survived and the rest were replaced by mutated crosses of the survivors, each kept inside its style's limits. The Grandmaster species has no limits at all.</p>
+    <div class="facts" id="facts"></div>
+  </header>
+
+  <section class="panel" aria-labelledby="h-champs">
+    <div class="panel-head"><h2 id="h-champs">Current champions</h2><span class="note">Best bot alive in each species with 1,000+ hands · net tai a hand over its whole life</span></div>
+    <div class="champs" id="champs"></div>
+  </section>
+
+  <section class="panel" aria-labelledby="h-final" id="final" hidden>
+    <div class="panel-head"><h2 id="h-final">Final tournament: evolved against the originals</h2><span class="note" id="final-note"></span></div>
+    <div id="final-tables" class="finals"></div>
+  </section>
+
+  <section class="panel" aria-labelledby="h-bench">
+    <div class="panel-head"><h2 id="h-bench">Against the original bots</h2><span class="note">Each species' champion at a fixed table with the original Veteran, the original efficiency-only bot and the original Speedster · net tai a hand</span></div>
+    <div class="legend" id="legend-bench"></div>
+    <div class="chart" id="chart-bench"></div>
+    <div class="bench" id="bench-now"></div>
+    <p class="note" id="bench-cap"></p>
+  </section>
+
+  <section class="panel" aria-labelledby="h-rank">
+    <div class="panel-head"><h2 id="h-rank">Best in species, generation by generation</h2><span class="note">Top lifetime net tai a hand within each species, against the whole mixed population</span></div>
+    <div class="legend" id="legend-rank"></div>
+    <div class="chart" id="chart-rank"></div>
+  </section>
+
+  <section class="panel" aria-labelledby="h-genes">
+    <div class="panel-head"><h2 id="h-genes">Where each style's settings went</h2><span class="note">Filled dot: each species' champion now · ring: where that species started · hover a dot for its value</span></div>
+    <div class="genes-wrap"><div class="genes" id="genes"></div></div>
+  </section>
+
+  <section class="panel" aria-labelledby="h-board">
+    <div class="panel-head"><h2 id="h-board">Leaderboard · everyone alive</h2><span class="note">Click a column to sort</span></div>
+    <div class="table-wrap"><table id="board"></table></div>
+  </section>
+</div>
+
+<script>
+const DATA = {"config":{"GENS":130,"PER":4,"POP":28,"WALLS":24,"ROUNDS":3,"BENCH_WALLS":24,"BENCH_EVERY":5,"SEED":7,"genes":{"speed":[0.4,1.6],"greed":[0,1],"minTai":[0,8],"callAppetite":[0,1],"caution":[0,1],"foldAt":[0.2,1],"read":[0,1],"noise":[0,0.3],"slip":[0,0.08],"riichi":[0,1],"focus":[0,0.9]},"species":[{"id":"grandmaster","name":"宗師 Grandmaster","from":"veteran","bounds":{}},{"id":"veteran","name":"老手 Veteran","from":"veteran","bounds":{"caution":[0.2,0.6],"greed":[0.05,0.5],"callAppetite":[0.4,0.95],"noise":[0,0.08],"slip":[0,0.02]}},{"id":"speedster","name":"快手 Speedster","from":"speedster","bounds":{"callAppetite":[0.85,1],"greed":[0,0.2],"minTai":[0,0],"speed":[1.1,1.6]}},{"id":"hunter","name":"大牌 Hunter","from":"hunter","bounds":{"greed":[0.7,1],"minTai":[3,8],"callAppetite":[0.2,0.7]}},{"id":"wall","name":"鐵壁 Iron Wall","from":"wall","bounds":{"caution":[0.8,1],"callAppetite":[0,0.3],"foldAt":[0.2,0.45],"read":[0.7,1]}},{"id":"gambler","name":"賭徒 Gambler","from":"gambler","bounds":{"caution":[0,0.1],"foldAt":[0.95,1],"riichi":[0.8,1],"focus":[0,0]}},{"id":"casual","name":"街坊 Casual","from":"casual","bounds":{"noise":[0.2,0.4],"slip":[0.05,0.1],"read":[0,0.4]}}]},"generations":113,"totalHands":227808,"minutes":257,"rankTrend":[{"id":"grandmaster","points":[[0,9.57],[1,6.32],[2,5.74],[3,5.88],[4,5.41],[5,4.92],[6,5.25],[7,10.3],[8,10.84],[9,6.37],[10,5.69],[11,5.38],[12,4.72],[13,5.17],[14,9.3],[15,7.48],[16,7.03],[17,5.93],[18,4.74],[19,4.42],[20,4.71],[21,4.33],[22,4.25],[23,4.15],[24,4.35],[25,4.18],[26,4.16],[27,3.92],[28,3.89],[29,3.98],[30,3.69],[31,3.5],[32,3.64],[33,3.55],[34,7.19],[35,3.4],[36,5.78],[37,5.47],[38,4.52],[39,4.53],[40,4.58],[41,4.22],[42,4.19],[43,4.31],[44,3.89],[45,3.41],[46,3.58],[47,3.46],[48,3.61],[49,3.7],[50,3.75],[51,3.85],[52,3.65],[53,3.75],[54,3.38],[55,3.27],[56,3.13],[57,3.08],[58,3.09],[59,3.22],[60,3.19],[61,3],[62,3.2],[63,3.3],[64,3.4],[65,7.29],[66,7.45],[67,5.37],[68,5.08],[69,3.23],[70,3.28],[71,3.54],[72,3.49],[73,3.04],[74,3.09],[75,3.05],[76,3.04],[77,3.04],[78,3.06],[79,3.06],[80,3.03],[81,3],[82,3.01],[83,3.03],[84,3.63],[85,2.91],[86,3.37],[87,2.89],[88,3.21],[89,3.23],[90,2.92],[91,6.1],[92,4.59],[93,4.72],[94,5.31],[95,8.45],[96,6.45],[97,3.83],[98,3.38],[99,3.43],[100,3.82],[101,4.25],[102,4.16],[103,4.16],[104,4.26],[105,4.19],[106,3.83],[107,3.65],[108,3.69],[109,3.36],[110,3.3],[111,3.06],[112,2.96]]},{"id":"veteran","points":[[0,4.34],[1,6.42],[2,5.24],[3,4.99],[4,3.85],[5,3.97],[6,7.16],[7,6.05],[8,5.18],[9,5.68],[10,4.41],[11,3.89],[12,3.67],[13,3.57],[14,3.5],[15,3.51],[16,3.75],[17,3.73],[18,3.83],[19,3.78],[20,3.81],[21,3.73],[22,3.5],[23,3.36],[24,3.25],[25,3.2],[26,3.13],[27,3.07],[28,3.13],[29,3.08],[30,3],[31,2.95],[32,4.13],[33,2.71],[34,3.08],[35,2.86],[36,2.36],[37,2.3],[38,2.22],[39,2.1],[40,2.07],[41,3.26],[42,2.54],[43,7.78],[44,4.86],[45,4.33],[46,3.88],[47,2.89],[48,2.03],[49,2.04],[50,2.03],[51,1.98],[52,2.03],[53,2.06],[54,2.4],[55,2.26],[56,4.66],[57,2.03],[58,1.96],[59,5.58],[60,3.57],[61,3.72],[62,3],[63,3.49],[64,3.06],[65,2.49],[66,2.34],[67,1.93],[68,2.05],[69,2.03],[70,1.83],[71,5.23],[72,1.66],[73,1.8],[74,2.31],[75,4.24],[76,3.75],[77,4.6],[78,5.58],[79,2.52],[80,3.62],[81,3.1],[82,3.09],[83,2.21],[84,2.6],[85,2.6],[86,2.11],[87,7.34],[88,3.23],[89,3.68],[90,2.68],[91,3.23],[92,3.27],[93,2.75],[94,3.16],[95,2.62],[96,2.25],[97,1.86],[98,3.61],[99,4.45],[100,4.29],[101,3.91],[102,3.24],[103,5.85],[104,5.79],[105,6.23],[106,5.43],[107,4.41],[108,3.81],[109,3.16],[110,3.24],[111,3.14],[112,2.85]]},{"id":"speedster","points":[[0,4.18],[1,4.84],[2,4.96],[3,9.43],[4,8.27],[5,6.95],[6,6.27],[7,6.58],[8,5.95],[9,5.45],[10,4.94],[11,4.97],[12,5.09],[13,5.01],[14,4.85],[15,4.78],[16,4.63],[17,4.79],[18,4.82],[19,4.74],[20,4.73],[21,4.64],[22,4.6],[23,4.45],[24,4.49],[25,4.45],[26,4.34],[27,4.28],[28,4.24],[29,4.2],[30,4.29],[31,4.38],[32,4.29],[33,4.26],[34,4.17],[35,4.13],[36,4.03],[37,3.99],[38,3.95],[39,3.89],[40,3.78],[41,3.8],[42,3.72],[43,3.68],[44,3.66],[45,3.74],[46,3.71],[47,3.75],[48,3.73],[49,3.73],[50,3.62],[51,3.61],[52,3.58],[53,3.58],[54,3.53],[55,3.44],[56,3.44],[57,4.76],[58,8.06],[59,5.14],[60,3.67],[61,3.71],[62,3.56],[63,3.76],[64,3.61],[65,3.32],[66,3.27],[67,3.33],[68,3.46],[69,4.77],[70,3.4],[71,4.22],[72,3.03],[73,8.62],[74,5.38],[75,6.02],[76,5.04],[77,5.1],[78,4.58],[79,4.01],[80,3.83],[81,3.94],[82,4.09],[83,3.68],[84,3.26],[85,7.29],[86,3.61],[87,3.66],[88,7.7],[89,3.83],[90,3.72],[91,3.56],[92,3.41],[93,3.44],[94,3.48],[95,3.51],[96,3.5],[97,3.4],[98,3.31],[99,3.38],[100,3.39],[101,3.32],[102,3.13],[103,3],[104,2.92],[105,2.82],[106,7.06],[107,2.9],[108,2.91],[109,6.33],[110,2.9],[111,2.99],[112,7.97]]},{"id":"hunter","points":[[0,0.68],[1,0.86],[2,0.84],[3,2.1],[4,1.23],[5,0.09],[6,-2.24],[7,-1.57],[8,-1.12],[9,-0.8],[10,-1.49],[11,0],[12,-0.82],[13,-0.72],[14,-0.22],[15,-0.63],[16,1],[17,1.8],[18,0.65],[19,0.01],[20,0.05],[21,0.97],[22,5.05],[23,1],[24,4.59],[25,1.57],[26,0.01],[27,2.61],[28,1.56],[29,0.9],[30,0.27],[31,0.27],[32,0.89],[33,-0.21],[34,0.12],[35,-0.08],[36,2.79],[37,1.56],[38,1.1],[39,2.61],[40,1.24],[41,1.08],[42,0.42],[43,-0.01],[44,1.4],[45,-0.14],[46,1],[47,-0.56],[48,-0.18],[49,-0.28],[50,-0.34],[51,-1.92],[52,-1.31],[53,-0.52],[54,1.43],[55,-0.09],[56,-0.63],[57,0.07],[58,-0.24],[59,0.21],[60,0.63],[61,0.39],[62,1.74],[63,1.23],[64,1.78],[65,1.25],[66,0.27],[67,1.5],[68,-0.53],[69,-0.19],[70,-0.18],[71,-0.81],[72,-1.06],[73,1.93],[74,-1.26],[75,-0.73],[76,-1.11],[77,-0.17],[78,-0.73],[79,0.38],[80,-1],[81,-1.68],[82,0.03],[83,-0.71],[84,-1.02],[85,-1.16],[86,0.48],[87,-0.34],[88,-0.3],[89,-0.42],[90,-0.49],[91,1.26],[92,0.26],[93,0.3],[94,-0.42],[95,-0.61],[96,-0.08],[97,0.24],[98,-0.26],[99,-0.23],[100,-0.17],[101,-0.55],[102,-0.44],[103,-1.17],[104,-0.2],[105,-0.32],[106,0.13],[107,1.43],[108,2.25],[109,0.97],[110,0.57],[111,3.93],[112,1.91]]},{"id":"wall","points":[[0,2.11],[1,-0.76],[2,-0.9],[3,-1.46],[4,-1.83],[5,1.56],[6,1.15],[7,-0.18],[8,0.75],[9,-0.81],[10,-0.25],[11,-1.31],[12,-1.01],[13,0.55],[14,0.86],[15,1.45],[16,-0.91],[17,0.15],[18,0.7],[19,-0.48],[20,0.45],[21,0.26],[22,-1.23],[23,-0.56],[24,1.98],[25,0.62],[26,-0.3],[27,0.99],[28,3.62],[29,2.44],[30,1.77],[31,3.13],[32,0.48],[33,0.29],[34,-0.29],[35,0.66],[36,-0.7],[37,1.17],[38,0.08],[39,-0.79],[40,-0.87],[41,0.4],[42,1.76],[43,-0.91],[44,0.26],[45,-0.64],[46,-1.49],[47,-1.26],[48,-1.53],[49,-1.68],[50,1.18],[51,-2.39],[52,-1.38],[53,1.15],[54,0],[55,5.95],[56,2.06],[57,-0.27],[58,-1.39],[59,0.05],[60,-1.2],[61,-0.89],[62,-1.84],[63,-1.75],[64,0.04],[65,0.59],[66,-0.32],[67,-1.56],[68,-0.86],[69,-1.39],[70,-1.7],[71,-1.52],[72,0.01],[73,-1.31],[74,-3.51],[75,-1.31],[76,-2.26],[77,-2.1],[78,-0.87],[79,-2.14],[80,0.16],[81,-0.97],[82,1.07],[83,-0.35],[84,0.33],[85,-0.3],[86,-1.17],[87,0.18],[88,-1.05],[89,-1.55],[90,-1.88],[91,-1.58],[92,-1.92],[93,-0.97],[94,-0.37],[95,-0.92],[96,-1.09],[97,-1.32],[98,-2.41],[99,-0.35],[100,-1.55],[101,-1.02],[102,-1.12],[103,-1.53],[104,-1.53],[105,-1.7],[106,-1.73],[107,-0.94],[108,-1.12],[109,-1.16],[110,0.42],[111,-1.4],[112,-1.1]]},{"id":"gambler","points":[[0,0.32],[1,1.28],[2,0.91],[3,0.06],[4,2.42],[5,3.75],[6,1.63],[7,1.79],[8,0.46],[9,0.34],[10,0.43],[11,3.32],[12,4.45],[13,2.78],[14,1.88],[15,1.51],[16,3.7],[17,1.5],[18,1.65],[19,0.08],[20,0.2],[21,2.21],[22,3.27],[23,2.95],[24,1.3],[25,3.69],[26,4.84],[27,2.07],[28,1.32],[29,1.51],[30,1.62],[31,4.98],[32,6.45],[33,6.03],[34,5.02],[35,3.94],[36,4.26],[37,3.84],[38,3.69],[39,3.27],[40,3.43],[41,3.25],[42,8.18],[43,6.1],[44,4.91],[45,3.85],[46,3.54],[47,5.82],[48,4.01],[49,2.93],[50,3.17],[51,2.93],[52,7.69],[53,3.85],[54,2.67],[55,3.15],[56,2.85],[57,2.95],[58,3.05],[59,2.73],[60,2.59],[61,2.76],[62,2.88],[63,2.98],[64,3.06],[65,3.34],[66,3.24],[67,3.39],[68,3.34],[69,5.95],[70,3.29],[71,3.21],[72,6.41],[73,4.54],[74,3.04],[75,3.82],[76,2.9],[77,3.65],[78,3.6],[79,7.11],[80,6.38],[81,5.64],[82,5.61],[83,5.3],[84,5.09],[85,4.36],[86,3.76],[87,3.27],[88,2.87],[89,2.92],[90,3.26],[91,3.57],[92,3.63],[93,3.83],[94,3.78],[95,3.94],[96,3.79],[97,3.86],[98,6.71],[99,3.54],[100,4.31],[101,3.54],[102,3.59],[103,3.59],[104,3.55],[105,3.57],[106,3.71],[107,3.61],[108,3.72],[109,3.77],[110,3.78],[111,3.86],[112,3.83]]},{"id":"casual","points":[[0,-3],[1,-3.18],[2,-1.03],[3,-4.39],[4,-2],[5,-2.47],[6,-2.87],[7,-3.51],[8,-4.43],[9,-4.58],[10,-1.04],[11,-3.2],[12,-1.94],[13,-2.76],[14,-3.8],[15,-4.23],[16,-3.45],[17,-2.91],[18,-1.29],[19,-3.39],[20,-2.97],[21,-2.13],[22,-1.78],[23,-2.89],[24,-3.41],[25,-5.1],[26,-3.06],[27,-2.84],[28,-2.76],[29,-1.62],[30,0.14],[31,-1.58],[32,-1.68],[33,-1.64],[34,-2.18],[35,-2.42],[36,-2.27],[37,-0.85],[38,-0.7],[39,-2.18],[40,-2.67],[41,-2.97],[42,-3.3],[43,-3.4],[44,0.1],[45,-0.42],[46,-1.62],[47,1.87],[48,-0.76],[49,-0.88],[50,-1.43],[51,-0.62],[52,-1.01],[53,-1.56],[54,-1.57],[55,-1.84],[56,-1.21],[57,-1.36],[58,-2.33],[59,-1.64],[60,-2.25],[61,-3.78],[62,-4.39],[63,-2.51],[64,-2.57],[65,-4.16],[66,-2.19],[67,-2.48],[68,0.04],[69,-1.44],[70,-1.91],[71,-0.19],[72,-1.03],[73,-1.85],[74,-1.75],[75,-1.33],[76,-1.17],[77,-0.79],[78,-1.09],[79,-0.3],[80,-1.9],[81,-1.99],[82,-0.97],[83,-1.34],[84,-2.52],[85,-2.53],[86,-1.9],[87,-0.94],[88,1.22],[89,-1.19],[90,-1.13],[91,0.16],[92,-1.72],[93,-2.75],[94,-2.07],[95,-3.17],[96,-1.06],[97,-1.81],[98,-1.61],[99,-1.38],[100,-1.04],[101,-1.76],[102,-1.58],[103,-0.76],[104,-3.35],[105,-0.74],[106,-2.17],[107,1.73],[108,-0.41],[109,-0.38],[110,-0.87],[111,-1.08],[112,-0.76]]}],"benchTrend":[{"id":"grandmaster","points":[[0,7.32],[5,0.72],[10,0.05],[15,-4.29],[20,-1.69],[25,0.45],[30,3.19],[35,1.46],[40,3.03],[45,2.1],[50,2.98],[55,7.42],[60,-0.47],[65,2.29],[70,-2.09],[75,-1.21],[80,9.23],[85,7.45],[90,-0.54],[95,4.75],[100,5.23],[105,8.36],[110,2.65]]},{"id":"veteran","points":[[0,-1.95],[5,0.52],[10,2.27],[15,4.04],[20,-4.24],[25,-4.24],[30,-1.8],[35,3.43],[40,0.14],[45,1.3],[50,1.02],[55,-1.23],[60,-1.93],[65,-1.23],[70,1.31],[75,2.94],[80,2.48],[85,1.78],[90,10.54],[95,5.18],[100,6.2],[105,-0.78],[110,7.41]]},{"id":"speedster","points":[[0,0.17],[5,-0.6],[10,-0.24],[15,-0.48],[20,0.74],[25,8.88],[30,1.21],[35,6.69],[40,-2.84],[45,2.7],[50,1.06],[55,1.5],[60,1.79],[65,1.7],[70,-1.74],[75,-4.19],[80,1.73],[85,4.61],[90,8.99],[95,2.35],[100,1.06],[105,5.52],[110,1.33]]},{"id":"hunter","points":[[0,-2.98],[5,-0.75],[10,-3.51],[15,-6.7],[20,-2.71],[25,-3.92],[30,0.82],[35,-1.6],[40,1.24],[45,-1.28],[50,-5.46],[55,-0.18],[60,-1.86],[65,-5.07],[70,4.81],[75,-2.18],[80,-6.48],[85,-2.47],[90,1.13],[95,-3.01],[100,-1.44],[105,-1.95],[110,2.06]]},{"id":"wall","points":[[0,-5.83],[5,-7.7],[10,-6.49],[15,-4.22],[20,-0.99],[25,1.33],[30,-0.26],[35,-4.04],[40,0.93],[45,-5.18],[50,-1.15],[55,-1.19],[60,1.34],[65,-3.37],[70,1.15],[75,-0.87],[80,-2.16],[85,0.18],[90,2.1],[95,-4.11],[100,-4.06],[105,-3.15],[110,4.01]]},{"id":"gambler","points":[[0,-1.73],[5,2.58],[10,0.65],[15,2.73],[20,-0.69],[25,-0.29],[30,3.05],[35,-0.89],[40,-1.48],[45,9.3],[50,0.59],[55,3.49],[60,2],[65,-1.85],[70,5.79],[75,3.27],[80,0.23],[85,0.89],[90,4.31],[95,8.94],[100,2.73],[105,0.27],[110,5.34]]},{"id":"casual","points":[[0,-1.62],[5,-5.02],[10,-5.31],[15,-6.04],[20,-5.04],[25,-2.93],[30,2.22],[35,-6.27],[40,-3.55],[45,-4.75],[50,-0.87],[55,-4.06],[60,-4.87],[65,-5.33],[70,-4.73],[75,-0.93],[80,-3.34],[85,-2.7],[90,-3.19],[95,0.75],[100,1.51],[105,1.71],[110,-4.52]]}],"startGenes":{"grandmaster":{"speed":1,"greed":0,"minTai":0,"callAppetite":1,"caution":0.35,"foldAt":1,"read":0.95,"noise":0.04,"slip":0.01,"riichi":1,"focus":0},"veteran":{"speed":1.355,"greed":0.05,"minTai":0,"callAppetite":0.95,"caution":0.35,"foldAt":1,"read":0.95,"noise":0.028,"slip":0.01,"riichi":1,"focus":0},"speedster":{"speed":1.272,"greed":0,"minTai":0,"callAppetite":1,"caution":0.15,"foldAt":0.778,"read":0.476,"noise":0,"slip":0.03,"riichi":0.9,"focus":0},"hunter":{"speed":1.346,"greed":0.95,"minTai":5,"callAppetite":0.544,"caution":0.475,"foldAt":0.5,"read":0.7,"noise":0.141,"slip":0.014,"riichi":0.7,"focus":0},"wall":{"speed":0.866,"greed":0.35,"minTai":2,"callAppetite":0.118,"caution":0.984,"foldAt":0.225,"read":1,"noise":0.03,"slip":0.01,"riichi":0,"focus":0},"gambler":{"speed":1,"greed":0.863,"minTai":0,"callAppetite":0.86,"caution":0.024,"foldAt":0.984,"read":0.131,"noise":0.15,"slip":0.04,"riichi":1,"focus":0},"casual":{"speed":0.779,"greed":0.4,"minTai":2,"callAppetite":0.6,"caution":0.435,"foldAt":0.383,"read":0.182,"noise":0.35,"slip":0.085,"riichi":0.41,"focus":0}},"living":[{"id":"g112-1586","name":"阿珍67","species":"speedster","style":"caller, 叮-happy","born":112,"parents":["g74-1054"],"genes":{"speed":1.176,"greed":0.002,"minTai":0,"callAppetite":0.973,"caution":0.42,"foldAt":0.778,"read":0.499,"noise":0,"slip":0.04,"riichi":0.987,"focus":0.324},"hands":288,"net":7.97,"win":0.278,"tsumo":0.413,"dealIn":0.076,"avgWin":55.6,"avgLoss":30.4,"calls":1.38,"riichi":0.455,"best":97},{"id":"g79-1130","name":"阿珍48","species":"gambler","style":"caller, reckless, 叮-happy","born":79,"parents":["g72-1032"],"genes":{"speed":1.6,"greed":0.556,"minTai":0,"callAppetite":0.882,"caution":0.035,"foldAt":1,"read":0,"noise":0,"slip":0,"riichi":0.941,"focus":0},"hands":9792,"net":3.83,"win":0.269,"tsumo":0.362,"dealIn":0.169,"avgWin":53,"avgLoss":30.7,"calls":1.41,"riichi":0.441,"best":128},{"id":"g74-1054","name":"阿華44","species":"speedster","style":"caller, reckless, 叮-happy","born":74,"parents":["g57-817","g73-1041"],"genes":{"speed":1.225,"greed":0.002,"minTai":0,"callAppetite":0.973,"caution":0.142,"foldAt":0.778,"read":0.333,"noise":0,"slip":0.04,"riichi":0.987,"focus":0.324},"hands":11232,"net":2.94,"win":0.249,"tsumo":0.322,"dealIn":0.148,"avgWin":51.2,"avgLoss":30.8,"calls":1.3,"riichi":0.407,"best":200},{"id":"g91-1289","name":"阿慧54","species":"grandmaster","style":"caller, reckless, 叮-happy","born":91,"parents":["g35-504","g81-1148"],"genes":{"speed":0.694,"greed":0.102,"minTai":2,"callAppetite":0.861,"caution":0.145,"foldAt":0.914,"read":0.778,"noise":0,"slip":0.001,"riichi":0.844,"focus":0.119},"hands":6336,"net":2.96,"win":0.252,"tsumo":0.353,"dealIn":0.146,"avgWin":51.1,"avgLoss":30.9,"calls":1.27,"riichi":0.389,"best":130},{"id":"g95-1344","name":"阿明57","species":"grandmaster","style":"caller, reckless, 叮-happy","born":95,"parents":["g35-504"],"genes":{"speed":0.897,"greed":0.189,"minTai":1,"callAppetite":1,"caution":0.145,"foldAt":0.914,"read":0.98,"noise":0,"slip":0.009,"riichi":0.844,"focus":0},"hands":5184,"net":2.96,"win":0.249,"tsumo":0.351,"dealIn":0.144,"avgWin":51.5,"avgLoss":29.9,"calls":1.27,"riichi":0.389,"best":107},{"id":"g103-1459","name":"阿美61","species":"veteran","style":"caller, greedy, 叮-happy","born":103,"parents":["g99-1402","g101-1430"],"genes":{"speed":1.477,"greed":0.05,"minTai":4,"callAppetite":0.95,"caution":0.224,"foldAt":0.947,"read":0.505,"noise":0.003,"slip":0.003,"riichi":0.796,"focus":0},"hands":2880,"net":2.85,"win":0.253,"tsumo":0.322,"dealIn":0.142,"avgWin":49.5,"avgLoss":30.1,"calls":1.26,"riichi":0.394,"best":93},{"id":"g102-1452","name":"阿光61","species":"gambler","style":"caller, reckless, 叮-happy","born":102,"parents":["g79-1130","g97-1383"],"genes":{"speed":1.6,"greed":0.556,"minTai":0,"callAppetite":0.978,"caution":0.035,"foldAt":0.998,"read":0,"noise":0,"slip":0,"riichi":1,"focus":0},"hands":3168,"net":2.68,"win":0.243,"tsumo":0.355,"dealIn":0.159,"avgWin":53,"avgLoss":30.1,"calls":1.27,"riichi":0.443,"best":157},{"id":"g109-1545","name":"阿標65","species":"speedster","style":"caller, 叮-happy","born":109,"parents":["g106-1502","g74-1054"],"genes":{"speed":1.225,"greed":0.002,"minTai":0,"callAppetite":0.968,"caution":0.321,"foldAt":0.778,"read":0.181,"noise":0,"slip":0.04,"riichi":1,"focus":0.324},"hands":1152,"net":3.01,"win":0.253,"tsumo":0.277,"dealIn":0.124,"avgWin":46.8,"avgLoss":28.3,"calls":1.29,"riichi":0.42,"best":88},{"id":"g112-1592","name":"阿賢67","species":"gambler","style":"caller, reckless, 叮-happy","born":112,"parents":["g79-1130","g102-1452"],"genes":{"speed":1.6,"greed":0.556,"minTai":0,"callAppetite":0.978,"caution":0.039,"foldAt":1,"read":0,"noise":0.007,"slip":0,"riichi":1,"focus":0},"hands":288,"net":3.18,"win":0.271,"tsumo":0.346,"dealIn":0.181,"avgWin":48.7,"avgLoss":32.3,"calls":1.59,"riichi":0.517,"best":122},{"id":"g111-1574","name":"阿雄66","species":"hunter","style":"careful, greedy, 叮-happy","born":111,"parents":["g107-1518"],"genes":{"speed":0.686,"greed":0.793,"minTai":3,"callAppetite":0.528,"caution":0.601,"foldAt":1,"read":0.433,"noise":0.034,"slip":0.019,"riichi":0.759,"focus":0},"hands":576,"net":1.91,"win":0.182,"tsumo":0.343,"dealIn":0.128,"avgWin":59.5,"avgLoss":31.3,"calls":0.97,"riichi":0.269,"best":102},{"id":"g112-1584","name":"阿明67","species":"veteran","style":"caller, greedy, fast","born":112,"parents":["g111-1571","g103-1459"],"genes":{"speed":1.477,"greed":0.05,"minTai":4,"callAppetite":0.95,"caution":0.224,"foldAt":0.907,"read":0.505,"noise":0.026,"slip":0.008,"riichi":0.509,"focus":0},"hands":288,"net":1.52,"win":0.233,"tsumo":0.463,"dealIn":0.135,"avgWin":56.8,"avgLoss":37.1,"calls":1.33,"riichi":0.292,"best":80},{"id":"g111-1571","name":"阿琪66","species":"veteran","style":"caller, greedy, 叮-happy","born":111,"parents":["g108-1529","g103-1459"],"genes":{"speed":1.477,"greed":0.06,"minTai":4,"callAppetite":0.95,"caution":0.224,"foldAt":1,"read":0.755,"noise":0.032,"slip":0.002,"riichi":1,"focus":0},"hands":576,"net":1.1,"win":0.22,"tsumo":0.346,"dealIn":0.148,"avgWin":52.1,"avgLoss":29.6,"calls":1.35,"riichi":0.385,"best":81},{"id":"g112-1593","name":"阿標67","species":"gambler","style":"caller, reckless, 叮-happy","born":112,"parents":["g102-1452","g79-1130"],"genes":{"speed":1.6,"greed":0.556,"minTai":0,"callAppetite":0.882,"caution":0.035,"foldAt":1,"read":0,"noise":0.053,"slip":0,"riichi":0.949,"focus":0},"hands":288,"net":1.31,"win":0.236,"tsumo":0.324,"dealIn":0.142,"avgWin":48.5,"avgLoss":32.5,"calls":1.31,"riichi":0.347,"best":98},{"id":"g112-1583","name":"阿英66","species":"grandmaster","style":"caller, reckless, 叮-happy","born":112,"parents":["g95-1344","g91-1289"],"genes":{"speed":0.694,"greed":0.189,"minTai":2,"callAppetite":0.861,"caution":0.145,"foldAt":0.899,"read":0.77,"noise":0,"slip":0.009,"riichi":0.844,"focus":0.24},"hands":288,"net":1.01,"win":0.226,"tsumo":0.354,"dealIn":0.174,"avgWin":49.9,"avgLoss":31.9,"calls":1.28,"riichi":0.34,"best":75},{"id":"g112-1582","name":"阿華66","species":"grandmaster","style":"caller, 叮-happy","born":112,"parents":["g91-1289","g95-1344"],"genes":{"speed":0.943,"greed":0.189,"minTai":2,"callAppetite":1,"caution":0.328,"foldAt":0.914,"read":0.508,"noise":0,"slip":0,"riichi":0.828,"focus":0},"hands":288,"net":0.64,"win":0.247,"tsumo":0.239,"dealIn":0.153,"avgWin":43.7,"avgLoss":35.9,"calls":1.23,"riichi":0.385,"best":95},{"id":"g107-1518","name":"阿偉64","species":"hunter","style":"careful, greedy, 叮-happy","born":107,"parents":["g106-1504"],"genes":{"speed":0.686,"greed":0.793,"minTai":3,"callAppetite":0.528,"caution":0.601,"foldAt":1,"read":0.19,"noise":0.063,"slip":0.019,"riichi":0.759,"focus":0},"hands":1728,"net":0.22,"win":0.157,"tsumo":0.373,"dealIn":0.12,"avgWin":57.3,"avgLoss":30.3,"calls":0.99,"riichi":0.277,"best":89},{"id":"g112-1587","name":"阿玲67","species":"speedster","style":"caller, 叮-happy","born":112,"parents":["g109-1545"],"genes":{"speed":1.209,"greed":0.027,"minTai":0,"callAppetite":0.968,"caution":0.321,"foldAt":0.513,"read":0.181,"noise":0,"slip":0.04,"riichi":1,"focus":0.324},"hands":288,"net":-0.64,"win":0.212,"tsumo":0.246,"dealIn":0.156,"avgWin":40.6,"avgLoss":29.5,"calls":1.17,"riichi":0.399,"best":54},{"id":"g112-1595","name":"阿琪67","species":"casual","style":"careful, 叮-happy, erratic","born":112,"parents":["g111-1580","g107-1524"],"genes":{"speed":0.6,"greed":0.028,"minTai":2,"callAppetite":0.739,"caution":0.7,"foldAt":0.568,"read":0.249,"noise":0.28,"slip":0.067,"riichi":0.994,"focus":0},"hands":288,"net":-0.76,"win":0.17,"tsumo":0.286,"dealIn":0.115,"avgWin":49.1,"avgLoss":30.3,"calls":1.15,"riichi":0.184,"best":113},{"id":"g112-1591","name":"阿豪67","species":"wall","style":"門清, careful","born":112,"parents":["g110-1563"],"genes":{"speed":1.089,"greed":0,"minTai":1,"callAppetite":0.081,"caution":0.877,"foldAt":0.296,"read":0.72,"noise":0,"slip":0.063,"riichi":0.389,"focus":0.876},"hands":288,"net":-1.1,"win":0.135,"tsumo":0.41,"dealIn":0.097,"avgWin":66.6,"avgLoss":21.4,"calls":0.32,"riichi":0.16,"best":71},{"id":"g112-1585","name":"阿強67","species":"veteran","style":"caller, greedy, 叮-happy","born":112,"parents":["g103-1459"],"genes":{"speed":1.477,"greed":0.05,"minTai":4,"callAppetite":0.95,"caution":0.224,"foldAt":0.947,"read":0.505,"noise":0.003,"slip":0.005,"riichi":0.796,"focus":0},"hands":288,"net":-1.32,"win":0.201,"tsumo":0.172,"dealIn":0.135,"avgWin":42.7,"avgLoss":29.3,"calls":1.09,"riichi":0.351,"best":71},{"id":"g110-1563","name":"阿玲66","species":"wall","style":"門清, careful, no-叮","born":110,"parents":["g109-1548","g108-1534"],"genes":{"speed":1.094,"greed":0.209,"minTai":1,"callAppetite":0.081,"caution":0.877,"foldAt":0.296,"read":0.72,"noise":0,"slip":0.068,"riichi":0.198,"focus":0.876},"hands":864,"net":-1.2,"win":0.149,"tsumo":0.24,"dealIn":0.095,"avgWin":50.7,"avgLoss":27.7,"calls":0.28,"riichi":0.089,"best":78},{"id":"g111-1576","name":"阿德66","species":"wall","style":"門清, careful, no-叮","born":111,"parents":["g110-1563","g109-1548"],"genes":{"speed":1.094,"greed":0.209,"minTai":0,"callAppetite":0.033,"caution":0.8,"foldAt":0.296,"read":0.742,"noise":0,"slip":0.08,"riichi":0.198,"focus":0.876},"hands":576,"net":-1.45,"win":0.156,"tsumo":0.3,"dealIn":0.09,"avgWin":51.5,"avgLoss":29.5,"calls":0.28,"riichi":0.085,"best":88},{"id":"g112-1588","name":"阿輝67","species":"hunter","style":"greedy, 叮-happy","born":112,"parents":["g111-1574","g107-1518"],"genes":{"speed":0.686,"greed":0.793,"minTai":3,"callAppetite":0.538,"caution":0.472,"foldAt":1,"read":0.433,"noise":0,"slip":0.019,"riichi":0.818,"focus":0},"hands":288,"net":-2.16,"win":0.188,"tsumo":0.185,"dealIn":0.181,"avgWin":46.9,"avgLoss":29.9,"calls":0.95,"riichi":0.302,"best":122},{"id":"g107-1524","name":"阿光64","species":"casual","style":"caller, careful, 叮-happy","born":107,"parents":["g105-1496"],"genes":{"speed":0.692,"greed":0.028,"minTai":2,"callAppetite":0.915,"caution":0.687,"foldAt":0.569,"read":0.299,"noise":0.28,"slip":0.068,"riichi":0.994,"focus":0.108},"hands":1728,"net":-1.31,"win":0.156,"tsumo":0.353,"dealIn":0.089,"avgWin":51.5,"avgLoss":30.3,"calls":1.22,"riichi":0.239,"best":84},{"id":"g112-1589","name":"阿芬67","species":"hunter","style":"careful, greedy, 叮-happy","born":112,"parents":["g111-1574","g107-1518"],"genes":{"speed":0.686,"greed":0.793,"minTai":3,"callAppetite":0.528,"caution":0.601,"foldAt":1,"read":0.19,"noise":0.063,"slip":0.01,"riichi":0.759,"focus":0},"hands":288,"net":-3.1,"win":0.17,"tsumo":0.245,"dealIn":0.135,"avgWin":46.8,"avgLoss":32.5,"calls":0.89,"riichi":0.257,"best":79},{"id":"g111-1580","name":"阿龍66","species":"casual","style":"caller, careful, 叮-happy","born":111,"parents":["g110-1567"],"genes":{"speed":0.584,"greed":0.029,"minTai":2,"callAppetite":0.833,"caution":0.687,"foldAt":0.597,"read":0.249,"noise":0.28,"slip":0.067,"riichi":0.994,"focus":0},"hands":576,"net":-2.38,"win":0.139,"tsumo":0.375,"dealIn":0.108,"avgWin":51.6,"avgLoss":29.4,"calls":1.34,"riichi":0.238,"best":84},{"id":"g112-1590","name":"阿偉67","species":"wall","style":"門清, careful, no-叮","born":112,"parents":["g111-1576","g110-1563"],"genes":{"speed":1.229,"greed":0.364,"minTai":1,"callAppetite":0.09,"caution":0.917,"foldAt":0.296,"read":0.72,"noise":0,"slip":0.071,"riichi":0.198,"focus":0.849},"hands":288,"net":-4.23,"win":0.101,"tsumo":0.276,"dealIn":0.09,"avgWin":47.8,"avgLoss":31.3,"calls":0.21,"riichi":0.08,"best":71},{"id":"g112-1594","name":"阿娟67","species":"casual","style":"caller, careful, 叮-happy","born":112,"parents":["g107-1524"],"genes":{"speed":0.692,"greed":0.028,"minTai":2,"callAppetite":0.915,"caution":0.687,"foldAt":0.569,"read":0.299,"noise":0.28,"slip":0.066,"riichi":0.917,"focus":0.108},"hands":288,"net":-5.7,"win":0.135,"tsumo":0.231,"dealIn":0.153,"avgWin":44.7,"avgLoss":29.8,"calls":1.18,"riichi":0.264,"best":74}],"lastBench":{"gen":110,"rows":[{"species":"grandmaster","name":"阿明57","net":2.65,"hands":96},{"species":"veteran","name":"阿美61","net":7.41,"hands":96},{"species":"speedster","name":"阿標65","net":1.33,"hands":96},{"species":"hunter","name":"阿偉64","net":2.06,"hands":96},{"species":"wall","name":"阿珍66","net":4.01,"hands":96},{"species":"gambler","name":"阿珍48","net":5.34,"hands":96},{"species":"casual","name":"阿偉66","net":-4.52,"hands":96}],"refs":[{"name":"老手 Veteran","net":-4.21},{"name":"基本 Basic","net":5.2},{"name":"快手 Speedster","net":-3.64}]},"updated":"2026-10-19 20:48","final":{"note":"1,200 hands per table, every wall dealt four times with the bots rotated a seat each time. Net tai a hand; evolved bots in bold.","tables":[{"title":"Grandmaster (first evolved pick) vs the originals","hands":"1,200","rows":[{"name":"Grandmaster (first pick)","evolved":true,"net":2.44,"win":"26.5%","dealIn":"14.3%","riichi":"37.3%"},{"name":"Basic","evolved":false,"net":0.46,"win":"25.6%","dealIn":"18.3%","riichi":"0.0%"},{"name":"Veteran","evolved":false,"net":-0.83,"win":"20.0%","dealIn":"13.7%","riichi":"32.6%"},{"name":"Speedster","evolved":false,"net":-2.07,"win":"17.0%","dealIn":"18.4%","riichi":"28.3%"}]},{"title":"Veteran and Speedster: evolved vs original","hands":"1,200","rows":[{"name":"Veteran","evolved":true,"net":1.83,"win":"23.3%","dealIn":"15.5%","riichi":"35.8%"},{"name":"Speedster","evolved":true,"net":1.49,"win":"22.8%","dealIn":"14.0%","riichi":"39.0%"},{"name":"Veteran","evolved":false,"net":-0.12,"win":"20.1%","dealIn":"11.9%","riichi":"35.4%"},{"name":"Speedster","evolved":false,"net":-3.21,"win":"17.3%","dealIn":"16.3%","riichi":"28.8%"}]},{"title":"Hunter and Iron Wall: evolved vs original","hands":"1,200","rows":[{"name":"Iron Wall","evolved":true,"net":1.82,"win":"14.7%","dealIn":"7.5%","riichi":"11.3%"},{"name":"Hunter","evolved":false,"net":0.67,"win":"12.1%","dealIn":"7.6%","riichi":"22.8%"},{"name":"Hunter","evolved":true,"net":0.62,"win":"13.0%","dealIn":"8.6%","riichi":"29.9%"},{"name":"Iron Wall","evolved":false,"net":-3.11,"win":"9.0%","dealIn":"6.3%","riichi":"8.7%"}]},{"title":"Gambler and Casual: evolved vs original","hands":"1,200","rows":[{"name":"Gambler","evolved":true,"net":7.71,"win":"32.4%","dealIn":"13.0%","riichi":"46.0%"},{"name":"Casual","evolved":true,"net":-0.33,"win":"17.3%","dealIn":"10.1%","riichi":"25.0%"},{"name":"Gambler","evolved":false,"net":-2.81,"win":"18.5%","dealIn":"21.8%","riichi":"32.1%"},{"name":"Casual","evolved":false,"net":-4.58,"win":"13.3%","dealIn":"13.5%","riichi":"17.4%"}]},{"title":"All-evolved final","hands":"1,200","rows":[{"name":"Gambler","evolved":true,"net":1.38,"win":"25.4%","dealIn":"19.9%","riichi":"40.0%"},{"name":"Grandmaster (first pick)","evolved":true,"net":-0.07,"win":"23.8%","dealIn":"16.2%","riichi":"33.3%"},{"name":"Veteran","evolved":true,"net":-0.33,"win":"20.1%","dealIn":"14.6%","riichi":"31.8%"},{"name":"Speedster","evolved":true,"net":-0.98,"win":"20.3%","dealIn":"13.3%","riichi":"33.8%"}]},{"title":"Grandmaster candidates: Gambler settings with and without full reads","hands":"1,200","rows":[{"name":"Grandmaster (adopted)","evolved":true,"net":1.05,"win":"25.0%","dealIn":"18.8%","riichi":"37.6%"},{"name":"Gambler","evolved":true,"net":0.34,"win":"24.3%","dealIn":"19.7%","riichi":"38.3%"},{"name":"Grandmaster (first pick)","evolved":true,"net":-0.59,"win":"21.8%","dealIn":"15.9%","riichi":"30.8%"},{"name":"Gambler settings, no reads","evolved":true,"net":-0.79,"win":"23.8%","dealIn":"19.5%","riichi":"35.7%"}]}]}};
+const SP = DATA.config.species;
+const COLOR = Object.fromEntries(SP.map((s, i) => [s.id, `var(--s${i + 1})`]));
+const NAME = Object.fromEntries(SP.map((s) => [s.id, s.name]));
+const zh = (id) => NAME[id].split(" ")[0];
+const en = (id) => NAME[id].split(" ").slice(1).join(" ");
+const fmt = (x, d = 2) => (x === null || x === undefined ? "–" : (x > 0 ? "+" : "") + x.toFixed(d));
+const pct = (x) => (x === null ? "–" : (x * 100).toFixed(1) + "%");
+const cls = (x) => (x > 0 ? "pos" : x < 0 ? "neg" : "");
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+
+document.getElementById("sub").textContent = `${DATA.generations} generations · updated ${DATA.updated}`;
+document.getElementById("facts").innerHTML = [
+  [DATA.generations, "generations"],
+  [DATA.totalHands.toLocaleString(), "hands played"],
+  [DATA.living.length, "bots alive"],
+  [`${Math.floor(DATA.minutes / 60)}h ${DATA.minutes % 60}m`, "of play"],
+].map(([v, l]) => `<div><b>${v}</b><span>${l}</span></div>`).join("");
+
+// ---- Final tournament ----
+if (DATA.final) {
+  document.getElementById("final").hidden = false;
+  document.getElementById("final-note").textContent = DATA.final.note;
+  document.getElementById("final-tables").innerHTML = DATA.final.tables.map((t) => `
+    <div class="final-table">
+      <div class="eyebrow">${esc(t.title)}</div>
+      <table><thead><tr><th>Bot</th><th>Net/hand</th><th>Win</th><th>Deal-in</th><th>叮</th></tr></thead><tbody>
+      ${t.rows.map((r) => `<tr><td>${r.evolved ? "<b>" : ""}${esc(r.name)}${r.evolved ? "</b>" : ""} <span class="style">${r.evolved ? "evolved" : "original"}</span></td><td class="num ${cls(r.net)}">${fmt(r.net)}</td><td class="num">${esc(r.win)}</td><td class="num">${esc(r.dealIn)}</td><td class="num">${esc(r.riichi)}</td></tr>`).join("")}
+      </tbody></table>
+      <p class="note">${esc(t.hands)} hands</p>
+    </div>`).join("");
+}
+
+// ---- Champions ----
+// A species' champion: its best bot with 1,000+ hands (a newcomer can top it
+// on a few hundred lucky hands), or its most experienced if none has that many.
+const champs = SP.map((s) => {
+  const mine = DATA.living.filter((b) => b.species === s.id);
+  const proven = mine.filter((b) => b.hands >= 1000);
+  return proven.length ? proven.sort((a, b) => (b.net ?? -99) - (a.net ?? -99))[0] : mine.sort((a, b) => b.hands - a.hands)[0];
+});
+document.getElementById("champs").innerHTML = champs.map((b) => `
+  <article class="champ">
+    <div class="champ-top">
+      <span class="sp"><span class="dot" style="background:${COLOR[b.species]}"></span>${zh(b.species)}</span>
+      <span class="score ${cls(b.net)}">${fmt(b.net)}</span>
+    </div>
+    <div class="who">${esc(en(b.species))} · <b>${esc(b.name)}</b>, born gen ${b.born}</div>
+    <div class="style">${esc(b.style)}</div>
+    <div class="kv">
+      <div><span>Win</span><b>${pct(b.win)}</b></div>
+      <div><span>Deal-in</span><b>${pct(b.dealIn)}</b></div>
+      <div><span>Self-draw</span><b>${pct(b.tsumo)}</b></div>
+      <div><span>Avg win</span><b>${b.avgWin ?? "–"}</b></div>
+      <div><span>Calls/hand</span><b>${b.calls}</b></div>
+      <div><span>叮</span><b>${pct(b.riichi)}</b></div>
+    </div>
+    <div class="style">${b.hands.toLocaleString()} hands</div>
+  </article>`).join("");
+
+// ---- Line charts ----
+function lineChart(el, legendEl, series, { label }) {
+  const hidden = new Set();
+  const W = 1000, H = 360, M = { l: 48, r: 16, t: 14, b: 30 };
+  const all = series.flatMap((s) => s.points).filter((p) => p[1] !== null);
+  if (!all.length) { el.innerHTML = `<p class="note">No data yet.</p>`; return; }
+  const xs = all.map((p) => p[0]);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs, x0 + 1);
+  legendEl.innerHTML = series.map((s) => `<label><input type="checkbox" id="lg-${el.id}-${s.id}" checked data-id="${s.id}"><span class="dot" style="background:${COLOR[s.id]}"></span>${esc(NAME[s.id])}</label>`).join("");
+  legendEl.querySelectorAll("input").forEach((i) => i.addEventListener("change", () => { i.checked ? hidden.delete(i.dataset.id) : hidden.add(i.dataset.id); draw(); }));
+  const tip = document.createElement("div");
+  tip.className = "tip"; tip.hidden = true;
+  function draw() {
+    const vis = series.filter((s) => !hidden.has(s.id));
+    const ys = vis.flatMap((s) => s.points.map((p) => p[1])).filter((v) => v !== null);
+    let y0 = Math.min(0, ...ys), y1 = Math.max(0, ...ys);
+    if (y1 - y0 < 1) { y0 -= 0.5; y1 += 0.5; }
+    const pad = (y1 - y0) * 0.08; y0 -= pad; y1 += pad;
+    const X = (v) => M.l + ((v - x0) / (x1 - x0)) * (W - M.l - M.r);
+    const Y = (v) => M.t + (1 - (v - y0) / (y1 - y0)) * (H - M.t - M.b);
+    const step = niceStep((y1 - y0) / 5);
+    let grid = "";
+    for (let v = Math.ceil(y0 / step) * step; v <= y1; v += step) {
+      const zero = Math.abs(v) < 1e-9;
+      grid += `<line x1="${M.l}" x2="${W - M.r}" y1="${Y(v)}" y2="${Y(v)}" stroke="${zero ? "var(--ink-3)" : "var(--grid)"}" stroke-width="${zero ? 1.2 : 1}"/>`;
+      grid += `<text x="${M.l - 8}" y="${Y(v) + 4}" text-anchor="end">${zero ? "0" : (v > 0 ? "+" : "") + +v.toFixed(2)}</text>`;
+    }
+    const xstep = Math.max(1, niceStep((x1 - x0) / 8));
+    for (let v = Math.ceil(x0 / xstep) * xstep; v <= x1; v += xstep) grid += `<text x="${X(v)}" y="${H - 8}" text-anchor="middle">${v}</text>`;
+    const lines = vis.map((s) => {
+      const pts = s.points.filter((p) => p[1] !== null);
+      const d = pts.map((p, i) => `${i ? "L" : "M"}${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`).join("");
+      const lastP = pts[pts.length - 1];
+      return `<path d="${d}" fill="none" stroke="${COLOR[s.id]}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>` +
+        (lastP ? `<circle cx="${X(lastP[0])}" cy="${Y(lastP[1])}" r="4" fill="${COLOR[s.id]}" stroke="var(--panel)" stroke-width="2"/>` : "");
+    }).join("");
+    el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(label)}">${grid}${lines}<line class="xh" x1="0" x2="0" y1="${M.t}" y2="${H - M.b}" stroke="var(--ink-3)" stroke-dasharray="3 3" visibility="hidden"/><rect x="${M.l}" y="${M.t}" width="${W - M.l - M.r}" height="${H - M.t - M.b}" fill="transparent"/></svg>`;
+    el.appendChild(tip);
+    const svg = el.querySelector("svg"), xh = el.querySelector(".xh");
+    const gensAll = [...new Set(all.map((p) => p[0]))].sort((a, b) => a - b);
+    svg.addEventListener("pointermove", (e) => {
+      const r = svg.getBoundingClientRect();
+      const vx = ((e.clientX - r.left) / r.width) * W;
+      const g = gensAll.reduce((a, b) => (Math.abs(X(b) - vx) < Math.abs(X(a) - vx) ? b : a));
+      xh.setAttribute("x1", X(g)); xh.setAttribute("x2", X(g)); xh.setAttribute("visibility", "visible");
+      const rows = vis.map((s) => [s.id, (s.points.find((p) => p[0] === g) || [])[1]]).filter((r) => r[1] !== undefined && r[1] !== null).sort((a, b) => b[1] - a[1]);
+      tip.innerHTML = `<div class="eyebrow">Generation ${g}</div>` + rows.map(([id, v]) => `<div class="row"><span><span class="dot" style="background:${COLOR[id]}"></span>${esc(NAME[id])}</span><b class="${cls(v)}">${fmt(v)}</b></div>`).join("");
+      tip.hidden = false;
+      const px = (X(g) / W) * r.width;
+      tip.style.left = Math.min(Math.max(0, px + 14), r.width - 190) + "px";
+      tip.style.top = "8px";
+    });
+    svg.addEventListener("pointerleave", () => { tip.hidden = true; xh.setAttribute("visibility", "hidden"); });
+  }
+  draw();
+}
+function niceStep(raw) {
+  if (!(raw > 0)) return 1;
+  const p = 10 ** Math.floor(Math.log10(raw)), f = raw / p;
+  return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * p;
+}
+lineChart(document.getElementById("chart-bench"), document.getElementById("legend-bench"), DATA.benchTrend, { label: "Benchmark net tai a hand by generation" });
+lineChart(document.getElementById("chart-rank"), document.getElementById("legend-rank"), DATA.rankTrend, { label: "Best lifetime net tai a hand in each species by generation" });
+
+if (DATA.lastBench) {
+  const lb = DATA.lastBench;
+  document.getElementById("bench-now").innerHTML =
+    lb.rows.slice().sort((a, b) => b.net - a.net).map((r) => `<div><span><span class="dot" style="background:${COLOR[r.species]}"></span> ${esc(zh(r.species))} ${esc(r.name)}</span><b class="num ${cls(r.net)}">${fmt(r.net)}</b></div>`).join("");
+  document.getElementById("bench-cap").textContent = `Latest benchmark, generation ${lb.gen}: ${lb.rows[0].hands} hands for each champion. One benchmark is noisy; read the trend above.`;
+}
+
+// ---- Genes ----
+const GENE_INFO = {
+  speed: "weight on improving tiles", greed: "chases big hands", minTai: "smallest win taken early", callAppetite: "eagerness to call",
+  caution: "fear of dealing in", foldAt: "threat that makes it fold", read: "table reading", noise: "randomness among close choices",
+  slip: "chance of a lazy move", riichi: "appetite for 叮", focus: "defends only vs likely-ready",
+};
+const ranges = DATA.config.genes;
+document.getElementById("genes").innerHTML = Object.keys(ranges).map((g) => {
+  const [lo, hi] = ranges[g];
+  const pos = (v) => ((v - lo) / (hi - lo || 1)) * 100;
+  const marks = champs.map((b) => {
+    const start = DATA.startGenes[b.species]?.[g];
+    return (start !== undefined ? `<span class="mk start" style="left:${pos(start)}%;border-color:${COLOR[b.species]}" title="${esc(en(b.species))} started at ${start}"></span>` : "") +
+      `<span class="mk" style="left:${pos(b.genes[g])}%;background:${COLOR[b.species]}" title="${esc(en(b.species))} champion: ${b.genes[g]}"></span>`;
+  }).join("");
+  return `<div class="gene"><div class="gene-name">${g}<small>${GENE_INFO[g] ?? ""}</small></div><div class="strip">${marks}<span class="lo">${lo}</span><span class="hi">${hi}</span></div></div>`;
+}).join("");
+
+// ---- Leaderboard ----
+const COLS = [
+  ["name", "Bot", "text"], ["species", "Species", "text"], ["style", "Style", "text"], ["net", "Net/hand", "num"], ["hands", "Hands", "num"],
+  ["win", "Win", "pct"], ["tsumo", "Self-draw", "pct"], ["dealIn", "Deal-in", "pct"], ["avgWin", "Avg win", "num"], ["avgLoss", "Avg loss", "num"],
+  ["calls", "Calls", "num"], ["riichi", "叮", "pct"], ["best", "Best", "num"], ["born", "Born", "num"],
+];
+let sortKey = "net", sortDir = -1;
+function drawBoard() {
+  const rows = DATA.living.slice().sort((a, b) => {
+    const A = a[sortKey], B = b[sortKey];
+    return (typeof A === "string" ? A.localeCompare(B) : (A ?? -1e9) - (B ?? -1e9)) * sortDir;
+  });
+  document.getElementById("board").innerHTML =
+    `<thead><tr>${COLS.map(([k, l]) => `<th tabindex="0" data-k="${k}" ${k === sortKey ? `aria-sort="${sortDir < 0 ? "descending" : "ascending"}"` : ""}>${l}${k === sortKey ? (sortDir < 0 ? " ↓" : " ↑") : ""}</th>`).join("")}</tr></thead><tbody>` +
+    rows.map((b) => `<tr>${COLS.map(([k, , t]) => {
+      const v = b[k];
+      if (k === "species") return `<td><span class="dot" style="background:${COLOR[v]}"></span> ${esc(zh(v))}</td>`;
+      if (k === "style") return `<td><span class="style">${esc(v)}</span></td>`;
+      if (k === "net") return `<td class="num ${cls(v)}">${fmt(v)}</td>`;
+      if (t === "pct") return `<td class="num">${pct(v)}</td>`;
+      if (t === "num") return `<td class="num">${v ?? "–"}</td>`;
+      return `<td>${esc(v)}</td>`;
+    }).join("")}</tr>`).join("") + `</tbody>`;
+  document.querySelectorAll("#board th").forEach((th) => {
+    const go = () => { const k = th.dataset.k; sortDir = sortKey === k ? -sortDir : (k === "name" || k === "species" || k === "style" ? 1 : -1); sortKey = k; drawBoard(); };
+    th.addEventListener("click", go);
+    th.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
+  });
+}
+drawBoard();
+</script>

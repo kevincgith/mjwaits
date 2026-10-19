@@ -5,7 +5,7 @@
 // the in-species ranking trend, a leaderboard of the living population and
 // where each style's settings drifted.
 
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
 const dir = process.argv[2] ?? "evolution/species1";
 const out = process.argv[3] ?? `${dir}/report.html`;
@@ -71,6 +71,8 @@ const data = {
       }
     : null,
   updated: new Date().toISOString().slice(0, 16).replace("T", " "),
+  // Optional: final head-to-head tournaments (written by hand from arena runs).
+  final: existsSync(`${dir}/final.json`) ? JSON.parse(readFileSync(`${dir}/final.json`, "utf8")) : null,
 };
 
 const html = readFileSync(new URL("./evolve-report.html", import.meta.url), "utf8").replace("/*DATA*/null", JSON.stringify(data));

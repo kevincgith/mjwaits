@@ -80,6 +80,11 @@ h2 { font-family: var(--body); font-size: 18px; font-weight: 700; margin: 0; tex
 .tip .row { display: flex; align-items: center; gap: 6px; justify-content: space-between; }
 .tip .row span:first-child { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); }
 
+/* Final tournament */
+.finals { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr)); gap: 20px 24px; }
+.final-table { display: grid; gap: 6px; min-width: 0; overflow-x: auto; }
+.final-table th:nth-child(2), .final-table td:nth-child(2) { text-align: right; }
+
 /* Bench table */
 .bench { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
 .bench div { border: 1px solid var(--rule); border-radius: 10px; padding: 8px 10px; display: grid; }
@@ -120,8 +125,13 @@ td .style { color: var(--ink-3); font-size: 12px; }
   </header>
 
   <section class="panel" aria-labelledby="h-champs">
-    <div class="panel-head"><h2 id="h-champs">Current champions</h2><span class="note">Best bot alive in each species · net tai a hand over its whole life</span></div>
+    <div class="panel-head"><h2 id="h-champs">Current champions</h2><span class="note">Best bot alive in each species with 1,000+ hands · net tai a hand over its whole life</span></div>
     <div class="champs" id="champs"></div>
+  </section>
+
+  <section class="panel" aria-labelledby="h-final" id="final" hidden>
+    <div class="panel-head"><h2 id="h-final">Final tournament: evolved against the originals</h2><span class="note" id="final-note"></span></div>
+    <div id="final-tables" class="finals"></div>
   </section>
 
   <section class="panel" aria-labelledby="h-bench">
@@ -169,8 +179,28 @@ document.getElementById("facts").innerHTML = [
   [`${Math.floor(DATA.minutes / 60)}h ${DATA.minutes % 60}m`, "of play"],
 ].map(([v, l]) => `<div><b>${v}</b><span>${l}</span></div>`).join("");
 
+// ---- Final tournament ----
+if (DATA.final) {
+  document.getElementById("final").hidden = false;
+  document.getElementById("final-note").textContent = DATA.final.note;
+  document.getElementById("final-tables").innerHTML = DATA.final.tables.map((t) => `
+    <div class="final-table">
+      <div class="eyebrow">${esc(t.title)}</div>
+      <table><thead><tr><th>Bot</th><th>Net/hand</th><th>Win</th><th>Deal-in</th><th>叮</th></tr></thead><tbody>
+      ${t.rows.map((r) => `<tr><td>${r.evolved ? "<b>" : ""}${esc(r.name)}${r.evolved ? "</b>" : ""} <span class="style">${r.evolved ? "evolved" : "original"}</span></td><td class="num ${cls(r.net)}">${fmt(r.net)}</td><td class="num">${esc(r.win)}</td><td class="num">${esc(r.dealIn)}</td><td class="num">${esc(r.riichi)}</td></tr>`).join("")}
+      </tbody></table>
+      <p class="note">${esc(t.hands)} hands</p>
+    </div>`).join("");
+}
+
 // ---- Champions ----
-const champs = SP.map((s) => DATA.living.filter((b) => b.species === s.id).sort((a, b) => (b.net ?? -99) - (a.net ?? -99))[0]);
+// A species' champion: its best bot with 1,000+ hands (a newcomer can top it
+// on a few hundred lucky hands), or its most experienced if none has that many.
+const champs = SP.map((s) => {
+  const mine = DATA.living.filter((b) => b.species === s.id);
+  const proven = mine.filter((b) => b.hands >= 1000);
+  return proven.length ? proven.sort((a, b) => (b.net ?? -99) - (a.net ?? -99))[0] : mine.sort((a, b) => b.hands - a.hands)[0];
+});
 document.getElementById("champs").innerHTML = champs.map((b) => `
   <article class="champ">
     <div class="champ-top">
