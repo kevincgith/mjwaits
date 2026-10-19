@@ -7496,22 +7496,18 @@ html.playing body {
 
 /* ---- 戰況: the board ---- */
 
+/* The toolbar card's heading line: round · 局. */
 .sc-status {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.85rem 1rem;
-}
-
-.sc-status-main {
-  display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.15rem 0.5rem;
+  min-width: 0;
+  padding: 0.35rem 0.75rem 0;
 }
 
 .sc-status-round {
-  font-size: var(--text-xl);
+  font-size: var(--text-md);
   font-weight: 700;
   letter-spacing: 0.02em;
 }
@@ -7558,12 +7554,16 @@ html.playing body {
 }
 
 .sc-toolbar {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
   margin: 0 0 0.75rem;
-  padding: 0.35rem 0.15rem;
+  padding: 0 0.15rem 0.35rem;
   border-radius: var(--radius-lg);
   background: var(--surface);
+}
+
+.sc-tools {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  margin-top: 0.15rem;
 }
 
 .sc-toolbar button {
@@ -7823,24 +7823,6 @@ html.playing body {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
-}
-
-.sc-selfdraw-key {
-  position: absolute;
-  bottom: -0.55rem;
-  left: 50%;
-  translate: -50% 0;
-  z-index: 1;
-  border: none;
-  border-radius: var(--radius-pill);
-  padding: 0.2rem 0.75rem;
-  background: var(--accent);
-  color: var(--on-accent);
-  font: inherit;
-  font-size: var(--text-sm);
-  font-weight: 700;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
-  cursor: pointer;
 }
 
 .sc-draw {
@@ -8696,10 +8678,6 @@ html.sc-fit-mode .build-version {
   flex-shrink: 0;
 }
 
-.sc-fit .sc-status {
-  margin-bottom: 0.6rem;
-}
-
 .sc-fit .sc-toolbar {
   margin-bottom: 0.6rem;
 }
@@ -8720,9 +8698,15 @@ html.sc-fit-mode .build-version {
   align-items: stretch;
 }
 
+/* On tall screens the cards stop growing before their rows do: keep each
+   one against the middle of the table so the gaps around it stay even. */
+.sc-fit .sc-seat.sc-area-top { align-items: flex-end; }
+.sc-fit .sc-seat.sc-area-left,
+.sc-fit .sc-seat.sc-area-right { align-items: center; }
+.sc-fit .sc-seat.sc-area-bottom { align-items: flex-start; }
+
 .sc-fit .sc-card {
   height: 100%;
-  max-height: 11.5rem;
   min-height: 0;
   overflow: hidden;
   justify-content: center;
@@ -8752,71 +8736,101 @@ html.sc-fit-mode .build-version {
   margin: 0.4rem 0 0;
 }
 
-/* The status card's right side: 最近 and the Jackpot. */
-.sc-status-side {
+/* 拉踢 sheet: one compact table per holder. */
+.sc-lah-group + .sc-lah-group {
+  margin-top: 1rem;
+}
+
+.sc-lah-head {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  margin-bottom: 0.4rem;
 }
 
-.sc-recent-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  height: 2.25rem;
-  border: none;
-  border-radius: var(--radius-pill);
-  padding: 0 0.75rem 0 0.6rem;
-  background: var(--fill);
-  color: var(--text);
-  font: inherit;
-  font-size: var(--text-sm);
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.sc-recent-button svg {
-  color: var(--accent);
-}
-
-.sc-recent-count {
-  min-width: 1.15rem;
-  padding: 0 0.3rem;
-  box-sizing: border-box;
-  border-radius: var(--radius-pill);
-  background: var(--surface);
-  color: var(--text-secondary);
-  font-size: var(--text-xs);
-  font-weight: 700;
-  line-height: 1.15rem;
-  text-align: center;
+.sc-lah-head .sc-help {
+  margin-left: auto;
   font-variant-numeric: tabular-nums;
+}
+
+.sc-lah-note {
+  margin: 0 0 0.5rem;
+  color: var(--sc-gold-ink);
+  font-size: var(--text-sm);
+}
+
+.sc-lah-table {
+  display: flex;
+  flex-direction: column;
+  padding: 0 0.85rem;
+  border-radius: var(--radius-lg);
+  background: var(--surface-sunken);
+}
+
+.sc-lah-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 2.5rem 3rem 3rem 5.25rem;
+  align-items: center;
+  min-height: 2.9rem;
+  font-size: var(--text-md);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.sc-lah-row + .sc-lah-row {
+  box-shadow: inset 0 1px 0 var(--separator);
+}
+
+.sc-lah-row > :first-child {
+  text-align: left;
+}
+
+.sc-lah-row.is-head {
+  min-height: 2rem;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+.sc-lah-surrender {
+  min-height: 1.9rem;
+  padding: 0.2rem 0.7rem;
+  font-size: var(--text-sm);
+}
+
+.sc-lah-surrender.is-armed {
+  background: var(--sc-neg);
+  box-shadow: none;
+  color: #fff;
+}
+
+.sc-lah-who {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sc-lah-row > span:nth-child(3) {
+  color: var(--text-secondary);
+}
+
+/* Next: a hint, quieter than the 拉 itself. */
+.sc-lah-row:not(.is-head) > span:nth-child(4) {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.sc-lah-key {
+  margin: 0.75rem 0 0;
 }
 
 /* Hand rows inside the Recent sheet's grouped list. */
 .sc-list-hands {
   padding: 0 0.85rem;
-}
-
-/* Slim status row: round · 局 · 連 on the left, 最近 and JP pills on the right. */
-.sc-status {
-  padding: 0.45rem 0.5rem 0.45rem 0.9rem;
-}
-
-.sc-status-main {
-  flex-direction: row;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 0.15rem 0.5rem;
-  min-width: 0;
-}
-
-.sc-status-round {
-  font-size: var(--text-lg);
-}
-
-.sc-status-main .sc-chip-gold {
-  margin-left: 0;
 }
 
 .sc-jackpot {
@@ -8976,12 +8990,11 @@ html.sc-fit-mode .build-version {
   }
 
   .sc-fit .sc-status {
-    padding-top: 0.3rem;
-    padding-bottom: 0.3rem;
+    padding-top: 0.25rem;
   }
 
   .sc-fit .sc-toolbar {
-    padding: 0.2rem 0.15rem;
+    padding: 0 0.15rem 0.2rem;
   }
 
   .sc-fit .sc-toolbar button {
@@ -9034,7 +9047,16 @@ html.sc-fit-mode .build-version {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
-  pointer-events: none;
+  border: none;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+/* A bigger invisible hit area than the pill itself. */
+.sc-pin::after {
+  content: "";
+  position: absolute;
+  inset: -0.4rem -0.25rem;
 }
 
 .sc-pin.is-pos {
@@ -9081,9 +9103,11 @@ html.sc-fit-mode .build-version {
 
 /* The name leads the card; the dealer gets a 莊 tag (with 連N). No seat wind -
    the table doesn't need it. */
+/* Grows with the screen's height, but no faster than the card's width
+   allows - tall, narrow phones would otherwise crowd out the 莊 badge. */
 .sc-card-top .sc-card-name,
 .sc-fit .sc-card-top .sc-card-name {
-  font-size: clamp(var(--text-lg), 2.6vh, var(--text-xl));
+  font-size: clamp(var(--text-lg), min(2.6vh, 5vw), var(--text-xl));
   font-weight: 800;
   letter-spacing: -0.01em;
   line-height: 1.2;
@@ -9094,13 +9118,30 @@ html.sc-fit-mode .build-version {
   align-items: baseline;
   flex-shrink: 0;
   gap: 0.2rem;
-  padding: 0.1rem 0.4rem;
+  padding: 0.1rem 0.3rem;
   border-radius: var(--radius-xs);
   background: var(--sc-gold);
   color: var(--sc-gold-ink);
   font-size: var(--text-sm);
   font-weight: 800;
   line-height: 1.25;
+}
+
+/* 起莊: a plain gold corner folded over the card's top-left, under the name. */
+.sc-qi-corner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-top-left-radius: var(--radius-lg);
+  background: var(--sc-gold);
+  clip-path: polygon(0 0, 100% 0, 0 100%);
+  pointer-events: none;
+}
+
+.sc-qi-corner + .sc-card-top {
+  position: relative;
 }
 
 .sc-zhuang-tag small {
@@ -9145,7 +9186,9 @@ html.sc-fit-mode .build-version {
   width: min(33vw, 10rem);
 }
 
-.sc-fit .sc-card {
+/* Cap the box, not the card, so the card fills it and the 拉 pins on its
+   edges stay on the card on tall screens. */
+.sc-fit .sc-card-box {
   max-height: 10.5rem;
 }
 
@@ -9423,39 +9466,56 @@ html.sc-fit-mode .build-version {
   background: var(--sc-gold);
 }
 
+/* What each payer owes: one row of chips, a fixed two lines tall. */
 .sc-paylines {
   display: flex;
-  flex-direction: column;
+  gap: 0.4rem;
   margin: 0;
-  padding: 0.2rem 0.75rem;
+  padding: 0;
   list-style: none;
-  border-radius: var(--radius-md);
-  background: var(--surface-sunken);
   font-size: var(--text-sm);
   font-variant-numeric: tabular-nums;
 }
 
 .sc-paylines li {
-  display: grid;
-  grid-template-columns: minmax(0, auto) minmax(0, 1fr) auto;
-  align-items: baseline;
-  gap: 0.6rem;
-  min-height: 1.75rem;
-  padding: 0.15rem 0;
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.05rem;
+  min-width: 0;
+  height: 2.9rem;
+  box-sizing: border-box;
+  padding: 0.3rem 0.6rem;
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
 }
 
-.sc-paylines li + li {
-  border-top: 1px solid var(--separator);
+.sc-paylines li.is-empty {
+  align-items: center;
+  color: var(--text-muted);
 }
 
 .sc-paylines li.is-high {
-  margin: 0 -0.75rem;
-  padding: 0.15rem 0.75rem;
   background: var(--warning-bg-3);
 }
 
+.sc-paylines li.is-high .sc-payline-parts {
+  color: var(--text);
+}
+
+.sc-payline-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
 .sc-payline-who {
+  overflow: hidden;
   font-weight: 700;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -9464,11 +9524,12 @@ html.sc-fit-mode .build-version {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--text-muted);
+  font-size: var(--text-xs);
 }
 
 .sc-payline-total {
   font-size: var(--text-md);
-  text-align: right;
+  white-space: nowrap;
 }
 
 .sc-payline-total .sc-capped {
@@ -9590,8 +9651,8 @@ html.sc-fit-mode .build-version {
   }
 
   .sc-paylines li {
-    min-height: 1.4rem;
-    padding: 0.05rem 0;
+    height: 2.6rem;
+    padding: 0.2rem 0.5rem;
   }
 
   .sc-sheet-actions {

@@ -16,6 +16,7 @@ import {
   previewWin,
   canRedo,
   exportScores,
+  half,
   mergeScores,
   parseBackup,
   redoEvent,
@@ -508,7 +509,6 @@ function WinSheet({
   const complete = fromValid && entries.length === multi && entries.every((e) => e.tai !== "");
   const pairs = fromValid && entries.length === multi ? previewWin(state, winners, from) : [];
   const total = pairs.reduce((s, p) => s + p.worth, 0);
-  const high = state.settings.highScore !== null && pairs.some((p) => p.worth >= state.settings.highScore!);
 
   const submit = () => {
     if (!complete) return;
@@ -609,30 +609,32 @@ function WinSheet({
       </div>
       <Keypad max={state.settings.scoreCap} value={entries[focus]?.tai ?? ""} onChange={(v) => setEntries((prev) => prev.map((e, i) => (i === focus ? { ...e, tai: v } : e)))} />
 
-      {pairs.length > 0 && (
-        <ul className="sc-paylines" aria-label="What each payer owes">
-          {pairs.map((p, i) => {
-            const parts = [
-              p.base ? `底${fmt(p.base)}` : null,
-              `番${fmt(p.tai)}`,
-              p.dealer ? `莊${fmt(p.dealer)}` : null,
-              p.lahKind ? `${p.lahKind}${fmt(p.lah)}` : null,
-            ].filter(Boolean);
-            const isHigh = state.settings.highScore !== null && p.worth >= state.settings.highScore;
-            return (
-              <li key={i} className={isHigh ? "is-high" : undefined}>
+      {/* One row of what each payer owes, always there and always the same
+          height, so nothing above it moves as the hand is filled in. */}
+      <ul className="sc-paylines" aria-label="What each payer owes" aria-live="polite">
+        {pairs.length === 0 && <li className="is-empty">Pick 輸家 to see who pays what</li>}
+        {pairs.map((p, i) => {
+          const parts = [
+            p.base ? `底${fmt(p.base)}` : null,
+            `番${fmt(p.tai)}`,
+            p.dealer ? `莊${fmt(p.dealer)}` : null,
+            p.lahKind ? `${p.lahKind}${fmt(p.lah)}` : null,
+          ].filter(Boolean);
+          const isHigh = state.settings.highScore !== null && p.worth >= state.settings.highScore;
+          return (
+            <li key={i} className={isHigh ? "is-high" : undefined} title={isHigh ? `高分 — ${state.settings.highScore} or more. Double-check the tai.` : undefined}>
+              <span className="sc-payline-top">
                 <span className="sc-payline-who">
-                  {multi > 1 && <span className="sc-help">{p.winner} ← </span>}
                   {p.payer}
+                  {multi > 1 && <span className="sc-help"> → {p.winner}</span>}
                 </span>
-                <span className="sc-payline-parts">{parts.join(" · ")}</span>
                 <strong className="sc-payline-total">{fmt(p.worth)}</strong>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-      {high && <p className="sc-warn">高分 — a payment of {state.settings.highScore} or more. Double-check the tai.</p>}
+              </span>
+              <span className="sc-payline-parts">{isHigh ? `高分 · ${parts.join(" · ")}` : parts.join(" · ")}</span>
+            </li>
+          );
+        })}
+      </ul>
     </Sheet>
   );
 }
@@ -851,7 +853,7 @@ function SeatsSheet({
   // Dealer draft - a seat, so it reads whoever the draft seating puts there.
   const [dealer, setDealer] = useState(state.dealer);
   const [streak, setStreak] = useState(state.streak);
-  const [reset, setReset] = useState(false);
+  const [reset, setReset] = useState(true);
 
   const bench = [...new Set([...store.roster.map((p) => p.name), ...state.players, ...added])].filter((p) => !seats.includes(p));
   const tapSeat = (s2: number) => {
@@ -872,7 +874,8 @@ function SeatsSheet({
   };
 
   const seatsChanged = seats.some((p, i) => p !== state.seats[i]);
-  const dealerChanged = dealer !== state.dealer || streak !== state.streak || reset;
+  // 重置風局 (on by default) only rides along with a real dealer or 連莊 change.
+  const dealerChanged = dealer !== state.dealer || streak !== state.streak;
   const anything = seatsChanged || dealerChanged || added.length > 0;
   const submit = () =>
     onDone({
@@ -956,10 +959,7 @@ function SeatsSheet({
               <Stepper value={streak} onChange={setStreak} label="連莊" />
             </div>
             <label className="sc-row">
-              <span>
-                重置風局
-                <span className="sc-help"> · back to 東風東局</span>
-              </span>
+              <span>重置風局</span>
               <Toggle checked={reset} onChange={setReset} label="Reset the round" />
             </label>
           </div>
@@ -970,58 +970,93 @@ function SeatsSheet({
 }
 
 function LahSheet({ store, state, onSurrender, onClose }: { store: ScoreStore; state: ReplayState; onSurrender: (holder: string, pulled: string) => void; onClose: () => void }) {
-  const holders = [...new Set(state.lahs.map((l) => l.holder))];
-  // 投降 takes two taps: the first arms it, the second ends the 拉.
+  // One table per holder, biggest first. Usually there's just one (the last
+  // winner); a 雙響/三響 can leave several, each also keeping what they held.
+  const groups = [...new Set(state.lahs.map((l) => l.holder))]
+    .map((holder) => {
+      const rows = state.lahs.filter((l) => l.holder === holder).sort((x, y) => y.value - x.value);
+      return { holder, rows, total: rows.reduce((t, l) => t + l.value, 0) };
+    })
+    .sort((x, y) => y.total - x.total);
+  // What the next hand between the two adds, whoever wins it: half the 拉
+  // (拉 and 踢 take the same half, give or take a rounding setting).
+  const next = (value: number) => half(value, state.settings.lahRound, state.settings.integerMode);
+  // 投降 takes two taps: the first arms it, the second ends that 拉. A tap
+  // anywhere else disarms it.
   const [armed, setArmed] = useState<string | null>(null);
+  useEffect(() => {
+    if (!armed) return;
+    const disarm = (e: PointerEvent) => {
+      if (!(e.target as Element).closest?.(".sc-lah-surrender.is-armed")) setArmed(null);
+    };
+    document.addEventListener("pointerdown", disarm, true);
+    return () => document.removeEventListener("pointerdown", disarm, true);
+  }, [armed]);
   return (
     <Sheet
       title="拉踢"
-      subtitle="Every 拉 on the table. 投降 ends one with nothing paid."
       onClose={onClose}
       actions={
         <button type="button" className="sc-primary" onClick={onClose}>
-          完成 Done
+          Done
         </button>
       }
     >
-      {holders.length === 0 && <p className="sc-empty">No 拉 on the table.</p>}
-      {holders.map((holder) => (
-        <div key={holder} className="sc-list">
-          <div className="sc-list-head">
+      {groups.length === 0 && <p className="sc-empty">No 拉 on the table.</p>}
+      {groups.map(({ holder, rows, total }) => (
+        <div key={holder} className="sc-lah-group">
+          <div className="sc-lah-head">
             <Monogram store={store} player={holder} size="sm" />
-            <strong>{holder}</strong> 拉
+            <strong>{holder}</strong>
+            <span className="sc-help">holds {fmt(total)}</span>
           </div>
-          {state.lahs
-            .filter((l) => l.holder === holder)
-            .map((l) => (
-              <div key={l.pulled} className="sc-row">
-                <span className="sc-row-main">
-                  {l.pulled}
-                  <span className="sc-help">
-                    {" "}
-                    · {l.count}次 · next win adds {fmt(Math.ceil(l.value / 2))}
+          {groups.length === 1 && <p className="sc-lah-note">Ends unless {holder} wins the next hand</p>}
+          <div className="sc-lah-table" role="table" aria-label={`${holder}'s 拉`}>
+            <div className="sc-lah-row is-head" role="row">
+              <span role="columnheader">On</span>
+              <span role="columnheader">拉</span>
+              <span role="columnheader">Streak</span>
+              <span role="columnheader">Next</span>
+              <span role="columnheader" />
+            </div>
+            {rows.map((l) => {
+              const key = `${l.holder}>${l.pulled}`;
+              const isArmed = armed === key;
+              return (
+                <div key={key} role="row" className="sc-lah-row">
+                  <span className="sc-lah-who" role="cell">
+                    <span className={`sc-dot sc-c${colorOf(store, l.pulled)}`} aria-hidden="true" />
+                    {l.pulled}
                   </span>
-                </span>
-                <span className="sc-row-end">
-                  <strong className="sc-num">{fmt(l.value)}</strong>
-                  <button
-                    type="button"
-                    className={`sc-outline${armed === `${l.holder}>${l.pulled}` ? " is-armed" : ""}`}
-                    onClick={() => {
-                      const key = `${l.holder}>${l.pulled}`;
-                      if (armed !== key) return setArmed(key);
-                      setArmed(null);
-                      onSurrender(l.holder, l.pulled);
-                    }}
-                    aria-label={armed === `${l.holder}>${l.pulled}` ? `Tap again to confirm ${l.pulled} surrenders` : `${l.pulled} surrenders`}
-                  >
-                    {armed === `${l.holder}>${l.pulled}` ? "Tap again to confirm" : "投降"}
-                  </button>
-                </span>
-              </div>
-            ))}
+                  <strong role="cell">{fmt(l.value)}</strong>
+                  <span role="cell">{l.count}</span>
+                  <span role="cell">+{fmt(next(l.value))}</span>
+                  <span role="cell">
+                    <button
+                      type="button"
+                      className={`sc-outline sc-lah-surrender${isArmed ? " is-armed" : ""}`}
+                      onClick={() => {
+                        if (!isArmed) return setArmed(key);
+                        setArmed(null);
+                        onSurrender(l.holder, l.pulled);
+                      }}
+                      aria-label={isArmed ? `Confirm ${l.pulled} surrenders to ${l.holder}` : `${l.pulled} surrenders to ${l.holder}`}
+                    >
+                      {isArmed ? "Confirm?" : "投降"}
+                    </button>
+                  </span>
+                </div>
+              );
+            })}
+          </div>
         </div>
       ))}
+      {groups.length > 0 && (
+        <p className="sc-help sc-lah-key">
+          {groups.length > 1 && "A holder's 拉 end when they don't win the next hand. "}
+          Next is what the next hand between the two adds, whoever wins it.
+        </p>
+      )}
     </Sheet>
   );
 }
@@ -1200,8 +1235,7 @@ const SETTING_GROUPS: { title: string; rows: { key: keyof ScoreSettings; label: 
     title: "顯示 Display",
     rows: [
       { key: "showLah", label: "拉數提示", help: "拉 on the player cards", kind: "bool" },
-      { key: "seatReminder", label: "執位提示", help: "When the round wind moves", kind: "bool" },
-      { key: "selfDrawKey", label: "自摸鍵", help: "A 自摸 button on each card", kind: "bool" },
+      { key: "seatReminder", label: "執位提示", help: "After 北風北局", kind: "bool" },
       { key: "highScore", label: "高分提示", help: "Flag a payment this big", kind: "nullable" },
     ],
   },
@@ -1519,7 +1553,7 @@ function Board({
     };
   }, []);
 
-  // The 執位 reminder comes back each time the round moves on.
+  // The 執位 reminder comes back after each 北風北局.
   useEffect(() => setReminderHidden(false), [state.roundWind]);
 
   const undo = () => {
@@ -1558,6 +1592,7 @@ function Board({
     { label: "重做", icon: Icons.redo, onClick: redo, disabled: !canRedo(game) },
     { label: "座位", icon: Icons.swap, onClick: () => setSheet({ kind: "seats" }) },
     { label: "拉踢", icon: Icons.lah, onClick: () => setSheet({ kind: "lah" }), badge: state.lahs.length || undefined },
+    { label: "最近", icon: Icons.recent, onClick: () => setSheet({ kind: "recent" }) },
     { label: "設定", icon: Icons.settings, onClick: () => setSheet({ kind: "settings" }) },
     { label: "新局", icon: Icons.newGame, onClick: () => setSheet({ kind: "settle" }) },
   ];
@@ -1565,38 +1600,29 @@ function Board({
   return (
     <>
       <div className="sc-fit" ref={fitRef} style={fitHeight !== null ? { height: fitHeight } : undefined}>
-      {/* Where the game is: round and deal, the 局 count, 連莊 and the Jackpot. */}
-      <div className="card sc-status">
-        <div className="sc-status-main">
+      {/* One card: where the game is (round and deal, the 局 count) over the game actions - 連莊 is on the dealer's badge. */}
+      <div className="sc-toolbar">
+        <div className="sc-status">
           <span className="sc-status-round">{state.label}</span>
           <span className="sc-status-meta">第{state.hands.length + 1}局</span>
-          {state.streak > 0 && <span className="sc-chip-gold">連{state.streak}</span>}
         </div>
-        <span className="sc-status-side">
-        <button type="button" className="sc-recent-button" onClick={() => setSheet({ kind: "recent" })} aria-label={`Recent hands (${state.hands.length})`}>
-          {Icons.recent}
-          <span>最近</span>
-          {state.hands.length > 0 && <span className="sc-recent-count">{state.hands.length}</span>}
-        </button>
-        </span>
-      </div>
-
-      <div className="sc-toolbar" role="toolbar" aria-label="Game actions">
-        {tools.map((t) => (
-          <button key={t.label} type="button" onClick={t.onClick} disabled={t.disabled}>
-            <span className="sc-tool-icon">
-              {t.icon}
-              {t.badge && <span className="sc-tool-badge">{t.badge}</span>}
-            </span>
-            <span className="sc-tool-label">{t.label}</span>
-          </button>
-        ))}
+        <div className="sc-tools" role="toolbar" aria-label="Game actions">
+          {tools.map((t) => (
+            <button key={t.label} type="button" onClick={t.onClick} disabled={t.disabled}>
+              <span className="sc-tool-icon">
+                {t.icon}
+                {t.badge && <span className="sc-tool-badge">{t.badge}</span>}
+              </span>
+              <span className="sc-tool-label">{t.label}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
       {state.seatChangeDue && !reminderHidden && (
         <div className="sc-banner" role="status">
           <span>
-            <strong>執位</strong> · Now {WIND_CHARS[state.roundWind]}風 — re-seat with 座位
+            <strong>執位</strong> · 北風北 done — re-seat with 座位
           </span>
           <button type="button" className="sc-icon-button" onClick={() => setReminderHidden(true)} aria-label="Dismiss">
             {Icons.close}
@@ -1619,17 +1645,18 @@ function Board({
             .filter((pin) => pin.otherSeat >= 0);
           const delta = last?.deltas[player];
           const isDealer = seat === state.dealer;
+          const isQi = seat === state.roundStartDealer;
           return (
             <div key={seat} className={`sc-seat sc-area-${SEAT_AREAS[seat]}`}>
               <div className="sc-card-box">
               <button type="button" className={`sc-card sc-c${colorOf(store, player)}${isDealer ? " is-dealer" : ""}`} onClick={() => setSheet({ kind: "hand", seat })} aria-label={`${player}, ${fmt(total)}. Record a hand for ${player}`}>
+                {/* 起莊: a gold corner on the seat this 圈 started from, so it's clear when 北風北 comes. */}
+                {isQi && (
+                  <span className="sc-qi-corner" role="img" aria-label="起莊" title="起莊 - this 圈 started here" />
+                )}
                 <span className="sc-card-top">
                   <span className="sc-card-name">{player}</span>
-                  {isDealer && (
-                    <span className="sc-zhuang-tag" title={state.streak > 0 ? `莊 · 連${state.streak}` : "莊"}>
-                      莊
-                    </span>
-                  )}
+                  {isDealer && <span className="sc-zhuang-tag">{state.streak > 0 ? `莊連${state.streak}` : "莊"}</span>}
                 </span>
                 <span className="sc-card-score" data-anchor="score">
                   <span className={`sc-card-total ${tone(total)}`}>{fmt(total)}</span>
@@ -1657,22 +1684,19 @@ function Board({
                   − on the pulled player's. */}
               {state.settings.showLah &&
                 pins.map((pin) => (
-                  <span
+                  <button
+                    type="button"
                     key={`${pin.other}`}
                     className={`sc-pin at-${facing(seat, pin.otherSeat)} ${pin.sign > 0 ? "is-pos" : "is-neg"}`}
+                    onClick={() => setSheet({ kind: "lah" })}
                     title={pin.sign > 0 ? `${player} 拉 ${pin.other}: ${fmt(pin.value)} (${pin.count}次)` : `${pin.other} 拉 ${player}: ${fmt(pin.value)} (${pin.count}次)`}
-                    aria-label={pin.sign > 0 ? `${player} has 拉 ${fmt(pin.value)} on ${pin.other}` : `${pin.other} has 拉 ${fmt(pin.value)} on ${player}`}
+                    aria-label={`${pin.sign > 0 ? `${player} has 拉 ${fmt(pin.value)} on ${pin.other}` : `${pin.other} has 拉 ${fmt(pin.value)} on ${player}`}. Open 拉踢`}
                   >
                     {pin.sign > 0 ? "+" : "−"}
                     {fmt(pin.value)}
-                  </span>
+                  </button>
                 ))}
               </div>
-              {state.settings.selfDrawKey && (
-                <button type="button" className="sc-selfdraw-key" onClick={() => setSheet({ kind: "hand", seat, initial: { selfDraw: true, tai: 0, patterns: [] } })}>
-                  自摸
-                </button>
-              )}
             </div>
           );
         })}
@@ -2539,7 +2563,10 @@ export function ScoresPanel({
             }}
           />
         ) : (
-          <Setup store={store} suggestion={seatNames} onStart={start} waitingHand={request !== null} />
+          <>
+            <Setup store={store} suggestion={seatNames} onStart={start} waitingHand={request !== null} />
+            <BackupCard store={store} setStore={setStore} />
+          </>
         ))}
       {sub === "stats" && <StatsPanel store={store} setStore={setStore} view={view} setView={setView} />}
     </section>
