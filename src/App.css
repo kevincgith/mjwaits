@@ -5485,8 +5485,8 @@ img.tile-face {
   --play-felt-line: rgba(255, 255, 255, 0.14);
   --play-shade: rgba(0, 0, 0, 0.26);
   /* Tile backs seen edge-on: a jade back over the ivory face edge. */
-  --play-back: #4fb27a;
-  --play-back-edge: #2f8a57;
+  --play-back: #35a84a;
+  --play-back-edge: #1f7a32;
   --play-gold: #ffd166;
   --play-gold-deep: #e29a1c;
   --play-neg: #ffb4a8;
@@ -5509,12 +5509,13 @@ html.playing body {
   position: fixed;
   inset: 0;
   z-index: 65;
-  background: var(--felt);
-  box-shadow: inset 0 0 0 3px var(--felt-edge);
+  background: radial-gradient(120% 90% at 50% 30%, #2c241c 0%, #17120d 60%, #0d0a07 100%);
   color: var(--play-on-felt);
   --play-hand: min(calc((100vw - env(safe-area-inset-left) - env(safe-area-inset-right) - 2rem) / 14.6), 12.5vh, 62px);
-  --play-small: clamp(13px, 4.2vh, 26px);
-  --play-pond: clamp(14px, 4.9vh, 30px);
+  --play-small: clamp(13px, 5.2vh, 28px);
+  --play-pond: clamp(14px, 6vh, 30px);
+  /* How far the table runs on under your hand. */
+  --play-under: calc(var(--play-hand) * 0.9);
 }
 
 .play-screen .tile-glyph {
@@ -5565,24 +5566,63 @@ html.playing body {
   height: 100%;
   box-sizing: border-box;
   display: grid;
-  grid-template-columns: minmax(3rem, auto) minmax(0, 1fr) auto minmax(0, 1fr) minmax(3rem, auto);
-  grid-template-rows: auto auto minmax(0, 1fr) auto auto auto;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto auto;
   grid-template-areas:
-    "corner top   top    top   ."
-    "lseat  .     tpond  .     rseat"
-    "lseat  lpond middle rpond rseat"
-    "lseat  .     bpond  .     rseat"
-    "me     me    me     me    me"
-    "bar    bar   bar    bar   bar";
-  gap: 0.3rem 0.6rem;
-  padding: max(0.4rem, env(safe-area-inset-top)) max(0.7rem, env(safe-area-inset-right))
-    max(0.3rem, env(safe-area-inset-bottom)) max(0.7rem, env(safe-area-inset-left));
+    "stage"
+    "me"
+    "bar";
+  padding: max(0.4rem, env(safe-area-inset-top)) max(0.7rem, env(safe-area-inset-right)) 0
+    max(0.7rem, env(safe-area-inset-left));
+}
+
+/* The table: a felt top with a dark wooden rim, tipped away from you so it
+   narrows toward the far side - the bots' tiles along its edges lean in
+   with it. It runs on under your hand, as a real table would. */
+.play-stage {
+  grid-area: stage;
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  min-height: 0;
+  padding-top: 2.3rem;
+  perspective: 760px;
+  perspective-origin: 50% 0%;
+}
+
+.play-felt {
+  position: relative;
+  flex: 1;
+  height: calc(100% + var(--play-under));
+  margin-bottom: calc(-1 * var(--play-under));
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    "lseat top   top    top   rseat"
+    "lseat tpond tpond  tpond rseat"
+    "lseat lpond middle rpond rseat"
+    "lseat bpond bpond  bpond rseat";
+  gap: 0.25rem 0.5rem;
+  padding: 0.45rem 0.7rem calc(var(--play-under) + 0.35rem);
+  border-radius: 1.4rem 1.4rem 0.6rem 0.6rem;
+  background: var(--felt);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06),
+    inset 0 0 2.5rem rgba(0, 0, 0, 0.35),
+    0 0 0 0.45rem #3a2717,
+    0 0 0 0.6rem #1c120a,
+    0 1.2rem 2.4rem rgba(0, 0, 0, 0.6);
+  transform: rotateX(24deg);
+  transform-origin: 50% 100%;
 }
 
 /* Leave, menu and 記牌器, top left. */
 .play-corner {
-  grid-area: corner;
-  position: relative;
+  position: absolute;
+  top: max(0.4rem, env(safe-area-inset-top));
+  left: max(0.7rem, env(safe-area-inset-left));
   z-index: 5;
   display: flex;
   gap: 0.3rem;
@@ -5630,9 +5670,13 @@ html.playing body {
   text-align: left;
 }
 
-.play-menu > button.toggle-on {
-  color: var(--accent);
+.play-menu > button.is-armed {
+  color: var(--danger-text-1);
   font-weight: 600;
+}
+
+.play-menu-row > span:first-child {
+  white-space: nowrap;
 }
 
 .play-menu-row {
@@ -5678,7 +5722,31 @@ html.playing body {
   white-space: nowrap;
 }
 
-.play-seat.is-active .play-badge {
+.play-badge.at-top,
+.play-badge.at-left,
+.play-badge.at-right {
+  position: absolute;
+  z-index: 4;
+  background: rgba(10, 8, 6, 0.62);
+}
+
+.play-badge.at-top {
+  top: max(0.45rem, env(safe-area-inset-top));
+  left: 50%;
+  translate: -50% 0;
+}
+
+.play-badge.at-left {
+  top: 3rem;
+  left: max(0.7rem, env(safe-area-inset-left));
+}
+
+.play-badge.at-right {
+  top: 3rem;
+  right: max(0.7rem, env(safe-area-inset-right));
+}
+
+.play-badge.is-active {
   box-shadow: 0 0 0 2px var(--play-gold);
 }
 
@@ -5712,6 +5780,19 @@ html.playing body {
   font-weight: 700;
 }
 
+/* 叮 declared: a red tag beside the name. */
+.play-riichi {
+  display: inline-grid;
+  place-items: center;
+  height: 1.15rem;
+  padding: 0 0.3rem;
+  border-radius: 0.3rem;
+  background: #c8341c;
+  color: #fff6d8;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
 .play-total {
   font-variant-numeric: tabular-nums;
   color: var(--play-on-felt-muted);
@@ -5725,7 +5806,8 @@ html.playing body {
 
 .play-seat {
   display: flex;
-  gap: 0.35rem;
+  align-items: center;
+  gap: 0.3em;
   min-width: 0;
   font-size: var(--play-small);
 }
@@ -5733,7 +5815,6 @@ html.playing body {
 .play-seat-top {
   grid-area: top;
   justify-self: center;
-  align-items: center;
 }
 
 .play-seat-left,
@@ -5752,22 +5833,9 @@ html.playing body {
   align-items: flex-end;
 }
 
-.play-seat-tiles {
-  display: flex;
-  align-items: center;
-  gap: 0.3em;
-}
-
-.play-seat-left .play-seat-tiles,
-.play-seat-right .play-seat-tiles {
-  flex-direction: column;
-  align-items: inherit;
-}
-
 .play-seat-melds {
   display: inline-flex;
   gap: 0.2em;
-  font-size: 0.9em;
 }
 
 .play-seat-left .play-seat-melds,
@@ -5787,11 +5855,18 @@ html.playing body {
 }
 
 .play-edge-top .play-edge-tile {
-  width: 0.62em;
-  height: 0.8em;
-  margin-right: 0.04em;
-  background: linear-gradient(to bottom, var(--play-back) 0 58%, var(--wall-seg) 58% 100%);
-  box-shadow: inset 0 -0.05em 0 var(--wall-seg-outline), 0 0.05em 0.08em rgba(0, 0, 0, 0.3);
+  width: 0.7em;
+  height: 0.95em;
+  margin-right: 0.035em;
+  border-radius: 0.1em;
+  background: linear-gradient(
+    to bottom,
+    #fbf8ef 0 13%,
+    #7fd98c 13% 20%,
+    var(--play-back) 20% 78%,
+    var(--play-back-edge) 100%
+  );
+  box-shadow: inset 0 0 0 0.02em rgba(0, 0, 0, 0.18), 0 0.07em 0.1em rgba(0, 0, 0, 0.4);
 }
 
 .play-edge-left,
@@ -5799,20 +5874,58 @@ html.playing body {
   flex-direction: column;
 }
 
+/* The side walls stand up for real: drawn like the far wall (a jade back
+   with its ivory top), then turned on edge in 3D so they rise off the felt,
+   leaning a little toward the middle the way a player tilts their tiles -
+   so each tile shows its top and its height, not a flat strip. */
+.play-felt,
+.play-seat {
+  transform-style: preserve-3d;
+}
+
+.play-edge-left {
+  transform-origin: 0 50%;
+  transform: rotateY(-105deg);
+}
+
+.play-edge-right {
+  transform-origin: 100% 50%;
+  transform: rotateY(105deg);
+}
+
+/* The far wall leans back a touch so its backs face you. */
+.play-edge-top {
+  transform-origin: 50% 100%;
+  transform: rotateX(-30deg);
+}
+
 .play-edge-left .play-edge-tile,
 .play-edge-right .play-edge-tile {
-  width: 0.9em;
-  height: 0.36em;
-  margin-bottom: 0.03em;
-  box-shadow: 0 0.04em 0.08em rgba(0, 0, 0, 0.3);
+  width: 0.95em;
+  height: 0.7em;
+  margin-bottom: 0.035em;
+  border-radius: 0.1em;
+  box-shadow: inset 0 0 0 0.02em rgba(0, 0, 0, 0.18);
 }
 
 .play-edge-left .play-edge-tile {
-  background: linear-gradient(to right, var(--play-back) 0 58%, var(--wall-seg) 58% 100%);
+  background: linear-gradient(
+    to left,
+    #fbf8ef 0 13%,
+    #7fd98c 13% 20%,
+    var(--play-back) 20% 78%,
+    var(--play-back-edge) 100%
+  );
 }
 
 .play-edge-right .play-edge-tile {
-  background: linear-gradient(to left, var(--play-back) 0 58%, var(--wall-seg) 58% 100%);
+  background: linear-gradient(
+    to right,
+    #fbf8ef 0 13%,
+    #7fd98c 13% 20%,
+    var(--play-back) 20% 78%,
+    var(--play-back-edge) 100%
+  );
 }
 
 /* A concealed kong's face-down ends. */
@@ -5836,7 +5949,6 @@ html.playing body {
 
 .play-flowers {
   display: inline-flex;
-  font-size: 0.8em;
 }
 
 /* Revealed hands on the side seats wrap into a narrow column. */
@@ -5864,33 +5976,41 @@ html.playing body {
   align-self: start;
 }
 
+.play-pond-slot-top {
+  justify-self: center;
+}
+
+.play-pond-slot-bottom {
+  justify-self: center;
+}
+
 .play-pond-slot-left {
   grid-area: lpond;
-  justify-self: end;
-  align-self: center;
+  justify-self: start;
+  align-self: start;
 }
 
 .play-pond-slot-right {
   grid-area: rpond;
-  justify-self: start;
-  align-self: center;
+  justify-self: end;
+  align-self: end;
 }
 
 .play-pond {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.04em;
+  gap: 0.2em 0.03em;
 }
 
 .play-pond-top,
 .play-pond-bottom {
-  width: calc(10 * 0.82em);
+  width: calc(12 * 0.82em);
   justify-content: center;
 }
 
 .play-pond-left,
 .play-pond-right {
-  max-width: calc(5 * 0.82em);
+  max-width: calc(6 * 0.82em);
 }
 
 .play-pond-left {
@@ -5901,6 +6021,15 @@ html.playing body {
   position: relative;
   display: inline-block;
   line-height: 0;
+}
+
+/* The tile that declared 叮 lies sideways. */
+.play-pond-tile.is-riichi {
+  margin: 0 0.12em;
+}
+
+.play-pond-tile.is-riichi > .tile-glyph {
+  rotate: 90deg;
 }
 
 /* The newest discard: a gold pin, and a short drop onto the table. */
@@ -6080,25 +6209,27 @@ html.playing body {
 }
 
 .play-spotlight.from-left {
-  right: calc(50% + 2.4em);
+  right: calc(50% + 2.5em);
   top: 50%;
   translate: 0 -50%;
 }
 
 .play-spotlight.from-right {
-  left: calc(50% + 2.4em);
+  left: calc(50% + 2.5em);
   top: 50%;
   translate: 0 -50%;
 }
 
 .play-spotlight.from-top {
-  left: calc(50% + 2.4em);
-  top: -0.6em;
+  left: 50%;
+  bottom: calc(50% + 2.3em);
+  translate: -50% 0;
 }
 
 .play-spotlight.from-bottom {
-  right: calc(50% + 2.4em);
-  bottom: -0.6em;
+  left: 50%;
+  top: calc(50% + 2.3em);
+  translate: -50% 0;
 }
 
 @keyframes play-spot {
@@ -6112,7 +6243,7 @@ html.playing body {
   }
 }
 
-/* ---- Call burst: a big calligraphic 吃 / 碰 / 槓 / 胡 by whoever called ---- */
+/* ---- Call burst: a big calligraphic 上 / 碰 / 槓 / 胡 by whoever called ---- */
 
 .play-burst {
   position: absolute;
@@ -6188,15 +6319,24 @@ html.playing body {
 .play-me {
   grid-area: me;
   position: relative;
+  z-index: 2;
+  padding-bottom: 0.3rem;
   display: flex;
   justify-content: center;
+  min-width: 0;
+}
+
+/* Your hand and, over its right end, the call buttons - kept to the hand's
+   width so they never land on the right-hand seat. */
+.play-hand-wrap {
+  position: relative;
   min-width: 0;
 }
 
 /* Call buttons: big round badges above the right end of your hand. */
 .play-calls {
   position: absolute;
-  right: 0.25rem;
+  right: 0;
   bottom: calc(100% + 0.35rem);
   z-index: 4;
   display: flex;
@@ -6233,6 +6373,24 @@ html.playing body {
 .play-call.is-long {
   padding: 0 0.8rem;
   font-size: clamp(1.2rem, 6.5vh, 1.7rem) !important;
+}
+
+/* 叮: red-gold like a win; armed, it pulses while you pick the tile. */
+.play-call.is-riichi {
+  background: var(--play-call-win);
+  color: #fff6d8;
+  -webkit-text-stroke: 0.02em #7a1f0f;
+}
+
+.play-call.is-riichi.is-armed {
+  box-shadow: 0 0 0 0.2rem var(--play-gold), 0 0.2rem 0.5rem rgba(0, 0, 0, 0.4);
+  animation: play-armed 1s ease-in-out infinite alternate;
+}
+
+@keyframes play-armed {
+  to {
+    box-shadow: 0 0 0 0.35rem rgba(255, 209, 102, 0.35), 0 0.2rem 0.5rem rgba(0, 0, 0, 0.4);
+  }
 }
 
 .play-call.is-pass {
@@ -6331,19 +6489,51 @@ html.playing body {
   filter: brightness(0.62) saturate(0.6);
 }
 
+/* ---- Tiles with thickness ---- */
+
+.play-felt img.tile-face,
+.play-my-melds img.tile-face,
+.play-result-hand img.tile-face {
+  box-shadow:
+    0 0 0 0.5px rgba(0, 0, 0, 0.28),
+    0 0.06em 0 #e2dccb,
+    0 0.12em 0 var(--play-back),
+    0 0.15em 0 var(--play-back-edge),
+    0 0.2em 0.14em rgba(0, 0, 0, 0.38);
+}
+
+.play-hand img.tile-face {
+  box-shadow:
+    0 0 0 0.5px rgba(0, 0, 0, 0.28),
+    0 -0.09em 0 var(--play-back),
+    0 -0.09em 0 0.5px var(--play-back-edge),
+    0 0.05em 0 #ddd6c3,
+    0 0.14em 0.16em rgba(0, 0, 0, 0.45);
+}
+
+.play-my-melds img.tile-face {
+  box-shadow:
+    0 0 0 0.5px rgba(0, 0, 0, 0.28),
+    0 -0.09em 0 var(--play-back),
+    0 0.05em 0 #ddd6c3,
+    0 0.14em 0.16em rgba(0, 0, 0, 0.45);
+}
+
 /* ---- Bottom bar ---- */
 
 .play-bar {
   grid-area: bar;
-  justify-self: center;
+  position: relative;
+  z-index: 3;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: center;
-  gap: 0.2rem 0.9rem;
-  padding: 0.12rem 0.85rem 0.12rem 0.2rem;
-  border-radius: 999px;
-  background: var(--play-shade);
+  gap: 0.2rem 1.4rem;
+  margin: 0 calc(-1 * max(0.7rem, env(safe-area-inset-right))) 0 calc(-1 * max(0.7rem, env(safe-area-inset-left)));
+  padding: 0.2rem 1rem max(0.2rem, env(safe-area-inset-bottom));
+  border-top: 1px solid rgba(255, 209, 102, 0.25);
+  background: linear-gradient(to bottom, rgba(18, 13, 9, 0.88), rgba(10, 7, 5, 0.96));
   font-size: 0.76rem;
   white-space: nowrap;
 }
@@ -6488,7 +6678,7 @@ html.playing body {
   flex-wrap: wrap;
   justify-content: center;
   gap: 0.25em;
-  font-size: clamp(18px, 6vh, 34px);
+  font-size: clamp(18px, 7.5vh, 38px);
 }
 
 .play-result-hand .play-meld {
@@ -6556,12 +6746,9 @@ html.playing body {
   color: #fff;
 }
 
-/* "Show result": brings the card back after View table. */
+/* "Show result": brings the card back after View table, where the call
+   buttons go (nothing can be called once the hand is over). */
 .play-show-result {
-  position: absolute;
-  z-index: 7;
-  top: max(0.4rem, env(safe-area-inset-top));
-  right: max(0.7rem, env(safe-area-inset-right));
   padding: 0.45rem 1rem;
   box-shadow: var(--shadow-float);
 }
