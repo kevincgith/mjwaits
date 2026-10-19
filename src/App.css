@@ -9047,7 +9047,16 @@ html.sc-fit-mode .build-version {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
-  pointer-events: none;
+  border: none;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+/* A bigger invisible hit area than the pill itself. */
+.sc-pin::after {
+  content: "";
+  position: absolute;
+  inset: -0.4rem -0.25rem;
 }
 
 .sc-pin.is-pos {
@@ -9094,9 +9103,11 @@ html.sc-fit-mode .build-version {
 
 /* The name leads the card; the dealer gets a 莊 tag (with 連N). No seat wind -
    the table doesn't need it. */
+/* Grows with the screen's height, but no faster than the card's width
+   allows - tall, narrow phones would otherwise crowd out the 莊 badge. */
 .sc-card-top .sc-card-name,
 .sc-fit .sc-card-top .sc-card-name {
-  font-size: clamp(var(--text-lg), 2.6vh, var(--text-xl));
+  font-size: clamp(var(--text-lg), min(2.6vh, 5vw), var(--text-xl));
   font-weight: 800;
   letter-spacing: -0.01em;
   line-height: 1.2;

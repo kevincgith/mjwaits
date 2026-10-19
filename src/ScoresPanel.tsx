@@ -1684,15 +1684,17 @@ function Board({
                   − on the pulled player's. */}
               {state.settings.showLah &&
                 pins.map((pin) => (
-                  <span
+                  <button
+                    type="button"
                     key={`${pin.other}`}
                     className={`sc-pin at-${facing(seat, pin.otherSeat)} ${pin.sign > 0 ? "is-pos" : "is-neg"}`}
+                    onClick={() => setSheet({ kind: "lah" })}
                     title={pin.sign > 0 ? `${player} 拉 ${pin.other}: ${fmt(pin.value)} (${pin.count}次)` : `${pin.other} 拉 ${player}: ${fmt(pin.value)} (${pin.count}次)`}
-                    aria-label={pin.sign > 0 ? `${player} has 拉 ${fmt(pin.value)} on ${pin.other}` : `${pin.other} has 拉 ${fmt(pin.value)} on ${player}`}
+                    aria-label={`${pin.sign > 0 ? `${player} has 拉 ${fmt(pin.value)} on ${pin.other}` : `${pin.other} has 拉 ${fmt(pin.value)} on ${player}`}. Open 拉踢`}
                   >
                     {pin.sign > 0 ? "+" : "−"}
                     {fmt(pin.value)}
-                  </span>
+                  </button>
                 ))}
               </div>
             </div>
