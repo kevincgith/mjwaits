@@ -14,10 +14,12 @@ import {
   forbiddenDiscards,
   isWinningHand,
   kongOptions,
+  lahAddOn,
   liveTilesLeft,
   meldsNeeded,
   riichiDiscards,
   riichiForcedDiscard,
+  surrenderable,
   sameTile,
   scoreWin,
   SEATS,
@@ -64,6 +66,14 @@ export interface BotProfile {
   // Forgotten tiles count as unseen and can't inform its reads. Optional,
   // default 1.
   memory?: number;
+  // 0..1: how much 拉 between players enters its decisions - the extra a
+  // deal-in to a particular player would cost, and the extra a win would
+  // collect. 0 plays as if there were no 拉. Optional, default 1.
+  pullSense?: number;
+  // 0..1: readiness to 投降 a 拉 once the rules allow it (3+ in a row,
+  // straight after a hand the holder won from it). 1 concedes a 拉 of 30
+  // or more; 0 never concedes. Optional, default 0.3.
+  surrender?: number;
   // ---- Human feel ----
   // Softmax temperature over near-equal choices (0 = always the top pick).
   noise: number;
@@ -95,6 +105,7 @@ export const BOT_PROFILES: BotProfile[] = [
     noise: 0,
     slip: 0,
     focus: 0,
+    surrender: 0.5,
   },
   {
     id: "veteran",
@@ -111,6 +122,7 @@ export const BOT_PROFILES: BotProfile[] = [
     noise: 0.003,
     slip: 0.003,
     focus: 0,
+    surrender: 0.5,
   },
   {
     id: "speedster",
@@ -128,6 +140,7 @@ export const BOT_PROFILES: BotProfile[] = [
     slip: 0.04,
     memory: 0.7,
     focus: 0.324,
+    surrender: 0.3,
   },
   {
     id: "hunter",
@@ -143,6 +156,7 @@ export const BOT_PROFILES: BotProfile[] = [
     read: 0.7,
     noise: 0.06,
     slip: 0.02,
+    surrender: 0.4,
   },
   {
     id: "wall",
@@ -159,6 +173,7 @@ export const BOT_PROFILES: BotProfile[] = [
     noise: 0,
     slip: 0.068,
     focus: 0.876,
+    surrender: 0.9,
   },
   {
     id: "gambler",
@@ -176,6 +191,7 @@ export const BOT_PROFILES: BotProfile[] = [
     slip: 0,
     memory: 0.5,
     focus: 0,
+    surrender: 0,
   },
   {
     id: "casual",
@@ -193,6 +209,7 @@ export const BOT_PROFILES: BotProfile[] = [
     slip: 0.068,
     memory: 0.3,
     focus: 0.108,
+    surrender: 0.6,
   },
 ];
 
@@ -204,6 +221,7 @@ export interface Voice {
   selfDraw: string[];
   riichi: string[];
   dealIn: string[];
+  surrender: string[];
 }
 
 export const VOICES: Record<string, Voice> = {
@@ -213,6 +231,7 @@ export const VOICES: Record<string, Voice> = {
     selfDraw: ["摸到喇。", "自摸，承讓。"],
     riichi: ["叮。", "聽緊。"],
     dealIn: ["好牌。", "算你嘅。"],
+    surrender: ["投降，下鋪再算。"],
   },
   veteran: {
     call: ["碰！", "要佢！", "上啦。"],
@@ -220,6 +239,7 @@ export const VOICES: Record<string, Voice> = {
     selfDraw: ["自摸！", "摸翻嚟！"],
     riichi: ["叮！小心喇。", "叮！"],
     dealIn: ["哎，俾你捉到。", "好眼光。"],
+    surrender: ["投降，留返啲力。"],
   },
   speedster: {
     call: ["碰！快啲！", "上！", "要！要！"],
@@ -227,6 +247,7 @@ export const VOICES: Record<string, Voice> = {
     selfDraw: ["自摸！快過你哋！"],
     riichi: ["叮！跟住就到！"],
     dealIn: ["慢咗少少…", "下鋪再嚟！"],
+    surrender: ["投降！快啲開下鋪！"],
   },
   hunter: {
     call: ["呢隻我要。", "碰，等大牌。"],
@@ -234,6 +255,7 @@ export const VOICES: Record<string, Voice> = {
     selfDraw: ["自摸大牌！", "值得等！"],
     riichi: ["叮，等大嘢。"],
     dealIn: ["細糊都要？", "冇所謂，等大嘅。"],
+    surrender: ["投降，等大牌報仇。"],
   },
   wall: {
     call: ["……碰。"],
@@ -241,6 +263,7 @@ export const VOICES: Record<string, Voice> = {
     selfDraw: ["自摸，安全第一。"],
     riichi: ["叮。"],
     dealIn: ["點會……", "唔應該㗎……"],
+    surrender: ["投降。穩陣啲。"],
   },
   gambler: {
     call: ["碰！搏！", "全部要！", "衝呀！"],
@@ -248,6 +271,7 @@ export const VOICES: Record<string, Voice> = {
     selfDraw: ["自摸！今晚旺！"],
     riichi: ["叮！照衝！", "叮！搏一鋪！"],
     dealIn: ["哈，冇所謂！", "再搏過！"],
+    surrender: ["投降？唔會㗎！"],
   },
   casual: {
     call: ["咦，碰！", "呢隻啱我！", "上，上。"],
@@ -255,6 +279,7 @@ export const VOICES: Record<string, Voice> = {
     selfDraw: ["自摸！今日好手氣！"],
     riichi: ["叮！應該係咁講…？"],
     dealIn: ["唉呀，又出銃。", "我都唔知你等呢隻！"],
+    surrender: ["唔玩喇，投降投降！"],
   },
 };
 
@@ -440,16 +465,37 @@ export function tileRisk(s: GameState, viewer: number, o: number, tile: Tile, re
 // `view`: the table as this player remembers it (see rememberedView) - pond
 // reads come from it, while threat still counts every discard (how long a
 // pond is, anyone can see).
-export function danger(s: GameState, seat: number, tile: Tile, read: number, unseen: Map<string, number>, focus = 0, view: GameState = s): number {
+export function danger(s: GameState, seat: number, tile: Tile, read: number, unseen: Map<string, number>, focus = 0, view: GameState = s, pullSense = 1): number {
   let d = 0;
   for (let o = 0; o < SEATS; o++) {
     if (o === seat) continue;
     const t = threat(s, o, read);
     if (t <= Math.max(0.02, focus)) continue;
-    const stake = o === s.dealer || seat === s.dealer ? 1.25 : 1;
-    d += t * stake * tileRisk(view, seat, o, tile, read, unseen);
+    d += t * dealInStake(s, seat, o, pullSense) * tileRisk(view, seat, o, tile, read, unseen);
   }
   return d;
+}
+
+// How much dealing into `o` costs relative to an average deal-in (~26 tai):
+// the dealer adds 莊, and 拉 between the two can add a lot. If `o` is
+// pulling us, they collect half the 拉 on top and it keeps growing; if we're
+// pulling `o`, it's a 踢 - half the 拉 on top, and we lose the 拉 itself
+// (counted at a third of its value, what it was likely to earn us). So a
+// tile `o` might want is far more dangerous than the same tile against a
+// player with no 拉 on us - defence becomes targeted.
+export function dealInStake(s: GameState, seat: number, o: number, sense = 1): number {
+  const dealer = o === s.dealer || seat === s.dealer ? 1.25 : 1;
+  const add = lahAddOn(s.lahs, o, seat);
+  const lost = add.kind === "踢" ? add.value / 3 : 0;
+  return dealer * (1 + (sense * (add.amount + lost)) / 26);
+}
+
+// What 拉 adds to a win of ours, averaged over who might pay: each pull or
+// kick we hold an add-on for counts once (a self-draw collects them all).
+export function lahGain(s: GameState, seat: number): number {
+  let sum = 0;
+  for (let o = 0; o < SEATS; o++) if (o !== seat) sum += lahAddOn(s.lahs, seat, o).amount;
+  return sum / 3;
 }
 
 // The table as a player with imperfect memory sees it: everyone else's
@@ -529,7 +575,7 @@ export function winChance(s: GameState, sh: number, acc: number, unseenTotal: nu
 // What a win is worth, in tai collected: 底 + typical extras + where the
 // hand is heading (counted more by the greedy), times about 1.7 for the
 // self-draws, which every player pays.
-const winWorth = (value: number, profile: BotProfile) => 1.7 * (7 + value * (0.6 + 0.8 * profile.greed));
+const winWorth = (value: number, profile: BotProfile, lah = 0) => 1.7 * (7 + value * (0.6 + 0.8 * profile.greed) + lah);
 
 // What dealing in costs as this player feels it: the measured average loss
 // (~26 tai), scaled by caution squared (none at all at 0, double for the
@@ -568,13 +614,14 @@ export function rateDiscardsFor(s: GameState, seat: number, profile: BotProfile)
     const sh = shanten(rest, melds);
     const acc = acceptance(rest, melds, sh, unseen);
     const value = handValue(s, seat, rest, p);
-    const d = danger(s, seat, t, profile.read, unseen, profile.focus, view);
+    const d = danger(s, seat, t, profile.read, unseen, profile.focus, view, profile.pullSense ?? 1);
     // In shanten steps: one step = 1.
     const build = -sh + 0.5 * profile.speed * (acc / (acc + 25)) + 0.07 * profile.greed * value;
     out.push({ tile: t, shanten: sh, acceptance: acc, value, danger: d, score: 0, build });
   }
   const best = out.reduce((a, b) => (b.build > a.build ? b : a));
-  const worth = winWorth(best.value, profile);
+  // A win is worth more when we hold 拉 or 踢 add-ons, so pushing pays more.
+  const worth = winWorth(best.value, profile, (profile.pullSense ?? 1) * lahGain(s, seat));
   const stepTai = Math.max(
     0.4,
     worth * (winChance(s, best.shanten, best.acceptance, unseenTotal, profile) - winChance(s, best.shanten + 1, best.acceptance, unseenTotal, profile))
@@ -647,7 +694,8 @@ export function botClaimFor(s: GameState, seat: number, profile: BotProfile, rng
   const p = s.players[seat];
   if (options.some((o) => o.kind === "win")) {
     // The Hunter lets a small win go by while the wall is deep.
-    if (profile.minTai > 0 && liveTilesLeft(s) > 36 && winTai(s, seat, tile, from) < profile.minTai) return null;
+    // (A 拉 or 踢 on the discarder counts toward it.)
+    if (profile.minTai > 0 && liveTilesLeft(s) > 36 && winTai(s, seat, tile, from) + lahAddOn(s.lahs, seat, from).amount < profile.minTai) return null;
     return { kind: "win" };
   }
   const melds = meldsNeeded(p);
@@ -695,6 +743,19 @@ export function botClaimFor(s: GameState, seat: number, profile: BotProfile, rng
   if (!best) return null;
   const threshold = 0.15 - (rng() < profile.slip ? 0.5 : 0);
   return best.score > threshold ? best.claim : null;
+}
+
+// Between hands: the holders this bot concedes a 拉 to (投降). Only 拉 the
+// rules allow; it gives up one once the 拉 is big enough for its taste -
+// keeping it means paying half again (and more) if the holder wins from it
+// once more, against the chance of 踢-ing it back for half.
+export function botSurrenders(s: GameState, seat: number, profile: BotProfile): number[] {
+  const eager = profile.surrender ?? 0.3;
+  if (eager <= 0) return [];
+  const threshold = 30 + (1 - eager) * 150;
+  return surrenderable(s, seat)
+    .filter((l) => l.value >= threshold)
+    .map((l) => Number(l.holder));
 }
 
 // A small seeded PRNG (mulberry32) for repeatable arena runs.

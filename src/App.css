@@ -5830,6 +5830,32 @@ html.playing body {
   --play-avatar: #2e8b57;
 }
 
+/* 拉 a seat holds: who it's on (avatar character, or 你) and the value -
+   red when it's on you, green when it's yours. */
+.play-lah {
+  display: inline-grid;
+  place-items: center;
+  height: 1.15rem;
+  padding: 0 0.3rem;
+  border-radius: 0.3rem;
+  background: rgba(255, 255, 255, 0.16);
+  color: var(--play-on-felt);
+  font-size: 0.68rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.play-lah.is-on-you {
+  background: #c8341c;
+  color: #fff6d8;
+}
+
+.play-lah.is-yours {
+  background: #2e8b57;
+  color: #fff6d8;
+}
+
 /* 叮 declared: a red tag beside the name. */
 .play-riichi {
   display: inline-grid;
@@ -6890,6 +6916,46 @@ html.playing body {
   margin: 0;
   color: var(--danger-text-1);
   font-size: 0.85rem;
+}
+
+/* 拉 / 踢 add-ons paid this hand. */
+.play-result-lah {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+/* 投降, when the rules allow it: what it does, and a two-tap button. */
+.play-surrender {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.45rem 0.6rem;
+  border-radius: var(--radius-sm);
+  background: var(--warning-bg-3, rgba(255, 196, 0, 0.15));
+  color: var(--warning-text, var(--text));
+  font-size: 0.82rem;
+}
+
+.play-surrender button {
+  flex-shrink: 0;
+  border: 1px solid currentColor;
+  border-radius: var(--radius-sm);
+  padding: 0.25rem 0.7rem;
+  background: none;
+  color: inherit;
+  font-weight: 700;
+}
+
+.play-surrender button.is-armed {
+  background: var(--danger-text-1, #c8341c);
+  border-color: transparent;
+  color: #fff;
 }
 
 .play-result-deltas {
@@ -8040,6 +8106,24 @@ html.playing body {
 
 .sc-banner .sc-icon-button {
   color: var(--warning-text);
+}
+
+.sc-banner > span {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The banner's one action (投降: open 拉踢). */
+.sc-banner-action {
+  flex-shrink: 0;
+  border: 1px solid currentColor;
+  border-radius: var(--radius-sm);
+  padding: 0.2rem 0.6rem;
+  background: none;
+  color: var(--warning-text);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
 }
 
 /* The four seats as a diamond, 流局 in the middle. */

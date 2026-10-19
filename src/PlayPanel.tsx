@@ -26,6 +26,8 @@ import {
   newGame,
   nextHand,
   resolveClaims,
+  surrender,
+  surrenderable,
   riichiDiscards,
   riichiForcedDiscard,
   roundLabel,
@@ -42,7 +44,7 @@ import {
 import { allTileKinds, shanten, sortTiles, tileKey, tileLabel, type Tile } from "./lib/mahjong";
 import { patternDisplayName, type BonusTile } from "./lib/scoring";
 import { BonusGlyphSpan, TileGlyphSpan } from "./TileGlyphs";
-import { BOT_PROFILES, botClaimFor, botTurnFor, profileById, rateDiscardsFor, voiceOf, type BotProfile, type Voice } from "./lib/bots";
+import { BOT_PROFILES, botClaimFor, botSurrenders, botTurnFor, profileById, rateDiscardsFor, voiceOf, type BotProfile, type Voice } from "./lib/bots";
 
 const WIND_CHARS = ["", "東", "南", "西", "北"];
 // Ready-made tables: who sits at Right / Across / Left (seats 1-3).
@@ -306,6 +308,8 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
     saved?.opponents?.length === 3 && saved.opponents.every((id) => BOT_PROFILES.some((p) => p.id === id)) ? saved.opponents : DEFAULT_OPPONENTS
   );
   const [opponentsOpen, setOpponentsOpen] = useState(false);
+  // 投降 on the result card takes two taps; this is the holder armed.
+  const [surrenderArmed, setSurrenderArmed] = useState<string | null>(null);
   const bots = useMemo<(BotProfile | null)[]>(() => [null, ...opponents.map(profileById)], [opponents]);
   // What each bot is saying, by seat (a speech bubble by its name card).
   const [bubbles, setBubbles] = useState<Record<number, { text: string; id: number }>>({});
@@ -505,6 +509,18 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
     else setSelected(index);
   };
 
+  // Next hand: first any bot allowed to 投降 decides (and says so), then deal.
+  const nextHandWithSurrenders = () => {
+    let s = game;
+    for (let seat = 1; seat < SEATS; seat++) {
+      const holders = botSurrenders(s, seat, bots[seat]!);
+      for (const holder of holders) s = surrender(s, holder, seat);
+      if (holders.length) window.setTimeout(() => say(seat, "surrender"), 300);
+    }
+    setSurrenderArmed(null);
+    advance(nextHand(s));
+  };
+
   const startNewGame = () => {
     setTotals([0, 0, 0, 0]);
     setMenuOpen(false);
@@ -524,6 +540,22 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
     <span className={`play-total${totals[seat] < 0 ? " is-neg" : ""}`}>{totals[seat] > 0 ? `+${totals[seat]}` : totals[seat]}</span>
   );
 
+  // The 拉 a seat holds, as chips: who it's on (their avatar character, or 你
+  // for you) and its value - red when it's on you, green when it's yours.
+  const lahChips = (seat: number) =>
+    (game.lahs ?? [])
+      .filter((l) => l.holder === String(seat))
+      .map((l) => {
+        const on = Number(l.pulled);
+        const who = on === HUMAN ? "你" : bots[on]!.name[0];
+        const tone = on === HUMAN ? " is-on-you" : seat === HUMAN ? " is-yours" : "";
+        return (
+          <span key={l.pulled} className={`play-lah${tone}`} title={`${nameOf(seat)} 拉 ${nameOf(on)}: ${l.value} (${l.count} in a row)`}>
+            拉{who} {l.value}
+          </span>
+        );
+      });
+
   // A bot's name card - flat, over the corner of the table like a HUD.
   const badge = (seat: number) => (
     <span className={`play-badge at-${SIDES[seat]}${activeSeat === seat ? " is-active" : ""}`}>
@@ -533,6 +565,7 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
         {nameOf(seat)}
         {seat === game.dealer && <span className="play-dealer">莊</span>}
         {game.players[seat].riichi && <span className="play-riichi">叮</span>}
+        {lahChips(seat)}
         {bubbles[seat] && (
           <span key={bubbles[seat].id} className="play-bubble" role="status">
             {bubbles[seat].text}
@@ -776,6 +809,7 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
             You
             {game.dealer === HUMAN && <span className="play-dealer">莊</span>}
             {me.riichi && <span className="play-riichi">叮</span>}
+            {lahChips(HUMAN)}
           </span>
           {total(HUMAN)}
           <span className="play-bar-round">
@@ -845,6 +879,39 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
                 </ul>
               )}
               {result.scoreError && <p className="play-result-error">Couldn't score this hand: {result.scoreError}</p>}
+              {(result.pairs ?? []).some((p) => p.lah) && (
+                <ul className="play-result-lah">
+                  {(result.pairs ?? [])
+                    .filter((p) => p.lah)
+                    .map((p) => (
+                      <li key={p.payer}>
+                        {p.lahKind === "踢" ? "踢" : "拉"} · {nameOf(Number(p.payer))} {Number(p.payer) === HUMAN ? "pay" : "pays"} {nameOf(Number(p.winner))} +{p.lah} on top (from {p.lahBefore})
+                      </li>
+                    ))}
+                </ul>
+              )}
+              {surrenderable(game, HUMAN).map((l) => {
+                const holder = Number(l.holder);
+                const armed = surrenderArmed === l.holder;
+                return (
+                  <div key={l.holder} className="play-surrender">
+                    <span>
+                      {nameOf(holder)} has 拉'd you {l.count} in a row ({l.value}). 投降 ends it, paying nothing.
+                    </span>
+                    <button
+                      type="button"
+                      className={armed ? "is-armed" : undefined}
+                      onClick={() => {
+                        if (!armed) return setSurrenderArmed(l.holder);
+                        setSurrenderArmed(null);
+                        setGame(surrender(game, holder, HUMAN));
+                      }}
+                    >
+                      {armed ? "Tap again to 投降" : "投降"}
+                    </button>
+                  </div>
+                );
+              })}
               <div className="play-result-deltas">
                 {result.deltas.map((d, seat) => (
                   <span key={seat} className={d < 0 ? "is-neg" : d > 0 ? "is-pos" : undefined}>
@@ -856,7 +923,7 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
                 <button type="button" className="play-view-table" onClick={() => setResultHidden(true)}>
                   View table
                 </button>
-                <button type="button" className="play-next" onClick={() => advance(nextHand(game))}>
+                <button type="button" className="play-next" onClick={nextHandWithSurrenders}>
                   Next hand
                 </button>
               </div>

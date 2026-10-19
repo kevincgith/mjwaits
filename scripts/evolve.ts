@@ -41,6 +41,8 @@ const GENES = {
   slip: [0, 0.08],
   riichi: [0, 1],
   focus: [0, 0.9],
+  surrender: [0, 1],
+  pullSense: [0, 1],
 } as const;
 type Gene = keyof typeof GENES;
 const GENE_KEYS = Object.keys(GENES) as Gene[];
@@ -59,8 +61,8 @@ const SPECIES: Species[] = [
   { id: "veteran", name: "老手 Veteran", from: "veteran", bounds: { caution: [0.2, 0.6], greed: [0.05, 0.5], callAppetite: [0.4, 0.95], noise: [0, 0.08], slip: [0, 0.02] } },
   { id: "speedster", name: "快手 Speedster", from: "speedster", bounds: { callAppetite: [0.85, 1], greed: [0, 0.2], minTai: [0, 0], speed: [1.1, 1.6] } },
   { id: "hunter", name: "大牌 Hunter", from: "hunter", bounds: { greed: [0.7, 1], minTai: [3, 8], callAppetite: [0.2, 0.7] } },
-  { id: "wall", name: "鐵壁 Iron Wall", from: "wall", bounds: { caution: [0.8, 1], callAppetite: [0, 0.3], foldAt: [0.2, 0.45], read: [0.7, 1] } },
-  { id: "gambler", name: "賭徒 Gambler", from: "gambler", bounds: { caution: [0, 0.1], foldAt: [0.95, 1], riichi: [0.8, 1], focus: [0, 0] } },
+  { id: "wall", name: "鐵壁 Iron Wall", from: "wall", bounds: { surrender: [0.6, 1], caution: [0.8, 1], callAppetite: [0, 0.3], foldAt: [0.2, 0.45], read: [0.7, 1] } },
+  { id: "gambler", name: "賭徒 Gambler", from: "gambler", bounds: { surrender: [0, 0.15], caution: [0, 0.1], foldAt: [0.95, 1], riichi: [0.8, 1], focus: [0, 0] } },
   { id: "casual", name: "街坊 Casual", from: "casual", bounds: { noise: [0.2, 0.4], slip: [0.05, 0.1], read: [0, 0.4] } },
 ];
 const rangeOf = (sp: Species, g: Gene): readonly [number, number] => sp.bounds[g] ?? GENES[g];
@@ -70,11 +72,12 @@ interface Job {
   bots: BotProfile[];
   walls: number;
   seed: number;
+  session: number;
 }
 
 if (!isMainThread) {
   parentPort!.on("message", (job: Job) => {
-    parentPort!.postMessage({ id: job.id, result: runArena(job.bots, job.walls, job.seed) });
+    parentPort!.postMessage({ id: job.id, result: runArena(job.bots, job.walls, job.seed, undefined, job.session) });
   });
 } else {
   const args = process.argv.slice(2);
@@ -88,6 +91,8 @@ if (!isMainThread) {
   const POP = SPECIES.length * PER;
   if (POP % 4) throw new Error(`${SPECIES.length} species x ${PER} must be a multiple of 4`);
   const BENCH_EVERY = Number(opt("benchEvery", "5"));
+  // Hands per session (拉 carries over within one); 1 = independent hands.
+  const SESSION = Math.max(1, Number(opt("session", "1")));
   const WALLS = Number(opt("walls", "24"));
   const ROUNDS = Number(opt("rounds", "3"));
   const BENCH_WALLS = Number(opt("bench", "24"));
@@ -174,9 +179,9 @@ if (!isMainThread) {
   }
 
   type Member = ReturnType<typeof make> & { life: BotStats };
-  const blank = (p: BotProfile): BotStats => ({ id: p.id, name: p.name, hands: 0, wins: 0, selfDraws: 0, dealIns: 0, taiWon: 0, taiLost: 0, dealInTai: 0, winTurns: 0, calls: 0, riichis: 0, biggestWin: 0 });
+  const blank = (p: BotProfile): BotStats => ({ id: p.id, name: p.name, hands: 0, wins: 0, selfDraws: 0, dealIns: 0, taiWon: 0, taiLost: 0, dealInTai: 0, winTurns: 0, calls: 0, riichis: 0, lahWon: 0, lahLost: 0, surrenders: 0, biggestWin: 0 });
   const addStats = (into: BotStats, s: BotStats) => {
-    for (const k of ["hands", "wins", "selfDraws", "dealIns", "taiWon", "taiLost", "dealInTai", "winTurns", "calls", "riichis"] as const) into[k] += s[k];
+    for (const k of ["hands", "wins", "selfDraws", "dealIns", "taiWon", "taiLost", "dealInTai", "winTurns", "calls", "riichis", "lahWon", "lahLost", "surrenders"] as const) into[k] += s[k];
     into.biggestWin = Math.max(into.biggestWin, s.biggestWin);
   };
   const net = (s: BotStats) => s.taiWon - s.taiLost;
@@ -208,13 +213,13 @@ if (!isMainThread) {
     //    are split into chunks so the worker pool stays busy.
     const jobs: Omit<Job, "id">[] = [];
     const seatings: number[][] = [];
-    const CHUNK = Math.max(2, Math.ceil(WALLS / 4));
+    const CHUNK = Math.max(SESSION, Math.ceil(Math.max(2, Math.ceil(WALLS / 4)) / SESSION) * SESSION);
     for (let r = 0; r < ROUNDS; r++) {
       const order = population.map((_, i) => i).sort(() => rng() - 0.5);
       for (let t = 0; t < POP / 4; t++) {
         const table = order.slice(t * 4, t * 4 + 4);
         for (let w = 0; w < WALLS; w += CHUNK) {
-          jobs.push({ bots: table.map((i) => population[i]), walls: Math.min(CHUNK, WALLS - w), seed: Math.floor(rng() * 1e9) });
+          jobs.push({ bots: table.map((i) => population[i]), walls: Math.min(CHUNK, WALLS - w), seed: Math.floor(rng() * 1e9), session: SESSION });
           seatings.push(table);
         }
       }
@@ -227,7 +232,7 @@ if (!isMainThread) {
     if (benchNow)
       champs.forEach((champ, c) => {
         for (let w = 0; w < BENCH_WALLS; w += CHUNK) {
-          jobs.push({ bots: [champ, ...BENCH], walls: Math.min(CHUNK, BENCH_WALLS - w), seed: Math.floor(rng() * 1e9) });
+          jobs.push({ bots: [champ, ...BENCH], walls: Math.min(CHUNK, BENCH_WALLS - w), seed: Math.floor(rng() * 1e9), session: SESSION });
           benchJobs.push(c);
         }
       });
@@ -269,7 +274,7 @@ if (!isMainThread) {
     history.push(snapshot);
     writeFileSync(
       `${OUT}/log.json`,
-      JSON.stringify({ config: { GENS, PER, POP, WALLS, ROUNDS, BENCH_WALLS, BENCH_EVERY, SEED, genes: GENES, species: SPECIES }, generations: history }, null, 1)
+      JSON.stringify({ config: { GENS, PER, POP, WALLS, ROUNDS, BENCH_WALLS, BENCH_EVERY, SESSION, SEED, genes: GENES, species: SPECIES }, generations: history }, null, 1)
     );
 
     const top = ranked[0];

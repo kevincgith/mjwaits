@@ -13,6 +13,10 @@ import {
   resolveClaims,
   riichiDiscards,
   riichiForcedDiscard,
+  settleWin,
+  lahAddOn,
+  surrender,
+  surrenderable,
   kongOptions,
   SEATS,
   type GameState,
@@ -184,6 +188,65 @@ describe("game", () => {
       const eaten = resolveClaims(s2, [null, { kind: "win" }, null, null]);
       const eatIds = eaten.phase.kind === "over" ? eaten.phase.result.score?.matched.map((x) => x.pattern.id) : [];
       expect(eatIds).toContain("riichi-eat");
+    });
+  });
+
+  describe("拉 / 踢", () => {
+    // Your examples: 11, then a 20-tai repeat is worth 26 and the 拉 is 37;
+    // 拉 29, then a 20-tai 踢 is worth 35 and the kicker's new 拉 is 20.
+    it("adds half the 拉 on a repeat win and grows it", () => {
+      const lahs = [{ holder: "1", pulled: "2", value: 11, count: 1 }];
+      const [pair] = settleWin(lahs, 0, 1, 2, 20);
+      expect(pair.worth).toBe(26);
+      expect(lahAddOn(lahs, 1, 2)).toEqual({ amount: 6, kind: "拉", value: 11 });
+    });
+
+    it("kicks: the pulled player winning back adds half and takes over at the plain value", () => {
+      const s0 = newGame();
+      s0.dealer = 0;
+      s0.lahs = [{ holder: "1", pulled: "2", value: 29, count: 1 }];
+      // Seat 2 wins 20 tai off seat 1.
+      const [pair] = settleWin(s0.lahs, 0, 2, 1, 20);
+      expect(pair.lahKind).toBe("踢");
+      expect(pair.worth).toBe(35);
+    });
+
+    it("pays each self-draw payer its own pair's 拉, and a draw keeps every 拉", () => {
+      const lahs = [
+        { holder: "0", pulled: "1", value: 10, count: 1 },
+        { holder: "3", pulled: "0", value: 8, count: 1 },
+      ];
+      const pairs = settleWin(lahs, 2, 0, null, 12);
+      const by = Object.fromEntries(pairs.map((p) => [p.payer, p.worth]));
+      expect(by).toEqual({ "1": 12 + 5, "2": 12, "3": 12 + 4 });
+      // A 流局 hand keeps them, and the next deal carries them on.
+      const s0 = newGame();
+      s0.lahs = lahs;
+      s0.phase = { kind: "over", result: { winner: null, from: null, tile: null, score: null, scoreError: null, deltas: [0, 0, 0, 0] } };
+      expect(nextHand(s0).lahs).toEqual(lahs);
+    });
+
+    it("allows 投降 only after 3 拉 in a row, between hands, paying nothing", () => {
+      const s0 = newGame();
+      s0.lahs = [
+        { holder: "1", pulled: "0", value: 60, count: 3 },
+        { holder: "2", pulled: "0", value: 30, count: 2 },
+      ];
+      // Mid-hand: not yet.
+      expect(surrenderable(s0, 0)).toEqual([]);
+      // After a draw the 拉 stands - that hand didn't involve them.
+      s0.phase = { kind: "over", result: { winner: null, from: null, tile: null, score: null, scoreError: null, deltas: [0, 0, 0, 0] } };
+      expect(surrenderable(s0, 0)).toEqual([]);
+      // After seat 1 wins off a third player, neither.
+      const offOther = settleWin([], 0, 1, 3, 10);
+      s0.phase = { kind: "over", result: { winner: 1, from: 3, tile: null, score: null, scoreError: null, deltas: [0, 10, 0, -10], pairs: offOther } };
+      expect(surrenderable(s0, 0)).toEqual([]);
+      // After seat 1 self-draws (seat 0 paid): now.
+      const selfDraw = settleWin([], 0, 1, null, 10);
+      s0.phase = { kind: "over", result: { winner: 1, from: null, tile: null, score: null, scoreError: null, deltas: [-10, 30, -10, -10], pairs: selfDraw } };
+      expect(surrenderable(s0, 0).map((l) => l.holder)).toEqual(["1"]);
+      expect(surrender(s0, 1, 0).lahs).toEqual([{ holder: "2", pulled: "0", value: 30, count: 2 }]);
+      expect(() => surrender(s0, 2, 0)).toThrow();
     });
   });
 });

@@ -331,7 +331,9 @@ never changes a payment.)
   your 拉 is gone and theirs starts at the plain value: 拉 29, then a 20 back is worth 35,
   and their 拉 is 20.
 - A 自摸 counts pair by pair. A 流局 keeps every 拉; a hand the holder doesn't win ends theirs;
-  投降 ends one with nothing paid.
+  投降 ends one with nothing paid. **投降提示** (a setting, on at 3) puts a prompt above the
+  table once anyone's 拉 has run that many hands in a row; it's only a reminder - 投降 itself
+  is never restricted here, since house rules differ.
 - **反雪** — a player who dealt into a 雙響/三響 and 自摸s the very next hand is paid back by each
   of those winners: 5 after a 雙響, 10 after a 三響 (both settings).
 - **Jackpot** — each 流局 every player puts the set amount in; a win can take it, or tap the
@@ -404,7 +406,17 @@ held upright is asked to turn sideways.
 - **Scoring:** a win is scored by the same tai list as the Scoring tab, with what the table
   knows filled in (seat and round wind, self-draw, the winning tile, last-tile and
   replacement-draw wins, 天胡/地胡/人胡, 莊 and 連莊). The discarder pays the tai; on a
-  self-draw all three do. Running totals sit on each seat badge. The result card's **View
+  self-draw all three do. Running totals sit on each seat badge.
+- **拉 / 踢** carry from hand to hand by the same house rules as the Scores tab (shared code in
+  `ledger.ts`): a repeat win off the same player adds half the 拉 and grows it, winning it back
+  (踢) adds half and takes over at the plain value, a draw keeps every 拉, and any other win
+  ends the holder's. Each name card shows the 拉 that player holds - 「拉你 78」 in red when
+  it's on you, green when it's yours - and the result card lists each add-on paid.
+- **投降:** at this table you may concede a 拉 only once it has run **3 or more hands in a
+  row**, and only straight after a hand that involved you (the holder has just won from you).
+  The result card then offers it (two taps); it ends that 拉 with nothing paid. Bots decide
+  their own by personality before the next deal - the Iron Wall concedes early, the Gambler
+  never - and say so. The result card's **View
   table** hides it to look over the final table and the revealed hands; **Show result** brings
   it back.
 - **Bots** (`src/lib/bots.ts`) all run one decision engine, and a personality sets its
@@ -425,6 +437,12 @@ held upright is asked to turn sideways.
   - **Suji (筋) is left off on purpose.** With no furiten it measured no safer than any
     other tile.
   - **Calls** weigh the step gained, the value gained, the 門清 given up and 食替.
+  - **拉 shapes defence:** dealing into a particular player is weighted by what it would
+    really cost - their 拉 on you adds half its value; your 拉 on them is a 踢, adding half
+    and losing the 拉 itself - so a tile that player might want is far more dangerous than
+    the same tile against someone with no 拉 on you. Wins count the 拉 they'd collect too.
+    In 16-hand sessions, 拉-aware bots beat 拉-blind copies of themselves by about 2 tai a
+    hand (the Iron Wall, which already folds against everyone, showed no gain).
   - **Human feel:**
     - a softmax "noise" picks among near-equal moves, and the occasional lazy "slip" happens;
     - **thinking time follows the decision:** an obvious throw goes almost at once, a close

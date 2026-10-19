@@ -1,5 +1,6 @@
 // npm run arena -- [--walls 200] [--bots veteran,speedster,hunter,wall] [--seed 1] [--workers 8]
 //                  [--tweak veteran2:veteran.caution=0.4,foldAt=0.6] [--calibrate] [--list]
+//                  [--session 16]   (hands per session: 拉, dealer and 連莊 carry over)
 //
 // --tweak adds a variant: a new id, the profile it copies, and the settings
 // it changes - so tunings can be played off against each other.
@@ -56,12 +57,15 @@ if (isMainThread) {
   const seed = Number(opt("seed", "1"));
   const workers = Math.max(1, Math.min(Number(opt("workers", String(availableParallelism()))), walls));
   if (ids.length !== 4) throw new Error("--bots needs four ids (repeats allowed); --list shows them");
-  const per = Array.from({ length: workers }, (_, i) => Math.floor(walls / workers) + (i < walls % workers ? 1 : 0));
+  // Each worker gets whole sessions.
+  const session = Math.max(1, Number(opt("session", "1")));
+  const sessions = Math.ceil(walls / session);
+  const per = Array.from({ length: Math.min(workers, sessions) }, (_, i) => (Math.floor(sessions / Math.min(workers, sessions)) + (i < sessions % Math.min(workers, sessions) ? 1 : 0)) * session);
   const parts = await Promise.all(
     per.map(
       (n, i) =>
         new Promise<{ result: ArenaResult; calib?: Record<string, [number, number]> }>((resolve, reject) => {
-          const w = new Worker(new URL(import.meta.url), { workerData: { ids, walls: n, seed: seed * 1000 + i, calibrate: args.includes("--calibrate"), tweak: opt("tweak", "") } });
+          const w = new Worker(new URL(import.meta.url), { workerData: { ids, walls: n, seed: seed * 1000 + i, calibrate: args.includes("--calibrate"), tweak: opt("tweak", ""), session: Number(opt("session", "1")) } });
           w.once("message", resolve);
           w.once("error", reject);
         })
@@ -103,7 +107,7 @@ if (isMainThread) {
     }
   }
 } else {
-  const { ids, walls, seed, calibrate, tweak } = workerData as { ids: string[]; walls: number; seed: number; calibrate: boolean; tweak: string };
+  const { ids, walls, seed, calibrate, tweak, session } = workerData as { ids: string[]; walls: number; seed: number; calibrate: boolean; tweak: string; session: number };
   const lookup = lookupWith(parseTweaks(tweak));
   const calib: Record<string, [number, number]> = {};
   const bucket = (d: number) => (d <= 3 ? "0-3" : d <= 6 ? "4-6" : d <= 9 ? "7-9" : d <= 12 ? "10-12" : d <= 15 ? "13-15" : "16+");
@@ -150,7 +154,8 @@ if (isMainThread) {
             }
           }
         }
-      : undefined
+      : undefined,
+    session
   );
   parentPort!.postMessage({ result, calib });
 }
