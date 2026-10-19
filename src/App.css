@@ -5513,7 +5513,7 @@ html.playing body {
   color: var(--play-on-felt);
   --play-hand: min(calc((100vw - env(safe-area-inset-left) - env(safe-area-inset-right) - 2rem) / 14.6), 12.5vh, 62px);
   --play-small: clamp(13px, 5.2vh, 28px);
-  --play-pond: clamp(14px, 6vh, 30px);
+  --play-pond: clamp(16px, calc(var(--play-hand) * 0.58), 36px);
   /* How far the table runs on under your hand. */
   --play-under: calc(var(--play-hand) * 0.9);
 }
@@ -5587,7 +5587,9 @@ html.playing body {
   min-height: 0;
   padding-top: 2.3rem;
   perspective: 760px;
-  perspective-origin: 50% 0%;
+  /* A viewpoint a little below the top of the screen, so the standing
+     tiles show their faces, not just their tops. */
+  perspective-origin: 50% 45%;
 }
 
 .play-felt {
@@ -5897,6 +5899,8 @@ html.playing body {
 .play-seat-right {
   flex-direction: column;
   align-self: center;
+  /* Starts below the name card over the table's far corner. */
+  margin-top: 2.2em;
 }
 
 .play-seat-left {
@@ -5920,47 +5924,20 @@ html.playing body {
   align-items: inherit;
 }
 
-/* Concealed tiles edge-on: a row across the top, a column down each side. */
-.play-edge {
-  display: inline-flex;
-}
-
-.play-edge-tile {
-  display: inline-block;
-  border-radius: 0.09em;
-}
-
-.play-edge-top .play-edge-tile {
-  width: 0.7em;
-  height: 0.95em;
-  margin-right: 0.035em;
-  border-radius: 0.1em;
-  background: linear-gradient(
-    to bottom,
-    #fbf8ef 0 13%,
-    #7fd98c 13% 20%,
-    var(--play-back) 20% 78%,
-    var(--play-back-edge) 100%
-  );
-  box-shadow: inset 0 0 0 0.02em rgba(0, 0, 0, 0.18), 0 0.07em 0.1em rgba(0, 0, 0, 0.4);
-}
-
-.play-edge-left,
-.play-edge-right {
-  flex-direction: column;
-}
-
-/* The side walls stand up for real: drawn like the far wall (a jade back
-   with its ivory top), then turned on edge in 3D so they rise off the felt,
-   leaning a little toward the middle the way a player tilts their tiles -
-   so each tile shows its top and its height, not a flat strip. */
+/* The bots' concealed tiles, standing on the felt as real 3D blocks: each
+   tile is its footprint on the felt, with two faces built from it - its
+   top (ivory body toward its owner, jade back toward the middle) raised to
+   the tile's height, and its jade back standing up toward the middle, in
+   shade. Rows across the top, columns down each side. */
 .play-felt,
-.play-seat {
+.play-seat,
+.play-edge,
+.play-edge-tile {
   transform-style: preserve-3d;
 }
 
 /* Everything lying on the felt sits a hair above it. With the felt a 3D
-   context (for the standing walls), Safari otherwise draws the felt over
+   context (for the standing tiles), Safari otherwise draws the felt over
    anything flat at exactly its depth - the ponds went invisible on iPhone. */
 .play-pond-slot,
 .play-middle,
@@ -5970,49 +5947,103 @@ html.playing body {
   transform: translateZ(1px);
 }
 
-.play-edge-left {
-  transform-origin: 0 50%;
-  transform: rotateY(-105deg);
+.play-edge {
+  display: inline-flex;
+  --play-tile-height: 0.95em;
 }
 
+.play-edge-left,
 .play-edge-right {
-  transform-origin: 100% 50%;
-  transform: rotateY(105deg);
+  flex-direction: column;
+  font-size: 1.2em;
 }
 
-/* The far wall leans back a touch so its backs face you. */
 .play-edge-top {
-  transform-origin: 50% 100%;
-  transform: rotateX(-30deg);
+  font-size: 1.25em;
 }
 
+.play-edge-tile {
+  position: relative;
+  display: inline-block;
+}
+
+.play-edge-tile::before,
+.play-edge-tile::after {
+  content: "";
+  position: absolute;
+}
+
+/* The top, at the tile's height. */
+.play-edge-tile::before {
+  inset: 0;
+  border-radius: 0.08em;
+  transform: translateZ(var(--play-tile-height));
+}
+
+/* The jade back, standing. */
+.play-edge-tile::after {
+  box-shadow: inset 0 -0.04em 0 rgba(0, 0, 0, 0.35);
+}
+
+/* Side walls: footprints run down the side, backs face the middle. */
 .play-edge-left .play-edge-tile,
 .play-edge-right .play-edge-tile {
-  width: 0.95em;
-  height: 0.7em;
-  margin-bottom: 0.035em;
-  border-radius: 0.1em;
-  box-shadow: inset 0 0 0 0.02em rgba(0, 0, 0, 0.18);
+  width: 0.55em;
+  height: 0.62em;
+  margin-bottom: 0.02em;
 }
 
-.play-edge-left .play-edge-tile {
-  background: linear-gradient(
-    to left,
-    #fbf8ef 0 13%,
-    #7fd98c 13% 20%,
-    var(--play-back) 20% 78%,
-    var(--play-back-edge) 100%
-  );
+.play-edge-left .play-edge-tile::before {
+  background: linear-gradient(to right, #fbf8ef 0 55%, #7fd98c 55% 70%, var(--play-back) 70%);
 }
 
-.play-edge-right .play-edge-tile {
-  background: linear-gradient(
-    to right,
-    #fbf8ef 0 13%,
-    #7fd98c 13% 20%,
-    var(--play-back) 20% 78%,
-    var(--play-back-edge) 100%
-  );
+.play-edge-right .play-edge-tile::before {
+  background: linear-gradient(to left, #fbf8ef 0 55%, #7fd98c 55% 70%, var(--play-back) 70%);
+}
+
+.play-edge-left .play-edge-tile::after,
+.play-edge-right .play-edge-tile::after {
+  top: 0;
+  width: var(--play-tile-height);
+  height: 100%;
+}
+
+.play-edge-left .play-edge-tile::after {
+  left: 100%;
+  border-radius: 0 0.1em 0.1em 0;
+  transform-origin: 0 50%;
+  transform: rotateY(-90deg);
+  background: linear-gradient(to right, var(--play-back-edge), var(--play-back) 30%, #4cc06a 90%);
+}
+
+.play-edge-right .play-edge-tile::after {
+  right: 100%;
+  border-radius: 0.1em 0 0 0.1em;
+  transform-origin: 100% 50%;
+  transform: rotateY(90deg);
+  background: linear-gradient(to left, var(--play-back-edge), var(--play-back) 30%, #4cc06a 90%);
+}
+
+/* Far wall: footprints run along the top, backs face you. */
+.play-edge-top .play-edge-tile {
+  width: 0.68em;
+  height: 0.4em;
+  margin-right: 0.03em;
+}
+
+.play-edge-top .play-edge-tile::before {
+  background: linear-gradient(to bottom, #fbf8ef 0 45%, #7fd98c 45% 62%, var(--play-back) 62%);
+}
+
+.play-edge-top .play-edge-tile::after {
+  top: 100%;
+  left: 0;
+  width: 100%;
+  height: var(--play-tile-height);
+  border-radius: 0 0 0.1em 0.1em;
+  transform-origin: 50% 0;
+  transform: rotateX(90deg);
+  background: linear-gradient(to top, var(--play-back-edge), var(--play-back) 35%, #4cc06a 95%);
 }
 
 /* A concealed kong's face-down ends. */
@@ -6161,8 +6192,8 @@ html.playing body {
 
 .play-compass {
   position: relative;
-  width: 4.4em;
-  height: 4.4em;
+  width: 3.6em;
+  height: 3.6em;
   border-radius: 0.9em;
   background: linear-gradient(160deg, #3a3f45, #1d2024);
   box-shadow: 0 0.12em 0.4em rgba(0, 0, 0, 0.45), inset 0 0 0 0.08em rgba(255, 255, 255, 0.08);
