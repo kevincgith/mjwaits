@@ -8698,9 +8698,15 @@ html.sc-fit-mode .build-version {
   align-items: stretch;
 }
 
+/* On tall screens the cards stop growing before their rows do: keep each
+   one against the middle of the table so the gaps around it stay even. */
+.sc-fit .sc-seat.sc-area-top { align-items: flex-end; }
+.sc-fit .sc-seat.sc-area-left,
+.sc-fit .sc-seat.sc-area-right { align-items: center; }
+.sc-fit .sc-seat.sc-area-bottom { align-items: flex-start; }
+
 .sc-fit .sc-card {
   height: 100%;
-  max-height: 11.5rem;
   min-height: 0;
   overflow: hidden;
   justify-content: center;
@@ -9064,7 +9070,9 @@ html.sc-fit-mode .build-version {
   width: min(33vw, 10rem);
 }
 
-.sc-fit .sc-card {
+/* Cap the box, not the card, so the card fills it and the 拉 pins on its
+   edges stay on the card on tall screens. */
+.sc-fit .sc-card-box {
   max-height: 10.5rem;
 }
 

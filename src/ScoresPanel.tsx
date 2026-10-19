@@ -1619,9 +1619,7 @@ function Board({
                 <span className="sc-card-top">
                   <span className="sc-card-name">{player}</span>
                   {isDealer && (
-                    <span className="sc-zhuang-tag" title={state.streak > 0 ? `莊 · 連${state.streak}` : "莊"}>
-                      莊
-                    </span>
+                    <span className="sc-zhuang-tag">{state.streak > 0 ? `莊連${state.streak}` : "莊"}</span>
                   )}
                 </span>
                 <span className="sc-card-score" data-anchor="score">
