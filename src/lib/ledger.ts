@@ -45,8 +45,7 @@ export interface ScoreSettings {
   lahRound: "up" | "down"; // 拉's half: 0.5進1 (up) or drop it
   tiRound: "up" | "down"; // 踢's half
   showLah: boolean; // 拉數提示 - 拉 badges on the cards
-  seatReminder: boolean; // 執位提示 - remind to re-seat when the round wind moves
-  selfDrawKey: boolean; // 自摸鍵 - a one-tap 自摸 on each card
+  seatReminder: boolean; // 執位提示 - remind to re-seat after 北風北局
   highScore: number | null; // 高分提示 - flag a payment at or above this
 }
 
@@ -66,7 +65,6 @@ export const DEFAULT_SETTINGS: ScoreSettings = {
   tiRound: "up",
   showLah: true,
   seatReminder: true,
-  selfDrawKey: false,
   highScore: 50,
 };
 
@@ -164,7 +162,7 @@ export interface ReplayState {
   // Every event's own deltas (hands, bonuses, jackpot hand-outs alike), for
   // the running-totals chart and the hand list.
   steps: { eventIndex: number; deltas: Record<string, number>; totalsAfter: Record<string, number> }[];
-  seatChangeDue: boolean; // the round wind just moved and 執位提示 is on
+  seatChangeDue: boolean; // 北風北局 just ended and 執位提示 is on
   label: string;
 }
 
@@ -249,7 +247,8 @@ export function replay(game: ScoreGame): ReplayState {
     state.streak = 0;
     if (state.dealer === state.roundStartDealer) {
       state.roundWind = (state.roundWind + 1) % 4;
-      state.seatChangeDue = state.settings.seatReminder;
+      // 執位 once a whole 圈 is done: after 北風北局, back round to 東.
+      if (state.roundWind === 0) state.seatChangeDue = state.settings.seatReminder;
     }
   };
 
@@ -465,17 +464,21 @@ const isGame = (g: unknown): g is ScoreGame =>
   (g as ScoreGame).seats.length === SEATS &&
   Array.isArray((g as ScoreGame).events);
 
+// Whatever was saved (or imported), trimmed to what this version can use.
+function normalizeStore(saved: Partial<ScoreStore>): ScoreStore {
+  return {
+    active: isGame(saved.active) ? saved.active : null,
+    history: Array.isArray(saved.history) ? saved.history.filter(isGame) : [],
+    roster: Array.isArray(saved.roster) ? saved.roster.filter((p) => p && typeof p.name === "string") : [],
+    settings: { ...DEFAULT_SETTINGS, ...(saved.settings ?? {}) },
+  };
+}
+
 export function loadScores(): ScoreStore {
   try {
     const raw = window.localStorage.getItem(SCORES_KEY);
     if (!raw) return emptyStore();
-    const saved = JSON.parse(raw) as Partial<ScoreStore>;
-    return {
-      active: isGame(saved.active) ? saved.active : null,
-      history: Array.isArray(saved.history) ? saved.history.filter(isGame) : [],
-      roster: Array.isArray(saved.roster) ? saved.roster.filter((p) => p && typeof p.name === "string") : [],
-      settings: { ...DEFAULT_SETTINGS, ...(saved.settings ?? {}) },
-    };
+    return normalizeStore(JSON.parse(raw) as Partial<ScoreStore>);
   } catch {
     return emptyStore();
   }
@@ -487,6 +490,55 @@ export function saveScores(store: ScoreStore): void {
   } catch {
     // Storage unavailable - scores just won't survive a reload.
   }
+}
+
+// ---- Backup --------------------------------------------------------------
+// A backup file is the whole store, wrapped so an import can tell it apart
+// from any other JSON. Older or newer versions read it the same way a saved
+// store is read (normalizeStore), so a backup outlives app updates.
+
+const BACKUP_KIND = "mjwaits.scores";
+const BACKUP_VERSION = 1;
+
+export function exportScores(store: ScoreStore, now = Date.now()): string {
+  return JSON.stringify({ kind: BACKUP_KIND, version: BACKUP_VERSION, exportedAt: now, store }, null, 1);
+}
+
+// The store in a backup file, or null if the text isn't one. A bare store
+// (what localStorage itself holds) is accepted too.
+export function parseBackup(text: string): ScoreStore | null {
+  let data: unknown;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (!data || typeof data !== "object") return null;
+  const wrapped = (data as { kind?: unknown }).kind === BACKUP_KIND;
+  const saved = (wrapped ? (data as { store?: unknown }).store : data) as Partial<ScoreStore> | undefined;
+  if (!saved || typeof saved !== "object") return null;
+  if (!wrapped && !("history" in saved) && !("active" in saved)) return null;
+  return normalizeStore(saved);
+}
+
+// A backup folded into what's here: every game from both (by id - the copy
+// with more entries wins), the roster joined, this device's settings kept.
+// This device's game in progress stays in progress; the backup's, if it's a
+// different game, goes to the history like any other.
+export function mergeScores(here: ScoreStore, backup: ScoreStore): ScoreStore {
+  const byId = new Map<string, ScoreGame>();
+  const add = (g: ScoreGame | null) => {
+    if (!g) return;
+    const prev = byId.get(g.id);
+    if (!prev || g.events.length > prev.events.length) byId.set(g.id, g);
+  };
+  [here.active, ...here.history, backup.active, ...backup.history].forEach(add);
+  const activeId = here.active?.id ?? backup.active?.id ?? null;
+  const active = activeId ? (byId.get(activeId) ?? null) : null;
+  const history = [...byId.values()].filter((g) => g.id !== activeId).sort((a, b) => b.startedAt - a.startedAt);
+  const roster = here.roster.slice();
+  for (const p of backup.roster) if (!roster.some((r) => r.name === p.name)) roster.push(p);
+  return { active, history, roster, settings: here.settings };
 }
 
 export function newGame(seats: string[], firstDealer: number, settings: ScoreSettings): ScoreGame {
