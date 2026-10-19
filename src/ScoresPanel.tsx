@@ -139,6 +139,11 @@ const Icons = {
       <circle cx="17" cy="17" r="2" />
     </svg>
   ),
+  plusMinus: (
+    <svg {...ICON} width={11} height={11} strokeWidth={2.2}>
+      <path d="M12 4v9M7.5 8.5h9M7.5 19h9" />
+    </svg>
+  ),
   recent: (
     <svg {...ICON} width={18} height={18}>
       <circle cx="12" cy="12" r="8.5" />
@@ -403,6 +408,7 @@ function HandSheet({
   state,
   seat,
   initial,
+  startMode = "win",
   onDone,
   onClose,
 }: {
@@ -410,10 +416,11 @@ function HandSheet({
   state: ReplayState;
   seat: number;
   initial?: HandInitial;
+  startMode?: "win" | "bonus";
   onDone: (ev: ScoreEvent) => void;
   onClose: () => void;
 }) {
-  const [mode, setMode] = useState<"win" | "bonus">("win");
+  const [mode, setMode] = useState<"win" | "bonus">(startMode);
   const [switched, setSwitched] = useState(false);
   const player = state.seats[seat];
   const switchTo = (m: "win" | "bonus") => {
@@ -701,9 +708,11 @@ function BonusSheet({
         </div>
       </div>
       <Keypad max={state.settings.scoreCap} value={amount} onChange={setAmount} />
-      {n > 0 && (
-        <p className="sc-summary-line">
-          {kind === "獎" ? (
+      {/* Always there and one line tall, so the keypad above never moves. */}
+      <p className={`sc-summary-line${n > 0 ? "" : " is-empty"}`} aria-live="polite">
+        {n <= 0 ? (
+          "Enter an amount to see who pays what"
+        ) : kind === "獎" ? (
             <>
               <strong>{player}</strong> <span className="is-pos">+{fmt(n * count)}</span> · {who} <span className="is-neg">−{fmt(n)}</span>
               {count > 1 && " each"}
@@ -714,8 +723,7 @@ function BonusSheet({
               {count > 1 && " each"}
             </>
           )}
-        </p>
-      )}
+      </p>
     </Sheet>
   );
 }
@@ -1352,7 +1360,7 @@ function Confirm({ title, detail, onYes, onClose, yes = "確定", danger }: { ti
 // ---- The board (戰況) -----------------------------------------------------------
 
 type BoardSheet =
-  | { kind: "hand"; seat: number; initial?: HandInitial }
+  | { kind: "hand"; seat: number; initial?: HandInitial; mode?: "win" | "bonus" }
   | { kind: "recent" }
   | { kind: "draw" }
   | { kind: "seats" }
@@ -1677,19 +1685,24 @@ function Board({
                     </span>
                   )}
                 </span>
-                {state.hands.length > 0 && (
-                  <span className="sc-card-tally" aria-label={`${tally.wins} wins, ${tally.selfDraws} self-draws, ${tally.dealIns} deal-ins`}>
-                    <span>
-                      胡<strong>{tally.wins}</strong>
-                    </span>
-                    <span>
-                      摸<strong>{tally.selfDraws}</strong>
-                    </span>
-                    <span>
-                      銃<strong>{tally.dealIns}</strong>
-                    </span>
-                  </span>
-                )}
+              </button>
+              {/* The card opens 食胡; its 胡 · 摸 · 銃 footer opens 特別獎罰. */}
+              <button
+                type="button"
+                className="sc-card-bonus"
+                onClick={() => setSheet({ kind: "hand", seat, mode: "bonus" })}
+                aria-label={`${tally.wins} wins, ${tally.selfDraws} self-draws, ${tally.dealIns} deal-ins. 特別獎罰 for ${player}`}
+              >
+                <span>
+                  胡<strong>{tally.wins}</strong>
+                </span>
+                <span>
+                  摸<strong>{tally.selfDraws}</strong>
+                </span>
+                <span>
+                  銃<strong>{tally.dealIns}</strong>
+                </span>
+                <span className="sc-card-bonus-mark">{Icons.plusMinus}</span>
               </button>
               {/* 拉 pins on the edge facing the other player: + on the holder's card,
                   − on the pulled player's. */}
@@ -1746,11 +1759,12 @@ function Board({
 
       {sheet?.kind === "hand" && (
         <HandSheet
-          key={sheet.seat}
+          key={`${sheet.seat}-${sheet.mode ?? "win"}`}
           store={store}
           state={state}
           seat={sheet.seat}
           initial={sheet.initial}
+          startMode={sheet.mode}
           onClose={close}
           onDone={(ev) => add(ev, ev.t === "bonus" ? `Recorded 特別${ev.kind}` : "Recorded ✓")}
         />
