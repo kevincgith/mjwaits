@@ -5959,6 +5959,17 @@ html.playing body {
   transform-style: preserve-3d;
 }
 
+/* Everything lying on the felt sits a hair above it. With the felt a 3D
+   context (for the standing walls), Safari otherwise draws the felt over
+   anything flat at exactly its depth - the ponds went invisible on iPhone. */
+.play-pond-slot,
+.play-middle,
+.play-seat-melds,
+.play-seat .play-flowers,
+.play-seat .play-meld {
+  transform: translateZ(1px);
+}
+
 .play-edge-left {
   transform-origin: 0 50%;
   transform: rotateY(-105deg);
