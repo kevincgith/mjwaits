@@ -267,6 +267,11 @@ export interface ResolvedHand {
   melds: ResolvedMeld[];
   pair: Tile[];
   bonusTiles: BonusTile[];
+  // Set only by winningMeldCandidateHands when the winning tile could
+  // legitimately have completed more than one group: pins which meld it
+  // completed for this candidate reading (winningMeld returns it as-is).
+  // Left unset otherwise, meaning "use winningMeld's default priority".
+  completedMeld?: ResolvedMeld;
 }
 
 function countsForSuit(tiles: Tile[], suit: Suit, size: number): number[] {
@@ -776,7 +781,8 @@ function isShanponWait(hand: ResolvedHand, ctx: GameContext): boolean {
   // rule). A declared triplet is always concealed:false (see pushMeld in
   // ScoringPanel), so this check alone is enough to exclude it - no
   // separate declared-meld count needed.
-  return hand.melds.some((m) => m.kind === "triplet" && m.concealed && meldHasTileKind(m, ctx.winningTile!));
+  const completed = winningMeld(hand, ctx);
+  return completed !== null && completed.kind === "triplet";
 }
 
 // Shared by 獨獨/假獨: the pre-completion tiles - everything except kong
@@ -1208,6 +1214,7 @@ export function isGenuineMultiWait(hand: ResolvedHand, ctx: GameContext): boolea
 // this.
 function winningMeld(hand: ResolvedHand, ctx: GameContext): ResolvedMeld | null {
   if (ctx.winningTile === null) return null;
+  if (hand.completedMeld) return hand.completedMeld;
   const matches = (t: Tile) => t.suit === ctx.winningTile!.suit && t.rank === ctx.winningTile!.rank;
   if (hand.pair.some(matches)) return null;
   for (const kind of ["triplet", "kong", "run"] as const) {
@@ -1217,34 +1224,39 @@ function winningMeld(hand: ResolvedHand, ctx: GameContext): ResolvedMeld | null 
   return null;
 }
 
-// One ResolvedHand per genuinely distinct meld that could be "the" one
-// winningMeld() designates - see that function's own comment. Only branches
-// when there's real ambiguity: 2+ *differently-shaped* concealed melds of
-// the same kind (the first kind, in winningMeld's own priority order, that
-// has any match at all) both holding a tile of the winning kind. Melds of
-// identical shape (e.g. two 123m runs) don't need separate variants -
-// swapping which identical object winningMeld happens to pick can't change
-// any pattern's score. Returns just `[hand]` unchanged whenever there's no
-// such ambiguity, so callers can always iterate the result the same way.
+// One ResolvedHand per genuinely distinct group the winning tile could have
+// completed, pinned via ResolvedHand.completedMeld - see winningMeld's own
+// comment. Branches across kinds, not just within one: a claimed 8m that
+// sits in both a concealed 888m triplet and a 789m run is a shanpon reading
+// (triplet completed, run was already whole) or a kanchan reading (run
+// completed, triplet was already whole), and they score differently (the
+// completed group is the open one, so the other stays 暗 and can feed
+// 兩暗刻). When the pair also holds the kind, "the pair completed it" is one
+// more reading, kept as the unmodified hand. Melds of identical shape
+// (e.g. two 123m runs) don't need separate variants - swapping which
+// identical object is picked can't change any pattern's score. Returns just
+// `[hand]` whenever there's only one possible reading.
 function winningMeldCandidateHands(hand: ResolvedHand, ctx: GameContext): ResolvedHand[] {
   if (ctx.winningTile === null) return [hand];
   const winningTile = ctx.winningTile;
-  if (hand.pair.some((t) => t.suit === winningTile.suit && t.rank === winningTile.rank)) return [hand];
-  for (const kind of ["triplet", "kong", "run"] as const) {
-    const candidates = hand.melds.filter((m) => m.kind === kind && m.concealed && meldHasTileKind(m, winningTile));
-    if (candidates.length === 0) continue;
-    const distinctByShape = new Map<string, ResolvedMeld>();
-    for (const c of candidates) distinctByShape.set(c.tiles.map((t) => `${t.suit}${t.rank}`).join(","), c);
-    if (distinctByShape.size <= 1) return [hand];
-    // Move each candidate to the front in turn, so winningMeld's own
-    // find() (which only ever looks within this same kind, at this same
-    // priority position) lands on it instead of whichever was first.
-    return [...distinctByShape.values()].map((chosen) => ({
-      ...hand,
-      melds: [chosen, ...hand.melds.filter((m) => m !== chosen)],
-    }));
+  const pairHolds = hand.pair.some((t) => t.suit === winningTile.suit && t.rank === winningTile.rank);
+  // Every distinct concealed meld - of ANY kind, not just winningMeld's
+  // first-matching kind - that holds a tile of the winning kind. A 888m
+  // triplet and a 789m run both holding the claimed 8m are two different
+  // readings (shanpon vs. kanchan) even though they're different kinds.
+  const distinctByShape = new Map<string, ResolvedMeld>();
+  for (const m of hand.melds) {
+    if (!m.concealed || !meldHasTileKind(m, winningTile)) continue;
+    const key = `${m.kind}:${m.tiles.map((t) => `${t.suit}${t.rank}`).join(",")}`;
+    if (!distinctByShape.has(key)) distinctByShape.set(key, m);
   }
-  return [hand];
+  const meldCount = distinctByShape.size;
+  // Pair attribution is the default reading whenever the pair holds the
+  // kind (winningMeld returns null for it), so it's one more candidate.
+  if (meldCount + (pairHolds ? 1 : 0) <= 1) return [hand];
+  const variants: ResolvedHand[] = [...distinctByShape.values()].map((chosen) => ({ ...hand, completedMeld: chosen }));
+  if (pairHolds) variants.unshift(hand);
+  return variants;
 }
 
 // 明 (open) vs 暗 (concealed/hidden), per the house rule: a meld is 明 if
