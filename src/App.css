@@ -10148,24 +10148,15 @@ html.sc-fit-mode .build-version {
   font-weight: 600;
 }
 
-/* 還原 in Recent says what it will undo. */
-.sc-undo-button {
-  display: flex;
-  flex-direction: column;
+/* 最近's 還原 / 重做, beside Close. */
+.sc-head-actions {
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
-  line-height: 1.15;
-  min-width: 0;
+  gap: 0.1rem;
 }
 
-.sc-undo-what {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--text-muted);
-  font-size: var(--text-xs);
-  font-weight: 500;
+.sc-head-actions .sc-icon-button:disabled {
+  opacity: 0.3;
 }
 
 .sc-share-row {

@@ -312,6 +312,7 @@ function Sheet({
   tabs,
   still,
   frame,
+  headActions,
 }: {
   title: ReactNode;
   subtitle?: ReactNode;
@@ -319,6 +320,7 @@ function Sheet({
   children: ReactNode;
   actions?: ReactNode;
   tabs?: ReactNode;
+  headActions?: ReactNode; // small icon buttons beside Close
   // Already on screen (switching 食胡 / 特別獎罰): skip the entrance animation.
   still?: boolean;
   frame?: SheetFrame;
@@ -347,6 +349,7 @@ function Sheet({
             <h2 className="sc-sheet-title">{title}</h2>
             {subtitle && <div className="sc-sheet-subtitle">{subtitle}</div>}
           </div>
+          {headActions}
           <button type="button" className="sc-icon-button" onClick={onClose} aria-label="Close">
             {Icons.close}
           </button>
@@ -2329,6 +2332,7 @@ function RecentSheet({
   state,
   onPick,
   onUndo,
+  onRedo,
   onClose,
 }: {
   store: ScoreStore;
@@ -2336,6 +2340,7 @@ function RecentSheet({
   state: ReplayState;
   onPick: (index: number) => void; // tap an entry to fix or delete it
   onUndo: () => void;
+  onRedo: () => void;
   onClose: () => void;
 }) {
   const lastIndex = game.events.length - 1;
@@ -2365,13 +2370,16 @@ function RecentSheet({
       title="最近 Recent"
       subtitle={game.events.length ? `${state.hands.length}局 · ${game.events.length} entries · tap one to fix it` : "Nothing recorded yet"}
       onClose={onClose}
-      actions={
-        <>
-          <button type="button" className="sc-secondary sc-undo-button" onClick={onUndo} disabled={lastIndex < 0}>
-            還原
-            {undoLabel && <span className="sc-undo-what">{undoLabel}</span>}
+      // 還原 / 重做 as on the board's toolbar - the list shows each one land.
+      headActions={
+        <span className="sc-head-actions">
+          <button type="button" className="sc-icon-button" onClick={onUndo} disabled={lastIndex < 0} aria-label={undoLabel ? `還原 ${undoLabel}` : "還原"} title={undoLabel ? `還原 · ${undoLabel}` : "還原"}>
+            {Icons.undo}
           </button>
-        </>
+          <button type="button" className="sc-icon-button" onClick={onRedo} disabled={!canRedo(game)} aria-label="重做" title="重做">
+            {Icons.redo}
+          </button>
+        </span>
       }
     >
       {game.events.length === 0 ? (
@@ -3037,6 +3045,7 @@ function Board({
           state={state}
           onPick={(index) => setSheet({ kind: "entry", index })}
           onUndo={undo}
+          onRedo={redo}
           onClose={close}
         />
       )}
