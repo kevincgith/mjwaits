@@ -47,6 +47,8 @@ export interface ScoreSettings {
   showLah: boolean; // 拉數提示 - 拉 badges on the cards
   seatReminder: boolean; // 執位提示 - remind to re-seat after 北風北局
   highScore: number | null; // 高分提示 - flag a payment at or above this
+  showTally: boolean; // 胡摸銃數 - win / self-draw / deal-in counts on the cards
+  quickScan: boolean; // 快速掃描 - a Scan button on the table, winner picked after the scan
 }
 
 export const DEFAULT_SETTINGS: ScoreSettings = {
@@ -66,6 +68,8 @@ export const DEFAULT_SETTINGS: ScoreSettings = {
   showLah: true,
   seatReminder: true,
   highScore: 50,
+  showTally: true,
+  quickScan: false,
 };
 
 export interface PatternNote {

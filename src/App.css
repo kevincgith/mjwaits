@@ -7054,6 +7054,19 @@ html.playing body {
   font-variant-numeric: tabular-nums;
 }
 
+/* A settings amount, the same size and shape as a stepper. */
+.sc-input-pill {
+  flex: 0 0 auto;
+  width: 6.25rem;
+  height: 2.1rem;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: var(--fill);
+  text-align: center;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
 .sc-switch {
   position: relative;
   flex-shrink: 0;
@@ -7091,6 +7104,12 @@ html.playing body {
   align-items: center;
   border-radius: var(--radius-pill);
   background: var(--fill);
+}
+
+.sc-stepper.is-disabled .sc-stepper-value,
+.sc-input-pill:disabled,
+.sc-row.is-off .sc-row-main {
+  opacity: 0.4;
 }
 
 .sc-stepper button {
@@ -7242,6 +7261,24 @@ html.playing body {
 .sc-option:disabled {
   opacity: 0.45;
   cursor: default;
+}
+
+/* 候補 Edit mode: tap a player to take them off the bench. */
+.sc-option-x {
+  display: inline-flex;
+  flex-shrink: 0;
+  width: 1.1rem;
+  height: 1.1rem;
+  color: var(--sc-neg);
+}
+
+.sc-option-x svg {
+  width: 100%;
+  height: 100%;
+}
+
+.sc-option-remove:not(:disabled) {
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--sc-neg) 45%, transparent);
 }
 
 .sc-zhuang {
@@ -7922,7 +7959,7 @@ html.playing body {
   transition: transform 0.12s ease;
 }
 
-.sc-card-box:has(> .sc-card:active, > .sc-card-bonus:active) {
+.sc-card-box:has(> .sc-card:active, > .sc-card-foot :active) {
   transform: scale(0.97);
 }
 
@@ -9147,43 +9184,110 @@ html.sc-fit-mode .build-version {
   padding-bottom: calc(0.5rem + var(--sc-bonus-h));
 }
 
-.sc-card-bonus {
+.sc-card-foot {
   position: absolute;
   right: 0;
   bottom: 0;
   left: 0;
   z-index: 1;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.7rem;
   height: var(--sc-bonus-h);
-  padding: 0 0.5rem;
-  border: none;
   border-radius: 0 0 var(--radius-lg) var(--radius-lg);
   background: var(--surface-sunken);
   box-shadow: inset 0 1px 0 var(--separator);
+  overflow: hidden;
+}
+
+.sc-card-bonus {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  padding: 0 0.2rem;
+  border: none;
+  background: none;
   color: var(--text-muted);
   font: inherit;
   font-size: var(--text-xs);
   font-weight: 600;
+  white-space: nowrap;
   cursor: pointer;
 }
 
-.sc-card-bonus strong {
-  margin-left: 0.15rem;
-  color: var(--text-secondary);
+.sc-card-counts {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.12rem;
+  color: var(--text-muted);
+}
+
+.sc-card-counts strong {
+  font-size: var(--text-sm);
+  font-weight: 800;
   font-variant-numeric: tabular-nums;
 }
 
-.sc-card-bonus-mark {
-  display: inline-flex;
-  margin-left: -0.3rem;
-  opacity: 0.7;
+.sc-card-counts .is-win {
+  color: var(--text);
 }
 
-.sc-card-bonus:active {
+.sc-card-counts .is-self {
+  color: var(--sc-pos);
+}
+
+.sc-card-counts .is-dealin {
+  color: var(--sc-neg);
+}
+
+/* Small phones (SE): a size down so two-digit counts still fit by the camera. */
+@media (max-width: 360px) {
+  .sc-card-counts strong {
+    font-size: var(--text-xs);
+  }
+
+  .sc-card-scan {
+    width: 1.5rem;
+  }
+}
+
+/* ± on the left as a small tinted chip, so the footer reads as a button. */
+.sc-card-bonus-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 1.05rem;
+  height: 1.05rem;
+  border-radius: 50%;
+  background: var(--accent-tint);
+  color: var(--accent);
+}
+
+.sc-card-bonus:active,
+.sc-card-scan:active {
   background: var(--fill);
+}
+
+/* 快速掃描: the camera at the footer's right, split off by a hairline. */
+.sc-card-scan {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.7rem;
+  border: none;
+  padding: 0;
+  background: none;
+  box-shadow: inset 1px 0 0 var(--separator);
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.sc-card-scan svg {
+  width: 1rem;
+  height: 1rem;
 }
 
 @media (max-height: 760px) {
@@ -9278,8 +9382,11 @@ html.sc-fit-mode .build-version {
 }
 
 .sc-lah-surrender {
+  /* Same width armed or not, so "Confirm?" doesn't shift the row. */
+  width: 100%;
   min-height: 1.9rem;
-  padding: 0.2rem 0.7rem;
+  padding: 0.2rem 0.3rem;
+  white-space: nowrap;
   font-size: var(--text-sm);
 }
 
@@ -9756,7 +9863,8 @@ html.sc-fit-mode .build-version {
     "left center right"
     ".    bottom .";
   gap: 0.4rem;
-  align-items: stretch;
+  /* Seats keep their own height beside the taller round 自摸 button. */
+  align-items: center;
 }
 
 .sc-table-pick .sc-area-top { grid-area: top; }
@@ -9766,6 +9874,7 @@ html.sc-fit-mode .build-version {
 
 .sc-pick {
   position: relative;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -10248,4 +10357,10 @@ html.sc-fit-mode .build-version {
   75% {
     transform: translateX(4px);
   }
+}
+
+/* Safari greys disabled inputs on its own - keep it the same as a stepper. */
+.sc-input-pill:disabled {
+  color: var(--text);
+  -webkit-text-fill-color: var(--text);
 }
