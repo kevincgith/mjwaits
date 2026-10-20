@@ -6,6 +6,7 @@ import {
   mergeScores,
   newGame,
   parseBackup,
+  previewFanXue,
   redoEvent,
   replay,
   settle,
@@ -111,9 +112,79 @@ describe("一炮多響 and 反雪", () => {
     expect(replay(game([multi(3, [0, 8], [1, 5]), win(3, 2, null)], { fanXueDouble: 3 })).hands[1].fanXue[0].amount).toBe(3);
   });
 
-  it("no 反雪 when a hand comes between, or when it's off", () => {
-    expect(replay(game([multi(3, [0, 8], [1, 5]), draw, win(3, 2, null)])).hands[2].fanXue).toEqual([]);
+  it("the 食胡 sheet's preview shows the 反雪 the next hand would pay", () => {
+    const s = replay(game([multi(3, [0, 8], [1, 5])]));
+    expect(s.fanXueDue).toEqual({ loser: "D", winners: ["A", "B"] });
+    expect(previewFanXue(s, [{ seat: 3 }], null)).toEqual([
+      { from: "A", to: "D", amount: 5 },
+      { from: "B", to: "D", amount: 5 },
+    ]);
+    // Only D's 自摸 does it.
+    expect(previewFanXue(s, [{ seat: 3 }], 0)).toEqual([]);
+    expect(previewFanXue(s, [{ seat: 2 }], null)).toEqual([]);
+  });
+
+  it("a 流局 in between keeps the 反雪", () => {
+    expect(replay(game([multi(3, [0, 8], [1, 5]), draw, win(3, 2, null)])).hands[2].fanXue).toEqual([
+      { from: "A", to: "D", amount: 5 },
+      { from: "B", to: "D", amount: 5 },
+    ]);
+    expect(replay(game([multi(3, [0, 8], [1, 5]), draw, draw])).fanXueDue).toEqual({ loser: "D", winners: ["A", "B"] });
+  });
+
+  it("so do 特別獎罰, 投降 and Jackpot entries in between", () => {
+    const between: ScoreEvent[] = [
+      { t: "bonus", at: 0, seat: 2, amount: 5, kind: "獎" },
+      { t: "surrender", at: 0, holder: "A", pulled: "D" },
+      { t: "jackpotIn", at: 0, shares: [{ player: "C", amount: 5 }] },
+    ];
+    const s = replay(game([multi(3, [0, 8], [1, 5]), ...between, win(3, 2, null)]));
+    expect(s.hands[1].fanXue.map((f) => f.from)).toEqual(["A", "B"]);
+  });
+
+  it("no 反雪 when a won hand comes between, or when it's off", () => {
+    expect(replay(game([multi(3, [0, 8], [1, 5]), win(2, 3, 0), win(3, 2, null)])).hands[2].fanXue).toEqual([]);
     expect(replay(game([multi(3, [0, 8], [1, 5]), win(3, 2, null)], { fanXue: false })).hands[1].fanXue).toEqual([]);
+  });
+});
+
+describe("圈 and 東", () => {
+  const dealer = (seat: number, resetRound = false): ScoreEvent => ({ t: "dealer", at: 0, seat, streak: 0, resetRound });
+
+  it("a 莊家 change before the first hand is who deals first: the 圈 starts there", () => {
+    const s = replay(game([dealer(3), win(3, 2, null)]));
+    expect(s.hands[0].label).toBe("東風東局");
+    expect(s.roundStartDealer).toBe(3);
+  });
+
+  it("counts 第幾圈 and 第幾個東 as the deal goes round", () => {
+    // Four non-dealer wins pass the deal once round: 東風 → 南風.
+    const round = [win(1, 1, 0), win(2, 1, 0), win(3, 1, 0), win(0, 1, 1)];
+    expect(replay(game([])).circle).toBe(1);
+    expect(replay(game(round))).toMatchObject({ circle: 2, east: 1, label: "南風東局" });
+    const s = replay(game([...round, ...round, ...round, ...round]));
+    expect(s).toMatchObject({ circle: 5, east: 2, label: "東風東局" });
+  });
+
+  it("a 莊家 change can set any 風局", () => {
+    const set = (seat: number, wind: number, hand: number): ScoreEvent => ({ t: "dealer", at: 0, seat, streak: 0, resetRound: false, round: { wind, hand } });
+    // B deals 南風西局: the 圈 started two seats back, at D.
+    const s = replay(game([set(1, 1, 2)]));
+    expect(s).toMatchObject({ label: "南風西局", roundWind: 1, roundStartDealer: 3, circle: 1, east: 1 });
+    // From there the deal goes on as usual: C deals 南風北局, then D starts 西風.
+    expect(replay(game([set(1, 1, 2), win(2, 1, 1)])).label).toBe("南風北局");
+    expect(replay(game([set(1, 1, 2), win(2, 1, 1), win(3, 1, 2)])).label).toBe("西風東局");
+    // After hands, a new wind starts a new 圈 - and a new 東 if it lands on 東風.
+    expect(replay(game([win(1, 1, 0), set(2, 1, 0)]))).toMatchObject({ circle: 2, east: 1, label: "南風東局" });
+    const back = replay(game([win(1, 1, 0), set(2, 1, 0), win(3, 1, 2), set(0, 0, 0)]));
+    expect(back).toMatchObject({ circle: 3, east: 2, label: "東風東局" });
+    // The same wind is just a relabel - e.g. 莊 moving seat and keeping the round.
+    expect(replay(game([win(1, 1, 0), set(3, 0, 1)]))).toMatchObject({ circle: 1, east: 1, label: "東風南局" });
+  });
+
+  it("a reset back to 東風東局 starts a new 圈 and 東 only after hands were played", () => {
+    expect(replay(game([dealer(2, true)]))).toMatchObject({ circle: 1, east: 1 });
+    expect(replay(game([win(1, 1, 0), dealer(2, true)]))).toMatchObject({ circle: 2, east: 2, label: "東風東局" });
   });
 });
 
@@ -281,3 +352,16 @@ describe("Backup", () => {
     expect(mergeScores(store({}), backup).active?.id).toBe("live");
   });
 });
+
+describe("Jackpot paid in by hand", () => {
+  it("takes it from each payer and adds it to the pot, which a win can then take", () => {
+    const payIn: ScoreEvent = { t: "jackpotIn", at: 0, shares: [{ player: "A", amount: 5 }, { player: "C", amount: 10 }] };
+    const s = replay(game([payIn], { jackpot: true }));
+    expect(s.pot).toBe(15);
+    expect(s.totals).toMatchObject({ A: -5, B: 0, C: -10, D: 0 });
+    const won = replay(game([payIn, win(1, 3, 0, { jackpotTo: "B" })], { jackpot: true }));
+    expect(won.pot).toBe(0);
+    expect(won.totals.B).toBe(3 + 15);
+  });
+});
+

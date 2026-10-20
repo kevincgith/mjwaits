@@ -7928,27 +7928,6 @@ html.playing body {
   line-height: 1;
 }
 
-.sc-summary-line {
-  overflow: hidden;
-  margin: 0;
-  padding: 0.6rem 0.75rem;
-  border-radius: var(--radius-md);
-  background: var(--surface-sunken);
-  font-size: var(--text-md);
-  font-variant-numeric: tabular-nums;
-  line-height: 1.4;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.sc-summary-line.is-empty {
-  color: var(--text-muted);
-  font-size: var(--text-sm);
-  text-align: center;
-  /* Same height as a filled line, whose text is a size bigger. */
-  line-height: calc(var(--text-md) * 1.4);
-}
-
 /* A seat picker laid out like the table. */
 .sc-diamond {
   display: grid;
@@ -8057,7 +8036,15 @@ html.playing body {
   background: var(--surface);
   box-shadow: 0 0 0 1px var(--separator);
   white-space: nowrap;
-  pointer-events: none;
+  cursor: default;
+}
+
+.sc-status-name {
+  overflow: hidden;
+  color: var(--accent);
+  font-size: var(--text-xs);
+  font-weight: 800;
+  text-overflow: ellipsis;
 }
 
 .sc-status-round {
@@ -8070,6 +8057,13 @@ html.playing body {
   color: var(--text-muted);
   font-size: var(--text-xs);
   font-variant-numeric: tabular-nums;
+}
+
+.sc-status-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 0.4em;
+  white-space: nowrap;
 }
 
 .sc-jackpot {
@@ -9614,18 +9608,23 @@ html.sc-fit-mode .build-version {
 /* 食胡: work the tai out on the Scoring tab - by photo or by tiles. */
 .sc-score-hand {
   display: flex;
-  gap: 0.5rem;
+  flex-shrink: 0;
+  gap: 0.35rem;
 }
 
 .sc-score-hand > button {
   display: inline-flex;
-  flex: 1;
   align-items: center;
   justify-content: center;
-  gap: 0.4rem;
-  min-height: 2.1rem;
-  padding: 0.3rem 0.6rem;
-  font-size: var(--text-sm);
+  width: 2.75rem;
+  height: 2.75rem;
+  min-height: 0;
+  padding: 0;
+}
+
+.sc-score-hand svg {
+  width: 1.2rem;
+  height: 1.2rem;
 }
 
 /* A picker whose players can be held (雙響): no text selection or iOS
@@ -9669,7 +9668,8 @@ html.sc-fit-mode .build-version {
 
 .sc-lah-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 2.5rem 3rem 3rem 5.25rem;
+  grid-template-columns: minmax(0, 1fr) 2.5rem 3rem 3rem 3rem;
+  column-gap: 0.3rem;
   align-items: center;
   min-height: 2.9rem;
   font-size: var(--text-md);
@@ -9692,13 +9692,16 @@ html.sc-fit-mode .build-version {
   font-weight: 600;
 }
 
-.sc-lah-surrender {
-  /* Same width armed or not, so "Confirm?" doesn't shift the row. */
-  width: 100%;
-  min-height: 1.9rem;
-  padding: 0.2rem 0.3rem;
+/* Small, and the same width armed or not, so 確定 doesn't shift the row. */
+.sc-lah-row .sc-lah-surrender {
+  justify-self: end;
+  width: 2.9rem;
+  min-height: 0;
+  height: 1.4rem;
+  padding: 0;
+  font-size: var(--text-xs);
+  line-height: 1;
   white-space: nowrap;
-  font-size: var(--text-sm);
 }
 
 .sc-lah-surrender.is-armed {
@@ -10064,6 +10067,9 @@ html.sc-fit-mode .build-version {
 .sc-card-score {
   flex: 1 1 auto;
   flex-direction: column;
+  /* Never wrap: in a short card a wrapping column pushes 上局 out to the
+     right of the total and off the card. */
+  flex-wrap: nowrap;
   align-items: center;
   justify-content: center;
   gap: 0.15rem;
@@ -10413,77 +10419,6 @@ html.sc-fit-mode .build-version {
   font-variant-numeric: tabular-nums;
 }
 
-/* What each payer owes: one row of chips, a fixed two lines tall. */
-.sc-paylines {
-  display: flex;
-  gap: 0.4rem;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  font-size: var(--text-sm);
-  font-variant-numeric: tabular-nums;
-}
-
-.sc-paylines li {
-  display: flex;
-  flex: 1 1 0;
-  flex-direction: column;
-  justify-content: center;
-  gap: 0.05rem;
-  min-width: 0;
-  height: 2.9rem;
-  box-sizing: border-box;
-  padding: 0.3rem 0.6rem;
-  border-radius: var(--radius-md);
-  background: var(--surface-sunken);
-}
-
-.sc-paylines li.is-empty {
-  align-items: center;
-  color: var(--text-muted);
-}
-
-.sc-paylines li.is-high {
-  background: var(--warning-bg-3);
-}
-
-.sc-paylines li.is-high .sc-payline-parts {
-  color: var(--text);
-}
-
-.sc-payline-top {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.4rem;
-  min-width: 0;
-}
-
-.sc-payline-who {
-  overflow: hidden;
-  font-weight: 700;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.sc-payline-parts {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--text-muted);
-  font-size: var(--text-xs);
-}
-
-.sc-payline-total {
-  font-size: var(--text-md);
-  white-space: nowrap;
-}
-
-.sc-payline-total .sc-capped {
-  display: inline;
-  margin-left: 0.25rem;
-}
-
 /* Tighter picker and keypad inside the sheet. */
 .sc-sheet .sc-pick,
 .sc-sheet .sc-pick-center {
@@ -10597,11 +10532,6 @@ html.sc-fit-mode .build-version {
     font-size: 1.25rem;
   }
 
-  .sc-paylines li {
-    height: 2.6rem;
-    padding: 0.2rem 0.5rem;
-  }
-
   .sc-sheet-actions {
     padding: 0.5rem 1rem calc(0.5rem + env(safe-area-inset-bottom));
   }
@@ -10674,4 +10604,280 @@ html.sc-fit-mode .build-version {
 .sc-input-pill:disabled {
   color: var(--text);
   -webkit-text-fill-color: var(--text);
+}
+
+/* 食胡: who pays what. A header and three rows' room, always - the 自摸 case -
+   so filling the hand in never moves the keypad. */
+.sc-paytable {
+  --sc-paytable-row: 1.38rem;
+  box-sizing: border-box;
+  height: calc(var(--sc-paytable-row) * 4 + 0.5rem);
+  padding: 0.25rem 0.6rem;
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Fixed layout: every part column the same narrow width and Total a bit
+   wider, grouped on the right like a receipt; the payer takes the rest. */
+.sc-paytable table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+}
+
+.sc-paytable col {
+  width: 2.4rem;
+}
+
+.sc-paytable col.is-who {
+  width: auto;
+}
+
+.sc-paytable col.is-total {
+  width: 3rem;
+}
+
+.sc-paytable col.is-name {
+  width: 40%;
+}
+
+.sc-paytable .is-name {
+  text-align: left;
+}
+
+.sc-paytable td.is-name {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.sc-paytable th,
+.sc-paytable td {
+  height: var(--sc-paytable-row);
+  padding: 0 0.15rem;
+  overflow: hidden;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sc-paytable thead th {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+.sc-paytable th:first-child {
+  padding-left: 0;
+  text-align: left;
+}
+
+.sc-paytable tbody th {
+  font-weight: 700;
+}
+
+.sc-paytable tbody tr + tr {
+  box-shadow: inset 0 1px 0 var(--separator);
+}
+
+.sc-paytable td {
+  color: var(--text-secondary);
+}
+
+.sc-paytable thead th:last-child,
+.sc-paytable .sc-paytable-total {
+  padding-right: 0;
+  text-align: right;
+}
+
+.sc-paytable .sc-paytable-total {
+  color: var(--text);
+  font-weight: 800;
+}
+
+.sc-paytable tr.is-high {
+  background: var(--warning-bg-3);
+}
+
+.sc-paytable-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  margin: 0;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+@media (max-width: 700px) and (max-height: 760px) {
+  .sc-paytable {
+    --sc-paytable-row: 1.15rem;
+  }
+}
+
+/* The 食胡 / 特別獎罰 tab not showing: mounted but out of sight. */
+.sc-backdrop.is-parked {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* 特別獎罰: 獎 | 罰 at the end of the amount row. */
+.sc-kind {
+  display: inline-flex;
+  flex-shrink: 0;
+  padding: 0.2rem;
+  border-radius: var(--radius-md);
+  background: var(--fill);
+}
+
+.sc-kind > button {
+  width: 2.6rem;
+  height: 2.35rem;
+  border: none;
+  border-radius: calc(var(--radius-md) - 0.15rem);
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--text-lg);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.sc-kind > .sc-kind-reward.is-on {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.sc-kind > .sc-kind-penalty.is-on {
+  background: var(--sc-neg);
+  color: #fff;
+}
+
+/* Scores is tapped and held, not read: no text selection or copy callout
+   anywhere on it - except in the fields you type into. */
+.scores-panel {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.scores-panel input,
+.scores-panel textarea {
+  -webkit-touch-callout: default;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* 座位: 風局 Keep | Reset | Set, the full width of its row, with the 風 and
+   局 pickers under it for Set. */
+.sc-round-row {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.5rem;
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
+}
+
+.sc-round-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.15;
+}
+
+.sc-round-option small {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+.sc-round-set {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 0.4rem 0.6rem;
+}
+
+.sc-round-row .sc-seg {
+  width: 100%;
+}
+
+/* 座位: Rotate and 東⇄南 · 西⇄北, side by side under the seat map. */
+.sc-seat-moves {
+  display: flex;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.sc-seat-moves > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 2rem;
+  padding: 0.25rem 0.8rem;
+  font-size: var(--text-sm);
+}
+
+.sc-seat-moves svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.sc-seat-moves > .sc-seat-rotate {
+  justify-content: center;
+  width: 2.4rem;
+  padding: 0;
+}
+
+/* The same arrow, mirrored. */
+.sc-seat-rotate.is-ccw svg {
+  transform: scaleX(-1);
+}
+
+/* Press feedback for the 座位 seat moves, like the app's other buttons. */
+.sc-seat-moves > button {
+  transition: background-color 0.12s ease, transform 0.12s ease;
+}
+
+.sc-seat-moves > button:active {
+  background: var(--accent-tint);
+  transform: scale(0.94);
+}
+
+/* 胡 / 銃 / 付 sit on the seat's top-right corner as a badge, half outside
+   it, so they never cover the name. */
+.sc-sheet .sc-pick .sc-pick-tag {
+  top: -0.45rem;
+  right: -0.3rem;
+  z-index: 1;
+  box-shadow: 0 0 0 2px var(--surface);
+}
+
+.sc-sheet .sc-pick .sc-pick-name {
+  min-width: 0;
+}
+
+/* Long names on the board (six characters or more). */
+.sc-zhuang-short {
+  display: none;
+}
+
+.sc-card-top.is-long .sc-card-name,
+.sc-fit .sc-card-top.is-long .sc-card-name {
+  font-size: clamp(var(--text-sm), min(2.6vh, 13cqi), var(--text-xl));
+}
+
+@container (max-width: 10rem) {
+  .sc-card-top.is-long .sc-zhuang-long {
+    display: none;
+  }
+
+  .sc-card-top.is-long .sc-zhuang-short {
+    display: inline;
+  }
+}
+
+.sc-card-score.is-tight .sc-delta {
+  display: none;
 }

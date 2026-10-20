@@ -20,12 +20,13 @@
 //   win ends all their 拉.
 // "Half" is rounded by 整數模式 (0.5進1 = up), or left exact when it's off.
 //
-// 反雪: a player who dealt into a 雙響/三響 and then self-draws the very next
-// hand is paid a fixed amount by each of those winners - fanXueDouble after a
-// 雙響 (5), fanXueTriple after a 三響 (10).
+// 反雪: a player who dealt into a 雙響/三響 and then self-draws the next hand
+// someone wins (流局 in between don't count) is paid a fixed amount by each of
+// those winners - fanXueDouble after a 雙響 (5), fanXueTriple after a 三響 (10).
 //
 // Jackpot: each draw, every seated player puts jackpotPerDraw into the pot;
-// a win can take it (jackpotTo), or it can be handed out by hand.
+// a win can take it (jackpotTo), or it can be handed out by hand - and
+// players can pay into it by hand too (jackpotIn).
 
 export const SEATS = 4;
 const WIND_CHARS = ["東", "南", "西", "北"];
@@ -71,7 +72,7 @@ export const DEFAULT_SETTINGS: ScoreSettings = {
   highScore: 50,
   surrenderPrompt: 3,
   showTally: true,
-  quickScan: false,
+  quickScan: true,
 };
 
 export interface PatternNote {
@@ -97,12 +98,16 @@ export type ScoreEvent =
   | { t: "bonus"; at: number; seat: number; amount: number; kind: "獎" | "罰"; other?: number }
   | { t: "surrender"; at: number; holder: string; pulled: string }
   | { t: "jackpot"; at: number; shares: { player: string; amount: number }[] }
+  | { t: "jackpotIn"; at: number; shares: { player: string; amount: number }[] } // paid into the pot
   | { t: "swap"; at: number; seats: string[] } // the whole new seating
-  | { t: "dealer"; at: number; seat: number; streak: number; resetRound: boolean }
+  // resetRound: back to 東風東局 from this dealer. Or `round` sets any 風局:
+  // wind 0-3 (東南西北) and hand 0-3 (this dealer's 東局 … 北局).
+  | { t: "dealer"; at: number; seat: number; streak: number; resetRound: boolean; round?: { wind: number; hand: number } }
   | { t: "settings"; at: number; settings: ScoreSettings };
 
 export interface ScoreGame {
   id: string;
+  name?: string; // what the players call it - set by a long press on the round box
   startedAt: number;
   endedAt?: number;
   seats: string[]; // the player at each seat at the start, in turn order
@@ -161,6 +166,10 @@ export interface ReplayState {
   streak: number;
   roundWind: number; // 0-3
   roundStartDealer: number;
+  // Where the game is overall: 第幾圈 (each wind, 東 南 西 北, is one 圈) and
+  // 第幾個東 (each pass through all four). Both from 1.
+  circle: number;
+  east: number;
   lahs: Lah[];
   pot: number;
   settings: ScoreSettings;
@@ -169,7 +178,28 @@ export interface ReplayState {
   // the running-totals chart and the hand list.
   steps: { eventIndex: number; deltas: Record<string, number>; totalsAfter: Record<string, number> }[];
   seatChangeDue: boolean; // 北風北局 just ended and 執位提示 is on
+  fanXueDue: FanXueDue | null; // the last hand's 雙響/三響, which a 自摸 by its loser next would 反雪
   label: string;
+}
+
+export interface FanXueDue {
+  loser: string;
+  winners: string[];
+}
+
+// What a win pays in 反雪: each of the last 雙響/三響's winners pays its loser
+// back, when that loser now self-draws. Empty otherwise.
+export function previewFanXue(
+  state: Pick<ReplayState, "seats" | "settings" | "fanXueDue">,
+  winners: { seat: number }[],
+  from: number | null
+): { from: string; to: string; amount: number }[] {
+  const due = state.fanXueDue;
+  const { settings, seats } = state;
+  if (!settings.fanXue || from !== null || !due || winners.length === 0 || seats[winners[0].seat] !== due.loser) return [];
+  const back = due.winners.length >= 3 ? settings.fanXueTriple : settings.fanXueDouble;
+  if (back <= 0) return [];
+  return due.winners.filter((w) => seats.includes(w)).map((w) => ({ from: w, to: due.loser, amount: back }));
 }
 
 export function half(value: number, round: "up" | "down", integer: boolean): number {
@@ -260,22 +290,32 @@ export function replay(game: ScoreGame): ReplayState {
     streak: 0,
     roundWind: 0,
     roundStartDealer: game.firstDealer,
+    circle: 1,
+    east: 1,
     lahs: [],
     pot: 0,
     settings: { ...DEFAULT_SETTINGS, ...game.settings },
     hands: [],
     steps: [],
     seatChangeDue: false,
+    fanXueDue: null,
     label: "",
   };
-  // The 雙響/三響 the next hand's 自摸 could 反雪.
-  let lastMulti: { loser: string; winners: string[] } | null = null;
 
+  // Hands played in the current 圈 - a reset back to 東風東局 only starts a
+  // new 圈 (and a new 東) when this one had any.
+  let handsThisCircle = 0;
+  const nextCircle = () => {
+    state.circle++;
+    handsThisCircle = 0;
+  };
   const passDeal = () => {
     state.dealer = (state.dealer + 1) % SEATS;
     state.streak = 0;
     if (state.dealer === state.roundStartDealer) {
       state.roundWind = (state.roundWind + 1) % 4;
+      nextCircle();
+      if (state.roundWind === 0) state.east++;
       // 執位 once a whole 圈 is done: after 北風北局, back round to 東.
       if (state.roundWind === 0) state.seatChangeDue = state.settings.seatReminder;
     }
@@ -300,17 +340,12 @@ export function replay(game: ScoreGame): ReplayState {
         state.lahs = nextLahs(state.lahs, pairs, winnerNames);
 
         // 反雪.
-        const fanXue: HandResult["fanXue"] = [];
-        if (state.settings.fanXue && ev.from === null && lastMulti && state.seats[ev.winners[0].seat] === lastMulti.loser) {
-          const back = lastMulti.winners.length >= 3 ? state.settings.fanXueTriple : state.settings.fanXueDouble;
-          for (const winner of lastMulti.winners) {
-            if (!state.seats.includes(winner) || back <= 0) continue;
-            add(deltas, lastMulti.loser, back);
-            add(deltas, winner, -back);
-            fanXue.push({ from: winner, to: lastMulti.loser, amount: back });
-          }
+        const fanXue: HandResult["fanXue"] = previewFanXue(state, ev.winners, ev.from);
+        for (const f of fanXue) {
+          add(deltas, f.to, f.amount);
+          add(deltas, f.from, -f.amount);
         }
-        lastMulti =
+        state.fanXueDue =
           ev.from !== null && ev.winners.length > 1
             ? { loser: state.seats[ev.from], winners: pairs.map((p) => p.winner) }
             : null;
@@ -323,6 +358,7 @@ export function replay(game: ScoreGame): ReplayState {
         }
 
         for (const [p, d] of Object.entries(deltas)) add(state.totals, p, d);
+        handsThisCircle++;
         state.hands.push({
           eventIndex,
           hand: state.hands.length + 1,
@@ -353,8 +389,9 @@ export function replay(game: ScoreGame): ReplayState {
           fed = state.settings.jackpotPerDraw * SEATS;
           state.pot += fed;
         }
-        lastMulti = null;
+        // A 流局 keeps a pending 反雪, as it keeps every 拉.
         for (const [p, d] of Object.entries(deltas)) add(state.totals, p, d);
+        handsThisCircle++;
         state.hands.push({
           eventIndex,
           hand: state.hands.length + 1,
@@ -401,6 +438,15 @@ export function replay(game: ScoreGame): ReplayState {
         for (const [p, d] of Object.entries(deltas)) add(state.totals, p, d);
         break;
       }
+      case "jackpotIn": {
+        for (const s of ev.shares) {
+          if (s.amount <= 0) continue;
+          add(deltas, s.player, -s.amount);
+          state.pot += s.amount;
+        }
+        for (const [p, d] of Object.entries(deltas)) add(state.totals, p, d);
+        break;
+      }
       case "swap":
         state.seats = ev.seats.slice();
         for (const p of ev.seats) {
@@ -411,7 +457,24 @@ export function replay(game: ScoreGame): ReplayState {
       case "dealer":
         state.dealer = ev.seat;
         state.streak = ev.streak;
-        if (ev.resetRound) {
+        // Before the first hand it's just who deals first, so the 圈 starts
+        // from them too, reset or not.
+        if (ev.round) {
+          // Set by hand. A new wind after hands in this one starts a new 圈
+          // (and, landing on 東風, a new 東); the same wind - including a seat
+          // move that keeps the round - just puts the label right.
+          const wind = ((ev.round.wind % 4) + 4) % 4;
+          if (handsThisCircle > 0 && wind !== state.roundWind) {
+            nextCircle();
+            if (wind === 0) state.east++;
+          }
+          state.roundWind = wind;
+          state.roundStartDealer = (ev.seat - (((ev.round.hand % 4) + 4) % 4) + SEATS) % SEATS;
+        } else if (ev.resetRound || state.hands.length === 0) {
+          if (handsThisCircle > 0) {
+            nextCircle();
+            state.east++; // back to 東風東局: a new 東
+          }
           state.roundWind = 0;
           state.roundStartDealer = ev.seat;
         }
