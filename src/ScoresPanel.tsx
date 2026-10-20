@@ -7,12 +7,13 @@
 // is owned by App (so the Scoring tab can send a hand here) and saved to
 // localStorage on every change.
 
-import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { Fragment, type RefObject, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import {
   DEFAULT_SETTINGS,
   PLAYER_COLORS,
   SEATS,
   newGame,
+  previewFanXue,
   previewWin,
   canRedo,
   exportScores,
@@ -21,6 +22,7 @@ import {
   parseBackup,
   redoEvent,
   replay,
+  roundLabel,
   settle,
   undoEvent,
   withEvent,
@@ -75,6 +77,8 @@ export interface RecordRequest {
   jackpot?: boolean;
   // Cancelled on Scoring: just reopen that sheet as it was, with no tai.
   reopenOnly?: boolean;
+  draft?: ScoreHandRequest["draft"]; // a 雙響/三響 sheet to put back together
+
   nonce: number;
 }
 
@@ -90,6 +94,9 @@ export interface ScoreHandRequest {
   seatWind: 1 | 2 | 3 | 4;
   scan: boolean; // open the camera straight away
   fromCard?: boolean; // a card's 快速掃描 button, not a 食胡 sheet
+  // A 雙響/三響: the sheet's own winner and every winner's tai so far, so
+  // the sheet comes back whole with just `seat`'s tai filled in.
+  draft?: { sheetSeat: number; entries: { seat: number; tai: string }[] };
   nonce: number;
 }
 
@@ -139,6 +146,27 @@ const Icons = {
     <svg {...ICON}>
       <path d="M15 14l5-5-5-5" />
       <path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13" />
+    </svg>
+  ),
+  dice: (
+    <svg {...ICON} width={16} height={16}>
+      {/* The Dice tab's own die: three. */}
+      <rect x="4" y="4" width="16" height="16" rx="3.5" />
+      <circle cx="8.5" cy="8.5" r="1.3" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none" />
+      <circle cx="15.5" cy="15.5" r="1.3" fill="currentColor" stroke="none" />
+    </svg>
+  ),
+  shuffle: (
+    <svg {...ICON} width={16} height={16}>
+      <path d="M4 7h3.5c2 0 3 1 4.5 3.5S14.5 17 16.5 17H20M4 17h3.5c1.2 0 2-.4 2.8-1.2M14 8.2c.7-.8 1.5-1.2 2.5-1.2H20" />
+      <path d="M17.5 4.5 20 7l-2.5 2.5M17.5 14.5 20 17l-2.5 2.5" />
+    </svg>
+  ),
+  rotate: (
+    <svg {...ICON} width={16} height={16}>
+      <path d="M19 12a7 7 0 1 1-2.05-4.95" />
+      <path d="M19 4.5v4h-4" />
     </svg>
   ),
   swap: (
@@ -222,15 +250,20 @@ function SectionHead({ zh, en, children }: { zh: string; en?: string; children?:
   );
 }
 
-// The monogram's letters: the first, or the first two when someone else at
-// the table (or on the roster) starts with the same one - Kevin "Ke", KY "KY".
+// The monogram's letters: the first, or - when someone else at the table (or
+// on the roster) starts with the same one - the first plus the first letter
+// where this name differs from theirs: Kevin "Kv" and Kelvin "Kl", KY "KY".
 function initials(store: ScoreStore, player: string): string {
   const first = (n: string) => [...n][0]?.toUpperCase() ?? "";
   const others = new Set([...store.roster.map((p) => p.name), ...(store.active?.seats ?? [])]);
   others.delete(player);
-  const clash = [...others].some((n) => first(n) === first(player));
+  const clashing = [...others].filter((n) => first(n) === first(player)).map((n) => [...n.toLowerCase()]);
   const chars = [...player];
-  return clash && chars.length > 1 ? chars[0].toUpperCase() + chars[1] : first(player);
+  if (clashing.length === 0 || chars.length < 2) return first(player);
+  const lower = player.toLowerCase();
+  const pick = chars.findIndex((c, i) => i > 0 && c.trim() !== "" && clashing.every((o) => o[i] !== [...lower][i]));
+  const fallback = chars.findIndex((c, i) => i > 0 && c.trim() !== "");
+  return chars[0].toUpperCase() + chars[pick > 0 ? pick : Math.max(1, fallback)];
 }
 
 // A round monogram in the player's colour - names and colours, no avatars.
@@ -243,6 +276,15 @@ function Monogram({ store, player, size = "md" }: { store: ScoreStore; player: s
   );
 }
 
+// The 食胡 and 特別獎罰 tabs are two sheets kept mounted together: the one not
+// showing is parked (invisible, inert), and both take the taller one's
+// height, so switching tabs never moves anything.
+interface SheetFrame {
+  ref: RefObject<HTMLDivElement | null>;
+  minHeight?: number;
+  hidden: boolean;
+}
+
 function Sheet({
   title,
   subtitle,
@@ -251,6 +293,7 @@ function Sheet({
   actions,
   tabs,
   still,
+  frame,
 }: {
   title: ReactNode;
   subtitle?: ReactNode;
@@ -260,15 +303,26 @@ function Sheet({
   tabs?: ReactNode;
   // Already on screen (switching 食胡 / 特別獎罰): skip the entrance animation.
   still?: boolean;
+  frame?: SheetFrame;
 }) {
+  const hidden = frame?.hidden ?? false;
   useEffect(() => {
+    if (hidden) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, hidden]);
   return (
-    <div className={`sc-backdrop${still ? " is-still" : ""}`} onClick={onClose}>
-      <div className="sc-sheet" role="dialog" aria-modal="true" aria-label={typeof title === "string" ? title : undefined} onClick={(e) => e.stopPropagation()}>
+    <div className={`sc-backdrop${still ? " is-still" : ""}${hidden ? " is-parked" : ""}`} onClick={onClose} inert={hidden || undefined} aria-hidden={hidden || undefined}>
+      <div
+        ref={frame?.ref}
+        className="sc-sheet"
+        role="dialog"
+        aria-modal="true"
+        aria-label={typeof title === "string" ? title : undefined}
+        style={frame?.minHeight ? { minHeight: frame.minHeight } : undefined}
+        onClick={(e) => e.stopPropagation()}
+      >
         <span className="sc-grabber" aria-hidden="true" />
         <div className="sc-sheet-head">
           <div className="sc-sheet-heading">
@@ -372,9 +426,35 @@ function Segmented<T extends string | number>({ value, options, onChange, small 
 }
 
 // A player as a selectable option: monogram + name.
-function PlayerOption({ store, player, selected, onClick, disabled, children }: { store: ScoreStore; player: string; selected?: boolean; onClick?: () => void; disabled?: boolean; children?: ReactNode }) {
+function PlayerOption({
+  store,
+  player,
+  selected,
+  onClick,
+  disabled,
+  press,
+  dataPlayer,
+  children,
+}: {
+  store: ScoreStore;
+  player: string;
+  selected?: boolean;
+  onClick?: () => void;
+  disabled?: boolean;
+  press?: Record<string, unknown>; // pointer handlers for a hold
+  dataPlayer?: string; // for the 座位 slide animation
+  children?: ReactNode;
+}) {
   return (
-    <button type="button" className={`sc-option${selected ? " is-on" : ""}`} aria-pressed={selected} onClick={onClick} disabled={disabled}>
+    <button
+      type="button"
+      className={`sc-option${selected ? " is-on" : ""}${press ? " can-hold" : ""}`}
+      aria-pressed={selected}
+      data-player={dataPlayer}
+      {...press}
+      onClick={onClick}
+      disabled={disabled}
+    >
       <Monogram store={store} player={player} size="sm" />
       <span className="sc-option-name">{player}</span>
       {children}
@@ -449,10 +529,24 @@ function Setup({ store, suggestion, onStart, waitingHand }: { store: ScoreStore;
 
 // ---- Recording a hand: the 食胡 / 特別獎罰 sheet --------------------------------
 
-type HandInitial = { selfDraw: boolean; tai?: number; patterns: PatternNote[]; note?: string; from?: number | null; jackpot?: boolean };
+// `entries`: a 雙響/三響 draft back from Scoring - every winner's tai so far,
+// with `tai` and `patterns` belonging to `patternsFor` (that winner's seat).
+type HandInitial = {
+  selfDraw: boolean;
+  tai?: number;
+  patterns: PatternNote[];
+  note?: string;
+  from?: number | null;
+  jackpot?: boolean;
+  entries?: DraftEntry[];
+  patternsFor?: number;
+};
 
-// What the 食胡 sheet hands over when asking Scoring to work a hand out.
-type ScoreHandAsk = { from: number | null; jackpot: boolean; scan: boolean };
+type DraftEntry = { seat: number; tai: string };
+
+// What the 食胡 sheet hands over when asking Scoring to work a hand out:
+// `target` is the winner being scored, `entries` the whole draft.
+type ScoreHandAsk = { from: number | null; jackpot: boolean; scan: boolean; target: number; entries: DraftEntry[] };
 
 function HandSheet({
   store,
@@ -474,16 +568,48 @@ function HandSheet({
   onScoreHand?: (ask: ScoreHandAsk) => void;
 }) {
   const [mode, setMode] = useState<"win" | "bonus">(startMode);
-  const [switched, setSwitched] = useState(false);
   const player = state.seats[seat];
-  const switchTo = (m: "win" | "bonus") => {
-    setSwitched(true);
-    setMode(m);
-  };
-  return mode === "win" ? (
-    <WinSheet store={store} state={state} winnerSeat={seat} initial={initial} onDone={onDone} onClose={onClose} onBonus={() => switchTo("bonus")} onScoreHand={onScoreHand} still={switched} />
-  ) : (
-    <BonusSheet store={store} state={state} seat={seat} onDone={onDone} onClose={onClose} onWin={() => switchTo("win")} player={player} still={switched} />
+  // Both sheets' natural heights, measured before paint (and again on a
+  // resize); each then gets the taller as its min-height.
+  const winRef = useRef<HTMLDivElement>(null);
+  const bonusRef = useRef<HTMLDivElement>(null);
+  const [minHeight, setMinHeight] = useState<number | undefined>(undefined);
+  useLayoutEffect(() => {
+    const measure = () => {
+      const els = [winRef.current, bonusRef.current].filter((el): el is HTMLDivElement => el !== null);
+      els.forEach((el) => (el.style.minHeight = ""));
+      const tallest = Math.max(...els.map((el) => el.offsetHeight));
+      els.forEach((el) => (el.style.minHeight = `${tallest}px`));
+      setMinHeight(tallest);
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, []);
+  return (
+    <>
+      <WinSheet
+        store={store}
+        state={state}
+        winnerSeat={seat}
+        initial={initial}
+        onDone={onDone}
+        onClose={onClose}
+        onBonus={() => setMode("bonus")}
+        onScoreHand={onScoreHand}
+        frame={{ ref: winRef, minHeight, hidden: mode !== "win" }}
+      />
+      <BonusSheet
+        store={store}
+        state={state}
+        seat={seat}
+        onDone={onDone}
+        onClose={onClose}
+        onWin={() => setMode("win")}
+        player={player}
+        frame={{ ref: bonusRef, minHeight, hidden: mode !== "bonus" }}
+      />
+    </>
   );
 }
 
@@ -511,7 +637,7 @@ function WinSheet({
   onClose,
   onBonus,
   onScoreHand,
-  still,
+  frame,
 }: {
   store: ScoreStore;
   state: ReplayState;
@@ -521,14 +647,18 @@ function WinSheet({
   onClose: () => void;
   onBonus: () => void;
   onScoreHand?: (ask: ScoreHandAsk) => void;
-  still?: boolean;
+  frame?: SheetFrame;
 }) {
   const seats = state.seats;
   // -1 = not picked yet.
   const [from, setFrom] = useState<number | null>(initial?.from !== undefined ? initial.from : initial?.selfDraw ? null : -1);
   // Each winner's tai as typed; the first is the tapped player.
-  const [entries, setEntries] = useState<{ seat: number; tai: string }[]>([{ seat: winnerSeat, tai: initial?.tai !== undefined ? String(initial.tai) : "" }]);
-  const [focus, setFocus] = useState(0);
+  const [entries, setEntries] = useState<DraftEntry[]>(
+    () => initial?.entries ?? [{ seat: winnerSeat, tai: initial?.tai !== undefined ? String(initial.tai) : "" }],
+  );
+  // Back from Scoring on a 雙響/三響: the winner just scored is in focus.
+  const [focus, setFocus] = useState(() => Math.max(0, initial?.entries?.findIndex((e) => e.seat === initial.patternsFor) ?? 0));
+  const patternsFor = initial?.patternsFor ?? winnerSeat;
   const [jackpot, setJackpot] = useState(initial?.jackpot ?? false);
 
   // One winner, or two or three (雙響/三響) - however many have been picked.
@@ -552,15 +682,32 @@ function WinSheet({
     if (next.length === 3) setFrom([0, 1, 2, 3].find((x) => !next.some((e) => e.seat === x))!);
     else if (from === null) setFrom(-1);
   };
-  const winners: WinnerEntry[] = entries.map((e, i) => ({
+  const winners: WinnerEntry[] = entries.map((e) => ({
     seat: e.seat,
     tai: Number(e.tai || 0),
-    ...(i === 0 && initial?.patterns.length ? { patterns: initial.patterns } : {}),
+    ...(e.seat === patternsFor && initial?.patterns.length ? { patterns: initial.patterns } : {}),
   }));
   const fromValid = from === null ? multi === 1 : from >= 0;
   const complete = fromValid && entries.every((e) => e.tai !== "");
   const pairs = fromValid ? previewWin(state, winners, from) : [];
-  const total = pairs.reduce((s, p) => s + p.worth, 0);
+  // 反雪 rides on the payer's line: the 自摸 after a 雙響/三響 they won.
+  const fanXue = fromValid ? previewFanXue(state, winners, from) : [];
+  const fanXueOf = (payer: string) => fanXue.find((f) => f.from === payer)?.amount ?? 0;
+  const total = pairs.reduce((s, p) => s + p.worth + fanXueOf(p.payer), 0);
+  // A part that's zero is left out of the row (a dash), and its column
+  // only shows when some row has it.
+  const payRows: PayRow[] = pairs.map((p) => ({
+    who: multi > 1 ? `${p.payer} → ${p.winner}` : p.payer,
+    cells: {
+      ...(p.base ? { base: fmt(p.base) } : {}),
+      tai: fmt(p.tai),
+      ...(p.dealer ? { dealer: fmt(p.dealer) } : {}),
+      ...(p.lahKind ? { lah: fmt(p.lah) } : {}),
+      ...(fanXueOf(p.payer) ? { fanXue: fmt(fanXueOf(p.payer)) } : {}),
+    },
+    total: p.worth + fanXueOf(p.payer),
+    high: state.settings.highScore !== null && p.worth >= state.settings.highScore,
+  }));
 
   const submit = () => {
     if (!complete) return;
@@ -586,12 +733,12 @@ function WinSheet({
         </span>
       }
       onClose={onClose}
-      still={still}
+      frame={frame}
       tabs={<ModeTabs mode="win" onBonus={onBonus} />}
       actions={
         <>
           <button type="button" className="sc-primary" disabled={!complete} onClick={submit}>
-            {complete ? `Confirm · ${fmt(total)}` : "Confirm"}
+            {complete ? (jackpot && state.pot > 0 ? `Confirm · ${fmt(total)} + Jackpot ${fmt(state.pot)} = ${fmt(total + state.pot)}` : `Confirm · ${fmt(total)}`) : "Confirm"}
           </button>
         </>
       }
@@ -637,6 +784,31 @@ function WinSheet({
             </button>
           ))}
         </div>
+        {/* Work the tai out on the Scoring tab instead - by photo or by tiles -
+            and come back here with it filled in. One winner only. */}
+        {/* On a 雙響/三響 they score the winner whose tai is in focus. */}
+        {onScoreHand && (
+          <span className="sc-score-hand">
+            <button
+              type="button"
+              className="sc-outline"
+              onClick={() => onScoreHand({ from, jackpot, scan: true, target: entries[focus].seat, entries })}
+              aria-label={multi > 1 ? `Scan ${seats[entries[focus].seat]}'s hand` : "Scan hand"}
+              title="Scan hand"
+            >
+              {Icons.camera}
+            </button>
+            <button
+              type="button"
+              className="sc-secondary"
+              onClick={() => onScoreHand({ from, jackpot, scan: false, target: entries[focus].seat, entries })}
+              aria-label={multi > 1 ? `Score ${seats[entries[focus].seat]}'s tiles` : "Score tiles"}
+              title="Score tiles"
+            >
+              {Icons.tiles}
+            </button>
+          </span>
+        )}
         {state.pot > 0 && (
           // A checkbox, so it reads as "this win takes the Jackpot" on or off.
           <button type="button" role="switch" className={`sc-jp-pill${jackpot ? " is-on" : ""}`} aria-checked={jackpot} onClick={() => setJackpot((j) => !j)} aria-label={`${seats[winnerSeat]} takes the Jackpot of ${fmt(state.pot)}`}>
@@ -648,55 +820,90 @@ function WinSheet({
               )}
             </span>
             <span className="sc-jp-text">
-              <span className="sc-jp-label">Take JP</span>
+              <span className="sc-jp-label">Jackpot</span>
               <span className="sc-jp-amount">{fmt(state.pot)}</span>
             </span>
           </button>
         )}
       </div>
-      {/* Work the tai out on the Scoring tab instead - by photo or by tiles -
-          and come back here with it filled in. One winner only. */}
-      {onScoreHand && multi === 1 && (
-        <div className="sc-score-hand">
-          <button type="button" className="sc-outline" onClick={() => onScoreHand({ from, jackpot, scan: true })}>
-            {Icons.camera}
-            Scan hand
-          </button>
-          <button type="button" className="sc-secondary" onClick={() => onScoreHand({ from, jackpot, scan: false })}>
-            {Icons.tiles}
-            Score tiles
-          </button>
-        </div>
-      )}
       <Keypad max={state.settings.scoreCap} value={entries[focus]?.tai ?? ""} onChange={(v) => setEntries((prev) => prev.map((e, i) => (i === focus ? { ...e, tai: v } : e)))} />
 
-      {/* One row of what each payer owes, always there and always the same
-          height, so nothing above it moves as the hand is filled in. */}
-      <ul className="sc-paylines" aria-label="What each payer owes" aria-live="polite">
-        {pairs.length === 0 && <li className="is-empty">Pick who dealt in to see who pays what</li>}
-        {pairs.map((p, i) => {
-          const parts = [
-            p.base ? `底${fmt(p.base)}` : null,
-            `番${fmt(p.tai)}`,
-            p.dealer ? `莊${fmt(p.dealer)}` : null,
-            p.lahKind ? `${p.lahKind}${fmt(p.lah)}` : null,
-          ].filter(Boolean);
-          const isHigh = state.settings.highScore !== null && p.worth >= state.settings.highScore;
-          return (
-            <li key={i} className={isHigh ? "is-high" : undefined} title={isHigh ? `高分 — ${state.settings.highScore} or more. Double-check the tai.` : undefined}>
-              <span className="sc-payline-top">
-                <span className="sc-payline-who">
-                  {p.payer}
-                  {multi > 1 && <span className="sc-help"> → {p.winner}</span>}
-                </span>
-                <strong className="sc-payline-total">{fmt(p.worth)}</strong>
-              </span>
-              <span className="sc-payline-parts">{isHigh ? `高分 · ${parts.join(" · ")}` : parts.join(" · ")}</span>
-            </li>
-          );
-        })}
-      </ul>
+      {/* What each payer owes, as a small table: a row per payer, with room
+          for three (a 自摸) always kept, so nothing moves as the hand is
+          filled in. Columns only for what's in play; 番 and the total always. */}
+      <PayTable
+        cols={[
+          { key: "base", label: "底" },
+          { key: "tai", label: "番" },
+          { key: "dealer", label: "莊" },
+          { key: "lah", label: "拉踢" },
+          { key: "fanXue", label: "反雪" },
+        ].filter((c) => c.key === "tai" || payRows.some((r) => r.cells[c.key] !== undefined))}
+        rows={payRows}
+        empty="Pick who dealt in to see who pays what"
+        highTitle={`高分 — ${state.settings.highScore} or more. Double-check the tai.`}
+      />
     </Sheet>
+  );
+}
+
+// A who-pays-what table, shared by the 食胡 and 特別獎罰 tabs: a row per
+// payer, always three rows tall (a 自摸, or everyone), payer on the left,
+// the parts in narrow columns, and the total on the right.
+interface PayCol {
+  key: string;
+  label: string;
+  wide?: boolean; // holds a name rather than a number
+}
+
+interface PayRow {
+  who: string;
+  cells: Record<string, ReactNode>;
+  total: number;
+  high?: boolean;
+}
+
+function PayTable({ cols, rows, empty, highTitle }: { cols: PayCol[]; rows: PayRow[]; empty: string; highTitle?: string }) {
+  return (
+    <div className="sc-paytable" aria-live="polite">
+      {rows.length === 0 ? (
+        <p className="sc-paytable-empty">{empty}</p>
+      ) : (
+        <table aria-label="Who pays what">
+          <colgroup>
+            <col className="is-who" />
+            {cols.map((c) => (
+              <col key={c.key} className={c.wide ? "is-name" : undefined} />
+            ))}
+            <col className="is-total" />
+          </colgroup>
+          <thead>
+            <tr>
+              <th scope="col">Pays</th>
+              {cols.map((c) => (
+                <th key={c.key} scope="col" className={c.wide ? "is-name" : undefined}>
+                  {c.label}
+                </th>
+              ))}
+              <th scope="col">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={i} className={r.high ? "is-high" : undefined} title={r.high ? highTitle : undefined}>
+                <th scope="row">{r.who}</th>
+                {cols.map((c) => (
+                  <td key={c.key} className={c.wide ? "is-name" : undefined}>
+                    {r.cells[c.key] ?? "–"}
+                  </td>
+                ))}
+                <td className="sc-paytable-total">{fmt(r.total)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
   );
 }
 
@@ -708,7 +915,7 @@ function BonusSheet({
   onDone,
   onClose,
   onWin,
-  still,
+  frame,
 }: {
   store: ScoreStore;
   state: ReplayState;
@@ -717,15 +924,13 @@ function BonusSheet({
   onDone: (ev: ScoreEvent) => void;
   onClose: () => void;
   onWin: () => void;
-  still?: boolean;
+  frame?: SheetFrame;
 }) {
   const [kind, setKind] = useState<"獎" | "罰">("獎");
   // null = everyone else.
   const [other, setOther] = useState<number | null>(null);
   const [amount, setAmount] = useState("");
   const n = Number(amount || 0);
-  const count = other === null ? 3 : 1;
-  const who = other === null ? "everyone else" : state.seats[other];
   return (
     <Sheet
       title={
@@ -736,7 +941,7 @@ function BonusSheet({
         </span>
       }
       onClose={onClose}
-      still={still}
+      frame={frame}
       tabs={<ModeTabs mode="bonus" onWin={onWin} />}
       actions={
         <>
@@ -751,14 +956,6 @@ function BonusSheet({
         </>
       }
     >
-      <Segmented
-        value={kind}
-        onChange={setKind}
-        options={[
-          { value: "獎", label: "獎 Reward" },
-          { value: "罰", label: "罰 Penalty" },
-        ]}
-      />
       <div className="sc-field">
         <span className="sc-label">{kind === "獎" ? "From" : "To"}</span>
         <TablePicker
@@ -781,24 +978,38 @@ function BonusSheet({
             <span className={`sc-tai-value${amount ? "" : " is-empty"}`}>{amount || "0"}</span>
           </div>
         </div>
+        {/* 獎 or 罰, in the row where 食胡 has its Scan / Jackpot - so the
+            picker above sits where it does on the 食胡 tab. */}
+        <span className="sc-kind" role="group" aria-label="Reward or penalty">
+          {(["獎", "罰"] as const).map((k) => (
+            <button
+              key={k}
+              type="button"
+              className={`sc-kind-${k === "獎" ? "reward" : "penalty"}${kind === k ? " is-on" : ""}`}
+              aria-pressed={kind === k}
+              aria-label={k === "獎" ? "獎 Reward" : "罰 Penalty"}
+              onClick={() => setKind(k)}
+            >
+              {k}
+            </button>
+          ))}
+        </span>
       </div>
       <Keypad max={state.settings.scoreCap} value={amount} onChange={setAmount} />
-      {/* Always there and one line tall, so the keypad above never moves. */}
-      <p className={`sc-summary-line${n > 0 ? "" : " is-empty"}`} aria-live="polite">
-        {n <= 0 ? (
-          "Enter an amount to see who pays what"
-        ) : kind === "獎" ? (
-            <>
-              <strong>{player}</strong> <span className="is-pos">+{fmt(n * count)}</span> · {who} <span className="is-neg">−{fmt(n)}</span>
-              {count > 1 && " each"}
-            </>
-          ) : (
-            <>
-              <strong>{player}</strong> <span className="is-neg">−{fmt(n * count)}</span> · {who} <span className="is-pos">+{fmt(n)}</span>
-              {count > 1 && " each"}
-            </>
-          )}
-      </p>
+      {/* Who pays whom, in the same table as 食胡 - and the same size. */}
+      <PayTable
+        cols={[{ key: "to", label: "To", wide: true }]}
+        rows={
+          n <= 0
+            ? []
+            : (other === null ? state.seats.map((_, s2) => s2).filter((s2) => s2 !== seat) : [other]).map((s2) =>
+                kind === "獎"
+                  ? { who: state.seats[s2], cells: { to: player }, total: n }
+                  : { who: player, cells: { to: state.seats[s2] }, total: n },
+              )
+        }
+        empty="Enter an amount to see who pays what"
+      />
     </Sheet>
   );
 }
@@ -920,23 +1131,33 @@ function SeatDiamond({ children }: { children: (seat: number) => ReactNode }) {
   );
 }
 
-// 座位: who sits where (換人) and who's dealing (莊家). One draft across both
-// tabs - a swap made under 換人 shows straight away under 莊家 - and one 確定
-// that applies the lot (each change still lands as its own entry, so 還原
-// takes them back one at a time).
+// 座位: who sits where and who's dealing, on one seat map - tap a seat to
+// move or replace that player, hold one to make that seat 莊. One draft and
+// one Confirm that applies the lot (each change still lands as its own
+// entry, so 還原 takes them back one at a time).
+// One 風局 choice: what it does, and the round it leaves you at.
+function RoundOption({ verb, label }: { verb: string; label: string }) {
+  return (
+    <span className="sc-round-option">
+      <span>{verb}</span>
+      <small>{label}</small>
+    </span>
+  );
+}
+
 function SeatsSheet({
   store,
   state,
   onDone,
   onClose,
+  onOpenSeating,
 }: {
   store: ScoreStore;
   state: ReplayState;
   onDone: (change: { seats: string[] | null; newNames: string[]; removedNames: string[]; dealer: ScoreEvent | null }) => void;
   onClose: () => void;
+  onOpenSeating?: () => void;
 }) {
-  const [tab, setTab] = useState<"swap" | "dealer">("swap");
-  const [switched, setSwitched] = useState(false);
   // Seating draft.
   const [seats, setSeats] = useState(state.seats.slice());
   const [picked, setPicked] = useState<number | null>(null);
@@ -945,12 +1166,232 @@ function SeatsSheet({
   // Bench players taken off the roster - applied on Confirm.
   const [removed, setRemoved] = useState<string[]>([]);
   const [editBench, setEditBench] = useState(false);
+  // The bench shows one row - its last tile "More" when there are more -
+  // until More (then a "Less" tile folds it back) or Edit. How many fit a row depends on the phone, so it's
+  // read off the grid.
+  const [benchOpen, setBenchOpen] = useState(false);
+  const benchRef = useRef<HTMLDivElement>(null);
+  // More / Less glide the bench to its new height, and the players it
+  // reveals fade in.
+  const benchWrapRef = useRef<HTMLDivElement>(null);
+  const benchFrom = useRef<number | null>(null);
+  const toggleBench = (open: boolean) => {
+    benchFrom.current = benchWrapRef.current?.offsetHeight ?? null;
+    setBenchOpen(open);
+  };
+  useLayoutEffect(() => {
+    const el = benchWrapRef.current;
+    const from = benchFrom.current;
+    benchFrom.current = null;
+    if (!el || from === null || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const to = el.offsetHeight;
+    const timing = { duration: 280, easing: "cubic-bezier(0.25, 0.8, 0.25, 1)" };
+    el.animate([{ height: `${from}px`, overflow: "hidden" }, { height: `${to}px`, overflow: "hidden" }], timing);
+    if (benchOpen)
+      [...el.querySelectorAll<HTMLElement>(".sc-options > *, .sc-add")].slice(Math.max(0, perRow - 1)).forEach((tile) => tile.animate([{ opacity: 0 }, { opacity: 1 }], timing));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [benchOpen]);
+  const [perRow, setPerRow] = useState(2);
+  useLayoutEffect(() => {
+    const el = benchRef.current;
+    if (!el) return;
+    const measure = () => setPerRow(Math.max(1, getComputedStyle(el).gridTemplateColumns.split(" ").filter(Boolean).length));
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   // Dealer draft - a seat, so it reads whoever the draft seating puts there.
-  const [dealer, setDealer] = useState(state.dealer);
+  // 莊 is a player, not a seat: it moves with them when seats change (and
+  // passes to whoever takes their place from the bench).
+  const startDealer = state.seats[state.dealer];
+  const [dealerName, setDealerName] = useState(startDealer);
   const [streak, setStreak] = useState(state.streak);
-  const [reset, setReset] = useState(true);
+  // 風局: keep the round going, reset to 東風東局 from the dealer, or set any
+  // 風 and 局. Keep until a new 莊 is picked - that's usually 執位, so it then
+  // flips to Reset, unless it was chosen by hand.
+  const [round, setRound] = useState<"keep" | "reset" | "set">("keep");
+  const roundTouched = useRef(false);
+  const [custom, setCustom] = useState({ wind: state.roundWind, hand: (state.dealer - state.roundStartDealer + SEATS) % SEATS });
+  const reset = round !== "keep";
+  // Holding a seat makes it 莊 (a new dealer starts at 連0); the tap that
+  // ends the hold is swallowed.
+  const hold = useRef<number | null>(null);
+  const held = useRef(false);
+  const cancelHold = () => {
+    if (hold.current !== null) window.clearTimeout(hold.current);
+    hold.current = null;
+  };
+  // Seat changes slide each player from where they were to where they now
+  // sit: note every player's spot just before a change, then (before paint)
+  // start each one there and let it glide home.
+  const diamondRef = useRef<HTMLDivElement>(null);
+  const before = useRef<Map<string, DOMRect> | null>(null);
+  const spots = () => {
+    const map = new Map<string, DOMRect>();
+    diamondRef.current?.querySelectorAll<HTMLElement>("[data-player]").forEach((el) => map.set(el.dataset.player!, el.getBoundingClientRect()));
+    return map;
+  };
+  const moveSeats = (change: (prev: string[]) => string[]) => {
+    before.current = spots();
+    setPicked(null);
+    setSeats(change);
+  };
+  useLayoutEffect(() => {
+    const was = before.current;
+    before.current = null;
+    const map = diamondRef.current;
+    if (!was || !map || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    // Each card travels round the map's centre, not across it, and shrinks
+    // mid-way, so cards pass each other instead of piling up in the middle.
+    // Clockwise ones take a wider lane than anticlockwise ones, so a swapped
+    // pair passes side by side rather than head-on.
+    const box = map.getBoundingClientRect();
+    const cx = box.left + box.width / 2;
+    const cy = box.top + box.height / 2;
+    const steps = 24;
+    const moves = [...map.querySelectorAll<HTMLElement>("[data-player]")].flatMap((el) => {
+      const from = was.get(el.dataset.player!);
+      if (!from) return [];
+      const to = el.getBoundingClientRect();
+      const fx = from.left + from.width / 2 - cx;
+      const fy = from.top + from.height / 2 - cy;
+      const tx = to.left + to.width / 2 - cx;
+      const ty = to.top + to.height / 2 - cy;
+      if (Math.abs(fx - tx) < 1 && Math.abs(fy - ty) < 1) return [];
+      return [{ el, fx, fy, tx, ty }];
+    });
+    // The seats sit on a wide oval, not a circle: travel round that, so the
+    // wide cards don't squeeze together at the diagonals.
+    const rx = Math.max(1, ...moves.flatMap((m) => [Math.abs(m.fx), Math.abs(m.tx)]));
+    const ry = Math.max(1, ...moves.flatMap((m) => [Math.abs(m.fy), Math.abs(m.ty)]));
+    const paths = moves.map((m) => {
+      const a0 = Math.atan2(m.fy / ry, m.fx / rx);
+      let turn = Math.atan2(m.ty / ry, m.tx / rx) - a0;
+      while (turn > Math.PI) turn -= 2 * Math.PI;
+      while (turn <= -Math.PI) turn += 2 * Math.PI;
+      if (Math.abs(Math.abs(turn) - Math.PI) < 0.01) turn = Math.PI; // straight across: go clockwise
+      return { ...m, a0, turn, r0: Math.hypot(m.fx / rx, m.fy / ry), r1: Math.hypot(m.tx / rx, m.ty / ry) };
+    });
+    // Lanes only matter when cards pass going opposite ways; a plain
+    // rotation keeps everyone on the same oval. Every card lifts (a gentle
+    // dip in size and a soft shadow), glides and settles together - same
+    // start, same pace, same landing.
+    const bothWays = paths.some((m) => m.turn > 0) && paths.some((m) => m.turn < 0);
+    // A lifted card only shrinks a touch - the shadow does most of the lift.
+    const DIP = 0.08;
+    paths.forEach(({ el, a0, turn, r0, r1, tx, ty }) => {
+      // Mirror-image lanes: one bows out exactly as far as the other bows in.
+      const lane = bothWays ? (turn > 0 ? 0.25 : -0.25) : 0;
+      const frames: Keyframe[] = [];
+      for (let i = 0; i <= steps; i++) {
+        const t = i / steps;
+        // Pick up, move, set down: the card shrinks and lifts in the first
+        // quarter, travels (smoothly, eased) mostly in the middle while
+        // small, and grows back as it lands.
+        const ease = (u: number) => (u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2);
+        const e = ease(Math.min(1, Math.max(0, (t - 0.15) / 0.7)));
+        const lifted = ease(Math.min(1, t / 0.25, (1 - t) / 0.25));
+        const bump = Math.sin(Math.PI * e);
+        const angle = a0 + turn * e;
+        const r = (r0 + (r1 - r0) * e) * (1 + lane * bump);
+        const x = Math.cos(angle) * r * rx - tx;
+        const y = Math.sin(angle) * r * ry - ty;
+        frames.push({
+          offset: t,
+          transform: `translate(${x}px, ${y}px) scale(${1 - DIP * lifted})`,
+          boxShadow: `0 ${10 * lifted}px ${26 * lifted}px rgba(0, 0, 0, ${0.2 * lifted})`,
+          zIndex: turn > 0 ? 2 : 1,
+        });
+      }
+      el.animate(frames, { duration: 800, easing: "linear" });
+    });
+  }, [seats]);
+  // A new 莊: the badge flies from the old dealer's seat to the new one (a
+  // copy of it, above the sheet, so no card clips it) and lands with a pop.
+  const badgeFrom = useRef<DOMRect | null>(null);
+  useLayoutEffect(() => {
+    const from = badgeFrom.current;
+    badgeFrom.current = null;
+    const badge = diamondRef.current?.querySelector<HTMLElement>(".sc-zhuang");
+    if (!from || !badge || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const to = badge.getBoundingClientRect();
+    const flyer = badge.cloneNode(true) as HTMLElement;
+    Object.assign(flyer.style, { position: "fixed", left: `${to.left}px`, top: `${to.top}px`, margin: "0", zIndex: "1000", pointerEvents: "none" });
+    document.body.appendChild(flyer);
+    const dx = from.left - to.left;
+    const dy = from.top - to.top;
+    // A smooth arc: sampled along an eased path with a gentle rise (a sine,
+    // so no sharp peak), growing a little mid-flight.
+    const lift = -Math.min(48, Math.hypot(dx, dy) / 4);
+    const frames: Keyframe[] = [];
+    for (let i = 0; i <= 20; i++) {
+      const t = i / 20;
+      const e = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+      const rise = Math.sin(Math.PI * e);
+      frames.push({ offset: t, transform: `translate(${dx * (1 - e)}px, ${dy * (1 - e) + lift * rise}px) scale(${1 + 0.35 * rise})` });
+    }
+    const flight = flyer.animate(frames, { duration: 600, easing: "linear" });
+    badge.style.visibility = "hidden";
+    const land = () => {
+      flyer.remove();
+      badge.style.visibility = "";
+      badge.animate([{ transform: "scale(1.35)" }, { transform: "scale(1)" }], { duration: 220, easing: "ease-out" });
+    };
+    flight.finished.then(land, land);
+    return () => {
+      flyer.remove();
+      badge.style.visibility = "";
+    };
+  }, [dealerName]);
 
-  const bench = [...new Set([...store.roster.map((p) => p.name), ...state.players, ...added])].filter((p) => !seats.includes(p) && !removed.includes(p));
+  const seatPress = (s2: number) => ({
+    onPointerDown: () => {
+      cancelHold();
+      held.current = false;
+      hold.current = window.setTimeout(() => {
+        hold.current = null;
+        held.current = true;
+        setPicked(null);
+        const name = seats[s2];
+        if (name !== dealerName) {
+          badgeFrom.current = diamondRef.current?.querySelector(".sc-zhuang")?.getBoundingClientRect() ?? null;
+          setDealerName(name);
+          setStreak(name === startDealer ? state.streak : 0);
+          if (!roundTouched.current) setRound(name !== startDealer ? "reset" : "keep");
+        }
+      }, 500);
+    },
+    onPointerUp: cancelHold,
+    onPointerLeave: cancelHold,
+    onPointerCancel: cancelHold,
+    onContextMenu: (e: { preventDefault: () => void }) => e.preventDefault(),
+  });
+
+  // The bench, most recent first: anyone added just now at the top (newest
+  // first), then by the last game they sat in (this one counts as now), then
+  // the roster's newest.
+  const lastPlayed = useMemo(() => {
+    const seen = new Map<string, number>();
+    const games = [...store.history, ...(store.active ? [store.active] : [])];
+    for (const g of games) {
+      const when = g === store.active ? Infinity : (g.endedAt ?? g.startedAt);
+      const names = [...g.seats, ...g.events.flatMap((ev) => (ev.t === "swap" ? ev.seats : []))];
+      for (const n of names) seen.set(n, Math.max(seen.get(n) ?? 0, when));
+    }
+    return seen;
+  }, [store]);
+  const rosterIndex = (n: string) => store.roster.findIndex((p) => p.name === n);
+  // Folded to one row with a More tile (only when there's more than a row).
+  const bench = [...new Set([...store.roster.map((p) => p.name), ...state.players, ...added])]
+    .filter((p) => !seats.includes(p) && !removed.includes(p))
+    .sort((x, y) => {
+      const ax = added.indexOf(x);
+      const ay = added.indexOf(y);
+      if (ax >= 0 || ay >= 0) return ay - ax;
+      return (lastPlayed.get(y) ?? 0) - (lastPlayed.get(x) ?? 0) || rosterIndex(y) - rosterIndex(x);
+    });
+  const collapsed = !benchOpen && !editBench && bench.length > perRow;
   // Anyone who has played this game stays - their score is on the table.
   const canRemove = (name: string) => !state.players.includes(name);
   const removeBench = (name: string) => {
@@ -959,11 +1400,12 @@ function SeatsSheet({
   };
   const tapSeat = (s2: number) => {
     if (picked === null) return setPicked(s2);
-    if (picked !== s2) setSeats((prev) => prev.map((p, i) => (i === s2 ? prev[picked] : i === picked ? prev[s2] : p)));
+    if (picked !== s2) moveSeats((prev) => prev.map((p, i) => (i === s2 ? prev[picked] : i === picked ? prev[s2] : p)));
     setPicked(null);
   };
   const tapBench = (name: string) => {
     if (picked === null) return;
+    if (seats[picked] === dealerName) setDealerName(name);
     setSeats((prev) => prev.map((p, i) => (i === picked ? name : p)));
     setPicked(null);
   };
@@ -976,47 +1418,36 @@ function SeatsSheet({
   };
 
   const seatsChanged = seats.some((p, i) => p !== state.seats[i]);
-  // 重置風局 (on by default) only rides along with a real dealer or 連莊 change.
+  const dealer = Math.max(0, seats.indexOf(dealerName));
   const dealerChanged = dealer !== state.dealer || streak !== state.streak;
-  const anything = seatsChanged || dealerChanged || added.length > 0 || removed.length > 0;
+  // Keep means the round as it stands, whichever seat 莊 now sits in.
+  const hereHand = (state.dealer - state.roundStartDealer + SEATS) % SEATS;
+  const anything = seatsChanged || dealerChanged || reset || added.length > 0 || removed.length > 0;
   const submit = () =>
     onDone({
       seats: seatsChanged ? seats : null,
       newNames: added,
       removedNames: removed,
-      dealer: dealerChanged ? { t: "dealer", at: Date.now(), seat: dealer, streak, resetRound: reset } : null,
+      dealer:
+        dealerChanged || reset
+          ? {
+              t: "dealer",
+              at: Date.now(),
+              seat: dealer,
+              streak,
+              resetRound: round === "reset",
+              ...(round === "set" ? { round: custom } : round === "keep" ? { round: { wind: state.roundWind, hand: hereHand } } : {}),
+            }
+          : null,
     });
 
-  const pending = [seatsChanged && "seating", dealerChanged && "dealer", removed.length > 0 && "bench"].filter(Boolean).join(" and ");
+  const pending = [seatsChanged && "seating", dealerChanged && "dealer", round === "reset" && "reset", round === "set" && "風局", removed.length > 0 && "bench"].filter(Boolean).join(" and ");
 
   return (
     <Sheet
       title="座位 Seats"
-      subtitle={
-        tab === "swap"
-          ? picked === null
-            ? "Tap a seat to move or replace that player"
-            : `Now tap another seat, or a 候補 player, for ${seats[picked]}'s place`
-          : "Who's dealing, the 連莊, or restart the round"
-      }
+      subtitle={picked === null ? "Tap a seat to move or replace that player · hold one for 莊" : `Now tap another seat, or a 候補 player, for ${seats[picked]}'s place`}
       onClose={onClose}
-      still={switched}
-      tabs={
-        <div className="sc-sheet-tabs">
-          <Segmented
-            value={tab}
-            onChange={(v) => {
-              setSwitched(true);
-              setPicked(null);
-              setTab(v);
-            }}
-            options={[
-              { value: "swap", label: `換人 Players${seatsChanged ? " •" : ""}` },
-              { value: "dealer", label: `莊家 Dealer${dealerChanged ? " •" : ""}` },
-            ]}
-          />
-        </div>
-      }
       actions={
         <>
           <button type="button" className="sc-primary" disabled={!anything} onClick={submit}>
@@ -1025,75 +1456,185 @@ function SeatsSheet({
         </>
       }
     >
-      {tab === "swap" ? (
-        <>
-          <SeatDiamond>{(s2) => <PlayerOption store={store} player={seats[s2]} selected={picked === s2} onClick={() => tapSeat(s2)} />}</SeatDiamond>
-          <div className="sc-field">
-            <div className="sc-field-head">
-              <span className="sc-label">候補 Bench</span>
-              {(editBench || bench.some(canRemove)) && (
-                <button
-                  type="button"
-                  className="sc-text-button"
-                  onClick={() => {
-                    setPicked(null);
-                    setEditBench((e) => !e);
-                  }}
-                >
-                  {editBench ? "Done" : "Edit"}
-                </button>
-              )}
+      <div ref={diamondRef}>
+      <SeatDiamond>
+        {(s2) => (
+          <PlayerOption
+            store={store}
+            player={seats[s2]}
+            selected={picked === s2}
+            dataPlayer={seats[s2]}
+            press={seatPress(s2)}
+            onClick={() => {
+              if (held.current) {
+                held.current = false;
+                return;
+              }
+              tapSeat(s2);
+            }}
+          >
+            {dealer === s2 && <span className="sc-zhuang">莊</span>}
+          </PlayerOption>
+        )}
+      </SeatDiamond>
+      </div>
+      {/* The usual 執位 moves in one tap: everyone one seat round the map
+          either way, 東 ⇄ 南 and 西 ⇄ 北, or a random seating. */}
+      <div className="sc-seat-moves">
+        <button
+          type="button"
+          className="sc-outline sc-seat-rotate is-ccw"
+          aria-label="Everyone one seat counter-clockwise"
+          title="Counter-clockwise"
+          onClick={() => moveSeats((prev) => [prev[3], prev[0], prev[1], prev[2]])}
+        >
+          {Icons.rotate}
+        </button>
+        <button
+          type="button"
+          className="sc-outline sc-seat-rotate"
+          aria-label="Everyone one seat clockwise"
+          title="Clockwise"
+          onClick={() => moveSeats((prev) => [prev[1], prev[2], prev[3], prev[0]])}
+        >
+          {Icons.rotate}
+        </button>
+        <button
+          type="button"
+          className="sc-outline sc-seat-rotate"
+          aria-label="Swap 東 with 南, and 西 with 北"
+          title="東⇄南 · 西⇄北"
+          onClick={() => moveSeats((prev) => [prev[1], prev[0], prev[3], prev[2]])}
+        >
+          {Icons.swap}
+        </button>
+        <button
+          type="button"
+          className="sc-outline sc-seat-rotate"
+          aria-label="Random seats"
+          title="Random seats"
+          onClick={() =>
+            moveSeats((prev) => {
+              // Shuffle until it's a new seating (there are 23 others).
+              let next = prev;
+              while (next.every((p, i) => p === prev[i])) {
+                next = prev.slice();
+                for (let i = next.length - 1; i > 0; i--) {
+                  const j = Math.floor(Math.random() * (i + 1));
+                  [next[i], next[j]] = [next[j], next[i]];
+                }
+              }
+              return next;
+            })
+          }
+        >
+          {Icons.shuffle}
+        </button>
+        {/* The full seat ceremony: dice on the Dice tab's Seating. */}
+        {onOpenSeating && (
+          <button
+            type="button"
+            className="sc-outline sc-seat-rotate"
+            onClick={onOpenSeating}
+            aria-label="Seat ceremony on the Dice tab"
+            title="Seat ceremony on the Dice tab"
+          >
+            {Icons.dice}
+          </button>
+        )}
+      </div>
+      <div className="sc-list">
+        <div className="sc-row">
+          <span>連莊</span>
+          <Stepper value={streak} onChange={setStreak} label="連莊" />
+        </div>
+        {/* What each choice leaves the round at, with the dealer as drafted. */}
+        <div className="sc-row sc-round-row">
+          <Segmented
+            value={round}
+            onChange={(v) => {
+              roundTouched.current = true;
+              setRound(v);
+            }}
+            options={[
+              { value: "keep", label: <RoundOption verb="Keep" label={state.label} /> },
+              { value: "reset", label: <RoundOption verb="Reset" label={roundLabel(0, dealer, dealer)} /> },
+              { value: "set", label: <RoundOption verb="Set" label={`${WIND_CHARS[custom.wind]}風${WIND_CHARS[custom.hand]}局`} /> },
+            ]}
+          />
+          {round === "set" && (
+            <div className="sc-round-set">
+              <span className="sc-help">風</span>
+              <Segmented value={custom.wind} onChange={(wind) => setCustom((c) => ({ ...c, wind }))} options={[0, 1, 2, 3].map((w) => ({ value: w, label: WIND_CHARS[w] }))} />
+              <span className="sc-help">局</span>
+              <Segmented value={custom.hand} onChange={(hand) => setCustom((c) => ({ ...c, hand }))} options={[0, 1, 2, 3].map((h) => ({ value: h, label: WIND_CHARS[h] }))} />
             </div>
-            <div className="sc-options">
-              {bench.map((p) =>
-                editBench ? (
-                  <button
-                    key={p}
-                    type="button"
-                    className="sc-option sc-option-remove"
-                    onClick={() => removeBench(p)}
-                    disabled={!canRemove(p)}
-                    aria-label={canRemove(p) ? `Remove ${p} from the bench` : `${p} is in this game`}
-                  >
-                    <Monogram store={store} player={p} size="sm" />
-                    <span className="sc-option-name">{p}</span>
-                    {canRemove(p) && <span className="sc-option-x">{Icons.close}</span>}
-                  </button>
-                ) : (
-                  <PlayerOption key={p} store={store} player={p} onClick={() => tapBench(p)} disabled={picked === null} />
-                ),
-              )}
-              {bench.length === 0 && <span className="sc-help">Nobody on the bench yet.</span>}
-            </div>
-            <div className="sc-add">
-              <input className="sc-input" value={newName} maxLength={12} placeholder="Add a player" onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addName()} aria-label="New player name" />
-              <button type="button" className="sc-secondary" onClick={addName} disabled={!newName.trim()}>
-                Add
+          )}
+        </div>
+      </div>
+      <div className="sc-field">
+        <div className="sc-field-head">
+          <span className="sc-label">候補 Bench</span>
+          <span className="sc-field-head-end">
+          {/* Like adding, editing the bench waits until it's open. */}
+          {!collapsed && (editBench || bench.some(canRemove)) && (
+            <button
+              type="button"
+              className="sc-text-button"
+              onClick={() => {
+                setPicked(null);
+                setEditBench((e) => !e);
+              }}
+            >
+              {editBench ? "Done" : "Edit"}
+            </button>
+          )}
+          </span>
+        </div>
+        <div ref={benchWrapRef} className="sc-bench-wrap">
+        <div ref={benchRef} className={`sc-options${benchOpen || editBench ? "" : " is-one-row"}`}>
+          {(collapsed ? bench.slice(0, perRow - 1) : bench).map((p) =>
+            editBench ? (
+              <button
+                key={p}
+                type="button"
+                className="sc-option sc-option-remove"
+                onClick={() => removeBench(p)}
+                disabled={!canRemove(p)}
+                aria-label={canRemove(p) ? `Remove ${p} from the bench` : `${p} is in this game`}
+              >
+                <Monogram store={store} player={p} size="sm" />
+                <span className="sc-option-name">{p}</span>
+                {canRemove(p) && <span className="sc-option-x">{Icons.close}</span>}
               </button>
-            </div>
-          </div>
-        </>
-      ) : (
-        <>
-          <SeatDiamond>
-            {(s2) => (
-              <PlayerOption store={store} player={seats[s2]} selected={dealer === s2} onClick={() => setDealer(s2)}>
-                {dealer === s2 && <span className="sc-zhuang">莊</span>}
-              </PlayerOption>
-            )}
-          </SeatDiamond>
-          <div className="sc-list">
-            <div className="sc-row">
-              <span>連莊</span>
-              <Stepper value={streak} onChange={setStreak} label="連莊" />
-            </div>
-            <label className="sc-row">
-              <span>重置風局</span>
-              <Toggle checked={reset} onChange={setReset} label="Reset the round" />
-            </label>
-          </div>
-        </>
-      )}
+            ) : (
+              <PlayerOption key={p} store={store} player={p} onClick={() => tapBench(p)} disabled={picked === null} />
+            ),
+          )}
+          {collapsed && (
+            <button type="button" className="sc-option sc-option-more" onClick={() => toggleBench(true)}>
+              <span className="sc-option-name">More</span>
+              <span className="sc-help">+{bench.length - (perRow - 1)}</span>
+            </button>
+          )}
+          {benchOpen && !editBench && bench.length > perRow && (
+            <button type="button" className="sc-option sc-option-more" onClick={() => toggleBench(false)}>
+              <span className="sc-option-name">Less</span>
+            </button>
+          )}
+          {bench.length === 0 && <span className="sc-help">Nobody on the bench yet.</span>}
+        </div>
+        {/* Adding someone is part of the open bench - hidden behind More. */}
+        {!collapsed && (
+        <div className="sc-add">
+          <input className="sc-input" value={newName} maxLength={12} placeholder="Add a player" onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addName()} aria-label="New player name" />
+          <button type="button" className="sc-secondary" onClick={addName} disabled={!newName.trim()}>
+            Add
+          </button>
+        </div>
+        )}
+        </div>
+      </div>
     </Sheet>
   );
 }
@@ -1110,7 +1651,7 @@ function LahSheet({ store, state, onSurrender, onClose }: { store: ScoreStore; s
   // What the next hand between the two adds, whoever wins it: half the 拉
   // (拉 and 踢 take the same half, give or take a rounding setting).
   const next = (value: number) => half(value, state.settings.lahRound, state.settings.integerMode);
-  // 投降 takes two taps: the first arms it, the second ends that 拉. A tap
+  // 投降 takes two taps: the first arms it (確定), the second ends that 拉. A tap
   // anywhere else disarms it.
   const [armed, setArmed] = useState<string | null>(null);
   useEffect(() => {
@@ -1126,7 +1667,16 @@ function LahSheet({ store, state, onSurrender, onClose }: { store: ScoreStore; s
       title="拉踢"
       onClose={onClose}
     >
-      {groups.length === 0 && <p className="sc-empty">No 拉 on the table.</p>}
+      {/* As tall as a sheet with a few 拉, so it doesn't open as a sliver. */}
+      {groups.length === 0 && (
+        <div className="sc-lah-empty">
+          <span className="sc-lah-empty-icon" aria-hidden="true">
+            {Icons.lah}
+          </span>
+          <strong>No 拉 on the table</strong>
+          <span className="sc-help">A win starts a 拉 on everyone who paid it</span>
+        </div>
+      )}
       {groups.map(({ holder, rows, total }) => (
         <div key={holder} className="sc-lah-group">
           <div className="sc-lah-head">
@@ -1166,7 +1716,7 @@ function LahSheet({ store, state, onSurrender, onClose }: { store: ScoreStore; s
                       }}
                       aria-label={isArmed ? `Confirm ${l.pulled} surrenders to ${l.holder}` : `${l.pulled} surrenders to ${l.holder}`}
                     >
-                      {isArmed ? "Confirm?" : "投降"}
+                      {isArmed ? "確定" : "投降"}
                     </button>
                   </span>
                 </div>
@@ -1186,58 +1736,135 @@ function LahSheet({ store, state, onSurrender, onClose }: { store: ScoreStore; s
 }
 
 function JackpotSheet({ store, state, onDone, onClose }: { store: ScoreStore; state: ReplayState; onDone: (ev: ScoreEvent) => void; onClose: () => void }) {
+  // Hand the pot out, or pay into it. An empty pot can only be paid into.
+  const [mode, setMode] = useState<"out" | "in">(state.pot > 0 ? "out" : "in");
   const [shares, setShares] = useState<number[]>(() => state.seats.map(() => 0));
   const total = shares.reduce((a, b) => a + b, 0);
-  // ± move in the pot's own unit (what each player puts in per 流局), and +
-  // stops at what's left to hand out.
-  const step = Math.max(1, state.settings.jackpotPerDraw || 1);
+  // ± move by 1; handing out, + stops at what's left in the pot. The
+  // shortcuts use the pot's own unit (what each player puts in per 流局).
+  const unit = Math.max(1, state.settings.jackpotPerDraw || 1);
+  const switchMode = (m: "out" | "in") => {
+    setMode(m);
+    setShares(state.seats.map(() => 0));
+  };
   const evenly = () => {
     const each = Math.floor(state.pot / SEATS);
     setShares(state.seats.map((_, i) => each + (i === 0 ? state.pot - each * SEATS : 0)));
   };
+  const out = mode === "out";
+  const ok = total > 0 && (!out || total <= state.pot);
+  const sharesOf = () => state.seats.map((player, i) => ({ player, amount: shares[i] })).filter((x) => x.amount > 0);
   return (
     <Sheet
       title={`Jackpot ${fmt(state.pot)}`}
-      subtitle={`Tap a player to give them all of it, or set shares in steps of ${fmt(step)}`}
+      subtitle={out ? "Tap a player to give them all of it, or set each share" : `What each player puts in - tap a name for ${fmt(unit)}`}
       onClose={onClose}
+      tabs={
+        <div className="sc-sheet-tabs">
+          <Segmented
+            value={mode}
+            onChange={switchMode}
+            options={[
+              { value: "out", label: "派 Hand out" },
+              { value: "in", label: "入 Pay in" },
+            ]}
+          />
+        </div>
+      }
       actions={
         <>
           <button
             type="button"
             className="sc-primary"
-            disabled={total <= 0 || total > state.pot}
-            onClick={() => onDone({ t: "jackpot", at: Date.now(), shares: state.seats.map((player, i) => ({ player, amount: shares[i] })).filter((s) => s.amount > 0) })}
+            disabled={!ok}
+            onClick={() => onDone({ t: out ? "jackpot" : "jackpotIn", at: Date.now(), shares: sharesOf() })}
           >
-            {total > 0 ? `Hand out ${fmt(total)}` : "Hand out"}
+            {out ? (total > 0 ? `Hand out ${fmt(total)}` : "Hand out") : total > 0 ? `Pay in ${fmt(total)}` : "Pay in"}
           </button>
         </>
       }
     >
-      <div className="sc-list">
-        {state.seats.map((p, i) => (
-          <div key={p} className="sc-row">
-            <button type="button" className="sc-row-main sc-row-button" onClick={() => setShares(state.seats.map((_, j) => (j === i ? state.pot : 0)))}>
-              <Monogram store={store} player={p} size="sm" />
-              {p}
-            </button>
-            <Stepper
-              value={shares[i]}
-              step={step}
-              max={shares[i] + Math.max(0, state.pot - total)}
-              onChange={(v) => setShares((prev) => prev.map((x, j) => (j === i ? v : x)))}
-              label={`${p}'s share`}
-            />
+      {out && state.pot <= 0 ? (
+        <p className="sc-empty">The Jackpot is empty - switch to Pay in to add to it.</p>
+      ) : (
+        <>
+          <div className="sc-list">
+            {state.seats.map((p, i) => (
+              <div key={p} className="sc-row">
+                <button
+                  type="button"
+                  className="sc-row-main sc-row-button"
+                  onClick={() => setShares(state.seats.map((_, j) => (j === i ? (out ? state.pot : unit) : out ? 0 : shares[j])))}
+                >
+                  <Monogram store={store} player={p} size="sm" />
+                  {p}
+                </button>
+                <Stepper
+                  value={shares[i]}
+                  max={out ? shares[i] + Math.max(0, state.pot - total) : undefined}
+                  onChange={(v) => setShares((prev) => prev.map((x, j) => (j === i ? v : x)))}
+                  label={out ? `${p}'s share` : `What ${p} pays in`}
+                />
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
-      <div className="sc-row">
-        <span className={total > state.pot ? "sc-warn" : "sc-help"}>
-          {fmt(total)} of {fmt(state.pot)} handed out
-        </span>
-        <button type="button" className="sc-outline" onClick={evenly}>
-          Split evenly
-        </button>
-      </div>
+          <div className="sc-row">
+            {out ? (
+              <span className={total > state.pot ? "sc-warn" : "sc-help"}>
+                {fmt(total)} of {fmt(state.pot)} handed out
+              </span>
+            ) : (
+              <span className="sc-help">
+                {fmt(total)} in · pot becomes {fmt(state.pot + total)}
+              </span>
+            )}
+            {out ? (
+              <button type="button" className="sc-outline" onClick={evenly}>
+                Split evenly
+              </button>
+            ) : (
+              <button type="button" className="sc-outline" onClick={() => setShares(state.seats.map(() => unit))}>
+                Everyone {fmt(unit)}
+              </button>
+            )}
+          </div>
+        </>
+      )}
+    </Sheet>
+  );
+}
+
+function NameSheet({ name, onSave, onClose }: { name: string; onSave: (name: string) => void; onClose: () => void }) {
+  const [text, setText] = useState(name);
+  const trimmed = text.trim();
+  return (
+    <Sheet
+      title="Name this game"
+      subtitle="Shown on the table and in History"
+      onClose={onClose}
+      actions={
+        <>
+          {name && (
+            <button type="button" className="sc-secondary" onClick={() => onSave("")}>
+              Clear
+            </button>
+          )}
+          <button type="button" className="sc-primary" disabled={trimmed === name} onClick={() => onSave(trimmed)}>
+            Save
+          </button>
+        </>
+      }
+    >
+      <input
+        className="sc-input"
+        value={text}
+        maxLength={24}
+        placeholder="Game name"
+        autoFocus
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && trimmed !== name && onSave(trimmed)}
+        aria-label="Game name"
+      />
     </Sheet>
   );
 }
@@ -1436,7 +2063,19 @@ function SettingsSheet({ settings, onSave, onClose }: { settings: ScoreSettings;
                     {/* Greyed out while the switch is off, like the other dependent rows. */}
                     <div className={`sc-row${value === null ? " is-off" : ""}`}>
                       <span className="sc-row-main">{key === "scoreCap" ? "Up to" : key === "surrenderPrompt" ? "After (hands)" : "From"}</span>
-                      <NumberField value={value ?? (DEFAULT_SETTINGS[key] as number)} onChange={(v) => set(key, v as never)} label={label} pill disabled={value === null} />
+                      {/* 高分提示 steps in 5s, 投降提示 in 1s; 封頂 is typed. */}
+                      {key !== "scoreCap" ? (
+                        <Stepper
+                          value={value ?? (DEFAULT_SETTINGS[key] as number)}
+                          onChange={(v) => set(key, v as never)}
+                          label={label}
+                          min={key === "highScore" ? 5 : 1}
+                          step={key === "highScore" ? 5 : 1}
+                          disabled={value === null}
+                        />
+                      ) : (
+                        <NumberField value={value ?? (DEFAULT_SETTINGS[key] as number)} onChange={(v) => set(key, v as never)} label={label} pill disabled={value === null} />
+                      )}
                     </div>
                   </Fragment>
                 );
@@ -1482,6 +2121,7 @@ type BoardSheet =
   | { kind: "recent" }
   | { kind: "draw" }
   | { kind: "seats" }
+  | { kind: "name" }
   | { kind: "lah" }
   | { kind: "jackpot" }
   | { kind: "settle" }
@@ -1502,7 +2142,9 @@ function EventRow({ ev, deltas }: { ev: ScoreEvent; deltas: Record<string, numbe
             ? `莊家設定${ev.streak > 0 ? ` · 連${ev.streak}` : ""}${ev.resetRound ? " · back to 東風東局" : ""}`
             : ev.t === "jackpot"
               ? "Jackpot handed out"
-              : "設定 changed";
+              : ev.t === "jackpotIn"
+                ? "Paid into the Jackpot"
+                : "設定 changed";
   const moved = Object.entries(deltas).filter(([, d]) => d !== 0);
   return (
     <div className="sc-hand sc-event">
@@ -1597,6 +2239,7 @@ function describeEvent(ev: ScoreEvent, state: ReplayState, i: number): string {
   }
   if (ev.t === "surrender") return `${ev.pulled} 投降`;
   if (ev.t === "jackpot") return "Jackpot handed out";
+  if (ev.t === "jackpotIn") return "Paid into the Jackpot";
   if (ev.t === "swap") return "換人";
   if (ev.t === "dealer") return "莊家設定";
   return "設定";
@@ -1612,6 +2255,7 @@ function Board({
   onRequestDone,
   onSeeAll,
   onScoreHand,
+  onOpenSeating,
 }: {
   store: ScoreStore;
   game: ScoreGame;
@@ -1622,8 +2266,51 @@ function Board({
   onRequestDone: () => void;
   onSeeAll: () => void;
   onScoreHand?: (req: Omit<ScoreHandRequest, "nonce">) => void;
+  onOpenSeating?: (names: string[]) => void;
 }) {
   const [sheet, setSheet] = useState<BoardSheet | null>(null);
+  // Holding a player's card opens 食胡 already on 自摸; the tap that ends
+  // the hold is then swallowed.
+  const cardHold = useRef<number | null>(null);
+  const cardHeld = useRef(false);
+  const cancelCardHold = () => {
+    if (cardHold.current !== null) window.clearTimeout(cardHold.current);
+    cardHold.current = null;
+  };
+  const cardPress = (seat: number) => ({
+    onPointerDown: () => {
+      cancelCardHold();
+      cardHeld.current = false;
+      cardHold.current = window.setTimeout(() => {
+        cardHold.current = null;
+        cardHeld.current = true;
+        setSheet({ kind: "hand", seat, initial: { selfDraw: true, patterns: [], from: null } });
+      }, 500);
+    },
+    onPointerUp: cancelCardHold,
+    onPointerLeave: cancelCardHold,
+    onPointerCancel: cancelCardHold,
+    onContextMenu: (e: { preventDefault: () => void }) => e.preventDefault(),
+  });
+  // Half a second's hold on the round box opens the name sheet.
+  const nameHold = useRef<number | null>(null);
+  const cancelNameHold = () => {
+    if (nameHold.current !== null) window.clearTimeout(nameHold.current);
+    nameHold.current = null;
+  };
+  const namePress = {
+    onPointerDown: () => {
+      cancelNameHold();
+      nameHold.current = window.setTimeout(() => {
+        nameHold.current = null;
+        setSheet({ kind: "name" });
+      }, 500);
+    },
+    onPointerUp: cancelNameHold,
+    onPointerLeave: cancelNameHold,
+    onPointerCancel: cancelNameHold,
+    onContextMenu: (e: { preventDefault: () => void }) => e.preventDefault(),
+  };
   const [toast, setToast] = useState<{ text: string; id: number } | null>(null);
   const [reminderHidden, setReminderHidden] = useState(false);
   // 投降 prompts dismissed, by "holder>pulled@count" - a chain that grows
@@ -1654,6 +2341,28 @@ function Board({
     // is whoever has the 門風 entered in Scoring.
     const seat = request.seat ?? [0, 1, 2, 3].find((s) => ((s - state.dealer + SEATS) % SEATS) + 1 === request.seatWind) ?? 0;
     const dealerNote = request.removedDealerTai ? ` (莊 ${request.removedDealerTai} taken out — Scores adds its own)` : "";
+    // A 雙響/三響: the sheet comes back whole, with only the scored winner's
+    // tai (and patterns) new. Who dealt in stands - one discard, several
+    // winners, so Scoring's 自摸 doesn't apply.
+    const draft = request.draft;
+    if (draft && request.seat !== undefined) {
+      const scored = request.seat;
+      setSheet({
+        kind: "hand",
+        seat: draft.sheetSeat,
+        initial: {
+          selfDraw: false,
+          patterns: request.reopenOnly ? [] : request.patterns,
+          from: request.from ?? -1,
+          jackpot: request.jackpot,
+          entries: request.reopenOnly ? draft.entries : draft.entries.map((e) => (e.seat === scored ? { ...e, tai: String(request.tai) } : e)),
+          patternsFor: scored,
+          ...(request.reopenOnly ? {} : { note: `From Scoring: ${state.seats[scored]} ${request.tai} tai${dealerNote}.` }),
+        },
+      });
+      onRequestDone();
+      return;
+    }
     if (request.reopenOnly) {
       setSheet({ kind: "hand", seat, initial: { selfDraw: request.from === null, patterns: [], from: request.from ?? -1, jackpot: request.jackpot } });
       onRequestDone();
@@ -1677,6 +2386,20 @@ function Board({
     onRequestDone();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [request]);
+
+  // A card too short for its total and 上局 both (a small phone with a
+  // banner up) drops the 上局 rather than letting it slide under the footer.
+  // Checked after every render and on resize; Recent still has every hand.
+  useLayoutEffect(() => {
+    const check = () =>
+      document.querySelectorAll<HTMLElement>(".sc-board .sc-card-score").forEach((el) => {
+        el.classList.remove("is-tight");
+        if (el.scrollHeight > el.clientHeight + 1) el.classList.add("is-tight");
+      });
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  });
 
   // The table fills exactly the space between the header and the tab bar, so
   // the board view never scrolls: measure what's left and hand it to the
@@ -1810,11 +2533,27 @@ function Board({
       )}
 
       <div className="sc-board">
-        {/* Where the game is - round and deal, the 局 count (連莊 is on the
-            dealer's badge) - in the empty corner beside the top seat. */}
-        <div className="sc-status">
+        {/* Where the game is - round and deal, the 局 count, and 第幾圈 /
+            第幾個東 (連莊 is on the dealer's badge) - in the empty corner
+            beside the top seat. */}
+        {/* A long press names the game. */}
+        <div
+          className="sc-status"
+          role="button"
+          tabIndex={0}
+          aria-label={`${game.name ? `${game.name}, ` : ""}${state.label}. Long-press to name this game`}
+          {...namePress}
+          onKeyDown={(e) => e.key === "Enter" && setSheet({ kind: "name" })}
+        >
+          {game.name && <span className="sc-status-name">{game.name}</span>}
           <span className="sc-status-round">{state.label}</span>
-          <span className="sc-status-meta">第{state.hands.length + 1}局</span>
+          <span className="sc-status-meta">局{state.hands.length + 1}</span>
+          <span className="sc-status-meta sc-status-wrap">
+            <span>東{state.east}</span>
+            <span>圈{state.circle}</span>
+          </span>
+          {/* The day this game started - today, for tonight's game. */}
+          <span className="sc-status-meta">{new Date(game.startedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</span>
         </div>
         {state.seats.map((player, seat) => {
           const total = state.totals[player] ?? 0;
@@ -1834,14 +2573,40 @@ function Board({
           return (
             <div key={seat} className={`sc-seat sc-area-${SEAT_AREAS[seat]}`}>
               <div className="sc-card-box">
-              <button type="button" className={`sc-card sc-c${colorOf(store, player)}${isDealer ? " is-dealer" : ""}`} onClick={() => setSheet({ kind: "hand", seat })} aria-label={`${player}, ${fmt(total)}. Record a hand for ${player}`}>
+              <button
+                type="button"
+                className={`sc-card sc-c${colorOf(store, player)}${isDealer ? " is-dealer" : ""}`}
+                {...cardPress(seat)}
+                onClick={() => {
+                  // A hold already opened it, as 自摸.
+                  if (cardHeld.current) {
+                    cardHeld.current = false;
+                    return;
+                  }
+                  setSheet({ kind: "hand", seat });
+                }}
+                aria-label={`${player}, ${fmt(total)}. Record a hand for ${player} - hold for 自摸`}
+              >
                 {/* 起莊: a gold corner on the seat this 圈 started from, so it's clear when 北風北 comes. */}
                 {isQi && (
                   <span className="sc-qi-corner" role="img" aria-label="起莊" title="起莊 - this 圈 started here" />
                 )}
-                <span className="sc-card-top">
+                {/* A long name gets a little smaller, and on a narrow card its
+                    莊連N badge shortens to 莊N, so the name isn't cut off. */}
+                <span className={`sc-card-top${[...player].length >= 6 ? " is-long" : ""}`}>
                   <span className="sc-card-name">{player}</span>
-                  {isDealer && <span className="sc-zhuang-tag">{state.streak > 0 ? `莊連${state.streak}` : "莊"}</span>}
+                  {isDealer && (
+                    <span className="sc-zhuang-tag" aria-label={state.streak > 0 ? `莊連${state.streak}` : "莊"}>
+                      {state.streak > 0 ? (
+                        <>
+                          <span className="sc-zhuang-long">莊連{state.streak}</span>
+                          <span className="sc-zhuang-short">莊{state.streak}</span>
+                        </>
+                      ) : (
+                        "莊"
+                      )}
+                    </span>
+                  )}
                 </span>
                 <span className="sc-card-score" data-anchor="score">
                   <span className={`sc-card-total ${tone(total)}`}>{fmt(total)}</span>
@@ -1921,7 +2686,7 @@ function Board({
             <span className="sc-draw-en">Draw</span>
           </button>
           {state.settings.jackpot && (
-            <button type="button" className={`sc-jackpot${state.pot > 0 ? " is-live" : ""}`} onClick={() => state.pot > 0 && setSheet({ kind: "jackpot" })} disabled={state.pot <= 0} aria-label={`Jackpot ${state.pot}${state.pot > 0 ? ", tap to hand it out" : ""}`}>
+            <button type="button" className={`sc-jackpot${state.pot > 0 ? " is-live" : ""}`} onClick={() => setSheet({ kind: "jackpot" })} aria-label={`Jackpot ${state.pot}, tap to hand it out or pay in`}>
               <span className="sc-jackpot-label">Jackpot</span>
               <span className="sc-jackpot-value">{fmt(state.pot)}</span>
             </button>
@@ -1958,7 +2723,8 @@ function Board({
           onScoreHand={
             onScoreHand &&
             ((ask) => {
-              const seat = sheet.seat;
+              // The winner being scored - on a 雙響/三響, maybe not the sheet's own.
+              const seat = ask.target;
               onScoreHand({
                 seat,
                 player: state.seats[seat],
@@ -1968,6 +2734,7 @@ function Board({
                 roundWind: (state.roundWind + 1) as 1 | 2 | 3 | 4,
                 seatWind: (((seat - state.dealer + SEATS) % SEATS) + 1) as 1 | 2 | 3 | 4,
                 scan: ask.scan,
+                ...(ask.entries.length > 1 ? { draft: { sheetSeat: sheet.seat, entries: ask.entries } } : {}),
               });
               close();
             })
@@ -2001,11 +2768,29 @@ function Board({
           onClose={close}
         />
       )}
+      {sheet?.kind === "name" && (
+        <NameSheet
+          name={game.name ?? ""}
+          onClose={close}
+          onSave={(name) => {
+            update({ ...game, name: name || undefined });
+            close();
+            flash(name ? `Named “${name}”` : "Name cleared");
+          }}
+        />
+      )}
       {sheet?.kind === "seats" && (
         <SeatsSheet
           store={store}
           state={state}
           onClose={close}
+          onOpenSeating={
+            onOpenSeating &&
+            (() => {
+              close();
+              onOpenSeating(state.seats);
+            })
+          }
           onDone={({ seats, newNames, removedNames, dealer }) => {
             const roster = withRoster(store, [...(seats ?? state.seats), ...newNames]).filter((p) => !removedNames.includes(p.name));
             let next = game;
@@ -2028,7 +2813,7 @@ function Board({
           }}
         />
       )}
-      {sheet?.kind === "jackpot" && <JackpotSheet store={store} state={state} onDone={(ev) => add(ev, "Jackpot handed out")} onClose={close} />}
+      {sheet?.kind === "jackpot" && <JackpotSheet store={store} state={state} onDone={(ev) => add(ev, ev.t === "jackpotIn" ? "Paid into the Jackpot" : "Jackpot handed out")} onClose={close} />}
       {sheet?.kind === "settle" && (
         <SettleSheet
           store={store}
@@ -2552,7 +3337,7 @@ function StatsPanel({ store, setStore, view, setView }: { store: ScoreStore; set
 
   return (
     <>
-      <SectionHead zh="玩家統計" en={isActive ? "This game" : new Date(game.startedAt).toLocaleDateString()}>
+      <SectionHead zh="玩家統計" en={game.name ?? (isActive ? "This game" : new Date(game.startedAt).toLocaleDateString())}>
         <span className="sc-help">{state.hands.length}局</span>
       </SectionHead>
       <div className="card sc-board-table">
@@ -2678,6 +3463,7 @@ function HistoryCard({ store, games, current, onPick, onDelete }: { store: Score
             <div key={g.id} className={`sc-game${g.id === current ? " is-current" : ""}`}>
               <button type="button" className="sc-game-main" onClick={() => onPick(g.id)}>
                 <span className="sc-game-date">
+                  {g.name && <strong>{g.name} · </strong>}
                   {g === store.active ? "In progress" : new Date(g.startedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
                   <span className="sc-help"> · {st.hands.length}局</span>
                   {g.id === current && <span className="sc-chip-accent">Showing</span>}
@@ -2803,6 +3589,7 @@ export function ScoresPanel({
   request,
   onRequestDone,
   onScoreHand,
+  onOpenSeating,
 }: {
   store: ScoreStore;
   setStore: (s: ScoreStore) => void;
@@ -2810,6 +3597,7 @@ export function ScoresPanel({
   request: RecordRequest | null;
   onRequestDone: () => void;
   onScoreHand?: (req: Omit<ScoreHandRequest, "nonce">) => void;
+  onOpenSeating?: (names: string[]) => void; // the Dice tab's Seating, for the seat ceremony
 }) {
   const [sub, setSub] = useState<"board" | "stats">("board");
   const [view, setView] = useState<StatsView>("trend");
@@ -2848,6 +3636,7 @@ export function ScoresPanel({
             request={request}
             onRequestDone={onRequestDone}
             onScoreHand={onScoreHand}
+            onOpenSeating={onOpenSeating}
             onSeeAll={() => {
               setView("hands");
               setSub("stats");
