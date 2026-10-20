@@ -3683,17 +3683,7 @@ function StatsPanel({ store, setStore, view, setView }: { store: ScoreStore; set
         <Segmented value={view} onChange={setView} options={views} />
       </div>
 
-      {view === "hands" && (
-        <div className="card sc-list-card">
-          {state.hands.length === 0 && <p className="sc-empty">No hands yet.</p>}
-          {state.hands
-            .slice()
-            .reverse()
-            .map((h) => (
-              <HandRow key={h.eventIndex} h={h} store={store} />
-            ))}
-        </div>
-      )}
+      {view === "hands" && <HandsTable store={store} game={game} state={state} />}
       {view === "trend" && (
         <div className="card">
           <div className="sc-card-head">
@@ -3719,6 +3709,199 @@ function StatsPanel({ store, setStore, view, setView }: { store: ScoreStore; set
       )}
       {view === "history" && <BackupCard store={store} setStore={setStore} />}
     </>
+  );
+}
+
+// 局 as a score sheet: a row per hand, oldest first, each player's change in
+// their own column - 胡 / 摸 on the winner's number, 銃 on the discarder's -
+// and the total at the foot. A tap opens who paid whom. 特別獎罰 are their
+// own rows, or folded into the hand they happened during.
+type SheetRow =
+  | { kind: "hand"; key: string; h: HandResult; deltas: Record<string, number>; bonuses: number; payIns: number }
+  | { kind: "bonus"; key: string; label: "獎" | "罰" | "獎罰"; deltas: Record<string, number> }
+  | { kind: "jackpot"; key: string; deltas: Record<string, number> };
+
+const shortName = (n: string) => {
+  const chars = [...n.replace(/\s+/g, "")];
+  return /[\u3400-\u9fff]/.test(n) ? chars.slice(0, 2).join("") : chars.slice(0, 3).join("");
+};
+
+const SHEET_VIEW_KEY = "mjwaits.sheetView";
+
+function HandsTable({ store, game, state }: { store: ScoreStore; game: ScoreGame; state: ReplayState }) {
+  // Detailed: 獎罰 and Jackpot pay-ins as their own rows, with every tag and
+  // 胡 / 摸 / 銃 mark. Simple: all folded into the hands, numbers only (the
+  // winner's in bold). Remembered on this phone.
+  const [detailed, setDetailedState] = useState(() => {
+    try {
+      return window.localStorage.getItem(SHEET_VIEW_KEY) !== "simple";
+    } catch {
+      return true;
+    }
+  });
+  const setDetailed = (on: boolean) => {
+    setDetailedState(on);
+    try {
+      window.localStorage.setItem(SHEET_VIEW_KEY, on ? "detailed" : "simple");
+    } catch {
+      // Just this visit, then.
+    }
+  };
+  const merge = !detailed;
+  const tags = detailed;
+  const [open, setOpen] = useState<string | null>(null);
+  const players = state.players.filter((p) => state.hands.some((h) => h.seatsAfter.includes(p)) || (state.totals[p] ?? 0) !== 0);
+  const rows = useMemo(() => {
+    const out: SheetRow[] = [];
+    // 獎罰 and Jackpot pay-ins waiting to fold into the next hand (Merged).
+    let pending: { deltas: Record<string, number>; count: number; payIns: number } | null = null;
+    const fold = (deltas: Record<string, number>, payIn: boolean) => {
+      const acc = pending ?? { deltas: {}, count: 0, payIns: 0 };
+      for (const [p, d] of Object.entries(deltas)) acc.deltas[p] = (acc.deltas[p] ?? 0) + d;
+      if (payIn) acc.payIns++;
+      else acc.count++;
+      pending = acc;
+    };
+    game.events.forEach((ev, i) => {
+      const step = state.steps.find((x) => x.eventIndex === i);
+      const deltas = step?.deltas ?? {};
+      if (ev.t === "win" || ev.t === "draw") {
+        const h = state.hands.find((x) => x.eventIndex === i);
+        if (!h) return;
+        const merged = { ...deltas };
+        if (pending) for (const [p, d] of Object.entries(pending.deltas)) merged[p] = (merged[p] ?? 0) + d;
+        const folded = pending as { count: number; payIns: number } | null;
+        out.push({ kind: "hand", key: `h${i}`, h, deltas: merged, bonuses: folded?.count ?? 0, payIns: folded?.payIns ?? 0 });
+        pending = null;
+      } else if (ev.t === "bonus") {
+        if (merge) fold(deltas, false);
+        else out.push({ kind: "bonus", key: `b${i}`, label: ev.kind, deltas });
+      } else if (ev.t === "jackpotIn" && merge) {
+        fold(deltas, true);
+      } else if ((ev.t === "jackpot" || ev.t === "jackpotIn") && Object.values(deltas).some((d) => d !== 0)) {
+        out.push({ kind: "jackpot", key: `j${i}`, deltas });
+      }
+    });
+    // A bonus after the last hand has no hand to join yet.
+    if (pending) {
+      const left = pending as { deltas: Record<string, number>; count: number };
+      out.push(left.count > 0 ? { kind: "bonus", key: "b-pending", label: "獎罰", deltas: left.deltas } : { kind: "jackpot", key: "j-pending", deltas: left.deltas });
+    }
+    return out;
+  }, [game, state, merge]);
+  const cols = { gridTemplateColumns: `1.5rem 2.7rem repeat(${players.length}, minmax(0, 1fr))` };
+  const cell = (row: SheetRow, p: string) => {
+    const d = row.deltas[p] ?? 0;
+    let mark: string | null = null;
+    if (row.kind === "hand" && row.h.kind === "win" && tags) {
+      if (row.h.winners.some((w) => w.player === p)) mark = row.h.selfDraw ? "摸" : "胡";
+      else if (row.h.from === p) mark = "銃";
+    }
+    const won = row.kind === "hand" && row.h.winners.some((w) => w.player === p);
+    return (
+      <span key={p} className={`sc-sheet-cell ${d ? tone(d) : "is-zero"}${won ? " is-winner" : ""}`}>
+        {mark && <span className={`sc-sheet-mark${mark === "銃" ? " is-dealin" : ""}`}>{mark}</span>}
+        {d ? signed(d) : "·"}
+      </span>
+    );
+  };
+  const what = (row: SheetRow) => {
+    if (row.kind === "bonus") return <span className="sc-sheet-what is-muted">{row.label}</span>;
+    if (row.kind === "jackpot") return <span className="sc-sheet-what is-muted">JP</span>;
+    const h = row.h;
+    if (h.kind === "draw") return <span className="sc-sheet-what is-muted">流局</span>;
+    const tag = h.pairs.some((x) => x.lahKind === "拉") ? "拉" : h.pairs.some((x) => x.lahKind === "踢") ? "踢" : null;
+    return (
+      <span className="sc-sheet-what">
+        {h.multi > 1 ? (h.multi === 2 ? "雙" : "三") : fmt(h.winners[0].tai)}
+        {tags && tag && <small>{tag}</small>}
+        {tags && row.bonuses > 0 && <small>獎罰</small>}
+        {tags && row.payIns > 0 && <small>JP</small>}
+      </span>
+    );
+  };
+  if (state.hands.length === 0) return <div className="card"><p className="sc-empty">No hands yet.</p></div>;
+  return (
+    <div className="card sc-sheet-card">
+      <div className="sc-card-head">
+        <h3>局 Hands</h3>
+        <Segmented
+          small
+          value={detailed ? "detailed" : "simple"}
+          onChange={(v) => setDetailed(v === "detailed")}
+          options={[
+            { value: "detailed", label: "Detailed" },
+            { value: "simple", label: "Simple" },
+          ]}
+        />
+      </div>
+      <div className="sc-sheet-table" role="table" aria-label="Every hand, and what each player won or paid">
+        <div className="sc-sheet-row is-head" style={cols} role="row">
+          <span>#</span>
+          <span>番</span>
+          {players.map((p) => (
+            <span key={p} className={`sc-sheet-name sc-c${colorOf(store, p)}`} title={p}>
+              {shortName(p)}
+            </span>
+          ))}
+        </div>
+        {rows.map((row) => {
+          const isOpen = open === row.key;
+          return (
+            <Fragment key={row.key}>
+              <div
+                className={`sc-sheet-row is-${row.kind}${isOpen ? " is-open" : ""}`}
+                style={cols}
+                role="row"
+                tabIndex={row.kind === "hand" ? 0 : undefined}
+                onClick={() => row.kind === "hand" && setOpen(isOpen ? null : row.key)}
+              >
+                <span className="sc-sheet-no">{row.kind === "hand" ? row.h.hand : ""}</span>
+                {what(row)}
+                {players.map((p) => cell(row, p))}
+              </div>
+              {isOpen && row.kind === "hand" && <HandDetail h={row.h} bonuses={row.bonuses} payIns={row.payIns} />}
+            </Fragment>
+          );
+        })}
+        <div className="sc-sheet-row is-total" style={cols} role="row">
+          <span />
+          <span>Total</span>
+          {players.map((p) => (
+            <span key={p} className={`sc-sheet-cell ${tone(state.totals[p] ?? 0)}`}>
+              {signed(state.totals[p] ?? 0)}
+            </span>
+          ))}
+        </div>
+      </div>
+      <p className="sc-help sc-help-block">Tap a hand for who paid whom.{merge ? " 獎罰 and Jackpot pay-ins are folded into the hand they happened during." : ""}</p>
+    </div>
+  );
+}
+
+// One hand opened in the 局 sheet: the round, each payment and its parts,
+// and anything else that moved (反雪, the Jackpot).
+function HandDetail({ h, bonuses, payIns }: { h: HandResult; bonuses: number; payIns: number }) {
+  const lines: string[] = h.pairs.map((p) => {
+    const parts = [p.base ? `底${fmt(p.base)}` : null, `番${fmt(p.tai)}`, p.dealer ? `莊${fmt(p.dealer)}` : null, p.lahKind ? `${p.lahKind}${fmt(p.lah)}` : null].filter(Boolean);
+    return `${p.payer} → ${p.winner} ${fmt(p.worth)} · ${parts.join(" ")}`;
+  });
+  for (const f of h.fanXue) lines.push(`${f.from} → ${f.to} ${fmt(f.amount)} · 反雪`);
+  if (h.jackpotWon) lines.push(`${h.jackpotWon.player} takes the Jackpot ${fmt(h.jackpotWon.amount)}`);
+  if (h.jackpotFed > 0) lines.push(`Jackpot +${fmt(h.jackpotFed)}`);
+  if (bonuses > 0) lines.push(`Includes ${bonuses} 特別獎罰`);
+  if (payIns > 0) lines.push(`Includes ${payIns} Jackpot pay-in${payIns > 1 ? "s" : ""}`);
+  return (
+    <div className="sc-sheet-detail">
+      <span className="sc-help">
+        {h.label} · 莊 {h.dealer}
+        {h.streak > 0 ? ` 連${h.streak}` : ""}
+        {h.multi > 1 ? ` · ${h.winners.map((w) => `${w.player} ${fmt(w.tai)}番`).join(", ")}` : ""}
+      </span>
+      {lines.map((l, i) => (
+        <span key={i}>{l}</span>
+      ))}
+    </div>
   );
 }
 

@@ -11096,3 +11096,128 @@ html.sc-fit-mode .build-version {
 .sc-banner.is-backup .sc-banner-action {
   color: var(--accent);
 }
+
+/* ---- Stats 局: the score sheet ---- */
+.sc-sheet-card .sc-card-head {
+  align-items: center;
+}
+
+.sc-sheet-table {
+  margin: 0 -0.25rem;
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.sc-sheet-row {
+  display: grid;
+  align-items: center;
+  column-gap: 0.25rem;
+  min-height: 2.4rem;
+  padding: 0 0.25rem;
+  border-top: 1px solid var(--separator);
+}
+
+.sc-sheet-row.is-head {
+  min-height: 2rem;
+  border-top: none;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+.sc-sheet-row.is-hand {
+  cursor: pointer;
+}
+
+.sc-sheet-row.is-hand:active,
+.sc-sheet-row.is-open {
+  background: var(--fill);
+}
+
+.sc-sheet-row.is-bonus,
+.sc-sheet-row.is-jackpot {
+  min-height: 2rem;
+  background: var(--surface-sunken);
+  font-size: var(--text-xs);
+}
+
+.sc-sheet-row.is-total {
+  min-height: 2.6rem;
+  border-top: 1.5px solid var(--text-muted);
+  font-weight: 800;
+}
+
+.sc-sheet-no {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.sc-sheet-what {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.2rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.sc-sheet-what small {
+  color: var(--accent);
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.sc-sheet-what.is-muted {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+/* Player names in their colour, right-aligned over their numbers. */
+.sc-sheet-name {
+  overflow: hidden;
+  color: var(--pc);
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sc-sheet-cell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.2rem;
+  white-space: nowrap;
+}
+
+.sc-sheet-cell.is-zero {
+  color: var(--text-muted);
+}
+
+.sc-sheet-cell.is-winner {
+  font-weight: 800;
+}
+
+.sc-sheet-mark {
+  padding: 0 0.2rem;
+  border-radius: 0.2rem;
+  background: var(--accent-tint);
+  color: var(--accent);
+  font-size: 0.62rem;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.sc-sheet-mark.is-dealin {
+  background: color-mix(in srgb, var(--sc-neg) 14%, transparent);
+  color: var(--sc-neg);
+}
+
+/* A hand opened: its payments, under the row. */
+.sc-sheet-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.35rem 0.5rem 0.6rem 1.75rem;
+  background: var(--fill);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
