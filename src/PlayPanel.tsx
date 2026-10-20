@@ -583,10 +583,14 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
     return (
       <div className={`play-seat play-seat-${side}`}>
         {over ? <RevealedHand tiles={p.hand} winningTile={null} /> : <EdgeTiles count={p.hand.length} side={side} />}
-        <span className="play-seat-melds">
-          <Melds melds={p.melds} hideConcealed={!over} />
+        {/* Melds and flowers beside the tiles, toward the middle - below
+            them, a side seat's column ran down into your hand. */}
+        <span className="play-seat-side">
+          <span className="play-seat-melds">
+            <Melds melds={p.melds} hideConcealed={!over} />
+          </span>
+          <Flowers flowers={p.flowers} />
         </span>
-        <Flowers flowers={p.flowers} />
       </div>
     );
   };
