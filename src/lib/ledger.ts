@@ -48,6 +48,8 @@ export interface ScoreSettings {
   seatReminder: boolean; // 執位提示 - remind to re-seat after 北風北局
   highScore: number | null; // 高分提示 - flag a payment at or above this
   surrenderPrompt: number | null; // 投降提示 - prompt once a 拉 runs this many hands in a row; null = off. A prompt only - 投降 itself is never restricted.
+  showTally: boolean; // 胡摸銃數 - win / self-draw / deal-in counts on the cards
+  quickScan: boolean; // 快速掃描 - a Scan button on each player's card
 }
 
 export const DEFAULT_SETTINGS: ScoreSettings = {
@@ -68,6 +70,8 @@ export const DEFAULT_SETTINGS: ScoreSettings = {
   seatReminder: true,
   highScore: 50,
   surrenderPrompt: 3,
+  showTally: true,
+  quickScan: false,
 };
 
 export interface PatternNote {

@@ -7,7 +7,7 @@
 // is owned by App (so the Scoring tab can send a hand here) and saved to
 // localStorage on every change.
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import {
   DEFAULT_SETTINGS,
   PLAYER_COLORS,
@@ -89,6 +89,7 @@ export interface ScoreHandRequest {
   roundWind: 1 | 2 | 3 | 4;
   seatWind: 1 | 2 | 3 | 4;
   scan: boolean; // open the camera straight away
+  fromCard?: boolean; // a card's 快速掃描 button, not a 食胡 sheet
   nonce: number;
 }
 
@@ -324,29 +325,30 @@ function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: 
   );
 }
 
-function Stepper({ value, onChange, min = 0, max, step = 1, label }: { value: number; onChange: (v: number) => void; min?: number; max?: number; step?: number; label?: string }) {
+function Stepper({ value, onChange, min = 0, max, step = 1, label, disabled }: { value: number; onChange: (v: number) => void; min?: number; max?: number; step?: number; label?: string; disabled?: boolean }) {
   return (
-    <span className="sc-stepper" role="group" aria-label={label}>
-      <button type="button" onClick={() => onChange(Math.max(min, value - step))} aria-label="Less" disabled={value <= min}>
+    <span className={`sc-stepper${disabled ? " is-disabled" : ""}`} role="group" aria-label={label} aria-disabled={disabled || undefined}>
+      <button type="button" onClick={() => onChange(Math.max(min, value - step))} aria-label="Less" disabled={disabled || value <= min}>
         −
       </button>
       <span className="sc-stepper-value">{value}</span>
-      <button type="button" onClick={() => onChange(max === undefined ? value + step : Math.min(max, value + step))} aria-label="More" disabled={max !== undefined && value >= max}>
+      <button type="button" onClick={() => onChange(max === undefined ? value + step : Math.min(max, value + step))} aria-label="More" disabled={disabled || (max !== undefined && value >= max)}>
         +
       </button>
     </span>
   );
 }
 
-function NumberField({ value, onChange, label }: { value: number; onChange: (v: number) => void; label: string }) {
+function NumberField({ value, onChange, label, pill, disabled }: { value: number; onChange: (v: number) => void; label: string; pill?: boolean; disabled?: boolean }) {
   const [text, setText] = useState(String(value));
   useEffect(() => setText(String(value)), [value]);
   return (
     <input
-      className="sc-input sc-input-short"
+      className={pill ? "sc-input sc-input-pill" : "sc-input sc-input-short"}
       inputMode="numeric"
       value={text}
       aria-label={label}
+      disabled={disabled}
       onChange={(e) => {
         const t = e.target.value.replace(/[^0-9]/g, "").slice(0, 5);
         setText(t);
@@ -930,7 +932,7 @@ function SeatsSheet({
 }: {
   store: ScoreStore;
   state: ReplayState;
-  onDone: (change: { seats: string[] | null; newNames: string[]; dealer: ScoreEvent | null }) => void;
+  onDone: (change: { seats: string[] | null; newNames: string[]; removedNames: string[]; dealer: ScoreEvent | null }) => void;
   onClose: () => void;
 }) {
   const [tab, setTab] = useState<"swap" | "dealer">("swap");
@@ -940,12 +942,21 @@ function SeatsSheet({
   const [picked, setPicked] = useState<number | null>(null);
   const [newName, setNewName] = useState("");
   const [added, setAdded] = useState<string[]>([]);
+  // Bench players taken off the roster - applied on Confirm.
+  const [removed, setRemoved] = useState<string[]>([]);
+  const [editBench, setEditBench] = useState(false);
   // Dealer draft - a seat, so it reads whoever the draft seating puts there.
   const [dealer, setDealer] = useState(state.dealer);
   const [streak, setStreak] = useState(state.streak);
   const [reset, setReset] = useState(true);
 
-  const bench = [...new Set([...store.roster.map((p) => p.name), ...state.players, ...added])].filter((p) => !seats.includes(p));
+  const bench = [...new Set([...store.roster.map((p) => p.name), ...state.players, ...added])].filter((p) => !seats.includes(p) && !removed.includes(p));
+  // Anyone who has played this game stays - their score is on the table.
+  const canRemove = (name: string) => !state.players.includes(name);
+  const removeBench = (name: string) => {
+    if (added.includes(name)) setAdded((a) => a.filter((n) => n !== name));
+    else setRemoved((r) => [...r, name]);
+  };
   const tapSeat = (s2: number) => {
     if (picked === null) return setPicked(s2);
     if (picked !== s2) setSeats((prev) => prev.map((p, i) => (i === s2 ? prev[picked] : i === picked ? prev[s2] : p)));
@@ -959,22 +970,24 @@ function SeatsSheet({
   const addName = () => {
     const n = newName.trim();
     if (!n || seats.includes(n) || bench.includes(n)) return;
-    setAdded((a) => [...a, n]);
+    if (removed.includes(n)) setRemoved((r) => r.filter((x) => x !== n));
+    else setAdded((a) => [...a, n]);
     setNewName("");
   };
 
   const seatsChanged = seats.some((p, i) => p !== state.seats[i]);
   // 重置風局 (on by default) only rides along with a real dealer or 連莊 change.
   const dealerChanged = dealer !== state.dealer || streak !== state.streak;
-  const anything = seatsChanged || dealerChanged || added.length > 0;
+  const anything = seatsChanged || dealerChanged || added.length > 0 || removed.length > 0;
   const submit = () =>
     onDone({
       seats: seatsChanged ? seats : null,
       newNames: added,
+      removedNames: removed,
       dealer: dealerChanged ? { t: "dealer", at: Date.now(), seat: dealer, streak, resetRound: reset } : null,
     });
 
-  const pending = [seatsChanged && "seating", dealerChanged && "dealer"].filter(Boolean).join(" and ");
+  const pending = [seatsChanged && "seating", dealerChanged && "dealer", removed.length > 0 && "bench"].filter(Boolean).join(" and ");
 
   return (
     <Sheet
@@ -1016,11 +1029,40 @@ function SeatsSheet({
         <>
           <SeatDiamond>{(s2) => <PlayerOption store={store} player={seats[s2]} selected={picked === s2} onClick={() => tapSeat(s2)} />}</SeatDiamond>
           <div className="sc-field">
-            <span className="sc-label">候補 Bench</span>
+            <div className="sc-field-head">
+              <span className="sc-label">候補 Bench</span>
+              {(editBench || bench.some(canRemove)) && (
+                <button
+                  type="button"
+                  className="sc-text-button"
+                  onClick={() => {
+                    setPicked(null);
+                    setEditBench((e) => !e);
+                  }}
+                >
+                  {editBench ? "Done" : "Edit"}
+                </button>
+              )}
+            </div>
             <div className="sc-options">
-              {bench.map((p) => (
-                <PlayerOption key={p} store={store} player={p} onClick={() => tapBench(p)} disabled={picked === null} />
-              ))}
+              {bench.map((p) =>
+                editBench ? (
+                  <button
+                    key={p}
+                    type="button"
+                    className="sc-option sc-option-remove"
+                    onClick={() => removeBench(p)}
+                    disabled={!canRemove(p)}
+                    aria-label={canRemove(p) ? `Remove ${p} from the bench` : `${p} is in this game`}
+                  >
+                    <Monogram store={store} player={p} size="sm" />
+                    <span className="sc-option-name">{p}</span>
+                    {canRemove(p) && <span className="sc-option-x">{Icons.close}</span>}
+                  </button>
+                ) : (
+                  <PlayerOption key={p} store={store} player={p} onClick={() => tapBench(p)} disabled={picked === null} />
+                ),
+              )}
               {bench.length === 0 && <span className="sc-help">Nobody on the bench yet.</span>}
             </div>
             <div className="sc-add">
@@ -1287,7 +1329,7 @@ function SettleSheet({ store, state, onEnd, onClose }: { store: ScoreStore; stat
   );
 }
 
-const SETTING_GROUPS: { title: string; rows: { key: keyof ScoreSettings; label: string; help?: string; kind: "number" | "bool" | "nullable" | "round" }[] }[] = [
+const SETTING_GROUPS: { title: string; rows: { key: keyof ScoreSettings; label: string; help?: string; kind: "number" | "bool" | "nullable" | "round"; needs?: keyof ScoreSettings }[] }[] = [
   {
     title: "計分 Scoring",
     rows: [
@@ -1305,8 +1347,8 @@ const SETTING_GROUPS: { title: string; rows: { key: keyof ScoreSettings; label: 
       { key: "lahRound", label: "拉 half", kind: "round" },
       { key: "tiRound", label: "踢 half", kind: "round" },
       { key: "fanXue", label: "反雪", help: "Paid back by each winner", kind: "bool" },
-      { key: "fanXueDouble", label: "反雪 after 雙響", kind: "number" },
-      { key: "fanXueTriple", label: "反雪 after 三響", kind: "number" },
+      { key: "fanXueDouble", label: "反雪 after 雙響", kind: "number", needs: "fanXue" },
+      { key: "fanXueTriple", label: "反雪 after 三響", kind: "number", needs: "fanXue" },
       { key: "surrenderPrompt", label: "投降提示", help: "Prompt once a 拉 runs this many hands in a row", kind: "nullable" },
     ],
   },
@@ -1314,7 +1356,7 @@ const SETTING_GROUPS: { title: string; rows: { key: keyof ScoreSettings; label: 
     title: "Jackpot",
     rows: [
       { key: "jackpot", label: "Jackpot", kind: "bool" },
-      { key: "jackpotPerDraw", label: "Per player per 流局", kind: "number" },
+      { key: "jackpotPerDraw", label: "Per player per 流局", kind: "number", needs: "jackpot" },
     ],
   },
   {
@@ -1323,6 +1365,8 @@ const SETTING_GROUPS: { title: string; rows: { key: keyof ScoreSettings; label: 
       { key: "showLah", label: "拉數提示", help: "拉 on the player cards", kind: "bool" },
       { key: "seatReminder", label: "執位提示", help: "After 北風北局", kind: "bool" },
       { key: "highScore", label: "高分提示", help: "Flag a payment this big", kind: "nullable" },
+      { key: "showTally", label: "胡摸銃數", help: "Counts on the cards: 胡 black, 摸 green, 銃 red", kind: "bool" },
+      { key: "quickScan", label: "快速掃描", help: "A Scan button on each player's card", kind: "bool" },
     ],
   },
 ];
@@ -1350,7 +1394,7 @@ function SettingsSheet({ settings, onSave, onClose }: { settings: ScoreSettings;
         <div key={g.title} className="sc-settings-group">
           <div className="sc-settings-title">{g.title}</div>
           <div className="sc-list">
-            {g.rows.map(({ key, label, help, kind }) => {
+            {g.rows.map(({ key, label, help, kind, needs }) => {
               const text = (
                 <span className="sc-row-main sc-row-stack">
                   {label}
@@ -1381,20 +1425,28 @@ function SettingsSheet({ settings, onSave, onClose }: { settings: ScoreSettings;
                 );
               if (kind === "nullable") {
                 const value = s[key] as number | null;
+                // The amount gets its own row, lined up with the steppers, so the
+                // switch stays in the same column as every other switch.
                 return (
-                  <div key={key} className="sc-row">
-                    {text}
-                    <span className="sc-row-end">
-                      {value !== null && <NumberField value={value} onChange={(v) => set(key, v as never)} label={label} />}
+                  <Fragment key={key}>
+                    <label className="sc-row">
+                      {text}
                       <Toggle checked={value !== null} onChange={(v) => set(key, (v ? DEFAULT_SETTINGS[key] ?? 50 : null) as never)} label={label} />
-                    </span>
-                  </div>
+                    </label>
+                    {/* Greyed out while the switch is off, like the other dependent rows. */}
+                    <div className={`sc-row${value === null ? " is-off" : ""}`}>
+                      <span className="sc-row-main">{key === "scoreCap" ? "Up to" : key === "surrenderPrompt" ? "After (hands)" : "From"}</span>
+                      <NumberField value={value ?? (DEFAULT_SETTINGS[key] as number)} onChange={(v) => set(key, v as never)} label={label} pill disabled={value === null} />
+                    </div>
+                  </Fragment>
                 );
               }
+              // Greyed out while the switch it belongs to is off.
+              const off = needs !== undefined && !s[needs];
               return (
-                <div key={key} className="sc-row">
+                <div key={key} className={`sc-row${off ? " is-off" : ""}`}>
                   {text}
-                  <Stepper value={s[key] as number} onChange={(v) => set(key, v as never)} label={label} />
+                  <Stepper value={s[key] as number} onChange={(v) => set(key, v as never)} label={label} disabled={off} />
                 </div>
               );
             })}
@@ -1800,24 +1852,48 @@ function Board({
                   )}
                 </span>
               </button>
-              {/* The card opens 食胡; its 胡 · 摸 · 銃 footer opens 特別獎罰. */}
-              <button
-                type="button"
-                className="sc-card-bonus"
-                onClick={() => setSheet({ kind: "hand", seat, mode: "bonus" })}
-                aria-label={`${tally.wins} wins, ${tally.selfDraws} self-draws, ${tally.dealIns} deal-ins. 特別獎罰 for ${player}`}
-              >
-                <span>
-                  胡<strong>{tally.wins}</strong>
-                </span>
-                <span>
-                  摸<strong>{tally.selfDraws}</strong>
-                </span>
-                <span>
-                  銃<strong>{tally.dealIns}</strong>
-                </span>
-                <span className="sc-card-bonus-mark">{Icons.plusMinus}</span>
-              </button>
+              {/* The card opens 食胡. Its footer: ± and 胡 · 摸 · 銃 open 特別獎罰,
+                  and with 快速掃描 on, the camera scans a hand this player won. */}
+              <div className="sc-card-foot">
+                <button
+                  type="button"
+                  className="sc-card-bonus"
+                  onClick={() => setSheet({ kind: "hand", seat, mode: "bonus" })}
+                  aria-label={`${tally.wins} wins, ${tally.selfDraws} self-draws, ${tally.dealIns} deal-ins. 特別獎罰 for ${player}`}
+                >
+                  <span className="sc-card-bonus-mark">{Icons.plusMinus}</span>
+                  {/* Numbers only, told apart by colour: 胡 black, 摸 green, 銃 red. */}
+                  {state.settings.showTally ? (
+                    <span className="sc-card-counts" aria-hidden="true">
+                      <strong className="is-win">{tally.wins}</strong>·<strong className="is-self">{tally.selfDraws}</strong>·<strong className="is-dealin">{tally.dealIns}</strong>
+                    </span>
+                  ) : (
+                    <span aria-hidden="true">獎罰</span>
+                  )}
+                </button>
+                {state.settings.quickScan && onScoreHand && (
+                  <button
+                    type="button"
+                    className="sc-card-scan"
+                    aria-label={`Scan a hand ${player} won`}
+                    onClick={() =>
+                      onScoreHand({
+                        seat,
+                        player,
+                        from: -1,
+                        fromName: null,
+                        jackpot: false,
+                        roundWind: (state.roundWind + 1) as 1 | 2 | 3 | 4,
+                        seatWind: (((seat - state.dealer + SEATS) % SEATS) + 1) as 1 | 2 | 3 | 4,
+                        scan: true,
+                        fromCard: true,
+                      })
+                    }
+                  >
+                    {Icons.camera}
+                  </button>
+                )}
+              </div>
               {/* 拉 pins on the edge facing the other player: + on the holder's card,
                   − on the pulled player's. */}
               {state.settings.showLah &&
@@ -1930,8 +2006,8 @@ function Board({
           store={store}
           state={state}
           onClose={close}
-          onDone={({ seats, newNames, dealer }) => {
-            const roster = withRoster(store, [...(seats ?? state.seats), ...newNames]);
+          onDone={({ seats, newNames, removedNames, dealer }) => {
+            const roster = withRoster(store, [...(seats ?? state.seats), ...newNames]).filter((p) => !removedNames.includes(p.name));
             let next = game;
             if (seats) next = withEvent(next, { t: "swap", at: Date.now(), seats });
             if (dealer) next = withEvent(next, dealer);

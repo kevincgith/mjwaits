@@ -1656,6 +1656,9 @@ const HandScanner = forwardRef<
     // is still empty, since Reset is also this flow's only cancel button
     // once the scan is running (see HandScannerHandle.reset).
     onActiveChange?: (active: boolean) => void;
+    // The scan was backed out of before anything was applied: the camera or
+    // photo picker closed with no photo, or the crop screen cancelled.
+    onAbandon?: () => void;
   }
 >(function HandScanner(
   {
@@ -1666,6 +1669,7 @@ const HandScanner = forwardRef<
     triggerLabel = "Scan a hand",
     onBusyChange,
     onActiveChange,
+    onAbandon,
     autoApply,
     recheckUnless = autoApply,
   },
@@ -1673,6 +1677,22 @@ const HandScanner = forwardRef<
 ) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const libraryFileInputRef = useRef<HTMLInputElement>(null);
+  // The camera / photo picker closing with nothing chosen, where the browser
+  // says so with the file input's "cancel" event. (Not page focus coming
+  // back: on iOS that comes before the photo does, and would drop it.)
+  const onAbandonRef = useRef(onAbandon);
+  onAbandonRef.current = onAbandon;
+  const pickerOpenRef = useRef(false);
+  useEffect(() => {
+    const inputs = [fileInputRef.current, libraryFileInputRef.current].filter((el): el is HTMLInputElement => el !== null);
+    const abandon = () => {
+      if (!pickerOpenRef.current) return;
+      pickerOpenRef.current = false;
+      onAbandonRef.current?.();
+    };
+    inputs.forEach((el) => el.addEventListener("cancel", abandon));
+    return () => inputs.forEach((el) => el.removeEventListener("cancel", abandon));
+  }, []);
   const [scanStatus, setScanStatus] = useState<"idle" | "analyzing" | "cropping" | "loading" | "review" | "auto-applied" | "error">(
     "idle"
   );
@@ -1706,10 +1726,12 @@ const HandScanner = forwardRef<
     // the time runScan needs it, it's often already downloaded or well
     // underway.
     prefetchModel();
+    pickerOpenRef.current = true;
     fileInputRef.current?.click();
   };
   const triggerScanLibrary = () => {
     prefetchModel();
+    pickerOpenRef.current = true;
     libraryFileInputRef.current?.click();
   };
   const resetScan = () => {
@@ -1790,6 +1812,7 @@ const HandScanner = forwardRef<
   };
 
   const handleScanFile = async (e: ChangeEvent<HTMLInputElement>) => {
+    pickerOpenRef.current = false;
     const file = e.target.files?.[0];
     e.target.value = ""; // allow re-selecting the same file next time
     if (!file) return;
@@ -1985,6 +2008,7 @@ const HandScanner = forwardRef<
     } else {
       setCropImage(null);
       setScanStatus("idle");
+      onAbandon?.();
     }
   };
 
@@ -7042,6 +7066,10 @@ function ScoringPanel({
         hideTrigger
         onBusyChange={setScanBusy}
         onActiveChange={setScanActive}
+        // A scan asked for from Scores and backed out of: straight back there.
+        onAbandon={() => {
+          if (forScores?.scan && handEmpty) onCancelForScores?.();
+        }}
         regionLabels={["Concealed", "Declared"]}
         regionIssue={declaredRegionIssue}
         onConfirm={applyScannedRegions}
@@ -9960,8 +9988,9 @@ function App() {
           }}
           forScores={scoreFor}
           onCancelForScores={() => {
-            // Back to the 食胡 sheet it came from, as it was.
-            if (scoreFor)
+            // Back to the 食胡 sheet it came from, as it was - or just the
+            // table, for a card's own Scan button.
+            if (scoreFor && !scoreFor.fromCard)
               setRecordRequest({
                 seatWind: scoreFor.seatWind,
                 selfDraw: scoreFor.from === null,
