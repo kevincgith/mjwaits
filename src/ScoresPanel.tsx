@@ -1349,6 +1349,7 @@ const SETTING_GROUPS: { title: string; rows: { key: keyof ScoreSettings; label: 
       { key: "fanXue", label: "反雪", help: "Paid back by each winner", kind: "bool" },
       { key: "fanXueDouble", label: "反雪 after 雙響", kind: "number", needs: "fanXue" },
       { key: "fanXueTriple", label: "反雪 after 三響", kind: "number", needs: "fanXue" },
+      { key: "surrenderPrompt", label: "投降提示", help: "Prompt once a 拉 runs this many hands in a row", kind: "nullable" },
     ],
   },
   {
@@ -1434,7 +1435,7 @@ function SettingsSheet({ settings, onSave, onClose }: { settings: ScoreSettings;
                     </label>
                     {/* Greyed out while the switch is off, like the other dependent rows. */}
                     <div className={`sc-row${value === null ? " is-off" : ""}`}>
-                      <span className="sc-row-main">{key === "scoreCap" ? "Up to" : "From"}</span>
+                      <span className="sc-row-main">{key === "scoreCap" ? "Up to" : key === "surrenderPrompt" ? "After (hands)" : "From"}</span>
                       <NumberField value={value ?? (DEFAULT_SETTINGS[key] as number)} onChange={(v) => set(key, v as never)} label={label} pill disabled={value === null} />
                     </div>
                   </Fragment>
@@ -1625,6 +1626,9 @@ function Board({
   const [sheet, setSheet] = useState<BoardSheet | null>(null);
   const [toast, setToast] = useState<{ text: string; id: number } | null>(null);
   const [reminderHidden, setReminderHidden] = useState(false);
+  // 投降 prompts dismissed, by "holder>pulled@count" - a chain that grows
+  // again prompts again.
+  const [surrenderSeen, setSurrenderSeen] = useState<string[]>([]);
   const close = () => setSheet(null);
   const flash = (text: string) => {
     const id = Date.now();
@@ -1763,6 +1767,36 @@ function Board({
           ))}
         </div>
       </div>
+
+      {/* 投降提示: someone's been 拉'd the set number of times in a row (3 by
+          default). Only a prompt - whether 投降 is allowed is the table's
+          house rule. */}
+      {(() => {
+        const at = state.settings.surrenderPrompt;
+        if (at === null) return null;
+        const due = state.lahs.filter((l) => l.count >= at && !surrenderSeen.includes(`${l.holder}>${l.pulled}@${l.count}`)).sort((a, b) => b.value - a.value);
+        if (due.length === 0) return null;
+        const l = due[0];
+        return (
+          <div className="sc-banner is-surrender" role="status">
+            <span>
+              <strong>投降</strong> · {l.pulled} has been 拉 {l.count} times by {l.holder} ({fmt(l.value)}) - surrender is available
+              {due.length > 1 && ` (+${due.length - 1} more)`}
+            </span>
+            <button type="button" className="sc-banner-action" onClick={() => setSheet({ kind: "lah" })}>
+              拉踢
+            </button>
+            <button
+              type="button"
+              className="sc-icon-button"
+              onClick={() => setSurrenderSeen((seen) => [...seen, ...due.map((d) => `${d.holder}>${d.pulled}@${d.count}`)])}
+              aria-label="Dismiss"
+            >
+              {Icons.close}
+            </button>
+          </div>
+        );
+      })()}
 
       {state.seatChangeDue && !reminderHidden && (
         <div className="sc-banner" role="status">

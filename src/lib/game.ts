@@ -29,6 +29,7 @@ import {
   tileKey,
   type Tile,
 } from "./mahjong";
+import { DEFAULT_SETTINGS, nextLahs, previewWin, type Lah, type PairPayment, type ScoreSettings } from "./ledger";
 import {
   scoreParsedHand,
   type BonusTile,
@@ -93,6 +94,9 @@ export interface HandResult {
   scoreError: string | null;
   // Tai change per seat: the winner gains what the payer(s) lose.
   deltas: number[];
+  // Each payer's share, with any 拉/踢 add-on (see settleWin). Optional so
+  // results saved before 拉 load.
+  pairs?: PairPayment[];
 }
 
 export interface GameState {
@@ -107,6 +111,57 @@ export interface GameState {
   firstGoAround: boolean;
   discardsMade: number;
   log: string[];
+  // 拉 between seats ("0".."3"), carried from hand to hand - the house
+  // rules the Scores tab keeps (see ledger.ts): a repeat win off the same
+  // player adds half the 拉, winning back (踢) adds half and resets it, a
+  // draw keeps every 拉 and any other win ends the holder's. Optional so
+  // games saved before 拉 load.
+  lahs?: Lah[];
+}
+
+// Seats as the ledger names players, and its settlement with everything
+// the tai list already counts (底, 莊, 連莊) switched off so nothing is
+// counted twice - leaving the 拉/踢 add-on.
+const SEAT_IDS = ["0", "1", "2", "3"];
+const PLAY_LAH_SETTINGS: ScoreSettings = { ...DEFAULT_SETTINGS, base: 0, dealerTai: 0, streakTai: 0, integerMode: true, lahRound: "up", tiRound: "up" };
+
+// What one winner collects, per payer, given the 拉 in play - the same
+// numbers the Scores tab's 食胡 sheet would show.
+export function settleWin(lahs: Lah[], dealer: number, winner: number, from: number | null, tai: number): PairPayment[] {
+  return previewWin({ seats: SEAT_IDS, dealer, streak: 0, lahs, settings: PLAY_LAH_SETTINGS }, [{ seat: winner, tai }], from);
+}
+
+// The 拉/踢 add-on `winner` would get from `payer` right now (0 if none).
+export function lahAddOn(lahs: Lah[] | undefined, winner: number, payer: number): { amount: number; kind: "拉" | "踢" | null; value: number } {
+  const pull = lahs?.find((l) => l.holder === SEAT_IDS[winner] && l.pulled === SEAT_IDS[payer]);
+  if (pull) return { amount: Math.ceil(pull.value / 2), kind: "拉", value: pull.value };
+  const kick = lahs?.find((l) => l.holder === SEAT_IDS[payer] && l.pulled === SEAT_IDS[winner]);
+  if (kick) return { amount: Math.ceil(kick.value / 2), kind: "踢", value: kick.value };
+  return { amount: 0, kind: null, value: 0 };
+}
+
+// 投降: a player 拉'd 3 or more times in a row by the same holder may end
+// that 拉 between hands, paying nothing - giving up the chance to 踢 it back -
+// but only straight after a hand that involved them: the holder has just
+// won from them (their discard, or the holder's self-draw). After a draw,
+// or a hand the holder won off someone else, the 拉 stands.
+// This is the Play table's house rule; the Scores tab leaves 投降 to the
+// players (house rules vary).
+export const SURRENDER_AFTER = 3;
+
+// The 拉 `pulled` may surrender right now: its chain against them is long
+// enough, and the hand is over (surrender happens between hands).
+export function surrenderable(s: GameState, pulled: number): Lah[] {
+  if (s.phase.kind !== "over") return [];
+  const paid = s.phase.result.pairs ?? [];
+  return (s.lahs ?? []).filter(
+    (l) => l.pulled === SEAT_IDS[pulled] && l.count >= SURRENDER_AFTER && paid.some((p) => p.winner === l.holder && p.payer === l.pulled)
+  );
+}
+
+export function surrender(s: GameState, holder: number, pulled: number): GameState {
+  if (!surrenderable(s, pulled).some((l) => l.holder === SEAT_IDS[holder])) throw new Error("投降 needs a 拉 of 3 or more, between hands");
+  return { ...s, lahs: (s.lahs ?? []).filter((l) => !(l.holder === SEAT_IDS[holder] && l.pulled === SEAT_IDS[pulled])) };
 }
 
 // ---- Wall ---------------------------------------------------------------
@@ -192,7 +247,7 @@ export function newGame(): GameState {
   return dealHand({ dealer: 0, roundWind: 1, dealerStreak: 0 });
 }
 
-export function dealHand(opts: { dealer: number; roundWind: Wind; dealerStreak: number }, wall?: WallTile[]): GameState {
+export function dealHand(opts: { dealer: number; roundWind: Wind; dealerStreak: number; lahs?: Lah[] }, wall?: WallTile[]): GameState {
   const s: GameState = {
     wall: wall ?? shuffled(fullWall()),
     players: Array.from({ length: SEATS }, () => ({ hand: [], melds: [], flowers: [], discards: [] })),
@@ -203,6 +258,7 @@ export function dealHand(opts: { dealer: number; roundWind: Wind; dealerStreak: 
     firstGoAround: true,
     discardsMade: 0,
     log: [],
+    lahs: opts.lahs ?? [],
   };
   // 16 each, in deal order from the dealer; bonus tiles are replaced as they come.
   for (let i = 0; i < SEATS; i++) {
@@ -525,29 +581,31 @@ function finishWin(
     scoreError = e instanceof Error ? e.message : String(e);
   }
   const tai = score?.total ?? 0;
+  // Each payer pays the tai plus any 拉/踢 add-on between the two of them.
+  const pairs = settleWin(s.lahs ?? [], s.dealer, winner, from, tai);
   const deltas = [0, 0, 0, 0];
-  if (from === null) {
-    for (let i = 0; i < SEATS; i++) if (i !== winner) deltas[i] = -tai;
-    deltas[winner] = tai * (SEATS - 1);
-  } else {
-    deltas[from] = -tai;
-    deltas[winner] = tai;
+  for (const p of pairs) {
+    deltas[Number(p.winner)] += p.worth;
+    deltas[Number(p.payer)] -= p.worth;
   }
-  s.phase = { kind: "over", result: { winner, from, tile, score, scoreError, deltas } };
+  s.lahs = nextLahs(s.lahs ?? [], pairs, new Set([SEAT_IDS[winner]]));
+  s.phase = { kind: "over", result: { winner, from, tile, score, scoreError, deltas, pairs } };
   return s;
 }
 
 // The next hand: the dealer stays on a dealer win or a draw (連莊), otherwise
 // the deal passes on; a full lap of dealers moves the round wind.
-export function nextHand(s: GameState): GameState {
+// 拉 carries over. `wall` is for the arena, which deals set walls.
+export function nextHand(s: GameState, wall?: WallTile[]): GameState {
   if (s.phase.kind !== "over") throw new Error("Hand not over");
   const { winner } = s.phase.result;
+  const lahs = s.lahs ?? [];
   if (winner === null || winner === s.dealer) {
-    return dealHand({ dealer: s.dealer, roundWind: s.roundWind, dealerStreak: s.dealerStreak + 1 });
+    return dealHand({ dealer: s.dealer, roundWind: s.roundWind, dealerStreak: s.dealerStreak + 1, lahs }, wall);
   }
   const dealer = (s.dealer + 1) % SEATS;
   const roundWind = (dealer === 0 ? (s.roundWind % 4) + 1 : s.roundWind) as Wind;
-  return dealHand({ dealer, roundWind, dealerStreak: 0 });
+  return dealHand({ dealer, roundWind, dealerStreak: 0, lahs }, wall);
 }
 
 // ---- Bots -------------------------------------------------------------------

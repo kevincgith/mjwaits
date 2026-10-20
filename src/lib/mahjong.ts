@@ -586,11 +586,24 @@ interface BlockOption {
   partials: number;
 }
 
+// Keeps the (melds, partials) options no other option beats on both. Meld
+// counts are small, so: the most partials for each meld count, then a walk
+// down from the most melds keeping only options that add partials - linear,
+// where comparing every pair was the hot spot in bot play.
 function paretoPrune(options: BlockOption[]): BlockOption[] {
-  const unique = Array.from(new Map(options.map((o) => [`${o.melds},${o.partials}`, o])).values());
-  return unique.filter(
-    (a) => !unique.some((b) => b !== a && b.melds >= a.melds && b.partials >= a.partials && (b.melds > a.melds || b.partials > a.partials))
-  );
+  let maxMelds = 0;
+  for (const o of options) if (o.melds > maxMelds) maxMelds = o.melds;
+  const best = new Array<number>(maxMelds + 1).fill(-1);
+  for (const o of options) if (o.partials > best[o.melds]) best[o.melds] = o.partials;
+  const out: BlockOption[] = [];
+  let top = -1;
+  for (let m = maxMelds; m >= 0; m--) {
+    if (best[m] > top) {
+      out.push({ melds: m, partials: best[m] });
+      top = best[m];
+    }
+  }
+  return out;
 }
 
 // Every Pareto-optimal (melds, partials) combination achievable by
@@ -608,7 +621,23 @@ function paretoPrune(options: BlockOption[]): BlockOption[] {
 // returns *deltas* (relative to whatever's already been chosen before
 // position i), which is what makes the memoized value reusable regardless
 // of how much melds/partials had already been accumulated on the way in.
+// A suit's block options depend only on its own counts, and the same suit
+// shapes recur constantly (every pair / single tried by standardShanten,
+// every candidate discard and draw the bots weigh), so results are kept
+// across calls. Callers only read the returned arrays.
+const suitOptionsCache = new Map<string, BlockOption[]>();
+
 function suitBlockOptions(counts: number[], allowRuns: boolean): BlockOption[] {
+  const cacheKey = (allowRuns ? "r" : "h") + counts.join("");
+  const hit = suitOptionsCache.get(cacheKey);
+  if (hit) return hit;
+  const result = suitBlockOptionsUncached(counts, allowRuns);
+  if (suitOptionsCache.size > 200_000) suitOptionsCache.clear();
+  suitOptionsCache.set(cacheKey, result);
+  return result;
+}
+
+function suitBlockOptionsUncached(counts: number[], allowRuns: boolean): BlockOption[] {
   const size = counts.length - 1;
   const memo = new Map<string, BlockOption[]>();
 
