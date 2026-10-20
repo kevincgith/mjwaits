@@ -8612,6 +8612,7 @@ function SeatToken({
   swapSelected,
   onTap,
   onRename,
+  fullName,
 }: {
   name: string;
   colorKey: string;
@@ -8622,6 +8623,7 @@ function SeatToken({
   swapSelected: boolean;
   onTap: () => void;
   onRename: () => void;
+  fullName?: boolean; // a whole name (from Scores) in a pill, not initials
 }) {
   const press = useTapAndLongPress(interactive ? onTap : NOOP, onRename);
   const classes = [
@@ -8631,6 +8633,7 @@ function SeatToken({
     interactive && "is-pickable",
     swapSelected && "is-swap-selected",
     name.length > 1 && "is-long",
+    fullName && "is-name",
   ]
     .filter(Boolean)
     .join(" ");
@@ -8792,12 +8795,15 @@ function SeatingPanel({
   onRename,
   onSwap,
   onResetNames,
+  fullNames,
 }: {
   names: readonly string[];
   seatOrder: readonly number[];
   onRename: (player: number, name: string) => void;
   onSwap: (posA: number, posB: number) => void;
   onResetNames: () => void;
+  // The game's own players from Scores: whole names, nothing to rename.
+  fullNames?: boolean;
 }) {
   const [order, setOrder] = useState<number[]>(newShuffle);
   // Which player's rename picker is open (player index), if any.
@@ -9032,7 +9038,8 @@ function SeatingPanel({
                 interactive={step === 0 && renaming === null}
                 swapSelected={step === 0 && swapFrom === seat}
                 onTap={() => onTokenTap(seat)}
-                onRename={() => openRename(player)}
+                onRename={fullNames ? NOOP : () => openRename(player)}
+                fullName={fullNames}
               />
             );
           })}
@@ -9079,7 +9086,7 @@ function SeatingPanel({
           <button type="button" className="seat-reset" onClick={reset}>
             Reset
           </button>
-          {!isDefaultSeatNames(names) && (
+          {!fullNames && !isDefaultSeatNames(names) && (
             <button
               type="button"
               className={`seat-reset${confirmingResetNames ? " is-confirming" : ""}`}
@@ -9114,14 +9121,20 @@ function DiceTab({
   onRenameSeat,
   onSwapSeats,
   onResetSeatNames,
+  gameNames,
 }: {
   seatNames: readonly string[];
   seatOrder: readonly number[];
   onRenameSeat: (player: number, name: string) => void;
   onSwapSeats: (posA: number, posB: number) => void;
   onResetSeatNames: () => void;
+  // Opened from Scores' 座位 Dice button: straight to Seating, with the
+  // game's four players by full name (just for this visit - the saved
+  // letters and their order stay as they were).
+  gameNames?: readonly string[];
 }) {
-  const [sub, setSub] = useState<"wall" | "exchange" | "seating">("wall");
+  const [sub, setSub] = useState<"wall" | "exchange" | "seating">(gameNames ? "seating" : "wall");
+  const [gameOrder, setGameOrder] = useState<readonly number[]>([0, 1, 2, 3]);
   return (
     <section className="panel dice-panel">
       <div className="segmented sub-tabs">
@@ -9155,11 +9168,16 @@ function DiceTab({
         {sub === "exchange" && <ExchangePanel />}
         {sub === "seating" && (
           <SeatingPanel
-            names={seatNames}
-            seatOrder={seatOrder}
+            names={gameNames ?? seatNames}
+            seatOrder={gameNames ? gameOrder : seatOrder}
             onRename={onRenameSeat}
-            onSwap={onSwapSeats}
+            onSwap={
+              gameNames
+                ? (a, b) => setGameOrder((prev) => prev.map((player, pos) => (pos === a ? prev[b] : pos === b ? prev[a] : player)))
+                : onSwapSeats
+            }
             onResetNames={onResetSeatNames}
+            fullNames={gameNames !== undefined}
           />
         )}
       </div>
@@ -9873,6 +9891,12 @@ function App() {
   // by double-tap-then-tap swaps on the Seating tab. Kept here with the names
   // so a rearranged table also survives tab switches and the seating Reset.
   const [seatOrder, setSeatOrder] = useState<readonly number[]>([0, 1, 2, 3]);
+  // Scores' 座位 Dice button opens the Dice tab on Seating; leaving Dice
+  // clears it, so the tab's own button still opens on Dice & wall.
+  const [diceSeating, setDiceSeating] = useState<readonly string[] | null>(null);
+  useEffect(() => {
+    if (mode !== "dice" && diceSeating) setDiceSeating(null);
+  }, [mode, diceSeating]);
   const swapSeats = (a: number, b: number) =>
     setSeatOrder((prev) => prev.map((player, pos) => (pos === a ? prev[b] : pos === b ? prev[a] : player)));
 
@@ -9981,7 +10005,8 @@ function App() {
           canRecord={scoreStore.active !== null}
           onRecord={(request) => {
             // Back to the sheet it came from: same winner, 銃 and Jackpot.
-            const back = scoreFor ? { seat: scoreFor.seat, from: scoreFor.from, jackpot: scoreFor.jackpot } : {};
+            // (A 雙響/三響 also brings its whole draft back.)
+            const back = scoreFor ? { seat: scoreFor.seat, from: scoreFor.from, jackpot: scoreFor.jackpot, draft: scoreFor.draft } : {};
             setRecordRequest({ ...request, ...back, nonce: Date.now() });
             setScoreFor(null);
             setMode("scores");
@@ -10000,6 +10025,7 @@ function App() {
                 seat: scoreFor.seat,
                 from: scoreFor.from,
                 jackpot: scoreFor.jackpot,
+                draft: scoreFor.draft,
                 reopenOnly: true,
                 nonce: Date.now(),
               });
@@ -10030,11 +10056,17 @@ function App() {
             setScoreFor({ ...req, nonce: Date.now() });
             setMode("scoring");
           }}
+          onOpenSeating={(names) => {
+            setDiceSeating(names);
+            setMode("dice");
+          }}
         />
       )}
       {mode === "play" && <PlayPanel onExit={() => setMode(lastNonPlayMode.current)} />}
       {mode === "dice" && (
         <DiceTab
+          key={diceSeating ? "seating" : "dice"}
+          gameNames={diceSeating ?? undefined}
           seatNames={seatNames}
           seatOrder={seatOrder}
           onRenameSeat={renameSeat}

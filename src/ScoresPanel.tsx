@@ -77,6 +77,8 @@ export interface RecordRequest {
   jackpot?: boolean;
   // Cancelled on Scoring: just reopen that sheet as it was, with no tai.
   reopenOnly?: boolean;
+  draft?: ScoreHandRequest["draft"]; // a 雙響/三響 sheet to put back together
+
   nonce: number;
 }
 
@@ -92,6 +94,9 @@ export interface ScoreHandRequest {
   seatWind: 1 | 2 | 3 | 4;
   scan: boolean; // open the camera straight away
   fromCard?: boolean; // a card's 快速掃描 button, not a 食胡 sheet
+  // A 雙響/三響: the sheet's own winner and every winner's tai so far, so
+  // the sheet comes back whole with just `seat`'s tai filled in.
+  draft?: { sheetSeat: number; entries: { seat: number; tai: string }[] };
   nonce: number;
 }
 
@@ -141,6 +146,15 @@ const Icons = {
     <svg {...ICON}>
       <path d="M15 14l5-5-5-5" />
       <path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13" />
+    </svg>
+  ),
+  dice: (
+    <svg {...ICON} width={16} height={16}>
+      {/* The Dice tab's own die: three. */}
+      <rect x="4" y="4" width="16" height="16" rx="3.5" />
+      <circle cx="8.5" cy="8.5" r="1.3" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none" />
+      <circle cx="15.5" cy="15.5" r="1.3" fill="currentColor" stroke="none" />
     </svg>
   ),
   shuffle: (
@@ -515,10 +529,24 @@ function Setup({ store, suggestion, onStart, waitingHand }: { store: ScoreStore;
 
 // ---- Recording a hand: the 食胡 / 特別獎罰 sheet --------------------------------
 
-type HandInitial = { selfDraw: boolean; tai?: number; patterns: PatternNote[]; note?: string; from?: number | null; jackpot?: boolean };
+// `entries`: a 雙響/三響 draft back from Scoring - every winner's tai so far,
+// with `tai` and `patterns` belonging to `patternsFor` (that winner's seat).
+type HandInitial = {
+  selfDraw: boolean;
+  tai?: number;
+  patterns: PatternNote[];
+  note?: string;
+  from?: number | null;
+  jackpot?: boolean;
+  entries?: DraftEntry[];
+  patternsFor?: number;
+};
 
-// What the 食胡 sheet hands over when asking Scoring to work a hand out.
-type ScoreHandAsk = { from: number | null; jackpot: boolean; scan: boolean };
+type DraftEntry = { seat: number; tai: string };
+
+// What the 食胡 sheet hands over when asking Scoring to work a hand out:
+// `target` is the winner being scored, `entries` the whole draft.
+type ScoreHandAsk = { from: number | null; jackpot: boolean; scan: boolean; target: number; entries: DraftEntry[] };
 
 function HandSheet({
   store,
@@ -625,8 +653,12 @@ function WinSheet({
   // -1 = not picked yet.
   const [from, setFrom] = useState<number | null>(initial?.from !== undefined ? initial.from : initial?.selfDraw ? null : -1);
   // Each winner's tai as typed; the first is the tapped player.
-  const [entries, setEntries] = useState<{ seat: number; tai: string }[]>([{ seat: winnerSeat, tai: initial?.tai !== undefined ? String(initial.tai) : "" }]);
-  const [focus, setFocus] = useState(0);
+  const [entries, setEntries] = useState<DraftEntry[]>(
+    () => initial?.entries ?? [{ seat: winnerSeat, tai: initial?.tai !== undefined ? String(initial.tai) : "" }],
+  );
+  // Back from Scoring on a 雙響/三響: the winner just scored is in focus.
+  const [focus, setFocus] = useState(() => Math.max(0, initial?.entries?.findIndex((e) => e.seat === initial.patternsFor) ?? 0));
+  const patternsFor = initial?.patternsFor ?? winnerSeat;
   const [jackpot, setJackpot] = useState(initial?.jackpot ?? false);
 
   // One winner, or two or three (雙響/三響) - however many have been picked.
@@ -650,10 +682,10 @@ function WinSheet({
     if (next.length === 3) setFrom([0, 1, 2, 3].find((x) => !next.some((e) => e.seat === x))!);
     else if (from === null) setFrom(-1);
   };
-  const winners: WinnerEntry[] = entries.map((e, i) => ({
+  const winners: WinnerEntry[] = entries.map((e) => ({
     seat: e.seat,
     tai: Number(e.tai || 0),
-    ...(i === 0 && initial?.patterns.length ? { patterns: initial.patterns } : {}),
+    ...(e.seat === patternsFor && initial?.patterns.length ? { patterns: initial.patterns } : {}),
   }));
   const fromValid = from === null ? multi === 1 : from >= 0;
   const complete = fromValid && entries.every((e) => e.tai !== "");
@@ -754,12 +786,25 @@ function WinSheet({
         </div>
         {/* Work the tai out on the Scoring tab instead - by photo or by tiles -
             and come back here with it filled in. One winner only. */}
-        {onScoreHand && multi === 1 && (
+        {/* On a 雙響/三響 they score the winner whose tai is in focus. */}
+        {onScoreHand && (
           <span className="sc-score-hand">
-            <button type="button" className="sc-outline" onClick={() => onScoreHand({ from, jackpot, scan: true })} aria-label="Scan hand" title="Scan hand">
+            <button
+              type="button"
+              className="sc-outline"
+              onClick={() => onScoreHand({ from, jackpot, scan: true, target: entries[focus].seat, entries })}
+              aria-label={multi > 1 ? `Scan ${seats[entries[focus].seat]}'s hand` : "Scan hand"}
+              title="Scan hand"
+            >
               {Icons.camera}
             </button>
-            <button type="button" className="sc-secondary" onClick={() => onScoreHand({ from, jackpot, scan: false })} aria-label="Score tiles" title="Score tiles">
+            <button
+              type="button"
+              className="sc-secondary"
+              onClick={() => onScoreHand({ from, jackpot, scan: false, target: entries[focus].seat, entries })}
+              aria-label={multi > 1 ? `Score ${seats[entries[focus].seat]}'s tiles` : "Score tiles"}
+              title="Score tiles"
+            >
               {Icons.tiles}
             </button>
           </span>
@@ -1105,11 +1150,13 @@ function SeatsSheet({
   state,
   onDone,
   onClose,
+  onOpenSeating,
 }: {
   store: ScoreStore;
   state: ReplayState;
   onDone: (change: { seats: string[] | null; newNames: string[]; removedNames: string[]; dealer: ScoreEvent | null }) => void;
   onClose: () => void;
+  onOpenSeating?: () => void;
 }) {
   // Seating draft.
   const [seats, setSeats] = useState(state.seats.slice());
@@ -1119,6 +1166,41 @@ function SeatsSheet({
   // Bench players taken off the roster - applied on Confirm.
   const [removed, setRemoved] = useState<string[]>([]);
   const [editBench, setEditBench] = useState(false);
+  // The bench shows one row - its last tile "More" when there are more -
+  // until More (then a "Less" tile folds it back) or Edit. How many fit a row depends on the phone, so it's
+  // read off the grid.
+  const [benchOpen, setBenchOpen] = useState(false);
+  const benchRef = useRef<HTMLDivElement>(null);
+  // More / Less glide the bench to its new height, and the players it
+  // reveals fade in.
+  const benchWrapRef = useRef<HTMLDivElement>(null);
+  const benchFrom = useRef<number | null>(null);
+  const toggleBench = (open: boolean) => {
+    benchFrom.current = benchWrapRef.current?.offsetHeight ?? null;
+    setBenchOpen(open);
+  };
+  useLayoutEffect(() => {
+    const el = benchWrapRef.current;
+    const from = benchFrom.current;
+    benchFrom.current = null;
+    if (!el || from === null || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const to = el.offsetHeight;
+    const timing = { duration: 280, easing: "cubic-bezier(0.25, 0.8, 0.25, 1)" };
+    el.animate([{ height: `${from}px`, overflow: "hidden" }, { height: `${to}px`, overflow: "hidden" }], timing);
+    if (benchOpen)
+      [...el.querySelectorAll<HTMLElement>(".sc-options > *, .sc-add")].slice(Math.max(0, perRow - 1)).forEach((tile) => tile.animate([{ opacity: 0 }, { opacity: 1 }], timing));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [benchOpen]);
+  const [perRow, setPerRow] = useState(2);
+  useLayoutEffect(() => {
+    const el = benchRef.current;
+    if (!el) return;
+    const measure = () => setPerRow(Math.max(1, getComputedStyle(el).gridTemplateColumns.split(" ").filter(Boolean).length));
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   // Dealer draft - a seat, so it reads whoever the draft seating puts there.
   // 莊 is a player, not a seat: it moves with them when seats change (and
   // passes to whoever takes their place from the bench).
@@ -1158,17 +1240,111 @@ function SeatsSheet({
   useLayoutEffect(() => {
     const was = before.current;
     before.current = null;
-    if (!was || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    diamondRef.current?.querySelectorAll<HTMLElement>("[data-player]").forEach((el) => {
+    const map = diamondRef.current;
+    if (!was || !map || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    // Each card travels round the map's centre, not across it, and shrinks
+    // mid-way, so cards pass each other instead of piling up in the middle.
+    // Clockwise ones take a wider lane than anticlockwise ones, so a swapped
+    // pair passes side by side rather than head-on.
+    const box = map.getBoundingClientRect();
+    const cx = box.left + box.width / 2;
+    const cy = box.top + box.height / 2;
+    const steps = 24;
+    const moves = [...map.querySelectorAll<HTMLElement>("[data-player]")].flatMap((el) => {
       const from = was.get(el.dataset.player!);
-      if (!from) return;
+      if (!from) return [];
       const to = el.getBoundingClientRect();
-      const dx = from.left - to.left;
-      const dy = from.top - to.top;
-      if (!dx && !dy) return;
-      el.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "translate(0, 0)" }], { duration: 600, easing: "cubic-bezier(0.25, 0.8, 0.25, 1)" });
+      const fx = from.left + from.width / 2 - cx;
+      const fy = from.top + from.height / 2 - cy;
+      const tx = to.left + to.width / 2 - cx;
+      const ty = to.top + to.height / 2 - cy;
+      if (Math.abs(fx - tx) < 1 && Math.abs(fy - ty) < 1) return [];
+      return [{ el, fx, fy, tx, ty }];
+    });
+    // The seats sit on a wide oval, not a circle: travel round that, so the
+    // wide cards don't squeeze together at the diagonals.
+    const rx = Math.max(1, ...moves.flatMap((m) => [Math.abs(m.fx), Math.abs(m.tx)]));
+    const ry = Math.max(1, ...moves.flatMap((m) => [Math.abs(m.fy), Math.abs(m.ty)]));
+    const paths = moves.map((m) => {
+      const a0 = Math.atan2(m.fy / ry, m.fx / rx);
+      let turn = Math.atan2(m.ty / ry, m.tx / rx) - a0;
+      while (turn > Math.PI) turn -= 2 * Math.PI;
+      while (turn <= -Math.PI) turn += 2 * Math.PI;
+      if (Math.abs(Math.abs(turn) - Math.PI) < 0.01) turn = Math.PI; // straight across: go clockwise
+      return { ...m, a0, turn, r0: Math.hypot(m.fx / rx, m.fy / ry), r1: Math.hypot(m.tx / rx, m.ty / ry) };
+    });
+    // Lanes only matter when cards pass going opposite ways; a plain
+    // rotation keeps everyone on the same oval. Every card lifts (a gentle
+    // dip in size and a soft shadow), glides and settles together - same
+    // start, same pace, same landing.
+    const bothWays = paths.some((m) => m.turn > 0) && paths.some((m) => m.turn < 0);
+    // A lifted card only shrinks a touch - the shadow does most of the lift.
+    const DIP = 0.08;
+    paths.forEach(({ el, a0, turn, r0, r1, tx, ty }) => {
+      // Mirror-image lanes: one bows out exactly as far as the other bows in.
+      const lane = bothWays ? (turn > 0 ? 0.25 : -0.25) : 0;
+      const frames: Keyframe[] = [];
+      for (let i = 0; i <= steps; i++) {
+        const t = i / steps;
+        // Pick up, move, set down: the card shrinks and lifts in the first
+        // quarter, travels (smoothly, eased) mostly in the middle while
+        // small, and grows back as it lands.
+        const ease = (u: number) => (u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2);
+        const e = ease(Math.min(1, Math.max(0, (t - 0.15) / 0.7)));
+        const lifted = ease(Math.min(1, t / 0.25, (1 - t) / 0.25));
+        const bump = Math.sin(Math.PI * e);
+        const angle = a0 + turn * e;
+        const r = (r0 + (r1 - r0) * e) * (1 + lane * bump);
+        const x = Math.cos(angle) * r * rx - tx;
+        const y = Math.sin(angle) * r * ry - ty;
+        frames.push({
+          offset: t,
+          transform: `translate(${x}px, ${y}px) scale(${1 - DIP * lifted})`,
+          boxShadow: `0 ${10 * lifted}px ${26 * lifted}px rgba(0, 0, 0, ${0.2 * lifted})`,
+          zIndex: turn > 0 ? 2 : 1,
+        });
+      }
+      el.animate(frames, { duration: 800, easing: "linear" });
     });
   }, [seats]);
+  // A new 莊: the badge flies from the old dealer's seat to the new one (a
+  // copy of it, above the sheet, so no card clips it) and lands with a pop.
+  const badgeFrom = useRef<DOMRect | null>(null);
+  useLayoutEffect(() => {
+    const from = badgeFrom.current;
+    badgeFrom.current = null;
+    const badge = diamondRef.current?.querySelector<HTMLElement>(".sc-zhuang");
+    if (!from || !badge || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const to = badge.getBoundingClientRect();
+    const flyer = badge.cloneNode(true) as HTMLElement;
+    Object.assign(flyer.style, { position: "fixed", left: `${to.left}px`, top: `${to.top}px`, margin: "0", zIndex: "1000", pointerEvents: "none" });
+    document.body.appendChild(flyer);
+    const dx = from.left - to.left;
+    const dy = from.top - to.top;
+    // A smooth arc: sampled along an eased path with a gentle rise (a sine,
+    // so no sharp peak), growing a little mid-flight.
+    const lift = -Math.min(48, Math.hypot(dx, dy) / 4);
+    const frames: Keyframe[] = [];
+    for (let i = 0; i <= 20; i++) {
+      const t = i / 20;
+      const e = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+      const rise = Math.sin(Math.PI * e);
+      frames.push({ offset: t, transform: `translate(${dx * (1 - e)}px, ${dy * (1 - e) + lift * rise}px) scale(${1 + 0.35 * rise})` });
+    }
+    const flight = flyer.animate(frames, { duration: 600, easing: "linear" });
+    badge.style.visibility = "hidden";
+    const land = () => {
+      flyer.remove();
+      badge.style.visibility = "";
+      badge.animate([{ transform: "scale(1.35)" }, { transform: "scale(1)" }], { duration: 220, easing: "ease-out" });
+    };
+    flight.finished.then(land, land);
+    return () => {
+      flyer.remove();
+      badge.style.visibility = "";
+    };
+  }, [dealerName]);
+
   const seatPress = (s2: number) => ({
     onPointerDown: () => {
       cancelHold();
@@ -1179,6 +1355,7 @@ function SeatsSheet({
         setPicked(null);
         const name = seats[s2];
         if (name !== dealerName) {
+          badgeFrom.current = diamondRef.current?.querySelector(".sc-zhuang")?.getBoundingClientRect() ?? null;
           setDealerName(name);
           setStreak(name === startDealer ? state.streak : 0);
           if (!roundTouched.current) setRound(name !== startDealer ? "reset" : "keep");
@@ -1191,7 +1368,30 @@ function SeatsSheet({
     onContextMenu: (e: { preventDefault: () => void }) => e.preventDefault(),
   });
 
-  const bench = [...new Set([...store.roster.map((p) => p.name), ...state.players, ...added])].filter((p) => !seats.includes(p) && !removed.includes(p));
+  // The bench, most recent first: anyone added just now at the top (newest
+  // first), then by the last game they sat in (this one counts as now), then
+  // the roster's newest.
+  const lastPlayed = useMemo(() => {
+    const seen = new Map<string, number>();
+    const games = [...store.history, ...(store.active ? [store.active] : [])];
+    for (const g of games) {
+      const when = g === store.active ? Infinity : (g.endedAt ?? g.startedAt);
+      const names = [...g.seats, ...g.events.flatMap((ev) => (ev.t === "swap" ? ev.seats : []))];
+      for (const n of names) seen.set(n, Math.max(seen.get(n) ?? 0, when));
+    }
+    return seen;
+  }, [store]);
+  const rosterIndex = (n: string) => store.roster.findIndex((p) => p.name === n);
+  // Folded to one row with a More tile (only when there's more than a row).
+  const bench = [...new Set([...store.roster.map((p) => p.name), ...state.players, ...added])]
+    .filter((p) => !seats.includes(p) && !removed.includes(p))
+    .sort((x, y) => {
+      const ax = added.indexOf(x);
+      const ay = added.indexOf(y);
+      if (ax >= 0 || ay >= 0) return ay - ax;
+      return (lastPlayed.get(y) ?? 0) - (lastPlayed.get(x) ?? 0) || rosterIndex(y) - rosterIndex(x);
+    });
+  const collapsed = !benchOpen && !editBench && bench.length > perRow;
   // Anyone who has played this game stays - their score is on the table.
   const canRemove = (name: string) => !state.players.includes(name);
   const removeBench = (name: string) => {
@@ -1330,6 +1530,18 @@ function SeatsSheet({
         >
           {Icons.shuffle}
         </button>
+        {/* The full seat ceremony: dice on the Dice tab's Seating. */}
+        {onOpenSeating && (
+          <button
+            type="button"
+            className="sc-outline sc-seat-rotate"
+            onClick={onOpenSeating}
+            aria-label="Seat ceremony on the Dice tab"
+            title="Seat ceremony on the Dice tab"
+          >
+            {Icons.dice}
+          </button>
+        )}
       </div>
       <div className="sc-list">
         <div className="sc-row">
@@ -1363,7 +1575,9 @@ function SeatsSheet({
       <div className="sc-field">
         <div className="sc-field-head">
           <span className="sc-label">候補 Bench</span>
-          {(editBench || bench.some(canRemove)) && (
+          <span className="sc-field-head-end">
+          {/* Like adding, editing the bench waits until it's open. */}
+          {!collapsed && (editBench || bench.some(canRemove)) && (
             <button
               type="button"
               className="sc-text-button"
@@ -1375,9 +1589,11 @@ function SeatsSheet({
               {editBench ? "Done" : "Edit"}
             </button>
           )}
+          </span>
         </div>
-        <div className="sc-options">
-          {bench.map((p) =>
+        <div ref={benchWrapRef} className="sc-bench-wrap">
+        <div ref={benchRef} className={`sc-options${benchOpen || editBench ? "" : " is-one-row"}`}>
+          {(collapsed ? bench.slice(0, perRow - 1) : bench).map((p) =>
             editBench ? (
               <button
                 key={p}
@@ -1395,13 +1611,28 @@ function SeatsSheet({
               <PlayerOption key={p} store={store} player={p} onClick={() => tapBench(p)} disabled={picked === null} />
             ),
           )}
+          {collapsed && (
+            <button type="button" className="sc-option sc-option-more" onClick={() => toggleBench(true)}>
+              <span className="sc-option-name">More</span>
+              <span className="sc-help">+{bench.length - (perRow - 1)}</span>
+            </button>
+          )}
+          {benchOpen && !editBench && bench.length > perRow && (
+            <button type="button" className="sc-option sc-option-more" onClick={() => toggleBench(false)}>
+              <span className="sc-option-name">Less</span>
+            </button>
+          )}
           {bench.length === 0 && <span className="sc-help">Nobody on the bench yet.</span>}
         </div>
+        {/* Adding someone is part of the open bench - hidden behind More. */}
+        {!collapsed && (
         <div className="sc-add">
           <input className="sc-input" value={newName} maxLength={12} placeholder="Add a player" onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addName()} aria-label="New player name" />
           <button type="button" className="sc-secondary" onClick={addName} disabled={!newName.trim()}>
             Add
           </button>
+        </div>
+        )}
         </div>
       </div>
     </Sheet>
@@ -1436,7 +1667,16 @@ function LahSheet({ store, state, onSurrender, onClose }: { store: ScoreStore; s
       title="拉踢"
       onClose={onClose}
     >
-      {groups.length === 0 && <p className="sc-empty">No 拉 on the table.</p>}
+      {/* As tall as a sheet with a few 拉, so it doesn't open as a sliver. */}
+      {groups.length === 0 && (
+        <div className="sc-lah-empty">
+          <span className="sc-lah-empty-icon" aria-hidden="true">
+            {Icons.lah}
+          </span>
+          <strong>No 拉 on the table</strong>
+          <span className="sc-help">A win starts a 拉 on everyone who paid it</span>
+        </div>
+      )}
       {groups.map(({ holder, rows, total }) => (
         <div key={holder} className="sc-lah-group">
           <div className="sc-lah-head">
@@ -2015,6 +2255,7 @@ function Board({
   onRequestDone,
   onSeeAll,
   onScoreHand,
+  onOpenSeating,
 }: {
   store: ScoreStore;
   game: ScoreGame;
@@ -2025,6 +2266,7 @@ function Board({
   onRequestDone: () => void;
   onSeeAll: () => void;
   onScoreHand?: (req: Omit<ScoreHandRequest, "nonce">) => void;
+  onOpenSeating?: (names: string[]) => void;
 }) {
   const [sheet, setSheet] = useState<BoardSheet | null>(null);
   // Holding a player's card opens 食胡 already on 自摸; the tap that ends
@@ -2099,6 +2341,28 @@ function Board({
     // is whoever has the 門風 entered in Scoring.
     const seat = request.seat ?? [0, 1, 2, 3].find((s) => ((s - state.dealer + SEATS) % SEATS) + 1 === request.seatWind) ?? 0;
     const dealerNote = request.removedDealerTai ? ` (莊 ${request.removedDealerTai} taken out — Scores adds its own)` : "";
+    // A 雙響/三響: the sheet comes back whole, with only the scored winner's
+    // tai (and patterns) new. Who dealt in stands - one discard, several
+    // winners, so Scoring's 自摸 doesn't apply.
+    const draft = request.draft;
+    if (draft && request.seat !== undefined) {
+      const scored = request.seat;
+      setSheet({
+        kind: "hand",
+        seat: draft.sheetSeat,
+        initial: {
+          selfDraw: false,
+          patterns: request.reopenOnly ? [] : request.patterns,
+          from: request.from ?? -1,
+          jackpot: request.jackpot,
+          entries: request.reopenOnly ? draft.entries : draft.entries.map((e) => (e.seat === scored ? { ...e, tai: String(request.tai) } : e)),
+          patternsFor: scored,
+          ...(request.reopenOnly ? {} : { note: `From Scoring: ${state.seats[scored]} ${request.tai} tai${dealerNote}.` }),
+        },
+      });
+      onRequestDone();
+      return;
+    }
     if (request.reopenOnly) {
       setSheet({ kind: "hand", seat, initial: { selfDraw: request.from === null, patterns: [], from: request.from ?? -1, jackpot: request.jackpot } });
       onRequestDone();
@@ -2459,7 +2723,8 @@ function Board({
           onScoreHand={
             onScoreHand &&
             ((ask) => {
-              const seat = sheet.seat;
+              // The winner being scored - on a 雙響/三響, maybe not the sheet's own.
+              const seat = ask.target;
               onScoreHand({
                 seat,
                 player: state.seats[seat],
@@ -2469,6 +2734,7 @@ function Board({
                 roundWind: (state.roundWind + 1) as 1 | 2 | 3 | 4,
                 seatWind: (((seat - state.dealer + SEATS) % SEATS) + 1) as 1 | 2 | 3 | 4,
                 scan: ask.scan,
+                ...(ask.entries.length > 1 ? { draft: { sheetSeat: sheet.seat, entries: ask.entries } } : {}),
               });
               close();
             })
@@ -2518,6 +2784,13 @@ function Board({
           store={store}
           state={state}
           onClose={close}
+          onOpenSeating={
+            onOpenSeating &&
+            (() => {
+              close();
+              onOpenSeating(state.seats);
+            })
+          }
           onDone={({ seats, newNames, removedNames, dealer }) => {
             const roster = withRoster(store, [...(seats ?? state.seats), ...newNames]).filter((p) => !removedNames.includes(p.name));
             let next = game;
@@ -3316,6 +3589,7 @@ export function ScoresPanel({
   request,
   onRequestDone,
   onScoreHand,
+  onOpenSeating,
 }: {
   store: ScoreStore;
   setStore: (s: ScoreStore) => void;
@@ -3323,6 +3597,7 @@ export function ScoresPanel({
   request: RecordRequest | null;
   onRequestDone: () => void;
   onScoreHand?: (req: Omit<ScoreHandRequest, "nonce">) => void;
+  onOpenSeating?: (names: string[]) => void; // the Dice tab's Seating, for the seat ceremony
 }) {
   const [sub, setSub] = useState<"board" | "stats">("board");
   const [view, setView] = useState<StatsView>("trend");
@@ -3361,6 +3636,7 @@ export function ScoresPanel({
             request={request}
             onRequestDone={onRequestDone}
             onScoreHand={onScoreHand}
+            onOpenSeating={onOpenSeating}
             onSeeAll={() => {
               setView("hands");
               setSub("stats");
