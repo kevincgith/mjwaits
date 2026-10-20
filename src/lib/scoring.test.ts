@@ -3411,3 +3411,27 @@ describe("PATTERNS: honor-meld breakdowns in 十三么/嚦咕嚦咕 show only th
     expect(rows(result, "dragon-tile")).toEqual([["5z5z5z"]]);
   });
 });
+
+describe("PATTERNS: winning tile that could complete either a triplet or a run (888m + 789m, claimed 8m)", () => {
+  const hand = "(111z)789m888m345t777t66m";
+  const w = { suit: "m" as const, rank: 8 };
+
+  it("scores the better reading: the run was completed (kanchan), so 888m stays 暗 and 兩暗刻 fires - 21, not the 16 the triplet reading gives", () => {
+    const result = scoreHand(hand, ctx({ winningTile: w }));
+    expect(result.total).toBe(21);
+    expect(tai(result, "two-hidden-triplets")).toBe(5);
+    expect(tai(result, "four-returns-to-one-open")).toBe(5);
+    expect(tai(result, "fake-single-wait")).toBe(2);
+    expect(tai(result, "shanpon-wait")).toBe(0);
+  });
+
+  it("doesn't credit 對碰 off a triplet the winning tile didn't actually complete", () => {
+    const result = scoreHand(hand, ctx({ winningTile: w }));
+    expect(result.hand.completedMeld?.kind).toBe("run");
+    expect(tai(result, "shanpon-wait")).toBe(0);
+  });
+
+  it("self-drawn totals the same 32 either way (the 對碰 reading and the 假獨 reading tie at +2)", () => {
+    expect(scoreHand(hand, ctx({ winningTile: w, selfDraw: true })).total).toBe(32);
+  });
+});

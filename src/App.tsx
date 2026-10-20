@@ -4431,6 +4431,13 @@ function BonusTileButton({
 function findWinningTileInstance(hand: ResolvedHand, declaredCount: number, winningTile: Tile | null): Tile | null {
   if (winningTile === null) return null;
   const matches = (t: Tile) => t.suit === winningTile.suit && t.rank === winningTile.rank;
+  // The scoring pass already settled which group the winning tile completed
+  // when more than one could have (see winningMeldCandidateHands) - follow
+  // that instead of re-deriving it from the priority order below.
+  if (hand.completedMeld) {
+    const t = hand.completedMeld.tiles.find(matches);
+    if (t) return t;
+  }
   const pairMatch = hand.pair.find(matches);
   if (pairMatch) return pairMatch;
   const concealedMelds = hand.melds.slice(declaredCount);
