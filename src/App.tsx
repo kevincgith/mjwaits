@@ -41,7 +41,8 @@ import {
 } from "./tileArt";
 import { BonusGlyphSpan, TileGlyphSpan } from "./TileGlyphs";
 import { PlayPanel } from "./PlayPanel";
-import { ScoresPanel, type RecordRequest, type ScoreHandRequest } from "./ScoresPanel";
+import { ScoresPanel, SharedScoresView, type RecordRequest, type ScoreHandRequest } from "./ScoresPanel";
+import { snapshotFromHash } from "./lib/scoreShare";
 import { loadScores, saveScores } from "./lib/ledger";
 import {
   COMPLETE_SIZE,
@@ -9846,6 +9847,9 @@ const TAB_ITEMS: { id: Exclude<AppMode, "play">; label: string; icon: ReactNode 
 
 function App() {
   const [mode, setMode] = useState<AppMode>(() => (readCalcHand(window.location.search) ? "calculator" : "scoring"));
+  // A shared scores link (#s=…) opens its read-only view over the app;
+  // "Open MJWaits" drops the hash and carries on as normal.
+  const [sharedScores, setSharedScores] = useState(() => snapshotFromHash(window.location.hash));
   // The Scores tab's games and roster - here so the Scoring tab can send a
   // hand to the game in progress. Saved on every change.
   const [scoreStore, setScoreStore] = useState(loadScores);
@@ -9994,9 +9998,16 @@ function App() {
           <button
             key={id}
             type="button"
-            className={mode === id ? "toggle-on" : undefined}
-            aria-pressed={mode === id}
-            onClick={() => setMode(id)}
+            className={!sharedScores && mode === id ? "toggle-on" : undefined}
+            aria-pressed={!sharedScores && mode === id}
+            onClick={() => {
+              // Leaving a shared scores view: back to this phone's own app.
+              if (sharedScores) {
+                window.history.replaceState(null, "", window.location.pathname + window.location.search);
+                setSharedScores(null);
+              }
+              setMode(id);
+            }}
           >
             <span className="tab-bar-icon" aria-hidden="true">
               {icon}
@@ -10005,7 +10016,17 @@ function App() {
           </button>
         ))}
       </nav>
-      {mode === "scoring" && (
+      {sharedScores && (
+        <SharedScoresView
+          snap={sharedScores}
+          onClose={() => {
+            window.history.replaceState(null, "", window.location.pathname + window.location.search);
+            setSharedScores(null);
+            setMode("scores");
+          }}
+        />
+      )}
+      {!sharedScores && mode === "scoring" && (
         <ScoringPanel
           testHandRequest={testHandRequest}
           onTestHandLoaded={() => setTestHandRequest(null)}
@@ -10041,8 +10062,8 @@ function App() {
           }}
         />
       )}
-      {mode === "calculator" && <Calculator initialHand={calcLinkHand} onInitialHandLoaded={() => setCalcLinkHand(null)} />}
-      {mode === "trainer" && (
+      {!sharedScores && mode === "calculator" && <Calculator initialHand={calcLinkHand} onInitialHandLoaded={() => setCalcLinkHand(null)} />}
+      {!sharedScores && mode === "trainer" && (
         <TrainerPanel
           waitsStats={waitsTrainerStats}
           setWaitsStats={setWaitsTrainerStats}
@@ -10052,7 +10073,7 @@ function App() {
           setEndlessStats={setEndlessTrainerStats}
         />
       )}
-      {mode === "scores" && (
+      {!sharedScores && mode === "scores" && (
         <ScoresPanel
           store={scoreStore}
           setStore={setScoreStore}
@@ -10069,8 +10090,8 @@ function App() {
           }}
         />
       )}
-      {mode === "play" && <PlayPanel onExit={() => setMode(lastNonPlayMode.current)} />}
-      {mode === "dice" && (
+      {!sharedScores && mode === "play" && <PlayPanel onExit={() => setMode(lastNonPlayMode.current)} />}
+      {!sharedScores && mode === "dice" && (
         <DiceTab
           key={diceSeating ? "seating" : "dice"}
           gameNames={diceSeating ?? undefined}

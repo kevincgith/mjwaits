@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_SETTINGS,
   canRedo,
+  deleteEvent,
   exportScores,
   mergeScores,
   newGame,
   parseBackup,
   previewFanXue,
   redoEvent,
+  replaceEvent,
   replay,
   settle,
   undoEvent,
@@ -362,6 +364,26 @@ describe("Jackpot paid in by hand", () => {
     const won = replay(game([payIn, win(1, 3, 0, { jackpotTo: "B" })], { jackpot: true }));
     expect(won.pot).toBe(0);
     expect(won.totals.B).toBe(3 + 15);
+  });
+});
+
+describe("fixing an older entry", () => {
+  it("replacing a hand replays everything after it", () => {
+    const g = game([win(1, 5, 0), win(2, 3, 1), win(3, 2, 2)]);
+    const fixed = replaceEvent(g, 0, win(1, 8, 0));
+    expect(fixed.events[0]).toMatchObject({ winners: [{ seat: 1, tai: 8 }] });
+    expect(fixed.events).toHaveLength(3);
+    const s = replay(fixed);
+    expect(s.hands[0].pairs[0].worth).toBe(8);
+    sumsToZero(s);
+  });
+
+  it("deleting an entry drops just that one, and clears 重做", () => {
+    const g = { ...game([win(1, 5, 0), draw, win(2, 3, 1)]), undone: [draw] };
+    const d = deleteEvent(g, 1);
+    expect(d.events.map((e) => e.t)).toEqual(["win", "win"]);
+    expect(d.undone).toEqual([]);
+    expect(replay(d).hands).toHaveLength(2);
   });
 });
 
