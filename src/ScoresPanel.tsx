@@ -130,10 +130,19 @@ const ICON = {
 } as const;
 
 const Icons = {
+  // A plus on a tile: a new game.
   newGame: (
     <svg {...ICON}>
-      <circle cx="12" cy="12" r="8.5" />
+      <rect x="4" y="4" width="16" height="16" rx="4" />
       <path d="M12 8.5v7M8.5 12h7" />
+    </svg>
+  ),
+  // An armchair: who sits where (座位).
+  seat: (
+    <svg {...ICON}>
+      <path d="M7 11V7.5A2.5 2.5 0 0 1 9.5 5h5A2.5 2.5 0 0 1 17 7.5V11" />
+      <path d="M5 11a2 2 0 0 1 2 2v1h10v-1a2 2 0 1 1 4 0v3.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 16.5V13a2 2 0 0 1 2-2z" />
+      <path d="M6 18v1.5M18 18v1.5" />
     </svg>
   ),
   undo: (
@@ -202,15 +211,18 @@ const Icons = {
       <path d="M4 19h16" />
     </svg>
   ),
+  // 特別獎罰: ±.
   plusMinus: (
-    <svg {...ICON} width={11} height={11} strokeWidth={2.2}>
+    <svg {...ICON} width={14} height={14} strokeWidth={2.6}>
       <path d="M12 4v9M7.5 8.5h9M7.5 19h9" />
     </svg>
   ),
+  // A clock turning back: what's happened (最近), not the time.
   recent: (
-    <svg {...ICON} width={18} height={18}>
-      <circle cx="12" cy="12" r="8.5" />
-      <path d="M12 7.5V12l3 2" />
+    <svg {...ICON}>
+      <path d="M4.2 13A8 8 0 1 0 6.3 6.3L4 8.5" />
+      <path d="M4 4.5v4h4" />
+      <path d="M12 8v4l2.8 1.8" />
     </svg>
   ),
   close: (
@@ -2467,7 +2479,7 @@ function Board({
     { label: "新局", icon: Icons.newGame, onClick: () => setSheet({ kind: "settle" }) },
     { label: "還原", icon: Icons.undo, onClick: undo, disabled: game.events.length === 0 },
     { label: "重做", icon: Icons.redo, onClick: redo, disabled: !canRedo(game) },
-    { label: "座位", icon: Icons.swap, onClick: () => setSheet({ kind: "seats" }) },
+    { label: "座位", icon: Icons.seat, onClick: () => setSheet({ kind: "seats" }) },
     { label: "拉踢", icon: Icons.lah, onClick: () => setSheet({ kind: "lah" }), badge: state.lahs.length || undefined },
     { label: "最近", icon: Icons.recent, onClick: () => setSheet({ kind: "recent" }) },
     { label: "設定", icon: Icons.settings, onClick: () => setSheet({ kind: "settings" }) },

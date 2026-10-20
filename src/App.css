@@ -9557,17 +9557,20 @@ html.sc-fit-mode .build-version {
   }
 }
 
-/* ± on the left as a small tinted chip, so the footer reads as a button. */
+/* A bare green ±, on the footer's left. */
 .sc-card-bonus-mark {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 1.05rem;
-  height: 1.05rem;
-  border-radius: 50%;
-  background: var(--accent-tint);
+  width: 1.1rem;
+  height: 1.1rem;
   color: var(--accent);
+}
+
+.sc-card-bonus-mark svg {
+  width: 0.85rem;
+  height: 0.85rem;
 }
 
 .sc-card-bonus:active,
