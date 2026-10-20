@@ -5895,9 +5895,11 @@ html.playing body {
   justify-self: center;
 }
 
+/* Side seats: the standing tiles at the table's edge, their melds and
+   flowers in a column beside them toward the middle. */
 .play-seat-left,
 .play-seat-right {
-  flex-direction: column;
+  align-items: flex-start;
   align-self: center;
   /* Starts below the name card over the table's far corner. */
   margin-top: 2.2em;
@@ -5905,11 +5907,30 @@ html.playing body {
 
 .play-seat-left {
   grid-area: lseat;
-  align-items: flex-start;
 }
 
 .play-seat-right {
   grid-area: rseat;
+  flex-direction: row-reverse;
+}
+
+.play-seat-side {
+  display: flex;
+  align-items: center;
+  gap: 0.2em;
+  transform-style: preserve-3d;
+}
+
+.play-seat-left .play-seat-side,
+.play-seat-right .play-seat-side {
+  flex-direction: column;
+}
+
+.play-seat-left .play-seat-side {
+  align-items: flex-start;
+}
+
+.play-seat-right .play-seat-side {
   align-items: flex-end;
 }
 
@@ -6316,7 +6337,7 @@ html.playing body {
   border-radius: 50%;
   background: radial-gradient(circle, rgba(16, 40, 28, 0.85) 55%, rgba(16, 40, 28, 0.6) 100%);
   box-shadow: 0 0 0 0.08em rgba(127, 243, 224, 0.75), 0 0 0.6em rgba(127, 243, 224, 0.5);
-  font-size: 1.15em;
+  font-size: 0.9em;
   line-height: 0;
   animation: play-spot 0.25s ease-out;
   pointer-events: none;
@@ -6326,28 +6347,13 @@ html.playing body {
   font-size: 1.55em;
 }
 
-.play-spotlight.from-left {
-  right: calc(50% + 2.5em);
-  top: 50%;
-  translate: 0 -50%;
-}
-
-.play-spotlight.from-right {
-  left: calc(50% + 2.5em);
-  top: 50%;
-  translate: 0 -50%;
-}
-
-.play-spotlight.from-top {
+/* It sits over the compass's centre, the lit quadrant around it still
+   saying who threw it - beside the compass it ran into the ponds, or your
+   hand. */
+.play-spotlight {
   left: 50%;
-  bottom: calc(50% + 2.3em);
-  translate: -50% 0;
-}
-
-.play-spotlight.from-bottom {
-  left: 50%;
-  top: calc(50% + 2.3em);
-  translate: -50% 0;
+  top: 50%;
+  translate: -50% -50%;
 }
 
 @keyframes play-spot {
