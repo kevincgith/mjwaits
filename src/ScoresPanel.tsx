@@ -558,6 +558,8 @@ type HandInitial = {
   jackpot?: boolean;
   entries?: DraftEntry[];
   patternsFor?: number;
+  // Fixing a 特別獎罰 entry: the tab opens as it was recorded.
+  bonus?: { kind: "獎" | "罰"; other: number | null; amount: number };
 };
 
 type DraftEntry = { seat: number; tai: string };
@@ -625,6 +627,7 @@ function HandSheet({
         onClose={onClose}
         onWin={() => setMode("win")}
         player={player}
+        initial={initial?.bonus}
         frame={{ ref: bonusRef, minHeight, hidden: mode !== "bonus" }}
       />
     </>
@@ -934,20 +937,22 @@ function BonusSheet({
   onClose,
   onWin,
   frame,
+  initial,
 }: {
   store: ScoreStore;
   state: ReplayState;
   seat: number;
   player: string;
+  initial?: HandInitial["bonus"];
   onDone: (ev: ScoreEvent) => void;
   onClose: () => void;
   onWin: () => void;
   frame?: SheetFrame;
 }) {
-  const [kind, setKind] = useState<"獎" | "罰">("獎");
+  const [kind, setKind] = useState<"獎" | "罰">(initial?.kind ?? "獎");
   // null = everyone else.
-  const [other, setOther] = useState<number | null>(null);
-  const [amount, setAmount] = useState("");
+  const [other, setOther] = useState<number | null>(initial?.other ?? null);
+  const [amount, setAmount] = useState(initial ? String(initial.amount) : "");
   const n = Number(amount || 0);
   return (
     <Sheet
@@ -2415,7 +2420,7 @@ function EntrySheet({ label, canEdit, onEdit, onDelete, onClose }: { label: stri
       }
     >
       <p className="sc-help sc-help-block">
-        {canEdit ? "Edit opens the hand as it was, with the table as it stood then." : "This entry can be deleted; to change it, delete it and add it again."}
+        {canEdit ? "Edit opens it as it was recorded, with the table as it stood then." : "This entry can be deleted; to change it, delete it and add it again."}
       </p>
     </Sheet>
   );
@@ -3010,11 +3015,18 @@ function Board({
       {sheet?.kind === "entry" && (
         <EntrySheet
           label={describeEvent(game.events[sheet.index], state, sheet.index)}
-          canEdit={game.events[sheet.index]?.t === "win"}
+          canEdit={game.events[sheet.index]?.t === "win" || game.events[sheet.index]?.t === "bonus"}
           onEdit={() => {
             const ev = game.events[sheet.index];
-            if (ev?.t !== "win") return;
-            setSheet({ kind: "hand", seat: ev.winners[0].seat, initial: winInitial(ev), editIndex: sheet.index });
+            if (ev?.t === "win") setSheet({ kind: "hand", seat: ev.winners[0].seat, initial: winInitial(ev), editIndex: sheet.index });
+            if (ev?.t === "bonus")
+              setSheet({
+                kind: "hand",
+                seat: ev.seat,
+                mode: "bonus",
+                initial: { selfDraw: false, patterns: [], bonus: { kind: ev.kind, other: ev.other ?? null, amount: ev.amount } },
+                editIndex: sheet.index,
+              });
           }}
           onDelete={() => {
             const what = describeEvent(game.events[sheet.index], state, sheet.index);
