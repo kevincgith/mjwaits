@@ -642,3 +642,18 @@ export const redoEvent = (game: ScoreGame): ScoreGame => {
 };
 
 export const canRedo = (game: ScoreGame) => (game.undone?.length ?? 0) > 0;
+
+// Fix an older entry from 最近: swap it for a corrected one (keeping when it
+// happened), or take it out. Everything after it replays on top, so totals,
+// 拉, 莊 and the round all follow. Either clears 重做, like a new entry.
+export const replaceEvent = (game: ScoreGame, index: number, ev: ScoreEvent): ScoreGame => ({
+  ...game,
+  events: game.events.map((e, i) => (i === index ? { ...ev, at: e.at } : e)),
+  undone: [],
+});
+
+export const deleteEvent = (game: ScoreGame, index: number): ScoreGame => ({
+  ...game,
+  events: game.events.filter((_, i) => i !== index),
+  undone: [],
+});

@@ -10961,3 +10961,130 @@ html.sc-fit-mode .build-version {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* 最近: each entry opens Edit / Delete. */
+.sc-recent-row {
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background-color 0.12s ease;
+}
+
+.sc-recent-row:active {
+  background: var(--fill);
+}
+
+.sc-recent-row + .sc-recent-row > .sc-hand {
+  border-top: 1px solid var(--separator);
+}
+
+/* 結帳's share buttons wrap onto a second line on a small phone. */
+.sc-share-row {
+  flex-wrap: wrap;
+}
+
+/* 備份 nudge: the app's green tint rather than the warning yellow - it's a
+   suggestion, not a problem. */
+.sc-banner.is-backup {
+  background: var(--accent-tint);
+  color: var(--accent);
+}
+
+.sc-backup-nudge {
+  gap: 0.6rem;
+}
+
+/* The share link's QR: big enough to scan across the table. */
+.sc-qr {
+  width: min(15rem, 70vw);
+  margin: 0 auto;
+  padding: 0.6rem;
+  border-radius: var(--radius-lg);
+  background: #fff;
+}
+
+.sc-qr svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* A shared link's read-only view. */
+.sc-shared {
+  gap: 0.75rem;
+}
+
+.sc-shared-head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.sc-shared-kicker {
+  color: var(--accent);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.sc-shared-title {
+  margin: 0;
+  font-size: var(--text-xl);
+}
+
+.sc-shared-row {
+  cursor: default;
+}
+
+.sc-shared-zhuang {
+  margin-left: 0.4rem;
+  font-size: var(--text-xs);
+  vertical-align: 0.1em;
+}
+
+.sc-shared-open {
+  width: 100%;
+  min-height: 3rem;
+}
+
+.sc-backup-nudge > .sc-secondary {
+  flex-shrink: 0;
+  min-height: 2.2rem;
+  padding: 0.3rem 0.9rem;
+  white-space: nowrap;
+}
+
+/* Small phones: a 拉 pill on a card's side would land on the big total and
+   the 流局 circle, so it rides higher - between the name and the total - and
+   sits further out over the gap. */
+@media (max-width: 360px) {
+  .sc-pin {
+    padding: 0.05rem 0.3rem;
+    font-size: 0.65rem;
+  }
+
+  .sc-pin.at-left { top: 30%; translate: -70% -50%; }
+  .sc-pin.at-right { top: 30%; translate: 70% -50%; }
+
+  /* The side seats' pills towards the middle ride above the 流局 circle. */
+  .sc-area-left .sc-pin.at-right { top: 13%; translate: 80% -50%; }
+  .sc-area-right .sc-pin.at-left { top: 13%; translate: -80% -50%; }
+
+  /* The top seat's drop below the round box in the corner. */
+  .sc-area-top .sc-pin.at-left,
+  .sc-area-top .sc-pin.at-right { top: 76%; }
+}
+
+/* A one-off tip: quiet, neutral. */
+.sc-banner.is-tip {
+  background: var(--fill);
+  color: var(--text-secondary);
+}
+
+.sc-banner.is-tip .is-win { color: var(--text); }
+.sc-banner.is-tip .is-self { color: var(--sc-pos); }
+.sc-banner.is-tip .is-dealin { color: var(--sc-neg); }
+
+.sc-banner.is-tip .sc-banner-action,
+.sc-banner.is-backup .sc-banner-action {
+  color: var(--accent);
+}

@@ -24,6 +24,8 @@ import {
   replay,
   roundLabel,
   settle,
+  deleteEvent,
+  replaceEvent,
   undoEvent,
   withEvent,
   type HandResult,
@@ -35,6 +37,10 @@ import {
   type ScoreStore,
   type WinnerEntry,
 } from "./lib/ledger";
+import { snapshotOf, snapshotUrl, type ScoreSnapshot } from "./lib/scoreShare";
+import { drawSettleCard } from "./lib/settleImage";
+import qrcode from "qrcode-generator";
+import { createPortal } from "react-dom";
 import { careerStats, headToHead, marks, patternCounts, playerStats, trend, type PlayerStats } from "./lib/scoreStats";
 
 const WIND_CHARS = ["東", "南", "西", "北"];
@@ -1881,7 +1887,85 @@ function NameSheet({ name, onSave, onClose }: { name: string; onSave: (name: str
   );
 }
 
-function SettleSheet({ store, state, onEnd, onClose }: { store: ScoreStore; state: ReplayState; onEnd: () => void; onClose: () => void }) {
+// A read-only link to the game as it stands, and its QR code for the people
+// at the table. A snapshot, not live - share a fresh one any time.
+function ShareLinkSheet({ store, game, onClose }: { store: ScoreStore; game: ScoreGame; onClose: () => void }) {
+  const url = useMemo(() => snapshotUrl(snapshotOf(store, game)), [store, game]);
+  const svg = useMemo(() => {
+    const qr = qrcode(0, "L");
+    qr.addData(url);
+    qr.make();
+    return qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true });
+  }, [url]);
+  const [copied, setCopied] = useState(false);
+  return (
+    <Sheet
+      title="Share the scores"
+      subtitle="A read-only snapshot of this game as it is now"
+      onClose={onClose}
+      actions={
+        <>
+          <button
+            type="button"
+            className="sc-secondary"
+            onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(url);
+                setCopied(true);
+                window.setTimeout(() => setCopied(false), 1500);
+              } catch {
+                window.prompt("Copy the link", url);
+              }
+            }}
+          >
+            {copied ? "Copied ✓" : "Copy link"}
+          </button>
+          {"share" in navigator && (
+            <button
+              type="button"
+              className="sc-primary"
+              onClick={async () => {
+                try {
+                  await navigator.share({ title: game.name ?? "MJWaits scores", url });
+                } catch {
+                  // Dismissed.
+                }
+              }}
+            >
+              Share link…
+            </button>
+          )}
+        </>
+      }
+    >
+      <div className="sc-qr" dangerouslySetInnerHTML={{ __html: svg }} role="img" aria-label="QR code for the scores link" />
+      <p className="sc-help sc-help-block">Scan to see the scores on another phone. It won't update by itself - share again for the latest.</p>
+    </Sheet>
+  );
+}
+
+function SettleSheet({
+  store,
+  game,
+  state,
+  backedUpAt,
+  onBackup,
+  onEnd,
+  onClose,
+}: {
+  store: ScoreStore;
+  game: ScoreGame;
+  state: ReplayState;
+  backedUpAt: number | null;
+  onBackup: () => void;
+  onEnd: () => void;
+  onClose: () => void;
+}) {
+  const [shareLink, setShareLink] = useState(false);
+  const [imaging, setImaging] = useState(false);
+  // Saved since the last thing recorded? Then the game is safe to end.
+  const lastAt = game.events.length ? game.events[game.events.length - 1].at : game.startedAt;
+  const backedUp = backedUpAt !== null && backedUpAt >= lastAt;
   const [multiplier, setMultiplier] = useState("1");
   const m = Number(multiplier) || 0;
   const payments = settle(state.totals, m);
@@ -1913,6 +1997,38 @@ function SettleSheet({ store, state, onEnd, onClose }: { store: ScoreStore; stat
       // Dismissed.
     }
   };
+  // 結帳 as a picture: shared straight to the chat where the phone can, or
+  // saved as a PNG.
+  const shareImage = async () => {
+    setImaging(true);
+    try {
+      const blob = await drawSettleCard(
+        snapshotOf(store, game),
+        payments,
+        m !== 1 ? `×${multiplier}` : "",
+      );
+      if (!blob) return;
+      const file = new File([blob], `mjwaits-${new Date().toISOString().slice(0, 10)}.png`, { type: "image/png" });
+      if (navigator.canShare?.({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file], title: game.name ?? "MJWaits 結帳" });
+        } catch {
+          // Dismissed.
+        }
+        return;
+      }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = file.name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } finally {
+      setImaging(false);
+    }
+  };
   return (
     <Sheet
       title="結帳 · 新局"
@@ -1939,10 +2055,27 @@ function SettleSheet({ store, state, onEnd, onClose }: { store: ScoreStore; stat
         </button>
         {"share" in navigator && (
           <button type="button" className="sc-outline" onClick={share}>
-            Share…
+            Share text…
           </button>
         )}
+        <button type="button" className="sc-outline" onClick={() => void shareImage()} disabled={imaging}>
+          {imaging ? "Drawing…" : "Image"}
+        </button>
+        <button type="button" className="sc-outline" onClick={() => setShareLink(true)}>
+          Link · QR
+        </button>
       </div>
+      {/* Before ending: the game only lives on this phone. */}
+      {!backedUp && game.events.length > 0 && (
+        <div className="sc-row sc-row-boxed sc-backup-nudge">
+          <span className="sc-help">Not backed up since the last hand - save a file before you end the game.</span>
+          <button type="button" className="sc-secondary" onClick={onBackup}>
+            儲存 Save
+          </button>
+        </div>
+      )}
+      {/* Over everything, not inside this sheet. */}
+      {shareLink && createPortal(<ShareLinkSheet store={store} game={game} onClose={() => setShareLink(false)} />, document.body)}
       <div className="sc-list">
         {payments.length === 0 && <p className="sc-empty">Everyone is level.</p>}
         {payments.map((p, i) => (
@@ -2129,7 +2262,9 @@ function Confirm({ title, detail, onYes, onClose, yes = "Confirm", danger }: { t
 // ---- The board (戰況) -----------------------------------------------------------
 
 type BoardSheet =
-  | { kind: "hand"; seat: number; initial?: HandInitial; mode?: "win" | "bonus" }
+  // editIndex: correcting that older entry from 最近, not recording a new one.
+  | { kind: "hand"; seat: number; initial?: HandInitial; mode?: "win" | "bonus"; editIndex?: number }
+  | { kind: "entry"; index: number }
   | { kind: "recent" }
   | { kind: "draw" }
   | { kind: "seats" }
@@ -2187,6 +2322,7 @@ function RecentSheet({
   store,
   game,
   state,
+  onPick,
   onUndo,
   onClose,
   onSeeStats,
@@ -2194,6 +2330,7 @@ function RecentSheet({
   store: ScoreStore;
   game: ScoreGame;
   state: ReplayState;
+  onPick: (index: number) => void; // tap an entry to fix or delete it
   onUndo: () => void;
   onClose: () => void;
   onSeeStats: () => void;
@@ -2204,17 +2341,26 @@ function RecentSheet({
     .map((ev, i) => ({ ev, i }))
     .reverse()
     .map(({ ev, i }) => {
+      let row: ReactNode = null;
       if (ev.t === "win" || ev.t === "draw") {
         const h = state.hands.find((x) => x.eventIndex === i);
-        return h ? <HandRow key={i} h={h} store={store} /> : null;
+        if (h) row = <HandRow h={h} store={store} />;
+      } else {
+        const step = state.steps.find((x) => x.eventIndex === i);
+        row = <EventRow ev={ev} deltas={step?.deltas ?? {}} />;
       }
-      const step = state.steps.find((x) => x.eventIndex === i);
-      return <EventRow key={i} ev={ev} deltas={step?.deltas ?? {}} />;
+      return (
+        row && (
+          <div key={i} className="sc-recent-row" role="button" tabIndex={0} onClick={() => onPick(i)} onKeyDown={(e) => e.key === "Enter" && onPick(i)}>
+            {row}
+          </div>
+        )
+      );
     });
   return (
     <Sheet
       title="最近 Recent"
-      subtitle={game.events.length ? `${state.hands.length}局 · ${game.events.length} entries · newest first` : "Nothing recorded yet"}
+      subtitle={game.events.length ? `${state.hands.length}局 · ${game.events.length} entries · tap one to fix it` : "Nothing recorded yet"}
       onClose={onClose}
       actions={
         <>
@@ -2233,6 +2379,44 @@ function RecentSheet({
       ) : (
         <div className="sc-list sc-list-hands">{rows}</div>
       )}
+    </Sheet>
+  );
+}
+
+// The 食胡 sheet set up as a recorded win was, for fixing it.
+function winInitial(ev: Extract<ScoreEvent, { t: "win" }>): HandInitial {
+  const first = ev.winners[0];
+  const base = { from: ev.from, jackpot: ev.jackpotTo !== undefined, patterns: first.patterns ?? [], patternsFor: first.seat };
+  return ev.winners.length > 1
+    ? { ...base, selfDraw: false, entries: ev.winners.map((w) => ({ seat: w.seat, tai: String(w.tai) })) }
+    : { ...base, selfDraw: ev.from === null, tai: first.tai };
+}
+
+// One entry picked in 最近: fix it (a hand) or delete it. Delete takes a
+// second tap; either way everything after it replays.
+function EntrySheet({ label, canEdit, onEdit, onDelete, onClose }: { label: string; canEdit: boolean; onEdit: () => void; onDelete: () => void; onClose: () => void }) {
+  const [armed, setArmed] = useState(false);
+  return (
+    <Sheet
+      title={label || "Entry"}
+      subtitle="Changes here replay every entry after it"
+      onClose={onClose}
+      actions={
+        <>
+          <button type="button" className={armed ? "sc-danger" : "sc-secondary"} onClick={() => (armed ? onDelete() : setArmed(true))}>
+            {armed ? "Tap again to delete" : "Delete"}
+          </button>
+          {canEdit && (
+            <button type="button" className="sc-primary" onClick={onEdit}>
+              Edit
+            </button>
+          )}
+        </>
+      }
+    >
+      <p className="sc-help sc-help-block">
+        {canEdit ? "Edit opens the hand as it was, with the table as it stood then." : "This entry can be deleted; to change it, delete it and add it again."}
+      </p>
     </Sheet>
   );
 }
@@ -2325,6 +2509,16 @@ function Board({
   };
   const [toast, setToast] = useState<{ text: string; id: number } | null>(null);
   const [reminderHidden, setReminderHidden] = useState(false);
+  const [backedUpAt, setBackedUpAt] = useState(readBackedUpAt);
+  // The card footer's key, once: after the first hand, until "Got it".
+  const [footerKeySeen, setFooterKeySeen] = useState(() => {
+    try {
+      return window.localStorage.getItem(FOOTER_KEY_SEEN) === "1";
+    } catch {
+      return true;
+    }
+  });
+  const [backupNudgeAt, setBackupNudgeAt] = useState(BACKUP_NUDGE_HANDS);
   // 投降 prompts dismissed, by "holder>pulled@count" - a chain that grows
   // again prompts again.
   const [surrenderSeen, setSurrenderSeen] = useState<string[]>([]);
@@ -2334,6 +2528,11 @@ function Board({
     setToast({ text, id });
     window.setTimeout(() => setToast((t) => (t?.id === id ? null : t)), 2200);
   };
+  // Fixing an older hand: the sheet sees the table as it stood just before it.
+  const sheetState = useMemo(
+    () => (sheet?.kind === "hand" && sheet.editIndex !== undefined ? replay({ ...game, events: game.events.slice(0, sheet.editIndex) }) : state),
+    [sheet, game, state],
+  );
   const add = (ev: ScoreEvent, message?: string) => {
     update(withEvent(game, ev));
     close();
@@ -2533,6 +2732,53 @@ function Board({
         );
       })()}
 
+      {/* The footer explained, once - its numbers have no labels. */}
+      {!footerKeySeen && state.hands.length > 0 && state.settings.showTally && (
+        <div className="sc-banner is-tip" role="status">
+          <span>
+            Card footer: <strong className="is-win">胡</strong> · <strong className="is-self">摸</strong> · <strong className="is-dealin">銃</strong> - wins, self-draws, deal-ins. ± opens 特別獎罰.
+          </span>
+          <button
+            type="button"
+            className="sc-banner-action"
+            onClick={() => {
+              setFooterKeySeen(true);
+              try {
+                window.localStorage.setItem(FOOTER_KEY_SEEN, "1");
+              } catch {
+                // Then it shows again next time - harmless.
+              }
+            }}
+          >
+            Got it
+          </button>
+        </div>
+      )}
+
+      {/* 備份: a nudge every 16 hands without a backup file - the scores
+          only live on this phone. Save from here, or dismiss for 16 more. */}
+      {handsSinceBackup(game, backedUpAt) >= backupNudgeAt && (
+        <div className="sc-banner is-backup" role="status">
+          <span>
+            <strong>備份</strong> · {handsSinceBackup(game, backedUpAt)} hands since your last backup
+          </span>
+          <button
+            type="button"
+            className="sc-banner-action"
+            onClick={() => {
+              setBackedUpAt(saveBackupFile(store));
+              setBackupNudgeAt(BACKUP_NUDGE_HANDS);
+              flash("Backup saved");
+            }}
+          >
+            儲存 Save
+          </button>
+          <button type="button" className="sc-icon-button" onClick={() => setBackupNudgeAt(handsSinceBackup(game, backedUpAt) + BACKUP_NUDGE_HANDS)} aria-label="Dismiss">
+            {Icons.close}
+          </button>
+        </div>
+      )}
+
       {state.seatChangeDue && !reminderHidden && (
         <div className="sc-banner" role="status">
           <span>
@@ -2726,15 +2972,15 @@ function Board({
 
       {sheet?.kind === "hand" && (
         <HandSheet
-          key={`${sheet.seat}-${sheet.mode ?? "win"}`}
+          key={`${sheet.seat}-${sheet.mode ?? "win"}-${sheet.editIndex ?? "new"}`}
           store={store}
-          state={state}
+          state={sheetState}
           seat={sheet.seat}
           initial={sheet.initial}
           startMode={sheet.mode}
           onScoreHand={
-            onScoreHand &&
-            ((ask) => {
+            onScoreHand && sheet.editIndex === undefined
+              ? (ask) => {
               // The winner being scored - on a 雙響/三響, maybe not the sheet's own.
               const seat = ask.target;
               onScoreHand({
@@ -2749,10 +2995,34 @@ function Board({
                 ...(ask.entries.length > 1 ? { draft: { sheetSeat: sheet.seat, entries: ask.entries } } : {}),
               });
               close();
-            })
+            }
+              : undefined
           }
           onClose={close}
-          onDone={(ev) => add(ev, ev.t === "bonus" ? `Recorded 特別${ev.kind}` : "Recorded ✓")}
+          onDone={(ev) => {
+            if (sheet.editIndex === undefined) return add(ev, ev.t === "bonus" ? `Recorded 特別${ev.kind}` : "Recorded ✓");
+            update(replaceEvent(game, sheet.editIndex, ev));
+            close();
+            flash("Entry fixed - later hands updated");
+          }}
+        />
+      )}
+      {sheet?.kind === "entry" && (
+        <EntrySheet
+          label={describeEvent(game.events[sheet.index], state, sheet.index)}
+          canEdit={game.events[sheet.index]?.t === "win"}
+          onEdit={() => {
+            const ev = game.events[sheet.index];
+            if (ev?.t !== "win") return;
+            setSheet({ kind: "hand", seat: ev.winners[0].seat, initial: winInitial(ev), editIndex: sheet.index });
+          }}
+          onDelete={() => {
+            const what = describeEvent(game.events[sheet.index], state, sheet.index);
+            update(deleteEvent(game, sheet.index));
+            close();
+            flash(`Deleted · ${what}`);
+          }}
+          onClose={() => setSheet({ kind: "recent" })}
         />
       )}
       {sheet?.kind === "recent" && (
@@ -2760,6 +3030,7 @@ function Board({
           store={store}
           game={game}
           state={state}
+          onPick={(index) => setSheet({ kind: "entry", index })}
           onUndo={undo}
           onClose={close}
           onSeeStats={() => {
@@ -2829,7 +3100,10 @@ function Board({
       {sheet?.kind === "settle" && (
         <SettleSheet
           store={store}
+          game={game}
           state={state}
+          backedUpAt={backedUpAt}
+          onBackup={() => setBackedUpAt(saveBackupFile(store))}
           onClose={close}
           onEnd={() => {
             close();
@@ -3227,6 +3501,37 @@ function readBackedUpAt(): number | null {
   }
 }
 
+// Save the whole store as a dated file, and note when - for the reminders.
+function saveBackupFile(store: ScoreStore): number {
+  const now = Date.now();
+  const blob = new Blob([exportScores(store, now)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const d = new Date(now);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  a.href = url;
+  a.download = `mjwaits-scores-${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  try {
+    window.localStorage.setItem(BACKED_UP_KEY, String(now));
+  } catch {
+    // Just the reminder - the file is saved either way.
+  }
+  return now;
+}
+
+// Hands recorded since the last backup file (all of them, if never).
+const handsSinceBackup = (game: ScoreGame, backedUpAt: number | null) =>
+  game.events.filter((ev) => (ev.t === "win" || ev.t === "draw") && (backedUpAt === null || ev.at > backedUpAt)).length;
+
+const FOOTER_KEY_SEEN = "mjwaits.footerKeySeen";
+
+// The board's nudge comes every this many hands without a backup.
+const BACKUP_NUDGE_HANDS = 16;
+
 function BackupCard({ store, setStore }: { store: ScoreStore; setStore: (s: ScoreStore) => void }) {
   const [backedUpAt, setBackedUpAt] = useState(readBackedUpAt);
   const [incoming, setIncoming] = useState<{ name: string; store: ScoreStore } | null>(null);
@@ -3237,24 +3542,7 @@ function BackupCard({ store, setStore }: { store: ScoreStore; setStore: (s: Scor
   const players = (n: number) => `${n} player${n === 1 ? "" : "s"}`;
 
   const download = () => {
-    const now = Date.now();
-    const blob = new Blob([exportScores(store, now)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    const d = new Date(now);
-    const pad = (n: number) => String(n).padStart(2, "0");
-    a.href = url;
-    a.download = `mjwaits-scores-${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}.json`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-    try {
-      window.localStorage.setItem(BACKED_UP_KEY, String(now));
-    } catch {
-      // Just the reminder - the file is saved either way.
-    }
-    setBackedUpAt(now);
+    setBackedUpAt(saveBackupFile(store));
     setMessage(null);
   };
 
@@ -3592,6 +3880,67 @@ function withRoster(store: ScoreStore, names: string[]) {
     roster.push({ name, color });
   }
   return roster;
+}
+
+// What a shared link opens: the game as it stood when it was shared,
+// read-only, in the board's colours. Nothing here touches this phone's own
+// scores.
+export function SharedScoresView({ snap, onClose }: { snap: ScoreSnapshot; onClose: () => void }) {
+  const ranked = [...snap.players].sort((a, b) => b.t - a.t);
+  const when = new Date(snap.at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  return (
+    <section className="panel scores-panel sc-shared">
+      <div className="card sc-shared-head">
+        <span className="sc-shared-kicker">Shared scores · read-only</span>
+        <h2 className="sc-shared-title">{snap.name ?? "Mahjong scores"}</h2>
+        <p className="sc-help">
+          {new Date(snap.started).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })} · {snap.label} · 局{snap.hands} · 東{snap.east} 圈{snap.circle}
+          {snap.ended && " · ended"}
+        </p>
+      </div>
+      <div className="card sc-list-card">
+        {ranked.map((p, i) => (
+          <div key={p.n} className="sc-leader sc-shared-row">
+            <span className={`sc-leader-rank is-${i + 1}`}>{i + 1}</span>
+            <span className={`sc-mono sc-mono-md sc-c${p.c >= 0 ? p.c : "x"}`} aria-hidden="true">
+              {[...p.n][0]?.toUpperCase()}
+            </span>
+            <span className="sc-leader-id">
+              <span className="sc-leader-name">
+                {p.n}
+                {p.n === snap.dealer && !snap.ended && <span className="sc-zhuang-tag sc-shared-zhuang">莊</span>}
+              </span>
+              <span className="sc-leader-sub">
+                胡{p.w} · 摸{p.s} · 銃{p.d}
+              </span>
+            </span>
+            <strong className={`sc-leader-total ${tone(p.t)}`}>{signed(p.t)}</strong>
+          </div>
+        ))}
+      </div>
+      <SectionHead zh="結帳" en="Settle up" />
+      <div className="card">
+        {snap.pays.length === 0 ? (
+          <p className="sc-empty">Everyone is level.</p>
+        ) : (
+          <div className="sc-list">
+            {snap.pays.map(([from, to, amount], i) => (
+              <div key={i} className="sc-row">
+                <span>
+                  {from} → {to}
+                </span>
+                <strong>{fmt(amount)}</strong>
+              </div>
+            ))}
+          </div>
+        )}
+        <p className="sc-help sc-help-block">At ×1. Shared {when} - a snapshot, so it won't update by itself.</p>
+      </div>
+      <button type="button" className="sc-primary sc-shared-open" onClick={onClose}>
+        Open MJWaits
+      </button>
+    </section>
+  );
 }
 
 export function ScoresPanel({
