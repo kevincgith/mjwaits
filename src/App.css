@@ -7656,6 +7656,7 @@ html.playing body {
 }
 
 .sc-sheet-heading {
+  flex: 1;
   min-width: 0;
 }
 
@@ -10148,15 +10149,50 @@ html.sc-fit-mode .build-version {
   font-weight: 600;
 }
 
-/* 最近's 還原 / 重做, beside Close. */
-.sc-head-actions {
-  display: inline-flex;
+/* 最近's 還原 / 重做: small labelled pills on the right of the subtitle. */
+.sc-recent-sub {
+  display: flex;
   align-items: center;
-  gap: 0.1rem;
+  justify-content: space-between;
+  gap: 0.5rem;
 }
 
-.sc-head-actions .sc-icon-button:disabled {
-  opacity: 0.3;
+.sc-recent-moves {
+  display: inline-flex;
+  flex-shrink: 0;
+  gap: 0.3rem;
+}
+
+.sc-recent-moves > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  min-height: 1.8rem;
+  padding: 0 0.6rem 0 0.45rem;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: none;
+  box-shadow: inset 0 0 0 1px var(--accent-border-light);
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.sc-recent-moves > button svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.sc-recent-moves > button:disabled {
+  box-shadow: inset 0 0 0 1px var(--separator);
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.sc-recent-moves > button:not(:disabled):active {
+  background: var(--accent-tint);
 }
 
 .sc-share-row {

@@ -312,7 +312,6 @@ function Sheet({
   tabs,
   still,
   frame,
-  headActions,
 }: {
   title: ReactNode;
   subtitle?: ReactNode;
@@ -320,7 +319,6 @@ function Sheet({
   children: ReactNode;
   actions?: ReactNode;
   tabs?: ReactNode;
-  headActions?: ReactNode; // small icon buttons beside Close
   // Already on screen (switching 食胡 / 特別獎罰): skip the entrance animation.
   still?: boolean;
   frame?: SheetFrame;
@@ -349,7 +347,6 @@ function Sheet({
             <h2 className="sc-sheet-title">{title}</h2>
             {subtitle && <div className="sc-sheet-subtitle">{subtitle}</div>}
           </div>
-          {headActions}
           <button type="button" className="sc-icon-button" onClick={onClose} aria-label="Close">
             {Icons.close}
           </button>
@@ -2368,24 +2365,31 @@ function RecentSheet({
   return (
     <Sheet
       title="最近 Recent"
-      subtitle={game.events.length ? `${state.hands.length}局 · ${game.events.length} entries · tap one to fix it` : "Nothing recorded yet"}
-      onClose={onClose}
-      // 還原 / 重做 as on the board's toolbar - the list shows each one land.
-      headActions={
-        <span className="sc-head-actions">
-          <button type="button" className="sc-icon-button" onClick={onUndo} disabled={lastIndex < 0} aria-label={undoLabel ? `還原 ${undoLabel}` : "還原"} title={undoLabel ? `還原 · ${undoLabel}` : "還原"}>
-            {Icons.undo}
-          </button>
-          <button type="button" className="sc-icon-button" onClick={onRedo} disabled={!canRedo(game)} aria-label="重做" title="重做">
-            {Icons.redo}
-          </button>
+      // 還原 / 重做 on the right of the subtitle - beside the list they change.
+      subtitle={
+        <span className="sc-recent-sub">
+          <span>{game.events.length ? `${state.hands.length}局 · ${game.events.length} ${game.events.length === 1 ? "entry" : "entries"}` : "Nothing recorded yet"}</span>
+          <span className="sc-recent-moves">
+            <button type="button" onClick={onUndo} disabled={lastIndex < 0} aria-label={undoLabel ? `還原 ${undoLabel}` : "還原"} title={undoLabel ? `還原 · ${undoLabel}` : "還原"}>
+              {Icons.undo}
+              還原
+            </button>
+            <button type="button" onClick={onRedo} disabled={!canRedo(game)} aria-label="重做" title="重做">
+              {Icons.redo}
+              重做
+            </button>
+          </span>
         </span>
       }
+      onClose={onClose}
     >
       {game.events.length === 0 ? (
         <p className="sc-empty">Tap the winner on the table to record a hand, or 流局 for a draw.</p>
       ) : (
-        <div className="sc-list sc-list-hands">{rows}</div>
+        <>
+          <div className="sc-list sc-list-hands">{rows}</div>
+          <p className="sc-help sc-help-block">Tap an entry to edit or delete it.</p>
+        </>
       )}
     </Sheet>
   );
