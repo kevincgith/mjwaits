@@ -2365,31 +2365,25 @@ function RecentSheet({
   return (
     <Sheet
       title="最近 Recent"
-      // 還原 / 重做 on the right of the subtitle - beside the list they change.
-      subtitle={
-        <span className="sc-recent-sub">
-          <span>{game.events.length ? `${state.hands.length}局 · ${game.events.length} ${game.events.length === 1 ? "entry" : "entries"}` : "Nothing recorded yet"}</span>
-          <span className="sc-recent-moves">
-            <button type="button" onClick={onUndo} disabled={lastIndex < 0} aria-label={undoLabel ? `還原 ${undoLabel}` : "還原"} title={undoLabel ? `還原 · ${undoLabel}` : "還原"}>
-              {Icons.undo}
-              還原
-            </button>
-            <button type="button" onClick={onRedo} disabled={!canRedo(game)} aria-label="重做" title="重做">
-              {Icons.redo}
-              重做
-            </button>
-          </span>
-        </span>
-      }
+      subtitle={game.events.length ? `${state.hands.length}局 · ${game.events.length} ${game.events.length === 1 ? "entry" : "entries"} · tap one to fix it` : "Nothing recorded yet"}
       onClose={onClose}
     >
+      {/* 還原 / 重做 in the app's segmented style, on their own row above
+          the list they change. */}
+      <div className="segmented sc-recent-moves" role="group" aria-label="Undo and redo">
+        <button type="button" onClick={onUndo} disabled={lastIndex < 0} title={undoLabel ? `還原 · ${undoLabel}` : "還原"}>
+          {Icons.undo}
+          還原
+        </button>
+        <button type="button" onClick={onRedo} disabled={!canRedo(game)} title="重做">
+          {Icons.redo}
+          重做
+        </button>
+      </div>
       {game.events.length === 0 ? (
         <p className="sc-empty">Tap the winner on the table to record a hand, or 流局 for a draw.</p>
       ) : (
-        <>
-          <div className="sc-list sc-list-hands">{rows}</div>
-          <p className="sc-help sc-help-block">Tap an entry to edit or delete it.</p>
-        </>
+        <div className="sc-list sc-list-hands">{rows}</div>
       )}
     </Sheet>
   );
@@ -2653,18 +2647,20 @@ function Board({
   // The 執位 reminder comes back after each 北風北局.
   useEffect(() => setReminderHidden(false), [state.roundWind]);
 
-  const undo = () => {
+  // quiet: from 最近, where the list itself shows what changed (a toast
+  // would only sit on top of it).
+  const undo = (quiet = false) => {
     if (game.events.length === 0) return;
     const i = game.events.length - 1;
-    flash(`還原 · ${describeEvent(game.events[i], state, i)}`);
+    if (!quiet) flash(`還原 · ${describeEvent(game.events[i], state, i)}`);
     update(undoEvent(game));
   };
-  const redo = () => {
+  const redo = (quiet = false) => {
     const next = game.undone?.[game.undone.length - 1];
     if (!next) return;
     const redone = redoEvent(game);
     const after = replay(redone);
-    flash(`重做 · ${describeEvent(next, after, redone.events.length - 1)}`);
+    if (!quiet) flash(`重做 · ${describeEvent(next, after, redone.events.length - 1)}`);
     update(redone);
   };
 
@@ -2686,8 +2682,8 @@ function Board({
 
   const tools: { label: string; icon: ReactNode; onClick: () => void; disabled?: boolean; badge?: number }[] = [
     { label: "新局", icon: Icons.newGame, onClick: () => setSheet({ kind: "settle" }) },
-    { label: "還原", icon: Icons.undo, onClick: undo, disabled: game.events.length === 0 },
-    { label: "重做", icon: Icons.redo, onClick: redo, disabled: !canRedo(game) },
+    { label: "還原", icon: Icons.undo, onClick: () => undo(), disabled: game.events.length === 0 },
+    { label: "重做", icon: Icons.redo, onClick: () => redo(), disabled: !canRedo(game) },
     { label: "座位", icon: Icons.seat, onClick: () => setSheet({ kind: "seats" }) },
     { label: "拉踢", icon: Icons.lah, onClick: () => setSheet({ kind: "lah" }), badge: state.lahs.length || undefined },
     { label: "最近", icon: Icons.recent, onClick: () => setSheet({ kind: "recent" }) },
@@ -2968,12 +2964,12 @@ function Board({
         <div key={toast.id} className="sc-toast" role="status">
           {toast.text}
           {toast.text.startsWith("Recorded") && (
-            <button type="button" onClick={undo}>
+            <button type="button" onClick={() => undo()}>
               還原
             </button>
           )}
           {toast.text.startsWith("還原") && canRedo(game) && (
-            <button type="button" onClick={redo}>
+            <button type="button" onClick={() => redo()}>
               重做
             </button>
           )}
@@ -3048,8 +3044,8 @@ function Board({
           game={game}
           state={state}
           onPick={(index) => setSheet({ kind: "entry", index })}
-          onUndo={undo}
-          onRedo={redo}
+          onUndo={() => undo(true)}
+          onRedo={() => redo(true)}
           onClose={close}
         />
       )}

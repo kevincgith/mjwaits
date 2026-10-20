@@ -10149,35 +10149,21 @@ html.sc-fit-mode .build-version {
   font-weight: 600;
 }
 
-/* 最近's 還原 / 重做: small labelled pills on the right of the subtitle. */
-.sc-recent-sub {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-}
-
+/* 最近's 還原 / 重做: a centred segmented pair above the list. */
 .sc-recent-moves {
-  display: inline-flex;
-  flex-shrink: 0;
-  gap: 0.3rem;
+  align-self: center;
+  width: auto;
 }
 
 .sc-recent-moves > button {
   display: inline-flex;
   align-items: center;
-  gap: 0.2rem;
-  min-height: 1.8rem;
-  padding: 0 0.6rem 0 0.45rem;
-  border: none;
-  border-radius: var(--radius-pill);
-  background: none;
-  box-shadow: inset 0 0 0 1px var(--accent-border-light);
+  justify-content: center;
+  gap: 0.3rem;
+  min-width: 6rem;
   color: var(--accent);
-  font: inherit;
   font-size: var(--text-sm);
   font-weight: 600;
-  cursor: pointer;
 }
 
 .sc-recent-moves > button svg {
@@ -10186,13 +10172,8 @@ html.sc-fit-mode .build-version {
 }
 
 .sc-recent-moves > button:disabled {
-  box-shadow: inset 0 0 0 1px var(--separator);
   color: var(--text-muted);
   cursor: default;
-}
-
-.sc-recent-moves > button:not(:disabled):active {
-  background: var(--accent-tint);
 }
 
 .sc-share-row {
