@@ -2330,7 +2330,6 @@ function RecentSheet({
   onPick,
   onUndo,
   onClose,
-  onSeeStats,
 }: {
   store: ScoreStore;
   game: ScoreGame;
@@ -2338,7 +2337,6 @@ function RecentSheet({
   onPick: (index: number) => void; // tap an entry to fix or delete it
   onUndo: () => void;
   onClose: () => void;
-  onSeeStats: () => void;
 }) {
   const lastIndex = game.events.length - 1;
   const undoLabel = lastIndex >= 0 ? describeEvent(game.events[lastIndex], state, lastIndex) : "";
@@ -2372,9 +2370,6 @@ function RecentSheet({
           <button type="button" className="sc-secondary sc-undo-button" onClick={onUndo} disabled={lastIndex < 0}>
             還原
             {undoLabel && <span className="sc-undo-what">{undoLabel}</span>}
-          </button>
-          <button type="button" className="sc-primary" onClick={onSeeStats}>
-            統計 Stats
           </button>
         </>
       }
@@ -2454,7 +2449,6 @@ function Board({
   onEndGame,
   request,
   onRequestDone,
-  onSeeAll,
   onScoreHand,
   onOpenSeating,
 }: {
@@ -2465,7 +2459,6 @@ function Board({
   onEndGame: () => void;
   request: RecordRequest | null;
   onRequestDone: () => void;
-  onSeeAll: () => void;
   onScoreHand?: (req: Omit<ScoreHandRequest, "nonce">) => void;
   onOpenSeating?: (names: string[]) => void;
 }) {
@@ -3045,10 +3038,6 @@ function Board({
           onPick={(index) => setSheet({ kind: "entry", index })}
           onUndo={undo}
           onClose={close}
-          onSeeStats={() => {
-            close();
-            onSeeAll();
-          }}
         />
       )}
       {sheet?.kind === "draw" && (
@@ -4010,10 +3999,6 @@ export function ScoresPanel({
             onRequestDone={onRequestDone}
             onScoreHand={onScoreHand}
             onOpenSeating={onOpenSeating}
-            onSeeAll={() => {
-              setView("hands");
-              setSub("stats");
-            }}
           />
         ) : (
           <>
