@@ -43,6 +43,8 @@ import { BonusGlyphSpan, TileGlyphSpan } from "./TileGlyphs";
 import { PlayPanel } from "./PlayPanel";
 import { ScoresPanel, SharedScoresView, type RecordRequest, type ScoreHandRequest, type SeatingResult } from "./ScoresPanel";
 import { snapshotFromHash } from "./lib/scoreShare";
+import { TaiRulesSheet } from "./TaiRulesSheet";
+import { loadTaiRules, rulesAffectScoring, saveTaiRules } from "./lib/taiRules";
 import { loadScores, saveScores } from "./lib/ledger";
 import {
   COMPLETE_SIZE,
@@ -112,7 +114,6 @@ import {
   type ScanProgress,
 } from "./lib/vision";
 import {
-  FIVE_POWER_TAI_TABLE,
   groupDeclaredTiles,
   isEightPairsHand,
   isGenuineMultiWait,
@@ -5507,7 +5508,7 @@ function ToolbarLogo() {
   );
 }
 
-function ToolbarIcon({ kind }: { kind: "reset" | "camera" | "photos" | "wand" | "rotate-left" | "rotate-right" | "swap" }) {
+function ToolbarIcon({ kind }: { kind: "reset" | "camera" | "photos" | "wand" | "rotate-left" | "rotate-right" | "swap" | "settings" }) {
   return (
     <svg className="toolbar-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       {kind === "reset" && (
@@ -5556,6 +5557,14 @@ function ToolbarIcon({ kind }: { kind: "reset" | "camera" | "photos" | "wand" | 
           <path d="M19.5 11v3M18 12.5h3" />
         </>
       )}
+      {kind === "settings" && (
+        <>
+          <path d="M4 7h9M17 7h3M4 12h3M11 12h9M4 17h11M19 17h1" />
+          <circle cx="15" cy="7" r="2" />
+          <circle cx="9" cy="12" r="2" />
+          <circle cx="17" cy="17" r="2" />
+        </>
+      )}
     </svg>
   );
 }
@@ -5590,6 +5599,13 @@ function ScoringPanel({
 }) {
   const [concealedTiles, setConcealedTiles] = useState<HandTile[]>([]);
   const [declaredMelds, setDeclaredMelds] = useState<DeclaredMeldTile[]>([]);
+  // The house's tai rules (設定) - saved in localStorage, applied to every
+  // score this tab works out (the result, the waits and discard lists).
+  const [taiRules, setTaiRules] = useState(loadTaiRules);
+  const [rulesOpen, setRulesOpen] = useState(false);
+  // 槓摸/搶槓's tai-by-count, for their buttons' tooltips.
+  const kongDrawTable = taiRules.rules.patterns["kong-draw"]?.table ?? [];
+  const robKongTable = taiRules.rules.patterns["rob-kong"]?.table ?? [];
   // 天叮/地叮/天胡/地胡/人胡 all require a fully concealed hand (see
   // isFullyConcealed in scoring.ts) - a call means a declared OPEN meld, so
   // this only looks at `concealed: false` entries. A concealed kong (暗槓,
@@ -6457,6 +6473,7 @@ function ScoringPanel({
     dealerStreak,
     manualVisibleTripleWin: manualVisibleExhaust !== "none",
     manualVisibleExhaustedMultiWait: manualVisibleExhaust === "exhausted",
+    rules: taiRules.rules,
   };
 
   // autoApply for HandScanner's streamlined scan path (see its own doc
@@ -6530,6 +6547,7 @@ function ScoringPanel({
     robKong,
     dealerStreak,
     manualVisibleExhaust,
+    taiRules,
     winningTile,
   ]);
 
@@ -6679,6 +6697,7 @@ function ScoringPanel({
     robKong,
     dealerStreak,
     manualVisibleExhaust,
+    taiRules,
   ]);
 
   // Full hand: for each distinct concealed tile kind, what discarding one
@@ -6736,6 +6755,7 @@ function ScoringPanel({
     robKong,
     dealerStreak,
     manualVisibleExhaust,
+    taiRules,
   ]);
 
   // Display order for the projected-waits list: highest tai first, or plain
@@ -6920,6 +6940,18 @@ function ScoringPanel({
           </button>
         </div>
       )}
+      {rulesOpen && (
+        <TaiRulesSheet
+          rules={taiRules.rules}
+          corrupt={taiRules.corrupt}
+          onClose={() => setRulesOpen(false)}
+          onSave={(rules) => {
+            saveTaiRules(rules);
+            setTaiRules({ rules, corrupt: false });
+            setRulesOpen(false);
+          }}
+        />
+      )}
       <div className="scoring-toolbar" ref={toolbarRef}>
         <ToolbarLogo />
         {/* Reset also puts the picker back to its Classic rows. */}
@@ -6954,6 +6986,15 @@ function ScoringPanel({
         >
           <ToolbarIcon kind="photos" />
           <span className="toolbar-label">Photos</span>
+        </button>
+        <button
+          type="button"
+          className={`toolbar-button toolbar-rules${rulesAffectScoring(taiRules.rules) || taiRules.rules.engine === "legacy" ? " is-custom" : ""}`}
+          onClick={() => setRulesOpen(true)}
+          title="設定 - the tai rules"
+        >
+          <ToolbarIcon kind="settings" />
+          <span className="toolbar-label">設定</span>
         </button>
         <span className="toolbar-status">
           {/* The tile count while entering, then the total in its place once
@@ -7522,7 +7563,7 @@ function ScoringPanel({
               title={
                 kongCount === 0
                   ? "槓摸 - no kongs declared to have drawn a replacement tile for"
-                  : `Tap to cycle 槓摸x0-x${kongCount} (tai: ${FIVE_POWER_TAI_TABLE.slice(1, kongCount + 1).join("/")}, capped at the ${kongCount} kong${kongCount === 1 ? "" : "s"} declared) - also turns on 自摸, deactivating 搶槓/雙響/三響`
+                  : `Tap to cycle 槓摸x0-x${kongCount} (tai: ${kongDrawTable.slice(1, kongCount + 1).join("/")}, capped at the ${kongCount} kong${kongCount === 1 ? "" : "s"} declared) - also turns on 自摸, deactivating 搶槓/雙響/三響`
               }
             >
               {countLabel("槓摸", kongDraw)}
@@ -7532,7 +7573,7 @@ function ScoringPanel({
               className={robKong > 0 ? "toggle-on" : undefined}
               aria-pressed={robKong > 0}
               onClick={cycleRobKong}
-              title={`Tap to cycle 搶槓x0-x5 (tai: ${FIVE_POWER_TAI_TABLE.slice(1).join("/")}) - mutually exclusive with 自摸`}
+              title={`Tap to cycle 搶槓x0-x5 (tai: ${robKongTable.slice(1).join("/")}) - mutually exclusive with 自摸`}
             >
               {countLabel("搶槓", robKong)}
             </button>
@@ -7569,7 +7610,25 @@ function ScoringPanel({
           {/* Tapping the card does what the toolbar's total pill does. (To
               share the hand, it's the top row of Recent below.) */}
           <div className="result-total" ref={resultRef} onClick={jumpToResult}>
-            <span className="result-total-label">Total</span>
+            <span className="result-total-label">
+              Total
+              {/* How this total was worked out, when it isn't the plain house list. */}
+              {scoring.result.engineFallback ? (
+                <button type="button" className="rules-badge is-warning" onClick={(e) => (e.stopPropagation(), setRulesOpen(true))}>
+                  Original rules · custom scoring failed
+                </button>
+              ) : taiRules.rules.engine === "legacy" ? (
+                <button type="button" className="rules-badge" onClick={(e) => (e.stopPropagation(), setRulesOpen(true))}>
+                  Original rules
+                </button>
+              ) : (
+                rulesAffectScoring(taiRules.rules) && (
+                  <button type="button" className="rules-badge" onClick={(e) => (e.stopPropagation(), setRulesOpen(true))}>
+                    Custom rules
+                  </button>
+                )
+              )}
+            </span>
             <span className="result-total-value">
               {scoring.result.total}
               <span className="visually-hidden"> tai</span>

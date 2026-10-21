@@ -39,7 +39,11 @@ and no concealed kongs (the exact-size score gate already excludes those).
 
 Still open:
 
-- **門清's tai value (1) is a placeholder**, not yet confirmed against house rules.
+- **Tai values, exclusions and special-hand inclusions are editable** in the Scoring tab's 設定
+  sheet (see docs/scoring-rules.md, "Rule classification and customisation"). The frozen
+  `scoringLegacy.ts` copy can be retired once the configurable engine has proven itself.
+- **Rules aren't shared yet**: a hand link opens under the receiver's own rules, and the Scores
+  tab's backup doesn't include them.
 - **No self-draw (自摸) or dealer-status patterns yet**, despite `GameContext` already tracking
   both - the house list given so far hasn't needed them.
 - **No point/currency conversion** (base value, dealer doubling, caps) - this only totals tai.

@@ -334,7 +334,7 @@ interface SheetFrame {
   hidden: boolean;
 }
 
-function Sheet({
+export function Sheet({
   title,
   subtitle,
   onClose,
@@ -420,7 +420,7 @@ function Keypad({ value, onChange, max }: { value: string; onChange: (v: string)
   );
 }
 
-function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
+export function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
   return (
     <button type="button" role="switch" aria-checked={checked} aria-label={label} className={`sc-switch${checked ? " is-on" : ""}`} onClick={() => onChange(!checked)}>
       <span />
@@ -442,7 +442,7 @@ function Stepper({ value, onChange, min = 0, max, step = 1, label, disabled }: {
   );
 }
 
-function NumberField({ value, onChange, label, pill, disabled }: { value: number; onChange: (v: number) => void; label: string; pill?: boolean; disabled?: boolean }) {
+export function NumberField({ value, onChange, label, pill, disabled }: { value: number; onChange: (v: number) => void; label: string; pill?: boolean; disabled?: boolean }) {
   const [text, setText] = useState(String(value));
   useEffect(() => setText(String(value)), [value]);
   return (
@@ -462,7 +462,7 @@ function NumberField({ value, onChange, label, pill, disabled }: { value: number
   );
 }
 
-function Segmented<T extends string | number>({ value, options, onChange, small }: { value: T; options: { value: T; label: ReactNode }[]; onChange: (v: T) => void; small?: boolean }) {
+export function Segmented<T extends string | number>({ value, options, onChange, small }: { value: T; options: { value: T; label: ReactNode }[]; onChange: (v: T) => void; small?: boolean }) {
   return (
     <div className={`segmented sc-seg${small ? " sc-seg-small" : ""}`}>
       {options.map((o) => (

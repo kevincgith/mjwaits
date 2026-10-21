@@ -1,0 +1,196 @@
+import { describe, expect, it } from "vitest";
+import { DEFAULT_TAI_RULES, PATTERNS, scoreHand, type GameContext, type PatternRule, type TaiRules } from "./scoring";
+import { PATTERN_CATALOG } from "./taiCatalog";
+import { changedCount, isDefaultRules, normalizeRules, replaceCycles, replacedBy } from "./taiRules";
+import { TEST_HAND_BASE_CONTEXT } from "./testHands";
+
+// Default rules with some patterns' rules patched.
+function withRules(patches: Record<string, Partial<PatternRule>>, engine: TaiRules["engine"] = "custom"): TaiRules {
+  const rules = structuredClone(DEFAULT_TAI_RULES);
+  rules.engine = engine;
+  for (const [id, patch] of Object.entries(patches)) rules.patterns[id] = { ...rules.patterns[id], ...patch };
+  return rules;
+}
+const ctx = (rules?: TaiRules, overrides: Partial<GameContext> = {}): GameContext => ({ ...TEST_HAND_BASE_CONTEXT, ...overrides, rules });
+const tai = (result: ReturnType<typeof scoreHand>, id: string) => result.matched.find((m) => m.pattern.id === id)?.tai ?? 0;
+
+const KONG_HAND = "(1111m)(2222t)345m678b999b11z"; // 2 declared kongs
+const DRAGONS_HAND = "(555z)(666z)(777z)123456t22b"; // 大三元
+const ORPHANS_HAND = "112349m19t19b1234567z"; // 十三么, no flowers
+const BORING_HAND = "(123m)222b234t567t789b22z"; // 大雞
+const PLAIN_HAND = "123456789m111z234t22b";
+
+describe("the classification", () => {
+  it("covers every pattern exactly once", () => {
+    expect(new Set(Object.keys(PATTERN_CATALOG))).toEqual(new Set(PATTERNS.map((p) => p.id)));
+  });
+
+  it("default rules replace only known patterns, never themselves, with no loops", () => {
+    const ids = new Set(PATTERNS.map((p) => p.id));
+    for (const [id, rule] of Object.entries(DEFAULT_TAI_RULES.patterns)) {
+      for (const r of rule.replaces) {
+        expect(ids.has(r), `${id} replaces ${r}`).toBe(true);
+        expect(r).not.toBe(id);
+      }
+    }
+    expect(replaceCycles(DEFAULT_TAI_RULES).size).toBe(0);
+  });
+
+  it("the defaults are the house list", () => {
+    expect(isDefaultRules(DEFAULT_TAI_RULES)).toBe(true);
+    expect(changedCount(DEFAULT_TAI_RULES)).toBe(0);
+  });
+});
+
+describe("values", () => {
+  it("rescales a per-instance pattern: 槓 at 3 gives 6 for 2 kongs", () => {
+    expect(tai(scoreHand(KONG_HAND, ctx()), "kong")).toBe(4);
+    expect(tai(scoreHand(KONG_HAND, ctx(withRules({ kong: { tai: 3 } }))), "kong")).toBe(6);
+  });
+
+  it("changes a flat pattern's value, 底 included", () => {
+    const result = scoreHand(PLAIN_HAND, ctx(withRules({ "base-tai": { tai: 10 } })));
+    expect(tai(result, "base-tai")).toBe(10);
+    expect(result.total).toBe(scoreHand(PLAIN_HAND, ctx()).total + 5);
+  });
+
+  it("reads an edited table: 搶槓 ×2", () => {
+    expect(tai(scoreHand(PLAIN_HAND, ctx(undefined, { robKong: 2 })), "rob-kong")).toBe(25);
+    const table = [0, 5, 30, 125, 250, 250];
+    expect(tai(scoreHand(PLAIN_HAND, ctx(withRules({ "rob-kong": { table } }), { robKong: 2 })), "rob-kong")).toBe(30);
+  });
+
+  it("values 莊 as first + each 連莊", () => {
+    expect(tai(scoreHand(PLAIN_HAND, ctx(undefined, { dealerStreak: 3 })), "dealer-streak")).toBe(5);
+    expect(tai(scoreHand(PLAIN_HAND, ctx(withRules({ "dealer-streak": { first: 2, tai: 3 } }), { dealerStreak: 3 })), "dealer-streak")).toBe(8);
+  });
+
+  it("lets 正圈風 be worth something (0 in the house list)", () => {
+    expect(tai(scoreHand(PLAIN_HAND, ctx()), "correct-round-wind")).toBe(0);
+    expect(tai(scoreHand(PLAIN_HAND, ctx(withRules({ "correct-round-wind": { tai: 2 } }))), "correct-round-wind")).toBe(2);
+  });
+});
+
+describe("on/off and exclusion", () => {
+  it("disabling a pattern removes it and the patterns it replaced come back", () => {
+    const result = scoreHand(DRAGONS_HAND, ctx(withRules({ "big-three-dragons": { enabled: false } })));
+    expect(tai(result, "big-three-dragons")).toBe(0);
+    expect(tai(result, "dragon-tile")).toBe(6);
+  });
+
+  it("removing a replaces edge makes both count", () => {
+    const rules = withRules({ "big-three-dragons": { replaces: ["small-three-dragons"] } });
+    const result = scoreHand(DRAGONS_HAND, ctx(rules));
+    expect(tai(result, "big-three-dragons")).toBe(80);
+    expect(tai(result, "dragon-tile")).toBe(6);
+  });
+
+  it("adding a replaces edge drops the other pattern", () => {
+    const result = scoreHand(KONG_HAND, ctx(withRules({ kong: { replaces: ["base-tai"] } })));
+    expect(tai(result, "base-tai")).toBe(0);
+    expect(tai(result, "kong")).toBe(4);
+  });
+
+  it("flags a replace loop - when both fire, neither counts", () => {
+    const rules = withRules({ "dragon-tile": { replaces: ["big-three-dragons"] } });
+    // 小三元 replaces 三元牌 too, so it's on the loop as well.
+    expect([...replaceCycles(rules).keys()].sort()).toEqual(["big-three-dragons", "dragon-tile", "small-three-dragons"]);
+    const result = scoreHand(DRAGONS_HAND, ctx(rules));
+    expect(tai(result, "big-three-dragons")).toBe(0);
+    expect(tai(result, "dragon-tile")).toBe(0);
+  });
+
+  it("lists what replaces a pattern", () => {
+    expect(replacedBy(DEFAULT_TAI_RULES, "small-three-dragons")).toEqual(["big-three-dragons"]);
+  });
+});
+
+describe("inclusion on special hands", () => {
+  it("switching 無花 off for 十三么 leaves it on normal hands", () => {
+    const shapes = DEFAULT_TAI_RULES.patterns["no-flowers"].shapes.filter((s) => s !== "thirteen-orphans");
+    const rules = withRules({ "no-flowers": { shapes } });
+    expect(scoreHand(ORPHANS_HAND, ctx()).total).toBe(167);
+    expect(tai(scoreHand(ORPHANS_HAND, ctx(rules)), "no-flowers")).toBe(0);
+    expect(scoreHand(ORPHANS_HAND, ctx(rules)).total).toBe(165);
+    expect(tai(scoreHand(PLAIN_HAND, ctx(rules)), "no-flowers")).toBe(2);
+  });
+});
+
+describe("大雞/大鴨's ignore list", () => {
+  it("莊 is ignored by default, so 大雞 still counts", () => {
+    expect(tai(scoreHand(BORING_HAND, ctx(undefined, { dealerStreak: 1 })), "big-chicken")).toBe(30);
+  });
+
+  it("taking 莊 off the list stops 大雞", () => {
+    const rules = withRules({ "dealer-streak": { chickenIgnores: false } });
+    expect(tai(scoreHand(BORING_HAND, ctx(rules, { dealerStreak: 1 })), "big-chicken")).toBe(0);
+  });
+
+  it("a disabled pattern doesn't stop 大雞", () => {
+    // Switch off whatever stops 大雞 on a plain hand, and 大雞 appears.
+    const plain = scoreHand(PLAIN_HAND, ctx());
+    expect(tai(plain, "big-chicken")).toBe(0);
+    const fired = plain.matched.map((m) => m.pattern.id).filter((id) => !DEFAULT_TAI_RULES.patterns[id].chickenIgnores && id !== "base-tai");
+    const rules = withRules(Object.fromEntries(fired.map((id) => [id, { enabled: false }])));
+    expect(tai(scoreHand(PLAIN_HAND, ctx(rules)), "big-chicken")).toBe(30);
+  });
+
+  it("doesn't recurse when 自摸 is switched off on a self-drawn boring hand", () => {
+    const rules = withRules({ "self-draw": { enabled: false }, "concealed-self-draw": { enabled: false } });
+    const result = scoreHand(BORING_HAND, ctx(rules, { selfDraw: true }));
+    expect(tai(result, "big-duck")).toBe(15);
+  });
+});
+
+describe("the original engine and the fallback", () => {
+  it("the original engine ignores edited rules", () => {
+    expect(tai(scoreHand(KONG_HAND, ctx(withRules({ kong: { tai: 3 } }, "legacy"))), "kong")).toBe(4);
+  });
+
+  it("falls back to the original engine, flagged, when the configurable one throws", () => {
+    const broken = { engine: "custom", patterns: null } as unknown as TaiRules;
+    const errors: unknown[] = [];
+    const original = console.error;
+    console.error = (...args: unknown[]) => errors.push(args);
+    try {
+      const result = scoreHand(PLAIN_HAND, ctx(broken));
+      expect(result.engineFallback).toBe(true);
+      expect(result.total).toBe(scoreHand(PLAIN_HAND, ctx()).total);
+      expect(errors.length).toBe(1);
+    } finally {
+      console.error = original;
+    }
+  });
+
+  it("still reports an incomplete hand as a ScoringError, not a fallback", () => {
+    expect(() => scoreHand("123m", ctx())).toThrow(/isn't complete/);
+    expect(() => scoreHand("123m", ctx(withRules({}, "legacy")))).toThrow(/isn't complete/);
+  });
+});
+
+describe("normalizeRules", () => {
+  it("fills missing patterns with defaults and drops unknown ones", () => {
+    const { rules, corrupt } = normalizeRules({ engine: "custom", patterns: { kong: { tai: 3 }, "no-such-pattern": { tai: 1 } } });
+    expect(corrupt).toBe(false);
+    expect(rules.patterns.kong.tai).toBe(3);
+    expect(rules.patterns.kong.replaces).toEqual(DEFAULT_TAI_RULES.patterns.kong.replaces);
+    expect(rules.patterns["base-tai"]).toEqual(DEFAULT_TAI_RULES.patterns["base-tai"]);
+    expect("no-such-pattern" in rules.patterns).toBe(false);
+  });
+
+  it("keeps shapes within what a pattern can count on, and replaces to known ids", () => {
+    const { rules } = normalizeRules({ patterns: { kong: { shapes: ["normal", "eight-pairs"], replaces: ["base-tai", "kong", "nope"] } } });
+    expect(rules.patterns.kong.shapes).toEqual(["normal"]);
+    expect(rules.patterns.kong.replaces).toEqual(["base-tai"]);
+  });
+
+  it("rejects a malformed table", () => {
+    const { rules } = normalizeRules({ patterns: { "rob-kong": { table: [0, 1] } } });
+    expect(rules.patterns["rob-kong"].table).toEqual(DEFAULT_TAI_RULES.patterns["rob-kong"].table);
+  });
+
+  it("treats garbage as corrupt and loads the defaults", () => {
+    expect(normalizeRules("garbage")).toEqual({ rules: DEFAULT_TAI_RULES, corrupt: true });
+    expect(normalizeRules(null)).toEqual({ rules: DEFAULT_TAI_RULES, corrupt: false });
+  });
+});

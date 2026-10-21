@@ -12038,3 +12038,376 @@ button.sc-stat:active {
   color: var(--sc-neg);
 }
 
+/* ---- Scoring 設定: the tai rules sheet (TaiRulesSheet.tsx) ---- */
+
+/* Icon-only in the toolbar, like Reset on a phone - its word is for screen
+   readers and the tooltip. Tinted while the rules differ from the house list. */
+.scoring-toolbar .toolbar-rules {
+  width: 44px;
+  min-height: 44px;
+  padding: 0;
+  justify-content: center;
+}
+
+.scoring-toolbar .toolbar-rules .toolbar-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.header-hidden .scoring-toolbar .toolbar-rules {
+  width: 44px;
+  padding: 0;
+}
+
+.toolbar-rules.is-custom {
+  background: var(--accent-bg);
+}
+
+/* On a phone, scrolled down, the folded toolbar's centred title needs the
+   room - 設定 folds away with the page header (it's back at the top, and
+   the TOTAL card's rules badge opens it too). */
+@media (max-width: 440px) {
+  .scoring-toolbar .toolbar-rules {
+    transition:
+      width 0.25s ease 0.12s,
+      opacity 0.2s ease 0.12s,
+      margin 0.25s ease 0.12s;
+  }
+
+  .header-hidden .scoring-toolbar .toolbar-rules {
+    width: 0;
+    margin-left: -0.25rem;
+    opacity: 0;
+    pointer-events: none;
+    transition-delay: 0s;
+  }
+}
+
+@media (max-width: 360px) {
+  .scoring-toolbar .toolbar-rules {
+    width: 40px;
+    min-height: 40px;
+  }
+}
+
+/* On the green TOTAL card: which rules worked the total out. */
+.result-total-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.rules-badge {
+  border: none;
+  border-radius: var(--radius-pill);
+  padding: 0.15rem 0.55rem;
+  background: rgba(255, 255, 255, 0.22);
+  color: inherit;
+  font: inherit;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  cursor: pointer;
+}
+
+.rules-badge.is-warning {
+  background: var(--warning-bg-2);
+  color: var(--warning-text);
+}
+
+.tr-notice {
+  padding: 0.6rem 0.85rem;
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.tr-notice.is-warning {
+  background: var(--warning-bg-3);
+  color: var(--warning-text);
+}
+
+/* Everything under the engine switch greys out (and goes inert) while the
+   original engine is chosen - the edits are kept for switching back. */
+.tr-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.tr-body.is-off {
+  opacity: 0.4;
+}
+
+.tr-filter {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.tr-search {
+  height: 2.4rem;
+}
+
+.tr-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-height: 2rem;
+  border: none;
+  border-radius: var(--radius-pill);
+  padding: 0.2rem 0.75rem;
+  background: var(--fill);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.tr-chip.is-on {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.tr-chip.is-static {
+  cursor: default;
+  padding-right: 0.35rem;
+}
+
+.tr-chip.is-static:not(:has(button)) {
+  padding-right: 0.75rem;
+}
+
+.tr-chip button {
+  border: none;
+  border-radius: 50%;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--text-md);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.tr-family {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  min-height: 2.5rem;
+  border: none;
+  border-radius: var(--radius-md);
+  padding: 0 0.85rem;
+  background: var(--surface-sunken);
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tr-family:disabled {
+  cursor: default;
+  opacity: 1;
+}
+
+.tr-family-chevron {
+  width: 0.8rem;
+  color: var(--text-muted);
+}
+
+.tr-family-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.tr-family-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.tr-dot {
+  display: inline-block;
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.tr-warn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 50%;
+  background: var(--warning-accent-1);
+  color: #fff;
+  font-size: var(--text-xs);
+  font-weight: 800;
+}
+
+.tr-empty {
+  padding: 1rem 0;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.tr-pattern.is-disabled .tr-pattern-name {
+  opacity: 0.45;
+}
+
+.tr-pattern.is-expanded {
+  border-radius: var(--radius-md);
+  box-shadow: inset 3px 0 0 var(--accent);
+  padding-left: 0.6rem;
+}
+
+.tr-pattern-name {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.05rem;
+  min-width: 0;
+  flex: 1;
+  border: none;
+  padding: 0.2rem 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tr-pattern-name .sc-help {
+  overflow: hidden;
+  max-width: 100%;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tr-pattern-zh {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 600;
+}
+
+.tr-pattern-end {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.tr-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.tr-value .sc-input-pill,
+.tr-table .sc-input-pill {
+  width: 3.6rem;
+}
+
+.tr-unit {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.tr-value-summary {
+  min-width: 3.6rem;
+  height: 2.1rem;
+  border: none;
+  border-radius: var(--radius-pill);
+  padding: 0 0.65rem;
+  background: var(--fill);
+  color: var(--text);
+  font: inherit;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.tr-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.25rem 0 0.85rem;
+}
+
+.tr-detail-label {
+  margin-bottom: 0.35rem;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.tr-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.tr-none {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.tr-add {
+  min-height: 2rem;
+  max-width: 100%;
+  border: 1px dashed var(--fill-strong);
+  border-radius: var(--radius-pill);
+  padding: 0 0.6rem;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--text-sm);
+}
+
+.tr-table,
+.tr-streak {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.85rem;
+}
+
+.tr-table-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.tr-reset {
+  align-self: flex-start;
+}
+
+/* The engine switch sits under its explanation, full width, so both
+   choices fit at any sheet width. */
+.tr-engine {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.5rem;
+}
