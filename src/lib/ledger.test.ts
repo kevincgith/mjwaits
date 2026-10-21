@@ -262,6 +262,16 @@ describe("Jackpot, bonuses, seats, undo", () => {
     sumsToZero(s);
   });
 
+  it("詐胡 ends the caller's 拉, each pulled player paid its 踢 half", () => {
+    // A won 7 off B, so A pulls B for 7.
+    const pays = (n: number) => ["B", "C", "D"].map((player) => ({ player, amount: n }));
+    const t = replay(game([win(0, 7, 1), { t: "zhaHu", at: 0, seat: 0, pays: pays(40) }]));
+    expect(t.lahs).toHaveLength(0);
+    // B: −7 for the hand, then +40 and +4 (half of 7, 0.5進1).
+    expect(t.totals).toEqual({ A: 7 - 120 - 4, B: -7 + 44, C: 40, D: 40 });
+    sumsToZero(t);
+  });
+
   it("特別獎罰 to or from one player", () => {
     // 獎 from C only: C pays B.
     expect(replay(game([{ t: "bonus", at: 0, seat: 1, amount: 5, kind: "獎", other: 2 }])).totals).toEqual({ A: 0, B: 5, C: -5, D: 0 });

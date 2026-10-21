@@ -105,7 +105,8 @@ export type ScoreEvent =
   | { t: "jackpot"; at: number; shares: { player: string; amount: number }[] }
   | { t: "jackpotIn"; at: number; shares: { player: string; amount: number }[] } // paid into the pot
   // 詐胡: the seat's player called a win that wasn't, and pays each of the
-  // others their amount. Not a hand - the deal carries on as it was.
+  // others their amount. Not a hand - the deal carries on as it was. Any 拉
+  // the caller holds ends there, each pulled player paid its 踢 half too.
   | { t: "zhaHu"; at: number; seat: number; pays: { player: string; amount: number }[] }
   | { t: "swap"; at: number; seats: string[] } // the whole new seating
   // resetRound: back to 東風東局 from this dealer. Or `round` sets any 風局:
@@ -220,6 +221,15 @@ export function roundLabel(roundWind: number, dealer: number, roundStartDealer: 
 }
 
 const lahKey = (holder: string, pulled: string) => `${holder}>${pulled}`;
+
+// A 詐胡 ends every 拉 its caller holds: each pulled player gets the 踢 half
+// of theirs, as if they'd won it back.
+export function zhaHuKicks(state: Pick<ReplayState, "lahs" | "settings">, caller: string): { player: string; amount: number }[] {
+  return state.lahs
+    .filter((l) => l.holder === caller)
+    .map((l) => ({ player: l.pulled, amount: half(l.value, state.settings.tiRound, state.settings.integerMode) }))
+    .filter((k) => k.amount > 0);
+}
 
 export function dealerAmount(settings: ScoreSettings, streak: number): number {
   return settings.dealerTai + settings.streakTai * streak;
@@ -442,6 +452,11 @@ export function replay(game: ScoreGame): ReplayState {
           add(deltas, me, -pay.amount);
           add(deltas, pay.player, pay.amount);
         }
+        for (const kick of zhaHuKicks(state, me)) {
+          add(deltas, me, -kick.amount);
+          add(deltas, kick.player, kick.amount);
+        }
+        state.lahs = state.lahs.filter((l) => l.holder !== me);
         for (const [p, d] of Object.entries(deltas)) add(state.totals, p, d);
         break;
       }
