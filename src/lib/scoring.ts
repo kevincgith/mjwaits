@@ -11,8 +11,14 @@
 //    triplet-heavy vs run-heavy hand), so the correct score is the max tai
 //    achievable over all valid readings (see decomposeHandAll).
 //
-// Deliberately not a generic/configurable rule engine: PATTERNS is a plain
-// array of concrete checks against one house rule set, added one at a time.
+// Detection stays concrete: PATTERNS is a plain array of checks against
+// one house rule set, added one at a time - not a generic rule engine. What
+// each pattern is *worth*, which patterns replace which, which may count on
+// the special hands, and what 大雞/大鴨 ignore are data instead (TaiRules,
+// built from taiCatalog.ts plus each pattern's `excludes`), so the Scoring
+// tab's 設定 sheet can edit them. The defaults reproduce the hard-coded
+// engine exactly - scoringLegacy.ts keeps a frozen copy of it, both as the
+// "original rules" engine and as a fallback (see scoreParsedHand).
 
 import {
   decomposeEightPairs,
@@ -29,6 +35,8 @@ import {
   type Suit,
   type Tile,
 } from "./mahjong";
+import { FIVE_POWER_TABLE, PATTERN_CATALOG } from "./taiCatalog";
+import { scoreParsedHand as scoreParsedHandLegacy, ScoringError as LegacyScoringError } from "./scoringLegacy";
 
 export type MeldKind = "triplet" | "run" | "kong";
 
@@ -488,8 +496,9 @@ export type LastTileWinState = "none" | "river-bottom" | "sea-bottom";
 // formula (the user's own description, "min(5^n, 240)", doesn't actually
 // match these numbers - 5^4 and 5^5 both cap at 250, not 240 - so the
 // explicit list is treated as the ground truth over the mismatched
-// formula description).
-export const FIVE_POWER_TAI_TABLE: readonly number[] = [0, 5, 25, 125, 250, 250];
+// formula description). The default for the editable 槓摸/搶槓 tables -
+// see taiCatalog.ts.
+export const FIVE_POWER_TAI_TABLE: readonly number[] = FIVE_POWER_TABLE;
 
 export interface GameContext {
   seatWind: Wind;
@@ -567,6 +576,45 @@ export interface GameContext {
   // this flag), so there's no double-counting either way.
   manualVisibleTripleWin: boolean;
   manualVisibleExhaustedMultiWait: boolean;
+  // The house's tai rules (the Scoring tab's 設定 sheet) - absent means
+  // DEFAULT_TAI_RULES, which scores exactly like the hard-coded list. Not
+  // part of the hand's situation: never shared with a hand link.
+  rules?: TaiRules;
+}
+
+// The 4 hand shapes the scorer reads a hand as - the ordinary melds+pair
+// shape, and the 3 special hands with their own scorers below.
+export type HandShape = "normal" | "thirteen-orphans" | "sixteen-unrelated" | "eight-pairs";
+export const HAND_SHAPES: { id: HandShape; label: string }[] = [
+  { id: "normal", label: "一般 Normal hand" },
+  { id: "thirteen-orphans", label: "十三么" },
+  { id: "sixteen-unrelated", label: "十六不搭" },
+  { id: "eight-pairs", label: "嚦咕嚦咕" },
+];
+
+// One pattern's editable rule - see taiCatalog.ts for what each attribute
+// means and TaiRules for how the scorer applies it.
+export interface PatternRule {
+  enabled: boolean;
+  /** flat/per: the tai (per instance for per). streak: tai per 連莊. */
+  tai: number;
+  /** table patterns (槓摸/搶槓): tai by count, index 0 unused. */
+  table?: number[];
+  /** streak (莊): tai for the first win as dealer. */
+  first?: number;
+  /** Ids this pattern removes when both fire (exclusion). */
+  replaces: string[];
+  /** Hand shapes it may count on (inclusion) - a subset of eligibleShapes. */
+  shapes: HandShape[];
+  /** 大雞/大鴨 treat it as not firing. */
+  chickenIgnores: boolean;
+}
+
+export interface TaiRules {
+  /** "legacy" scores with the frozen hard-coded engine (scoringLegacy.ts)
+   *  and ignores `patterns`, which are kept for switching back. */
+  engine: "custom" | "legacy";
+  patterns: Record<string, PatternRule>;
 }
 
 // The dealer is whoever's own seat wind is East for the current hand - not
@@ -2077,9 +2125,15 @@ function hasBigThreeBrothers(hand: ResolvedHand): boolean {
 // exempts those two specifically, since self-draw is exactly what it's
 // checking for.
 const BIG_CHICKEN_BASE_EXEMPT_IDS = new Set(["base-tai", "no-flowers", "correct-flower", "wrong-flower"]);
+// These two lists are only the defaults now - each pattern's
+// `chickenIgnores` rule (see TaiRules) is what's actually read, so 設定 can
+// edit it. 大雞 and 大鴨 never count each other (they're both "nothing
+// else fired" checks, and evaluating one inside the other could recurse
+// once 自摸 is switched off), and a disabled or 0-tai pattern doesn't fire.
 function anyOtherPatternFires(hand: ResolvedHand, ctx: GameContext, extraExempt: string[]): boolean {
-  const exempt = new Set([...BIG_CHICKEN_BASE_EXEMPT_IDS, ...extraExempt]);
-  return PATTERNS.some((p) => !exempt.has(p.id) && p.score(hand, ctx) > 0);
+  const rules = rulesOf(ctx);
+  const exempt = new Set(["big-chicken", "big-duck", ...extraExempt]);
+  return PATTERNS.some((p) => !exempt.has(p.id) && !rules.patterns[p.id]?.chickenIgnores && taiFor(p, hand, ctx, "normal") > 0);
 }
 
 // Also shared by 大雞/大鴨, on top of the base exemptions above: purely
@@ -2192,10 +2246,12 @@ export const PATTERNS: TaiPattern[] = [
   {
     id: "correct-round-wind",
     name: "正圈風 (Round wind)",
-    // Placeholder: kept in the list (so the wind-pattern exclusion chain
-    // below stays wired up around it) but worth 0 tai for now. 爛圈風 was
-    // removed entirely rather than zeroed the same way.
-    score: () => 0,
+    // Worth 0 tai in the house list (kept so the wind-pattern exclusion
+    // chain below stays wired up around it, and so a house that does score
+    // it can set a value in 設定). Detection returns 1 rather than a tai -
+    // see its rawUnit in taiCatalog.ts. 爛圈風 was removed entirely rather
+    // than zeroed the same way.
+    score: (hand, ctx) => (windMeldRanks(hand).some((r) => r === ctx.roundWind) ? 1 : 0),
   },
   {
     id: "small-three-winds",
@@ -3523,7 +3579,7 @@ export const PATTERNS: TaiPattern[] = [
     // result, since this needs to know what *would* fire, not what
     // survives exclusion.
     score: (hand, ctx) =>
-      hand.bonusTiles.length > 1 || anyOtherPatternFires(hand, ctx, ["big-chicken", ...BIG_CHICKEN_DUCK_EXTRA_EXEMPT_IDS])
+      hand.bonusTiles.length > 1 || anyOtherPatternFires(hand, ctx, [])
         ? 0
         : 30,
   },
@@ -3539,7 +3595,7 @@ export const PATTERNS: TaiPattern[] = [
     score: (hand, ctx) =>
       !ctx.selfDraw ||
       hand.bonusTiles.length > 1 ||
-      anyOtherPatternFires(hand, ctx, ["big-duck", "self-draw", "concealed-self-draw", ...BIG_CHICKEN_DUCK_EXTRA_EXEMPT_IDS])
+      anyOtherPatternFires(hand, ctx, ["self-draw", "concealed-self-draw"])
         ? 0
         : 15,
   },
@@ -3710,7 +3766,14 @@ export interface ScoreResult {
   // decomposition both apply at once. Both readings are scored and shown
   // separately in the summary tab; `total` is their sum.
   second?: { matched: { pattern: TaiPattern; tai: number }[]; hand: ResolvedHand };
+  // Set when the configurable engine threw (a bug, not an incomplete hand)
+  // and this result came from the frozen hard-coded engine instead - see
+  // scoreParsedHand. The UI says so rather than silently scoring
+  // differently from the rules in 設定.
+  engineFallback?: boolean;
 }
+
+export type MatchedPattern = { pattern: TaiPattern; tai: number };
 
 export class ScoringError extends Error {}
 
@@ -3757,23 +3820,16 @@ function scoreThirteenOrphans(parsed: ParsedScoringHand, ctx: GameContext): Scor
   const mainMeld: ResolvedMeld = { tiles: breakdown.meld, kind: isTriplet ? "triplet" : "run", concealed: true };
   const hand: ResolvedHand = { melds: [...singleMelds, mainMeld], pair: breakdown.pair, bonusTiles: parsed.bonusTiles };
 
-  const basePattern = PATTERNS.find((p) => p.id === "base-tai")!;
-  const orphansPattern = PATTERNS.find((p) => p.id === "thirteen-orphans")!;
-  const matched = [
-    { pattern: basePattern, tai: basePattern.score(hand, ctx) },
-    { pattern: orphansPattern, tai: orphansPattern.score(hand, ctx) },
-  ];
+  const shape: HandShape = "thirteen-orphans";
+  const at = (id: string, h: ResolvedHand = hand) => scoredAs(id, h, ctx, shape);
+  const scored: MatchedPattern[] = [at("base-tai"), at("thirteen-orphans")];
 
   // 明/暗四歸: each pattern's own score() already recomputes the relevant
   // quad(s) via allFourReturnQuadKinds and sums correctly (a 十三么 hand
   // has at most one, so at most one of the two ever actually fires here,
   // but calling both and filtering keeps this in sync with scoreEightPairs
   // below, which genuinely can need both at once).
-  for (const id of ["orphans-four-return-open", "orphans-four-return-hidden"]) {
-    const pattern = PATTERNS.find((p) => p.id === id)!;
-    const tai = pattern.score(hand, ctx);
-    if (tai > 0) matched.push({ pattern, tai });
-  }
+  scored.push(at("orphans-four-return-open"), at("orphans-four-return-hidden"));
 
   // 混帶么/混老頭: reused as-is (same ids/tai as their normal-hand
   // definitions - see the user's request) rather than special-cased,
@@ -3783,20 +3839,16 @@ function scoreThirteenOrphans(parsed: ParsedScoringHand, ctx: GameContext): Scor
   // about the one real 3-tile meld - a terminal-containing run only
   // satisfies 混帶么 (e.g. 123m); a triplet - terminal *or* honor, e.g.
   // 111m or 777z - satisfies 混老頭 too, which then excludes 混帶么, same
-  // as their normal-hand exclusion relationship.
-  const mixedTerminalPattern = PATTERNS.find((p) => p.id === "mixed-terminal")!;
-  const allTerminalTripletsPattern = PATTERNS.find((p) => p.id === "mixed-terminal-honor-triplets")!;
-  const allTerminalTripletsTai = allTerminalTripletsPattern.score(hand, ctx);
-  if (allTerminalTripletsTai > 0) {
-    matched.push({ pattern: allTerminalTripletsPattern, tai: allTerminalTripletsTai });
-  } else {
-    const mixedTerminalTai = mixedTerminalPattern.score(hand, ctx);
-    if (mixedTerminalTai > 0) matched.push({ pattern: mixedTerminalPattern, tai: mixedTerminalTai });
-  }
-
-  pushHonorTripleBonus(hand, mainMeld, ctx, matched);
-  pushFlowerBonuses(hand, ctx, matched);
-  pushSelfDrawAndGenuineSingleWait(hand, ctx, matched);
+  // as their normal-hand exclusion relationship (applied by applyReplaces
+  // below, with every other edge, across the whole hand).
+  scored.push(
+    at("mixed-terminal-honor-triplets"),
+    at("mixed-terminal"),
+    ...honorTripleBonus(hand, mainMeld, ctx, shape),
+    ...flowerBonuses(hand, ctx, shape),
+    ...situationAndSingleWait(hand, ctx, shape),
+  );
+  const matched = applyReplaces(scored, ctx);
   return { total: matched.reduce((sum, m) => sum + m.tai, 0), matched, hand };
 }
 
@@ -3806,36 +3858,23 @@ function scoreThirteenOrphans(parsed: ParsedScoringHand, ctx: GameContext): Scor
 // that meld, since these two special constructions otherwise fill
 // hand.melds with 1-tile/pair/quad placeholders that the ordinary wind/
 // dragon patterns would wrongly read as melds of their own.
-function pushHonorTripleBonus(
-  hand: ResolvedHand,
-  triple: ResolvedMeld,
-  ctx: GameContext,
-  matched: { pattern: TaiPattern; tai: number }[],
-): void {
-  if (triple.tiles.length !== 3 || !isHonorTile(triple.tiles[0])) return;
+const HONOR_TRIPLE_BONUS_IDS = ["dragon-tile", "correct-seat-wind", "wrong-seat-wind"];
+function honorTripleBonus(hand: ResolvedHand, triple: ResolvedMeld, ctx: GameContext, shape: HandShape): MatchedPattern[] {
+  if (triple.tiles.length !== 3 || !isHonorTile(triple.tiles[0])) return [];
   const tripleOnly: ResolvedHand = { ...hand, melds: [triple] };
-  for (const id of ["dragon-tile", "correct-seat-wind", "wrong-seat-wind"]) {
-    const pattern = PATTERNS.find((p) => p.id === id)!;
-    const tai = pattern.score(tripleOnly, ctx);
-    if (tai > 0) matched.push({ pattern, tai });
-  }
+  return HONOR_TRIPLE_BONUS_IDS.map((id) => scoredAs(id, tripleOnly, ctx, shape));
 }
 
 // Shared by 十三么/十六不搭: 無花/正花/爛花 are purely bonusTiles-based
 // checks, unrelated to meld structure, so they apply unmodified - a
 // 十三么/十六不搭 hand still carries its own bonus tiles the same way any
 // normal hand does. 嚦咕嚦咕 doesn't use this helper - it lumps the same 3
-// ids into its own reusableIds batch instead (see scoreEightPairs),
-// alongside 無字/無字花, so that pattern's exclusion of 無花/無字 is
-// actually honored (無字/無字花 can never fire for 十三么/十六不搭, since
-// both always include all 7 honors by definition, so there's no
-// cross-exclusion to worry about keeping in the same batch for them).
-function pushFlowerBonuses(hand: ResolvedHand, ctx: GameContext, matched: { pattern: TaiPattern; tai: number }[]): void {
-  for (const id of ["no-flowers", "correct-flower", "wrong-flower"]) {
-    const pattern = PATTERNS.find((p) => p.id === id)!;
-    const tai = pattern.score(hand, ctx);
-    if (tai > 0) matched.push({ pattern, tai });
-  }
+// ids into its own EIGHT_PAIRS_REUSABLE_IDS list instead (see
+// scoreEightPairs), alongside 無字/無字花 (無字/無字花 can never fire for
+// 十三么/十六不搭, since both always include all 7 honors by definition).
+const FLOWER_BONUS_IDS = ["no-flowers", "correct-flower", "wrong-flower"];
+function flowerBonuses(hand: ResolvedHand, ctx: GameContext, shape: HandShape): MatchedPattern[] {
+  return FLOWER_BONUS_IDS.map((id) => scoredAs(id, hand, ctx, shape));
 }
 
 // Every purely-declared pattern (nothing about the hand's own shape
@@ -3900,13 +3939,6 @@ const DECLARED_ONLY_PATTERN_IDS = [
   "visible-triple-win",
   "visible-exhausted-multi-wait",
 ];
-function pushDeclaredOnlyPatterns(hand: ResolvedHand, ctx: GameContext, matched: { pattern: TaiPattern; tai: number }[]): void {
-  const scored = PATTERNS.filter((p) => DECLARED_ONLY_PATTERN_IDS.includes(p.id))
-    .map((pattern) => ({ pattern, tai: pattern.score(hand, ctx) }))
-    .filter((m) => m.tai > 0);
-  const excluded = new Set(scored.flatMap((m) => m.pattern.excludes ?? []));
-  matched.push(...scored.filter((m) => !excluded.has(m.pattern.id)));
-}
 
 // Shared by all three special hands: the declared-only battery above, plus
 // 獨獨/假獨 - 獨獨's getWaits-based check already generalizes to these
@@ -3921,28 +3953,23 @@ function pushDeclaredOnlyPatterns(hand: ResolvedHand, ctx: GameContext, matched:
 // callback rather than folding it into isFakeSingleWait itself, since that
 // check's "quad + triple coexist" signal would wrongly fire on any
 // ordinary hand holding a genuine kong alongside an unrelated triplet.
-// Both fake-wait paths are kept mutually exclusive with 獨獨 by only
-// checking them when 獨獨 didn't fire, matching genuine-single-wait's own
-// declared `excludes`.
-function pushSelfDrawAndGenuineSingleWait(
+// Both fake-wait paths are kept mutually exclusive with 獨獨 by
+// genuine-single-wait's own `replaces` edge (applyReplaces).
+function situationAndSingleWait(
   hand: ResolvedHand,
   ctx: GameContext,
-  matched: { pattern: TaiPattern; tai: number }[],
+  shape: HandShape,
   extraFakeSingleWaitCheck?: (hand: ResolvedHand, ctx: GameContext) => boolean,
-): void {
-  pushDeclaredOnlyPatterns(hand, ctx, matched);
-
-  const genuineSingleWaitPattern = PATTERNS.find((p) => p.id === "genuine-single-wait")!;
-  const genuineSingleWaitTai = genuineSingleWaitPattern.score(hand, ctx);
-  if (genuineSingleWaitTai > 0) {
-    matched.push({ pattern: genuineSingleWaitPattern, tai: genuineSingleWaitTai });
-  } else {
-    const fakeSingleWaitPattern = PATTERNS.find((p) => p.id === "fake-single-wait")!;
-    const fakeSingleWaitTai = fakeSingleWaitPattern.score(hand, ctx);
-    if (fakeSingleWaitTai > 0 || (extraFakeSingleWaitCheck?.(hand, ctx) ?? false)) {
-      matched.push({ pattern: fakeSingleWaitPattern, tai: fakeSingleWaitTai > 0 ? fakeSingleWaitTai : 2 });
-    }
+): MatchedPattern[] {
+  const fake = scoredAs("fake-single-wait", hand, ctx, shape);
+  if (fake.tai === 0 && (extraFakeSingleWaitCheck?.(hand, ctx) ?? false)) {
+    fake.tai = taiForInstances("fake-single-wait", 1, ctx, shape);
   }
+  return [
+    ...inPatternOrder(DECLARED_ONLY_PATTERN_IDS).map((id) => scoredAs(id, hand, ctx, shape)),
+    scoredAs("genuine-single-wait", hand, ctx, shape),
+    fake,
+  ];
 }
 
 // 嚦咕嚦咕's own 假獨 shape: a genuine "dual already-tripled kind" wait -
@@ -4006,36 +4033,48 @@ function scoreSixteenUnrelated(parsed: ParsedScoringHand, ctx: GameContext): Sco
   const singleMelds: ResolvedMeld[] = breakdown.singles.map((t) => ({ tiles: [t], kind: "triplet", concealed: true }));
   const hand: ResolvedHand = { melds: singleMelds, pair: breakdown.pair, bonusTiles: parsed.bonusTiles };
 
-  const basePattern = PATTERNS.find((p) => p.id === "base-tai")!;
-  const sixteenPattern = PATTERNS.find((p) => p.id === "sixteen-unrelated")!;
-  const flyingPattern = PATTERNS.find((p) => p.id === "sixteen-unrelated-flying")!;
-  const flyingTai = flyingPattern.score(hand, ctx);
-  const matched = [
-    { pattern: basePattern, tai: basePattern.score(hand, ctx) },
-    flyingTai > 0 ? { pattern: flyingPattern, tai: flyingTai } : { pattern: sixteenPattern, tai: sixteenPattern.score(hand, ctx) },
+  const shape: HandShape = "sixteen-unrelated";
+  const at = (id: string) => scoredAs(id, hand, ctx, shape);
+  // 十六飛 replaces plain 十六不搭 (its `replaces` edge).
+  const scored: MatchedPattern[] = [
+    at("base-tai"),
+    at("sixteen-unrelated-flying"),
+    at("sixteen-unrelated"),
+    at("sixteen-unrelated-same-ranks"),
+    at("sixteen-unrelated-straight"),
   ];
-
-  const sameRanksPattern = PATTERNS.find((p) => p.id === "sixteen-unrelated-same-ranks")!;
-  const sameRanksTai = sameRanksPattern.score(hand, ctx);
-  if (sameRanksTai > 0) matched.push({ pattern: sameRanksPattern, tai: sameRanksTai });
-
-  const straightPattern = PATTERNS.find((p) => p.id === "sixteen-unrelated-straight")!;
-  const straightTai = straightPattern.score(hand, ctx);
-  if (straightTai > 0) matched.push({ pattern: straightPattern, tai: straightTai });
 
   // 將眼: reused as-is (same id/tai/condition as the normal-hand
   // definition) - a 十六不搭 hand has one genuine designated pair
   // (`breakdown.pair`, unlike 嚦咕嚦咕's 8 pair-like groups, which needed
   // its own eightPairsMiddleTilePairCount variant), so the normal pattern's
   // plain `hand.pair[0]` check already works unmodified here.
-  const middleTilePairPattern = PATTERNS.find((p) => p.id === "middle-tile-pair")!;
-  const middleTilePairTai = middleTilePairPattern.score(hand, ctx);
-  if (middleTilePairTai > 0) matched.push({ pattern: middleTilePairPattern, tai: middleTilePairTai });
-
-  pushFlowerBonuses(hand, ctx, matched);
-  pushSelfDrawAndGenuineSingleWait(hand, ctx, matched);
+  scored.push(at("middle-tile-pair"), ...flowerBonuses(hand, ctx, shape), ...situationAndSingleWait(hand, ctx, shape));
+  const matched = applyReplaces(scored, ctx);
   return { total: matched.reduce((sum, m) => sum + m.tai, 0), matched, hand };
 }
+
+// The ordinary patterns 嚦咕嚦咕 reuses as-is - see scoreEightPairs.
+const EIGHT_PAIRS_REUSABLE_IDS = [
+  "all-simples",
+  "no-fives",
+  "greater-than-five",
+  "less-than-five",
+  "missing-one-suit",
+  "pure-terminal-triplets",
+  "mixed-terminal-honor-triplets",
+  "half-flush",
+  "full-flush",
+  "all-honors",
+  "three-treasures",
+  "mixed-common-rank",
+  "no-flowers",
+  "correct-flower",
+  "wrong-flower",
+  "no-honors",
+  "no-honors-no-flowers",
+];
+const EIGHT_PAIRS_HONOR_BONUS_IDS = ["eight-pairs-three-dragons", "eight-pairs-three-winds", "eight-pairs-four-winds"];
 
 // 嚦咕嚦咕 (Eight Pairs / Liguligu): 8 pairs of tile kinds (16 tiles), one
 // of them upgraded to a triplet by the 食胡 tile - 7*2 + 1*3 = 17 tiles. A
@@ -4066,32 +4105,23 @@ function scoreEightPairs(parsed: ParsedScoringHand, ctx: GameContext): ScoreResu
   ];
   const hand: ResolvedHand = { melds: groupMelds, pair, bonusTiles: parsed.bonusTiles };
 
-  const basePattern = PATTERNS.find((p) => p.id === "base-tai")!;
-  const eightPairsPattern = PATTERNS.find((p) => p.id === "eight-pairs")!;
-  const flyingPattern = PATTERNS.find((p) => p.id === "eight-pairs-flying")!;
-  const flyingTai = flyingPattern.score(hand, ctx);
-  const matched = [
-    { pattern: basePattern, tai: basePattern.score(hand, ctx) },
-    flyingTai > 0 ? { pattern: flyingPattern, tai: flyingTai } : { pattern: eightPairsPattern, tai: eightPairsPattern.score(hand, ctx) },
-  ];
+  const shape: HandShape = "eight-pairs";
+  const at = (id: string) => scoredAs(id, hand, ctx, shape);
+  // 八飛 replaces plain 嚦咕嚦咕 (its `replaces` edge).
+  const scored: MatchedPattern[] = [at("base-tai"), at("eight-pairs-flying"), at("eight-pairs")];
 
   // 明/暗四歸: a 嚦咕嚦咕 hand can hold several independent quads at once
   // (see eightPairsQuadKinds), so both patterns can genuinely fire
   // together here (some quads open, others hidden) - each one's own
   // score() sums across every quad it applies to.
-  for (const id of ["orphans-four-return-open", "orphans-four-return-hidden"]) {
-    const pattern = PATTERNS.find((p) => p.id === id)!;
-    const tai = pattern.score(hand, ctx);
-    if (tai > 0) matched.push({ pattern, tai });
-  }
+  scored.push(at("orphans-four-return-open"), at("orphans-four-return-hidden"));
 
-  const smallFiveSuitsTai = eightPairsSmallFiveSuitsTai(hand);
-  const smallSevenSuitsTai = eightPairsSmallSevenSuitsTai(hand);
-  if (smallSevenSuitsTai > 0) {
-    matched.push({ pattern: PATTERNS.find((p) => p.id === "small-seven-suits")!, tai: smallSevenSuitsTai });
-  } else if (smallFiveSuitsTai > 0) {
-    matched.push({ pattern: PATTERNS.find((p) => p.id === "small-five-suits")!, tai: smallFiveSuitsTai });
-  }
+  // 小七門齊 replaces 小五門齊 (its `replaces` edge) - both scored with this
+  // hand's own pairs-shaped checks, then valued by the rules like any other.
+  scored.push(
+    scoredRaw("small-seven-suits", eightPairsSmallSevenSuitsTai(hand), ctx, shape),
+    scoredRaw("small-five-suits", eightPairsSmallFiveSuitsTai(hand), ctx, shape),
+  );
 
   // 斷么/缺一門/清老頭/混老頭/混一色/清一色/字一色/混帶X/無花/正花/爛花/
   // 無字/無字花: reused as-is (same ids/tai as their normal-hand
@@ -4113,50 +4143,19 @@ function scoreEightPairs(parsed: ParsedScoringHand, ctx: GameContext): ScoreResu
   // fire there and the cross-exclusion doesn't matter, but 嚦咕嚦咕 can
   // genuinely go honor-free. Their own excludes metadata (e.g. 清一色
   // excluding 混一色, 無字花 excluding 無花/無字) is applied the same way
-  // the normal per-decomposition loop does, scoped to just this batch.
-  const reusableIds = [
-    "all-simples",
-    "no-fives",
-    "greater-than-five",
-    "less-than-five",
-    "missing-one-suit",
-    "pure-terminal-triplets",
-    "mixed-terminal-honor-triplets",
-    "half-flush",
-    "full-flush",
-    "all-honors",
-    "three-treasures",
-    "mixed-common-rank",
-    "no-flowers",
-    "correct-flower",
-    "wrong-flower",
-    "no-honors",
-    "no-honors-no-flowers",
-  ];
-  const reusableScored = PATTERNS.filter((p) => reusableIds.includes(p.id))
-    .map((pattern) => ({ pattern, tai: pattern.score(hand, ctx) }))
-    .filter((m) => m.tai > 0);
-  const reusableExcluded = new Set(reusableScored.flatMap((m) => m.pattern.excludes ?? []));
-  matched.push(...reusableScored.filter((m) => !reusableExcluded.has(m.pattern.id)));
+  // the normal per-decomposition loop does.
+  scored.push(...inPatternOrder(EIGHT_PAIRS_REUSABLE_IDS).map(at));
 
-  const middleTilePairCount = eightPairsMiddleTilePairCount(hand);
-  if (middleTilePairCount > 0) {
-    matched.push({ pattern: PATTERNS.find((p) => p.id === "middle-tile-pair")!, tai: middleTilePairCount * 2 });
-  }
+  // 將眼, once per 2/5/8 pair group (eightPairsMiddleTilePairCount).
+  scored.push({ pattern: patternById("middle-tile-pair"), tai: taiForInstances("middle-tile-pair", eightPairsMiddleTilePairCount(hand), ctx, shape) });
 
-  pushHonorTripleBonus(hand, groupMelds[0], ctx, matched);
+  scored.push(...honorTripleBonus(hand, groupMelds[0], ctx, shape));
 
-  // 三元嚦咕/三風嚦咕/四喜嚦咕: eight-pairs-only bonuses, same raw-score +
-  // exclude-cascade approach as the reusable batch above, just kept
-  // separate since these ids don't exist as normal-hand patterns at all.
-  const honorBonusIds = ["eight-pairs-three-dragons", "eight-pairs-three-winds", "eight-pairs-four-winds"];
-  const honorBonusScored = PATTERNS.filter((p) => honorBonusIds.includes(p.id))
-    .map((pattern) => ({ pattern, tai: pattern.score(hand, ctx) }))
-    .filter((m) => m.tai > 0);
-  const honorBonusExcluded = new Set(honorBonusScored.flatMap((m) => m.pattern.excludes ?? []));
-  matched.push(...honorBonusScored.filter((m) => !honorBonusExcluded.has(m.pattern.id)));
+  // 三元嚦咕/三風嚦咕/四喜嚦咕: eight-pairs-only bonuses.
+  scored.push(...inPatternOrder(EIGHT_PAIRS_HONOR_BONUS_IDS).map(at));
 
-  pushSelfDrawAndGenuineSingleWait(hand, ctx, matched, isEightPairsFakeSingleWait);
+  scored.push(...situationAndSingleWait(hand, ctx, shape, isEightPairsFakeSingleWait));
+  const matched = applyReplaces(scored, ctx);
   return { total: matched.reduce((sum, m) => sum + m.tai, 0), matched, hand };
 }
 
@@ -4180,7 +4179,174 @@ const SPECIAL_HAND_ONLY_PATTERN_IDS = new Set([
   "eight-pairs-four-winds",
 ]);
 
-export function scoreParsedHand(parsed: ParsedScoringHand, ctx: GameContext): ScoreResult {
+// ---------------------------------------------------------------------------
+// Tai rules: the data side of scoring. A pattern's score() says whether (and
+// how many times) it applies, at the house-list value; its PatternRule says
+// what that's worth, what it replaces, which hand shapes it counts on, and
+// whether 大雞/大鴨 ignore it. See taiCatalog.ts for the classification.
+
+const SITUATION_AND_WAIT_IDS = [...DECLARED_ONLY_PATTERN_IDS, "genuine-single-wait", "fake-single-wait"];
+
+// What each special hand's own scorer evaluates (and how - see each
+// scorer). A special hand can't count anything outside its list: an
+// ordinary pattern run against the special construction's 1-tile/pair/quad
+// placeholder "melds" would misread them, the same reason
+// SPECIAL_HAND_ONLY_PATTERN_IDS keeps those out of normal hands.
+const SPECIAL_SHAPE_PATTERN_IDS: Record<Exclude<HandShape, "normal">, ReadonlySet<string>> = {
+  "thirteen-orphans": new Set([
+    "base-tai",
+    "thirteen-orphans",
+    "orphans-four-return-open",
+    "orphans-four-return-hidden",
+    "mixed-terminal-honor-triplets",
+    "mixed-terminal",
+    ...HONOR_TRIPLE_BONUS_IDS,
+    ...FLOWER_BONUS_IDS,
+    ...SITUATION_AND_WAIT_IDS,
+  ]),
+  "sixteen-unrelated": new Set([
+    "base-tai",
+    "sixteen-unrelated-flying",
+    "sixteen-unrelated",
+    "sixteen-unrelated-same-ranks",
+    "sixteen-unrelated-straight",
+    "middle-tile-pair",
+    ...FLOWER_BONUS_IDS,
+    ...SITUATION_AND_WAIT_IDS,
+  ]),
+  "eight-pairs": new Set([
+    "base-tai",
+    "eight-pairs-flying",
+    "eight-pairs",
+    "orphans-four-return-open",
+    "orphans-four-return-hidden",
+    "small-seven-suits",
+    "small-five-suits",
+    ...EIGHT_PAIRS_REUSABLE_IDS,
+    "middle-tile-pair",
+    ...HONOR_TRIPLE_BONUS_IDS,
+    ...EIGHT_PAIRS_HONOR_BONUS_IDS,
+    ...SITUATION_AND_WAIT_IDS,
+  ]),
+};
+
+/** The hand shapes a pattern can be switched on for - its default too. */
+export function eligibleShapes(id: string): HandShape[] {
+  return HAND_SHAPES.map((s) => s.id).filter((shape) =>
+    shape === "normal" ? !SPECIAL_HAND_ONLY_PATTERN_IDS.has(id) : SPECIAL_SHAPE_PATTERN_IDS[shape].has(id),
+  );
+}
+
+/** 大雞/大鴨 can't have their own ignore switch - see anyOtherPatternFires. */
+export const CHICKEN_PATTERN_IDS: ReadonlySet<string> = new Set(["big-chicken", "big-duck"]);
+
+function defaultRule(pattern: TaiPattern): PatternRule {
+  const value = PATTERN_CATALOG[pattern.id].value;
+  return {
+    enabled: true,
+    tai: value.kind === "table" ? 0 : value.tai,
+    ...(value.kind === "table" ? { table: [...value.table] } : {}),
+    ...(value.kind === "streak" ? { first: value.first } : {}),
+    replaces: [...(pattern.excludes ?? [])],
+    shapes: eligibleShapes(pattern.id),
+    chickenIgnores: BIG_CHICKEN_BASE_EXEMPT_IDS.has(pattern.id) || BIG_CHICKEN_DUCK_EXTRA_EXEMPT_IDS.includes(pattern.id),
+  };
+}
+
+/** The house list, exactly as the hard-coded engine scores it. */
+export const DEFAULT_TAI_RULES: TaiRules = {
+  engine: "custom",
+  patterns: Object.fromEntries(PATTERNS.map((p) => [p.id, defaultRule(p)])),
+};
+
+const rulesOf = (ctx: GameContext): TaiRules => ctx.rules ?? DEFAULT_TAI_RULES;
+
+// Absent from a saved ruleset (a pattern added since) means its default.
+function ruleFor(id: string, ctx: GameContext, shape: HandShape): PatternRule | null {
+  const rule = rulesOf(ctx).patterns[id] ?? DEFAULT_TAI_RULES.patterns[id];
+  return rule && rule.enabled && rule.shapes.includes(shape) ? rule : null;
+}
+
+// The count a table/streak pattern is valued by.
+const COUNT_OF: Record<string, (ctx: GameContext) => number> = {
+  "kong-draw": (ctx) => ctx.kongDraw,
+  "rob-kong": (ctx) => ctx.robKong,
+  "dealer-streak": (ctx) => ctx.dealerStreak,
+};
+
+// Values a pattern's raw score() (at house-list tai) under `rule`. flat/per
+// rescale: raw ÷ the house value is the instance count (1 for flat), times
+// the rule's tai. table/streak read their count from ctx instead.
+function valueFor(id: string, raw: number, rule: PatternRule, ctx: GameContext): number {
+  if (raw <= 0) return 0;
+  const cls = PATTERN_CATALOG[id];
+  if (!cls) return raw;
+  const value = cls.value;
+  if (value.kind === "table") {
+    const n = COUNT_OF[id]?.(ctx) ?? 0;
+    const table = rule.table ?? value.table;
+    return n <= 0 || table.length < 2 ? 0 : (table[Math.min(n, table.length - 1)] ?? 0);
+  }
+  if (value.kind === "streak") {
+    const n = COUNT_OF[id]?.(ctx) ?? 0;
+    return n <= 0 ? 0 : (rule.first ?? value.first) + rule.tai * (n - 1);
+  }
+  return Math.round(raw / (cls.rawUnit ?? value.tai)) * rule.tai;
+}
+
+/** A pattern's tai on `hand` read as `shape`, under ctx's rules. */
+export function taiFor(pattern: TaiPattern, hand: ResolvedHand, ctx: GameContext, shape: HandShape): number {
+  const rule = ruleFor(pattern.id, ctx, shape);
+  return rule ? valueFor(pattern.id, pattern.score(hand, ctx), rule, ctx) : 0;
+}
+
+// For the few places a special hand counts instances itself (嚦咕's 將眼
+// per pair group, its own 假獨 shape).
+function taiForInstances(id: string, n: number, ctx: GameContext, shape: HandShape): number {
+  const rule = ruleFor(id, ctx, shape);
+  const cls = PATTERN_CATALOG[id];
+  if (!rule || n <= 0 || cls.value.kind === "table" || cls.value.kind === "streak") return 0;
+  return valueFor(id, n * (cls.rawUnit ?? cls.value.tai), rule, ctx);
+}
+
+let patternsById: Map<string, TaiPattern> | null = null;
+function patternById(id: string): TaiPattern {
+  patternsById ??= new Map(PATTERNS.map((p) => [p.id, p]));
+  return patternsById.get(id)!;
+}
+
+// A batch of ids in PATTERNS' own order, so a breakdown lists them the way
+// it always has.
+function inPatternOrder(ids: readonly string[]): string[] {
+  return PATTERNS.filter((p) => ids.includes(p.id)).map((p) => p.id);
+}
+
+function scoredAs(id: string, hand: ResolvedHand, ctx: GameContext, shape: HandShape): MatchedPattern {
+  const pattern = patternById(id);
+  return { pattern, tai: taiFor(pattern, hand, ctx, shape) };
+}
+
+// A raw house-list value computed outside the pattern's own score() (嚦咕's
+// pairs-shaped 門齊 checks), valued by the rules the same way.
+function scoredRaw(id: string, raw: number, ctx: GameContext, shape: HandShape): MatchedPattern {
+  const rule = ruleFor(id, ctx, shape);
+  return { pattern: patternById(id), tai: rule ? valueFor(id, raw, rule, ctx) : 0 };
+}
+
+// Drops what didn't fire, then everything any firing pattern replaces - in
+// one pass, so a pattern that is itself replaced still removes its own
+// targets (大四喜 removes 小四喜, and 小四喜's own edges still apply too),
+// exactly how the hard-coded `excludes` always worked.
+function applyReplaces(scored: MatchedPattern[], ctx: GameContext): MatchedPattern[] {
+  const rules = rulesOf(ctx);
+  const firing = scored.filter((m) => m.tai > 0);
+  const replaced = new Set(firing.flatMap((m) => (rules.patterns[m.pattern.id] ?? DEFAULT_TAI_RULES.patterns[m.pattern.id])?.replaces ?? []));
+  return firing.filter((m) => !replaced.has(m.pattern.id));
+}
+
+// The configurable engine on its own, no fallback - scoreParsedHand is what
+// callers want; this is exported for the parity tests.
+export function scoreParsedHandWithRules(parsed: ParsedScoringHand, ctx: GameContext): ScoreResult {
   // Special-hand readings and the normal melds+pair reading aren't always
   // mutually exclusive at the tile-count level - e.g. 123m123m123m123m
   // (four identical runs) also happens to satisfy 嚦咕嚦咕's per-kind-count
@@ -4226,11 +4392,11 @@ export function scoreParsedHand(parsed: ParsedScoringHand, ctx: GameContext): Sc
         // stacking a reading it isn't actually being scored under. They're
         // only meaningful via their own scoreXxx short-circuit, which builds
         // the dedicated hand construction for that shape.
-        const scored = PATTERNS.filter((p) => !SPECIAL_HAND_ONLY_PATTERN_IDS.has(p.id))
-          .map((pattern) => ({ pattern, tai: pattern.score(hand, ctx) }))
-          .filter((m) => m.tai > 0);
-        const excludedIds = new Set(scored.flatMap((m) => m.pattern.excludes ?? []));
-        const matched = scored.filter((m) => !excludedIds.has(m.pattern.id));
+        const scored = PATTERNS.filter((p) => !SPECIAL_HAND_ONLY_PATTERN_IDS.has(p.id)).map((pattern) => ({
+          pattern,
+          tai: taiFor(pattern, hand, ctx, "normal"),
+        }));
+        const matched = applyReplaces(scored, ctx);
         normalCandidates.push({ total: matched.reduce((sum, m) => sum + m.tai, 0), matched, hand });
       }
     }
@@ -4263,6 +4429,31 @@ export function scoreParsedHand(parsed: ParsedScoringHand, ctx: GameContext): Sc
   }
 
   return candidates.reduce((best, c) => (c.total > best.total ? c : best));
+}
+
+// Scores with the engine the rules pick: the configurable one by default,
+// or the frozen hard-coded one (scoringLegacy.ts) when 設定 says "original
+// rules". If the configurable engine throws anything but a ScoringError/
+// ParseError (an incomplete or malformed hand is a normal outcome, not a
+// bug), the hand is re-scored with the hard-coded engine and flagged
+// `engineFallback`, so a refactoring bug never leaves the tab unusable.
+export function scoreParsedHand(parsed: ParsedScoringHand, ctx: GameContext): ScoreResult {
+  if (rulesOf(ctx).engine === "legacy") return scoreLegacy(parsed, ctx);
+  try {
+    return scoreParsedHandWithRules(parsed, ctx);
+  } catch (e) {
+    if (e instanceof ScoringError || e instanceof ParseError) throw e;
+    console.error("Configurable scoring failed - scored with the original rules instead.", e);
+    return { ...scoreLegacy(parsed, ctx), engineFallback: true };
+  }
+}
+
+function scoreLegacy(parsed: ParsedScoringHand, ctx: GameContext): ScoreResult {
+  try {
+    return scoreParsedHandLegacy(parsed, ctx) as ScoreResult;
+  } catch (e) {
+    throw e instanceof LegacyScoringError ? new ScoringError(e.message) : e;
+  }
 }
 
 // Parses notation text, then scores it - see scoreParsedHand.
