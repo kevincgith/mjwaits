@@ -2161,37 +2161,59 @@ function JackpotSheet({ store, state, onDone, onClose }: { store: ScoreStore; st
   );
 }
 
-function NameSheet({ name, onSave, onClose }: { name: string; onSave: (name: string) => void; onClose: () => void }) {
+// The game's name and the day it was played - set from a long press on the
+// game box. A new day keeps the time of day it started.
+function NameSheet({ name, startedAt, onSave, onClose }: { name: string; startedAt: number; onSave: (name: string, startedAt: number) => void; onClose: () => void }) {
   const [text, setText] = useState(name);
   const trimmed = text.trim();
+  const day = (at: number) => {
+    const d = new Date(at);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  };
+  const [date, setDate] = useState(() => day(startedAt));
+  const nextStart = () => {
+    const [y, m, d] = date.split("-").map(Number);
+    if (!y || !m || !d) return startedAt;
+    const at = new Date(startedAt);
+    at.setFullYear(y, m - 1, d);
+    return at.getTime();
+  };
+  const changed = trimmed !== name || day(nextStart()) !== day(startedAt);
+  const save = () => changed && onSave(trimmed, nextStart());
   return (
     <Sheet
-      title="Name this game"
-      subtitle="Shown on the table and in History"
+      title="Name and date"
+      subtitle="Shown on the table, in History and on the 結帳 image"
       onClose={onClose}
       actions={
         <>
           {name && (
-            <button type="button" className="sc-secondary" onClick={() => onSave("")}>
-              Clear
+            <button type="button" className="sc-secondary" onClick={() => onSave("", nextStart())}>
+              Clear name
             </button>
           )}
-          <button type="button" className="sc-primary" disabled={trimmed === name} onClick={() => onSave(trimmed)}>
+          <button type="button" className="sc-primary" disabled={!changed} onClick={save}>
             Save
           </button>
         </>
       }
     >
-      <input
-        className="sc-input"
-        value={text}
-        maxLength={24}
-        placeholder="Game name"
-        autoFocus
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={(e) => e.key === "Enter" && trimmed !== name && onSave(trimmed)}
-        aria-label="Game name"
-      />
+      <label className="sc-field">
+        <span className="sc-label">Name</span>
+        <input
+          className="sc-input sc-input-full"
+          value={text}
+          maxLength={24}
+          placeholder="Game name"
+          autoFocus
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && save()}
+        />
+      </label>
+      <label className="sc-field">
+        <span className="sc-label">Date</span>
+        <input className="sc-input sc-input-full" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+      </label>
     </Sheet>
   );
 }
@@ -3263,12 +3285,12 @@ function Board({
         {/* Where the game is - round and deal, the 局 count, and 第幾圈 /
             第幾個東 (連莊 is on the dealer's badge) - in the empty corner
             beside the top seat. */}
-        {/* A long press names the game. */}
+        {/* A long press names (and dates) the game. */}
         <div
           className="sc-status"
           role="button"
           tabIndex={0}
-          aria-label={`${game.name ? `${game.name}, ` : ""}${state.label}. Long-press to name this game`}
+          aria-label={`${game.name ? `${game.name}, ` : ""}${state.label}. Long-press to name or date this game`}
           {...namePress}
           onKeyDown={(e) => e.key === "Enter" && setSheet({ kind: "name" })}
         >
@@ -3527,11 +3549,12 @@ function Board({
       {sheet?.kind === "name" && (
         <NameSheet
           name={game.name ?? ""}
+          startedAt={game.startedAt}
           onClose={close}
-          onSave={(name) => {
-            update({ ...game, name: name || undefined });
+          onSave={(name, startedAt) => {
+            update({ ...game, name: name || undefined, startedAt });
             close();
-            flash(name ? `Named “${name}”` : "Name cleared");
+            flash(name !== (game.name ?? "") ? (name ? `Named “${name}”` : "Name cleared") : "Date changed");
           }}
         />
       )}

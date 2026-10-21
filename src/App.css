@@ -11484,3 +11484,23 @@ html.sc-fit-mode .build-version {
     display: none;
   }
 }
+
+/* A field on its own in a sheet (Name this game): the sheet's full width. */
+.sc-input-full {
+  flex: none;
+  width: 100%;
+}
+
+/* iOS draws a date field its own way: keep it the size and alignment of the
+   text field above it. */
+.sc-input[type="date"] {
+  -webkit-appearance: none;
+  appearance: none;
+  display: flex;
+  align-items: center;
+  text-align: left;
+}
+
+.sc-input[type="date"]::-webkit-date-and-time-value {
+  text-align: left;
+}
