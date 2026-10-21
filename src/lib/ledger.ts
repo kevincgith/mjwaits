@@ -78,11 +78,8 @@ export const DEFAULT_SETTINGS: ScoreSettings = {
   quickScan: true,
   chipsPrompt: true,
   tipsAutoHide: 30,
-  zhaHu: null,
+  zhaHu: 40,
 };
-
-// What a nullable setting starts at when it's switched on, if not its default.
-export const SETTING_ON_VALUE: Partial<Record<keyof ScoreSettings, number>> = { zhaHu: 40 };
 
 export interface PatternNote {
   id: string;
