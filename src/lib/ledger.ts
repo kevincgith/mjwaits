@@ -549,6 +549,17 @@ export function settle(totals: Record<string, number>, multiplier = 1): { from: 
   return out;
 }
 
+// The Jackpot split as evenly as it goes, by seat: what won't divide is
+// spread one unit each (1, or 0.1 off 整數模式), 莊 first and on round the
+// table - 11 is 3 · 3 · 3 · 2 with 東 dealing.
+export function evenShares(pot: number, dealer: number, integer: boolean): number[] {
+  const unit = integer ? 1 : 0.1;
+  const units = Math.round(pot / unit);
+  const each = Math.floor(units / SEATS);
+  const left = units - each * SEATS;
+  return [0, 1, 2, 3].map((seat) => Math.round((each + ((seat - dealer + SEATS) % SEATS < left ? 1 : 0)) * unit * 10) / 10);
+}
+
 // ---- Chips -----------------------------------------------------------------
 
 // Who hands whom chips between two states of a game. At the table a hand's
