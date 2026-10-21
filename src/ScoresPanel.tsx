@@ -247,6 +247,19 @@ const Icons = {
       <path d="M12 8v4l2.8 1.8" />
     </svg>
   ),
+  // 玩家's best / lowest at the table: on fire, gone cold.
+  hot: (
+    <svg {...ICON} width={14} height={14} strokeWidth={2}>
+      <path d="M12 21c3.9 0 6.5-2.6 6.5-6.2 0-3.4-2.4-5.6-3.9-7.6-.4 1.9-1.4 3.1-2.6 3.6.3-3.2-1.3-6-3.9-7.8.2 3.4-1.7 5.4-3.1 7.4-1 1.4-1.6 2.9-1.6 4.4C3.4 18.4 6.1 21 9.9 21" />
+      <path d="M12 21c-1.7 0-2.9-1.2-2.9-2.8 0-1.6 1.5-2.7 2.5-4.2.6 1.2 1.5 1.8 2.3 2 .4.7.6 1.4.6 2.1 0 1.7-1.1 2.9-2.5 2.9Z" />
+    </svg>
+  ),
+  cold: (
+    <svg {...ICON} width={14} height={14} strokeWidth={2}>
+      <path d="M12 3v18M4.2 7.5l15.6 9M4.2 16.5l15.6-9" />
+      <path d="M9.5 4.5 12 7l2.5-2.5M9.5 19.5 12 17l2.5 2.5M4.5 10.4l3.4.9-.9 3.4M19.5 13.6l-3.4-.9.9-3.4M7 9.3l.9 3.4-3.4.9M17 14.7l-.9-3.4 3.4-.9" />
+    </svg>
+  ),
   close: (
     <svg {...ICON} width={18} height={18}>
       <path d="M6 6l12 12M18 6 6 18" />
@@ -4260,7 +4273,7 @@ function PlayerCard({ store, stats, state, index, onIndex }: { store: ScoreStore
                       {r.zh}
                       {m && (
                         <span className={`sc-mark is-${m}`} title={m === "best" ? "Best at the table" : "Lowest at the table"}>
-                          {m === "best" ? "佳" : "差"}
+                          {m === "best" ? Icons.hot : Icons.cold}
                         </span>
                       )}
                     </span>
@@ -4298,7 +4311,7 @@ function PlayerCard({ store, stats, state, index, onIndex }: { store: ScoreStore
         </details>
       )}
       <p className="sc-help sc-stat-key">
-        <span className="sc-mark is-best">佳</span> 最佳 · <span className="sc-mark is-worst">差</span> 最差 - best and lowest at the table
+        <span className="sc-mark is-best">{Icons.hot}</span> 全場最好 · <span className="sc-mark is-worst">{Icons.cold}</span> 全場最差 - best and lowest at the table
       </p>
     </div>
   );
