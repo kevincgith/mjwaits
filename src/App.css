@@ -12591,3 +12591,45 @@ button.sc-stat:active {
   background: var(--sc-neg);
   color: #fff;
 }
+
+/* 設定: a rule's example - the tiles it counts, the whole hand, or the
+   situation it's declared in - and what it's worth there. */
+.tr-example {
+  padding: 0.6rem 0.75rem 0.65rem;
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+}
+
+.tr-example-tiles {
+  gap: 0.45rem;
+  margin-bottom: 0.4rem;
+}
+
+.tr-example-tiles .breakdown-group {
+  background: var(--surface);
+}
+
+/* Declared (exposed) melds, as in the hand card: an outline, not a fill. */
+.tr-example-tiles .breakdown-group.tr-example-declared {
+  background: none;
+  box-shadow: inset 0 0 0 1px var(--fill-strong);
+}
+
+.tr-example-chip {
+  min-height: 1.75rem;
+  background: var(--surface);
+}
+
+.tr-example-chip .tile-glyph {
+  font-size: 1.5em;
+}
+
+.tr-example-worth {
+  margin-top: 0.35rem;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.tr-example-worth strong {
+  color: var(--text);
+}
