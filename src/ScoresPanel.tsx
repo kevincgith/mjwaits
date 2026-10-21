@@ -2619,14 +2619,40 @@ function useChipMoves(game: ScoreGame, state: ReplayState) {
   return { moves, dismiss: () => setMoves(null) };
 }
 
-// A 自摸 reads "Kelvin ← Mandy 12 · 凱文 6 · Ah Wing 6", one payer to two
-// winners "Mandy → Kelvin 12 · 凱文 8"; anything else, pair by pair.
-function chipLine(list: { from: string; to: string; amount: number }[]): string {
-  const to = new Set(list.map((m) => m.to));
-  const from = new Set(list.map((m) => m.from));
-  if (list.length > 1 && to.size === 1) return `${list[0].to} ← ${list.map((m) => `${m.from} ${fmt(m.amount)}`).join(" · ")}`;
-  if (list.length > 1 && from.size === 1) return `${list[0].from} → ${list.map((m) => `${m.to} ${fmt(m.amount)}`).join(" · ")}`;
-  return list.map((m) => `${m.from} → ${m.to} ${fmt(m.amount)}`).join(" · ");
+// Said in words, not arrows: everyone paying one player reads "凱文 收" over
+// each payer and amount; otherwise by payer, "Mandy 付" over each receiver
+// and amount. 彩池 is the Jackpot pile.
+function ChipsCard({ verb, list, onDone }: { verb: string; list: { from: string; to: string; amount: number }[]; onDone: () => void }) {
+  const receivers = [...new Set(list.map((m) => m.to))];
+  const groups =
+    list.length > 1 && receivers.length === 1
+      ? [{ head: `${receivers[0]} 收`, rows: list.map((m) => ({ who: m.from, amount: m.amount })) }]
+      : [...new Set(list.map((m) => m.from))].map((payer) => ({
+          head: `${payer} 付`,
+          rows: list.filter((m) => m.from === payer).map((m) => ({ who: m.to, amount: m.amount })),
+        }));
+  const label = `籌碼${verb ? ` ${verb}` : ""}: ${list.map((m) => `${m.from} pays ${m.to} ${fmt(m.amount)}`).join(", ")}. Tap once handed over.`;
+  return (
+    <button type="button" className="sc-chips" onClick={onDone} aria-label={label}>
+      <span className="sc-chips-head">
+        <span className="sc-chips-title">籌碼{verb && ` · ${verb}`}</span>
+        <span className="sc-chips-done" aria-hidden="true">
+          {Icons.check}
+        </span>
+      </span>
+      {groups.map((g) => (
+        <Fragment key={g.head}>
+          <span className="sc-chips-who">{g.head}</span>
+          {g.rows.map((r) => (
+            <span key={r.who} className="sc-chips-row">
+              <span className="sc-chips-name">{r.who}</span>
+              <strong>{fmt(r.amount)}</strong>
+            </span>
+          ))}
+        </Fragment>
+      ))}
+    </button>
+  );
 }
 
 // One non-hand entry (特別獎罰, 投降, 換人, 莊家, Jackpot, 設定) in the Recent list,
@@ -3091,18 +3117,6 @@ function Board({
           now), 執位 (re-seat), 備份 (save a file), then the footer's one-off
           tip. The rest wait their turn. */}
       {[
-        // 籌碼: who hands whom chips for what just went in (or back out).
-        chips.moves && state.settings.chipsPrompt && (
-          <div className="sc-banner is-chips" role="status">
-            <span>
-              <strong>籌碼</strong>
-              {chips.moves.verb && ` · ${chips.moves.verb}`} · {chipLine(chips.moves.list)}
-            </span>
-            <button type="button" className="sc-icon-button" onClick={chips.dismiss} aria-label="Chips handed over">
-              {Icons.check}
-            </button>
-          </div>
-        ),
         // 投降提示: someone's been 拉'd the set number of times in a row (3 by
         // default). Only a prompt - whether 投降 is allowed is house rule.
         (() => {
@@ -3215,6 +3229,9 @@ function Board({
           {/* The day this game started - today, for tonight's game. */}
           <span className="sc-status-meta">{new Date(game.startedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</span>
         </div>
+        {/* 籌碼: who hands whom chips for what just went in (or back out) - in
+            the other corner beside the top seat. A tap once they're handed over. */}
+        {chips.moves && state.settings.chipsPrompt && <ChipsCard {...chips.moves} onDone={chips.dismiss} />}
         {state.seats.map((player, seat) => {
           const total = state.totals[player] ?? 0;
           const tally = counts.get(player) ?? { wins: 0, selfDraws: 0, dealIns: 0 };

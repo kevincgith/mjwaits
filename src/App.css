@@ -11325,3 +11325,89 @@ html.sc-fit-mode .build-version {
   font-size: 1.25rem;
   line-height: 1.1;
 }
+
+/* 籌碼: the chips to hand over, in the top-right corner beside the top seat -
+   the game box's mirror. */
+.sc-chips {
+  position: absolute;
+  top: 0.1rem;
+  right: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.05rem;
+  width: calc((100% - min(33vw, 10rem)) / 2 - 0.4rem);
+  max-width: 9rem;
+  box-sizing: border-box;
+  border: none;
+  padding: 0.3rem 0.5rem 0.35rem 0.6rem;
+  border-radius: var(--radius-md);
+  background: var(--accent-tint);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  animation: sc-chips-in 0.25s ease-out;
+}
+
+@keyframes sc-chips-in {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+}
+
+.sc-chips-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.3rem;
+}
+
+.sc-chips-title {
+  color: var(--accent);
+  font-size: var(--text-xs);
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.sc-chips-done {
+  display: inline-flex;
+  color: var(--accent);
+}
+
+.sc-chips-done svg {
+  width: 0.95rem;
+  height: 0.95rem;
+}
+
+.sc-chips-who {
+  overflow: hidden;
+  font-size: var(--text-sm);
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sc-chips-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.3rem;
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.sc-chips-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sc-chips-row strong {
+  flex-shrink: 0;
+  font-size: var(--text-sm);
+}
