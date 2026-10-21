@@ -51,6 +51,7 @@ export interface ScoreSettings {
   surrenderPrompt: number | null; // 投降提示 - prompt once a 拉 runs this many hands in a row; null = off. A prompt only - 投降 itself is never restricted.
   showTally: boolean; // 胡摸銃數 - win / self-draw / deal-in counts on the cards
   quickScan: boolean; // 快速掃描 - a Scan button on each player's card
+  chipsPrompt: boolean; // 籌碼提示 - who hands whom chips, after each entry that moves points
   zhaHu: number | null; // 詐胡 - what a false win pays each other player by default (each can be changed); null = off
 }
 
@@ -74,6 +75,7 @@ export const DEFAULT_SETTINGS: ScoreSettings = {
   surrenderPrompt: 3,
   showTally: true,
   quickScan: true,
+  chipsPrompt: true,
   zhaHu: null,
 };
 
@@ -546,6 +548,37 @@ export function settle(totals: Record<string, number>, multiplier = 1): { from: 
     if (creditors[j].v <= 1e-9) j++;
   }
   return out;
+}
+
+// ---- Chips -----------------------------------------------------------------
+
+// Who hands whom chips between two states of a game. At the table a hand's
+// payment goes into a 拉 and stays there: chips only change hands when that
+// 拉 ends (the holder doesn't win the next hand, a 踢, 投降, 詐胡), the pulled
+// player paying its whole value - less a 踢's half, which the 踢 pays back.
+// 獎罰, 詐胡, 反雪 and the Jackpot are paid there and then. So a player's
+// chips are their score less what's still riding in open 拉; the Jackpot
+// is a pile of its own (彩池).
+export const CHIP_POT = "彩池";
+
+function chipPositions(state: Pick<ReplayState, "totals" | "pot" | "lahs">): Record<string, number> {
+  const c: Record<string, number> = { ...state.totals, [CHIP_POT]: state.pot };
+  for (const l of state.lahs) {
+    c[l.holder] = (c[l.holder] ?? 0) - l.value;
+    c[l.pulled] = (c[l.pulled] ?? 0) + l.value;
+  }
+  return c;
+}
+
+export function chipMoves(before: Pick<ReplayState, "totals" | "pot" | "lahs">, after: Pick<ReplayState, "totals" | "pot" | "lahs">): { from: string; to: string; amount: number }[] {
+  const was = chipPositions(before);
+  const now = chipPositions(after);
+  const net: Record<string, number> = {};
+  for (const p of new Set([...Object.keys(was), ...Object.keys(now)])) {
+    const d = Math.round(((now[p] ?? 0) - (was[p] ?? 0)) * 10) / 10;
+    if (d !== 0) net[p] = d;
+  }
+  return settle(net, 1);
 }
 
 // ---- Storage -------------------------------------------------------------

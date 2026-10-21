@@ -37,6 +37,7 @@ import {
   type ScoreStore,
   type WinnerEntry,
   SETTING_ON_VALUE,
+  chipMoves,
   zhaHuKicks,
 } from "./lib/ledger";
 import { snapshotOf, snapshotUrl, type ScoreSnapshot } from "./lib/scoreShare";
@@ -240,6 +241,11 @@ const Icons = {
   close: (
     <svg {...ICON} width={18} height={18}>
       <path d="M6 6l12 12M18 6 6 18" />
+    </svg>
+  ),
+  check: (
+    <svg {...ICON} width={18} height={18}>
+      <path d="M5 12.5 10 17.5 19 7" />
     </svg>
   ),
   back: (
@@ -2450,6 +2456,7 @@ const SETTING_GROUPS: { title: string; rows: { key: keyof ScoreSettings; label: 
       { key: "highScore", label: "高分提示", help: "Flag a payment this big", kind: "nullable" },
       { key: "showTally", label: "胡摸銃數", help: "Counts on the cards: 胡 black, 摸 green, 銃 red", kind: "bool" },
       { key: "quickScan", label: "快速掃描", help: "A Scan button on each player's card", kind: "bool" },
+      { key: "chipsPrompt", label: "籌碼提示", help: "Who hands whom chips, after each entry", kind: "bool" },
     ],
   },
 ];
@@ -2588,6 +2595,39 @@ type BoardSheet =
   | { kind: "settle" }
   | { kind: "settings" }
 ;
+
+// 籌碼提示: the chips to hand over for each change (see chipMoves) - a new
+// entry, or an undo / redo / fix / delete, which hands back the difference.
+// Stays up until ticked or the next change that moves chips replaces it.
+function useChipMoves(game: ScoreGame, state: ReplayState) {
+  const last = useRef<{ id: string; events: ScoreEvent[]; state: ReplayState } | null>(null);
+  const [moves, setMoves] = useState<{ verb: string; list: { from: string; to: string; amount: number }[] } | null>(null);
+  useEffect(() => {
+    const prev = last.current;
+    last.current = { id: game.id, events: game.events, state };
+    if (!prev || prev.id !== game.id) return setMoves(null);
+    if (prev.events === game.events) return;
+    const list = chipMoves(prev.state, state);
+    if (list.length === 0) return;
+    // What happened: one more entry, the last one taken back, or an older
+    // one fixed or deleted.
+    const n = game.events.length;
+    const grew = n === prev.events.length + 1 && game.events[n - 2] === prev.events[n - 2];
+    const shrank = n === prev.events.length - 1 && prev.events[n - 1] === game.events[n - 1];
+    setMoves({ verb: grew ? "" : shrank ? "還原" : "改正", list });
+  }, [game, state]);
+  return { moves, dismiss: () => setMoves(null) };
+}
+
+// A 自摸 reads "Kelvin ← Mandy 12 · 凱文 6 · Ah Wing 6", one payer to two
+// winners "Mandy → Kelvin 12 · 凱文 8"; anything else, pair by pair.
+function chipLine(list: { from: string; to: string; amount: number }[]): string {
+  const to = new Set(list.map((m) => m.to));
+  const from = new Set(list.map((m) => m.from));
+  if (list.length > 1 && to.size === 1) return `${list[0].to} ← ${list.map((m) => `${m.from} ${fmt(m.amount)}`).join(" · ")}`;
+  if (list.length > 1 && from.size === 1) return `${list[0].from} → ${list.map((m) => `${m.to} ${fmt(m.amount)}`).join(" · ")}`;
+  return list.map((m) => `${m.from} → ${m.to} ${fmt(m.amount)}`).join(" · ");
+}
 
 // One non-hand entry (特別獎罰, 投降, 換人, 莊家, Jackpot, 設定) in the Recent list,
 // with whatever it changed.
@@ -2825,6 +2865,7 @@ function Board({
   };
   const [toast, setToast] = useState<{ text: string; id: number } | null>(null);
   const [reminderHidden, setReminderHidden] = useState(false);
+  const chips = useChipMoves(game, state);
   const [backedUpAt, setBackedUpAt] = useState(readBackedUpAt);
   // The card footer's key, once: after the first hand, until "Got it".
   const [footerKeySeen, setFooterKeySeen] = useState(() => {
@@ -3050,6 +3091,18 @@ function Board({
           now), 執位 (re-seat), 備份 (save a file), then the footer's one-off
           tip. The rest wait their turn. */}
       {[
+        // 籌碼: who hands whom chips for what just went in (or back out).
+        chips.moves && state.settings.chipsPrompt && (
+          <div className="sc-banner is-chips" role="status">
+            <span>
+              <strong>籌碼</strong>
+              {chips.moves.verb && ` · ${chips.moves.verb}`} · {chipLine(chips.moves.list)}
+            </span>
+            <button type="button" className="sc-icon-button" onClick={chips.dismiss} aria-label="Chips handed over">
+              {Icons.check}
+            </button>
+          </div>
+        ),
         // 投降提示: someone's been 拉'd the set number of times in a row (3 by
         // default). Only a prompt - whether 投降 is allowed is house rule.
         (() => {
