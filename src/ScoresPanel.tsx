@@ -37,6 +37,7 @@ import {
   type ScoreStore,
   type WinnerEntry,
   bonusPresets,
+  type BonusPreset,
   chipMoves,
   evenShares,
   playTimes,
@@ -1172,13 +1173,17 @@ function BonusSheet({
   // amount or its way is changed by hand.
   const [preset, setPreset] = useState<string | null>(initial?.name ?? null);
   const presets = bonusPresets(state.settings);
+  // A one-player pick (7搶1, 1搶7) waits for who: Confirm stays off till then.
+  const [needsOne, setNeedsOne] = useState(false);
   const n = Number(amount || 0);
-  const pick = (p: { name: string; kind: "獎" | "罰"; amount: number }) => {
+  const pick = (p: BonusPreset) => {
     setKind(p.kind);
     setOther(null);
     setAmount(String(p.amount));
     setPreset(p.name);
+    setNeedsOne(p.one === true);
   };
+  const waiting = needsOne && other === null;
   return (
     <Sheet
       title={
@@ -1196,10 +1201,10 @@ function BonusSheet({
           <button
             type="button"
             className={kind === "獎" ? "sc-primary" : "sc-danger"}
-            disabled={n <= 0}
+            disabled={n <= 0 || waiting}
             onClick={() => onDone({ t: "bonus", at: Date.now(), seat, amount: n, kind, ...(other !== null ? { other } : {}), ...(preset ? { name: preset } : {}) })}
           >
-            Confirm
+            {waiting ? (kind === "獎" ? "Tap who pays" : "Tap who's paid") : "Confirm"}
           </button>
         </>
       }
@@ -1217,7 +1222,20 @@ function BonusSheet({
           isOn={(s2) => other === s2}
           onPick={setOther}
           tagFor={(s2) => (other === s2 ? (kind === "獎" ? { text: "付", tone: "discard" } : { text: "收", tone: "win" }) : undefined)}
-          center={{ label: "全", sub: "Everyone", on: other === null, onPick: () => setOther(null), tone: kind === "罰" ? "lose" : "win" }}
+          center={{
+            label: "全",
+            sub: "Everyone",
+            on: other === null && !needsOne,
+            onPick: () => {
+              setOther(null);
+              // Everyone, by hand: not the one-player pick any more.
+              if (needsOne) {
+                setNeedsOne(false);
+                setPreset(null);
+              }
+            },
+            tone: kind === "罰" ? "lose" : "win",
+          }}
         />
       </div>
       <div className="sc-tai-row">
@@ -1239,7 +1257,10 @@ function BonusSheet({
               aria-pressed={kind === k}
               aria-label={k === "獎" ? "獎 Reward" : "罰 Penalty"}
               onClick={() => {
-                if (k !== kind) setPreset(null);
+                if (k !== kind) {
+                  setPreset(null);
+                  setNeedsOne(false);
+                }
                 setKind(k);
               }}
             >
@@ -1254,6 +1275,7 @@ function BonusSheet({
         onChange={(v) => {
           setAmount(v);
           setPreset(null);
+          setNeedsOne(false);
         }}
       />
       {/* Who pays whom, in the same table as 食胡 - and the same size. Empty,
@@ -1261,7 +1283,7 @@ function BonusSheet({
       <PayTable
         cols={[{ key: "to", label: "To", wide: true }]}
         rows={
-          n <= 0
+          n <= 0 || waiting
             ? []
             : (other === null ? state.seats.map((_, s2) => s2).filter((s2) => s2 !== seat) : [other]).map((s2) =>
                 kind === "獎"
@@ -1270,7 +1292,9 @@ function BonusSheet({
               )
         }
         empty={
-          presets.length > 0 ? (
+          waiting ? (
+            `${preset} - tap who ${kind === "獎" ? "pays" : "is paid"}, above`
+          ) : presets.length > 0 ? (
             <div className="sc-presets" role="group" aria-label="預設獎罰">
               {presets.map((p, i) => (
                 <button key={i} type="button" className={`sc-preset is-${p.kind === "獎" ? "reward" : "penalty"}`} onClick={() => pick(p)}>
@@ -2708,6 +2732,10 @@ const SETTING_GROUPS: { title: string; rows: { key: keyof ScoreSettings; label: 
       { key: "presetChaseBig", label: "追", help: "Receive from each player - the second", kind: "number", needs: "bonusPresets" },
       { key: "presetTriple", label: "圍骰", help: "Receive from each player", kind: "number", needs: "bonusPresets" },
       { key: "presetSnake", label: "蛇骰", help: "Pay each player", kind: "number", needs: "bonusPresets" },
+      { key: "presetSevenOne", label: "7搶1", help: "Receive from one player", kind: "number", needs: "bonusPresets" },
+      { key: "presetOneSeven", label: "1搶7", help: "Receive from one player", kind: "number", needs: "bonusPresets" },
+      { key: "presetEightImmortals", label: "八仙過海", help: "Receive from each player", kind: "number", needs: "bonusPresets" },
+      { key: "presetWrongCall", label: "嗌錯", help: "Pay each player", kind: "number", needs: "bonusPresets" },
     ],
   },
   {

@@ -64,6 +64,10 @@ export interface ScoreSettings {
   presetChaseBig: number; // 追 - receive from each (the bigger)
   presetSnake: number; // 蛇骰 - pay each
   presetTriple: number; // 圍骰 - receive from each
+  presetSevenOne: number; // 7搶1 - receive from one player
+  presetOneSeven: number; // 1搶7 - receive from one player
+  presetEightImmortals: number; // 八仙過海 - receive from each
+  presetWrongCall: number; // 嗌錯 - pay each
   zhaHu: number | null; // 詐胡 - what a false win pays each other player by default (each can be changed); null = off
 }
 
@@ -98,14 +102,26 @@ export const DEFAULT_SETTINGS: ScoreSettings = {
   presetChaseBig: 10,
   presetSnake: 5,
   presetTriple: 5,
+  presetSevenOne: 30,
+  presetOneSeven: 30,
+  presetEightImmortals: 100,
+  presetWrongCall: 5,
   zhaHu: 40,
 };
 
 // The 預設獎罰 quick picks, from the settings: what each is called, which way
-// it goes, and how much from (or to) each other player.
-export function bonusPresets(settings: ScoreSettings): { name: string; kind: "獎" | "罰"; amount: number }[] {
+// it goes, how much - and whether it's with everyone else or one player (who
+// is picked on the sheet).
+export interface BonusPreset {
+  name: string;
+  kind: "獎" | "罰";
+  amount: number;
+  one?: true;
+}
+
+export function bonusPresets(settings: ScoreSettings): BonusPreset[] {
   if (!settings.bonusPresets) return [];
-  return [
+  return ([
     { name: "花", kind: "獎" as const, amount: settings.presetFlower },
     { name: "草", kind: "獎" as const, amount: settings.presetGrass },
     { name: "花草", kind: "獎" as const, amount: settings.presetBoth },
@@ -114,7 +130,11 @@ export function bonusPresets(settings: ScoreSettings): { name: string; kind: "�
     { name: "追", kind: "獎" as const, amount: settings.presetChaseBig },
     { name: "圍骰", kind: "獎" as const, amount: settings.presetTriple },
     { name: "蛇骰", kind: "罰" as const, amount: settings.presetSnake },
-  ].filter((p) => p.amount > 0);
+    { name: "7搶1", kind: "獎" as const, amount: settings.presetSevenOne, one: true as const },
+    { name: "1搶7", kind: "獎" as const, amount: settings.presetOneSeven, one: true as const },
+    { name: "八仙過海", kind: "獎" as const, amount: settings.presetEightImmortals },
+    { name: "嗌錯", kind: "罰" as const, amount: settings.presetWrongCall },
+  ] as BonusPreset[]).filter((p) => p.amount > 0);
 }
 
 export interface PatternNote {
