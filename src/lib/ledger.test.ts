@@ -378,6 +378,24 @@ describe("籌碼 - chips change hands when a 拉 ends", () => {
     ]);
   });
 
+  it("pair by pair, never netted: A pulls B C D, B and D pull C, then C self-draws", () => {
+    // A 自摸 10, then A + B + D 三響 off C for 4 each: A still pulls B and D
+    // (10) and C (10 + 4 + 5 拉半 = 19); B and D each pull C 4.
+    // (反雪 off - C's 自摸 after the 三響 would add each winner's pay-back.)
+    const before = [win(0, 10, null), many([[0, 4], [1, 4], [3, 4]], 2)];
+    const noFanXue = { fanXue: false };
+    expect(after(before, noFanXue).lahs.map((l) => `${l.holder}>${l.pulled} ${l.value}`).sort()).toEqual(["A>B 10", "A>C 19", "A>D 10", "B>C 4", "D>C 4"]);
+    // Every 拉 ends. B and D hand A theirs whole; C 踢s all three, handing
+    // each their 拉 less the half kicked back.
+    expect(sorted(moves(before, win(2, 2, null), noFanXue))).toEqual([
+      { from: "B", to: "A", amount: 10 },
+      { from: "C", to: "A", amount: 9 },
+      { from: "C", to: "B", amount: 2 },
+      { from: "C", to: "D", amount: 2 },
+      { from: "D", to: "A", amount: 10 },
+    ]);
+  });
+
   it("a 流局 feeds the Jackpot pile", () => {
     expect(moves([], draw, { jackpot: true, jackpotPerDraw: 5 }).every((m) => m.to === CHIP_POT && m.amount === 5)).toBe(true);
   });
