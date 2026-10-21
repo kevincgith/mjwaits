@@ -860,7 +860,8 @@ function WinSheet({
       </div>
 
       <div className="sc-tai-row">
-        <span className="sc-label">番 Tai</span>
+        {/* Fixed width, as on 特別獎罰 and 詐胡, so the field sits in the same place on every tab. */}
+        <span className="sc-label sc-label-fixed">番 Tai</span>
         <div className="sc-tai-fields">
           {entries.map((e, i) => (
             <button key={e.seat} type="button" className={`sc-tai${focus === i ? " is-focus" : ""}`} onClick={() => setFocus(i)} aria-label={`${seats[e.seat]}'s tai`}>
@@ -1057,7 +1058,7 @@ function ZhaHuSheet({
         />
       </div>
       <div className="sc-tai-row">
-        <span className="sc-label">金額</span>
+        <span className="sc-label sc-label-fixed">金額</span>
         <div className="sc-tai-fields">
           {others.map((s2, i) => (
             <button key={s2} type="button" className={`sc-tai${focus === i ? " is-focus" : ""}`} onClick={() => setFocus(i)} aria-label={`${state.seats[s2]}'s amount`}>
@@ -1175,18 +1176,10 @@ function BonusSheet({
   const presets = bonusPresets(state.settings);
   // A one-player pick (7搶1, 1搶7) waits for who: Confirm stays off till then.
   const [needsOne, setNeedsOne] = useState(false);
-  // The quick picks in pages of eight (two rows of four), the usual ones
-  // first and the less common a swipe to the right - each swipe lands on a
-  // whole page, and dots show which - so the box never grows.
-  const shown = [...presets.filter((p) => !p.more), ...presets.filter((p) => p.more)];
-  const pages = Math.ceil(shown.length / 8);
-  const [presetPage, setPresetPage] = useState(0);
-  const stripRef = useRef<HTMLDivElement>(null);
-  const toPage = (i: number) => {
-    const el = stripRef.current;
-    const first = el?.querySelectorAll<HTMLElement>(".sc-preset")[i * 8];
-    if (el && first) el.scrollTo({ left: first.offsetLeft - el.offsetLeft, behavior: "smooth" });
-  };
+  // The quick picks in pages of eight (two rows of four), in bonusPresets'
+  // order - each swipe lands on a whole page, with a sliver of the other
+  // peeking in at the edge - so the box never grows.
+  const shown = presets;
   const n = Number(amount || 0);
   const pick = (p: BonusPreset) => {
     setKind(p.kind);
@@ -1307,17 +1300,7 @@ function BonusSheet({
           waiting ? (
             `${preset} - tap who ${kind === "獎" ? "pays" : "is paid"}, above`
           ) : presets.length > 0 ? (
-            <>
-            <div
-              ref={stripRef}
-              className="sc-presets"
-              role="group"
-              aria-label="預設獎罰"
-              onScroll={(e) => {
-                const el = e.currentTarget;
-                setPresetPage(Math.min(pages - 1, Math.round(el.scrollLeft / el.clientWidth)));
-              }}
-            >
+            <div className={`sc-presets${shown.length > 8 ? " is-paged" : ""}`} role="group" aria-label="預設獎罰">
               {/* Four columns to a screenful, read across a row then down:
                   a tile's place is worked out, so the strip still reads 花 草
                   花草 … left to right however far it scrolls. */}
@@ -1337,14 +1320,6 @@ function BonusSheet({
                 </button>
               ))}
             </div>
-            {pages > 1 && (
-              <span className="sc-preset-dots">
-                {Array.from({ length: pages }, (_, i) => (
-                  <button key={i} type="button" className={i === presetPage ? "is-on" : undefined} onClick={() => toPage(i)} aria-label={`Quick picks page ${i + 1}`} />
-                ))}
-              </span>
-            )}
-            </>
           ) : (
             "Enter an amount to see who pays what"
           )
@@ -2767,14 +2742,14 @@ const SETTING_GROUPS: { title: string; rows: { key: keyof ScoreSettings; label: 
       { key: "presetGrass", label: "草", help: "Receive from each player", kind: "number", needs: "bonusPresets" },
       { key: "presetBoth", label: "花草", help: "Receive from each player", kind: "number", needs: "bonusPresets" },
       { key: "presetKong", label: "暗槓", help: "Receive from each player", kind: "number", needs: "bonusPresets" },
+      { key: "presetSnake", label: "蛇骰", help: "Pay each player", kind: "number", needs: "bonusPresets" },
+      { key: "presetTriple", label: "圍骰", help: "Receive from each player", kind: "number", needs: "bonusPresets" },
       { key: "presetChase", label: "追", help: "Receive from each player - the first", kind: "number", needs: "bonusPresets" },
       { key: "presetChaseBig", label: "追", help: "Receive from each player - the second", kind: "number", needs: "bonusPresets" },
-      { key: "presetTriple", label: "圍骰", help: "Receive from each player", kind: "number", needs: "bonusPresets" },
-      { key: "presetSnake", label: "蛇骰", help: "Pay each player", kind: "number", needs: "bonusPresets" },
+      { key: "presetWrongCall", label: "嗌錯", help: "Pay each player", kind: "number", needs: "bonusPresets" },
       { key: "presetSevenOne", label: "7搶1", help: "Receive from one player", kind: "number", needs: "bonusPresets" },
       { key: "presetOneSeven", label: "1搶7", help: "Receive from one player", kind: "number", needs: "bonusPresets" },
       { key: "presetEightImmortals", label: "八仙過海", help: "Receive from each player", kind: "number", needs: "bonusPresets" },
-      { key: "presetWrongCall", label: "嗌錯", help: "Pay each player", kind: "number", needs: "bonusPresets" },
     ],
   },
   {
