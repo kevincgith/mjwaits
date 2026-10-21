@@ -2457,6 +2457,7 @@ const SETTING_GROUPS: { title: string; rows: { key: keyof ScoreSettings; label: 
       { key: "showTally", label: "胡摸銃數", help: "Counts on the cards: 胡 black, 摸 green, 銃 red", kind: "bool" },
       { key: "quickScan", label: "快速掃描", help: "A Scan button on each player's card", kind: "bool" },
       { key: "chipsPrompt", label: "籌碼提示", help: "Who hands whom chips, after each entry", kind: "bool" },
+      { key: "tipsAutoHide", label: "提示自動隱藏", help: "籌碼 and the other notices go by themselves", kind: "nullable" },
     ],
   },
 ];
@@ -2526,17 +2527,17 @@ function SettingsSheet({ settings, onSave, onClose }: { settings: ScoreSettings;
                     {/* Greyed out while the switch is off, like the other dependent rows. */}
                     <div className={`sc-row${value === null ? " is-off" : ""}`}>
                       <span className="sc-row-main sc-row-stack">
-                        {key === "scoreCap" ? "上限" : key === "surrenderPrompt" ? "局數" : key === "zhaHu" ? "每人" : "門檻"}
-                        <span className="sc-help">{key === "scoreCap" ? "Up to" : key === "surrenderPrompt" ? "Hands in a row" : key === "zhaHu" ? "To each player, to start with" : "From"}</span>
+                        {key === "scoreCap" ? "上限" : key === "surrenderPrompt" ? "局數" : key === "zhaHu" ? "每人" : key === "tipsAutoHide" ? "秒數" : "門檻"}
+                        <span className="sc-help">{key === "scoreCap" ? "Up to" : key === "surrenderPrompt" ? "Hands in a row" : key === "zhaHu" ? "To each player, to start with" : key === "tipsAutoHide" ? "Before each goes" : "From"}</span>
                       </span>
-                      {/* 高分提示 and 詐胡 step in 5s, 投降提示 in 1s; 封頂 is typed. */}
+                      {/* 高分提示, 詐胡 and 提示自動隱藏 step in 5s, 投降提示 in 1s; 封頂 is typed. */}
                       {key !== "scoreCap" ? (
                         <Stepper
                           value={value ?? ((DEFAULT_SETTINGS[key] ?? SETTING_ON_VALUE[key]) as number)}
                           onChange={(v) => set(key, v as never)}
                           label={label}
-                          min={key === "highScore" || key === "zhaHu" ? 5 : 1}
-                          step={key === "highScore" || key === "zhaHu" ? 5 : 1}
+                          min={key === "highScore" || key === "zhaHu" || key === "tipsAutoHide" ? 5 : 1}
+                          step={key === "highScore" || key === "zhaHu" || key === "tipsAutoHide" ? 5 : 1}
                           disabled={value === null}
                         />
                       ) : (
@@ -2605,7 +2606,7 @@ function useChipMoves(game: ScoreGame, state: ReplayState) {
   // state before the first of them - until the card is ticked or something
   // else goes in.
   const surrenders = useRef<ReplayState | null>(null);
-  const [moves, setMoves] = useState<{ verb: string; list: { from: string; to: string; amount: number }[] } | null>(null);
+  const [moves, setMoves] = useState<{ at: number; verb: string; list: { from: string; to: string; amount: number }[] } | null>(null);
   useEffect(() => {
     const prev = last.current;
     last.current = { id: game.id, events: game.events, state };
@@ -2625,7 +2626,7 @@ function useChipMoves(game: ScoreGame, state: ReplayState) {
     else if (!surrenders.current) surrenders.current = prev.state;
     const list = chipMoves(surrendered ? surrenders.current! : prev.state, state);
     if (list.length === 0) return;
-    setMoves({ verb: grew ? (surrendered ? "投降" : "") : shrank ? "還原" : "改正", list });
+    setMoves({ at: Date.now(), verb: grew ? (surrendered ? "投降" : "") : shrank ? "還原" : "改正", list });
   }, [game, state]);
   return {
     moves,
@@ -2641,8 +2642,35 @@ function useChipMoves(game: ScoreGame, state: ReplayState) {
 // "→ Mandy 2", "→ Ah Wing 2". Names are never cut: when the widest payer and
 // receiver don't fit side by side, each payer takes a line of their own above
 // their arrows. 彩池 is the Jackpot pile.
-function ChipsCard({ verb, list, onDone }: { verb: string; list: { from: string; to: string; amount: number }[]; onDone: () => void }) {
+// 提示自動隱藏 for a banner: closed for you (as its × or Got it would) after
+// that many seconds, a bar along its foot running down. null: until closed.
+function AutoHide({ seconds, onHide, children }: { seconds: number | null; onHide: () => void; children: ReactNode }) {
+  const hide = useRef(onHide);
+  hide.current = onHide;
+  useEffect(() => {
+    if (seconds === null) return;
+    const timer = window.setTimeout(() => hide.current(), seconds * 1000);
+    return () => window.clearTimeout(timer);
+  }, [seconds]);
+  return (
+    <div className="sc-autohide">
+      {children}
+      {seconds !== null && <span className="sc-timer" style={{ animationDuration: `${seconds}s` }} aria-hidden="true" />}
+    </div>
+  );
+}
+
+function ChipsCard({ verb, list, autoHide, onDone }: { verb: string; list: { from: string; to: string; amount: number }[]; autoHide: number | null; onDone: () => void }) {
   const payers = [...new Set(list.map((m) => m.from))];
+  // 提示自動隱藏: gone by itself after that many seconds (a bar along the foot
+  // runs down); off, it stays until ticked. A new change brings a new card
+  // and a fresh count.
+  useEffect(() => {
+    if (autoHide === null) return;
+    const timer = window.setTimeout(onDone, autoHide * 1000);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoHide]);
   const gridRef = useRef<HTMLSpanElement>(null);
   const [stacked, setStacked] = useState(false);
   // Measured side by side, before paint, whenever the list changes.
@@ -2681,6 +2709,7 @@ function ChipsCard({ verb, list, onDone }: { verb: string; list: { from: string;
           );
         })}
       </span>
+      {autoHide !== null && <span className="sc-timer" style={{ animationDuration: `${autoHide}s` }} aria-hidden="true" />}
     </button>
   );
 }
@@ -2931,6 +2960,14 @@ function Board({
       return true;
     }
   });
+  const seeFooterKey = () => {
+    setFooterKeySeen(true);
+    try {
+      window.localStorage.setItem(FOOTER_KEY_SEEN, "1");
+    } catch {
+      // Then it shows again next time - harmless.
+    }
+  };
   const [backupNudgeAt, setBackupNudgeAt] = useState(BACKUP_NUDGE_HANDS);
   // 投降 prompts dismissed, by "holder>pulled@count" - a chain that grows
   // again prompts again.
@@ -3145,7 +3182,7 @@ function Board({
 
       {/* One banner at a time, the most pressing first: 投降 (a choice to make
           now), 執位 (re-seat), 備份 (save a file), then the footer's one-off
-          tip. The rest wait their turn. */}
+          tip. The rest wait their turn. Each goes by itself after 提示自動隱藏. */}
       {[
         // 投降提示: someone's been 拉'd the set number of times in a row (3 by
         // default). Only a prompt - whether 投降 is allowed is house rule.
@@ -3155,7 +3192,9 @@ function Board({
         const due = state.lahs.filter((l) => l.count >= at && !surrenderSeen.includes(`${l.holder}>${l.pulled}@${l.count}`)).sort((a, b) => b.value - a.value);
         if (due.length === 0) return null;
         const l = due[0];
+        const seen = () => setSurrenderSeen((was) => [...was, ...due.map((d) => `${d.holder}>${d.pulled}@${d.count}`)]);
         return (
+          <AutoHide key={`surrender-${l.holder}>${l.pulled}@${l.count}`} seconds={state.settings.tipsAutoHide} onHide={seen}>
           <div className="sc-banner is-surrender" role="status">
             <span>
               <strong>投降</strong> · {l.pulled} has been 拉 {l.count} times by {l.holder} ({fmt(l.value)}) - surrender is available
@@ -3164,19 +3203,16 @@ function Board({
             <button type="button" className="sc-banner-action" onClick={() => setSheet({ kind: "lah" })}>
               拉踢
             </button>
-            <button
-              type="button"
-              className="sc-icon-button"
-              onClick={() => setSurrenderSeen((seen) => [...seen, ...due.map((d) => `${d.holder}>${d.pulled}@${d.count}`)])}
-              aria-label="Dismiss"
-            >
+            <button type="button" className="sc-icon-button" onClick={seen} aria-label="Dismiss">
               {Icons.close}
             </button>
           </div>
+          </AutoHide>
         );
       })(),
         // 執位: 北風北 is done.
         state.seatChangeDue && !reminderHidden && (
+        <AutoHide key="seat" seconds={state.settings.tipsAutoHide} onHide={() => setReminderHidden(true)}>
         <div className="sc-banner" role="status">
           <span>
             <strong>執位</strong> · 北風北 done — re-seat with 座位
@@ -3188,10 +3224,12 @@ function Board({
             {Icons.close}
           </button>
         </div>
+        </AutoHide>
       ),
         // 備份: every 16 hands without a backup file - the scores only live
         // on this phone. Save from here, or dismiss for 16 more.
         handsSinceBackup(game, backedUpAt) >= backupNudgeAt && (
+        <AutoHide key="backup" seconds={state.settings.tipsAutoHide} onHide={() => setBackupNudgeAt(handsSinceBackup(game, backedUpAt) + BACKUP_NUDGE_HANDS)}>
         <div className="sc-banner is-backup" role="status">
           <span>
             <strong>備份</strong> · {handsSinceBackup(game, backedUpAt)} hands since your last backup
@@ -3211,28 +3249,20 @@ function Board({
             {Icons.close}
           </button>
         </div>
+        </AutoHide>
       ),
         // The footer explained, once - its numbers have no labels.
         !footerKeySeen && state.hands.length > 0 && state.settings.showTally && (
+        <AutoHide key="tip" seconds={state.settings.tipsAutoHide} onHide={seeFooterKey}>
         <div className="sc-banner is-tip" role="status">
           <span>
             Card footer: <strong className="is-win">胡</strong> · <strong className="is-self">摸</strong> · <strong className="is-dealin">銃</strong> - wins, self-draws, deal-ins. ± opens 特別獎罰.
           </span>
-          <button
-            type="button"
-            className="sc-banner-action"
-            onClick={() => {
-              setFooterKeySeen(true);
-              try {
-                window.localStorage.setItem(FOOTER_KEY_SEEN, "1");
-              } catch {
-                // Then it shows again next time - harmless.
-              }
-            }}
-          >
+          <button type="button" className="sc-banner-action" onClick={seeFooterKey}>
             Got it
           </button>
         </div>
+        </AutoHide>
       ),
       ].find(Boolean) ?? null}
 
@@ -3261,7 +3291,9 @@ function Board({
         </div>
         {/* 籌碼: who hands whom chips for what just went in (or back out) - in
             the other corner beside the top seat. A tap once they're handed over. */}
-        {chips.moves && state.settings.chipsPrompt && <ChipsCard {...chips.moves} onDone={chips.dismiss} />}
+        {chips.moves && state.settings.chipsPrompt && (
+          <ChipsCard key={chips.moves.at} {...chips.moves} autoHide={state.settings.tipsAutoHide} onDone={chips.dismiss} />
+        )}
         {state.seats.map((player, seat) => {
           const total = state.totals[player] ?? 0;
           const tally = counts.get(player) ?? { wins: 0, selfDraws: 0, dealIns: 0 };

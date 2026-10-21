@@ -52,6 +52,7 @@ export interface ScoreSettings {
   showTally: boolean; // 胡摸銃數 - win / self-draw / deal-in counts on the cards
   quickScan: boolean; // 快速掃描 - a Scan button on each player's card
   chipsPrompt: boolean; // 籌碼提示 - who hands whom chips, after each entry that moves points
+  tipsAutoHide: number | null; // 提示自動隱藏 - seconds a passing card (籌碼, the banners) stays before it goes by itself; null = until closed
   zhaHu: number | null; // 詐胡 - what a false win pays each other player by default (each can be changed); null = off
 }
 
@@ -76,6 +77,7 @@ export const DEFAULT_SETTINGS: ScoreSettings = {
   showTally: true,
   quickScan: true,
   chipsPrompt: true,
+  tipsAutoHide: 30,
   zhaHu: null,
 };
 

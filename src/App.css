@@ -11440,3 +11440,47 @@ html.sc-fit-mode .build-version {
 .sc-chips-grid.is-stacked .sc-chips-amount {
   grid-column: 3;
 }
+
+/* 提示自動隱藏: a hairline along a passing card's foot, running down to when
+   it goes. A banner sits in a wrapper that carries its spacing and clips it. */
+.sc-chips {
+  overflow: hidden;
+}
+
+.sc-autohide {
+  position: relative;
+  margin-bottom: 0.75rem;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.sc-autohide > .sc-banner {
+  margin-bottom: 0;
+}
+
+.sc-timer {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 2px;
+  background: var(--accent);
+  opacity: 0.45;
+  transform-origin: left;
+  animation: sc-timer linear forwards;
+}
+
+@keyframes sc-timer {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sc-timer {
+    display: none;
+  }
+}
