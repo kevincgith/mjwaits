@@ -11957,21 +11957,25 @@ button.sc-stat:active {
   font-weight: 500;
 }
 
-/* 預設獎罰: quick picks filling the empty pay table - two rows, four columns
-   to a screenful, the rest a smooth swipe to the right, snapping to a column. */
+/* 預設獎罰: quick picks filling the empty pay table, in pages of two rows of
+   four - a swipe always lands on a whole page; dots at the foot show which. */
+.sc-paytable:has(> .sc-presets) {
+  position: relative;
+}
+
 .sc-presets {
   display: grid;
   grid-template-rows: repeat(2, minmax(0, 1fr));
   grid-auto-columns: calc((100% - 3 * 0.3rem) / 4);
   gap: 0.3rem;
   height: 100%;
-  padding: 0.1rem 0;
+  padding: 0.1rem 0 0.45rem;
   box-sizing: border-box;
   overflow-x: auto;
   overflow-y: hidden;
   overscroll-behavior-x: contain;
-  scroll-snap-type: x proximity;
-  scroll-behavior: smooth;
+  scroll-snap-type: x mandatory;
+  scroll-padding: 0;
   scrollbar-width: none;
 }
 
@@ -11979,14 +11983,33 @@ button.sc-stat:active {
   display: none;
 }
 
-.sc-presets > .sc-preset {
+/* Only a page's first tile is a snap point, so a swipe can't stop between. */
+.sc-presets > .sc-preset.is-page {
   scroll-snap-align: start;
+  scroll-snap-stop: always;
 }
 
-/* More to the right: the box's right edge fades, a hint to swipe. */
-.sc-paytable:has(> .sc-presets:not(.is-at-end) > :nth-child(9)) {
-  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 1.25rem), transparent);
-  mask-image: linear-gradient(to right, #000 calc(100% - 1.25rem), transparent);
+.sc-preset-dots {
+  position: absolute;
+  left: 50%;
+  bottom: 0.15rem;
+  translate: -50% 0;
+  display: flex;
+  gap: 0.3rem;
+}
+
+.sc-preset-dots button {
+  width: 0.4rem;
+  height: 0.4rem;
+  border: none;
+  border-radius: 50%;
+  padding: 0;
+  background: var(--separator);
+  cursor: pointer;
+}
+
+.sc-preset-dots button.is-on {
+  background: var(--text-muted);
 }
 
 /* Name and amount side by side, so two rows fit the box. */

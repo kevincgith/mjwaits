@@ -1175,11 +1175,18 @@ function BonusSheet({
   const presets = bonusPresets(state.settings);
   // A one-player pick (7搶1, 1搶7) waits for who: Confirm stays off till then.
   const [needsOne, setNeedsOne] = useState(false);
-  // The quick picks in one strip, two rows deep, the usual ones first and the
-  // less common a swipe to the right - so the box never grows.
+  // The quick picks in pages of eight (two rows of four), the usual ones
+  // first and the less common a swipe to the right - each swipe lands on a
+  // whole page, and dots show which - so the box never grows.
   const shown = [...presets.filter((p) => !p.more), ...presets.filter((p) => p.more)];
-  // Scrolled all the way: no more to hint at.
-  const [presetsAtEnd, setPresetsAtEnd] = useState(false);
+  const pages = Math.ceil(shown.length / 8);
+  const [presetPage, setPresetPage] = useState(0);
+  const stripRef = useRef<HTMLDivElement>(null);
+  const toPage = (i: number) => {
+    const el = stripRef.current;
+    const first = el?.querySelectorAll<HTMLElement>(".sc-preset")[i * 8];
+    if (el && first) el.scrollTo({ left: first.offsetLeft - el.offsetLeft, behavior: "smooth" });
+  };
   const n = Number(amount || 0);
   const pick = (p: BonusPreset) => {
     setKind(p.kind);
@@ -1300,13 +1307,15 @@ function BonusSheet({
           waiting ? (
             `${preset} - tap who ${kind === "獎" ? "pays" : "is paid"}, above`
           ) : presets.length > 0 ? (
+            <>
             <div
-              className={`sc-presets${presetsAtEnd ? " is-at-end" : ""}`}
+              ref={stripRef}
+              className="sc-presets"
               role="group"
               aria-label="預設獎罰"
               onScroll={(e) => {
                 const el = e.currentTarget;
-                setPresetsAtEnd(el.scrollLeft + el.clientWidth >= el.scrollWidth - 2);
+                setPresetPage(Math.min(pages - 1, Math.round(el.scrollLeft / el.clientWidth)));
               }}
             >
               {/* Four columns to a screenful, read across a row then down:
@@ -1316,7 +1325,7 @@ function BonusSheet({
                 <button
                   key={i}
                   type="button"
-                  className={`sc-preset is-${p.kind === "獎" ? "reward" : "penalty"}`}
+                  className={`sc-preset is-${p.kind === "獎" ? "reward" : "penalty"}${i % 8 === 0 ? " is-page" : ""}`}
                   style={{ gridRow: Math.floor((i % 8) / 4) + 1, gridColumn: Math.floor(i / 8) * 4 + (i % 4) + 1 }}
                   onClick={() => pick(p)}
                 >
@@ -1328,6 +1337,14 @@ function BonusSheet({
                 </button>
               ))}
             </div>
+            {pages > 1 && (
+              <span className="sc-preset-dots">
+                {Array.from({ length: pages }, (_, i) => (
+                  <button key={i} type="button" className={i === presetPage ? "is-on" : undefined} onClick={() => toPage(i)} aria-label={`Quick picks page ${i + 1}`} />
+                ))}
+              </span>
+            )}
+            </>
           ) : (
             "Enter an amount to see who pays what"
           )
