@@ -1663,10 +1663,10 @@ describe("PATTERNS: 獨獨/假獨 (genuine vs. fake single wait)", () => {
     // interplay with 獨獨 (already covered by the kanchan tests above and
     // the 十六飛 test below).
     const low = scoreHand("123m456m789t111z789b22b", ctx({ winningTile: { suit: "m", rank: 3 } }));
-    expect(PATTERNS.find((p) => p.id === "fake-single-wait")!.score(low.hand, ctx({ winningTile: { suit: "m", rank: 3 } }))).toBe(2);
+    expect(PATTERNS.find((p) => p.id === "fake-single-wait")!.score(low.hand, ctx({ winningTile: { suit: "m", rank: 3 } }))).toBe(1);
 
     const high = scoreHand("789m456m123t111z789b22b", ctx({ winningTile: { suit: "m", rank: 7 } }));
-    expect(PATTERNS.find((p) => p.id === "fake-single-wait")!.score(high.hand, ctx({ winningTile: { suit: "m", rank: 7 } }))).toBe(2);
+    expect(PATTERNS.find((p) => p.id === "fake-single-wait")!.score(high.hand, ctx({ winningTile: { suit: "m", rank: 7 } }))).toBe(1);
   });
 
   it("doesn't treat a 2-3 waiting on 1 (or an 7-8 waiting on 9) as 邊張 - those are genuine two-sided (兩面) waits, not edge waits", () => {
@@ -1736,7 +1736,7 @@ describe("PATTERNS: 明絕 (won on a tile already declared 3 times)", () => {
     const result = scoreHand("(333m)(666m)(567m)345m789t11z", ctx({ winningTile: { suit: "m", rank: 3 } }));
     expect(tai(result, "visible-triple-win")).toBe(0);
     expect(tai(result, "visible-exhausted-multi-wait")).toBe(10);
-    expect(PATTERNS.find((p) => p.id === "visible-triple-win")!.score(result.hand, ctx({ winningTile: { suit: "m", rank: 3 } }))).toBe(5);
+    expect(PATTERNS.find((p) => p.id === "visible-triple-win")!.score(result.hand, ctx({ winningTile: { suit: "m", rank: 3 } }))).toBe(1);
   });
 
   it("doesn't score when the winning tile's kind doesn't match any declared meld", () => {

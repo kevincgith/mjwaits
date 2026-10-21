@@ -12404,10 +12404,160 @@ button.sc-stat:active {
   align-self: flex-start;
 }
 
-/* The engine switch sits under its explanation, full width, so both
-   choices fit at any sheet width. */
-.tr-engine {
-  flex-direction: column;
-  align-items: stretch;
+/* Live preview: the hand in the tab under the saved rules and the draft. */
+.tr-preview {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 2.75rem;
+  padding: 0.5rem 0.85rem;
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+}
+
+.tr-preview.is-changed {
+  background: var(--accent-bg);
+}
+
+.tr-preview-empty {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.tr-preview-label {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.tr-preview-totals {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.tr-preview-totals strong {
+  font-size: var(--text-lg);
+}
+
+.tr-preview.is-changed .tr-preview-totals strong {
+  color: var(--accent);
+}
+
+.tr-preview-was {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
+/* Changes from the house list, each with its own undo. */
+.tr-changes-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-right: 0.25rem;
+}
+
+.tr-link {
+  border: none;
+  padding: 0.35rem 0.5rem;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tr-change {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 0.5rem;
+  min-height: 2.5rem;
+}
+
+.tr-change + .tr-change {
+  border-top: 0.5px solid var(--separator);
+}
+
+.tr-change-text {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  padding: 0.35rem 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+/* A ladder: its tiers top-down, joined by a rail; the rail goes dashed when
+   the tiers stack instead of the highest replacing the rest. */
+.tr-ladder {
+  border-radius: var(--radius-lg);
+  padding: 0.35rem 0.85rem 0.5rem;
+  background: var(--surface-sunken);
+}
+
+.tr-ladder-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 2.9rem;
+}
+
+.tr-ladder-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 600;
+}
+
+.tr-ladder-rungs {
+  display: flex;
+  flex-direction: column;
+  margin-left: 0.35rem;
+  padding-left: 0.75rem;
+  border-left: 2px solid var(--accent);
+}
+
+.tr-ladder.is-stacking .tr-ladder-rungs {
+  border-left-style: dashed;
+  border-left-color: var(--fill-strong);
+}
+
+.tr-rung + .tr-rung {
+  border-top: 0.5px solid var(--separator);
+}
+
+.tr-chip.is-ladder {
+  background: none;
+  box-shadow: inset 0 0 0 1px var(--fill-strong);
+  color: var(--text-muted);
+}
+
+/* The breakdown: a pattern whose rule isn't the house list's. */
+.custom-rule-dot {
+  display: inline-block;
+  width: 0.45rem;
+  height: 0.45rem;
+  margin-right: 0.35rem;
+  border-radius: 50%;
+  background: var(--accent);
+  vertical-align: middle;
+}
+
+/* Recent: a total worked out under other rules than now. */
+.recent-rules {
+  border-radius: var(--radius-pill);
+  padding: 0.05rem 0.45rem;
+  background: var(--warning-bg-3);
+  color: var(--warning-text);
+  font-size: var(--text-xs);
+  white-space: nowrap;
 }

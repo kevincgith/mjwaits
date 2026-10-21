@@ -82,6 +82,8 @@ export interface RecordRequest {
   tai: number; // without 莊 - the ledger adds that
   patterns: PatternNote[];
   removedDealerTai: number;
+  // Scored under custom tai rules: their fingerprint (see WinnerEntry.rules).
+  rules?: string;
   // Set when the hand was started from a Scores 食胡 sheet (ScoreHandRequest):
   // straight back to that winner, with who dealt in and the Jackpot as picked.
   seat?: number;
@@ -589,6 +591,7 @@ type HandInitial = {
   jackpot?: boolean;
   entries?: DraftEntry[];
   patternsFor?: number;
+  rules?: string; // patternsFor's hand was scored under custom tai rules
   // Fixing a 特別獎罰 entry: the tab opens as it was recorded.
   bonus?: { kind: "獎" | "罰"; other: number | null; amount: number; name?: string };
   // Fixing a 詐胡 entry: each player's amount as recorded.
@@ -766,7 +769,7 @@ function WinSheet({
   const winners: WinnerEntry[] = entries.map((e) => ({
     seat: e.seat,
     tai: Number(e.tai || 0),
-    ...(e.seat === patternsFor && initial?.patterns.length ? { patterns: initial.patterns } : {}),
+    ...(e.seat === patternsFor && initial?.patterns.length ? { patterns: initial.patterns, ...(initial.rules ? { rules: initial.rules } : {}) } : {}),
   }));
   const fromValid = from === null ? multi === 1 : from >= 0;
   const complete = fromValid && entries.every((e) => e.tai !== "");
@@ -3140,7 +3143,7 @@ function RecentSheet({
 // The 食胡 sheet set up as a recorded win was, for fixing it.
 function winInitial(ev: Extract<ScoreEvent, { t: "win" }>): HandInitial {
   const first = ev.winners[0];
-  const base = { from: ev.from, jackpot: ev.jackpotTo !== undefined, patterns: first.patterns ?? [], patternsFor: first.seat };
+  const base = { from: ev.from, jackpot: ev.jackpotTo !== undefined, patterns: first.patterns ?? [], patternsFor: first.seat, rules: first.rules };
   return ev.winners.length > 1
     ? { ...base, selfDraw: false, entries: ev.winners.map((w) => ({ seat: w.seat, tai: String(w.tai) })) }
     : { ...base, selfDraw: ev.from === null, tai: first.tai };
@@ -3327,6 +3330,7 @@ function Board({
     // is whoever has the 門風 entered in Scoring.
     const seat = request.seat ?? [0, 1, 2, 3].find((s) => ((s - state.dealer + SEATS) % SEATS) + 1 === request.seatWind) ?? 0;
     const dealerNote = request.removedDealerTai ? ` (莊 ${request.removedDealerTai} taken out — Scores adds its own)` : "";
+    const rulesNote = request.rules ? " · scored under custom tai rules" : "";
     // A 雙響/三響: the sheet comes back whole, with only the scored winner's
     // tai (and patterns) new. Who dealt in stands - one discard, several
     // winners, so Scoring's 自摸 doesn't apply.
@@ -3365,11 +3369,12 @@ function Board({
         initial: {
           selfDraw: false,
           patterns: request.reopenOnly ? [] : request.patterns,
+          rules: request.reopenOnly ? undefined : request.rules,
           from: request.from ?? -1,
           jackpot: request.jackpot,
           entries: request.reopenOnly ? draft.entries : draft.entries.map((e) => (e.seat === scored ? { ...e, tai: String(request.tai) } : e)),
           patternsFor: scored,
-          ...(request.reopenOnly ? {} : { note: `From Scoring: ${state.seats[scored]} ${request.tai} tai${dealerNote}.` }),
+          ...(request.reopenOnly ? {} : { note: `From Scoring: ${state.seats[scored]} ${request.tai} tai${dealerNote}${rulesNote}.` }),
         },
       });
       onRequestDone();
@@ -3387,12 +3392,13 @@ function Board({
         selfDraw: request.selfDraw,
         tai: request.tai,
         patterns: request.patterns,
+        rules: request.rules,
         // Scoring has the last word on 自摸; who dealt in carries over otherwise.
         ...(request.seat !== undefined ? { from: request.selfDraw ? null : request.from === null || request.from === undefined ? -1 : request.from, jackpot: request.jackpot } : {}),
         note:
           request.seat !== undefined
-            ? `From Scoring: ${request.tai} tai${dealerNote}.`
-            : `From Scoring: ${request.tai} tai${dealerNote}. Winner picked by 門風 ${WIND_CHARS[request.seatWind - 1]}.`,
+            ? `From Scoring: ${request.tai} tai${dealerNote}${rulesNote}.`
+            : `From Scoring: ${request.tai} tai${dealerNote}${rulesNote}. Winner picked by 門風 ${WIND_CHARS[request.seatWind - 1]}.`,
       },
     });
     onRequestDone();

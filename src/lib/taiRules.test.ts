@@ -1,7 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_TAI_RULES, PATTERNS, scoreHand, type GameContext, type PatternRule, type TaiRules } from "./scoring";
 import { PATTERN_CATALOG } from "./taiCatalog";
-import { changedCount, isDefaultRules, normalizeRules, replaceCycles, replacedBy } from "./taiRules";
+import {
+  changedCount,
+  describeChanges,
+  isDefaultRules,
+  normalizeRules,
+  replaceCycles,
+  replacedBy,
+  rulesDiff,
+  rulesFingerprint,
+  rulesFromDiff,
+  rulesFromHash,
+  rulesUrl,
+} from "./taiRules";
+import { LADDERS } from "./taiCatalog";
 import { TEST_HAND_BASE_CONTEXT } from "./testHands";
 
 // Default rules with some patterns' rules patched.
@@ -23,6 +36,23 @@ const PLAIN_HAND = "123456789m111z234t22b";
 describe("the classification", () => {
   it("covers every pattern exactly once", () => {
     expect(new Set(Object.keys(PATTERN_CATALOG))).toEqual(new Set(PATTERNS.map((p) => p.id)));
+  });
+
+  it("puts each pattern on at most one ladder, and ladders name only real patterns", () => {
+    const ids = new Set(PATTERNS.map((p) => p.id));
+    const seen = new Set<string>();
+    for (const id of LADDERS.flatMap((l) => l.rungs.flat())) {
+      expect(ids.has(id), id).toBe(true);
+      expect(seen.has(id), id).toBe(false);
+      seen.add(id);
+    }
+  });
+
+  it("every score() returns a count, not a tai value", () => {
+    // Values live in the catalog only: no pattern scores more than a
+    // handful of instances on a real hand.
+    const result = scoreHand(DRAGONS_HAND, ctx(undefined, { dealerStreak: 3, kongDraw: 2 }));
+    for (const m of result.matched) expect(m.pattern.score(result.hand, ctx(undefined, { dealerStreak: 3, kongDraw: 2 }))).toBeLessThanOrEqual(5);
   });
 
   it("default rules replace only known patterns, never themselves, with no loops", () => {
@@ -78,11 +108,20 @@ describe("on/off and exclusion", () => {
     expect(tai(result, "dragon-tile")).toBe(6);
   });
 
-  it("removing a replaces edge makes both count", () => {
-    const rules = withRules({ "big-three-dragons": { replaces: ["small-three-dragons"] } });
+  it("switching a ladder off makes its tiers stack", () => {
+    const rules = withRules({});
+    rules.ladders.dragons = { exclusive: false };
     const result = scoreHand(DRAGONS_HAND, ctx(rules));
     expect(tai(result, "big-three-dragons")).toBe(80);
     expect(tai(result, "dragon-tile")).toBe(6);
+  });
+
+  it("removing an explicit replaces edge makes both count", () => {
+    // 五槓子 replaces 槓 by its own edge (they're not on one ladder).
+    const FIVE_KONGS = "(1111m)(2222m)(3333t)(4444t)(5555b)11z";
+    expect(tai(scoreHand(FIVE_KONGS, ctx()), "kong")).toBe(0);
+    const rules = withRules({ "five-kongs": { replaces: DEFAULT_TAI_RULES.patterns["five-kongs"].replaces.filter((r) => r !== "kong") } });
+    expect(tai(scoreHand(FIVE_KONGS, ctx(rules)), "kong")).toBe(10);
   });
 
   it("adding a replaces edge drops the other pattern", () => {
@@ -122,7 +161,7 @@ describe("大雞/大鴨's ignore list", () => {
   });
 
   it("taking 莊 off the list stops 大雞", () => {
-    const rules = withRules({ "dealer-streak": { chickenIgnores: false } });
+    const rules = withRules({ "dealer-streak": { blocksChicken: true } });
     expect(tai(scoreHand(BORING_HAND, ctx(rules, { dealerStreak: 1 })), "big-chicken")).toBe(0);
   });
 
@@ -130,7 +169,7 @@ describe("大雞/大鴨's ignore list", () => {
     // Switch off whatever stops 大雞 on a plain hand, and 大雞 appears.
     const plain = scoreHand(PLAIN_HAND, ctx());
     expect(tai(plain, "big-chicken")).toBe(0);
-    const fired = plain.matched.map((m) => m.pattern.id).filter((id) => !DEFAULT_TAI_RULES.patterns[id].chickenIgnores && id !== "base-tai");
+    const fired = plain.matched.map((m) => m.pattern.id).filter((id) => DEFAULT_TAI_RULES.patterns[id].blocksChicken && id !== "base-tai");
     const rules = withRules(Object.fromEntries(fired.map((id) => [id, { enabled: false }])));
     expect(tai(scoreHand(PLAIN_HAND, ctx(rules)), "big-chicken")).toBe(30);
   });
@@ -168,7 +207,54 @@ describe("the original engine and the fallback", () => {
   });
 });
 
+describe("the changes list, fingerprint and share links", () => {
+  const custom = () => {
+    const rules = withRules({ kong: { tai: 3 }, "no-flowers": { shapes: ["normal"] } });
+    rules.ladders.dragons = { exclusive: false };
+    return rules;
+  };
+
+  it("describes every change in words", () => {
+    const texts = describeChanges(custom()).map((c) => c.text);
+    expect(texts).toContain("槓 2 each → 3 each");
+    expect(texts).toContain("三元 Dragons: every tier counts (stacks)");
+    expect(texts.some((t) => t.startsWith("無花 not on"))).toBe(true);
+    expect(describeChanges(DEFAULT_TAI_RULES)).toEqual([]);
+  });
+
+  it("fingerprints only rules that score differently", () => {
+    expect(rulesFingerprint(DEFAULT_TAI_RULES)).toBeNull();
+    expect(rulesFingerprint(withRules({ kong: { tai: 3 } }, "legacy"))).toBeNull();
+    const a = rulesFingerprint(custom());
+    expect(a).toMatch(/^[0-9a-z]+$/);
+    expect(rulesFingerprint(custom())).toBe(a);
+    expect(rulesFingerprint(withRules({ kong: { tai: 4 } }))).not.toBe(a);
+  });
+
+  it("round-trips through a diff and a share link", () => {
+    expect(rulesFromDiff(rulesDiff(custom()))).toEqual(custom());
+    expect(rulesDiff(DEFAULT_TAI_RULES)).toEqual({ v: 1 });
+    const url = rulesUrl(custom(), "https://example.test/mjwaits/");
+    expect(rulesFromHash(url.slice(url.indexOf("#")))).toEqual(custom());
+    expect(rulesFromHash("#r=garbage")).toBeNull();
+    expect(rulesFromHash("#s=abc")).toBeNull();
+  });
+});
+
 describe("normalizeRules", () => {
+  it("reads the first release's saves: chickenIgnores, and replaces lists that spelled out ladder edges", () => {
+    const { rules } = normalizeRules({
+      engine: "custom",
+      patterns: {
+        "dealer-streak": { chickenIgnores: false },
+        "big-three-dragons": { replaces: ["dragon-tile", "small-three-dragons"] },
+      },
+    });
+    expect(rules.patterns["dealer-streak"].blocksChicken).toBe(true);
+    expect(rules.patterns["big-three-dragons"].replaces).toEqual([]);
+    expect(rules.ladders.dragons.exclusive).toBe(true);
+  });
+
   it("fills missing patterns with defaults and drops unknown ones", () => {
     const { rules, corrupt } = normalizeRules({ engine: "custom", patterns: { kong: { tai: 3 }, "no-such-pattern": { tai: 1 } } });
     expect(corrupt).toBe(false);

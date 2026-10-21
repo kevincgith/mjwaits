@@ -9,26 +9,35 @@ document the house list, kept in sync as patterns are added or adjusted.
 ## Rule classification and customisation
 
 The Scoring tab's 設定 sheet edits a `TaiRules` (saved in localStorage as `mjwaits.taiRules`), and
-every score that tab works out uses it. Each pattern is classified by five attributes, with its
-defaults in [`src/lib/taiCatalog.ts`](../src/lib/taiCatalog.ts) plus each pattern's own `excludes`:
+every score that tab works out uses it. Detection and value are separate: each pattern's `score()`
+only says **how many times** it applies (0, 1, n - or the declared count for 槓摸/搶槓/莊), and the
+rules turn that into tai. Everything about a pattern's rule is written in one place,
+[`src/lib/taiCatalog.ts`](../src/lib/taiCatalog.ts), and the default ruleset is built from it alone:
 
 | Attribute | What it is | Editable as |
 |---|---|---|
 | Family | Which section of this document it belongs to | Groups the sheet |
 | Value | `flat` (N tai when it applies), `per` (N per instance), `table` (槓摸/搶槓: tai by count), `streak` (莊: first + each 連莊) | The tai, the table, or first/each |
-| Hand shapes (**inclusion**) | Which of normal / 十三么 / 十六不搭 / 嚦咕嚦咕 it may count on | Switch each shape off and on. A special hand only offers the patterns its own scorer evaluates (the "eligible" shapes): ordinary checks run against the special construction would misread it |
-| Replaces (**exclusion**) | Patterns it drops when both fire. Any pair with no edge **stacks** | Add/remove edges; "Replaced by" shows the reverse |
-| 大雞/大鴨 ignore it | Whether 大雞/大鴨 treat it as not firing | A switch per pattern (大雞/大鴨 never count each other) |
+| Ladder | Tiers within a family, lowest rung first (`LADDERS`): 三元牌 → 小三元 → 大三元, 兩 → 三 → 四 → 五暗刻, 混一色 → 清一色… A pattern replaces every lower rung that fires, so only the highest counts | One switch per ladder: "only the highest counts" (house list) or every tier stacks |
+| Replaces (**exclusion**) | Edges outside any ladder (天胡 replaces 門前清, 五槓子 replaces 槓…). Any pair with no edge and no shared ladder **stacks** | Add/remove edges; edges from the ladder show but change with its switch; "Replaced by" shows the reverse |
+| Hand shapes (**inclusion**) | Which of normal / 十三么 / 十六不搭 / 嚦咕嚦咕 it may count on | Switch each shape off and on, among the shapes that hand's scorer can evaluate (derived in `scoring.ts` as `eligibleShapes` - a fact about the scorer, not a rule) |
+| Blocks 大雞/大鴨 | Whether its firing stops 大雞/大鴨 - off for 底, the bonus tiles and purely declared state like 莊/叮/天胡 | A switch per pattern (大雞/大鴨 never count each other) |
 
 How the scorer applies them: a disabled pattern, or one not included for the hand's shape, scores 0
-and replaces nothing. A `flat`/`per` value rescales the house value (the raw score divided by the
-house value is the instance count). Replacing is a single pass: every pattern that fires drops its
-targets, even if it is itself dropped. So a loop (A replaces B and B replaces A) drops both, and the
-sheet warns about one. Loops between answers of the same situation choice (門清叮 and 天叮/地叮)
+and replaces nothing. Replacing is a single pass: every pattern that fires drops its targets (ladder
+and own edges), even if it is itself dropped. So a loop (A replaces B and B replaces A) drops both, and
+the sheet warns about one. Loops between answers of the same situation choice (門清叮 and 天叮/地叮)
 can never fire together, so they aren't flagged.
 
+The sheet previews the hand in the tab live as you edit ("This hand: 31 → 33"), lists every change
+from the house list in words (each with Undo), and can **share** the rules as a link or QR code
+(`#r=…`, just the differences): opening one shows them in 設定 to review before they replace your
+own. Totals worked out under custom rules carry a short fingerprint of them (`rulesFingerprint`):
+Recent marks one scored under other rules than now, and a hand sent to the Scores tab notes it, and
+the breakdown dots any pattern whose rule isn't the house list's.
+
 **Fallback.** `src/lib/scoringLegacy.ts` is a frozen copy of the engine from before rules were
-editable. 設定's "Original" engine scores with it, and if the configurable engine ever throws (a
+editable. The developer sheet's "Tai rules engine: Original" scores with it, and if the configurable engine ever throws (a
 bug, not an incomplete hand) the hand is re-scored with it and the TOTAL card says so.
 `engineParity.test.ts` checks that the default rules score every test hand identically to it.
 The `pre-tai-rules` git tag marks the last commit without any of this.

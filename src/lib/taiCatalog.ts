@@ -1,19 +1,23 @@
-// How every scoring pattern is classified, so its tai and relations can be
-// edited as data (see TaiRules in scoring.ts and the Scoring tab's 設定
-// sheet). Pure data, no imports - scoring.ts builds the default ruleset
-// from this plus PATTERNS' own `excludes`, so there's exactly one place a
-// pattern's family/value lives.
+// The house's tai rules as data: one row per scoring pattern, the single
+// place its value and relations are written down. scoring.ts's PATTERNS only
+// *detect* - each score() returns how many times a pattern applies (0 = not
+// at all) - and the rules turn that into tai; DEFAULT_TAI_RULES (scoring.ts)
+// is built from this file alone. The Scoring tab's 設定 sheet edits a copy.
 //
-// Five attributes per pattern (docs/scoring-rules.md, "Rule classification
-// and customisation"):
-// 1. family   - the docs section it belongs to; groups the editor.
-// 2. value    - flat (N when it applies), per (N per instance), table
-//               (tai by count, 槓摸/搶槓) or streak (莊: first + each extra).
-// 3. shapes   - which hand shapes it may count on (inclusion) - built in
-//               scoring.ts from the special-hand scorers' own lists.
-// 4. replaces - ids it removes when both fire (exclusion) - PATTERNS'
-//               `excludes`; any pair without an edge stacks.
-// 5. 大雞/大鴨 ignore it - built in scoring.ts from the exempt lists.
+// What a pattern's rule is made of (docs/scoring-rules.md, "Rule
+// classification and customisation"):
+// - family        - the docs section it belongs to; groups the editor.
+// - value         - flat (N when it applies), per (N per instance), table
+//                   (tai by count, 槓摸/搶槓) or streak (莊: first + each 連莊).
+// - ladder        - LADDERS below: tiers where a higher rung replaces every
+//                   lower one (大三元 over 小三元 over 三元牌).
+// - replaces      - exclusion edges outside any ladder; any pair with no
+//                   edge and no shared ladder stacks.
+// - blocksChicken - whether its firing stops 大雞/大鴨 (default yes).
+// - hand shapes   - which of normal/十三么/十六不搭/嚦咕嚦咕 it can count on.
+//                   Not listed here: that's a fact about each special-hand
+//                   scorer (what it knows how to evaluate), so it's derived
+//                   in scoring.ts as eligibleShapes.
 
 export type PatternFamily =
   | "foundation"
@@ -77,13 +81,347 @@ export type PatternValue =
 export interface PatternClass {
   family: PatternFamily;
   value: PatternValue;
-  /** What score() returns per instance when it differs from the default
-   *  tai - only 正圈風, whose detection returns 1 but which is worth 0. */
-  rawUnit?: number;
+  /** Exclusion edges beyond its ladder. */
+  replaces?: string[];
+  /** false: 大雞/大鴨 still apply when this fires (purely declared state). */
+  blocksChicken?: boolean;
 }
 
-const flat = (family: PatternFamily, tai: number): PatternClass => ({ family, value: { kind: "flat", tai } });
-const per = (family: PatternFamily, tai: number): PatternClass => ({ family, value: { kind: "per", tai } });
+// 槓摸/搶槓's default table - see FIVE_POWER_TAI_TABLE in scoring.ts for
+// why it's a literal list rather than a formula.
+export const FIVE_POWER_TABLE: readonly number[] = [0, 5, 25, 125, 250, 250];
+
+const flat = (tai: number): PatternValue => ({ kind: "flat", tai });
+const per = (tai: number): PatternValue => ({ kind: "per", tai });
+const table = (t: readonly number[]): PatternValue => ({ kind: "table", table: [...t] });
+const streak = (first: number, tai: number): PatternValue => ({ kind: "streak", first, tai });
+
+export const PATTERN_CATALOG: Record<string, PatternClass> = {
+  "base-tai": { family: "foundation", value: flat(5), blocksChicken: false },
+  "concealed-except-kongs": { family: "foundation", value: flat(5) },
+  kong: { family: "foundation", value: per(2) },
+  "no-flowers": { family: "bonus", value: flat(2), blocksChicken: false },
+  "correct-flower": { family: "bonus", value: per(2), blocksChicken: false },
+  "wrong-flower": { family: "bonus", value: per(2), blocksChicken: false },
+  "no-honors-no-flowers": { family: "purity", value: flat(10) },
+  "no-honors": { family: "purity", value: flat(2) },
+  "wrong-seat-wind": { family: "winds", value: per(2) },
+  "correct-seat-wind": { family: "winds", value: flat(2) },
+  "correct-round-wind": { family: "winds", value: flat(0) },
+  "small-three-winds": { family: "winds", value: flat(30) },
+  "big-three-winds": { family: "winds", value: flat(60) },
+  "small-four-winds": { family: "winds", value: flat(120) },
+  "big-four-winds": { family: "winds", value: flat(160) },
+  "dragon-tile": { family: "dragons", value: per(2) },
+  "small-three-dragons": { family: "dragons", value: flat(40) },
+  "big-three-dragons": { family: "dragons", value: flat(80) },
+  "all-honors": { family: "purity", value: flat(160) },
+  "all-runs": { family: "shape", value: flat(5) },
+  "all-runs-no-honors-no-flowers": { family: "shape", value: flat(20), replaces: ["all-runs", "no-honors-no-flowers"] },
+  "missing-one-suit": { family: "coverage", value: flat(10) },
+  "middle-tile-pair": { family: "pair", value: per(2) },
+  "no-fives": { family: "range", value: flat(10) },
+  "small-five-suits": { family: "coverage", value: flat(10) },
+  "big-five-suits": { family: "coverage", value: flat(15) },
+  "small-seven-suits": { family: "coverage", value: flat(15) },
+  "big-seven-suits": { family: "coverage", value: flat(20) },
+  "greater-than-five": { family: "range", value: flat(40), replaces: ["no-fives"] },
+  "less-than-five": { family: "range", value: flat(40), replaces: ["no-fives"] },
+  "all-simples": { family: "range", value: flat(10) },
+  "three-treasures": { family: "compound", value: flat(40) },
+  "all-triplets": { family: "shape", value: flat(40) },
+  "five-concealed-triplets": { family: "shape", value: flat(160), replaces: ["all-triplets", "two-hidden-triplets", "three-hidden-triplets", "four-hidden-triplets", "five-hidden-triplets"] },
+  "two-hidden-triplets": { family: "hidden", value: flat(5) },
+  "three-hidden-triplets": { family: "hidden", value: flat(15) },
+  "four-hidden-triplets": { family: "hidden", value: flat(30) },
+  "five-hidden-triplets": { family: "hidden", value: flat(80) },
+  "five-kongs": { family: "hidden", value: flat(240), replaces: ["kong", "four-hidden-triplets", "five-hidden-triplets"] },
+  "pure-straight-open": { family: "straights", value: per(10) },
+  "pure-straight-hidden": { family: "straights", value: per(20) },
+  "mixed-straight-open": { family: "straights", value: per(8) },
+  "mixed-straight-hidden": { family: "straights", value: per(15) },
+  "old-young-run": { family: "straights", value: per(3) },
+  "old-young-triplet": { family: "straights", value: per(5) },
+  "mixed-common-rank": { family: "common-rank", value: flat(30) },
+  "mixed-common-rank-pair": { family: "common-rank", value: flat(50) },
+  "mixed-common-rank-triple": { family: "common-rank", value: flat(60) },
+  "pure-common-rank": { family: "common-rank", value: flat(120), replaces: ["mixed-common-rank"] },
+  "mixed-terminal": { family: "common-rank", value: flat(40) },
+  "pure-terminal": { family: "common-rank", value: flat(80), replaces: ["no-fives"] },
+  "mixed-terminal-honor-triplets": { family: "common-rank", value: flat(100) },
+  "pure-terminal-triplets": { family: "common-rank", value: flat(200) },
+  "four-returns-to-one-open": { family: "four-returns", value: per(5) },
+  "four-returns-to-one-hidden": { family: "four-returns", value: per(15) },
+  "four-returns-to-two-open": { family: "four-returns", value: flat(15) },
+  "four-returns-to-two-hidden": { family: "four-returns", value: flat(30) },
+  "four-returns-to-four-open": { family: "four-returns", value: per(30) },
+  "four-returns-to-four-hidden": { family: "four-returns", value: per(60) },
+  "identical-sequences-open": { family: "sequences", value: per(5) },
+  "identical-sequences-hidden": { family: "sequences", value: per(8) },
+  "small-twin-identical-sequences-open": { family: "sequences", value: flat(10), replaces: ["identical-sequences-open", "identical-sequences-hidden"] },
+  "small-twin-identical-sequences-hidden": { family: "sequences", value: flat(15), replaces: ["identical-sequences-open", "identical-sequences-hidden"] },
+  "triple-identical-sequences-open": { family: "sequences", value: flat(30) },
+  "triple-identical-sequences-hidden": { family: "sequences", value: flat(60) },
+  "quadruple-identical-sequences-open": { family: "sequences", value: flat(80) },
+  "quadruple-identical-sequences-hidden": { family: "sequences", value: flat(160) },
+  "two-separate-identical-sequences-open": { family: "sequences", value: flat(20), replaces: ["identical-sequences-open", "identical-sequences-hidden"] },
+  "two-separate-identical-sequences-hidden": { family: "sequences", value: flat(40), replaces: ["identical-sequences-open", "identical-sequences-hidden"] },
+  "same-suit-consecutive-open": { family: "sequences", value: per(15) },
+  "same-suit-consecutive-hidden": { family: "sequences", value: per(30) },
+  "same-suit-two-step-open": { family: "sequences", value: per(8) },
+  "same-suit-two-step-hidden": { family: "sequences", value: per(15) },
+  "consecutive-triplet-pair": { family: "consecutive", value: per(5) },
+  "small-three-consecutive-triplets": { family: "consecutive", value: per(15) },
+  "big-three-consecutive-triplets": { family: "consecutive", value: per(30) },
+  "half-flush": { family: "flush", value: flat(40) },
+  "full-flush": { family: "flush", value: flat(120) },
+  "cross-suit-same-run": { family: "cross-suit", value: per(3) },
+  "twin-cross-suit-runs": { family: "cross-suit", value: flat(5) },
+  "full-cross-suit-runs": { family: "cross-suit", value: flat(20) },
+  staircase: { family: "cross-suit", value: flat(20) },
+  "rotating-staircase": { family: "cross-suit", value: flat(40) },
+  "three-suit-same-run-open": { family: "cross-suit", value: flat(10) },
+  "three-suit-same-run-hidden": { family: "cross-suit", value: flat(20) },
+  "four-suit-same-run-open": { family: "cross-suit", value: flat(40), replaces: ["identical-sequences-open", "identical-sequences-hidden"] },
+  "four-suit-same-run-hidden": { family: "cross-suit", value: flat(80), replaces: ["identical-sequences-open", "identical-sequences-hidden"] },
+  "five-suit-same-run-open": { family: "cross-suit", value: flat(80), replaces: ["identical-sequences-open", "identical-sequences-hidden"] },
+  "five-suit-same-run-hidden": { family: "cross-suit", value: flat(160), replaces: ["identical-sequences-open", "identical-sequences-hidden"] },
+  "cross-suit-same-triplet": { family: "cross-suit", value: per(5) },
+  "small-three-color-consecutive-triplets": { family: "cross-suit", value: per(10) },
+  "big-three-color-consecutive-triplets": { family: "cross-suit", value: per(20) },
+  "small-three-brothers": { family: "cross-suit", value: flat(20) },
+  "big-three-brothers": { family: "cross-suit", value: flat(40) },
+  "three-color-step-up-open": { family: "cross-suit", value: per(5) },
+  "three-color-step-up-hidden": { family: "cross-suit", value: per(10) },
+  "shanpon-wait": { family: "completion", value: flat(2) },
+  "genuine-single-wait": { family: "completion", value: flat(2) },
+  "fake-single-wait": { family: "completion", value: flat(2) },
+  "visible-triple-win": { family: "completion", value: flat(5), blocksChicken: false },
+  "visible-exhausted-multi-wait": { family: "completion", value: flat(10), blocksChicken: false },
+  "self-draw": { family: "situation", value: flat(1) },
+  riichi: { family: "situation", value: flat(5), blocksChicken: false },
+  "concealed-riichi": { family: "situation", value: flat(10), replaces: ["riichi", "heavenly-riichi", "earthly-riichi"], blocksChicken: false },
+  "heavenly-riichi": { family: "situation", value: flat(60), replaces: ["riichi", "concealed-riichi", "concealed-except-kongs"], blocksChicken: false },
+  "earthly-riichi": { family: "situation", value: flat(50), replaces: ["riichi", "concealed-riichi", "concealed-except-kongs"], blocksChicken: false },
+  "riichi-instant-win": { family: "situation", value: flat(5), blocksChicken: false },
+  "riichi-eat": { family: "situation", value: flat(5), blocksChicken: false },
+  "early-win-four": { family: "situation", value: flat(60), blocksChicken: false },
+  "early-win-seven": { family: "situation", value: flat(30), blocksChicken: false },
+  "early-win-ten": { family: "situation", value: flat(15), blocksChicken: false },
+  "multi-win-double": { family: "situation", value: flat(5), blocksChicken: false },
+  "multi-win-triple": { family: "situation", value: flat(10), blocksChicken: false },
+  "heavenly-win": { family: "situation", value: flat(160), replaces: ["concealed-except-kongs", "riichi", "concealed-riichi", "heavenly-riichi", "earthly-riichi"], blocksChicken: false },
+  "earthly-win": { family: "situation", value: flat(120), replaces: ["concealed-except-kongs", "riichi", "concealed-riichi", "heavenly-riichi", "earthly-riichi"], blocksChicken: false },
+  "human-win": { family: "situation", value: flat(80), replaces: ["concealed-except-kongs", "riichi", "concealed-riichi", "heavenly-riichi", "earthly-riichi"], blocksChicken: false },
+  "river-bottom-win": { family: "situation", value: flat(5), blocksChicken: false },
+  "sea-bottom-win": { family: "situation", value: flat(10), blocksChicken: false },
+  "sea-bottom-win-one-tong": { family: "situation", value: flat(20), blocksChicken: false },
+  "flower-draw": { family: "situation", value: per(2) },
+  "kong-draw": { family: "situation", value: table(FIVE_POWER_TABLE) },
+  "rob-kong": { family: "situation", value: table(FIVE_POWER_TABLE), blocksChicken: false },
+  "dealer-streak": { family: "situation", value: streak(1, 2), blocksChicken: false },
+  "concealed-self-draw": { family: "situation", value: flat(3) },
+  "everyone-else-completes-it": { family: "situation", value: flat(30) },
+  "half-everyone-else-completes-it": { family: "situation", value: flat(15) },
+  "big-chicken": { family: "meta", value: flat(30) },
+  "big-duck": { family: "meta", value: flat(15) },
+  "thirteen-orphans": { family: "special", value: flat(160) },
+  "orphans-four-return-open": { family: "special", value: per(5) },
+  "orphans-four-return-hidden": { family: "special", value: per(15) },
+  "sixteen-unrelated": { family: "special", value: flat(50) },
+  "sixteen-unrelated-flying": { family: "special", value: flat(60) },
+  "sixteen-unrelated-same-ranks": { family: "special", value: flat(20) },
+  "sixteen-unrelated-straight": { family: "special", value: flat(20) },
+  "eight-pairs": { family: "special", value: flat(50) },
+  "eight-pairs-flying": { family: "special", value: flat(60) },
+  "eight-pairs-three-dragons": { family: "special", value: flat(20) },
+  "eight-pairs-three-winds": { family: "special", value: flat(15) },
+  "eight-pairs-four-winds": { family: "special", value: flat(60) },
+};
+
+// Tiers within a family, lowest rung first. When the ladder is exclusive
+// (the default, and the house list), a pattern that fires replaces every
+// pattern on a lower rung - so only the highest rung that fires counts. A
+// rung can hold several patterns that are alternatives at the same tier
+// (明/暗 versions, or 正位風/爛位風/正圈風).
+export interface Ladder {
+  id: string;
+  label: string;
+  rungs: string[][];
+}
+
+export const LADDERS: Ladder[] = [
+  {
+    id: "winds",
+    label: "風 Winds",
+    rungs: [
+      ["wrong-seat-wind", "correct-seat-wind", "correct-round-wind"],
+      ["small-three-winds"],
+      ["big-three-winds"],
+      ["small-four-winds"],
+      ["big-four-winds"],
+    ],
+  },
+  {
+    id: "dragons",
+    label: "三元 Dragons",
+    rungs: [
+      ["dragon-tile"],
+      ["small-three-dragons"],
+      ["big-three-dragons"],
+    ],
+  },
+  {
+    id: "purity",
+    label: "無字/無花",
+    rungs: [
+      ["no-honors", "no-flowers"],
+      ["no-honors-no-flowers"],
+    ],
+  },
+  {
+    id: "hidden",
+    label: "暗刻",
+    rungs: [
+      ["two-hidden-triplets"],
+      ["three-hidden-triplets"],
+      ["four-hidden-triplets"],
+      ["five-hidden-triplets"],
+    ],
+  },
+  {
+    id: "small-suits",
+    label: "小五/七門齊",
+    rungs: [
+      ["small-five-suits"],
+      ["small-seven-suits"],
+    ],
+  },
+  {
+    id: "big-suits",
+    label: "大五/七門齊",
+    rungs: [
+      ["big-five-suits"],
+      ["big-seven-suits"],
+    ],
+  },
+  {
+    id: "common-rank",
+    label: "混帶X/XY/XYZ",
+    rungs: [
+      ["mixed-common-rank"],
+      ["mixed-common-rank-pair"],
+      ["mixed-common-rank-triple"],
+    ],
+  },
+  {
+    id: "terminals",
+    label: "帶么/老頭",
+    rungs: [
+      ["mixed-terminal", "pure-terminal"],
+      ["mixed-terminal-honor-triplets"],
+      ["pure-terminal-triplets"],
+    ],
+  },
+  {
+    id: "identical",
+    label: "般高/同順",
+    rungs: [
+      ["identical-sequences-open", "identical-sequences-hidden"],
+      ["triple-identical-sequences-open", "triple-identical-sequences-hidden"],
+      ["quadruple-identical-sequences-open", "quadruple-identical-sequences-hidden"],
+    ],
+  },
+  {
+    id: "same-run",
+    label: "三/四/五相逢",
+    rungs: [
+      ["three-suit-same-run-open", "three-suit-same-run-hidden"],
+      ["four-suit-same-run-open", "four-suit-same-run-hidden"],
+      ["five-suit-same-run-open", "five-suit-same-run-hidden"],
+    ],
+  },
+  {
+    id: "sisters",
+    label: "姊妹",
+    rungs: [
+      ["twin-cross-suit-runs"],
+      ["full-cross-suit-runs"],
+    ],
+  },
+  {
+    id: "staircase",
+    label: "樓梯",
+    rungs: [
+      ["staircase"],
+      ["rotating-staircase"],
+    ],
+  },
+  {
+    id: "flush",
+    label: "一色",
+    rungs: [
+      ["half-flush"],
+      ["full-flush"],
+    ],
+  },
+  {
+    id: "single-wait",
+    label: "獨獨",
+    rungs: [
+      ["fake-single-wait"],
+      ["genuine-single-wait"],
+    ],
+  },
+  {
+    id: "visible",
+    label: "明絕/絕絕",
+    rungs: [
+      ["visible-triple-win"],
+      ["visible-exhausted-multi-wait"],
+    ],
+  },
+  {
+    id: "self-draw",
+    label: "自摸",
+    rungs: [
+      ["self-draw"],
+      ["concealed-self-draw"],
+    ],
+  },
+  {
+    id: "sea-bottom",
+    label: "海底撈月",
+    rungs: [
+      ["sea-bottom-win"],
+      ["sea-bottom-win-one-tong"],
+    ],
+  },
+  {
+    id: "sixteen",
+    label: "十六不搭",
+    rungs: [
+      ["sixteen-unrelated"],
+      ["sixteen-unrelated-flying"],
+    ],
+  },
+  {
+    id: "eight-pairs",
+    label: "嚦咕嚦咕",
+    rungs: [
+      ["eight-pairs"],
+      ["eight-pairs-flying"],
+    ],
+  },
+  {
+    id: "eight-pairs-winds",
+    label: "嚦咕風",
+    rungs: [
+      ["eight-pairs-three-winds"],
+      ["eight-pairs-four-winds"],
+    ],
+  },
+];
 
 // Patterns keyed to one value of a single situation choice (the Scoring
 // tab's cycling buttons): two with the same choice but different values can
@@ -106,171 +444,4 @@ export const SITUATION_CHOICE: Record<string, { choice: string; value: string }>
   "river-bottom-win": { choice: "lastTileWin", value: "river-bottom" },
   "sea-bottom-win": { choice: "lastTileWin", value: "sea-bottom" },
   "sea-bottom-win-one-tong": { choice: "lastTileWin", value: "sea-bottom" },
-};
-
-export const FIVE_POWER_TABLE: readonly number[] = [0, 5, 25, 125, 250, 250];
-
-export const PATTERN_CATALOG: Record<string, PatternClass> = {
-  "base-tai": flat("foundation", 5),
-  "concealed-except-kongs": flat("foundation", 5),
-  kong: per("foundation", 2),
-
-  "no-flowers": flat("bonus", 2),
-  "correct-flower": per("bonus", 2),
-  "wrong-flower": per("bonus", 2),
-
-  "no-honors-no-flowers": flat("purity", 10),
-  "no-honors": flat("purity", 2),
-  "all-honors": flat("purity", 160),
-
-  "wrong-seat-wind": per("winds", 2),
-  "correct-seat-wind": flat("winds", 2),
-  "correct-round-wind": { family: "winds", value: { kind: "flat", tai: 0 }, rawUnit: 1 },
-  "small-three-winds": flat("winds", 30),
-  "big-three-winds": flat("winds", 60),
-  "small-four-winds": flat("winds", 120),
-  "big-four-winds": flat("winds", 160),
-
-  "dragon-tile": per("dragons", 2),
-  "small-three-dragons": flat("dragons", 40),
-  "big-three-dragons": flat("dragons", 80),
-
-  "all-runs": flat("shape", 5),
-  "all-runs-no-honors-no-flowers": flat("shape", 20),
-  "all-triplets": flat("shape", 40),
-  "five-concealed-triplets": flat("shape", 160),
-
-  "two-hidden-triplets": flat("hidden", 5),
-  "three-hidden-triplets": flat("hidden", 15),
-  "four-hidden-triplets": flat("hidden", 30),
-  "five-hidden-triplets": flat("hidden", 80),
-  "five-kongs": flat("hidden", 240),
-
-  "shanpon-wait": flat("completion", 2),
-  "genuine-single-wait": flat("completion", 2),
-  "fake-single-wait": flat("completion", 2),
-  "visible-triple-win": flat("completion", 5),
-  "visible-exhausted-multi-wait": flat("completion", 10),
-
-  "self-draw": flat("situation", 1),
-  "concealed-self-draw": flat("situation", 3),
-  riichi: flat("situation", 5),
-  "concealed-riichi": flat("situation", 10),
-  "heavenly-riichi": flat("situation", 60),
-  "earthly-riichi": flat("situation", 50),
-  "riichi-instant-win": flat("situation", 5),
-  "riichi-eat": flat("situation", 5),
-  "early-win-four": flat("situation", 60),
-  "early-win-seven": flat("situation", 30),
-  "early-win-ten": flat("situation", 15),
-  "multi-win-double": flat("situation", 5),
-  "multi-win-triple": flat("situation", 10),
-  "heavenly-win": flat("situation", 160),
-  "earthly-win": flat("situation", 120),
-  "human-win": flat("situation", 80),
-  "river-bottom-win": flat("situation", 5),
-  "sea-bottom-win": flat("situation", 10),
-  "sea-bottom-win-one-tong": flat("situation", 20),
-  "flower-draw": per("situation", 2),
-  "kong-draw": { family: "situation", value: { kind: "table", table: [...FIVE_POWER_TABLE] } },
-  "rob-kong": { family: "situation", value: { kind: "table", table: [...FIVE_POWER_TABLE] } },
-  "dealer-streak": { family: "situation", value: { kind: "streak", first: 1, tai: 2 } },
-  "everyone-else-completes-it": flat("situation", 30),
-  "half-everyone-else-completes-it": flat("situation", 15),
-
-  "four-returns-to-one-open": per("four-returns", 5),
-  "four-returns-to-one-hidden": per("four-returns", 15),
-  "four-returns-to-two-open": flat("four-returns", 15),
-  "four-returns-to-two-hidden": flat("four-returns", 30),
-  "four-returns-to-four-open": per("four-returns", 30),
-  "four-returns-to-four-hidden": per("four-returns", 60),
-
-  "identical-sequences-open": per("sequences", 5),
-  "identical-sequences-hidden": per("sequences", 8),
-  "small-twin-identical-sequences-open": flat("sequences", 10),
-  "small-twin-identical-sequences-hidden": flat("sequences", 15),
-  "triple-identical-sequences-open": flat("sequences", 30),
-  "triple-identical-sequences-hidden": flat("sequences", 60),
-  "quadruple-identical-sequences-open": flat("sequences", 80),
-  "quadruple-identical-sequences-hidden": flat("sequences", 160),
-  "two-separate-identical-sequences-open": flat("sequences", 20),
-  "two-separate-identical-sequences-hidden": flat("sequences", 40),
-  "same-suit-consecutive-open": per("sequences", 15),
-  "same-suit-consecutive-hidden": per("sequences", 30),
-  "same-suit-two-step-open": per("sequences", 8),
-  "same-suit-two-step-hidden": per("sequences", 15),
-
-  "consecutive-triplet-pair": per("consecutive", 5),
-  "small-three-consecutive-triplets": per("consecutive", 15),
-  "big-three-consecutive-triplets": per("consecutive", 30),
-
-  "cross-suit-same-run": per("cross-suit", 3),
-  "twin-cross-suit-runs": flat("cross-suit", 5),
-  "full-cross-suit-runs": flat("cross-suit", 20),
-  staircase: flat("cross-suit", 20),
-  "rotating-staircase": flat("cross-suit", 40),
-  "three-suit-same-run-open": flat("cross-suit", 10),
-  "three-suit-same-run-hidden": flat("cross-suit", 20),
-  "four-suit-same-run-open": flat("cross-suit", 40),
-  "four-suit-same-run-hidden": flat("cross-suit", 80),
-  "five-suit-same-run-open": flat("cross-suit", 80),
-  "five-suit-same-run-hidden": flat("cross-suit", 160),
-  "cross-suit-same-triplet": per("cross-suit", 5),
-  "small-three-color-consecutive-triplets": per("cross-suit", 10),
-  "big-three-color-consecutive-triplets": per("cross-suit", 20),
-  "small-three-brothers": flat("cross-suit", 20),
-  "big-three-brothers": flat("cross-suit", 40),
-  "three-color-step-up-open": per("cross-suit", 5),
-  "three-color-step-up-hidden": per("cross-suit", 10),
-
-  "half-flush": flat("flush", 40),
-  "full-flush": flat("flush", 120),
-
-  "pure-straight-open": per("straights", 10),
-  "pure-straight-hidden": per("straights", 20),
-  "mixed-straight-open": per("straights", 8),
-  "mixed-straight-hidden": per("straights", 15),
-  "old-young-run": per("straights", 3),
-  "old-young-triplet": per("straights", 5),
-
-  "mixed-common-rank": flat("common-rank", 30),
-  "mixed-common-rank-pair": flat("common-rank", 50),
-  "mixed-common-rank-triple": flat("common-rank", 60),
-  "pure-common-rank": flat("common-rank", 120),
-  "mixed-terminal": flat("common-rank", 40),
-  "pure-terminal": flat("common-rank", 80),
-  "mixed-terminal-honor-triplets": flat("common-rank", 100),
-  "pure-terminal-triplets": flat("common-rank", 200),
-
-  "missing-one-suit": flat("coverage", 10),
-  "small-five-suits": flat("coverage", 10),
-  "big-five-suits": flat("coverage", 15),
-  "small-seven-suits": flat("coverage", 15),
-  "big-seven-suits": flat("coverage", 20),
-
-  "all-simples": flat("range", 10),
-  "no-fives": flat("range", 10),
-  "greater-than-five": flat("range", 40),
-  "less-than-five": flat("range", 40),
-
-  // Normal hands have one pair; 嚦咕嚦咕 scores it once per 2/5/8 pair.
-  "middle-tile-pair": per("pair", 2),
-
-  "three-treasures": flat("compound", 40),
-
-  "big-chicken": flat("meta", 30),
-  "big-duck": flat("meta", 15),
-
-  "thirteen-orphans": flat("special", 160),
-  "orphans-four-return-open": per("special", 5),
-  "orphans-four-return-hidden": per("special", 15),
-  "sixteen-unrelated": flat("special", 50),
-  "sixteen-unrelated-flying": flat("special", 60),
-  "sixteen-unrelated-same-ranks": flat("special", 20),
-  "sixteen-unrelated-straight": flat("special", 20),
-  "eight-pairs": flat("special", 50),
-  "eight-pairs-flying": flat("special", 60),
-  "eight-pairs-three-dragons": flat("special", 20),
-  "eight-pairs-three-winds": flat("special", 15),
-  "eight-pairs-four-winds": flat("special", 60),
 };
