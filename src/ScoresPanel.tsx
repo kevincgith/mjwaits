@@ -1175,12 +1175,11 @@ function BonusSheet({
   const presets = bonusPresets(state.settings);
   // A one-player pick (7搶1, 1搶7) waits for who: Confirm stays off till then.
   const [needsOne, setNeedsOne] = useState(false);
-  // The quick picks come in two pages: the usual ones and More (the less
-  // common), swapped in place so the box never grows - like the bench.
-  const [morePresets, setMorePresets] = useState(false);
-  const common = presets.filter((p) => !p.more);
-  const rare = presets.filter((p) => p.more);
-  const shown = rare.length === 0 ? common : morePresets ? rare : common;
+  // The quick picks in one strip, two rows deep, the usual ones first and the
+  // less common a swipe to the right - so the box never grows.
+  const shown = [...presets.filter((p) => !p.more), ...presets.filter((p) => p.more)];
+  // Scrolled all the way: no more to hint at.
+  const [presetsAtEnd, setPresetsAtEnd] = useState(false);
   const n = Number(amount || 0);
   const pick = (p: BonusPreset) => {
     setKind(p.kind);
@@ -1301,9 +1300,26 @@ function BonusSheet({
           waiting ? (
             `${preset} - tap who ${kind === "獎" ? "pays" : "is paid"}, above`
           ) : presets.length > 0 ? (
-            <div className="sc-presets" role="group" aria-label="預設獎罰">
+            <div
+              className={`sc-presets${presetsAtEnd ? " is-at-end" : ""}`}
+              role="group"
+              aria-label="預設獎罰"
+              onScroll={(e) => {
+                const el = e.currentTarget;
+                setPresetsAtEnd(el.scrollLeft + el.clientWidth >= el.scrollWidth - 2);
+              }}
+            >
+              {/* Four columns to a screenful, read across a row then down:
+                  a tile's place is worked out, so the strip still reads 花 草
+                  花草 … left to right however far it scrolls. */}
               {shown.map((p, i) => (
-                <button key={i} type="button" className={`sc-preset is-${p.kind === "獎" ? "reward" : "penalty"}`} onClick={() => pick(p)}>
+                <button
+                  key={i}
+                  type="button"
+                  className={`sc-preset is-${p.kind === "獎" ? "reward" : "penalty"}`}
+                  style={{ gridRow: Math.floor((i % 8) / 4) + 1, gridColumn: Math.floor(i / 8) * 4 + (i % 4) + 1 }}
+                  onClick={() => pick(p)}
+                >
                   <strong>{p.name}</strong>
                   <span>
                     {p.kind === "獎" ? "+" : "−"}
@@ -1311,12 +1327,6 @@ function BonusSheet({
                   </span>
                 </button>
               ))}
-              {rare.length > 0 && common.length > 0 && (
-                <button type="button" className="sc-preset is-more" onClick={() => setMorePresets((m) => !m)}>
-                  <strong>{morePresets ? "返回" : "更多"}</strong>
-                  <span>{morePresets ? "Back" : "More"}</span>
-                </button>
-              )}
             </div>
           ) : (
             "Enter an amount to see who pays what"
