@@ -11372,12 +11372,12 @@ html.sc-fit-mode .build-version {
   white-space: nowrap;
 }
 
-.sc-chips-done {
+.sc-chips-close {
   display: inline-flex;
-  color: var(--accent);
+  color: var(--text-muted);
 }
 
-.sc-chips-done svg {
+.sc-chips-close svg {
   width: 0.95rem;
   height: 0.95rem;
 }
