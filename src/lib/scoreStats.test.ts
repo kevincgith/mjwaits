@@ -49,6 +49,36 @@ describe("playerStats", () => {
     expect(stats.A.positiveRate).toBeGreaterThan(0);
   });
 
+  it("做莊: hands dealt, their net, and the longest run of the deal", () => {
+    // A deals 局1-3 (連0, 連1, 連2): +10, +9, -16.
+    expect(stats.A).toMatchObject({ dealerHands: 3, dealerNet: 3, longestDealerRun: 3 });
+    // C deals 局4 and keeps it through the 流局.
+    expect(stats.C).toMatchObject({ dealerHands: 2, longestDealerRun: 2 });
+  });
+
+  it("averages per win and per deal-in, and the share of wins by 自摸", () => {
+    expect(stats.B.avgDealInLoss).toBe(-9.5);
+    expect(stats.D.avgWinGain).toBe(23);
+    expect(stats.C.selfDrawShare).toBe(1);
+    expect(stats.A.selfDrawShare).toBe(0);
+    expect(stats.C.avgDealInLoss).toBeNull();
+  });
+
+  it("拉踢淨額: what 拉 and 踢 add-ons made, less what they paid", () => {
+    // A: +5 拉 in 局2, then 踢 by B (-10) and by D's 自摸 (-4).
+    expect(stats.A.lahNet).toBe(-9);
+    expect(stats.D.lahNet).toBe(7);
+  });
+
+  it("對手: net against each other player, best first, adding up to the net", () => {
+    expect(stats.A.opponents).toEqual([
+      { player: "B", net: 3 },
+      { player: "D", net: -3 },
+      { player: "C", net: -4 },
+    ]);
+    for (const s of Object.values(stats)) expect(s.opponents.reduce((t, o) => t + o.net, 0)).toBe(s.net);
+  });
+
   it("marks the best and worst at the table", () => {
     const all = playerStats(state, g);
     const m = marks(all, "dealIns");

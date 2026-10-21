@@ -4010,69 +4010,86 @@ function niceStep(raw: number): number {
   return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * mag;
 }
 
-type StatRow = { key: keyof PlayerStats; label: string; show: (s: PlayerStats) => string; tone?: (s: PlayerStats) => number };
+// sub: a muted line under the value - which 局 a record came from.
+type StatRow = { key: keyof PlayerStats; zh: string; en: string; show: (s: PlayerStats) => string; sub?: (s: PlayerStats) => string | null; tone?: (s: PlayerStats) => number };
 
 // Which hand a stat happened on, and how many times a chain record was hit.
-const atHand = (h: { value: number; hand: number }, show: (v: number) => string) => `${show(h.value)} · hand ${h.hand}`;
+const handOf = (h: { hand: number } | null) => (h ? `第${h.hand}局` : null);
 const chain = (c: { count: number; times: number } | null) => (c ? `${c.count}${c.times > 1 ? ` ×${c.times}` : ""}` : "–");
+const oneDp = (n: number | null) => (n === null ? "–" : fmt(Math.round(n * 10) / 10));
+const signedDp = (n: number | null) => (n === null ? "–" : signed(Math.round(n * 10) / 10));
 
-// English for the words, Chinese for the mahjong terms.
-const STAT_GROUPS: { title: string; rows: StatRow[] }[] = [
+// Cantonese for each stat, a few words of English under it.
+const STAT_GROUPS: { zh: string; en: string; rows: StatRow[] }[] = [
   {
-    title: "Record",
+    zh: "戰績",
+    en: "Record",
     rows: [
-      { key: "wins", label: "食胡", show: (s) => String(s.wins) },
-      { key: "selfDraws", label: "自摸", show: (s) => String(s.selfDraws) },
-      { key: "dealIns", label: "出銃", show: (s) => String(s.dealIns) },
-      { key: "multiWins", label: "雙響 / 三響", show: (s) => String(s.multiWins) },
-      { key: "winStreak", label: "Win streak", show: (s) => String(s.winStreak) },
-      { key: "assists", label: "Others' 自摸", show: (s) => String(s.assists) },
+      { key: "wins", zh: "食糊", en: "Off a discard", show: (s) => String(s.wins) },
+      { key: "selfDraws", zh: "自摸", en: "Self-drawn", show: (s) => String(s.selfDraws) },
+      { key: "dealIns", zh: "出銃", en: "Dealt in", show: (s) => String(s.dealIns) },
+      { key: "assists", zh: "被自摸", en: "Paid others' 自摸", show: (s) => String(s.assists) },
+      { key: "multiWins", zh: "多響", en: "Won in a 雙響 / 三響", show: (s) => String(s.multiWins) },
+      { key: "winStreak", zh: "連勝", en: "Most wins in a row", show: (s) => String(s.winStreak) },
     ],
   },
   {
-    title: "Rates",
+    zh: "效率",
+    en: "Rates",
     rows: [
-      { key: "winRate", label: "Win rate", show: (s) => pct(s.winRate) },
-      { key: "dealInRate", label: "Deal-in rate", show: (s) => pct(s.dealInRate) },
-      { key: "perHand", label: "Per hand", show: (s) => (s.perHand === null ? "–" : signed(Math.round(s.perHand * 10) / 10)), tone: (s) => s.perHand ?? 0 },
-      { key: "firstRate", label: "In 1st", show: (s) => pct(s.firstRate) },
-      { key: "positiveRate", label: "In the plus", show: (s) => pct(s.positiveRate) },
-      { key: "assistRate", label: "Others' 自摸 rate", show: (s) => pct(s.assistRate) },
+      { key: "winRate", zh: "食糊率", en: "Hands won", show: (s) => pct(s.winRate) },
+      { key: "dealInRate", zh: "出銃率", en: "Hands dealt in", show: (s) => pct(s.dealInRate) },
+      { key: "selfDrawShare", zh: "自摸比例", en: "Wins by 自摸", show: (s) => pct(s.selfDrawShare) },
+      { key: "assistRate", zh: "被自摸率", en: "Paid others' 自摸", show: (s) => pct(s.assistRate) },
+      { key: "firstRate", zh: "領先", en: "Time in 1st", show: (s) => pct(s.firstRate) },
+      { key: "positiveRate", zh: "正數", en: "Time above 0", show: (s) => pct(s.positiveRate) },
     ],
   },
   {
-    title: "Tai",
+    zh: "得失",
+    en: "Points",
     rows: [
-      { key: "maxTai", label: "Top tai", show: (s) => (s.maxTai ? atHand(s.maxTai, fmt) : "–") },
-      { key: "avgWinTai", label: "Avg tai won", show: (s) => (s.avgWinTai === null ? "–" : s.avgWinTai.toFixed(1)) },
-      { key: "avgDealInTai", label: "Avg tai dealt in", show: (s) => (s.avgDealInTai === null ? "–" : s.avgDealInTai.toFixed(1)) },
+      { key: "avgWinGain", zh: "每次食糊", en: "Won per win", show: (s) => signedDp(s.avgWinGain), tone: (s) => s.avgWinGain ?? 0 },
+      { key: "avgDealInLoss", zh: "每次出銃", en: "Lost per deal-in", show: (s) => signedDp(s.avgDealInLoss), tone: (s) => s.avgDealInLoss ?? 0 },
+      { key: "bestHand", zh: "最大一舖", en: "Best hand", show: (s) => (s.bestHand ? signed(s.bestHand.value) : "–"), sub: (s) => handOf(s.bestHand), tone: () => 1 },
+      { key: "worstHand", zh: "最傷一舖", en: "Worst hand", show: (s) => (s.worstHand ? fmt(s.worstHand.value) : "–"), sub: (s) => handOf(s.worstHand), tone: () => -1 },
+      { key: "selfDrawGain", zh: "自摸贏", en: "Won by 自摸", show: (s) => signed(s.selfDrawGain), tone: (s) => s.selfDrawGain },
+      { key: "discardGain", zh: "食糊贏", en: "Won off discards", show: (s) => signed(s.discardGain), tone: (s) => s.discardGain },
+      { key: "discardLoss", zh: "出銃輸", en: "Lost dealing in", show: (s) => fmt(s.discardLoss), tone: (s) => s.discardLoss },
+      { key: "selfDrawLoss", zh: "被自摸輸", en: "Paid on others' 自摸", show: (s) => fmt(s.selfDrawLoss), tone: (s) => s.selfDrawLoss },
+      { key: "bonus", zh: "獎罰", en: "Bonuses and 詐胡", show: (s) => signed(s.bonus), tone: (s) => s.bonus },
+      { key: "jackpot", zh: "彩池", en: "Jackpot won", show: (s) => fmt(s.jackpot) },
     ],
   },
   {
-    title: "Points",
+    zh: "番數",
+    en: "Tai",
     rows: [
-      { key: "bestHand", label: "Best hand", show: (s) => (s.bestHand ? atHand(s.bestHand, signed) : "–"), tone: () => 1 },
-      { key: "worstHand", label: "Worst hand", show: (s) => (s.worstHand ? atHand(s.worstHand, fmt) : "–"), tone: () => -1 },
-      { key: "selfDrawGain", label: "Won by 自摸", show: (s) => signed(s.selfDrawGain), tone: (s) => s.selfDrawGain },
-      { key: "selfDrawLoss", label: "Paid on 自摸", show: (s) => fmt(s.selfDrawLoss), tone: (s) => s.selfDrawLoss },
-      { key: "discardGain", label: "Won by 食胡", show: (s) => signed(s.discardGain), tone: (s) => s.discardGain },
-      { key: "discardLoss", label: "Lost to 出銃", show: (s) => fmt(s.discardLoss), tone: (s) => s.discardLoss },
-      { key: "bonus", label: "獎罰", show: (s) => signed(s.bonus), tone: (s) => s.bonus },
-      { key: "jackpot", label: "Jackpot", show: (s) => fmt(s.jackpot) },
+      { key: "maxTai", zh: "最高番", en: "Biggest hand", show: (s) => (s.maxTai ? fmt(s.maxTai.value) : "–"), sub: (s) => handOf(s.maxTai) },
+      { key: "avgWinTai", zh: "平均食糊番", en: "Avg tai per win", show: (s) => oneDp(s.avgWinTai) },
+      { key: "avgDealInTai", zh: "平均出銃番", en: "Avg tai dealt in", show: (s) => oneDp(s.avgDealInTai) },
     ],
   },
   {
-    title: "拉踢",
+    zh: "做莊",
+    en: "As dealer",
     rows: [
-      { key: "pulls", label: "拉 others", show: (s) => String(s.pulls) },
-      { key: "pulled", label: "Got 拉", show: (s) => String(s.pulled) },
-      { key: "maxPull", label: "Longest 拉", show: (s) => chain(s.maxPull) },
-      { key: "maxPulled", label: "Longest got 拉", show: (s) => chain(s.maxPulled) },
-      { key: "kicks", label: "踢 others", show: (s) => String(s.kicks) },
-      { key: "kicked", label: "Got 踢", show: (s) => String(s.kicked) },
-      { key: "maxKicks", label: "Most 踢 at once", show: (s) => chain(s.maxKicks) },
-      { key: "maxKicked", label: "Most got 踢", show: (s) => chain(s.maxKicked) },
-      { key: "fanXue", label: "反雪", show: (s) => String(s.fanXue) },
+      { key: "dealerHands", zh: "做莊局數", en: "Hands dealt", show: (s) => String(s.dealerHands) },
+      { key: "dealerNet", zh: "莊家得失", en: "Net as dealer", show: (s) => signed(s.dealerNet), tone: (s) => s.dealerNet },
+      { key: "longestDealerRun", zh: "最長連莊", en: "Most 連莊 in a run", show: (s) => (s.longestDealerRun > 1 ? `連${s.longestDealerRun - 1}` : "–") },
+    ],
+  },
+  {
+    zh: "拉踢",
+    en: "Pull & kick",
+    rows: [
+      { key: "lahNet", zh: "拉踢淨額", en: "Net from add-ons", show: (s) => signed(s.lahNet), tone: (s) => s.lahNet },
+      { key: "maxPull", zh: "最長拉", en: "Longest 拉 held", show: (s) => chain(s.maxPull) },
+      { key: "pulls", zh: "拉人", en: "拉 on others", show: (s) => String(s.pulls) },
+      { key: "pulled", zh: "被拉", en: "拉'd by others", show: (s) => String(s.pulled) },
+      { key: "kicks", zh: "踢人", en: "踢 others", show: (s) => String(s.kicks) },
+      { key: "kicked", zh: "被踢", en: "踢'd by others", show: (s) => String(s.kicked) },
+      { key: "fanXue", zh: "反雪", en: "Paid back after a 雙響", show: (s) => String(s.fanXue) },
     ],
   },
 ];
@@ -4082,12 +4099,12 @@ const STAT_GROUPS: { title: string; rows: StatRow[] }[] = [
 function PointsBar({ s }: { s: PlayerStats }) {
   const gains = [
     { label: "自摸", value: s.selfDrawGain, cls: "is-g1" },
-    { label: "食胡", value: s.discardGain, cls: "is-g2" },
+    { label: "食糊", value: s.discardGain, cls: "is-g2" },
     { label: "獎罰", value: Math.max(0, s.bonus), cls: "is-g3" },
   ].filter((x) => x.value > 0);
   const losses = [
     { label: "出銃", value: -s.discardLoss, cls: "is-l1" },
-    { label: "Paid 自摸", value: -s.selfDrawLoss, cls: "is-l2" },
+    { label: "被自摸", value: -s.selfDrawLoss, cls: "is-l2" },
     { label: "獎罰", value: Math.max(0, -s.bonus), cls: "is-l3" },
   ].filter((x) => x.value > 0);
   const gain = gains.reduce((t, x) => t + x.value, 0);
@@ -4130,11 +4147,46 @@ function PointsBar({ s }: { s: PlayerStats }) {
   );
 }
 
+// 重點: the few things worth knowing about a player's game, said in a line
+// each - Cantonese, with the English under it. Only what has something to say.
+function insights(s: PlayerStats): { zh: string; en: string; tone?: number }[] {
+  const out: { zh: string; en: string; tone?: number }[] = [];
+  const share = (n: number, of: number) => `${Math.round((n / of) * 100)}%`;
+  const sources = [
+    { zh: "自摸", en: "self-draws", v: s.selfDrawGain },
+    { zh: "食糊", en: "wins off discards", v: s.discardGain },
+    { zh: "獎罰", en: "bonuses", v: Math.max(0, s.bonus) },
+  ];
+  const won = sources.reduce((t, x) => t + x.v, 0);
+  const top = sources.slice().sort((a, b) => b.v - a.v)[0];
+  if (won > 0 && top.v > 0) out.push({ zh: `主要靠${top.zh}贏分（${share(top.v, won)}）`, en: `Most points won by ${top.en} (${share(top.v, won)})` });
+  if (s.dealIns > 0 && s.avgDealInLoss !== null)
+    out.push({
+      zh: `出銃 ${s.dealIns} 次，平均每次輸 ${oneDp(-s.avgDealInLoss)}`,
+      en: `Dealt in ${s.dealIns} time${s.dealIns === 1 ? "" : "s"}, losing ${oneDp(-s.avgDealInLoss)} each on average`,
+      tone: -1,
+    });
+  const prey = s.opponents[0];
+  const nemesis = s.opponents[s.opponents.length - 1];
+  if (prey && prey.net > 0) out.push({ zh: `最大苦主：${prey.player}（${signed(prey.net)}）`, en: `Won the most from ${prey.player}`, tone: 1 });
+  if (nemesis && nemesis.net < 0) out.push({ zh: `剋星：${nemesis.player}（${signed(nemesis.net)}）`, en: `Lost the most to ${nemesis.player}`, tone: -1 });
+  if (s.dealerHands > 0)
+    out.push({
+      zh: `做莊 ${s.dealerHands} 局，${signed(s.dealerNet)}${s.longestDealerRun > 1 ? `，最長連${s.longestDealerRun - 1}` : ""}`,
+      en: `As dealer: ${s.dealerHands} hand${s.dealerHands === 1 ? "" : "s"}, ${signed(s.dealerNet)}${s.longestDealerRun > 1 ? `, up to 連${s.longestDealerRun - 1}` : ""}`,
+      tone: s.dealerNet,
+    });
+  if (s.lahNet !== 0) out.push({ zh: `拉踢淨${s.lahNet > 0 ? "賺" : "蝕"} ${fmt(Math.abs(s.lahNet))}`, en: `${s.lahNet > 0 ? "Made" : "Lost"} ${fmt(Math.abs(s.lahNet))} on 拉 / 踢 add-ons`, tone: s.lahNet });
+  return out;
+}
+
 function PlayerCard({ store, stats, state, index, onIndex }: { store: ScoreStore; stats: PlayerStats[]; state: ReplayState; index: number; onIndex: (i: number) => void }) {
   const s = stats[index];
   const markFor = useMemo(() => Object.fromEntries(STAT_GROUPS.flatMap((g) => g.rows).map((r) => [r.key, marks(stats, r.key)])), [stats]);
   const series = trend(state).series.find((x) => x.player === s.player);
   const rank = stats.slice().sort((a, b) => b.net - a.net).findIndex((x) => x.player === s.player) + 1;
+  const notes = insights(s);
+  const oppMax = Math.max(1, ...s.opponents.map((o) => Math.abs(o.net)));
   return (
     <div className="card sc-profile">
       <div className="sc-profile-head">
@@ -4145,7 +4197,7 @@ function PlayerCard({ store, stats, state, index, onIndex }: { store: ScoreStore
           <Monogram store={store} player={s.player} size="lg" />
           <span className="sc-profile-name">{s.player}</span>
           <span className="sc-profile-sub">
-            #{rank} of {stats.length} · {s.hands}局
+            第{rank}名（{stats.length}人）· {s.hands}局
           </span>
         </div>
         <button type="button" className="sc-icon-button sc-icon-button-fill" onClick={() => onIndex((index + 1) % stats.length)} aria-label="Next player">
@@ -4156,27 +4208,47 @@ function PlayerCard({ store, stats, state, index, onIndex }: { store: ScoreStore
         <span className={`sc-profile-net ${tone(s.net)}`}>{signed(s.net)}</span>
         {series && <Sparkline values={series.values} className={`sc-c${colorOf(store, s.player)}`} />}
       </div>
+      {/* 胡 here is every win, 自摸 included - 戰績 below splits them. */}
       <div className="sc-kpis">
         <span>
-          <strong>{s.wins + s.selfDraws}</strong>胡
+          <strong>{s.wins + s.selfDraws}</strong>
+          胡<small>Wins</small>
         </span>
         <span>
-          <strong>{s.selfDraws}</strong>摸
+          <strong>{s.selfDraws}</strong>
+          摸<small>Self-draws</small>
         </span>
         <span>
-          <strong>{s.dealIns}</strong>銃
+          <strong>{s.dealIns}</strong>
+          銃<small>Deal-ins</small>
         </span>
-        {/* The share of hands spent top of the table. */}
-        <span title="Hands spent in 1st place">
-          <strong>{pct(s.firstRate)}</strong>領先
+        <span>
+          <strong className={tone(s.perHand ?? 0)}>{signedDp(s.perHand)}</strong>
+          每局<small>Per hand</small>
         </span>
       </div>
       <PointsBar s={s} />
-      <p className="sc-help sc-stat-key">👑 best and 💀 lowest at the table for that stat</p>
+      {notes.length > 0 && (
+        <div className="sc-insights">
+          <div className="sc-stat-title">
+            重點 <small>Highlights</small>
+          </div>
+          <ul>
+            {notes.map((n) => (
+              <li key={n.zh} className={n.tone === undefined || n.tone === 0 ? undefined : n.tone > 0 ? "is-up" : "is-down"}>
+                <span>{n.zh}</span>
+                <small>{n.en}</small>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       {/* The first two groups open; the rest fold away until wanted. */}
       {STAT_GROUPS.map((g, gi) => (
-        <details key={g.title} className="sc-stat-group" open={gi < 2}>
-          <summary className="sc-stat-title">{g.title}</summary>
+        <details key={g.zh} className="sc-stat-group" open={gi < 2}>
+          <summary className="sc-stat-title">
+            {g.zh} <small>{g.en}</small>
+          </summary>
           <div className="sc-stat-grid">
             {g.rows.map((r) => {
               const m = markFor[r.key]?.get(s.player);
@@ -4184,20 +4256,48 @@ function PlayerCard({ store, stats, state, index, onIndex }: { store: ScoreStore
               return (
                 <div key={r.key} className="sc-stat">
                   <span className="sc-stat-label">
-                    {r.label}
-                    {m && (
-                      <span className="sc-mark" title={m === "best" ? "Best at the table" : "Lowest at the table"}>
-                        {m === "best" ? "👑" : "💀"}
-                      </span>
-                    )}
+                    <span>
+                      {r.zh}
+                      {m && (
+                        <span className="sc-mark" title={m === "best" ? "Best at the table" : "Lowest at the table"}>
+                          {m === "best" ? "👑" : "💀"}
+                        </span>
+                      )}
+                    </span>
+                    <small>{r.en}</small>
                   </span>
-                  <strong className={t !== undefined ? tone(t) : undefined}>{r.show(s)}</strong>
+                  <span className="sc-stat-value">
+                    <strong className={t !== undefined ? tone(t) : undefined}>{r.show(s)}</strong>
+                    {r.sub?.(s) && <small>{r.sub(s)}</small>}
+                  </span>
                 </div>
               );
             })}
           </div>
         </details>
       ))}
+      {s.opponents.length > 0 && (
+        <details className="sc-stat-group">
+          <summary className="sc-stat-title">
+            對手 <small>Against each player</small>
+          </summary>
+          <ul className="sc-opponents">
+            {s.opponents.map((o) => (
+              <li key={o.player}>
+                <span className="sc-opponent-name">
+                  <span className={`sc-dot sc-c${colorOf(store, o.player)}`} aria-hidden="true" />
+                  {o.player}
+                </span>
+                <span className="sc-opponent-bar" aria-hidden="true">
+                  <span className={o.net > 0 ? "is-pos" : "is-neg"} style={{ width: `${(Math.abs(o.net) / oppMax) * 50}%` }} />
+                </span>
+                <strong className={tone(o.net)}>{signed(o.net)}</strong>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+      <p className="sc-help sc-stat-key">👑 最好 · 💀 最差 - best and lowest at the table</p>
     </div>
   );
 }
@@ -4396,7 +4496,7 @@ function StatsPanel({ store, setStore, view, setView }: { store: ScoreStore; set
         <div className="card">
           <div className="sc-card-head">
             <h3>走勢 Trend</h3>
-            <span className="sc-help">Running totals · touch for 局 detail</span>
+            <span className="sc-help">累計分數 · Running totals, touch for a 局</span>
           </div>
           <TrendChart store={store} state={state} />
         </div>
@@ -4620,7 +4720,7 @@ function PatternsCard({ state, store }: { state: ReplayState; store: ScoreStore 
     <div className="card">
       <div className="sc-card-head">
         <h3>牌型 Patterns</h3>
-        <span className="sc-help">From hands sent from Scoring</span>
+        <span className="sc-help">計番送嚟嘅牌 · Hands from Scoring</span>
       </div>
       {rows.length === 0 ? (
         <p className="sc-empty">Use Record to Scores on the Scoring tab, and the patterns behind each hand show up here.</p>
@@ -4694,15 +4794,32 @@ function HistoryCard({ store, games, current, onPick, onDelete }: { store: Score
         <div className="sc-table-wrap">
           <table className="sc-table">
             <thead>
-              <tr>
-                <th>Player</th>
-                <th>Games</th>
-                <th>Net</th>
-                <th className="sc-opt">Avg</th>
-                <th>1st</th>
-                <th>Win</th>
-                <th>銃</th>
-                <th className="sc-opt">Best</th>
+              {/* Cantonese, the English under it. */}
+              <tr className="sc-th-two">
+                <th>
+                  玩家<small>Player</small>
+                </th>
+                <th>
+                  場數<small>Games</small>
+                </th>
+                <th>
+                  總分<small>Net</small>
+                </th>
+                <th className="sc-opt">
+                  平均<small>Per game</small>
+                </th>
+                <th>
+                  第一<small>Won</small>
+                </th>
+                <th>
+                  食糊率<small>Win</small>
+                </th>
+                <th>
+                  出銃率<small>Deal-in</small>
+                </th>
+                <th className="sc-opt">
+                  最大一舖<small>Best hand</small>
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -4730,7 +4847,7 @@ function HistoryCard({ store, games, current, onPick, onDelete }: { store: Score
       {names.length > 1 && (
         <>
           <SectionHead zh="對戰" en="Head-to-head">
-            <span className="sc-help">Row vs column</span>
+            <span className="sc-help">橫行對直行 · Row vs column</span>
           </SectionHead>
           <div className="card sc-table-card">
             <div className="sc-table-wrap">

@@ -11634,3 +11634,203 @@ html.sc-fit-mode .build-version {
   min-height: calc(2em * 1.4);
   line-height: 1.4;
 }
+
+/* ---- 玩家: Cantonese first, a muted line of English under it ------------- */
+
+.sc-stat-label {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  white-space: normal;
+}
+
+.sc-stat-label > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.sc-stat-label small,
+.sc-stat-title small,
+.sc-kpis small,
+.sc-insights small {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.sc-stat-label small {
+  line-height: 1.25;
+}
+
+.sc-stat-title small {
+  margin-left: 0.3rem;
+}
+
+.sc-kpis span {
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+.sc-kpis small {
+  margin-top: 0.05rem;
+}
+
+/* 重點: a short list, a line each, a tick of colour for good or bad. */
+.sc-insights {
+  margin-top: 0.85rem;
+}
+
+.sc-insights ul {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  background: var(--separator);
+  list-style: none;
+}
+
+.sc-insights li {
+  display: flex;
+  flex-direction: column;
+  padding: 0.45rem 0.75rem 0.45rem 0.85rem;
+  background: var(--surface-sunken);
+  box-shadow: inset 3px 0 0 var(--separator);
+  font-size: var(--text-md);
+  font-weight: 600;
+}
+
+.sc-insights li.is-up {
+  box-shadow: inset 3px 0 0 var(--sc-pos);
+}
+
+.sc-insights li.is-down {
+  box-shadow: inset 3px 0 0 var(--sc-neg);
+}
+
+/* 對手: a bar each way from the middle - up on them right, down left. */
+.sc-opponents {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  background: var(--separator);
+  list-style: none;
+}
+
+.sc-opponents li {
+  display: grid;
+  grid-template-columns: minmax(0, 6.5rem) 1fr auto;
+  align-items: center;
+  gap: 0.6rem;
+  min-height: 2.6rem;
+  padding: 0.3rem 0.75rem;
+  background: var(--surface-sunken);
+}
+
+.sc-opponent-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.sc-opponent-bar {
+  position: relative;
+  height: 0.5rem;
+  border-radius: var(--radius-pill);
+  background: var(--fill);
+}
+
+.sc-opponent-bar::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -2px;
+  bottom: -2px;
+  width: 1px;
+  background: var(--separator);
+}
+
+.sc-opponent-bar > span {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: var(--radius-pill);
+}
+
+.sc-opponent-bar > .is-pos {
+  left: 50%;
+  background: var(--sc-pos);
+}
+
+.sc-opponent-bar > .is-neg {
+  right: 50%;
+  background: var(--sc-neg);
+}
+
+.sc-opponents strong {
+  min-width: 2.5rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* Career table: Cantonese headers, the English under each. */
+.sc-th-two th small {
+  display: block;
+  color: var(--text-muted);
+  font-size: 0.625rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.sc-stat-grid {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.sc-stat {
+  min-width: 0;
+}
+
+/* The smallest phones: a stat a row, so labels and values both fit. */
+@media (max-width: 360px) {
+  .sc-stat-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sc-stat:last-child:nth-child(odd) {
+    grid-column: auto;
+  }
+}
+
+.sc-stat-value {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  flex-shrink: 0;
+}
+
+.sc-stat-value small {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  line-height: 1.2;
+}
+
+.sc-th-two th small {
+  text-transform: none;
+  letter-spacing: 0;
+}
