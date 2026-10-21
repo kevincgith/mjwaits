@@ -6,7 +6,7 @@
 
 import qrcode from "qrcode-generator";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { NumberField, Sheet, Toggle } from "./ScoresPanel";
+import { NumberField, Segmented, Sheet, Toggle } from "./ScoresPanel";
 import { BonusGlyphSpan, TileGlyphSpan } from "./TileGlyphs";
 import type { Tile } from "./lib/mahjong";
 import { PATTERN_EXAMPLES } from "./lib/patternExamples";
@@ -93,7 +93,8 @@ export function TaiRulesSheet({
   onClose,
 }: {
   store: RuleSetStore;
-  /** The developer sheet's engine switch: "legacy" ignores every set. */
+  /** Which engine scores - a phone-wide setting, not part of any set:
+   *  "legacy" is the frozen original engine and ignores every set. */
   engine: TaiRules["engine"];
   /** Rules from a shared link: they open as a new set, to review. */
   incoming: { name: string | null; rules: TaiRules } | null;
@@ -101,8 +102,9 @@ export function TaiRulesSheet({
   corrupt: boolean;
   /** The tab's current hand scored under some rules - null if it can't be. */
   previewTotal: (rules: TaiRules) => number | null;
-  /** Every set (renamed, added, deleted, edited) with the selected one in use. */
-  onSave: (store: RuleSetStore) => void;
+  /** Every set (renamed, added, deleted, edited) with the selected one in
+   *  use, and the engine. */
+  onSave: (store: RuleSetStore, engine: TaiRules["engine"]) => void;
   onClose: () => void;
 }) {
   // The whole sheet is a draft: the sets and each one's edited rules. A
@@ -160,7 +162,8 @@ export function TaiRulesSheet({
   const cycles = useMemo(() => replaceCycles(draft), [draft]);
   const changes = useMemo(() => describeChanges(draft), [draft]);
   const changed = changedCount(draft);
-  const legacy = engine === "legacy";
+  const [draftEngine, setDraftEngine] = useState(engine);
+  const legacy = draftEngine === "legacy";
 
   // Live preview: the hand in the tab under the rules in use and this set.
   const inUse = useMemo(() => rulesOfSet(activeSet(store)), [store]);
@@ -296,22 +299,48 @@ export function TaiRulesSheet({
     <>
       <Sheet
         title="設定 · 台數規則"
-        subtitle={incoming ? "Shared with you · review, then use" : selected === store.active ? `In use: ${inUseName}` : `In use: ${inUseName} · Save to switch`}
+        subtitle={
+          incoming
+            ? "Shared with you · review, then use"
+            : engine === "legacy"
+              ? "In use: the original built-in engine"
+              : selected === store.active
+                ? `In use: ${inUseName}`
+                : `In use: ${inUseName} · Save to switch`
+        }
         onClose={onClose}
         actions={
           <>
             <button type="button" className="sc-secondary" onClick={() => setDrafts((prev) => (selected === null ? prev : { ...prev, [selected]: structuredClone(DEFAULT_TAI_RULES) }))} disabled={changed === 0}>
               Reset
             </button>
-            <button type="button" className="sc-primary" onClick={() => onSave({ v: 1, active: selected, sets: finalSets() })}>
+            <button type="button" className="sc-primary" onClick={() => onSave({ v: 1, active: selected, sets: finalSets() }, draftEngine)}>
               {selected === store.active && !incoming ? "Save" : "Save & use"}
             </button>
           </>
         }
       >
         {corrupt && !incoming && <div className="tr-notice">Your saved rule sets couldn't be read, so these are the house rules.</div>}
-        {legacy && <div className="tr-notice is-warning">Scoring with the original built-in rules (a developer setting) - sets apply once it's switched back.</div>}
+        <div className="sc-settings-group">
+          <div className="sc-settings-title">Scoring engine</div>
+          <div className="tr-engine">
+            <Segmented
+              value={draftEngine}
+              onChange={setDraftEngine}
+              options={[
+                { value: "custom", label: "Rule sets" },
+                { value: "legacy", label: "Original built-in" },
+              ]}
+            />
+            <span className="sc-help">
+              {legacy
+                ? "Scores with the engine as it was before rules were editable - the house rules only. Your rule sets are kept for switching back."
+                : "Scores with the rule set below. The original engine is a fallback: it also takes over by itself if this one ever fails."}
+            </span>
+          </div>
+        </div>
 
+        <div className={`tr-rules${legacy ? " is-off" : ""}`} inert={legacy || undefined}>
         <div className="sc-settings-group">
           <div className="sc-settings-title">Rule set</div>
           <div className="tr-sets">
@@ -431,7 +460,7 @@ export function TaiRulesSheet({
           )}
         </div>
 
-        <div className={`tr-body${legacy ? " is-off" : ""}`} inert={legacy || undefined}>
+        <div className="tr-body">
           <div className="tr-filter">
             <input className="sc-input tr-search" type="search" placeholder="Search 清一色, flush…" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Search patterns" />
             <button type="button" className={`tr-chip${changedOnly ? " is-on" : ""}`} aria-pressed={changedOnly} onClick={() => setChangedOnly((v) => !v)}>
@@ -496,6 +525,7 @@ export function TaiRulesSheet({
               </div>
             );
           })}
+        </div>
         </div>
       </Sheet>
       {sharing && <ShareRulesSheet name={selectedSet ? name : null} rules={draft} count={changed} onClose={() => setSharing(false)} />}

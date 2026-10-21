@@ -54,7 +54,7 @@ sent to the Scores tab notes it, and the breakdown dots any pattern whose rule i
 list's.
 
 **Fallback.** `src/lib/scoringLegacy.ts` is a frozen copy of the engine from before rules were
-editable. The developer sheet's "Tai rules engine: Original" (a device setting,
+editable. 設定's "Scoring engine: Original built-in" (a phone-wide setting,
 `mjwaits.taiEngine`, not part of any set) scores with it, and if the configurable engine ever throws (a
 bug, not an incomplete hand) the hand is re-scored with it and the TOTAL card says so.
 `engineParity.test.ts` checks that the default rules score every test hand identically to it.

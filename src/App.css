@@ -12143,9 +12143,6 @@ button.sc-stat:active {
   gap: 0.85rem;
 }
 
-.tr-body.is-off {
-  opacity: 0.4;
-}
 
 .tr-filter {
   display: flex;
@@ -12649,4 +12646,22 @@ button.sc-stat:active {
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
+}
+
+/* 設定's scoring engine: the switch, full width, over its explanation. While
+   the original engine is chosen, the rule sets and rules below grey out. */
+.tr-engine {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.tr-rules {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.tr-rules.is-off {
+  opacity: 0.4;
 }
