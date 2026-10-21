@@ -1468,8 +1468,10 @@ function SeatsSheet({
   // 起莊's corner belongs to a seat, not a player. When the card that had it
   // slides to its new seat (a rotation, say), it simply rides along on that
   // card. Otherwise it flies there on its own (a copy, above the sheet, on the
-  // 莊 badge's arc) rather than arriving on some other card. Measured against
-  // the map, before the cards start sliding (so this runs first).
+  // 莊 badge's arc) rather than arriving on some other card - and when its seat
+  // doesn't change but another player slides in, the copy holds still there
+  // while they do. Measured against the map, before the cards start sliding
+  // (so this runs first).
   const lastQi = useRef<{ seat: number; player: string; x: number; y: number } | null>(null);
   const lastSeats = useRef(seats.join("|"));
   // The copy in flight - a later render mustn't cut it short, only a new move.
@@ -1487,7 +1489,10 @@ function SeatsSheet({
     const to = corner.getBoundingClientRect();
     const now = { seat: seats.indexOf(card.dataset.player!), player: card.dataset.player!, x: to.left - box.left, y: to.top - box.top };
     lastQi.current = now;
-    if (!prev || prev.seat === now.seat || (seatsMoved && prev.player === now.player) || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    if (!prev || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const hold = prev.seat === now.seat && seatsMoved && prev.player !== now.player;
+    if (prev.seat === now.seat && !hold) return;
+    if (prev.seat !== now.seat && seatsMoved && prev.player === now.player) return;
     const style = getComputedStyle(corner);
     const flyer = corner.cloneNode(true) as HTMLElement;
     Object.assign(flyer.style, {
@@ -1508,7 +1513,7 @@ function SeatsSheet({
     for (let i = 0; i <= 20; i++) {
       const t = i / 20;
       const e = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-      const rise = Math.sin(Math.PI * e);
+      const rise = hold ? 0 : Math.sin(Math.PI * e);
       frames.push({ offset: t, transform: `translate(${dx * (1 - e)}px, ${dy * (1 - e) + lift * rise}px) scale(${1 + 0.25 * rise})` });
     }
     qiFlight.current?.();
