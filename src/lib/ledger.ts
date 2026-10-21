@@ -59,6 +59,8 @@ export interface ScoreSettings {
   presetFlower: number; // 花 - receive from each
   presetGrass: number; // 草 - receive from each
   presetKong: number; // 暗槓 - receive from each
+  presetChase: number; // 追 - receive from each (the smaller)
+  presetChaseBig: number; // 追 - receive from each (the bigger)
   presetSnake: number; // 蛇骰 - pay each
   presetTriple: number; // 圍骰 - receive from each
   zhaHu: number | null; // 詐胡 - what a false win pays each other player by default (each can be changed); null = off
@@ -90,6 +92,8 @@ export const DEFAULT_SETTINGS: ScoreSettings = {
   presetFlower: 5,
   presetGrass: 3,
   presetKong: 5,
+  presetChase: 5,
+  presetChaseBig: 10,
   presetSnake: 5,
   presetTriple: 5,
   zhaHu: 40,
@@ -103,8 +107,10 @@ export function bonusPresets(settings: ScoreSettings): { name: string; kind: "�
     { name: "花", kind: "獎" as const, amount: settings.presetFlower },
     { name: "草", kind: "獎" as const, amount: settings.presetGrass },
     { name: "暗槓", kind: "獎" as const, amount: settings.presetKong },
-    { name: "蛇骰", kind: "罰" as const, amount: settings.presetSnake },
+    { name: "追", kind: "獎" as const, amount: settings.presetChase },
+    { name: "追", kind: "獎" as const, amount: settings.presetChaseBig },
     { name: "圍骰", kind: "獎" as const, amount: settings.presetTriple },
+    { name: "蛇骰", kind: "罰" as const, amount: settings.presetSnake },
   ].filter((p) => p.amount > 0);
 }
 
