@@ -45,7 +45,7 @@ import { snapshotOf, snapshotUrl, type ScoreSnapshot } from "./lib/scoreShare";
 import { drawSettleCard } from "./lib/settleImage";
 import qrcode from "qrcode-generator";
 import { createPortal } from "react-dom";
-import { careerStats, headToHead, marks, patternCounts, playerStats, rankedBy, trend, type CareerStats, type PlayerStats } from "./lib/scoreStats";
+import { careerStats, headToHead, marks, patternCounts, playerStats, rankedBy, RECENT_HANDS, trend, trendSummary, type CareerStats, type PlayerStats, type Swing } from "./lib/scoreStats";
 
 const WIND_CHARS = ["東", "南", "西", "北"];
 // Where each seat sits on the board, by seat index (turn order runs
@@ -4028,6 +4028,8 @@ type StatRow = { key: keyof PlayerStats; zh: string; en: string; show: (s: Playe
 
 // Which hand a stat happened on, and how many times a chain record was hit.
 const handOf = (h: { hand: number } | null) => (h ? `第${h.hand}局` : null);
+// A swing's span: 3→9局, or 開局→9局 from the start.
+const spanOf = (w: Swing | null) => (w ? `${w.from === 0 ? "開局" : w.from}→${w.to}局` : null);
 const chain = (c: { count: number; times: number } | null) => (c ? `${c.count}${c.times > 1 ? ` ×${c.times}` : ""}` : "–");
 const oneDp = (n: number | null) => (n === null ? "–" : fmt(Math.round(n * 10) / 10));
 const signedDp = (n: number | null) => (n === null ? "–" : signed(Math.round(n * 10) / 10));
@@ -4056,6 +4058,20 @@ const STAT_GROUPS: { zh: string; en: string; rows: StatRow[] }[] = [
       { key: "assistRate", zh: "被自摸率", en: "Paid others' 自摸", show: (s) => pct(s.assistRate) },
       { key: "firstRate", zh: "領先", en: "Time in 1st", show: (s) => pct(s.firstRate) },
       { key: "positiveRate", zh: "正數", en: "Time above 0", show: (s) => pct(s.positiveRate) },
+    ],
+  },
+  {
+    zh: "走勢",
+    en: "Trend",
+    rows: [
+      { key: "peak", zh: "最高位", en: "Highest total", show: (s) => (s.peak ? signed(s.peak.value) : "–"), sub: (s) => handOf(s.peak), tone: (s) => s.peak?.value ?? 0 },
+      { key: "trough", zh: "最低位", en: "Lowest total", show: (s) => (s.trough ? signed(s.trough.value) : "–"), sub: (s) => handOf(s.trough), tone: (s) => s.trough?.value ?? 0 },
+      { key: "maxDrawdown", zh: "最大回落", en: "Biggest drop", show: (s) => (s.maxDrawdown ? signed(s.maxDrawdown.value) : "–"), sub: (s) => spanOf(s.maxDrawdown), tone: (s) => s.maxDrawdown?.value ?? 0 },
+      { key: "maxRunUp", zh: "最大升幅", en: "Biggest climb", show: (s) => (s.maxRunUp ? signed(s.maxRunUp.value) : "–"), sub: (s) => spanOf(s.maxRunUp), tone: (s) => s.maxRunUp?.value ?? 0 },
+      { key: "recovery", zh: "谷底反彈", en: "Back from the low", show: (s) => signed(s.recovery), tone: (s) => s.recovery },
+      { key: "recent", zh: `近${RECENT_HANDS}局`, en: `Last ${RECENT_HANDS} hands`, show: (s) => signed(s.recent.net), tone: (s) => s.recent.net },
+      { key: "longestLosingRun", zh: "最長連跌", en: "Losing run", show: (s) => String(s.longestLosingRun) },
+      { key: "avgSwing", zh: "平均波幅", en: "Swing per hand", show: (s) => oneDp(s.avgSwing) },
     ],
   },
   {
@@ -4173,6 +4189,17 @@ function insights(s: PlayerStats): { zh: string; en: string; tone?: number }[] {
   const won = sources.reduce((t, x) => t + x.v, 0);
   const top = sources.slice().sort((a, b) => b.v - a.v)[0];
   if (won > 0 && top.v > 0) out.push({ zh: `主要靠${top.zh}贏分（${share(top.v, won)}）`, en: `Most points won by ${top.en} (${share(top.v, won)})` });
+  // 走勢: a comeback from below 0, else a deep fall; then current form.
+  if (s.trough && s.trough.value < 0 && s.net > 0)
+    out.push({ zh: `由 ${signed(s.trough.value)} 反彈到 ${signed(s.net)}`, en: `Came back from ${signed(s.trough.value)} to ${signed(s.net)}`, tone: 1 });
+  else if (s.maxDrawdown && s.avgSwing && -s.maxDrawdown.value >= 3 * s.avgSwing)
+    out.push({ zh: `最大回落 ${signed(s.maxDrawdown.value)}（${spanOf(s.maxDrawdown)}）`, en: `Biggest drop: ${signed(s.maxDrawdown.value)}`, tone: -1 });
+  if (s.recent.hands >= 4 && s.recent.net !== 0)
+    out.push({
+      zh: `近${s.recent.hands}局 ${signed(s.recent.net)}${s.recent.net > 0 ? "，手風順" : "，手風唔順"}`,
+      en: `Last ${s.recent.hands} hands: ${signed(s.recent.net)} - ${s.recent.net > 0 ? "on form" : "off form"}`,
+      tone: s.recent.net,
+    });
   if (s.dealIns > 0 && s.avgDealInLoss !== null)
     out.push({
       zh: `出銃 ${s.dealIns} 次，平均每次輸 ${oneDp(-s.avgDealInLoss)}`,
@@ -4226,6 +4253,27 @@ function StatRanking({ store, stats, row, player, onClose }: { store: ScoreStore
         })}
       </ol>
     </Sheet>
+  );
+}
+
+// Under the 走勢 chart: the game's story in a line or three - how often the
+// lead changed, who held it longest, and the biggest comeback.
+function TrendSummary({ state }: { state: ReplayState }) {
+  const t = trendSummary(state);
+  const lines: { zh: string; en: string }[] = [];
+  if (state.hands.length > 1) lines.push({ zh: t.leadChanges === 0 ? "領先從未易手" : `領先易手 ${t.leadChanges} 次`, en: t.leadChanges === 0 ? "The lead never changed" : `The lead changed ${t.leadChanges} time${t.leadChanges === 1 ? "" : "s"}` });
+  if (t.mostLed) lines.push({ zh: `${t.mostLed.player} 領先最耐（${t.mostLed.hands}局）`, en: `${t.mostLed.player} led for the most hands` });
+  if (t.comeback && t.comeback.to > 0) lines.push({ zh: `最大逆轉：${t.comeback.player} 由 ${signed(t.comeback.from)} 追到 ${signed(t.comeback.to)}`, en: `Biggest comeback: ${t.comeback.player}` });
+  if (lines.length === 0) return null;
+  return (
+    <ul className="sc-trend-summary">
+      {lines.map((l) => (
+        <li key={l.zh}>
+          <span>{l.zh}</span>
+          <small>{l.en}</small>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -4553,6 +4601,7 @@ function StatsPanel({ store, setStore, view, setView }: { store: ScoreStore; set
             <span className="sc-help">累計分數 · Running totals, touch for a 局</span>
           </div>
           <TrendChart store={store} state={state} />
+          <TrendSummary state={state} />
         </div>
       )}
       {view === "patterns" && <PatternsCard state={state} store={store} />}
