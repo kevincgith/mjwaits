@@ -565,7 +565,8 @@ type HandInitial = {
   zhaHu?: { player: string; amount: number }[];
 };
 
-// The 胡 sheet's tabs: 食胡, 特別獎罰, and 詐胡 when it's switched on in 設定.
+// The 胡 sheet's views: 食胡, 特別獎罰, and 詐胡 - part of the 食胡 tab, opened
+// from its foot when it's switched on in 設定.
 type HandMode = "win" | "bonus" | "zhaHu";
 
 type DraftEntry = { seat: number; tai: string };
@@ -636,7 +637,6 @@ function HandSheet({
         onDone={onDone}
         onClose={onClose}
         onWin={() => setMode("win")}
-        onZhaHu={onZhaHu}
         player={player}
         initial={initial?.bonus}
         frame={{ ref: bonusRef, minHeight, hidden: mode !== "bonus" }}
@@ -659,18 +659,16 @@ function HandSheet({
   );
 }
 
-function ModeTabs({ mode, onWin, onBonus, onZhaHu }: { mode: HandMode; onWin?: () => void; onBonus?: () => void; onZhaHu?: () => void }) {
-  // With 詐胡 there are three tabs, so they drop the English to fit a phone.
-  const three = onZhaHu !== undefined || mode === "zhaHu";
+function ModeTabs({ mode, onWin, onBonus }: { mode: HandMode; onWin?: () => void; onBonus?: () => void }) {
+  // 詐胡 lives on the 食胡 tab.
   return (
     <div className="sc-sheet-tabs">
       <Segmented
-        value={mode}
-        onChange={(v) => (v === "win" ? onWin?.() : v === "bonus" ? onBonus?.() : onZhaHu?.())}
+        value={mode === "bonus" ? "bonus" : "win"}
+        onChange={(v) => (v === "win" ? onWin?.() : onBonus?.())}
         options={[
-          { value: "win", label: three ? "食胡" : "食胡 Win" },
-          { value: "bonus", label: three ? "特別獎罰" : "特別獎罰 Bonus" },
-          ...(three ? [{ value: "zhaHu" as const, label: "詐胡" }] : []),
+          { value: "win", label: "食胡 Win" },
+          { value: "bonus", label: "特別獎罰 Bonus" },
         ]}
       />
     </div>
@@ -785,9 +783,15 @@ function WinSheet({
       }
       onClose={onClose}
       frame={frame}
-      tabs={<ModeTabs mode="win" onBonus={onBonus} onZhaHu={onZhaHu} />}
+      tabs={<ModeTabs mode="win" onBonus={onBonus} />}
       actions={
         <>
+          {/* 詐胡 - a called win that wasn't - from the same tab. */}
+          {onZhaHu && (
+            <button type="button" className="sc-secondary sc-zha-switch" onClick={onZhaHu}>
+              詐胡
+            </button>
+          )}
           <button type="button" className="sc-primary" disabled={!complete} onClick={submit}>
             {complete ? (jackpot && state.pot > 0 ? `Confirm · ${fmt(total)} + Jackpot ${fmt(state.pot)} = ${fmt(total + state.pot)}` : `Confirm · ${fmt(total)}`) : "Confirm"}
           </button>
@@ -961,6 +965,9 @@ function ZhaHuSheet({
       tabs={<ModeTabs mode="zhaHu" onWin={onWin} onBonus={onBonus} />}
       actions={
         <>
+          <button type="button" className="sc-secondary sc-zha-switch" onClick={onWin}>
+            食胡
+          </button>
           <button
             type="button"
             className="sc-danger"
@@ -1042,7 +1049,6 @@ function BonusSheet({
   onDone,
   onClose,
   onWin,
-  onZhaHu,
   frame,
   initial,
 }: {
@@ -1054,7 +1060,6 @@ function BonusSheet({
   onDone: (ev: ScoreEvent) => void;
   onClose: () => void;
   onWin: () => void;
-  onZhaHu?: () => void;
   frame?: SheetFrame;
 }) {
   const [kind, setKind] = useState<"獎" | "罰">(initial?.kind ?? "獎");
@@ -1073,7 +1078,7 @@ function BonusSheet({
       }
       onClose={onClose}
       frame={frame}
-      tabs={<ModeTabs mode="bonus" onWin={onWin} onZhaHu={onZhaHu} />}
+      tabs={<ModeTabs mode="bonus" onWin={onWin} />}
       actions={
         <>
           <button
