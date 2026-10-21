@@ -117,6 +117,7 @@ export interface BonusPreset {
   kind: "獎" | "罰";
   amount: number;
   one?: true;
+  more?: true; // a less common one, behind More on the sheet
 }
 
 export function bonusPresets(settings: ScoreSettings): BonusPreset[] {
@@ -124,16 +125,16 @@ export function bonusPresets(settings: ScoreSettings): BonusPreset[] {
   return ([
     { name: "花", kind: "獎" as const, amount: settings.presetFlower },
     { name: "草", kind: "獎" as const, amount: settings.presetGrass },
-    { name: "花草", kind: "獎" as const, amount: settings.presetBoth },
+    { name: "花草", kind: "獎" as const, amount: settings.presetBoth, more: true as const },
     { name: "暗槓", kind: "獎" as const, amount: settings.presetKong },
     { name: "追", kind: "獎" as const, amount: settings.presetChase },
     { name: "追", kind: "獎" as const, amount: settings.presetChaseBig },
     { name: "圍骰", kind: "獎" as const, amount: settings.presetTriple },
     { name: "蛇骰", kind: "罰" as const, amount: settings.presetSnake },
-    { name: "7搶1", kind: "獎" as const, amount: settings.presetSevenOne, one: true as const },
-    { name: "1搶7", kind: "獎" as const, amount: settings.presetOneSeven, one: true as const },
-    { name: "八仙過海", kind: "獎" as const, amount: settings.presetEightImmortals },
-    { name: "嗌錯", kind: "罰" as const, amount: settings.presetWrongCall },
+    { name: "7搶1", kind: "獎" as const, amount: settings.presetSevenOne, one: true as const, more: true as const },
+    { name: "1搶7", kind: "獎" as const, amount: settings.presetOneSeven, one: true as const, more: true as const },
+    { name: "八仙過海", kind: "獎" as const, amount: settings.presetEightImmortals, more: true as const },
+    { name: "嗌錯", kind: "罰" as const, amount: settings.presetWrongCall, more: true as const },
   ] as BonusPreset[]).filter((p) => p.amount > 0);
 }
 
