@@ -1,5 +1,5 @@
-// Saving, loading, comparing and sharing a TaiRules (the Scoring tab's 設定
-// sheet). The engine side - what each attribute does to a score - lives in
+// Reading, comparing and diffing a TaiRules (the Scoring tab's 設定 sheet);
+// named sets, files and share links are in taiRuleSets.ts. The engine side - what each attribute does to a score - lives in
 // scoring.ts; the classification in taiCatalog.ts.
 
 import { LADDERS, PATTERN_CATALOG, SITUATION_CHOICE } from "./taiCatalog";
@@ -15,6 +15,8 @@ import {
   type TaiRules,
 } from "./scoring";
 
+// Where the first release saved its one ruleset - read once, to move it into
+// a named set (loadRuleSets in taiRuleSets.ts).
 export const TAI_RULES_KEY = "mjwaits.taiRules";
 
 const KNOWN_IDS = new Set(PATTERNS.map((p) => p.id));
@@ -76,25 +78,6 @@ export function normalizeRules(saved: unknown): { rules: TaiRules; corrupt: bool
     },
     corrupt: false,
   };
-}
-
-export function loadTaiRules(): { rules: TaiRules; corrupt: boolean } {
-  try {
-    const raw = window.localStorage.getItem(TAI_RULES_KEY);
-    if (raw === null) return normalizeRules(null);
-    return normalizeRules(JSON.parse(raw));
-  } catch {
-    return { rules: structuredClone(DEFAULT_TAI_RULES), corrupt: true };
-  }
-}
-
-export function saveTaiRules(rules: TaiRules): void {
-  try {
-    if (isDefaultRules(rules)) window.localStorage.removeItem(TAI_RULES_KEY);
-    else window.localStorage.setItem(TAI_RULES_KEY, JSON.stringify(rules));
-  } catch {
-    // Private window / storage blocked: the rules still apply this session.
-  }
 }
 
 // ---- Comparing with the house list ----
@@ -215,7 +198,7 @@ export function ladderOf(id: string) {
   return LADDERS.find((l) => l.rungs.some((rung) => rung.includes(id)));
 }
 
-// ---- A compact diff: fingerprints and share links ----
+// ---- A compact diff: what sets, files, links and fingerprints hold ----
 
 export interface RulesDiff {
   v: 1;
@@ -257,13 +240,6 @@ export function rulesFromDiff(diff: unknown): TaiRules | null {
   return normalizeRules({ engine: d.e === "legacy" ? "legacy" : "custom", patterns, ladders }).rules;
 }
 
-const toBase64Url = (text: string) => {
-  let bin = "";
-  for (const b of new TextEncoder().encode(text)) bin += String.fromCharCode(b);
-  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-};
-const fromBase64Url = (code: string) => new TextDecoder().decode(Uint8Array.from(atob(code.replace(/-/g, "+").replace(/_/g, "/")), (ch) => ch.charCodeAt(0)));
-
 /** A short, stable id for a ruleset that scores differently from the house
  *  list - stamped on Recent hands and Scores entries, so a total worked out
  *  under other rules can be told apart. null for the house list (and the
@@ -275,21 +251,6 @@ export function rulesFingerprint(rules: TaiRules | undefined): string | null {
   let h = 0x811c9dc5;
   for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193);
   return (h >>> 0).toString(36);
-}
-
-export const RULES_HASH = "#r=";
-
-export function rulesUrl(rules: TaiRules, base = `${window.location.origin}${window.location.pathname}`): string {
-  return `${base}${RULES_HASH}${toBase64Url(JSON.stringify(rulesDiff(rules)))}`;
-}
-
-export function rulesFromHash(hash: string): TaiRules | null {
-  if (!hash.startsWith(RULES_HASH)) return null;
-  try {
-    return rulesFromDiff(JSON.parse(fromBase64Url(hash.slice(RULES_HASH.length))));
-  } catch {
-    return null;
-  }
 }
 
 export { LADDER_BY_ID };

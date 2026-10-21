@@ -5,7 +5,7 @@
 // hand in the tab; nothing applies until Save.
 
 import qrcode from "qrcode-generator";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { NumberField, Sheet, Toggle } from "./ScoresPanel";
 import {
   CHICKEN_PATTERN_IDS,
@@ -19,6 +19,20 @@ import {
 } from "./lib/scoring";
 import { LADDERS, PATTERN_CATALOG, PATTERN_FAMILIES, type Ladder, type PatternFamily } from "./lib/taiCatalog";
 import {
+  activeSet,
+  diffOf,
+  exportFile,
+  exportFileName,
+  HOUSE_RULES_NAME,
+  newSetId,
+  parseImport,
+  rulesLink,
+  rulesOfSet,
+  uniqueName,
+  type RuleSet,
+  type RuleSetStore,
+} from "./lib/taiRuleSets";
+import {
   changedCount,
   describeChanges,
   isLadderChanged,
@@ -27,7 +41,6 @@ import {
   replaceCycles,
   replacedBy,
   ruleChanges,
-  rulesUrl,
   shortName,
   type RuleChange,
 } from "./lib/taiRules";
@@ -58,45 +71,146 @@ function valueSummary(id: string, rule: PatternRule): string {
   return String(rule.tai);
 }
 
+// Which set the sheet is editing: the house list (read-only - editing it
+// starts a new set) or one of the saved sets.
+type Selected = string | null;
+
 export function TaiRulesSheet({
-  rules,
+  store,
+  engine,
   incoming,
   corrupt,
   previewTotal,
   onSave,
   onClose,
 }: {
-  rules: TaiRules;
-  /** Rules from a shared link: the sheet opens on them, to review. */
-  incoming: TaiRules | null;
-  /** The saved rules couldn't be read and were reset to the house list. */
+  store: RuleSetStore;
+  /** The developer sheet's engine switch: "legacy" ignores every set. */
+  engine: TaiRules["engine"];
+  /** Rules from a shared link: they open as a new set, to review. */
+  incoming: { name: string | null; rules: TaiRules } | null;
+  /** The saved sets couldn't be read and were reset. */
   corrupt: boolean;
   /** The tab's current hand scored under some rules - null if it can't be. */
   previewTotal: (rules: TaiRules) => number | null;
-  onSave: (rules: TaiRules) => void;
+  /** Every set (renamed, added, deleted, edited) with the selected one in use. */
+  onSave: (store: RuleSetStore) => void;
   onClose: () => void;
 }) {
-  const [draft, setDraft] = useState<TaiRules>(() => structuredClone(incoming ?? rules));
+  // The whole sheet is a draft: the sets and each one's edited rules. A
+  // shared link's rules arrive as a new set, selected.
+  const [initial] = useState(() => {
+    const sets = [...store.sets];
+    const drafts: Record<string, TaiRules> = {};
+    let selected: Selected = store.active;
+    if (incoming) {
+      const id = newSetId();
+      sets.push({ id, name: uniqueName(sets, incoming.name ?? "Shared rules"), diff: diffOf(incoming.rules), updated: Date.now() });
+      drafts[id] = incoming.rules;
+      selected = id;
+    }
+    return { sets, drafts, selected };
+  });
+  const [sets, setSets] = useState<RuleSet[]>(initial.sets);
+  const [drafts, setDrafts] = useState<Record<string, TaiRules>>(initial.drafts);
+  const [selected, setSelected] = useState<Selected>(initial.selected);
   const [query, setQuery] = useState("");
   const [changedOnly, setChangedOnly] = useState(false);
   const [openFamilies, setOpenFamilies] = useState<Set<PatternFamily>>(() => new Set());
   const [expanded, setExpanded] = useState<string | null>(null);
   const [reveal, setReveal] = useState<string | null>(null);
   const [sharing, setSharing] = useState(false);
+  const [notice, setNotice] = useState<{ text: string; bad?: boolean } | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const importRef = useRef<HTMLInputElement>(null);
 
+  const selectedSet = sets.find((s) => s.id === selected);
+  const draft = useMemo<TaiRules>(
+    () => (selected === null ? DEFAULT_TAI_RULES : (drafts[selected] ?? rulesOfSet(selectedSet))),
+    [selected, drafts, selectedSet],
+  );
+  const name = selectedSet?.name ?? HOUSE_RULES_NAME;
+
+  // Editing the house list starts a new set from it ("My rules"), selected.
+  const edit = (update: (prev: TaiRules) => TaiRules) => {
+    if (selected === null) {
+      const id = newSetId();
+      setSets((prev) => [...prev, { id, name: uniqueName(prev, "My rules"), diff: { v: 1 }, updated: Date.now() }]);
+      setDrafts((prev) => ({ ...prev, [id]: update(structuredClone(DEFAULT_TAI_RULES)) }));
+      setSelected(id);
+      setNotice({ text: "Editing a copy of the house rules - it's saved as a new set." });
+      return;
+    }
+    const id = selected;
+    setDrafts((prev) => ({ ...prev, [id]: update(prev[id] ?? rulesOfSet(selectedSet)) }));
+  };
   const setRule = (id: string, patch: Partial<PatternRule>) =>
-    setDraft((prev) => ({ ...prev, patterns: { ...prev.patterns, [id]: { ...prev.patterns[id], ...patch } } }));
+    edit((prev) => ({ ...prev, patterns: { ...prev.patterns, [id]: { ...prev.patterns[id], ...patch } } }));
   const resetRule = (id: string) => setRule(id, structuredClone(DEFAULT_TAI_RULES.patterns[id]));
-  const setLadder = (id: string, exclusive: boolean) => setDraft((prev) => ({ ...prev, ladders: { ...prev.ladders, [id]: { exclusive } } }));
+  const setLadder = (id: string, exclusive: boolean) => edit((prev) => ({ ...prev, ladders: { ...prev.ladders, [id]: { exclusive } } }));
 
   const cycles = useMemo(() => replaceCycles(draft), [draft]);
   const changes = useMemo(() => describeChanges(draft), [draft]);
   const changed = changedCount(draft);
-  const legacy = draft.engine === "legacy";
+  const legacy = engine === "legacy";
 
-  // Live preview: the hand in the tab, under the saved rules and the draft.
-  const savedTotal = useMemo(() => previewTotal(rules), [previewTotal, rules]);
+  // Live preview: the hand in the tab under the rules in use and this set.
+  const inUse = useMemo(() => rulesOfSet(activeSet(store)), [store]);
+  const savedTotal = useMemo(() => previewTotal(inUse), [previewTotal, inUse]);
   const draftTotal = useMemo(() => previewTotal(draft), [previewTotal, draft]);
+
+  // ---- Sets ----
+  const pick = (id: Selected) => {
+    setSelected(id);
+    setConfirmDelete(false);
+    setNotice(null);
+  };
+  const addSet = (setName: string, rules: TaiRules) => {
+    const id = newSetId();
+    setSets((prev) => [...prev, { id, name: uniqueName(prev, setName), diff: diffOf(rules), updated: Date.now() }]);
+    setDrafts((prev) => ({ ...prev, [id]: rules }));
+    pick(id);
+  };
+  const rename = (next: string) => {
+    if (selected === null) return;
+    setSets((prev) => prev.map((s) => (s.id === selected ? { ...s, name: next.slice(0, 60) } : s)));
+  };
+  const remove = () => {
+    if (selected === null) return;
+    setSets((prev) => prev.filter((s) => s.id !== selected));
+    pick(null);
+    setNotice({ text: `Deleted "${name}" - Save to make it final.` });
+  };
+  // The sets as they'd be saved now: each one's edits folded into its diff,
+  // and blank names given back.
+  const finalSets = (): RuleSet[] =>
+    sets.map((s) => {
+      const rules = drafts[s.id];
+      const named = s.name.trim() ? s.name.trim() : uniqueName(sets, "My rules", s.id);
+      return rules ? { ...s, name: named, diff: diffOf(rules), updated: Date.now() } : { ...s, name: named };
+    });
+  const download = (fileSets: RuleSet[], fileName: string) => {
+    const url = URL.createObjectURL(new Blob([exportFile(fileSets)], { type: "application/json" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileName;
+    a.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+  const exportSelected = () => {
+    const set = finalSets().find((s) => s.id === selected);
+    if (set) download([set], exportFileName(set.name));
+  };
+  const exportAll = () => download(finalSets(), exportFileName(null));
+  const importFile = async (file: File) => {
+    const result = parseImport(await file.text());
+    if ("error" in result) return setNotice({ text: result.error, bad: true });
+    const next = [...sets];
+    for (const s of result.sets) next.push({ id: newSetId() + next.length, name: uniqueName(next, s.name), diff: s.diff, updated: Date.now() });
+    setSets(next);
+    pick(next[sets.length].id);
+    setNotice({ text: `Imported ${result.sets.length} rule set${result.sets.length === 1 ? "" : "s"} - Save to keep ${result.sets.length === 1 ? "it" : "them"}.` });
+  };
 
   // Jump to a pattern from the changes list: open its family, expand it,
   // scroll it into view once it's rendered.
@@ -123,7 +237,6 @@ export function TaiRulesSheet({
   const undo = (c: RuleChange) => {
     if (c.target.kind === "pattern") resetRule(c.target.id);
     else if (c.target.kind === "ladder") setLadder(c.target.id, true);
-    else setDraft((prev) => ({ ...prev, engine: "custom" }));
   };
 
   // Filtering opens every family with a match, so results aren't hidden
@@ -160,33 +273,99 @@ export function TaiRulesSheet({
     onReset: () => resetRule(id),
   });
 
+  const inUseName = activeSet(store)?.name ?? HOUSE_RULES_NAME;
   return (
     <>
       <Sheet
         title="設定 · 台數規則"
-        subtitle={incoming ? "Shared with you · review, then Save to use" : changed === 0 ? "House rules" : `Custom · ${changed} change${changed === 1 ? "" : "s"}`}
+        subtitle={incoming ? "Shared with you · review, then use" : selected === store.active ? `In use: ${inUseName}` : `In use: ${inUseName} · Save to switch`}
         onClose={onClose}
         actions={
           <>
-            <button type="button" className="sc-secondary" onClick={() => setDraft({ ...structuredClone(DEFAULT_TAI_RULES), engine: draft.engine })} disabled={changed === 0}>
-              House rules
+            <button type="button" className="sc-secondary" onClick={() => setDrafts((prev) => (selected === null ? prev : { ...prev, [selected]: structuredClone(DEFAULT_TAI_RULES) }))} disabled={changed === 0}>
+              Reset
             </button>
-            <button type="button" className="sc-primary" onClick={() => onSave(draft)}>
-              {incoming ? "Use these rules" : "Save"}
+            <button type="button" className="sc-primary" onClick={() => onSave({ v: 1, active: selected, sets: finalSets() })}>
+              {selected === store.active && !incoming ? "Save" : "Save & use"}
             </button>
           </>
         }
       >
-        {corrupt && !incoming && <div className="tr-notice">Your saved rules couldn't be read, so these are the house rules.</div>}
-        {legacy && (
-          <div className="tr-notice is-warning">
-            Scoring with the original built-in rules (a developer setting) - these edits apply once it's switched back.
+        {corrupt && !incoming && <div className="tr-notice">Your saved rule sets couldn't be read, so these are the house rules.</div>}
+        {legacy && <div className="tr-notice is-warning">Scoring with the original built-in rules (a developer setting) - sets apply once it's switched back.</div>}
+
+        <div className="sc-settings-group">
+          <div className="sc-settings-title">Rule set</div>
+          <div className="tr-sets">
+            <select className="sc-input tr-set-select" value={selected ?? ""} onChange={(e) => pick(e.target.value || null)} aria-label="Rule set">
+              <option value="">{HOUSE_RULES_NAME}</option>
+              {sets.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name || "(no name)"}
+                  {s.id === store.active ? " · in use" : ""}
+                </option>
+              ))}
+            </select>
+            {selectedSet && (
+              <input
+                className="sc-input tr-set-name"
+                value={selectedSet.name}
+                onChange={(e) => rename(e.target.value)}
+                onBlur={() => !selectedSet.name.trim() && rename(uniqueName(sets, "My rules", selectedSet.id))}
+                placeholder="Name this rule set"
+                aria-label="Rule set name"
+                maxLength={60}
+              />
+            )}
+            <div className="tr-set-actions">
+              <button type="button" className="tr-chip" onClick={() => addSet("My rules", structuredClone(DEFAULT_TAI_RULES))}>
+                New
+              </button>
+              <button type="button" className="tr-chip" onClick={() => addSet(`${name} copy`.replace(`${HOUSE_RULES_NAME} copy`, "My rules"), structuredClone(draft))}>
+                Duplicate
+              </button>
+              {selectedSet &&
+                (confirmDelete ? (
+                  <button type="button" className="tr-chip is-danger" onClick={remove}>
+                    Delete "{name}"?
+                  </button>
+                ) : (
+                  <button type="button" className="tr-chip" onClick={() => setConfirmDelete(true)}>
+                    Delete
+                  </button>
+                ))}
+              {selectedSet && (
+                <button type="button" className="tr-chip" onClick={exportSelected}>
+                  Export
+                </button>
+              )}
+              {sets.length > 1 && (
+                <button type="button" className="tr-chip" onClick={exportAll}>
+                  Export all
+                </button>
+              )}
+              <button type="button" className="tr-chip" onClick={() => importRef.current?.click()}>
+                Import
+              </button>
+              <input
+                ref={importRef}
+                type="file"
+                accept=".json,application/json"
+                hidden
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = "";
+                  if (file) void importFile(file);
+                }}
+              />
+            </div>
           </div>
-        )}
+          {notice && <div className={`tr-notice${notice.bad ? " is-warning" : ""}`}>{notice.text}</div>}
+        </div>
 
         <div className={`tr-preview${savedTotal !== null && draftTotal !== null && savedTotal !== draftTotal ? " is-changed" : ""}`} aria-live="polite">
           {savedTotal === null || draftTotal === null ? (
-            <span className="tr-preview-empty">Enter a complete hand to see its total change as you edit.</span>
+            <span className="tr-preview-empty">Enter a complete hand to see its total under this set.</span>
           ) : (
             <>
               <span className="tr-preview-label">This hand</span>
@@ -203,14 +382,16 @@ export function TaiRulesSheet({
           )}
         </div>
 
-        {changes.length > 0 && (
-          <div className="sc-settings-group">
-            <div className="tr-changes-head">
-              <span className="sc-settings-title">Changes from the house list</span>
+        <div className="sc-settings-group">
+          <div className="tr-changes-head">
+            <span className="sc-settings-title">{changes.length > 0 ? "Changes from the house rules" : "Same as the house rules"}</span>
+            {changes.length > 0 && (
               <button type="button" className="tr-link" onClick={() => setSharing(true)}>
                 Share
               </button>
-            </div>
+            )}
+          </div>
+          {changes.length > 0 && (
             <div className="sc-list tr-changes">
               {changes.map((c, i) => (
                 <div key={i} className="tr-change">
@@ -227,8 +408,8 @@ export function TaiRulesSheet({
                 </div>
               ))}
             </div>
-          </div>
-        )}
+          )}
+        </div>
 
         <div className={`tr-body${legacy ? " is-off" : ""}`} inert={legacy || undefined}>
           <div className="tr-filter">
@@ -289,7 +470,7 @@ export function TaiRulesSheet({
           })}
         </div>
       </Sheet>
-      {sharing && <ShareRulesSheet rules={draft} count={changed} onClose={() => setSharing(false)} />}
+      {sharing && <ShareRulesSheet name={selectedSet ? name : null} rules={draft} count={changed} onClose={() => setSharing(false)} />}
     </>
   );
 }
@@ -521,29 +702,45 @@ function PatternDetails({
   );
 }
 
-// A link (and its QR code) that opens these rules on another phone, for
-// everyone at the table to score the same way. The receiver reviews them
-// in this sheet before they replace their own.
-function ShareRulesSheet({ rules, count, onClose }: { rules: TaiRules; count: number; onClose: () => void }) {
-  const url = useMemo(() => rulesUrl(rules), [rules]);
+// A link (and its QR code) that opens a rule set on another phone, for
+// everyone at the table to score the same way. The receiver reviews it in
+// this sheet, as a new set, before using it. The link is compressed (see
+// rulesLink) so even a heavily changed set fits a QR code; if one ever
+// doesn't, the link is still there to copy or share.
+function ShareRulesSheet({ name, rules, count, onClose }: { name: string | null; rules: TaiRules; count: number; onClose: () => void }) {
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    void rulesLink(name, rules).then((link) => live && setUrl(link));
+    return () => {
+      live = false;
+    };
+  }, [name, rules]);
   const svg = useMemo(() => {
-    const qr = qrcode(0, "L");
-    qr.addData(url);
-    qr.make();
-    return qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true });
+    if (!url) return null;
+    try {
+      const qr = qrcode(0, "L");
+      qr.addData(url);
+      qr.make();
+      return qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true });
+    } catch {
+      return null; // Too long for a QR code.
+    }
   }, [url]);
   const [copied, setCopied] = useState(false);
   return (
     <Sheet
-      title="Share these rules"
-      subtitle={`${count} change${count === 1 ? "" : "s"} from the house list`}
+      title={name ? `Share "${name}"` : "Share these rules"}
+      subtitle={`${count} change${count === 1 ? "" : "s"} from the house rules`}
       onClose={onClose}
       actions={
         <>
           <button
             type="button"
             className="sc-secondary"
+            disabled={!url}
             onClick={async () => {
+              if (!url) return;
               try {
                 await navigator.clipboard.writeText(url);
                 setCopied(true);
@@ -559,9 +756,11 @@ function ShareRulesSheet({ rules, count, onClose }: { rules: TaiRules; count: nu
             <button
               type="button"
               className="sc-primary"
+              disabled={!url}
               onClick={async () => {
+                if (!url) return;
                 try {
-                  await navigator.share({ title: "MJWaits tai rules", url });
+                  await navigator.share({ title: name ? `MJWaits rules: ${name}` : "MJWaits tai rules", url });
                 } catch {
                   // Dismissed.
                 }
@@ -573,8 +772,12 @@ function ShareRulesSheet({ rules, count, onClose }: { rules: TaiRules; count: nu
         </>
       }
     >
-      <div className="sc-qr" dangerouslySetInnerHTML={{ __html: svg }} role="img" aria-label="QR code for the rules link" />
-      <p className="sc-help sc-help-block">Scan on another phone to open these rules in its 設定, ready to review and use. Unsaved edits are included.</p>
+      {svg ? (
+        <div className="sc-qr" dangerouslySetInnerHTML={{ __html: svg }} role="img" aria-label="QR code for the rules link" />
+      ) : (
+        url && <div className="tr-notice is-warning">Too many changes for a QR code - copy or share the link instead.</div>
+      )}
+      <p className="sc-help sc-help-block">Scan or open on another phone: the rules arrive in its 設定 as a new set, ready to review and use. Unsaved edits are included.</p>
     </Sheet>
   );
 }

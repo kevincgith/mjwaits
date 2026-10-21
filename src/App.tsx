@@ -44,7 +44,18 @@ import { PlayPanel } from "./PlayPanel";
 import { ScoresPanel, SharedScoresView, type RecordRequest, type ScoreHandRequest, type SeatingResult } from "./ScoresPanel";
 import { snapshotFromHash } from "./lib/scoreShare";
 import { TaiRulesSheet } from "./TaiRulesSheet";
-import { isLadderChanged, isRuleChanged, ladderOf, loadTaiRules, rulesAffectScoring, rulesFingerprint, rulesFromHash, saveTaiRules } from "./lib/taiRules";
+import { isLadderChanged, isRuleChanged, ladderOf, rulesAffectScoring, rulesFingerprint } from "./lib/taiRules";
+import {
+  activeSet,
+  HOUSE_RULES_NAME,
+  loadEngine,
+  loadRuleSets,
+  readRulesLink,
+  rulesOfSet,
+  saveEngine,
+  saveRuleSets,
+  type RuleSetStore,
+} from "./lib/taiRuleSets";
 import { loadScores, saveScores } from "./lib/ledger";
 import {
   COMPLETE_SIZE,
@@ -5604,7 +5615,8 @@ function ScoringPanel({
   forScores,
   onCancelForScores,
   taiRules,
-  onSaveRules,
+  ruleStore,
+  onSaveRuleStore,
   incomingRules,
   onIncomingRulesHandled,
 }: {
@@ -5618,13 +5630,15 @@ function ScoringPanel({
   // result straight back.
   forScores?: ScoreHandRequest | null;
   onCancelForScores?: () => void;
-  // The house's tai rules (設定), held by App so the developer sheet and a
-  // shared rules link reach them too. Applied to every score this tab works
-  // out (the result, the waits and discard lists).
-  taiRules: { rules: TaiRules; corrupt: boolean };
-  onSaveRules: (rules: TaiRules) => void;
+  // The tai rules in use (設定) - the active named set, or the house list -
+  // applied to every score this tab works out (the result, the waits and
+  // discard lists). App holds the sets so the developer sheet and a shared
+  // rules link reach them too.
+  taiRules: { rules: TaiRules; corrupt: boolean; name: string };
+  ruleStore: RuleSetStore;
+  onSaveRuleStore: (store: RuleSetStore) => void;
   // Rules opened from a shared link (#r=…), to review in the sheet.
-  incomingRules?: TaiRules | null;
+  incomingRules?: { name: string | null; rules: TaiRules } | null;
   onIncomingRulesHandled?: () => void;
 }) {
   const [concealedTiles, setConcealedTiles] = useState<HandTile[]>([]);
@@ -6996,7 +7010,8 @@ function ScoringPanel({
       )}
       {rulesOpen && (
         <TaiRulesSheet
-          rules={taiRules.rules}
+          store={ruleStore}
+          engine={taiRules.rules.engine}
           incoming={incomingRules ?? null}
           corrupt={taiRules.corrupt}
           previewTotal={previewTotal}
@@ -7004,8 +7019,8 @@ function ScoringPanel({
             setRulesOpen(false);
             onIncomingRulesHandled?.();
           }}
-          onSave={(rules) => {
-            onSaveRules(rules);
+          onSave={(store) => {
+            onSaveRuleStore(store);
             setRulesOpen(false);
             onIncomingRulesHandled?.();
           }}
@@ -7050,7 +7065,7 @@ function ScoringPanel({
           type="button"
           className={`toolbar-button toolbar-rules${rulesAffectScoring(taiRules.rules) ? " is-custom" : ""}`}
           onClick={() => setRulesOpen(true)}
-          title="設定 - the tai rules"
+          title={`設定 - the tai rules (${taiRules.name})`}
         >
           <ToolbarIcon kind="settings" />
           <span className="toolbar-label">設定</span>
@@ -7683,7 +7698,7 @@ function ScoringPanel({
               ) : (
                 rulesAffectScoring(taiRules.rules) && (
                   <button type="button" className="rules-badge" onClick={(e) => (e.stopPropagation(), setRulesOpen(true))}>
-                    Custom rules
+                    {taiRules.name}
                   </button>
                 )
               )}
@@ -10034,16 +10049,30 @@ function App() {
   // A shared scores link (#s=…) opens its read-only view over the app;
   // "Open MJWaits" drops the hash and carries on as normal.
   const [sharedScores, setSharedScores] = useState(() => snapshotFromHash(window.location.hash));
-  // The Scoring tab's tai rules (設定), saved in localStorage - here so the
-  // developer sheet's engine switch and a shared rules link reach them.
-  const [taiRules, setTaiRules] = useState(loadTaiRules);
-  const saveRules = (rules: TaiRules) => {
-    saveTaiRules(rules);
-    setTaiRules({ rules, corrupt: false });
+  // The Scoring tab's tai rule sets (設定), saved in localStorage, and the
+  // developer sheet's engine switch - here so both, and a shared rules
+  // link, reach them. taiRules is what scoring uses: the active set.
+  const [ruleSets, setRuleSets] = useState(loadRuleSets);
+  const [rulesEngine, setRulesEngine] = useState(loadEngine);
+  const taiRules = useMemo(() => {
+    const set = activeSet(ruleSets.store);
+    return { rules: { ...rulesOfSet(set), engine: rulesEngine }, corrupt: ruleSets.corrupt, name: set?.name ?? HOUSE_RULES_NAME };
+  }, [ruleSets, rulesEngine]);
+  const saveRuleStore = (store: RuleSetStore) => {
+    saveRuleSets(store);
+    setRuleSets({ store, corrupt: false });
   };
   // A shared rules link (#r=…) opens the Scoring tab's 設定 sheet with them
-  // to review; the hash goes once they're saved or dismissed.
-  const [incomingRules, setIncomingRules] = useState(() => rulesFromHash(window.location.hash));
+  // to review; the hash goes once they're saved or dismissed. Links are
+  // compressed, so reading one is async.
+  const [incomingRules, setIncomingRules] = useState<{ name: string | null; rules: TaiRules } | null>(null);
+  useEffect(() => {
+    void readRulesLink(window.location.hash).then((shared) => {
+      if (!shared) return;
+      setIncomingRules(shared);
+      setMode("scoring");
+    });
+  }, []);
   const dropIncomingRules = () => {
     setIncomingRules(null);
     if (window.location.hash.startsWith("#r=")) window.history.replaceState(null, "", window.location.pathname + window.location.search);
@@ -10241,7 +10270,8 @@ function App() {
           }}
           forScores={scoreFor}
           taiRules={taiRules}
-          onSaveRules={saveRules}
+          ruleStore={ruleSets.store}
+          onSaveRuleStore={saveRuleStore}
           incomingRules={incomingRules}
           onIncomingRulesHandled={dropIncomingRules}
           onCancelForScores={() => {
@@ -10344,8 +10374,11 @@ function App() {
           onClose={() => setTestHandsOpen(false)}
           tileStyle={tileStyle}
           onTileStyleChange={changeTileStyle}
-          rulesEngine={taiRules.rules.engine}
-          onRulesEngineChange={(engine) => saveRules({ ...taiRules.rules, engine })}
+          rulesEngine={rulesEngine}
+          onRulesEngineChange={(engine) => {
+            saveEngine(engine);
+            setRulesEngine(engine);
+          }}
         />
       )}
       {/* Last, so it sits above any sheet a link was tapped in. */}

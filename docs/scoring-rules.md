@@ -8,8 +8,11 @@ document the house list, kept in sync as patterns are added or adjusted.
 
 ## Rule classification and customisation
 
-The Scoring tab's 設定 sheet edits a `TaiRules` (saved in localStorage as `mjwaits.taiRules`), and
-every score that tab works out uses it. Detection and value are separate: each pattern's `score()`
+The Scoring tab's 設定 sheet edits named **rule sets** (`TaiRules`), and every score that tab works
+out uses the one in use - or the built-in house list, which can't be edited or deleted (editing it
+starts a new set). Sets are saved in localStorage as `mjwaits.taiRuleSets`, each holding only its
+differences from the house list (so it follows the house list wherever it doesn't differ); see
+[`src/lib/taiRuleSets.ts`](../src/lib/taiRuleSets.ts). Detection and value are separate: each pattern's `score()`
 only says **how many times** it applies (0, 1, n - or the declared count for 槓摸/搶槓/莊), and the
 rules turn that into tai. Everything about a pattern's rule is written in one place,
 [`src/lib/taiCatalog.ts`](../src/lib/taiCatalog.ts), and the default ruleset is built from it alone:
@@ -29,15 +32,21 @@ and own edges), even if it is itself dropped. So a loop (A replaces B and B repl
 the sheet warns about one. Loops between answers of the same situation choice (門清叮 and 天叮/地叮)
 can never fire together, so they aren't flagged.
 
-The sheet previews the hand in the tab live as you edit ("This hand: 31 → 33"), lists every change
-from the house list in words (each with Undo), and can **share** the rules as a link or QR code
-(`#r=…`, just the differences): opening one shows them in 設定 to review before they replace your
-own. Totals worked out under custom rules carry a short fingerprint of them (`rulesFingerprint`):
-Recent marks one scored under other rules than now, and a hand sent to the Scores tab notes it, and
-the breakdown dots any pattern whose rule isn't the house list's.
+The sheet previews the hand in the tab live as you edit ("This hand: 31 → 33" - the set in use
+against the one being edited) and lists every change from the house list in words, each with Undo.
+Sets can be created, duplicated, renamed, deleted, **exported** to a `.json` file (one set or all) and
+**imported** from one (clashing names get a number), and **shared** as a link or QR code. A link is
+`#r=z` + the set's differences and name, deflate-compressed and base64url-encoded: even a set with
+every pattern changed is about 1,500 characters, inside a QR code's limit (if one ever weren't, the
+Share sheet shows the link alone). Opening a link, or the first release's uncompressed `#r=` links,
+adds the set to 設定 to review before using it. Totals worked out under custom rules carry a short
+fingerprint of them (`rulesFingerprint`): Recent marks one scored under other rules than now, a hand
+sent to the Scores tab notes it, and the breakdown dots any pattern whose rule isn't the house
+list's.
 
 **Fallback.** `src/lib/scoringLegacy.ts` is a frozen copy of the engine from before rules were
-editable. The developer sheet's "Tai rules engine: Original" scores with it, and if the configurable engine ever throws (a
+editable. The developer sheet's "Tai rules engine: Original" (a device setting,
+`mjwaits.taiEngine`, not part of any set) scores with it, and if the configurable engine ever throws (a
 bug, not an incomplete hand) the hand is re-scored with it and the TOTAL card says so.
 `engineParity.test.ts` checks that the default rules score every test hand identically to it.
 The `pre-tai-rules` git tag marks the last commit without any of this.
