@@ -2170,6 +2170,55 @@ function JackpotSheet({ store, state, onDone, onClose }: { store: ScoreStore; st
 // The game's name, the day it was played and, if wanted, where and when play
 // started and stopped - set from a long press on the game box. A new day
 // keeps the time of day it started; anything left empty isn't shown.
+// A field with a × to empty it, shown once there's something in it.
+function ClearableInput({
+  value,
+  onChange,
+  label,
+  type = "text",
+  maxLength,
+  placeholder,
+  autoFocus,
+  onEnter,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  label: string;
+  type?: "text" | "time";
+  maxLength?: number;
+  placeholder?: string;
+  autoFocus?: boolean;
+  onEnter?: () => void;
+}) {
+  return (
+    <span className={`sc-input-clearable${value ? " has-value" : ""}`}>
+      <input
+        className="sc-input sc-input-full"
+        type={type}
+        value={value}
+        maxLength={maxLength}
+        placeholder={placeholder}
+        autoFocus={autoFocus}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && onEnter?.()}
+      />
+      {value && (
+        <button
+          type="button"
+          className="sc-input-clear"
+          aria-label={`Clear ${label}`}
+          onClick={(e) => {
+            e.preventDefault();
+            onChange("");
+          }}
+        >
+          {Icons.close}
+        </button>
+      )}
+    </span>
+  );
+}
+
 type GameLabel = { name: string; startedAt: number; startTime: string; endTime: string; location: string };
 
 function NameSheet({ initial, onSave, onClose }: { initial: GameLabel; onSave: (label: GameLabel) => void; onClose: () => void }) {
@@ -2205,9 +2254,19 @@ function NameSheet({ initial, onSave, onClose }: { initial: GameLabel; onSave: (
       onClose={onClose}
       actions={
         <>
-          {initial.name && (
-            <button type="button" className="sc-secondary" onClick={() => onSave(label(""))}>
-              Clear name
+          {/* Empties every field but the date (a game always has one) - Save keeps it. */}
+          {(text || location || startTime || endTime) && (
+            <button
+              type="button"
+              className="sc-secondary"
+              onClick={() => {
+                setText("");
+                setLocation("");
+                setStartTime("");
+                setEndTime("");
+              }}
+            >
+              Clear
             </button>
           )}
           <button type="button" className="sc-primary" disabled={!changed} onClick={save}>
@@ -2218,19 +2277,11 @@ function NameSheet({ initial, onSave, onClose }: { initial: GameLabel; onSave: (
     >
       <label className="sc-field">
         <span className="sc-label">Name</span>
-        <input
-          className="sc-input sc-input-full"
-          value={text}
-          maxLength={24}
-          placeholder="Game name"
-          autoFocus
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && save()}
-        />
+        <ClearableInput value={text} onChange={setText} label="name" maxLength={24} placeholder="Game name" autoFocus onEnter={save} />
       </label>
       <label className="sc-field">
         <span className="sc-label">Location</span>
-        <input className="sc-input sc-input-full" value={location} maxLength={32} placeholder="Optional" onChange={(e) => setLocation(e.target.value)} />
+        <ClearableInput value={location} onChange={setLocation} label="location" maxLength={32} placeholder="Optional" onEnter={save} />
       </label>
       <label className="sc-field">
         <span className="sc-label">Date</span>
@@ -2240,11 +2291,11 @@ function NameSheet({ initial, onSave, onClose }: { initial: GameLabel; onSave: (
       <div className="sc-time-pair">
         <label className="sc-field">
           <span className="sc-label">Start</span>
-          <input className="sc-input sc-input-full" type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} />
+          <ClearableInput type="time" value={startTime} onChange={setStartTime} label="start time" />
         </label>
         <label className="sc-field">
           <span className="sc-label">End</span>
-          <input className="sc-input sc-input-full" type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} />
+          <ClearableInput type="time" value={endTime} onChange={setEndTime} label="end time" />
         </label>
       </div>
       <span className="sc-help">Location, start and end are optional - left empty, they aren't shown.</span>
