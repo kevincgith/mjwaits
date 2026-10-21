@@ -50,3 +50,22 @@ Still open:
 - **Jokers aren't supported** in the scoring notation/UI at all yet.
 - **Added kong vs. called kong** aren't distinguished (both score as a generic "exposed kong") -
   only matters for the rare robbing-the-kong (搶槓) pattern, not yet requested.
+
+## Needs clarification (rules reference wording)
+
+設定 → Export PDF prints a plain-language description of every pattern
+([`src/lib/patternGuide.ts`](src/lib/patternGuide.ts)). Most come straight from the house rules
+already given, but these aren't pinned down - the scorer only knows them as a declared 情況 button
+or a placeholder - so the printed wording is neutral or a best guess (each is marked `UNCONFIRMED`
+in that file). Confirm the definitions and the text can be made exact:
+
+- **食叮** - what it means at this table. Only known: it counts with or without 叮 being declared.
+- **地胡 / 人胡** - the house definitions (who wins, on which tile, how early). Printed as "a win at
+  the very start of the game, after 天胡 / 地胡".
+- **一發** - the exact window after declaring 叮. Printed as "within one go-round".
+- **四子內 / 七子內 / 十子內** - whether the count is every player's discards or only the winner's.
+  Printed as "four or fewer tiles had been discarded".
+- **正圈風** - worth 0 as a placeholder; the real value hasn't been given.
+- Still open from [docs/scoring-rules.md](docs/scoring-rules.md) ("Assumptions made without
+  explicit confirmation"): whether **二連刻** and **小三連刻** stack per instance, and whether the
+  三色連刻 / 三色步步高 / 三兄弟 families really never replace one another.

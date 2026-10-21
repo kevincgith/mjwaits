@@ -53,6 +53,15 @@ fingerprint of them (`rulesFingerprint`): Recent marks one scored under other ru
 sent to the Scores tab notes it, and the breakdown dots any pattern whose rule isn't the house
 list's.
 
+**Printable reference.** 設定 → Export PDF opens a print-ready reference of the selected set
+(`RulesReference.tsx`; "Print / Save as PDF" uses the system print dialog): page 1 lists every pattern
+with its value and type in four columns, page 2 explains how scoring works (best reading, 明/暗,
+tiers, replaces, special hands, what 大雞/大鴨 ignore, and the set's changes), and the pages after
+take each family in turn - its tiers, then a card per pattern with a plain description
+([`src/lib/patternGuide.ts`](../src/lib/patternGuide.ts)), its value, an example hand and what it
+replaces. A few descriptions aren't pinned down by the house rules yet - see ROADMAP.md, "Needs
+clarification".
+
 **Fallback.** `src/lib/scoringLegacy.ts` is a frozen copy of the engine from before rules were
 editable. 設定's "Scoring engine: Original built-in" (a phone-wide setting,
 `mjwaits.taiEngine`, not part of any set) scores with it, and if the configurable engine ever throws (a
