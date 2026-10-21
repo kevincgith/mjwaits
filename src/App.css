@@ -11891,3 +11891,60 @@ html.sc-fit-mode .build-version {
   align-items: end;
   padding-bottom: 0.3rem;
 }
+
+/* 玩家: each stat is a button - a tap ranks the table on it. */
+button.sc-stat {
+  width: 100%;
+  border: none;
+  color: inherit;
+  font: inherit;
+  font-size: var(--text-md);
+  text-align: left;
+  cursor: pointer;
+}
+
+button.sc-stat:active {
+  background: var(--fill);
+}
+
+.sc-ranking {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  background: var(--separator);
+  list-style: none;
+}
+
+.sc-ranking li {
+  display: grid;
+  grid-template-columns: 1.6rem 1.75rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.6rem;
+  min-height: 3rem;
+  padding: 0.35rem 0.75rem;
+  background: var(--surface-sunken);
+}
+
+/* The player whose card it is. */
+.sc-ranking li.is-me {
+  background: var(--accent-tint);
+}
+
+.sc-ranking-name {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 700;
+}
+
+.sc-ranking .sc-stat-value strong {
+  font-size: var(--text-lg);
+  font-variant-numeric: tabular-nums;
+}

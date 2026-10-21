@@ -90,6 +90,14 @@ export const STAT_DIRECTION: Partial<Record<keyof PlayerStats, "high" | "low">> 
   avgWinGain: "high",
   avgDealInLoss: "high", // negative: closer to 0 is better
   lahNet: "high",
+  // Records: bigger is better, and a smaller worst hand (closer to 0) too.
+  maxTai: "high",
+  avgWinTai: "high",
+  avgDealInTai: "low",
+  bestHand: "high",
+  worstHand: "high",
+  maxPull: "high",
+  dealerHands: "high",
 };
 
 const rate = (n: number, of: number) => (of > 0 ? n / of : null);
@@ -258,6 +266,26 @@ export function marks(stats: PlayerStats[], key: keyof PlayerStats): Map<string,
     else if (x.v === (dir === "high" ? lo : hi)) out.set(x.p, "worst");
   }
   return out;
+}
+
+// The table ranked on one stat, best first - 1 is best whichever way is good
+// for it, ties share a place (two firsts, then third). Players with no value
+// for it (a rate with nothing to rate) come last, unranked.
+export function rankedBy(stats: PlayerStats[], key: keyof PlayerStats): { player: string; rank: number | null }[] {
+  const dir = STAT_DIRECTION[key] ?? "high";
+  const num = (s: PlayerStats): number | null => {
+    const v = s[key] as unknown;
+    if (typeof v === "number") return v;
+    if (v && typeof v === "object" && "value" in v) return (v as { value: number }).value;
+    if (v && typeof v === "object" && "count" in v) return (v as { count: number }).count;
+    return null;
+  };
+  const scored = stats.filter((s) => s.hands > 0).map((s) => ({ player: s.player, v: num(s) }));
+  const better = (a: number, b: number) => (dir === "high" ? a > b : a < b);
+  return scored
+    .map((x) => ({ player: x.player, v: x.v, rank: x.v === null ? null : 1 + scored.filter((y) => y.v !== null && better(y.v, x.v!)).length }))
+    .sort((a, b) => (a.rank ?? Infinity) - (b.rank ?? Infinity))
+    .map(({ player, rank }) => ({ player, rank }));
 }
 
 // 走勢: each player's running total after every 局, from 0.
