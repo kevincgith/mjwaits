@@ -85,6 +85,7 @@ export interface RecordRequest {
   // Cancelled on Scoring: just reopen that sheet as it was, with no tai.
   reopenOnly?: boolean;
   draft?: ScoreHandRequest["draft"]; // a 雙響/三響 sheet to put back together
+  zhaHu?: ScoreHandRequest["zhaHu"]; // a 詐胡 sheet to put back together
 
   nonce: number;
 }
@@ -104,6 +105,9 @@ export interface ScoreHandRequest {
   // A 雙響/三響: the sheet's own winner and every winner's tai so far, so
   // the sheet comes back whole with just `seat`'s tai filled in.
   draft?: { sheetSeat: number; entries: { seat: number; tai: string }[] };
+  // A 詐胡: each player's amount so far. The scored hand comes back as what
+  // it would pay each of them off their discard, 詐胡's 設定 amount at least.
+  zhaHu?: { player: string; amount: number }[];
   nonce: number;
 }
 
@@ -573,7 +577,7 @@ type DraftEntry = { seat: number; tai: string };
 
 // What the 食胡 sheet hands over when asking Scoring to work a hand out:
 // `target` is the winner being scored, `entries` the whole draft.
-type ScoreHandAsk = { from: number | null; jackpot: boolean; scan: boolean; target: number; entries: DraftEntry[] };
+type ScoreHandAsk = { from: number | null; jackpot: boolean; scan: boolean; target: number; entries: DraftEntry[]; zhaHu?: { player: string; amount: number }[] };
 
 function HandSheet({
   store,
@@ -622,7 +626,7 @@ function HandSheet({
         store={store}
         state={state}
         winnerSeat={seat}
-        initial={initial}
+        initial={initial?.zhaHu ? undefined : initial}
         onDone={onDone}
         onClose={onClose}
         onBonus={() => setMode("bonus")}
@@ -648,10 +652,12 @@ function HandSheet({
           seat={seat}
           player={player}
           initial={initial?.zhaHu}
+          note={initial?.zhaHu ? initial.note : undefined}
           onDone={onDone}
           onClose={onClose}
           onWin={() => setMode("win")}
           onBonus={() => setMode("bonus")}
+          onScoreHand={onScoreHand}
           frame={{ ref: zhaHuRef, minHeight, hidden: mode !== "zhaHu" }}
         />
       )}
@@ -797,7 +803,7 @@ function WinSheet({
       <div className="sc-field">
         <div className="sc-field-head">
           <span className="sc-label">Who dealt in?</span>
-          <span className="sc-help">{onZhaHu ? "Hold a player for 雙響 · 胡 for 詐胡" : "Hold a player for 雙響"}</span>
+          <span className="sc-help">{onZhaHu ? "Hold a player for 多響 · 詐胡" : "Hold a player for 多響"}</span>
         </div>
         <TablePicker
           store={store}
@@ -929,17 +935,21 @@ function ZhaHuSheet({
   onClose,
   onWin,
   onBonus,
+  onScoreHand,
   frame,
+  note,
 }: {
   store: ScoreStore;
   state: ReplayState;
   seat: number;
   player: string;
   initial?: { player: string; amount: number }[];
+  note?: string;
   onDone: (ev: ScoreEvent) => void;
   onClose: () => void;
   onWin: () => void;
   onBonus: () => void;
+  onScoreHand?: (ask: ScoreHandAsk) => void;
   frame?: SheetFrame;
 }) {
   const others = state.seats.map((_, s2) => s2).filter((s2) => s2 !== seat);
@@ -962,6 +972,16 @@ function ZhaHuSheet({
     if (i >= 0) setFocus(i);
   };
   const total = amounts.reduce((t, a) => t + Number(a || 0), 0);
+  // Scan or score the called hand: it comes back as what it's worth to each.
+  const scoreIt = (scan: boolean) =>
+    onScoreHand?.({
+      from: -1,
+      jackpot: false,
+      scan,
+      target: seat,
+      entries: [{ seat, tai: "" }],
+      zhaHu: others.map((s2, i) => ({ player: state.seats[s2], amount: Number(amounts[i] || 0) })),
+    });
   return (
     <Sheet
       title={
@@ -990,6 +1010,7 @@ function ZhaHuSheet({
         </>
       }
     >
+      {note && <p className="sc-note">{note}</p>}
       <div className="sc-field">
         <div className="sc-field-head">
           <span className="sc-label">Who gets paid?</span>
@@ -1020,6 +1041,17 @@ function ZhaHuSheet({
             </button>
           ))}
         </div>
+        {/* As on 食胡: work the called hand out on Scoring - by photo or by tiles. */}
+        {onScoreHand && (
+          <span className="sc-score-hand">
+            <button type="button" className="sc-outline" onClick={() => scoreIt(true)} aria-label="Scan hand" title="Scan hand">
+              {Icons.camera}
+            </button>
+            <button type="button" className="sc-secondary" onClick={() => scoreIt(false)} aria-label="Score tiles" title="Score tiles">
+              {Icons.tiles}
+            </button>
+          </span>
+        )}
       </div>
       <Keypad value={amounts[focus] ?? ""} onChange={type} />
       <PayTable
@@ -1420,6 +1452,63 @@ function SeatsSheet({
     setPicked(null);
     setSeats(change);
   };
+  // 起莊's corner belongs to a seat, not a player: when a change moves it to
+  // another seat it flies there (a copy, above the sheet, on the 莊 badge's
+  // arc) rather than riding in on whichever card now sits there. Measured
+  // against the map, before the cards start sliding (so this runs first).
+  const lastQi = useRef<{ seat: number; x: number; y: number } | null>(null);
+  const lastSeats = useRef(seats.join("|"));
+  // The copy in flight - a later render mustn't cut it short, only a new move.
+  const qiFlight = useRef<(() => void) | null>(null);
+  useEffect(() => () => qiFlight.current?.(), []);
+  useLayoutEffect(() => {
+    const map = diamondRef.current;
+    const corner = map?.querySelector<HTMLElement>(".sc-qi-corner");
+    const card = corner?.closest<HTMLElement>("[data-player]");
+    const prev = lastQi.current;
+    const seatsMoved = lastSeats.current !== seats.join("|");
+    lastSeats.current = seats.join("|");
+    if (!map || !corner || !card) return;
+    const box = map.getBoundingClientRect();
+    const to = corner.getBoundingClientRect();
+    const now = { seat: seats.indexOf(card.dataset.player!), x: to.left - box.left, y: to.top - box.top };
+    lastQi.current = now;
+    if (!prev || prev.seat === now.seat || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const style = getComputedStyle(corner);
+    const flyer = corner.cloneNode(true) as HTMLElement;
+    Object.assign(flyer.style, {
+      position: "fixed",
+      left: `${to.left}px`,
+      top: `${to.top}px`,
+      width: `${to.width}px`,
+      height: `${to.height}px`,
+      borderTopLeftRadius: style.borderTopLeftRadius,
+      zIndex: "1000",
+      pointerEvents: "none",
+    });
+    document.body.appendChild(flyer);
+    const dx = prev.x - now.x;
+    const dy = prev.y - now.y;
+    const lift = -Math.min(48, Math.hypot(dx, dy) / 4);
+    const frames: Keyframe[] = [];
+    for (let i = 0; i <= 20; i++) {
+      const t = i / 20;
+      const e = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+      const rise = Math.sin(Math.PI * e);
+      frames.push({ offset: t, transform: `translate(${dx * (1 - e)}px, ${dy * (1 - e) + lift * rise}px) scale(${1 + 0.25 * rise})` });
+    }
+    qiFlight.current?.();
+    // Alongside the cards when they move too, so all of it lands together.
+    const flight = flyer.animate(frames, { duration: seatsMoved ? 800 : 600, easing: "linear" });
+    corner.style.visibility = "hidden";
+    const land = () => {
+      flyer.remove();
+      corner.style.visibility = "";
+      if (qiFlight.current === land) qiFlight.current = null;
+    };
+    qiFlight.current = land;
+    flight.finished.then(land, land);
+  });
   useLayoutEffect(() => {
     const was = before.current;
     before.current = null;
@@ -2771,6 +2860,32 @@ function Board({
     // A 雙響/三響: the sheet comes back whole, with only the scored winner's
     // tai (and patterns) new. Who dealt in stands - one discard, several
     // winners, so Scoring's 自摸 doesn't apply.
+    // A 詐胡: back to it, each player's amount now what the hand would pay
+    // them off their own discard (not 拉 - nothing was won), never under
+    // the 設定 amount. Cancelled: the amounts as they were.
+    if (request.zhaHu && request.seat !== undefined) {
+      const caller = request.seat;
+      const floor = state.settings.zhaHu ?? SETTING_ON_VALUE.zhaHu ?? 40;
+      const worth = (payer: number) => {
+        const pair = previewWin(state, [{ seat: caller, tai: request.tai }], payer)[0];
+        return pair ? pair.base + pair.tai + pair.dealer : 0;
+      };
+      setSheet({
+        kind: "hand",
+        seat: caller,
+        mode: "zhaHu",
+        initial: {
+          selfDraw: false,
+          patterns: [],
+          zhaHu: request.reopenOnly
+            ? request.zhaHu
+            : request.zhaHu.map((x) => ({ player: x.player, amount: Math.max(floor, worth(state.seats.indexOf(x.player))) })),
+          ...(request.reopenOnly ? {} : { note: `From Scoring: ${request.tai} tai${dealerNote} - each pays what it's worth to them, ${fmt(floor)} at least.` }),
+        },
+      });
+      onRequestDone();
+      return;
+    }
     const draft = request.draft;
     if (draft && request.seat !== undefined) {
       const scored = request.seat;
@@ -3208,6 +3323,7 @@ function Board({
                 seatWind: (((seat - state.dealer + SEATS) % SEATS) + 1) as 1 | 2 | 3 | 4,
                 scan: ask.scan,
                 ...(ask.entries.length > 1 ? { draft: { sheetSeat: sheet.seat, entries: ask.entries } } : {}),
+                ...(ask.zhaHu ? { zhaHu: ask.zhaHu } : {}),
               });
               close();
             }

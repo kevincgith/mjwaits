@@ -6909,7 +6909,7 @@ function ScoringPanel({
         <div className="for-scores-banner" role="status">
           <span className="for-scores-text">
             <span>
-              <strong>For Scores:</strong> {forScores.player} {forScores.from === null ? "自摸" : forScores.fromName ? `食 ${forScores.fromName}` : "食胡"}
+              <strong>For Scores:</strong> {forScores.player} {forScores.zhaHu ? "詐胡 - what the hand is worth" : forScores.from === null ? "自摸" : forScores.fromName ? `食 ${forScores.fromName}` : "食胡"}
             </span>
             <span className="for-scores-sub">
               Winds set: {"東南西北"[forScores.roundWind - 1]}圈 · {"東南西北"[forScores.seatWind - 1]}家
@@ -10034,7 +10034,7 @@ function App() {
           onRecord={(request) => {
             // Back to the sheet it came from: same winner, 銃 and Jackpot.
             // (A 雙響/三響 also brings its whole draft back.)
-            const back = scoreFor ? { seat: scoreFor.seat, from: scoreFor.from, jackpot: scoreFor.jackpot, draft: scoreFor.draft } : {};
+            const back = scoreFor ? { seat: scoreFor.seat, from: scoreFor.from, jackpot: scoreFor.jackpot, draft: scoreFor.draft, zhaHu: scoreFor.zhaHu } : {};
             setRecordRequest({ ...request, ...back, nonce: Date.now() });
             setScoreFor(null);
             setMode("scores");
@@ -10054,6 +10054,7 @@ function App() {
                 from: scoreFor.from,
                 jackpot: scoreFor.jackpot,
                 draft: scoreFor.draft,
+                zhaHu: scoreFor.zhaHu,
                 reopenOnly: true,
                 nonce: Date.now(),
               });
