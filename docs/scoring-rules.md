@@ -1,9 +1,37 @@
 # Scoring rules (tai/番)
 
 Reference for the house tai list implemented in [`src/lib/scoring.ts`](../src/lib/scoring.ts)'s
-`PATTERNS` array, built up one pattern at a time. This is **not** a generic/configurable ruleset —
-see that file's module doc comment for why — just documentation for the concrete list currently
-implemented, kept in sync as patterns are added or adjusted.
+`PATTERNS` array, built up one pattern at a time. Detection stays concrete (one check per pattern),
+but every value and relation below is the **default** of an editable ruleset - see
+[Rule classification and customisation](#rule-classification-and-customisation). The tables here
+document the house list, kept in sync as patterns are added or adjusted.
+
+## Rule classification and customisation
+
+The Scoring tab's 設定 sheet edits a `TaiRules` (saved in localStorage as `mjwaits.taiRules`), and
+every score that tab works out uses it. Each pattern is classified by five attributes, with its
+defaults in [`src/lib/taiCatalog.ts`](../src/lib/taiCatalog.ts) plus each pattern's own `excludes`:
+
+| Attribute | What it is | Editable as |
+|---|---|---|
+| Family | Which section of this document it belongs to | Groups the sheet |
+| Value | `flat` (N tai when it applies), `per` (N per instance), `table` (槓摸/搶槓: tai by count), `streak` (莊: first + each 連莊) | The tai, the table, or first/each |
+| Hand shapes (**inclusion**) | Which of normal / 十三么 / 十六不搭 / 嚦咕嚦咕 it may count on | Switch each shape off and on. A special hand only offers the patterns its own scorer evaluates (the "eligible" shapes): ordinary checks run against the special construction would misread it |
+| Replaces (**exclusion**) | Patterns it drops when both fire. Any pair with no edge **stacks** | Add/remove edges; "Replaced by" shows the reverse |
+| 大雞/大鴨 ignore it | Whether 大雞/大鴨 treat it as not firing | A switch per pattern (大雞/大鴨 never count each other) |
+
+How the scorer applies them: a disabled pattern, or one not included for the hand's shape, scores 0
+and replaces nothing. A `flat`/`per` value rescales the house value (the raw score divided by the
+house value is the instance count). Replacing is a single pass: every pattern that fires drops its
+targets, even if it is itself dropped. So a loop (A replaces B and B replaces A) drops both, and the
+sheet warns about one. Loops between answers of the same situation choice (門清叮 and 天叮/地叮)
+can never fire together, so they aren't flagged.
+
+**Fallback.** `src/lib/scoringLegacy.ts` is a frozen copy of the engine from before rules were
+editable. 設定's "Original" engine scores with it, and if the configurable engine ever throws (a
+bug, not an incomplete hand) the hand is re-scored with it and the TOTAL card says so.
+`engineParity.test.ts` checks that the default rules score every test hand identically to it.
+The `pre-tai-rules` git tag marks the last commit without any of this.
 
 Every pattern is evaluated against a fully resolved hand: 5 melds (each a triplet, run, or kong,
 each concealed or exposed) + 1 pair, plus whatever bonus tiles (flowers/seasons) were drawn. Where

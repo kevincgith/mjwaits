@@ -85,6 +85,29 @@ export interface PatternClass {
 const flat = (family: PatternFamily, tai: number): PatternClass => ({ family, value: { kind: "flat", tai } });
 const per = (family: PatternFamily, tai: number): PatternClass => ({ family, value: { kind: "per", tai } });
 
+// Patterns keyed to one value of a single situation choice (the Scoring
+// tab's cycling buttons): two with the same choice but different values can
+// never fire on the same hand, so a replace loop between them is harmless -
+// the house list itself has 門清叮 and 天叮/地叮 replacing each other. Read
+// by replaceCycles (taiRules.ts) so only loops that can bite are flagged.
+export const SITUATION_CHOICE: Record<string, { choice: string; value: string }> = {
+  riichi: { choice: "riichi", value: "riichi" },
+  "concealed-riichi": { choice: "riichi", value: "riichi" },
+  "heavenly-riichi": { choice: "riichi", value: "heavenly-riichi" },
+  "earthly-riichi": { choice: "riichi", value: "earthly-riichi" },
+  "early-win-four": { choice: "earlyWin", value: "four" },
+  "early-win-seven": { choice: "earlyWin", value: "seven" },
+  "early-win-ten": { choice: "earlyWin", value: "ten" },
+  "multi-win-double": { choice: "multiWin", value: "double" },
+  "multi-win-triple": { choice: "multiWin", value: "triple" },
+  "heavenly-win": { choice: "heavenlyWin", value: "heaven" },
+  "earthly-win": { choice: "heavenlyWin", value: "earth" },
+  "human-win": { choice: "heavenlyWin", value: "man" },
+  "river-bottom-win": { choice: "lastTileWin", value: "river-bottom" },
+  "sea-bottom-win": { choice: "lastTileWin", value: "sea-bottom" },
+  "sea-bottom-win-one-tong": { choice: "lastTileWin", value: "sea-bottom" },
+};
+
 export const FIVE_POWER_TABLE: readonly number[] = [0, 5, 25, 125, 250, 250];
 
 export const PATTERN_CATALOG: Record<string, PatternClass> = {
