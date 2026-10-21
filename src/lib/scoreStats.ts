@@ -7,6 +7,7 @@ import { replay, type HandResult, type ReplayState, type ScoreGame } from "./led
 export interface AtHand {
   value: number;
   hand: number; // 第N局
+  when?: string; // across games (career): which game, by its day
 }
 
 export interface PlayerStats {
@@ -71,6 +72,8 @@ export interface Swing {
   value: number;
   from: number; // 第N局 it started from (0: the start)
   to: number;
+  fromWhen?: string; // across games (career): which games, by their day
+  toWhen?: string;
 }
 
 // 近況 looks back this many hands.
@@ -267,7 +270,13 @@ export function playerStats(state: ReplayState, game: ScoreGame): PlayerStats[] 
 // biggest climb, how much came back since the low, the longest losing run,
 // recent form and how much it moved per hand.
 function trendOf(seated: HandResult[], player: string) {
-  const points = [{ hand: 0, v: 0 }, ...seated.map((h) => ({ hand: h.hand, v: h.totalsAfter[player] ?? 0 }))];
+  return curve([{ hand: 0, v: 0 }, ...seated.map((h) => ({ hand: h.hand, v: h.totalsAfter[player] ?? 0 }))]);
+}
+
+// What a running total did, point by point from its start: one game's, or a
+// whole career's laid end to end (when: which game each point is in).
+type CurvePoint = { hand: number; v: number; when?: string };
+function curve(points: CurvePoint[]) {
   const deltas = points.slice(1).map((p, i) => p.v - points[i].v);
   let peak: AtHand | null = null;
   let trough: AtHand | null = null;
@@ -276,10 +285,11 @@ function trendOf(seated: HandResult[], player: string) {
   let hi = points[0];
   let lo = points[0];
   for (const p of points.slice(1)) {
-    if (!peak || p.v > peak.value) peak = { value: p.v, hand: p.hand };
-    if (!trough || p.v < trough.value) trough = { value: p.v, hand: p.hand };
-    if (p.v - hi.v < (maxDrawdown?.value ?? 0)) maxDrawdown = { value: p.v - hi.v, from: hi.hand, to: p.hand };
-    if (p.v - lo.v > (maxRunUp?.value ?? 0)) maxRunUp = { value: p.v - lo.v, from: lo.hand, to: p.hand };
+    if (!peak || p.v > peak.value) peak = { value: p.v, hand: p.hand, ...(p.when ? { when: p.when } : {}) };
+    if (!trough || p.v < trough.value) trough = { value: p.v, hand: p.hand, ...(p.when ? { when: p.when } : {}) };
+    const span = (a: CurvePoint, b: CurvePoint) => ({ from: a.hand, to: b.hand, ...(b.when ? { fromWhen: a.when, toWhen: b.when } : {}) });
+    if (p.v - hi.v < (maxDrawdown?.value ?? 0)) maxDrawdown = { value: p.v - hi.v, ...span(hi, p) };
+    if (p.v - lo.v > (maxRunUp?.value ?? 0)) maxRunUp = { value: p.v - lo.v, ...span(lo, p) };
     if (p.v > hi.v) hi = p;
     if (p.v < lo.v) lo = p;
   }
@@ -299,7 +309,7 @@ function trendOf(seated: HandResult[], player: string) {
     maxRunUp,
     recovery: last - low,
     longestLosingRun,
-    recent: { hands: Math.min(RECENT_HANDS, seated.length), net: last - recentFrom },
+    recent: { hands: Math.min(RECENT_HANDS, points.length - 1), net: last - recentFrom },
     avgSwing: deltas.length ? deltas.reduce((t, d) => t + Math.abs(d), 0) / deltas.length : null,
   };
 }
@@ -492,6 +502,109 @@ export function careerStats(games: ScoreGame[]): CareerStats[] {
       };
     })
     .sort((a, b) => b.net - a.net);
+}
+
+// The 玩家 card's stats over every game a player sat in, so a career reads
+// exactly like one game: counts and points added up, rates and averages
+// worked out again from those totals (not averaged), records the best of
+// any game (with the game's day), opponents summed, and 走勢 read off one
+// running total through the games in the order they were played.
+export function careerPlayerStats(games: ScoreGame[], dayOf: (at: number) => string): { stats: PlayerStats[]; series: Map<string, number[]> } {
+  const played = games.slice().sort((a, b) => a.startedAt - b.startedAt);
+  const per = new Map<string, { s: PlayerStats; game: ScoreGame }[]>();
+  const points = new Map<string, CurvePoint[]>();
+  // Each player's career total before the game - each game's curve starts there.
+  const carried = new Map<string, number>();
+  for (const g of played) {
+    const state = replay(g);
+    if (state.hands.length === 0) continue;
+    const when = dayOf(g.startedAt);
+    for (const s of playerStats(state, g)) {
+      if (s.hands === 0) continue;
+      per.set(s.player, [...(per.get(s.player) ?? []), { s, game: g }]);
+      const line = points.get(s.player) ?? [{ hand: 0, v: 0 }];
+      const base = carried.get(s.player) ?? 0;
+      for (const h of state.hands) if (h.seatsAfter.includes(s.player)) line.push({ hand: h.hand, v: base + (h.totalsAfter[s.player] ?? 0), when });
+      points.set(s.player, line);
+      carried.set(s.player, base + s.net);
+    }
+  }
+  const stats = [...per].map(([player, list]): PlayerStats => {
+    const sum = (f: (s: PlayerStats) => number) => list.reduce((t, x) => t + f(x.s), 0);
+    const when = (g: ScoreGame) => dayOf(g.startedAt);
+    // The best (or worst) record of any game, tagged with that game's day.
+    const record = (f: (s: PlayerStats) => AtHand | null, better: (a: number, b: number) => boolean): AtHand | null =>
+      list.reduce<AtHand | null>((best, x) => {
+        const r = f(x.s);
+        return r && (!best || better(r.value, best.value)) ? { ...r, when: when(x.game) } : best;
+      }, null);
+    const chainMax = (f: (s: PlayerStats) => { count: number; times: number } | null) => {
+      const all = list.map((x) => f(x.s)).filter((c): c is { count: number; times: number } => c !== null);
+      if (all.length === 0) return null;
+      const count = Math.max(...all.map((c) => c.count));
+      return { count, times: all.filter((c) => c.count === count).reduce((t, c) => t + c.times, 0) };
+    };
+    const hands = sum((s) => s.hands);
+    const wins = sum((s) => s.wins);
+    const selfDraws = sum((s) => s.selfDraws);
+    const dealIns = sum((s) => s.dealIns);
+    const net = sum((s) => s.net);
+    const won = wins + selfDraws;
+    const weighted = (f: (s: PlayerStats) => number | null, w: (s: PlayerStats) => number) => {
+      const of = sum(w);
+      return of > 0 ? list.reduce((t, x) => t + (f(x.s) ?? 0) * w(x.s), 0) / of : null;
+    };
+    const opp = new Map<string, number>();
+    for (const x of list) for (const o of x.s.opponents) opp.set(o.player, (opp.get(o.player) ?? 0) + o.net);
+    return {
+      player,
+      net,
+      hands,
+      wins,
+      selfDraws,
+      dealIns,
+      bonus: sum((s) => s.bonus),
+      jackpot: sum((s) => s.jackpot),
+      maxTai: record((s) => s.maxTai, (a, b) => a > b),
+      avgWinTai: weighted((s) => s.avgWinTai, (s) => s.wins + s.selfDraws),
+      avgDealInTai: weighted((s) => s.avgDealInTai, (s) => s.dealIns),
+      pulls: sum((s) => s.pulls),
+      pulled: sum((s) => s.pulled),
+      kicks: sum((s) => s.kicks),
+      kicked: sum((s) => s.kicked),
+      maxPull: chainMax((s) => s.maxPull),
+      maxPulled: chainMax((s) => s.maxPulled),
+      maxKicks: chainMax((s) => s.maxKicks),
+      maxKicked: chainMax((s) => s.maxKicked),
+      multiWins: sum((s) => s.multiWins),
+      fanXue: sum((s) => s.fanXue),
+      bestHand: record((s) => s.bestHand, (a, b) => a > b),
+      worstHand: record((s) => s.worstHand, (a, b) => a < b),
+      selfDrawGain: sum((s) => s.selfDrawGain),
+      selfDrawLoss: sum((s) => s.selfDrawLoss),
+      discardGain: sum((s) => s.discardGain),
+      discardLoss: sum((s) => s.discardLoss),
+      winStreak: Math.max(...list.map((x) => x.s.winStreak)),
+      assists: sum((s) => s.assists),
+      assistRate: rate(sum((s) => s.assists), hands),
+      positiveRate: weighted((s) => s.positiveRate, (s) => s.hands),
+      firstRate: weighted((s) => s.firstRate, (s) => s.hands),
+      winRate: rate(won, hands),
+      dealInRate: rate(dealIns, hands),
+      perHand: rate(net, hands),
+      dealerHands: sum((s) => s.dealerHands),
+      dealerNet: sum((s) => s.dealerNet),
+      longestDealerRun: Math.max(...list.map((x) => x.s.longestDealerRun)),
+      selfDrawShare: rate(selfDraws, won),
+      avgWinGain: rate(sum((s) => s.selfDrawGain + s.discardGain), won),
+      avgDealInLoss: rate(sum((s) => s.discardLoss), dealIns),
+      lahNet: sum((s) => s.lahNet),
+      opponents: [...opp].filter(([, v]) => v !== 0).map(([p, v]) => ({ player: p, net: v })).sort((a, b) => b.net - a.net),
+      ...curve(points.get(player) ?? [{ hand: 0, v: 0 }]),
+    };
+  });
+  const series = new Map([...points].map(([p, line]) => [p, line.map((x) => x.v)]));
+  return { stats: stats.sort((a, b) => b.net - a.net), series };
 }
 
 // Net tai each player has taken off each other, across these games:

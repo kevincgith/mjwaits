@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_SETTINGS, newGame, replay, type ScoreEvent, type ScoreGame } from "./ledger";
-import { careerStats, headToHead, marks, patternCounts, playerStats, rankedBy, trend, trendSummary } from "./scoreStats";
+import { careerPlayerStats, careerStats, headToHead, marks, patternCounts, playerStats, rankedBy, trend, trendSummary } from "./scoreStats";
 
 const PLAIN = { ...DEFAULT_SETTINGS, dealerTai: 0, streakTai: 0, jackpot: false };
 const game = (events: ScoreEvent[], seats = ["A", "B", "C", "D"]): ScoreGame => ({ ...newGame(seats, 0, PLAIN), events });
@@ -153,6 +153,35 @@ describe("trend, patterns, career and head-to-head", () => {
     expect(trendSummary(st)).toEqual({ leadChanges: 2, mostLed: { player: "A", hands: 2 }, comeback: { player: "A", from: -25, to: 26 } });
     // One hand: nobody came back from anything.
     expect(trendSummary(replay(g2)).comeback).toBeNull();
+  });
+
+  it("a one-game career reads exactly like that game", () => {
+    const one = Object.fromEntries(playerStats(replay(g1), g1).map((x) => [x.player, x]));
+    const career = careerPlayerStats([g1], () => "d").stats;
+    for (const c of career) {
+      const { maxTai, bestHand, worstHand, peak, trough, maxDrawdown, maxRunUp, ...rest } = c;
+      const { maxTai: m1, bestHand: b1, worstHand: w1, peak: p1, trough: t1, maxDrawdown: d1, maxRunUp: r1, ...rest1 } = one[c.player];
+      expect(rest).toEqual(rest1);
+      expect(maxTai?.value).toBe(m1?.value);
+      expect(bestHand?.value).toBe(b1?.value);
+      expect(worstHand?.value).toBe(w1?.value);
+      expect([peak?.value, trough?.value, maxDrawdown?.value, maxRunUp?.value]).toEqual([p1?.value, t1?.value, d1?.value, r1?.value]);
+    }
+  });
+
+  it("adds a career up across games, 走勢 running through them in order", () => {
+    const later = { ...g2, startedAt: g1.startedAt + 1 };
+    const { stats: list, series } = careerPlayerStats([later, g1], (at) => (at === g1.startedAt ? "g1" : "g2"));
+    const c = Object.fromEntries(list.map((x) => [x.player, x]));
+    expect(c.A).toMatchObject({ hands: 8, net: -24, dealerHands: 4, dealerNet: -17, longestDealerRun: 3 });
+    // A's curve: g1's 0 … -3 (its 獎罰 after the last hand makes it -4),
+    // then g2 from -4: -24.
+    expect(series.get("A")!.at(-1)).toBe(-24);
+    expect(c.A.trough).toEqual({ value: -24, hand: 1, when: "g2" });
+    expect(c.A.maxDrawdown).toEqual({ value: -43, from: 2, to: 1, fromWhen: "g1", toWhen: "g2" });
+    // Records carry the game they came from; opponents add up to the net.
+    expect(c.A.maxTai).toEqual({ value: 10, hand: 1, when: "g1" });
+    for (const x of list) expect(x.opponents.reduce((t, o) => t + o.net, 0)).toBe(x.net);
   });
 
   it("nets head-to-head both ways", () => {

@@ -45,7 +45,7 @@ import { snapshotOf, snapshotUrl, type ScoreSnapshot } from "./lib/scoreShare";
 import { drawSettleCard } from "./lib/settleImage";
 import qrcode from "qrcode-generator";
 import { createPortal } from "react-dom";
-import { careerStats, headToHead, marks, patternCounts, playerStats, rankedBy, RECENT_HANDS, trend, trendSummary, type CareerStats, type PlayerStats, type Swing } from "./lib/scoreStats";
+import { careerPlayerStats, careerStats, headToHead, marks, patternCounts, playerStats, rankedBy, RECENT_HANDS, trend, trendSummary, type PlayerStats, type Swing } from "./lib/scoreStats";
 
 const WIND_CHARS = ["東", "南", "西", "北"];
 // Where each seat sits on the board, by seat index (turn order runs
@@ -4027,9 +4027,11 @@ function niceStep(raw: number): number {
 type StatRow = { key: keyof PlayerStats; zh: string; en: string; show: (s: PlayerStats) => string; sub?: (s: PlayerStats) => string | null; tone?: (s: PlayerStats) => number };
 
 // Which hand a stat happened on, and how many times a chain record was hit.
-const handOf = (h: { hand: number } | null) => (h ? `第${h.hand}局` : null);
-// A swing's span: 3→9局, or 開局→9局 from the start.
-const spanOf = (w: Swing | null) => (w ? `${w.from === 0 ? "開局" : w.from}→${w.to}局` : null);
+// Across games (career) a record also names its game, by the day.
+const handOf = (h: { hand: number; when?: string } | null) => (h ? `${h.when ? `${h.when} ` : ""}第${h.hand}局` : null);
+// A swing's span: 3→9局, or 開局→9局 from the start; across games, by day.
+const spanOf = (w: Swing | null) =>
+  !w ? null : w.toWhen ? (w.fromWhen === w.toWhen ? `${w.toWhen} ${w.from}→${w.to}局` : `${w.fromWhen ?? "開局"}→${w.toWhen}`) : `${w.from === 0 ? "開局" : w.from}→${w.to}局`;
 const chain = (c: { count: number; times: number } | null) => (c ? `${c.count}${c.times > 1 ? ` ×${c.times}` : ""}` : "–");
 const oneDp = (n: number | null) => (n === null ? "–" : fmt(Math.round(n * 10) / 10));
 const signedDp = (n: number | null) => (n === null ? "–" : signed(Math.round(n * 10) / 10));
@@ -4277,10 +4279,27 @@ function TrendSummary({ state }: { state: ReplayState }) {
   );
 }
 
-function PlayerCard({ store, stats, state, index, onIndex }: { store: ScoreStore; stats: PlayerStats[]; state: ReplayState; index: number; onIndex: (i: number) => void }) {
+// One player's stats - for a game, or a whole career (the same card, the
+// same numbers): series is their running total, games how many they played
+// (career only).
+function PlayerCard({
+  store,
+  stats,
+  seriesOf,
+  index,
+  onIndex,
+  games,
+}: {
+  store: ScoreStore;
+  stats: PlayerStats[];
+  seriesOf: (player: string) => (number | null)[] | undefined;
+  index: number;
+  onIndex: (i: number) => void;
+  games?: number;
+}) {
   const s = stats[index];
   const markFor = useMemo(() => Object.fromEntries(STAT_GROUPS.flatMap((g) => g.rows).map((r) => [r.key, marks(stats, r.key)])), [stats]);
-  const series = trend(state).series.find((x) => x.player === s.player);
+  const values = seriesOf(s.player);
   const rank = stats.slice().sort((a, b) => b.net - a.net).findIndex((x) => x.player === s.player) + 1;
   const notes = insights(s);
   const oppMax = Math.max(1, ...s.opponents.map((o) => Math.abs(o.net)));
@@ -4296,7 +4315,8 @@ function PlayerCard({ store, stats, state, index, onIndex }: { store: ScoreStore
           <Monogram store={store} player={s.player} size="lg" />
           <span className="sc-profile-name">{s.player}</span>
           <span className="sc-profile-sub">
-            第{rank}名（{stats.length}人）· {s.hands}局
+            第{rank}名（{stats.length}人）· {games !== undefined ? `${games}場 · ` : ""}
+            {s.hands}局
           </span>
         </div>
         <button type="button" className="sc-icon-button sc-icon-button-fill" onClick={() => onIndex((index + 1) % stats.length)} aria-label="Next player">
@@ -4305,7 +4325,7 @@ function PlayerCard({ store, stats, state, index, onIndex }: { store: ScoreStore
       </div>
       <div className="sc-profile-score">
         <span className={`sc-profile-net ${tone(s.net)}`}>{signed(s.net)}</span>
-        {series && <Sparkline values={series.values} className={`sc-c${colorOf(store, s.player)}`} />}
+        {values && <Sparkline values={values} className={`sc-c${colorOf(store, s.player)}`} />}
       </div>
       {/* 胡 here is every win, 自摸 included - 戰績 below splits them. */}
       <div className="sc-kpis">
@@ -4605,7 +4625,9 @@ function StatsPanel({ store, setStore, view, setView }: { store: ScoreStore; set
         </div>
       )}
       {view === "patterns" && <PatternsCard state={state} store={store} />}
-      {view === "player" && stats.length > 0 && <PlayerCard store={store} stats={stats} state={state} index={Math.min(playerIndex, stats.length - 1)} onIndex={setPlayerIndex} />}
+      {view === "player" && stats.length > 0 && (
+        <PlayerCard store={store} stats={stats} seriesOf={(p) => series.find((x) => x.player === p)?.values} index={Math.min(playerIndex, stats.length - 1)} onIndex={setPlayerIndex} />
+      )}
       {view === "history" && (
         <HistoryCard
           store={store}
@@ -4847,47 +4869,18 @@ function PatternsCard({ state, store }: { state: ReplayState; store: ScoreStore 
   );
 }
 
-// One player's career opened under their row: what the 玩家 card shows for a
-// game, over every game - and who they've done best and worst against.
-function CareerDetail({ c, versus }: { c: CareerStats; versus: Record<string, number> }) {
-  const opponents = Object.entries(versus)
-    .filter(([, v]) => v !== 0)
-    .sort((a, b) => b[1] - a[1]);
-  const prey = opponents[0];
-  const nemesis = opponents[opponents.length - 1];
-  const rows: { zh: string; en: string; value: string; tone?: number }[] = [
-    { zh: "領先", en: "Time in 1st", value: pct(c.firstRate) },
-    { zh: "自摸比例", en: "Wins by 自摸", value: pct(c.selfDrawShare) },
-    { zh: "每次食糊", en: "Won per win", value: c.avgWinGain === null ? "–" : signed(Math.round(c.avgWinGain * 10) / 10), tone: c.avgWinGain ?? 0 },
-    { zh: "每次出銃", en: "Lost per deal-in", value: c.avgDealInLoss === null ? "–" : signed(Math.round(c.avgDealInLoss * 10) / 10), tone: c.avgDealInLoss ?? 0 },
-    { zh: "做莊局數", en: "Hands dealt", value: String(c.dealerHands) },
-    { zh: "莊家得失", en: "Net as dealer", value: signed(c.dealerNet), tone: c.dealerNet },
-    { zh: "最長連莊", en: "Most 連莊 in a run", value: c.longestDealerRun > 1 ? `連${c.longestDealerRun - 1}` : "–" },
-    { zh: "拉踢淨額", en: "Net from add-ons", value: signed(c.lahNet), tone: c.lahNet },
-    ...(prey && prey[1] > 0 ? [{ zh: "最大苦主", en: "Won most from", value: `${prey[0]} ${signed(prey[1])}`, tone: 1 }] : []),
-    ...(nemesis && nemesis[1] < 0 ? [{ zh: "剋星", en: "Lost most to", value: `${nemesis[0]} ${signed(nemesis[1])}`, tone: -1 }] : []),
-  ];
-  return (
-    <div className="sc-stat-grid sc-career-stats">
-      {rows.map((r) => (
-        <div key={r.zh} className="sc-stat">
-          <span className="sc-stat-label">
-            <span>{r.zh}</span>
-            <small>{r.en}</small>
-          </span>
-          <span className="sc-stat-value">
-            <strong className={r.tone !== undefined ? tone(r.tone) : undefined}>{r.value}</strong>
-          </span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 function HistoryCard({ store, games, current, onPick, onDelete }: { store: ScoreStore; games: ScoreGame[]; current: string; onPick: (id: string) => void; onDelete: (id: string) => void }) {
   const [confirm, setConfirm] = useState<string | null>(null);
   const [careerOpen, setCareerOpen] = useState<string | null>(null);
   const career = useMemo(() => careerStats(games), [games]);
+  // The 玩家 card's numbers over every game, for the card a row opens.
+  const careerCard = useMemo(() => careerPlayerStats(games, (at) => new Date(at).toLocaleDateString(undefined, { month: "short", day: "numeric" })), [games]);
+  // Opened from a row: bring the card into view (it sits under the table).
+  const careerCardRef = useRef<HTMLDivElement>(null);
+  const openCareer = (player: string | null) => {
+    setCareerOpen(player);
+    if (player) window.setTimeout(() => careerCardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+  };
   const h2h = useMemo(() => headToHead(games), [games]);
   const names = career.map((c) => c.player);
   return (
@@ -4965,8 +4958,8 @@ function HistoryCard({ store, games, current, onPick, onDelete }: { store: Score
                 const isOpen = careerOpen === c.player;
                 return (
                   <Fragment key={c.player}>
-                    {/* A tap opens the rest of their career under the row. */}
-                    <tr className={`sc-career-row${isOpen ? " is-open" : ""}`} onClick={() => setCareerOpen(isOpen ? null : c.player)} aria-expanded={isOpen}>
+                    {/* A tap opens their career, as a 玩家 card, under the table. */}
+                    <tr className={`sc-career-row${isOpen ? " is-open" : ""}`} onClick={() => openCareer(isOpen ? null : c.player)} aria-expanded={isOpen}>
                       <th>
                         <span className="sc-table-player">
                           <Monogram store={store} player={c.player} size="sm" />
@@ -4981,13 +4974,6 @@ function HistoryCard({ store, games, current, onPick, onDelete }: { store: Score
                       <td>{pct(c.dealInRate)}</td>
                       <td className="sc-opt">{c.bestHand === null ? "–" : fmt(c.bestHand)}</td>
                     </tr>
-                    {isOpen && (
-                      <tr className="sc-career-detail">
-                        <td colSpan={8}>
-                          <CareerDetail c={c} versus={h2h[c.player] ?? {}} />
-                        </td>
-                      </tr>
-                    )}
                   </Fragment>
                 );
               })}
@@ -4995,6 +4981,18 @@ function HistoryCard({ store, games, current, onPick, onDelete }: { store: Score
           </table>
         </div>
       </div>
+      {careerOpen !== null && careerCard.stats.some((x) => x.player === careerOpen) && (
+        <div ref={careerCardRef} className="sc-career-card">
+        <PlayerCard
+          store={store}
+          stats={careerCard.stats}
+          seriesOf={(p) => careerCard.series.get(p)}
+          index={careerCard.stats.findIndex((x) => x.player === careerOpen)}
+          onIndex={(i) => setCareerOpen(careerCard.stats[i].player)}
+          games={career.find((c) => c.player === careerOpen)?.games ?? 0}
+        />
+        </div>
+      )}
       {names.length > 1 && (
         <>
           <SectionHead zh="對戰" en="Head-to-head">
