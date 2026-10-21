@@ -13180,3 +13180,27 @@ button.sc-stat:active {
     margin-top: 0;
   }
 }
+
+/* 獨獨/假獨's example: every tile that would have won before the winning tile. */
+.tr-example-waits {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+  margin-top: 0.35rem;
+}
+
+.tr-example-waits-label {
+  margin-right: 0.15rem;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.rr-card .tr-example-waits {
+  margin-top: 1mm;
+}
+
+.rr-card .tr-example-waits-label {
+  color: var(--rr-muted);
+  font-size: 7pt;
+}

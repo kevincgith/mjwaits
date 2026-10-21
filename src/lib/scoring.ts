@@ -867,6 +867,16 @@ function preWinWaitInput(hand: ResolvedHand, winningTile: Tile): { tiles: Tile[]
 // 獨獨: the pre-completion hand has exactly one tile kind that would
 // complete it - reuses the Calculator tab's own getWaits rather than
 // reimplementing wait-finding here.
+/** Every tile that would have completed the hand just before the winning
+ *  tile arrived (its concealed part only - see preWinWaitInput), or null
+ *  without a winning tile. One tile is a genuine single wait (獨獨); more,
+ *  with the winning tile in a narrow shape, is 假獨. */
+export function waitsBeforeWin(hand: ResolvedHand, ctx: GameContext): Tile[] | null {
+  if (ctx.winningTile === null) return null;
+  const pre = preWinWaitInput(hand, ctx.winningTile);
+  return pre ? getWaits(pre.tiles, pre.meldsRequired) : null;
+}
+
 function isGenuineSingleWait(hand: ResolvedHand, ctx: GameContext): boolean {
   if (ctx.winningTile === null) return false;
   const pre = preWinWaitInput(hand, ctx.winningTile);

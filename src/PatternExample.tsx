@@ -6,7 +6,7 @@ import { useMemo } from "react";
 import { BonusGlyphSpan, TileGlyphSpan } from "./TileGlyphs";
 import type { Tile } from "./lib/mahjong";
 import { PATTERN_EXAMPLES } from "./lib/patternExamples";
-import { DEFAULT_TAI_RULES, parseScoringHand, PATTERNS, scoreParsedHand, type GameContext, type TaiRules } from "./lib/scoring";
+import { DEFAULT_TAI_RULES, parseScoringHand, PATTERNS, scoreParsedHand, waitsBeforeWin, type GameContext, type TaiRules } from "./lib/scoring";
 import { PATTERN_CATALOG } from "./lib/taiCatalog";
 import { TEST_HAND_BASE_CONTEXT } from "./lib/testHands";
 
@@ -34,6 +34,8 @@ function situationChips(ctx: Partial<GameContext>): string[] {
   return chips;
 }
 
+const WAIT_PATTERN_IDS: ReadonlySet<string> = new Set(["genuine-single-wait", "fake-single-wait"]);
+
 // The example's rules: the house list (正圈風 at 2, since at 0 it never
 // counts), so the hand reads the way the tests score it.
 const EXAMPLE_RULES: TaiRules = (() => {
@@ -56,7 +58,7 @@ export function PatternExampleView({ id, rules }: { id: string; rules: TaiRules 
       const ctx: GameContext = { ...TEST_HAND_BASE_CONTEXT, ...example.ctx };
       const result = scoreParsedHand(parsed, { ...ctx, rules: EXAMPLE_RULES });
       const reading = result.matched.some((m) => m.pattern.id === id) || !result.second ? result : { ...result, ...result.second };
-      return { ctx, hand: reading.hand, declared: parsed.declaredMelds.length };
+      return { ctx, hand: reading.hand, declared: parsed.declaredMelds.length, waits: waitsBeforeWin(reading.hand, ctx) };
     } catch {
       return null;
     }
@@ -80,7 +82,16 @@ export function PatternExampleView({ id, rules }: { id: string; rules: TaiRules 
   // 正花/爛花/無花 are about the flowers and seasons (and the seat wind they
   // match), not the hand.
   const bonusOnly = family === "bonus";
-  const rows = situation || bonusOnly ? null : pattern.tiles?.(scored.hand, scored.ctx);
+  // 獨獨/假獨 are about the wait, which one meld can't show: 假獨's 2 filling
+  // 1_3 looks exactly like a genuine single wait unless you can also see the
+  // 2-3-4 beside it, and that 5 would have won too. So these show every
+  // meld in the winning tile's suit, and the full wait list (a chip below).
+  const waitPattern = WAIT_PATTERN_IDS.has(id) && scored.waits !== null && !!scored.ctx.winningTile;
+  const winSuit = scored.ctx.winningTile?.suit;
+  const waitGroups = waitPattern
+    ? [...scored.hand.melds.filter((m) => m.tiles.some((t) => t.suit === winSuit)).map((m) => m.tiles), ...(scored.hand.pair[0]?.suit === winSuit ? [scored.hand.pair] : [])]
+    : null;
+  const rows = situation || bonusOnly ? null : waitGroups ? [waitGroups] : pattern.tiles?.(scored.hand, scored.ctx);
   // Wind and flower patterns compare against the winds, so always show them.
   const winds = family === "winds" || bonusOnly ? [`門風 ${WINDS[scored.ctx.seatWind - 1]}`, ...(id === "correct-round-wind" ? [`圈風 ${WINDS[scored.ctx.roundWind - 1]}`] : [])] : [];
   const isWindChip = (c: string) => c.startsWith("門風") || c.startsWith("圈風");
@@ -104,7 +115,16 @@ export function PatternExampleView({ id, rules }: { id: string; rules: TaiRules 
   return (
     <div className="tr-detail tr-example">
       <div className="tr-detail-label">
-        Example · {situation ? "declared, on any winning hand" : bonusOnly ? "the flowers and seasons" : rows && rows.length > 0 ? "the tiles it counts" : "the whole hand"}
+        Example ·{" "}
+        {situation
+          ? "declared, on any winning hand"
+          : bonusOnly
+            ? "the flowers and seasons"
+            : waitGroups
+              ? "the tiles around the winning tile"
+              : rows && rows.length > 0
+                ? "the tiles it counts"
+                : "the whole hand"}
       </div>
       {bonusOnly && (
         <div className="breakdown-groups tr-example-tiles">
@@ -158,6 +178,14 @@ export function PatternExampleView({ id, rules }: { id: string; rules: TaiRules 
             <span key={c} className="tr-chip is-static tr-example-chip">
               {c}
             </span>
+          ))}
+        </div>
+      )}
+      {waitPattern && scored.waits && (
+        <div className="tr-example-waits">
+          <span className="tr-example-waits-label">{scored.waits.length === 1 ? "Waited on only" : "Waited on"}</span>
+          {scored.waits.map((t, i) => (
+            <TileGlyphSpan key={i} tile={t} highlight={t.suit === winning?.suit && t.rank === winning?.rank} />
           ))}
         </div>
       )}

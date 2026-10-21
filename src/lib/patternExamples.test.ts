@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_TAI_RULES, parseScoringHand, PATTERNS, scoreParsedHand, type GameContext, type TaiRules } from "./scoring";
+import { DEFAULT_TAI_RULES, parseScoringHand, PATTERNS, scoreParsedHand, waitsBeforeWin, type GameContext, type TaiRules } from "./scoring";
 import { PATTERN_EXAMPLES } from "./patternExamples";
 import { TEST_HAND_BASE_CONTEXT } from "./testHands";
 
@@ -25,4 +25,16 @@ describe("設定's pattern examples", () => {
       expect([...result.matched, ...(result.second?.matched ?? [])].map((m) => m.pattern.id)).toContain(p.id);
     });
   }
+
+  // 獨獨/假獨's examples show the full wait list, which is what tells them apart.
+  it("shows 假獨 with more than one wait, and 獨獨 with exactly one", () => {
+    const waits = (id: string) => {
+      const example = PATTERN_EXAMPLES[id];
+      const ctx = { ...TEST_HAND_BASE_CONTEXT, ...example.ctx, rules: RULES } as GameContext;
+      const result = scoreParsedHand(parseScoringHand(example.hand), ctx);
+      return waitsBeforeWin(result.hand, ctx)?.map((t) => `${t.rank}${t.suit}`);
+    };
+    expect(waits("fake-single-wait")).toEqual(["2m", "5m"]);
+    expect(waits("genuine-single-wait")).toEqual(["2m"]);
+  });
 });
