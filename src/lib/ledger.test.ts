@@ -342,6 +342,42 @@ describe("籌碼 - chips change hands when a 拉 ends", () => {
     ]);
   });
 
+  // 雙響 / 三響: each winner's 拉 on the discarder rides; the 拉 they end are
+  // paid, less a half for each winner who 踢s.
+  const many = (winners: [number, number][], from: number): ScoreEvent => ({ t: "win", at: 0, winners: winners.map(([seat, tai]) => ({ seat, tai })), from, source: "quick" });
+
+  it("雙響 off D after A's 自摸: A's 拉 end, everyone pays A 10", () => {
+    expect(sorted(moves([win(0, 10, null)], many([[1, 20], [2, 20]], 3)))).toEqual([
+      { from: "B", to: "A", amount: 10 },
+      { from: "C", to: "A", amount: 10 },
+      { from: "D", to: "A", amount: 10 },
+    ]);
+  });
+
+  it("雙響 / 三響 off A: each winner 踢s, paying A only half", () => {
+    expect(sorted(moves([win(0, 10, null)], many([[1, 20], [2, 20]], 0)))).toEqual([
+      { from: "B", to: "A", amount: 5 },
+      { from: "C", to: "A", amount: 5 },
+      { from: "D", to: "A", amount: 10 },
+    ]);
+    expect(sorted(moves([win(0, 10, null)], many([[1, 20], [2, 20], [3, 20]], 0)))).toEqual([
+      { from: "B", to: "A", amount: 5 },
+      { from: "C", to: "A", amount: 5 },
+      { from: "D", to: "A", amount: 5 },
+    ]);
+  });
+
+  it("a 雙響 the holder is part of keeps their 拉 - no chips", () => {
+    expect(moves([win(0, 10, null)], many([[0, 20], [1, 20]], 3))).toEqual([]);
+  });
+
+  it("the 雙響's loser self-draws: each winner's 拉 ends with a 踢, less the 反雪 they pay back", () => {
+    expect(sorted(moves([many([[1, 20], [2, 20]], 3)], win(3, 10, null), { fanXue: true, fanXueDouble: 5 }))).toEqual([
+      { from: "D", to: "B", amount: 5 },
+      { from: "D", to: "C", amount: 5 },
+    ]);
+  });
+
   it("a 流局 feeds the Jackpot pile", () => {
     expect(moves([], draw, { jackpot: true, jackpotPerDraw: 5 }).every((m) => m.to === CHIP_POT && m.amount === 5)).toBe(true);
   });
