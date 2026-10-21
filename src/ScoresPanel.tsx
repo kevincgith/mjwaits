@@ -45,7 +45,7 @@ import { snapshotOf, snapshotUrl, type ScoreSnapshot } from "./lib/scoreShare";
 import { drawSettleCard } from "./lib/settleImage";
 import qrcode from "qrcode-generator";
 import { createPortal } from "react-dom";
-import { careerStats, headToHead, marks, patternCounts, playerStats, trend, type CareerStats, type PlayerStats } from "./lib/scoreStats";
+import { careerStats, headToHead, marks, patternCounts, playerStats, rankedBy, trend, type CareerStats, type PlayerStats } from "./lib/scoreStats";
 
 const WIND_CHARS = ["東", "南", "西", "北"];
 // Where each seat sits on the board, by seat index (turn order runs
@@ -4193,6 +4193,42 @@ function insights(s: PlayerStats): { zh: string; en: string; tone?: number }[] {
   return out;
 }
 
+// One stat, everyone at the table on it: 1st to last whichever way is good
+// for it, ties sharing a place, the player being looked at picked out.
+function StatRanking({ store, stats, row, player, onClose }: { store: ScoreStore; stats: PlayerStats[]; row: StatRow; player: string; onClose: () => void }) {
+  const order = rankedBy(stats, row.key);
+  const bySelf = new Map(stats.map((x) => [x.player, x]));
+  const ranked = order.filter((x) => x.rank !== null);
+  const first = ranked[0]?.rank;
+  const last = ranked.at(-1)?.rank;
+  const spread = first !== undefined && last !== undefined && first !== last;
+  return (
+    <Sheet title={row.zh} subtitle={`${row.en} · 全場排名 The table`} onClose={onClose}>
+      <ol className="sc-ranking">
+        {order.map(({ player: p, rank }) => {
+          const x = bySelf.get(p)!;
+          const t = row.tone?.(x);
+          const mark = spread && rank === first ? "best" : spread && rank === last ? "worst" : null;
+          return (
+            <li key={p} className={p === player ? "is-me" : undefined}>
+              <span className={`sc-leader-rank${rank !== null && rank <= 3 ? ` is-${rank}` : ""}`}>{rank ?? "–"}</span>
+              <Monogram store={store} player={p} size="sm" />
+              <span className="sc-ranking-name">
+                {p}
+                {mark && <span className={`sc-mark is-${mark}`}>{mark === "best" ? Icons.hot : Icons.cold}</span>}
+              </span>
+              <span className="sc-stat-value">
+                <strong className={t !== undefined ? tone(t) : undefined}>{row.show(x)}</strong>
+                {row.sub?.(x) && <small>{row.sub(x)}</small>}
+              </span>
+            </li>
+          );
+        })}
+      </ol>
+    </Sheet>
+  );
+}
+
 function PlayerCard({ store, stats, state, index, onIndex }: { store: ScoreStore; stats: PlayerStats[]; state: ReplayState; index: number; onIndex: (i: number) => void }) {
   const s = stats[index];
   const markFor = useMemo(() => Object.fromEntries(STAT_GROUPS.flatMap((g) => g.rows).map((r) => [r.key, marks(stats, r.key)])), [stats]);
@@ -4200,6 +4236,8 @@ function PlayerCard({ store, stats, state, index, onIndex }: { store: ScoreStore
   const rank = stats.slice().sort((a, b) => b.net - a.net).findIndex((x) => x.player === s.player) + 1;
   const notes = insights(s);
   const oppMax = Math.max(1, ...s.opponents.map((o) => Math.abs(o.net)));
+  // A stat tapped: everyone at the table ranked on it.
+  const [ranking, setRanking] = useState<StatRow | null>(null);
   return (
     <div className="card sc-profile">
       <div className="sc-profile-head">
@@ -4267,7 +4305,7 @@ function PlayerCard({ store, stats, state, index, onIndex }: { store: ScoreStore
               const m = markFor[r.key]?.get(s.player);
               const t = r.tone?.(s);
               return (
-                <div key={r.key} className="sc-stat">
+                <button key={r.key} type="button" className="sc-stat" onClick={() => setRanking(r)} aria-label={`${r.zh} ${r.en}: ${r.show(s)} - see everyone`}>
                   <span className="sc-stat-label">
                     <span>
                       {r.zh}
@@ -4283,7 +4321,7 @@ function PlayerCard({ store, stats, state, index, onIndex }: { store: ScoreStore
                     <strong className={t !== undefined ? tone(t) : undefined}>{r.show(s)}</strong>
                     {r.sub?.(s) && <small>{r.sub(s)}</small>}
                   </span>
-                </div>
+                </button>
               );
             })}
           </div>
@@ -4310,7 +4348,8 @@ function PlayerCard({ store, stats, state, index, onIndex }: { store: ScoreStore
           </ul>
         </details>
       )}
-      <p className="sc-help sc-stat-key">
+      {ranking && <StatRanking store={store} stats={stats} row={ranking} player={s.player} onClose={() => setRanking(null)} />}
+      <p className="sc-help sc-stat-key">撳任何一項睇全場排名 · Tap a stat to see everyone<br />
         <span className="sc-mark is-best">{Icons.hot}</span> 全場最好 · <span className="sc-mark is-worst">{Icons.cold}</span> 全場最差 - best and lowest at the table
       </p>
     </div>

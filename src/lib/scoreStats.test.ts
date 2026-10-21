@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_SETTINGS, newGame, replay, type ScoreEvent, type ScoreGame } from "./ledger";
-import { careerStats, headToHead, marks, patternCounts, playerStats, trend } from "./scoreStats";
+import { careerStats, headToHead, marks, patternCounts, playerStats, rankedBy, trend } from "./scoreStats";
 
 const PLAIN = { ...DEFAULT_SETTINGS, dealerTai: 0, streakTai: 0, jackpot: false };
 const game = (events: ScoreEvent[], seats = ["A", "B", "C", "D"]): ScoreGame => ({ ...newGame(seats, 0, PLAIN), events });
@@ -77,6 +77,19 @@ describe("playerStats", () => {
       { player: "C", net: -4 },
     ]);
     for (const s of Object.values(stats)) expect(s.opponents.reduce((t, o) => t + o.net, 0)).toBe(s.net);
+  });
+
+  it("ranks the table on any stat, best first, ties sharing a place", () => {
+    const all = playerStats(state, g);
+    // 出銃: fewer is better - C never dealt in.
+    expect(rankedBy(all, "dealIns")[0]).toEqual({ player: "C", rank: 1 });
+    // C and D each self-drew once: joint first, the rest third.
+    const sd = rankedBy(all, "selfDraws");
+    expect(sd.slice(0, 2).map((x) => x.rank)).toEqual([1, 1]);
+    expect(sd[2].rank).toBe(3);
+    // A record ({ value }) ranks by its value; a missing rate comes last, unranked.
+    expect(rankedBy(all, "maxTai")[0].player).toBe("A");
+    expect(rankedBy(all, "avgDealInTai").at(-1)).toEqual({ player: "C", rank: null });
   });
 
   it("marks the best and worst at the table", () => {
