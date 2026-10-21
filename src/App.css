@@ -9119,8 +9119,26 @@ details.sc-stat-group:not([open]) {
   white-space: nowrap;
 }
 
+/* 最佳 / 最差: a small tag in the table's green or red. */
 .sc-mark {
-  font-size: 0.8rem;
+  display: inline-block;
+  margin-left: 0.3rem;
+  padding: 0 0.3rem;
+  border-radius: var(--radius-xs);
+  font-size: 0.625rem;
+  font-weight: 700;
+  line-height: 1.5;
+  vertical-align: 0.1em;
+}
+
+.sc-mark.is-best {
+  background: color-mix(in srgb, var(--sc-pos) 14%, transparent);
+  color: var(--sc-pos);
+}
+
+.sc-mark.is-worst {
+  background: color-mix(in srgb, var(--sc-neg) 12%, transparent);
+  color: var(--sc-neg);
 }
 
 .sc-stat strong {
