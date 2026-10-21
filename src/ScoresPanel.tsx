@@ -4529,11 +4529,6 @@ type SheetRow =
   | { kind: "bonus"; key: string; label: "獎" | "罰" | "獎罰" | "詐胡"; deltas: Record<string, number> }
   | { kind: "jackpot"; key: string; deltas: Record<string, number> };
 
-const shortName = (n: string) => {
-  const chars = [...n.replace(/\s+/g, "")];
-  return /[\u3400-\u9fff]/.test(n) ? chars.slice(0, 2).join("") : chars.slice(0, 3).join("");
-};
-
 const SHEET_VIEW_KEY = "mjwaits.sheetView";
 
 function HandsTable({ store, game, state }: { store: ScoreStore; game: ScoreGame; state: ReplayState }) {
@@ -4648,8 +4643,8 @@ function HandsTable({ store, game, state }: { store: ScoreStore; game: ScoreGame
           <span>#</span>
           <span>番</span>
           {players.map((p) => (
-            <span key={p} className={`sc-sheet-name sc-c${colorOf(store, p)}`} title={p}>
-              {shortName(p)}
+            <span key={p} className={`sc-sheet-name sc-c${colorOf(store, p)}`}>
+              {p}
             </span>
           ))}
         </div>

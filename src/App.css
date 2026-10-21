@@ -11097,7 +11097,8 @@ html.sc-fit-mode .build-version {
 .sc-sheet-row {
   display: grid;
   align-items: center;
-  column-gap: 0.25rem;
+  /* Room between columns, so two full names side by side read as two. */
+  column-gap: 0.55rem;
   min-height: 2.4rem;
   padding: 0 0.25rem;
   border-top: 1px solid var(--separator);
@@ -11158,12 +11159,12 @@ html.sc-fit-mode .build-version {
 }
 
 /* Player names in their colour, right-aligned over their numbers. */
+/* Whole names: a long one wraps to a second line rather than being cut. */
 .sc-sheet-name {
-  overflow: hidden;
   color: var(--pc);
+  line-height: 1.15;
   text-align: right;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .sc-sheet-cell {
@@ -11855,4 +11856,10 @@ html.sc-fit-mode .build-version {
   position: sticky;
   left: 0;
   width: min(100%, calc(100vw - 4rem));
+}
+
+/* A name on two lines: the header's names share the bottom line. */
+.sc-sheet-row.is-head {
+  align-items: end;
+  padding-bottom: 0.3rem;
 }
