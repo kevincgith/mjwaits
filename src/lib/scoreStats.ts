@@ -127,7 +127,7 @@ export function playerStats(state: ReplayState, game: ScoreGame): PlayerStats[] 
   game.events.forEach((ev, i) => {
     const step = state.steps.find((s) => s.eventIndex === i);
     if (!step) return;
-    if (ev.t === "bonus") for (const [p, d] of Object.entries(step.deltas)) bonus.set(p, (bonus.get(p) ?? 0) + d);
+    if (ev.t === "bonus" || ev.t === "zhaHu") for (const [p, d] of Object.entries(step.deltas)) bonus.set(p, (bonus.get(p) ?? 0) + d);
     if (ev.t === "jackpot") for (const s of ev.shares) jackpotShares.set(s.player, (jackpotShares.get(s.player) ?? 0) + s.amount);
   });
 
