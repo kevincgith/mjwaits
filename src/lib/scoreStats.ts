@@ -56,7 +56,25 @@ export interface PlayerStats {
   // 對手 - net against each other player this game (every payment between
   // the two: hands, 反雪, 獎罰, 詐胡), best first.
   opponents: { player: string; net: number }[];
+  // 走勢 - read off the running total after each hand they sat in (from 0).
+  peak: AtHand | null; // 最高位
+  trough: AtHand | null; // 最低位
+  maxDrawdown: Swing | null; // 最大回落 - a high to a later low (negative)
+  maxRunUp: Swing | null; // 最大升幅 - a low to a later high
+  recovery: number; // 谷底反彈 - won back since the lowest point
+  longestLosingRun: number; // 最長連跌 - hands in a row losing points
+  recent: { hands: number; net: number }; // 近況 - the last RECENT_HANDS hands
+  avgSwing: number | null; // 平均波幅 - points moved per hand, either way
 }
+
+export interface Swing {
+  value: number;
+  from: number; // 第N局 it started from (0: the start)
+  to: number;
+}
+
+// 近況 looks back this many hands.
+export const RECENT_HANDS = 8;
 
 // Which way is good, for the 👍 (best at the table) and 👎 (lowest) marks.
 export const STAT_DIRECTION: Partial<Record<keyof PlayerStats, "high" | "low">> = {
@@ -98,6 +116,13 @@ export const STAT_DIRECTION: Partial<Record<keyof PlayerStats, "high" | "low">> 
   worstHand: "high",
   maxPull: "high",
   dealerHands: "high",
+  peak: "high",
+  trough: "high", // a shallower low is better
+  maxDrawdown: "high", // negative: a smaller drop is better
+  maxRunUp: "high",
+  recovery: "high",
+  longestLosingRun: "low",
+  recent: "high",
 };
 
 const rate = (n: number, of: number) => (of > 0 ? n / of : null);
@@ -227,6 +252,7 @@ export function playerStats(state: ReplayState, game: ScoreGame): PlayerStats[] 
       avgDealInLoss: rate(sum(dealtIn), dealtIn.length),
       lahNet:
         pairsAsWinner.reduce((t, p) => t + (p.lahKind ? p.lah : 0), 0) - pairsAsPayer.reduce((t, p) => t + (p.lahKind ? p.lah : 0), 0),
+      ...trendOf(seated, player),
       opponents: state.players
         .filter((q) => q !== player)
         .map((q) => ({ player: q, net: (state.paid[`${q}>${player}`] ?? 0) - (state.paid[`${player}>${q}`] ?? 0) }))
@@ -234,6 +260,81 @@ export function playerStats(state: ReplayState, game: ScoreGame): PlayerStats[] 
         .sort((a, b) => b.net - a.net),
     };
   });
+}
+
+// 走勢 for one player: the running total after each hand they sat in,
+// starting from 0, and what it did - its high and low, the deepest fall and
+// biggest climb, how much came back since the low, the longest losing run,
+// recent form and how much it moved per hand.
+function trendOf(seated: HandResult[], player: string) {
+  const points = [{ hand: 0, v: 0 }, ...seated.map((h) => ({ hand: h.hand, v: h.totalsAfter[player] ?? 0 }))];
+  const deltas = points.slice(1).map((p, i) => p.v - points[i].v);
+  let peak: AtHand | null = null;
+  let trough: AtHand | null = null;
+  let maxDrawdown: Swing | null = null;
+  let maxRunUp: Swing | null = null;
+  let hi = points[0];
+  let lo = points[0];
+  for (const p of points.slice(1)) {
+    if (!peak || p.v > peak.value) peak = { value: p.v, hand: p.hand };
+    if (!trough || p.v < trough.value) trough = { value: p.v, hand: p.hand };
+    if (p.v - hi.v < (maxDrawdown?.value ?? 0)) maxDrawdown = { value: p.v - hi.v, from: hi.hand, to: p.hand };
+    if (p.v - lo.v > (maxRunUp?.value ?? 0)) maxRunUp = { value: p.v - lo.v, from: lo.hand, to: p.hand };
+    if (p.v > hi.v) hi = p;
+    if (p.v < lo.v) lo = p;
+  }
+  let run = 0;
+  let longestLosingRun = 0;
+  for (const d of deltas) {
+    run = d < 0 ? run + 1 : 0;
+    longestLosingRun = Math.max(longestLosingRun, run);
+  }
+  const last = points[points.length - 1].v;
+  const low = Math.min(0, ...points.map((p) => p.v));
+  const recentFrom = points[Math.max(0, points.length - 1 - RECENT_HANDS)].v;
+  return {
+    peak,
+    trough,
+    maxDrawdown,
+    maxRunUp,
+    recovery: last - low,
+    longestLosingRun,
+    recent: { hands: Math.min(RECENT_HANDS, seated.length), net: last - recentFrom },
+    avgSwing: deltas.length ? deltas.reduce((t, d) => t + Math.abs(d), 0) / deltas.length : null,
+  };
+}
+
+// The game's 走勢 in a few facts: how often the lead changed hands, who led
+// for the most hands, and the biggest comeback (from a player's low to where
+// they finished).
+export function trendSummary(state: ReplayState): {
+  leadChanges: number;
+  mostLed: { player: string; hands: number } | null;
+  comeback: { player: string; from: number; to: number } | null;
+} {
+  let leader: string | null = null;
+  let leadChanges = 0;
+  const led = new Map<string, number>();
+  for (const h of state.hands) {
+    const top = Math.max(...h.seatsAfter.map((p) => h.totalsAfter[p] ?? 0));
+    const leaders = h.seatsAfter.filter((p) => (h.totalsAfter[p] ?? 0) === top);
+    for (const p of leaders) led.set(p, (led.get(p) ?? 0) + 1);
+    // A change is a new sole leader; a tie holds whoever had it.
+    if (leaders.length === 1 && leaders[0] !== leader) {
+      if (leader !== null) leadChanges++;
+      leader = leaders[0];
+    }
+  }
+  const mostLed = [...led].sort((a, b) => b[1] - a[1])[0];
+  let comeback: { player: string; from: number; to: number } | null = null;
+  for (const player of state.players) {
+    const totals = state.hands.filter((h) => player in h.totalsAfter).map((h) => h.totalsAfter[player]);
+    if (totals.length === 0) continue;
+    const low = Math.min(0, ...totals);
+    const end = state.totals[player] ?? 0;
+    if (low < 0 && end - low > (comeback ? comeback.to - comeback.from : 0)) comeback = { player, from: low, to: end };
+  }
+  return { leadChanges, mostLed: mostLed && mostLed[1] > 0 ? { player: mostLed[0], hands: mostLed[1] } : null, comeback };
 }
 
 // 做莊: the hands a player dealt, what they made from them, and the most
@@ -278,6 +379,7 @@ export function rankedBy(stats: PlayerStats[], key: keyof PlayerStats): { player
     if (typeof v === "number") return v;
     if (v && typeof v === "object" && "value" in v) return (v as { value: number }).value;
     if (v && typeof v === "object" && "count" in v) return (v as { count: number }).count;
+    if (v && typeof v === "object" && "net" in v) return (v as { net: number }).net;
     return null;
   };
   const scored = stats.filter((s) => s.hands > 0).map((s) => ({ player: s.player, v: num(s) }));

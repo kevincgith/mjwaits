@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_SETTINGS, newGame, replay, type ScoreEvent, type ScoreGame } from "./ledger";
-import { careerStats, headToHead, marks, patternCounts, playerStats, rankedBy, trend } from "./scoreStats";
+import { careerStats, headToHead, marks, patternCounts, playerStats, rankedBy, trend, trendSummary } from "./scoreStats";
 
 const PLAIN = { ...DEFAULT_SETTINGS, dealerTai: 0, streakTai: 0, jackpot: false };
 const game = (events: ScoreEvent[], seats = ["A", "B", "C", "D"]): ScoreGame => ({ ...newGame(seats, 0, PLAIN), events });
@@ -92,6 +92,18 @@ describe("playerStats", () => {
     expect(rankedBy(all, "avgDealInTai").at(-1)).toEqual({ player: "C", rank: null });
   });
 
+  it("走勢: high and low, the deepest fall and biggest climb, form and swing", () => {
+    // A runs 0, 10, 19, 3, 0, 0, 8, -3 (局7: D's 自摸, its 踢 and 反雪).
+    expect(stats.A.peak).toEqual({ value: 19, hand: 2 });
+    expect(stats.A.trough).toEqual({ value: -3, hand: 7 });
+    expect(stats.A.maxDrawdown).toEqual({ value: -22, from: 2, to: 7 });
+    expect(stats.A.maxRunUp).toEqual({ value: 19, from: 0, to: 2 });
+    expect(stats.A.recovery).toBe(0);
+    expect(stats.A.longestLosingRun).toBe(2);
+    expect(stats.A.recent).toEqual({ hands: 7, net: -3 });
+    expect(stats.A.avgSwing).toBeCloseTo(57 / 7);
+  });
+
   it("marks the best and worst at the table", () => {
     const all = playerStats(state, g);
     const m = marks(all, "dealIns");
@@ -132,6 +144,15 @@ describe("trend, patterns, career and head-to-head", () => {
     expect(c.B.selfDrawShare).toBe(0);
     expect(c.A.lahNet).toBe(-9);
     expect(c.A.firstRate).not.toBeNull();
+  });
+
+  it("sums up a game's 走勢: lead changes, who led most, the biggest comeback", () => {
+    // A leads; B's 30 off A (a 踢: +5) puts B ahead, A down 25; A takes
+    // the lead back with 51 off C.
+    const st = replay(game([win(0, 10, 1), win(1, 30, 0), win(0, 51, 2)]));
+    expect(trendSummary(st)).toEqual({ leadChanges: 2, mostLed: { player: "A", hands: 2 }, comeback: { player: "A", from: -25, to: 26 } });
+    // One hand: nobody came back from anything.
+    expect(trendSummary(replay(g2)).comeback).toBeNull();
   });
 
   it("nets head-to-head both ways", () => {
