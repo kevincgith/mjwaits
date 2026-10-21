@@ -10752,16 +10752,20 @@ html.sc-fit-mode .build-version {
 }
 
 /* 特別獎罰: 獎 | 罰 at the end of the amount row. */
+/* As wide as 食胡's Scan and Score pair, so the amount field lines up across tabs. */
 .sc-kind {
   display: inline-flex;
   flex-shrink: 0;
+  box-sizing: border-box;
+  width: calc(2 * 2.75rem + 0.35rem);
   padding: 0.2rem;
   border-radius: var(--radius-md);
   background: var(--fill);
 }
 
 .sc-kind > button {
-  width: 2.6rem;
+  flex: 1;
+  width: auto;
   height: 2.35rem;
   border: none;
   border-radius: calc(var(--radius-md) - 0.15rem);
@@ -11958,25 +11962,28 @@ button.sc-stat:active {
 }
 
 /* 預設獎罰: quick picks filling the empty pay table, in pages of two rows of
-   four - a swipe always lands on a whole page; dots at the foot show which. */
-.sc-paytable:has(> .sc-presets) {
-  position: relative;
-}
-
+   four. A swipe always lands on a whole page; a sliver of the other page
+   peeks in at the edge (on the right from page 1, the left from page 2), so
+   it's clear there's more without anything taking room. */
 .sc-presets {
+  --peek: 0.85rem;
   display: grid;
   grid-template-rows: repeat(2, minmax(0, 1fr));
   grid-auto-columns: calc((100% - 3 * 0.3rem) / 4);
   gap: 0.3rem;
   height: 100%;
-  padding: 0.1rem 0 0.45rem;
+  padding: 0.1rem 0;
   box-sizing: border-box;
   overflow-x: auto;
   overflow-y: hidden;
   overscroll-behavior-x: contain;
   scroll-snap-type: x mandatory;
-  scroll-padding: 0;
+  scroll-padding-inline-start: var(--peek);
   scrollbar-width: none;
+}
+
+.sc-presets.is-paged {
+  grid-auto-columns: calc((100% - 3 * 0.3rem - var(--peek) - 0.3rem) / 4);
 }
 
 .sc-presets::-webkit-scrollbar {
@@ -11987,29 +11994,6 @@ button.sc-stat:active {
 .sc-presets > .sc-preset.is-page {
   scroll-snap-align: start;
   scroll-snap-stop: always;
-}
-
-.sc-preset-dots {
-  position: absolute;
-  left: 50%;
-  bottom: 0.15rem;
-  translate: -50% 0;
-  display: flex;
-  gap: 0.3rem;
-}
-
-.sc-preset-dots button {
-  width: 0.4rem;
-  height: 0.4rem;
-  border: none;
-  border-radius: 50%;
-  padding: 0;
-  background: var(--separator);
-  cursor: pointer;
-}
-
-.sc-preset-dots button.is-on {
-  background: var(--text-muted);
 }
 
 /* Name and amount side by side, so two rows fit the box. */
