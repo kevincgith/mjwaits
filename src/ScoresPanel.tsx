@@ -36,7 +36,6 @@ import {
   type ScoreSettings,
   type ScoreStore,
   type WinnerEntry,
-  SETTING_ON_VALUE,
   chipMoves,
   evenShares,
   playTimes,
@@ -965,7 +964,7 @@ function ZhaHuSheet({
   frame?: SheetFrame;
 }) {
   const others = state.seats.map((_, s2) => s2).filter((s2) => s2 !== seat);
-  const each = state.settings.zhaHu ?? SETTING_ON_VALUE.zhaHu ?? 40;
+  const each = state.settings.zhaHu ?? DEFAULT_SETTINGS.zhaHu ?? 40;
   const [amounts, setAmounts] = useState<string[]>(() =>
     others.map((s2) => String(initial?.find((x) => x.player === state.seats[s2])?.amount ?? each)),
   );
@@ -2727,7 +2726,7 @@ function SettingsSheet({ settings, onSave, onClose }: { settings: ScoreSettings;
                   <Fragment key={key}>
                     <label className="sc-row">
                       {text}
-                      <Toggle checked={value !== null} onChange={(v) => set(key, (v ? DEFAULT_SETTINGS[key] ?? SETTING_ON_VALUE[key] ?? 50 : null) as never)} label={label} />
+                      <Toggle checked={value !== null} onChange={(v) => set(key, (v ? DEFAULT_SETTINGS[key] ?? 50 : null) as never)} label={label} />
                     </label>
                     {/* Greyed out while the switch is off, like the other dependent rows. */}
                     <div className={`sc-row${value === null ? " is-off" : ""}`}>
@@ -2738,7 +2737,7 @@ function SettingsSheet({ settings, onSave, onClose }: { settings: ScoreSettings;
                       {/* 高分提示, 詐胡 and 提示自動隱藏 step in 5s, 投降提示 in 1s; 封頂 is typed. */}
                       {key !== "scoreCap" ? (
                         <Stepper
-                          value={value ?? ((DEFAULT_SETTINGS[key] ?? SETTING_ON_VALUE[key]) as number)}
+                          value={value ?? (DEFAULT_SETTINGS[key] as number)}
                           onChange={(v) => set(key, v as never)}
                           label={label}
                           min={key === "highScore" || key === "zhaHu" || key === "tipsAutoHide" ? 5 : 1}
@@ -3228,7 +3227,7 @@ function Board({
     // the 設定 amount. Cancelled: the amounts as they were.
     if (request.zhaHu && request.seat !== undefined) {
       const caller = request.seat;
-      const floor = state.settings.zhaHu ?? SETTING_ON_VALUE.zhaHu ?? 40;
+      const floor = state.settings.zhaHu ?? DEFAULT_SETTINGS.zhaHu ?? 40;
       const worth = (payer: number) => {
         const pair = previewWin(state, [{ seat: caller, tai: request.tai }], payer)[0];
         return pair ? pair.base + pair.tai + pair.dealer : 0;
