@@ -37,6 +37,7 @@ import {
   type ScoreStore,
   type WinnerEntry,
   SETTING_ON_VALUE,
+  zhaHuKicks,
 } from "./lib/ledger";
 import { snapshotOf, snapshotUrl, type ScoreSnapshot } from "./lib/scoreShare";
 import { drawSettleCard } from "./lib/settleImage";
@@ -971,7 +972,11 @@ function ZhaHuSheet({
     const i = others.indexOf(s2);
     if (i >= 0) setFocus(i);
   };
+  // Any 拉 the caller holds ends here, each pulled player paid its 踢 half.
+  const kicks = zhaHuKicks(state, player);
+  const kickOf = (p: string) => kicks.find((k) => k.player === p)?.amount ?? 0;
   const total = amounts.reduce((t, a) => t + Number(a || 0), 0);
+  const kickTotal = kicks.reduce((t, k) => t + k.amount, 0);
   // Scan or score the called hand: it comes back as what it's worth to each.
   const scoreIt = (scan: boolean) =>
     onScoreHand?.({
@@ -1005,7 +1010,7 @@ function ZhaHuSheet({
             disabled={total <= 0}
             onClick={() => onDone({ t: "zhaHu", at: Date.now(), seat, pays: others.map((s2, i) => ({ player: state.seats[s2], amount: Number(amounts[i] || 0) })) })}
           >
-            {total > 0 ? `Confirm · ${fmt(total)}` : "Confirm"}
+            {total > 0 ? `Confirm · ${fmt(total + kickTotal)}` : "Confirm"}
           </button>
         </>
       }
@@ -1054,10 +1059,19 @@ function ZhaHuSheet({
         )}
       </div>
       <Keypad value={amounts[focus] ?? ""} onChange={type} />
+      {/* The 踢 column: the caller's 拉 end here, each pulled player paid its 踢 half. */}
       <PayTable
-        cols={[{ key: "to", label: "To", wide: true }]}
+        cols={[{ key: "to", label: "To", wide: true }, ...(kicks.length > 0 ? [{ key: "zha", label: "詐胡" }, { key: "kick", label: "踢" }] : [])]}
         rows={others
-          .map((s2, i) => ({ who: player, cells: { to: state.seats[s2] }, total: Number(amounts[i] || 0) }))
+          .map((s2, i) => {
+            const p = state.seats[s2];
+            const amount = Number(amounts[i] || 0);
+            return {
+              who: player,
+              cells: { to: p, ...(kicks.length > 0 ? { zha: fmt(amount), ...(kickOf(p) ? { kick: fmt(kickOf(p)) } : {}) } : {}) },
+              total: amount + kickOf(p),
+            };
+          })
           .filter((r) => r.total > 0)}
         empty="Enter an amount to see who pays what"
       />

@@ -11310,3 +11310,28 @@ html.sc-fit-mode .build-version {
 .sc-zha-switch {
   padding-inline: 1.1rem;
 }
+
+/* Two or three fields (雙響 / 三響, 詐胡) beside Scan and Score: each shrinks
+   to fit, its name over its number, instead of running under the buttons. */
+.sc-tai-row .sc-tai {
+  min-width: 0;
+}
+
+.sc-tai-row .sc-tai-fields:has(> .sc-tai + .sc-tai) .sc-tai {
+  flex-direction: column;
+  gap: 0;
+  padding: 0.15rem 0.25rem;
+}
+
+.sc-tai-row .sc-tai-fields:has(> .sc-tai + .sc-tai) .sc-tai-who {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+
+.sc-tai-row .sc-tai-fields:has(> .sc-tai + .sc-tai) .sc-tai-value {
+  font-size: 1.25rem;
+  line-height: 1.1;
+}
