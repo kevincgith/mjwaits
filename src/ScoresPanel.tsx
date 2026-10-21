@@ -1384,6 +1384,8 @@ function RoundOption({ verb, label }: { verb: string; label: string }) {
 // How long 座位's cards take to slide to new seats - the 莊 badge and the
 // 起莊 corner fly on the same clock when they move with them.
 const SEAT_MOVE_MS = 800;
+// ...and how much a card shrinks while it's lifted - the shadow does most of the lift.
+const SEAT_DIP = 0.08;
 
 function SeatsSheet({
   store,
@@ -1471,6 +1473,8 @@ function SeatsSheet({
   // start each one there and let it glide home.
   const diamondRef = useRef<HTMLDivElement>(null);
   const before = useRef<Map<string, DOMRect> | null>(null);
+  // Cards caught mid-slide by the next move, and how lifted they were (0-1).
+  const midSlide = useRef<Map<string, number>>(new Map());
   const spots = () => {
     const map = new Map<string, DOMRect>();
     diamondRef.current?.querySelectorAll<HTMLElement>("[data-player]").forEach((el) => map.set(el.dataset.player!, el.getBoundingClientRect()));
@@ -1479,8 +1483,15 @@ function SeatsSheet({
   const moveSeats = (change: (prev: string[]) => string[]) => {
     // Where everything is on screen right now - mid-slide too, when taps come
     // fast - so the next slide starts from there, not from where the last one
-    // was headed.
+    // was headed. A card caught mid-slide also keeps how lifted it was.
     before.current = spots();
+    const lift = new Map<string, number>();
+    diamondRef.current?.querySelectorAll<HTMLElement>("[data-player]").forEach((el) => {
+      if (el.getAnimations().length === 0) return;
+      const scale = new DOMMatrixReadOnly(getComputedStyle(el).transform).a;
+      lift.set(el.dataset.player!, Math.min(1, Math.max(0, (1 - scale) / SEAT_DIP)));
+    });
+    midSlide.current = lift;
     qiFrom.current = qiSpot();
     setPicked(null);
     setSeats(change);
@@ -1502,7 +1513,8 @@ function SeatsSheet({
   const lastQi = useRef<{ seat: number; player: string; x: number; y: number } | null>(null);
   // The corner as it is on screen at the moment of a move (its copy, if one
   // is in flight), against the map.
-  const qiFrom = useRef<{ x: number; y: number } | null>(null);
+  // scale: a copy caught in flight, and how big it was then.
+  const qiFrom = useRef<{ x: number; y: number; scale?: number } | null>(null);
   const qiSpot = () => {
     const map = diamondRef.current;
     const flying = [...document.body.children].find((el) => el.classList.contains("sc-qi-corner")) as HTMLElement | undefined;
@@ -1510,7 +1522,12 @@ function SeatsSheet({
     if (!map || !corner) return null;
     const box = map.getBoundingClientRect();
     const r = corner.getBoundingClientRect();
-    return { x: r.left - box.left, y: r.top - box.top };
+    // getBoundingClientRect is the scaled box; the copy is placed by its
+    // unscaled top-left, so take the scale back out around its centre.
+    const scale = flying ? new DOMMatrixReadOnly(getComputedStyle(flying).transform).a : 1;
+    const w = r.width / scale;
+    const h = r.height / scale;
+    return { x: r.left + (r.width - w) / 2 - box.left, y: r.top + (r.height - h) / 2 - box.top, ...(flying ? { scale } : {}) };
   };
   const lastSeats = useRef(seats.join("|"));
   // The copy in flight - a later render mustn't cut it short, only a new move.
@@ -1533,7 +1550,10 @@ function SeatsSheet({
     if (!prev || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     const hold = prev.seat === now.seat && seatsMoved && prev.player !== now.player;
     if (prev.seat === now.seat && !hold) return;
-    if (prev.seat !== now.seat && seatsMoved && prev.player === now.player) return;
+    // Riding its card - unless its copy is still in the air from the last
+    // move, which then carries on to the new spot rather than landing on the
+    // old one first.
+    if (prev.seat !== now.seat && seatsMoved && prev.player === now.player && from?.scale === undefined) return;
     const style = getComputedStyle(corner);
     const flyer = corner.cloneNode(true) as HTMLElement;
     Object.assign(flyer.style, {
@@ -1551,8 +1571,16 @@ function SeatsSheet({
     const dy = (from ?? prev).y - now.y;
     const lift = -Math.min(48, Math.hypot(dx, dy) / 4);
     const frames: Keyframe[] = [];
+    // A copy caught in flight carries on from where it is and as big as it
+    // is, settling straight in - no second take-off.
+    const s0 = from?.scale;
     for (let i = 0; i <= 20; i++) {
       const t = i / 20;
+      if (s0 !== undefined) {
+        const e = 1 - Math.pow(1 - t, 3);
+        frames.push({ offset: t, transform: `translate(${dx * (1 - e)}px, ${dy * (1 - e)}px) scale(${s0 + (1 - s0) * e})` });
+        continue;
+      }
       const e = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
       const rise = hold ? 0 : Math.sin(Math.PI * e);
       frames.push({ offset: t, transform: `translate(${dx * (1 - e)}px, ${dy * (1 - e) + lift * rise}px) scale(${1 + 0.25 * rise})` });
@@ -1651,11 +1679,14 @@ function SeatsSheet({
     // dip in size and a soft shadow), glides and settles together - same
     // start, same pace, same landing.
     const bothWays = paths.some((m) => m.turn > 0) && paths.some((m) => m.turn < 0);
-    // A lifted card only shrinks a touch - the shadow does most of the lift.
-    const DIP = 0.08;
+    const caught = midSlide.current;
+    midSlide.current = new Map();
     paths.forEach(({ el, a0, turn, r0, r1, tx, ty }) => {
       // Mirror-image lanes: one bows out exactly as far as the other bows in.
       const lane = bothWays ? (turn > 0 ? 0.25 : -0.25) : 0;
+      // Caught mid-slide: no pick-up pause - it stays up, already moving,
+      // and eases into the new path from where it was.
+      const lift0 = caught.get(el.dataset.player!);
       const frames: Keyframe[] = [];
       for (let i = 0; i <= steps; i++) {
         const t = i / steps;
@@ -1663,8 +1694,14 @@ function SeatsSheet({
         // quarter, travels (smoothly, eased) mostly in the middle while
         // small, and grows back as it lands.
         const ease = (u: number) => (u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2);
-        const e = ease(Math.min(1, Math.max(0, (t - 0.15) / 0.7)));
-        const lifted = ease(Math.min(1, t / 0.25, (1 - t) / 0.25));
+        const easeOut = (u: number) => 1 - Math.pow(1 - u, 3);
+        const e = lift0 === undefined ? ease(Math.min(1, Math.max(0, (t - 0.15) / 0.7))) : easeOut(Math.min(1, t / 0.85));
+        const lifted =
+          lift0 === undefined
+            ? ease(Math.min(1, t / 0.25, (1 - t) / 0.25))
+            : t < 0.75
+              ? lift0 + (1 - lift0) * ease(Math.min(1, t / 0.2))
+              : ease((1 - t) / 0.25);
         const bump = Math.sin(Math.PI * e);
         const angle = a0 + turn * e;
         const r = (r0 + (r1 - r0) * e) * (1 + lane * bump);
@@ -1672,7 +1709,7 @@ function SeatsSheet({
         const y = Math.sin(angle) * r * ry - ty;
         frames.push({
           offset: t,
-          transform: `translate(${x}px, ${y}px) scale(${1 - DIP * lifted})`,
+          transform: `translate(${x}px, ${y}px) scale(${1 - SEAT_DIP * lifted})`,
           boxShadow: `0 ${10 * lifted}px ${26 * lifted}px rgba(0, 0, 0, ${0.2 * lifted})`,
           zIndex: turn > 0 ? 2 : 1,
         });
