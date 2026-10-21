@@ -39,6 +39,7 @@ import {
   SETTING_ON_VALUE,
   chipMoves,
   evenShares,
+  playTimes,
   zhaHuKicks,
 } from "./lib/ledger";
 import { snapshotOf, snapshotUrl, type ScoreSnapshot } from "./lib/scoreShare";
@@ -2161,34 +2162,46 @@ function JackpotSheet({ store, state, onDone, onClose }: { store: ScoreStore; st
   );
 }
 
-// The game's name and the day it was played - set from a long press on the
-// game box. A new day keeps the time of day it started.
-function NameSheet({ name, startedAt, onSave, onClose }: { name: string; startedAt: number; onSave: (name: string, startedAt: number) => void; onClose: () => void }) {
-  const [text, setText] = useState(name);
+// The game's name, the day it was played and, if wanted, where and when play
+// started and stopped - set from a long press on the game box. A new day
+// keeps the time of day it started; anything left empty isn't shown.
+type GameLabel = { name: string; startedAt: number; startTime: string; endTime: string; location: string };
+
+function NameSheet({ initial, onSave, onClose }: { initial: GameLabel; onSave: (label: GameLabel) => void; onClose: () => void }) {
+  const [text, setText] = useState(initial.name);
   const trimmed = text.trim();
   const day = (at: number) => {
     const d = new Date(at);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   };
-  const [date, setDate] = useState(() => day(startedAt));
+  const [date, setDate] = useState(() => day(initial.startedAt));
+  const [startTime, setStartTime] = useState(initial.startTime);
+  const [endTime, setEndTime] = useState(initial.endTime);
+  const [location, setLocation] = useState(initial.location);
   const nextStart = () => {
     const [y, m, d] = date.split("-").map(Number);
-    if (!y || !m || !d) return startedAt;
-    const at = new Date(startedAt);
+    if (!y || !m || !d) return initial.startedAt;
+    const at = new Date(initial.startedAt);
     at.setFullYear(y, m - 1, d);
     return at.getTime();
   };
-  const changed = trimmed !== name || day(nextStart()) !== day(startedAt);
-  const save = () => changed && onSave(trimmed, nextStart());
+  const label = (name: string): GameLabel => ({ name, startedAt: nextStart(), startTime, endTime, location: location.trim() });
+  const changed =
+    trimmed !== initial.name ||
+    day(nextStart()) !== day(initial.startedAt) ||
+    startTime !== initial.startTime ||
+    endTime !== initial.endTime ||
+    location.trim() !== initial.location;
+  const save = () => changed && onSave(label(trimmed));
   return (
     <Sheet
-      title="Name and date"
-      subtitle="Shown on the table, in History and on the 結帳 image"
+      title="Game details"
+      subtitle="Shown on the table and in History - the name on the 結帳 image too"
       onClose={onClose}
       actions={
         <>
-          {name && (
-            <button type="button" className="sc-secondary" onClick={() => onSave("", nextStart())}>
+          {initial.name && (
+            <button type="button" className="sc-secondary" onClick={() => onSave(label(""))}>
               Clear name
             </button>
           )}
@@ -2211,9 +2224,25 @@ function NameSheet({ name, startedAt, onSave, onClose }: { name: string; started
         />
       </label>
       <label className="sc-field">
+        <span className="sc-label">Location</span>
+        <input className="sc-input sc-input-full" value={location} maxLength={32} placeholder="Optional" onChange={(e) => setLocation(e.target.value)} />
+      </label>
+      <label className="sc-field">
         <span className="sc-label">Date</span>
         <input className="sc-input sc-input-full" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
       </label>
+      {/* Optional, each: left empty, it isn't shown. */}
+      <div className="sc-time-pair">
+        <label className="sc-field">
+          <span className="sc-label">Start</span>
+          <input className="sc-input sc-input-full" type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} />
+        </label>
+        <label className="sc-field">
+          <span className="sc-label">End</span>
+          <input className="sc-input sc-input-full" type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} />
+        </label>
+      </div>
+      <span className="sc-help">Location, start and end are optional - left empty, they aren't shown.</span>
     </Sheet>
   );
 }
@@ -3285,12 +3314,12 @@ function Board({
         {/* Where the game is - round and deal, the 局 count, and 第幾圈 /
             第幾個東 (連莊 is on the dealer's badge) - in the empty corner
             beside the top seat. */}
-        {/* A long press names (and dates) the game. */}
+        {/* A long press opens the game's details: name, place, date, times. */}
         <div
           className="sc-status"
           role="button"
           tabIndex={0}
-          aria-label={`${game.name ? `${game.name}, ` : ""}${state.label}. Long-press to name or date this game`}
+          aria-label={`${game.name ? `${game.name}, ` : ""}${state.label}. Long-press for this game's details`}
           {...namePress}
           onKeyDown={(e) => e.key === "Enter" && setSheet({ kind: "name" })}
         >
@@ -3303,6 +3332,8 @@ function Board({
           </span>
           {/* The day this game started - today, for tonight's game. */}
           <span className="sc-status-meta">{new Date(game.startedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</span>
+          {playTimes(game) && <span className="sc-status-meta">{playTimes(game)}</span>}
+          {game.location && <span className="sc-status-meta sc-status-place">{game.location}</span>}
         </div>
         {/* 籌碼: who hands whom chips for what just went in (or back out) - in
             the other corner beside the top seat. A tap once they're handed over. */}
@@ -3548,13 +3579,12 @@ function Board({
       )}
       {sheet?.kind === "name" && (
         <NameSheet
-          name={game.name ?? ""}
-          startedAt={game.startedAt}
+          initial={{ name: game.name ?? "", startedAt: game.startedAt, startTime: game.startTime ?? "", endTime: game.endTime ?? "", location: game.location ?? "" }}
           onClose={close}
-          onSave={(name, startedAt) => {
-            update({ ...game, name: name || undefined, startedAt });
+          onSave={({ name, startedAt, startTime, endTime, location }) => {
+            update({ ...game, name: name || undefined, startedAt, startTime: startTime || undefined, endTime: endTime || undefined, location: location || undefined });
             close();
-            flash(name !== (game.name ?? "") ? (name ? `Named “${name}”` : "Name cleared") : "Date changed");
+            flash(name !== (game.name ?? "") ? (name ? `Named “${name}”` : "Name cleared") : "Saved");
           }}
         />
       )}
@@ -4455,6 +4485,8 @@ function HistoryCard({ store, games, current, onPick, onDelete }: { store: Score
                 <span className="sc-game-date">
                   {g.name && <strong>{g.name} · </strong>}
                   {g === store.active ? "In progress" : new Date(g.startedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+                  {playTimes(g) && ` · ${playTimes(g)}`}
+                  {g.location && ` · ${g.location}`}
                   <span className="sc-help"> · {st.hands.length}局</span>
                   {g.id === current && <span className="sc-chip-accent">Showing</span>}
                 </span>
