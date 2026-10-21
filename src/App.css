@@ -9119,8 +9119,8 @@ details.sc-stat-group:not([open]) {
   white-space: nowrap;
 }
 
-/* Best / lowest at the table: a small flame (on fire) or snowflake (gone
-   cold), drawn in the icons' line style - warm amber, cool blue. */
+/* Best / lowest at the table: a small thumbs up or down in the table's own
+   green and red - the colours of a plus and a minus score. */
 .sc-mark {
   display: inline-flex;
   align-items: center;
@@ -9134,21 +9134,11 @@ details.sc-stat-group:not([open]) {
 }
 
 .sc-mark.is-best {
-  color: #e8590c;
+  color: var(--sc-pos);
 }
 
 .sc-mark.is-worst {
-  color: #3b82c4;
-}
-
-@media (prefers-color-scheme: dark) {
-  .sc-mark.is-best {
-    color: #ff8a3d;
-  }
-
-  .sc-mark.is-worst {
-    color: #6aa9e0;
-  }
+  color: var(--sc-neg);
 }
 
 .sc-stat strong {
