@@ -5,9 +5,10 @@
 // name, value, type; page 2 how scoring works; then each family, its tiers,
 // and each pattern with an example hand.
 
+import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { PatternExampleView } from "./PatternExample";
-import { TileStyleContext } from "./tileArt";
+import { rasterizeTileArt, TileArtRemapContext, TileStyleContext } from "./tileArt";
 import { FAMILY_GUIDE, GENERAL_RULES, PATTERN_GUIDE } from "./lib/patternGuide";
 import { DEFAULT_TAI_RULES, effectiveReplaces, HAND_SHAPES, PATTERNS, type PatternRule, type TaiRules } from "./lib/scoring";
 import { LADDERS, PATTERN_CATALOG, PATTERN_FAMILIES, type Ladder, type PatternFamily } from "./lib/taiCatalog";
@@ -32,6 +33,45 @@ const GROUPS = PATTERN_FAMILIES.map((f) => {
   return { ...f, ladders, ids };
 }).filter((g) => g.ids.length > 0);
 
+// Page 1's four columns, split here rather than by CSS multi-column, which
+// Safari's engine doesn't keep when printing (everything falls into one long
+// column over several pages). A family can run on into the next column,
+// which then repeats its heading marked "cont."; a heading never ends a
+// column on its own.
+type SummaryLine = { kind: "family"; group: (typeof GROUPS)[number]; cont: boolean } | { kind: "row"; id: string };
+const SUMMARY_COLUMNS: SummaryLine[][] = (() => {
+  const lines: SummaryLine[] = GROUPS.flatMap((g) => [{ kind: "family" as const, group: g, cont: false }, ...g.ids.map((id) => ({ kind: "row" as const, id }))]);
+  const perColumn = Math.ceil(lines.length / 4);
+  const columns: SummaryLine[][] = [[]];
+  let group = GROUPS[0];
+  for (const line of lines) {
+    let column = columns[columns.length - 1];
+    const full = column.length >= perColumn - (line.kind === "family" ? 1 : 0);
+    if (full && columns.length < 4) {
+      column = [];
+      columns.push(column);
+      if (line.kind === "row") column.push({ kind: "family", group, cont: true });
+    }
+    if (line.kind === "family") group = line.group;
+    column.push(line);
+  }
+  return columns;
+})();
+
+function SummaryRow({ id, rule, changed }: { id: string; rule: PatternRule; changed: boolean }) {
+  const v = valueOf(id, rule);
+  return (
+    <div className={`rr-sum-row${rule.enabled ? "" : " is-off"}`}>
+      <span className="rr-sum-name">
+        {shortName(id)}
+        {changed && <span className="rr-mark" aria-label="changed from the house rules" />}
+      </span>
+      <span className="rr-sum-value">{rule.enabled ? v.value : "off"}</span>
+      <span className="rr-sum-type">{rule.enabled ? v.type : ""}</span>
+    </div>
+  );
+}
+
 /** A pattern's value in words: "5", "2 each", "5 · 25 · 125…", "1, +2 per 連莊". */
 function valueOf(id: string, rule: PatternRule): { value: string; type: string; long: string } {
   const v = PATTERN_CATALOG[id].value;
@@ -49,6 +89,22 @@ function valueOf(id: string, rule: PatternRule): { value: string; type: string; 
 }
 
 export function RulesReference({ name, rules, onClose }: { name: string; rules: TaiRules; onClose: () => void }) {
+  // Every tile kind as one shared PNG for printing (see TileArtRemapContext);
+  // 120 px tall is several times the printed size, so they stay sharp.
+  const [pngs, setPngs] = useState<Map<string, string> | null>(null);
+  useEffect(() => {
+    let live = true;
+    let made: Map<string, string> | null = null;
+    void rasterizeTileArt(120).then((map) => {
+      made = map;
+      if (live) setPngs(map);
+      else for (const url of map.values()) URL.revokeObjectURL(url);
+    });
+    return () => {
+      live = false;
+      if (made) for (const url of made.values()) URL.revokeObjectURL(url);
+    };
+  }, []);
   const legacy = rules.engine === "legacy";
   // Under the original engine the house list is what scores.
   const shown = legacy ? DEFAULT_TAI_RULES : rules;
@@ -59,14 +115,15 @@ export function RulesReference({ name, rules, onClose }: { name: string; rules: 
 
   return createPortal(
     <TileStyleContext.Provider value="art">
+      <TileArtRemapContext.Provider value={pngs}>
       <div className="rr-overlay" role="dialog" aria-modal="true" aria-label="Rules reference">
         <div className="rr-toolbar">
           <button type="button" className="sc-secondary" onClick={onClose}>
             Close
           </button>
           <span className="rr-toolbar-hint">A4 · choose "Save as PDF" in the print dialog</span>
-          <button type="button" className="sc-primary" onClick={() => window.print()}>
-            Print / Save as PDF
+          <button type="button" className="sc-primary" onClick={() => window.print()} disabled={!pngs}>
+            {pngs ? "Print / Save as PDF" : "Preparing…"}
           </button>
         </div>
 
@@ -87,28 +144,23 @@ export function RulesReference({ name, rules, onClose }: { name: string; rules: 
             </header>
 
             <div className="rr-columns">
-              {GROUPS.map((g) => (
-                <div key={g.id} className="rr-sum-group">
-                  <div className="rr-sum-family">
-                    {g.label}
-                    {/* A tier that stacks in this set, rather than only its highest counting. */}
-                    {!legacy && g.ladders.some((l) => isLadderChanged(rules, l.id)) && <span className="rr-mark" aria-label="tier changed" />}
-                  </div>
-                  {g.ids.map((id) => {
-                    const rule = shown.patterns[id];
-                    const v = valueOf(id, rule);
-                    const changed = !legacy && isRowChanged(id, rule);
-                    return (
-                      <div key={id} className={`rr-sum-row${rule.enabled ? "" : " is-off"}`}>
-                        <span className="rr-sum-name">
-                          {shortName(id)}
-                          {changed && <span className="rr-mark" aria-label="changed from the house rules" />}
-                        </span>
-                        <span className="rr-sum-value">{rule.enabled ? v.value : "off"}</span>
-                        <span className="rr-sum-type">{rule.enabled ? v.type : ""}</span>
+              {SUMMARY_COLUMNS.map((column, ci) => (
+                <div key={ci} className="rr-col">
+                  {column.map((line) =>
+                    line.kind === "family" ? (
+                      <div key={`${line.group.id}${line.cont ? "+" : ""}`} className="rr-sum-family">
+                        {/* Continued: just the Chinese name, so the heading stays on one line. */}
+                        {line.cont ? line.group.label.split(" ")[0] : line.group.label}
+                        {line.cont && <span className="rr-sum-cont">cont.</span>}
+                        {/* A tier that stacks in this set, rather than only its highest counting. */}
+                        {!line.cont && !legacy && line.group.ladders.some((l) => isLadderChanged(rules, l.id)) && (
+                          <span className="rr-mark" aria-label="tier changed" />
+                        )}
                       </div>
-                    );
-                  })}
+                    ) : (
+                      <SummaryRow key={line.id} id={line.id} rule={shown.patterns[line.id]} changed={!legacy && isRowChanged(line.id, shown.patterns[line.id])} />
+                    ),
+                  )}
                 </div>
               ))}
             </div>
@@ -190,6 +242,7 @@ export function RulesReference({ name, rules, onClose }: { name: string; rules: 
 
         </article>
       </div>
+      </TileArtRemapContext.Provider>
     </TileStyleContext.Provider>,
     document.body,
   );
