@@ -36,6 +36,7 @@ import {
   type ScoreSettings,
   type ScoreStore,
   type WinnerEntry,
+  bonusPresets,
   chipMoves,
   evenShares,
   playTimes,
@@ -588,7 +589,7 @@ type HandInitial = {
   entries?: DraftEntry[];
   patternsFor?: number;
   // Fixing a 特別獎罰 entry: the tab opens as it was recorded.
-  bonus?: { kind: "獎" | "罰"; other: number | null; amount: number };
+  bonus?: { kind: "獎" | "罰"; other: number | null; amount: number; name?: string };
   // Fixing a 詐胡 entry: each player's amount as recorded.
   zhaHu?: { player: string; amount: number }[];
 };
@@ -1098,11 +1099,11 @@ function ZhaHuSheet({
   );
 }
 
-function PayTable({ cols, rows, empty, highTitle }: { cols: PayCol[]; rows: PayRow[]; empty: string; highTitle?: string }) {
+function PayTable({ cols, rows, empty, highTitle }: { cols: PayCol[]; rows: PayRow[]; empty: ReactNode; highTitle?: string }) {
   return (
     <div className="sc-paytable" aria-live="polite">
       {rows.length === 0 ? (
-        <p className="sc-paytable-empty">{empty}</p>
+        typeof empty === "string" ? <p className="sc-paytable-empty">{empty}</p> : empty
       ) : (
         <table aria-label="Who pays what">
           <colgroup>
@@ -1167,14 +1168,24 @@ function BonusSheet({
   // null = everyone else.
   const [other, setOther] = useState<number | null>(initial?.other ?? null);
   const [amount, setAmount] = useState(initial ? String(initial.amount) : "");
+  // A 預設獎罰 picked (花, 暗槓…): its name goes on the entry, until the
+  // amount or its way is changed by hand.
+  const [preset, setPreset] = useState<string | null>(initial?.name ?? null);
+  const presets = bonusPresets(state.settings);
   const n = Number(amount || 0);
+  const pick = (p: { name: string; kind: "獎" | "罰"; amount: number }) => {
+    setKind(p.kind);
+    setOther(null);
+    setAmount(String(p.amount));
+    setPreset(p.name);
+  };
   return (
     <Sheet
       title={
         <span className="sc-sheet-who">
           <Monogram store={store} player={player} />
           {player}
-          <span className={`sc-sheet-verb${kind === "罰" ? " is-penalty" : ""}`}>特別{kind}</span>
+          <span className={`sc-sheet-verb${kind === "罰" ? " is-penalty" : ""}`}>{preset ?? `特別${kind}`}</span>
         </span>
       }
       onClose={onClose}
@@ -1186,7 +1197,7 @@ function BonusSheet({
             type="button"
             className={kind === "獎" ? "sc-primary" : "sc-danger"}
             disabled={n <= 0}
-            onClick={() => onDone({ t: "bonus", at: Date.now(), seat, amount: n, kind, ...(other !== null ? { other } : {}) })}
+            onClick={() => onDone({ t: "bonus", at: Date.now(), seat, amount: n, kind, ...(other !== null ? { other } : {}), ...(preset ? { name: preset } : {}) })}
           >
             Confirm
           </button>
@@ -1227,15 +1238,26 @@ function BonusSheet({
               className={`sc-kind-${k === "獎" ? "reward" : "penalty"}${kind === k ? " is-on" : ""}`}
               aria-pressed={kind === k}
               aria-label={k === "獎" ? "獎 Reward" : "罰 Penalty"}
-              onClick={() => setKind(k)}
+              onClick={() => {
+                if (k !== kind) setPreset(null);
+                setKind(k);
+              }}
             >
               {k}
             </button>
           ))}
         </span>
       </div>
-      <Keypad max={state.settings.scoreCap} value={amount} onChange={setAmount} />
-      {/* Who pays whom, in the same table as 食胡 - and the same size. */}
+      <Keypad
+        max={state.settings.scoreCap}
+        value={amount}
+        onChange={(v) => {
+          setAmount(v);
+          setPreset(null);
+        }}
+      />
+      {/* Who pays whom, in the same table as 食胡 - and the same size. Empty,
+          it holds the 預設獎罰 quick picks instead, so they take no room. */}
       <PayTable
         cols={[{ key: "to", label: "To", wide: true }]}
         rows={
@@ -1247,7 +1269,23 @@ function BonusSheet({
                   : { who: player, cells: { to: state.seats[s2] }, total: n },
               )
         }
-        empty="Enter an amount to see who pays what"
+        empty={
+          presets.length > 0 ? (
+            <div className="sc-presets" role="group" aria-label="預設獎罰">
+              {presets.map((p) => (
+                <button key={p.name} type="button" className={`sc-preset is-${p.kind === "獎" ? "reward" : "penalty"}`} onClick={() => pick(p)}>
+                  <strong>{p.name}</strong>
+                  <span>
+                    {p.kind === "獎" ? "+" : "−"}
+                    {fmt(p.amount)}
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            "Enter an amount to see who pays what"
+          )
+        }
       />
     </Sheet>
   );
@@ -2659,6 +2697,17 @@ const SETTING_GROUPS: { title: string; rows: { key: keyof ScoreSettings; label: 
     ],
   },
   {
+    title: "特別獎罰 Bonuses",
+    rows: [
+      { key: "bonusPresets", label: "預設獎罰", help: "Quick picks on the 特別獎罰 tab", kind: "bool" },
+      { key: "presetFlower", label: "花", help: "Receive from each player", kind: "number", needs: "bonusPresets" },
+      { key: "presetGrass", label: "草", help: "Receive from each player", kind: "number", needs: "bonusPresets" },
+      { key: "presetKong", label: "暗槓", help: "Receive from each player", kind: "number", needs: "bonusPresets" },
+      { key: "presetSnake", label: "蛇骰", help: "Pay each player", kind: "number", needs: "bonusPresets" },
+      { key: "presetTriple", label: "圍骰", help: "Receive from each player", kind: "number", needs: "bonusPresets" },
+    ],
+  },
+  {
     title: "Jackpot",
     rows: [
       { key: "jackpot", label: "Jackpot", kind: "bool" },
@@ -2896,7 +2945,8 @@ function ChipsCard({ verb, list, autoHide, onDone }: { verb: string; list: { fro
     if (!grid) return;
     const was = grid.classList.contains("is-stacked");
     grid.classList.remove("is-stacked");
-    const tooWide = grid.scrollWidth > grid.clientWidth + 1;
+    // Too wide: the card overflows, or a receiver's name doesn't fit its column.
+    const tooWide = grid.scrollWidth > grid.clientWidth + 1 || [...grid.querySelectorAll(".sc-chips-to")].some((el) => el.scrollWidth > el.clientWidth + 1);
     grid.classList.toggle("is-stacked", was);
     setStacked(tooWide);
   }, [list]);
@@ -2936,7 +2986,7 @@ function ChipsCard({ verb, list, autoHide, onDone }: { verb: string; list: { fro
 function EventRow({ ev, deltas }: { ev: ScoreEvent; deltas: Record<string, number> }) {
   const label =
     ev.t === "bonus"
-      ? `特別${ev.kind} · ${fmt(ev.amount)}${ev.other === undefined ? " each" : ""}`
+      ? `${ev.name ?? `特別${ev.kind}`} · ${fmt(ev.amount)}${ev.other === undefined ? " each" : ""}`
       : ev.t === "surrender"
         ? `${ev.pulled} 投降 · ${ev.holder}'s 拉 ended`
         : ev.t === "swap"
@@ -3090,7 +3140,7 @@ function describeEvent(ev: ScoreEvent, state: ReplayState, i: number): string {
   if (ev.t === "bonus") {
     const step = state.steps.find((x) => x.eventIndex === i);
     const me = Object.entries(step?.deltas ?? {}).find(([, d]) => (ev.kind === "獎" ? d > 0 : d < 0))?.[0];
-    return `${me ?? ""} 特別${ev.kind} ${fmt(ev.amount)}`.trim();
+    return `${me ?? ""} ${ev.name ?? `特別${ev.kind}`} ${fmt(ev.amount)}`.trim();
   }
   if (ev.t === "surrender") return `${ev.pulled} 投降`;
   if (ev.t === "jackpot") return "Jackpot handed out";
@@ -3706,7 +3756,7 @@ function Board({
           }
           onClose={close}
           onDone={(ev) => {
-            if (sheet.editIndex === undefined) return add(ev, ev.t === "bonus" ? `Recorded 特別${ev.kind}` : ev.t === "zhaHu" ? "Recorded 詐胡" : "Recorded ✓");
+            if (sheet.editIndex === undefined) return add(ev, ev.t === "bonus" ? `Recorded ${ev.name ?? `特別${ev.kind}`}` : ev.t === "zhaHu" ? "Recorded 詐胡" : "Recorded ✓");
             update(replaceEvent(game, sheet.editIndex, ev));
             close();
             flash("Entry fixed - later hands updated");
@@ -3725,7 +3775,7 @@ function Board({
                 kind: "hand",
                 seat: ev.seat,
                 mode: "bonus",
-                initial: { selfDraw: false, patterns: [], bonus: { kind: ev.kind, other: ev.other ?? null, amount: ev.amount } },
+                initial: { selfDraw: false, patterns: [], bonus: { kind: ev.kind, other: ev.other ?? null, amount: ev.amount, ...(ev.name ? { name: ev.name } : {}) } },
                 editIndex: sheet.index,
               });
             if (ev?.t === "zhaHu")
@@ -4651,7 +4701,7 @@ function StatsPanel({ store, setStore, view, setView }: { store: ScoreStore; set
 // own rows, or folded into the hand they happened during.
 type SheetRow =
   | { kind: "hand"; key: string; h: HandResult; deltas: Record<string, number>; bonuses: number; payIns: number }
-  | { kind: "bonus"; key: string; label: "獎" | "罰" | "獎罰" | "詐胡"; deltas: Record<string, number> }
+  | { kind: "bonus"; key: string; label: string; deltas: Record<string, number> } // 獎 / 罰, a 預設獎罰's name, 獎罰 or 詐胡
   | { kind: "jackpot"; key: string; deltas: Record<string, number> };
 
 const SHEET_VIEW_KEY = "mjwaits.sheetView";
@@ -4703,7 +4753,7 @@ function HandsTable({ store, game, state }: { store: ScoreStore; game: ScoreGame
         pending = null;
       } else if (ev.t === "bonus" || ev.t === "zhaHu") {
         if (merge) fold(deltas, false);
-        else out.push({ kind: "bonus", key: `b${i}`, label: ev.t === "zhaHu" ? "詐胡" : ev.kind, deltas });
+        else out.push({ kind: "bonus", key: `b${i}`, label: ev.t === "zhaHu" ? "詐胡" : (ev.name ?? ev.kind), deltas });
       } else if (ev.t === "jackpotIn" && merge) {
         fold(deltas, true);
       } else if ((ev.t === "jackpot" || ev.t === "jackpotIn") && Object.values(deltas).some((d) => d !== 0)) {

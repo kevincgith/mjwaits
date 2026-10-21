@@ -53,6 +53,14 @@ export interface ScoreSettings {
   quickScan: boolean; // 快速掃描 - a Scan button on each player's card
   chipsPrompt: boolean; // 籌碼提示 - who hands whom chips, after each entry that moves points
   tipsAutoHide: number | null; // 提示自動隱藏 - seconds a passing card (籌碼, the banners) stays before it goes by itself; null = until closed
+  // 預設獎罰 - quick picks on the 特別獎罰 tab, each what one player gets from
+  // (or, 蛇骰, pays) each of the others.
+  bonusPresets: boolean;
+  presetFlower: number; // 花 - receive from each
+  presetGrass: number; // 草 - receive from each
+  presetKong: number; // 暗槓 - receive from each
+  presetSnake: number; // 蛇骰 - pay each
+  presetTriple: number; // 圍骰 - receive from each
   zhaHu: number | null; // 詐胡 - what a false win pays each other player by default (each can be changed); null = off
 }
 
@@ -78,8 +86,27 @@ export const DEFAULT_SETTINGS: ScoreSettings = {
   quickScan: true,
   chipsPrompt: true,
   tipsAutoHide: 30,
+  bonusPresets: true,
+  presetFlower: 5,
+  presetGrass: 3,
+  presetKong: 5,
+  presetSnake: 5,
+  presetTriple: 5,
   zhaHu: 40,
 };
+
+// The 預設獎罰 quick picks, from the settings: what each is called, which way
+// it goes, and how much from (or to) each other player.
+export function bonusPresets(settings: ScoreSettings): { name: string; kind: "獎" | "罰"; amount: number }[] {
+  if (!settings.bonusPresets) return [];
+  return [
+    { name: "花", kind: "獎" as const, amount: settings.presetFlower },
+    { name: "草", kind: "獎" as const, amount: settings.presetGrass },
+    { name: "暗槓", kind: "獎" as const, amount: settings.presetKong },
+    { name: "蛇骰", kind: "罰" as const, amount: settings.presetSnake },
+    { name: "圍骰", kind: "獎" as const, amount: settings.presetTriple },
+  ].filter((p) => p.amount > 0);
+}
 
 export interface PatternNote {
   id: string;
@@ -101,7 +128,8 @@ export type ScoreEvent =
   // 特別獎罰: 獎 - the seat's player is paid `amount`; 罰 - they pay it. With
   // `other`, just that one player pays (獎) or is paid (罰); without it, each
   // of the other three does.
-  | { t: "bonus"; at: number; seat: number; amount: number; kind: "獎" | "罰"; other?: number }
+  // name: a 預設獎罰's, when it came from one (花, 暗槓…) - shown in its place.
+  | { t: "bonus"; at: number; seat: number; amount: number; kind: "獎" | "罰"; other?: number; name?: string }
   | { t: "surrender"; at: number; holder: string; pulled: string }
   | { t: "jackpot"; at: number; shares: { player: string; amount: number }[] }
   | { t: "jackpotIn"; at: number; shares: { player: string; amount: number }[] } // paid into the pot
