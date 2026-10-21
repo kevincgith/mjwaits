@@ -1452,11 +1452,12 @@ function SeatsSheet({
     setPicked(null);
     setSeats(change);
   };
-  // 起莊's corner belongs to a seat, not a player: when a change moves it to
-  // another seat it flies there (a copy, above the sheet, on the 莊 badge's
-  // arc) rather than riding in on whichever card now sits there. Measured
-  // against the map, before the cards start sliding (so this runs first).
-  const lastQi = useRef<{ seat: number; x: number; y: number } | null>(null);
+  // 起莊's corner belongs to a seat, not a player. When the card that had it
+  // slides to its new seat (a rotation, say), it simply rides along on that
+  // card. Otherwise it flies there on its own (a copy, above the sheet, on the
+  // 莊 badge's arc) rather than arriving on some other card. Measured against
+  // the map, before the cards start sliding (so this runs first).
+  const lastQi = useRef<{ seat: number; player: string; x: number; y: number } | null>(null);
   const lastSeats = useRef(seats.join("|"));
   // The copy in flight - a later render mustn't cut it short, only a new move.
   const qiFlight = useRef<(() => void) | null>(null);
@@ -1471,9 +1472,9 @@ function SeatsSheet({
     if (!map || !corner || !card) return;
     const box = map.getBoundingClientRect();
     const to = corner.getBoundingClientRect();
-    const now = { seat: seats.indexOf(card.dataset.player!), x: to.left - box.left, y: to.top - box.top };
+    const now = { seat: seats.indexOf(card.dataset.player!), player: card.dataset.player!, x: to.left - box.left, y: to.top - box.top };
     lastQi.current = now;
-    if (!prev || prev.seat === now.seat || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    if (!prev || prev.seat === now.seat || (seatsMoved && prev.player === now.player) || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     const style = getComputedStyle(corner);
     const flyer = corner.cloneNode(true) as HTMLElement;
     Object.assign(flyer.style, {
