@@ -247,17 +247,17 @@ const Icons = {
       <path d="M12 8v4l2.8 1.8" />
     </svg>
   ),
-  // 玩家's best / lowest at the table: on fire, gone cold.
-  hot: (
+  // 玩家's best / lowest at the table.
+  thumbUp: (
     <svg {...ICON} width={14} height={14} strokeWidth={2}>
-      <path d="M12 21c3.9 0 6.5-2.6 6.5-6.2 0-3.4-2.4-5.6-3.9-7.6-.4 1.9-1.4 3.1-2.6 3.6.3-3.2-1.3-6-3.9-7.8.2 3.4-1.7 5.4-3.1 7.4-1 1.4-1.6 2.9-1.6 4.4C3.4 18.4 6.1 21 9.9 21" />
-      <path d="M12 21c-1.7 0-2.9-1.2-2.9-2.8 0-1.6 1.5-2.7 2.5-4.2.6 1.2 1.5 1.8 2.3 2 .4.7.6 1.4.6 2.1 0 1.7-1.1 2.9-2.5 2.9Z" />
+      <path d="M7 10v11" />
+      <path d="M15 5.9 14 10h5.8a2 2 0 0 1 1.9 2.6l-2.3 7A2 2 0 0 1 17.5 21H4.5A1.5 1.5 0 0 1 3 19.5v-8A1.5 1.5 0 0 1 4.5 10h2.8a2 2 0 0 0 1.8-1.1L12 3a3 3 0 0 1 3 2.9Z" />
     </svg>
   ),
-  cold: (
+  thumbDown: (
     <svg {...ICON} width={14} height={14} strokeWidth={2}>
-      <path d="M12 3v18M4.2 7.5l15.6 9M4.2 16.5l15.6-9" />
-      <path d="M9.5 4.5 12 7l2.5-2.5M9.5 19.5 12 17l2.5 2.5M4.5 10.4l3.4.9-.9 3.4M19.5 13.6l-3.4-.9.9-3.4M7 9.3l.9 3.4-3.4.9M17 14.7l-.9-3.4 3.4-.9" />
+      <path d="M17 14V3" />
+      <path d="M9 18.1 10 14H4.2a2 2 0 0 1-1.9-2.6l2.3-7A2 2 0 0 1 6.5 3h13A1.5 1.5 0 0 1 21 4.5v8a1.5 1.5 0 0 1-1.5 1.5h-2.8a2 2 0 0 0-1.8 1.1L12 21a3 3 0 0 1-3-2.9Z" />
     </svg>
   ),
   close: (
@@ -4215,7 +4215,7 @@ function StatRanking({ store, stats, row, player, onClose }: { store: ScoreStore
               <Monogram store={store} player={p} size="sm" />
               <span className="sc-ranking-name">
                 {p}
-                {mark && <span className={`sc-mark is-${mark}`}>{mark === "best" ? Icons.hot : Icons.cold}</span>}
+                {mark && <span className={`sc-mark is-${mark}`}>{mark === "best" ? Icons.thumbUp : Icons.thumbDown}</span>}
               </span>
               <span className="sc-stat-value">
                 <strong className={t !== undefined ? tone(t) : undefined}>{row.show(x)}</strong>
@@ -4311,7 +4311,7 @@ function PlayerCard({ store, stats, state, index, onIndex }: { store: ScoreStore
                       {r.zh}
                       {m && (
                         <span className={`sc-mark is-${m}`} title={m === "best" ? "Best at the table" : "Lowest at the table"}>
-                          {m === "best" ? Icons.hot : Icons.cold}
+                          {m === "best" ? Icons.thumbUp : Icons.thumbDown}
                         </span>
                       )}
                     </span>
@@ -4350,7 +4350,7 @@ function PlayerCard({ store, stats, state, index, onIndex }: { store: ScoreStore
       )}
       {ranking && <StatRanking store={store} stats={stats} row={ranking} player={s.player} onClose={() => setRanking(null)} />}
       <p className="sc-help sc-stat-key">撳任何一項睇全場排名 · Tap a stat to see everyone<br />
-        <span className="sc-mark is-best">{Icons.hot}</span> 全場最好 · <span className="sc-mark is-worst">{Icons.cold}</span> 全場最差 - best and lowest at the table
+        <span className="sc-mark is-best">{Icons.thumbUp}</span> 全場最好 · <span className="sc-mark is-worst">{Icons.thumbDown}</span> 全場最差 - best and lowest at the table
       </p>
     </div>
   );
