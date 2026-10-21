@@ -24,7 +24,7 @@ rules turn that into tai. Everything about a pattern's rule is written in one pl
 | Ladder | Tiers within a family, lowest rung first (`LADDERS`): 三元牌 → 小三元 → 大三元, 兩 → 三 → 四 → 五暗刻, 混一色 → 清一色… A pattern replaces every lower rung that fires, so only the highest counts | One switch per ladder: "only the highest counts" (house list) or every tier stacks |
 | Replaces (**exclusion**) | Edges outside any ladder (天胡 replaces 門前清, 五槓子 replaces 槓…). Any pair with no edge and no shared ladder **stacks** | Add/remove edges; edges from the ladder show but change with its switch; "Replaced by" shows the reverse |
 | Hand shapes (**inclusion**) | Which of normal / 十三么 / 十六不搭 / 嚦咕嚦咕 it may count on | Switch each shape off and on, among the shapes that hand's scorer can evaluate (derived in `scoring.ts` as `eligibleShapes` - a fact about the scorer, not a rule) |
-| Blocks 大雞/大鴨 | Whether its firing stops 大雞/大鴨 - off for 底, the bonus tiles and purely declared state like 莊/叮/天胡 | A switch per pattern (大雞/大鴨 never count each other) |
+| Blocks 大雞/大鴨 | Whether its firing stops 大雞/大鴨 - off for 底, the bonus tiles and purely declared state like 莊/叮/天胡 | One list, "What 大雞/大鴨 ignore", at the top of the 大雞/大鴨 group - not per pattern (大雞/大鴨 never count each other) |
 
 How the scorer applies them: a disabled pattern, or one not included for the hand's shape, scores 0
 and replaces nothing. Replacing is a single pass: every pattern that fires drops its targets (ladder

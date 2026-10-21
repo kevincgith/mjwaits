@@ -3,7 +3,9 @@ import { DEFAULT_TAI_RULES, PATTERNS, scoreHand, type GameContext, type PatternR
 import { PATTERN_CATALOG } from "./taiCatalog";
 import {
   changedCount,
+  chickenIgnores,
   describeChanges,
+  isRowChanged,
   isDefaultRules,
   normalizeRules,
   replaceCycles,
@@ -218,6 +220,17 @@ describe("the changes list, fingerprint and diff", () => {
     expect(texts).toContain("三元 Dragons: every tier counts (stacks)");
     expect(texts.some((t) => t.startsWith("無花 not on"))).toBe(true);
     expect(describeChanges(DEFAULT_TAI_RULES)).toEqual([]);
+  });
+
+  it("keeps the 大雞/大鴨 ignore list as one setting", () => {
+    expect(chickenIgnores(DEFAULT_TAI_RULES)).toEqual(expect.arrayContaining(["base-tai", "dealer-streak", "riichi"]));
+    expect(chickenIgnores(DEFAULT_TAI_RULES)).not.toContain("self-draw");
+    const rules = withRules({ "dealer-streak": { blocksChicken: true } });
+    expect(chickenIgnores(rules)).not.toContain("dealer-streak");
+    const change = describeChanges(rules).find((c) => c.chicken);
+    expect(change?.text).toBe("大雞/大鴨 no longer ignore 莊");
+    // Its own row doesn't count as changed - the list has its own setting.
+    expect(isRowChanged("dealer-streak", rules.patterns["dealer-streak"])).toBe(false);
   });
 
   it("fingerprints only rules that score differently", () => {

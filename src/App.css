@@ -12633,3 +12633,20 @@ button.sc-stat:active {
 .tr-example-worth strong {
   color: var(--text);
 }
+
+/* 設定: 大雞/大鴨's ignore list, one setting at the top of their group. */
+.tr-chicken {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  border-radius: var(--radius-lg);
+  padding: 0.6rem 0.85rem 0.75rem;
+  background: var(--surface-sunken);
+}
+
+.tr-chicken-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}

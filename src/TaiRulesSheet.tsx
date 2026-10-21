@@ -41,13 +41,14 @@ import {
 } from "./lib/taiRuleSets";
 import {
   changedCount,
+  chickenIgnores,
   describeChanges,
+  isChickenListChanged,
+  isRowChanged,
   isLadderChanged,
-  isRuleChanged,
   ladderOf,
   replaceCycles,
   replacedBy,
-  ruleChanges,
   shortName,
   type RuleChange,
 } from "./lib/taiRules";
@@ -235,6 +236,12 @@ export function TaiRulesSheet({
     setOpenFamilies((prev) => new Set(prev).add(ladderFamily(l)));
     setReveal(`ladder:${id}`);
   };
+  const revealChicken = () => {
+    setQuery("");
+    setChangedOnly(false);
+    setOpenFamilies((prev) => new Set(prev).add("meta"));
+    setReveal("chicken");
+  };
   useEffect(() => {
     if (!reveal) return;
     document.querySelector(`[data-reveal="${reveal}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" });
@@ -242,7 +249,8 @@ export function TaiRulesSheet({
   }, [reveal]);
 
   const undo = (c: RuleChange) => {
-    if (c.target.kind === "pattern") resetRule(c.target.id);
+    if (c.chicken && c.target.kind === "pattern") setRule(c.target.id, { blocksChicken: DEFAULT_TAI_RULES.patterns[c.target.id].blocksChicken });
+    else if (c.target.kind === "pattern") resetRule(c.target.id);
     else if (c.target.kind === "ladder") setLadder(c.target.id, true);
   };
 
@@ -251,12 +259,15 @@ export function TaiRulesSheet({
   const filtering = query.trim() !== "" || changedOnly;
   const q = query.trim().toLowerCase();
   const matches = (id: string) =>
-    (!changedOnly || isRuleChanged(id, draft.patterns[id])) && (q === "" || (NAME_BY_ID.get(id) ?? "").toLowerCase().includes(q) || id.includes(q));
+    (!changedOnly || isRowChanged(id, draft.patterns[id])) && (q === "" || (NAME_BY_ID.get(id) ?? "").toLowerCase().includes(q) || id.includes(q));
   const groups = PATTERN_FAMILIES.map((f) => {
     const ladders = LADDERS.filter(
       (l) => ladderFamily(l) === f.id && (l.rungs.flat().some(matches) || (changedOnly && q === "" && isLadderChanged(draft, l.id))),
     );
-    const singles = PATTERNS.map((p) => p.id).filter((id) => PATTERN_CATALOG[id].family === f.id && !ON_LADDER.has(id) && matches(id));
+    const chickenChanged = f.id === "meta" && changedOnly && q === "" && isChickenListChanged(draft);
+    const singles = PATTERNS.map((p) => p.id).filter(
+      (id) => PATTERN_CATALOG[id].family === f.id && !ON_LADDER.has(id) && (matches(id) || chickenChanged),
+    );
     const ids = [...ladders.flatMap((l) => l.rungs.flat()), ...singles];
     return { ...f, ladders, singles, ids };
   }).filter((g) => g.ids.length > 0);
@@ -405,7 +416,9 @@ export function TaiRulesSheet({
                   <button
                     type="button"
                     className="tr-change-text"
-                    onClick={() => (c.target.kind === "pattern" ? revealPattern(c.target.id) : c.target.kind === "ladder" ? revealLadder(c.target.id) : undefined)}
+                    onClick={() =>
+                      c.chicken ? revealChicken() : c.target.kind === "pattern" ? revealPattern(c.target.id) : c.target.kind === "ladder" ? revealLadder(c.target.id) : undefined
+                    }
                   >
                     {c.text}
                   </button>
@@ -437,7 +450,9 @@ export function TaiRulesSheet({
           {groups.map((g) => {
             const open = filtering || openFamilies.has(g.id);
             const familyChanged =
-              g.ids.filter((id) => isRuleChanged(id, draft.patterns[id])).length + g.ladders.filter((l) => isLadderChanged(draft, l.id)).length;
+              g.ids.filter((id) => isRowChanged(id, draft.patterns[id])).length +
+              g.ladders.filter((l) => isLadderChanged(draft, l.id)).length +
+              (g.id === "meta" && isChickenListChanged(draft) ? 1 : 0);
             return (
               <div key={g.id} className="sc-settings-group">
                 <button type="button" className="tr-family" aria-expanded={open} onClick={() => toggleFamily(g.id)} disabled={filtering}>
@@ -452,6 +467,12 @@ export function TaiRulesSheet({
                 </button>
                 {open && (
                   <>
+                    {g.id === "meta" && (
+                      <ChickenIgnoreBlock
+                        ignored={chickenIgnores(draft)}
+                        onChange={(id, ignored) => setRule(id, { blocksChicken: !ignored })}
+                      />
+                    )}
                     {g.ladders.map((l) => (
                       <LadderBlock key={l.id} ladder={l} exclusive={draft.ladders[l.id]?.exclusive !== false} onExclusive={(v) => setLadder(l.id, v)}>
                         {[...l.rungs].reverse().map((rung, i) => (
@@ -525,7 +546,7 @@ function PatternRow({
 }) {
   const [zh, en] = splitName(id);
   const value = PATTERN_CATALOG[id].value;
-  const changed = Object.values(ruleChanges(id, rule)).some(Boolean);
+  const changed = isRowChanged(id, rule);
   const flatOrPer = value.kind === "flat" || value.kind === "per";
   return (
     <div className={`tr-pattern${rule.enabled ? "" : " is-disabled"}${expanded ? " is-expanded" : ""}`} data-reveal={id}>
@@ -690,16 +711,6 @@ function PatternDetails({
           })}
         </div>
       </div>
-
-      {!CHICKEN_PATTERN_IDS.has(id) && (
-        <label className="sc-row tr-detail">
-          <span className="sc-row-main sc-row-stack">
-            Blocks 大雞/大鴨
-            <span className="sc-help">When this applies, 大雞/大鴨 don't. Off for things that say nothing about the hand's shape, like 莊.</span>
-          </span>
-          <Toggle checked={rule.blocksChicken} onChange={(blocksChicken) => onChange({ blocksChicken })} label="Blocks 大雞/大鴨" />
-        </label>
-      )}
 
       {changed && (
         <button type="button" className="sc-secondary tr-reset" onClick={onReset}>
@@ -950,6 +961,58 @@ function PatternExampleView({ id, rules }: { id: string; rules: TaiRules }) {
           </>
         ) : (
           "Doesn't count here under this set"
+        )}
+      </div>
+    </div>
+  );
+}
+
+// 大雞/大鴨's one setting: which patterns they ignore - patterns that can
+// count and still leave 大雞/大鴨 standing (house list: 底, the bonus tiles,
+// and declared state that says nothing about the hand's shape, like 莊 and
+// 叮). Everything else that counts stops them.
+function ChickenIgnoreBlock({ ignored, onChange }: { ignored: string[]; onChange: (id: string, ignored: boolean) => void }) {
+  const houseIgnored = new Set(PATTERNS.filter((p) => !CHICKEN_PATTERN_IDS.has(p.id) && !DEFAULT_TAI_RULES.patterns[p.id].blocksChicken).map((p) => p.id));
+  const changed = ignored.length !== houseIgnored.size || ignored.some((id) => !houseIgnored.has(id));
+  const addable = PATTERNS.map((p) => p.id).filter((id) => !CHICKEN_PATTERN_IDS.has(id) && !ignored.includes(id));
+  return (
+    <div className="tr-chicken" data-reveal="chicken">
+      <div className="tr-chicken-head">
+        <span className="sc-row-main sc-row-stack">
+          <span className="tr-ladder-title">
+            What 大雞/大鴨 ignore
+            {changed && <span className="tr-dot" aria-label="changed" />}
+          </span>
+          <span className="sc-help">大雞/大鴨 count only when nothing else does - these can count alongside them.</span>
+        </span>
+      </div>
+      <div className="tr-chips">
+        {ignored.map((id) => (
+          <span key={id} className="tr-chip is-static">
+            {shortName(id)}
+            <button type="button" aria-label={`Stop ignoring ${shortName(id)}`} onClick={() => onChange(id, false)}>
+              ×
+            </button>
+          </span>
+        ))}
+        <select className="tr-add" value="" aria-label="Add a pattern 大雞/大鴨 ignore" onChange={(e) => e.target.value && onChange(e.target.value, true)}>
+          <option value="">+ Add</option>
+          {addable.map((id) => (
+            <option key={id} value={id}>
+              {NAME_BY_ID.get(id)}
+            </option>
+          ))}
+        </select>
+        {changed && (
+          <button
+            type="button"
+            className="tr-link"
+            onClick={() => {
+              for (const id of PATTERNS.map((p) => p.id)) if (!CHICKEN_PATTERN_IDS.has(id) && ignored.includes(id) !== houseIgnored.has(id)) onChange(id, houseIgnored.has(id));
+            }}
+          >
+            Reset
+          </button>
         )}
       </div>
     </div>
