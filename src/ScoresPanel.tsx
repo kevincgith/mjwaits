@@ -2636,37 +2636,30 @@ function useChipMoves(game: ScoreGame, state: ReplayState) {
   };
 }
 
-// Said in words, not arrows: everyone paying one player reads "凱文 收" over
-// each payer and amount; otherwise by payer, "Mandy 付" over each receiver
-// and amount. 彩池 is the Jackpot pile.
+// A line a payer, "A → B 10" for A pays B: "Mandy → 凱文 10", or
+// "Kelvin → 凱文 9  Mandy 2  Ah Wing 2", wrapping under the name only when
+// it must. 彩池 is the Jackpot pile.
 function ChipsCard({ verb, list, onDone }: { verb: string; list: { from: string; to: string; amount: number }[]; onDone: () => void }) {
-  const receivers = [...new Set(list.map((m) => m.to))];
-  const groups =
-    list.length > 1 && receivers.length === 1
-      ? [{ head: `${receivers[0]} 收`, rows: list.map((m) => ({ who: m.from, amount: m.amount })) }]
-      : [...new Set(list.map((m) => m.from))].map((payer) => ({
-          head: `${payer} 付`,
-          rows: list.filter((m) => m.from === payer).map((m) => ({ who: m.to, amount: m.amount })),
-        }));
+  const payers = [...new Set(list.map((m) => m.from))];
   const label = `籌碼${verb ? ` ${verb}` : ""}: ${list.map((m) => `${m.from} pays ${m.to} ${fmt(m.amount)}`).join(", ")}. Tap once handed over.`;
   return (
     <button type="button" className="sc-chips" onClick={onDone} aria-label={label}>
-      <span className="sc-chips-head">
+      <span className="sc-chips-head" aria-hidden="true">
         <span className="sc-chips-title">籌碼{verb && ` · ${verb}`}</span>
-        <span className="sc-chips-done" aria-hidden="true">
-          {Icons.check}
-        </span>
+        <span className="sc-chips-done">{Icons.check}</span>
       </span>
-      {groups.map((g) => (
-        <Fragment key={g.head}>
-          <span className="sc-chips-who">{g.head}</span>
-          {g.rows.map((r) => (
-            <span key={r.who} className="sc-chips-row">
-              <span className="sc-chips-name">{r.who}</span>
-              <strong>{fmt(r.amount)}</strong>
-            </span>
-          ))}
-        </Fragment>
+      {payers.map((payer) => (
+        <span key={payer} className="sc-chips-line" aria-hidden="true">
+          <span className="sc-chips-who">{payer}</span>
+          <span className="sc-chips-arrow">→</span>
+          {list
+            .filter((m) => m.from === payer)
+            .map((m) => (
+              <span key={m.to} className="sc-chips-item">
+                {m.to} <strong>{fmt(m.amount)}</strong>
+              </span>
+            ))}
+        </span>
       ))}
     </button>
   );
