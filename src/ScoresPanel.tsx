@@ -243,11 +243,6 @@ const Icons = {
       <path d="M6 6l12 12M18 6 6 18" />
     </svg>
   ),
-  check: (
-    <svg {...ICON} width={18} height={18}>
-      <path d="M5 12.5 10 17.5 19 7" />
-    </svg>
-  ),
   back: (
     <svg {...ICON} width={18} height={18}>
       <path d="M15 5l-7 7 7 7" />
@@ -2599,11 +2594,11 @@ type BoardSheet =
 
 // 籌碼提示: the chips to hand over for each change (see chipMoves) - a new
 // entry, or an undo / redo / fix / delete, which hands back the difference.
-// Stays up until ticked or the next change that moves chips replaces it.
+// Stays up until dismissed or the next change that moves chips replaces it.
 function useChipMoves(game: ScoreGame, state: ReplayState) {
   const last = useRef<{ id: string; events: ScoreEvent[]; state: ReplayState } | null>(null);
   // 投降 after 投降 (one by one in 拉踢) add up on the one card, from the
-  // state before the first of them - until the card is ticked or something
+  // state before the first of them - until the card is dismissed or something
   // else goes in.
   const surrenders = useRef<ReplayState | null>(null);
   const [moves, setMoves] = useState<{ at: number; verb: string; list: { from: string; to: string; amount: number }[] } | null>(null);
@@ -2663,7 +2658,7 @@ function AutoHide({ seconds, onHide, children }: { seconds: number | null; onHid
 function ChipsCard({ verb, list, autoHide, onDone }: { verb: string; list: { from: string; to: string; amount: number }[]; autoHide: number | null; onDone: () => void }) {
   const payers = [...new Set(list.map((m) => m.from))];
   // 提示自動隱藏: gone by itself after that many seconds (a bar along the foot
-  // runs down); off, it stays until ticked. A new change brings a new card
+  // runs down); off, it stays until dismissed. A new change brings a new card
   // and a fresh count.
   useEffect(() => {
     if (autoHide === null) return;
@@ -2683,12 +2678,12 @@ function ChipsCard({ verb, list, autoHide, onDone }: { verb: string; list: { fro
     grid.classList.toggle("is-stacked", was);
     setStacked(tooWide);
   }, [list]);
-  const label = `籌碼${verb ? ` ${verb}` : ""}: ${list.map((m) => `${m.from} pays ${m.to} ${fmt(m.amount)}`).join(", ")}. Tap once handed over.`;
+  const label = `籌碼${verb ? ` ${verb}` : ""}: ${list.map((m) => `${m.from} pays ${m.to} ${fmt(m.amount)}`).join(", ")}. Tap to dismiss.`;
   return (
     <button type="button" className="sc-chips" onClick={onDone} aria-label={label}>
       <span className="sc-chips-head" aria-hidden="true">
         <span className="sc-chips-title">籌碼{verb && ` · ${verb}`}</span>
-        <span className="sc-chips-done">{Icons.check}</span>
+        <span className="sc-chips-close">{Icons.close}</span>
       </span>
       <span ref={gridRef} className={`sc-chips-grid${stacked ? " is-stacked" : ""}`} aria-hidden="true">
         {payers.map((payer) => {
