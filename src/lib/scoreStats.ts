@@ -45,6 +45,17 @@ export interface PlayerStats {
   winRate: number | null; // hands won (食胡 or 自摸), of those sat in
   dealInRate: number | null; // hands dealt in, of those sat in
   perHand: number | null; // net per hand sat in
+  // 做莊 - as dealer: hands dealt, their net, and the longest run of the deal (連莊).
+  dealerHands: number;
+  dealerNet: number;
+  longestDealerRun: number;
+  selfDrawShare: number | null; // 自摸比例 - of their wins, the share by 自摸
+  avgWinGain: number | null; // 每次食糊平均贏 - points per hand won
+  avgDealInLoss: number | null; // 每次出銃平均輸 - points per deal-in (negative)
+  lahNet: number; // 拉踢淨額 - what 拉 and 踢 add-ons made them, less what they paid
+  // 對手 - net against each other player this game (every payment between
+  // the two: hands, 反雪, 獎罰, 詐胡), best first.
+  opponents: { player: string; net: number }[];
 }
 
 // Which way is good, for the 👑 (best at the table) and 💀 (worst) marks.
@@ -73,6 +84,12 @@ export const STAT_DIRECTION: Partial<Record<keyof PlayerStats, "high" | "low">> 
   winRate: "high",
   dealInRate: "low",
   perHand: "high",
+  dealerNet: "high",
+  longestDealerRun: "high",
+  selfDrawShare: "high",
+  avgWinGain: "high",
+  avgDealInLoss: "high", // negative: closer to 0 is better
+  lahNet: "high",
 };
 
 const rate = (n: number, of: number) => (of > 0 ? n / of : null);
@@ -196,8 +213,30 @@ export function playerStats(state: ReplayState, game: ScoreGame): PlayerStats[] 
       winRate: rate(won.length, seated.length),
       dealInRate: rate(dealtIn.length, seated.length),
       perHand: rate(state.totals[player] ?? 0, seated.length),
+      ...dealing(hands, player),
+      selfDrawShare: rate(won.filter((h) => h.selfDraw).length, won.length),
+      avgWinGain: rate(sum(won), won.length),
+      avgDealInLoss: rate(sum(dealtIn), dealtIn.length),
+      lahNet:
+        pairsAsWinner.reduce((t, p) => t + (p.lahKind ? p.lah : 0), 0) - pairsAsPayer.reduce((t, p) => t + (p.lahKind ? p.lah : 0), 0),
+      opponents: state.players
+        .filter((q) => q !== player)
+        .map((q) => ({ player: q, net: (state.paid[`${q}>${player}`] ?? 0) - (state.paid[`${player}>${q}`] ?? 0) }))
+        .filter((o) => o.net !== 0)
+        .sort((a, b) => b.net - a.net),
     };
   });
+}
+
+// 做莊: the hands a player dealt, what they made from them, and the most
+// hands they dealt in a row - a hand dealt at 連N is the (N+1)th running.
+function dealing(hands: HandResult[], player: string) {
+  const mine = hands.filter((h) => h.dealer === player);
+  return {
+    dealerHands: mine.length,
+    dealerNet: mine.reduce((t, h) => t + (h.deltas[player] ?? 0), 0),
+    longestDealerRun: Math.max(0, ...mine.map((h) => h.streak + 1)),
+  };
 }
 
 // 👑 / 💀 for one stat across the table: the best and worst players, or
