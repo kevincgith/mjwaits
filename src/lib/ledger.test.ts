@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_SETTINGS,
+  bonusPresets,
   canRedo,
   deleteEvent,
   exportScores,
@@ -273,6 +274,14 @@ describe("Jackpot, bonuses, seats, undo", () => {
     // B: −7 for the hand, then +40 and +4 (half of 7, 0.5進1).
     expect(t.totals).toEqual({ A: 7 - 120 - 4, B: -7 + 44, C: 40, D: 40 });
     sumsToZero(t);
+  });
+
+  it("預設獎罰: 花 草 暗槓 圍骰 receive, 蛇骰 pays - off, or at 0, they're gone", () => {
+    expect(bonusPresets(PLAIN).map((p) => `${p.name}${p.kind}${p.amount}`)).toEqual(["花獎5", "草獎3", "暗槓獎5", "蛇骰罰5", "圍骰獎5"]);
+    expect(bonusPresets({ ...PLAIN, presetGrass: 0 }).map((p) => p.name)).not.toContain("草");
+    expect(bonusPresets({ ...PLAIN, bonusPresets: false })).toEqual([]);
+    // A named bonus pays just like any other.
+    expect(replay(game([{ t: "bonus", at: 0, seat: 1, amount: 5, kind: "罰", name: "蛇骰" }])).totals).toMatchObject({ A: 5, B: -15, C: 5, D: 5 });
   });
 
   it("特別獎罰 to or from one player", () => {
