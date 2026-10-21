@@ -42,8 +42,8 @@ Still open:
 - **Tai values, exclusions and special-hand inclusions are editable** in the Scoring tab's 設定
   sheet (see docs/scoring-rules.md, "Rule classification and customisation"). The frozen
   `scoringLegacy.ts` copy can be retired once the configurable engine has proven itself.
-- **Rules aren't shared yet**: a hand link opens under the receiver's own rules, and the Scores
-  tab's backup doesn't include them.
+- **Rules travel by their own link** (設定 → Share), not with a hand link - a shared hand opens
+  under the receiver's own rules - and the Scores tab's backup doesn't include them.
 - **No self-draw (自摸) or dealer-status patterns yet**, despite `GameContext` already tracking
   both - the house list given so far hasn't needed them.
 - **No point/currency conversion** (base value, dealer doubling, caps) - this only totals tai.

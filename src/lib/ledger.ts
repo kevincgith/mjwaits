@@ -148,6 +148,9 @@ export interface WinnerEntry {
   seat: number;
   tai: number;
   patterns?: PatternNote[];
+  // Worked out on the Scoring tab under custom tai rules: their fingerprint
+  // (rulesFingerprint in taiRules.ts). Absent for the house rules.
+  rules?: string;
 }
 
 export type ScoreEvent =

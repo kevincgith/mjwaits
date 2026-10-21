@@ -17,6 +17,8 @@ export interface SharedHand {
 
 export interface RecentHand extends SharedHand {
   total: number;
+  /** Scored under custom tai rules: their fingerprint (rulesFingerprint). */
+  rules?: string;
   /** When it was last scored (ms since epoch). */
   at: number;
 }

@@ -44,7 +44,7 @@ import { PlayPanel } from "./PlayPanel";
 import { ScoresPanel, SharedScoresView, type RecordRequest, type ScoreHandRequest, type SeatingResult } from "./ScoresPanel";
 import { snapshotFromHash } from "./lib/scoreShare";
 import { TaiRulesSheet } from "./TaiRulesSheet";
-import { loadTaiRules, rulesAffectScoring, saveTaiRules } from "./lib/taiRules";
+import { isLadderChanged, isRuleChanged, ladderOf, loadTaiRules, rulesAffectScoring, rulesFingerprint, rulesFromHash, saveTaiRules } from "./lib/taiRules";
 import { loadScores, saveScores } from "./lib/ledger";
 import {
   COMPLETE_SIZE,
@@ -133,6 +133,7 @@ import {
   type LastTileWinState,
   type MultiWinState,
   type ParsedScoringHand,
+  type TaiRules,
   type ResolvedHand,
   type RiichiState,
   type ScoreResult,
@@ -4536,12 +4537,21 @@ function PatternRow({
 }) {
   const [expanded, setExpanded] = useState(false);
   const rows = pattern.tiles?.(hand, ctx);
+  // A dot where this pattern's rule isn't the house list's, so a custom
+  // number at the table is visibly one.
+  const ladder = ladderOf(pattern.id);
+  const custom =
+    !!ctx.rules &&
+    ctx.rules.engine === "custom" &&
+    (isRuleChanged(pattern.id, ctx.rules.patterns[pattern.id]) || (!!ladder && isLadderChanged(ctx.rules, ladder.id)));
+  const customMark = custom && <span className="custom-rule-dot" title="Custom tai rule (設定)" aria-label="custom rule" />;
   if (!rows || rows.length === 0) {
     return (
       <div className="pattern-row">
         <div className="scoring-pattern-row" title={pattern.caveat}>
           <PatternName name={patternDisplayName(pattern, hand)} />
           <span className="scoring-pattern-meta">
+            {customMark}
             <span className="scoring-pattern-tai">{tai}<span className="visually-hidden"> tai</span></span>
           </span>
         </div>
@@ -4553,6 +4563,7 @@ function PatternRow({
       <button type="button" className="scoring-pattern-row" onClick={() => setExpanded((e) => !e)} aria-expanded={expanded} title={pattern.caveat}>
         <PatternName name={patternDisplayName(pattern, hand)} expand={expanded ? "open" : "closed"} />
         <span className="scoring-pattern-meta">
+          {customMark}
           <span className="scoring-pattern-tai">{tai}<span className="visually-hidden"> tai</span></span>
         </span>
       </button>
@@ -5418,7 +5429,9 @@ function ShareButton({ url, text, className }: { url: () => string; text: string
 // One row of the Recent list: the hand decomposed into its 門前 / 手牌
 // boxes (the same view as the breakdowns), with its total, age and share
 // button in a column beside them. Tap the boxes to load the hand back.
-function RecentHandRow({ entry, onLoad }: { entry: RecentHand; onLoad: () => void }) {
+function RecentHandRow({ entry, onLoad, rulesNow }: { entry: RecentHand; onLoad: () => void; rulesNow: string | null }) {
+  // Its total was worked out under other tai rules than the ones in use now.
+  const otherRules = (entry.rules ?? null) !== rulesNow;
   const resolved = useMemo(() => {
     try {
       const parsed = parseScoringHand(entry.hand);
@@ -5447,6 +5460,11 @@ function RecentHandRow({ entry, onLoad }: { entry: RecentHand; onLoad: () => voi
       </button>
       <div className="recent-meta">
         <span className="recent-total">{entry.total}</span>
+        {otherRules && (
+          <span className="recent-rules" title="Scored under different tai rules than the ones in use now">
+            other rules
+          </span>
+        )}
         <span className="recent-when">{when}</span>
         <ShareButton url={() => shareUrl(entry)} text={`A ${entry.total}-tai hand on MJWaits`} className="recent-share" />
       </div>
@@ -5585,6 +5603,10 @@ function ScoringPanel({
   onRecord,
   forScores,
   onCancelForScores,
+  taiRules,
+  onSaveRules,
+  incomingRules,
+  onIncomingRulesHandled,
 }: {
   testHandRequest: TestHandRequest | null;
   onTestHandLoaded: () => void;
@@ -5596,13 +5618,37 @@ function ScoringPanel({
   // result straight back.
   forScores?: ScoreHandRequest | null;
   onCancelForScores?: () => void;
+  // The house's tai rules (設定), held by App so the developer sheet and a
+  // shared rules link reach them too. Applied to every score this tab works
+  // out (the result, the waits and discard lists).
+  taiRules: { rules: TaiRules; corrupt: boolean };
+  onSaveRules: (rules: TaiRules) => void;
+  // Rules opened from a shared link (#r=…), to review in the sheet.
+  incomingRules?: TaiRules | null;
+  onIncomingRulesHandled?: () => void;
 }) {
   const [concealedTiles, setConcealedTiles] = useState<HandTile[]>([]);
   const [declaredMelds, setDeclaredMelds] = useState<DeclaredMeldTile[]>([]);
-  // The house's tai rules (設定) - saved in localStorage, applied to every
-  // score this tab works out (the result, the waits and discard lists).
-  const [taiRules, setTaiRules] = useState(loadTaiRules);
   const [rulesOpen, setRulesOpen] = useState(false);
+  // A shared rules link opens the sheet with them, to review before saving.
+  useEffect(() => {
+    if (incomingRules) setRulesOpen(true);
+  }, [incomingRules]);
+  // The current hand's total under some other rules - the 設定 sheet's live
+  // preview of a draft. null while the hand isn't complete or doesn't score.
+  const previewTotal = (rules: TaiRules): number | null => {
+    if (totalTiles !== requiredSize) return null;
+    const parsed: ParsedScoringHand = {
+      declaredMelds: declaredMelds.map(({ kind, concealed, tiles }) => ({ kind, concealed, tiles })),
+      freeTiles: concealedTiles.map(({ id: _id, ...tile }) => tile),
+      bonusTiles,
+    };
+    try {
+      return scoreParsedHand(parsed, { ...ctx, rules }).total;
+    } catch {
+      return null;
+    }
+  };
   // 槓摸/搶槓's tai-by-count, for their buttons' tooltips.
   const kongDrawTable = taiRules.rules.patterns["kong-draw"]?.table ?? [];
   const robKongTable = taiRules.rules.patterns["rob-kong"]?.table ?? [];
@@ -6609,7 +6655,15 @@ function ScoringPanel({
   const [recentHands, setRecentHands] = useState<RecentHand[]>(loadRecentHands);
   useEffect(() => {
     if (!scoring?.ok || loadedTestHand) return;
-    const entry: RecentHand = { hand: notation, bonus: bonusTiles, ctx: situationDiff(ctx), total: scoring.result.total, at: Date.now() };
+    const fingerprint = rulesFingerprint(taiRules.rules);
+    const entry: RecentHand = {
+      hand: notation,
+      bonus: bonusTiles,
+      ctx: situationDiff(ctx),
+      total: scoring.result.total,
+      at: Date.now(),
+      ...(fingerprint ? { rules: fingerprint } : {}),
+    };
     setRecentHands((prev) => {
       const next = withRecent(prev, entry);
       if (next !== prev) saveRecentHands(next);
@@ -6943,12 +6997,17 @@ function ScoringPanel({
       {rulesOpen && (
         <TaiRulesSheet
           rules={taiRules.rules}
+          incoming={incomingRules ?? null}
           corrupt={taiRules.corrupt}
-          onClose={() => setRulesOpen(false)}
-          onSave={(rules) => {
-            saveTaiRules(rules);
-            setTaiRules({ rules, corrupt: false });
+          previewTotal={previewTotal}
+          onClose={() => {
             setRulesOpen(false);
+            onIncomingRulesHandled?.();
+          }}
+          onSave={(rules) => {
+            onSaveRules(rules);
+            setRulesOpen(false);
+            onIncomingRulesHandled?.();
           }}
         />
       )}
@@ -6989,7 +7048,7 @@ function ScoringPanel({
         </button>
         <button
           type="button"
-          className={`toolbar-button toolbar-rules${rulesAffectScoring(taiRules.rules) || taiRules.rules.engine === "legacy" ? " is-custom" : ""}`}
+          className={`toolbar-button toolbar-rules${rulesAffectScoring(taiRules.rules) ? " is-custom" : ""}`}
           onClick={() => setRulesOpen(true)}
           title="設定 - the tai rules"
         >
@@ -7650,6 +7709,7 @@ function ScoringPanel({
                   selfDraw: effectiveSelfDraw,
                   tai: scoring.result.total - removedDealerTai,
                   removedDealerTai,
+                  ...(rulesFingerprint(taiRules.rules) ? { rules: rulesFingerprint(taiRules.rules)! } : {}),
                   patterns: readings.flatMap((r) =>
                     r.matched
                       .filter((m) => m.pattern.id !== "dealer-streak")
@@ -7829,7 +7889,7 @@ function ScoringPanel({
           <CollapsiblePanel open={!recentCollapsed}>
             <div className="card recent-list">
               {recentHands.map((r) => (
-                <RecentHandRow key={`${r.hand}|${r.at}`} entry={r} onLoad={() => loadRecentHand(r)} />
+                <RecentHandRow key={`${r.hand}|${r.at}`} entry={r} onLoad={() => loadRecentHand(r)} rulesNow={rulesFingerprint(taiRules.rules)} />
               ))}
             </div>
           </CollapsiblePanel>
@@ -9309,10 +9369,14 @@ function DeveloperTools({
   onLoadNotation,
   tileStyle,
   onTileStyleChange,
+  rulesEngine,
+  onRulesEngineChange,
 }: {
   onLoadNotation: (notation: string) => void;
   tileStyle: TileStyle;
   onTileStyleChange: (style: TileStyle) => void;
+  rulesEngine: TaiRules["engine"];
+  onRulesEngineChange: (engine: TaiRules["engine"]) => void;
 }) {
   const debug = useDebug();
   const [notation, setNotation] = useState("");
@@ -9431,6 +9495,26 @@ function DeveloperTools({
           </button>
         </div>
         <span className="dev-note">"(…)" declared, "[…]" 暗槓, the rest concealed. Load resets the situation; flowers aren't included.</span>
+      </section>
+
+      <section className="dev-section">
+        <h3 className="dev-heading">Tai rules engine</h3>
+        <div className="segmented" role="group" aria-label="Tai rules engine">
+          {(
+            [
+              ["custom", "Configurable"],
+              ["legacy", "Original (frozen)"],
+            ] as const
+          ).map(([value, label]) => (
+            <button key={value} type="button" className={rulesEngine === value ? "toggle-on" : undefined} aria-pressed={rulesEngine === value} onClick={() => onRulesEngineChange(value)}>
+              {label}
+            </button>
+          ))}
+        </div>
+        <span className="dev-note">
+          Original scores with scoringLegacy.ts, the engine as it was before rules were editable, and ignores 設定. The configurable engine falls back
+          to it by itself if it ever fails.
+        </span>
       </section>
 
       <section className="dev-section">
@@ -9576,11 +9660,15 @@ function TestHandsSheet({
   onClose,
   tileStyle,
   onTileStyleChange,
+  rulesEngine,
+  onRulesEngineChange,
 }: {
   onPick: (hand: TestHand) => void;
   onClose: () => void;
   tileStyle: TileStyle;
   onTileStyleChange: (style: TileStyle) => void;
+  rulesEngine: TaiRules["engine"];
+  onRulesEngineChange: (engine: TaiRules["engine"]) => void;
 }) {
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState<"hands" | "tools">("hands");
@@ -9633,6 +9721,8 @@ function TestHandsSheet({
               onLoadNotation={(hand) => onPick({ group: "", name: "Pasted hand", hand, ctx: {} })}
               tileStyle={tileStyle}
               onTileStyleChange={onTileStyleChange}
+              rulesEngine={rulesEngine}
+              onRulesEngineChange={onRulesEngineChange}
             />
           </div>
         ) : (
@@ -9944,6 +10034,20 @@ function App() {
   // A shared scores link (#s=…) opens its read-only view over the app;
   // "Open MJWaits" drops the hash and carries on as normal.
   const [sharedScores, setSharedScores] = useState(() => snapshotFromHash(window.location.hash));
+  // The Scoring tab's tai rules (設定), saved in localStorage - here so the
+  // developer sheet's engine switch and a shared rules link reach them.
+  const [taiRules, setTaiRules] = useState(loadTaiRules);
+  const saveRules = (rules: TaiRules) => {
+    saveTaiRules(rules);
+    setTaiRules({ rules, corrupt: false });
+  };
+  // A shared rules link (#r=…) opens the Scoring tab's 設定 sheet with them
+  // to review; the hash goes once they're saved or dismissed.
+  const [incomingRules, setIncomingRules] = useState(() => rulesFromHash(window.location.hash));
+  const dropIncomingRules = () => {
+    setIncomingRules(null);
+    if (window.location.hash.startsWith("#r=")) window.history.replaceState(null, "", window.location.pathname + window.location.search);
+  };
   // The Scores tab's games and roster - here so the Scoring tab can send a
   // hand to the game in progress. Saved on every change.
   const [scoreStore, setScoreStore] = useState(loadScores);
@@ -10136,6 +10240,10 @@ function App() {
             setMode("scores");
           }}
           forScores={scoreFor}
+          taiRules={taiRules}
+          onSaveRules={saveRules}
+          incomingRules={incomingRules}
+          onIncomingRulesHandled={dropIncomingRules}
           onCancelForScores={() => {
             // Back to the 食胡 sheet it came from, as it was - or just the
             // table, for a card's own Scan button.
@@ -10236,6 +10344,8 @@ function App() {
           onClose={() => setTestHandsOpen(false)}
           tileStyle={tileStyle}
           onTileStyleChange={changeTileStyle}
+          rulesEngine={taiRules.rules.engine}
+          onRulesEngineChange={(engine) => saveRules({ ...taiRules.rules, engine })}
         />
       )}
       {/* Last, so it sits above any sheet a link was tapped in. */}
