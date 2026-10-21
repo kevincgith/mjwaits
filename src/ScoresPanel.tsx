@@ -3698,10 +3698,14 @@ function Board({
             onOpenSeating &&
             (() => {
               close();
-              // The provisional East: whoever won last (the first of a 雙響).
+              // The provisional East: whoever won last - of a 雙響 / 三響, the
+              // winner first counting round from that hand's 莊 (莊 themself
+              // if they won). No win yet: 莊.
               const lastWin = [...state.hands].reverse().find((h) => h.kind === "win");
-              const east = lastWin ? state.seats.indexOf(lastWin.winners[0].player) : -1;
-              onOpenSeating(state.seats, east >= 0 ? east : null);
+              const dealerSeat = lastWin ? state.seats.indexOf(lastWin.dealer) : -1;
+              const fromDealer = (p: string) => (state.seats.indexOf(p) - Math.max(0, dealerSeat) + SEATS) % SEATS;
+              const winner = lastWin?.winners.map((w) => w.player).filter((p) => state.seats.includes(p)).sort((x, y) => fromDealer(x) - fromDealer(y))[0];
+              onOpenSeating(state.seats, winner ? state.seats.indexOf(winner) : state.dealer);
             })
           }
           onDone={({ seats, newNames, removedNames, dealer }) => {
