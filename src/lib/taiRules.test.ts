@@ -11,8 +11,6 @@ import {
   rulesDiff,
   rulesFingerprint,
   rulesFromDiff,
-  rulesFromHash,
-  rulesUrl,
 } from "./taiRules";
 import { LADDERS } from "./taiCatalog";
 import { TEST_HAND_BASE_CONTEXT } from "./testHands";
@@ -207,7 +205,7 @@ describe("the original engine and the fallback", () => {
   });
 });
 
-describe("the changes list, fingerprint and share links", () => {
+describe("the changes list, fingerprint and diff", () => {
   const custom = () => {
     const rules = withRules({ kong: { tai: 3 }, "no-flowers": { shapes: ["normal"] } });
     rules.ladders.dragons = { exclusive: false };
@@ -231,13 +229,9 @@ describe("the changes list, fingerprint and share links", () => {
     expect(rulesFingerprint(withRules({ kong: { tai: 4 } }))).not.toBe(a);
   });
 
-  it("round-trips through a diff and a share link", () => {
+  it("round-trips through a diff", () => {
     expect(rulesFromDiff(rulesDiff(custom()))).toEqual(custom());
     expect(rulesDiff(DEFAULT_TAI_RULES)).toEqual({ v: 1 });
-    const url = rulesUrl(custom(), "https://example.test/mjwaits/");
-    expect(rulesFromHash(url.slice(url.indexOf("#")))).toEqual(custom());
-    expect(rulesFromHash("#r=garbage")).toBeNull();
-    expect(rulesFromHash("#s=abc")).toBeNull();
   });
 });
 

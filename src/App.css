@@ -12561,3 +12561,33 @@ button.sc-stat:active {
   font-size: var(--text-xs);
   white-space: nowrap;
 }
+
+/* Rule sets: which one the sheet is editing, its name, and what to do with it. */
+.tr-sets {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.tr-set-select {
+  flex: none;
+  height: 2.75rem;
+  appearance: auto;
+  font-weight: 600;
+}
+
+.tr-set-name {
+  flex: none;
+  height: 2.5rem;
+}
+
+.tr-set-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.tr-chip.is-danger {
+  background: var(--sc-neg);
+  color: #fff;
+}
