@@ -45,7 +45,7 @@ import { snapshotOf, snapshotUrl, type ScoreSnapshot } from "./lib/scoreShare";
 import { drawSettleCard } from "./lib/settleImage";
 import qrcode from "qrcode-generator";
 import { createPortal } from "react-dom";
-import { careerStats, headToHead, marks, patternCounts, playerStats, trend, type PlayerStats } from "./lib/scoreStats";
+import { careerStats, headToHead, marks, patternCounts, playerStats, trend, type CareerStats, type PlayerStats } from "./lib/scoreStats";
 
 const WIND_CHARS = ["東", "南", "西", "北"];
 // Where each seat sits on the board, by seat index (turn order runs
@@ -4749,8 +4749,46 @@ function PatternsCard({ state, store }: { state: ReplayState; store: ScoreStore 
   );
 }
 
+// One player's career opened under their row: what the 玩家 card shows for a
+// game, over every game - and who they've done best and worst against.
+function CareerDetail({ c, versus }: { c: CareerStats; versus: Record<string, number> }) {
+  const opponents = Object.entries(versus)
+    .filter(([, v]) => v !== 0)
+    .sort((a, b) => b[1] - a[1]);
+  const prey = opponents[0];
+  const nemesis = opponents[opponents.length - 1];
+  const rows: { zh: string; en: string; value: string; tone?: number }[] = [
+    { zh: "領先", en: "Time in 1st", value: pct(c.firstRate) },
+    { zh: "自摸比例", en: "Wins by 自摸", value: pct(c.selfDrawShare) },
+    { zh: "每次食糊", en: "Won per win", value: c.avgWinGain === null ? "–" : signed(Math.round(c.avgWinGain * 10) / 10), tone: c.avgWinGain ?? 0 },
+    { zh: "每次出銃", en: "Lost per deal-in", value: c.avgDealInLoss === null ? "–" : signed(Math.round(c.avgDealInLoss * 10) / 10), tone: c.avgDealInLoss ?? 0 },
+    { zh: "做莊局數", en: "Hands dealt", value: String(c.dealerHands) },
+    { zh: "莊家得失", en: "Net as dealer", value: signed(c.dealerNet), tone: c.dealerNet },
+    { zh: "最長連莊", en: "Most 連莊 in a run", value: c.longestDealerRun > 1 ? `連${c.longestDealerRun - 1}` : "–" },
+    { zh: "拉踢淨額", en: "Net from add-ons", value: signed(c.lahNet), tone: c.lahNet },
+    ...(prey && prey[1] > 0 ? [{ zh: "最大苦主", en: "Won most from", value: `${prey[0]} ${signed(prey[1])}`, tone: 1 }] : []),
+    ...(nemesis && nemesis[1] < 0 ? [{ zh: "剋星", en: "Lost most to", value: `${nemesis[0]} ${signed(nemesis[1])}`, tone: -1 }] : []),
+  ];
+  return (
+    <div className="sc-stat-grid sc-career-stats">
+      {rows.map((r) => (
+        <div key={r.zh} className="sc-stat">
+          <span className="sc-stat-label">
+            <span>{r.zh}</span>
+            <small>{r.en}</small>
+          </span>
+          <span className="sc-stat-value">
+            <strong className={r.tone !== undefined ? tone(r.tone) : undefined}>{r.value}</strong>
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function HistoryCard({ store, games, current, onPick, onDelete }: { store: ScoreStore; games: ScoreGame[]; current: string; onPick: (id: string) => void; onDelete: (id: string) => void }) {
   const [confirm, setConfirm] = useState<string | null>(null);
+  const [careerOpen, setCareerOpen] = useState<string | null>(null);
   const career = useMemo(() => careerStats(games), [games]);
   const h2h = useMemo(() => headToHead(games), [games]);
   const names = career.map((c) => c.player);
@@ -4789,7 +4827,9 @@ function HistoryCard({ store, games, current, onPick, onDelete }: { store: Score
           );
         })}
       </div>
-      <SectionHead zh="生涯" en="Career" />
+      <SectionHead zh="生涯" en="Career">
+        <span className="sc-help">撳一行睇詳情 · Tap a player</span>
+      </SectionHead>
       <div className="card sc-table-card">
         <div className="sc-table-wrap">
           <table className="sc-table">
@@ -4823,23 +4863,36 @@ function HistoryCard({ store, games, current, onPick, onDelete }: { store: Score
               </tr>
             </thead>
             <tbody>
-              {career.map((c) => (
-                <tr key={c.player}>
-                  <th>
-                    <span className="sc-table-player">
-                      <Monogram store={store} player={c.player} size="sm" />
-                      {c.player}
-                    </span>
-                  </th>
-                  <td>{c.games}</td>
-                  <td className={tone(c.net)}>{signed(c.net)}</td>
-                  <td className="sc-opt">{fmt(Math.round(c.avgNet * 10) / 10)}</td>
-                  <td>{c.firsts}</td>
-                  <td>{pct(c.winRate)}</td>
-                  <td>{pct(c.dealInRate)}</td>
-                  <td className="sc-opt">{c.bestHand === null ? "–" : fmt(c.bestHand)}</td>
-                </tr>
-              ))}
+              {career.map((c) => {
+                const isOpen = careerOpen === c.player;
+                return (
+                  <Fragment key={c.player}>
+                    {/* A tap opens the rest of their career under the row. */}
+                    <tr className={`sc-career-row${isOpen ? " is-open" : ""}`} onClick={() => setCareerOpen(isOpen ? null : c.player)} aria-expanded={isOpen}>
+                      <th>
+                        <span className="sc-table-player">
+                          <Monogram store={store} player={c.player} size="sm" />
+                          {c.player}
+                        </span>
+                      </th>
+                      <td>{c.games}</td>
+                      <td className={tone(c.net)}>{signed(c.net)}</td>
+                      <td className="sc-opt">{fmt(Math.round(c.avgNet * 10) / 10)}</td>
+                      <td>{c.firsts}</td>
+                      <td>{pct(c.winRate)}</td>
+                      <td>{pct(c.dealInRate)}</td>
+                      <td className="sc-opt">{c.bestHand === null ? "–" : fmt(c.bestHand)}</td>
+                    </tr>
+                    {isOpen && (
+                      <tr className="sc-career-detail">
+                        <td colSpan={8}>
+                          <CareerDetail c={c} versus={h2h[c.player] ?? {}} />
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>
