@@ -916,8 +916,9 @@ interface PayRow {
   high?: boolean;
 }
 
-// 詐胡: a called win that wasn't. The caller pays each of the other three - the
-// 設定 amount to start with, and any of them can be changed before Confirm.
+// 詐胡: a called win that wasn't. Laid out like a 三響 on the 食胡 tab - the
+// caller in the 胡 seat, an amount field for each of the other three (the 設定
+// amount to start with, retyped from the keypad), and who pays whom below.
 function ZhaHuSheet({
   store,
   state,
@@ -941,12 +942,26 @@ function ZhaHuSheet({
   onBonus: () => void;
   frame?: SheetFrame;
 }) {
-  const others = state.seats.filter((_, s2) => s2 !== seat);
+  const others = state.seats.map((_, s2) => s2).filter((s2) => s2 !== seat);
   const each = state.settings.zhaHu ?? SETTING_ON_VALUE.zhaHu ?? 40;
-  const [amounts, setAmounts] = useState<Record<string, number>>(() =>
-    Object.fromEntries(others.map((p) => [p, initial?.find((x) => x.player === p)?.amount ?? each])),
+  const [amounts, setAmounts] = useState<string[]>(() =>
+    others.map((s2) => String(initial?.find((x) => x.player === state.seats[s2])?.amount ?? each)),
   );
-  const total = others.reduce((t, p) => t + (amounts[p] ?? 0), 0);
+  const [focus, setFocus] = useState(0);
+  // A field still showing its starting amount is replaced by the first digit
+  // typed, not added to.
+  const [fresh, setFresh] = useState(() => others.map(() => true));
+  const type = (v: string) => {
+    const old = amounts[focus];
+    const next = fresh[focus] && v.length === old.length + 1 && v.startsWith(old) ? v.slice(-1) : v;
+    setAmounts((a) => a.map((x, i) => (i === focus ? next : x)));
+    setFresh((f) => f.map((x, i) => (i === focus ? false : x)));
+  };
+  const pick = (s2: number) => {
+    const i = others.indexOf(s2);
+    if (i >= 0) setFocus(i);
+  };
+  const total = amounts.reduce((t, a) => t + Number(a || 0), 0);
   return (
     <Sheet
       title={
@@ -968,27 +983,52 @@ function ZhaHuSheet({
             type="button"
             className="sc-danger"
             disabled={total <= 0}
-            onClick={() => onDone({ t: "zhaHu", at: Date.now(), seat, pays: others.map((p) => ({ player: p, amount: amounts[p] ?? 0 })) })}
+            onClick={() => onDone({ t: "zhaHu", at: Date.now(), seat, pays: others.map((s2, i) => ({ player: state.seats[s2], amount: Number(amounts[i] || 0) })) })}
           >
             {total > 0 ? `Confirm · ${fmt(total)}` : "Confirm"}
           </button>
         </>
       }
     >
-      <p className="sc-help sc-help-block">
-        {player} pays each player {fmt(each)} - change anyone's amount below.
-      </p>
-      <div className="sc-list">
-        {others.map((p) => (
-          <div key={p} className="sc-row">
-            <span className="sc-row-main sc-zha-who">
-              <Monogram store={store} player={p} size="sm" />
-              {p}
-            </span>
-            <NumberField value={amounts[p] ?? 0} onChange={(v) => setAmounts((a) => ({ ...a, [p]: v }))} label={`${p}'s amount`} pill />
-          </div>
-        ))}
+      <div className="sc-field">
+        <div className="sc-field-head">
+          <span className="sc-label">Who gets paid?</span>
+          <span className="sc-help">Tap one to change theirs</span>
+        </div>
+        <TablePicker
+          store={store}
+          seats={state.seats}
+          dealer={state.dealer}
+          streak={state.streak}
+          self={seat}
+          selfLabel="詐"
+          selfTone="lose"
+          isOn={(s2) => others[focus] === s2}
+          onPick={pick}
+          onSelfLongPress={onWin}
+          tagFor={(s2) => (s2 !== seat ? { text: "收", tone: "win" } : undefined)}
+          center={{ label: "詐胡", sub: `${fmt(each)} each`, on: true, tone: "lose" }}
+        />
       </div>
+      <div className="sc-tai-row">
+        <span className="sc-label">金額</span>
+        <div className="sc-tai-fields">
+          {others.map((s2, i) => (
+            <button key={s2} type="button" className={`sc-tai${focus === i ? " is-focus" : ""}`} onClick={() => setFocus(i)} aria-label={`${state.seats[s2]}'s amount`}>
+              <span className="sc-tai-who">{state.seats[s2]}</span>
+              <span className={`sc-tai-value${amounts[i] ? "" : " is-empty"}`}>{amounts[i] || "0"}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+      <Keypad value={amounts[focus] ?? ""} onChange={type} />
+      <PayTable
+        cols={[{ key: "to", label: "To", wide: true }]}
+        rows={others
+          .map((s2, i) => ({ who: player, cells: { to: state.seats[s2] }, total: Number(amounts[i] || 0) }))
+          .filter((r) => r.total > 0)}
+        empty="Enter an amount to see who pays what"
+      />
     </Sheet>
   );
 }

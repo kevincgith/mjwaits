@@ -11295,14 +11295,6 @@ html.sc-fit-mode .build-version {
   pointer-events: none;
 }
 
-/* 詐胡: each player's name beside their amount. */
-.sc-zha-who {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  min-width: 0;
-}
-
 /* A sheet held to its siblings' height (the 胡 sheet's tabs) keeps Confirm
    at the foot, however short its own content. */
 .sc-sheet-body {
