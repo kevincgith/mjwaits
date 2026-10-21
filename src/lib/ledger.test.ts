@@ -1,14 +1,20 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_SETTINGS,
+  bonusPresets,
   canRedo,
+  deleteEvent,
   exportScores,
   mergeScores,
   newGame,
   parseBackup,
   previewFanXue,
   redoEvent,
+  replaceEvent,
   replay,
+  chipMoves,
+  evenShares,
+  CHIP_POT,
   settle,
   undoEvent,
   withEvent,
@@ -252,6 +258,34 @@ describe("Jackpot, bonuses, seats, undo", () => {
     expect(replay(game([{ t: "bonus", at: 0, seat: 1, amount: 3, kind: "罰" }])).totals).toMatchObject({ A: 3, B: -9 });
   });
 
+  it("詐胡 pays each player their own amount, and leaves the deal alone", () => {
+    const s = replay(game([{ t: "zhaHu", at: 0, seat: 1, pays: [{ player: "A", amount: 40 }, { player: "C", amount: 20 }, { player: "D", amount: 40 }] }]));
+    expect(s.totals).toEqual({ A: 40, B: -100, C: 20, D: 40 });
+    expect(s.hands).toHaveLength(0);
+    expect(s.dealer).toBe(0);
+    sumsToZero(s);
+  });
+
+  it("詐胡 ends the caller's 拉, each pulled player paid its 踢 half", () => {
+    // A won 7 off B, so A pulls B for 7.
+    const pays = (n: number) => ["B", "C", "D"].map((player) => ({ player, amount: n }));
+    const t = replay(game([win(0, 7, 1), { t: "zhaHu", at: 0, seat: 0, pays: pays(40) }]));
+    expect(t.lahs).toHaveLength(0);
+    // B: −7 for the hand, then +40 and +4 (half of 7, 0.5進1).
+    expect(t.totals).toEqual({ A: 7 - 120 - 4, B: -7 + 44, C: 40, D: 40 });
+    sumsToZero(t);
+  });
+
+  it("預設獎罰: 花 草 花草 暗槓 追 追 圍骰 receive, 蛇骰 pays - off, or at 0, they're gone", () => {
+    expect(bonusPresets(PLAIN).map((p) => `${p.name}${p.kind}${p.amount}`)).toEqual(["花獎5", "草獎3", "花草獎8", "暗槓獎5", "蛇骰罰5", "圍骰獎5", "追獎5", "追獎10", "嗌錯罰5", "7搶1獎30", "1搶7獎30", "八仙過海獎100"]);
+    expect(bonusPresets({ ...PLAIN, presetGrass: 0 }).map((p) => p.name)).not.toContain("草");
+    // 7搶1 and 1搶7 are with one player, picked on the sheet.
+    expect(bonusPresets(PLAIN).filter((p) => p.one).map((p) => p.name)).toEqual(["7搶1", "1搶7"]);
+    expect(bonusPresets({ ...PLAIN, bonusPresets: false })).toEqual([]);
+    // A named bonus pays just like any other.
+    expect(replay(game([{ t: "bonus", at: 0, seat: 1, amount: 5, kind: "罰", name: "蛇骰" }])).totals).toMatchObject({ A: 5, B: -15, C: 5, D: 5 });
+  });
+
   it("特別獎罰 to or from one player", () => {
     // 獎 from C only: C pays B.
     expect(replay(game([{ t: "bonus", at: 0, seat: 1, amount: 5, kind: "獎", other: 2 }])).totals).toEqual({ A: 0, B: 5, C: -5, D: 0 });
@@ -282,6 +316,113 @@ describe("Jackpot, bonuses, seats, undo", () => {
     const g = game([win(0, 10, 1), multi(2, [0, 3], [1, 4]), win(3, 2, null)]);
     sumsToZero(replay(g));
     expect(replay(undoEvent(g)).hands).toHaveLength(2);
+  });
+});
+
+describe("籌碼 - chips change hands when a 拉 ends", () => {
+  const after = (events: ScoreEvent[], settings: Partial<ScoreSettings> = {}) => replay(game(events, settings));
+  const moves = (events: ScoreEvent[], extra: ScoreEvent, settings: Partial<ScoreSettings> = {}) =>
+    chipMoves(after(events, settings), after([...events, extra], settings));
+  const sorted = (m: { from: string; to: string; amount: number }[]) => m.slice().sort((x, y) => x.from.localeCompare(y.from));
+
+  it("A's 自摸 of 10 starts a 拉 on everyone - no chips yet", () => {
+    expect(moves([], win(0, 10, null))).toEqual([]);
+  });
+
+  it("B then wins 20 off C: A's 拉 end, everyone pays A 10; C's 20 rides in B's 拉", () => {
+    expect(sorted(moves([win(0, 10, null)], win(1, 20, 2)))).toEqual([
+      { from: "B", to: "A", amount: 10 },
+      { from: "C", to: "A", amount: 10 },
+      { from: "D", to: "A", amount: 10 },
+    ]);
+  });
+
+  it("B wins 20 off A instead (a 踢): C and D pay A 10, B only 5", () => {
+    expect(sorted(moves([win(0, 10, null)], win(1, 20, 0)))).toEqual([
+      { from: "B", to: "A", amount: 5 },
+      { from: "C", to: "A", amount: 10 },
+      { from: "D", to: "A", amount: 10 },
+    ]);
+  });
+
+  it("投降 hands over the whole 拉; 特別獎罰 is paid on the spot", () => {
+    expect(moves([win(0, 7, 1)], { t: "surrender", at: 0, holder: "A", pulled: "B" })).toEqual([{ from: "B", to: "A", amount: 7 }]);
+    expect(sorted(moves([], { t: "bonus", at: 0, seat: 1, amount: 3, kind: "獎" }))).toEqual([
+      { from: "A", to: "B", amount: 3 },
+      { from: "C", to: "B", amount: 3 },
+      { from: "D", to: "B", amount: 3 },
+    ]);
+  });
+
+  // 雙響 / 三響: each winner's 拉 on the discarder rides; the 拉 they end are
+  // paid, less a half for each winner who 踢s.
+  const many = (winners: [number, number][], from: number): ScoreEvent => ({ t: "win", at: 0, winners: winners.map(([seat, tai]) => ({ seat, tai })), from, source: "quick" });
+
+  it("雙響 off D after A's 自摸: A's 拉 end, everyone pays A 10", () => {
+    expect(sorted(moves([win(0, 10, null)], many([[1, 20], [2, 20]], 3)))).toEqual([
+      { from: "B", to: "A", amount: 10 },
+      { from: "C", to: "A", amount: 10 },
+      { from: "D", to: "A", amount: 10 },
+    ]);
+  });
+
+  it("雙響 / 三響 off A: each winner 踢s, paying A only half", () => {
+    expect(sorted(moves([win(0, 10, null)], many([[1, 20], [2, 20]], 0)))).toEqual([
+      { from: "B", to: "A", amount: 5 },
+      { from: "C", to: "A", amount: 5 },
+      { from: "D", to: "A", amount: 10 },
+    ]);
+    expect(sorted(moves([win(0, 10, null)], many([[1, 20], [2, 20], [3, 20]], 0)))).toEqual([
+      { from: "B", to: "A", amount: 5 },
+      { from: "C", to: "A", amount: 5 },
+      { from: "D", to: "A", amount: 5 },
+    ]);
+  });
+
+  it("a 雙響 the holder is part of keeps their 拉 - no chips", () => {
+    expect(moves([win(0, 10, null)], many([[0, 20], [1, 20]], 3))).toEqual([]);
+  });
+
+  it("the 雙響's loser self-draws: each winner's 拉 ends with a 踢, less the 反雪 they pay back", () => {
+    expect(sorted(moves([many([[1, 20], [2, 20]], 3)], win(3, 10, null), { fanXue: true, fanXueDouble: 5 }))).toEqual([
+      { from: "D", to: "B", amount: 5 },
+      { from: "D", to: "C", amount: 5 },
+    ]);
+  });
+
+  it("pair by pair, never netted: A pulls B C D, B and D pull C, then C self-draws", () => {
+    // A 自摸 10, then A + B + D 三響 off C for 4 each: A still pulls B and D
+    // (10) and C (10 + 4 + 5 拉半 = 19); B and D each pull C 4.
+    // (反雪 off - C's 自摸 after the 三響 would add each winner's pay-back.)
+    const before = [win(0, 10, null), many([[0, 4], [1, 4], [3, 4]], 2)];
+    const noFanXue = { fanXue: false };
+    expect(after(before, noFanXue).lahs.map((l) => `${l.holder}>${l.pulled} ${l.value}`).sort()).toEqual(["A>B 10", "A>C 19", "A>D 10", "B>C 4", "D>C 4"]);
+    // Every 拉 ends. B and D hand A theirs whole; C 踢s all three, handing
+    // each their 拉 less the half kicked back.
+    expect(sorted(moves(before, win(2, 2, null), noFanXue))).toEqual([
+      { from: "B", to: "A", amount: 10 },
+      { from: "C", to: "A", amount: 9 },
+      { from: "C", to: "B", amount: 2 },
+      { from: "C", to: "D", amount: 2 },
+      { from: "D", to: "A", amount: 10 },
+    ]);
+  });
+
+  it("a 流局 feeds the Jackpot pile", () => {
+    expect(moves([], draw, { jackpot: true, jackpotPerDraw: 5 }).every((m) => m.to === CHIP_POT && m.amount === 5)).toBe(true);
+  });
+});
+
+describe("Jackpot split evenly", () => {
+  it("spreads what won't divide one each, from the 起莊 seat on", () => {
+    expect(evenShares(11, 0, true)).toEqual([3, 3, 3, 2]);
+    expect(evenShares(11, 2, true)).toEqual([3, 2, 3, 3]);
+    expect(evenShares(20, 1, true)).toEqual([5, 5, 5, 5]);
+    expect(evenShares(2, 3, true)).toEqual([1, 0, 0, 1]);
+  });
+
+  it("goes to 0.1 off 整數模式", () => {
+    expect(evenShares(11, 0, false)).toEqual([2.8, 2.8, 2.7, 2.7]);
   });
 });
 
@@ -362,6 +503,26 @@ describe("Jackpot paid in by hand", () => {
     const won = replay(game([payIn, win(1, 3, 0, { jackpotTo: "B" })], { jackpot: true }));
     expect(won.pot).toBe(0);
     expect(won.totals.B).toBe(3 + 15);
+  });
+});
+
+describe("fixing an older entry", () => {
+  it("replacing a hand replays everything after it", () => {
+    const g = game([win(1, 5, 0), win(2, 3, 1), win(3, 2, 2)]);
+    const fixed = replaceEvent(g, 0, win(1, 8, 0));
+    expect(fixed.events[0]).toMatchObject({ winners: [{ seat: 1, tai: 8 }] });
+    expect(fixed.events).toHaveLength(3);
+    const s = replay(fixed);
+    expect(s.hands[0].pairs[0].worth).toBe(8);
+    sumsToZero(s);
+  });
+
+  it("deleting an entry drops just that one, and clears 重做", () => {
+    const g = { ...game([win(1, 5, 0), draw, win(2, 3, 1)]), undone: [draw] };
+    const d = deleteEvent(g, 1);
+    expect(d.events.map((e) => e.t)).toEqual(["win", "win"]);
+    expect(d.undone).toEqual([]);
+    expect(replay(d).hands).toHaveLength(2);
   });
 });
 

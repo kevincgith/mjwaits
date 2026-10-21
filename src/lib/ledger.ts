@@ -51,6 +51,24 @@ export interface ScoreSettings {
   surrenderPrompt: number | null; // 投降提示 - prompt once a 拉 runs this many hands in a row; null = off. A prompt only - 投降 itself is never restricted.
   showTally: boolean; // 胡摸銃數 - win / self-draw / deal-in counts on the cards
   quickScan: boolean; // 快速掃描 - a Scan button on each player's card
+  chipsPrompt: boolean; // 籌碼提示 - who hands whom chips, after each entry that moves points
+  tipsAutoHide: number | null; // 提示自動隱藏 - seconds a passing card (籌碼, the banners) stays before it goes by itself; null = until closed
+  // 預設獎罰 - quick picks on the 特別獎罰 tab, each what one player gets from
+  // (or, 蛇骰, pays) each of the others.
+  bonusPresets: boolean;
+  presetFlower: number; // 花 - receive from each
+  presetGrass: number; // 草 - receive from each
+  presetBoth: number; // 花草 - receive from each
+  presetKong: number; // 暗槓 - receive from each
+  presetChase: number; // 追 - receive from each (the smaller)
+  presetChaseBig: number; // 追 - receive from each (the bigger)
+  presetSnake: number; // 蛇骰 - pay each
+  presetTriple: number; // 圍骰 - receive from each
+  presetSevenOne: number; // 7搶1 - receive from one player
+  presetOneSeven: number; // 1搶7 - receive from one player
+  presetEightImmortals: number; // 八仙過海 - receive from each
+  presetWrongCall: number; // 嗌錯 - pay each
+  zhaHu: number | null; // 詐胡 - what a false win pays each other player by default (each can be changed); null = off
 }
 
 export const DEFAULT_SETTINGS: ScoreSettings = {
@@ -73,7 +91,52 @@ export const DEFAULT_SETTINGS: ScoreSettings = {
   surrenderPrompt: 3,
   showTally: true,
   quickScan: true,
+  chipsPrompt: true,
+  tipsAutoHide: 30,
+  bonusPresets: true,
+  presetFlower: 5,
+  presetGrass: 3,
+  presetBoth: 8,
+  presetKong: 5,
+  presetChase: 5,
+  presetChaseBig: 10,
+  presetSnake: 5,
+  presetTriple: 5,
+  presetSevenOne: 30,
+  presetOneSeven: 30,
+  presetEightImmortals: 100,
+  presetWrongCall: 5,
+  zhaHu: 40,
 };
+
+// The 預設獎罰 quick picks, from the settings: what each is called, which way
+// it goes, how much - and whether it's with everyone else or one player (who
+// is picked on the sheet).
+export interface BonusPreset {
+  name: string;
+  kind: "獎" | "罰";
+  amount: number;
+  one?: true;
+}
+
+export function bonusPresets(settings: ScoreSettings): BonusPreset[] {
+  if (!settings.bonusPresets) return [];
+  // In the order they sit on the sheet: page 1's two rows, then page 2.
+  return ([
+    { name: "花", kind: "獎", amount: settings.presetFlower },
+    { name: "草", kind: "獎", amount: settings.presetGrass },
+    { name: "花草", kind: "獎", amount: settings.presetBoth },
+    { name: "暗槓", kind: "獎", amount: settings.presetKong },
+    { name: "蛇骰", kind: "罰", amount: settings.presetSnake },
+    { name: "圍骰", kind: "獎", amount: settings.presetTriple },
+    { name: "追", kind: "獎", amount: settings.presetChase },
+    { name: "追", kind: "獎", amount: settings.presetChaseBig },
+    { name: "嗌錯", kind: "罰", amount: settings.presetWrongCall },
+    { name: "7搶1", kind: "獎", amount: settings.presetSevenOne, one: true },
+    { name: "1搶7", kind: "獎", amount: settings.presetOneSeven, one: true },
+    { name: "八仙過海", kind: "獎", amount: settings.presetEightImmortals },
+  ] as BonusPreset[]).filter((p) => p.amount > 0);
+}
 
 export interface PatternNote {
   id: string;
@@ -95,10 +158,15 @@ export type ScoreEvent =
   // 特別獎罰: 獎 - the seat's player is paid `amount`; 罰 - they pay it. With
   // `other`, just that one player pays (獎) or is paid (罰); without it, each
   // of the other three does.
-  | { t: "bonus"; at: number; seat: number; amount: number; kind: "獎" | "罰"; other?: number }
+  // name: a 預設獎罰's, when it came from one (花, 暗槓…) - shown in its place.
+  | { t: "bonus"; at: number; seat: number; amount: number; kind: "獎" | "罰"; other?: number; name?: string }
   | { t: "surrender"; at: number; holder: string; pulled: string }
   | { t: "jackpot"; at: number; shares: { player: string; amount: number }[] }
   | { t: "jackpotIn"; at: number; shares: { player: string; amount: number }[] } // paid into the pot
+  // 詐胡: the seat's player called a win that wasn't, and pays each of the
+  // others their amount. Not a hand - the deal carries on as it was. Any 拉
+  // the caller holds ends there, each pulled player paid its 踢 half too.
+  | { t: "zhaHu"; at: number; seat: number; pays: { player: string; amount: number }[] }
   | { t: "swap"; at: number; seats: string[] } // the whole new seating
   // resetRound: back to 東風東局 from this dealer. Or `round` sets any 風局:
   // wind 0-3 (東南西北) and hand 0-3 (this dealer's 東局 … 北局).
@@ -110,12 +178,23 @@ export interface ScoreGame {
   name?: string; // what the players call it - set by a long press on the round box
   startedAt: number;
   endedAt?: number;
+  // When play started and stopped, as "HH:MM", if someone set them - shown
+  // only when set. (startedAt and endedAt are when the app opened and closed it.)
+  startTime?: string;
+  endTime?: string;
+  location?: string; // where it was played, if someone set it
   seats: string[]; // the player at each seat at the start, in turn order
   firstDealer: number;
   settings: ScoreSettings; // as at the start - later changes are events
   events: ScoreEvent[];
   // Entries taken back by 還原, newest last, for 重做 (redo). Any new entry clears it.
   undone?: ScoreEvent[];
+}
+
+// "20:00–23:30", "20:00–", "–23:30" or "" - a game's times as set.
+export function playTimes(game: Pick<ScoreGame, "startTime" | "endTime">): string {
+  const { startTime: from, endTime: to } = game;
+  return from || to ? `${from ?? ""}–${to ?? ""}` : "";
 }
 
 export interface Lah {
@@ -177,6 +256,9 @@ export interface ReplayState {
   // Every event's own deltas (hands, bonuses, jackpot hand-outs alike), for
   // the running-totals chart and the hand list.
   steps: { eventIndex: number; deltas: Record<string, number>; totalsAfter: Record<string, number> }[];
+  // Everything each player has paid each other (and the Jackpot pile,
+  // CHIP_POT), as "from>to" - for the chips that change hands pair by pair.
+  paid: Record<string, number>;
   seatChangeDue: boolean; // 北風北局 just ended and 執位提示 is on
   fanXueDue: FanXueDue | null; // the last hand's 雙響/三響, which a 自摸 by its loser next would 反雪
   label: string;
@@ -212,6 +294,15 @@ export function roundLabel(roundWind: number, dealer: number, roundStartDealer: 
 }
 
 const lahKey = (holder: string, pulled: string) => `${holder}>${pulled}`;
+
+// A 詐胡 ends every 拉 its caller holds: each pulled player gets the 踢 half
+// of theirs, as if they'd won it back.
+export function zhaHuKicks(state: Pick<ReplayState, "lahs" | "settings">, caller: string): { player: string; amount: number }[] {
+  return state.lahs
+    .filter((l) => l.holder === caller)
+    .map((l) => ({ player: l.pulled, amount: half(l.value, state.settings.tiRound, state.settings.integerMode) }))
+    .filter((k) => k.amount > 0);
+}
 
 export function dealerAmount(settings: ScoreSettings, streak: number): number {
   return settings.dealerTai + settings.streakTai * streak;
@@ -297,6 +388,7 @@ export function replay(game: ScoreGame): ReplayState {
     settings: { ...DEFAULT_SETTINGS, ...game.settings },
     hands: [],
     steps: [],
+    paid: {},
     seatChangeDue: false,
     fanXueDue: null,
     label: "",
@@ -323,6 +415,13 @@ export function replay(game: ScoreGame): ReplayState {
 
   game.events.forEach((ev, eventIndex) => {
     const deltas: Record<string, number> = {};
+    // One payment between two players (or a player and the pot): their
+    // deltas, and who paid whom.
+    const pay = (from: string, to: string, amount: number) => {
+      if (from !== CHIP_POT) add(deltas, from, -amount);
+      if (to !== CHIP_POT) add(deltas, to, amount);
+      add(state.paid, `${from}>${to}`, amount);
+    };
     const labelBefore = roundLabel(state.roundWind, state.dealer, state.roundStartDealer);
     const dealerBefore = state.seats[state.dealer];
     const streakBefore = state.streak;
@@ -333,18 +432,12 @@ export function replay(game: ScoreGame): ReplayState {
       case "win": {
         const pairs = previewWin(state, ev.winners, ev.from);
         const winnerNames = new Set(ev.winners.map((w) => state.seats[w.seat]));
-        for (const pair of pairs) {
-          add(deltas, pair.winner, pair.worth);
-          add(deltas, pair.payer, -pair.worth);
-        }
+        for (const pair of pairs) pay(pair.payer, pair.winner, pair.worth);
         state.lahs = nextLahs(state.lahs, pairs, winnerNames);
 
         // 反雪.
         const fanXue: HandResult["fanXue"] = previewFanXue(state, ev.winners, ev.from);
-        for (const f of fanXue) {
-          add(deltas, f.to, f.amount);
-          add(deltas, f.from, -f.amount);
-        }
+        for (const f of fanXue) pay(f.from, f.to, f.amount);
         state.fanXueDue =
           ev.from !== null && ev.winners.length > 1
             ? { loser: state.seats[ev.from], winners: pairs.map((p) => p.winner) }
@@ -352,7 +445,7 @@ export function replay(game: ScoreGame): ReplayState {
 
         let jackpotWon: HandResult["jackpotWon"] = null;
         if (ev.jackpotTo && state.pot > 0) {
-          add(deltas, ev.jackpotTo, state.pot);
+          pay(CHIP_POT, ev.jackpotTo, state.pot);
           jackpotWon = { player: ev.jackpotTo, amount: state.pot };
           state.pot = 0;
         }
@@ -385,7 +478,7 @@ export function replay(game: ScoreGame): ReplayState {
       case "draw": {
         let fed = 0;
         if (state.settings.jackpot && state.settings.jackpotPerDraw > 0) {
-          for (const p of state.seats) add(deltas, p, -state.settings.jackpotPerDraw);
+          for (const p of state.seats) pay(p, CHIP_POT, state.settings.jackpotPerDraw);
           fed = state.settings.jackpotPerDraw * SEATS;
           state.pot += fed;
         }
@@ -420,10 +513,17 @@ export function replay(game: ScoreGame): ReplayState {
         const counterparts = ev.other !== undefined && ev.other !== ev.seat ? [state.seats[ev.other]] : state.seats;
         for (const other of counterparts) {
           if (other === me) continue;
-          const amount = ev.kind === "獎" ? ev.amount : -ev.amount;
-          add(deltas, me, amount);
-          add(deltas, other, -amount);
+          if (ev.kind === "獎") pay(other, me, ev.amount);
+          else pay(me, other, ev.amount);
         }
+        for (const [p, d] of Object.entries(deltas)) add(state.totals, p, d);
+        break;
+      }
+      case "zhaHu": {
+        const me = state.seats[ev.seat];
+        for (const each of ev.pays) if (each.player !== me && each.amount > 0) pay(me, each.player, each.amount);
+        for (const kick of zhaHuKicks(state, me)) pay(me, kick.player, kick.amount);
+        state.lahs = state.lahs.filter((l) => l.holder !== me);
         for (const [p, d] of Object.entries(deltas)) add(state.totals, p, d);
         break;
       }
@@ -433,7 +533,7 @@ export function replay(game: ScoreGame): ReplayState {
       case "jackpot": {
         const total = ev.shares.reduce((s, x) => s + x.amount, 0);
         if (total > state.pot) break;
-        for (const s of ev.shares) add(deltas, s.player, s.amount);
+        for (const s of ev.shares) pay(CHIP_POT, s.player, s.amount);
         state.pot -= total;
         for (const [p, d] of Object.entries(deltas)) add(state.totals, p, d);
         break;
@@ -441,7 +541,7 @@ export function replay(game: ScoreGame): ReplayState {
       case "jackpotIn": {
         for (const s of ev.shares) {
           if (s.amount <= 0) continue;
-          add(deltas, s.player, -s.amount);
+          pay(s.player, CHIP_POT, s.amount);
           state.pot += s.amount;
         }
         for (const [p, d] of Object.entries(deltas)) add(state.totals, p, d);
@@ -511,6 +611,56 @@ export function settle(totals: Record<string, number>, multiplier = 1): { from: 
     creditors[j].v -= amount;
     if (debtors[i].v <= 1e-9) i++;
     if (creditors[j].v <= 1e-9) j++;
+  }
+  return out;
+}
+
+// The Jackpot split as evenly as it goes, by seat: what won't divide is
+// spread one unit each (1, or 0.1 off 整數模式), from `first` (the 起莊 seat)
+// on round the table - 11 is 3 · 3 · 3 · 2 from seat 0.
+export function evenShares(pot: number, first: number, integer: boolean): number[] {
+  const unit = integer ? 1 : 0.1;
+  const units = Math.round(pot / unit);
+  const each = Math.floor(units / SEATS);
+  const left = units - each * SEATS;
+  return [0, 1, 2, 3].map((seat) => Math.round((each + ((seat - first + SEATS) % SEATS < left ? 1 : 0)) * unit * 10) / 10);
+}
+
+// ---- Chips -----------------------------------------------------------------
+
+// Who hands whom chips between two states of a game. At the table a hand's
+// payment goes into a 拉 and stays there: chips only change hands when that
+// 拉 ends (the holder doesn't win the next hand, a 踢, 投降, 詐胡), the pulled
+// player paying its whole value - less a 踢's half, which the 踢 pays back.
+// 獎罰, 詐胡, 反雪 and the Jackpot are paid there and then. Each 拉 is
+// settled between its own two players, so the handovers are pair by pair -
+// never netted across the table. The Jackpot is a pile of its own (彩池).
+export const CHIP_POT = "彩池";
+
+export function chipMoves(before: Pick<ReplayState, "paid" | "lahs">, after: Pick<ReplayState, "paid" | "lahs">): { from: string; to: string; amount: number }[] {
+  // Between each two players, what has changed hands in chips so far: what
+  // one has paid the other, less what's still riding in a 拉 between them.
+  const handed = (state: Pick<ReplayState, "paid" | "lahs">) => {
+    const net: Record<string, number> = {};
+    const move = (from: string, to: string, amount: number) => {
+      const key = from < to ? `${from}>${to}` : `${to}>${from}`;
+      net[key] = (net[key] ?? 0) + (from < to ? amount : -amount);
+    };
+    for (const [key, amount] of Object.entries(state.paid)) {
+      const [from, to] = key.split(">");
+      move(from, to, amount);
+    }
+    for (const l of state.lahs) move(l.pulled, l.holder, -l.value);
+    return net;
+  };
+  const was = handed(before);
+  const now = handed(after);
+  const out: { from: string; to: string; amount: number }[] = [];
+  for (const key of new Set([...Object.keys(was), ...Object.keys(now)])) {
+    const d = Math.round(((now[key] ?? 0) - (was[key] ?? 0)) * 10) / 10;
+    if (d === 0) continue;
+    const [a, b] = key.split(">");
+    out.push(d > 0 ? { from: a, to: b, amount: d } : { from: b, to: a, amount: -d });
   }
   return out;
 }
@@ -642,3 +792,18 @@ export const redoEvent = (game: ScoreGame): ScoreGame => {
 };
 
 export const canRedo = (game: ScoreGame) => (game.undone?.length ?? 0) > 0;
+
+// Fix an older entry from 最近: swap it for a corrected one (keeping when it
+// happened), or take it out. Everything after it replays on top, so totals,
+// 拉, 莊 and the round all follow. Either clears 重做, like a new entry.
+export const replaceEvent = (game: ScoreGame, index: number, ev: ScoreEvent): ScoreGame => ({
+  ...game,
+  events: game.events.map((e, i) => (i === index ? { ...ev, at: e.at } : e)),
+  undone: [],
+});
+
+export const deleteEvent = (game: ScoreGame, index: number): ScoreGame => ({
+  ...game,
+  events: game.events.filter((_, i) => i !== index),
+  undone: [],
+});

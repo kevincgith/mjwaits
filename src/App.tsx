@@ -41,7 +41,8 @@ import {
 } from "./tileArt";
 import { BonusGlyphSpan, TileGlyphSpan } from "./TileGlyphs";
 import { PlayPanel } from "./PlayPanel";
-import { ScoresPanel, type RecordRequest, type ScoreHandRequest } from "./ScoresPanel";
+import { ScoresPanel, SharedScoresView, type RecordRequest, type ScoreHandRequest, type SeatingResult } from "./ScoresPanel";
+import { snapshotFromHash } from "./lib/scoreShare";
 import { TaiRulesSheet } from "./TaiRulesSheet";
 import { loadTaiRules, rulesAffectScoring, saveTaiRules } from "./lib/taiRules";
 import { loadScores, saveScores } from "./lib/ledger";
@@ -6928,7 +6929,7 @@ function ScoringPanel({
         <div className="for-scores-banner" role="status">
           <span className="for-scores-text">
             <span>
-              <strong>For Scores:</strong> {forScores.player} {forScores.from === null ? "自摸" : forScores.fromName ? `食 ${forScores.fromName}` : "食胡"}
+              <strong>For Scores:</strong> {forScores.player} {forScores.zhaHu ? "詐胡 - what the hand is worth" : forScores.from === null ? "自摸" : forScores.fromName ? `食 ${forScores.fromName}` : "食胡"}
             </span>
             <span className="for-scores-sub">
               Winds set: {"東南西北"[forScores.roundWind - 1]}圈 · {"東南西北"[forScores.seatWind - 1]}家
@@ -8862,6 +8863,8 @@ function SeatingPanel({
   onSwap,
   onResetNames,
   fullNames,
+  onUse,
+  initialEast = null,
 }: {
   names: readonly string[];
   seatOrder: readonly number[];
@@ -8870,6 +8873,12 @@ function SeatingPanel({
   onResetNames: () => void;
   // The game's own players from Scores: whole names, nothing to rename.
   fullNames?: boolean;
+  // Opened from Scores: the final seating goes back there - who sits at each
+  // table position (bottom, right, top, left, as on the Scores board) and the
+  // position that drew 東.
+  onUse?: (seats: string[], east: number) => void;
+  // A position to start as the provisional East (from Scores: the last winner).
+  initialEast?: number | null;
 }) {
   const [order, setOrder] = useState<number[]>(newShuffle);
   // Which player's rename picker is open (player index), if any.
@@ -8898,8 +8907,8 @@ function SeatingPanel({
   // each mirrored in a ref, same idea as ScoringPanel's handRef: the tap
   // handlers below commit from a timer (see onTokenTap), so they read the
   // refs rather than a possibly-stale render's state.
-  const [provEast, setProvEastState] = useState<number | null>(null);
-  const provEastRef = useRef<number | null>(null);
+  const [provEast, setProvEastState] = useState<number | null>(initialEast);
+  const provEastRef = useRef<number | null>(initialEast);
   const setProvEast = (pos: number | null) => {
     provEastRef.current = pos;
     setProvEastState(pos);
@@ -8978,11 +8987,18 @@ function SeatingPanel({
       ? null
       : dealt.map((w) => (realEast + (w - 1)) % 4);
   const dealFromTwoPin = sum2 % 2 === 0;
+  // Everyone in their final seat, by table position.
+  const finalSeats = (): string[] | null => {
+    if (!finalPos) return null;
+    const out: string[] = [];
+    finalPos.forEach((to, from) => (out[to] = nameAt(from)));
+    return out;
+  };
 
   const reset = () => {
     cancelPendingTap();
     setOrder(newShuffle());
-    setProvEast(null);
+    setProvEast(initialEast);
     setSwapFrom(null);
     setStep(0);
   };
@@ -9140,14 +9156,28 @@ function SeatingPanel({
       {throwSum !== null && <div className="seat-throw-sum">Sum: {throwSum}</div>}
 
       <div className="seat-controls">
-        <button
-          type="button"
-          className="dice-roll seat-next"
-          onClick={advance}
-          disabled={!canNext}
-        >
-          {step < SEATING_STEPS - 1 ? "Next" : "Done"}
-        </button>
+        {/* At the end, from Scores: back there with this seating. */}
+        {step === SEATING_STEPS - 1 && onUse ? (
+          <button
+            type="button"
+            className="dice-roll seat-next"
+            onClick={() => {
+              const seats = finalSeats();
+              if (seats && realEast !== null) onUse(seats, realEast);
+            }}
+          >
+            Use in Scores
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="dice-roll seat-next"
+            onClick={advance}
+            disabled={!canNext}
+          >
+            {step < SEATING_STEPS - 1 ? "Next" : "Done"}
+          </button>
+        )}
         <div className="seat-secondary">
           <button type="button" className="seat-reset" onClick={reset}>
             Reset
@@ -9188,16 +9218,20 @@ function DiceTab({
   onSwapSeats,
   onResetSeatNames,
   gameNames,
+  gameEast = null,
+  onUseSeating,
 }: {
   seatNames: readonly string[];
   seatOrder: readonly number[];
   onRenameSeat: (player: number, name: string) => void;
   onSwapSeats: (posA: number, posB: number) => void;
   onResetSeatNames: () => void;
+  onUseSeating?: (seats: string[], east: number) => void;
   // Opened from Scores' 座位 Dice button: straight to Seating, with the
   // game's four players by full name (just for this visit - the saved
   // letters and their order stay as they were).
   gameNames?: readonly string[];
+  gameEast?: number | null; // ...with whoever won last as the provisional East
 }) {
   const [sub, setSub] = useState<"wall" | "exchange" | "seating">(gameNames ? "seating" : "wall");
   const [gameOrder, setGameOrder] = useState<readonly number[]>([0, 1, 2, 3]);
@@ -9244,6 +9278,8 @@ function DiceTab({
             }
             onResetNames={onResetSeatNames}
             fullNames={gameNames !== undefined}
+            onUse={gameNames ? onUseSeating : undefined}
+            initialEast={gameNames ? gameEast : null}
           />
         )}
       </div>
@@ -9905,6 +9941,9 @@ const TAB_ITEMS: { id: Exclude<AppMode, "play">; label: string; icon: ReactNode 
 
 function App() {
   const [mode, setMode] = useState<AppMode>(() => (readCalcHand(window.location.search) ? "calculator" : "scoring"));
+  // A shared scores link (#s=…) opens its read-only view over the app;
+  // "Open MJWaits" drops the hash and carries on as normal.
+  const [sharedScores, setSharedScores] = useState(() => snapshotFromHash(window.location.hash));
   // The Scores tab's games and roster - here so the Scoring tab can send a
   // hand to the game in progress. Saved on every change.
   const [scoreStore, setScoreStore] = useState(loadScores);
@@ -9959,7 +9998,9 @@ function App() {
   const [seatOrder, setSeatOrder] = useState<readonly number[]>([0, 1, 2, 3]);
   // Scores' 座位 Dice button opens the Dice tab on Seating; leaving Dice
   // clears it, so the tab's own button still opens on Dice & wall.
-  const [diceSeating, setDiceSeating] = useState<readonly string[] | null>(null);
+  const [diceSeating, setDiceSeating] = useState<{ names: readonly string[]; east: number | null } | null>(null);
+  // ...and the ceremony's final seating on its way back to 座位.
+  const [seatingResult, setSeatingResult] = useState<SeatingResult | null>(null);
   useEffect(() => {
     if (mode !== "dice" && diceSeating) setDiceSeating(null);
   }, [mode, diceSeating]);
@@ -10053,9 +10094,16 @@ function App() {
           <button
             key={id}
             type="button"
-            className={mode === id ? "toggle-on" : undefined}
-            aria-pressed={mode === id}
-            onClick={() => setMode(id)}
+            className={!sharedScores && mode === id ? "toggle-on" : undefined}
+            aria-pressed={!sharedScores && mode === id}
+            onClick={() => {
+              // Leaving a shared scores view: back to this phone's own app.
+              if (sharedScores) {
+                window.history.replaceState(null, "", window.location.pathname + window.location.search);
+                setSharedScores(null);
+              }
+              setMode(id);
+            }}
           >
             <span className="tab-bar-icon" aria-hidden="true">
               {icon}
@@ -10064,7 +10112,17 @@ function App() {
           </button>
         ))}
       </nav>
-      {mode === "scoring" && (
+      {sharedScores && (
+        <SharedScoresView
+          snap={sharedScores}
+          onClose={() => {
+            window.history.replaceState(null, "", window.location.pathname + window.location.search);
+            setSharedScores(null);
+            setMode("scores");
+          }}
+        />
+      )}
+      {!sharedScores && mode === "scoring" && (
         <ScoringPanel
           testHandRequest={testHandRequest}
           onTestHandLoaded={() => setTestHandRequest(null)}
@@ -10072,7 +10130,7 @@ function App() {
           onRecord={(request) => {
             // Back to the sheet it came from: same winner, 銃 and Jackpot.
             // (A 雙響/三響 also brings its whole draft back.)
-            const back = scoreFor ? { seat: scoreFor.seat, from: scoreFor.from, jackpot: scoreFor.jackpot, draft: scoreFor.draft } : {};
+            const back = scoreFor ? { seat: scoreFor.seat, from: scoreFor.from, jackpot: scoreFor.jackpot, draft: scoreFor.draft, zhaHu: scoreFor.zhaHu } : {};
             setRecordRequest({ ...request, ...back, nonce: Date.now() });
             setScoreFor(null);
             setMode("scores");
@@ -10092,6 +10150,7 @@ function App() {
                 from: scoreFor.from,
                 jackpot: scoreFor.jackpot,
                 draft: scoreFor.draft,
+                zhaHu: scoreFor.zhaHu,
                 reopenOnly: true,
                 nonce: Date.now(),
               });
@@ -10100,8 +10159,8 @@ function App() {
           }}
         />
       )}
-      {mode === "calculator" && <Calculator initialHand={calcLinkHand} onInitialHandLoaded={() => setCalcLinkHand(null)} />}
-      {mode === "trainer" && (
+      {!sharedScores && mode === "calculator" && <Calculator initialHand={calcLinkHand} onInitialHandLoaded={() => setCalcLinkHand(null)} />}
+      {!sharedScores && mode === "trainer" && (
         <TrainerPanel
           waitsStats={waitsTrainerStats}
           setWaitsStats={setWaitsTrainerStats}
@@ -10111,7 +10170,7 @@ function App() {
           setEndlessStats={setEndlessTrainerStats}
         />
       )}
-      {mode === "scores" && (
+      {!sharedScores && mode === "scores" && (
         <ScoresPanel
           store={scoreStore}
           setStore={setScoreStore}
@@ -10122,22 +10181,30 @@ function App() {
             setScoreFor({ ...req, nonce: Date.now() });
             setMode("scoring");
           }}
-          onOpenSeating={(names) => {
-            setDiceSeating(names);
+          onOpenSeating={(names, east) => {
+            setDiceSeating({ names, east });
             setMode("dice");
           }}
+          seatingResult={seatingResult}
+          onSeatingResultDone={() => setSeatingResult(null)}
         />
       )}
-      {mode === "play" && <PlayPanel onExit={() => setMode(lastNonPlayMode.current)} />}
-      {mode === "dice" && (
+      {!sharedScores && mode === "play" && <PlayPanel onExit={() => setMode(lastNonPlayMode.current)} />}
+      {!sharedScores && mode === "dice" && (
         <DiceTab
           key={diceSeating ? "seating" : "dice"}
-          gameNames={diceSeating ?? undefined}
+          gameNames={diceSeating?.names}
+          gameEast={diceSeating?.east ?? null}
           seatNames={seatNames}
           seatOrder={seatOrder}
           onRenameSeat={renameSeat}
           onSwapSeats={swapSeats}
           onResetSeatNames={resetSeatNames}
+          onUseSeating={(seats, east) => {
+            // Back to Scores, where 座位 opens with this seating to confirm.
+            setSeatingResult({ seats, east: seats[east], nonce: Date.now() });
+            setMode("scores");
+          }}
         />
       )}
       {/* The maker's credit first and clearest (linking to the source on

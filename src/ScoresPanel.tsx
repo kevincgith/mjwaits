@@ -24,6 +24,8 @@ import {
   replay,
   roundLabel,
   settle,
+  deleteEvent,
+  replaceEvent,
   undoEvent,
   withEvent,
   type HandResult,
@@ -34,8 +36,18 @@ import {
   type ScoreSettings,
   type ScoreStore,
   type WinnerEntry,
+  bonusPresets,
+  type BonusPreset,
+  chipMoves,
+  evenShares,
+  playTimes,
+  zhaHuKicks,
 } from "./lib/ledger";
-import { careerStats, headToHead, marks, patternCounts, playerStats, trend, type PlayerStats } from "./lib/scoreStats";
+import { snapshotOf, snapshotUrl, type ScoreSnapshot } from "./lib/scoreShare";
+import { drawSettleCard } from "./lib/settleImage";
+import qrcode from "qrcode-generator";
+import { createPortal } from "react-dom";
+import { careerPlayerStats, careerStats, headToHead, marks, patternCounts, playerStats, rankedBy, RECENT_HANDS, trend, trendSummary, type PlayerStats, type Swing } from "./lib/scoreStats";
 
 const WIND_CHARS = ["東", "南", "西", "北"];
 // Where each seat sits on the board, by seat index (turn order runs
@@ -78,6 +90,7 @@ export interface RecordRequest {
   // Cancelled on Scoring: just reopen that sheet as it was, with no tai.
   reopenOnly?: boolean;
   draft?: ScoreHandRequest["draft"]; // a 雙響/三響 sheet to put back together
+  zhaHu?: ScoreHandRequest["zhaHu"]; // a 詐胡 sheet to put back together
 
   nonce: number;
 }
@@ -97,6 +110,17 @@ export interface ScoreHandRequest {
   // A 雙響/三響: the sheet's own winner and every winner's tai so far, so
   // the sheet comes back whole with just `seat`'s tai filled in.
   draft?: { sheetSeat: number; entries: { seat: number; tai: string }[] };
+  // A 詐胡: each player's amount so far. The scored hand comes back as what
+  // it would pay each of them off their discard, 詐胡's 設定 amount at least.
+  zhaHu?: { player: string; amount: number }[];
+  nonce: number;
+}
+
+// The Dice tab's seat ceremony, back from Seating: who sits at each seat
+// (bottom, right, top, left - the board's own order) and who drew 東.
+export interface SeatingResult {
+  seats: string[];
+  east: string;
   nonce: number;
 }
 
@@ -130,10 +154,19 @@ const ICON = {
 } as const;
 
 const Icons = {
+  // A plus on a tile: a new game.
   newGame: (
     <svg {...ICON}>
-      <circle cx="12" cy="12" r="8.5" />
+      <rect x="4" y="4" width="16" height="16" rx="4" />
       <path d="M12 8.5v7M8.5 12h7" />
+    </svg>
+  ),
+  // An armchair: who sits where (座位).
+  seat: (
+    <svg {...ICON}>
+      <path d="M7 11V7.5A2.5 2.5 0 0 1 9.5 5h5A2.5 2.5 0 0 1 17 7.5V11" />
+      <path d="M5 11a2 2 0 0 1 2 2v1h10v-1a2 2 0 1 1 4 0v3.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 16.5V13a2 2 0 0 1 2-2z" />
+      <path d="M6 18v1.5M18 18v1.5" />
     </svg>
   ),
   undo: (
@@ -202,15 +235,31 @@ const Icons = {
       <path d="M4 19h16" />
     </svg>
   ),
+  // 特別獎罰: ±.
   plusMinus: (
-    <svg {...ICON} width={11} height={11} strokeWidth={2.2}>
+    <svg {...ICON} width={14} height={14} strokeWidth={2.6}>
       <path d="M12 4v9M7.5 8.5h9M7.5 19h9" />
     </svg>
   ),
+  // A clock turning back: what's happened (最近), not the time.
   recent: (
-    <svg {...ICON} width={18} height={18}>
-      <circle cx="12" cy="12" r="8.5" />
-      <path d="M12 7.5V12l3 2" />
+    <svg {...ICON}>
+      <path d="M4.2 13A8 8 0 1 0 6.3 6.3L4 8.5" />
+      <path d="M4 4.5v4h4" />
+      <path d="M12 8v4l2.8 1.8" />
+    </svg>
+  ),
+  // 玩家's best / lowest at the table.
+  thumbUp: (
+    <svg {...ICON} width={14} height={14} strokeWidth={2}>
+      <path d="M7 10v11" />
+      <path d="M15 5.9 14 10h5.8a2 2 0 0 1 1.9 2.6l-2.3 7A2 2 0 0 1 17.5 21H4.5A1.5 1.5 0 0 1 3 19.5v-8A1.5 1.5 0 0 1 4.5 10h2.8a2 2 0 0 0 1.8-1.1L12 3a3 3 0 0 1 3 2.9Z" />
+    </svg>
+  ),
+  thumbDown: (
+    <svg {...ICON} width={14} height={14} strokeWidth={2}>
+      <path d="M17 14V3" />
+      <path d="M9 18.1 10 14H4.2a2 2 0 0 1-1.9-2.6l2.3-7A2 2 0 0 1 6.5 3h13A1.5 1.5 0 0 1 21 4.5v8a1.5 1.5 0 0 1-1.5 1.5h-2.8a2 2 0 0 0-1.8 1.1L12 21a3 3 0 0 1-3-2.9Z" />
     </svg>
   ),
   close: (
@@ -540,13 +589,21 @@ type HandInitial = {
   jackpot?: boolean;
   entries?: DraftEntry[];
   patternsFor?: number;
+  // Fixing a 特別獎罰 entry: the tab opens as it was recorded.
+  bonus?: { kind: "獎" | "罰"; other: number | null; amount: number; name?: string };
+  // Fixing a 詐胡 entry: each player's amount as recorded.
+  zhaHu?: { player: string; amount: number }[];
 };
+
+// The 胡 sheet's views: 食胡, 特別獎罰, and 詐胡 - part of the 食胡 tab, opened
+// from its foot when it's switched on in 設定.
+type HandMode = "win" | "bonus" | "zhaHu";
 
 type DraftEntry = { seat: number; tai: string };
 
 // What the 食胡 sheet hands over when asking Scoring to work a hand out:
 // `target` is the winner being scored, `entries` the whole draft.
-type ScoreHandAsk = { from: number | null; jackpot: boolean; scan: boolean; target: number; entries: DraftEntry[] };
+type ScoreHandAsk = { from: number | null; jackpot: boolean; scan: boolean; target: number; entries: DraftEntry[]; zhaHu?: { player: string; amount: number }[] };
 
 function HandSheet({
   store,
@@ -562,13 +619,16 @@ function HandSheet({
   state: ReplayState;
   seat: number;
   initial?: HandInitial;
-  startMode?: "win" | "bonus";
+  startMode?: HandMode;
   onDone: (ev: ScoreEvent) => void;
   onClose: () => void;
   onScoreHand?: (ask: ScoreHandAsk) => void;
 }) {
-  const [mode, setMode] = useState<"win" | "bonus">(startMode);
+  const [mode, setMode] = useState<HandMode>(startMode);
   const player = state.seats[seat];
+  const zhaHuOn = state.settings.zhaHu !== null || initial?.zhaHu !== undefined;
+  const onZhaHu = zhaHuOn ? () => setMode("zhaHu") : undefined;
+  const zhaHuRef = useRef<HTMLDivElement>(null);
   // Both sheets' natural heights, measured before paint (and again on a
   // resize); each then gets the taller as its min-height.
   const winRef = useRef<HTMLDivElement>(null);
@@ -576,7 +636,7 @@ function HandSheet({
   const [minHeight, setMinHeight] = useState<number | undefined>(undefined);
   useLayoutEffect(() => {
     const measure = () => {
-      const els = [winRef.current, bonusRef.current].filter((el): el is HTMLDivElement => el !== null);
+      const els = [winRef.current, bonusRef.current, zhaHuRef.current].filter((el): el is HTMLDivElement => el !== null);
       els.forEach((el) => (el.style.minHeight = ""));
       const tallest = Math.max(...els.map((el) => el.offsetHeight));
       els.forEach((el) => (el.style.minHeight = `${tallest}px`));
@@ -592,10 +652,11 @@ function HandSheet({
         store={store}
         state={state}
         winnerSeat={seat}
-        initial={initial}
+        initial={initial?.zhaHu ? undefined : initial}
         onDone={onDone}
         onClose={onClose}
         onBonus={() => setMode("bonus")}
+        onZhaHu={onZhaHu}
         onScoreHand={onScoreHand}
         frame={{ ref: winRef, minHeight, hidden: mode !== "win" }}
       />
@@ -607,17 +668,35 @@ function HandSheet({
         onClose={onClose}
         onWin={() => setMode("win")}
         player={player}
+        initial={initial?.bonus}
         frame={{ ref: bonusRef, minHeight, hidden: mode !== "bonus" }}
       />
+      {zhaHuOn && (
+        <ZhaHuSheet
+          store={store}
+          state={state}
+          seat={seat}
+          player={player}
+          initial={initial?.zhaHu}
+          note={initial?.zhaHu ? initial.note : undefined}
+          onDone={onDone}
+          onClose={onClose}
+          onWin={() => setMode("win")}
+          onBonus={() => setMode("bonus")}
+          onScoreHand={onScoreHand}
+          frame={{ ref: zhaHuRef, minHeight, hidden: mode !== "zhaHu" }}
+        />
+      )}
     </>
   );
 }
 
-function ModeTabs({ mode, onWin, onBonus }: { mode: "win" | "bonus"; onWin?: () => void; onBonus?: () => void }) {
+function ModeTabs({ mode, onWin, onBonus }: { mode: HandMode; onWin?: () => void; onBonus?: () => void }) {
+  // 詐胡 lives on the 食胡 tab.
   return (
     <div className="sc-sheet-tabs">
       <Segmented
-        value={mode}
+        value={mode === "bonus" ? "bonus" : "win"}
         onChange={(v) => (v === "win" ? onWin?.() : onBonus?.())}
         options={[
           { value: "win", label: "食胡 Win" },
@@ -636,6 +715,7 @@ function WinSheet({
   onDone,
   onClose,
   onBonus,
+  onZhaHu,
   onScoreHand,
   frame,
 }: {
@@ -646,6 +726,7 @@ function WinSheet({
   onDone: (ev: ScoreEvent) => void;
   onClose: () => void;
   onBonus: () => void;
+  onZhaHu?: () => void;
   onScoreHand?: (ask: ScoreHandAsk) => void;
   frame?: SheetFrame;
 }) {
@@ -748,17 +829,21 @@ function WinSheet({
       <div className="sc-field">
         <div className="sc-field-head">
           <span className="sc-label">Who dealt in?</span>
-          <span className="sc-help">Hold a player for 雙響</span>
+          <span className="sc-help">{onZhaHu ? "Hold a player for 多響 · 詐胡" : "Hold a player for 多響"}</span>
         </div>
         <TablePicker
           store={store}
           seats={seats}
+          dealer={state.dealer}
+          streak={state.streak}
           self={winnerSeat}
           selfLabel="胡"
           selfTone="win"
           isOn={(seat) => from === seat || entries.some((e) => e.seat === seat)}
           onPick={(seat) => pickFrom(from === seat ? -1 : seat)}
           onLongPress={toggleExtra}
+          // 詐胡 - a called win that wasn't: hold the caller.
+          onSelfLongPress={onZhaHu}
           tagFor={(seat) =>
             seat === from && from !== null && from >= 0
               ? { text: "銃", tone: "discard" }
@@ -775,7 +860,8 @@ function WinSheet({
       </div>
 
       <div className="sc-tai-row">
-        <span className="sc-label">番 Tai</span>
+        {/* Fixed width, as on 特別獎罰 and 詐胡, so the field sits in the same place on every tab. */}
+        <span className="sc-label sc-label-fixed">番 Tai</span>
         <div className="sc-tai-fields">
           {entries.map((e, i) => (
             <button key={e.seat} type="button" className={`sc-tai${focus === i ? " is-focus" : ""}`} onClick={() => setFocus(i)} aria-label={`${seats[e.seat]}'s tai`}>
@@ -863,11 +949,163 @@ interface PayRow {
   high?: boolean;
 }
 
-function PayTable({ cols, rows, empty, highTitle }: { cols: PayCol[]; rows: PayRow[]; empty: string; highTitle?: string }) {
+// 詐胡: a called win that wasn't. Laid out like a 三響 on the 食胡 tab - the
+// caller in the 胡 seat, an amount field for each of the other three (the 設定
+// amount to start with, retyped from the keypad), and who pays whom below.
+function ZhaHuSheet({
+  store,
+  state,
+  seat,
+  player,
+  initial,
+  onDone,
+  onClose,
+  onWin,
+  onBonus,
+  onScoreHand,
+  frame,
+  note,
+}: {
+  store: ScoreStore;
+  state: ReplayState;
+  seat: number;
+  player: string;
+  initial?: { player: string; amount: number }[];
+  note?: string;
+  onDone: (ev: ScoreEvent) => void;
+  onClose: () => void;
+  onWin: () => void;
+  onBonus: () => void;
+  onScoreHand?: (ask: ScoreHandAsk) => void;
+  frame?: SheetFrame;
+}) {
+  const others = state.seats.map((_, s2) => s2).filter((s2) => s2 !== seat);
+  const each = state.settings.zhaHu ?? DEFAULT_SETTINGS.zhaHu ?? 40;
+  const [amounts, setAmounts] = useState<string[]>(() =>
+    others.map((s2) => String(initial?.find((x) => x.player === state.seats[s2])?.amount ?? each)),
+  );
+  const [focus, setFocus] = useState(0);
+  // A field still showing its starting amount is replaced by the first digit
+  // typed, not added to - the keypad (and its 封頂) sees it as empty.
+  const [fresh, setFresh] = useState(() => others.map(() => true));
+  const type = (v: string) => {
+    setAmounts((a) => a.map((x, i) => (i === focus ? v : x)));
+    setFresh((f) => f.map((x, i) => (i === focus ? false : x)));
+  };
+  const pick = (s2: number) => {
+    const i = others.indexOf(s2);
+    if (i >= 0) setFocus(i);
+  };
+  // Any 拉 the caller holds ends here, each pulled player paid its 踢 half.
+  const kicks = zhaHuKicks(state, player);
+  const kickOf = (p: string) => kicks.find((k) => k.player === p)?.amount ?? 0;
+  const total = amounts.reduce((t, a) => t + Number(a || 0), 0);
+  const kickTotal = kicks.reduce((t, k) => t + k.amount, 0);
+  // Scan or score the called hand: it comes back as what it's worth to each.
+  const scoreIt = (scan: boolean) =>
+    onScoreHand?.({
+      from: -1,
+      jackpot: false,
+      scan,
+      target: seat,
+      entries: [{ seat, tai: "" }],
+      zhaHu: others.map((s2, i) => ({ player: state.seats[s2], amount: Number(amounts[i] || 0) })),
+    });
+  return (
+    <Sheet
+      title={
+        <span className="sc-sheet-who">
+          <Monogram store={store} player={player} />
+          {player}
+          <span className="sc-sheet-verb is-penalty">詐胡</span>
+        </span>
+      }
+      onClose={onClose}
+      frame={frame}
+      tabs={<ModeTabs mode="zhaHu" onWin={onWin} onBonus={onBonus} />}
+      actions={
+        <>
+          <button
+            type="button"
+            className="sc-danger"
+            disabled={total <= 0}
+            onClick={() => onDone({ t: "zhaHu", at: Date.now(), seat, pays: others.map((s2, i) => ({ player: state.seats[s2], amount: Number(amounts[i] || 0) })) })}
+          >
+            {total > 0 ? `Confirm · ${fmt(total + kickTotal)}` : "Confirm"}
+          </button>
+        </>
+      }
+    >
+      {note && <p className="sc-note">{note}</p>}
+      <div className="sc-field">
+        <div className="sc-field-head">
+          <span className="sc-label">Who gets paid?</span>
+          <span className="sc-help">Tap one to change theirs</span>
+        </div>
+        <TablePicker
+          store={store}
+          seats={state.seats}
+          dealer={state.dealer}
+          streak={state.streak}
+          self={seat}
+          selfLabel="詐"
+          selfTone="lose"
+          isOn={(s2) => others[focus] === s2}
+          onPick={pick}
+          onSelfLongPress={onWin}
+          tagFor={(s2) => (s2 !== seat ? { text: "收", tone: "win" } : undefined)}
+          center={{ label: "詐胡", sub: `${fmt(each)} each`, on: true, tone: "lose" }}
+        />
+      </div>
+      <div className="sc-tai-row">
+        <span className="sc-label sc-label-fixed">金額</span>
+        <div className="sc-tai-fields">
+          {others.map((s2, i) => (
+            <button key={s2} type="button" className={`sc-tai${focus === i ? " is-focus" : ""}`} onClick={() => setFocus(i)} aria-label={`${state.seats[s2]}'s amount`}>
+              <span className="sc-tai-who">{state.seats[s2]}</span>
+              <span className={`sc-tai-value${amounts[i] ? "" : " is-empty"}`}>{amounts[i] || "0"}</span>
+            </button>
+          ))}
+        </div>
+        {/* As on 食胡: work the called hand out on Scoring - by photo or by tiles. */}
+        {onScoreHand && (
+          <span className="sc-score-hand">
+            <button type="button" className="sc-outline" onClick={() => scoreIt(true)} aria-label="Scan hand" title="Scan hand">
+              {Icons.camera}
+            </button>
+            <button type="button" className="sc-secondary" onClick={() => scoreIt(false)} aria-label="Score tiles" title="Score tiles">
+              {Icons.tiles}
+            </button>
+          </span>
+        )}
+      </div>
+      {/* 封頂 holds here as on 食胡. */}
+      <Keypad max={state.settings.scoreCap} value={fresh[focus] ? "" : (amounts[focus] ?? "")} onChange={type} />
+      {/* The 踢 column: the caller's 拉 end here, each pulled player paid its 踢 half. */}
+      <PayTable
+        cols={[{ key: "to", label: "To", wide: true }, ...(kicks.length > 0 ? [{ key: "zha", label: "詐胡" }, { key: "kick", label: "踢" }] : [])]}
+        rows={others
+          .map((s2, i) => {
+            const p = state.seats[s2];
+            const amount = Number(amounts[i] || 0);
+            return {
+              who: player,
+              cells: { to: p, ...(kicks.length > 0 ? { zha: fmt(amount), ...(kickOf(p) ? { kick: fmt(kickOf(p)) } : {}) } : {}) },
+              total: amount + kickOf(p),
+            };
+          })
+          .filter((r) => r.total > 0)}
+        empty="Enter an amount to see who pays what"
+      />
+    </Sheet>
+  );
+}
+
+function PayTable({ cols, rows, empty, highTitle }: { cols: PayCol[]; rows: PayRow[]; empty: ReactNode; highTitle?: string }) {
   return (
     <div className="sc-paytable" aria-live="polite">
       {rows.length === 0 ? (
-        <p className="sc-paytable-empty">{empty}</p>
+        typeof empty === "string" ? <p className="sc-paytable-empty">{empty}</p> : empty
       ) : (
         <table aria-label="Who pays what">
           <colgroup>
@@ -916,28 +1154,48 @@ function BonusSheet({
   onClose,
   onWin,
   frame,
+  initial,
 }: {
   store: ScoreStore;
   state: ReplayState;
   seat: number;
   player: string;
+  initial?: HandInitial["bonus"];
   onDone: (ev: ScoreEvent) => void;
   onClose: () => void;
   onWin: () => void;
   frame?: SheetFrame;
 }) {
-  const [kind, setKind] = useState<"獎" | "罰">("獎");
+  const [kind, setKind] = useState<"獎" | "罰">(initial?.kind ?? "獎");
   // null = everyone else.
-  const [other, setOther] = useState<number | null>(null);
-  const [amount, setAmount] = useState("");
+  const [other, setOther] = useState<number | null>(initial?.other ?? null);
+  const [amount, setAmount] = useState(initial ? String(initial.amount) : "");
+  // A 預設獎罰 picked (花, 暗槓…): its name goes on the entry, until the
+  // amount or its way is changed by hand.
+  const [preset, setPreset] = useState<string | null>(initial?.name ?? null);
+  const presets = bonusPresets(state.settings);
+  // A one-player pick (7搶1, 1搶7) waits for who: Confirm stays off till then.
+  const [needsOne, setNeedsOne] = useState(false);
+  // The quick picks in pages of eight (two rows of four), in bonusPresets'
+  // order - each swipe lands on a whole page, with a sliver of the other
+  // peeking in at the edge - so the box never grows.
+  const shown = presets;
   const n = Number(amount || 0);
+  const pick = (p: BonusPreset) => {
+    setKind(p.kind);
+    setOther(null);
+    setAmount(String(p.amount));
+    setPreset(p.name);
+    setNeedsOne(p.one === true);
+  };
+  const waiting = needsOne && other === null;
   return (
     <Sheet
       title={
         <span className="sc-sheet-who">
           <Monogram store={store} player={player} />
           {player}
-          <span className={`sc-sheet-verb${kind === "罰" ? " is-penalty" : ""}`}>特別{kind}</span>
+          <span className={`sc-sheet-verb${kind === "罰" ? " is-penalty" : ""}`}>{preset ?? `特別${kind}`}</span>
         </span>
       }
       onClose={onClose}
@@ -948,10 +1206,10 @@ function BonusSheet({
           <button
             type="button"
             className={kind === "獎" ? "sc-primary" : "sc-danger"}
-            disabled={n <= 0}
-            onClick={() => onDone({ t: "bonus", at: Date.now(), seat, amount: n, kind, ...(other !== null ? { other } : {}) })}
+            disabled={n <= 0 || waiting}
+            onClick={() => onDone({ t: "bonus", at: Date.now(), seat, amount: n, kind, ...(other !== null ? { other } : {}), ...(preset ? { name: preset } : {}) })}
           >
-            Confirm
+            {waiting ? (kind === "獎" ? "Tap who pays" : "Tap who's paid") : "Confirm"}
           </button>
         </>
       }
@@ -961,13 +1219,28 @@ function BonusSheet({
         <TablePicker
           store={store}
           seats={state.seats}
+          dealer={state.dealer}
+          streak={state.streak}
           self={seat}
           selfLabel={kind}
           selfTone={kind === "罰" ? "lose" : "win"}
           isOn={(s2) => other === s2}
           onPick={setOther}
           tagFor={(s2) => (other === s2 ? (kind === "獎" ? { text: "付", tone: "discard" } : { text: "收", tone: "win" }) : undefined)}
-          center={{ label: "全", sub: "Everyone", on: other === null, onPick: () => setOther(null), tone: kind === "罰" ? "lose" : "win" }}
+          center={{
+            label: "全",
+            sub: "Everyone",
+            on: other === null && !needsOne,
+            onPick: () => {
+              setOther(null);
+              // Everyone, by hand: not the one-player pick any more.
+              if (needsOne) {
+                setNeedsOne(false);
+                setPreset(null);
+              }
+            },
+            tone: kind === "罰" ? "lose" : "win",
+          }}
         />
       </div>
       <div className="sc-tai-row">
@@ -988,19 +1261,34 @@ function BonusSheet({
               className={`sc-kind-${k === "獎" ? "reward" : "penalty"}${kind === k ? " is-on" : ""}`}
               aria-pressed={kind === k}
               aria-label={k === "獎" ? "獎 Reward" : "罰 Penalty"}
-              onClick={() => setKind(k)}
+              onClick={() => {
+                if (k !== kind) {
+                  setPreset(null);
+                  setNeedsOne(false);
+                }
+                setKind(k);
+              }}
             >
               {k}
             </button>
           ))}
         </span>
       </div>
-      <Keypad max={state.settings.scoreCap} value={amount} onChange={setAmount} />
-      {/* Who pays whom, in the same table as 食胡 - and the same size. */}
+      <Keypad
+        max={state.settings.scoreCap}
+        value={amount}
+        onChange={(v) => {
+          setAmount(v);
+          setPreset(null);
+          setNeedsOne(false);
+        }}
+      />
+      {/* Who pays whom, in the same table as 食胡 - and the same size. Empty,
+          it holds the 預設獎罰 quick picks instead, so they take no room. */}
       <PayTable
         cols={[{ key: "to", label: "To", wide: true }]}
         rows={
-          n <= 0
+          n <= 0 || waiting
             ? []
             : (other === null ? state.seats.map((_, s2) => s2).filter((s2) => s2 !== seat) : [other]).map((s2) =>
                 kind === "獎"
@@ -1008,7 +1296,34 @@ function BonusSheet({
                   : { who: player, cells: { to: state.seats[s2] }, total: n },
               )
         }
-        empty="Enter an amount to see who pays what"
+        empty={
+          waiting ? (
+            `${preset} - tap who ${kind === "獎" ? "pays" : "is paid"}, above`
+          ) : presets.length > 0 ? (
+            <div className={`sc-presets${shown.length > 8 ? " is-paged" : ""}`} role="group" aria-label="預設獎罰">
+              {/* Four columns to a screenful, read across a row then down:
+                  a tile's place is worked out, so the strip still reads 花 草
+                  花草 … left to right however far it scrolls. */}
+              {shown.map((p, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  className={`sc-preset is-${p.kind === "獎" ? "reward" : "penalty"}${i % 8 === 0 ? " is-page" : ""}`}
+                  style={{ gridRow: Math.floor((i % 8) / 4) + 1, gridColumn: Math.floor(i / 8) * 4 + (i % 4) + 1 }}
+                  onClick={() => pick(p)}
+                >
+                  <strong>{p.name}</strong>
+                  <span>
+                    {p.kind === "獎" ? "+" : "−"}
+                    {fmt(p.amount)}
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            "Enter an amount to see who pays what"
+          )
+        }
       />
     </Sheet>
   );
@@ -1029,12 +1344,17 @@ function TablePicker({
   isDisabled,
   onPick,
   onLongPress,
+  onSelfLongPress,
   center,
   tagFor,
   selfTone,
+  dealer,
+  streak = 0,
 }: {
   store: ScoreStore;
   seats: string[];
+  dealer?: number; // marks that seat 莊 (連N), as on the 戰況 cards
+  streak?: number;
   self?: number;
   selfLabel?: string;
   isOn: (seat: number) => boolean;
@@ -1042,6 +1362,7 @@ function TablePicker({
   onPick: (seat: number) => void;
   // A held press (about half a second) - its tap is then swallowed.
   onLongPress?: (seat: number) => void;
+  onSelfLongPress?: () => void;
   center?: { label: ReactNode; sub?: ReactNode; on: boolean; onPick?: () => void; tone?: "win" | "lose" };
   selfTone?: "win" | "lose";
   tagFor?: (seat: number) => { text: string; tone: "win" | "discard" } | undefined;
@@ -1050,15 +1371,15 @@ function TablePicker({
   const release = () => {
     if (hold.current) window.clearTimeout(hold.current.timer);
   };
-  const press = (seat: number) =>
-    onLongPress
+  const holdFor = (fire: (() => void) | undefined) =>
+    fire
       ? {
           onPointerDown: () => {
             release();
             const h = { timer: 0, fired: false };
             h.timer = window.setTimeout(() => {
               h.fired = true;
-              onLongPress(seat);
+              fire();
             }, 450);
             hold.current = h;
           },
@@ -1068,15 +1389,17 @@ function TablePicker({
           onContextMenu: (e: { preventDefault: () => void }) => e.preventDefault(),
         }
       : {};
+  const press = (seat: number) => holdFor(onLongPress && (() => onLongPress(seat)));
   return (
     <div className={`sc-table-pick${onLongPress ? " can-hold" : ""}`}>
       {seats.map((player, seat) => {
         const area = SEAT_AREAS[seat];
         if (seat === self)
           return (
-            <span key={seat} className={`sc-pick sc-pick-self sc-area-${area}${selfTone ? ` is-self-${selfTone}` : ""}`}>
+            <span key={seat} className={`sc-pick sc-pick-self sc-area-${area}${selfTone ? ` is-self-${selfTone}` : ""}`} {...holdFor(onSelfLongPress)}>
               <Monogram store={store} player={player} size="sm" />
               <span className="sc-pick-name">{player}</span>
+              {seat === dealer && <span className="sc-zhuang sc-pick-zhuang">{streak > 0 ? `莊${streak}` : "莊"}</span>}
               {selfLabel && <span className={`sc-pick-tag${selfTone === "lose" ? " is-discard" : ""}`}>{selfLabel}</span>}
             </span>
           );
@@ -1098,6 +1421,7 @@ function TablePicker({
           >
             <Monogram store={store} player={player} size="sm" />
             <span className="sc-pick-name">{player}</span>
+            {seat === dealer && <span className="sc-zhuang sc-pick-zhuang">{streak > 0 ? `莊${streak}` : "莊"}</span>}
             {tagFor?.(seat) && <span className={`sc-pick-tag is-${tagFor(seat)!.tone}`}>{tagFor(seat)!.text}</span>}
           </button>
         );
@@ -1145,18 +1469,28 @@ function RoundOption({ verb, label }: { verb: string; label: string }) {
   );
 }
 
+// How long 座位's cards take to slide to new seats - the 莊 badge and the
+// 起莊 corner fly on the same clock when they move with them.
+const SEAT_MOVE_MS = 800;
+// ...and how much a card shrinks while it's lifted - the shadow does most of the lift.
+const SEAT_DIP = 0.08;
+
 function SeatsSheet({
   store,
   state,
   onDone,
   onClose,
   onOpenSeating,
+  proposal,
 }: {
   store: ScoreStore;
   state: ReplayState;
   onDone: (change: { seats: string[] | null; newNames: string[]; removedNames: string[]; dealer: ScoreEvent | null }) => void;
   onClose: () => void;
   onOpenSeating?: () => void;
+  // The seat ceremony's result: the cards slide there once the sheet is up,
+  // 東 becomes 莊 at 連0 and the round resets - all still to Confirm.
+  proposal?: { seats: string[]; east: string };
 }) {
   // Seating draft.
   const [seats, setSeats] = useState(state.seats.slice());
@@ -1227,16 +1561,171 @@ function SeatsSheet({
   // start each one there and let it glide home.
   const diamondRef = useRef<HTMLDivElement>(null);
   const before = useRef<Map<string, DOMRect> | null>(null);
+  // Cards caught mid-slide by the next move, and how lifted they were (0-1).
+  const midSlide = useRef<Map<string, number>>(new Map());
   const spots = () => {
     const map = new Map<string, DOMRect>();
     diamondRef.current?.querySelectorAll<HTMLElement>("[data-player]").forEach((el) => map.set(el.dataset.player!, el.getBoundingClientRect()));
     return map;
   };
   const moveSeats = (change: (prev: string[]) => string[]) => {
+    // Where everything is on screen right now - mid-slide too, when taps come
+    // fast - so the next slide starts from there, not from where the last one
+    // was headed. A card caught mid-slide also keeps how lifted it was.
     before.current = spots();
+    const lift = new Map<string, number>();
+    diamondRef.current?.querySelectorAll<HTMLElement>("[data-player]").forEach((el) => {
+      if (el.getAnimations().length === 0) return;
+      const scale = new DOMMatrixReadOnly(getComputedStyle(el).transform).a;
+      lift.set(el.dataset.player!, Math.min(1, Math.max(0, (1 - scale) / SEAT_DIP)));
+    });
+    midSlide.current = lift;
+    qiFrom.current = qiSpot();
     setPicked(null);
     setSeats(change);
   };
+  // A move on top of a move: the slides still running are dropped (their
+  // start points are already noted above), so the new ones - and the 莊 and
+  // 起莊 marks measured next - work from the cards' real seats.
+  useLayoutEffect(() => {
+    if (!before.current) return;
+    diamondRef.current?.querySelectorAll<HTMLElement>("[data-player]").forEach((el) => el.getAnimations().forEach((a) => a.cancel()));
+  }, [seats]);
+  // 起莊's corner belongs to a seat, not a player. When the card that had it
+  // slides to its new seat (a rotation, say), it simply rides along on that
+  // card. Otherwise it flies there on its own (a copy, above the sheet, on the
+  // 莊 badge's arc) rather than arriving on some other card - and when its seat
+  // doesn't change but another player slides in, the copy holds still there
+  // while they do. Measured against the map, before the cards start sliding
+  // (so this runs first).
+  const lastQi = useRef<{ seat: number; player: string; x: number; y: number } | null>(null);
+  // The corner as it is on screen at the moment of a move (its copy, if one
+  // is in flight), against the map.
+  // scale: a copy caught in flight, and how big it was then.
+  const qiFrom = useRef<{ x: number; y: number; scale?: number } | null>(null);
+  const qiSpot = () => {
+    const map = diamondRef.current;
+    const flying = [...document.body.children].find((el) => el.classList.contains("sc-qi-corner")) as HTMLElement | undefined;
+    const corner = flying ?? map?.querySelector<HTMLElement>(".sc-qi-corner");
+    if (!map || !corner) return null;
+    const box = map.getBoundingClientRect();
+    const r = corner.getBoundingClientRect();
+    // getBoundingClientRect is the scaled box; the copy is placed by its
+    // unscaled top-left, so take the scale back out around its centre.
+    const scale = flying ? new DOMMatrixReadOnly(getComputedStyle(flying).transform).a : 1;
+    const w = r.width / scale;
+    const h = r.height / scale;
+    return { x: r.left + (r.width - w) / 2 - box.left, y: r.top + (r.height - h) / 2 - box.top, ...(flying ? { scale } : {}) };
+  };
+  const lastSeats = useRef(seats.join("|"));
+  // The copy in flight - a later render mustn't cut it short, only a new move.
+  const qiFlight = useRef<(() => void) | null>(null);
+  useEffect(() => () => qiFlight.current?.(), []);
+  useLayoutEffect(() => {
+    const map = diamondRef.current;
+    const corner = map?.querySelector<HTMLElement>(".sc-qi-corner");
+    const card = corner?.closest<HTMLElement>("[data-player]");
+    const prev = lastQi.current;
+    const from = qiFrom.current;
+    qiFrom.current = null;
+    const seatsMoved = lastSeats.current !== seats.join("|");
+    lastSeats.current = seats.join("|");
+    if (!map || !corner || !card) return;
+    const box = map.getBoundingClientRect();
+    const to = corner.getBoundingClientRect();
+    const now = { seat: seats.indexOf(card.dataset.player!), player: card.dataset.player!, x: to.left - box.left, y: to.top - box.top };
+    lastQi.current = now;
+    if (!prev || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const hold = prev.seat === now.seat && seatsMoved && prev.player !== now.player;
+    if (prev.seat === now.seat && !hold) return;
+    // Riding its card - unless its copy is still in the air from the last
+    // move, which then carries on to the new spot rather than landing on the
+    // old one first.
+    if (prev.seat !== now.seat && seatsMoved && prev.player === now.player && from?.scale === undefined) return;
+    const style = getComputedStyle(corner);
+    const flyer = corner.cloneNode(true) as HTMLElement;
+    Object.assign(flyer.style, {
+      position: "fixed",
+      left: `${to.left}px`,
+      top: `${to.top}px`,
+      width: `${to.width}px`,
+      height: `${to.height}px`,
+      borderTopLeftRadius: style.borderTopLeftRadius,
+      zIndex: "1000",
+      pointerEvents: "none",
+    });
+    document.body.appendChild(flyer);
+    const dx = (from ?? prev).x - now.x;
+    const dy = (from ?? prev).y - now.y;
+    const lift = -Math.min(48, Math.hypot(dx, dy) / 4);
+    const frames: Keyframe[] = [];
+    // A copy caught in flight carries on from where it is and as big as it
+    // is, settling straight in - no second take-off.
+    const s0 = from?.scale;
+    for (let i = 0; i <= 20; i++) {
+      const t = i / 20;
+      if (s0 !== undefined) {
+        const e = 1 - Math.pow(1 - t, 3);
+        frames.push({ offset: t, transform: `translate(${dx * (1 - e)}px, ${dy * (1 - e)}px) scale(${s0 + (1 - s0) * e})` });
+        continue;
+      }
+      const e = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+      const rise = hold ? 0 : Math.sin(Math.PI * e);
+      frames.push({ offset: t, transform: `translate(${dx * (1 - e)}px, ${dy * (1 - e) + lift * rise}px) scale(${1 + 0.25 * rise})` });
+    }
+    qiFlight.current?.();
+    // Alongside the cards when they move too, so all of it lands together.
+    const flight = flyer.animate(frames, { duration: seatsMoved ? SEAT_MOVE_MS : 600, easing: "linear" });
+    corner.style.visibility = "hidden";
+    const land = () => {
+      flyer.remove();
+      corner.style.visibility = "";
+      if (qiFlight.current === land) qiFlight.current = null;
+    };
+    qiFlight.current = land;
+    flight.finished.then(land, land);
+  });
+  // A new 莊: the badge flies from the old dealer's seat to the new one (a
+  // copy of it, above the sheet, so no card clips it) and lands with a pop.
+  // Measured where it ends up before the cards start sliding (so this runs
+  // ahead of them), and in step with them when they move too - start state
+  // to end state, every piece on the same clock.
+  const badgeFrom = useRef<DOMRect | null>(null);
+  useLayoutEffect(() => {
+    const from = badgeFrom.current;
+    badgeFrom.current = null;
+    const cardsMoving = before.current !== null;
+    const badge = diamondRef.current?.querySelector<HTMLElement>(".sc-zhuang");
+    if (!from || !badge || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const to = badge.getBoundingClientRect();
+    const flyer = badge.cloneNode(true) as HTMLElement;
+    Object.assign(flyer.style, { position: "fixed", left: `${to.left}px`, top: `${to.top}px`, margin: "0", zIndex: "1000", pointerEvents: "none" });
+    document.body.appendChild(flyer);
+    const dx = from.left - to.left;
+    const dy = from.top - to.top;
+    // A smooth arc: sampled along an eased path with a gentle rise (a sine,
+    // so no sharp peak), growing a little mid-flight.
+    const lift = -Math.min(48, Math.hypot(dx, dy) / 4);
+    const frames: Keyframe[] = [];
+    for (let i = 0; i <= 20; i++) {
+      const t = i / 20;
+      const e = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+      const rise = Math.sin(Math.PI * e);
+      frames.push({ offset: t, transform: `translate(${dx * (1 - e)}px, ${dy * (1 - e) + lift * rise}px) scale(${1 + 0.35 * rise})` });
+    }
+    const flight = flyer.animate(frames, { duration: cardsMoving ? SEAT_MOVE_MS : 600, easing: "linear" });
+    badge.style.visibility = "hidden";
+    const land = () => {
+      flyer.remove();
+      badge.style.visibility = "";
+      badge.animate([{ transform: "scale(1.35)" }, { transform: "scale(1)" }], { duration: 220, easing: "ease-out" });
+    };
+    flight.finished.then(land, land);
+    return () => {
+      flyer.remove();
+      badge.style.visibility = "";
+    };
+  }, [dealerName]);
   useLayoutEffect(() => {
     const was = before.current;
     before.current = null;
@@ -1278,11 +1767,14 @@ function SeatsSheet({
     // dip in size and a soft shadow), glides and settles together - same
     // start, same pace, same landing.
     const bothWays = paths.some((m) => m.turn > 0) && paths.some((m) => m.turn < 0);
-    // A lifted card only shrinks a touch - the shadow does most of the lift.
-    const DIP = 0.08;
+    const caught = midSlide.current;
+    midSlide.current = new Map();
     paths.forEach(({ el, a0, turn, r0, r1, tx, ty }) => {
       // Mirror-image lanes: one bows out exactly as far as the other bows in.
       const lane = bothWays ? (turn > 0 ? 0.25 : -0.25) : 0;
+      // Caught mid-slide: no pick-up pause - it stays up, already moving,
+      // and eases into the new path from where it was.
+      const lift0 = caught.get(el.dataset.player!);
       const frames: Keyframe[] = [];
       for (let i = 0; i <= steps; i++) {
         const t = i / steps;
@@ -1290,8 +1782,14 @@ function SeatsSheet({
         // quarter, travels (smoothly, eased) mostly in the middle while
         // small, and grows back as it lands.
         const ease = (u: number) => (u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2);
-        const e = ease(Math.min(1, Math.max(0, (t - 0.15) / 0.7)));
-        const lifted = ease(Math.min(1, t / 0.25, (1 - t) / 0.25));
+        const easeOut = (u: number) => 1 - Math.pow(1 - u, 3);
+        const e = lift0 === undefined ? ease(Math.min(1, Math.max(0, (t - 0.15) / 0.7))) : easeOut(Math.min(1, t / 0.85));
+        const lifted =
+          lift0 === undefined
+            ? ease(Math.min(1, t / 0.25, (1 - t) / 0.25))
+            : t < 0.75
+              ? lift0 + (1 - lift0) * ease(Math.min(1, t / 0.2))
+              : ease((1 - t) / 0.25);
         const bump = Math.sin(Math.PI * e);
         const angle = a0 + turn * e;
         const r = (r0 + (r1 - r0) * e) * (1 + lane * bump);
@@ -1299,52 +1797,33 @@ function SeatsSheet({
         const y = Math.sin(angle) * r * ry - ty;
         frames.push({
           offset: t,
-          transform: `translate(${x}px, ${y}px) scale(${1 - DIP * lifted})`,
+          transform: `translate(${x}px, ${y}px) scale(${1 - SEAT_DIP * lifted})`,
           boxShadow: `0 ${10 * lifted}px ${26 * lifted}px rgba(0, 0, 0, ${0.2 * lifted})`,
           zIndex: turn > 0 ? 2 : 1,
         });
       }
-      el.animate(frames, { duration: 800, easing: "linear" });
+      el.animate(frames, { duration: SEAT_MOVE_MS, easing: "linear" });
     });
   }, [seats]);
-  // A new 莊: the badge flies from the old dealer's seat to the new one (a
-  // copy of it, above the sheet, so no card clips it) and lands with a pop.
-  const badgeFrom = useRef<DOMRect | null>(null);
-  useLayoutEffect(() => {
-    const from = badgeFrom.current;
-    badgeFrom.current = null;
-    const badge = diamondRef.current?.querySelector<HTMLElement>(".sc-zhuang");
-    if (!from || !badge || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const to = badge.getBoundingClientRect();
-    const flyer = badge.cloneNode(true) as HTMLElement;
-    Object.assign(flyer.style, { position: "fixed", left: `${to.left}px`, top: `${to.top}px`, margin: "0", zIndex: "1000", pointerEvents: "none" });
-    document.body.appendChild(flyer);
-    const dx = from.left - to.left;
-    const dy = from.top - to.top;
-    // A smooth arc: sampled along an eased path with a gentle rise (a sine,
-    // so no sharp peak), growing a little mid-flight.
-    const lift = -Math.min(48, Math.hypot(dx, dy) / 4);
-    const frames: Keyframe[] = [];
-    for (let i = 0; i <= 20; i++) {
-      const t = i / 20;
-      const e = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-      const rise = Math.sin(Math.PI * e);
-      frames.push({ offset: t, transform: `translate(${dx * (1 - e)}px, ${dy * (1 - e) + lift * rise}px) scale(${1 + 0.35 * rise})` });
-    }
-    const flight = flyer.animate(frames, { duration: 600, easing: "linear" });
-    badge.style.visibility = "hidden";
-    const land = () => {
-      flyer.remove();
-      badge.style.visibility = "";
-      badge.animate([{ transform: "scale(1.35)" }, { transform: "scale(1)" }], { duration: 220, easing: "ease-out" });
-    };
-    flight.finished.then(land, land);
-    return () => {
-      flyer.remove();
-      badge.style.visibility = "";
-    };
-  }, [dealerName]);
 
+
+  // From the seat ceremony: once the sheet has slid up, everyone slides to
+  // the seat they drew and the 莊 badge flies to 東 - a new 東風東局 at 連0.
+  useEffect(() => {
+    if (!proposal) return;
+    const timer = window.setTimeout(() => {
+      roundTouched.current = true;
+      setRound("reset");
+      setStreak(0);
+      if (proposal.east !== dealerName) {
+        badgeFrom.current = diamondRef.current?.querySelector(".sc-zhuang")?.getBoundingClientRect() ?? null;
+        setDealerName(proposal.east);
+      }
+      if (proposal.seats.some((p, i) => p !== seats[i])) moveSeats(() => proposal.seats.slice());
+    }, 380);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const seatPress = (s2: number) => ({
     onPointerDown: () => {
       cancelHold();
@@ -1398,15 +1877,24 @@ function SeatsSheet({
     if (added.includes(name)) setAdded((a) => a.filter((n) => n !== name));
     else setRemoved((r) => [...r, name]);
   };
+  // Either order works: a seat then a 候補 player, or a 候補 player then a seat.
+  const [benchPick, setBenchPick] = useState<string | null>(null);
+  const seatBench = (seat: number, name: string) => {
+    if (seats[seat] === dealerName) setDealerName(name);
+    setSeats((prev) => prev.map((p, i) => (i === seat ? name : p)));
+  };
   const tapSeat = (s2: number) => {
+    if (benchPick !== null) {
+      seatBench(s2, benchPick);
+      return setBenchPick(null);
+    }
     if (picked === null) return setPicked(s2);
     if (picked !== s2) moveSeats((prev) => prev.map((p, i) => (i === s2 ? prev[picked] : i === picked ? prev[s2] : p)));
     setPicked(null);
   };
   const tapBench = (name: string) => {
-    if (picked === null) return;
-    if (seats[picked] === dealerName) setDealerName(name);
-    setSeats((prev) => prev.map((p, i) => (i === picked ? name : p)));
+    if (picked === null) return setBenchPick((b) => (b === name ? null : name));
+    seatBench(picked, name);
     setPicked(null);
   };
   const addName = () => {
@@ -1423,6 +1911,8 @@ function SeatsSheet({
   // Keep means the round as it stands, whichever seat 莊 now sits in.
   const hereHand = (state.dealer - state.roundStartDealer + SEATS) % SEATS;
   const anything = seatsChanged || dealerChanged || reset || added.length > 0 || removed.length > 0;
+  // 起莊 as the drafted round would leave it, for the gold corner.
+  const qiSeat = (dealer - (round === "reset" ? 0 : round === "set" ? custom.hand : hereHand) + SEATS) % SEATS;
   const submit = () =>
     onDone({
       seats: seatsChanged ? seats : null,
@@ -1441,17 +1931,26 @@ function SeatsSheet({
           : null,
     });
 
-  const pending = [seatsChanged && "seating", dealerChanged && "dealer", round === "reset" && "reset", round === "set" && "風局", removed.length > 0 && "bench"].filter(Boolean).join(" and ");
-
   return (
     <Sheet
       title="座位 Seats"
-      subtitle={picked === null ? "Tap a seat to move or replace that player · hold one for 莊" : `Now tap another seat, or a 候補 player, for ${seats[picked]}'s place`}
+      // Always two lines tall, so the sheet doesn't jump as the hint changes.
+      subtitle={
+        <span className="sc-seats-hint">
+          {benchPick !== null
+            ? `Now tap the seat ${benchPick} takes`
+            : picked !== null
+              ? `Now tap another seat, or a 候補 player, for ${seats[picked]}'s place`
+              : proposal
+                ? "From the seat ceremony · Confirm to use it"
+                : "Tap a seat to move or replace that player · hold one for 莊"}
+        </span>
+      }
       onClose={onClose}
       actions={
         <>
           <button type="button" className="sc-primary" disabled={!anything} onClick={submit}>
-            {pending ? `Confirm ${pending}` : "Confirm"}
+            Confirm
           </button>
         </>
       }
@@ -1473,7 +1972,8 @@ function SeatsSheet({
               tapSeat(s2);
             }}
           >
-            {dealer === s2 && <span className="sc-zhuang">莊</span>}
+            {qiSeat === s2 && <span className="sc-qi-corner" role="img" aria-label="起莊" title="起莊 - this 圈 started here" />}
+            {dealer === s2 && <span className="sc-zhuang">{streak > 0 ? `莊${streak}` : "莊"}</span>}
           </PlayerOption>
         )}
       </SeatDiamond>
@@ -1559,7 +2059,7 @@ function SeatsSheet({
             options={[
               { value: "keep", label: <RoundOption verb="Keep" label={state.label} /> },
               { value: "reset", label: <RoundOption verb="Reset" label={roundLabel(0, dealer, dealer)} /> },
-              { value: "set", label: <RoundOption verb="Set" label={`${WIND_CHARS[custom.wind]}風${WIND_CHARS[custom.hand]}局`} /> },
+              { value: "set", label: <RoundOption verb="Set" label={round === "set" ? `${WIND_CHARS[custom.wind]}風${WIND_CHARS[custom.hand]}局` : "any 風局"} /> },
             ]}
           />
           {round === "set" && (
@@ -1583,6 +2083,7 @@ function SeatsSheet({
               className="sc-text-button"
               onClick={() => {
                 setPicked(null);
+                setBenchPick(null);
                 setEditBench((e) => !e);
               }}
             >
@@ -1608,7 +2109,7 @@ function SeatsSheet({
                 {canRemove(p) && <span className="sc-option-x">{Icons.close}</span>}
               </button>
             ) : (
-              <PlayerOption key={p} store={store} player={p} onClick={() => tapBench(p)} disabled={picked === null} />
+              <PlayerOption key={p} store={store} player={p} selected={benchPick === p} onClick={() => tapBench(p)} />
             ),
           )}
           {collapsed && (
@@ -1639,7 +2140,19 @@ function SeatsSheet({
   );
 }
 
-function LahSheet({ store, state, onSurrender, onClose }: { store: ScoreStore; state: ReplayState; onSurrender: (holder: string, pulled: string) => void; onClose: () => void }) {
+function LahSheet({
+  store,
+  state,
+  onSurrender,
+  onSurrenderAll,
+  onClose,
+}: {
+  store: ScoreStore;
+  state: ReplayState;
+  onSurrender: (holder: string, pulled: string) => void;
+  onSurrenderAll: () => void;
+  onClose: () => void;
+}) {
   // One table per holder, biggest first. Usually there's just one (the last
   // winner); a 雙響/三響 can leave several, each also keeping what they held.
   const groups = [...new Set(state.lahs.map((l) => l.holder))]
@@ -1657,7 +2170,7 @@ function LahSheet({ store, state, onSurrender, onClose }: { store: ScoreStore; s
   useEffect(() => {
     if (!armed) return;
     const disarm = (e: PointerEvent) => {
-      if (!(e.target as Element).closest?.(".sc-lah-surrender.is-armed")) setArmed(null);
+      if (!(e.target as Element).closest?.(".sc-lah-surrender.is-armed, .sc-lah-all.is-armed")) setArmed(null);
     };
     document.addEventListener("pointerdown", disarm, true);
     return () => document.removeEventListener("pointerdown", disarm, true);
@@ -1666,6 +2179,22 @@ function LahSheet({ store, state, onSurrender, onClose }: { store: ScoreStore; s
     <Sheet
       title="拉踢"
       onClose={onClose}
+      actions={
+        // Everyone 投降 at once - two taps, like each row's.
+        state.lahs.length > 1 ? (
+          <button
+            type="button"
+            className={`sc-lah-all ${armed === "all" ? "sc-danger is-armed" : "sc-secondary"}`}
+            onClick={() => {
+              if (armed !== "all") return setArmed("all");
+              setArmed(null);
+              onSurrenderAll();
+            }}
+          >
+            {armed === "all" ? `確定 · end all ${state.lahs.length} 拉` : "全部投降 All surrender"}
+          </button>
+        ) : undefined
+      }
     >
       {/* As tall as a sheet with a few 拉, so it doesn't open as a sliver. */}
       {groups.length === 0 && (
@@ -1747,10 +2276,7 @@ function JackpotSheet({ store, state, onDone, onClose }: { store: ScoreStore; st
     setMode(m);
     setShares(state.seats.map(() => 0));
   };
-  const evenly = () => {
-    const each = Math.floor(state.pot / SEATS);
-    setShares(state.seats.map((_, i) => each + (i === 0 ? state.pot - each * SEATS : 0)));
-  };
+  const evenly = () => setShares(evenShares(state.pot, state.roundStartDealer, state.settings.integerMode));
   const out = mode === "out";
   const ok = total > 0 && (!out || total <= state.pot);
   const sharesOf = () => state.seats.map((player, i) => ({ player, amount: shares[i] })).filter((x) => x.amount > 0);
@@ -1834,42 +2360,221 @@ function JackpotSheet({ store, state, onDone, onClose }: { store: ScoreStore; st
   );
 }
 
-function NameSheet({ name, onSave, onClose }: { name: string; onSave: (name: string) => void; onClose: () => void }) {
-  const [text, setText] = useState(name);
+// The game's name, the day it was played and, if wanted, where and when play
+// started and stopped - set from a long press on the game box. A new day
+// keeps the time of day it started; anything left empty isn't shown.
+// A field with a × to empty it, shown once there's something in it.
+function ClearableInput({
+  value,
+  onChange,
+  label,
+  type = "text",
+  maxLength,
+  placeholder,
+  autoFocus,
+  onEnter,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  label: string;
+  type?: "text" | "time";
+  maxLength?: number;
+  placeholder?: string;
+  autoFocus?: boolean;
+  onEnter?: () => void;
+}) {
+  return (
+    <span className={`sc-input-clearable${value ? " has-value" : ""}`}>
+      <input
+        className="sc-input sc-input-full"
+        type={type}
+        value={value}
+        maxLength={maxLength}
+        placeholder={placeholder}
+        autoFocus={autoFocus}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && onEnter?.()}
+      />
+      {value && (
+        <button
+          type="button"
+          className="sc-input-clear"
+          aria-label={`Clear ${label}`}
+          onClick={(e) => {
+            e.preventDefault();
+            onChange("");
+          }}
+        >
+          {Icons.close}
+        </button>
+      )}
+    </span>
+  );
+}
+
+type GameLabel = { name: string; startedAt: number; startTime: string; endTime: string; location: string };
+
+function NameSheet({ initial, onSave, onClose }: { initial: GameLabel; onSave: (label: GameLabel) => void; onClose: () => void }) {
+  const [text, setText] = useState(initial.name);
   const trimmed = text.trim();
+  const day = (at: number) => {
+    const d = new Date(at);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  };
+  const [date, setDate] = useState(() => day(initial.startedAt));
+  const [startTime, setStartTime] = useState(initial.startTime);
+  const [endTime, setEndTime] = useState(initial.endTime);
+  const [location, setLocation] = useState(initial.location);
+  const nextStart = () => {
+    const [y, m, d] = date.split("-").map(Number);
+    if (!y || !m || !d) return initial.startedAt;
+    const at = new Date(initial.startedAt);
+    at.setFullYear(y, m - 1, d);
+    return at.getTime();
+  };
+  const label = (name: string): GameLabel => ({ name, startedAt: nextStart(), startTime, endTime, location: location.trim() });
+  const changed =
+    trimmed !== initial.name ||
+    day(nextStart()) !== day(initial.startedAt) ||
+    startTime !== initial.startTime ||
+    endTime !== initial.endTime ||
+    location.trim() !== initial.location;
+  const save = () => changed && onSave(label(trimmed));
   return (
     <Sheet
-      title="Name this game"
-      subtitle="Shown on the table and in History"
+      title="Game details"
+      subtitle="Shown on the table and in History - the name on the 結帳 image too"
       onClose={onClose}
       actions={
         <>
-          {name && (
-            <button type="button" className="sc-secondary" onClick={() => onSave("")}>
+          {/* Empties every field but the date (a game always has one) - Save keeps it. */}
+          {(text || location || startTime || endTime) && (
+            <button
+              type="button"
+              className="sc-secondary"
+              onClick={() => {
+                setText("");
+                setLocation("");
+                setStartTime("");
+                setEndTime("");
+              }}
+            >
               Clear
             </button>
           )}
-          <button type="button" className="sc-primary" disabled={trimmed === name} onClick={() => onSave(trimmed)}>
+          <button type="button" className="sc-primary" disabled={!changed} onClick={save}>
             Save
           </button>
         </>
       }
     >
-      <input
-        className="sc-input"
-        value={text}
-        maxLength={24}
-        placeholder="Game name"
-        autoFocus
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={(e) => e.key === "Enter" && trimmed !== name && onSave(trimmed)}
-        aria-label="Game name"
-      />
+      <label className="sc-field">
+        <span className="sc-label">Name</span>
+        <ClearableInput value={text} onChange={setText} label="name" maxLength={24} placeholder="Game name" autoFocus onEnter={save} />
+      </label>
+      <label className="sc-field">
+        <span className="sc-label">Location</span>
+        <ClearableInput value={location} onChange={setLocation} label="location" maxLength={32} placeholder="Optional" onEnter={save} />
+      </label>
+      <label className="sc-field">
+        <span className="sc-label">Date</span>
+        <input className="sc-input sc-input-full" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+      </label>
+      {/* Optional, each: left empty, it isn't shown. */}
+      <div className="sc-time-pair">
+        <label className="sc-field">
+          <span className="sc-label">Start</span>
+          <ClearableInput type="time" value={startTime} onChange={setStartTime} label="start time" />
+        </label>
+        <label className="sc-field">
+          <span className="sc-label">End</span>
+          <ClearableInput type="time" value={endTime} onChange={setEndTime} label="end time" />
+        </label>
+      </div>
+      <span className="sc-help">Location, start and end are optional - left empty, they aren't shown.</span>
     </Sheet>
   );
 }
 
-function SettleSheet({ store, state, onEnd, onClose }: { store: ScoreStore; state: ReplayState; onEnd: () => void; onClose: () => void }) {
+// A read-only link to the game as it stands, and its QR code for the people
+// at the table. A snapshot, not live - share a fresh one any time.
+function ShareLinkSheet({ store, game, onClose }: { store: ScoreStore; game: ScoreGame; onClose: () => void }) {
+  const url = useMemo(() => snapshotUrl(snapshotOf(store, game)), [store, game]);
+  const svg = useMemo(() => {
+    const qr = qrcode(0, "L");
+    qr.addData(url);
+    qr.make();
+    return qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true });
+  }, [url]);
+  const [copied, setCopied] = useState(false);
+  return (
+    <Sheet
+      title="Share the scores"
+      subtitle="A read-only snapshot of this game as it is now"
+      onClose={onClose}
+      actions={
+        <>
+          <button
+            type="button"
+            className="sc-secondary"
+            onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(url);
+                setCopied(true);
+                window.setTimeout(() => setCopied(false), 1500);
+              } catch {
+                window.prompt("Copy the link", url);
+              }
+            }}
+          >
+            {copied ? "Copied ✓" : "Copy link"}
+          </button>
+          {"share" in navigator && (
+            <button
+              type="button"
+              className="sc-primary"
+              onClick={async () => {
+                try {
+                  await navigator.share({ title: game.name ?? "MJWaits scores", url });
+                } catch {
+                  // Dismissed.
+                }
+              }}
+            >
+              Share link…
+            </button>
+          )}
+        </>
+      }
+    >
+      <div className="sc-qr" dangerouslySetInnerHTML={{ __html: svg }} role="img" aria-label="QR code for the scores link" />
+      <p className="sc-help sc-help-block">Scan to see the scores on another phone. It won't update by itself - share again for the latest.</p>
+    </Sheet>
+  );
+}
+
+function SettleSheet({
+  store,
+  game,
+  state,
+  backedUpAt,
+  onBackup,
+  onEnd,
+  onClose,
+}: {
+  store: ScoreStore;
+  game: ScoreGame;
+  state: ReplayState;
+  backedUpAt: number | null;
+  onBackup: () => void;
+  onEnd: () => void;
+  onClose: () => void;
+}) {
+  const [shareLink, setShareLink] = useState(false);
+  const [imaging, setImaging] = useState(false);
+  // Saved since the last thing recorded? Then the game is safe to end.
+  const lastAt = game.events.length ? game.events[game.events.length - 1].at : game.startedAt;
+  const backedUp = backedUpAt !== null && backedUpAt >= lastAt;
   const [multiplier, setMultiplier] = useState("1");
   const m = Number(multiplier) || 0;
   const payments = settle(state.totals, m);
@@ -1901,6 +2606,38 @@ function SettleSheet({ store, state, onEnd, onClose }: { store: ScoreStore; stat
       // Dismissed.
     }
   };
+  // 結帳 as a picture: shared straight to the chat where the phone can, or
+  // saved as a PNG.
+  const shareImage = async () => {
+    setImaging(true);
+    try {
+      const blob = await drawSettleCard(
+        snapshotOf(store, game),
+        payments,
+        m !== 1 ? `×${multiplier}` : "",
+      );
+      if (!blob) return;
+      const file = new File([blob], `mjwaits-${new Date().toISOString().slice(0, 10)}.png`, { type: "image/png" });
+      if (navigator.canShare?.({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file], title: game.name ?? "MJWaits 結帳" });
+        } catch {
+          // Dismissed.
+        }
+        return;
+      }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = file.name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } finally {
+      setImaging(false);
+    }
+  };
   return (
     <Sheet
       title="結帳 · 新局"
@@ -1927,10 +2664,27 @@ function SettleSheet({ store, state, onEnd, onClose }: { store: ScoreStore; stat
         </button>
         {"share" in navigator && (
           <button type="button" className="sc-outline" onClick={share}>
-            Share…
+            Share text…
           </button>
         )}
+        <button type="button" className="sc-outline" onClick={() => void shareImage()} disabled={imaging}>
+          {imaging ? "Drawing…" : "Image"}
+        </button>
+        <button type="button" className="sc-outline" onClick={() => setShareLink(true)}>
+          Link · QR
+        </button>
       </div>
+      {/* Before ending: the game only lives on this phone. */}
+      {!backedUp && game.events.length > 0 && (
+        <div className="sc-row sc-row-boxed sc-backup-nudge">
+          <span className="sc-help">Not backed up since the last hand - save a file before you end the game.</span>
+          <button type="button" className="sc-secondary" onClick={onBackup}>
+            儲存 Save
+          </button>
+        </div>
+      )}
+      {/* Over everything, not inside this sheet. */}
+      {shareLink && createPortal(<ShareLinkSheet store={store} game={game} onClose={() => setShareLink(false)} />, document.body)}
       <div className="sc-list">
         {payments.length === 0 && <p className="sc-empty">Everyone is level.</p>}
         {payments.map((p, i) => (
@@ -1963,27 +2717,46 @@ const SETTING_GROUPS: { title: string; rows: { key: keyof ScoreSettings; label: 
       { key: "base", label: "自動計算底", help: "Added to every payment", kind: "number" },
       { key: "dealerTai", label: "自動計算莊", help: "When the dealer wins or pays", kind: "number" },
       { key: "streakTai", label: "自動計算連莊", help: "Per 連莊", kind: "number" },
-      { key: "drawKeepsDealer", label: "流局留莊", kind: "bool" },
+      { key: "drawKeepsDealer", label: "流局留莊", help: "The dealer stays after a 流局", kind: "bool" },
       { key: "scoreCap", label: "封頂", help: "The highest tai or amount you can type", kind: "nullable" },
+      { key: "zhaHu", label: "詐胡", help: "A false win - the caller pays each player", kind: "nullable" },
     ],
   },
   {
     title: "拉踢 Pull & kick",
     rows: [
       { key: "integerMode", label: "整數模式", help: "Whole numbers only", kind: "bool" },
-      { key: "lahRound", label: "拉 half", kind: "round" },
-      { key: "tiRound", label: "踢 half", kind: "round" },
+      { key: "lahRound", label: "拉減半", help: "Rounding when a 拉 halves", kind: "round" },
+      { key: "tiRound", label: "踢減半", help: "Rounding when a 踢 halves", kind: "round" },
       { key: "fanXue", label: "反雪", help: "Paid back by each winner", kind: "bool" },
-      { key: "fanXueDouble", label: "反雪 after 雙響", kind: "number", needs: "fanXue" },
-      { key: "fanXueTriple", label: "反雪 after 三響", kind: "number", needs: "fanXue" },
+      { key: "fanXueDouble", label: "雙響反雪", help: "反雪 after a 雙響", kind: "number", needs: "fanXue" },
+      { key: "fanXueTriple", label: "三響反雪", help: "反雪 after a 三響", kind: "number", needs: "fanXue" },
       { key: "surrenderPrompt", label: "投降提示", help: "Prompt once a 拉 runs this many hands in a row", kind: "nullable" },
+    ],
+  },
+  {
+    title: "特別獎罰 Bonuses",
+    rows: [
+      { key: "bonusPresets", label: "預設獎罰", help: "Quick picks on the 特別獎罰 tab", kind: "bool" },
+      { key: "presetFlower", label: "花", help: "Receive from each player", kind: "number", needs: "bonusPresets" },
+      { key: "presetGrass", label: "草", help: "Receive from each player", kind: "number", needs: "bonusPresets" },
+      { key: "presetBoth", label: "花草", help: "Receive from each player", kind: "number", needs: "bonusPresets" },
+      { key: "presetKong", label: "暗槓", help: "Receive from each player", kind: "number", needs: "bonusPresets" },
+      { key: "presetSnake", label: "蛇骰", help: "Pay each player", kind: "number", needs: "bonusPresets" },
+      { key: "presetTriple", label: "圍骰", help: "Receive from each player", kind: "number", needs: "bonusPresets" },
+      { key: "presetChase", label: "追", help: "Receive from each player - the first", kind: "number", needs: "bonusPresets" },
+      { key: "presetChaseBig", label: "追", help: "Receive from each player - the second", kind: "number", needs: "bonusPresets" },
+      { key: "presetWrongCall", label: "嗌錯", help: "Pay each player", kind: "number", needs: "bonusPresets" },
+      { key: "presetSevenOne", label: "7搶1", help: "Receive from one player", kind: "number", needs: "bonusPresets" },
+      { key: "presetOneSeven", label: "1搶7", help: "Receive from one player", kind: "number", needs: "bonusPresets" },
+      { key: "presetEightImmortals", label: "八仙過海", help: "Receive from each player", kind: "number", needs: "bonusPresets" },
     ],
   },
   {
     title: "Jackpot",
     rows: [
       { key: "jackpot", label: "Jackpot", kind: "bool" },
-      { key: "jackpotPerDraw", label: "Per player per 流局", kind: "number", needs: "jackpot" },
+      { key: "jackpotPerDraw", label: "每人每流局", help: "Each player pays in when a hand is drawn", kind: "number", needs: "jackpot" },
     ],
   },
   {
@@ -1994,6 +2767,8 @@ const SETTING_GROUPS: { title: string; rows: { key: keyof ScoreSettings; label: 
       { key: "highScore", label: "高分提示", help: "Flag a payment this big", kind: "nullable" },
       { key: "showTally", label: "胡摸銃數", help: "Counts on the cards: 胡 black, 摸 green, 銃 red", kind: "bool" },
       { key: "quickScan", label: "快速掃描", help: "A Scan button on each player's card", kind: "bool" },
+      { key: "chipsPrompt", label: "籌碼提示", help: "Who hands whom chips, after each entry", kind: "bool" },
+      { key: "tipsAutoHide", label: "提示自動隱藏", help: "籌碼 and the other notices go by themselves", kind: "nullable" },
     ],
   },
 ];
@@ -2062,15 +2837,18 @@ function SettingsSheet({ settings, onSave, onClose }: { settings: ScoreSettings;
                     </label>
                     {/* Greyed out while the switch is off, like the other dependent rows. */}
                     <div className={`sc-row${value === null ? " is-off" : ""}`}>
-                      <span className="sc-row-main">{key === "scoreCap" ? "Up to" : key === "surrenderPrompt" ? "After (hands)" : "From"}</span>
-                      {/* 高分提示 steps in 5s, 投降提示 in 1s; 封頂 is typed. */}
+                      <span className="sc-row-main sc-row-stack">
+                        {key === "scoreCap" ? "上限" : key === "surrenderPrompt" ? "局數" : key === "zhaHu" ? "每人" : key === "tipsAutoHide" ? "秒數" : "門檻"}
+                        <span className="sc-help">{key === "scoreCap" ? "Up to" : key === "surrenderPrompt" ? "Hands in a row" : key === "zhaHu" ? "To each player, to start with" : key === "tipsAutoHide" ? "Before each goes" : "From"}</span>
+                      </span>
+                      {/* 高分提示, 詐胡 and 提示自動隱藏 step in 5s, 投降提示 in 1s; 封頂 is typed. */}
                       {key !== "scoreCap" ? (
                         <Stepper
                           value={value ?? (DEFAULT_SETTINGS[key] as number)}
                           onChange={(v) => set(key, v as never)}
                           label={label}
-                          min={key === "highScore" ? 5 : 1}
-                          step={key === "highScore" ? 5 : 1}
+                          min={key === "highScore" || key === "zhaHu" || key === "tipsAutoHide" ? 5 : 1}
+                          step={key === "highScore" || key === "zhaHu" || key === "tipsAutoHide" ? 5 : 1}
                           disabled={value === null}
                         />
                       ) : (
@@ -2117,10 +2895,12 @@ function Confirm({ title, detail, onYes, onClose, yes = "Confirm", danger }: { t
 // ---- The board (戰況) -----------------------------------------------------------
 
 type BoardSheet =
-  | { kind: "hand"; seat: number; initial?: HandInitial; mode?: "win" | "bonus" }
+  // editIndex: correcting that older entry from 最近, not recording a new one.
+  | { kind: "hand"; seat: number; initial?: HandInitial; mode?: HandMode; editIndex?: number }
+  | { kind: "entry"; index: number }
   | { kind: "recent" }
   | { kind: "draw" }
-  | { kind: "seats" }
+  | { kind: "seats"; proposal?: { seats: string[]; east: string } } // proposal: from the seat ceremony
   | { kind: "name" }
   | { kind: "lah" }
   | { kind: "jackpot" }
@@ -2128,12 +2908,130 @@ type BoardSheet =
   | { kind: "settings" }
 ;
 
+// 籌碼提示: the chips to hand over for each change (see chipMoves) - a new
+// entry, or an undo / redo / fix / delete, which hands back the difference.
+// Stays up until dismissed or the next change that moves chips replaces it.
+function useChipMoves(game: ScoreGame, state: ReplayState) {
+  const last = useRef<{ id: string; events: ScoreEvent[]; state: ReplayState } | null>(null);
+  // 投降 after 投降 (one by one in 拉踢) add up on the one card, from the
+  // state before the first of them - until the card is dismissed or something
+  // else goes in.
+  const surrenders = useRef<ReplayState | null>(null);
+  const [moves, setMoves] = useState<{ at: number; verb: string; list: { from: string; to: string; amount: number }[] } | null>(null);
+  useEffect(() => {
+    const prev = last.current;
+    last.current = { id: game.id, events: game.events, state };
+    if (!prev || prev.id !== game.id) {
+      surrenders.current = null;
+      return setMoves(null);
+    }
+    if (prev.events === game.events) return;
+    // What happened: entries added, the last ones taken back, or an older
+    // one fixed or deleted.
+    const n = game.events.length;
+    const m = prev.events.length;
+    const grew = n > m && (m === 0 || game.events[m - 1] === prev.events[m - 1]);
+    const shrank = n < m && (n === 0 || prev.events[n - 1] === game.events[n - 1]);
+    const surrendered = grew && game.events.slice(m).every((ev) => ev.t === "surrender");
+    if (!surrendered) surrenders.current = null;
+    else if (!surrenders.current) surrenders.current = prev.state;
+    const list = chipMoves(surrendered ? surrenders.current! : prev.state, state);
+    if (list.length === 0) return;
+    setMoves({ at: Date.now(), verb: grew ? (surrendered ? "投降" : "") : shrank ? "還原" : "改正", list });
+  }, [game, state]);
+  return {
+    moves,
+    dismiss: () => {
+      surrenders.current = null;
+      setMoves(null);
+    },
+  };
+}
+
+// "A → B 10" for A pays B, each receiver on a line of their own, every
+// arrow (and amount) in one column down the card: "Kelvin → 凱文 9", then
+// "→ Mandy 2", "→ Ah Wing 2". Names are never cut: when the widest payer and
+// receiver don't fit side by side, each payer takes a line of their own above
+// their arrows. 彩池 is the Jackpot pile.
+// 提示自動隱藏 for a banner: closed for you (as its × or Got it would) after
+// that many seconds, a bar along its foot running down. null: until closed.
+function AutoHide({ seconds, onHide, children }: { seconds: number | null; onHide: () => void; children: ReactNode }) {
+  const hide = useRef(onHide);
+  hide.current = onHide;
+  useEffect(() => {
+    if (seconds === null) return;
+    const timer = window.setTimeout(() => hide.current(), seconds * 1000);
+    return () => window.clearTimeout(timer);
+  }, [seconds]);
+  return (
+    <div className="sc-autohide">
+      {children}
+      {seconds !== null && <span className="sc-timer" style={{ animationDuration: `${seconds}s` }} aria-hidden="true" />}
+    </div>
+  );
+}
+
+function ChipsCard({ verb, list, autoHide, onDone }: { verb: string; list: { from: string; to: string; amount: number }[]; autoHide: number | null; onDone: () => void }) {
+  const payers = [...new Set(list.map((m) => m.from))];
+  // 提示自動隱藏: gone by itself after that many seconds (a bar along the foot
+  // runs down); off, it stays until dismissed. A new change brings a new card
+  // and a fresh count.
+  useEffect(() => {
+    if (autoHide === null) return;
+    const timer = window.setTimeout(onDone, autoHide * 1000);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoHide]);
+  const gridRef = useRef<HTMLSpanElement>(null);
+  const [stacked, setStacked] = useState(false);
+  // Measured side by side, before paint, whenever the list changes.
+  useLayoutEffect(() => {
+    const grid = gridRef.current;
+    if (!grid) return;
+    const was = grid.classList.contains("is-stacked");
+    grid.classList.remove("is-stacked");
+    // Too wide: the card overflows, or a receiver's name doesn't fit its column.
+    const tooWide = grid.scrollWidth > grid.clientWidth + 1 || [...grid.querySelectorAll(".sc-chips-to")].some((el) => el.scrollWidth > el.clientWidth + 1);
+    grid.classList.toggle("is-stacked", was);
+    setStacked(tooWide);
+  }, [list]);
+  const label = `籌碼${verb ? ` ${verb}` : ""}: ${list.map((m) => `${m.from} pays ${m.to} ${fmt(m.amount)}`).join(", ")}. Tap to dismiss.`;
+  return (
+    <button type="button" className="sc-chips" onClick={onDone} aria-label={label}>
+      <span className="sc-chips-head" aria-hidden="true">
+        <span className="sc-chips-title">籌碼{verb && ` · ${verb}`}</span>
+        <span className="sc-chips-close">{Icons.close}</span>
+      </span>
+      <span ref={gridRef} className={`sc-chips-grid${stacked ? " is-stacked" : ""}`} aria-hidden="true">
+        {payers.map((payer) => {
+          const mine = list.filter((m) => m.from === payer);
+          return (
+            <Fragment key={payer}>
+              <span className="sc-chips-who" style={{ gridRow: stacked ? undefined : `span ${mine.length}` }}>
+                {payer}
+              </span>
+              {mine.map((m) => (
+                <Fragment key={m.to}>
+                  <span className="sc-chips-arrow">→</span>
+                  <span className="sc-chips-to">{m.to}</span>
+                  <strong className="sc-chips-amount">{fmt(m.amount)}</strong>
+                </Fragment>
+              ))}
+            </Fragment>
+          );
+        })}
+      </span>
+      {autoHide !== null && <span className="sc-timer" style={{ animationDuration: `${autoHide}s` }} aria-hidden="true" />}
+    </button>
+  );
+}
+
 // One non-hand entry (特別獎罰, 投降, 換人, 莊家, Jackpot, 設定) in the Recent list,
 // with whatever it changed.
 function EventRow({ ev, deltas }: { ev: ScoreEvent; deltas: Record<string, number> }) {
   const label =
     ev.t === "bonus"
-      ? `特別${ev.kind} · ${fmt(ev.amount)}${ev.other === undefined ? " each" : ""}`
+      ? `${ev.name ?? `特別${ev.kind}`} · ${fmt(ev.amount)}${ev.other === undefined ? " each" : ""}`
       : ev.t === "surrender"
         ? `${ev.pulled} 投降 · ${ev.holder}'s 拉 ended`
         : ev.t === "swap"
@@ -2144,7 +3042,9 @@ function EventRow({ ev, deltas }: { ev: ScoreEvent; deltas: Record<string, numbe
               ? "Jackpot handed out"
               : ev.t === "jackpotIn"
                 ? "Paid into the Jackpot"
-                : "設定 changed";
+                : ev.t === "zhaHu"
+                  ? `詐胡 · ${ev.pays.map((x) => fmt(x.amount)).join(" / ")}`
+                  : "設定 changed";
   const moved = Object.entries(deltas).filter(([, d]) => d !== 0);
   return (
     <div className="sc-hand sc-event">
@@ -2175,16 +3075,18 @@ function RecentSheet({
   store,
   game,
   state,
+  onPick,
   onUndo,
+  onRedo,
   onClose,
-  onSeeStats,
 }: {
   store: ScoreStore;
   game: ScoreGame;
   state: ReplayState;
+  onPick: (index: number) => void; // tap an entry to fix or delete it
   onUndo: () => void;
+  onRedo: () => void;
   onClose: () => void;
-  onSeeStats: () => void;
 }) {
   const lastIndex = game.events.length - 1;
   const undoLabel = lastIndex >= 0 ? describeEvent(game.events[lastIndex], state, lastIndex) : "";
@@ -2192,35 +3094,83 @@ function RecentSheet({
     .map((ev, i) => ({ ev, i }))
     .reverse()
     .map(({ ev, i }) => {
+      let row: ReactNode = null;
       if (ev.t === "win" || ev.t === "draw") {
         const h = state.hands.find((x) => x.eventIndex === i);
-        return h ? <HandRow key={i} h={h} store={store} /> : null;
+        if (h) row = <HandRow h={h} store={store} />;
+      } else {
+        const step = state.steps.find((x) => x.eventIndex === i);
+        row = <EventRow ev={ev} deltas={step?.deltas ?? {}} />;
       }
-      const step = state.steps.find((x) => x.eventIndex === i);
-      return <EventRow key={i} ev={ev} deltas={step?.deltas ?? {}} />;
+      return (
+        row && (
+          <div key={i} className="sc-recent-row" role="button" tabIndex={0} onClick={() => onPick(i)} onKeyDown={(e) => e.key === "Enter" && onPick(i)}>
+            {row}
+          </div>
+        )
+      );
     });
   return (
     <Sheet
       title="最近 Recent"
-      subtitle={game.events.length ? `${state.hands.length}局 · ${game.events.length} entries · newest first` : "Nothing recorded yet"}
+      subtitle={game.events.length ? `${state.hands.length}局 · ${game.events.length} ${game.events.length === 1 ? "entry" : "entries"} · tap one to fix it` : "Nothing recorded yet"}
       onClose={onClose}
-      actions={
-        <>
-          <button type="button" className="sc-secondary sc-undo-button" onClick={onUndo} disabled={lastIndex < 0}>
-            還原
-            {undoLabel && <span className="sc-undo-what">{undoLabel}</span>}
-          </button>
-          <button type="button" className="sc-primary" onClick={onSeeStats}>
-            統計 Stats
-          </button>
-        </>
-      }
     >
+      {/* 還原 / 重做 in the app's segmented style, on their own row above
+          the list they change. */}
+      <div className="segmented sc-recent-moves" role="group" aria-label="Undo and redo">
+        <button type="button" onClick={onUndo} disabled={lastIndex < 0} title={undoLabel ? `還原 · ${undoLabel}` : "還原"}>
+          {Icons.undo}
+          還原
+        </button>
+        <button type="button" onClick={onRedo} disabled={!canRedo(game)} title="重做">
+          {Icons.redo}
+          重做
+        </button>
+      </div>
       {game.events.length === 0 ? (
         <p className="sc-empty">Tap the winner on the table to record a hand, or 流局 for a draw.</p>
       ) : (
         <div className="sc-list sc-list-hands">{rows}</div>
       )}
+    </Sheet>
+  );
+}
+
+// The 食胡 sheet set up as a recorded win was, for fixing it.
+function winInitial(ev: Extract<ScoreEvent, { t: "win" }>): HandInitial {
+  const first = ev.winners[0];
+  const base = { from: ev.from, jackpot: ev.jackpotTo !== undefined, patterns: first.patterns ?? [], patternsFor: first.seat };
+  return ev.winners.length > 1
+    ? { ...base, selfDraw: false, entries: ev.winners.map((w) => ({ seat: w.seat, tai: String(w.tai) })) }
+    : { ...base, selfDraw: ev.from === null, tai: first.tai };
+}
+
+// One entry picked in 最近: fix it (a hand) or delete it. Delete takes a
+// second tap; either way everything after it replays.
+function EntrySheet({ label, canEdit, onEdit, onDelete, onClose }: { label: string; canEdit: boolean; onEdit: () => void; onDelete: () => void; onClose: () => void }) {
+  const [armed, setArmed] = useState(false);
+  return (
+    <Sheet
+      title={label || "Entry"}
+      subtitle="Changes here replay every entry after it"
+      onClose={onClose}
+      actions={
+        <>
+          <button type="button" className={armed ? "sc-danger" : "sc-secondary"} onClick={() => (armed ? onDelete() : setArmed(true))}>
+            {armed ? "Tap again to delete" : "Delete"}
+          </button>
+          {canEdit && (
+            <button type="button" className="sc-primary" onClick={onEdit}>
+              Edit
+            </button>
+          )}
+        </>
+      }
+    >
+      <p className="sc-help sc-help-block">
+        {canEdit ? "Edit opens it as it was recorded, with the table as it stood then." : "This entry can be deleted; to change it, delete it and add it again."}
+      </p>
     </Sheet>
   );
 }
@@ -2235,11 +3185,12 @@ function describeEvent(ev: ScoreEvent, state: ReplayState, i: number): string {
   if (ev.t === "bonus") {
     const step = state.steps.find((x) => x.eventIndex === i);
     const me = Object.entries(step?.deltas ?? {}).find(([, d]) => (ev.kind === "獎" ? d > 0 : d < 0))?.[0];
-    return `${me ?? ""} 特別${ev.kind} ${fmt(ev.amount)}`.trim();
+    return `${me ?? ""} ${ev.name ?? `特別${ev.kind}`} ${fmt(ev.amount)}`.trim();
   }
   if (ev.t === "surrender") return `${ev.pulled} 投降`;
   if (ev.t === "jackpot") return "Jackpot handed out";
   if (ev.t === "jackpotIn") return "Paid into the Jackpot";
+  if (ev.t === "zhaHu") return `${state.seats[ev.seat] ?? ""} 詐胡 ${fmt(ev.pays.reduce((t, x) => t + x.amount, 0))}`.trim();
   if (ev.t === "swap") return "換人";
   if (ev.t === "dealer") return "莊家設定";
   return "設定";
@@ -2253,9 +3204,10 @@ function Board({
   onEndGame,
   request,
   onRequestDone,
-  onSeeAll,
   onScoreHand,
   onOpenSeating,
+  seatingResult,
+  onSeatingResultDone,
 }: {
   store: ScoreStore;
   game: ScoreGame;
@@ -2264,11 +3216,21 @@ function Board({
   onEndGame: () => void;
   request: RecordRequest | null;
   onRequestDone: () => void;
-  onSeeAll: () => void;
   onScoreHand?: (req: Omit<ScoreHandRequest, "nonce">) => void;
-  onOpenSeating?: (names: string[]) => void;
+  onOpenSeating?: (names: string[], east: number | null) => void;
+  seatingResult: SeatingResult | null;
+  onSeatingResultDone?: () => void;
 }) {
   const [sheet, setSheet] = useState<BoardSheet | null>(null);
+  // Back from the seat ceremony: 座位 opens with its seating, to confirm.
+  useEffect(() => {
+    if (!seatingResult) return;
+    // Only the same four players - the bench may have changed meanwhile.
+    const same = seatingResult.seats.length === SEATS && seatingResult.seats.every((p) => state.seats.includes(p));
+    if (same) setSheet({ kind: "seats", proposal: { seats: seatingResult.seats, east: seatingResult.east } });
+    onSeatingResultDone?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seatingResult]);
   // Holding a player's card opens 食胡 already on 自摸; the tap that ends
   // the hold is then swallowed.
   const cardHold = useRef<number | null>(null);
@@ -2313,6 +3275,25 @@ function Board({
   };
   const [toast, setToast] = useState<{ text: string; id: number } | null>(null);
   const [reminderHidden, setReminderHidden] = useState(false);
+  const chips = useChipMoves(game, state);
+  const [backedUpAt, setBackedUpAt] = useState(readBackedUpAt);
+  // The card footer's key, once: after the first hand, until "Got it".
+  const [footerKeySeen, setFooterKeySeen] = useState(() => {
+    try {
+      return window.localStorage.getItem(FOOTER_KEY_SEEN) === "1";
+    } catch {
+      return true;
+    }
+  });
+  const seeFooterKey = () => {
+    setFooterKeySeen(true);
+    try {
+      window.localStorage.setItem(FOOTER_KEY_SEEN, "1");
+    } catch {
+      // Then it shows again next time - harmless.
+    }
+  };
+  const [backupNudgeAt, setBackupNudgeAt] = useState(BACKUP_NUDGE_HANDS);
   // 投降 prompts dismissed, by "holder>pulled@count" - a chain that grows
   // again prompts again.
   const [surrenderSeen, setSurrenderSeen] = useState<string[]>([]);
@@ -2322,6 +3303,11 @@ function Board({
     setToast({ text, id });
     window.setTimeout(() => setToast((t) => (t?.id === id ? null : t)), 2200);
   };
+  // Fixing an older hand: the sheet sees the table as it stood just before it.
+  const sheetState = useMemo(
+    () => (sheet?.kind === "hand" && sheet.editIndex !== undefined ? replay({ ...game, events: game.events.slice(0, sheet.editIndex) }) : state),
+    [sheet, game, state],
+  );
   const add = (ev: ScoreEvent, message?: string) => {
     update(withEvent(game, ev));
     close();
@@ -2344,6 +3330,32 @@ function Board({
     // A 雙響/三響: the sheet comes back whole, with only the scored winner's
     // tai (and patterns) new. Who dealt in stands - one discard, several
     // winners, so Scoring's 自摸 doesn't apply.
+    // A 詐胡: back to it, each player's amount now what the hand would pay
+    // them off their own discard (not 拉 - nothing was won), never under
+    // the 設定 amount. Cancelled: the amounts as they were.
+    if (request.zhaHu && request.seat !== undefined) {
+      const caller = request.seat;
+      const floor = state.settings.zhaHu ?? DEFAULT_SETTINGS.zhaHu ?? 40;
+      const worth = (payer: number) => {
+        const pair = previewWin(state, [{ seat: caller, tai: request.tai }], payer)[0];
+        return pair ? pair.base + pair.tai + pair.dealer : 0;
+      };
+      setSheet({
+        kind: "hand",
+        seat: caller,
+        mode: "zhaHu",
+        initial: {
+          selfDraw: false,
+          patterns: [],
+          zhaHu: request.reopenOnly
+            ? request.zhaHu
+            : request.zhaHu.map((x) => ({ player: x.player, amount: Math.max(floor, worth(state.seats.indexOf(x.player))) })),
+          ...(request.reopenOnly ? {} : { note: `From Scoring: ${request.tai} tai${dealerNote} - each pays what it's worth to them, ${fmt(floor)} at least.` }),
+        },
+      });
+      onRequestDone();
+      return;
+    }
     const draft = request.draft;
     if (draft && request.seat !== undefined) {
       const scored = request.seat;
@@ -2432,18 +3444,20 @@ function Board({
   // The 執位 reminder comes back after each 北風北局.
   useEffect(() => setReminderHidden(false), [state.roundWind]);
 
-  const undo = () => {
+  // quiet: from 最近, where the list itself shows what changed (a toast
+  // would only sit on top of it).
+  const undo = (quiet = false) => {
     if (game.events.length === 0) return;
     const i = game.events.length - 1;
-    flash(`還原 · ${describeEvent(game.events[i], state, i)}`);
+    if (!quiet) flash(`還原 · ${describeEvent(game.events[i], state, i)}`);
     update(undoEvent(game));
   };
-  const redo = () => {
+  const redo = (quiet = false) => {
     const next = game.undone?.[game.undone.length - 1];
     if (!next) return;
     const redone = redoEvent(game);
     const after = replay(redone);
-    flash(`重做 · ${describeEvent(next, after, redone.events.length - 1)}`);
+    if (!quiet) flash(`重做 · ${describeEvent(next, after, redone.events.length - 1)}`);
     update(redone);
   };
 
@@ -2465,9 +3479,9 @@ function Board({
 
   const tools: { label: string; icon: ReactNode; onClick: () => void; disabled?: boolean; badge?: number }[] = [
     { label: "新局", icon: Icons.newGame, onClick: () => setSheet({ kind: "settle" }) },
-    { label: "還原", icon: Icons.undo, onClick: undo, disabled: game.events.length === 0 },
-    { label: "重做", icon: Icons.redo, onClick: redo, disabled: !canRedo(game) },
-    { label: "座位", icon: Icons.swap, onClick: () => setSheet({ kind: "seats" }) },
+    { label: "還原", icon: Icons.undo, onClick: () => undo(), disabled: game.events.length === 0 },
+    { label: "重做", icon: Icons.redo, onClick: () => redo(), disabled: !canRedo(game) },
+    { label: "座位", icon: Icons.seat, onClick: () => setSheet({ kind: "seats" }) },
     { label: "拉踢", icon: Icons.lah, onClick: () => setSheet({ kind: "lah" }), badge: state.lahs.length || undefined },
     { label: "最近", icon: Icons.recent, onClick: () => setSheet({ kind: "recent" }) },
     { label: "設定", icon: Icons.settings, onClick: () => setSheet({ kind: "settings" }) },
@@ -2491,16 +3505,21 @@ function Board({
         </div>
       </div>
 
-      {/* 投降提示: someone's been 拉'd the set number of times in a row (3 by
-          default). Only a prompt - whether 投降 is allowed is the table's
-          house rule. */}
-      {(() => {
+      {/* One banner at a time, the most pressing first: 投降 (a choice to make
+          now), 執位 (re-seat), 備份 (save a file), then the footer's one-off
+          tip. The rest wait their turn. Each goes by itself after 提示自動隱藏. */}
+      {[
+        // 投降提示: someone's been 拉'd the set number of times in a row (3 by
+        // default). Only a prompt - whether 投降 is allowed is house rule.
+        (() => {
         const at = state.settings.surrenderPrompt;
         if (at === null) return null;
         const due = state.lahs.filter((l) => l.count >= at && !surrenderSeen.includes(`${l.holder}>${l.pulled}@${l.count}`)).sort((a, b) => b.value - a.value);
         if (due.length === 0) return null;
         const l = due[0];
+        const seen = () => setSurrenderSeen((was) => [...was, ...due.map((d) => `${d.holder}>${d.pulled}@${d.count}`)]);
         return (
+          <AutoHide key={`surrender-${l.holder}>${l.pulled}@${l.count}`} seconds={state.settings.tipsAutoHide} onHide={seen}>
           <div className="sc-banner is-surrender" role="status">
             <span>
               <strong>投降</strong> · {l.pulled} has been 拉 {l.count} times by {l.holder} ({fmt(l.value)}) - surrender is available
@@ -2509,52 +3528,99 @@ function Board({
             <button type="button" className="sc-banner-action" onClick={() => setSheet({ kind: "lah" })}>
               拉踢
             </button>
-            <button
-              type="button"
-              className="sc-icon-button"
-              onClick={() => setSurrenderSeen((seen) => [...seen, ...due.map((d) => `${d.holder}>${d.pulled}@${d.count}`)])}
-              aria-label="Dismiss"
-            >
+            <button type="button" className="sc-icon-button" onClick={seen} aria-label="Dismiss">
               {Icons.close}
             </button>
           </div>
+          </AutoHide>
         );
-      })()}
-
-      {state.seatChangeDue && !reminderHidden && (
+      })(),
+        // 執位: 北風北 is done.
+        state.seatChangeDue && !reminderHidden && (
+        <AutoHide key="seat" seconds={state.settings.tipsAutoHide} onHide={() => setReminderHidden(true)}>
         <div className="sc-banner" role="status">
           <span>
             <strong>執位</strong> · 北風北 done — re-seat with 座位
           </span>
+          <button type="button" className="sc-banner-action" onClick={() => setSheet({ kind: "seats" })}>
+            座位
+          </button>
           <button type="button" className="sc-icon-button" onClick={() => setReminderHidden(true)} aria-label="Dismiss">
             {Icons.close}
           </button>
         </div>
-      )}
+        </AutoHide>
+      ),
+        // 備份: every 16 hands without a backup file - the scores only live
+        // on this phone. Save from here, or dismiss for 16 more.
+        handsSinceBackup(game, backedUpAt) >= backupNudgeAt && (
+        <AutoHide key="backup" seconds={state.settings.tipsAutoHide} onHide={() => setBackupNudgeAt(handsSinceBackup(game, backedUpAt) + BACKUP_NUDGE_HANDS)}>
+        <div className="sc-banner is-backup" role="status">
+          <span>
+            <strong>備份</strong> · {handsSinceBackup(game, backedUpAt)} hands since your last backup
+          </span>
+          <button
+            type="button"
+            className="sc-banner-action"
+            onClick={() => {
+              setBackedUpAt(saveBackupFile(store));
+              setBackupNudgeAt(BACKUP_NUDGE_HANDS);
+              flash("Backup saved");
+            }}
+          >
+            儲存 Save
+          </button>
+          <button type="button" className="sc-icon-button" onClick={() => setBackupNudgeAt(handsSinceBackup(game, backedUpAt) + BACKUP_NUDGE_HANDS)} aria-label="Dismiss">
+            {Icons.close}
+          </button>
+        </div>
+        </AutoHide>
+      ),
+        // The footer explained, once - its numbers have no labels.
+        !footerKeySeen && state.hands.length > 0 && state.settings.showTally && (
+        <AutoHide key="tip" seconds={state.settings.tipsAutoHide} onHide={seeFooterKey}>
+        <div className="sc-banner is-tip" role="status">
+          <span>
+            Card footer: <strong className="is-win">胡</strong> · <strong className="is-self">摸</strong> · <strong className="is-dealin">銃</strong> - wins, self-draws, deal-ins. ± opens 特別獎罰.
+          </span>
+          <button type="button" className="sc-banner-action" onClick={seeFooterKey}>
+            Got it
+          </button>
+        </div>
+        </AutoHide>
+      ),
+      ].find(Boolean) ?? null}
 
       <div className="sc-board">
         {/* Where the game is - round and deal, the 局 count, and 第幾圈 /
             第幾個東 (連莊 is on the dealer's badge) - in the empty corner
             beside the top seat. */}
-        {/* A long press names the game. */}
+        {/* A long press opens the game's details: name, place, date, times. */}
         <div
           className="sc-status"
           role="button"
           tabIndex={0}
-          aria-label={`${game.name ? `${game.name}, ` : ""}${state.label}. Long-press to name this game`}
+          aria-label={`${game.name ? `${game.name}, ` : ""}${state.label}. Long-press for this game's details`}
           {...namePress}
           onKeyDown={(e) => e.key === "Enter" && setSheet({ kind: "name" })}
         >
           {game.name && <span className="sc-status-name">{game.name}</span>}
           <span className="sc-status-round">{state.label}</span>
-          <span className="sc-status-meta">局{state.hands.length + 1}</span>
           <span className="sc-status-meta sc-status-wrap">
+            <span>局{state.hands.length + 1}</span>
             <span>東{state.east}</span>
             <span>圈{state.circle}</span>
           </span>
           {/* The day this game started - today, for tonight's game. */}
           <span className="sc-status-meta">{new Date(game.startedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</span>
+          {playTimes(game) && <span className="sc-status-meta">{playTimes(game)}</span>}
+          {game.location && <span className="sc-status-meta sc-status-place">{game.location}</span>}
         </div>
+        {/* 籌碼: who hands whom chips for what just went in (or back out) - in
+            the other corner beside the top seat. A tap once they're handed over. */}
+        {chips.moves && state.settings.chipsPrompt && (
+          <ChipsCard key={chips.moves.at} {...chips.moves} autoHide={state.settings.tipsAutoHide} onDone={chips.dismiss} />
+        )}
         {state.seats.map((player, seat) => {
           const total = state.totals[player] ?? 0;
           const tally = counts.get(player) ?? { wins: 0, selfDraws: 0, dealIns: 0 };
@@ -2591,20 +3657,12 @@ function Board({
                 {isQi && (
                   <span className="sc-qi-corner" role="img" aria-label="起莊" title="起莊 - this 圈 started here" />
                 )}
-                {/* A long name gets a little smaller, and on a narrow card its
-                    莊連N badge shortens to 莊N, so the name isn't cut off. */}
+                {/* A long name gets a little smaller, so it isn't cut off. 莊N: N = 連莊. */}
                 <span className={`sc-card-top${[...player].length >= 6 ? " is-long" : ""}`}>
                   <span className="sc-card-name">{player}</span>
                   {isDealer && (
                     <span className="sc-zhuang-tag" aria-label={state.streak > 0 ? `莊連${state.streak}` : "莊"}>
-                      {state.streak > 0 ? (
-                        <>
-                          <span className="sc-zhuang-long">莊連{state.streak}</span>
-                          <span className="sc-zhuang-short">莊{state.streak}</span>
-                        </>
-                      ) : (
-                        "莊"
-                      )}
+                      {state.streak > 0 ? `莊${state.streak}` : "莊"}
                     </span>
                   )}
                 </span>
@@ -2698,14 +3756,14 @@ function Board({
 
       {toast && (
         <div key={toast.id} className="sc-toast" role="status">
-          {toast.text}
+          <span className="sc-toast-text">{toast.text}</span>
           {toast.text.startsWith("Recorded") && (
-            <button type="button" onClick={undo}>
+            <button type="button" onClick={() => undo()}>
               還原
             </button>
           )}
           {toast.text.startsWith("還原") && canRedo(game) && (
-            <button type="button" onClick={redo}>
+            <button type="button" onClick={() => redo()}>
               重做
             </button>
           )}
@@ -2714,15 +3772,15 @@ function Board({
 
       {sheet?.kind === "hand" && (
         <HandSheet
-          key={`${sheet.seat}-${sheet.mode ?? "win"}`}
+          key={`${sheet.seat}-${sheet.mode ?? "win"}-${sheet.editIndex ?? "new"}`}
           store={store}
-          state={state}
+          state={sheetState}
           seat={sheet.seat}
           initial={sheet.initial}
           startMode={sheet.mode}
           onScoreHand={
-            onScoreHand &&
-            ((ask) => {
+            onScoreHand && sheet.editIndex === undefined
+              ? (ask) => {
               // The winner being scored - on a 雙響/三響, maybe not the sheet's own.
               const seat = ask.target;
               onScoreHand({
@@ -2735,12 +3793,46 @@ function Board({
                 seatWind: (((seat - state.dealer + SEATS) % SEATS) + 1) as 1 | 2 | 3 | 4,
                 scan: ask.scan,
                 ...(ask.entries.length > 1 ? { draft: { sheetSeat: sheet.seat, entries: ask.entries } } : {}),
+                ...(ask.zhaHu ? { zhaHu: ask.zhaHu } : {}),
               });
               close();
-            })
+            }
+              : undefined
           }
           onClose={close}
-          onDone={(ev) => add(ev, ev.t === "bonus" ? `Recorded 特別${ev.kind}` : "Recorded ✓")}
+          onDone={(ev) => {
+            if (sheet.editIndex === undefined) return add(ev, ev.t === "bonus" ? `Recorded ${ev.name ?? `特別${ev.kind}`}` : ev.t === "zhaHu" ? "Recorded 詐胡" : "Recorded ✓");
+            update(replaceEvent(game, sheet.editIndex, ev));
+            close();
+            flash("Entry fixed - later hands updated");
+          }}
+        />
+      )}
+      {sheet?.kind === "entry" && (
+        <EntrySheet
+          label={describeEvent(game.events[sheet.index], state, sheet.index)}
+          canEdit={["win", "bonus", "zhaHu"].includes(game.events[sheet.index]?.t ?? "")}
+          onEdit={() => {
+            const ev = game.events[sheet.index];
+            if (ev?.t === "win") setSheet({ kind: "hand", seat: ev.winners[0].seat, initial: winInitial(ev), editIndex: sheet.index });
+            if (ev?.t === "bonus")
+              setSheet({
+                kind: "hand",
+                seat: ev.seat,
+                mode: "bonus",
+                initial: { selfDraw: false, patterns: [], bonus: { kind: ev.kind, other: ev.other ?? null, amount: ev.amount, ...(ev.name ? { name: ev.name } : {}) } },
+                editIndex: sheet.index,
+              });
+            if (ev?.t === "zhaHu")
+              setSheet({ kind: "hand", seat: ev.seat, mode: "zhaHu", initial: { selfDraw: false, patterns: [], zhaHu: ev.pays }, editIndex: sheet.index });
+          }}
+          onDelete={() => {
+            const what = describeEvent(game.events[sheet.index], state, sheet.index);
+            update(deleteEvent(game, sheet.index));
+            close();
+            flash(`Deleted · ${what}`);
+          }}
+          onClose={() => setSheet({ kind: "recent" })}
         />
       )}
       {sheet?.kind === "recent" && (
@@ -2748,12 +3840,10 @@ function Board({
           store={store}
           game={game}
           state={state}
-          onUndo={undo}
+          onPick={(index) => setSheet({ kind: "entry", index })}
+          onUndo={() => undo(true)}
+          onRedo={() => redo(true)}
           onClose={close}
-          onSeeStats={() => {
-            close();
-            onSeeAll();
-          }}
         />
       )}
       {sheet?.kind === "draw" && (
@@ -2770,12 +3860,12 @@ function Board({
       )}
       {sheet?.kind === "name" && (
         <NameSheet
-          name={game.name ?? ""}
+          initial={{ name: game.name ?? "", startedAt: game.startedAt, startTime: game.startTime ?? "", endTime: game.endTime ?? "", location: game.location ?? "" }}
           onClose={close}
-          onSave={(name) => {
-            update({ ...game, name: name || undefined });
+          onSave={({ name, startedAt, startTime, endTime, location }) => {
+            update({ ...game, name: name || undefined, startedAt, startTime: startTime || undefined, endTime: endTime || undefined, location: location || undefined });
             close();
-            flash(name ? `Named “${name}”` : "Name cleared");
+            flash(name !== (game.name ?? "") ? (name ? `Named “${name}”` : "Name cleared") : "Saved");
           }}
         />
       )}
@@ -2783,12 +3873,20 @@ function Board({
         <SeatsSheet
           store={store}
           state={state}
+          proposal={sheet.proposal}
           onClose={close}
           onOpenSeating={
             onOpenSeating &&
             (() => {
               close();
-              onOpenSeating(state.seats);
+              // The provisional East: whoever won last - of a 雙響 / 三響, the
+              // winner first counting round from that hand's 莊 (莊 themself
+              // if they won). No win yet: 莊.
+              const lastWin = [...state.hands].reverse().find((h) => h.kind === "win");
+              const dealerSeat = lastWin ? state.seats.indexOf(lastWin.dealer) : -1;
+              const fromDealer = (p: string) => (state.seats.indexOf(p) - Math.max(0, dealerSeat) + SEATS) % SEATS;
+              const winner = lastWin?.winners.map((w) => w.player).filter((p) => state.seats.includes(p)).sort((x, y) => fromDealer(x) - fromDealer(y))[0];
+              onOpenSeating(state.seats, winner ? state.seats.indexOf(winner) : state.dealer);
             })
           }
           onDone={({ seats, newNames, removedNames, dealer }) => {
@@ -2809,7 +3907,15 @@ function Board({
           onClose={close}
           onSurrender={(holder, pulled) => {
             update(withEvent(game, { t: "surrender", at: Date.now(), holder, pulled }));
+            // The last 拉 gone: back to the table, where the 籌碼 card is.
+            if (state.lahs.length === 1) close();
             flash(`${pulled} 投降`);
+          }}
+          onSurrenderAll={() => {
+            const at = Date.now();
+            update(state.lahs.reduce((g, l) => withEvent(g, { t: "surrender", at, holder: l.holder, pulled: l.pulled }), game));
+            close();
+            flash(`全部投降 · ${state.lahs.length} 拉 ended`);
           }}
         />
       )}
@@ -2817,7 +3923,10 @@ function Board({
       {sheet?.kind === "settle" && (
         <SettleSheet
           store={store}
+          game={game}
           state={state}
+          backedUpAt={backedUpAt}
+          onBackup={() => setBackedUpAt(saveBackupFile(store))}
           onClose={close}
           onEnd={() => {
             close();
@@ -3009,69 +4118,104 @@ function niceStep(raw: number): number {
   return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * mag;
 }
 
-type StatRow = { key: keyof PlayerStats; label: string; show: (s: PlayerStats) => string; tone?: (s: PlayerStats) => number };
+// sub: a muted line under the value - which 局 a record came from.
+type StatRow = { key: keyof PlayerStats; zh: string; en: string; show: (s: PlayerStats) => string; sub?: (s: PlayerStats) => string | null; tone?: (s: PlayerStats) => number };
 
 // Which hand a stat happened on, and how many times a chain record was hit.
-const atHand = (h: { value: number; hand: number }, show: (v: number) => string) => `${show(h.value)} · hand ${h.hand}`;
+// Across games (career) a record also names its game, by the day.
+const handOf = (h: { hand: number; when?: string } | null) => (h ? `${h.when ? `${h.when} ` : ""}第${h.hand}局` : null);
+// A swing's span: 3→9局, or 開局→9局 from the start; across games, by day.
+const spanOf = (w: Swing | null) =>
+  !w ? null : w.toWhen ? (w.fromWhen === w.toWhen ? `${w.toWhen} ${w.from}→${w.to}局` : `${w.fromWhen ?? "開局"}→${w.toWhen}`) : `${w.from === 0 ? "開局" : w.from}→${w.to}局`;
 const chain = (c: { count: number; times: number } | null) => (c ? `${c.count}${c.times > 1 ? ` ×${c.times}` : ""}` : "–");
+const oneDp = (n: number | null) => (n === null ? "–" : fmt(Math.round(n * 10) / 10));
+const signedDp = (n: number | null) => (n === null ? "–" : signed(Math.round(n * 10) / 10));
 
-// English for the words, Chinese for the mahjong terms.
-const STAT_GROUPS: { title: string; rows: StatRow[] }[] = [
+// Cantonese for each stat, a few words of English under it.
+const STAT_GROUPS: { zh: string; en: string; rows: StatRow[] }[] = [
   {
-    title: "Record",
+    zh: "戰績",
+    en: "Record",
     rows: [
-      { key: "wins", label: "食胡", show: (s) => String(s.wins) },
-      { key: "selfDraws", label: "自摸", show: (s) => String(s.selfDraws) },
-      { key: "dealIns", label: "出銃", show: (s) => String(s.dealIns) },
-      { key: "multiWins", label: "雙響 / 三響", show: (s) => String(s.multiWins) },
-      { key: "winStreak", label: "Win streak", show: (s) => String(s.winStreak) },
-      { key: "assists", label: "Others' 自摸", show: (s) => String(s.assists) },
+      { key: "wins", zh: "食糊", en: "Off a discard", show: (s) => String(s.wins) },
+      { key: "selfDraws", zh: "自摸", en: "Self-drawn", show: (s) => String(s.selfDraws) },
+      { key: "dealIns", zh: "出銃", en: "Dealt in", show: (s) => String(s.dealIns) },
+      { key: "assists", zh: "被自摸", en: "Paid others' 自摸", show: (s) => String(s.assists) },
+      { key: "multiWins", zh: "多響", en: "Won in a 雙響 / 三響", show: (s) => String(s.multiWins) },
+      { key: "winStreak", zh: "連勝", en: "Most wins in a row", show: (s) => String(s.winStreak) },
     ],
   },
   {
-    title: "Rates",
+    zh: "效率",
+    en: "Rates",
     rows: [
-      { key: "winRate", label: "Win rate", show: (s) => pct(s.winRate) },
-      { key: "dealInRate", label: "Deal-in rate", show: (s) => pct(s.dealInRate) },
-      { key: "perHand", label: "Per hand", show: (s) => (s.perHand === null ? "–" : signed(Math.round(s.perHand * 10) / 10)), tone: (s) => s.perHand ?? 0 },
-      { key: "firstRate", label: "In 1st", show: (s) => pct(s.firstRate) },
-      { key: "positiveRate", label: "In the plus", show: (s) => pct(s.positiveRate) },
-      { key: "assistRate", label: "Others' 自摸 rate", show: (s) => pct(s.assistRate) },
+      { key: "winRate", zh: "食糊率", en: "Hands won", show: (s) => pct(s.winRate) },
+      { key: "dealInRate", zh: "出銃率", en: "Hands dealt in", show: (s) => pct(s.dealInRate) },
+      { key: "selfDrawShare", zh: "自摸比例", en: "Wins by 自摸", show: (s) => pct(s.selfDrawShare) },
+      { key: "assistRate", zh: "被自摸率", en: "Paid others' 自摸", show: (s) => pct(s.assistRate) },
+      { key: "firstRate", zh: "領先", en: "Time in 1st", show: (s) => pct(s.firstRate) },
+      { key: "positiveRate", zh: "正數", en: "Time above 0", show: (s) => pct(s.positiveRate) },
     ],
   },
   {
-    title: "Tai",
+    zh: "走勢",
+    en: "Trend",
     rows: [
-      { key: "maxTai", label: "Top tai", show: (s) => (s.maxTai ? atHand(s.maxTai, fmt) : "–") },
-      { key: "avgWinTai", label: "Avg tai won", show: (s) => (s.avgWinTai === null ? "–" : s.avgWinTai.toFixed(1)) },
-      { key: "avgDealInTai", label: "Avg tai dealt in", show: (s) => (s.avgDealInTai === null ? "–" : s.avgDealInTai.toFixed(1)) },
+      { key: "peak", zh: "最高位", en: "Highest total", show: (s) => (s.peak ? signed(s.peak.value) : "–"), sub: (s) => handOf(s.peak), tone: (s) => s.peak?.value ?? 0 },
+      { key: "trough", zh: "最低位", en: "Lowest total", show: (s) => (s.trough ? signed(s.trough.value) : "–"), sub: (s) => handOf(s.trough), tone: (s) => s.trough?.value ?? 0 },
+      { key: "maxDrawdown", zh: "最大回落", en: "Biggest drop", show: (s) => (s.maxDrawdown ? signed(s.maxDrawdown.value) : "–"), sub: (s) => spanOf(s.maxDrawdown), tone: (s) => s.maxDrawdown?.value ?? 0 },
+      { key: "maxRunUp", zh: "最大升幅", en: "Biggest climb", show: (s) => (s.maxRunUp ? signed(s.maxRunUp.value) : "–"), sub: (s) => spanOf(s.maxRunUp), tone: (s) => s.maxRunUp?.value ?? 0 },
+      { key: "recovery", zh: "谷底反彈", en: "Back from the low", show: (s) => signed(s.recovery), tone: (s) => s.recovery },
+      { key: "recent", zh: `近${RECENT_HANDS}局`, en: `Last ${RECENT_HANDS} hands`, show: (s) => signed(s.recent.net), tone: (s) => s.recent.net },
+      { key: "longestLosingRun", zh: "最長連跌", en: "Losing run", show: (s) => String(s.longestLosingRun) },
+      { key: "avgSwing", zh: "平均波幅", en: "Swing per hand", show: (s) => oneDp(s.avgSwing) },
     ],
   },
   {
-    title: "Points",
+    zh: "得失",
+    en: "Points",
     rows: [
-      { key: "bestHand", label: "Best hand", show: (s) => (s.bestHand ? atHand(s.bestHand, signed) : "–"), tone: () => 1 },
-      { key: "worstHand", label: "Worst hand", show: (s) => (s.worstHand ? atHand(s.worstHand, fmt) : "–"), tone: () => -1 },
-      { key: "selfDrawGain", label: "Won by 自摸", show: (s) => signed(s.selfDrawGain), tone: (s) => s.selfDrawGain },
-      { key: "selfDrawLoss", label: "Paid on 自摸", show: (s) => fmt(s.selfDrawLoss), tone: (s) => s.selfDrawLoss },
-      { key: "discardGain", label: "Won by 食胡", show: (s) => signed(s.discardGain), tone: (s) => s.discardGain },
-      { key: "discardLoss", label: "Lost to 出銃", show: (s) => fmt(s.discardLoss), tone: (s) => s.discardLoss },
-      { key: "bonus", label: "獎罰", show: (s) => signed(s.bonus), tone: (s) => s.bonus },
-      { key: "jackpot", label: "Jackpot", show: (s) => fmt(s.jackpot) },
+      { key: "avgWinGain", zh: "每次食糊", en: "Won per win", show: (s) => signedDp(s.avgWinGain), tone: (s) => s.avgWinGain ?? 0 },
+      { key: "avgDealInLoss", zh: "每次出銃", en: "Lost per deal-in", show: (s) => signedDp(s.avgDealInLoss), tone: (s) => s.avgDealInLoss ?? 0 },
+      { key: "bestHand", zh: "最大一舖", en: "Best hand", show: (s) => (s.bestHand ? signed(s.bestHand.value) : "–"), sub: (s) => handOf(s.bestHand), tone: () => 1 },
+      { key: "worstHand", zh: "最傷一舖", en: "Worst hand", show: (s) => (s.worstHand ? fmt(s.worstHand.value) : "–"), sub: (s) => handOf(s.worstHand), tone: () => -1 },
+      { key: "selfDrawGain", zh: "自摸贏", en: "Won by 自摸", show: (s) => signed(s.selfDrawGain), tone: (s) => s.selfDrawGain },
+      { key: "discardGain", zh: "食糊贏", en: "Won off discards", show: (s) => signed(s.discardGain), tone: (s) => s.discardGain },
+      { key: "discardLoss", zh: "出銃輸", en: "Lost dealing in", show: (s) => fmt(s.discardLoss), tone: (s) => s.discardLoss },
+      { key: "selfDrawLoss", zh: "被自摸輸", en: "Paid on others' 自摸", show: (s) => fmt(s.selfDrawLoss), tone: (s) => s.selfDrawLoss },
+      { key: "bonus", zh: "獎罰", en: "Bonuses and 詐胡", show: (s) => signed(s.bonus), tone: (s) => s.bonus },
+      { key: "jackpot", zh: "彩池", en: "Jackpot won", show: (s) => fmt(s.jackpot) },
     ],
   },
   {
-    title: "拉踢",
+    zh: "番數",
+    en: "Tai",
     rows: [
-      { key: "pulls", label: "拉 others", show: (s) => String(s.pulls) },
-      { key: "pulled", label: "Got 拉", show: (s) => String(s.pulled) },
-      { key: "maxPull", label: "Longest 拉", show: (s) => chain(s.maxPull) },
-      { key: "maxPulled", label: "Longest got 拉", show: (s) => chain(s.maxPulled) },
-      { key: "kicks", label: "踢 others", show: (s) => String(s.kicks) },
-      { key: "kicked", label: "Got 踢", show: (s) => String(s.kicked) },
-      { key: "maxKicks", label: "Most 踢 at once", show: (s) => chain(s.maxKicks) },
-      { key: "maxKicked", label: "Most got 踢", show: (s) => chain(s.maxKicked) },
-      { key: "fanXue", label: "反雪", show: (s) => String(s.fanXue) },
+      { key: "maxTai", zh: "最高番", en: "Biggest hand", show: (s) => (s.maxTai ? fmt(s.maxTai.value) : "–"), sub: (s) => handOf(s.maxTai) },
+      { key: "avgWinTai", zh: "平均食糊番", en: "Avg tai per win", show: (s) => oneDp(s.avgWinTai) },
+      { key: "avgDealInTai", zh: "平均出銃番", en: "Avg tai dealt in", show: (s) => oneDp(s.avgDealInTai) },
+    ],
+  },
+  {
+    zh: "做莊",
+    en: "As dealer",
+    rows: [
+      { key: "dealerHands", zh: "做莊局數", en: "Hands dealt", show: (s) => String(s.dealerHands) },
+      { key: "dealerNet", zh: "莊家得失", en: "Net as dealer", show: (s) => signed(s.dealerNet), tone: (s) => s.dealerNet },
+      { key: "longestDealerRun", zh: "最長連莊", en: "Most 連莊 in a run", show: (s) => (s.longestDealerRun > 1 ? `連${s.longestDealerRun - 1}` : "–") },
+    ],
+  },
+  {
+    zh: "拉踢",
+    en: "Pull & kick",
+    rows: [
+      { key: "lahNet", zh: "拉踢淨額", en: "Net from add-ons", show: (s) => signed(s.lahNet), tone: (s) => s.lahNet },
+      { key: "maxPull", zh: "最長拉", en: "Longest 拉 held", show: (s) => chain(s.maxPull) },
+      { key: "pulls", zh: "拉人", en: "拉 on others", show: (s) => String(s.pulls) },
+      { key: "pulled", zh: "被拉", en: "拉'd by others", show: (s) => String(s.pulled) },
+      { key: "kicks", zh: "踢人", en: "踢 others", show: (s) => String(s.kicks) },
+      { key: "kicked", zh: "被踢", en: "踢'd by others", show: (s) => String(s.kicked) },
+      { key: "fanXue", zh: "反雪", en: "Paid back after a 雙響", show: (s) => String(s.fanXue) },
     ],
   },
 ];
@@ -3081,12 +4225,12 @@ const STAT_GROUPS: { title: string; rows: StatRow[] }[] = [
 function PointsBar({ s }: { s: PlayerStats }) {
   const gains = [
     { label: "自摸", value: s.selfDrawGain, cls: "is-g1" },
-    { label: "食胡", value: s.discardGain, cls: "is-g2" },
+    { label: "食糊", value: s.discardGain, cls: "is-g2" },
     { label: "獎罰", value: Math.max(0, s.bonus), cls: "is-g3" },
   ].filter((x) => x.value > 0);
   const losses = [
     { label: "出銃", value: -s.discardLoss, cls: "is-l1" },
-    { label: "Paid 自摸", value: -s.selfDrawLoss, cls: "is-l2" },
+    { label: "被自摸", value: -s.selfDrawLoss, cls: "is-l2" },
     { label: "獎罰", value: Math.max(0, -s.bonus), cls: "is-l3" },
   ].filter((x) => x.value > 0);
   const gain = gains.reduce((t, x) => t + x.value, 0);
@@ -3129,11 +4273,133 @@ function PointsBar({ s }: { s: PlayerStats }) {
   );
 }
 
-function PlayerCard({ store, stats, state, index, onIndex }: { store: ScoreStore; stats: PlayerStats[]; state: ReplayState; index: number; onIndex: (i: number) => void }) {
+// 重點: the few things worth knowing about a player's game, said in a line
+// each - Cantonese, with the English under it. Only what has something to say.
+function insights(s: PlayerStats): { zh: string; en: string; tone?: number }[] {
+  const out: { zh: string; en: string; tone?: number }[] = [];
+  const share = (n: number, of: number) => `${Math.round((n / of) * 100)}%`;
+  const sources = [
+    { zh: "自摸", en: "self-draws", v: s.selfDrawGain },
+    { zh: "食糊", en: "wins off discards", v: s.discardGain },
+    { zh: "獎罰", en: "bonuses", v: Math.max(0, s.bonus) },
+  ];
+  const won = sources.reduce((t, x) => t + x.v, 0);
+  const top = sources.slice().sort((a, b) => b.v - a.v)[0];
+  if (won > 0 && top.v > 0) out.push({ zh: `主要靠${top.zh}贏分（${share(top.v, won)}）`, en: `Most points won by ${top.en} (${share(top.v, won)})` });
+  // 走勢: a comeback from below 0, else a deep fall; then current form.
+  if (s.trough && s.trough.value < 0 && s.net > 0)
+    out.push({ zh: `由 ${signed(s.trough.value)} 反彈到 ${signed(s.net)}`, en: `Came back from ${signed(s.trough.value)} to ${signed(s.net)}`, tone: 1 });
+  else if (s.maxDrawdown && s.avgSwing && -s.maxDrawdown.value >= 3 * s.avgSwing)
+    out.push({ zh: `最大回落 ${signed(s.maxDrawdown.value)}（${spanOf(s.maxDrawdown)}）`, en: `Biggest drop: ${signed(s.maxDrawdown.value)}`, tone: -1 });
+  if (s.recent.hands >= 4 && s.recent.net !== 0)
+    out.push({
+      zh: `近${s.recent.hands}局 ${signed(s.recent.net)}${s.recent.net > 0 ? "，手風順" : "，手風唔順"}`,
+      en: `Last ${s.recent.hands} hands: ${signed(s.recent.net)} - ${s.recent.net > 0 ? "on form" : "off form"}`,
+      tone: s.recent.net,
+    });
+  if (s.dealIns > 0 && s.avgDealInLoss !== null)
+    out.push({
+      zh: `出銃 ${s.dealIns} 次，平均每次輸 ${oneDp(-s.avgDealInLoss)}`,
+      en: `Dealt in ${s.dealIns} time${s.dealIns === 1 ? "" : "s"}, losing ${oneDp(-s.avgDealInLoss)} each on average`,
+      tone: -1,
+    });
+  const prey = s.opponents[0];
+  const nemesis = s.opponents[s.opponents.length - 1];
+  if (prey && prey.net > 0) out.push({ zh: `最大苦主：${prey.player}（${signed(prey.net)}）`, en: `Won the most from ${prey.player}`, tone: 1 });
+  if (nemesis && nemesis.net < 0) out.push({ zh: `剋星：${nemesis.player}（${signed(nemesis.net)}）`, en: `Lost the most to ${nemesis.player}`, tone: -1 });
+  if (s.dealerHands > 0)
+    out.push({
+      zh: `做莊 ${s.dealerHands} 局，${signed(s.dealerNet)}${s.longestDealerRun > 1 ? `，最長連${s.longestDealerRun - 1}` : ""}`,
+      en: `As dealer: ${s.dealerHands} hand${s.dealerHands === 1 ? "" : "s"}, ${signed(s.dealerNet)}${s.longestDealerRun > 1 ? `, up to 連${s.longestDealerRun - 1}` : ""}`,
+      tone: s.dealerNet,
+    });
+  if (s.lahNet !== 0) out.push({ zh: `拉踢淨${s.lahNet > 0 ? "賺" : "蝕"} ${fmt(Math.abs(s.lahNet))}`, en: `${s.lahNet > 0 ? "Made" : "Lost"} ${fmt(Math.abs(s.lahNet))} on 拉 / 踢 add-ons`, tone: s.lahNet });
+  return out;
+}
+
+// One stat, everyone at the table on it: 1st to last whichever way is good
+// for it, ties sharing a place, the player being looked at picked out.
+function StatRanking({ store, stats, row, player, onClose }: { store: ScoreStore; stats: PlayerStats[]; row: StatRow; player: string; onClose: () => void }) {
+  const order = rankedBy(stats, row.key);
+  const bySelf = new Map(stats.map((x) => [x.player, x]));
+  const ranked = order.filter((x) => x.rank !== null);
+  const first = ranked[0]?.rank;
+  const last = ranked.at(-1)?.rank;
+  const spread = first !== undefined && last !== undefined && first !== last;
+  return (
+    <Sheet title={row.zh} subtitle={`${row.en} · 全場排名 The table`} onClose={onClose}>
+      <ol className="sc-ranking">
+        {order.map(({ player: p, rank }) => {
+          const x = bySelf.get(p)!;
+          const t = row.tone?.(x);
+          const mark = spread && rank === first ? "best" : spread && rank === last ? "worst" : null;
+          return (
+            <li key={p} className={p === player ? "is-me" : undefined}>
+              <span className={`sc-leader-rank${rank !== null && rank <= 3 ? ` is-${rank}` : ""}`}>{rank ?? "–"}</span>
+              <Monogram store={store} player={p} size="sm" />
+              <span className="sc-ranking-name">
+                {p}
+                {mark && <span className={`sc-mark is-${mark}`}>{mark === "best" ? Icons.thumbUp : Icons.thumbDown}</span>}
+              </span>
+              <span className="sc-stat-value">
+                <strong className={t !== undefined ? tone(t) : undefined}>{row.show(x)}</strong>
+                {row.sub?.(x) && <small>{row.sub(x)}</small>}
+              </span>
+            </li>
+          );
+        })}
+      </ol>
+    </Sheet>
+  );
+}
+
+// Under the 走勢 chart: the game's story in a line or three - how often the
+// lead changed, who held it longest, and the biggest comeback.
+function TrendSummary({ state }: { state: ReplayState }) {
+  const t = trendSummary(state);
+  const lines: { zh: string; en: string }[] = [];
+  if (state.hands.length > 1) lines.push({ zh: t.leadChanges === 0 ? "領先從未易手" : `領先易手 ${t.leadChanges} 次`, en: t.leadChanges === 0 ? "The lead never changed" : `The lead changed ${t.leadChanges} time${t.leadChanges === 1 ? "" : "s"}` });
+  if (t.mostLed) lines.push({ zh: `${t.mostLed.player} 領先最耐（${t.mostLed.hands}局）`, en: `${t.mostLed.player} led for the most hands` });
+  if (t.comeback && t.comeback.to > 0) lines.push({ zh: `最大逆轉：${t.comeback.player} 由 ${signed(t.comeback.from)} 追到 ${signed(t.comeback.to)}`, en: `Biggest comeback: ${t.comeback.player}` });
+  if (lines.length === 0) return null;
+  return (
+    <ul className="sc-trend-summary">
+      {lines.map((l) => (
+        <li key={l.zh}>
+          <span>{l.zh}</span>
+          <small>{l.en}</small>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+// One player's stats - for a game, or a whole career (the same card, the
+// same numbers): series is their running total, games how many they played
+// (career only).
+function PlayerCard({
+  store,
+  stats,
+  seriesOf,
+  index,
+  onIndex,
+  games,
+}: {
+  store: ScoreStore;
+  stats: PlayerStats[];
+  seriesOf: (player: string) => (number | null)[] | undefined;
+  index: number;
+  onIndex: (i: number) => void;
+  games?: number;
+}) {
   const s = stats[index];
   const markFor = useMemo(() => Object.fromEntries(STAT_GROUPS.flatMap((g) => g.rows).map((r) => [r.key, marks(stats, r.key)])), [stats]);
-  const series = trend(state).series.find((x) => x.player === s.player);
+  const values = seriesOf(s.player);
   const rank = stats.slice().sort((a, b) => b.net - a.net).findIndex((x) => x.player === s.player) + 1;
+  const notes = insights(s);
+  const oppMax = Math.max(1, ...s.opponents.map((o) => Math.abs(o.net)));
+  // A stat tapped: everyone at the table ranked on it.
+  const [ranking, setRanking] = useState<StatRow | null>(null);
   return (
     <div className="card sc-profile">
       <div className="sc-profile-head">
@@ -3144,7 +4410,8 @@ function PlayerCard({ store, stats, state, index, onIndex }: { store: ScoreStore
           <Monogram store={store} player={s.player} size="lg" />
           <span className="sc-profile-name">{s.player}</span>
           <span className="sc-profile-sub">
-            #{rank} of {stats.length} · {s.hands}局
+            第{rank}名（{stats.length}人）· {games !== undefined ? `${games}場 · ` : ""}
+            {s.hands}局
           </span>
         </div>
         <button type="button" className="sc-icon-button sc-icon-button-fill" onClick={() => onIndex((index + 1) % stats.length)} aria-label="Next player">
@@ -3153,49 +4420,101 @@ function PlayerCard({ store, stats, state, index, onIndex }: { store: ScoreStore
       </div>
       <div className="sc-profile-score">
         <span className={`sc-profile-net ${tone(s.net)}`}>{signed(s.net)}</span>
-        {series && <Sparkline values={series.values} className={`sc-c${colorOf(store, s.player)}`} />}
+        {values && <Sparkline values={values} className={`sc-c${colorOf(store, s.player)}`} />}
       </div>
+      {/* 胡 here is every win, 自摸 included - 戰績 below splits them. */}
       <div className="sc-kpis">
         <span>
-          <strong>{s.wins + s.selfDraws}</strong>胡
+          <strong>{s.wins + s.selfDraws}</strong>
+          胡<small>Wins</small>
         </span>
         <span>
-          <strong>{s.selfDraws}</strong>摸
+          <strong>{s.selfDraws}</strong>
+          摸<small>Self-draws</small>
         </span>
         <span>
-          <strong>{s.dealIns}</strong>銃
+          <strong>{s.dealIns}</strong>
+          銃<small>Deal-ins</small>
         </span>
         <span>
-          <strong>{pct(s.firstRate)}</strong>1st
+          <strong className={tone(s.perHand ?? 0)}>{signedDp(s.perHand)}</strong>
+          每局<small>Per hand</small>
         </span>
       </div>
       <PointsBar s={s} />
-      <p className="sc-help sc-stat-key">👑 best and 💀 lowest at the table for that stat</p>
+      {notes.length > 0 && (
+        <div className="sc-insights">
+          <div className="sc-stat-title">
+            重點 <small>Highlights</small>
+          </div>
+          <ul>
+            {notes.map((n) => (
+              <li key={n.zh} className={n.tone === undefined || n.tone === 0 ? undefined : n.tone > 0 ? "is-up" : "is-down"}>
+                <span>{n.zh}</span>
+                <small>{n.en}</small>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       {/* The first two groups open; the rest fold away until wanted. */}
       {STAT_GROUPS.map((g, gi) => (
-        <details key={g.title} className="sc-stat-group" open={gi < 2}>
-          <summary className="sc-stat-title">{g.title}</summary>
+        <details key={g.zh} className="sc-stat-group" open={gi < 2}>
+          <summary className="sc-stat-title">
+            {g.zh} <small>{g.en}</small>
+          </summary>
           <div className="sc-stat-grid">
             {g.rows.map((r) => {
               const m = markFor[r.key]?.get(s.player);
               const t = r.tone?.(s);
               return (
-                <div key={r.key} className="sc-stat">
+                <button key={r.key} type="button" className="sc-stat" onClick={() => setRanking(r)} aria-label={`${r.zh} ${r.en}: ${r.show(s)} - see everyone`}>
                   <span className="sc-stat-label">
-                    {r.label}
-                    {m && (
-                      <span className="sc-mark" title={m === "best" ? "Best at the table" : "Lowest at the table"}>
-                        {m === "best" ? "👑" : "💀"}
-                      </span>
-                    )}
+                    <span>
+                      {r.zh}
+                      {m && (
+                        <span className={`sc-mark is-${m}`} title={m === "best" ? "Best at the table" : "Lowest at the table"}>
+                          {m === "best" ? Icons.thumbUp : Icons.thumbDown}
+                        </span>
+                      )}
+                    </span>
+                    <small>{r.en}</small>
                   </span>
-                  <strong className={t !== undefined ? tone(t) : undefined}>{r.show(s)}</strong>
-                </div>
+                  <span className="sc-stat-value">
+                    <strong className={t !== undefined ? tone(t) : undefined}>{r.show(s)}</strong>
+                    {r.sub?.(s) && <small>{r.sub(s)}</small>}
+                  </span>
+                </button>
               );
             })}
           </div>
         </details>
       ))}
+      {s.opponents.length > 0 && (
+        <details className="sc-stat-group">
+          <summary className="sc-stat-title">
+            對手 <small>Against each player</small>
+          </summary>
+          <ul className="sc-opponents">
+            {s.opponents.map((o) => (
+              <li key={o.player}>
+                <span className="sc-opponent-name">
+                  <span className={`sc-dot sc-c${colorOf(store, o.player)}`} aria-hidden="true" />
+                  {o.player}
+                </span>
+                <span className="sc-opponent-bar" aria-hidden="true">
+                  <span className={o.net > 0 ? "is-pos" : "is-neg"} style={{ width: `${(Math.abs(o.net) / oppMax) * 50}%` }} />
+                </span>
+                <strong className={tone(o.net)}>{signed(o.net)}</strong>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+      {ranking && <StatRanking store={store} stats={stats} row={ranking} player={s.player} onClose={() => setRanking(null)} />}
+      <p className="sc-help sc-stat-key">撳任何一項睇全場排名 · Tap a stat to see everyone<br />
+        <span className="sc-mark is-best">{Icons.thumbUp}</span> 全場最好 · <span className="sc-mark is-worst">{Icons.thumbDown}</span> 全場最差 - best and lowest at the table
+      </p>
     </div>
   );
 }
@@ -3215,6 +4534,37 @@ function readBackedUpAt(): number | null {
   }
 }
 
+// Save the whole store as a dated file, and note when - for the reminders.
+function saveBackupFile(store: ScoreStore): number {
+  const now = Date.now();
+  const blob = new Blob([exportScores(store, now)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const d = new Date(now);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  a.href = url;
+  a.download = `mjwaits-scores-${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  try {
+    window.localStorage.setItem(BACKED_UP_KEY, String(now));
+  } catch {
+    // Just the reminder - the file is saved either way.
+  }
+  return now;
+}
+
+// Hands recorded since the last backup file (all of them, if never).
+const handsSinceBackup = (game: ScoreGame, backedUpAt: number | null) =>
+  game.events.filter((ev) => (ev.t === "win" || ev.t === "draw") && (backedUpAt === null || ev.at > backedUpAt)).length;
+
+const FOOTER_KEY_SEEN = "mjwaits.footerKeySeen";
+
+// The board's nudge comes every this many hands without a backup.
+const BACKUP_NUDGE_HANDS = 16;
+
 function BackupCard({ store, setStore }: { store: ScoreStore; setStore: (s: ScoreStore) => void }) {
   const [backedUpAt, setBackedUpAt] = useState(readBackedUpAt);
   const [incoming, setIncoming] = useState<{ name: string; store: ScoreStore } | null>(null);
@@ -3225,24 +4575,7 @@ function BackupCard({ store, setStore }: { store: ScoreStore; setStore: (s: Scor
   const players = (n: number) => `${n} player${n === 1 ? "" : "s"}`;
 
   const download = () => {
-    const now = Date.now();
-    const blob = new Blob([exportScores(store, now)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    const d = new Date(now);
-    const pad = (n: number) => String(n).padStart(2, "0");
-    a.href = url;
-    a.download = `mjwaits-scores-${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}.json`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-    try {
-      window.localStorage.setItem(BACKED_UP_KEY, String(now));
-    } catch {
-      // Just the reminder - the file is saved either way.
-    }
-    setBackedUpAt(now);
+    setBackedUpAt(saveBackupFile(store));
     setMessage(null);
   };
 
@@ -3340,7 +4673,8 @@ function StatsPanel({ store, setStore, view, setView }: { store: ScoreStore; set
       <SectionHead zh="玩家統計" en={game.name ?? (isActive ? "This game" : new Date(game.startedAt).toLocaleDateString())}>
         <span className="sc-help">{state.hands.length}局</span>
       </SectionHead>
-      <div className="card sc-board-table">
+      {/* In full - sparklines and 胡·摸·銃 - above 走勢; a line each above the other views, which have their own detail. */}
+      <div className={`card sc-board-table${view === "trend" ? "" : " is-compact"}`}>
         {ranked.length === 0 && <p className="sc-empty">No hands yet.</p>}
         {ranked.map((s, i) => (
           <button
@@ -3357,8 +4691,9 @@ function StatsPanel({ store, setStore, view, setView }: { store: ScoreStore; set
             <span className="sc-leader-id">
               <span className="sc-leader-name">{s.player}</span>
               <span className="sc-leader-sub">
-                <span>
-                  胡{s.wins + s.selfDraws} 摸{s.selfDraws} 銃{s.dealIns}
+                {/* As on the 戰況 cards: 胡 black, 摸 green, 銃 red. */}
+                <span className="sc-card-counts" aria-label={`${s.wins + s.selfDraws} wins, ${s.selfDraws} self-draws, ${s.dealIns} deal-ins`}>
+                  <strong className="is-win">{s.wins + s.selfDraws}</strong>·<strong className="is-self">{s.selfDraws}</strong>·<strong className="is-dealin">{s.dealIns}</strong>
                 </span>
                 {s.bonus !== 0 && <span>獎{signed(s.bonus)}</span>}
               </span>
@@ -3373,28 +4708,21 @@ function StatsPanel({ store, setStore, view, setView }: { store: ScoreStore; set
         <Segmented value={view} onChange={setView} options={views} />
       </div>
 
-      {view === "hands" && (
-        <div className="card sc-list-card">
-          {state.hands.length === 0 && <p className="sc-empty">No hands yet.</p>}
-          {state.hands
-            .slice()
-            .reverse()
-            .map((h) => (
-              <HandRow key={h.eventIndex} h={h} store={store} />
-            ))}
-        </div>
-      )}
+      {view === "hands" && <HandsTable store={store} game={game} state={state} />}
       {view === "trend" && (
         <div className="card">
           <div className="sc-card-head">
             <h3>走勢 Trend</h3>
-            <span className="sc-help">Running totals · touch for 局 detail</span>
+            <span className="sc-help">累計分數 · Running totals, touch for a 局</span>
           </div>
           <TrendChart store={store} state={state} />
+          <TrendSummary state={state} />
         </div>
       )}
       {view === "patterns" && <PatternsCard state={state} store={store} />}
-      {view === "player" && stats.length > 0 && <PlayerCard store={store} stats={stats} state={state} index={Math.min(playerIndex, stats.length - 1)} onIndex={setPlayerIndex} />}
+      {view === "player" && stats.length > 0 && (
+        <PlayerCard store={store} stats={stats} seriesOf={(p) => series.find((x) => x.player === p)?.values} index={Math.min(playerIndex, stats.length - 1)} onIndex={setPlayerIndex} />
+      )}
       {view === "history" && (
         <HistoryCard
           store={store}
@@ -3412,6 +4740,194 @@ function StatsPanel({ store, setStore, view, setView }: { store: ScoreStore; set
   );
 }
 
+// 局 as a score sheet: a row per hand, oldest first, each player's change in
+// their own column - 胡 / 摸 on the winner's number, 銃 on the discarder's -
+// and the total at the foot. A tap opens who paid whom. 特別獎罰 are their
+// own rows, or folded into the hand they happened during.
+type SheetRow =
+  | { kind: "hand"; key: string; h: HandResult; deltas: Record<string, number>; bonuses: number; payIns: number }
+  | { kind: "bonus"; key: string; label: string; deltas: Record<string, number> } // 獎 / 罰, a 預設獎罰's name, 獎罰 or 詐胡
+  | { kind: "jackpot"; key: string; deltas: Record<string, number> };
+
+const SHEET_VIEW_KEY = "mjwaits.sheetView";
+
+function HandsTable({ store, game, state }: { store: ScoreStore; game: ScoreGame; state: ReplayState }) {
+  // Detailed: 獎罰 and Jackpot pay-ins as their own rows, with every tag and
+  // 胡 / 摸 / 銃 mark. Simple: all folded into the hands, numbers only (the
+  // winner's in bold). Remembered on this phone.
+  const [detailed, setDetailedState] = useState(() => {
+    try {
+      return window.localStorage.getItem(SHEET_VIEW_KEY) !== "simple";
+    } catch {
+      return true;
+    }
+  });
+  const setDetailed = (on: boolean) => {
+    setDetailedState(on);
+    try {
+      window.localStorage.setItem(SHEET_VIEW_KEY, on ? "detailed" : "simple");
+    } catch {
+      // Just this visit, then.
+    }
+  };
+  const merge = !detailed;
+  const tags = detailed;
+  const [open, setOpen] = useState<string | null>(null);
+  const players = state.players.filter((p) => state.hands.some((h) => h.seatsAfter.includes(p)) || (state.totals[p] ?? 0) !== 0);
+  const rows = useMemo(() => {
+    const out: SheetRow[] = [];
+    // 獎罰 and Jackpot pay-ins waiting to fold into the next hand (Merged).
+    let pending: { deltas: Record<string, number>; count: number; payIns: number } | null = null;
+    const fold = (deltas: Record<string, number>, payIn: boolean) => {
+      const acc = pending ?? { deltas: {}, count: 0, payIns: 0 };
+      for (const [p, d] of Object.entries(deltas)) acc.deltas[p] = (acc.deltas[p] ?? 0) + d;
+      if (payIn) acc.payIns++;
+      else acc.count++;
+      pending = acc;
+    };
+    game.events.forEach((ev, i) => {
+      const step = state.steps.find((x) => x.eventIndex === i);
+      const deltas = step?.deltas ?? {};
+      if (ev.t === "win" || ev.t === "draw") {
+        const h = state.hands.find((x) => x.eventIndex === i);
+        if (!h) return;
+        const merged = { ...deltas };
+        if (pending) for (const [p, d] of Object.entries(pending.deltas)) merged[p] = (merged[p] ?? 0) + d;
+        const folded = pending as { count: number; payIns: number } | null;
+        out.push({ kind: "hand", key: `h${i}`, h, deltas: merged, bonuses: folded?.count ?? 0, payIns: folded?.payIns ?? 0 });
+        pending = null;
+      } else if (ev.t === "bonus" || ev.t === "zhaHu") {
+        if (merge) fold(deltas, false);
+        else out.push({ kind: "bonus", key: `b${i}`, label: ev.t === "zhaHu" ? "詐胡" : (ev.name ?? ev.kind), deltas });
+      } else if (ev.t === "jackpotIn" && merge) {
+        fold(deltas, true);
+      } else if ((ev.t === "jackpot" || ev.t === "jackpotIn") && Object.values(deltas).some((d) => d !== 0)) {
+        out.push({ kind: "jackpot", key: `j${i}`, deltas });
+      }
+    });
+    // A bonus after the last hand has no hand to join yet.
+    if (pending) {
+      const left = pending as { deltas: Record<string, number>; count: number };
+      out.push(left.count > 0 ? { kind: "bonus", key: "b-pending", label: "獎罰", deltas: left.deltas } : { kind: "jackpot", key: "j-pending", deltas: left.deltas });
+    }
+    return out;
+  }, [game, state, merge]);
+  const cols = { gridTemplateColumns: `1.5rem 2.7rem repeat(${players.length}, minmax(0, 1fr))` };
+  const cell = (row: SheetRow, p: string) => {
+    const d = row.deltas[p] ?? 0;
+    let mark: string | null = null;
+    if (row.kind === "hand" && row.h.kind === "win" && tags) {
+      if (row.h.winners.some((w) => w.player === p)) mark = row.h.selfDraw ? "摸" : "胡";
+      else if (row.h.from === p) mark = "銃";
+    }
+    const won = row.kind === "hand" && row.h.winners.some((w) => w.player === p);
+    return (
+      <span key={p} className={`sc-sheet-cell ${d ? tone(d) : "is-zero"}${won ? " is-winner" : ""}`}>
+        {mark && <span className={`sc-sheet-mark${mark === "銃" ? " is-dealin" : ""}`}>{mark}</span>}
+        {d ? signed(d) : "·"}
+      </span>
+    );
+  };
+  const what = (row: SheetRow) => {
+    if (row.kind === "bonus") return <span className="sc-sheet-what is-muted">{row.label}</span>;
+    if (row.kind === "jackpot") return <span className="sc-sheet-what is-muted">JP</span>;
+    const h = row.h;
+    if (h.kind === "draw") return <span className="sc-sheet-what is-muted">流局</span>;
+    const tag = h.pairs.some((x) => x.lahKind === "拉") ? "拉" : h.pairs.some((x) => x.lahKind === "踢") ? "踢" : null;
+    return (
+      <span className="sc-sheet-what">
+        {h.multi > 1 ? (h.multi === 2 ? "雙" : "三") : fmt(h.winners[0].tai)}
+        {tags && tag && <small>{tag}</small>}
+        {tags && row.bonuses > 0 && <small>獎罰</small>}
+        {tags && row.payIns > 0 && <small>JP</small>}
+      </span>
+    );
+  };
+  if (state.hands.length === 0) return <div className="card"><p className="sc-empty">No hands yet.</p></div>;
+  return (
+    <div className="card sc-sheet-card">
+      <div className="sc-card-head">
+        <h3>局 Hands</h3>
+        <Segmented
+          small
+          value={detailed ? "detailed" : "simple"}
+          onChange={(v) => setDetailed(v === "detailed")}
+          options={[
+            { value: "detailed", label: "Detailed" },
+            { value: "simple", label: "Simple" },
+          ]}
+        />
+      </div>
+      <div className="sc-sheet-table" role="table" aria-label="Every hand, and what each player won or paid">
+        <div className="sc-sheet-row is-head" style={cols} role="row">
+          <span>#</span>
+          <span>番</span>
+          {players.map((p) => (
+            <span key={p} className={`sc-sheet-name sc-c${colorOf(store, p)}`}>
+              {p}
+            </span>
+          ))}
+        </div>
+        {rows.map((row) => {
+          const isOpen = open === row.key;
+          return (
+            <Fragment key={row.key}>
+              <div
+                className={`sc-sheet-row is-${row.kind}${isOpen ? " is-open" : ""}`}
+                style={cols}
+                role="row"
+                tabIndex={row.kind === "hand" ? 0 : undefined}
+                onClick={() => row.kind === "hand" && setOpen(isOpen ? null : row.key)}
+              >
+                <span className="sc-sheet-no">{row.kind === "hand" ? row.h.hand : ""}</span>
+                {what(row)}
+                {players.map((p) => cell(row, p))}
+              </div>
+              {isOpen && row.kind === "hand" && <HandDetail h={row.h} bonuses={row.bonuses} payIns={row.payIns} />}
+            </Fragment>
+          );
+        })}
+        <div className="sc-sheet-row is-total" style={cols} role="row">
+          <span />
+          <span>Total</span>
+          {players.map((p) => (
+            <span key={p} className={`sc-sheet-cell ${tone(state.totals[p] ?? 0)}`}>
+              {signed(state.totals[p] ?? 0)}
+            </span>
+          ))}
+        </div>
+      </div>
+      <p className="sc-help sc-help-block">Tap a hand for who paid whom.{merge ? " 獎罰 and Jackpot pay-ins are folded into the hand they happened during." : ""}</p>
+    </div>
+  );
+}
+
+// One hand opened in the 局 sheet: the round, each payment and its parts,
+// and anything else that moved (反雪, the Jackpot).
+function HandDetail({ h, bonuses, payIns }: { h: HandResult; bonuses: number; payIns: number }) {
+  const lines: string[] = h.pairs.map((p) => {
+    const parts = [p.base ? `底${fmt(p.base)}` : null, `番${fmt(p.tai)}`, p.dealer ? `莊${fmt(p.dealer)}` : null, p.lahKind ? `${p.lahKind}${fmt(p.lah)}` : null].filter(Boolean);
+    return `${p.payer} → ${p.winner} ${fmt(p.worth)} · ${parts.join(" ")}`;
+  });
+  for (const f of h.fanXue) lines.push(`${f.from} → ${f.to} ${fmt(f.amount)} · 反雪`);
+  if (h.jackpotWon) lines.push(`${h.jackpotWon.player} takes the Jackpot ${fmt(h.jackpotWon.amount)}`);
+  if (h.jackpotFed > 0) lines.push(`Jackpot +${fmt(h.jackpotFed)}`);
+  if (bonuses > 0) lines.push(`Includes ${bonuses} 特別獎罰`);
+  if (payIns > 0) lines.push(`Includes ${payIns} Jackpot pay-in${payIns > 1 ? "s" : ""}`);
+  return (
+    <div className="sc-sheet-detail">
+      <span className="sc-help">
+        {h.label} · 莊 {h.dealer}
+        {h.streak > 0 ? ` 連${h.streak}` : ""}
+        {h.multi > 1 ? ` · ${h.winners.map((w) => `${w.player} ${fmt(w.tai)}番`).join(", ")}` : ""}
+      </span>
+      {lines.map((l, i) => (
+        <span key={i}>{l}</span>
+      ))}
+    </div>
+  );
+}
+
 function PatternsCard({ state, store }: { state: ReplayState; store: ScoreStore }) {
   const rows = patternCounts(state);
   const max = Math.max(1, ...rows.map((r) => r.count));
@@ -3419,7 +4935,7 @@ function PatternsCard({ state, store }: { state: ReplayState; store: ScoreStore 
     <div className="card">
       <div className="sc-card-head">
         <h3>牌型 Patterns</h3>
-        <span className="sc-help">From hands sent from Scoring</span>
+        <span className="sc-help">計番送嚟嘅牌 · Hands from Scoring</span>
       </div>
       {rows.length === 0 ? (
         <p className="sc-empty">Use Record to Scores on the Scoring tab, and the patterns behind each hand show up here.</p>
@@ -3450,7 +4966,16 @@ function PatternsCard({ state, store }: { state: ReplayState; store: ScoreStore 
 
 function HistoryCard({ store, games, current, onPick, onDelete }: { store: ScoreStore; games: ScoreGame[]; current: string; onPick: (id: string) => void; onDelete: (id: string) => void }) {
   const [confirm, setConfirm] = useState<string | null>(null);
+  const [careerOpen, setCareerOpen] = useState<string | null>(null);
   const career = useMemo(() => careerStats(games), [games]);
+  // The 玩家 card's numbers over every game, for the card a row opens.
+  const careerCard = useMemo(() => careerPlayerStats(games, (at) => new Date(at).toLocaleDateString(undefined, { month: "short", day: "numeric" })), [games]);
+  // Opened from a row: bring the card into view (it sits under the table).
+  const careerCardRef = useRef<HTMLDivElement>(null);
+  const openCareer = (player: string | null) => {
+    setCareerOpen(player);
+    if (player) window.setTimeout(() => careerCardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+  };
   const h2h = useMemo(() => headToHead(games), [games]);
   const names = career.map((c) => c.player);
   return (
@@ -3465,6 +4990,8 @@ function HistoryCard({ store, games, current, onPick, onDelete }: { store: Score
                 <span className="sc-game-date">
                   {g.name && <strong>{g.name} · </strong>}
                   {g === store.active ? "In progress" : new Date(g.startedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+                  {playTimes(g) && ` · ${playTimes(g)}`}
+                  {g.location && ` · ${g.location}`}
                   <span className="sc-help"> · {st.hands.length}局</span>
                   {g.id === current && <span className="sc-chip-accent">Showing</span>}
                 </span>
@@ -3486,48 +5013,85 @@ function HistoryCard({ store, games, current, onPick, onDelete }: { store: Score
           );
         })}
       </div>
-      <SectionHead zh="生涯" en="Career" />
+      <SectionHead zh="生涯" en="Career">
+        <span className="sc-help">撳一行睇詳情 · Tap a player</span>
+      </SectionHead>
       <div className="card sc-table-card">
         <div className="sc-table-wrap">
           <table className="sc-table">
             <thead>
-              <tr>
-                <th>Player</th>
-                <th>Games</th>
-                <th>Net</th>
-                <th className="sc-opt">Avg</th>
-                <th>1st</th>
-                <th>Win</th>
-                <th>銃</th>
-                <th className="sc-opt">Best</th>
+              {/* Cantonese, the English under it. */}
+              <tr className="sc-th-two">
+                <th>
+                  玩家<small>Player</small>
+                </th>
+                <th>
+                  場數<small>Games</small>
+                </th>
+                <th>
+                  總分<small>Net</small>
+                </th>
+                <th className="sc-opt">
+                  平均<small>Per game</small>
+                </th>
+                <th>
+                  第一<small>Won</small>
+                </th>
+                <th>
+                  食糊率<small>Win</small>
+                </th>
+                <th>
+                  出銃率<small>Deal-in</small>
+                </th>
+                <th className="sc-opt">
+                  最大一舖<small>Best hand</small>
+                </th>
               </tr>
             </thead>
             <tbody>
-              {career.map((c) => (
-                <tr key={c.player}>
-                  <th>
-                    <span className="sc-table-player">
-                      <Monogram store={store} player={c.player} size="sm" />
-                      {c.player}
-                    </span>
-                  </th>
-                  <td>{c.games}</td>
-                  <td className={tone(c.net)}>{signed(c.net)}</td>
-                  <td className="sc-opt">{fmt(Math.round(c.avgNet * 10) / 10)}</td>
-                  <td>{c.firsts}</td>
-                  <td>{pct(c.winRate)}</td>
-                  <td>{pct(c.dealInRate)}</td>
-                  <td className="sc-opt">{c.bestHand === null ? "–" : fmt(c.bestHand)}</td>
-                </tr>
-              ))}
+              {career.map((c) => {
+                const isOpen = careerOpen === c.player;
+                return (
+                  <Fragment key={c.player}>
+                    {/* A tap opens their career, as a 玩家 card, under the table. */}
+                    <tr className={`sc-career-row${isOpen ? " is-open" : ""}`} onClick={() => openCareer(isOpen ? null : c.player)} aria-expanded={isOpen}>
+                      <th>
+                        <span className="sc-table-player">
+                          <Monogram store={store} player={c.player} size="sm" />
+                          {c.player}
+                        </span>
+                      </th>
+                      <td>{c.games}</td>
+                      <td className={tone(c.net)}>{signed(c.net)}</td>
+                      <td className="sc-opt">{fmt(Math.round(c.avgNet * 10) / 10)}</td>
+                      <td>{c.firsts}</td>
+                      <td>{pct(c.winRate)}</td>
+                      <td>{pct(c.dealInRate)}</td>
+                      <td className="sc-opt">{c.bestHand === null ? "–" : fmt(c.bestHand)}</td>
+                    </tr>
+                  </Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>
       </div>
+      {careerOpen !== null && careerCard.stats.some((x) => x.player === careerOpen) && (
+        <div ref={careerCardRef} className="sc-career-card">
+        <PlayerCard
+          store={store}
+          stats={careerCard.stats}
+          seriesOf={(p) => careerCard.series.get(p)}
+          index={careerCard.stats.findIndex((x) => x.player === careerOpen)}
+          onIndex={(i) => setCareerOpen(careerCard.stats[i].player)}
+          games={career.find((c) => c.player === careerOpen)?.games ?? 0}
+        />
+        </div>
+      )}
       {names.length > 1 && (
         <>
           <SectionHead zh="對戰" en="Head-to-head">
-            <span className="sc-help">Row vs column</span>
+            <span className="sc-help">橫行對直行 · Row vs column</span>
           </SectionHead>
           <div className="card sc-table-card">
             <div className="sc-table-wrap">
@@ -3582,6 +5146,67 @@ function withRoster(store: ScoreStore, names: string[]) {
   return roster;
 }
 
+// What a shared link opens: the game as it stood when it was shared,
+// read-only, in the board's colours. Nothing here touches this phone's own
+// scores.
+export function SharedScoresView({ snap, onClose }: { snap: ScoreSnapshot; onClose: () => void }) {
+  const ranked = [...snap.players].sort((a, b) => b.t - a.t);
+  const when = new Date(snap.at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  return (
+    <section className="panel scores-panel sc-shared">
+      <div className="card sc-shared-head">
+        <span className="sc-shared-kicker">Shared scores · read-only</span>
+        <h2 className="sc-shared-title">{snap.name ?? "Mahjong scores"}</h2>
+        <p className="sc-help">
+          {new Date(snap.started).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })} · {snap.label} · 局{snap.hands} · 東{snap.east} 圈{snap.circle}
+          {snap.ended && " · ended"}
+        </p>
+      </div>
+      <div className="card sc-list-card">
+        {ranked.map((p, i) => (
+          <div key={p.n} className="sc-leader sc-shared-row">
+            <span className={`sc-leader-rank is-${i + 1}`}>{i + 1}</span>
+            <span className={`sc-mono sc-mono-md sc-c${p.c >= 0 ? p.c : "x"}`} aria-hidden="true">
+              {[...p.n][0]?.toUpperCase()}
+            </span>
+            <span className="sc-leader-id">
+              <span className="sc-leader-name">
+                {p.n}
+                {p.n === snap.dealer && !snap.ended && <span className="sc-zhuang-tag sc-shared-zhuang">莊</span>}
+              </span>
+              <span className="sc-leader-sub">
+                胡{p.w} · 摸{p.s} · 銃{p.d}
+              </span>
+            </span>
+            <strong className={`sc-leader-total ${tone(p.t)}`}>{signed(p.t)}</strong>
+          </div>
+        ))}
+      </div>
+      <SectionHead zh="結帳" en="Settle up" />
+      <div className="card">
+        {snap.pays.length === 0 ? (
+          <p className="sc-empty">Everyone is level.</p>
+        ) : (
+          <div className="sc-list">
+            {snap.pays.map(([from, to, amount], i) => (
+              <div key={i} className="sc-row">
+                <span>
+                  {from} → {to}
+                </span>
+                <strong>{fmt(amount)}</strong>
+              </div>
+            ))}
+          </div>
+        )}
+        <p className="sc-help sc-help-block">At ×1. Shared {when} - a snapshot, so it won't update by itself.</p>
+      </div>
+      <button type="button" className="sc-primary sc-shared-open" onClick={onClose}>
+        Open MJWaits
+      </button>
+    </section>
+  );
+}
+
 export function ScoresPanel({
   store,
   setStore,
@@ -3590,6 +5215,8 @@ export function ScoresPanel({
   onRequestDone,
   onScoreHand,
   onOpenSeating,
+  seatingResult,
+  onSeatingResultDone,
 }: {
   store: ScoreStore;
   setStore: (s: ScoreStore) => void;
@@ -3597,13 +5224,15 @@ export function ScoresPanel({
   request: RecordRequest | null;
   onRequestDone: () => void;
   onScoreHand?: (req: Omit<ScoreHandRequest, "nonce">) => void;
-  onOpenSeating?: (names: string[]) => void; // the Dice tab's Seating, for the seat ceremony
+  onOpenSeating?: (names: string[], east: number | null) => void; // the Dice tab's Seating, for the seat ceremony (east: the provisional East's seat)
+  seatingResult?: SeatingResult | null; // ...and what it came back with
+  onSeatingResultDone?: () => void;
 }) {
   const [sub, setSub] = useState<"board" | "stats">("board");
   const [view, setView] = useState<StatsView>("trend");
   useEffect(() => {
-    if (request) setSub("board");
-  }, [request]);
+    if (request || seatingResult) setSub("board");
+  }, [request, seatingResult]);
   const game = store.active;
   const state = useMemo(() => (game ? replay(game) : null), [game]);
 
@@ -3637,10 +5266,8 @@ export function ScoresPanel({
             onRequestDone={onRequestDone}
             onScoreHand={onScoreHand}
             onOpenSeating={onOpenSeating}
-            onSeeAll={() => {
-              setView("hands");
-              setSub("stats");
-            }}
+            seatingResult={seatingResult ?? null}
+            onSeatingResultDone={onSeatingResultDone}
           />
         ) : (
           <>

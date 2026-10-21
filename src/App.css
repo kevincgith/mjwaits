@@ -7656,6 +7656,7 @@ html.playing body {
 }
 
 .sc-sheet-heading {
+  flex: 1;
   min-width: 0;
 }
 
@@ -9118,8 +9119,26 @@ details.sc-stat-group:not([open]) {
   white-space: nowrap;
 }
 
+/* Best / lowest at the table: a small thumbs up or down in the table's own
+   green and red - the colours of a plus and a minus score. */
 .sc-mark {
-  font-size: 0.8rem;
+  display: inline-flex;
+  align-items: center;
+  margin-left: 0.25rem;
+  vertical-align: -0.1em;
+}
+
+.sc-mark svg {
+  width: 0.85rem;
+  height: 0.85rem;
+}
+
+.sc-mark.is-best {
+  color: var(--sc-pos);
+}
+
+.sc-mark.is-worst {
+  color: var(--sc-neg);
 }
 
 .sc-stat strong {
@@ -9557,17 +9576,20 @@ html.sc-fit-mode .build-version {
   }
 }
 
-/* ± on the left as a small tinted chip, so the footer reads as a button. */
+/* A bare green ±, on the footer's left. */
 .sc-card-bonus-mark {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 1.05rem;
-  height: 1.05rem;
-  border-radius: 50%;
-  background: var(--accent-tint);
+  width: 1.1rem;
+  height: 1.1rem;
   color: var(--accent);
+}
+
+.sc-card-bonus-mark svg {
+  width: 0.85rem;
+  height: 0.85rem;
 }
 
 .sc-card-bonus:active,
@@ -10145,24 +10167,31 @@ html.sc-fit-mode .build-version {
   font-weight: 600;
 }
 
-/* 還原 in Recent says what it will undo. */
-.sc-undo-button {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  line-height: 1.15;
-  min-width: 0;
+/* 最近's 還原 / 重做: a centred segmented pair above the list. */
+.sc-recent-moves {
+  align-self: center;
+  width: auto;
 }
 
-.sc-undo-what {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.sc-recent-moves > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  min-width: 6rem;
+  color: var(--accent);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.sc-recent-moves > button svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.sc-recent-moves > button:disabled {
   color: var(--text-muted);
-  font-size: var(--text-xs);
-  font-weight: 500;
+  cursor: default;
 }
 
 .sc-share-row {
@@ -10723,16 +10752,20 @@ html.sc-fit-mode .build-version {
 }
 
 /* 特別獎罰: 獎 | 罰 at the end of the amount row. */
+/* As wide as 食胡's Scan and Score pair, so the amount field lines up across tabs. */
 .sc-kind {
   display: inline-flex;
   flex-shrink: 0;
+  box-sizing: border-box;
+  width: calc(2 * 2.75rem + 0.35rem);
   padding: 0.2rem;
   border-radius: var(--radius-md);
   background: var(--fill);
 }
 
 .sc-kind > button {
-  width: 2.6rem;
+  flex: 1;
+  width: auto;
   height: 2.35rem;
   border: none;
   border-radius: calc(var(--radius-md) - 0.15rem);
@@ -10859,23 +10892,9 @@ html.sc-fit-mode .build-version {
 }
 
 /* Long names on the board (six characters or more). */
-.sc-zhuang-short {
-  display: none;
-}
-
 .sc-card-top.is-long .sc-card-name,
 .sc-fit .sc-card-top.is-long .sc-card-name {
   font-size: clamp(var(--text-sm), min(2.6vh, 13cqi), var(--text-xl));
-}
-
-@container (max-width: 10rem) {
-  .sc-card-top.is-long .sc-zhuang-long {
-    display: none;
-  }
-
-  .sc-card-top.is-long .sc-zhuang-short {
-    display: inline;
-  }
 }
 
 .sc-card-score.is-tight .sc-delta {
@@ -10957,6 +10976,1066 @@ html.sc-fit-mode .build-version {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 最近: each entry opens Edit / Delete. */
+.sc-recent-row {
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background-color 0.12s ease;
+}
+
+.sc-recent-row:active {
+  background: var(--fill);
+}
+
+.sc-recent-row + .sc-recent-row > .sc-hand {
+  border-top: 1px solid var(--separator);
+}
+
+/* 結帳's share buttons wrap onto a second line on a small phone. */
+.sc-share-row {
+  flex-wrap: wrap;
+}
+
+/* 備份 nudge: the app's green tint rather than the warning yellow - it's a
+   suggestion, not a problem. */
+.sc-banner.is-backup {
+  background: var(--accent-tint);
+  color: var(--accent);
+}
+
+.sc-backup-nudge {
+  gap: 0.6rem;
+}
+
+/* The share link's QR: big enough to scan across the table. */
+.sc-qr {
+  width: min(15rem, 70vw);
+  margin: 0 auto;
+  padding: 0.6rem;
+  border-radius: var(--radius-lg);
+  background: #fff;
+}
+
+.sc-qr svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* A shared link's read-only view. */
+.sc-shared {
+  gap: 0.75rem;
+}
+
+.sc-shared-head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.sc-shared-kicker {
+  color: var(--accent);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.sc-shared-title {
+  margin: 0;
+  font-size: var(--text-xl);
+}
+
+.sc-shared-row {
+  cursor: default;
+}
+
+.sc-shared-zhuang {
+  margin-left: 0.4rem;
+  font-size: var(--text-xs);
+  vertical-align: 0.1em;
+}
+
+.sc-shared-open {
+  width: 100%;
+  min-height: 3rem;
+}
+
+.sc-backup-nudge > .sc-secondary {
+  flex-shrink: 0;
+  min-height: 2.2rem;
+  padding: 0.3rem 0.9rem;
+  white-space: nowrap;
+}
+
+/* Small phones: a 拉 pill on a card's side would land on the big total and
+   the 流局 circle, so it rides higher - between the name and the total - and
+   sits further out over the gap. */
+@media (max-width: 360px) {
+  .sc-pin {
+    padding: 0.05rem 0.3rem;
+    font-size: 0.65rem;
+  }
+
+  .sc-pin.at-left { top: 30%; translate: -70% -50%; }
+  .sc-pin.at-right { top: 30%; translate: 70% -50%; }
+
+  /* The side seats' pills towards the middle ride above the 流局 circle. */
+  .sc-area-left .sc-pin.at-right { top: 13%; translate: 80% -50%; }
+  .sc-area-right .sc-pin.at-left { top: 13%; translate: -80% -50%; }
+
+  /* The top seat's drop below the round box in the corner. */
+  .sc-area-top .sc-pin.at-left,
+  .sc-area-top .sc-pin.at-right { top: 76%; }
+}
+
+/* A one-off tip: quiet, neutral. */
+.sc-banner.is-tip {
+  background: var(--fill);
+  color: var(--text-secondary);
+}
+
+.sc-banner.is-tip .is-win { color: var(--text); }
+.sc-banner.is-tip .is-self { color: var(--sc-pos); }
+.sc-banner.is-tip .is-dealin { color: var(--sc-neg); }
+
+.sc-banner.is-tip .sc-banner-action,
+.sc-banner.is-backup .sc-banner-action {
+  color: var(--accent);
+}
+
+/* ---- Stats 局: the score sheet ---- */
+.sc-sheet-card .sc-card-head {
+  align-items: center;
+}
+
+.sc-sheet-table {
+  margin: 0 -0.25rem;
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.sc-sheet-row {
+  display: grid;
+  align-items: center;
+  /* Room between columns, so two full names side by side read as two. */
+  column-gap: 0.55rem;
+  min-height: 2.4rem;
+  padding: 0 0.25rem;
+  border-top: 1px solid var(--separator);
+}
+
+.sc-sheet-row.is-head {
+  min-height: 2rem;
+  border-top: none;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+.sc-sheet-row.is-hand {
+  cursor: pointer;
+}
+
+.sc-sheet-row.is-hand:active,
+.sc-sheet-row.is-open {
+  background: var(--fill);
+}
+
+.sc-sheet-row.is-bonus,
+.sc-sheet-row.is-jackpot {
+  min-height: 2rem;
+  background: var(--surface-sunken);
+  font-size: var(--text-xs);
+}
+
+.sc-sheet-row.is-total {
+  min-height: 2.6rem;
+  border-top: 1.5px solid var(--text-muted);
+  font-weight: 800;
+}
+
+.sc-sheet-no {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.sc-sheet-what {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.2rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.sc-sheet-what small {
+  color: var(--accent);
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.sc-sheet-what.is-muted {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+/* Player names in their colour, right-aligned over their numbers. */
+/* Whole names: a long one wraps to a second line rather than being cut. */
+.sc-sheet-name {
+  color: var(--pc);
+  line-height: 1.15;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.sc-sheet-cell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.2rem;
+  white-space: nowrap;
+}
+
+.sc-sheet-cell.is-zero {
+  color: var(--text-muted);
+}
+
+.sc-sheet-cell.is-winner {
+  font-weight: 800;
+}
+
+.sc-sheet-mark {
+  padding: 0 0.2rem;
+  border-radius: 0.2rem;
+  background: var(--accent-tint);
+  color: var(--accent);
+  font-size: 0.62rem;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.sc-sheet-mark.is-dealin {
+  background: color-mix(in srgb, var(--sc-neg) 14%, transparent);
+  color: var(--sc-neg);
+}
+
+/* A hand opened: its payments, under the row. */
+.sc-sheet-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.35rem 0.5rem 0.6rem 1.75rem;
+  background: var(--fill);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+
+/* Every board banner in one style - quiet grey, the label in ink, the
+   action in the app's green. (Only one shows at a time.) */
+.sc-banner,
+.sc-banner.is-surrender,
+.sc-banner.is-backup,
+.sc-banner.is-tip {
+  background: var(--fill);
+  color: var(--text-secondary);
+}
+
+.sc-banner strong {
+  color: var(--text);
+}
+
+.sc-banner .sc-banner-action {
+  color: var(--accent);
+}
+
+/* 局 table: the names and the Total stay in view while the hands scroll -
+   the Total clears the phone's bottom tab bar. */
+.sc-sheet-row.is-head,
+.sc-sheet-row.is-total {
+  position: sticky;
+  z-index: 2;
+  background: var(--surface);
+}
+
+.sc-sheet-row.is-head {
+  top: 0;
+  box-shadow: 0 1px 0 var(--separator);
+}
+
+.sc-sheet-row.is-total {
+  bottom: 0;
+}
+
+@media (max-width: 700px) {
+  .sc-sheet-row.is-total {
+    bottom: calc(var(--tab-bar-h) + env(safe-area-inset-bottom));
+  }
+}
+
+/* Stats leaderboard off 走勢: one line a player - the views below carry the detail. */
+.sc-board-table.is-compact .sc-leader {
+  grid-template-columns: 1.6rem 2rem minmax(0, 1fr) auto;
+  min-height: 2.75rem;
+  padding-block: 0.15rem;
+}
+
+.sc-board-table.is-compact .sc-leader-sub,
+.sc-board-table.is-compact .sc-spark {
+  display: none;
+}
+
+.sc-board-table.is-compact .sc-leader-name {
+  font-size: var(--text-md);
+}
+
+.sc-board-table.is-compact .sc-leader-net {
+  font-size: var(--text-lg);
+}
+
+/* 座位: the 起莊 corner on its name card, as on the 戰況 cards. */
+.sc-option:has(> .sc-qi-corner) {
+  position: relative;
+}
+
+.sc-option > .sc-qi-corner {
+  width: 1.1rem;
+  height: 1.1rem;
+  border-top-left-radius: var(--radius-md);
+}
+
+/* 胡 / 特別獎罰 picker: 莊 on the seat's top-left corner - the mirror of the
+   胡 / 銃 tag on the right, so neither covers the name. */
+.sc-pick-zhuang {
+  position: absolute;
+  top: -0.45rem;
+  left: -0.3rem;
+  min-width: 1.15rem;
+  height: 1.15rem;
+  line-height: 1.15rem;
+  padding: 0 0.2rem;
+  font-size: 0.68rem;
+  pointer-events: none;
+}
+
+/* A sheet held to its siblings' height (the 胡 sheet's tabs) keeps Confirm
+   at the foot, however short its own content. */
+.sc-sheet-body {
+  flex: 1 1 auto;
+}
+
+/* Two or three fields (雙響 / 三響, 詐胡) beside Scan and Score: each shrinks
+   to fit, its name over its number, instead of running under the buttons. */
+.sc-tai-row .sc-tai {
+  min-width: 0;
+}
+
+.sc-tai-row .sc-tai-fields:has(> .sc-tai + .sc-tai) .sc-tai {
+  flex-direction: column;
+  gap: 0;
+  padding: 0.15rem 0.25rem;
+}
+
+.sc-tai-row .sc-tai-fields:has(> .sc-tai + .sc-tai) .sc-tai-who {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+
+.sc-tai-row .sc-tai-fields:has(> .sc-tai + .sc-tai) .sc-tai-value {
+  font-size: 1.25rem;
+  line-height: 1.1;
+}
+
+/* 籌碼: the chips to hand over, in the top-right corner beside the top seat -
+   the game box's mirror. */
+.sc-chips {
+  position: absolute;
+  top: 0.1rem;
+  right: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.1rem;
+  width: calc((100% - min(33vw, 10rem)) / 2 - 0.4rem);
+  max-width: 9rem;
+  box-sizing: border-box;
+  border: none;
+  padding: 0.25rem 0.4rem 0.3rem 0.5rem;
+  border-radius: var(--radius-md);
+  background: var(--accent-tint);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  animation: sc-chips-in 0.25s ease-out;
+}
+
+@keyframes sc-chips-in {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+}
+
+.sc-chips-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.3rem;
+}
+
+.sc-chips-title {
+  color: var(--accent);
+  font-size: var(--text-xs);
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.sc-chips-close {
+  display: inline-flex;
+  color: var(--text-muted);
+}
+
+.sc-chips-close svg {
+  width: 0.95rem;
+  height: 0.95rem;
+}
+
+/* One grid down the card - payer, arrow, receiver, amount - so every arrow
+   and amount lines up. Stacked (the names too wide side by side): each payer
+   on a line of their own, the arrows beneath. */
+.sc-chips-grid {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  align-items: baseline;
+  column-gap: 0.25em;
+  font-size: var(--text-xs);
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.sc-chips-who {
+  grid-column: 1;
+  font-weight: 700;
+}
+
+.sc-chips-arrow {
+  grid-column: 2;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.sc-chips-to {
+  grid-column: 3;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-secondary);
+}
+
+.sc-chips-amount {
+  grid-column: 4;
+  padding-left: 0.2em;
+  color: var(--text);
+  font-weight: 800;
+  text-align: right;
+}
+
+.sc-chips-grid.is-stacked {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.sc-chips-grid.is-stacked .sc-chips-who {
+  grid-column: 1 / -1;
+}
+
+.sc-chips-grid.is-stacked .sc-chips-arrow {
+  grid-column: 1;
+  padding-left: 0.5em;
+}
+
+.sc-chips-grid.is-stacked .sc-chips-to {
+  grid-column: 2;
+}
+
+.sc-chips-grid.is-stacked .sc-chips-amount {
+  grid-column: 3;
+}
+
+/* 提示自動隱藏: a hairline along a passing card's foot, running down to when
+   it goes. A banner sits in a wrapper that carries its spacing and clips it. */
+.sc-chips {
+  overflow: hidden;
+}
+
+.sc-autohide {
+  position: relative;
+  margin-bottom: 0.75rem;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.sc-autohide > .sc-banner {
+  margin-bottom: 0;
+}
+
+.sc-timer {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 2px;
+  background: var(--accent);
+  opacity: 0.45;
+  transform-origin: left;
+  animation: sc-timer linear forwards;
+}
+
+@keyframes sc-timer {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sc-timer {
+    display: none;
+  }
+}
+
+/* A field on its own in a sheet (Name this game): the sheet's full width. */
+.sc-input-full {
+  flex: none;
+  width: 100%;
+}
+
+/* iOS draws a date field its own way: keep it the size and alignment of the
+   text field above it. */
+.sc-input[type="date"] {
+  -webkit-appearance: none;
+  appearance: none;
+  display: flex;
+  align-items: center;
+  text-align: left;
+}
+
+.sc-input[type="date"]::-webkit-date-and-time-value {
+  text-align: left;
+}
+
+/* Name and date: start and end side by side. */
+.sc-time-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.6rem;
+}
+
+.sc-time-pair .sc-field,
+.sc-time-pair .sc-input {
+  min-width: 0;
+}
+
+.sc-input[type="time"] {
+  -webkit-appearance: none;
+  appearance: none;
+  display: flex;
+  align-items: center;
+  text-align: left;
+}
+
+.sc-status-place {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* A field with a × at its end to empty it. */
+.sc-input-clearable {
+  position: relative;
+  display: block;
+}
+
+.sc-input-clearable .sc-input {
+  padding-right: 2.4rem;
+}
+
+.sc-input-clear {
+  position: absolute;
+  top: 50%;
+  right: 0.35rem;
+  translate: 0 -50%;
+  display: inline-grid;
+  place-items: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  border: none;
+  border-radius: 50%;
+  padding: 0;
+  background: var(--fill);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.sc-input-clear svg {
+  width: 0.85rem;
+  height: 0.85rem;
+}
+
+/* The browser's own picker mark would sit under the × - hidden while it shows. */
+.sc-input-clearable.has-value input[type="time"]::-webkit-calendar-picker-indicator {
+  display: none;
+}
+
+/* ---- 320px audit ---------------------------------------------------------- */
+
+/* The toast sizes to its words, not to half the screen (it's centred with
+   left: 50%), so "Recorded ✓  還原" stays on one line on the smallest phones. */
+.sc-toast {
+  width: max-content;
+  box-sizing: border-box;
+}
+
+.sc-toast-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sc-toast button {
+  flex-shrink: 0;
+}
+
+/* 籌碼: a soft shadow, so where it reaches a card it reads as a layer on top
+   (the 拉 pins stay above it). */
+.sc-chips {
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+}
+
+@media (max-width: 360px) {
+  /* 籌碼 and the game box: a touch tighter. */
+  .sc-chips-grid,
+  .sc-status-meta {
+    line-height: 1.3;
+  }
+
+  /* 食胡 / 特別獎罰 / 詐胡 picker: a smaller monogram and name, so side seats
+     keep a whole name. */
+  .sc-sheet .sc-pick {
+    gap: 0.25rem;
+    padding: 0.25rem 0.3rem;
+  }
+
+  .sc-sheet .sc-pick .sc-mono {
+    width: 1.35rem;
+    height: 1.35rem;
+    font-size: 0.65rem;
+  }
+
+  .sc-sheet .sc-pick-name {
+    font-size: var(--text-sm);
+  }
+
+  /* Stats leaderboard: a shorter sparkline so names aren't cut. */
+  .sc-leader {
+    grid-template-columns: 1.5rem 1.75rem minmax(0, 1fr) 2.5rem auto;
+    gap: 0.45rem;
+  }
+
+  .sc-spark {
+    width: 2.5rem;
+  }
+}
+
+/* 座位's hint: two lines' room whatever it says, so the sheet holds still. */
+.sc-seats-hint {
+  display: block;
+  min-height: calc(2em * 1.4);
+  line-height: 1.4;
+}
+
+/* ---- 玩家: Cantonese first, a muted line of English under it ------------- */
+
+.sc-stat-label {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  white-space: normal;
+}
+
+.sc-stat-label > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.sc-stat-label small,
+.sc-stat-title small,
+.sc-kpis small,
+.sc-insights small {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.sc-stat-label small {
+  line-height: 1.25;
+}
+
+.sc-stat-title small {
+  margin-left: 0.3rem;
+}
+
+.sc-kpis span {
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+.sc-kpis small {
+  margin-top: 0.05rem;
+}
+
+/* 重點: a short list, a line each, a tick of colour for good or bad. */
+.sc-insights {
+  margin-top: 0.85rem;
+}
+
+.sc-insights ul {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  background: var(--separator);
+  list-style: none;
+}
+
+.sc-insights li {
+  display: flex;
+  flex-direction: column;
+  padding: 0.45rem 0.75rem 0.45rem 0.85rem;
+  background: var(--surface-sunken);
+  box-shadow: inset 3px 0 0 var(--separator);
+  font-size: var(--text-md);
+  font-weight: 600;
+}
+
+.sc-insights li.is-up {
+  box-shadow: inset 3px 0 0 var(--sc-pos);
+}
+
+.sc-insights li.is-down {
+  box-shadow: inset 3px 0 0 var(--sc-neg);
+}
+
+/* 對手: a bar each way from the middle - up on them right, down left. */
+.sc-opponents {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  background: var(--separator);
+  list-style: none;
+}
+
+.sc-opponents li {
+  display: grid;
+  grid-template-columns: minmax(0, 6.5rem) 1fr auto;
+  align-items: center;
+  gap: 0.6rem;
+  min-height: 2.6rem;
+  padding: 0.3rem 0.75rem;
+  background: var(--surface-sunken);
+}
+
+.sc-opponent-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.sc-opponent-bar {
+  position: relative;
+  height: 0.5rem;
+  border-radius: var(--radius-pill);
+  background: var(--fill);
+}
+
+.sc-opponent-bar::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -2px;
+  bottom: -2px;
+  width: 1px;
+  background: var(--separator);
+}
+
+.sc-opponent-bar > span {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: var(--radius-pill);
+}
+
+.sc-opponent-bar > .is-pos {
+  left: 50%;
+  background: var(--sc-pos);
+}
+
+.sc-opponent-bar > .is-neg {
+  right: 50%;
+  background: var(--sc-neg);
+}
+
+.sc-opponents strong {
+  min-width: 2.5rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* Career table: Cantonese headers, the English under each. */
+.sc-th-two th small {
+  display: block;
+  color: var(--text-muted);
+  font-size: 0.625rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.sc-stat-grid {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.sc-stat {
+  min-width: 0;
+}
+
+/* The smallest phones: a stat a row, so labels and values both fit. */
+@media (max-width: 360px) {
+  .sc-stat-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sc-stat:last-child:nth-child(odd) {
+    grid-column: auto;
+  }
+}
+
+.sc-stat-value {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  flex-shrink: 0;
+}
+
+.sc-stat-value small {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  line-height: 1.2;
+}
+
+.sc-th-two th small {
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* 生涯: a row opens its player's career details under it. */
+.sc-career-row {
+  cursor: pointer;
+}
+
+.sc-career-row.is-open > * {
+  background: var(--fill);
+}
+
+/* The career card opened from a row: scrolled to with room above it. */
+.sc-career-card {
+  scroll-margin-top: 0.75rem;
+}
+
+/* A name on two lines: the header's names share the bottom line. */
+.sc-sheet-row.is-head {
+  align-items: end;
+  padding-bottom: 0.3rem;
+}
+
+/* 玩家: each stat is a button - a tap ranks the table on it. */
+button.sc-stat {
+  width: 100%;
+  border: none;
+  color: inherit;
+  font: inherit;
+  font-size: var(--text-md);
+  text-align: left;
+  cursor: pointer;
+}
+
+button.sc-stat:active {
+  background: var(--fill);
+}
+
+.sc-ranking {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  background: var(--separator);
+  list-style: none;
+}
+
+.sc-ranking li {
+  display: grid;
+  grid-template-columns: 1.6rem 1.75rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.6rem;
+  min-height: 3rem;
+  padding: 0.35rem 0.75rem;
+  background: var(--surface-sunken);
+}
+
+/* The player whose card it is. */
+.sc-ranking li.is-me {
+  background: var(--accent-tint);
+}
+
+.sc-ranking-name {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 700;
+}
+
+.sc-ranking .sc-stat-value strong {
+  font-size: var(--text-lg);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 走勢: the game's story under the chart, a line each. */
+.sc-trend-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0.75rem 0 0;
+  padding: 0.6rem 0 0;
+  border-top: 1px solid var(--separator);
+  list-style: none;
+}
+
+.sc-trend-summary li {
+  display: flex;
+  flex-direction: column;
+  font-size: var(--text-md);
+  font-weight: 600;
+}
+
+.sc-trend-summary small {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: 500;
+}
+
+/* 預設獎罰: quick picks filling the empty pay table, in pages of two rows of
+   four. A swipe always lands on a whole page; a sliver of the other page
+   peeks in at the edge (on the right from page 1, the left from page 2), so
+   it's clear there's more without anything taking room. */
+.sc-presets {
+  --peek: 0.85rem;
+  display: grid;
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  grid-auto-columns: calc((100% - 3 * 0.3rem) / 4);
+  gap: 0.3rem;
+  height: 100%;
+  padding: 0.1rem 0;
+  box-sizing: border-box;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+  scroll-padding-inline-start: var(--peek);
+  scrollbar-width: none;
+}
+
+.sc-presets.is-paged {
+  grid-auto-columns: calc((100% - 3 * 0.3rem - var(--peek) - 0.3rem) / 4);
+}
+
+.sc-presets::-webkit-scrollbar {
+  display: none;
+}
+
+/* Only a page's first tile is a snap point, so a swipe can't stop between. */
+.sc-presets > .sc-preset.is-page {
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+}
+
+/* Name and amount side by side, so two rows fit the box. */
+.sc-preset {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0 0.25rem;
+  line-height: 1.15;
+  padding: 0 0.2rem;
+  align-content: center;
+  flex-wrap: wrap;
+  min-width: 0;
+  border: none;
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.sc-preset:active {
+  background: var(--fill);
+}
+
+.sc-preset strong {
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+
+.sc-preset span {
+  font-size: var(--text-sm);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.sc-preset.is-reward span {
+  color: var(--sc-pos);
+}
+
+.sc-preset.is-penalty span {
+  color: var(--sc-neg);
 }
 
 /* ---- Scoring 設定: the tai rules sheet (TaiRulesSheet.tsx) ---- */
