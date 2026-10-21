@@ -276,8 +276,8 @@ describe("Jackpot, bonuses, seats, undo", () => {
     sumsToZero(t);
   });
 
-  it("預設獎罰: 花 草 暗槓 圍骰 receive, 蛇骰 pays - off, or at 0, they're gone", () => {
-    expect(bonusPresets(PLAIN).map((p) => `${p.name}${p.kind}${p.amount}`)).toEqual(["花獎5", "草獎3", "暗槓獎5", "蛇骰罰5", "圍骰獎5"]);
+  it("預設獎罰: 花 草 暗槓 追 追 圍骰 receive, 蛇骰 pays - off, or at 0, they're gone", () => {
+    expect(bonusPresets(PLAIN).map((p) => `${p.name}${p.kind}${p.amount}`)).toEqual(["花獎5", "草獎3", "暗槓獎5", "追獎5", "追獎10", "圍骰獎5", "蛇骰罰5"]);
     expect(bonusPresets({ ...PLAIN, presetGrass: 0 }).map((p) => p.name)).not.toContain("草");
     expect(bonusPresets({ ...PLAIN, bonusPresets: false })).toEqual([]);
     // A named bonus pays just like any other.
