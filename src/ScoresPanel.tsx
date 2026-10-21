@@ -1381,6 +1381,10 @@ function RoundOption({ verb, label }: { verb: string; label: string }) {
   );
 }
 
+// How long 座位's cards take to slide to new seats - the 莊 badge and the
+// 起莊 corner fly on the same clock when they move with them.
+const SEAT_MOVE_MS = 800;
+
 function SeatsSheet({
   store,
   state,
@@ -1530,7 +1534,7 @@ function SeatsSheet({
     }
     qiFlight.current?.();
     // Alongside the cards when they move too, so all of it lands together.
-    const flight = flyer.animate(frames, { duration: seatsMoved ? 800 : 600, easing: "linear" });
+    const flight = flyer.animate(frames, { duration: seatsMoved ? SEAT_MOVE_MS : 600, easing: "linear" });
     corner.style.visibility = "hidden";
     const land = () => {
       flyer.remove();
@@ -1540,6 +1544,47 @@ function SeatsSheet({
     qiFlight.current = land;
     flight.finished.then(land, land);
   });
+  // A new 莊: the badge flies from the old dealer's seat to the new one (a
+  // copy of it, above the sheet, so no card clips it) and lands with a pop.
+  // Measured where it ends up before the cards start sliding (so this runs
+  // ahead of them), and in step with them when they move too - start state
+  // to end state, every piece on the same clock.
+  const badgeFrom = useRef<DOMRect | null>(null);
+  useLayoutEffect(() => {
+    const from = badgeFrom.current;
+    badgeFrom.current = null;
+    const cardsMoving = before.current !== null;
+    const badge = diamondRef.current?.querySelector<HTMLElement>(".sc-zhuang");
+    if (!from || !badge || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const to = badge.getBoundingClientRect();
+    const flyer = badge.cloneNode(true) as HTMLElement;
+    Object.assign(flyer.style, { position: "fixed", left: `${to.left}px`, top: `${to.top}px`, margin: "0", zIndex: "1000", pointerEvents: "none" });
+    document.body.appendChild(flyer);
+    const dx = from.left - to.left;
+    const dy = from.top - to.top;
+    // A smooth arc: sampled along an eased path with a gentle rise (a sine,
+    // so no sharp peak), growing a little mid-flight.
+    const lift = -Math.min(48, Math.hypot(dx, dy) / 4);
+    const frames: Keyframe[] = [];
+    for (let i = 0; i <= 20; i++) {
+      const t = i / 20;
+      const e = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+      const rise = Math.sin(Math.PI * e);
+      frames.push({ offset: t, transform: `translate(${dx * (1 - e)}px, ${dy * (1 - e) + lift * rise}px) scale(${1 + 0.35 * rise})` });
+    }
+    const flight = flyer.animate(frames, { duration: cardsMoving ? SEAT_MOVE_MS : 600, easing: "linear" });
+    badge.style.visibility = "hidden";
+    const land = () => {
+      flyer.remove();
+      badge.style.visibility = "";
+      badge.animate([{ transform: "scale(1.35)" }, { transform: "scale(1)" }], { duration: 220, easing: "ease-out" });
+    };
+    flight.finished.then(land, land);
+    return () => {
+      flyer.remove();
+      badge.style.visibility = "";
+    };
+  }, [dealerName]);
   useLayoutEffect(() => {
     const was = before.current;
     before.current = null;
@@ -1607,46 +1652,10 @@ function SeatsSheet({
           zIndex: turn > 0 ? 2 : 1,
         });
       }
-      el.animate(frames, { duration: 800, easing: "linear" });
+      el.animate(frames, { duration: SEAT_MOVE_MS, easing: "linear" });
     });
   }, [seats]);
-  // A new 莊: the badge flies from the old dealer's seat to the new one (a
-  // copy of it, above the sheet, so no card clips it) and lands with a pop.
-  const badgeFrom = useRef<DOMRect | null>(null);
-  useLayoutEffect(() => {
-    const from = badgeFrom.current;
-    badgeFrom.current = null;
-    const badge = diamondRef.current?.querySelector<HTMLElement>(".sc-zhuang");
-    if (!from || !badge || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const to = badge.getBoundingClientRect();
-    const flyer = badge.cloneNode(true) as HTMLElement;
-    Object.assign(flyer.style, { position: "fixed", left: `${to.left}px`, top: `${to.top}px`, margin: "0", zIndex: "1000", pointerEvents: "none" });
-    document.body.appendChild(flyer);
-    const dx = from.left - to.left;
-    const dy = from.top - to.top;
-    // A smooth arc: sampled along an eased path with a gentle rise (a sine,
-    // so no sharp peak), growing a little mid-flight.
-    const lift = -Math.min(48, Math.hypot(dx, dy) / 4);
-    const frames: Keyframe[] = [];
-    for (let i = 0; i <= 20; i++) {
-      const t = i / 20;
-      const e = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-      const rise = Math.sin(Math.PI * e);
-      frames.push({ offset: t, transform: `translate(${dx * (1 - e)}px, ${dy * (1 - e) + lift * rise}px) scale(${1 + 0.35 * rise})` });
-    }
-    const flight = flyer.animate(frames, { duration: 600, easing: "linear" });
-    badge.style.visibility = "hidden";
-    const land = () => {
-      flyer.remove();
-      badge.style.visibility = "";
-      badge.animate([{ transform: "scale(1.35)" }, { transform: "scale(1)" }], { duration: 220, easing: "ease-out" });
-    };
-    flight.finished.then(land, land);
-    return () => {
-      flyer.remove();
-      badge.style.visibility = "";
-    };
-  }, [dealerName]);
+
 
   // From the seat ceremony: once the sheet has slid up, everyone slides to
   // the seat they drew and the 莊 badge flies to 東 - a new 東風東局 at 連0.
