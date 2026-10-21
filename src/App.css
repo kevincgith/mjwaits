@@ -11308,3 +11308,13 @@ html.sc-fit-mode .build-version {
 .sc-sheet-body {
   flex: 1 1 auto;
 }
+
+/* 食胡 ⇄ 詐胡: a narrow switch beside Confirm. */
+.sc-sheet-actions:has(> .sc-zha-switch) {
+  grid-template-columns: auto 1fr;
+  grid-auto-flow: row;
+}
+
+.sc-zha-switch {
+  padding-inline: 1.1rem;
+}
