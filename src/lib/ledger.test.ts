@@ -12,6 +12,7 @@ import {
   replaceEvent,
   replay,
   chipMoves,
+  evenShares,
   CHIP_POT,
   settle,
   undoEvent,
@@ -398,6 +399,19 @@ describe("籌碼 - chips change hands when a 拉 ends", () => {
 
   it("a 流局 feeds the Jackpot pile", () => {
     expect(moves([], draw, { jackpot: true, jackpotPerDraw: 5 }).every((m) => m.to === CHIP_POT && m.amount === 5)).toBe(true);
+  });
+});
+
+describe("Jackpot split evenly", () => {
+  it("spreads what won't divide one each, 莊 first", () => {
+    expect(evenShares(11, 0, true)).toEqual([3, 3, 3, 2]);
+    expect(evenShares(11, 2, true)).toEqual([3, 2, 3, 3]);
+    expect(evenShares(20, 1, true)).toEqual([5, 5, 5, 5]);
+    expect(evenShares(2, 3, true)).toEqual([1, 0, 0, 1]);
+  });
+
+  it("goes to 0.1 off 整數模式", () => {
+    expect(evenShares(11, 0, false)).toEqual([2.8, 2.8, 2.7, 2.7]);
   });
 });
 
