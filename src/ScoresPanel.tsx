@@ -1795,7 +1795,19 @@ function SeatsSheet({
   );
 }
 
-function LahSheet({ store, state, onSurrender, onClose }: { store: ScoreStore; state: ReplayState; onSurrender: (holder: string, pulled: string) => void; onClose: () => void }) {
+function LahSheet({
+  store,
+  state,
+  onSurrender,
+  onSurrenderAll,
+  onClose,
+}: {
+  store: ScoreStore;
+  state: ReplayState;
+  onSurrender: (holder: string, pulled: string) => void;
+  onSurrenderAll: () => void;
+  onClose: () => void;
+}) {
   // One table per holder, biggest first. Usually there's just one (the last
   // winner); a 雙響/三響 can leave several, each also keeping what they held.
   const groups = [...new Set(state.lahs.map((l) => l.holder))]
@@ -1813,7 +1825,7 @@ function LahSheet({ store, state, onSurrender, onClose }: { store: ScoreStore; s
   useEffect(() => {
     if (!armed) return;
     const disarm = (e: PointerEvent) => {
-      if (!(e.target as Element).closest?.(".sc-lah-surrender.is-armed")) setArmed(null);
+      if (!(e.target as Element).closest?.(".sc-lah-surrender.is-armed, .sc-lah-all.is-armed")) setArmed(null);
     };
     document.addEventListener("pointerdown", disarm, true);
     return () => document.removeEventListener("pointerdown", disarm, true);
@@ -1822,6 +1834,22 @@ function LahSheet({ store, state, onSurrender, onClose }: { store: ScoreStore; s
     <Sheet
       title="拉踢"
       onClose={onClose}
+      actions={
+        // Everyone 投降 at once - two taps, like each row's.
+        state.lahs.length > 1 ? (
+          <button
+            type="button"
+            className={`sc-lah-all ${armed === "all" ? "sc-danger is-armed" : "sc-secondary"}`}
+            onClick={() => {
+              if (armed !== "all") return setArmed("all");
+              setArmed(null);
+              onSurrenderAll();
+            }}
+          >
+            {armed === "all" ? `確定 · end all ${state.lahs.length} 拉` : "全部投降 All surrender"}
+          </button>
+        ) : undefined
+      }
     >
       {/* As tall as a sheet with a few 拉, so it doesn't open as a sliver. */}
       {groups.length === 0 && (
@@ -3242,6 +3270,11 @@ function Board({
           onSurrender={(holder, pulled) => {
             update(withEvent(game, { t: "surrender", at: Date.now(), holder, pulled }));
             flash(`${pulled} 投降`);
+          }}
+          onSurrenderAll={() => {
+            const at = Date.now();
+            update(state.lahs.reduce((g, l) => withEvent(g, { t: "surrender", at, holder: l.holder, pulled: l.pulled }), game));
+            flash(`全部投降 · ${state.lahs.length} 拉 ended`);
           }}
         />
       )}
