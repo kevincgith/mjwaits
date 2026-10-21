@@ -11508,8 +11508,13 @@ html.sc-fit-mode .build-version {
 /* Name and date: start and end side by side. */
 .sc-time-pair {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 0.6rem;
+}
+
+.sc-time-pair .sc-field,
+.sc-time-pair .sc-input {
+  min-width: 0;
 }
 
 .sc-input[type="time"] {
@@ -11523,4 +11528,41 @@ html.sc-fit-mode .build-version {
 .sc-status-place {
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* A field with a × at its end to empty it. */
+.sc-input-clearable {
+  position: relative;
+  display: block;
+}
+
+.sc-input-clearable .sc-input {
+  padding-right: 2.4rem;
+}
+
+.sc-input-clear {
+  position: absolute;
+  top: 50%;
+  right: 0.35rem;
+  translate: 0 -50%;
+  display: inline-grid;
+  place-items: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  border: none;
+  border-radius: 50%;
+  padding: 0;
+  background: var(--fill);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.sc-input-clear svg {
+  width: 0.85rem;
+  height: 0.85rem;
+}
+
+/* The browser's own picker mark would sit under the × - hidden while it shows. */
+.sc-input-clearable.has-value input[type="time"]::-webkit-calendar-picker-indicator {
+  display: none;
 }
