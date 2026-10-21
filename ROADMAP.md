@@ -66,6 +66,15 @@ in that file). Confirm the definitions and the text can be made exact:
 - **四子內 / 七子內 / 十子內** - whether the count is every player's discards or only the winner's.
   Printed as "four or fewer tiles had been discarded".
 - **正圈風** - worth 0 as a placeholder; the real value hasn't been given.
+- **設定 examples and descriptions still to fix** (reported, not yet done):
+  - **明絕** - description should say the other three copies are in your own declared melds, *or*
+    seen elsewhere and declared with the 明絕 button; its example uses that manual button on a hand
+    whose declared melds are unrelated winds, so it shows nothing - pick an auto-detected hand (e.g.
+    declared 333萬 + concealed 345萬, won on 3萬) and show the declared copies.
+  - **絕絕** - description is vague; its example should show the waiting shape, the declared melds
+    holding the waiting tiles, and the wait list (as 假獨/獨獨 now do).
+  - **對碰** - its example shows only the finished triplet; it should show the two pairs it was
+    waiting on (the completed triplet plus the pair) and the wait list.
 - Still open from [docs/scoring-rules.md](docs/scoring-rules.md) ("Assumptions made without
   explicit confirmation"): whether **二連刻** and **小三連刻** stack per instance, and whether the
   三色連刻 / 三色步步高 / 三兄弟 families really never replace one another.
