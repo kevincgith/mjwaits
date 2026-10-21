@@ -11863,17 +11863,9 @@ html.sc-fit-mode .build-version {
   background: var(--fill);
 }
 
-.sc-career-detail > td {
-  padding: 0.35rem 0.25rem 0.6rem;
-  text-align: left;
-  white-space: normal;
-}
-
-/* Stays inside the card's width, not the table's scrolled width. */
-.sc-career-stats {
-  position: sticky;
-  left: 0;
-  width: min(100%, calc(100vw - 4rem));
+/* The career card opened from a row: scrolled to with room above it. */
+.sc-career-card {
+  scroll-margin-top: 0.75rem;
 }
 
 /* A name on two lines: the header's names share the bottom line. */
