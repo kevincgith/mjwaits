@@ -58,6 +58,7 @@ export interface ScoreSettings {
   bonusPresets: boolean;
   presetFlower: number; // 花 - receive from each
   presetGrass: number; // 草 - receive from each
+  presetBoth: number; // 花草 - receive from each
   presetKong: number; // 暗槓 - receive from each
   presetChase: number; // 追 - receive from each (the smaller)
   presetChaseBig: number; // 追 - receive from each (the bigger)
@@ -91,6 +92,7 @@ export const DEFAULT_SETTINGS: ScoreSettings = {
   bonusPresets: true,
   presetFlower: 5,
   presetGrass: 3,
+  presetBoth: 8,
   presetKong: 5,
   presetChase: 5,
   presetChaseBig: 10,
@@ -106,6 +108,7 @@ export function bonusPresets(settings: ScoreSettings): { name: string; kind: "�
   return [
     { name: "花", kind: "獎" as const, amount: settings.presetFlower },
     { name: "草", kind: "獎" as const, amount: settings.presetGrass },
+    { name: "花草", kind: "獎" as const, amount: settings.presetBoth },
     { name: "暗槓", kind: "獎" as const, amount: settings.presetKong },
     { name: "追", kind: "獎" as const, amount: settings.presetChase },
     { name: "追", kind: "獎" as const, amount: settings.presetChaseBig },

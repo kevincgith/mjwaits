@@ -2702,6 +2702,7 @@ const SETTING_GROUPS: { title: string; rows: { key: keyof ScoreSettings; label: 
       { key: "bonusPresets", label: "預設獎罰", help: "Quick picks on the 特別獎罰 tab", kind: "bool" },
       { key: "presetFlower", label: "花", help: "Receive from each player", kind: "number", needs: "bonusPresets" },
       { key: "presetGrass", label: "草", help: "Receive from each player", kind: "number", needs: "bonusPresets" },
+      { key: "presetBoth", label: "花草", help: "Receive from each player", kind: "number", needs: "bonusPresets" },
       { key: "presetKong", label: "暗槓", help: "Receive from each player", kind: "number", needs: "bonusPresets" },
       { key: "presetChase", label: "追", help: "Receive from each player - the first", kind: "number", needs: "bonusPresets" },
       { key: "presetChaseBig", label: "追", help: "Receive from each player - the second", kind: "number", needs: "bonusPresets" },
