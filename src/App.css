@@ -12008,3 +12008,40 @@ button.sc-stat:active {
 .sc-preset.is-penalty span {
   color: var(--sc-neg);
 }
+
+/* Nine or more picks: three even rows of four, each tile its name over its
+   amount, small - still inside the box. */
+.sc-presets:has(> :nth-child(9)) {
+  grid-template-rows: repeat(3, minmax(0, 1fr));
+  gap: 0.2rem;
+}
+
+.sc-presets:has(> :nth-child(9)) .sc-preset {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0;
+  line-height: 1.1;
+}
+
+.sc-presets:has(> :nth-child(9)) .sc-preset strong,
+.sc-presets:has(> :nth-child(9)) .sc-preset span {
+  font-size: 0.6875rem;
+}
+
+/* ...and the box grows a little to hold them at a tappable size. */
+.sc-paytable:has(> .sc-presets > :nth-child(9)) {
+  height: auto;
+}
+
+.sc-presets:has(> :nth-child(9)) {
+  grid-template-rows: repeat(3, 1.875rem);
+}
+
+/* Short screens: the 特別獎罰 keypad gives back the room the picks took. */
+@media (max-height: 700px) {
+  .sc-sheet:has(.sc-presets > :nth-child(9)) .sc-keypad button {
+    height: 1.8rem;
+    min-height: 0;
+  }
+}
