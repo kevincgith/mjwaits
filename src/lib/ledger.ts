@@ -123,12 +123,23 @@ export interface ScoreGame {
   name?: string; // what the players call it - set by a long press on the round box
   startedAt: number;
   endedAt?: number;
+  // When play started and stopped, as "HH:MM", if someone set them - shown
+  // only when set. (startedAt and endedAt are when the app opened and closed it.)
+  startTime?: string;
+  endTime?: string;
+  location?: string; // where it was played, if someone set it
   seats: string[]; // the player at each seat at the start, in turn order
   firstDealer: number;
   settings: ScoreSettings; // as at the start - later changes are events
   events: ScoreEvent[];
   // Entries taken back by 還原, newest last, for 重做 (redo). Any new entry clears it.
   undone?: ScoreEvent[];
+}
+
+// "20:00–23:30", "from 20:00", "until 23:30" or "" - a game's times as set.
+export function playTimes(game: Pick<ScoreGame, "startTime" | "endTime">): string {
+  const { startTime: from, endTime: to } = game;
+  return from && to ? `${from}–${to}` : from ? `from ${from}` : to ? `until ${to}` : "";
 }
 
 export interface Lah {

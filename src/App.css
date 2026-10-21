@@ -11504,3 +11504,23 @@ html.sc-fit-mode .build-version {
 .sc-input[type="date"]::-webkit-date-and-time-value {
   text-align: left;
 }
+
+/* Name and date: start and end side by side. */
+.sc-time-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+}
+
+.sc-input[type="time"] {
+  -webkit-appearance: none;
+  appearance: none;
+  display: flex;
+  align-items: center;
+  text-align: left;
+}
+
+.sc-status-place {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
