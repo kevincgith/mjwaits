@@ -11627,3 +11627,10 @@ html.sc-fit-mode .build-version {
     width: 2.5rem;
   }
 }
+
+/* 座位's hint: two lines' room whatever it says, so the sheet holds still. */
+.sc-seats-hint {
+  display: block;
+  min-height: calc(2em * 1.4);
+  line-height: 1.4;
+}

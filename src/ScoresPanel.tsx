@@ -1784,14 +1784,17 @@ function SeatsSheet({
   return (
     <Sheet
       title="座位 Seats"
+      // Always two lines tall, so the sheet doesn't jump as the hint changes.
       subtitle={
-        benchPick !== null
-          ? `Now tap the seat ${benchPick} takes`
-          : picked !== null
-            ? `Now tap another seat, or a 候補 player, for ${seats[picked]}'s place`
-            : proposal
-              ? "From the seat ceremony: 東 deals a new 東風東局 - Confirm to use it"
-              : "Tap a seat to move or replace that player · hold one for 莊"
+        <span className="sc-seats-hint">
+          {benchPick !== null
+            ? `Now tap the seat ${benchPick} takes`
+            : picked !== null
+              ? `Now tap another seat, or a 候補 player, for ${seats[picked]}'s place`
+              : proposal
+                ? "From the seat ceremony · Confirm to use it"
+                : "Tap a seat to move or replace that player · hold one for 莊"}
+        </span>
       }
       onClose={onClose}
       actions={
