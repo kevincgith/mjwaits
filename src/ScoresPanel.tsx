@@ -3425,8 +3425,8 @@ function Board({
         >
           {game.name && <span className="sc-status-name">{game.name}</span>}
           <span className="sc-status-round">{state.label}</span>
-          <span className="sc-status-meta">局{state.hands.length + 1}</span>
           <span className="sc-status-meta sc-status-wrap">
+            <span>局{state.hands.length + 1}</span>
             <span>東{state.east}</span>
             <span>圈{state.circle}</span>
           </span>
@@ -3575,7 +3575,7 @@ function Board({
 
       {toast && (
         <div key={toast.id} className="sc-toast" role="status">
-          {toast.text}
+          <span className="sc-toast-text">{toast.text}</span>
           {toast.text.startsWith("Recorded") && (
             <button type="button" onClick={() => undo()}>
               還原

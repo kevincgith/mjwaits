@@ -136,10 +136,10 @@ export interface ScoreGame {
   undone?: ScoreEvent[];
 }
 
-// "20:00–23:30", "from 20:00", "until 23:30" or "" - a game's times as set.
+// "20:00–23:30", "20:00–", "–23:30" or "" - a game's times as set.
 export function playTimes(game: Pick<ScoreGame, "startTime" | "endTime">): string {
   const { startTime: from, endTime: to } = game;
-  return from && to ? `${from}–${to}` : from ? `from ${from}` : to ? `until ${to}` : "";
+  return from || to ? `${from ?? ""}–${to ?? ""}` : "";
 }
 
 export interface Lah {
