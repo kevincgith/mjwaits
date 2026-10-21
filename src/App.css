@@ -11382,38 +11382,61 @@ html.sc-fit-mode .build-version {
   height: 0.95rem;
 }
 
-/* One payer a line; a wrapped line hangs under the payer's name. */
-.sc-chips-line {
-  display: block;
-  padding-left: 0.6rem;
-  text-indent: -0.6rem;
+/* One grid down the card - payer, arrow, receiver, amount - so every arrow
+   and amount lines up. Stacked (the names too wide side by side): each payer
+   on a line of their own, the arrows beneath. */
+.sc-chips-grid {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  align-items: baseline;
+  column-gap: 0.25em;
   font-size: var(--text-xs);
   line-height: 1.4;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .sc-chips-who {
+  grid-column: 1;
   font-weight: 700;
 }
 
 .sc-chips-arrow {
-  margin: 0 0.25em 0 0.2em;
+  grid-column: 2;
   color: var(--accent);
   font-weight: 700;
 }
 
-.sc-chips-item {
-  display: inline-block;
-  text-indent: 0;
+.sc-chips-to {
+  grid-column: 3;
   color: var(--text-secondary);
-  white-space: nowrap;
 }
 
-.sc-chips-item + .sc-chips-item {
-  margin-left: 0.45em;
-}
-
-.sc-chips-item strong {
+.sc-chips-amount {
+  grid-column: 4;
+  padding-left: 0.2em;
   color: var(--text);
   font-weight: 800;
+  text-align: right;
+}
+
+.sc-chips-grid.is-stacked {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.sc-chips-grid.is-stacked .sc-chips-who {
+  grid-column: 1 / -1;
+}
+
+.sc-chips-grid.is-stacked .sc-chips-arrow {
+  grid-column: 1;
+  padding-left: 0.5em;
+}
+
+.sc-chips-grid.is-stacked .sc-chips-to {
+  grid-column: 2;
+}
+
+.sc-chips-grid.is-stacked .sc-chips-amount {
+  grid-column: 3;
 }

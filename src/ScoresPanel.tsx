@@ -2636,11 +2636,25 @@ function useChipMoves(game: ScoreGame, state: ReplayState) {
   };
 }
 
-// A line a payer, "A → B 10" for A pays B: "Mandy → 凱文 10", or
-// "Kelvin → 凱文 9  Mandy 2  Ah Wing 2", wrapping under the name only when
-// it must. 彩池 is the Jackpot pile.
+// "A → B 10" for A pays B, each receiver on a line of their own, every
+// arrow (and amount) in one column down the card: "Kelvin → 凱文 9", then
+// "→ Mandy 2", "→ Ah Wing 2". Names are never cut: when the widest payer and
+// receiver don't fit side by side, each payer takes a line of their own above
+// their arrows. 彩池 is the Jackpot pile.
 function ChipsCard({ verb, list, onDone }: { verb: string; list: { from: string; to: string; amount: number }[]; onDone: () => void }) {
   const payers = [...new Set(list.map((m) => m.from))];
+  const gridRef = useRef<HTMLSpanElement>(null);
+  const [stacked, setStacked] = useState(false);
+  // Measured side by side, before paint, whenever the list changes.
+  useLayoutEffect(() => {
+    const grid = gridRef.current;
+    if (!grid) return;
+    const was = grid.classList.contains("is-stacked");
+    grid.classList.remove("is-stacked");
+    const tooWide = grid.scrollWidth > grid.clientWidth + 1;
+    grid.classList.toggle("is-stacked", was);
+    setStacked(tooWide);
+  }, [list]);
   const label = `籌碼${verb ? ` ${verb}` : ""}: ${list.map((m) => `${m.from} pays ${m.to} ${fmt(m.amount)}`).join(", ")}. Tap once handed over.`;
   return (
     <button type="button" className="sc-chips" onClick={onDone} aria-label={label}>
@@ -2648,19 +2662,25 @@ function ChipsCard({ verb, list, onDone }: { verb: string; list: { from: string;
         <span className="sc-chips-title">籌碼{verb && ` · ${verb}`}</span>
         <span className="sc-chips-done">{Icons.check}</span>
       </span>
-      {payers.map((payer) => (
-        <span key={payer} className="sc-chips-line" aria-hidden="true">
-          <span className="sc-chips-who">{payer}</span>
-          <span className="sc-chips-arrow">→</span>
-          {list
-            .filter((m) => m.from === payer)
-            .map((m) => (
-              <span key={m.to} className="sc-chips-item">
-                {m.to} <strong>{fmt(m.amount)}</strong>
+      <span ref={gridRef} className={`sc-chips-grid${stacked ? " is-stacked" : ""}`} aria-hidden="true">
+        {payers.map((payer) => {
+          const mine = list.filter((m) => m.from === payer);
+          return (
+            <Fragment key={payer}>
+              <span className="sc-chips-who" style={{ gridRow: stacked ? undefined : `span ${mine.length}` }}>
+                {payer}
               </span>
-            ))}
-        </span>
-      ))}
+              {mine.map((m) => (
+                <Fragment key={m.to}>
+                  <span className="sc-chips-arrow">→</span>
+                  <span className="sc-chips-to">{m.to}</span>
+                  <strong className="sc-chips-amount">{fmt(m.amount)}</strong>
+                </Fragment>
+              ))}
+            </Fragment>
+          );
+        })}
+      </span>
     </button>
   );
 }
