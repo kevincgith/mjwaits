@@ -254,6 +254,14 @@ describe("Jackpot, bonuses, seats, undo", () => {
     expect(replay(game([{ t: "bonus", at: 0, seat: 1, amount: 3, kind: "罰" }])).totals).toMatchObject({ A: 3, B: -9 });
   });
 
+  it("詐胡 pays each player their own amount, and leaves the deal alone", () => {
+    const s = replay(game([{ t: "zhaHu", at: 0, seat: 1, pays: [{ player: "A", amount: 40 }, { player: "C", amount: 20 }, { player: "D", amount: 40 }] }]));
+    expect(s.totals).toEqual({ A: 40, B: -100, C: 20, D: 40 });
+    expect(s.hands).toHaveLength(0);
+    expect(s.dealer).toBe(0);
+    sumsToZero(s);
+  });
+
   it("特別獎罰 to or from one player", () => {
     // 獎 from C only: C pays B.
     expect(replay(game([{ t: "bonus", at: 0, seat: 1, amount: 5, kind: "獎", other: 2 }])).totals).toEqual({ A: 0, B: 5, C: -5, D: 0 });

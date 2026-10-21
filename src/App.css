@@ -10870,23 +10870,9 @@ html.sc-fit-mode .build-version {
 }
 
 /* Long names on the board (six characters or more). */
-.sc-zhuang-short {
-  display: none;
-}
-
 .sc-card-top.is-long .sc-card-name,
 .sc-fit .sc-card-top.is-long .sc-card-name {
   font-size: clamp(var(--text-sm), min(2.6vh, 13cqi), var(--text-xl));
-}
-
-@container (max-width: 10rem) {
-  .sc-card-top.is-long .sc-zhuang-long {
-    display: none;
-  }
-
-  .sc-card-top.is-long .sc-zhuang-short {
-    display: inline;
-  }
 }
 
 .sc-card-score.is-tight .sc-delta {
@@ -11220,4 +11206,105 @@ html.sc-fit-mode .build-version {
   background: var(--fill);
   color: var(--text-secondary);
   font-size: var(--text-xs);
+}
+
+/* Every board banner in one style - quiet grey, the label in ink, the
+   action in the app's green. (Only one shows at a time.) */
+.sc-banner,
+.sc-banner.is-surrender,
+.sc-banner.is-backup,
+.sc-banner.is-tip {
+  background: var(--fill);
+  color: var(--text-secondary);
+}
+
+.sc-banner strong {
+  color: var(--text);
+}
+
+.sc-banner .sc-banner-action {
+  color: var(--accent);
+}
+
+/* 局 table: the names and the Total stay in view while the hands scroll -
+   the Total clears the phone's bottom tab bar. */
+.sc-sheet-row.is-head,
+.sc-sheet-row.is-total {
+  position: sticky;
+  z-index: 2;
+  background: var(--surface);
+}
+
+.sc-sheet-row.is-head {
+  top: 0;
+  box-shadow: 0 1px 0 var(--separator);
+}
+
+.sc-sheet-row.is-total {
+  bottom: 0;
+}
+
+@media (max-width: 700px) {
+  .sc-sheet-row.is-total {
+    bottom: calc(var(--tab-bar-h) + env(safe-area-inset-bottom));
+  }
+}
+
+/* Stats leaderboard off 走勢: one line a player - the views below carry the detail. */
+.sc-board-table.is-compact .sc-leader {
+  grid-template-columns: 1.6rem 2rem minmax(0, 1fr) auto;
+  min-height: 2.75rem;
+  padding-block: 0.15rem;
+}
+
+.sc-board-table.is-compact .sc-leader-sub,
+.sc-board-table.is-compact .sc-spark {
+  display: none;
+}
+
+.sc-board-table.is-compact .sc-leader-name {
+  font-size: var(--text-md);
+}
+
+.sc-board-table.is-compact .sc-leader-net {
+  font-size: var(--text-lg);
+}
+
+/* 座位: the 起莊 corner on its name card, as on the 戰況 cards. */
+.sc-option:has(> .sc-qi-corner) {
+  position: relative;
+}
+
+.sc-option > .sc-qi-corner {
+  width: 1.1rem;
+  height: 1.1rem;
+  border-top-left-radius: var(--radius-md);
+}
+
+/* 胡 / 特別獎罰 picker: 莊 on the seat's top-left corner - the mirror of the
+   胡 / 銃 tag on the right, so neither covers the name. */
+.sc-pick-zhuang {
+  position: absolute;
+  top: -0.45rem;
+  left: -0.3rem;
+  min-width: 1.15rem;
+  height: 1.15rem;
+  line-height: 1.15rem;
+  padding: 0 0.2rem;
+  font-size: 0.68rem;
+  pointer-events: none;
+}
+
+/* 詐胡: each player's name beside their amount. */
+.sc-zha-who {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+/* A sheet held to its siblings' height (the 胡 sheet's tabs) keeps Confirm
+   at the foot, however short its own content. */
+.sc-sheet-body {
+  flex: 1 1 auto;
 }

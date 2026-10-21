@@ -51,6 +51,7 @@ export interface ScoreSettings {
   surrenderPrompt: number | null; // 投降提示 - prompt once a 拉 runs this many hands in a row; null = off. A prompt only - 投降 itself is never restricted.
   showTally: boolean; // 胡摸銃數 - win / self-draw / deal-in counts on the cards
   quickScan: boolean; // 快速掃描 - a Scan button on each player's card
+  zhaHu: number | null; // 詐胡 - what a false win pays each other player by default (each can be changed); null = off
 }
 
 export const DEFAULT_SETTINGS: ScoreSettings = {
@@ -73,7 +74,11 @@ export const DEFAULT_SETTINGS: ScoreSettings = {
   surrenderPrompt: 3,
   showTally: true,
   quickScan: true,
+  zhaHu: null,
 };
+
+// What a nullable setting starts at when it's switched on, if not its default.
+export const SETTING_ON_VALUE: Partial<Record<keyof ScoreSettings, number>> = { zhaHu: 40 };
 
 export interface PatternNote {
   id: string;
@@ -99,6 +104,9 @@ export type ScoreEvent =
   | { t: "surrender"; at: number; holder: string; pulled: string }
   | { t: "jackpot"; at: number; shares: { player: string; amount: number }[] }
   | { t: "jackpotIn"; at: number; shares: { player: string; amount: number }[] } // paid into the pot
+  // 詐胡: the seat's player called a win that wasn't, and pays each of the
+  // others their amount. Not a hand - the deal carries on as it was.
+  | { t: "zhaHu"; at: number; seat: number; pays: { player: string; amount: number }[] }
   | { t: "swap"; at: number; seats: string[] } // the whole new seating
   // resetRound: back to 東風東局 from this dealer. Or `round` sets any 風局:
   // wind 0-3 (東南西北) and hand 0-3 (this dealer's 東局 … 北局).
@@ -423,6 +431,16 @@ export function replay(game: ScoreGame): ReplayState {
           const amount = ev.kind === "獎" ? ev.amount : -ev.amount;
           add(deltas, me, amount);
           add(deltas, other, -amount);
+        }
+        for (const [p, d] of Object.entries(deltas)) add(state.totals, p, d);
+        break;
+      }
+      case "zhaHu": {
+        const me = state.seats[ev.seat];
+        for (const pay of ev.pays) {
+          if (pay.player === me || pay.amount <= 0) continue;
+          add(deltas, me, -pay.amount);
+          add(deltas, pay.player, pay.amount);
         }
         for (const [p, d] of Object.entries(deltas)) add(state.totals, p, d);
         break;
