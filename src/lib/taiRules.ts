@@ -100,6 +100,22 @@ export function isRuleChanged(id: string, rule: PatternRule): boolean {
   return Object.values(ruleChanges(id, rule)).some(Boolean);
 }
 
+/** Changed in a way its own row in 設定 shows - everything but the 大雞/大鴨
+ *  ignore list, which has its own setting. */
+export function isRowChanged(id: string, rule: PatternRule): boolean {
+  const { chicken: _chicken, ...rest } = ruleChanges(id, rule);
+  return Object.values(rest).some(Boolean);
+}
+
+/** The patterns 大雞/大鴨 ignore (don't count against them), in PATTERNS order. */
+export function chickenIgnores(rules: TaiRules): string[] {
+  return PATTERNS.filter((p) => !CHICKEN_PATTERN_IDS.has(p.id) && rules.patterns[p.id]?.blocksChicken === false).map((p) => p.id);
+}
+
+export function isChickenListChanged(rules: TaiRules): boolean {
+  return PATTERNS.some((p) => ruleChanges(p.id, rules.patterns[p.id]).chicken);
+}
+
 export const isLadderChanged = (rules: TaiRules, ladderId: string) => rules.ladders[ladderId]?.exclusive === false;
 
 /** How many patterns and ladders differ from the house list. */
@@ -125,7 +141,12 @@ function valueText(id: string, rule: PatternRule): string {
 
 const shapeLabel = (shape: HandShape) => HAND_SHAPES.find((s) => s.id === shape)?.label ?? shape;
 
-export type RuleChange = { target: { kind: "pattern" | "ladder"; id: string } | { kind: "engine" }; text: string };
+export type RuleChange = {
+  target: { kind: "pattern" | "ladder"; id: string } | { kind: "engine" };
+  text: string;
+  /** Set for a change to the 大雞/大鴨 ignore list (one pattern's blocksChicken). */
+  chicken?: boolean;
+};
 
 /** Every difference from the house list, in words - the sheet's summary. */
 export function describeChanges(rules: TaiRules): RuleChange[] {
@@ -145,7 +166,7 @@ export function describeChanges(rules: TaiRules): RuleChange[] {
     for (const r of base.replaces) if (!rule.replaces.includes(r)) out.push({ target, text: `${name} stacks with ${shortName(r)}` });
     for (const s of base.shapes) if (!rule.shapes.includes(s)) out.push({ target, text: `${name} not on ${shapeLabel(s)}` });
     for (const s of rule.shapes) if (!base.shapes.includes(s)) out.push({ target, text: `${name} on ${shapeLabel(s)}` });
-    if (c.chicken) out.push({ target, text: rule.blocksChicken ? `${name} blocks 大雞/大鴨` : `${name} doesn't block 大雞/大鴨` });
+    if (c.chicken) out.push({ target, text: rule.blocksChicken ? `大雞/大鴨 no longer ignore ${name}` : `大雞/大鴨 ignore ${name}`, chicken: true });
   }
   return out;
 }

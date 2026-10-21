@@ -12143,9 +12143,6 @@ button.sc-stat:active {
   gap: 0.85rem;
 }
 
-.tr-body.is-off {
-  opacity: 0.4;
-}
 
 .tr-filter {
   display: flex;
@@ -12590,4 +12587,565 @@ button.sc-stat:active {
 .tr-chip.is-danger {
   background: var(--sc-neg);
   color: #fff;
+}
+
+/* 設定: a rule's example - the tiles it counts, the whole hand, or the
+   situation it's declared in - and what it's worth there. */
+.tr-example {
+  padding: 0.6rem 0.75rem 0.65rem;
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+}
+
+.tr-example-tiles {
+  gap: 0.45rem;
+  margin-bottom: 0.4rem;
+}
+
+.tr-example-tiles .breakdown-group {
+  background: var(--surface);
+}
+
+/* Declared (exposed) melds, as in the hand card: an outline, not a fill. */
+.tr-example-tiles .breakdown-group.tr-example-declared {
+  background: none;
+  box-shadow: inset 0 0 0 1px var(--fill-strong);
+}
+
+.tr-example-chip {
+  min-height: 1.75rem;
+  background: var(--surface);
+}
+
+.tr-example-chip .tile-glyph {
+  font-size: 1.5em;
+}
+
+.tr-example-worth {
+  margin-top: 0.35rem;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.tr-example-worth strong {
+  color: var(--text);
+}
+
+/* 設定: 大雞/大鴨's ignore list, one setting at the top of their group. */
+.tr-chicken {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  border-radius: var(--radius-lg);
+  padding: 0.6rem 0.85rem 0.75rem;
+  background: var(--surface-sunken);
+}
+
+.tr-chicken-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+/* 設定's scoring engine: the switch, full width, over its explanation. While
+   the original engine is chosen, the rule sets and rules below grey out. */
+.tr-engine {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.tr-rules {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.tr-rules.is-off {
+  opacity: 0.4;
+}
+
+/* ---- The printable rules reference (RulesReference.tsx) ----
+   Fixed light colours rather than the theme tokens: it's a document for
+   paper, and should look the same whatever the app's theme. */
+.rr-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  overflow-y: auto;
+  background: #e8e8ed;
+  -webkit-overflow-scrolling: touch;
+}
+
+.rr-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: calc(0.6rem + env(safe-area-inset-top)) 1rem 0.6rem;
+  background: rgba(232, 232, 237, 0.86);
+  -webkit-backdrop-filter: saturate(180%) blur(18px);
+  backdrop-filter: saturate(180%) blur(18px);
+}
+
+.rr-toolbar .sc-primary,
+.rr-toolbar .sc-secondary {
+  flex: none;
+  width: auto;
+  padding-inline: 1.1rem;
+}
+
+.rr-toolbar-hint {
+  color: #6e6e73;
+  font-size: var(--text-xs);
+  text-align: center;
+}
+
+.rr-doc {
+  --rr-ink: #1d1d1f;
+  --rr-muted: #6e6e73;
+  --rr-faint: #aeaeb2;
+  --rr-line: #e2e2e7;
+  --rr-tint: #f5f5f7;
+  --rr-accent: #2f7a4b;
+  box-sizing: border-box;
+  width: min(210mm, 100% - 1.5rem);
+  margin: 0.75rem auto 2rem;
+  padding: 14mm 13mm;
+  border-radius: 6px;
+  background: #fff;
+  color: var(--rr-ink);
+  box-shadow: 0 6px 30px rgba(0, 0, 0, 0.12);
+  font-family: -apple-system, "SF Pro Text", "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+  font-size: 9pt;
+  line-height: 1.45;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+.rr-doc .tile-glyph {
+  font-size: 17px;
+}
+
+/* -- Page 1: at a glance -- */
+.rr-head {
+  margin-bottom: 5mm;
+  padding-bottom: 3.5mm;
+  border-bottom: 0.4mm solid var(--rr-ink);
+}
+
+.rr-kicker {
+  color: var(--rr-accent);
+  font-size: 7.5pt;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.rr-title {
+  margin: 1mm 0 0.5mm;
+  font-size: 22pt;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+}
+
+.rr-sub {
+  color: var(--rr-muted);
+  font-size: 8.5pt;
+}
+
+.rr-columns {
+  column-count: 4;
+  column-gap: 5mm;
+  column-rule: 0.2mm solid var(--rr-line);
+  font-size: 8pt;
+  line-height: 1.36;
+}
+
+/* A long family (情況 has 25) may run on into the next column, but its
+   heading stays with its first rows. */
+.rr-sum-group {
+  margin-bottom: 2mm;
+}
+
+.rr-sum-row {
+  break-inside: avoid;
+}
+
+.rr-sum-family {
+  display: flex;
+  align-items: center;
+  gap: 1.2mm;
+  break-after: avoid;
+  margin-bottom: 0.6mm;
+  padding-bottom: 0.4mm;
+  border-bottom: 0.2mm solid var(--rr-line);
+  color: var(--rr-accent);
+  font-size: 7.6pt;
+  font-weight: 700;
+}
+
+.rr-sum-row {
+  display: grid;
+  grid-template-columns: 1fr auto 7.5mm;
+  gap: 1.2mm;
+  align-items: baseline;
+}
+
+.rr-sum-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 1mm;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.rr-sum-value {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  text-align: right;
+}
+
+.rr-sum-type {
+  color: var(--rr-muted);
+  font-size: 6.4pt;
+}
+
+.rr-sum-row.is-off {
+  color: var(--rr-faint);
+}
+
+.rr-sum-row.is-off .rr-sum-name {
+  text-decoration: line-through;
+}
+
+.rr-mark {
+  display: inline-block;
+  flex: none;
+  width: 1.4mm;
+  height: 1.4mm;
+  border-radius: 50%;
+  background: var(--rr-accent);
+}
+
+.rr-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1mm 5mm;
+  margin-top: 4mm;
+  padding-top: 2.5mm;
+  border-top: 0.2mm solid var(--rr-line);
+  color: var(--rr-muted);
+  font-size: 6.8pt;
+}
+
+.rr-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 1mm;
+}
+
+.rr-legend b {
+  color: var(--rr-ink);
+  font-weight: 600;
+}
+
+/* -- The details -- */
+.rr-family {
+  margin-top: 10mm;
+}
+
+.rr-family-title {
+  margin: 0;
+  padding-bottom: 1.5mm;
+  border-bottom: 0.4mm solid var(--rr-ink);
+  font-size: 14pt;
+  font-weight: 700;
+  break-after: avoid;
+}
+
+.rr-family-guide {
+  margin: 1.5mm 0 3mm;
+  color: var(--rr-muted);
+  font-size: 8.5pt;
+  break-after: avoid;
+}
+
+.rr-ladder {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 1mm 3mm;
+  margin-bottom: 3mm;
+  padding: 2mm 3mm;
+  border-left: 0.8mm solid var(--rr-accent);
+  border-radius: 0 1.5mm 1.5mm 0;
+  background: var(--rr-tint);
+  font-size: 8.5pt;
+  break-inside: avoid;
+}
+
+.rr-ladder-label {
+  color: var(--rr-accent);
+  font-size: 7.2pt;
+  font-weight: 700;
+}
+
+.rr-ladder-rungs {
+  font-weight: 600;
+}
+
+.rr-ladder-sep {
+  margin: 0 1.5mm;
+  color: var(--rr-faint);
+  font-weight: 400;
+}
+
+.rr-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3mm;
+}
+
+.rr-card {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5mm;
+  padding: 3mm 3.2mm;
+  border: 0.25mm solid var(--rr-line);
+  border-radius: 2mm;
+  break-inside: avoid;
+}
+
+.rr-card.is-off {
+  background: var(--rr-tint);
+  color: var(--rr-muted);
+}
+
+.rr-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 2mm;
+}
+
+.rr-card-name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.rr-card-zh {
+  font-size: 11pt;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.rr-card-en {
+  color: var(--rr-muted);
+  font-size: 7.2pt;
+}
+
+.rr-card-value {
+  flex: none;
+  max-width: 50%;
+  color: var(--rr-accent);
+  font-size: 8.5pt;
+  font-weight: 700;
+  text-align: right;
+}
+
+.rr-card.is-off .rr-card-value {
+  color: var(--rr-muted);
+}
+
+.rr-card-text {
+  margin: 0;
+  font-size: 8.5pt;
+}
+
+/* The shared example block, restyled for paper. */
+.rr-card .tr-example {
+  padding: 2mm 2.4mm;
+  border-radius: 1.5mm;
+  background: var(--rr-tint);
+}
+
+.rr-card .tr-detail-label {
+  margin-bottom: 1mm;
+  color: var(--rr-muted);
+  font-size: 6.6pt;
+}
+
+.rr-card .tr-example-tiles {
+  gap: 1.6mm;
+  margin-bottom: 1mm;
+}
+
+.rr-card .tr-example-tiles .breakdown-group {
+  padding: 0;
+  background: none;
+}
+
+.rr-card .tr-example-tiles .breakdown-group.tr-example-declared {
+  padding: 0.4mm;
+  box-shadow: inset 0 0 0 0.25mm var(--rr-faint);
+  border-radius: 1mm;
+}
+
+.rr-card .tr-chips {
+  gap: 1mm;
+}
+
+.rr-card .tr-example-chip {
+  min-height: 0;
+  padding: 0.3mm 1.6mm;
+  background: #fff;
+  color: var(--rr-ink);
+  font-size: 7pt;
+}
+
+.rr-card .tr-example-chip .tile-glyph {
+  font-size: 13px;
+}
+
+.rr-card .tr-example-worth {
+  margin-top: 1mm;
+  color: var(--rr-muted);
+  font-size: 7pt;
+}
+
+.rr-card .tr-none {
+  font-size: 7.5pt;
+}
+
+.rr-card-meta {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.6mm 2.5mm;
+  margin: 0;
+  font-size: 7.6pt;
+}
+
+.rr-card-meta dt {
+  color: var(--rr-muted);
+}
+
+.rr-card-meta dd {
+  margin: 0;
+}
+
+/* -- How scoring works -- */
+.rr-rules-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3mm 6mm;
+  margin-top: 3mm;
+}
+
+.rr-rule {
+  break-inside: avoid;
+}
+
+.rr-rule h3,
+.rr-changes-title {
+  margin: 0 0 0.8mm;
+  font-size: 9.5pt;
+  font-weight: 700;
+}
+
+.rr-rule p {
+  margin: 0;
+  font-size: 8.5pt;
+}
+
+.rr-changes-title {
+  margin-top: 6mm;
+}
+
+.rr-general {
+  margin-top: 10mm;
+}
+
+.rr-changes {
+  margin: 0;
+  padding-left: 4.5mm;
+  font-size: 8.5pt;
+  columns: 2;
+  column-gap: 6mm;
+}
+
+/* A phone's screen: one card per row. Paper keeps two. */
+@media screen and (max-width: 600px) {
+  .rr-doc {
+    padding: 8mm 6mm;
+  }
+
+  .rr-columns {
+    column-count: 2;
+    font-size: 8pt;
+  }
+
+  .rr-cards,
+  .rr-rules-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .rr-toolbar-hint {
+    display: none;
+  }
+}
+
+@media print {
+  @page {
+    size: A4;
+    margin: 12mm 12mm 13mm;
+  }
+
+  /* Only the reference prints: the app underneath goes. */
+  body:has(.rr-overlay) > #root {
+    display: none !important;
+  }
+
+  body:has(.rr-overlay) {
+    background: #fff !important;
+  }
+
+  .rr-overlay {
+    position: static;
+    overflow: visible;
+    background: none;
+  }
+
+  .rr-toolbar {
+    display: none;
+  }
+
+  .rr-doc {
+    width: auto;
+    margin: 0;
+    padding: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  /* Page 1 is the summary on its own; the details start on page 2. */
+  .rr-summary {
+    break-after: page;
+  }
+
+  /* Page 2, how scoring works, also stands alone; the families follow. */
+  .rr-general {
+    margin-top: 0;
+    break-after: page;
+  }
+
+  .rr-family.is-first {
+    margin-top: 0;
+  }
 }

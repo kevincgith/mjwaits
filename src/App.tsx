@@ -5636,7 +5636,7 @@ function ScoringPanel({
   // rules link reach them too.
   taiRules: { rules: TaiRules; corrupt: boolean; name: string };
   ruleStore: RuleSetStore;
-  onSaveRuleStore: (store: RuleSetStore) => void;
+  onSaveRuleStore: (store: RuleSetStore, engine: TaiRules["engine"]) => void;
   // Rules opened from a shared link (#r=…), to review in the sheet.
   incomingRules?: { name: string | null; rules: TaiRules } | null;
   onIncomingRulesHandled?: () => void;
@@ -7019,8 +7019,8 @@ function ScoringPanel({
             setRulesOpen(false);
             onIncomingRulesHandled?.();
           }}
-          onSave={(store) => {
-            onSaveRuleStore(store);
+          onSave={(store, engine) => {
+            onSaveRuleStore(store, engine);
             setRulesOpen(false);
             onIncomingRulesHandled?.();
           }}
@@ -9384,14 +9384,10 @@ function DeveloperTools({
   onLoadNotation,
   tileStyle,
   onTileStyleChange,
-  rulesEngine,
-  onRulesEngineChange,
 }: {
   onLoadNotation: (notation: string) => void;
   tileStyle: TileStyle;
   onTileStyleChange: (style: TileStyle) => void;
-  rulesEngine: TaiRules["engine"];
-  onRulesEngineChange: (engine: TaiRules["engine"]) => void;
 }) {
   const debug = useDebug();
   const [notation, setNotation] = useState("");
@@ -9510,26 +9506,6 @@ function DeveloperTools({
           </button>
         </div>
         <span className="dev-note">"(…)" declared, "[…]" 暗槓, the rest concealed. Load resets the situation; flowers aren't included.</span>
-      </section>
-
-      <section className="dev-section">
-        <h3 className="dev-heading">Tai rules engine</h3>
-        <div className="segmented" role="group" aria-label="Tai rules engine">
-          {(
-            [
-              ["custom", "Configurable"],
-              ["legacy", "Original (frozen)"],
-            ] as const
-          ).map(([value, label]) => (
-            <button key={value} type="button" className={rulesEngine === value ? "toggle-on" : undefined} aria-pressed={rulesEngine === value} onClick={() => onRulesEngineChange(value)}>
-              {label}
-            </button>
-          ))}
-        </div>
-        <span className="dev-note">
-          Original scores with scoringLegacy.ts, the engine as it was before rules were editable, and ignores 設定. The configurable engine falls back
-          to it by itself if it ever fails.
-        </span>
       </section>
 
       <section className="dev-section">
@@ -9675,15 +9651,11 @@ function TestHandsSheet({
   onClose,
   tileStyle,
   onTileStyleChange,
-  rulesEngine,
-  onRulesEngineChange,
 }: {
   onPick: (hand: TestHand) => void;
   onClose: () => void;
   tileStyle: TileStyle;
   onTileStyleChange: (style: TileStyle) => void;
-  rulesEngine: TaiRules["engine"];
-  onRulesEngineChange: (engine: TaiRules["engine"]) => void;
 }) {
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState<"hands" | "tools">("hands");
@@ -9736,8 +9708,6 @@ function TestHandsSheet({
               onLoadNotation={(hand) => onPick({ group: "", name: "Pasted hand", hand, ctx: {} })}
               tileStyle={tileStyle}
               onTileStyleChange={onTileStyleChange}
-              rulesEngine={rulesEngine}
-              onRulesEngineChange={onRulesEngineChange}
             />
           </div>
         ) : (
@@ -10049,18 +10019,20 @@ function App() {
   // A shared scores link (#s=…) opens its read-only view over the app;
   // "Open MJWaits" drops the hash and carries on as normal.
   const [sharedScores, setSharedScores] = useState(() => snapshotFromHash(window.location.hash));
-  // The Scoring tab's tai rule sets (設定), saved in localStorage, and the
-  // developer sheet's engine switch - here so both, and a shared rules
-  // link, reach them. taiRules is what scoring uses: the active set.
+  // The Scoring tab's tai rule sets and scoring engine (設定), saved in
+  // localStorage - here so a shared rules link reaches them. taiRules is
+  // what scoring uses: the active set, under the chosen engine.
   const [ruleSets, setRuleSets] = useState(loadRuleSets);
   const [rulesEngine, setRulesEngine] = useState(loadEngine);
   const taiRules = useMemo(() => {
     const set = activeSet(ruleSets.store);
     return { rules: { ...rulesOfSet(set), engine: rulesEngine }, corrupt: ruleSets.corrupt, name: set?.name ?? HOUSE_RULES_NAME };
   }, [ruleSets, rulesEngine]);
-  const saveRuleStore = (store: RuleSetStore) => {
+  const saveRuleStore = (store: RuleSetStore, engine: TaiRules["engine"]) => {
     saveRuleSets(store);
     setRuleSets({ store, corrupt: false });
+    saveEngine(engine);
+    setRulesEngine(engine);
   };
   // A shared rules link (#r=…) opens the Scoring tab's 設定 sheet with them
   // to review; the hash goes once they're saved or dismissed. Links are
@@ -10374,11 +10346,6 @@ function App() {
           onClose={() => setTestHandsOpen(false)}
           tileStyle={tileStyle}
           onTileStyleChange={changeTileStyle}
-          rulesEngine={rulesEngine}
-          onRulesEngineChange={(engine) => {
-            saveEngine(engine);
-            setRulesEngine(engine);
-          }}
         />
       )}
       {/* Last, so it sits above any sheet a link was tapped in. */}
