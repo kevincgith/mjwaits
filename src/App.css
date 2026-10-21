@@ -11834,3 +11834,25 @@ html.sc-fit-mode .build-version {
   text-transform: none;
   letter-spacing: 0;
 }
+
+/* 生涯: a row opens its player's career details under it. */
+.sc-career-row {
+  cursor: pointer;
+}
+
+.sc-career-row.is-open > * {
+  background: var(--fill);
+}
+
+.sc-career-detail > td {
+  padding: 0.35rem 0.25rem 0.6rem;
+  text-align: left;
+  white-space: normal;
+}
+
+/* Stays inside the card's width, not the table's scrolled width. */
+.sc-career-stats {
+  position: sticky;
+  left: 0;
+  width: min(100%, calc(100vw - 4rem));
+}

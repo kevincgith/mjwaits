@@ -108,6 +108,19 @@ describe("trend, patterns, career and head-to-head", () => {
     expect(c.B.net).toBe(replay(g1).totals.B + 20);
   });
 
+  it("carries the 玩家 metrics across games", () => {
+    const c = Object.fromEntries(careerStats([g1, g2]).map((s) => [s.player, s]));
+    // A deals 局1-3 of g1 (+3) and g2's only hand (-20).
+    expect(c.A).toMatchObject({ dealerHands: 4, dealerNet: -17, longestDealerRun: 3 });
+    // B's per-win average spans both games: g1's wins plus g2's +20.
+    const b1 = playerStats(replay(g1), g1).find((s) => s.player === "B")!;
+    const winsB = b1.wins + b1.selfDraws + 1;
+    expect(c.B.avgWinGain).toBeCloseTo((b1.selfDrawGain + b1.discardGain + 20) / winsB);
+    expect(c.B.selfDrawShare).toBe(0);
+    expect(c.A.lahNet).toBe(-9);
+    expect(c.A.firstRate).not.toBeNull();
+  });
+
   it("nets head-to-head both ways", () => {
     const h = headToHead([g1, g2]);
     expect(h.A.B).toBe(-h.B.A);

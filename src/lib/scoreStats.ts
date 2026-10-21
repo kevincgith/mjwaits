@@ -282,10 +282,22 @@ export interface CareerStats {
   winRate: number | null;
   dealInRate: number | null;
   bestHand: number | null;
+  // As in a game's 玩家 card, across every game.
+  dealerHands: number;
+  dealerNet: number;
+  longestDealerRun: number;
+  selfDrawShare: number | null;
+  avgWinGain: number | null;
+  avgDealInLoss: number | null;
+  lahNet: number;
+  firstRate: number | null; // 領先 - hands spent in 1st, of all hands sat in
 }
 
 export function careerStats(games: ScoreGame[]): CareerStats[] {
   const by = new Map<string, CareerStats>();
+  // Running sums for the averages: points won, points lost dealing in, and
+  // hands spent in 1st.
+  const totals = new Map<string, { won: number; dealtIn: number; inFirst: number }>();
   for (const g of games) {
     const state = replay(g);
     if (state.hands.length === 0) continue;
@@ -306,7 +318,16 @@ export function careerStats(games: ScoreGame[]): CareerStats[] {
         winRate: null,
         dealInRate: null,
         bestHand: null,
+        dealerHands: 0,
+        dealerNet: 0,
+        longestDealerRun: 0,
+        selfDrawShare: null,
+        avgWinGain: null,
+        avgDealInLoss: null,
+        lahNet: 0,
+        firstRate: null,
       };
+      const t = totals.get(s.player) ?? { won: 0, dealtIn: 0, inFirst: 0 };
       c.games++;
       c.hands += s.hands;
       c.net += s.net;
@@ -315,16 +336,31 @@ export function careerStats(games: ScoreGame[]): CareerStats[] {
       c.selfDraws += s.selfDraws;
       c.dealIns += s.dealIns;
       if (s.bestHand && (c.bestHand === null || s.bestHand.value > c.bestHand)) c.bestHand = s.bestHand.value;
+      c.dealerHands += s.dealerHands;
+      c.dealerNet += s.dealerNet;
+      c.longestDealerRun = Math.max(c.longestDealerRun, s.longestDealerRun);
+      c.lahNet += s.lahNet;
+      t.won += s.selfDrawGain + s.discardGain;
+      t.dealtIn += s.discardLoss;
+      t.inFirst += (s.firstRate ?? 0) * s.hands;
+      totals.set(s.player, t);
       by.set(s.player, c);
     }
   }
   return [...by.values()]
-    .map((c) => ({
-      ...c,
-      avgNet: c.net / c.games,
-      winRate: rate(c.wins + c.selfDraws, c.hands),
-      dealInRate: rate(c.dealIns, c.hands),
-    }))
+    .map((c) => {
+      const t = totals.get(c.player) ?? { won: 0, dealtIn: 0, inFirst: 0 };
+      return {
+        ...c,
+        avgNet: c.net / c.games,
+        winRate: rate(c.wins + c.selfDraws, c.hands),
+        dealInRate: rate(c.dealIns, c.hands),
+        selfDrawShare: rate(c.selfDraws, c.wins + c.selfDraws),
+        avgWinGain: rate(t.won, c.wins + c.selfDraws),
+        avgDealInLoss: rate(t.dealtIn, c.dealIns),
+        firstRate: rate(Math.round(t.inFirst), c.hands),
+      };
+    })
     .sort((a, b) => b.net - a.net);
 }
 
