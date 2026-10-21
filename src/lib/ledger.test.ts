@@ -403,7 +403,7 @@ describe("籌碼 - chips change hands when a 拉 ends", () => {
 });
 
 describe("Jackpot split evenly", () => {
-  it("spreads what won't divide one each, 莊 first", () => {
+  it("spreads what won't divide one each, from the 起莊 seat on", () => {
     expect(evenShares(11, 0, true)).toEqual([3, 3, 3, 2]);
     expect(evenShares(11, 2, true)).toEqual([3, 2, 3, 3]);
     expect(evenShares(20, 1, true)).toEqual([5, 5, 5, 5]);

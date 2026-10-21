@@ -2077,7 +2077,7 @@ function JackpotSheet({ store, state, onDone, onClose }: { store: ScoreStore; st
     setMode(m);
     setShares(state.seats.map(() => 0));
   };
-  const evenly = () => setShares(evenShares(state.pot, state.dealer, state.settings.integerMode));
+  const evenly = () => setShares(evenShares(state.pot, state.roundStartDealer, state.settings.integerMode));
   const out = mode === "out";
   const ok = total > 0 && (!out || total <= state.pot);
   const sharesOf = () => state.seats.map((player, i) => ({ player, amount: shares[i] })).filter((x) => x.amount > 0);
