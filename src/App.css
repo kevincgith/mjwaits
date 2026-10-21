@@ -11301,16 +11301,6 @@ html.sc-fit-mode .build-version {
   flex: 1 1 auto;
 }
 
-/* 食胡 ⇄ 詐胡: a narrow switch beside Confirm. */
-.sc-sheet-actions:has(> .sc-zha-switch) {
-  grid-template-columns: auto 1fr;
-  grid-auto-flow: row;
-}
-
-.sc-zha-switch {
-  padding-inline: 1.1rem;
-}
-
 /* Two or three fields (雙響 / 三響, 詐胡) beside Scan and Score: each shrinks
    to fit, its name over its number, instead of running under the buttons. */
 .sc-tai-row .sc-tai {

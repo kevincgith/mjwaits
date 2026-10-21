@@ -960,12 +960,10 @@ function ZhaHuSheet({
   );
   const [focus, setFocus] = useState(0);
   // A field still showing its starting amount is replaced by the first digit
-  // typed, not added to.
+  // typed, not added to - the keypad (and its 封頂) sees it as empty.
   const [fresh, setFresh] = useState(() => others.map(() => true));
   const type = (v: string) => {
-    const old = amounts[focus];
-    const next = fresh[focus] && v.length === old.length + 1 && v.startsWith(old) ? v.slice(-1) : v;
-    setAmounts((a) => a.map((x, i) => (i === focus ? next : x)));
+    setAmounts((a) => a.map((x, i) => (i === focus ? v : x)));
     setFresh((f) => f.map((x, i) => (i === focus ? false : x)));
   };
   const pick = (s2: number) => {
@@ -1001,9 +999,6 @@ function ZhaHuSheet({
       tabs={<ModeTabs mode="zhaHu" onWin={onWin} onBonus={onBonus} />}
       actions={
         <>
-          <button type="button" className="sc-secondary sc-zha-switch" onClick={onWin}>
-            食胡
-          </button>
           <button
             type="button"
             className="sc-danger"
@@ -1058,7 +1053,8 @@ function ZhaHuSheet({
           </span>
         )}
       </div>
-      <Keypad value={amounts[focus] ?? ""} onChange={type} />
+      {/* 封頂 holds here as on 食胡. */}
+      <Keypad max={state.settings.scoreCap} value={fresh[focus] ? "" : (amounts[focus] ?? "")} onChange={type} />
       {/* The 踢 column: the caller's 拉 end here, each pulled player paid its 踢 half. */}
       <PayTable
         cols={[{ key: "to", label: "To", wide: true }, ...(kicks.length > 0 ? [{ key: "zha", label: "詐胡" }, { key: "kick", label: "踢" }] : [])]}
