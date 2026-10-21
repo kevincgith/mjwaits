@@ -11,6 +11,8 @@ import {
   redoEvent,
   replaceEvent,
   replay,
+  chipMoves,
+  CHIP_POT,
   settle,
   undoEvent,
   withEvent,
@@ -302,6 +304,46 @@ describe("Jackpot, bonuses, seats, undo", () => {
     const g = game([win(0, 10, 1), multi(2, [0, 3], [1, 4]), win(3, 2, null)]);
     sumsToZero(replay(g));
     expect(replay(undoEvent(g)).hands).toHaveLength(2);
+  });
+});
+
+describe("籌碼 - chips change hands when a 拉 ends", () => {
+  const after = (events: ScoreEvent[], settings: Partial<ScoreSettings> = {}) => replay(game(events, settings));
+  const moves = (events: ScoreEvent[], extra: ScoreEvent, settings: Partial<ScoreSettings> = {}) =>
+    chipMoves(after(events, settings), after([...events, extra], settings));
+  const sorted = (m: { from: string; to: string; amount: number }[]) => m.slice().sort((x, y) => x.from.localeCompare(y.from));
+
+  it("A's 自摸 of 10 starts a 拉 on everyone - no chips yet", () => {
+    expect(moves([], win(0, 10, null))).toEqual([]);
+  });
+
+  it("B then wins 20 off C: A's 拉 end, everyone pays A 10; C's 20 rides in B's 拉", () => {
+    expect(sorted(moves([win(0, 10, null)], win(1, 20, 2)))).toEqual([
+      { from: "B", to: "A", amount: 10 },
+      { from: "C", to: "A", amount: 10 },
+      { from: "D", to: "A", amount: 10 },
+    ]);
+  });
+
+  it("B wins 20 off A instead (a 踢): C and D pay A 10, B only 5", () => {
+    expect(sorted(moves([win(0, 10, null)], win(1, 20, 0)))).toEqual([
+      { from: "B", to: "A", amount: 5 },
+      { from: "C", to: "A", amount: 10 },
+      { from: "D", to: "A", amount: 10 },
+    ]);
+  });
+
+  it("投降 hands over the whole 拉; 特別獎罰 is paid on the spot", () => {
+    expect(moves([win(0, 7, 1)], { t: "surrender", at: 0, holder: "A", pulled: "B" })).toEqual([{ from: "B", to: "A", amount: 7 }]);
+    expect(sorted(moves([], { t: "bonus", at: 0, seat: 1, amount: 3, kind: "獎" }))).toEqual([
+      { from: "A", to: "B", amount: 3 },
+      { from: "C", to: "B", amount: 3 },
+      { from: "D", to: "B", amount: 3 },
+    ]);
+  });
+
+  it("a 流局 feeds the Jackpot pile", () => {
+    expect(moves([], draw, { jackpot: true, jackpotPerDraw: 5 }).every((m) => m.to === CHIP_POT && m.amount === 5)).toBe(true);
   });
 });
 
