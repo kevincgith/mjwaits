@@ -786,12 +786,6 @@ function WinSheet({
       tabs={<ModeTabs mode="win" onBonus={onBonus} />}
       actions={
         <>
-          {/* 詐胡 - a called win that wasn't - from the same tab. */}
-          {onZhaHu && (
-            <button type="button" className="sc-secondary sc-zha-switch" onClick={onZhaHu}>
-              詐胡
-            </button>
-          )}
           <button type="button" className="sc-primary" disabled={!complete} onClick={submit}>
             {complete ? (jackpot && state.pot > 0 ? `Confirm · ${fmt(total)} + Jackpot ${fmt(state.pot)} = ${fmt(total + state.pot)}` : `Confirm · ${fmt(total)}`) : "Confirm"}
           </button>
@@ -803,7 +797,7 @@ function WinSheet({
       <div className="sc-field">
         <div className="sc-field-head">
           <span className="sc-label">Who dealt in?</span>
-          <span className="sc-help">Hold a player for 雙響</span>
+          <span className="sc-help">{onZhaHu ? "Hold a player for 雙響 · 胡 for 詐胡" : "Hold a player for 雙響"}</span>
         </div>
         <TablePicker
           store={store}
@@ -816,6 +810,8 @@ function WinSheet({
           isOn={(seat) => from === seat || entries.some((e) => e.seat === seat)}
           onPick={(seat) => pickFrom(from === seat ? -1 : seat)}
           onLongPress={toggleExtra}
+          // 詐胡 - a called win that wasn't: hold the caller.
+          onSelfLongPress={onZhaHu}
           tagFor={(seat) =>
             seat === from && from !== null && from >= 0
               ? { text: "銃", tone: "discard" }
@@ -1167,6 +1163,7 @@ function TablePicker({
   isDisabled,
   onPick,
   onLongPress,
+  onSelfLongPress,
   center,
   tagFor,
   selfTone,
@@ -1184,6 +1181,7 @@ function TablePicker({
   onPick: (seat: number) => void;
   // A held press (about half a second) - its tap is then swallowed.
   onLongPress?: (seat: number) => void;
+  onSelfLongPress?: () => void;
   center?: { label: ReactNode; sub?: ReactNode; on: boolean; onPick?: () => void; tone?: "win" | "lose" };
   selfTone?: "win" | "lose";
   tagFor?: (seat: number) => { text: string; tone: "win" | "discard" } | undefined;
@@ -1192,15 +1190,15 @@ function TablePicker({
   const release = () => {
     if (hold.current) window.clearTimeout(hold.current.timer);
   };
-  const press = (seat: number) =>
-    onLongPress
+  const holdFor = (fire: (() => void) | undefined) =>
+    fire
       ? {
           onPointerDown: () => {
             release();
             const h = { timer: 0, fired: false };
             h.timer = window.setTimeout(() => {
               h.fired = true;
-              onLongPress(seat);
+              fire();
             }, 450);
             hold.current = h;
           },
@@ -1210,13 +1208,14 @@ function TablePicker({
           onContextMenu: (e: { preventDefault: () => void }) => e.preventDefault(),
         }
       : {};
+  const press = (seat: number) => holdFor(onLongPress && (() => onLongPress(seat)));
   return (
     <div className={`sc-table-pick${onLongPress ? " can-hold" : ""}`}>
       {seats.map((player, seat) => {
         const area = SEAT_AREAS[seat];
         if (seat === self)
           return (
-            <span key={seat} className={`sc-pick sc-pick-self sc-area-${area}${selfTone ? ` is-self-${selfTone}` : ""}`}>
+            <span key={seat} className={`sc-pick sc-pick-self sc-area-${area}${selfTone ? ` is-self-${selfTone}` : ""}`} {...holdFor(onSelfLongPress)}>
               <Monogram store={store} player={player} size="sm" />
               <span className="sc-pick-name">{player}</span>
               {seat === dealer && <span className="sc-zhuang sc-pick-zhuang">{streak > 0 ? `莊${streak}` : "莊"}</span>}
