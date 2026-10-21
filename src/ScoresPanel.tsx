@@ -2601,22 +2601,39 @@ type BoardSheet =
 // Stays up until ticked or the next change that moves chips replaces it.
 function useChipMoves(game: ScoreGame, state: ReplayState) {
   const last = useRef<{ id: string; events: ScoreEvent[]; state: ReplayState } | null>(null);
+  // 投降 after 投降 (one by one in 拉踢) add up on the one card, from the
+  // state before the first of them - until the card is ticked or something
+  // else goes in.
+  const surrenders = useRef<ReplayState | null>(null);
   const [moves, setMoves] = useState<{ verb: string; list: { from: string; to: string; amount: number }[] } | null>(null);
   useEffect(() => {
     const prev = last.current;
     last.current = { id: game.id, events: game.events, state };
-    if (!prev || prev.id !== game.id) return setMoves(null);
+    if (!prev || prev.id !== game.id) {
+      surrenders.current = null;
+      return setMoves(null);
+    }
     if (prev.events === game.events) return;
-    const list = chipMoves(prev.state, state);
-    if (list.length === 0) return;
-    // What happened: one more entry, the last one taken back, or an older
+    // What happened: entries added, the last ones taken back, or an older
     // one fixed or deleted.
     const n = game.events.length;
-    const grew = n === prev.events.length + 1 && game.events[n - 2] === prev.events[n - 2];
-    const shrank = n === prev.events.length - 1 && prev.events[n - 1] === game.events[n - 1];
-    setMoves({ verb: grew ? "" : shrank ? "還原" : "改正", list });
+    const m = prev.events.length;
+    const grew = n > m && (m === 0 || game.events[m - 1] === prev.events[m - 1]);
+    const shrank = n < m && (n === 0 || prev.events[n - 1] === game.events[n - 1]);
+    const surrendered = grew && game.events.slice(m).every((ev) => ev.t === "surrender");
+    if (!surrendered) surrenders.current = null;
+    else if (!surrenders.current) surrenders.current = prev.state;
+    const list = chipMoves(surrendered ? surrenders.current! : prev.state, state);
+    if (list.length === 0) return;
+    setMoves({ verb: grew ? (surrendered ? "投降" : "") : shrank ? "還原" : "改正", list });
   }, [game, state]);
-  return { moves, dismiss: () => setMoves(null) };
+  return {
+    moves,
+    dismiss: () => {
+      surrenders.current = null;
+      setMoves(null);
+    },
+  };
 }
 
 // Said in words, not arrows: everyone paying one player reads "凱文 收" over
@@ -3510,11 +3527,14 @@ function Board({
           onClose={close}
           onSurrender={(holder, pulled) => {
             update(withEvent(game, { t: "surrender", at: Date.now(), holder, pulled }));
+            // The last 拉 gone: back to the table, where the 籌碼 card is.
+            if (state.lahs.length === 1) close();
             flash(`${pulled} 投降`);
           }}
           onSurrenderAll={() => {
             const at = Date.now();
             update(state.lahs.reduce((g, l) => withEvent(g, { t: "surrender", at, holder: l.holder, pulled: l.pulled }), game));
+            close();
             flash(`全部投降 · ${state.lahs.length} 拉 ended`);
           }}
         />
