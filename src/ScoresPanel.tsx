@@ -1477,10 +1477,21 @@ function SeatsSheet({
     return map;
   };
   const moveSeats = (change: (prev: string[]) => string[]) => {
+    // Where everything is on screen right now - mid-slide too, when taps come
+    // fast - so the next slide starts from there, not from where the last one
+    // was headed.
     before.current = spots();
+    qiFrom.current = qiSpot();
     setPicked(null);
     setSeats(change);
   };
+  // A move on top of a move: the slides still running are dropped (their
+  // start points are already noted above), so the new ones - and the 莊 and
+  // 起莊 marks measured next - work from the cards' real seats.
+  useLayoutEffect(() => {
+    if (!before.current) return;
+    diamondRef.current?.querySelectorAll<HTMLElement>("[data-player]").forEach((el) => el.getAnimations().forEach((a) => a.cancel()));
+  }, [seats]);
   // 起莊's corner belongs to a seat, not a player. When the card that had it
   // slides to its new seat (a rotation, say), it simply rides along on that
   // card. Otherwise it flies there on its own (a copy, above the sheet, on the
@@ -1489,6 +1500,18 @@ function SeatsSheet({
   // while they do. Measured against the map, before the cards start sliding
   // (so this runs first).
   const lastQi = useRef<{ seat: number; player: string; x: number; y: number } | null>(null);
+  // The corner as it is on screen at the moment of a move (its copy, if one
+  // is in flight), against the map.
+  const qiFrom = useRef<{ x: number; y: number } | null>(null);
+  const qiSpot = () => {
+    const map = diamondRef.current;
+    const flying = [...document.body.children].find((el) => el.classList.contains("sc-qi-corner")) as HTMLElement | undefined;
+    const corner = flying ?? map?.querySelector<HTMLElement>(".sc-qi-corner");
+    if (!map || !corner) return null;
+    const box = map.getBoundingClientRect();
+    const r = corner.getBoundingClientRect();
+    return { x: r.left - box.left, y: r.top - box.top };
+  };
   const lastSeats = useRef(seats.join("|"));
   // The copy in flight - a later render mustn't cut it short, only a new move.
   const qiFlight = useRef<(() => void) | null>(null);
@@ -1498,6 +1521,8 @@ function SeatsSheet({
     const corner = map?.querySelector<HTMLElement>(".sc-qi-corner");
     const card = corner?.closest<HTMLElement>("[data-player]");
     const prev = lastQi.current;
+    const from = qiFrom.current;
+    qiFrom.current = null;
     const seatsMoved = lastSeats.current !== seats.join("|");
     lastSeats.current = seats.join("|");
     if (!map || !corner || !card) return;
@@ -1522,8 +1547,8 @@ function SeatsSheet({
       pointerEvents: "none",
     });
     document.body.appendChild(flyer);
-    const dx = prev.x - now.x;
-    const dy = prev.y - now.y;
+    const dx = (from ?? prev).x - now.x;
+    const dy = (from ?? prev).y - now.y;
     const lift = -Math.min(48, Math.hypot(dx, dy) / 4);
     const frames: Keyframe[] = [];
     for (let i = 0; i <= 20; i++) {
