@@ -115,6 +115,14 @@ export interface ScoreHandRequest {
   nonce: number;
 }
 
+// The Dice tab's seat ceremony, back from Seating: who sits at each seat
+// (bottom, right, top, left - the board's own order) and who drew 東.
+export interface SeatingResult {
+  seats: string[];
+  east: string;
+  nonce: number;
+}
+
 // Numbers: a true minus sign, one decimal only when 整數模式 is off.
 const fmt = (n: number) => {
   const s = Number.isInteger(n) ? String(Math.abs(n)) : Math.abs(n).toFixed(1);
@@ -1379,12 +1387,16 @@ function SeatsSheet({
   onDone,
   onClose,
   onOpenSeating,
+  proposal,
 }: {
   store: ScoreStore;
   state: ReplayState;
   onDone: (change: { seats: string[] | null; newNames: string[]; removedNames: string[]; dealer: ScoreEvent | null }) => void;
   onClose: () => void;
   onOpenSeating?: () => void;
+  // The seat ceremony's result: the cards slide there once the sheet is up,
+  // 東 becomes 莊 at 連0 and the round resets - all still to Confirm.
+  proposal?: { seats: string[]; east: string };
 }) {
   // Seating draft.
   const [seats, setSeats] = useState(state.seats.slice());
@@ -1636,6 +1648,23 @@ function SeatsSheet({
     };
   }, [dealerName]);
 
+  // From the seat ceremony: once the sheet has slid up, everyone slides to
+  // the seat they drew and the 莊 badge flies to 東 - a new 東風東局 at 連0.
+  useEffect(() => {
+    if (!proposal) return;
+    const timer = window.setTimeout(() => {
+      roundTouched.current = true;
+      setRound("reset");
+      setStreak(0);
+      if (proposal.east !== dealerName) {
+        badgeFrom.current = diamondRef.current?.querySelector(".sc-zhuang")?.getBoundingClientRect() ?? null;
+        setDealerName(proposal.east);
+      }
+      if (proposal.seats.some((p, i) => p !== seats[i])) moveSeats(() => proposal.seats.slice());
+    }, 380);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const seatPress = (s2: number) => ({
     onPointerDown: () => {
       cancelHold();
@@ -1749,9 +1778,11 @@ function SeatsSheet({
       subtitle={
         benchPick !== null
           ? `Now tap the seat ${benchPick} takes`
-          : picked === null
-            ? "Tap a seat to move or replace that player · hold one for 莊"
-            : `Now tap another seat, or a 候補 player, for ${seats[picked]}'s place`
+          : picked !== null
+            ? `Now tap another seat, or a 候補 player, for ${seats[picked]}'s place`
+            : proposal
+              ? "From the seat ceremony: 東 deals a new 東風東局 - Confirm to use it"
+              : "Tap a seat to move or replace that player · hold one for 莊"
       }
       onClose={onClose}
       actions={
@@ -2689,7 +2720,7 @@ type BoardSheet =
   | { kind: "entry"; index: number }
   | { kind: "recent" }
   | { kind: "draw" }
-  | { kind: "seats" }
+  | { kind: "seats"; proposal?: { seats: string[]; east: string } } // proposal: from the seat ceremony
   | { kind: "name" }
   | { kind: "lah" }
   | { kind: "jackpot" }
@@ -2994,6 +3025,8 @@ function Board({
   onRequestDone,
   onScoreHand,
   onOpenSeating,
+  seatingResult,
+  onSeatingResultDone,
 }: {
   store: ScoreStore;
   game: ScoreGame;
@@ -3003,9 +3036,20 @@ function Board({
   request: RecordRequest | null;
   onRequestDone: () => void;
   onScoreHand?: (req: Omit<ScoreHandRequest, "nonce">) => void;
-  onOpenSeating?: (names: string[]) => void;
+  onOpenSeating?: (names: string[], east: number | null) => void;
+  seatingResult: SeatingResult | null;
+  onSeatingResultDone?: () => void;
 }) {
   const [sheet, setSheet] = useState<BoardSheet | null>(null);
+  // Back from the seat ceremony: 座位 opens with its seating, to confirm.
+  useEffect(() => {
+    if (!seatingResult) return;
+    // Only the same four players - the bench may have changed meanwhile.
+    const same = seatingResult.seats.length === SEATS && seatingResult.seats.every((p) => state.seats.includes(p));
+    if (same) setSheet({ kind: "seats", proposal: { seats: seatingResult.seats, east: seatingResult.east } });
+    onSeatingResultDone?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seatingResult]);
   // Holding a player's card opens 食胡 already on 自摸; the tap that ends
   // the hold is then swallowed.
   const cardHold = useRef<number | null>(null);
@@ -3648,12 +3692,16 @@ function Board({
         <SeatsSheet
           store={store}
           state={state}
+          proposal={sheet.proposal}
           onClose={close}
           onOpenSeating={
             onOpenSeating &&
             (() => {
               close();
-              onOpenSeating(state.seats);
+              // The provisional East: whoever won last (the first of a 雙響).
+              const lastWin = [...state.hands].reverse().find((h) => h.kind === "win");
+              const east = lastWin ? state.seats.indexOf(lastWin.winners[0].player) : -1;
+              onOpenSeating(state.seats, east >= 0 ? east : null);
             })
           }
           onDone={({ seats, newNames, removedNames, dealer }) => {
@@ -4729,6 +4777,8 @@ export function ScoresPanel({
   onRequestDone,
   onScoreHand,
   onOpenSeating,
+  seatingResult,
+  onSeatingResultDone,
 }: {
   store: ScoreStore;
   setStore: (s: ScoreStore) => void;
@@ -4736,13 +4786,15 @@ export function ScoresPanel({
   request: RecordRequest | null;
   onRequestDone: () => void;
   onScoreHand?: (req: Omit<ScoreHandRequest, "nonce">) => void;
-  onOpenSeating?: (names: string[]) => void; // the Dice tab's Seating, for the seat ceremony
+  onOpenSeating?: (names: string[], east: number | null) => void; // the Dice tab's Seating, for the seat ceremony (east: the provisional East's seat)
+  seatingResult?: SeatingResult | null; // ...and what it came back with
+  onSeatingResultDone?: () => void;
 }) {
   const [sub, setSub] = useState<"board" | "stats">("board");
   const [view, setView] = useState<StatsView>("trend");
   useEffect(() => {
-    if (request) setSub("board");
-  }, [request]);
+    if (request || seatingResult) setSub("board");
+  }, [request, seatingResult]);
   const game = store.active;
   const state = useMemo(() => (game ? replay(game) : null), [game]);
 
@@ -4776,6 +4828,8 @@ export function ScoresPanel({
             onRequestDone={onRequestDone}
             onScoreHand={onScoreHand}
             onOpenSeating={onOpenSeating}
+            seatingResult={seatingResult ?? null}
+            onSeatingResultDone={onSeatingResultDone}
           />
         ) : (
           <>
