@@ -51,6 +51,41 @@ export function bonusArtUrl(tile: BonusTile): string {
   return artUrl(`${tile.kind}${tile.rank}`);
 }
 
+// Swaps the tile art for other images, keyed by the art's own URL. Only the
+// printable rules reference sets it: there, every tile kind prints from one
+// shared PNG instead of the SVG, because a PDF repeats an SVG's drawing for
+// every tile shown (≈1,400 in a reference) but stores a repeated image once
+// - about a third of the file size in Safari's engine.
+export const TileArtRemapContext = createContext<ReadonlyMap<string, string> | null>(null);
+
+export function useTileArtUrl(): (url: string) => string {
+  const remap = useContext(TileArtRemapContext);
+  return (url) => remap?.get(url) ?? url;
+}
+
+/** Every tile artwork drawn once as a PNG `height` pixels tall, keyed by
+ *  its SVG URL (blob: URLs - revoke them when done). */
+export async function rasterizeTileArt(height: number): Promise<Map<string, string>> {
+  const entries = await Promise.all(
+    Object.values(ART).map(
+      (url) =>
+        new Promise<[string, string] | null>((resolve) => {
+          const img = new Image();
+          img.onload = () => {
+            const canvas = document.createElement("canvas");
+            canvas.height = height;
+            canvas.width = Math.round((height * img.naturalWidth) / img.naturalHeight);
+            canvas.getContext("2d")?.drawImage(img, 0, 0, canvas.width, canvas.height);
+            canvas.toBlob((blob) => resolve(blob ? [url, URL.createObjectURL(blob)] : null), "image/png");
+          };
+          img.onerror = () => resolve(null);
+          img.src = url;
+        }),
+    ),
+  );
+  return new Map(entries.filter((e): e is [string, string] => e !== null));
+}
+
 // English names for the 8 bonus tiles, keyed by the number painted on the
 // tile (see the glyph notes in TileGlyphs.tsx).
 const FLOWER_NAMES: Record<1 | 2 | 3 | 4, string> = { 1: "Plum", 2: "Orchid", 3: "Chrysanthemum", 4: "Bamboo" };

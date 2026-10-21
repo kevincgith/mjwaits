@@ -3,7 +3,7 @@
 
 import { tileGlyph, tileLabel, type Tile } from "./lib/mahjong";
 import type { BonusTile } from "./lib/scoring";
-import { bonusArtUrl, bonusTileLabel, tileArtUrl, useTileStyle } from "./tileArt";
+import { bonusArtUrl, bonusTileLabel, tileArtUrl, useTileArtUrl, useTileStyle } from "./tileArt";
 
 export function TileGlyphSpan({
   tile,
@@ -17,6 +17,7 @@ export function TileGlyphSpan({
   jokerAssumed?: boolean;
 }) {
   const art = useTileStyle() === "art";
+  const artUrl = useTileArtUrl();
   const classes = ["tile-glyph", art && "tile-art", large && "large", highlight && "wait-highlight", jokerAssumed && "joker-assumed"]
     .filter(Boolean)
     .join(" ");
@@ -32,7 +33,7 @@ export function TileGlyphSpan({
       aria-label={jokerAssumed ? `${tileLabel(tile)} (assumed from a joker)` : tileLabel(tile)}
       title={jokerAssumed ? "Assumed from a joker" : undefined}
     >
-      {art ? <img className="tile-face" src={tileArtUrl(tile)} alt="" draggable={false} /> : tileGlyph(tile)}
+      {art ? <img className="tile-face" src={artUrl(tileArtUrl(tile))} alt="" draggable={false} /> : tileGlyph(tile)}
     </span>
   );
 }
@@ -71,13 +72,14 @@ function bonusTileGlyph(tile: BonusTile): string {
 // A flower/season tile, in the current tile style (see TileGlyphSpan).
 export function BonusGlyphSpan({ tile, large, label }: { tile: BonusTile; large?: boolean; label?: boolean }) {
   const art = useTileStyle() === "art";
+  const artUrl = useTileArtUrl();
   return (
     <span
       className={["tile-glyph", art && "tile-art", large && "large"].filter(Boolean).join(" ")}
       data-suit="bonus"
       {...(label ? { role: "img", "aria-label": bonusTileLabel(tile) } : {})}
     >
-      {art ? <img className="tile-face" src={bonusArtUrl(tile)} alt="" draggable={false} /> : bonusTileGlyph(tile)}
+      {art ? <img className="tile-face" src={artUrl(bonusArtUrl(tile))} alt="" draggable={false} /> : bonusTileGlyph(tile)}
     </span>
   );
 }

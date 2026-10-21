@@ -59,7 +59,10 @@ with its value and type in four columns, page 2 explains how scoring works (best
 tiers, replaces, special hands, what 大雞/大鴨 ignore, and the set's changes), and the pages after
 take each family in turn - its tiers, then a card per pattern with a plain description
 ([`src/lib/patternGuide.ts`](../src/lib/patternGuide.ts)), its value, an example hand and what it
-replaces. A few descriptions aren't pinned down by the house rules yet - see ROADMAP.md, "Needs
+replaces. Tiles print from one PNG per tile kind (drawn when the reference opens - see
+`TileArtRemapContext` in `tileArt.ts`), since a PDF stores a repeated image once but repeats an SVG's
+drawing for every tile; page 1's columns are split in code rather than with CSS multi-column, which
+Safari's engine drops when printing. A few descriptions aren't pinned down by the house rules yet - see ROADMAP.md, "Needs
 clarification".
 
 **Fallback.** `src/lib/scoringLegacy.ts` is a frozen copy of the engine from before rules were

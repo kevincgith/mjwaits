@@ -12759,18 +12759,42 @@ button.sc-stat:active {
   font-size: 8.5pt;
 }
 
+/* Four columns laid out as a grid (see SUMMARY_COLUMNS), not CSS
+   multi-column, so every browser prints them the same. */
 .rr-columns {
-  column-count: 4;
-  column-gap: 5mm;
-  column-rule: 0.2mm solid var(--rr-line);
-  font-size: 8pt;
-  line-height: 1.36;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  /* Sized to leave about a tenth of the page spare: Safari's engine sets
+     text a little larger than Chrome's when printing. */
+  font-size: 7.6pt;
+  line-height: 1.3;
 }
 
-/* A long family (情況 has 25) may run on into the next column, but its
-   heading stays with its first rows. */
-.rr-sum-group {
-  margin-bottom: 2mm;
+.rr-col {
+  min-width: 0;
+  padding: 0 2.5mm;
+}
+
+.rr-col:first-child {
+  padding-left: 0;
+}
+
+.rr-col:last-child {
+  padding-right: 0;
+}
+
+.rr-col + .rr-col {
+  border-left: 0.2mm solid var(--rr-line);
+}
+
+.rr-sum-family:not(:first-child) {
+  margin-top: 2mm;
+}
+
+.rr-sum-cont {
+  color: var(--rr-faint);
+  font-size: 6.4pt;
+  font-weight: 400;
 }
 
 .rr-sum-row {
@@ -12781,6 +12805,8 @@ button.sc-stat:active {
   display: flex;
   align-items: center;
   gap: 1.2mm;
+  overflow: hidden;
+  white-space: nowrap;
   break-after: avoid;
   margin-bottom: 0.6mm;
   padding-bottom: 0.4mm;
@@ -13087,8 +13113,13 @@ button.sc-stat:active {
   }
 
   .rr-columns {
-    column-count: 2;
-    font-size: 8pt;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    row-gap: 4mm;
+  }
+
+  .rr-col:nth-child(odd) {
+    padding-left: 0;
+    border-left: none;
   }
 
   .rr-cards,
