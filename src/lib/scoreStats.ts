@@ -58,7 +58,7 @@ export interface PlayerStats {
   opponents: { player: string; net: number }[];
 }
 
-// Which way is good, for the 最佳 (best at the table) and 最差 (worst) marks.
+// Which way is good, for the 佳 (best at the table) and 差 (worst) marks.
 export const STAT_DIRECTION: Partial<Record<keyof PlayerStats, "high" | "low">> = {
   net: "high",
   wins: "high",
@@ -239,7 +239,7 @@ function dealing(hands: HandResult[], player: string) {
   };
 }
 
-// 最佳 / 最差 for one stat across the table: the best and worst players, or
+// 佳 / 差 for one stat across the table: the best and worst players, or
 // nothing when everyone is level.
 export function marks(stats: PlayerStats[], key: keyof PlayerStats): Map<string, "best" | "worst"> {
   const dir = STAT_DIRECTION[key];

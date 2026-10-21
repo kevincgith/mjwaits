@@ -4260,7 +4260,7 @@ function PlayerCard({ store, stats, state, index, onIndex }: { store: ScoreStore
                       {r.zh}
                       {m && (
                         <span className={`sc-mark is-${m}`} title={m === "best" ? "Best at the table" : "Lowest at the table"}>
-                          {m === "best" ? "最佳" : "最差"}
+                          {m === "best" ? "佳" : "差"}
                         </span>
                       )}
                     </span>
@@ -4298,7 +4298,7 @@ function PlayerCard({ store, stats, state, index, onIndex }: { store: ScoreStore
         </details>
       )}
       <p className="sc-help sc-stat-key">
-        <span className="sc-mark is-best">最佳</span> <span className="sc-mark is-worst">最差</span> best and lowest at the table
+        <span className="sc-mark is-best">佳</span> 最佳 · <span className="sc-mark is-worst">差</span> 最差 - best and lowest at the table
       </p>
     </div>
   );
