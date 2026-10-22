@@ -153,7 +153,11 @@ export interface WinnerEntry {
   rules?: string;
 }
 
-export type ScoreEvent =
+// batch: entries recorded together as one action (a 座位 change's new seats
+// and 莊, 全部投降's surrenders) share one, so 還原 / 重做 take them as one.
+export type ScoreEvent = ScoreEventBody & { batch?: string };
+
+type ScoreEventBody =
   // `from` null = 自摸 (exactly one winner); otherwise the discarder, who pays
   // each winner (one = 食胡, two or three = 雙響 / 三響).
   | { t: "win"; at: number; winners: WinnerEntry[]; from: number | null; jackpotTo?: string; source: "quick" | "scoring" }
@@ -192,6 +196,9 @@ export interface ScoreGame {
   events: ScoreEvent[];
   // Entries taken back by 還原, newest last, for 重做 (redo). Any new entry clears it.
   undone?: ScoreEvent[];
+  // When it last changed (any entry, a fix, its name or end) - a backup merge
+  // keeps whichever copy of a game changed last.
+  updatedAt?: number;
 }
 
 // "20:00–23:30", "20:00–", "–23:30" or "" - a game's times as set.
@@ -374,6 +381,16 @@ export function nextLahs(before: Lah[], pairs: PairPayment[], winnerNames: Set<s
 const add = (rec: Record<string, number>, player: string, amount: number) => {
   rec[player] = (rec[player] ?? 0) + amount;
 };
+
+// A game's replay, worked out once per version of it: games are never changed
+// in place (every change is a new object), so a game object's replay never
+// goes stale. For views that read many games at once (紀錄, careers).
+const replays = new WeakMap<ScoreGame, ReplayState>();
+export function replayCached(game: ScoreGame): ReplayState {
+  let state = replays.get(game);
+  if (!state) replays.set(game, (state = replay(game)));
+  return state;
+}
 
 export function replay(game: ScoreGame): ReplayState {
   const state: ReplayState = {
@@ -706,21 +723,46 @@ function normalizeStore(saved: Partial<ScoreStore>): ScoreStore {
   };
 }
 
+// Saved scores that couldn't be read are copied here before anything new is
+// saved over them, so they're never lost - a backup file can still be made
+// from them (see unreadableScores).
+export const UNREADABLE_SCORES_KEY = `${SCORES_KEY}.unreadable`;
+
 export function loadScores(): ScoreStore {
+  let raw: string | null = null;
   try {
-    const raw = window.localStorage.getItem(SCORES_KEY);
+    raw = window.localStorage.getItem(SCORES_KEY);
     if (!raw) return emptyStore();
     return normalizeStore(JSON.parse(raw) as Partial<ScoreStore>);
   } catch {
+    if (raw) {
+      try {
+        window.localStorage.setItem(UNREADABLE_SCORES_KEY, raw);
+      } catch {
+        // No room even for that - the next save would still overwrite it.
+      }
+    }
     return emptyStore();
   }
 }
 
-export function saveScores(store: ScoreStore): void {
+// The saved scores that couldn't be read, if any were kept.
+export function unreadableScores(): string | null {
+  try {
+    return window.localStorage.getItem(UNREADABLE_SCORES_KEY);
+  } catch {
+    return null;
+  }
+}
+
+// false: the scores weren't saved (storage full or blocked) - they'd be lost
+// on a reload, so the Scores tab says so.
+export function saveScores(store: ScoreStore): boolean {
   try {
     window.localStorage.setItem(SCORES_KEY, JSON.stringify(store));
+    return true;
   } catch {
-    // Storage unavailable - scores just won't survive a reload.
+    return false;
   }
 }
 
@@ -759,10 +801,14 @@ export function parseBackup(text: string): ScoreStore | null {
 // different game, goes to the history like any other.
 export function mergeScores(here: ScoreStore, backup: ScoreStore): ScoreStore {
   const byId = new Map<string, ScoreGame>();
+  // The same game in both: keep the copy that changed last - an edit or a
+  // deletion is newer, not fewer entries. Copies from before updatedAt was
+  // kept fall back to their latest entry, then to more entries.
+  const changed = (g: ScoreGame) => g.updatedAt ?? Math.max(g.endedAt ?? 0, ...g.events.map((ev) => ev.at), g.startedAt);
   const add = (g: ScoreGame | null) => {
     if (!g) return;
     const prev = byId.get(g.id);
-    if (!prev || g.events.length > prev.events.length) byId.set(g.id, g);
+    if (!prev || changed(g) > changed(prev) || (changed(g) === changed(prev) && g.events.length > prev.events.length)) byId.set(g.id, g);
   };
   [here.active, ...here.history, backup.active, ...backup.history].forEach(add);
   const activeId = here.active?.id ?? backup.active?.id ?? null;
@@ -781,17 +827,36 @@ export function newGame(seats: string[], firstDealer: number, settings: ScoreSet
 // A new entry - which also drops anything waiting to be redone.
 export const withEvent = (game: ScoreGame, ev: ScoreEvent): ScoreGame => ({ ...game, events: [...game.events, ev], undone: [] });
 
-// 還原: take the last entry back, keeping it for 重做.
-export const undoEvent = (game: ScoreGame): ScoreGame =>
-  game.events.length === 0
-    ? game
-    : { ...game, events: game.events.slice(0, -1), undone: [...(game.undone ?? []), game.events[game.events.length - 1]] };
+// Several entries that make one action, so 還原 / 重做 treat them as one.
+export const withEvents = (game: ScoreGame, evs: ScoreEvent[]): ScoreGame => {
+  if (evs.length < 2) return evs.reduce(withEvent, game);
+  const batch = `b${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+  return { ...game, events: [...game.events, ...evs.map((ev) => ({ ...ev, batch }))], undone: [] };
+};
+
+// The trailing run of a list that belongs to its last entry's batch (just
+// the last entry when it has none).
+const lastAction = (list: ScoreEvent[]): number => {
+  const last = list[list.length - 1];
+  if (!last?.batch) return list.length ? 1 : 0;
+  let n = 0;
+  while (n < list.length && list[list.length - 1 - n].batch === last.batch) n++;
+  return n;
+};
+
+// 還原: take the last action back (all its entries), keeping it for 重做.
+export const undoEvent = (game: ScoreGame): ScoreGame => {
+  const n = lastAction(game.events);
+  if (n === 0) return game;
+  return { ...game, events: game.events.slice(0, -n), undone: [...(game.undone ?? []), ...game.events.slice(-n)] };
+};
 
 // 重做: put the most recently undone entry back.
 export const redoEvent = (game: ScoreGame): ScoreGame => {
   const undone = game.undone ?? [];
-  if (undone.length === 0) return game;
-  return { ...game, events: [...game.events, undone[undone.length - 1]], undone: undone.slice(0, -1) };
+  const n = lastAction(undone);
+  if (n === 0) return game;
+  return { ...game, events: [...game.events, ...undone.slice(-n)], undone: undone.slice(0, -n) };
 };
 
 export const canRedo = (game: ScoreGame) => (game.undone?.length ?? 0) > 0;

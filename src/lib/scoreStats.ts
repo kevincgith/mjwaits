@@ -2,7 +2,7 @@
 // per-player stats (the 統計 card), the running-totals series (走勢), career
 // stats across games, head-to-head and pattern counts.
 
-import { replay, type HandResult, type ReplayState, type ScoreGame } from "./ledger";
+import { replayCached, type HandResult, type ReplayState, type ScoreGame } from "./ledger";
 
 export interface AtHand {
   value: number;
@@ -439,7 +439,7 @@ export function careerStats(games: ScoreGame[]): CareerStats[] {
   // hands spent in 1st.
   const totals = new Map<string, { won: number; dealtIn: number; inFirst: number }>();
   for (const g of games) {
-    const state = replay(g);
+    const state = replayCached(g);
     if (state.hands.length === 0) continue;
     const stats = playerStats(state, g);
     const top = Math.max(...state.players.map((p) => state.totals[p] ?? 0));
@@ -516,7 +516,7 @@ export function careerPlayerStats(games: ScoreGame[], dayOf: (at: number) => str
   // Each player's career total before the game - each game's curve starts there.
   const carried = new Map<string, number>();
   for (const g of played) {
-    const state = replay(g);
+    const state = replayCached(g);
     if (state.hands.length === 0) continue;
     const when = dayOf(g.startedAt);
     for (const s of playerStats(state, g)) {
@@ -618,7 +618,7 @@ export function headToHead(games: ScoreGame[]): Record<string, Record<string, nu
     out[b][a] = (out[b][a] ?? 0) - v;
   };
   for (const g of games) {
-    for (const h of replay(g).hands) {
+    for (const h of replayCached(g).hands) {
       for (const p of h.pairs) add(p.winner, p.payer, p.worth);
       for (const f of h.fanXue) add(f.to, f.from, f.amount);
     }

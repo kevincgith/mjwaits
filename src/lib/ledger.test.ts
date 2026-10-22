@@ -6,6 +6,10 @@ import {
   deleteEvent,
   exportScores,
   mergeScores,
+  loadScores,
+  saveScores,
+  unreadableScores,
+  withEvents,
   newGame,
   parseBackup,
   previewFanXue,
@@ -488,9 +492,62 @@ describe("Backup", () => {
     expect(m.settings).toBe(here.settings);
   });
 
+  it("keeps the copy that changed last - a deletion or fix beats more entries", () => {
+    const older = { ...g("x", 2, [draw, draw, draw]), updatedAt: 100 };
+    const newer = { ...g("x", 2, [draw]), updatedAt: 200 }; // two entries deleted since
+    expect(mergeScores(store({ history: [older] }), store({ history: [newer] })).history[0].events).toHaveLength(1);
+    expect(mergeScores(store({ history: [newer] }), store({ history: [older] })).history[0].events).toHaveLength(1);
+  });
+
+  it("keeps saved scores it can't read, rather than saving over them", () => {
+    const mem = new Map<string, string>([["mjwaits.scores", "{not json"]]);
+    const was = (globalThis as { window?: unknown }).window;
+    (globalThis as { window?: unknown }).window = {
+      localStorage: { getItem: (k: string) => mem.get(k) ?? null, setItem: (k: string, v: string) => void mem.set(k, v), removeItem: (k: string) => void mem.delete(k) },
+    };
+    try {
+      expect(loadScores().active).toBeNull();
+      expect(unreadableScores()).toBe("{not json");
+      // A save after that (the app's first) leaves the copy alone.
+      expect(saveScores(store({}))).toBe(true);
+      expect(mem.get("mjwaits.scores.unreadable")).toBe("{not json");
+    } finally {
+      (globalThis as { window?: unknown }).window = was;
+    }
+  });
+
+  it("says when it couldn't save", () => {
+    const was = (globalThis as { window?: unknown }).window;
+    (globalThis as { window?: unknown }).window = { localStorage: { setItem: () => { throw new Error("QuotaExceededError"); } } };
+    try {
+      expect(saveScores(store({}))).toBe(false);
+    } finally {
+      (globalThis as { window?: unknown }).window = was;
+    }
+  });
+
   it("restores the backup's game in progress onto an empty device", () => {
     const backup = store({ active: g("live", 5, [draw]) });
     expect(mergeScores(store({}), backup).active?.id).toBe("live");
+  });
+});
+
+describe("還原 / 重做 take an action's entries together", () => {
+  it("undoes and redoes a batch as one, and a lone entry as itself", () => {
+    const g0 = withEvent(game([]), win(0, 3, 1));
+    const g1 = withEvents(g0, [
+      { t: "swap", at: 1, seats: ["B", "A", "C", "D"] },
+      { t: "dealer", at: 1, seat: 0, streak: 0, resetRound: true },
+    ]);
+    expect(g1.events).toHaveLength(3);
+    const u = undoEvent(g1);
+    expect(u.events).toHaveLength(1);
+    expect(u.undone).toHaveLength(2);
+    const r = redoEvent(u);
+    expect(r.events.map((e) => e.t)).toEqual(["win", "swap", "dealer"]);
+    expect(undoEvent(u).events).toHaveLength(0);
+    // One entry needs no batch.
+    expect(withEvents(g0, [draw]).events.at(-1)?.batch).toBeUndefined();
   });
 });
 

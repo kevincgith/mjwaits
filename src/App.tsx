@@ -10052,7 +10052,10 @@ function App() {
   // The Scores tab's games and roster - here so the Scoring tab can send a
   // hand to the game in progress. Saved on every change.
   const [scoreStore, setScoreStore] = useState(loadScores);
-  useEffect(() => saveScores(scoreStore), [scoreStore]);
+  // false when this phone couldn't keep the last change (storage full or
+  // blocked) - the Scores tab warns, since a reload would lose it.
+  const [scoresSaved, setScoresSaved] = useState(true);
+  useEffect(() => setScoresSaved(saveScores(scoreStore)), [scoreStore]);
   const [recordRequest, setRecordRequest] = useState<RecordRequest | null>(null);
   // A Scores 食胡 sheet asked Scoring to work a hand out (see ScoreHandRequest).
   // Dropped if you leave Scoring any other way than Back to Scores / Cancel.
@@ -10284,6 +10287,7 @@ function App() {
         <ScoresPanel
           store={scoreStore}
           setStore={setScoreStore}
+          saveFailed={!scoresSaved}
           seatNames={seatOrder.map((player) => seatNames[player])}
           request={recordRequest}
           onRequestDone={() => setRecordRequest(null)}
