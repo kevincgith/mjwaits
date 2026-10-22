@@ -19,6 +19,9 @@ import {
   surrenderable,
   wallBreak,
   diceBonus,
+  dealHand,
+  flowerBonus,
+  fullWall,
   kongOptions,
   SEATS,
   type GameState,
@@ -280,3 +283,27 @@ describe("game", () => {
     });
   });
 });
+
+describe("flower bonuses", () => {
+  const f = (kind: "flower" | "season", ...ranks: (1 | 2 | 3 | 4)[]) => ranks.map((rank) => ({ kind, rank }));
+  it("草 is a mixed 1-2-3-4, 花 one set, 花草 both at once, at most one of each", () => {
+    expect(flowerBonus([...f("flower", 1, 2), ...f("season", 3, 4)], [])).toEqual(["草"]);
+    expect(flowerBonus(f("season", 1, 2, 3, 4), [])).toEqual(["花"]);
+    // 123f + 12s, then 4f: 1234f and 1s 2s 3f 4f in one go.
+    expect(flowerBonus([...f("flower", 1, 2, 3), ...f("season", 1, 2), ...f("flower", 4)], [])).toEqual(["花草"]);
+    // 124s + 4f, then 3s: 1234s and 1s 2s 3s 4f.
+    expect(flowerBonus([...f("season", 1, 2, 4), ...f("flower", 4), ...f("season", 3)], [])).toEqual(["花草"]);
+    expect(flowerBonus([...f("flower", 1, 2, 3, 4), ...f("season", 4)], ["花"])).toEqual(["草"]);
+    expect(flowerBonus([...f("flower", 1, 2, 3, 4), ...f("season", 1, 2, 3)], ["花草"])).toEqual([]);
+    expect(flowerBonus([...f("flower", 1, 2), ...f("season", 1, 2)], [])).toEqual([]);
+    expect(flowerBonus([...f("flower", 1, 2, 3, 4), ...f("season", 1, 2, 3, 4)], ["花草"])).toEqual(["八仙過海"]);
+  });
+  it("a draw that completes one charges the other three", () => {
+    const wall = fullWall().filter((w) => !("bonus" in w));
+    const bonus = (kind: "flower" | "season", rank: 1 | 2 | 3 | 4) => ({ bonus: { kind, rank } });
+    // Seat 0 is dealt 1f 2f 3s at the start and 4s straight after.
+    const s = dealHand({ dealer: 0, roundWind: 1, dealerStreak: 0 }, [bonus("flower", 1), bonus("flower", 2), bonus("season", 3), bonus("season", 4), ...wall]);
+    expect(s.flowerBonuses).toEqual([{ seat: 0, name: "草", deltas: [9, -3, -3, -3], paid: false }]);
+  });
+});
+

@@ -421,6 +421,13 @@ held upright is asked to turn sideways.
   - **圍骰** (all three dice the same): the dealer collects 5 from each player.
   - **蛇骰** (1-2-3, any order): the dealer pays 5 to each player.
   Both are paid into the running totals as the dice settle.
+- **Flower bonuses:** paid the moment a flower completes one, by each other player,
+  whether or not that player goes on to win:
+  - **草** (3): a 1-2-3-4 from both sets mixed, e.g. 1f 2f 3s 4s.
+  - **花** (5): a 1-2-3-4 of one set, 梅蘭菊竹 or 春夏秋冬.
+  - **花草** (8): one flower completing both at once, e.g. 124s 4f, then 3s.
+  - **八仙過海** (100): all eight. The hand carries on.
+  Each player collects at most one 花 and one 草 a hand.
 - **聽:** whenever your hand is ready, the bottom band shows each tile you're waiting on and
   how many of it are still unseen (struck through when none are left).
 - **Look:** menus, sheets and the result card share the table's dark lacquer and gold, so

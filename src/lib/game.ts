@@ -123,6 +123,17 @@ export interface GameState {
   // What the dice pay before the first discard (圍骰), per seat, and whether
   // the table has already paid it - so a reload can't pay it twice.
   diceBonus?: { name: string; deltas: number[]; paid: boolean };
+  // Flower bonuses earned this hand (花 / 草 / 花草 / 八仙過海, see
+  // flowerBonus), in the order they came, each marked once the table has
+  // paid it.
+  flowerBonuses?: FlowerBonus[];
+}
+
+export interface FlowerBonus {
+  seat: number;
+  name: "花" | "草" | "花草" | "八仙過海";
+  deltas: number[];
+  paid: boolean;
 }
 
 // Seats as the ledger names players, and its settlement with everything
@@ -221,6 +232,7 @@ function cloneState(s: GameState): GameState {
       ...(p.riichi ? { riichi: { ...p.riichi } } : {}),
     })),
     log: s.log.slice(),
+    ...(s.flowerBonuses ? { flowerBonuses: s.flowerBonuses.slice() } : {}),
   };
 }
 
@@ -237,6 +249,8 @@ function drawInto(s: GameState, seat: number, fromBack: boolean): { tile: Tile |
     const w = back ? s.wall.pop()! : s.wall.shift()!;
     if ("bonus" in w) {
       s.players[seat].flowers.push(w.bonus);
+      const earned = flowerBonus(s.players[seat].flowers, (s.flowerBonuses ?? []).filter((b) => b.seat === seat).map((b) => b.name));
+      for (const name of earned) (s.flowerBonuses ??= []).push({ seat, name, deltas: collectFromEach(seat, FLOWER_BONUS[name]), paid: false });
       flowered = true;
       back = true;
       continue;
@@ -272,6 +286,39 @@ export function diceBonus(dice: Dice, dealer: number): { name: string; deltas: n
     return { name: "蛇骰", deltas };
   }
   return null;
+}
+
+// ---- Flower bonuses -----------------------------------------------------------
+
+// What each other player pays the one who completes:
+//   草 - a 1-2-3-4 from both sets mixed (1f 2f 3s 4s)
+//   花 - a 1-2-3-4 of one set (梅蘭菊竹 or 春夏秋冬)
+//   花草 - one flower completing both at once (5 + 3)
+//   八仙過海 - all eight
+// At most one 花 and one 草 per player per hand, however many more form.
+export const FLOWER_BONUS = { 草: 3, 花: 5, 花草: 8, 八仙過海: 100 } as const;
+
+const collectFromEach = (seat: number, amount: number) =>
+  Array.from({ length: SEATS }, (_, i) => (i === seat ? amount * (SEATS - 1) : -amount));
+
+// What a seat's flowers newly earn, given what it has already collected.
+export function flowerBonus(flowers: BonusTile[], had: FlowerBonus["name"][]): FlowerBonus["name"][] {
+  const ranks = (kind: BonusTile["kind"]) => new Set(flowers.filter((f) => f.kind === kind).map((f) => f.rank));
+  const fl = ranks("flower");
+  const se = ranks("season");
+  const hua = fl.size === 4 || se.size === 4;
+  // Every rank, with both sets among them: a mixed 1-2-3-4 can always be picked.
+  const cao = new Set([...fl, ...se]).size === 4 && fl.size > 0 && se.size > 0;
+  const hadHua = had.includes("花") || had.includes("花草");
+  const hadCao = had.includes("草") || had.includes("花草");
+  const out: FlowerBonus["name"][] = [];
+  const newHua = hua && !hadHua;
+  const newCao = cao && !hadCao;
+  if (newHua && newCao) out.push("花草");
+  else if (newHua) out.push("花");
+  else if (newCao) out.push("草");
+  if (fl.size === 4 && se.size === 4 && !had.includes("八仙過海")) out.push("八仙過海");
+  return out;
 }
 
 export const rollDice = (rng: () => number = Math.random): Dice => [1, 2, 3].map(() => 1 + Math.floor(rng() * 6)) as Dice;
