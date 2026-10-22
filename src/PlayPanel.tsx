@@ -409,7 +409,7 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
     for (const b of due) keys.add(String(all.indexOf(b)));
     setTotals((t) => t.map((v, i) => v + due.reduce((sum, b) => sum + b.deltas[i], 0)));
     const last = due[due.length - 1];
-    showBurst(last.seat, `${last.name} +${last.deltas[last.seat]}`);
+    showBurst(last.seat, `${last.name} ${last.deltas[last.seat] > 0 ? "+" : "−"}${Math.abs(last.deltas[last.seat])}`);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rolling, game.tableBonuses]);
   // How long the roll shows - timed on its own, so a re-run of the effect
