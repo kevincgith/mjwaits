@@ -342,3 +342,34 @@ describe("暗槓", () => {
     expect(s2.tableBonuses?.filter((b) => b.name === "暗槓")).toHaveLength(2);
   });
 });
+
+describe("追", () => {
+  const throwAround = (s0: GameState, seats: number[], tile: string) => {
+    let s = s0;
+    for (const seat of seats) {
+      const t = parseHand(tile)[0];
+      s = { ...s, phase: { kind: "turn", seat, drawn: null, replacement: null } };
+      s.players = s.players.map((p, i) => (i === seat ? { ...p, hand: [...p.hand, t], riichi: undefined } : p));
+      s = applyTurnMove(s, { kind: "discard", tile: t });
+    }
+    return s;
+  };
+  const fresh = () => ({ ...newGame(), tableBonuses: undefined });
+  it("the fourth in a row to throw the same tile pays the rest: 5 for an honour, 10 for m/t/b", () => {
+    expect(throwAround(fresh(), [0, 1, 2, 3], "7z").tableBonuses).toEqual([{ seat: 3, name: "追", deltas: [5, 5, 5, -15], paid: false }]);
+    expect(throwAround(fresh(), [2, 3, 0, 1], "5m").tableBonuses).toEqual([{ seat: 1, name: "追", deltas: [10, -30, 10, 10], paid: false }]);
+  });
+  it("needs four seats in turn and the same tile", () => {
+    expect(throwAround(throwAround(fresh(), [0, 1, 2], "7z"), [3], "6z").tableBonuses).toBeUndefined();
+    expect(throwAround(fresh(), [0, 1, 3, 0], "7z").tableBonuses).toBeUndefined();
+  });
+  it("a concealed kong along the way doesn't break the run", () => {
+    let s = throwAround(fresh(), [0, 1], "7z");
+    s = { ...s, phase: { kind: "turn", seat: 2, drawn: null, replacement: null } };
+    s.players = s.players.map((p, i) => (i === 2 ? { ...p, hand: [...parseHand("1111m"), ...p.hand], riichi: undefined } : p));
+    s = applyTurnMove(s, { kind: "concealedKong", tile: parseHand("1m")[0] });
+    s = throwAround(s, [2, 3], "7z");
+    expect(s.tableBonuses?.filter((b) => b.name === "追")).toEqual([{ seat: 3, name: "追", deltas: [5, 5, 5, -15], paid: false }]);
+  });
+});
+

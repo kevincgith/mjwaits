@@ -124,14 +124,17 @@ export interface GameState {
   // the table has already paid it - so a reload can't pay it twice.
   diceBonus?: { name: string; deltas: number[]; paid: boolean };
   // Bonuses paid at the table during the hand - flowers (花 / 草 / 花草 /
-  // 八仙過海, 7搶1 / 1搶7, see flowerBonus) and 暗槓 - in the order they
+  // 八仙過海, 7搶1 / 1搶7, see flowerBonus), 暗槓 and 追 - in the order they
   // came, each marked once the table has paid it.
   tableBonuses?: TableBonus[];
+  // The run of the same tile discarded seat after seat with no call between,
+  // toward 追 (see CHASE_PENALTY).
+  chase?: { seat: number; tile: Tile; run: number };
 }
 
 export interface TableBonus {
   seat: number;
-  name: "花" | "草" | "花草" | "八仙過海" | "7搶1" | "1搶7" | "暗槓";
+  name: "花" | "草" | "花草" | "八仙過海" | "7搶1" | "1搶7" | "暗槓" | "追";
   deltas: number[];
   paid: boolean;
 }
@@ -302,6 +305,10 @@ export const FLOWER_BONUS = { 草: 3, 花: 5, 花草: 8, 八仙過海: 100 } as 
 
 // 暗槓: a concealed kong collects this from each player when declared.
 export const CONCEALED_KONG_BONUS = 5;
+
+// 追: four players in a row discard the same tile, with no call between -
+// the fourth pays each of the others this (an honour tile, or m/t/b).
+export const CHASE_PENALTY = { honour: 5, suited: 10 };
 
 // 7搶1 / 1搶7: the last of the eight flowers out, split seven and one - paid
 // by the other of the two only.
@@ -535,6 +542,13 @@ export function applyTurnMove(state: GameState, move: TurnMove): GameState {
       }
       p.hand = removeTiles(p.hand, [move.tile]);
       p.discards.push(move.tile);
+      // 追: the fourth player in a row to throw the same tile pays the rest.
+      const run = s.chase && sameTile(s.chase.tile, move.tile) && (s.chase.seat + 1) % SEATS === seat ? s.chase.run + 1 : 1;
+      if (run === SEATS) {
+        const penalty = move.tile.suit === "z" ? CHASE_PENALTY.honour : CHASE_PENALTY.suited;
+        (s.tableBonuses ??= []).push({ seat, name: "追", deltas: collectFromEach(seat, -penalty), paid: false });
+        s.chase = undefined;
+      } else s.chase = { seat, tile: move.tile, run };
       s.discardsMade++;
       if (s.discardsMade >= SEATS) s.firstGoAround = false;
       s.phase = { kind: "claims", from: seat, tile: move.tile };
@@ -628,6 +642,7 @@ export function resolveClaims(state: GameState, decisions: (Claim | null)[]): Ga
   // The claimed tile leaves the discarder's pond.
   s.players[from].discards.pop();
   s.firstGoAround = false;
+  s.chase = undefined;
   // A call ends everyone's 一發 (a win ends the hand anyway).
   if (claim.kind !== "win") for (const pl of s.players) if (pl.riichi) pl.riichi.ippatsu = false;
   if (claim.kind === "win") {
