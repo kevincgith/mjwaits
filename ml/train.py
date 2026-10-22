@@ -39,6 +39,18 @@ import torch.nn.functional as F
 VALUE_SCALE = 30.0  # hand nets are tens of tai; scale them to around 1
 
 
+def load_many(spec):
+    """--data a,b,c: several datasets with the same encoding and styles, joined."""
+    parts = [load(d) for d in spec.split(",")]
+    manifest = parts[0][0]
+    for m, *_ in parts[1:]:
+        if (m["obsSize"], m["numActions"], m["styles"]) != (manifest["obsSize"], manifest["numActions"], manifest["styles"]):
+            raise SystemExit("datasets differ in encoding or styles")
+    cat = lambda i: np.concatenate([p[i] for p in parts])
+    extras = [p[4] for p in parts]
+    return manifest, cat(1), cat(2), cat(3), (np.concatenate(extras) if all(e is not None for e in extras) else None)
+
+
 def load(data_dir):
     manifest = json.load(open(os.path.join(data_dir, "manifest.json")))
     O, A = manifest["obsSize"], manifest["numActions"]
@@ -254,7 +266,7 @@ def main():
             args.epochs = 2
         return rl(args)
 
-    manifest, obs, mask, meta, _ = load(args.data)
+    manifest, obs, mask, meta, _ = load_many(args.data)
     n, O = obs.shape
     A = mask.shape[1]
     styles = manifest["styles"]

@@ -1,5 +1,12 @@
 // npm run ml-selfplay -- --model ml/runs/bc2 [--hands 4000] [--session 16] [--temp 1] [--seed 1] [--out ml/data/sp1]
 //                        [--rules grandmaster,veteran,gambler]   (rule bots for two seats of every table)
+//                        [--label teacher]   (DAgger: record what the rule bot of that style would do)
+//
+// --label teacher: the network still plays (so the positions are the ones
+// IT reaches), but each recorded action is the rule bot's choice there -
+// the corrections behaviour cloning needs where its own mistakes have
+// taken it off the teacher's path. Train on it with the original data
+// (train.py --data a,b).
 //
 // Stage 2 data: the network plays itself. Every seat is the network as a
 // random personality, sampling its moves (temperature 1 = as it believes),
@@ -21,7 +28,7 @@ import { isMainThread, parentPort, Worker, workerData } from "node:worker_thread
 import * as ort from "onnxruntime-web/wasm";
 import { botClaimFor, botSurrenders, botTurnMoveFor, profileById, seededRng, type BotProfile, type Rng } from "../src/lib/bots";
 import { applyTurnMove, dealHand, fullWall, nextHand, resolveClaims, SEATS, surrender, type Claim, type GameState, type WallTile } from "../src/lib/game";
-import { actionToClaim, actionToTurnMove, encodeObservation, legalActions, NUM_ACTIONS, NUM_PLANES, OBS_SIZE } from "../src/lib/ml/encode";
+import { actionToClaim, actionToTurnMove, claimDecisionAction, encodeObservation, legalActions, NUM_ACTIONS, NUM_PLANES, OBS_SIZE, turnMoveAction } from "../src/lib/ml/encode";
 import { sample } from "../src/lib/ml/policy";
 
 const META = 6;
@@ -38,7 +45,7 @@ function shuffledWall(rng: Rng): WallTile[] {
 // `rules`: rule bots to seat at two of the four places at every table (random
 // seats, random picks), so the network doesn't only learn to beat itself.
 // Their decisions aren't recorded.
-async function selfPlay(modelDir: string, hands: number, session: number, temperature: number, seed: number, rules: BotProfile[]) {
+async function selfPlay(modelDir: string, hands: number, session: number, temperature: number, seed: number, rules: BotProfile[], teacher: boolean) {
   const meta = JSON.parse(readFileSync(`${modelDir}/meta.json`, "utf8")) as { styles: string[]; obsSize: number; numActions: number };
   if (meta.obsSize !== OBS_SIZE || meta.numActions !== NUM_ACTIONS) throw new Error("Model was trained on a different encoding");
   ort.env.wasm.numThreads = 1;
@@ -50,6 +57,8 @@ async function selfPlay(modelDir: string, hands: number, session: number, temper
   const extraOut: number[] = [];
 
   // One decision: run the network, sample, and return the action with its log-prob.
+  // The teacher's own random stream, so labelling doesn't change the play.
+  const teacherRng = seededRng(seed + 7919);
   const decide = async (s: GameState, seat: number, style: number) => {
     const mask = legalActions(s, seat);
     let options = 0;
@@ -94,7 +103,7 @@ async function selfPlay(modelDir: string, hands: number, session: number, temper
             continue;
           }
           const d = (await decide(s, seat, styles[seat]))!;
-          if (d.record) pending.push({ obs: d.obs, mask: d.mask, action: d.action, logp: d.logp, kind: 0, seat });
+          if (d.record) pending.push({ obs: d.obs, mask: d.mask, action: teacher ? turnMoveAction(botTurnMoveFor(s, profileById(meta.styles[styles[seat]]), teacherRng)) : d.action, logp: d.logp, kind: 0, seat });
           s = applyTurnMove(s, actionToTurnMove(s, d.action));
         } else {
           const claims: (Claim | null)[] = [];
@@ -104,7 +113,8 @@ async function selfPlay(modelDir: string, hands: number, session: number, temper
               continue;
             }
             const d = await decide(s, seat, styles[seat]);
-            if (d?.record) pending.push({ obs: d.obs, mask: d.mask, action: d.action, logp: d.logp, kind: 1, seat });
+            if (d?.record)
+              pending.push({ obs: d.obs, mask: d.mask, action: teacher ? claimDecisionAction(s, botClaimFor(s, seat, profileById(meta.styles[styles[seat]]), teacherRng)) : d.action, logp: d.logp, kind: 1, seat });
             claims.push(d ? actionToClaim(s, seat, d.action) : null);
           }
           s = resolveClaims(s, claims);
@@ -138,21 +148,32 @@ if (isMainThread) {
   const session = Number(opt("session", "16"));
   const temperature = Number(opt("temp", "1"));
   const rules = opt("rules", "");
+  const teacher = opt("label", "self") === "teacher";
   const seed = Number(opt("seed", "1"));
   const out = opt("out", "ml/data/sp1");
-  const workers = Math.min(availableParallelism(), Math.max(1, Math.ceil(hands / session)));
+  // Short jobs of at most JOB_HANDS hands, each in a fresh worker, run
+  // availableParallelism() at a time: a worker that plays thousands of
+  // hands grows the network runtime's memory until Node crashes.
+  const JOB_HANDS = 500;
+  const jobs = Array.from({ length: Math.ceil(hands / JOB_HANDS) }, (_, j) => Math.min(JOB_HANDS, hands - j * JOB_HANDS));
   mkdirSync(out, { recursive: true });
   const t0 = Date.now();
-  const per = Array.from({ length: workers }, (_, i) => Math.floor(hands / workers) + (i < hands % workers ? 1 : 0));
-  const results = await Promise.all(
-    per.map(
-      (n, w) =>
-        new Promise<{ n: number; styles: string[] }>((resolve, reject) => {
-          const worker = new Worker(new URL(import.meta.url), { workerData: { model, hands: n, session, temperature, seed: seed * 1000 + w, out, w, rules } });
-          worker.once("message", resolve);
-          worker.once("error", reject);
-        })
-    )
+  const results: { n: number; styles: string[] }[] = new Array(jobs.length);
+  let next = 0;
+  const runJob = (j: number) =>
+    new Promise<void>((resolve, reject) => {
+      const worker = new Worker(new URL(import.meta.url), { workerData: { model, hands: jobs[j], session, temperature, seed: seed * 1000 + j, out, w: j, rules, teacher } });
+      worker.once("message", (r) => {
+        results[j] = r;
+        void worker.terminate();
+        resolve();
+      });
+      worker.once("error", reject);
+    });
+  await Promise.all(
+    Array.from({ length: Math.min(availableParallelism(), jobs.length) }, async () => {
+      while (next < jobs.length) await runJob(next++);
+    })
   );
   const total = results.reduce((a, b) => a + b.n, 0);
   writeFileSync(
@@ -179,8 +200,8 @@ if (isMainThread) {
   );
   console.log(`${total.toLocaleString()} self-play decisions from ${hands} hands in ${((Date.now() - t0) / 1000).toFixed(0)}s -> ${out}`);
 } else {
-  const { model, hands, session, temperature, seed, out, w, rules } = workerData as { model: string; hands: number; session: number; temperature: number; seed: number; out: string; w: number; rules: string };
-  const { obsOut, maskOut, metaOut, extraOut, styles } = await selfPlay(model, hands, session, temperature, seed, rules ? rules.split(",").map(profileById) : []);
+  const { model, hands, session, temperature, seed, out, w, rules, teacher } = workerData as { model: string; hands: number; session: number; temperature: number; seed: number; out: string; w: number; rules: string; teacher: boolean };
+  const { obsOut, maskOut, metaOut, extraOut, styles } = await selfPlay(model, hands, session, temperature, seed, rules ? rules.split(",").map(profileById) : [], teacher);
   const n = obsOut.length;
   const O = new Uint8Array(n * OBS_SIZE);
   const M = new Uint8Array(n * NUM_ACTIONS);
