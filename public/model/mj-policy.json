@@ -1,0 +1,14 @@
+{
+ "obsSize": 725,
+ "numActions": 77,
+ "styles": [
+  "grandmaster",
+  "veteran",
+  "speedster",
+  "hunter",
+  "wall",
+  "gambler",
+  "casual"
+ ],
+ "label": "tile1 - behaviour cloning of the evolved rule bots (865k decisions)"
+}
