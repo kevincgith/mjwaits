@@ -13261,3 +13261,45 @@ button.sc-stat:active {
   font-size: 8pt;
   font-weight: 700;
 }
+
+/* 設定: 大雞/大鴨's two switches and the fine-tune list under them. */
+.tr-chicken-group {
+  min-height: 0;
+  padding: 0.25rem 0;
+}
+
+.tr-mixed {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.tr-chicken-foot {
+  display: flex;
+  justify-content: space-between;
+  margin: 0 -0.5rem;
+}
+
+/* 設定 → Share & files: one row per file action. */
+.tr-file-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.05rem;
+  width: 100%;
+  min-height: 2.9rem;
+  border: none;
+  padding: 0.45rem 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tr-file-row + .tr-file-row {
+  border-top: 0.5px solid var(--separator);
+}
+
+.tr-advanced .tr-engine {
+  padding: 0.5rem 0.25rem 0;
+}

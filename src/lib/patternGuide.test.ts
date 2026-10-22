@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FAMILY_GUIDE, PAIR_GUIDE, PATTERN_GUIDE } from "./patternGuide";
+import { FAMILY_GUIDE, PAIR_GUIDE, PATTERN_ALIASES, PATTERN_GUIDE } from "./patternGuide";
 import { PATTERNS } from "./scoring";
 import { OPEN_CONCEALED_PAIRS, pairOf, PATTERN_FAMILIES } from "./taiCatalog";
 
@@ -19,6 +19,18 @@ describe("the rules reference's descriptions", () => {
     for (const [id, text] of [...Object.entries(PATTERN_GUIDE), ...Object.entries(PAIR_GUIDE)]) {
       expect(text, id).not.toMatch(/[`=]|ctx\.|GameContext/);
       expect(text.trim().endsWith("."), id).toBe(true);
+    }
+  });
+});
+
+describe("pattern aliases", () => {
+  it("are keyed by real patterns or 明/暗 pairs, and never repeat the pattern's own name", () => {
+    const names = new Map(PATTERNS.map((p) => [p.id, p.name.split(" (")[0]]));
+    for (const [key, aliases] of Object.entries(PATTERN_ALIASES)) {
+      const pair = OPEN_CONCEALED_PAIRS.find((p) => p.id === key);
+      expect(names.has(key) || !!pair, key).toBe(true);
+      const own = pair ? names.get(pair.open)!.replace(/^明/, "") : names.get(key)!;
+      for (const alias of aliases) expect(alias, key).not.toBe(own);
     }
   });
 });

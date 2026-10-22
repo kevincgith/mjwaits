@@ -1,4 +1,4 @@
-// The printable rules reference (設定 → Export PDF): a human-readable summary
+// The printable rules reference (設定 → Share & files… → Print reference): a human-readable summary
 // of a rule set - not the settings themselves. A full-screen preview with a
 // "Print / Save as PDF" button; in print only the document shows (see the
 // .rr-* print styles in App.css). Page 1 is every pattern at a glance -
@@ -12,7 +12,7 @@ import { rasterizeTileArt, TileArtRemapContext, TileStyleContext } from "./tileA
 import { FAMILY_GUIDE, GENERAL_RULES, PAIR_GUIDE, PATTERN_GUIDE } from "./lib/patternGuide";
 import { DEFAULT_TAI_RULES, effectiveReplaces, HAND_SHAPES, PATTERNS, type PatternRule, type TaiRules } from "./lib/scoring";
 import { LADDERS, pairOf, PATTERN_CATALOG, PATTERN_FAMILIES, type Ladder, type OpenConcealedPair, type PatternFamily } from "./lib/taiCatalog";
-import { chickenIgnores, describeChanges, isLadderChanged, isRowChanged, pairName, ruleChanges, shortName } from "./lib/taiRules";
+import { chickenIgnores, describeChanges, isLadderChanged, isRuleOn, isRowChanged, pairName, ruleChanges, shortName } from "./lib/taiRules";
 
 const NAME_BY_ID = new Map(PATTERNS.map((p) => [p.id, p.name]));
 const english = (id: string) => {
@@ -67,11 +67,11 @@ function SummaryRow({ id, rules, legacy }: { id: string; rules: TaiRules; legacy
   const rule = rules.patterns[id];
   // A 明/暗 pair: one line, "5 / 8" (明 / 暗).
   const partner = pair ? rules.patterns[pair.concealed] : undefined;
-  const enabled = rule.enabled || !!partner?.enabled;
+  const enabled = isRuleOn(rule) || (!!partner && isRuleOn(partner));
   const changed = !legacy && (isRowChanged(id, rule) || (!!pair && isRowChanged(pair.concealed, partner!)));
   const v = valueOf(id, rule);
   const value = pair
-    ? `${rule.enabled ? rule.tai : "–"} / ${partner!.enabled ? partner!.tai : "–"}`
+    ? `${isRuleOn(rule) ? rule.tai : "–"} / ${isRuleOn(partner!) ? partner!.tai : "–"}`
     : v.value;
   return (
     <div className={`rr-sum-row${enabled ? "" : " is-off"}`}>
@@ -282,16 +282,16 @@ function PatternCard({ id, rules, changedFromHouse }: { id: string; rules: TaiRu
   // Where it counts - worth saying only when this set has changed it.
   const shapes = c.shapes ? rule.shapes : null;
   return (
-    <div className={`rr-card${rule.enabled ? "" : " is-off"}`}>
+    <div className={`rr-card${isRuleOn(rule) ? "" : " is-off"}`}>
       <div className="rr-card-head">
         <span className="rr-card-name">
           <span className="rr-card-zh">{shortName(id)}</span>
           <span className="rr-card-en">{english(id)}</span>
         </span>
-        <span className="rr-card-value">{rule.enabled ? v.long : "Not counted"}</span>
+        <span className="rr-card-value">{isRuleOn(rule) ? v.long : "Not counted"}</span>
       </div>
       <p className="rr-card-text">{PATTERN_GUIDE[id]}</p>
-      {rule.enabled && <PatternExampleView id={id} rules={rules} />}
+      {isRuleOn(rule) && <PatternExampleView id={id} rules={rules} />}
       <dl className="rr-card-meta">
         {replaces.length > 0 && (
           <>
@@ -308,7 +308,7 @@ function PatternCard({ id, rules, changedFromHouse }: { id: string; rules: TaiRu
         {changedFromHouse && (c.value || c.enabled) && (
           <>
             <dt>House rule</dt>
-            <dd>{base.enabled ? valueOf(id, base).long : "Not counted"}</dd>
+            <dd>{isRuleOn(base) ? valueOf(id, base).long : "Not counted"}</dd>
           </>
         )}
       </dl>
@@ -324,7 +324,7 @@ function PairCard({ pair, rules, changedFromHouse }: { pair: OpenConcealedPair; 
     { id: pair.open, label: "明", rule: rules.patterns[pair.open] },
     { id: pair.concealed, label: "暗", rule: rules.patterns[pair.concealed] },
   ];
-  const enabled = sides.some((side) => side.rule.enabled);
+  const enabled = sides.some((side) => isRuleOn(side.rule));
   const replaces = sides.map((side) => effectiveReplaces(rules, side.id).map(shortName).join("、"));
   return (
     <div className={`rr-card${enabled ? "" : " is-off"}`}>
@@ -334,13 +334,13 @@ function PairCard({ pair, rules, changedFromHouse }: { pair: OpenConcealedPair; 
           <span className="rr-card-en">{en}</span>
         </span>
         <span className="rr-card-value">
-          {sides.map((side) => `${side.label} ${side.rule.enabled ? valueOf(side.id, side.rule).long : "off"}`).join(" · ")}
+          {sides.map((side) => `${side.label} ${isRuleOn(side.rule) ? valueOf(side.id, side.rule).long : "off"}`).join(" · ")}
         </span>
       </div>
       <p className="rr-card-text">{PAIR_GUIDE[pair.id]}</p>
       {sides.map(
         (side) =>
-          side.rule.enabled && (
+          isRuleOn(side.rule) && (
             <div key={side.id} className="rr-pair-example">
               <span className="rr-pair-side">{side.label}</span>
               <PatternExampleView id={side.id} rules={rules} />
@@ -372,7 +372,7 @@ function PairCard({ pair, rules, changedFromHouse }: { pair: OpenConcealedPair; 
               (c.value || c.enabled) && (
                 <Fragment key={`h${side.id}`}>
                   <dt>House {side.label}</dt>
-                  <dd>{base.enabled ? valueOf(side.id, base).long : "Not counted"}</dd>
+                  <dd>{isRuleOn(base) ? valueOf(side.id, base).long : "Not counted"}</dd>
                 </Fragment>
               )
             );

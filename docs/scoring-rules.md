@@ -20,11 +20,11 @@ rules turn that into tai. Everything about a pattern's rule is written in one pl
 | Attribute | What it is | Editable as |
 |---|---|---|
 | Family | Which section of this document it belongs to | Groups the sheet |
-| Value | `flat` (N tai when it applies), `per` (N per instance), `table` (槓摸/搶槓: tai by count), `streak` (莊: first + each 連莊) | The tai, the table, or first/each |
+| Value | `flat` (N tai when it applies), `per` (N per instance), `table` (槓摸/搶槓: tai by count), `streak` (莊: first + each 連莊) | The tai, the table, or first/each. **0 is off** - there is no separate switch (a set saved with the old `enabled: false` loads as 0) |
 | Tier family | Ordered tiers, lowest first (`LADDERS`). **count** families (三元牌 → 小三元 → 大三元, 兩 → 三 → 四 → 五暗刻, 混一色 → 清一色…): a pattern replaces every lower tier that fires, so only the highest counts. **windows** families (連刻): a run of melds counts at the longest tier that has a value, and a longer run worth 0 counts as overlapping shorter windows | count: one switch, "only the highest counts" or every tier stacks. windows: no switch - giving the longer tiers a value is the switch |
 | Replaces (**exclusion**) | Edges outside any ladder (天胡 replaces 門前清, 五槓子 replaces 槓…). Any pair with no edge and no shared ladder **stacks** | Add/remove edges; edges from the ladder show but change with its switch; "Replaced by" shows the reverse |
 | Hand shapes (**inclusion**) | Which of normal / 十三么 / 十六不搭 / 嚦咕嚦咕 it may count on | Switch each shape off and on, among the shapes that hand's scorer can evaluate (derived in `scoring.ts` as `eligibleShapes` - a fact about the scorer, not a rule) |
-| Blocks 大雞/大鴨 | Whether its firing stops 大雞/大鴨 - off for 底, the bonus tiles and purely declared state like 莊/叮/天胡 | One list, "What 大雞/大鴨 ignore", at the top of the 大雞/大鴨 group - not per pattern (大雞/大鴨 never count each other) |
+| Blocks 大雞/大鴨 | Whether its firing stops 大雞/大鴨 - off for 底, the bonus tiles and purely declared state like 莊/叮/天胡 | Two switches at the top of the 大雞/大鴨 group (`CHICKEN_GROUPS`): "Situations don't stop them" (every 情況 button) and "Flowers don't stop them" (無花/正花/爛花), each showing "partly" when only some are set; "Fine-tune…" opens the full per-pattern list. Not per pattern row (大雞/大鴨 never count each other) |
 
 **明/暗 pairs.** The 17 patterns scored separately when an instance is 明 (open) or 暗 (concealed)
 - 般高, 清龍, 相逢, 四歸… (`OPEN_CONCEALED_PAIRS` in taiCatalog.ts: every `-open` id with its
@@ -32,7 +32,7 @@ rules turn that into tai. Everything about a pattern's rule is written in one pl
 hand can score both), but 設定 and the printed reference show each pair as one row with a 明 and a
 暗 value, one description and an example for each side.
 
-How the scorer applies them: a disabled pattern, or one not included for the hand's shape, scores 0
+How the scorer applies them: a pattern worth 0, or one not included for the hand's shape, scores 0
 and replaces nothing. Replacing is a single pass: every pattern that fires drops its targets (ladder
 and own edges), even if it is itself dropped. So a loop (A replaces B and B replaces A) drops both, and
 the sheet warns about one. Loops between answers of the same situation choice (門清叮 and 天叮/地叮)
@@ -47,10 +47,18 @@ patterns, the situation alone for declared state (自摸, 叮, 莊…), and othe
 (清一色, 平胡, 十三么…), with the 食胡 tile highlighted and what it's worth there under the set
 being edited. `patternExamples.test.ts` checks every example still counts its pattern.
 
+Finding a rule: the search box matches the Chinese and English names and the common other names
+for a pattern (`PATTERN_ALIASES` in patternGuide.ts - 一般高 finds 般高, 混全帶么 finds 混帶么…). Adding
+a "Replaces" edge offers the patterns **likely to count together** with it first
+(`src/lib/patternPartners.ts`, generated alongside the examples from which patterns actually fire
+together in the test hands; situations pair with anything, special hands with patterns of their own
+shape), then every other pattern.
+
 The sheet previews the hand in the tab live as you edit ("This hand: 31 → 33" - the set in use
 against the one being edited) and lists every change from the house list in words, each with Undo.
-Sets can be created, duplicated, renamed, deleted, **exported** to a `.json` file (one set or all) and
-**imported** from one (clashing names get a number), and **shared** as a link or QR code. A link is
+Sets can be created, duplicated, renamed and deleted from the set row; **Share & files…** holds the
+rest - a link or QR code, **export** to a `.json` file (one set or all), **import** from one (clashing
+names get a number) and the printable reference. A link is
 `#r=z` + the set's differences and name, deflate-compressed and base64url-encoded: even a set with
 every pattern changed is about 1,500 characters, inside a QR code's limit (if one ever weren't, the
 Share sheet shows the link alone). Opening a link, or the first release's uncompressed `#r=` links,
@@ -59,7 +67,7 @@ fingerprint of them (`rulesFingerprint`): Recent marks one scored under other ru
 sent to the Scores tab notes it, and the breakdown dots any pattern whose rule isn't the house
 list's.
 
-**Printable reference.** 設定 → Export PDF opens a print-ready reference of the selected set
+**Printable reference.** 設定 → Share & files… → Print reference (PDF) opens a print-ready reference of the selected set
 (`RulesReference.tsx`; "Print / Save as PDF" uses the system print dialog): page 1 lists every pattern
 with its value and type in four columns, page 2 explains how scoring works (best reading, 明/暗,
 tiers, replaces, special hands, what 大雞/大鴨 ignore, and the set's changes), and the pages after
@@ -72,7 +80,7 @@ Safari's engine drops when printing. A few descriptions aren't pinned down by th
 clarification".
 
 **Fallback.** `src/lib/scoringLegacy.ts` is a frozen copy of the engine from before rules were
-editable. 設定's "Scoring engine: Original built-in" (a phone-wide setting,
+editable. 設定 → Advanced (at the bottom) → "Scoring engine: Original built-in" (a phone-wide setting,
 `mjwaits.taiEngine`, not part of any set) scores with it, and if the configurable engine ever throws (a
 bug, not an incomplete hand) the hand is re-scored with it and the TOTAL card says so.
 `engineParity.test.ts` checks that the default rules score every test hand identically to it.

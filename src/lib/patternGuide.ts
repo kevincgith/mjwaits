@@ -1,5 +1,5 @@
 // Plain-language descriptions for the printable rules reference (設定 →
-// Export PDF): what each pattern asks of a hand, for players rather than
+// Share & files… → Print reference): what each pattern asks of a hand, for players rather than
 // developers. Only the *condition* - what it's worth, what it replaces and
 // where it counts come from the rule set being printed. docs/scoring-rules.md
 // has the full technical criteria; keep the two in step.
@@ -200,6 +200,65 @@ export const PAIR_GUIDE: Record<string, string> = {
   "pure-straight": "123, 456 and 789 in one suit (清龍).",
   "mixed-straight": "123, 456 and 789, each in a different suit (雜龍).",
   "orphans-four-return": "In 十三么 or 嚦咕嚦咕: all four copies of one tile. 明 when the last copy was a claimed winning tile, otherwise 暗.",
+};
+
+/** Other names a pattern goes by (other tables and apps), so 設定's search
+ *  finds it either way and the name can say "aka …". Keyed by pattern id, or
+ *  by a 明/暗 pair's stem (taiCatalog.ts OPEN_CONCEALED_PAIRS). */
+export const PATTERN_ALIASES: Record<string, string[]> = {
+  "concealed-except-kongs": ["門清"],
+  kong: ["明槓", "暗槓"],
+  "correct-seat-wind": ["正位風牌"],
+  "wrong-seat-wind": ["爛位風牌"],
+  "correct-round-wind": ["正圈風牌"],
+  "all-runs": ["平糊"],
+  "all-runs-no-honors-no-flowers": ["無字花大平糊"],
+  "all-triplets": ["對對糊"],
+  "all-simples": ["斷么九"],
+  riichi: ["聽牌", "聽"],
+  "concealed-riichi": ["門清聽牌"],
+  "heavenly-riichi": ["天聽"],
+  "earthly-riichi": ["地聽"],
+  "heavenly-win": ["天糊"],
+  "earthly-win": ["地糊"],
+  "human-win": ["人糊"],
+  "early-win-four": ["四只內"],
+  "early-win-seven": ["七只內"],
+  "early-win-ten": ["十只內"],
+  "kong-draw": ["槓上自摸", "槓上開花"],
+  "flower-draw": ["花上自摸"],
+  "big-chicken": ["雞糊", "大雞糊"],
+  "big-duck": ["鴨糊"],
+  "small-three-consecutive-triplets": ["三小連刻"],
+  "big-three-consecutive-triplets": ["三大連刻"],
+  "small-four-consecutive-triplets": ["四小連刻"],
+  "big-four-consecutive-triplets": ["四大連刻"],
+  "small-five-consecutive-triplets": ["五小連刻"],
+  "big-five-consecutive-triplets": ["五大連刻"],
+  "small-six-consecutive-triplets": ["六小連刻"],
+  "identical-sequences": ["一色同順", "一般高"],
+  "two-separate-identical-sequences": ["雙一色同順", "雙般高"],
+  "triple-identical-sequences": ["太般高"],
+  "quadruple-identical-sequences": ["四海一家", "超般高"],
+  "same-suit-consecutive": ["一色三步高"],
+  "same-suit-two-step": ["一色連環套"],
+  "three-color-step-up": ["三色三步高"],
+  "cross-suit-same-run": ["兩同順", "兩相逢"],
+  "twin-cross-suit-runs": ["雙同順"],
+  "three-suit-same-run": ["三色同順"],
+  "cross-suit-same-triplet": ["二同刻", "兄弟"],
+  "small-three-brothers": ["小三同刻"],
+  "big-three-brothers": ["三同刻"],
+  "small-three-color-consecutive-triplets": ["小三雜連刻"],
+  "big-three-color-consecutive-triplets": ["三雜連刻"],
+  "rotating-staircase": ["三色五步高"],
+  "pure-common-rank": ["滿庭芳"],
+  "pure-terminal": ["清帶么"],
+  "small-five-suits": ["小五門"],
+  "big-five-suits": ["大五門"],
+  "small-seven-suits": ["小七門"],
+  "big-seven-suits": ["大七門"],
+  "sixteen-unrelated-flying": ["十六不搭十六飛"],
 };
 
 /** General rules, for the reference's closing page. */

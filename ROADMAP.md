@@ -42,8 +42,12 @@ Still open:
 - **Tai values, exclusions and special-hand inclusions are editable** in the Scoring tab's 設定
   sheet (see docs/scoring-rules.md, "Rule classification and customisation"). The frozen
   `scoringLegacy.ts` copy can be retired once the configurable engine has proven itself.
-- **Rule sets travel by their own link or file** (設定 → Share / Export), not with a hand link - a
+- **Rule sets travel by their own link or file** (設定 → Share & files…), not with a hand link - a
   shared hand opens under the receiver's own rules - and the Scores tab's backup doesn't include them.
+- **Engine-wide options not offered yet** (seen in other apps, skipped to keep 設定 simple): a
+  複式 (multiplying instead of adding) mode, a threshold for how many melds patterns may share, and
+  switches for regional variants detected from the hand rather than declared. Worth adding only if a
+  house actually plays that way.
 - **No self-draw (自摸) or dealer-status patterns yet**, despite `GameContext` already tracking
   both - the house list given so far hasn't needed them.
 - **No point/currency conversion** (base value, dealer doubling, caps) - this only totals tai.
@@ -53,7 +57,7 @@ Still open:
 
 ## Needs clarification (rules reference wording)
 
-設定 → Export PDF prints a plain-language description of every pattern
+設定 → Share & files… → Print reference (PDF) prints a plain-language description of every pattern
 ([`src/lib/patternGuide.ts`](src/lib/patternGuide.ts)). Most come straight from the house rules
 already given, but these aren't pinned down - the scorer only knows them as a declared 情況 button
 or a placeholder - so the printed wording is neutral or a best guess (each is marked `UNCONFIRMED`

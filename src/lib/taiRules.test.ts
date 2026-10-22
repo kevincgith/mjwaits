@@ -261,6 +261,13 @@ describe("the changes list, fingerprint and diff", () => {
 });
 
 describe("normalizeRules", () => {
+  it("loads a switched-off rule as 0 = off, and says so in the changes list", () => {
+    const { rules } = normalizeRules({ patterns: { kong: { enabled: false } } });
+    expect(rules.patterns.kong).toMatchObject({ enabled: true, tai: 0 });
+    expect(describeChanges(rules).map((c) => c.text)).toEqual(["槓 2 each → off"]);
+    expect(tai(scoreHand(KONG_HAND, ctx(rules)), "kong")).toBe(0);
+  });
+
   it("reads the first release's saves: chickenIgnores, and replaces lists that spelled out ladder edges", () => {
     const { rules } = normalizeRules({
       engine: "custom",
