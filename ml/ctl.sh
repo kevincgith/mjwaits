@@ -31,7 +31,7 @@ if [ "$cmd" = start ]; then
   run=$(norm "${1:-perHand}")
   shift || true
   if pgrep -f "$(script "$run")" >/dev/null; then echo "$run already running (ml/ctl.sh status $run)"; exit 1; fi
-  nohup caffeinate -i "$(script "$run")" "$@" >>"$(logfile "$run")" 2>&1 &
+  nohup nice -n 10 caffeinate -i "$(script "$run")" "$@" >>"$(logfile "$run")" 2>&1 &
   echo "$run started - $(logfile "$run")"
   exit 0
 fi
