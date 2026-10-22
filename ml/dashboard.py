@@ -26,7 +26,8 @@ LINE = re.compile(r"^\[(\d\d-\d\d \d\d:\d\d)\] (.*)$")
 SELF_PLAY = ["Self-play", "Training", "Scoring"]
 ARENA_HANDS = 2048
 # A 2,048-hand arena score is good to about this much either way (net tai/hand).
-NOISE = {"perHand": 1.0, "matchDay": 1.5}
+# perHand now plays challengers head to head on 8,192 hands (± ~1.2).
+NOISE = {"perHand": 1.2, "matchDay": 1.5}
 
 # Each run: where its files are, what its score means, and how its log
 # lines name the steps. A step: what it's called, the model it makes, its
@@ -35,7 +36,7 @@ RUNS = {
     "perHand": {
         "about": "Plays each hand for the most tai. Doesn't see the scoreboard.",
         "metric": "Net tai per hand vs the rule bots",
-        "metricNote": "Same 2,048 hands every time (±~1 is luck). A step only replaces the best if it scores higher.",
+        "metricNote": "Each round plays the best head to head on the same fresh 8,192 hands (±~1.2 is luck) and replaces it only if it scores higher there. Orange: the best's score on those same hands.",
         "log": "ml/runs/long.log",
         "state": "ml/runs/long/state",
         "logs": "ml/runs/long",
@@ -238,6 +239,7 @@ def insights(key, scores, st, step, arena_best, arena_last):
     """Plain-English notes on where the run stands."""
     notes = []
     noise = NOISE[key]
+    scores = [s for s in scores if not s.get("old")]
     unit = "tai/hand" if key == "perHand" else "utility/hand"
     if len(scores) >= 2:
         first, best = scores[0], max(scores, key=lambda s: s["score"])
@@ -247,7 +249,7 @@ def insights(key, scores, st, step, arena_best, arena_last):
     if rounds:
         kept = [s for s in rounds if s["best"]]
         best_score = float(st.get("best_score", "nan"))
-        worse = [s for s in rounds if s["score"] < best_score - noise]
+        worse = [s for s in rounds if s["score"] < (s["vsBest"] if s.get("vsBest") is not None else best_score) - noise]
         if kept:
             notes.append(("good", f"{len(kept)} of {len(rounds)} self-play round{'s' if len(rounds) > 1 else ''} beat the best and replaced it."))
         else:
@@ -297,9 +299,21 @@ def run_status(key):
         if sm:
             name = sm.group(1).split("/")[-1]
             label, desc = describe(name)
-            scores.append({"name": name, "label": label, "desc": desc, "score": float(sm.group(2)), "at": at, "best": "new best" in msg})
+            vs = re.search(r"vs best (-?[\d.]+)", msg)
+            scores.append({"name": name, "label": label, "desc": desc, "score": float(sm.group(2)), "at": at, "best": "new best" in msg, "vsBest": float(vs[1]) if vs else None})
         if "-> new best" in msg and scores:
             scores[-1]["best"] = True
+        # The move to head-to-head scoring: earlier scores were single
+        # 2,048-hand tests, kept but marked; the re-scoring picks the best.
+        if msg.startswith("re-scoring"):
+            for sc in scores:
+                sc["old"] = True
+            step = {"since": at, "title": "Re-scoring tile1, dagger1 and round 3 on the same 8,192 hands", "name": "rescore", "stages": ["Scoring"], "stage": "scoring"}
+        bm = re.match(r"\s+-> best on the bigger test: (\S+)", msg)
+        if bm:
+            for sc in scores:
+                if not sc.get("old") and sc["name"] == bm[1].split("/")[-1]:
+                    sc["best"] = True
         for pattern, make in cfg["steps"]:
             pm = re.match(pattern, msg)
             if pm:

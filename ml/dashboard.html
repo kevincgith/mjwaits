@@ -255,9 +255,14 @@ function renderChart(svg, tip, scores) {
     svg.innerHTML = `<text x="${W / 2}" y="${H / 2}" text-anchor="middle" font-size="13" fill="var(--text-muted)">No scores yet</text>`;
     return;
   }
+  // Best so far: the best's score on the same hands where a step played it
+  // head to head, otherwise the running maximum.
   const best = [];
   let b = -Infinity;
-  for (const s of scores) { b = Math.max(b, s.score); best.push(b); }
+  for (const s of scores) {
+    b = s.vsBest != null ? (s.best ? s.score : s.vsBest) : Math.max(b, s.score);
+    best.push(b);
+  }
   const vals = scores.map((s) => s.score).concat(0);
   let lo = Math.min(...vals), hi = Math.max(...vals);
   const pad = Math.max(0.5, (hi - lo) * 0.15);
@@ -379,12 +384,12 @@ function renderRun(r) {
   f("metric").textContent = r.metric;
   f("metricNote").textContent = r.metricNote;
   f("chart").setAttribute("aria-label", `${r.key}: ${r.metric} per training step`);
-  renderChart(f("chart"), f("tip"), scores);
+  renderChart(f("chart"), f("tip"), scores.filter((x) => !x.old));
   f("rowsHead").innerHTML = `<tr><th>Step</th><th>Finished</th><th class="num">Took</th><th class="num">Score</th><th class="num">Win</th><th class="num">Deal-in</th><th class="num">Avg win</th>${md ? '<th class="num">1st</th>' : ""}<th></th></tr>`;
   f("rows").innerHTML = scores.length
     ? scores.slice().reverse().map((x) => {
         const a = x.arena || {};
-        return `<tr><td>${esc(x.label)}<div class="sub">${x.name}</div></td><td>${x.at}</td><td class="num">${x.mins != null ? (x.mins >= 60 ? `${Math.floor(x.mins / 60)} h ${String(Math.round(x.mins % 60)).padStart(2, "0")}` : `${Math.round(x.mins)} min`) : "–"}</td><td class="num">${fmt(x.score)}</td><td class="num">${a.win != null ? a.win.toFixed(1) + "%" : "–"}</td><td class="num">${a.dealin != null ? a.dealin.toFixed(1) + "%" : "–"}</td><td class="num">${a.avgwin != null ? a.avgwin.toFixed(0) : "–"}</td>${md ? `<td class="num">${a.first != null ? a.first.toFixed(0) + "%" : "–"}</td>` : ""}<td>${x.best ? '<span class="tag">new best</span>' : ""}</td></tr>`;
+        return `<tr${x.old ? ' style="opacity:.55"' : ""}><td>${esc(x.label)}<div class="sub">${x.name}${x.old ? " · old 2,048-hand test" : ""}</div></td><td>${x.at}</td><td class="num">${x.mins != null ? (x.mins >= 60 ? `${Math.floor(x.mins / 60)} h ${String(Math.round(x.mins % 60)).padStart(2, "0")}` : `${Math.round(x.mins)} min`) : "–"}</td><td class="num">${fmt(x.score)}${x.vsBest != null ? `<div class="sub">best ${fmt(x.vsBest)}</div>` : ""}</td><td class="num">${a.win != null ? a.win.toFixed(1) + "%" : "–"}</td><td class="num">${a.dealin != null ? a.dealin.toFixed(1) + "%" : "–"}</td><td class="num">${a.avgwin != null ? a.avgwin.toFixed(0) : "–"}</td>${md ? `<td class="num">${a.first != null ? a.first.toFixed(0) + "%" : "–"}</td>` : ""}<td>${x.best ? '<span class="tag">new best</span>' : ""}</td></tr>`;
       }).join("")
     : `<tr><td colspan="9" class="empty">No scores yet</td></tr>`;
   const logEl = f("log");
@@ -406,7 +411,7 @@ async function refresh() {
 }
 refresh();
 setInterval(refresh, 2000);
-addEventListener("resize", () => last && last.runs.forEach((r) => renderChart(section(r.key).querySelector('[data-f="chart"]'), section(r.key).querySelector('[data-f="tip"]'), r.scores || [])));
+addEventListener("resize", () => last && last.runs.forEach((r) => renderChart(section(r.key).querySelector('[data-f="chart"]'), section(r.key).querySelector('[data-f="tip"]'), (r.scores || []).filter((x) => !x.old))));
 </script>
 </body>
 </html>
