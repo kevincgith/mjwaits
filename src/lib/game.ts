@@ -123,15 +123,15 @@ export interface GameState {
   // What the dice pay before the first discard (圍骰), per seat, and whether
   // the table has already paid it - so a reload can't pay it twice.
   diceBonus?: { name: string; deltas: number[]; paid: boolean };
-  // Flower bonuses earned this hand (花 / 草 / 花草 / 八仙過海, see
-  // flowerBonus), in the order they came, each marked once the table has
-  // paid it.
-  flowerBonuses?: FlowerBonus[];
+  // Bonuses paid at the table during the hand - flowers (花 / 草 / 花草 /
+  // 八仙過海, 7搶1 / 1搶7, see flowerBonus) and 暗槓 - in the order they
+  // came, each marked once the table has paid it.
+  tableBonuses?: TableBonus[];
 }
 
-export interface FlowerBonus {
+export interface TableBonus {
   seat: number;
-  name: "花" | "草" | "花草" | "八仙過海" | "7搶1" | "1搶7";
+  name: "花" | "草" | "花草" | "八仙過海" | "7搶1" | "1搶7" | "暗槓";
   deltas: number[];
   paid: boolean;
 }
@@ -232,7 +232,7 @@ function cloneState(s: GameState): GameState {
       ...(p.riichi ? { riichi: { ...p.riichi } } : {}),
     })),
     log: s.log.slice(),
-    ...(s.flowerBonuses ? { flowerBonuses: s.flowerBonuses.slice() } : {}),
+    ...(s.tableBonuses ? { tableBonuses: s.tableBonuses.slice() } : {}),
   };
 }
 
@@ -249,10 +249,10 @@ function drawInto(s: GameState, seat: number, fromBack: boolean): { tile: Tile |
     const w = back ? s.wall.pop()! : s.wall.shift()!;
     if ("bonus" in w) {
       s.players[seat].flowers.push(w.bonus);
-      const earned = flowerBonus(s.players[seat].flowers, (s.flowerBonuses ?? []).filter((b) => b.seat === seat).map((b) => b.name));
-      for (const name of earned) (s.flowerBonuses ??= []).push({ seat, name, deltas: collectFromEach(seat, FLOWER_BONUS[name]), paid: false });
+      const earned = flowerBonus(s.players[seat].flowers, (s.tableBonuses ?? []).filter((b) => b.seat === seat).map((b) => b.name));
+      for (const name of earned) (s.tableBonuses ??= []).push({ seat, name, deltas: collectFromEach(seat, FLOWER_BONUS[name]), paid: false });
       const rob = flowerRobbery(s.players.map((p) => p.flowers.length), seat);
-      if (rob) (s.flowerBonuses ??= []).push({ seat: rob.seat, name: rob.name, deltas: collectFromOne(rob.seat, rob.from, FLOWER_ROBBERY), paid: false });
+      if (rob) (s.tableBonuses ??= []).push({ seat: rob.seat, name: rob.name, deltas: collectFromOne(rob.seat, rob.from, FLOWER_ROBBERY), paid: false });
       flowered = true;
       back = true;
       continue;
@@ -300,6 +300,9 @@ export function diceBonus(dice: Dice, dealer: number): { name: string; deltas: n
 // At most one 花 and one 草 per player per hand, however many more form.
 export const FLOWER_BONUS = { 草: 3, 花: 5, 花草: 8, 八仙過海: 100 } as const;
 
+// 暗槓: a concealed kong collects this from each player when declared.
+export const CONCEALED_KONG_BONUS = 5;
+
 // 7搶1 / 1搶7: the last of the eight flowers out, split seven and one - paid
 // by the other of the two only.
 export const FLOWER_ROBBERY = 30;
@@ -325,7 +328,7 @@ const collectFromEach = (seat: number, amount: number) =>
   Array.from({ length: SEATS }, (_, i) => (i === seat ? amount * (SEATS - 1) : -amount));
 
 // What a seat's flowers newly earn, given what it has already collected.
-export function flowerBonus(flowers: BonusTile[], had: FlowerBonus["name"][]): (keyof typeof FLOWER_BONUS)[] {
+export function flowerBonus(flowers: BonusTile[], had: TableBonus["name"][]): (keyof typeof FLOWER_BONUS)[] {
   const ranks = (kind: BonusTile["kind"]) => new Set(flowers.filter((f) => f.kind === kind).map((f) => f.rank));
   const fl = ranks("flower");
   const se = ranks("season");
@@ -549,6 +552,7 @@ export function applyTurnMove(state: GameState, move: TurnMove): GameState {
       if (move.kind === "concealedKong") {
         p.hand = removeTiles(p.hand, [move.tile, move.tile, move.tile, move.tile]);
         p.melds.push({ kind: "kong", tiles: [move.tile, move.tile, move.tile, move.tile], concealed: true, from: null });
+        (s.tableBonuses ??= []).push({ seat, name: "暗槓", deltas: collectFromEach(seat, CONCEALED_KONG_BONUS), paid: false });
       } else {
         p.hand = removeTiles(p.hand, [move.tile]);
         const m = p.melds.find((m) => m.kind === "triplet" && sameTile(m.tiles[0], move.tile))!;

@@ -392,24 +392,26 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
     showBurst(game.dealer, bonus.name);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rolling, game.diceBonus]);
-  // Flower bonuses (花 / 草 / 花草 / 八仙過海) paid as they're earned, the
+  // Table bonuses (flowers, 暗槓) paid as they're earned, the
   // same way: marked paid in the game, and the ref remembers what this
   // hand has paid in case a stale copy of the game comes back unmarked.
-  const paidFlowers = useRef<{ hand: Dice | undefined; keys: Set<string> }>({ hand: undefined, keys: new Set() });
+  const paidBonuses = useRef<{ hand: Dice | undefined; keys: Set<string> }>({ hand: undefined, keys: new Set() });
   useEffect(() => {
-    if (paidFlowers.current.hand !== game.dice) paidFlowers.current = { hand: game.dice, keys: new Set() };
-    const keys = paidFlowers.current.keys;
-    const unpaid = (game.flowerBonuses ?? []).filter((b) => !b.paid);
+    if (paidBonuses.current.hand !== game.dice) paidBonuses.current = { hand: game.dice, keys: new Set() };
+    const keys = paidBonuses.current.keys;
+    const unpaid = (game.tableBonuses ?? []).filter((b) => !b.paid);
     if (rolling || !unpaid.length) return;
-    setGame((g) => (g.flowerBonuses ? { ...g, flowerBonuses: g.flowerBonuses.map((b) => ({ ...b, paid: true })) } : g));
-    const due = unpaid.filter((b) => !keys.has(`${b.seat}${b.name}`));
+    setGame((g) => (g.tableBonuses ? { ...g, tableBonuses: g.tableBonuses.map((b) => ({ ...b, paid: true })) } : g));
+    // Keyed by place in the list, which only grows during a hand.
+    const all = game.tableBonuses ?? [];
+    const due = unpaid.filter((b) => !keys.has(String(all.indexOf(b))));
     if (!due.length) return;
-    for (const b of due) keys.add(`${b.seat}${b.name}`);
+    for (const b of due) keys.add(String(all.indexOf(b)));
     setTotals((t) => t.map((v, i) => v + due.reduce((sum, b) => sum + b.deltas[i], 0)));
     const last = due[due.length - 1];
     showBurst(last.seat, `${last.name} +${last.deltas[last.seat]}`);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rolling, game.flowerBonuses]);
+  }, [rolling, game.tableBonuses]);
   // How long the roll shows - timed on its own, so a re-run of the effect
   // above (which skips a deal it has seen) can't leave it showing forever.
   useEffect(() => {

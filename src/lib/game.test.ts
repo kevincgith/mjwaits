@@ -304,7 +304,7 @@ describe("flower bonuses", () => {
     const bonus = (kind: "flower" | "season", rank: 1 | 2 | 3 | 4) => ({ bonus: { kind, rank } });
     // Seat 0 is dealt 1f 2f 3s at the start and 4s straight after.
     const s = dealHand({ dealer: 0, roundWind: 1, dealerStreak: 0 }, [bonus("flower", 1), bonus("flower", 2), bonus("season", 3), bonus("season", 4), ...wall]);
-    expect(s.flowerBonuses).toEqual([{ seat: 0, name: "草", deltas: [9, -3, -3, -3], paid: false }]);
+    expect(s.tableBonuses).toEqual([{ seat: 0, name: "草", deltas: [9, -3, -3, -3], paid: false }]);
   });
 });
 
@@ -323,7 +323,22 @@ describe("7搶1 / 1搶7", () => {
     const wall = [b("flower", 1), ...tiles.slice(0, 15), b("flower", 2), b("flower", 3), b("flower", 4), b("season", 1), b("season", 2), b("season", 3), b("season", 4), ...tiles.slice(15)];
     const s = dealHand({ dealer: 0, roundWind: 1, dealerStreak: 0 }, wall);
     expect(s.players.map((p) => p.flowers.length)).toEqual([1, 7, 0, 0]);
-    expect(s.flowerBonuses?.find((x) => x.name === "7搶1")).toEqual({ seat: 1, name: "7搶1", deltas: [-30, 30, 0, 0], paid: false });
+    expect(s.tableBonuses?.find((x) => x.name === "7搶1")).toEqual({ seat: 1, name: "7搶1", deltas: [-30, 30, 0, 0], paid: false });
   });
 });
 
+
+describe("暗槓", () => {
+  it("declaring a concealed kong collects 5 from each player, every time", () => {
+    const s0 = newGame();
+    s0.tableBonuses = undefined;
+    s0.phase = { kind: "turn", seat: 0, drawn: null, replacement: null };
+    s0.players[0].hand = parseHand("1111m2222m333t55b789t");
+    const s1 = applyTurnMove(s0, { kind: "concealedKong", tile: parseHand("1m")[0] });
+    // (The replacement draw may bring flower bonuses of its own.)
+    expect(s1.tableBonuses?.filter((b) => b.name === "暗槓")).toEqual([{ seat: 0, name: "暗槓", deltas: [15, -5, -5, -5], paid: false }]);
+    if (s1.phase.kind !== "turn") throw new Error("still their turn");
+    const s2 = applyTurnMove({ ...s1, phase: { ...s1.phase, seat: 0 } }, { kind: "concealedKong", tile: parseHand("2m")[0] });
+    expect(s2.tableBonuses?.filter((b) => b.name === "暗槓")).toHaveLength(2);
+  });
+});

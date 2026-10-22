@@ -432,6 +432,7 @@ held upright is asked to turn sideways.
     the seven collects off the one.
   - **1搶7** (30): one player holds seven and another draws the last - the one
     collects off the seven.
+- **暗槓:** each concealed kong collects 5 from each other player as it's declared.
 - **聽:** whenever your hand is ready, the bottom band shows each tile you're waiting on and
   how many of it are still unseen (struck through when none are left).
 - **Look:** menus, sheets and the result card share the table's dark lacquer and gold, so
