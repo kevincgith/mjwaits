@@ -137,7 +137,9 @@ def rl(args):
     styles = manifest["styles"]
     device = "mps" if torch.backends.mps.is_available() else "cpu"
     model = load_model(args.init, O, A, styles, args.width, device)
-    ref = load_model(args.init, O, A, styles, args.width, device).eval()
+    # The anchor: the network every round should stay close to - the original
+    # imitation network, not just the previous round, so drift can't build up.
+    ref = load_model(args.ref or args.init, O, A, styles, args.width, device).eval()
     for p in ref.parameters():
         p.requires_grad_(False)
     reward = shaped_reward(styles, meta, extra)
@@ -177,7 +179,7 @@ def rl(args):
         pg_m, kl_m, v_m = np.mean(stats, axis=0)
         print(f"epoch {epoch + 1}/{args.epochs}  {time.time() - t0:.0f}s  policy {pg_m:+.4f}  KL to start {kl_m:.4f}  value {v_m:.4f}")
     init_meta = json.load(open(os.path.join(args.init, "meta.json")))
-    export(model, O, A, args.out, styles, {"arch": init_meta.get("arch", "mlp"), "width": init_meta.get("width", args.width), "planes": init_meta.get("planes"), "init": args.init, "data": args.data, "samples": int(n), "rl": True})
+    export(model, O, A, args.out, styles, {"arch": init_meta.get("arch", "mlp"), "width": init_meta.get("width", args.width), "planes": init_meta.get("planes"), "init": args.init, "ref": args.ref or args.init, "data": args.data, "samples": int(n), "rl": True})
 
 
 class TilePolicy(nn.Module):
@@ -241,6 +243,7 @@ def main():
     ap.add_argument("--planes", type=int, default=None, help="per-kind planes (else from the data manifest)")
     ap.add_argument("--rl", action="store_true", help="PPO on self-play data, starting from --init")
     ap.add_argument("--init", default="ml/runs/bc2")
+    ap.add_argument("--ref", default=None, help="network the KL penalty anchors to (default: --init)")
     ap.add_argument("--clip", type=float, default=0.2)
     ap.add_argument("--kl", type=float, default=0.05)
     args = ap.parse_args()

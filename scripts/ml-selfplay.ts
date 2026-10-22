@@ -1,4 +1,5 @@
 // npm run ml-selfplay -- --model ml/runs/bc2 [--hands 4000] [--session 16] [--temp 1] [--seed 1] [--out ml/data/sp1]
+//                        [--rules grandmaster,veteran,gambler]   (rule bots for two seats of every table)
 //
 // Stage 2 data: the network plays itself. Every seat is the network as a
 // random personality, sampling its moves (temperature 1 = as it believes),
@@ -18,8 +19,8 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { availableParallelism } from "node:os";
 import { isMainThread, parentPort, Worker, workerData } from "node:worker_threads";
 import * as ort from "onnxruntime-web/wasm";
-import { seededRng, type Rng } from "../src/lib/bots";
-import { applyTurnMove, dealHand, fullWall, nextHand, resolveClaims, SEATS, type Claim, type GameState, type WallTile } from "../src/lib/game";
+import { botClaimFor, botSurrenders, botTurnMoveFor, profileById, seededRng, type BotProfile, type Rng } from "../src/lib/bots";
+import { applyTurnMove, dealHand, fullWall, nextHand, resolveClaims, SEATS, surrender, type Claim, type GameState, type WallTile } from "../src/lib/game";
 import { actionToClaim, actionToTurnMove, encodeObservation, legalActions, NUM_ACTIONS, NUM_PLANES, OBS_SIZE } from "../src/lib/ml/encode";
 import { sample } from "../src/lib/ml/policy";
 
@@ -34,7 +35,10 @@ function shuffledWall(rng: Rng): WallTile[] {
   return w;
 }
 
-async function selfPlay(modelDir: string, hands: number, session: number, temperature: number, seed: number) {
+// `rules`: rule bots to seat at two of the four places at every table (random
+// seats, random picks), so the network doesn't only learn to beat itself.
+// Their decisions aren't recorded.
+async function selfPlay(modelDir: string, hands: number, session: number, temperature: number, seed: number, rules: BotProfile[]) {
   const meta = JSON.parse(readFileSync(`${modelDir}/meta.json`, "utf8")) as { styles: string[]; obsSize: number; numActions: number };
   if (meta.obsSize !== OBS_SIZE || meta.numActions !== NUM_ACTIONS) throw new Error("Model was trained on a different encoding");
   ort.env.wasm.numThreads = 1;
@@ -71,6 +75,12 @@ async function selfPlay(modelDir: string, hands: number, session: number, temper
   let played = 0;
   while (played < hands) {
     const styles = Array.from({ length: SEATS }, () => Math.floor(rng() * meta.styles.length));
+    // Which seats are rule bots this session (none without --rules).
+    const ruleSeat: (BotProfile | null)[] = [null, null, null, null];
+    if (rules.length) {
+      const seats = [0, 1, 2, 3].sort(() => rng() - 0.5).slice(0, 2);
+      for (const seat of seats) ruleSeat[seat] = rules[Math.floor(rng() * rules.length)];
+    }
     const sessionStart = metaOut.length / META;
     const sessionNet = [0, 0, 0, 0];
     let s: GameState = dealHand({ dealer: Math.floor(rng() * SEATS), roundWind: 1, dealerStreak: 0 }, shuffledWall(rng));
@@ -79,12 +89,20 @@ async function selfPlay(modelDir: string, hands: number, session: number, temper
       for (let steps = 0; s.phase.kind !== "over" && steps < 2000; steps++) {
         if (s.phase.kind === "turn") {
           const seat = s.phase.seat;
+          if (ruleSeat[seat]) {
+            s = applyTurnMove(s, botTurnMoveFor(s, ruleSeat[seat]!, rng));
+            continue;
+          }
           const d = (await decide(s, seat, styles[seat]))!;
           if (d.record) pending.push({ obs: d.obs, mask: d.mask, action: d.action, logp: d.logp, kind: 0, seat });
           s = applyTurnMove(s, actionToTurnMove(s, d.action));
         } else {
           const claims: (Claim | null)[] = [];
           for (let seat = 0; seat < SEATS; seat++) {
+            if (ruleSeat[seat]) {
+              claims.push(botClaimFor(s, seat, ruleSeat[seat]!, rng));
+              continue;
+            }
             const d = await decide(s, seat, styles[seat]);
             if (d?.record) pending.push({ obs: d.obs, mask: d.mask, action: d.action, logp: d.logp, kind: 1, seat });
             claims.push(d ? actionToClaim(s, seat, d.action) : null);
@@ -101,6 +119,7 @@ async function selfPlay(modelDir: string, hands: number, session: number, temper
         metaOut.push(x.action, styles[x.seat], r.deltas[x.seat], 0, x.kind, x.seat);
         extraOut.push(x.logp, r.winner === x.seat ? (r.score?.total ?? 0) : 0, r.from === x.seat ? 1 : 0, s.players[x.seat].discards.length);
       }
+      for (let seat = 0; seat < SEATS; seat++) if (ruleSeat[seat]) for (const holder of botSurrenders(s, seat, ruleSeat[seat]!)) s = surrender(s, holder, seat);
       s = nextHand(s, shuffledWall(rng));
     }
     for (let i = sessionStart; i < metaOut.length / META; i++) metaOut[i * META + 3] = sessionNet[metaOut[i * META + 5]];
@@ -118,6 +137,7 @@ if (isMainThread) {
   const hands = Number(opt("hands", "4000"));
   const session = Number(opt("session", "16"));
   const temperature = Number(opt("temp", "1"));
+  const rules = opt("rules", "");
   const seed = Number(opt("seed", "1"));
   const out = opt("out", "ml/data/sp1");
   const workers = Math.min(availableParallelism(), Math.max(1, Math.ceil(hands / session)));
@@ -128,7 +148,7 @@ if (isMainThread) {
     per.map(
       (n, w) =>
         new Promise<{ n: number; styles: string[] }>((resolve, reject) => {
-          const worker = new Worker(new URL(import.meta.url), { workerData: { model, hands: n, session, temperature, seed: seed * 1000 + w, out, w } });
+          const worker = new Worker(new URL(import.meta.url), { workerData: { model, hands: n, session, temperature, seed: seed * 1000 + w, out, w, rules } });
           worker.once("message", resolve);
           worker.once("error", reject);
         })
@@ -159,8 +179,8 @@ if (isMainThread) {
   );
   console.log(`${total.toLocaleString()} self-play decisions from ${hands} hands in ${((Date.now() - t0) / 1000).toFixed(0)}s -> ${out}`);
 } else {
-  const { model, hands, session, temperature, seed, out, w } = workerData as { model: string; hands: number; session: number; temperature: number; seed: number; out: string; w: number };
-  const { obsOut, maskOut, metaOut, extraOut, styles } = await selfPlay(model, hands, session, temperature, seed);
+  const { model, hands, session, temperature, seed, out, w, rules } = workerData as { model: string; hands: number; session: number; temperature: number; seed: number; out: string; w: number; rules: string };
+  const { obsOut, maskOut, metaOut, extraOut, styles } = await selfPlay(model, hands, session, temperature, seed, rules ? rules.split(",").map(profileById) : []);
   const n = obsOut.length;
   const O = new Uint8Array(n * OBS_SIZE);
   const M = new Uint8Array(n * NUM_ACTIONS);
