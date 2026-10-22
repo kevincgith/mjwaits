@@ -41,8 +41,8 @@ def describe(run_id):
 
 
 def run_state():
-    out = subprocess.run(["bash", "ml/ctl.sh", "status"], cwd=ROOT, capture_output=True, text=True).stdout
-    return out.splitlines()[0] if out else "unknown"
+    out = subprocess.run(["bash", "ml/ctl.sh", "status", "perHand"], cwd=ROOT, capture_output=True, text=True).stdout
+    return out.splitlines()[0].split(": ")[-1] if out else "unknown"
 
 
 def read_state():
@@ -142,7 +142,7 @@ class Handler(BaseHTTPRequestHandler):
         cmd = self.path.rsplit("/", 1)[-1]
         if not self.path.startswith("/ctl/") or cmd not in ("pause", "resume", "stop", "start"):
             return self.send(404, "not found", "text/plain")
-        out = subprocess.run(["bash", "ml/ctl.sh", cmd], cwd=ROOT, capture_output=True, text=True)
+        out = subprocess.run(["bash", "ml/ctl.sh", cmd, "perHand"], cwd=ROOT, capture_output=True, text=True)
         self.send(200, json.dumps({"out": (out.stdout + out.stderr).strip()}), "application/json")
 
     def log_message(self, *args):

@@ -5,13 +5,19 @@
 // seat - and prints the usual table. "ml:<style>" seats are the network
 // playing as that personality; anything else is a rule bot (or "basic").
 // Runs on one thread (the network's runtime is async and single-session).
+//
+// --match <hands> [--goal 0.5]: sessions are match days of that many hands
+// (a v2 network gets the match inputs - scoreboard, goal, opponents' stats),
+// and each seat's finishing places are reported too: 1st-place rate, average
+// place, and the day's utility at that goal (match.ts).
 
 import { readFileSync } from "node:fs";
 import * as ort from "onnxruntime-web/wasm";
 import { BASELINE, emptyStats, formatArena, type ArenaResult, type BotStats } from "../src/lib/arena";
 import { botClaimFor, botSurrenders, botTurnMoveFor, profileById, seededRng, type BotProfile, type Rng } from "../src/lib/bots";
 import { applyTurnMove, botClaim, botTurnMove, dealHand, fullWall, nextHand, resolveClaims, SEATS, surrender, type Claim, type GameState, type TurnMove, type WallTile } from "../src/lib/game";
-import { NUM_ACTIONS, OBS_SIZE } from "../src/lib/ml/encode";
+import { NUM_ACTIONS, OBS_SIZE, OBS_SIZE_MATCH } from "../src/lib/ml/encode";
+import { afterHand, matchUtility, newMatch, type MatchContext } from "../src/lib/ml/match";
 import { learnedClaim, learnedTurnMove, type LearnedBot } from "../src/lib/ml/policy";
 
 const args = process.argv.slice(2);
@@ -22,17 +28,23 @@ const opt = (name: string, fallback: string) => {
 const modelDir = opt("model", "ml/runs/bc1");
 const ids = opt("bots", "ml:veteran,veteran,basic,gambler").split(",");
 const walls = Number(opt("walls", "64"));
-const session = Number(opt("session", "16"));
+const matchLength = Number(opt("match", "0"));
+const goal = Number(opt("goal", "0.5"));
+const session = matchLength || Number(opt("session", "16"));
 const temperature = Number(opt("temp", "0"));
 const seed = Number(opt("seed", "1"));
 
 const meta = JSON.parse(readFileSync(`${modelDir}/meta.json`, "utf8")) as { styles: string[]; obsSize: number; numActions: number };
-if (meta.obsSize !== OBS_SIZE || meta.numActions !== NUM_ACTIONS) throw new Error("Model was trained on a different encoding");
+if ((meta.obsSize !== OBS_SIZE && meta.obsSize !== OBS_SIZE_MATCH) || meta.numActions !== NUM_ACTIONS) throw new Error("Model was trained on a different encoding");
+const v2 = meta.obsSize === OBS_SIZE_MATCH;
+if (v2 && !matchLength) throw new Error("A match-day (v2) network needs --match <hands>");
+// The match in play, as the table sees it.
+let current: MatchContext = newMatch(session, goal);
 ort.env.wasm.numThreads = 1;
 const net = await ort.InferenceSession.create(readFileSync(`${modelDir}/policy.onnx`));
 const run = async (obs: Float32Array, style: number, mask: Float32Array) => {
   const out = await net.run({
-    obs: new ort.Tensor("float32", obs, [1, OBS_SIZE]),
+    obs: new ort.Tensor("float32", obs, [1, obs.length]),
     style: new ort.Tensor("int64", BigInt64Array.from([BigInt(style)]), [1]),
     mask: new ort.Tensor("float32", mask, [1, NUM_ACTIONS]),
   });
@@ -45,7 +57,7 @@ const seatsSpec: Seat[] = ids.map((id) => {
     const style = meta.styles.indexOf(id.slice(3));
     if (style < 0) throw new Error(`Unknown style ${id}; the model knows ${meta.styles.join(", ")}`);
     const base = profileById(id.slice(3));
-    return { kind: "ml", bot: { run, style, temperature }, profile: { ...base, id, name: `學 ${base.name.split(" ").slice(1).join(" ")} (net)` } };
+    return { kind: "ml", bot: { run, style, temperature, ...(v2 ? { match: () => current } : {}) }, profile: { ...base, id, name: `學 ${base.name.split(" ").slice(1).join(" ")} (net)` } };
   }
   return { kind: "rule", profile: id === "basic" ? BASELINE : profileById(id) };
 });
@@ -69,12 +81,14 @@ const rng = seededRng(seed);
 const stats: BotStats[] = seatsSpec.map((s) => emptyStats(s.profile));
 let hands = 0;
 let draws = 0;
+const places = seatsSpec.map(() => ({ days: 0, first: 0, placeSum: 0, utility: 0 }));
 for (let w = 0; w < walls; w += session) {
   const sessionWalls = Array.from({ length: Math.min(session, walls - w) }, () => shuffledWall(rng));
   for (let rot = 0; rot < SEATS; rot++) {
     const at = (seat: number) => (seat - rot + SEATS) % SEATS;
     const seats = Array.from({ length: SEATS }, (_, seat) => seatsSpec[at(seat)]);
     let s: GameState = dealHand({ dealer: (w / session) % SEATS, roundWind: 1, dealerStreak: 0 }, sessionWalls[0].slice());
+    current = newMatch(session, goal);
     for (let h = 0; h < sessionWalls.length; h++) {
       for (let steps = 0; s.phase.kind !== "over" && steps < 2000; steps++) {
         if (s.phase.kind === "turn") s = applyTurnMove(s, await turnMove(seats[s.phase.seat], s, rng));
@@ -86,6 +100,7 @@ for (let w = 0; w < walls; w += session) {
       }
       hands++;
       if (s.phase.kind !== "over") break;
+      current = afterHand(current, s);
       const r = s.phase.result;
       for (let seat = 0; seat < SEATS; seat++) {
         const st = stats[at(seat)];
@@ -111,7 +126,26 @@ for (let w = 0; w < walls; w += session) {
       }
       s = nextHand(s, sessionWalls[h + 1].slice());
     }
+    if (matchLength && current.hand === sessionWalls.length) {
+      for (let seat = 0; seat < SEATS; seat++) {
+        const pl = places[at(seat)];
+        const place = current.totals.filter((t) => t > current.totals[seat]).length;
+        pl.days++;
+        pl.first += place === 0 ? 1 : 0;
+        pl.placeSum += place + 1;
+        pl.utility += matchUtility(current.totals, seat, goal);
+      }
+    }
   }
 }
 const result: ArenaResult = { hands, draws, stats, ms: Date.now() - t0 };
 console.log(formatArena(result));
+if (matchLength) {
+  console.log(`\nMatch days of ${matchLength} hands, goal ${goal}:`);
+  console.log("Bot                    Days   1st   Avg place   Utility/day");
+  seatsSpec.forEach((sp, i) => {
+    const pl = places[i];
+    if (!pl.days) return;
+    console.log(`${sp.profile.name.padEnd(22)} ${String(pl.days).padStart(4)} ${((pl.first / pl.days) * 100).toFixed(1).padStart(5)}%   ${(pl.placeSum / pl.days).toFixed(2).padStart(9)}   ${(pl.utility / pl.days).toFixed(1).padStart(11)}`);
+  });
+}

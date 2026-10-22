@@ -21,6 +21,10 @@
 //   meta-w.i32  N x 6  action, style, hand net, session net, kind, seat
 //   extra-w.f32 N x 4  log-prob of the action, own win tai, dealt in (0/1), discards made
 // and manifest.json.
+//
+// A v2 model (trained with match-day inputs, encode.ts OBS_SIZE_MATCH)
+// plays match days instead of sessions, as ml-data.ts --match does, and the
+// hands-w.f32 / link-w.i32 files are written alongside.
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { availableParallelism } from "node:os";
@@ -28,10 +32,12 @@ import { isMainThread, parentPort, Worker, workerData } from "node:worker_thread
 import * as ort from "onnxruntime-web/wasm";
 import { botClaimFor, botSurrenders, botTurnMoveFor, profileById, seededRng, type BotProfile, type Rng } from "../src/lib/bots";
 import { applyTurnMove, dealHand, fullWall, nextHand, resolveClaims, SEATS, surrender, type Claim, type GameState, type WallTile } from "../src/lib/game";
-import { actionToClaim, actionToTurnMove, claimDecisionAction, encodeObservation, legalActions, NUM_ACTIONS, NUM_PLANES, OBS_SIZE, turnMoveAction } from "../src/lib/ml/encode";
+import { actionToClaim, actionToTurnMove, claimDecisionAction, encodeObservation, legalActions, NUM_ACTIONS, NUM_PLANES, OBS_SIZE, OBS_SIZE_MATCH, turnMoveAction } from "../src/lib/ml/encode";
+import { afterHand, randomMatch, type MatchContext } from "../src/lib/ml/match";
 import { sample } from "../src/lib/ml/policy";
 
 const META = 6;
+const HAND_ROW = 15;
 
 function shuffledWall(rng: Rng): WallTile[] {
   const w = fullWall();
@@ -47,7 +53,11 @@ function shuffledWall(rng: Rng): WallTile[] {
 // Their decisions aren't recorded.
 async function selfPlay(modelDir: string, hands: number, session: number, temperature: number, seed: number, rules: BotProfile[], teacher: boolean) {
   const meta = JSON.parse(readFileSync(`${modelDir}/meta.json`, "utf8")) as { styles: string[]; obsSize: number; numActions: number };
-  if (meta.obsSize !== OBS_SIZE || meta.numActions !== NUM_ACTIONS) throw new Error("Model was trained on a different encoding");
+  if ((meta.obsSize !== OBS_SIZE && meta.obsSize !== OBS_SIZE_MATCH) || meta.numActions !== NUM_ACTIONS) throw new Error("Model was trained on a different encoding");
+  const matchDays = meta.obsSize === OBS_SIZE_MATCH;
+  const handRows: number[] = [];
+  const links: number[] = [];
+  let match: MatchContext | undefined;
   ort.env.wasm.numThreads = 1;
   const net = await ort.InferenceSession.create(readFileSync(`${modelDir}/policy.onnx`));
   const rng = seededRng(seed);
@@ -64,9 +74,9 @@ async function selfPlay(modelDir: string, hands: number, session: number, temper
     let options = 0;
     for (const m of mask) options += m;
     if (options === 0) return null;
-    const obs = encodeObservation(s, seat);
+    const obs = encodeObservation(s, seat, match);
     const out = await net.run({
-      obs: new ort.Tensor("float32", Float32Array.from(obs), [1, OBS_SIZE]),
+      obs: new ort.Tensor("float32", Float32Array.from(obs), [1, obs.length]),
       style: new ort.Tensor("int64", BigInt64Array.from([BigInt(style)]), [1]),
       mask: new ort.Tensor("float32", Float32Array.from(mask), [1, NUM_ACTIONS]),
     });
@@ -92,8 +102,12 @@ async function selfPlay(modelDir: string, hands: number, session: number, temper
     }
     const sessionStart = metaOut.length / META;
     const sessionNet = [0, 0, 0, 0];
+    match = matchDays ? randomMatch(rng) : undefined;
+    const matchRowStart = handRows.length / HAND_ROW;
+    const length = match ? match.length - match.hand : session;
     let s: GameState = dealHand({ dealer: Math.floor(rng() * SEATS), roundWind: 1, dealerStreak: 0 }, shuffledWall(rng));
-    for (let h = 0; h < session && played < hands; h++, played++) {
+    let h = 0;
+    for (; h < length && played < hands; h++, played++) {
       const pending: { obs: Uint8Array; mask: Uint8Array; action: number; logp: number; kind: number; seat: number }[] = [];
       for (let steps = 0; s.phase.kind !== "over" && steps < 2000; steps++) {
         if (s.phase.kind === "turn") {
@@ -128,13 +142,22 @@ async function selfPlay(modelDir: string, hands: number, session: number, temper
         maskOut.push(x.mask);
         metaOut.push(x.action, styles[x.seat], r.deltas[x.seat], 0, x.kind, x.seat);
         extraOut.push(x.logp, r.winner === x.seat ? (r.score?.total ?? 0) : 0, r.from === x.seat ? 1 : 0, s.players[x.seat].discards.length);
+        if (match) links.push(handRows.length / HAND_ROW);
+      }
+      if (match) {
+        const before = match.totals;
+        match = afterHand(match, s);
+        handRows.push(match.goal, match.hand - 1, match.length, ...before, ...match.totals, 0, 0, 0, 0);
       }
       for (let seat = 0; seat < SEATS; seat++) if (ruleSeat[seat]) for (const holder of botSurrenders(s, seat, ruleSeat[seat]!)) s = surrender(s, holder, seat);
       s = nextHand(s, shuffledWall(rng));
     }
     for (let i = sessionStart; i < metaOut.length / META; i++) metaOut[i * META + 3] = sessionNet[metaOut[i * META + 5]];
+    // Where the match ended, for every hand of it (NaN if it was cut short).
+    const done = h >= length;
+    if (match) for (let r = matchRowStart; r < handRows.length / HAND_ROW; r++) for (let k = 0; k < 4; k++) handRows[r * HAND_ROW + 11 + k] = done ? match.totals[k] : NaN;
   }
-  return { obsOut, maskOut, metaOut, extraOut, styles: meta.styles };
+  return { obsOut, maskOut, metaOut, extraOut, handRows, links, matchDays, styles: meta.styles };
 }
 
 if (isMainThread) {
@@ -155,6 +178,7 @@ if (isMainThread) {
   // availableParallelism() at a time: a worker that plays thousands of
   // hands grows the network runtime's memory until Node crashes.
   const JOB_HANDS = 500;
+  const modelMeta = JSON.parse(readFileSync(`${model}/meta.json`, "utf8")) as { obsSize: number };
   const jobs = Array.from({ length: Math.ceil(hands / JOB_HANDS) }, (_, j) => Math.min(JOB_HANDS, hands - j * JOB_HANDS));
   mkdirSync(out, { recursive: true });
   const t0 = Date.now();
@@ -180,7 +204,8 @@ if (isMainThread) {
     `${out}/manifest.json`,
     JSON.stringify(
       {
-        obsSize: OBS_SIZE,
+        obsSize: modelMeta.obsSize,
+        ...(modelMeta.obsSize === OBS_SIZE_MATCH ? { match: true } : {}),
         numPlanes: NUM_PLANES,
         numActions: NUM_ACTIONS,
         meta: ["action", "style", "handNet", "sessionNet", "kind", "seat"],
@@ -201,15 +226,20 @@ if (isMainThread) {
   console.log(`${total.toLocaleString()} self-play decisions from ${hands} hands in ${((Date.now() - t0) / 1000).toFixed(0)}s -> ${out}`);
 } else {
   const { model, hands, session, temperature, seed, out, w, rules, teacher } = workerData as { model: string; hands: number; session: number; temperature: number; seed: number; out: string; w: number; rules: string; teacher: boolean };
-  const { obsOut, maskOut, metaOut, extraOut, styles } = await selfPlay(model, hands, session, temperature, seed, rules ? rules.split(",").map(profileById) : [], teacher);
+  const { obsOut, maskOut, metaOut, extraOut, handRows, links, matchDays, styles } = await selfPlay(model, hands, session, temperature, seed, rules ? rules.split(",").map(profileById) : [], teacher);
   const n = obsOut.length;
-  const O = new Uint8Array(n * OBS_SIZE);
+  const size = matchDays ? OBS_SIZE_MATCH : OBS_SIZE;
+  const O = new Uint8Array(n * size);
   const M = new Uint8Array(n * NUM_ACTIONS);
-  obsOut.forEach((o, i) => O.set(o, i * OBS_SIZE));
+  obsOut.forEach((o, i) => O.set(o, i * size));
   maskOut.forEach((m, i) => M.set(m, i * NUM_ACTIONS));
   writeFileSync(`${out}/obs-${w}.u8`, O);
   writeFileSync(`${out}/mask-${w}.u8`, M);
   writeFileSync(`${out}/meta-${w}.i32`, new Int32Array(metaOut));
   writeFileSync(`${out}/extra-${w}.f32`, new Float32Array(extraOut));
+  if (matchDays) {
+    writeFileSync(`${out}/hands-${w}.f32`, new Float32Array(handRows));
+    writeFileSync(`${out}/link-${w}.i32`, new Int32Array(links));
+  }
   parentPort!.postMessage({ n, styles });
 }

@@ -6,6 +6,7 @@
 
 import type { Claim, GameState, TurnMove } from "../game";
 import { actionToClaim, actionToTurnMove, encodeObservation, legalActions, NUM_ACTIONS, OBS_SIZE } from "./encode";
+import type { MatchContext } from "./match";
 
 // Runs the network on a batch of one: the raw observation, the style id and
 // the legal mask in; logits (illegal at -1e9) and the value out.
@@ -18,12 +19,15 @@ export interface LearnedBot {
   // Sampling temperature: 0 always plays the top move; around 0.5-1 plays
   // like the data, mistakes included.
   temperature: number;
+  // A v2 network (trained with match-day inputs) needs the match it's
+  // playing; called at each decision for the current one.
+  match?: () => MatchContext;
 }
 
 async function decide(bot: LearnedBot, s: GameState, seat: number, rng: () => number): Promise<{ action: number; value: number } | null> {
   const mask = legalActions(s, seat);
   if (!mask.some(Boolean)) return null;
-  const obs = Float32Array.from(encodeObservation(s, seat));
+  const obs = Float32Array.from(encodeObservation(s, seat, bot.match?.()));
   const { logits, value } = await bot.run(obs, bot.style, Float32Array.from(mask));
   return { action: sample(logits, mask, bot.temperature, rng), value };
 }

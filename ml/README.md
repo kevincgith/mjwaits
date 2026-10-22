@@ -28,6 +28,29 @@ ml/.venv/bin/python ml/train.py --data ml/data/run1 --out ml/runs/bc1 --epochs 6
 npm run ml-eval -- --model ml/runs/bc1 --bots ml:grandmaster,grandmaster,basic,gambler --walls 64
 ```
 
+### Two runs: perHand and matchDay
+
+- **perHand** (`ml/long.sh`, encoding v1): plays each hand for the most tai.
+  It never sees the scoreboard.
+- **matchDay** (`ml/matchday.sh`, encoding v2): plays for the day's result.
+  On top of the hand it sees the match context (`src/lib/ml/match.ts`): its
+  total and the gaps to the others, its place, hands left in a 60-100-hand day,
+  each opponent's record so far (win, deal-in, call, 叮 and big-win rates, average
+  win), and a **goal dial** - 0 is pure tai, 1 makes placing count most (finishing
+  1st is worth +300 on top of the tai, 4th −300). Training plays every setting,
+  so one network can be asked for any of them.
+  - Half its match days start part-way, with a random scoreboard, so late,
+    lopsided days come up often.
+  - Its reward is how much a hand moved the expected end of the day: a small
+    board-value network (`train.py`, Suphx's "global reward prediction") learns
+    what a scoreboard is worth from finished matches. A late deal-in while
+    leading then costs what it really costs.
+  - It's scored on 64-hand match days at goal 0.5 (utility per hand), and
+    `ml-eval --match <hands> --goal <g>` reports 1st-place rates for any network.
+
+`ml/ctl.sh start|pause|resume|stop|status [perHand|matchDay]` controls either
+(both when not named).
+
 ### The long run
 
 ```bash

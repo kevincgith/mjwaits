@@ -27,6 +27,7 @@ import {
 } from "../game";
 import { profileById, rateDiscardsFor } from "../bots";
 import { allTileKinds, shanten, tileKey, type Tile } from "../mahjong";
+import { matchScalars, NUM_MATCH_SCALARS, type MatchContext } from "./match";
 
 export const KINDS = allTileKinds();
 export const NUM_KINDS = KINDS.length; // 34
@@ -116,12 +117,15 @@ const SCALARS = [
 ] as const;
 export const NUM_SCALARS = SCALARS.length;
 export const OBS_SIZE = NUM_PLANES * NUM_KINDS + NUM_SCALARS;
+// Encoding v2: the same, with the match-day inputs (match.ts) after it.
+export const OBS_SIZE_MATCH = OBS_SIZE + NUM_MATCH_SCALARS;
 
 const cap = (x: number, hi = 255) => Math.max(0, Math.min(hi, Math.round(x)));
 
-// What `seat` sees at a decision point (its turn, or a discard it may claim).
-export function encodeObservation(s: GameState, seat: number): Uint8Array {
-  const out = new Uint8Array(OBS_SIZE);
+// What `seat` sees at a decision point (its turn, or a discard it may claim)
+// - and, given the match it's part of, the match-day inputs too (v2).
+export function encodeObservation(s: GameState, seat: number, match?: MatchContext): Uint8Array {
+  const out = new Uint8Array(match ? OBS_SIZE_MATCH : OBS_SIZE);
   const put = (plane: number, k: number, v: number) => {
     if (k >= 0) out[plane * NUM_KINDS + k] = cap(out[plane * NUM_KINDS + k] + v);
   };
@@ -184,6 +188,7 @@ export function encodeObservation(s: GameState, seat: number): Uint8Array {
     scalar(lahAddOn(s.lahs, o, seat).amount / 2);
     scalar(s.lahs?.find((l) => l.holder === String(o) && l.pulled === String(seat))?.count ?? 0);
   }
+  if (match) for (const v of matchScalars(match, seat)) scalar(v);
   return out;
 }
 
