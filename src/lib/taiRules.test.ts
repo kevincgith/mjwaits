@@ -287,3 +287,57 @@ describe("normalizeRules", () => {
     expect(normalizeRules(null)).toEqual({ rules: DEFAULT_TAI_RULES, corrupt: false });
   });
 });
+
+// 連刻 tiers (CHAIN_TIERS in scoring.ts): the longest tier that's switched on
+// wins; a shorter tier counts once per window no longer enabled tier contains.
+describe("連刻 tiers", () => {
+  const FIVE_CHAIN = "(111m)(222m)(333m)(444m)(555m)99t";
+  const FOUR_CHAIN = "(222m)(333m)(444m)(555m)789t11z";
+  const SMALL_FOUR = "(333m)(444m)(555m)22m123t789b";
+  const TWO_TWOS = "(222m)(333m)(777m)(888m)456t11z";
+
+  it("with only the house tiers on, a long chain counts as overlapping 大三連刻, as before", () => {
+    expect(tai(scoreHand(FIVE_CHAIN, ctx()), "big-three-consecutive-triplets")).toBe(90);
+    expect(tai(scoreHand(FOUR_CHAIN, ctx()), "big-three-consecutive-triplets")).toBe(60);
+    expect(tai(scoreHand(FIVE_CHAIN, ctx()), "consecutive-triplet-pair")).toBe(0);
+  });
+
+  it("a longer tier with a value counts once, and replaces the shorter ones", () => {
+    const five = scoreHand(FIVE_CHAIN, ctx(withRules({ "big-five-consecutive-triplets": { tai: 240 } })));
+    expect(tai(five, "big-five-consecutive-triplets")).toBe(240);
+    expect(tai(five, "big-three-consecutive-triplets")).toBe(0);
+    const four = scoreHand(FOUR_CHAIN, ctx(withRules({ "big-four-consecutive-triplets": { tai: 90 } })));
+    expect(tai(four, "big-four-consecutive-triplets")).toBe(90);
+    expect(tai(four, "big-three-consecutive-triplets")).toBe(0);
+  });
+
+  it("an enabled tier shorter than the chain counts once per overlapping window", () => {
+    const result = scoreHand(FIVE_CHAIN, ctx(withRules({ "big-four-consecutive-triplets": { tai: 60 } })));
+    expect(tai(result, "big-four-consecutive-triplets")).toBe(120);
+    expect(tai(result, "big-three-consecutive-triplets")).toBe(0);
+  });
+
+  it("small tiers work the same way: 小四連刻 off falls back to 小三 + 大三", () => {
+    const off = scoreHand(SMALL_FOUR, ctx());
+    expect(tai(off, "small-three-consecutive-triplets")).toBe(15);
+    expect(tai(off, "big-three-consecutive-triplets")).toBe(30);
+    const on = scoreHand(SMALL_FOUR, ctx(withRules({ "small-four-consecutive-triplets": { tai: 50 } })));
+    expect(tai(on, "small-four-consecutive-triplets")).toBe(50);
+    expect(tai(on, "small-three-consecutive-triplets")).toBe(0);
+    expect(tai(on, "big-three-consecutive-triplets")).toBe(0);
+  });
+
+  it("雙連刻: off, two separate 二連刻 count twice; on, it replaces them", () => {
+    expect(tai(scoreHand(TWO_TWOS, ctx()), "consecutive-triplet-pair")).toBe(10);
+    const on = scoreHand(TWO_TWOS, ctx(withRules({ "twin-consecutive-triplet-pairs": { tai: 20 } })));
+    expect(tai(on, "twin-consecutive-triplet-pairs")).toBe(20);
+    expect(tai(on, "consecutive-triplet-pair")).toBe(0);
+  });
+
+  it("雙連刻 needs two separate 二連刻, not two overlapping ones in a chain", () => {
+    const rules = withRules({ "big-three-consecutive-triplets": { tai: 0 }, "twin-consecutive-triplet-pairs": { tai: 20 } });
+    const result = scoreHand("(222m)(333m)(444m)456t789b11z", ctx(rules));
+    expect(tai(result, "twin-consecutive-triplet-pairs")).toBe(0);
+    expect(tai(result, "consecutive-triplet-pair")).toBe(10);
+  });
+});

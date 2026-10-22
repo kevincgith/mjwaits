@@ -1,7 +1,8 @@
 import { it } from "vitest";
 import { writeFileSync } from "node:fs";
 import path from "node:path";
-import { DEFAULT_TAI_RULES, parseScoringHand, PATTERNS, scoreParsedHand, type BonusTile, type GameContext, type TaiRules } from "../src/lib/scoring";
+import { parseScoringHand, PATTERNS, scoreParsedHand, type BonusTile, type GameContext } from "../src/lib/scoring";
+import { EXAMPLE_RULES } from "../src/lib/taiRules";
 import type { PatternExample } from "../src/lib/patternExamples";
 import { PATTERN_CATALOG } from "../src/lib/taiCatalog";
 import { TEST_HAND_BASE_CONTEXT, TEST_HANDS } from "../src/lib/testHands";
@@ -13,10 +14,9 @@ import { TEST_HAND_BASE_CONTEXT, TEST_HANDS } from "../src/lib/testHands";
 // hands (src/lib/patternExamples.test.ts checks every example still counts):
 //   UPDATE_EXAMPLES=1 npx vitest run scripts/pick-pattern-examples.test.ts
 
-// 正圈風 is worth 0 in the house list, so it never "counts" - pick and check
-// its example as if it were worth 2.
-const RULES: TaiRules = structuredClone(DEFAULT_TAI_RULES);
-RULES.patterns["correct-round-wind"].tai = 2;
+// Patterns the house list leaves at 0 are shown and checked as worth 1 -
+// see EXAMPLE_RULES.
+const RULES = EXAMPLE_RULES;
 
 // Hands for patterns no test hand shows on its own - mostly situations and
 // bonus tiles, which the tests check on hands busy with other patterns.
@@ -46,6 +46,13 @@ const EXTRA: PatternExample[] = [
   { hand: "(1111m)222b234t567t789b22z", ctx: { selfDraw: true, kongDraw: 1 } },
   { hand: PLAIN, ctx: { robKong: 1 } },
   { hand: PLAIN, ctx: { dealerStreak: 2 } },
+  // The longer 連刻 tiers and 雙連刻.
+  { hand: "22m333m444m555m123t789b" },
+  { hand: "222m333m444m555m789t11z" },
+  { hand: "22m333m444m555m666m789t" },
+  { hand: "111m222m333m444m555m99t" },
+  { hand: "11m222m333m444m555m666m" },
+  { hand: "222m333m777m888m456t11z" },
   { hand: "(123m)(222b)(234t)(567t)(789b)22z", ctx: { selfDraw: true } },
   { hand: "147m258t369b12345677z", ctx: { winningTile: { suit: "z", rank: 7 } } },
 ];

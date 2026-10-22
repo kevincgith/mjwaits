@@ -76,5 +76,5 @@ in that file). Confirm the definitions and the text can be made exact:
   - **對碰** - its example shows only the finished triplet; it should show the two pairs it was
     waiting on (the completed triplet plus the pair) and the wait list.
 - Still open from [docs/scoring-rules.md](docs/scoring-rules.md) ("Assumptions made without
-  explicit confirmation"): whether **二連刻** and **小三連刻** stack per instance, and whether the
-  三色連刻 / 三色步步高 / 三兄弟 families really never replace one another.
+  explicit confirmation"): whether the 三色連刻 / 三色步步高 / 三兄弟 families really never replace one
+  another. (二連刻 / 小三連刻 stacking is settled: 連刻 are now tiers.)

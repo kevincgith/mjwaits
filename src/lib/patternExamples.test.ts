@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_TAI_RULES, parseScoringHand, PATTERNS, scoreParsedHand, waitsBeforeWin, type GameContext, type TaiRules } from "./scoring";
+import { parseScoringHand, PATTERNS, scoreParsedHand, waitsBeforeWin, type GameContext } from "./scoring";
+import { EXAMPLE_RULES } from "./taiRules";
 import { PATTERN_EXAMPLES } from "./patternExamples";
 import { TEST_HAND_BASE_CONTEXT } from "./testHands";
 
@@ -7,9 +8,9 @@ import { TEST_HAND_BASE_CONTEXT } from "./testHands";
 // scripts/pick-pattern-examples.test.ts) must still show that pattern
 // counting - re-run the generator if a scoring change breaks one.
 
-// 正圈風 is worth 0 in the house list, so it never counts - check it as if 2.
-const RULES: TaiRules = structuredClone(DEFAULT_TAI_RULES);
-RULES.patterns["correct-round-wind"].tai = 2;
+// Patterns the house list leaves at 0 are shown and checked as worth 1 -
+// see EXAMPLE_RULES.
+const RULES = EXAMPLE_RULES;
 
 describe("設定's pattern examples", () => {
   it("has one for every pattern", () => {

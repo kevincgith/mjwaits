@@ -80,6 +80,15 @@ export function normalizeRules(saved: unknown): { rules: TaiRules; corrupt: bool
   };
 }
 
+/** The rules 設定's examples are shown and checked under: the house list,
+ *  with every pattern it leaves at 0 (正圈風, the longer 連刻 tiers…) worth
+ *  1 instead - an example is about showing a pattern counting at all. */
+export const EXAMPLE_RULES: TaiRules = (() => {
+  const rules = structuredClone(DEFAULT_TAI_RULES);
+  for (const rule of Object.values(rules.patterns)) if (rule.tai === 0 && !rule.table) rule.tai = 1;
+  return rules;
+})();
+
 // ---- Comparing with the house list ----
 
 const sameSet = (a: readonly string[], b: readonly string[]) => a.length === b.length && a.every((x) => b.includes(x));

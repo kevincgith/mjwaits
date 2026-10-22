@@ -173,6 +173,15 @@ export const PATTERN_CATALOG: Record<string, PatternClass> = {
   "consecutive-triplet-pair": { family: "consecutive", value: per(5) },
   "small-three-consecutive-triplets": { family: "consecutive", value: per(15) },
   "big-three-consecutive-triplets": { family: "consecutive", value: per(30) },
+  // Longer chains: worth 0 in the house list, so a long chain still counts
+  // as overlapping 大三連刻 windows until one of these is given a value
+  // (see CHAIN_TIERS in scoring.ts).
+  "small-four-consecutive-triplets": { family: "consecutive", value: per(0) },
+  "big-four-consecutive-triplets": { family: "consecutive", value: per(0) },
+  "small-five-consecutive-triplets": { family: "consecutive", value: per(0) },
+  "big-five-consecutive-triplets": { family: "consecutive", value: per(0) },
+  "small-six-consecutive-triplets": { family: "consecutive", value: per(0) },
+  "twin-consecutive-triplet-pairs": { family: "consecutive", value: flat(0), replaces: ["consecutive-triplet-pair"] },
   "half-flush": { family: "flush", value: flat(40) },
   "full-flush": { family: "flush", value: flat(120) },
   "cross-suit-same-run": { family: "cross-suit", value: per(3) },

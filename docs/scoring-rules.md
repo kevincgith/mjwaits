@@ -353,11 +353,30 @@ these use [duplicate-instance counting](#duplicate-instance-counting-清龍雜�
 
 ## Consecutive triplets
 
-| Pattern | Tai | Criteria | Excludes | Notes |
-|---|---|---|---|---|
-| 二連刻 (2 consecutive triplets/kongs) | 5 each | 2 triplets/kongs at consecutive ranks in one suit (e.g. `222m+333m`, triplet/kong mixed freely). No 明/暗 split. | — | **Stacks per adjacent pair** — 3 consecutive triplets (`222+333+444`) counts as 2 instances. Only discounts the pairs actually subsumed by 小/大三連刻 (whichever specific 3-rank window(s) those found) - a genuinely separate adjacent pair using up the hand's *other* melds still counts, e.g. `111m222m333m555t666t` claims 大三連刻 for the m-suit window but still separately scores 二連刻 for `555t+666t`. |
-| 小三連刻 (3 consecutive ranks, pair at one end) | 15 each | 3 consecutive ranks in one suit where the hand's pair sits at one end and the other 2 are triplets/kongs — e.g. `22m+333m+444m`. | — | Structurally different from 大三連刻 (needs the pair), so not mutually exclusive with it - confirmed. Its own claimed melds subtract from 二連刻's count (see that row) rather than a blanket exclude. **Stacks** across the pair's up-to-3 sliding windows (pair at the low end, middle, or high end) — e.g. `111m222m444m555m` around a `33m` pair scores 3 instances (all of low/middle/high qualify with triplets flanking on both sides), same reasoning as 大三連刻/清龍. |
-| 大三連刻 (3 consecutive triplets/kongs) | 30 each | Same 3-consecutive-rank shape, but all 3 are full triplets/kongs — pair not involved. | — | Its own claimed melds subtract from 二連刻's count (see that row) rather than a blanket exclude. **Stacks** across overlapping windows — `111m222m333m444m555m` scores 3 instances (`[1,2,3]`, `[2,3,4]`, `[3,4,5]`), same sliding-window reasoning as 二連刻/清龍. |
+連刻 are **tiers of one shape**: a window of neighbouring ranks in one suit, each holding a
+triplet/kong - or, for a 小 (small) tier, exactly one of them holding the hand's pair instead
+(anywhere in the window: `22 333 444` or `222 33 444`). No 明/暗 split.
+
+| Pattern | Tai | Window |
+|---|---|---|
+| 二連刻 | 5 each | 2 ranks, triplets |
+| 小三連刻 | 15 each | 3 ranks, 2 triplets + the pair |
+| 大三連刻 | 30 each | 3 ranks, triplets |
+| 小四連刻 | 0 (off) | 4 ranks, 3 triplets + the pair |
+| 大四連刻 | 0 (off) | 4 ranks, triplets |
+| 小五連刻 | 0 (off) | 5 ranks, 4 triplets + the pair |
+| 大五連刻 | 0 (off) | 5 ranks, triplets - the whole hand |
+| 小六連刻 | 0 (off) | 6 ranks, 5 triplets + the pair - the whole hand |
+| 雙連刻 | 0 (off) | two 二連刻 sharing no rank (e.g. `222 333 + 777 888`); replaces 二連刻 |
+
+**The longest tier that's switched on wins.** A window counts unless a window of a *larger*
+enabled tier contains it; a tier that's on but shorter than the chain counts once per overlapping
+window of its size. So with the house list (only 二 / 小三 / 大三 on), `111 222 333 444 555萬` is
+three overlapping 大三連刻 (`[1,2,3]`, `[2,3,4]`, `[3,4,5]`) = 90, and `222 333 444` scores 大三連刻
+alone (its two 二連刻 are inside it). Give 大五連刻 a value and the same hand is one 大五連刻; give
+大四連刻 a value (大五 still 0) and it's two overlapping 大四連刻. A separate chain in another suit
+counts on its own (`222 333 444萬 + 77 888 999筒` = 大三 + 小三). 雙連刻 off, two separate
+二連刻 simply count twice. See `CHAIN_TIERS` in [scoring.ts](../src/lib/scoring.ts).
 
 ## Cross-suit patterns
 
@@ -493,11 +512,8 @@ A batch of patterns went in quickly enough that a few exclusion/stacking decisio
 inference from precedent rather than direct confirmation - implemented and tested either way, but
 worth double-checking:
 
-- **二連刻 stacks** (3 consecutive triplets = 2 instances) - inferred from the same precedent as
-  老少上/二步高 rather than stated outright for this specific pattern.
-- **小三連刻 stacks across its up-to-3 sliding windows** - confirmed for 大三連刻 with a worked
-  example (`111m222m333m444m555m` = 3 instances); 小三連刻 was fixed the same way for consistency
-  (same sliding-window shape, just anchored to the pair) but not itself confirmed with an example.
+- **連刻 stacking** - settled: 連刻 are tiers, and the longest one switched on wins (see
+  Consecutive triplets); with the longer tiers off, long chains count as overlapping shorter ones.
 - **小/大三色連刻, 明/暗三色步步高, and 小/大三兄弟 don't exclude each other across families**
   (e.g. 小三色連刻 doesn't exclude 兩兄弟) - they check different shapes (consecutive vs. same
   rank, triplet vs. run) that can't structurally overlap, so no exclusion was added between them.

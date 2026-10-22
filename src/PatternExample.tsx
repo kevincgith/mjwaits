@@ -6,8 +6,9 @@ import { useMemo } from "react";
 import { BonusGlyphSpan, TileGlyphSpan } from "./TileGlyphs";
 import type { Tile } from "./lib/mahjong";
 import { PATTERN_EXAMPLES } from "./lib/patternExamples";
-import { DEFAULT_TAI_RULES, parseScoringHand, PATTERNS, scoreParsedHand, waitsBeforeWin, type GameContext, type TaiRules } from "./lib/scoring";
+import { parseScoringHand, PATTERNS, scoreParsedHand, waitsBeforeWin, type GameContext, type TaiRules } from "./lib/scoring";
 import { PATTERN_CATALOG } from "./lib/taiCatalog";
+import { EXAMPLE_RULES } from "./lib/taiRules";
 import { TEST_HAND_BASE_CONTEXT } from "./lib/testHands";
 
 const WINDS = ["東", "南", "西", "北"];
@@ -36,13 +37,6 @@ function situationChips(ctx: Partial<GameContext>): string[] {
 
 const WAIT_PATTERN_IDS: ReadonlySet<string> = new Set(["genuine-single-wait", "fake-single-wait"]);
 
-// The example's rules: the house list (正圈風 at 2, since at 0 it never
-// counts), so the hand reads the way the tests score it.
-const EXAMPLE_RULES: TaiRules = (() => {
-  const rules = structuredClone(DEFAULT_TAI_RULES);
-  rules.patterns["correct-round-wind"].tai = 2;
-  return rules;
-})();
 
 // One pattern's example, in the expanded rule: the tiles it's about where it
 // points at particular melds (三元牌, 般高…), the whole hand where it's about
