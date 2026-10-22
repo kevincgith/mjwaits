@@ -117,6 +117,26 @@ export interface GameState {
   // draw keeps every 拉 and any other win ends the holder's. Optional so
   // games saved before 拉 load.
   lahs?: Lah[];
+  // The dealer's three dice for this deal (see rollDice); absent when the
+  // wall was laid out in advance (the arena's duplicate deals).
+  dice?: Dice;
+  // What the dice pay before the first discard (圍骰), per seat, and whether
+  // the table has already paid it - so a reload can't pay it twice.
+  diceBonus?: { name: string; deltas: number[]; paid: boolean };
+  // Bonuses paid at the table during the hand - flowers (花 / 草 / 花草 /
+  // 八仙過海, 7搶1 / 1搶7, see flowerBonus), 暗槓, 追 and 嗌錯 - in the order they
+  // came, each marked once the table has paid it.
+  tableBonuses?: TableBonus[];
+  // The run of the same tile discarded seat after seat with no call between,
+  // toward 追 (see CHASE_PENALTY).
+  chase?: { seat: number; tile: Tile; run: number };
+}
+
+export interface TableBonus {
+  seat: number;
+  name: "花" | "草" | "花草" | "八仙過海" | "7搶1" | "1搶7" | "暗槓" | "追" | "嗌錯";
+  deltas: number[];
+  paid: boolean;
 }
 
 // Seats as the ledger names players, and its settlement with everything
@@ -215,6 +235,7 @@ function cloneState(s: GameState): GameState {
       ...(p.riichi ? { riichi: { ...p.riichi } } : {}),
     })),
     log: s.log.slice(),
+    ...(s.tableBonuses ? { tableBonuses: s.tableBonuses.slice() } : {}),
   };
 }
 
@@ -231,6 +252,10 @@ function drawInto(s: GameState, seat: number, fromBack: boolean): { tile: Tile |
     const w = back ? s.wall.pop()! : s.wall.shift()!;
     if ("bonus" in w) {
       s.players[seat].flowers.push(w.bonus);
+      const earned = flowerBonus(s.players[seat].flowers, (s.tableBonuses ?? []).filter((b) => b.seat === seat).map((b) => b.name));
+      for (const name of earned) (s.tableBonuses ??= []).push({ seat, name, deltas: collectFromEach(seat, FLOWER_BONUS[name]), paid: false });
+      const rob = flowerRobbery(s.players.map((p) => p.flowers.length), seat);
+      if (rob) (s.tableBonuses ??= []).push({ seat: rob.seat, name: rob.name, deltas: collectFromOne(rob.seat, rob.from, FLOWER_ROBBERY), paid: false });
       flowered = true;
       back = true;
       continue;
@@ -243,13 +268,123 @@ function drawInto(s: GameState, seat: number, fromBack: boolean): { tile: Tile |
 
 // ---- Dealing --------------------------------------------------------------
 
+// ---- Dice ---------------------------------------------------------------------
+
+export type Dice = [number, number, number];
+
+// The wall: 144 tiles in 72 stacks of two, 18 stacks in front of each seat.
+const STACKS_PER_SIDE = 18;
+
+// 圍骰: all three dice the same - the dealer collects this from each player.
+export const TRIPLE_DICE_BONUS = 5;
+// 蛇骰: a 1-2-3 (in any order) - the dealer, who rolled it, pays this to each.
+export const SNAKE_DICE_PENALTY = 5;
+
+// What a roll pays, per seat, before the hand is played (null if nothing).
+export function diceBonus(dice: Dice, dealer: number): { name: string; deltas: number[] } | null {
+  if (dice[0] === dice[1] && dice[1] === dice[2]) {
+    const deltas = Array.from({ length: SEATS }, (_, seat) => (seat === dealer ? TRIPLE_DICE_BONUS * (SEATS - 1) : -TRIPLE_DICE_BONUS));
+    return { name: "圍骰", deltas };
+  }
+  if ([...dice].sort((a, b) => a - b).join("") === "123") {
+    const deltas = Array.from({ length: SEATS }, (_, seat) => (seat === dealer ? -SNAKE_DICE_PENALTY * (SEATS - 1) : SNAKE_DICE_PENALTY));
+    return { name: "蛇骰", deltas };
+  }
+  return null;
+}
+
+// ---- Flower bonuses -----------------------------------------------------------
+
+// What each other player pays the one who completes:
+//   草 - a 1-2-3-4 from both sets mixed (1f 2f 3s 4s)
+//   花 - a 1-2-3-4 of one set (梅蘭菊竹 or 春夏秋冬)
+//   花草 - one flower completing both at once (5 + 3)
+//   八仙過海 - all eight
+// At most one 花 and one 草 per player per hand, however many more form.
+export const FLOWER_BONUS = { 草: 3, 花: 5, 花草: 8, 八仙過海: 100 } as const;
+
+// 暗槓: a concealed kong collects this from each player when declared.
+export const CONCEALED_KONG_BONUS = 5;
+
+// 追: four players in a row discard the same tile, with no call between -
+// the fourth pays each of the others this (an honour tile, or m/t/b).
+export const CHASE_PENALTY = { honour: 5, suited: 10 };
+
+// 7搶1 / 1搶7: the last of the eight flowers out, split seven and one - paid
+// by the other of the two only.
+export const FLOWER_ROBBERY = 30;
+
+const collectFromOne = (seat: number, from: number, amount: number) =>
+  Array.from({ length: SEATS }, (_, i) => (i === seat ? amount : i === from ? -amount : 0));
+
+// Given each seat's flower count just after `drew` took one: the eighth out,
+// with one seat holding seven and another one. Drawing it into the seven is
+// 7搶1 (collects off the one); drawing it as the lone one is 1搶7 (collects
+// off the seven).
+export function flowerRobbery(counts: number[], drew: number): { seat: number; from: number; name: "7搶1" | "1搶7" } | null {
+  if (counts.reduce((a, b) => a + b, 0) !== 8) return null;
+  const seven = counts.indexOf(7);
+  const one = counts.indexOf(1);
+  if (seven < 0 || one < 0) return null;
+  if (drew === seven) return { seat: seven, from: one, name: "7搶1" };
+  if (drew === one) return { seat: one, from: seven, name: "1搶7" };
+  return null;
+}
+
+const collectFromEach = (seat: number, amount: number) =>
+  Array.from({ length: SEATS }, (_, i) => (i === seat ? amount * (SEATS - 1) : -amount));
+
+// What a seat's flowers newly earn, given what it has already collected.
+export function flowerBonus(flowers: BonusTile[], had: TableBonus["name"][]): (keyof typeof FLOWER_BONUS)[] {
+  const ranks = (kind: BonusTile["kind"]) => new Set(flowers.filter((f) => f.kind === kind).map((f) => f.rank));
+  const fl = ranks("flower");
+  const se = ranks("season");
+  const hua = fl.size === 4 || se.size === 4;
+  // Every rank, with both sets among them: a mixed 1-2-3-4 can always be picked.
+  const cao = new Set([...fl, ...se]).size === 4 && fl.size > 0 && se.size > 0;
+  const hadHua = had.includes("花") || had.includes("花草");
+  const hadCao = had.includes("草") || had.includes("花草");
+  const out: (keyof typeof FLOWER_BONUS)[] = [];
+  const newHua = hua && !hadHua;
+  const newCao = cao && !hadCao;
+  if (newHua && newCao) out.push("花草");
+  else if (newHua) out.push("花");
+  else if (newCao) out.push("草");
+  if (fl.size === 4 && se.size === 4 && !had.includes("八仙過海")) out.push("八仙過海");
+  return out;
+}
+
+export const rollDice = (rng: () => number = Math.random): Dice => [1, 2, 3].map(() => 1 + Math.floor(rng() * 6)) as Dice;
+
+// Where the dice break the wall, as at a real table: the total, counted
+// round from the dealer (1 = the dealer's own wall, 2 the next seat's, 3
+// across, 4 the one before), picks whose wall; that many stacks are counted
+// in from its end, and the deal starts from the break. Same rule as the
+// Dice tab.
+export function wallBreak(dice: Dice, dealer: number): { seat: number; stacks: number } {
+  const total = dice[0] + dice[1] + dice[2];
+  return { seat: (dealer + total - 1) % SEATS, stacks: total };
+}
+
+// The shuffled wall turned so drawing starts at the break (replacements come
+// off the other end of the same break). Every arrangement is equally likely
+// either way - this makes the deal work like the real thing.
+function breakWall(wall: WallTile[], dice: Dice, dealer: number): WallTile[] {
+  const { seat, stacks } = wallBreak(dice, dealer);
+  const at = (((seat * STACKS_PER_SIDE + stacks) * 2) % wall.length + wall.length) % wall.length;
+  return [...wall.slice(at), ...wall.slice(0, at)];
+}
+
 export function newGame(): GameState {
   return dealHand({ dealer: 0, roundWind: 1, dealerStreak: 0 });
 }
 
 export function dealHand(opts: { dealer: number; roundWind: Wind; dealerStreak: number; lahs?: Lah[] }, wall?: WallTile[]): GameState {
+  // A table-made wall: shuffled, the dice rolled, broken where they say. A
+  // wall passed in (the arena, tests) is dealt as it is.
+  const dice = wall ? undefined : rollDice();
   const s: GameState = {
-    wall: wall ?? shuffled(fullWall()),
+    wall: wall ?? breakWall(shuffled(fullWall()), dice!, opts.dealer),
     players: Array.from({ length: SEATS }, () => ({ hand: [], melds: [], flowers: [], discards: [] })),
     dealer: opts.dealer,
     roundWind: opts.roundWind,
@@ -259,7 +394,10 @@ export function dealHand(opts: { dealer: number; roundWind: Wind; dealerStreak: 
     discardsMade: 0,
     log: [],
     lahs: opts.lahs ?? [],
+    ...(dice ? { dice } : {}),
   };
+  const bonus = dice ? diceBonus(dice, opts.dealer) : null;
+  if (bonus) s.diceBonus = { ...bonus, paid: false };
   // 16 each, in deal order from the dealer; bonus tiles are replaced as they come.
   for (let i = 0; i < SEATS; i++) {
     const seat = (opts.dealer + i) % SEATS;
@@ -404,6 +542,13 @@ export function applyTurnMove(state: GameState, move: TurnMove): GameState {
       }
       p.hand = removeTiles(p.hand, [move.tile]);
       p.discards.push(move.tile);
+      // 追: the fourth player in a row to throw the same tile pays the rest.
+      const run = s.chase && sameTile(s.chase.tile, move.tile) && (s.chase.seat + 1) % SEATS === seat ? s.chase.run + 1 : 1;
+      if (run === SEATS) {
+        const penalty = move.tile.suit === "z" ? CHASE_PENALTY.honour : CHASE_PENALTY.suited;
+        (s.tableBonuses ??= []).push({ seat, name: "追", deltas: collectFromEach(seat, -penalty), paid: false });
+        s.chase = undefined;
+      } else s.chase = { seat, tile: move.tile, run };
       s.discardsMade++;
       if (s.discardsMade >= SEATS) s.firstGoAround = false;
       s.phase = { kind: "claims", from: seat, tile: move.tile };
@@ -421,6 +566,7 @@ export function applyTurnMove(state: GameState, move: TurnMove): GameState {
       if (move.kind === "concealedKong") {
         p.hand = removeTiles(p.hand, [move.tile, move.tile, move.tile, move.tile]);
         p.melds.push({ kind: "kong", tiles: [move.tile, move.tile, move.tile, move.tile], concealed: true, from: null });
+        (s.tableBonuses ??= []).push({ seat, name: "暗槓", deltas: collectFromEach(seat, CONCEALED_KONG_BONUS), paid: false });
       } else {
         p.hand = removeTiles(p.hand, [move.tile]);
         const m = p.melds.find((m) => m.kind === "triplet" && sameTile(m.tiles[0], move.tile))!;
@@ -480,6 +626,20 @@ export function roundLabel(s: GameState): string {
   return `${WIND_CHARS[s.roundWind]}圈${WIND_CHARS[s.dealer + 1]}局`;
 }
 
+// 嗌錯: a player takes back a chow, pung or kong they've just called. The
+// discard is resolved again from `before` (its claims phase) as if they'd
+// passed, and they pay this to each of the others.
+export const WRONG_CALL_PENALTY = 5;
+
+export function retractClaim(before: GameState, decisions: (Claim | null)[], seat: number): GameState {
+  const passed = decisions.slice();
+  passed[seat] = null;
+  const s = resolveClaims(before, passed);
+  (s.tableBonuses ??= []).push({ seat, name: "嗌錯", deltas: collectFromEach(seat, -WRONG_CALL_PENALTY), paid: false });
+  s.log.push(`Seat ${seat} took back a call (嗌錯)`);
+  return s;
+}
+
 export function resolveClaims(state: GameState, decisions: (Claim | null)[]): GameState {
   if (state.phase.kind !== "claims") throw new Error("No discard to claim");
   const { from, tile } = state.phase;
@@ -496,6 +656,7 @@ export function resolveClaims(state: GameState, decisions: (Claim | null)[]): Ga
   // The claimed tile leaves the discarder's pond.
   s.players[from].discards.pop();
   s.firstGoAround = false;
+  s.chase = undefined;
   // A call ends everyone's 一發 (a win ends the hand anyway).
   if (claim.kind !== "win") for (const pl of s.players) if (pl.riichi) pl.riichi.ippatsu = false;
   if (claim.kind === "win") {

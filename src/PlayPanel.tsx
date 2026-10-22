@@ -26,11 +26,16 @@ import {
   newGame,
   nextHand,
   resolveClaims,
+  retractClaim,
   surrender,
   surrenderable,
   riichiDiscards,
   riichiForcedDiscard,
   roundLabel,
+  wallBreak,
+  SNAKE_DICE_PENALTY,
+  TRIPLE_DICE_BONUS,
+  type Dice,
   sameTile,
   SEATS,
   seatWind,
@@ -47,6 +52,8 @@ import { BonusGlyphSpan, TileGlyphSpan } from "./TileGlyphs";
 import { BOT_PROFILES, botClaimFor, botSurrenders, botTurnFor, LEARNED_PREFIX, learnedProfile, learnedStyle, profileById, rateDiscardsFor, voiceOf, type BotProfile, type Voice } from "./lib/bots";
 import { loadLearnedModel, type LearnedModel } from "./lib/ml/browser";
 import { learnedClaim, learnedTurnMove, type LearnedBot } from "./lib/ml/policy";
+import { claimDecisionAction, encodeObservation, legalActions, turnMoveAction } from "./lib/ml/encode";
+import { countRecorded, exportRecorded, finishHand, recordDecision } from "./lib/ml/recorder";
 
 const WIND_CHARS = ["", "東", "南", "西", "北"];
 // Ready-made tables: who sits at Right / Across / Left (seats 1-3).
@@ -110,6 +117,7 @@ interface Saved {
   timer?: TimerSetting;
   speed?: Speed;
   oneTap?: boolean;
+  record?: boolean;
   // The bot ids at seats 1-3.
   opponents?: string[];
 }
@@ -325,6 +333,26 @@ function OpponentsSheet({
   );
 }
 
+// The pips on each face, as cells of a 3x3 grid (1-9, reading order) - as
+// on the Dice tab.
+const DIE_PIPS: Record<number, number[]> = { 1: [5], 2: [3, 7], 3: [3, 5, 7], 4: [1, 3, 7, 9], 5: [1, 3, 5, 7, 9], 6: [1, 3, 4, 6, 7, 9] };
+
+// One Chinese die (red pips on the 1 and the 4), tumbling in when `rolling`.
+function PlayDie({ value, rolling, index }: { value: number; rolling: boolean; index: number }) {
+  return (
+    <span
+      className={`play-die${value === 1 || value === 4 ? " is-red" : ""}${value === 1 ? " is-one" : ""}${rolling ? " is-rolling" : ""}`}
+      style={{ animationDelay: `${index * 70}ms` }}
+      role="img"
+      aria-label={`${value}`}
+    >
+      {Array.from({ length: 9 }, (_, i) => (
+        <span key={i} className={DIE_PIPS[value]?.includes(i + 1) ? "play-die-pip" : undefined} />
+      ))}
+    </span>
+  );
+}
+
 // ---- The table ------------------------------------------------------------
 
 export function PlayPanel({ onExit }: { onExit: () => void }) {
@@ -335,7 +363,63 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
   const [timer, setTimer] = useState<TimerSetting>(() => saved?.timer ?? 0);
   // One-tap discard: a single tap throws the tile (off: tap to lift, tap again).
   const [oneTap, setOneTap] = useState(() => saved?.oneTap ?? false);
+  // Record my play (off by default): your decisions, kept in this browser for
+  // training a learned bot that plays like you (lib/ml/recorder.ts).
+  const [record, setRecord] = useState(() => saved?.record ?? false);
+  const [recorded, setRecorded] = useState<number | null>(null);
+  const handId = useRef(String(Date.now()));
   const [speed, setSpeed] = useState<Speed>(() => (saved?.speed && saved.speed in SPEEDS ? saved.speed : "normal"));
+  // The dealer's dice, shown tumbling in at the start of each deal while
+  // play waits (rolling); remembered per deal so a reload mid-hand doesn't
+  // roll again.
+  const [rolling, setRolling] = useState(false);
+  const rolledFor = useRef<Dice | null>(null);
+  useEffect(() => {
+    const dice = game.dice;
+    if (!dice || rolledFor.current === dice || game.discardsMade > 0 || game.phase.kind === "over") return;
+    rolledFor.current = dice;
+    setRolling(true);
+  }, [game]);
+  // A roll that pays (圍骰 / 蛇骰): into the totals once, as the dice
+  // settle. The saved paid mark stops a reload paying again; the ref stops
+  // a second run of this effect before that mark has landed.
+  const paidFor = useRef<Dice | null>(null);
+  useEffect(() => {
+    const bonus = game.diceBonus;
+    if (rolling || !bonus || bonus.paid || paidFor.current === game.dice) return;
+    paidFor.current = game.dice ?? null;
+    setTotals((t) => t.map((v, i) => v + bonus.deltas[i]));
+    setGame((g) => (g.diceBonus ? { ...g, diceBonus: { ...g.diceBonus, paid: true } } : g));
+    showBurst(game.dealer, bonus.name);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rolling, game.diceBonus]);
+  // Table bonuses (flowers, 暗槓) paid as they're earned, the
+  // same way: marked paid in the game, and the ref remembers what this
+  // hand has paid in case a stale copy of the game comes back unmarked.
+  const paidBonuses = useRef<{ hand: Dice | undefined; keys: Set<string> }>({ hand: undefined, keys: new Set() });
+  useEffect(() => {
+    if (paidBonuses.current.hand !== game.dice) paidBonuses.current = { hand: game.dice, keys: new Set() };
+    const keys = paidBonuses.current.keys;
+    const unpaid = (game.tableBonuses ?? []).filter((b) => !b.paid);
+    if (rolling || !unpaid.length) return;
+    setGame((g) => (g.tableBonuses ? { ...g, tableBonuses: g.tableBonuses.map((b) => ({ ...b, paid: true })) } : g));
+    // Keyed by place in the list, which only grows during a hand.
+    const all = game.tableBonuses ?? [];
+    const due = unpaid.filter((b) => !keys.has(String(all.indexOf(b))));
+    if (!due.length) return;
+    for (const b of due) keys.add(String(all.indexOf(b)));
+    setTotals((t) => t.map((v, i) => v + due.reduce((sum, b) => sum + b.deltas[i], 0)));
+    const last = due[due.length - 1];
+    showBurst(last.seat, `${last.name} ${last.deltas[last.seat] > 0 ? "+" : "−"}${Math.abs(last.deltas[last.seat])}`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rolling, game.tableBonuses]);
+  // How long the roll shows - timed on its own, so a re-run of the effect
+  // above (which skips a deal it has seen) can't leave it showing forever.
+  useEffect(() => {
+    if (!rolling) return;
+    const id = window.setTimeout(() => setRolling(false), speed === "fast" ? 900 : 1700);
+    return () => window.clearTimeout(id);
+  }, [rolling, speed]);
   const [opponents, setOpponents] = useState<string[]>(() =>
     saved?.opponents?.length === 3 && saved.opponents.every(knownBot) ? saved.opponents : DEFAULT_OPPONENTS
   );
@@ -375,11 +459,14 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
   const [confirmNew, setConfirmNew] = useState(false);
   const [trackerOpen, setTrackerOpen] = useState(false);
   const [chowChoice, setChowChoice] = useState(false);
+  // Your last chow / pung / kong, with the discard it came from - so 嗌錯 can
+  // take it back until you discard.
+  const [lastCall, setLastCall] = useState<{ before: GameState; decisions: (Claim | null)[] } | null>(null);
   // 叮 armed: the next discard declares it (only tiles that leave you ready).
   const [riichiArmed, setRiichiArmed] = useState(false);
   const [resultHidden, setResultHidden] = useState(false);
 
-  useEffect(() => save({ game, totals, hint, timer, opponents, speed, oneTap }), [game, totals, hint, timer, opponents, speed, oneTap]);
+  useEffect(() => save({ game, totals, hint, timer, opponents, speed, oneTap, record }), [game, totals, hint, timer, opponents, speed, oneTap, record]);
 
   // The menu closes on a tap anywhere outside it, and disarms New game.
   useEffect(() => {
@@ -399,11 +486,15 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
     if (next.phase.kind === "over" && game.phase.kind !== "over") {
       const { deltas } = next.phase.result;
       setTotals((t) => t.map((v, i) => v + deltas[i]));
+      if (record) void finishHand(handId.current, deltas[HUMAN]);
     }
+    // A new deal: a new hand for the recorder.
+    if (game.phase.kind === "over" && next.phase.kind !== "over") handId.current = String(Date.now());
     setSelected(null);
     setChowChoice(false);
     setRiichiArmed(false);
     setResultHidden(false);
+    setLastCall(null);
     setGame(next);
   };
 
@@ -430,6 +521,7 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
     resolving.current = game;
     const decisions = botDecisions.slice();
     decisions[HUMAN] = humanClaim;
+    if (humanClaims.length) recordMine(1, claimDecisionAction(game, humanClaim));
     for (let seat = 1; seat < SEATS; seat++) {
       const net = learnedBot(seat);
       if (net) decisions[seat] = await learnedClaim(net, game, seat);
@@ -443,6 +535,28 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
       } else say(seat, "call");
     }
     advance(resolveClaims(game, decisions));
+    if (seat === HUMAN && humanClaim && humanClaim.kind !== "win") setLastCall({ before: game, decisions });
+  };
+
+  // 嗌錯: take back your call - the discard plays on as if you'd passed and
+  // you pay each player. Anything the call itself earned (a kong's
+  // replacement flower) is handed back.
+  const canRetract =
+    !!lastCall &&
+    game.phase.kind === "turn" &&
+    game.phase.seat === HUMAN &&
+    game.discardsMade === lastCall.before.discardsMade &&
+    game.players[HUMAN].melds.length === lastCall.before.players[HUMAN].melds.length + 1;
+  const retract = () => {
+    if (!lastCall || !canRetract) return;
+    const kept = lastCall.before.tableBonuses?.length ?? 0;
+    const now = game.tableBonuses ?? [];
+    const refund = now.slice(kept).filter((b) => b.paid);
+    if (refund.length) setTotals((t) => t.map((v, i) => v - refund.reduce((sum, b) => sum + b.deltas[i], 0)));
+    const next = retractClaim(lastCall.before, lastCall.decisions, HUMAN);
+    next.tableBonuses = next.tableBonuses?.map((b, i) => (i < kept ? { ...b, paid: now[i]?.paid ?? b.paid } : b));
+    paidBonuses.current.keys = new Set([...paidBonuses.current.keys].filter((k) => Number(k) < kept));
+    advance(next);
   };
 
   const me = game.players[HUMAN];
@@ -456,7 +570,16 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
   const isForbidden = (t: Tile) =>
     forbidden.some((f) => sameTile(f, t)) || (forced !== null && !sameTile(forced, t)) || (riichiArmed && !riichiTiles.some((r) => sameTile(r, t)));
 
+  // Record my play: one of your decisions, if it was a real choice.
+  const recordMine = (kind: 0 | 1, action: number) => {
+    if (!record) return;
+    const mask = legalActions(game, HUMAN);
+    if (mask.reduce((n, m) => n + m, 0) < 2) return;
+    void recordDecision({ obs: encodeObservation(game, HUMAN), mask, action, kind, hand: handId.current });
+  };
+
   const doTurn = (move: TurnMove) => {
+    recordMine(0, turnMoveAction(move));
     if (move.kind === "selfDraw") showBurst(HUMAN, "自摸");
     else if (move.kind === "discard" && move.riichi) showBurst(HUMAN, "叮");
     else if (move.kind !== "discard") showBurst(HUMAN, "槓");
@@ -466,6 +589,7 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
   // Bot pacing: one move per botDelay(), and a discard nobody (the human
   // included) can claim moves on by itself.
   useEffect(() => {
+    if (rolling) return;
     const phase = game.phase;
     let move: (() => void) | null = null;
     let delay = PASS_DELAY_MS;
@@ -521,7 +645,7 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
     const id = window.setTimeout(move, delay * SPEEDS[speed].factor);
     return () => window.clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [game]);
+  }, [game, rolling]);
 
   // The turn timer (off by default): runs only while the human has to
   // decide, and on running out passes on a call or throws the drawn tile.
@@ -591,6 +715,7 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
   const myKongs = myTurn && liveTilesLeft(game) > 0 ? kongOptions(me) : [];
 
   const tapTile = (index: number) => {
+    if (rolling) return;
     if (!myTurn || isForbidden(handTiles[index])) return;
     // One-tap throws straight away - except when declaring 叮, which always
     // takes the confirming second tap.
@@ -740,6 +865,45 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
                   ))}
                 </span>
               </div>
+              <div className="play-menu-row">
+                <span>
+                  Record my play
+                  {record && recorded !== null && <span className="play-menu-note"> · {recorded}</span>}
+                </span>
+                <span className="play-menu-seg">
+                  {[false, true].map((on) => (
+                    <button
+                      key={String(on)}
+                      type="button"
+                      className={record === on ? "toggle-on" : undefined}
+                      aria-pressed={record === on}
+                      onClick={() => {
+                        setRecord(on);
+                        if (on) void countRecorded().then(setRecorded);
+                      }}
+                    >
+                      {on ? "On" : "Off"}
+                    </button>
+                  ))}
+                </span>
+              </div>
+              {record && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const { text, count } = await exportRecorded();
+                    const url = URL.createObjectURL(new Blob([text], { type: "application/x-ndjson" }));
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = `mjwaits-my-play-${new Date().toISOString().slice(0, 10)}.jsonl`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                    setRecorded(count);
+                  }}
+                >
+                  Export my play for training
+                </button>
+              )}
               <button
                 type="button"
                 className="play-menu-link"
@@ -835,6 +999,11 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
                 </>
               ) : (
                 <>
+                  {canRetract && (
+                    <button type="button" className="play-call is-pass" onClick={retract} aria-label="嗌錯 - take back your call and pay 5 to each">
+                      嗌錯
+                    </button>
+                  )}
                   {canSelfDraw && (
                     <button type="button" className="play-call is-win is-long" onClick={() => doTurn({ kind: "selfDraw" })}>
                       自摸
@@ -931,6 +1100,13 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
             {game.dealerStreak > 0 && ` · 連${game.dealerStreak}`}
           </span>
           <span className="play-bar-left">剩:{liveTilesLeft(game)}張</span>
+          {game.dice && !rolling && (
+            <span className="play-bar-dice" aria-label={`Dice ${game.dice.join(", ")}`}>
+              {game.dice.map((d, i) => (
+                <PlayDie key={i} value={d} rolling={false} index={i} />
+              ))}
+            </span>
+          )}
           {waits ? (
             <span className="play-bar-waits" aria-label={`Ready, waiting on ${waits.map((w) => `${tileLabel(w.tile)} (${w.left} left)`).join(", ")}`}>
               聽
@@ -952,6 +1128,31 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
         </div>
 
         {burst && <CallBurst key={burst.id} seat={burst.seat} label={burst.label} />}
+
+        {rolling && game.dice && (
+          <div className="play-dice" role="status">
+            <div className="play-dice-row">
+              {game.dice.map((d, i) => (
+                <PlayDie key={i} value={d} rolling index={i} />
+              ))}
+            </div>
+            <span className="play-dice-caption">
+              {game.dice.join(" + ")} = {game.dice[0] + game.dice[1] + game.dice[2]} ·{" "}
+              {(() => {
+                const brk = wallBreak(game.dice, game.dealer);
+                return `${brk.seat === HUMAN ? "your" : `${nameOf(brk.seat)}'s`} wall, ${brk.stacks} stacks in`;
+              })()}
+            </span>
+            {game.diceBonus && (
+              <span className="play-dice-bonus">
+                {game.diceBonus.name} ·{" "}
+                {game.diceBonus.deltas[game.dealer] > 0
+                  ? `${game.dealer === HUMAN ? "you collect" : `${nameOf(game.dealer)} collects`} ${game.diceBonus.deltas[game.dealer]} (${TRIPLE_DICE_BONUS} from each)`
+                  : `${game.dealer === HUMAN ? "you pay" : `${nameOf(game.dealer)} pays`} ${-game.diceBonus.deltas[game.dealer]} (${SNAKE_DICE_PENALTY} to each)`}
+              </span>
+            )}
+          </div>
+        )}
 
         {trackerOpen && <TileTracker game={game} onClose={() => setTrackerOpen(false)} />}
         {opponentsOpen && <OpponentsSheet opponents={opponents} learned={model?.styles ?? null} onChange={setOpponents} onClose={() => setOpponentsOpen(false)} />}

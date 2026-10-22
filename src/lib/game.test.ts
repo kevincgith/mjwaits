@@ -17,6 +17,13 @@ import {
   lahAddOn,
   surrender,
   surrenderable,
+  wallBreak,
+  diceBonus,
+  dealHand,
+  flowerBonus,
+  flowerRobbery,
+  retractClaim,
+  fullWall,
   kongOptions,
   SEATS,
   type GameState,
@@ -249,4 +256,138 @@ describe("game", () => {
       expect(() => surrender(s0, 2, 0)).toThrow();
     });
   });
+
+  describe("dice", () => {
+    it("rolls three dice for a table-made deal, none for a given wall", () => {
+      const s = newGame();
+      expect(s.dice).toHaveLength(3);
+      for (const d of s.dice!) expect(d >= 1 && d <= 6).toBe(true);
+      expect(tilesInPlay(s)).toBe(144);
+    });
+
+    it("breaks the wall where a real table would: the total counted round from the dealer", () => {
+      // 3 + 4 + 5 = 12: 12 counted from the dealer lands on the seat before them.
+      expect(wallBreak([3, 4, 5], 0)).toEqual({ seat: 3, stacks: 12 });
+      // 1 + 1 + 3 = 5: the dealer's own wall.
+      expect(wallBreak([1, 1, 3], 2)).toEqual({ seat: 2, stacks: 5 });
+      // 6 + 6 + 6 = 18: across from... 18 counted from seat 1 is seat 2.
+      expect(wallBreak([6, 6, 6], 1)).toEqual({ seat: 2, stacks: 18 });
+    });
+
+    it("pays 圍骰 on a triple: the dealer collects 5 from each player", () => {
+      expect(diceBonus([4, 4, 4], 2)).toEqual({ name: "圍骰", deltas: [-5, -5, 15, -5] });
+      expect(diceBonus([4, 4, 5], 2)).toBeNull();
+    });
+
+    it("charges 蛇骰 on a 1-2-3 in any order: the dealer pays 5 to each player", () => {
+      expect(diceBonus([3, 1, 2], 0)).toEqual({ name: "蛇骰", deltas: [-15, 5, 5, 5] });
+      expect(diceBonus([2, 3, 4], 0)).toBeNull();
+    });
+  });
 });
+
+describe("flower bonuses", () => {
+  const f = (kind: "flower" | "season", ...ranks: (1 | 2 | 3 | 4)[]) => ranks.map((rank) => ({ kind, rank }));
+  it("草 is a mixed 1-2-3-4, 花 one set, 花草 both at once, at most one of each", () => {
+    expect(flowerBonus([...f("flower", 1, 2), ...f("season", 3, 4)], [])).toEqual(["草"]);
+    expect(flowerBonus(f("season", 1, 2, 3, 4), [])).toEqual(["花"]);
+    // 123f + 12s, then 4f: 1234f and 1s 2s 3f 4f in one go.
+    expect(flowerBonus([...f("flower", 1, 2, 3), ...f("season", 1, 2), ...f("flower", 4)], [])).toEqual(["花草"]);
+    // 124s + 4f, then 3s: 1234s and 1s 2s 3s 4f.
+    expect(flowerBonus([...f("season", 1, 2, 4), ...f("flower", 4), ...f("season", 3)], [])).toEqual(["花草"]);
+    expect(flowerBonus([...f("flower", 1, 2, 3, 4), ...f("season", 4)], ["花"])).toEqual(["草"]);
+    expect(flowerBonus([...f("flower", 1, 2, 3, 4), ...f("season", 1, 2, 3)], ["花草"])).toEqual([]);
+    expect(flowerBonus([...f("flower", 1, 2), ...f("season", 1, 2)], [])).toEqual([]);
+    expect(flowerBonus([...f("flower", 1, 2, 3, 4), ...f("season", 1, 2, 3, 4)], ["花草"])).toEqual(["八仙過海"]);
+  });
+  it("a draw that completes one charges the other three", () => {
+    const wall = fullWall().filter((w) => !("bonus" in w));
+    const bonus = (kind: "flower" | "season", rank: 1 | 2 | 3 | 4) => ({ bonus: { kind, rank } });
+    // Seat 0 is dealt 1f 2f 3s at the start and 4s straight after.
+    const s = dealHand({ dealer: 0, roundWind: 1, dealerStreak: 0 }, [bonus("flower", 1), bonus("flower", 2), bonus("season", 3), bonus("season", 4), ...wall]);
+    expect(s.tableBonuses).toEqual([{ seat: 0, name: "草", deltas: [9, -3, -3, -3], paid: false }]);
+  });
+});
+
+describe("7搶1 / 1搶7", () => {
+  it("the eighth flower split seven and one: whoever drew it collects 30 off the other", () => {
+    expect(flowerRobbery([1, 7, 0, 0], 1)).toEqual({ seat: 1, from: 0, name: "7搶1" });
+    expect(flowerRobbery([1, 7, 0, 0], 0)).toEqual({ seat: 0, from: 1, name: "1搶7" });
+    expect(flowerRobbery([1, 6, 0, 0], 1)).toBeNull();
+    expect(flowerRobbery([2, 6, 0, 0], 1)).toBeNull();
+    expect(flowerRobbery([0, 8, 0, 0], 1)).toBeNull();
+  });
+  it("is paid at the table by the one player", () => {
+    const tiles = fullWall().filter((w) => !("bonus" in w));
+    const b = (kind: "flower" | "season", rank: 1 | 2 | 3 | 4) => ({ bonus: { kind, rank } });
+    // Seat 0 (dealer) draws 1f first; seat 1 then draws the other seven.
+    const wall = [b("flower", 1), ...tiles.slice(0, 15), b("flower", 2), b("flower", 3), b("flower", 4), b("season", 1), b("season", 2), b("season", 3), b("season", 4), ...tiles.slice(15)];
+    const s = dealHand({ dealer: 0, roundWind: 1, dealerStreak: 0 }, wall);
+    expect(s.players.map((p) => p.flowers.length)).toEqual([1, 7, 0, 0]);
+    expect(s.tableBonuses?.find((x) => x.name === "7搶1")).toEqual({ seat: 1, name: "7搶1", deltas: [-30, 30, 0, 0], paid: false });
+  });
+});
+
+
+describe("暗槓", () => {
+  it("declaring a concealed kong collects 5 from each player, every time", () => {
+    const s0 = newGame();
+    s0.tableBonuses = undefined;
+    s0.phase = { kind: "turn", seat: 0, drawn: null, replacement: null };
+    s0.players[0].hand = parseHand("1111m2222m333t55b789t");
+    const s1 = applyTurnMove(s0, { kind: "concealedKong", tile: parseHand("1m")[0] });
+    // (The replacement draw may bring flower bonuses of its own.)
+    expect(s1.tableBonuses?.filter((b) => b.name === "暗槓")).toEqual([{ seat: 0, name: "暗槓", deltas: [15, -5, -5, -5], paid: false }]);
+    if (s1.phase.kind !== "turn") throw new Error("still their turn");
+    const s2 = applyTurnMove({ ...s1, phase: { ...s1.phase, seat: 0 } }, { kind: "concealedKong", tile: parseHand("2m")[0] });
+    expect(s2.tableBonuses?.filter((b) => b.name === "暗槓")).toHaveLength(2);
+  });
+});
+
+describe("追", () => {
+  const throwAround = (s0: GameState, seats: number[], tile: string) => {
+    let s = s0;
+    for (const seat of seats) {
+      const t = parseHand(tile)[0];
+      s = { ...s, phase: { kind: "turn", seat, drawn: null, replacement: null } };
+      s.players = s.players.map((p, i) => (i === seat ? { ...p, hand: [...p.hand, t], riichi: undefined } : p));
+      s = applyTurnMove(s, { kind: "discard", tile: t });
+    }
+    return s;
+  };
+  const fresh = () => ({ ...newGame(), tableBonuses: undefined });
+  it("the fourth in a row to throw the same tile pays the rest: 5 for an honour, 10 for m/t/b", () => {
+    expect(throwAround(fresh(), [0, 1, 2, 3], "7z").tableBonuses).toEqual([{ seat: 3, name: "追", deltas: [5, 5, 5, -15], paid: false }]);
+    expect(throwAround(fresh(), [2, 3, 0, 1], "5m").tableBonuses).toEqual([{ seat: 1, name: "追", deltas: [10, -30, 10, 10], paid: false }]);
+  });
+  it("needs four seats in turn and the same tile", () => {
+    expect(throwAround(throwAround(fresh(), [0, 1, 2], "7z"), [3], "6z").tableBonuses).toBeUndefined();
+    expect(throwAround(fresh(), [0, 1, 3, 0], "7z").tableBonuses).toBeUndefined();
+  });
+  it("a concealed kong along the way doesn't break the run", () => {
+    let s = throwAround(fresh(), [0, 1], "7z");
+    s = { ...s, phase: { kind: "turn", seat: 2, drawn: null, replacement: null } };
+    s.players = s.players.map((p, i) => (i === 2 ? { ...p, hand: [...parseHand("1111m"), ...p.hand], riichi: undefined } : p));
+    s = applyTurnMove(s, { kind: "concealedKong", tile: parseHand("1m")[0] });
+    s = throwAround(s, [2, 3], "7z");
+    expect(s.tableBonuses?.filter((b) => b.name === "追")).toEqual([{ seat: 3, name: "追", deltas: [5, 5, 5, -15], paid: false }]);
+  });
+});
+
+describe("嗌錯", () => {
+  it("takes back a call: the discard plays on as if passed, and the caller pays 5 to each", () => {
+    const s0 = { ...newGame(), tableBonuses: undefined };
+    s0.players[0].hand = parseHand("12345m111222333t55b");
+    s0.players[1].hand = parseHand("46m111222333t12345b");
+    const before = applyTurnMove({ ...s0, phase: { kind: "turn", seat: 0, drawn: null, replacement: null } }, { kind: "discard", tile: parseHand("5m")[0] });
+    const [four, six] = parseHand("46m");
+    const decisions: Parameters<typeof resolveClaims>[1] = [null, { kind: "chow", tiles: [four, six] }, null, null];
+    expect(resolveClaims(before, decisions).players[1].melds).toHaveLength(1);
+    const s = retractClaim(before, decisions, 1);
+    expect(s.players[1].melds).toHaveLength(0);
+    expect(s.players[0].discards.at(-1)).toEqual(parseHand("5m")[0]);
+    expect(s.phase.kind === "turn" && s.phase.seat).toBe(1);
+    expect(s.tableBonuses?.filter((b) => b.name === "嗌錯")).toEqual([{ seat: 1, name: "嗌錯", deltas: [5, -15, 5, 5], paid: false }]);
+  });
+});
+

@@ -39,6 +39,23 @@ import torch.nn.functional as F
 VALUE_SCALE = 30.0  # hand nets are tens of tai; scale them to around 1
 
 
+def load_many(spec):
+    """--data a,b,c: several datasets with the same encoding and styles, joined."""
+    parts = [load(d) for d in spec.split(",")]
+    manifest = parts[0][0]
+    for m, *_ in parts[1:]:
+        if (m["obsSize"], m["numActions"], m["styles"]) != (manifest["obsSize"], manifest["numActions"], manifest["styles"]):
+            raise SystemExit("datasets differ in encoding or styles")
+    cat = lambda i: np.concatenate([p[i] for p in parts])
+    extras = [p[4] for p in parts]
+    # Match-day data (encoding v2): the per-hand rows, and each decision's
+    # row, renumbered across the datasets.
+    if all("_hands" in p[0] for p in parts):
+        offsets = np.cumsum([0] + [len(p[0]["_hands"]) for p in parts[:-1]])
+        manifest = {**manifest, "_hands": np.concatenate([p[0]["_hands"] for p in parts]), "_link": np.concatenate([p[0]["_link"] + o for p, o in zip(parts, offsets)])}
+    return manifest, cat(1), cat(2), cat(3), (np.concatenate(extras) if all(e is not None for e in extras) else None)
+
+
 def load(data_dir):
     manifest = json.load(open(os.path.join(data_dir, "manifest.json")))
     O, A = manifest["obsSize"], manifest["numActions"]
@@ -53,14 +70,120 @@ def load(data_dir):
         path = os.path.join(data_dir, f"extra-{w}.f32")
         if os.path.exists(path):
             extra.append(np.fromfile(path, dtype=np.float32).reshape(n, 4))
+    if manifest.get("match"):
+        hands, link = [], []
+        for shard in manifest["shards"]:
+            w = shard["w"]
+            h = np.fromfile(os.path.join(data_dir, f"hands-{w}.f32"), dtype=np.float32).reshape(-1, HAND_ROW)
+            link.append(np.fromfile(os.path.join(data_dir, f"link-{w}.i32"), dtype=np.int32) + sum(len(x) for x in hands))
+            hands.append(h)
+        manifest["_hands"], manifest["_link"] = np.concatenate(hands), np.concatenate(link)
     return manifest, np.concatenate(obs), np.concatenate(mask), np.concatenate(meta), (np.concatenate(extra) if extra else None)
 
 
-def shaped_reward(styles, meta, extra):
+# ---- Match days (encoding v2, src/lib/ml/match.ts) --------------------------
+# hands-*.f32 rows: goal, hand index, match length, totals before (4), after
+# (4), and at the match's end (4; NaN if the match was cut short).
+HAND_ROW = 15
+PLACE_BONUS = np.array([300.0, 100.0, -100.0, -300.0])
+
+
+def place_bonus(totals, seat):
+    """match.ts placeBonus, vectorised: ties share the places they span."""
+    mine = totals[:, seat][:, None]
+    above = (totals > mine).sum(1)
+    tied = (totals == mine).sum(1)
+    cum = np.concatenate([[0], np.cumsum(PLACE_BONUS)])
+    return (cum[above + tied] - cum[above]) / tied
+
+
+def match_utility(totals, seat, goal):
+    return totals[:, seat] + goal * place_bonus(totals, seat)
+
+
+def board_features(goal, hand, length, totals, seat):
+    """What a scoreboard looks like from `seat`: goal, how much of the day is
+    left, our total, the others' gaps to us (in turn order) and our place."""
+    me = totals[:, seat]
+    gaps = [totals[:, (seat + r) % 4] - me for r in (1, 2, 3)]
+    place = (totals > me[:, None]).sum(1)
+    left = np.maximum(length - hand, 0)
+    return np.stack([goal, left / 100, np.sqrt(left) / 10, me / 100, *[g / 100 for g in gaps], *[(place == p).astype(np.float32) for p in range(4)]], axis=1).astype(np.float32)
+
+
+class BoardValue(nn.Module):
+    """What a scoreboard is worth at the end of the day, in tai / 100 -
+    learned from finished matches. Suphx calls this global reward prediction:
+    a hand's reward is how much it moved this, so a late deal-in while
+    leading costs what it really costs."""
+
+    def __init__(self, width=128):
+        super().__init__()
+        self.net = nn.Sequential(nn.Linear(11, width), nn.GELU(), nn.Linear(width, width), nn.GELU(), nn.Linear(width, 1))
+
+    def forward(self, x):
+        return self.net(x).squeeze(-1)
+
+
+def fit_board_value(hands, device, epochs=30):
+    done = np.isfinite(hands[:, 11])
+    h = hands[done]
+    X, Y = [], []
+    for seat in range(4):
+        # Every hand start of a finished match -> where it ended.
+        X.append(board_features(h[:, 0], h[:, 1], h[:, 2], h[:, 3:7], seat))
+        Y.append(match_utility(h[:, 11:15], seat, h[:, 0]) / 100)
+    X, Y = np.concatenate(X), np.concatenate(Y).astype(np.float32)
+    model = BoardValue().to(device)
+    opt = torch.optim.AdamW(model.parameters(), lr=2e-3, weight_decay=1e-4)
+    Xt, Yt = torch.from_numpy(X).to(device), torch.from_numpy(Y).to(device)
+    n = len(X)
+    for epoch in range(epochs):
+        perm = torch.randperm(n, device=device)
+        for b in range(0, n, 4096):
+            ix = perm[b : b + 4096]
+            loss = F.smooth_l1_loss(model(Xt[ix]), Yt[ix])
+            opt.zero_grad()
+            loss.backward()
+            opt.step()
+    with torch.no_grad():
+        err = (model(Xt) - Yt).abs().mean().item() * 100
+    print(f"board value: {done.sum():,} hands of finished matches, mean error {err:.0f} tai")
+    return model.eval()
+
+
+def match_rewards(manifest, meta, device):
+    """Each decision's reward: how much its hand moved the value of the
+    deciding seat's scoreboard (the true end-of-day utility after the last
+    hand), in the same units as the hand net it replaces."""
+    hands, link = manifest["_hands"], manifest["_link"]
+    model = fit_board_value(hands, device)
+    rows, seats = hands[link], meta[:, 5]
+    goal, hand, length = rows[:, 0], rows[:, 1], rows[:, 2]
+
+    def value(totals, at):
+        out = np.empty(len(rows), dtype=np.float32)
+        for seat in range(4):
+            sel = seats == seat
+            x = torch.from_numpy(board_features(goal[sel], at[sel], length[sel], totals[sel], seat)).to(device)
+            with torch.no_grad():
+                out[sel] = model(x).cpu().numpy() * 100
+        return out
+
+    before = value(rows[:, 3:7], hand)
+    after = value(rows[:, 7:11], hand + 1)
+    # After the day's last hand there's nothing to predict.
+    last = hand + 1 >= length
+    exact = np.array([match_utility(rows[i : i + 1, 7:11], seats[i], goal[i : i + 1])[0] for i in np.where(last)[0]])
+    after[last] = exact
+    return after - before
+
+
+def shaped_reward(styles, meta, extra, hand_value=None):
     """Per-decision reward: the hand's net tai for the deciding seat (scaled),
     plus each personality's shaping. extra columns: logp, own win tai, dealt in,
     discards made."""
-    r = meta[:, 2].astype(np.float32) / VALUE_SCALE
+    r = (meta[:, 2].astype(np.float32) if hand_value is None else hand_value.astype(np.float32)) / VALUE_SCALE
     style = np.array(styles)[meta[:, 1]]
     win_tai, dealt_in, discards = extra[:, 1], extra[:, 2], extra[:, 3]
     won = win_tai > 0
@@ -129,7 +252,7 @@ def masked_log_softmax(logits, mask):
 
 
 def rl(args):
-    manifest, obs, mask, meta, extra = load(args.data)
+    manifest, obs, mask, meta, extra = load_many(args.data)
     if extra is None:
         raise SystemExit("--rl needs self-play data (scripts/ml-selfplay.ts writes extra-*.f32)")
     n, O = obs.shape
@@ -137,10 +260,14 @@ def rl(args):
     styles = manifest["styles"]
     device = "mps" if torch.backends.mps.is_available() else "cpu"
     model = load_model(args.init, O, A, styles, args.width, device)
-    ref = load_model(args.init, O, A, styles, args.width, device).eval()
+    # The anchor: the network every round should stay close to - the original
+    # imitation network, not just the previous round, so drift can't build up.
+    ref = load_model(args.ref or args.init, O, A, styles, args.width, device).eval()
     for p in ref.parameters():
         p.requires_grad_(False)
-    reward = shaped_reward(styles, meta, extra)
+    # Match-day data: a hand is worth how much it moved the day's outcome.
+    hand_value = match_rewards(manifest, meta, device) if "_hands" in manifest else None
+    reward = shaped_reward(styles, meta, extra, hand_value)
     old_logp = extra[:, 0]
     print(f"{n:,} self-play decisions; mean reward by style: " + " ".join(f"{s}:{reward[meta[:, 1] == i].mean():+.3f}" for i, s in enumerate(styles)))
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
@@ -177,7 +304,7 @@ def rl(args):
         pg_m, kl_m, v_m = np.mean(stats, axis=0)
         print(f"epoch {epoch + 1}/{args.epochs}  {time.time() - t0:.0f}s  policy {pg_m:+.4f}  KL to start {kl_m:.4f}  value {v_m:.4f}")
     init_meta = json.load(open(os.path.join(args.init, "meta.json")))
-    export(model, O, A, args.out, styles, {"arch": init_meta.get("arch", "mlp"), "width": init_meta.get("width", args.width), "planes": init_meta.get("planes"), "init": args.init, "data": args.data, "samples": int(n), "rl": True})
+    export(model, O, A, args.out, styles, {"arch": init_meta.get("arch", "mlp"), "width": init_meta.get("width", args.width), "planes": init_meta.get("planes"), "init": args.init, "ref": args.ref or args.init, "data": args.data, "samples": int(n), "rl": True})
 
 
 class TilePolicy(nn.Module):
@@ -241,6 +368,7 @@ def main():
     ap.add_argument("--planes", type=int, default=None, help="per-kind planes (else from the data manifest)")
     ap.add_argument("--rl", action="store_true", help="PPO on self-play data, starting from --init")
     ap.add_argument("--init", default="ml/runs/bc2")
+    ap.add_argument("--ref", default=None, help="network the KL penalty anchors to (default: --init)")
     ap.add_argument("--clip", type=float, default=0.2)
     ap.add_argument("--kl", type=float, default=0.05)
     args = ap.parse_args()
@@ -251,7 +379,7 @@ def main():
             args.epochs = 2
         return rl(args)
 
-    manifest, obs, mask, meta, _ = load(args.data)
+    manifest, obs, mask, meta, _ = load_many(args.data)
     n, O = obs.shape
     A = mask.shape[1]
     styles = manifest["styles"]
