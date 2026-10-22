@@ -402,6 +402,9 @@ held upright is asked to turn sideways.
     tiles get a red mark (the Veteran's read of who might be ready).
   - **One-tap discard** Off / On: on, a single tap throws the tile; declaring 叮 still takes
     the confirming second tap.
+  - **Record my play** Off / On (off by default): your decisions are kept in this browser,
+    in the learned bots' encoding, for training a bot that plays like you; **Export my play
+    for training** saves them as a file (see `ml/README.md`).
   - **Opponents**, **Bot speed** (Slow / Normal / Fast) and a **turn timer** (Off by
     default, or 10s / 20s per decision; at zero it passes on a call, or throws the drawn
     tile, or the hint's pick after a call).

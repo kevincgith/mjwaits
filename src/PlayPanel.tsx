@@ -47,6 +47,8 @@ import { BonusGlyphSpan, TileGlyphSpan } from "./TileGlyphs";
 import { BOT_PROFILES, botClaimFor, botSurrenders, botTurnFor, LEARNED_PREFIX, learnedProfile, learnedStyle, profileById, rateDiscardsFor, voiceOf, type BotProfile, type Voice } from "./lib/bots";
 import { loadLearnedModel, type LearnedModel } from "./lib/ml/browser";
 import { learnedClaim, learnedTurnMove, type LearnedBot } from "./lib/ml/policy";
+import { claimDecisionAction, encodeObservation, legalActions, turnMoveAction } from "./lib/ml/encode";
+import { countRecorded, exportRecorded, finishHand, recordDecision } from "./lib/ml/recorder";
 
 const WIND_CHARS = ["", "東", "南", "西", "北"];
 // Ready-made tables: who sits at Right / Across / Left (seats 1-3).
@@ -110,6 +112,7 @@ interface Saved {
   timer?: TimerSetting;
   speed?: Speed;
   oneTap?: boolean;
+  record?: boolean;
   // The bot ids at seats 1-3.
   opponents?: string[];
 }
@@ -335,6 +338,11 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
   const [timer, setTimer] = useState<TimerSetting>(() => saved?.timer ?? 0);
   // One-tap discard: a single tap throws the tile (off: tap to lift, tap again).
   const [oneTap, setOneTap] = useState(() => saved?.oneTap ?? false);
+  // Record my play (off by default): your decisions, kept in this browser for
+  // training a learned bot that plays like you (lib/ml/recorder.ts).
+  const [record, setRecord] = useState(() => saved?.record ?? false);
+  const [recorded, setRecorded] = useState<number | null>(null);
+  const handId = useRef(String(Date.now()));
   const [speed, setSpeed] = useState<Speed>(() => (saved?.speed && saved.speed in SPEEDS ? saved.speed : "normal"));
   const [opponents, setOpponents] = useState<string[]>(() =>
     saved?.opponents?.length === 3 && saved.opponents.every(knownBot) ? saved.opponents : DEFAULT_OPPONENTS
@@ -379,7 +387,7 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
   const [riichiArmed, setRiichiArmed] = useState(false);
   const [resultHidden, setResultHidden] = useState(false);
 
-  useEffect(() => save({ game, totals, hint, timer, opponents, speed, oneTap }), [game, totals, hint, timer, opponents, speed, oneTap]);
+  useEffect(() => save({ game, totals, hint, timer, opponents, speed, oneTap, record }), [game, totals, hint, timer, opponents, speed, oneTap, record]);
 
   // The menu closes on a tap anywhere outside it, and disarms New game.
   useEffect(() => {
@@ -399,7 +407,10 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
     if (next.phase.kind === "over" && game.phase.kind !== "over") {
       const { deltas } = next.phase.result;
       setTotals((t) => t.map((v, i) => v + deltas[i]));
+      if (record) void finishHand(handId.current, deltas[HUMAN]);
     }
+    // A new deal: a new hand for the recorder.
+    if (game.phase.kind === "over" && next.phase.kind !== "over") handId.current = String(Date.now());
     setSelected(null);
     setChowChoice(false);
     setRiichiArmed(false);
@@ -430,6 +441,7 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
     resolving.current = game;
     const decisions = botDecisions.slice();
     decisions[HUMAN] = humanClaim;
+    if (humanClaims.length) recordMine(1, claimDecisionAction(game, humanClaim));
     for (let seat = 1; seat < SEATS; seat++) {
       const net = learnedBot(seat);
       if (net) decisions[seat] = await learnedClaim(net, game, seat);
@@ -456,7 +468,16 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
   const isForbidden = (t: Tile) =>
     forbidden.some((f) => sameTile(f, t)) || (forced !== null && !sameTile(forced, t)) || (riichiArmed && !riichiTiles.some((r) => sameTile(r, t)));
 
+  // Record my play: one of your decisions, if it was a real choice.
+  const recordMine = (kind: 0 | 1, action: number) => {
+    if (!record) return;
+    const mask = legalActions(game, HUMAN);
+    if (mask.reduce((n, m) => n + m, 0) < 2) return;
+    void recordDecision({ obs: encodeObservation(game, HUMAN), mask, action, kind, hand: handId.current });
+  };
+
   const doTurn = (move: TurnMove) => {
+    recordMine(0, turnMoveAction(move));
     if (move.kind === "selfDraw") showBurst(HUMAN, "自摸");
     else if (move.kind === "discard" && move.riichi) showBurst(HUMAN, "叮");
     else if (move.kind !== "discard") showBurst(HUMAN, "槓");
@@ -740,6 +761,45 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
                   ))}
                 </span>
               </div>
+              <div className="play-menu-row">
+                <span>
+                  Record my play
+                  {record && recorded !== null && <span className="play-menu-note"> · {recorded}</span>}
+                </span>
+                <span className="play-menu-seg">
+                  {[false, true].map((on) => (
+                    <button
+                      key={String(on)}
+                      type="button"
+                      className={record === on ? "toggle-on" : undefined}
+                      aria-pressed={record === on}
+                      onClick={() => {
+                        setRecord(on);
+                        if (on) void countRecorded().then(setRecorded);
+                      }}
+                    >
+                      {on ? "On" : "Off"}
+                    </button>
+                  ))}
+                </span>
+              </div>
+              {record && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const { text, count } = await exportRecorded();
+                    const url = URL.createObjectURL(new Blob([text], { type: "application/x-ndjson" }));
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = `mjwaits-my-play-${new Date().toISOString().slice(0, 10)}.jsonl`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                    setRecorded(count);
+                  }}
+                >
+                  Export my play for training
+                </button>
+              )}
               <button
                 type="button"
                 className="play-menu-link"

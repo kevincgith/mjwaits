@@ -46,8 +46,12 @@ Data, environments and model runs are git-ignored (`ml/data`, `ml/.venv`,
    every deal-in, the Speedster is rewarded for winning early, the Gambler
    ignores risk. The network learns *how* to play that way, rather than
    following a tuned formula.
-4. **Human data.** Record your own games at the table (the same encoder) and
-   fine-tune toward them - the most human-like personality there can be.
+4. **Human data.** Switch on **Record my play** in the Play menu: your
+   decisions are kept in the browser (IndexedDB, nothing leaves the device)
+   in the same encoding, with each hand's outcome. **Export my play for
+   training** saves a `.jsonl`; `ml/.venv/bin/python ml/human.py <files> --out
+   ml/data/human1` turns it into shards with one style, `human`, to learn or
+   fine-tune toward - the most human-like personality there can be.
 5. **In the app.** The ONNX model (a few MB) runs in the browser through
    onnxruntime-web, as new opponents in the Opponents sheet.
 

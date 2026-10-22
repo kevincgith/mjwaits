@@ -5690,6 +5690,10 @@ html.playing body {
   display: flex;
   flex-direction: column;
   min-width: 13rem;
+  /* A phone held sideways is short: the menu never runs off the screen. */
+  max-height: calc(100dvh - 3.6rem - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 0.3rem;
   border-radius: var(--radius-md);
   background: var(--surface);
@@ -5720,7 +5724,7 @@ html.playing body {
   align-items: center;
   justify-content: space-between;
   gap: 0.6rem;
-  padding: 0.35rem 0.4rem 0.35rem 0.7rem;
+  padding: 0.25rem 0.4rem 0.25rem 0.7rem;
 }
 
 /* A menu row that opens a sheet: label, current value, chevron. */
@@ -5729,6 +5733,12 @@ html.playing body {
   align-items: center;
   justify-content: space-between;
   gap: 0.8rem;
+}
+
+.play-menu-note {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
 }
 
 .play-menu-value {
