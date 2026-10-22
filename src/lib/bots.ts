@@ -283,7 +283,23 @@ export const VOICES: Record<string, Voice> = {
   },
 };
 
-export const voiceOf = (p: BotProfile): Voice => VOICES[p.id] ?? VOICES.veteran;
+export const voiceOf = (p: BotProfile): Voice => VOICES[learnedStyle(p) ?? p.id] ?? VOICES.veteran;
+
+// Learned bots (src/lib/ml): a trained network playing as one of the
+// personalities. Their profile is the personality's, renamed - it's what
+// the table shows, and what they fall back to if the network can't load.
+export const LEARNED_PREFIX = "net-";
+export const learnedStyle = (p: BotProfile): string | null => (p.id.startsWith(LEARNED_PREFIX) ? p.id.slice(LEARNED_PREFIX.length) : null);
+export function learnedProfile(style: string): BotProfile {
+  const base = profileById(style);
+  const [zh, ...en] = base.name.split(" ");
+  return {
+    ...base,
+    id: LEARNED_PREFIX + base.id,
+    name: `學${zh} ${en.join(" ")} AI`,
+    blurb: `A neural network trained to play like the ${en.join(" ")} - experimental, and still learning.`,
+  };
+}
 
 export const profileById = (id: string): BotProfile => BOT_PROFILES.find((p) => p.id === id) ?? BOT_PROFILES.find((p) => p.id === "veteran")!;
 

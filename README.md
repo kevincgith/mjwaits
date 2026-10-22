@@ -397,12 +397,27 @@ held upright is asked to turn sideways.
 - **Playing:** tap a tile to lift it, tap again to discard. When you can call a discard,
   round call buttons (胡 / 槓 / 碰 / 上) appear above your hand with 過 to pass. 上 with more
   than one fitting shape asks which; 自摸 and kongs show on your own turn.
-- **Menu (≡):** Hints Off / On, **Opponents**, a **turn timer** (Off by default, or 10s / 20s per decision; at
-  zero it passes on a call, or throws the drawn tile, or the hint's pick after a call), and
-  New game, which takes a second tap since it resets the totals. **記牌器** beside it lists how many of each tile you haven't seen yet.
+- **Menu (≡):**
+  - **Hints** Off / On. With hints on, the suggested throw is underlined gold and risky
+    tiles get a red mark (the Veteran's read of who might be ready).
+  - **One-tap discard** Off / On: on, a single tap throws the tile; declaring 叮 still takes
+    the confirming second tap.
+  - **Opponents**, **Bot speed** (Slow / Normal / Fast) and a **turn timer** (Off by
+    default, or 10s / 20s per decision; at zero it passes on a call, or throws the drawn
+    tile, or the hint's pick after a call).
+  - **New game**, which takes a second tap since it resets the totals.
+
+  **記牌器** beside it lists how many of each tile you haven't seen yet. The corner buttons
+  stay usable above the result card and sheets.
+- **聽:** whenever your hand is ready, the bottom band shows each tile you're waiting on and
+  how many of it are still unseen (struck through when none are left).
+- **Look:** menus, sheets and the result card share the table's dark lacquer and gold, so
+  nothing pops up in the app's light theme over the felt.
 - **Opponents (對手):** pick a ready-made table (Mixed; Tough, with two Grandmasters and a
-  Veteran; Styles; Friendly) or any bot
-  for each seat - Right, Across, Left - from the full roster, with each one's style shown.
+  Veteran; Styles; Friendly) or any bot for each seat - Right, Across, Left - from the full
+  roster, with each one's style shown. When a trained model is installed
+  (`public/model/mj-policy.onnx`), learned versions of each personality (學, ringed
+  avatars) appear too; see `ml/README.md`.
 - **Scoring:** a win is scored by the same tai list as the Scoring tab, with what the table
   knows filled in (seat and round wind, self-draw, the winning tile, last-tile and
   replacement-draw wins, 天胡/地胡/人胡, 莊 and 連莊). The discarder pays the tai; on a

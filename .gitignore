@@ -31,6 +31,13 @@ dist-ssr
 /.arena
 /.evolve
 /evolution
+/.ml-data
+/ml/data
+/ml/.venv
+/ml/runs
+__pycache__/
+/.ml-eval
+/.ml-selfplay
 
 # Screenshots of another scoring app, for comparison - not ours to commit.
 reference-app/
