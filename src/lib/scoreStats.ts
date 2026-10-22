@@ -2,7 +2,7 @@
 // per-player stats (the 統計 card), the running-totals series (走勢), career
 // stats across games, head-to-head and pattern counts.
 
-import { replayCached, type HandResult, type ReplayState, type ScoreGame } from "./ledger";
+import { CHIP_POT, replayCached, stepAt, type HandResult, type ReplayState, type ScoreGame } from "./ledger";
 
 export interface AtHand {
   value: number;
@@ -178,7 +178,7 @@ export function playerStats(state: ReplayState, game: ScoreGame): PlayerStats[] 
   const bonus = new Map<string, number>();
   const jackpotShares = new Map<string, number>();
   game.events.forEach((ev, i) => {
-    const step = state.steps.find((s) => s.eventIndex === i);
+    const step = stepAt(state, i);
     if (!step) return;
     if (ev.t === "bonus" || ev.t === "zhaHu") for (const [p, d] of Object.entries(step.deltas)) bonus.set(p, (bonus.get(p) ?? 0) + d);
     if (ev.t === "jackpot") for (const s of ev.shares) jackpotShares.set(s.player, (jackpotShares.get(s.player) ?? 0) + s.amount);
@@ -422,22 +422,10 @@ export interface CareerStats {
   winRate: number | null;
   dealInRate: number | null;
   bestHand: number | null;
-  // As in a game's 玩家 card, across every game.
-  dealerHands: number;
-  dealerNet: number;
-  longestDealerRun: number;
-  selfDrawShare: number | null;
-  avgWinGain: number | null;
-  avgDealInLoss: number | null;
-  lahNet: number;
-  firstRate: number | null; // 領先 - hands spent in 1st, of all hands sat in
 }
 
 export function careerStats(games: ScoreGame[]): CareerStats[] {
   const by = new Map<string, CareerStats>();
-  // Running sums for the averages: points won, points lost dealing in, and
-  // hands spent in 1st.
-  const totals = new Map<string, { won: number; dealtIn: number; inFirst: number }>();
   for (const g of games) {
     const state = replayCached(g);
     if (state.hands.length === 0) continue;
@@ -458,16 +446,7 @@ export function careerStats(games: ScoreGame[]): CareerStats[] {
         winRate: null,
         dealInRate: null,
         bestHand: null,
-        dealerHands: 0,
-        dealerNet: 0,
-        longestDealerRun: 0,
-        selfDrawShare: null,
-        avgWinGain: null,
-        avgDealInLoss: null,
-        lahNet: 0,
-        firstRate: null,
       };
-      const t = totals.get(s.player) ?? { won: 0, dealtIn: 0, inFirst: 0 };
       c.games++;
       c.hands += s.hands;
       c.net += s.net;
@@ -476,31 +455,16 @@ export function careerStats(games: ScoreGame[]): CareerStats[] {
       c.selfDraws += s.selfDraws;
       c.dealIns += s.dealIns;
       if (s.bestHand && (c.bestHand === null || s.bestHand.value > c.bestHand)) c.bestHand = s.bestHand.value;
-      c.dealerHands += s.dealerHands;
-      c.dealerNet += s.dealerNet;
-      c.longestDealerRun = Math.max(c.longestDealerRun, s.longestDealerRun);
-      c.lahNet += s.lahNet;
-      t.won += s.selfDrawGain + s.discardGain;
-      t.dealtIn += s.discardLoss;
-      t.inFirst += (s.firstRate ?? 0) * s.hands;
-      totals.set(s.player, t);
       by.set(s.player, c);
     }
   }
   return [...by.values()]
-    .map((c) => {
-      const t = totals.get(c.player) ?? { won: 0, dealtIn: 0, inFirst: 0 };
-      return {
-        ...c,
-        avgNet: c.net / c.games,
-        winRate: rate(c.wins + c.selfDraws, c.hands),
-        dealInRate: rate(c.dealIns, c.hands),
-        selfDrawShare: rate(c.selfDraws, c.wins + c.selfDraws),
-        avgWinGain: rate(t.won, c.wins + c.selfDraws),
-        avgDealInLoss: rate(t.dealtIn, c.dealIns),
-        firstRate: rate(Math.round(t.inFirst), c.hands),
-      };
-    })
+    .map((c) => ({
+      ...c,
+      avgNet: c.net / c.games,
+      winRate: rate(c.wins + c.selfDraws, c.hands),
+      dealInRate: rate(c.dealIns, c.hands),
+    }))
     .sort((a, b) => b.net - a.net);
 }
 
@@ -607,8 +571,9 @@ export function careerPlayerStats(games: ScoreGame[], dayOf: (at: number) => str
   return { stats: stats.sort((a, b) => b.net - a.net), series };
 }
 
-// Net tai each player has taken off each other, across these games:
-// result[a][b] > 0 means a is up on b.
+// Net each player has taken off each other, across these games: result[a][b]
+// > 0 means a is up on b. Every payment between the two counts - hands, 反雪,
+// 獎罰, 詐胡 - the same as a 玩家 card's 對手, so the two always agree.
 export function headToHead(games: ScoreGame[]): Record<string, Record<string, number>> {
   const out: Record<string, Record<string, number>> = {};
   const add = (a: string, b: string, v: number) => {
@@ -618,9 +583,10 @@ export function headToHead(games: ScoreGame[]): Record<string, Record<string, nu
     out[b][a] = (out[b][a] ?? 0) - v;
   };
   for (const g of games) {
-    for (const h of replayCached(g).hands) {
-      for (const p of h.pairs) add(p.winner, p.payer, p.worth);
-      for (const f of h.fanXue) add(f.to, f.from, f.amount);
+    for (const [key, amount] of Object.entries(replayCached(g).paid)) {
+      const [from, to] = key.split(">");
+      if (from === CHIP_POT || to === CHIP_POT) continue;
+      add(to, from, amount);
     }
   }
   return out;

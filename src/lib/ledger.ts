@@ -392,6 +392,20 @@ export function replayCached(game: ScoreGame): ReplayState {
   return state;
 }
 
+// An entry's step and hand by its index, looked up directly (built once per
+// replay) rather than searched for - so a long game's views stay quick.
+const indexes = new WeakMap<ReplayState, { steps: Map<number, ReplayState["steps"][number]>; hands: Map<number, HandResult> }>();
+function indexOf(state: ReplayState) {
+  let ix = indexes.get(state);
+  if (!ix) {
+    ix = { steps: new Map(state.steps.map((x) => [x.eventIndex, x])), hands: new Map(state.hands.map((h) => [h.eventIndex, h])) };
+    indexes.set(state, ix);
+  }
+  return ix;
+}
+export const stepAt = (state: ReplayState, eventIndex: number) => indexOf(state).steps.get(eventIndex);
+export const handAt = (state: ReplayState, eventIndex: number) => indexOf(state).hands.get(eventIndex);
+
 export function replay(game: ScoreGame): ReplayState {
   const state: ReplayState = {
     seats: game.seats.slice(),

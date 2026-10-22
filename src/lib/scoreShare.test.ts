@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { newGame, withEvent, type ScoreStore } from "./ledger";
-import { decodeSnapshot, encodeSnapshot, snapshotFromHash, snapshotOf, snapshotUrl } from "./scoreShare";
+import { decodeFull, decodeSnapshot, encodeFull, encodeSnapshot, fullSnapshotOf, fullSnapshotUrl, snapshotFromAnyHash, snapshotFromHash, snapshotOf, snapshotUrl } from "./scoreShare";
 
 const store = (): ScoreStore => {
   let g = newGame(["凱文", "Mandy", "Kelvin", "Ah Wing"], 0, { base: 0, dealerTai: 0, streakTai: 0, jackpot: false } as never);
@@ -33,5 +33,32 @@ describe("share snapshot", () => {
     expect(snapshotFromHash("#s=not-base64!!")).toBeNull();
     expect(snapshotFromHash("#other")).toBeNull();
     expect(decodeSnapshot(encodeSnapshot({ v: 2 } as never))).toBeNull();
+  });
+
+  it("v2 carries the whole game, compressed, and reads back exactly", async () => {
+    const s = store();
+    const full = fullSnapshotOf(s, s.active!, 100);
+    expect(full.v).toBe(2);
+    expect(full.game?.events).toHaveLength(2);
+    expect(full.colors).toEqual({ Mandy: 3 });
+    expect(await decodeFull(await encodeFull(full))).toEqual(full);
+    const url = await fullSnapshotUrl(full, "https://example.test/mjwaits/");
+    expect(url).toMatch(/#z=[\w-]+$/);
+    expect(await snapshotFromAnyHash(url.slice(url.indexOf("#")))).toEqual(full);
+    // Old #s= links still read.
+    const old = snapshotUrl(snapshotOf(s, s.active!, 100), "https://example.test/mjwaits/");
+    expect((await snapshotFromAnyHash(old.slice(old.indexOf("#"))))?.v).toBe(1);
+  });
+
+  it("keeps a night's game short enough for a QR code", async () => {
+    const s = store();
+    let g = s.active!;
+    for (let i = 0; i < 40; i++) g = withEvent(g, { t: "win", at: 1792000000000 + i * 60000, winners: [{ seat: i % 4, tai: 3 + (i % 7) }], from: i % 3 ? (i + 1) % 4 : null, source: "quick" });
+    const url = await fullSnapshotUrl(fullSnapshotOf(s, g, 100), "https://kevincgith.github.io/mjwaits/");
+    expect(url.length).toBeLessThan(2900);
+  });
+
+  it("ignores a #z= that isn't a game", async () => {
+    expect(await snapshotFromAnyHash("#z=bm90LWRlZmxhdGU")).toBeNull();
   });
 });
