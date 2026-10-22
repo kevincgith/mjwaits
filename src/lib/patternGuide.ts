@@ -285,6 +285,6 @@ export const GENERAL_RULES: { title: string; text: string }[] = [
   },
   {
     title: "Situations",
-    text: "自摸, 叮, 莊 and the other situations are declared on the Scoring tab's 情況 buttons. They can't be seen in the tiles.",
+    text: "自摸, 叮, 莊 and the other situations are declared on the Scoring tab's 情況 buttons. They can't be seen in the tiles. The buttons keep them consistent: anything self-drawn (花摸, 槓摸, 海底, 天胡) turns 自摸 on, a claimed win (搶槓, 雙響, 地胡, 食叮) turns it off, and situations that can't happen together clear each other. Each situation's card says how its button links; that's how the app works, not part of a rule set.",
   },
 ];

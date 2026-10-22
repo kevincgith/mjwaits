@@ -47,6 +47,13 @@ patterns, the situation alone for declared state (自摸, 叮, 莊…), and othe
 (清一色, 平胡, 十三么…), with the 食胡 tile highlighted and what it's worth there under the set
 being edited. `patternExamples.test.ts` checks every example still counts its pattern.
 
+**情況 button links.** How the Scoring tab's situation buttons force or clear each other (花摸/槓摸/河底/海底/天胡
+turn 自摸 on; 搶槓/雙響/三響/地胡/食叮 turn it off; 四子內… and 河底/海底 clear each other; 天胡/地胡/人胡 clear
+河底/海底 and the 叮 family) is the app's own wiring in App.tsx, not part of a rule set - the engine scores
+whatever it's given. [`src/lib/situationLinks.ts`](../src/lib/situationLinks.ts) restates it as data, with
+what each situation needs to count, and 設定 (each situation's details) and the printed reference show it
+read-only. Change it there whenever the buttons' wiring changes.
+
 Finding a rule: the search box matches the Chinese and English names and the common other names
 for a pattern (`PATTERN_ALIASES` in patternGuide.ts - 一般高 finds 般高, 混全帶么 finds 混帶么…). Adding
 a "Replaces" edge offers the patterns **likely to count together** with it first

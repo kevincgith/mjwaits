@@ -12,6 +12,7 @@ import { rasterizeTileArt, TileArtRemapContext, TileStyleContext } from "./tileA
 import { FAMILY_GUIDE, GENERAL_RULES, PAIR_GUIDE, PATTERN_GUIDE } from "./lib/patternGuide";
 import { DEFAULT_TAI_RULES, effectiveReplaces, HAND_SHAPES, PATTERNS, type PatternRule, type TaiRules } from "./lib/scoring";
 import { LADDERS, pairOf, PATTERN_CATALOG, PATTERN_FAMILIES, type Ladder, type OpenConcealedPair, type PatternFamily } from "./lib/taiCatalog";
+import { situationLinkRows } from "./lib/situationLinks";
 import { chickenIgnores, describeChanges, isLadderChanged, isRuleOn, isRowChanged, pairName, ruleChanges, shortName } from "./lib/taiRules";
 
 const NAME_BY_ID = new Map(PATTERNS.map((p) => [p.id, p.name]));
@@ -305,6 +306,12 @@ function PatternCard({ id, rules, changedFromHouse }: { id: string; rules: TaiRu
             <dd>{shapes.length === 0 ? "No hand shape" : shapes.map((s) => SHAPE_LABEL.get(s)).join("、")}</dd>
           </>
         )}
+        {situationLinkRows(id, shortName).map((row) => (
+          <Fragment key={row.label}>
+            <dt>{row.label}</dt>
+            <dd>{row.text}</dd>
+          </Fragment>
+        ))}
         {changedFromHouse && (c.value || c.enabled) && (
           <>
             <dt>House rule</dt>

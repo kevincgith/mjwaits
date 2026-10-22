@@ -5,11 +5,12 @@
 // hand in the tab; nothing applies until Save.
 
 import qrcode from "qrcode-generator";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { PatternExampleView } from "./PatternExample";
 import { RulesReference } from "./RulesReference";
 import { PATTERN_ALIASES } from "./lib/patternGuide";
 import { PATTERN_PARTNERS } from "./lib/patternPartners";
+import { situationLinkRows } from "./lib/situationLinks";
 import { NumberField, Segmented, Sheet, Toggle } from "./ScoresPanel";
 import {
   CHICKEN_PATTERN_IDS,
@@ -818,6 +819,7 @@ function PatternDetails({
   const likely = likelyPartners(id);
   const sameFamily = candidates.filter((other) => likely.has(other) || PATTERN_CATALOG[other].family === family);
   const otherFamilies = candidates.filter((other) => !sameFamily.includes(other));
+  const linkRows = situationLinkRows(id, shortName);
 
   return (
     <div className="tr-details">
@@ -901,6 +903,20 @@ function PatternDetails({
           )}
         </div>
       </div>
+
+      {linkRows.length > 0 && (
+        <div className="tr-detail">
+          <div className="tr-detail-label">情況 button · how it links (the app's, not part of the set)</div>
+          <dl className="tr-links">
+            {linkRows.map((row) => (
+              <Fragment key={row.label}>
+                <dt>{row.label}</dt>
+                <dd>{row.text}</dd>
+              </Fragment>
+            ))}
+          </dl>
+        </div>
+      )}
 
       <div className="tr-detail">
         <div className="tr-detail-label">Counts on</div>
