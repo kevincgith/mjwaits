@@ -736,8 +736,8 @@ function PatternRow({
         <span className="tr-pattern-end">
           {flatOrPer ? (
             <span className="tr-value">
-              <NumberField value={rule.tai} onChange={(tai) => onChange({ tai, enabled: true })} label={`${zh} tai (0 = off)`} pill />
               <span className="tr-unit">{rule.tai === 0 ? "off" : value.kind === "per" ? "each" : ""}</span>
+              <NumberField value={rule.tai} onChange={(tai) => onChange({ tai, enabled: true })} label={`${zh} tai (0 = off)`} pill />
             </span>
           ) : (
             <span className="tr-value">
@@ -747,7 +747,6 @@ function PatternRow({
                   ›
                 </span>
               </button>
-              <span className="tr-unit" />
             </span>
           )}
         </span>
@@ -803,6 +802,7 @@ function PairRow({
         </button>
         <span className="tr-pattern-end">
           <span className="tr-pair-values">
+            <span className="tr-unit">{!enabled ? "off" : per ? "each" : ""}</span>
             {sides.map((side) => (
               <span key={side.id} className="tr-value tr-pair-value">
                 <span className="tr-pair-side">{side.label}</span>
@@ -814,7 +814,6 @@ function PairRow({
                 />
               </span>
             ))}
-            <span className="tr-unit">{!enabled ? "off" : per ? "each" : ""}</span>
           </span>
 
         </span>

@@ -12485,13 +12485,17 @@ button.sc-stat:active {
   width: 3.6rem;
 }
 
-/* Always this wide, empty or not, so every row's value box lines up -
-   "each" / "off" sit in it rather than pushing the box left. */
+/* "each" / "off", before the value - the box itself sits flush right,
+   lined up with every other row's value and the switches. */
 .tr-unit {
   flex-shrink: 0;
-  width: 1.7rem;
   color: var(--text-muted);
   font-size: var(--text-xs);
+  text-align: right;
+}
+
+.tr-unit:empty {
+  display: none;
 }
 
 .tr-value-summary {
@@ -13424,7 +13428,7 @@ button.sc-stat:active {
 }
 
 .tr-pair .tr-value .sc-input-pill {
-  width: 3.2rem;
+  width: 3.5rem;
 }
 
 .tr-pair-section + .tr-pair-section {
