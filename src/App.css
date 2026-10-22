@@ -5516,6 +5516,24 @@ html.playing body {
   --play-pond: clamp(16px, calc(var(--play-hand) * 0.58), 36px);
   /* How far the table runs on under your hand. */
   --play-under: calc(var(--play-hand) * 0.9);
+
+  /* The table's own chrome: menus, sheets and the result card in dark
+     lacquer with gold, matching the wood and felt - the app's light
+     tokens, redefined for everything inside the Play screen. */
+  --surface: #211a14;
+  --text: #f3ede2;
+  --text-muted: rgba(243, 237, 226, 0.62);
+  --fill: rgba(255, 255, 255, 0.08);
+  --accent: #e2b04a;
+  --danger-text-1: #ff8f80;
+  --warning-bg-3: rgba(255, 196, 0, 0.12);
+  --warning-text: #ffd27a;
+  --separator: rgba(255, 255, 255, 0.1);
+  --shadow-float: 0 0.8rem 2rem rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 209, 102, 0.18);
+  --shadow-segment: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --play-ink-on-gold: #2e1d0b;
+  --play-seg-on: rgba(255, 255, 255, 0.16);
+  --play-pos: #8fe3a6;
 }
 
 .play-screen .tile-glyph {
@@ -5621,11 +5639,13 @@ html.playing body {
 }
 
 /* Leave, menu and 記牌器, top left. */
+/* Above the result card and sheets (z 7-8), so Leave, the menu and
+   記牌器 always work. */
 .play-corner {
   position: absolute;
   top: max(0.4rem, env(safe-area-inset-top));
   left: max(0.7rem, env(safe-area-inset-left));
-  z-index: 5;
+  z-index: 9;
   display: flex;
   gap: 0.3rem;
   align-self: start;
@@ -5634,13 +5654,19 @@ html.playing body {
 .play-icon-button {
   display: grid;
   place-items: center;
-  min-width: 2rem;
-  height: 2rem;
+  min-width: 2.1rem;
+  height: 2.1rem;
   padding: 0;
-  border: none;
+  border: 1px solid rgba(255, 209, 102, 0.28);
   border-radius: 999px;
-  background: var(--play-felt-line);
-  color: var(--play-on-felt);
+  background: rgba(20, 15, 10, 0.72);
+  color: #f3e3c0;
+  box-shadow: 0 0.15rem 0.4rem rgba(0, 0, 0, 0.35);
+}
+
+.play-icon-button[aria-expanded="true"] {
+  border-color: var(--play-gold);
+  color: var(--play-gold);
 }
 
 .play-icon-button.is-text {
@@ -5719,7 +5745,7 @@ html.playing body {
 }
 
 .play-menu-seg button.toggle-on {
-  background: var(--surface);
+  background: var(--play-seg-on);
   box-shadow: var(--shadow-segment);
   font-weight: 600;
 }
@@ -6608,6 +6634,20 @@ html.playing body {
   background: var(--play-gold);
 }
 
+/* Hints: a tile risky enough to deal into someone (the Veteran's read)
+   gets a red bar along its top. */
+.play-hand-tile.is-danger::before {
+  content: "";
+  position: absolute;
+  left: 15%;
+  right: 15%;
+  top: -0.16em;
+  height: 0.06em;
+  border-radius: 1em;
+  background: #ff6b5a;
+  box-shadow: 0 0 0.15em rgba(255, 107, 90, 0.8);
+}
+
 /* 食替: barred from being discarded right now. */
 .play-hand-tile.is-barred .tile-glyph {
   filter: brightness(0.62) saturate(0.6);
@@ -6684,6 +6724,35 @@ html.playing body {
 .play-bar-shanten,
 .play-bar-prompt {
   color: var(--play-on-felt-muted);
+}
+
+/* 聽: the tiles you're waiting on, each with how many are still unseen. */
+.play-bar-waits {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--play-gold);
+  font-weight: 700;
+}
+
+.play-wait {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.1rem;
+  color: var(--play-on-felt);
+  font-size: 0.78rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.play-wait .tile-glyph {
+  font-size: 1.15rem;
+}
+
+/* None of that tile left to win on. */
+.play-wait.is-dead {
+  opacity: 0.45;
+  text-decoration: line-through;
 }
 
 /* ---- A bot's speech bubble, by its name card ---- */
@@ -6779,7 +6848,7 @@ html.playing body {
 .play-presets button.toggle-on,
 .play-opponent-chips button.toggle-on {
   background: var(--accent);
-  color: #fff;
+  color: var(--play-ink-on-gold);
   font-weight: 600;
 }
 
@@ -7016,7 +7085,7 @@ html.playing body {
 }
 
 .play-result-deltas .is-pos {
-  color: var(--accent);
+  color: var(--play-pos);
   font-weight: 600;
 }
 
@@ -7034,9 +7103,10 @@ html.playing body {
   color: var(--text);
 }
 
-.play-next {
-  background: var(--accent);
-  color: #fff;
+.play-next,
+.play-show-result {
+  background: linear-gradient(#f0c766, var(--play-gold-deep));
+  color: var(--play-ink-on-gold);
 }
 
 /* "Show result": brings the card back after View table, where the call

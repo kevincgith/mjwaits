@@ -31,3 +31,10 @@ dist-ssr
 /.arena
 /.evolve
 /evolution
+/.ml-data
+/ml/data
+/ml/.venv
+/ml/runs
+__pycache__/
+/.ml-eval
+/.ml-selfplay

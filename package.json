@@ -10,7 +10,10 @@
     "preview": "vite preview",
     "test": "vitest run",
     "arena": "vite build --ssr scripts/arena.ts --outDir .arena --emptyOutDir --logLevel warn && node .arena/arena.js",
-    "evolve": "vite build --ssr scripts/evolve.ts --outDir .evolve --emptyOutDir --logLevel warn && node .evolve/evolve.js"
+    "evolve": "vite build --ssr scripts/evolve.ts --outDir .evolve --emptyOutDir --logLevel warn && node .evolve/evolve.js",
+    "ml-data": "vite build --ssr scripts/ml-data.ts --outDir .ml-data --emptyOutDir --logLevel warn && node .ml-data/ml-data.js",
+    "ml-eval": "vite build --ssr scripts/ml-eval.ts --outDir .ml-eval --emptyOutDir --logLevel warn && node .ml-eval/ml-eval.js",
+    "ml-selfplay": "vite build --ssr scripts/ml-selfplay.ts --outDir .ml-selfplay --emptyOutDir --logLevel warn && node .ml-selfplay/ml-selfplay.js"
   },
   "dependencies": {
     "onnxruntime-web": "^1.27.0",

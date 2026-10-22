@@ -41,7 +41,7 @@ import {
   type GameState,
   type TurnMove,
 } from "./lib/game";
-import { allTileKinds, shanten, sortTiles, tileKey, tileLabel, type Tile } from "./lib/mahjong";
+import { allTileKinds, getWaits, shanten, sortTiles, tileKey, tileLabel, type Tile } from "./lib/mahjong";
 import { patternDisplayName, type BonusTile } from "./lib/scoring";
 import { BonusGlyphSpan, TileGlyphSpan } from "./TileGlyphs";
 import { BOT_PROFILES, botClaimFor, botSurrenders, botTurnFor, profileById, rateDiscardsFor, voiceOf, type BotProfile, type Voice } from "./lib/bots";
@@ -81,6 +81,12 @@ const botDelay = (difficulty: number, afterCall: boolean) => 300 + difficulty * 
 // bot had a call to weigh and passed (a tell, as at a real table).
 const PASS_DELAY_MS = 380;
 const PONDER_DELAY_MS = 900;
+// The bots' pace, from the menu: every pause is multiplied by this.
+const SPEEDS = { slow: { label: "Slow", factor: 1.6 }, normal: { label: "Normal", factor: 1 }, fast: { label: "Fast", factor: 0.45 } } as const;
+type Speed = keyof typeof SPEEDS;
+// With hints on, a tile at least this dangerous (the Veteran's deal-in read)
+// gets a red mark.
+const DANGER_MARK = 0.12;
 const BUBBLE_MS = 2200;
 const BURST_MS = 1200;
 const TIMER_CHOICES = [0, 10, 20] as const;
@@ -93,6 +99,7 @@ interface Saved {
   totals: number[];
   hint: boolean;
   timer?: TimerSetting;
+  speed?: Speed;
   // The bot ids at seats 1-3.
   opponents?: string[];
 }
@@ -304,6 +311,7 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
   const [totals, setTotals] = useState<number[]>(() => saved?.totals ?? [0, 0, 0, 0]);
   const [hint, setHint] = useState(() => saved?.hint ?? false);
   const [timer, setTimer] = useState<TimerSetting>(() => saved?.timer ?? 0);
+  const [speed, setSpeed] = useState<Speed>(() => (saved?.speed && saved.speed in SPEEDS ? saved.speed : "normal"));
   const [opponents, setOpponents] = useState<string[]>(() =>
     saved?.opponents?.length === 3 && saved.opponents.every((id) => BOT_PROFILES.some((p) => p.id === id)) ? saved.opponents : DEFAULT_OPPONENTS
   );
@@ -334,7 +342,7 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
   const [riichiArmed, setRiichiArmed] = useState(false);
   const [resultHidden, setResultHidden] = useState(false);
 
-  useEffect(() => save({ game, totals, hint, timer, opponents }), [game, totals, hint, timer, opponents]);
+  useEffect(() => save({ game, totals, hint, timer, opponents, speed }), [game, totals, hint, timer, opponents, speed]);
 
   // The menu closes on a tap anywhere outside it, and disarms New game.
   useEffect(() => {
@@ -442,7 +450,7 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
       delay = pondered ? PONDER_DELAY_MS + Math.random() * 300 : PASS_DELAY_MS;
     }
     if (!move) return;
-    const id = window.setTimeout(move, delay);
+    const id = window.setTimeout(move, delay * SPEEDS[speed].factor);
     return () => window.clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [game]);
@@ -494,6 +502,17 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
       ? handTiles.length - 1
       : handTiles.findIndex((t) => sameTile(t, bestDiscard))
     : -1;
+  // Hints: tiles risky enough to mark red, by the Veteran's read of the table.
+  const dangerous = useMemo(() => new Set((ratings ?? []).filter((r) => r.danger >= DANGER_MARK).map((r) => tileKey(r.tile))), [ratings]);
+  // When you're ready (聽): what you're waiting on, and how many of each are
+  // still unseen. Shown whether or not hints are on - any player knows this.
+  const waits = useMemo(() => {
+    if (myTurn || me.hand.length !== meldsNeeded(me) * 3 + 1) return null;
+    const ws = getWaits(me.hand, meldsNeeded(me));
+    if (ws.length === 0) return null;
+    const unseen = unseenCounts(game, HUMAN);
+    return ws.map((t) => ({ tile: t, left: Math.max(0, unseen.get(tileKey(t)) ?? 0) }));
+  }, [game, me, myTurn]);
   const myShanten = useMemo(() => {
     if (!hint) return null;
     if (myTurn) return ratings?.[0]?.shanten ?? null;
@@ -653,6 +672,16 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
                 <span className="play-menu-value">{opponents.map((id) => shortName(profileById(id))).join(" · ")} ›</span>
               </button>
               <div className="play-menu-row">
+                <span>Bot speed</span>
+                <span className="play-menu-seg">
+                  {(Object.keys(SPEEDS) as Speed[]).map((sp) => (
+                    <button key={sp} type="button" className={speed === sp ? "toggle-on" : undefined} aria-pressed={speed === sp} onClick={() => setSpeed(sp)}>
+                      {SPEEDS[sp].label}
+                    </button>
+                  ))}
+                </span>
+              </div>
+              <div className="play-menu-row">
                 <span>Turn timer</span>
                 <span className="play-menu-seg">
                   {TIMER_CHOICES.map((t) => (
@@ -790,6 +819,7 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
                       isDrawn && "is-drawn",
                       selected === i && "is-selected",
                       i === hintIndex && "is-hint",
+                      hint && myTurn && dangerous.has(tileKey(t)) && "is-danger",
                       barred && "is-barred",
                     ]
                       .filter(Boolean)
@@ -821,18 +851,21 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
             {game.dealerStreak > 0 && ` · 連${game.dealerStreak}`}
           </span>
           <span className="play-bar-left">剩:{liveTilesLeft(game)}張</span>
-          {myShanten !== null && (
-            <span className="play-bar-shanten">{myShanten <= 0 ? (myShanten < 0 ? "Complete" : "Ready (聽)") : `${myShanten} from ready`}</span>
+          {waits ? (
+            <span className="play-bar-waits" aria-label={`Ready, waiting on ${waits.map((w) => `${tileLabel(w.tile)} (${w.left} left)`).join(", ")}`}>
+              聽
+              {waits.map((w) => (
+                <span key={tileKey(w.tile)} className={`play-wait${w.left === 0 ? " is-dead" : ""}`}>
+                  <TileGlyphSpan tile={w.tile} />×{w.left}
+                </span>
+              ))}
+            </span>
+          ) : (
+            myShanten !== null && myShanten > 0 && <span className="play-bar-shanten">{myShanten} from ready</span>
           )}
-          {myTurn && !over && !forced && (
+          {myTurn && !over && !forced && (riichiArmed || selected !== null) && (
             <span className="play-bar-prompt">
-              {riichiArmed
-                ? selected === null
-                  ? "叮: choose the tile to throw"
-                  : "Tap again to declare 叮"
-                : selected === null
-                  ? "Tap a tile, then again to discard"
-                  : "Tap again to discard"}
+              {riichiArmed ? (selected === null ? "叮: choose the tile to throw" : "Tap again to declare 叮") : "Tap again to discard"}
             </span>
           )}
           {me.riichi && !over && <span className="play-bar-prompt">叮 - your hand is locked</span>}
