@@ -281,6 +281,10 @@ def rl(args):
     hand_value = match_rewards(manifest, meta, device) if "_hands" in manifest else None
     reward = shaped_reward(styles, meta, extra, hand_value)
     old_logp = extra[:, 0]
+    # The temperature the hands were played at: the recorded log-probs are of
+    # logits / T, so the ratio and the KL are taken at the same T.
+    temp = float(manifest.get("temperature", 1) or 1)
+    print(f"played at temperature {temp}")
     print(f"{n:,} self-play decisions; mean reward by style: " + " ".join(f"{s}:{reward[meta[:, 1] == i].mean():+.3f}" for i, s in enumerate(styles)))
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
     idx = np.arange(n)
@@ -299,6 +303,7 @@ def rl(args):
             r = torch.from_numpy(reward[ix]).to(device)
             lp_old = torch.from_numpy(old_logp[ix]).to(device)
             logits, value = model(o, s, m)
+            logits = logits / temp
             logp_all = masked_log_softmax(logits, m)
             logp = logp_all.gather(1, a[:, None]).squeeze(1)
             adv = r - value.detach()
@@ -306,7 +311,7 @@ def rl(args):
             ratio = torch.exp(logp - lp_old)
             pg = -torch.min(ratio * adv, torch.clamp(ratio, 1 - args.clip, 1 + args.clip) * adv).mean()
             with torch.no_grad():
-                ref_logp = masked_log_softmax(ref(o, s, m)[0], m)
+                ref_logp = masked_log_softmax(ref(o, s, m)[0] / temp, m)
             kl = (ref_logp.exp() * (ref_logp - logp_all)).masked_fill(m < 0.5, 0).sum(-1).mean()
             loss = pg + args.value_weight * F.smooth_l1_loss(value, r) + args.kl * kl
             opt.zero_grad()

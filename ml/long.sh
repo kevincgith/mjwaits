@@ -96,9 +96,9 @@ while true; do
   round=$((round + 1))
   name="long-$round"
   log "round $round: $best self-play, $hands hands"
-  data=$(selfplay "ml/data/$name" "$hands" "$((300 + round))" --model "$best" --rules "$rules")
+  data=$(selfplay "ml/data/$name" "$hands" "$((300 + round))" --model "$best" --rules "$rules" --temp 0.5)
   log "  PPO"
-  ml/.venv/bin/python -u ml/train.py --rl --init "$best" --ref "$best" --data "$data" --out "ml/runs/$name" --lr 1e-4 --kl 0.2 2>&1 | grep --line-buffered -v Warning >"ml/runs/long/$name-train.log"
+  ml/.venv/bin/python -u ml/train.py --rl --init "$best" --ref "$best" --data "$data" --out "ml/runs/$name" --lr 3e-5 --kl 1.0 --clip 0.1 2>&1 | grep --line-buffered -v Warning >"ml/runs/long/$name-train.log"
   rm -rf "ml/data/$name"
   if [ ! -f "ml/runs/$name/policy.onnx" ]; then
     log "  training failed - see ml/runs/long/$name-train.log"
