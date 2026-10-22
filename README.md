@@ -428,6 +428,10 @@ held upright is asked to turn sideways.
   - **花草** (8): one flower completing both at once, e.g. 124s 4f, then 3s.
   - **八仙過海** (100): all eight. The hand carries on.
   Each player collects at most one 花 and one 草 a hand.
+  - **7搶1** (30): one player holds a flower and another collects the other seven -
+    the seven collects off the one.
+  - **1搶7** (30): one player holds seven and another draws the last - the one
+    collects off the seven.
 - **聽:** whenever your hand is ready, the bottom band shows each tile you're waiting on and
   how many of it are still unseen (struck through when none are left).
 - **Look:** menus, sheets and the result card share the table's dark lacquer and gold, so

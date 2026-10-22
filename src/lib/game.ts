@@ -131,7 +131,7 @@ export interface GameState {
 
 export interface FlowerBonus {
   seat: number;
-  name: "花" | "草" | "花草" | "八仙過海";
+  name: "花" | "草" | "花草" | "八仙過海" | "7搶1" | "1搶7";
   deltas: number[];
   paid: boolean;
 }
@@ -251,6 +251,8 @@ function drawInto(s: GameState, seat: number, fromBack: boolean): { tile: Tile |
       s.players[seat].flowers.push(w.bonus);
       const earned = flowerBonus(s.players[seat].flowers, (s.flowerBonuses ?? []).filter((b) => b.seat === seat).map((b) => b.name));
       for (const name of earned) (s.flowerBonuses ??= []).push({ seat, name, deltas: collectFromEach(seat, FLOWER_BONUS[name]), paid: false });
+      const rob = flowerRobbery(s.players.map((p) => p.flowers.length), seat);
+      if (rob) (s.flowerBonuses ??= []).push({ seat: rob.seat, name: rob.name, deltas: collectFromOne(rob.seat, rob.from, FLOWER_ROBBERY), paid: false });
       flowered = true;
       back = true;
       continue;
@@ -298,11 +300,32 @@ export function diceBonus(dice: Dice, dealer: number): { name: string; deltas: n
 // At most one 花 and one 草 per player per hand, however many more form.
 export const FLOWER_BONUS = { 草: 3, 花: 5, 花草: 8, 八仙過海: 100 } as const;
 
+// 7搶1 / 1搶7: the last of the eight flowers out, split seven and one - paid
+// by the other of the two only.
+export const FLOWER_ROBBERY = 30;
+
+const collectFromOne = (seat: number, from: number, amount: number) =>
+  Array.from({ length: SEATS }, (_, i) => (i === seat ? amount : i === from ? -amount : 0));
+
+// Given each seat's flower count just after `drew` took one: the eighth out,
+// with one seat holding seven and another one. Drawing it into the seven is
+// 7搶1 (collects off the one); drawing it as the lone one is 1搶7 (collects
+// off the seven).
+export function flowerRobbery(counts: number[], drew: number): { seat: number; from: number; name: "7搶1" | "1搶7" } | null {
+  if (counts.reduce((a, b) => a + b, 0) !== 8) return null;
+  const seven = counts.indexOf(7);
+  const one = counts.indexOf(1);
+  if (seven < 0 || one < 0) return null;
+  if (drew === seven) return { seat: seven, from: one, name: "7搶1" };
+  if (drew === one) return { seat: one, from: seven, name: "1搶7" };
+  return null;
+}
+
 const collectFromEach = (seat: number, amount: number) =>
   Array.from({ length: SEATS }, (_, i) => (i === seat ? amount * (SEATS - 1) : -amount));
 
 // What a seat's flowers newly earn, given what it has already collected.
-export function flowerBonus(flowers: BonusTile[], had: FlowerBonus["name"][]): FlowerBonus["name"][] {
+export function flowerBonus(flowers: BonusTile[], had: FlowerBonus["name"][]): (keyof typeof FLOWER_BONUS)[] {
   const ranks = (kind: BonusTile["kind"]) => new Set(flowers.filter((f) => f.kind === kind).map((f) => f.rank));
   const fl = ranks("flower");
   const se = ranks("season");
@@ -311,7 +334,7 @@ export function flowerBonus(flowers: BonusTile[], had: FlowerBonus["name"][]): F
   const cao = new Set([...fl, ...se]).size === 4 && fl.size > 0 && se.size > 0;
   const hadHua = had.includes("花") || had.includes("花草");
   const hadCao = had.includes("草") || had.includes("花草");
-  const out: FlowerBonus["name"][] = [];
+  const out: (keyof typeof FLOWER_BONUS)[] = [];
   const newHua = hua && !hadHua;
   const newCao = cao && !hadCao;
   if (newHua && newCao) out.push("花草");

@@ -21,6 +21,7 @@ import {
   diceBonus,
   dealHand,
   flowerBonus,
+  flowerRobbery,
   fullWall,
   kongOptions,
   SEATS,
@@ -304,6 +305,25 @@ describe("flower bonuses", () => {
     // Seat 0 is dealt 1f 2f 3s at the start and 4s straight after.
     const s = dealHand({ dealer: 0, roundWind: 1, dealerStreak: 0 }, [bonus("flower", 1), bonus("flower", 2), bonus("season", 3), bonus("season", 4), ...wall]);
     expect(s.flowerBonuses).toEqual([{ seat: 0, name: "草", deltas: [9, -3, -3, -3], paid: false }]);
+  });
+});
+
+describe("7搶1 / 1搶7", () => {
+  it("the eighth flower split seven and one: whoever drew it collects 30 off the other", () => {
+    expect(flowerRobbery([1, 7, 0, 0], 1)).toEqual({ seat: 1, from: 0, name: "7搶1" });
+    expect(flowerRobbery([1, 7, 0, 0], 0)).toEqual({ seat: 0, from: 1, name: "1搶7" });
+    expect(flowerRobbery([1, 6, 0, 0], 1)).toBeNull();
+    expect(flowerRobbery([2, 6, 0, 0], 1)).toBeNull();
+    expect(flowerRobbery([0, 8, 0, 0], 1)).toBeNull();
+  });
+  it("is paid at the table by the one player", () => {
+    const tiles = fullWall().filter((w) => !("bonus" in w));
+    const b = (kind: "flower" | "season", rank: 1 | 2 | 3 | 4) => ({ bonus: { kind, rank } });
+    // Seat 0 (dealer) draws 1f first; seat 1 then draws the other seven.
+    const wall = [b("flower", 1), ...tiles.slice(0, 15), b("flower", 2), b("flower", 3), b("flower", 4), b("season", 1), b("season", 2), b("season", 3), b("season", 4), ...tiles.slice(15)];
+    const s = dealHand({ dealer: 0, roundWind: 1, dealerStreak: 0 }, wall);
+    expect(s.players.map((p) => p.flowers.length)).toEqual([1, 7, 0, 0]);
+    expect(s.flowerBonuses?.find((x) => x.name === "7搶1")).toEqual({ seat: 1, name: "7搶1", deltas: [-30, 30, 0, 0], paid: false });
   });
 });
 
