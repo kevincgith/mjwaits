@@ -23,6 +23,23 @@ BACKUP = os.path.expanduser("~/Library/Mobile Documents/com~apple~CloudDocs/mjwa
 LINE = re.compile(r"^\[(\d\d-\d\d \d\d:\d\d)\] (.*)$")
 
 
+# Descriptive names for the runs (the folders keep their short ids, which
+# the scripts and the app's model files refer to).
+NAMES = {
+    "tile1": ("Rule-bot copy", "learned by copying the rule bots' decisions"),
+    "dagger1": ("Rule-bot copy, corrected", "DAgger: re-taught where its own play went off the rule bots' path"),
+}
+
+
+def describe(run_id):
+    if run_id in NAMES:
+        return NAMES[run_id]
+    m = re.match(r"long-(\d+)$", run_id)
+    if m:
+        return (f"Self-play round {m.group(1)}", "PPO on self-play hands from the best network so far")
+    return (run_id, "")
+
+
 def run_state():
     out = subprocess.run(["bash", "ml/ctl.sh", "status"], cwd=ROOT, capture_output=True, text=True).stdout
     return out.splitlines()[0] if out else "unknown"
@@ -50,7 +67,10 @@ def parse_log():
         sm = re.match(r"\s*(ml/runs/\S+|dagger1|long-\d+): (-?\d+(?:\.\d+)?)", msg)
         if sm:
             name = sm.group(1).split("/")[-1]
-            scores.append({"name": name, "score": float(sm.group(2)), "at": at, "best": "new best" in msg})
+            label, desc = describe(name)
+            scores.append({"name": name, "label": label, "desc": desc, "score": float(sm.group(2)), "at": at, "best": "new best" in msg})
+        if "-> new best" in msg and scores:
+            scores[-1]["best"] = True
         if msg.startswith("DAgger"):
             step = {"kind": "dagger", "name": "dagger1", "hands": 8000, "since": at, "stage": "self-play"}
         rm = re.match(r"round (\d+): .* (\d+) hands", msg)
@@ -84,9 +104,12 @@ def parse_log():
 def status():
     entries, scores, step = parse_log()
     started = entries[0]["at"] if entries else None
+    st = read_state()
+    if st.get("best"):
+        st["bestLabel"], st["bestDesc"] = describe(st["best"].split("/")[-1])
     return {
         "run": run_state(),
-        "state": read_state(),
+        "state": st,
         "step": step,
         "scores": scores,
         "log": entries[-40:],

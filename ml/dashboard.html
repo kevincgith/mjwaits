@@ -104,7 +104,7 @@ h2 { font-size: 15px; margin: 0 0 4px; font-weight: 650; }
 svg { display: block; width: 100%; height: 260px; overflow: visible; }
 .tip {
   position: absolute; pointer-events: none; background: var(--surface-1); border: 1px solid var(--border);
-  border-radius: 8px; padding: 6px 10px; font-size: 12px; box-shadow: 0 4px 14px rgb(0 0 0 / .12); display: none; white-space: nowrap;
+  border-radius: 8px; padding: 6px 10px; font-size: 12px; box-shadow: 0 4px 14px rgb(0 0 0 / .12); display: none; max-width: 260px;
 }
 .tip b { font-variant-numeric: tabular-nums; }
 .empty { color: var(--text-muted); font-size: 13px; padding: 40px 0; text-align: center; }
@@ -139,7 +139,7 @@ td.num, th.num { text-align: right; }
 
   <div class="grid">
     <div class="card"><div class="label">Best network</div><div class="big" id="best">–</div><div class="sub" id="best-name"></div></div>
-    <div class="card"><div class="label">Starting score (tile1)</div><div class="big" id="start">–</div><div class="sub">net tai / hand vs rule bots</div></div>
+    <div class="card"><div class="label">Starting score (rule-bot copy)</div><div class="big" id="start">–</div><div class="sub">net tai / hand vs rule bots</div></div>
     <div class="card"><div class="label">Rounds finished</div><div class="big" id="rounds">–</div><div class="sub" id="kept"></div></div>
     <div class="card"><div class="label">Running since</div><div class="big" id="since" style="font-size:20px">–</div><div class="sub" id="load"></div></div>
 
@@ -214,7 +214,8 @@ function renderChart(scores) {
     g += `<text x="${L - 8}" y="${y(v) + 4}" text-anchor="end" font-size="11" fill="var(--text-muted)">${fmt(v)}</text>`;
   }
   scores.forEach((s, i) => {
-    g += `<text x="${x(i)}" y="${H - 8}" text-anchor="middle" font-size="11" fill="var(--text-muted)">${s.name}</text>`;
+    const short = s.name.startsWith("long-") ? "R" + s.name.slice(5) : s.name === "tile1" ? "Copy" : s.name === "dagger1" ? "Corrected" : s.name;
+    g += `<text x="${x(i)}" y="${H - 8}" text-anchor="middle" font-size="11" fill="var(--text-muted)">${short}</text>`;
   });
   let d = "";
   best.forEach((v, i) => { d += (i ? ` H${x(i)} V${y(v)}` : `M${x(i)} ${y(v)}`); });
@@ -231,7 +232,7 @@ function renderChart(scores) {
   svg.querySelectorAll(".hit").forEach((c) => {
     c.addEventListener("mouseenter", () => {
       const s = scores[+c.dataset.i];
-      tip.innerHTML = `${s.name} · ${s.at}<br>Score <b>${fmt(s.score)}</b>${s.best ? " · new best" : ""}<br>Best so far <b>${fmt(best[+c.dataset.i])}</b>`;
+      tip.innerHTML = `<b>${s.label}</b> · ${s.at}<br>${s.desc ? s.desc + "<br>" : ""}Score <b>${fmt(s.score)}</b>${s.best ? " · new best" : ""}<br>Best so far <b>${fmt(best[+c.dataset.i])}</b>`;
       tip.style.display = "block";
       const cx = +c.getAttribute("cx"), cy = +c.getAttribute("cy");
       tip.style.left = Math.min(Math.max(cx - tip.offsetWidth / 2, 0), W - tip.offsetWidth) + "px";
@@ -254,7 +255,7 @@ function render(s) {
   const st = s.state || {};
   const scores = s.scores || [];
   $("best").textContent = st.best_score ? fmt(+st.best_score) : "–";
-  $("best-name").textContent = st.best ? st.best.split("/").pop() : "";
+  $("best-name").textContent = st.best ? `${st.bestLabel} (${st.best.split("/").pop()})` : "";
   $("start").textContent = scores.length ? fmt(scores[0].score) : "–";
   const rounds = scores.filter((x) => x.name.startsWith("long-")).length;
   $("rounds").textContent = rounds;
@@ -266,7 +267,7 @@ function render(s) {
   const step = s.step;
   const names = stageNames(step);
   const stageIdx = !step ? -1 : step.kind === "start" ? 0 : { "self-play": 0, training: 1, scoring: 2 }[step.stage];
-  $("step-title").textContent = !step ? "–" : step.kind === "start" ? "Scoring the starting network" : step.kind === "dagger" ? "DAgger: tile1 plays, the rule bots label" : `Round ${step.name.split("-")[1]}: self-play and PPO`;
+  $("step-title").textContent = !step ? "–" : step.kind === "start" ? "Scoring the starting network" : step.kind === "dagger" ? "Correcting the rule-bot copy (DAgger)" : `Self-play round ${step.name.split("-")[1]}: play, then PPO training`;
   $("stages").innerHTML = names.map((n, i) => `<div class="stage ${i < stageIdx ? "done" : i === stageIdx ? "now" : ""}">${n}</div>`).join("");
   if (step && step.kind !== "start") {
     $("chunks").textContent = `${step.chunksDone} / ${step.chunks}`;
@@ -290,7 +291,7 @@ function render(s) {
 
   renderChart(scores);
   $("rows").innerHTML = scores.length
-    ? scores.slice().reverse().map((x) => `<tr><td>${x.name}</td><td>${x.at}</td><td class="num">${fmt(x.score)}</td><td>${x.best ? '<span class="tag">new best</span>' : ""}</td></tr>`).join("")
+    ? scores.slice().reverse().map((x) => `<tr><td>${x.label}<div class="sub">${x.name}</div></td><td>${x.at}</td><td class="num">${fmt(x.score)}</td><td>${x.best ? '<span class="tag">new best</span>' : ""}</td></tr>`).join("")
     : `<tr><td colspan="4" class="empty">No scores yet</td></tr>`;
   const logEl = $("log");
   const atBottom = logEl.scrollTop + logEl.clientHeight >= logEl.scrollHeight - 4;
