@@ -1997,6 +1997,14 @@ button.scoring-pattern-row {
   cursor: pointer;
 }
 
+/* "30 × 3" beside a pattern counted more than once. */
+.scoring-pattern-times {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .scoring-pattern-tai {
   font-weight: 600;
   color: var(--text);
@@ -8285,6 +8293,37 @@ html.playing body {
   cursor: pointer;
 }
 
+/* Scores not kept safely on this phone: a warning above everything else. */
+.sc-storage-warning {
+  margin-bottom: 0.75rem;
+  background: color-mix(in srgb, var(--sc-neg) 10%, var(--surface));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sc-neg) 35%, transparent);
+}
+
+.sc-storage-warning p {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+.sc-storage-warning p + p {
+  margin-top: 0.75rem;
+}
+
+.sc-storage-warning strong {
+  color: var(--sc-neg);
+  font-size: var(--text-md);
+}
+
+.sc-storage-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
 /* The four seats as a diamond, 流局 in the middle. */
 .sc-board {
   position: relative;
@@ -8686,6 +8725,42 @@ html.playing body {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+}
+
+/* The four rows, reordered by dragging a row's grip. */
+.sc-setup-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.sc-setup-row.is-dragging {
+  position: relative;
+  z-index: 2;
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.16);
+}
+
+/* A big enough target for a thumb; the page doesn't scroll while it's held. */
+.sc-setup-grip {
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 1.6rem;
+  height: 2.75rem;
+  margin-right: -0.25rem;
+  color: var(--text-muted);
+  font-size: 1.1rem;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.sc-setup-row.is-dragging .sc-setup-grip {
+  color: var(--accent);
+  cursor: grabbing;
 }
 
 .sc-setup-wind {
@@ -10744,7 +10819,7 @@ html.sc-fit-mode .build-version {
 }
 
 .sc-paytable col.is-total {
-  width: 3rem;
+  width: 3.5rem;
 }
 
 .sc-paytable col.is-name {
@@ -12444,6 +12519,23 @@ button.sc-stat:active {
   gap: 0.35rem;
 }
 
+.tr-links {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.2rem 0.6rem;
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+.tr-links dt {
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.tr-links dd {
+  margin: 0;
+}
+
 .tr-none {
   color: var(--text-muted);
   font-size: var(--text-sm);
@@ -13282,4 +13374,95 @@ button.sc-stat:active {
 .rr-card .tr-example-waits-label {
   color: var(--rr-muted);
   font-size: 7pt;
+}
+
+/* 設定: a 明/暗 pair as one row - a value for each side, labelled. */
+.tr-pair-values {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.tr-pair-value {
+  gap: 0.2rem;
+}
+
+.tr-pair-side {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+.tr-pair .tr-value .sc-input-pill {
+  width: 3.5rem;
+}
+
+.tr-pair-section + .tr-pair-section {
+  margin-top: 0.25rem;
+  padding-top: 0.6rem;
+  border-top: 0.5px solid var(--separator);
+}
+
+.tr-pair-heading {
+  margin-top: 0.25rem;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: 700;
+}
+
+/* The printed reference: a 明/暗 pair card's examples, each labelled. */
+.rr-pair-example {
+  display: grid;
+  grid-template-columns: 4mm 1fr;
+  gap: 1.5mm;
+  align-items: start;
+}
+
+.rr-pair-side {
+  padding-top: 2mm;
+  color: var(--rr-accent);
+  font-size: 8pt;
+  font-weight: 700;
+}
+
+/* 設定: 大雞/大鴨's two switches and the fine-tune list under them. */
+.tr-chicken-group {
+  min-height: 0;
+  padding: 0.25rem 0;
+}
+
+.tr-mixed {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.tr-chicken-foot {
+  display: flex;
+  justify-content: space-between;
+  margin: 0 -0.5rem;
+}
+
+/* 設定 → Share & files: one row per file action. */
+.tr-file-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.05rem;
+  width: 100%;
+  min-height: 2.9rem;
+  border: none;
+  padding: 0.45rem 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tr-file-row + .tr-file-row {
+  border-top: 0.5px solid var(--separator);
+}
+
+.tr-advanced .tr-engine {
+  padding: 0.5rem 0.25rem 0;
 }

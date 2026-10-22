@@ -38,3 +38,6 @@ dist-ssr
 __pycache__/
 /.ml-eval
 /.ml-selfplay
+
+# Screenshots of another scoring app, for comparison - not ours to commit.
+reference-app/

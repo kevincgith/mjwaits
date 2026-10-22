@@ -27,7 +27,11 @@ import {
   deleteEvent,
   replaceEvent,
   undoEvent,
+  replayCached,
+  unreadableScores,
+  UNREADABLE_SCORES_KEY,
   withEvent,
+  withEvents,
   type HandResult,
   type PatternNote,
   type ReplayState,
@@ -535,35 +539,105 @@ function Sparkline({ values, className }: { values: (number | null)[]; className
 
 function Setup({ store, suggestion, onStart, waitingHand }: { store: ScoreStore; suggestion: readonly string[]; onStart: (seats: string[], dealer: number) => void; waitingHand: boolean }) {
   const last = store.history[0]?.seats;
-  const [names, setNames] = useState<string[]>(() => (last ?? suggestion).slice(0, SEATS).map(String));
-  const [dealer, setDealer] = useState(0);
-  const trimmed = names.map((n) => n.trim());
+  // Each row keeps an id, so a drag moves the player (their typing and 莊
+  // with them) while the 東南西北 labels stay with the seats.
+  const [rows, setRows] = useState(() => (last ?? suggestion).slice(0, SEATS).map((name, id) => ({ id, name: String(name) })));
+  const [dealerId, setDealerId] = useState(0);
+  const dealer = Math.max(0, rows.findIndex((r) => r.id === dealerId));
+  const trimmed = rows.map((r) => r.name.trim());
   const valid = trimmed.every(Boolean) && new Set(trimmed).size === SEATS;
+
+  // Drag to reorder, by the grip: the row follows the finger, and the others
+  // slide out of its way as it passes their middle.
+  const listRef = useRef<HTMLDivElement>(null);
+  const drag = useRef<{ id: number; startY: number; startIndex: number; rowH: number } | null>(null);
+  const [dragging, setDragging] = useState<{ id: number; dy: number } | null>(null);
+  const before = useRef<Map<number, number> | null>(null);
+  const tops = () => new Map([...(listRef.current?.querySelectorAll<HTMLElement>("[data-row]") ?? [])].map((el) => [Number(el.dataset.row), el.getBoundingClientRect().top]));
+  const grip = (id: number) => ({
+    onPointerDown: (e: React.PointerEvent<HTMLSpanElement>) => {
+      const row = (e.currentTarget as HTMLElement).closest<HTMLElement>("[data-row]");
+      if (!row) return;
+      e.preventDefault();
+      e.currentTarget.setPointerCapture(e.pointerId);
+      const gap = parseFloat(getComputedStyle(listRef.current!).rowGap) || 0;
+      drag.current = { id, startY: e.clientY, startIndex: rows.findIndex((r) => r.id === id), rowH: row.offsetHeight + gap };
+      setDragging({ id, dy: 0 });
+    },
+    onPointerMove: (e: React.PointerEvent<HTMLSpanElement>) => {
+      const d = drag.current;
+      if (!d) return;
+      const dy = e.clientY - d.startY;
+      const target = Math.min(SEATS - 1, Math.max(0, d.startIndex + Math.round(dy / d.rowH)));
+      setRows((prev) => {
+        const from = prev.findIndex((r) => r.id === d.id);
+        if (from === target) return prev;
+        before.current = tops();
+        const next = prev.slice();
+        const [moved] = next.splice(from, 1);
+        next.splice(target, 0, moved);
+        return next;
+      });
+      setDragging({ id: d.id, dy });
+    },
+    onPointerUp: () => {
+      drag.current = null;
+      setDragging(null);
+    },
+    onPointerCancel: () => {
+      drag.current = null;
+      setDragging(null);
+    },
+  });
+  // The rows a drag pushed aside glide to their new places.
+  useLayoutEffect(() => {
+    const was = before.current;
+    before.current = null;
+    if (!was || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    listRef.current?.querySelectorAll<HTMLElement>("[data-row]").forEach((el) => {
+      const id = Number(el.dataset.row);
+      if (id === drag.current?.id) return;
+      const from = was.get(id);
+      const to = el.getBoundingClientRect().top;
+      if (from !== undefined && Math.abs(from - to) > 0.5) el.animate([{ transform: `translateY(${from - to}px)` }, { transform: "translateY(0)" }], { duration: 160, easing: "ease-out" });
+    });
+  }, [rows]);
+
   return (
     <>
       <SectionHead zh="新局" en="New game" />
       <div className="card sc-setup">
         {waitingHand && <p className="sc-note">Start a game and the hand from Scoring opens to record.</p>}
-        <p className="sc-help">Players in turn order, counter-clockwise round the table. Pick who deals first.</p>
-        {names.map((n, i) => (
-          <div key={i} className="sc-setup-row">
-            <span className="sc-setup-wind" aria-hidden="true">
-              {WIND_CHARS[(i - dealer + SEATS) % SEATS]}
-            </span>
-            <input
-              className="sc-input"
-              value={n}
-              maxLength={12}
-              autoComplete="off"
-              onChange={(e) => setNames((prev) => prev.map((x, j) => (j === i ? e.target.value : x)))}
-              aria-label={`Player ${i + 1}`}
-              list="sc-roster"
-            />
-            <button type="button" className={`sc-dealer-pick${dealer === i ? " is-on" : ""}`} aria-pressed={dealer === i} aria-label={`${trimmed[i] || `Player ${i + 1}`} deals first`} onClick={() => setDealer(i)}>
-              莊
-            </button>
-          </div>
-        ))}
+        <p className="sc-help">Players in turn order, counter-clockwise round the table - drag ⠿ to reorder. Pick who deals first.</p>
+        <div ref={listRef} className="sc-setup-list">
+          {rows.map((r, i) => {
+            const isDragging = dragging?.id === r.id;
+            // Under the finger: where the finger is, less where the row now sits.
+            const shift = isDragging && drag.current ? dragging.dy - (i - drag.current.startIndex) * drag.current.rowH : 0;
+            return (
+              <div key={r.id} data-row={r.id} className={`sc-setup-row${isDragging ? " is-dragging" : ""}`} style={isDragging ? { transform: `translateY(${shift}px)` } : undefined}>
+                <span className="sc-setup-grip" role="button" aria-label={`Drag ${trimmed[i] || `player ${i + 1}`} to reorder`} {...grip(r.id)}>
+                  ⠿
+                </span>
+                <span className="sc-setup-wind" aria-hidden="true">
+                  {WIND_CHARS[(i - dealer + SEATS) % SEATS]}
+                </span>
+                <input
+                  className="sc-input"
+                  value={r.name}
+                  maxLength={12}
+                  autoComplete="off"
+                  onChange={(e) => setRows((prev) => prev.map((x) => (x.id === r.id ? { ...x, name: e.target.value } : x)))}
+                  aria-label={`Player ${i + 1}`}
+                  list="sc-roster"
+                />
+                <button type="button" className={`sc-dealer-pick${dealer === i ? " is-on" : ""}`} aria-pressed={dealer === i} aria-label={`${trimmed[i] || `Player ${i + 1}`} deals first`} onClick={() => setDealerId(r.id)}>
+                  莊
+                </button>
+              </div>
+            );
+          })}
+        </div>
         <datalist id="sc-roster">
           {store.roster.map((p) => (
             <option key={p.name} value={p.name} />
@@ -3898,8 +3972,8 @@ function Board({
           onDone={({ seats, newNames, removedNames, dealer }) => {
             const roster = withRoster(store, [...(seats ?? state.seats), ...newNames]).filter((p) => !removedNames.includes(p.name));
             let next = game;
-            if (seats) next = withEvent(next, { t: "swap", at: Date.now(), seats });
-            if (dealer) next = withEvent(next, dealer);
+            // New seats and 莊 together are one change - one 還原 takes both back.
+            next = withEvents(next, [...(seats ? [{ t: "swap" as const, at: Date.now(), seats }] : []), ...(dealer ? [dealer] : [])]);
             update(next, { roster });
             close();
             if (seats || dealer) flash(seats && dealer ? "座位 and 莊家 updated" : seats ? "座位 updated" : "莊家 updated");
@@ -3919,7 +3993,7 @@ function Board({
           }}
           onSurrenderAll={() => {
             const at = Date.now();
-            update(state.lahs.reduce((g, l) => withEvent(g, { t: "surrender", at, holder: l.holder, pulled: l.pulled }), game));
+            update(withEvents(game, state.lahs.map((l) => ({ t: "surrender" as const, at, holder: l.holder, pulled: l.pulled }))));
             close();
             flash(`全部投降 · ${state.lahs.length} 拉 ended`);
           }}
@@ -4988,7 +5062,7 @@ function HistoryCard({ store, games, current, onPick, onDelete }: { store: Score
     <>
       <div className="card sc-list-card">
         {games.map((g) => {
-          const st = replay(g);
+          const st = replayCached(g);
           const ranked = st.players.filter((p) => st.hands.some((h) => h.seatsAfter.includes(p))).sort((a, b) => (st.totals[b] ?? 0) - (st.totals[a] ?? 0));
           return (
             <div key={g.id} className={`sc-game${g.id === current ? " is-current" : ""}`}>
@@ -5213,6 +5287,63 @@ export function SharedScoresView({ snap, onClose }: { snap: ScoreSnapshot; onClo
   );
 }
 
+// When this phone isn't keeping the scores safely: the last change couldn't be
+// saved (storage full or blocked), or saved scores couldn't be read when the
+// app opened (a copy was kept). Either way, a file to keep them by.
+function StorageWarning({ store, saveFailed }: { store: ScoreStore; saveFailed: boolean }) {
+  const [unreadable, setUnreadable] = useState(() => unreadableScores());
+  if (!saveFailed && !unreadable) return null;
+  const saveUnreadable = () => {
+    const blob = new Blob([unreadable ?? ""], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "mjwaits-scores-unreadable.json";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+  return (
+    <div className="card sc-storage-warning" role="alert">
+      {saveFailed && (
+        <p>
+          <strong>儲存唔到 · Not saved</strong>
+          This phone couldn't keep the last change (its storage is full or blocked) - a reload would lose it. Save a backup file now.
+          <button type="button" className="sc-primary" onClick={() => saveBackupFile(store)}>
+            儲存 Save file
+          </button>
+        </p>
+      )}
+      {unreadable && (
+        <p>
+          <strong>讀唔到舊紀錄 · Old scores unreadable</strong>
+          The scores saved here couldn't be read when the app opened. A copy was kept - save it as a file to recover later.
+          <span className="sc-storage-actions">
+            <button type="button" className="sc-primary" onClick={saveUnreadable}>
+              儲存副本 Save copy
+            </button>
+            <button
+              type="button"
+              className="sc-secondary"
+              onClick={() => {
+                try {
+                  window.localStorage.removeItem(UNREADABLE_SCORES_KEY);
+                } catch {
+                  // Then it shows again next time - harmless.
+                }
+                setUnreadable(null);
+              }}
+            >
+              唔要 Discard
+            </button>
+          </span>
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function ScoresPanel({
   store,
   setStore,
@@ -5223,9 +5354,11 @@ export function ScoresPanel({
   onOpenSeating,
   seatingResult,
   onSeatingResultDone,
+  saveFailed,
 }: {
   store: ScoreStore;
   setStore: (s: ScoreStore) => void;
+  saveFailed?: boolean; // the last change couldn't be kept on this phone
   seatNames: readonly string[];
   request: RecordRequest | null;
   onRequestDone: () => void;
@@ -5242,16 +5375,18 @@ export function ScoresPanel({
   const game = store.active;
   const state = useMemo(() => (game ? replay(game) : null), [game]);
 
-  const update = (next: ScoreGame, extra: Partial<ScoreStore> = {}) => setStore({ ...store, ...extra, active: next });
+  // Every change stamps the game, so a backup merge keeps its latest copy.
+  const update = (next: ScoreGame, extra: Partial<ScoreStore> = {}) => setStore({ ...store, ...extra, active: { ...next, updatedAt: Date.now() } });
   const endGame = () => {
     if (!game) return;
-    const finished = { ...game, endedAt: Date.now() };
+    const finished = { ...game, endedAt: Date.now(), updatedAt: Date.now() };
     setStore({ ...store, active: null, history: game.events.length > 0 ? [finished, ...store.history] : store.history });
   };
   const start = (seats: string[], dealer: number) => setStore({ ...store, roster: withRoster(store, seats), active: newGame(seats, dealer, store.settings) });
 
   return (
     <section className="panel scores-panel">
+      <StorageWarning store={store} saveFailed={saveFailed ?? false} />
       <div className="segmented sub-tabs">
         <button type="button" className={sub === "board" ? "toggle-on" : undefined} aria-pressed={sub === "board"} onClick={() => setSub("board")}>
           戰況 Table

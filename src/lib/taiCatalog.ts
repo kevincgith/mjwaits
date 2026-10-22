@@ -173,6 +173,15 @@ export const PATTERN_CATALOG: Record<string, PatternClass> = {
   "consecutive-triplet-pair": { family: "consecutive", value: per(5) },
   "small-three-consecutive-triplets": { family: "consecutive", value: per(15) },
   "big-three-consecutive-triplets": { family: "consecutive", value: per(30) },
+  // Longer chains: worth 0 in the house list, so a long chain still counts
+  // as overlapping 大三連刻 windows until one of these is given a value
+  // (see CHAIN_TIERS in scoring.ts).
+  "small-four-consecutive-triplets": { family: "consecutive", value: per(0) },
+  "big-four-consecutive-triplets": { family: "consecutive", value: per(0) },
+  "small-five-consecutive-triplets": { family: "consecutive", value: per(0) },
+  "big-five-consecutive-triplets": { family: "consecutive", value: per(0) },
+  "small-six-consecutive-triplets": { family: "consecutive", value: per(0) },
+  "twin-consecutive-triplet-pairs": { family: "consecutive", value: flat(0), replaces: ["consecutive-triplet-pair"] },
   "half-flush": { family: "flush", value: flat(40) },
   "full-flush": { family: "flush", value: flat(120) },
   "cross-suit-same-run": { family: "cross-suit", value: per(3) },
@@ -239,18 +248,63 @@ export const PATTERN_CATALOG: Record<string, PatternClass> = {
   "eight-pairs-four-winds": { family: "special", value: flat(60) },
 };
 
-// Tiers within a family, lowest rung first. When the ladder is exclusive
-// (the default, and the house list), a pattern that fires replaces every
-// pattern on a lower rung - so only the highest rung that fires counts. A
-// rung can hold several patterns that are alternatives at the same tier
-// (明/暗 versions, or 正位風/爛位風/正圈風).
+// 明/暗 pairs: a pattern scored separately when an instance is open (明 -
+// any meld called, or completed by a claimed winning tile) or concealed
+// (暗). They stay two patterns in the engine - two ids, two values, two
+// breakdown rows, since a hand can score both - and are shown as one row
+// with two values in 設定 and the printed reference. Every pattern whose id
+// ends "-open" has a "-hidden" partner (checked in taiRules.test.ts).
+export interface OpenConcealedPair {
+  /** The shared id stem, e.g. "identical-sequences". */
+  id: string;
+  open: string;
+  concealed: string;
+}
+
+export const OPEN_CONCEALED_PAIRS: OpenConcealedPair[] = Object.keys(PATTERN_CATALOG)
+  .filter((id) => id.endsWith("-open"))
+  .map((open) => {
+    const id = open.slice(0, -"-open".length);
+    return { id, open, concealed: `${id}-hidden` };
+  });
+
+const PAIR_BY_PATTERN = new Map(OPEN_CONCEALED_PAIRS.flatMap((p) => [[p.open, p] as const, [p.concealed, p] as const]));
+
+/** The 明/暗 pair a pattern belongs to, if any. */
+export const pairOf = (id: string): OpenConcealedPair | undefined => PAIR_BY_PATTERN.get(id);
+
+// Tier families, lowest rung first. A rung can hold several patterns that
+// are alternatives at the same tier (明/暗 versions, 小/大 連刻, or
+// 正位風/爛位風/正圈風). Two kinds, one rule - the highest tier that has a
+// value wins:
+// - "count" (the default): a pattern that fires replaces every pattern on a
+//   lower rung, so only the highest rung that fires counts (暗刻: 兩 → 三 →
+//   四 → 五). The rule set can switch a count family to stacking.
+// - "windows": rungs are lengths of a run of melds (連刻: 2, 3, 4… ranks).
+//   A window counts unless a longer tier with a value covers it, so a long
+//   run whose own tier is 0 counts as overlapping shorter windows. Found by
+//   the family's detector in scoring.ts (CHAIN_TIERS for 連刻); never
+//   switched to stacking - giving the longer tiers a value is the switch.
 export interface Ladder {
   id: string;
   label: string;
   rungs: string[][];
+  kind?: "count" | "windows";
 }
 
 export const LADDERS: Ladder[] = [
+  {
+    id: "consecutive",
+    label: "連刻 Consecutive triplets",
+    kind: "windows",
+    rungs: [
+      ["consecutive-triplet-pair"],
+      ["small-three-consecutive-triplets", "big-three-consecutive-triplets"],
+      ["small-four-consecutive-triplets", "big-four-consecutive-triplets"],
+      ["small-five-consecutive-triplets", "big-five-consecutive-triplets"],
+      ["small-six-consecutive-triplets"],
+    ],
+  },
   {
     id: "winds",
     label: "風 Winds",

@@ -5,9 +5,12 @@
 // hand in the tab; nothing applies until Save.
 
 import qrcode from "qrcode-generator";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { PatternExampleView } from "./PatternExample";
 import { RulesReference } from "./RulesReference";
+import { PATTERN_ALIASES } from "./lib/patternGuide";
+import { PATTERN_PARTNERS } from "./lib/patternPartners";
+import { situationLinkRows } from "./lib/situationLinks";
 import { NumberField, Segmented, Sheet, Toggle } from "./ScoresPanel";
 import {
   CHICKEN_PATTERN_IDS,
@@ -19,7 +22,7 @@ import {
   type PatternRule,
   type TaiRules,
 } from "./lib/scoring";
-import { LADDERS, PATTERN_CATALOG, PATTERN_FAMILIES, type Ladder, type PatternFamily } from "./lib/taiCatalog";
+import { LADDERS, pairOf, PATTERN_CATALOG, PATTERN_FAMILIES, type Ladder, type OpenConcealedPair, type PatternFamily } from "./lib/taiCatalog";
 import {
   activeSet,
   diffOf,
@@ -35,11 +38,14 @@ import {
   type RuleSetStore,
 } from "./lib/taiRuleSets";
 import {
+  CHICKEN_GROUPS,
   changedCount,
   chickenIgnores,
   describeChanges,
   isChickenListChanged,
   isRowChanged,
+  isRuleOn,
+  pairName,
   isLadderChanged,
   ladderOf,
   replaceCycles,
@@ -67,7 +73,36 @@ const familyOfPattern = (id: string): PatternFamily => {
 };
 const ON_LADDER = new Set(LADDERS.flatMap((l) => l.rungs.flat()));
 
+// A 明/暗 pair is one row in the sheet, keyed by its stem; anything else by
+// its own id.
+const rowKey = (id: string) => pairOf(id)?.id ?? id;
+
+// Patterns that can count on the same hand as `id`, for the "Replaces"
+// picker: seen together in the scoring tests' hands (patternPartners.ts),
+// plus every situation (declared, so possible with any hand). A situation's
+// own likely partners are the state and wait patterns it might replace
+// (天胡 over 自摸, 門前清…); a special-hand pattern's, those that can count on
+// the same special hand.
+const SITUATION_IDS = PATTERNS.map((p) => p.id).filter((id) => PATTERN_CATALOG[id].family === "situation");
+function likelyPartners(id: string): Set<string> {
+  const family = PATTERN_CATALOG[id].family;
+  if (family === "special") {
+    const shapes: string[] = eligibleShapes(id).filter((shape) => shape !== "normal");
+    return new Set(PATTERNS.map((p) => p.id).filter((other) => eligibleShapes(other).some((shape) => shapes.includes(shape))));
+  }
+  if (family === "situation") {
+    return new Set(PATTERNS.map((p) => p.id).filter((other) => ["situation", "foundation", "completion"].includes(PATTERN_CATALOG[other].family)));
+  }
+  return new Set([...(PATTERN_PARTNERS[id] ?? []), ...SITUATION_IDS]);
+}
+
+// A pattern's other names (patternGuide.ts), by its own id or its pair's.
+const aliasesOf = (id: string): string[] => PATTERN_ALIASES[id] ?? PATTERN_ALIASES[pairOf(id)?.id ?? ""] ?? [];
+// Its English name, then "aka …" when it has other names.
+const subName = (en: string, id: string) => [en, aliasesOf(id).length > 0 ? `aka ${aliasesOf(id).join("、")}` : ""].filter(Boolean).join(" · ");
+
 function valueSummary(id: string, rule: PatternRule): string {
+  if (!isRuleOn(rule)) return "off";
   const value = PATTERN_CATALOG[id].value;
   if (value.kind === "table") return (rule.table ?? []).slice(1).join("/");
   if (value.kind === "streak") return `${rule.first ?? value.first} +${rule.tai}`;
@@ -128,6 +163,7 @@ export function TaiRulesSheet({
   const [notice, setNotice] = useState<{ text: string; bad?: boolean } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [printing, setPrinting] = useState(false);
+  const [advanced, setAdvanced] = useState(engine === "legacy");
   const importRef = useRef<HTMLInputElement>(null);
 
   const selectedSet = sets.find((s) => s.id === selected);
@@ -150,8 +186,18 @@ export function TaiRulesSheet({
     const id = selected;
     setDrafts((prev) => ({ ...prev, [id]: update(prev[id] ?? rulesOfSet(selectedSet)) }));
   };
+  // Editing a value is the only on/off there is: 0 = off. (enabled stays
+  // true; an older save's switched-off rule is loaded as 0 - see
+  // normalizeRules.)
   const setRule = (id: string, patch: Partial<PatternRule>) =>
     edit((prev) => ({ ...prev, patterns: { ...prev.patterns, [id]: { ...prev.patterns[id], ...patch } } }));
+  // Several patterns in one edit - so editing the house list starts one new
+  // set, not one per pattern.
+  const setRules = (patches: Record<string, Partial<PatternRule>>) =>
+    edit((prev) => ({
+      ...prev,
+      patterns: { ...prev.patterns, ...Object.fromEntries(Object.entries(patches).map(([id, patch]) => [id, { ...prev.patterns[id], ...patch }])) },
+    }));
   const resetRule = (id: string) => setRule(id, structuredClone(DEFAULT_TAI_RULES.patterns[id]));
   const setLadder = (id: string, exclusive: boolean) => edit((prev) => ({ ...prev, ladders: { ...prev.ladders, [id]: { exclusive } } }));
 
@@ -225,8 +271,8 @@ export function TaiRulesSheet({
     setQuery("");
     setChangedOnly(false);
     setOpenFamilies((prev) => new Set(prev).add(familyOfPattern(id)));
-    setExpanded(id);
-    setReveal(id);
+    setExpanded(rowKey(id));
+    setReveal(rowKey(id));
   };
   const revealLadder = (id: string) => {
     const l = LADDERS.find((x) => x.id === id)!;
@@ -257,8 +303,14 @@ export function TaiRulesSheet({
   // behind a closed header. A ladder shows whole when any rung matches.
   const filtering = query.trim() !== "" || changedOnly;
   const q = query.trim().toLowerCase();
-  const matches = (id: string) =>
-    (!changedOnly || isRowChanged(id, draft.patterns[id])) && (q === "" || (NAME_BY_ID.get(id) ?? "").toLowerCase().includes(q) || id.includes(q));
+  const matchesOne = (id: string) =>
+    (!changedOnly || isRowChanged(id, draft.patterns[id])) &&
+    (q === "" || (NAME_BY_ID.get(id) ?? "").toLowerCase().includes(q) || id.includes(q) || aliasesOf(id).some((a) => a.includes(q)));
+  // A 明/暗 pair shows (as one row) when either half matches.
+  const matches = (id: string) => {
+    const pair = pairOf(id);
+    return pair ? matchesOne(pair.open) || matchesOne(pair.concealed) : matchesOne(id);
+  };
   const groups = PATTERN_FAMILIES.map((f) => {
     const ladders = LADDERS.filter(
       (l) => ladderFamily(l) === f.id && (l.rungs.flat().some(matches) || (changedOnly && q === "" && isLadderChanged(draft, l.id))),
@@ -290,6 +342,25 @@ export function TaiRulesSheet({
     onReset: () => resetRule(id),
   });
 
+  // One row per pattern - a 明/暗 pair as one row, drawn at its 明 half.
+  const renderRow = (id: string) => {
+    const pair = pairOf(id);
+    if (!pair) return <PatternRow key={id} {...rowProps(id)} />;
+    if (id !== pair.open) return null;
+    return (
+      <PairRow
+        key={pair.id}
+        pair={pair}
+        draft={draft}
+        inCycle={cycles.has(pair.open) || cycles.has(pair.concealed)}
+        expanded={expanded === pair.id}
+        onExpand={() => setExpanded((cur) => (cur === pair.id ? null : pair.id))}
+        onChange={setRule}
+        onReset={resetRule}
+      />
+    );
+  };
+
   const inUseName = activeSet(store)?.name ?? HOUSE_RULES_NAME;
   return (
     <>
@@ -317,24 +388,9 @@ export function TaiRulesSheet({
         }
       >
         {corrupt && !incoming && <div className="tr-notice">Your saved rule sets couldn't be read, so these are the house rules.</div>}
-        <div className="sc-settings-group">
-          <div className="sc-settings-title">Scoring engine</div>
-          <div className="tr-engine">
-            <Segmented
-              value={draftEngine}
-              onChange={setDraftEngine}
-              options={[
-                { value: "custom", label: "Rule sets" },
-                { value: "legacy", label: "Original built-in" },
-              ]}
-            />
-            <span className="sc-help">
-              {legacy
-                ? "Scores with the engine as it was before rules were editable - the house rules only. Your rule sets are kept for switching back."
-                : "Scores with the rule set below. The original engine is a fallback: it also takes over by itself if this one ever fails."}
-            </span>
-          </div>
-        </div>
+        {legacy && (
+          <div className="tr-notice is-warning">Scoring with the original built-in engine, so rule sets don't apply. Switch back under Advanced, at the bottom.</div>
+        )}
 
         <div className={`tr-rules${legacy ? " is-off" : ""}`} inert={legacy || undefined}>
         <div className="sc-settings-group">
@@ -377,21 +433,8 @@ export function TaiRulesSheet({
                     Delete
                   </button>
                 ))}
-              {selectedSet && (
-                <button type="button" className="tr-chip" onClick={exportSelected}>
-                  Export
-                </button>
-              )}
-              {sets.length > 1 && (
-                <button type="button" className="tr-chip" onClick={exportAll}>
-                  Export all
-                </button>
-              )}
-              <button type="button" className="tr-chip" onClick={() => importRef.current?.click()}>
-                Import
-              </button>
-              <button type="button" className="tr-chip" onClick={() => setPrinting(true)}>
-                Export PDF
+              <button type="button" className="tr-chip" onClick={() => setSharing(true)}>
+                Share &amp; files…
               </button>
               <input
                 ref={importRef}
@@ -461,7 +504,7 @@ export function TaiRulesSheet({
 
         <div className="tr-body">
           <div className="tr-filter">
-            <input className="sc-input tr-search" type="search" placeholder="Search 清一色, flush…" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Search patterns" />
+            <input className="sc-input tr-search" type="search" placeholder="Search 清一色, flush, 一般高…" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Search patterns" />
             <button type="button" className={`tr-chip${changedOnly ? " is-on" : ""}`} aria-pressed={changedOnly} onClick={() => setChangedOnly((v) => !v)}>
               Changed
             </button>
@@ -490,7 +533,7 @@ export function TaiRulesSheet({
                   <span className="tr-family-label">{g.label}</span>
                   <span className="tr-family-count">
                     {familyChanged > 0 && <span className="tr-dot" aria-label={`${familyChanged} changed`} />}
-                    {g.ids.length}
+                    {new Set(g.ids.map(rowKey)).size}
                   </span>
                 </button>
                 {open && (
@@ -498,25 +541,21 @@ export function TaiRulesSheet({
                     {g.id === "meta" && (
                       <ChickenIgnoreBlock
                         ignored={chickenIgnores(draft)}
-                        onChange={(id, ignored) => setRule(id, { blocksChicken: !ignored })}
+                        onChange={(byId) => setRules(Object.fromEntries(Object.entries(byId).map(([id, ignored]) => [id, { blocksChicken: !ignored }])))}
                       />
                     )}
                     {g.ladders.map((l) => (
                       <LadderBlock key={l.id} ladder={l} exclusive={draft.ladders[l.id]?.exclusive !== false} onExclusive={(v) => setLadder(l.id, v)}>
                         {[...l.rungs].reverse().map((rung, i) => (
                           <div key={i} className="tr-rung">
-                            {rung.map((id) => (
-                              <PatternRow key={id} {...rowProps(id)} />
-                            ))}
+                            {rung.map(renderRow)}
                           </div>
                         ))}
                       </LadderBlock>
                     ))}
                     {g.singles.length > 0 && (
                       <div className="sc-list">
-                        {g.singles.map((id) => (
-                          <PatternRow key={id} {...rowProps(id)} />
-                        ))}
+                        {g.singles.map(renderRow)}
                       </div>
                     )}
                   </>
@@ -526,9 +565,55 @@ export function TaiRulesSheet({
           })}
         </div>
         </div>
+
+        <div className="sc-settings-group tr-advanced">
+          <button type="button" className="tr-family" aria-expanded={advanced} onClick={() => setAdvanced((v) => !v)}>
+            <span className="tr-family-chevron" aria-hidden="true">
+              {advanced ? "▾" : "▸"}
+            </span>
+            <span className="tr-family-label">Advanced</span>
+            <span className="tr-family-count">{legacy && <span className="tr-dot" aria-label="original engine in use" />}</span>
+          </button>
+          {advanced && (
+            <div className="tr-engine">
+              <span className="sc-row-main sc-row-stack">
+                Scoring engine
+                <span className="sc-help">
+                  {legacy
+                    ? "The engine as it was before rules were editable - the house rules only. Your rule sets are kept for switching back."
+                    : "Rule sets score as set above. The original engine is a fallback: it also takes over by itself if this one ever fails."}
+                </span>
+              </span>
+              <Segmented
+                value={draftEngine}
+                onChange={setDraftEngine}
+                options={[
+                  { value: "custom", label: "Rule sets" },
+                  { value: "legacy", label: "Original built-in" },
+                ]}
+              />
+            </div>
+          )}
+        </div>
       </Sheet>
       {printing && <RulesReference name={name} rules={{ ...draft, engine: draftEngine }} onClose={() => setPrinting(false)} />}
-      {sharing && <ShareRulesSheet name={selectedSet ? name : null} rules={draft} count={changed} onClose={() => setSharing(false)} />}
+      {sharing && (
+        <ShareRulesSheet
+          name={selectedSet ? name : null}
+          rules={draft}
+          count={changed}
+          onClose={() => setSharing(false)}
+          files={{
+            exportSet: selectedSet ? exportSelected : null,
+            exportAll: sets.length > 1 ? exportAll : null,
+            importFile: () => importRef.current?.click(),
+            print: () => {
+              setSharing(false);
+              setPrinting(true);
+            },
+          }}
+        />
+      )}
     </>
   );
 }
@@ -537,19 +622,30 @@ export function TaiRulesSheet({
 // only the highest rung that fires counts (the house list) or every rung
 // stacks.
 function LadderBlock({ ladder, exclusive, onExclusive, children }: { ladder: Ladder; exclusive: boolean; onExclusive: (v: boolean) => void; children: React.ReactNode }) {
-  const changed = !exclusive;
-  return (
-    <div className={`tr-ladder${exclusive ? "" : " is-stacking"}`} data-reveal={`ladder:${ladder.id}`}>
-      <label className="tr-ladder-head">
-        <span className="sc-row-main sc-row-stack">
-          <span className="tr-ladder-title">
-            {ladder.label}
-            {changed && <span className="tr-dot" aria-label="changed" />}
-          </span>
-          <span className="sc-help">{exclusive ? "Only the highest that applies counts" : "Every tier that applies counts"}</span>
+  // A windows family (連刻) has no stacking switch: giving its longer tiers a
+  // value is the switch - see Ladder in taiCatalog.ts.
+  const windows = ladder.kind === "windows";
+  const changed = !windows && !exclusive;
+  const help = windows
+    ? "The longest that has a value counts. A longer one worth 0 counts as overlapping shorter ones."
+    : exclusive
+      ? "Only the highest that applies counts"
+      : "Every tier that applies counts";
+  const head = (
+    <>
+      <span className="sc-row-main sc-row-stack">
+        <span className="tr-ladder-title">
+          {ladder.label}
+          {changed && <span className="tr-dot" aria-label="changed" />}
         </span>
-        <Toggle checked={exclusive} onChange={onExclusive} label={`${ladder.label}: only the highest counts`} />
-      </label>
+        <span className="sc-help">{help}</span>
+      </span>
+      {!windows && <Toggle checked={exclusive} onChange={onExclusive} label={`${ladder.label}: only the highest counts`} />}
+    </>
+  );
+  return (
+    <div className={`tr-ladder${exclusive || windows ? "" : " is-stacking"}${windows ? " is-windows" : ""}`} data-reveal={`ladder:${ladder.id}`}>
+      {windows ? <div className="tr-ladder-head">{head}</div> : <label className="tr-ladder-head">{head}</label>}
       <div className="tr-ladder-rungs">{children}</div>
     </div>
   );
@@ -579,7 +675,7 @@ function PatternRow({
   const changed = isRowChanged(id, rule);
   const flatOrPer = value.kind === "flat" || value.kind === "per";
   return (
-    <div className={`tr-pattern${rule.enabled ? "" : " is-disabled"}${expanded ? " is-expanded" : ""}`} data-reveal={id}>
+    <div className={`tr-pattern${isRuleOn(rule) ? "" : " is-disabled"}${expanded ? " is-expanded" : ""}`} data-reveal={id}>
       <div className="sc-row">
         <button type="button" className="tr-pattern-name" aria-expanded={expanded} onClick={onExpand}>
           <span className="tr-pattern-zh">
@@ -591,23 +687,105 @@ function PatternRow({
               </span>
             )}
           </span>
-          {en && <span className="sc-help">{en}</span>}
+          {(en || aliasesOf(id).length > 0) && <span className="sc-help">{subName(en, id)}</span>}
         </button>
         <span className="tr-pattern-end">
           {flatOrPer ? (
             <span className="tr-value">
-              <NumberField value={rule.tai} onChange={(tai) => onChange({ tai })} label={`${zh} tai`} pill disabled={!rule.enabled} />
-              {value.kind === "per" && <span className="tr-unit">each</span>}
+              <NumberField value={rule.tai} onChange={(tai) => onChange({ tai, enabled: true })} label={`${zh} tai (0 = off)`} pill />
+              <span className="tr-unit">{rule.tai === 0 ? "off" : value.kind === "per" ? "each" : ""}</span>
             </span>
           ) : (
-            <button type="button" className="tr-value-summary" onClick={onExpand} disabled={!rule.enabled}>
+            <button type="button" className="tr-value-summary" onClick={onExpand}>
               {valueSummary(id, rule)}
             </button>
           )}
-          <Toggle checked={rule.enabled} onChange={(enabled) => onChange({ enabled })} label={`Count ${zh}`} />
         </span>
       </div>
       {expanded && <PatternDetails id={id} rule={rule} draft={draft} changed={changed} onChange={onChange} onReset={onReset} />}
+    </div>
+  );
+}
+
+// A 明/暗 pair as one row: its shared name, a value for each side, and one
+// switch for both. Expanded, each side's example and rules in turn.
+function PairRow({
+  pair,
+  draft,
+  inCycle,
+  expanded,
+  onExpand,
+  onChange,
+  onReset,
+}: {
+  pair: OpenConcealedPair;
+  draft: TaiRules;
+  inCycle: boolean;
+  expanded: boolean;
+  onExpand: () => void;
+  onChange: (id: string, patch: Partial<PatternRule>) => void;
+  onReset: (id: string) => void;
+}) {
+  const [zh, en] = pairName(pair);
+  const open = draft.patterns[pair.open];
+  const concealed = draft.patterns[pair.concealed];
+  const enabled = isRuleOn(open) || isRuleOn(concealed);
+  const changed = isRowChanged(pair.open, open) || isRowChanged(pair.concealed, concealed);
+  const per = PATTERN_CATALOG[pair.open].value.kind === "per";
+  const sides = [
+    { id: pair.open, rule: open, label: "明", long: "明 · open (any meld called, or completed by a claimed tile)" },
+    { id: pair.concealed, rule: concealed, label: "暗", long: "暗 · concealed (every meld self-formed)" },
+  ];
+  return (
+    <div className={`tr-pattern tr-pair${enabled ? "" : " is-disabled"}${expanded ? " is-expanded" : ""}`} data-reveal={pair.id}>
+      <div className="sc-row">
+        <button type="button" className="tr-pattern-name" aria-expanded={expanded} onClick={onExpand}>
+          <span className="tr-pattern-zh">
+            {zh}
+            {changed && <span className="tr-dot" aria-label="changed" />}
+            {inCycle && (
+              <span className="tr-warn" title="Part of a replace loop" aria-label="replace loop">
+                !
+              </span>
+            )}
+          </span>
+          {(en || aliasesOf(pair.open).length > 0) && <span className="sc-help">{subName(en, pair.open)}</span>}
+        </button>
+        <span className="tr-pattern-end">
+          <span className="tr-pair-values">
+            {sides.map((side) => (
+              <span key={side.id} className="tr-value tr-pair-value">
+                <span className="tr-pair-side">{side.label}</span>
+                <NumberField
+                  value={side.rule.tai}
+                  onChange={(tai) => onChange(side.id, { tai, enabled: true })}
+                  label={`${zh} ${side.label} tai (0 = off)`}
+                  pill
+                />
+              </span>
+            ))}
+            <span className="tr-unit">{!enabled ? "off" : per ? "each" : ""}</span>
+          </span>
+
+        </span>
+      </div>
+      {expanded && (
+        <div className="tr-pair-details">
+          {sides.map((side) => (
+            <div key={side.id} className="tr-pair-section">
+              <div className="tr-pair-heading">{side.long}</div>
+              <PatternDetails
+                id={side.id}
+                rule={side.rule}
+                draft={draft}
+                changed={isRowChanged(side.id, side.rule)}
+                onChange={(patch) => onChange(side.id, patch)}
+                onReset={() => onReset(side.id)}
+              />
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -636,8 +814,12 @@ function PatternDetails({
   const taken = new Set([id, ...rule.replaces, ...viaLadder]);
   // The add-a-replace picker: this family first, then the rest.
   const candidates = PATTERNS.map((p) => p.id).filter((other) => !taken.has(other));
-  const sameFamily = candidates.filter((other) => PATTERN_CATALOG[other].family === family);
-  const otherFamilies = candidates.filter((other) => PATTERN_CATALOG[other].family !== family);
+  // Likely partners first - patterns that can count on the same hand - so the
+  // useful choices aren't lost among all 160.
+  const likely = likelyPartners(id);
+  const sameFamily = candidates.filter((other) => likely.has(other) || PATTERN_CATALOG[other].family === family);
+  const otherFamilies = candidates.filter((other) => !sameFamily.includes(other));
+  const linkRows = situationLinkRows(id, shortName);
 
   return (
     <div className="tr-details">
@@ -688,7 +870,7 @@ function PatternDetails({
           <select className="tr-add" value="" aria-label="Add a pattern this replaces" onChange={(e) => e.target.value && onChange({ replaces: [...rule.replaces, e.target.value] })}>
             <option value="">+ Add</option>
             {sameFamily.length > 0 && (
-              <optgroup label="Same family">
+              <optgroup label="Likely to count together">
                 {sameFamily.map((other) => (
                   <option key={other} value={other}>
                     {NAME_BY_ID.get(other)}
@@ -696,7 +878,7 @@ function PatternDetails({
                 ))}
               </optgroup>
             )}
-            <optgroup label="Other families">
+            <optgroup label="All other patterns">
               {otherFamilies.map((other) => (
                 <option key={other} value={other}>
                   {NAME_BY_ID.get(other)}
@@ -721,6 +903,20 @@ function PatternDetails({
           )}
         </div>
       </div>
+
+      {linkRows.length > 0 && (
+        <div className="tr-detail">
+          <div className="tr-detail-label">情況 button · how it links (the app's, not part of the set)</div>
+          <dl className="tr-links">
+            {linkRows.map((row) => (
+              <Fragment key={row.label}>
+                <dt>{row.label}</dt>
+                <dd>{row.text}</dd>
+              </Fragment>
+            ))}
+          </dl>
+        </div>
+      )}
 
       <div className="tr-detail">
         <div className="tr-detail-label">Counts on</div>
@@ -756,7 +952,22 @@ function PatternDetails({
 // this sheet, as a new set, before using it. The link is compressed (see
 // rulesLink) so even a heavily changed set fits a QR code; if one ever
 // doesn't, the link is still there to copy or share.
-function ShareRulesSheet({ name, rules, count, onClose }: { name: string | null; rules: TaiRules; count: number; onClose: () => void }) {
+// Everything that takes a set elsewhere, in one place: a link and its QR code
+// for another phone, files to keep or move (one set, or all), importing one,
+// and the printable reference.
+function ShareRulesSheet({
+  name,
+  rules,
+  count,
+  onClose,
+  files,
+}: {
+  name: string | null;
+  rules: TaiRules;
+  count: number;
+  onClose: () => void;
+  files: { exportSet: (() => void) | null; exportAll: (() => void) | null; importFile: () => void; print: () => void };
+}) {
   const [url, setUrl] = useState<string | null>(null);
   useEffect(() => {
     let live = true;
@@ -779,7 +990,7 @@ function ShareRulesSheet({ name, rules, count, onClose }: { name: string | null;
   const [copied, setCopied] = useState(false);
   return (
     <Sheet
-      title={name ? `Share "${name}"` : "Share these rules"}
+      title={name ? `Share & files · ${name}` : "Share & files"}
       subtitle={`${count} change${count === 1 ? "" : "s"} from the house rules`}
       onClose={onClose}
       actions={
@@ -827,58 +1038,105 @@ function ShareRulesSheet({ name, rules, count, onClose }: { name: string | null;
         url && <div className="tr-notice is-warning">Too many changes for a QR code - copy or share the link instead.</div>
       )}
       <p className="sc-help sc-help-block">Scan or open on another phone: the rules arrive in its 設定 as a new set, ready to review and use. Unsaved edits are included.</p>
+      <div className="sc-settings-group">
+        <div className="sc-settings-title">Files</div>
+        <div className="sc-list tr-files">
+          {files.exportSet && (
+            <button type="button" className="tr-file-row" onClick={files.exportSet}>
+              <span>Export this set</span>
+              <span className="sc-help">a .json file to keep or send</span>
+            </button>
+          )}
+          {files.exportAll && (
+            <button type="button" className="tr-file-row" onClick={files.exportAll}>
+              <span>Export all sets</span>
+              <span className="sc-help">every saved set in one file</span>
+            </button>
+          )}
+          <button type="button" className="tr-file-row" onClick={files.importFile}>
+            <span>Import…</span>
+            <span className="sc-help">add sets from a file</span>
+          </button>
+          <button type="button" className="tr-file-row" onClick={files.print}>
+            <span>Print reference (PDF)</span>
+            <span className="sc-help">every pattern, its value and an example</span>
+          </button>
+        </div>
+      </div>
     </Sheet>
   );
 }
 
-// 大雞/大鴨's one setting: which patterns they ignore - patterns that can
-// count and still leave 大雞/大鴨 standing (house list: 底, the bonus tiles,
-// and declared state that says nothing about the hand's shape, like 莊 and
-// 叮). Everything else that counts stops them.
-function ChickenIgnoreBlock({ ignored, onChange }: { ignored: string[]; onChange: (id: string, ignored: boolean) => void }) {
+// 大雞/大鴨's setting: what they ignore - patterns that can count and still
+// leave 大雞/大鴨 standing. Two plain switches (situations, flowers), and the
+// full list under "Fine-tune" for anything more particular.
+// onChange takes every change at once ({ id: ignored }) - one edit, so editing
+// the house list starts one new set.
+function ChickenIgnoreBlock({ ignored, onChange }: { ignored: string[]; onChange: (byId: Record<string, boolean>) => void }) {
+  const [fineTune, setFineTune] = useState(false);
   const houseIgnored = new Set(PATTERNS.filter((p) => !CHICKEN_PATTERN_IDS.has(p.id) && !DEFAULT_TAI_RULES.patterns[p.id].blocksChicken).map((p) => p.id));
   const changed = ignored.length !== houseIgnored.size || ignored.some((id) => !houseIgnored.has(id));
   const addable = PATTERNS.map((p) => p.id).filter((id) => !CHICKEN_PATTERN_IDS.has(id) && !ignored.includes(id));
+  const set = (ids: string[], value: boolean) => onChange(Object.fromEntries(ids.map((id) => [id, value])));
+  const reset = () =>
+    onChange(Object.fromEntries(PATTERNS.map((p) => p.id).filter((id) => !CHICKEN_PATTERN_IDS.has(id)).map((id) => [id, houseIgnored.has(id)])));
   return (
     <div className="tr-chicken" data-reveal="chicken">
       <div className="tr-chicken-head">
         <span className="sc-row-main sc-row-stack">
           <span className="tr-ladder-title">
-            What 大雞/大鴨 ignore
+            大雞/大鴨
             {changed && <span className="tr-dot" aria-label="changed" />}
           </span>
-          <span className="sc-help">大雞/大鴨 count only when nothing else does - these can count alongside them.</span>
+          <span className="sc-help">They count only when nothing else does. 底 never stops them.</span>
         </span>
       </div>
-      <div className="tr-chips">
-        {ignored.map((id) => (
-          <span key={id} className="tr-chip is-static">
-            {shortName(id)}
-            <button type="button" aria-label={`Stop ignoring ${shortName(id)}`} onClick={() => onChange(id, false)}>
-              ×
-            </button>
-          </span>
-        ))}
-        <select className="tr-add" value="" aria-label="Add a pattern 大雞/大鴨 ignore" onChange={(e) => e.target.value && onChange(e.target.value, true)}>
-          <option value="">+ Add</option>
-          {addable.map((id) => (
-            <option key={id} value={id}>
-              {NAME_BY_ID.get(id)}
-            </option>
-          ))}
-        </select>
+      {CHICKEN_GROUPS.map((group) => {
+        const all = group.ids.every((id) => ignored.includes(id));
+        const some = !all && group.ids.some((id) => ignored.includes(id));
+        return (
+          <label key={group.id} className="sc-row tr-chicken-group">
+            <span className="sc-row-main sc-row-stack">
+              <span>
+                {group.label}
+                {some && <span className="tr-mixed"> · partly (see Fine-tune)</span>}
+              </span>
+              <span className="sc-help">{group.help}</span>
+            </span>
+            <Toggle checked={all} onChange={(on) => set(group.ids, on)} label={group.label} />
+          </label>
+        );
+      })}
+      <div className="tr-chicken-foot">
+        <button type="button" className="tr-link" aria-expanded={fineTune} onClick={() => setFineTune((v) => !v)}>
+          {fineTune ? "Hide fine-tune" : "Fine-tune…"}
+        </button>
         {changed && (
-          <button
-            type="button"
-            className="tr-link"
-            onClick={() => {
-              for (const id of PATTERNS.map((p) => p.id)) if (!CHICKEN_PATTERN_IDS.has(id) && ignored.includes(id) !== houseIgnored.has(id)) onChange(id, houseIgnored.has(id));
-            }}
-          >
+          <button type="button" className="tr-link" onClick={reset}>
             Reset
           </button>
         )}
       </div>
+      {fineTune && (
+        <div className="tr-chips">
+          {ignored.map((id) => (
+            <span key={id} className="tr-chip is-static">
+              {shortName(id)}
+              <button type="button" aria-label={`Let ${shortName(id)} stop 大雞/大鴨`} onClick={() => set([id], false)}>
+                ×
+              </button>
+            </span>
+          ))}
+          <select className="tr-add" value="" aria-label="Add a pattern 大雞/大鴨 ignore" onChange={(e) => e.target.value && set([e.target.value], true)}>
+            <option value="">+ Add</option>
+            {addable.map((id) => (
+              <option key={id} value={id}>
+                {NAME_BY_ID.get(id)}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
     </div>
   );
 }

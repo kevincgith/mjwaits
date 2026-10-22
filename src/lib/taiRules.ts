@@ -2,7 +2,7 @@
 // named sets, files and share links are in taiRuleSets.ts. The engine side - what each attribute does to a score - lives in
 // scoring.ts; the classification in taiCatalog.ts.
 
-import { LADDERS, PATTERN_CATALOG, SITUATION_CHOICE } from "./taiCatalog";
+import { LADDERS, pairOf, PATTERN_CATALOG, SITUATION_CHOICE, type OpenConcealedPair } from "./taiCatalog";
 import {
   CHICKEN_PATTERN_IDS,
   DEFAULT_TAI_RULES,
@@ -23,13 +23,23 @@ const KNOWN_IDS = new Set(PATTERNS.map((p) => p.id));
 const NAME_BY_ID = new Map(PATTERNS.map((p) => [p.id, p.name]));
 const LADDER_BY_ID = new Map(LADDERS.map((l) => [l.id, l]));
 // What a pattern's ladder already replaces for it - never stored as its own edge.
-const LADDER_BELOW = new Map(LADDERS.flatMap((l) => l.rungs.flatMap((rung, i) => rung.map((id) => [id, new Set(l.rungs.slice(0, i).flat())] as const))));
+const LADDER_BELOW = new Map(LADDERS.filter((l) => l.kind !== "windows").flatMap((l) => l.rungs.flatMap((rung, i) => rung.map((id) => [id, new Set(l.rungs.slice(0, i).flat())] as const))));
 
 /** "清一色 (One numbered suit, no honors)" -> "清一色" */
 export function shortName(id: string): string {
   const name = NAME_BY_ID.get(id) ?? id;
   const at = name.indexOf(" (");
   return at === -1 ? name : name.slice(0, at);
+}
+
+/** A 明/暗 pair's shared name, from its 明 pattern: "明清龍 (Pure straight,
+ *  open)" -> ["清龍", "Pure straight"]. */
+export function pairName(pair: OpenConcealedPair): [string, string] {
+  const name = NAME_BY_ID.get(pair.open) ?? pair.id;
+  const at = name.indexOf(" (");
+  const zh = (at === -1 ? name : name.slice(0, at)).replace(/^明/, "");
+  const en = at === -1 ? "" : name.slice(at + 2, -1).replace(/,? ?open$/i, "").trim();
+  return [zh, en];
 }
 
 const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v >= 0;
@@ -58,7 +68,22 @@ function normalizeRule(id: string, saved: unknown): PatternRule {
     rule.table[0] = 0;
   }
   if (base.first !== undefined) rule.first = isNum(s.first) ? Math.round(s.first) : base.first;
+  // 0 = off: a rule switched off (an older save, or a share link) becomes a
+  // value of 0, so the sheet has one thing to show - the number.
+  if (!rule.enabled) return switchedOff(rule);
   return rule;
+}
+
+/** A rule with every value at 0 - off, the one way 設定 shows it. */
+export function switchedOff(rule: PatternRule): PatternRule {
+  return { ...rule, enabled: true, tai: 0, ...(rule.table ? { table: rule.table.map(() => 0) } : {}), ...(rule.first !== undefined ? { first: 0 } : {}) };
+}
+
+/** Whether a rule counts for anything: on, and some value above 0. */
+export function isRuleOn(rule: PatternRule): boolean {
+  if (!rule.enabled) return false;
+  if (rule.table) return rule.table.some((v) => v > 0);
+  return rule.tai > 0 || (rule.first ?? 0) > 0;
 }
 
 /** A saved ruleset (anything - it came from storage or a link) merged over
@@ -80,6 +105,24 @@ export function normalizeRules(saved: unknown): { rules: TaiRules; corrupt: bool
   };
 }
 
+/** The rules a pattern's example is shown and checked under: the house
+ *  list, with that one pattern worth 1 if the house leaves it at 0 (正圈風,
+ *  the longer 連刻 tiers…) - an example is about showing it counting at all.
+ *  Only that one pattern: switching every 0 pattern on at once can change
+ *  how a hand is best read, and the example would then show something else. */
+const exampleRulesCache = new Map<string, TaiRules>();
+export function exampleRulesFor(id: string): TaiRules {
+  const rule = DEFAULT_TAI_RULES.patterns[id];
+  if (!rule || rule.tai !== 0 || rule.table) return DEFAULT_TAI_RULES;
+  let rules = exampleRulesCache.get(id);
+  if (!rules) {
+    rules = structuredClone(DEFAULT_TAI_RULES);
+    rules.patterns[id].tai = 1;
+    exampleRulesCache.set(id, rules);
+  }
+  return rules;
+}
+
 // ---- Comparing with the house list ----
 
 const sameSet = (a: readonly string[], b: readonly string[]) => a.length === b.length && a.every((x) => b.includes(x));
@@ -87,9 +130,12 @@ const sameSet = (a: readonly string[], b: readonly string[]) => a.length === b.l
 /** Which parts of one pattern's rule differ from the house list. */
 export function ruleChanges(id: string, rule: PatternRule): { value: boolean; enabled: boolean; replaces: boolean; shapes: boolean; chicken: boolean } {
   const base = DEFAULT_TAI_RULES.patterns[id];
+  const on = isRuleOn(rule);
+  const sameValue = rule.tai === base.tai && rule.first === base.first && (rule.table ?? []).join() === (base.table ?? []).join();
   return {
-    enabled: rule.enabled !== base.enabled,
-    value: rule.tai !== base.tai || rule.first !== base.first || (rule.table ?? []).join() !== (base.table ?? []).join(),
+    // Off (0, or an older save's switch) shows as a value change: "槓 2 → off".
+    enabled: false,
+    value: on !== isRuleOn(base) || (on && !sameValue),
     replaces: !sameSet(rule.replaces, base.replaces),
     shapes: !sameSet(rule.shapes, base.shapes),
     chicken: rule.blocksChicken !== base.blocksChicken,
@@ -112,11 +158,30 @@ export function chickenIgnores(rules: TaiRules): string[] {
   return PATTERNS.filter((p) => !CHICKEN_PATTERN_IDS.has(p.id) && rules.patterns[p.id]?.blocksChicken === false).map((p) => p.id);
 }
 
+/** 大雞/大鴨's ignore list in two plain groups - the 設定 switches. 底 is
+ *  always ignored and in neither group. "situations" is everything the house
+ *  list ignores that's declared rather than seen in the tiles. */
+export const CHICKEN_GROUPS: { id: string; label: string; help: string; ids: string[] }[] = (() => {
+  const flowers = ["no-flowers", "correct-flower", "wrong-flower"];
+  const houseIgnored = PATTERNS.map((p) => p.id).filter((id) => !CHICKEN_PATTERN_IDS.has(id) && !DEFAULT_TAI_RULES.patterns[id].blocksChicken);
+  return [
+    {
+      id: "situations",
+      label: "Situations don't stop them",
+      help: "莊, 叮, 天胡, 搶槓, 雙響, 海底… - declared on the 情況 buttons, not seen in the tiles.",
+      ids: houseIgnored.filter((id) => id !== "base-tai" && !flowers.includes(id)),
+    },
+    { id: "flowers", label: "Flowers don't stop them", help: "無花, 正花, 爛花 - with at most one flower either way.", ids: flowers },
+  ];
+})();
+
 export function isChickenListChanged(rules: TaiRules): boolean {
   return PATTERNS.some((p) => ruleChanges(p.id, rules.patterns[p.id]).chicken);
 }
 
-export const isLadderChanged = (rules: TaiRules, ladderId: string) => rules.ladders[ladderId]?.exclusive === false;
+// Only a count family can be switched to stacking (see Ladder in taiCatalog.ts).
+export const isLadderChanged = (rules: TaiRules, ladderId: string) =>
+  LADDER_BY_ID.get(ladderId)?.kind !== "windows" && rules.ladders[ladderId]?.exclusive === false;
 
 /** How many patterns and ladders differ from the house list. */
 export function changedCount(rules: TaiRules): number {
@@ -133,6 +198,7 @@ export function rulesAffectScoring(rules: TaiRules | undefined): boolean {
 }
 
 function valueText(id: string, rule: PatternRule): string {
+  if (!isRuleOn(rule)) return "off";
   const value = PATTERN_CATALOG[id].value;
   if (value.kind === "table") return (rule.table ?? []).slice(1).join("/");
   if (value.kind === "streak") return `${rule.first ?? value.first} +${rule.tai}`;
@@ -159,7 +225,9 @@ export function describeChanges(rules: TaiRules): RuleChange[] {
     const base = DEFAULT_TAI_RULES.patterns[p.id];
     const c = ruleChanges(p.id, rule);
     const target = { kind: "pattern" as const, id: p.id };
-    const name = shortName(p.id);
+    // A 明/暗 half is named by its pair and side: "般高 暗".
+    const pair = pairOf(p.id);
+    const name = pair ? `${pairName(pair)[0]} ${pair.open === p.id ? "明" : "暗"}` : shortName(p.id);
     if (c.enabled) out.push({ target, text: rule.enabled ? `${name} on` : `${name} off` });
     if (c.value) out.push({ target, text: `${name} ${valueText(p.id, base)} → ${valueText(p.id, rule)}` });
     for (const r of rule.replaces) if (!base.replaces.includes(r)) out.push({ target, text: `${name} replaces ${shortName(r)}` });
@@ -233,7 +301,8 @@ export function rulesDiff(rules: TaiRules): RulesDiff {
   const diff: RulesDiff = { v: 1 };
   if (rules.engine === "legacy") diff.e = "legacy";
   for (const p of PATTERNS) {
-    const rule = rules.patterns[p.id];
+    // Off travels as values of 0 (0 = off), never as a separate switch.
+    const rule = isRuleOn(rules.patterns[p.id]) ? rules.patterns[p.id] : switchedOff(rules.patterns[p.id]);
     const c = ruleChanges(p.id, rule);
     const part: Partial<PatternRule> = {};
     if (c.enabled) part.enabled = rule.enabled;
