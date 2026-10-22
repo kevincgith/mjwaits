@@ -8,7 +8,7 @@ import type { Tile } from "./lib/mahjong";
 import { PATTERN_EXAMPLES } from "./lib/patternExamples";
 import { parseScoringHand, PATTERNS, scoreParsedHand, waitsBeforeWin, type GameContext, type TaiRules } from "./lib/scoring";
 import { PATTERN_CATALOG } from "./lib/taiCatalog";
-import { EXAMPLE_RULES } from "./lib/taiRules";
+import { exampleRulesFor } from "./lib/taiRules";
 import { TEST_HAND_BASE_CONTEXT } from "./lib/testHands";
 
 const WINDS = ["東", "南", "西", "北"];
@@ -50,7 +50,7 @@ export function PatternExampleView({ id, rules }: { id: string; rules: TaiRules 
     try {
       const parsed = { ...parseScoringHand(example.hand), bonusTiles: example.bonus ?? [] };
       const ctx: GameContext = { ...TEST_HAND_BASE_CONTEXT, ...example.ctx };
-      const result = scoreParsedHand(parsed, { ...ctx, rules: EXAMPLE_RULES });
+      const result = scoreParsedHand(parsed, { ...ctx, rules: exampleRulesFor(id) });
       const reading = result.matched.some((m) => m.pattern.id === id) || !result.second ? result : { ...result, ...result.second };
       return { ctx, hand: reading.hand, declared: parsed.declaredMelds.length, waits: waitsBeforeWin(reading.hand, ctx) };
     } catch {

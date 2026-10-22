@@ -5,14 +5,14 @@
 // name, value, type; page 2 how scoring works; then each family, its tiers,
 // and each pattern with an example hand.
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { PatternExampleView } from "./PatternExample";
 import { rasterizeTileArt, TileArtRemapContext, TileStyleContext } from "./tileArt";
-import { FAMILY_GUIDE, GENERAL_RULES, PATTERN_GUIDE } from "./lib/patternGuide";
+import { FAMILY_GUIDE, GENERAL_RULES, PAIR_GUIDE, PATTERN_GUIDE } from "./lib/patternGuide";
 import { DEFAULT_TAI_RULES, effectiveReplaces, HAND_SHAPES, PATTERNS, type PatternRule, type TaiRules } from "./lib/scoring";
-import { LADDERS, PATTERN_CATALOG, PATTERN_FAMILIES, type Ladder, type PatternFamily } from "./lib/taiCatalog";
-import { chickenIgnores, describeChanges, isLadderChanged, isRowChanged, ruleChanges, shortName } from "./lib/taiRules";
+import { LADDERS, pairOf, PATTERN_CATALOG, PATTERN_FAMILIES, type Ladder, type OpenConcealedPair, type PatternFamily } from "./lib/taiCatalog";
+import { chickenIgnores, describeChanges, isLadderChanged, isRowChanged, pairName, ruleChanges, shortName } from "./lib/taiRules";
 
 const NAME_BY_ID = new Map(PATTERNS.map((p) => [p.id, p.name]));
 const english = (id: string) => {
@@ -40,7 +40,11 @@ const GROUPS = PATTERN_FAMILIES.map((f) => {
 // column on its own.
 type SummaryLine = { kind: "family"; group: (typeof GROUPS)[number]; cont: boolean } | { kind: "row"; id: string };
 const SUMMARY_COLUMNS: SummaryLine[][] = (() => {
-  const lines: SummaryLine[] = GROUPS.flatMap((g) => [{ kind: "family" as const, group: g, cont: false }, ...g.ids.map((id) => ({ kind: "row" as const, id }))]);
+  // A 明/暗 pair is one line, carried by its 明 half.
+  const lines: SummaryLine[] = GROUPS.flatMap((g) => [
+    { kind: "family" as const, group: g, cont: false },
+    ...g.ids.filter((id) => pairOf(id)?.concealed !== id).map((id) => ({ kind: "row" as const, id })),
+  ]);
   const perColumn = Math.ceil(lines.length / 4);
   const columns: SummaryLine[][] = [[]];
   let group = GROUPS[0];
@@ -58,16 +62,25 @@ const SUMMARY_COLUMNS: SummaryLine[][] = (() => {
   return columns;
 })();
 
-function SummaryRow({ id, rule, changed }: { id: string; rule: PatternRule; changed: boolean }) {
+function SummaryRow({ id, rules, legacy }: { id: string; rules: TaiRules; legacy: boolean }) {
+  const pair = pairOf(id);
+  const rule = rules.patterns[id];
+  // A 明/暗 pair: one line, "5 / 8" (明 / 暗).
+  const partner = pair ? rules.patterns[pair.concealed] : undefined;
+  const enabled = rule.enabled || !!partner?.enabled;
+  const changed = !legacy && (isRowChanged(id, rule) || (!!pair && isRowChanged(pair.concealed, partner!)));
   const v = valueOf(id, rule);
+  const value = pair
+    ? `${rule.enabled ? rule.tai : "–"} / ${partner!.enabled ? partner!.tai : "–"}`
+    : v.value;
   return (
-    <div className={`rr-sum-row${rule.enabled ? "" : " is-off"}`}>
+    <div className={`rr-sum-row${enabled ? "" : " is-off"}`}>
       <span className="rr-sum-name">
-        {shortName(id)}
+        {pair ? pairName(pair)[0] : shortName(id)}
         {changed && <span className="rr-mark" aria-label="changed from the house rules" />}
       </span>
-      <span className="rr-sum-value">{rule.enabled ? v.value : "off"}</span>
-      <span className="rr-sum-type">{rule.enabled ? v.type : ""}</span>
+      <span className="rr-sum-value">{enabled ? value : "off"}</span>
+      <span className="rr-sum-type">{enabled ? v.type : ""}</span>
     </div>
   );
 }
@@ -158,7 +171,7 @@ export function RulesReference({ name, rules, onClose }: { name: string; rules: 
                         )}
                       </div>
                     ) : (
-                      <SummaryRow key={line.id} id={line.id} rule={shown.patterns[line.id]} changed={!legacy && isRowChanged(line.id, shown.patterns[line.id])} />
+                      <SummaryRow key={line.id} id={line.id} rules={shown} legacy={legacy} />
                     ),
                   )}
                 </div>
@@ -166,6 +179,9 @@ export function RulesReference({ name, rules, onClose }: { name: string; rules: 
             </div>
 
             <footer className="rr-legend">
+              <span>
+                <b>5 / 8</b> 明 open / 暗 concealed
+              </span>
               <span>
                 <b>each</b> per meld or instance
               </span>
@@ -239,9 +255,12 @@ export function RulesReference({ name, rules, onClose }: { name: string; rules: 
               })}
 
               <div className="rr-cards">
-                {g.ids.map((id) => (
-                  <PatternCard key={id} id={id} rules={shown} changedFromHouse={!legacy} />
-                ))}
+                {g.ids.map((id) => {
+                  const pair = pairOf(id);
+                  if (!pair) return <PatternCard key={id} id={id} rules={shown} changedFromHouse={!legacy} />;
+                  if (pair.concealed === id) return null;
+                  return <PairCard key={pair.id} pair={pair} rules={shown} changedFromHouse={!legacy} />;
+                })}
               </div>
             </section>
           ))}
@@ -292,6 +311,72 @@ function PatternCard({ id, rules, changedFromHouse }: { id: string; rules: TaiRu
             <dd>{base.enabled ? valueOf(id, base).long : "Not counted"}</dd>
           </>
         )}
+      </dl>
+    </div>
+  );
+}
+
+// A 明/暗 pair's card: one name and description, a value for each side,
+// each side's example, and what each replaces (once, if the same).
+function PairCard({ pair, rules, changedFromHouse }: { pair: OpenConcealedPair; rules: TaiRules; changedFromHouse: boolean }) {
+  const [zh, en] = pairName(pair);
+  const sides = [
+    { id: pair.open, label: "明", rule: rules.patterns[pair.open] },
+    { id: pair.concealed, label: "暗", rule: rules.patterns[pair.concealed] },
+  ];
+  const enabled = sides.some((side) => side.rule.enabled);
+  const replaces = sides.map((side) => effectiveReplaces(rules, side.id).map(shortName).join("、"));
+  return (
+    <div className={`rr-card${enabled ? "" : " is-off"}`}>
+      <div className="rr-card-head">
+        <span className="rr-card-name">
+          <span className="rr-card-zh">{zh}</span>
+          <span className="rr-card-en">{en}</span>
+        </span>
+        <span className="rr-card-value">
+          {sides.map((side) => `${side.label} ${side.rule.enabled ? valueOf(side.id, side.rule).long : "off"}`).join(" · ")}
+        </span>
+      </div>
+      <p className="rr-card-text">{PAIR_GUIDE[pair.id]}</p>
+      {sides.map(
+        (side) =>
+          side.rule.enabled && (
+            <div key={side.id} className="rr-pair-example">
+              <span className="rr-pair-side">{side.label}</span>
+              <PatternExampleView id={side.id} rules={rules} />
+            </div>
+          ),
+      )}
+      <dl className="rr-card-meta">
+        {replaces[0] === replaces[1]
+          ? replaces[0] && (
+              <>
+                <dt>Replaces</dt>
+                <dd>{replaces[0]}</dd>
+              </>
+            )
+          : sides.map(
+              (side, i) =>
+                replaces[i] && (
+                  <Fragment key={side.id}>
+                    <dt>{side.label} replaces</dt>
+                    <dd>{replaces[i]}</dd>
+                  </Fragment>
+                ),
+            )}
+        {changedFromHouse &&
+          sides.map((side) => {
+            const c = ruleChanges(side.id, side.rule);
+            const base = DEFAULT_TAI_RULES.patterns[side.id];
+            return (
+              (c.value || c.enabled) && (
+                <Fragment key={`h${side.id}`}>
+                  <dt>House {side.label}</dt>
+                  <dd>{base.enabled ? valueOf(side.id, base).long : "Not counted"}</dd>
+                </Fragment>
+              )
+            );
+          })}
       </dl>
     </div>
   );

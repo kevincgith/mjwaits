@@ -2,7 +2,7 @@ import { it } from "vitest";
 import { writeFileSync } from "node:fs";
 import path from "node:path";
 import { parseScoringHand, PATTERNS, scoreParsedHand, type BonusTile, type GameContext } from "../src/lib/scoring";
-import { EXAMPLE_RULES } from "../src/lib/taiRules";
+import { exampleRulesFor } from "../src/lib/taiRules";
 import type { PatternExample } from "../src/lib/patternExamples";
 import { PATTERN_CATALOG } from "../src/lib/taiCatalog";
 import { TEST_HAND_BASE_CONTEXT, TEST_HANDS } from "../src/lib/testHands";
@@ -14,9 +14,9 @@ import { TEST_HAND_BASE_CONTEXT, TEST_HANDS } from "../src/lib/testHands";
 // hands (src/lib/patternExamples.test.ts checks every example still counts):
 //   UPDATE_EXAMPLES=1 npx vitest run scripts/pick-pattern-examples.test.ts
 
-// Patterns the house list leaves at 0 are shown and checked as worth 1 -
-// see EXAMPLE_RULES.
-const RULES = EXAMPLE_RULES;
+// Each pattern's example is picked under exampleRulesFor it: the house list,
+// with that pattern worth 1 if the house leaves it at 0.
+const ZERO_IDS = PATTERNS.map((p) => p.id).filter((id) => exampleRulesFor(id) !== exampleRulesFor("base-tai"));
 
 // Hands for patterns no test hand shows on its own - mostly situations and
 // bonus tiles, which the tests check on hands busy with other patterns.
@@ -46,6 +46,12 @@ const EXTRA: PatternExample[] = [
   { hand: "(1111m)222b234t567t789b22z", ctx: { selfDraw: true, kongDraw: 1 } },
   { hand: PLAIN, ctx: { robKong: 1 } },
   { hand: PLAIN, ctx: { dealerStreak: 2 } },
+  // Exact 連刻 shapes with declared triplets, so they can't be re-read as runs.
+  { hand: "(222m)(333m)789t456b123b11z" },
+  { hand: "(222m)(333m)(444m)789t456b11z" },
+  { hand: "(333m)(444m)22m123t789b456b" },
+  { hand: "(333m)(444m)(555m)22m123t789b" },
+  { hand: "(222m)(333m)(444m)(555m)789t11z" },
   // The longer 連刻 tiers and 雙連刻.
   { hand: "22m333m444m555m123t789b" },
   { hand: "222m333m444m555m789t11z" },
@@ -62,11 +68,18 @@ const CANDIDATES: PatternExample[] = [
   ...EXTRA,
 ];
 
-function countedIn(example: PatternExample): string[] | null {
+function countedIn(example: PatternExample, ruleId = "base-tai"): string[] | null {
   try {
     const parsed = { ...parseScoringHand(example.hand), bonusTiles: example.bonus ?? [] };
-    const result = scoreParsedHand(parsed, { ...TEST_HAND_BASE_CONTEXT, ...example.ctx, rules: RULES } as GameContext);
-    return [...result.matched, ...(result.second?.matched ?? [])].map((m) => m.pattern.id);
+    const result = scoreParsedHand(parsed, { ...TEST_HAND_BASE_CONTEXT, ...example.ctx, rules: exampleRulesFor(ruleId) } as GameContext);
+    // A pattern counted several times (二連刻 ×2) is listed once per time,
+    // so the ranking below prefers a hand where it counts exactly once.
+    const rules = exampleRulesFor(ruleId);
+    return [...result.matched, ...(result.second?.matched ?? [])].flatMap((m) => {
+      const each = rules.patterns[m.pattern.id]?.tai;
+      const times = PATTERN_CATALOG[m.pattern.id]?.value.kind === "per" && each > 0 ? Math.round(m.tai / each) : 1;
+      return Array.from({ length: Math.max(1, times) }, () => m.pattern.id);
+    });
   } catch {
     return null;
   }
@@ -76,16 +89,24 @@ const SPECIAL_SHAPES = new Set(["thirteen-orphans", "sixteen-unrelated", "sixtee
 
 function pick(): Record<string, PatternExample> {
   const best = new Map<string, { rank: number; example: PatternExample }>();
-  for (const example of CANDIDATES) {
-    const ids = countedIn(example);
-    if (!ids) continue;
+  // Each candidate under the house list, and under each 0-valued pattern's
+  // own rules (where only that pattern can newly count).
+  const readings = CANDIDATES.flatMap((example) => [
+    { example, ids: countedIn(example), only: null as string | null },
+    ...ZERO_IDS.map((id) => ({ example, ids: countedIn(example, id), only: id })),
+  ]);
+  for (const { example, ids: all, only } of readings) {
+    if (!all) continue;
+    const ids = all;
     // Fewest other patterns first, then the least situation / bonus set up.
     // An ordinary pattern is shown on an ordinary hand where it can be (a
     // special hand counts so little else that it would otherwise always win).
     const special = ids.some((id) => SPECIAL_SHAPES.has(id));
     const rank = ids.length * 100 + Object.keys(example.ctx ?? {}).length * 10 + (example.bonus?.length ?? 0);
     const manual = example.ctx?.manualVisibleTripleWin || example.ctx?.manualVisibleExhaustedMultiWait;
-    for (const id of ids) {
+    for (const id of new Set(ids)) {
+      // Under a 0-valued pattern's rules, only that pattern is being picked.
+      if (only !== null ? id !== only : ZERO_IDS.includes(id)) continue;
       // A manual 明絕/絕絕 flag would show up as noise on any other pattern's example.
       if (manual && !id.startsWith("visible-")) continue;
       const penalty = special && PATTERN_CATALOG[id].family !== "special" ? 10_000 : 0;

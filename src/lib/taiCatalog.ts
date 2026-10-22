@@ -248,6 +248,31 @@ export const PATTERN_CATALOG: Record<string, PatternClass> = {
   "eight-pairs-four-winds": { family: "special", value: flat(60) },
 };
 
+// 明/暗 pairs: a pattern scored separately when an instance is open (明 -
+// any meld called, or completed by a claimed winning tile) or concealed
+// (暗). They stay two patterns in the engine - two ids, two values, two
+// breakdown rows, since a hand can score both - and are shown as one row
+// with two values in 設定 and the printed reference. Every pattern whose id
+// ends "-open" has a "-hidden" partner (checked in taiRules.test.ts).
+export interface OpenConcealedPair {
+  /** The shared id stem, e.g. "identical-sequences". */
+  id: string;
+  open: string;
+  concealed: string;
+}
+
+export const OPEN_CONCEALED_PAIRS: OpenConcealedPair[] = Object.keys(PATTERN_CATALOG)
+  .filter((id) => id.endsWith("-open"))
+  .map((open) => {
+    const id = open.slice(0, -"-open".length);
+    return { id, open, concealed: `${id}-hidden` };
+  });
+
+const PAIR_BY_PATTERN = new Map(OPEN_CONCEALED_PAIRS.flatMap((p) => [[p.open, p] as const, [p.concealed, p] as const]));
+
+/** The 明/暗 pair a pattern belongs to, if any. */
+export const pairOf = (id: string): OpenConcealedPair | undefined => PAIR_BY_PATTERN.get(id);
+
 // Tier families, lowest rung first. A rung can hold several patterns that
 // are alternatives at the same tier (明/暗 versions, 小/大 連刻, or
 // 正位風/爛位風/正圈風). Two kinds, one rule - the highest tier that has a

@@ -14,7 +14,7 @@ import {
   rulesFingerprint,
   rulesFromDiff,
 } from "./taiRules";
-import { LADDERS } from "./taiCatalog";
+import { LADDERS, OPEN_CONCEALED_PAIRS } from "./taiCatalog";
 import { TEST_HAND_BASE_CONTEXT } from "./testHands";
 
 // Default rules with some patterns' rules patched.
@@ -64,6 +64,18 @@ describe("the classification", () => {
       }
     }
     expect(replaceCycles(DEFAULT_TAI_RULES).size).toBe(0);
+  });
+
+  it("pairs every 明 pattern with its 暗 partner, and the other way round", () => {
+    const ids = PATTERNS.map((p) => p.id);
+    expect(OPEN_CONCEALED_PAIRS).toHaveLength(17);
+    for (const pair of OPEN_CONCEALED_PAIRS) expect(ids, pair.concealed).toContain(pair.concealed);
+    for (const id of ids.filter((x) => x.endsWith("-hidden"))) expect(OPEN_CONCEALED_PAIRS.some((p) => p.concealed === id), id).toBe(true);
+  });
+
+  it("names a 明/暗 half in the changes list by its pair and side", () => {
+    const texts = describeChanges(withRules({ "identical-sequences-hidden": { tai: 10 } })).map((c) => c.text);
+    expect(texts).toEqual(["般高 暗 8 each → 10 each"]);
   });
 
   it("the defaults are the house list", () => {

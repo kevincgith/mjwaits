@@ -26,6 +26,12 @@ rules turn that into tai. Everything about a pattern's rule is written in one pl
 | Hand shapes (**inclusion**) | Which of normal / 十三么 / 十六不搭 / 嚦咕嚦咕 it may count on | Switch each shape off and on, among the shapes that hand's scorer can evaluate (derived in `scoring.ts` as `eligibleShapes` - a fact about the scorer, not a rule) |
 | Blocks 大雞/大鴨 | Whether its firing stops 大雞/大鴨 - off for 底, the bonus tiles and purely declared state like 莊/叮/天胡 | One list, "What 大雞/大鴨 ignore", at the top of the 大雞/大鴨 group - not per pattern (大雞/大鴨 never count each other) |
 
+**明/暗 pairs.** The 17 patterns scored separately when an instance is 明 (open) or 暗 (concealed)
+- 般高, 清龍, 相逢, 四歸… (`OPEN_CONCEALED_PAIRS` in taiCatalog.ts: every `-open` id with its
+`-hidden` partner) - stay two patterns in the engine (two ids and values, two breakdown rows, since a
+hand can score both), but 設定 and the printed reference show each pair as one row with a 明 and a
+暗 value, one description and an example for each side.
+
 How the scorer applies them: a disabled pattern, or one not included for the hand's shape, scores 0
 and replaces nothing. Replacing is a single pass: every pattern that fires drops its targets (ladder
 and own edges), even if it is itself dropped. So a loop (A replaces B and B replaces A) drops both, and

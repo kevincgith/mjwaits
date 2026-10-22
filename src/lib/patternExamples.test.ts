@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseScoringHand, PATTERNS, scoreParsedHand, waitsBeforeWin, type GameContext } from "./scoring";
-import { EXAMPLE_RULES } from "./taiRules";
+import { exampleRulesFor } from "./taiRules";
 import { PATTERN_EXAMPLES } from "./patternExamples";
 import { TEST_HAND_BASE_CONTEXT } from "./testHands";
 
@@ -8,9 +8,8 @@ import { TEST_HAND_BASE_CONTEXT } from "./testHands";
 // scripts/pick-pattern-examples.test.ts) must still show that pattern
 // counting - re-run the generator if a scoring change breaks one.
 
-// Patterns the house list leaves at 0 are shown and checked as worth 1 -
-// see EXAMPLE_RULES.
-const RULES = EXAMPLE_RULES;
+// Each example is checked under exampleRulesFor its pattern: the house list,
+// with that pattern worth 1 if the house leaves it at 0.
 
 describe("設定's pattern examples", () => {
   it("has one for every pattern", () => {
@@ -22,7 +21,7 @@ describe("設定's pattern examples", () => {
       const example = PATTERN_EXAMPLES[p.id];
       if (!example) return;
       const parsed = { ...parseScoringHand(example.hand), bonusTiles: example.bonus ?? [] };
-      const result = scoreParsedHand(parsed, { ...TEST_HAND_BASE_CONTEXT, ...example.ctx, rules: RULES } as GameContext);
+      const result = scoreParsedHand(parsed, { ...TEST_HAND_BASE_CONTEXT, ...example.ctx, rules: exampleRulesFor(p.id) } as GameContext);
       expect([...result.matched, ...(result.second?.matched ?? [])].map((m) => m.pattern.id)).toContain(p.id);
     });
   }
@@ -31,7 +30,7 @@ describe("設定's pattern examples", () => {
   it("shows 假獨 with more than one wait, and 獨獨 with exactly one", () => {
     const waits = (id: string) => {
       const example = PATTERN_EXAMPLES[id];
-      const ctx = { ...TEST_HAND_BASE_CONTEXT, ...example.ctx, rules: RULES } as GameContext;
+      const ctx = { ...TEST_HAND_BASE_CONTEXT, ...example.ctx, rules: exampleRulesFor(id) } as GameContext;
       const result = scoreParsedHand(parseScoringHand(example.hand), ctx);
       return waitsBeforeWin(result.hand, ctx)?.map((t) => `${t.rank}${t.suit}`);
     };

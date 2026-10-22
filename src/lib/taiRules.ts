@@ -2,7 +2,7 @@
 // named sets, files and share links are in taiRuleSets.ts. The engine side - what each attribute does to a score - lives in
 // scoring.ts; the classification in taiCatalog.ts.
 
-import { LADDERS, PATTERN_CATALOG, SITUATION_CHOICE } from "./taiCatalog";
+import { LADDERS, pairOf, PATTERN_CATALOG, SITUATION_CHOICE, type OpenConcealedPair } from "./taiCatalog";
 import {
   CHICKEN_PATTERN_IDS,
   DEFAULT_TAI_RULES,
@@ -30,6 +30,16 @@ export function shortName(id: string): string {
   const name = NAME_BY_ID.get(id) ?? id;
   const at = name.indexOf(" (");
   return at === -1 ? name : name.slice(0, at);
+}
+
+/** A 明/暗 pair's shared name, from its 明 pattern: "明清龍 (Pure straight,
+ *  open)" -> ["清龍", "Pure straight"]. */
+export function pairName(pair: OpenConcealedPair): [string, string] {
+  const name = NAME_BY_ID.get(pair.open) ?? pair.id;
+  const at = name.indexOf(" (");
+  const zh = (at === -1 ? name : name.slice(0, at)).replace(/^明/, "");
+  const en = at === -1 ? "" : name.slice(at + 2, -1).replace(/,? ?open$/i, "").trim();
+  return [zh, en];
 }
 
 const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v >= 0;
@@ -80,14 +90,23 @@ export function normalizeRules(saved: unknown): { rules: TaiRules; corrupt: bool
   };
 }
 
-/** The rules 設定's examples are shown and checked under: the house list,
- *  with every pattern it leaves at 0 (正圈風, the longer 連刻 tiers…) worth
- *  1 instead - an example is about showing a pattern counting at all. */
-export const EXAMPLE_RULES: TaiRules = (() => {
-  const rules = structuredClone(DEFAULT_TAI_RULES);
-  for (const rule of Object.values(rules.patterns)) if (rule.tai === 0 && !rule.table) rule.tai = 1;
+/** The rules a pattern's example is shown and checked under: the house
+ *  list, with that one pattern worth 1 if the house leaves it at 0 (正圈風,
+ *  the longer 連刻 tiers…) - an example is about showing it counting at all.
+ *  Only that one pattern: switching every 0 pattern on at once can change
+ *  how a hand is best read, and the example would then show something else. */
+const exampleRulesCache = new Map<string, TaiRules>();
+export function exampleRulesFor(id: string): TaiRules {
+  const rule = DEFAULT_TAI_RULES.patterns[id];
+  if (!rule || rule.tai !== 0 || rule.table) return DEFAULT_TAI_RULES;
+  let rules = exampleRulesCache.get(id);
+  if (!rules) {
+    rules = structuredClone(DEFAULT_TAI_RULES);
+    rules.patterns[id].tai = 1;
+    exampleRulesCache.set(id, rules);
+  }
   return rules;
-})();
+}
 
 // ---- Comparing with the house list ----
 
@@ -170,7 +189,9 @@ export function describeChanges(rules: TaiRules): RuleChange[] {
     const base = DEFAULT_TAI_RULES.patterns[p.id];
     const c = ruleChanges(p.id, rule);
     const target = { kind: "pattern" as const, id: p.id };
-    const name = shortName(p.id);
+    // A 明/暗 half is named by its pair and side: "般高 暗".
+    const pair = pairOf(p.id);
+    const name = pair ? `${pairName(pair)[0]} ${pair.open === p.id ? "明" : "暗"}` : shortName(p.id);
     if (c.enabled) out.push({ target, text: rule.enabled ? `${name} on` : `${name} off` });
     if (c.value) out.push({ target, text: `${name} ${valueText(p.id, base)} → ${valueText(p.id, rule)}` });
     for (const r of rule.replaces) if (!base.replaces.includes(r)) out.push({ target, text: `${name} replaces ${shortName(r)}` });

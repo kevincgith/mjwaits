@@ -19,7 +19,7 @@ import {
   type PatternRule,
   type TaiRules,
 } from "./lib/scoring";
-import { LADDERS, PATTERN_CATALOG, PATTERN_FAMILIES, type Ladder, type PatternFamily } from "./lib/taiCatalog";
+import { LADDERS, pairOf, PATTERN_CATALOG, PATTERN_FAMILIES, type Ladder, type OpenConcealedPair, type PatternFamily } from "./lib/taiCatalog";
 import {
   activeSet,
   diffOf,
@@ -40,6 +40,7 @@ import {
   describeChanges,
   isChickenListChanged,
   isRowChanged,
+  pairName,
   isLadderChanged,
   ladderOf,
   replaceCycles,
@@ -66,6 +67,10 @@ const familyOfPattern = (id: string): PatternFamily => {
   return l ? ladderFamily(l) : PATTERN_CATALOG[id].family;
 };
 const ON_LADDER = new Set(LADDERS.flatMap((l) => l.rungs.flat()));
+
+// A 明/暗 pair is one row in the sheet, keyed by its stem; anything else by
+// its own id.
+const rowKey = (id: string) => pairOf(id)?.id ?? id;
 
 function valueSummary(id: string, rule: PatternRule): string {
   const value = PATTERN_CATALOG[id].value;
@@ -225,8 +230,8 @@ export function TaiRulesSheet({
     setQuery("");
     setChangedOnly(false);
     setOpenFamilies((prev) => new Set(prev).add(familyOfPattern(id)));
-    setExpanded(id);
-    setReveal(id);
+    setExpanded(rowKey(id));
+    setReveal(rowKey(id));
   };
   const revealLadder = (id: string) => {
     const l = LADDERS.find((x) => x.id === id)!;
@@ -257,8 +262,13 @@ export function TaiRulesSheet({
   // behind a closed header. A ladder shows whole when any rung matches.
   const filtering = query.trim() !== "" || changedOnly;
   const q = query.trim().toLowerCase();
-  const matches = (id: string) =>
+  const matchesOne = (id: string) =>
     (!changedOnly || isRowChanged(id, draft.patterns[id])) && (q === "" || (NAME_BY_ID.get(id) ?? "").toLowerCase().includes(q) || id.includes(q));
+  // A 明/暗 pair shows (as one row) when either half matches.
+  const matches = (id: string) => {
+    const pair = pairOf(id);
+    return pair ? matchesOne(pair.open) || matchesOne(pair.concealed) : matchesOne(id);
+  };
   const groups = PATTERN_FAMILIES.map((f) => {
     const ladders = LADDERS.filter(
       (l) => ladderFamily(l) === f.id && (l.rungs.flat().some(matches) || (changedOnly && q === "" && isLadderChanged(draft, l.id))),
@@ -289,6 +299,25 @@ export function TaiRulesSheet({
     onChange: (patch: Partial<PatternRule>) => setRule(id, patch),
     onReset: () => resetRule(id),
   });
+
+  // One row per pattern - a 明/暗 pair as one row, drawn at its 明 half.
+  const renderRow = (id: string) => {
+    const pair = pairOf(id);
+    if (!pair) return <PatternRow key={id} {...rowProps(id)} />;
+    if (id !== pair.open) return null;
+    return (
+      <PairRow
+        key={pair.id}
+        pair={pair}
+        draft={draft}
+        inCycle={cycles.has(pair.open) || cycles.has(pair.concealed)}
+        expanded={expanded === pair.id}
+        onExpand={() => setExpanded((cur) => (cur === pair.id ? null : pair.id))}
+        onChange={setRule}
+        onReset={resetRule}
+      />
+    );
+  };
 
   const inUseName = activeSet(store)?.name ?? HOUSE_RULES_NAME;
   return (
@@ -490,7 +519,7 @@ export function TaiRulesSheet({
                   <span className="tr-family-label">{g.label}</span>
                   <span className="tr-family-count">
                     {familyChanged > 0 && <span className="tr-dot" aria-label={`${familyChanged} changed`} />}
-                    {g.ids.length}
+                    {new Set(g.ids.map(rowKey)).size}
                   </span>
                 </button>
                 {open && (
@@ -505,18 +534,14 @@ export function TaiRulesSheet({
                       <LadderBlock key={l.id} ladder={l} exclusive={draft.ladders[l.id]?.exclusive !== false} onExclusive={(v) => setLadder(l.id, v)}>
                         {[...l.rungs].reverse().map((rung, i) => (
                           <div key={i} className="tr-rung">
-                            {rung.map((id) => (
-                              <PatternRow key={id} {...rowProps(id)} />
-                            ))}
+                            {rung.map(renderRow)}
                           </div>
                         ))}
                       </LadderBlock>
                     ))}
                     {g.singles.length > 0 && (
                       <div className="sc-list">
-                        {g.singles.map((id) => (
-                          <PatternRow key={id} {...rowProps(id)} />
-                        ))}
+                        {g.singles.map(renderRow)}
                       </div>
                     )}
                   </>
@@ -619,6 +644,97 @@ function PatternRow({
         </span>
       </div>
       {expanded && <PatternDetails id={id} rule={rule} draft={draft} changed={changed} onChange={onChange} onReset={onReset} />}
+    </div>
+  );
+}
+
+// A 明/暗 pair as one row: its shared name, a value for each side, and one
+// switch for both. Expanded, each side's example and rules in turn.
+function PairRow({
+  pair,
+  draft,
+  inCycle,
+  expanded,
+  onExpand,
+  onChange,
+  onReset,
+}: {
+  pair: OpenConcealedPair;
+  draft: TaiRules;
+  inCycle: boolean;
+  expanded: boolean;
+  onExpand: () => void;
+  onChange: (id: string, patch: Partial<PatternRule>) => void;
+  onReset: (id: string) => void;
+}) {
+  const [zh, en] = pairName(pair);
+  const open = draft.patterns[pair.open];
+  const concealed = draft.patterns[pair.concealed];
+  const enabled = open.enabled || concealed.enabled;
+  const changed = isRowChanged(pair.open, open) || isRowChanged(pair.concealed, concealed);
+  const per = PATTERN_CATALOG[pair.open].value.kind === "per";
+  const sides = [
+    { id: pair.open, rule: open, label: "明", long: "明 · open (any meld called, or completed by a claimed tile)" },
+    { id: pair.concealed, rule: concealed, label: "暗", long: "暗 · concealed (every meld self-formed)" },
+  ];
+  return (
+    <div className={`tr-pattern tr-pair${enabled ? "" : " is-disabled"}${expanded ? " is-expanded" : ""}`} data-reveal={pair.id}>
+      <div className="sc-row">
+        <button type="button" className="tr-pattern-name" aria-expanded={expanded} onClick={onExpand}>
+          <span className="tr-pattern-zh">
+            {zh}
+            {changed && <span className="tr-dot" aria-label="changed" />}
+            {inCycle && (
+              <span className="tr-warn" title="Part of a replace loop" aria-label="replace loop">
+                !
+              </span>
+            )}
+          </span>
+          {en && <span className="sc-help">{en}</span>}
+        </button>
+        <span className="tr-pattern-end">
+          <span className="tr-pair-values">
+            {sides.map((side) => (
+              <span key={side.id} className="tr-value tr-pair-value">
+                <span className="tr-pair-side">{side.label}</span>
+                <NumberField
+                  value={side.rule.tai}
+                  onChange={(tai) => onChange(side.id, { tai })}
+                  label={`${zh} ${side.label} tai`}
+                  pill
+                  disabled={!side.rule.enabled}
+                />
+              </span>
+            ))}
+            {per && <span className="tr-unit">each</span>}
+          </span>
+          <Toggle
+            checked={enabled}
+            onChange={(on) => {
+              onChange(pair.open, { enabled: on });
+              onChange(pair.concealed, { enabled: on });
+            }}
+            label={`Count ${zh}`}
+          />
+        </span>
+      </div>
+      {expanded && (
+        <div className="tr-pair-details">
+          {sides.map((side) => (
+            <div key={side.id} className="tr-pair-section">
+              <div className="tr-pair-heading">{side.long}</div>
+              <PatternDetails
+                id={side.id}
+                rule={side.rule}
+                draft={draft}
+                changed={isRowChanged(side.id, side.rule)}
+                onChange={(patch) => onChange(side.id, patch)}
+                onReset={() => onReset(side.id)}
+              />
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

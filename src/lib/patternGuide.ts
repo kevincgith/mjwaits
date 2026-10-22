@@ -112,27 +112,7 @@ export const PATTERN_GUIDE: Record<string, string> = {
   "everyone-else-completes-it": "Every meld called, and won on a discard (全求人).",
   "half-everyone-else-completes-it": "Every meld called, and won by self-draw (半求人).",
 
-  "four-returns-to-one-open": "A triplet plus a run holding the fourth copy of the same tile - open (明).",
-  "four-returns-to-one-hidden": "A triplet plus a run holding the fourth copy of the same tile - concealed (暗).",
-  "four-returns-to-two-open": "The pair plus two runs, together holding all four copies of the pair's tile - open (明).",
-  "four-returns-to-two-hidden": "The pair plus two runs, together holding all four copies of the pair's tile - concealed (暗).",
-  "four-returns-to-four-open": "Four runs that each hold one copy of the same tile - open (明).",
-  "four-returns-to-four-hidden": "Four runs that each hold one copy of the same tile - concealed (暗).",
 
-  "identical-sequences-open": "Two identical runs, same suit and ranks (般高) - open (明).",
-  "identical-sequences-hidden": "Two identical runs, same suit and ranks (般高) - concealed (暗).",
-  "small-twin-identical-sequences-open": "Two of each of four ranks in a row, read as the pair plus two identical runs (e.g. 22 334455) - open (明).",
-  "small-twin-identical-sequences-hidden": "Two of each of four ranks in a row, read as the pair plus two identical runs (e.g. 22 334455) - concealed (暗).",
-  "triple-identical-sequences-open": "Three identical runs - open (明).",
-  "triple-identical-sequences-hidden": "Three identical runs - concealed (暗).",
-  "quadruple-identical-sequences-open": "Four identical runs - open (明).",
-  "quadruple-identical-sequences-hidden": "Four identical runs - concealed (暗).",
-  "two-separate-identical-sequences-open": "Two different pairs of identical runs (e.g. 123 123 and 678 678) - open (明).",
-  "two-separate-identical-sequences-hidden": "Two different pairs of identical runs (e.g. 123 123 and 678 678) - concealed (暗).",
-  "same-suit-consecutive-open": "Three runs in one suit, each starting one higher (e.g. 123 234 345) - open (明).",
-  "same-suit-consecutive-hidden": "Three runs in one suit, each starting one higher (e.g. 123 234 345) - concealed (暗).",
-  "same-suit-two-step-open": "Three runs in one suit, each starting two higher (e.g. 123 345 567) - open (明).",
-  "same-suit-two-step-hidden": "Three runs in one suit, each starting two higher (e.g. 123 345 567) - concealed (暗).",
 
   "consecutive-triplet-pair": "Two triplets or kongs at neighbouring ranks in one suit (e.g. 222 333).",
   "small-three-consecutive-triplets": "Three neighbouring ranks in one suit: two triplets and the pair at one end (e.g. 22 333 444).",
@@ -149,27 +129,15 @@ export const PATTERN_GUIDE: Record<string, string> = {
   "full-cross-suit-runs": "Every meld is a run matched by the same run in another suit.",
   staircase: "Five runs whose starting ranks climb one at a time, in any suits (樓梯).",
   "rotating-staircase": "樓梯 with the suits either all the same, or rotating in a fixed order (五步高).",
-  "three-suit-same-run-open": "The same run in all three suits - open (明).",
-  "three-suit-same-run-hidden": "The same run in all three suits - concealed (暗).",
-  "four-suit-same-run-open": "The same run four times across all three suits - open (明).",
-  "four-suit-same-run-hidden": "The same run four times across all three suits - concealed (暗).",
-  "five-suit-same-run-open": "The same run five times across all three suits - open (明).",
-  "five-suit-same-run-hidden": "The same run five times across all three suits - concealed (暗).",
   "cross-suit-same-triplet": "Triplets or kongs of the same rank in two suits (兩兄弟).",
   "small-three-color-consecutive-triplets": "Three neighbouring ranks, one in each suit: two triplets and the pair.",
   "big-three-color-consecutive-triplets": "Three neighbouring ranks, one in each suit, all triplets or kongs.",
   "small-three-brothers": "One rank in all three suits: two triplets and the pair.",
   "big-three-brothers": "One rank in all three suits, all triplets or kongs.",
-  "three-color-step-up-open": "One run in each suit, their starting ranks climbing one at a time - open (明).",
-  "three-color-step-up-hidden": "One run in each suit, their starting ranks climbing one at a time - concealed (暗).",
 
   "half-flush": "One numbered suit only, with honors.",
   "full-flush": "One numbered suit only, no honors.",
 
-  "pure-straight-open": "123, 456 and 789 in one suit (清龍) - open (明).",
-  "pure-straight-hidden": "123, 456 and 789 in one suit (清龍) - concealed (暗).",
-  "mixed-straight-open": "123, 456 and 789, each in a different suit (雜龍) - open (明).",
-  "mixed-straight-hidden": "123, 456 and 789, each in a different suit (雜龍) - concealed (暗).",
   "old-young-run": "123 and 789 in the same suit, without the 456 that would make it 清龍.",
   "old-young-triplet": "Triplets or kongs of 1 and 9 in the same suit.",
 
@@ -201,8 +169,6 @@ export const PATTERN_GUIDE: Record<string, string> = {
   "big-duck": "Nothing else counts (besides what 大雞/大鴨 ignore), at most one flower, won by self-draw.",
 
   "thirteen-orphans": "One of each 1 and 9 in every suit and all seven honors, one doubled as the pair, plus one ordinary meld.",
-  "orphans-four-return-open": "In 十三么 or 嚦咕嚦咕: all four copies of one tile, the last one claimed (明).",
-  "orphans-four-return-hidden": "In 十三么 or 嚦咕嚦咕: all four copies of one tile, not completed by a claimed tile (暗).",
   "sixteen-unrelated": "All seven honors plus three unrelated ranks (each at least three apart) in every suit, one tile doubled as the pair.",
   "sixteen-unrelated-flying": "十六不搭 where the winning tile made the pair - a sixteen-way wait.",
   "sixteen-unrelated-same-ranks": "In 十六不搭: the same three ranks in every suit, with an honor pair.",
@@ -212,6 +178,28 @@ export const PATTERN_GUIDE: Record<string, string> = {
   "eight-pairs-three-dragons": "In 嚦咕嚦咕: all three dragons present.",
   "eight-pairs-three-winds": "In 嚦咕嚦咕: three of the four winds present.",
   "eight-pairs-four-winds": "In 嚦咕嚦咕: all four winds present.",
+};
+
+/** A 明/暗 pair's description (taiCatalog.ts OPEN_CONCEALED_PAIRS) - one
+ *  for both halves; which applies is the general 明/暗 rule. */
+export const PAIR_GUIDE: Record<string, string> = {
+  "four-returns-to-one": "A triplet plus a run holding the fourth copy of the same tile.",
+  "four-returns-to-two": "The pair plus two runs, together holding all four copies of the pair's tile.",
+  "four-returns-to-four": "Four runs that each hold one copy of the same tile.",
+  "identical-sequences": "Two identical runs, same suit and ranks (般高).",
+  "small-twin-identical-sequences": "Two of each of four ranks in a row, read as the pair plus two identical runs (e.g. 22 334455).",
+  "triple-identical-sequences": "Three identical runs.",
+  "quadruple-identical-sequences": "Four identical runs.",
+  "two-separate-identical-sequences": "Two different pairs of identical runs (e.g. 123 123 and 678 678).",
+  "same-suit-consecutive": "Three runs in one suit, each starting one higher (e.g. 123 234 345).",
+  "same-suit-two-step": "Three runs in one suit, each starting two higher (e.g. 123 345 567).",
+  "three-suit-same-run": "The same run in all three suits.",
+  "four-suit-same-run": "The same run four times across all three suits.",
+  "five-suit-same-run": "The same run five times across all three suits.",
+  "three-color-step-up": "One run in each suit, their starting ranks climbing one at a time.",
+  "pure-straight": "123, 456 and 789 in one suit (清龍).",
+  "mixed-straight": "123, 456 and 789, each in a different suit (雜龍).",
+  "orphans-four-return": "In 十三么 or 嚦咕嚦咕: all four copies of one tile. 明 when the last copy was a claimed winning tile, otherwise 暗.",
 };
 
 /** General rules, for the reference's closing page. */
