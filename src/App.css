@@ -6944,6 +6944,12 @@ html.playing body {
   font-variant-numeric: tabular-nums;
 }
 
+.play-dice-bonus {
+  color: var(--play-gold);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
 /* An ivory cube, pips on a 3x3 grid; red on the 1 and 4 (big on the 1). */
 .play-die {
   display: inline-grid;

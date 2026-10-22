@@ -32,6 +32,8 @@ import {
   riichiForcedDiscard,
   roundLabel,
   wallBreak,
+  SNAKE_DICE_PENALTY,
+  TRIPLE_DICE_BONUS,
   type Dice,
   sameTile,
   SEATS,
@@ -377,6 +379,19 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
     rolledFor.current = dice;
     setRolling(true);
   }, [game]);
+  // A roll that pays (圍骰 / 蛇骰): into the totals once, as the dice
+  // settle. The saved paid mark stops a reload paying again; the ref stops
+  // a second run of this effect before that mark has landed.
+  const paidFor = useRef<Dice | null>(null);
+  useEffect(() => {
+    const bonus = game.diceBonus;
+    if (rolling || !bonus || bonus.paid || paidFor.current === game.dice) return;
+    paidFor.current = game.dice ?? null;
+    setTotals((t) => t.map((v, i) => v + bonus.deltas[i]));
+    setGame((g) => (g.diceBonus ? { ...g, diceBonus: { ...g.diceBonus, paid: true } } : g));
+    showBurst(game.dealer, bonus.name);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rolling, game.diceBonus]);
   // How long the roll shows - timed on its own, so a re-run of the effect
   // above (which skips a deal it has seen) can't leave it showing forever.
   useEffect(() => {
@@ -1076,6 +1091,14 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
                 return `${brk.seat === HUMAN ? "your" : `${nameOf(brk.seat)}'s`} wall, ${brk.stacks} stacks in`;
               })()}
             </span>
+            {game.diceBonus && (
+              <span className="play-dice-bonus">
+                {game.diceBonus.name} ·{" "}
+                {game.diceBonus.deltas[game.dealer] > 0
+                  ? `${game.dealer === HUMAN ? "you collect" : `${nameOf(game.dealer)} collects`} ${game.diceBonus.deltas[game.dealer]} (${TRIPLE_DICE_BONUS} from each)`
+                  : `${game.dealer === HUMAN ? "you pay" : `${nameOf(game.dealer)} pays`} ${-game.diceBonus.deltas[game.dealer]} (${SNAKE_DICE_PENALTY} to each)`}
+              </span>
+            )}
           </div>
         )}
 

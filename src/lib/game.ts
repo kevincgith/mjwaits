@@ -120,6 +120,9 @@ export interface GameState {
   // The dealer's three dice for this deal (see rollDice); absent when the
   // wall was laid out in advance (the arena's duplicate deals).
   dice?: Dice;
+  // What the dice pay before the first discard (圍骰), per seat, and whether
+  // the table has already paid it - so a reload can't pay it twice.
+  diceBonus?: { name: string; deltas: number[]; paid: boolean };
 }
 
 // Seats as the ledger names players, and its settlement with everything
@@ -253,6 +256,24 @@ export type Dice = [number, number, number];
 // The wall: 144 tiles in 72 stacks of two, 18 stacks in front of each seat.
 const STACKS_PER_SIDE = 18;
 
+// 圍骰: all three dice the same - the dealer collects this from each player.
+export const TRIPLE_DICE_BONUS = 5;
+// 蛇骰: a 1-2-3 (in any order) - the dealer, who rolled it, pays this to each.
+export const SNAKE_DICE_PENALTY = 5;
+
+// What a roll pays, per seat, before the hand is played (null if nothing).
+export function diceBonus(dice: Dice, dealer: number): { name: string; deltas: number[] } | null {
+  if (dice[0] === dice[1] && dice[1] === dice[2]) {
+    const deltas = Array.from({ length: SEATS }, (_, seat) => (seat === dealer ? TRIPLE_DICE_BONUS * (SEATS - 1) : -TRIPLE_DICE_BONUS));
+    return { name: "圍骰", deltas };
+  }
+  if ([...dice].sort((a, b) => a - b).join("") === "123") {
+    const deltas = Array.from({ length: SEATS }, (_, seat) => (seat === dealer ? -SNAKE_DICE_PENALTY * (SEATS - 1) : SNAKE_DICE_PENALTY));
+    return { name: "蛇骰", deltas };
+  }
+  return null;
+}
+
 export const rollDice = (rng: () => number = Math.random): Dice => [1, 2, 3].map(() => 1 + Math.floor(rng() * 6)) as Dice;
 
 // Where the dice break the wall, as at a real table: the total, counted
@@ -295,6 +316,8 @@ export function dealHand(opts: { dealer: number; roundWind: Wind; dealerStreak: 
     lahs: opts.lahs ?? [],
     ...(dice ? { dice } : {}),
   };
+  const bonus = dice ? diceBonus(dice, opts.dealer) : null;
+  if (bonus) s.diceBonus = { ...bonus, paid: false };
   // 16 each, in deal order from the dealer; bonus tiles are replaced as they come.
   for (let i = 0; i < SEATS; i++) {
     const seat = (opts.dealer + i) % SEATS;

@@ -18,6 +18,7 @@ import {
   surrender,
   surrenderable,
   wallBreak,
+  diceBonus,
   kongOptions,
   SEATS,
   type GameState,
@@ -266,6 +267,16 @@ describe("game", () => {
       expect(wallBreak([1, 1, 3], 2)).toEqual({ seat: 2, stacks: 5 });
       // 6 + 6 + 6 = 18: across from... 18 counted from seat 1 is seat 2.
       expect(wallBreak([6, 6, 6], 1)).toEqual({ seat: 2, stacks: 18 });
+    });
+
+    it("pays 圍骰 on a triple: the dealer collects 5 from each player", () => {
+      expect(diceBonus([4, 4, 4], 2)).toEqual({ name: "圍骰", deltas: [-5, -5, 15, -5] });
+      expect(diceBonus([4, 4, 5], 2)).toBeNull();
+    });
+
+    it("charges 蛇骰 on a 1-2-3 in any order: the dealer pays 5 to each player", () => {
+      expect(diceBonus([3, 1, 2], 0)).toEqual({ name: "蛇骰", deltas: [-15, 5, 5, 5] });
+      expect(diceBonus([2, 3, 4], 0)).toBeNull();
     });
   });
 });

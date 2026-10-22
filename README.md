@@ -418,6 +418,9 @@ held upright is asked to turn sideways.
   The wall really is broken there: dealing starts from the break and replacement tiles
   come off its other end. Play waits while the dice settle; the roll stays on the
   bottom band for the hand.
+  - **圍骰** (all three dice the same): the dealer collects 5 from each player.
+  - **蛇骰** (1-2-3, any order): the dealer pays 5 to each player.
+  Both are paid into the running totals as the dice settle.
 - **聽:** whenever your hand is ready, the bottom band shows each tile you're waiting on and
   how many of it are still unseen (struck through when none are left).
 - **Look:** menus, sheets and the result card share the table's dark lacquer and gold, so
