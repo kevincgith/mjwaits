@@ -539,35 +539,105 @@ function Sparkline({ values, className }: { values: (number | null)[]; className
 
 function Setup({ store, suggestion, onStart, waitingHand }: { store: ScoreStore; suggestion: readonly string[]; onStart: (seats: string[], dealer: number) => void; waitingHand: boolean }) {
   const last = store.history[0]?.seats;
-  const [names, setNames] = useState<string[]>(() => (last ?? suggestion).slice(0, SEATS).map(String));
-  const [dealer, setDealer] = useState(0);
-  const trimmed = names.map((n) => n.trim());
+  // Each row keeps an id, so a drag moves the player (their typing and 莊
+  // with them) while the 東南西北 labels stay with the seats.
+  const [rows, setRows] = useState(() => (last ?? suggestion).slice(0, SEATS).map((name, id) => ({ id, name: String(name) })));
+  const [dealerId, setDealerId] = useState(0);
+  const dealer = Math.max(0, rows.findIndex((r) => r.id === dealerId));
+  const trimmed = rows.map((r) => r.name.trim());
   const valid = trimmed.every(Boolean) && new Set(trimmed).size === SEATS;
+
+  // Drag to reorder, by the grip: the row follows the finger, and the others
+  // slide out of its way as it passes their middle.
+  const listRef = useRef<HTMLDivElement>(null);
+  const drag = useRef<{ id: number; startY: number; startIndex: number; rowH: number } | null>(null);
+  const [dragging, setDragging] = useState<{ id: number; dy: number } | null>(null);
+  const before = useRef<Map<number, number> | null>(null);
+  const tops = () => new Map([...(listRef.current?.querySelectorAll<HTMLElement>("[data-row]") ?? [])].map((el) => [Number(el.dataset.row), el.getBoundingClientRect().top]));
+  const grip = (id: number) => ({
+    onPointerDown: (e: React.PointerEvent<HTMLSpanElement>) => {
+      const row = (e.currentTarget as HTMLElement).closest<HTMLElement>("[data-row]");
+      if (!row) return;
+      e.preventDefault();
+      e.currentTarget.setPointerCapture(e.pointerId);
+      const gap = parseFloat(getComputedStyle(listRef.current!).rowGap) || 0;
+      drag.current = { id, startY: e.clientY, startIndex: rows.findIndex((r) => r.id === id), rowH: row.offsetHeight + gap };
+      setDragging({ id, dy: 0 });
+    },
+    onPointerMove: (e: React.PointerEvent<HTMLSpanElement>) => {
+      const d = drag.current;
+      if (!d) return;
+      const dy = e.clientY - d.startY;
+      const target = Math.min(SEATS - 1, Math.max(0, d.startIndex + Math.round(dy / d.rowH)));
+      setRows((prev) => {
+        const from = prev.findIndex((r) => r.id === d.id);
+        if (from === target) return prev;
+        before.current = tops();
+        const next = prev.slice();
+        const [moved] = next.splice(from, 1);
+        next.splice(target, 0, moved);
+        return next;
+      });
+      setDragging({ id: d.id, dy });
+    },
+    onPointerUp: () => {
+      drag.current = null;
+      setDragging(null);
+    },
+    onPointerCancel: () => {
+      drag.current = null;
+      setDragging(null);
+    },
+  });
+  // The rows a drag pushed aside glide to their new places.
+  useLayoutEffect(() => {
+    const was = before.current;
+    before.current = null;
+    if (!was || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    listRef.current?.querySelectorAll<HTMLElement>("[data-row]").forEach((el) => {
+      const id = Number(el.dataset.row);
+      if (id === drag.current?.id) return;
+      const from = was.get(id);
+      const to = el.getBoundingClientRect().top;
+      if (from !== undefined && Math.abs(from - to) > 0.5) el.animate([{ transform: `translateY(${from - to}px)` }, { transform: "translateY(0)" }], { duration: 160, easing: "ease-out" });
+    });
+  }, [rows]);
+
   return (
     <>
       <SectionHead zh="新局" en="New game" />
       <div className="card sc-setup">
         {waitingHand && <p className="sc-note">Start a game and the hand from Scoring opens to record.</p>}
-        <p className="sc-help">Players in turn order, counter-clockwise round the table. Pick who deals first.</p>
-        {names.map((n, i) => (
-          <div key={i} className="sc-setup-row">
-            <span className="sc-setup-wind" aria-hidden="true">
-              {WIND_CHARS[(i - dealer + SEATS) % SEATS]}
-            </span>
-            <input
-              className="sc-input"
-              value={n}
-              maxLength={12}
-              autoComplete="off"
-              onChange={(e) => setNames((prev) => prev.map((x, j) => (j === i ? e.target.value : x)))}
-              aria-label={`Player ${i + 1}`}
-              list="sc-roster"
-            />
-            <button type="button" className={`sc-dealer-pick${dealer === i ? " is-on" : ""}`} aria-pressed={dealer === i} aria-label={`${trimmed[i] || `Player ${i + 1}`} deals first`} onClick={() => setDealer(i)}>
-              莊
-            </button>
-          </div>
-        ))}
+        <p className="sc-help">Players in turn order, counter-clockwise round the table - drag ⠿ to reorder. Pick who deals first.</p>
+        <div ref={listRef} className="sc-setup-list">
+          {rows.map((r, i) => {
+            const isDragging = dragging?.id === r.id;
+            // Under the finger: where the finger is, less where the row now sits.
+            const shift = isDragging && drag.current ? dragging.dy - (i - drag.current.startIndex) * drag.current.rowH : 0;
+            return (
+              <div key={r.id} data-row={r.id} className={`sc-setup-row${isDragging ? " is-dragging" : ""}`} style={isDragging ? { transform: `translateY(${shift}px)` } : undefined}>
+                <span className="sc-setup-grip" role="button" aria-label={`Drag ${trimmed[i] || `player ${i + 1}`} to reorder`} {...grip(r.id)}>
+                  ⠿
+                </span>
+                <span className="sc-setup-wind" aria-hidden="true">
+                  {WIND_CHARS[(i - dealer + SEATS) % SEATS]}
+                </span>
+                <input
+                  className="sc-input"
+                  value={r.name}
+                  maxLength={12}
+                  autoComplete="off"
+                  onChange={(e) => setRows((prev) => prev.map((x) => (x.id === r.id ? { ...x, name: e.target.value } : x)))}
+                  aria-label={`Player ${i + 1}`}
+                  list="sc-roster"
+                />
+                <button type="button" className={`sc-dealer-pick${dealer === i ? " is-on" : ""}`} aria-pressed={dealer === i} aria-label={`${trimmed[i] || `Player ${i + 1}`} deals first`} onClick={() => setDealerId(r.id)}>
+                  莊
+                </button>
+              </div>
+            );
+          })}
+        </div>
         <datalist id="sc-roster">
           {store.roster.map((p) => (
             <option key={p.name} value={p.name} />
