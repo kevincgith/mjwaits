@@ -10,5 +10,5 @@
   "gambler",
   "casual"
  ],
- "label": "tile1 - behaviour cloning of the evolved rule bots (865k decisions)"
+ "label": "dagger1 (perHand) - the rule-bot copy, corrected with DAgger: +1.87 tai/hand vs the rule bots over 2,048 arena hands"
 }
