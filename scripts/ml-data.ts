@@ -19,7 +19,7 @@ import { availableParallelism } from "node:os";
 import { isMainThread, parentPort, Worker, workerData } from "node:worker_threads";
 import { botClaimFor, botSurrenders, botTurnMoveFor, BOT_PROFILES, seededRng, type BotProfile, type Rng } from "../src/lib/bots";
 import { applyTurnMove, dealHand, fullWall, nextHand, resolveClaims, SEATS, surrender, type GameState, type WallTile } from "../src/lib/game";
-import { claimDecisionAction, encodeObservation, legalActions, NUM_ACTIONS, OBS_SIZE, turnMoveAction } from "../src/lib/ml/encode";
+import { claimDecisionAction, encodeObservation, legalActions, NUM_ACTIONS, NUM_PLANES, OBS_SIZE, turnMoveAction } from "../src/lib/ml/encode";
 
 const STYLES = BOT_PROFILES.map((p) => p.id);
 const META = 6;
@@ -124,6 +124,7 @@ if (isMainThread) {
     JSON.stringify(
       {
         obsSize: OBS_SIZE,
+        numPlanes: NUM_PLANES,
         numActions: NUM_ACTIONS,
         meta: ["action", "style", "handNet", "sessionNet", "kind", "seat"],
         styles: STYLES,

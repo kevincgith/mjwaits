@@ -80,6 +80,7 @@ const PLANES = [
   "discardShanten", // shanten after throwing it, + 1 (0 = not ours to throw)
   "discardAccept", // unseen tiles that would then improve the hand, / 2
   "discardDanger", // the table read's deal-in danger of throwing it, x 40
+  "discardValue", // where the hand's tai are heading after throwing it (flushes, all-pungs, honours, 門清), x 4
 ] as const;
 export const NUM_PLANES = PLANES.length;
 const PLANE = Object.fromEntries(PLANES.map((p, i) => [p, i])) as Record<(typeof PLANES)[number], number>;
@@ -139,6 +140,7 @@ export function encodeObservation(s: GameState, seat: number): Uint8Array {
       out[PLANE.discardShanten * NUM_KINDS + k] = cap(c.shanten + 1, 9);
       out[PLANE.discardAccept * NUM_KINDS + k] = cap(c.acceptance / 2);
       out[PLANE.discardDanger * NUM_KINDS + k] = cap(c.danger * 40);
+      out[PLANE.discardValue * NUM_KINDS + k] = cap(c.value * 4);
     }
   }
   for (let r = 1; r < SEATS; r++) {

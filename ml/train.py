@@ -118,7 +118,8 @@ def export(model, O, A, out, styles, extra_meta):
 
 def load_model(run_dir, O, A, styles, width, device):
     state = torch.load(os.path.join(run_dir, "policy.pt"), map_location="cpu")
-    model = Policy(O, A, len(styles), state["scale"].numpy(), width=width)
+    meta = json.load(open(os.path.join(run_dir, "meta.json")))
+    model = make_model(meta.get("arch", "mlp"), O, A, len(styles), state["scale"].numpy(), meta.get("width", width), meta.get("planes"))
     model.load_state_dict(state)
     return model.to(device)
 
@@ -175,7 +176,56 @@ def rl(args):
             stats.append((pg.item(), kl.item(), F.smooth_l1_loss(value, r).item()))
         pg_m, kl_m, v_m = np.mean(stats, axis=0)
         print(f"epoch {epoch + 1}/{args.epochs}  {time.time() - t0:.0f}s  policy {pg_m:+.4f}  KL to start {kl_m:.4f}  value {v_m:.4f}")
-    export(model, O, A, args.out, styles, {"init": args.init, "data": args.data, "samples": int(n), "rl": True})
+    init_meta = json.load(open(os.path.join(args.init, "meta.json")))
+    export(model, O, A, args.out, styles, {"arch": init_meta.get("arch", "mlp"), "width": init_meta.get("width", args.width), "planes": init_meta.get("planes"), "init": args.init, "data": args.data, "samples": int(n), "rl": True})
+
+
+class TilePolicy(nn.Module):
+    """The tile-kind architecture: each of the 34 kinds is a token holding its
+    planes (hand, ponds, melds, the discard facts...), plus a summary of the
+    table (scalars, style, a pooled view of all tokens). One shared network
+    scores every kind - so what it learns about throwing one tile applies to
+    all of them - for the discard and discard-and-叮 actions. The other
+    actions (自摸, kong, pass, win, pung, claim kong, three chows) and the
+    value come from the pooled table summary.
+    """
+
+    def __init__(self, obs_size, num_actions, num_styles, scale, num_planes, num_kinds=34, width=256, style_dim=8):
+        super().__init__()
+        self.register_buffer("scale", torch.tensor(scale, dtype=torch.float32))
+        self.num_kinds = num_kinds
+        self.num_planes = num_planes  # the per-kind planes come first; the rest are scalars
+        self.plane_size = num_planes * num_kinds
+        self.num_scalars = obs_size - self.plane_size
+        self.num_actions = num_actions
+        self.style = nn.Embedding(num_styles, style_dim)
+        self.token_in = nn.Linear(self.num_planes, width)
+        self.global_in = nn.Linear(self.num_scalars + style_dim, width)
+        self.mix = nn.Sequential(nn.GELU(), nn.Linear(2 * width, width), nn.GELU(), nn.Linear(width, width), nn.GELU())
+        self.tile_head = nn.Linear(width, 2)  # discard, discard + 叮
+        self.global_head = nn.Sequential(nn.Linear(2 * width, width), nn.GELU())
+        self.other = nn.Linear(width, num_actions - 2 * num_kinds)
+        self.value = nn.Linear(width, 1)
+
+    def forward(self, obs, style, mask):
+        x = obs / self.scale
+        planes = x[:, : self.plane_size].reshape(-1, self.num_planes, self.num_kinds).transpose(1, 2)  # [B, 34, P]
+        scalars = x[:, self.plane_size :]
+        g = self.global_in(torch.cat([scalars, self.style(style)], dim=-1))  # [B, W]
+        t = self.token_in(planes)  # [B, 34, W]
+        h = self.mix(torch.cat([t, g[:, None, :].expand_as(t)], dim=-1))  # [B, 34, W]
+        tile_logits = self.tile_head(h)  # [B, 34, 2]
+        pooled = torch.cat([h.mean(dim=1), g], dim=-1)
+        z = self.global_head(pooled)
+        logits = torch.cat([tile_logits[:, :, 0], tile_logits[:, :, 1], self.other(z)], dim=-1)
+        logits = logits.masked_fill(mask < 0.5, -1e9)
+        return logits, self.value(z).squeeze(-1)
+
+
+def make_model(arch, O, A, num_styles, scale, width, planes=None):
+    if arch == "tile":
+        return TilePolicy(O, A, num_styles, scale, planes, width=width)
+    return Policy(O, A, num_styles, scale, width=width)
 
 
 def main():
@@ -187,6 +237,8 @@ def main():
     ap.add_argument("--lr", type=float, default=2e-3)
     ap.add_argument("--width", type=int, default=512)
     ap.add_argument("--value-weight", type=float, default=0.25)
+    ap.add_argument("--arch", default="tile", choices=["tile", "mlp"])
+    ap.add_argument("--planes", type=int, default=None, help="per-kind planes (else from the data manifest)")
     ap.add_argument("--rl", action="store_true", help="PPO on self-play data, starting from --init")
     ap.add_argument("--init", default="ml/runs/bc2")
     ap.add_argument("--clip", type=float, default=0.2)
@@ -214,7 +266,10 @@ def main():
 
     scale = np.maximum(obs[train].max(axis=0).astype(np.float32), 1.0)
     device = "mps" if torch.backends.mps.is_available() else "cpu"
-    model = Policy(O, A, len(styles), scale, width=args.width).to(device)
+    planes = args.planes or manifest.get("numPlanes")
+    if args.arch == "tile" and not planes:
+        raise SystemExit("--arch tile needs the plane count: --planes N, or data recorded with numPlanes in its manifest")
+    model = make_model(args.arch, O, A, len(styles), scale, args.width, planes).to(device)
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
     steps = args.epochs * math.ceil(len(train) / args.batch)
     sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=args.lr, total_steps=steps)
@@ -278,7 +333,7 @@ def main():
             + " ".join(f"{k}:{v:.2f}" for k, v in ev["byStyle"].items())
         )
 
-    export(model, O, A, args.out, styles, {"data": args.data, "samples": int(n), "history": history})
+    export(model, O, A, args.out, styles, {"arch": args.arch, "width": args.width, "planes": planes, "data": args.data, "samples": int(n), "history": history})
 
 
 if __name__ == "__main__":

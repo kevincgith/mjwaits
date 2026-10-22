@@ -20,7 +20,7 @@ import { isMainThread, parentPort, Worker, workerData } from "node:worker_thread
 import * as ort from "onnxruntime-web/wasm";
 import { seededRng, type Rng } from "../src/lib/bots";
 import { applyTurnMove, dealHand, fullWall, nextHand, resolveClaims, SEATS, type Claim, type GameState, type WallTile } from "../src/lib/game";
-import { actionToClaim, actionToTurnMove, encodeObservation, legalActions, NUM_ACTIONS, OBS_SIZE } from "../src/lib/ml/encode";
+import { actionToClaim, actionToTurnMove, encodeObservation, legalActions, NUM_ACTIONS, NUM_PLANES, OBS_SIZE } from "../src/lib/ml/encode";
 import { sample } from "../src/lib/ml/policy";
 
 const META = 6;
@@ -140,6 +140,7 @@ if (isMainThread) {
     JSON.stringify(
       {
         obsSize: OBS_SIZE,
+        numPlanes: NUM_PLANES,
         numActions: NUM_ACTIONS,
         meta: ["action", "style", "handNet", "sessionNet", "kind", "seat"],
         extra: ["logp", "winTai", "dealtIn", "discards"],

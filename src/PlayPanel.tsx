@@ -13,7 +13,7 @@
 // and a phone held upright gets a "turn to landscape" card instead, since a
 // web page can't lock orientation on iPhone.
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   applyTurnMove,
   claimOptions,
@@ -44,7 +44,9 @@ import {
 import { allTileKinds, getWaits, shanten, sortTiles, tileKey, tileLabel, type Tile } from "./lib/mahjong";
 import { patternDisplayName, type BonusTile } from "./lib/scoring";
 import { BonusGlyphSpan, TileGlyphSpan } from "./TileGlyphs";
-import { BOT_PROFILES, botClaimFor, botSurrenders, botTurnFor, profileById, rateDiscardsFor, voiceOf, type BotProfile, type Voice } from "./lib/bots";
+import { BOT_PROFILES, botClaimFor, botSurrenders, botTurnFor, LEARNED_PREFIX, learnedProfile, learnedStyle, profileById, rateDiscardsFor, voiceOf, type BotProfile, type Voice } from "./lib/bots";
+import { loadLearnedModel, type LearnedModel } from "./lib/ml/browser";
+import { learnedClaim, learnedTurnMove, type LearnedBot } from "./lib/ml/policy";
 
 const WIND_CHARS = ["", "東", "南", "西", "北"];
 // Ready-made tables: who sits at Right / Across / Left (seats 1-3).
@@ -62,11 +64,18 @@ const shortName = (p: BotProfile) => p.name.split(" ")[0];
 const englishName = (p: BotProfile) => p.name.split(" ").slice(1).join(" ");
 // Each personality's avatar: the first character of its title on its own
 // colour (see .play-avatar.is-<id>).
-const Avatar = ({ bot }: { bot: BotProfile }) => (
-  <span className={`play-avatar is-${bot.id}`} aria-hidden="true">
-    {bot.name[0]}
-  </span>
-);
+// A learned bot wears its personality's avatar with a ring.
+const Avatar = ({ bot }: { bot: BotProfile }) => {
+  const style = learnedStyle(bot);
+  return (
+    <span className={`play-avatar is-${style ?? bot.id}${style ? " is-learned" : ""}`} aria-hidden="true">
+      {style ? profileById(style).name[0] : bot.name[0]}
+    </span>
+  );
+};
+// A seat's bot by id: a personality, or "net-<personality>" for a learned one.
+const botById = (id: string): BotProfile => (id.startsWith(LEARNED_PREFIX) ? learnedProfile(id.slice(LEARNED_PREFIX.length)) : profileById(id));
+const knownBot = (id: string) => BOT_PROFILES.some((p) => p.id === id || LEARNED_PREFIX + p.id === id);
 // Hints and the timer's fallback throw judge the way the Veteran does.
 const ADVISOR = profileById("veteran");
 // Where each seat sits on screen, by seat index.
@@ -100,6 +109,7 @@ interface Saved {
   hint: boolean;
   timer?: TimerSetting;
   speed?: Speed;
+  oneTap?: boolean;
   // The bot ids at seats 1-3.
   opponents?: string[];
 }
@@ -251,7 +261,19 @@ function TileTracker({ game, onClose }: { game: GameState; onClose: () => void }
 
 // Who you play against: a ready-made table, or a bot per seat from the
 // whole roster. Changes take effect from the next move.
-function OpponentsSheet({ opponents, onChange, onClose }: { opponents: string[]; onChange: (ids: string[]) => void; onClose: () => void }) {
+function OpponentsSheet({
+  opponents,
+  learned,
+  onChange,
+  onClose,
+}: {
+  opponents: string[];
+  // The personalities a learned model can play, once it has loaded.
+  learned: string[] | null;
+  onChange: (ids: string[]) => void;
+  onClose: () => void;
+}) {
+  const choices = [...BOT_PROFILES, ...(learned ?? []).filter((st) => BOT_PROFILES.some((p) => p.id === st)).map(learnedProfile)];
   return (
     <div className="play-sheet-backdrop" onClick={onClose}>
       <div className="play-sheet play-opponents" role="dialog" aria-label="Opponents" onClick={(e) => e.stopPropagation()}>
@@ -273,16 +295,16 @@ function OpponentsSheet({ opponents, onChange, onClose }: { opponents: string[];
           })}
         </div>
         {[1, 2, 3].map((seat) => {
-          const current = profileById(opponents[seat - 1]);
+          const current = botById(opponents[seat - 1]);
           return (
             <div key={seat} className="play-opponent-row">
               <span className="play-opponent-seat">{SEAT_LABELS[seat]}</span>
               <div className="play-opponent-chips">
-                {BOT_PROFILES.map((p) => (
+                {choices.map((p) => (
                   <button
                     key={p.id}
                     type="button"
-                    className={p.id === current.id ? "toggle-on" : undefined}
+                    className={[p.id === current.id && "toggle-on", learnedStyle(p) && "is-learned"].filter(Boolean).join(" ") || undefined}
                     aria-pressed={p.id === current.id}
                     title={englishName(p)}
                     aria-label={`${SEAT_LABELS[seat]}: ${englishName(p)}`}
@@ -311,14 +333,29 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
   const [totals, setTotals] = useState<number[]>(() => saved?.totals ?? [0, 0, 0, 0]);
   const [hint, setHint] = useState(() => saved?.hint ?? false);
   const [timer, setTimer] = useState<TimerSetting>(() => saved?.timer ?? 0);
+  // One-tap discard: a single tap throws the tile (off: tap to lift, tap again).
+  const [oneTap, setOneTap] = useState(() => saved?.oneTap ?? false);
   const [speed, setSpeed] = useState<Speed>(() => (saved?.speed && saved.speed in SPEEDS ? saved.speed : "normal"));
   const [opponents, setOpponents] = useState<string[]>(() =>
-    saved?.opponents?.length === 3 && saved.opponents.every((id) => BOT_PROFILES.some((p) => p.id === id)) ? saved.opponents : DEFAULT_OPPONENTS
+    saved?.opponents?.length === 3 && saved.opponents.every(knownBot) ? saved.opponents : DEFAULT_OPPONENTS
   );
   const [opponentsOpen, setOpponentsOpen] = useState(false);
   // 投降 on the result card takes two taps; this is the holder armed.
   const [surrenderArmed, setSurrenderArmed] = useState<string | null>(null);
-  const bots = useMemo<(BotProfile | null)[]>(() => [null, ...opponents.map(profileById)], [opponents]);
+  const bots = useMemo<(BotProfile | null)[]>(() => [null, ...opponents.map(botById)], [opponents]);
+  // The learned bots' network: loaded when one is seated or the Opponents
+  // sheet opens; until then (or if there's none) they play by their rules.
+  const [model, setModel] = useState<LearnedModel | null>(null);
+  const wantModel = opponentsOpen || opponents.some((id) => id.startsWith(LEARNED_PREFIX));
+  useEffect(() => {
+    if (wantModel && !model) void loadLearnedModel().then(setModel);
+  }, [wantModel, model]);
+  const learnedBot = (seat: number): LearnedBot | null => {
+    const style = bots[seat] && learnedStyle(bots[seat]!);
+    if (!style || !model || !model.styles.includes(style)) return null;
+    // A little sampling, so it isn't the same robot every time.
+    return { run: model.run, style: model.styles.indexOf(style), temperature: 0.25 };
+  };
   // What each bot is saying, by seat (a speech bubble by its name card).
   const [bubbles, setBubbles] = useState<Record<number, { text: string; id: number }>>({});
   const say = (seat: number, line: keyof Voice) => {
@@ -342,7 +379,7 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
   const [riichiArmed, setRiichiArmed] = useState(false);
   const [resultHidden, setResultHidden] = useState(false);
 
-  useEffect(() => save({ game, totals, hint, timer, opponents, speed }), [game, totals, hint, timer, opponents, speed]);
+  useEffect(() => save({ game, totals, hint, timer, opponents, speed, oneTap }), [game, totals, hint, timer, opponents, speed, oneTap]);
 
   // The menu closes on a tap anywhere outside it, and disarms New game.
   useEffect(() => {
@@ -385,10 +422,18 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
     [game, bots]
   );
 
-  const resolve = (humanClaim: Claim | null) => {
-    if (!botDecisions) return;
+  // Learned bots decide their claims through the network (async); a resolve
+  // already under way for this discard ignores a second call.
+  const resolving = useRef<GameState | null>(null);
+  const resolve = async (humanClaim: Claim | null) => {
+    if (!botDecisions || resolving.current === game) return;
+    resolving.current = game;
     const decisions = botDecisions.slice();
     decisions[HUMAN] = humanClaim;
+    for (let seat = 1; seat < SEATS; seat++) {
+      const net = learnedBot(seat);
+      if (net) decisions[seat] = await learnedClaim(net, game, seat);
+    }
     const seat = winningClaimSeat(game, decisions);
     if (seat !== null) {
       showBurst(seat, claimLabel(decisions[seat]!));
@@ -424,6 +469,29 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
     const phase = game.phase;
     let move: (() => void) | null = null;
     let delay = PASS_DELAY_MS;
+    if (phase.kind === "turn" && phase.seat !== HUMAN && learnedBot(phase.seat)) {
+      // A learned bot asks its network (async), then moves after a steady pause.
+      let cancelled = false;
+      let timer = 0;
+      const seat = phase.seat;
+      void learnedTurnMove(learnedBot(seat)!, game).then((m) => {
+        if (cancelled) return;
+        timer = window.setTimeout(() => {
+          if (m.kind === "selfDraw") {
+            showBurst(seat, "自摸");
+            say(seat, "selfDraw");
+          } else if (m.kind === "discard" && m.riichi) {
+            showBurst(seat, "叮");
+            say(seat, "riichi");
+          } else if (m.kind !== "discard") showBurst(seat, "槓");
+          advance(applyTurnMove(game, m));
+        }, botDelay(0.4, phase.drawn === null) * SPEEDS[speed].factor);
+      });
+      return () => {
+        cancelled = true;
+        window.clearTimeout(timer);
+      };
+    }
     if (phase.kind === "turn" && phase.seat !== HUMAN) {
       // Decide now, so the pause can match how hard the choice was.
       const { move: m, difficulty } = botTurnFor(game, bots[phase.seat]!);
@@ -524,7 +592,9 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
 
   const tapTile = (index: number) => {
     if (!myTurn || isForbidden(handTiles[index])) return;
-    if (selected === index) doTurn({ kind: "discard", tile: handTiles[index], ...(riichiArmed ? { riichi: true } : {}) });
+    // One-tap throws straight away - except when declaring 叮, which always
+    // takes the confirming second tap.
+    if (selected === index || (oneTap && !riichiArmed)) doTurn({ kind: "discard", tile: handTiles[index], ...(riichiArmed ? { riichi: true } : {}) });
     else setSelected(index);
   };
 
@@ -655,6 +725,16 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
                 <span className="play-menu-seg">
                   {[false, true].map((on) => (
                     <button key={String(on)} type="button" className={hint === on ? "toggle-on" : undefined} aria-pressed={hint === on} onClick={() => setHint(on)}>
+                      {on ? "On" : "Off"}
+                    </button>
+                  ))}
+                </span>
+              </div>
+              <div className="play-menu-row">
+                <span>One-tap discard</span>
+                <span className="play-menu-seg">
+                  {[false, true].map((on) => (
+                    <button key={String(on)} type="button" className={oneTap === on ? "toggle-on" : undefined} aria-pressed={oneTap === on} onClick={() => setOneTap(on)}>
                       {on ? "On" : "Off"}
                     </button>
                   ))}
@@ -874,7 +954,7 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
         {burst && <CallBurst key={burst.id} seat={burst.seat} label={burst.label} />}
 
         {trackerOpen && <TileTracker game={game} onClose={() => setTrackerOpen(false)} />}
-        {opponentsOpen && <OpponentsSheet opponents={opponents} onChange={setOpponents} onClose={() => setOpponentsOpen(false)} />}
+        {opponentsOpen && <OpponentsSheet opponents={opponents} learned={model?.styles ?? null} onChange={setOpponents} onClose={() => setOpponentsOpen(false)} />}
 
         {result && !resultHidden && (
           <div className="play-result" role="dialog" aria-label="Hand result">
