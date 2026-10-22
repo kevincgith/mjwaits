@@ -412,6 +412,12 @@ held upright is asked to turn sideways.
 
   **記牌器** beside it lists how many of each tile you haven't seen yet. The corner buttons
   stay usable above the result card and sheets.
+- **Dice:** every deal starts with the dealer's three dice tumbling onto the felt, with
+  whose wall breaks and how many stacks in (the total counted round from the dealer -
+  1 their own wall, 2 the next seat's, 3 across, 4 the one before - as on the Dice tab).
+  The wall really is broken there: dealing starts from the break and replacement tiles
+  come off its other end. Play waits while the dice settle; the roll stays on the
+  bottom band for the hand.
 - **聽:** whenever your hand is ready, the bottom band shows each tile you're waiting on and
   how many of it are still unseen (struck through when none are left).
 - **Look:** menus, sheets and the result card share the table's dark lacquer and gold, so

@@ -17,6 +17,7 @@ import {
   lahAddOn,
   surrender,
   surrenderable,
+  wallBreak,
   kongOptions,
   SEATS,
   type GameState,
@@ -247,6 +248,24 @@ describe("game", () => {
       expect(surrenderable(s0, 0).map((l) => l.holder)).toEqual(["1"]);
       expect(surrender(s0, 1, 0).lahs).toEqual([{ holder: "2", pulled: "0", value: 30, count: 2 }]);
       expect(() => surrender(s0, 2, 0)).toThrow();
+    });
+  });
+
+  describe("dice", () => {
+    it("rolls three dice for a table-made deal, none for a given wall", () => {
+      const s = newGame();
+      expect(s.dice).toHaveLength(3);
+      for (const d of s.dice!) expect(d >= 1 && d <= 6).toBe(true);
+      expect(tilesInPlay(s)).toBe(144);
+    });
+
+    it("breaks the wall where a real table would: the total counted round from the dealer", () => {
+      // 3 + 4 + 5 = 12: 12 counted from the dealer lands on the seat before them.
+      expect(wallBreak([3, 4, 5], 0)).toEqual({ seat: 3, stacks: 12 });
+      // 1 + 1 + 3 = 5: the dealer's own wall.
+      expect(wallBreak([1, 1, 3], 2)).toEqual({ seat: 2, stacks: 5 });
+      // 6 + 6 + 6 = 18: across from... 18 counted from seat 1 is seat 2.
+      expect(wallBreak([6, 6, 6], 1)).toEqual({ seat: 2, stacks: 18 });
     });
   });
 });

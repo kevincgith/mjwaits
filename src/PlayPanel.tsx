@@ -31,6 +31,8 @@ import {
   riichiDiscards,
   riichiForcedDiscard,
   roundLabel,
+  wallBreak,
+  type Dice,
   sameTile,
   SEATS,
   seatWind,
@@ -328,6 +330,26 @@ function OpponentsSheet({
   );
 }
 
+// The pips on each face, as cells of a 3x3 grid (1-9, reading order) - as
+// on the Dice tab.
+const DIE_PIPS: Record<number, number[]> = { 1: [5], 2: [3, 7], 3: [3, 5, 7], 4: [1, 3, 7, 9], 5: [1, 3, 5, 7, 9], 6: [1, 3, 4, 6, 7, 9] };
+
+// One Chinese die (red pips on the 1 and the 4), tumbling in when `rolling`.
+function PlayDie({ value, rolling, index }: { value: number; rolling: boolean; index: number }) {
+  return (
+    <span
+      className={`play-die${value === 1 || value === 4 ? " is-red" : ""}${value === 1 ? " is-one" : ""}${rolling ? " is-rolling" : ""}`}
+      style={{ animationDelay: `${index * 70}ms` }}
+      role="img"
+      aria-label={`${value}`}
+    >
+      {Array.from({ length: 9 }, (_, i) => (
+        <span key={i} className={DIE_PIPS[value]?.includes(i + 1) ? "play-die-pip" : undefined} />
+      ))}
+    </span>
+  );
+}
+
 // ---- The table ------------------------------------------------------------
 
 export function PlayPanel({ onExit }: { onExit: () => void }) {
@@ -344,6 +366,24 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
   const [recorded, setRecorded] = useState<number | null>(null);
   const handId = useRef(String(Date.now()));
   const [speed, setSpeed] = useState<Speed>(() => (saved?.speed && saved.speed in SPEEDS ? saved.speed : "normal"));
+  // The dealer's dice, shown tumbling in at the start of each deal while
+  // play waits (rolling); remembered per deal so a reload mid-hand doesn't
+  // roll again.
+  const [rolling, setRolling] = useState(false);
+  const rolledFor = useRef<Dice | null>(null);
+  useEffect(() => {
+    const dice = game.dice;
+    if (!dice || rolledFor.current === dice || game.discardsMade > 0 || game.phase.kind === "over") return;
+    rolledFor.current = dice;
+    setRolling(true);
+  }, [game]);
+  // How long the roll shows - timed on its own, so a re-run of the effect
+  // above (which skips a deal it has seen) can't leave it showing forever.
+  useEffect(() => {
+    if (!rolling) return;
+    const id = window.setTimeout(() => setRolling(false), speed === "fast" ? 900 : 1700);
+    return () => window.clearTimeout(id);
+  }, [rolling, speed]);
   const [opponents, setOpponents] = useState<string[]>(() =>
     saved?.opponents?.length === 3 && saved.opponents.every(knownBot) ? saved.opponents : DEFAULT_OPPONENTS
   );
@@ -487,6 +527,7 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
   // Bot pacing: one move per botDelay(), and a discard nobody (the human
   // included) can claim moves on by itself.
   useEffect(() => {
+    if (rolling) return;
     const phase = game.phase;
     let move: (() => void) | null = null;
     let delay = PASS_DELAY_MS;
@@ -542,7 +583,7 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
     const id = window.setTimeout(move, delay * SPEEDS[speed].factor);
     return () => window.clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [game]);
+  }, [game, rolling]);
 
   // The turn timer (off by default): runs only while the human has to
   // decide, and on running out passes on a call or throws the drawn tile.
@@ -612,6 +653,7 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
   const myKongs = myTurn && liveTilesLeft(game) > 0 ? kongOptions(me) : [];
 
   const tapTile = (index: number) => {
+    if (rolling) return;
     if (!myTurn || isForbidden(handTiles[index])) return;
     // One-tap throws straight away - except when declaring 叮, which always
     // takes the confirming second tap.
@@ -991,6 +1033,13 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
             {game.dealerStreak > 0 && ` · 連${game.dealerStreak}`}
           </span>
           <span className="play-bar-left">剩:{liveTilesLeft(game)}張</span>
+          {game.dice && !rolling && (
+            <span className="play-bar-dice" aria-label={`Dice ${game.dice.join(", ")}`}>
+              {game.dice.map((d, i) => (
+                <PlayDie key={i} value={d} rolling={false} index={i} />
+              ))}
+            </span>
+          )}
           {waits ? (
             <span className="play-bar-waits" aria-label={`Ready, waiting on ${waits.map((w) => `${tileLabel(w.tile)} (${w.left} left)`).join(", ")}`}>
               聽
@@ -1012,6 +1061,23 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
         </div>
 
         {burst && <CallBurst key={burst.id} seat={burst.seat} label={burst.label} />}
+
+        {rolling && game.dice && (
+          <div className="play-dice" role="status">
+            <div className="play-dice-row">
+              {game.dice.map((d, i) => (
+                <PlayDie key={i} value={d} rolling index={i} />
+              ))}
+            </div>
+            <span className="play-dice-caption">
+              {game.dice.join(" + ")} = {game.dice[0] + game.dice[1] + game.dice[2]} ·{" "}
+              {(() => {
+                const brk = wallBreak(game.dice, game.dealer);
+                return `${brk.seat === HUMAN ? "your" : `${nameOf(brk.seat)}'s`} wall, ${brk.stacks} stacks in`;
+              })()}
+            </span>
+          </div>
+        )}
 
         {trackerOpen && <TileTracker game={game} onClose={() => setTrackerOpen(false)} />}
         {opponentsOpen && <OpponentsSheet opponents={opponents} learned={model?.styles ?? null} onChange={setOpponents} onClose={() => setOpponentsOpen(false)} />}

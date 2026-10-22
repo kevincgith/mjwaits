@@ -117,6 +117,9 @@ export interface GameState {
   // draw keeps every 拉 and any other win ends the holder's. Optional so
   // games saved before 拉 load.
   lahs?: Lah[];
+  // The dealer's three dice for this deal (see rollDice); absent when the
+  // wall was laid out in advance (the arena's duplicate deals).
+  dice?: Dice;
 }
 
 // Seats as the ledger names players, and its settlement with everything
@@ -243,13 +246,44 @@ function drawInto(s: GameState, seat: number, fromBack: boolean): { tile: Tile |
 
 // ---- Dealing --------------------------------------------------------------
 
+// ---- Dice ---------------------------------------------------------------------
+
+export type Dice = [number, number, number];
+
+// The wall: 144 tiles in 72 stacks of two, 18 stacks in front of each seat.
+const STACKS_PER_SIDE = 18;
+
+export const rollDice = (rng: () => number = Math.random): Dice => [1, 2, 3].map(() => 1 + Math.floor(rng() * 6)) as Dice;
+
+// Where the dice break the wall, as at a real table: the total, counted
+// round from the dealer (1 = the dealer's own wall, 2 the next seat's, 3
+// across, 4 the one before), picks whose wall; that many stacks are counted
+// in from its end, and the deal starts from the break. Same rule as the
+// Dice tab.
+export function wallBreak(dice: Dice, dealer: number): { seat: number; stacks: number } {
+  const total = dice[0] + dice[1] + dice[2];
+  return { seat: (dealer + total - 1) % SEATS, stacks: total };
+}
+
+// The shuffled wall turned so drawing starts at the break (replacements come
+// off the other end of the same break). Every arrangement is equally likely
+// either way - this makes the deal work like the real thing.
+function breakWall(wall: WallTile[], dice: Dice, dealer: number): WallTile[] {
+  const { seat, stacks } = wallBreak(dice, dealer);
+  const at = (((seat * STACKS_PER_SIDE + stacks) * 2) % wall.length + wall.length) % wall.length;
+  return [...wall.slice(at), ...wall.slice(0, at)];
+}
+
 export function newGame(): GameState {
   return dealHand({ dealer: 0, roundWind: 1, dealerStreak: 0 });
 }
 
 export function dealHand(opts: { dealer: number; roundWind: Wind; dealerStreak: number; lahs?: Lah[] }, wall?: WallTile[]): GameState {
+  // A table-made wall: shuffled, the dice rolled, broken where they say. A
+  // wall passed in (the arena, tests) is dealt as it is.
+  const dice = wall ? undefined : rollDice();
   const s: GameState = {
-    wall: wall ?? shuffled(fullWall()),
+    wall: wall ?? breakWall(shuffled(fullWall()), dice!, opts.dealer),
     players: Array.from({ length: SEATS }, () => ({ hand: [], melds: [], flowers: [], discards: [] })),
     dealer: opts.dealer,
     roundWind: opts.roundWind,
@@ -259,6 +293,7 @@ export function dealHand(opts: { dealer: number; roundWind: Wind; dealerStreak: 
     discardsMade: 0,
     log: [],
     lahs: opts.lahs ?? [],
+    ...(dice ? { dice } : {}),
   };
   // 16 each, in deal order from the dealer; bonus tiles are replaced as they come.
   for (let i = 0; i < SEATS; i++) {
