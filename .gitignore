@@ -41,3 +41,4 @@ __pycache__/
 
 # Screenshots of another scoring app, for comparison - not ours to commit.
 reference-app/
+.ml-md-*
