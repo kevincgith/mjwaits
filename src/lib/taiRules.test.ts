@@ -142,6 +142,23 @@ describe("on/off and exclusion", () => {
     expect(tai(result, "kong")).toBe(4);
   });
 
+  // Edges the sheet doesn't offer but a hand-edited file could hold. Both
+  // are ignored when scoring and dropped when a set is loaded, so the set
+  // scores the same before and after it's saved or shared (found by
+  // rulesFuzz.test.ts).
+  it("ignores a pattern replacing itself", () => {
+    const rules = withRules({ kong: { replaces: ["kong"] } });
+    expect(tai(scoreHand(KONG_HAND, ctx(rules)), "kong")).toBe(4);
+    expect(normalizeRules(rules).rules.patterns.kong.replaces).toEqual([]);
+  });
+
+  it("ignores an edge to a lower tier of its own family - the family's switch decides", () => {
+    const rules = withRules({ "big-three-dragons": { replaces: ["dragon-tile"] } });
+    rules.ladders.dragons = { exclusive: false };
+    expect(tai(scoreHand(DRAGONS_HAND, ctx(rules)), "dragon-tile")).toBe(6);
+    expect(normalizeRules(rules).rules.patterns["big-three-dragons"].replaces).toEqual([]);
+  });
+
   it("flags a replace loop - when both fire, neither counts", () => {
     const rules = withRules({ "dragon-tile": { replaces: ["big-three-dragons"] } });
     // 小三元 replaces 三元牌 too, so it's on the loop as well.

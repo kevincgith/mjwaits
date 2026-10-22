@@ -4216,10 +4216,14 @@ const LADDER_OF = new Map(
 /** Everything a pattern replaces under `rules`: its own edges, plus every
  *  lower rung of its count-family ladder while that ladder is exclusive. */
 export function effectiveReplaces(rules: TaiRules, id: string): string[] {
-  const own = ruleOf(rules, id)?.replaces ?? [];
   const place = LADDER_OF.get(id);
+  const below = place ? place.ladder.rungs.slice(0, place.rung).flat() : [];
+  // Never itself, and never a lower rung of its own family - the family's
+  // switch decides those. normalizeRules drops the same edges, so a set
+  // scores the same before and after it's saved or shared.
+  const own = (ruleOf(rules, id)?.replaces ?? []).filter((r) => r !== id && !below.includes(r));
   if (!place || (rules.ladders?.[place.ladder.id] ?? DEFAULT_TAI_RULES.ladders[place.ladder.id]).exclusive === false) return own;
-  return [...place.ladder.rungs.slice(0, place.rung).flat(), ...own];
+  return [...below, ...own];
 }
 
 // Drops what didn't fire, then everything any firing pattern replaces - in
