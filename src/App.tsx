@@ -42,7 +42,7 @@ import {
 import { BonusGlyphSpan, TileGlyphSpan } from "./TileGlyphs";
 import { PlayPanel } from "./PlayPanel";
 import { ScoresPanel, SharedScoresView, type RecordRequest, type ScoreHandRequest, type SeatingResult } from "./ScoresPanel";
-import { snapshotFromHash } from "./lib/scoreShare";
+import { GAME_HASH, snapshotFromAnyHash, snapshotFromHash } from "./lib/scoreShare";
 import { TaiRulesSheet } from "./TaiRulesSheet";
 import { isLadderChanged, isRuleChanged, ladderOf, rulesAffectScoring, rulesFingerprint } from "./lib/taiRules";
 import { PATTERN_CATALOG } from "./lib/taiCatalog";
@@ -10029,9 +10029,18 @@ const TAB_ITEMS: { id: Exclude<AppMode, "play">; label: string; icon: ReactNode 
 
 function App() {
   const [mode, setMode] = useState<AppMode>(() => (readCalcHand(window.location.search) ? "calculator" : "scoring"));
-  // A shared scores link (#s=…) opens its read-only view over the app;
-  // "Open MJWaits" drops the hash and carries on as normal.
+  // A shared scores link (#s=… totals, #z=… the whole game) opens its
+  // read-only view over the app; "Open MJWaits" drops the hash and carries on
+  // as normal. #z= is compressed, so it's read once the page is up.
   const [sharedScores, setSharedScores] = useState(() => snapshotFromHash(window.location.hash));
+  useEffect(() => {
+    if (!window.location.hash.startsWith(GAME_HASH)) return;
+    let live = true;
+    void snapshotFromAnyHash(window.location.hash).then((snap) => live && snap && setSharedScores(snap));
+    return () => {
+      live = false;
+    };
+  }, []);
   // The Scoring tab's tai rule sets and scoring engine (設定), saved in
   // localStorage - here so a shared rules link reaches them. taiRules is
   // what scoring uses: the active set, under the chosen engine.

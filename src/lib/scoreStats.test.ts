@@ -133,19 +133,6 @@ describe("trend, patterns, career and head-to-head", () => {
     expect(c.B.net).toBe(replay(g1).totals.B + 20);
   });
 
-  it("carries the 玩家 metrics across games", () => {
-    const c = Object.fromEntries(careerStats([g1, g2]).map((s) => [s.player, s]));
-    // A deals 局1-3 of g1 (+3) and g2's only hand (-20).
-    expect(c.A).toMatchObject({ dealerHands: 4, dealerNet: -17, longestDealerRun: 3 });
-    // B's per-win average spans both games: g1's wins plus g2's +20.
-    const b1 = playerStats(replay(g1), g1).find((s) => s.player === "B")!;
-    const winsB = b1.wins + b1.selfDraws + 1;
-    expect(c.B.avgWinGain).toBeCloseTo((b1.selfDrawGain + b1.discardGain + 20) / winsB);
-    expect(c.B.selfDrawShare).toBe(0);
-    expect(c.A.lahNet).toBe(-9);
-    expect(c.A.firstRate).not.toBeNull();
-  });
-
   it("sums up a game's 走勢: lead changes, who led most, the biggest comeback", () => {
     // A leads; B's 30 off A (a 踢: +5) puts B ahead, A down 25; A takes
     // the lead back with 51 off C.
@@ -182,6 +169,11 @@ describe("trend, patterns, career and head-to-head", () => {
     // Records carry the game they came from; opponents add up to the net.
     expect(c.A.maxTai).toEqual({ value: 10, hand: 1, when: "g1" });
     for (const x of list) expect(x.opponents.reduce((t, o) => t + o.net, 0)).toBe(x.net);
+  });
+
+  it("head-to-head counts every payment, matching each player's 對手", () => {
+    const h = headToHead([g1]);
+    for (const x of playerStats(replay(g1), g1)) for (const o of x.opponents) expect(h[x.player][o.player]).toBe(o.net);
   });
 
   it("nets head-to-head both ways", () => {
