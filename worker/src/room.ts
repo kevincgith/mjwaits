@@ -9,13 +9,19 @@
 // anything else looks at it, and every change ends with the whole public
 // room going to everyone (see RoomView).
 //
-// Phase 1 so far: joining, nicknames, seats, reconnecting, the host's table
-// settings and starting the game. Recording hands comes next.
+// Phase 1, the shared scoreboard: players join, sit and start; then any
+// seated player records hands, draws and 特別獎罰 as events in the Scores
+// tab's own format (ledger.ts), and the board is worked out by replaying
+// them with the shared ledger - the same numbers the Scores tab would show.
+// Undo takes back the last event, once another player agrees (or at once,
+// for the host, if the room allows it). Ending the session freezes the
+// board as its summary.
 
 import { DurableObject } from "cloudflare:workers";
+import { DEFAULT_SETTINGS, replay, settle, type ScoreEvent, type ScoreGame, type ScoreSettings } from "@mjwaits/shared/engine/ledger";
 import { DEFAULT_ROOM_SETTINGS, parseClientMessage, type ClientMessage, type RoomSettings } from "@mjwaits/shared/protocol/client";
 import { cleanNickname, PROTOCOL_VERSION, RATE_BURST, RATE_PER_SECOND, SEATS } from "@mjwaits/shared/protocol/limits";
-import type { ErrorCode, RoomView, SeatView, ServerMessage } from "@mjwaits/shared/protocol/server";
+import type { BoardView, ErrorCode, PendingUndo, RoomView, SeatView, ServerMessage, SessionSummary } from "@mjwaits/shared/protocol/server";
 import type { Env } from "./index";
 
 // Open connections per room (players and watchers together).
@@ -51,6 +57,16 @@ const hex = (bytes: ArrayBuffer | Uint8Array) => Array.from(new Uint8Array(bytes
 const randomHex = (n: number) => hex(crypto.getRandomValues(new Uint8Array(n)));
 const sha256 = async (s: string) => hex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)));
 
+// The ledger settings a room plays by: the Scores tab's defaults with the
+// host's 底 / 莊 / 連莊.
+export function ledgerSettings(room: RoomSettings): ScoreSettings {
+  return { ...DEFAULT_SETTINGS, base: room.base, dealerTai: room.dealerTai, streakTai: room.streakTai };
+}
+
+// The game record minus its events, kept in meta from the start (events
+// have their own table, one row each).
+type GameHead = Omit<ScoreGame, "events">;
+
 // Nicknames are unique per room regardless of case or width (Ｋ vs K).
 const nameKey = (name: string) => name.normalize("NFKC").toLowerCase();
 
@@ -84,6 +100,7 @@ export class Room extends DurableObject<Env> {
         seat INTEGER UNIQUE,
         joined_at INTEGER NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS events (idx INTEGER PRIMARY KEY, body TEXT NOT NULL);
     `);
   }
 
@@ -96,6 +113,30 @@ export class Room extends DurableObject<Env> {
 
   private setMeta(key: string, value: unknown) {
     this.sql.exec("INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", key, JSON.stringify(value));
+  }
+
+  private deleteMeta(key: string) {
+    this.sql.exec("DELETE FROM meta WHERE key = ?", key);
+  }
+
+  private settings(): RoomSettings {
+    return this.meta<RoomSettings>("settings") ?? DEFAULT_ROOM_SETTINGS;
+  }
+
+  private eventCount(): number {
+    return this.sql.exec<{ n: number }>("SELECT COUNT(*) AS n FROM events").one().n;
+  }
+
+  // The scoreboard as the ledger keeps it, or null before the game starts.
+  private game(): ScoreGame | null {
+    const head = this.meta<GameHead>("game");
+    if (!head) return null;
+    const events = this.sql.exec<{ body: string }>("SELECT body FROM events ORDER BY idx").toArray().map((r) => JSON.parse(r.body) as ScoreEvent);
+    return { ...head, events, updatedAt: this.meta<number>("updated") ?? head.startedAt };
+  }
+
+  private record(ev: ScoreEvent) {
+    this.sql.exec("INSERT INTO events (idx, body) VALUES (?, ?)", this.eventCount(), JSON.stringify(ev));
   }
 
   private players(): PlayerRow[] {
@@ -259,6 +300,19 @@ export class Room extends DurableObject<Env> {
     const lobby = () => {
       if (this.phase !== "lobby") throw new Refusal("started", "the game has started");
     };
+    const playing = () => {
+      const phase = this.phase;
+      if (phase === "lobby") throw new Refusal("notStarted", "the game hasn't started");
+      if (phase === "ended") throw new Refusal("ended", "the session has ended");
+    };
+    // Only the four at the table record, not anyone watching.
+    const seat = (): number => {
+      if (me.seat === null) throw new Refusal("notSeated", "only the players at the table can do that");
+      return me.seat;
+    };
+    const noPendingUndo = () => {
+      if (this.meta("pendingUndo")) throw new Refusal("undoPending", "an undo is waiting for an answer");
+    };
     switch (msg.t) {
       case "sit": {
         lobby();
@@ -276,22 +330,119 @@ export class Room extends DurableObject<Env> {
         if (!isHost) throw new Refusal("notHost", "only the host sets up the table");
         this.setMeta("settings", msg.settings);
         break;
-      case "start":
+      case "start": {
         lobby();
         if (!isHost) throw new Refusal("notHost", "only the host starts the game");
         if (this.sql.exec("SELECT 1 FROM players WHERE seat IS NOT NULL").toArray().length < SEATS)
           throw new Refusal("seatsNotFull", "all four seats need a player");
+        const seated = this.players().filter((p) => p.seat !== null);
+        const names = Array.from({ length: SEATS }, (_, i) => seated.find((p) => p.seat === i)!.name);
+        const settings = this.settings();
+        const now = Date.now();
+        const head: GameHead = { id: `g${now.toString(36)}`, startedAt: now, seats: names, firstDealer: settings.firstDealer, settings: ledgerSettings(settings) };
+        this.setMeta("game", head);
         this.setMeta("phase", "playing");
         break;
-      default:
-        // win / draw / bonus / undo / undoVote / end: the scoreboard, next.
-        if (this.phase === "lobby") throw new Refusal("notStarted", "the game hasn't started");
-        throw new Refusal("badMessage", "not supported yet");
+      }
+      case "win": {
+        playing();
+        seat();
+        noPendingUndo();
+        if (msg.winners.length > 1 && this.settings().multiWin !== "all")
+          throw new Refusal("multiWinOff", "this table plays 截胡: one winner per discard");
+        const names = this.meta<GameHead>("game")!.seats;
+        this.record({
+          t: "win",
+          at: Date.now(),
+          winners: msg.winners.map((w) => ({ seat: w.seat, tai: w.tai })),
+          from: msg.from,
+          source: "quick",
+          ...(msg.jackpot ? { jackpotTo: names[msg.winners[0].seat] } : {}),
+        });
+        break;
+      }
+      case "draw":
+        playing();
+        seat();
+        noPendingUndo();
+        this.record({ t: "draw", at: Date.now() });
+        break;
+      case "bonus":
+        playing();
+        seat();
+        noPendingUndo();
+        this.record({ t: "bonus", at: Date.now(), seat: msg.seat, kind: msg.kind, amount: msg.amount, ...(msg.other === undefined ? {} : { other: msg.other }) });
+        break;
+      case "undo": {
+        playing();
+        const mine = seat();
+        noPendingUndo();
+        const entries = this.eventCount();
+        if (entries === 0) throw new Refusal("nothingToUndo", "nothing recorded yet");
+        if (isHost && this.settings().hostCanUndo) this.dropLast();
+        else this.setMeta("pendingUndo", { by: mine, entry: entries - 1 } satisfies PendingUndo);
+        break;
+      }
+      case "undoVote": {
+        playing();
+        const mine = seat();
+        const pending = this.meta<PendingUndo>("pendingUndo");
+        if (!pending) throw new Refusal("noUndoPending", "no undo is waiting for an answer");
+        if (pending.by === mine && msg.approve) throw new Refusal("ownUndo", "another player has to agree");
+        // Recording is blocked while an undo waits, so its entry is still the last.
+        if (msg.approve) this.dropLast();
+        this.deleteMeta("pendingUndo");
+        break;
+      }
+      case "end":
+        playing();
+        if (!isHost) throw new Refusal("notHost", "only the host ends the session");
+        noPendingUndo();
+        this.setMeta("phase", "ended");
+        this.setMeta("endedAt", Date.now());
+        break;
     }
     this.changed();
   }
 
+  private dropLast() {
+    this.sql.exec("DELETE FROM events WHERE idx = (SELECT MAX(idx) FROM events)");
+  }
+
   // ---- Broadcasting -------------------------------------------------------
+
+  // The board and, once ended, the summary - worked out from the events by
+  // the shared ledger.
+  private scores(game: ScoreGame, settings: RoomSettings): { board: BoardView; summary: SessionSummary | null } {
+    const state = replay(game);
+    const net = game.seats.map((name) => state.totals[name] ?? 0);
+    const chips = net.map((n) => settings.startChips + n);
+    const board: BoardView = {
+      chips,
+      net,
+      dealer: state.dealer,
+      streak: state.streak,
+      roundWind: state.roundWind,
+      label: state.label,
+      hands: state.hands.length,
+      lahs: state.lahs,
+      pot: state.pot,
+    };
+    const endedAt = this.meta<number>("endedAt");
+    const seatOf = (name: string) => game.seats.indexOf(name);
+    const summary =
+      endedAt === null
+        ? null
+        : {
+            hands: board.hands,
+            net,
+            chips,
+            settle: settle(Object.fromEntries(game.seats.map((name, i) => [name, net[i]]))).map((p) => ({ from: seatOf(p.from), to: seatOf(p.to), amount: p.amount })),
+            pot: board.pot,
+            endedAt,
+          };
+    return { board, summary };
+  }
 
   private view(except?: WebSocket): RoomView {
     const online = new Set(this.conns(except).map(([, c]) => c.player));
@@ -302,16 +453,20 @@ export class Room extends DurableObject<Env> {
       if (p.seat !== null) seats[p.seat] = { name: p.name, connected: online.has(p.id), host: p.id === host };
       else if (online.has(p.id)) watching++;
     }
+    const settings = this.settings();
+    const game = this.game();
+    const scores = game ? this.scores(game, settings) : null;
     return {
       code: this.meta<string>("code")!,
       version: this.meta<number>("version") ?? 0,
       phase: this.phase,
       seats,
       watching,
-      settings: this.meta<RoomSettings>("settings") ?? DEFAULT_ROOM_SETTINGS,
-      game: null,
-      board: null,
-      pendingUndo: null,
+      settings,
+      game,
+      board: scores?.board ?? null,
+      pendingUndo: this.meta<PendingUndo>("pendingUndo"),
+      summary: scores?.summary ?? null,
     };
   }
 

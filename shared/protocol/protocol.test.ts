@@ -19,6 +19,7 @@ describe("parseClientMessage", () => {
       { t: "start" },
       { t: "win", winners: [{ seat: 0, tai: 12 }], from: null },
       { t: "win", winners: [{ seat: 0, tai: 5 }, { seat: 2, tai: 8 }], from: 1 },
+      { t: "win", winners: [{ seat: 3, tai: 20 }], from: 0, jackpot: true },
       { t: "draw" },
       { t: "bonus", seat: 1, kind: "獎", amount: 5 },
       { t: "bonus", seat: 1, kind: "罰", amount: 30, other: 2 },
@@ -68,6 +69,7 @@ describe("parseClientMessage", () => {
     expect(error({ t: "win", winners: [{ seat: 0, tai: 5 }, { seat: 0, tai: 6 }], from: 1 })).toBe("winners: a seat is listed twice");
     expect(error({ t: "win", winners: [{ seat: 1, tai: 5 }], from: 1 })).toBe("from: the discarder can't be a winner");
     expect(error({ t: "bonus", seat: 2, kind: "罰", amount: 5, other: 2 })).toBe("other: must be another player");
+    expect(error({ t: "win", winners: [{ seat: 0, tai: 5 }, { seat: 2, tai: 5 }], from: 1, jackpot: true })).toBe("jackpot: only a single winner takes the pot");
   });
 
   it("refuses anything over the size limit, counted in UTF-8 bytes", () => {
@@ -89,6 +91,7 @@ describe("parseClientMessage", () => {
       t: "win";
       winners: { seat: number; tai: number }[];
       from: number | null;
+      jackpot?: boolean;
       rid?: string;
     }>();
   });

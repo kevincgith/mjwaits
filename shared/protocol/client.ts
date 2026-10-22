@@ -51,15 +51,18 @@ const ClientSchema = tagged({
   start: object({ t: literal("start"), rid }),
   // A hand won. `from` null = 自摸 (exactly one winner); otherwise the
   // discarder, who pays each winner - two or three winners only when the
-  // room plays 一炮多響.
-  win: object({ t: literal("win"), winners: array(object({ seat, tai }), 1, 3), from: nullable(seat), rid }),
+  // room plays 一炮多響. `jackpot`: the (one) winner also takes the pot.
+  win: object({ t: literal("win"), winners: array(object({ seat, tai }), 1, 3), from: nullable(seat), jackpot: optional(bool), rid }),
   draw: object({ t: literal("draw"), rid }), // 流局
   // 特別獎罰, as on the Scores tab: 獎 - `seat` is paid `amount`; 罰 - they
   // pay it. With `other`, only that player; without, each of the other three.
   bonus: object({ t: literal("bonus"), seat, kind: oneOf("獎", "罰"), amount: int(1, 9999), other: optional(seat), rid }),
-  undo: object({ t: literal("undo"), rid }), // ask to take back the last entry
+  // Take back the last entry: at once if the room lets the host do that and
+  // the host asks, otherwise once another seated player approves (undoVote).
+  // The one who asked can withdraw with approve: false.
+  undo: object({ t: literal("undo"), rid }),
   undoVote: object({ t: literal("undoVote"), approve: bool, rid }),
-  end: object({ t: literal("end"), rid }), // end the session (host)
+  end: object({ t: literal("end"), rid }), // end the session (host): the board becomes the summary
   ping: object({ t: literal("ping"), rid }),
 });
 
@@ -90,6 +93,7 @@ export function parseClientMessage(frame: string | ArrayBuffer): Result<ClientMe
     if (new Set(seats).size !== seats.length) return { ok: false, error: "winners: a seat is listed twice" };
     if (m.from === null && seats.length !== 1) return { ok: false, error: "winners: a self-draw has one winner" };
     if (m.from !== null && seats.includes(m.from)) return { ok: false, error: "from: the discarder can't be a winner" };
+    if (m.jackpot && seats.length !== 1) return { ok: false, error: "jackpot: only a single winner takes the pot" };
   }
   if (m.t === "bonus" && m.other === m.seat) return { ok: false, error: "other: must be another player" };
   return r;

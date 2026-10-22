@@ -55,6 +55,18 @@ export interface PendingUndo {
   entry: number; // index of the event it would take back
 }
 
+// The end-of-session result, per seat, and the fewest payments that settle
+// it (the Scores tab's 結帳), in tai. Anything still in the Jackpot was paid
+// in by the players and isn't in `settle` - `pot` says how much is left.
+export interface SessionSummary {
+  hands: number;
+  net: number[];
+  chips: number[];
+  settle: { from: number; to: number; amount: number }[];
+  pot: number;
+  endedAt: number;
+}
+
 export interface RoomView {
   code: string;
   version: number;
@@ -68,6 +80,7 @@ export interface RoomView {
   game: ScoreGame | null;
   board: BoardView | null;
   pendingUndo: PendingUndo | null;
+  summary: SessionSummary | null; // once ended
 }
 
 export type ServerMessage =
