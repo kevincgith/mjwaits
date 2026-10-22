@@ -85,7 +85,7 @@ if [ ! -f ml/runs/dagger1/policy.onnx ]; then
   log "DAgger: $best plays 8,000 hands, the rule bots label them"
   data=$(selfplay ml/data/dagger1 8000 211 --model "$best" --label teacher)
   log "  training on ml/data/run3 + the corrections"
-  ml/.venv/bin/python -u ml/train.py --data "ml/data/run3,$data" --out ml/runs/dagger1 --arch tile --width 256 --planes 20 --epochs 6 2>&1 | grep -v Warning >ml/runs/long/dagger1-train.log
+  ml/.venv/bin/python -u ml/train.py --data "ml/data/run3,$data" --out ml/runs/dagger1 --arch tile --width 256 --planes 20 --epochs 6 2>&1 | grep --line-buffered -v Warning >ml/runs/long/dagger1-train.log
   s=$(score ml/runs/dagger1)
   log "  dagger1: $s (best so far $best_score)"
   if better "$s" "$best_score"; then best=ml/runs/dagger1; best_score=$s; log "  -> new best"; fi
@@ -98,7 +98,7 @@ while true; do
   log "round $round: $best self-play, $hands hands"
   data=$(selfplay "ml/data/$name" "$hands" "$((300 + round))" --model "$best" --rules "$rules")
   log "  PPO"
-  ml/.venv/bin/python -u ml/train.py --rl --init "$best" --ref "$best" --data "$data" --out "ml/runs/$name" --lr 1e-4 --kl 0.2 2>&1 | grep -v Warning >"ml/runs/long/$name-train.log"
+  ml/.venv/bin/python -u ml/train.py --rl --init "$best" --ref "$best" --data "$data" --out "ml/runs/$name" --lr 1e-4 --kl 0.2 2>&1 | grep --line-buffered -v Warning >"ml/runs/long/$name-train.log"
   rm -rf "ml/data/$name"
   if [ ! -f "ml/runs/$name/policy.onnx" ]; then
     log "  training failed - see ml/runs/long/$name-train.log"

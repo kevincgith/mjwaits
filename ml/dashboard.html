@@ -270,10 +270,18 @@ function render(s) {
   $("stages").innerHTML = names.map((n, i) => `<div class="stage ${i < stageIdx ? "done" : i === stageIdx ? "now" : ""}">${n}</div>`).join("");
   if (step && step.kind !== "start") {
     $("chunks").textContent = `${step.chunksDone} / ${step.chunks}`;
-    const frac = step.stage === "self-play" ? step.chunksDone / step.chunks : 1;
+    const training = step.stage === "training" && step.epochs;
+    const frac = step.stage === "self-play" ? step.chunksDone / step.chunks : training ? step.epoch / step.epochs : 1;
     $("bar").style.width = Math.round(frac * 100) + "%";
     const each = step.hands / step.chunks;
-    $("step-note").textContent = `${(step.chunksDone * each).toLocaleString()} of ${step.hands.toLocaleString()} hands played · step started ${step.since}` + (step.chunkFails ? ` · ${step.chunkFails} chunk crash${step.chunkFails > 1 ? "es" : ""} retried` : "");
+    $("step-note").textContent =
+      (training
+        ? `Training: epoch ${step.epoch} of ${step.epochs} done` + (step.epoch ? ` · about ${Math.round(step.epochSecs / step.epoch / 60)} min per epoch` : "")
+        : step.stage === "training"
+          ? "Training: epoch progress shows from the next step"
+          : `${(step.chunksDone * each).toLocaleString()} of ${step.hands.toLocaleString()} hands played`) +
+      ` · step started ${step.since}` +
+      (step.chunkFails ? ` · ${step.chunkFails} chunk crash${step.chunkFails > 1 ? "es" : ""} retried` : "");
   } else {
     $("chunks").textContent = "–";
     $("bar").style.width = step ? "100%" : "0";

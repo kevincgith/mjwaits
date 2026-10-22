@@ -67,6 +67,14 @@ def parse_log():
         step["chunkFails"] = sum(int(m.group(1)) for e in entries if e["at"] >= step["since"] for m in [re.search(r"retrying (\d+) crashed", e["msg"])] if m)
         if step["stage"] == "self-play" and step["chunksDone"] >= step["chunks"]:
             step["stage"] = "training"
+        # Epochs finished so far, from the trainer's log.
+        tl = os.path.join(ROOT, "ml/runs/long", f"{step['name']}-train.log")
+        if step["stage"] == "training" and os.path.exists(tl):
+            ep = re.findall(r"^epoch (\d+)/(\d+)\s+(\d+)s", open(tl).read(), re.M)
+            if ep:
+                step["epoch"], step["epochs"], step["epochSecs"] = map(int, ep[-1])
+            else:
+                step["epoch"], step["epochs"] = 0, None
         # Training writes the model before scoring it.
         if step["stage"] == "training" and os.path.exists(os.path.join(ROOT, "ml/runs", step["name"], "policy.onnx")):
             step["stage"] = "scoring"
