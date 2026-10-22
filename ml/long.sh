@@ -33,22 +33,26 @@ backup() {
 }
 
 # Self-play in chunks of 1,000 hands, each its own Node process (a long-lived
-# one eventually crashes in the network runtime), retried if one dies.
-# Prints the chunk directories, comma-separated, for train.py --data.
+# one eventually crashes in the network runtime), ML_PAR (4) at a time, and
+# any that die are run again. Prints the chunk directories, comma-separated,
+# for train.py --data.
 selfplay() {
   local out=$1 n=$2 seed=$3
   shift 3
-  local chunk=1000 i=0 dirs=()
+  local chunk=1000 count=$(((n + 999) / 1000)) par="${ML_PAR:-4}" dirs=() todo i
   mkdir -p "$out"
-  while ((i * chunk < n)); do
-    local d="$out/c$i"
-    for try in 1 2 3; do
-      [ -f "$d/manifest.json" ] && break
-      node .ml-selfplay/ml-selfplay.js --hands "$chunk" --session 16 --seed "$((seed * 100 + i))" --out "$d" "$@" >/dev/null 2>"$out/c$i.err" || log "  chunk $i failed (try $try)" >&2
+  for try in 1 2 3; do
+    todo=()
+    for ((i = 0; i < count; i++)); do [ -f "$out/c$i/manifest.json" ] || todo+=("$i"); done
+    ((${#todo[@]})) || break
+    ((try > 1)) && log "  retrying ${#todo[@]} crashed chunk(s)" >&2
+    for i in "${todo[@]}"; do
+      while (($(jobs -rp | wc -l) >= par)); do sleep 2; done
+      node .ml-selfplay/ml-selfplay.js --hands "$chunk" --session 16 --seed "$((seed * 100 + i))" --out "$out/c$i" "$@" >/dev/null 2>"$out/c$i.err" &
     done
-    [ -f "$d/manifest.json" ] && dirs+=("$d")
-    i=$((i + 1))
+    wait
   done
+  for ((i = 0; i < count; i++)); do [ -f "$out/c$i/manifest.json" ] && dirs+=("$out/c$i"); done
   (IFS=,; echo "${dirs[*]}")
 }
 

@@ -38,6 +38,10 @@ ml/ctl.sh stop                        # start again later resumes from the last 
 ml/ctl.sh status
 ```
 
+`python3 ml/dashboard.py` serves a live dashboard on http://127.0.0.1:8765:
+what it's doing now and how far through, every step's arena score against
+the best so far, the log, and Pause / Resume buttons.
+
 `ml/long.sh` does one DAgger round (the network plays, the rule bots label
 its positions, a fresh network trains on both), then self-play rounds
 forever: PPO on 32,000 hands of the best network so far, scored over 2,048
