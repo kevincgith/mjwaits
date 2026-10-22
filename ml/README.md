@@ -61,7 +61,7 @@ ml/ctl.sh stop                        # start again later resumes from the last 
 ml/ctl.sh status
 ```
 
-`python3 ml/dashboard.py` serves a live dashboard on http://127.0.0.1:8765:
+`python3 ml/dashboard.py` serves a live dashboard for both runs on http://127.0.0.1:8765:
 what it's doing now and how far through, every step's arena score against
 the best so far, the log, and Pause / Resume buttons.
 
