@@ -26,7 +26,11 @@ export interface LearnedBot {
 
 async function decide(bot: LearnedBot, s: GameState, seat: number, rng: () => number): Promise<{ action: number; value: number } | null> {
   const mask = legalActions(s, seat);
-  if (!mask.some(Boolean)) return null;
+  let legal = 0;
+  for (const m of mask) legal += m;
+  if (legal === 0) return null;
+  // One legal move (most claim checks: only pass) - no need to ask.
+  if (legal === 1) return { action: mask.indexOf(1), value: 0 };
   const obs = Float32Array.from(encodeObservation(s, seat, bot.match?.()));
   const { logits, value } = await bot.run(obs, bot.style, Float32Array.from(mask));
   return { action: sample(logits, mask, bot.temperature, rng), value };

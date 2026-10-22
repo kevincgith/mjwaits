@@ -30,7 +30,7 @@ import {
   type Player,
   type TurnMove,
 } from "./game";
-import { allTileKinds, shanten as rawShanten, tileCount, tileKey, type Tile } from "./mahjong";
+import { allTileKinds, kindCounts, kindIndexOf, shantenCounts, tileCount, tileKey, type Tile } from "./mahjong";
 
 export interface BotProfile {
   id: string;
@@ -305,19 +305,10 @@ export const profileById = (id: string): BotProfile => BOT_PROFILES.find((p) => 
 
 // ---- Helpers ------------------------------------------------------------
 
-// Shanten is the hot path (every discard x every improving draw), and the
-// same hands recur turn to turn, so results are memoised by sorted hand.
-const shantenCache = new Map<string, number>();
-function shanten(tiles: Tile[], melds: number): number {
-  const key = melds + ":" + tiles.map(tileKey).sort().join("");
-  let v = shantenCache.get(key);
-  if (v === undefined) {
-    v = rawShanten(tiles, melds);
-    if (shantenCache.size > 400_000) shantenCache.clear();
-    shantenCache.set(key, v);
-  }
-  return v;
-}
+// Shanten is the hot path (every discard x every improving draw). It works
+// from 34 tile counts with each suit's shape looked up once (mahjong.ts),
+// which is cheaper than building a key to memoise whole hands by.
+const shanten = (tiles: Tile[], melds: number): number => shantenCounts(kindCounts(tiles), melds);
 
 const ALL_KINDS = allTileKinds();
 
@@ -342,10 +333,16 @@ function improvers(hand: Tile[]): Tile[] {
 }
 
 function acceptance(rest: Tile[], melds: number, sh: number, unseen: Map<string, number>): number {
+  // The hand counted once; each candidate draw is a +1 on it.
+  const c = kindCounts(rest);
   let n = 0;
   for (const k of improvers(rest)) {
     const left = unseen.get(tileKey(k)) ?? 0;
-    if (left > 0 && shanten([...rest, k], melds) < sh) n += left;
+    if (left <= 0) continue;
+    const i = kindIndexOf(k);
+    c[i]++;
+    if (shantenCounts(c, melds) < sh) n += left;
+    c[i]--;
   }
   return n;
 }

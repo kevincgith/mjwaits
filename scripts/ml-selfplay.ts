@@ -29,7 +29,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { availableParallelism } from "node:os";
 import { isMainThread, parentPort, Worker, workerData } from "node:worker_threads";
-import * as ort from "onnxruntime-web/wasm";
+import * as ort from "onnxruntime-node";
 import { botClaimFor, botSurrenders, botTurnMoveFor, profileById, seededRng, type BotProfile, type Rng } from "../src/lib/bots";
 import { applyTurnMove, dealHand, fullWall, nextHand, resolveClaims, SEATS, surrender, type Claim, type GameState, type WallTile } from "../src/lib/game";
 import { actionToClaim, actionToTurnMove, claimDecisionAction, encodeObservation, legalActions, NUM_ACTIONS, NUM_PLANES, OBS_SIZE, OBS_SIZE_MATCH, turnMoveAction } from "../src/lib/ml/encode";
@@ -59,8 +59,8 @@ async function selfPlay(modelDir: string, hands: number, session: number, temper
   const handRows: number[] = [];
   const links: number[] = [];
   let match: MatchContext | undefined;
-  ort.env.wasm.numThreads = 1;
-  const net = await ort.InferenceSession.create(readFileSync(`${modelDir}/policy.onnx`));
+  // The native runtime, one thread: several of these run side by side.
+  const net = await ort.InferenceSession.create(readFileSync(`${modelDir}/policy.onnx`), { intraOpNumThreads: 1, interOpNumThreads: 1 });
   const rng = seededRng(seed);
   const obsOut: Uint8Array[] = [];
   const maskOut: Uint8Array[] = [];
@@ -75,6 +75,9 @@ async function selfPlay(modelDir: string, hands: number, session: number, temper
     let options = 0;
     for (const m of mask) options += m;
     if (options === 0) return null;
+    // One legal move (most claim checks: only pass) - nothing to decide, and
+    // not recorded, so no need to encode or run the network.
+    if (options === 1) return { action: mask.indexOf(1), logp: 0, obs: new Uint8Array(0), mask, record: false };
     const obs = encodeObservation(s, seat, match);
     const out = await net.run({
       obs: new ort.Tensor("float32", Float32Array.from(obs), [1, obs.length]),

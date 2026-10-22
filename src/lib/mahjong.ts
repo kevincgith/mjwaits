@@ -718,12 +718,156 @@ function combineBlockOptions(perSuit: BlockOption[][]): BlockOption[] {
   return combined;
 }
 
+// Standard-shape shanten, fast: what bots and the learned bots' encoder call
+// hundreds of times a decision (every discard x every tile that could come
+// in), so it was most of the cost of training self-play.
+//
+// Each suit is summarised once per shape as three small tables, indexed by
+// the number of complete melds taken from it: the most partials possible
+// with nothing held back, with a pair held back (the eyes), and with a
+// single tile held back (a tanki wait). The whole hand is then a few tiny
+// max-plus merges over the four suits - the same three cases as the
+// reference version (no reserve, a pair, a single), giving the same answer
+// (checked against it on random hands in mahjong.test.ts) without building
+// and pruning option lists on every call.
+interface SuitTable {
+  base: number[];
+  pair: number[];
+  single: number[];
+}
+const NONE = -1000;
+const suitTableCache = new Map<number, SuitTable>();
+
+// Most partials for each meld count, from a suit's Pareto options.
+function byMelds(options: BlockOption[], into: number[] = []): number[] {
+  for (const o of options) {
+    while (into.length <= o.melds) into.push(NONE);
+    if (o.partials > into[o.melds]) into[o.melds] = o.partials;
+  }
+  return into;
+}
+
+// The table for one suit of a 34-count hand (see kindCounts), starting at
+// `off`: looked up by the suit's counts packed into a number, built only on
+// a miss.
+function suitTableAt(c: ArrayLike<number>, off: number, size: number, allowRuns: boolean): SuitTable {
+  let key = allowRuns ? 1 : 2;
+  for (let r = 0; r < size; r++) key = key * 8 + Math.min(7, c[off + r]);
+  const hit = suitTableCache.get(key);
+  if (hit) return hit;
+  const counts = [0];
+  for (let r = 0; r < size; r++) counts.push(c[off + r]);
+  const base = byMelds(suitBlockOptions(counts, allowRuns));
+  const pair: number[] = [];
+  const single: number[] = [];
+  for (let r = 1; r < counts.length; r++) {
+    if (counts[r] >= 2) {
+      counts[r] -= 2;
+      byMelds(suitBlockOptions(counts, allowRuns), pair);
+      counts[r] += 2;
+    }
+    if (counts[r] >= 1) {
+      counts[r] -= 1;
+      byMelds(suitBlockOptions(counts, allowRuns), single);
+      counts[r] += 1;
+    }
+  }
+  const table = { base, pair, single };
+  if (suitTableCache.size > 500_000) suitTableCache.clear();
+  suitTableCache.set(key, table);
+  return table;
+}
+
+// Max-plus merge: the most partials for each total meld count.
+function merge(a: number[], b: number[]): number[] {
+  if (!a.length || !b.length) return [];
+  const out = new Array<number>(a.length + b.length - 1).fill(NONE);
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] === NONE) continue;
+    for (let j = 0; j < b.length; j++) {
+      if (b[j] === NONE) continue;
+      const v = a[i] + b[j];
+      if (v > out[i + j]) out[i + j] = v;
+    }
+  }
+  return out;
+}
+
+function better(a: number[], b: number[]): number[] {
+  const out = a.length >= b.length ? a.slice() : b.slice();
+  const other = a.length >= b.length ? b : a;
+  for (let i = 0; i < other.length; i++) if (other[i] > out[i]) out[i] = other[i];
+  return out;
+}
+
+// A hand as 34 counts in allTileKinds() order (m1-9, t1-9, b1-9, z1-7) -
+// what the hot paths pass around, so a hand is counted once and a candidate
+// draw is a +1 rather than a new array. Jokers aren't counted, as in the
+// tile-list versions.
+const SUIT_OFFSET: Partial<Record<Suit, number>> = { m: 0, t: 9, b: 18, z: 27 };
+export const kindIndexOf = (t: Tile): number => {
+  const off = SUIT_OFFSET[t.suit];
+  return off === undefined ? -1 : off + t.rank - 1;
+};
+export function kindCounts(tiles: Tile[]): Uint8Array {
+  const c = new Uint8Array(34);
+  for (const t of tiles) {
+    const i = kindIndexOf(t);
+    if (i >= 0) c[i]++;
+  }
+  return c;
+}
+
+const SUIT_SPANS: [number, number, boolean][] = [
+  [0, 9, true],
+  [9, 9, true],
+  [18, 9, true],
+  [27, 7, false],
+];
+
+export function standardShanten(tiles: Tile[], meldsRequired: number = MELDS_REQUIRED): number {
+  return standardShantenCounts(kindCounts(tiles), meldsRequired);
+}
+
+export function standardShantenCounts(c: ArrayLike<number>, meldsRequired: number = MELDS_REQUIRED): number {
+  // Over the suits so far: nothing held back, a pair held back somewhere,
+  // a single tile held back somewhere.
+  let none = [0];
+  let withPair: number[] = [];
+  let withSingle: number[] = [];
+  for (const [off, size, allowRuns] of SUIT_SPANS) {
+    const t = suitTableAt(c, off, size, allowRuns);
+    const nextNone = merge(none, t.base);
+    withPair = better(merge(withPair, t.base), merge(none, t.pair));
+    withSingle = better(merge(withSingle, t.base), merge(none, t.single));
+    none = nextNone;
+  }
+  let best = Infinity;
+  // No reserve: a hand whose blocks fill every meld has nothing left to
+  // start the pair with.
+  for (let m = 0; m < none.length; m++) {
+    if (none[m] === NONE) continue;
+    const capped = Math.min(none[m], meldsRequired - m);
+    best = Math.min(best, 2 * (meldsRequired - m) - capped + (m + capped === meldsRequired ? 1 : 0));
+  }
+  for (let m = 0; m < withPair.length; m++) {
+    if (withPair[m] !== NONE) best = Math.min(best, 2 * (meldsRequired - m) - Math.min(withPair[m], meldsRequired - m) - 1);
+  }
+  for (let m = 0; m < withSingle.length; m++) {
+    if (withSingle[m] !== NONE) best = Math.min(best, 2 * (meldsRequired - m) - Math.min(withSingle[m], meldsRequired - m));
+  }
+  return best;
+}
+
+// The straightforward version of standardShanten below, kept as the
+// reference the fast one is tested against (mahjong.test.ts).
+//
 // Standard-shape shanten for a hand at any checkpoint size (works the same
 // way isCheckpointSize/meldsForSize do for smaller practice sizes, not just
 // the full 16-tile hand). Doesn't know about jokers or the special hands
 // (Thirteen Orphans, Eight Pairs) - see shanten() below, which folds in
 // Eight Pairs.
-export function standardShanten(tiles: Tile[], meldsRequired: number = MELDS_REQUIRED): number {
+export function standardShantenReference(tiles: Tile[], meldsRequired: number = MELDS_REQUIRED): number {
   const suitsData: { counts: number[]; allowRuns: boolean }[] = [
     { counts: countsForSuit(tiles, "m", 9), allowRuns: true },
     { counts: countsForSuit(tiles, "t", 9), allowRuns: true },
@@ -871,7 +1015,61 @@ function sixteenUnrelatedShanten(tiles: Tile[]): number {
 // those separately) or Thirteen Orphans (whose shanten interacts with the
 // extra required meld in a way this module doesn't compute yet).
 export function shanten(tiles: Tile[], meldsRequired: number = MELDS_REQUIRED): number {
-  let best = standardShanten(tiles, meldsRequired);
+  return shantenCounts(kindCounts(tiles), meldsRequired);
+}
+
+// The same from 34 counts (see kindCounts) - the hot path.
+export function shantenCounts(c: ArrayLike<number>, meldsRequired: number = MELDS_REQUIRED): number {
+  let best = standardShantenCounts(c, meldsRequired);
+  if (meldsRequired === MELDS_REQUIRED) {
+    // Eight Pairs (as eightPairsShanten).
+    let pairUnits = 0;
+    let hasSpare = false;
+    for (let i = 0; i < 34; i++) {
+      pairUnits += c[i] >> 1;
+      if (c[i] >= 3) hasSpare = true;
+    }
+    best = Math.min(best, 8 - pairUnits - (hasSpare ? 1 : 0));
+    // Sixteen Unrelated Tiles (as sixteenUnrelatedShanten).
+    let units = 0;
+    let hasPair = false;
+    for (let off = 0; off < 27; off += 9) {
+      // maxUnrelatedWithPair, reading the counts in place: the most ranks
+      // at least 3 apart, and whether one of them is held twice.
+      let u3 = 0, u2 = 0, u1 = 0, p3 = false, p2 = false, p1 = false;
+      for (let r = 0; r < 9; r++) {
+        let u: number = u1;
+        let p: boolean = p1;
+        if (c[off + r] > 0) {
+          const bu: number = r >= 2 ? u3 + 1 : 1;
+          const bp: boolean = (r >= 2 ? p3 : false) || c[off + r] >= 2;
+          if (bu > u) {
+            u = bu;
+            p = bp;
+          } else if (bu === u) p = p || bp;
+        }
+        u3 = u2;
+        p3 = p2;
+        u2 = u1;
+        p2 = p1;
+        u1 = u;
+        p1 = p;
+      }
+      units += u1;
+      hasPair ||= p1;
+    }
+    for (let r = 27; r < 34; r++) {
+      if (c[r] > 0) units++;
+      if (c[r] >= 2) hasPair = true;
+    }
+    best = Math.min(best, 16 - units - (hasPair ? 1 : 0));
+  }
+  return best;
+}
+
+// The tile-list version: the reference the counts one is tested against.
+export function shantenReference(tiles: Tile[], meldsRequired: number = MELDS_REQUIRED): number {
+  let best = standardShantenReference(tiles, meldsRequired);
   if (meldsRequired === MELDS_REQUIRED) {
     best = Math.min(best, eightPairsShanten(tiles));
     best = Math.min(best, sixteenUnrelatedShanten(tiles));

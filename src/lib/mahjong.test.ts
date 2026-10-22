@@ -22,6 +22,8 @@ import {
   parseHand,
   shanten,
   standardShanten,
+  standardShantenReference,
+  shantenReference,
   tileCount,
   tileKey,
 } from "./mahjong";
@@ -994,5 +996,33 @@ describe("analyzeDiscardChoices", () => {
   it("returns nothing for hand sizes that aren't a valid checkpoint", () => {
     const outcome = analyzeDiscardChoices(parseHand("11m1b"));
     expect(outcome).toEqual({ alreadyComplete: false, choices: [] });
+  });
+});
+
+describe("standardShanten (fast) matches the reference version", () => {
+  it("on random hands of every size, flush-heavy and honour-heavy ones included", () => {
+    let seed = 12345;
+    const rand = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+    const kinds = allTileKinds();
+    let checked = 0;
+    for (let i = 0; i < 6000; i++) {
+      const melds = 1 + (i % 5);
+      const size = melds * 3 + 1 + (i % 2);
+      // Draw from a narrowed pool sometimes, so flushes and honour piles come up.
+      const pool = i % 3 === 0 ? kinds.filter((k) => k.suit === "m" || k.suit === "z") : i % 3 === 1 ? kinds.filter((k) => k.suit === "b") : kinds;
+      const counts = new Map<string, number>();
+      const hand: Tile[] = [];
+      while (hand.length < size) {
+        const k = pool[Math.floor(rand() * pool.length)];
+        const key = `${k.suit}${k.rank}`;
+        if ((counts.get(key) ?? 0) >= 4) continue;
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+        hand.push({ ...k });
+      }
+      expect(standardShanten(hand, melds), `${hand.map((t) => t.rank + t.suit).join(" ")} (${melds} melds)`).toBe(standardShantenReference(hand, melds));
+      expect(shanten(hand, melds), `shanten: ${hand.map((t) => t.rank + t.suit).join(" ")} (${melds} melds)`).toBe(shantenReference(hand, melds));
+      checked++;
+    }
+    expect(checked).toBe(6000);
   });
 });

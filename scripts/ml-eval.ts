@@ -12,7 +12,7 @@
 // place, and the day's utility at that goal (match.ts).
 
 import { readFileSync, writeFileSync } from "node:fs";
-import * as ort from "onnxruntime-web/wasm";
+import * as ort from "onnxruntime-node";
 import { BASELINE, emptyStats, formatArena, type ArenaResult, type BotStats } from "../src/lib/arena";
 import { botClaimFor, botSurrenders, botTurnMoveFor, profileById, seededRng, type BotProfile, type Rng } from "../src/lib/bots";
 import { applyTurnMove, botClaim, botTurnMove, dealHand, fullWall, nextHand, resolveClaims, SEATS, surrender, type Claim, type GameState, type TurnMove, type WallTile } from "../src/lib/game";
@@ -40,8 +40,8 @@ const v2 = meta.obsSize === OBS_SIZE_MATCH;
 if (v2 && !matchLength) throw new Error("A match-day (v2) network needs --match <hands>");
 // The match in play, as the table sees it.
 let current: MatchContext = newMatch(session, goal);
-ort.env.wasm.numThreads = 1;
-const net = await ort.InferenceSession.create(readFileSync(`${modelDir}/policy.onnx`));
+// The native runtime, one thread: several of these run side by side.
+const net = await ort.InferenceSession.create(readFileSync(`${modelDir}/policy.onnx`), { intraOpNumThreads: 1, interOpNumThreads: 1 });
 const run = async (obs: Float32Array, style: number, mask: Float32Array) => {
   const out = await net.run({
     obs: new ort.Tensor("float32", obs, [1, obs.length]),
