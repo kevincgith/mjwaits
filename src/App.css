@@ -8640,6 +8640,42 @@ html.playing body {
   gap: 0.5rem;
 }
 
+/* The four rows, reordered by dragging a row's grip. */
+.sc-setup-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.sc-setup-row.is-dragging {
+  position: relative;
+  z-index: 2;
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.16);
+}
+
+/* A big enough target for a thumb; the page doesn't scroll while it's held. */
+.sc-setup-grip {
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 1.6rem;
+  height: 2.75rem;
+  margin-right: -0.25rem;
+  color: var(--text-muted);
+  font-size: 1.1rem;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.sc-setup-row.is-dragging .sc-setup-grip {
+  color: var(--accent);
+  cursor: grabbing;
+}
+
 .sc-setup-wind {
   display: inline-grid;
   place-items: center;
