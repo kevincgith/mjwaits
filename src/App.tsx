@@ -45,6 +45,7 @@ import { ScoresPanel, SharedScoresView, type RecordRequest, type ScoreHandReques
 import { snapshotFromHash } from "./lib/scoreShare";
 import { TaiRulesSheet } from "./TaiRulesSheet";
 import { isLadderChanged, isRuleChanged, ladderOf, rulesAffectScoring, rulesFingerprint } from "./lib/taiRules";
+import { PATTERN_CATALOG } from "./lib/taiCatalog";
 import {
   activeSet,
   HOUSE_RULES_NAME,
@@ -134,6 +135,7 @@ import {
   parseScoringHand,
   patternDisplayName,
   ScoringError,
+  DEFAULT_TAI_RULES,
   scoreParsedHand,
   type BonusTile,
   type GameContext,
@@ -4556,6 +4558,15 @@ function PatternRow({
     ctx.rules.engine === "custom" &&
     (isRuleChanged(pattern.id, ctx.rules.patterns[pattern.id]) || (!!ladder && isLadderChanged(ctx.rules, ladder.id)));
   const customMark = custom && <span className="custom-rule-dot" title="Custom tai rule (設定)" aria-label="custom rule" />;
+  // Counted more than once (二連刻 twice, 大三連刻 over three overlapping
+  // windows…): "30 × 3", so a stacked total reads as one value times a count.
+  const perRule = PATTERN_CATALOG[pattern.id]?.value.kind === "per" ? (ctx.rules ?? DEFAULT_TAI_RULES).patterns[pattern.id] : undefined;
+  const times = perRule && perRule.tai > 0 ? Math.round(tai / perRule.tai) : 1;
+  const timesMark = times > 1 && (
+    <span className="scoring-pattern-times" title={`${perRule!.tai} tai × ${times}`}>
+      {perRule!.tai} × {times}
+    </span>
+  );
   if (!rows || rows.length === 0) {
     return (
       <div className="pattern-row">
@@ -4563,6 +4574,7 @@ function PatternRow({
           <PatternName name={patternDisplayName(pattern, hand)} />
           <span className="scoring-pattern-meta">
             {customMark}
+            {timesMark}
             <span className="scoring-pattern-tai">{tai}<span className="visually-hidden"> tai</span></span>
           </span>
         </div>
@@ -4575,6 +4587,7 @@ function PatternRow({
         <PatternName name={patternDisplayName(pattern, hand)} expand={expanded ? "open" : "closed"} />
         <span className="scoring-pattern-meta">
           {customMark}
+          {timesMark}
           <span className="scoring-pattern-tai">{tai}<span className="visually-hidden"> tai</span></span>
         </span>
       </button>

@@ -31,3 +31,6 @@ dist-ssr
 /.arena
 /.evolve
 /evolution
+
+# Screenshots of another scoring app, for comparison - not ours to commit.
+reference-app/

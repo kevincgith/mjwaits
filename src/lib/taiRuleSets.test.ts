@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import qrcode from "qrcode-generator";
 import { DEFAULT_TAI_RULES, PATTERNS, type TaiRules } from "./scoring";
-import { TAI_RULES_KEY } from "./taiRules";
+import { normalizeRules, TAI_RULES_KEY } from "./taiRules";
 import {
   diffOf,
   ENGINE_KEY,
@@ -140,6 +140,7 @@ describe("share links", () => {
     const qr = qrcode(0, "L");
     qr.addData(url);
     expect(() => qr.make()).not.toThrow();
-    expect((await readRulesLink(url.slice(url.indexOf("#"))))?.rules).toEqual(rules);
+    // Switched off comes back as 0 = off.
+    expect((await readRulesLink(url.slice(url.indexOf("#"))))?.rules).toEqual(normalizeRules(rules).rules);
   });
 });

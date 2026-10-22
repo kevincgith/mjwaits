@@ -1783,82 +1783,81 @@ function threeColorStepUpInstances(hand: ResolvedHand): ResolvedMeld[][] {
   return result;
 }
 
-// 二連刻: 2 triplets/kongs at consecutive ranks in one suit (e.g. 222m+333m,
-// mixing triplet/kong freely). No 明/暗 split. Stacks per adjacent pair
-// found (matches the precedent set by 老少上/二步高-style patterns), so 3
-// consecutive triplets (222+333+444) counts as 2 instances. See its own
-// PATTERNS entry (consecutive-triplet-pair) for the actual meld-finding
-// logic - inlined there since it also needs to filter out melds claimed
-// by 小/大三連刻 (see claimedConsecutiveTripletMelds), which a plain count
-// couldn't do.
+// 連刻 (consecutive triplets) as tiers: a window of neighbouring ranks in
+// one suit, each holding a triplet/kong - or, for a "small" (小) tier,
+// exactly one of them holding the hand's pair instead (anywhere in the
+// window, e.g. 22 333 444 or 222 33 444). Sizes count ranks: 二連刻 is a
+// 2-window of triplets, 小三連刻 a 3-window with the pair, 大三連刻 a
+// 3-window of triplets, and so on up to 小六連刻 (five triplets + the pair).
+//
+// Scoring rule: the longest tier that's switched on wins. A window counts
+// unless a window of a LARGER enabled tier contains it - so with only
+// 二/小三/大三 on (the house list), 111 222 333 444 555萬 counts as three
+// overlapping 大三連刻 windows, exactly as the hard-coded engine always did,
+// and with 大五連刻 on it's one 大五連刻 instead. A tier that's on but
+// shorter than the chain counts once per overlapping window of its size.
+export const CHAIN_TIERS: { id: string; size: number; small: boolean }[] = [
+  { id: "consecutive-triplet-pair", size: 2, small: false },
+  { id: "small-three-consecutive-triplets", size: 3, small: true },
+  { id: "big-three-consecutive-triplets", size: 3, small: false },
+  { id: "small-four-consecutive-triplets", size: 4, small: true },
+  { id: "big-four-consecutive-triplets", size: 4, small: false },
+  { id: "small-five-consecutive-triplets", size: 5, small: true },
+  { id: "big-five-consecutive-triplets", size: 5, small: false },
+  { id: "small-six-consecutive-triplets", size: 6, small: true },
+];
 
-// 小三連刻: 3 consecutive ranks in one suit where the hand's pair sits at
-// one of the 3 positions and the other 2 are triplets/kongs (e.g. 22m +
-// 333m + 444m). 大三連刻: same 3-consecutive-rank shape, but all 3 are full
-// triplets/kongs (pair not involved at all) - these are structurally
-// different (one needs the pair, one doesn't), so not mutually exclusive.
-// Both stack: overlapping windows sharing a triplet each count separately -
-// e.g. 大三連刻 on 111m222m333m444m555m is 3 instances ([1,2,3], [2,3,4],
-// [3,4,5]), same sliding-window reasoning as 二連刻/清龍's own stacking.
-function smallThreeConsecutiveTripletCount(hand: ResolvedHand): number {
+type ChainWindow = { suit: Suit; start: number; size: number };
+
+// Every window of one tier in the hand.
+function chainWindows(hand: ResolvedHand, size: number, small: boolean): ChainWindow[] {
   const pair = hand.pair[0];
-  if (pair.suit === "z") return 0;
-  const windows = [
-    [pair.rank, pair.rank + 1, pair.rank + 2],
-    [pair.rank - 1, pair.rank, pair.rank + 1],
-    [pair.rank - 2, pair.rank - 1, pair.rank],
-  ];
-  let count = 0;
-  for (const window of windows) {
-    if (window[0] < 1 || window[2] > 9) continue;
-    const others = window.filter((r) => r !== pair.rank);
-    if (others.length === 2 && others.every((r) => isTripletOrKongAt(hand, pair.suit, r))) count++;
-  }
-  return count;
-}
-function bigThreeConsecutiveTripletCount(hand: ResolvedHand): number {
-  let count = 0;
-  for (const suit of ["m", "t", "b"] as const) {
-    for (let rank = 1; rank <= 7; rank++) {
-      if ([rank, rank + 1, rank + 2].every((r) => isTripletOrKongAt(hand, suit, r))) count++;
+  const out: ChainWindow[] = [];
+  for (const suit of NUMBERED_SUITS) {
+    for (let start = 1; start + size - 1 <= 9; start++) {
+      const ranks = Array.from({ length: size }, (_, i) => start + i);
+      const pairRanks = ranks.filter((r) => pair.suit === suit && pair.rank === r);
+      if (small ? pairRanks.length !== 1 : pairRanks.length !== 0) continue;
+      if (ranks.every((r) => pairRanks.includes(r) || isTripletOrKongAt(hand, suit, r))) out.push({ suit, start, size });
     }
   }
-  return count;
+  return out;
 }
 
-// Which specific melds belong to every qualifying 大三連刻 window (3
-// consecutive ranks, all triplets/kongs) or 小三連刻 window (anchored on
-// the pair) - both already stack across multiple windows themselves, so
-// this unions every one found rather than just the first. Used only to
-// scope 二連刻's own exclusion (see consecutive-triplet-pair below) to the
-// melds those patterns are actually about - a genuinely separate
-// adjacent-triplet pair using up the hand's *other* melds should still
-// earn its own tai, e.g. 111m222m333m555t666t22b claims 大三連刻 for the
-// m-suit window, but 555t+666t is an unrelated pair and still counts.
-function claimedConsecutiveTripletMelds(hand: ResolvedHand): ResolvedMeld[] {
-  const claimed: ResolvedMeld[] = [];
-  const meldAt = (suit: Suit, rank: number) =>
-    hand.melds.find((m) => (m.kind === "triplet" || m.kind === "kong") && m.tiles[0].suit === suit && m.tiles[0].rank === rank);
-  for (const suit of ["m", "t", "b"] as const) {
-    for (let rank = 1; rank <= 7; rank++) {
-      const melds = [rank, rank + 1, rank + 2].map((r) => meldAt(suit, r));
-      if (melds.every((m): m is ResolvedMeld => !!m)) claimed.push(...melds);
+// Whether a 連刻 tier is switched on for normal hands under ctx's rules.
+function chainTierOn(id: string, ctx: GameContext): boolean {
+  const rule = ruleFor(id, ctx, "normal");
+  return !!rule && rule.tai > 0;
+}
+
+const containsWindow = (outer: ChainWindow, inner: ChainWindow) =>
+  outer.suit === inner.suit && outer.start <= inner.start && outer.start + outer.size >= inner.start + inner.size;
+
+/** One 連刻 tier's windows that count: those no larger enabled tier's window contains. */
+function countedChainWindows(hand: ResolvedHand, ctx: GameContext, id: string): ChainWindow[] {
+  const tier = CHAIN_TIERS.find((t) => t.id === id)!;
+  const larger = CHAIN_TIERS.filter((t) => t.size > tier.size && chainTierOn(t.id, ctx)).flatMap((t) => chainWindows(hand, t.size, t.small));
+  return chainWindows(hand, tier.size, tier.small).filter((w) => !larger.some((l) => containsWindow(l, w)));
+}
+
+// A window's groups in rank order, the pair included - for the breakdown.
+function chainWindowTiles(hand: ResolvedHand, w: ChainWindow): Tile[][] {
+  return Array.from({ length: w.size }, (_, i) => w.start + i).map((rank) => {
+    if (hand.pair[0].suit === w.suit && hand.pair[0].rank === rank) return hand.pair;
+    const meld = hand.melds.find((m) => (m.kind === "triplet" || m.kind === "kong") && m.tiles[0].suit === w.suit && m.tiles[0].rank === rank);
+    return meld!.tiles;
+  });
+}
+
+// 雙連刻: two 二連刻 that share no rank (e.g. 222 333 + 777 888).
+function separateTwoChains(hand: ResolvedHand, ctx: GameContext): ChainWindow[] | null {
+  const windows = countedChainWindows(hand, ctx, "consecutive-triplet-pair");
+  for (const a of windows) {
+    for (const b of windows) {
+      if (a !== b && (a.suit !== b.suit || a.start + a.size <= b.start)) return [a, b];
     }
   }
-  const pair = hand.pair[0];
-  if (pair.suit !== "z") {
-    const windows = [
-      [pair.rank, pair.rank + 1, pair.rank + 2],
-      [pair.rank - 1, pair.rank, pair.rank + 1],
-      [pair.rank - 2, pair.rank - 1, pair.rank],
-    ];
-    for (const window of windows) {
-      if (window[0] < 1 || window[2] > 9) continue;
-      const melds = window.filter((r) => r !== pair.rank).map((r) => meldAt(pair.suit, r));
-      if (melds.length === 2 && melds.every((m): m is ResolvedMeld => !!m)) claimed.push(...melds);
-    }
-  }
-  return claimed;
+  return null;
 }
 
 // 相逢: 2 runs with the same 3 ranks but in *different* suits (e.g.
@@ -2804,83 +2803,65 @@ export const PATTERNS: TaiPattern[] = [
   {
     id: "consecutive-triplet-pair",
     name: "二連刻 (2 consecutive triplets/kongs)",
-    // Stacks per adjacent pair; no 明/暗 split. Only discounts the pairs
-    // actually subsumed by 小/大三連刻 (see claimedConsecutiveTripletMelds)
-    // - a genuinely separate adjacent pair using up the hand's *other*
-    // melds still earns its own tai, e.g. 111m222m333m555t666t22b claims
-    // 大三連刻 for the m-suit window, but 555t+666t is an unrelated pair
-    // and still counts here.
-    score: (hand) => {
-      const claimed = claimedConsecutiveTripletMelds(hand);
-      const meldAt = (suit: Suit, rank: number) =>
-        hand.melds.find((m) => (m.kind === "triplet" || m.kind === "kong") && m.tiles[0].suit === suit && m.tiles[0].rank === rank);
-      let count = 0;
-      for (const suit of ["m", "t", "b"] as const) {
-        for (let rank = 1; rank <= 8; rank++) {
-          const a = meldAt(suit, rank);
-          const b = meldAt(suit, rank + 1);
-          if (a && b && !claimed.includes(a) && !claimed.includes(b)) count++;
-        }
-      }
-      return count;
-    },
-    tiles: (hand) => {
-      const claimed = claimedConsecutiveTripletMelds(hand);
-      const meldAt = (suit: Suit, rank: number) =>
-        hand.melds.find((m) => (m.kind === "triplet" || m.kind === "kong") && m.tiles[0].suit === suit && m.tiles[0].rank === rank);
-      const rows: Tile[][][] = [];
-      for (const suit of ["m", "t", "b"] as const) {
-        for (let rank = 1; rank <= 8; rank++) {
-          const a = meldAt(suit, rank);
-          const b = meldAt(suit, rank + 1);
-          if (a && b && !claimed.includes(a) && !claimed.includes(b)) rows.push([a.tiles, b.tiles]);
-        }
-      }
-      return rows;
-    },
+    // The 連刻 tiers (this one and the seven below) share one rule - see
+    // CHAIN_TIERS: the longest tier that's switched on wins, and a shorter
+    // one counts once per window no longer enabled tier contains.
+    score: (hand, ctx) => countedChainWindows(hand, ctx, "consecutive-triplet-pair").length,
+    tiles: (hand, ctx) => countedChainWindows(hand, ctx, "consecutive-triplet-pair").map((w) => chainWindowTiles(hand, w)),
   },
   {
     id: "small-three-consecutive-triplets",
     name: "小三連刻 (3 consecutive ranks, pair at one end + 2 triplets/kongs)",
-    score: (hand) => smallThreeConsecutiveTripletCount(hand),
-    tiles: (hand) => {
-      const pair = hand.pair[0];
-      if (pair.suit === "z") return [];
-      const meldAt = (rank: number) =>
-        hand.melds.find((m) => (m.kind === "triplet" || m.kind === "kong") && m.tiles[0].suit === pair.suit && m.tiles[0].rank === rank);
-      const windows = [
-        [pair.rank, pair.rank + 1, pair.rank + 2],
-        [pair.rank - 1, pair.rank, pair.rank + 1],
-        [pair.rank - 2, pair.rank - 1, pair.rank],
-      ];
-      const rows: Tile[][][] = [];
-      for (const window of windows) {
-        if (window[0] < 1 || window[2] > 9) continue;
-        const melds = window.filter((r) => r !== pair.rank).map(meldAt);
-        // Sorted by rank (the pair included) rather than pair-always-first
-        // - see 小三色連刻's own tiles() comment for the same fix.
-        if (melds.length === 2 && melds.every((m): m is ResolvedMeld => !!m)) {
-          rows.push([hand.pair, ...melds.map((m) => m.tiles)].sort((a, b) => a[0].rank - b[0].rank));
-        }
-      }
-      return rows;
-    },
+    score: (hand, ctx) => countedChainWindows(hand, ctx, "small-three-consecutive-triplets").length,
+    tiles: (hand, ctx) => countedChainWindows(hand, ctx, "small-three-consecutive-triplets").map((w) => chainWindowTiles(hand, w)),
   },
   {
     id: "big-three-consecutive-triplets",
     name: "大三連刻 (3 consecutive triplets/kongs)",
-    score: (hand) => bigThreeConsecutiveTripletCount(hand),
-    tiles: (hand) => {
-      const meldAt = (suit: Suit, rank: number) =>
-        hand.melds.find((m) => (m.kind === "triplet" || m.kind === "kong") && m.tiles[0].suit === suit && m.tiles[0].rank === rank);
-      const rows: Tile[][][] = [];
-      for (const suit of ["m", "t", "b"] as const) {
-        for (let rank = 1; rank <= 7; rank++) {
-          const melds = [rank, rank + 1, rank + 2].map((r) => meldAt(suit, r));
-          if (melds.every((m): m is ResolvedMeld => !!m)) rows.push(melds.map((m) => m.tiles));
-        }
-      }
-      return rows;
+    score: (hand, ctx) => countedChainWindows(hand, ctx, "big-three-consecutive-triplets").length,
+    tiles: (hand, ctx) => countedChainWindows(hand, ctx, "big-three-consecutive-triplets").map((w) => chainWindowTiles(hand, w)),
+  },
+  {
+    id: "small-four-consecutive-triplets",
+    name: "小四連刻 (4 consecutive ranks: 3 triplets/kongs + the pair)",
+    // Worth 0 in the house list - see CHAIN_TIERS for how a 0 tier falls
+    // back to counting the shorter ones.
+    score: (hand, ctx) => countedChainWindows(hand, ctx, "small-four-consecutive-triplets").length,
+    tiles: (hand, ctx) => countedChainWindows(hand, ctx, "small-four-consecutive-triplets").map((w) => chainWindowTiles(hand, w)),
+  },
+  {
+    id: "big-four-consecutive-triplets",
+    name: "大四連刻 (4 consecutive triplets/kongs)",
+    score: (hand, ctx) => countedChainWindows(hand, ctx, "big-four-consecutive-triplets").length,
+    tiles: (hand, ctx) => countedChainWindows(hand, ctx, "big-four-consecutive-triplets").map((w) => chainWindowTiles(hand, w)),
+  },
+  {
+    id: "small-five-consecutive-triplets",
+    name: "小五連刻 (5 consecutive ranks: 4 triplets/kongs + the pair)",
+    score: (hand, ctx) => countedChainWindows(hand, ctx, "small-five-consecutive-triplets").length,
+    tiles: (hand, ctx) => countedChainWindows(hand, ctx, "small-five-consecutive-triplets").map((w) => chainWindowTiles(hand, w)),
+  },
+  {
+    id: "big-five-consecutive-triplets",
+    name: "大五連刻 (5 consecutive triplets/kongs)",
+    score: (hand, ctx) => countedChainWindows(hand, ctx, "big-five-consecutive-triplets").length,
+    tiles: (hand, ctx) => countedChainWindows(hand, ctx, "big-five-consecutive-triplets").map((w) => chainWindowTiles(hand, w)),
+  },
+  {
+    id: "small-six-consecutive-triplets",
+    name: "小六連刻 (6 consecutive ranks: 5 triplets/kongs + the pair)",
+    score: (hand, ctx) => countedChainWindows(hand, ctx, "small-six-consecutive-triplets").length,
+    tiles: (hand, ctx) => countedChainWindows(hand, ctx, "small-six-consecutive-triplets").map((w) => chainWindowTiles(hand, w)),
+  },
+  {
+    id: "twin-consecutive-triplet-pairs",
+    name: "雙連刻 (2 separate 二連刻)",
+    // Two 二連刻 sharing no rank. Worth 0 in the house list (二連刻 then
+    // simply counts twice); on, it replaces 二連刻 (its catalog edge).
+    score: (hand, ctx) => (separateTwoChains(hand, ctx) ? 1 : 0),
+    tiles: (hand, ctx) => {
+      const pair = separateTwoChains(hand, ctx);
+      return pair ? [pair.flatMap((w) => chainWindowTiles(hand, w))] : [];
     },
   },
   {
@@ -4226,15 +4207,23 @@ function scoredCount(id: string, count: number, ctx: GameContext, shape: HandSha
   return { pattern: patternById(id), tai: rule ? valueOf(id, count, rule) : 0 };
 }
 
-const LADDER_OF = new Map(LADDERS.flatMap((l) => l.rungs.flatMap((rung, i) => rung.map((id) => [id, { ladder: l, rung: i }] as const))));
+// Only "count" families replace by rung - a "windows" family's covering rule
+// lives in its detector (CHAIN_TIERS).
+const LADDER_OF = new Map(
+  LADDERS.filter((l) => l.kind !== "windows").flatMap((l) => l.rungs.flatMap((rung, i) => rung.map((id) => [id, { ladder: l, rung: i }] as const))),
+);
 
 /** Everything a pattern replaces under `rules`: its own edges, plus every
- *  lower rung of its ladder while that ladder is exclusive. */
+ *  lower rung of its count-family ladder while that ladder is exclusive. */
 export function effectiveReplaces(rules: TaiRules, id: string): string[] {
-  const own = ruleOf(rules, id)?.replaces ?? [];
   const place = LADDER_OF.get(id);
+  const below = place ? place.ladder.rungs.slice(0, place.rung).flat() : [];
+  // Never itself, and never a lower rung of its own family - the family's
+  // switch decides those. normalizeRules drops the same edges, so a set
+  // scores the same before and after it's saved or shared.
+  const own = (ruleOf(rules, id)?.replaces ?? []).filter((r) => r !== id && !below.includes(r));
   if (!place || (rules.ladders?.[place.ladder.id] ?? DEFAULT_TAI_RULES.ladders[place.ladder.id]).exclusive === false) return own;
-  return [...place.ladder.rungs.slice(0, place.rung).flat(), ...own];
+  return [...below, ...own];
 }
 
 // Drops what didn't fire, then everything any firing pattern replaces - in
