@@ -442,5 +442,17 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8765
-    print(f"training dashboard on http://127.0.0.1:{port}", flush=True)
+    # Both loopbacks, so http://localhost works whichever one it resolves to.
+    import socket
+    import threading
+
+    class V6(ThreadingHTTPServer):
+        address_family = socket.AF_INET6
+
+    try:
+        v6 = V6(("::1", port), Handler)
+        threading.Thread(target=v6.serve_forever, daemon=True).start()
+    except OSError:
+        pass
+    print(f"training dashboard on http://localhost:{port}", flush=True)
     ThreadingHTTPServer(("127.0.0.1", port), Handler).serve_forever()
