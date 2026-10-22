@@ -218,11 +218,17 @@ export function RulesReference({ name, rules, onClose }: { name: string; rules: 
                 const exclusive = shown.ladders[l.id]?.exclusive !== false;
                 return (
                   <div key={l.id} className="rr-ladder">
-                    <span className="rr-ladder-label">{exclusive ? "Tier · only the highest counts" : "Tier · every level counts"}</span>
+                    <span className="rr-ladder-label">
+                      {l.kind === "windows"
+                        ? "Tier · the longest with a value counts; one worth 0 counts as overlapping shorter ones"
+                        : exclusive
+                          ? "Tier · only the highest counts"
+                          : "Tier · every level counts"}
+                    </span>
                     <span className="rr-ladder-rungs">
                       {[...l.rungs].reverse().map((rung, i) => (
                         <span key={i} className="rr-ladder-rung">
-                          {i > 0 && <span className="rr-ladder-sep">{exclusive ? "›" : "+"}</span>}
+                          {i > 0 && <span className="rr-ladder-sep">{exclusive || l.kind === "windows" ? "›" : "+"}</span>}
                           {rung.map(shortName).join(" / ")}
                         </span>
                       ))}

@@ -1796,7 +1796,7 @@ function threeColorStepUpInstances(hand: ResolvedHand): ResolvedMeld[][] {
 // overlapping 大三連刻 windows, exactly as the hard-coded engine always did,
 // and with 大五連刻 on it's one 大五連刻 instead. A tier that's on but
 // shorter than the chain counts once per overlapping window of its size.
-const CHAIN_TIERS: { id: string; size: number; small: boolean }[] = [
+export const CHAIN_TIERS: { id: string; size: number; small: boolean }[] = [
   { id: "consecutive-triplet-pair", size: 2, small: false },
   { id: "small-three-consecutive-triplets", size: 3, small: true },
   { id: "big-three-consecutive-triplets", size: 3, small: false },
@@ -4207,10 +4207,14 @@ function scoredCount(id: string, count: number, ctx: GameContext, shape: HandSha
   return { pattern: patternById(id), tai: rule ? valueOf(id, count, rule) : 0 };
 }
 
-const LADDER_OF = new Map(LADDERS.flatMap((l) => l.rungs.flatMap((rung, i) => rung.map((id) => [id, { ladder: l, rung: i }] as const))));
+// Only "count" families replace by rung - a "windows" family's covering rule
+// lives in its detector (CHAIN_TIERS).
+const LADDER_OF = new Map(
+  LADDERS.filter((l) => l.kind !== "windows").flatMap((l) => l.rungs.flatMap((rung, i) => rung.map((id) => [id, { ladder: l, rung: i }] as const))),
+);
 
 /** Everything a pattern replaces under `rules`: its own edges, plus every
- *  lower rung of its ladder while that ladder is exclusive. */
+ *  lower rung of its count-family ladder while that ladder is exclusive. */
 export function effectiveReplaces(rules: TaiRules, id: string): string[] {
   const own = ruleOf(rules, id)?.replaces ?? [];
   const place = LADDER_OF.get(id);

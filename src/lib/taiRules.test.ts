@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_TAI_RULES, PATTERNS, scoreHand, type GameContext, type PatternRule, type TaiRules } from "./scoring";
+import { CHAIN_TIERS, DEFAULT_TAI_RULES, PATTERNS, scoreHand, type GameContext, type PatternRule, type TaiRules } from "./scoring";
 import { PATTERN_CATALOG } from "./taiCatalog";
 import {
   changedCount,
@@ -291,6 +291,23 @@ describe("normalizeRules", () => {
 // 連刻 tiers (CHAIN_TIERS in scoring.ts): the longest tier that's switched on
 // wins; a shorter tier counts once per window no longer enabled tier contains.
 describe("連刻 tiers", () => {
+  it("the detector's tiers match the 連刻 family's rungs, by size", () => {
+    const family = LADDERS.find((l) => l.id === "consecutive")!;
+    expect(family.kind).toBe("windows");
+    family.rungs.forEach((rung, i) => {
+      for (const id of rung) expect(CHAIN_TIERS.find((t) => t.id === id)?.size, id).toBe(i + 2);
+    });
+    expect(CHAIN_TIERS.map((t) => t.id).sort()).toEqual(family.rungs.flat().sort());
+  });
+
+  it("暗刻 is a count family: only the highest that fires counts", () => {
+    expect(LADDERS.find((l) => l.id === "hidden")?.kind ?? "count").toBe("count");
+    const result = scoreHand("111m222t333b444m789t55z", ctx());
+    expect(tai(result, "four-hidden-triplets")).toBe(30);
+    expect(tai(result, "three-hidden-triplets")).toBe(0);
+    expect(tai(result, "two-hidden-triplets")).toBe(0);
+  });
+
   const FIVE_CHAIN = "(111m)(222m)(333m)(444m)(555m)99t";
   const FOUR_CHAIN = "(222m)(333m)(444m)(555m)789t11z";
   const SMALL_FOUR = "(333m)(444m)(555m)22m123t789b";

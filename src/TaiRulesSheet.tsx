@@ -537,19 +537,30 @@ export function TaiRulesSheet({
 // only the highest rung that fires counts (the house list) or every rung
 // stacks.
 function LadderBlock({ ladder, exclusive, onExclusive, children }: { ladder: Ladder; exclusive: boolean; onExclusive: (v: boolean) => void; children: React.ReactNode }) {
-  const changed = !exclusive;
-  return (
-    <div className={`tr-ladder${exclusive ? "" : " is-stacking"}`} data-reveal={`ladder:${ladder.id}`}>
-      <label className="tr-ladder-head">
-        <span className="sc-row-main sc-row-stack">
-          <span className="tr-ladder-title">
-            {ladder.label}
-            {changed && <span className="tr-dot" aria-label="changed" />}
-          </span>
-          <span className="sc-help">{exclusive ? "Only the highest that applies counts" : "Every tier that applies counts"}</span>
+  // A windows family (連刻) has no stacking switch: giving its longer tiers a
+  // value is the switch - see Ladder in taiCatalog.ts.
+  const windows = ladder.kind === "windows";
+  const changed = !windows && !exclusive;
+  const help = windows
+    ? "The longest that has a value counts. A longer one worth 0 counts as overlapping shorter ones."
+    : exclusive
+      ? "Only the highest that applies counts"
+      : "Every tier that applies counts";
+  const head = (
+    <>
+      <span className="sc-row-main sc-row-stack">
+        <span className="tr-ladder-title">
+          {ladder.label}
+          {changed && <span className="tr-dot" aria-label="changed" />}
         </span>
-        <Toggle checked={exclusive} onChange={onExclusive} label={`${ladder.label}: only the highest counts`} />
-      </label>
+        <span className="sc-help">{help}</span>
+      </span>
+      {!windows && <Toggle checked={exclusive} onChange={onExclusive} label={`${ladder.label}: only the highest counts`} />}
+    </>
+  );
+  return (
+    <div className={`tr-ladder${exclusive || windows ? "" : " is-stacking"}${windows ? " is-windows" : ""}`} data-reveal={`ladder:${ladder.id}`}>
+      {windows ? <div className="tr-ladder-head">{head}</div> : <label className="tr-ladder-head">{head}</label>}
       <div className="tr-ladder-rungs">{children}</div>
     </div>
   );

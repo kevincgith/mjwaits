@@ -23,7 +23,7 @@ const KNOWN_IDS = new Set(PATTERNS.map((p) => p.id));
 const NAME_BY_ID = new Map(PATTERNS.map((p) => [p.id, p.name]));
 const LADDER_BY_ID = new Map(LADDERS.map((l) => [l.id, l]));
 // What a pattern's ladder already replaces for it - never stored as its own edge.
-const LADDER_BELOW = new Map(LADDERS.flatMap((l) => l.rungs.flatMap((rung, i) => rung.map((id) => [id, new Set(l.rungs.slice(0, i).flat())] as const))));
+const LADDER_BELOW = new Map(LADDERS.filter((l) => l.kind !== "windows").flatMap((l) => l.rungs.flatMap((rung, i) => rung.map((id) => [id, new Set(l.rungs.slice(0, i).flat())] as const))));
 
 /** "清一色 (One numbered suit, no honors)" -> "清一色" */
 export function shortName(id: string): string {
@@ -125,7 +125,9 @@ export function isChickenListChanged(rules: TaiRules): boolean {
   return PATTERNS.some((p) => ruleChanges(p.id, rules.patterns[p.id]).chicken);
 }
 
-export const isLadderChanged = (rules: TaiRules, ladderId: string) => rules.ladders[ladderId]?.exclusive === false;
+// Only a count family can be switched to stacking (see Ladder in taiCatalog.ts).
+export const isLadderChanged = (rules: TaiRules, ladderId: string) =>
+  LADDER_BY_ID.get(ladderId)?.kind !== "windows" && rules.ladders[ladderId]?.exclusive === false;
 
 /** How many patterns and ladders differ from the house list. */
 export function changedCount(rules: TaiRules): number {

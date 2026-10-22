@@ -1997,6 +1997,14 @@ button.scoring-pattern-row {
   cursor: pointer;
 }
 
+/* "30 × 3" beside a pattern counted more than once. */
+.scoring-pattern-times {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .scoring-pattern-tai {
   font-weight: 600;
   color: var(--text);
