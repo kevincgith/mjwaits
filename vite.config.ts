@@ -1,4 +1,5 @@
 import { defineConfig } from 'vite'
+import { configDefaults } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 
 // Stamped at build time (not runtime) so the deployed page shows exactly
@@ -16,5 +17,11 @@ export default defineConfig({
   plugins: [react()],
   define: {
     __BUILD_TIME__: JSON.stringify(buildTimeHKT()),
+  },
+  test: {
+    // worker/ has its own tests, run inside the Workers runtime (npm test
+    // runs both); .claude/ holds other sessions' worktrees, full copies of
+    // this repo whose tests aren't ours to run.
+    exclude: [...configDefaults.exclude, 'worker/**', '.claude/**'],
   },
 })

@@ -1,0 +1,18 @@
+// The multiplayer server. One Durable Object (Room) per table, keyed by its
+// room code, holding the room in its own SQLite storage.
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "mjwaits-mp",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "durable_objects": {
+    "bindings": [{ "name": "ROOMS", "class_name": "Room" }]
+  },
+  // SQLite-backed Durable Objects are the ones the Workers free plan offers.
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Room"] }],
+  "vars": {
+    // Pages allowed to connect, comma-separated, besides localhost (always
+    // allowed, for development). Override for a LAN test in .dev.vars.
+    "ALLOWED_ORIGINS": "https://app.kevinlhc.com"
+  }
+}

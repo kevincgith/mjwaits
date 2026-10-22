@@ -1,0 +1,21 @@
+{
+  "name": "@mjwaits/worker",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "The multiplayer server: a Cloudflare Worker with one Durable Object per room.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@mjwaits/shared": "*"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "1.4.0",
+    "@cloudflare/workers-types": "5.20261008.1",
+    "wrangler": "4.149.0"
+  }
+}
