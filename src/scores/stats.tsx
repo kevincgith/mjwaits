@@ -2,7 +2,7 @@
 // past games and backups.
 
 import { Fragment, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { exportScores, mergeScores, parseBackup, replay, replayCached, type HandResult, type ReplayState, type ScoreGame, type ScoreStore, playTimes } from "../lib/ledger";
+import { exportScores, mergeScores, parseBackup, replay, replayCached, type HandResult, type ReplayState, type ScoreGame, type ScoreStore, playTimes } from "@mjwaits/shared/engine/ledger";
 import { sheetRows, type SheetRow } from "../lib/scoreViews";
 import { careerPlayerStats, careerStats, headToHead, marks, patternCounts, playerStats, rankedBy, RECENT_HANDS, trend, trendSummary, type PlayerStats, type Swing } from "../lib/scoreStats";
 import { fmt, signed, pct, tone, colorOf, Icons, SectionHead, Monogram, Sheet, Segmented, Sparkline } from "./shared";

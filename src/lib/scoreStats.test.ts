@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_SETTINGS, newGame, replay, type ScoreEvent, type ScoreGame } from "./ledger";
+import { DEFAULT_SETTINGS, newGame, replay, type ScoreEvent, type ScoreGame } from "@mjwaits/shared/engine/ledger";
 import { careerPlayerStats, careerStats, headToHead, marks, patternCounts, playerStats, rankedBy, trend, trendSummary } from "./scoreStats";
 
 const PLAIN = { ...DEFAULT_SETTINGS, dealerTai: 0, streakTai: 0, jackpot: false };

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PATTERNS } from "./scoring";
+import { PATTERNS } from "@mjwaits/shared/engine/scoring";
 import { SITUATION_LINK_IDS, situationLinks } from "./situationLinks";
 
 // situationLinks.ts mirrors the 情況 buttons' wiring in App.tsx for 設定 and

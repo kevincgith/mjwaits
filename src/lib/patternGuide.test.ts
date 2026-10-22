@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { FAMILY_GUIDE, PAIR_GUIDE, PATTERN_ALIASES, PATTERN_GUIDE } from "./patternGuide";
-import { PATTERNS } from "./scoring";
-import { OPEN_CONCEALED_PAIRS, pairOf, PATTERN_FAMILIES } from "./taiCatalog";
+import { PATTERNS } from "@mjwaits/shared/engine/scoring";
+import { OPEN_CONCEALED_PAIRS, pairOf, PATTERN_FAMILIES } from "@mjwaits/shared/engine/taiCatalog";
 
 // The printable rules reference describes every pattern and family.
 describe("the rules reference's descriptions", () => {

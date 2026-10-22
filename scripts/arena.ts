@@ -12,8 +12,8 @@ import { availableParallelism } from "node:os";
 import { isMainThread, parentPort, Worker, workerData } from "node:worker_threads";
 import { BASELINE, formatArena, mergeResults, runArena, type ArenaResult } from "../src/lib/arena";
 import { BOT_PROFILES, flushSuit, profileById, tileRisk, type BotProfile } from "../src/lib/bots";
-import { isWinningHand, meldsNeeded, SEATS, unseenCounts } from "../src/lib/game";
-import { shanten } from "../src/lib/mahjong";
+import { isWinningHand, meldsNeeded, SEATS, unseenCounts } from "@mjwaits/shared/engine/game";
+import { shanten } from "@mjwaits/shared/engine/mahjong";
 
 type Tweaks = Record<string, { from: string; set: Record<string, number> }>;
 

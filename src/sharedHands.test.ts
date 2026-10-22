@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { TEST_HAND_BASE_CONTEXT } from "./lib/testHands";
+import { TEST_HAND_BASE_CONTEXT } from "@mjwaits/shared/engine/testHands";
 import {
   formatBonus,
   readCalcHand,

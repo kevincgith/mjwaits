@@ -4,8 +4,8 @@
 // The choice is per browser (localStorage); the default is "art".
 
 import { createContext, useContext } from "react";
-import type { Tile } from "./lib/mahjong";
-import type { BonusTile } from "./lib/scoring";
+import type { Tile } from "@mjwaits/shared/engine/mahjong";
+import type { BonusTile } from "@mjwaits/shared/engine/scoring";
 
 export type TileStyle = "art" | "unicode";
 

@@ -27,7 +27,7 @@ Smaller and more concrete than the two feature ideas above.
 
 The Scoring tab scores a complete hand against a concrete house tai list, built up one pattern
 at a time rather than as a configurable/universal ruleset (confirmed as the right call - see
-[`src/lib/scoring.ts`](src/lib/scoring.ts)'s module doc comment). 27 patterns implemented so
+[`shared/engine/scoring.ts`](shared/engine/scoring.ts)'s module doc comment). 27 patterns implemented so
 far; see [docs/scoring-rules.md](docs/scoring-rules.md) for the full list with tai values,
 criteria, and exclusions.
 

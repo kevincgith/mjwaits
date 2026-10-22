@@ -2,7 +2,7 @@
 // example hand for each pattern: the simplest hand (from the scoring tests,
 // plus a few written for situations and bonus tiles) where it counts.
 
-import type { BonusTile, GameContext } from "./scoring";
+import type { BonusTile, GameContext } from "@mjwaits/shared/engine/scoring";
 
 export interface PatternExample {
   /** Scoring notation - "(123m)" declared, "[1111z]" 暗槓, the rest concealed. */

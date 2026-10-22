@@ -2,7 +2,7 @@
 // recent entries, and the sheets it opens.
 
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { DEFAULT_SETTINGS, SEATS, previewWin, canRedo, redoEvent, replay, deleteEvent, replaceEvent, undoEvent, stepAt, handAt, withEvent, withEvents, type HandResult, type ReplayState, type ScoreEvent, type ScoreGame, type ScoreStore, chipMoves, playTimes } from "../lib/ledger";
+import { DEFAULT_SETTINGS, SEATS, previewWin, canRedo, redoEvent, replay, deleteEvent, replaceEvent, undoEvent, stepAt, handAt, withEvent, withEvents, type HandResult, type ReplayState, type ScoreEvent, type ScoreGame, type ScoreStore, chipMoves, playTimes } from "@mjwaits/shared/engine/ledger";
 import { changeKind, provisionalEast } from "../lib/scoreViews";
 import { WIND_CHARS, SEAT_AREAS, facing, FIT_MIN, FIT_GAP, type RecordRequest, type ScoreHandRequest, type SeatingResult, fmt, signed, tone, colorOf, Icons, Monogram, Sheet, withRoster } from "./shared";
 import { type HandInitial, type HandMode, HandSheet, SeatsSheet, LahSheet, JackpotSheet, NameSheet, SettleSheet, SettingsSheet, Confirm } from "./sheets";

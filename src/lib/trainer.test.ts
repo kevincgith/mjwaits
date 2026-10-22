@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { analyzeDiscardChoices, getWaits, isCompleteHand, shanten, tileKey } from "./mahjong";
+import { analyzeDiscardChoices, getWaits, isCompleteHand, shanten, tileKey } from "@mjwaits/shared/engine/mahjong";
 import {
   MAX_TRAINER_LEVEL,
   MIN_TRAINER_LEVEL,

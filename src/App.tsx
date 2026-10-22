@@ -44,8 +44,8 @@ import { PlayPanel } from "./PlayPanel";
 import { ScoresPanel, SharedScoresView, type RecordRequest, type ScoreHandRequest, type SeatingResult } from "./ScoresPanel";
 import { GAME_HASH, snapshotFromAnyHash, snapshotFromHash } from "./lib/scoreShare";
 import { TaiRulesSheet } from "./TaiRulesSheet";
-import { isLadderChanged, isRuleChanged, ladderOf, rulesAffectScoring, rulesFingerprint } from "./lib/taiRules";
-import { PATTERN_CATALOG } from "./lib/taiCatalog";
+import { isLadderChanged, isRuleChanged, ladderOf, rulesAffectScoring, rulesFingerprint } from "@mjwaits/shared/engine/taiRules";
+import { PATTERN_CATALOG } from "@mjwaits/shared/engine/taiCatalog";
 import {
   activeSet,
   HOUSE_RULES_NAME,
@@ -57,7 +57,7 @@ import {
   saveRuleSets,
   type RuleSetStore,
 } from "./lib/taiRuleSets";
-import { loadScores, saveScores } from "./lib/ledger";
+import { loadScores, saveScores } from "./lib/scoreStore";
 import {
   COMPLETE_SIZE,
   compareTiles,
@@ -85,7 +85,7 @@ import {
   tileCount,
   tileKey,
   tileLabel,
-} from "./lib/mahjong";
+} from "@mjwaits/shared/engine/mahjong";
 import type {
   DiscardChoice,
   DiscardChoicesOutcome,
@@ -93,7 +93,7 @@ import type {
   JokerWaitResult,
   Suit,
   Tile,
-} from "./lib/mahjong";
+} from "@mjwaits/shared/engine/mahjong";
 import {
   MAX_TRAINER_LEVEL,
   MIN_TRAINER_LEVEL,
@@ -152,8 +152,8 @@ import {
   type ScoreResult,
   type TaiPattern,
   type Wind,
-} from "./lib/scoring";
-import { TEST_HAND_BASE_CONTEXT, TEST_HANDS, type TestHand } from "./lib/testHands";
+} from "@mjwaits/shared/engine/scoring";
+import { TEST_HAND_BASE_CONTEXT, TEST_HANDS, type TestHand } from "@mjwaits/shared/engine/testHands";
 
 // A stable id per tile instance, so sorting for display never loses track
 // of which underlying tile is which (needed to revert Sort cleanly, and to

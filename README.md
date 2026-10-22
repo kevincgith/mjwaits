@@ -610,13 +610,13 @@ npm run build    # typecheck + production build
 ```
 
 The core engine (parsing, shanten, waits, joker resolution, discard analysis) lives in
-[`src/lib/mahjong.ts`](src/lib/mahjong.ts), covered by an extensive suite in
-[`src/lib/mahjong.test.ts`](src/lib/mahjong.test.ts) including brute-force cross-validation for
+[`shared/engine/mahjong.ts`](shared/engine/mahjong.ts), covered by an extensive suite in
+[`shared/engine/mahjong.test.ts`](shared/engine/mahjong.test.ts) including brute-force cross-validation for
 the trickier joker and shanten logic. Trainer question generation is in
 [`src/lib/trainer.ts`](src/lib/trainer.ts) with property-based checks across all levels and flush
 mode. The scoring engine — notation parsing, the all-decompositions search, and the `PATTERNS`
-tai list — is in [`src/lib/scoring.ts`](src/lib/scoring.ts), tested in
-[`src/lib/scoring.test.ts`](src/lib/scoring.test.ts); see
+tai list — is in [`shared/engine/scoring.ts`](shared/engine/scoring.ts), tested in
+[`shared/engine/scoring.test.ts`](shared/engine/scoring.test.ts); see
 [`docs/scoring-rules.md`](docs/scoring-rules.md) for what each pattern does. The client-side tile
 detector (letterboxing, ONNX inference, non-max suppression) is in
 [`src/lib/vision.ts`](src/lib/vision.ts).

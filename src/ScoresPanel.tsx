@@ -11,7 +11,8 @@
 // and 統計.
 
 import { useEffect, useMemo, useState } from "react";
-import { DEFAULT_SETTINGS, newGame, replay, unreadableScores, UNREADABLE_SCORES_KEY, type ScoreGame, type ScoreStore } from "./lib/ledger";
+import { DEFAULT_SETTINGS, newGame, replay, type ScoreGame, type ScoreStore } from "@mjwaits/shared/engine/ledger";
+import { unreadableScores, UNREADABLE_SCORES_KEY } from "./lib/scoreStore";
 import { type ScoreSnapshot } from "./lib/scoreShare";
 import { playerStats, trend } from "./lib/scoreStats";
 import { type RecordRequest, type ScoreHandRequest, type SeatingResult, fmt, signed, tone, SectionHead, Segmented, withRoster } from "./scores/shared";

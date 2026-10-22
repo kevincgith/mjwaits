@@ -3,6 +3,9 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "workspaces": [
+    "shared"
+  ],
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
@@ -16,6 +19,7 @@
     "ml-selfplay": "vite build --ssr scripts/ml-selfplay.ts --outDir .ml-selfplay --emptyOutDir --logLevel warn && node .ml-selfplay/ml-selfplay.js"
   },
   "dependencies": {
+    "@mjwaits/shared": "*",
     "onnxruntime-web": "^1.27.0",
     "qrcode-generator": "2.0.4",
     "react": "^19.2.8",

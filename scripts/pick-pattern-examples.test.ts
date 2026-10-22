@@ -1,11 +1,11 @@
 import { it } from "vitest";
 import { writeFileSync } from "node:fs";
 import path from "node:path";
-import { parseScoringHand, PATTERNS, scoreParsedHand, type BonusTile, type GameContext } from "../src/lib/scoring";
-import { exampleRulesFor } from "../src/lib/taiRules";
+import { parseScoringHand, PATTERNS, scoreParsedHand, type BonusTile, type GameContext } from "@mjwaits/shared/engine/scoring";
+import { exampleRulesFor } from "@mjwaits/shared/engine/taiRules";
 import type { PatternExample } from "../src/lib/patternExamples";
-import { PATTERN_CATALOG } from "../src/lib/taiCatalog";
-import { TEST_HAND_BASE_CONTEXT, TEST_HANDS } from "../src/lib/testHands";
+import { PATTERN_CATALOG } from "@mjwaits/shared/engine/taiCatalog";
+import { TEST_HAND_BASE_CONTEXT, TEST_HANDS } from "@mjwaits/shared/engine/testHands";
 
 // Regenerates src/lib/patternExamples.ts - 設定's example per pattern -
 // picked from the scoring tests' own hands (testHands.ts) plus EXTRA below:
@@ -126,7 +126,7 @@ it.runIf(process.env.UPDATE_EXAMPLES)("regenerates src/lib/patternExamples.ts", 
 // example hand for each pattern: the simplest hand (from the scoring tests,
 // plus a few written for situations and bonus tiles) where it counts.
 
-import type { BonusTile, GameContext } from "./scoring";
+import type { BonusTile, GameContext } from "@mjwaits/shared/engine/scoring";
 
 export interface PatternExample {
   /** Scoring notation - "(123m)" declared, "[1111z]" 暗槓, the rest concealed. */

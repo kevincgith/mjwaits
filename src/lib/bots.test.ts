@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { BOT_PROFILES, botClaimFor, botTurnFor, botTurnMoveFor, danger, profileById, rememberedView, seededRng, threat, tileRisk, VOICES, voiceOf } from "./bots";
 import { runArena } from "./arena";
-import { applyTurnMove, dealHand, resolveClaims, SEATS, unseenCounts, type GameMeld, type GameState } from "./game";
-import type { Tile } from "./mahjong";
+import { applyTurnMove, dealHand, resolveClaims, SEATS, unseenCounts, type GameMeld, type GameState } from "@mjwaits/shared/engine/game";
+import type { Tile } from "@mjwaits/shared/engine/mahjong";
 
 const t = (suit: Tile["suit"], rank: number): Tile => ({ suit, rank });
 

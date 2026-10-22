@@ -3,7 +3,7 @@
 // and the settle-up. There's no server - it's the scores as they were when
 // shared, and a newer link replaces it.
 
-import { replay, settle, type ScoreGame, type ScoreStore } from "./ledger";
+import { replay, settle, type ScoreGame, type ScoreStore } from "@mjwaits/shared/engine/ledger";
 
 export interface SnapshotPlayer {
   n: string; // name

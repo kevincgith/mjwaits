@@ -3,7 +3,7 @@
 // sharing, settling up and 設定.
 
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { DEFAULT_SETTINGS, SEATS, previewFanXue, previewWin, half, roundLabel, settle, type PatternNote, type ReplayState, type ScoreEvent, type ScoreGame, type ScoreSettings, type ScoreStore, type WinnerEntry, bonusPresets, type BonusPreset, evenShares, zhaHuKicks } from "../lib/ledger";
+import { DEFAULT_SETTINGS, SEATS, previewFanXue, previewWin, half, roundLabel, settle, type PatternNote, type ReplayState, type ScoreEvent, type ScoreGame, type ScoreSettings, type ScoreStore, type WinnerEntry, bonusPresets, type BonusPreset, evenShares, zhaHuKicks } from "@mjwaits/shared/engine/ledger";
 import { fullSnapshotOf, fullSnapshotUrl, snapshotOf, snapshotUrl } from "../lib/scoreShare";
 import { drawSettleCard } from "../lib/settleImage";
 import qrcode from "qrcode-generator";

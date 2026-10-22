@@ -3,7 +3,7 @@
 // segmented controls.
 
 import { type RefObject, useEffect, useState, type ReactNode } from "react";
-import { PLAYER_COLORS, type PatternNote, type ScoreStore } from "../lib/ledger";
+import { PLAYER_COLORS, type PatternNote, type ScoreStore } from "@mjwaits/shared/engine/ledger";
 
 export const WIND_CHARS = ["東", "南", "西", "北"];
 // Where each seat sits on the board, by seat index (turn order runs

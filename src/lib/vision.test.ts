@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseHand, type Suit } from "./mahjong";
+import { parseHand, type Suit } from "@mjwaits/shared/engine/mahjong";
 import {
   clusterRows,
   concealednessScore,

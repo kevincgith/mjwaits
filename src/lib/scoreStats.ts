@@ -2,7 +2,7 @@
 // per-player stats (the 統計 card), the running-totals series (走勢), career
 // stats across games, head-to-head and pattern counts.
 
-import { CHIP_POT, replayCached, stepAt, type HandResult, type ReplayState, type ScoreGame } from "./ledger";
+import { CHIP_POT, replayCached, stepAt, type HandResult, type ReplayState, type ScoreGame } from "@mjwaits/shared/engine/ledger";
 
 export interface AtHand {
   value: number;
