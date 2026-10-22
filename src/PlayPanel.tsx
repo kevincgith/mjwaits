@@ -26,6 +26,7 @@ import {
   newGame,
   nextHand,
   resolveClaims,
+  retractClaim,
   surrender,
   surrenderable,
   riichiDiscards,
@@ -458,6 +459,9 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
   const [confirmNew, setConfirmNew] = useState(false);
   const [trackerOpen, setTrackerOpen] = useState(false);
   const [chowChoice, setChowChoice] = useState(false);
+  // Your last chow / pung / kong, with the discard it came from - so 嗌錯 can
+  // take it back until you discard.
+  const [lastCall, setLastCall] = useState<{ before: GameState; decisions: (Claim | null)[] } | null>(null);
   // 叮 armed: the next discard declares it (only tiles that leave you ready).
   const [riichiArmed, setRiichiArmed] = useState(false);
   const [resultHidden, setResultHidden] = useState(false);
@@ -490,6 +494,7 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
     setChowChoice(false);
     setRiichiArmed(false);
     setResultHidden(false);
+    setLastCall(null);
     setGame(next);
   };
 
@@ -530,6 +535,28 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
       } else say(seat, "call");
     }
     advance(resolveClaims(game, decisions));
+    if (seat === HUMAN && humanClaim && humanClaim.kind !== "win") setLastCall({ before: game, decisions });
+  };
+
+  // 嗌錯: take back your call - the discard plays on as if you'd passed and
+  // you pay each player. Anything the call itself earned (a kong's
+  // replacement flower) is handed back.
+  const canRetract =
+    !!lastCall &&
+    game.phase.kind === "turn" &&
+    game.phase.seat === HUMAN &&
+    game.discardsMade === lastCall.before.discardsMade &&
+    game.players[HUMAN].melds.length === lastCall.before.players[HUMAN].melds.length + 1;
+  const retract = () => {
+    if (!lastCall || !canRetract) return;
+    const kept = lastCall.before.tableBonuses?.length ?? 0;
+    const now = game.tableBonuses ?? [];
+    const refund = now.slice(kept).filter((b) => b.paid);
+    if (refund.length) setTotals((t) => t.map((v, i) => v - refund.reduce((sum, b) => sum + b.deltas[i], 0)));
+    const next = retractClaim(lastCall.before, lastCall.decisions, HUMAN);
+    next.tableBonuses = next.tableBonuses?.map((b, i) => (i < kept ? { ...b, paid: now[i]?.paid ?? b.paid } : b));
+    paidBonuses.current.keys = new Set([...paidBonuses.current.keys].filter((k) => Number(k) < kept));
+    advance(next);
   };
 
   const me = game.players[HUMAN];
@@ -972,6 +999,11 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
                 </>
               ) : (
                 <>
+                  {canRetract && (
+                    <button type="button" className="play-call is-pass" onClick={retract} aria-label="嗌錯 - take back your call and pay 5 to each">
+                      嗌錯
+                    </button>
+                  )}
                   {canSelfDraw && (
                     <button type="button" className="play-call is-win is-long" onClick={() => doTurn({ kind: "selfDraw" })}>
                       自摸

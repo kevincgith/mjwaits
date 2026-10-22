@@ -124,7 +124,7 @@ export interface GameState {
   // the table has already paid it - so a reload can't pay it twice.
   diceBonus?: { name: string; deltas: number[]; paid: boolean };
   // Bonuses paid at the table during the hand - flowers (花 / 草 / 花草 /
-  // 八仙過海, 7搶1 / 1搶7, see flowerBonus), 暗槓 and 追 - in the order they
+  // 八仙過海, 7搶1 / 1搶7, see flowerBonus), 暗槓, 追 and 嗌錯 - in the order they
   // came, each marked once the table has paid it.
   tableBonuses?: TableBonus[];
   // The run of the same tile discarded seat after seat with no call between,
@@ -134,7 +134,7 @@ export interface GameState {
 
 export interface TableBonus {
   seat: number;
-  name: "花" | "草" | "花草" | "八仙過海" | "7搶1" | "1搶7" | "暗槓" | "追";
+  name: "花" | "草" | "花草" | "八仙過海" | "7搶1" | "1搶7" | "暗槓" | "追" | "嗌錯";
   deltas: number[];
   paid: boolean;
 }
@@ -624,6 +624,20 @@ const WIND_CHARS = ["", "東", "南", "西", "北"];
 // counted from seat 0, who deals first in every round.
 export function roundLabel(s: GameState): string {
   return `${WIND_CHARS[s.roundWind]}圈${WIND_CHARS[s.dealer + 1]}局`;
+}
+
+// 嗌錯: a player takes back a chow, pung or kong they've just called. The
+// discard is resolved again from `before` (its claims phase) as if they'd
+// passed, and they pay this to each of the others.
+export const WRONG_CALL_PENALTY = 5;
+
+export function retractClaim(before: GameState, decisions: (Claim | null)[], seat: number): GameState {
+  const passed = decisions.slice();
+  passed[seat] = null;
+  const s = resolveClaims(before, passed);
+  (s.tableBonuses ??= []).push({ seat, name: "嗌錯", deltas: collectFromEach(seat, -WRONG_CALL_PENALTY), paid: false });
+  s.log.push(`Seat ${seat} took back a call (嗌錯)`);
+  return s;
 }
 
 export function resolveClaims(state: GameState, decisions: (Claim | null)[]): GameState {

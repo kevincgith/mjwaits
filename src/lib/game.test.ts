@@ -22,6 +22,7 @@ import {
   dealHand,
   flowerBonus,
   flowerRobbery,
+  retractClaim,
   fullWall,
   kongOptions,
   SEATS,
@@ -370,6 +371,23 @@ describe("追", () => {
     s = applyTurnMove(s, { kind: "concealedKong", tile: parseHand("1m")[0] });
     s = throwAround(s, [2, 3], "7z");
     expect(s.tableBonuses?.filter((b) => b.name === "追")).toEqual([{ seat: 3, name: "追", deltas: [5, 5, 5, -15], paid: false }]);
+  });
+});
+
+describe("嗌錯", () => {
+  it("takes back a call: the discard plays on as if passed, and the caller pays 5 to each", () => {
+    const s0 = { ...newGame(), tableBonuses: undefined };
+    s0.players[0].hand = parseHand("12345m111222333t55b");
+    s0.players[1].hand = parseHand("46m111222333t12345b");
+    const before = applyTurnMove({ ...s0, phase: { kind: "turn", seat: 0, drawn: null, replacement: null } }, { kind: "discard", tile: parseHand("5m")[0] });
+    const [four, six] = parseHand("46m");
+    const decisions: Parameters<typeof resolveClaims>[1] = [null, { kind: "chow", tiles: [four, six] }, null, null];
+    expect(resolveClaims(before, decisions).players[1].melds).toHaveLength(1);
+    const s = retractClaim(before, decisions, 1);
+    expect(s.players[1].melds).toHaveLength(0);
+    expect(s.players[0].discards.at(-1)).toEqual(parseHand("5m")[0]);
+    expect(s.phase.kind === "turn" && s.phase.seat).toBe(1);
+    expect(s.tableBonuses?.filter((b) => b.name === "嗌錯")).toEqual([{ seat: 1, name: "嗌錯", deltas: [5, -15, 5, 5], paid: false }]);
   });
 });
 

@@ -435,6 +435,9 @@ held upright is asked to turn sideways.
 - **暗槓:** each concealed kong collects 5 from each other player as it's declared.
 - **追:** four players in a row throw the same tile, with no call between - the
   fourth pays each of the others 5 for an honour (東南西北中發白), 10 for a suited tile.
+- **嗌錯:** after calling a chow, pung or kong, a **嗌錯** button takes the call back
+  until you discard: the discard plays on as if you'd passed, and you pay 5 to each
+  player.
 - **聽:** whenever your hand is ready, the bottom band shows each tile you're waiting on and
   how many of it are still unseen (struck through when none are left).
 - **Look:** menus, sheets and the result card share the table's dark lacquer and gold, so
