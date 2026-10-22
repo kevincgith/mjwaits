@@ -299,9 +299,9 @@ export const LADDERS: Ladder[] = [
     kind: "windows",
     rungs: [
       ["consecutive-triplet-pair"],
-      ["small-three-consecutive-triplets", "big-three-consecutive-triplets"],
-      ["small-four-consecutive-triplets", "big-four-consecutive-triplets"],
-      ["small-five-consecutive-triplets", "big-five-consecutive-triplets"],
+      ["big-three-consecutive-triplets", "small-three-consecutive-triplets"],
+      ["big-four-consecutive-triplets", "small-four-consecutive-triplets"],
+      ["big-five-consecutive-triplets", "small-five-consecutive-triplets"],
       ["small-six-consecutive-triplets"],
     ],
   },

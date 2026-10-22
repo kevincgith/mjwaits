@@ -105,8 +105,20 @@ function valueSummary(id: string, rule: PatternRule): string {
   if (!isRuleOn(rule)) return "off";
   const value = PATTERN_CATALOG[id].value;
   if (value.kind === "table") return (rule.table ?? []).slice(1).join("/");
-  if (value.kind === "streak") return `${rule.first ?? value.first} +${rule.tai}`;
+  if (value.kind === "streak") return `${rule.first ?? value.first}, +${rule.tai} each 連莊`;
   return String(rule.tai);
+}
+
+// Sets as comparable text: keys sorted, save times left out - so "would
+// Save change anything" doesn't trip on key order or a fresh timestamp.
+function canonical(sets: readonly RuleSet[]): string {
+  const sorted = (v: unknown): unknown =>
+    Array.isArray(v)
+      ? v.map(sorted)
+      : v && typeof v === "object"
+        ? Object.fromEntries(Object.keys(v).filter((k) => k !== "updated").sort().map((k) => [k, sorted((v as Record<string, unknown>)[k])]))
+        : v;
+  return JSON.stringify(sorted(sets));
 }
 
 // Which set the sheet is editing: the house list (read-only - editing it
@@ -162,6 +174,8 @@ export function TaiRulesSheet({
   const [sharing, setSharing] = useState(false);
   const [notice, setNotice] = useState<{ text: string; bad?: boolean } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmReset, setConfirmReset] = useState(false);
+  const [confirmClose, setConfirmClose] = useState(false);
   const [printing, setPrinting] = useState(false);
   const [advanced, setAdvanced] = useState(engine === "legacy");
   const importRef = useRef<HTMLInputElement>(null);
@@ -175,6 +189,8 @@ export function TaiRulesSheet({
 
   // Editing the house list starts a new set from it ("My rules"), selected.
   const edit = (update: (prev: TaiRules) => TaiRules) => {
+    setConfirmReset(false);
+    setConfirmClose(false);
     if (selected === null) {
       const id = newSetId();
       setSets((prev) => [...prev, { id, name: uniqueName(prev, "My rules"), diff: { v: 1 }, updated: Date.now() }]);
@@ -216,6 +232,7 @@ export function TaiRulesSheet({
   const pick = (id: Selected) => {
     setSelected(id);
     setConfirmDelete(false);
+    setConfirmReset(false);
     setNotice(null);
   };
   const addSet = (setName: string, rules: TaiRules) => {
@@ -242,6 +259,12 @@ export function TaiRulesSheet({
       const named = s.name.trim() ? s.name.trim() : uniqueName(sets, "My rules", s.id);
       return rules ? { ...s, name: named, diff: diffOf(rules), updated: Date.now() } : { ...s, name: named };
     });
+  // Anything Save would change: an edited, added, renamed or deleted set, or
+  // the engine. Picking another set isn't a change (Save & use switches).
+  const unsaved = () => draftEngine !== engine || !!incoming || canonical(finalSets()) !== canonical(store.sets);
+  // Closing (✕, Escape, a tap outside) asks first rather than silently
+  // dropping edits.
+  const close = () => (unsaved() ? setConfirmClose(true) : onClose());
   const download = (fileSets: RuleSet[], fileName: string) => {
     const url = URL.createObjectURL(new Blob([exportFile(fileSets)], { type: "application/json" }));
     const a = document.createElement("a");
@@ -375,18 +398,40 @@ export function TaiRulesSheet({
                 ? `In use: ${inUseName}`
                 : `In use: ${inUseName} · Save to switch`
         }
-        onClose={onClose}
+        onClose={close}
         actions={
-          <>
-            <button type="button" className="sc-secondary" onClick={() => setDrafts((prev) => (selected === null ? prev : { ...prev, [selected]: structuredClone(DEFAULT_TAI_RULES) }))} disabled={changed === 0}>
-              Reset
-            </button>
-            <button type="button" className="sc-primary" onClick={() => onSave({ v: 1, active: selected, sets: finalSets() }, draftEngine)}>
-              {selected === store.active && !incoming ? "Save" : "Save & use"}
-            </button>
-          </>
+          confirmClose ? (
+            <>
+              <button type="button" className="sc-secondary" onClick={() => setConfirmClose(false)}>
+                Keep editing
+              </button>
+              <button type="button" className="sc-danger" onClick={onClose}>
+                Discard changes
+              </button>
+            </>
+          ) : (
+            <>
+              {/* Resets the whole set to the house list - so it asks first. */}
+              <button
+                type="button"
+                className={confirmReset ? "sc-danger" : "sc-secondary"}
+                disabled={changed === 0}
+                onClick={() => {
+                  if (!confirmReset) return setConfirmReset(true);
+                  setDrafts((prev) => (selected === null ? prev : { ...prev, [selected]: structuredClone(DEFAULT_TAI_RULES) }));
+                  setConfirmReset(false);
+                }}
+              >
+                {confirmReset ? `Reset ${changed} change${changed === 1 ? "" : "s"}?` : "Reset all"}
+              </button>
+              <button type="button" className="sc-primary" onClick={() => onSave({ v: 1, active: selected, sets: finalSets() }, draftEngine)}>
+                {selected === store.active && !incoming ? "Save" : "Save & use"}
+              </button>
+            </>
+          )
         }
       >
+        {confirmClose && <div className="tr-notice is-warning">These changes aren't saved yet. Keep editing to save them, or discard them.</div>}
         {corrupt && !incoming && <div className="tr-notice">Your saved rule sets couldn't be read, so these are the house rules.</div>}
         {legacy && (
           <div className="tr-notice is-warning">Scoring with the original built-in engine, so rule sets don't apply. Switch back under Advanced, at the bottom.</div>
@@ -452,12 +497,10 @@ export function TaiRulesSheet({
           {notice && <div className={`tr-notice${notice.bad ? " is-warning" : ""}`}>{notice.text}</div>}
         </div>
 
-        <div className={`tr-preview${savedTotal !== null && draftTotal !== null && savedTotal !== draftTotal ? " is-changed" : ""}`} aria-live="polite">
-          {savedTotal === null || draftTotal === null ? (
-            <span className="tr-preview-empty">Enter a complete hand to see its total under this set.</span>
-          ) : (
-            <>
-              <span className="tr-preview-label">This hand</span>
+        {/* Only with a hand to score - an empty box is just in the way. */}
+        {savedTotal !== null && draftTotal !== null && (
+        <div className={`tr-preview${savedTotal !== draftTotal ? " is-changed" : ""}`} aria-live="polite">
+          <span className="tr-preview-label">This hand</span>
               <span className="tr-preview-totals">
                 {savedTotal !== draftTotal && (
                   <>
@@ -467,13 +510,13 @@ export function TaiRulesSheet({
                 )}
                 <strong>{draftTotal}</strong> tai
               </span>
-            </>
-          )}
         </div>
+        )}
 
+        {(changes.length > 0 || selectedSet) && (
         <div className="sc-settings-group">
           <div className="tr-changes-head">
-            <span className="sc-settings-title">{changes.length > 0 ? "Changes from the house rules" : "Same as the house rules"}</span>
+            <span className="sc-settings-title">{changes.length > 0 ? "Changes from the house rules" : "No changes from the house rules yet"}</span>
             {changes.length > 0 && (
               <button type="button" className="tr-link" onClick={() => setSharing(true)}>
                 Share
@@ -501,6 +544,7 @@ export function TaiRulesSheet({
             </div>
           )}
         </div>
+        )}
 
         <div className="tr-body">
           <div className="tr-filter">
@@ -696,9 +740,15 @@ function PatternRow({
               <span className="tr-unit">{rule.tai === 0 ? "off" : value.kind === "per" ? "each" : ""}</span>
             </span>
           ) : (
-            <button type="button" className="tr-value-summary" onClick={onExpand}>
-              {valueSummary(id, rule)}
-            </button>
+            <span className="tr-value">
+              <button type="button" className="tr-value-summary" onClick={onExpand} aria-label={`${zh}: ${valueSummary(id, rule)} - edit`}>
+                {valueSummary(id, rule)}
+                <span className="tr-value-more" aria-hidden="true">
+                  ›
+                </span>
+              </button>
+              <span className="tr-unit" />
+            </span>
           )}
         </span>
       </div>
@@ -855,8 +905,9 @@ function PatternDetails({
         <div className="tr-chips">
           {viaLadder.length === 0 && rule.replaces.length === 0 && <span className="tr-none">Nothing - stacks with everything</span>}
           {viaLadder.map((other) => (
-            <span key={other} className="tr-chip is-static is-ladder" title="Lower on its ladder - change with the ladder's switch">
+            <span key={other} className="tr-chip is-static is-ladder">
               {shortName(other)}
+              <span className="tr-chip-tag">tier</span>
             </span>
           ))}
           {rule.replaces.map((other) => (
@@ -887,6 +938,7 @@ function PatternDetails({
             </optgroup>
           </select>
         </div>
+        {viaLadder.length > 0 && <div className="tr-chips-note">"tier": a lower tier of its family - it follows the family's "only the highest counts" switch, not this list.</div>}
       </div>
 
       <div className="tr-detail">
@@ -918,6 +970,7 @@ function PatternDetails({
         </div>
       )}
 
+      {shapes.length > 1 && (
       <div className="tr-detail">
         <div className="tr-detail-label">Counts on</div>
         <div className="tr-chips">
@@ -937,6 +990,7 @@ function PatternDetails({
           })}
         </div>
       </div>
+      )}
 
       {changed && (
         <button type="button" className="sc-secondary tr-reset" onClick={onReset}>
