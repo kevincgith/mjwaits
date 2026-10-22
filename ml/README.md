@@ -28,6 +28,24 @@ ml/.venv/bin/python ml/train.py --data ml/data/run1 --out ml/runs/bc1 --epochs 6
 npm run ml-eval -- --model ml/runs/bc1 --bots ml:grandmaster,grandmaster,basic,gambler --walls 64
 ```
 
+### The long run
+
+```bash
+ml/ctl.sh start ml/runs/tile1 32000   # in the background, kept awake
+ml/ctl.sh pause                       # freeze where it is - no CPU, nothing lost
+ml/ctl.sh resume
+ml/ctl.sh stop                        # start again later resumes from the last finished step
+ml/ctl.sh status
+```
+
+`ml/long.sh` does one DAgger round (the network plays, the rule bots label
+its positions, a fresh network trains on both), then self-play rounds
+forever: PPO on 32,000 hands of the best network so far, scored over 2,048
+arena hands, kept only if it beats the best. Self-play runs in 1,000-hand
+chunks, each its own Node process, retried if one crashes. The log is
+`ml/runs/long.log`; models, logs and arena tables are copied to iCloud Drive
+(`mjwaits-ml/`) after every step.
+
 Data, environments and model runs are git-ignored (`ml/data`, `ml/.venv`,
 `ml/runs`); they're regenerated from the commands above.
 
