@@ -141,7 +141,7 @@ def masked_log_softmax(logits, mask):
 
 
 def rl(args):
-    manifest, obs, mask, meta, extra = load(args.data)
+    manifest, obs, mask, meta, extra = load_many(args.data)
     if extra is None:
         raise SystemExit("--rl needs self-play data (scripts/ml-selfplay.ts writes extra-*.f32)")
     n, O = obs.shape
