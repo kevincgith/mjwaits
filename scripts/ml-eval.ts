@@ -11,7 +11,7 @@
 // and each seat's finishing places are reported too: 1st-place rate, average
 // place, and the day's utility at that goal (match.ts).
 
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import * as ort from "onnxruntime-web/wasm";
 import { BASELINE, emptyStats, formatArena, type ArenaResult, type BotStats } from "../src/lib/arena";
 import { botClaimFor, botSurrenders, botTurnMoveFor, profileById, seededRng, type BotProfile, type Rng } from "../src/lib/bots";
@@ -99,6 +99,8 @@ for (let w = 0; w < walls; w += session) {
         }
       }
       hands++;
+      // How far through, for the training dashboard.
+      if (hands % 8 === 0) writeFileSync(`${modelDir}/arena.progress`, `${hands} ${walls * SEATS}`);
       if (s.phase.kind !== "over") break;
       current = afterHand(current, s);
       const r = s.phase.result;

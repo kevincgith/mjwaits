@@ -131,6 +131,21 @@ td.num, th.num { text-align: right; }
 .page-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 22px; }
 .page-head h1 { margin-right: auto; }
 .chart-title { font-size: 15px; margin: 0 0 4px; font-weight: 650; }
+.pace { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 8px; font-size: 13px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.pace b { color: var(--text-primary); font-weight: 600; }
+.insights { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 8px; }
+.insights li { display: flex; gap: 10px; align-items: baseline; font-size: 13.5px; }
+.insights li::before { content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted); transform: translateY(-1px); }
+.insights li.good::before { background: var(--good); }
+.insights li.warn::before { background: var(--warn); }
+.insights .tone { flex: none; font-size: 11px; font-weight: 600; width: 46px; color: var(--text-muted); }
+.insights li.good .tone { color: var(--good); }
+.insights li.warn .tone { color: var(--warn); }
+tr.me td { font-weight: 650; }
+tr.me td:first-child::after { content: " ← network"; font-weight: 400; color: var(--text-muted); font-size: 11px; }
+.three { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+.mini { font-size: 12px; }
+@media (max-width: 760px) { .three { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
@@ -183,7 +198,12 @@ function section(key) {
         <div class="stages" data-f="stages"></div>
         <div class="bar"><div data-f="bar" style="width:0"></div></div>
         <div class="sub" data-f="stepNote"></div>
+        <div class="pace" data-f="pace"></div>
       </div>
+    </div>
+    <div class="card" style="margin-bottom:12px">
+      <h2>Insights</h2>
+      <ul class="insights" data-f="insights"></ul>
     </div>
     <div class="card">
       <div class="chart-title" data-f="metric"></div>
@@ -191,12 +211,24 @@ function section(key) {
       <div class="legend"><span><i class="sw-dot"></i>Step score</span><span><i class="sw-line"></i>Best so far</span></div>
       <div class="chart-wrap"><svg data-f="chart" role="img"></svg><div class="tip" data-f="tip"></div></div>
     </div>
-    <div class="two">
+    <div class="three">
       <div class="card">
-        <h2>Steps</h2>
-        <table><thead><tr><th>Step</th><th>Finished</th><th class="num">Score</th><th></th></tr></thead><tbody data-f="rows"></tbody></table>
+        <h2>Best network vs the table</h2>
+        <div class="sub" data-f="tableNote">The arena game it was scored on, every seat.</div>
+        <table class="mini"><thead data-f="tableHead"></thead><tbody data-f="table"></tbody></table>
       </div>
       <div class="card">
+        <h2 data-f="trainTitle">Training</h2>
+        <div class="sub" data-f="trainNote"></div>
+        <table class="mini"><thead data-f="trainHead"></thead><tbody data-f="train"></tbody></table>
+      </div>
+    </div>
+    <div class="card" style="margin-top:12px">
+      <h2>Steps</h2>
+      <table class="mini"><thead data-f="rowsHead"></thead><tbody data-f="rows"></tbody></table>
+    </div>
+    <div class="two">
+      <div class="card" style="grid-column: 1 / -1">
         <h2>Log</h2>
         <div class="log" data-f="log"></div>
       </div>
@@ -253,7 +285,7 @@ function renderChart(svg, tip, scores) {
   svg.querySelectorAll(".hit").forEach((c) => {
     c.addEventListener("mouseenter", () => {
       const i = +c.dataset.i, s = scores[i];
-      tip.innerHTML = `<b>${esc(s.label)}</b> · ${s.at}<br>${s.desc ? esc(s.desc) + "<br>" : ""}Score <b>${fmt(s.score)}</b>${s.first != null ? ` · 1st on <b>${s.first}%</b> of days` : ""}${s.best ? " · new best" : ""}<br>Best so far <b>${fmt(best[i])}</b>`;
+      tip.innerHTML = `<b>${esc(s.label)}</b> · ${s.at}<br>${s.desc ? esc(s.desc) + "<br>" : ""}Score <b>${fmt(s.score)}</b>${s.arena && s.arena.first != null ? ` · 1st on <b>${s.arena.first}%</b> of days` : ""}${s.arena ? `<br>Wins ${s.arena.win}% · deals in ${s.arena.dealin}%` : ""}${s.best ? " · new best" : ""}<br>Best so far <b>${fmt(best[i])}</b>`;
       tip.style.display = "block";
       const cx = +c.getAttribute("cx"), cy = +c.getAttribute("cy");
       tip.style.left = Math.min(Math.max(cx - tip.offsetWidth / 2, 0), W - tip.offsetWidth) + "px";
@@ -277,13 +309,14 @@ function renderRun(r) {
   const st = r.state || {};
   const scores = r.scores || [];
   f("best").textContent = st.best_score && st.best ? fmt(+st.best_score) : "–";
-  f("bestName").textContent = st.best ? `${st.bestLabel} (${st.best.split("/").pop()})` + (st.bestFirst != null ? ` · 1st on ${st.bestFirst}% of days` : "") : "not yet";
+  f("bestName").textContent = st.best ? `${st.bestLabel} (${st.best.split("/").pop()})` : "not yet";
   f("secondLabel").textContent = r.key === "perHand" ? "Starting score (rule-bot copy)" : "1st-place rate (best)";
   if (r.key === "perHand") {
     f("second").textContent = scores.length ? fmt(scores[0].score) : "–";
     f("secondSub").textContent = "net tai / hand vs rule bots";
   } else {
-    f("second").textContent = st.bestFirst != null ? st.bestFirst + "%" : "–";
+    const me = r.table && r.table.me;
+    f("second").textContent = me && me.first != null ? me.first.toFixed(1) + "%" : "–";
     f("secondSub").textContent = "of 64-hand match days won (25% = even)";
   }
   const rounds = scores.filter((x) => /(long|matchday-round)-\d+$/.test(x.name)).length;
@@ -297,38 +330,63 @@ function renderRun(r) {
   f("stepTitle").textContent = step ? step.title : "–";
   const idx = !step ? -1 : { "self-play": 0, training: 1, scoring: 2 }[step.stage];
   f("stages").innerHTML = step ? step.stages.map((n, i) => `<div class="stage ${i < idx ? "done" : i === Math.min(idx, step.stages.length - 1) ? "now" : ""}">${n}</div>`).join("") : "";
-  const hasChunks = step && step.data;
+  const hasChunks = step && step.data && !step.flat;
   f("chunksLabel").style.visibility = f("chunks").style.visibility = hasChunks ? "visible" : "hidden";
-  let frac = 0, note = "";
+  if (hasChunks) f("chunks").textContent = `${step.chunksDone} / ${step.chunks}`;
+  let note = "", pace = "";
+  const p = step && step.progress;
   if (step) {
-    const training = step.stage === "training" && step.epochs;
-    if (hasChunks && step.stage === "self-play") {
-      frac = step.chunksDone / step.chunks;
-      note = `${(step.chunksDone * 1000).toLocaleString()} of ${step.hands.toLocaleString()} hands played`;
-    } else if (training) {
-      frac = step.epoch / step.epochs;
-      note = `Training: epoch ${step.epoch} of ${step.epochs} done` + (step.epoch ? ` · about ${Math.round(step.epochSecs / step.epoch / 60)} min per epoch` : "");
-    } else if (step.stage === "training") {
-      note = "Training";
-    } else if (step.stage === "scoring") {
-      frac = 1;
-      note = "Scoring on the arena hands";
-    } else {
-      note = "Playing (no progress count for this step)";
-    }
+    if (p && p.unit === "hands") note = `${Math.round(p.done).toLocaleString()} of ${p.total.toLocaleString()} hands played`;
+    else if (p && p.unit === "training") note = `Training: epoch ${step.epochLive.epoch} of ${step.epochLive.of}, ${Math.round(p.frac * 100)}% of all epochs done`;
+    else if (p && p.unit === "arena hands") note = `Scoring: ${p.done.toLocaleString()} of ${p.total.toLocaleString()} arena hands`;
+    else if (step.stage === "training") note = "Training (progress shows once the trainer reports it)";
+    else if (step.stage === "scoring") note = "Scoring on the arena hands";
+    else note = "Starting";
     note += ` · step started ${step.since}` + (step.chunkFails ? ` · ${step.chunkFails} chunk crash${step.chunkFails > 1 ? "es" : ""} retried` : "");
-    f("chunks").textContent = `${step.chunksDone} / ${step.chunks}`;
+    if (p) {
+      const bits = [`<span>Progress <b>${(p.frac * 100).toFixed(1)}%</b></span>`];
+      if (p.perMin != null && p.unit !== "training") bits.push(`<span>Pace <b>${Math.round(p.perMin).toLocaleString()}</b> ${p.unit}/min</span>`);
+      if (p.unit === "training" && step.epochLive) bits.push(`<span>Training time <b>${Math.round(step.epochLive.secs / 60)} min</b></span>`);
+      bits.push(`<span>Finishes in <b>${p.eta || (r.run === "paused" ? "– (paused)" : "measuring…")}</b></span>`);
+      pace = bits.join("");
+    } else if (r.run === "paused") pace = "<span><b>Paused</b> - nothing is running</span>";
   }
-  f("bar").style.width = Math.round(frac * 100) + "%";
+  f("bar").style.width = Math.round((p ? p.frac : step && step.stage === "scoring" ? 1 : 0) * 100) + "%";
   f("stepNote").textContent = note;
+  f("pace").innerHTML = pace;
+
+  f("insights").innerHTML = (r.insights || []).length
+    ? r.insights.map((i) => `<li class="${i.tone}"><span class="tone">${i.tone === "good" ? "Good" : i.tone === "warn" ? "Watch" : "Note"}</span><span>${esc(i.text)}</span></li>`).join("")
+    : `<li><span class="tone">Note</span><span>Insights appear once the first networks are scored.</span></li>`;
+
+  const t = r.table;
+  const md = r.key === "matchDay";
+  f("tableHead").innerHTML = `<tr><th>Seat</th><th class="num">Tai/hand</th><th class="num">Win</th><th class="num">Deal-in</th><th class="num">Avg win</th>${md ? '<th class="num">1st</th><th class="num">Place</th>' : '<th class="num">Avg loss</th>'}</tr>`;
+  f("table").innerHTML = t && t.rows.length
+    ? t.rows.map((x) => `<tr class="${x.net_model ? "me" : ""}"><td>${esc(x.name.replace(" (net)", ""))}</td><td class="num">${fmt(x.net)}</td><td class="num">${x.win.toFixed(1)}%</td><td class="num">${x.dealin.toFixed(1)}%</td><td class="num">${x.avgwin.toFixed(0)}</td>${md ? `<td class="num">${x.first != null ? x.first.toFixed(0) + "%" : "–"}</td><td class="num">${x.place != null ? x.place.toFixed(2) : "–"}</td>` : `<td class="num">${x.avgloss.toFixed(0)}</td>`}</tr>`).join("")
+    : `<tr><td colspan="7" class="empty">No scored network yet</td></tr>`;
+  f("tableNote").textContent = t ? `${st.bestLabel || "Best"}: the arena table it was scored on (${md ? "64-hand match days, goal 0.5" : "2,048 hands"}).` : "";
+
+  const tr = r.training;
+  const isRl = tr && tr.epochs.some((e) => e.policy != null);
+  f("trainTitle").textContent = tr ? `Training · ${tr.of}${tr.current ? " (now)" : " (last finished)"}` : "Training";
+  f("trainNote").textContent = !tr ? "No training finished yet." : isRl ? `PPO on ${tr.decisions || "?"} self-play decisions. Policy: the change in play; KL: how far from where the round started (kept small on purpose); value: how well it predicts results.` : "Copying: how often it picks the move the rule bot picked, on held-out decisions (turns and claims).";
+  f("trainHead").innerHTML = !tr ? "" : isRl ? `<tr><th>Epoch</th><th class="num">Time</th><th class="num">Policy</th><th class="num">KL</th><th class="num">Value</th></tr>` : `<tr><th>Epoch</th><th class="num">Time</th><th class="num">Accuracy</th><th class="num">Turns</th><th class="num">Claims</th></tr>`;
+  f("train").innerHTML = !tr ? "" : tr.epochs.length
+    ? tr.epochs.map((e) => isRl ? `<tr><td>${e.epoch}/${e.of}</td><td class="num">${Math.round(e.secs / 60)} min</td><td class="num">${e.policy >= 0 ? "+" : ""}${e.policy.toFixed(4)}</td><td class="num">${e.kl.toFixed(4)}</td><td class="num">${e.value.toFixed(3)}</td></tr>` : `<tr><td>${e.epoch}/${e.of}</td><td class="num">${Math.round(e.secs / 60)} min</td><td class="num">${(e.acc * 100).toFixed(1)}%</td><td class="num">${(e.accTurn * 100).toFixed(1)}%</td><td class="num">${(e.accClaim * 100).toFixed(1)}%</td></tr>`).join("")
+    : `<tr><td colspan="5" class="empty">First epoch in progress</td></tr>`;
 
   f("metric").textContent = r.metric;
   f("metricNote").textContent = r.metricNote;
   f("chart").setAttribute("aria-label", `${r.key}: ${r.metric} per training step`);
   renderChart(f("chart"), f("tip"), scores);
+  f("rowsHead").innerHTML = `<tr><th>Step</th><th>Finished</th><th class="num">Took</th><th class="num">Score</th><th class="num">Win</th><th class="num">Deal-in</th><th class="num">Avg win</th>${md ? '<th class="num">1st</th>' : ""}<th></th></tr>`;
   f("rows").innerHTML = scores.length
-    ? scores.slice().reverse().map((x) => `<tr><td>${esc(x.label)}<div class="sub">${x.name}</div></td><td>${x.at}</td><td class="num">${fmt(x.score)}${x.first != null ? `<div class="sub">1st ${x.first}%</div>` : ""}</td><td>${x.best ? '<span class="tag">new best</span>' : ""}</td></tr>`).join("")
-    : `<tr><td colspan="4" class="empty">No scores yet</td></tr>`;
+    ? scores.slice().reverse().map((x) => {
+        const a = x.arena || {};
+        return `<tr><td>${esc(x.label)}<div class="sub">${x.name}</div></td><td>${x.at}</td><td class="num">${x.mins != null ? (x.mins >= 60 ? `${Math.floor(x.mins / 60)} h ${String(Math.round(x.mins % 60)).padStart(2, "0")}` : `${Math.round(x.mins)} min`) : "–"}</td><td class="num">${fmt(x.score)}</td><td class="num">${a.win != null ? a.win.toFixed(1) + "%" : "–"}</td><td class="num">${a.dealin != null ? a.dealin.toFixed(1) + "%" : "–"}</td><td class="num">${a.avgwin != null ? a.avgwin.toFixed(0) : "–"}</td>${md ? `<td class="num">${a.first != null ? a.first.toFixed(0) + "%" : "–"}</td>` : ""}<td>${x.best ? '<span class="tag">new best</span>' : ""}</td></tr>`;
+      }).join("")
+    : `<tr><td colspan="9" class="empty">No scores yet</td></tr>`;
   const logEl = f("log");
   const atBottom = logEl.scrollTop + logEl.clientHeight >= logEl.scrollHeight - 4;
   logEl.innerHTML = (r.log || []).map((e) => `<b>${e.at}</b> ${esc(e.msg)}`).join("\n");
@@ -347,7 +405,7 @@ async function refresh() {
   catch { $("foot").textContent = "Dashboard server not reachable"; }
 }
 refresh();
-setInterval(refresh, 5000);
+setInterval(refresh, 2000);
 addEventListener("resize", () => last && last.runs.forEach((r) => renderChart(section(r.key).querySelector('[data-f="chart"]'), section(r.key).querySelector('[data-f="tip"]'), r.scores || [])));
 </script>
 </body>

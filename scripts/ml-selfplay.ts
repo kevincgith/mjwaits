@@ -51,7 +51,8 @@ function shuffledWall(rng: Rng): WallTile[] {
 // `rules`: rule bots to seat at two of the four places at every table (random
 // seats, random picks), so the network doesn't only learn to beat itself.
 // Their decisions aren't recorded.
-async function selfPlay(modelDir: string, hands: number, session: number, temperature: number, seed: number, rules: BotProfile[], teacher: boolean) {
+// `onHand`: told the hands played so far after each one (for the dashboard).
+async function selfPlay(modelDir: string, hands: number, session: number, temperature: number, seed: number, rules: BotProfile[], teacher: boolean, onHand?: (played: number) => void) {
   const meta = JSON.parse(readFileSync(`${modelDir}/meta.json`, "utf8")) as { styles: string[]; obsSize: number; numActions: number };
   if ((meta.obsSize !== OBS_SIZE && meta.obsSize !== OBS_SIZE_MATCH) || meta.numActions !== NUM_ACTIONS) throw new Error("Model was trained on a different encoding");
   const matchDays = meta.obsSize === OBS_SIZE_MATCH;
@@ -151,6 +152,7 @@ async function selfPlay(modelDir: string, hands: number, session: number, temper
       }
       for (let seat = 0; seat < SEATS; seat++) if (ruleSeat[seat]) for (const holder of botSurrenders(s, seat, ruleSeat[seat]!)) s = surrender(s, holder, seat);
       s = nextHand(s, shuffledWall(rng));
+      onHand?.(played + 1);
     }
     for (let i = sessionStart; i < metaOut.length / META; i++) metaOut[i * META + 3] = sessionNet[metaOut[i * META + 5]];
     // Where the match ended, for every hand of it (NaN if it was cut short).
@@ -226,7 +228,7 @@ if (isMainThread) {
   console.log(`${total.toLocaleString()} self-play decisions from ${hands} hands in ${((Date.now() - t0) / 1000).toFixed(0)}s -> ${out}`);
 } else {
   const { model, hands, session, temperature, seed, out, w, rules, teacher } = workerData as { model: string; hands: number; session: number; temperature: number; seed: number; out: string; w: number; rules: string; teacher: boolean };
-  const { obsOut, maskOut, metaOut, extraOut, handRows, links, matchDays, styles } = await selfPlay(model, hands, session, temperature, seed, rules ? rules.split(",").map(profileById) : [], teacher);
+  const { obsOut, maskOut, metaOut, extraOut, handRows, links, matchDays, styles } = await selfPlay(model, hands, session, temperature, seed, rules ? rules.split(",").map(profileById) : [], teacher, (n) => writeFileSync(`${out}/progress-${w}`, String(n)));
   const n = obsOut.length;
   const size = matchDays ? OBS_SIZE_MATCH : OBS_SIZE;
   const O = new Uint8Array(n * size);

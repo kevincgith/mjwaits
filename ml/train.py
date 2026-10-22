@@ -247,6 +247,18 @@ def load_model(run_dir, O, A, styles, width, device):
     return model.to(device)
 
 
+_last_progress = [0.0]
+
+
+def progress(epoch, epochs, b, n, t0):
+    """A line every few seconds for the training dashboard: how far through
+    the current epoch, and the time so far."""
+    now = time.time()
+    if now - _last_progress[0] >= 5:
+        _last_progress[0] = now
+        print(f"progress epoch {epoch + 1}/{epochs} {b}/{n} {now - t0:.0f}s", flush=True)
+
+
 def masked_log_softmax(logits, mask):
     return F.log_softmax(logits.masked_fill(mask < 0.5, -1e9), dim=-1)
 
@@ -278,6 +290,7 @@ def rl(args):
         rng.shuffle(idx)
         stats = []
         for b in range(0, n, args.batch):
+            progress(epoch, args.epochs, b, n, t0)
             ix = idx[b : b + args.batch]
             o = torch.from_numpy(obs[ix].astype(np.float32)).to(device)
             m = torch.from_numpy(mask[ix].astype(np.float32)).to(device)
@@ -446,6 +459,7 @@ def main():
     for epoch in range(args.epochs):
         rng.shuffle(train)
         for b in range(0, len(train), args.batch):
+            progress(epoch, args.epochs, b, len(train), t0)
             o, s, m, a, v, _ = batch(train[b : b + args.batch])
             logits, value = model(o, s, m)
             loss = F.cross_entropy(logits, a) + args.value_weight * F.smooth_l1_loss(value, v)

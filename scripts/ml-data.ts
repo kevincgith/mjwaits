@@ -53,7 +53,8 @@ interface Sample {
 
 export const HAND_ROW = 15;
 
-function record(hands: number, session: number, seed: number, matchDays: boolean) {
+// `onHand`: told the hands played so far after each one (for the dashboard).
+function record(hands: number, session: number, seed: number, matchDays: boolean, onHand?: (played: number) => void) {
   const rng = seededRng(seed);
   const obs: Uint8Array[] = [];
   const masks: Uint8Array[] = [];
@@ -110,6 +111,7 @@ function record(hands: number, session: number, seed: number, matchDays: boolean
       let between = s;
       for (let seat = 0; seat < SEATS; seat++) for (const holder of botSurrenders(between, seat, bots[seat])) between = surrender(between, holder, seat);
       s = nextHand(between, shuffledWall(rng));
+      onHand?.(played + 1);
     }
     // Each decision also learns how the whole session went for its seat.
     for (let i = sessionStart; i < meta.length / META; i++) meta[i * META + 3] = sessionNet[meta[i * META + 5]];
@@ -171,7 +173,7 @@ if (isMainThread) {
   console.log(`${total.toLocaleString()} decisions from ${hands} hands in ${((Date.now() - t0) / 1000).toFixed(0)}s -> ${out}`);
 } else {
   const { hands, session, seed, out, w, matchDays } = workerData as { hands: number; session: number; seed: number; out: string; w: number; matchDays: boolean };
-  const { obs, masks, meta, handRows, links } = record(hands, session, seed, matchDays);
+  const { obs, masks, meta, handRows, links } = record(hands, session, seed, matchDays, (n) => writeFileSync(`${out}/progress-${w}`, String(n)));
   const n = obs.length;
   const size = matchDays ? OBS_SIZE_MATCH : OBS_SIZE;
   const O = new Uint8Array(n * size);
