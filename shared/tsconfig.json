@@ -22,5 +22,5 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["engine", "globals.d.ts"]
+  "include": ["engine", "protocol", "globals.d.ts"]
 }

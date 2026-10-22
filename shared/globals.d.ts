@@ -11,3 +11,7 @@ declare const console: {
 declare const performance: { now(): number };
 
 declare function structuredClone<T>(value: T): T;
+
+declare class TextEncoder {
+  encode(input?: string): Uint8Array;
+}

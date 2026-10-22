@@ -3,8 +3,9 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "The rules engine (tiles, tai scoring, the hand engine, score keeping) shared by the web app and the multiplayer Worker. No dependencies, no browser APIs.",
+  "description": "Shared by the web app and the multiplayer Worker: the rules engine (tiles, tai scoring, the hand engine, score keeping) and the multiplayer message protocol. No dependencies, no browser APIs.",
   "exports": {
-    "./engine/*": "./engine/*.ts"
+    "./engine/*": "./engine/*.ts",
+    "./protocol/*": "./protocol/*.ts"
   }
 }
