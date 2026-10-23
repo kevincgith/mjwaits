@@ -6378,7 +6378,9 @@ html.playing body {
 }
 
 .play-felt .play-kong-top {
-  transform: translateZ(var(--play-thick));
+  /* A hair above the middle tile's face, not exactly on it - two surfaces
+     at one depth flicker as the browser can't pick which is in front. */
+  transform: translateZ(calc(var(--play-thick) + 1px));
 }
 
 
