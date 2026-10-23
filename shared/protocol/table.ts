@@ -164,6 +164,7 @@ export interface TableState {
   waitingOn: number[];
   ready: number[];
   auto: number[]; // seats being played for, until their player is back
+  scores: number; // entries in the table's record (GET /tables/<CODE>/scores) - fetch it again when this changes
   last: TableAction | null;
   // This phone's seat (null for someone watching) and its view of the hand.
   you: number | null;

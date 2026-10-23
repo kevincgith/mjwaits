@@ -609,6 +609,11 @@ held upright is asked to turn sideways.
       original efficiency-only bot the Grandmaster scores **+2.4 tai a hand**.
   - The engine is fast enough for this because hand-distance (shanten) results are cached
     per suit shape and the pruning of meld options is linear; together about 4× faster.
+- **戰況** (top left, by 記牌器): the game so far as the Scores tab shows a game - the players
+  best first with 胡·摸·銃 and their trend, the 拉 in play, then 最近 (every hand and bonus),
+  走勢, 局 (the score sheet), 玩家 (each player's stats and analysis) and 牌型. Every hand,
+  bonus (花, 骰, 暗槓, 追, 嗌錯) and 投降 at the table goes into a Scores-tab game as it happens
+  (`shared/engine/playLedger.ts`), kept with the game on this device - online, by the server.
 - **神秘 Mystery** in the Opponents sheet seats a bot that plays as one of the personalities,
   picked at random (again for each new game), without saying which - a plain "?" avatar and
   plain lines.
@@ -634,8 +639,9 @@ and 記牌器 - just with the others' moves coming from the server.
   itself until you're back (*away* / *auto* on the name card). Reopening the app (the table
   stays in the address) puts you straight back in your seat.
 - **Between hands:** the result card, then **Next hand** - the next deal comes when everyone
-  connected is ready. 投降 and 拉 work as here. The host can end the table from the menu;
-  everyone sees the final scores.
+  connected is ready. 投降 and 拉 work as here. **戰況** shows the table's whole record (the
+  server keeps it). The host can end the table from the menu; everyone sees the final scores,
+  and 戰況 for every hand.
 
 ## Dice
 

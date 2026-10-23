@@ -5,6 +5,7 @@
 //
 // No React here; OnlineTable.tsx turns it into a screen.
 
+import type { ScoreGame } from "@mjwaits/shared/engine/ledger";
 import { normalizeRoomCode } from "@mjwaits/shared/protocol/limits";
 import type { TableClientMessage, TableServerMessage, TableState } from "@mjwaits/shared/protocol/table";
 import { HubClient, serverBase, type HubClientOptions } from "./online";
@@ -25,6 +26,14 @@ export async function tableInfo(code: string, base = serverBase(), fetcher: type
   if (res.status === 404) return null;
   if (!res.ok) throw new Error("Couldn't reach the server");
   return (await res.json()) as TableInfo;
+}
+
+// The table's record - its hands as a Scores-tab game - or null before the first deal.
+export async function tableScores(code: string, base = serverBase(), fetcher: typeof fetch = fetch): Promise<ScoreGame | null> {
+  const res = await fetcher(`${base}/tables/${code}/scores`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error("Couldn't reach the server");
+  return (await res.json()) as ScoreGame;
 }
 
 // The link that opens the app at this table.

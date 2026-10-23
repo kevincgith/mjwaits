@@ -209,6 +209,7 @@ scoreboard; rooms left from it are cleared when they wake.)
 | `GET /rooms/<CODE>` | `200 {"code","phase","players"}`, or `404` |
 | `GET /rooms/<CODE>/ws` | the WebSocket (`Upgrade: websocket`); `404` for no such room, `503` when it's full |
 | `POST /tables`, `GET /tables/<CODE>`, `GET /tables/<CODE>/ws` | the same for an online table (`{"code","phase","seats"}`) |
+| `GET /tables/<CODE>/scores` | the table's record as a Scores-tab game, or `404` before the first deal |
 | `GET /health` | `ok` |
 
 The room routes need an allowed `Origin` (else `403`). Codes are 5 characters from
@@ -308,3 +309,6 @@ tokens, limits and errors as a live room). The table (`src/table.ts`) is authori
   carry across hands: each hand's payments, and dice and flower bonuses as they're paid.
 - **Storage:** the whole table is one SQLite row, written once per event however far the hand
   moved, plus the hub's clock row.
+- **The record:** every hand, bonus and 投降 also goes into the table's record - a Scores-tab
+  game (`shared/engine/playLedger.ts`), a row per entry, a few a hand. `TableState.scores` counts
+  them; phones fetch the record from `GET /tables/<CODE>/scores` when it changes, for 戰況.

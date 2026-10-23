@@ -77,6 +77,9 @@ import {
 import { scoreView, type ResultView } from "@mjwaits/shared/engine/view";
 import { MYSTERY_BOT, type TableClientMessage, type TableState } from "@mjwaits/shared/protocol/table";
 import { BLANK, seatState } from "./lib/seatState";
+import { withEvents, type ScoreGame } from "@mjwaits/shared/engine/ledger";
+import { carriedOver, newPlayLedger, playEvents, uniqueNames } from "@mjwaits/shared/engine/playLedger";
+import { PlayScores } from "./scores/playScores";
 import { loadLearnedModel, type LearnedModel } from "./lib/ml/browser";
 import { learnedClaim, learnedTurnMove, type LearnedBot } from "./lib/ml/policy";
 import { claimDecisionAction, encodeObservation, legalActions, turnMoveAction } from "./lib/ml/encode";
@@ -163,6 +166,8 @@ interface Saved {
   record?: boolean;
   // The bot ids at seats 1-3.
   opponents?: string[];
+  // The game so far as a Scores-tab game (playLedger.ts), for 戰況.
+  ledger?: ScoreGame;
 }
 
 function loadSaved(): Saved | null {
@@ -412,6 +417,8 @@ function PlayDie({ value, rolling, index }: { value: number; rolling: boolean; i
 // Playing at an online table: what the server sent, and how to answer it.
 export interface OnlinePlay {
   table: TableState;
+  // The table's record, as the server keeps it (null until it's arrived).
+  scores: ScoreGame | null;
   send: (msg: Exclude<TableClientMessage, { t: "hello" }>) => void;
   host: boolean;
 }
@@ -519,6 +526,38 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
     saved?.opponents?.length === 3 && saved.opponents.every(knownBot) ? saved.opponents : DEFAULT_OPPONENTS
   );
   const [opponentsOpen, setOpponentsOpen] = useState(false);
+  // The game so far as a Scores-tab game: started with the game (its first
+  // deal's dice and flowers in it), or - a game saved before this was kept -
+  // carried over from the totals.
+  const playerNames = (ids: string[]) => uniqueNames(["You", ...ids.map((id) => englishName(botById(id)))]);
+  const [localLedger, setLedger] = useState<ScoreGame>(() => {
+    if (saved?.ledger) return saved.ledger;
+    if (saved) return carriedOver(playerNames(opponents), localGame.dealer, localTotals);
+    const fresh = newPlayLedger(playerNames(opponents), localGame.dealer);
+    return { ...fresh, events: playEvents(null, localGame, fresh.seats) };
+  });
+  // Every change to the game adds what it scored (a hand's end, a bonus, 投降).
+  const ledgerFrom = useRef(localGame);
+  useEffect(() => {
+    const before = ledgerFrom.current;
+    ledgerFrom.current = localGame;
+    if (before === localGame) return;
+    const evs = playEvents(before, localGame, localLedger.seats);
+    if (evs.length) setLedger((l) => withEvents(l, evs));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [localGame]);
+  // New opponents mid-game: a new seating in the record.
+  useEffect(() => {
+    const names = playerNames(opponents);
+    setLedger((l) => {
+      const lastSwap = l.events.findLast((e) => e.t === "swap");
+      const seated = lastSwap?.t === "swap" ? lastSwap.seats : l.seats;
+      return names.join() === seated.join() ? l : withEvents(l, [{ t: "swap", at: Date.now(), seats: names }]);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [opponents]);
+  const [scoresOpen, setScoresOpen] = useState(false);
+  const ledger = online ? online.scores : localLedger;
   // 投降 on the result card takes two taps; this is the holder armed.
   const [surrenderArmed, setSurrenderArmed] = useState<string | null>(null);
   // Online: the table's bots (a mystery one as a mystery - the server never
@@ -585,8 +624,8 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
 
   // This device's own game (never an online one).
   useEffect(
-    () => save({ game: localGame, totals: localTotals, hint, timer, opponents, speed, oneTap, record, multiWin }),
-    [localGame, localTotals, hint, timer, opponents, speed, oneTap, record, multiWin]
+    () => save({ game: localGame, totals: localTotals, hint, timer, opponents, speed, oneTap, record, multiWin, ledger: localLedger }),
+    [localGame, localTotals, hint, timer, opponents, speed, oneTap, record, multiWin, localLedger]
   );
 
   // The menu closes on a tap anywhere outside it, and disarms New game.
@@ -928,7 +967,11 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
     setMenuOpen(false);
     setSelected(null);
     setResultHidden(false);
-    setGame(newGame());
+    const g = newGame();
+    ledgerFrom.current = g;
+    const fresh = newPlayLedger(playerNames(opponents), g.dealer);
+    setLedger({ ...fresh, events: playEvents(null, g, fresh.seats) });
+    setGame(g);
   };
 
   // The pond whose newest tile is up for claiming (not when robbing a kong:
@@ -1058,6 +1101,11 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
           <button type="button" className="play-icon-button is-text" onClick={() => setTrackerOpen(true)} aria-label="Tile tracker" title="記牌器 - tiles you haven't seen">
             記牌器
           </button>
+          {ledger && (
+            <button type="button" className="play-icon-button is-text" onClick={() => setScoresOpen(true)} aria-label="Scores so far" title="戰況 - the scores so far, 拉, every hand and each player's stats">
+              戰況
+            </button>
+          )}
           {menuOpen && online && (
             <div className="play-menu">
               <p className="play-menu-note">
@@ -1425,6 +1473,7 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
         )}
 
         {trackerOpen && <TileTracker game={game} onClose={() => setTrackerOpen(false)} />}
+        {scoresOpen && ledger && <PlayScores game={ledger} onClose={() => setScoresOpen(false)} />}
         {opponentsOpen && <OpponentsSheet opponents={opponents} learned={model?.styles ?? null} onChange={setOpponents} onClose={() => setOpponentsOpen(false)} />}
 
         {result && !resultHidden && (

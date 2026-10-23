@@ -202,28 +202,6 @@ export function RecentSheet({
 }) {
   const lastIndex = game.events.length - 1;
   const undoLabel = lastIndex >= 0 ? describeEvent(game.events[lastIndex], state, lastIndex) : "";
-  const rows = game.events
-    .map((ev, i) => ({ ev, i }))
-    .reverse()
-    .map(({ ev, i }) => {
-      let row: ReactNode = null;
-      if (ev.t === "win" || ev.t === "draw") {
-        const h = handAt(state, i);
-        if (h) row = <HandRow h={h} store={store} />;
-      } else {
-        const step = stepAt(state, i);
-        row = <EventRow ev={ev} deltas={step?.deltas ?? {}} />;
-      }
-      const by = entryBy?.(i);
-      return (
-        row && (
-          <div key={i} className="sc-recent-row" role="button" tabIndex={0} onClick={() => onPick(i)} onKeyDown={(e) => e.key === "Enter" && onPick(i)}>
-            {row}
-            {by && <span className="sc-entry-by">{by}</span>}
-          </div>
-        )
-      );
-    });
   return (
     <Sheet
       title="最近 Recent"
@@ -245,10 +223,47 @@ export function RecentSheet({
       {game.events.length === 0 ? (
         <p className="sc-empty">Tap the winner on the table to record a hand, or 流局 for a draw.</p>
       ) : (
-        <div className="sc-list sc-list-hands">{rows}</div>
+        <RecentRows store={store} game={game} state={state} entryBy={entryBy} onPick={onPick} />
       )}
     </Sheet>
   );
+}
+
+// Every entry, newest first: each hand as its row, each 獎罰 and the like as
+// theirs, and who entered it (a live game). `onPick`: tapping one (to fix it).
+export function RecentRows({
+  store,
+  game,
+  state,
+  entryBy,
+  onPick,
+}: {
+  store: ScoreStore;
+  game: ScoreGame;
+  state: ReplayState;
+  entryBy?: (index: number) => string | undefined;
+  onPick?: (index: number) => void;
+}) {
+  const rows = game.events
+    .map((ev, i) => ({ ev, i }))
+    .reverse()
+    .map(({ ev, i }) => {
+      let row: ReactNode = null;
+      if (ev.t === "win" || ev.t === "draw") {
+        const h = handAt(state, i);
+        if (h) row = <HandRow h={h} store={store} />;
+      } else row = <EventRow ev={ev} deltas={stepAt(state, i)?.deltas ?? {}} />;
+      const by = entryBy?.(i);
+      if (!row) return null;
+      const tap = onPick ? { role: "button", tabIndex: 0, onClick: () => onPick(i), onKeyDown: (e: { key: string }) => e.key === "Enter" && onPick(i) } : {};
+      return (
+        <div key={i} className="sc-recent-row" {...tap}>
+          {row}
+          {by && <span className="sc-entry-by">{by}</span>}
+        </div>
+      );
+    });
+  return <div className="sc-list sc-list-hands">{rows}</div>;
 }
 
 // The 食胡 sheet set up as a recorded win was, for fixing it.

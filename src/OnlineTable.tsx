@@ -12,7 +12,9 @@ import { MYSTERY_NAME, profileById } from "@mjwaits/shared/engine/bots";
 import { cleanNickname, normalizeRoomCode } from "@mjwaits/shared/protocol/limits";
 import { MYSTERY_BOT, TABLE_BOTS, TURN_TIMERS, type TableBot, type TableClientMessage, type TableSettings, type TableState } from "@mjwaits/shared/protocol/table";
 import { defaultNickname, type ConnectionStatus } from "./lib/online";
-import { createTable, loadTables, saveTables, TableClient, tableLink, tableToken, withoutTable, withTable } from "./lib/onlineTable";
+import { createTable, loadTables, saveTables, TableClient, tableLink, tableScores, tableToken, withoutTable, withTable } from "./lib/onlineTable";
+import type { ScoreGame } from "@mjwaits/shared/engine/ledger";
+import { PlayScores } from "./scores/playScores";
 import { PlayPanel } from "./PlayPanel";
 import "./OnlineTable.css";
 
@@ -41,6 +43,20 @@ export function OnlineTable({ initialCode, onExit }: { initialCode: string | nul
   const [toast, setToast] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const client = useRef<TableClient | null>(null);
+  // The table's record (for 戰況), fetched again whenever it grows.
+  const [scores, setScores] = useState<ScoreGame | null>(null);
+  const scoreCount = table?.scores ?? 0;
+  const started = !!table && table.phase !== "lobby";
+  useEffect(() => {
+    if (!code || !started) return;
+    let live = true;
+    tableScores(code)
+      .then((g) => live && setScores(g))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [code, scoreCount, started]);
 
   const say = (text: string) => {
     setToast(text);
@@ -135,7 +151,7 @@ export function OnlineTable({ initialCode, onExit }: { initialCode: string | nul
   if (code && table?.phase === "playing" && table.view && me)
     return (
       <>
-        <PlayPanel onExit={leave} online={{ table, send, host: me.host }} />
+        <PlayPanel onExit={leave} online={{ table, send, host: me.host, scores }} />
         {status !== "open" && <div className="ot-status">{status === "closed" ? "Disconnected" : "Reconnecting…"}</div>}
         {toast && (
           <div className="ot-toast" role="status">
@@ -169,7 +185,7 @@ export function OnlineTable({ initialCode, onExit }: { initialCode: string | nul
       ) : table.phase === "lobby" ? (
         <Lobby table={table} me={me} send={send} onLeave={leave} />
       ) : table.phase === "ended" ? (
-        <Ended table={table} onLeave={leave} />
+        <Ended table={table} scores={scores} onLeave={leave} />
       ) : null}
       {code && table && status !== "open" && <div className="ot-status">{status === "closed" ? "Disconnected" : "Reconnecting…"}</div>}
       {toast && (
@@ -395,8 +411,9 @@ function Seg({ on, disabled, onClick, children }: { on: boolean; disabled: boole
 
 // ---- The table's done -----------------------------------------------------------------------
 
-function Ended({ table, onLeave }: { table: TableState; onLeave: () => void }) {
+function Ended({ table, scores, onLeave }: { table: TableState; scores: ScoreGame | null; onLeave: () => void }) {
   const order = [0, 1, 2, 3].sort((a, b) => table.totals[b] - table.totals[a]);
+  const [open, setOpen] = useState(false);
   return (
     <div className="ot-page">
       <header className="ot-head">
@@ -411,9 +428,15 @@ function Ended({ table, onLeave }: { table: TableState; onLeave: () => void }) {
           </li>
         ))}
       </ol>
+      {scores && (
+        <button type="button" className="ot-button" onClick={() => setOpen(true)}>
+          戰況 · every hand and each player's stats
+        </button>
+      )}
       <button type="button" className="ot-button is-primary" onClick={onLeave}>
         Done
       </button>
+      {open && scores && <PlayScores game={scores} onClose={() => setOpen(false)} />}
     </div>
   );
 }

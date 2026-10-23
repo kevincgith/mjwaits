@@ -5,6 +5,7 @@
 import { env, runDurableObjectAlarm, runInDurableObject, SELF } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import type { Tile } from "@mjwaits/shared/engine/mahjong";
+import { replay, type ScoreGame } from "@mjwaits/shared/engine/ledger";
 import { PROTOCOL_VERSION } from "@mjwaits/shared/protocol/limits";
 import type { TableServerMessage, TableState } from "@mjwaits/shared/protocol/table";
 import type { Table } from "../src/table";
@@ -252,6 +253,16 @@ describe("playing", () => {
     host.send({ t: "start" });
     const s = await playUntil([host], (s) => s.hand >= 3);
     expect(s.totals.reduce((a, b) => a + b, 0)).toBe(0);
+    // The table's record (for 戰況) replays to the same totals.
+    const res = await SELF.fetch(`${BASE}/tables/${s.code}/scores`, { headers: { Origin: ORIGIN } });
+    expect(res.status).toBe(200);
+    const record = (await res.json()) as ScoreGame;
+    expect(record.seats).toEqual(["Kevin", "快手 Speedster", "鐵壁 Iron Wall", "街坊 Casual"]);
+    const latest = host.latest!;
+    expect(record.events.length).toBe(latest.scores);
+    const r = replay(record);
+    expect(record.seats.map((p) => r.totals[p])).toEqual(latest.totals);
+    expect(r.hands.length).toBe(latest.hand - 1);
     expect(host.errors).toEqual([]);
     expectNoLeaks(host.states);
   });
