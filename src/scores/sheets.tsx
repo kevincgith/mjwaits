@@ -464,7 +464,16 @@ export function WinSheet({
           </button>
         )}
       </div>
-      <Keypad max={state.settings.scoreCap} value={entries[focus]?.tai ?? ""} onChange={(v) => setEntries((prev) => prev.map((e, i) => (i === focus ? { ...e, tai: v } : e)))} />
+      <Keypad
+        max={state.settings.scoreCap}
+        value={entries[focus]?.tai ?? ""}
+        onChange={(v) => {
+          setEntries((prev) => prev.map((e, i) => (i === focus ? { ...e, tai: v } : e)));
+          // Tai typed before anyone's picked: take it as 自摸 (one winner), saving
+          // a tap - a tap on whoever dealt in still turns it into 食胡.
+          if (v && from === -1 && multi === 1) setFrom(null);
+        }}
+      />
 
       {/* What each payer owes, as a small table: a row per payer, with room
           for three (a 自摸) always kept, so nothing moves as the hand is
