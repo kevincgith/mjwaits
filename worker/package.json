@@ -8,7 +8,8 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "test:dev": "node integration/table.ts",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p integration"
   },
   "dependencies": {
     "@mjwaits/shared": "*"

@@ -75,6 +75,23 @@ the Origin check and limits, expiry, sharing and following a game, who may recor
 at once, stopping, and a room evicted from memory mid-game carrying on. The protocol's
 validation - including that the game check has exactly the ledger's fields - is tested in
 `shared/protocol/protocol.test.ts`; the app's connection and GameSync in `src/lib/online.test.ts`.
+The online table's tests (`test/table.test.ts`) play whole hands over sockets - one person with
+three bots, four people with someone watching - checking every message each phone is sent for
+anything its seat shouldn't see, and cover stale and illegal moves, the turn timer, bots paced
+by the alarm, a dropped seat held then played for, and that each event writes at most two rows.
+
+### Against `wrangler dev`
+
+```bash
+npm run test:dev --prefix worker
+```
+
+starts `wrangler dev` (on port 8799, with fresh local storage and no bot pauses), then four
+phones and someone watching play a whole hand over real WebSockets - one phone dropping
+mid-hand and coming back with its token - and two people and two bots play until someone
+wins. It checks every message for leaks, that another site's page is turned away, that
+everyone sees the same result, and that the payments add up; then stops the server. Add
+`-- --url http://127.0.0.1:8787` to run it against a `wrangler dev` you started yourself.
 
 ## Deploying
 

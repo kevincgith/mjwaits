@@ -1,0 +1,10 @@
+{
+  // The integration test runs in Node, not the Workers runtime.
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "../../node_modules/.tmp/tsconfig.integration.tsbuildinfo",
+    "lib": ["ES2023", "DOM"],
+    "types": ["node"]
+  },
+  "include": ["."]
+}
