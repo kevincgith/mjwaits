@@ -65,7 +65,7 @@ export function useChipMoves(game: ScoreGame, state: ReplayState) {
 // their arrows. 彩池 is the Jackpot pile.
 // 提示自動隱藏 for a banner: closed for you (as its × or Got it would) after
 // that many seconds, a bar along its foot running down. null: until closed.
-export function AutoHide({ seconds, onHide, children }: { seconds: number | null; onHide: () => void; children: ReactNode }) {
+export function AutoHide({ seconds, onHide, className, children }: { seconds: number | null; onHide: () => void; className?: string; children: ReactNode }) {
   const hide = useRef(onHide);
   hide.current = onHide;
   useEffect(() => {
@@ -74,9 +74,30 @@ export function AutoHide({ seconds, onHide, children }: { seconds: number | null
     return () => window.clearTimeout(timer);
   }, [seconds]);
   return (
-    <div className="sc-autohide">
+    <div className={`sc-autohide${className ? ` ${className}` : ""}`}>
       {children}
       {seconds !== null && <span className="sc-timer" style={{ animationDuration: `${seconds}s` }} aria-hidden="true" />}
+    </div>
+  );
+}
+
+// A tip in the top-right corner beside the top seat (where 籌碼 shows), so
+// the board doesn't move: title and × on top, the words, then its action.
+function TipCard({ title, onClose, action, children }: { title: string; onClose: () => void; action?: { label: string; onClick: () => void }; children: ReactNode }) {
+  return (
+    <div className="sc-tipcard" role="status">
+      <span className="sc-tipcard-head">
+        <strong className="sc-tipcard-title">{title}</strong>
+        <button type="button" className="sc-tipcard-close" onClick={onClose} aria-label="Dismiss">
+          {Icons.close}
+        </button>
+      </span>
+      <span className="sc-tipcard-text">{children}</span>
+      {action && (
+        <button type="button" className="sc-tipcard-action" onClick={action.onClick}>
+          {action.label}
+        </button>
+      )}
     </div>
   );
 }
@@ -630,6 +651,70 @@ export function Board({
     ...(live ? [{ label: "線上", icon: Icons.live, onClick: live.onOpen, on: live.on }] : []),
   ];
 
+  // One tip at a time, the most pressing first: 投降 (a choice to make now),
+  // 執位 (re-seat), 備份 (save a file), then the footer's one-off tip. The
+  // rest wait their turn - and all of them while 籌碼 has the corner. Each
+  // goes by itself after 提示自動隱藏.
+  const surrenderTip = (() => {
+    const at = state.settings.surrenderPrompt;
+    if (at === null) return null;
+    // 投降提示: someone's been 拉'd the set number of times in a row (3 by
+    // default). Only a prompt - whether 投降 is allowed is house rule.
+    const due = state.lahs.filter((l) => l.count >= at && !surrenderSeen.includes(`${l.holder}>${l.pulled}@${l.count}`)).sort((a, b) => b.value - a.value);
+    if (due.length === 0) return null;
+    const l = due[0];
+    const seen = () => setSurrenderSeen((was) => [...was, ...due.map((d) => `${d.holder}>${d.pulled}@${d.count}`)]);
+    return (
+      <AutoHide key={`surrender-${l.holder}>${l.pulled}@${l.count}`} className="is-corner" seconds={state.settings.tipsAutoHide} onHide={seen}>
+        <TipCard title="投降" onClose={seen} action={{ label: "拉踢", onClick: () => setSheet({ kind: "lah" }) }}>
+          {l.pulled} can surrender to {l.holder} - 拉 {l.count} times
+          {due.length > 1 && ` (+${due.length - 1} more)`}
+        </TipCard>
+      </AutoHide>
+    );
+  })();
+  const sinceBackup = handsSinceBackup(game, backedUpAt);
+  const snoozeBackup = () => setBackupNudgeAt(sinceBackup + BACKUP_NUDGE_HANDS);
+  const tip =
+    surrenderTip ??
+    // 執位: 北風北 is done.
+    ((state.seatChangeDue && !reminderHidden && (
+      <AutoHide key="seat" className="is-corner" seconds={state.settings.tipsAutoHide} onHide={() => setReminderHidden(true)}>
+        <TipCard title="執位" onClose={() => setReminderHidden(true)} action={{ label: "座位", onClick: () => setSheet({ kind: "seats" }) }}>
+          北風北 done - time to re-seat
+        </TipCard>
+      </AutoHide>
+    )) ||
+      // 備份: every 16 hands without a backup file - the scores only live
+      // on this phone. Save from here, or dismiss for 16 more.
+      (sinceBackup >= backupNudgeAt && (
+        <AutoHide key="backup" className="is-corner" seconds={state.settings.tipsAutoHide} onHide={snoozeBackup}>
+          <TipCard
+            title="備份"
+            onClose={snoozeBackup}
+            action={{
+              label: "儲存 Save",
+              onClick: () => {
+                setBackedUpAt(saveBackupFile(store));
+                setBackupNudgeAt(BACKUP_NUDGE_HANDS);
+                flash("Backup saved");
+              },
+            }}
+          >
+            {sinceBackup} hands since the last backup
+          </TipCard>
+        </AutoHide>
+      )) ||
+      // The footer explained, once - its numbers have no labels.
+      (!footerKeySeen && state.hands.length > 0 && state.settings.showTally && (
+        <AutoHide key="tip" className="is-corner" seconds={state.settings.tipsAutoHide} onHide={seeFooterKey}>
+          <TipCard title="提示" onClose={seeFooterKey} action={{ label: "Got it", onClick: seeFooterKey }}>
+            Card footer: <strong className="is-win">胡</strong> · <strong className="is-self">摸</strong> · <strong className="is-dealin">銃</strong> counts. ± for 特別獎罰.
+          </TipCard>
+        </AutoHide>
+      )) ||
+      null);
+
   return (
     <>
       <div className="sc-fit" ref={fitRef} style={fitHeight !== null ? { height: fitHeight } : undefined}>
@@ -648,91 +733,6 @@ export function Board({
         </div>
       </div>
 
-      {/* One banner at a time, the most pressing first: 投降 (a choice to make
-          now), 執位 (re-seat), 備份 (save a file), then the footer's one-off
-          tip. The rest wait their turn. Each goes by itself after 提示自動隱藏. */}
-      {[
-        // 投降提示: someone's been 拉'd the set number of times in a row (3 by
-        // default). Only a prompt - whether 投降 is allowed is house rule.
-        (() => {
-        const at = state.settings.surrenderPrompt;
-        if (at === null) return null;
-        const due = state.lahs.filter((l) => l.count >= at && !surrenderSeen.includes(`${l.holder}>${l.pulled}@${l.count}`)).sort((a, b) => b.value - a.value);
-        if (due.length === 0) return null;
-        const l = due[0];
-        const seen = () => setSurrenderSeen((was) => [...was, ...due.map((d) => `${d.holder}>${d.pulled}@${d.count}`)]);
-        return (
-          <AutoHide key={`surrender-${l.holder}>${l.pulled}@${l.count}`} seconds={state.settings.tipsAutoHide} onHide={seen}>
-          <div className="sc-banner is-surrender" role="status">
-            <span>
-              <strong>投降</strong> · {l.pulled} has been 拉 {l.count} times by {l.holder} ({fmt(l.value)}) - surrender is available
-              {due.length > 1 && ` (+${due.length - 1} more)`}
-            </span>
-            <button type="button" className="sc-banner-action" onClick={() => setSheet({ kind: "lah" })}>
-              拉踢
-            </button>
-            <button type="button" className="sc-icon-button" onClick={seen} aria-label="Dismiss">
-              {Icons.close}
-            </button>
-          </div>
-          </AutoHide>
-        );
-      })(),
-        // 執位: 北風北 is done.
-        state.seatChangeDue && !reminderHidden && (
-        <AutoHide key="seat" seconds={state.settings.tipsAutoHide} onHide={() => setReminderHidden(true)}>
-        <div className="sc-banner" role="status">
-          <span>
-            <strong>執位</strong> · 北風北 done — re-seat with 座位
-          </span>
-          <button type="button" className="sc-banner-action" onClick={() => setSheet({ kind: "seats" })}>
-            座位
-          </button>
-          <button type="button" className="sc-icon-button" onClick={() => setReminderHidden(true)} aria-label="Dismiss">
-            {Icons.close}
-          </button>
-        </div>
-        </AutoHide>
-      ),
-        // 備份: every 16 hands without a backup file - the scores only live
-        // on this phone. Save from here, or dismiss for 16 more.
-        handsSinceBackup(game, backedUpAt) >= backupNudgeAt && (
-        <AutoHide key="backup" seconds={state.settings.tipsAutoHide} onHide={() => setBackupNudgeAt(handsSinceBackup(game, backedUpAt) + BACKUP_NUDGE_HANDS)}>
-        <div className="sc-banner is-backup" role="status">
-          <span>
-            <strong>備份</strong> · {handsSinceBackup(game, backedUpAt)} hands since your last backup
-          </span>
-          <button
-            type="button"
-            className="sc-banner-action"
-            onClick={() => {
-              setBackedUpAt(saveBackupFile(store));
-              setBackupNudgeAt(BACKUP_NUDGE_HANDS);
-              flash("Backup saved");
-            }}
-          >
-            儲存 Save
-          </button>
-          <button type="button" className="sc-icon-button" onClick={() => setBackupNudgeAt(handsSinceBackup(game, backedUpAt) + BACKUP_NUDGE_HANDS)} aria-label="Dismiss">
-            {Icons.close}
-          </button>
-        </div>
-        </AutoHide>
-      ),
-        // The footer explained, once - its numbers have no labels.
-        !footerKeySeen && state.hands.length > 0 && state.settings.showTally && (
-        <AutoHide key="tip" seconds={state.settings.tipsAutoHide} onHide={seeFooterKey}>
-        <div className="sc-banner is-tip" role="status">
-          <span>
-            Card footer: <strong className="is-win">胡</strong> · <strong className="is-self">摸</strong> · <strong className="is-dealin">銃</strong> - wins, self-draws, deal-ins. ± opens 特別獎罰.
-          </span>
-          <button type="button" className="sc-banner-action" onClick={seeFooterKey}>
-            Got it
-          </button>
-        </div>
-        </AutoHide>
-      ),
-      ].find(Boolean) ?? null}
 
       <div className="sc-board">
         {/* Where the game is - round and deal, the 局 count, and 第幾圈 /
@@ -761,8 +761,10 @@ export function Board({
         </div>
         {/* 籌碼: who hands whom chips for what just went in (or back out) - in
             the other corner beside the top seat. A tap once they're handed over. */}
-        {chips.moves && state.settings.chipsPrompt && (
+        {chips.moves && state.settings.chipsPrompt ? (
           <ChipsCard key={chips.moves.at} {...chips.moves} autoHide={state.settings.tipsAutoHide} onDone={chips.dismiss} />
+        ) : (
+          tip
         )}
         {state.seats.map((player, seat) => {
           const total = state.totals[player] ?? 0;

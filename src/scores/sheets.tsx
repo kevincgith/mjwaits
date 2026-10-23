@@ -321,7 +321,8 @@ export function WinSheet({
     ...(e.seat === patternsFor && initial?.patterns.length ? { patterns: initial.patterns, ...(initial.rules ? { rules: initial.rules } : {}) } : {}),
   }));
   const fromValid = from === null ? multi === 1 : from >= 0;
-  const complete = fromValid && entries.every((e) => e.tai !== "");
+  // Every winner needs a tai above 0.
+  const complete = fromValid && entries.every((e) => Number(e.tai) > 0);
   const pairs = fromValid ? previewWin(state, winners, from) : [];
   // 反雪 rides on the payer's line: the 自摸 after a 雙響/三響 they won.
   const fanXue = fromValid ? previewFanXue(state, winners, from) : [];
@@ -464,7 +465,16 @@ export function WinSheet({
           </button>
         )}
       </div>
-      <Keypad max={state.settings.scoreCap} value={entries[focus]?.tai ?? ""} onChange={(v) => setEntries((prev) => prev.map((e, i) => (i === focus ? { ...e, tai: v } : e)))} />
+      <Keypad
+        max={state.settings.scoreCap}
+        value={entries[focus]?.tai ?? ""}
+        onChange={(v) => {
+          setEntries((prev) => prev.map((e, i) => (i === focus ? { ...e, tai: v } : e)));
+          // Tai typed before anyone's picked: take it as 自摸 (one winner), saving
+          // a tap - a tap on whoever dealt in still turns it into 食胡.
+          if (v && from === -1 && multi === 1) setFrom(null);
+        }}
+      />
 
       {/* What each payer owes, as a small table: a row per payer, with room
           for three (a 自摸) always kept, so nothing moves as the hand is
