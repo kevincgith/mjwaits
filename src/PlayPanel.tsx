@@ -1142,11 +1142,13 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
       <span className="play-badge-wind">{WIND_CHARS[seatWind(seat, game.dealer)]}</span>
       {bots[seat] && <Avatar bot={bots[seat]!} />}
       <span className="play-badge-name">
-        {nameOf(seat)}
-        {seatTag(seat)}
-        {seat === game.dealer && <span className="play-dealer">莊</span>}
-        {game.players[seat].riichi && <span className="play-riichi">叮</span>}
-        {lahChips(seat)}
+        <span className="play-badge-name-text">{nameOf(seat)}</span>
+        <span className="play-badge-chips">
+          {seatTag(seat)}
+          {seat === game.dealer && <span className="play-dealer">莊</span>}
+          {game.players[seat].riichi && <span className="play-riichi">叮</span>}
+          {lahChips(seat)}
+        </span>
         {bubbles[seat] && (
           <span key={bubbles[seat].id} className="play-bubble" role="status">
             {bubbles[seat].text}

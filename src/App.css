@@ -5854,25 +5854,62 @@ html.playing body {
 }
 
 /* The side players' cards stand upright beside their walls, a quarter of
-   the way down - as wide as the name on one line (at least a set width),
-   so a long one (Grandmaster AI) always sits inside its card. */
+   the way down, condensed: wind and avatar side by side, the name under
+   them (one line, the card as wide as it needs), the dealer / 叮 / 拉
+   chips sharing a line beneath, then the total. */
 .play-badge.at-left,
 .play-badge.at-right {
   top: 24%;
-  flex-direction: column;
-  gap: 0.15rem;
-  min-width: 3.4rem;
-  padding: 0.35rem 0.4rem;
-  font-size: 0.68rem;
-  border-radius: 0.8rem;
+  display: grid;
+  grid-template-columns: auto auto;
+  justify-content: center;
+  justify-items: center;
+  gap: 0.12rem 0.18rem;
+  min-width: 3.2rem;
+  padding: 0.25rem 0.3rem;
+  font-size: 0.62rem;
+  border-radius: 0.7rem;
   text-align: center;
+}
+
+.play-badge.at-left > :not(.play-badge-wind, .play-avatar),
+.play-badge.at-right > :not(.play-badge-wind, .play-avatar) {
+  grid-column: 1 / -1;
 }
 
 .play-badge.at-left .play-badge-name,
 .play-badge.at-right .play-badge-name {
-  flex-direction: column;
-  gap: 0.15rem;
-  line-height: 1.15;
+  display: grid;
+  justify-items: center;
+  gap: 0.12rem;
+  line-height: 1.1;
+}
+
+/* Elsewhere the chips just follow the name; in a side card they share a
+   line under it, wrapping within the card's width (never widening it). */
+.play-badge-chips {
+  display: contents;
+}
+
+.play-badge.at-left .play-badge-chips,
+.play-badge.at-right .play-badge-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.12rem;
+  width: 0;
+  min-width: 100%;
+}
+
+.play-badge-chips:empty {
+  display: none;
+}
+
+.play-badge.at-left :is(.play-badge-wind, .play-avatar),
+.play-badge.at-right :is(.play-badge-wind, .play-avatar) {
+  width: 1.15rem;
+  height: 1.15rem;
+  font-size: 0.7rem;
 }
 
 .play-badge.at-left {
