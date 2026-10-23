@@ -7055,7 +7055,7 @@ function ScoringPanel({
         />
         <button
           type="button"
-          className={`toolbar-button${forScores?.scan && handEmpty && !scanActive ? " is-attention" : ""}`}
+          className={`toolbar-button toolbar-scan${forScores?.scan && handEmpty && !scanActive ? " is-attention" : ""}`}
           onClick={() => handScannerRef.current?.trigger()}
           disabled={scanBusy}
         >
@@ -7959,7 +7959,7 @@ function Die({
   return (
     <button
       type="button"
-      className={`die${DIE_RED[value] ? " is-red" : ""}${value === 1 ? " is-one" : ""}`}
+      className={`die${DIE_RED[value] ? " is-red" : ""}${value === 1 ? " is-one" : ""}${value ? "" : " is-unrolled"}`}
       onClick={onBump}
       disabled={disabled}
       aria-label={value ? `Die showing ${value} — tap to change` : "Die not rolled yet — tap to set it"}

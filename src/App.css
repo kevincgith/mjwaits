@@ -3140,6 +3140,23 @@ img.tile-face {
   cursor: pointer;
 }
 
+/* Not rolled yet: a faint "?" rather than a blank face, which looked
+   broken. */
+.die.is-unrolled {
+  position: relative;
+}
+
+.die.is-unrolled::after {
+  content: "?";
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--text-tertiary);
+  font-size: 1.6rem;
+  font-weight: 700;
+}
+
 .die:disabled {
   cursor: default;
 }
@@ -5024,9 +5041,52 @@ img.tile-face {
   }
 }
 
-/* The very narrowest phones (iPhone SE 1st gen, 320px): Photos goes
-   icon-only too, so Scan - the main way in - keeps its label. */
+/* Phone widths (iPhone, 375-393px): with the rules button the toolbar
+   ran past the edge (the tile counter cut off) - Photos goes icon-only, so
+   Scan, the main way in, keeps its label. */
+@media (max-width: 400px) {
+  .toolbar-photos {
+    width: 44px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  /* Photos is icon-only here even at the top - keep its word shut. */
+  .scoring-toolbar .toolbar-photos .toolbar-label {
+    max-width: 0;
+    opacity: 0;
+  }
+
+  .toolbar-photos .toolbar-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+/* The very narrowest phones (iPhone SE 1st gen, 320px): Scan goes icon-only
+   as well, or the counter runs to the screen's edge. */
 @media (max-width: 360px) {
+  .scoring-toolbar .toolbar-scan {
+    width: 44px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .scoring-toolbar .toolbar-scan .toolbar-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
   /* The add-to captions only just fit this narrow - tighter type keeps
      "手牌 Concealed" clear of "門前 Declared". */
   .add-to-caption {
@@ -5038,18 +5098,6 @@ img.tile-face {
   /* 9 picker-size tiles don't fit the 手牌 box this narrow - drop to 8. */
   .panel .hand-card .hand-display:not(.breakdown-groups) {
     grid-template-columns: repeat(8, minmax(0, 1fr));
-  }
-
-  .toolbar-photos {
-    width: 44px;
-    padding: 0;
-    justify-content: center;
-  }
-
-  /* Photos is icon-only here even at the top - keep its word shut. */
-  .scoring-toolbar .toolbar-photos .toolbar-label {
-    max-width: 0;
-    opacity: 0;
   }
 
   /* Scrolled down, the three folded buttons are 40px circles this narrow,
@@ -5065,15 +5113,6 @@ img.tile-face {
     padding: 0;
   }
 
-  .toolbar-photos .toolbar-label {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    margin: -1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-  }
 }
 
 /* ---- Hidden developer sheet (three taps on the logo) ----------------------- */
@@ -5754,7 +5793,7 @@ html.playing body {
   flex-direction: column;
   min-width: 13rem;
   /* A phone held sideways is short: the menu never runs off the screen. */
-  max-height: calc(100dvh - 3.6rem - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  max-height: calc(100dvh - 3.1rem - env(safe-area-inset-top) - env(safe-area-inset-bottom));
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 0.3rem;
@@ -5796,6 +5835,23 @@ html.playing body {
   align-items: center;
   justify-content: space-between;
   gap: 0.8rem;
+}
+
+/* A short screen (a phone on its side): rows packed a little closer, so
+   the whole menu - New game included - shows without scrolling. */
+@media (max-height: 430px) {
+  .play-menu > button {
+    padding-block: 0.4rem;
+  }
+
+  .play-menu-row {
+    padding-block: 0.08rem;
+  }
+
+  .play-menu-seg button {
+    min-height: 1.75rem;
+    padding-block: 0.1rem;
+  }
 }
 
 .play-menu-note {
@@ -6174,6 +6230,9 @@ html.playing body {
   justify-content: center;
   width: 1em;
   margin-left: 0.08em;
+  /* Passes the 3D through to the tile (without it the winning tile was
+     flattened to a picture among the blocks). */
+  transform-style: preserve-3d;
 }
 
 .play-win-tile > .tile-glyph {
@@ -6319,7 +6378,9 @@ html.playing body {
 }
 
 .play-felt .play-kong-top {
-  transform: translateZ(var(--play-thick));
+  /* A hair above the middle tile's face, not exactly on it - two surfaces
+     at one depth flicker as the browser can't pick which is in front. */
+  transform: translateZ(calc(var(--play-thick) + 1px));
 }
 
 
@@ -8128,7 +8189,9 @@ html.playing body {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 1rem;
+  /* Clear of the corner buttons' row at the top (a short screen's card
+     runs that tall), scrolling within if it must. */
+  padding: max(3rem, calc(env(safe-area-inset-top) + 2.6rem)) 1rem 1rem;
   background: rgba(0, 0, 0, 0.35);
 }
 
