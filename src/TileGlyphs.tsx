@@ -8,16 +8,17 @@ import { bonusArtUrl, bonusTileLabel, tileArtUrl, useTileArtUrl, useTileStyle } 
 // A tile's sides, for one drawn as a solid block on a 3D table (the Play
 // tab's felt): four sides and the four rounded corners between them, which
 // its CSS stands up round the face; anywhere else they're hidden.
+// Each rounded corner in three panels (see .tile-side.is-corner).
+const CORNERS = ["nr1", "nr2", "nr3", "nl1", "nl2", "nl3", "fl1", "fl2", "fl3", "fr1", "fr2", "fr3"];
 export const TileSides = () => (
   <>
     <i className="tile-side is-near" />
     <i className="tile-side is-far" />
     <i className="tile-side is-left" />
     <i className="tile-side is-right" />
-    <i className="tile-side is-corner is-near-left" />
-    <i className="tile-side is-corner is-near-right" />
-    <i className="tile-side is-corner is-far-left" />
-    <i className="tile-side is-corner is-far-right" />
+    {CORNERS.map((c) => (
+      <i key={c} className={`tile-side is-corner is-${c}`} />
+    ))}
   </>
 );
 
