@@ -142,14 +142,14 @@ const botDelay = (difficulty: number, afterCall: boolean) => 300 + difficulty * 
 // bot had a call to weigh and passed (a tell, as at a real table).
 const PASS_DELAY_MS = 380;
 const PONDER_DELAY_MS = 900;
-// A seat's line - its tiles, melds and flowers end to end - in tiles. A
-// full hand is 17; a call keeps it the same (three tiles out of the hand,
-// three into the meld), kongs and flowers lengthen it. Past this, the melds
-// and flowers go in front of the hand instead.
+// The far seat's line - its tiles, melds and flowers end to end - in tiles.
+// A full hand is 17; a call keeps it the same (three tiles out of the hand,
+// three into the meld), flowers lengthen it. Past this, the melds and
+// flowers go in front of the hand instead.
 const LINE_FITS = 18;
-const lineLength = (p: GameState["players"][number]) => p.hand.length + p.flowers.length + p.melds.reduce((n, m) => n + m.tiles.length, 0);
+const lineLength = (p: GameState["players"][number]) => p.hand.length + p.flowers.length + p.melds.length * 3;
 // The table's tiles, as a share of your hand's tile size: as big as fits (see fitTable).
-const TILE_SIZE = { min: 0.3, max: 0.7 };
+const TILE_SIZE = { min: 0.3, max: 0.9 };
 // A discard a bot is about to take stays on the table this long first, so
 // everyone sees what was thrown before it goes into the caller's meld.
 const CLAIM_DELAY_MS = 1100;
@@ -219,16 +219,30 @@ function EdgeTiles({ count, side }: { count: number; side: Side }) {
 // `hideConcealed`: a bot's concealed kong lies fully face down - nothing
 // about it shows until the hand is over. Your own shows its two middle
 // tiles, so you can see what you've set aside.
+// A kong is three tiles wide, its fourth stacked on the middle one.
 function Melds({ melds, hideConcealed }: { melds: GameMeld[]; hideConcealed?: boolean }) {
   return (
     <>
-      {melds.map((m, i) => (
-        <span key={i} className="play-meld">
-          {m.tiles.map((t, j) =>
-            m.concealed && (hideConcealed || j === 0 || j === 3) ? <span key={j} className="play-back" /> : <TileGlyphSpan key={j} tile={t} />
-          )}
-        </span>
-      ))}
+      {melds.map((m, i) => {
+        const tile = (j: number) =>
+          m.concealed && (hideConcealed || j === 0 || j === 3) ? <span key={j} className="play-back" /> : <TileGlyphSpan key={j} tile={m.tiles[j]} />;
+        return (
+          <span key={i} className="play-meld">
+            {m.kind === "kong" && m.tiles.length === 4 ? (
+              <>
+                {tile(0)}
+                <span className="play-kong-stack">
+                  {tile(1)}
+                  <span className="play-kong-top">{tile(3)}</span>
+                </span>
+                {tile(2)}
+              </>
+            ) : (
+              m.tiles.map((_, j) => tile(j))
+            )}
+          </span>
+        );
+      })}
     </>
   );
 }
@@ -1119,10 +1133,10 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
     const side = SIDES[seat];
     const p = game.players[seat];
     return (
-      <div className={`play-seat play-seat-${side}${lineLength(p) > LINE_FITS ? " is-front" : ""}`}>
-        {/* Along the seat's edge as its player has them: melds and flowers
-            on their left, then their tiles (the CSS turns it to face them) -
-            or, when that line would run too long, in front of their tiles. */}
+      <div className={`play-seat play-seat-${side}${side !== "top" || lineLength(p) > LINE_FITS ? " is-front" : ""}`}>
+        {/* Melds and flowers in front of a side player's wall, from their
+            left (the CSS turns them to face them); across, on the far
+            player's left along their row - or in front, if that runs long. */}
         <span className="play-seat-side">
           <Flowers flowers={p.flowers} />
           <span className="play-seat-melds">

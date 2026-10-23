@@ -400,13 +400,17 @@ goes back). A full hand of 16-tile mahjong against three bots that run in the br
 out like a commercial 16-tile app. It's a landscape table: it fills the screen, and a phone
 held upright is asked to turn sideways.
 
-- **The table:** a green felt top in a dark wooden rim, tipped away from you in perspective
-  so it narrows toward the far side. Each bot's concealed tiles stand along its edge - jade
-  backs across the top, slanted walls down the sides - with its melds and flowers beside them
-  and its pond out in front of it; their name cards sit flat over the table's corners. Tiles
-  on the felt show their thickness (the ivory body and jade back below the face); in your
-  hand the jade back peeks over the top. You're along the bottom, your melds and flowers
-  inline before your hand and the tile you just drew set apart at the right.
+- **The table:** a green felt top in a dark wooden rim, tipped away from you at one angle,
+  laid out as real tiles would be. Every tile on it is one size - the others' standing tiles,
+  their melds and every pond - as big as fits; those further off look smaller only by
+  perspective. Each side player's tiles stand along their edge, their melds and flowers just
+  in front of them and their discards in rows of six beyond, all turned to face them; a kong
+  is three tiles with the fourth stacked on top. The player across faces you, their melds on
+  their left along their row (in front of it if it runs long). Name cards stand beside the
+  side walls. Tiles lying on the felt are solid blocks, their near edge showing the ivory
+  body and jade back; in your hand the same edge shows along the top. You're along the
+  bottom, your melds and flowers inline before your hand and the tile you just drew set
+  apart at the right.
   A wind compass in the middle shows each seat's wind where that seat sits and lights whoever
   is to act; its read-out is the live tiles left, or the countdown when the timer is on. The
   newest discard carries a gold pin, and while it can be claimed it also shows large in a

@@ -5615,9 +5615,11 @@ html.playing body {
   display: flex;
   align-items: flex-end;
   min-height: 0;
-  padding-top: 2.3rem;
-  /* Seen from a little way back, so the far side of the deep, steeply
-     tipped table (see fitTable) isn't shrunk more than it needs to be. */
+  /* The table runs almost to the top of the screen, with room either side
+     for the side players' name cards, beside their walls. */
+  padding: 1.9rem 3.4rem 0;
+  /* Seen from a little way back, so the far side isn't shrunk more than
+     it needs to be. */
   perspective: 1100px;
   /* A viewpoint a little below the top of the screen, so the standing
      tiles show their faces, not just their tops. */
@@ -5657,7 +5659,7 @@ html.playing body {
     0 0 0 0.45rem #3a2717,
     0 0 0 0.6rem #1c120a,
     0 1.2rem 2.4rem rgba(0, 0, 0, 0.6);
-  transform: rotateX(var(--play-tilt, 38deg));
+  transform: rotateX(var(--play-tilt, 32deg));
   transform-origin: 50% 100%;
 }
 
@@ -5810,14 +5812,35 @@ html.playing body {
   translate: -50% 0;
 }
 
+/* The side players' cards stand upright beside their walls, a third of
+   the way down. */
+.play-badge.at-left,
+.play-badge.at-right {
+  top: 24%;
+  flex-direction: column;
+  gap: 0.15rem;
+  width: 3.4rem;
+  padding: 0.35rem 0.15rem;
+  font-size: 0.68rem;
+  border-radius: 0.8rem;
+  text-align: center;
+  white-space: normal;
+}
+
+.play-badge.at-left .play-badge-name,
+.play-badge.at-right .play-badge-name {
+  flex-direction: column;
+  gap: 0.15rem;
+  line-height: 1.15;
+  overflow-wrap: break-word;
+}
+
 .play-badge.at-left {
-  top: 3rem;
-  left: max(0.7rem, env(safe-area-inset-left));
+  left: max(0.25rem, env(safe-area-inset-left));
 }
 
 .play-badge.at-right {
-  top: 3rem;
-  right: max(0.7rem, env(safe-area-inset-right));
+  right: max(0.25rem, env(safe-area-inset-right));
 }
 
 .play-badge.is-active {
@@ -5972,9 +5995,7 @@ html.playing body {
 
 .play-seat-left,
 .play-seat-right {
-  align-self: center;
-  /* Starts below the name card over the table's far corner. */
-  margin-top: var(--play-small);
+  align-self: start;
 }
 
 /* Each as wide as what's in it (measured for --play-side), against its edge. */
@@ -6038,22 +6059,45 @@ html.playing body {
    length across and its width along (rotating leaves the layout box as it
    was, so the margins make it up), and the edge toward you - the long
    side - is drawn along the face's own x. */
-.play-seat-left :is(.play-meld, .play-flowers) > .tile-glyph,
-.play-seat-right :is(.play-meld, .play-flowers) > .tile-glyph {
+.play-seat-left :is(.play-meld, .play-flowers) .tile-glyph,
+.play-seat-right :is(.play-meld, .play-flowers) .tile-glyph,
+.play-pond-left .play-pond-tile:not(.is-riichi) > .tile-glyph,
+.play-pond-right .play-pond-tile:not(.is-riichi) > .tile-glyph {
   margin: -0.11em 0.11em;
 }
 
-.play-seat-left :is(.play-meld, .play-flowers) > .tile-glyph {
+.play-seat-left :is(.play-meld, .play-flowers) .tile-glyph,
+.play-pond-left .play-pond-tile:not(.is-riichi) > .tile-glyph {
   rotate: 90deg;
 }
 
-.play-seat-right :is(.play-meld, .play-flowers) > .tile-glyph {
+.play-seat-right :is(.play-meld, .play-flowers) .tile-glyph,
+.play-pond-right .play-pond-tile:not(.is-riichi) > .tile-glyph {
   rotate: -90deg;
 }
 
-.play-seat-top :is(.play-meld, .play-flowers) > .tile-glyph {
-  rotate: 180deg;
+/* A kong: three tiles, the fourth stacked on the middle one - a tile's
+   thickness up on the table, lifted a little in your own melds. */
+.play-kong-stack {
+  position: relative;
+  display: inline-flex;
+  transform-style: preserve-3d;
 }
+
+.play-kong-top {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform-style: preserve-3d;
+  transform: translateY(-0.28em);
+}
+
+.play-felt .play-kong-top {
+  transform: translateZ(var(--play-thick));
+}
+
 
 .play-seat-left .play-back,
 .play-seat-right .play-back {
@@ -6249,13 +6293,13 @@ html.playing body {
 .play-pond-slot-left {
   grid-area: lpond;
   justify-self: start;
-  align-self: start;
+  align-self: center;
 }
 
 .play-pond-slot-right {
   grid-area: rpond;
   justify-self: end;
-  align-self: end;
+  align-self: center;
 }
 
 /* Discards in rows, side by side as real tiles lie: each tile's box is a
@@ -6273,13 +6317,38 @@ html.playing body {
   justify-content: center;
 }
 
+/* A side player's discards face them: their rows of six run up and down
+   the screen, the first nearest their wall, each from their left - top to
+   bottom for the left seat, bottom to top for the right. The tile laid
+   sideways for 叮 stands upright among them. */
 .play-pond-left,
 .play-pond-right {
-  max-width: calc(6 * 0.74em);
+  flex-direction: column;
+  height: calc(6 * 0.74em);
+  align-content: flex-start;
 }
 
-.play-pond-left {
-  justify-content: flex-end;
+.play-pond-right {
+  flex-direction: column-reverse;
+  flex-wrap: wrap-reverse;
+}
+
+.play-pond-left .play-pond-tile,
+.play-pond-right .play-pond-tile {
+  margin: -0.025em -0.035em;
+}
+
+.play-pond-left .play-pond-tile.is-riichi,
+.play-pond-right .play-pond-tile.is-riichi {
+  width: auto;
+  height: 1em;
+  align-items: center;
+}
+
+.play-pond-left .play-pond-tile.is-riichi > .tile-glyph,
+.play-pond-right .play-pond-tile.is-riichi > .tile-glyph {
+  rotate: none;
+  translate: none;
 }
 
 .play-pond-tile {
@@ -6812,9 +6881,11 @@ html.playing body {
   transform: rotateX(90deg);
 }
 
-/* Turned a quarter clockwise (the left seat, 叮): the near side is the face's right. */
+/* Turned a quarter clockwise (the left seat, its discards, 叮 across or
+   at your end): the near side is the face's right. */
 .play-felt .play-seat-left .tile-glyph.tile-art::after,
-.play-felt .is-riichi .tile-glyph.tile-art::after {
+.play-felt .play-pond-left .play-pond-tile:not(.is-riichi) .tile-glyph.tile-art::after,
+.play-felt :is(.play-pond-top, .play-pond-bottom) .is-riichi .tile-glyph.tile-art::after {
   left: 0.75em;
   top: 0.043em;
   width: var(--play-thick);
@@ -6825,8 +6896,9 @@ html.playing body {
   transform: rotateY(-90deg);
 }
 
-/* A quarter the other way (the right seat): the face's left. */
-.play-felt .play-seat-right .tile-glyph.tile-art::after {
+/* A quarter the other way (the right seat, its discards): the face's left. */
+.play-felt .play-seat-right .tile-glyph.tile-art::after,
+.play-felt .play-pond-right .play-pond-tile:not(.is-riichi) .tile-glyph.tile-art::after {
   left: calc(0.03em - var(--play-thick));
   top: 0.043em;
   width: var(--play-thick);
@@ -6835,15 +6907,6 @@ html.playing body {
   background: linear-gradient(to left, var(--play-back-edge), var(--play-back) 38%, #7fd98c 46%, var(--play-ivory) 54%, #f2ede0);
   transform-origin: 100% 50%;
   transform: rotateY(90deg);
-}
-
-/* Half round (the far seat): the face's top. */
-.play-felt .play-seat-top .tile-glyph.tile-art::after {
-  top: calc(0.043em - var(--play-thick));
-  border-radius: 0.07em 0.07em 0 0;
-  background: linear-gradient(to top, var(--play-back-edge), var(--play-back) 38%, #7fd98c 46%, var(--play-ivory) 54%, #f2ede0);
-  transform-origin: 50% 100%;
-  transform: rotateX(-90deg);
 }
 
 .play-hand img.tile-face,
