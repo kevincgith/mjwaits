@@ -1443,8 +1443,9 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
             <div className={`play-hand${myTurn ? " is-turn" : ""}`}>
               {(me.melds.length > 0 || me.flowers.length > 0) && (
                 <span className="play-my-melds">
-                  <Melds melds={me.melds} hideConcealed={!seated} />
+                  {/* Flowers always leftmost, then melds, then the hand. */}
                   <Flowers flowers={me.flowers} />
+                  <Melds melds={me.melds} hideConcealed={!seated} />
                 </span>
               )}
               {handTiles.map((t, i) => {
@@ -1580,9 +1581,9 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
                   <div key={w.winner} className="play-result-winner">
                     {result.alsoWon?.length ? <h3 className="play-result-who">{w.winner === HUMAN ? "You" : nameOf(w.winner)}</h3> : null}
                     <div className="play-result-hand">
+                      <Flowers flowers={game.players[w.winner].flowers} />
                       <Melds melds={game.players[w.winner].melds} />
                       <RevealedHand tiles={game.players[w.winner].hand} winningTile={result.tile} />
-                      <Flowers flowers={game.players[w.winner].flowers} />
                     </div>
                     {w.score && (
                       <ul className="play-result-patterns">

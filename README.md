@@ -411,7 +411,7 @@ held upright is asked to turn sideways.
   side walls. Tiles lying on the felt are solid blocks with all four sides, so the tilt shows
   whichever it would - face up, ivory body over jade back; a concealed kong face down, jade
   on top. In your hand the same edge shows along the top. You're along the
-  bottom, your melds and flowers inline before your hand and the tile you just drew set
+  bottom, your flowers (always leftmost, as for everyone) and melds before your hand and the tile you just drew set
   apart at the right.
   A wind compass in the middle shows each seat's wind where that seat sits and lights whoever
   is to act; its read-out is the live tiles left, or the countdown when the timer is on. The
