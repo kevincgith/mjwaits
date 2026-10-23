@@ -317,8 +317,8 @@ function Entry({
         <section className="ot-tip">
           <h2>Got MJWaits on your home screen?</h2>
           <p>
-            Links always open in the browser{apple ? " on iPhone" : ""}. To play this table in the app: copy the invite, open MJWaits from your home
-            screen, then tap <strong>Paste invite</strong> on its Online table page.
+            Links always open in the browser{apple ? " on iPhone" : ""}. To play this table in the app: tap <strong>Copy invite</strong>, open MJWaits
+            from your home screen, hold its logo to open the Play table, then <strong>☰ → 線上對局</strong> and <strong>Paste invite</strong>.
           </p>
           <button type="button" className="ot-button" onClick={copyInvite}>
             Copy invite
@@ -342,6 +342,7 @@ function Entry({
               </>
             )}{" "}
             It opens full screen like an app, and keeps your tables and games on this phone.
+            {invited && " Install from this page and the app opens straight at this table."}
           </p>
         </section>
       )}

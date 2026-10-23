@@ -42,7 +42,7 @@ import {
 import { BonusGlyphSpan, TileGlyphSpan } from "./TileGlyphs";
 import { PlayPanel } from "./PlayPanel";
 import { OnlineTable } from "./OnlineTable";
-import { tableFromSearch } from "./lib/onlineTable";
+import { inviteLaunch, startInstallAtInvite } from "./lib/onlineTable";
 import { ScoresPanel, SharedScoresView, type RecordRequest, type ScoreHandRequest, type SeatingResult } from "./ScoresPanel";
 import { GAME_HASH, snapshotFromAnyHash, snapshotFromHash } from "./lib/scoreShare";
 import { roomFromSearch } from "./lib/online";
@@ -10037,8 +10037,12 @@ const TAB_ITEMS: { id: Exclude<AppMode, "play" | "table">; label: string; icon: 
 function App() {
   // A table invite (?room=…) opens the Scores tab's 線上 on that table.
   const [joinCode] = useState(() => roomFromSearch(window.location.search));
-  // An online table invite (?table=…) opens that table.
-  const [tableCode] = useState(() => tableFromSearch(window.location.search));
+  // An online table invite (?table=…) opens that table - and installing the
+  // app from it starts the app there.
+  const [tableCode] = useState(() => inviteLaunch(window.location.search));
+  useEffect(() => {
+    if (tableCode) startInstallAtInvite(tableCode);
+  }, [tableCode]);
   const [mode, setMode] = useState<AppMode>(() => (readCalcHand(window.location.search) ? "calculator" : tableCode ? "table" : joinCode ? "scores" : "scoring"));
   // A shared scores link (#s=… totals, #z=… the whole game) opens its
   // read-only view over the app; "Open MJWaits" drops the hash and carries on
