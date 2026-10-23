@@ -81,7 +81,7 @@
   height: 1.6em;
   border-radius: 50%;
   background: var(--fill);
-  font-family: var(--play-calligraphy);
+  font-family: var(--play-cjk);
   font-weight: 700;
 }
 
@@ -162,6 +162,46 @@
   min-width: 0;
   letter-spacing: 0.2em;
   text-transform: uppercase;
+}
+
+/* Tips: taking an invite to the installed app, installing it. */
+.ot-tip {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid rgba(255, 209, 102, 0.35);
+  border-radius: 1rem;
+  background: var(--fill);
+}
+
+.ot-tip h2 {
+  margin: 0;
+  color: var(--play-gold);
+}
+
+.ot-tip p,
+.ot-note {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.ot-tip strong {
+  color: var(--text);
+}
+
+.ot-tip-close {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.4rem;
+}
+
+.ot-tip:has(.ot-tip-close) h2 {
+  padding-right: 2.4rem;
 }
 
 .ot-recent {

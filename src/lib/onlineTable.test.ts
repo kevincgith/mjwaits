@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { PROTOCOL_VERSION } from "@mjwaits/shared/protocol/limits";
 import type { TableServerMessage, TableState } from "@mjwaits/shared/protocol/table";
 import type { SocketLike } from "./online";
-import { createTable, loadTables, saveTables, TableClient, tableFromSearch, tableInfo, tableToken, TABLES_KEY, withoutTable, withTable } from "./onlineTable";
+import { codeFromInvite, createTable, loadTables, saveTables, TableClient, tableFromSearch, tableInfo, tableToken, TABLES_KEY, withoutTable, withTable } from "./onlineTable";
 
 class FakeSocket implements SocketLike {
   readyState = 0;
@@ -119,5 +119,14 @@ describe("tables over HTTP and the device's memory", () => {
     expect(withoutTable(back, "AAAAA").tables.map((t) => t.code)).toEqual(["CCCCC"]);
     store.set(TABLES_KEY, "not json");
     expect(loadTables(storage).tables).toEqual([]);
+  });
+});
+
+describe("codeFromInvite", () => {
+  it("reads the table from a copied invite link, or a bare code", () => {
+    expect(codeFromInvite("https://app.kevinlhc.com/mjwaits/?table=GGEAE")).toBe("GGEAE");
+    expect(codeFromInvite("  ggeae ")).toBe("GGEAE");
+    expect(codeFromInvite("https://example.com/")).toBeNull();
+    expect(codeFromInvite("hello there")).toBeNull();
   });
 });

@@ -41,6 +41,66 @@ export function tableLink(code: string): string {
   return `${window.location.origin}${import.meta.env.BASE_URL}?table=${code}`;
 }
 
+// The table in something copied: an invite link, or just its code.
+export function codeFromInvite(text: string): string | null {
+  const t = text.trim();
+  try {
+    const fromLink = tableFromSearch(new URL(t).search);
+    if (fromLink) return fromLink;
+  } catch {
+    // Not a link.
+  }
+  return normalizeRoomCode(t);
+}
+
+// Running as the app added to the home screen (not in a browser tab).
+export const isInstalledApp = () =>
+  window.matchMedia("(display-mode: standalone)").matches || (navigator as Navigator & { standalone?: boolean }).standalone === true;
+
+// Opened from an invite in the browser: if the app is installed from this
+// page, its first launch goes straight to the table - the page's manifest
+// is swapped for one starting at this invite (the same app, the same
+// scope). The app then opens it once (see inviteLaunch), not every time.
+export function startInstallAtInvite(code: string) {
+  const link = document.querySelector<HTMLLinkElement>('link[rel="manifest"]');
+  if (!link || isInstalledApp()) return;
+  const base = `${window.location.origin}${import.meta.env.BASE_URL}`;
+  void fetch(link.href)
+    .then((r) => r.json())
+    .then((m: { icons?: { src: string }[] }) => {
+      const manifest = {
+        ...m,
+        id: import.meta.env.BASE_URL,
+        start_url: `${base}?table=${code}&via=install`,
+        scope: base,
+        icons: (m.icons ?? []).map((i) => ({ ...i, src: new URL(i.src, link.href).href })),
+      };
+      link.href = URL.createObjectURL(new Blob([JSON.stringify(manifest)], { type: "application/manifest+json" }));
+    })
+    .catch(() => {
+      // Keep the usual manifest.
+    });
+}
+
+// The table to open at launch: an invite in the address, but in the
+// installed app one it was installed from only the first time (later
+// launches open the app as usual, not a finished table).
+const INVITE_LAUNCH_KEY = "mjwaits.inviteLaunch";
+export function inviteLaunch(search: string): string | null {
+  const code = tableFromSearch(search);
+  if (!code || !isInstalledApp() || new URLSearchParams(search).get("via") !== "install") return code;
+  try {
+    if (localStorage.getItem(INVITE_LAUNCH_KEY) === code) return null;
+    localStorage.setItem(INVITE_LAUNCH_KEY, code);
+  } catch {
+    // No storage: open it every time rather than never.
+  }
+  return code;
+}
+
+// An iPhone or iPad (iPadOS reports a Mac, with a touch screen).
+export const isAppleMobile = () => /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+
 export function tableFromSearch(search: string): string | null {
   const raw = new URLSearchParams(search).get("table");
   return raw ? normalizeRoomCode(raw) : null;

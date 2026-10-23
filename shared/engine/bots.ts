@@ -31,6 +31,7 @@ import {
   type TurnMove,
 } from "./game";
 import { allTileKinds, shanten as rawShanten, tileCount, tileKey, type Tile } from "./mahjong";
+import { MYSTERY_VOICE, VOICES, type Voice } from "./voices";
 
 export interface BotProfile {
   id: string;
@@ -213,85 +214,8 @@ export const BOT_PROFILES: BotProfile[] = [
   },
 ];
 
-// What each personality says at the table (shown in a bubble by its name):
-// on a call, a win off a discard, a self-draw, declaring 叮, and dealing in.
-export interface Voice {
-  call: string[];
-  win: string[];
-  selfDraw: string[];
-  riichi: string[];
-  dealIn: string[];
-  surrender: string[];
-}
-
-export const VOICES: Record<string, Voice> = {
-  grandmaster: {
-    call: ["嗯。", "要。", "碰得。"],
-    win: ["承讓。", "見笑。", "多謝晒。"],
-    selfDraw: ["摸到喇。", "自摸，承讓。"],
-    riichi: ["叮。", "聽緊。"],
-    dealIn: ["好牌。", "算你嘅。"],
-    surrender: ["投降，下鋪再算。"],
-  },
-  veteran: {
-    call: ["碰！", "要佢！", "上啦。"],
-    win: ["食糊！", "唔好意思喇。", "又係我。"],
-    selfDraw: ["自摸！", "摸翻嚟！"],
-    riichi: ["叮！小心喇。", "叮！"],
-    dealIn: ["哎，俾你捉到。", "好眼光。"],
-    surrender: ["投降，留返啲力。"],
-  },
-  speedster: {
-    call: ["碰！快啲！", "上！", "要！要！"],
-    win: ["食咗先講！", "快手！", "雞糊都係糊！"],
-    selfDraw: ["自摸！快過你哋！"],
-    riichi: ["叮！跟住就到！"],
-    dealIn: ["慢咗少少…", "下鋪再嚟！"],
-    surrender: ["投降！快啲開下鋪！"],
-  },
-  hunter: {
-    call: ["呢隻我要。", "碰，等大牌。"],
-    win: ["大牌嚟喇！", "番數夠晒！", "清一色呀！"],
-    selfDraw: ["自摸大牌！", "值得等！"],
-    riichi: ["叮，等大嘢。"],
-    dealIn: ["細糊都要？", "冇所謂，等大嘅。"],
-    surrender: ["投降，等大牌報仇。"],
-  },
-  wall: {
-    call: ["……碰。"],
-    win: ["穩陣。", "一早睇住。"],
-    selfDraw: ["自摸，安全第一。"],
-    riichi: ["叮。"],
-    dealIn: ["點會……", "唔應該㗎……"],
-    surrender: ["投降。穩陣啲。"],
-  },
-  gambler: {
-    call: ["碰！搏！", "全部要！", "衝呀！"],
-    win: ["搏到喇！", "邊個話唔得？", "爽！"],
-    selfDraw: ["自摸！今晚旺！"],
-    riichi: ["叮！照衝！", "叮！搏一鋪！"],
-    dealIn: ["哈，冇所謂！", "再搏過！"],
-    surrender: ["投降？唔會㗎！"],
-  },
-  casual: {
-    call: ["咦，碰！", "呢隻啱我！", "上，上。"],
-    win: ["吓？我食咗？", "好彩好彩！", "食糊喇～"],
-    selfDraw: ["自摸！今日好手氣！"],
-    riichi: ["叮！應該係咁講…？"],
-    dealIn: ["唉呀，又出銃。", "我都唔知你等呢隻！"],
-    surrender: ["唔玩喇，投降投降！"],
-  },
-};
-
-// A mystery bot speaks plainly, so its lines don't give its personality away.
-const MYSTERY_VOICE: Voice = {
-  call: ["碰。", "要。", "上。"],
-  win: ["食糊。", "唔好意思。"],
-  selfDraw: ["自摸。"],
-  riichi: ["叮。"],
-  dealIn: ["哦。", "好牌。"],
-  surrender: ["投降。"],
-};
+// What each personality says at the table: see voices.ts.
+export { VOICES, MYSTERY_VOICE, type Voice } from "./voices";
 
 export const voiceOf = (p: BotProfile): Voice => (mysteryStyle(p) ? MYSTERY_VOICE : (VOICES[learnedStyle(p) ?? p.id] ?? VOICES.veteran));
 

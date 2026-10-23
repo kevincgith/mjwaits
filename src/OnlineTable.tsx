@@ -12,7 +12,20 @@ import { MYSTERY_NAME, profileById } from "@mjwaits/shared/engine/bots";
 import { cleanNickname, normalizeRoomCode } from "@mjwaits/shared/protocol/limits";
 import { MYSTERY_BOT, TABLE_BOTS, TURN_TIMERS, type TableBot, type TableClientMessage, type TableSettings, type TableState } from "@mjwaits/shared/protocol/table";
 import { defaultNickname, type ConnectionStatus } from "./lib/online";
-import { createTable, loadTables, saveTables, TableClient, tableLink, tableScores, tableToken, withoutTable, withTable } from "./lib/onlineTable";
+import {
+  codeFromInvite,
+  createTable,
+  isAppleMobile,
+  isInstalledApp,
+  loadTables,
+  saveTables,
+  TableClient,
+  tableLink,
+  tableScores,
+  tableToken,
+  withoutTable,
+  withTable,
+} from "./lib/onlineTable";
 import type { ScoreGame } from "@mjwaits/shared/engine/ledger";
 import { PlayScores } from "./scores/playScores";
 import { PlayPanel } from "./PlayPanel";
@@ -169,6 +182,7 @@ export function OnlineTable({ initialCode, onExit }: { initialCode: string | nul
           setName={setName}
           joinCode={joinCode}
           setJoinCode={setJoinCode}
+          invited={initialCode}
           recent={memory.tables.map((t) => t.code)}
           onForget={(c) => setMemory((m) => withoutTable(m, c))}
           busy={busy}
@@ -199,11 +213,14 @@ export function OnlineTable({ initialCode, onExit }: { initialCode: string | nul
 
 // ---- Before joining ---------------------------------------------------------------------
 
+const INSTALL_TIP_KEY = "mjwaits.installTip";
+
 function Entry({
   name,
   setName,
   joinCode,
   setJoinCode,
+  invited,
   recent,
   onForget,
   busy,
@@ -214,6 +231,7 @@ function Entry({
   setName: (s: string) => void;
   joinCode: string;
   setJoinCode: (s: string) => void;
+  invited: string | null; // opened from an invite link to this table
   recent: string[];
   onForget: (code: string) => void;
   busy: boolean;
@@ -221,6 +239,45 @@ function Entry({
   onExit: () => void;
 }) {
   const normalized = normalizeRoomCode(joinCode);
+  // In a browser tab or the app on the home screen: on iPhone a link always
+  // opens the browser, so an invite is carried over by copy and paste.
+  const installed = isInstalledApp();
+  const apple = isAppleMobile();
+  const [note, setNote] = useState<string | null>(null);
+  const [installTip, setInstallTip] = useState(() => {
+    try {
+      return !installed && localStorage.getItem(INSTALL_TIP_KEY) !== "dismissed";
+    } catch {
+      return !installed;
+    }
+  });
+  const dismissInstallTip = () => {
+    setInstallTip(false);
+    try {
+      localStorage.setItem(INSTALL_TIP_KEY, "dismissed");
+    } catch {
+      // Private mode: it just comes back next time.
+    }
+  };
+  const copyInvite = async () => {
+    if (!invited) return;
+    try {
+      await navigator.clipboard.writeText(tableLink(invited));
+      setNote("Invite copied - now open MJWaits from your home screen and tap Paste invite.");
+    } catch {
+      setNote(`Couldn't copy - the table code is ${invited}.`);
+    }
+  };
+  const pasteInvite = async () => {
+    try {
+      const code = codeFromInvite(await navigator.clipboard.readText());
+      if (!code) return setNote("No invite copied - copy the link or the table code first.");
+      setJoinCode(code);
+      onEnter(code);
+    } catch {
+      setNote("Couldn't read what you copied - type the table code instead.");
+    }
+  };
   return (
     <div className="ot-page">
       <header className="ot-head">
@@ -249,6 +306,46 @@ function Entry({
           Join
         </button>
       </div>
+      {installed && (
+        <button type="button" className="ot-button" onClick={pasteInvite}>
+          Paste invite
+        </button>
+      )}
+      {note && <p className="ot-note">{note}</p>}
+      {/* Opened from an invite in the browser: if they've the app, how to take it there. */}
+      {!installed && invited && (
+        <section className="ot-tip">
+          <h2>Got MJWaits on your home screen?</h2>
+          <p>
+            Links always open in the browser{apple ? " on iPhone" : ""}. To play this table in the app: tap <strong>Copy invite</strong>, open MJWaits
+            from your home screen, hold its logo to open the Play table, then <strong>☰ → 線上對局</strong> and <strong>Paste invite</strong>.
+          </p>
+          <button type="button" className="ot-button" onClick={copyInvite}>
+            Copy invite
+          </button>
+        </section>
+      )}
+      {installTip && (
+        <section className="ot-tip">
+          <button type="button" className="ot-icon ot-tip-close" aria-label="Dismiss" onClick={dismissInstallTip}>
+            ×
+          </button>
+          <h2>Install MJWaits</h2>
+          <p>
+            {apple ? (
+              <>
+                Tap <strong>Share</strong> in Safari, then <strong>Add to Home Screen</strong>.
+              </>
+            ) : (
+              <>
+                Open the browser menu, then <strong>Install app</strong> (or <strong>Add to Home screen</strong>).
+              </>
+            )}{" "}
+            It opens full screen like an app, and keeps your tables and games on this phone.
+            {invited && " Install from this page and the app opens straight at this table."}
+          </p>
+        </section>
+      )}
       {recent.length > 0 && (
         <section className="ot-recent">
           <h2>Your tables</h2>

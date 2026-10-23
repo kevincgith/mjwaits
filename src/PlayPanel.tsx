@@ -730,12 +730,17 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
   };
   // What each bot is saying, by seat (a speech bubble by its name card).
   const [bubbles, setBubbles] = useState<Record<number, { text: string; id: number }>>({});
+  const lastLine = useRef<Record<number, string>>({});
   const say = (seat: number, line: keyof Voice) => {
     const bot = bots[seat];
     if (!bot) return;
     const lines = voiceOf(bot)[line];
+    // Never the same line twice running from one bot.
+    let text = lines[Math.floor(Math.random() * lines.length)];
+    if (lines.length > 1 && text === lastLine.current[seat]) text = lines[(lines.indexOf(text) + 1 + Math.floor(Math.random() * (lines.length - 1))) % lines.length];
+    lastLine.current[seat] = text;
     const id = Date.now() + seat;
-    setBubbles((b) => ({ ...b, [seat]: { text: lines[Math.floor(Math.random() * lines.length)], id } }));
+    setBubbles((b) => ({ ...b, [seat]: { text, id } }));
     window.setTimeout(() => setBubbles((b) => (b[seat]?.id === id ? Object.fromEntries(Object.entries(b).filter(([k]) => Number(k) !== seat)) : b)), BUBBLE_MS);
   };
   // "You", or the bot's English name (老手 Veteran -> Veteran); online,
