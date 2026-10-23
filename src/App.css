@@ -5853,27 +5853,63 @@ html.playing body {
   translate: -50% 0;
 }
 
-/* The side players' cards stand upright beside their walls, a third of
-   the way down. */
+/* The side players' cards stand upright beside their walls, a quarter of
+   the way down, condensed: wind and avatar side by side, the name under
+   them (one line, the card as wide as it needs), the dealer / 叮 / 拉
+   chips sharing a line beneath, then the total. */
 .play-badge.at-left,
 .play-badge.at-right {
   top: 24%;
-  flex-direction: column;
-  gap: 0.15rem;
-  width: 3.4rem;
-  padding: 0.35rem 0.15rem;
-  font-size: 0.68rem;
-  border-radius: 0.8rem;
+  display: grid;
+  grid-template-columns: auto auto;
+  justify-content: center;
+  justify-items: center;
+  gap: 0.12rem 0.18rem;
+  min-width: 3.2rem;
+  padding: 0.25rem 0.3rem;
+  font-size: 0.62rem;
+  border-radius: 0.7rem;
   text-align: center;
-  white-space: normal;
+}
+
+.play-badge.at-left > :not(.play-badge-wind, .play-avatar),
+.play-badge.at-right > :not(.play-badge-wind, .play-avatar) {
+  grid-column: 1 / -1;
 }
 
 .play-badge.at-left .play-badge-name,
 .play-badge.at-right .play-badge-name {
-  flex-direction: column;
-  gap: 0.15rem;
-  line-height: 1.15;
-  overflow-wrap: break-word;
+  display: grid;
+  justify-items: center;
+  gap: 0.12rem;
+  line-height: 1.1;
+}
+
+/* Elsewhere the chips just follow the name; in a side card they share a
+   line under it, wrapping within the card's width (never widening it). */
+.play-badge-chips {
+  display: contents;
+}
+
+.play-badge.at-left .play-badge-chips,
+.play-badge.at-right .play-badge-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.12rem;
+  width: 0;
+  min-width: 100%;
+}
+
+.play-badge-chips:empty {
+  display: none;
+}
+
+.play-badge.at-left :is(.play-badge-wind, .play-avatar),
+.play-badge.at-right :is(.play-badge-wind, .play-avatar) {
+  width: 1.15rem;
+  height: 1.15rem;
+  font-size: 0.7rem;
 }
 
 .play-badge.at-left {
@@ -6660,35 +6696,56 @@ html.playing body {
   text-shadow: 0 0 0.35em rgba(127, 243, 224, 0.6);
 }
 
-/* The discard up for grabs, big in a glowing ring beside the compass on
-   the discarder's side. */
+/* The discard up for grabs: a tile on the table, a size up from the
+   ponds, lying between the compass and the pond of whoever threw it (and
+   turned to face them, as their pond is) - dropped there, with no ring or
+   glow. */
+.play-middle {
+  transform-style: preserve-3d;
+}
+
 .play-spotlight {
   position: absolute;
   z-index: 3;
-  display: grid;
-  place-items: center;
-  width: 2.5em;
-  height: 2.5em;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(16, 40, 28, 0.85) 55%, rgba(16, 40, 28, 0.6) 100%);
-  box-shadow: 0 0 0 0.08em rgba(255, 209, 102, 0.8), 0 0 0.6em rgba(255, 209, 102, 0.45);
-  font-size: 0.9em;
   line-height: 0;
-  animation: play-spot 0.25s ease-out;
+  translate: -50% -50%;
+  transform-style: preserve-3d;
   pointer-events: none;
 }
 
 .play-spotlight .tile-glyph {
-  font-size: 1.55em;
+  font-size: calc(var(--play-tile) * 1.15);
+  animation: play-drop 0.36s both;
 }
 
-/* It sits over the compass's centre, the lit quadrant around it still
-   saying who threw it - beside the compass it ran into the ponds, or your
-   hand. */
-.play-spotlight {
+/* Halfway between the compass's edge (1.8em from the middle) and the
+   middle's own edge, on the thrower's side. */
+.play-spotlight.from-bottom {
   left: 50%;
+  top: calc(75% + 0.9em);
+}
+
+.play-spotlight.from-top {
+  left: 50%;
+  top: calc(25% - 0.9em);
+}
+
+.play-spotlight.from-left {
+  left: calc(25% - 0.9em);
   top: 50%;
-  translate: -50% -50%;
+}
+
+.play-spotlight.from-right {
+  left: calc(75% + 0.9em);
+  top: 50%;
+}
+
+.play-spotlight.from-left .tile-glyph {
+  rotate: 90deg;
+}
+
+.play-spotlight.from-right .tile-glyph {
+  rotate: -90deg;
 }
 
 @keyframes play-spot {
@@ -6915,7 +6972,9 @@ html.playing body {
   display: inline-flex;
   align-items: flex-end;
   border: none;
-  padding: 0 0.012em;
+  /* A hair between faces - the tile art has its own margin round the face. */
+  padding: 0;
+  margin: 0 -0.015em;
   background: none;
   line-height: 0;
   /* Lifting and dropping a tile you pick eases rather than snaps. */
@@ -6999,6 +7058,17 @@ html.playing body {
     0 0.13em 0 var(--play-back),
     0 0.15em 0 var(--play-back-edge),
     0 0.2em 0.14em rgba(0, 0, 0, 0.38);
+}
+
+/* The winning tile, turned a quarter: its edge drawn along the face's x, so
+   once turned it still lies below the tile, toward you. */
+.play-result-hand .play-win-tile img.tile-face {
+  box-shadow:
+    0 0 0 0.5px rgba(0, 0, 0, 0.28),
+    0.08em 0 0 var(--play-ivory),
+    0.13em 0 0 var(--play-back),
+    0.15em 0 0 var(--play-back-edge),
+    0.2em 0 0.14em rgba(0, 0, 0, 0.38);
 }
 
 /* On the table every tile is a solid block: its top raised off the felt by
@@ -7106,7 +7176,8 @@ html.playing body {
 .play-pond-right .play-pond-tile:not(.is-riichi) > .tile-glyph,
 .play-pond-top .play-pond-tile.is-riichi > .tile-glyph,
 .play-pond-bottom .play-pond-tile.is-riichi > .tile-glyph,
-.play-felt .play-win-tile > .tile-glyph {
+.play-felt .play-win-tile > .tile-glyph,
+.play-spotlight:is(.from-left, .from-right) .tile-glyph {
   --shade-long: 0.14;
   --shade-end: 0;
 }
@@ -7698,8 +7769,11 @@ html.playing body {
   font-size: clamp(18px, 7.5vh, 38px);
 }
 
-.play-result-hand .play-meld {
-  background: var(--fill);
+/* Groups apart by a gap alone - no box behind them, which reads as a glow
+   on the dark card. */
+.play-result-hand :is(.play-meld, .play-flowers) {
+  margin-inline: 0.12em;
+  background: none;
 }
 
 .play-result-patterns {
