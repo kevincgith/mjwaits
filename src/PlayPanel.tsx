@@ -207,9 +207,11 @@ const claimLabel = (c: Claim) => (c.kind === "win" ? "胡" : c.kind === "kong" ?
 // ---- Pieces of the table ----------------------------------------------------
 
 // A seat's concealed tiles, seen edge-on from the middle of the table.
-function EdgeTilesView({ count, side }: { count: number; side: Side }) {
+// `drew`: holding a tile just drawn, which stands a little apart at the
+// player's right end (as yours does).
+function EdgeTilesView({ count, side, drew }: { count: number; side: Side; drew: boolean }) {
   return (
-    <span className={`play-edge play-edge-${side}`} style={{ "--count": count } as CSSProperties} aria-label={`${count} concealed tiles`}>
+    <span className={`play-edge play-edge-${side}${drew ? " has-drawn" : ""}`} style={{ "--count": count } as CSSProperties} aria-label={`${count} concealed tiles`}>
       {Array.from({ length: count }, (_, i) => (
         <span key={i} className="play-edge-tile" />
       ))}
@@ -1145,7 +1147,9 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
   // it ends in front of you (a game opened already over shows it at once).
   const [cardHeld, setCardHeld] = useState(false);
   const wasOver = useRef(over);
-  useEffect(() => {
+  // Before the screen updates (a layout effect), so the card never shows
+  // for a frame first.
+  useLayoutEffect(() => {
     const ended = over && !wasOver.current;
     wasOver.current = over;
     if (!ended) return;
@@ -1221,6 +1225,9 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
     </span>
   );
 
+  // Who's holding a tile just drawn (online, the table says so - not which).
+  const drewSeat =
+    game.phase.kind === "turn" && (game.phase.drawn !== null || ("drew" in game.phase && game.phase.drew)) ? game.phase.seat : null;
   // A bot's tiles, standing along its edge of the (tilted) table.
   // The tile a seat won with (to lay sideways in its hand), if it won.
   const wonWith = (seat: number) =>
@@ -1239,7 +1246,7 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
             <Melds melds={p.melds} hideConcealed={!over} />
           </span>
         </span>
-        {over ? <RevealedHand tiles={p.hand} winningTile={wonWith(seat)} toppleAt={wonWith(seat) ? 0 : 0.8} /> : <EdgeTiles count={p.hand.length} side={side} />}
+        {over ? <RevealedHand tiles={p.hand} winningTile={wonWith(seat)} toppleAt={wonWith(seat) ? 0 : 0.8} /> : <EdgeTiles count={p.hand.length} side={side} drew={drewSeat === seat} />}
       </div>
     );
   };
