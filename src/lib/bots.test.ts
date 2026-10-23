@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BOT_PROFILES, botClaimFor, botTurnFor, botTurnMoveFor, danger, profileById, rememberedView, seededRng, threat, tileRisk, VOICES, voiceOf } from "./bots";
+import { BOT_PROFILES, botClaimFor, botTurnFor, botTurnMoveFor, danger, profileById, rememberedView, seededRng, threat, tileRisk, VOICES, voiceOf } from "@mjwaits/shared/engine/bots";
 import { runArena } from "./arena";
 import { applyTurnMove, dealHand, resolveClaims, SEATS, unseenCounts, type GameMeld, type GameState } from "@mjwaits/shared/engine/game";
 import type { Tile } from "@mjwaits/shared/engine/mahjong";
@@ -125,5 +125,12 @@ describe("human touches", () => {
     expect(view.players[1].discards).toHaveLength(3);
     expect(view.players[1].discards).toEqual(pond.slice(-3));
     expect(rememberedView(s, 0, 1)).toBe(s);
+  });
+});
+
+describe("the online table's bots", () => {
+  it("are exactly the roster's personalities (the basic bot aside)", async () => {
+    const { TABLE_BOTS } = await import("@mjwaits/shared/protocol/table");
+    expect([...TABLE_BOTS].sort()).toEqual(BOT_PROFILES.map((p) => p.id).filter((id) => id !== "basic").sort());
   });
 });

@@ -29,8 +29,8 @@ import {
   type GameState,
   type Player,
   type TurnMove,
-} from "@mjwaits/shared/engine/game";
-import { allTileKinds, shanten as rawShanten, tileCount, tileKey, type Tile } from "@mjwaits/shared/engine/mahjong";
+} from "./game";
+import { allTileKinds, shanten as rawShanten, tileCount, tileKey, type Tile } from "./mahjong";
 
 export interface BotProfile {
   id: string;

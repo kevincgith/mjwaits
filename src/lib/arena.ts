@@ -9,7 +9,7 @@
 // seatings.
 
 import { botClaim, botTurnMove, applyTurnMove, dealHand, fullWall, nextHand, resolveClaims, SEATS, surrender, type Claim, type GameState, type TurnMove, type WallTile } from "@mjwaits/shared/engine/game";
-import { botClaimFor, botSurrenders, botTurnMoveFor, profileById, seededRng, type BotProfile, type Rng } from "./bots";
+import { botClaimFor, botSurrenders, botTurnMoveFor, profileById, seededRng, type BotProfile, type Rng } from "@mjwaits/shared/engine/bots";
 
 // The original single-minded bot, kept as a yardstick.
 export const BASELINE: BotProfile = { ...profileById("veteran"), id: "basic", name: "基本 Basic", blurb: "The original bot: tile efficiency only, no defence." };

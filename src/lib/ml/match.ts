@@ -12,7 +12,7 @@
 // them at the table.
 
 import { SEATS, type GameState } from "@mjwaits/shared/engine/game";
-import type { Rng } from "../bots";
+import type { Rng } from "@mjwaits/shared/engine/bots";
 
 export interface OppStats {
   hands: number; // hands seen this match

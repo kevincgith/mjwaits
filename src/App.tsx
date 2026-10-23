@@ -41,6 +41,8 @@ import {
 } from "./tileArt";
 import { BonusGlyphSpan, TileGlyphSpan } from "./TileGlyphs";
 import { PlayPanel } from "./PlayPanel";
+import { OnlineTable } from "./OnlineTable";
+import { tableFromSearch } from "./lib/onlineTable";
 import { ScoresPanel, SharedScoresView, type RecordRequest, type ScoreHandRequest, type SeatingResult } from "./ScoresPanel";
 import { GAME_HASH, snapshotFromAnyHash, snapshotFromHash } from "./lib/scoreShare";
 import { roomFromSearch } from "./lib/online";
@@ -9952,7 +9954,8 @@ function ExternalLinkConfirm() {
   );
 }
 
-type AppMode = "scoring" | "calculator" | "trainer" | "scores" | "play" | "dice";
+// "table": an online table (OnlineTable), opened from Play or a ?table= invite.
+type AppMode = "scoring" | "calculator" | "trainer" | "scores" | "play" | "table" | "dice";
 
 // Tab-bar glyphs: 24px line icons drawn in currentColor, so they pick up the
 // tab's selected/unselected colour like the label does.
@@ -9969,7 +9972,7 @@ const TAB_ICON_PROPS = {
 
 // Play isn't in the tab bar while it's being worked on: a long-press on the
 // logo opens it (see logoPress in App).
-const TAB_ITEMS: { id: Exclude<AppMode, "play">; label: string; icon: ReactNode }[] = [
+const TAB_ITEMS: { id: Exclude<AppMode, "play" | "table">; label: string; icon: ReactNode }[] = [
   {
     id: "scoring",
     label: "Scoring",
@@ -10031,7 +10034,9 @@ const TAB_ITEMS: { id: Exclude<AppMode, "play">; label: string; icon: ReactNode 
 function App() {
   // A table invite (?room=…) opens the Scores tab's 線上 on that table.
   const [joinCode] = useState(() => roomFromSearch(window.location.search));
-  const [mode, setMode] = useState<AppMode>(() => (readCalcHand(window.location.search) ? "calculator" : joinCode ? "scores" : "scoring"));
+  // An online table invite (?table=…) opens that table.
+  const [tableCode] = useState(() => tableFromSearch(window.location.search));
+  const [mode, setMode] = useState<AppMode>(() => (readCalcHand(window.location.search) ? "calculator" : tableCode ? "table" : joinCode ? "scores" : "scoring"));
   // A shared scores link (#s=… totals, #z=… the whole game) opens its
   // read-only view over the app; "Open MJWaits" drops the hash and carries on
   // as normal. #z= is compressed, so it's read once the page is up.
@@ -10090,10 +10095,10 @@ function App() {
   }, [mode, scoreFor]);
   // Where the Play table's Leave button goes back to.
   const lastNonPlayMode = useRef<AppMode>("scoring");
-  if (mode !== "play") lastNonPlayMode.current = mode;
+  if (mode !== "play" && mode !== "table") lastNonPlayMode.current = mode;
   // The table fills the screen; html.playing hides the page around it.
   useEffect(() => {
-    document.documentElement.classList.toggle("playing", mode === "play");
+    document.documentElement.classList.toggle("playing", mode === "play" || mode === "table");
   }, [mode]);
   // Lifted above TrainerPanel so stats survive switching back to the
   // Calculator tab and back - the trainers themselves unmount (and their other
@@ -10329,7 +10334,8 @@ function App() {
           joinCode={joinCode}
         />
       )}
-      {!sharedScores && mode === "play" && <PlayPanel onExit={() => setMode(lastNonPlayMode.current)} />}
+      {!sharedScores && mode === "play" && <PlayPanel onExit={() => setMode(lastNonPlayMode.current)} onOnline={() => setMode("table")} />}
+      {!sharedScores && mode === "table" && <OnlineTable initialCode={tableCode} onExit={() => setMode(lastNonPlayMode.current)} />}
       {!sharedScores && mode === "dice" && (
         <DiceTab
           key={diceSeating ? "seating" : "dice"}
