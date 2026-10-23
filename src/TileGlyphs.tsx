@@ -5,16 +5,30 @@ import { tileGlyph, tileLabel, type Tile } from "@mjwaits/shared/engine/mahjong"
 import type { BonusTile } from "@mjwaits/shared/engine/scoring";
 import { bonusArtUrl, bonusTileLabel, tileArtUrl, useTileArtUrl, useTileStyle } from "./tileArt";
 
+// A tile's four sides, for one drawn as a solid block on a 3D table (the
+// Play tab's felt): its CSS stands them up round the face; anywhere else
+// they're hidden.
+export const TileSides = () => (
+  <>
+    <i className="tile-side is-near" />
+    <i className="tile-side is-far" />
+    <i className="tile-side is-left" />
+    <i className="tile-side is-right" />
+  </>
+);
+
 export function TileGlyphSpan({
   tile,
   large,
   highlight,
   jokerAssumed,
+  block,
 }: {
   tile: Tile;
   large?: boolean;
   highlight?: boolean;
   jokerAssumed?: boolean;
+  block?: boolean; // with its sides (see TileSides)
 }) {
   const art = useTileStyle() === "art";
   const artUrl = useTileArtUrl();
@@ -34,6 +48,7 @@ export function TileGlyphSpan({
       title={jokerAssumed ? "Assumed from a joker" : undefined}
     >
       {art ? <img className="tile-face" src={artUrl(tileArtUrl(tile))} alt="" draggable={false} /> : tileGlyph(tile)}
+      {art && block && <TileSides />}
     </span>
   );
 }
@@ -70,7 +85,7 @@ function bonusTileGlyph(tile: BonusTile): string {
 }
 
 // A flower/season tile, in the current tile style (see TileGlyphSpan).
-export function BonusGlyphSpan({ tile, large, label }: { tile: BonusTile; large?: boolean; label?: boolean }) {
+export function BonusGlyphSpan({ tile, large, label, block }: { tile: BonusTile; large?: boolean; label?: boolean; block?: boolean }) {
   const art = useTileStyle() === "art";
   const artUrl = useTileArtUrl();
   return (
@@ -80,6 +95,7 @@ export function BonusGlyphSpan({ tile, large, label }: { tile: BonusTile; large?
       {...(label ? { role: "img", "aria-label": bonusTileLabel(tile) } : {})}
     >
       {art ? <img className="tile-face" src={artUrl(bonusArtUrl(tile))} alt="" draggable={false} /> : bonusTileGlyph(tile)}
+      {art && block && <TileSides />}
     </span>
   );
 }
