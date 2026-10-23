@@ -15,7 +15,7 @@ import { readFileSync } from "node:fs";
 import * as ort from "onnxruntime-web/wasm";
 import { BASELINE, emptyStats, formatArena, type ArenaResult, type BotStats } from "../src/lib/arena";
 import { botClaimFor, botSurrenders, botTurnMoveFor, profileById, seededRng, type BotProfile, type Rng } from "../src/lib/bots";
-import { applyTurnMove, botClaim, botTurnMove, dealHand, fullWall, nextHand, resolveClaims, SEATS, surrender, type Claim, type GameState, type TurnMove, type WallTile } from "../src/lib/game";
+import { applyTurnMove, botClaim, botTurnMove, dealHand, fullWall, nextHand, resolveClaims, SEATS, surrender, type Claim, type GameState, type TurnMove, type WallTile } from "@mjwaits/shared/engine/game";
 import { NUM_ACTIONS, OBS_SIZE, OBS_SIZE_MATCH } from "../src/lib/ml/encode";
 import { afterHand, matchUtility, newMatch, type MatchContext } from "../src/lib/ml/match";
 import { learnedClaim, learnedTurnMove, type LearnedBot } from "../src/lib/ml/policy";

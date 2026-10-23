@@ -10,7 +10,8 @@ hand, see what completes it and which discard gives the best odds — and has gr
 - **Trainer** — timed quizzes: a **Waits** drill (name every tile that completes a hand) and a
   **Discards** drill (just drew — pick the single best tile to throw).
 - **Scores** — keep score of a real game at the table (港式台牌 rules: 莊/連莊, 拉/踢, 一炮多響,
-  反雪, Jackpot), with a stats page per player.
+  反雪, Jackpot), with a stats page per player — on one phone, or **線上** with every player on
+  their own phone and one live scoreboard.
 - **Dice** — roll for the wall, and see exactly where it breaks.
 
 On a phone the five tabs sit in a bottom tab bar; on wider screens they're a segmented control
@@ -18,6 +19,8 @@ under the title. In the Scoring tab a sticky toolbar keeps Reset / Scan / Photos
 (or, once the hand scores, the total — tap it to jump to the breakdown) in view while scrolling.
 
 Everything runs client-side, including the camera tile scanner. No hand ever leaves the browser.
+The one exception is by design: a **線上 Online** table's scores go through the multiplayer server
+so every phone at the table sees them.
 
 **Install it** from the browser's menu (Safari: Share → Add to Home Screen): it opens full screen
 like an app and **works offline** — after one visit with a connection, it loads with no signal,
@@ -353,6 +356,36 @@ their records, 多響, 反雪, 最高得分 / 失分, 總自摸 / 出銃 得分 
 首名率 - with 👑 for the best at the table and 💀 the worst) and **紀錄** (every game, career
 stats per player and head-to-head net tai).
 
+### 線上 Online
+
+The same scoreboard shared live: everyone at the table on their own phone, an entry made on any
+of them on all of them at once. It runs on a small server ([`worker/`](worker/README.md), a
+Cloudflare Worker at `mj-api.kevinlhc.com`); the scores are worked out there by the same ledger
+as 戰況, so the numbers match.
+
+- **Start.** Pick a nickname, then **開枱** to make a table or **加入** with its 5-character code.
+  **Invite** shows the table's QR code and link (`…/mjwaits/?room=CODE`), which opens straight on
+  the join form. Tables joined on this phone are listed for a week, to rejoin.
+- **Lobby.** Each player takes a seat (東南西北 from the first dealer); a dot shows who's
+  connected. The host - whoever made the table - sets the starting chips, 底 / 莊 / 連莊, 截胡 or
+  一炮多響, whether the host may 還原 alone, and who deals first, then starts once four are
+  seated.
+- **Playing.** The 戰況 cards, turned so your own seat is at the bottom, with chips (or net when
+  the table starts at 0), 莊 / 連莊 and the last change. Tap a winner for the same 食胡 /
+  特別獎罰 sheets; 流局 in the middle, the Jackpot under it, and every 拉 listed below. Any seated
+  player can record; anyone else at the table watches. **還原** asks to take back the last entry,
+  and another player taps Agree (or No) on the banner that appears on every phone - nothing new
+  can be recorded meanwhile. **最近** lists every entry.
+- **Ending.** The host's **結束** ends the session for everyone: the final ranking, the fewest
+  payments that settle it, and anything left in the Jackpot. **Keep in my Stats** copies the
+  game into this phone's 統計.
+- **Dropping out** costs nothing: a reload, a lost signal or a phone that slept reconnects by
+  itself to the same seat (a reconnect token is kept on the phone). A table closes two days after
+  its last change.
+
+Not online yet: 詐胡, 投降, 換人 / re-seating, sharing out the Jackpot by hand, and fixing an older
+entry (only the last one can be taken back).
+
 ## Play (hidden, in progress)
 
 Not in the tab bar while it's being built: **long-press the logo** to open it (‹ on the table
@@ -601,22 +634,34 @@ Digits before a suit letter are that many tiles of that suit; jokers are written
 
 ## Development
 
+Needs Node 22 or newer.
+
 ```bash
 npm install
 npm run dev      # start the dev server (http://localhost:5173/mjwaits/)
-npm test         # run the test suite (vitest)
+npm test         # run the test suite (vitest): the app and shared/, then the Worker's
 npm run lint     # oxlint
 npm run build    # typecheck + production build
 ```
 
+The repo is an npm workspace of three parts:
+
+- the app at the root (`src/`, built by Vite to GitHub Pages);
+- [`shared/`](shared/) (`@mjwaits/shared`) — the rules engine (`engine/`: tiles, tai scoring, the
+  hand engine, the score ledger) and the multiplayer protocol (`protocol/`), with no
+  dependencies and no browser APIs, imported by both the app and the server;
+- [`worker/`](worker/README.md) — the 線上 server: a Cloudflare Worker with one Durable Object
+  per table. Its README covers running it locally (`npm run dev --workspace worker`), deploying
+  it to `mj-api.kevinlhc.com`, and the message protocol.
+
 The core engine (parsing, shanten, waits, joker resolution, discard analysis) lives in
-[`src/lib/mahjong.ts`](src/lib/mahjong.ts), covered by an extensive suite in
-[`src/lib/mahjong.test.ts`](src/lib/mahjong.test.ts) including brute-force cross-validation for
+[`shared/engine/mahjong.ts`](shared/engine/mahjong.ts), covered by an extensive suite in
+[`shared/engine/mahjong.test.ts`](shared/engine/mahjong.test.ts) including brute-force cross-validation for
 the trickier joker and shanten logic. Trainer question generation is in
 [`src/lib/trainer.ts`](src/lib/trainer.ts) with property-based checks across all levels and flush
 mode. The scoring engine — notation parsing, the all-decompositions search, and the `PATTERNS`
-tai list — is in [`src/lib/scoring.ts`](src/lib/scoring.ts), tested in
-[`src/lib/scoring.test.ts`](src/lib/scoring.test.ts); see
+tai list — is in [`shared/engine/scoring.ts`](shared/engine/scoring.ts), tested in
+[`shared/engine/scoring.test.ts`](shared/engine/scoring.test.ts); see
 [`docs/scoring-rules.md`](docs/scoring-rules.md) for what each pattern does. The client-side tile
 detector (letterboxing, ONNX inference, non-max suppression) is in
 [`src/lib/vision.ts`](src/lib/vision.ts).
@@ -641,7 +686,7 @@ The README screenshots are regenerated from a running dev server with
 `npm i puppeteer-core --no-save` and a local Google Chrome).
 
 Built with React, TypeScript, and Vite; deployed to GitHub Pages via GitHub Actions on every push
-to `main`.
+to `main`. The 線上 server deploys separately, with wrangler (see [worker/README.md](worker/README.md)).
 
 See [ROADMAP.md](ROADMAP.md) for future ideas (a live camera viewfinder, extending joker
 resolution into shanten and discard analysis, point/currency conversion for scoring).

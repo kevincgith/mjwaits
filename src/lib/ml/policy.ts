@@ -4,7 +4,7 @@
 // arena under Node - so this file stays free of any runtime and only maps
 // positions in and decisions out, through encode.ts.
 
-import type { Claim, GameState, TurnMove } from "../game";
+import type { Claim, GameState, TurnMove } from "@mjwaits/shared/engine/game";
 import { actionToClaim, actionToTurnMove, encodeObservation, legalActions, NUM_ACTIONS, OBS_SIZE } from "./encode";
 import type { MatchContext } from "./match";
 

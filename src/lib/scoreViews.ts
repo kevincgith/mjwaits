@@ -2,7 +2,7 @@
 // tested on its own: the 局 sheet's rows, the seat ceremony's provisional
 // East, and what kind of change just happened (for the 籌碼 card).
 
-import { handAt, stepAt, SEATS, type HandResult, type ReplayState, type ScoreEvent, type ScoreGame } from "./ledger";
+import { handAt, stepAt, SEATS, type HandResult, type ReplayState, type ScoreEvent, type ScoreGame } from "@mjwaits/shared/engine/ledger";
 
 // ---- 局: the score sheet's rows ---------------------------------------------
 

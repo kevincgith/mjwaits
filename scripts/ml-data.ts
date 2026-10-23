@@ -26,7 +26,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { availableParallelism } from "node:os";
 import { isMainThread, parentPort, Worker, workerData } from "node:worker_threads";
 import { botClaimFor, botSurrenders, botTurnMoveFor, BOT_PROFILES, seededRng, type BotProfile, type Rng } from "../src/lib/bots";
-import { applyTurnMove, dealHand, fullWall, nextHand, resolveClaims, SEATS, surrender, type GameState, type WallTile } from "../src/lib/game";
+import { applyTurnMove, dealHand, fullWall, nextHand, resolveClaims, SEATS, surrender, type GameState, type WallTile } from "@mjwaits/shared/engine/game";
 import { claimDecisionAction, encodeObservation, legalActions, NUM_ACTIONS, NUM_PLANES, OBS_SIZE, OBS_SIZE_MATCH, turnMoveAction } from "../src/lib/ml/encode";
 import { afterHand, randomMatch, type MatchContext } from "../src/lib/ml/match";
 

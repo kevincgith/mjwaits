@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { botClaimFor, botTurnMoveFor, profileById, seededRng } from "../bots";
-import { applyTurnMove, dealHand, resolveClaims, SEATS, type GameState } from "../game";
+import { applyTurnMove, dealHand, resolveClaims, SEATS, type GameState } from "@mjwaits/shared/engine/game";
 import {
   actionToClaim,
   actionToTurnMove,

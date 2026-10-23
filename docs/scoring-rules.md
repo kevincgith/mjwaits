@@ -1,6 +1,6 @@
 # Scoring rules (tai/番)
 
-Reference for the house tai list implemented in [`src/lib/scoring.ts`](../src/lib/scoring.ts)'s
+Reference for the house tai list implemented in [`shared/engine/scoring.ts`](../shared/engine/scoring.ts)'s
 `PATTERNS` array, built up one pattern at a time. Detection stays concrete (one check per pattern),
 but every value and relation below is the **default** of an editable ruleset - see
 [Rule classification and customisation](#rule-classification-and-customisation). The tables here
@@ -15,7 +15,7 @@ differences from the house list (so it follows the house list wherever it doesn'
 [`src/lib/taiRuleSets.ts`](../src/lib/taiRuleSets.ts). Detection and value are separate: each pattern's `score()`
 only says **how many times** it applies (0, 1, n - or the declared count for 槓摸/搶槓/莊), and the
 rules turn that into tai. Everything about a pattern's rule is written in one place,
-[`src/lib/taiCatalog.ts`](../src/lib/taiCatalog.ts), and the default ruleset is built from it alone:
+[`shared/engine/taiCatalog.ts`](../shared/engine/taiCatalog.ts), and the default ruleset is built from it alone:
 
 | Attribute | What it is | Editable as |
 |---|---|---|
@@ -86,7 +86,7 @@ drawing for every tile; page 1's columns are split in code rather than with CSS 
 Safari's engine drops when printing. A few descriptions aren't pinned down by the house rules yet - see ROADMAP.md, "Needs
 clarification".
 
-**Fallback.** `src/lib/scoringLegacy.ts` is a frozen copy of the engine from before rules were
+**Fallback.** `shared/engine/scoringLegacy.ts` is a frozen copy of the engine from before rules were
 editable. 設定 → Advanced (at the bottom) → "Scoring engine: Original built-in" (a phone-wide setting,
 `mjwaits.taiEngine`, not part of any set) scores with it, and if the configurable engine ever throws (a
 bug, not an incomplete hand) the hand is re-scored with it and the TOTAL card says so.
@@ -100,7 +100,7 @@ three runs, or a rank held all 4 copies as a kong vs. a triplet plus one tile bo
 adjacent run), scoring picks whichever reading yields the highest total tai.
 
 **This is a genuine global max, not a greedy/local choice.** `allSuitDecompositions`
-([scoring.ts](../src/lib/scoring.ts)) is an exhaustive backtracking search: at every branch point it
+([scoring.ts](../shared/engine/scoring.ts)) is an exhaustive backtracking search: at every branch point it
 tries every structurally valid option (triplet, kong, run) and recurses into each rather than
 committing to one, so *every* full decomposition of the hand gets enumerated as its own candidate -
 not just whichever one a first-choice heuristic happens to reach first. `scoreParsedHand` then scores
@@ -397,7 +397,7 @@ three overlapping 大三連刻 (`[1,2,3]`, `[2,3,4]`, `[3,4,5]`) = 90, and `222 
 alone (its two 二連刻 are inside it). Give 大五連刻 a value and the same hand is one 大五連刻; give
 大四連刻 a value (大五 still 0) and it's two overlapping 大四連刻. A separate chain in another suit
 counts on its own (`222 333 444萬 + 77 888 999筒` = 大三 + 小三). 雙連刻 off, two separate
-二連刻 simply count twice. See `CHAIN_TIERS` in [scoring.ts](../src/lib/scoring.ts).
+二連刻 simply count twice. See `CHAIN_TIERS` in [scoring.ts](../shared/engine/scoring.ts).
 
 ## Cross-suit patterns
 

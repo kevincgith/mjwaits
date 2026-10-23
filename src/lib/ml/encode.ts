@@ -24,9 +24,9 @@ import {
   type Claim,
   type GameState,
   type TurnMove,
-} from "../game";
+} from "@mjwaits/shared/engine/game";
 import { profileById, rateDiscardsFor } from "../bots";
-import { allTileKinds, shanten, tileKey, type Tile } from "../mahjong";
+import { allTileKinds, shanten, tileKey, type Tile } from "@mjwaits/shared/engine/mahjong";
 import { matchScalars, NUM_MATCH_SCALARS, type MatchContext } from "./match";
 
 export const KINDS = allTileKinds();

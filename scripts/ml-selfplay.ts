@@ -31,7 +31,7 @@ import { availableParallelism } from "node:os";
 import { isMainThread, parentPort, Worker, workerData } from "node:worker_threads";
 import * as ort from "onnxruntime-web/wasm";
 import { botClaimFor, botSurrenders, botTurnMoveFor, profileById, seededRng, type BotProfile, type Rng } from "../src/lib/bots";
-import { applyTurnMove, dealHand, fullWall, nextHand, resolveClaims, SEATS, surrender, type Claim, type GameState, type WallTile } from "../src/lib/game";
+import { applyTurnMove, dealHand, fullWall, nextHand, resolveClaims, SEATS, surrender, type Claim, type GameState, type WallTile } from "@mjwaits/shared/engine/game";
 import { actionToClaim, actionToTurnMove, claimDecisionAction, encodeObservation, legalActions, NUM_ACTIONS, NUM_PLANES, OBS_SIZE, OBS_SIZE_MATCH, turnMoveAction } from "../src/lib/ml/encode";
 import { afterHand, randomMatch, type MatchContext } from "../src/lib/ml/match";
 import { sample } from "../src/lib/ml/policy";

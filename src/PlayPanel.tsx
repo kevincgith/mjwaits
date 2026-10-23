@@ -45,9 +45,9 @@ import {
   type GameMeld,
   type GameState,
   type TurnMove,
-} from "./lib/game";
-import { allTileKinds, getWaits, shanten, sortTiles, tileKey, tileLabel, type Tile } from "./lib/mahjong";
-import { patternDisplayName, type BonusTile } from "./lib/scoring";
+} from "@mjwaits/shared/engine/game";
+import { allTileKinds, getWaits, shanten, sortTiles, tileKey, tileLabel, type Tile } from "@mjwaits/shared/engine/mahjong";
+import { patternDisplayName, type BonusTile } from "@mjwaits/shared/engine/scoring";
 import { BonusGlyphSpan, TileGlyphSpan } from "./TileGlyphs";
 import { BOT_PROFILES, botClaimFor, botSurrenders, botTurnFor, LEARNED_PREFIX, learnedProfile, learnedStyle, profileById, rateDiscardsFor, voiceOf, type BotProfile, type Voice } from "./lib/bots";
 import { loadLearnedModel, type LearnedModel } from "./lib/ml/browser";

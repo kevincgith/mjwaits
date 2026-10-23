@@ -1,0 +1,11 @@
+{
+  "name": "@mjwaits/shared",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Shared by the web app and the multiplayer Worker: the rules engine (tiles, tai scoring, the hand engine, score keeping) and the multiplayer message protocol. No dependencies, no browser APIs.",
+  "exports": {
+    "./engine/*": "./engine/*.ts",
+    "./protocol/*": "./protocol/*.ts"
+  }
+}

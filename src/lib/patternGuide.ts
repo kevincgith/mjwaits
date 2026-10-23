@@ -10,7 +10,7 @@
 // "Needs clarification"; settle the wording there before relying on a
 // printed reference for them.
 
-import type { PatternFamily } from "./taiCatalog";
+import type { PatternFamily } from "@mjwaits/shared/engine/taiCatalog";
 
 /** One line under each family's heading. */
 export const FAMILY_GUIDE: Record<PatternFamily, string> = {

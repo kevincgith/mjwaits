@@ -713,7 +713,6 @@ export interface ScoreStore {
   settings: ScoreSettings; // what a new game starts with
 }
 
-export const SCORES_KEY = "mjwaits.scores";
 export const PLAYER_COLORS = 8;
 
 export function emptyStore(): ScoreStore {
@@ -728,56 +727,13 @@ const isGame = (g: unknown): g is ScoreGame =>
   Array.isArray((g as ScoreGame).events);
 
 // Whatever was saved (or imported), trimmed to what this version can use.
-function normalizeStore(saved: Partial<ScoreStore>): ScoreStore {
+export function normalizeStore(saved: Partial<ScoreStore>): ScoreStore {
   return {
     active: isGame(saved.active) ? saved.active : null,
     history: Array.isArray(saved.history) ? saved.history.filter(isGame) : [],
     roster: Array.isArray(saved.roster) ? saved.roster.filter((p) => p && typeof p.name === "string") : [],
     settings: { ...DEFAULT_SETTINGS, ...(saved.settings ?? {}) },
   };
-}
-
-// Saved scores that couldn't be read are copied here before anything new is
-// saved over them, so they're never lost - a backup file can still be made
-// from them (see unreadableScores).
-export const UNREADABLE_SCORES_KEY = `${SCORES_KEY}.unreadable`;
-
-export function loadScores(): ScoreStore {
-  let raw: string | null = null;
-  try {
-    raw = window.localStorage.getItem(SCORES_KEY);
-    if (!raw) return emptyStore();
-    return normalizeStore(JSON.parse(raw) as Partial<ScoreStore>);
-  } catch {
-    if (raw) {
-      try {
-        window.localStorage.setItem(UNREADABLE_SCORES_KEY, raw);
-      } catch {
-        // No room even for that - the next save would still overwrite it.
-      }
-    }
-    return emptyStore();
-  }
-}
-
-// The saved scores that couldn't be read, if any were kept.
-export function unreadableScores(): string | null {
-  try {
-    return window.localStorage.getItem(UNREADABLE_SCORES_KEY);
-  } catch {
-    return null;
-  }
-}
-
-// false: the scores weren't saved (storage full or blocked) - they'd be lost
-// on a reload, so the Scores tab says so.
-export function saveScores(store: ScoreStore): boolean {
-  try {
-    window.localStorage.setItem(SCORES_KEY, JSON.stringify(store));
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 // ---- Backup --------------------------------------------------------------

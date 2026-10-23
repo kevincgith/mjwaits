@@ -7,11 +7,12 @@
 // is owned by App (so the Scoring tab can send a hand here) and saved to
 // localStorage on every change.
 //
-// The pieces live in scores/: shared building blocks, the sheets, the board
-// and 統計.
+// The pieces live in scores/: shared building blocks, the sheets, the board,
+// 統計, and 線上 - the same scoreboard shared live between phones.
 
 import { useEffect, useMemo, useState } from "react";
-import { DEFAULT_SETTINGS, newGame, replay, unreadableScores, UNREADABLE_SCORES_KEY, type ScoreGame, type ScoreStore } from "./lib/ledger";
+import { DEFAULT_SETTINGS, newGame, replay, type ScoreGame, type ScoreStore } from "@mjwaits/shared/engine/ledger";
+import { unreadableScores, UNREADABLE_SCORES_KEY } from "./lib/scoreStore";
 import { type ScoreSnapshot } from "./lib/scoreShare";
 import { playerStats, trend } from "./lib/scoreStats";
 import { type RecordRequest, type ScoreHandRequest, type SeatingResult, fmt, signed, tone, SectionHead, Segmented, withRoster } from "./scores/shared";
@@ -22,6 +23,8 @@ export type { RecordRequest, ScoreHandRequest, SeatingResult } from "./scores/sh
 import { Setup } from "./scores/sheets";
 import { Board } from "./scores/board";
 import { TrendChart, TrendSummary, PlayerCard, type StatsView, saveBackupFile, BackupCard, StatsPanel, HandsTable } from "./scores/stats";
+import { OnlinePanel } from "./scores/online";
+import { loadOnline } from "./lib/online";
 
 // ---- The tab ------------------------------------------------------------------------
 
@@ -207,6 +210,7 @@ export function ScoresPanel({
   seatingResult,
   onSeatingResultDone,
   saveFailed,
+  joinCode = null,
 }: {
   store: ScoreStore;
   setStore: (s: ScoreStore) => void;
@@ -218,8 +222,10 @@ export function ScoresPanel({
   onOpenSeating?: (names: string[], east: number | null) => void; // the Dice tab's Seating, for the seat ceremony (east: the provisional East's seat)
   seatingResult?: SeatingResult | null; // ...and what it came back with
   onSeatingResultDone?: () => void;
+  joinCode?: string | null; // a ?room= link: open 線上 on that table
 }) {
-  const [sub, setSub] = useState<"board" | "stats">("board");
+  // At an online table (an invite link, or one left open), Scores opens on it.
+  const [sub, setSub] = useState<"board" | "stats" | "online">(() => (joinCode || loadOnline().current ? "online" : "board"));
   const [view, setView] = useState<StatsView>("trend");
   useEffect(() => {
     if (request || seatingResult) setSub("board");
@@ -246,6 +252,9 @@ export function ScoresPanel({
         <button type="button" className={sub === "stats" ? "toggle-on" : undefined} aria-pressed={sub === "stats"} onClick={() => setSub("stats")}>
           統計 Stats
         </button>
+        <button type="button" className={sub === "online" ? "toggle-on" : undefined} aria-pressed={sub === "online"} onClick={() => setSub("online")}>
+          線上 Online
+        </button>
       </div>
       {sub === "board" &&
         (game && state ? (
@@ -269,6 +278,7 @@ export function ScoresPanel({
           </>
         ))}
       {sub === "stats" && <StatsPanel store={store} setStore={setStore} view={view} setView={setView} />}
+      {sub === "online" && <OnlinePanel store={store} setStore={setStore} joinCode={joinCode} />}
     </section>
   );
 }

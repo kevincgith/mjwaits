@@ -3,12 +3,16 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "workspaces": [
+    "shared",
+    "worker"
+  ],
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "test": "vitest run",
+    "test": "vitest run && npm test --workspace worker",
     "arena": "vite build --ssr scripts/arena.ts --outDir .arena --emptyOutDir --logLevel warn && node .arena/arena.js",
     "evolve": "vite build --ssr scripts/evolve.ts --outDir .evolve --emptyOutDir --logLevel warn && node .evolve/evolve.js",
     "ml-data": "vite build --ssr scripts/ml-data.ts --outDir .ml-data --emptyOutDir --logLevel warn && node .ml-data/ml-data.js",
@@ -16,6 +20,7 @@
     "ml-selfplay": "vite build --ssr scripts/ml-selfplay.ts --outDir .ml-selfplay --emptyOutDir --logLevel warn && node .ml-selfplay/ml-selfplay.js"
   },
   "dependencies": {
+    "@mjwaits/shared": "*",
     "onnxruntime-web": "^1.27.0",
     "qrcode-generator": "2.0.4",
     "react": "^19.2.8",

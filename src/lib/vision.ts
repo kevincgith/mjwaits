@@ -30,7 +30,7 @@ import {
   MELDS_REQUIRED,
   type Suit,
   type Tile,
-} from "./mahjong";
+} from "@mjwaits/shared/engine/mahjong";
 
 export const IMG_SIZE = 640;
 const CONFIDENCE_THRESHOLD = 0.4;

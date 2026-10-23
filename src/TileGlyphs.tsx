@@ -1,8 +1,8 @@
 // The tile glyph components shared by every tab: one ordinary tile or one
 // flower/season, drawn in the current tile style (art or Unicode).
 
-import { tileGlyph, tileLabel, type Tile } from "./lib/mahjong";
-import type { BonusTile } from "./lib/scoring";
+import { tileGlyph, tileLabel, type Tile } from "@mjwaits/shared/engine/mahjong";
+import type { BonusTile } from "@mjwaits/shared/engine/scoring";
 import { bonusArtUrl, bonusTileLabel, tileArtUrl, useTileArtUrl, useTileStyle } from "./tileArt";
 
 export function TileGlyphSpan({

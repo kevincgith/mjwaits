@@ -16,7 +16,7 @@ import {
   analyzeDiscardChoices,
   getWaits,
   tileKey,
-} from "./mahjong";
+} from "@mjwaits/shared/engine/mahjong";
 
 export const MIN_TRAINER_LEVEL = 1;
 export const MAX_TRAINER_LEVEL = 5;

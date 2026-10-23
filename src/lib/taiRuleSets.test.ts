@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import qrcode from "qrcode-generator";
-import { DEFAULT_TAI_RULES, PATTERNS, type TaiRules } from "./scoring";
-import { normalizeRules, TAI_RULES_KEY } from "./taiRules";
+import { DEFAULT_TAI_RULES, PATTERNS, type TaiRules } from "@mjwaits/shared/engine/scoring";
+import { normalizeRules, TAI_RULES_KEY } from "@mjwaits/shared/engine/taiRules";
 import {
   diffOf,
   ENGINE_KEY,

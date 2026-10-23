@@ -42,3 +42,7 @@ __pycache__/
 # Screenshots of another scoring app, for comparison - not ours to commit.
 reference-app/
 .ml-md-*
+
+# Wrangler's local state and dev-only secrets/vars
+.wrangler/
+.dev.vars*

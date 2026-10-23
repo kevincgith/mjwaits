@@ -4,8 +4,8 @@
 // follows the house list wherever it doesn't differ. The house list itself
 // is always there, built in, and can't be edited or deleted.
 
-import { DEFAULT_TAI_RULES, type TaiRules } from "./scoring";
-import { normalizeRules, rulesDiff, rulesFromDiff, TAI_RULES_KEY, type RulesDiff } from "./taiRules";
+import { DEFAULT_TAI_RULES, type TaiRules } from "@mjwaits/shared/engine/scoring";
+import { normalizeRules, rulesDiff, rulesFromDiff, TAI_RULES_KEY, type RulesDiff } from "@mjwaits/shared/engine/taiRules";
 
 export const RULE_SETS_KEY = "mjwaits.taiRuleSets";
 // The developer sheet's frozen-engine switch - a device setting, not part of

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { newGame, withEvent, type ScoreStore } from "./ledger";
+import { newGame, withEvent, type ScoreStore } from "@mjwaits/shared/engine/ledger";
 import { decodeFull, decodeSnapshot, encodeFull, encodeSnapshot, fullSnapshotOf, fullSnapshotUrl, snapshotFromAnyHash, snapshotFromHash, snapshotOf, snapshotUrl } from "./scoreShare";
 
 const store = (): ScoreStore => {

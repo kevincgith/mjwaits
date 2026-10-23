@@ -3,9 +3,9 @@
 // (localStorage). The situation is stored as just what differs from the
 // defaults, so a plain hand's link stays short.
 
-import { parseHand, type Tile } from "./lib/mahjong";
-import { parseScoringHand, type BonusTile, type GameContext } from "./lib/scoring";
-import { TEST_HAND_BASE_CONTEXT } from "./lib/testHands";
+import { parseHand, type Tile } from "@mjwaits/shared/engine/mahjong";
+import { parseScoringHand, type BonusTile, type GameContext } from "@mjwaits/shared/engine/scoring";
+import { TEST_HAND_BASE_CONTEXT } from "@mjwaits/shared/engine/testHands";
 
 export interface SharedHand {
   /** Scoring notation - "(123m)" declared, "[1111z]" 暗槓, the rest concealed. */

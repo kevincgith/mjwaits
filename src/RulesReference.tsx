@@ -10,10 +10,10 @@ import { createPortal } from "react-dom";
 import { PatternExampleView } from "./PatternExample";
 import { rasterizeTileArt, TileArtRemapContext, TileStyleContext } from "./tileArt";
 import { FAMILY_GUIDE, GENERAL_RULES, PAIR_GUIDE, PATTERN_GUIDE } from "./lib/patternGuide";
-import { DEFAULT_TAI_RULES, effectiveReplaces, HAND_SHAPES, PATTERNS, type PatternRule, type TaiRules } from "./lib/scoring";
-import { LADDERS, pairOf, PATTERN_CATALOG, PATTERN_FAMILIES, type Ladder, type OpenConcealedPair, type PatternFamily } from "./lib/taiCatalog";
+import { DEFAULT_TAI_RULES, effectiveReplaces, HAND_SHAPES, PATTERNS, type PatternRule, type TaiRules } from "@mjwaits/shared/engine/scoring";
+import { LADDERS, pairOf, PATTERN_CATALOG, PATTERN_FAMILIES, type Ladder, type OpenConcealedPair, type PatternFamily } from "@mjwaits/shared/engine/taiCatalog";
 import { situationLinkRows } from "./lib/situationLinks";
-import { chickenIgnores, describeChanges, isLadderChanged, isRuleOn, isRowChanged, pairName, ruleChanges, shortName } from "./lib/taiRules";
+import { chickenIgnores, describeChanges, isLadderChanged, isRuleOn, isRowChanged, pairName, ruleChanges, shortName } from "@mjwaits/shared/engine/taiRules";
 
 const NAME_BY_ID = new Map(PATTERNS.map((p) => [p.id, p.name]));
 const english = (id: string) => {

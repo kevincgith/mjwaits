@@ -21,8 +21,8 @@ import {
   PATTERNS,
   type PatternRule,
   type TaiRules,
-} from "./lib/scoring";
-import { LADDERS, pairOf, PATTERN_CATALOG, PATTERN_FAMILIES, type Ladder, type OpenConcealedPair, type PatternFamily } from "./lib/taiCatalog";
+} from "@mjwaits/shared/engine/scoring";
+import { LADDERS, pairOf, PATTERN_CATALOG, PATTERN_FAMILIES, type Ladder, type OpenConcealedPair, type PatternFamily } from "@mjwaits/shared/engine/taiCatalog";
 import {
   activeSet,
   diffOf,
@@ -52,7 +52,7 @@ import {
   replacedBy,
   shortName,
   type RuleChange,
-} from "./lib/taiRules";
+} from "@mjwaits/shared/engine/taiRules";
 
 const NAME_BY_ID = new Map(PATTERNS.map((p) => [p.id, p.name]));
 // "清一色 (One numbered suit, no honors)" -> ["清一色", "One numbered suit, no honors"]

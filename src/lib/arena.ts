@@ -8,7 +8,7 @@
 // hands), as at a real table; each whole session is replayed under the four
 // seatings.
 
-import { botClaim, botTurnMove, applyTurnMove, dealHand, fullWall, nextHand, resolveClaims, SEATS, surrender, type Claim, type GameState, type TurnMove, type WallTile } from "./game";
+import { botClaim, botTurnMove, applyTurnMove, dealHand, fullWall, nextHand, resolveClaims, SEATS, surrender, type Claim, type GameState, type TurnMove, type WallTile } from "@mjwaits/shared/engine/game";
 import { botClaimFor, botSurrenders, botTurnMoveFor, profileById, seededRng, type BotProfile, type Rng } from "./bots";
 
 // The original single-minded bot, kept as a yardstick.

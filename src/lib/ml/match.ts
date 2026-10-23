@@ -11,7 +11,7 @@
 // Training plays every setting, so one network can be asked for any of
 // them at the table.
 
-import { SEATS, type GameState } from "../game";
+import { SEATS, type GameState } from "@mjwaits/shared/engine/game";
 import type { Rng } from "../bots";
 
 export interface OppStats {
