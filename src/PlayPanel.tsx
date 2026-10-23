@@ -148,8 +148,8 @@ const PONDER_DELAY_MS = 900;
 // and flowers go in front of the hand instead.
 const LINE_FITS = 18;
 const lineLength = (p: GameState["players"][number]) => p.hand.length + p.flowers.length + p.melds.reduce((n, m) => n + m.tiles.length, 0);
-// How far the table tips away from you, in degrees: just enough to fit (see fitTable).
-const TILT = { min: 24, max: 72 };
+// The table's tiles, as a share of your hand's tile size: as big as fits (see fitTable).
+const TILE_SIZE = { min: 0.3, max: 0.7 };
 // A discard a bot is about to take stays on the table this long first, so
 // everyone sees what was thrown before it goes into the caller's meld.
 const CLAIM_DELAY_MS = 1100;
@@ -581,31 +581,35 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
     seats.forEach((el) => watch.observe(el));
     return () => watch.disconnect();
   }, []);
-  // Every tile on the table is one size (as real tiles are), so the table
-  // is as deep as what's on it needs - the longer side seat, or the ponds
-  // and compass down the middle - and tipped back as far as it takes for
-  // its far edge to sit just under the name cards. Further tiles look
-  // smaller only by perspective. Run before paint whenever the table
-  // changes, and on resizing.
+  // Every tile on the table is one size (as real tiles are), seen at one
+  // angle (TABLE_TILT): the table is as deep as what's on it needs - the
+  // longer side seat, or the ponds and compass down the middle - and the
+  // tile size is the largest at which that depth, tipped back, still fits
+  // under the name cards. Further tiles look smaller only by perspective.
+  // Run before paint whenever the table changes, and on resizing.
   const fitTable = () => {
     const felt = feltRef.current;
     const stage = felt?.parentElement;
     if (!felt || !stage) return;
-    felt.style.height = "";
-    const fill = felt.offsetHeight; // the stage's height (and the part under your hand)
-    felt.style.height = "auto";
-    const needs = felt.offsetHeight; // what's on it
-    felt.style.height = `${Math.max(fill, needs)}px`;
     const limit = stage.getBoundingClientRect().top + parseFloat(getComputedStyle(stage).paddingTop);
-    let lo = TILT.min;
-    let hi = TILT.max;
-    for (let i = 0; i < 12; i++) {
+    const fits = (k: number) => {
+      felt.style.setProperty("--play-tile-k", k.toFixed(3));
+      felt.style.height = "";
+      const fill = felt.offsetHeight; // the stage's height (and the part under your hand)
+      felt.style.height = "auto";
+      const needs = felt.offsetHeight; // what's on it
+      felt.style.height = `${Math.max(fill, needs)}px`;
+      return felt.getBoundingClientRect().top >= limit - 1;
+    };
+    let lo = TILE_SIZE.min;
+    let hi = TILE_SIZE.max;
+    if (fits(hi)) return;
+    for (let i = 0; i < 10; i++) {
       const mid = (lo + hi) / 2;
-      felt.style.setProperty("--play-tilt", `${mid}deg`);
-      if (felt.getBoundingClientRect().top < limit) lo = mid;
+      if (fits(mid)) lo = mid;
       else hi = mid;
     }
-    felt.style.setProperty("--play-tilt", `${hi.toFixed(1)}deg`);
+    fits(lo);
   };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useLayoutEffect(fitTable, [game]);

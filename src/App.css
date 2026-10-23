@@ -5618,7 +5618,7 @@ html.playing body {
   padding-top: 2.3rem;
   /* Seen from a little way back, so the far side of the deep, steeply
      tipped table (see fitTable) isn't shrunk more than it needs to be. */
-  perspective: 1400px;
+  perspective: 1100px;
   /* A viewpoint a little below the top of the screen, so the standing
      tiles show their faces, not just their tops. */
   perspective-origin: 50% 45%;
@@ -5627,8 +5627,8 @@ html.playing body {
 .play-felt {
   position: relative;
   flex: 1;
-  /* As deep as what's on it needs, and tipped back as far as it takes to
-     fit the screen (both set in PlayPanel - see fitTable). */
+  /* As deep as what's on it needs (set in PlayPanel - see fitTable),
+     tipped back at one angle. */
   height: calc(100% + var(--play-under));
   margin-bottom: calc(-1 * var(--play-under));
   box-sizing: border-box;
@@ -5637,9 +5637,10 @@ html.playing body {
      (--play-side, measured - see PlayPanel), so a seat's melds growing
      never pushes the middle off centre. */
   grid-template-columns: var(--play-side, auto) minmax(0, 1fr) auto minmax(0, 1fr) var(--play-side, auto);
-  /* Every tile on the table: one size, as with real tiles. Those further
-     away look smaller only because the table is tipped away from you. */
-  --play-tile: clamp(12px, calc(var(--play-hand) * 0.58), 38px);
+  /* Every tile on the table: one size, as with real tiles - as big as fits
+     (--play-tile-k, fitted in PlayPanel). Those further away look smaller
+     only because the table is tipped away from you. */
+  --play-tile: calc(var(--play-hand) * var(--play-tile-k, 0.5));
   grid-template-rows: auto auto minmax(0, 1fr) auto;
   grid-template-areas:
     "lseat top   top    top   rseat"
@@ -5656,7 +5657,7 @@ html.playing body {
     0 0 0 0.45rem #3a2717,
     0 0 0 0.6rem #1c120a,
     0 1.2rem 2.4rem rgba(0, 0, 0, 0.6);
-  transform: rotateX(var(--play-tilt, 24deg));
+  transform: rotateX(var(--play-tilt, 38deg));
   transform-origin: 50% 100%;
 }
 
@@ -5973,7 +5974,7 @@ html.playing body {
 .play-seat-right {
   align-self: center;
   /* Starts below the name card over the table's far corner. */
-  margin-top: calc(var(--play-small) * 2.2);
+  margin-top: var(--play-small);
 }
 
 /* Each as wide as what's in it (measured for --play-side), against its edge. */
@@ -6058,33 +6059,6 @@ html.playing body {
 .play-seat-right .play-back {
   width: 0.96em;
   height: 0.74em;
-}
-
-.play-felt .play-seat-left img.tile-face {
-  box-shadow:
-    0 0 0 0.5px rgba(0, 0, 0, 0.28),
-    0.08em 0 0 var(--play-ivory),
-    0.13em 0 0 var(--play-back),
-    0.15em 0 0 var(--play-back-edge),
-    0.2em 0 0.14em rgba(0, 0, 0, 0.38);
-}
-
-.play-felt .play-seat-right img.tile-face {
-  box-shadow:
-    0 0 0 0.5px rgba(0, 0, 0, 0.28),
-    -0.08em 0 0 var(--play-ivory),
-    -0.13em 0 0 var(--play-back),
-    -0.15em 0 0 var(--play-back-edge),
-    -0.2em 0 0.14em rgba(0, 0, 0, 0.38);
-}
-
-.play-felt .play-seat-top img.tile-face {
-  box-shadow:
-    0 0 0 0.5px rgba(0, 0, 0, 0.28),
-    0 -0.08em 0 var(--play-ivory),
-    0 -0.13em 0 var(--play-back),
-    0 -0.15em 0 var(--play-back-edge),
-    0 -0.2em 0.14em rgba(0, 0, 0, 0.38);
 }
 
 /* The bots' concealed tiles, standing on the felt as real 3D blocks: each
@@ -6251,6 +6225,7 @@ html.playing body {
   font-size: var(--play-tile);
   min-width: 0;
   min-height: 0;
+  transform-style: preserve-3d;
 }
 
 .play-pond-slot-top {
@@ -6283,21 +6258,24 @@ html.playing body {
   align-self: end;
 }
 
+/* Discards in rows, side by side as real tiles lie: each tile's box is a
+   little bigger than its face (see img.tile-face), so the margins take
+   that back and the faces all but touch. */
 .play-pond {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.2em 0.03em;
+  transform-style: preserve-3d;
 }
 
 .play-pond-top,
 .play-pond-bottom {
-  width: calc(12 * 0.82em);
+  width: calc(12 * 0.74em);
   justify-content: center;
 }
 
 .play-pond-left,
 .play-pond-right {
-  max-width: calc(6 * 0.82em);
+  max-width: calc(6 * 0.74em);
 }
 
 .play-pond-left {
@@ -6307,7 +6285,9 @@ html.playing body {
 .play-pond-tile {
   position: relative;
   display: inline-block;
+  margin: -0.035em -0.025em;
   line-height: 0;
+  transform-style: preserve-3d;
 }
 
 /* The tile that declared 叮 lies sideways: its slot is as wide as a tile
@@ -6317,7 +6297,7 @@ html.playing body {
   display: inline-flex;
   justify-content: center;
   width: 1em;
-  margin: 0 0.04em;
+  margin: -0.035em -0.025em;
 }
 
 .play-pond-tile.is-riichi > .tile-glyph {
@@ -6789,7 +6769,7 @@ html.playing body {
    shows its top edge above the face - the ivory body nearest the face,
    then the jade back behind it. */
 
-.play-felt img.tile-face,
+/* The result card's hands, lying flat, seen face on: the near edge below. */
 .play-result-hand img.tile-face {
   box-shadow:
     0 0 0 0.5px rgba(0, 0, 0, 0.28),
@@ -6799,16 +6779,71 @@ html.playing body {
     0 0.2em 0.14em rgba(0, 0, 0, 0.38);
 }
 
-/* Lying sideways (叮): the tile is turned a quarter, so its edge toward
-   you - its long side - is drawn along the face's own x (turned, it points
-   down the screen). */
-.play-felt .is-riichi img.tile-face {
-  box-shadow:
-    0 0 0 0.5px rgba(0, 0, 0, 0.28),
-    0.08em 0 0 var(--play-ivory),
-    0.13em 0 0 var(--play-back),
-    0.15em 0 0 var(--play-back-edge),
-    0.2em 0 0.14em rgba(0, 0, 0, 0.38);
+/* On the table, a tile lying flat is a real block: its face raised off the
+   felt by the tile's thickness, and its side toward you standing up from
+   the felt - jade back at the bottom, ivory body under the face - so the
+   table's tilt shows it as it would a real tile. A tile turned to face a
+   side seat (or laid sideways for 叮) shows its long side; one turned to
+   face the far seat, its other end. */
+.play-felt {
+  --play-thick: 0.42em;
+}
+
+.play-felt .tile-glyph.tile-art {
+  transform-style: preserve-3d;
+}
+
+.play-felt img.tile-face {
+  transform: translateZ(var(--play-thick));
+  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.25);
+}
+
+.play-felt .tile-glyph.tile-art::after {
+  content: "";
+  position: absolute;
+  /* Under the face's near edge (see img.tile-face: 0.72em x 0.913em, 0.043em down). */
+  left: 0.03em;
+  top: 0.956em;
+  width: 0.72em;
+  height: var(--play-thick);
+  border-radius: 0 0 0.07em 0.07em;
+  background: linear-gradient(to bottom, var(--play-back-edge), var(--play-back) 38%, #7fd98c 46%, var(--play-ivory) 54%, #f2ede0);
+  transform-origin: 50% 0;
+  transform: rotateX(90deg);
+}
+
+/* Turned a quarter clockwise (the left seat, 叮): the near side is the face's right. */
+.play-felt .play-seat-left .tile-glyph.tile-art::after,
+.play-felt .is-riichi .tile-glyph.tile-art::after {
+  left: 0.75em;
+  top: 0.043em;
+  width: var(--play-thick);
+  height: 0.913em;
+  border-radius: 0 0.07em 0.07em 0;
+  background: linear-gradient(to right, var(--play-back-edge), var(--play-back) 38%, #7fd98c 46%, var(--play-ivory) 54%, #f2ede0);
+  transform-origin: 0 50%;
+  transform: rotateY(-90deg);
+}
+
+/* A quarter the other way (the right seat): the face's left. */
+.play-felt .play-seat-right .tile-glyph.tile-art::after {
+  left: calc(0.03em - var(--play-thick));
+  top: 0.043em;
+  width: var(--play-thick);
+  height: 0.913em;
+  border-radius: 0.07em 0 0 0.07em;
+  background: linear-gradient(to left, var(--play-back-edge), var(--play-back) 38%, #7fd98c 46%, var(--play-ivory) 54%, #f2ede0);
+  transform-origin: 100% 50%;
+  transform: rotateY(90deg);
+}
+
+/* Half round (the far seat): the face's top. */
+.play-felt .play-seat-top .tile-glyph.tile-art::after {
+  top: calc(0.043em - var(--play-thick));
+  border-radius: 0.07em 0.07em 0 0;
+  background: linear-gradient(to top, var(--play-back-edge), var(--play-back) 38%, #7fd98c 46%, var(--play-ivory) 54%, #f2ede0);
+  transform-origin: 50% 100%;
+  transform: rotateX(-90deg);
 }
 
 .play-hand img.tile-face,
