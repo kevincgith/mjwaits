@@ -318,11 +318,12 @@ two tabs:
 
 After each entry a toast offers a one-tap 還原.
 
-The centre **流局** button records a draw. The toolbar: **新局** (file this game in History and
-start another), **還原** (undo the last entry), **莊家** (set the dealer and 連莊, optionally
-back to 東風東局), **換人** (swap seats, or bring in a 候補 player - totals stay with the player),
-**拉踢** (every live 拉, each with 投降), **結帳** (the fewest payments that settle everyone,
-× 倍數, and End game) and **設定**.
+The centre **流局** button records a draw. The toolbar: **新局** (結帳 · 新局: the fewest
+payments that settle everyone, × 倍數 ($ per tai), to share as text or a picture - then file this
+game in History and start another), **還原** / **重做** (undo / redo the last entry), **座位**
+(swap seats, or bring in a 候補 player - totals stay with the player; set the dealer and 連莊,
+optionally back to 東風東局; or run the Dice tab's seating ceremony), **拉踢** (every live 拉,
+each with 投降), **最近** (every hand so far), **設定** and **線上**.
 
 **How a payment is worked out.** One payer owes one winner: 底 + 番 + 莊 (自動計算莊 + 連莊 ×
 自動計算連莊, only when one of the two is the dealer) + the pair's 拉/踢. (**封頂**, 999 by
