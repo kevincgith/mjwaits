@@ -5680,7 +5680,10 @@ html.playing body {
      as in the table apps, so the side walls fit the table's depth. */
   --play-tile: calc(var(--play-hand) * 0.74);
   --play-wall: calc(var(--play-tile) * 0.62);
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  /* The middle row just the compass: the far and near ponds start right by
+     it and grow toward their players, the table's spare depth split beyond
+     them (the far pond sits at the foot of its row, yours at the top). */
+  grid-template-rows: auto minmax(0, 1fr) auto minmax(0, 1fr);
   /* The ponds as a pinwheel, each in front of its player: the side
      players' running the table's full height, the far and near ones only
      as wide as the middle - so all four can fill without meeting. */
@@ -6184,6 +6187,114 @@ html.playing body {
   rotate: none;
   translate: none;
   margin: 0;
+}
+
+/* A hand laid down at the end topples: each tile starts standing on the
+   edge nearest its owner, face toward them, and falls away from them onto
+   its back - one after another along the row, quickening as it falls, with
+   a small settle. Then the winning tile drops in. (Moved only, never faded:
+   a 3D tile turned partly transparent is drawn flat.) */
+.play-topple {
+  display: inline-flex;
+  line-height: 0;
+  transform-style: preserve-3d;
+  animation: 0.42s cubic-bezier(0.55, 0, 1, 0.45) both;
+  animation-delay: calc(var(--topple-at, 0s) + var(--i, 0) * 0.035s);
+}
+
+.play-seat-top .play-topple {
+  transform-origin: 50% 0;
+  animation-name: play-topple-far;
+}
+
+.play-seat-left .play-topple {
+  transform-origin: 0 50%;
+  animation-name: play-topple-left;
+}
+
+.play-seat-right .play-topple {
+  transform-origin: 100% 50%;
+  animation-name: play-topple-right;
+}
+
+.play-seat .play-meld.is-revealed .play-win-tile > .tile-glyph {
+  animation: play-drop 0.36s both;
+  animation-delay: calc(var(--topple-at, 0s) + var(--n, 0) * 0.035s + 0.45s);
+}
+
+@keyframes play-topple-far {
+  0% {
+    transform: rotateX(90deg);
+  }
+  80% {
+    transform: rotateX(0deg);
+    animation-timing-function: ease-out;
+  }
+  90% {
+    transform: rotateX(7deg);
+    animation-timing-function: ease-in;
+  }
+  100% {
+    transform: rotateX(0deg);
+  }
+}
+
+@keyframes play-topple-left {
+  0% {
+    transform: rotateY(-90deg);
+  }
+  80% {
+    transform: rotateY(0deg);
+    animation-timing-function: ease-out;
+  }
+  90% {
+    transform: rotateY(-7deg);
+    animation-timing-function: ease-in;
+  }
+  100% {
+    transform: rotateY(0deg);
+  }
+}
+
+@keyframes play-topple-right {
+  0% {
+    transform: rotateY(90deg);
+  }
+  80% {
+    transform: rotateY(0deg);
+    animation-timing-function: ease-out;
+  }
+  90% {
+    transform: rotateY(7deg);
+    animation-timing-function: ease-in;
+  }
+  100% {
+    transform: rotateY(0deg);
+  }
+}
+
+/* Your own hand falls back onto the table when you win: each block tips
+   away from you about its foot until it lies at the felt's angle. */
+.play-hand.is-toppled .tile-glyph.tile-art {
+  animation: play-topple-mine 0.46s cubic-bezier(0.55, 0, 1, 0.45) both;
+  animation-delay: calc(var(--i, 0) * 0.035s);
+}
+
+@keyframes play-topple-mine {
+  0% {
+    transform: rotateX(-22deg);
+  }
+  80% {
+    transform: rotateX(32deg);
+    animation-timing-function: ease-out;
+  }
+  90% {
+    transform: rotateX(26deg);
+    animation-timing-function: ease-in;
+  }
+  100% {
+    transform: rotateX(32deg);
+  }
 }
 
 /* A kong: three tiles, the fourth stacked on the middle one - a tile's
@@ -6709,8 +6820,8 @@ html.playing body {
   z-index: 3;
   display: grid;
   place-items: center;
-  padding: 0.3em;
-  border-radius: 0.6em;
+  padding: 0.38em;
+  border-radius: 0.7em;
   background: rgba(14, 18, 16, 0.92);
   box-shadow:
     0 0 0 0.07em rgba(255, 209, 102, 0.85),
@@ -6728,7 +6839,7 @@ html.playing body {
 /* The tile in it a real block, like every tile on the table: tipped back
    (from its foot, held in front of the bubble) to show its thickness. */
 .play-spotlight .tile-glyph {
-  font-size: var(--play-tile);
+  font-size: calc(var(--play-tile) * 1.25);
   transform-origin: 50% 100%;
   transform: translateZ(0.55em) rotateX(30deg);
 }
@@ -6768,25 +6879,25 @@ html.playing body {
   transform: translate(-50%, -50%) rotate(-45deg);
 }
 
-/* Halfway between the compass's edge (1.8em from the middle) and the
-   middle's own edge, on the thrower's side. */
+/* Just past the compass's edge (1.8em from the middle) on the thrower's
+   side - standing up over the start of their pond. */
 .play-spotlight.from-bottom {
   left: 50%;
-  top: calc(75% + 0.9em);
+  top: calc(50% + 3.1em);
 }
 
 .play-spotlight.from-top {
   left: 50%;
-  top: calc(25% - 0.9em);
+  top: calc(50% - 3.1em);
 }
 
 .play-spotlight.from-left {
-  left: calc(25% - 0.9em);
+  left: calc(50% - 3.6em);
   top: 50%;
 }
 
 .play-spotlight.from-right {
-  left: calc(75% + 0.9em);
+  left: calc(50% + 3.6em);
   top: 50%;
 }
 
@@ -6837,10 +6948,19 @@ html.playing body {
   animation: play-burst 1.2s cubic-bezier(0.2, 0.9, 0.3, 1.2) forwards;
 }
 
+/* More than one character (a bonus: 正花 +2, 自摸 ...): a pill as long as
+   its text, a size down, so it never runs out of its plate. */
 .play-burst.is-long {
-  width: 2.3em;
-  font-size: clamp(2.4rem, 14vh, 4.5rem);
-  border-radius: 1em;
+  width: auto;
+  height: auto;
+  max-width: 70vw;
+  padding: 0.22em 0.55em 0.26em;
+  font-size: clamp(1.5rem, 9vh, 2.6rem);
+  white-space: nowrap;
+  border-radius: 999px;
+  box-shadow:
+    0 0 0 0.05em rgba(255, 209, 102, 0.85),
+    0 0.12em 0.4em rgba(0, 0, 0, 0.5);
 }
 
 .play-burst.at-bottom {
@@ -6884,6 +7004,22 @@ html.playing body {
     scale: 1.05;
     opacity: 0;
   }
+}
+
+/* 自動 on: the button lit, and your hand watched rather than played - no
+   taps on it, no call buttons (the result card's still yours). */
+.play-icon-button.is-on {
+  border-color: var(--play-gold);
+  background: rgba(255, 209, 102, 0.18);
+  color: var(--play-gold);
+}
+
+.play-me.is-auto .play-hand {
+  pointer-events: none;
+}
+
+.play-me.is-auto .play-calls > :not(.play-show-result) {
+  display: none;
 }
 
 /* ---- You ---- */
@@ -7134,7 +7270,8 @@ html.playing body {
    felt to the ivory body under the face; face down (a concealed kong), the
    other way, the jade back on top. --tile-x/-y/-w/-h: where the top sits
    in the tile's box. */
-.play-felt {
+.play-felt,
+.play-hand {
   --play-thick: 0.42em;
   /* How round a tile's upright edges are (and its top's corners). */
   --tile-r: 0.09em;
@@ -7145,7 +7282,7 @@ html.playing body {
   display: none;
 }
 
-.play-felt .tile-glyph.tile-art {
+:is(.play-felt, .play-hand) .tile-glyph.tile-art {
   transform-style: preserve-3d;
   --tile-x: 0.03em;
   --tile-y: 0.043em;
@@ -7158,14 +7295,14 @@ html.playing body {
    at the felt), and inside it a plate at half its height - a core, so if
    two of its sides ever meet imperfectly you see the tile there, not the
    felt. (As a CSS die does it.) */
-.play-felt .tile-glyph.tile-art,
-.play-felt .play-back {
+:is(.play-felt, .play-hand) .tile-glyph.tile-art,
+:is(.play-felt, .play-hand) .play-back {
   border-radius: calc(var(--tile-r) * 1.5);
   box-shadow: 0 0 0.16em 0.03em rgba(0, 0, 0, 0.38);
 }
 
-.play-felt .tile-glyph.tile-art::after,
-.play-felt .play-back::after {
+:is(.play-felt, .play-hand) .tile-glyph.tile-art::after,
+:is(.play-felt, .play-hand) .play-back::after {
   content: "";
   position: absolute;
   left: var(--tile-x);
@@ -7177,17 +7314,17 @@ html.playing body {
   transform: translateZ(calc(var(--play-thick) / 2));
 }
 
-.play-felt .play-back::after {
+:is(.play-felt, .play-hand) .play-back::after {
   background: var(--play-back);
 }
 
-.play-felt img.tile-face {
+:is(.play-felt, .play-hand) img.tile-face {
   border-radius: var(--tile-r);
   transform: translateZ(var(--play-thick));
   box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.25);
 }
 
-.play-felt .play-back {
+:is(.play-felt, .play-hand) .play-back {
   position: relative;
   background: none;
   box-shadow: none;
@@ -7199,7 +7336,7 @@ html.playing body {
   --tile-sides: #f2ede0, var(--play-ivory) 42%, #7fd98c 50%, var(--play-back) 60%, var(--play-back-edge);
 }
 
-.play-felt .play-back > .tile-top {
+:is(.play-felt, .play-hand) .play-back > .tile-top {
   display: block;
   position: absolute;
   inset: 0;
@@ -7209,7 +7346,7 @@ html.playing body {
   transform: translateZ(var(--play-thick));
 }
 
-.play-felt .tile-side {
+:is(.play-felt, .play-hand) .tile-side {
   display: block;
   position: absolute;
 }
@@ -7220,8 +7357,8 @@ html.playing body {
    the top. Light falls from in front, as on a real table: the sides facing
    you (and away) are lit, the ones facing left and right a shade darker.
    On a tile turned a quarter that's its ends facing you, so it swaps. */
-.play-felt .tile-glyph.tile-art,
-.play-felt .play-back {
+:is(.play-felt, .play-hand) .tile-glyph.tile-art,
+:is(.play-felt, .play-hand) .play-back {
   --shade-long: 0;
   --shade-end: 0.14;
 }
@@ -7232,7 +7369,7 @@ html.playing body {
 .play-pond-right .play-pond-tile:not(.is-riichi) > .tile-glyph,
 .play-pond-top .play-pond-tile.is-riichi > .tile-glyph,
 .play-pond-bottom .play-pond-tile.is-riichi > .tile-glyph,
-.play-felt .play-win-tile > .tile-glyph {
+:is(.play-felt, .play-hand) .play-win-tile > .tile-glyph {
   --shade-long: 0.14;
   --shade-end: 0;
 }
@@ -7242,7 +7379,7 @@ html.playing body {
   --shade-end: 0.14;
 }
 
-.play-felt .tile-side.is-near {
+:is(.play-felt, .play-hand) .tile-side.is-near {
   left: calc(var(--tile-x) + var(--tile-r) - 0.5px);
   top: calc(var(--tile-y) + var(--tile-h));
   width: calc(var(--tile-w) - 2 * var(--tile-r) + 1px);
@@ -7252,7 +7389,7 @@ html.playing body {
   transform: rotateX(90deg);
 }
 
-.play-felt .tile-side.is-far {
+:is(.play-felt, .play-hand) .tile-side.is-far {
   left: calc(var(--tile-x) + var(--tile-r) - 0.5px);
   top: calc(var(--tile-y) - var(--play-thick));
   width: calc(var(--tile-w) - 2 * var(--tile-r) + 1px);
@@ -7262,7 +7399,7 @@ html.playing body {
   transform: rotateX(-90deg);
 }
 
-.play-felt .tile-side.is-right {
+:is(.play-felt, .play-hand) .tile-side.is-right {
   left: calc(var(--tile-x) + var(--tile-w));
   top: calc(var(--tile-y) + var(--tile-r) - 0.5px);
   width: var(--play-thick);
@@ -7272,7 +7409,7 @@ html.playing body {
   transform: rotateY(-90deg);
 }
 
-.play-felt .tile-side.is-left {
+:is(.play-felt, .play-hand) .tile-side.is-left {
   left: calc(var(--tile-x) - var(--play-thick));
   top: calc(var(--tile-y) + var(--tile-r) - 0.5px);
   width: var(--play-thick);
@@ -7286,104 +7423,116 @@ html.playing body {
    from its foot (a chord of the rounding) like the long sides are, and
    shaded by which way it faces - from the long side's light to the end's
    shade. (Generated: centre +/- r, angles every 30°.) */
-.play-felt .tile-side.is-corner {
+:is(.play-felt, .play-hand) .tile-side.is-corner {
   width: calc(var(--tile-r) * 0.5176 + 1px);
   height: var(--play-thick);
   transform-origin: 0 0;
 }
 
-.play-felt .tile-side.is-nr1 {
+:is(.play-felt, .play-hand) .tile-side.is-nr1 {
   left: calc(var(--tile-x) + var(--tile-w) - var(--tile-r) + var(--tile-r) * 0.0000);
   top: calc(var(--tile-y) + var(--tile-h) - var(--tile-r) + var(--tile-r) * 1.0000);
   background: linear-gradient(rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.26)), rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.26))), linear-gradient(to bottom, var(--tile-sides));
   transform: rotateZ(-15.00deg) rotateX(90deg);
 }
 
-.play-felt .tile-side.is-nr2 {
+:is(.play-felt, .play-hand) .tile-side.is-nr2 {
   left: calc(var(--tile-x) + var(--tile-w) - var(--tile-r) + var(--tile-r) * 0.5000);
   top: calc(var(--tile-y) + var(--tile-h) - var(--tile-r) + var(--tile-r) * 0.8660);
   background: linear-gradient(rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.71)), rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.71))), linear-gradient(to bottom, var(--tile-sides));
   transform: rotateZ(-45.00deg) rotateX(90deg);
 }
 
-.play-felt .tile-side.is-nr3 {
+:is(.play-felt, .play-hand) .tile-side.is-nr3 {
   left: calc(var(--tile-x) + var(--tile-w) - var(--tile-r) + var(--tile-r) * 0.8660);
   top: calc(var(--tile-y) + var(--tile-h) - var(--tile-r) + var(--tile-r) * 0.5000);
   background: linear-gradient(rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.96)), rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.96))), linear-gradient(to bottom, var(--tile-sides));
   transform: rotateZ(-75.00deg) rotateX(90deg);
 }
 
-.play-felt .tile-side.is-nl1 {
+:is(.play-felt, .play-hand) .tile-side.is-nl1 {
   left: calc(var(--tile-x) + var(--tile-r) + var(--tile-r) * -1.0000);
   top: calc(var(--tile-y) + var(--tile-h) - var(--tile-r) + var(--tile-r) * 0.0000);
   background: linear-gradient(rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.96)), rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.96))), linear-gradient(to bottom, var(--tile-sides));
   transform: rotateZ(75.00deg) rotateX(90deg);
 }
 
-.play-felt .tile-side.is-nl2 {
+:is(.play-felt, .play-hand) .tile-side.is-nl2 {
   left: calc(var(--tile-x) + var(--tile-r) + var(--tile-r) * -0.8660);
   top: calc(var(--tile-y) + var(--tile-h) - var(--tile-r) + var(--tile-r) * 0.5000);
   background: linear-gradient(rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.71)), rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.71))), linear-gradient(to bottom, var(--tile-sides));
   transform: rotateZ(45.00deg) rotateX(90deg);
 }
 
-.play-felt .tile-side.is-nl3 {
+:is(.play-felt, .play-hand) .tile-side.is-nl3 {
   left: calc(var(--tile-x) + var(--tile-r) + var(--tile-r) * -0.5000);
   top: calc(var(--tile-y) + var(--tile-h) - var(--tile-r) + var(--tile-r) * 0.8660);
   background: linear-gradient(rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.26)), rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.26))), linear-gradient(to bottom, var(--tile-sides));
   transform: rotateZ(15.00deg) rotateX(90deg);
 }
 
-.play-felt .tile-side.is-fl1 {
+:is(.play-felt, .play-hand) .tile-side.is-fl1 {
   left: calc(var(--tile-x) + var(--tile-r) + var(--tile-r) * -0.0000);
   top: calc(var(--tile-y) + var(--tile-r) + var(--tile-r) * -1.0000);
   background: linear-gradient(rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.26)), rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.26))), linear-gradient(to bottom, var(--tile-sides));
   transform: rotateZ(165.00deg) rotateX(90deg);
 }
 
-.play-felt .tile-side.is-fl2 {
+:is(.play-felt, .play-hand) .tile-side.is-fl2 {
   left: calc(var(--tile-x) + var(--tile-r) + var(--tile-r) * -0.5000);
   top: calc(var(--tile-y) + var(--tile-r) + var(--tile-r) * -0.8660);
   background: linear-gradient(rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.71)), rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.71))), linear-gradient(to bottom, var(--tile-sides));
   transform: rotateZ(135.00deg) rotateX(90deg);
 }
 
-.play-felt .tile-side.is-fl3 {
+:is(.play-felt, .play-hand) .tile-side.is-fl3 {
   left: calc(var(--tile-x) + var(--tile-r) + var(--tile-r) * -0.8660);
   top: calc(var(--tile-y) + var(--tile-r) + var(--tile-r) * -0.5000);
   background: linear-gradient(rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.96)), rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.96))), linear-gradient(to bottom, var(--tile-sides));
   transform: rotateZ(105.00deg) rotateX(90deg);
 }
 
-.play-felt .tile-side.is-fr1 {
+:is(.play-felt, .play-hand) .tile-side.is-fr1 {
   left: calc(var(--tile-x) + var(--tile-w) - var(--tile-r) + var(--tile-r) * 1.0000);
   top: calc(var(--tile-y) + var(--tile-r) + var(--tile-r) * -0.0000);
   background: linear-gradient(rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.96)), rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.96))), linear-gradient(to bottom, var(--tile-sides));
   transform: rotateZ(-105.00deg) rotateX(90deg);
 }
 
-.play-felt .tile-side.is-fr2 {
+:is(.play-felt, .play-hand) .tile-side.is-fr2 {
   left: calc(var(--tile-x) + var(--tile-w) - var(--tile-r) + var(--tile-r) * 0.8660);
   top: calc(var(--tile-y) + var(--tile-r) + var(--tile-r) * -0.5000);
   background: linear-gradient(rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.71)), rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.71))), linear-gradient(to bottom, var(--tile-sides));
   transform: rotateZ(-135.00deg) rotateX(90deg);
 }
 
-.play-felt .tile-side.is-fr3 {
+:is(.play-felt, .play-hand) .tile-side.is-fr3 {
   left: calc(var(--tile-x) + var(--tile-w) - var(--tile-r) + var(--tile-r) * 0.5000);
   top: calc(var(--tile-y) + var(--tile-r) + var(--tile-r) * -0.8660);
   background: linear-gradient(rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.26)), rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.26))), linear-gradient(to bottom, var(--tile-sides));
   transform: rotateZ(-165.00deg) rotateX(90deg);
 }
 
-.play-hand img.tile-face,
-.play-my-melds img.tile-face {
-  box-shadow:
-    0 0 0 0.5px rgba(0, 0, 0, 0.28),
-    0 -0.07em 0 var(--play-ivory),
-    0 -0.12em 0 var(--play-back),
-    0 -0.12em 0 0.5px var(--play-back-edge),
-    0 0.14em 0.16em rgba(0, 0, 0, 0.45);
+/* Your hand and melds are the same blocks as the table's, seen with the
+   table's own perspective from above you: standing, leaning a little toward
+   you so their tops show; flat on the felt once toppled (the felt's own
+   32deg). */
+.play-hand {
+  perspective: 1100px;
+  perspective-origin: 50% -60%;
+  transform-style: preserve-3d;
+}
+
+.play-hand :is(.play-my-melds, .play-meld, .play-flowers, .play-kong-stack, .play-kong-top, .play-hand-tile) {
+  transform-style: preserve-3d;
+}
+
+.play-hand .tile-glyph.tile-art {
+  /* Pivoting on the face's foot, so the face stands where its slot is. */
+  transform-origin: 50% 100% var(--play-thick);
+  transform: rotateX(-22deg);
+  /* No shadow on the felt: these stand in front of it. */
+  box-shadow: none;
 }
 
 /* ---- Bottom bar ---- */
