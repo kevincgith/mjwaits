@@ -217,6 +217,14 @@ function EdgeTiles({ count, side }: { count: number; side: Side }) {
 // `hideConcealed`: a bot's concealed kong lies fully face down - nothing
 // about it shows until the hand is over. Your own shows its two middle
 // tiles, so you can see what you've set aside.
+// A called run's tiles in table order: the claimed one between the other two.
+function runOrder(tiles: Tile[], claimed: Tile): number[] {
+  const c = tiles.findIndex((t) => sameTile(t, claimed));
+  if (c < 0) return [0, 1, 2];
+  const others = [0, 1, 2].filter((j) => j !== c);
+  return [others[0], c, others[1]];
+}
+
 // A kong is three tiles wide, its fourth stacked on the middle one.
 function Melds({ melds, hideConcealed }: { melds: GameMeld[]; hideConcealed?: boolean }) {
   return (
@@ -234,7 +242,11 @@ function Melds({ melds, hideConcealed }: { melds: GameMeld[]; hideConcealed?: bo
           );
         return (
           <span key={i} className="play-meld">
-            {m.kind === "kong" && m.tiles.length === 4 ? (
+            {m.kind === "run" && m.claimed && m.tiles.length === 3 ? (
+              // A called run shows the claimed tile in the middle: 1-3-2 for
+              // a 3 taken to 1-2.
+              runOrder(m.tiles, m.claimed).map((j) => tile(j))
+            ) : m.kind === "kong" && m.tiles.length === 4 ? (
               <>
                 {tile(0)}
                 <span className="play-kong-stack">
@@ -265,14 +277,22 @@ function Flowers({ flowers }: { flowers: BonusTile[] }) {
 }
 
 // A finished hand's concealed tiles, sorted, with the winning tile marked once.
+// The tile that completed a winning hand goes last, laid sideways, as
+// players mark it at the table.
 function RevealedHand({ tiles, winningTile }: { tiles: Tile[]; winningTile: Tile | null }) {
   const sorted = sortTiles(tiles);
   const mark = winningTile ? sorted.findIndex((t) => sameTile(t, winningTile)) : -1;
+  const rest = mark < 0 ? sorted : sorted.filter((_, i) => i !== mark);
   return (
-    <span className="play-meld">
-      {sorted.map((t, i) => (
-        <TileGlyphSpan key={i} tile={t} highlight={i === mark} block />
+    <span className="play-meld is-revealed">
+      {rest.map((t, i) => (
+        <TileGlyphSpan key={i} tile={t} block />
       ))}
+      {mark >= 0 && (
+        <span className="play-win-tile">
+          <TileGlyphSpan tile={sorted[mark]} block />
+        </span>
+      )}
     </span>
   );
 }
@@ -1121,6 +1141,9 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
   );
 
   // A bot's tiles, standing along its edge of the (tilted) table.
+  // The tile a seat won with (to lay sideways in its hand), if it won.
+  const wonWith = (seat: number) =>
+    result && result.tile && (result.winner === seat || result.alsoWon?.some((w) => w.winner === seat)) ? result.tile : null;
   const wall = (seat: number) => {
     const side = SIDES[seat];
     const p = game.players[seat];
@@ -1135,7 +1158,7 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
             <Melds melds={p.melds} hideConcealed={!over} />
           </span>
         </span>
-        {over ? <RevealedHand tiles={p.hand} winningTile={null} /> : <EdgeTiles count={p.hand.length} side={side} />}
+        {over ? <RevealedHand tiles={p.hand} winningTile={wonWith(seat)} /> : <EdgeTiles count={p.hand.length} side={side} />}
       </div>
     );
   };
@@ -1391,7 +1414,7 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
               ) : (
                 <>
                   {canRetract && (
-                    <button type="button" className="play-call is-pass" onClick={retract} aria-label="嗌錯 - take back your call and pay 5 to each">
+                    <button type="button" className="play-call is-pass is-minor" onClick={retract} aria-label="嗌錯 - take back your call and pay 5 to each">
                       嗌錯
                     </button>
                   )}

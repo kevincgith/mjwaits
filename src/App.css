@@ -6117,6 +6117,39 @@ html.playing body {
   rotate: -90deg;
 }
 
+/* A hand laid face up at the end lies where it stood: wall size, so it
+   takes the wall's room and never runs over the melds and flowers. */
+.play-seat .play-meld.is-revealed {
+  font-size: var(--play-wall);
+}
+
+/* The tile that completed a winning hand, last and laid sideways - turned
+   a quarter from the tiles beside it: in a row its slot is a tile long
+   (and it sits on their line); in a side seat's column, it stands upright
+   among the turned tiles. */
+.play-win-tile {
+  display: inline-flex;
+  justify-content: center;
+  width: 1em;
+  margin-left: 0.08em;
+}
+
+.play-win-tile > .tile-glyph {
+  rotate: 90deg;
+  translate: 0 0.11em;
+}
+
+:is(.play-seat-left, .play-seat-right) .play-meld .play-win-tile {
+  width: auto;
+  margin: 0.08em 0 0;
+}
+
+:is(.play-seat-left, .play-seat-right) .play-meld .play-win-tile > .tile-glyph {
+  rotate: none;
+  translate: none;
+  margin: 0;
+}
+
 /* A kong: three tiles, the fourth stacked on the middle one - a tile's
    thickness up on the table, lifted a little in your own melds. */
 .play-kong-stack {
@@ -6177,9 +6210,23 @@ html.playing body {
   --play-tile-height: 1em;
 }
 
+/* A wall is a full hand long (17), its tiles packed at its player's left -
+   so drawing and throwing only change its far end, and nothing slides
+   along (the far wall's left is your right; the left wall's, the far end;
+   the right wall's, the near end). */
 .play-edge-left,
 .play-edge-right {
   flex-direction: column;
+  height: calc(17 * 0.78em);
+}
+
+.play-edge-right {
+  justify-content: flex-end;
+}
+
+.play-edge-top {
+  width: calc(17 * 0.78em);
+  justify-content: flex-end;
 }
 
 .play-edge-tile {
@@ -6337,15 +6384,16 @@ html.playing body {
   justify-self: center;
 }
 
+/* The side ponds against the middle, by the compass. */
 .play-pond-slot-left {
   grid-area: lpond;
-  justify-self: center;
+  justify-self: end;
   align-self: center;
 }
 
 .play-pond-slot-right {
   grid-area: rpond;
-  justify-self: center;
+  justify-self: start;
   align-self: center;
 }
 
@@ -6358,16 +6406,26 @@ html.playing body {
   transform-style: preserve-3d;
 }
 
+/* Every pond fills as a player lays discards: the first row next to the
+   compass, each row from the player's own left, the next row further out.
+   Yours: left to right, rows going down; the far player's: right to left
+   (their left is your right), rows going up. */
 .play-pond-top,
 .play-pond-bottom {
   width: calc(8 * 0.74em);
-  justify-content: center;
+  justify-content: flex-start;
+  align-content: flex-start;
+}
+
+.play-pond-top {
+  flex-direction: row-reverse;
+  flex-wrap: wrap-reverse;
 }
 
 /* A side player's discards face them: their rows of six run up and down
-   the screen, the first nearest their wall, each from their left - top to
-   bottom for the left seat, bottom to top for the right. The tile laid
-   sideways for 叮 stands upright among them. */
+   the screen, each from their left - top to bottom for the left seat,
+   bottom to top for the right. The tile laid sideways for 叮 stands
+   upright among them. */
 .play-pond-left,
 .play-pond-right {
   flex-direction: column;
@@ -6375,9 +6433,15 @@ html.playing body {
   align-content: flex-start;
 }
 
+/* The side players' rows run up and down: the left player's from the top,
+   the first row by the compass (rightmost) and the next ones out to its
+   left; the right player's from the bottom, first row leftmost. */
+.play-pond-left {
+  flex-wrap: wrap-reverse;
+}
+
 .play-pond-right {
   flex-direction: column-reverse;
-  flex-wrap: wrap-reverse;
 }
 
 .play-pond-left .play-pond-tile,
@@ -6423,7 +6487,7 @@ html.playing body {
 
 /* The newest discard: a gold pin, and a short drop onto the table. */
 .play-pond-tile.is-latest {
-  animation: play-drop 0.28s ease-out;
+  animation: play-drop 0.36s both;
 }
 
 .play-pond-tile.is-latest::after {
@@ -6439,14 +6503,24 @@ html.playing body {
   box-shadow: 0 0 0.25em var(--play-gold);
 }
 
+/* A discard drops onto the felt from a little above and settles - moved
+   only, never faded: a 3D tile turned partly transparent is drawn flat for
+   that moment, as if pressed into the table. */
 @keyframes play-drop {
-  from {
-    transform: translateY(-0.35em) scale(1.25);
-    opacity: 0;
+  0% {
+    transform: translateZ(1.4em);
+    animation-timing-function: cubic-bezier(0.5, 0, 0.9, 0.6);
   }
-  to {
-    transform: none;
-    opacity: 1;
+  72% {
+    transform: translateZ(0);
+    animation-timing-function: cubic-bezier(0.2, 0.6, 0.4, 1);
+  }
+  86% {
+    transform: translateZ(0.12em);
+    animation-timing-function: cubic-bezier(0.5, 0, 0.8, 0.5);
+  }
+  100% {
+    transform: translateZ(0);
   }
 }
 
@@ -6768,6 +6842,19 @@ html.playing body {
   }
 }
 
+/* 嗌錯 (take back a call): rarely pressed, so a small quiet pill rather
+   than a call disc. */
+.play-call.is-minor {
+  align-self: flex-end;
+  min-width: 0;
+  height: auto;
+  min-height: 1.9rem; /* still easy to tap */
+  padding: 0.3rem 0.65rem;
+  border-width: 1px;
+  font-size: 0.9rem !important;
+  font-weight: 700;
+}
+
 .play-call.is-pass {
   border-color: rgba(243, 237, 226, 0.4);
   background: var(--play-call-teal);
@@ -6812,11 +6899,17 @@ html.playing body {
 
 .play-hand-tile {
   position: relative;
+  /* The tile flush with the button's foot (inline, it sat on a text
+     baseline with a gap under it), so your hand and your melds stand on
+     the same line. */
+  display: inline-flex;
+  align-items: flex-end;
   border: none;
   padding: 0 0.012em;
   background: none;
   line-height: 0;
-  transition: transform 0.12s ease;
+  /* Lifting and dropping a tile you pick eases rather than snaps. */
+  transition: transform 0.16s cubic-bezier(0.2, 0.8, 0.3, 1);
 }
 
 .play-hand-tile:disabled {
@@ -6825,17 +6918,20 @@ html.playing body {
 
 .play-hand-tile.is-drawn {
   margin-left: 0.3em;
-  animation: play-draw 0.25s ease-out;
+  animation: play-draw 0.32s cubic-bezier(0.2, 0.8, 0.3, 1);
 }
 
+/* A drawn tile slides in from the wall's side and settles into place. */
 @keyframes play-draw {
   from {
-    transform: translateY(-0.4em);
+    transform: translate(0.5em, -0.35em);
     opacity: 0;
+  }
+  60% {
+    opacity: 1;
   }
   to {
     transform: none;
-    opacity: 1;
   }
 }
 
