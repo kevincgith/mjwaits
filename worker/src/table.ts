@@ -63,6 +63,9 @@ import { Hub, Refusal } from "./hub";
 
 // A bot's (or an away player's) move waits this long, so people can follow.
 export const BOT_PAUSE_MS = 700;
+// A discard that's being called stays on the table this many bot pauses
+// first, so everyone sees what was thrown before it's taken.
+const CLAIM_PAUSES = 1.6;
 
 // A mystery bot keeps its personality here and nowhere else: phones are
 // sent only "mystery".
@@ -371,6 +374,10 @@ export class Table extends Hub<TableMessage> {
         return this.actsAlone(seat) ? this.aloneClaim(seat) : "waiting";
       });
       if (timer && rt.decisions.includes("waiting")) rt.deadline = now + timer;
+      // Only bots (or away players) answered, and one calls: the discard
+      // stays on the table a moment before it's taken. (If someone was
+      // waited on, everyone has already seen it.)
+      if (!rt.decisions.includes("waiting") && rt.decisions.some((x) => x !== null) && this.pause > 0) rt.botAt = now + this.pause * CLAIM_PAUSES;
     } else {
       rt.ready = [];
     }
@@ -507,6 +514,8 @@ export class Table extends Hub<TableMessage> {
           if (rt.deadline !== null && now >= rt.deadline) d.forEach((x, s) => x === "waiting" && (d[s] = null)); // out of time: pass
           else return;
         }
+        // A bot's call: the discard is seen on the table first (see newDecision).
+        if (rt.botAt !== null && now < rt.botAt) return;
         this.resolve();
         continue;
       }

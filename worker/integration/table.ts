@@ -202,6 +202,8 @@ async function untilSomeoneWins() {
   for (const p of phones) await p.connect(code);
   phones[0].send({ t: "sit", seat: 0 });
   phones[1].send({ t: "sit", seat: 2 });
+  // Joining seats Amy in seat 1; the bot goes there once she's moved.
+  await phones[0].table((s) => s.seats[2]?.kind === "human" && s.seats[2].name === "Amy");
   phones[0].send({ t: "setBot", seat: 1, bot: "grandmaster" });
   phones[0].send({ t: "setBot", seat: 3, bot: "speedster" });
   await phones[0].table((s) => s.seats.every(Boolean));
