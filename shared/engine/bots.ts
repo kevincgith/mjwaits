@@ -283,7 +283,30 @@ export const VOICES: Record<string, Voice> = {
   },
 };
 
-export const voiceOf = (p: BotProfile): Voice => VOICES[learnedStyle(p) ?? p.id] ?? VOICES.veteran;
+// A mystery bot speaks plainly, so its lines don't give its personality away.
+const MYSTERY_VOICE: Voice = {
+  call: ["碰。", "要。", "上。"],
+  win: ["食糊。", "唔好意思。"],
+  selfDraw: ["自摸。"],
+  riichi: ["叮。"],
+  dealIn: ["哦。", "好牌。"],
+  surrender: ["投降。"],
+};
+
+export const voiceOf = (p: BotProfile): Voice => (mysteryStyle(p) ? MYSTERY_VOICE : (VOICES[learnedStyle(p) ?? p.id] ?? VOICES.veteran));
+
+// A mystery bot: one of the personalities, picked at random and not shown -
+// its name, avatar and lines are the same whichever it is. Its id carries
+// the personality ("mystery-<id>"), which is how this device plays it; the
+// online table keeps the id on the server and sends only "mystery".
+export const MYSTERY_PREFIX = "mystery-";
+export const MYSTERY_NAME = "神秘 Mystery";
+export const mysteryStyle = (p: BotProfile): string | null => (p.id.startsWith(MYSTERY_PREFIX) ? p.id.slice(MYSTERY_PREFIX.length) : null);
+export function mysteryProfile(style: string): BotProfile {
+  return { ...profileById(style), id: MYSTERY_PREFIX + style, name: MYSTERY_NAME, blurb: "One of the personalities, picked at random - which one is for you to work out." };
+}
+// A personality for a new mystery bot.
+export const randomStyle = (random: () => number = Math.random) => BOT_PROFILES[Math.floor(random() * BOT_PROFILES.length)].id;
 
 // Learned bots (src/lib/ml): a trained network playing as one of the
 // personalities. Their profile is the personality's, renamed - it's what

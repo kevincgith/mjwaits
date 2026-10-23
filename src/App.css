@@ -6120,6 +6120,23 @@ html.playing body {
   background: linear-gradient(to top, var(--play-back-edge), var(--play-back) 35%, #4cc06a 95%);
 }
 
+/* A mystery bot: a plain "?" on grey, whichever personality it is. */
+.play-avatar.is-mystery {
+  background: #5d6670;
+  color: #f4f7f5;
+}
+
+/* Online: a person whose phone has dropped, or whom the table plays for. */
+.play-away {
+  margin-left: 0.3em;
+  padding: 0 0.35em;
+  border-radius: 0.4em;
+  background: rgba(255, 196, 0, 0.18);
+  color: #ffd27a;
+  font-size: 0.75em;
+  font-weight: 600;
+}
+
 /* A concealed kong's face-down ends. */
 .play-back {
   display: inline-block;

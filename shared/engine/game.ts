@@ -156,7 +156,7 @@ export interface TableBonus {
 // the tai list already counts (底, 莊, 連莊) switched off so nothing is
 // counted twice - leaving the 拉/踢 add-on.
 const SEAT_IDS = ["0", "1", "2", "3"];
-const PLAY_LAH_SETTINGS: ScoreSettings = { ...DEFAULT_SETTINGS, base: 0, dealerTai: 0, streakTai: 0, integerMode: true, lahRound: "up", tiRound: "up" };
+export const PLAY_LAH_SETTINGS: ScoreSettings = { ...DEFAULT_SETTINGS, base: 0, dealerTai: 0, streakTai: 0, integerMode: true, lahRound: "up", tiRound: "up" };
 
 // What one winner collects, per payer, given the 拉 in play - the same
 // numbers the Scores tab's 食胡 sheet would show.

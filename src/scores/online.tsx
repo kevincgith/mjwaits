@@ -7,16 +7,16 @@
 // 線上 in the toolbar shows the room's status, and Leave.
 
 import { useMemo, useRef, useState } from "react";
-import { replay, handAt, stepAt, type ScoreGame, type ScoreStore } from "@mjwaits/shared/engine/ledger";
+import { replay, type ScoreGame, type ScoreStore } from "@mjwaits/shared/engine/ledger";
 import type { RoomView } from "@mjwaits/shared/protocol/server";
-import { Board, EventRow, HandRow } from "./board";
+import { Board, RecentRows } from "./board";
 import { ChangesList, entryByOf, InviteBlock, STATUS_TEXT, Toast, useLiveGame, useToast } from "./live";
 import { fmt, Icons, SEAT_AREAS, SectionHead, Sheet, signed, tone, withRoster } from "./shared";
 import { TrendChart } from "./stats";
 
 // The store the shared pieces expect, made up for a game that isn't this
 // phone's: each player in the host's colour, the game's own settings.
-function liveStore(game: ScoreGame, colors: Record<string, number>): ScoreStore {
+export function liveStore(game: ScoreGame, colors: Record<string, number>): ScoreStore {
   const roster = Object.entries(colors).map(([name, color]) => ({ name, color }));
   for (const [i, name] of game.seats.entries()) if (!roster.some((r) => r.name === name)) roster.push({ name, color: i });
   return { active: game, history: [], roster, settings: replay(game).settings };
@@ -227,21 +227,6 @@ function WatchView({
       roster: withRoster(store, state.players),
       history: [{ ...game, endedAt: game.endedAt ?? Date.now() }, ...store.history].sort((a, b) => b.startedAt - a.startedAt),
     });
-  const rows = game.events
-    .map((ev, i) => ({ ev, i }))
-    .reverse()
-    .map(({ ev, i }) => {
-      const by = entryBy?.(i);
-      const row = ev.t === "win" || ev.t === "draw" ? (handAt(state, i) ? <HandRow h={handAt(state, i)!} store={shown} /> : null) : <EventRow ev={ev} deltas={stepAt(state, i)?.deltas ?? {}} />;
-      return (
-        row && (
-          <div key={i} className="sc-recent-row">
-            {row}
-            {by && <span className="sc-entry-by">{by}</span>}
-          </div>
-        )
-      );
-    });
   const colorOf = (player: string) => shown.roster.find((r) => r.name === player)?.color ?? "x";
 
   return (
@@ -322,7 +307,7 @@ function WatchView({
 
       <div ref={recentRef} />
       <SectionHead zh="最近" en={game.events.length ? `${state.hands.length}局 · ${game.events.length} ${game.events.length === 1 ? "entry" : "entries"}` : "Nothing recorded yet"} />
-      <div className="card">{game.events.length ? <div className="sc-list sc-list-hands">{rows}</div> : <p className="sc-empty">Hands show here as they're recorded.</p>}</div>
+      <div className="card">{game.events.length ? <RecentRows store={shown} game={game} state={state} entryBy={entryBy} /> : <p className="sc-empty">Hands show here as they're recorded.</p>}</div>
 
       {room.phase === "ended" && (
         <div className="ol-summary-actions">

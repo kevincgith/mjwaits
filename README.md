@@ -374,7 +374,7 @@ in progress).
   the last change, 莊, 拉 and the Jackpot, with the trend and every hand underneath. Its 線上
   button shows the game's status - connection, whose game, who's here and who records, the
   changes, an invite to pass on - and Leave. Games you've followed are listed in the sheet for a
-  week.
+  week; × dismisses one.
 - **Recording.** Once the host switches you on, the same 戰況 board appears, with everything but
   新局; whatever you enter shows on every phone, the host's included. If two people record at the
   same moment, the first is kept and the second is told to enter theirs again - nothing is merged
@@ -387,7 +387,8 @@ in progress).
   **Keep in my Stats**. Later, 線上 offers **Resume as CODE**: the same room, so everyone's link
   still works and recorders can still record. A game already ended is listed under **Your shared
   games** to **Reopen** - back out of 統計 into 戰況, shared again under its old code (when no
-  other game is in progress). If its room has closed meanwhile, it's shared under a new code.
+  other game is in progress), or × to dismiss it. If its room has closed meanwhile, it's shared
+  under a new code.
 - **Dropping out** costs nothing: a reload, a lost signal or a phone that slept reconnects by
   itself (a token is kept on the phone), and the host's own changes made offline go up when it's
   back. A shared game's room closes two days after its last change.
@@ -608,6 +609,14 @@ held upright is asked to turn sideways.
       original efficiency-only bot the Grandmaster scores **+2.4 tai a hand**.
   - The engine is fast enough for this because hand-distance (shanten) results are cached
     per suit shape and the pruning of meld options is linear; together about 4× faster.
+- **戰況** (top left, by 記牌器): the game so far as the Scores tab shows a game - the players
+  best first with 胡·摸·銃 and their trend, the 拉 in play, then 最近 (every hand and bonus),
+  走勢, 局 (the score sheet), 玩家 (each player's stats and analysis) and 牌型. Every hand,
+  bonus (花, 骰, 暗槓, 追, 嗌錯) and 投降 at the table goes into a Scores-tab game as it happens
+  (`shared/engine/playLedger.ts`), kept with the game on this device - online, by the server.
+- **神秘 Mystery** in the Opponents sheet seats a bot that plays as one of the personalities,
+  picked at random (again for each new game), without saying which - a plain "?" avatar and
+  plain lines.
 - The dealer stays on a dealer win or a draw; a full lap of dealers moves the round wind. The
   game in progress, and the hint, opponents and timer settings, are kept on this device, so leaving the
   table or reloading picks it back up.
@@ -616,25 +625,23 @@ held upright is asked to turn sideways.
 
 From the Play table's menu, **Play online**, or an invite link (`?table=CODE`): a table of
 four on the multiplayer server (`worker/`), with friends on their own phones and bots in any
-empty seat. Laid out for a phone held upright.
+empty seat. The hands are played on this same table - landscape, the same felt, calls, hints
+and 記牌器 - just with the others' moves coming from the server.
 
-- **Joining:** a nickname, then **New table** or a code. The lobby shows the code and a
-  **Share invite** link; people tap **Sit**; the host adds bots (the Play tab's
-  personalities), and sets 截糊 or 一炮多響, the turn timer (off, 10, 20, 30 s), how long a
-  dropped seat waits (30 s, 1 or 2 min) and who deals first, then **Start**.
-- **The table:** the other three along the top - wind, 莊, score, tiles in hand, melds and
-  flowers, and *away* / *auto* when their phone has dropped - then the felt with the four
-  ponds round a compass that lights whoever is to act and counts down the timer; a discard
-  you can claim shows big above it. Your calls (食, 碰, 槓, 上, 過; 自摸, 叮 and kongs on your
-  turn) sit over your hand: tap a tile to lift it, tap again to throw it.
-- **The server decides everything:** it holds the wall and every hand, sends your phone only
-  your own tiles, and checks each move. When the timer runs out your drawn tile is thrown (or
-  the claim passed); if your phone drops, your seat waits, then plays itself until you're
-  back - reopening the app (the link stays in the address) puts you straight back in.
-- **Between hands:** the result - the winner's hand, its 台 and the payments - and everyone's
-  tiles face up; **Next hand** when you're ready, 投降 when someone has 拉'd you three in a row.
-  Scores carry across hands. The host can end the table from the menu (☰); everyone sees
-  the final scores.
+- **Joining:** a name (it starts as PlayerNN), then **New table** or a code. Everyone who joins
+  the lobby takes the first empty seat (tap another to move, or **Stand** to watch). The host
+  adds bots - a personality, or **神秘 Mystery**: one picked at random that never says which -
+  and sets 截胡 or 一炮多響, the turn timer (off, 10, 20, 30 s), how long a dropped seat waits
+  and who deals first, then **Start**. **Your tables** lists the ones to go back to; × dismisses one.
+- **Playing:** as against the bots, except that the server holds the wall and every hand and
+  sends your phone only your own tiles; it checks every move. When the timer runs out your
+  drawn tile is thrown (or the claim passed); if your phone drops, your seat waits, then plays
+  itself until you're back (*away* / *auto* on the name card). Reopening the app (the table
+  stays in the address) puts you straight back in your seat.
+- **Between hands:** the result card, then **Next hand** - the next deal comes when everyone
+  connected is ready. 投降 and 拉 work as here. **戰況** shows the table's whole record (the
+  server keeps it). The host can end the table from the menu; everyone sees the final scores,
+  and 戰況 for every hand.
 
 ## Dice
 

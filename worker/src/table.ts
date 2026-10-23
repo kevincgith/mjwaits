@@ -12,7 +12,9 @@
 //
 // Storage: the whole table is one row ("state"), written once per event - a
 // message or the alarm - however many steps that event moved the hand on,
-// plus the hub's clock row. (The free plan's daily limit on rows written is
+// plus the hub's clock row. The table's record - the hands as a Scores-tab
+// game (playLedger.ts), for 戰況 on every phone - is a row per entry, added
+// as the hands are played (a few a hand), and fetched by phones over HTTP. (The free plan's daily limit on rows written is
 // the one a busy table would meet first.)
 //
 // Timers share the room's one alarm: the turn deadline, the next bot move,
@@ -38,12 +40,15 @@ import {
   type GameState,
   type TurnMove,
 } from "@mjwaits/shared/engine/game";
-import { botClaimFor, botSurrenders, botTurnMoveFor, profileById } from "@mjwaits/shared/engine/bots";
+import { botClaimFor, botSurrenders, botTurnMoveFor, MYSTERY_NAME, profileById, randomStyle } from "@mjwaits/shared/engine/bots";
 import type { Tile } from "@mjwaits/shared/engine/mahjong";
 import { viewFor } from "@mjwaits/shared/engine/view";
+import type { ScoreEvent, ScoreGame } from "@mjwaits/shared/engine/ledger";
+import { newPlayLedger, playEvents } from "@mjwaits/shared/engine/playLedger";
 import { PROTOCOL_VERSION } from "@mjwaits/shared/protocol/limits";
 import {
   DEFAULT_TABLE_SETTINGS,
+  MYSTERY_BOT,
   parseTableMessage,
   type SeatInfo,
   type TableAction,
@@ -59,7 +64,9 @@ import { Hub, Refusal } from "./hub";
 // A bot's (or an away player's) move waits this long, so people can follow.
 export const BOT_PAUSE_MS = 700;
 
-type SeatRow = { kind: "human"; id: string } | { kind: "bot"; bot: TableBot };
+// A mystery bot keeps its personality here and nowhere else: phones are
+// sent only "mystery".
+type SeatRow = { kind: "human"; id: string } | { kind: "bot"; bot: TableBot; mystery?: true };
 type Decision = Claim | null | "waiting";
 type TableMessage = Exclude<TableClientMessage, { t: "hello" | "ping" }>;
 
@@ -80,6 +87,7 @@ interface Runtime {
   auto: number[]; // seats being played for
   last: TableAction | null;
   settled: number; // the last hand whose payments are in `totals`
+  scores: number; // entries in the record
 }
 
 // crypto.getRandomValues as a number in [0, 1), for the wall, the dice and the bots.
@@ -90,8 +98,9 @@ const sameClaim = (a: Claim, b: Claim) =>
 const key = (t: Tile) => `${t.suit}${t.rank}`;
 
 export class Table extends Hub<TableMessage> {
+  // 2: the table's record (a Scores-tab game) alongside it.
   protected get schema() {
-    return 1;
+    return 2;
   }
 
   private rt!: Runtime; // loaded for each event
@@ -115,6 +124,7 @@ export class Table extends Hub<TableMessage> {
       auto: [],
       last: null,
       settled: 0,
+      scores: 0,
     };
     this.setMeta("state", fresh);
   }
@@ -128,6 +138,31 @@ export class Table extends Hub<TableMessage> {
     this.setMeta("state", this.rt);
   }
 
+  protected extraTables() {
+    return "CREATE TABLE IF NOT EXISTS record (i INTEGER PRIMARY KEY, body TEXT NOT NULL);";
+  }
+
+  // ---- The record -------------------------------------------------------------------
+
+  // What one step of the game scored, into the record.
+  private record(before: GameState | null, after: GameState) {
+    const head = this.meta<ScoreGame>("recordHead");
+    if (!head) return;
+    this.addToRecord(playEvents(before, after, head.seats));
+  }
+
+  private addToRecord(events: ScoreEvent[]) {
+    for (const ev of events) this.sql.exec("INSERT INTO record (i, body) VALUES (?, ?)", this.rt.scores++, JSON.stringify(ev));
+  }
+
+  // The table so far as a Scores-tab game, or null before the first deal.
+  async scores(): Promise<ScoreGame | null> {
+    const head = this.meta<ScoreGame>("recordHead");
+    if (!head) return null;
+    const events = this.sql.exec<{ body: string }>("SELECT body FROM record ORDER BY i").toArray().map((r) => JSON.parse(r.body) as ScoreEvent);
+    return { ...head, events };
+  }
+
   protected parse(frame: string | ArrayBuffer) {
     return parseTableMessage(frame);
   }
@@ -139,7 +174,11 @@ export class Table extends Hub<TableMessage> {
   }
 
   private seatName(s: SeatRow): string {
-    return s.kind === "bot" ? profileById(s.bot).name : (this.person(s.id)?.name ?? "?");
+    if (s.kind === "human") return this.person(s.id)?.name ?? "?";
+    if (!s.mystery) return profileById(s.bot).name;
+    // Several mystery bots are told apart by number.
+    const mysteries = this.rt.seats.filter((x) => x?.kind === "bot" && x.mystery);
+    return mysteries.length > 1 ? `${MYSTERY_NAME} ${mysteries.indexOf(s) + 1}` : MYSTERY_NAME;
   }
 
   private seatOf(personId: string): number | null {
@@ -161,6 +200,16 @@ export class Table extends Hub<TableMessage> {
 
   protected onArrive(personId: string) {
     const rt = this.load();
+    // In the lobby, someone arriving takes the first empty seat (they can
+    // move, or stand to watch).
+    if (rt.phase === "lobby" && this.seatOf(personId) === null) {
+      const free = rt.seats.indexOf(null);
+      if (free >= 0) {
+        rt.seats[free] = { kind: "human", id: personId };
+        this.save();
+      }
+      return;
+    }
     const seat = this.seatOf(personId);
     if (seat === null) return;
     delete rt.away[seat];
@@ -217,7 +266,11 @@ export class Table extends Hub<TableMessage> {
         hostOnly();
         const taken = rt.seats[msg.seat];
         if (taken?.kind === "human") throw new Refusal("seatTaken", "someone is in that seat");
-        rt.seats[msg.seat] = msg.bot ? { kind: "bot", bot: msg.bot } : null;
+        rt.seats[msg.seat] = !msg.bot
+          ? null
+          : msg.bot === MYSTERY_BOT
+            ? { kind: "bot", bot: randomStyle(random) as TableBot, mystery: true }
+            : { kind: "bot", bot: msg.bot };
         break;
       }
       case "setup":
@@ -231,6 +284,9 @@ export class Table extends Hub<TableMessage> {
         if (rt.seats.some((s) => s === null)) throw new Refusal("seatsNotFull", "every seat needs a player or a bot");
         rt.game = dealHand({ dealer: rt.settings.firstDealer, roundWind: 1, dealerStreak: 0, multiWin: rt.settings.multiWin }, undefined, random);
         rt.phase = "playing";
+        // The record starts with the first deal (its dice and flowers).
+        this.setMeta("recordHead", newPlayLedger(rt.seats.map((x) => this.seatName(x!)), rt.settings.firstDealer, Date.now(), `table-${this.meta("code")}`));
+        this.record(null, rt.game);
         rt.hand = 1;
         rt.step = 1;
         rt.totals = [0, 0, 0, 0];
@@ -271,11 +327,13 @@ export class Table extends Hub<TableMessage> {
       case "surrender": {
         playing();
         const seat = seated();
+        const before = rt.game!;
         try {
-          rt.game = surrender(rt.game!, msg.holder, seat);
+          rt.game = surrender(before, msg.holder, seat);
         } catch {
           throw new Refusal("illegal", "that 拉 can't be surrendered now");
         }
+        this.record(before, rt.game);
         break;
       }
       case "end":
@@ -330,6 +388,7 @@ export class Table extends Hub<TableMessage> {
     }
     const before = rt.game!;
     rt.game = next;
+    this.record(before, next);
     const by = auto ? { auto: true } : {};
     if (move.kind === "discard" && next.phase.kind === "claims" && !next.phase.robKong) rt.last = { kind: "discard", seat, tile: move.tile, ...(move.riichi ? { riichi: true } : {}), ...by };
     else if (move.kind === "concealedKong" || move.kind === "addedKong") rt.last = { kind: "kong", seat, concealed: move.kind === "concealedKong", ...by };
@@ -342,6 +401,7 @@ export class Table extends Hub<TableMessage> {
     const before = rt.game!;
     const decisions = rt.decisions!.map((d) => (d === "waiting" ? null : d));
     rt.game = resolveClaims(before, decisions);
+    this.record(before, rt.game);
     const g = rt.game;
     if (before.phase.kind === "claims" && g.phase.kind === "turn" && g.phase.seat !== (before.phase.from + 1) % SEATS) {
       const claim = decisions[g.phase.seat];
@@ -454,11 +514,17 @@ export class Table extends Hub<TableMessage> {
       // is dealt once every person here (and not played for) is ready.
       for (const [s, row] of rt.seats.entries()) {
         if (row?.kind !== "bot") continue;
-        for (const holder of botSurrenders(g, s, profileById(row.bot))) rt.game = surrender(rt.game, holder, s);
+        for (const holder of botSurrenders(g, s, profileById(row.bot))) {
+          const before = rt.game;
+          rt.game = surrender(before, holder, s);
+          this.record(before, rt.game);
+        }
       }
       const waiting = humans.filter((h) => online.has(h.id) && !rt.auto.includes(h.seat) && !rt.ready.includes(h.seat));
       if (waiting.length) return;
-      rt.game = nextHand(rt.game, undefined, random);
+      const ended = rt.game;
+      rt.game = nextHand(ended, undefined, random);
+      this.record(ended, rt.game);
       rt.hand++;
       rt.last = null;
       this.collectBonuses();
@@ -508,7 +574,7 @@ export class Table extends Hub<TableMessage> {
       !s
         ? null
         : s.kind === "bot"
-          ? { kind: "bot", bot: s.bot, name: this.seatName(s) }
+          ? { kind: "bot", bot: s.mystery ? MYSTERY_BOT : s.bot, name: this.seatName(s) }
           : { kind: "human", id: s.id, name: this.seatName(s), connected: online.has(s.id), host: this.isHost(s.id) }
     );
     const waitingOn: number[] = !g
@@ -543,6 +609,7 @@ export class Table extends Hub<TableMessage> {
       waitingOn,
       ready: rt.ready,
       auto: rt.auto,
+      scores: rt.scores,
       last: rt.last,
       you: seat,
       view: g ? viewFor(g, seat ?? -1) : null,

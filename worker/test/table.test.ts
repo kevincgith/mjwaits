@@ -5,6 +5,7 @@
 import { env, runDurableObjectAlarm, runInDurableObject, SELF } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import type { Tile } from "@mjwaits/shared/engine/mahjong";
+import { replay, type ScoreGame } from "@mjwaits/shared/engine/ledger";
 import { PROTOCOL_VERSION } from "@mjwaits/shared/protocol/limits";
 import type { TableServerMessage, TableState } from "@mjwaits/shared/protocol/table";
 import type { Table } from "../src/table";
@@ -205,12 +206,63 @@ describe("the lobby", () => {
   });
 });
 
+describe("seats", () => {
+  it("puts people who arrive in the lobby in the first empty seat; once full, they watch", async () => {
+    const code = await createTable();
+    const phones: Phone[] = [];
+    for (const name of ["Kevin", "Amy", "Ben"]) phones.push((await join(code, name)).p);
+    const { p: host } = { p: phones[0] };
+    host.send({ t: "setBot", seat: 3, bot: "wall" });
+    const s = await host.table((t) => t.seats.every(Boolean));
+    expect(s.seats.map((x) => x?.name)).toEqual(["Kevin", "Amy", "Ben", "鐵壁 Iron Wall"]);
+    const { p: dan } = await join(code, "Dan");
+    expect(dan.latest!.you).toBeNull();
+    expect(dan.latest!.watching).toBe(1);
+    // Standing frees the seat; coming back (a new connection) doesn't take it again unless it's free.
+    phones[1].send({ t: "stand" });
+    await host.table((t) => t.seats[1] === null);
+  });
+
+  it("seats a mystery bot without ever saying which personality it is", async () => {
+    const code = await createTable();
+    const { p: host } = await join(code, "Kevin");
+    const { p: watcher } = await join(code, "Dan");
+    watcher.send({ t: "stand" });
+    for (const seat of [1, 2, 3]) host.send({ t: "setBot", seat, bot: "mystery" });
+    const lobby = await host.table((t) => t.seats.filter((x) => x?.kind === "bot").length === 3);
+    expect(lobby.seats.slice(1).map((x) => x?.kind === "bot" && x.bot)).toEqual(["mystery", "mystery", "mystery"]);
+    expect(lobby.seats.slice(1).map((x) => x?.name)).toEqual(["神秘 Mystery 1", "神秘 Mystery 2", "神秘 Mystery 3"]);
+    host.send({ t: "setup", settings: { multiWin: false, timer: 0, hold: 30, firstDealer: 0 } });
+    host.send({ t: "start" });
+    await playUntil([host], (t) => t.hand >= 2);
+    // Nothing anyone was sent names a personality.
+    const ids = ["grandmaster", "veteran", "speedster", "hunter", "wall", "gambler", "casual"].map((id) => `"${id}"`);
+    const names = [...ids, "Grandmaster", "Veteran", "Speedster", "Hunter", "Iron Wall", "Gambler", "Casual"];
+    for (const p of [host, watcher]) {
+      const all = JSON.stringify(p.inbox) + JSON.stringify(p.states);
+      for (const n of names) expect(all).not.toContain(n);
+    }
+    const info = await (await SELF.fetch(`${BASE}/tables/${code}`, { headers: { Origin: ORIGIN } })).text();
+    for (const n of names) expect(info).not.toContain(n);
+  }, 120_000);
+});
+
 describe("playing", () => {
   it("plays hands with one person and three bots, totals adding up to nothing", { timeout: 120_000 }, async () => {
     const { host } = await withBots(0);
     host.send({ t: "start" });
     const s = await playUntil([host], (s) => s.hand >= 3);
     expect(s.totals.reduce((a, b) => a + b, 0)).toBe(0);
+    // The table's record (for 戰況) replays to the same totals.
+    const res = await SELF.fetch(`${BASE}/tables/${s.code}/scores`, { headers: { Origin: ORIGIN } });
+    expect(res.status).toBe(200);
+    const record = (await res.json()) as ScoreGame;
+    expect(record.seats).toEqual(["Kevin", "快手 Speedster", "鐵壁 Iron Wall", "街坊 Casual"]);
+    const latest = host.latest!;
+    expect(record.events.length).toBe(latest.scores);
+    const r = replay(record);
+    expect(record.seats.map((p) => r.totals[p])).toEqual(latest.totals);
+    expect(r.hands.length).toBe(latest.hand - 1);
     expect(host.errors).toEqual([]);
     expectNoLeaks(host.states);
   });

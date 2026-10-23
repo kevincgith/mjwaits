@@ -6,6 +6,7 @@
 //   GET  /rooms/:code/ws      the room's WebSocket (Upgrade: websocket)
 //   POST /tables, GET /tables/:code, GET /tables/:code/ws
 //                             the same for an online table ({"phase": "lobby", "seats": [...]})
+//   GET  /tables/:code/scores the table's hands as a Scores-tab game (ScoreGame), or 404
 //   GET  /health              "ok"
 //
 // The room routes check the page's Origin first: only the sites in
@@ -100,6 +101,15 @@ export default {
       const code = normalizeRoomCode(info[2]);
       const room = code ? await stubFor(env, info[1], code).info() : null;
       return room ? json({ code, ...room }, 200, cors(origin!)) : json({ error: "no such room" }, 404, cors(origin!));
+    }
+
+    const scores = url.pathname.match(/^\/tables\/([^/]+)\/scores$/);
+    if (scores) {
+      if (!isAllowedOrigin(origin, env.ALLOWED_ORIGINS)) return json({ error: "origin not allowed" }, 403);
+      if (request.method !== "GET") return json({ error: "method not allowed" }, 405, { Allow: "GET", ...cors(origin!) });
+      const code = normalizeRoomCode(scores[1]);
+      const game = code ? await env.TABLES.getByName(code).scores() : null;
+      return game ? json(game, 200, cors(origin!)) : json({ error: "no record yet" }, 404, cors(origin!));
     }
 
     const ws = url.pathname.match(/^\/(rooms|tables)\/([^/]+)\/ws$/);

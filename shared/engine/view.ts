@@ -47,7 +47,7 @@ export function scoreView(score: ScoreResult): ScoreView {
 export type PhaseView =
   // `drawn` and `forbidden` only for the seat whose turn it is.
   | { kind: "turn"; seat: number; drawn: Tile | null; replacement: "flower" | "kong" | null; forbidden?: Tile[] }
-  | { kind: "claims"; from: number; tile: Tile }
+  | { kind: "claims"; from: number; tile: Tile; robKong?: true } // robKong: a kong shown for 搶槓, not a discard
   | { kind: "over"; result: ResultView };
 
 export interface TableView {
@@ -95,7 +95,7 @@ export function viewFor(s: GameState, you: number): TableView {
       ...(mine && s.phase.forbidden ? { forbidden: copyTiles(s.phase.forbidden) } : {}),
     };
   } else if (s.phase.kind === "claims") {
-    phase = { kind: "claims", from: s.phase.from, tile: { ...s.phase.tile } };
+    phase = { kind: "claims", from: s.phase.from, tile: { ...s.phase.tile }, ...(s.phase.robKong ? { robKong: true as const } : {}) };
   } else {
     const { score, alsoWon, ...rest } = s.phase.result;
     phase = {

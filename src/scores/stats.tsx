@@ -641,6 +641,47 @@ export function BackupCard({ store, setStore }: { store: ScoreStore; setStore: (
   );
 }
 
+// The players, best first: rank, 胡·摸·銃, any 獎罰, the trend line and the
+// net. `compact`: a line each. A tap picks that player (their stats).
+export function Leaderboard({
+  store,
+  stats,
+  series,
+  compact,
+  onPick,
+}: {
+  store: ScoreStore;
+  stats: PlayerStats[];
+  series: { player: string; values: (number | null)[] }[];
+  compact?: boolean;
+  onPick?: (index: number) => void;
+}) {
+  const ranked = stats.slice().sort((a, b) => b.net - a.net);
+  return (
+    <div className={`card sc-board-table${compact ? " is-compact" : ""}`}>
+      {ranked.length === 0 && <p className="sc-empty">No hands yet.</p>}
+      {ranked.map((s, i) => (
+        <button key={s.player} type="button" className="sc-leader" onClick={() => onPick?.(stats.findIndex((x) => x.player === s.player))}>
+          <span className={`sc-leader-rank is-${i + 1}`}>{i + 1}</span>
+          <Monogram store={store} player={s.player} />
+          <span className="sc-leader-id">
+            <span className="sc-leader-name">{s.player}</span>
+            <span className="sc-leader-sub">
+              {/* As on the 戰況 cards: 胡 black, 摸 green, 銃 red. */}
+              <span className="sc-card-counts" aria-label={`${s.wins + s.selfDraws} wins, ${s.selfDraws} self-draws, ${s.dealIns} deal-ins`}>
+                <strong className="is-win">{s.wins + s.selfDraws}</strong>·<strong className="is-self">{s.selfDraws}</strong>·<strong className="is-dealin">{s.dealIns}</strong>
+              </span>
+              {s.bonus !== 0 && <span>獎{signed(s.bonus)}</span>}
+            </span>
+          </span>
+          <Sparkline values={series.find((x) => x.player === s.player)?.values ?? []} className={`sc-c${colorOf(store, s.player)}`} />
+          <span className={`sc-leader-net ${tone(s.net)}`}>{signed(s.net)}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function StatsPanel({ store, setStore, view, setView }: { store: ScoreStore; setStore: (s: ScoreStore) => void; view: StatsView; setView: (v: StatsView) => void }) {
   const games = useMemo(() => [...(store.active ? [store.active] : []), ...store.history], [store]);
   const [gameId, setGameId] = useState<string | null>(null);
@@ -667,7 +708,6 @@ export function StatsPanel({ store, setStore, view, setView }: { store: ScoreSto
     { value: "patterns", label: "牌型" },
     { value: "history", label: "紀錄" },
   ];
-  const ranked = stats.slice().sort((a, b) => b.net - a.net);
   const isActive = game === store.active;
 
   return (
@@ -676,35 +716,16 @@ export function StatsPanel({ store, setStore, view, setView }: { store: ScoreSto
         <span className="sc-help">{state.hands.length}局</span>
       </SectionHead>
       {/* In full - sparklines and 胡·摸·銃 - above 走勢; a line each above the other views, which have their own detail. */}
-      <div className={`card sc-board-table${view === "trend" ? "" : " is-compact"}`}>
-        {ranked.length === 0 && <p className="sc-empty">No hands yet.</p>}
-        {ranked.map((s, i) => (
-          <button
-            key={s.player}
-            type="button"
-            className="sc-leader"
-            onClick={() => {
-              setPlayerIndex(stats.findIndex((x) => x.player === s.player));
-              setView("player");
-            }}
-          >
-            <span className={`sc-leader-rank is-${i + 1}`}>{i + 1}</span>
-            <Monogram store={store} player={s.player} />
-            <span className="sc-leader-id">
-              <span className="sc-leader-name">{s.player}</span>
-              <span className="sc-leader-sub">
-                {/* As on the 戰況 cards: 胡 black, 摸 green, 銃 red. */}
-                <span className="sc-card-counts" aria-label={`${s.wins + s.selfDraws} wins, ${s.selfDraws} self-draws, ${s.dealIns} deal-ins`}>
-                  <strong className="is-win">{s.wins + s.selfDraws}</strong>·<strong className="is-self">{s.selfDraws}</strong>·<strong className="is-dealin">{s.dealIns}</strong>
-                </span>
-                {s.bonus !== 0 && <span>獎{signed(s.bonus)}</span>}
-              </span>
-            </span>
-            <Sparkline values={series.find((x) => x.player === s.player)?.values ?? []} className={`sc-c${colorOf(store, s.player)}`} />
-            <span className={`sc-leader-net ${tone(s.net)}`}>{signed(s.net)}</span>
-          </button>
-        ))}
-      </div>
+      <Leaderboard
+        store={store}
+        stats={stats}
+        series={series}
+        compact={view !== "trend"}
+        onPick={(i) => {
+          setPlayerIndex(i);
+          setView("player");
+        }}
+      />
 
       <div className="sc-views">
         <Segmented value={view} onChange={setView} options={views} />

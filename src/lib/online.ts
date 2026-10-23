@@ -97,6 +97,9 @@ function safeStorage(): Storage | null {
   }
 }
 
+// A name to start from, until you pick your own: Player and two digits.
+export const defaultNickname = (random: () => number = Math.random) => `Player${Math.floor(random() * 90) + 10}`;
+
 export const tokenFor = (memory: OnlineMemory, code: string) => memory.rooms.find((r) => r.code === code)?.token;
 
 export const withToken = (memory: OnlineMemory, code: string, token: string): OnlineMemory => ({

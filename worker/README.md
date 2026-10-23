@@ -209,6 +209,7 @@ scoreboard; rooms left from it are cleared when they wake.)
 | `GET /rooms/<CODE>` | `200 {"code","phase","players"}`, or `404` |
 | `GET /rooms/<CODE>/ws` | the WebSocket (`Upgrade: websocket`); `404` for no such room, `503` when it's full |
 | `POST /tables`, `GET /tables/<CODE>`, `GET /tables/<CODE>/ws` | the same for an online table (`{"code","phase","seats"}`) |
+| `GET /tables/<CODE>/scores` | the table's record as a Scores-tab game, or `404` before the first deal |
 | `GET /health` | `ok` |
 
 The room routes need an allowed `Origin` (else `403`). Codes are 5 characters from
@@ -294,7 +295,9 @@ tokens, limits and errors as a live room). The table (`src/table.ts`) is authori
   message each phone is sent.
 - **Every move is checked** against the engine: the decision's `step` (a late tap is `stale`),
   whose turn or claim it is, and that the move or claim is legal (`illegal`).
-- **The lobby:** people sit; the host seats bots (the Play tab's personalities), sets 截糊 or
+- **The lobby:** people arriving take the first empty seat (and can move or stand); the host
+  seats bots (the Play tab's personalities, or a mystery one - a personality picked at random
+  that the server keeps to itself: phones see only `"mystery"`), sets 截糊 or
   一炮多響, the turn timer (off, 10, 20 or 30 s), how long a dropped seat is held, and who deals
   first, then starts once all four seats are filled.
 - **Timers** share the object's one alarm, set for exactly the next thing due: a bot's move
@@ -306,3 +309,6 @@ tokens, limits and errors as a live room). The table (`src/table.ts`) is authori
   carry across hands: each hand's payments, and dice and flower bonuses as they're paid.
 - **Storage:** the whole table is one SQLite row, written once per event however far the hand
   moved, plus the hub's clock row.
+- **The record:** every hand, bonus and 投降 also goes into the table's record - a Scores-tab
+  game (`shared/engine/playLedger.ts`), a row per entry, a few a hand. `TableState.scores` counts
+  them; phones fetch the record from `GET /tables/<CODE>/scores` when it changes, for 戰況.
