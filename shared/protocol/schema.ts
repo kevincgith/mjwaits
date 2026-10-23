@@ -144,15 +144,16 @@ export function record<T>(key: Schema<string>, value: Schema<T>, maxKeys: number
   };
 }
 
-// A union of object schemas told apart by their `t` field, so an error names
-// the one problem with the message the client meant rather than every
-// alternative's.
-export function tagged<M extends Record<string, Schema<{ t: string }>>>(byTag: M): Schema<Infer<M[keyof M]>> {
+// A union of object schemas told apart by one field - `t` for messages,
+// `kind` for moves - so an error names the one problem with the shape the
+// client meant rather than every alternative's.
+export function tagged<M extends Record<string, Schema<object>>>(byTag: M, key = "t"): Schema<Infer<M[keyof M]>> {
   return {
     check: (v, path) => {
       if (!isPlainObject(v)) return fail(path, "expected an object");
-      const tag = v.t;
-      if (typeof tag !== "string" || !Object.hasOwn(byTag, tag)) return fail(path ? `${path}.t` : "t", "unknown message type");
+      const tag = v[key];
+      const at = path ? `${path}.${key}` : key;
+      if (typeof tag !== "string" || !Object.hasOwn(byTag, tag)) return fail(at, key === "t" ? "unknown message type" : `unknown ${key}`);
       return byTag[tag].check(v, path) as Result<Infer<M[keyof M]>>;
     },
   };

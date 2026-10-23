@@ -127,3 +127,10 @@ describe("human touches", () => {
     expect(rememberedView(s, 0, 1)).toBe(s);
   });
 });
+
+describe("the online table's bots", () => {
+  it("are exactly the roster's personalities (the basic bot aside)", async () => {
+    const { TABLE_BOTS } = await import("@mjwaits/shared/protocol/table");
+    expect([...TABLE_BOTS].sort()).toEqual(BOT_PROFILES.map((p) => p.id).filter((id) => id !== "basic").sort());
+  });
+});
