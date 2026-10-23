@@ -144,6 +144,12 @@ while true; do
     continue
   fi
   read -r s b < <(score_same "$((1000 + round))" "ml/runs/$name" "$best")
+  # A missing score is a failed test, never a pass.
+  if [ -z "$s" ] || [ -z "$b" ]; then
+    log "  $name: scoring failed (round '${s:-none}', best '${b:-none}') - kept $best"
+    save
+    continue
+  fi
   if better "$s" "$b"; then
     log "  $name: $s vs best $b on the same 8,192 hands - new best"
     best="ml/runs/$name"

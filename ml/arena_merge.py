@@ -8,9 +8,11 @@ hands into one table in the same format: every column averaged per seat
 import re
 import sys
 
+# A seat that never won shows "-" for its win-only columns (counted as 0).
+N = r"(?:-?[\d.]+|-)"
 ROW = re.compile(
-    r"^(?P<name>.+?)\s+(?P<net>-?[\d.]+)\s+(?P<win>[\d.]+)%\s+(?P<tsumo>[\d.]+)%\s+(?P<dealin>[\d.]+)%\s+(?P<avgwin>[\d.]+)\s+(?P<avgloss>[\d.]+)"
-    r"\s+(?P<turn>[\d.]+)\s+(?P<calls>[\d.]+)\s+(?P<riichi>[\d.]+)%\s+(?P<lah>-?[\d.]+)\s+(?P<surrender>\d+)\s+(?P<best>\d+)\s*$"
+    rf"^(?P<name>.+?)\s+(?P<net>-?[\d.]+)\s+(?P<win>[\d.]+)%\s+(?P<tsumo>{N})%?\s+(?P<dealin>[\d.]+)%\s+(?P<avgwin>{N})\s+(?P<avgloss>{N})"
+    rf"\s+(?P<turn>{N})\s+(?P<calls>{N})\s+(?P<riichi>[\d.]+)%\s+(?P<lah>-?[\d.]+)\s+(?P<surrender>\d+)\s+(?P<best>\d+)\s*$"
 )
 HANDS = re.compile(r"^(\d+) hands .*?([\d.]+)% drawn")
 NUMS = ["net", "win", "tsumo", "dealin", "avgwin", "avgloss", "turn", "calls", "riichi", "lah", "surrender"]
@@ -31,7 +33,7 @@ def main(paths):
             s = seats.setdefault(m["name"].strip(), {"n": 0, "best": 0, **{k: 0.0 for k in NUMS}})
             s["n"] += 1
             for k in NUMS:
-                s[k] += float(m[k])
+                s[k] += 0.0 if m[k] == "-" else float(m[k])
             s["best"] = max(s["best"], int(m["best"]))
     if not seats:
         raise SystemExit("no arena rows found")

@@ -290,12 +290,18 @@ def rl(args):
     idx = np.arange(n)
     rng = np.random.default_rng(1)
     t0 = time.time()
+    skipped = 0
     for epoch in range(args.epochs):
         rng.shuffle(idx)
         stats = []
         for b in range(0, n, args.batch):
             progress(epoch, args.epochs, b, n, t0)
             ix = idx[b : b + args.batch]
+            # A leftover sliver of a batch has no spread to normalise the
+            # advantages by (one sample: std is NaN, and NaN weights are a
+            # network that never wins) - skip it; it's reshuffled next epoch.
+            if len(ix) < 64:
+                continue
             o = torch.from_numpy(obs[ix].astype(np.float32)).to(device)
             m = torch.from_numpy(mask[ix].astype(np.float32)).to(device)
             a = torch.from_numpy(meta[ix, 0].astype(np.int64)).to(device)
@@ -314,6 +320,10 @@ def rl(args):
                 ref_logp = masked_log_softmax(ref(o, s, m)[0] / temp, m)
             kl = (ref_logp.exp() * (ref_logp - logp_all)).masked_fill(m < 0.5, 0).sum(-1).mean()
             loss = pg + args.value_weight * F.smooth_l1_loss(value, r) + args.kl * kl
+            # Never let one bad batch poison the weights.
+            if not torch.isfinite(loss):
+                skipped += 1
+                continue
             opt.zero_grad()
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -321,6 +331,10 @@ def rl(args):
             stats.append((pg.item(), kl.item(), F.smooth_l1_loss(value, r).item()))
         pg_m, kl_m, v_m = np.mean(stats, axis=0)
         print(f"epoch {epoch + 1}/{args.epochs}  {time.time() - t0:.0f}s  policy {pg_m:+.4f}  KL to start {kl_m:.4f}  value {v_m:.4f}")
+    if skipped:
+        print(f"skipped {skipped} batches with a non-finite loss")
+    if not all(torch.isfinite(p).all() for p in model.parameters()):
+        raise SystemExit("training produced non-finite weights - not saving this network")
     init_meta = json.load(open(os.path.join(args.init, "meta.json")))
     export(model, O, A, args.out, styles, {"arch": init_meta.get("arch", "mlp"), "width": init_meta.get("width", args.width), "planes": init_meta.get("planes"), "init": args.init, "ref": args.ref or args.init, "data": args.data, "samples": int(n), "rl": True})
 

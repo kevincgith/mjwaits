@@ -150,10 +150,16 @@ def train_metrics(path):
     for m in re.finditer(r"^epoch (\d+)/(\d+)\s+(\d+)s\s+(.*)$", text, re.M):
         e = {"epoch": int(m[1]), "of": int(m[2]), "secs": int(m[3])}
         rest = m[4]
-        for key, pat in [("valLoss", r"val loss ([\d.]+)"), ("acc", r"acc ([\d.]+)"), ("accTurn", r"turn ([\d.]+)"), ("accClaim", r"claim ([\d.]+)"), ("policy", r"policy ([-+\d.]+)"), ("kl", r"KL to start ([\d.]+)"), ("value", r"value ([\d.]+)")]:
+        num = r"([-+]?(?:nan|inf|[\d.]+))"
+        for key, pat in [("valLoss", r"val loss " + num), ("acc", r"acc " + num), ("accTurn", r"turn " + num), ("accClaim", r"claim " + num), ("policy", r"policy " + num), ("kl", r"KL to start " + num), ("value", r"value " + num)]:
             mm = re.search(pat, rest)
             if mm:
-                e[key] = float(mm[1])
+                v = float(mm[1])
+                # NaN isn't JSON: flag it instead.
+                if v != v or v in (float("inf"), float("-inf")):
+                    e["broken"] = True
+                    v = None
+                e[key] = v
         epochs.append(e)
     reward = re.search(r"^([\d,]+) self-play decisions; mean reward by style: (.*)$", text, re.M)
     board = re.search(r"^board value: ([\d,]+) hands of finished matches, mean error (\d+) tai", text, re.M)
@@ -240,15 +246,22 @@ def insights(key, scores, st, step, arena_best, arena_last):
     notes = []
     noise = NOISE[key]
     scores = [s for s in scores if not s.get("old")]
+    # Health first: a network that never wins, or training that went NaN.
+    if arena_best and arena_best["me"] and arena_best["me"]["win"] == 0:
+        notes.append(("warn", "The best network never won a hand in its test - it's broken (often NaN weights). Stop the run and roll back."))
+    if step and any(e.get("broken") for e in (step.get("train") or {}).get("epochs", [])):
+        notes.append(("warn", "This round's training produced NaN values - the network it saves would be broken (training now refuses to save it)."))
     unit = "tai/hand" if key == "perHand" else "utility/hand"
-    if len(scores) >= 2:
-        first, best = scores[0], max(scores, key=lambda s: s["score"])
-        gain = best["score"] - first["score"]
-        notes.append(("good" if gain > noise else "neutral", f"Best so far is {best['label'].lower()} at {best['score']:+.2f} {unit}, {gain:+.2f} over the starting copy" + (" - well beyond luck." if gain > 2 * noise else " - within luck so far." if gain <= noise else " - probably real.")))
+    if st.get("best"):
+        label, _ = describe(st["best"].split("/")[-1])
+        notes.append(("neutral", f"The best is {label.lower()} ({st['best'].split('/')[-1]}). Scores on different hands can't be compared directly - each round is judged head to head against the best on the same hands."))
     rounds = [s for s in scores if re.search(r"(long|matchday-round)-\d+$", s["name"])]
     if rounds:
         kept = [s for s in rounds if s["best"]]
-        best_score = float(st.get("best_score", "nan"))
+        try:
+            best_score = float(st.get("best_score") or "nan")
+        except ValueError:
+            best_score = float("nan")
         worse = [s for s in rounds if s["score"] < (s["vsBest"] if s.get("vsBest") is not None else best_score) - noise]
         if kept:
             notes.append(("good", f"{len(kept)} of {len(rounds)} self-play round{'s' if len(rounds) > 1 else ''} beat the best and replaced it."))
@@ -415,10 +428,19 @@ def training_cpu():
     return round(mine / 100, 1), round(total / 100, 1)
 
 
+def safe_run_status(key):
+    """A run's status; if reading its files fails (one caught mid-write, say),
+    a minimal entry instead of taking the whole page down."""
+    try:
+        return run_status(key)
+    except Exception as e:  # noqa: BLE001 - the dashboard must keep answering
+        return {"key": key, "about": RUNS[key]["about"], "metric": RUNS[key]["metric"], "metricNote": RUNS[key]["metricNote"], "run": ctl_state(key), "state": {}, "step": None, "scores": [], "table": None, "training": None, "insights": [{"tone": "warn", "text": f"Couldn't read this run's files just now ({type(e).__name__}); retrying."}], "log": [], "started": None, "backup": None}
+
+
 def status():
     mine, total = training_cpu()
     return {
-        "runs": [run_status(k) for k in RUNS],
+        "runs": [safe_run_status(k) for k in RUNS],
         "cpuTraining": mine,
         "cpuTotal": total,
         "cpus": os.cpu_count(),
