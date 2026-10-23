@@ -80,6 +80,7 @@ import { BLANK, seatState } from "./lib/seatState";
 import { withEvents, type ScoreGame } from "@mjwaits/shared/engine/ledger";
 import { carriedOver, newPlayLedger, playEvents, uniqueNames } from "@mjwaits/shared/engine/playLedger";
 import { PlayScores } from "./scores/playScores";
+import { ReviewSheet, type Decision } from "./PlayReview";
 import { loadLearnedModel, type LearnedModel } from "./lib/ml/browser";
 import { learnedClaim, learnedTurnMove, type LearnedBot } from "./lib/ml/policy";
 import { claimDecisionAction, encodeObservation, legalActions, turnMoveAction } from "./lib/ml/encode";
@@ -640,6 +641,24 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opponents]);
   const [scoresOpen, setScoresOpen] = useState(false);
+  // 回顧: your discards this hand, each with the table just before it - for
+  // the review on the result card. A new deal starts a new list.
+  const [decisions, setDecisions] = useState<Decision[]>([]);
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const beforeMove = useRef<GameState | null>(null);
+  useEffect(() => {
+    const prev = beforeMove.current;
+    beforeMove.current = game;
+    if (!prev) return;
+    if (prev.phase.kind === "over" && game.phase.kind !== "over") {
+      setDecisions([]);
+      setReviewOpen(false);
+      return;
+    }
+    const mine = game.players[HUMAN].discards;
+    if (prev.phase.kind === "turn" && prev.phase.seat === HUMAN && mine.length === prev.players[HUMAN].discards.length + 1)
+      setDecisions((d) => [...d, { before: prev, tile: mine[mine.length - 1] }]);
+  }, [game]);
   // Where the scores sheet is drawn: outside the table (in the app's own
   // colours), but turned with it on a phone held upright.
   const [sheetHost] = useState(() => {
@@ -1712,6 +1731,13 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
 
         {trackerOpen && <TileTracker game={game} onClose={() => setTrackerOpen(false)} />}
         {scoresOpen && ledger && <PlayScores game={ledger} onClose={() => setScoresOpen(false)} host={sheetHost} />}
+        {reviewOpen && (
+          <ReviewSheet
+            decisions={decisions}
+            dealtIn={!!result && result.winner !== null && result.from === HUMAN}
+            onClose={() => setReviewOpen(false)}
+          />
+        )}
         {opponentsOpen && <OpponentsSheet opponents={opponents} learned={model?.styles ?? null} onChange={setOpponents} onClose={() => setOpponentsOpen(false)} />}
 
         {result && !resultHidden && !cardHeld && (
@@ -1811,6 +1837,11 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
                 <button type="button" className="play-view-table" onClick={() => setResultHidden(true)}>
                   View table
                 </button>
+                {decisions.length > 0 && (
+                  <button type="button" className="play-view-table" onClick={() => setReviewOpen(true)}>
+                    回顧 Review
+                  </button>
+                )}
                 {seated && (
                   <button type="button" className="play-next" disabled={meReady} onClick={nextHandWithSurrenders}>
                     {meReady ? "Ready ✓" : "Next hand"}

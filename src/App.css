@@ -8178,6 +8178,104 @@ html.playing body {
   box-shadow: var(--shadow-float);
 }
 
+/* 回顧 Review: one row per discard - your hand then, what you threw (and how
+   risky), what the Grandmaster would have thrown. */
+.play-review {
+  width: min(44rem, 100%);
+}
+
+.play-review-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.play-review-row {
+  display: grid;
+  grid-template-columns: 1.4rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.play-review-row.is-deal-in {
+  background: rgba(214, 69, 50, 0.18);
+  box-shadow: inset 0 0 0 1px rgba(214, 69, 50, 0.55);
+}
+
+.play-review-n {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.play-review-hand {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1px;
+  font-size: 22px;
+  line-height: 0;
+}
+
+.play-review-verdict {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.2rem;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.play-review-threw,
+.play-review-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.play-review-threw .tile-glyph,
+.play-review-note .tile-glyph {
+  font-size: 26px;
+  line-height: 0;
+}
+
+.play-review-note {
+  color: var(--text-muted);
+}
+
+.play-review-note.is-agree {
+  color: var(--play-pos);
+}
+
+.play-review-tag {
+  padding: 0.05rem 0.4rem;
+  border-radius: var(--radius-pill);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.play-review-tag.is-low {
+  background: rgba(76, 192, 106, 0.18);
+  color: #8fe3a5;
+}
+
+.play-review-tag.is-some {
+  background: rgba(255, 209, 102, 0.18);
+  color: var(--play-gold);
+}
+
+.play-review-tag.is-high,
+.play-review-tag.is-deal-in {
+  background: rgba(214, 69, 50, 0.25);
+  color: #ff9c8a;
+}
+
 .play-sheet-head {
   display: flex;
   align-items: baseline;
