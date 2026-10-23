@@ -8335,6 +8335,11 @@ html.playing body {
   background: var(--accent-bg-2);
 }
 
+/* 線上 while this game is live on other phones. */
+.sc-toolbar button.is-on {
+  color: var(--danger-text-1);
+}
+
 .sc-toolbar button:disabled {
   color: var(--text-muted);
   opacity: 0.4;
@@ -13616,7 +13621,7 @@ button.sc-stat:active {
   padding: 0.5rem 0.25rem 0;
 }
 
-/* ---- Scores · 線上 Online table (scores/online.tsx) ---------------------- */
+/* ---- Scores · 線上 live scores (scores/live.tsx, scores/online.tsx) ------ */
 
 .ol-field {
   display: flex;
@@ -13635,19 +13640,9 @@ button.sc-stat:active {
   flex: none;
 }
 
-.ol-start-actions > button,
-.ol-start-game {
-  width: 100%;
-}
-
-.ol-start-game {
-  margin-top: 1rem;
-}
-
 .ol-join {
   display: flex;
   gap: 0.5rem;
-  margin-top: 0.75rem;
 }
 
 .ol-code-input {
@@ -13679,13 +13674,11 @@ button.sc-stat:active {
   font-size: var(--text-xl);
 }
 
-.ol-code-sheet {
-  margin: 0.5rem 0 0;
-  text-align: center;
+.ol-code-big {
   font-size: var(--text-title);
 }
 
-/* The room's header: its code, the connection, Invite / Leave. */
+/* A followed game's header: whose game, its code, the connection, Leave. */
 .ol-head {
   display: flex;
   flex-wrap: wrap;
@@ -13708,12 +13701,14 @@ button.sc-stat:active {
 
 .ol-head-actions {
   display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 0.4rem;
   width: 100%;
 }
 
-.ol-head-actions > button {
-  flex: 1;
+.ol-head-actions > .sc-secondary {
+  margin-left: auto;
 }
 
 .ol-status {
@@ -13766,40 +13761,8 @@ button.sc-stat:active {
   margin: 0 0 0.75rem;
 }
 
-/* Lobby seats. */
-.ol-seat {
-  justify-content: flex-start;
-}
-
-.ol-seat.is-me {
-  font-weight: 600;
-}
-
-.ol-wind {
-  display: inline-grid;
-  place-items: center;
-  flex-shrink: 0;
-  width: 2rem;
-  height: 2rem;
-  border-radius: var(--radius-sm);
-  background: var(--fill);
-  font-weight: 700;
-}
-
-.ol-seat-name {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  flex: 1;
-  min-width: 0;
-}
-
-.ol-empty {
-  color: var(--text-subtle);
-}
-
 .ol-tag {
-  padding: 0.05rem 0.4rem;
+  padding: 0.1rem 0.5rem;
   border-radius: var(--radius-pill);
   background: var(--fill);
   color: var(--text-muted);
@@ -13812,35 +13775,56 @@ button.sc-stat:active {
   color: var(--accent);
 }
 
-.ol-sub {
-  display: block;
+/* The host's 線上 sheet: the invite, then who's here and who records. */
+.ol-live-title {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.6rem;
 }
 
-.ol-link {
-  border: 0;
-  padding: 0;
-  background: none;
-  color: var(--accent);
-  font: inherit;
-  text-decoration: underline;
-  cursor: pointer;
+.ol-invite {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
 }
 
-.ol-first-dealer {
+.ol-qr {
+  flex: 0 0 8.5rem;
+  width: 8.5rem;
+  margin: 0;
+}
+
+.ol-invite-side {
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
-  margin-top: 0.5rem;
+  min-width: 0;
 }
 
-/* The live board: this phone's own card, and the 拉 list under the table. */
-.ol-board .sc-card-top .ol-dot {
-  margin-right: 0.25rem;
+.ol-people-head {
+  margin: 1.25rem 0 0.25rem;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-weight: 600;
 }
 
-.sc-card.ol-is-me {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+.ol-seat-name {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.ol-record {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+/* A watched board: cards aren't buttons, so they don't look pressable. */
+.ol-board .sc-card {
+  cursor: default;
 }
 
 .ol-lahs {
@@ -13849,14 +13833,6 @@ button.sc-stat:active {
   gap: 0.35rem 0.9rem;
   margin-top: 0.75rem;
   font-size: var(--text-sm);
-}
-
-.ol-undo {
-  margin-top: 0.5rem;
-}
-
-.ol-leader {
-  grid-template-columns: 1.6rem minmax(0, 1fr) auto;
 }
 
 .ol-summary-actions {

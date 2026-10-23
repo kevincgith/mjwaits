@@ -112,6 +112,14 @@ export const ICON = {
 } as const;
 
 export const Icons = {
+  // A dot sending out waves: this game, live on other phones (線上).
+  live: (
+    <svg {...ICON}>
+      <circle cx="12" cy="12" r="2" />
+      <path d="M8.5 15.5a5 5 0 0 1 0-7M15.5 8.5a5 5 0 0 1 0 7" />
+      <path d="M5.6 18.4a9 9 0 0 1 0-12.8M18.4 5.6a9 9 0 0 1 0 12.8" />
+    </svg>
+  ),
   // A plus on a tile: a new game.
   newGame: (
     <svg {...ICON}>

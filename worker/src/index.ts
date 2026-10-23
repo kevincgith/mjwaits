@@ -2,7 +2,7 @@
 // the room's Durable Object:
 //
 //   POST /rooms               make a room; answers {"code": "3AC9X"}
-//   GET  /rooms/:code         is there such a room: {"phase": "lobby", "seated": 2}, or 404
+//   GET  /rooms/:code         is there such a room: {"phase": "live", "players": [...]}, or 404
 //   GET  /rooms/:code/ws      the room's WebSocket (Upgrade: websocket)
 //   GET  /health              "ok"
 //

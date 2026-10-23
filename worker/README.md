@@ -1,27 +1,30 @@
-# MJWaits multiplayer server
+# MJWaits live-scores server
 
-The server behind the Scores tab's **線上 Online** table: a Cloudflare Worker with one Durable
-Object per table, each keeping its table in its own SQLite storage. Every phone at the table
-holds a WebSocket to it, so an entry made on one phone shows on all of them at once.
+The server behind the Scores tab's **線上** live scores: a Cloudflare Worker with one Durable
+Object per shared game, each keeping its game in its own SQLite storage. The host's phone puts
+its 戰況 game up and keeps it current; everyone following holds a WebSocket to the room and sees
+each change the moment it's made; whoever the host allows can record into it too.
 
 It runs on the Workers **free plan**: SQLite-backed Durable Objects, and the WebSocket
-Hibernation API so a quiet table costs nothing while it waits.
+Hibernation API so a quiet room costs nothing while it waits.
 
 ```
-shared/                @mjwaits/shared - imported by the web app and this Worker alike
-  engine/              the rules engine: tiles, tai scoring, the hand engine, score keeping (ledger.ts)
-  protocol/            the messages (client.ts, server.ts), limits.ts, and their validation
-worker/                this Worker
-  src/index.ts         routes: make a room, look one up, open its WebSocket; the Origin check
-  src/room.ts          Room, the Durable Object: players, seats, the scoreboard, undo, expiry
-  test/                tests run inside the Workers runtime against the real Durable Object
-src/lib/online.ts      the web app's connection: rooms over HTTP, the live socket, reconnecting
-src/scores/online.tsx  the 線上 panel
+shared/                  @mjwaits/shared - imported by the web app and this Worker alike
+  engine/                the rules engine: tiles, tai scoring, the hand engine, score keeping (ledger.ts)
+  protocol/              the messages (client.ts, server.ts), a game's full check (game.ts), limits.ts
+worker/                  this Worker
+  src/index.ts           routes: make a room, look one up, open its WebSocket; the Origin check
+  src/room.ts            Room, the Durable Object: people, who records, the game, conflicts, expiry
+  test/                  tests run inside the Workers runtime against the real Durable Object
+src/lib/online.ts        the web app's side: rooms over HTTP, the live socket (RoomClient), and
+                         keeping a phone's copy of the game in step with the room's (GameSync)
+src/scores/live.tsx      the host's side: Go live, who records, stop sharing
+src/scores/online.tsx    everyone else's: join, watch, record
 ```
 
-The scores are the shared ledger's (`shared/engine/ledger.ts`), the same code as the Scores
-tab: the room stores each hand as a Scores-tab entry and replays them for the board, so 拉/踢,
-反雪, 連莊 and the round come out exactly as on 戰況.
+The room keeps the game exactly as the Scores tab does - a `ScoreGame` from
+`shared/engine/ledger.ts` - so every 戰況 feature (換人, 投降, 詐胡, fixing an older hand, 設定…)
+works the same live, and every phone works the scores out with the same ledger.
 
 ## Local development
 
@@ -65,11 +68,11 @@ npm test --workspace worker       # just the Worker
 ```
 
 The Worker's tests run inside the Workers runtime (`@cloudflare/vitest-plugin`), against the
-real `Room` Durable Object and its SQLite storage, with real WebSockets: joining, seats,
-reconnecting, the Origin check and limits, expiry, payouts checked against the ledger, undo with
-approval, the summary, and a room evicted from memory mid-game carrying on. The protocol's
-validation is tested in `shared/protocol/protocol.test.ts`; the app's connection in
-`src/lib/online.test.ts`.
+real `Room` Durable Object and its SQLite storage, with real WebSockets: joining, reconnecting,
+the Origin check and limits, expiry, sharing and following a game, who may record, two changes
+at once, stopping, and a room evicted from memory mid-game carrying on. The protocol's
+validation - including that the game check has exactly the ledger's fields - is tested in
+`shared/protocol/protocol.test.ts`; the app's connection and GameSync in `src/lib/online.test.ts`.
 
 ## Deploying
 
@@ -142,14 +145,14 @@ What the Workers free plan allows is on Cloudflare's
 counts here:
 
 - **Requests.** Making or looking up a room is one; each WebSocket message to a room counts as a
-  small fraction of one (Cloudflare bills WebSocket messages at 20:1). A table of four is a few
-  hundred messages an evening.
+  small fraction of one (Cloudflare bills WebSocket messages at 20:1). An evening's game is a few
+  hundred messages.
 - **Duration.** A room is only billed while awake. With the Hibernation API it sleeps between
   messages, open sockets and all.
-- **Storage.** A room is a few kilobytes. Rows written: one per entry plus a couple of
-  bookkeeping rows per change.
-- **CPU.** Each message is replaying the ledger (microseconds) - the costly part, tai scoring,
-  isn't done on the server in phase 1.
+- **Storage.** A room is its game - tens of kilobytes for a long evening - and a few rows of
+  bookkeeping. Each change rewrites the game: a handful of rows written.
+- **CPU.** Each change is checked by replaying the game with the ledger: a millisecond or so for
+  a long game. Tai scoring isn't done on the server at all.
 
 ### Limits and clean-up
 
@@ -157,10 +160,10 @@ All in `room.ts` and `shared/protocol/limits.ts`:
 
 | What | Limit |
 |---|---|
-| Message size | 8 KB |
+| Message size | 512 KB (a game of up to 3,000 entries) |
 | Messages per connection | bursts of 20, then 5 a second; closed after 10 refusals in a row |
 | Connections per room | 16 |
-| Nicknames per room | 12; up to 12 characters, no markup or invisible characters, unique ignoring case and width |
+| People per room | 12; names up to 12 characters, no markup or invisible characters, unique ignoring case and width |
 | A room no one joined | removed after 1 hour |
 | Any other room | removed 2 days after its last change, never while anyone is connected |
 
@@ -170,15 +173,17 @@ Clean-up is one Durable Object alarm per room, set when it's made and moved only
 
 JSON over the WebSocket at `wss://mj-api.kevinlhc.com/rooms/<CODE>/ws`. Everything is defined
 once in `shared/protocol/`: `client.ts` (what a phone sends, with the schema the server checks),
-`server.ts` (what the room sends), `limits.ts`. Bump `PROTOCOL_VERSION` when a message changes
-shape; a page speaking another version is told to reload.
+`game.ts` (a whole game, checked field by field and then replayed by the ledger), `server.ts`
+(what the room sends), `limits.ts`. Bump `PROTOCOL_VERSION` when a message changes shape; a page
+speaking another version is told to reload. (Version 1 was the earlier seat-and-lobby
+scoreboard; rooms left from it are cleared when they wake.)
 
 ### HTTP
 
 | Request | Answer |
 |---|---|
-| `POST /rooms` | `201 {"code":"3AC9X"}` - a new room |
-| `GET /rooms/<CODE>` | `200 {"code","phase","seated"}`, or `404` |
+| `POST /rooms` | `201 {"code":"3AC9X"}` - a new, empty room |
+| `GET /rooms/<CODE>` | `200 {"code","phase","players"}`, or `404` |
 | `GET /rooms/<CODE>/ws` | the WebSocket (`Upgrade: websocket`); `404` for no such room, `503` when it's full |
 | `GET /health` | `ok` |
 
@@ -187,58 +192,59 @@ The room routes need an allowed `Origin` (else `403`). Codes are 5 characters fr
 
 ### Phone → room
 
-Every message is checked by `parseClientMessage` before anything else: text, at most 8 KB,
-JSON, a known `t`, exactly the listed fields with the right types, and the rules between fields.
-Each may carry `rid` (up to 16 characters), echoed on any `error` it causes.
+Every message is checked by `parseClientMessage` before anything else: text, at most 512 KB,
+JSON, a known `t`, exactly the listed fields with the right types. Each may carry `rid` (up to 16
+characters), echoed on any `error` it causes.
 
-| `t` | Fields | Who, when |
+| `t` | Fields | Who |
 |---|---|---|
-| `hello` | `v`, `name`, `token?` | first, on every connection; `token` takes back a seat |
-| `sit` | `seat` (0-3) | anyone joined, in the lobby |
-| `stand` | | in the lobby |
-| `setup` | `settings` | the host, in the lobby |
-| `start` | | the host, with four seated |
-| `win` | `winners: [{seat, tai}]` (1-3), `from` (seat, or null for 自摸), `jackpot?` | a seated player, during the game |
-| `draw` | | 流局 - a seated player |
-| `bonus` | `seat`, `kind` (獎 / 罰), `amount`, `other?` | 特別獎罰 - a seated player |
-| `undo` | | ask to take back the last entry - a seated player |
-| `undoVote` | `approve` | another seated player answers; the asker can withdraw (`false`) |
-| `end` | | the host: the session is over |
+| `hello` | `v`, `name`, `token?` | first, on every connection; `token` comes back as the same person. The first person in a room is its host. |
+| `update` | `base`, `game`, `colors?` | the host - the first update puts the game up - and anyone the host lets record |
+| `setRecorder` | `person` (an id from `people`), `allow` | the host |
+| `stop` | | the host: stop sharing; the game stays, read-only |
 | `ping` | | answered with `pong` |
 
-`settings`: `startChips`, `base` (底), `dealerTai` (莊), `streakTai` (連莊), `multiWin`
-(`"first"` 截胡 / `"all"` 一炮多響), `hostCanUndo`, `firstDealer`.
-
-Rules a shape can't say: a 自摸 has one winner; the discarder isn't a winner; no seat twice; two
-or three winners only at a `multiWin: "all"` table; only a single winner takes the Jackpot. While
-an undo waits for an answer, nothing new is recorded.
+`update` sends the whole game as it now stands, the way the Scores tab saves it. The room
+checks it in full (`checkGame`: every field and bound, four different names, and that the ledger
+can replay it), refuses a different game than the one being shared, and takes it only if `base`
+is the room's current `gameVersion` - otherwise someone else's change landed first, and the
+answer is `conflict`. Fields it doesn't know (from an older app version's saved game) are
+dropped, not refused. `colors` (player → colour) is only taken from the host.
 
 ### Room → phone
 
 | `t` | Fields |
 |---|---|
-| `welcome` | `v`, `token`, `name`, `host`, `seat` - keep `token` to come back to this seat |
+| `welcome` | `v`, `token`, `id`, `name`, `host` - keep `token` to come back as the same person |
 | `room` | `room`: the whole public room (below), after every change |
 | `error` | `code`, `message`, `rid?` |
 | `pong` | `rid?` |
 
-`room` carries `code`, `version` (one higher each change - drop anything older), `phase`
-(`lobby` / `playing` / `ended`), `seats` (each `{name, connected, host}` or null), `watching`,
-`settings`, `game` (the Scores tab's own game record: seats as nicknames, and every entry),
-`board` (`chips`, `net`, `dealer`, `streak`, `roundWind`, `label`, `hands`, `lahs`, `pot`),
-`pendingUndo` (`{by, entry}` or null) and, once ended, `summary` (`hands`, `net`, `chips`,
-`settle` - the fewest payments, in seats - `pot` left in the Jackpot, `endedAt`).
+`room` carries `code`, `version` (one higher each send - drop anything older), `phase`
+(`waiting` for the game / `live` / `ended`), `people` (each `{id, name, connected, host,
+canRecord}`), `game` (the `ScoreGame`, or null), `gameVersion` (one higher each accepted
+update) and `colors`.
 
 Error codes: `badMessage`, `tooLarge`, `rateLimited`, `version`, `notJoined`, `badToken`,
-`nameTaken`, `seatTaken`, `notSeated`, `notHost`, `started`, `notStarted`, `ended`,
-`seatsNotFull`, `multiWinOff`, `undoPending`, `nothingToUndo`, `noUndoPending`, `ownUndo`.
+`nameTaken`, `notHost`, `notAllowed`, `conflict`, `badGame`, `ended`, `noSuchPerson`.
+
+### Keeping in step
+
+`GameSync` (`src/lib/online.ts`) keeps a phone's copy of the game in step with the room's. It
+sends the copy when it differs from the last game the room confirmed - one update at a time, each
+made on that confirmed `gameVersion` - and adopts every change made elsewhere. When a change here
+and one elsewhere collide, the room's wins and the phone says the change wasn't saved, to be
+entered again: two people's entries are never merged behind their backs. After a reconnect, a
+copy changed offline goes up if nothing changed in the room meanwhile (it's the newer); otherwise
+the room's is taken. Games are compared as the server keeps them (`gameKey`: through the same
+schema, keys sorted), so a game from an older app version doesn't bounce back and forth.
 
 ### Reconnecting
 
-The room keeps each player's reconnect token as a SHA-256 hash. The app keeps the token itself
-in `localStorage` (`mjwaits.online`, per room, for a week), sends it with `hello` after any drop
-or reload, and gets the same seat back. It retries with growing waits (½ s up to 8 s) and at once
-when the page comes back to the front or the network returns. When a connection fails before it
-opens, the app asks `GET /rooms/<CODE>`: a `404` means the table has expired, so it stops and says
-so instead of retrying. (A room that answers `badToken` - it doesn't know this player - is joined
-afresh.)
+The room keeps each person's reconnect token as a SHA-256 hash. The app keeps the token itself
+in `localStorage` (`mjwaits.online`, per room, for a week) - the host's phone also notes which
+game it's sharing where - sends it with `hello` after any drop or reload, and is the same person
+again (the host stays host). It retries with growing waits (½ s up to 8 s) and at once when the
+page comes back to the front or the network returns. When a connection fails before it opens,
+the app asks `GET /rooms/<CODE>`: a `404` means the game has closed, so it stops and says so
+instead of retrying.

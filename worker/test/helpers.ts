@@ -4,6 +4,7 @@ import { SELF } from "cloudflare:test";
 import { expect } from "vitest";
 import { PROTOCOL_VERSION } from "@mjwaits/shared/protocol/limits";
 import type { RoomView, ServerMessage } from "@mjwaits/shared/protocol/server";
+import { sampleGame } from "@mjwaits/shared/protocol/sampleGame";
 
 export const ORIGIN = "http://localhost:5173";
 export const BASE = "https://mp.test";
@@ -86,15 +87,11 @@ export async function join(code: string, name: string, token?: string) {
   return { c, welcome, room };
 }
 
-// A room with four seated players; `a` is the host.
-export async function fullTable() {
+// A room with the host (Kevin) sharing the sample game, and its welcome.
+export async function sharing(game = sampleGame()) {
   const code = await createRoom();
-  const players = [];
-  for (const [i, name] of ["A", "B", "C", "D"].entries()) {
-    const p = await join(code, name);
-    p.c.send({ t: "sit", seat: i });
-    await p.c.room((v) => v.seats[i]?.name === name);
-    players.push(p);
-  }
-  return { code, players };
+  const host = await join(code, "Kevin");
+  host.c.send({ t: "update", base: 0, game, colors: { Amy: 1, Ben: 2 } });
+  const room = await host.c.room((v) => v.phase === "live");
+  return { code, host, room, game };
 }
