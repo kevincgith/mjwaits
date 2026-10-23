@@ -75,11 +75,15 @@ import {
   type Voice,
 } from "@mjwaits/shared/engine/bots";
 import { scoreView, type ResultView } from "@mjwaits/shared/engine/view";
-import { MYSTERY_BOT, type TableClientMessage, type TableState } from "@mjwaits/shared/protocol/table";
+import { MYSTERY_BOT, REACTIONS, type Reaction, type TableClientMessage, type TableState } from "@mjwaits/shared/protocol/table";
 import { BLANK, seatState } from "./lib/seatState";
 import { withEvents, type ScoreGame } from "@mjwaits/shared/engine/ledger";
 import { carriedOver, newPlayLedger, playEvents, uniqueNames } from "@mjwaits/shared/engine/playLedger";
 import { PlayScores } from "./scores/playScores";
+import { ReviewSheet, type Decision } from "./PlayReview";
+import { RecordSheet } from "./PlayRecord";
+import { isMuted, play as playSound, setMuted, wakeAudio, type Sound } from "./lib/sound";
+import { addHand, loadRecord, saveRecord, type Opponent } from "./lib/playRecord";
 import { loadLearnedModel, type LearnedModel } from "./lib/ml/browser";
 import { learnedClaim, learnedTurnMove, type LearnedBot } from "./lib/ml/policy";
 import { claimDecisionAction, encodeObservation, legalActions, turnMoveAction } from "./lib/ml/encode";
@@ -157,6 +161,8 @@ const BURST_MS = 1200;
 // hands laid down - and only then the result card: this long after a win,
 // less after a 流局 (no call to see).
 const WIN_SHOW_MS = 2400;
+// A phone held upright: the table is drawn turned (as App.css's media query).
+const TURNED = "(orientation: portrait) and (max-width: 820px)";
 const DRAW_SHOW_MS = 900;
 // 自動 autoplay: a bot plays your seat and you watch - the Grandmaster -
 // dealing on by itself this long after each result.
@@ -308,6 +314,41 @@ function RevealedHandView({ tiles, winningTile, toppleAt = 0 }: { tiles: Tile[];
         </span>
       )}
     </span>
+  );
+}
+
+// The sound for a burst: a win, 叮, a call, or (anything longer, as 正花 +2) a bonus.
+function burstSound(label: string): Sound {
+  if (/胡|自摸|搶槓|響/.test(label)) return "win";
+  if (label === "叮") return "riichi";
+  if (label === "碰" || label === "上" || label === "槓") return "call";
+  return "bonus";
+}
+
+// 音效: sound on or off, in either menu.
+function SoundRow() {
+  const [off, setOff] = useState(isMuted);
+  return (
+    <div className="play-menu-row">
+      <span>音效 Sound</span>
+      <span className="play-menu-seg">
+        {[true, false].map((on) => (
+          <button
+            key={String(on)}
+            type="button"
+            className={!off === on ? "toggle-on" : undefined}
+            aria-pressed={!off === on}
+            onClick={() => {
+              setMuted(!on);
+              setOff(!on);
+              if (on) wakeAudio();
+            }}
+          >
+            {on ? "On" : "Off"}
+          </button>
+        ))}
+      </span>
+    </div>
   );
 }
 
@@ -498,6 +539,8 @@ function PlayDie({ value, rolling, index }: { value: number; rolling: boolean; i
 // Playing at an online table: what the server sent, and how to answer it.
 export interface OnlinePlay {
   table: TableState;
+  // The last quick reaction someone at the table sent (a new id each time).
+  reaction: { seat: number; r: Reaction; id: number } | null;
   // The table's record, as the server keeps it (null until it's arrived).
   scores: ScoreGame | null;
   send: (msg: Exclude<TableClientMessage, { t: "hello" }>) => void;
@@ -638,6 +681,51 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opponents]);
   const [scoresOpen, setScoresOpen] = useState(false);
+  // 回顧: your discards this hand, each with the table just before it - for
+  // the review on the result card. A new deal starts a new list.
+  const [decisions, setDecisions] = useState<Decision[]>([]);
+  const [reviewOpen, setReviewOpen] = useState(false);
+  // Sound: woken by the first tap (iPhones need one); a clack whenever a
+  // tile hits a pond, a softer tick as you draw.
+  useEffect(() => {
+    const wake = () => wakeAudio();
+    window.addEventListener("pointerdown", wake, { once: true });
+    return () => window.removeEventListener("pointerdown", wake);
+  }, []);
+  const soundBefore = useRef<GameState | null>(null);
+  useEffect(() => {
+    const prev = soundBefore.current;
+    soundBefore.current = game;
+    if (!prev || game.phase.kind === "over") return;
+    const count = (g: GameState) => g.players.reduce((n, p) => n + p.discards.length, 0);
+    if (count(game) > count(prev)) playSound("discard");
+    else if (game.phase.kind === "turn" && game.phase.seat === HUMAN && game.phase.drawn && !(prev.phase.kind === "turn" && prev.phase.drawn)) playSound("draw");
+  }, [game]);
+  const beforeMove = useRef<GameState | null>(null);
+  useEffect(() => {
+    const prev = beforeMove.current;
+    beforeMove.current = game;
+    if (!prev) return;
+    if (prev.phase.kind === "over" && game.phase.kind !== "over") {
+      setDecisions([]);
+      setReviewOpen(false);
+      return;
+    }
+    const mine = game.players[HUMAN].discards;
+    if (prev.phase.kind === "turn" && prev.phase.seat === HUMAN && mine.length === prev.players[HUMAN].discards.length + 1)
+      setDecisions((d) => [...d, { before: prev, tile: mine[mine.length - 1] }]);
+  }, [game]);
+  // Where the scores sheet is drawn: outside the table (in the app's own
+  // colours), but turned with it on a phone held upright.
+  const [sheetHost] = useState(() => {
+    const host = document.createElement("div");
+    host.className = "play-sheet-host";
+    return host;
+  });
+  useEffect(() => {
+    document.body.appendChild(sheetHost);
+    return () => sheetHost.remove();
+  }, [sheetHost]);
   // The side seats' columns both as wide as the wider seat (its melds and
   // flowers included), so a call on one side never pushes the middle over.
   const feltRef = useRef<HTMLDivElement>(null);
@@ -683,15 +771,23 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
     const felt = feltRef.current;
     const stage = felt?.parentElement;
     if (!felt || !stage) return;
+    // The table's top as drawn: on a phone held upright the whole table is
+    // turned a quarter (see .play-screen), its top along the phone's right
+    // edge - further right is higher up.
+    const turned = window.matchMedia(TURNED);
+    const topOf = (el: Element) => {
+      const r = el.getBoundingClientRect();
+      return turned.matches ? -r.right : r.top;
+    };
     const fitDepth = () => {
       felt.style.height = "";
-      const limit = stage.getBoundingClientRect().top + parseFloat(getComputedStyle(stage).paddingTop);
+      const limit = topOf(stage) + parseFloat(getComputedStyle(stage).paddingTop);
       let lo = felt.offsetHeight;
       let hi = lo * 3;
       for (let i = 0; i < 14; i++) {
         const mid = (lo + hi) / 2;
         felt.style.height = `${mid}px`;
-        if (felt.getBoundingClientRect().top >= limit) lo = mid;
+        if (topOf(felt) >= limit) lo = mid;
         else hi = mid;
       }
       felt.style.height = `${Math.floor(lo)}px`;
@@ -730,6 +826,19 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
   };
   // What each bot is saying, by seat (a speech bubble by its name card).
   const [bubbles, setBubbles] = useState<Record<number, { text: string; id: number }>>({});
+  // Online: a quick reaction shows as a bubble by whoever sent it (you too).
+  const showBubble = (seat: number, text: string) => {
+    const id = Date.now() + seat;
+    setBubbles((b) => ({ ...b, [seat]: { text, id } }));
+    window.setTimeout(() => setBubbles((b) => (b[seat]?.id === id ? Object.fromEntries(Object.entries(b).filter(([k]) => Number(k) !== seat)) : b)), BUBBLE_MS);
+  };
+  const reaction = online?.reaction ?? null;
+  useEffect(() => {
+    if (!reaction || !net) return;
+    showBubble(net.toLocal(reaction.seat), reaction.r);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reaction?.id]);
+  const [reacting, setReacting] = useState(false);
   const lastLine = useRef<Record<number, string>>({});
   const say = (seat: number, line: keyof Voice) => {
     const bot = bots[seat];
@@ -811,6 +920,7 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
   };
 
   const showBurst = (seat: number, label: string) => {
+    playSound(burstSound(label));
     const id = Date.now();
     setBurst({ seat, label, id });
     window.setTimeout(() => setBurst((b) => (b?.id === id ? null : b)), BURST_MS);
@@ -1165,6 +1275,30 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [over]);
+  // 我的紀錄: your record across games, added to as each hand you play ends
+  // (watching doesn't count) - with any big pattern won for the first time,
+  // for the result card.
+  const [playRecord, setPlayRecord] = useState(loadRecord);
+  const [recordOpen, setRecordOpen] = useState(false);
+  const [milestones, setMilestones] = useState<string[]>([]);
+  const recordedOver = useRef(over);
+  useEffect(() => {
+    const ended = over && !recordedOver.current;
+    recordedOver.current = over;
+    if (!over) setMilestones([]);
+    if (!ended || !result || !seated) return;
+    const opponents: Opponent[] = [1, 2, 3].map((seat) => {
+      const bot = bots[seat];
+      if (!bot) return { seat, key: `people:${nameOf(seat)}`, name: nameOf(seat) };
+      if (mysteryStyle(bot)) return { seat, key: "mystery", name: "Mystery" };
+      return { seat, key: bot.id, name: nameOf(seat) };
+    });
+    const { record: next, firsts } = addHand(loadRecord(), result, opponents);
+    saveRecord(next);
+    setPlayRecord(next);
+    setMilestones(firsts);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [over]);
   // On autoplay the next hand deals itself once the result has been up a while.
   useEffect(() => {
     if (!autoplay || !over || cardHeld || online) return;
@@ -1262,17 +1396,6 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
 
   return (
     <div className="play-screen">
-      <div className="play-rotate">
-        <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <rect x="7" y="2.5" width="10" height="19" rx="2" />
-          <path d="M3 9.5a9 9 0 0 1 3-5M3 4.5v5h5" />
-        </svg>
-        <p>Turn your phone sideways to play.</p>
-        <button type="button" onClick={onExit}>
-          Leave
-        </button>
-      </div>
-
       <div className="play-table">
         <div className="play-corner">
           <button type="button" className="play-icon-button" onClick={onExit} aria-label="Leave the table" title="Leave">
@@ -1311,6 +1434,34 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
               戰況
             </button>
           )}
+          {/* Online: quick reactions for the table, and who's watching. */}
+          {online && seated && (
+            <button type="button" className={`play-icon-button${reacting ? " is-on" : ""}`} onClick={() => setReacting((r) => !r)} aria-label="Send a reaction" aria-expanded={reacting}>
+              😊
+            </button>
+          )}
+          {online && online.table.watching > 0 && (
+            <span className="play-watching" title={`${online.table.watching} watching`}>
+              👁 {online.table.watching}
+            </span>
+          )}
+          {reacting && online && (
+            <div className="play-reactions" role="menu">
+              {REACTIONS.map((r) => (
+                <button
+                  key={r}
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    online.send({ t: "react", r });
+                    setReacting(false);
+                  }}
+                >
+                  {r}
+                </button>
+              ))}
+            </div>
+          )}
           {menuOpen && online && (
             <div className="play-menu">
               <p className="play-menu-note">
@@ -1337,6 +1488,7 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
                   ))}
                 </span>
               </div>
+              <SoundRow />
               <button type="button" onClick={onExit}>
                 Leave (your seat waits for you)
               </button>
@@ -1426,6 +1578,19 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
                 className="play-menu-link"
                 onClick={() => {
                   setMenuOpen(false);
+                  setRecordOpen(true);
+                }}
+              >
+                <span>我的紀錄 Your record</span>
+                <span className="play-menu-value">
+                  {playRecord.hands ? `${playRecord.wins} wins / ${playRecord.hands}` : "–"} ›
+                </span>
+              </button>
+              <button
+                type="button"
+                className="play-menu-link"
+                onClick={() => {
+                  setMenuOpen(false);
                   setOpponentsOpen(true);
                 }}
               >
@@ -1452,6 +1617,7 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
                   ))}
                 </span>
               </div>
+              <SoundRow />
               {onOnline && (
                 <button type="button" className="play-menu-link" onClick={onOnline}>
                   <span>線上對局 Play online</span>
@@ -1639,6 +1805,11 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
             {game.dealer === HUMAN && <span className="play-dealer">莊</span>}
             {me.riichi && <span className="play-riichi">叮</span>}
             {lahChips(HUMAN)}
+            {bubbles[HUMAN] && (
+              <span key={bubbles[HUMAN].id} className="play-bubble is-mine" role="status">
+                {bubbles[HUMAN].text}
+              </span>
+            )}
           </span>
           {total(HUMAN)}
           <span className="play-bar-round">
@@ -1701,7 +1872,15 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
         )}
 
         {trackerOpen && <TileTracker game={game} onClose={() => setTrackerOpen(false)} />}
-        {scoresOpen && ledger && <PlayScores game={ledger} onClose={() => setScoresOpen(false)} />}
+        {scoresOpen && ledger && <PlayScores game={ledger} onClose={() => setScoresOpen(false)} host={sheetHost} />}
+        {recordOpen && <RecordSheet record={playRecord} onReset={setPlayRecord} onClose={() => setRecordOpen(false)} />}
+        {reviewOpen && (
+          <ReviewSheet
+            decisions={decisions}
+            dealtIn={!!result && result.winner !== null && result.from === HUMAN}
+            onClose={() => setReviewOpen(false)}
+          />
+        )}
         {opponentsOpen && <OpponentsSheet opponents={opponents} learned={model?.styles ?? null} onChange={setOpponents} onClose={() => setOpponentsOpen(false)} />}
 
         {result && !resultHidden && !cardHeld && (
@@ -1790,6 +1969,7 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
                   </div>
                 );
               })}
+              {milestones.length > 0 && <p className="play-result-milestone">🏅 First time: {milestones.join(" · ")}</p>}
               <div className="play-result-deltas">
                 {result.deltas.map((d, seat) => (
                   <span key={seat} className={d < 0 ? "is-neg" : d > 0 ? "is-pos" : undefined}>
@@ -1801,6 +1981,11 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
                 <button type="button" className="play-view-table" onClick={() => setResultHidden(true)}>
                   View table
                 </button>
+                {decisions.length > 0 && (
+                  <button type="button" className="play-view-table" onClick={() => setReviewOpen(true)}>
+                    回顧 Review
+                  </button>
+                )}
                 {seated && (
                   <button type="button" className="play-next" disabled={meReady} onClick={nextHandWithSurrenders}>
                     {meReady ? "Ready ✓" : "Next hand"}

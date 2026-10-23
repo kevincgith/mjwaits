@@ -7,7 +7,7 @@
 
 import type { ScoreGame } from "@mjwaits/shared/engine/ledger";
 import { normalizeRoomCode } from "@mjwaits/shared/protocol/limits";
-import type { TableClientMessage, TableServerMessage, TableState } from "@mjwaits/shared/protocol/table";
+import type { Reaction, TableClientMessage, TableServerMessage, TableState } from "@mjwaits/shared/protocol/table";
 import { HubClient, serverBase, type HubClientOptions } from "./online";
 
 // ---- Over HTTP -------------------------------------------------------------------
@@ -160,15 +160,18 @@ export const withoutTable = (memory: TableMemory, code: string): TableMemory => 
 
 export interface TableClientOptions extends HubClientOptions<TableServerMessage> {
   onTable?: (table: TableState) => void;
+  onReaction?: (seat: number, r: Reaction) => void;
 }
 
 export class TableClient extends HubClient<TableClientMessage, TableServerMessage> {
   table: TableState | null = null;
   private readonly onTable?: (table: TableState) => void;
+  private readonly onReaction?: (seat: number, r: Reaction) => void;
 
   constructor(opts: TableClientOptions) {
     super("tables", opts);
     this.onTable = opts.onTable;
+    this.onReaction = opts.onReaction;
   }
 
   protected exists(code: string) {
@@ -176,6 +179,7 @@ export class TableClient extends HubClient<TableClientMessage, TableServerMessag
   }
 
   protected receive(msg: TableServerMessage) {
+    if (msg.t === "reaction") return this.onReaction?.(msg.seat, msg.r);
     if (msg.t !== "table") return;
     if (this.table && msg.table.version < this.table.version) return; // a straggler
     this.table = msg.table;

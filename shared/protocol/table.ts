@@ -25,6 +25,11 @@ export type TableBot = (typeof TABLE_BOTS)[number];
 // at random and never says which.
 export const MYSTERY_BOT = "mystery";
 
+// Quick reactions a seated player can send the table (no free text: nothing
+// to moderate). Shown by their name card for a moment; never stored.
+export const REACTIONS = ["👍", "😂", "😮", "😭", "🔥", "好牌！", "快啲啦", "承讓"] as const;
+export type Reaction = (typeof REACTIONS)[number];
+
 // Seconds a player gets for each decision; 0 = no timer.
 export const TURN_TIMERS = [0, 10, 20, 30] as const;
 
@@ -73,6 +78,10 @@ const TableClientSchema = tagged({
   ready: object({ t: literal("ready"), rid }),
   surrender: object({ t: literal("surrender"), holder: seat, rid }),
   end: object({ t: literal("end"), rid }), // host: the table's done
+  // Ended: the same seats and rules back in the lobby for a new game (host).
+  rematch: object({ t: literal("rematch"), rid }),
+  // Seated: a quick reaction for everyone at the table.
+  react: object({ t: literal("react"), r: oneOf(...REACTIONS), rid }),
   ping: object({ t: literal("ping"), rid }),
 });
 
@@ -175,6 +184,7 @@ export interface TableState {
 export type TableServerMessage =
   | { t: "welcome"; v: number; token: string; id: string; name: string; host: boolean; seat: number | null; rid?: string }
   | { t: "table"; table: TableState }
+  | { t: "reaction"; seat: number; r: Reaction }
   | { t: "error"; code: TableErrorCode; message: string; rid?: string }
   | { t: "pong"; rid?: string };
 

@@ -428,3 +428,40 @@ describe("timers", () => {
     expect(mine.view!.players[1].hand).not.toBeNull();
   });
 });
+
+describe("between games", () => {
+  it("sends a seated player's reaction to everyone, unstored; the host's rematch goes back to the lobby", async () => {
+    const code = await createTable();
+    const { p: host } = await join(code, "Kevin");
+    const { p: amy } = await join(code, "Amy");
+    host.send({ t: "setBot", seat: 2, bot: "wall" });
+    host.send({ t: "setBot", seat: 3, bot: "grandmaster" });
+    await host.table((s) => s.seats.every(Boolean));
+    const { p: dan } = await join(code, "Dan"); // watching
+    host.send({ t: "start" });
+    await host.table((s) => s.phase === "playing");
+
+    const version = host.latest!.version;
+    amy.send({ t: "react", r: "好牌！" });
+    for (const p of [host, amy, dan]) expect(await p.next("reaction")).toMatchObject({ seat: 1, r: "好牌！" });
+    expect(host.latest!.version).toBe(version); // not a change to the table
+    dan.send({ t: "react", r: "👍" });
+    expect((await dan.error()).code).toBe("notSeated");
+    amy.send({ t: "react", r: "hello" });
+    expect((await amy.error()).code).toBe("badMessage");
+
+    amy.send({ t: "rematch" });
+    expect((await amy.error()).code).toBe("notHost");
+    host.send({ t: "rematch" });
+    expect((await host.error()).code).toBe("illegal");
+    host.send({ t: "end" });
+    const ended = await host.table((s) => s.phase === "ended");
+    host.send({ t: "rematch" });
+    const lobby = await amy.table((s) => s.phase === "lobby" && s.version > ended.version);
+    expect(lobby).toMatchObject({ hand: 0, totals: [0, 0, 0, 0], view: null });
+    expect(lobby.seats.map((s) => s?.name)).toEqual(["Kevin", "Amy", "鐵壁 Iron Wall", "宗師 Grandmaster"]);
+    expect(await runInDurableObject(stubFor(code), (t: Table) => t.scores())).toBeNull();
+    host.send({ t: "start" });
+    expect((await host.table((s) => s.phase === "playing")).hand).toBe(1);
+  });
+});
