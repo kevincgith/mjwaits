@@ -3334,6 +3334,39 @@ img.tile-face {
   background: var(--crest);
 }
 
+/* A corner triangle touching a face: rim at the point on the face, easing
+   to the crest - so the corner shades like the edges either side of it (a
+   flat grey patch there showed as a separate piece). Its point on the face
+   is at its top left (a), top right (b) or bottom left (c). */
+.wall-die-bevel.is-corner-a {
+  background: linear-gradient(to bottom right, var(--rim) 0%, var(--crest) 45%);
+}
+
+.wall-die-bevel.is-corner-b {
+  background: linear-gradient(to bottom left, var(--rim) 0%, var(--crest) 45%);
+}
+
+.wall-die-bevel.is-corner-c {
+  background: linear-gradient(to top right, var(--rim) 0%, var(--crest) 45%);
+}
+
+/* Behind each face, a backing plate the size of the whole cube, set in by
+   the bevel - together an inner core, so wherever two pieces of the curve
+   meet imperfectly the die's own white shows there, never the table. */
+.wall-die-side {
+  transform-style: preserve-3d;
+}
+
+.wall-die-side::before {
+  content: "";
+  position: absolute;
+  inset: calc(-1 * var(--c));
+  /* Rounded by the bevel, so its corners stay inside the rounded ones. */
+  border-radius: var(--c);
+  background: var(--crest);
+  transform: translateZ(calc(-1 * var(--c)));
+}
+
 /* The landed die: flat, fully rounded, at the cube's top face height (so the
    same perspective sizes it, just covering the cube's outline), with the
    face's own pip layout. Once landed (.is-resting) it fades in over the
@@ -6887,6 +6920,33 @@ html.playing body {
   --tile-w: 0.72em;
   --tile-h: 0.913em;
   --tile-sides: var(--play-back-edge), var(--play-back) 38%, #7fd98c 46%, var(--play-ivory) 54%, #f2ede0;
+}
+
+/* Grounded: a soft shadow on the felt where the tile rests (its base box,
+   at the felt), and inside it a plate at half its height - a core, so if
+   two of its sides ever meet imperfectly you see the tile there, not the
+   felt. (As a CSS die does it.) */
+.play-felt .tile-glyph.tile-art,
+.play-felt .play-back {
+  border-radius: calc(var(--tile-r) * 1.5);
+  box-shadow: 0 0 0.16em 0.03em rgba(0, 0, 0, 0.38);
+}
+
+.play-felt .tile-glyph.tile-art::after,
+.play-felt .play-back::after {
+  content: "";
+  position: absolute;
+  left: var(--tile-x);
+  top: var(--tile-y);
+  width: var(--tile-w);
+  height: var(--tile-h);
+  border-radius: var(--tile-r);
+  background: var(--play-ivory);
+  transform: translateZ(calc(var(--play-thick) / 2));
+}
+
+.play-felt .play-back::after {
+  background: var(--play-back);
 }
 
 .play-felt img.tile-face {
