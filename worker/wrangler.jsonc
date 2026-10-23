@@ -5,6 +5,9 @@
   "name": "mjwaits-mp",
   "main": "src/index.ts",
   "compatibility_date": "2026-10-01",
+  // Served at its own subdomain of kevinlhc.com (a Custom Domain: Cloudflare
+  // makes the DNS record and certificate on the first deploy).
+  "routes": [{ "pattern": "mj-api.kevinlhc.com", "custom_domain": true }],
   "durable_objects": {
     "bindings": [{ "name": "ROOMS", "class_name": "Room" }]
   },

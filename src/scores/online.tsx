@@ -45,6 +45,7 @@ function useRoom(code: string, name: string) {
   const [me, setMe] = useState<{ name: string; host: boolean } | null>(null);
   const [status, setStatus] = useState<ConnectionStatus>("connecting");
   const [problem, setProblem] = useState<Problem | null>(null);
+  const [gone, setGone] = useState(false);
   const client = useRef<RoomClient | null>(null);
   useEffect(() => {
     const c = new RoomClient({
@@ -58,6 +59,7 @@ function useRoom(code: string, name: string) {
       onRoom: setRoom,
       onStatus: setStatus,
       onError: (code, message) => setProblem({ code, message, at: Date.now() }),
+      onGone: () => setGone(true),
     });
     client.current = c;
     // Back to the front, or back online: try now rather than at the next backoff.
@@ -78,7 +80,7 @@ function useRoom(code: string, name: string) {
     setProblem({ code: "offline", message: "Not connected - try again in a moment", at: Date.now() });
     return false;
   };
-  return { room, me, status, problem, send };
+  return { room, me, status, problem, gone, send };
 }
 
 // The store the shared sheets expect, made up for this room: each seat its
@@ -110,9 +112,9 @@ export function OnlinePanel({ store, setStore, joinCode }: { store: ScoreStore; 
     remember({ ...memory, name, current: code });
     setCurrent(code);
   };
-  const leave = () => {
-    remember({ ...loadOnline(), current: null });
-    setMemory(loadOnline());
+  const leave = (forget = false) => {
+    const now = loadOnline();
+    remember(forget && current ? withoutRoom(now, current) : { ...now, current: null });
     setCurrent(null);
   };
   if (!current) return <OnlineStart memory={memory} joinCode={joinCode} onEnter={enter} onForget={(code) => remember(withoutRoom(memory, code))} />;
@@ -251,8 +253,20 @@ const STATUS_TEXT: Record<ConnectionStatus, string> = {
   closed: "Offline",
 };
 
-function OnlineRoom({ code, name, store, setStore, onLeave }: { code: string; name: string; store: ScoreStore; setStore: (s: ScoreStore) => void; onLeave: () => void }) {
-  const { room, me, status, problem, send } = useRoom(code, name);
+function OnlineRoom({
+  code,
+  name,
+  store,
+  setStore,
+  onLeave,
+}: {
+  code: string;
+  name: string;
+  store: ScoreStore;
+  setStore: (s: ScoreStore) => void;
+  onLeave: (forget?: boolean) => void; // forget: drop the table from this phone's list too
+}) {
+  const { room, me, status, problem, gone, send } = useRoom(code, name);
   const [share, setShare] = useState(false);
   const [toast, setToast] = useState<Problem | null>(null);
   useEffect(() => {
@@ -283,7 +297,7 @@ function OnlineRoom({ code, name, store, setStore, onLeave }: { code: string; na
           <button type="button" className="sc-secondary" onClick={() => setShare(true)}>
             Invite
           </button>
-          <button type="button" className="sc-secondary" onClick={onLeave}>
+          <button type="button" className="sc-secondary" onClick={() => onLeave()}>
             Leave
           </button>
         </div>
@@ -297,14 +311,23 @@ function OnlineRoom({ code, name, store, setStore, onLeave }: { code: string; na
               Reload
             </button>
           ) : (
-            <button type="button" className="sc-primary" onClick={onLeave}>
+            <button type="button" className="sc-primary" onClick={() => onLeave()}>
               Pick another nickname
             </button>
           )}
         </div>
       )}
 
-      {!room ? (
+      {gone && (
+        <div className="card ol-stuck" role="alert">
+          <p>Table {code} has closed - tables close two days after their last change. The scores kept on this phone (統計) are still here.</p>
+          <button type="button" className="sc-primary" onClick={() => onLeave(true)}>
+            OK
+          </button>
+        </div>
+      )}
+
+      {gone ? null : !room ? (
         !stuck && <p className="sc-empty">Connecting to the table…</p>
       ) : room.phase === "lobby" ? (
         <Lobby room={room} seat={seat} host={me?.host ?? false} send={send} onInvite={() => setShare(true)} />
@@ -749,7 +772,7 @@ function Summary({ room, game, store, setStore, onLeave }: { room: RoomView; gam
         <button type="button" className="sc-primary" onClick={keep} disabled={kept}>
           {kept ? "Kept in 統計 ✓" : "存入統計 Keep in my Stats"}
         </button>
-        <button type="button" className="sc-secondary" onClick={onLeave}>
+        <button type="button" className="sc-secondary" onClick={() => onLeave()}>
           New table
         </button>
       </div>

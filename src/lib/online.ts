@@ -123,6 +123,8 @@ export interface RoomClientEvents {
   onRoom?: (room: RoomView) => void;
   onError?: (code: ErrorCode, message: string, rid?: string) => void;
   onStatus?: (status: ConnectionStatus) => void;
+  // The room no longer exists (expired, or never made): the client has stopped.
+  onGone?: () => void;
 }
 
 // The parts of WebSocket this needs, so tests can hand in a fake.
@@ -144,6 +146,10 @@ export interface RoomClientOptions extends RoomClientEvents {
   makeSocket?: (url: string) => SocketLike;
   // Waits before each retry, in ms; the last repeats. A little jitter is added.
   backoff?: number[];
+  // Asked after a connection fails before it opens: a room that has gone
+  // (the server answers its socket with 404, which a browser can't see)
+  // would otherwise be retried forever. Defaults to roomInfo.
+  roomExists?: (code: string) => Promise<boolean>;
 }
 
 const OPEN = 1;
@@ -178,7 +184,9 @@ export class RoomClient {
     const url = `${wsBase(this.opts.base ?? serverBase())}/rooms/${this.opts.code}/ws`;
     const socket = (this.opts.makeSocket ?? ((u) => new WebSocket(u) as unknown as SocketLike))(url);
     this.socket = socket;
+    let opened = false;
     socket.onopen = () => {
+      opened = true;
       this.retries = 0;
       this.raw({ t: "hello", v: PROTOCOL_VERSION, name: this.opts.name, ...(this.token ? { token: this.token } : {}) });
     };
@@ -198,6 +206,7 @@ export class RoomClient {
       if (this.stopped) return this.setStatus("closed");
       this.setStatus("reconnecting");
       this.scheduleRetry();
+      if (!opened) void this.checkGone();
     };
     socket.onerror = () => {
       // A close always follows; that's where the retry happens.
@@ -232,6 +241,20 @@ export class RoomClient {
       case "pong":
         break;
     }
+  }
+
+  // A failed handshake: offline, or the room is gone. Only a definite "no
+  // such room" stops the retries - a failed check is just more offline.
+  private async checkGone() {
+    let exists = true;
+    try {
+      exists = await (this.opts.roomExists ?? (async (code) => (await roomInfo(code, this.opts.base)) !== null))(this.opts.code);
+    } catch {
+      return;
+    }
+    if (exists || this.stopped) return;
+    this.stop();
+    this.opts.onGone?.();
   }
 
   private scheduleRetry() {

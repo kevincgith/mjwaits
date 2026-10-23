@@ -165,6 +165,52 @@ describe("RoomClient", () => {
     expect(sockets).toHaveLength(1);
   });
 
+  it("stops, and says so, when a failed connection turns out to be a room that's gone", async () => {
+    let exists = true;
+    let gone = 0;
+    const { sockets, events } = client({ roomExists: async () => exists, onGone: () => gone++ });
+    sockets[0].drop(); // failed before opening, but the room is there: keep trying
+    await vi.advanceTimersByTimeAsync(0);
+    expect(gone).toBe(0);
+    await vi.advanceTimersByTimeAsync(150);
+    expect(sockets).toHaveLength(2);
+    exists = false;
+    sockets[1].drop();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(gone).toBe(1);
+    expect(events.status.at(-1)).toBe("closed");
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(sockets).toHaveLength(2);
+  });
+
+  it("keeps trying when it can't tell whether the room is there", async () => {
+    let gone = 0;
+    const { sockets } = client({
+      roomExists: async () => {
+        throw new Error("offline");
+      },
+      onGone: () => gone++,
+    });
+    sockets[0].drop();
+    await vi.advanceTimersByTimeAsync(150);
+    expect(gone).toBe(0);
+    expect(sockets).toHaveLength(2);
+  });
+
+  it("doesn't ask about the room after a drop from an open connection", async () => {
+    let asked = 0;
+    const { sockets } = client({
+      roomExists: async () => {
+        asked++;
+        return true;
+      },
+    });
+    sockets[0].open();
+    sockets[0].drop();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(asked).toBe(0);
+  });
+
   it("stays closed once stopped", () => {
     const { c, sockets } = client();
     sockets[0].open();
