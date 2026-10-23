@@ -231,9 +231,10 @@ function runOrder(tiles: Tile[], claimed: Tile): number[] {
 }
 
 // A kong is three tiles wide, its fourth stacked on the middle one - where
-// tiles lie on the table. Your own stand (`standing`), and nothing rests on
-// a standing tile, so there a kong is its four tiles side by side.
-function MeldsView({ melds, hideConcealed, standing }: { melds: GameMeld[]; hideConcealed?: boolean; standing?: boolean }) {
+// tiles lie on the table. `inRow`: its four tiles side by side instead - in
+// your melds (they stand, and nothing rests on a standing tile) and on the
+// result card (a flat picture, where a stack just overlaps).
+function MeldsView({ melds, hideConcealed, inRow }: { melds: GameMeld[]; hideConcealed?: boolean; inRow?: boolean }) {
   return (
     <>
       {melds.map((m, i) => {
@@ -253,7 +254,7 @@ function MeldsView({ melds, hideConcealed, standing }: { melds: GameMeld[]; hide
               // A called run shows the claimed tile in the middle: 1-3-2 for
               // a 3 taken to 1-2.
               runOrder(m.tiles, m.claimed).map((j) => tile(j))
-            ) : m.kind === "kong" && m.tiles.length === 4 && !standing ? (
+            ) : m.kind === "kong" && m.tiles.length === 4 && !inRow ? (
               <>
                 {tile(0)}
                 <span className="play-kong-stack">
@@ -335,7 +336,7 @@ const tilesKey = (ts: Tile[]) => ts.map(tileKey).join();
 const meldsKey = (ms: GameMeld[]) =>
   ms.map((m) => `${m.kind}${m.concealed ? "c" : ""}${tilesKey(m.tiles)}${m.claimed ? tileKey(m.claimed) : ""}`).join("|");
 const EdgeTiles = memo(EdgeTilesView);
-const Melds = memo(MeldsView, (a, b) => a.hideConcealed === b.hideConcealed && a.standing === b.standing && meldsKey(a.melds) === meldsKey(b.melds));
+const Melds = memo(MeldsView, (a, b) => a.hideConcealed === b.hideConcealed && a.inRow === b.inRow && meldsKey(a.melds) === meldsKey(b.melds));
 const Flowers = memo(FlowersView, (a, b) => a.flowers.map((f) => f.kind + f.rank).join() === b.flowers.map((f) => f.kind + f.rank).join());
 const RevealedHand = memo(
   RevealedHandView,
@@ -1584,7 +1585,7 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
                 <span className="play-my-melds">
                   {/* Flowers always leftmost, then melds, then the hand. */}
                   <Flowers flowers={me.flowers} />
-                  <Melds melds={me.melds} hideConcealed={!seated} standing />
+                  <Melds melds={me.melds} hideConcealed={!seated} inRow />
                 </span>
               )}
               {handTiles.map((t, i) => {
@@ -1722,7 +1723,7 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
                     {result.alsoWon?.length ? <h3 className="play-result-who">{w.winner === HUMAN ? "You" : nameOf(w.winner)}</h3> : null}
                     <div className="play-result-hand">
                       <Flowers flowers={game.players[w.winner].flowers} />
-                      <Melds melds={game.players[w.winner].melds} />
+                      <Melds melds={game.players[w.winner].melds} inRow />
                       <RevealedHand tiles={game.players[w.winner].hand} winningTile={result.tile} />
                     </div>
                     {w.score && (
