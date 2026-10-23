@@ -3,7 +3,7 @@ import { PROTOCOL_VERSION } from "@mjwaits/shared/protocol/limits";
 import type { RoomView, ServerMessage } from "@mjwaits/shared/protocol/server";
 import { withEvent, type ScoreGame } from "@mjwaits/shared/engine/ledger";
 import { sampleGame } from "@mjwaits/shared/protocol/sampleGame";
-import { createRoom, gameKey, GameSync, loadOnline, ONLINE_KEY, RoomClient, roomFromSearch, roomInfo, saveOnline, tokenFor, withoutRoom, withToken, type SocketLike } from "./online";
+import { createRoom, gameKey, GameSync, loadOnline, ONLINE_KEY, RoomClient, roomFromSearch, roomInfo, saveOnline, tokenFor, withoutRoom, withSharing, withToken, type SocketLike } from "./online";
 
 // A WebSocket stand-in the test drives by hand.
 class FakeSocket implements SocketLike {
@@ -242,21 +242,24 @@ describe("this device's memory", () => {
   it("round-trips, remembers tokens per room and forgets old rooms", () => {
     const mem = new Map<string, string>();
     const storage = { getItem: (k: string) => mem.get(k) ?? null, setItem: (k: string, v: string) => void mem.set(k, v) };
-    expect(loadOnline(storage)).toEqual({ name: "", rooms: [], current: null, sharing: null });
-    let m = withToken({ name: "Kevin", rooms: [], current: "3AC9X", sharing: { code: "3AC9X", gameId: "g1" } }, "3AC9X", TOKEN);
+    expect(loadOnline(storage)).toEqual({ name: "", rooms: [], current: null, sharing: null, hosted: [] });
+    let m = withToken(withSharing({ name: "Kevin", rooms: [], current: "3AC9X", sharing: null, hosted: [] }, "3AC9X", "g1"), "3AC9X", TOKEN);
     m = withToken(m, "4AC9X", "f".repeat(32));
     saveOnline(m, storage);
     const back = loadOnline(storage);
     expect(back.rooms.map((r) => r.code)).toEqual(["4AC9X", "3AC9X"]);
     expect(tokenFor(back, "3AC9X")).toBe(TOKEN);
     expect(back.sharing).toEqual({ code: "3AC9X", gameId: "g1" });
-    expect(withoutRoom(back, "3AC9X")).toMatchObject({ current: null, sharing: null, rooms: [{ code: "4AC9X" }] });
+    expect(back.hosted).toMatchObject([{ code: "3AC9X", gameId: "g1" }]);
+    // Sharing the same game again (a new room) replaces its entry.
+    expect(withSharing(back, "4AC9X", "g1").hosted.map((h) => h.code)).toEqual(["4AC9X"]);
+    expect(withoutRoom(back, "3AC9X")).toMatchObject({ current: null, sharing: null, hosted: [], rooms: [{ code: "4AC9X" }] });
 
     const stale = { ...back, rooms: [{ code: "9AC9X", token: TOKEN, at: Date.now() - 8 * 24 * 60 * 60 * 1000 }] };
     mem.set(ONLINE_KEY, JSON.stringify(stale));
     expect(loadOnline(storage).rooms).toEqual([]);
     mem.set(ONLINE_KEY, "{oops");
-    expect(loadOnline(storage)).toEqual({ name: "", rooms: [], current: null, sharing: null });
+    expect(loadOnline(storage)).toEqual({ name: "", rooms: [], current: null, sharing: null, hosted: [] });
   });
 
   it("reads a room code from a link", () => {

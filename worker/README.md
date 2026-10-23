@@ -202,6 +202,7 @@ characters), echoed on any `error` it causes.
 | `update` | `base`, `game`, `colors?` | the host - the first update puts the game up - and anyone the host lets record |
 | `setRecorder` | `person` (an id from `people`), `allow` | the host |
 | `stop` | | the host: stop sharing; the game stays, read-only |
+| `resume` | | the host: share a stopped room's game again - same code, same people and who records |
 | `ping` | | answered with `pong` |
 
 `update` sends the whole game as it now stands, the way the Scores tab saves it. The room

@@ -8,8 +8,9 @@
 // localStorage on every change.
 //
 // The pieces live in scores/: shared building blocks, the sheets, the board,
-// 統計, and live sharing - a 戰況 game on other phones as it's scored (live:
-// the host's side, online: everyone else's).
+// 統計, and live sharing - 戰況's 線上 button: this phone's game on other
+// phones as it's scored (live.tsx), or someone else's game followed here in
+// 戰況 (online.tsx).
 
 import { useEffect, useMemo, useState } from "react";
 import { DEFAULT_SETTINGS, newGame, replay, type ScoreGame, type ScoreStore } from "@mjwaits/shared/engine/ledger";
@@ -24,9 +25,10 @@ export type { RecordRequest, ScoreHandRequest, SeatingResult } from "./scores/sh
 import { Setup } from "./scores/sheets";
 import { Board } from "./scores/board";
 import { TrendChart, TrendSummary, PlayerCard, type StatsView, saveBackupFile, BackupCard, StatsPanel, HandsTable } from "./scores/stats";
-import { OnlinePanel } from "./scores/online";
+import { FollowView } from "./scores/online";
 import { entryByOf, LiveSheet, Toast, useHostLive, useToast } from "./scores/live";
-import { loadOnline } from "./lib/online";
+import { loadOnline, saveOnline, tokenFor, withoutRoom } from "./lib/online";
+import { Icons } from "./scores/shared";
 
 // ---- The tab ------------------------------------------------------------------------
 
@@ -224,14 +226,32 @@ export function ScoresPanel({
   onOpenSeating?: (names: string[], east: number | null) => void; // the Dice tab's Seating, for the seat ceremony (east: the provisional East's seat)
   seatingResult?: SeatingResult | null; // ...and what it came back with
   onSeatingResultDone?: () => void;
-  joinCode?: string | null; // a ?room= link: open 線上 on that table
+  joinCode?: string | null; // a ?room= link: follow that game (or open 線上 to join it)
 }) {
-  // Following someone's game (an invite link, or one left open): Scores opens on it.
-  const [sub, setSub] = useState<"board" | "stats" | "online">(() => (joinCode || loadOnline().current ? "online" : "board"));
+  const [sub, setSub] = useState<"board" | "stats">("board");
   // This phone's game, live on others' (線上 on 戰況).
   const live = useHostLive(store, setStore);
   const liveToast = useToast(live.problem);
-  const [liveOpen, setLiveOpen] = useState(false);
+  // Someone else's game, followed here in 戰況 in place of this phone's own
+  // (which is kept, and back when you leave). An invite link to a game this
+  // phone already follows goes straight to it; to a new one, opens 線上 to join.
+  const [following, setFollowing] = useState<string | null>(() => {
+    const memory = loadOnline();
+    if (joinCode) return tokenFor(memory, joinCode) && memory.sharing?.code !== joinCode ? joinCode : null;
+    return memory.current;
+  });
+  const [liveOpen, setLiveOpen] = useState(() => !!joinCode && !following);
+  const follow = (code: string, name: string) => {
+    saveOnline({ ...loadOnline(), name, current: code });
+    setFollowing(code);
+    setLiveOpen(false);
+    setSub("board");
+  };
+  const unfollow = (forget = false) => {
+    const now = loadOnline();
+    saveOnline(forget && following ? withoutRoom(now, following) : { ...now, current: null });
+    setFollowing(null);
+  };
   const [view, setView] = useState<StatsView>("trend");
   useEffect(() => {
     if (request || seatingResult) setSub("board");
@@ -260,12 +280,11 @@ export function ScoresPanel({
         <button type="button" className={sub === "stats" ? "toggle-on" : undefined} aria-pressed={sub === "stats"} onClick={() => setSub("stats")}>
           統計 Stats
         </button>
-        <button type="button" className={sub === "online" ? "toggle-on" : undefined} aria-pressed={sub === "online"} onClick={() => setSub("online")}>
-          線上 Online
-        </button>
       </div>
       {sub === "board" &&
-        (game && state ? (
+        (following ? (
+          <FollowView key={following} code={following} name={loadOnline().name} store={store} setStore={setStore} onLeave={unfollow} />
+        ) : game && state ? (
           <Board
             store={store}
             game={game}
@@ -283,14 +302,19 @@ export function ScoresPanel({
           />
         ) : (
           <>
+            <button type="button" className="card ol-entry" onClick={() => setLiveOpen(true)}>
+              <span className="ol-entry-icon">{Icons.live}</span>
+              <span>
+                <strong>線上</strong> · Follow a game on this phone, or reopen one you shared
+              </span>
+            </button>
             <Setup store={store} suggestion={seatNames} onStart={start} waitingHand={request !== null} />
             <BackupCard store={store} setStore={setStore} />
           </>
         ))}
       {sub === "stats" && <StatsPanel store={store} setStore={setStore} view={view} setView={setView} />}
-      {sub === "online" && <OnlinePanel store={store} setStore={setStore} joinCode={joinCode} />}
-      {liveOpen && game && <LiveSheet live={live} onClose={() => setLiveOpen(false)} />}
-      {sub !== "online" && <Toast toast={liveToast} />}
+      {liveOpen && <LiveSheet live={live} store={store} joinCode={joinCode} onFollow={follow} onClose={() => setLiveOpen(false)} />}
+      {!following && <Toast toast={liveToast} />}
     </section>
   );
 }

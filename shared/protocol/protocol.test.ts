@@ -21,6 +21,7 @@ describe("parseClientMessage", () => {
       { t: "update", base: 7, game: sampleGame(), colors: { Amy: 0, Ben: 3 } },
       { t: "setRecorder", person: "0123456789abcdef", allow: true },
       { t: "stop" },
+      { t: "resume" },
       { t: "ping", rid: "x" },
     ];
     for (const m of good) expect(parse(m)).toEqual({ ok: true, value: JSON.parse(JSON.stringify(m)) });

@@ -321,6 +321,10 @@ export class Room extends DurableObject<Env> {
         if (!isHost) throw new Refusal("notHost", "only the host stops sharing");
         this.setMeta("phase", "ended");
         break;
+      case "resume":
+        if (!isHost) throw new Refusal("notHost", "only the host can share it again");
+        this.setMeta("phase", this.meta("game") ? "live" : "waiting");
+        break;
     }
     this.changed();
   }

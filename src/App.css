@@ -13815,6 +13815,44 @@ button.sc-stat:active {
   font-size: var(--text-sm);
 }
 
+/* 線上 on 戰況's setup screen (no game in progress): follow, or reopen. */
+.ol-entry {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  width: 100%;
+  margin-bottom: 0.75rem;
+  border: none;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.ol-entry-icon {
+  display: inline-flex;
+  color: var(--danger-text-1);
+}
+
+/* The 線上 sheet's buttons. */
+.ol-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.ol-actions > button {
+  flex: 1;
+}
+
+.ol-wide {
+  width: 100%;
+}
+
+.ol-followed {
+  margin-top: 0.5rem;
+}
+
 /* The audit trail: who entered an entry, under it in 最近; and the changes. */
 .sc-entry-by {
   display: block;

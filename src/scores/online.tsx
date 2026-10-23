@@ -1,16 +1,14 @@
-// Scores tab, 線上 Online: someone else's 戰況 game, live on this phone.
+// Scores tab, following someone else's 戰況 game on this phone.
 //
-// Join with the code (or a ?room= link, or the QR code) and the game shows
-// here as the host keeps score - totals, the last change, 拉, every hand and
-// the trend. If the host lets you record, you get the same 戰況 board they
-// have, and what you enter goes to everyone. Sharing your own game is done
-// from 戰況 (its 線上 button), not here.
+// Joined from the 線上 sheet (or a ?room= link, or the QR code), the game
+// shows in 戰況 in place of this phone's own as the host keeps score - totals,
+// the last change, 拉, every hand and the trend. If the host lets you record,
+// you get the same 戰況 board they have, and what you enter goes to everyone.
+// 線上 in the toolbar shows the room's status, and Leave.
 
 import { useMemo, useRef, useState } from "react";
 import { replay, handAt, stepAt, type ScoreGame, type ScoreStore } from "@mjwaits/shared/engine/ledger";
-import { cleanNickname, NICKNAME_MAX, normalizeRoomCode, ROOM_CODE_LENGTH } from "@mjwaits/shared/protocol/limits";
 import type { RoomView } from "@mjwaits/shared/protocol/server";
-import { loadOnline, roomInfo, saveOnline, withoutRoom, type OnlineMemory } from "../lib/online";
 import { Board, EventRow, HandRow } from "./board";
 import { ChangesList, entryByOf, InviteBlock, STATUS_TEXT, Toast, useLiveGame, useToast } from "./live";
 import { fmt, Icons, SEAT_AREAS, SectionHead, Sheet, signed, tone, withRoster } from "./shared";
@@ -24,129 +22,9 @@ function liveStore(game: ScoreGame, colors: Record<string, number>): ScoreStore 
   return { active: game, history: [], roster, settings: replay(game).settings };
 }
 
-// ---- The panel --------------------------------------------------------------------
-
-export function OnlinePanel({ store, setStore, joinCode }: { store: ScoreStore; setStore: (s: ScoreStore) => void; joinCode: string | null }) {
-  const [memory, setMemory] = useState<OnlineMemory>(() => loadOnline());
-  const remember = (next: OnlineMemory) => {
-    setMemory(next);
-    saveOnline(next);
-  };
-  // A ?room= link wins over the game left open last time.
-  const [current, setCurrent] = useState<string | null>(() => (joinCode && memory.rooms.some((r) => r.code === joinCode) ? joinCode : joinCode ? null : memory.current));
-  const enter = (code: string, name: string) => {
-    remember({ ...loadOnline(), name, current: code });
-    setCurrent(code);
-  };
-  const leave = (forget = false) => {
-    const now = loadOnline();
-    remember(forget && current ? withoutRoom(now, current) : { ...now, current: null });
-    setCurrent(null);
-  };
-  if (!current)
-    return <OnlineStart memory={memory} joinCode={joinCode} onEnter={enter} onForget={(code) => remember(withoutRoom(loadOnline(), code))} />;
-  return <LiveRoom key={current} code={current} name={memory.name} store={store} setStore={setStore} onLeave={leave} />;
-}
-
-// ---- Joining ------------------------------------------------------------------------
-
-function OnlineStart({
-  memory,
-  joinCode,
-  onEnter,
-  onForget,
-}: {
-  memory: OnlineMemory;
-  joinCode: string | null;
-  onEnter: (code: string, name: string) => void;
-  onForget: (code: string) => void;
-}) {
-  const [name, setName] = useState(memory.name);
-  const [code, setCode] = useState(joinCode ?? "");
-  const [busy, setBusy] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
-  const clean = cleanNickname(name);
-  const join = async (joining = normalizeRoomCode(code)) => {
-    if (!clean) return setProblem("Pick a name first, so the host knows who's watching");
-    if (!joining) return setProblem(`A code is ${ROOM_CODE_LENGTH} letters and numbers`);
-    setBusy(true);
-    setProblem(null);
-    try {
-      const info = await roomInfo(joining);
-      if (!info) setProblem(`No game ${joining} - check the code (a shared game closes two days after its last change)`);
-      else onEnter(joining, clean);
-    } catch {
-      setProblem("Couldn't reach the server - check the connection");
-    } finally {
-      setBusy(false);
-    }
-  };
-  const mine = memory.sharing?.code;
-  const followed = memory.rooms.filter((r) => r.code !== mine);
-  return (
-    <>
-      <div className="card ol-start">
-        <div className="sc-card-head">
-          <h3>線上 Live scores</h3>
-          <span className="sc-help">Follow a game on your own phone as it's scored</span>
-        </div>
-        <label className="ol-field">
-          <span className="ol-field-label">暱稱 Your name</span>
-          <input className="sc-input" value={name} maxLength={NICKNAME_MAX * 2} placeholder="So the host knows who's watching" autoComplete="nickname" onChange={(e) => setName(e.target.value)} />
-        </label>
-        <div className="ol-join">
-          <input
-            className="sc-input ol-code-input"
-            value={code}
-            placeholder="CODE"
-            aria-label="Game code"
-            autoCapitalize="characters"
-            autoComplete="off"
-            spellCheck={false}
-            maxLength={ROOM_CODE_LENGTH + 2}
-            onChange={(e) => setCode(e.target.value.toUpperCase())}
-            onKeyDown={(e) => e.key === "Enter" && void join()}
-          />
-          <button type="button" className="sc-primary" onClick={() => void join()} disabled={busy}>
-            {busy ? "Joining…" : "加入 Join"}
-          </button>
-        </div>
-        {problem && (
-          <p className="ol-problem" role="alert">
-            {problem}
-          </p>
-        )}
-        <p className="sc-help sc-help-block">{mine ? `Your 戰況 game is live as ${mine} - manage it with 線上 on 戰況.` : "To share your own game, tap 線上 on 戰況."}</p>
-      </div>
-      {followed.length > 0 && (
-        <>
-          <SectionHead zh="最近" en="Games you've followed" />
-          <div className="card">
-            <div className="sc-list">
-              {followed.map((r) => (
-                <div key={r.code} className="sc-row">
-                  <span className="ol-code-small">{r.code}</span>
-                  <span className="ol-row-actions">
-                    <button type="button" className="sc-secondary" onClick={() => void join(r.code)} disabled={busy}>
-                      Open
-                    </button>
-                    <button type="button" className="sc-icon-button" onClick={() => onForget(r.code)} aria-label={`Forget ${r.code}`}>
-                      {Icons.close}
-                    </button>
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </>
-      )}
-    </>
-  );
-}
-
 // ---- A live game ------------------------------------------------------------------
 
-function LiveRoom({
+export function FollowView({
   code,
   name,
   store,

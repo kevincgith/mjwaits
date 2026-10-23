@@ -31,6 +31,8 @@ const ClientSchema = tagged({
   setRecorder: object({ t: literal("setRecorder"), person: str(16, PERSON_ID_PATTERN), allow: bool, rid }),
   // Host only: stop sharing. The room keeps the game as it was, read-only.
   stop: object({ t: literal("stop"), rid }),
+  // Host only: share a stopped room's game again - same code, same people.
+  resume: object({ t: literal("resume"), rid }),
   ping: object({ t: literal("ping"), rid }),
 });
 
