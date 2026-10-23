@@ -294,7 +294,9 @@ tokens, limits and errors as a live room). The table (`src/table.ts`) is authori
   message each phone is sent.
 - **Every move is checked** against the engine: the decision's `step` (a late tap is `stale`),
   whose turn or claim it is, and that the move or claim is legal (`illegal`).
-- **The lobby:** people sit; the host seats bots (the Play tab's personalities), sets 截糊 or
+- **The lobby:** people arriving take the first empty seat (and can move or stand); the host
+  seats bots (the Play tab's personalities, or a mystery one - a personality picked at random
+  that the server keeps to itself: phones see only `"mystery"`), sets 截糊 or
   一炮多響, the turn timer (off, 10, 20 or 30 s), how long a dropped seat is held, and who deals
   first, then starts once all four seats are filled.
 - **Timers** share the object's one alarm, set for exactly the next thing due: a bot's move

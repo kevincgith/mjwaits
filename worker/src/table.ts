@@ -38,12 +38,13 @@ import {
   type GameState,
   type TurnMove,
 } from "@mjwaits/shared/engine/game";
-import { botClaimFor, botSurrenders, botTurnMoveFor, profileById } from "@mjwaits/shared/engine/bots";
+import { botClaimFor, botSurrenders, botTurnMoveFor, MYSTERY_NAME, profileById, randomStyle } from "@mjwaits/shared/engine/bots";
 import type { Tile } from "@mjwaits/shared/engine/mahjong";
 import { viewFor } from "@mjwaits/shared/engine/view";
 import { PROTOCOL_VERSION } from "@mjwaits/shared/protocol/limits";
 import {
   DEFAULT_TABLE_SETTINGS,
+  MYSTERY_BOT,
   parseTableMessage,
   type SeatInfo,
   type TableAction,
@@ -59,7 +60,9 @@ import { Hub, Refusal } from "./hub";
 // A bot's (or an away player's) move waits this long, so people can follow.
 export const BOT_PAUSE_MS = 700;
 
-type SeatRow = { kind: "human"; id: string } | { kind: "bot"; bot: TableBot };
+// A mystery bot keeps its personality here and nowhere else: phones are
+// sent only "mystery".
+type SeatRow = { kind: "human"; id: string } | { kind: "bot"; bot: TableBot; mystery?: true };
 type Decision = Claim | null | "waiting";
 type TableMessage = Exclude<TableClientMessage, { t: "hello" | "ping" }>;
 
@@ -139,7 +142,11 @@ export class Table extends Hub<TableMessage> {
   }
 
   private seatName(s: SeatRow): string {
-    return s.kind === "bot" ? profileById(s.bot).name : (this.person(s.id)?.name ?? "?");
+    if (s.kind === "human") return this.person(s.id)?.name ?? "?";
+    if (!s.mystery) return profileById(s.bot).name;
+    // Several mystery bots are told apart by number.
+    const mysteries = this.rt.seats.filter((x) => x?.kind === "bot" && x.mystery);
+    return mysteries.length > 1 ? `${MYSTERY_NAME} ${mysteries.indexOf(s) + 1}` : MYSTERY_NAME;
   }
 
   private seatOf(personId: string): number | null {
@@ -161,6 +168,16 @@ export class Table extends Hub<TableMessage> {
 
   protected onArrive(personId: string) {
     const rt = this.load();
+    // In the lobby, someone arriving takes the first empty seat (they can
+    // move, or stand to watch).
+    if (rt.phase === "lobby" && this.seatOf(personId) === null) {
+      const free = rt.seats.indexOf(null);
+      if (free >= 0) {
+        rt.seats[free] = { kind: "human", id: personId };
+        this.save();
+      }
+      return;
+    }
     const seat = this.seatOf(personId);
     if (seat === null) return;
     delete rt.away[seat];
@@ -217,7 +234,11 @@ export class Table extends Hub<TableMessage> {
         hostOnly();
         const taken = rt.seats[msg.seat];
         if (taken?.kind === "human") throw new Refusal("seatTaken", "someone is in that seat");
-        rt.seats[msg.seat] = msg.bot ? { kind: "bot", bot: msg.bot } : null;
+        rt.seats[msg.seat] = !msg.bot
+          ? null
+          : msg.bot === MYSTERY_BOT
+            ? { kind: "bot", bot: randomStyle(random) as TableBot, mystery: true }
+            : { kind: "bot", bot: msg.bot };
         break;
       }
       case "setup":
@@ -508,7 +529,7 @@ export class Table extends Hub<TableMessage> {
       !s
         ? null
         : s.kind === "bot"
-          ? { kind: "bot", bot: s.bot, name: this.seatName(s) }
+          ? { kind: "bot", bot: s.mystery ? MYSTERY_BOT : s.bot, name: this.seatName(s) }
           : { kind: "human", id: s.id, name: this.seatName(s), connected: online.has(s.id), host: this.isHost(s.id) }
     );
     const waitingOn: number[] = !g

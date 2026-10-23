@@ -19,6 +19,7 @@ describe("parseTableMessage", () => {
       { t: "stand" },
       { t: "setBot", seat: 3, bot: "grandmaster" },
       { t: "setBot", seat: 3, bot: null },
+      { t: "setBot", seat: 2, bot: "mystery" },
       { t: "setup", settings: DEFAULT_TABLE_SETTINGS },
       { t: "setup", settings: { multiWin: true, timer: 0, hold: 60, firstDealer: 2 } },
       { t: "start" },

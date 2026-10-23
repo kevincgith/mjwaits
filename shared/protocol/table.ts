@@ -21,6 +21,10 @@ import { array, bool, int, literal, nullable, object, oneOf, optional, str, tagg
 export const TABLE_BOTS = ["grandmaster", "veteran", "speedster", "hunter", "wall", "gambler", "casual"] as const;
 export type TableBot = (typeof TABLE_BOTS)[number];
 
+// A bot the host asks for without choosing: the table picks a personality
+// at random and never says which.
+export const MYSTERY_BOT = "mystery";
+
 // Seconds a player gets for each decision; 0 = no timer.
 export const TURN_TIMERS = [0, 10, 20, 30] as const;
 
@@ -59,7 +63,7 @@ const TableClientSchema = tagged({
   // In the lobby.
   sit: object({ t: literal("sit"), seat, rid }),
   stand: object({ t: literal("stand"), rid }),
-  setBot: object({ t: literal("setBot"), seat, bot: nullable(oneOf(...TABLE_BOTS)), rid }), // host: a bot in a seat, or out of it
+  setBot: object({ t: literal("setBot"), seat, bot: nullable(oneOf(...TABLE_BOTS, MYSTERY_BOT)), rid }), // host: a bot in a seat (or a mystery one), or out of it
   setup: object({ t: literal("setup"), settings: TableSettingsSchema, rid }), // host
   start: object({ t: literal("start"), rid }), // host, with four seats filled
   // Playing: your turn's move, or your answer to a discard (null = pass).
@@ -124,7 +128,7 @@ export type TableErrorCode =
 
 export type SeatInfo =
   | { kind: "human"; id: string; name: string; connected: boolean; host: boolean }
-  | { kind: "bot"; bot: TableBot; name: string };
+  | { kind: "bot"; bot: TableBot | typeof MYSTERY_BOT; name: string };
 
 // What this seat may do right now. The table still checks every move.
 export interface YourOptions {
