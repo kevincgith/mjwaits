@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { seededRng } from "../bots";
+import { seededRng } from "@mjwaits/shared/engine/bots";
 import { newGame } from "@mjwaits/shared/engine/game";
 import { encodeObservation, OBS_SIZE, OBS_SIZE_MATCH } from "./encode";
 import { afterHand, matchScalars, matchUtility, NUM_MATCH_SCALARS, placeBonus, randomMatch, newMatch } from "./match";

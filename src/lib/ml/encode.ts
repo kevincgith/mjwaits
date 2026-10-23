@@ -25,7 +25,7 @@ import {
   type GameState,
   type TurnMove,
 } from "@mjwaits/shared/engine/game";
-import { profileById, rateDiscardsFor } from "../bots";
+import { profileById, rateDiscardsFor } from "@mjwaits/shared/engine/bots";
 import { allTileKinds, shanten, tileKey, type Tile } from "@mjwaits/shared/engine/mahjong";
 import { matchScalars, NUM_MATCH_SCALARS, type MatchContext } from "./match";
 

@@ -201,7 +201,7 @@ describe("expiry", () => {
   const stubFor = (code: string) => env.ROOMS.getByName(code);
   const backdate = (code: string, ms: number) =>
     runInDurableObject(stubFor(code), (_room: Room, state) => {
-      state.storage.sql.exec("UPDATE meta SET value = ? WHERE key = 'updated'", JSON.stringify(Date.now() - ms));
+      state.storage.sql.exec("UPDATE meta SET value = json_set(value, '$.updated', ?) WHERE key = 'clock'", Date.now() - ms);
     });
 
   it("sets an alarm when a room is made", async () => {

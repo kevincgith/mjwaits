@@ -502,7 +502,7 @@ held upright is asked to turn sideways.
   never - and say so. The result card's **View
   table** hides it to look over the final table and the revealed hands; **Show result** brings
   it back.
-- **Bots** (`src/lib/bots.ts`) all run one decision engine, and a personality sets its
+- **Bots** (`shared/engine/bots.ts`) all run one decision engine, and a personality sets its
   weights. A discard is ranked first on building the hand: shanten, then the unseen tiles
   that would improve it, then where its tai are heading (flushes, all-pungs, honour pungs,
   門清). Expected value then trades that against danger. A step toward ready is worth what it

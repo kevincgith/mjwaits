@@ -49,7 +49,7 @@ import {
 import { allTileKinds, getWaits, shanten, sortTiles, tileKey, tileLabel, type Tile } from "@mjwaits/shared/engine/mahjong";
 import { patternDisplayName, type BonusTile } from "@mjwaits/shared/engine/scoring";
 import { BonusGlyphSpan, TileGlyphSpan } from "./TileGlyphs";
-import { BOT_PROFILES, botClaimFor, botSurrenders, botTurnFor, LEARNED_PREFIX, learnedProfile, learnedStyle, profileById, rateDiscardsFor, voiceOf, type BotProfile, type Voice } from "./lib/bots";
+import { BOT_PROFILES, botClaimFor, botSurrenders, botTurnFor, LEARNED_PREFIX, learnedProfile, learnedStyle, profileById, rateDiscardsFor, voiceOf, type BotProfile, type Voice } from "@mjwaits/shared/engine/bots";
 import { loadLearnedModel, type LearnedModel } from "./lib/ml/browser";
 import { learnedClaim, learnedTurnMove, type LearnedBot } from "./lib/ml/policy";
 import { claimDecisionAction, encodeObservation, legalActions, turnMoveAction } from "./lib/ml/encode";
