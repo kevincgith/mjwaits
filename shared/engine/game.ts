@@ -12,8 +12,10 @@
 // once the live wall is down to its last DEAD_WALL_SIZE tiles. Claim priority
 // is win > pung/kong > chow; two wins off one discard go to the first winner
 // in turn order (截胡). 叮 (riichi): a ready player may declare with a
-// discard, which locks the hand (see Riichi). Not modelled: robbing a kong
-// and other purely declared house calls.
+// discard, which locks the hand (see Riichi). 搶槓: adding a tile to a
+// declared pung (加槓) gives anyone who could win on that tile the chance to
+// take it, as if it were a discard (see Robbing a kong). Not modelled: other
+// purely declared house calls.
 //
 // Scoring hands the finished hand to scoring.ts's scoreParsedHand, with the
 // context the table actually knows (seat/round wind, self-draw, the winning
@@ -82,8 +84,10 @@ export type Phase =
   // `forbidden`: 食替 - tiles that can't be discarded straight after a chow or
   // pung (see swapDiscardBan). Optional so games saved before it load as "none".
   | { kind: "turn"; seat: number; drawn: Tile | null; replacement: "flower" | "kong" | null; forbidden?: Tile[] }
-  // `seat` just discarded `tile`; the others may claim it.
-  | { kind: "claims"; from: number; tile: Tile }
+  // `seat` just discarded `tile`; the others may claim it. `robKong`: `seat`
+  // is adding `tile` to a pung instead - the others may only win on it (搶槓),
+  // and it's in no one's pond.
+  | { kind: "claims"; from: number; tile: Tile; robKong?: true }
   | { kind: "over"; result: HandResult };
 
 export interface HandResult {
@@ -97,6 +101,7 @@ export interface HandResult {
   // Each payer's share, with any 拉/踢 add-on (see settleWin). Optional so
   // results saved before 拉 load.
   pairs?: PairPayment[];
+  robKong?: true; // 搶槓: won on `from`'s kong tile, not a discard
 }
 
 export interface GameState {
@@ -186,14 +191,14 @@ export function surrender(s: GameState, holder: number, pulled: number): GameSta
 
 // ---- Wall ---------------------------------------------------------------
 
-function randomInt(n: number): number {
-  return Math.floor(Math.random() * n);
-}
+// Where the randomness comes from: a number in [0, 1). Math.random on a phone;
+// the multiplayer server passes one built on crypto.getRandomValues.
+export type Random = () => number;
 
-function shuffled<T>(arr: T[]): T[] {
+function shuffled<T>(arr: T[], random: Random = Math.random): T[] {
   const a = arr.slice();
   for (let i = a.length - 1; i > 0; i--) {
-    const j = randomInt(i + 1);
+    const j = Math.floor(random() * (i + 1));
     [a[i], a[j]] = [a[j], a[i]];
   }
   return a;
@@ -379,12 +384,12 @@ export function newGame(): GameState {
   return dealHand({ dealer: 0, roundWind: 1, dealerStreak: 0 });
 }
 
-export function dealHand(opts: { dealer: number; roundWind: Wind; dealerStreak: number; lahs?: Lah[] }, wall?: WallTile[]): GameState {
+export function dealHand(opts: { dealer: number; roundWind: Wind; dealerStreak: number; lahs?: Lah[] }, wall?: WallTile[], random: Random = Math.random): GameState {
   // A table-made wall: shuffled, the dice rolled, broken where they say. A
   // wall passed in (the arena, tests) is dealt as it is.
-  const dice = wall ? undefined : rollDice();
+  const dice = wall ? undefined : rollDice(random);
   const s: GameState = {
-    wall: wall ?? breakWall(shuffled(fullWall()), dice!, opts.dealer),
+    wall: wall ?? breakWall(shuffled(fullWall(), random), dice!, opts.dealer),
     players: Array.from({ length: SEATS }, () => ({ hand: [], melds: [], flowers: [], discards: [] })),
     dealer: opts.dealer,
     roundWind: opts.roundWind,
@@ -456,8 +461,8 @@ export function claimOptions(s: GameState, seat: number): Claim[] {
   const opts: Claim[] = [];
   if (isWinningHand(p, tile)) opts.push({ kind: "win" });
   // Claims other than a win need a tile left to draw afterwards, and a
-  // locked 叮 hand can only win.
-  if (liveTilesLeft(s) === 0 || p.riichi) return opts;
+  // locked 叮 hand can only win - as can anyone robbing a kong.
+  if (liveTilesLeft(s) === 0 || p.riichi || s.phase.robKong) return opts;
   const held = tileCount(p.hand, tile);
   if (held >= 3) opts.push({ kind: "kong" });
   if (held >= 2) opts.push({ kind: "pung" });
@@ -567,19 +572,42 @@ export function applyTurnMove(state: GameState, move: TurnMove): GameState {
         p.hand = removeTiles(p.hand, [move.tile, move.tile, move.tile, move.tile]);
         p.melds.push({ kind: "kong", tiles: [move.tile, move.tile, move.tile, move.tile], concealed: true, from: null });
         (s.tableBonuses ??= []).push({ seat, name: "暗槓", deltas: collectFromEach(seat, CONCEALED_KONG_BONUS), paid: false });
-      } else {
-        p.hand = removeTiles(p.hand, [move.tile]);
-        const m = p.melds.find((m) => m.kind === "triplet" && sameTile(m.tiles[0], move.tile))!;
-        m.kind = "kong";
-        m.tiles.push(move.tile);
+        s.firstGoAround = false;
+        return kongReplacement(s, seat);
       }
+      p.hand = removeTiles(p.hand, [move.tile]);
       s.firstGoAround = false;
-      const { tile, flowered } = drawInto(s, seat, true);
-      if (!tile) return endInDraw(s);
-      s.phase = { kind: "turn", seat, drawn: tile, replacement: flowered ? "flower" : "kong" };
-      return s;
+      // 搶槓: anyone who'd win on the added tile may take it first.
+      if (s.players.some((pl, i) => i !== seat && isWinningHand(pl, move.tile))) {
+        s.phase = { kind: "claims", from: seat, tile: move.tile, robKong: true };
+        return s;
+      }
+      return completeAddedKong(s, seat, move.tile);
     }
   }
+}
+
+// ---- Robbing a kong -------------------------------------------------------------
+//
+// 搶槓: a player adding a tile to their declared pung (加槓) - whether just
+// drawn or held - shows it to the table first. Anyone who could win on it may
+// take it (win off the kong player, who pays, scored with 搶槓); with more
+// than one, the first in turn order, as with a discard. Otherwise the kong
+// stands and its replacement is drawn. Only an added kong can be robbed.
+
+// The pung becomes a kong; then the replacement draw.
+function completeAddedKong(s: GameState, seat: number, tile: Tile): GameState {
+  const m = s.players[seat].melds.find((m) => m.kind === "triplet" && sameTile(m.tiles[0], tile))!;
+  m.kind = "kong";
+  m.tiles.push(tile);
+  return kongReplacement(s, seat);
+}
+
+function kongReplacement(s: GameState, seat: number): GameState {
+  const { tile, flowered } = drawInto(s, seat, true);
+  if (!tile) return endInDraw(s);
+  s.phase = { kind: "turn", seat, drawn: tile, replacement: flowered ? "flower" : "kong" };
+  return s;
 }
 
 // Resolves a discard: `decisions[seat]` is that seat's claim, or null to pass
@@ -643,16 +671,25 @@ export function retractClaim(before: GameState, decisions: (Claim | null)[], sea
 export function resolveClaims(state: GameState, decisions: (Claim | null)[]): GameState {
   if (state.phase.kind !== "claims") throw new Error("No discard to claim");
   const { from, tile } = state.phase;
+  // Robbing a kong is a win or nothing.
+  if (state.phase.robKong) decisions = decisions.map((d) => (d?.kind === "win" ? d : null));
   const best = winningClaimSeat(state, decisions);
 
   const s = cloneState(state);
   if (best === null) {
+    // No one robbed the kong: it stands.
+    if (state.phase.robKong) return completeAddedKong(s, from, tile);
     if (liveTilesLeft(s) === 0) return endInDraw(s);
     return nextTurn(s, (from + 1) % SEATS);
   }
 
   const claim = decisions[best]!;
   const p = s.players[best];
+  if (state.phase.robKong) {
+    // Robbed: the tile goes to the winner, and the pung stays a pung.
+    p.hand.push(tile);
+    return finishWin(s, best, from, tile, null, true);
+  }
   // The claimed tile leaves the discarder's pond.
   s.players[from].discards.pop();
   s.firstGoAround = false;
@@ -689,7 +726,8 @@ export function scoreWin(
   winner: number,
   from: number | null,
   tile: Tile,
-  replacement: "flower" | "kong" | null
+  replacement: "flower" | "kong" | null,
+  robKong = false
 ): ScoreResult {
   const p = s.players[winner];
   const declaredMelds: MeldDeclaration[] = p.melds.map((m) => ({ tiles: m.tiles, kind: m.kind, concealed: m.concealed }));
@@ -718,7 +756,7 @@ export function scoreWin(
     lastTileWin: lastTile ? (selfDraw ? "sea-bottom" : "river-bottom") : "none",
     flowerDraw: selfDraw && replacement === "flower" ? 1 : 0,
     kongDraw: selfDraw && replacement === "kong" ? 1 : 0,
-    robKong: 0,
+    robKong: robKong ? 1 : 0,
     // 莊 counts when the dealer wins or pays; 連莊 adds the streak.
     dealerStreak: isDealer || from === s.dealer ? s.dealerStreak + 1 : 0,
     manualVisibleTripleWin: false,
@@ -732,12 +770,13 @@ function finishWin(
   winner: number,
   from: number | null,
   tile: Tile,
-  replacement: "flower" | "kong" | null
+  replacement: "flower" | "kong" | null,
+  robKong = false
 ): GameState {
   let score: ScoreResult | null = null;
   let scoreError: string | null = null;
   try {
-    score = scoreWin(s, winner, from, tile, replacement);
+    score = scoreWin(s, winner, from, tile, replacement, robKong);
   } catch (e) {
     scoreError = e instanceof Error ? e.message : String(e);
   }
@@ -750,23 +789,23 @@ function finishWin(
     deltas[Number(p.payer)] -= p.worth;
   }
   s.lahs = nextLahs(s.lahs ?? [], pairs, new Set([SEAT_IDS[winner]]));
-  s.phase = { kind: "over", result: { winner, from, tile, score, scoreError, deltas, pairs } };
+  s.phase = { kind: "over", result: { winner, from, tile, score, scoreError, deltas, pairs, ...(robKong ? { robKong: true as const } : {}) } };
   return s;
 }
 
 // The next hand: the dealer stays on a dealer win or a draw (連莊), otherwise
 // the deal passes on; a full lap of dealers moves the round wind.
 // 拉 carries over. `wall` is for the arena, which deals set walls.
-export function nextHand(s: GameState, wall?: WallTile[]): GameState {
+export function nextHand(s: GameState, wall?: WallTile[], random: Random = Math.random): GameState {
   if (s.phase.kind !== "over") throw new Error("Hand not over");
   const { winner } = s.phase.result;
   const lahs = s.lahs ?? [];
   if (winner === null || winner === s.dealer) {
-    return dealHand({ dealer: s.dealer, roundWind: s.roundWind, dealerStreak: s.dealerStreak + 1, lahs }, wall);
+    return dealHand({ dealer: s.dealer, roundWind: s.roundWind, dealerStreak: s.dealerStreak + 1, lahs }, wall, random);
   }
   const dealer = (s.dealer + 1) % SEATS;
   const roundWind = (dealer === 0 ? (s.roundWind % 4) + 1 : s.roundWind) as Wind;
-  return dealHand({ dealer, roundWind, dealerStreak: 0, lahs }, wall);
+  return dealHand({ dealer, roundWind, dealerStreak: 0, lahs }, wall, random);
 }
 
 // ---- Bots -------------------------------------------------------------------

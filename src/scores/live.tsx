@@ -14,6 +14,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import qrcode from "qrcode-generator";
 import { replay, type ScoreGame, type ScoreStore } from "@mjwaits/shared/engine/ledger";
 import { cleanNickname, NICKNAME_MAX } from "@mjwaits/shared/protocol/limits";
+import { describeChange } from "@mjwaits/shared/protocol/audit";
 import type { ErrorCode, RoomView } from "@mjwaits/shared/protocol/server";
 import { createRoom, GameSync, joinLink, loadOnline, RoomClient, saveOnline, tokenFor, withToken, type ConnectionStatus } from "../lib/online";
 import { colorOf, Sheet, Toggle } from "./shared";
@@ -138,6 +139,44 @@ export function Toast({ toast }: { toast: Problem | null }) {
       <span className="sc-toast-text">{toast.message}</span>
     </div>
   ) : null;
+}
+
+// ---- The audit trail -----------------------------------------------------------------
+
+// Who entered an entry (and who last changed it), as 最近 shows it.
+export function entryByOf(room: RoomView | null): ((index: number) => string | undefined) | undefined {
+  if (!room) return undefined;
+  return (i) => {
+    const a = room.authors[i];
+    return a ? (a.editedBy ? `by ${a.by} · edited by ${a.editedBy}` : `by ${a.by}`) : undefined;
+  };
+}
+
+// The latest changes to the shared game, newest first: who, what, when.
+export function ChangesList({ room }: { room: RoomView }) {
+  const time = (at: number) => new Date(at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  return (
+    <>
+      <h3 className="ol-people-head">Changes</h3>
+      {room.changes.length === 0 ? (
+        <p className="sc-help">Nothing recorded yet.</p>
+      ) : (
+        <div className="sc-list ol-changes">
+          {room.changes
+            .slice()
+            .reverse()
+            .map((c) => (
+              <div key={c.v} className="sc-row ol-change">
+                <span>
+                  <strong>{c.by}</strong> {describeChange(c)}
+                </span>
+                <span className="sc-help">{time(c.at)}</span>
+              </div>
+            ))}
+        </div>
+      )}
+    </>
+  );
 }
 
 // ---- The host's side ---------------------------------------------------------------
@@ -296,6 +335,7 @@ export function LiveSheet({ live, onClose }: { live: HostLive; onClose: () => vo
           </div>
         ))}
       </div>
+      {room && <ChangesList room={room} />}
     </Sheet>
   );
 }

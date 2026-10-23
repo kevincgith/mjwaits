@@ -12,6 +12,7 @@
 
 import type { ScoreGame } from "@mjwaits/shared/engine/ledger";
 import type { ClientMessage } from "@mjwaits/shared/protocol/client";
+import { stableJson } from "@mjwaits/shared/protocol/audit";
 import { GameSchema } from "@mjwaits/shared/protocol/game";
 import { normalizeRoomCode, PROTOCOL_VERSION } from "@mjwaits/shared/protocol/limits";
 import type { ErrorCode, RoomView, ServerMessage } from "@mjwaits/shared/protocol/server";
@@ -320,17 +321,6 @@ export class RoomClient {
 export function gameKey(game: ScoreGame): string {
   const checked = GameSchema.check(game, "game");
   return stableJson(checked.ok ? checked.value : game);
-}
-
-function stableJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
-  if (value && typeof value === "object")
-    return `{${Object.keys(value)
-      .filter((k) => (value as Record<string, unknown>)[k] !== undefined)
-      .sort()
-      .map((k) => `${JSON.stringify(k)}:${stableJson((value as Record<string, unknown>)[k])}`)
-      .join(",")}}`;
-  return JSON.stringify(value);
 }
 
 export interface GameSyncIO {

@@ -47,6 +47,8 @@ const view = (version: number, game: ScoreGame | null = null, gameVersion = 0, p
   game: game && JSON.parse(JSON.stringify(game)),
   gameVersion,
   colors: {},
+  authors: [],
+  changes: [],
 });
 
 function client(extra: Partial<ConstructorParameters<typeof RoomClient>[0]> = {}) {
