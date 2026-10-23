@@ -6380,7 +6380,7 @@ html.playing body {
   right: 0;
   width: calc(var(--count, 0) * 0.78em);
   height: 0.55em;
-  box-shadow: 0 0.55em 0.45em 0 rgba(0, 0, 0, 0.6);
+  box-shadow: 0 0.3em 0.7em -0.05em rgba(0, 0, 0, 0.3);
 }
 
 .play-edge-left::after {
@@ -6388,7 +6388,7 @@ html.playing body {
   left: 0;
   width: 0.55em;
   height: calc(var(--count, 0) * 0.78em);
-  box-shadow: 0.55em 0 0.45em 0 rgba(0, 0, 0, 0.6);
+  box-shadow: 0.3em 0 0.7em -0.05em rgba(0, 0, 0, 0.3);
 }
 
 .play-edge-right::after {
@@ -6396,7 +6396,35 @@ html.playing body {
   right: 0;
   width: 0.55em;
   height: calc(var(--count, 0) * 0.78em);
-  box-shadow: -0.55em 0 0.45em 0 rgba(0, 0, 0, 0.6);
+  box-shadow: -0.3em 0 0.7em -0.05em rgba(0, 0, 0, 0.3);
+}
+
+/* A tile just drawn stands a little apart at its player's right end, as
+   yours does: the far player's leftmost, the left player's nearest, the
+   right player's furthest. (Tiles keep their size - the gap runs past the
+   wall's end.) */
+.play-edge-tile {
+  flex-shrink: 0;
+}
+
+.play-edge-top.has-drawn .play-edge-tile:first-child {
+  margin-right: 0.25em;
+}
+
+.play-edge-left.has-drawn .play-edge-tile:last-child {
+  margin-top: 0.25em;
+}
+
+.play-edge-right.has-drawn .play-edge-tile:first-child {
+  margin-bottom: 0.25em;
+}
+
+.play-edge-top.has-drawn::after {
+  width: calc(var(--count, 0) * 0.78em + 0.25em);
+}
+
+:is(.play-edge-left, .play-edge-right).has-drawn::after {
+  height: calc(var(--count, 0) * 0.78em + 0.25em);
 }
 
 /* A wall is a full hand long (17), its tiles packed at its player's left -
@@ -7301,6 +7329,24 @@ html.playing body {
     0 0.2em 0.14em rgba(0, 0, 0, 0.38);
 }
 
+/* A face-down tile on the card: the same size as a face and the same edge
+   below it, the other way up - the jade back on top, so the jade first,
+   then the ivory body. */
+.play-result-hand .play-back {
+  width: 0.72em;
+  height: 0.913em;
+  margin: 0.043em 0.03em 0.044em;
+  border-radius: 0.08em;
+  background: linear-gradient(to bottom, #4cc06a, var(--play-back) 30%);
+  box-shadow:
+    0 0 0 0.5px rgba(0, 0, 0, 0.28),
+    0 0.05em 0 var(--play-back-edge),
+    0 0.1em 0 #f2ede0,
+    0 0.13em 0 var(--play-ivory),
+    0 0.15em 0 #d8d0bb,
+    0 0.2em 0.14em rgba(0, 0, 0, 0.38);
+}
+
 /* The winning tile, turned a quarter: its edge drawn along the face's x, so
    once turned it still lies below the tile, toward you. */
 .play-result-hand .play-win-tile img.tile-face {
@@ -7665,11 +7711,11 @@ html.playing body {
   position: absolute;
   left: 0.1em;
   right: 0.1em;
-  bottom: -0.12em;
-  height: 0.32em;
+  bottom: -0.1em;
+  height: 0.3em;
   border-radius: 50%;
-  background: rgba(0, 0, 0, 0.5);
-  filter: blur(0.1em);
+  background: rgba(0, 0, 0, 0.28);
+  filter: blur(0.18em);
   pointer-events: none;
 }
 

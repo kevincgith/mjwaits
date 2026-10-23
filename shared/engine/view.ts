@@ -45,8 +45,10 @@ export function scoreView(score: ScoreResult): ScoreView {
 }
 
 export type PhaseView =
-  // `drawn` and `forbidden` only for the seat whose turn it is.
-  | { kind: "turn"; seat: number; drawn: Tile | null; replacement: "flower" | "kong" | null; forbidden?: Tile[] }
+  // `drawn` and `forbidden` only for the seat whose turn it is; `drew` for
+  // everyone - that they're holding a tile just drawn (not which: whether a
+  // player drew or called is seen by all), so it can stand apart.
+  | { kind: "turn"; seat: number; drawn: Tile | null; drew?: true; replacement: "flower" | "kong" | null; forbidden?: Tile[] }
   | { kind: "claims"; from: number; tile: Tile; robKong?: true } // robKong: a kong shown for 搶槓, not a discard
   | { kind: "over"; result: ResultView };
 
@@ -91,6 +93,7 @@ export function viewFor(s: GameState, you: number): TableView {
       kind: "turn",
       seat: s.phase.seat,
       drawn: mine && s.phase.drawn ? { ...s.phase.drawn } : null,
+      ...(s.phase.drawn ? { drew: true as const } : {}),
       replacement: s.phase.replacement,
       ...(mine && s.phase.forbidden ? { forbidden: copyTiles(s.phase.forbidden) } : {}),
     };
