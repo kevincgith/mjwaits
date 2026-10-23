@@ -142,8 +142,14 @@ const botDelay = (difficulty: number, afterCall: boolean) => 300 + difficulty * 
 // bot had a call to weigh and passed (a tell, as at a real table).
 const PASS_DELAY_MS = 380;
 const PONDER_DELAY_MS = 900;
-// Pond size, as a share of your hand's tile size: as big as fits (see fitPonds).
-const POND_SCALE = { max: 0.72, min: 0.4, step: 0.04 };
+// A seat's line - its tiles, melds and flowers end to end - in tiles. A
+// full hand is 17; a call keeps it the same (three tiles out of the hand,
+// three into the meld), kongs and flowers lengthen it. Past this, the melds
+// and flowers go in front of the hand instead.
+const LINE_FITS = 18;
+const lineLength = (p: GameState["players"][number]) => p.hand.length + p.flowers.length + p.melds.reduce((n, m) => n + m.tiles.length, 0);
+// How far the table tips away from you, in degrees: just enough to fit (see fitTable).
+const TILT = { min: 24, max: 72 };
 // A discard a bot is about to take stays on the table this long first, so
 // everyone sees what was thrown before it goes into the caller's meld.
 const CLAIM_DELAY_MS = 1100;
@@ -575,34 +581,38 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
     seats.forEach((el) => watch.observe(el));
     return () => watch.disconnect();
   }, []);
-  // The ponds as big as they'll go: from the largest size down, a step at a
-  // time, until no pond touches another, the compass or the felt's edge.
-  // Run before paint whenever the table changes, and on resizing.
-  const fitPonds = () => {
+  // Every tile on the table is one size (as real tiles are), so the table
+  // is as deep as what's on it needs - the longer side seat, or the ponds
+  // and compass down the middle - and tipped back as far as it takes for
+  // its far edge to sit just under the name cards. Further tiles look
+  // smaller only by perspective. Run before paint whenever the table
+  // changes, and on resizing.
+  const fitTable = () => {
     const felt = feltRef.current;
-    if (!felt) return;
-    const parts = [...felt.querySelectorAll<HTMLElement>(".play-pond-slot, .play-compass")];
-    const hand = felt.closest(".play-table")?.querySelector(".play-hand");
-    const crowded = () => {
-      const felted = felt.getBoundingClientRect();
-      // The felt runs on under your hand; the ponds stop above it.
-      const edge = { left: felted.left, right: felted.right, top: felted.top, bottom: Math.min(felted.bottom, hand?.getBoundingClientRect().top ?? Infinity) };
-      const boxes = parts.map((el) => el.getBoundingClientRect());
-      const off = boxes.some((b) => b.width > 0 && (b.left < edge.left || b.right > edge.right || b.top < edge.top || b.bottom > edge.bottom));
-      const touch = boxes.some((a, i) => boxes.some((b, j) => j > i && a.width > 0 && b.width > 0 && a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom));
-      return off || touch;
-    };
-    for (let k = POND_SCALE.max; k >= POND_SCALE.min; k -= POND_SCALE.step) {
-      felt.style.setProperty("--play-pond-k", k.toFixed(2));
-      if (!crowded()) break;
+    const stage = felt?.parentElement;
+    if (!felt || !stage) return;
+    felt.style.height = "";
+    const fill = felt.offsetHeight; // the stage's height (and the part under your hand)
+    felt.style.height = "auto";
+    const needs = felt.offsetHeight; // what's on it
+    felt.style.height = `${Math.max(fill, needs)}px`;
+    const limit = stage.getBoundingClientRect().top + parseFloat(getComputedStyle(stage).paddingTop);
+    let lo = TILT.min;
+    let hi = TILT.max;
+    for (let i = 0; i < 12; i++) {
+      const mid = (lo + hi) / 2;
+      felt.style.setProperty("--play-tilt", `${mid}deg`);
+      if (felt.getBoundingClientRect().top < limit) lo = mid;
+      else hi = mid;
     }
+    felt.style.setProperty("--play-tilt", `${hi.toFixed(1)}deg`);
   };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useLayoutEffect(fitPonds, [game]);
+  useLayoutEffect(fitTable, [game]);
   useEffect(() => {
     const felt = feltRef.current;
     if (!felt) return;
-    const watch = new ResizeObserver(() => fitPonds());
+    const watch = new ResizeObserver(() => fitTable());
     watch.observe(felt);
     return () => watch.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1105,16 +1115,17 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
     const side = SIDES[seat];
     const p = game.players[seat];
     return (
-      <div className={`play-seat play-seat-${side}`}>
-        {over ? <RevealedHand tiles={p.hand} winningTile={null} /> : <EdgeTiles count={p.hand.length} side={side} />}
-        {/* Melds and flowers beside the tiles, toward the middle - below
-            them, a side seat's column ran down into your hand. */}
+      <div className={`play-seat play-seat-${side}${lineLength(p) > LINE_FITS ? " is-front" : ""}`}>
+        {/* Along the seat's edge as its player has them: melds and flowers
+            on their left, then their tiles (the CSS turns it to face them) -
+            or, when that line would run too long, in front of their tiles. */}
         <span className="play-seat-side">
+          <Flowers flowers={p.flowers} />
           <span className="play-seat-melds">
             <Melds melds={p.melds} hideConcealed={!over} />
           </span>
-          <Flowers flowers={p.flowers} />
         </span>
+        {over ? <RevealedHand tiles={p.hand} winningTile={null} /> : <EdgeTiles count={p.hand.length} side={side} />}
       </div>
     );
   };

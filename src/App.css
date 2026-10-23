@@ -5484,8 +5484,11 @@ img.tile-face {
    below the update pill's 70) on the same felt as the Dice wall, and the
    page behind it stops scrolling. Tile sizes are em-based (see
    .tile-glyph.tile-art), so each region just sets a font-size: --play-hand
-   for your own hand, --play-small for the bots' seats, --play-pond for the
-   discards. A phone held upright sees .play-rotate instead. */
+   for your own hand, and --play-tile for every tile on the table - the
+   others' standing tiles, their melds and flowers, and the four ponds - one
+   size, as with real tiles, differing only by the table's tilt (fitted in
+   PlayPanel). --play-small sizes the name cards. A phone held upright sees
+   .play-rotate instead. */
 
 :root {
   --play-on-felt: #f4f7f5;
@@ -5523,7 +5526,6 @@ html.playing body {
   color: var(--play-on-felt);
   --play-hand: min(calc((100vw - env(safe-area-inset-left) - env(safe-area-inset-right) - 2rem) / 14.6), 12.5vh, 62px);
   --play-small: clamp(13px, 5.2vh, 28px);
-  --play-pond: clamp(14px, calc(var(--play-hand) * 0.72), 44px);
   /* How far the table runs on under your hand. */
   --play-under: calc(var(--play-hand) * 0.9);
 
@@ -5614,7 +5616,9 @@ html.playing body {
   align-items: flex-end;
   min-height: 0;
   padding-top: 2.3rem;
-  perspective: 760px;
+  /* Seen from a little way back, so the far side of the deep, steeply
+     tipped table (see fitTable) isn't shrunk more than it needs to be. */
+  perspective: 1400px;
   /* A viewpoint a little below the top of the screen, so the standing
      tiles show their faces, not just their tops. */
   perspective-origin: 50% 45%;
@@ -5623,6 +5627,8 @@ html.playing body {
 .play-felt {
   position: relative;
   flex: 1;
+  /* As deep as what's on it needs, and tipped back as far as it takes to
+     fit the screen (both set in PlayPanel - see fitTable). */
   height: calc(100% + var(--play-under));
   margin-bottom: calc(-1 * var(--play-under));
   box-sizing: border-box;
@@ -5631,10 +5637,9 @@ html.playing body {
      (--play-side, measured - see PlayPanel), so a seat's melds growing
      never pushes the middle off centre. */
   grid-template-columns: var(--play-side, auto) minmax(0, 1fr) auto minmax(0, 1fr) var(--play-side, auto);
-  /* The ponds (and the compass with them) as big as fits: --play-pond-k
-     steps down as the ponds fill, so they never run into each other or off
-     the felt (fitted in PlayPanel). */
-  --play-pond: clamp(14px, calc(var(--play-hand) * var(--play-pond-k, 0.72)), 44px);
+  /* Every tile on the table: one size, as with real tiles. Those further
+     away look smaller only because the table is tipped away from you. */
+  --play-tile: clamp(12px, calc(var(--play-hand) * 0.58), 38px);
   grid-template-rows: auto auto minmax(0, 1fr) auto;
   grid-template-areas:
     "lseat top   top    top   rseat"
@@ -5651,7 +5656,7 @@ html.playing body {
     0 0 0 0.45rem #3a2717,
     0 0 0 0.6rem #1c120a,
     0 1.2rem 2.4rem rgba(0, 0, 0, 0.6);
-  transform: rotateX(24deg);
+  transform: rotateX(var(--play-tilt, 24deg));
   transform-origin: 50% 100%;
 }
 
@@ -5949,65 +5954,137 @@ html.playing body {
   align-items: center;
   gap: 0.3em;
   min-width: 0;
-  font-size: var(--play-small);
+  font-size: var(--play-tile);
 }
 
+/* Each seat is one line along its edge of the table, as its player has
+   it: their melds and flowers on their left, then their standing tiles.
+   Seen from you, that's the far end of the left seat's column (they face
+   right), the near end of the right seat's (they face left), and the right
+   end of the row across (they face you). Every tile in it is turned to
+   face its owner. */
 .play-seat-top {
   grid-area: top;
   justify-self: center;
+  flex-direction: row-reverse;
 }
 
-/* Side seats: the standing tiles at the table's edge, their melds and
-   flowers in a column beside them toward the middle. */
 .play-seat-left,
 .play-seat-right {
-  align-items: flex-start;
   align-self: center;
   /* Starts below the name card over the table's far corner. */
-  margin-top: 2.2em;
+  margin-top: calc(var(--play-small) * 2.2);
 }
 
 /* Each as wide as what's in it (measured for --play-side), against its edge. */
 .play-seat-left {
   grid-area: lseat;
   justify-self: start;
+  flex-direction: column;
 }
 
 .play-seat-right {
   grid-area: rseat;
   justify-self: end;
+  flex-direction: column-reverse;
+}
+
+/* Too long for one line: the melds and flowers in front of the hand
+   (toward the middle), still from the player's left end. */
+.play-seat-left.is-front {
   flex-direction: row-reverse;
-}
-
-.play-seat-side {
-  display: flex;
-  align-items: center;
-  gap: 0.2em;
-  transform-style: preserve-3d;
-}
-
-.play-seat-left .play-seat-side,
-.play-seat-right .play-seat-side {
-  flex-direction: column;
-}
-
-.play-seat-left .play-seat-side {
   align-items: flex-start;
 }
 
-.play-seat-right .play-seat-side {
+.play-seat-right.is-front {
+  flex-direction: row;
   align-items: flex-end;
 }
 
-.play-seat-melds {
-  display: inline-flex;
-  gap: 0.2em;
+.play-seat-top.is-front {
+  flex-direction: column-reverse;
+  align-items: flex-end;
 }
 
-.play-seat-left .play-seat-melds,
-.play-seat-right .play-seat-melds {
+.play-seat-side,
+.play-seat-melds,
+.play-seat .play-meld,
+.play-seat .play-flowers {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15em;
+  transform-style: preserve-3d;
+}
+
+.play-seat .play-meld,
+.play-seat .play-flowers {
+  gap: 0;
+}
+
+.play-seat-left :is(.play-seat-side, .play-seat-melds, .play-meld, .play-flowers) {
   flex-direction: column;
-  align-items: inherit;
+}
+
+.play-seat-right :is(.play-seat-side, .play-seat-melds, .play-meld, .play-flowers) {
+  flex-direction: column-reverse;
+}
+
+.play-seat-top :is(.play-seat-side, .play-seat-melds, .play-meld, .play-flowers) {
+  flex-direction: row-reverse;
+}
+
+/* Turned a quarter to face a side seat: the box swaps to the tile's
+   length across and its width along (rotating leaves the layout box as it
+   was, so the margins make it up), and the edge toward you - the long
+   side - is drawn along the face's own x. */
+.play-seat-left :is(.play-meld, .play-flowers) > .tile-glyph,
+.play-seat-right :is(.play-meld, .play-flowers) > .tile-glyph {
+  margin: -0.11em 0.11em;
+}
+
+.play-seat-left :is(.play-meld, .play-flowers) > .tile-glyph {
+  rotate: 90deg;
+}
+
+.play-seat-right :is(.play-meld, .play-flowers) > .tile-glyph {
+  rotate: -90deg;
+}
+
+.play-seat-top :is(.play-meld, .play-flowers) > .tile-glyph {
+  rotate: 180deg;
+}
+
+.play-seat-left .play-back,
+.play-seat-right .play-back {
+  width: 0.96em;
+  height: 0.74em;
+}
+
+.play-felt .play-seat-left img.tile-face {
+  box-shadow:
+    0 0 0 0.5px rgba(0, 0, 0, 0.28),
+    0.08em 0 0 var(--play-ivory),
+    0.13em 0 0 var(--play-back),
+    0.15em 0 0 var(--play-back-edge),
+    0.2em 0 0.14em rgba(0, 0, 0, 0.38);
+}
+
+.play-felt .play-seat-right img.tile-face {
+  box-shadow:
+    0 0 0 0.5px rgba(0, 0, 0, 0.28),
+    -0.08em 0 0 var(--play-ivory),
+    -0.13em 0 0 var(--play-back),
+    -0.15em 0 0 var(--play-back-edge),
+    -0.2em 0 0.14em rgba(0, 0, 0, 0.38);
+}
+
+.play-felt .play-seat-top img.tile-face {
+  box-shadow:
+    0 0 0 0.5px rgba(0, 0, 0, 0.28),
+    0 -0.08em 0 var(--play-ivory),
+    0 -0.13em 0 var(--play-back),
+    0 -0.15em 0 var(--play-back-edge),
+    0 -0.2em 0.14em rgba(0, 0, 0, 0.38);
 }
 
 /* The bots' concealed tiles, standing on the felt as real 3D blocks: each
@@ -6035,17 +6112,14 @@ html.playing body {
 
 .play-edge {
   display: inline-flex;
-  --play-tile-height: 0.95em;
+  /* A tile standing: as tall as a face, its footprint a face wide along
+     the row and its thickness across. */
+  --play-tile-height: 1em;
 }
 
 .play-edge-left,
 .play-edge-right {
   flex-direction: column;
-  font-size: 1.2em;
-}
-
-.play-edge-top {
-  font-size: 1.25em;
 }
 
 .play-edge-tile {
@@ -6075,8 +6149,7 @@ html.playing body {
 .play-edge-left .play-edge-tile,
 .play-edge-right .play-edge-tile {
   width: 0.55em;
-  height: 0.62em;
-  margin-bottom: 0.02em;
+  height: 0.78em;
 }
 
 .play-edge-left .play-edge-tile::before {
@@ -6112,9 +6185,8 @@ html.playing body {
 
 /* Far wall: footprints run along the top, backs face you. */
 .play-edge-top .play-edge-tile {
-  width: 0.68em;
-  height: 0.4em;
-  margin-right: 0.03em;
+  width: 0.78em;
+  height: 0.55em;
 }
 
 .play-edge-top .play-edge-tile::before {
@@ -6172,17 +6244,11 @@ html.playing body {
   display: inline-flex;
 }
 
-/* Revealed hands on the side seats wrap into a narrow column. */
-.play-seat-left .play-meld,
-.play-seat-right .play-meld {
-  flex-wrap: wrap;
-  max-width: 4.6em;
-}
 
 /* ---- Ponds, each in front of its seat ---- */
 
 .play-pond-slot {
-  font-size: var(--play-pond);
+  font-size: var(--play-tile);
   min-width: 0;
   min-height: 0;
 }
@@ -6296,7 +6362,8 @@ html.playing body {
   display: grid;
   place-items: center;
   min-height: 0;
-  font-size: var(--play-pond);
+  /* The compass and the spotlit discard: sized to read, not as tiles. */
+  font-size: calc(var(--play-hand) * 0.62);
 }
 
 .play-compass {
