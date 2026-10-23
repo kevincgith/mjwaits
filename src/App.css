@@ -7601,6 +7601,33 @@ html.playing body {
   display: none;
 }
 
+/* Melds the same: tiles in a meld (or a row of flowers) touch, so where
+   they meet nothing shows, nor the side facing away - the far side of the
+   far player's, the outer end of a side player's (turned a quarter). A
+   kong's fourth tile, up on top, keeps all its sides; so does a hand laid
+   down at the end (it shows every side as it topples). */
+.play-seat-top :is(.play-meld:not(.is-revealed), .play-flowers) > :is(.tile-glyph, .play-back) > .tile-side.is-far,
+.play-seat-top :is(.play-meld:not(.is-revealed), .play-flowers) > :is(.tile-glyph, .play-back):not(:first-child) > .tile-side.is-right,
+.play-seat-top :is(.play-meld:not(.is-revealed), .play-flowers) > :is(.tile-glyph, .play-back):not(:last-child) > .tile-side.is-left,
+.play-seat-left :is(.play-meld:not(.is-revealed), .play-flowers) > :is(.tile-glyph, .play-back) > .tile-side:is(.is-near, .is-left, .is-nl1),
+.play-seat-left :is(.play-meld:not(.is-revealed), .play-flowers) > :is(.tile-glyph, .play-back):not(:last-child) > .tile-side.is-right,
+.play-seat-right :is(.play-meld:not(.is-revealed), .play-flowers) > :is(.tile-glyph, .play-back) > .tile-side:is(.is-near, .is-right, .is-nr1),
+.play-seat-right :is(.play-meld:not(.is-revealed), .play-flowers) > :is(.tile-glyph, .play-back):not(:first-child) > .tile-side.is-left {
+  display: none;
+}
+
+/* Your hand and melds stand leaning toward you, seen from above: the foot
+   never shows, nor the ends pressed between neighbours - except beside a
+   gap (the drawn tile, set apart; a tile picked to throw, lifted). Toppled,
+   they show everything again. */
+.play-hand:not(.is-toppled) :is(.tile-glyph.tile-art, .play-back) > .tile-side.is-near,
+.play-hand:not(.is-toppled) :is(.play-meld, .play-flowers) > :is(.tile-glyph, .play-back):not(:last-child) > .tile-side.is-right,
+.play-hand:not(.is-toppled) :is(.play-meld, .play-flowers) > :is(.tile-glyph, .play-back):not(:first-child) > .tile-side.is-left,
+.play-hand:not(.is-toppled) .play-hand-tile:not(.is-selected):has(+ .play-hand-tile:not(.is-drawn):not(.is-selected)) > .tile-glyph > .tile-side.is-right,
+.play-hand:not(.is-toppled) .play-hand-tile:not(.is-selected) + .play-hand-tile:not(.is-drawn):not(.is-selected) > .tile-glyph > .tile-side.is-left {
+  display: none;
+}
+
 /* One panel for a whole corner: from the first panel's foot, across the
    rounding at 45deg (see TileSides). */
 :is(.play-felt, .play-hand) .tile-side.is-corner.is-whole {
