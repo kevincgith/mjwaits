@@ -5680,7 +5680,10 @@ html.playing body {
      as in the table apps, so the side walls fit the table's depth. */
   --play-tile: calc(var(--play-hand) * 0.74);
   --play-wall: calc(var(--play-tile) * 0.62);
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  /* The middle row just the compass: the far and near ponds start right by
+     it and grow toward their players, the table's spare depth split beyond
+     them (the far pond sits at the foot of its row, yours at the top). */
+  grid-template-rows: auto minmax(0, 1fr) auto minmax(0, 1fr);
   /* The ponds as a pinwheel, each in front of its player: the side
      players' running the table's full height, the far and near ones only
      as wide as the middle - so all four can fill without meeting. */
@@ -6768,25 +6771,25 @@ html.playing body {
   transform: translate(-50%, -50%) rotate(-45deg);
 }
 
-/* Halfway between the compass's edge (1.8em from the middle) and the
-   middle's own edge, on the thrower's side. */
+/* On the compass's edge (1.8em from the middle) on the thrower's side -
+   standing up over it, between the compass and their pond. */
 .play-spotlight.from-bottom {
   left: 50%;
-  top: calc(75% + 0.9em);
+  top: calc(50% + 1.8em);
 }
 
 .play-spotlight.from-top {
   left: 50%;
-  top: calc(25% - 0.9em);
+  top: calc(50% - 1.8em);
 }
 
 .play-spotlight.from-left {
-  left: calc(25% - 0.9em);
+  left: calc(50% - 1.8em);
   top: 50%;
 }
 
 .play-spotlight.from-right {
-  left: calc(75% + 0.9em);
+  left: calc(50% + 1.8em);
   top: 50%;
 }
 
@@ -6893,6 +6896,22 @@ html.playing body {
     scale: 1.05;
     opacity: 0;
   }
+}
+
+/* 自動 on: the button lit, and your hand watched rather than played - no
+   taps on it, no call buttons (the result card's still yours). */
+.play-icon-button.is-on {
+  border-color: var(--play-gold);
+  background: rgba(255, 209, 102, 0.18);
+  color: var(--play-gold);
+}
+
+.play-me.is-auto .play-hand {
+  pointer-events: none;
+}
+
+.play-me.is-auto .play-calls > :not(.play-show-result) {
+  display: none;
 }
 
 /* ---- You ---- */

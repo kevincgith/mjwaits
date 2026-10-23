@@ -153,6 +153,15 @@ type Speed = keyof typeof SPEEDS;
 const DANGER_MARK = 0.12;
 const BUBBLE_MS = 2200;
 const BURST_MS = 1200;
+// A hand's end is seen on the table first - the 胡 / 自摸 called and the
+// hands laid down - and only then the result card: this long after a win,
+// less after a 流局 (no call to see).
+const WIN_SHOW_MS = 1900;
+const DRAW_SHOW_MS = 900;
+// 自動 autoplay: a bot plays your seat and you watch - the Grandmaster -
+// dealing on by itself this long after each result.
+const AUTOPLAY_BOT = "grandmaster";
+const AUTOPLAY_NEXT_MS = 4500;
 const TIMER_CHOICES = [0, 10, 20] as const;
 type TimerSetting = (typeof TIMER_CHOICES)[number];
 
@@ -728,6 +737,9 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
   // 叮 armed: the next discard declares it (only tiles that leave you ready).
   const [riichiArmed, setRiichiArmed] = useState(false);
   const [resultHidden, setResultHidden] = useState(false);
+  // 自動: your seat played for you (this phone's own game only).
+  const [autoplay, setAutoplay] = useState(false);
+  const autoBot = useMemo(() => botById(AUTOPLAY_BOT), []);
 
   // This device's own game (never an online one).
   useEffect(
@@ -821,7 +833,7 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
     resolving.current = game;
     const decisions = botDecisions.slice();
     decisions[HUMAN] = humanClaim;
-    if (humanClaims.length) recordMine(1, claimDecisionAction(game, humanClaim));
+    if (humanClaims.length && !autoplay) recordMine(1, claimDecisionAction(game, humanClaim));
     for (let seat = 1; seat < SEATS; seat++) {
       const net = learnedBot(seat);
       if (net) decisions[seat] = await learnedClaim(net, game, seat);
@@ -930,9 +942,9 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
         window.clearTimeout(timer);
       };
     }
-    if (phase.kind === "turn" && phase.seat !== HUMAN) {
+    if (phase.kind === "turn" && (phase.seat !== HUMAN || autoplay)) {
       // Decide now, so the pause can match how hard the choice was.
-      const { move: m, difficulty } = botTurnFor(game, bots[phase.seat]!);
+      const { move: m, difficulty } = botTurnFor(game, phase.seat === HUMAN ? autoBot : bots[phase.seat]!);
       delay = botDelay(difficulty, phase.drawn === null);
       move = () => {
         if (m.kind === "selfDraw") {
@@ -949,23 +961,25 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
       const tile = riichiForcedDiscard(game);
       if (tile) move = () => advance(applyTurnMove(game, { kind: "discard", tile }));
       delay = 700;
-    } else if (phase.kind === "claims" && humanClaims.length === 0) {
-      move = () => resolve(null);
+    } else if (phase.kind === "claims" && (humanClaims.length === 0 || autoplay)) {
+      // On autoplay your seat's call is the autoplay bot's.
+      const mine = autoplay && humanClaims.length ? botClaimFor(game, HUMAN, autoBot) : null;
+      move = () => resolve(mine);
       // Someone had a call to weigh: they take a moment either way; a call
       // that's coming lets the discard land first.
       const pondered = [1, 2, 3].some((seat) => seat !== phase.from && claimOptions(game, seat).length > 0);
-      const called = botDecisions?.some((d) => d !== null);
+      const called = mine !== null || botDecisions?.some((d) => d !== null);
       delay = called ? CLAIM_DELAY_MS : pondered ? PONDER_DELAY_MS + Math.random() * 300 : PASS_DELAY_MS;
     }
     if (!move) return;
     const id = window.setTimeout(move, delay * SPEEDS[speed].factor);
     return () => window.clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [game, rolling, myTurn]);
+  }, [game, rolling, myTurn, autoplay]);
 
   // The turn timer (off by default): runs only while the human has to
   // decide, and on running out passes on a call or throws the drawn tile.
-  const deciding = myTurn || humanClaims.length > 0;
+  const deciding = !autoplay && (myTurn || humanClaims.length > 0);
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
   // Online, the server's deadline (it moves for you when it passes).
   const deadline = online?.table.deadline ?? null;
@@ -1100,6 +1114,27 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
   const activeSeat = game.phase.kind === "turn" ? game.phase.seat : game.phase.kind === "claims" ? game.phase.from : null;
   const over = game.phase.kind === "over";
   const result = over ? shownResult : null;
+  // The card held back while the table shows how the hand ended - only when
+  // it ends in front of you (a game opened already over shows it at once).
+  const [cardHeld, setCardHeld] = useState(false);
+  const wasOver = useRef(over);
+  useEffect(() => {
+    const ended = over && !wasOver.current;
+    wasOver.current = over;
+    if (!ended) return;
+    setCardHeld(true);
+    const won = game.phase.kind === "over" && game.phase.result.winner !== null;
+    const t = window.setTimeout(() => setCardHeld(false), won ? WIN_SHOW_MS : DRAW_SHOW_MS);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [over]);
+  // On autoplay the next hand deals itself once the result has been up a while.
+  useEffect(() => {
+    if (!autoplay || !over || cardHeld || online) return;
+    const t = window.setTimeout(() => nextHandWithSurrenders(), AUTOPLAY_NEXT_MS);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoplay, over, cardHeld, game]);
   // Online, between hands: whether you've said you're ready, and who hasn't.
   const meReady = !!online && online.table.you !== null && online.table.ready.includes(online.table.you);
   const notReady = online && net ? online.table.waitingOn.filter((s) => s !== online.table.you).map((s) => nameOf(net.toLocal(s))) : [];
@@ -1216,6 +1251,21 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
           <button type="button" className="play-icon-button is-text" onClick={() => setTrackerOpen(true)} aria-label="Tile tracker" title="記牌器 - tiles you haven't seen">
             記牌器
           </button>
+          {!online && (
+            <button
+              type="button"
+              className={`play-icon-button is-text${autoplay ? " is-on" : ""}`}
+              onClick={() => {
+                setAutoplay((a) => !a);
+                setSelected(null);
+                setChowChoice(false);
+              }}
+              aria-pressed={autoplay}
+              title={autoplay ? "自動 - the Grandmaster is playing your seat; tap to take it back" : "自動 - let the Grandmaster play your seat and watch"}
+            >
+              {autoplay ? "■ 自動" : "▶ 自動"}
+            </button>
+          )}
           {ledger && (
             <button type="button" className="play-icon-button is-text" onClick={() => setScoresOpen(true)} aria-label="Scores so far" title="戰況 - the scores so far, 拉, every hand and each player's stats">
               戰況
@@ -1409,10 +1459,10 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
           </div>
         </div>
 
-        <div className="play-me">
+        <div className={`play-me${autoplay ? " is-auto" : ""}`}>
           <div className="play-hand-wrap">
             <div className="play-calls">
-              {result && resultHidden && (
+              {result && resultHidden && !cardHeld && (
                 <button type="button" className="play-show-result" onClick={() => setResultHidden(false)}>
                   Show result
                 </button>
@@ -1592,7 +1642,7 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
         {scoresOpen && ledger && <PlayScores game={ledger} onClose={() => setScoresOpen(false)} />}
         {opponentsOpen && <OpponentsSheet opponents={opponents} learned={model?.styles ?? null} onChange={setOpponents} onClose={() => setOpponentsOpen(false)} />}
 
-        {result && !resultHidden && (
+        {result && !resultHidden && !cardHeld && (
           <div className="play-result" role="dialog" aria-label="Hand result">
             <div className="play-result-card">
               <h2>
