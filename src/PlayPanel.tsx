@@ -117,6 +117,7 @@ interface Saved {
   timer?: TimerSetting;
   speed?: Speed;
   oneTap?: boolean;
+  multiWin?: boolean; // 一炮多響 (else 截胡)
   record?: boolean;
   // The bot ids at seats 1-3.
   opponents?: string[];
@@ -363,6 +364,11 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
   const [timer, setTimer] = useState<TimerSetting>(() => saved?.timer ?? 0);
   // One-tap discard: a single tap throws the tile (off: tap to lift, tap again).
   const [oneTap, setOneTap] = useState(() => saved?.oneTap ?? false);
+  // 一炮多響: a table setting, kept on the game itself so it carries hand to hand.
+  const [multiWin, setMultiWin] = useState(() => saved?.multiWin ?? saved?.game?.multiWin ?? false);
+  useEffect(() => {
+    if (!!game.multiWin !== multiWin) setGame((g) => ({ ...g, multiWin }));
+  }, [game, multiWin]);
   // Record my play (off by default): your decisions, kept in this browser for
   // training a learned bot that plays like you (lib/ml/recorder.ts).
   const [record, setRecord] = useState(() => saved?.record ?? false);
@@ -466,7 +472,7 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
   const [riichiArmed, setRiichiArmed] = useState(false);
   const [resultHidden, setResultHidden] = useState(false);
 
-  useEffect(() => save({ game, totals, hint, timer, opponents, speed, oneTap, record }), [game, totals, hint, timer, opponents, speed, oneTap, record]);
+  useEffect(() => save({ game, totals, hint, timer, opponents, speed, oneTap, record, multiWin }), [game, totals, hint, timer, opponents, speed, oneTap, record, multiWin]);
 
   // The menu closes on a tap anywhere outside it, and disarms New game.
   useEffect(() => {
@@ -869,6 +875,19 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
               </div>
               <div className="play-menu-row">
                 <span>
+                  一炮多響
+                  <span className="play-menu-note"> · {multiWin ? "everyone off one discard wins" : "截胡: first in turn takes it"}</span>
+                </span>
+                <span className="play-menu-seg">
+                  {[false, true].map((on) => (
+                    <button key={String(on)} type="button" className={multiWin === on ? "toggle-on" : undefined} aria-pressed={multiWin === on} onClick={() => setMultiWin(on)}>
+                      {on ? "On" : "Off"}
+                    </button>
+                  ))}
+                </span>
+              </div>
+              <div className="play-menu-row">
+                <span>
                   Record my play
                   {record && recorded !== null && <span className="play-menu-note"> · {recorded}</span>}
                 </span>
@@ -1163,7 +1182,11 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
           <div className="play-result" role="dialog" aria-label="Hand result">
             <div className="play-result-card">
               <h2>
-                {result.winner === null
+                {result.winner !== null && result.alsoWon?.length
+                  ? `${result.alsoWon.length === 1 ? "雙響" : "三響"}! ${[result.winner, ...result.alsoWon.map((w) => w.winner)].map((w) => (w === HUMAN ? "You" : nameOf(w))).join(" and ")} won off ${
+                      result.from === HUMAN ? "your" : `${nameOf(result.from!)}'s`
+                    } ${result.robKong ? "kong (搶槓)" : "discard"}`
+                  : result.winner === null
                   ? "Draw - wall exhausted (流局)"
                   : result.winner === HUMAN
                     ? result.from === null
@@ -1181,40 +1204,44 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
                               : `won off ${nameOf(result.from)}`
                       }`}
               </h2>
-              {result.winner !== null && (
-                <div className="play-result-hand">
-                  <Melds melds={game.players[result.winner].melds} />
-                  <RevealedHand tiles={game.players[result.winner].hand} winningTile={result.tile} />
-                  <Flowers flowers={game.players[result.winner].flowers} />
-                </div>
-              )}
-              {result.score && (
-                <ul className="play-result-patterns">
-                  {result.score.matched.map(({ pattern, tai }) => (
-                    <li key={pattern.id}>
-                      <span>{patternDisplayName(pattern, result.score!.hand)}</span>
-                      <span>{tai}</span>
-                    </li>
-                  ))}
-                  {result.score.second?.matched.map(({ pattern, tai }) => (
-                    <li key={`2-${pattern.id}`}>
-                      <span>{patternDisplayName(pattern, result.score!.second!.hand)}</span>
-                      <span>{tai}</span>
-                    </li>
-                  ))}
-                  <li className="play-result-total">
-                    <span>Total</span>
-                    <span>{result.score.total} 台</span>
-                  </li>
-                </ul>
-              )}
-              {result.scoreError && <p className="play-result-error">Couldn't score this hand: {result.scoreError}</p>}
+              {result.winner !== null &&
+                [{ winner: result.winner, score: result.score, scoreError: result.scoreError }, ...(result.alsoWon ?? [])].map((w) => (
+                  <div key={w.winner} className="play-result-winner">
+                    {result.alsoWon?.length ? <h3 className="play-result-who">{w.winner === HUMAN ? "You" : nameOf(w.winner)}</h3> : null}
+                    <div className="play-result-hand">
+                      <Melds melds={game.players[w.winner].melds} />
+                      <RevealedHand tiles={game.players[w.winner].hand} winningTile={result.tile} />
+                      <Flowers flowers={game.players[w.winner].flowers} />
+                    </div>
+                    {w.score && (
+                      <ul className="play-result-patterns">
+                        {w.score.matched.map(({ pattern, tai }) => (
+                          <li key={pattern.id}>
+                            <span>{patternDisplayName(pattern, w.score!.hand)}</span>
+                            <span>{tai}</span>
+                          </li>
+                        ))}
+                        {w.score.second?.matched.map(({ pattern, tai }) => (
+                          <li key={`2-${pattern.id}`}>
+                            <span>{patternDisplayName(pattern, w.score!.second!.hand)}</span>
+                            <span>{tai}</span>
+                          </li>
+                        ))}
+                        <li className="play-result-total">
+                          <span>Total</span>
+                          <span>{w.score.total} 台</span>
+                        </li>
+                      </ul>
+                    )}
+                    {w.scoreError && <p className="play-result-error">Couldn't score this hand: {w.scoreError}</p>}
+                  </div>
+                ))}
               {(result.pairs ?? []).some((p) => p.lah) && (
                 <ul className="play-result-lah">
                   {(result.pairs ?? [])
                     .filter((p) => p.lah)
                     .map((p) => (
-                      <li key={p.payer}>
+                      <li key={`${p.winner}-${p.payer}`}>
                         {p.lahKind === "踢" ? "踢" : "拉"} · {nameOf(Number(p.payer))} {Number(p.payer) === HUMAN ? "pay" : "pays"} {nameOf(Number(p.winner))} +{p.lah} on top (from {p.lahBefore})
                       </li>
                     ))}

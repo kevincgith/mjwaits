@@ -361,31 +361,36 @@ stats per player and head-to-head net tai).
 A game in 戰況 can go live: everyone else at the table follows it on their own phone as it's
 scored, and the host can let any of them record too. It runs through a small server
 ([`worker/`](worker/README.md), a Cloudflare Worker at `mj-api.kevinlhc.com`) that holds the
-game exactly as the Scores tab keeps it, so every phone shows the same numbers.
+game exactly as the Scores tab keeps it, so every phone shows the same numbers. Everything is
+under one button: **線上**, at the end of 戰況's toolbar (above the new-game setup when no game is
+in progress).
 
-- **Going live (the host).** **線上** at the end of 戰況's toolbar → your name → **Go live**. The
-  sheet shows the game's 5-character code, its QR code and link (`…/mjwaits/?room=CODE`), and
-  everyone who has joined, each with a **Can record** switch. 線上 turns red while the game is
-  live. You keep scoring exactly as before; every change goes to everyone.
-- **Following (everyone else).** Scores → **線上** → your name and the code (or scan the QR code,
-  or open the link). You see the board as it's scored - totals, the last change, 莊, 拉 and the
-  Jackpot - with the trend and every hand underneath. Games you've followed are listed for a week.
-- **Recording.** Once the host switches you on, the same 戰況 board appears on your phone, with
-  everything but 新局; whatever you enter shows on every phone, the host's included. If two people
-  record at the same moment, the first is kept and the second is told to enter theirs again -
-  nothing is merged behind anyone's back.
+- **Going live (the host).** 線上 → your name → **Go live**. The sheet shows the game's
+  5-character code, its QR code and link (`…/mjwaits/?room=CODE`), everyone who has joined, each
+  with a **Can record** switch, and the latest changes. 線上 turns red while the game is live.
+  You keep scoring exactly as before; every change goes to everyone.
+- **Following (everyone else).** 線上 → your name and the code (or scan the QR code, or open the
+  link). The game then shows in 戰況 in place of your own (kept, and back when you leave): totals,
+  the last change, 莊, 拉 and the Jackpot, with the trend and every hand underneath. Its 線上
+  button shows the game's status - connection, whose game, who's here and who records, the
+  changes, an invite to pass on - and Leave. Games you've followed are listed in the sheet for a
+  week.
+- **Recording.** Once the host switches you on, the same 戰況 board appears, with everything but
+  新局; whatever you enter shows on every phone, the host's included. If two people record at the
+  same moment, the first is kept and the second is told to enter theirs again - nothing is merged
+  behind anyone's back.
 - **Who did what.** Every change is logged with who made it: 最近 says under each entry who put
-  it in ("by Amy", "by Kevin · edited by Ben"), on every phone, and the 線上 sheet lists the latest
+  it in ("by Amy", "by Kevin · edited by Ben"), on every phone, and the 線上 sheets list the latest
   changes - added, taken back, fixed - with the time.
-- **Staying out of the way.** Following a game, 線上 is just a button in the toolbar (next to 設定
-  once you record): it opens the game's status - connection, whose game, who's here and who
-  records, the changes, an invite to pass on, and Leave.
-- **Ending.** When the host ends the game (新局), its final state goes up and sharing stops; or
-  **Stop sharing** in the 線上 sheet stops it with the game as it stands. Everyone else then sees
-  **Final**, with **Keep in my Stats** to copy the game into their own 統計.
+- **Stopping and resuming.** **Stop sharing** leaves everyone with the scores as they stand;
+  ending the game (新局) sends its final state and stops too - either way they see **Final**, with
+  **Keep in my Stats**. Later, 線上 offers **Resume as CODE**: the same room, so everyone's link
+  still works and recorders can still record. A game already ended is listed under **Your shared
+  games** to **Reopen** - back out of 統計 into 戰況, shared again under its old code (when no
+  other game is in progress). If its room has closed meanwhile, it's shared under a new code.
 - **Dropping out** costs nothing: a reload, a lost signal or a phone that slept reconnects by
   itself (a token is kept on the phone), and the host's own changes made offline go up when it's
-  back. A shared game closes two days after its last change.
+  back. A shared game's room closes two days after its last change.
 
 ## Play (hidden, in progress)
 

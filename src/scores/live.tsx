@@ -13,10 +13,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import qrcode from "qrcode-generator";
 import { replay, type ScoreGame, type ScoreStore } from "@mjwaits/shared/engine/ledger";
-import { cleanNickname, NICKNAME_MAX } from "@mjwaits/shared/protocol/limits";
+import { cleanNickname, NICKNAME_MAX, normalizeRoomCode, ROOM_CODE_LENGTH } from "@mjwaits/shared/protocol/limits";
 import { describeChange } from "@mjwaits/shared/protocol/audit";
 import type { ErrorCode, RoomView } from "@mjwaits/shared/protocol/server";
-import { createRoom, GameSync, joinLink, loadOnline, RoomClient, saveOnline, tokenFor, withToken, type ConnectionStatus } from "../lib/online";
+import { createRoom, GameSync, joinLink, loadOnline, RoomClient, roomInfo, saveOnline, tokenFor, withSharing, withToken, type ConnectionStatus } from "../lib/online";
 import { colorOf, Sheet, Toggle } from "./shared";
 
 export type Problem = { code: ErrorCode | "offline" | "lost"; message: string; at: number };
@@ -60,9 +60,11 @@ export function useLiveGame({
   colorsRef.current = colors;
 
   useEffect(() => {
-    if (!code) return;
+    // A different room (or none): nothing seen of the last one carries over.
     setRoom(null);
+    setMe(null);
     setGone(false);
+    if (!code) return;
     const s = new GameSync({
       send: (base, game) => client.current?.send({ t: "update", base, game, ...(colorsRef.current ? { colors: colorsRef.current } : {}) }) !== false,
       adopt: (game) => adopt.current(game),
@@ -193,13 +195,18 @@ export function colorsOf(store: ScoreStore, game: ScoreGame): Record<string, num
 
 // Sharing this phone's 戰況 game: which room (if any) it's live in, and the
 // connection that keeps it there. Ending the game (新局) sends its final
-// state and stops sharing.
+// state and stops sharing. A game shared before can be shared again in its
+// old room (resume) - reopened from 統計's history first if it had ended.
 export function useHostLive(store: ScoreStore, setStore: (s: ScoreStore) => void) {
   const [sharing, setSharing] = useState(() => loadOnline().sharing);
-  const remember = (next: { code: string; gameId: string } | null) => {
-    saveOnline({ ...loadOnline(), sharing: next });
-    setSharing(next);
+  const remember = (code: string | null, gameId?: string) => {
+    const now = loadOnline();
+    saveOnline(code && gameId ? withSharing(now, code, gameId) : { ...now, sharing: null });
+    setSharing(code && gameId ? { code, gameId } : null);
   };
+  // Asked to share a stopped room again: the `resume` goes once the room is back.
+  const [resuming, setResuming] = useState(false);
+  const [notice, setNotice] = useState<Problem | null>(null);
   const active = store.active;
   // The game being shared: in progress, or just ended (moved to history).
   const shared = sharing ? (active?.id === sharing.gameId ? active : (store.history.find((g) => g.id === sharing.gameId) ?? null)) : null;
@@ -218,124 +225,289 @@ export function useHostLive(store: ScoreStore, setStore: (s: ScoreStore) => void
       if (now.active?.id === game.id) setStore({ ...now, active: game });
     },
   });
+  const { room, send, me, gone } = live;
   // The game ended here: once its final state is up, stop sharing.
   const ended = shared !== null && shared !== active;
-  const { room, send } = live;
   useEffect(() => {
     if (!ended || !room) return;
     if (room.phase === "ended") return remember(null);
     if (room.game?.endedAt) send({ t: "stop" });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ended, room]);
+  // Stopped elsewhere (or before this phone noticed): it isn't being shared -
+  // 線上 offers Resume instead.
+  useEffect(() => {
+    if (!ended && !resuming && room?.code === code && room?.phase === "ended") remember(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [room]);
+  // Resuming: once connected as host, reopen the room; done when it's live.
+  useEffect(() => {
+    if (!resuming || !room || room.code !== code || !me?.host) return;
+    if (room.phase === "ended") send({ t: "resume" });
+    else setResuming(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resuming, room, me]);
+  // The old room has closed meanwhile: share it in a new one.
+  useEffect(() => {
+    if (!gone || !shared || !code) return;
+    const old = code;
+    void createRoom()
+      .then((fresh) => {
+        remember(fresh, shared.id);
+        setResuming(false);
+        setNotice({ code: "offline", message: `Room ${old} had closed - shared again as ${fresh}`, at: Date.now() });
+      })
+      .catch(() => remember(null));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gone]);
 
   const goLive = async (name: string) => {
     if (!active) return;
     saveOnline({ ...loadOnline(), name });
-    const roomCode = await createRoom();
-    remember({ code: roomCode, gameId: active.id });
+    remember(await createRoom(), active.id);
   };
   const stop = () => {
     send({ t: "stop" });
     remember(null);
   };
-  return { ...live, code, goLive, stop };
+  // Share a game again in its old room. One that has ended comes back out of
+  // the history into 戰況 first - only when no other game is in progress.
+  const resume = (entry: { code: string; gameId: string }, name: string) => {
+    const now = storeRef.current;
+    saveOnline({ ...loadOnline(), name });
+    if (now.active?.id !== entry.gameId) {
+      const old = now.history.find((g) => g.id === entry.gameId);
+      if (!old || now.active) return;
+      const { endedAt: _, ...reopened } = old;
+      setStore({ ...now, active: { ...reopened, updatedAt: Date.now() }, history: now.history.filter((g) => g.id !== entry.gameId) });
+    }
+    setResuming(true);
+    remember(entry.code, entry.gameId);
+  };
+  return { ...live, problem: notice && (!live.problem || notice.at > live.problem.at) ? notice : live.problem, code, goLive, stop, resume };
 }
 
 export type HostLive = ReturnType<typeof useHostLive>;
 
-export function LiveSheet({ live, onClose }: { live: HostLive; onClose: () => void }) {
-  const [name, setName] = useState(() => loadOnline().name);
-  const [busy, setBusy] = useState(false);
+// A short label for a game: its name, or its players, and the day.
+export function gameLabel(game: ScoreGame): string {
+  const day = new Date(game.startedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return `${game.name ?? game.seats.join(" · ")} · ${day}`;
+}
+
+// The one 線上 sheet, from the 線上 button. Sharing: the code, who's here and
+// who may record, the changes, Stop sharing. Otherwise: share this game (or
+// share it again in its old room), reopen an earlier shared game, follow
+// someone else's with a code, or open one followed before.
+export function LiveSheet({
+  live,
+  store,
+  joinCode,
+  onFollow,
+  onClose,
+}: {
+  live: HostLive;
+  store: ScoreStore;
+  joinCode?: string | null;
+  onFollow: (code: string, name: string) => void;
+  onClose: () => void;
+}) {
+  const [memory] = useState(() => loadOnline());
+  const [name, setName] = useState(memory.name);
+  const [code, setCode] = useState(joinCode ?? "");
+  const [busy, setBusy] = useState<"share" | "join" | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [confirmStop, setConfirmStop] = useState(false);
   const clean = cleanNickname(name);
-  if (!live.code)
-    return (
-      <Sheet
-        title="線上 Go live"
-        subtitle="This game on everyone's phone, as it happens"
-        onClose={onClose}
-        actions={
-          <button
-            type="button"
-            className="sc-primary"
-            disabled={!clean || busy}
-            onClick={async () => {
-              if (!clean) return;
-              setBusy(true);
-              setProblem(null);
-              try {
-                await live.goLive(clean);
-              } catch (e) {
-                setProblem(e instanceof Error && e.message !== "Failed to fetch" ? e.message : "Couldn't reach the server - check the connection");
-              } finally {
-                setBusy(false);
-              }
-            }}
-          >
-            {busy ? "Opening…" : "Go live"}
-          </button>
-        }
-      >
-        <p className="sc-help sc-help-block">
-          The others open Scores → 線上 and join with a code (or scan the QR code) to watch the scores update live. You choose who may record hands too.
-        </p>
+  const needName = () => {
+    if (clean) return false;
+    setProblem("Pick a name first - it's how the others see you");
+    return true;
+  };
+  const failed = (e: unknown) => setProblem(e instanceof Error && e.message !== "Failed to fetch" ? e.message : "Couldn't reach the server - check the connection");
+
+  const active = store.active;
+  const resumable = active ? memory.hosted.find((h) => h.gameId === active.id) : undefined;
+  const reopenable = memory.hosted
+    .map((h) => ({ ...h, game: store.history.find((g) => g.id === h.gameId) }))
+    .filter((h): h is typeof h & { game: ScoreGame } => !!h.game);
+  const followed = memory.rooms.filter((r) => !memory.hosted.some((h) => h.code === r.code));
+  const follow = async (joining = normalizeRoomCode(code)) => {
+    if (needName()) return;
+    if (!joining) return setProblem(`A code is ${ROOM_CODE_LENGTH} letters and numbers`);
+    setBusy("join");
+    setProblem(null);
+    try {
+      const info = await roomInfo(joining);
+      if (!info) setProblem(`No game ${joining} - check the code (a shared game closes two days after its last change)`);
+      else onFollow(joining, clean!);
+    } catch (e) {
+      failed(e);
+    } finally {
+      setBusy(null);
+    }
+  };
+  // Following someone else's game, from either view of the sheet.
+  const followBlock = (
+    <>
+      <h3 className="ol-people-head">Follow a game</h3>
+      {live.code && (
         <label className="ol-field">
           <span className="ol-field-label">Your name, as the others will see it</span>
-          <input className="sc-input" value={name} maxLength={NICKNAME_MAX * 2} placeholder="Host" onChange={(e) => setName(e.target.value)} />
+          <input className="sc-input" value={name} maxLength={NICKNAME_MAX * 2} placeholder="Your name" autoComplete="nickname" onChange={(e) => setName(e.target.value)} />
         </label>
-        {problem && (
-          <p className="ol-problem" role="alert">
-            {problem}
-          </p>
-        )}
+      )}
+      <div className="ol-join">
+        <input
+          className="sc-input ol-code-input"
+          value={code}
+          placeholder="CODE"
+          aria-label="Game code"
+          autoCapitalize="characters"
+          autoComplete="off"
+          spellCheck={false}
+          maxLength={ROOM_CODE_LENGTH + 2}
+          onChange={(e) => setCode(e.target.value.toUpperCase())}
+          onKeyDown={(e) => e.key === "Enter" && void follow()}
+        />
+        <button type="button" className="sc-primary" onClick={() => void follow()} disabled={busy !== null}>
+          {busy === "join" ? "Joining…" : "加入 Join"}
+        </button>
+      </div>
+      {followed.length > 0 && (
+        <div className="sc-list ol-followed">
+          {followed.map((r) => (
+            <div key={r.code} className="sc-row">
+              <span className="ol-code-small">{r.code}</span>
+              <button type="button" className="sc-secondary" onClick={() => void follow(r.code)} disabled={busy !== null}>
+                Open
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      {problem && (
+        <p className="ol-problem" role="alert">
+          {problem}
+        </p>
+      )}
+    </>
+  );
+
+  if (live.code) {
+    const room = live.room;
+    const others = room?.people.filter((p) => !p.host) ?? [];
+    return (
+      <Sheet
+        title={
+          <span className="ol-live-title">
+            線上 <span className="ol-code">{live.code}</span>
+          </span>
+        }
+        subtitle={
+          <span className={`ol-status is-${live.status}`}>
+            <span className="ol-dot" aria-hidden="true" />
+            {STATUS_TEXT[live.status]}
+          </span>
+        }
+        onClose={onClose}
+        actions={
+          confirmStop ? (
+            <button type="button" className="sc-danger" onClick={() => (live.stop(), onClose())}>
+              Stop sharing - you can resume it later
+            </button>
+          ) : (
+            <button type="button" className="sc-secondary" onClick={() => setConfirmStop(true)}>
+              Stop sharing
+            </button>
+          )
+        }
+      >
+        <InviteBlock code={live.code} />
+        <h3 className="ol-people-head">{others.length ? "Who's here" : "No one has joined yet"}</h3>
+        <div className="sc-list">
+          {others.map((p) => (
+            <div key={p.id} className="sc-row">
+              <span className="ol-seat-name">
+                <span className={`ol-dot${p.connected ? " is-on" : ""}`} aria-label={p.connected ? "connected" : "away"} />
+                {p.name}
+              </span>
+              <span className="ol-record">
+                <span className="sc-help">{p.canRecord ? "Records" : "Watches"}</span>
+                <Toggle checked={p.canRecord} onChange={(allow) => live.send({ t: "setRecorder", person: p.id, allow })} label={`Let ${p.name} record`} />
+              </span>
+            </div>
+          ))}
+        </div>
+        {room && <ChangesList room={room} />}
+        {followBlock}
       </Sheet>
     );
-  const room = live.room;
-  const others = room?.people.filter((p) => !p.host) ?? [];
+  }
+
+  const share = async (how: () => Promise<void> | void) => {
+    if (needName()) return;
+    setBusy("share");
+    setProblem(null);
+    try {
+      await how();
+    } catch (e) {
+      failed(e);
+    } finally {
+      setBusy(null);
+    }
+  };
+
   return (
-    <Sheet
-      title={
-        <span className="ol-live-title">
-          線上 <span className="ol-code">{live.code}</span>
-        </span>
-      }
-      subtitle={
-        <span className={`ol-status is-${live.status}`}>
-          <span className="ol-dot" aria-hidden="true" />
-          {STATUS_TEXT[live.status]}
-        </span>
-      }
-      onClose={onClose}
-      actions={
-        confirmStop ? (
-          <button type="button" className="sc-danger" onClick={() => (live.stop(), onClose())}>
-            Stop sharing - the others keep the scores as they are now
-          </button>
-        ) : (
-          <button type="button" className="sc-secondary" onClick={() => setConfirmStop(true)}>
-            Stop sharing
-          </button>
-        )
-      }
-    >
-      <InviteBlock code={live.code} />
-      <h3 className="ol-people-head">{others.length ? "Who's here" : "No one has joined yet"}</h3>
-      <div className="sc-list">
-        {others.map((p) => (
-          <div key={p.id} className="sc-row">
-            <span className="ol-seat-name">
-              <span className={`ol-dot${p.connected ? " is-on" : ""}`} aria-label={p.connected ? "connected" : "away"} />
-              {p.name}
-            </span>
-            <span className="ol-record">
-              <span className="sc-help">{p.canRecord ? "Records" : "Watches"}</span>
-              <Toggle checked={p.canRecord} onChange={(allow) => live.send({ t: "setRecorder", person: p.id, allow })} label={`Let ${p.name} record`} />
-            </span>
+    <Sheet title="線上 Live scores" subtitle="This game on everyone's phone as it's scored - or follow someone else's" onClose={onClose}>
+      <label className="ol-field">
+        <span className="ol-field-label">Your name, as the others will see it</span>
+        <input className="sc-input" value={name} maxLength={NICKNAME_MAX * 2} placeholder="Your name" autoComplete="nickname" onChange={(e) => setName(e.target.value)} />
+      </label>
+
+      {active && (
+        <>
+          <h3 className="ol-people-head">Share this game</h3>
+          {resumable ? (
+            <div className="ol-actions">
+              <button type="button" className="sc-primary" disabled={busy !== null} onClick={() => void share(() => live.resume(resumable, clean!))}>
+                Resume as {resumable.code}
+              </button>
+              <button type="button" className="sc-secondary" disabled={busy !== null} onClick={() => void share(() => live.goLive(clean!))}>
+                New code
+              </button>
+            </div>
+          ) : (
+            <button type="button" className="sc-primary ol-wide" disabled={busy !== null} onClick={() => void share(() => live.goLive(clean!))}>
+              {busy === "share" ? "Opening…" : "Go live"}
+            </button>
+          )}
+          <p className="sc-help sc-help-block">
+            {resumable ? "Resume keeps the code, so everyone's link still works and recorders can still record." : "The others scan the QR code or enter the code to follow along; you choose who may record."}
+          </p>
+        </>
+      )}
+
+      {reopenable.length > 0 && (
+        <>
+          <h3 className="ol-people-head">Your shared games</h3>
+          <div className="sc-list">
+            {reopenable.map((h) => (
+              <div key={h.gameId} className="sc-row">
+                <span className="ol-seat-name">{gameLabel(h.game)}</span>
+                <button type="button" className="sc-secondary" disabled={busy !== null || !!active} onClick={() => void share(() => live.resume(h, clean!))}>
+                  Reopen
+                </button>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
-      {room && <ChangesList room={room} />}
+          <p className="sc-help sc-help-block">
+            {active ? "To reopen one, end or file the game in progress first (新局)." : "Reopen brings the game back to 戰況 and shares it again under its old code."}
+          </p>
+        </>
+      )}
+
+      {followBlock}
     </Sheet>
   );
 }

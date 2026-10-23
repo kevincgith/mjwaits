@@ -7127,6 +7127,19 @@ html.playing body {
   text-align: center;
 }
 
+/* 一炮多響: each winner's hand and score, under their name. */
+.play-result-winner + .play-result-winner {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.play-result-who {
+  margin: 0 0 0.35rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
 .play-result-hand {
   display: flex;
   flex-wrap: wrap;
@@ -13800,6 +13813,44 @@ button.sc-stat:active {
   gap: 0.35rem 0.9rem;
   margin-top: 0.75rem;
   font-size: var(--text-sm);
+}
+
+/* 線上 on 戰況's setup screen (no game in progress): follow, or reopen. */
+.ol-entry {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  width: 100%;
+  margin-bottom: 0.75rem;
+  border: none;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.ol-entry-icon {
+  display: inline-flex;
+  color: var(--danger-text-1);
+}
+
+/* The 線上 sheet's buttons. */
+.ol-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.ol-actions > button {
+  flex: 1;
+}
+
+.ol-wide {
+  width: 100%;
+}
+
+.ol-followed {
+  margin-top: 0.5rem;
 }
 
 /* The audit trail: who entered an entry, under it in 最近; and the changes. */

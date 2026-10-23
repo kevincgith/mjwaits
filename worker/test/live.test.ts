@@ -154,3 +154,26 @@ describe("the audit trail", () => {
     expect(view.changes[1]).toMatchObject({ from: n, added: 1, t: ["draw"] });
   });
 });
+
+describe("resuming", () => {
+  it("lets the host share a stopped game again, in the same room, with the same people", async () => {
+    const { code, host, game } = await sharing();
+    const amy = await join(code, "Amy");
+    host.c.send({ t: "setRecorder", person: amy.welcome.id, allow: true });
+    await amy.c.room((v) => v.people[1]?.canRecord === true);
+    host.c.send({ t: "stop" });
+    await amy.c.room((v) => v.phase === "ended");
+    amy.c.send({ t: "resume" });
+    expect(await amy.c.error()).toMatchObject({ code: "notHost" });
+
+    // The host comes back later (a new connection, same token) and resumes.
+    await host.c.closeAndWait();
+    const back = await join(code, "x", host.welcome.token);
+    back.c.send({ t: "resume" });
+    const live = await amy.c.room((v) => v.phase === "live");
+    expect(live.people[1]).toMatchObject({ name: "Amy", canRecord: true });
+    // And it takes changes again, on from where it was.
+    back.c.send({ t: "update", base: 1, game: plusDraw(game) });
+    expect((await amy.c.room((v) => v.gameVersion === 2)).game!.events).toHaveLength(game.events.length + 1);
+  });
+});

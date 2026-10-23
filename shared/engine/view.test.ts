@@ -129,3 +129,22 @@ describe("dealHand's random source", () => {
     expect(JSON.stringify(a.wall)).not.toEqual(JSON.stringify(c.wall));
   });
 });
+
+describe("viewFor, 一炮多響", () => {
+  it("carries every winner's score as plain data", () => {
+    const s = dealHand({ dealer: 3, roundWind: 1, dealerStreak: 0, multiWin: true });
+    s.players = s.players.map((p) => ({ ...p, melds: [], flowers: [], discards: [] }));
+    const T = (h: string) => [...h.matchAll(/(\d+)([mtbz])/g)].flatMap(([, ds, suit]) => [...ds].map((d) => ({ suit, rank: Number(d) }) as Tile));
+    s.players[1].hand = T("46m111222333t456b77z");
+    s.players[2].hand = T("46m111222333t456b77z");
+    s.players[0].discards = T("5m");
+    s.phase = { kind: "claims", from: 0, tile: { suit: "m", rank: 5 } };
+    const over = resolveClaims(s, [null, { kind: "win" }, { kind: "win" }, null]);
+    const v = viewFor(over, 3);
+    if (v.phase.kind !== "over") throw new Error("over");
+    expect(v.multiWin).toBe(true);
+    expect(v.phase.result.alsoWon?.[0]).toMatchObject({ winner: 2, scoreError: null });
+    expect(v.phase.result.alsoWon?.[0].score?.patterns.map((x) => x.id)).toContain("multi-win-double");
+    expect(() => JSON.stringify(v)).not.toThrow();
+  });
+});

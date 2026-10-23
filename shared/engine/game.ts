@@ -11,7 +11,8 @@
 // replacement draw, win off a discard or by self-draw, and an exhaustive draw
 // once the live wall is down to its last DEAD_WALL_SIZE tiles. Claim priority
 // is win > pung/kong > chow; two wins off one discard go to the first winner
-// in turn order (截胡). 叮 (riichi): a ready player may declare with a
+// in turn order (截胡) - or, at a table that plays 一炮多響 (GameState
+// multiWin), every one of them wins and is paid (雙響 / 三響). 叮 (riichi): a ready player may declare with a
 // discard, which locks the hand (see Riichi). 搶槓: adding a tile to a
 // declared pung (加槓) gives anyone who could win on that tile the chance to
 // take it, as if it were a discard (see Robbing a kong). Not modelled: other
@@ -102,6 +103,9 @@ export interface HandResult {
   // results saved before 拉 load.
   pairs?: PairPayment[];
   robKong?: true; // 搶槓: won on `from`'s kong tile, not a discard
+  // 一炮多響: the other winners off the same discard, in turn order after
+  // `winner`. Their payments are in `deltas` and `pairs` with the first's.
+  alsoWon?: { winner: number; score: ScoreResult | null; scoreError: string | null }[];
 }
 
 export interface GameState {
@@ -135,6 +139,10 @@ export interface GameState {
   // The run of the same tile discarded seat after seat with no call between,
   // toward 追 (see CHASE_PENALTY).
   chase?: { seat: number; tile: Tile; run: number };
+  // 一炮多響: every player who wins off a discard (or a robbed kong) wins
+  // and is paid. Off (the default) is 截胡: the first in turn order takes it.
+  // A table setting, carried from hand to hand.
+  multiWin?: boolean;
 }
 
 export interface TableBonus {
@@ -153,7 +161,13 @@ const PLAY_LAH_SETTINGS: ScoreSettings = { ...DEFAULT_SETTINGS, base: 0, dealerT
 // What one winner collects, per payer, given the 拉 in play - the same
 // numbers the Scores tab's 食胡 sheet would show.
 export function settleWin(lahs: Lah[], dealer: number, winner: number, from: number | null, tai: number): PairPayment[] {
-  return previewWin({ seats: SEAT_IDS, dealer, streak: 0, lahs, settings: PLAY_LAH_SETTINGS }, [{ seat: winner, tai }], from);
+  return settleWins(lahs, dealer, [{ seat: winner, tai }], from);
+}
+
+// The same for several winners off one discard (一炮多響): the Scores tab's
+// 雙響 / 三響 settlement.
+export function settleWins(lahs: Lah[], dealer: number, winners: { seat: number; tai: number }[], from: number | null): PairPayment[] {
+  return previewWin({ seats: SEAT_IDS, dealer, streak: 0, lahs, settings: PLAY_LAH_SETTINGS }, winners, from);
 }
 
 // The 拉/踢 add-on `winner` would get from `payer` right now (0 if none).
@@ -384,7 +398,11 @@ export function newGame(): GameState {
   return dealHand({ dealer: 0, roundWind: 1, dealerStreak: 0 });
 }
 
-export function dealHand(opts: { dealer: number; roundWind: Wind; dealerStreak: number; lahs?: Lah[] }, wall?: WallTile[], random: Random = Math.random): GameState {
+export function dealHand(
+  opts: { dealer: number; roundWind: Wind; dealerStreak: number; lahs?: Lah[]; multiWin?: boolean },
+  wall?: WallTile[],
+  random: Random = Math.random
+): GameState {
   // A table-made wall: shuffled, the dice rolled, broken where they say. A
   // wall passed in (the arena, tests) is dealt as it is.
   const dice = wall ? undefined : rollDice(random);
@@ -399,6 +417,7 @@ export function dealHand(opts: { dealer: number; roundWind: Wind; dealerStreak: 
     discardsMade: 0,
     log: [],
     lahs: opts.lahs ?? [],
+    ...(opts.multiWin ? { multiWin: true } : {}),
     ...(dice ? { dice } : {}),
   };
   const bonus = dice ? diceBonus(dice, opts.dealer) : null;
@@ -612,6 +631,9 @@ function kongReplacement(s: GameState, seat: number): GameState {
 
 // Resolves a discard: `decisions[seat]` is that seat's claim, or null to pass
 // (the discarder's own entry is ignored). Picks by priority, then turn order.
+// The seats after `from`, in turn order.
+const claimOrder = (from: number) => [1, 2, 3].map((i) => (from + i) % SEATS);
+
 export function winningClaimSeat(state: GameState, decisions: (Claim | null)[]): number | null {
   if (state.phase.kind !== "claims") return null;
   const order = [1, 2, 3].map((i) => (state.phase.kind === "claims" ? state.phase.from + i : i) % SEATS);
@@ -683,6 +705,10 @@ export function resolveClaims(state: GameState, decisions: (Claim | null)[]): Ga
     return nextTurn(s, (from + 1) % SEATS);
   }
 
+  // 一炮多響: everyone who called a win off it wins.
+  const winners = state.multiWin ? claimOrder(from).filter((seat) => decisions[seat]?.kind === "win") : [];
+  if (winners.length > 1) return finishWins(s, winners, from, tile, !!state.phase.robKong);
+
   const claim = decisions[best]!;
   const p = s.players[best];
   if (state.phase.robKong) {
@@ -727,7 +753,8 @@ export function scoreWin(
   from: number | null,
   tile: Tile,
   replacement: "flower" | "kong" | null,
-  robKong = false
+  robKong = false,
+  winnersOffOne = 1 // 一炮多響: how many won off this discard
 ): ScoreResult {
   const p = s.players[winner];
   const declaredMelds: MeldDeclaration[] = p.melds.map((m) => ({ tiles: m.tiles, kind: m.kind, concealed: m.concealed }));
@@ -744,7 +771,7 @@ export function scoreWin(
     // 食叮: winning off a discard from a player who has declared 叮.
     eatRiichi: from !== null && !!s.players[from].riichi,
     earlyWin: "none",
-    multiWin: "none",
+    multiWin: winnersOffOne >= 3 ? "triple" : winnersOffOne === 2 ? "double" : "none",
     heavenlyWin:
       s.firstGoAround && selfDraw && s.discardsMade === 0 && isDealer
         ? "heaven"
@@ -793,19 +820,52 @@ function finishWin(
   return s;
 }
 
+// 一炮多響: several winners off one discard (or one robbed kong), in turn
+// order. Each takes the tile into their hand, is scored with 雙響 / 三響, and
+// is paid by `from`; 拉 / 踢 settle as the Scores tab settles a 雙響.
+function finishWins(s: GameState, seats: number[], from: number, tile: Tile, robKong: boolean): GameState {
+  // The discard leaves the pond (a robbed kong's tile was never in it).
+  if (!robKong) s.players[from].discards.pop();
+  s.firstGoAround = false;
+  s.chase = undefined;
+  for (const seat of seats) s.players[seat].hand.push(tile);
+  const scored = seats.map((seat) => {
+    try {
+      return { winner: seat, score: scoreWin(s, seat, from, tile, null, robKong, seats.length) as ScoreResult | null, scoreError: null as string | null };
+    } catch (e) {
+      return { winner: seat, score: null, scoreError: e instanceof Error ? e.message : String(e) };
+    }
+  });
+  const pairs = settleWins(s.lahs ?? [], s.dealer, scored.map((w) => ({ seat: w.winner, tai: w.score?.total ?? 0 })), from);
+  const deltas = [0, 0, 0, 0];
+  for (const p of pairs) {
+    deltas[Number(p.winner)] += p.worth;
+    deltas[Number(p.payer)] -= p.worth;
+  }
+  s.lahs = nextLahs(s.lahs ?? [], pairs, new Set(seats.map((seat) => SEAT_IDS[seat])));
+  const [first, ...rest] = scored;
+  s.phase = {
+    kind: "over",
+    result: { winner: first.winner, from, tile, score: first.score, scoreError: first.scoreError, deltas, pairs, alsoWon: rest, ...(robKong ? { robKong: true as const } : {}) },
+  };
+  return s;
+}
+
 // The next hand: the dealer stays on a dealer win or a draw (連莊), otherwise
 // the deal passes on; a full lap of dealers moves the round wind.
 // 拉 carries over. `wall` is for the arena, which deals set walls.
 export function nextHand(s: GameState, wall?: WallTile[], random: Random = Math.random): GameState {
   if (s.phase.kind !== "over") throw new Error("Hand not over");
-  const { winner } = s.phase.result;
+  const { winner, alsoWon } = s.phase.result;
   const lahs = s.lahs ?? [];
-  if (winner === null || winner === s.dealer) {
-    return dealHand({ dealer: s.dealer, roundWind: s.roundWind, dealerStreak: s.dealerStreak + 1, lahs }, wall, random);
+  const multiWin = s.multiWin;
+  // The dealer stays on a draw, or when among the winners.
+  if (winner === null || winner === s.dealer || alsoWon?.some((w) => w.winner === s.dealer)) {
+    return dealHand({ dealer: s.dealer, roundWind: s.roundWind, dealerStreak: s.dealerStreak + 1, lahs, multiWin }, wall, random);
   }
   const dealer = (s.dealer + 1) % SEATS;
   const roundWind = (dealer === 0 ? (s.roundWind % 4) + 1 : s.roundWind) as Wind;
-  return dealHand({ dealer, roundWind, dealerStreak: 0, lahs }, wall, random);
+  return dealHand({ dealer, roundWind, dealerStreak: 0, lahs, multiWin }, wall, random);
 }
 
 // ---- Bots -------------------------------------------------------------------

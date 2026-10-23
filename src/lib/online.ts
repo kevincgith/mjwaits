@@ -48,11 +48,13 @@ export interface OnlineMemory {
   name: string;
   // Rooms joined on this device, newest first, with the token to get back in.
   rooms: { code: string; token: string; at: number }[];
-  current: string | null; // the room the 線上 panel had open
+  current: string | null; // the room being followed (shown in 戰況)
   sharing: { code: string; gameId: string } | null; // this phone's 戰況 game, live in that room
+  // Games this phone has shared, newest first, and their rooms - to resume.
+  hosted: { code: string; gameId: string; at: number }[];
 }
 
-const EMPTY: OnlineMemory = { name: "", rooms: [], current: null, sharing: null };
+const EMPTY: OnlineMemory = { name: "", rooms: [], current: null, sharing: null, hosted: [] };
 // Old rooms expire on the server after two idle days; a week's list is plenty.
 const MEMORY_DAYS = 7;
 
@@ -70,6 +72,9 @@ export function loadOnline(storage: Pick<Storage, "getItem"> | null = safeStorag
       current: typeof saved.current === "string" ? saved.current : null,
       sharing:
         saved.sharing && typeof saved.sharing.code === "string" && typeof saved.sharing.gameId === "string" ? { code: saved.sharing.code, gameId: saved.sharing.gameId } : null,
+      hosted: Array.isArray(saved.hosted)
+        ? saved.hosted.filter((h) => h && typeof h.code === "string" && typeof h.gameId === "string" && typeof h.at === "number" && h.at > cutoff)
+        : [],
     };
   } catch {
     return EMPTY;
@@ -104,6 +109,14 @@ export const withoutRoom = (memory: OnlineMemory, code: string): OnlineMemory =>
   rooms: memory.rooms.filter((r) => r.code !== code),
   current: memory.current === code ? null : memory.current,
   sharing: memory.sharing?.code === code ? null : memory.sharing,
+  hosted: memory.hosted.filter((h) => h.code !== code),
+});
+
+// This phone is sharing `gameId` in room `code` (now, and in the list to resume).
+export const withSharing = (memory: OnlineMemory, code: string, gameId: string): OnlineMemory => ({
+  ...memory,
+  sharing: { code, gameId },
+  hosted: [{ code, gameId, at: Date.now() }, ...memory.hosted.filter((h) => h.gameId !== gameId)].slice(0, 10),
 });
 
 // ---- Rooms over HTTP -----------------------------------------------------------

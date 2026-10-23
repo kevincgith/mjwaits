@@ -474,3 +474,79 @@ describe("搶槓 (robbing a kong)", () => {
     }
   });
 });
+
+describe("一炮多響 (several winners off one discard)", () => {
+  // Seat 0 has just discarded 5m; `waiting` win on it (a 4-6m wait).
+  const table = (waiting: number[], multiWin: boolean, dealer = 3): GameState => {
+    const s = { ...newGame(), tableBonuses: undefined, chase: undefined, dealer, multiWin };
+    s.players = s.players.map((p) => ({ ...p, melds: [], flowers: [], discards: [], riichi: undefined }));
+    for (const seat of [1, 2, 3]) s.players[seat].hand = waiting.includes(seat) ? parseHand("46m111222333t456b77z") : parseHand("1357m1357t1357b1234z");
+    s.players[0].hand = parseHand("123456789t1122b3b");
+    s.players[0].discards = [m(5)];
+    s.phase = { kind: "claims", from: 0, tile: m(5) };
+    s.firstGoAround = false;
+    return s;
+  };
+  const allWin = (seats: number[]) => Array.from({ length: SEATS }, (_, i) => (seats.includes(i) ? ({ kind: "win" } as const) : null));
+  const ids = (score: { matched: { pattern: { id: string } }[] } | null) => score?.matched.map((x) => x.pattern.id) ?? [];
+
+  it("is off by default: two wins, the first in turn order takes it (截胡)", () => {
+    const s = resolveClaims(table([1, 2], false), allWin([1, 2]));
+    if (s.phase.kind !== "over") throw new Error("over");
+    expect(s.phase.result.winner).toBe(1);
+    expect(s.phase.result.alsoWon).toBeUndefined();
+    expect(s.phase.result.deltas[2]).toBe(0);
+  });
+
+  it("pays every winner when on - 雙響", () => {
+    const s = resolveClaims(table([1, 2], true), allWin([1, 2]));
+    if (s.phase.kind !== "over") throw new Error("over");
+    const r = s.phase.result;
+    expect(r.winner).toBe(1);
+    expect(r.alsoWon?.map((w) => w.winner)).toEqual([2]);
+    expect(ids(r.score)).toContain("multi-win-double");
+    expect(ids(r.alsoWon![0].score)).toContain("multi-win-double");
+    expect(r.deltas[1]).toBeGreaterThan(0);
+    expect(r.deltas[2]).toBeGreaterThan(0);
+    expect(r.deltas[0]).toBe(-(r.deltas[1] + r.deltas[2]));
+    expect(r.deltas[3]).toBe(0);
+    expect(r.pairs?.map((p) => [p.winner, p.payer])).toEqual([["1", "0"], ["2", "0"]]);
+    // Each winner has the tile; the discard has left the pond.
+    expect(s.players[1].hand.filter((t) => sameTile(t, m(5)))).toHaveLength(1);
+    expect(s.players[2].hand.filter((t) => sameTile(t, m(5)))).toHaveLength(1);
+    expect(s.players[0].discards).toEqual([]);
+  });
+
+  it("scores three winners as 三響, and still only pays those who called", () => {
+    const three = resolveClaims(table([1, 2, 3], true), allWin([1, 2, 3]));
+    if (three.phase.kind !== "over") throw new Error("over");
+    expect([three.phase.result.winner, ...three.phase.result.alsoWon!.map((w) => w.winner)]).toEqual([1, 2, 3]);
+    expect(ids(three.phase.result.score)).toContain("multi-win-triple");
+    // One who could win but passes isn't paid.
+    const passed = resolveClaims(table([1, 2, 3], true), allWin([1, 3]));
+    if (passed.phase.kind !== "over") throw new Error("over");
+    expect([passed.phase.result.winner, ...passed.phase.result.alsoWon!.map((w) => w.winner)]).toEqual([1, 3]);
+    expect(passed.phase.result.deltas[2]).toBe(0);
+  });
+
+  it("keeps the deal when the dealer is among the winners, passes it otherwise, and carries the setting", () => {
+    const dealerWins = resolveClaims(table([1, 2], true, 2), allWin([1, 2]));
+    const next = nextHand(dealerWins);
+    expect(next.dealer).toBe(2);
+    expect(next.dealerStreak).toBe(1);
+    expect(next.multiWin).toBe(true);
+    const otherWins = nextHand(resolveClaims(table([1, 2], true, 3), allWin([1, 2])));
+    expect(otherWins.dealer).toBe(0);
+  });
+
+  it("lets two players rob the same kong", () => {
+    const s = { ...table([1, 2], true), phase: { kind: "turn" as const, seat: 0, drawn: m(5), replacement: null } };
+    s.players = s.players.map((p, i) => (i === 0 ? { ...p, discards: [], melds: [{ kind: "triplet" as const, tiles: [m(5), m(5), m(5)], concealed: false, from: 2 }], hand: parseHand("5m123456789t1122b") } : p));
+    const robbing = applyTurnMove(s, { kind: "addedKong", tile: m(5) });
+    const done = resolveClaims(robbing, allWin([1, 2]));
+    if (done.phase.kind !== "over") throw new Error("over");
+    expect(done.phase.result.robKong).toBe(true);
+    expect(done.phase.result.alsoWon?.map((w) => w.winner)).toEqual([2]);
+    expect(ids(done.phase.result.score)).toEqual(expect.arrayContaining(["rob-kong", "multi-win-double"]));
+  });
+});
