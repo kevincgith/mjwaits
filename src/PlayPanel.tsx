@@ -528,7 +528,7 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
     }
     const seat = winningClaimSeat(game, decisions);
     if (seat !== null) {
-      showBurst(seat, claimLabel(decisions[seat]!));
+      showBurst(seat, game.phase.kind === "claims" && game.phase.robKong ? "搶槓" : claimLabel(decisions[seat]!));
       if (decisions[seat]!.kind === "win") {
         say(seat, "win");
         if (game.phase.kind === "claims") say(game.phase.from, "dealIn");
@@ -743,7 +743,9 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
     setGame(newGame());
   };
 
-  const discardFrom = game.phase.kind === "claims" ? game.phase.from : null;
+  // The pond whose newest tile is up for claiming (not when robbing a kong:
+  // that tile was never discarded).
+  const discardFrom = game.phase.kind === "claims" && !game.phase.robKong ? game.phase.from : null;
   const activeSeat = game.phase.kind === "turn" ? game.phase.seat : game.phase.kind === "claims" ? game.phase.from : null;
   const over = game.phase.kind === "over";
   const result = over && game.phase.kind === "over" ? game.phase.result : null;
@@ -1166,8 +1168,18 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
                   : result.winner === HUMAN
                     ? result.from === null
                       ? "You won by self-draw! (自摸)"
-                      : `You won off ${nameOf(result.from)}'s discard!`
-                    : `${nameOf(result.winner)} won${result.from === null ? " by self-draw" : result.from === HUMAN ? " off your discard" : ` off ${nameOf(result.from)}`}`}
+                      : result.robKong
+                        ? `You robbed ${nameOf(result.from)}'s kong! (搶槓)`
+                        : `You won off ${nameOf(result.from)}'s discard!`
+                    : `${nameOf(result.winner)} ${
+                        result.from === null
+                          ? "won by self-draw"
+                          : result.robKong
+                            ? `robbed ${result.from === HUMAN ? "your" : `${nameOf(result.from)}'s`} kong (搶槓)`
+                            : result.from === HUMAN
+                              ? "won off your discard"
+                              : `won off ${nameOf(result.from)}`
+                      }`}
               </h2>
               {result.winner !== null && (
                 <div className="play-result-hand">

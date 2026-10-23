@@ -391,3 +391,86 @@ describe("嗌錯", () => {
   });
 });
 
+
+describe("搶槓 (robbing a kong)", () => {
+  // Seat 0 has a declared pung of 5m and has just drawn the fourth.
+  // `waiting`: the seats that win on 5m (a 4-6m wait); the rest can't.
+  const table = (waiting: number[], extra?: (s: GameState) => void): GameState => {
+    const s = { ...newGame(), tableBonuses: undefined, chase: undefined };
+    s.players = s.players.map((p) => ({ ...p, melds: [], flowers: [], discards: [], riichi: undefined }));
+    s.players[0].melds = [{ kind: "triplet", tiles: [m(5), m(5), m(5)], concealed: false, from: 2 }];
+    s.players[0].hand = parseHand("5m123456789t1122b");
+    for (const seat of [1, 2, 3]) s.players[seat].hand = waiting.includes(seat) ? parseHand("46m111222333t456b77z") : parseHand("1357m1357t1357b1234z");
+    s.phase = { kind: "turn", seat: 0, drawn: m(5), replacement: null };
+    s.firstGoAround = false;
+    extra?.(s);
+    return s;
+  };
+  const addKong = (s: GameState) => applyTurnMove(s, { kind: "addedKong", tile: m(5) });
+
+  it("lets anyone who'd win on the added tile take it - and only win", () => {
+    const s = addKong(table([1], (s) => (s.players[3].hand = parseHand("55m1357t1357b1234z99t"))));
+    expect(s.phase).toEqual({ kind: "claims", from: 0, tile: m(5), robKong: true });
+    expect(claimOptions(s, 1)).toEqual([{ kind: "win" }]);
+    expect(claimOptions(s, 3)).toEqual([]); // a pair of 5m: no pung on a kong being added
+    // Nothing has happened to the kong player's pung yet, nor to anyone's pond.
+    expect(s.players[0].melds[0].tiles).toHaveLength(3);
+    expect(s.players[0].hand.some((t) => sameTile(t, m(5)))).toBe(false);
+    expect(s.players.every((p) => p.discards.length === 0)).toBe(true);
+  });
+
+  it("scores a robbed win off the kong player, with 搶槓, and leaves the pung a pung", () => {
+    const s = resolveClaims(addKong(table([1])), [null, { kind: "win" }, null, null]);
+    if (s.phase.kind !== "over") throw new Error("the hand should be over");
+    const { winner, from, tile, score, deltas } = s.phase.result;
+    expect({ winner, from, tile }).toEqual({ winner: 1, from: 0, tile: m(5) });
+    expect(s.phase.result.robKong).toBe(true);
+    expect(score?.matched.map((x) => x.pattern.id)).toContain("rob-kong");
+    expect(score?.matched.map((x) => x.pattern.id)).not.toContain("self-draw");
+    expect(deltas[0]).toBeLessThan(0);
+    expect(deltas[1]).toBe(-deltas[0]);
+    expect(deltas[2]).toBe(0);
+    expect(s.players[0].melds[0]).toMatchObject({ kind: "triplet", tiles: [m(5), m(5), m(5)] });
+    expect(s.players[1].hand.filter((t) => sameTile(t, m(5)))).toHaveLength(1);
+  });
+
+  it("completes the kong with its replacement draw when no one robs it", () => {
+    const s = resolveClaims(addKong(table([1])), [null, null, null, null]);
+    expect(s.phase).toMatchObject({ kind: "turn", seat: 0 });
+    if (s.phase.kind === "turn") expect(["kong", "flower"]).toContain(s.phase.replacement);
+    expect(s.players[0].melds[0]).toMatchObject({ kind: "kong", tiles: [m(5), m(5), m(5), m(5)] });
+  });
+
+  it("doesn't stop at all when no one could win on the tile", () => {
+    const s = addKong(table([]));
+    expect(s.phase).toMatchObject({ kind: "turn", seat: 0 });
+    expect(s.players[0].melds[0].kind).toBe("kong");
+  });
+
+  it("goes to the first robber in turn order, and ignores anything but a win", () => {
+    const two = resolveClaims(addKong(table([2, 3])), [null, null, { kind: "win" }, { kind: "win" }]);
+    expect(two.phase.kind === "over" && two.phase.result.winner).toBe(2);
+    const pung = resolveClaims(addKong(table([1])), [null, null, null, { kind: "pung" }]);
+    expect(pung.phase).toMatchObject({ kind: "turn", seat: 0 });
+    expect(pung.players[0].melds[0].kind).toBe("kong");
+  });
+
+  it("never applies to a concealed kong", () => {
+    const s = table([1], (s) => {
+      s.players[0].melds = [];
+      s.players[0].hand = parseHand("5555m123456789t1122b");
+    });
+    expect(applyTurnMove(s, { kind: "concealedKong", tile: m(5) }).phase).toMatchObject({ kind: "turn", seat: 0 });
+  });
+
+  it("is taken by a bot that can win, and played through by bot-only hands", () => {
+    expect(botClaim(addKong(table([1])), 1)).toEqual({ kind: "win" });
+    // (These made-up tables don't hold all 144 tiles, so not playOut's checks.)
+    for (const start of [addKong(table([1])), addKong(table([]))]) {
+      let s = start;
+      for (let k = 0; k < 1000 && s.phase.kind !== "over"; k++)
+        s = s.phase.kind === "turn" ? applyTurnMove(s, botTurnMove(s)) : resolveClaims(s, Array.from({ length: SEATS }, (_, i) => botClaim(s, i)));
+      expect(s.phase.kind).toBe("over");
+    }
+  });
+});
