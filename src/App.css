@@ -6712,8 +6712,8 @@ html.playing body {
   z-index: 3;
   display: grid;
   place-items: center;
-  padding: 0.3em;
-  border-radius: 0.6em;
+  padding: 0.38em;
+  border-radius: 0.7em;
   background: rgba(14, 18, 16, 0.92);
   box-shadow:
     0 0 0 0.07em rgba(255, 209, 102, 0.85),
@@ -6731,7 +6731,7 @@ html.playing body {
 /* The tile in it a real block, like every tile on the table: tipped back
    (from its foot, held in front of the bubble) to show its thickness. */
 .play-spotlight .tile-glyph {
-  font-size: var(--play-tile);
+  font-size: calc(var(--play-tile) * 1.25);
   transform-origin: 50% 100%;
   transform: translateZ(0.55em) rotateX(30deg);
 }
@@ -6771,25 +6771,25 @@ html.playing body {
   transform: translate(-50%, -50%) rotate(-45deg);
 }
 
-/* On the compass's edge (1.8em from the middle) on the thrower's side -
-   standing up over it, between the compass and their pond. */
+/* Just past the compass's edge (1.8em from the middle) on the thrower's
+   side - standing up over the start of their pond. */
 .play-spotlight.from-bottom {
   left: 50%;
-  top: calc(50% + 1.8em);
+  top: calc(50% + 3.1em);
 }
 
 .play-spotlight.from-top {
   left: 50%;
-  top: calc(50% - 1.8em);
+  top: calc(50% - 3.1em);
 }
 
 .play-spotlight.from-left {
-  left: calc(50% - 1.8em);
+  left: calc(50% - 3.6em);
   top: 50%;
 }
 
 .play-spotlight.from-right {
-  left: calc(50% + 1.8em);
+  left: calc(50% + 3.6em);
   top: 50%;
 }
 
