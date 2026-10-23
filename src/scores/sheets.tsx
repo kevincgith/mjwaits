@@ -321,7 +321,8 @@ export function WinSheet({
     ...(e.seat === patternsFor && initial?.patterns.length ? { patterns: initial.patterns, ...(initial.rules ? { rules: initial.rules } : {}) } : {}),
   }));
   const fromValid = from === null ? multi === 1 : from >= 0;
-  const complete = fromValid && entries.every((e) => e.tai !== "");
+  // Every winner needs a tai above 0.
+  const complete = fromValid && entries.every((e) => Number(e.tai) > 0);
   const pairs = fromValid ? previewWin(state, winners, from) : [];
   // 反雪 rides on the payer's line: the 自摸 after a 雙響/三響 they won.
   const fanXue = fromValid ? previewFanXue(state, winners, from) : [];
