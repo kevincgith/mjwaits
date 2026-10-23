@@ -55,7 +55,7 @@ import {
 } from "@mjwaits/shared/engine/game";
 import { allTileKinds, getWaits, shanten, sortTiles, tileKey, tileLabel, type Tile } from "@mjwaits/shared/engine/mahjong";
 import type { BonusTile } from "@mjwaits/shared/engine/scoring";
-import { BonusGlyphSpan, TileGlyphSpan } from "./TileGlyphs";
+import { BonusGlyphSpan, TileGlyphSpan, TileSides } from "./TileGlyphs";
 import {
   BOT_PROFILES,
   botClaimFor,
@@ -148,8 +148,6 @@ const PONDER_DELAY_MS = 900;
 // flowers go in front of the hand instead.
 const LINE_FITS = 18;
 const lineLength = (p: GameState["players"][number]) => p.hand.length + p.flowers.length + p.melds.length * 3;
-// The table's tiles, as a share of your hand's tile size: as big as fits (see fitTable).
-const TILE_SIZE = { min: 0.3, max: 0.9 };
 // A discard a bot is about to take stays on the table this long first, so
 // everyone sees what was thrown before it goes into the caller's meld.
 const CLAIM_DELAY_MS = 1100;
@@ -225,7 +223,15 @@ function Melds({ melds, hideConcealed }: { melds: GameMeld[]; hideConcealed?: bo
     <>
       {melds.map((m, i) => {
         const tile = (j: number) =>
-          m.concealed && (hideConcealed || j === 0 || j === 3) ? <span key={j} className="play-back" /> : <TileGlyphSpan key={j} tile={m.tiles[j]} />;
+          m.concealed && (hideConcealed || j === 0 || j === 3) ? (
+            // Face down: on the table, a block with its back up.
+            <span key={j} className="play-back">
+              <i className="tile-top" />
+              <TileSides />
+            </span>
+          ) : (
+            <TileGlyphSpan key={j} tile={m.tiles[j]} block />
+          );
         return (
           <span key={i} className="play-meld">
             {m.kind === "kong" && m.tiles.length === 4 ? (
@@ -252,7 +258,7 @@ function Flowers({ flowers }: { flowers: BonusTile[] }) {
   return (
     <span className="play-flowers">
       {flowers.map((f, i) => (
-        <BonusGlyphSpan key={i} tile={f} />
+        <BonusGlyphSpan key={i} tile={f} block />
       ))}
     </span>
   );
@@ -265,7 +271,7 @@ function RevealedHand({ tiles, winningTile }: { tiles: Tile[]; winningTile: Tile
   return (
     <span className="play-meld">
       {sorted.map((t, i) => (
-        <TileGlyphSpan key={i} tile={t} highlight={i === mark} />
+        <TileGlyphSpan key={i} tile={t} highlight={i === mark} block />
       ))}
     </span>
   );
@@ -280,7 +286,7 @@ function Pond({ tiles, side, pinLast, riichiAt }: { tiles: Tile[]; side: Side; p
         const last = pinLast && i === tiles.length - 1;
         return (
           <span key={i} className={["play-pond-tile", last && "is-latest", i === riichiAt && "is-riichi"].filter(Boolean).join(" ")}>
-            <TileGlyphSpan tile={t} />
+            <TileGlyphSpan tile={t} block />
           </span>
         );
       })}
@@ -595,45 +601,31 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
     seats.forEach((el) => watch.observe(el));
     return () => watch.disconnect();
   }, []);
-  // Every tile on the table is one size (as real tiles are), seen at one
-  // angle (TABLE_TILT): the table is as deep as what's on it needs - the
-  // longer side seat, or the ponds and compass down the middle - and the
-  // tile size is the largest at which that depth, tipped back, still fits
-  // under the name cards. Further tiles look smaller only by perspective.
-  // Run before paint whenever the table changes, and on resizing.
-  const fitTable = () => {
+  // The table as deep as the screen allows at its one angle: its far edge
+  // just under the name cards. It depends only on the screen, so it's
+  // worked out when that changes size - never as the game goes on, so
+  // nothing on the table is resized mid-game.
+  useLayoutEffect(() => {
     const felt = feltRef.current;
     const stage = felt?.parentElement;
     if (!felt || !stage) return;
-    const limit = stage.getBoundingClientRect().top + parseFloat(getComputedStyle(stage).paddingTop);
-    const fits = (k: number) => {
-      felt.style.setProperty("--play-tile-k", k.toFixed(3));
+    const fitDepth = () => {
       felt.style.height = "";
-      const fill = felt.offsetHeight; // the stage's height (and the part under your hand)
-      felt.style.height = "auto";
-      const needs = felt.offsetHeight; // what's on it
-      felt.style.height = `${Math.max(fill, needs)}px`;
-      return felt.getBoundingClientRect().top >= limit - 1;
+      const limit = stage.getBoundingClientRect().top + parseFloat(getComputedStyle(stage).paddingTop);
+      let lo = felt.offsetHeight;
+      let hi = lo * 3;
+      for (let i = 0; i < 14; i++) {
+        const mid = (lo + hi) / 2;
+        felt.style.height = `${mid}px`;
+        if (felt.getBoundingClientRect().top >= limit) lo = mid;
+        else hi = mid;
+      }
+      felt.style.height = `${Math.floor(lo)}px`;
     };
-    let lo = TILE_SIZE.min;
-    let hi = TILE_SIZE.max;
-    if (fits(hi)) return;
-    for (let i = 0; i < 10; i++) {
-      const mid = (lo + hi) / 2;
-      if (fits(mid)) lo = mid;
-      else hi = mid;
-    }
-    fits(lo);
-  };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useLayoutEffect(fitTable, [game]);
-  useEffect(() => {
-    const felt = feltRef.current;
-    if (!felt) return;
-    const watch = new ResizeObserver(() => fitTable());
-    watch.observe(felt);
+    fitDepth();
+    const watch = new ResizeObserver(fitDepth);
+    watch.observe(stage);
     return () => watch.disconnect();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const ledger = online ? online.scores : localLedger;
   // 投降 on the result card takes two taps; this is the holder armed.
