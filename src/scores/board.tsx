@@ -189,10 +189,12 @@ export function RecentSheet({
   onUndo,
   onRedo,
   onClose,
+  entryBy,
 }: {
   store: ScoreStore;
   game: ScoreGame;
   state: ReplayState;
+  entryBy?: (index: number) => string | undefined; // a live game: who entered it
   onPick: (index: number) => void; // tap an entry to fix or delete it
   onUndo: () => void;
   onRedo: () => void;
@@ -212,10 +214,12 @@ export function RecentSheet({
         const step = stepAt(state, i);
         row = <EventRow ev={ev} deltas={step?.deltas ?? {}} />;
       }
+      const by = entryBy?.(i);
       return (
         row && (
           <div key={i} className="sc-recent-row" role="button" tabIndex={0} onClick={() => onPick(i)} onKeyDown={(e) => e.key === "Enter" && onPick(i)}>
             {row}
+            {by && <span className="sc-entry-by">{by}</span>}
           </div>
         )
       );
@@ -320,6 +324,7 @@ export function Board({
   onSeatingResultDone,
   live,
   recorder = false,
+  entryBy,
 }: {
   store: ScoreStore;
   game: ScoreGame;
@@ -336,6 +341,8 @@ export function Board({
   live?: { on: boolean; onOpen: () => void };
   // Recording into someone else's live game: ending it (新局) is theirs.
   recorder?: boolean;
+  // A live game: who entered each entry, for 最近 (the audit trail).
+  entryBy?: (index: number) => string | undefined;
 }) {
   const [sheet, setSheet] = useState<BoardSheet | null>(null);
   // Back from the seat ceremony: 座位 opens with its seating, to confirm.
@@ -964,6 +971,7 @@ export function Board({
           game={game}
           state={state}
           onPick={(index) => setSheet({ kind: "entry", index })}
+          entryBy={entryBy}
           onUndo={() => undo(true)}
           onRedo={() => redo(true)}
           onClose={close}

@@ -125,3 +125,32 @@ describe("persistence", () => {
     expect(again.room.game).toEqual(seen.game);
   });
 });
+
+describe("the audit trail", () => {
+  it("records who made each change, and who entered each entry", async () => {
+    const { code, host, game } = await sharing();
+    const amy = await join(code, "Amy");
+    host.c.send({ t: "setRecorder", person: amy.welcome.id, allow: true });
+    await amy.c.room((v) => v.people[1]?.canRecord === true);
+    const n = game.events.length;
+    const g2 = plusDraw(game);
+    amy.c.send({ t: "update", base: 1, game: g2 });
+    await host.c.room((v) => v.gameVersion === 2);
+    // The host fixes Amy's entry, then takes it back.
+    const g3 = { ...g2, events: [...g2.events.slice(0, -1), { t: "win" as const, at: 5, winners: [{ seat: 0, tai: 3 }], from: 1, source: "quick" as const }] };
+    host.c.send({ t: "update", base: 2, game: g3 });
+    let view = await amy.c.room((v) => v.gameVersion === 3);
+    expect(view.authors.at(-1)).toEqual({ by: "Amy", editedBy: "Kevin" });
+    expect(view.authors.slice(0, n).every((a) => a.by === "Kevin")).toBe(true);
+    host.c.send({ t: "update", base: 3, game: { ...g3, events: g3.events.slice(0, -1) } });
+    view = await amy.c.room((v) => v.gameVersion === 4);
+    expect(view.authors).toHaveLength(n);
+    expect(view.changes.map((c) => [c.v, c.by, c.kind])).toEqual([
+      [1, "Kevin", "share"],
+      [2, "Amy", "add"],
+      [3, "Kevin", "edit"],
+      [4, "Kevin", "remove"],
+    ]);
+    expect(view.changes[1]).toMatchObject({ from: n, added: 1, t: ["draw"] });
+  });
+});

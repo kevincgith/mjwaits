@@ -6,14 +6,14 @@
 // have, and what you enter goes to everyone. Sharing your own game is done
 // from 戰況 (its 線上 button), not here.
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { replay, handAt, stepAt, type ScoreGame, type ScoreStore } from "@mjwaits/shared/engine/ledger";
 import { cleanNickname, NICKNAME_MAX, normalizeRoomCode, ROOM_CODE_LENGTH } from "@mjwaits/shared/protocol/limits";
 import type { RoomView } from "@mjwaits/shared/protocol/server";
 import { loadOnline, roomInfo, saveOnline, withoutRoom, type OnlineMemory } from "../lib/online";
 import { Board, EventRow, HandRow } from "./board";
-import { STATUS_TEXT, Toast, useLiveGame, useToast } from "./live";
-import { fmt, Icons, SEAT_AREAS, SectionHead, signed, tone, withRoster } from "./shared";
+import { ChangesList, entryByOf, InviteBlock, STATUS_TEXT, Toast, useLiveGame, useToast } from "./live";
+import { fmt, Icons, SEAT_AREAS, SectionHead, Sheet, signed, tone, withRoster } from "./shared";
 import { TrendChart } from "./stats";
 
 // The store the shared pieces expect, made up for a game that isn't this
@@ -171,25 +171,12 @@ function LiveRoom({
   const stuck = status === "closed" && live.problem && (live.problem.code === "nameTaken" || live.problem.code === "version");
   const ended = room?.phase === "ended";
 
+  const [statusOpen, setStatusOpen] = useState(false);
+  const openStatus = () => setStatusOpen(true);
+  const entryBy = entryByOf(room);
+
   return (
     <>
-      <div className="card ol-head">
-        <div className="ol-head-main">
-          <span className="ol-head-label">{host ? `${host.name}'s game` : "Live game"}</span>
-          <span className="ol-code">{code}</span>
-        </div>
-        <span className={`ol-status is-${ended ? "closed" : status}`} role="status">
-          <span className="ol-dot" aria-hidden="true" />
-          {ended ? "Final" : STATUS_TEXT[status]}
-        </span>
-        <div className="ol-head-actions">
-          {meHere && room?.phase === "live" && <span className={`ol-tag ol-role${canRecord ? " is-me" : ""}`}>{canRecord ? "You can record" : "Watching"}</span>}
-          <button type="button" className="sc-secondary" onClick={() => onLeave()}>
-            Leave
-          </button>
-        </div>
-      </div>
-
       {gone && (
         <div className="card ol-stuck" role="alert">
           <p>Game {code} has closed - a shared game closes two days after its last change.</p>
@@ -213,22 +200,103 @@ function LiveRoom({
         </div>
       )}
 
-      {gone || stuck ? null : !room ? (
-        <p className="sc-empty">Connecting…</p>
-      ) : !game ? (
-        <p className="sc-empty">Waiting for {host?.name ?? "the host"} to put the game up…</p>
+      {gone || stuck ? null : !room || !game ? (
+        <>
+          <WatchTools onStatus={openStatus} status={status} />
+          <p className="sc-empty">{!room ? "Connecting…" : `Waiting for ${host?.name ?? "the host"} to put the game up…`}</p>
+        </>
       ) : canRecord && copy ? (
-        <RecordBoard game={copy} colors={room.colors} onChange={setCopy} />
+        <RecordBoard game={copy} colors={room.colors} onChange={setCopy} onStatus={openStatus} entryBy={entryBy} />
       ) : (
-        <WatchView game={game} colors={room.colors} room={room} store={store} setStore={setStore} />
+        <WatchView game={game} colors={room.colors} room={room} store={store} setStore={setStore} onStatus={openStatus} status={status} entryBy={entryBy} />
+      )}
+      {statusOpen && (
+        <Sheet
+          title={
+            <span className="ol-live-title">
+              線上 <span className="ol-code">{code}</span>
+            </span>
+          }
+          subtitle={
+            <span className="ol-status-line">
+              <span className={`ol-status is-${ended ? "closed" : status}`}>
+                <span className="ol-dot" aria-hidden="true" />
+                {ended ? "Final" : STATUS_TEXT[status]}
+              </span>
+              <span>{host ? `${host.name}'s game` : "Live game"}</span>
+              {meHere && room?.phase === "live" && <span className={`ol-tag${canRecord ? " is-me" : ""}`}>{canRecord ? "You can record" : "Watching"}</span>}
+            </span>
+          }
+          onClose={() => setStatusOpen(false)}
+          actions={
+            <button type="button" className="sc-secondary" onClick={() => onLeave()}>
+              Leave
+            </button>
+          }
+        >
+          {room && (
+            <>
+              <h3 className="ol-people-head">Who's here</h3>
+              <div className="sc-list">
+                {room.people.map((p) => (
+                  <div key={p.id} className="sc-row">
+                    <span className="ol-seat-name">
+                      <span className={`ol-dot${p.connected ? " is-on" : ""}`} aria-label={p.connected ? "connected" : "away"} />
+                      {p.name}
+                      {p.id === me?.id && <span className="ol-tag is-me">You</span>}
+                    </span>
+                    <span className="sc-help">{p.host ? "Host" : p.canRecord ? "Records" : "Watches"}</span>
+                  </div>
+                ))}
+              </div>
+              <ChangesList room={room} />
+              <h3 className="ol-people-head">Invite</h3>
+              <InviteBlock code={code} />
+            </>
+          )}
+        </Sheet>
       )}
       <Toast toast={toast} />
     </>
   );
 }
 
+// A watcher's toolbar, in the 戰況 toolbar's style: jump to 最近 or 走勢, and
+// 線上 for the room's status.
+function WatchTools({ onStatus, status, onRecent, onTrend }: { onStatus: () => void; status: string; onRecent?: () => void; onTrend?: () => void }) {
+  const tools = [
+    ...(onRecent ? [{ label: "最近", icon: Icons.recent, onClick: onRecent }] : []),
+    ...(onTrend ? [{ label: "走勢", icon: Icons.trend, onClick: onTrend }] : []),
+    { label: "線上", icon: Icons.live, onClick: onStatus, on: status === "open" },
+  ];
+  return (
+    <div className="sc-toolbar">
+      <div className="sc-tools" role="toolbar" aria-label="Live game" style={{ gridTemplateColumns: `repeat(${tools.length}, minmax(0, 1fr))` }}>
+        {tools.map((t) => (
+          <button key={t.label} type="button" onClick={t.onClick} className={"on" in t && t.on ? "is-on" : undefined}>
+            <span className="sc-tool-icon">{t.icon}</span>
+            <span className="sc-tool-label">{t.label}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // Recording: the full 戰況 board on this phone's copy, which GameSync sends.
-function RecordBoard({ game, colors, onChange }: { game: ScoreGame; colors: Record<string, number>; onChange: (g: ScoreGame) => void }) {
+function RecordBoard({
+  game,
+  colors,
+  onChange,
+  onStatus,
+  entryBy,
+}: {
+  game: ScoreGame;
+  colors: Record<string, number>;
+  onChange: (g: ScoreGame) => void;
+  onStatus: () => void;
+  entryBy?: (index: number) => string | undefined;
+}) {
   const store = useMemo(() => liveStore(game, colors), [game, colors]);
   const state = useMemo(() => replay(game), [game]);
   return (
@@ -242,12 +310,35 @@ function RecordBoard({ game, colors, onChange }: { game: ScoreGame; colors: Reco
       onRequestDone={() => {}}
       seatingResult={null}
       recorder
+      live={{ on: true, onOpen: onStatus }}
+      entryBy={entryBy}
     />
   );
 }
 
 // Watching: the board as it stands, every hand, and the trend.
-function WatchView({ game, colors, room, store, setStore }: { game: ScoreGame; colors: Record<string, number>; room: RoomView; store: ScoreStore; setStore: (s: ScoreStore) => void }) {
+function WatchView({
+  game,
+  colors,
+  room,
+  store,
+  setStore,
+  onStatus,
+  status,
+  entryBy,
+}: {
+  game: ScoreGame;
+  colors: Record<string, number>;
+  room: RoomView;
+  store: ScoreStore;
+  setStore: (s: ScoreStore) => void;
+  onStatus: () => void;
+  status: string;
+  entryBy?: (index: number) => string | undefined;
+}) {
+  const recentRef = useRef<HTMLDivElement>(null);
+  const trendRef = useRef<HTMLDivElement>(null);
+  const jump = (el: HTMLElement | null) => el?.scrollIntoView({ behavior: "smooth", block: "start" });
   const shown = useMemo(() => liveStore(game, colors), [game, colors]);
   const state = useMemo(() => replay(game), [game]);
   const last = state.steps.at(-1);
@@ -262,16 +353,22 @@ function WatchView({ game, colors, room, store, setStore }: { game: ScoreGame; c
     .map((ev, i) => ({ ev, i }))
     .reverse()
     .map(({ ev, i }) => {
-      if (ev.t === "win" || ev.t === "draw") {
-        const h = handAt(state, i);
-        return h ? <HandRow key={i} h={h} store={shown} /> : null;
-      }
-      return <EventRow key={i} ev={ev} deltas={stepAt(state, i)?.deltas ?? {}} />;
+      const by = entryBy?.(i);
+      const row = ev.t === "win" || ev.t === "draw" ? (handAt(state, i) ? <HandRow h={handAt(state, i)!} store={shown} /> : null) : <EventRow ev={ev} deltas={stepAt(state, i)?.deltas ?? {}} />;
+      return (
+        row && (
+          <div key={i} className="sc-recent-row">
+            {row}
+            {by && <span className="sc-entry-by">{by}</span>}
+          </div>
+        )
+      );
     });
   const colorOf = (player: string) => shown.roster.find((r) => r.name === player)?.color ?? "x";
 
   return (
     <>
+      <WatchTools onStatus={onStatus} status={room.phase === "ended" ? "closed" : status} onRecent={() => jump(recentRef.current)} onTrend={state.hands.length > 1 ? () => jump(trendRef.current) : undefined} />
       {room.phase === "ended" && (
         <div className="sc-banner" role="status">
           <span>
@@ -337,6 +434,7 @@ function WatchView({ game, colors, room, store, setStore }: { game: ScoreGame; c
 
       {state.hands.length > 1 && (
         <>
+          <div ref={trendRef} />
           <SectionHead zh="走勢" en="Trend" />
           <div className="card">
             <TrendChart store={shown} state={state} />
@@ -344,6 +442,7 @@ function WatchView({ game, colors, room, store, setStore }: { game: ScoreGame; c
         </>
       )}
 
+      <div ref={recentRef} />
       <SectionHead zh="最近" en={game.events.length ? `${state.hands.length}局 · ${game.events.length} ${game.events.length === 1 ? "entry" : "entries"}` : "Nothing recorded yet"} />
       <div className="card">{game.events.length ? <div className="sc-list sc-list-hands">{rows}</div> : <p className="sc-empty">Hands show here as they're recorded.</p>}</div>
 

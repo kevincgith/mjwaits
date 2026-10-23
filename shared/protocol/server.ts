@@ -7,6 +7,7 @@
 // only when the game itself changes - it's what an `update` names as `base`.
 
 import type { ScoreGame } from "../engine/ledger";
+import type { AuditEntry } from "./audit";
 
 export type ErrorCode =
   | "badMessage" // failed parseClientMessage
@@ -41,6 +42,10 @@ export interface RoomView {
   game: ScoreGame | null;
   gameVersion: number;
   colors: Record<string, number>; // player name -> colour, from the host's phone
+  // The audit trail: for each entry in `game`, who put it in and who last
+  // changed it; and the latest changes, newest last (see audit.ts).
+  authors: { by: string; editedBy?: string }[];
+  changes: AuditEntry[];
 }
 
 export type ServerMessage =

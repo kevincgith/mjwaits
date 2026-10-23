@@ -374,6 +374,12 @@ game exactly as the Scores tab keeps it, so every phone shows the same numbers.
   everything but 新局; whatever you enter shows on every phone, the host's included. If two people
   record at the same moment, the first is kept and the second is told to enter theirs again -
   nothing is merged behind anyone's back.
+- **Who did what.** Every change is logged with who made it: 最近 says under each entry who put
+  it in ("by Amy", "by Kevin · edited by Ben"), on every phone, and the 線上 sheet lists the latest
+  changes - added, taken back, fixed - with the time.
+- **Staying out of the way.** Following a game, 線上 is just a button in the toolbar (next to 設定
+  once you record): it opens the game's status - connection, whose game, who's here and who
+  records, the changes, an invite to pass on, and Leave.
 - **Ending.** When the host ends the game (新局), its final state goes up and sharing stops; or
   **Stop sharing** in the 線上 sheet stops it with the game as it stands. Everyone else then sees
   **Final**, with **Keep in my Stats** to copy the game into their own 統計.

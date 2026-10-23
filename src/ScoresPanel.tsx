@@ -25,7 +25,7 @@ import { Setup } from "./scores/sheets";
 import { Board } from "./scores/board";
 import { TrendChart, TrendSummary, PlayerCard, type StatsView, saveBackupFile, BackupCard, StatsPanel, HandsTable } from "./scores/stats";
 import { OnlinePanel } from "./scores/online";
-import { LiveSheet, Toast, useHostLive, useToast } from "./scores/live";
+import { entryByOf, LiveSheet, Toast, useHostLive, useToast } from "./scores/live";
 import { loadOnline } from "./lib/online";
 
 // ---- The tab ------------------------------------------------------------------------
@@ -279,6 +279,7 @@ export function ScoresPanel({
             seatingResult={seatingResult ?? null}
             onSeatingResultDone={onSeatingResultDone}
             live={{ on: live.code !== null, onOpen: () => setLiveOpen(true) }}
+            entryBy={live.code ? entryByOf(live.room) : undefined}
           />
         ) : (
           <>

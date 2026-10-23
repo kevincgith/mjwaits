@@ -120,6 +120,13 @@ export const Icons = {
       <path d="M5.6 18.4a9 9 0 0 1 0-12.8M18.4 5.6a9 9 0 0 1 0 12.8" />
     </svg>
   ),
+  // A line rising and falling: the running totals (走勢).
+  trend: (
+    <svg {...ICON}>
+      <path d="M4 18 9 12l4 3 7-9" />
+      <path d="M4 21h16" />
+    </svg>
+  ),
   // A plus on a tile: a new game.
   newGame: (
     <svg {...ICON}>

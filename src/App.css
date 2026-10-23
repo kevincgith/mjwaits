@@ -13678,39 +13678,6 @@ button.sc-stat:active {
   font-size: var(--text-title);
 }
 
-/* A followed game's header: whose game, its code, the connection, Leave. */
-.ol-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.6rem 0.75rem;
-  margin-bottom: 0.75rem;
-}
-
-.ol-head-main {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-width: 0;
-}
-
-.ol-head-label {
-  color: var(--text-muted);
-  font-size: var(--text-xs);
-}
-
-.ol-head-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.4rem;
-  width: 100%;
-}
-
-.ol-head-actions > .sc-secondary {
-  margin-left: auto;
-}
-
 .ol-status {
   display: inline-flex;
   align-items: center;
@@ -13833,6 +13800,26 @@ button.sc-stat:active {
   gap: 0.35rem 0.9rem;
   margin-top: 0.75rem;
   font-size: var(--text-sm);
+}
+
+/* The audit trail: who entered an entry, under it in 最近; and the changes. */
+.sc-entry-by {
+  display: block;
+  margin: -0.15rem 0 0.35rem 2.2rem;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.ol-change {
+  min-height: 2.25rem;
+  font-size: var(--text-sm);
+}
+
+.ol-status-line {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.6rem;
 }
 
 .ol-summary-actions {

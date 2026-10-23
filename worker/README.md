@@ -223,7 +223,16 @@ dropped, not refused. `colors` (player → colour) is only taken from the host.
 `room` carries `code`, `version` (one higher each send - drop anything older), `phase`
 (`waiting` for the game / `live` / `ended`), `people` (each `{id, name, connected, host,
 canRecord}`), `game` (the `ScoreGame`, or null), `gameVersion` (one higher each accepted
-update) and `colors`.
+update), `colors`, and the audit trail: `authors` (for each entry in the game, who put it in and
+who last changed it) and `changes` (the latest 50 changes, newest last).
+
+### The audit trail
+
+Each accepted `update` is logged with who sent it (`shared/protocol/audit.ts`). The room
+compares the new game with the one before (`diffGames`): entries added, removed or replaced, and
+where - so an undo, a redo, deleting or fixing an older hand all come out as what they are; the
+first update is the host sharing the game. The whole log is kept in the room's storage;
+`entryAuthors` replays it to say who entered each entry now in the game.
 
 Error codes: `badMessage`, `tooLarge`, `rateLimited`, `version`, `notJoined`, `badToken`,
 `nameTaken`, `notHost`, `notAllowed`, `conflict`, `badGame`, `ended`, `noSuchPerson`.

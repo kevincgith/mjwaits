@@ -12,7 +12,8 @@
 // stands (`update`), checked in full (checkGame: the shape, then a replay by
 // the ledger) and accepted only if it was made on the latest game - two
 // people recording at once can't overwrite each other; the later one is told
-// to try again on the new game.
+// to try again on the new game. Each accepted change is logged with who made
+// it (the audit trail, see shared/protocol/audit.ts).
 //
 // Every frame goes through parseClientMessage (shared/protocol) before
 // anything else looks at it, and every change ends with the whole public
@@ -21,6 +22,7 @@
 import { DurableObject } from "cloudflare:workers";
 import type { ScoreGame } from "@mjwaits/shared/engine/ledger";
 import { parseClientMessage, type ClientMessage } from "@mjwaits/shared/protocol/client";
+import { diffGames, entryAuthors, type AuditEntry } from "@mjwaits/shared/protocol/audit";
 import { checkGame } from "@mjwaits/shared/protocol/game";
 import { cleanNickname, PROTOCOL_VERSION, RATE_BURST, RATE_PER_SECOND } from "@mjwaits/shared/protocol/limits";
 import type { ErrorCode, PersonView, RoomView, ServerMessage } from "@mjwaits/shared/protocol/server";
@@ -30,6 +32,8 @@ import type { Env } from "./index";
 export const MAX_CONNECTIONS = 16;
 // Nicknames a room will remember - connected or not.
 export const MAX_PEOPLE = 12;
+// Changes each room view carries (the whole log stays in storage).
+export const RECENT_CHANGES = 50;
 // A connection over its rate limit this many times in a row is closed.
 export const RATE_STRIKES = 10;
 // A room no one has joined is gone after an hour; any other, two days after
@@ -96,6 +100,7 @@ export class Room extends DurableObject<Env> {
         can_record INTEGER NOT NULL DEFAULT 0,
         joined_at INTEGER NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS audit (v INTEGER PRIMARY KEY, body TEXT NOT NULL);
     `);
   }
 
@@ -297,6 +302,8 @@ export class Room extends DurableObject<Env> {
         if (current && checked.value.id !== current.id) throw new Refusal("badGame", "that's a different game - share it as a new room");
         const gameVersion = this.meta<number>("gameVersion") ?? 0;
         if (msg.base !== gameVersion) throw new Refusal("conflict", "someone else's change landed first");
+        const entry: AuditEntry = { v: gameVersion + 1, at: Date.now(), by: me.name, ...diffGames(current, checked.value) };
+        this.sql.exec("INSERT INTO audit (v, body) VALUES (?, ?)", entry.v, JSON.stringify(entry));
         this.setMeta("game", checked.value);
         this.setMeta("gameVersion", gameVersion + 1);
         if (isHost && msg.colors) this.setMeta("colors", msg.colors);
@@ -321,6 +328,7 @@ export class Room extends DurableObject<Env> {
   // ---- Broadcasting -------------------------------------------------------
 
   private view(except?: WebSocket): RoomView {
+    const log = this.sql.exec<{ body: string }>("SELECT body FROM audit ORDER BY v").toArray().map((r) => JSON.parse(r.body) as AuditEntry);
     const online = new Set(this.conns(except).map(([, c]) => c.person));
     const host = this.meta<string>("host");
     const people: PersonView[] = this.people().map((p) => ({
@@ -338,6 +346,8 @@ export class Room extends DurableObject<Env> {
       game: this.meta<ScoreGame>("game"),
       gameVersion: this.meta<number>("gameVersion") ?? 0,
       colors: this.meta<Record<string, number>>("colors") ?? {},
+      authors: entryAuthors(log),
+      changes: log.slice(-RECENT_CHANGES),
     };
   }
 
