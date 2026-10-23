@@ -7186,13 +7186,10 @@ html.playing body {
 }
 
 /* A drawn tile slides in from the wall's side and settles into place. */
+/* (Moved only, never faded - fading would flatten the 3D tile.) */
 @keyframes play-draw {
   from {
     transform: translate(0.5em, -0.35em);
-    opacity: 0;
-  }
-  60% {
-    opacity: 1;
   }
   to {
     transform: none;
@@ -7234,7 +7231,10 @@ html.playing body {
 }
 
 /* 食替: barred from being discarded right now. */
-.play-hand-tile.is-barred .tile-glyph {
+/* Dimmed piece by piece - the face and each side - never the whole tile:
+   a filter (or opacity) on a 3D tile flattens it, and Safari then drops
+   most of it. */
+.play-hand-tile.is-barred :is(img.tile-face, .tile-side) {
   filter: brightness(0.62) saturate(0.6);
 }
 
