@@ -75,7 +75,7 @@ import {
   type Voice,
 } from "@mjwaits/shared/engine/bots";
 import { scoreView, type ResultView } from "@mjwaits/shared/engine/view";
-import { MYSTERY_BOT, type TableClientMessage, type TableState } from "@mjwaits/shared/protocol/table";
+import { MYSTERY_BOT, REACTIONS, type Reaction, type TableClientMessage, type TableState } from "@mjwaits/shared/protocol/table";
 import { BLANK, seatState } from "./lib/seatState";
 import { withEvents, type ScoreGame } from "@mjwaits/shared/engine/ledger";
 import { carriedOver, newPlayLedger, playEvents, uniqueNames } from "@mjwaits/shared/engine/playLedger";
@@ -539,6 +539,8 @@ function PlayDie({ value, rolling, index }: { value: number; rolling: boolean; i
 // Playing at an online table: what the server sent, and how to answer it.
 export interface OnlinePlay {
   table: TableState;
+  // The last quick reaction someone at the table sent (a new id each time).
+  reaction: { seat: number; r: Reaction; id: number } | null;
   // The table's record, as the server keeps it (null until it's arrived).
   scores: ScoreGame | null;
   send: (msg: Exclude<TableClientMessage, { t: "hello" }>) => void;
@@ -824,6 +826,19 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
   };
   // What each bot is saying, by seat (a speech bubble by its name card).
   const [bubbles, setBubbles] = useState<Record<number, { text: string; id: number }>>({});
+  // Online: a quick reaction shows as a bubble by whoever sent it (you too).
+  const showBubble = (seat: number, text: string) => {
+    const id = Date.now() + seat;
+    setBubbles((b) => ({ ...b, [seat]: { text, id } }));
+    window.setTimeout(() => setBubbles((b) => (b[seat]?.id === id ? Object.fromEntries(Object.entries(b).filter(([k]) => Number(k) !== seat)) : b)), BUBBLE_MS);
+  };
+  const reaction = online?.reaction ?? null;
+  useEffect(() => {
+    if (!reaction || !net) return;
+    showBubble(net.toLocal(reaction.seat), reaction.r);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reaction?.id]);
+  const [reacting, setReacting] = useState(false);
   const lastLine = useRef<Record<number, string>>({});
   const say = (seat: number, line: keyof Voice) => {
     const bot = bots[seat];
@@ -1419,6 +1434,34 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
               戰況
             </button>
           )}
+          {/* Online: quick reactions for the table, and who's watching. */}
+          {online && seated && (
+            <button type="button" className={`play-icon-button${reacting ? " is-on" : ""}`} onClick={() => setReacting((r) => !r)} aria-label="Send a reaction" aria-expanded={reacting}>
+              😊
+            </button>
+          )}
+          {online && online.table.watching > 0 && (
+            <span className="play-watching" title={`${online.table.watching} watching`}>
+              👁 {online.table.watching}
+            </span>
+          )}
+          {reacting && online && (
+            <div className="play-reactions" role="menu">
+              {REACTIONS.map((r) => (
+                <button
+                  key={r}
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    online.send({ t: "react", r });
+                    setReacting(false);
+                  }}
+                >
+                  {r}
+                </button>
+              ))}
+            </div>
+          )}
           {menuOpen && online && (
             <div className="play-menu">
               <p className="play-menu-note">
@@ -1762,6 +1805,11 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
             {game.dealer === HUMAN && <span className="play-dealer">莊</span>}
             {me.riichi && <span className="play-riichi">叮</span>}
             {lahChips(HUMAN)}
+            {bubbles[HUMAN] && (
+              <span key={bubbles[HUMAN].id} className="play-bubble is-mine" role="status">
+                {bubbles[HUMAN].text}
+              </span>
+            )}
           </span>
           {total(HUMAN)}
           <span className="play-bar-round">

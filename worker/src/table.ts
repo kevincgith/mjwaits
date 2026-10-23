@@ -345,6 +345,36 @@ export class Table extends Hub<TableMessage> {
         rt.deadline = null;
         rt.botAt = null;
         break;
+      case "rematch": {
+        hostOnly();
+        if (rt.phase !== "ended") throw new Refusal("illegal", "the table hasn't finished");
+        // Back to the lobby: the same seats and rules, a new game and record.
+        Object.assign(rt, {
+          phase: "lobby",
+          game: null,
+          totals: [0, 0, 0, 0],
+          hand: 0,
+          step: 0,
+          deadline: null,
+          botAt: null,
+          decisions: null,
+          ready: [],
+          away: {},
+          auto: [],
+          last: null,
+          settled: 0,
+          scores: 0,
+        } satisfies Partial<Runtime>);
+        this.sql.exec("DELETE FROM record");
+        this.setMeta("recordHead", null);
+        break;
+      }
+      case "react": {
+        // Straight out to everyone - not stored, not a change to the table.
+        const seat = seated();
+        for (const [ws] of this.conns()) this.send(ws, { t: "reaction", seat, r: msg.r });
+        return;
+      }
     }
     this.run(Date.now());
     this.save();

@@ -7869,6 +7869,7 @@ html.playing body {
 }
 
 .play-bar-you {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
@@ -8176,6 +8177,57 @@ html.playing body {
   background: var(--surface);
   color: var(--text);
   box-shadow: var(--shadow-float);
+}
+
+/* Online: the quick reactions, a strip under the corner buttons, and the
+   count of people watching. */
+.play-reactions {
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  left: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  max-width: calc(100 * var(--vw) - 2rem);
+  padding: 0.35rem;
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-float);
+}
+
+.play-reactions button {
+  min-width: 2.4rem;
+  min-height: 2.4rem;
+  padding: 0 0.6rem;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text);
+  font-size: 1rem;
+}
+
+.play-watching {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0 0.6rem;
+  border-radius: var(--radius-pill);
+  background: var(--play-shade);
+  color: var(--play-on-felt-muted);
+  font-size: 0.78rem;
+}
+
+/* Your own reaction: above your name in the bar. */
+.play-bubble.is-mine {
+  top: auto;
+  bottom: calc(100% + 0.45rem);
+}
+
+.play-bubble.is-mine::before {
+  top: 100%;
+  bottom: auto;
+  border-bottom-color: transparent;
+  border-top-color: #fffaf0;
 }
 
 /* 我的紀錄 Your record: the numbers, against each opponent, milestones. */

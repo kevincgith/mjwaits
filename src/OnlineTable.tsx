@@ -28,7 +28,7 @@ import {
 } from "./lib/onlineTable";
 import type { ScoreGame } from "@mjwaits/shared/engine/ledger";
 import { PlayScores } from "./scores/playScores";
-import { PlayPanel } from "./PlayPanel";
+import { PlayPanel, type OnlinePlay } from "./PlayPanel";
 import "./OnlineTable.css";
 
 const WIND_CHARS = ["", "東", "南", "西", "北"];
@@ -58,6 +58,7 @@ export function OnlineTable({ initialCode, onExit }: { initialCode: string | nul
   const client = useRef<TableClient | null>(null);
   // The table's record (for 戰況), fetched again whenever it grows.
   const [scores, setScores] = useState<ScoreGame | null>(null);
+  const [reaction, setReaction] = useState<OnlinePlay["reaction"]>(null);
   const scoreCount = table?.scores ?? 0;
   const started = !!table && table.phase !== "lobby";
   useEffect(() => {
@@ -107,6 +108,7 @@ export function OnlineTable({ initialCode, onExit }: { initialCode: string | nul
         setMemory((m) => withTable(m, code, w.token));
       },
       onTable: setTable,
+      onReaction: (seat, r) => setReaction({ seat, r, id: Date.now() }),
       onStatus: setStatus,
       onError: (errorCode, message) => {
         if (errorCode === "nameTaken" || errorCode === "version") {
@@ -164,7 +166,7 @@ export function OnlineTable({ initialCode, onExit }: { initialCode: string | nul
   if (code && table?.phase === "playing" && table.view && me)
     return (
       <>
-        <PlayPanel onExit={leave} online={{ table, send, host: me.host, scores }} />
+        <PlayPanel onExit={leave} online={{ table, send, host: me.host, scores, reaction }} />
         {status !== "open" && <div className="ot-status">{status === "closed" ? "Disconnected" : "Reconnecting…"}</div>}
         {toast && (
           <div className="ot-toast" role="status">
@@ -199,7 +201,7 @@ export function OnlineTable({ initialCode, onExit }: { initialCode: string | nul
       ) : table.phase === "lobby" ? (
         <Lobby table={table} me={me} send={send} onLeave={leave} />
       ) : table.phase === "ended" ? (
-        <Ended table={table} scores={scores} onLeave={leave} />
+        <Ended table={table} scores={scores} onLeave={leave} host={me.host} onRematch={() => send({ t: "rematch" })} />
       ) : null}
       {code && table && status !== "open" && <div className="ot-status">{status === "closed" ? "Disconnected" : "Reconnecting…"}</div>}
       {toast && (
@@ -508,7 +510,20 @@ function Seg({ on, disabled, onClick, children }: { on: boolean; disabled: boole
 
 // ---- The table's done -----------------------------------------------------------------------
 
-function Ended({ table, scores, onLeave }: { table: TableState; scores: ScoreGame | null; onLeave: () => void }) {
+// `onRematch` (the host): the same seats and rules back in the lobby.
+function Ended({
+  table,
+  scores,
+  onLeave,
+  host,
+  onRematch,
+}: {
+  table: TableState;
+  scores: ScoreGame | null;
+  onLeave: () => void;
+  host: boolean;
+  onRematch: () => void;
+}) {
   const order = [0, 1, 2, 3].sort((a, b) => table.totals[b] - table.totals[a]);
   const [open, setOpen] = useState(false);
   return (
@@ -530,7 +545,14 @@ function Ended({ table, scores, onLeave }: { table: TableState; scores: ScoreGam
           戰況 · every hand and each player's stats
         </button>
       )}
-      <button type="button" className="ot-button is-primary" onClick={onLeave}>
+      {host ? (
+        <button type="button" className="ot-button is-primary" onClick={onRematch}>
+          再來一局 Rematch · same seats
+        </button>
+      ) : (
+        <p className="ot-muted">Waiting for the host - they can start a rematch with the same seats.</p>
+      )}
+      <button type="button" className={host ? "ot-button" : "ot-button is-primary"} onClick={onLeave}>
         Done
       </button>
       {open && scores && <PlayScores game={scores} onClose={() => setOpen(false)} />}
