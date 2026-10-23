@@ -6117,6 +6117,39 @@ html.playing body {
   rotate: -90deg;
 }
 
+/* A hand laid face up at the end lies where it stood: wall size, so it
+   takes the wall's room and never runs over the melds and flowers. */
+.play-seat .play-meld.is-revealed {
+  font-size: var(--play-wall);
+}
+
+/* The tile that completed a winning hand, last and laid sideways - turned
+   a quarter from the tiles beside it: in a row its slot is a tile long
+   (and it sits on their line); in a side seat's column, it stands upright
+   among the turned tiles. */
+.play-win-tile {
+  display: inline-flex;
+  justify-content: center;
+  width: 1em;
+  margin-left: 0.08em;
+}
+
+.play-win-tile > .tile-glyph {
+  rotate: 90deg;
+  translate: 0 0.11em;
+}
+
+:is(.play-seat-left, .play-seat-right) .play-meld .play-win-tile {
+  width: auto;
+  margin: 0.08em 0 0;
+}
+
+:is(.play-seat-left, .play-seat-right) .play-meld .play-win-tile > .tile-glyph {
+  rotate: none;
+  translate: none;
+  margin: 0;
+}
+
 /* A kong: three tiles, the fourth stacked on the middle one - a tile's
    thickness up on the table, lifted a little in your own melds. */
 .play-kong-stack {
@@ -6177,9 +6210,23 @@ html.playing body {
   --play-tile-height: 1em;
 }
 
+/* A wall is a full hand long (17), its tiles packed at its player's left -
+   so drawing and throwing only change its far end, and nothing slides
+   along (the far wall's left is your right; the left wall's, the far end;
+   the right wall's, the near end). */
 .play-edge-left,
 .play-edge-right {
   flex-direction: column;
+  height: calc(17 * 0.78em);
+}
+
+.play-edge-right {
+  justify-content: flex-end;
+}
+
+.play-edge-top {
+  width: calc(17 * 0.78em);
+  justify-content: flex-end;
 }
 
 .play-edge-tile {
@@ -6337,15 +6384,16 @@ html.playing body {
   justify-self: center;
 }
 
+/* The side ponds against the middle, by the compass. */
 .play-pond-slot-left {
   grid-area: lpond;
-  justify-self: center;
+  justify-self: end;
   align-self: center;
 }
 
 .play-pond-slot-right {
   grid-area: rpond;
-  justify-self: center;
+  justify-self: start;
   align-self: center;
 }
 
@@ -6358,16 +6406,26 @@ html.playing body {
   transform-style: preserve-3d;
 }
 
+/* Every pond fills as a player lays discards: the first row next to the
+   compass, each row from the player's own left, the next row further out.
+   Yours: left to right, rows going down; the far player's: right to left
+   (their left is your right), rows going up. */
 .play-pond-top,
 .play-pond-bottom {
   width: calc(8 * 0.74em);
-  justify-content: center;
+  justify-content: flex-start;
+  align-content: flex-start;
+}
+
+.play-pond-top {
+  flex-direction: row-reverse;
+  flex-wrap: wrap-reverse;
 }
 
 /* A side player's discards face them: their rows of six run up and down
-   the screen, the first nearest their wall, each from their left - top to
-   bottom for the left seat, bottom to top for the right. The tile laid
-   sideways for 叮 stands upright among them. */
+   the screen, each from their left - top to bottom for the left seat,
+   bottom to top for the right. The tile laid sideways for 叮 stands
+   upright among them. */
 .play-pond-left,
 .play-pond-right {
   flex-direction: column;
@@ -6375,9 +6433,15 @@ html.playing body {
   align-content: flex-start;
 }
 
+/* The side players' rows run up and down: the left player's from the top,
+   the first row by the compass (rightmost) and the next ones out to its
+   left; the right player's from the bottom, first row leftmost. */
+.play-pond-left {
+  flex-wrap: wrap-reverse;
+}
+
 .play-pond-right {
   flex-direction: column-reverse;
-  flex-wrap: wrap-reverse;
 }
 
 .play-pond-left .play-pond-tile,
@@ -6423,7 +6487,7 @@ html.playing body {
 
 /* The newest discard: a gold pin, and a short drop onto the table. */
 .play-pond-tile.is-latest {
-  animation: play-drop 0.28s ease-out;
+  animation: play-drop 0.36s both;
 }
 
 .play-pond-tile.is-latest::after {
@@ -6439,14 +6503,24 @@ html.playing body {
   box-shadow: 0 0 0.25em var(--play-gold);
 }
 
+/* A discard drops onto the felt from a little above and settles - moved
+   only, never faded: a 3D tile turned partly transparent is drawn flat for
+   that moment, as if pressed into the table. */
 @keyframes play-drop {
-  from {
-    transform: translateY(-0.35em) scale(1.25);
-    opacity: 0;
+  0% {
+    transform: translateZ(1.4em);
+    animation-timing-function: cubic-bezier(0.5, 0, 0.9, 0.6);
   }
-  to {
-    transform: none;
-    opacity: 1;
+  72% {
+    transform: translateZ(0);
+    animation-timing-function: cubic-bezier(0.2, 0.6, 0.4, 1);
+  }
+  86% {
+    transform: translateZ(0.12em);
+    animation-timing-function: cubic-bezier(0.5, 0, 0.8, 0.5);
+  }
+  100% {
+    transform: translateZ(0);
   }
 }
 
@@ -6462,64 +6536,108 @@ html.playing body {
   font-size: calc(var(--play-hand) * 0.4);
 }
 
+/* The compass: a dark plate in a thin bronze rim, each seat's wind by its
+   edge with a short light bar along that edge. The bar on the side of
+   whoever is to act glows gold (tightly - no haze over the felt) and their
+   wind lights with it; the read-out is in the middle. */
 .play-compass {
   position: relative;
   width: 3.6em;
   height: 3.6em;
   border-radius: 0.9em;
-  background: linear-gradient(160deg, #3a3f45, #1d2024);
-  box-shadow: 0 0.12em 0.4em rgba(0, 0, 0, 0.45), inset 0 0 0 0.08em rgba(255, 255, 255, 0.08);
-  overflow: visible;
+  background: radial-gradient(120% 120% at 50% 30%, #33383e 0%, #1f2327 60%, #16191c 100%);
+  box-shadow:
+    0 0.12em 0.4em rgba(0, 0, 0, 0.45),
+    inset 0 0 0 0.05em rgba(226, 176, 74, 0.45),
+    inset 0 0.06em 0.1em rgba(255, 255, 255, 0.08);
 }
 
 .play-compass-q {
   position: absolute;
   display: grid;
-  color: rgba(255, 255, 255, 0.55);
+  color: rgba(255, 255, 255, 0.5);
   font-size: 0.62em;
   font-weight: 700;
-  transition: background 0.2s, color 0.2s;
+  transition:
+    color 0.25s ease,
+    text-shadow 0.25s ease;
+}
+
+/* The light bar along a seat's edge. */
+.play-compass-q::after {
+  content: "";
+  position: absolute;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  transition:
+    background 0.25s ease,
+    box-shadow 0.25s ease;
 }
 
 .play-compass-top {
-  inset: 0.2em 0.2em auto;
-  height: 1.55em;
+  inset: 0.18em 0.2em auto;
+  height: 1.5em;
   place-items: start center;
-  padding-top: 0.12em;
-  clip-path: polygon(0 0, 100% 0, 72% 100%, 28% 100%);
-  border-radius: 0.6em 0.6em 0 0;
+  padding-top: 0.32em;
+}
+
+.play-compass-top::after {
+  top: 0;
+  left: 26%;
+  right: 26%;
+  height: 0.16em;
 }
 
 .play-compass-bottom {
-  inset: auto 0.2em 0.2em;
-  height: 1.55em;
+  inset: auto 0.2em 0.18em;
+  height: 1.5em;
   place-items: end center;
-  padding-bottom: 0.12em;
-  clip-path: polygon(28% 0, 72% 0, 100% 100%, 0 100%);
-  border-radius: 0 0 0.6em 0.6em;
+  padding-bottom: 0.32em;
+}
+
+.play-compass-bottom::after {
+  bottom: 0;
+  left: 26%;
+  right: 26%;
+  height: 0.16em;
 }
 
 .play-compass-left {
-  inset: 0.2em auto 0.2em 0.2em;
-  width: 1.55em;
+  inset: 0.2em auto 0.2em 0.18em;
+  width: 1.5em;
   place-items: center start;
-  padding-left: 0.18em;
-  clip-path: polygon(0 0, 100% 28%, 100% 72%, 0 100%);
-  border-radius: 0.6em 0 0 0.6em;
+  padding-left: 0.42em;
+}
+
+.play-compass-left::after {
+  left: 0;
+  top: 26%;
+  bottom: 26%;
+  width: 0.16em;
 }
 
 .play-compass-right {
-  inset: 0.2em 0.2em 0.2em auto;
-  width: 1.55em;
+  inset: 0.2em 0.18em 0.2em auto;
+  width: 1.5em;
   place-items: center end;
-  padding-right: 0.18em;
-  clip-path: polygon(0 28%, 100% 0, 100% 100%, 0 72%);
-  border-radius: 0 0.6em 0.6em 0;
+  padding-right: 0.42em;
+}
+
+.play-compass-right::after {
+  right: 0;
+  top: 26%;
+  bottom: 26%;
+  width: 0.16em;
 }
 
 .play-compass-q.is-active {
+  color: var(--play-gold);
+  text-shadow: 0 0 0.4em rgba(255, 209, 102, 0.55);
+}
+
+.play-compass-q.is-active::after {
   background: linear-gradient(var(--play-gold), var(--play-gold-deep));
-  color: var(--felt-edge);
+  box-shadow: 0 0 0.35em rgba(255, 209, 102, 0.75);
 }
 
 .play-compass-center {
@@ -6540,40 +6658,6 @@ html.playing body {
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.04em;
   text-shadow: 0 0 0.35em rgba(127, 243, 224, 0.6);
-}
-
-/* A soft beam from the compass toward whoever is to act. */
-.play-compass-beam {
-  position: absolute;
-  z-index: -1;
-  width: 5em;
-  height: 3em;
-  background: radial-gradient(ellipse at 50% 0%, rgba(255, 209, 102, 0.42), rgba(255, 209, 102, 0) 70%);
-  pointer-events: none;
-}
-
-.play-compass-beam.to-bottom {
-  top: 88%;
-  left: 50%;
-  transform: translateX(-50%);
-}
-
-.play-compass-beam.to-top {
-  bottom: 88%;
-  left: 50%;
-  transform: translateX(-50%) rotate(180deg);
-}
-
-.play-compass-beam.to-left {
-  right: 74%;
-  top: 50%;
-  transform: translateY(-50%) rotate(90deg);
-}
-
-.play-compass-beam.to-right {
-  left: 74%;
-  top: 50%;
-  transform: translateY(-50%) rotate(-90deg);
 }
 
 /* The discard up for grabs, big in a glowing ring beside the compass on
@@ -6768,6 +6852,19 @@ html.playing body {
   }
 }
 
+/* 嗌錯 (take back a call): rarely pressed, so a small quiet pill rather
+   than a call disc. */
+.play-call.is-minor {
+  align-self: flex-end;
+  min-width: 0;
+  height: auto;
+  min-height: 1.9rem; /* still easy to tap */
+  padding: 0.3rem 0.65rem;
+  border-width: 1px;
+  font-size: 0.9rem !important;
+  font-weight: 700;
+}
+
 .play-call.is-pass {
   border-color: rgba(243, 237, 226, 0.4);
   background: var(--play-call-teal);
@@ -6812,11 +6909,17 @@ html.playing body {
 
 .play-hand-tile {
   position: relative;
+  /* The tile flush with the button's foot (inline, it sat on a text
+     baseline with a gap under it), so your hand and your melds stand on
+     the same line. */
+  display: inline-flex;
+  align-items: flex-end;
   border: none;
   padding: 0 0.012em;
   background: none;
   line-height: 0;
-  transition: transform 0.12s ease;
+  /* Lifting and dropping a tile you pick eases rather than snaps. */
+  transition: transform 0.16s cubic-bezier(0.2, 0.8, 0.3, 1);
 }
 
 .play-hand-tile:disabled {
@@ -6825,17 +6928,20 @@ html.playing body {
 
 .play-hand-tile.is-drawn {
   margin-left: 0.3em;
-  animation: play-draw 0.25s ease-out;
+  animation: play-draw 0.32s cubic-bezier(0.2, 0.8, 0.3, 1);
 }
 
+/* A drawn tile slides in from the wall's side and settles into place. */
 @keyframes play-draw {
   from {
-    transform: translateY(-0.4em);
+    transform: translate(0.5em, -0.35em);
     opacity: 0;
+  }
+  60% {
+    opacity: 1;
   }
   to {
     transform: none;
-    opacity: 1;
   }
 }
 
@@ -6985,10 +7091,29 @@ html.playing body {
 /* The four sides run between the rounded corners (a hair longer, so they
    overlap them), and each corner is three narrow panels round the
    rounding - a smoothly rounded edge, with no seam and nothing poking past
-   the top. The ends (left and right) are a shade darker than
-   the long sides, as light falls on a real block. */
-.play-felt .tile-side {
-  --shade: linear-gradient(rgba(0, 0, 0, 0), rgba(0, 0, 0, 0));
+   the top. Light falls from in front, as on a real table: the sides facing
+   you (and away) are lit, the ones facing left and right a shade darker.
+   On a tile turned a quarter that's its ends facing you, so it swaps. */
+.play-felt .tile-glyph.tile-art,
+.play-felt .play-back {
+  --shade-long: 0;
+  --shade-end: 0.14;
+}
+
+.play-seat-left :is(.play-meld, .play-flowers) .tile-glyph,
+.play-seat-right :is(.play-meld, .play-flowers) .tile-glyph,
+.play-pond-left .play-pond-tile:not(.is-riichi) > .tile-glyph,
+.play-pond-right .play-pond-tile:not(.is-riichi) > .tile-glyph,
+.play-pond-top .play-pond-tile.is-riichi > .tile-glyph,
+.play-pond-bottom .play-pond-tile.is-riichi > .tile-glyph,
+.play-felt .play-win-tile > .tile-glyph {
+  --shade-long: 0.14;
+  --shade-end: 0;
+}
+
+:is(.play-seat-left, .play-seat-right) .play-meld .play-win-tile > .tile-glyph {
+  --shade-long: 0;
+  --shade-end: 0.14;
 }
 
 .play-felt .tile-side.is-near {
@@ -6996,7 +7121,7 @@ html.playing body {
   top: calc(var(--tile-y) + var(--tile-h));
   width: calc(var(--tile-w) - 2 * var(--tile-r) + 1px);
   height: var(--play-thick);
-  background: linear-gradient(to bottom, var(--tile-sides));
+  background: linear-gradient(rgba(0, 0, 0, var(--shade-long)), rgba(0, 0, 0, var(--shade-long))), linear-gradient(to bottom, var(--tile-sides));
   transform-origin: 50% 0;
   transform: rotateX(90deg);
 }
@@ -7006,7 +7131,7 @@ html.playing body {
   top: calc(var(--tile-y) - var(--play-thick));
   width: calc(var(--tile-w) - 2 * var(--tile-r) + 1px);
   height: var(--play-thick);
-  background: linear-gradient(to top, var(--tile-sides));
+  background: linear-gradient(rgba(0, 0, 0, var(--shade-long)), rgba(0, 0, 0, var(--shade-long))), linear-gradient(to top, var(--tile-sides));
   transform-origin: 50% 100%;
   transform: rotateX(-90deg);
 }
@@ -7016,7 +7141,7 @@ html.playing body {
   top: calc(var(--tile-y) + var(--tile-r) - 0.5px);
   width: var(--play-thick);
   height: calc(var(--tile-h) - 2 * var(--tile-r) + 1px);
-  background: linear-gradient(rgba(0, 0, 0, 0.14), rgba(0, 0, 0, 0.14)), linear-gradient(to right, var(--tile-sides));
+  background: linear-gradient(rgba(0, 0, 0, var(--shade-end)), rgba(0, 0, 0, var(--shade-end))), linear-gradient(to right, var(--tile-sides));
   transform-origin: 0 50%;
   transform: rotateY(-90deg);
 }
@@ -7026,7 +7151,7 @@ html.playing body {
   top: calc(var(--tile-y) + var(--tile-r) - 0.5px);
   width: var(--play-thick);
   height: calc(var(--tile-h) - 2 * var(--tile-r) + 1px);
-  background: linear-gradient(rgba(0, 0, 0, 0.14), rgba(0, 0, 0, 0.14)), linear-gradient(to left, var(--tile-sides));
+  background: linear-gradient(rgba(0, 0, 0, var(--shade-end)), rgba(0, 0, 0, var(--shade-end))), linear-gradient(to left, var(--tile-sides));
   transform-origin: 100% 50%;
   transform: rotateY(90deg);
 }
@@ -7044,84 +7169,84 @@ html.playing body {
 .play-felt .tile-side.is-nr1 {
   left: calc(var(--tile-x) + var(--tile-w) - var(--tile-r) + var(--tile-r) * 0.0000);
   top: calc(var(--tile-y) + var(--tile-h) - var(--tile-r) + var(--tile-r) * 1.0000);
-  background: linear-gradient(rgba(0, 0, 0, 0.036), rgba(0, 0, 0, 0.036)), linear-gradient(to bottom, var(--tile-sides));
+  background: linear-gradient(rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.26)), rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.26))), linear-gradient(to bottom, var(--tile-sides));
   transform: rotateZ(-15.00deg) rotateX(90deg);
 }
 
 .play-felt .tile-side.is-nr2 {
   left: calc(var(--tile-x) + var(--tile-w) - var(--tile-r) + var(--tile-r) * 0.5000);
   top: calc(var(--tile-y) + var(--tile-h) - var(--tile-r) + var(--tile-r) * 0.8660);
-  background: linear-gradient(rgba(0, 0, 0, 0.099), rgba(0, 0, 0, 0.099)), linear-gradient(to bottom, var(--tile-sides));
+  background: linear-gradient(rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.71)), rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.71))), linear-gradient(to bottom, var(--tile-sides));
   transform: rotateZ(-45.00deg) rotateX(90deg);
 }
 
 .play-felt .tile-side.is-nr3 {
   left: calc(var(--tile-x) + var(--tile-w) - var(--tile-r) + var(--tile-r) * 0.8660);
   top: calc(var(--tile-y) + var(--tile-h) - var(--tile-r) + var(--tile-r) * 0.5000);
-  background: linear-gradient(rgba(0, 0, 0, 0.135), rgba(0, 0, 0, 0.135)), linear-gradient(to bottom, var(--tile-sides));
+  background: linear-gradient(rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.96)), rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.96))), linear-gradient(to bottom, var(--tile-sides));
   transform: rotateZ(-75.00deg) rotateX(90deg);
 }
 
 .play-felt .tile-side.is-nl1 {
   left: calc(var(--tile-x) + var(--tile-r) + var(--tile-r) * -1.0000);
   top: calc(var(--tile-y) + var(--tile-h) - var(--tile-r) + var(--tile-r) * 0.0000);
-  background: linear-gradient(rgba(0, 0, 0, 0.135), rgba(0, 0, 0, 0.135)), linear-gradient(to bottom, var(--tile-sides));
+  background: linear-gradient(rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.96)), rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.96))), linear-gradient(to bottom, var(--tile-sides));
   transform: rotateZ(75.00deg) rotateX(90deg);
 }
 
 .play-felt .tile-side.is-nl2 {
   left: calc(var(--tile-x) + var(--tile-r) + var(--tile-r) * -0.8660);
   top: calc(var(--tile-y) + var(--tile-h) - var(--tile-r) + var(--tile-r) * 0.5000);
-  background: linear-gradient(rgba(0, 0, 0, 0.099), rgba(0, 0, 0, 0.099)), linear-gradient(to bottom, var(--tile-sides));
+  background: linear-gradient(rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.71)), rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.71))), linear-gradient(to bottom, var(--tile-sides));
   transform: rotateZ(45.00deg) rotateX(90deg);
 }
 
 .play-felt .tile-side.is-nl3 {
   left: calc(var(--tile-x) + var(--tile-r) + var(--tile-r) * -0.5000);
   top: calc(var(--tile-y) + var(--tile-h) - var(--tile-r) + var(--tile-r) * 0.8660);
-  background: linear-gradient(rgba(0, 0, 0, 0.036), rgba(0, 0, 0, 0.036)), linear-gradient(to bottom, var(--tile-sides));
+  background: linear-gradient(rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.26)), rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.26))), linear-gradient(to bottom, var(--tile-sides));
   transform: rotateZ(15.00deg) rotateX(90deg);
 }
 
 .play-felt .tile-side.is-fl1 {
   left: calc(var(--tile-x) + var(--tile-r) + var(--tile-r) * -0.0000);
   top: calc(var(--tile-y) + var(--tile-r) + var(--tile-r) * -1.0000);
-  background: linear-gradient(rgba(0, 0, 0, 0.036), rgba(0, 0, 0, 0.036)), linear-gradient(to bottom, var(--tile-sides));
+  background: linear-gradient(rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.26)), rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.26))), linear-gradient(to bottom, var(--tile-sides));
   transform: rotateZ(165.00deg) rotateX(90deg);
 }
 
 .play-felt .tile-side.is-fl2 {
   left: calc(var(--tile-x) + var(--tile-r) + var(--tile-r) * -0.5000);
   top: calc(var(--tile-y) + var(--tile-r) + var(--tile-r) * -0.8660);
-  background: linear-gradient(rgba(0, 0, 0, 0.099), rgba(0, 0, 0, 0.099)), linear-gradient(to bottom, var(--tile-sides));
+  background: linear-gradient(rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.71)), rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.71))), linear-gradient(to bottom, var(--tile-sides));
   transform: rotateZ(135.00deg) rotateX(90deg);
 }
 
 .play-felt .tile-side.is-fl3 {
   left: calc(var(--tile-x) + var(--tile-r) + var(--tile-r) * -0.8660);
   top: calc(var(--tile-y) + var(--tile-r) + var(--tile-r) * -0.5000);
-  background: linear-gradient(rgba(0, 0, 0, 0.135), rgba(0, 0, 0, 0.135)), linear-gradient(to bottom, var(--tile-sides));
+  background: linear-gradient(rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.96)), rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.96))), linear-gradient(to bottom, var(--tile-sides));
   transform: rotateZ(105.00deg) rotateX(90deg);
 }
 
 .play-felt .tile-side.is-fr1 {
   left: calc(var(--tile-x) + var(--tile-w) - var(--tile-r) + var(--tile-r) * 1.0000);
   top: calc(var(--tile-y) + var(--tile-r) + var(--tile-r) * -0.0000);
-  background: linear-gradient(rgba(0, 0, 0, 0.135), rgba(0, 0, 0, 0.135)), linear-gradient(to bottom, var(--tile-sides));
+  background: linear-gradient(rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.96)), rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.96))), linear-gradient(to bottom, var(--tile-sides));
   transform: rotateZ(-105.00deg) rotateX(90deg);
 }
 
 .play-felt .tile-side.is-fr2 {
   left: calc(var(--tile-x) + var(--tile-w) - var(--tile-r) + var(--tile-r) * 0.8660);
   top: calc(var(--tile-y) + var(--tile-r) + var(--tile-r) * -0.5000);
-  background: linear-gradient(rgba(0, 0, 0, 0.099), rgba(0, 0, 0, 0.099)), linear-gradient(to bottom, var(--tile-sides));
+  background: linear-gradient(rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.71)), rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.71))), linear-gradient(to bottom, var(--tile-sides));
   transform: rotateZ(-135.00deg) rotateX(90deg);
 }
 
 .play-felt .tile-side.is-fr3 {
   left: calc(var(--tile-x) + var(--tile-w) - var(--tile-r) + var(--tile-r) * 0.5000);
   top: calc(var(--tile-y) + var(--tile-r) + var(--tile-r) * -0.8660);
-  background: linear-gradient(rgba(0, 0, 0, 0.036), rgba(0, 0, 0, 0.036)), linear-gradient(to bottom, var(--tile-sides));
+  background: linear-gradient(rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.26)), rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.26))), linear-gradient(to bottom, var(--tile-sides));
   transform: rotateZ(-165.00deg) rotateX(90deg);
 }
 

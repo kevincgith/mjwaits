@@ -58,6 +58,8 @@ export interface GameMeld {
   // Who it was claimed from (null for concealed kongs). An added kong keeps
   // its original pung's source.
   from: number | null;
+  // A called run: the tile taken from the discard (shown in the middle).
+  claimed?: Tile;
 }
 
 // 叮: declared with a discard that leaves the hand ready. From then on the
@@ -728,7 +730,7 @@ export function resolveClaims(state: GameState, decisions: (Claim | null)[]): Ga
   }
   if (claim.kind === "chow") {
     p.hand = removeTiles(p.hand, claim.tiles);
-    p.melds.push({ kind: "run", tiles: sortTiles([...claim.tiles, tile]), concealed: false, from });
+    p.melds.push({ kind: "run", tiles: sortTiles([...claim.tiles, tile]), concealed: false, from, claimed: tile });
     s.phase = { kind: "turn", seat: best, drawn: null, replacement: null, forbidden: swapDiscardBan(tile, claim.tiles) };
     return s;
   }
