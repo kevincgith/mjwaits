@@ -1395,8 +1395,8 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
             <div className="play-middle">
               <Compass game={game} active={over ? null : activeSeat} center={compassCenter} />
               {game.phase.kind === "claims" && (
-                <span className={`play-spotlight from-${SIDES[game.phase.from]}`}>
-                  <TileGlyphSpan key={game.discardsMade} tile={game.phase.tile} block />
+                <span key={game.discardsMade} className={`play-spotlight from-${SIDES[game.phase.from]}`}>
+                  <TileGlyphSpan tile={game.phase.tile} block />
                 </span>
               )}
             </div>

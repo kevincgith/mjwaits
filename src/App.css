@@ -5545,7 +5545,7 @@ img.tile-face {
   --play-call-win: radial-gradient(circle at 50% 32%, #c03a24 0%, #8e2112 55%, #5e140a 100%);
   --play-call-teal: radial-gradient(circle at 50% 32%, #3a3029 0%, #231b15 60%, #17110c 100%);
   --play-call-ink: #ffd166;
-  --play-calligraphy: "Kaiti TC", "STKaiti", "BiauKai", "DFKai-SB", "KaiTi", serif;
+  --play-cjk: "PingFang HK", "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif;
 }
 
 html.playing,
@@ -5963,7 +5963,7 @@ html.playing body {
   border-radius: 0.35rem;
   background: var(--play-avatar, #5c6b63);
   color: #fffaf0;
-  font-family: var(--play-calligraphy);
+  font-family: var(--play-cjk);
   font-size: 0.85rem;
   font-weight: 800;
   box-shadow: inset 0 -0.1rem 0 rgba(0, 0, 0, 0.25);
@@ -6696,10 +6696,10 @@ html.playing body {
   text-shadow: 0 0 0.35em rgba(127, 243, 224, 0.6);
 }
 
-/* The discard up for grabs: a tile on the table, a size up from the
-   ponds, lying between the compass and the pond of whoever threw it (and
-   turned to face them, as their pond is) - dropped there, with no ring or
-   glow. */
+/* The discard up for grabs, shown once more in a bubble - a callout, not
+   another tile on the table: it stands up off the felt to face you, the
+   tile upright whoever threw it, with a point toward the thrower. It sits
+   between the compass and their pond while the others may call it. */
 .play-middle {
   transform-style: preserve-3d;
 }
@@ -6707,15 +6707,65 @@ html.playing body {
 .play-spotlight {
   position: absolute;
   z-index: 3;
+  display: grid;
+  place-items: center;
+  padding: 0.3em;
+  border-radius: 0.6em;
+  background: rgba(14, 18, 16, 0.92);
+  box-shadow:
+    0 0 0 0.07em rgba(255, 209, 102, 0.85),
+    0 0.35em 0.7em rgba(0, 0, 0, 0.45);
   line-height: 0;
   translate: -50% -50%;
+  /* Stood up from the tilted felt to face you, a little above it. */
+  transform: translateZ(0.8em) rotateX(-32deg);
   transform-style: preserve-3d;
+  /* Popped in by scale alone: fading a 3D tile draws it flat meanwhile. */
+  animation: play-pop 0.22s ease-out both;
   pointer-events: none;
 }
 
+/* The tile in it a real block, like every tile on the table: tipped back
+   (from its foot, held in front of the bubble) to show its thickness. */
 .play-spotlight .tile-glyph {
-  font-size: calc(var(--play-tile) * 1.15);
-  animation: play-drop 0.36s both;
+  font-size: var(--play-tile);
+  transform-origin: 50% 100%;
+  transform: translateZ(0.55em) rotateX(30deg);
+}
+
+/* The point, toward whoever threw it. */
+.play-spotlight::after {
+  content: "";
+  position: absolute;
+  width: 0.5em;
+  height: 0.5em;
+  z-index: -1;
+  background: inherit;
+  box-shadow: 0.07em 0.07em 0 0 rgba(255, 209, 102, 0.85);
+}
+
+.play-spotlight.from-bottom::after {
+  left: 50%;
+  top: 100%;
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+
+.play-spotlight.from-top::after {
+  left: 50%;
+  top: 0;
+  transform: translate(-50%, -50%) rotate(-135deg);
+}
+
+.play-spotlight.from-left::after {
+  left: 0;
+  top: 50%;
+  transform: translate(-50%, -50%) rotate(135deg);
+}
+
+.play-spotlight.from-right::after {
+  left: 100%;
+  top: 50%;
+  transform: translate(-50%, -50%) rotate(-45deg);
 }
 
 /* Halfway between the compass's edge (1.8em from the middle) and the
@@ -6740,12 +6790,13 @@ html.playing body {
   top: 50%;
 }
 
-.play-spotlight.from-left .tile-glyph {
-  rotate: 90deg;
-}
-
-.play-spotlight.from-right .tile-glyph {
-  rotate: -90deg;
+@keyframes play-pop {
+  from {
+    scale: 0.5;
+  }
+  to {
+    scale: 1;
+  }
 }
 
 @keyframes play-spot {
@@ -6759,24 +6810,29 @@ html.playing body {
   }
 }
 
-/* ---- Call burst: a big calligraphic 上 / 碰 / 槓 / 胡 by whoever called ---- */
+/* ---- Call burst: a big 上 / 碰 / 槓 / 胡 by whoever called ----
+   In the phone's own bold Chinese face (a brush face isn't on every phone,
+   and the fallback serif looked odd), gold on a dark disc in a thin gold
+   ring - the compass's and the discard bubble's look. */
 
 .play-burst {
   position: absolute;
   z-index: 6;
   display: grid;
   place-items: center;
-  width: 1.5em;
-  height: 1.5em;
+  width: 1.45em;
+  height: 1.45em;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(255, 209, 102, 0.55) 0%, rgba(226, 154, 28, 0.25) 45%, rgba(226, 154, 28, 0) 70%);
-  color: #fff6d8;
-  font-family: var(--play-calligraphy);
-  font-size: clamp(3rem, 19vh, 6rem);
-  font-weight: 800;
+  background: radial-gradient(120% 120% at 50% 30%, rgba(40, 44, 48, 0.94), rgba(16, 19, 21, 0.94));
+  box-shadow:
+    0 0 0 0.03em rgba(255, 209, 102, 0.85),
+    0 0.08em 0.25em rgba(0, 0, 0, 0.5);
+  color: var(--play-gold);
+  font-family: var(--play-cjk);
+  font-size: clamp(2.6rem, 16vh, 5rem);
+  font-weight: 700;
   line-height: 1;
-  -webkit-text-stroke: 0.035em #b4410f;
-  text-shadow: 0 0.04em 0 #7a1f0f, 0 0 0.25em rgba(255, 140, 40, 0.9);
+  text-shadow: 0 0.03em 0 rgba(0, 0, 0, 0.6);
   pointer-events: none;
   animation: play-burst 1.2s cubic-bezier(0.2, 0.9, 0.3, 1.2) forwards;
 }
@@ -6872,7 +6928,7 @@ html.playing body {
   border-radius: 999px;
   background: var(--play-call-gold);
   color: var(--play-call-ink);
-  font-family: var(--play-calligraphy) !important;
+  font-family: var(--play-cjk) !important;
   font-size: clamp(1.5rem, 8vh, 2.1rem) !important;
   font-weight: 800;
   line-height: 1;
@@ -7176,8 +7232,7 @@ html.playing body {
 .play-pond-right .play-pond-tile:not(.is-riichi) > .tile-glyph,
 .play-pond-top .play-pond-tile.is-riichi > .tile-glyph,
 .play-pond-bottom .play-pond-tile.is-riichi > .tile-glyph,
-.play-felt .play-win-tile > .tile-glyph,
-.play-spotlight:is(.from-left, .from-right) .tile-glyph {
+.play-felt .play-win-tile > .tile-glyph {
   --shade-long: 0.14;
   --shade-end: 0;
 }
