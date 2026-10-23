@@ -6828,8 +6828,11 @@ html.playing body {
     0 0.35em 0.7em rgba(0, 0, 0, 0.45);
   line-height: 0;
   translate: -50% -50%;
-  /* Stood up from the tilted felt to face you, a little above it. */
-  transform: translateZ(0.8em) rotateX(-32deg);
+  /* Stood up from the tilted felt to face you, from its foot and lifted
+     clear of the tiles, so no tile in a pond ever reaches through it (turned
+     about its middle, its lower half went under the felt). */
+  transform-origin: 50% 100%;
+  transform: translateZ(1.3em) rotateX(-32deg);
   transform-style: preserve-3d;
   /* Popped in by scale alone: fading a 3D tile draws it flat meanwhile. */
   animation: play-pop 0.22s ease-out both;
@@ -7183,13 +7186,10 @@ html.playing body {
 }
 
 /* A drawn tile slides in from the wall's side and settles into place. */
+/* (Moved only, never faded - fading would flatten the 3D tile.) */
 @keyframes play-draw {
   from {
     transform: translate(0.5em, -0.35em);
-    opacity: 0;
-  }
-  60% {
-    opacity: 1;
   }
   to {
     transform: none;
@@ -7231,7 +7231,10 @@ html.playing body {
 }
 
 /* 食替: barred from being discarded right now. */
-.play-hand-tile.is-barred .tile-glyph {
+/* Dimmed piece by piece - the face and each side - never the whole tile:
+   a filter (or opacity) on a 3D tile flattens it, and Safari then drops
+   most of it. */
+.play-hand-tile.is-barred :is(img.tile-face, .tile-side) {
   filter: brightness(0.62) saturate(0.6);
 }
 
