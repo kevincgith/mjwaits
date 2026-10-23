@@ -20,7 +20,7 @@
 // Your moves go to the server instead of into the game; the bots, timer and
 // payments are the server's.
 
-import { type CSSProperties, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   applyTurnMove,
   claimOptions,
@@ -207,9 +207,9 @@ const claimLabel = (c: Claim) => (c.kind === "win" ? "胡" : c.kind === "kong" ?
 // ---- Pieces of the table ----------------------------------------------------
 
 // A seat's concealed tiles, seen edge-on from the middle of the table.
-function EdgeTiles({ count, side }: { count: number; side: Side }) {
+function EdgeTilesView({ count, side }: { count: number; side: Side }) {
   return (
-    <span className={`play-edge play-edge-${side}`} aria-label={`${count} concealed tiles`}>
+    <span className={`play-edge play-edge-${side}`} style={{ "--count": count } as CSSProperties} aria-label={`${count} concealed tiles`}>
       {Array.from({ length: count }, (_, i) => (
         <span key={i} className="play-edge-tile" />
       ))}
@@ -228,8 +228,10 @@ function runOrder(tiles: Tile[], claimed: Tile): number[] {
   return [others[0], c, others[1]];
 }
 
-// A kong is three tiles wide, its fourth stacked on the middle one.
-function Melds({ melds, hideConcealed }: { melds: GameMeld[]; hideConcealed?: boolean }) {
+// A kong is three tiles wide, its fourth stacked on the middle one - where
+// tiles lie on the table. Your own stand (`standing`), and nothing rests on
+// a standing tile, so there a kong is its four tiles side by side.
+function MeldsView({ melds, hideConcealed, standing }: { melds: GameMeld[]; hideConcealed?: boolean; standing?: boolean }) {
   return (
     <>
       {melds.map((m, i) => {
@@ -249,7 +251,7 @@ function Melds({ melds, hideConcealed }: { melds: GameMeld[]; hideConcealed?: bo
               // A called run shows the claimed tile in the middle: 1-3-2 for
               // a 3 taken to 1-2.
               runOrder(m.tiles, m.claimed).map((j) => tile(j))
-            ) : m.kind === "kong" && m.tiles.length === 4 ? (
+            ) : m.kind === "kong" && m.tiles.length === 4 && !standing ? (
               <>
                 {tile(0)}
                 <span className="play-kong-stack">
@@ -268,7 +270,7 @@ function Melds({ melds, hideConcealed }: { melds: GameMeld[]; hideConcealed?: bo
   );
 }
 
-function Flowers({ flowers }: { flowers: BonusTile[] }) {
+function FlowersView({ flowers }: { flowers: BonusTile[] }) {
   if (flowers.length === 0) return null;
   return (
     <span className="play-flowers">
@@ -286,7 +288,7 @@ function Flowers({ flowers }: { flowers: BonusTile[] }) {
 // standing to flat one after another, as a player knocks their hand over -
 // the winner's at once, the others' a moment later (`toppleAt`, seconds);
 // the winning tile drops in after.
-function RevealedHand({ tiles, winningTile, toppleAt = 0 }: { tiles: Tile[]; winningTile: Tile | null; toppleAt?: number }) {
+function RevealedHandView({ tiles, winningTile, toppleAt = 0 }: { tiles: Tile[]; winningTile: Tile | null; toppleAt?: number }) {
   const sorted = sortTiles(tiles);
   const mark = winningTile ? sorted.findIndex((t) => sameTile(t, winningTile)) : -1;
   const rest = mark < 0 ? sorted : sorted.filter((_, i) => i !== mark);
@@ -308,9 +310,9 @@ function RevealedHand({ tiles, winningTile, toppleAt = 0 }: { tiles: Tile[]; win
 
 // A seat's discards, in front of it; the newest one carries a gold pin.
 // `riichiAt`: the pond index of the tile that declared 叮, laid sideways.
-function Pond({ tiles, side, pinLast, riichiAt }: { tiles: Tile[]; side: Side; pinLast: boolean; riichiAt?: number }) {
+function PondView({ tiles, side, pinLast, riichiAt }: { tiles: Tile[]; side: Side; pinLast: boolean; riichiAt?: number }) {
   return (
-    <div className={`play-pond play-pond-${side}`}>
+    <div className={`play-pond play-pond-${side}${riichiAt !== undefined ? " has-riichi" : ""}`}>
       {tiles.map((t, i) => {
         const last = pinLast && i === tiles.length - 1;
         return (
@@ -322,6 +324,23 @@ function Pond({ tiles, side, pinLast, riichiAt }: { tiles: Tile[]; side: Side; p
     </div>
   );
 }
+
+// The table's pieces drawn again only when what they show changes - the
+// game is copied whole on every move, so a pond or a seat's melds would
+// otherwise be rebuilt (every tile, every side) many times a second on a
+// busy table.
+const tilesKey = (ts: Tile[]) => ts.map(tileKey).join();
+const meldsKey = (ms: GameMeld[]) =>
+  ms.map((m) => `${m.kind}${m.concealed ? "c" : ""}${tilesKey(m.tiles)}${m.claimed ? tileKey(m.claimed) : ""}`).join("|");
+const EdgeTiles = memo(EdgeTilesView);
+const Melds = memo(MeldsView, (a, b) => a.hideConcealed === b.hideConcealed && a.standing === b.standing && meldsKey(a.melds) === meldsKey(b.melds));
+const Flowers = memo(FlowersView, (a, b) => a.flowers.map((f) => f.kind + f.rank).join() === b.flowers.map((f) => f.kind + f.rank).join());
+const RevealedHand = memo(
+  RevealedHandView,
+  (a, b) =>
+    a.toppleAt === b.toppleAt && tilesKey(a.tiles) === tilesKey(b.tiles) && (a.winningTile ? tileKey(a.winningTile) : "") === (b.winningTile ? tileKey(b.winningTile) : "")
+);
+const Pond = memo(PondView, (a, b) => a.side === b.side && a.pinLast === b.pinLast && a.riichiAt === b.riichiAt && tilesKey(a.tiles) === tilesKey(b.tiles));
 
 // The wind compass: the four seats' winds where those seats sit, the one to
 // act lit gold with a beam toward them, and a number in the middle.
@@ -1558,7 +1577,7 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
                 <span className="play-my-melds">
                   {/* Flowers always leftmost, then melds, then the hand. */}
                   <Flowers flowers={me.flowers} />
-                  <Melds melds={me.melds} hideConcealed={!seated} />
+                  <Melds melds={me.melds} hideConcealed={!seated} standing />
                 </span>
               )}
               {handTiles.map((t, i) => {
@@ -1584,7 +1603,7 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
                     title={barred ? "食替 – can't discard this now" : undefined}
                     aria-label={barred ? `${tileLabel(t)} (食替 – can't discard this now)` : selected === i ? `Discard ${tileLabel(t)}` : tileLabel(t)}
                   >
-                    {t === BLANK ? <span className="play-back" /> : <TileGlyphSpan tile={t} block />}
+                    {t === BLANK ? <span className="play-back" /> : <TileGlyphSpan tile={t} block="fine" />}
                   </button>
                 );
               })}

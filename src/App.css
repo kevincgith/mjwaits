@@ -6275,7 +6275,7 @@ html.playing body {
 
 /* Your own hand falls back onto the table when you win: each block tips
    away from you about its foot until it lies at the felt's angle. */
-.play-hand.is-toppled .tile-glyph.tile-art {
+.play-hand.is-toppled :is(.tile-glyph.tile-art, .play-back) {
   animation: play-topple-mine 0.46s cubic-bezier(0.55, 0, 1, 0.45) both;
   animation-delay: calc(var(--i, 0) * 0.035s);
 }
@@ -6320,6 +6320,7 @@ html.playing body {
 }
 
 
+
 .play-seat-left .play-back,
 .play-seat-right .play-back {
   width: 0.96em;
@@ -6355,6 +6356,47 @@ html.playing body {
   /* A tile standing: as tall as a face, its footprint a face wide along
      the row and its thickness across. */
   --play-tile-height: 1em;
+}
+
+/* One shadow for a whole row of standing tiles (they stand together, so
+   one soft shape under them all - not one per tile), on the felt under
+   just the tiles there are (--count, packed at the wall's far end), falling
+   in across the felt, as from light behind each player. */
+.play-edge {
+  position: relative;
+  transform-style: preserve-3d;
+}
+
+.play-edge::after {
+  content: "";
+  position: absolute;
+  border-radius: 0.1em;
+  pointer-events: none;
+  transform: translateZ(0.5px);
+}
+
+.play-edge-top::after {
+  top: 0;
+  right: 0;
+  width: calc(var(--count, 0) * 0.78em);
+  height: 0.55em;
+  box-shadow: 0 0.55em 0.45em 0 rgba(0, 0, 0, 0.6);
+}
+
+.play-edge-left::after {
+  top: 0;
+  left: 0;
+  width: 0.55em;
+  height: calc(var(--count, 0) * 0.78em);
+  box-shadow: 0.55em 0 0.45em 0 rgba(0, 0, 0, 0.6);
+}
+
+.play-edge-right::after {
+  bottom: 0;
+  right: 0;
+  width: 0.55em;
+  height: calc(var(--count, 0) * 0.78em);
+  box-shadow: -0.55em 0 0.45em 0 rgba(0, 0, 0, 0.6);
 }
 
 /* A wall is a full hand long (17), its tiles packed at its player's left -
@@ -7200,8 +7242,12 @@ html.playing body {
   transform: translateY(-0.2em);
 }
 
-.play-hand.is-turn .play-hand-tile:not(.is-selected):not(:disabled):hover {
-  transform: translateY(-0.08em);
+/* Only with a real pointer: on a phone the tap that threw a tile leaves a
+   "hover" behind, and the tile that slides under it looked picked. */
+@media (hover: hover) {
+  .play-hand.is-turn .play-hand-tile:not(.is-selected):not(:disabled):hover {
+    transform: translateY(-0.08em);
+  }
 }
 
 /* Hints: a gold underline under the bots' pick. */
@@ -7516,21 +7562,122 @@ html.playing body {
   transform: rotateZ(-165.00deg) rotateX(90deg);
 }
 
+/* A discard lies still, always in the same place, so some of its sides can
+   never be seen from your seat - those aren't drawn at all (fewer 3D pieces
+   for the browser to put together on every frame):
+   - the side facing away from you, and for a side player's tiles (turned a
+     quarter) the end facing the table's edge;
+   - an end pressed against the next tile in its row;
+   - the edge covered by a tile lying right in front of it in the next row.
+   Rows are 8 long across, 6 down the sides; a pond with a 叮 tile (laid
+   sideways, a wider slot) keeps everything but the faces away from you. A
+   corner goes only where both its sides do. */
+:is(.play-pond-top, .play-pond-bottom) .play-pond-tile:not(.is-riichi) .tile-side.is-far,
+:is(.play-pond-left, .play-pond-right) .play-pond-tile.is-riichi .tile-side.is-far,
+.play-pond-left .play-pond-tile:not(.is-riichi) .tile-side:is(.is-near, .is-left, .is-nl1),
+.play-pond-right .play-pond-tile:not(.is-riichi) .tile-side:is(.is-near, .is-right, .is-nr1) {
+  display: none;
+}
+
+/* Your pond and the far one: ends inside a row; the edge toward you under
+   the next row's tile (yours grows toward you, theirs away). */
+.play-pond:is(.play-pond-top, .play-pond-bottom):not(.has-riichi) .play-pond-tile:not(:nth-child(8n + 1)):not(:nth-child(8n)):not(:last-child) .tile-side:is(.is-left, .is-right),
+.play-pond-bottom:not(.has-riichi) .play-pond-tile:nth-last-child(n + 9) .tile-side.is-near,
+.play-pond-top:not(.has-riichi) .play-pond-tile:nth-child(n + 9) .tile-side.is-near {
+  display: none;
+}
+
+/* The side ponds: the edge toward you under the tile below it in the
+   column (the left player's columns run down, the right's up); the end
+   toward the middle under the previous column. */
+.play-pond-left:not(.has-riichi) .play-pond-tile:not(:nth-child(6n)):not(:last-child) .tile-side.is-right,
+.play-pond-right:not(.has-riichi) .play-pond-tile:not(:nth-child(6n + 1)) .tile-side.is-left,
+:is(.play-pond-left, .play-pond-right):not(.has-riichi) .play-pond-tile:nth-child(n + 7) .tile-side.is-far {
+  display: none;
+}
+
+/* Melds the same: tiles in a meld (or a row of flowers) touch, so where
+   they meet nothing shows, nor the side facing away - the far side of the
+   far player's, the outer end of a side player's (turned a quarter). A
+   kong's fourth tile, up on top, keeps all its sides; so does a hand laid
+   down at the end (it shows every side as it topples). */
+.play-seat-top :is(.play-meld:not(.is-revealed), .play-flowers) > :is(.tile-glyph, .play-back) > .tile-side.is-far,
+.play-seat-top :is(.play-meld:not(.is-revealed), .play-flowers) > :is(.tile-glyph, .play-back):not(:first-child) > .tile-side.is-right,
+.play-seat-top :is(.play-meld:not(.is-revealed), .play-flowers) > :is(.tile-glyph, .play-back):not(:last-child) > .tile-side.is-left,
+.play-seat-left :is(.play-meld:not(.is-revealed), .play-flowers) > :is(.tile-glyph, .play-back) > .tile-side:is(.is-near, .is-left, .is-nl1),
+.play-seat-left :is(.play-meld:not(.is-revealed), .play-flowers) > :is(.tile-glyph, .play-back):not(:last-child) > .tile-side.is-right,
+.play-seat-right :is(.play-meld:not(.is-revealed), .play-flowers) > :is(.tile-glyph, .play-back) > .tile-side:is(.is-near, .is-right, .is-nr1),
+.play-seat-right :is(.play-meld:not(.is-revealed), .play-flowers) > :is(.tile-glyph, .play-back):not(:first-child) > .tile-side.is-left {
+  display: none;
+}
+
+/* Your hand and melds stand leaning toward you, seen from above: the foot
+   never shows, nor the ends pressed between neighbours - except beside a
+   gap (the drawn tile, set apart; a tile picked to throw, lifted). Toppled,
+   they show everything again. */
+.play-hand:not(.is-toppled) :is(.tile-glyph.tile-art, .play-back) > .tile-side.is-near,
+.play-hand:not(.is-toppled) :is(.play-meld, .play-flowers) > :is(.tile-glyph, .play-back):not(:last-child) > .tile-side.is-right,
+.play-hand:not(.is-toppled) :is(.play-meld, .play-flowers) > :is(.tile-glyph, .play-back):not(:first-child) > .tile-side.is-left,
+.play-hand:not(.is-toppled) .play-hand-tile:not(.is-selected):has(+ .play-hand-tile:not(.is-drawn):not(.is-selected)) > .tile-glyph > .tile-side.is-right,
+.play-hand:not(.is-toppled) .play-hand-tile:not(.is-selected) + .play-hand-tile:not(.is-drawn):not(.is-selected) > .tile-glyph > .tile-side.is-left {
+  display: none;
+}
+
+/* One panel for a whole corner: from the first panel's foot, across the
+   rounding at 45deg (see TileSides). */
+:is(.play-felt, .play-hand) .tile-side.is-corner.is-whole {
+  width: calc(var(--tile-r) * 1.4142 + 1px);
+  background: linear-gradient(rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.5)), rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.5))), linear-gradient(to bottom, var(--tile-sides));
+}
+
+:is(.play-felt, .play-hand) .tile-side.is-nr1.is-whole {
+  transform: rotateZ(-45deg) rotateX(90deg);
+}
+
+:is(.play-felt, .play-hand) .tile-side.is-nl1.is-whole {
+  transform: rotateZ(45deg) rotateX(90deg);
+}
+
+:is(.play-felt, .play-hand) .tile-side.is-fl1.is-whole {
+  transform: rotateZ(135deg) rotateX(90deg);
+}
+
+:is(.play-felt, .play-hand) .tile-side.is-fr1.is-whole {
+  transform: rotateZ(-135deg) rotateX(90deg);
+}
+
+
 /* Your hand and melds are the same blocks as the table's, seen with the
    table's own perspective from above you: standing, leaning a little toward
    you so their tops show; flat on the felt once toppled (the felt's own
    32deg). */
 .play-hand {
+  position: relative;
   perspective: 1100px;
   perspective-origin: 50% -60%;
   transform-style: preserve-3d;
+}
+
+/* One shadow for your whole standing row, under its foot, falling toward
+   you (the same light as the walls'). */
+.play-hand::before {
+  content: "";
+  position: absolute;
+  left: 0.1em;
+  right: 0.1em;
+  bottom: -0.12em;
+  height: 0.32em;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.5);
+  filter: blur(0.1em);
+  pointer-events: none;
 }
 
 .play-hand :is(.play-my-melds, .play-meld, .play-flowers, .play-kong-stack, .play-kong-top, .play-hand-tile) {
   transform-style: preserve-3d;
 }
 
-.play-hand .tile-glyph.tile-art {
+.play-hand :is(.tile-glyph.tile-art, .play-back) {
   /* Pivoting on the face's foot, so the face stands where its slot is. */
   transform-origin: 50% 100% var(--play-thick);
   transform: rotateX(-22deg);
