@@ -228,8 +228,10 @@ function runOrder(tiles: Tile[], claimed: Tile): number[] {
   return [others[0], c, others[1]];
 }
 
-// A kong is three tiles wide, its fourth stacked on the middle one.
-function MeldsView({ melds, hideConcealed }: { melds: GameMeld[]; hideConcealed?: boolean }) {
+// A kong is three tiles wide, its fourth stacked on the middle one - where
+// tiles lie on the table. Your own stand (`standing`), and nothing rests on
+// a standing tile, so there a kong is its four tiles side by side.
+function MeldsView({ melds, hideConcealed, standing }: { melds: GameMeld[]; hideConcealed?: boolean; standing?: boolean }) {
   return (
     <>
       {melds.map((m, i) => {
@@ -249,7 +251,7 @@ function MeldsView({ melds, hideConcealed }: { melds: GameMeld[]; hideConcealed?
               // A called run shows the claimed tile in the middle: 1-3-2 for
               // a 3 taken to 1-2.
               runOrder(m.tiles, m.claimed).map((j) => tile(j))
-            ) : m.kind === "kong" && m.tiles.length === 4 ? (
+            ) : m.kind === "kong" && m.tiles.length === 4 && !standing ? (
               <>
                 {tile(0)}
                 <span className="play-kong-stack">
@@ -331,7 +333,7 @@ const tilesKey = (ts: Tile[]) => ts.map(tileKey).join();
 const meldsKey = (ms: GameMeld[]) =>
   ms.map((m) => `${m.kind}${m.concealed ? "c" : ""}${tilesKey(m.tiles)}${m.claimed ? tileKey(m.claimed) : ""}`).join("|");
 const EdgeTiles = memo(EdgeTilesView);
-const Melds = memo(MeldsView, (a, b) => a.hideConcealed === b.hideConcealed && meldsKey(a.melds) === meldsKey(b.melds));
+const Melds = memo(MeldsView, (a, b) => a.hideConcealed === b.hideConcealed && a.standing === b.standing && meldsKey(a.melds) === meldsKey(b.melds));
 const Flowers = memo(FlowersView, (a, b) => a.flowers.map((f) => f.kind + f.rank).join() === b.flowers.map((f) => f.kind + f.rank).join());
 const RevealedHand = memo(
   RevealedHandView,
@@ -1575,7 +1577,7 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
                 <span className="play-my-melds">
                   {/* Flowers always leftmost, then melds, then the hand. */}
                   <Flowers flowers={me.flowers} />
-                  <Melds melds={me.melds} hideConcealed={!seated} />
+                  <Melds melds={me.melds} hideConcealed={!seated} standing />
                 </span>
               )}
               {handTiles.map((t, i) => {

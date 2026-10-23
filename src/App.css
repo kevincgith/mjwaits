@@ -6319,11 +6319,6 @@ html.playing body {
   transform: translateZ(var(--play-thick));
 }
 
-/* In your melds, where tiles stand: the fourth leans on the middle one, a
-   tile's thickness in front of it and raised, so all of it shows. */
-.play-hand .play-kong-top {
-  transform: translateY(-0.32em) translateZ(calc(var(--play-thick) + 1px));
-}
 
 
 .play-seat-left .play-back,
