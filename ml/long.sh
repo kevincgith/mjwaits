@@ -83,6 +83,40 @@ score_same() {
   echo
 }
 
+halt_file=ml/runs/long/HALTED
+FLOOR=-8
+# Stop the whole run, and say so (a Mac notification, the log, and a
+# HALTED file the dashboard shows): a broken network or test should cost one
+# round, not a night. `ml/ctl.sh start` clears it.
+halt() {
+  log "HALTED: $*"
+  printf '%s\n' "$*" >"$halt_file"
+  osascript -e "display notification \"$*\" with title \"MJWaits training stopped\" sound name \"Basso\"" >/dev/null 2>&1 || true
+  save
+  exit 1
+}
+
+# The network's win rate (%) in a scored model's arena table.
+net_win() { awk '/\(net\)/ { for (i = 1; i <= NF; i++) if ($i == "(net)") { w = $(i + 2); sub("%", "", w); print w; exit } }' "$1/arena.txt" 2>/dev/null; }
+
+# A scored network that looks broken stops the run: a healthy one wins
+# ~22-25% of hands; under 10%, or a score past FLOOR, is a broken network
+# (NaN weights once made one that never wins) or a broken test.
+check_health() {
+  local model=$1 score=$2 w
+  w=$(net_win "$model")
+  if [ -z "$w" ] || awk -v w="$w" 'BEGIN { exit !(w < 10) }'; then halt "$(basename "$model") won ${w:-?}% of its test hands - the network looks broken"; fi
+  if awk -v s="$score" -v f="$FLOOR" 'BEGIN { exit !(s < f) }'; then halt "$(basename "$model") scored $score in its test - far outside the normal range"; fi
+}
+
+# Two failed rounds in a row (training or scoring) stop the run too.
+fails=0
+failed() {
+  fails=$((fails + 1))
+  [ "$fails" -ge 2 ] && halt "two rounds in a row failed: $*"
+  return 0
+}
+
 better() { awk -v a="$1" -v b="$2" 'BEGIN { exit !(a > b) }'; }
 
 npx vite build --ssr scripts/ml-selfplay.ts --outDir .ml-selfplay --emptyOutDir --logLevel warn
@@ -140,6 +174,7 @@ while true; do
   rm -rf "ml/data/$name"
   if [ ! -f "ml/runs/$name/policy.onnx" ]; then
     log "  training failed - see ml/runs/long/$name-train.log"
+    failed "training"
     save
     continue
   fi
@@ -147,9 +182,13 @@ while true; do
   # A missing score is a failed test, never a pass.
   if [ -z "$s" ] || [ -z "$b" ]; then
     log "  $name: scoring failed (round '${s:-none}', best '${b:-none}') - kept $best"
+    failed "scoring"
     save
     continue
   fi
+  check_health "$best" "$b"
+  check_health "ml/runs/$name" "$s"
+  fails=0
   if better "$s" "$b"; then
     log "  $name: $s vs best $b on the same 8,192 hands - new best"
     best="ml/runs/$name"

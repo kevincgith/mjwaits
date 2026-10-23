@@ -59,6 +59,40 @@ score() {
   awk '/Utility\/day/ { on = 1; next } on && /\(net\)/ { print $NF / 64; exit }' "$1/arena.txt"
 }
 
+halt_file=ml/runs/matchday/HALTED
+FLOOR=-10
+# Stop the whole run, and say so (a Mac notification, the log, and a
+# HALTED file the dashboard shows): a broken network or test should cost one
+# round, not a night. `ml/ctl.sh start` clears it.
+halt() {
+  log "HALTED: $*"
+  printf '%s\n' "$*" >"$halt_file"
+  osascript -e "display notification \"$*\" with title \"MJWaits training stopped\" sound name \"Basso\"" >/dev/null 2>&1 || true
+  save
+  exit 1
+}
+
+# The network's win rate (%) in a scored model's arena table.
+net_win() { awk '/\(net\)/ { for (i = 1; i <= NF; i++) if ($i == "(net)") { w = $(i + 2); sub("%", "", w); print w; exit } }' "$1/arena.txt" 2>/dev/null; }
+
+# A scored network that looks broken stops the run: a healthy one wins
+# ~22-25% of hands; under 10%, or a score past FLOOR, is a broken network
+# (NaN weights once made one that never wins) or a broken test.
+check_health() {
+  local model=$1 score=$2 w
+  w=$(net_win "$model")
+  if [ -z "$w" ] || awk -v w="$w" 'BEGIN { exit !(w < 10) }'; then halt "$(basename "$model") won ${w:-?}% of its test hands - the network looks broken"; fi
+  if awk -v s="$score" -v f="$FLOOR" 'BEGIN { exit !(s < f) }'; then halt "$(basename "$model") scored $score in its test - far outside the normal range"; fi
+}
+
+# Two failed rounds in a row (training or scoring) stop the run too.
+fails=0
+failed() {
+  fails=$((fails + 1))
+  [ "$fails" -ge 2 ] && halt "two rounds in a row failed: $*"
+  return 0
+}
+
 better() { awk -v a="$1" -v b="$2" 'BEGIN { exit !(a > b) }'; }
 
 npx vite build --ssr scripts/ml-data.ts --outDir .ml-md-data --emptyOutDir --logLevel warn
@@ -81,6 +115,8 @@ if [ ! -f ml/runs/matchday-copy/policy.onnx ]; then
   log "matchDay copy: learning the rule bots' play, with the match inputs"
   ml/.venv/bin/python -u ml/train.py --data ml/data/matchday-rules --out ml/runs/matchday-copy --arch tile --width 256 --planes 20 --epochs 6 2>&1 | grep --line-buffered -v Warning >ml/runs/matchday/matchday-copy-train.log
   s=$(score ml/runs/matchday-copy)
+  [ -n "$s" ] || halt "matchday-copy scoring failed"
+  check_health ml/runs/matchday-copy "$s"
   log "  matchday-copy: $s"
   best=ml/runs/matchday-copy
   best_score=$s
@@ -93,6 +129,8 @@ if [ ! -f ml/runs/matchday-corrected/policy.onnx ]; then
   log "  training on the rule-bot match days + the corrections"
   ml/.venv/bin/python -u ml/train.py --data "ml/data/matchday-rules,$data" --out ml/runs/matchday-corrected --arch tile --width 256 --planes 20 --epochs 6 2>&1 | grep --line-buffered -v Warning >ml/runs/matchday/matchday-corrected-train.log
   s=$(score ml/runs/matchday-corrected)
+  [ -n "$s" ] || halt "matchday-corrected scoring failed"
+  check_health ml/runs/matchday-corrected "$s"
   log "  matchday-corrected: $s (best so far $best_score)"
   if better "$s" "$best_score"; then best=ml/runs/matchday-corrected; best_score=$s; log "  -> new best"; fi
   save
@@ -108,10 +146,14 @@ while true; do
   rm -rf "ml/data/$name"
   if [ ! -f "ml/runs/$name/policy.onnx" ]; then
     log "  training failed - see ml/runs/matchday/$name-train.log"
+    failed "training"
     save
     continue
   fi
   s=$(score "ml/runs/$name")
+  [ -n "$s" ] || halt "$name scoring failed"
+  check_health "ml/runs/$name" "$s"
+  fails=0
   if better "$s" "$best_score"; then
     log "  $name: $s - new best (was $best_score)"
     best="ml/runs/$name"

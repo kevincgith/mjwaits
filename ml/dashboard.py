@@ -394,7 +394,13 @@ def run_status(key):
         if best_arena and scores[-1]["name"] == st.get("best", "").split("/")[-1]:
             last_arena = best_arena
     backup = os.path.join(BACKUP, os.path.relpath(os.path.join(ROOT, cfg["state"]), os.path.join(ROOT, "ml/runs")))
+    halted_path = os.path.join(ROOT, os.path.dirname(cfg["state"]), "HALTED")
+    halted = open(halted_path).read().strip() if os.path.exists(halted_path) else None
+    notes = insights(key, scores, st, step, best_arena, last_arena)
+    if halted:
+        notes.insert(0, {"tone": "warn", "text": f"Stopped by its health check: {halted}. Look into it, then Start to carry on."})
     return {
+        "halted": halted,
         "key": key,
         "about": cfg["about"],
         "metric": cfg["metric"],
@@ -405,7 +411,7 @@ def run_status(key):
         "scores": scores,
         "table": best_arena,
         "training": shown,
-        "insights": insights(key, scores, st, step, best_arena, last_arena),
+        "insights": notes,
         "log": entries[-40:],
         "started": entries[0]["at"] if entries else None,
         "backup": time.strftime("%m-%d %H:%M", time.localtime(os.path.getmtime(backup))) if os.path.exists(backup) else None,

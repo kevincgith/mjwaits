@@ -31,6 +31,8 @@ if [ "$cmd" = start ]; then
   run=$(norm "${1:-perHand}")
   shift || true
   if pgrep -f "$(script "$run")" >/dev/null; then echo "$run already running (ml/ctl.sh status $run)"; exit 1; fi
+  # Starting again clears a health-check stop (see halt in the scripts).
+  rm -f "$(dirname "$(statefile "$run")")/HALTED"
   nohup nice -n 10 caffeinate -i "$(script "$run")" "$@" >>"$(logfile "$run")" 2>&1 &
   echo "$run started - $(logfile "$run")"
   exit 0
@@ -51,6 +53,7 @@ for r in $runs; do
       if [ -z "$p" ]; then echo "$run: not running"
       elif ps -o stat= -p "$p" | grep -q T; then echo "$run: paused"
       else echo "$run: running"; fi
+      [ -f "$(dirname "$(statefile "$run")")/HALTED" ] && echo "HALTED: $(cat "$(dirname "$(statefile "$run")")/HALTED")"
       [ -f "$(statefile "$run")" ] && cat "$(statefile "$run")"
       tail -n 6 "$(logfile "$run")" 2>/dev/null
       ;;

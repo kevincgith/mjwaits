@@ -305,7 +305,8 @@ function renderRun(r) {
   const f = (name) => el.querySelector(`[data-f="${name}"]`);
   const run = r.run === "running" ? "running" : r.run === "paused" ? "paused" : "stopped";
   f("pill").className = "pill " + run;
-  f("pill").lastElementChild.textContent = run === "running" ? "Running" : run === "paused" ? "Paused" : "Not running";
+  f("pill").lastElementChild.textContent = run === "running" ? "Running" : run === "paused" ? "Paused" : r.halted ? "Stopped by health check" : "Not running";
+  if (r.halted && run === "stopped") f("pill").className = "pill paused";
   f("pause").disabled = run !== "running";
   f("resume").disabled = run === "running";
   f("resume").textContent = run === "stopped" ? "Start" : "Resume";
