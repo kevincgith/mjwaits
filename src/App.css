@@ -5495,6 +5495,8 @@ img.tile-face {
   /* Tile backs seen edge-on: a jade back over the ivory face edge. */
   --play-back: #35a84a;
   --play-back-edge: #1f7a32;
+  /* The ivory body between a tile's face and its back. */
+  --play-ivory: #e6dfcb;
   --play-gold: #ffd166;
   --play-gold-deep: #e29a1c;
   --play-neg: #ffb4a8;
@@ -5521,7 +5523,7 @@ html.playing body {
   color: var(--play-on-felt);
   --play-hand: min(calc((100vw - env(safe-area-inset-left) - env(safe-area-inset-right) - 2rem) / 14.6), 12.5vh, 62px);
   --play-small: clamp(13px, 5.2vh, 28px);
-  --play-pond: clamp(16px, calc(var(--play-hand) * 0.58), 36px);
+  --play-pond: clamp(14px, calc(var(--play-hand) * 0.72), 44px);
   /* How far the table runs on under your hand. */
   --play-under: calc(var(--play-hand) * 0.9);
 
@@ -5625,7 +5627,14 @@ html.playing body {
   margin-bottom: calc(-1 * var(--play-under));
   box-sizing: border-box;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1fr) auto;
+  /* The side seats' columns are as wide as the wider of the two
+     (--play-side, measured - see PlayPanel), so a seat's melds growing
+     never pushes the middle off centre. */
+  grid-template-columns: var(--play-side, auto) minmax(0, 1fr) auto minmax(0, 1fr) var(--play-side, auto);
+  /* The ponds (and the compass with them) as big as fits: --play-pond-k
+     steps down as the ponds fill, so they never run into each other or off
+     the felt (fitted in PlayPanel). */
+  --play-pond: clamp(14px, calc(var(--play-hand) * var(--play-pond-k, 0.72)), 44px);
   grid-template-rows: auto auto minmax(0, 1fr) auto;
   grid-template-areas:
     "lseat top   top    top   rseat"
@@ -5958,12 +5967,15 @@ html.playing body {
   margin-top: 2.2em;
 }
 
+/* Each as wide as what's in it (measured for --play-side), against its edge. */
 .play-seat-left {
   grid-area: lseat;
+  justify-self: start;
 }
 
 .play-seat-right {
   grid-area: rseat;
+  justify-self: end;
   flex-direction: row-reverse;
 }
 
@@ -6232,13 +6244,19 @@ html.playing body {
   line-height: 0;
 }
 
-/* The tile that declared 叮 lies sideways. */
+/* The tile that declared 叮 lies sideways: its slot is as wide as a tile
+   is long, so it doesn't run into its neighbours, and it sits on the same
+   line as them (turning it leaves it 0.11em high in its box). */
 .play-pond-tile.is-riichi {
-  margin: 0 0.12em;
+  display: inline-flex;
+  justify-content: center;
+  width: 1em;
+  margin: 0 0.04em;
 }
 
 .play-pond-tile.is-riichi > .tile-glyph {
   rotate: 90deg;
+  translate: 0 0.11em;
 }
 
 /* The newest discard: a gold pin, and a short drop onto the table. */
@@ -6697,33 +6715,42 @@ html.playing body {
   filter: brightness(0.62) saturate(0.6);
 }
 
-/* ---- Tiles with thickness ---- */
+/* ---- Tiles with thickness ----
+   One tile throughout: an ivory body under the face and a jade back, seen
+   from your seat. A tile lying on the felt shows its near edge below the
+   face - the ivory body, then the jade back; a tile standing in your hand
+   shows its top edge above the face - the ivory body nearest the face,
+   then the jade back behind it. */
 
 .play-felt img.tile-face,
-.play-my-melds img.tile-face,
 .play-result-hand img.tile-face {
   box-shadow:
     0 0 0 0.5px rgba(0, 0, 0, 0.28),
-    0 0.06em 0 #e2dccb,
-    0 0.12em 0 var(--play-back),
+    0 0.08em 0 var(--play-ivory),
+    0 0.13em 0 var(--play-back),
     0 0.15em 0 var(--play-back-edge),
     0 0.2em 0.14em rgba(0, 0, 0, 0.38);
 }
 
-.play-hand img.tile-face {
+/* Lying sideways (叮): the tile is turned a quarter, so its edge toward
+   you - its long side - is drawn along the face's own x (turned, it points
+   down the screen). */
+.play-felt .is-riichi img.tile-face {
   box-shadow:
     0 0 0 0.5px rgba(0, 0, 0, 0.28),
-    0 -0.09em 0 var(--play-back),
-    0 -0.09em 0 0.5px var(--play-back-edge),
-    0 0.05em 0 #ddd6c3,
-    0 0.14em 0.16em rgba(0, 0, 0, 0.45);
+    0.08em 0 0 var(--play-ivory),
+    0.13em 0 0 var(--play-back),
+    0.15em 0 0 var(--play-back-edge),
+    0.2em 0 0.14em rgba(0, 0, 0, 0.38);
 }
 
+.play-hand img.tile-face,
 .play-my-melds img.tile-face {
   box-shadow:
     0 0 0 0.5px rgba(0, 0, 0, 0.28),
-    0 -0.09em 0 var(--play-back),
-    0 0.05em 0 #ddd6c3,
+    0 -0.07em 0 var(--play-ivory),
+    0 -0.12em 0 var(--play-back),
+    0 -0.12em 0 0.5px var(--play-back-edge),
     0 0.14em 0.16em rgba(0, 0, 0, 0.45);
 }
 

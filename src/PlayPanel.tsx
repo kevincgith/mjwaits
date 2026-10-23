@@ -20,7 +20,7 @@
 // Your moves go to the server instead of into the game; the bots, timer and
 // payments are the server's.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   applyTurnMove,
   claimOptions,
@@ -142,6 +142,11 @@ const botDelay = (difficulty: number, afterCall: boolean) => 300 + difficulty * 
 // bot had a call to weigh and passed (a tell, as at a real table).
 const PASS_DELAY_MS = 380;
 const PONDER_DELAY_MS = 900;
+// Pond size, as a share of your hand's tile size: as big as fits (see fitPonds).
+const POND_SCALE = { max: 0.72, min: 0.4, step: 0.04 };
+// A discard a bot is about to take stays on the table this long first, so
+// everyone sees what was thrown before it goes into the caller's meld.
+const CLAIM_DELAY_MS = 1100;
 // The bots' pace, from the menu: every pause is multiplied by this.
 const SPEEDS = { slow: { label: "Slow", factor: 1.6 }, normal: { label: "Normal", factor: 1 }, fast: { label: "Fast", factor: 0.45 } } as const;
 type Speed = keyof typeof SPEEDS;
@@ -557,6 +562,51 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opponents]);
   const [scoresOpen, setScoresOpen] = useState(false);
+  // The side seats' columns both as wide as the wider seat (its melds and
+  // flowers included), so a call on one side never pushes the middle over.
+  const feltRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const felt = feltRef.current;
+    if (!felt) return;
+    const seats = [...felt.querySelectorAll<HTMLElement>(".play-seat-left, .play-seat-right")];
+    const fit = () => felt.style.setProperty("--play-side", `${Math.max(...seats.map((el) => el.offsetWidth))}px`);
+    fit();
+    const watch = new ResizeObserver(fit);
+    seats.forEach((el) => watch.observe(el));
+    return () => watch.disconnect();
+  }, []);
+  // The ponds as big as they'll go: from the largest size down, a step at a
+  // time, until no pond touches another, the compass or the felt's edge.
+  // Run before paint whenever the table changes, and on resizing.
+  const fitPonds = () => {
+    const felt = feltRef.current;
+    if (!felt) return;
+    const parts = [...felt.querySelectorAll<HTMLElement>(".play-pond-slot, .play-compass")];
+    const hand = felt.closest(".play-table")?.querySelector(".play-hand");
+    const crowded = () => {
+      const felted = felt.getBoundingClientRect();
+      // The felt runs on under your hand; the ponds stop above it.
+      const edge = { left: felted.left, right: felted.right, top: felted.top, bottom: Math.min(felted.bottom, hand?.getBoundingClientRect().top ?? Infinity) };
+      const boxes = parts.map((el) => el.getBoundingClientRect());
+      const off = boxes.some((b) => b.width > 0 && (b.left < edge.left || b.right > edge.right || b.top < edge.top || b.bottom > edge.bottom));
+      const touch = boxes.some((a, i) => boxes.some((b, j) => j > i && a.width > 0 && b.width > 0 && a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom));
+      return off || touch;
+    };
+    for (let k = POND_SCALE.max; k >= POND_SCALE.min; k -= POND_SCALE.step) {
+      felt.style.setProperty("--play-pond-k", k.toFixed(2));
+      if (!crowded()) break;
+    }
+  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useLayoutEffect(fitPonds, [game]);
+  useEffect(() => {
+    const felt = feltRef.current;
+    if (!felt) return;
+    const watch = new ResizeObserver(() => fitPonds());
+    watch.observe(felt);
+    return () => watch.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const ledger = online ? online.scores : localLedger;
   // 投降 on the result card takes two taps; this is the holder armed.
   const [surrenderArmed, setSurrenderArmed] = useState<string | null>(null);
@@ -844,9 +894,11 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
       delay = 700;
     } else if (phase.kind === "claims" && humanClaims.length === 0) {
       move = () => resolve(null);
-      // Someone had a call to weigh: they take a moment either way.
+      // Someone had a call to weigh: they take a moment either way; a call
+      // that's coming lets the discard land first.
       const pondered = [1, 2, 3].some((seat) => seat !== phase.from && claimOptions(game, seat).length > 0);
-      delay = pondered ? PONDER_DELAY_MS + Math.random() * 300 : PASS_DELAY_MS;
+      const called = botDecisions?.some((d) => d !== null);
+      delay = called ? CLAIM_DELAY_MS : pondered ? PONDER_DELAY_MS + Math.random() * 300 : PASS_DELAY_MS;
     }
     if (!move) return;
     const id = window.setTimeout(move, delay * SPEEDS[speed].factor);
@@ -1267,7 +1319,7 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
         {/* The table itself, tipped away from you in perspective; your hand
             and the bar stay flat in front of it. */}
         <div className="play-stage">
-          <div className="play-felt">
+          <div className="play-felt" ref={feltRef}>
             {wall(2)}
             {wall(3)}
             {wall(1)}
