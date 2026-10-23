@@ -7091,10 +7091,29 @@ html.playing body {
 /* The four sides run between the rounded corners (a hair longer, so they
    overlap them), and each corner is three narrow panels round the
    rounding - a smoothly rounded edge, with no seam and nothing poking past
-   the top. The ends (left and right) are a shade darker than
-   the long sides, as light falls on a real block. */
-.play-felt .tile-side {
-  --shade: linear-gradient(rgba(0, 0, 0, 0), rgba(0, 0, 0, 0));
+   the top. Light falls from in front, as on a real table: the sides facing
+   you (and away) are lit, the ones facing left and right a shade darker.
+   On a tile turned a quarter that's its ends facing you, so it swaps. */
+.play-felt .tile-glyph.tile-art,
+.play-felt .play-back {
+  --shade-long: 0;
+  --shade-end: 0.14;
+}
+
+.play-seat-left :is(.play-meld, .play-flowers) .tile-glyph,
+.play-seat-right :is(.play-meld, .play-flowers) .tile-glyph,
+.play-pond-left .play-pond-tile:not(.is-riichi) > .tile-glyph,
+.play-pond-right .play-pond-tile:not(.is-riichi) > .tile-glyph,
+.play-pond-top .play-pond-tile.is-riichi > .tile-glyph,
+.play-pond-bottom .play-pond-tile.is-riichi > .tile-glyph,
+.play-felt .play-win-tile > .tile-glyph {
+  --shade-long: 0.14;
+  --shade-end: 0;
+}
+
+:is(.play-seat-left, .play-seat-right) .play-meld .play-win-tile > .tile-glyph {
+  --shade-long: 0;
+  --shade-end: 0.14;
 }
 
 .play-felt .tile-side.is-near {
@@ -7102,7 +7121,7 @@ html.playing body {
   top: calc(var(--tile-y) + var(--tile-h));
   width: calc(var(--tile-w) - 2 * var(--tile-r) + 1px);
   height: var(--play-thick);
-  background: linear-gradient(to bottom, var(--tile-sides));
+  background: linear-gradient(rgba(0, 0, 0, var(--shade-long)), rgba(0, 0, 0, var(--shade-long))), linear-gradient(to bottom, var(--tile-sides));
   transform-origin: 50% 0;
   transform: rotateX(90deg);
 }
@@ -7112,7 +7131,7 @@ html.playing body {
   top: calc(var(--tile-y) - var(--play-thick));
   width: calc(var(--tile-w) - 2 * var(--tile-r) + 1px);
   height: var(--play-thick);
-  background: linear-gradient(to top, var(--tile-sides));
+  background: linear-gradient(rgba(0, 0, 0, var(--shade-long)), rgba(0, 0, 0, var(--shade-long))), linear-gradient(to top, var(--tile-sides));
   transform-origin: 50% 100%;
   transform: rotateX(-90deg);
 }
@@ -7122,7 +7141,7 @@ html.playing body {
   top: calc(var(--tile-y) + var(--tile-r) - 0.5px);
   width: var(--play-thick);
   height: calc(var(--tile-h) - 2 * var(--tile-r) + 1px);
-  background: linear-gradient(rgba(0, 0, 0, 0.14), rgba(0, 0, 0, 0.14)), linear-gradient(to right, var(--tile-sides));
+  background: linear-gradient(rgba(0, 0, 0, var(--shade-end)), rgba(0, 0, 0, var(--shade-end))), linear-gradient(to right, var(--tile-sides));
   transform-origin: 0 50%;
   transform: rotateY(-90deg);
 }
@@ -7132,7 +7151,7 @@ html.playing body {
   top: calc(var(--tile-y) + var(--tile-r) - 0.5px);
   width: var(--play-thick);
   height: calc(var(--tile-h) - 2 * var(--tile-r) + 1px);
-  background: linear-gradient(rgba(0, 0, 0, 0.14), rgba(0, 0, 0, 0.14)), linear-gradient(to left, var(--tile-sides));
+  background: linear-gradient(rgba(0, 0, 0, var(--shade-end)), rgba(0, 0, 0, var(--shade-end))), linear-gradient(to left, var(--tile-sides));
   transform-origin: 100% 50%;
   transform: rotateY(90deg);
 }
@@ -7150,84 +7169,84 @@ html.playing body {
 .play-felt .tile-side.is-nr1 {
   left: calc(var(--tile-x) + var(--tile-w) - var(--tile-r) + var(--tile-r) * 0.0000);
   top: calc(var(--tile-y) + var(--tile-h) - var(--tile-r) + var(--tile-r) * 1.0000);
-  background: linear-gradient(rgba(0, 0, 0, 0.036), rgba(0, 0, 0, 0.036)), linear-gradient(to bottom, var(--tile-sides));
+  background: linear-gradient(rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.26)), rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.26))), linear-gradient(to bottom, var(--tile-sides));
   transform: rotateZ(-15.00deg) rotateX(90deg);
 }
 
 .play-felt .tile-side.is-nr2 {
   left: calc(var(--tile-x) + var(--tile-w) - var(--tile-r) + var(--tile-r) * 0.5000);
   top: calc(var(--tile-y) + var(--tile-h) - var(--tile-r) + var(--tile-r) * 0.8660);
-  background: linear-gradient(rgba(0, 0, 0, 0.099), rgba(0, 0, 0, 0.099)), linear-gradient(to bottom, var(--tile-sides));
+  background: linear-gradient(rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.71)), rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.71))), linear-gradient(to bottom, var(--tile-sides));
   transform: rotateZ(-45.00deg) rotateX(90deg);
 }
 
 .play-felt .tile-side.is-nr3 {
   left: calc(var(--tile-x) + var(--tile-w) - var(--tile-r) + var(--tile-r) * 0.8660);
   top: calc(var(--tile-y) + var(--tile-h) - var(--tile-r) + var(--tile-r) * 0.5000);
-  background: linear-gradient(rgba(0, 0, 0, 0.135), rgba(0, 0, 0, 0.135)), linear-gradient(to bottom, var(--tile-sides));
+  background: linear-gradient(rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.96)), rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.96))), linear-gradient(to bottom, var(--tile-sides));
   transform: rotateZ(-75.00deg) rotateX(90deg);
 }
 
 .play-felt .tile-side.is-nl1 {
   left: calc(var(--tile-x) + var(--tile-r) + var(--tile-r) * -1.0000);
   top: calc(var(--tile-y) + var(--tile-h) - var(--tile-r) + var(--tile-r) * 0.0000);
-  background: linear-gradient(rgba(0, 0, 0, 0.135), rgba(0, 0, 0, 0.135)), linear-gradient(to bottom, var(--tile-sides));
+  background: linear-gradient(rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.96)), rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.96))), linear-gradient(to bottom, var(--tile-sides));
   transform: rotateZ(75.00deg) rotateX(90deg);
 }
 
 .play-felt .tile-side.is-nl2 {
   left: calc(var(--tile-x) + var(--tile-r) + var(--tile-r) * -0.8660);
   top: calc(var(--tile-y) + var(--tile-h) - var(--tile-r) + var(--tile-r) * 0.5000);
-  background: linear-gradient(rgba(0, 0, 0, 0.099), rgba(0, 0, 0, 0.099)), linear-gradient(to bottom, var(--tile-sides));
+  background: linear-gradient(rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.71)), rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.71))), linear-gradient(to bottom, var(--tile-sides));
   transform: rotateZ(45.00deg) rotateX(90deg);
 }
 
 .play-felt .tile-side.is-nl3 {
   left: calc(var(--tile-x) + var(--tile-r) + var(--tile-r) * -0.5000);
   top: calc(var(--tile-y) + var(--tile-h) - var(--tile-r) + var(--tile-r) * 0.8660);
-  background: linear-gradient(rgba(0, 0, 0, 0.036), rgba(0, 0, 0, 0.036)), linear-gradient(to bottom, var(--tile-sides));
+  background: linear-gradient(rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.26)), rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.26))), linear-gradient(to bottom, var(--tile-sides));
   transform: rotateZ(15.00deg) rotateX(90deg);
 }
 
 .play-felt .tile-side.is-fl1 {
   left: calc(var(--tile-x) + var(--tile-r) + var(--tile-r) * -0.0000);
   top: calc(var(--tile-y) + var(--tile-r) + var(--tile-r) * -1.0000);
-  background: linear-gradient(rgba(0, 0, 0, 0.036), rgba(0, 0, 0, 0.036)), linear-gradient(to bottom, var(--tile-sides));
+  background: linear-gradient(rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.26)), rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.26))), linear-gradient(to bottom, var(--tile-sides));
   transform: rotateZ(165.00deg) rotateX(90deg);
 }
 
 .play-felt .tile-side.is-fl2 {
   left: calc(var(--tile-x) + var(--tile-r) + var(--tile-r) * -0.5000);
   top: calc(var(--tile-y) + var(--tile-r) + var(--tile-r) * -0.8660);
-  background: linear-gradient(rgba(0, 0, 0, 0.099), rgba(0, 0, 0, 0.099)), linear-gradient(to bottom, var(--tile-sides));
+  background: linear-gradient(rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.71)), rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.71))), linear-gradient(to bottom, var(--tile-sides));
   transform: rotateZ(135.00deg) rotateX(90deg);
 }
 
 .play-felt .tile-side.is-fl3 {
   left: calc(var(--tile-x) + var(--tile-r) + var(--tile-r) * -0.8660);
   top: calc(var(--tile-y) + var(--tile-r) + var(--tile-r) * -0.5000);
-  background: linear-gradient(rgba(0, 0, 0, 0.135), rgba(0, 0, 0, 0.135)), linear-gradient(to bottom, var(--tile-sides));
+  background: linear-gradient(rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.96)), rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.96))), linear-gradient(to bottom, var(--tile-sides));
   transform: rotateZ(105.00deg) rotateX(90deg);
 }
 
 .play-felt .tile-side.is-fr1 {
   left: calc(var(--tile-x) + var(--tile-w) - var(--tile-r) + var(--tile-r) * 1.0000);
   top: calc(var(--tile-y) + var(--tile-r) + var(--tile-r) * -0.0000);
-  background: linear-gradient(rgba(0, 0, 0, 0.135), rgba(0, 0, 0, 0.135)), linear-gradient(to bottom, var(--tile-sides));
+  background: linear-gradient(rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.96)), rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.96))), linear-gradient(to bottom, var(--tile-sides));
   transform: rotateZ(-105.00deg) rotateX(90deg);
 }
 
 .play-felt .tile-side.is-fr2 {
   left: calc(var(--tile-x) + var(--tile-w) - var(--tile-r) + var(--tile-r) * 0.8660);
   top: calc(var(--tile-y) + var(--tile-r) + var(--tile-r) * -0.5000);
-  background: linear-gradient(rgba(0, 0, 0, 0.099), rgba(0, 0, 0, 0.099)), linear-gradient(to bottom, var(--tile-sides));
+  background: linear-gradient(rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.71)), rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.71))), linear-gradient(to bottom, var(--tile-sides));
   transform: rotateZ(-135.00deg) rotateX(90deg);
 }
 
 .play-felt .tile-side.is-fr3 {
   left: calc(var(--tile-x) + var(--tile-w) - var(--tile-r) + var(--tile-r) * 0.5000);
   top: calc(var(--tile-y) + var(--tile-r) + var(--tile-r) * -0.8660);
-  background: linear-gradient(rgba(0, 0, 0, 0.036), rgba(0, 0, 0, 0.036)), linear-gradient(to bottom, var(--tile-sides));
+  background: linear-gradient(rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.26)), rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.26))), linear-gradient(to bottom, var(--tile-sides));
   transform: rotateZ(-165.00deg) rotateX(90deg);
 }
 
