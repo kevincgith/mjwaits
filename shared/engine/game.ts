@@ -186,14 +186,14 @@ export function surrender(s: GameState, holder: number, pulled: number): GameSta
 
 // ---- Wall ---------------------------------------------------------------
 
-function randomInt(n: number): number {
-  return Math.floor(Math.random() * n);
-}
+// Where the randomness comes from: a number in [0, 1). Math.random on a phone;
+// the multiplayer server passes one built on crypto.getRandomValues.
+export type Random = () => number;
 
-function shuffled<T>(arr: T[]): T[] {
+function shuffled<T>(arr: T[], random: Random = Math.random): T[] {
   const a = arr.slice();
   for (let i = a.length - 1; i > 0; i--) {
-    const j = randomInt(i + 1);
+    const j = Math.floor(random() * (i + 1));
     [a[i], a[j]] = [a[j], a[i]];
   }
   return a;
@@ -379,12 +379,12 @@ export function newGame(): GameState {
   return dealHand({ dealer: 0, roundWind: 1, dealerStreak: 0 });
 }
 
-export function dealHand(opts: { dealer: number; roundWind: Wind; dealerStreak: number; lahs?: Lah[] }, wall?: WallTile[]): GameState {
+export function dealHand(opts: { dealer: number; roundWind: Wind; dealerStreak: number; lahs?: Lah[] }, wall?: WallTile[], random: Random = Math.random): GameState {
   // A table-made wall: shuffled, the dice rolled, broken where they say. A
   // wall passed in (the arena, tests) is dealt as it is.
-  const dice = wall ? undefined : rollDice();
+  const dice = wall ? undefined : rollDice(random);
   const s: GameState = {
-    wall: wall ?? breakWall(shuffled(fullWall()), dice!, opts.dealer),
+    wall: wall ?? breakWall(shuffled(fullWall(), random), dice!, opts.dealer),
     players: Array.from({ length: SEATS }, () => ({ hand: [], melds: [], flowers: [], discards: [] })),
     dealer: opts.dealer,
     roundWind: opts.roundWind,
@@ -757,16 +757,16 @@ function finishWin(
 // The next hand: the dealer stays on a dealer win or a draw (連莊), otherwise
 // the deal passes on; a full lap of dealers moves the round wind.
 // 拉 carries over. `wall` is for the arena, which deals set walls.
-export function nextHand(s: GameState, wall?: WallTile[]): GameState {
+export function nextHand(s: GameState, wall?: WallTile[], random: Random = Math.random): GameState {
   if (s.phase.kind !== "over") throw new Error("Hand not over");
   const { winner } = s.phase.result;
   const lahs = s.lahs ?? [];
   if (winner === null || winner === s.dealer) {
-    return dealHand({ dealer: s.dealer, roundWind: s.roundWind, dealerStreak: s.dealerStreak + 1, lahs }, wall);
+    return dealHand({ dealer: s.dealer, roundWind: s.roundWind, dealerStreak: s.dealerStreak + 1, lahs }, wall, random);
   }
   const dealer = (s.dealer + 1) % SEATS;
   const roundWind = (dealer === 0 ? (s.roundWind % 4) + 1 : s.roundWind) as Wind;
-  return dealHand({ dealer, roundWind, dealerStreak: 0, lahs }, wall);
+  return dealHand({ dealer, roundWind, dealerStreak: 0, lahs }, wall, random);
 }
 
 // ---- Bots -------------------------------------------------------------------
