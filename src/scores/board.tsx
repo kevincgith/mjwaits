@@ -667,7 +667,7 @@ export function Board({
     return (
       <AutoHide key={`surrender-${l.holder}>${l.pulled}@${l.count}`} className="is-corner" seconds={state.settings.tipsAutoHide} onHide={seen}>
         <TipCard title="投降" onClose={seen} action={{ label: "拉踢", onClick: () => setSheet({ kind: "lah" }) }}>
-          {l.pulled} has been 拉 {l.count} times by {l.holder} ({fmt(l.value)}) - surrender is available
+          {l.pulled} can surrender to {l.holder} - 拉 {l.count} times
           {due.length > 1 && ` (+${due.length - 1} more)`}
         </TipCard>
       </AutoHide>
@@ -681,7 +681,7 @@ export function Board({
     ((state.seatChangeDue && !reminderHidden && (
       <AutoHide key="seat" className="is-corner" seconds={state.settings.tipsAutoHide} onHide={() => setReminderHidden(true)}>
         <TipCard title="執位" onClose={() => setReminderHidden(true)} action={{ label: "座位", onClick: () => setSheet({ kind: "seats" }) }}>
-          北風北 done — re-seat with 座位
+          北風北 done - time to re-seat
         </TipCard>
       </AutoHide>
     )) ||
@@ -701,7 +701,7 @@ export function Board({
               },
             }}
           >
-            {sinceBackup} hands since your last backup
+            {sinceBackup} hands since the last backup
           </TipCard>
         </AutoHide>
       )) ||
@@ -709,7 +709,7 @@ export function Board({
       (!footerKeySeen && state.hands.length > 0 && state.settings.showTally && (
         <AutoHide key="tip" className="is-corner" seconds={state.settings.tipsAutoHide} onHide={seeFooterKey}>
           <TipCard title="提示" onClose={seeFooterKey} action={{ label: "Got it", onClick: seeFooterKey }}>
-            Card footer: <strong className="is-win">胡</strong> · <strong className="is-self">摸</strong> · <strong className="is-dealin">銃</strong> - wins, self-draws, deal-ins. ± opens 特別獎罰.
+            Card footer: <strong className="is-win">胡</strong> · <strong className="is-self">摸</strong> · <strong className="is-dealin">銃</strong> counts. ± for 特別獎罰.
           </TipCard>
         </AutoHide>
       )) ||
