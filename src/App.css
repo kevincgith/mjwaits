@@ -6189,6 +6189,121 @@ html.playing body {
   margin: 0;
 }
 
+/* A hand laid down at the end topples: each tile starts standing on the
+   edge nearest its owner, face toward them, and falls away from them onto
+   its back - one after another along the row, quickening as it falls, with
+   a small settle. Then the winning tile drops in. (Moved only, never faded:
+   a 3D tile turned partly transparent is drawn flat.) */
+.play-topple {
+  display: inline-flex;
+  line-height: 0;
+  transform-style: preserve-3d;
+  animation: 0.42s cubic-bezier(0.55, 0, 1, 0.45) both;
+  animation-delay: calc(var(--topple-at, 0s) + var(--i, 0) * 0.035s);
+}
+
+.play-seat-top .play-topple {
+  transform-origin: 50% 0;
+  animation-name: play-topple-far;
+}
+
+.play-seat-left .play-topple {
+  transform-origin: 0 50%;
+  animation-name: play-topple-left;
+}
+
+.play-seat-right .play-topple {
+  transform-origin: 100% 50%;
+  animation-name: play-topple-right;
+}
+
+.play-seat .play-meld.is-revealed .play-win-tile > .tile-glyph {
+  animation: play-drop 0.36s both;
+  animation-delay: calc(var(--topple-at, 0s) + var(--n, 0) * 0.035s + 0.45s);
+}
+
+@keyframes play-topple-far {
+  0% {
+    transform: rotateX(90deg);
+  }
+  80% {
+    transform: rotateX(0deg);
+    animation-timing-function: ease-out;
+  }
+  90% {
+    transform: rotateX(7deg);
+    animation-timing-function: ease-in;
+  }
+  100% {
+    transform: rotateX(0deg);
+  }
+}
+
+@keyframes play-topple-left {
+  0% {
+    transform: rotateY(-90deg);
+  }
+  80% {
+    transform: rotateY(0deg);
+    animation-timing-function: ease-out;
+  }
+  90% {
+    transform: rotateY(-7deg);
+    animation-timing-function: ease-in;
+  }
+  100% {
+    transform: rotateY(0deg);
+  }
+}
+
+@keyframes play-topple-right {
+  0% {
+    transform: rotateY(90deg);
+  }
+  80% {
+    transform: rotateY(0deg);
+    animation-timing-function: ease-out;
+  }
+  90% {
+    transform: rotateY(7deg);
+    animation-timing-function: ease-in;
+  }
+  100% {
+    transform: rotateY(0deg);
+  }
+}
+
+/* Your own hand, standing in front of you, falls back onto the table when
+   you win: each tile tips away from you about its foot until it lies at the
+   table's angle. */
+.play-hand.is-toppled {
+  perspective: 900px;
+  perspective-origin: 50% 0;
+}
+
+.play-hand.is-toppled .play-hand-tile {
+  transform-origin: 50% 100%;
+  animation: play-topple-mine 0.46s cubic-bezier(0.55, 0, 1, 0.45) both;
+  animation-delay: calc(var(--i, 0) * 0.035s);
+}
+
+@keyframes play-topple-mine {
+  0% {
+    transform: rotateX(0deg);
+  }
+  80% {
+    transform: rotateX(58deg);
+    animation-timing-function: ease-out;
+  }
+  90% {
+    transform: rotateX(52deg);
+    animation-timing-function: ease-in;
+  }
+  100% {
+    transform: rotateX(58deg);
+  }
+}
+
 /* A kong: three tiles, the fourth stacked on the middle one - a tile's
    thickness up on the table, lifted a little in your own melds. */
 .play-kong-stack {

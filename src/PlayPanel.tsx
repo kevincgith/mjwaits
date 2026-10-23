@@ -20,7 +20,7 @@
 // Your moves go to the server instead of into the game; the bots, timer and
 // payments are the server's.
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   applyTurnMove,
   claimOptions,
@@ -156,7 +156,7 @@ const BURST_MS = 1200;
 // A hand's end is seen on the table first - the 胡 / 自摸 called and the
 // hands laid down - and only then the result card: this long after a win,
 // less after a 流局 (no call to see).
-const WIN_SHOW_MS = 1900;
+const WIN_SHOW_MS = 2400;
 const DRAW_SHOW_MS = 900;
 // 自動 autoplay: a bot plays your seat and you watch - the Grandmaster -
 // dealing on by itself this long after each result.
@@ -282,14 +282,20 @@ function Flowers({ flowers }: { flowers: BonusTile[] }) {
 // A finished hand's concealed tiles, sorted, with the winning tile marked once.
 // The tile that completed a winning hand goes last, laid sideways, as
 // players mark it at the table.
-function RevealedHand({ tiles, winningTile }: { tiles: Tile[]; winningTile: Tile | null }) {
+// On the table (a seat's hand laid down at the end) the tiles topple from
+// standing to flat one after another, as a player knocks their hand over -
+// the winner's at once, the others' a moment later (`toppleAt`, seconds);
+// the winning tile drops in after.
+function RevealedHand({ tiles, winningTile, toppleAt = 0 }: { tiles: Tile[]; winningTile: Tile | null; toppleAt?: number }) {
   const sorted = sortTiles(tiles);
   const mark = winningTile ? sorted.findIndex((t) => sameTile(t, winningTile)) : -1;
   const rest = mark < 0 ? sorted : sorted.filter((_, i) => i !== mark);
   return (
-    <span className="play-meld is-revealed">
+    <span className="play-meld is-revealed" style={{ "--topple-at": `${toppleAt}s`, "--n": rest.length } as CSSProperties}>
       {rest.map((t, i) => (
-        <TileGlyphSpan key={i} tile={t} block />
+        <span key={i} className="play-topple" style={{ "--i": i } as CSSProperties}>
+          <TileGlyphSpan tile={t} block />
+        </span>
       ))}
       {mark >= 0 && (
         <span className="play-win-tile">
@@ -1114,6 +1120,8 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
   const activeSeat = game.phase.kind === "turn" ? game.phase.seat : game.phase.kind === "claims" ? game.phase.from : null;
   const over = game.phase.kind === "over";
   const result = over ? shownResult : null;
+  // You won this hand: your tiles topple flat, as everyone's on the table do.
+  const iWon = !!result && !!result.tile && (result.winner === HUMAN || !!result.alsoWon?.some((w) => w.winner === HUMAN));
   // The card held back while the table shows how the hand ended - only when
   // it ends in front of you (a game opened already over shows it at once).
   const [cardHeld, setCardHeld] = useState(false);
@@ -1212,7 +1220,7 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
             <Melds melds={p.melds} hideConcealed={!over} />
           </span>
         </span>
-        {over ? <RevealedHand tiles={p.hand} winningTile={wonWith(seat)} /> : <EdgeTiles count={p.hand.length} side={side} />}
+        {over ? <RevealedHand tiles={p.hand} winningTile={wonWith(seat)} toppleAt={wonWith(seat) ? 0 : 0.8} /> : <EdgeTiles count={p.hand.length} side={side} />}
       </div>
     );
   };
@@ -1532,7 +1540,7 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
                 </>
               )}
             </div>
-            <div className={`play-hand${myTurn ? " is-turn" : ""}`}>
+            <div className={`play-hand${myTurn ? " is-turn" : ""}${iWon ? " is-toppled" : ""}`}>
               {(me.melds.length > 0 || me.flowers.length > 0) && (
                 <span className="play-my-melds">
                   {/* Flowers always leftmost, then melds, then the hand. */}
@@ -1547,6 +1555,7 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
                   <button
                     key={i}
                     type="button"
+                    style={{ "--i": i } as CSSProperties}
                     className={[
                       "play-hand-tile",
                       isDrawn && "is-drawn",
