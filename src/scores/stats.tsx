@@ -562,8 +562,6 @@ export function saveBackupFile(store: ScoreStore): number {
 export const handsSinceBackup = (game: ScoreGame, backedUpAt: number | null) =>
   game.events.filter((ev) => (ev.t === "win" || ev.t === "draw") && (backedUpAt === null || ev.at > backedUpAt)).length;
 
-export const FOOTER_KEY_SEEN = "mjwaits.footerKeySeen";
-
 // The board's nudge comes every this many hands without a backup.
 export const BACKUP_NUDGE_HANDS = 16;
 

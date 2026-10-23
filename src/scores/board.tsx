@@ -6,7 +6,7 @@ import { DEFAULT_SETTINGS, SEATS, previewWin, canRedo, redoEvent, replay, delete
 import { changeKind, provisionalEast } from "../lib/scoreViews";
 import { WIND_CHARS, SEAT_AREAS, facing, FIT_MIN, FIT_GAP, type RecordRequest, type ScoreHandRequest, type SeatingResult, fmt, signed, tone, colorOf, Icons, Monogram, Sheet, withRoster } from "./shared";
 import { type HandInitial, type HandMode, HandSheet, SeatsSheet, LahSheet, JackpotSheet, NameSheet, SettleSheet, SettingsSheet, Confirm } from "./sheets";
-import { readBackedUpAt, saveBackupFile, handsSinceBackup, FOOTER_KEY_SEEN, BACKUP_NUDGE_HANDS } from "./stats";
+import { readBackedUpAt, saveBackupFile, handsSinceBackup, BACKUP_NUDGE_HANDS } from "./stats";
 
 // ---- The board (戰況) -----------------------------------------------------------
 
@@ -436,22 +436,6 @@ export function Board({
   const [reminderHidden, setReminderHidden] = useState(false);
   const chips = useChipMoves(game, state);
   const [backedUpAt, setBackedUpAt] = useState(readBackedUpAt);
-  // The card footer's key, once: after the first hand, until "Got it".
-  const [footerKeySeen, setFooterKeySeen] = useState(() => {
-    try {
-      return window.localStorage.getItem(FOOTER_KEY_SEEN) === "1";
-    } catch {
-      return true;
-    }
-  });
-  const seeFooterKey = () => {
-    setFooterKeySeen(true);
-    try {
-      window.localStorage.setItem(FOOTER_KEY_SEEN, "1");
-    } catch {
-      // Then it shows again next time - harmless.
-    }
-  };
   const [backupNudgeAt, setBackupNudgeAt] = useState(BACKUP_NUDGE_HANDS);
   // 投降 prompts dismissed, by "holder>pulled@count" - a chain that grows
   // again prompts again.
@@ -652,9 +636,9 @@ export function Board({
   ];
 
   // One tip at a time, the most pressing first: 投降 (a choice to make now),
-  // 執位 (re-seat), 備份 (save a file), then the footer's one-off tip. The
-  // rest wait their turn - and all of them while 籌碼 has the corner. Each
-  // goes by itself after 提示自動隱藏.
+  // 執位 (re-seat), then 備份 (save a file). The rest wait their turn - and
+  // all of them while 籌碼 has the corner. Each goes by itself after
+  // 提示自動隱藏.
   const surrenderTip = (() => {
     const at = state.settings.surrenderPrompt;
     if (at === null) return null;
@@ -667,7 +651,7 @@ export function Board({
     return (
       <AutoHide key={`surrender-${l.holder}>${l.pulled}@${l.count}`} className="is-corner" seconds={state.settings.tipsAutoHide} onHide={seen}>
         <TipCard title="投降" onClose={seen} action={{ label: "拉踢", onClick: () => setSheet({ kind: "lah" }) }}>
-          {l.pulled} can surrender to {l.holder} - 拉 {l.count} times
+          {l.holder} 拉x{l.count} on {l.pulled}, surrender?
           {due.length > 1 && ` (+${due.length - 1} more)`}
         </TipCard>
       </AutoHide>
@@ -681,7 +665,7 @@ export function Board({
     ((state.seatChangeDue && !reminderHidden && (
       <AutoHide key="seat" className="is-corner" seconds={state.settings.tipsAutoHide} onHide={() => setReminderHidden(true)}>
         <TipCard title="執位" onClose={() => setReminderHidden(true)} action={{ label: "座位", onClick: () => setSheet({ kind: "seats" }) }}>
-          北風北 done - time to re-seat
+          北風北 done - reseat?
         </TipCard>
       </AutoHide>
     )) ||
@@ -702,14 +686,6 @@ export function Board({
             }}
           >
             {sinceBackup} hands since the last backup
-          </TipCard>
-        </AutoHide>
-      )) ||
-      // The footer explained, once - its numbers have no labels.
-      (!footerKeySeen && state.hands.length > 0 && state.settings.showTally && (
-        <AutoHide key="tip" className="is-corner" seconds={state.settings.tipsAutoHide} onHide={seeFooterKey}>
-          <TipCard title="提示" onClose={seeFooterKey} action={{ label: "Got it", onClick: seeFooterKey }}>
-            Card footer: <strong className="is-win">胡</strong> · <strong className="is-self">摸</strong> · <strong className="is-dealin">銃</strong> counts. ± for 特別獎罰.
           </TipCard>
         </AutoHide>
       )) ||
