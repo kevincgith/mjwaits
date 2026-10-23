@@ -8178,6 +8178,113 @@ html.playing body {
   box-shadow: var(--shadow-float);
 }
 
+/* 我的紀錄 Your record: the numbers, against each opponent, milestones. */
+.play-record {
+  width: min(36rem, 100%);
+}
+
+.play-record-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.4rem;
+}
+
+.play-record-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+  padding: 0.45rem 0.6rem;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.play-record-stat span,
+.play-record-stat small {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.play-record-stat strong {
+  color: var(--play-gold);
+  font-size: 1.25rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.play-record-vs {
+  width: 100%;
+  margin-top: 0.7rem;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.play-record-vs th {
+  padding: 0.2rem 0.3rem;
+  color: var(--text-muted);
+  font-weight: 600;
+  text-align: right;
+}
+
+.play-record-vs td {
+  padding: 0.3rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  text-align: right;
+}
+
+.play-record-vs :is(th, td):first-child {
+  text-align: left;
+}
+
+.play-record-firsts h3 {
+  margin: 0.8rem 0 0.4rem;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.play-record-firsts div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.play-record-badge {
+  padding: 0.2rem 0.55rem;
+  border: 1px solid rgba(255, 209, 102, 0.4);
+  border-radius: var(--radius-pill);
+  font-size: 0.78rem;
+}
+
+.play-record-badge b {
+  color: var(--play-gold);
+}
+
+.play-record-reset {
+  display: block;
+  margin: 0.9rem auto 0;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.play-record-reset.is-armed {
+  color: var(--danger-text-1);
+  font-weight: 600;
+}
+
+/* A big pattern won for the first time, on the result card. */
+.play-result-milestone {
+  margin: 0;
+  color: var(--play-gold);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
 /* 回顧 Review: one row per discard - your hand then, what you threw (and how
    risky), what the Grandmaster would have thrown. */
 .play-review {

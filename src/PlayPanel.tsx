@@ -81,6 +81,8 @@ import { withEvents, type ScoreGame } from "@mjwaits/shared/engine/ledger";
 import { carriedOver, newPlayLedger, playEvents, uniqueNames } from "@mjwaits/shared/engine/playLedger";
 import { PlayScores } from "./scores/playScores";
 import { ReviewSheet, type Decision } from "./PlayReview";
+import { RecordSheet } from "./PlayRecord";
+import { addHand, loadRecord, saveRecord, type Opponent } from "./lib/playRecord";
 import { loadLearnedModel, type LearnedModel } from "./lib/ml/browser";
 import { learnedClaim, learnedTurnMove, type LearnedBot } from "./lib/ml/policy";
 import { claimDecisionAction, encodeObservation, legalActions, turnMoveAction } from "./lib/ml/encode";
@@ -1205,6 +1207,30 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [over]);
+  // 我的紀錄: your record across games, added to as each hand you play ends
+  // (watching doesn't count) - with any big pattern won for the first time,
+  // for the result card.
+  const [playRecord, setPlayRecord] = useState(loadRecord);
+  const [recordOpen, setRecordOpen] = useState(false);
+  const [milestones, setMilestones] = useState<string[]>([]);
+  const recordedOver = useRef(over);
+  useEffect(() => {
+    const ended = over && !recordedOver.current;
+    recordedOver.current = over;
+    if (!over) setMilestones([]);
+    if (!ended || !result || !seated) return;
+    const opponents: Opponent[] = [1, 2, 3].map((seat) => {
+      const bot = bots[seat];
+      if (!bot) return { seat, key: `people:${nameOf(seat)}`, name: nameOf(seat) };
+      if (mysteryStyle(bot)) return { seat, key: "mystery", name: "Mystery" };
+      return { seat, key: bot.id, name: nameOf(seat) };
+    });
+    const { record: next, firsts } = addHand(loadRecord(), result, opponents);
+    saveRecord(next);
+    setPlayRecord(next);
+    setMilestones(firsts);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [over]);
   // On autoplay the next hand deals itself once the result has been up a while.
   useEffect(() => {
     if (!autoplay || !over || cardHeld || online) return;
@@ -1450,6 +1476,19 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
                   Export my play for training
                 </button>
               )}
+              <button
+                type="button"
+                className="play-menu-link"
+                onClick={() => {
+                  setMenuOpen(false);
+                  setRecordOpen(true);
+                }}
+              >
+                <span>我的紀錄 Your record</span>
+                <span className="play-menu-value">
+                  {playRecord.hands ? `${playRecord.wins} wins / ${playRecord.hands}` : "–"} ›
+                </span>
+              </button>
               <button
                 type="button"
                 className="play-menu-link"
@@ -1731,6 +1770,7 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
 
         {trackerOpen && <TileTracker game={game} onClose={() => setTrackerOpen(false)} />}
         {scoresOpen && ledger && <PlayScores game={ledger} onClose={() => setScoresOpen(false)} host={sheetHost} />}
+        {recordOpen && <RecordSheet record={playRecord} onReset={setPlayRecord} onClose={() => setRecordOpen(false)} />}
         {reviewOpen && (
           <ReviewSheet
             decisions={decisions}
@@ -1826,6 +1866,7 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
                   </div>
                 );
               })}
+              {milestones.length > 0 && <p className="play-result-milestone">🏅 First time: {milestones.join(" · ")}</p>}
               <div className="play-result-deltas">
                 {result.deltas.map((d, seat) => (
                   <span key={seat} className={d < 0 ? "is-neg" : d > 0 ? "is-pos" : undefined}>
