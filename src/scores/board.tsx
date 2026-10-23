@@ -646,13 +646,19 @@ export function Board({
     // default). Only a prompt - whether 投降 is allowed is house rule.
     const due = state.lahs.filter((l) => l.count >= at && !surrenderSeen.includes(`${l.holder}>${l.pulled}@${l.count}`)).sort((a, b) => b.value - a.value);
     if (due.length === 0) return null;
-    const l = due[0];
-    const seen = () => setSurrenderSeen((was) => [...was, ...due.map((d) => `${d.holder}>${d.pulled}@${d.count}`)]);
+    const keys = due.map((d) => `${d.holder}>${d.pulled}@${d.count}`);
+    const seen = () => setSurrenderSeen((was) => [...was, ...keys]);
+    // Every pair due, a line each, the biggest 拉 first, and the question
+    // once at the end. A new pair (or a longer chain) starts the tip over.
     return (
-      <AutoHide key={`surrender-${l.holder}>${l.pulled}@${l.count}`} className="is-corner" seconds={state.settings.tipsAutoHide} onHide={seen}>
+      <AutoHide key={`surrender-${keys.join(",")}`} className="is-corner" seconds={state.settings.tipsAutoHide} onHide={seen}>
         <TipCard title="投降" onClose={seen} action={{ label: "拉踢", onClick: () => setSheet({ kind: "lah" }) }}>
-          {l.holder} 拉x{l.count} on {l.pulled}, surrender?
-          {due.length > 1 && ` (+${due.length - 1} more)`}
+          {due.map((l, i) => (
+            <span key={keys[i]} className="sc-tipcard-line">
+              {l.holder} 拉x{l.count} on {l.pulled}
+              {i === due.length - 1 && ", surrender?"}
+            </span>
+          ))}
         </TipCard>
       </AutoHide>
     );

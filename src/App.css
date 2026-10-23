@@ -12138,6 +12138,14 @@ html.sc-fit-mode .build-version {
   height: 0.95rem;
 }
 
+.sc-tipcard-line {
+  display: block;
+}
+
+.sc-tipcard-line + .sc-tipcard-line {
+  margin-top: 0.15rem;
+}
+
 .sc-tipcard-text strong {
   color: var(--text);
 }
