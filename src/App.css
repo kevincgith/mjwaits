@@ -11772,7 +11772,7 @@ html.sc-fit-mode .build-version {
   animation: sc-chips-in 0.25s ease-out;
 }
 
-/* Tips (投降, 執位, 備份, the footer key) in the same corner as 籌碼, so the
+/* Tips (投降, 執位, 備份) in the same corner as 籌碼, so the
    board never moves for them - 籌碼 first, a tip when the corner is free. */
 .sc-autohide.is-corner {
   position: absolute;
@@ -11827,9 +11827,6 @@ html.sc-fit-mode .build-version {
 .sc-tipcard-text strong {
   color: var(--text);
 }
-
-.sc-tipcard-text .is-self { color: var(--sc-pos); }
-.sc-tipcard-text .is-dealin { color: var(--sc-neg); }
 
 .sc-tipcard-action {
   align-self: flex-start;
