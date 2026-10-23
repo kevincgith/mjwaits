@@ -87,11 +87,13 @@ Cloudflare creates the DNS record and the certificate itself. That's set in
    ```bash
    cd worker && npx wrangler login
    ```
-3. **Deploy:**
+3. **Deploy** (still in `worker/`):
 
    ```bash
-   npm run deploy --workspace worker
+   npm run deploy
    ```
+
+   From the repo root it's `npm run deploy --workspace worker`.
 
    The first deploy also creates the `Room` Durable Object class (the `v1` migration) and
    attaches `mj-api.kevinlhc.com`. The certificate can take a few minutes to be issued.
