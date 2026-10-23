@@ -8165,13 +8165,16 @@ const WALL_DIE_MESH: { transform: string; clipPath?: string; part: string }[] = 
       for (const sz of [1, -1]) {
         const k: Vec3 = [sx * (h - c), sy * (h - c), sz * (h - c)];
         const pt = (a: number, b: number) => add(k, norm([sx * a, sy * b, sz * (2 - a - b)]), c + grow * 0.5);
-        for (const [p, q, r] of [
-          [[0, 0], [1, 0], [0, 1]],
-          [[1, 0], [2, 0], [1, 1]],
-          [[0, 1], [1, 1], [0, 2]],
-          [[1, 0], [1, 1], [0, 1]],
-        ] as [number, number][][]) {
-          out.push(piece(pt(...p), pt(...q), pt(...r), true, "corner"));
+        // Each triangle shaded as the curve is: the three that touch a face
+        // (at their first, second or third point) ease from that face's rim
+        // to the crest; the middle one is all crest - see .wall-die-bevel.
+        for (const [p, q, r, part] of [
+          [[0, 0], [1, 0], [0, 1], "corner-a"],
+          [[1, 0], [2, 0], [1, 1], "corner-b"],
+          [[0, 1], [1, 1], [0, 2], "corner-c"],
+          [[1, 0], [1, 1], [0, 1], "corner"],
+        ] as [[number, number], [number, number], [number, number], string][]) {
+          out.push(piece(pt(...p), pt(...q), pt(...r), true, part));
         }
       }
   return out;
