@@ -1500,6 +1500,19 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
                       自摸
                     </button>
                   )}
+                  {riichiArmed && (
+                    <button
+                      type="button"
+                      className="play-call is-pass is-minor"
+                      onClick={() => {
+                        setSelected(null);
+                        setRiichiArmed(false);
+                      }}
+                      aria-label="Cancel 叮 - discard as usual"
+                    >
+                      取消
+                    </button>
+                  )}
                   {riichiTiles.length > 0 && (
                     <button
                       type="button"
@@ -1614,7 +1627,7 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
           )}
           {myTurn && !over && !forced && (riichiArmed || selected !== null) && (
             <span className="play-bar-prompt">
-              {riichiArmed ? (selected === null ? "叮: choose the tile to throw" : "Tap again to declare 叮") : "Tap again to discard"}
+              {riichiArmed ? (selected === null ? "叮: choose the tile to throw (取消 to cancel)" : "Tap again to declare 叮") : "Tap again to discard"}
             </span>
           )}
           {me.riichi && !over && <span className="play-bar-prompt">叮 - your hand is locked</span>}
