@@ -41,6 +41,25 @@ export function tableLink(code: string): string {
   return `${window.location.origin}${import.meta.env.BASE_URL}?table=${code}`;
 }
 
+// The table in something copied: an invite link, or just its code.
+export function codeFromInvite(text: string): string | null {
+  const t = text.trim();
+  try {
+    const fromLink = tableFromSearch(new URL(t).search);
+    if (fromLink) return fromLink;
+  } catch {
+    // Not a link.
+  }
+  return normalizeRoomCode(t);
+}
+
+// Running as the app added to the home screen (not in a browser tab).
+export const isInstalledApp = () =>
+  window.matchMedia("(display-mode: standalone)").matches || (navigator as Navigator & { standalone?: boolean }).standalone === true;
+
+// An iPhone or iPad (iPadOS reports a Mac, with a touch screen).
+export const isAppleMobile = () => /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+
 export function tableFromSearch(search: string): string | null {
   const raw = new URLSearchParams(search).get("table");
   return raw ? normalizeRoomCode(raw) : null;

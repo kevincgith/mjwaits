@@ -5647,6 +5647,9 @@ html.playing body {
 .play-stage {
   grid-area: stage;
   position: relative;
+  /* Its own layer, so the 3D tiles inside can never be drawn over what lies
+     above the table (Safari otherwise can, e.g. over the result card). */
+  z-index: 1;
   display: flex;
   align-items: flex-end;
   min-height: 0;
@@ -8042,7 +8045,7 @@ html.playing body {
 .play-sheet-backdrop {
   position: absolute;
   inset: 0;
-  z-index: 8;
+  z-index: 11;
   display: grid;
   place-items: center;
   padding: 0.75rem;
@@ -8119,7 +8122,9 @@ html.playing body {
 .play-result {
   position: absolute;
   inset: 0;
-  z-index: 7;
+  /* Over everything on the table, the corner buttons too (9); under the
+     sheets that open from it (11). */
+  z-index: 10;
   display: flex;
   align-items: center;
   justify-content: center;
