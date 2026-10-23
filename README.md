@@ -612,6 +612,30 @@ held upright is asked to turn sideways.
   game in progress, and the hint, opponents and timer settings, are kept on this device, so leaving the
   table or reloading picks it back up.
 
+### 線上對局 Online table
+
+From the Play table's menu, **Play online**, or an invite link (`?table=CODE`): a table of
+four on the multiplayer server (`worker/`), with friends on their own phones and bots in any
+empty seat. Laid out for a phone held upright.
+
+- **Joining:** a nickname, then **New table** or a code. The lobby shows the code and a
+  **Share invite** link; people tap **Sit**; the host adds bots (the Play tab's
+  personalities), and sets 截糊 or 一炮多響, the turn timer (off, 10, 20, 30 s), how long a
+  dropped seat waits (30 s, 1 or 2 min) and who deals first, then **Start**.
+- **The table:** the other three along the top - wind, 莊, score, tiles in hand, melds and
+  flowers, and *away* / *auto* when their phone has dropped - then the felt with the four
+  ponds round a compass that lights whoever is to act and counts down the timer; a discard
+  you can claim shows big above it. Your calls (食, 碰, 槓, 上, 過; 自摸, 叮 and kongs on your
+  turn) sit over your hand: tap a tile to lift it, tap again to throw it.
+- **The server decides everything:** it holds the wall and every hand, sends your phone only
+  your own tiles, and checks each move. When the timer runs out your drawn tile is thrown (or
+  the claim passed); if your phone drops, your seat waits, then plays itself until you're
+  back - reopening the app (the link stays in the address) puts you straight back in.
+- **Between hands:** the result - the winner's hand, its 台 and the payments - and everyone's
+  tiles face up; **Next hand** when you're ready, 投降 when someone has 拉'd you three in a row.
+  Scores carry across hands. The host can end the table from the menu (☰); everyone sees
+  the final scores.
+
 ## Dice
 
 ![The Dice & wall sub-tab: three dice showing 4, 5, 3 (total 12), the built wall drawn as a four-bar pinwheel, and a 👉 marking where a count of 12 breaks the left wall](docs/dice.png)

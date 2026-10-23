@@ -140,15 +140,6 @@ export async function roomInfo(code: string, base = serverBase(), fetcher: typeo
 
 export type ConnectionStatus = "connecting" | "open" | "reconnecting" | "closed";
 
-export interface RoomClientEvents {
-  onWelcome?: (welcome: Extract<ServerMessage, { t: "welcome" }>) => void;
-  onRoom?: (room: RoomView) => void;
-  onError?: (code: ErrorCode, message: string, rid?: string) => void;
-  onStatus?: (status: ConnectionStatus) => void;
-  // The room no longer exists (expired, or never made): the client has stopped.
-  onGone?: () => void;
-}
-
 // The parts of WebSocket this needs, so tests can hand in a fake.
 export interface SocketLike {
   readyState: number;
@@ -160,7 +151,13 @@ export interface SocketLike {
   onerror: ((ev: unknown) => void) | null;
 }
 
-export interface RoomClientOptions extends RoomClientEvents {
+// What every kind of room sends the same way (see worker/src/hub.ts).
+type Welcome = { t: "welcome"; token: string };
+type HubError = { t: "error"; code: string; message: string; rid?: string };
+type HubServerMessage = Welcome | HubError | { t: "pong" } | { t: string };
+type ErrorCodeOf<Recv> = Recv extends { t: "error"; code: infer C } ? C : never;
+
+export interface HubClientOptions<Recv extends HubServerMessage> {
   code: string;
   name: string;
   token?: string;
@@ -170,16 +167,26 @@ export interface RoomClientOptions extends RoomClientEvents {
   backoff?: number[];
   // Asked after a connection fails before it opens: a room that has gone
   // (the server answers its socket with 404, which a browser can't see)
-  // would otherwise be retried forever. Defaults to roomInfo.
+  // would otherwise be retried forever.
   roomExists?: (code: string) => Promise<boolean>;
+  onWelcome?: (welcome: Extract<Recv, { t: "welcome" }>) => void;
+  onError?: (code: ErrorCodeOf<Recv>, message: string, rid?: string) => void;
+  onStatus?: (status: ConnectionStatus) => void;
+  // The room no longer exists (expired, or never made): the client has stopped.
+  onGone?: () => void;
 }
 
 const OPEN = 1;
 const DEFAULT_BACKOFF = [500, 1000, 2000, 4000, 8000];
 // Errors that mean retrying the same way can't work.
-const FATAL: ReadonlySet<ErrorCode> = new Set(["version", "nameTaken"]);
+const FATAL: ReadonlySet<string> = new Set(["version", "nameTaken"]);
 
-export class RoomClient {
+// One live connection to a room - a live-scores room or an online table -
+// that keeps itself up: says hello (with the token, once it has one),
+// reconnects with backoff, rejoins afresh if the room forgot the token, and
+// stops for good when the room has gone. What the room sends besides the
+// common messages goes to `receive` (RoomClient, TableClient).
+export abstract class HubClient<Send extends { t: string }, Recv extends HubServerMessage> {
   private socket: SocketLike | null = null;
   private status: ConnectionStatus = "connecting";
   private retries = 0;
@@ -187,14 +194,20 @@ export class RoomClient {
   private stopped = false;
   private nextRid = 1;
   private token: string | undefined;
-  private readonly opts: RoomClientOptions;
-  room: RoomView | null = null;
+  protected readonly opts: HubClientOptions<Recv>;
+  private readonly path: string;
 
-  constructor(opts: RoomClientOptions) {
+  constructor(path: "rooms" | "tables", opts: HubClientOptions<Recv>) {
+    this.path = path;
     this.opts = opts;
     this.token = opts.token;
+    // Nothing arrives before the subclass's fields are set: messages come
+    // in on a later task.
     this.open();
   }
+
+  protected abstract receive(msg: Recv): void;
+  protected abstract exists(code: string): Promise<boolean>;
 
   private setStatus(status: ConnectionStatus) {
     if (status === this.status) return;
@@ -203,7 +216,7 @@ export class RoomClient {
   }
 
   private open() {
-    const url = `${wsBase(this.opts.base ?? serverBase())}/rooms/${this.opts.code}/ws`;
+    const url = `${wsBase(this.opts.base ?? serverBase())}/${this.path}/${this.opts.code}/ws`;
     const socket = (this.opts.makeSocket ?? ((u) => new WebSocket(u) as unknown as SocketLike))(url);
     this.socket = socket;
     let opened = false;
@@ -214,13 +227,13 @@ export class RoomClient {
     };
     socket.onmessage = (ev) => {
       if (typeof ev.data !== "string") return;
-      let msg: ServerMessage;
+      let msg: Recv;
       try {
-        msg = JSON.parse(ev.data) as ServerMessage;
+        msg = JSON.parse(ev.data) as Recv;
       } catch {
         return;
       }
-      this.receive(msg);
+      this.handle(msg);
     };
     socket.onclose = () => {
       if (this.socket !== socket) return;
@@ -235,34 +248,23 @@ export class RoomClient {
     };
   }
 
-  private receive(msg: ServerMessage) {
-    switch (msg.t) {
-      case "welcome":
-        this.token = msg.token;
-        this.setStatus("open");
-        this.opts.onWelcome?.(msg);
-        break;
-      case "room":
-        // Anything older than what's showing is a straggler.
-        if (this.room && msg.room.version < this.room.version) return;
-        this.room = msg.room;
-        this.opts.onRoom?.(msg.room);
-        break;
-      case "error":
-        // A token the room no longer knows: forget it and join afresh.
-        if (msg.code === "badToken" && this.token) {
-          this.token = undefined;
-          this.raw({ t: "hello", v: PROTOCOL_VERSION, name: this.opts.name });
-          return;
-        }
-        if (FATAL.has(msg.code)) {
-          this.stop();
-        }
-        this.opts.onError?.(msg.code, msg.message, msg.rid);
-        break;
-      case "pong":
-        break;
-    }
+  private handle(msg: Recv) {
+    if (msg.t === "welcome") {
+      const w = msg as Extract<Recv, { t: "welcome" }> & Welcome;
+      this.token = w.token;
+      this.setStatus("open");
+      this.opts.onWelcome?.(w);
+    } else if (msg.t === "error") {
+      const e = msg as Extract<Recv, { t: "error" }> & HubError;
+      // A token the room no longer knows: forget it and join afresh.
+      if (e.code === "badToken" && this.token) {
+        this.token = undefined;
+        this.raw({ t: "hello", v: PROTOCOL_VERSION, name: this.opts.name });
+        return;
+      }
+      if (FATAL.has(e.code)) this.stop();
+      this.opts.onError?.(e.code as ErrorCodeOf<Recv>, e.message, e.rid);
+    } else if (msg.t !== "pong") this.receive(msg);
   }
 
   // A failed handshake: offline, or the room is gone. Only a definite "no
@@ -270,7 +272,7 @@ export class RoomClient {
   private async checkGone() {
     let exists = true;
     try {
-      exists = await (this.opts.roomExists ?? (async (code) => (await roomInfo(code, this.opts.base)) !== null))(this.opts.code);
+      exists = await (this.opts.roomExists ?? ((code) => this.exists(code)))(this.opts.code);
     } catch {
       return;
     }
@@ -298,13 +300,13 @@ export class RoomClient {
     this.open();
   }
 
-  private raw(msg: ClientMessage) {
+  private raw(msg: object) {
     if (this.socket?.readyState === OPEN) this.socket.send(JSON.stringify(msg));
   }
 
   // Sends a message to the room; false if not connected right now (nothing
   // is queued - an action taken offline would surprise everyone later).
-  send(msg: Exclude<ClientMessage, { t: "hello" }>): string | false {
+  send(msg: Exclude<Send, { t: "hello" }>): string | false {
     if (this.status !== "open" || this.socket?.readyState !== OPEN) return false;
     const rid = String(this.nextRid++);
     this.socket.send(JSON.stringify({ ...msg, rid }));
@@ -323,6 +325,41 @@ export class RoomClient {
     this.socket = null;
     socket?.close(1000, "bye");
     this.setStatus("closed");
+  }
+}
+
+export interface RoomClientEvents {
+  onWelcome?: (welcome: Extract<ServerMessage, { t: "welcome" }>) => void;
+  onRoom?: (room: RoomView) => void;
+  onError?: (code: ErrorCode, message: string, rid?: string) => void;
+  onStatus?: (status: ConnectionStatus) => void;
+  onGone?: () => void;
+}
+
+export interface RoomClientOptions extends HubClientOptions<ServerMessage> {
+  onRoom?: (room: RoomView) => void;
+}
+
+// A live-scores room.
+export class RoomClient extends HubClient<ClientMessage, ServerMessage> {
+  room: RoomView | null = null;
+  private readonly onRoom?: (room: RoomView) => void;
+
+  constructor(opts: RoomClientOptions) {
+    super("rooms", opts);
+    this.onRoom = opts.onRoom;
+  }
+
+  protected exists(code: string) {
+    return roomInfo(code, this.opts.base).then((r) => r !== null);
+  }
+
+  protected receive(msg: ServerMessage) {
+    if (msg.t !== "room") return;
+    // Anything older than what's showing is a straggler.
+    if (this.room && msg.room.version < this.room.version) return;
+    this.room = msg.room;
+    this.onRoom?.(msg.room);
   }
 }
 

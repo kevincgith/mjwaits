@@ -356,7 +356,7 @@ function PlayDie({ value, rolling, index }: { value: number; rolling: boolean; i
 
 // ---- The table ------------------------------------------------------------
 
-export function PlayPanel({ onExit }: { onExit: () => void }) {
+export function PlayPanel({ onExit, onOnline }: { onExit: () => void; onOnline?: () => void }) {
   const saved = useMemo(loadSaved, []);
   const [game, setGame] = useState<GameState>(() => saved?.game ?? newGame());
   const [totals, setTotals] = useState<number[]>(() => saved?.totals ?? [0, 0, 0, 0]);
@@ -956,6 +956,12 @@ export function PlayPanel({ onExit }: { onExit: () => void }) {
                   ))}
                 </span>
               </div>
+              {onOnline && (
+                <button type="button" className="play-menu-link" onClick={onOnline}>
+                  <span>線上對局 Play online</span>
+                  <span className="play-menu-value">with friends or bots ›</span>
+                </button>
+              )}
               <button type="button" className={confirmNew ? "is-armed" : undefined} onClick={() => (confirmNew ? startNewGame() : setConfirmNew(true))}>
                 {confirmNew ? "Tap again to reset totals" : "New game"}
               </button>
