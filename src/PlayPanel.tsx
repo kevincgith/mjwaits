@@ -157,6 +157,8 @@ const BURST_MS = 1200;
 // hands laid down - and only then the result card: this long after a win,
 // less after a 流局 (no call to see).
 const WIN_SHOW_MS = 2400;
+// A phone held upright: the table is drawn turned (as App.css's media query).
+const TURNED = "(orientation: portrait) and (max-width: 820px)";
 const DRAW_SHOW_MS = 900;
 // 自動 autoplay: a bot plays your seat and you watch - the Grandmaster -
 // dealing on by itself this long after each result.
@@ -638,6 +640,17 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opponents]);
   const [scoresOpen, setScoresOpen] = useState(false);
+  // Where the scores sheet is drawn: outside the table (in the app's own
+  // colours), but turned with it on a phone held upright.
+  const [sheetHost] = useState(() => {
+    const host = document.createElement("div");
+    host.className = "play-sheet-host";
+    return host;
+  });
+  useEffect(() => {
+    document.body.appendChild(sheetHost);
+    return () => sheetHost.remove();
+  }, [sheetHost]);
   // The side seats' columns both as wide as the wider seat (its melds and
   // flowers included), so a call on one side never pushes the middle over.
   const feltRef = useRef<HTMLDivElement>(null);
@@ -683,15 +696,23 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
     const felt = feltRef.current;
     const stage = felt?.parentElement;
     if (!felt || !stage) return;
+    // The table's top as drawn: on a phone held upright the whole table is
+    // turned a quarter (see .play-screen), its top along the phone's right
+    // edge - further right is higher up.
+    const turned = window.matchMedia(TURNED);
+    const topOf = (el: Element) => {
+      const r = el.getBoundingClientRect();
+      return turned.matches ? -r.right : r.top;
+    };
     const fitDepth = () => {
       felt.style.height = "";
-      const limit = stage.getBoundingClientRect().top + parseFloat(getComputedStyle(stage).paddingTop);
+      const limit = topOf(stage) + parseFloat(getComputedStyle(stage).paddingTop);
       let lo = felt.offsetHeight;
       let hi = lo * 3;
       for (let i = 0; i < 14; i++) {
         const mid = (lo + hi) / 2;
         felt.style.height = `${mid}px`;
-        if (felt.getBoundingClientRect().top >= limit) lo = mid;
+        if (topOf(felt) >= limit) lo = mid;
         else hi = mid;
       }
       felt.style.height = `${Math.floor(lo)}px`;
@@ -1262,17 +1283,6 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
 
   return (
     <div className="play-screen">
-      <div className="play-rotate">
-        <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <rect x="7" y="2.5" width="10" height="19" rx="2" />
-          <path d="M3 9.5a9 9 0 0 1 3-5M3 4.5v5h5" />
-        </svg>
-        <p>Turn your phone sideways to play.</p>
-        <button type="button" onClick={onExit}>
-          Leave
-        </button>
-      </div>
-
       <div className="play-table">
         <div className="play-corner">
           <button type="button" className="play-icon-button" onClick={onExit} aria-label="Leave the table" title="Leave">
@@ -1701,7 +1711,7 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
         )}
 
         {trackerOpen && <TileTracker game={game} onClose={() => setTrackerOpen(false)} />}
-        {scoresOpen && ledger && <PlayScores game={ledger} onClose={() => setScoresOpen(false)} />}
+        {scoresOpen && ledger && <PlayScores game={ledger} onClose={() => setScoresOpen(false)} host={sheetHost} />}
         {opponentsOpen && <OpponentsSheet opponents={opponents} learned={model?.styles ?? null} onChange={setOpponents} onClose={() => setOpponentsOpen(false)} />}
 
         {result && !resultHidden && !cardHeld && (

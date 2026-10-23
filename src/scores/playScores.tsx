@@ -19,7 +19,9 @@ import { HandsTable, Leaderboard, PatternsCard, PlayerCard, TrendChart, TrendSum
 
 type View = "recent" | "trend" | "hands" | "player" | "patterns";
 
-export function PlayScores({ game, onClose }: { game: ScoreGame; onClose: () => void }) {
+// `host`: where it's drawn (the Play table's sheet host, which turns with
+// the table on a phone held upright); the page itself otherwise.
+export function PlayScores({ game, onClose, host }: { game: ScoreGame; onClose: () => void; host?: Element | null }) {
   // Each seat in its own colour.
   const store = useMemo(() => liveStore(game, Object.fromEntries(game.seats.map((p, i) => [p, i]))), [game]);
   const state = useMemo(() => replay(game), [game]);
@@ -89,6 +91,6 @@ export function PlayScores({ game, onClose }: { game: ScoreGame; onClose: () => 
         {view === "patterns" && <PatternsCard state={state} store={store} />}
       </div>
     </Sheet>,
-    document.body
+    host ?? document.body
   );
 }
