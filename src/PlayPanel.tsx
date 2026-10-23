@@ -209,7 +209,7 @@ const claimLabel = (c: Claim) => (c.kind === "win" ? "胡" : c.kind === "kong" ?
 // A seat's concealed tiles, seen edge-on from the middle of the table.
 function EdgeTilesView({ count, side }: { count: number; side: Side }) {
   return (
-    <span className={`play-edge play-edge-${side}`} aria-label={`${count} concealed tiles`}>
+    <span className={`play-edge play-edge-${side}`} style={{ "--count": count } as CSSProperties} aria-label={`${count} concealed tiles`}>
       {Array.from({ length: count }, (_, i) => (
         <span key={i} className="play-edge-tile" />
       ))}
@@ -310,7 +310,7 @@ function RevealedHandView({ tiles, winningTile, toppleAt = 0 }: { tiles: Tile[];
 // `riichiAt`: the pond index of the tile that declared 叮, laid sideways.
 function PondView({ tiles, side, pinLast, riichiAt }: { tiles: Tile[]; side: Side; pinLast: boolean; riichiAt?: number }) {
   return (
-    <div className={`play-pond play-pond-${side}`}>
+    <div className={`play-pond play-pond-${side}${riichiAt !== undefined ? " has-riichi" : ""}`}>
       {tiles.map((t, i) => {
         const last = pinLast && i === tiles.length - 1;
         return (
