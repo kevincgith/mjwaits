@@ -38,7 +38,8 @@ function tilesInPlay(s: GameState): number {
     s.wall.length +
     s.players.reduce((n, p) => n + p.hand.length + p.discards.length + p.flowers.length + p.melds.reduce((m, x) => m + x.tiles.length, 0), 0) +
     // A claimed discard is in a meld; an unclaimed one is in a pond - either way counted above.
-    0
+    // A kong tile shown for 搶槓 is in neither hand nor meld until the window closes.
+    (s.phase.kind === "claims" && s.phase.robKong ? 1 : 0)
   );
 }
 
