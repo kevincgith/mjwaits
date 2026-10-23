@@ -6230,6 +6230,9 @@ html.playing body {
   justify-content: center;
   width: 1em;
   margin-left: 0.08em;
+  /* Passes the 3D through to the tile (without it the winning tile was
+     flattened to a picture among the blocks). */
+  transform-style: preserve-3d;
 }
 
 .play-win-tile > .tile-glyph {
