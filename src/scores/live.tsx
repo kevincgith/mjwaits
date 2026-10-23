@@ -16,7 +16,7 @@ import { replay, type ScoreGame, type ScoreStore } from "@mjwaits/shared/engine/
 import { cleanNickname, NICKNAME_MAX, normalizeRoomCode, ROOM_CODE_LENGTH } from "@mjwaits/shared/protocol/limits";
 import { describeChange } from "@mjwaits/shared/protocol/audit";
 import type { ErrorCode, RoomView } from "@mjwaits/shared/protocol/server";
-import { createRoom, GameSync, joinLink, loadOnline, RoomClient, roomInfo, saveOnline, tokenFor, withSharing, withToken, type ConnectionStatus } from "../lib/online";
+import { createRoom, defaultNickname, GameSync, joinLink, loadOnline, RoomClient, roomInfo, saveOnline, tokenFor, withoutRoom, withSharing, withToken, type ConnectionStatus } from "../lib/online";
 import { colorOf, Sheet, Toggle } from "./shared";
 
 export type Problem = { code: ErrorCode | "offline" | "lost"; message: string; at: number };
@@ -312,8 +312,14 @@ export function LiveSheet({
   onFollow: (code: string, name: string) => void;
   onClose: () => void;
 }) {
-  const [memory] = useState(() => loadOnline());
-  const [name, setName] = useState(memory.name);
+  const [memory, setMemory] = useState(() => loadOnline());
+  const [name, setName] = useState(() => memory.name || defaultNickname());
+  // Dismiss a game from the lists below: this phone forgets it (and its way back in).
+  const forget = (code: string) => {
+    const next = withoutRoom(loadOnline(), code);
+    saveOnline(next);
+    setMemory(next);
+  };
   const [code, setCode] = useState(joinCode ?? "");
   const [busy, setBusy] = useState<"share" | "join" | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
@@ -381,6 +387,9 @@ export function LiveSheet({
               <span className="ol-code-small">{r.code}</span>
               <button type="button" className="sc-secondary" onClick={() => void follow(r.code)} disabled={busy !== null}>
                 Open
+              </button>
+              <button type="button" className="sc-icon-button" aria-label={`Dismiss ${r.code}`} title="Dismiss" onClick={() => forget(r.code)}>
+                ×
               </button>
             </div>
           ))}
@@ -497,6 +506,9 @@ export function LiveSheet({
                 <span className="ol-seat-name">{gameLabel(h.game)}</span>
                 <button type="button" className="sc-secondary" disabled={busy !== null || !!active} onClick={() => void share(() => live.resume(h, clean!))}>
                   Reopen
+                </button>
+                <button type="button" className="sc-icon-button" aria-label={`Dismiss ${gameLabel(h.game)}`} title="Dismiss" onClick={() => forget(h.code)}>
+                  ×
                 </button>
               </div>
             ))}

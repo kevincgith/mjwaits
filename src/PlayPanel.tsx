@@ -12,6 +12,13 @@
 // The table fills the screen (over the tab bar, with its own Leave button),
 // and a phone held upright gets a "turn to landscape" card instead, since a
 // web page can't lock orientation on iPhone.
+//
+// The same table plays online (`online`, from OnlineTable.tsx): the server
+// holds the game and sends this seat's view, which seatState turns into a
+// game with you at seat 0 - blanks for what you can't see - so the table
+// draws it, and works out your calls, waits and hints, exactly as here.
+// Your moves go to the server instead of into the game; the bots, timer and
+// payments are the server's.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -47,9 +54,29 @@ import {
   type TurnMove,
 } from "@mjwaits/shared/engine/game";
 import { allTileKinds, getWaits, shanten, sortTiles, tileKey, tileLabel, type Tile } from "@mjwaits/shared/engine/mahjong";
-import { patternDisplayName, type BonusTile } from "@mjwaits/shared/engine/scoring";
+import type { BonusTile } from "@mjwaits/shared/engine/scoring";
 import { BonusGlyphSpan, TileGlyphSpan } from "./TileGlyphs";
-import { BOT_PROFILES, botClaimFor, botSurrenders, botTurnFor, LEARNED_PREFIX, learnedProfile, learnedStyle, profileById, rateDiscardsFor, voiceOf, type BotProfile, type Voice } from "@mjwaits/shared/engine/bots";
+import {
+  BOT_PROFILES,
+  botClaimFor,
+  botSurrenders,
+  botTurnFor,
+  LEARNED_PREFIX,
+  learnedProfile,
+  learnedStyle,
+  MYSTERY_PREFIX,
+  mysteryProfile,
+  mysteryStyle,
+  profileById,
+  randomStyle,
+  rateDiscardsFor,
+  voiceOf,
+  type BotProfile,
+  type Voice,
+} from "@mjwaits/shared/engine/bots";
+import { scoreView, type ResultView } from "@mjwaits/shared/engine/view";
+import { MYSTERY_BOT, type TableClientMessage, type TableState } from "@mjwaits/shared/protocol/table";
+import { BLANK, seatState } from "./lib/seatState";
 import { loadLearnedModel, type LearnedModel } from "./lib/ml/browser";
 import { learnedClaim, learnedTurnMove, type LearnedBot } from "./lib/ml/policy";
 import { claimDecisionAction, encodeObservation, legalActions, turnMoveAction } from "./lib/ml/encode";
@@ -71,8 +98,15 @@ const shortName = (p: BotProfile) => p.name.split(" ")[0];
 const englishName = (p: BotProfile) => p.name.split(" ").slice(1).join(" ");
 // Each personality's avatar: the first character of its title on its own
 // colour (see .play-avatar.is-<id>).
-// A learned bot wears its personality's avatar with a ring.
+// A learned bot wears its personality's avatar with a ring; a mystery bot
+// a plain "?", whichever personality it is.
 const Avatar = ({ bot }: { bot: BotProfile }) => {
+  if (mysteryStyle(bot))
+    return (
+      <span className="play-avatar is-mystery" aria-hidden="true">
+        ?
+      </span>
+    );
   const style = learnedStyle(bot);
   return (
     <span className={`play-avatar is-${style ?? bot.id}${style ? " is-learned" : ""}`} aria-hidden="true">
@@ -80,9 +114,17 @@ const Avatar = ({ bot }: { bot: BotProfile }) => {
     </span>
   );
 };
-// A seat's bot by id: a personality, or "net-<personality>" for a learned one.
-const botById = (id: string): BotProfile => (id.startsWith(LEARNED_PREFIX) ? learnedProfile(id.slice(LEARNED_PREFIX.length)) : profileById(id));
-const knownBot = (id: string) => BOT_PROFILES.some((p) => p.id === id || LEARNED_PREFIX + p.id === id);
+// A seat's bot by id: a personality, "net-<personality>" for a learned one,
+// or "mystery-<personality>" for one that doesn't say.
+const botById = (id: string): BotProfile =>
+  id.startsWith(LEARNED_PREFIX)
+    ? learnedProfile(id.slice(LEARNED_PREFIX.length))
+    : id.startsWith(MYSTERY_PREFIX)
+      ? mysteryProfile(id.slice(MYSTERY_PREFIX.length))
+      : profileById(id);
+const knownBot = (id: string) => BOT_PROFILES.some((p) => p.id === id || LEARNED_PREFIX + p.id === id || MYSTERY_PREFIX + p.id === id);
+// A new mystery bot (and a fresh one for each new game).
+const newMystery = () => MYSTERY_PREFIX + randomStyle();
 // Hints and the timer's fallback throw judge the way the Veteran does.
 const ADVISOR = profileById("veteran");
 // Where each seat sits on screen, by seat index.
@@ -305,6 +347,7 @@ function OpponentsSheet({
         </div>
         {[1, 2, 3].map((seat) => {
           const current = botById(opponents[seat - 1]);
+          const mystery = !!mysteryStyle(current);
           return (
             <div key={seat} className="play-opponent-row">
               <span className="play-opponent-seat">{SEAT_LABELS[seat]}</span>
@@ -313,8 +356,8 @@ function OpponentsSheet({
                   <button
                     key={p.id}
                     type="button"
-                    className={[p.id === current.id && "toggle-on", learnedStyle(p) && "is-learned"].filter(Boolean).join(" ") || undefined}
-                    aria-pressed={p.id === current.id}
+                    className={[!mystery && p.id === current.id && "toggle-on", learnedStyle(p) && "is-learned"].filter(Boolean).join(" ") || undefined}
+                    aria-pressed={!mystery && p.id === current.id}
                     title={englishName(p)}
                     aria-label={`${SEAT_LABELS[seat]}: ${englishName(p)}`}
                     onClick={() => onChange(opponents.map((id, i) => (i === seat - 1 ? p.id : id)))}
@@ -322,6 +365,16 @@ function OpponentsSheet({
                     {shortName(p)}
                   </button>
                 ))}
+                <button
+                  type="button"
+                  className={mystery ? "toggle-on" : undefined}
+                  aria-pressed={mystery}
+                  title="Mystery"
+                  aria-label={`${SEAT_LABELS[seat]}: a mystery bot`}
+                  onClick={() => onChange(opponents.map((id, i) => (i === seat - 1 ? newMystery() : id)))}
+                >
+                  神秘?
+                </button>
               </div>
               <span className="play-opponent-blurb">
                 <b>{englishName(current)}</b> {current.blurb}
@@ -356,10 +409,29 @@ function PlayDie({ value, rolling, index }: { value: number; rolling: boolean; i
 
 // ---- The table ------------------------------------------------------------
 
-export function PlayPanel({ onExit, onOnline }: { onExit: () => void; onOnline?: () => void }) {
+// Playing at an online table: what the server sent, and how to answer it.
+export interface OnlinePlay {
+  table: TableState;
+  send: (msg: Exclude<TableClientMessage, { t: "hello" }>) => void;
+  host: boolean;
+}
+
+type WireMove = Extract<TableClientMessage, { t: "move" }>["move"];
+type WireClaim = Extract<TableClientMessage, { t: "claim" }>["claim"];
+
+export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; onOnline?: () => void; online?: OnlinePlay }) {
   const saved = useMemo(loadSaved, []);
-  const [game, setGame] = useState<GameState>(() => saved?.game ?? newGame());
-  const [totals, setTotals] = useState<number[]>(() => saved?.totals ?? [0, 0, 0, 0]);
+  const [localGame, setGame] = useState<GameState>(() => saved?.game ?? newGame());
+  const [localTotals, setTotals] = useState<number[]>(() => saved?.totals ?? [0, 0, 0, 0]);
+  // Online: this seat's view, turned so you're at seat 0.
+  const net = useMemo(() => (online?.table.view ? seatState(online.table.view) : null), [online?.table]);
+  const game = net?.game ?? localGame;
+  const totals = online && net ? [0, 1, 2, 3].map((i) => online.table.totals[net.toTable(i)]) : localTotals;
+  // Online, someone watching sits in seat 0's place but has no hand to play.
+  const seated = !online || online.table.you !== null;
+  // Online, whether the table is waiting on you (it isn't once you've
+  // answered, or while it's playing for you).
+  const waitedOn = !online || (online.table.you !== null && online.table.waitingOn.includes(online.table.you));
   const [hint, setHint] = useState(() => saved?.hint ?? false);
   const [timer, setTimer] = useState<TimerSetting>(() => saved?.timer ?? 0);
   // One-tap discard: a single tap throws the tile (off: tap to lift, tap again).
@@ -367,8 +439,8 @@ export function PlayPanel({ onExit, onOnline }: { onExit: () => void; onOnline?:
   // 一炮多響: a table setting, kept on the game itself so it carries hand to hand.
   const [multiWin, setMultiWin] = useState(() => saved?.multiWin ?? saved?.game?.multiWin ?? false);
   useEffect(() => {
-    if (!!game.multiWin !== multiWin) setGame((g) => ({ ...g, multiWin }));
-  }, [game, multiWin]);
+    if (!online && !!game.multiWin !== multiWin) setGame((g) => ({ ...g, multiWin }));
+  }, [game, multiWin, online]);
   // Record my play (off by default): your decisions, kept in this browser for
   // training a learned bot that plays like you (lib/ml/recorder.ts).
   const [record, setRecord] = useState(() => saved?.record ?? false);
@@ -379,20 +451,23 @@ export function PlayPanel({ onExit, onOnline }: { onExit: () => void; onOnline?:
   // play waits (rolling); remembered per deal so a reload mid-hand doesn't
   // roll again.
   const [rolling, setRolling] = useState(false);
-  const rolledFor = useRef<Dice | null>(null);
+  // Which deal it is: the dice themselves here; online, the hand number
+  // (every message brings a fresh copy of the game).
+  const dealKey: unknown = online ? online.table.hand : game.dice;
+  const rolledFor = useRef<unknown>(null);
   useEffect(() => {
-    const dice = game.dice;
-    if (!dice || rolledFor.current === dice || game.discardsMade > 0 || game.phase.kind === "over") return;
-    rolledFor.current = dice;
+    if (!game.dice || rolledFor.current === dealKey || game.discardsMade > 0 || game.phase.kind === "over") return;
+    rolledFor.current = dealKey;
     setRolling(true);
-  }, [game]);
+  }, [game, dealKey]);
   // A roll that pays (圍骰 / 蛇骰): into the totals once, as the dice
   // settle. The saved paid mark stops a reload paying again; the ref stops
   // a second run of this effect before that mark has landed.
   const paidFor = useRef<Dice | null>(null);
   useEffect(() => {
     const bonus = game.diceBonus;
-    if (rolling || !bonus || bonus.paid || paidFor.current === game.dice) return;
+    // Online the server pays it.
+    if (online || rolling || !bonus || bonus.paid || paidFor.current === game.dice) return;
     paidFor.current = game.dice ?? null;
     setTotals((t) => t.map((v, i) => v + bonus.deltas[i]));
     setGame((g) => (g.diceBonus ? { ...g, diceBonus: { ...g.diceBonus, paid: true } } : g));
@@ -403,7 +478,21 @@ export function PlayPanel({ onExit, onOnline }: { onExit: () => void; onOnline?:
   // same way: marked paid in the game, and the ref remembers what this
   // hand has paid in case a stale copy of the game comes back unmarked.
   const paidBonuses = useRef<{ hand: Dice | undefined; keys: Set<string> }>({ hand: undefined, keys: new Set() });
+  // Online the server pays them; the table just shows each new one. (On
+  // joining mid-hand, the ones already paid aren't shown again.)
+  const shownBonuses = useRef<{ deal: unknown; count: number }>({ deal: undefined, count: 0 });
   useEffect(() => {
+    if (!online) return;
+    const all = game.tableBonuses ?? [];
+    if (shownBonuses.current.deal !== dealKey) shownBonuses.current = { deal: dealKey, count: game.discardsMade === 0 ? 0 : all.length };
+    if (rolling || all.length <= shownBonuses.current.count) return;
+    shownBonuses.current.count = all.length;
+    const last = all[all.length - 1];
+    showBurst(last.seat, `${last.name} ${last.deltas[last.seat] > 0 ? "+" : "−"}${Math.abs(last.deltas[last.seat])}`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [online, rolling, game.tableBonuses]);
+  useEffect(() => {
+    if (online) return;
     if (paidBonuses.current.hand !== game.dice) paidBonuses.current = { hand: game.dice, keys: new Set() };
     const keys = paidBonuses.current.keys;
     const unpaid = (game.tableBonuses ?? []).filter((b) => !b.paid);
@@ -432,11 +521,21 @@ export function PlayPanel({ onExit, onOnline }: { onExit: () => void; onOnline?:
   const [opponentsOpen, setOpponentsOpen] = useState(false);
   // 投降 on the result card takes two taps; this is the holder armed.
   const [surrenderArmed, setSurrenderArmed] = useState<string | null>(null);
-  const bots = useMemo<(BotProfile | null)[]>(() => [null, ...opponents.map(botById)], [opponents]);
+  // Online: the table's bots (a mystery one as a mystery - the server never
+  // says which it is), and no one in the seats people sit in.
+  const onlineSeats = online?.table.seats;
+  const bots = useMemo<(BotProfile | null)[]>(() => {
+    if (!onlineSeats || !net) return [null, ...opponents.map(botById)];
+    return [0, 1, 2, 3].map((i) => {
+      const info = onlineSeats[net.toTable(i)];
+      if (info?.kind !== "bot") return null;
+      return info.bot === MYSTERY_BOT ? mysteryProfile("veteran") : profileById(info.bot);
+    });
+  }, [opponents, onlineSeats, net]);
   // The learned bots' network: loaded when one is seated or the Opponents
   // sheet opens; until then (or if there's none) they play by their rules.
   const [model, setModel] = useState<LearnedModel | null>(null);
-  const wantModel = opponentsOpen || opponents.some((id) => id.startsWith(LEARNED_PREFIX));
+  const wantModel = !online && (opponentsOpen || opponents.some((id) => id.startsWith(LEARNED_PREFIX)));
   useEffect(() => {
     if (wantModel && !model) void loadLearnedModel().then(setModel);
   }, [wantModel, model]);
@@ -456,8 +555,20 @@ export function PlayPanel({ onExit, onOnline }: { onExit: () => void; onOnline?:
     setBubbles((b) => ({ ...b, [seat]: { text: lines[Math.floor(Math.random() * lines.length)], id } }));
     window.setTimeout(() => setBubbles((b) => (b[seat]?.id === id ? Object.fromEntries(Object.entries(b).filter(([k]) => Number(k) !== seat)) : b)), BUBBLE_MS);
   };
-  // "You", or the bot's English name (老手 Veteran -> Veteran).
-  const nameOf = (seat: number) => (seat === HUMAN ? "You" : englishName(bots[seat]!));
+  // "You", or the bot's English name (老手 Veteran -> Veteran); online,
+  // people by their nickname and bots by the name the table gives them.
+  const nameOf = (seat: number): string => {
+    if (seat === HUMAN && seated) return "You";
+    if (online && net) {
+      const info = online.table.seats[net.toTable(seat)];
+      if (!info) return "?";
+      return info.kind === "bot" ? info.name.split(" ").slice(1).join(" ") || info.name : info.name;
+    }
+    return englishName(bots[seat]!);
+  };
+  // One character for a seat: 你, a bot's avatar character, a person's initial.
+  const initialOf = (seat: number) =>
+    seat === HUMAN && seated ? "你" : bots[seat] ? (mysteryStyle(bots[seat]!) ? "?" : bots[seat]!.name[0]) : nameOf(seat).slice(0, 1).toUpperCase();
   const [selected, setSelected] = useState<number | null>(null);
   const [burst, setBurst] = useState<{ seat: number; label: string; id: number } | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -472,7 +583,11 @@ export function PlayPanel({ onExit, onOnline }: { onExit: () => void; onOnline?:
   const [riichiArmed, setRiichiArmed] = useState(false);
   const [resultHidden, setResultHidden] = useState(false);
 
-  useEffect(() => save({ game, totals, hint, timer, opponents, speed, oneTap, record, multiWin }), [game, totals, hint, timer, opponents, speed, oneTap, record, multiWin]);
+  // This device's own game (never an online one).
+  useEffect(
+    () => save({ game: localGame, totals: localTotals, hint, timer, opponents, speed, oneTap, record, multiWin }),
+    [localGame, localTotals, hint, timer, opponents, speed, oneTap, record, multiWin]
+  );
 
   // The menu closes on a tap anywhere outside it, and disarms New game.
   useEffect(() => {
@@ -510,19 +625,52 @@ export function PlayPanel({ onExit, onOnline }: { onExit: () => void; onOnline?:
     window.setTimeout(() => setBurst((b) => (b?.id === id ? null : b)), BURST_MS);
   };
 
-  const humanClaims = game.phase.kind === "claims" ? claimOptions(game, HUMAN) : [];
+  // Online: a burst (and a bot's line) for what just happened at the table -
+  // not for whatever happened before this phone looked.
+  const lastSeen = useRef<string | null>(null);
+  const lastAction = online?.table.last ?? null;
+  useEffect(() => {
+    if (!online || !net) return;
+    const key = JSON.stringify([online.table.hand, game.discardsMade, lastAction]);
+    if (!lastAction || lastSeen.current === key) return;
+    const first = lastSeen.current === null;
+    lastSeen.current = key;
+    if (first) return;
+    const at = net.toLocal;
+    if (lastAction.kind === "call") {
+      showBurst(at(lastAction.seat), lastAction.call === "chow" ? "上" : lastAction.call === "pung" ? "碰" : "槓");
+      say(at(lastAction.seat), "call");
+    } else if (lastAction.kind === "kong") showBurst(at(lastAction.seat), "槓");
+    else if (lastAction.kind === "discard" && lastAction.riichi) {
+      showBurst(at(lastAction.seat), "叮");
+      say(at(lastAction.seat), "riichi");
+    } else if (lastAction.kind === "win") {
+      const seat = at(lastAction.seats[0]);
+      const n = lastAction.seats.length;
+      showBurst(seat, lastAction.robKong ? "搶槓" : lastAction.from === null ? "自摸" : n > 1 ? (n === 2 ? "雙響" : "三響") : "胡");
+      say(seat, lastAction.from === null ? "selfDraw" : "win");
+      if (lastAction.from !== null) say(at(lastAction.from), "dealIn");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastAction, online?.table.hand, game.discardsMade]);
+
+  const humanClaims = game.phase.kind === "claims" && seated && waitedOn ? claimOptions(game, HUMAN) : [];
 
   // The bots' claims on the current discard are decided as soon as it lands
   // (they can't see what the human will do).
   const botDecisions = useMemo(
-    () => (game.phase.kind === "claims" ? Array.from({ length: SEATS }, (_, seat) => (seat === HUMAN ? null : botClaimFor(game, seat, bots[seat]!))) : null),
-    [game, bots]
+    () => (!online && game.phase.kind === "claims" ? Array.from({ length: SEATS }, (_, seat) => (seat === HUMAN ? null : botClaimFor(game, seat, bots[seat]!))) : null),
+    [game, bots, online]
   );
 
   // Learned bots decide their claims through the network (async); a resolve
   // already under way for this discard ignores a second call.
   const resolving = useRef<GameState | null>(null);
   const resolve = async (humanClaim: Claim | null) => {
+    if (online) {
+      online.send({ t: "claim", step: online.table.step, claim: humanClaim as WireClaim });
+      return;
+    }
     if (!botDecisions || resolving.current === game) return;
     resolving.current = game;
     const decisions = botDecisions.slice();
@@ -566,7 +714,7 @@ export function PlayPanel({ onExit, onOnline }: { onExit: () => void; onOnline?:
   };
 
   const me = game.players[HUMAN];
-  const myTurn = game.phase.kind === "turn" && game.phase.seat === HUMAN;
+  const myTurn = seated && waitedOn && game.phase.kind === "turn" && game.phase.seat === HUMAN;
   const drawn = myTurn && game.phase.kind === "turn" ? game.phase.drawn : null;
   const forbidden = myTurn ? forbiddenDiscards(game) : [];
   // Tiles you can't throw right now: 食替, a locked 叮 hand's anything-but-
@@ -578,13 +726,19 @@ export function PlayPanel({ onExit, onOnline }: { onExit: () => void; onOnline?:
 
   // Record my play: one of your decisions, if it was a real choice.
   const recordMine = (kind: 0 | 1, action: number) => {
-    if (!record) return;
+    if (!record || online) return;
     const mask = legalActions(game, HUMAN);
     if (mask.reduce((n, m) => n + m, 0) < 2) return;
     void recordDecision({ obs: encodeObservation(game, HUMAN), mask, action, kind, hand: handId.current });
   };
 
   const doTurn = (move: TurnMove) => {
+    if (online) {
+      online.send({ t: "move", step: online.table.step, move: move as WireMove });
+      setSelected(null);
+      setRiichiArmed(false);
+      return;
+    }
     recordMine(0, turnMoveAction(move));
     if (move.kind === "selfDraw") showBurst(HUMAN, "自摸");
     else if (move.kind === "discard" && move.riichi) showBurst(HUMAN, "叮");
@@ -595,6 +749,14 @@ export function PlayPanel({ onExit, onOnline }: { onExit: () => void; onOnline?:
   // Bot pacing: one move per botDelay(), and a discard nobody (the human
   // included) can claim moves on by itself.
   useEffect(() => {
+    if (online) {
+      // The server plays the bots; a locked 叮 hand still throws its draw by itself.
+      const phase = game.phase;
+      if (!myTurn || phase.kind !== "turn" || !me.riichi || isWinningHand(me) || !phase.drawn) return;
+      const tile = phase.drawn;
+      const id = window.setTimeout(() => doTurn({ kind: "discard", tile }), 700);
+      return () => window.clearTimeout(id);
+    }
     if (rolling) return;
     const phase = game.phase;
     let move: (() => void) | null = null;
@@ -651,13 +813,27 @@ export function PlayPanel({ onExit, onOnline }: { onExit: () => void; onOnline?:
     const id = window.setTimeout(move, delay * SPEEDS[speed].factor);
     return () => window.clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [game, rolling]);
+  }, [game, rolling, myTurn]);
 
   // The turn timer (off by default): runs only while the human has to
   // decide, and on running out passes on a call or throws the drawn tile.
   const deciding = myTurn || humanClaims.length > 0;
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
+  // Online, the server's deadline (it moves for you when it passes).
+  const deadline = online?.table.deadline ?? null;
   useEffect(() => {
+    if (!online) return;
+    if (deadline === null) {
+      setSecondsLeft(null);
+      return;
+    }
+    const tick = () => setSecondsLeft(Math.max(0, Math.ceil((deadline - Date.now()) / 1000)));
+    tick();
+    const id = window.setInterval(tick, 250);
+    return () => window.clearInterval(id);
+  }, [online, deadline]);
+  useEffect(() => {
+    if (online) return;
     if (!timer || !deciding) {
       setSecondsLeft(null);
       return;
@@ -705,17 +881,17 @@ export function PlayPanel({ onExit, onOnline }: { onExit: () => void; onOnline?:
   // When you're ready (聽): what you're waiting on, and how many of each are
   // still unseen. Shown whether or not hints are on - any player knows this.
   const waits = useMemo(() => {
-    if (myTurn || me.hand.length !== meldsNeeded(me) * 3 + 1) return null;
+    if (!seated || myTurn || me.hand.length !== meldsNeeded(me) * 3 + 1) return null;
     const ws = getWaits(me.hand, meldsNeeded(me));
     if (ws.length === 0) return null;
     const unseen = unseenCounts(game, HUMAN);
     return ws.map((t) => ({ tile: t, left: Math.max(0, unseen.get(tileKey(t)) ?? 0) }));
-  }, [game, me, myTurn]);
+  }, [game, me, myTurn, seated]);
   const myShanten = useMemo(() => {
-    if (!hint) return null;
+    if (!hint || !seated) return null;
     if (myTurn) return ratings?.[0]?.shanten ?? null;
     return me.hand.length === meldsNeeded(me) * 3 + 1 ? shanten(me.hand, meldsNeeded(me)) : null;
-  }, [hint, myTurn, ratings, me]);
+  }, [hint, myTurn, ratings, me, seated]);
 
   const canSelfDraw = myTurn && isWinningHand(me);
   const myKongs = myTurn && liveTilesLeft(game) > 0 ? kongOptions(me) : [];
@@ -731,6 +907,10 @@ export function PlayPanel({ onExit, onOnline }: { onExit: () => void; onOnline?:
 
   // Next hand: first any bot allowed to 投降 decides (and says so), then deal.
   const nextHandWithSurrenders = () => {
+    if (online) {
+      online.send({ t: "ready" });
+      return;
+    }
     let s = game;
     for (let seat = 1; seat < SEATS; seat++) {
       const holders = botSurrenders(s, seat, bots[seat]!);
@@ -743,6 +923,8 @@ export function PlayPanel({ onExit, onOnline }: { onExit: () => void; onOnline?:
 
   const startNewGame = () => {
     setTotals([0, 0, 0, 0]);
+    // A new game, new mysteries.
+    setOpponents((o) => o.map((id) => (id.startsWith(MYSTERY_PREFIX) ? newMystery() : id)));
     setMenuOpen(false);
     setSelected(null);
     setResultHidden(false);
@@ -752,9 +934,23 @@ export function PlayPanel({ onExit, onOnline }: { onExit: () => void; onOnline?:
   // The pond whose newest tile is up for claiming (not when robbing a kong:
   // that tile was never discarded).
   const discardFrom = game.phase.kind === "claims" && !game.phase.robKong ? game.phase.from : null;
+  // The finished hand, with its scores as the card shows them (online, as the server sent them).
+  const shownResult: ResultView | null = useMemo(() => {
+    if (net) return net.result;
+    if (game.phase.kind !== "over") return null;
+    const { alsoWon, ...r } = game.phase.result;
+    return {
+      ...r,
+      score: r.score ? scoreView(r.score) : null,
+      ...(alsoWon ? { alsoWon: alsoWon.map((w) => ({ winner: w.winner, score: w.score ? scoreView(w.score) : null, scoreError: w.scoreError })) } : {}),
+    };
+  }, [game, net]);
   const activeSeat = game.phase.kind === "turn" ? game.phase.seat : game.phase.kind === "claims" ? game.phase.from : null;
   const over = game.phase.kind === "over";
-  const result = over && game.phase.kind === "over" ? game.phase.result : null;
+  const result = over ? shownResult : null;
+  // Online, between hands: whether you've said you're ready, and who hasn't.
+  const meReady = !!online && online.table.you !== null && online.table.ready.includes(online.table.you);
+  const notReady = online && net ? online.table.waitingOn.filter((s) => s !== online.table.you).map((s) => nameOf(net.toLocal(s))) : [];
   const compassCenter =
     secondsLeft !== null ? String(secondsLeft).padStart(2, "0") : String(liveTilesLeft(game)).padStart(2, "0");
 
@@ -769,7 +965,7 @@ export function PlayPanel({ onExit, onOnline }: { onExit: () => void; onOnline?:
       .filter((l) => l.holder === String(seat))
       .map((l) => {
         const on = Number(l.pulled);
-        const who = on === HUMAN ? "你" : bots[on]!.name[0];
+        const who = initialOf(on);
         const tone = on === HUMAN ? " is-on-you" : seat === HUMAN ? " is-yours" : "";
         return (
           <span key={l.pulled} className={`play-lah${tone}`} title={`${nameOf(seat)} 拉 ${nameOf(on)}: ${l.value} (${l.count} in a row)`}>
@@ -778,6 +974,16 @@ export function PlayPanel({ onExit, onOnline }: { onExit: () => void; onOnline?:
         );
       });
 
+  // Online: a person whose phone has dropped, or whom the table is playing for.
+  const seatTag = (seat: number) => {
+    if (!online || !net) return null;
+    const t = net.toTable(seat);
+    const info = online.table.seats[t];
+    if (online.table.auto.includes(t)) return <span className="play-away">auto</span>;
+    if (info?.kind === "human" && !info.connected) return <span className="play-away">away</span>;
+    return null;
+  };
+
   // A bot's name card - flat, over the corner of the table like a HUD.
   const badge = (seat: number) => (
     <span className={`play-badge at-${SIDES[seat]}${activeSeat === seat ? " is-active" : ""}`}>
@@ -785,6 +991,7 @@ export function PlayPanel({ onExit, onOnline }: { onExit: () => void; onOnline?:
       {bots[seat] && <Avatar bot={bots[seat]!} />}
       <span className="play-badge-name">
         {nameOf(seat)}
+        {seatTag(seat)}
         {seat === game.dealer && <span className="play-dealer">莊</span>}
         {game.players[seat].riichi && <span className="play-riichi">叮</span>}
         {lahChips(seat)}
@@ -851,7 +1058,43 @@ export function PlayPanel({ onExit, onOnline }: { onExit: () => void; onOnline?:
           <button type="button" className="play-icon-button is-text" onClick={() => setTrackerOpen(true)} aria-label="Tile tracker" title="記牌器 - tiles you haven't seen">
             記牌器
           </button>
-          {menuOpen && (
+          {menuOpen && online && (
+            <div className="play-menu">
+              <p className="play-menu-note">
+                Table {online.table.code} · {online.table.settings.multiWin ? "一炮多響" : "截胡"} · timer {online.table.settings.timer ? `${online.table.settings.timer}s` : "off"}
+                {online.table.watching > 0 && ` · ${online.table.watching} watching`}
+              </p>
+              <div className="play-menu-row">
+                <span>Hints</span>
+                <span className="play-menu-seg">
+                  {[false, true].map((on) => (
+                    <button key={String(on)} type="button" className={hint === on ? "toggle-on" : undefined} aria-pressed={hint === on} onClick={() => setHint(on)}>
+                      {on ? "On" : "Off"}
+                    </button>
+                  ))}
+                </span>
+              </div>
+              <div className="play-menu-row">
+                <span>One-tap discard</span>
+                <span className="play-menu-seg">
+                  {[false, true].map((on) => (
+                    <button key={String(on)} type="button" className={oneTap === on ? "toggle-on" : undefined} aria-pressed={oneTap === on} onClick={() => setOneTap(on)}>
+                      {on ? "On" : "Off"}
+                    </button>
+                  ))}
+                </span>
+              </div>
+              <button type="button" onClick={onExit}>
+                Leave (your seat waits for you)
+              </button>
+              {online.host && (
+                <button type="button" className={confirmNew ? "is-armed" : undefined} onClick={() => (confirmNew ? online.send({ t: "end" }) : setConfirmNew(true))}>
+                  {confirmNew ? "Tap again to end the table" : "End the table"}
+                </button>
+              )}
+            </div>
+          )}
+          {menuOpen && !online && (
             <div className="play-menu">
               <div className="play-menu-row">
                 <span>Hints</span>
@@ -934,7 +1177,7 @@ export function PlayPanel({ onExit, onOnline }: { onExit: () => void; onOnline?:
                 }}
               >
                 <span>Opponents</span>
-                <span className="play-menu-value">{opponents.map((id) => shortName(profileById(id))).join(" · ")} ›</span>
+                <span className="play-menu-value">{opponents.map((id) => shortName(botById(id))).join(" · ")} ›</span>
               </button>
               <div className="play-menu-row">
                 <span>Bot speed</span>
@@ -1079,7 +1322,7 @@ export function PlayPanel({ onExit, onOnline }: { onExit: () => void; onOnline?:
             <div className={`play-hand${myTurn ? " is-turn" : ""}`}>
               {(me.melds.length > 0 || me.flowers.length > 0) && (
                 <span className="play-my-melds">
-                  <Melds melds={me.melds} />
+                  <Melds melds={me.melds} hideConcealed={!seated} />
                   <Flowers flowers={me.flowers} />
                 </span>
               )}
@@ -1105,7 +1348,7 @@ export function PlayPanel({ onExit, onOnline }: { onExit: () => void; onOnline?:
                     title={barred ? "食替 – can't discard this now" : undefined}
                     aria-label={barred ? `${tileLabel(t)} (食替 – can't discard this now)` : selected === i ? `Discard ${tileLabel(t)}` : tileLabel(t)}
                   >
-                    <TileGlyphSpan tile={t} />
+                    {t === BLANK ? <span className="play-back" /> : <TileGlyphSpan tile={t} />}
                   </button>
                 );
               })}
@@ -1221,15 +1464,9 @@ export function PlayPanel({ onExit, onOnline }: { onExit: () => void; onOnline?:
                     </div>
                     {w.score && (
                       <ul className="play-result-patterns">
-                        {w.score.matched.map(({ pattern, tai }) => (
-                          <li key={pattern.id}>
-                            <span>{patternDisplayName(pattern, w.score!.hand)}</span>
-                            <span>{tai}</span>
-                          </li>
-                        ))}
-                        {w.score.second?.matched.map(({ pattern, tai }) => (
-                          <li key={`2-${pattern.id}`}>
-                            <span>{patternDisplayName(pattern, w.score!.second!.hand)}</span>
+                        {w.score.patterns.map(({ id, name, tai }, i) => (
+                          <li key={`${i}-${id}`}>
+                            <span>{name}</span>
                             <span>{tai}</span>
                           </li>
                         ))}
@@ -1267,7 +1504,8 @@ export function PlayPanel({ onExit, onOnline }: { onExit: () => void; onOnline?:
                       onClick={() => {
                         if (!armed) return setSurrenderArmed(l.holder);
                         setSurrenderArmed(null);
-                        setGame(surrender(game, holder, HUMAN));
+                        if (online && net) online.send({ t: "surrender", holder: net.toTable(holder) });
+                        else setGame(surrender(game, holder, HUMAN));
                       }}
                     >
                       {armed ? "Tap again to 投降" : "投降"}
@@ -1286,10 +1524,13 @@ export function PlayPanel({ onExit, onOnline }: { onExit: () => void; onOnline?:
                 <button type="button" className="play-view-table" onClick={() => setResultHidden(true)}>
                   View table
                 </button>
-                <button type="button" className="play-next" onClick={nextHandWithSurrenders}>
-                  Next hand
-                </button>
+                {seated && (
+                  <button type="button" className="play-next" disabled={meReady} onClick={nextHandWithSurrenders}>
+                    {meReady ? "Ready ✓" : "Next hand"}
+                  </button>
+                )}
               </div>
+              {notReady.length > 0 && <p className="play-menu-note">Waiting for {notReady.join(", ")}</p>}
             </div>
           </div>
         )}
