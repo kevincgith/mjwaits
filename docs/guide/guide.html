@@ -1,0 +1,473 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>MJWaits User Guide</title>
+<style>
+  @page { size: A4; margin: 16mm 15mm 16mm 15mm; }
+  :root { --green: #1f7a3d; --ink: #1d2320; --muted: #5d6762; --rule: #dfe5e1; --tint: #eef6f0; --warn: #fff6e0; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, "PingFang TC", "Helvetica Neue", Arial, sans-serif; color: var(--ink); font-size: 10.2pt; line-height: 1.5; margin: 0; background: #fff; }
+  h1, h2, h3 { line-height: 1.2; }
+  h2 { font-size: 20pt; margin: 0 0 3mm; color: var(--green); border-bottom: 1.5pt solid var(--green); padding-bottom: 2mm; }
+  h2 .zh { font-weight: 600; margin-right: 2mm; }
+  h3 { font-size: 12.5pt; margin: 5mm 0 1.5mm; break-after: avoid; }
+  p { margin: 0 0 2.4mm; }
+  ul, ol { margin: 0 0 2.4mm; padding-left: 5mm; }
+  li { margin-bottom: 1mm; }
+  b, strong { font-weight: 650; }
+  .chapter { break-before: page; }
+  .lead { font-size: 11pt; color: var(--muted); margin-bottom: 4mm; }
+  .row { display: flex; gap: 6mm; align-items: flex-start; margin-bottom: 3mm; }
+  .row > .text { flex: 1; min-width: 0; }
+  figure { margin: 0; flex: 0 0 52mm; break-inside: avoid; }
+  figure img { width: 100%; border: 0.6pt solid var(--rule); border-radius: 3mm; display: block; }
+  figcaption { font-size: 8.2pt; color: var(--muted); margin-top: 1.2mm; line-height: 1.35; }
+  figure.wide { flex: none; width: 100%; margin: 2mm 0 4mm; }
+  figure.wide img { border-radius: 2mm; }
+  .pair { display: flex; gap: 5mm; margin: 2mm 0 4mm; }
+  .pair figure { flex: 1; }
+  .tip { background: var(--tint); border-left: 2.5pt solid var(--green); padding: 2.5mm 3.5mm; border-radius: 1.5mm; margin: 2mm 0 3mm; break-inside: avoid; }
+  .note { background: var(--warn); border-left: 2.5pt solid #d9a400; padding: 2.5mm 3.5mm; border-radius: 1.5mm; margin: 2mm 0 3mm; break-inside: avoid; }
+  .tip b:first-child, .note b:first-child { display: block; margin-bottom: 0.5mm; }
+  table { border-collapse: collapse; width: 100%; margin: 1mm 0 3mm; font-size: 9.4pt; break-inside: avoid; }
+  th, td { text-align: left; padding: 1.4mm 2mm; border-bottom: 0.5pt solid var(--rule); vertical-align: top; }
+  th { background: #f4f7f5; font-weight: 650; }
+  td:first-child { white-space: nowrap; font-weight: 600; }
+  .steps { counter-reset: s; list-style: none; padding-left: 0; }
+  .steps > li { counter-increment: s; position: relative; padding-left: 8mm; }
+  .steps > li::before { content: counter(s); position: absolute; left: 0; top: 0.2mm; width: 5mm; height: 5mm; border-radius: 50%; background: var(--green); color: #fff; font-size: 8pt; font-weight: 700; text-align: center; line-height: 5mm; }
+  .math { font-family: "SF Mono", Menlo, monospace; font-size: 9pt; background: #f4f7f5; padding: 0.3mm 1.2mm; border-radius: 1mm; }
+  .keep { break-inside: avoid; }
+
+  /* Cover */
+  .cover { height: 260mm; display: flex; flex-direction: column; }
+  .cover .brand { display: flex; align-items: center; gap: 4mm; margin-top: 18mm; }
+  .cover .logo { width: 18mm; height: 18mm; }
+  .cover h1 { font-size: 34pt; margin: 0; letter-spacing: -0.5pt; }
+  .cover .sub { font-size: 14pt; color: var(--muted); margin: 3mm 0 12mm; }
+  .toc { list-style: none; padding: 0; margin: 0; border-top: 0.8pt solid var(--rule); }
+  .toc li { display: flex; gap: 5mm; padding: 3.2mm 0; border-bottom: 0.8pt solid var(--rule); margin: 0; }
+  .toc .n { font-size: 15pt; font-weight: 700; color: var(--green); width: 8mm; }
+  .toc .t { font-size: 12.5pt; font-weight: 650; }
+  .toc .d { color: var(--muted); font-size: 9.5pt; }
+  .cover .foot { margin-top: auto; color: var(--muted); font-size: 9pt; }
+</style>
+</head>
+<body>
+
+<!-- ================================================================ COVER -->
+<section class="cover">
+  <div class="brand">
+    <svg class="logo" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#1f7a3d"/><rect x="11" y="14" width="19" height="36" rx="4" fill="#fff" opacity=".95"/><rect x="34" y="14" width="19" height="36" rx="4" fill="none" stroke="#fff" stroke-width="2.5" stroke-dasharray="4 3"/></svg>
+    <h1>MJWaits User Guide</h1>
+  </div>
+  <p class="sub">How to use every part of the app, for 16-tile Taiwanese / Hong Kong mahjong.<br>Live app: app.kevinlhc.com/mjwaits</p>
+  <ol class="toc">
+    <li><span class="n">1</span><span><span class="t">Scoring 計番</span><br><span class="d">Enter a finished hand and get its tai, pattern by pattern.</span></span></li>
+    <li><span class="n">2</span><span><span class="t">Scores 計分</span><br><span class="d">Keep score of a real game at the table, with 拉 / 踢, Jackpot, stats and live sharing.</span></span></li>
+    <li><span class="n">3</span><span><span class="t">Calculator</span><br><span class="d">Waits, shanten and the best discard for any hand.</span></span></li>
+    <li><span class="n">4</span><span><span class="t">Trainer</span><br><span class="d">Timed drills for spotting waits and picking discards.</span></span></li>
+    <li><span class="n">5</span><span><span class="t">Dice</span><br><span class="d">Roll for the wall, the tile exchange and the seating ceremony.</span></span></li>
+    <li><span class="n">6</span><span><span class="t">Play</span><br><span class="d">A full hand against three bots, or online with friends.</span></span></li>
+  </ol>
+  <div class="tip" style="margin-top:10mm">
+    <b>Getting around</b>
+    On a phone the five main tabs sit in a bar along the bottom; on a wider screen they're a row of buttons under the title.
+    Play isn't in the tab bar: <b>press and hold the MJWaits logo</b> to open it.
+  </div>
+  <div class="tip">
+    <b>Install it like an app</b>
+    In Safari tap Share → <b>Add to Home Screen</b> (other browsers: Install app in the menu). It opens full screen and works
+    offline after one visit. When a new version is out, a <b>New version available · Reload</b> bar appears.
+  </div>
+  <p class="foot">Everything except live scores and online play runs on your device: no hand or photo is uploaded. Updated 23 October 2026.</p>
+</section>
+
+<!-- ================================================================ SCORING -->
+<section class="chapter">
+  <h2><span class="zh">計番</span> 1 · Scoring</h2>
+  <p class="lead">Score a complete winning hand against the house tai list (about 140 patterns). This is the tab the app opens on.</p>
+
+  <div class="row">
+    <div class="text">
+      <h3>The screen at a glance</h3>
+      <ul>
+        <li><b>Toolbar</b> (stays at the top while you scroll): <b>Reset</b> ↺, <b>Scan</b> 📷, <b>Photos</b>, and a counter of tiles entered (e.g. 14/17). Once the hand scores, the counter turns into the <b>tai total</b>; tap it to jump to the breakdown.</li>
+        <li><b>Your hand</b>: two areas in one card. <b>門前 Declared</b> holds what you've laid down in front of you (melds, flowers). <b>手牌 Concealed</b> holds the tiles still in your hand.</li>
+        <li><b>選牌 Add tiles</b>: the tile picker. Every tap adds a tile to the hand.</li>
+        <li><b>情況 Situation</b>: winds, dealer, self-draw and the other things the tiles alone can't show.</li>
+      </ul>
+      <h3>Entering a hand</h3>
+      <ol class="steps">
+        <li>Pick where taps go with the buttons above the picker. <b>手牌</b> adds one concealed tile. <b>上</b> (chow), <b>碰</b> (pung), <b>明槓</b> (exposed kong) or <b>暗槓</b> (concealed kong) drops that whole meld into 門前, starting from the tile you tap. Tiles that can't start the chosen meld turn grey.</li>
+        <li>Tap the tiles. Flowers and seasons (bottom row) always go to 門前.</li>
+        <li>Mark the <b>食胡 tile</b>, the one that completed the hand: <b>long-press</b> it in the hand (or long-press it in the picker to add it already marked). Some patterns depend on it.</li>
+        <li>Set the situation (next page). The score appears as soon as the hand is complete.</li>
+      </ol>
+    </div>
+    <figure><img src="jpg/scoring-empty.jpg"><figcaption>Empty hand: 門前 above, 手牌 (green) below, the picker under them.</figcaption></figure>
+  </div>
+
+  <div class="row">
+    <figure><img src="jpg/scoring-building.jpg"><figcaption>Building a hand: 14 of 17 tiles in. With the picker scrolled, the hand stays pinned on top.</figcaption></figure>
+    <div class="text">
+      <h3>Fixing mistakes</h3>
+      <ul>
+        <li><b>Tap</b> a tile or meld in the hand to remove it.</li>
+        <li><b>Long-press</b> an empty part of 門前 or 手牌 to clear just that area.</li>
+        <li><b>Clear</b> in the 選牌 header empties both areas (tap twice to confirm).</li>
+        <li><b>Reset</b> in the toolbar clears the hand, the winds and every situation button.</li>
+      </ul>
+      <h3>Picker layouts</h3>
+      <p>The two small icons next to 選牌 switch layouts. <b>Classic</b> shows every suit at once. <b>Numpad</b> shows one group at a time (花 字 | 萬 筒 索) as a keypad of bigger keys. The choice is remembered, and the Calculator uses the same one. The <b>?</b> on the picker lists every tap and long-press.</p>
+      <h3>Scanning instead of tapping</h3>
+      <p><b>Scan</b> opens the camera; <b>Photos</b> uses a picture you already have. You crop twice, once for the concealed tiles and once for the declared ones, check the boxes the scanner drew, and the tiles are filled in. A complete hand from a scan is applied straight away, with an <b>Adjust</b> button to go back to the crop.</p>
+      <div class="tip"><b>Tip</b>When the hand card scrolls off screen, a small copy of it slides in under the toolbar. Tap it to jump back up.</div>
+    </div>
+  </div>
+</section>
+
+<section class="chapter">
+  <h3 style="margin-top:0">Setting the situation 情況</h3>
+  <div class="row">
+    <div class="text">
+      <ul>
+        <li><b>圈風 Round wind</b> and <b>門風 Seat wind</b>: tap a wind tile in each row.</li>
+        <li><b>莊</b>: tap to make yourself the dealer; <b>+</b> / <b>−</b> set the 連莊 streak.</li>
+        <li><b>自摸</b>: self-drawn win.</li>
+        <li><b>叮</b> (riichi): taps cycle 叮 → 天叮 → 地叮. <b>一發</b> and <b>食叮</b> sit next to it.</li>
+        <li><b>四子內 / 七子內 / 十子內</b>: won within the first 4, 7 or 10 discards (cycles on tap).</li>
+        <li><b>雙響 / 三響</b>: you were one of two or three winners off the same discard.</li>
+        <li><b>天胡 / 地胡 / 人胡</b>, and <b>河底撈魚 / 海底撈月 / 海底撈月(一筒)</b> for wins on the last tile.</li>
+        <li><b>花摸 / 槓摸 / 搶槓</b>: win on a flower or kong replacement tile, or by robbing a kong. Each counts up (×2, ×3) but never past the flowers or kongs actually in the hand.</li>
+        <li><b>明絕 / 絕絕</b>: waited on the last copy of a tile.</li>
+      </ul>
+      <p>The buttons know how the rules interact: picking 花摸, 槓摸, a last-tile win or 天胡 turns on 自摸 for you, and 自摸 can't be on together with 搶槓, 雙響, 三響, 地胡 or 食叮. Greyed buttons don't apply to the hand as entered.</p>
+    </div>
+    <figure><img src="jpg/scoring-situation.jpg"><figcaption>Situation buttons. 自摸 is on, so the tai total (198) shows in the toolbar.</figcaption></figure>
+  </div>
+
+  <h3>Reading the result</h3>
+  <div class="row">
+    <figure><img src="jpg/scoring-result.jpg"><figcaption>The TOTAL, then each pattern with its tai. 兩暗刻 and 暗清龍 are expanded to show their tiles.</figcaption></figure>
+    <div class="text">
+      <ul>
+        <li><b>TOTAL</b> is the hand's tai. Below it, <b>Patterns</b> lists every pattern that scored, with its tai.</li>
+        <li><b>Tap a pattern</b> (one with a ⌄) to see exactly which tiles earn it. A pattern that counts more than once shows one line per copy, and the row says e.g. <span class="math">15 × 2</span>.</li>
+        <li><b>Press and hold</b> a group of tiles in an expanded row to light those tiles up in the hand strip at the top.</li>
+        <li><b>Sort</b> cycles the list: check order → tai high to low → tai low to high.</li>
+      </ul>
+      <p>The app tries every way the hand can be split into melds and a pair, and keeps the one worth the most tai. A bigger pattern replaces the smaller one it includes; unrelated patterns add up. Special hands (十三么, 嚦咕嚦咕, 十六不搭) are scored by their own rules, and a hand that is both 嚦咕嚦咕 and an ordinary hand is shown both ways.</p>
+      <h3>One tile short? Projected scores</h3>
+      <p>If the concealed tiles are exactly one tile short of a win, the tab lists every tile that would complete it and what the whole hand would then score. Sort by score or by tile. (Not available with jokers or concealed kongs.)</p>
+    </div>
+  </div>
+</section>
+
+<section class="chapter">
+  <div class="row">
+    <div class="text">
+      <h3 style="margin-top:0">Recent hands and sharing</h3>
+      <ul>
+        <li><b>最近 Recent</b>, at the bottom of the tab, keeps the last 10 hands that scored on this device. Tap one to load it back. Changing only the situation updates the same entry instead of adding another. <b>Clear</b> (two taps) forgets them.</li>
+        <li>The <b>share icon</b> on a Recent row sends the hand as a link: <b>Copy link</b>, your phone's <b>Share…</b> sheet, or on a computer WhatsApp, Telegram, Email or X. The link carries the tiles and the situation, so whoever opens it sees the same score.</li>
+      </ul>
+      <h3>Sending a hand to the Scores tab</h3>
+      <p>While a game is running in Scores, the result has a <b>Record to Scores</b> button. It opens the Scores win sheet with the winner picked from your 門風, 自摸 set, and the tai filled in <i>without</i> 莊 / 連莊 (Scores adds those itself). The hand's patterns are kept for the 牌型 stats.</p>
+      <div class="note"><b>Remember</b>Set 門風 correctly before tapping Record to Scores: that's how it knows who won.</div>
+      <h3>Where to read the rules</h3>
+      <p>Every pattern, its tai, what it needs and what it replaces is in <b>docs/scoring-rules.md</b> in the project, kept in step with the app.</p>
+    </div>
+    <figure><img src="jpg/scoring-recent.jpg"><figcaption>最近 Recent: the hand just scored (198) is at the top, with its share icon.</figcaption></figure>
+  </div>
+</section>
+
+<!-- ================================================================ SCORES -->
+<section class="chapter">
+  <h2><span class="zh">計分</span> 2 · Scores</h2>
+  <p class="lead">A score keeper for a real game at the table, using 港式台牌 house rules: 莊 and 連莊, 拉 / 踢, 一炮多響, 反雪 and a Jackpot. Two sub-tabs: <b>戰況 Table</b> (the game) and <b>統計 Stats</b>.</p>
+
+  <div class="row">
+    <div class="text">
+      <h3>Starting a game</h3>
+      <ol class="steps">
+        <li>Open <b>Scores → 戰況 Table</b>. With no game running you see <b>新局 New game</b>.</li>
+        <li>Type the four players <b>in turn order</b>, going counter-clockwise round the table (東 南 西 北). Drag the ⠿ handle to reorder.</li>
+        <li>Tap <b>莊</b> beside whoever deals first.</li>
+        <li>Tap <b>開始 Start game</b>.</li>
+      </ol>
+      <p>Names you've used before are remembered and suggested. The <b>線上</b> card above is for following someone else's game (see 線上 at the end of this chapter).</p>
+      <h3>Backups</h3>
+      <p>All games are kept on this phone only. <b>備份 Backup → 儲存 Save file</b> saves everything to a file; <b>還原 Restore</b> loads one back (on this or another phone). Do this now and then: clearing the browser's data deletes your scores.</p>
+    </div>
+    <figure><img src="jpg/scores-setup.jpg"><figcaption>新局 New game: four names in seat order and who is 莊.</figcaption></figure>
+  </div>
+</section>
+
+<section class="chapter">
+  <h3 style="margin-top:0">The board 戰況</h3>
+  <div class="row">
+    <figure><img src="jpg/scores-board.jpg"><figcaption>A game 8 hands in. Ben is 莊 and won the last hand (+9); Chris carries a 拉 against him (−9 tag).</figcaption></figure>
+    <div class="text">
+      <p>The board always fits one screen. From top to bottom:</p>
+      <ul>
+        <li><b>Toolbar</b> of icons: 新局, 還原, 重做, 座位, 拉踢, 最近, 設定, 線上 (each explained on the next page).</li>
+        <li><b>Round box</b> (top left): the game's name, the round and deal (e.g. 南風南局), the number of hands (局8) and the dealer's streak. Long-press it to name the game.</li>
+        <li><b>Four player cards</b> sit where the players sit. Each shows the name, a <b>莊</b> tag on the dealer, the running total (green above zero, red below) and <b>上局</b>, last hand's change.</li>
+        <li>Under each card: <b>± win·self-draw·deal-in</b> counts (tap for 特別獎罰) and a 📷 to scan a hand that player won.</li>
+        <li><b>拉 tags</b> on the side of a card facing the other player: green +N on the card of whoever holds it, red −N on the player being pulled.</li>
+        <li>In the middle: <b>流局 Draw</b> and the <b>JACKPOT</b> pot.</li>
+      </ul>
+      <h3>Recording a win 食胡</h3>
+      <ol class="steps">
+        <li><b>Tap the winner's card.</b> (Hold it to start on 自摸.)</li>
+        <li>Under <i>Who dealt in?</i> tap the player who threw the tile, or <b>自摸</b> in the middle.</li>
+        <li>Type the <b>番 Tai</b> on the keypad. Don't include 莊 or 連莊: they're added for you.</li>
+        <li>Check the breakdown of what each payer owes, then <b>Confirm</b>.</li>
+      </ol>
+      <p>A toast offers <b>還原</b> straight after, in case you picked the wrong player.</p>
+    </div>
+  </div>
+</section>
+
+<section class="chapter">
+  <div class="row">
+    <div class="text">
+      <h3 style="margin-top:0">More on the win sheet</h3>
+      <ul>
+        <li><b>Breakdown</b>: for each payer, <span class="math">底 · 番 · 莊 · 拉 · 總</span>. A payment over the 高分 threshold (50 by default) is flagged.</li>
+        <li><b>一炮多響</b> (two or three winners off one discard): hold a player under <i>Who dealt in?</i>, choose 雙響 or 三響, pick the discarder and the other winners, and enter each winner's tai.</li>
+        <li><b>Jackpot</b>: the box next to the tai turns on when the pot has money in it. Tick it to give the pot to this winner.</li>
+        <li>📷 scans the winning hand into the Scoring tab and comes back with its tai and patterns.</li>
+      </ul>
+      <h3>特別獎罰 Bonus / penalty</h3>
+      <p>The second tab on the same sheet. Choose <b>獎</b> (the player is paid) or <b>罰</b> (the player pays) and an amount. Either <b>everyone</b> pays or is paid that amount, or pick one player as From / To. Presets cover the usual ones (花, 草, 花草, 暗槓…).</p>
+      <h3>Draw 流局</h3>
+      <p>Tap <b>流局</b> in the middle and confirm. Each player pays the Jackpot amount (5 by default) into the pot. The dealer stays (流局留莊 setting).</p>
+      <h3>The toolbar</h3>
+      <table>
+        <tr><td>新局</td><td><b>結帳 · 新局</b>: settle up, then end the game. Shows the fewest payments that square everyone, times a <b>倍數</b> ($ per tai), ready to share as text or a picture. Ending files the game in Stats.</td></tr>
+        <tr><td>還原 / 重做</td><td>Undo the last entry / redo it.</td></tr>
+        <tr><td>座位</td><td>Swap seats, bring in a 候補 substitute (totals stay with the person, not the seat), or set the 莊 and 連莊 by hand. Can also open the Dice tab's seating ceremony and bring the result back.</td></tr>
+        <tr><td>拉踢</td><td>Every live 拉, each with a <b>投降</b> button. The badge shows how many are running.</td></tr>
+        <tr><td>最近</td><td>Every hand so far, newest first. Tap one to edit it; later hands are re-worked automatically.</td></tr>
+        <tr><td>設定</td><td>Settings: 底, 莊 and 連莊 tai, 流局留莊, 封頂, 詐胡, rounding of 拉 / 踢 halves, 反雪, Jackpot, reminders and more.</td></tr>
+        <tr><td>線上</td><td>Share the game live with the table (see 線上, end of this chapter).</td></tr>
+      </table>
+    </div>
+    <figure><img src="jpg/scores-win-sheet.jpg"><figcaption>Ben's 食胡 sheet: pick who dealt in (or 自摸), type the tai, Confirm.</figcaption></figure>
+  </div>
+</section>
+
+<section class="chapter">
+  <h3 style="margin-top:0">How a payment is worked out</h3>
+  <p>Each payment is between <b>one payer and one winner</b>:</p>
+  <p style="text-align:center; font-size:11pt; margin:3mm 0"><span class="math" style="font-size:10.5pt">底 + 番 + 莊 + 拉 / 踢</span></p>
+  <ul>
+    <li><b>底</b>: the base (0 by default).</li>
+    <li><b>番</b>: the tai you typed.</li>
+    <li><b>莊</b>: only when the dealer is the winner or the payer: 1 tai for the dealer, plus 2 for each 連莊 (both settings).</li>
+    <li><b>拉 / 踢</b>: the running add-on between those two players, below.</li>
+  </ul>
+  <p>On a <b>自摸</b> all three others pay, each worked out separately. <b>封頂</b> (999 by default) only limits what the keypad accepts; it never caps a payment.</p>
+
+  <h3>拉 and 踢</h3>
+  <div class="tip keep">
+    <b>拉 (pull): winning off the same player again</b>
+    Once you've won off someone, the next hand you win off them is worth its value <b>+ half your 拉</b> (halves round up), and your 拉 grows to that new worth.<br>
+    Example: you win 11 off Chris → 拉 11. You win a 20 off Chris → worth 20 + 6 = <b>26</b>, and the 拉 is now 11 + 26 = <b>37</b>.
+  </div>
+  <div class="tip keep">
+    <b>踢 (kick): the player you're pulling wins back off you</b>
+    Their hand is worth its value <b>+ half your 拉 on them</b>. Your 拉 is gone, and theirs starts at their hand's plain value.<br>
+    Example: you hold 拉 29 on Chris. Chris wins a 20 off you → worth 20 + 15 = <b>35</b>, and Chris now has 拉 20 on you.
+  </div>
+  <ul>
+    <li>A <b>流局</b> keeps every 拉. A hand the holder doesn't win ends their 拉s.</li>
+    <li><b>投降</b> (concede, in 拉踢) ends a 拉 with nothing paid. Once a 拉 has run 3 hands in a row, a reminder shows above the table (the 投降提示 setting). The app never forbids conceding: house rules differ.</li>
+  </ul>
+
+  <h3>Other rules the board handles</h3>
+  <table>
+    <tr><td>反雪</td><td>If a player dealt into a 雙響 / 三響 and then 自摸s the very next hand, each of those winners pays them back: 5 after a 雙響, 10 after a 三響 (settings).</td></tr>
+    <tr><td>Jackpot</td><td>Each 流局, everyone puts in the set amount. A winner can take it on the win sheet, or tap the pot to share it out by hand.</td></tr>
+    <tr><td>Dealer</td><td>Stays on a dealer win or a 流局; otherwise moves on. After a full lap the round wind moves on, and 執位提示 reminds you to re-seat.</td></tr>
+  </table>
+  <div class="note"><b>Worked example</b>Ben is 莊 with 連莊 1 and wins 10 tai off Chris, with no 拉 between them: 0 + 10 + (1 + 2×1) = <b>13</b>, which Chris pays Ben.</div>
+</section>
+
+<section class="chapter">
+  <div class="row">
+    <div class="text">
+      <h3 style="margin-top:0">Stats 統計</h3>
+      <p>At the top, <b>玩家統計</b> ranks the players with net score, a trend line and <span class="math">胡·摸·銃</span> (wins, self-draws, deal-ins) plus 獎 bonuses. Below, five views:</p>
+      <table>
+        <tr><td>走勢</td><td>Running totals hand by hand. Touch the chart for any hand's numbers. A line underneath sums up the game's story ("The lead changed 1 time").</td></tr>
+        <tr><td>局</td><td>Every hand, with each player's change.</td></tr>
+        <tr><td>玩家</td><td>One player's full record: 食胡, 自摸, 出銃, 最高番數, average tai, 拉 / 踢 records, 連勝, 助攻 and more. 👑 marks the best at the table, 💀 the worst.</td></tr>
+        <tr><td>牌型</td><td>Patterns scored, from hands sent from the Scoring tab.</td></tr>
+        <tr><td>紀錄</td><td>Every past game, career stats per player, and head-to-head net tai.</td></tr>
+      </table>
+    </div>
+    <figure><img src="jpg/scores-stats.jpg"><figcaption>統計 for the same game: rankings, then the 走勢 chart.</figcaption></figure>
+  </div>
+
+  <h3>線上: live scores on everyone's phone</h3>
+  <p>Everything live sits under the one <b>線上</b> button at the end of the toolbar.</p>
+  <ul>
+    <li><b>Host:</b> 線上 → your name → <b>Go live</b>. You get a 5-character code, a QR code and a link. 線上 turns red while live. Keep scoring as normal; every change reaches everyone.</li>
+    <li><b>Everyone else:</b> scan the QR code or open the link (or 線上 → name + code). The host's game shows on your 戰況 in place of your own, which comes back when you leave.</li>
+    <li><b>Letting others record:</b> in the host's 線上 sheet, switch on <b>Can record</b> for a player. They then get the full board (everything but 新局). If two people record at the same moment, the first is kept and the second is asked to enter theirs again.</li>
+    <li><b>Who did what:</b> 最近 shows who entered each hand ("by Amy · edited by Ben").</li>
+    <li><b>Stopping:</b> <b>Stop sharing</b>, or 新局, ends it; followers see <b>Final</b> and can <b>Keep in my Stats</b>. Later, <b>Resume as CODE</b> reopens the same room. A room closes two days after its last change.</li>
+    <li>A dropped signal or a sleeping phone reconnects by itself; the host's offline changes go up when it's back.</li>
+  </ul>
+</section>
+
+<!-- ================================================================ CALCULATOR -->
+<section class="chapter">
+  <h2>3 · Calculator</h2>
+  <p class="lead">Build any hand and see what completes it, how far it is from ready, and which tile to throw.</p>
+  <div class="row">
+    <div class="text">
+      <h3>Entering a hand</h3>
+      <ul>
+        <li>Tap tiles on the picker, or <b>type</b> them in the box, e.g. <span class="math">123456789m111z11t22b</span>. The two stay in sync.</li>
+        <li>Suits: <b>m</b> 萬 characters, <b>t</b> 筒 circles, <b>b</b> 索 bamboo, <b>z</b> honours (1–7 = 東 南 西 北 中 發 白), <b>j</b> joker.</li>
+        <li><b>Sort</b> keeps new tiles in order; turn it off to keep the order you entered.</li>
+        <li>Tap a tile to remove it; long-press an empty part of the hand to clear it. Scan and Photos work as in Scoring.</li>
+      </ul>
+      <h3>聽牌 Waits</h3>
+      <p>With 1, 4, 7, 10, 13 or 16 tiles you see every tile that completes the hand and how many copies are left (4 minus what you hold), plus the total. <b>Breakdown</b> shows how the hand splits with each wait, the winning tile outlined; <b>↔</b> switches pair-first or tile order.</p>
+      <h3>Shanten</h3>
+      <p>How many tile swaps you are from ready, shown in the discards caption.</p>
+      <h3>Jokers 🀪</h3>
+      <p>Add any number. The waits list shows what each joker stands for, highlighted purple in the Breakdown.</p>
+    </div>
+    <figure><img src="jpg/calculator-waits.jpg"><figcaption>16 tiles waiting on 1筒 or 2索 (4 tiles left), with Breakdown on.</figcaption></figure>
+  </div>
+  <div class="row">
+    <figure><img src="jpg/calculator-discards.jpg"><figcaption>17 tiles, just drew: each discard with its tenpai and win chances.</figcaption></figure>
+    <div class="text">
+      <h3>打牌 Discards</h3>
+      <p>One tile past a checkpoint (you've just drawn), every discard is listed with what it leaves: <b>Tenpai</b> and its waits, or a shanten count and which draws would help, with copies left.</p>
+      <p>Not ready yet? <b>Discard efficiency</b> ranks every throw by its chance to win, with a two-step look-ahead: which draw brings you to ready, and what you'd then wait on.</p>
+      <div class="note"><b>About the percentages</b>The model looks at your next 8 self-draws only, with no opponents or discards. Treat the numbers as a ranking, not real odds.</div>
+      <h3>Special hands</h3>
+      <p>十三么 Thirteen Orphans, 嚦咕嚦咕 Eight Pairs and 十六不搭 Sixteen Unrelated are all recognised, with their own Breakdown layout.</p>
+      <h3>Sharing and Recent</h3>
+      <p>The share icon in the result caption makes a link that opens this hand in the Calculator. <b>最近 Recent</b> keeps recent hands with what was found.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================================================================ TRAINER -->
+<section class="chapter">
+  <h2>4 · Trainer</h2>
+  <p class="lead">Three drills on their own sub-tabs. Stats are saved on the device; each drill has a Reset.</p>
+  <div class="row">
+    <div class="text">
+      <h3>Choosing a drill</h3>
+      <ul>
+        <li><b>L1–L5</b> sets the hand size: Level 1 is one meld (4 tiles), Level 5 the full 16.</li>
+        <li><b>Flush</b> deals every hand in one suit, for harder reading.</li>
+        <li>Press <b>New hand</b>. A timer runs until you submit.</li>
+      </ul>
+      <h3>Waits</h3>
+      <ol class="steps">
+        <li>Look at the hand and work out every tile that completes it.</li>
+        <li>Tap those tiles on the answer picker (only suits in the hand are shown).</li>
+        <li>Tap <b>Pick the waits</b> to submit.</li>
+      </ol>
+      <p>Each pick is marked: <b style="color:#1f7a3d">green</b> correct, <b style="color:#c0392b">red</b> wrong, <b style="color:#b7791f">amber</b> a wait you missed. The full Breakdown follows. Stats: answered, % correct, average time, by level.</p>
+      <h3>Discards</h3>
+      <p>You've just drawn. Tap the one tile you'd throw and submit. It's graded against the Calculator: the best discard has the highest win chance. Your pick and every equally-best tile are highlighted, and the whole ranked list is shown. <b>Average regret</b> tracks how much win chance your picks gave up.</p>
+      <h3>Endless</h3>
+      <p>Press <b>Start</b> and play a full hand out, one draw at a time: tap a tile to throw it, a new tile is drawn. The HUD shows turn, shanten, best-discard rate, loose discards and regret. <b>Undo</b> / <b>Redo</b> (⌘Z / ⇧⌘Z) step through the hand; <b>N</b> deals a new one.</p>
+    </div>
+    <figure><img src="jpg/trainer-question.jpg"><figcaption>A Level 3 Waits question. Tap every winning tile, then Pick the waits.</figcaption></figure>
+  </div>
+</section>
+
+<!-- ================================================================ DICE -->
+<section class="chapter">
+  <h2>5 · Dice</h2>
+  <p class="lead">Dice for the table, on three sub-tabs.</p>
+  <div class="row">
+    <div class="text">
+      <h3>Dice &amp; wall</h3>
+      <ul>
+        <li><b>Roll the dice</b> for a tumble that settles on a result, or tap a die to set its face yourself (handy for copying a real roll).</li>
+        <li>The <b>Total</b> box turns green for three of a kind and red for 1-2-3.</li>
+        <li>The wall is drawn as four bars round the table. The app counts the total round to the right seat, marks the break with a pointer, and says which wall breaks and how many stacks are counted off (e.g. <i>Break the right wall · count 14 stacks clockwise · 4 stay on that wall</i>).</li>
+      </ul>
+      <h3>Exchange tiles</h3>
+      <p>Two dice for the exchange before the deal. <b>Round</b> picks round 1–3, <b>Tiles</b> a count (never fewer than 3), and <b>Total</b> is their product.</p>
+    </div>
+    <figure><img src="jpg/dice-wall.jpg"><figcaption>A roll of 14 breaks the right wall; the gold stacks are the ones counted off.</figcaption></figure>
+  </div>
+  <div class="row">
+    <figure><img src="jpg/dice-seating.jpg"><figcaption>Seating, step 1 of 9: A is the provisional East.</figcaption></figure>
+    <div class="text">
+      <h3>Seating 執位</h3>
+      <p>A step-by-step seating ceremony with the four winds plus 一筒 and 二筒. Press <b>Next</b> to move through the nine steps; the line at the top says what happens at each:</p>
+      <ol class="steps">
+        <li>Choose a <b>provisional East</b> (tap a player). Double-tap two players to swap them; long-press to rename (initials).</li>
+        <li>The provisional East throws the dice.</li>
+        <li>The total picks the <b>real East</b> seat.</li>
+        <li>The player at the real East throws again.</li>
+        <li>All six tiles are turned face up.</li>
+        <li>一筒 and 二筒 slide to the ends; the winds keep their order.</li>
+        <li>The second total picks who takes the first wind.</li>
+        <li>The four winds are dealt out.</li>
+        <li>Everyone moves to the seat of the wind they drew.</li>
+      </ol>
+      <p><b>Reset</b> starts over. Opened from the Scores tab's 座位 button, the last step shows <b>Use in Scores</b>, which sends the new seating back to the game.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================================================================ PLAY -->
+<section class="chapter" style="font-size:9.6pt">
+  <h2>6 · Play</h2>
+  <p class="lead">A full game of 16-tile mahjong against three bots, in the browser. Still being built, so it's hidden: <b>press and hold the MJWaits logo</b> to open it, and ‹ to leave. Turn your phone sideways.</p>
+  <figure class="wide" style="width:56%;margin-left:auto;margin-right:auto"><img src="jpg/play-table.jpg"><figcaption>The table. Your hand is along the bottom, the drawn tile set apart on the right. The compass shows each seat's wind and the tiles left (59). The bottom band shows your wind, 莊, your total, the round and 剩 tiles.</figcaption></figure>
+
+  <div class="row">
+    <div class="text">
+      <h3>Playing a turn</h3>
+      <ul>
+        <li><b>Tap a tile</b> to lift it, <b>tap again</b> to throw it. (Menu → One-tap discard throws on the first tap.)</li>
+        <li>When you can claim a discard, round buttons appear above your hand: <b>胡 · 槓 · 碰 · 上</b>, and <b>過</b> to pass. If several chows fit, you're asked which.</li>
+        <li>自摸 and kong buttons appear on your own turn.</li>
+        <li><b>食替</b>: right after a call you can't throw the tile you claimed (or, after an end chow, the tile at the far end). Barred tiles are greyed.</li>
+        <li><b>嗌錯</b>: changed your mind after a call? Tap it before you discard. You pay 5 to each player.</li>
+        <li><b>聽</b>: when you're ready, the bottom band lists your waits and how many of each are unseen.</li>
+      </ul>
+      <h3>叮 (riichi)</h3>
+      <p>When a discard would leave you ready, a red <b>叮</b> button appears. Tap it, then throw one of the tiles left bright. Your hand is then locked: draws that don't win are thrown for you, and you can only win. Worth 叮 5 (門清叮 10), 天叮 60 / 地叮 50 on your first discard, 一發 5, and 食叮 5 to whoever wins off a declared player.</p>
+    </div>
+    <div class="text">
+      <h3>Menu ≡ and buttons</h3>
+      <ul>
+        <li><b>Hints</b>: the suggested throw is underlined gold; risky tiles get a red mark.</li>
+        <li><b>Opponents 對手</b>: a ready-made table (Mixed, Tough, Styles, Friendly) or any bot per seat. <b>神秘 Mystery</b> plays as a hidden personality.</li>
+        <li><b>Bot speed</b> and a <b>turn timer</b> (off, 10 s, 20 s).</li>
+        <li><b>New game</b> (two taps, resets the totals).</li>
+        <li><b>記牌器</b>: how many of each tile you haven't seen.</li>
+        <li><b>戰況</b>: the game as the Scores tab shows it: standings, 拉, every hand, trend and stats.</li>
+      </ul>
+      <h3>Money on the table</h3>
+      <p>Scored with the same tai list as the Scoring tab; the discarder pays, or all three on 自摸. <b>拉 / 踢</b> carry over as in Scores, and each name card shows its 拉. Paid as they happen: dice 圍骰 / 蛇骰 (±5 from the dealer), flower sets 草 3 · 花 5 · 花草 8 · 八仙過海 100, 7搶1 / 1搶7 30, each 暗槓 5, and 追 (four same discards in a row: 5 or 10). After a hand, <b>投降</b> is offered once a 拉 on you has run 3+ hands.</p>
+      <div class="tip keep">
+    <b>線上對局 Play online with friends</b>
+    Menu → <b>Play online</b>, then <b>New table</b> or a code. Friends join by code or invite link; the host adds bots to any empty seat and taps <b>Start</b>. A dropped phone's seat plays itself until it's back.
+  </div>
+    </div>
+  </div>
+
+</section>
+
+</body>
+</html>
