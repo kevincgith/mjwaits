@@ -142,12 +142,6 @@ const botDelay = (difficulty: number, afterCall: boolean) => 300 + difficulty * 
 // bot had a call to weigh and passed (a tell, as at a real table).
 const PASS_DELAY_MS = 380;
 const PONDER_DELAY_MS = 900;
-// The far seat's line - its tiles, melds and flowers end to end - in tiles.
-// A full hand is 17; a call keeps it the same (three tiles out of the hand,
-// three into the meld), flowers lengthen it. Past this, the melds and
-// flowers go in front of the hand instead.
-const LINE_FITS = 18;
-const lineLength = (p: GameState["players"][number]) => p.hand.length + p.flowers.length + p.melds.length * 3;
 // A discard a bot is about to take stays on the table this long first, so
 // everyone sees what was thrown before it goes into the caller's meld.
 const CLAIM_DELAY_MS = 1100;
@@ -618,6 +612,30 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
     fit();
     const watch = new ResizeObserver(fit);
     seats.forEach((el) => watch.observe(el));
+    return () => watch.disconnect();
+  }, []);
+  // The far seat's melds and flowers along its row, beside its hand - in
+  // front of the hand only when the row really won't fit across the table.
+  // The hand keeps a slot for a drawn tile, so only a call or a flower can
+  // change this, never a draw.
+  const [topFront, setTopFront] = useState(false);
+  useLayoutEffect(() => {
+    const felt = feltRef.current;
+    const seat = felt?.querySelector<HTMLElement>(".play-seat-top");
+    const side = seat?.querySelector<HTMLElement>(".play-seat-side");
+    if (!felt || !seat || !side) return;
+    const fit = () => {
+      const hand = seat.querySelector<HTMLElement>(".play-edge-top");
+      if (!hand) return; // the hand laid out at the end: leave it as it was
+      const cols = getComputedStyle(felt).gridTemplateColumns.split(" ").map(parseFloat);
+      const room = cols.slice(1, -1).reduce((a, b) => a + b, 0);
+      const gap = parseFloat(getComputedStyle(seat).columnGap) || 0;
+      setTopFront(hand.offsetWidth + gap + side.offsetWidth > room);
+    };
+    fit();
+    const watch = new ResizeObserver(fit);
+    watch.observe(felt);
+    watch.observe(side);
     return () => watch.disconnect();
   }, []);
   // The table as deep as the screen allows at its one angle: its far edge
@@ -1147,7 +1165,7 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
     const side = SIDES[seat];
     const p = game.players[seat];
     return (
-      <div className={`play-seat play-seat-${side}${side !== "top" || lineLength(p) > LINE_FITS ? " is-front" : ""}`}>
+      <div className={`play-seat play-seat-${side}${side !== "top" || topFront ? " is-front" : ""}`}>
         {/* Melds and flowers in front of a side player's wall, from their
             left (the CSS turns them to face them); across, on the far
             player's left along their row - or in front, if that runs long. */}
@@ -1376,7 +1394,7 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
               <Compass game={game} active={over ? null : activeSeat} center={compassCenter} />
               {game.phase.kind === "claims" && (
                 <span className={`play-spotlight from-${SIDES[game.phase.from]}`}>
-                  <TileGlyphSpan tile={game.phase.tile} />
+                  <TileGlyphSpan key={game.discardsMade} tile={game.phase.tile} block />
                 </span>
               )}
             </div>
