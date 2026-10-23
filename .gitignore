@@ -46,3 +46,4 @@ reference-app/
 # Wrangler's local state and dev-only secrets/vars
 .wrangler/
 .dev.vars*
+docs/guide/img/

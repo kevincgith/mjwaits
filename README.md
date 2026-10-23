@@ -30,6 +30,8 @@ online, and an app left open (or paused in the background, as iPhone does) shows
 
 **Live app: [app.kevinlhc.com/mjwaits](https://app.kevinlhc.com/mjwaits/)**
 
+**User guide:** [docs/user-guide.pdf](docs/user-guide.pdf) - a step-by-step PDF of every tab, with screenshots.
+
 ![The Scoring tab: a fully concealed pure-flush self-draw scored at 198 tai, with the matched-pattern list — 底, 門前清, 清一色, 暗清龍, 暗四歸一… — each row expandable to the exact tiles behind it](docs/scoring.png)
 
 ## Scoring calculator (tai / 番)
