@@ -8,7 +8,8 @@
 // localStorage on every change.
 //
 // The pieces live in scores/: shared building blocks, the sheets, the board,
-// 統計, and 線上 - the same scoreboard shared live between phones.
+// 統計, and live sharing - a 戰況 game on other phones as it's scored (live:
+// the host's side, online: everyone else's).
 
 import { useEffect, useMemo, useState } from "react";
 import { DEFAULT_SETTINGS, newGame, replay, type ScoreGame, type ScoreStore } from "@mjwaits/shared/engine/ledger";
@@ -24,6 +25,7 @@ import { Setup } from "./scores/sheets";
 import { Board } from "./scores/board";
 import { TrendChart, TrendSummary, PlayerCard, type StatsView, saveBackupFile, BackupCard, StatsPanel, HandsTable } from "./scores/stats";
 import { OnlinePanel } from "./scores/online";
+import { LiveSheet, Toast, useHostLive, useToast } from "./scores/live";
 import { loadOnline } from "./lib/online";
 
 // ---- The tab ------------------------------------------------------------------------
@@ -224,8 +226,12 @@ export function ScoresPanel({
   onSeatingResultDone?: () => void;
   joinCode?: string | null; // a ?room= link: open 線上 on that table
 }) {
-  // At an online table (an invite link, or one left open), Scores opens on it.
+  // Following someone's game (an invite link, or one left open): Scores opens on it.
   const [sub, setSub] = useState<"board" | "stats" | "online">(() => (joinCode || loadOnline().current ? "online" : "board"));
+  // This phone's game, live on others' (線上 on 戰況).
+  const live = useHostLive(store, setStore);
+  const liveToast = useToast(live.problem);
+  const [liveOpen, setLiveOpen] = useState(false);
   const [view, setView] = useState<StatsView>("trend");
   useEffect(() => {
     if (request || seatingResult) setSub("board");
@@ -237,6 +243,8 @@ export function ScoresPanel({
   const update = (next: ScoreGame, extra: Partial<ScoreStore> = {}) => setStore({ ...store, ...extra, active: { ...next, updatedAt: Date.now() } });
   const endGame = () => {
     if (!game) return;
+    // An empty game isn't kept, so there's no final state to send: just stop.
+    if (live.code && game.events.length === 0) live.stop();
     const finished = { ...game, endedAt: Date.now(), updatedAt: Date.now() };
     setStore({ ...store, active: null, history: game.events.length > 0 ? [finished, ...store.history] : store.history });
   };
@@ -270,6 +278,7 @@ export function ScoresPanel({
             onOpenSeating={onOpenSeating}
             seatingResult={seatingResult ?? null}
             onSeatingResultDone={onSeatingResultDone}
+            live={{ on: live.code !== null, onOpen: () => setLiveOpen(true) }}
           />
         ) : (
           <>
@@ -279,6 +288,8 @@ export function ScoresPanel({
         ))}
       {sub === "stats" && <StatsPanel store={store} setStore={setStore} view={view} setView={setView} />}
       {sub === "online" && <OnlinePanel store={store} setStore={setStore} joinCode={joinCode} />}
+      {liveOpen && game && <LiveSheet live={live} onClose={() => setLiveOpen(false)} />}
+      {sub !== "online" && <Toast toast={liveToast} />}
     </section>
   );
 }

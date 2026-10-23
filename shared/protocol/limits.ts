@@ -4,12 +4,14 @@
 
 // Bumped whenever a message changes shape. The server answers a `hello` with
 // a different version with an error asking the page to reload.
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2; // 2: the room shares a whole Scores-tab game
 
 export const SEATS = 4;
 
-// Largest message either side accepts, in UTF-8 bytes.
-export const MAX_MESSAGE_BYTES = 8 * 1024;
+// Largest message either side accepts, in UTF-8 bytes. An update carries the
+// whole game: a long evening is tens of kilobytes, the 3,000-entry cap a few
+// hundred. (Cloudflare's own WebSocket limit is 1 MiB.)
+export const MAX_MESSAGE_BYTES = 512 * 1024;
 
 // Per connection: a burst of RATE_BURST messages, refilled at RATE_PER_SECOND
 // (a token bucket - the Worker enforces it).

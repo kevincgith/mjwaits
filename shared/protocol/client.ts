@@ -1,68 +1,36 @@
-// What a client may send the room, and the one function the server runs on
-// every incoming frame (parseClientMessage). Phase 1: the shared scoreboard.
+// What a phone may send a live room, and the one function the server runs on
+// every incoming frame (parseClientMessage).
+//
+// A room shares one Scores-tab game. The host - whoever made the room - puts
+// their 戰況 game up and keeps it current; anyone else joins to watch; the
+// host can let particular people record too. Recording is just sending the
+// whole game as it now stands (`update`), the way the Scores tab itself
+// saves it - so every 戰況 feature works the same online.
 //
 // Every message may carry `rid`, a client-chosen id echoed back on the
 // `error` it causes, so the page knows which action failed.
 
-import { MAX_MESSAGE_BYTES, NICKNAME_RAW_MAX, SEATS, TOKEN_PATTERN } from "./limits";
-import { array, bool, int, literal, nullable, object, oneOf, optional, str, tagged, type Infer, type Result } from "./schema";
+import { GameSchema, MAX_NAME } from "./game";
+import { MAX_MESSAGE_BYTES, NICKNAME_RAW_MAX, TOKEN_PATTERN } from "./limits";
+import { bool, int, literal, object, optional, record, str, tagged, type Infer, type Result } from "./schema";
 
-const seat = int(0, SEATS - 1);
-// 封頂 is 999 in the Scores tab; nothing at a real table goes past it.
-const tai = int(0, 999);
 const rid = optional(str(16));
-
-// What the host sets for the table. The rest of the ledger's settings stay
-// at the Scores tab's defaults (see DEFAULT_SETTINGS in ledger.ts).
-export const RoomSettingsSchema = object({
-  startChips: int(0, 1_000_000), // what each player starts with; the board shows this + net
-  base: int(0, 100), // 底
-  dealerTai: int(0, 100), // 莊
-  streakTai: int(0, 100), // per 連莊
-  // Several winners on one discard: "first" = 截胡 (the first in turn order
-  // from the discarder takes it), "all" = 一炮多響 (雙響 / 三響 all paid).
-  multiWin: oneOf("first", "all"),
-  // Undo: the host may take back the last entry alone; otherwise another
-  // seated player has to agree.
-  hostCanUndo: bool,
-  firstDealer: seat,
-});
-export type RoomSettings = Infer<typeof RoomSettingsSchema>;
-
-export const DEFAULT_ROOM_SETTINGS: RoomSettings = {
-  startChips: 0,
-  base: 0,
-  dealerTai: 1,
-  streakTai: 2,
-  multiWin: "first",
-  hostCanUndo: false,
-  firstDealer: 0,
-};
+// Room members are told apart by an id the server gives them (not their token).
+export const PERSON_ID_PATTERN = /^[0-9a-f]{16}$/;
 
 const ClientSchema = tagged({
   // First message on every connection. `token` (from an earlier `welcome`)
-  // takes back the seat it held; without one the player joins unseated.
+  // comes back as the same person; without one, a new person joins.
   hello: object({ t: literal("hello"), v: int(0, 1_000_000), name: str(NICKNAME_RAW_MAX), token: optional(str(32, TOKEN_PATTERN)), rid }),
-  sit: object({ t: literal("sit"), seat, rid }),
-  stand: object({ t: literal("stand"), rid }),
-  // Host only, before the game starts.
-  setup: object({ t: literal("setup"), settings: RoomSettingsSchema, rid }),
-  // Host only, with all four seats taken.
-  start: object({ t: literal("start"), rid }),
-  // A hand won. `from` null = 自摸 (exactly one winner); otherwise the
-  // discarder, who pays each winner - two or three winners only when the
-  // room plays 一炮多響. `jackpot`: the (one) winner also takes the pot.
-  win: object({ t: literal("win"), winners: array(object({ seat, tai }), 1, 3), from: nullable(seat), jackpot: optional(bool), rid }),
-  draw: object({ t: literal("draw"), rid }), // 流局
-  // 特別獎罰, as on the Scores tab: 獎 - `seat` is paid `amount`; 罰 - they
-  // pay it. With `other`, only that player; without, each of the other three.
-  bonus: object({ t: literal("bonus"), seat, kind: oneOf("獎", "罰"), amount: int(1, 9999), other: optional(seat), rid }),
-  // Take back the last entry: at once if the room lets the host do that and
-  // the host asks, otherwise once another seated player approves (undoVote).
-  // The one who asked can withdraw with approve: false.
-  undo: object({ t: literal("undo"), rid }),
-  undoVote: object({ t: literal("undoVote"), approve: bool, rid }),
-  end: object({ t: literal("end"), rid }), // end the session (host): the board becomes the summary
+  // The game as it now stands, from the host or someone allowed to record.
+  // `base` is the room's gameVersion this change was made on: if someone
+  // else's change landed first, it's refused (conflict) rather than lost.
+  // `colors`: each player's colour on the host's phone, for everyone else's.
+  update: object({ t: literal("update"), base: int(0, 1_000_000_000), game: GameSchema, colors: optional(record(str(MAX_NAME), int(0, 7), 32)), rid }),
+  // Host only: let someone record, or stop them.
+  setRecorder: object({ t: literal("setRecorder"), person: str(16, PERSON_ID_PATTERN), allow: bool, rid }),
+  // Host only: stop sharing. The room keeps the game as it was, read-only.
+  stop: object({ t: literal("stop"), rid }),
   ping: object({ t: literal("ping"), rid }),
 });
 
@@ -71,10 +39,10 @@ export type ClientMessageType = ClientMessage["t"];
 
 const encoder = new TextEncoder();
 
-// Checks one incoming WebSocket frame: text, within the size limit, JSON, a
-// known message of the right shape, and the cross-field rules a shape can't
-// say. Whether it's allowed right now (seated, host, game started) is the
-// room's call.
+// Checks one incoming WebSocket frame: text, within the size limit, JSON, and
+// a known message of the right shape (a game in `update` is then checked in
+// full by checkGame, by the room). Whether it's allowed - host, recorder - is
+// the room's call.
 export function parseClientMessage(frame: string | ArrayBuffer): Result<ClientMessage> {
   if (typeof frame !== "string") return { ok: false, error: "message: expected text" };
   // A UTF-16 unit is at most 3 UTF-8 bytes - skip encoding when it can't be over.
@@ -85,16 +53,5 @@ export function parseClientMessage(frame: string | ArrayBuffer): Result<ClientMe
   } catch {
     return { ok: false, error: "message: not JSON" };
   }
-  const r = ClientSchema.check(data, "");
-  if (!r.ok) return r;
-  const m = r.value;
-  if (m.t === "win") {
-    const seats = m.winners.map((w) => w.seat);
-    if (new Set(seats).size !== seats.length) return { ok: false, error: "winners: a seat is listed twice" };
-    if (m.from === null && seats.length !== 1) return { ok: false, error: "winners: a self-draw has one winner" };
-    if (m.from !== null && seats.includes(m.from)) return { ok: false, error: "from: the discarder can't be a winner" };
-    if (m.jackpot && seats.length !== 1) return { ok: false, error: "jackpot: only a single winner takes the pot" };
-  }
-  if (m.t === "bonus" && m.other === m.seat) return { ok: false, error: "other: must be another player" };
-  return r;
+  return ClientSchema.check(data, "");
 }

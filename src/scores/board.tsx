@@ -318,6 +318,8 @@ export function Board({
   onOpenSeating,
   seatingResult,
   onSeatingResultDone,
+  live,
+  recorder = false,
 }: {
   store: ScoreStore;
   game: ScoreGame;
@@ -330,6 +332,10 @@ export function Board({
   onOpenSeating?: (names: string[], east: number | null) => void;
   seatingResult: SeatingResult | null;
   onSeatingResultDone?: () => void;
+  // 線上: the host's button for sharing this game live (on: it is).
+  live?: { on: boolean; onOpen: () => void };
+  // Recording into someone else's live game: ending it (新局) is theirs.
+  recorder?: boolean;
 }) {
   const [sheet, setSheet] = useState<BoardSheet | null>(null);
   // Back from the seat ceremony: 座位 opens with its seating, to confirm.
@@ -591,14 +597,15 @@ export function Board({
     return m;
   }, [state.hands]);
 
-  const tools: { label: string; icon: ReactNode; onClick: () => void; disabled?: boolean; badge?: number }[] = [
-    { label: "新局", icon: Icons.newGame, onClick: () => setSheet({ kind: "settle" }) },
+  const tools: { label: string; icon: ReactNode; onClick: () => void; disabled?: boolean; badge?: number; on?: boolean }[] = [
+    ...(recorder ? [] : [{ label: "新局", icon: Icons.newGame, onClick: () => setSheet({ kind: "settle" }) }]),
     { label: "還原", icon: Icons.undo, onClick: () => undo(), disabled: game.events.length === 0 },
     { label: "重做", icon: Icons.redo, onClick: () => redo(), disabled: !canRedo(game) },
     { label: "座位", icon: Icons.seat, onClick: () => setSheet({ kind: "seats" }) },
     { label: "拉踢", icon: Icons.lah, onClick: () => setSheet({ kind: "lah" }), badge: state.lahs.length || undefined },
     { label: "最近", icon: Icons.recent, onClick: () => setSheet({ kind: "recent" }) },
     { label: "設定", icon: Icons.settings, onClick: () => setSheet({ kind: "settings" }) },
+    ...(live ? [{ label: "線上", icon: Icons.live, onClick: live.onOpen, on: live.on }] : []),
   ];
 
   return (
@@ -606,9 +613,9 @@ export function Board({
       <div className="sc-fit" ref={fitRef} style={fitHeight !== null ? { height: fitHeight } : undefined}>
       {/* The game actions. Where the game is sits in the table's corner. */}
       <div className="sc-toolbar">
-        <div className="sc-tools" role="toolbar" aria-label="Game actions">
+        <div className="sc-tools" role="toolbar" aria-label="Game actions" style={{ gridTemplateColumns: `repeat(${tools.length}, minmax(0, 1fr))` }}>
           {tools.map((t) => (
-            <button key={t.label} type="button" onClick={t.onClick} disabled={t.disabled}>
+            <button key={t.label} type="button" onClick={t.onClick} disabled={t.disabled} className={t.on ? "is-on" : undefined} aria-pressed={t.on}>
               <span className="sc-tool-icon">
                 {t.icon}
                 {t.badge && <span className="sc-tool-badge">{t.badge}</span>}

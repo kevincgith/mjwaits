@@ -1,13 +1,13 @@
 // Runs in the Workers runtime (see vitest.config.ts): requests go through the
 // real Worker into a real Room Durable Object with its own SQLite storage.
+// The live game itself - sharing, recording, permissions - is live.test.ts.
 
-import { env, runDurableObjectAlarm, runInDurableObject, SELF } from "cloudflare:test";
+import { env, evictDurableObject, runDurableObjectAlarm, runInDurableObject, SELF } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
-import { DEFAULT_ROOM_SETTINGS } from "@mjwaits/shared/protocol/client";
-import { PROTOCOL_VERSION, RATE_BURST, ROOM_CODE_PATTERN } from "@mjwaits/shared/protocol/limits";
+import { MAX_MESSAGE_BYTES, PROTOCOL_VERSION, RATE_BURST, ROOM_CODE_PATTERN } from "@mjwaits/shared/protocol/limits";
 import { isAllowedOrigin, randomRoomCode } from "../src/index";
 import { IDLE_TTL_MS, MAX_CONNECTIONS, UNUSED_TTL_MS, type Room } from "../src/room";
-import { BASE, connect, createRoom, fullTable, join, ORIGIN } from "./helpers";
+import { BASE, connect, createRoom, join, ORIGIN, sharing } from "./helpers";
 
 describe("the Worker's routes", () => {
   it("answers /health", async () => {
@@ -32,7 +32,7 @@ describe("the Worker's routes", () => {
     const res = await SELF.fetch(`${BASE}/rooms/${code.toLowerCase()}`, { headers: { Origin: ORIGIN } });
     expect(res.status).toBe(200);
     expect(res.headers.get("Access-Control-Allow-Origin")).toBe(ORIGIN);
-    expect(await res.json()).toEqual({ code, phase: "lobby", seated: 0 });
+    expect(await res.json()).toEqual({ code, phase: "waiting", players: [] });
     let unused = randomRoomCode();
     while (unused === code) unused = randomRoomCode();
     expect((await SELF.fetch(`${BASE}/rooms/${unused}`, { headers: { Origin: ORIGIN } })).status).toBe(404);
@@ -81,20 +81,31 @@ describe("the Worker's routes", () => {
 });
 
 describe("joining", () => {
-  it("welcomes the first player as host with a reconnect token", async () => {
+  it("welcomes the first person as host, with an id and a reconnect token", async () => {
     const code = await createRoom();
     const { welcome, room } = await join(code, "  陳大文 ");
-    expect(welcome).toMatchObject({ v: PROTOCOL_VERSION, name: "陳大文", host: true, seat: null });
+    expect(welcome).toMatchObject({ v: PROTOCOL_VERSION, name: "陳大文", host: true });
+    expect(welcome.id).toMatch(/^[0-9a-f]{16}$/);
     expect(welcome.token).toMatch(/^[0-9a-f]{32}$/);
-    expect(room).toMatchObject({ code, phase: "lobby", watching: 1, seats: [null, null, null, null], settings: DEFAULT_ROOM_SETTINGS });
+    expect(room).toMatchObject({ code, phase: "waiting", game: null, gameVersion: 0, colors: {} });
+    expect(room.people).toEqual([{ id: welcome.id, name: "陳大文", connected: true, host: true, canRecord: true }]);
+  });
+
+  it("lists everyone who joins, watching until the host says otherwise", async () => {
+    const { code, host } = await sharing();
+    const amy = await join(code, "Amy");
+    expect(amy.welcome.host).toBe(false);
+    expect(amy.room.game?.seats).toEqual(["Amy", "Ben", "陳大文", "Dee"]);
+    const view = await host.c.room((v) => v.people.length === 2);
+    expect(view.people[1]).toEqual({ id: amy.welcome.id, name: "Amy", connected: true, host: false, canRecord: false });
   });
 
   it("needs a hello first, the right version, and a usable, unique nickname", async () => {
     const code = await createRoom();
     const c = await connect(code);
-    c.send({ t: "sit", seat: 0, rid: "r1" });
+    c.send({ t: "stop", rid: "r1" });
     expect(await c.error()).toMatchObject({ code: "notJoined", rid: "r1" });
-    c.send({ t: "hello", v: PROTOCOL_VERSION + 1, name: "A" });
+    c.send({ t: "hello", v: PROTOCOL_VERSION - 1, name: "A" });
     expect(await c.error()).toMatchObject({ code: "version" });
     c.send({ t: "hello", v: PROTOCOL_VERSION, name: "<>" });
     expect(await c.error()).toMatchObject({ code: "badMessage" });
@@ -109,9 +120,9 @@ describe("joining", () => {
     const { c } = await join(await createRoom(), "A");
     c.send("{not json");
     expect(await c.error()).toMatchObject({ code: "badMessage", message: "message: not JSON" });
-    c.send({ t: "sit", seat: 9 });
+    c.send({ t: "setRecorder", person: "nope", allow: true });
     expect(await c.error()).toMatchObject({ code: "badMessage" });
-    c.send(JSON.stringify({ t: "ping", rid: "x", pad: "x".repeat(9000) }));
+    c.send(JSON.stringify({ t: "ping", rid: "x", pad: "x".repeat(MAX_MESSAGE_BYTES) }));
     expect(await c.error()).toMatchObject({ code: "tooLarge" });
     c.send({ t: "hello", v: PROTOCOL_VERSION, name: "B" });
     expect(await c.error()).toMatchObject({ code: "badMessage", message: "already joined" });
@@ -120,64 +131,28 @@ describe("joining", () => {
   });
 });
 
-describe("seats and the lobby", () => {
-  it("lets players take, change and leave seats, one player per seat", async () => {
-    const code = await createRoom();
-    const a = await join(code, "A");
-    const b = await join(code, "B");
-    a.c.send({ t: "sit", seat: 2 });
-    expect((await b.c.room((v) => v.seats[2] !== null)).seats[2]).toEqual({ name: "A", connected: true, host: true });
-    b.c.send({ t: "sit", seat: 2 });
-    expect(await b.c.error()).toMatchObject({ code: "seatTaken" });
-    a.c.send({ t: "sit", seat: 0 });
-    let view = await b.c.room((v) => v.seats[0] !== null);
-    expect(view.seats.map((s) => s?.name ?? null)).toEqual(["A", null, null, null]);
-    expect(view.watching).toBe(1);
-    a.c.send({ t: "stand" });
-    view = await b.c.room((v) => v.seats[0] === null);
-    expect(view.seats).toEqual([null, null, null, null]);
-    expect(view.watching).toBe(2);
-  });
-
-  it("lets only the host set up and start, and only with four seated", async () => {
-    const { players } = await fullTable();
-    const [a, b] = players;
-    const settings = { ...DEFAULT_ROOM_SETTINGS, startChips: 500, multiWin: "all" as const, firstDealer: 2 };
-    b.c.send({ t: "setup", settings });
-    expect(await b.c.error()).toMatchObject({ code: "notHost" });
-    a.c.send({ t: "setup", settings });
-    expect((await b.c.room((v) => v.settings.startChips === 500)).settings).toEqual(settings);
-    b.c.send({ t: "start" });
-    expect(await b.c.error()).toMatchObject({ code: "notHost" });
-    players[3].c.send({ t: "stand" });
-    await a.c.room((v) => v.seats[3] === null);
-    a.c.send({ t: "start" });
-    expect(await a.c.error()).toMatchObject({ code: "seatsNotFull" });
-    players[3].c.send({ t: "sit", seat: 3 });
-    await a.c.room((v) => v.seats[3] !== null);
-    a.c.send({ t: "start" });
-    expect((await b.c.room((v) => v.phase !== "lobby")).phase).toBe("playing");
-    b.c.send({ t: "sit", seat: 0 });
-    expect(await b.c.error()).toMatchObject({ code: "started" });
-    a.c.send({ t: "setup", settings: DEFAULT_ROOM_SETTINGS });
-    expect(await a.c.error()).toMatchObject({ code: "started" });
-  });
-});
-
 describe("reconnecting", () => {
-  it("shows a dropped player as away and gives them their seat back with their token", async () => {
-    const code = await createRoom();
-    const a = await join(code, "A");
-    const b = await join(code, "B");
-    b.c.send({ t: "sit", seat: 1 });
-    await a.c.room((v) => v.seats[1] !== null);
-    await b.c.closeAndWait();
-    expect((await a.c.room((v) => v.seats[1]?.connected === false)).seats[1]).toEqual({ name: "B", connected: false, host: false });
+  it("shows a dropped person as away and knows them again by their token", async () => {
+    const { code, host } = await sharing();
+    const amy = await join(code, "Amy");
+    await host.c.room((v) => v.people.length === 2);
+    await amy.c.closeAndWait();
+    expect((await host.c.room((v) => v.people[1]?.connected === false)).people[1]).toMatchObject({ name: "Amy", connected: false });
 
-    // Back, with a different name typed - the seat's name stays.
-    const again = await join(code, "Someone else", b.welcome.token);
-    expect(again.welcome).toMatchObject({ seat: 1, token: b.welcome.token, name: "B", host: false });
-    expect((await a.c.room((v) => v.seats[1]?.connected === true)).seats[1]).toEqual({ name: "B", connected: true, host: false });
+    // Back, with a different name typed - the name stays.
+    const again = await join(code, "Someone else", amy.welcome.token);
+    expect(again.welcome).toMatchObject({ id: amy.welcome.id, token: amy.welcome.token, name: "Amy", host: false });
+    expect(again.room.game).not.toBeNull();
+    expect((await host.c.room((v) => v.people[1]?.connected === true)).people[1]).toMatchObject({ name: "Amy", connected: true });
+  });
+
+  it("keeps the host the host after a reconnect", async () => {
+    const { code, host } = await sharing();
+    await host.c.closeAndWait();
+    const back = await join(code, "x", host.welcome.token);
+    expect(back.welcome.host).toBe(true);
+    back.c.send({ t: "stop" });
+    expect((await back.c.room((v) => v.phase === "ended")).phase).toBe("ended");
   });
 
   it("refuses a token the room doesn't know", async () => {
@@ -185,10 +160,22 @@ describe("reconnecting", () => {
     const c = await connect(code);
     c.send({ t: "hello", v: PROTOCOL_VERSION, name: "A", token: "0".repeat(32) });
     expect(await c.error()).toMatchObject({ code: "badToken" });
-    // A token from another room is no good here either.
     const other = await join(await createRoom(), "A");
     c.send({ t: "hello", v: PROTOCOL_VERSION, name: "A", token: other.welcome.token });
     expect(await c.error()).toMatchObject({ code: "badToken" });
+  });
+});
+
+describe("rooms from before live sharing", () => {
+  it("are cleared when they wake: their scoreboard can't be read as a live game", async () => {
+    const code = await createRoom();
+    const stub = env.ROOMS.getByName(code);
+    // Make it look like a protocol-1 room: no schema mark.
+    await runInDurableObject(stub, (_room: Room, state) => {
+      state.storage.sql.exec("DELETE FROM meta WHERE key = 'schema'");
+    });
+    await evictDurableObject(stub);
+    expect((await SELF.fetch(`${BASE}/rooms/${code}`, { headers: { Origin: ORIGIN } })).status).toBe(404);
   });
 });
 
@@ -244,7 +231,7 @@ describe("expiry", () => {
     await expect.poll(() => runInDurableObject(stubFor(code), (_r: Room, state) => state.getWebSockets().length), { timeout: 2000 }).toBe(0);
     await backdate(code, UNUSED_TTL_MS + 1000); // idle an hour: not long enough once joined
     await runDurableObjectAlarm(stubFor(code));
-    expect(await runInDurableObject(stubFor(code), (_r: Room, state) => state.storage.sql.exec("SELECT COUNT(*) AS n FROM players").one().n)).toBe(1);
+    expect(await runInDurableObject(stubFor(code), (_r: Room, state) => state.storage.sql.exec("SELECT COUNT(*) AS n FROM people").one().n)).toBe(1);
 
     await backdate(code, IDLE_TTL_MS + 1000);
     await runDurableObjectAlarm(stubFor(code));

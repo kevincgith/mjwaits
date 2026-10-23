@@ -10,8 +10,8 @@ hand, see what completes it and which discard gives the best odds — and has gr
 - **Trainer** — timed quizzes: a **Waits** drill (name every tile that completes a hand) and a
   **Discards** drill (just drew — pick the single best tile to throw).
 - **Scores** — keep score of a real game at the table (港式台牌 rules: 莊/連莊, 拉/踢, 一炮多響,
-  反雪, Jackpot), with a stats page per player — on one phone, or **線上** with every player on
-  their own phone and one live scoreboard.
+  反雪, Jackpot), with a stats page per player — and **線上**, the game live on everyone's
+  phone as it's scored.
 - **Dice** — roll for the wall, and see exactly where it breaks.
 
 On a phone the five tabs sit in a bottom tab bar; on wider screens they're a segmented control
@@ -19,8 +19,8 @@ under the title. In the Scoring tab a sticky toolbar keeps Reset / Scan / Photos
 (or, once the hand scores, the total — tap it to jump to the breakdown) in view while scrolling.
 
 Everything runs client-side, including the camera tile scanner. No hand ever leaves the browser.
-The one exception is by design: a **線上 Online** table's scores go through the multiplayer server
-so every phone at the table sees them.
+The one exception is by design: a game shared with **線上** goes through the live-scores server
+so every phone at the table sees it.
 
 **Install it** from the browser's menu (Safari: Share → Add to Home Screen): it opens full screen
 like an app and **works offline** — after one visit with a connection, it loads with no signal,
@@ -356,35 +356,30 @@ their records, 多響, 反雪, 最高得分 / 失分, 總自摸 / 出銃 得分 
 首名率 - with 👑 for the best at the table and 💀 the worst) and **紀錄** (every game, career
 stats per player and head-to-head net tai).
 
-### 線上 Online
+### 線上 live scores
 
-The same scoreboard shared live: everyone at the table on their own phone, an entry made on any
-of them on all of them at once. It runs on a small server ([`worker/`](worker/README.md), a
-Cloudflare Worker at `mj-api.kevinlhc.com`); the scores are worked out there by the same ledger
-as 戰況, so the numbers match.
+A game in 戰況 can go live: everyone else at the table follows it on their own phone as it's
+scored, and the host can let any of them record too. It runs through a small server
+([`worker/`](worker/README.md), a Cloudflare Worker at `mj-api.kevinlhc.com`) that holds the
+game exactly as the Scores tab keeps it, so every phone shows the same numbers.
 
-- **Start.** Pick a nickname, then **開枱** to make a table or **加入** with its 5-character code.
-  **Invite** shows the table's QR code and link (`…/mjwaits/?room=CODE`), which opens straight on
-  the join form. Tables joined on this phone are listed for a week, to rejoin.
-- **Lobby.** Each player takes a seat (東南西北 from the first dealer); a dot shows who's
-  connected. The host - whoever made the table - sets the starting chips, 底 / 莊 / 連莊, 截胡 or
-  一炮多響, whether the host may 還原 alone, and who deals first, then starts once four are
-  seated.
-- **Playing.** The 戰況 cards, turned so your own seat is at the bottom, with chips (or net when
-  the table starts at 0), 莊 / 連莊 and the last change. Tap a winner for the same 食胡 /
-  特別獎罰 sheets; 流局 in the middle, the Jackpot under it, and every 拉 listed below. Any seated
-  player can record; anyone else at the table watches. **還原** asks to take back the last entry,
-  and another player taps Agree (or No) on the banner that appears on every phone - nothing new
-  can be recorded meanwhile. **最近** lists every entry.
-- **Ending.** The host's **結束** ends the session for everyone: the final ranking, the fewest
-  payments that settle it, and anything left in the Jackpot. **Keep in my Stats** copies the
-  game into this phone's 統計.
+- **Going live (the host).** **線上** at the end of 戰況's toolbar → your name → **Go live**. The
+  sheet shows the game's 5-character code, its QR code and link (`…/mjwaits/?room=CODE`), and
+  everyone who has joined, each with a **Can record** switch. 線上 turns red while the game is
+  live. You keep scoring exactly as before; every change goes to everyone.
+- **Following (everyone else).** Scores → **線上** → your name and the code (or scan the QR code,
+  or open the link). You see the board as it's scored - totals, the last change, 莊, 拉 and the
+  Jackpot - with the trend and every hand underneath. Games you've followed are listed for a week.
+- **Recording.** Once the host switches you on, the same 戰況 board appears on your phone, with
+  everything but 新局; whatever you enter shows on every phone, the host's included. If two people
+  record at the same moment, the first is kept and the second is told to enter theirs again -
+  nothing is merged behind anyone's back.
+- **Ending.** When the host ends the game (新局), its final state goes up and sharing stops; or
+  **Stop sharing** in the 線上 sheet stops it with the game as it stands. Everyone else then sees
+  **Final**, with **Keep in my Stats** to copy the game into their own 統計.
 - **Dropping out** costs nothing: a reload, a lost signal or a phone that slept reconnects by
-  itself to the same seat (a reconnect token is kept on the phone). A table closes two days after
-  its last change.
-
-Not online yet: 詐胡, 投降, 換人 / re-seating, sharing out the Jackpot by hand, and fixing an older
-entry (only the last one can be taken back).
+  itself (a token is kept on the phone), and the host's own changes made offline go up when it's
+  back. A shared game closes two days after its last change.
 
 ## Play (hidden, in progress)
 
@@ -650,8 +645,8 @@ The repo is an npm workspace of three parts:
 - [`shared/`](shared/) (`@mjwaits/shared`) — the rules engine (`engine/`: tiles, tai scoring, the
   hand engine, the score ledger) and the multiplayer protocol (`protocol/`), with no
   dependencies and no browser APIs, imported by both the app and the server;
-- [`worker/`](worker/README.md) — the 線上 server: a Cloudflare Worker with one Durable Object
-  per table. Its README covers running it locally (`npm run dev --workspace worker`), deploying
+- [`worker/`](worker/README.md) — the 線上 live-scores server: a Cloudflare Worker with one
+  Durable Object per shared game. Its README covers running it locally (`npm run dev --workspace worker`), deploying
   it to `mj-api.kevinlhc.com`, and the message protocol.
 
 The core engine (parsing, shanten, waits, joker resolution, discard analysis) lives in
