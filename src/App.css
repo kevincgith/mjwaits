@@ -7329,6 +7329,24 @@ html.playing body {
     0 0.2em 0.14em rgba(0, 0, 0, 0.38);
 }
 
+/* A face-down tile on the card: the same size as a face and the same edge
+   below it, the other way up - the jade back on top, so the jade first,
+   then the ivory body. */
+.play-result-hand .play-back {
+  width: 0.72em;
+  height: 0.913em;
+  margin: 0.043em 0.03em 0.044em;
+  border-radius: 0.08em;
+  background: linear-gradient(to bottom, #4cc06a, var(--play-back) 30%);
+  box-shadow:
+    0 0 0 0.5px rgba(0, 0, 0, 0.28),
+    0 0.05em 0 var(--play-back-edge),
+    0 0.1em 0 #f2ede0,
+    0 0.13em 0 var(--play-ivory),
+    0 0.15em 0 #d8d0bb,
+    0 0.2em 0.14em rgba(0, 0, 0, 0.38);
+}
+
 /* The winning tile, turned a quarter: its edge drawn along the face's x, so
    once turned it still lies below the tile, toward you. */
 .play-result-hand .play-win-tile img.tile-face {
