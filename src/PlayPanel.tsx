@@ -82,6 +82,7 @@ import { carriedOver, newPlayLedger, playEvents, uniqueNames } from "@mjwaits/sh
 import { PlayScores } from "./scores/playScores";
 import { ReviewSheet, type Decision } from "./PlayReview";
 import { RecordSheet } from "./PlayRecord";
+import { isMuted, play as playSound, setMuted, wakeAudio, type Sound } from "./lib/sound";
 import { addHand, loadRecord, saveRecord, type Opponent } from "./lib/playRecord";
 import { loadLearnedModel, type LearnedModel } from "./lib/ml/browser";
 import { learnedClaim, learnedTurnMove, type LearnedBot } from "./lib/ml/policy";
@@ -313,6 +314,41 @@ function RevealedHandView({ tiles, winningTile, toppleAt = 0 }: { tiles: Tile[];
         </span>
       )}
     </span>
+  );
+}
+
+// The sound for a burst: a win, 叮, a call, or (anything longer, as 正花 +2) a bonus.
+function burstSound(label: string): Sound {
+  if (/胡|自摸|搶槓|響/.test(label)) return "win";
+  if (label === "叮") return "riichi";
+  if (label === "碰" || label === "上" || label === "槓") return "call";
+  return "bonus";
+}
+
+// 音效: sound on or off, in either menu.
+function SoundRow() {
+  const [off, setOff] = useState(isMuted);
+  return (
+    <div className="play-menu-row">
+      <span>音效 Sound</span>
+      <span className="play-menu-seg">
+        {[true, false].map((on) => (
+          <button
+            key={String(on)}
+            type="button"
+            className={!off === on ? "toggle-on" : undefined}
+            aria-pressed={!off === on}
+            onClick={() => {
+              setMuted(!on);
+              setOff(!on);
+              if (on) wakeAudio();
+            }}
+          >
+            {on ? "On" : "Off"}
+          </button>
+        ))}
+      </span>
+    </div>
   );
 }
 
@@ -647,6 +683,22 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
   // the review on the result card. A new deal starts a new list.
   const [decisions, setDecisions] = useState<Decision[]>([]);
   const [reviewOpen, setReviewOpen] = useState(false);
+  // Sound: woken by the first tap (iPhones need one); a clack whenever a
+  // tile hits a pond, a softer tick as you draw.
+  useEffect(() => {
+    const wake = () => wakeAudio();
+    window.addEventListener("pointerdown", wake, { once: true });
+    return () => window.removeEventListener("pointerdown", wake);
+  }, []);
+  const soundBefore = useRef<GameState | null>(null);
+  useEffect(() => {
+    const prev = soundBefore.current;
+    soundBefore.current = game;
+    if (!prev || game.phase.kind === "over") return;
+    const count = (g: GameState) => g.players.reduce((n, p) => n + p.discards.length, 0);
+    if (count(game) > count(prev)) playSound("discard");
+    else if (game.phase.kind === "turn" && game.phase.seat === HUMAN && game.phase.drawn && !(prev.phase.kind === "turn" && prev.phase.drawn)) playSound("draw");
+  }, [game]);
   const beforeMove = useRef<GameState | null>(null);
   useEffect(() => {
     const prev = beforeMove.current;
@@ -853,6 +905,7 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
   };
 
   const showBurst = (seat: number, label: string) => {
+    playSound(burstSound(label));
     const id = Date.now();
     setBurst({ seat, label, id });
     window.setTimeout(() => setBurst((b) => (b?.id === id ? null : b)), BURST_MS);
@@ -1392,6 +1445,7 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
                   ))}
                 </span>
               </div>
+              <SoundRow />
               <button type="button" onClick={onExit}>
                 Leave (your seat waits for you)
               </button>
@@ -1520,6 +1574,7 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
                   ))}
                 </span>
               </div>
+              <SoundRow />
               {onOnline && (
                 <button type="button" className="play-menu-link" onClick={onOnline}>
                   <span>線上對局 Play online</span>
