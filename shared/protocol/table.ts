@@ -135,14 +135,14 @@ export interface YourOptions {
   claims: Claim[];
 }
 
-// What just happened, for the table to show it (a burst, a sound).
+// What just happened, for the table to show it (a burst, a sound). `auto`:
+// the table made that move for the seat - out of time, or away.
 export type TableAction =
-  | { kind: "discard"; seat: number; tile: Tile; riichi?: boolean }
+  | { kind: "discard"; seat: number; tile: Tile; riichi?: boolean; auto?: boolean }
   | { kind: "call"; seat: number; call: "chow" | "pung" | "kong"; from: number }
-  | { kind: "kong"; seat: number; concealed: boolean }
+  | { kind: "kong"; seat: number; concealed: boolean; auto?: boolean }
   | { kind: "win"; seats: number[]; from: number | null; robKong?: boolean }
-  | { kind: "draw" } // 流局
-  | { kind: "auto"; seat: number }; // played for: out of time, or away
+  | { kind: "draw" }; // 流局
 
 export interface TableState {
   code: string;

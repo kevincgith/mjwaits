@@ -14,7 +14,9 @@ shared/                  @mjwaits/shared - imported by the web app and this Work
   protocol/              the messages (client.ts, server.ts), a game's full check (game.ts), limits.ts
 worker/                  this Worker
   src/index.ts           routes: make a room, look one up, open its WebSocket; the Origin check
-  src/room.ts            Room, the Durable Object: people, who records, the game, conflicts, expiry
+  src/hub.ts             what every room has in common: joining, tokens, rate limits, the alarm, expiry
+  src/room.ts            Room, a live-scores room: who records, the game, conflicts, the audit trail
+  src/table.ts           Table, an online table: four seats, the wall and every hand, turns, claims, timers
   test/                  tests run inside the Workers runtime against the real Durable Object
 src/lib/online.ts        the web app's side: rooms over HTTP, the live socket (RoomClient), and
                          keeping a phone's copy of the game in step with the room's (GameSync)
@@ -151,6 +153,10 @@ counts here:
   messages, open sockets and all.
 - **Storage.** A room is its game - tens of kilobytes for a long evening - and a few rows of
   bookkeeping. Each change rewrites the game: a handful of rows written.
+- **Tables.** An online table is different: it's awake for as long as a hand is being played
+  (bots and timers keep it ticking), so its cost is duration - every awake object is billed as
+  128 MB, so an hour awake is 460 GB-s and the free 13,000 GB-s a day is about 28 table-hours.
+  Storage stays small: the whole table is one row, written once per move (plus the clock row).
 - **CPU.** Each change is checked by replaying the game with the ledger: a millisecond or so for
   a long game. Tai scoring isn't done on the server at all.
 
@@ -185,6 +191,7 @@ scoreboard; rooms left from it are cleared when they wake.)
 | `POST /rooms` | `201 {"code":"3AC9X"}` - a new, empty room |
 | `GET /rooms/<CODE>` | `200 {"code","phase","players"}`, or `404` |
 | `GET /rooms/<CODE>/ws` | the WebSocket (`Upgrade: websocket`); `404` for no such room, `503` when it's full |
+| `POST /tables`, `GET /tables/<CODE>`, `GET /tables/<CODE>/ws` | the same for an online table (`{"code","phase","seats"}`) |
 | `GET /health` | `ok` |
 
 The room routes need an allowed `Origin` (else `403`). Codes are 5 characters from
@@ -258,3 +265,27 @@ again (the host stays host). It retries with growing waits (½ s up to 8 s) and 
 page comes back to the front or the network returns. When a connection fails before it opens,
 the app asks `GET /rooms/<CODE>`: a `404` means the game has closed, so it stops and says so
 instead of retrying.
+
+## Online tables
+
+`/tables/<CODE>/ws` speaks the table protocol in `shared/protocol/table.ts` (same `hello`,
+tokens, limits and errors as a live room). The table (`src/table.ts`) is authoritative:
+
+- **It holds everything** - the wall and all four hands, as the engine's `GameState` - and sends
+  each phone only its seat's view (`viewFor` in `shared/engine/view.ts`): its own tiles, everyone's
+  melds and discards, counts for the rest. Someone watching sees no hand. Tests check every
+  message each phone is sent.
+- **Every move is checked** against the engine: the decision's `step` (a late tap is `stale`),
+  whose turn or claim it is, and that the move or claim is legal (`illegal`).
+- **The lobby:** people sit; the host seats bots (the Play tab's personalities), sets 截糊 or
+  一炮多響, the turn timer (off, 10, 20 or 30 s), how long a dropped seat is held, and who deals
+  first, then starts once all four seats are filled.
+- **Timers** share the object's one alarm, set for exactly the next thing due: a bot's move
+  (700 ms after the last, so people can follow), a turn deadline (out of time, the drawn tile
+  goes; a claim is passed), or a dropped player's hold running out - after which the table plays
+  for them (winning if it can, otherwise throwing the drawn tile) until they reconnect. If no
+  one at the table is connected, nothing moves.
+- **Between hands** everyone connected taps ready; bots 投降 a long 拉 by personality. Totals
+  carry across hands: each hand's payments, and dice and flower bonuses as they're paid.
+- **Storage:** the whole table is one SQLite row, written once per event however far the hand
+  moved, plus the hub's clock row.
