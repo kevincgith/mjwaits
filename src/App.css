@@ -6866,6 +6866,8 @@ html.playing body {
    in the tile's box. */
 .play-felt {
   --play-thick: 0.42em;
+  /* How round a tile's upright edges are (and its top's corners). */
+  --tile-r: 0.07em;
 }
 
 .tile-side,
@@ -6882,10 +6884,8 @@ html.playing body {
   --tile-sides: var(--play-back-edge), var(--play-back) 38%, #7fd98c 46%, var(--play-ivory) 54%, #f2ede0;
 }
 
-/* The top's corners are nearly square, like the sides that meet it -
-   rounded, they left the sides' ends poking out past it. */
 .play-felt img.tile-face {
-  border-radius: 0.035em;
+  border-radius: var(--tile-r);
   transform: translateZ(var(--play-thick));
   box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.25);
 }
@@ -6906,7 +6906,7 @@ html.playing body {
   display: block;
   position: absolute;
   inset: 0;
-  border-radius: 0.035em;
+  border-radius: var(--tile-r);
   background: var(--play-back);
   box-shadow: inset 0 0 0 0.04em var(--play-back-edge);
   transform: translateZ(var(--play-thick));
@@ -6917,14 +6917,19 @@ html.playing body {
   position: absolute;
 }
 
-/* Each side square-ended and a hair longer than its edge, so neighbours
-   overlap at the corners and no seam opens between them; the ends (left
-   and right) a shade darker than the long sides, as light falls on a
-   real block. */
+/* The four sides run between the rounded corners (a hair longer, so they
+   overlap them), and each corner is a narrow panel set at 45° across the
+   rounding - at a tile's size, a rounded edge, with no seam and nothing
+   poking past the top. The ends (left and right) are a shade darker than
+   the long sides, as light falls on a real block. */
+.play-felt .tile-side {
+  --shade: linear-gradient(rgba(0, 0, 0, 0), rgba(0, 0, 0, 0));
+}
+
 .play-felt .tile-side.is-near {
-  left: calc(var(--tile-x) - 0.5px);
+  left: calc(var(--tile-x) + var(--tile-r) - 0.5px);
   top: calc(var(--tile-y) + var(--tile-h));
-  width: calc(var(--tile-w) + 1px);
+  width: calc(var(--tile-w) - 2 * var(--tile-r) + 1px);
   height: var(--play-thick);
   background: linear-gradient(to bottom, var(--tile-sides));
   transform-origin: 50% 0;
@@ -6932,9 +6937,9 @@ html.playing body {
 }
 
 .play-felt .tile-side.is-far {
-  left: calc(var(--tile-x) - 0.5px);
+  left: calc(var(--tile-x) + var(--tile-r) - 0.5px);
   top: calc(var(--tile-y) - var(--play-thick));
-  width: calc(var(--tile-w) + 1px);
+  width: calc(var(--tile-w) - 2 * var(--tile-r) + 1px);
   height: var(--play-thick);
   background: linear-gradient(to top, var(--tile-sides));
   transform-origin: 50% 100%;
@@ -6943,9 +6948,9 @@ html.playing body {
 
 .play-felt .tile-side.is-right {
   left: calc(var(--tile-x) + var(--tile-w));
-  top: calc(var(--tile-y) - 0.5px);
+  top: calc(var(--tile-y) + var(--tile-r) - 0.5px);
   width: var(--play-thick);
-  height: calc(var(--tile-h) + 1px);
+  height: calc(var(--tile-h) - 2 * var(--tile-r) + 1px);
   background: linear-gradient(rgba(0, 0, 0, 0.14), rgba(0, 0, 0, 0.14)), linear-gradient(to right, var(--tile-sides));
   transform-origin: 0 50%;
   transform: rotateY(-90deg);
@@ -6953,12 +6958,45 @@ html.playing body {
 
 .play-felt .tile-side.is-left {
   left: calc(var(--tile-x) - var(--play-thick));
-  top: calc(var(--tile-y) - 0.5px);
+  top: calc(var(--tile-y) + var(--tile-r) - 0.5px);
   width: var(--play-thick);
-  height: calc(var(--tile-h) + 1px);
+  height: calc(var(--tile-h) - 2 * var(--tile-r) + 1px);
   background: linear-gradient(rgba(0, 0, 0, 0.14), rgba(0, 0, 0, 0.14)), linear-gradient(to left, var(--tile-sides));
   transform-origin: 100% 50%;
   transform: rotateY(90deg);
+}
+
+/* A corner: stood up from its foot - a line across the rounding, from the
+   end of one side to the start of the next - like the long sides are. */
+.play-felt .tile-side.is-corner {
+  width: calc(var(--tile-r) * 1.4142 + 1px);
+  height: var(--play-thick);
+  background: linear-gradient(rgba(0, 0, 0, 0.07), rgba(0, 0, 0, 0.07)), linear-gradient(to bottom, var(--tile-sides));
+  transform-origin: 0 0;
+}
+
+.play-felt .tile-side.is-near-left {
+  left: var(--tile-x);
+  top: calc(var(--tile-y) + var(--tile-h) - var(--tile-r));
+  transform: rotateZ(45deg) rotateX(90deg);
+}
+
+.play-felt .tile-side.is-near-right {
+  left: calc(var(--tile-x) + var(--tile-w) - var(--tile-r));
+  top: calc(var(--tile-y) + var(--tile-h));
+  transform: rotateZ(-45deg) rotateX(90deg);
+}
+
+.play-felt .tile-side.is-far-right {
+  left: calc(var(--tile-x) + var(--tile-w) - var(--tile-r));
+  top: var(--tile-y);
+  transform: rotateZ(45deg) rotateX(90deg);
+}
+
+.play-felt .tile-side.is-far-left {
+  left: var(--tile-x);
+  top: calc(var(--tile-y) + var(--tile-r));
+  transform: rotateZ(-45deg) rotateX(90deg);
 }
 
 .play-hand img.tile-face,

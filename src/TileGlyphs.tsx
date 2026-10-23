@@ -5,15 +5,19 @@ import { tileGlyph, tileLabel, type Tile } from "@mjwaits/shared/engine/mahjong"
 import type { BonusTile } from "@mjwaits/shared/engine/scoring";
 import { bonusArtUrl, bonusTileLabel, tileArtUrl, useTileArtUrl, useTileStyle } from "./tileArt";
 
-// A tile's four sides, for one drawn as a solid block on a 3D table (the
-// Play tab's felt): its CSS stands them up round the face; anywhere else
-// they're hidden.
+// A tile's sides, for one drawn as a solid block on a 3D table (the Play
+// tab's felt): four sides and the four rounded corners between them, which
+// its CSS stands up round the face; anywhere else they're hidden.
 export const TileSides = () => (
   <>
     <i className="tile-side is-near" />
     <i className="tile-side is-far" />
     <i className="tile-side is-left" />
     <i className="tile-side is-right" />
+    <i className="tile-side is-corner is-near-left" />
+    <i className="tile-side is-corner is-near-right" />
+    <i className="tile-side is-corner is-far-left" />
+    <i className="tile-side is-corner is-far-right" />
   </>
 );
 
