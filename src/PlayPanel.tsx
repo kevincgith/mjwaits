@@ -324,7 +324,6 @@ function Compass({ game, active, center }: { game: GameState; active: number | n
           {WIND_CHARS[seatWind(seat, game.dealer)]}
         </span>
       ))}
-      {active !== null && <span className={`play-compass-beam to-${SIDES[active]}`} />}
       <span className="play-compass-center">{center}</span>
     </div>
   );

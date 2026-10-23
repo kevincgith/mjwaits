@@ -6536,64 +6536,108 @@ html.playing body {
   font-size: calc(var(--play-hand) * 0.4);
 }
 
+/* The compass: a dark plate in a thin bronze rim, each seat's wind by its
+   edge with a short light bar along that edge. The bar on the side of
+   whoever is to act glows gold (tightly - no haze over the felt) and their
+   wind lights with it; the read-out is in the middle. */
 .play-compass {
   position: relative;
   width: 3.6em;
   height: 3.6em;
   border-radius: 0.9em;
-  background: linear-gradient(160deg, #3a3f45, #1d2024);
-  box-shadow: 0 0.12em 0.4em rgba(0, 0, 0, 0.45), inset 0 0 0 0.08em rgba(255, 255, 255, 0.08);
-  overflow: visible;
+  background: radial-gradient(120% 120% at 50% 30%, #33383e 0%, #1f2327 60%, #16191c 100%);
+  box-shadow:
+    0 0.12em 0.4em rgba(0, 0, 0, 0.45),
+    inset 0 0 0 0.05em rgba(226, 176, 74, 0.45),
+    inset 0 0.06em 0.1em rgba(255, 255, 255, 0.08);
 }
 
 .play-compass-q {
   position: absolute;
   display: grid;
-  color: rgba(255, 255, 255, 0.55);
+  color: rgba(255, 255, 255, 0.5);
   font-size: 0.62em;
   font-weight: 700;
-  transition: background 0.2s, color 0.2s;
+  transition:
+    color 0.25s ease,
+    text-shadow 0.25s ease;
+}
+
+/* The light bar along a seat's edge. */
+.play-compass-q::after {
+  content: "";
+  position: absolute;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  transition:
+    background 0.25s ease,
+    box-shadow 0.25s ease;
 }
 
 .play-compass-top {
-  inset: 0.2em 0.2em auto;
-  height: 1.55em;
+  inset: 0.18em 0.2em auto;
+  height: 1.5em;
   place-items: start center;
-  padding-top: 0.12em;
-  clip-path: polygon(0 0, 100% 0, 72% 100%, 28% 100%);
-  border-radius: 0.6em 0.6em 0 0;
+  padding-top: 0.32em;
+}
+
+.play-compass-top::after {
+  top: 0;
+  left: 26%;
+  right: 26%;
+  height: 0.16em;
 }
 
 .play-compass-bottom {
-  inset: auto 0.2em 0.2em;
-  height: 1.55em;
+  inset: auto 0.2em 0.18em;
+  height: 1.5em;
   place-items: end center;
-  padding-bottom: 0.12em;
-  clip-path: polygon(28% 0, 72% 0, 100% 100%, 0 100%);
-  border-radius: 0 0 0.6em 0.6em;
+  padding-bottom: 0.32em;
+}
+
+.play-compass-bottom::after {
+  bottom: 0;
+  left: 26%;
+  right: 26%;
+  height: 0.16em;
 }
 
 .play-compass-left {
-  inset: 0.2em auto 0.2em 0.2em;
-  width: 1.55em;
+  inset: 0.2em auto 0.2em 0.18em;
+  width: 1.5em;
   place-items: center start;
-  padding-left: 0.18em;
-  clip-path: polygon(0 0, 100% 28%, 100% 72%, 0 100%);
-  border-radius: 0.6em 0 0 0.6em;
+  padding-left: 0.42em;
+}
+
+.play-compass-left::after {
+  left: 0;
+  top: 26%;
+  bottom: 26%;
+  width: 0.16em;
 }
 
 .play-compass-right {
-  inset: 0.2em 0.2em 0.2em auto;
-  width: 1.55em;
+  inset: 0.2em 0.18em 0.2em auto;
+  width: 1.5em;
   place-items: center end;
-  padding-right: 0.18em;
-  clip-path: polygon(0 28%, 100% 0, 100% 100%, 0 72%);
-  border-radius: 0 0.6em 0.6em 0;
+  padding-right: 0.42em;
+}
+
+.play-compass-right::after {
+  right: 0;
+  top: 26%;
+  bottom: 26%;
+  width: 0.16em;
 }
 
 .play-compass-q.is-active {
+  color: var(--play-gold);
+  text-shadow: 0 0 0.4em rgba(255, 209, 102, 0.55);
+}
+
+.play-compass-q.is-active::after {
   background: linear-gradient(var(--play-gold), var(--play-gold-deep));
-  color: var(--felt-edge);
+  box-shadow: 0 0 0.35em rgba(255, 209, 102, 0.75);
 }
 
 .play-compass-center {
@@ -6614,40 +6658,6 @@ html.playing body {
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.04em;
   text-shadow: 0 0 0.35em rgba(127, 243, 224, 0.6);
-}
-
-/* A soft beam from the compass toward whoever is to act. */
-.play-compass-beam {
-  position: absolute;
-  z-index: -1;
-  width: 5em;
-  height: 3em;
-  background: radial-gradient(ellipse at 50% 0%, rgba(255, 209, 102, 0.42), rgba(255, 209, 102, 0) 70%);
-  pointer-events: none;
-}
-
-.play-compass-beam.to-bottom {
-  top: 88%;
-  left: 50%;
-  transform: translateX(-50%);
-}
-
-.play-compass-beam.to-top {
-  bottom: 88%;
-  left: 50%;
-  transform: translateX(-50%) rotate(180deg);
-}
-
-.play-compass-beam.to-left {
-  right: 74%;
-  top: 50%;
-  transform: translateY(-50%) rotate(90deg);
-}
-
-.play-compass-beam.to-right {
-  left: 74%;
-  top: 50%;
-  transform: translateY(-50%) rotate(-90deg);
 }
 
 /* The discard up for grabs, big in a glowing ring beside the compass on
