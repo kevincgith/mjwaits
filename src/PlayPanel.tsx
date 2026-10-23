@@ -1611,7 +1611,15 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
                     title={barred ? "食替 – can't discard this now" : undefined}
                     aria-label={barred ? `${tileLabel(t)} (食替 – can't discard this now)` : selected === i ? `Discard ${tileLabel(t)}` : tileLabel(t)}
                   >
-                    {t === BLANK ? <span className="play-back" /> : <TileGlyphSpan tile={t} block="fine" />}
+                    {t === BLANK ? (
+                      // Watching, not seated: the seat's tiles face down, as blocks like the rest.
+                      <span className="play-back">
+                        <i className="tile-top" />
+                        <TileSides fine />
+                      </span>
+                    ) : (
+                      <TileGlyphSpan tile={t} block="fine" />
+                    )}
                   </button>
                 );
               })}
