@@ -33,7 +33,10 @@ export interface ScoreView {
   total: number;
   patterns: { id: string; name: string; tai: number }[];
 }
-export type ResultView = Omit<HandResult, "score"> & { score: ScoreView | null };
+export type ResultView = Omit<HandResult, "score" | "alsoWon"> & {
+  score: ScoreView | null;
+  alsoWon?: { winner: number; score: ScoreView | null; scoreError: string | null }[];
+};
 
 export function scoreView(score: ScoreResult): ScoreView {
   const named = (matched: ScoreResult["matched"], hand: ScoreResult["hand"]) =>
@@ -59,6 +62,7 @@ export interface TableView {
   firstGoAround: boolean;
   discardsMade: number;
   lahs: NonNullable<GameState["lahs"]>;
+  multiWin: boolean;
   dice?: GameState["dice"];
   diceBonus?: GameState["diceBonus"];
   tableBonuses: TableBonus[];
@@ -93,8 +97,15 @@ export function viewFor(s: GameState, you: number): TableView {
   } else if (s.phase.kind === "claims") {
     phase = { kind: "claims", from: s.phase.from, tile: { ...s.phase.tile } };
   } else {
-    const { score, ...rest } = s.phase.result;
-    phase = { kind: "over", result: { ...structuredClone(rest), score: score ? scoreView(score) : null } };
+    const { score, alsoWon, ...rest } = s.phase.result;
+    phase = {
+      kind: "over",
+      result: {
+        ...structuredClone(rest),
+        score: score ? scoreView(score) : null,
+        ...(alsoWon ? { alsoWon: alsoWon.map((w) => ({ winner: w.winner, score: w.score ? scoreView(w.score) : null, scoreError: w.scoreError })) } : {}),
+      },
+    };
   }
   return {
     you,
@@ -108,6 +119,7 @@ export function viewFor(s: GameState, you: number): TableView {
     firstGoAround: s.firstGoAround,
     discardsMade: s.discardsMade,
     lahs: structuredClone(s.lahs ?? []),
+    multiWin: !!s.multiWin,
     ...(s.dice ? { dice: [...s.dice] as GameState["dice"] } : {}),
     ...(s.diceBonus ? { diceBonus: structuredClone(s.diceBonus) } : {}),
     tableBonuses: structuredClone(s.tableBonuses ?? []),

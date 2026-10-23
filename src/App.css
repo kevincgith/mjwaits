@@ -7127,6 +7127,19 @@ html.playing body {
   text-align: center;
 }
 
+/* 一炮多響: each winner's hand and score, under their name. */
+.play-result-winner + .play-result-winner {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.play-result-who {
+  margin: 0 0 0.35rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
 .play-result-hand {
   display: flex;
   flex-wrap: wrap;
