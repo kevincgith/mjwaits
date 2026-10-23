@@ -1,11 +1,12 @@
-// The Worker's front door. It does three things and hands everything else
-// to the room's Durable Object:
+// The Worker's front door. It answers these and hands everything else to
+// the room's Durable Object:
 //
 //   POST /rooms               make a room; answers {"code": "3AC9X"}
+//   GET  /rooms/:code         is there such a room: {"phase": "lobby", "seated": 2}, or 404
 //   GET  /rooms/:code/ws      the room's WebSocket (Upgrade: websocket)
 //   GET  /health              "ok"
 //
-// Both room routes check the page's Origin first: only the sites in
+// The room routes check the page's Origin first: only the sites in
 // ALLOWED_ORIGINS, and localhost, may use them.
 
 import { normalizeRoomCode, ROOM_CODE_ALPHABET, ROOM_CODE_LENGTH } from "@mjwaits/shared/protocol/limits";
@@ -78,6 +79,15 @@ export default {
         if (await env.ROOMS.getByName(code).create(code)) return json({ code }, 201, cors(origin!));
       }
       return json({ error: "no free room code, try again" }, 503, cors(origin!));
+    }
+
+    const info = url.pathname.match(/^\/rooms\/([^/]+)$/);
+    if (info) {
+      if (!isAllowedOrigin(origin, env.ALLOWED_ORIGINS)) return json({ error: "origin not allowed" }, 403);
+      if (request.method !== "GET") return json({ error: "method not allowed" }, 405, { Allow: "GET", ...cors(origin!) });
+      const code = normalizeRoomCode(info[1]);
+      const room = code ? await env.ROOMS.getByName(code).info() : null;
+      return room ? json({ code, ...room }, 200, cors(origin!)) : json({ error: "no such room" }, 404, cors(origin!));
     }
 
     const ws = url.pathname.match(/^\/rooms\/([^/]+)\/ws$/);

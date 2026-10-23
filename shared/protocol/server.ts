@@ -85,8 +85,10 @@ export interface RoomView {
 
 export type ServerMessage =
   // The answer to `hello`. Keep `token` (in localStorage) to come back to
-  // the same seat after a drop or a reload.
-  | { t: "welcome"; v: number; token: string; seat: number | null; rid?: string }
+  // the same seat after a drop or a reload. `name` is the nickname this
+  // player is known by here - on a reconnect, the one they first joined
+  // with - so the page can find its own seat in each room view.
+  | { t: "welcome"; v: number; token: string; name: string; host: boolean; seat: number | null; rid?: string }
   | { t: "room"; room: RoomView }
   | { t: "error"; code: ErrorCode; message: string; rid?: string }
   | { t: "pong"; rid?: string };

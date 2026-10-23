@@ -27,6 +27,19 @@ describe("the Worker's routes", () => {
     expect((await SELF.fetch(`${BASE}/rooms`, { headers: { Origin: ORIGIN } })).status).toBe(405);
   });
 
+  it("says whether a room exists, for the join form", async () => {
+    const code = await createRoom();
+    const res = await SELF.fetch(`${BASE}/rooms/${code.toLowerCase()}`, { headers: { Origin: ORIGIN } });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Access-Control-Allow-Origin")).toBe(ORIGIN);
+    expect(await res.json()).toEqual({ code, phase: "lobby", seated: 0 });
+    let unused = randomRoomCode();
+    while (unused === code) unused = randomRoomCode();
+    expect((await SELF.fetch(`${BASE}/rooms/${unused}`, { headers: { Origin: ORIGIN } })).status).toBe(404);
+    expect((await SELF.fetch(`${BASE}/rooms/nope!`, { headers: { Origin: ORIGIN } })).status).toBe(404);
+    expect((await SELF.fetch(`${BASE}/rooms/${code}`, { headers: { Origin: "https://evil.example" } })).status).toBe(403);
+  });
+
   it("refuses a WebSocket from another site, a non-upgrade, and unknown rooms", async () => {
     const code = await createRoom();
     expect((await SELF.fetch(`${BASE}/rooms/${code}/ws`, { headers: { Upgrade: "websocket", Origin: "https://evil.example" } })).status).toBe(403);
@@ -71,7 +84,7 @@ describe("joining", () => {
   it("welcomes the first player as host with a reconnect token", async () => {
     const code = await createRoom();
     const { welcome, room } = await join(code, "  陳大文 ");
-    expect(welcome).toMatchObject({ v: PROTOCOL_VERSION, seat: null });
+    expect(welcome).toMatchObject({ v: PROTOCOL_VERSION, name: "陳大文", host: true, seat: null });
     expect(welcome.token).toMatch(/^[0-9a-f]{32}$/);
     expect(room).toMatchObject({ code, phase: "lobby", watching: 1, seats: [null, null, null, null], settings: DEFAULT_ROOM_SETTINGS });
   });
@@ -163,7 +176,7 @@ describe("reconnecting", () => {
 
     // Back, with a different name typed - the seat's name stays.
     const again = await join(code, "Someone else", b.welcome.token);
-    expect(again.welcome).toMatchObject({ seat: 1, token: b.welcome.token });
+    expect(again.welcome).toMatchObject({ seat: 1, token: b.welcome.token, name: "B", host: false });
     expect((await a.c.room((v) => v.seats[1]?.connected === true)).seats[1]).toEqual({ name: "B", connected: true, host: false });
   });
 

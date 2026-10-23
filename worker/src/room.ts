@@ -58,9 +58,10 @@ const randomHex = (n: number) => hex(crypto.getRandomValues(new Uint8Array(n)));
 const sha256 = async (s: string) => hex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)));
 
 // The ledger settings a room plays by: the Scores tab's defaults with the
-// host's 底 / 莊 / 連莊.
+// host's 底 / 莊 / 連莊, and 詐胡 off - the room has no message for it, so
+// the web app's 食胡 sheet shouldn't offer it.
 export function ledgerSettings(room: RoomSettings): ScoreSettings {
-  return { ...DEFAULT_SETTINGS, base: room.base, dealerTai: room.dealerTai, streakTai: room.streakTai };
+  return { ...DEFAULT_SETTINGS, base: room.base, dealerTai: room.dealerTai, streakTai: room.streakTai, zhaHu: null };
 }
 
 // The game record minus its events, kept in meta from the start (events
@@ -167,6 +168,13 @@ export class Room extends DurableObject<Env> {
     this.setMeta("settings", DEFAULT_ROOM_SETTINGS);
     await this.ctx.storage.setAlarm(now + UNUSED_TTL_MS);
     return true;
+  }
+
+  // What the join form shows before connecting: whether the room exists and
+  // how full it is. Null for a code no one has made.
+  async info(): Promise<{ phase: Phase; seated: number } | null> {
+    if (this.meta("code") === null) return null;
+    return { phase: this.phase, seated: this.players().filter((p) => p.seat !== null).length };
   }
 
   async fetch(_request: Request): Promise<Response> {
@@ -289,7 +297,16 @@ export class Room extends DurableObject<Env> {
     }
     conn.player = id;
     ws.serializeAttachment(conn);
-    this.send(ws, { t: "welcome", v: PROTOCOL_VERSION, token, seat: this.player(id)!.seat, ...(msg.rid === undefined ? {} : { rid: msg.rid }) });
+    const me = this.player(id)!;
+    this.send(ws, {
+      t: "welcome",
+      v: PROTOCOL_VERSION,
+      token,
+      name: me.name,
+      host: this.meta<string>("host") === id,
+      seat: me.seat,
+      ...(msg.rid === undefined ? {} : { rid: msg.rid }),
+    });
     this.changed();
   }
 

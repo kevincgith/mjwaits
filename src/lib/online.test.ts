@@ -1,0 +1,220 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { PROTOCOL_VERSION } from "@mjwaits/shared/protocol/limits";
+import type { RoomView, ServerMessage } from "@mjwaits/shared/protocol/server";
+import { DEFAULT_ROOM_SETTINGS } from "@mjwaits/shared/protocol/client";
+import { createRoom, loadOnline, ONLINE_KEY, RoomClient, roomFromSearch, roomInfo, saveOnline, tokenFor, withoutRoom, withToken, type SocketLike } from "./online";
+
+// A WebSocket stand-in the test drives by hand.
+class FakeSocket implements SocketLike {
+  readyState = 0;
+  sent: Record<string, unknown>[] = [];
+  closed = false;
+  onopen: ((ev: unknown) => void) | null = null;
+  onmessage: ((ev: { data: unknown }) => void) | null = null;
+  onclose: ((ev: unknown) => void) | null = null;
+  onerror: ((ev: unknown) => void) | null = null;
+  readonly url: string;
+  constructor(url: string) {
+    this.url = url;
+  }
+  send(data: string) {
+    this.sent.push(JSON.parse(data) as Record<string, unknown>);
+  }
+  close() {
+    this.closed = true;
+    this.readyState = 3;
+  }
+  // Test side:
+  open() {
+    this.readyState = 1;
+    this.onopen?.({});
+  }
+  deliver(msg: ServerMessage) {
+    this.onmessage?.({ data: JSON.stringify(msg) });
+  }
+  drop() {
+    this.readyState = 3;
+    this.onclose?.({});
+  }
+}
+
+const view = (version: number): RoomView => ({
+  code: "3AC9X",
+  version,
+  phase: "lobby",
+  seats: [null, null, null, null],
+  watching: 1,
+  settings: DEFAULT_ROOM_SETTINGS,
+  game: null,
+  board: null,
+  pendingUndo: null,
+  summary: null,
+});
+
+function client(extra: Partial<ConstructorParameters<typeof RoomClient>[0]> = {}) {
+  const sockets: FakeSocket[] = [];
+  const events = { welcome: [] as [number | null, string, string][], rooms: [] as RoomView[], errors: [] as string[], status: [] as string[] };
+  const c = new RoomClient({
+    code: "3AC9X",
+    name: "Kevin",
+    base: "https://mj-api.example",
+    backoff: [100, 200],
+    makeSocket: (url) => {
+      const s = new FakeSocket(url);
+      sockets.push(s);
+      return s;
+    },
+    onWelcome: (w) => events.welcome.push([w.seat, w.token, w.name]),
+    onRoom: (room) => events.rooms.push(room),
+    onError: (code) => events.errors.push(code),
+    onStatus: (s) => events.status.push(s),
+    ...extra,
+  });
+  return { c, sockets, events };
+}
+
+const TOKEN = "0123456789abcdef0123456789abcdef";
+
+describe("RoomClient", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it("says hello on the room's WebSocket and reports what comes back", () => {
+    const { c, sockets, events } = client();
+    expect(sockets[0].url).toBe("wss://mj-api.example/rooms/3AC9X/ws");
+    sockets[0].open();
+    expect(sockets[0].sent).toEqual([{ t: "hello", v: PROTOCOL_VERSION, name: "Kevin" }]);
+    sockets[0].deliver({ t: "welcome", v: PROTOCOL_VERSION, token: TOKEN, name: "Kevin", host: true, seat: null });
+    sockets[0].deliver({ t: "room", room: view(3) });
+    expect(events.welcome).toEqual([[null, TOKEN, "Kevin"]]);
+    expect(events.status).toEqual(["open"]);
+    expect(c.room?.version).toBe(3);
+  });
+
+  it("sends only while connected, tagging each message", () => {
+    const { c, sockets } = client();
+    expect(c.send({ t: "sit", seat: 1 })).toBe(false);
+    sockets[0].open();
+    expect(c.send({ t: "sit", seat: 1 })).toBe(false); // not welcomed yet
+    sockets[0].deliver({ t: "welcome", v: PROTOCOL_VERSION, token: TOKEN, name: "Kevin", host: true, seat: null });
+    expect(c.send({ t: "sit", seat: 1 })).toBe("1");
+    expect(c.send({ t: "draw" })).toBe("2");
+    expect(sockets[0].sent.slice(1)).toEqual([
+      { t: "sit", seat: 1, rid: "1" },
+      { t: "draw", rid: "2" },
+    ]);
+  });
+
+  it("ignores a room older than the one it has", () => {
+    const { sockets, events } = client();
+    sockets[0].open();
+    sockets[0].deliver({ t: "room", room: view(5) });
+    sockets[0].deliver({ t: "room", room: view(4) });
+    sockets[0].deliver({ t: "room", room: view(6) });
+    expect(events.rooms.map((r) => r.version)).toEqual([5, 6]);
+  });
+
+  it("reconnects after a drop, backing off, and comes back with its token", () => {
+    const { sockets, events } = client();
+    sockets[0].open();
+    sockets[0].deliver({ t: "welcome", v: PROTOCOL_VERSION, token: TOKEN, name: "Kevin", host: false, seat: 2 });
+    sockets[0].drop();
+    expect(events.status).toEqual(["open", "reconnecting"]);
+    vi.advanceTimersByTime(90);
+    expect(sockets).toHaveLength(1);
+    vi.advanceTimersByTime(40); // 100ms + up to 20% jitter
+    expect(sockets).toHaveLength(2);
+    sockets[1].drop(); // failed before opening: waits longer
+    vi.advanceTimersByTime(150);
+    expect(sockets).toHaveLength(2);
+    vi.advanceTimersByTime(100);
+    expect(sockets).toHaveLength(3);
+    sockets[2].open();
+    expect(sockets[2].sent[0]).toEqual({ t: "hello", v: PROTOCOL_VERSION, name: "Kevin", token: TOKEN });
+    sockets[2].deliver({ t: "welcome", v: PROTOCOL_VERSION, token: TOKEN, name: "Kevin", host: false, seat: 2 });
+    expect(events.status.at(-1)).toBe("open");
+  });
+
+  it("retries at once when nudged", () => {
+    const { c, sockets } = client();
+    sockets[0].open();
+    sockets[0].drop();
+    c.nudge();
+    expect(sockets).toHaveLength(2);
+    c.nudge(); // already trying
+    expect(sockets).toHaveLength(2);
+  });
+
+  it("joins afresh when the room no longer knows its token", () => {
+    const { sockets, events } = client({ token: TOKEN });
+    sockets[0].open();
+    expect(sockets[0].sent[0]).toMatchObject({ token: TOKEN });
+    sockets[0].deliver({ t: "error", code: "badToken", message: "unknown" });
+    expect(sockets[0].sent[1]).toEqual({ t: "hello", v: PROTOCOL_VERSION, name: "Kevin" });
+    expect(events.errors).toEqual([]);
+  });
+
+  it("stops for good on an error retrying can't fix", () => {
+    const { sockets, events } = client();
+    sockets[0].open();
+    sockets[0].deliver({ t: "error", code: "nameTaken", message: "taken" });
+    expect(events.errors).toEqual(["nameTaken"]);
+    expect(events.status.at(-1)).toBe("closed");
+    expect(sockets[0].closed).toBe(true);
+    vi.advanceTimersByTime(10_000);
+    expect(sockets).toHaveLength(1);
+  });
+
+  it("stays closed once stopped", () => {
+    const { c, sockets } = client();
+    sockets[0].open();
+    c.stop();
+    sockets[0].drop();
+    vi.advanceTimersByTime(10_000);
+    expect(sockets).toHaveLength(1);
+    expect(c.connection).toBe("closed");
+  });
+});
+
+describe("rooms over HTTP", () => {
+  it("makes a room and checks one", async () => {
+    const calls: [string, RequestInit | undefined][] = [];
+    const fetcher = (async (url: string, init?: RequestInit) => {
+      calls.push([url, init]);
+      if (url.endsWith("/rooms")) return new Response(JSON.stringify({ code: "3AC9X" }), { status: 201 });
+      if (url.endsWith("/3AC9X")) return new Response(JSON.stringify({ code: "3AC9X", phase: "lobby", seated: 2 }));
+      return new Response("{}", { status: 404 });
+    }) as typeof fetch;
+    expect(await createRoom("https://x", fetcher)).toBe("3AC9X");
+    expect(calls[0]).toEqual(["https://x/rooms", { method: "POST" }]);
+    expect(await roomInfo("3AC9X", "https://x", fetcher)).toMatchObject({ phase: "lobby", seated: 2 });
+    expect(await roomInfo("4AC9X", "https://x", fetcher)).toBeNull();
+  });
+});
+
+describe("this device's memory", () => {
+  it("round-trips, remembers tokens per room and forgets old rooms", () => {
+    const mem = new Map<string, string>();
+    const storage = { getItem: (k: string) => mem.get(k) ?? null, setItem: (k: string, v: string) => void mem.set(k, v) };
+    expect(loadOnline(storage)).toEqual({ name: "", rooms: [], current: null });
+    let m = withToken({ name: "Kevin", rooms: [], current: "3AC9X" }, "3AC9X", TOKEN);
+    m = withToken(m, "4AC9X", "f".repeat(32));
+    saveOnline(m, storage);
+    const back = loadOnline(storage);
+    expect(back.rooms.map((r) => r.code)).toEqual(["4AC9X", "3AC9X"]);
+    expect(tokenFor(back, "3AC9X")).toBe(TOKEN);
+    expect(withoutRoom(back, "3AC9X")).toMatchObject({ current: null, rooms: [{ code: "4AC9X" }] });
+
+    const stale = { ...back, rooms: [{ code: "9AC9X", token: TOKEN, at: Date.now() - 8 * 24 * 60 * 60 * 1000 }] };
+    mem.set(ONLINE_KEY, JSON.stringify(stale));
+    expect(loadOnline(storage).rooms).toEqual([]);
+    mem.set(ONLINE_KEY, "{oops");
+    expect(loadOnline(storage)).toEqual({ name: "", rooms: [], current: null });
+  });
+
+  it("reads a room code from a link", () => {
+    expect(roomFromSearch("?room=3ac9x")).toBe("3AC9X");
+    expect(roomFromSearch("?room=nope")).toBeNull();
+    expect(roomFromSearch("?h=abc")).toBeNull();
+  });
+});

@@ -43,6 +43,7 @@ import { BonusGlyphSpan, TileGlyphSpan } from "./TileGlyphs";
 import { PlayPanel } from "./PlayPanel";
 import { ScoresPanel, SharedScoresView, type RecordRequest, type ScoreHandRequest, type SeatingResult } from "./ScoresPanel";
 import { GAME_HASH, snapshotFromAnyHash, snapshotFromHash } from "./lib/scoreShare";
+import { roomFromSearch } from "./lib/online";
 import { TaiRulesSheet } from "./TaiRulesSheet";
 import { isLadderChanged, isRuleChanged, ladderOf, rulesAffectScoring, rulesFingerprint } from "@mjwaits/shared/engine/taiRules";
 import { PATTERN_CATALOG } from "@mjwaits/shared/engine/taiCatalog";
@@ -10028,7 +10029,9 @@ const TAB_ITEMS: { id: Exclude<AppMode, "play">; label: string; icon: ReactNode 
 ];
 
 function App() {
-  const [mode, setMode] = useState<AppMode>(() => (readCalcHand(window.location.search) ? "calculator" : "scoring"));
+  // A table invite (?room=…) opens the Scores tab's 線上 on that table.
+  const [joinCode] = useState(() => roomFromSearch(window.location.search));
+  const [mode, setMode] = useState<AppMode>(() => (readCalcHand(window.location.search) ? "calculator" : joinCode ? "scores" : "scoring"));
   // A shared scores link (#s=… totals, #z=… the whole game) opens its
   // read-only view over the app; "Open MJWaits" drops the hash and carries on
   // as normal. #z= is compressed, so it's read once the page is up.
@@ -10155,11 +10158,11 @@ function App() {
       ? { hand: { group: "", name: "Shared hand", hand: shared.hand, ctx: shared.ctx }, bonus: shared.bonus, nonce: Date.now() }
       : null;
   });
-  // Then the hand comes off the address bar, so a reload doesn't load it
-  // over whatever was entered since.
+  // Then the hand (or table invite) comes off the address bar, so a reload
+  // doesn't load it over whatever was entered since.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.has("h") || params.has("calc")) {
+    if (params.has("h") || params.has("calc") || params.has("room")) {
       window.history.replaceState(null, "", window.location.pathname + window.location.hash);
     }
   }, []);
@@ -10323,6 +10326,7 @@ function App() {
           }}
           seatingResult={seatingResult}
           onSeatingResultDone={() => setSeatingResult(null)}
+          joinCode={joinCode}
         />
       )}
       {!sharedScores && mode === "play" && <PlayPanel onExit={() => setMode(lastNonPlayMode.current)} />}
