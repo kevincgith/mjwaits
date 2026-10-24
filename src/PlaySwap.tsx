@@ -1,21 +1,93 @@
-// 換牌 at the Play table (the rules: shared/engine/swap.ts). The panel over
-// the middle of the table while the swapping goes on - the dealer's two
-// dice, then each round: who has laid their tiles out, and the face-down
-// piles to take from, where you tap the tiles you want - and the sheet that
-// sets which rounds swap and what the dice mean.
+// 換牌 at the Play table (the rules: shared/engine/swap.ts): the dealer's
+// two dice over the middle of the table; each seat's face-down pile on the
+// felt where its discards go, which you tap to take from; the swap's line in
+// the bar under the table, with your buttons; and the sheet that sets which
+// rounds swap and what the dice mean.
 
-import { useState } from "react";
-import { DEFAULT_SWAP_RULES, SWAP_MAX_ROUNDS, SWAP_MAX_TILES, SWAP_MIN_TILES, checkTake, type SwapPhase, type SwapRules } from "@mjwaits/shared/engine/swap";
+import { type CSSProperties, useRef, useState } from "react";
+import {
+  blindPicks,
+  botSplit,
+  checkTake,
+  DEFAULT_SWAP_RULES,
+  pileLeft,
+  SWAP_MAX_ROUNDS,
+  SWAP_MAX_TILES,
+  SWAP_MIN_TILES,
+  type Pile,
+  type SwapPhase,
+  type SwapRules,
+} from "@mjwaits/shared/engine/swap";
 import type { Wind } from "@mjwaits/shared/engine/scoring";
 import { PlayDie } from "./PlayDie";
+import { TileSides } from "./TileGlyphs";
 
 const WIND_CHARS = ["", "東", "南", "西", "北"];
 
-// The panel. `picks`: the tiles you've tapped in each pile (by place);
-// `after`: who takes after the one taking now.
-export function SwapPanel({
+// A seat's face-down pile, on the felt where its discards go: real 3D
+// blocks like every other face-down tile on the table (a back on top, four
+// sides), laid as that seat's tiles lie - across the table in a row, the
+// side seats' along their side - so their depth is drawn from where you
+// sit. A tile taken leaves its place empty; the rest don't move. Yours to
+// tap (`onPick`) only on your take, and never your own pile.
+export function SwapPond({
+  pile,
+  side,
+  count,
+  picked,
+  onPick,
+}: {
+  pile: Pile | null;
+  side: "top" | "left" | "right" | "bottom";
+  count: number;
+  picked: number[];
+  onPick: ((i: number) => void) | null;
+}) {
+  const slots = pile ?? [];
+  if (!pile) return null;
+  return (
+    <div className={`play-pond play-pond-${side} play-swap-pond${onPick ? " is-pickable" : ""}`} style={{ "--n": count } as CSSProperties}>
+      {slots.map((t, i) => (
+        <span
+          key={i}
+          className={["play-swap-tile", !t && "is-gap", picked.includes(i) && "is-picked"].filter(Boolean).join(" ")}
+          role={onPick && t ? "button" : undefined}
+          aria-pressed={onPick && t ? picked.includes(i) : undefined}
+          aria-label={t ? `Face-down tile ${i + 1}` : "Taken"}
+          onClick={onPick && t ? () => onPick(i) : undefined}
+        >
+          <span className="play-back">
+            <i className="tile-top" />
+            <TileSides />
+          </span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+// The dealer's two dice, tumbling one then the other, over the middle of
+// the table - then what they mean.
+export function SwapDice({ phase }: { phase: SwapPhase }) {
+  return (
+    <div className="play-dice play-swap-dice-roll" role="status">
+      <div className="play-dice-row">
+        <PlayDie value={phase.dice[0]} rolling index={0} />
+        <PlayDie value={phase.dice[1]} rolling index={1} delay={650} />
+      </div>
+      <span className="play-dice-caption play-swap-sum">
+        換牌 · {phase.rounds} round{phase.rounds === 1 ? "" : "s"} · {phase.count} tiles each
+      </span>
+    </div>
+  );
+}
+
+// The swap's line in the bar under the table: the round, what's happening,
+// and your buttons - give; take what you've tapped, or take evenly in one
+// tap. `picks`: the places you've tapped in each pile; `after`: who takes
+// after the one taking now.
+export function SwapBar({
   phase,
-  rolling,
   nameOf,
   seated,
   picks,
@@ -26,7 +98,6 @@ export function SwapPanel({
   onTake,
 }: {
   phase: SwapPhase;
-  rolling: boolean;
   nameOf: (seat: number) => string;
   seated: boolean;
   picks: number[][];
@@ -34,117 +105,77 @@ export function SwapPanel({
   after: number[];
   giveCount: number; // tiles you've picked from your hand to give
   onGive: () => void;
-  onTake: () => void;
+  onTake: (picks?: number[][]) => void;
 }) {
-  const { dice, rounds, count, round, stage, piles, taker } = phase;
+  const { rounds, count, round, stage, piles, taker } = phase;
   const mineToGive = seated && stage === "give" && !piles[0];
   const myTake = seated && stage === "take" && taker === 0;
-  const sizes = piles.map((p) => p?.length ?? 0);
+  const sizes = piles.map(pileLeft);
   const split = picks.map((p) => p.length);
   const taken = split.reduce((a, b) => a + b, 0);
   const check = myTake ? checkTake(sizes, 0, after, count, split) : null;
-  const toggle = (seat: number, i: number) => {
-    if (!myTake || seat === 0) return;
-    setPicks((now) => {
-      const has = now[seat].includes(i);
-      if (!has && now.flat().length >= count) return now;
-      return now.map((p, g) => (g !== seat ? p : has ? p.filter((x) => x !== i) : [...p, i]));
-    });
+  // One tap: an even take (the fairest there is), blind picks from each.
+  const quickTake = () => {
+    const even = botSplit(sizes, 0, after, count);
+    onTake(piles.map((p, g) => blindPicks(p!, even[g])));
   };
-  // The others' piles in the order they sit round from you: right, across, left.
-  const order = [1, 2, 3, 0];
+  let note: string;
+  let tone = "";
+  if (mineToGive) note = giveCount === count ? `Your loneliest ${count}, picked - tap to change` : `Tap ${count} tiles to give · ${giveCount}/${count}`;
+  else if (stage === "give") note = "Everyone lays tiles face down";
+  else if (!myTake) note = `${nameOf(taker)} is taking`;
+  else if (taken === 0) note = `Take ${count} - at least one from each`;
+  else {
+    note = `${[3, 2, 1].map((g) => split[g]).join("·")} (${taken}/${count})`;
+    if (taken === count && check) {
+      if (check.error ?? check.warning) note += ` - ${check.error ?? check.warning}`;
+      tone = check.ok ? (check.warning ? " is-warn" : " is-ok") : " is-error";
+    }
+  }
   return (
-    <div className={`play-swap${rolling ? " is-rolling" : ""}`} role="status">
-      <div className="play-swap-head">
-        <span className="play-swap-title">換牌</span>
-        <span className="play-swap-dice" aria-label={`Dice ${dice[0]} and ${dice[1]}`}>
-          <PlayDie value={dice[0]} rolling={rolling} index={0} />
-          <PlayDie value={dice[1]} rolling={rolling} index={1} delay={650} />
-        </span>
-        <span className="play-swap-sum">
-          {rounds} round{rounds === 1 ? "" : "s"} · {count} tiles
-        </span>
-      </div>
-      {!rolling && (
+    <span className="play-swap-bar">
+      <b>
+        換牌 {round}/{rounds}
+      </b>
+      <span className={`play-swap-note${tone}`}>{note}</span>
+      {mineToGive && (
+        <button type="button" className="play-swap-go" disabled={giveCount !== count} onClick={onGive}>
+          放牌 Give
+        </button>
+      )}
+      {myTake && check && taken === 0 && (
+        <button type="button" className="play-swap-go" onClick={quickTake}>
+          一按 Take evenly
+        </button>
+      )}
+      {myTake && check && taken > 0 && (
         <>
-          <span className="play-swap-round">
-            Round {round} of {rounds} ·{" "}
-            {stage === "give"
-              ? "everyone lays tiles face down"
-              : myTake
-                ? `your turn: take ${count} - at least one from each`
-                : `${nameOf(taker)} is taking`}
-          </span>
-          {stage === "give" ? (
-            <div className="play-swap-givers">
-              {[0, 1, 2, 3].map((seat) => (
-                <span key={seat} className={`play-swap-giver${piles[seat] ? " is-done" : ""}`}>
-                  {piles[seat] ? "✓ " : ""}
-                  {nameOf(seat)}
-                </span>
-              ))}
-            </div>
-          ) : (
-            <div className="play-swap-piles">
-              {order.map((seat) => (
-                <div key={seat} className={`play-swap-pile${seat === 0 ? " is-mine" : ""}${seat === taker ? " is-taking" : ""}`}>
-                  <span className="play-swap-who">
-                    {nameOf(seat)}
-                    {myTake && seat !== 0 && picks[seat].length > 0 && <b> · {picks[seat].length}</b>}
-                  </span>
-                  <span className="play-swap-backs">
-                    {piles[seat]!.map((_, i) => (
-                      <button
-                        key={i}
-                        type="button"
-                        className={`play-swap-back${picks[seat]?.includes(i) ? " is-picked" : ""}`}
-                        disabled={!myTake || seat === 0}
-                        aria-pressed={picks[seat]?.includes(i)}
-                        aria-label={`${nameOf(seat)}'s tile ${i + 1}`}
-                        onClick={() => toggle(seat, i)}
-                      />
-                    ))}
-                    {piles[seat]!.length === 0 && <span className="play-swap-empty">taken</span>}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-          {mineToGive && (
-            <div className="play-swap-act">
-              <span>
-                Tap {count} tiles in your hand to give · {giveCount}/{count}
-              </span>
-              <button type="button" className="play-swap-go" disabled={giveCount !== count} onClick={onGive}>
-                放牌 Give
-              </button>
-            </div>
-          )}
-          {myTake && check && (
-            <div className="play-swap-act">
-              <span className={taken === count ? (check.ok ? (check.warning ? "is-warn" : "is-ok") : "is-error") : undefined}>
-                {[1, 2, 3].map((g) => split[g]).join(" · ")} ({taken}/{count})
-                {taken === count && (check.error ?? check.warning) ? ` - ${check.error ?? check.warning}` : ""}
-              </span>
-              <button type="button" className={`play-swap-go${check.warning ? " is-warn" : ""}`} disabled={!check.ok} onClick={onTake}>
-                {check.warning ? "Take anyway" : "攞牌 Take"}
-              </button>
-            </div>
-          )}
+          <button type="button" className="play-swap-clear" onClick={() => setPicks(() => [[], [], [], []])}>
+            Clear
+          </button>
+          <button type="button" className={`play-swap-go${check.warning ? " is-warn" : ""}`} disabled={!check.ok} onClick={() => onTake()}>
+            {check.warning ? "Take anyway" : "攞牌 Take"}
+          </button>
         </>
       )}
-    </div>
+    </span>
   );
 }
 
 // The settings: which round winds swap, and what each die means.
 export function SwapSheet({ rules, onChange, onClose }: { rules: SwapRules; onChange: (r: SwapRules) => void; onClose: () => void }) {
   const [r, setR] = useState(rules);
-  const set = (next: SwapRules) => {
+  // Each change from the settings as they stand (not as last drawn), so
+  // quick taps don't undo each other.
+  const latest = useRef(rules);
+  const update = (change: (r: SwapRules) => SwapRules) => {
+    const next = change(latest.current);
+    latest.current = next;
     setR(next);
     onChange(next);
   };
-  const toggleWind = (w: Wind) => set({ ...r, winds: r.winds.includes(w) ? r.winds.filter((x) => x !== w) : ([...r.winds, w].sort() as Wind[]) });
+  const set = (next: SwapRules) => update(() => next);
+  const toggleWind = (w: Wind) => update((r) => ({ ...r, winds: r.winds.includes(w) ? r.winds.filter((x) => x !== w) : ([...r.winds, w].sort() as Wind[]) }));
   const mapRow = (key: "rounds" | "tiles", lo: number, hi: number, unit: string) => (
     <div className="play-swap-map">
       {r[key].map((v, i) => (
@@ -153,7 +184,10 @@ export function SwapSheet({ rules, onChange, onClose }: { rules: SwapRules; onCh
           <select
             value={v}
             aria-label={`Die ${i + 1}: ${unit}`}
-            onChange={(e) => set({ ...r, [key]: r[key].map((x, j) => (j === i ? Number(e.target.value) : x)) })}
+            onChange={(e) => {
+              const n = Number(e.target.value);
+              update((r) => ({ ...r, [key]: r[key].map((x, j) => (j === i ? n : x)) }));
+            }}
           >
             {Array.from({ length: hi - lo + 1 }, (_, k) => lo + k).map((n) => (
               <option key={n} value={n}>

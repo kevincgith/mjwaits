@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { dealHand, nextHand, swapGive, swapTake, takersAfter, type GameState } from "./game";
 import { seededRng } from "./bots";
-import { blindPicks, botGive, botSplit, checkTake, DEFAULT_SWAP_RULES, splitsFor, type SwapRules } from "./swap";
+import { blindPicks, botGive, botSplit, checkTake, DEFAULT_SWAP_RULES, pileLeft, splitsFor, type SwapRules } from "./swap";
 import { tileKey, type Tile } from "./mahjong";
 
 const EVERY_ROUND: SwapRules = { ...DEFAULT_SWAP_RULES, winds: [1, 2, 3, 4] };
@@ -15,9 +15,9 @@ function swapAll(state: GameState, rng: () => number): GameState {
       const seat = ph.piles.findIndex((p) => !p);
       s = swapGive(s, seat, botGive(s.players[seat].hand, ph.count, rng), rng);
     } else {
-      const sizes = ph.piles.map((p) => p!.length);
+      const sizes = ph.piles.map(pileLeft);
       const split = botSplit(sizes, ph.taker, takersAfter(ph, s.dealer), ph.count, rng);
-      s = swapTake(s, ph.taker, sizes.map((n, g) => blindPicks(n, split[g], rng)));
+      s = swapTake(s, ph.taker, ph.piles.map((p, g) => blindPicks(p!, split[g], rng)));
     }
   }
   return s;
@@ -67,7 +67,13 @@ describe("換牌 at the deal", () => {
     for (let seat = 0; seat < 4; seat++) s = swapGive(s, seat, s.players[seat].hand.slice(0, 3));
     expect(() => swapTake(s, 1, [[0], [], [0], [0]])).toThrow();
     expect(() => swapTake(s, 0, [[0], [0, 1], [0], []])).toThrow();
-    expect(swapTake(s, 0, [[], [0], [0], [0]]).phase).toMatchObject({ kind: "swap", taker: 1 });
+    const took = swapTake(s, 0, [[], [0], [0], [0]]);
+    expect(took.phase).toMatchObject({ kind: "swap", taker: 1 });
+    // The places taken stay, empty; nothing moves up.
+    if (took.phase.kind !== "swap" || s.phase.kind !== "swap") return;
+    expect(took.phase.piles[1]).toEqual([null, ...s.phase.piles[1]!.slice(1)]);
+    expect(() => swapTake(took, 1, [[0], [], [0], [1]])).toThrow(/No tile there/);
+    expect(() => swapTake(took, 1, [[0], [], [1], [1]])).not.toThrow();
   });
 });
 

@@ -42,7 +42,7 @@ import {
   type ScoreResult,
   type Wind,
 } from "./scoring";
-import { checkTake, swapCount, swapRounds, swapsOn, takeOrder, type Split, type SwapPhase, type SwapRules } from "./swap";
+import { checkTake, pileLeft, swapCount, swapRounds, swapsOn, takeOrder, type Split, type SwapPhase, type SwapRules } from "./swap";
 
 export const SEATS = 4;
 export const HUMAN = 0;
@@ -922,20 +922,20 @@ export function takersAfter(ph: SwapPhase, dealer: number): number[] {
   return order.slice(order.indexOf(ph.taker) + 1);
 }
 
-// `seat`, whose turn it is, takes the tiles at these places in each pile.
-// After the last taker, the next round - or, the rounds done, the dealer's
-// first draw.
+// `seat`, whose turn it is, takes the tiles at these places in each pile,
+// leaving the places empty. After the last taker, the next round - or, the
+// rounds done, the dealer's first draw.
 export function swapTake(state: GameState, seat: number, picks: number[][]): GameState {
   const ph = state.phase;
   if (ph.kind !== "swap" || ph.stage !== "take" || ph.taker !== seat) throw new Error("Not your take");
-  const sizes = ph.piles.map((p) => p!.length);
+  const sizes = ph.piles.map(pileLeft);
   const split: Split = picks.map((idx) => new Set(idx).size);
-  if (picks.some((idx, g) => idx.some((i) => i < 0 || i >= sizes[g]))) throw new Error("No such tile");
+  if (picks.some((idx, g) => idx.some((i) => !ph.piles[g]?.[i]))) throw new Error("No tile there");
   const check = checkTake(sizes, seat, takersAfter(ph, state.dealer), ph.count, split);
   if (!check.ok) throw new Error(check.error);
   const s = cloneState(state);
-  const piles = ph.piles.map((pile, g) => pile!.filter((_, i) => !picks[g].includes(i)));
-  s.players[seat].hand.push(...ph.piles.flatMap((pile, g) => pile!.filter((_, i) => picks[g].includes(i))));
+  const piles = ph.piles.map((pile, g) => pile!.map((t, i) => (picks[g].includes(i) ? null : t)));
+  s.players[seat].hand.push(...ph.piles.flatMap((pile, g) => [...new Set(picks[g])].map((i) => pile![i]!)));
   const took = [...ph.took, seat];
   if (took.length < SEATS) {
     s.phase = { ...ph, piles, took, taker: (seat + 1) % SEATS };
