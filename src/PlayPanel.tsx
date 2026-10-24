@@ -61,6 +61,7 @@ import {
   botClaimFor,
   botSurrenders,
   botTurnFor,
+  callLines,
   LEARNED_PREFIX,
   learnedProfile,
   learnedStyle,
@@ -72,6 +73,7 @@ import {
   rateDiscardsFor,
   voiceOf,
   type BotProfile,
+  type CallKind,
   type Voice,
 } from "@mjwaits/shared/engine/bots";
 import { scoreView, type ResultView } from "@mjwaits/shared/engine/view";
@@ -923,10 +925,11 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
   }, [reaction?.id]);
   const [reacting, setReacting] = useState(false);
   const lastLine = useRef<Record<number, string>>({});
-  const say = (seat: number, line: keyof Voice) => {
+  // A call says which (chow, pung, kong), so the line fits it.
+  const say = (seat: number, line: keyof Voice, call?: CallKind) => {
     const bot = bots[seat];
     if (!bot) return;
-    const lines = voiceOf(bot)[line];
+    const lines = call ? callLines(voiceOf(bot), call) : voiceOf(bot)[line];
     // Never the same line twice running from one bot.
     let text = lines[Math.floor(Math.random() * lines.length)];
     if (lines.length > 1 && text === lastLine.current[seat]) text = lines[(lines.indexOf(text) + 1 + Math.floor(Math.random() * (lines.length - 1))) % lines.length];
@@ -1023,7 +1026,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     const at = net.toLocal;
     if (lastAction.kind === "call") {
       showBurst(at(lastAction.seat), lastAction.call === "chow" ? "上" : lastAction.call === "pung" ? "碰" : "槓");
-      say(at(lastAction.seat), "call");
+      say(at(lastAction.seat), "call", lastAction.call);
     } else if (lastAction.kind === "kong") showBurst(at(lastAction.seat), "槓");
     else if (lastAction.kind === "discard" && lastAction.riichi) {
       showBurst(at(lastAction.seat), "叮");
@@ -1070,7 +1073,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
       if (decisions[seat]!.kind === "win") {
         say(seat, "win");
         if (game.phase.kind === "claims") say(game.phase.from, "dealIn");
-      } else say(seat, "call");
+      } else say(seat, "call", decisions[seat]!.kind as CallKind);
     }
     advance(resolveClaims(game, decisions));
     if (seat === HUMAN && humanClaim && humanClaim.kind !== "win") setLastCall({ before: game, decisions });

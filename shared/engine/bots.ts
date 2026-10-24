@@ -215,7 +215,7 @@ export const BOT_PROFILES: BotProfile[] = [
 ];
 
 // What each personality says at the table: see voices.ts.
-export { VOICES, MYSTERY_VOICE, type Voice } from "./voices";
+export { VOICES, MYSTERY_VOICE, callLines, type CallKind, type Voice } from "./voices";
 
 export const voiceOf = (p: BotProfile): Voice => (mysteryStyle(p) ? MYSTERY_VOICE : (VOICES[learnedStyle(p) ?? p.id] ?? VOICES.veteran));
 

@@ -11,6 +11,23 @@ export interface Voice {
   surrender: string[];
 }
 
+export type CallKind = "chow" | "pung" | "kong";
+
+// The call a line names out loud, if any: "碰！" is a pung, "上啦。" a chow
+// (上 leading the line - "大牌路上" isn't one).
+const NAMES: Record<CallKind, RegExp> = {
+  chow: /^[…\s]*上/,
+  pung: /碰/,
+  kong: /槓|杠/,
+};
+
+// The lines for this call: those that name it, or no call at all - never
+// a 碰 shouted over a chow.
+export function callLines(voice: Voice, kind: CallKind): string[] {
+  const fits = voice.call.filter((line) => (Object.keys(NAMES) as CallKind[]).every((k) => k === kind || !NAMES[k].test(line)));
+  return fits.length ? fits : voice.call;
+}
+
 export const VOICES: Record<string, Voice> = {
   // 宗師: calm, few words, old-school courtesy - with a dry edge.
   grandmaster: {
