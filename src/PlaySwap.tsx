@@ -33,6 +33,9 @@ const WIND_CHARS = ["", "東", "南", "西", "北"];
 // the player who took it (SwapFlight), so you see who took what. A tile
 // taken leaves its place empty; the rest don't move. Tappable (`onPick`)
 // only on your take, and never your own pile.
+// A waiting tile whose face isn't yours to see.
+const HELD_BACK: Tile = { suit: "j", rank: 0 };
+
 export function SwapPond({
   pile,
   side,
@@ -40,13 +43,17 @@ export function SwapPond({
   picked,
   onPick,
   standing,
+  held,
 }: {
   pile: Pile | null;
   side: "top" | "left" | "right" | "bottom";
   count: number;
   picked: number[];
   onPick: ((i: number) => void) | null;
-  standing: boolean; // yours: stood up facing you, so you see what goes where
+  standing: boolean;
+  // Tiles taken but still waiting their turn to fly: drawn where they lay
+  // until they set off (place -> the tile, or null face down).
+  held: Map<number, Tile | null>; // yours: stood up facing you, so you see what goes where
 }) {
   if (!pile) return null;
   return (
@@ -54,17 +61,18 @@ export function SwapPond({
       className={`play-pond play-pond-${side} play-swap-pond${onPick ? " is-pickable" : ""}${standing ? " is-standing" : ""}`}
       style={{ "--n": count } as CSSProperties}
     >
-      {pile.map((t, i) => {
+      {pile.map((slot, i) => {
+        const t = slot ?? (held.has(i) ? (held.get(i) ?? HELD_BACK) : null);
         return (
           <span
             key={i}
             className={["play-swap-tile", !t && "is-gap", picked.includes(i) && "is-picked"].filter(Boolean).join(" ")}
-            role={onPick && t ? "button" : undefined}
-            aria-pressed={onPick && t ? picked.includes(i) : undefined}
+            role={onPick && slot ? "button" : undefined}
+            aria-pressed={onPick && slot ? picked.includes(i) : undefined}
             aria-label={t ? (standing ? `Your ${tileLabel(t)}` : `Face-down tile ${i + 1}`) : "Taken"}
-            onClick={onPick && t ? () => onPick(i) : undefined}
+            onClick={onPick && slot ? () => onPick(i) : undefined}
           >
-            {t && standing ? (
+            {t && t !== HELD_BACK && standing ? (
               <TileGlyphSpan tile={t} block />
             ) : (
               <span className="play-back">
@@ -268,26 +276,34 @@ export function SwapSheet({ rules, onChange, onClose }: { rules: SwapRules; onCh
   );
 }
 
-// One of your tiles on its way from your pile to the player who took it:
-// lifted, then flown to their seat, shrinking into their hand. Drawn flat
-// over the table, from where the tile stood (`from`, on screen) by (dx, dy).
+// A tile on its way from a pile to the hand that took it: lifted, then
+// flown to that seat, shrinking into the hand - face up if it's one of
+// yours, else face down. Drawn flat over the table, from where it lay
+// (`from`, on screen) by (dx, dy), after `delay`.
 export interface Flight {
   id: number;
-  tile: Tile;
+  seat: number; // whose pile it left, and its place there - where it's
+  place: number; // drawn until it sets off
+  tile: Tile | null; // null: face down - not yours to see
+  ghost?: boolean; // the round's last take - its pile drawn from the ghost
   from: { left: number; top: number; width: number };
   dx: number;
   dy: number;
   delay: number;
 }
 
-// How long a flight takes (as .play-swap-flight's animation).
-const FLIGHT_MS = 850;
+// How long a flight takes (as .play-swap-flight's animation), and the
+// wait between one tile of a take setting off and the next.
+export const SWAP_FLIGHT_MS = 600;
+export const SWAP_STAGGER_MS = 300;
+// From a take to its last tile landing.
+export const takeFlightMs = (tiles: number) => SWAP_FLIGHT_MS + Math.max(0, tiles - 1) * SWAP_STAGGER_MS;
 
-export function SwapFlight({ flight, onDone }: { flight: Flight; onDone: () => void }) {
+export function SwapFlight({ flight, onStart, onDone }: { flight: Flight; onStart: () => void; onDone: () => void }) {
   // Gone when it lands - or, should the animation's end never come (a page
   // in the background holds animations), soon after it should have.
   useEffect(() => {
-    const id = window.setTimeout(onDone, flight.delay + FLIGHT_MS + 400);
+    const id = window.setTimeout(onDone, flight.delay + SWAP_FLIGHT_MS + 400);
     return () => window.clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -304,10 +320,11 @@ export function SwapFlight({ flight, onDone }: { flight: Flight; onDone: () => v
           animationDelay: `${flight.delay}ms`,
         } as CSSProperties
       }
+      onAnimationStart={onStart}
       onAnimationEnd={onDone}
       aria-hidden="true"
     >
-      <TileGlyphSpan tile={flight.tile} />
+      {flight.tile ? <TileGlyphSpan tile={flight.tile} /> : <span className="play-swap-flight-back" />}
     </span>
   );
 }
