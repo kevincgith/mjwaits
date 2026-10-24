@@ -40,7 +40,8 @@ import {
   type TileStyle,
 } from "./tileArt";
 import { BonusGlyphSpan, TileGlyphSpan } from "./TileGlyphs";
-import { PlayPanel } from "./PlayPanel";
+import { PlayPanel, savedSummary } from "./PlayPanel";
+import { PlayHome } from "./PlayHome";
 import { OnlineTable } from "./OnlineTable";
 import { inviteLaunch, startInstallAtInvite } from "./lib/onlineTable";
 import { ScoresPanel, SharedScoresView, type RecordRequest, type ScoreHandRequest, type SeatingResult } from "./ScoresPanel";
@@ -10102,6 +10103,11 @@ function App() {
   }, [mode, scoreFor]);
   // Where the Play table's Leave button goes back to.
   const lastNonPlayMode = useRef<AppMode>("scoring");
+  // Play opens on its start screen; from there, the table - the saved game
+  // ("resume") or a new one ("new") - or an online table, which comes back
+  // to the start screen when you leave it.
+  const [playScreen, setPlayScreen] = useState<"home" | "resume" | "new">("home");
+  const tableFromPlay = useRef(false);
   if (mode !== "play" && mode !== "table") lastNonPlayMode.current = mode;
   // The table fills the screen; html.playing hides the page around it.
   useEffect(() => {
@@ -10341,8 +10347,41 @@ function App() {
           joinCode={joinCode}
         />
       )}
-      {!sharedScores && mode === "play" && <PlayPanel onExit={() => setMode(lastNonPlayMode.current)} onOnline={() => setMode("table")} />}
-      {!sharedScores && mode === "table" && <OnlineTable initialCode={tableCode} onExit={() => setMode(lastNonPlayMode.current)} />}
+      {!sharedScores &&
+        mode === "play" &&
+        (playScreen === "home" ? (
+          <PlayHome
+            saved={savedSummary()}
+            onPlay={(fresh) => setPlayScreen(fresh ? "new" : "resume")}
+            onOnline={() => {
+              tableFromPlay.current = true;
+              setMode("table");
+            }}
+            onExit={() => setMode(lastNonPlayMode.current)}
+          />
+        ) : (
+          <PlayPanel
+            fresh={playScreen === "new"}
+            onExit={() => setPlayScreen("home")}
+            onOnline={() => {
+              tableFromPlay.current = true;
+              setPlayScreen("home");
+              setMode("table");
+            }}
+          />
+        ))}
+      {!sharedScores && mode === "table" && (
+        <OnlineTable
+          initialCode={tableCode}
+          onExit={() => {
+            if (tableFromPlay.current) {
+              tableFromPlay.current = false;
+              setPlayScreen("home");
+              setMode("play");
+            } else setMode(lastNonPlayMode.current);
+          }}
+        />
+      )}
       {!sharedScores && mode === "dice" && (
         <DiceTab
           key={diceSeating ? "seating" : "dice"}
