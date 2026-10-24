@@ -16052,7 +16052,9 @@ button.sc-stat:active {
 }
 
 /* One of your tiles, flying from your pile to whoever took it: lifted
-   and held a beat, then off to their seat, shrinking into their hand. */
+   and held a beat, then off to their seat, shrinking into their hand -
+   alongside the others they took, never touching (see the flights in
+   PlayPanel). */
 .play-swap-flight {
   position: fixed;
   z-index: 60;
@@ -16069,8 +16071,9 @@ button.sc-stat:active {
   0% {
     transform: translate(0, 0) scale(1);
   }
+  /* Lifted, at its own size - grown, it would touch its neighbours. */
   25% {
-    transform: translate(calc(var(--dx) * 0.05), calc(var(--dy) * 0.05 - 0.45em)) scale(1.15);
+    transform: translate(calc(var(--dx) * 0.05), calc(var(--dy) * 0.05 - 0.45em)) scale(1);
   }
   85% {
     opacity: 1;

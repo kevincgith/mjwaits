@@ -4,7 +4,7 @@
 // the bar under the table, with your buttons; and the sheet that sets which
 // rounds swap and what the dice mean.
 
-import { type CSSProperties, useRef, useState } from "react";
+import { type CSSProperties, useEffect, useRef, useState } from "react";
 import {
   blindPicks,
   botSplit,
@@ -280,7 +280,17 @@ export interface Flight {
   delay: number;
 }
 
+// How long a flight takes (as .play-swap-flight's animation).
+const FLIGHT_MS = 850;
+
 export function SwapFlight({ flight, onDone }: { flight: Flight; onDone: () => void }) {
+  // Gone when it lands - or, should the animation's end never come (a page
+  // in the background holds animations), soon after it should have.
+  useEffect(() => {
+    const id = window.setTimeout(onDone, flight.delay + FLIGHT_MS + 400);
+    return () => window.clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   return (
     <span
       className="play-swap-flight"

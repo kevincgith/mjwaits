@@ -1266,24 +1266,31 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     if (!fresh.length) return;
     const slots = document.querySelectorAll(".play-swap-pond.play-pond-bottom .play-swap-tile");
     const now = Date.now();
-    setFlights((f) => [
-      ...f,
-      ...fresh.flatMap((i, k) => {
+    // The tiles one player takes leave together and land side by side, in
+    // the order they stood and closing up only as they shrink - so they
+    // never touch on the way.
+    const LAND = 0.75; // landing gap, in tile widths: the tiles land at half size
+    const byTaker = new Map<number, number[]>();
+    for (const i of fresh) byTaker.set(myTakers[i]!, [...(byTaker.get(myTakers[i]!) ?? []), i]);
+    const next: Flight[] = [];
+    for (const [taker, places] of byTaker) {
+      const to = document.querySelector(`.play-seat-${SIDES[taker]}`)?.getBoundingClientRect();
+      if (!to) continue;
+      places.forEach((i, k) => {
         const from = slots[i]?.getBoundingClientRect();
-        const to = document.querySelector(`.play-seat-${SIDES[myTakers[i]!]}`)?.getBoundingClientRect();
-        if (!from || !to) return [];
-        return [
-          {
-            id: now + k,
-            tile: prev.pile![i]!,
-            from: { left: from.left, top: from.top, width: from.width },
-            dx: to.left + to.width / 2 - (from.left + from.width / 2),
-            dy: to.top + to.height / 2 - (from.top + from.height / 2),
-            delay: k * 90,
-          },
-        ];
-      }),
-    ]);
+        if (!from) return;
+        const offset = (k - (places.length - 1) / 2) * from.width * LAND;
+        next.push({
+          id: now + next.length,
+          tile: prev.pile![i]!,
+          from: { left: from.left, top: from.top, width: from.width },
+          dx: to.left + to.width / 2 + offset - (from.left + from.width / 2),
+          dy: to.top + to.height / 2 - (from.top + from.height / 2),
+          delay: 0,
+        });
+      });
+    }
+    setFlights((f) => [...f, ...next]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [myPile, myTakers]);
 
