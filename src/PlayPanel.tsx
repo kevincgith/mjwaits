@@ -211,6 +211,17 @@ function loadSaved(): Saved | null {
   }
 }
 
+// The game left on this phone, for the start screen's Continue.
+export interface SavedSummary {
+  round: string;
+  you: number; // your total
+}
+
+export function savedSummary(): SavedSummary | null {
+  const saved = loadSaved();
+  return saved && { round: roundLabel(saved.game), you: saved.totals[0] };
+}
+
 function save(saved: Saved): void {
   try {
     window.localStorage.setItem(SAVE_KEY, JSON.stringify(saved));
@@ -589,10 +600,12 @@ export interface OnlinePlay {
 type WireMove = Extract<TableClientMessage, { t: "move" }>["move"];
 type WireClaim = Extract<TableClientMessage, { t: "claim" }>["claim"];
 
-export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; onOnline?: () => void; online?: OnlinePlay }) {
+// `fresh`: start a new game (keeping the settings) instead of the saved one.
+export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => void; onOnline?: () => void; online?: OnlinePlay; fresh?: boolean }) {
   const saved = useMemo(loadSaved, []);
-  const [localGame, setGame] = useState<GameState>(() => saved?.game ?? newGame());
-  const [localTotals, setTotals] = useState<number[]>(() => saved?.totals ?? [0, 0, 0, 0]);
+  const resume = fresh ? null : saved;
+  const [localGame, setGame] = useState<GameState>(() => resume?.game ?? newGame());
+  const [localTotals, setTotals] = useState<number[]>(() => resume?.totals ?? [0, 0, 0, 0]);
   // Online: this seat's view, turned so you're at seat 0.
   const net = useMemo(() => (online?.table.view ? seatState(online.table.view) : null), [online?.table]);
   const game = net?.game ?? localGame;
@@ -692,7 +705,10 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
     if (online && rolling && game.discardsMade > 0) setRolling(false);
   }, [online, rolling, game.discardsMade]);
   const [opponents, setOpponents] = useState<string[]>(() =>
-    saved?.opponents?.length === 3 && saved.opponents.every(knownBot) ? saved.opponents : DEFAULT_OPPONENTS
+    saved?.opponents?.length === 3 && saved.opponents.every(knownBot)
+      ? // A new game, new mysteries.
+        saved.opponents.map((id) => (fresh && id.startsWith(MYSTERY_PREFIX) ? newMystery() : id))
+      : DEFAULT_OPPONENTS
   );
   const [opponentsOpen, setOpponentsOpen] = useState(false);
   // The game so far as a Scores-tab game: started with the game (its first
@@ -700,8 +716,8 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
   // carried over from the totals.
   const playerNames = (ids: string[]) => uniqueNames(["You", ...ids.map((id) => englishName(botById(id)))]);
   const [localLedger, setLedger] = useState<ScoreGame>(() => {
-    if (saved?.ledger) return saved.ledger;
-    if (saved) return carriedOver(playerNames(opponents), localGame.dealer, localTotals);
+    if (resume?.ledger) return resume.ledger;
+    if (resume) return carriedOver(playerNames(opponents), localGame.dealer, localTotals);
     const fresh = newPlayLedger(playerNames(opponents), localGame.dealer);
     return { ...fresh, events: playEvents(null, localGame, fresh.seats) };
   });
