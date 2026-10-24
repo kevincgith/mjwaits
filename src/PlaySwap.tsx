@@ -4,7 +4,7 @@
 // the bar under the table, with your buttons; and the sheet that sets which
 // rounds swap and what the dice mean.
 
-import { type CSSProperties, useState } from "react";
+import { type CSSProperties, useRef, useState } from "react";
 import {
   blindPicks,
   botSplit,
@@ -165,11 +165,17 @@ export function SwapBar({
 // The settings: which round winds swap, and what each die means.
 export function SwapSheet({ rules, onChange, onClose }: { rules: SwapRules; onChange: (r: SwapRules) => void; onClose: () => void }) {
   const [r, setR] = useState(rules);
-  const set = (next: SwapRules) => {
+  // Each change from the settings as they stand (not as last drawn), so
+  // quick taps don't undo each other.
+  const latest = useRef(rules);
+  const update = (change: (r: SwapRules) => SwapRules) => {
+    const next = change(latest.current);
+    latest.current = next;
     setR(next);
     onChange(next);
   };
-  const toggleWind = (w: Wind) => set({ ...r, winds: r.winds.includes(w) ? r.winds.filter((x) => x !== w) : ([...r.winds, w].sort() as Wind[]) });
+  const set = (next: SwapRules) => update(() => next);
+  const toggleWind = (w: Wind) => update((r) => ({ ...r, winds: r.winds.includes(w) ? r.winds.filter((x) => x !== w) : ([...r.winds, w].sort() as Wind[]) }));
   const mapRow = (key: "rounds" | "tiles", lo: number, hi: number, unit: string) => (
     <div className="play-swap-map">
       {r[key].map((v, i) => (
@@ -178,7 +184,10 @@ export function SwapSheet({ rules, onChange, onClose }: { rules: SwapRules; onCh
           <select
             value={v}
             aria-label={`Die ${i + 1}: ${unit}`}
-            onChange={(e) => set({ ...r, [key]: r[key].map((x, j) => (j === i ? Number(e.target.value) : x)) })}
+            onChange={(e) => {
+              const n = Number(e.target.value);
+              update((r) => ({ ...r, [key]: r[key].map((x, j) => (j === i ? n : x)) }));
+            }}
           >
             {Array.from({ length: hi - lo + 1 }, (_, k) => lo + k).map((n) => (
               <option key={n} value={n}>

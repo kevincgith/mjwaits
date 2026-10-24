@@ -15949,10 +15949,13 @@ button.sc-stat:active {
   flex-wrap: nowrap;
 }
 
-/* A side pile in rows of three along its side, the next row further out
-   (as its pond fills, rows of six there) - so it stays clear of your hand. */
+/* A side pile: one row along its side, as that player sees it, centred
+   on the compass - a little smaller than across, so even six stay clear
+   of your hand. */
 .play-swap-pond:is(.play-pond-left, .play-pond-right) {
-  height: calc(3 * 0.8em);
+  height: auto;
+  flex-wrap: nowrap;
+  font-size: 1.2em;
 }
 
 /* Yours: the size of your discards - there to see, not to take from. (Never

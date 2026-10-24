@@ -2004,12 +2004,18 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
             {wall(3)}
             {wall(1)}
             <div className="play-pond-slot play-pond-slot-top">
-              <Pond tiles={game.players[2].discards} riichiAt={game.players[2].riichi?.discard} side="top" pinLast={discardFrom === 2} />
-              {swapPond(2, "top")}
+              {swapPhase ? (
+                swapPond(2, "top")
+              ) : (
+                <Pond tiles={game.players[2].discards} riichiAt={game.players[2].riichi?.discard} side="top" pinLast={discardFrom === 2} />
+              )}
             </div>
             <div className="play-pond-slot play-pond-slot-left">
-              <Pond tiles={game.players[3].discards} riichiAt={game.players[3].riichi?.discard} side="left" pinLast={discardFrom === 3} />
-              {swapPond(3, "left")}
+              {swapPhase ? (
+                swapPond(3, "left")
+              ) : (
+                <Pond tiles={game.players[3].discards} riichiAt={game.players[3].riichi?.discard} side="left" pinLast={discardFrom === 3} />
+              )}
             </div>
             <div className="play-middle">
               <Compass game={game} active={over ? null : activeSeat} center={compassCenter} countdown={over ? null : countdown} />
@@ -2027,12 +2033,18 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
               )}
             </div>
             <div className="play-pond-slot play-pond-slot-right">
-              <Pond tiles={game.players[1].discards} riichiAt={game.players[1].riichi?.discard} side="right" pinLast={discardFrom === 1} />
-              {swapPond(1, "right")}
+              {swapPhase ? (
+                swapPond(1, "right")
+              ) : (
+                <Pond tiles={game.players[1].discards} riichiAt={game.players[1].riichi?.discard} side="right" pinLast={discardFrom === 1} />
+              )}
             </div>
             <div className="play-pond-slot play-pond-slot-bottom">
-              <Pond tiles={me.discards} riichiAt={me.riichi?.discard} side="bottom" pinLast={discardFrom === HUMAN} />
-              {swapPond(HUMAN, "bottom")}
+              {swapPhase ? (
+                swapPond(HUMAN, "bottom")
+              ) : (
+                <Pond tiles={me.discards} riichiAt={me.riichi?.discard} side="bottom" pinLast={discardFrom === HUMAN} />
+              )}
             </div>
           </div>
         </div>
