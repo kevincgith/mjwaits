@@ -4,7 +4,7 @@
 // the bar under the table, with your buttons; and the sheet that sets which
 // rounds swap and what the dice mean.
 
-import { type CSSProperties, useRef, useState } from "react";
+import { type CSSProperties, useEffect, useRef, useState } from "react";
 import {
   blindPicks,
   botSplit,
@@ -20,48 +20,69 @@ import {
 } from "@mjwaits/shared/engine/swap";
 import type { Wind } from "@mjwaits/shared/engine/scoring";
 import { PlayDie } from "./PlayDie";
-import { TileSides } from "./TileGlyphs";
+import { TileGlyphSpan, TileSides } from "./TileGlyphs";
+import { tileLabel, type Tile } from "@mjwaits/shared/engine/mahjong";
 
 const WIND_CHARS = ["", "東", "南", "西", "北"];
 
-// A seat's face-down pile, on the felt where its discards go: real 3D
-// blocks like every other face-down tile on the table (a back on top, four
-// sides), laid as that seat's tiles lie - across the table in a row, the
-// side seats' along their side - so their depth is drawn from where you
-// sit. A tile taken leaves its place empty; the rest don't move. Yours to
-// tap (`onPick`) only on your take, and never your own pile.
+// A seat's pile, on the felt where its discards go: real 3D blocks like
+// every other tile on the table, laid as that seat's tiles lie - across the
+// table in a row, the side seats' along their side - so their depth is
+// drawn from where you sit. The others' lie face down; yours stand up
+// facing you, as at a real table - and a tile taken from yours flies to
+// the player who took it (SwapFlight), so you see who took what. A tile
+// taken leaves its place empty; the rest don't move. Tappable (`onPick`)
+// only on your take, and never your own pile.
+// A waiting tile whose face isn't yours to see.
+const HELD_BACK: Tile = { suit: "j", rank: 0 };
+
 export function SwapPond({
   pile,
   side,
   count,
   picked,
   onPick,
+  standing,
+  held,
 }: {
   pile: Pile | null;
   side: "top" | "left" | "right" | "bottom";
   count: number;
   picked: number[];
   onPick: ((i: number) => void) | null;
+  standing: boolean;
+  // Tiles taken but still waiting their turn to fly: drawn where they lay
+  // until they set off (place -> the tile, or null face down).
+  held: Map<number, Tile | null>; // yours: stood up facing you, so you see what goes where
 }) {
-  const slots = pile ?? [];
   if (!pile) return null;
   return (
-    <div className={`play-pond play-pond-${side} play-swap-pond${onPick ? " is-pickable" : ""}`} style={{ "--n": count } as CSSProperties}>
-      {slots.map((t, i) => (
-        <span
-          key={i}
-          className={["play-swap-tile", !t && "is-gap", picked.includes(i) && "is-picked"].filter(Boolean).join(" ")}
-          role={onPick && t ? "button" : undefined}
-          aria-pressed={onPick && t ? picked.includes(i) : undefined}
-          aria-label={t ? `Face-down tile ${i + 1}` : "Taken"}
-          onClick={onPick && t ? () => onPick(i) : undefined}
-        >
-          <span className="play-back">
-            <i className="tile-top" />
-            <TileSides />
+    <div
+      className={`play-pond play-pond-${side} play-swap-pond${onPick ? " is-pickable" : ""}${standing ? " is-standing" : ""}`}
+      style={{ "--n": count } as CSSProperties}
+    >
+      {pile.map((slot, i) => {
+        const t = slot ?? (held.has(i) ? (held.get(i) ?? HELD_BACK) : null);
+        return (
+          <span
+            key={i}
+            className={["play-swap-tile", !t && "is-gap", picked.includes(i) && "is-picked"].filter(Boolean).join(" ")}
+            role={onPick && slot ? "button" : undefined}
+            aria-pressed={onPick && slot ? picked.includes(i) : undefined}
+            aria-label={t ? (standing ? `Your ${tileLabel(t)}` : `Face-down tile ${i + 1}`) : "Taken"}
+            onClick={onPick && slot ? () => onPick(i) : undefined}
+          >
+            {t && t !== HELD_BACK && standing ? (
+              <TileGlyphSpan tile={t} block />
+            ) : (
+              <span className="play-back">
+                <i className="tile-top" />
+                <TileSides />
+              </span>
+            )}
           </span>
-        </span>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -82,11 +103,13 @@ export function SwapDice({ phase }: { phase: SwapPhase }) {
   );
 }
 
-// The swap's line in the bar under the table: the round, what's happening,
-// and your buttons - give; take what you've tapped, or take evenly in one
-// tap. `picks`: the places you've tapped in each pile; `after`: who takes
-// after the one taking now.
-export function SwapBar({
+// The swap's controls: its line in the bar under the table (the round,
+// what's happening - `part` "bar"), and your buttons ("actions") in the
+// calls corner like 上 碰 槓: give; take what you've tapped, or take evenly
+// in one tap. `picks`: the places you've tapped in
+// each pile; `after`: who takes after the one taking now.
+export function SwapControls({
+  part,
   phase,
   nameOf,
   seated,
@@ -97,6 +120,7 @@ export function SwapBar({
   onGive,
   onTake,
 }: {
+  part: "bar" | "actions";
   phase: SwapPhase;
   nameOf: (seat: number) => string;
   seated: boolean;
@@ -132,33 +156,52 @@ export function SwapBar({
       tone = check.ok ? (check.warning ? " is-warn" : " is-ok") : " is-error";
     }
   }
+  if (part === "bar")
+    return (
+      <span className="play-swap-bar">
+        <b>
+          換牌 {round}/{rounds}
+        </b>
+        <span className={`play-swap-note${tone}`}>{note}</span>
+      </span>
+    );
+  // Your buttons: discs in the calls corner, like 上 碰 槓 - where your moves
+  // always are.
+  if (!mineToGive && !myTake) return null;
+  if (mineToGive)
+    return (
+      <button
+        type="button"
+        className="play-call is-win is-long"
+        disabled={giveCount !== count}
+        onClick={onGive}
+        aria-label={giveCount === count ? `Give these ${count}` : `Pick ${count} tiles to give`}
+      >
+        放牌
+      </button>
+    );
+  if (!check) return null;
+  if (taken === 0)
+    return (
+      <button type="button" className="play-call is-win is-long" onClick={quickTake} aria-label={`Take ${count} evenly, blind`}>
+        攞牌
+      </button>
+    );
   return (
-    <span className="play-swap-bar">
-      <b>
-        換牌 {round}/{rounds}
-      </b>
-      <span className={`play-swap-note${tone}`}>{note}</span>
-      {mineToGive && (
-        <button type="button" className="play-swap-go" disabled={giveCount !== count} onClick={onGive}>
-          放牌 Give
-        </button>
-      )}
-      {myTake && check && taken === 0 && (
-        <button type="button" className="play-swap-go" onClick={quickTake}>
-          一按 Take evenly
-        </button>
-      )}
-      {myTake && check && taken > 0 && (
-        <>
-          <button type="button" className="play-swap-clear" onClick={() => setPicks(() => [[], [], [], []])}>
-            Clear
-          </button>
-          <button type="button" className={`play-swap-go${check.warning ? " is-warn" : ""}`} disabled={!check.ok} onClick={() => onTake()}>
-            {check.warning ? "Take anyway" : "攞牌 Take"}
-          </button>
-        </>
-      )}
-    </span>
+    <>
+      <button type="button" className="play-call is-pass is-minor" onClick={() => setPicks(() => [[], [], [], []])} aria-label="Clear your picks">
+        ↺
+      </button>
+      <button
+        type="button"
+        className={`play-call is-long${check.ok && !check.warning ? " is-win" : ""}${check.warning ? " is-warn" : ""}`}
+        disabled={!check.ok}
+        onClick={() => onTake()}
+        aria-label={check.error ?? check.warning ?? `Take these ${taken}`}
+      >
+        {check.warning ? "照攞" : `攞 ${taken}/${count}`}
+      </button>
+    </>
   );
 }
 
@@ -230,5 +273,58 @@ export function SwapSheet({ rules, onChange, onClose }: { rules: SwapRules; onCh
         </button>
       </div>
     </div>
+  );
+}
+
+// A tile on its way from a pile to the hand that took it: lifted, then
+// flown to that seat, shrinking into the hand - face up if it's one of
+// yours, else face down. Drawn flat over the table, from where it lay
+// (`from`, on screen) by (dx, dy), after `delay`.
+export interface Flight {
+  id: number;
+  seat: number; // whose pile it left, and its place there - where it's
+  place: number; // drawn until it sets off
+  tile: Tile | null; // null: face down - not yours to see
+  ghost?: boolean; // the round's last take - its pile drawn from the ghost
+  from: { left: number; top: number; width: number };
+  dx: number;
+  dy: number;
+  delay: number;
+}
+
+// How long a flight takes (as .play-swap-flight's animation), and the
+// wait between one tile of a take setting off and the next.
+export const SWAP_FLIGHT_MS = 600;
+export const SWAP_STAGGER_MS = 300;
+// From a take to its last tile landing.
+export const takeFlightMs = (tiles: number) => SWAP_FLIGHT_MS + Math.max(0, tiles - 1) * SWAP_STAGGER_MS;
+
+export function SwapFlight({ flight, onStart, onDone }: { flight: Flight; onStart: () => void; onDone: () => void }) {
+  // Gone when it lands - or, should the animation's end never come (a page
+  // in the background holds animations), soon after it should have.
+  useEffect(() => {
+    const id = window.setTimeout(onDone, flight.delay + SWAP_FLIGHT_MS + 400);
+    return () => window.clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return (
+    <span
+      className="play-swap-flight"
+      style={
+        {
+          left: flight.from.left,
+          top: flight.from.top,
+          fontSize: flight.from.width / 0.74,
+          "--dx": `${flight.dx}px`,
+          "--dy": `${flight.dy}px`,
+          animationDelay: `${flight.delay}ms`,
+        } as CSSProperties
+      }
+      onAnimationStart={onStart}
+      onAnimationEnd={onDone}
+      aria-hidden="true"
+    >
+      {flight.tile ? <TileGlyphSpan tile={flight.tile} /> : <span className="play-swap-flight-back" />}
+    </span>
   );
 }

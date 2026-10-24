@@ -15937,10 +15937,11 @@ button.sc-stat:active {
    tumble over the middle first; the swap's line and buttons sit in the bar
    under the table, out of the way of the piles and your hand. */
 
-/* A pile: a little bigger than discards - few tiles, and you tap them. */
+/* A pile: a little bigger than discards - few tiles, and you tap them -
+   and every seat's the same size, yours included. */
 .play-swap-pond {
   gap: 0.06em;
-  font-size: 1.3em;
+  font-size: 1.2em;
 }
 
 .play-swap-pond.play-pond-top,
@@ -15950,19 +15951,14 @@ button.sc-stat:active {
 }
 
 /* A side pile: one row along its side, as that player sees it, centred
-   on the compass - a little smaller than across, so even six stay clear
-   of your hand. */
+   on the compass - even six stay clear of your hand. */
 .play-swap-pond:is(.play-pond-left, .play-pond-right) {
   height: auto;
   flex-wrap: nowrap;
-  font-size: 1.2em;
 }
 
-/* Yours: the size of your discards - there to see, not to take from. (Never
-   faded: a 3D tile turned partly transparent is drawn flat.) */
-.play-swap-pond.play-pond-bottom {
-  font-size: 1em;
-}
+/* Yours is there to see, not to take from - but drawn like the rest (never
+   faded: a 3D tile turned partly transparent is drawn flat). */
 
 .play-swap-tile {
   position: relative;
@@ -15982,6 +15978,14 @@ button.sc-stat:active {
 /* Taken: the place stays, empty. */
 .play-swap-tile.is-gap > .play-back {
   visibility: hidden;
+}
+
+/* Yours stand up on the felt, faces toward you (backs to the table), as at
+   a real table - so you see which of your tiles each player takes. Leaned
+   back a little, as a hand stands, so the faces read. */
+.play-swap-pond.is-standing .play-swap-tile > .tile-glyph {
+  transform-origin: 50% 100%;
+  transform: rotateX(-68deg);
 }
 
 .play-swap-pond.is-pickable .play-swap-tile:not(.is-gap) {
@@ -16047,35 +16051,73 @@ button.sc-stat:active {
   color: #ff8f80;
 }
 
-.play-swap-go,
-.play-swap-clear {
-  flex: none;
-  min-height: 1.7rem;
-  padding: 0 0.75rem;
-  border: none;
-  border-radius: 999px;
-  font-weight: 800;
-  white-space: nowrap;
+/* A taken tile, flying from its pile to the taker's hand: lifted and held
+   a beat, then off to their seat, shrinking into their hand - one after
+   another with the rest of the take, never touching (see the flights in
+   PlayPanel). */
+/* Hidden until its turn: till then the tile is still drawn in its pile. */
+.play-swap-flight {
+  position: fixed;
+  z-index: 60;
+  line-height: 0;
+  pointer-events: none;
+  visibility: hidden;
+  animation: play-swap-fly 0.6s cubic-bezier(0.45, 0, 0.3, 1) forwards;
 }
 
-.play-swap-go {
-  background: linear-gradient(180deg, #ffe08a, var(--play-gold) 50%, var(--play-gold-deep));
-  color: var(--play-ink-on-gold);
+.play-swap-flight img.tile-face {
+  box-shadow: 0 0.12em 0.3em rgba(0, 0, 0, 0.45);
 }
 
-.play-swap-go.is-warn {
+/* Face down in flight: the jade back, a tile's size, its ivory edge below. */
+.play-swap-flight-back {
+  display: block;
+  width: 0.74em;
+  height: 0.96em;
+  border-radius: 0.08em;
+  background: linear-gradient(160deg, #4cc062, var(--play-back) 55%, var(--play-back-edge));
+  box-shadow:
+    inset 0 0.02em 0 rgba(255, 255, 255, 0.35),
+    0 0.07em 0 var(--play-ivory),
+    0 0.12em 0.3em rgba(0, 0, 0, 0.45);
+}
+
+@keyframes play-swap-fly {
+  0% {
+    visibility: visible;
+    transform: translate(0, 0) scale(1);
+  }
+  /* Lifted, at its own size - grown, it would touch its neighbours. */
+  25% {
+    transform: translate(calc(var(--dx) * 0.05), calc(var(--dy) * 0.05 - 0.45em)) scale(1);
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    visibility: visible;
+    transform: translate(var(--dx), var(--dy)) scale(0.5);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .play-swap-flight {
+    animation-duration: 0.01s;
+  }
+}
+
+/* Your swap buttons are discs in the calls corner (.play-call): 放牌,
+   攞牌, and 照攞 for a lopsided take - amber, as a warning. */
+.play-call.is-warn {
+  border-color: #f0a03c;
   background: linear-gradient(180deg, #ffd59a, #f0a03c);
+  color: #3b2200;
 }
 
-.play-swap-go:disabled {
-  background: rgba(255, 255, 255, 0.1);
-  color: var(--text-muted);
+.play-call:disabled {
+  opacity: 0.45;
   cursor: default;
-}
-
-.play-swap-clear {
-  background: rgba(255, 255, 255, 0.1);
-  color: var(--play-on-felt);
 }
 
 /* The settings sheet. */
