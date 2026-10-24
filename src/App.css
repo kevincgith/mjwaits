@@ -6091,6 +6091,14 @@ html.playing body {
   font-weight: 700;
 }
 
+/* With a 連莊 run on it: a pill instead of a dot. */
+.play-dealer.is-streak {
+  width: auto;
+  padding: 0 0.4rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
 /* A bot's avatar: its title's first character on its personality colour. */
 .play-avatar {
   display: inline-grid;

@@ -1425,6 +1425,9 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
     return null;
   };
 
+  // The dealer's chip, with their run of wins and draws (連莊) on it.
+  const dealerChip = game.dealerStreak > 0 ? <span className="play-dealer is-streak">莊 連{game.dealerStreak}</span> : <span className="play-dealer">莊</span>;
+
   // A bot's name card - flat, over the corner of the table like a HUD.
   const badge = (seat: number) => (
     <span className={`play-badge at-${SIDES[seat]}${activeSeat === seat ? " is-active" : ""}`}>
@@ -1434,7 +1437,7 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
         <span className="play-badge-name-text">{nameOf(seat)}</span>
         <span className="play-badge-chips">
           {seatTag(seat)}
-          {seat === game.dealer && <span className="play-dealer">莊</span>}
+          {seat === game.dealer && dealerChip}
           {game.players[seat].riichi && <span className="play-riichi">叮</span>}
           {lahChips(seat)}
         </span>
@@ -1909,7 +1912,7 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
           <span className={`play-bar-you${activeSeat === HUMAN ? " is-active" : ""}`}>
             <span className="play-badge-wind">{WIND_CHARS[seatWind(HUMAN, game.dealer)]}</span>
             You
-            {game.dealer === HUMAN && <span className="play-dealer">莊</span>}
+            {game.dealer === HUMAN && dealerChip}
             {me.riichi && <span className="play-riichi">叮</span>}
             {lahChips(HUMAN)}
             {bubbles[HUMAN] && (
@@ -1921,7 +1924,6 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
           {total(HUMAN)}
           <span className="play-bar-round">
             {roundLabel(game)}
-            {game.dealerStreak > 0 && ` · 連${game.dealerStreak}`}
           </span>
           <span className="play-bar-left">剩:{liveTilesLeft(game)}張</span>
           {game.dice && !rolling && (
