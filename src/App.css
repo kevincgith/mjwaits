@@ -7487,10 +7487,12 @@ html.playing body {
 }
 
 /* 食替: barred from being discarded right now. */
-/* Dimmed piece by piece - the face and each side - never the whole tile:
-   a filter (or opacity) on a 3D tile flattens it, and Safari then drops
-   most of it. */
-.play-hand-tile.is-barred :is(img.tile-face, .tile-side) {
+/* Dimmed piece by piece - the face, each side and the core inside (or
+   it showed as a bright line where two dimmed tiles meet) - never the
+   whole tile: a filter (or opacity) on a 3D tile flattens it, and Safari
+   then drops most of it. */
+.play-hand-tile.is-barred :is(img.tile-face, .tile-side),
+.play-hand-tile.is-barred .tile-glyph.tile-art::after {
   filter: brightness(0.62) saturate(0.6);
 }
 
