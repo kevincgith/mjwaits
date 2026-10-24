@@ -6280,6 +6280,26 @@ html.playing body {
   margin: -0.11em 0.11em;
 }
 
+/* A declared meld's tiles butt up against each other - no gap: each face
+   sits a little inside its box (0.03em a side), so the boxes overlap by
+   that much (a face-down tile fills its box, less its 0.02em margin). In
+   a side seat's turned column, along the column. */
+:is(.play-seat-top, .play-hand) .play-meld:not(.is-revealed) .tile-glyph {
+  margin-inline: -0.03em;
+}
+
+:is(.play-seat-top, .play-hand) .play-meld:not(.is-revealed) .play-back {
+  margin-inline: 0;
+}
+
+:is(.play-seat-left, .play-seat-right) .play-meld:not(.is-revealed) .tile-glyph {
+  margin-block: -0.14em;
+}
+
+:is(.play-seat-left, .play-seat-right) .play-meld:not(.is-revealed) .play-back {
+  margin-block: 0;
+}
+
 .play-seat-left :is(.play-meld, .play-flowers) .tile-glyph,
 .play-pond-left .play-pond-tile:not(.is-riichi) > .tile-glyph {
   rotate: 90deg;
