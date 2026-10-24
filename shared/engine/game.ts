@@ -937,12 +937,13 @@ export function swapTake(state: GameState, seat: number, picks: number[][]): Gam
   const piles = ph.piles.map((pile, g) => pile!.map((t, i) => (picks[g].includes(i) ? null : t)));
   s.players[seat].hand.push(...ph.piles.flatMap((pile, g) => [...new Set(picks[g])].map((i) => pile![i]!)));
   const took = [...ph.took, seat];
+  const takenBy = ph.piles.map((pile, g) => pile!.map((_, i) => (picks[g].includes(i) ? seat : (ph.takenBy?.[g]?.[i] ?? null))));
   if (took.length < SEATS) {
-    s.phase = { ...ph, piles, took, taker: (seat + 1) % SEATS };
+    s.phase = { ...ph, piles, took, takenBy, taker: (seat + 1) % SEATS };
     return s;
   }
   if (ph.round < ph.rounds) {
-    s.phase = { ...ph, round: ph.round + 1, stage: "give", piles: [null, null, null, null], took: [], taker: s.dealer };
+    s.phase = { ...ph, round: ph.round + 1, stage: "give", piles: [null, null, null, null], took: [], takenBy: undefined, taker: s.dealer };
     return s;
   }
   const { tile, flowered } = drawInto(s, s.dealer, false);

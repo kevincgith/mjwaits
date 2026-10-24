@@ -20,48 +20,67 @@ import {
 } from "@mjwaits/shared/engine/swap";
 import type { Wind } from "@mjwaits/shared/engine/scoring";
 import { PlayDie } from "./PlayDie";
-import { TileSides } from "./TileGlyphs";
+import { TileGlyphSpan, TileSides } from "./TileGlyphs";
+import { tileLabel } from "@mjwaits/shared/engine/mahjong";
 
 const WIND_CHARS = ["", "東", "南", "西", "北"];
 
-// A seat's face-down pile, on the felt where its discards go: real 3D
-// blocks like every other face-down tile on the table (a back on top, four
-// sides), laid as that seat's tiles lie - across the table in a row, the
-// side seats' along their side - so their depth is drawn from where you
-// sit. A tile taken leaves its place empty; the rest don't move. Yours to
-// tap (`onPick`) only on your take, and never your own pile.
+// A seat's pile, on the felt where its discards go: real 3D blocks like
+// every other tile on the table, laid as that seat's tiles lie - across the
+// table in a row, the side seats' along their side - so their depth is
+// drawn from where you sit. The others' lie face down; yours stand up
+// facing you, as at a real table, so you see which of your tiles each
+// player takes. A tile taken leaves its place empty, marked with the
+// taker's wind; the rest don't move. Tappable (`onPick`) only on your
+// take, and never your own pile.
 export function SwapPond({
   pile,
   side,
   count,
   picked,
   onPick,
+  takers,
+  windOf,
+  standing,
 }: {
   pile: Pile | null;
   side: "top" | "left" | "right" | "bottom";
   count: number;
   picked: number[];
   onPick: ((i: number) => void) | null;
+  takers: (number | null)[] | undefined; // who took the tile from each place
+  windOf: (seat: number) => string;
+  standing: boolean; // yours: stood up facing you, so you see what goes where
 }) {
-  const slots = pile ?? [];
   if (!pile) return null;
   return (
-    <div className={`play-pond play-pond-${side} play-swap-pond${onPick ? " is-pickable" : ""}`} style={{ "--n": count } as CSSProperties}>
-      {slots.map((t, i) => (
-        <span
-          key={i}
-          className={["play-swap-tile", !t && "is-gap", picked.includes(i) && "is-picked"].filter(Boolean).join(" ")}
-          role={onPick && t ? "button" : undefined}
-          aria-pressed={onPick && t ? picked.includes(i) : undefined}
-          aria-label={t ? `Face-down tile ${i + 1}` : "Taken"}
-          onClick={onPick && t ? () => onPick(i) : undefined}
-        >
-          <span className="play-back">
-            <i className="tile-top" />
-            <TileSides />
+    <div
+      className={`play-pond play-pond-${side} play-swap-pond${onPick ? " is-pickable" : ""}${standing ? " is-standing" : ""}`}
+      style={{ "--n": count } as CSSProperties}
+    >
+      {pile.map((t, i) => {
+        const by = takers?.[i];
+        return (
+          <span
+            key={i}
+            className={["play-swap-tile", !t && "is-gap", picked.includes(i) && "is-picked"].filter(Boolean).join(" ")}
+            role={onPick && t ? "button" : undefined}
+            aria-pressed={onPick && t ? picked.includes(i) : undefined}
+            aria-label={t ? (standing ? `Your ${tileLabel(t)}` : `Face-down tile ${i + 1}`) : by != null ? `Taken by ${windOf(by)}` : "Taken"}
+            onClick={onPick && t ? () => onPick(i) : undefined}
+          >
+            {t && standing ? (
+              <TileGlyphSpan tile={t} block />
+            ) : (
+              <span className="play-back">
+                <i className="tile-top" />
+                <TileSides />
+              </span>
+            )}
+            {!t && by != null && <span className="play-swap-taker">{windOf(by)}</span>}
           </span>
-        </span>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -83,9 +102,9 @@ export function SwapDice({ phase }: { phase: SwapPhase }) {
 }
 
 // The swap's controls: its line in the bar under the table (the round,
-// what's happening - `part` "bar"), and your buttons, big over the middle
-// of the table where the compass is ("actions"): give; take what you've
-// tapped, or take evenly in one tap. `picks`: the places you've tapped in
+// what's happening - `part` "bar"), and your buttons ("actions") in the
+// calls corner like 上 碰 槓: give; take what you've tapped, or take evenly
+// in one tap. `picks`: the places you've tapped in
 // each pile; `after`: who takes after the one taking now.
 export function SwapControls({
   part,
@@ -144,33 +163,43 @@ export function SwapControls({
         <span className={`play-swap-note${tone}`}>{note}</span>
       </span>
     );
+  // Your buttons: discs in the calls corner, like 上 碰 槓 - where your moves
+  // always are.
   if (!mineToGive && !myTake) return null;
+  if (mineToGive)
+    return (
+      <button
+        type="button"
+        className="play-call is-win is-long"
+        disabled={giveCount !== count}
+        onClick={onGive}
+        aria-label={giveCount === count ? `Give these ${count}` : `Pick ${count} tiles to give`}
+      >
+        放牌
+      </button>
+    );
+  if (!check) return null;
+  if (taken === 0)
+    return (
+      <button type="button" className="play-call is-win is-long" onClick={quickTake} aria-label={`Take ${count} evenly, blind`}>
+        攞牌
+      </button>
+    );
   return (
-    <div className="play-swap-actions">
-      <div className="play-swap-buttons">
-        {mineToGive && (
-          <button type="button" className="play-swap-go" disabled={giveCount !== count} onClick={onGive}>
-            放牌 {giveCount === count ? "Give" : `${giveCount}/${count}`}
-          </button>
-        )}
-        {myTake && check && taken === 0 && (
-          <button type="button" className="play-swap-go" title="An even take, blind" onClick={quickTake}>
-            一按 Take
-          </button>
-        )}
-        {myTake && check && taken > 0 && (
-          <>
-            <button type="button" className="play-swap-clear" aria-label="Clear your picks" title="Clear" onClick={() => setPicks(() => [[], [], [], []])}>
-              ↺
-            </button>
-            <button type="button" className={`play-swap-go${check.warning ? " is-warn" : ""}`} disabled={!check.ok} onClick={() => onTake()}>
-              {/* Short, to sit clear of the piles: the bar says it in full. */}
-              {taken === count && check.error ? "Not allowed" : check.warning ? "Take anyway" : `攞牌 ${taken}/${count}`}
-            </button>
-          </>
-        )}
-      </div>
-    </div>
+    <>
+      <button type="button" className="play-call is-pass is-minor" onClick={() => setPicks(() => [[], [], [], []])} aria-label="Clear your picks">
+        ↺
+      </button>
+      <button
+        type="button"
+        className={`play-call is-long${check.ok && !check.warning ? " is-win" : ""}${check.warning ? " is-warn" : ""}`}
+        disabled={!check.ok}
+        onClick={() => onTake()}
+        aria-label={check.error ?? check.warning ?? `Take these ${taken}`}
+      >
+        {check.warning ? "照攞" : `攞 ${taken}/${count}`}
+      </button>
+    </>
   );
 }
 

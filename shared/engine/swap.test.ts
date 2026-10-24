@@ -72,6 +72,9 @@ describe("換牌 at the deal", () => {
     // The places taken stay, empty; nothing moves up.
     if (took.phase.kind !== "swap" || s.phase.kind !== "swap") return;
     expect(took.phase.piles[1]).toEqual([null, ...s.phase.piles[1]!.slice(1)]);
+    // And everyone sees who took it.
+    expect(took.phase.takenBy?.[1]).toEqual([0, null, null]);
+    expect(took.phase.takenBy?.[0]).toEqual([null, null, null]);
     expect(() => swapTake(took, 1, [[0], [], [0], [1]])).toThrow(/No tile there/);
     expect(() => swapTake(took, 1, [[0], [], [1], [1]])).not.toThrow();
   });

@@ -1692,6 +1692,9 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
         side={side}
         count={swapPhase.count}
         picked={swapPicks[seat]}
+        takers={swapPhase.takenBy?.[seat]}
+        windOf={(t) => WIND_CHARS[seatWind(t, game.dealer)]}
+        standing={seat === HUMAN && seated && !autoplay}
         onPick={
           myTake && seat !== HUMAN
             ? (i) =>
@@ -2052,6 +2055,20 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
         <div className={`play-me${autoplay ? " is-auto" : ""}`}>
           <div className="play-hand-wrap">
             <div className="play-calls">
+              {swapPhase && !swapRolling && !rolling && !over && (
+                <SwapControls
+                  part="actions"
+                  phase={swapPhase}
+                  nameOf={(seat) => (seat === HUMAN ? "You" : nameOf(seat))}
+                  seated={seated && !autoplay}
+                  picks={swapPicks}
+                  setPicks={setSwapPicks}
+                  after={takersAfter(swapPhase, game.dealer)}
+                  giveCount={swapHand.length}
+                  onGive={giveSwap}
+                  onTake={takeSwap}
+                />
+              )}
               {result && resultHidden && !cardHeld && (
                 <button type="button" className="play-show-result" onClick={() => setResultHidden(false)}>
                   Show result
@@ -2247,20 +2264,6 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
         {burst && <CallBurst key={burst.id} seat={burst.seat} label={burst.label} />}
 
         {swapPhase && swapRolling && !rolling && <SwapDice phase={swapPhase} />}
-        {swapPhase && !swapRolling && !rolling && !over && (
-          <SwapControls
-            part="actions"
-            phase={swapPhase}
-            nameOf={(seat) => (seat === HUMAN ? "You" : nameOf(seat))}
-            seated={seated && !autoplay}
-            picks={swapPicks}
-            setPicks={setSwapPicks}
-            after={takersAfter(swapPhase, game.dealer)}
-            giveCount={swapHand.length}
-            onGive={giveSwap}
-            onTake={takeSwap}
-          />
-        )}
 
         {rolling && game.dice && (
           <div className="play-dice" role="status">

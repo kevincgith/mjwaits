@@ -48,6 +48,10 @@ export interface SwapPhase {
   // Whose turn to take (stage "take"), and who has taken this round.
   taker: number;
   took: number[];
+  // Who took the tile from each place in each pile (null: still there) -
+  // everyone sees whose hand reaches into which pile. Absent until the
+  // round's first take.
+  takenBy?: (number | null)[][];
 }
 
 export type Pile = (Tile | null)[];
