@@ -6966,8 +6966,10 @@ html.playing body {
   height: 3.6em;
   border-radius: 0.9em;
   background: radial-gradient(120% 120% at 50% 30%, #33383e 0%, #1f2327 60%, #16191c 100%);
+  /* A soft shadow on the felt: a faint contact line and a wide, light spread. */
   box-shadow:
-    0 0.12em 0.4em rgba(0, 0, 0, 0.45),
+    0 0.04em 0.1em rgba(0, 0, 0, 0.18),
+    0 0.2em 0.9em rgba(0, 0, 0, 0.2),
     inset 0 0 0 0.05em rgba(226, 176, 74, 0.45),
     inset 0 0.06em 0.1em rgba(255, 255, 255, 0.08);
 }
