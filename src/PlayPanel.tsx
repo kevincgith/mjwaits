@@ -59,7 +59,7 @@ import {
 import { allTileKinds, getWaits, shanten, sortTiles, tileKey, tileLabel, type Tile } from "@mjwaits/shared/engine/mahjong";
 import { blindPicks, botGive, botSplit, DEFAULT_SWAP_RULES, pileLeft, type SwapRules } from "@mjwaits/shared/engine/swap";
 import { PlayDie } from "./PlayDie";
-import { SwapControls, SwapDice, SwapPond, SwapSheet } from "./PlaySwap";
+import { SwapControls, SwapDice, SwapFlight, SwapPond, SwapSheet, type Flight } from "./PlaySwap";
 import type { BonusTile } from "@mjwaits/shared/engine/scoring";
 import { BonusGlyphSpan, TileGlyphSpan, TileSides } from "./TileGlyphs";
 import {
@@ -1252,6 +1252,41 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     const id = window.setTimeout(() => setSwapRolling(false), speed === "fast" ? 1300 : 2200);
     return () => window.clearTimeout(id);
   }, [swapRolling, speed]);
+  // Your tiles flying to whoever takes them: each take from your pile, as it
+  // lands, sends those tiles from where they stood to the taker's seat.
+  const [flights, setFlights] = useState<Flight[]>([]);
+  const myPileSeen = useRef<{ pile: (Tile | null)[] | null; by: (number | null)[] | undefined }>({ pile: null, by: undefined });
+  const myPile = swapPhase?.piles[HUMAN] ?? null;
+  const myTakers = swapPhase?.takenBy?.[HUMAN];
+  useEffect(() => {
+    const prev = myPileSeen.current;
+    myPileSeen.current = { pile: myPile, by: myTakers };
+    if (!myTakers || !prev.pile) return;
+    const fresh = myTakers.flatMap((by, i) => (by !== null && prev.by?.[i] == null && prev.pile![i] ? [i] : []));
+    if (!fresh.length) return;
+    const slots = document.querySelectorAll(".play-swap-pond.play-pond-bottom .play-swap-tile");
+    const now = Date.now();
+    setFlights((f) => [
+      ...f,
+      ...fresh.flatMap((i, k) => {
+        const from = slots[i]?.getBoundingClientRect();
+        const to = document.querySelector(`.play-seat-${SIDES[myTakers[i]!]}`)?.getBoundingClientRect();
+        if (!from || !to) return [];
+        return [
+          {
+            id: now + k,
+            tile: prev.pile![i]!,
+            from: { left: from.left, top: from.top, width: from.width },
+            dx: to.left + to.width / 2 - (from.left + from.width / 2),
+            dy: to.top + to.height / 2 - (from.top + from.height / 2),
+            delay: k * 90,
+          },
+        ];
+      }),
+    ]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [myPile, myTakers]);
+
   const giveSwap = () => {
     if (!swapPhase || swapHand.length !== swapPhase.count) return;
     advance(swapGive(game, HUMAN, swapHand.map((i) => handTiles[i])));
@@ -1692,8 +1727,6 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
         side={side}
         count={swapPhase.count}
         picked={swapPicks[seat]}
-        takers={swapPhase.takenBy?.[seat]}
-        windOf={(t) => WIND_CHARS[seatWind(t, game.dealer)]}
         standing={seat === HUMAN && seated && !autoplay}
         onPick={
           myTake && seat !== HUMAN
@@ -2264,6 +2297,9 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
         {burst && <CallBurst key={burst.id} seat={burst.seat} label={burst.label} />}
 
         {swapPhase && swapRolling && !rolling && <SwapDice phase={swapPhase} />}
+        {flights.map((f) => (
+          <SwapFlight key={f.id} flight={f} onDone={() => setFlights((all) => all.filter((x) => x.id !== f.id))} />
+        ))}
 
         {rolling && game.dice && (
           <div className="play-dice" role="status">

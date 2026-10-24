@@ -21,7 +21,7 @@ import {
 import type { Wind } from "@mjwaits/shared/engine/scoring";
 import { PlayDie } from "./PlayDie";
 import { TileGlyphSpan, TileSides } from "./TileGlyphs";
-import { tileLabel } from "@mjwaits/shared/engine/mahjong";
+import { tileLabel, type Tile } from "@mjwaits/shared/engine/mahjong";
 
 const WIND_CHARS = ["", "東", "南", "西", "北"];
 
@@ -29,18 +29,16 @@ const WIND_CHARS = ["", "東", "南", "西", "北"];
 // every other tile on the table, laid as that seat's tiles lie - across the
 // table in a row, the side seats' along their side - so their depth is
 // drawn from where you sit. The others' lie face down; yours stand up
-// facing you, as at a real table, so you see which of your tiles each
-// player takes. A tile taken leaves its place empty, marked with the
-// taker's wind; the rest don't move. Tappable (`onPick`) only on your
-// take, and never your own pile.
+// facing you, as at a real table - and a tile taken from yours flies to
+// the player who took it (SwapFlight), so you see who took what. A tile
+// taken leaves its place empty; the rest don't move. Tappable (`onPick`)
+// only on your take, and never your own pile.
 export function SwapPond({
   pile,
   side,
   count,
   picked,
   onPick,
-  takers,
-  windOf,
   standing,
 }: {
   pile: Pile | null;
@@ -48,8 +46,6 @@ export function SwapPond({
   count: number;
   picked: number[];
   onPick: ((i: number) => void) | null;
-  takers: (number | null)[] | undefined; // who took the tile from each place
-  windOf: (seat: number) => string;
   standing: boolean; // yours: stood up facing you, so you see what goes where
 }) {
   if (!pile) return null;
@@ -59,14 +55,13 @@ export function SwapPond({
       style={{ "--n": count } as CSSProperties}
     >
       {pile.map((t, i) => {
-        const by = takers?.[i];
         return (
           <span
             key={i}
             className={["play-swap-tile", !t && "is-gap", picked.includes(i) && "is-picked"].filter(Boolean).join(" ")}
             role={onPick && t ? "button" : undefined}
             aria-pressed={onPick && t ? picked.includes(i) : undefined}
-            aria-label={t ? (standing ? `Your ${tileLabel(t)}` : `Face-down tile ${i + 1}`) : by != null ? `Taken by ${windOf(by)}` : "Taken"}
+            aria-label={t ? (standing ? `Your ${tileLabel(t)}` : `Face-down tile ${i + 1}`) : "Taken"}
             onClick={onPick && t ? () => onPick(i) : undefined}
           >
             {t && standing ? (
@@ -77,7 +72,6 @@ export function SwapPond({
                 <TileSides />
               </span>
             )}
-            {!t && by != null && <span className="play-swap-taker">{windOf(by)}</span>}
           </span>
         );
       })}
@@ -271,5 +265,39 @@ export function SwapSheet({ rules, onChange, onClose }: { rules: SwapRules; onCh
         </button>
       </div>
     </div>
+  );
+}
+
+// One of your tiles on its way from your pile to the player who took it:
+// lifted, then flown to their seat, shrinking into their hand. Drawn flat
+// over the table, from where the tile stood (`from`, on screen) by (dx, dy).
+export interface Flight {
+  id: number;
+  tile: Tile;
+  from: { left: number; top: number; width: number };
+  dx: number;
+  dy: number;
+  delay: number;
+}
+
+export function SwapFlight({ flight, onDone }: { flight: Flight; onDone: () => void }) {
+  return (
+    <span
+      className="play-swap-flight"
+      style={
+        {
+          left: flight.from.left,
+          top: flight.from.top,
+          fontSize: flight.from.width / 0.74,
+          "--dx": `${flight.dx}px`,
+          "--dy": `${flight.dy}px`,
+          animationDelay: `${flight.delay}ms`,
+        } as CSSProperties
+      }
+      onAnimationEnd={onDone}
+      aria-hidden="true"
+    >
+      <TileGlyphSpan tile={flight.tile} />
+    </span>
   );
 }
