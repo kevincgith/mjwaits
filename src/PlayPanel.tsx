@@ -59,7 +59,7 @@ import {
 import { allTileKinds, getWaits, shanten, sortTiles, tileKey, tileLabel, type Tile } from "@mjwaits/shared/engine/mahjong";
 import { blindPicks, botGive, botSplit, DEFAULT_SWAP_RULES, pileLeft, type SwapRules } from "@mjwaits/shared/engine/swap";
 import { PlayDie } from "./PlayDie";
-import { SwapPanel, SwapSheet } from "./PlaySwap";
+import { SwapBar, SwapDice, SwapPond, SwapSheet } from "./PlaySwap";
 import type { BonusTile } from "@mjwaits/shared/engine/scoring";
 import { BonusGlyphSpan, TileGlyphSpan, TileSides } from "./TileGlyphs";
 import {
@@ -1682,6 +1682,29 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
   // The tile a seat won with (to lay sideways in its hand), if it won.
   const wonWith = (seat: number) =>
     result && result.tile && (result.winner === seat || result.alsoWon?.some((w) => w.winner === seat)) ? result.tile : null;
+  // 換牌: a seat's face-down pile, where its discards go. Tappable on your take.
+  const myTake = !!swapPhase && seated && !autoplay && !swapRolling && swapPhase.stage === "take" && swapPhase.taker === HUMAN;
+  const swapPond = (seat: number, side: "top" | "left" | "right" | "bottom") =>
+    swapPhase &&
+    !swapRolling && (
+      <SwapPond
+        pile={swapPhase.piles[seat]}
+        side={side}
+        count={swapPhase.count}
+        picked={swapPicks[seat]}
+        onPick={
+          myTake && seat !== HUMAN
+            ? (i) =>
+                setSwapPicks((now) => {
+                  const has = now[seat].includes(i);
+                  if (!has && now.flat().length >= swapPhase.count) return now;
+                  return now.map((p, g) => (g !== seat ? p : has ? p.filter((x) => x !== i) : [...p, i]));
+                })
+            : null
+        }
+      />
+    );
+
   const wall = (seat: number) => {
     const side = SIDES[seat];
     const p = game.players[seat];
@@ -1982,9 +2005,11 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
             {wall(1)}
             <div className="play-pond-slot play-pond-slot-top">
               <Pond tiles={game.players[2].discards} riichiAt={game.players[2].riichi?.discard} side="top" pinLast={discardFrom === 2} />
+              {swapPond(2, "top")}
             </div>
             <div className="play-pond-slot play-pond-slot-left">
               <Pond tiles={game.players[3].discards} riichiAt={game.players[3].riichi?.discard} side="left" pinLast={discardFrom === 3} />
+              {swapPond(3, "left")}
             </div>
             <div className="play-middle">
               <Compass game={game} active={over ? null : activeSeat} center={compassCenter} countdown={over ? null : countdown} />
@@ -2003,9 +2028,11 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
             </div>
             <div className="play-pond-slot play-pond-slot-right">
               <Pond tiles={game.players[1].discards} riichiAt={game.players[1].riichi?.discard} side="right" pinLast={discardFrom === 1} />
+              {swapPond(1, "right")}
             </div>
             <div className="play-pond-slot play-pond-slot-bottom">
               <Pond tiles={me.discards} riichiAt={me.riichi?.discard} side="bottom" pinLast={discardFrom === HUMAN} />
+              {swapPond(HUMAN, "bottom")}
             </div>
           </div>
         </div>
@@ -2172,7 +2199,19 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
               ))}
             </span>
           )}
-          {waits ? (
+          {swapPhase && !swapRolling ? (
+            <SwapBar
+              phase={swapPhase}
+              nameOf={(seat) => (seat === HUMAN ? "You" : nameOf(seat))}
+              seated={seated && !autoplay}
+              picks={swapPicks}
+              setPicks={setSwapPicks}
+              after={takersAfter(swapPhase, game.dealer)}
+              giveCount={swapHand.length}
+              onGive={giveSwap}
+              onTake={takeSwap}
+            />
+          ) : waits ? (
             <span className="play-bar-waits" aria-label={`Ready, waiting on ${waits.map((w) => `${tileLabel(w.tile)} (${w.left} left)`).join(", ")}`}>
               聽
               {waits.map((w) => (
@@ -2194,21 +2233,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
 
         {burst && <CallBurst key={burst.id} seat={burst.seat} label={burst.label} />}
 
-        {swapPhase && !rolling && !over && (
-          <SwapPanel
-            phase={swapPhase}
-            rolling={swapRolling}
-            nameOf={(seat) => (seat === HUMAN ? "You" : nameOf(seat))}
-            windOf={(seat) => WIND_CHARS[seatWind(seat, game.dealer)]}
-            seated={seated && !autoplay}
-            picks={swapPicks}
-            setPicks={setSwapPicks}
-            after={takersAfter(swapPhase, game.dealer)}
-            giveCount={swapHand.length}
-            onGive={giveSwap}
-            onTake={takeSwap}
-          />
-        )}
+        {swapPhase && swapRolling && !rolling && <SwapDice phase={swapPhase} />}
 
         {rolling && game.dice && (
           <div className="play-dice" role="status">

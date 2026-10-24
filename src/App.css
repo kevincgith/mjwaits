@@ -15931,63 +15931,77 @@ button.sc-stat:active {
 }
 
 /* ---- 換牌 (PlaySwap): the swapping before the first draw --------------------
-   A lacquer panel over the middle of the table: the dealer's two dice (the
-   second tumbling in after the first), then each round who has laid their
-   tiles out, and the face-down piles - tap the ones you'll take. Kept clear
-   of your hand, which you tap to choose what to give. */
+   Each seat's face-down pile lies on the felt where its discards go - the
+   table's own 3D blocks (.play-back: a back on top, four sides), so they
+   show their depth from your seat like every other tile there. The dice
+   tumble over the middle first; the swap's line and buttons sit in the bar
+   under the table, out of the way of the piles and your hand. */
 
-.play-swap {
-  position: absolute;
-  left: 50%;
-  top: 45%;
-  z-index: 6;
-  translate: -50% -50%;
-  display: grid;
-  justify-items: center;
-  gap: 0.45rem;
-  width: min(30rem, calc(100 * var(--vw) - 2rem));
-  padding: 0.55rem 0.9rem 0.65rem;
-  box-sizing: border-box;
-  border-radius: var(--radius-lg);
-  background: linear-gradient(180deg, rgba(40, 32, 24, 0.94), rgba(20, 15, 10, 0.94));
+/* A pile: a little bigger than discards - few tiles, and you tap them. */
+.play-swap-pond {
+  gap: 0.06em;
+  font-size: 1.3em;
+}
+
+.play-swap-pond.play-pond-top,
+.play-swap-pond.play-pond-bottom {
+  width: auto;
+  flex-wrap: nowrap;
+}
+
+/* A side pile in rows of three along its side, the next row further out
+   (as its pond fills, rows of six there) - so it stays clear of your hand. */
+.play-swap-pond:is(.play-pond-left, .play-pond-right) {
+  height: calc(3 * 0.8em);
+}
+
+/* Yours: the size of your discards - there to see, not to take from. (Never
+   faded: a 3D tile turned partly transparent is drawn flat.) */
+.play-swap-pond.play-pond-bottom {
+  font-size: 1em;
+}
+
+.play-swap-tile {
+  position: relative;
+  display: inline-block;
+  line-height: 0;
+  transform-style: preserve-3d;
+}
+
+/* The side seats' tiles lie along their side: the block's footprint turned
+   (long across, as they face it), not a picture rotated - its sides stand
+   where they really are, the long one toward you. */
+.play-swap-pond:is(.play-pond-left, .play-pond-right) .play-back {
+  width: 0.96em;
+  height: 0.74em;
+}
+
+/* Taken: the place stays, empty. */
+.play-swap-tile.is-gap > .play-back {
+  visibility: hidden;
+}
+
+.play-swap-pond.is-pickable .play-swap-tile:not(.is-gap) {
+  cursor: pointer;
+}
+
+/* Picked: lifted off the felt, its back rimmed in gold. */
+.play-swap-tile > .play-back {
+  transition: transform 0.15s ease;
+}
+
+.play-swap-tile.is-picked > .play-back {
+  transform: translateZ(0.45em);
+}
+
+.play-swap-tile.is-picked > .play-back > .tile-top {
   box-shadow:
-    0 0 0 1px rgba(255, 209, 102, 0.25),
-    var(--shadow-float);
-  color: var(--play-on-felt);
-  font-size: 0.8rem;
-  /* Popped in by scale alone (see .play-dice). */
-  animation: play-pop 0.2s ease-out both;
+    inset 0 0 0 0.06em var(--play-gold),
+    0 0 0.3em rgba(255, 209, 102, 0.7);
 }
 
-.play-swap-head {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-}
-
-.play-swap-title {
-  color: var(--play-gold);
-  font-size: 1.05rem;
-  font-weight: 800;
-  letter-spacing: 0.1em;
-}
-
-.play-swap-dice {
-  display: flex;
-  gap: 0.35rem;
-  font-size: 1.5rem;
-}
-
-.play-swap.is-rolling .play-swap-dice {
-  font-size: 2.4rem;
-}
-
-.play-swap-sum {
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-
-.play-swap.is-rolling .play-swap-sum {
+/* The dice, a size up from the deal's. */
+.play-swap-dice-roll .play-swap-sum {
   opacity: 0;
   animation: play-swap-reveal 0.3s 1.3s ease-out forwards;
 }
@@ -15998,245 +16012,52 @@ button.sc-stat:active {
   }
 }
 
-.play-swap-round {
-  color: var(--play-on-felt-muted);
-  text-align: center;
-}
-
-/* Round the table: each pile where its player sits - across at the top,
-   right and left at the sides, yours below - the round in the middle. */
-.play-swap-table {
-  display: grid;
-  grid-template-areas:
-    "left top right"
-    "left mid right";
-  grid-template-columns: 1fr auto 1fr;
+/* In the bar: the round, what's happening, your buttons. */
+.play-swap-bar {
+  display: inline-flex;
   align-items: center;
-  justify-items: center;
-  gap: 0.35rem 0.6rem;
-  width: 100%;
+  gap: 0.45rem;
+  min-width: 0;
 }
 
-/* Giving, it sits higher - clear of your hand, where you pick what to give
-   - and the piles, only filling up, are drawn small. */
-.play-swap:not(.is-taking) {
-  top: 38%;
+.play-swap-bar > b {
+  color: var(--play-gold);
+  white-space: nowrap;
 }
 
-.play-swap:not(.is-taking) :is(.play-swap-back, .play-swap-gap) {
-  width: clamp(1rem, calc(4.4 * var(--vh)), 1.4rem);
-}
-
-.play-swap-round {
-  margin-top: -0.2rem;
-  color: var(--play-on-felt-muted);
-  text-align: center;
-}
-
-.play-swap-mid {
-  grid-area: mid;
-}
-
-.play-swap-pile {
-  display: grid;
-  justify-items: center;
-  gap: 0.2rem;
-  padding: 0.25rem 0.35rem;
-  border-radius: 0.6rem;
-  transition: background 0.2s ease;
-}
-
-.play-swap-pile.is-top { grid-area: top; }
-.play-swap-pile.is-left { grid-area: left; }
-.play-swap-pile.is-right { grid-area: right; }
-.play-swap-pile.is-mine { grid-area: mid; align-self: end; opacity: 0.55; font-size: 0.8em; }
-
-.play-swap-pile.is-mine .play-swap-back,
-.play-swap-pile.is-mine .play-swap-gap {
-  width: clamp(1rem, calc(4.4 * var(--vh)), 1.4rem);
-}
-
-.play-swap-pile.is-taking {
-  background: rgba(255, 209, 102, 0.12);
-  box-shadow: inset 0 0 0 1px rgba(255, 209, 102, 0.35);
-}
-
-.play-swap-who {
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
-  max-width: 9rem;
+.play-swap-note {
   overflow: hidden;
-  font-weight: 700;
+  color: var(--play-on-felt-muted);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.play-swap-who b {
-  min-width: 1.1rem;
-  border-radius: 999px;
-  background: var(--play-gold);
-  color: var(--play-ink-on-gold);
-  text-align: center;
-}
-
-.play-swap-wind {
-  display: inline-grid;
-  place-items: center;
-  width: 1.15rem;
-  height: 1.15rem;
-  border-radius: 50%;
-  background: #1c150e;
-  box-shadow: 0 0 0 1px rgba(255, 209, 102, 0.55);
-  color: var(--play-gold);
-  font-family: var(--play-cjk);
-  font-size: 0.68rem;
-}
-
-/* Across and yours: a row, as the tiles lie in front of you. The players
-   at your sides: a column of tiles turned sideways, running along their
-   side of the table as their ponds do. The places keep their spots as
-   tiles are taken. */
-.play-swap-backs {
-  display: flex;
-  gap: 0.25rem;
-}
-
-.play-swap-pile:is(.is-left, .is-right) .play-swap-backs {
-  flex-direction: column;
-}
-
-.play-swap-pile:is(.is-left, .is-right) :is(.play-swap-back, .play-swap-gap) {
-  width: calc(clamp(1.5rem, calc(6.4 * var(--vh)), 2.1rem) * 4 / 3);
-  aspect-ratio: 4 / 3;
-}
-
-.play-swap:not(.is-taking) .play-swap-pile:is(.is-left, .is-right) :is(.play-swap-back, .play-swap-gap) {
-  width: calc(clamp(1rem, calc(4.4 * var(--vh)), 1.4rem) * 4 / 3);
-}
-
-/* Seen from your seat, a sideways tile shows its thickness along its near
-   edge - the long one now - just as an upright tile shows it along its
-   short one: the ivory depth stays underneath, never at the side. Picked,
-   it slides toward the middle of the table. */
-.play-swap-pile:is(.is-left, .is-right) .play-swap-back {
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.35),
-    0 0.16rem 0 var(--play-ivory),
-    0 0.22rem 0.32rem rgba(0, 0, 0, 0.4);
-}
-
-.play-swap-pile.is-left .play-swap-back.is-picked {
-  translate: 0.3rem 0;
-}
-
-.play-swap-pile.is-right .play-swap-back.is-picked {
-  translate: -0.3rem 0;
-}
-
-.play-swap-pile:is(.is-left, .is-right) .play-swap-back.is-picked {
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.35),
-    0 0 0 2px var(--play-gold),
-    0 0.16rem 0 var(--play-ivory),
-    0 0.4rem 0.6rem rgba(0, 0, 0, 0.45);
-}
-
-/* The depth below each turned tile needs its room in the column. */
-.play-swap-pile:is(.is-left, .is-right) .play-swap-backs {
-  gap: 0.32rem;
-}
-
-/* A face-down tile: the jade back, a tile's proportions, big enough to tap. */
-.play-swap-back,
-.play-swap-gap {
-  width: clamp(1.5rem, calc(6.4 * var(--vh)), 2.1rem);
-  aspect-ratio: 3 / 4;
-  box-sizing: border-box;
-  border-radius: 0.24rem;
-}
-
-.play-swap-back {
-  padding: 0;
-  border: none;
-  background: linear-gradient(160deg, #4cc062, var(--play-back) 55%, var(--play-back-edge));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.35),
-    0 0.16rem 0 var(--play-ivory),
-    0 0.22rem 0.32rem rgba(0, 0, 0, 0.4);
-  transition: translate 0.15s ease, box-shadow 0.15s ease;
-}
-
-.play-swap-back:disabled {
-  cursor: default;
-}
-
-.play-swap-back.is-picked {
-  translate: 0 -0.3rem;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.35),
-    0 0 0 2px var(--play-gold),
-    0 0.16rem 0 var(--play-ivory),
-    0 0.5rem 0.6rem rgba(0, 0, 0, 0.45);
-}
-
-/* Where a tile was taken from: an empty place, the rest unmoved. */
-.play-swap-gap {
-  background: rgba(0, 0, 0, 0.45);
-  box-shadow: inset 0 0.08rem 0.25rem rgba(0, 0, 0, 0.6);
-}
-
-.play-swap-gap.is-coming {
-  background: none;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
-}
-
-.play-swap-buttons {
-  display: flex;
-  gap: 0.35rem;
-}
-
-.play-swap-clear {
-  min-height: 2rem;
-  padding: 0 0.8rem;
-  border: none;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.1);
-  color: var(--play-on-felt);
-  font-weight: 700;
-}
-
-.play-swap-act {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.6rem;
-  width: 100%;
-  padding-top: 0.2rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.play-swap-act .is-ok {
+.play-swap-note.is-ok {
   color: var(--play-pos);
 }
 
-.play-swap-act .is-warn {
+.play-swap-note.is-warn {
   color: #ffc76b;
 }
 
-.play-swap-act .is-error {
+.play-swap-note.is-error {
   color: #ff8f80;
 }
 
-.play-swap-go {
+.play-swap-go,
+.play-swap-clear {
   flex: none;
-  min-height: 2rem;
-  padding: 0 0.9rem;
+  min-height: 1.7rem;
+  padding: 0 0.75rem;
   border: none;
   border-radius: 999px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.play-swap-go {
   background: linear-gradient(180deg, #ffe08a, var(--play-gold) 50%, var(--play-gold-deep));
   color: var(--play-ink-on-gold);
-  font-weight: 800;
 }
 
 .play-swap-go.is-warn {
@@ -16247,6 +16068,11 @@ button.sc-stat:active {
   background: rgba(255, 255, 255, 0.1);
   color: var(--text-muted);
   cursor: default;
+}
+
+.play-swap-clear {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--play-on-felt);
 }
 
 /* The settings sheet. */
@@ -16323,8 +16149,7 @@ button.sc-stat:active {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .play-swap,
-  .play-swap.is-rolling .play-swap-sum {
+  .play-swap-dice-roll .play-swap-sum {
     animation: none;
     opacity: 1;
   }
