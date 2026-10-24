@@ -6688,20 +6688,18 @@ html.playing body {
   vertical-align: middle;
 }
 
-.play-meld {
-  display: inline-flex;
-  padding: 0.04em;
-  border-radius: var(--radius-xs);
-  background: rgba(0, 0, 0, 0.18);
-}
-
-/* Flowers on the same plate as a meld, so they line up with the melds
-   beside them (unplated, they sat a little lower). */
+/* A meld, and the flowers beside it, spaced alike so they line up. On the
+   table each group casts one soft shadow on the felt - no plate under it
+   (a dark box with hard edges). */
+.play-meld,
 .play-flowers {
   display: inline-flex;
   padding: 0.04em;
-  border-radius: var(--radius-xs);
-  background: rgba(0, 0, 0, 0.18);
+  border-radius: 0.14em;
+}
+
+.play-felt :is(.play-meld, .play-flowers) {
+  box-shadow: 0 0.05em 0.5em 0.04em rgba(0, 0, 0, 0.3);
 }
 
 
@@ -7524,7 +7522,7 @@ html.playing body {
 :is(.play-felt, .play-hand) .tile-glyph.tile-art,
 :is(.play-felt, .play-hand) .play-back {
   border-radius: calc(var(--tile-r) * 1.5);
-  box-shadow: 0 0 0.16em 0.03em rgba(0, 0, 0, 0.38);
+  box-shadow: 0 0.03em 0.28em rgba(0, 0, 0, 0.3);
 }
 
 :is(.play-felt, .play-hand) .tile-glyph.tile-art::after,
