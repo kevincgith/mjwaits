@@ -16052,9 +16052,9 @@ button.sc-stat:active {
 }
 
 /* A taken tile, flying from its pile to the taker's hand: lifted and held
-   a beat, then off to their seat, shrinking into their hand - one after
-   another with the rest of the take, never touching (see the flights in
-   PlayPanel). */
+   a beat, then off to their seat at its own size, fading as it lands - one
+   after another with the rest of the take, never touching (see the flights
+   in PlayPanel). */
 /* Hidden until its turn: till then the tile is still drawn in its pile. */
 .play-swap-flight {
   position: fixed;
@@ -16091,12 +16091,14 @@ button.sc-stat:active {
   25% {
     transform: translate(calc(var(--dx) * 0.05), calc(var(--dy) * 0.05 - 0.45em)) scale(1);
   }
-  85% {
+  /* Into the hand at its own size, fading only as it lands. */
+  88% {
+    transform: translate(calc(var(--dx) * 0.97), calc(var(--dy) * 0.97)) scale(1);
     opacity: 1;
   }
   100% {
     visibility: visible;
-    transform: translate(var(--dx), var(--dy)) scale(0.5);
+    transform: translate(var(--dx), var(--dy)) scale(1);
     opacity: 0;
   }
 }

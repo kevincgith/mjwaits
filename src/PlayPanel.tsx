@@ -1219,8 +1219,14 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
   // dice tumble first (swapRolling), one then the other; then you pick the
   // tiles to give from your hand (swapHand, places in it) and, on your take,
   // the face-down tiles from the others' piles (swapPicks, places per pile).
+  // Tiles in flight from a take (see the flights below) - and while any are,
+  // the swap waits: nobody gives for the next round before they've had
+  // what they took.
+  const [flights, setFlights] = useState<Flight[]>([]);
+  const [flown, setFlown] = useState<Set<number>>(new Set());
+  const swapFlying = flights.length > 0;
   const swapPhase = game.phase.kind === "swap" ? game.phase : null;
-  const swapGiving = !!swapPhase && seated && !autoplay && swapPhase.stage === "give" && !swapPhase.piles[HUMAN];
+  const swapGiving = !!swapPhase && seated && !autoplay && !swapFlying && swapPhase.stage === "give" && !swapPhase.piles[HUMAN];
   const [swapHand, setSwapHand] = useState<number[]>([]);
   const [swapPicks, setSwapPicks] = useState<number[][]>([[], [], [], []]);
   const swapStep = swapPhase ? `${swapPhase.round}${swapPhase.stage}${swapPhase.taker}` : "";
@@ -1258,8 +1264,6 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
   // off when the last is halfway, and land in a line along the way in, the
   // first deepest - so they never touch on the way; till its turn, a tile
   // stays drawn in its pile (`flown`: the ones that have set off).
-  const [flights, setFlights] = useState<Flight[]>([]);
-  const [flown, setFlown] = useState<Set<number>>(new Set());
   const heldIn = (seat: number) => new Map(flights.filter((f) => f.seat === seat && !flown.has(f.id)).map((f) => [f.place, f.tile]));
   // The last take of a round ends it - the piles leave the felt at once - so
   // that take's tiles are drawn where they lay (`ghost`: each pile's length)
@@ -1295,7 +1299,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
       );
     if (!fresh.length || !prev.width) return;
     if (roundOver) setGhost(was.piles.map((p) => p?.length ?? 0));
-    const LAND = 0.8; // landing spots apart along the way in, in tile widths (they land at half size)
+    const LAND = 0.6; // landing spots apart along the way in, in tile widths - each fades as it lands, before the next arrives
     const STAGGER = SWAP_STAGGER_MS; // one after another, each off when the last is halfway
     const now = Date.now();
     const next: Flight[] = [];
@@ -1396,6 +1400,8 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
       const factor = SPEEDS[speed].factor;
       const bot = (seat: number) => seat !== HUMAN || autoplay;
       if (phase.stage === "give") {
+        // Not till the last round's tiles are in hand.
+        if (swapFlying) return;
         // The bots lay out their tiles together (and yours, on autoplay).
         const givers = [0, 1, 2, 3].filter((seat) => !phase.piles[seat] && bot(seat));
         if (!givers.length) return;
@@ -1472,7 +1478,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     const id = window.setTimeout(move, delay * SPEEDS[speed].factor);
     return () => window.clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [game, rolling, swapRolling, myTurn, autoplay]);
+  }, [game, rolling, swapRolling, swapFlying, myTurn, autoplay]);
 
   // The turn timer (off by default): runs only while the human has to
   // decide, and on running out passes on a call or throws the drawn tile.
@@ -1773,7 +1779,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
   const wonWith = (seat: number) =>
     result && result.tile && (result.winner === seat || result.alsoWon?.some((w) => w.winner === seat)) ? result.tile : null;
   // 換牌: a seat's face-down pile, where its discards go. Tappable on your take.
-  const myTake = !!swapPhase && seated && !autoplay && !swapRolling && swapPhase.stage === "take" && swapPhase.taker === HUMAN;
+  const myTake = !!swapPhase && seated && !autoplay && !swapRolling && !swapFlying && swapPhase.stage === "take" && swapPhase.taker === HUMAN;
   const swapPond = (seat: number, side: "top" | "left" | "right" | "bottom") => {
     // A round's last take, its tiles still waiting to fly: drawn from the
     // ghost - every place empty but the ones held.
@@ -2151,7 +2157,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
         <div className={`play-me${autoplay ? " is-auto" : ""}`}>
           <div className="play-hand-wrap">
             <div className="play-calls">
-              {swapPhase && !swapRolling && !rolling && !over && (
+              {swapPhase && !swapRolling && !swapFlying && !rolling && !over && (
                 <SwapControls
                   part="actions"
                   phase={swapPhase}
