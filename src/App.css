@@ -6326,8 +6326,8 @@ html.playing body {
   display: inline-flex;
   line-height: 0;
   transform-style: preserve-3d;
-  animation: 0.42s cubic-bezier(0.55, 0, 1, 0.45) both;
-  animation-delay: calc(var(--topple-at, 0s) + var(--i, 0) * 0.035s);
+  animation: var(--topple-dur, 0.6s) cubic-bezier(0.55, 0, 1, 0.45) both;
+  animation-delay: calc(var(--topple-at, 0s) + var(--i, 0) * var(--topple-step, 0.07s));
 }
 
 .play-seat-top .play-topple {
@@ -6347,7 +6347,7 @@ html.playing body {
 
 .play-seat .play-meld.is-revealed .play-win-tile > .tile-glyph {
   animation: play-drop 0.36s both;
-  animation-delay: calc(var(--topple-at, 0s) + var(--n, 0) * 0.035s + 0.45s);
+  animation-delay: calc(var(--topple-at, 0s) + var(--n, 0) * var(--topple-step, 0.07s) + var(--topple-dur, 0.6s));
 }
 
 @keyframes play-topple-far {
@@ -6404,8 +6404,9 @@ html.playing body {
 /* Your own hand falls back onto the table when you win: each block tips
    away from you about its foot until it lies at the felt's angle. */
 .play-hand.is-toppled :is(.tile-glyph.tile-art, .play-back) {
-  animation: play-topple-mine 0.46s cubic-bezier(0.55, 0, 1, 0.45) both;
-  animation-delay: calc(var(--i, 0) * 0.035s);
+  /* Timed as a winner's (TOPPLE_WINNER in PlayPanel). */
+  animation: play-topple-mine 0.6s cubic-bezier(0.55, 0, 1, 0.45) both;
+  animation-delay: calc(0.2s + var(--i, 0) * 0.07s);
 }
 
 @keyframes play-topple-mine {
