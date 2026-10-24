@@ -102,6 +102,9 @@ export function viewFor(s: GameState, you: number, shown: (seat: number) => bool
     };
   } else if (s.phase.kind === "claims") {
     phase = { kind: "claims", from: s.phase.from, tile: { ...s.phase.tile }, ...(s.phase.robKong ? { robKong: true as const } : {}) };
+  } else if (s.phase.kind === "swap") {
+    // 換牌 is played only at the Play table so far, never online.
+    throw new Error("No seat view of 換牌 yet");
   } else {
     const { score, alsoWon, ...rest } = s.phase.result;
     phase = {

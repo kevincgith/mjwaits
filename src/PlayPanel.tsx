@@ -36,6 +36,9 @@ import {
   retractClaim,
   surrender,
   surrenderable,
+  swapGive,
+  swapTake,
+  takersAfter,
   riichiDiscards,
   riichiForcedDiscard,
   roundLabel,
@@ -54,6 +57,9 @@ import {
   type TurnMove,
 } from "@mjwaits/shared/engine/game";
 import { allTileKinds, getWaits, shanten, sortTiles, tileKey, tileLabel, type Tile } from "@mjwaits/shared/engine/mahjong";
+import { blindPicks, botGive, botSplit, DEFAULT_SWAP_RULES, type SwapRules } from "@mjwaits/shared/engine/swap";
+import { PlayDie } from "./PlayDie";
+import { SwapPanel, SwapSheet } from "./PlaySwap";
 import type { BonusTile } from "@mjwaits/shared/engine/scoring";
 import { BonusGlyphSpan, TileGlyphSpan, TileSides } from "./TileGlyphs";
 import {
@@ -206,6 +212,7 @@ interface Saved {
   speed?: Speed;
   oneTap?: boolean;
   multiWin?: boolean; // 一炮多響 (else 截胡)
+  swapRules?: SwapRules; // 換牌: which rounds, and what the dice mean
   record?: boolean;
   // The bot ids at seats 1-3.
   opponents?: string[];
@@ -602,26 +609,6 @@ function OpponentsSheet({
   );
 }
 
-// The pips on each face, as cells of a 3x3 grid (1-9, reading order) - as
-// on the Dice tab.
-const DIE_PIPS: Record<number, number[]> = { 1: [5], 2: [3, 7], 3: [3, 5, 7], 4: [1, 3, 7, 9], 5: [1, 3, 5, 7, 9], 6: [1, 3, 4, 6, 7, 9] };
-
-// One Chinese die (red pips on the 1 and the 4), tumbling in when `rolling`.
-function PlayDie({ value, rolling, index }: { value: number; rolling: boolean; index: number }) {
-  return (
-    <span
-      className={`play-die${value === 1 || value === 4 ? " is-red" : ""}${value === 1 ? " is-one" : ""}${rolling ? " is-rolling" : ""}`}
-      style={{ animationDelay: `${index * 70}ms` }}
-      role="img"
-      aria-label={`${value}`}
-    >
-      {Array.from({ length: 9 }, (_, i) => (
-        <span key={i} className={DIE_PIPS[value]?.includes(i + 1) ? "play-die-pip" : undefined} />
-      ))}
-    </span>
-  );
-}
-
 // ---- The table ------------------------------------------------------------
 
 // Playing at an online table: what the server sent, and how to answer it.
@@ -662,6 +649,12 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
   useEffect(() => {
     if (!online && !!game.multiWin !== multiWin) setGame((g) => ({ ...g, multiWin }));
   }, [game, multiWin, online]);
+  // 換牌's settings ride on the game like multiWin, from the next deal.
+  const [swapRules, setSwapRules] = useState<SwapRules>(() => saved?.swapRules ?? saved?.game?.swapRules ?? DEFAULT_SWAP_RULES);
+  useEffect(() => {
+    if (!online && JSON.stringify(game.swapRules) !== JSON.stringify(swapRules)) setGame((g) => ({ ...g, swapRules }));
+  }, [game, swapRules, online]);
+  const [swapSheetOpen, setSwapSheetOpen] = useState(false);
   // Record my play (off by default): your decisions, kept in this browser for
   // training a learned bot that plays like you (lib/ml/recorder.ts).
   const [record, setRecord] = useState(() => saved?.record ?? false);
@@ -1021,8 +1014,8 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
 
   // This device's own game (never an online one).
   useEffect(
-    () => save({ game: localGame, totals: localTotals, hint, timer, opponents, speed, oneTap, record, multiWin, ledger: localLedger }),
-    [localGame, localTotals, hint, timer, opponents, speed, oneTap, record, multiWin, localLedger]
+    () => save({ game: localGame, totals: localTotals, hint, timer, opponents, speed, oneTap, record, multiWin, swapRules, ledger: localLedger }),
+    [localGame, localTotals, hint, timer, opponents, speed, oneTap, record, multiWin, swapRules, localLedger]
   );
 
   // The menu closes on a tap anywhere outside it, and disarms New game.
@@ -1222,6 +1215,40 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
 
   const me = game.players[HUMAN];
   const myTurn = seated && waitedOn && game.phase.kind === "turn" && game.phase.seat === HUMAN;
+  // 換牌: the swapping before the first draw (see PlaySwap). The dealer's two
+  // dice tumble first (swapRolling), one then the other; then you pick the
+  // tiles to give from your hand (swapHand, places in it) and, on your take,
+  // the face-down tiles from the others' piles (swapPicks, places per pile).
+  const swapPhase = game.phase.kind === "swap" ? game.phase : null;
+  const swapGiving = !!swapPhase && seated && !autoplay && swapPhase.stage === "give" && !swapPhase.piles[HUMAN];
+  const [swapHand, setSwapHand] = useState<number[]>([]);
+  const [swapPicks, setSwapPicks] = useState<number[][]>([[], [], [], []]);
+  const swapStep = swapPhase ? `${swapPhase.round}${swapPhase.stage}${swapPhase.taker}` : "";
+  useEffect(() => {
+    setSwapHand([]);
+    setSwapPicks([[], [], [], []]);
+  }, [swapStep]);
+  const swapDeal = swapPhase && swapPhase.round === 1 && swapPhase.stage === "give" && swapPhase.piles.every((p) => !p) ? JSON.stringify([game.dealer, game.dealerStreak, game.roundWind, game.dice, swapPhase.dice]) : null;
+  const [swapRolling, setSwapRolling] = useState(false);
+  const swapRolledFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!swapDeal || rolling || swapRolledFor.current === swapDeal) return;
+    swapRolledFor.current = swapDeal;
+    setSwapRolling(true);
+  }, [swapDeal, rolling]);
+  useEffect(() => {
+    if (!swapRolling) return;
+    const id = window.setTimeout(() => setSwapRolling(false), speed === "fast" ? 1300 : 2200);
+    return () => window.clearTimeout(id);
+  }, [swapRolling, speed]);
+  const giveSwap = () => {
+    if (!swapPhase || swapHand.length !== swapPhase.count) return;
+    advance(swapGive(game, HUMAN, swapHand.map((i) => handTiles[i])));
+  };
+  const takeSwap = () => {
+    if (!swapPhase) return;
+    advance(swapTake(game, HUMAN, swapPicks));
+  };
   const drawn = myTurn && game.phase.kind === "turn" ? game.phase.drawn : null;
   const forbidden = myTurn ? forbiddenDiscards(game) : [];
   // Tiles you can't throw right now: 食替, a locked 叮 hand's anything-but-
@@ -1264,8 +1291,30 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
       const id = window.setTimeout(() => doTurn({ kind: "discard", tile }), 700);
       return () => window.clearTimeout(id);
     }
-    if (rolling) return;
+    if (rolling || swapRolling) return;
     const phase = game.phase;
+    if (phase.kind === "swap") {
+      const factor = SPEEDS[speed].factor;
+      const bot = (seat: number) => seat !== HUMAN || autoplay;
+      if (phase.stage === "give") {
+        // The bots lay out their tiles together (and yours, on autoplay).
+        const givers = [0, 1, 2, 3].filter((seat) => !phase.piles[seat] && bot(seat));
+        if (!givers.length) return;
+        const id = window.setTimeout(() => {
+          let g = game;
+          for (const seat of givers) g = swapGive(g, seat, botGive(g.players[seat].hand, phase.count));
+          advance(g);
+        }, 900 * factor);
+        return () => window.clearTimeout(id);
+      }
+      if (!bot(phase.taker)) return;
+      const id = window.setTimeout(() => {
+        const sizes = phase.piles.map((p) => p!.length);
+        const split = botSplit(sizes, phase.taker, takersAfter(phase, game.dealer), phase.count);
+        advance(swapTake(game, phase.taker, sizes.map((n, g) => blindPicks(n, split[g]))));
+      }, 1300 * factor);
+      return () => window.clearTimeout(id);
+    }
     let move: (() => void) | null = null;
     let delay = PASS_DELAY_MS;
     if (phase.kind === "turn" && phase.seat !== HUMAN && learnedBot(phase.seat)) {
@@ -1322,7 +1371,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     const id = window.setTimeout(move, delay * SPEEDS[speed].factor);
     return () => window.clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [game, rolling, myTurn, autoplay]);
+  }, [game, rolling, swapRolling, myTurn, autoplay]);
 
   // The turn timer (off by default): runs only while the human has to
   // decide, and on running out passes on a call or throws the drawn tile.
@@ -1413,6 +1462,11 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
 
   const tapTile = (index: number) => {
     if (rolling) return;
+    if (swapGiving) {
+      // 換牌: picking the tiles to give.
+      setSwapHand((sel) => (sel.includes(index) ? sel.filter((i) => i !== index) : sel.length < swapPhase!.count ? [...sel, index] : sel));
+      return;
+    }
     if (!myTurn || isForbidden(handTiles[index])) return;
     // One-tap throws straight away - except when declaring 叮, which always
     // takes the confirming second tap.
@@ -1444,7 +1498,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     setMenuOpen(false);
     setSelected(null);
     setResultHidden(false);
-    const g = newGame();
+    const g = newGame({ multiWin, swapRules });
     ledgerFrom.current = g;
     const fresh = newPlayLedger(playerNames(opponents), g.dealer);
     setLedger({ ...fresh, events: playEvents(null, g, fresh.seats) });
@@ -1859,6 +1913,17 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
                 <span>Opponents</span>
                 <span className="play-menu-value">{opponents.map((id) => shortName(botById(id))).join(" · ")} ›</span>
               </button>
+              <button
+                type="button"
+                className="play-menu-link"
+                onClick={() => {
+                  setMenuOpen(false);
+                  setSwapSheetOpen(true);
+                }}
+              >
+                <span>換牌 Swap tiles</span>
+                <span className="play-menu-value">{swapRules.winds.length ? swapRules.winds.map((w) => ["", "東", "南", "西", "北"][w]).join(" ") : "Off"} ›</span>
+              </button>
               <div className="play-menu-row">
                 <span>Bot speed</span>
                 <span className="play-menu-seg">
@@ -2043,14 +2108,14 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
                       "play-hand-tile",
                       isDrawn && "is-drawn",
                       i === winIndex && "is-winner",
-                      selected === i && "is-selected",
+                      (selected === i || swapHand.includes(i)) && "is-selected",
                       i === hintIndex && "is-hint",
                       hint && myTurn && dangerous.has(tileKey(t)) && "is-danger",
                       barred && "is-barred",
                     ]
                       .filter(Boolean)
                       .join(" ")}
-                    disabled={!myTurn || barred}
+                    disabled={!(myTurn || swapGiving) || barred}
                     onClick={() => tapTile(i)}
                     title={barred ? "食替 – can't discard this now" : undefined}
                     aria-label={barred ? `${tileLabel(t)} (食替 – can't discard this now)` : selected === i ? `Discard ${tileLabel(t)}` : tileLabel(t)}
@@ -2118,6 +2183,21 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
 
         {burst && <CallBurst key={burst.id} seat={burst.seat} label={burst.label} />}
 
+        {swapPhase && !rolling && !over && (
+          <SwapPanel
+            phase={swapPhase}
+            rolling={swapRolling}
+            nameOf={(seat) => (seat === HUMAN ? "You" : nameOf(seat))}
+            seated={seated && !autoplay}
+            picks={swapPicks}
+            setPicks={setSwapPicks}
+            after={takersAfter(swapPhase, game.dealer)}
+            giveCount={swapHand.length}
+            onGive={giveSwap}
+            onTake={takeSwap}
+          />
+        )}
+
         {rolling && game.dice && (
           <div className="play-dice" role="status">
             <div className="play-dice-row">
@@ -2153,6 +2233,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
             onClose={() => setReviewOpen(false)}
           />
         )}
+        {swapSheetOpen && <SwapSheet rules={swapRules} onChange={setSwapRules} onClose={() => setSwapSheetOpen(false)} />}
         {opponentsOpen && <OpponentsSheet opponents={opponents} learned={model?.styles ?? null} onChange={setOpponents} onClose={() => setOpponentsOpen(false)} />}
 
         {result && !resultHidden && !cardHeld && (
