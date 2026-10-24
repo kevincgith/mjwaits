@@ -7072,6 +7072,49 @@ html.playing body {
   text-shadow: 0 0 0.35em rgba(127, 243, 224, 0.6);
 }
 
+/* The turn timer: a light bar on the rim, draining clockwise from the top
+   (see CountdownRing). Gold, turning red as time runs short. */
+.play-countdown {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.play-countdown path {
+  fill: none;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+
+.play-countdown-track {
+  stroke: rgba(255, 255, 255, 0.08);
+}
+
+.play-countdown-bar {
+  stroke: var(--play-gold);
+  stroke-dasharray: 1 1;
+  filter: drop-shadow(0 0 0.6px rgba(255, 209, 102, 0.9));
+  animation-name: play-countdown;
+  animation-timing-function: linear;
+  animation-fill-mode: both;
+}
+
+@keyframes play-countdown {
+  0% {
+    stroke-dashoffset: 0;
+  }
+  65% {
+    stroke: var(--play-gold);
+  }
+  100% {
+    stroke-dashoffset: -1;
+    stroke: #ff5a4f;
+  }
+}
+
 /* The discard up for grabs, shown once more in a bubble - a callout, not
    another tile on the table: it stands up off the felt to face you, the
    tile upright whoever threw it, with a point toward the thrower. It sits

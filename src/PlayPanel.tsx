@@ -400,11 +400,36 @@ const RevealedHand = memo(
 );
 const Pond = memo(PondView, (a, b) => a.side === b.side && a.pinLast === b.pinLast && a.riichiAt === b.riichiAt && tilesKey(a.tiles) === tilesKey(b.tiles));
 
+// The turn timer as a light bar around the compass's rim, from the top and
+// clockwise: full when the clock starts, gone when it runs out. Drawn by a
+// CSS animation as long as the whole clock, started part-way through when
+// it began before now (so it drains smoothly, not a step a second).
+interface Countdown {
+  total: number; // seconds
+  endsAt: number; // ms
+}
+
+function CountdownRing({ total, endsAt }: Countdown) {
+  const ms = total * 1000;
+  const elapsed = Math.min(ms, Math.max(0, ms - (endsAt - Date.now())));
+  const style = { animationDuration: `${ms}ms`, animationDelay: `${-elapsed}ms` };
+  return (
+    <svg className="play-countdown" viewBox="0 0 36 36">
+      <path className="play-countdown-track" d={RIM} pathLength={1} />
+      <path key={endsAt} className="play-countdown-bar" d={RIM} pathLength={1} style={style} />
+    </svg>
+  );
+}
+
+// The compass's rounded edge, from the middle of its top edge clockwise.
+const RIM = "M18 1H27A8 8 0 0 1 35 9V27A8 8 0 0 1 27 35H9A8 8 0 0 1 1 27V9A8 8 0 0 1 9 1Z";
+
 // The wind compass: the four seats' winds where those seats sit, the one to
 // act lit gold with a beam toward them, and a number in the middle.
-function Compass({ game, active, center }: { game: GameState; active: number | null; center: string }) {
+function Compass({ game, active, center, countdown }: { game: GameState; active: number | null; center: string; countdown: Countdown | null }) {
   return (
     <div className="play-compass" aria-hidden="true">
+      {countdown && <CountdownRing {...countdown} />}
       {SIDES.map((side, seat) => (
         <span key={side} className={`play-compass-q play-compass-${side}${active === seat ? " is-active" : ""}`}>
           {WIND_CHARS[seatWind(seat, game.dealer)]}
@@ -1151,14 +1176,18 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
   // decide, and on running out passes on a call or throws the drawn tile.
   const deciding = !autoplay && (myTurn || humanClaims.length > 0);
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
+  const [countdown, setCountdown] = useState<Countdown | null>(null);
   // Online, the server's deadline (it moves for you when it passes).
   const deadline = online?.table.deadline ?? null;
   useEffect(() => {
     if (!online) return;
     if (deadline === null) {
       setSecondsLeft(null);
+      setCountdown(null);
       return;
     }
+    const total = online.table.settings.timer;
+    setCountdown(total ? { total, endsAt: deadline } : null);
     const tick = () => setSecondsLeft(Math.max(0, Math.ceil((deadline - Date.now()) / 1000)));
     tick();
     const id = window.setInterval(tick, 250);
@@ -1168,10 +1197,12 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
     if (online) return;
     if (!timer || !deciding) {
       setSecondsLeft(null);
+      setCountdown(null);
       return;
     }
     const started = Date.now();
     setSecondsLeft(timer);
+    setCountdown({ total: timer, endsAt: started + timer * 1000 });
     const id = window.setInterval(() => {
       const left = timer - Math.floor((Date.now() - started) / 1000);
       setSecondsLeft(Math.max(0, left));
@@ -1718,7 +1749,7 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
               <Pond tiles={game.players[3].discards} riichiAt={game.players[3].riichi?.discard} side="left" pinLast={discardFrom === 3} />
             </div>
             <div className="play-middle">
-              <Compass game={game} active={over ? null : activeSeat} center={compassCenter} />
+              <Compass game={game} active={over ? null : activeSeat} center={compassCenter} countdown={over ? null : countdown} />
               {game.phase.kind === "claims" ? (
                 <span key={game.discardsMade} className={`play-spotlight from-${SIDES[game.phase.from]}`}>
                   <TileGlyphSpan tile={game.phase.tile} block />
