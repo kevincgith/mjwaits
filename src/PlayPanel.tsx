@@ -160,10 +160,19 @@ const BURST_MS = 1200;
 // A hand's end is seen on the table first - the 胡 / 自摸 called and the
 // hands laid down - and only then the result card: this long after a win,
 // less after a 流局 (no call to see).
-const WIN_SHOW_MS = 2400;
+// How a hand laid down at the end topples, in seconds: from `at`, a tile
+// every `step`, each falling for `dur`. The winner's first, in a slow wave
+// so there's no doubt who won; then, once it's down, the others' - each
+// hand falling all at once, no wave. (A 流局, or a hand shown later: at once.)
+type Topple = { at: number; step: number; dur: number };
+const TOPPLE_WINNER: Topple = { at: 0.2, step: 0.07, dur: 0.6 };
+const TOPPLE_OTHERS: Topple = { at: 2.6, step: 0, dur: 0.5 };
+const TOPPLE_DRAW: Topple = { at: 0.15, step: 0, dur: 0.5 };
+// The result card waits for all of that.
+const WIN_SHOW_MS = 3700;
 // A phone held upright: the table is drawn turned (as App.css's media query).
 const TURNED = "(orientation: portrait) and (max-width: 820px)";
-const DRAW_SHOW_MS = 900;
+const DRAW_SHOW_MS = 1700;
 // 自動 autoplay: a bot plays your seat and you watch - the Grandmaster -
 // dealing on by itself this long after each result.
 const AUTOPLAY_BOT = "grandmaster";
@@ -294,15 +303,18 @@ function FlowersView({ flowers }: { flowers: BonusTile[] }) {
 // The tile that completed a winning hand goes last, laid sideways, as
 // players mark it at the table.
 // On the table (a seat's hand laid down at the end) the tiles topple from
-// standing to flat one after another, as a player knocks their hand over -
-// the winner's at once, the others' a moment later (`toppleAt`, seconds);
-// the winning tile drops in after.
-function RevealedHandView({ tiles, winningTile, toppleAt = 0 }: { tiles: Tile[]; winningTile: Tile | null; toppleAt?: number }) {
+// standing to flat one after another, as a player knocks their hand over,
+// timed by `topple` (the winner's first - see TOPPLE_WINNER); the winning
+// tile drops in after.
+function RevealedHandView({ tiles, winningTile, topple = TOPPLE_WINNER }: { tiles: Tile[]; winningTile: Tile | null; topple?: Topple }) {
   const sorted = sortTiles(tiles);
   const mark = winningTile ? sorted.findIndex((t) => sameTile(t, winningTile)) : -1;
   const rest = mark < 0 ? sorted : sorted.filter((_, i) => i !== mark);
   return (
-    <span className="play-meld is-revealed" style={{ "--topple-at": `${toppleAt}s`, "--n": rest.length } as CSSProperties}>
+    <span
+      className="play-meld is-revealed"
+      style={{ "--topple-at": `${topple.at}s`, "--topple-step": `${topple.step}s`, "--topple-dur": `${topple.dur}s`, "--n": rest.length } as CSSProperties}
+    >
       {rest.map((t, i) => (
         <span key={i} className="play-topple" style={{ "--i": i } as CSSProperties}>
           <TileGlyphSpan tile={t} block />
@@ -382,7 +394,7 @@ const Flowers = memo(FlowersView, (a, b) => a.flowers.map((f) => f.kind + f.rank
 const RevealedHand = memo(
   RevealedHandView,
   (a, b) =>
-    a.toppleAt === b.toppleAt && tilesKey(a.tiles) === tilesKey(b.tiles) && (a.winningTile ? tileKey(a.winningTile) : "") === (b.winningTile ? tileKey(b.winningTile) : "")
+    a.topple === b.topple && tilesKey(a.tiles) === tilesKey(b.tiles) && (a.winningTile ? tileKey(a.winningTile) : "") === (b.winningTile ? tileKey(b.winningTile) : "")
 );
 const Pond = memo(PondView, (a, b) => a.side === b.side && a.pinLast === b.pinLast && a.riichiAt === b.riichiAt && tilesKey(a.tiles) === tilesKey(b.tiles));
 
@@ -1382,6 +1394,11 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
   const wall = (seat: number) => {
     const side = SIDES[seat];
     const p = game.players[seat];
+    // Online, a losing hand the table keeps hidden (until its player shows
+    // it) stays standing, face down.
+    const hidden = p.hand.some((t) => t === BLANK);
+    // Losing hands hidden, one shown is shown later, by choice: at once.
+    const choosing = online?.table.settings.reveal === false;
     return (
       <div className={`play-seat play-seat-${side}${side !== "top" || topFront ? " is-front" : ""}`}>
         {/* Melds and flowers in front of a side player's wall, from their
@@ -1390,10 +1407,18 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
         <span className="play-seat-side">
           <Flowers flowers={p.flowers} />
           <span className="play-seat-melds">
-            <Melds melds={p.melds} hideConcealed={!over} />
+            <Melds melds={p.melds} hideConcealed={!over || hidden} />
           </span>
         </span>
-        {over ? <RevealedHand tiles={p.hand} winningTile={wonWith(seat)} toppleAt={wonWith(seat) ? 0 : 0.8} /> : <EdgeTiles count={p.hand.length} side={side} drew={drewSeat === seat} />}
+        {over && !hidden ? (
+          <RevealedHand
+            tiles={p.hand}
+            winningTile={wonWith(seat)}
+            topple={wonWith(seat) ? TOPPLE_WINNER : result?.winner === null || choosing ? TOPPLE_DRAW : TOPPLE_OTHERS}
+          />
+        ) : (
+          <EdgeTiles count={p.hand.length} side={side} drew={!over && drewSeat === seat} />
+        )}
       </div>
     );
   };
@@ -1984,6 +2009,12 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
                   </span>
                 ))}
               </div>
+              {/* Losing hands hidden at this table: yours shows only if you say so. */}
+              {online && seated && online.table.settings.reveal === false && !iWon && (
+                <button type="button" className="play-show-hand" disabled={online.table.shown.includes(online.table.you!)} onClick={() => online.send({ t: "show" })}>
+                  {online.table.shown.includes(online.table.you!) ? "亮牌 Shown ✓" : "亮牌 Show my hand"}
+                </button>
+              )}
               <div className="play-result-actions">
                 <button type="button" className="play-view-table" onClick={() => setResultHidden(true)}>
                   View table

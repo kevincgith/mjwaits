@@ -71,6 +71,28 @@ describe("seatState", () => {
     for (let i = 0; i < SEATS; i++) expect(game.players[i].hand.some((t) => t === BLANK)).toBe(false);
   });
 
+  it("keeps a losing hand hidden at the end when the table says so - concealed kongs too", () => {
+    const s = midHand(400);
+    if (s.phase.kind !== "over") return;
+    const you = 2;
+    const shownSeat = (you + 1) % SEATS;
+    const view = viewFor(s, you, (seat) => seat === shownSeat);
+    for (let seat = 0; seat < SEATS; seat++) {
+      const pv = view.players[seat];
+      if (seat === you || seat === shownSeat) expect(pv.hand).not.toBeNull();
+      else {
+        expect(pv.hand).toBeNull();
+        expect(pv.melds.every((m) => !(m.kind === "kong" && m.concealed) || "hidden" in m)).toBe(true);
+      }
+    }
+    // Drawn as blanks on this phone - standing, face down.
+    const { game, toLocal } = seatState(view);
+    for (let seat = 0; seat < SEATS; seat++) {
+      const blank = game.players[toLocal(seat)].hand.every((t) => t === BLANK);
+      expect(blank).toBe(seat !== you && seat !== shownSeat);
+    }
+  });
+
   it("puts someone watching at seat 0's place, seeing no hand", () => {
     const real = midHand(5);
     const { game } = seatState(viewFor(real, -1));

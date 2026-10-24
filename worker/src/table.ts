@@ -91,6 +91,7 @@ interface Runtime {
   last: TableAction | null;
   settled: number; // the last hand whose payments are in `totals`
   scores: number; // entries in the record
+  shown?: number[]; // this hand's end, losing hands hidden: who has shown theirs
 }
 
 // crypto.getRandomValues as a number in [0, 1), for the wall, the dice and the bots.
@@ -327,6 +328,13 @@ export class Table extends Hub<TableMessage> {
         if (!rt.ready.includes(seat)) rt.ready.push(seat);
         break;
       }
+      case "show": {
+        playing();
+        const seat = seated();
+        if (rt.game?.phase.kind !== "over") throw new Refusal("notYourTurn", "the hand isn't over");
+        if (!(rt.shown ??= []).includes(seat)) rt.shown.push(seat);
+        break;
+      }
       case "surrender": {
         playing();
         const seat = seated();
@@ -364,6 +372,7 @@ export class Table extends Hub<TableMessage> {
           last: null,
           settled: 0,
           scores: 0,
+          shown: [],
         } satisfies Partial<Runtime>);
         this.sql.exec("DELETE FROM record");
         this.setMeta("recordHead", null);
@@ -564,6 +573,7 @@ export class Table extends Hub<TableMessage> {
       const ended = rt.game;
       rt.game = nextHand(ended, undefined, random);
       this.record(ended, rt.game);
+      rt.shown = [];
       rt.hand++;
       rt.last = null;
       this.collectBonuses();
@@ -648,12 +658,21 @@ export class Table extends Hub<TableMessage> {
       waitingOn,
       ready: rt.ready,
       auto: rt.auto,
+      shown: rt.shown ?? [],
       scores: rt.scores,
       last: rt.last,
       you: seat,
-      view: g ? viewFor(g, seat ?? -1) : null,
+      view: g ? viewFor(g, seat ?? -1, (s) => this.handShown(g, s)) : null,
       options,
     };
+  }
+
+  // At a hand's end, whether everyone sees this seat's hand: always, unless
+  // the table keeps losing hands hidden - then a winner's, or one shown.
+  private handShown(g: GameState, seat: number): boolean {
+    if (this.rt.settings.reveal !== false || g.phase.kind !== "over") return true;
+    const r = g.phase.result;
+    return r.winner === seat || !!r.alsoWon?.some((w) => w.winner === seat) || !!this.rt.shown?.includes(seat);
   }
 
   protected broadcast(except?: WebSocket) {

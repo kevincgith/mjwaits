@@ -454,6 +454,16 @@ function Lobby({ table, me, send, onLeave }: { table: TableState; me: Welcome; s
             </Seg>
           ))}
         </Setting>
+        <Setting
+          label="Losing hands at a hand's end"
+          note={s.reveal === false ? "only the winner's is shown - each other player chooses whether to show theirs" : "everyone's hand is shown"}
+        >
+          {[true, false].map((on) => (
+            <Seg key={String(on)} on={(s.reveal !== false) === on} disabled={!me.host} onClick={() => setup({ reveal: on })}>
+              {on ? "Shown" : "Players choose"}
+            </Seg>
+          ))}
+        </Setting>
         <Setting label="Turn timer">
           {TURN_TIMERS.map((t) => (
             <Seg key={t} on={s.timer === t} disabled={!me.host} onClick={() => setup({ timer: t })}>
