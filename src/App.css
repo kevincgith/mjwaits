@@ -6358,14 +6358,16 @@ html.playing body {
 /* A hand laid down at the end topples: each tile starts standing on the
    edge nearest its owner, face toward them, and falls away from them onto
    its back - one after another along the row, quickening as it falls, with
-   a small settle. Then the winning tile drops in. (Moved only, never faded:
-   a 3D tile turned partly transparent is drawn flat.) */
+   a small settle. A winner's hand waits for the winning tile: shown first,
+   held up then set down (--win-lead), as a player does at the table.
+   (Moved only, never faded: a 3D tile turned partly transparent is drawn
+   flat.) */
 .play-topple {
   display: inline-flex;
   line-height: 0;
   transform-style: preserve-3d;
   animation: var(--topple-dur, 0.6s) cubic-bezier(0.55, 0, 1, 0.45) both;
-  animation-delay: calc(var(--topple-at, 0s) + var(--i, 0) * var(--topple-step, 0.07s));
+  animation-delay: calc(var(--topple-at, 0s) + var(--win-lead, 0s) + var(--i, 0) * var(--topple-step, 0.07s));
 }
 
 .play-seat-top .play-topple {
@@ -6384,8 +6386,32 @@ html.playing body {
 }
 
 .play-seat .play-meld.is-revealed .play-win-tile > .tile-glyph {
-  animation: play-drop 0.36s both;
-  animation-delay: calc(var(--topple-at, 0s) + var(--n, 0) * var(--topple-step, 0.07s) + var(--topple-dur, 0.6s));
+  animation: play-show 0.8s both;
+  animation-delay: var(--topple-at, 0s);
+}
+
+/* The winning tile, shown: lifted up off the table, held a beat for all to
+   see, then set down with a small settle. */
+@keyframes play-show {
+  0% {
+    transform: translateZ(2.4em);
+    animation-timing-function: cubic-bezier(0.2, 0.7, 0.4, 1);
+  }
+  45% {
+    transform: translateZ(1.8em);
+    animation-timing-function: cubic-bezier(0.5, 0, 0.9, 0.6);
+  }
+  80% {
+    transform: translateZ(0);
+    animation-timing-function: cubic-bezier(0.2, 0.6, 0.4, 1);
+  }
+  90% {
+    transform: translateZ(0.12em);
+    animation-timing-function: cubic-bezier(0.5, 0, 0.8, 0.5);
+  }
+  100% {
+    transform: translateZ(0);
+  }
 }
 
 @keyframes play-topple-far {
@@ -6444,7 +6470,36 @@ html.playing body {
 .play-hand.is-toppled .play-hand-tile :is(.tile-glyph.tile-art, .play-back) {
   /* Timed as a winner's (TOPPLE_WINNER in PlayPanel). */
   animation: play-topple-mine 0.6s cubic-bezier(0.55, 0, 1, 0.45) both;
-  animation-delay: calc(0.2s + var(--i, 0) * 0.07s);
+  animation-delay: calc(0.2s + var(--win-lead, 0s) + var(--i, 0) * 0.07s);
+}
+
+/* The tile you won with goes down first, on its own: lifted, shown, laid
+   flat - then the rest of your hand follows. */
+.play-hand.is-toppled .play-hand-tile.is-winner :is(.tile-glyph.tile-art, .play-back) {
+  animation: play-show-mine 0.8s both;
+  animation-delay: 0.2s;
+}
+
+@keyframes play-show-mine {
+  0% {
+    transform: translateY(-0.5em) rotateX(-22deg);
+    animation-timing-function: cubic-bezier(0.2, 0.7, 0.4, 1);
+  }
+  45% {
+    transform: translateY(-0.6em) rotateX(-22deg);
+    animation-timing-function: cubic-bezier(0.55, 0, 1, 0.45);
+  }
+  85% {
+    transform: translateY(0) rotateX(32deg);
+    animation-timing-function: ease-out;
+  }
+  93% {
+    transform: translateY(0) rotateX(26deg);
+    animation-timing-function: ease-in;
+  }
+  100% {
+    transform: translateY(0) rotateX(32deg);
+  }
 }
 
 @keyframes play-topple-mine {
@@ -15872,5 +15927,297 @@ button.sc-stat:active {
   .ph-tile,
   .ph-menu > * {
     animation: none !important;
+  }
+}
+
+/* ---- 換牌 (PlaySwap): the swapping before the first draw --------------------
+   A lacquer panel over the middle of the table: the dealer's two dice (the
+   second tumbling in after the first), then each round who has laid their
+   tiles out, and the face-down piles - tap the ones you'll take. Kept clear
+   of your hand, which you tap to choose what to give. */
+
+.play-swap {
+  position: absolute;
+  left: 50%;
+  top: 40%;
+  z-index: 6;
+  translate: -50% -50%;
+  display: grid;
+  justify-items: center;
+  gap: 0.45rem;
+  width: min(24rem, calc(100 * var(--vw) - 2rem));
+  padding: 0.65rem 0.9rem 0.75rem;
+  box-sizing: border-box;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(180deg, rgba(40, 32, 24, 0.94), rgba(20, 15, 10, 0.94));
+  box-shadow:
+    0 0 0 1px rgba(255, 209, 102, 0.25),
+    var(--shadow-float);
+  color: var(--play-on-felt);
+  font-size: 0.8rem;
+  /* Popped in by scale alone (see .play-dice). */
+  animation: play-pop 0.2s ease-out both;
+}
+
+.play-swap-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.play-swap-title {
+  color: var(--play-gold);
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+}
+
+.play-swap-dice {
+  display: flex;
+  gap: 0.35rem;
+  font-size: 1.5rem;
+}
+
+.play-swap.is-rolling .play-swap-dice {
+  font-size: 2.4rem;
+}
+
+.play-swap-sum {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.play-swap.is-rolling .play-swap-sum {
+  opacity: 0;
+  animation: play-swap-reveal 0.3s 1.3s ease-out forwards;
+}
+
+@keyframes play-swap-reveal {
+  to {
+    opacity: 1;
+  }
+}
+
+.play-swap-round {
+  color: var(--play-on-felt-muted);
+  text-align: center;
+}
+
+.play-swap-givers {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.3rem;
+}
+
+.play-swap-giver {
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--play-on-felt-muted);
+  font-weight: 600;
+}
+
+.play-swap-giver.is-done {
+  background: rgba(255, 209, 102, 0.16);
+  color: var(--play-gold);
+}
+
+.play-swap-piles {
+  display: grid;
+  gap: 0.3rem;
+  width: 100%;
+}
+
+.play-swap-pile {
+  display: grid;
+  grid-template-columns: 5.5rem 1fr;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.2rem 0.4rem;
+  border-radius: 0.6rem;
+}
+
+.play-swap-pile.is-taking {
+  background: rgba(255, 209, 102, 0.1);
+}
+
+.play-swap-pile.is-mine {
+  opacity: 0.5;
+}
+
+.play-swap-who {
+  overflow: hidden;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.play-swap-who b {
+  color: var(--play-gold);
+}
+
+.play-swap-backs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.22rem;
+  min-height: 1.7rem;
+  align-items: center;
+}
+
+/* A face-down tile: the jade back, a tile's proportions. */
+.play-swap-back {
+  width: 1.2rem;
+  height: 1.62rem;
+  padding: 0;
+  border: none;
+  border-radius: 0.2rem;
+  background: linear-gradient(160deg, #4cc062, var(--play-back) 55%, var(--play-back-edge));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    0 0.14rem 0 var(--play-ivory),
+    0 0.2rem 0.3rem rgba(0, 0, 0, 0.4);
+  transition: translate 0.15s ease, box-shadow 0.15s ease;
+}
+
+.play-swap-back:disabled {
+  cursor: default;
+}
+
+.play-swap-back.is-picked {
+  translate: 0 -0.35rem;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    0 0 0 2px var(--play-gold),
+    0 0.14rem 0 var(--play-ivory),
+    0 0.5rem 0.6rem rgba(0, 0, 0, 0.45);
+}
+
+.play-swap-empty {
+  color: var(--play-on-felt-muted);
+  font-style: italic;
+}
+
+.play-swap-act {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  width: 100%;
+  padding-top: 0.2rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.play-swap-act .is-ok {
+  color: var(--play-pos);
+}
+
+.play-swap-act .is-warn {
+  color: #ffc76b;
+}
+
+.play-swap-act .is-error {
+  color: #ff8f80;
+}
+
+.play-swap-go {
+  flex: none;
+  min-height: 2rem;
+  padding: 0 0.9rem;
+  border: none;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #ffe08a, var(--play-gold) 50%, var(--play-gold-deep));
+  color: var(--play-ink-on-gold);
+  font-weight: 800;
+}
+
+.play-swap-go.is-warn {
+  background: linear-gradient(180deg, #ffd59a, #f0a03c);
+}
+
+.play-swap-go:disabled {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-muted);
+  cursor: default;
+}
+
+/* The settings sheet. */
+.play-swap-sheet h3 {
+  margin: 0.9rem 0 0.4rem;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.play-swap-note {
+  margin: 0.4rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.play-swap-winds {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.play-swap-winds button {
+  flex: 1;
+  min-height: 2.2rem;
+  border: none;
+  border-radius: 0.6rem;
+  background: var(--fill);
+  color: var(--text);
+  font-weight: 700;
+}
+
+.play-swap-winds button.toggle-on {
+  background: var(--play-seg-on);
+  box-shadow: inset 0 0 0 1px var(--play-gold);
+  color: var(--play-gold);
+}
+
+.play-swap-map {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 0.35rem;
+}
+
+.play-swap-map-cell {
+  display: grid;
+  justify-items: center;
+  gap: 0.3rem;
+  font-size: 1.4rem;
+}
+
+.play-swap-map-cell select {
+  width: 100%;
+  min-height: 2rem;
+  border: 1px solid var(--separator);
+  border-radius: 0.5rem;
+  background: var(--fill);
+  color: var(--text);
+  font-size: 1rem;
+  text-align: center;
+}
+
+.play-swap-reset {
+  width: 100%;
+  margin-top: 1rem;
+  min-height: 2.4rem;
+  border: 1px solid var(--separator);
+  border-radius: 0.7rem;
+  background: none;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .play-swap,
+  .play-swap.is-rolling .play-swap-sum {
+    animation: none;
+    opacity: 1;
   }
 }

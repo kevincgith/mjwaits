@@ -36,6 +36,9 @@ import {
   retractClaim,
   surrender,
   surrenderable,
+  swapGive,
+  swapTake,
+  takersAfter,
   riichiDiscards,
   riichiForcedDiscard,
   roundLabel,
@@ -54,6 +57,9 @@ import {
   type TurnMove,
 } from "@mjwaits/shared/engine/game";
 import { allTileKinds, getWaits, shanten, sortTiles, tileKey, tileLabel, type Tile } from "@mjwaits/shared/engine/mahjong";
+import { blindPicks, botGive, botSplit, DEFAULT_SWAP_RULES, type SwapRules } from "@mjwaits/shared/engine/swap";
+import { PlayDie } from "./PlayDie";
+import { SwapPanel, SwapSheet } from "./PlaySwap";
 import type { BonusTile } from "@mjwaits/shared/engine/scoring";
 import { BonusGlyphSpan, TileGlyphSpan, TileSides } from "./TileGlyphs";
 import {
@@ -61,6 +67,7 @@ import {
   botClaimFor,
   botSurrenders,
   botTurnFor,
+  callLines,
   LEARNED_PREFIX,
   learnedProfile,
   learnedStyle,
@@ -70,10 +77,21 @@ import {
   profileById,
   randomStyle,
   rateDiscardsFor,
-  voiceOf,
+  speechOf,
   type BotProfile,
-  type Voice,
+  type CallKind,
+  type Speech,
 } from "@mjwaits/shared/engine/bots";
+import {
+  BIG_WIN_TAI,
+  CHATTINESS,
+  isComeback,
+  LineDecks,
+  MYSTERY_CHATTINESS,
+  pickSituation,
+  situations,
+  type Outcome,
+} from "@mjwaits/shared/engine/speech";
 import { scoreView, type ResultView } from "@mjwaits/shared/engine/view";
 import { MYSTERY_BOT, REACTIONS, type Reaction, type TableClientMessage, type TableState } from "@mjwaits/shared/protocol/table";
 import { BLANK, seatState } from "./lib/seatState";
@@ -166,10 +184,12 @@ const BURST_MS = 1200;
 // hand falling all at once, no wave. (A 流局, or a hand shown later: at once.)
 type Topple = { at: number; step: number; dur: number };
 const TOPPLE_WINNER: Topple = { at: 0.2, step: 0.07, dur: 0.6 };
-const TOPPLE_OTHERS: Topple = { at: 2.6, step: 0, dur: 0.5 };
+// How long the winning tile is shown on its own before the hand goes down.
+const WIN_TILE_LEAD = 0.85;
+const TOPPLE_OTHERS: Topple = { at: 2.6 + WIN_TILE_LEAD, step: 0, dur: 0.5 };
 const TOPPLE_DRAW: Topple = { at: 0.15, step: 0, dur: 0.5 };
 // The result card waits for all of that.
-const WIN_SHOW_MS = 3700;
+const WIN_SHOW_MS = 3700 + WIN_TILE_LEAD * 1000;
 // A phone held upright: the table is drawn turned (as App.css's media query).
 const TURNED = "(orientation: portrait) and (max-width: 820px)";
 const DRAW_SHOW_MS = 1700;
@@ -192,6 +212,7 @@ interface Saved {
   speed?: Speed;
   oneTap?: boolean;
   multiWin?: boolean; // 一炮多響 (else 截胡)
+  swapRules?: SwapRules; // 換牌: which rounds, and what the dice mean
   record?: boolean;
   // The bot ids at seats 1-3.
   opponents?: string[];
@@ -317,8 +338,9 @@ function FlowersView({ flowers }: { flowers: BonusTile[] }) {
 // players mark it at the table.
 // On the table (a seat's hand laid down at the end) the tiles topple from
 // standing to flat one after another, as a player knocks their hand over,
-// timed by `topple` (the winner's first - see TOPPLE_WINNER); the winning
-// tile drops in after.
+// timed by `topple` (the winner's first - see TOPPLE_WINNER). A winner shows
+// the winning tile first, as a player does at a real table - held up, then
+// set down - and only then lays the rest of the hand down.
 function RevealedHandView({ tiles, winningTile, topple = TOPPLE_WINNER }: { tiles: Tile[]; winningTile: Tile | null; topple?: Topple }) {
   const sorted = sortTiles(tiles);
   const mark = winningTile ? sorted.findIndex((t) => sameTile(t, winningTile)) : -1;
@@ -326,7 +348,15 @@ function RevealedHandView({ tiles, winningTile, topple = TOPPLE_WINNER }: { tile
   return (
     <span
       className="play-meld is-revealed"
-      style={{ "--topple-at": `${topple.at}s`, "--topple-step": `${topple.step}s`, "--topple-dur": `${topple.dur}s`, "--n": rest.length } as CSSProperties}
+      style={
+        {
+          "--topple-at": `${topple.at}s`,
+          "--topple-step": `${topple.step}s`,
+          "--topple-dur": `${topple.dur}s`,
+          "--win-lead": mark >= 0 ? `${WIN_TILE_LEAD}s` : "0s",
+          "--n": rest.length,
+        } as CSSProperties
+      }
     >
       {rest.map((t, i) => (
         <span key={i} className="play-topple" style={{ "--i": i } as CSSProperties}>
@@ -579,26 +609,6 @@ function OpponentsSheet({
   );
 }
 
-// The pips on each face, as cells of a 3x3 grid (1-9, reading order) - as
-// on the Dice tab.
-const DIE_PIPS: Record<number, number[]> = { 1: [5], 2: [3, 7], 3: [3, 5, 7], 4: [1, 3, 7, 9], 5: [1, 3, 5, 7, 9], 6: [1, 3, 4, 6, 7, 9] };
-
-// One Chinese die (red pips on the 1 and the 4), tumbling in when `rolling`.
-function PlayDie({ value, rolling, index }: { value: number; rolling: boolean; index: number }) {
-  return (
-    <span
-      className={`play-die${value === 1 || value === 4 ? " is-red" : ""}${value === 1 ? " is-one" : ""}${rolling ? " is-rolling" : ""}`}
-      style={{ animationDelay: `${index * 70}ms` }}
-      role="img"
-      aria-label={`${value}`}
-    >
-      {Array.from({ length: 9 }, (_, i) => (
-        <span key={i} className={DIE_PIPS[value]?.includes(i + 1) ? "play-die-pip" : undefined} />
-      ))}
-    </span>
-  );
-}
-
 // ---- The table ------------------------------------------------------------
 
 // Playing at an online table: what the server sent, and how to answer it.
@@ -639,6 +649,12 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
   useEffect(() => {
     if (!online && !!game.multiWin !== multiWin) setGame((g) => ({ ...g, multiWin }));
   }, [game, multiWin, online]);
+  // 換牌's settings ride on the game like multiWin, from the next deal.
+  const [swapRules, setSwapRules] = useState<SwapRules>(() => saved?.swapRules ?? saved?.game?.swapRules ?? DEFAULT_SWAP_RULES);
+  useEffect(() => {
+    if (!online && JSON.stringify(game.swapRules) !== JSON.stringify(swapRules)) setGame((g) => ({ ...g, swapRules }));
+  }, [game, swapRules, online]);
+  const [swapSheetOpen, setSwapSheetOpen] = useState(false);
   // Record my play (off by default): your decisions, kept in this browser for
   // training a learned bot that plays like you (lib/ml/recorder.ts).
   const [record, setRecord] = useState(() => saved?.record ?? false);
@@ -922,19 +938,49 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reaction?.id]);
   const [reacting, setReacting] = useState(false);
-  const lastLine = useRef<Record<number, string>>({});
-  const say = (seat: number, line: keyof Voice) => {
+  // Speech bubbles: each bot works through its own shuffled deck of each
+  // kind of line, speaks as readily as its personality does, and leaves gaps
+  // - the table quiet a few seconds between table talk, a bot longer.
+  const decks = useRef(new LineDecks());
+  const spoke = useRef<{ any: number; seat: Record<number, number> }>({ any: 0, seat: {} });
+  // How each seat's hands have gone this game (for 手風順 and the like).
+  const history = useRef<Outcome[][]>([[], [], [], []]);
+  const chattiness = (seat: number) => {
+    const bot = bots[seat];
+    if (!bot) return 0;
+    return mysteryStyle(bot) ? MYSTERY_CHATTINESS : (CHATTINESS[learnedStyle(bot) ?? bot.id] ?? 0.5);
+  };
+  // A call says which (chow, pung, kong), so the line fits it.
+  const say = (seat: number, kind: keyof Speech, call?: CallKind) => {
     const bot = bots[seat];
     if (!bot) return;
-    const lines = voiceOf(bot)[line];
-    // Never the same line twice running from one bot.
-    let text = lines[Math.floor(Math.random() * lines.length)];
-    if (lines.length > 1 && text === lastLine.current[seat]) text = lines[(lines.indexOf(text) + 1 + Math.floor(Math.random() * (lines.length - 1))) % lines.length];
-    lastLine.current[seat] = text;
+    const speech = speechOf(bot);
+    const text = decks.current.next(`${bot.id}:${seat}:${call ?? kind}`, call ? callLines(speech, call) : speech[kind]);
+    if (!text) return;
+    spoke.current.any = Date.now();
+    spoke.current.seat[seat] = Date.now();
     const id = Date.now() + seat;
     setBubbles((b) => ({ ...b, [seat]: { text, id } }));
     window.setTimeout(() => setBubbles((b) => (b[seat]?.id === id ? Object.fromEntries(Object.entries(b).filter(([k]) => Number(k) !== seat)) : b)), BUBBLE_MS);
   };
+  const sayLater = (ms: number, seat: number, kind: keyof Speech) => window.setTimeout(() => say(seat, kind), ms);
+  // Not every call gets a word - the chattier, the likelier.
+  const sayCall = (seat: number, call: CallKind) => {
+    if (Math.random() < 0.3 + 0.65 * chattiness(seat)) say(seat, "call", call);
+  };
+  // 叮: said by whoever declares it - and sometimes someone else reacts.
+  const sayRiichi = (seat: number) => {
+    say(seat, "riichi");
+    const others = [1, 2, 3].filter((s) => s !== seat && bots[s] && Math.random() < chattiness(s) * 0.6);
+    if (others.length) sayLater(1100, others[Math.floor(Math.random() * others.length)], "pressure");
+  };
+  const moodOf = (seat: number) => ({
+    seat,
+    totals,
+    history: history.current[seat],
+    riichi: game.players.map((p) => !!p.riichi),
+    liveLeft: liveTilesLeft(game),
+  });
   // "You", or the bot's English name (老手 Veteran -> Veteran); online,
   // people by their nickname and bots by the name the table gives them.
   const nameOf = (seat: number): string => {
@@ -968,8 +1014,8 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
 
   // This device's own game (never an online one).
   useEffect(
-    () => save({ game: localGame, totals: localTotals, hint, timer, opponents, speed, oneTap, record, multiWin, ledger: localLedger }),
-    [localGame, localTotals, hint, timer, opponents, speed, oneTap, record, multiWin, localLedger]
+    () => save({ game: localGame, totals: localTotals, hint, timer, opponents, speed, oneTap, record, multiWin, swapRules, ledger: localLedger }),
+    [localGame, localTotals, hint, timer, opponents, speed, oneTap, record, multiWin, swapRules, localLedger]
   );
 
   // The menu closes on a tap anywhere outside it, and disarms New game.
@@ -1023,20 +1069,93 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     const at = net.toLocal;
     if (lastAction.kind === "call") {
       showBurst(at(lastAction.seat), lastAction.call === "chow" ? "上" : lastAction.call === "pung" ? "碰" : "槓");
-      say(at(lastAction.seat), "call");
+      sayCall(at(lastAction.seat), lastAction.call);
     } else if (lastAction.kind === "kong") showBurst(at(lastAction.seat), "槓");
     else if (lastAction.kind === "discard" && lastAction.riichi) {
       showBurst(at(lastAction.seat), "叮");
-      say(at(lastAction.seat), "riichi");
+      sayRiichi(at(lastAction.seat));
     } else if (lastAction.kind === "win") {
       const seat = at(lastAction.seats[0]);
       const n = lastAction.seats.length;
       showBurst(seat, lastAction.robKong ? "搶槓" : lastAction.from === null ? "自摸" : n > 1 ? (n === 2 ? "雙響" : "三響") : "胡");
-      say(seat, lastAction.from === null ? "selfDraw" : "win");
-      if (lastAction.from !== null) say(at(lastAction.from), "dealIn");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastAction, online?.table.hand, game.discardsMade]);
+
+  // The end of a hand, however it came (here or online): the winner's line -
+  // bigger for a big hand, a comeback from the bottom - the payer's, and a
+  // word from someone looking on. Not for a hand that was already over when
+  // this table opened.
+  const overKey =
+    game.phase.kind === "over"
+      ? JSON.stringify([online?.table.hand ?? null, game.dealer, game.dealerStreak, game.discardsMade, game.phase.result.deltas, game.phase.result.winner])
+      : null;
+  const seenOver = useRef<string | null>(overKey);
+  useEffect(() => {
+    if (!overKey || seenOver.current === overKey || game.phase.kind !== "over") return;
+    seenOver.current = overKey;
+    const r = game.phase.result;
+    const winners = r.winner === null ? [] : [{ winner: r.winner, score: r.score }, ...(r.alsoWon ?? [])];
+    for (let seat = 0; seat < SEATS; seat++)
+      history.current[seat] = [...history.current[seat], winners.some((w) => w.winner === seat) ? "win" : r.from === seat ? "dealIn" : "none"];
+    if (!winners.length) {
+      // 流局: a word or two round the table.
+      const talkers = [1, 2, 3].filter((s) => bots[s] && Math.random() < chattiness(s) * 0.55).slice(0, 2);
+      talkers.forEach((s, i) => sayLater(400 + i * 900, s, "drawGame"));
+      return;
+    }
+    winners.forEach(({ winner, score }, i) => {
+      const tai = score?.total ?? 0;
+      const kind: keyof Speech =
+        tai >= BIG_WIN_TAI && Math.random() < 0.75
+          ? "bigWin"
+          : isComeback(totals, r.deltas, winner) && Math.random() < 0.6
+            ? "comeback"
+            : situations(moodOf(winner)).includes("hot") && Math.random() < 0.35
+              ? "hot"
+              : r.from === null
+                ? "selfDraw"
+                : "win";
+      sayLater(i * 700, winner, kind);
+    });
+    if (r.from !== null && !r.robKong) sayLater(600, r.from, situations(moodOf(r.from)).includes("cold") && Math.random() < 0.35 ? "cold" : "dealIn");
+    else if (r.from !== null) sayLater(600, r.from, "dealIn");
+    const lookers = [1, 2, 3].filter((s) => s !== r.from && !winners.some((w) => w.winner === s) && bots[s]);
+    const looker = lookers[Math.floor(Math.random() * lookers.length)];
+    if (looker !== undefined && Math.random() < chattiness(looker) * 0.7) sayLater(1500, looker, "othersWin");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [overKey]);
+
+  // A fresh deal: sometimes someone says something as the tiles come in -
+  // about the hand, or how the game's going for them.
+  const freshDealKey = game.phase.kind === "turn" && game.discardsMade === 0 ? JSON.stringify([online?.table.hand ?? null, game.dealer, game.dealerStreak, game.roundWind]) : null;
+  const seenDeal = useRef<string | null>(freshDealKey);
+  useEffect(() => {
+    if (!freshDealKey || seenDeal.current === freshDealKey) return;
+    seenDeal.current = freshDealKey;
+    const talkers = [1, 2, 3].filter((s) => bots[s]);
+    const s = talkers[Math.floor(Math.random() * talkers.length)];
+    if (s === undefined || Math.random() > 0.25 + chattiness(s) * 0.4) return;
+    const mood = situations(moodOf(s)).filter((x) => x === "ahead" || x === "behind" || x === "hot" || x === "cold");
+    sayLater(900, s, mood.length && Math.random() < 0.45 ? mood[Math.floor(Math.random() * mood.length)] : "handStart");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [freshDealKey]);
+
+  // Table talk between discards: now and then, never on top of the last
+  // thing said, and never the same bot too often. What about depends on
+  // how things stand for them (see pickSituation).
+  useEffect(() => {
+    if (game.phase.kind === "over" || game.discardsMade === 0) return;
+    const now = Date.now();
+    if (now - spoke.current.any < 7000 || Math.random() > 0.16) return;
+    const ready = [1, 2, 3].filter((s) => bots[s] && now - (spoke.current.seat[s] ?? 0) > 20000);
+    const weight = ready.map(chattiness);
+    let pick = Math.random() * weight.reduce((a, b) => a + b, 0);
+    const seat = ready.find((_, i) => (pick -= weight[i]) < 0);
+    if (seat === undefined) return;
+    sayLater(500, seat, pickSituation(moodOf(seat)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [game.discardsMade]);
 
   const humanClaims = game.phase.kind === "claims" && seated && waitedOn ? claimOptions(game, HUMAN) : [];
 
@@ -1067,10 +1186,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     const seat = winningClaimSeat(game, decisions);
     if (seat !== null) {
       showBurst(seat, game.phase.kind === "claims" && game.phase.robKong ? "搶槓" : claimLabel(decisions[seat]!));
-      if (decisions[seat]!.kind === "win") {
-        say(seat, "win");
-        if (game.phase.kind === "claims") say(game.phase.from, "dealIn");
-      } else say(seat, "call");
+      if (decisions[seat]!.kind !== "win") sayCall(seat, decisions[seat]!.kind as CallKind);
     }
     advance(resolveClaims(game, decisions));
     if (seat === HUMAN && humanClaim && humanClaim.kind !== "win") setLastCall({ before: game, decisions });
@@ -1099,6 +1215,40 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
 
   const me = game.players[HUMAN];
   const myTurn = seated && waitedOn && game.phase.kind === "turn" && game.phase.seat === HUMAN;
+  // 換牌: the swapping before the first draw (see PlaySwap). The dealer's two
+  // dice tumble first (swapRolling), one then the other; then you pick the
+  // tiles to give from your hand (swapHand, places in it) and, on your take,
+  // the face-down tiles from the others' piles (swapPicks, places per pile).
+  const swapPhase = game.phase.kind === "swap" ? game.phase : null;
+  const swapGiving = !!swapPhase && seated && !autoplay && swapPhase.stage === "give" && !swapPhase.piles[HUMAN];
+  const [swapHand, setSwapHand] = useState<number[]>([]);
+  const [swapPicks, setSwapPicks] = useState<number[][]>([[], [], [], []]);
+  const swapStep = swapPhase ? `${swapPhase.round}${swapPhase.stage}${swapPhase.taker}` : "";
+  useEffect(() => {
+    setSwapHand([]);
+    setSwapPicks([[], [], [], []]);
+  }, [swapStep]);
+  const swapDeal = swapPhase && swapPhase.round === 1 && swapPhase.stage === "give" && swapPhase.piles.every((p) => !p) ? JSON.stringify([game.dealer, game.dealerStreak, game.roundWind, game.dice, swapPhase.dice]) : null;
+  const [swapRolling, setSwapRolling] = useState(false);
+  const swapRolledFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!swapDeal || rolling || swapRolledFor.current === swapDeal) return;
+    swapRolledFor.current = swapDeal;
+    setSwapRolling(true);
+  }, [swapDeal, rolling]);
+  useEffect(() => {
+    if (!swapRolling) return;
+    const id = window.setTimeout(() => setSwapRolling(false), speed === "fast" ? 1300 : 2200);
+    return () => window.clearTimeout(id);
+  }, [swapRolling, speed]);
+  const giveSwap = () => {
+    if (!swapPhase || swapHand.length !== swapPhase.count) return;
+    advance(swapGive(game, HUMAN, swapHand.map((i) => handTiles[i])));
+  };
+  const takeSwap = () => {
+    if (!swapPhase) return;
+    advance(swapTake(game, HUMAN, swapPicks));
+  };
   const drawn = myTurn && game.phase.kind === "turn" ? game.phase.drawn : null;
   const forbidden = myTurn ? forbiddenDiscards(game) : [];
   // Tiles you can't throw right now: 食替, a locked 叮 hand's anything-but-
@@ -1141,8 +1291,30 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
       const id = window.setTimeout(() => doTurn({ kind: "discard", tile }), 700);
       return () => window.clearTimeout(id);
     }
-    if (rolling) return;
+    if (rolling || swapRolling) return;
     const phase = game.phase;
+    if (phase.kind === "swap") {
+      const factor = SPEEDS[speed].factor;
+      const bot = (seat: number) => seat !== HUMAN || autoplay;
+      if (phase.stage === "give") {
+        // The bots lay out their tiles together (and yours, on autoplay).
+        const givers = [0, 1, 2, 3].filter((seat) => !phase.piles[seat] && bot(seat));
+        if (!givers.length) return;
+        const id = window.setTimeout(() => {
+          let g = game;
+          for (const seat of givers) g = swapGive(g, seat, botGive(g.players[seat].hand, phase.count));
+          advance(g);
+        }, 900 * factor);
+        return () => window.clearTimeout(id);
+      }
+      if (!bot(phase.taker)) return;
+      const id = window.setTimeout(() => {
+        const sizes = phase.piles.map((p) => p!.length);
+        const split = botSplit(sizes, phase.taker, takersAfter(phase, game.dealer), phase.count);
+        advance(swapTake(game, phase.taker, sizes.map((n, g) => blindPicks(n, split[g]))));
+      }, 1300 * factor);
+      return () => window.clearTimeout(id);
+    }
     let move: (() => void) | null = null;
     let delay = PASS_DELAY_MS;
     if (phase.kind === "turn" && phase.seat !== HUMAN && learnedBot(phase.seat)) {
@@ -1155,10 +1327,9 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
         timer = window.setTimeout(() => {
           if (m.kind === "selfDraw") {
             showBurst(seat, "自摸");
-            say(seat, "selfDraw");
           } else if (m.kind === "discard" && m.riichi) {
             showBurst(seat, "叮");
-            say(seat, "riichi");
+            sayRiichi(seat);
           } else if (m.kind !== "discard") showBurst(seat, "槓");
           advance(applyTurnMove(game, m));
         }, botDelay(0.4, phase.drawn === null) * SPEEDS[speed].factor);
@@ -1175,10 +1346,9 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
       move = () => {
         if (m.kind === "selfDraw") {
           showBurst(phase.seat, "自摸");
-          say(phase.seat, "selfDraw");
         } else if (m.kind === "discard" && m.riichi) {
           showBurst(phase.seat, "叮");
-          say(phase.seat, "riichi");
+          sayRiichi(phase.seat);
         } else if (m.kind !== "discard") showBurst(phase.seat, "槓");
         advance(applyTurnMove(game, m));
       };
@@ -1201,7 +1371,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     const id = window.setTimeout(move, delay * SPEEDS[speed].factor);
     return () => window.clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [game, rolling, myTurn, autoplay]);
+  }, [game, rolling, swapRolling, myTurn, autoplay]);
 
   // The turn timer (off by default): runs only while the human has to
   // decide, and on running out passes on a call or throws the drawn tile.
@@ -1292,6 +1462,11 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
 
   const tapTile = (index: number) => {
     if (rolling) return;
+    if (swapGiving) {
+      // 換牌: picking the tiles to give.
+      setSwapHand((sel) => (sel.includes(index) ? sel.filter((i) => i !== index) : sel.length < swapPhase!.count ? [...sel, index] : sel));
+      return;
+    }
     if (!myTurn || isForbidden(handTiles[index])) return;
     // One-tap throws straight away - except when declaring 叮, which always
     // takes the confirming second tap.
@@ -1317,12 +1492,13 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
 
   const startNewGame = () => {
     setTotals([0, 0, 0, 0]);
+    history.current = [[], [], [], []];
     // A new game, new mysteries.
     setOpponents((o) => o.map((id) => (id.startsWith(MYSTERY_PREFIX) ? newMystery() : id)));
     setMenuOpen(false);
     setSelected(null);
     setResultHidden(false);
-    const g = newGame();
+    const g = newGame({ multiWin, swapRules });
     ledgerFrom.current = g;
     const fresh = newPlayLedger(playerNames(opponents), g.dealer);
     setLedger({ ...fresh, events: playEvents(null, g, fresh.seats) });
@@ -1373,6 +1549,12 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
   const result = over ? shownResult : null;
   // You won this hand: your tiles topple flat, as everyone's on the table do.
   const iWon = !!result && !!result.tile && (result.winner === HUMAN || !!result.alsoWon?.some((w) => w.winner === HUMAN));
+  // The tile you won with, shown first: the one you drew, or the last of its kind.
+  const winIndex = !iWon
+    ? -1
+    : handView.drawnTile && sameTile(handView.drawnTile, result!.tile!)
+      ? handTiles.length - 1
+      : handTiles.map((t) => sameTile(t, result!.tile!)).lastIndexOf(true);
   // The card held back while the table shows how the hand ended - only when
   // it ends in front of you (a game opened already over shows it at once).
   const [cardHeld, setCardHeld] = useState(false);
@@ -1731,6 +1913,17 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
                 <span>Opponents</span>
                 <span className="play-menu-value">{opponents.map((id) => shortName(botById(id))).join(" · ")} ›</span>
               </button>
+              <button
+                type="button"
+                className="play-menu-link"
+                onClick={() => {
+                  setMenuOpen(false);
+                  setSwapSheetOpen(true);
+                }}
+              >
+                <span>換牌 Swap tiles</span>
+                <span className="play-menu-value">{swapRules.winds.length ? swapRules.winds.map((w) => ["", "東", "南", "西", "北"][w]).join(" ") : "Off"} ›</span>
+              </button>
               <div className="play-menu-row">
                 <span>Bot speed</span>
                 <span className="play-menu-seg">
@@ -1892,7 +2085,10 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
                 </>
               )}
             </div>
-            <div className={`play-hand${myTurn ? " is-turn" : ""}${iWon ? " is-toppled" : ""}`}>
+            <div
+              className={`play-hand${myTurn ? " is-turn" : ""}${iWon ? " is-toppled" : ""}`}
+              style={winIndex >= 0 ? ({ "--win-lead": `${WIN_TILE_LEAD}s` } as CSSProperties) : undefined}
+            >
               {(me.melds.length > 0 || me.flowers.length > 0) && (
                 <span className="play-my-melds">
                   {/* Flowers always leftmost, then melds, then the hand. */}
@@ -1911,14 +2107,15 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
                     className={[
                       "play-hand-tile",
                       isDrawn && "is-drawn",
-                      selected === i && "is-selected",
+                      i === winIndex && "is-winner",
+                      (selected === i || swapHand.includes(i)) && "is-selected",
                       i === hintIndex && "is-hint",
                       hint && myTurn && dangerous.has(tileKey(t)) && "is-danger",
                       barred && "is-barred",
                     ]
                       .filter(Boolean)
                       .join(" ")}
-                    disabled={!myTurn || barred}
+                    disabled={!(myTurn || swapGiving) || barred}
                     onClick={() => tapTile(i)}
                     title={barred ? "食替 – can't discard this now" : undefined}
                     aria-label={barred ? `${tileLabel(t)} (食替 – can't discard this now)` : selected === i ? `Discard ${tileLabel(t)}` : tileLabel(t)}
@@ -1986,6 +2183,21 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
 
         {burst && <CallBurst key={burst.id} seat={burst.seat} label={burst.label} />}
 
+        {swapPhase && !rolling && !over && (
+          <SwapPanel
+            phase={swapPhase}
+            rolling={swapRolling}
+            nameOf={(seat) => (seat === HUMAN ? "You" : nameOf(seat))}
+            seated={seated && !autoplay}
+            picks={swapPicks}
+            setPicks={setSwapPicks}
+            after={takersAfter(swapPhase, game.dealer)}
+            giveCount={swapHand.length}
+            onGive={giveSwap}
+            onTake={takeSwap}
+          />
+        )}
+
         {rolling && game.dice && (
           <div className="play-dice" role="status">
             <div className="play-dice-row">
@@ -2021,6 +2233,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
             onClose={() => setReviewOpen(false)}
           />
         )}
+        {swapSheetOpen && <SwapSheet rules={swapRules} onChange={setSwapRules} onClose={() => setSwapSheetOpen(false)} />}
         {opponentsOpen && <OpponentsSheet opponents={opponents} learned={model?.styles ?? null} onChange={setOpponents} onClose={() => setOpponentsOpen(false)} />}
 
         {result && !resultHidden && !cardHeld && (

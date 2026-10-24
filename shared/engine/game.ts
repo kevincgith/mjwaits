@@ -42,6 +42,7 @@ import {
   type ScoreResult,
   type Wind,
 } from "./scoring";
+import { checkTake, swapCount, swapRounds, swapsOn, takeOrder, type Split, type SwapPhase, type SwapRules } from "./swap";
 
 export const SEATS = 4;
 export const HUMAN = 0;
@@ -91,7 +92,9 @@ export type Phase =
   // is adding `tile` to a pung instead - the others may only win on it (搶槓),
   // and it's in no one's pond.
   | { kind: "claims"; from: number; tile: Tile; robKong?: true }
-  | { kind: "over"; result: HandResult };
+  | { kind: "over"; result: HandResult }
+  // 換牌 before the first draw, on a round that swaps (see swap.ts).
+  | SwapPhase;
 
 export interface HandResult {
   winner: number | null; // null = exhaustive draw
@@ -128,6 +131,9 @@ export interface GameState {
   // draw keeps every 拉 and any other win ends the holder's. Optional so
   // games saved before 拉 load.
   lahs?: Lah[];
+  // 換牌: the house rule's settings, carried from hand to hand like
+  // multiWin - absent at a table that never swaps.
+  swapRules?: SwapRules;
   // The dealer's three dice for this deal (see rollDice); absent when the
   // wall was laid out in advance (the arena's duplicate deals).
   dice?: Dice;
@@ -396,12 +402,12 @@ function breakWall(wall: WallTile[], dice: Dice, dealer: number): WallTile[] {
   return [...wall.slice(at), ...wall.slice(0, at)];
 }
 
-export function newGame(): GameState {
-  return dealHand({ dealer: 0, roundWind: 1, dealerStreak: 0 });
+export function newGame(opts: { multiWin?: boolean; swapRules?: SwapRules } = {}): GameState {
+  return dealHand({ dealer: 0, roundWind: 1, dealerStreak: 0, ...opts });
 }
 
 export function dealHand(
-  opts: { dealer: number; roundWind: Wind; dealerStreak: number; lahs?: Lah[]; multiWin?: boolean },
+  opts: { dealer: number; roundWind: Wind; dealerStreak: number; lahs?: Lah[]; multiWin?: boolean; swapRules?: SwapRules },
   wall?: WallTile[],
   random: Random = Math.random
 ): GameState {
@@ -420,6 +426,7 @@ export function dealHand(
     log: [],
     lahs: opts.lahs ?? [],
     ...(opts.multiWin ? { multiWin: true } : {}),
+    ...(opts.swapRules ? { swapRules: opts.swapRules } : {}),
     ...(dice ? { dice } : {}),
   };
   const bonus = dice ? diceBonus(dice, opts.dealer) : null;
@@ -428,6 +435,24 @@ export function dealHand(
   for (let i = 0; i < SEATS; i++) {
     const seat = (opts.dealer + i) % SEATS;
     for (let n = 0; n < MELDS_REQUIRED * 3 + 1; n++) drawInto(s, seat, false);
+  }
+  // A round that swaps: the dealer's two dice, and the swapping before the
+  // first draw (see swap.ts).
+  if (swapsOn(opts.swapRules, opts.roundWind)) {
+    const die = () => 1 + Math.floor(random() * 6);
+    const swapDice: [number, number] = [die(), die()];
+    s.phase = {
+      kind: "swap",
+      dice: swapDice,
+      rounds: swapRounds(opts.swapRules!, swapDice[0]),
+      count: swapCount(opts.swapRules!, swapDice[1]),
+      round: 1,
+      stage: "give",
+      piles: [null, null, null, null],
+      taker: opts.dealer,
+      took: [],
+    };
+    return s;
   }
   // The dealer's 17th tile: their first draw.
   const { tile, flowered } = drawInto(s, opts.dealer, false);
@@ -861,13 +886,68 @@ export function nextHand(s: GameState, wall?: WallTile[], random: Random = Math.
   const { winner, alsoWon } = s.phase.result;
   const lahs = s.lahs ?? [];
   const multiWin = s.multiWin;
+  const swapRules = s.swapRules;
   // The dealer stays on a draw, or when among the winners.
   if (winner === null || winner === s.dealer || alsoWon?.some((w) => w.winner === s.dealer)) {
-    return dealHand({ dealer: s.dealer, roundWind: s.roundWind, dealerStreak: s.dealerStreak + 1, lahs, multiWin }, wall, random);
+    return dealHand({ dealer: s.dealer, roundWind: s.roundWind, dealerStreak: s.dealerStreak + 1, lahs, multiWin, swapRules }, wall, random);
   }
   const dealer = (s.dealer + 1) % SEATS;
   const roundWind = (dealer === 0 ? (s.roundWind % 4) + 1 : s.roundWind) as Wind;
-  return dealHand({ dealer, roundWind, dealerStreak: 0, lahs, multiWin }, wall, random);
+  return dealHand({ dealer, roundWind, dealerStreak: 0, lahs, multiWin, swapRules }, wall, random);
+}
+
+// ---- 換牌 ------------------------------------------------------------------------
+
+// `seat` lays `tiles` (from its hand, `count` of them) face down. Once all
+// four have, the taking starts with the dealer. The pile is shuffled: where
+// a tile lies says nothing of what it is.
+export function swapGive(state: GameState, seat: number, tiles: Tile[], random: Random = Math.random): GameState {
+  const ph = state.phase;
+  if (ph.kind !== "swap" || ph.stage !== "give") throw new Error("Not giving now");
+  if (ph.piles[seat]) throw new Error("Already given");
+  if (tiles.length !== ph.count) throw new Error(`Give ${ph.count}`);
+  const s = cloneState(state);
+  const p = s.players[seat];
+  p.hand = removeTiles(p.hand, tiles);
+  const piles = ph.piles.slice();
+  piles[seat] = shuffled(tiles, random);
+  const all = piles.every(Boolean);
+  s.phase = { ...ph, piles, stage: all ? "take" : "give", taker: s.dealer, took: [] };
+  return s;
+}
+
+// The seats still to take after `taker` this round.
+export function takersAfter(ph: SwapPhase, dealer: number): number[] {
+  const order = takeOrder(dealer);
+  return order.slice(order.indexOf(ph.taker) + 1);
+}
+
+// `seat`, whose turn it is, takes the tiles at these places in each pile.
+// After the last taker, the next round - or, the rounds done, the dealer's
+// first draw.
+export function swapTake(state: GameState, seat: number, picks: number[][]): GameState {
+  const ph = state.phase;
+  if (ph.kind !== "swap" || ph.stage !== "take" || ph.taker !== seat) throw new Error("Not your take");
+  const sizes = ph.piles.map((p) => p!.length);
+  const split: Split = picks.map((idx) => new Set(idx).size);
+  if (picks.some((idx, g) => idx.some((i) => i < 0 || i >= sizes[g]))) throw new Error("No such tile");
+  const check = checkTake(sizes, seat, takersAfter(ph, state.dealer), ph.count, split);
+  if (!check.ok) throw new Error(check.error);
+  const s = cloneState(state);
+  const piles = ph.piles.map((pile, g) => pile!.filter((_, i) => !picks[g].includes(i)));
+  s.players[seat].hand.push(...ph.piles.flatMap((pile, g) => pile!.filter((_, i) => picks[g].includes(i))));
+  const took = [...ph.took, seat];
+  if (took.length < SEATS) {
+    s.phase = { ...ph, piles, took, taker: (seat + 1) % SEATS };
+    return s;
+  }
+  if (ph.round < ph.rounds) {
+    s.phase = { ...ph, round: ph.round + 1, stage: "give", piles: [null, null, null, null], took: [], taker: s.dealer };
+    return s;
+  }
+  const { tile, flowered } = drawInto(s, s.dealer, false);
+  s.phase = { kind: "turn", seat: s.dealer, drawn: tile, replacement: flowered ? "flower" : null };
+  return s;
 }
 
 // ---- Bots -------------------------------------------------------------------

@@ -31,7 +31,7 @@ import {
   type TurnMove,
 } from "./game";
 import { allTileKinds, shanten as rawShanten, tileCount, tileKey, type Tile } from "./mahjong";
-import { MYSTERY_VOICE, VOICES, type Voice } from "./voices";
+import { MYSTERY_SPEECH, SPEECH, type Speech } from "./speech";
 
 export interface BotProfile {
   id: string;
@@ -214,10 +214,10 @@ export const BOT_PROFILES: BotProfile[] = [
   },
 ];
 
-// What each personality says at the table: see voices.ts.
-export { VOICES, MYSTERY_VOICE, type Voice } from "./voices";
+// What each personality says at the table (its speech bubbles): see speech.ts.
+export { SPEECH, MYSTERY_SPEECH, callLines, type CallKind, type Speech } from "./speech";
 
-export const voiceOf = (p: BotProfile): Voice => (mysteryStyle(p) ? MYSTERY_VOICE : (VOICES[learnedStyle(p) ?? p.id] ?? VOICES.veteran));
+export const speechOf = (p: BotProfile): Speech => (mysteryStyle(p) ? MYSTERY_SPEECH : (SPEECH[learnedStyle(p) ?? p.id] ?? SPEECH.veteran));
 
 // A mystery bot: one of the personalities, picked at random and not shown -
 // its name, avatar and lines are the same whichever it is. Its id carries
