@@ -150,12 +150,12 @@ export function SwapControls({
       <div className="play-swap-buttons">
         {mineToGive && (
           <button type="button" className="play-swap-go" disabled={giveCount !== count} onClick={onGive}>
-            放牌 Give {giveCount === count ? count : `${giveCount}/${count}`}
+            放牌 {giveCount === count ? "Give" : `${giveCount}/${count}`}
           </button>
         )}
         {myTake && check && taken === 0 && (
-          <button type="button" className="play-swap-go" onClick={quickTake}>
-            一按 Take evenly
+          <button type="button" className="play-swap-go" title="An even take, blind" onClick={quickTake}>
+            一按 Take
           </button>
         )}
         {myTake && check && taken > 0 && (
@@ -164,7 +164,8 @@ export function SwapControls({
               ↺
             </button>
             <button type="button" className={`play-swap-go${check.warning ? " is-warn" : ""}`} disabled={!check.ok} onClick={() => onTake()}>
-              {taken === count && check.error ? check.error : check.warning ? "Take anyway" : `攞牌 Take ${taken}/${count}`}
+              {/* Short, to sit clear of the piles: the bar says it in full. */}
+              {taken === count && check.error ? "Not allowed" : check.warning ? "Take anyway" : `攞牌 ${taken}/${count}`}
             </button>
           </>
         )}

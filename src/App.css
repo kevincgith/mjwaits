@@ -16070,11 +16070,11 @@ button.sc-stat:active {
 .play-swap-go,
 .play-swap-clear {
   flex: none;
-  min-height: 2.6rem;
-  padding: 0 1.2rem;
+  min-height: 2.5rem;
+  padding: 0 1.1rem;
   border: none;
   border-radius: 999px;
-  font-size: 1rem;
+  font-size: 0.95rem;
   font-weight: 800;
   white-space: nowrap;
   box-shadow: 0 0.35rem 0.9rem rgba(0, 0, 0, 0.45);
@@ -16090,13 +16090,9 @@ button.sc-stat:active {
 /* Clear: a round button beside the big one - the pair fits between the
    side piles. */
 .play-swap-clear {
-  width: 2.6rem;
+  width: 2.5rem;
   padding: 0;
-  font-size: 1.2rem;
-}
-
-.play-swap-buttons .play-swap-go {
-  padding: 0 1rem;
+  font-size: 1.15rem;
 }
 
 .play-swap-go:active,
