@@ -412,22 +412,37 @@ const RevealedHand = memo(
 const Pond = memo(PondView, (a, b) => a.side === b.side && a.pinLast === b.pinLast && a.riichiAt === b.riichiAt && tilesKey(a.tiles) === tilesKey(b.tiles));
 
 // The turn timer as a light bar around the compass's rim, from the top and
-// clockwise: full when the clock starts, gone when it runs out. Drawn by a
-// CSS animation as long as the whole clock, started part-way through when
-// it began before now (so it drains smoothly, not a step a second).
+// clockwise: full when the clock starts, gone when it runs out. Drawn every
+// frame from the clock's end itself, so it always agrees with the number in
+// the middle (a CSS animation only starts when it's first painted, and ran
+// behind). Red for the last stretch.
 interface Countdown {
   total: number; // seconds
   endsAt: number; // ms
 }
 
+const COUNTDOWN_SHORT = 0.3;
+
 function CountdownRing({ total, endsAt }: Countdown) {
-  const ms = total * 1000;
-  const elapsed = Math.min(ms, Math.max(0, ms - (endsAt - Date.now())));
-  const style = { animationDuration: `${ms}ms`, animationDelay: `${-elapsed}ms` };
+  const bar = useRef<SVGPathElement>(null);
+  useEffect(() => {
+    let frame = 0;
+    const draw = () => {
+      const left = Math.min(1, Math.max(0, (endsAt - Date.now()) / (total * 1000)));
+      const el = bar.current;
+      if (el) {
+        el.style.strokeDashoffset = String(left - 1);
+        el.classList.toggle("is-short", left < COUNTDOWN_SHORT);
+      }
+      if (left > 0) frame = requestAnimationFrame(draw);
+    };
+    draw();
+    return () => cancelAnimationFrame(frame);
+  }, [total, endsAt]);
   return (
     <svg className="play-countdown" viewBox="0 0 36 36">
       <path className="play-countdown-track" d={RIM} pathLength={1} />
-      <path key={endsAt} className="play-countdown-bar" d={RIM} pathLength={1} style={style} />
+      <path ref={bar} className="play-countdown-bar" d={RIM} pathLength={1} />
     </svg>
   );
 }
@@ -440,7 +455,7 @@ const RIM = "M18 1H27A8 8 0 0 1 35 9V27A8 8 0 0 1 27 35H9A8 8 0 0 1 1 27V9A8 8 0
 function Compass({ game, active, center, countdown }: { game: GameState; active: number | null; center: string; countdown: Countdown | null }) {
   return (
     <div className="play-compass" aria-hidden="true">
-      {countdown && <CountdownRing {...countdown} />}
+      {countdown && <CountdownRing key={countdown.endsAt} {...countdown} />}
       {SIDES.map((side, seat) => (
         <span key={side} className={`play-compass-q play-compass-${side}${active === seat ? " is-active" : ""}`}>
           {WIND_CHARS[seatWind(seat, game.dealer)]}
