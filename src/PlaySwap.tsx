@@ -73,7 +73,8 @@ export function SwapPond({
             onClick={onPick && slot ? () => onPick(i) : undefined}
           >
             {t && t !== HELD_BACK && standing ? (
-              <TileGlyphSpan tile={t} block />
+              // Drawn as finely as your hand's - it stands like them.
+              <TileGlyphSpan tile={t} block="fine" />
             ) : (
               <span className="play-back">
                 <i className="tile-top" />
