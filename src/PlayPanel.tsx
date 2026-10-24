@@ -173,6 +173,8 @@ const WIN_SHOW_MS = 3700;
 // A phone held upright: the table is drawn turned (as App.css's media query).
 const TURNED = "(orientation: portrait) and (max-width: 820px)";
 const DRAW_SHOW_MS = 1700;
+// Online, how long a discard whose claim window passed unseen shows in the bubble.
+const FLASH_MS = 900;
 // 自動 autoplay: a bot plays your seat and you watch - the Grandmaster -
 // dealing on by itself this long after each result.
 const AUTOPLAY_BOT = "grandmaster";
@@ -658,6 +660,12 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
     const id = window.setTimeout(() => setRolling(false), speed === "fast" ? 900 : 1700);
     return () => window.clearTimeout(id);
   }, [rolling, speed]);
+  // Online the table doesn't wait for this phone's roll: the dice go as soon
+  // as the first tile is thrown, so they never sit over tiles landing on the
+  // felt (iPhone Safari drew those flat under the fading overlay).
+  useEffect(() => {
+    if (online && rolling && game.discardsMade > 0) setRolling(false);
+  }, [online, rolling, game.discardsMade]);
   const [opponents, setOpponents] = useState<string[]>(() =>
     saved?.opponents?.length === 3 && saved.opponents.every(knownBot) ? saved.opponents : DEFAULT_OPPONENTS
   );
@@ -1261,7 +1269,32 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
 
   // The pond whose newest tile is up for claiming (not when robbing a kong:
   // that tile was never discarded).
-  const discardFrom = game.phase.kind === "claims" && !game.phase.robKong ? game.phase.from : null;
+  // The newest discard: from whichever pond just grew - not from the claim
+  // window, which online is often settled before this phone sees it (no
+  // drop, no pin, no bubble for most bot discards). Gone once it's claimed
+  // or the hand ends. Online, a discard whose claim window passed unseen
+  // still flashes in the bubble for a moment.
+  const pondSizes = useRef<number[] | null>(null);
+  const [latest, setLatest] = useState<{ seat: number; count: number; tile: Tile; id: number } | null>(null);
+  const [flash, setFlash] = useState<{ seat: number; tile: Tile; id: number } | null>(null);
+  useEffect(() => {
+    const sizes = game.players.map((p) => p.discards.length);
+    const prev = pondSizes.current;
+    pondSizes.current = sizes;
+    if (!prev) return;
+    const seat = sizes.findIndex((n, i) => n > prev[i]);
+    if (seat < 0) return;
+    const tile = game.players[seat].discards[sizes[seat] - 1];
+    const id = Date.now();
+    setLatest({ seat, count: sizes[seat], tile, id });
+    if (online && game.phase.kind !== "claims") {
+      setFlash({ seat, tile, id });
+      window.setTimeout(() => setFlash((f) => (f?.id === id ? null : f)), FLASH_MS);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [game]);
+  const discardFrom =
+    game.phase.kind === "over" ? null : latest && game.players[latest.seat].discards.length === latest.count ? latest.seat : null;
   // The finished hand, with its scores as the card shows them (online, as the server sent them).
   const shownResult: ResultView | null = useMemo(() => {
     if (net) return net.result;
@@ -1423,7 +1456,11 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
     );
   };
 
-  const chows = humanClaims.filter((c): c is Extract<Claim, { kind: "chow" }> => c.kind === "chow");
+  // Your ways to make a run with the discard - each run once (with only one,
+  // 上 takes it at once; the choice shows only when there's a real choice).
+  const chows = humanClaims
+    .filter((c): c is Extract<Claim, { kind: "chow" }> => c.kind === "chow")
+    .filter((c, i, all) => all.findIndex((d) => tilesKey(sortTiles([...d.tiles])) === tilesKey(sortTiles([...c.tiles]))) === i);
   const otherClaims = humanClaims.filter((c) => c.kind !== "chow");
 
   return (
@@ -1682,10 +1719,17 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
             </div>
             <div className="play-middle">
               <Compass game={game} active={over ? null : activeSeat} center={compassCenter} />
-              {game.phase.kind === "claims" && (
+              {game.phase.kind === "claims" ? (
                 <span key={game.discardsMade} className={`play-spotlight from-${SIDES[game.phase.from]}`}>
                   <TileGlyphSpan tile={game.phase.tile} block />
                 </span>
+              ) : (
+                flash &&
+                game.phase.kind !== "over" && (
+                  <span key={flash.id} className={`play-spotlight from-${SIDES[flash.seat]}`}>
+                    <TileGlyphSpan tile={flash.tile} block />
+                  </span>
+                )
               )}
             </div>
             <div className="play-pond-slot play-pond-slot-right">

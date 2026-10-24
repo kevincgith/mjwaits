@@ -6412,7 +6412,7 @@ html.playing body {
 
 /* Your own hand falls back onto the table when you win: each block tips
    away from you about its foot until it lies at the felt's angle. */
-.play-hand.is-toppled :is(.tile-glyph.tile-art, .play-back) {
+.play-hand.is-toppled .play-hand-tile :is(.tile-glyph.tile-art, .play-back) {
   /* Timed as a winner's (TOPPLE_WINNER in PlayPanel). */
   animation: play-topple-mine 0.6s cubic-bezier(0.55, 0, 1, 0.45) both;
   animation-delay: calc(0.2s + var(--i, 0) * 0.07s);
@@ -6705,6 +6705,12 @@ html.playing body {
   display: inline-flex;
   padding: 0.04em;
   border-radius: 0.14em;
+}
+
+/* Bonus tiles (flowers, seasons) set out a size down - two thirds of the
+   meld tiles beside them - wherever they're declared. */
+.play-flowers > .tile-glyph {
+  font-size: calc(2em / 3);
 }
 
 .play-felt :is(.play-meld, .play-flowers) {
@@ -7310,7 +7316,8 @@ html.playing body {
   font-weight: 800;
   line-height: 1;
   box-shadow: 0 0.2rem 0.6rem rgba(0, 0, 0, 0.5), inset 0 0 0 1px rgba(255, 209, 102, 0.22), inset 0 0.12rem 0.2rem rgba(255, 255, 255, 0.08);
-  animation: play-spot 0.2s ease-out;
+  /* Scale only, no fade: it sits over your 3D hand (see .play-dice). */
+  animation: play-pop 0.2s ease-out both;
 }
 
 .play-call.is-win {
@@ -7395,6 +7402,14 @@ html.playing body {
   gap: 0.12em;
   margin-right: 0.3em;
   font-size: 0.74em;
+}
+
+/* Your declared melds and flowers lie face up on the table, as on a real
+   one (and as the others' do): each falls from standing to flat as it's
+   laid down, at the felt's angle. */
+.play-hand .play-my-melds :is(.tile-glyph.tile-art, .play-back) {
+  transform: rotateX(32deg);
+  animation: play-topple-mine 0.5s cubic-bezier(0.55, 0, 1, 0.45) both;
 }
 
 .play-hand-tile {
@@ -7829,7 +7844,7 @@ html.playing body {
    never shows, nor the ends pressed between neighbours - except beside a
    gap (the drawn tile, set apart; a tile picked to throw, lifted). Toppled,
    they show everything again. */
-.play-hand:not(.is-toppled) :is(.tile-glyph.tile-art, .play-back) > .tile-side.is-near,
+.play-hand:not(.is-toppled) .play-hand-tile :is(.tile-glyph.tile-art, .play-back) > .tile-side.is-near,
 .play-hand:not(.is-toppled) :is(.play-meld, .play-flowers) > :is(.tile-glyph, .play-back):not(:last-child) > .tile-side.is-right,
 .play-hand:not(.is-toppled) :is(.play-meld, .play-flowers) > :is(.tile-glyph, .play-back):not(:first-child) > .tile-side.is-left,
 .play-hand:not(.is-toppled) .play-hand-tile:not(.is-selected):has(+ .play-hand-tile:not(.is-drawn):not(.is-selected)) > .tile-glyph > .tile-side.is-right,
@@ -8118,7 +8133,9 @@ html.playing body {
   background: rgba(16, 12, 8, 0.72);
   box-shadow: var(--shadow-float);
   pointer-events: none;
-  animation: play-spot 0.2s ease-out;
+  /* Popped in by scale alone - a fading layer over the table makes Safari
+     draw the 3D tiles under it flat. */
+  animation: play-pop 0.2s ease-out both;
 }
 
 .play-dice-row {

@@ -16,7 +16,9 @@ describe("ML encoding", () => {
   it("round-trips every bot decision through the action space, legally", () => {
     const rng = seededRng(5);
     const bots = ["grandmaster", "veteran", "wall", "casual"].map(profileById);
-    let s: GameState = dealHand({ dealer: 0, roundWind: 1, dealerStreak: 0 });
+    // The deal seeded too, so the hand (and how many decisions it takes) is
+    // the same every run - unseeded, a quick win sometimes left too few.
+    let s: GameState = dealHand({ dealer: 0, roundWind: 1, dealerStreak: 0 }, undefined, rng);
     let decisions = 0;
     for (let steps = 0; s.phase.kind !== "over" && steps < 400; steps++) {
       if (s.phase.kind === "turn") {
