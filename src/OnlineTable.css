@@ -1,72 +1,658 @@
 /* ---- 線上對局: the way into an online table, its lobby and final scores ----
-   Pages in .play-screen's full-screen lacquer and tokens, upright or not.
+   The start screen's felt, gold and lacquer (PlayHome, .ph-* in App.css):
+   a title over the four winds and the ways in; the lobby as the table
+   itself, seats round the felt and the code in the middle, its rules
+   beside; the final scores as a podium. Laid out for a phone on its side,
+   stacked when it's upright (these pages stay unturned - they take typing).
    The hands are played on the Play table itself (PlayPanel). */
 
 .ot-screen {
   display: flex;
   flex-direction: column;
-  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
-  box-sizing: border-box;
+  overflow: hidden;
   font-size: 0.95rem;
+  background: radial-gradient(130% 110% at 30% 20%, #1f6a45 0%, #134b30 38%, #0b2c1c 72%, #071a10 100%);
 }
 
-.ot-muted {
-  color: var(--text-muted);
-  font-size: 0.85em;
+.ot-page {
+  position: relative;
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  justify-items: center;
+  gap: clamp(1rem, 4vw, 3.5rem);
+  width: 100%;
+  max-width: 62rem;
+  min-height: 0;
+  margin: 0 auto;
+  padding: max(0.9rem, env(safe-area-inset-top)) max(1.25rem, env(safe-area-inset-right)) max(0.9rem, env(safe-area-inset-bottom))
+    max(1.25rem, env(safe-area-inset-left));
+  box-sizing: border-box;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
-.ot-button {
-  min-height: 2.6rem;
-  padding: 0.5rem 1rem;
-  border: 1px solid var(--separator);
-  border-radius: 0.8rem;
-  background: var(--fill);
-  color: var(--text);
+@media (orientation: portrait) {
+  .ot-page {
+    grid-template-columns: minmax(0, 1fr);
+    align-content: start;
+    max-width: 30rem;
+    padding-top: calc(max(0.9rem, env(safe-area-inset-top)) + 2.6rem);
+  }
+}
+
+.ot-back {
+  position: absolute;
+  top: max(0.75rem, env(safe-area-inset-top));
+  left: max(0.75rem, env(safe-area-inset-left));
+  z-index: 3;
+}
+
+.ot-page h2 {
+  margin: 0 0 0.5rem;
+  color: var(--play-gold);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.ot-page h2 small {
+  color: var(--play-on-felt-muted);
+  font-size: 1em;
   font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: none;
 }
 
-.ot-button:disabled {
-  opacity: 0.5;
-  cursor: default;
+/* ---- Title: 線上對局 over the four winds ---------------------------------- */
+
+.ot-hero {
+  display: grid;
+  justify-items: center;
+  text-align: center;
+  animation: ph-rise 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
-.ot-button.is-primary {
-  border: none;
-  background: linear-gradient(#ffd166, #e29a1c);
-  color: var(--play-ink-on-gold);
+.ot-winds {
+  display: flex;
+  align-items: flex-end;
+  height: 1.2em;
+  margin-bottom: 0.15em;
+  font-size: clamp(2.6rem, min(14vh, 9vw), 4.6rem);
 }
 
-.ot-button.is-danger {
-  border-color: var(--danger-text-1);
-  color: var(--danger-text-1);
+.ot-wind-tile {
+  display: block;
+  line-height: 0;
+  rotate: var(--fan);
+  transform-origin: 50% 130%;
+  animation: ph-deal 0.7s cubic-bezier(0.2, 0.9, 0.25, 1.15) both;
 }
 
-.ot-button.is-small {
-  min-height: 2rem;
-  padding: 0.25rem 0.7rem;
-  font-size: 0.85rem;
+.ot-wind-tile img.tile-face {
+  border-radius: 0.07em;
+  box-shadow:
+    0 0 0 0.5px rgba(0, 0, 0, 0.25),
+    0 0.035em 0 var(--play-ivory),
+    0 0.07em 0 var(--play-ivory),
+    0 0.085em 0 #7fd98c,
+    0 0.12em 0 var(--play-back),
+    0 0.14em 0 var(--play-back-edge),
+    0 0.25em 0.3em rgba(0, 0, 0, 0.45);
 }
 
-.ot-icon {
-  width: 2.4rem;
-  height: 2.4rem;
-  border: none;
-  border-radius: 50%;
-  background: var(--fill);
-  color: var(--text);
-  font-size: 1.3rem;
+.ot-wind-tile.is-0 { --fan: -15deg; margin-right: -0.08em; animation-delay: 0.2s; }
+.ot-wind-tile.is-1 { --fan: -5deg; translate: 0 -0.07em; z-index: 1; animation-delay: 0.1s; }
+.ot-wind-tile.is-2 { --fan: 5deg; translate: 0 -0.07em; z-index: 1; animation-delay: 0.15s; }
+.ot-wind-tile.is-3 { --fan: 15deg; margin-left: -0.08em; animation-delay: 0.25s; }
+
+.ot-title {
+  display: grid;
+  margin: 0;
   line-height: 1;
 }
 
-.ot-tag {
-  margin-left: 0.3em;
-  padding: 0.05em 0.4em;
-  border-radius: 0.5em;
-  background: var(--fill);
+.ot-title-zh {
+  margin-right: -0.1em;
+  font-size: clamp(2rem, min(11vh, 7vw), 3.6rem);
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  background: linear-gradient(180deg, #fff3cc 0%, var(--play-gold) 45%, var(--play-gold-deep) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 0.06em 0.12em rgba(0, 0, 0, 0.5));
+}
+
+.ot-title-en {
+  margin-top: 0.45rem;
+  margin-right: -0.36em;
+  color: rgba(255, 233, 180, 0.8);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.36em;
+  text-transform: uppercase;
+}
+
+.ot-tagline {
+  margin: 0.55rem 0 0;
+  color: var(--play-on-felt-muted);
+  font-size: 0.8rem;
+  letter-spacing: 0.04em;
+}
+
+@media (orientation: portrait) {
+  .ot-winds {
+    font-size: clamp(2.4rem, 13vw, 4rem);
+  }
+
+  .ot-title-zh {
+    font-size: clamp(2rem, 10vw, 3rem);
+  }
+}
+
+/* ---- The ways in ------------------------------------------------------------ */
+
+.ot-panel {
+  display: grid;
+  gap: 0.6rem;
+  width: 100%;
+  max-width: 23rem;
+  align-self: center;
+}
+
+/* On its side, the ways in scroll by themselves beside the title. */
+@media (orientation: landscape) {
+  .ot-entry,
+  .ot-ended {
+    overflow: hidden;
+  }
+
+  .ot-entry .ot-panel,
+  .ot-ended .ot-panel {
+    align-self: stretch;
+    align-content: safe center;
+    max-height: 100%;
+    margin: -0.6rem -0.6rem;
+    padding: 0.6rem;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: none;
+  }
+}
+
+.ot-panel > * {
+  animation: ph-rise 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.ot-panel > :nth-child(2) { animation-delay: 0.08s; }
+.ot-panel > :nth-child(3) { animation-delay: 0.16s; }
+.ot-panel > :nth-child(n + 4) { animation-delay: 0.24s; }
+
+/* The lacquer card the start screen's menu is made of, for fields too. */
+.ot-name,
+.ot-join {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.55rem 0.6rem 0.55rem 0.9rem;
+  border-radius: 1rem;
+  background: linear-gradient(180deg, rgba(40, 32, 24, 0.92), rgba(24, 19, 14, 0.94));
+  box-shadow:
+    0 0 0 1px rgba(255, 209, 102, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 0.4rem 1rem rgba(0, 0, 0, 0.35);
+  transition: box-shadow 0.2s ease;
+}
+
+.ot-name:focus-within,
+.ot-join:focus-within {
+  box-shadow:
+    0 0 0 1.5px var(--play-gold),
+    0 0 1.2rem rgba(255, 209, 102, 0.2),
+    0 0.4rem 1rem rgba(0, 0, 0, 0.35);
+}
+
+.ot-name-text {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+
+.ot-name-text small {
   color: var(--text-muted);
-  font-size: 0.72em;
+  font-size: 0.72rem;
+}
+
+.ot-name input,
+.ot-join input {
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  outline: none;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 1.05rem; /* 16px+: no zoom on iPhone */
+  font-weight: 700;
+}
+
+.ot-join input {
+  flex: 1;
+  font-size: 1.35rem;
+  font-weight: 800;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--play-ivory);
+}
+
+.ot-join input::placeholder {
+  color: rgba(230, 223, 203, 0.28);
+}
+
+.ot-go {
+  flex: none;
+  min-height: 2.4rem;
+  padding: 0 1.1rem;
+  border: none;
+  border-radius: 0.75rem;
+  background: linear-gradient(180deg, #ffe08a 0%, var(--play-gold) 45%, var(--play-gold-deep) 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  color: var(--play-ink-on-gold);
+  font-weight: 800;
+}
+
+.ot-go:disabled {
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: none;
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.ot-screen .ph-item:disabled {
+  opacity: 0.6;
+  filter: saturate(0.4);
+  cursor: default;
+}
+
+/* A round token for a player: their initial on ivory, a bot's face on
+   jade, an empty seat dashed. */
+.ot-avatar {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 2.6rem;
+  height: 2.6rem;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #fffaf0, var(--play-ivory) 60%, #c9bf9f);
+  box-shadow:
+    inset 0 -2px 0 rgba(0, 0, 0, 0.15),
+    0 0 0 2px rgba(255, 209, 102, 0.55),
+    0 0.2rem 0.5rem rgba(0, 0, 0, 0.4);
+  color: #2b2116;
+  font-size: 1.15rem;
+  font-weight: 800;
+}
+
+.ot-chip-button {
+  justify-self: center;
+  min-height: 2.3rem;
+  padding: 0 1.2rem;
+  border: none;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.28);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+  color: var(--text);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.ot-chip-button:active,
+.ot-go:active,
+.ot-mini:active,
+.ot-share:active {
+  transform: scale(0.96);
+}
+
+.ot-note {
+  margin: 0;
+  color: var(--play-on-felt-muted);
+  font-size: 0.82rem;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.ot-recent {
+  margin-top: 0.2rem;
+}
+
+.ot-recent-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.ot-recent-chip {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.28);
+  box-shadow: inset 0 0 0 1px rgba(255, 209, 102, 0.3);
+}
+
+.ot-recent-chip button {
+  min-height: 2.1rem;
+  padding: 0 0.4rem 0 0.9rem;
+  border: none;
+  background: none;
+  color: var(--play-gold);
+  font-weight: 800;
+  letter-spacing: 0.18em;
+}
+
+.ot-recent-chip .ot-recent-x {
+  padding: 0 0.75rem 0 0.35rem;
+  color: var(--text-muted);
+  font-size: 1.1rem;
+  letter-spacing: 0;
+}
+
+/* Tips: taking an invite to the installed app, installing it. */
+.ot-tip {
+  position: relative;
+  display: grid;
+  justify-items: start;
+  gap: 0.45rem;
+  padding: 0.8rem 0.95rem;
+  border-radius: 1rem;
+  background: rgba(0, 0, 0, 0.26);
+  box-shadow: inset 0 0 0 1px rgba(255, 209, 102, 0.22);
+}
+
+.ot-tip h2 {
+  margin: 0;
+}
+
+.ot-tip p {
+  margin: 0;
+  color: var(--play-on-felt-muted);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.ot-tip strong {
+  color: var(--text);
+}
+
+.ot-tip .ot-chip-button {
+  justify-self: start;
+}
+
+.ot-tip-close {
+  position: absolute;
+  top: 0.3rem;
+  right: 0.3rem;
+  width: 2rem;
+  height: 2rem;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: var(--text-muted);
+  font-size: 1.2rem;
+}
+
+.ot-tip:has(.ot-tip-close) h2 {
+  padding-right: 2rem;
+}
+
+/* ---- The lobby: the table itself, its rules beside -------------------------- */
+
+.ot-lobby {
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  align-items: stretch;
+  overflow: hidden;
+}
+
+.ot-room {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-height: 0;
+  container-type: size;
+}
+
+/* Square, as big as the space allows. */
+.ot-table {
+  position: relative;
+  width: min(100cqw, 100cqh, 27rem);
+  aspect-ratio: 1;
+  animation: ph-rise 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+/* The felt in its wooden rim, lit from above. */
+.ot-felt {
+  position: absolute;
+  inset: 13%;
+  border-radius: 1.4rem;
+  background:
+    radial-gradient(70% 70% at 50% 40%, rgba(255, 209, 102, 0.14), transparent 70%),
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.02) 0 2px, transparent 2px 6px),
+    linear-gradient(160deg, #2a8457, #17603c 55%, #0f4a2d);
+  box-shadow:
+    0 0 0 0.45rem #4a2f17,
+    0 0 0 0.55rem #2a1a0b,
+    inset 0 0 1.6rem rgba(0, 0, 0, 0.45),
+    0 1rem 2.4rem rgba(0, 0, 0, 0.5);
+}
+
+.ot-felt::after {
+  content: "";
+  position: absolute;
+  inset: 0.5rem;
+  border: 1px solid rgba(255, 209, 102, 0.16);
+  border-radius: 1rem;
+}
+
+.ot-center {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  translate: -50% -50%;
+  display: grid;
+  justify-items: center;
+  gap: 0.35rem;
+}
+
+.ot-center-label {
+  color: var(--play-on-felt-muted);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* The code on ivory tiles. */
+.ot-code {
+  display: flex;
+  gap: 0.14em;
+  font-size: clamp(1rem, 5.2cqmin, 1.35rem);
+}
+
+.ot-code span {
+  display: grid;
+  place-items: center;
+  width: 1.08em;
+  height: 1.42em;
+  border-radius: 0.2em;
+  background: linear-gradient(180deg, #fffaf0, var(--play-ivory));
+  box-shadow:
+    0 0.07em 0 #7fd98c,
+    0 0.13em 0 var(--play-back),
+    0 0.16em 0 var(--play-back-edge),
+    0 0.28em 0.35em rgba(0, 0, 0, 0.45);
+  color: #2b2116;
+  font-weight: 800;
+  animation: ph-deal 0.6s cubic-bezier(0.2, 0.9, 0.25, 1.15) both;
+  --fan: 0deg;
+}
+
+.ot-code span:nth-child(2) { animation-delay: 0.05s; }
+.ot-code span:nth-child(3) { animation-delay: 0.1s; }
+.ot-code span:nth-child(4) { animation-delay: 0.15s; }
+.ot-code span:nth-child(5) { animation-delay: 0.2s; }
+
+.ot-share {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.3rem;
+  min-height: 1.9rem;
+  padding: 0 0.85rem;
+  border: none;
+  border-radius: 999px;
+  background: rgba(10, 30, 20, 0.6);
+  box-shadow: inset 0 0 0 1px rgba(255, 209, 102, 0.4);
+  color: var(--play-gold);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.ot-watching {
+  color: var(--play-on-felt-muted);
+  font-size: 0.68rem;
+}
+
+/* A seat: its player's token on the rim, wind and dealer on it. */
+.ot-chair {
+  position: absolute;
+  display: grid;
+  justify-items: center;
+  gap: 0.05rem;
+  width: 6.2rem;
+  text-align: center;
+  animation: ph-rise 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.ot-chair.is-bottom { bottom: 0; left: 50%; translate: -50% 0; animation-delay: 0.1s; }
+.ot-chair.is-right { right: 0; top: 50%; translate: 0 -50%; animation-delay: 0.16s; }
+.ot-chair.is-top { top: 0; left: 50%; translate: -50% 0; animation-delay: 0.22s; }
+.ot-chair.is-left { left: 0; top: 50%; translate: 0 -50%; animation-delay: 0.28s; }
+
+.ot-chair .ot-avatar {
+  width: 2.5rem;
+  height: 2.5rem;
+}
+
+.ot-chair:has(.ot-avatar svg) .ot-avatar {
+  background: radial-gradient(circle at 35% 30%, #6fe08a, var(--play-back) 60%, var(--play-back-edge));
+  color: #0b2c1c;
+}
+
+.ot-chair.is-empty .ot-avatar {
+  background: rgba(0, 0, 0, 0.3);
+  box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.28);
+  color: rgba(255, 255, 255, 0.45);
+  font-weight: 400;
+  outline: 1.5px dashed rgba(255, 255, 255, 0.25);
+  outline-offset: 3px;
+}
+
+.ot-chair.is-me .ot-avatar {
+  box-shadow:
+    inset 0 -2px 0 rgba(0, 0, 0, 0.15),
+    0 0 0 2.5px var(--play-gold),
+    0 0 1rem rgba(255, 209, 102, 0.55);
+}
+
+.ot-chair.is-away .ot-avatar {
+  filter: grayscale(0.8) brightness(0.75);
+}
+
+/* The seat's wind, and 莊 on the first dealer. */
+.ot-wind,
+.ot-dealer {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 1.15rem;
+  height: 1.15rem;
+  border-radius: 50%;
+  font-family: var(--play-cjk);
+  font-size: 0.66rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.ot-wind {
+  right: -0.35rem;
+  bottom: -0.2rem;
+  background: #1c150e;
+  box-shadow: 0 0 0 1px rgba(255, 209, 102, 0.6);
+  color: var(--play-gold);
+}
+
+.ot-dealer {
+  left: -0.35rem;
+  top: -0.2rem;
+  background: #c8372d;
+  box-shadow: 0 0 0 1px #ffb3a8;
+  color: #fff;
+}
+
+.ot-chair-name {
+  max-width: 100%;
+  margin-top: 0.2rem;
+  overflow: hidden;
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+.ot-chair.is-empty .ot-chair-name {
+  color: var(--play-on-felt-muted);
   font-weight: 600;
-  vertical-align: 0.1em;
+}
+
+.ot-chair-tags {
+  display: flex;
+  gap: 0.2rem;
+  min-height: 0;
+}
+
+.ot-chair-tags:empty {
+  display: none;
+}
+
+.ot-chair-actions {
+  display: flex;
+  gap: 0.2rem;
+  margin-top: 0.3rem;
+}
+
+.ot-chair-actions:empty {
+  display: none;
+}
+
+.ot-tag {
+  padding: 0.08em 0.45em;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--play-on-felt-muted);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.ot-tag.is-you {
+  background: var(--play-gold);
+  color: var(--play-ink-on-gold);
 }
 
 .ot-tag.is-away {
@@ -74,243 +660,263 @@
   color: var(--warning-text);
 }
 
-.ot-wind {
-  display: inline-grid;
-  place-items: center;
-  width: 1.6em;
-  height: 1.6em;
-  border-radius: 50%;
-  background: var(--fill);
-  font-family: var(--play-cjk);
+.ot-mini {
+  min-height: 1.6rem;
+  max-width: 6.2rem;
+  padding: 0 0.55rem;
+  border: none;
+  border-radius: 999px;
+  background: rgba(20, 15, 10, 0.78);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.7rem;
   font-weight: 700;
 }
 
-.ot-final .is-neg {
-  color: var(--play-neg);
+.ot-mini.is-gold {
+  background: linear-gradient(180deg, #ffe08a, var(--play-gold-deep));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  color: var(--play-ink-on-gold);
 }
 
-.ot-final .is-pos {
-  color: var(--play-pos);
-}
-
-/* ---- Pages: joining, the lobby, the end --------------------------------- */
-
-.ot-page {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  width: 100%;
-  max-width: 32rem;
-  margin: 0 auto;
-  padding: 0.75rem 1rem 2rem;
-  box-sizing: border-box;
-  overflow-y: auto;
-}
-
-.ot-head {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.ot-head h1 {
-  margin: 0;
-  font-size: 1.2rem;
-}
-
-.ot-page h2 {
-  margin: 0 0 0.4rem;
-  color: var(--text-muted);
-  font-size: 0.8rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.ot-field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-}
-
-.ot-field input,
-.ot-join input,
+/* A select is as wide as its longest bot's name: kept to its label's. */
 .ot-select {
-  min-height: 2.6rem;
-  padding: 0 0.8rem;
-  border: 1px solid var(--separator);
-  border-radius: 0.8rem;
-  background: rgba(0, 0, 0, 0.25);
-  color: var(--text);
-  font: inherit;
-  font-size: 1rem; /* no zoom on iPhone */
-}
-
-.ot-select {
-  min-height: 2rem;
-  padding: 0 0.5rem;
-  font-size: 0.85rem;
-}
-
-.ot-join {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.ot-join input {
-  flex: 1;
+  appearance: none;
+  -webkit-appearance: none;
+  width: 3.5rem;
   min-width: 0;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-}
-
-/* Tips: taking an invite to the installed app, installing it. */
-.ot-tip {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0.5rem;
-  padding: 0.85rem 1rem;
-  border: 1px solid rgba(255, 209, 102, 0.35);
-  border-radius: 1rem;
-  background: var(--fill);
-}
-
-.ot-tip h2 {
-  margin: 0;
-  color: var(--play-gold);
-}
-
-.ot-tip p,
-.ot-note {
-  margin: 0;
-  color: var(--text-muted);
-  font-size: 0.85rem;
-  line-height: 1.4;
-}
-
-.ot-tip strong {
-  color: var(--text);
-}
-
-.ot-tip-close {
-  position: absolute;
-  top: 0.4rem;
-  right: 0.4rem;
-}
-
-.ot-tip:has(.ot-tip-close) h2 {
-  padding-right: 2.4rem;
-}
-
-.ot-recent {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.ot-recent-row {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.ot-recent-row .ot-button {
-  flex: 1;
-}
-
-.ot-invite {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 0.8rem 1rem;
-  border-radius: 1rem;
-  background: var(--fill);
-}
-
-.ot-code {
-  color: var(--play-gold);
-  font-size: 2rem;
-  font-weight: 800;
-  letter-spacing: 0.15em;
-}
-
-.ot-seats {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-}
-
-.ot-seat-row {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  min-height: 2.8rem;
-  padding: 0.3rem 0.6rem;
-  border-radius: 0.8rem;
-  background: var(--fill);
-}
-
-.ot-seat-row.is-me {
-  box-shadow: inset 0 0 0 1px var(--play-gold);
-}
-
-.ot-seat-who {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
+  text-align: center;
   text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-.ot-settings {
+/* Beside the table: its rules, and the way to start. */
+.ot-side {
   display: flex;
   flex-direction: column;
-  gap: 0.7rem;
+  gap: 0.6rem;
+  width: 100%;
+  max-width: 24rem;
+  min-height: 0;
+  animation: ph-rise 0.6s 0.1s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.ot-rules {
+  flex: 0 1 auto;
+  display: grid;
+  gap: 0.6rem;
+  min-height: 0;
+  padding: 0.85rem 0.9rem;
+  border-radius: 1rem;
+  background: linear-gradient(180deg, rgba(40, 32, 24, 0.85), rgba(24, 19, 14, 0.9));
+  box-shadow:
+    0 0 0 1px rgba(255, 209, 102, 0.18),
+    0 0.4rem 1rem rgba(0, 0, 0, 0.3);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.ot-rules h2 {
+  margin: 0;
 }
 
 .ot-setting {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
+  display: grid;
+  gap: 0.3rem;
+  font-size: 0.82rem;
+  font-weight: 600;
 }
 
+.ot-setting .ot-muted {
+  color: var(--text-muted);
+  font-size: 0.92em;
+  font-weight: 400;
+}
+
+/* A segmented control: the chosen one in gold. */
 .ot-seg {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.3rem;
+  gap: 0.2rem;
+  padding: 0.2rem;
+  border-radius: 0.75rem;
+  background: rgba(0, 0, 0, 0.35);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.4);
 }
 
 .ot-seg button {
-  min-height: 2.1rem;
-  padding: 0.2rem 0.75rem;
+  flex: 1;
+  min-width: 0;
+  min-height: 1.8rem;
+  padding: 0.15rem 0.4rem;
   border: none;
   border-radius: 0.6rem;
-  background: var(--fill);
+  background: none;
   color: var(--text);
-  font-size: 0.85rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition:
+    background 0.18s ease,
+    color 0.18s ease;
 }
 
 .ot-seg button.toggle-on {
-  background: var(--play-seg-on);
-  box-shadow: inset 0 0 0 1px var(--play-gold);
-  color: var(--play-gold);
+  background: linear-gradient(180deg, #ffe08a, var(--play-gold) 50%, var(--play-gold-deep));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    0 1px 3px rgba(0, 0, 0, 0.4);
+  color: var(--play-ink-on-gold);
+  font-weight: 800;
 }
 
 .ot-seg button:disabled {
-  opacity: 0.45;
+  opacity: 0.4;
   cursor: default;
 }
 
+.ot-seg button.toggle-on:disabled {
+  opacity: 0.85;
+}
+
+.ot-start {
+  flex: none;
+  display: grid;
+  gap: 0.45rem;
+}
+
+/* Four pips: how many seats are taken. */
+.ot-pips {
+  display: flex;
+  justify-content: center;
+  gap: 0.35rem;
+}
+
+.ot-pips span {
+  width: 1.4rem;
+  height: 0.28rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  transition: background 0.3s ease;
+}
+
+.ot-pips span.is-on {
+  background: var(--play-gold);
+  box-shadow: 0 0 0.5rem rgba(255, 209, 102, 0.6);
+}
+
+.ot-screen .ph-item.is-ready {
+  animation: ot-ready 1.8s ease-in-out infinite;
+}
+
+@keyframes ot-ready {
+  50% {
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.55),
+      inset 0 -2px 0 rgba(120, 70, 0, 0.35),
+      0 0.45rem 1.4rem rgba(226, 154, 28, 0.55),
+      0 0 2.6rem rgba(255, 209, 102, 0.45);
+  }
+}
+
 .ot-wait-note {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  margin: 0;
+  padding: 0.75rem;
+  color: var(--play-on-felt-muted);
+  font-size: 0.85rem;
   text-align: center;
 }
 
+/* Three dots, taking turns: waiting on someone. */
+.ot-dots {
+  display: inline-flex;
+  gap: 0.25rem;
+}
+
+.ot-dots i {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+  background: var(--play-gold);
+  animation: ot-dot 1.2s ease-in-out infinite;
+}
+
+.ot-dots i:nth-child(2) { animation-delay: 0.15s; }
+.ot-dots i:nth-child(3) { animation-delay: 0.3s; }
+
+@keyframes ot-dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.3;
+    transform: none;
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-0.2rem);
+  }
+}
+
+@media (orientation: portrait) {
+  .ot-lobby {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    overflow-y: auto;
+  }
+
+  .ot-room {
+    container-type: inline-size;
+  }
+
+  .ot-table {
+    width: min(100cqw, 24rem);
+  }
+
+  .ot-code {
+    font-size: clamp(1rem, 5.2cqw, 1.35rem);
+  }
+
+  .ot-rules {
+    overflow: visible;
+  }
+
+  .ot-start {
+    position: sticky;
+    bottom: calc(-1 * max(0.9rem, env(safe-area-inset-bottom)));
+    margin-inline: -1rem;
+    padding: 1.4rem 1rem max(0.9rem, env(safe-area-inset-bottom));
+    background: linear-gradient(rgba(8, 32, 15, 0), #08200f 1.1rem);
+  }
+}
+
+/* ---- The end: a podium ----------------------------------------------------- */
+
+.ot-trophy {
+  display: grid;
+  place-items: center;
+  width: 4.2rem;
+  height: 4.2rem;
+  margin-bottom: 0.7rem;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #fff3cc, var(--play-gold) 55%, var(--play-gold-deep));
+  box-shadow:
+    0 0 0 0.3rem rgba(255, 209, 102, 0.2),
+    0 0 2.4rem rgba(255, 209, 102, 0.45),
+    0 0.4rem 1rem rgba(0, 0, 0, 0.4);
+  color: var(--play-ink-on-gold);
+  font-size: 1.9rem;
+  font-weight: 800;
+  animation: ph-deal 0.8s cubic-bezier(0.2, 0.9, 0.25, 1.15) both;
+  --fan: 0deg;
+}
+
 .ot-final {
-  display: flex;
-  flex-direction: column;
+  display: grid;
   gap: 0.4rem;
   margin: 0;
   padding: 0;
@@ -319,12 +925,67 @@
 
 .ot-final li {
   display: flex;
-  justify-content: space-between;
-  padding: 0.7rem 1rem;
-  border-radius: 0.8rem;
-  background: var(--fill);
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.55rem 0.9rem 0.55rem 0.6rem;
+  border-radius: 0.9rem;
+  background: linear-gradient(180deg, rgba(40, 32, 24, 0.92), rgba(24, 19, 14, 0.94));
+  box-shadow: 0 0 0 1px rgba(255, 209, 102, 0.16);
+  animation: ph-rise 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.ot-final li.is-0 {
+  padding-block: 0.75rem;
+  background: linear-gradient(180deg, #ffe08a 0%, var(--play-gold) 45%, var(--play-gold-deep) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    0 0.45rem 1.2rem rgba(226, 154, 28, 0.35);
+  color: var(--play-ink-on-gold);
+}
+
+.ot-place {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.55rem;
+  background: rgba(255, 209, 102, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(255, 209, 102, 0.3);
+  color: var(--play-gold);
+  font-family: var(--play-cjk);
+  font-weight: 800;
+}
+
+.ot-final li.is-0 .ot-place {
+  background: rgba(46, 29, 11, 0.9);
+  box-shadow: none;
+}
+
+.ot-final-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ot-final-score {
   font-size: 1.1rem;
-  font-weight: 600;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.ot-final-score.is-pos {
+  color: var(--play-pos);
+}
+
+.ot-final-score.is-neg {
+  color: var(--play-neg);
+}
+
+.ot-final li.is-0 .ot-final-score {
+  color: inherit;
 }
 
 .ot-center-card {
@@ -334,6 +995,28 @@
   justify-content: center;
   gap: 1rem;
   flex: 1;
+  position: relative;
+  color: var(--play-on-felt-muted);
+}
+
+.ot-center-card p {
+  margin: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ot-hero,
+  .ot-wind-tile,
+  .ot-panel > *,
+  .ot-table,
+  .ot-chair,
+  .ot-code span,
+  .ot-side,
+  .ot-final li,
+  .ot-trophy,
+  .ot-dots i,
+  .ot-screen .ph-item.is-ready {
+    animation: none !important;
+  }
 }
 
 /* Connection and messages. */

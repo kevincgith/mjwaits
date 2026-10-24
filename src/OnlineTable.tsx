@@ -29,6 +29,8 @@ import {
 import type { ScoreGame } from "@mjwaits/shared/engine/ledger";
 import { PlayScores } from "./scores/playScores";
 import { PlayPanel, type OnlinePlay } from "./PlayPanel";
+import type { Tile } from "@mjwaits/shared/engine/mahjong";
+import { TileGlyphSpan } from "./TileGlyphs";
 import "./OnlineTable.css";
 
 const WIND_CHARS = ["", "東", "南", "西", "北"];
@@ -40,6 +42,39 @@ type Welcome = { id: string; host: boolean };
 const signed = (n: number) => (n > 0 ? `+${n}` : String(n));
 const tone = (n: number) => (n > 0 ? " is-pos" : n < 0 ? " is-neg" : "");
 const botName = (bot: TableBot) => profileById(bot).name;
+// A name's first letter (or character), for its round token.
+const initial = (name: string) => [...name.trim()][0]?.toUpperCase() ?? "?";
+const PLACINGS = ["冠", "亞", "季", "殿"];
+
+// 東 南 西 北, fanned over the title.
+const WIND_TILES: Tile[] = [1, 2, 3, 4].map((rank) => ({ suit: "z", rank }));
+
+function BackButton({ onClick, label }: { onClick: () => void; label: string }) {
+  return (
+    <button type="button" className="play-icon-button ot-back" onClick={onClick} aria-label={label}>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+        <path d="M15 5l-7 7 7 7" />
+      </svg>
+    </button>
+  );
+}
+
+function Chevron() {
+  return (
+    <svg className="ph-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
+      <path d="M9 5l7 7-7 7" />
+    </svg>
+  );
+}
+
+function BotFace() {
+  return (
+    <svg width="58%" height="58%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+      <rect x="4" y="7" width="16" height="12" rx="3.5" />
+      <path d="M12 3v4M9 12.5v1M15 12.5v1M2 12v3M22 12v3" />
+    </svg>
+  );
+}
 
 
 // ---- The screen ------------------------------------------------------------------------
@@ -178,6 +213,7 @@ export function OnlineTable({ initialCode, onExit }: { initialCode: string | nul
 
   return (
     <div className="play-screen ot-screen">
+      <div className="ph-glow" aria-hidden="true" />
       {!code ? (
         <Entry
           name={name}
@@ -193,8 +229,13 @@ export function OnlineTable({ initialCode, onExit }: { initialCode: string | nul
         />
       ) : !table || !me ? (
         <div className="ot-center-card">
+          <span className="ot-dots" aria-hidden="true">
+            <i />
+            <i />
+            <i />
+          </span>
           <p>{status === "reconnecting" ? "Reconnecting…" : `Joining table ${code}…`}</p>
-          <button type="button" className="ot-button" onClick={leave}>
+          <button type="button" className="ot-chip-button" onClick={leave}>
             Cancel
           </button>
         </div>
@@ -281,219 +322,305 @@ function Entry({
     }
   };
   return (
-    <div className="ot-page">
-      <header className="ot-head">
-        <button type="button" className="ot-icon" onClick={onExit} aria-label="Back">
-          ‹
-        </button>
-        <h1>線上對局 Online table</h1>
-      </header>
-      <label className="ot-field">
-        <span className="ot-muted">Name</span>
-        <input value={name} maxLength={24} onChange={(e) => setName(e.target.value)} placeholder="Name" autoComplete="nickname" />
-      </label>
-      <button type="button" className="ot-button is-primary" disabled={busy} onClick={() => onEnter("new")}>
-        {busy ? "Making a table…" : "New table"}
-      </button>
-      <div className="ot-join">
-        <input
-          value={joinCode}
-          onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
-          placeholder="Table code"
-          aria-label="Table code"
-          maxLength={8}
-          autoCapitalize="characters"
-        />
-        <button type="button" className="ot-button" disabled={!normalized} onClick={() => normalized && onEnter(normalized)}>
-          Join
-        </button>
-      </div>
-      {installed && (
-        <button type="button" className="ot-button" onClick={pasteInvite}>
-          Paste invite
-        </button>
-      )}
-      {note && <p className="ot-note">{note}</p>}
-      {/* Opened from an invite in the browser: if they've the app, how to take it there. */}
-      {!installed && invited && (
-        <section className="ot-tip">
-          <h2>Got MJWaits on your home screen?</h2>
-          <p>
-            Links always open in the browser{apple ? " on iPhone" : ""}. To play this table in the app: tap <strong>Copy invite</strong>, open MJWaits
-            from your home screen, hold its logo to open the Play table, then <strong>☰ → 線上對局</strong> and <strong>Paste invite</strong>.
-          </p>
-          <button type="button" className="ot-button" onClick={copyInvite}>
-            Copy invite
-          </button>
-        </section>
-      )}
-      {installTip && (
-        <section className="ot-tip">
-          <button type="button" className="ot-icon ot-tip-close" aria-label="Dismiss" onClick={dismissInstallTip}>
-            ×
-          </button>
-          <h2>Install MJWaits</h2>
-          <p>
-            {apple ? (
-              <>
-                Tap <strong>Share</strong> in Safari, then <strong>Add to Home Screen</strong>.
-              </>
-            ) : (
-              <>
-                Open the browser menu, then <strong>Install app</strong> (or <strong>Add to Home screen</strong>).
-              </>
-            )}{" "}
-            It opens full screen like an app, and keeps your tables and games on this phone.
-            {invited && " Install from this page and the app opens straight at this table."}
-          </p>
-        </section>
-      )}
-      {recent.length > 0 && (
-        <section className="ot-recent">
-          <h2>Your tables</h2>
-          {recent.map((c) => (
-            <div key={c} className="ot-recent-row">
-              <button type="button" className="ot-button" onClick={() => onEnter(c)}>
-                Back to {c}
-              </button>
-              <button type="button" className="ot-icon" aria-label={`Dismiss ${c}`} title="Dismiss" onClick={() => onForget(c)}>
-                ×
-              </button>
-            </div>
+    <div className="ot-page ot-entry">
+      <BackButton onClick={onExit} label="Back" />
+      <div className="ot-hero">
+        <div className="ot-winds" aria-hidden="true">
+          {WIND_TILES.map((t, i) => (
+            <span key={i} className={`ot-wind-tile is-${i}`}>
+              <TileGlyphSpan tile={t} />
+            </span>
           ))}
-        </section>
-      )}
+        </div>
+        <h1 className="ot-title">
+          <span className="ot-title-zh">線上對局</span>
+          <span className="ot-title-en">Online table</span>
+        </h1>
+        <p className="ot-tagline">Four seats · friends on their own phones, or bots</p>
+      </div>
+
+      <div className="ot-panel">
+        <label className="ot-name">
+          <span className="ot-avatar" aria-hidden="true">
+            {initial(name)}
+          </span>
+          <span className="ot-name-text">
+            <small>Playing as</small>
+            <input value={name} maxLength={24} onChange={(e) => setName(e.target.value)} placeholder="Your name" autoComplete="nickname" />
+          </span>
+        </label>
+
+        <button type="button" className="ph-item is-primary" disabled={busy} onClick={() => onEnter("new")}>
+          <span className="ph-item-zh">開枱</span>
+          <span className="ph-item-text">
+            <strong>{busy ? "Making a table…" : "New table"}</strong>
+            <small>You host · invite friends with a code</small>
+          </span>
+          <Chevron />
+        </button>
+
+        <div className="ot-join">
+          <span className="ph-item-zh">入座</span>
+          <input
+            value={joinCode}
+            onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+            onKeyDown={(e) => e.key === "Enter" && normalized && onEnter(normalized)}
+            placeholder="CODE"
+            aria-label="Table code"
+            maxLength={8}
+            autoCapitalize="characters"
+            autoComplete="off"
+            spellCheck={false}
+          />
+          <button type="button" className="ot-go" disabled={!normalized} onClick={() => normalized && onEnter(normalized)}>
+            Join
+          </button>
+        </div>
+        {installed && (
+          <button type="button" className="ot-chip-button" onClick={pasteInvite}>
+            Paste invite
+          </button>
+        )}
+        {note && <p className="ot-note">{note}</p>}
+
+        {recent.length > 0 && (
+          <section className="ot-recent">
+            <h2>Your tables</h2>
+            <div className="ot-recent-list">
+              {recent.map((c) => (
+                <span key={c} className="ot-recent-chip">
+                  <button type="button" onClick={() => onEnter(c)} aria-label={`Back to ${c}`}>
+                    {c}
+                  </button>
+                  <button type="button" className="ot-recent-x" aria-label={`Dismiss ${c}`} title="Dismiss" onClick={() => onForget(c)}>
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* Opened from an invite in the browser: if they've the app, how to take it there. */}
+        {!installed && invited && (
+          <section className="ot-tip">
+            <h2>Got MJWaits on your home screen?</h2>
+            <p>
+              Links always open in the browser{apple ? " on iPhone" : ""}. To play this table in the app: tap <strong>Copy invite</strong>, open MJWaits
+              from your home screen, hold its logo to open the Play table, then <strong>線上 Play online</strong> and <strong>Paste invite</strong>.
+            </p>
+            <button type="button" className="ot-chip-button" onClick={copyInvite}>
+              Copy invite
+            </button>
+          </section>
+        )}
+        {installTip && (
+          <section className="ot-tip">
+            <button type="button" className="ot-tip-close" aria-label="Dismiss" onClick={dismissInstallTip}>
+              ×
+            </button>
+            <h2>Install MJWaits</h2>
+            <p>
+              {apple ? (
+                <>
+                  Tap <strong>Share</strong> in Safari, then <strong>Add to Home Screen</strong>.
+                </>
+              ) : (
+                <>
+                  Open the browser menu, then <strong>Install app</strong> (or <strong>Add to Home screen</strong>).
+                </>
+              )}{" "}
+              It opens full screen like an app, and keeps your tables and games on this phone.
+              {invited && " Install from this page and the app opens straight at this table."}
+            </p>
+          </section>
+        )}
+      </div>
     </div>
   );
 }
 
 // ---- The lobby ------------------------------------------------------------------------------
 
+// Seats drawn round the table as you'd sit at it: yours at the near edge,
+// the next to play on your right, across, then on your left.
+const PLACES = ["bottom", "right", "top", "left"] as const;
+const NO_BOT = "-";
+
 function Lobby({ table, me, send, onLeave }: { table: TableState; me: Welcome; send: (m: Send) => void; onLeave: () => void }) {
   const mySeat = table.seats.findIndex((s) => s?.kind === "human" && s.id === me.id);
   const full = table.seats.every(Boolean);
+  const filled = table.seats.filter(Boolean).length;
   const s = table.settings;
   const setup = (patch: Partial<TableSettings>) => send({ t: "setup", settings: { ...s, ...patch } });
   const link = tableLink(table.code);
+  const [shared, setShared] = useState(false);
   const share = async () => {
     try {
       if (navigator.share) await navigator.share({ title: "MJWaits table", text: `Join my mahjong table ${table.code}`, url: link });
-      else await navigator.clipboard.writeText(link);
+      else {
+        await navigator.clipboard.writeText(link);
+        setShared(true);
+        window.setTimeout(() => setShared(false), 2000);
+      }
     } catch {
       // Dismissed.
     }
   };
+  const near = mySeat >= 0 ? mySeat : 0;
   return (
-    <div className="ot-page">
-      <header className="ot-head">
-        <button type="button" className="ot-icon" onClick={onLeave} aria-label="Leave">
-          ‹
-        </button>
-        <h1>Table {table.code}</h1>
-      </header>
-      <section className="ot-invite">
-        <span className="ot-code">{table.code}</span>
-        <button type="button" className="ot-button" onClick={share}>
-          Share invite
-        </button>
-      </section>
-
-      <section className="ot-seats">
-        {table.seats.map((seat, i) => (
-          <div key={i} className={`ot-seat-row${i === mySeat ? " is-me" : ""}`}>
-            <span className="ot-wind">{WIND_CHARS[seatWind(i, s.firstDealer)]}</span>
-            <span className="ot-seat-who">
-              {seat ? (
-                <>
-                  {seat.name}
-                  {seat.kind === "human" && seat.host && <span className="ot-tag">host</span>}
-                  {seat.kind === "bot" && <span className="ot-tag">bot</span>}
-                  {seat.kind === "human" && !seat.connected && <span className="ot-tag is-away">away</span>}
-                </>
-              ) : (
-                <span className="ot-muted">Empty</span>
-              )}
+    <div className="ot-page ot-lobby">
+      <BackButton onClick={onLeave} label="Leave" />
+      <div className="ot-room">
+        <div className="ot-table">
+          <div className="ot-felt" aria-hidden="true" />
+          <div className="ot-center">
+            <span className="ot-center-label">枱號 Table code</span>
+            <span className="ot-code" aria-label={`Table code ${table.code}`}>
+              {[...table.code].map((ch, i) => (
+                <span key={i}>{ch}</span>
+              ))}
             </span>
-            {!seat && (
-              <button type="button" className="ot-button is-small" onClick={() => send({ t: "sit", seat: i })}>
-                {mySeat >= 0 ? "Move here" : "Sit"}
-              </button>
-            )}
-            {i === mySeat && (
-              <button type="button" className="ot-button is-small" onClick={() => send({ t: "stand" })}>
-                Stand
-              </button>
-            )}
-            {me.host && seat?.kind !== "human" && (
-              <select
-                className="ot-select"
-                aria-label={`Bot in seat ${i + 1}`}
-                value={seat?.kind === "bot" ? seat.bot : ""}
-                onChange={(e) => send({ t: "setBot", seat: i, bot: (e.target.value || null) as TableBot | null })}
-              >
-                <option value="">{seat ? "Remove bot" : "Add a bot…"}</option>
-                {TABLE_BOTS.map((b) => (
-                  <option key={b} value={b}>
-                    {botName(b)}
-                  </option>
-                ))}
-                <option value={MYSTERY_BOT}>{MYSTERY_NAME} (random)</option>
-              </select>
-            )}
+            <button type="button" className="ot-share" onClick={share}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M12 3v12M7 8l5-5 5 5M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6" />
+              </svg>
+              {shared ? "Link copied" : "Invite"}
+            </button>
+            {table.watching > 0 && <span className="ot-watching">{table.watching} watching</span>}
           </div>
-        ))}
-        {table.watching > 0 && <p className="ot-muted">{table.watching} watching</p>}
-      </section>
+          {[0, 1, 2, 3].map((k) => {
+            const i = (near + k) % 4;
+            const seat = table.seats[i];
+            const wind = seatWind(i, s.firstDealer);
+            return (
+              <div
+                key={i}
+                aria-label={seat ? undefined : "Empty seat"}
+                className={`ot-chair is-${PLACES[k]}${seat ? "" : " is-empty"}${i === mySeat ? " is-me" : ""}${seat?.kind === "human" && !seat.connected ? " is-away" : ""}`}
+              >
+                <span className="ot-avatar">
+                  {seat ? (seat.kind === "bot" ? <BotFace /> : initial(seat.name)) : "+"}
+                  <span className="ot-wind">{WIND_CHARS[wind]}</span>
+                  {s.firstDealer === i && <span className="ot-dealer">莊</span>}
+                </span>
+                {seat && <span className="ot-chair-name">{seat.name}</span>}
+                <span className="ot-chair-tags">
+                  {i === mySeat && <span className="ot-tag is-you">you</span>}
+                  {seat?.kind === "human" && seat.host && <span className="ot-tag">host</span>}
+                  {seat?.kind === "bot" && <span className="ot-tag">bot</span>}
+                  {seat?.kind === "human" && !seat.connected && <span className="ot-tag is-away">away</span>}
+                </span>
+                <span className="ot-chair-actions">
+                  {!seat && (
+                    <button type="button" className={`ot-mini${mySeat >= 0 ? "" : " is-gold"}`} onClick={() => send({ t: "sit", seat: i })}>
+                      {mySeat >= 0 ? "Move" : "Sit"}
+                    </button>
+                  )}
+                  {i === mySeat && (
+                    <button type="button" className="ot-mini" onClick={() => send({ t: "stand" })}>
+                      Stand
+                    </button>
+                  )}
+                  {me.host && seat?.kind !== "human" && (
+                    <select
+                      className="ot-mini ot-select"
+                      aria-label={`Bot in seat ${i + 1}`}
+                      value=""
+                      onChange={(e) => send({ t: "setBot", seat: i, bot: (e.target.value === NO_BOT ? null : e.target.value) as TableBot | null })}
+                    >
+                      <option value="" disabled hidden>
+                        {seat ? "Swap" : "+ Bot"}
+                      </option>
+                      {seat && <option value={NO_BOT}>Remove the bot</option>}
+                      {TABLE_BOTS.map((b) => (
+                        <option key={b} value={b}>
+                          {botName(b)}
+                        </option>
+                      ))}
+                      <option value={MYSTERY_BOT}>{MYSTERY_NAME} (random)</option>
+                    </select>
+                  )}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
 
-      <section className="ot-settings">
-        <h2>Table rules</h2>
-        <Setting label="One discard, several winners" note={s.multiWin ? "一炮多響: everyone who can win, wins" : "截糊: the first in turn takes it"}>
-          {[false, true].map((on) => (
-            <Seg key={String(on)} on={s.multiWin === on} disabled={!me.host} onClick={() => setup({ multiWin: on })}>
-              {on ? "一炮多響" : "截糊"}
-            </Seg>
-          ))}
-        </Setting>
-        <Setting
-          label="Losing hands at a hand's end"
-          note={s.reveal === false ? "only the winner's is shown - each other player chooses whether to show theirs" : "everyone's hand is shown"}
-        >
-          {[true, false].map((on) => (
-            <Seg key={String(on)} on={(s.reveal !== false) === on} disabled={!me.host} onClick={() => setup({ reveal: on })}>
-              {on ? "Shown" : "Players choose"}
-            </Seg>
-          ))}
-        </Setting>
-        <Setting label="Turn timer">
-          {TURN_TIMERS.map((t) => (
-            <Seg key={t} on={s.timer === t} disabled={!me.host} onClick={() => setup({ timer: t })}>
-              {t ? `${t}s` : "Off"}
-            </Seg>
-          ))}
-        </Setting>
-        <Setting label="If someone drops" note={`their seat waits ${s.hold}s, then plays itself until they're back`}>
-          {HOLDS.map((h) => (
-            <Seg key={h} on={s.hold === h} disabled={!me.host} onClick={() => setup({ hold: h })}>
-              {h < 60 ? `${h}s` : `${h / 60}m`}
-            </Seg>
-          ))}
-        </Setting>
-        <Setting label="First dealer (莊)">
-          {[0, 1, 2, 3].map((d) => (
-            <Seg key={d} on={s.firstDealer === d} disabled={!me.host} onClick={() => setup({ firstDealer: d })}>
-              {table.seats[d]?.name.split(" ")[0] ?? `Seat ${d + 1}`}
-            </Seg>
-          ))}
-        </Setting>
-      </section>
+      <div className="ot-side">
+        <section className="ot-rules">
+          <h2>
+            枱例 Table rules
+            {!me.host && <small> · set by the host</small>}
+          </h2>
+          <Setting label="One discard, several winners" note={s.multiWin ? "一炮多響: everyone who can win, wins" : "截糊: the first in turn takes it"}>
+            {[false, true].map((on) => (
+              <Seg key={String(on)} on={s.multiWin === on} disabled={!me.host} onClick={() => setup({ multiWin: on })}>
+                {on ? "一炮多響" : "截糊"}
+              </Seg>
+            ))}
+          </Setting>
+          <Setting
+            label="Losing hands at a hand's end"
+            note={s.reveal === false ? "only the winner's is shown - each other player chooses whether to show theirs" : "everyone's hand is shown"}
+          >
+            {[true, false].map((on) => (
+              <Seg key={String(on)} on={(s.reveal !== false) === on} disabled={!me.host} onClick={() => setup({ reveal: on })}>
+                {on ? "Shown" : "Players choose"}
+              </Seg>
+            ))}
+          </Setting>
+          <Setting label="Turn timer">
+            {TURN_TIMERS.map((t) => (
+              <Seg key={t} on={s.timer === t} disabled={!me.host} onClick={() => setup({ timer: t })}>
+                {t ? `${t}s` : "Off"}
+              </Seg>
+            ))}
+          </Setting>
+          <Setting label="If someone drops" note={`their seat waits ${s.hold}s, then plays itself until they're back`}>
+            {HOLDS.map((h) => (
+              <Seg key={h} on={s.hold === h} disabled={!me.host} onClick={() => setup({ hold: h })}>
+                {h < 60 ? `${h}s` : `${h / 60}m`}
+              </Seg>
+            ))}
+          </Setting>
+          <Setting label="First dealer (莊)">
+            {[0, 1, 2, 3].map((d) => (
+              <Seg key={d} on={s.firstDealer === d} disabled={!me.host} onClick={() => setup({ firstDealer: d })}>
+                {table.seats[d]?.name.split(" ")[0] ?? `Seat ${d + 1}`}
+              </Seg>
+            ))}
+          </Setting>
+        </section>
 
-      {me.host ? (
-        <button type="button" className="ot-button is-primary" disabled={!full} onClick={() => send({ t: "start" })}>
-          {full ? "Start" : "Fill every seat to start"}
-        </button>
-      ) : (
-        <p className="ot-muted ot-wait-note">Waiting for the host to start</p>
-      )}
+        <div className="ot-start">
+          <span className="ot-pips" aria-label={`${filled} of 4 seats filled`}>
+            {table.seats.map((seat, i) => (
+              <span key={i} className={seat ? "is-on" : undefined} />
+            ))}
+          </span>
+          {me.host ? (
+            <button type="button" className={`ph-item is-primary${full ? " is-ready" : ""}`} disabled={!full} onClick={() => send({ t: "start" })}>
+              <span className="ph-item-zh">開局</span>
+              <span className="ph-item-text">
+                <strong>{full ? "Start the game" : `${4 - filled} seat${filled === 3 ? "" : "s"} to fill`}</strong>
+                <small>{full ? "Everyone's seated" : "Invite friends or add bots"}</small>
+              </span>
+              <Chevron />
+            </button>
+          ) : (
+            <p className="ot-wait-note">
+              <span className="ot-dots" aria-hidden="true">
+                <i />
+                <i />
+                <i />
+              </span>
+              Waiting for the host to start
+            </p>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -537,34 +664,55 @@ function Ended({
   const order = [0, 1, 2, 3].sort((a, b) => table.totals[b] - table.totals[a]);
   const [open, setOpen] = useState(false);
   return (
-    <div className="ot-page">
-      <header className="ot-head">
-        <h1>Table {table.code} · finished</h1>
-      </header>
-      <p className="ot-muted">{table.hand} hands played</p>
-      <ol className="ot-final">
-        {order.map((seat) => (
-          <li key={seat}>
-            <span>{table.seats[seat]?.name ?? "?"}</span>
-            <span className={tone(table.totals[seat]).trim() || undefined}>{signed(table.totals[seat])}</span>
-          </li>
-        ))}
-      </ol>
-      {scores && (
-        <button type="button" className="ot-button" onClick={() => setOpen(true)}>
-          戰況 · every hand and each player's stats
+    <div className="ot-page ot-ended">
+      <div className="ot-hero">
+        <span className="ot-trophy" aria-hidden="true">
+          {initial(table.seats[order[0]]?.name ?? "?")}
+        </span>
+        <h1 className="ot-title">
+          <span className="ot-title-zh">終局</span>
+          <span className="ot-title-en">
+            Table {table.code} · {table.hand} hand{table.hand === 1 ? "" : "s"}
+          </span>
+        </h1>
+        <p className="ot-tagline">{table.seats[order[0]]?.name ?? "?"} takes the table</p>
+      </div>
+      <div className="ot-panel">
+        <ol className="ot-final">
+          {order.map((seat, rank) => (
+            <li key={seat} className={`is-${rank}`} style={{ animationDelay: `${0.1 + rank * 0.08}s` }}>
+              <span className="ot-place">{PLACINGS[rank]}</span>
+              <span className="ot-final-name">{table.seats[seat]?.name ?? "?"}</span>
+              <span className={`ot-final-score${tone(table.totals[seat])}`}>{signed(table.totals[seat])}</span>
+            </li>
+          ))}
+        </ol>
+        {scores && (
+          <button type="button" className="ph-item" onClick={() => setOpen(true)}>
+            <span className="ph-item-zh">戰況</span>
+            <span className="ph-item-text">
+              <strong>Every hand</strong>
+              <small>And each player's stats</small>
+            </span>
+            <Chevron />
+          </button>
+        )}
+        {host ? (
+          <button type="button" className="ph-item is-primary" onClick={onRematch}>
+            <span className="ph-item-zh">再來</span>
+            <span className="ph-item-text">
+              <strong>Rematch</strong>
+              <small>Same seats, same rules</small>
+            </span>
+            <Chevron />
+          </button>
+        ) : (
+          <p className="ot-wait-note">Waiting for the host - they can start a rematch with the same seats.</p>
+        )}
+        <button type="button" className="ot-chip-button" onClick={onLeave}>
+          Done
         </button>
-      )}
-      {host ? (
-        <button type="button" className="ot-button is-primary" onClick={onRematch}>
-          再來一局 Rematch · same seats
-        </button>
-      ) : (
-        <p className="ot-muted">Waiting for the host - they can start a rematch with the same seats.</p>
-      )}
-      <button type="button" className={host ? "ot-button" : "ot-button is-primary"} onClick={onLeave}>
-        Done
-      </button>
+      </div>
       {open && scores && <PlayScores game={scores} onClose={() => setOpen(false)} />}
     </div>
   );
