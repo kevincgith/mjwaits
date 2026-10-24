@@ -57,10 +57,13 @@ export const TableSettingsSchema = object({
   timer: int(0, 30), // seconds per decision, one of TURN_TIMERS
   hold: int(10, 300), // seconds a dropped player's seat waits before it's played for them
   firstDealer: seat,
+  // At a hand's end: everyone's hand shown (the default), or only the
+  // winner's - each other player choosing whether to show theirs.
+  reveal: optional(bool),
 });
 export type TableSettings = Infer<typeof TableSettingsSchema>;
 
-export const DEFAULT_TABLE_SETTINGS: TableSettings = { multiWin: false, timer: 20, hold: 30, firstDealer: 0 };
+export const DEFAULT_TABLE_SETTINGS: TableSettings = { multiWin: false, timer: 20, hold: 30, firstDealer: 0, reveal: true };
 
 const TableClientSchema = tagged({
   // First on every connection; `token` comes back as the same person (and seat).
@@ -77,6 +80,8 @@ const TableClientSchema = tagged({
   // Between hands: ready for the next deal; 投降 a 拉 that holder has on you.
   ready: object({ t: literal("ready"), rid }),
   surrender: object({ t: literal("surrender"), holder: seat, rid }),
+  // A hand over, losing hands hidden: show yours to the table.
+  show: object({ t: literal("show"), rid }),
   end: object({ t: literal("end"), rid }), // host: the table's done
   // Ended: the same seats and rules back in the lobby for a new game (host).
   rematch: object({ t: literal("rematch"), rid }),
@@ -173,6 +178,7 @@ export interface TableState {
   waitingOn: number[];
   ready: number[];
   auto: number[]; // seats being played for, until their player is back
+  shown: number[]; // the hand over, losing hands hidden: who has shown theirs
   scores: number; // entries in the table's record (GET /tables/<CODE>/scores) - fetch it again when this changes
   last: TableAction | null;
   // This phone's seat (null for someone watching) and its view of the hand.

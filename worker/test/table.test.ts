@@ -465,3 +465,31 @@ describe("between games", () => {
     expect((await host.table((s) => s.phase === "playing")).hand).toBe(1);
   });
 });
+
+describe("hiding losing hands", () => {
+  it("keeps the host's setting, refuses showing before a hand ends, and tells everyone who has shown", async () => {
+    const code = await createTable();
+    const { p: host } = await join(code, "Kevin");
+    const { p: amy } = await join(code, "Amy");
+    host.send({ t: "setup", settings: { multiWin: false, timer: 0, hold: 30, firstDealer: 0, reveal: false } });
+    host.send({ t: "setBot", seat: 2, bot: "wall" });
+    host.send({ t: "setBot", seat: 3, bot: "wall" });
+    const ready = await amy.table((s) => s.settings.reveal === false && s.seats.every(Boolean));
+    expect(ready.shown).toEqual([]);
+    host.send({ t: "start" });
+    await host.table((s) => s.phase === "playing");
+    amy.send({ t: "show" });
+    expect((await amy.error()).code).toBe("notYourTurn");
+    // At a hand's end: the winner's hand and any shown one, not the rest -
+    // and all of them when the table shows losing hands.
+    const over = { phase: { kind: "over", result: { winner: 0 } } };
+    const shown = await runInDurableObject(stubFor(code), (t: Table) => {
+      const table = t as unknown as { rt: { settings: { reveal?: boolean }; shown?: number[] }; handShown: (g: unknown, s: number) => boolean };
+      table.rt = { settings: { reveal: false }, shown: [2] };
+      const hidden = [0, 1, 2, 3].map((s) => table.handShown(over, s));
+      table.rt = { settings: { reveal: true }, shown: [] };
+      return { hidden, open: [0, 1, 2, 3].map((s) => table.handShown(over, s)) };
+    });
+    expect(shown).toEqual({ hidden: [true, false, true, false], open: [true, true, true, true] });
+  });
+});

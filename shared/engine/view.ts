@@ -73,10 +73,13 @@ export interface TableView {
 
 const copyTiles = (tiles: Tile[]) => tiles.map((t) => ({ suit: t.suit, rank: t.rank }));
 
-export function viewFor(s: GameState, you: number): TableView {
+// `shown`: at a hand's end, whose hands everyone sees - all of them unless
+// the table keeps losing hands hidden (then the winners', and whoever
+// chose to show). You always see your own.
+export function viewFor(s: GameState, you: number, shown: (seat: number) => boolean = () => true): TableView {
   const over = s.phase.kind === "over";
   const players: SeatView[] = s.players.map((p, seat) => {
-    const open = seat === you || over;
+    const open = seat === you || (over && shown(seat));
     return {
       hand: open ? copyTiles(p.hand) : null,
       handCount: p.hand.length,
