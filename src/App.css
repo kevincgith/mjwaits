@@ -6291,8 +6291,9 @@ html.playing body {
 /* A declared meld's tiles butt up against each other - no gap: each face
    sits a little inside its box (0.03em a side), so the boxes overlap by
    that much (a face-down tile fills its box, less its 0.02em margin). In
-   a side seat's turned column, along the column. */
-:is(.play-seat-top, .play-hand) .play-meld:not(.is-revealed) .tile-glyph {
+   a side seat's turned column, along the column. The bonus tiles beside
+   them alike. */
+:is(.play-seat-top, .play-hand) :is(.play-meld:not(.is-revealed), .play-flowers) .tile-glyph {
   margin-inline: -0.03em;
 }
 
@@ -6300,7 +6301,7 @@ html.playing body {
   margin-inline: 0;
 }
 
-:is(.play-seat-left, .play-seat-right) .play-meld:not(.is-revealed) .tile-glyph {
+:is(.play-seat-left, .play-seat-right) :is(.play-meld:not(.is-revealed), .play-flowers) .tile-glyph {
   margin-block: -0.14em;
 }
 
@@ -6897,16 +6898,19 @@ html.playing body {
   filter: drop-shadow(0 0 0.08em rgba(255, 209, 102, 0.7));
 }
 
+/* Yours sits half way up instead, against the tile's front side (which
+   faces you): at face height it drew over the ivory, and on the felt the
+   jade back between read as a gap. Here it covers only the jade. */
 .play-pond-bottom .play-pond-tile.is-latest::after {
   left: 50%;
-  bottom: -0.17em;
-  transform: translateX(-50%) translateZ(var(--play-thick));
+  bottom: -0.15em;
+  transform: translateX(-50%) translateZ(calc(var(--play-thick) * 0.5));
   border-bottom-color: var(--play-gold);
 }
 
 .play-pond-top .play-pond-tile.is-latest::after {
   left: 50%;
-  top: -0.17em;
+  top: -0.15em;
   transform: translateX(-50%) translateZ(var(--play-thick));
   border-top-color: var(--play-gold);
 }
@@ -7110,22 +7114,12 @@ html.playing body {
   stroke: var(--play-gold);
   stroke-dasharray: 1 1;
   filter: drop-shadow(0 0 0.6px rgba(255, 209, 102, 0.9));
-  animation-name: play-countdown;
-  animation-timing-function: linear;
-  animation-fill-mode: both;
+  transition: stroke 0.6s ease;
 }
 
-@keyframes play-countdown {
-  0% {
-    stroke-dashoffset: 0;
-  }
-  65% {
-    stroke: var(--play-gold);
-  }
-  100% {
-    stroke-dashoffset: -1;
-    stroke: #ff5a4f;
-  }
+.play-countdown-bar.is-short {
+  stroke: #ff5a4f;
+  filter: drop-shadow(0 0 0.6px rgba(255, 90, 79, 0.9));
 }
 
 /* The discard up for grabs, shown once more in a bubble - a callout, not
