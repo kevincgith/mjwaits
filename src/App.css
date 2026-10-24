@@ -16115,29 +16115,36 @@ button.sc-stat:active {
   width: calc(clamp(1rem, calc(4.4 * var(--vh)), 1.4rem) * 4 / 3);
 }
 
-/* The sideways tiles' ivory edge faces their owner. */
-.play-swap-pile.is-left .play-swap-back {
+/* Seen from your seat, a sideways tile shows its thickness along its near
+   edge - the long one now - just as an upright tile shows it along its
+   short one: the ivory depth stays underneath, never at the side. Picked,
+   it slides toward the middle of the table. */
+.play-swap-pile:is(.is-left, .is-right) .play-swap-back {
   box-shadow:
-    inset 1px 0 0 rgba(255, 255, 255, 0.35),
-    -0.16rem 0 0 var(--play-ivory),
-    0 0.22rem 0.32rem rgba(0, 0, 0, 0.4);
-}
-
-.play-swap-pile.is-right .play-swap-back {
-  box-shadow:
-    inset -1px 0 0 rgba(255, 255, 255, 0.35),
-    0.16rem 0 0 var(--play-ivory),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    0 0.16rem 0 var(--play-ivory),
     0 0.22rem 0.32rem rgba(0, 0, 0, 0.4);
 }
 
 .play-swap-pile.is-left .play-swap-back.is-picked {
   translate: 0.3rem 0;
-  box-shadow: 0 0 0 2px var(--play-gold), -0.16rem 0 0 var(--play-ivory), 0 0.4rem 0.6rem rgba(0, 0, 0, 0.45);
 }
 
 .play-swap-pile.is-right .play-swap-back.is-picked {
   translate: -0.3rem 0;
-  box-shadow: 0 0 0 2px var(--play-gold), 0.16rem 0 0 var(--play-ivory), 0 0.4rem 0.6rem rgba(0, 0, 0, 0.45);
+}
+
+.play-swap-pile:is(.is-left, .is-right) .play-swap-back.is-picked {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    0 0 0 2px var(--play-gold),
+    0 0.16rem 0 var(--play-ivory),
+    0 0.4rem 0.6rem rgba(0, 0, 0, 0.45);
+}
+
+/* The depth below each turned tile needs its room in the column. */
+.play-swap-pile:is(.is-left, .is-right) .play-swap-backs {
+  gap: 0.32rem;
 }
 
 /* A face-down tile: the jade back, a tile's proportions, big enough to tap. */
