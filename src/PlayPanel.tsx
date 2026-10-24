@@ -1225,6 +1225,10 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
   const [flights, setFlights] = useState<Flight[]>([]);
   const [flown, setFlown] = useState<Set<number>>(new Set());
   const swapFlying = flights.length > 0;
+  // A taken tile joins its new hand as it lands, not before: till then each
+  // hand is drawn without the tiles still flying to it.
+  const incoming = (seat: number) => flights.filter((f) => f.to === seat).map((f) => f.real);
+  const comingToMe = useMemo(() => incoming(HUMAN), [flights]); // eslint-disable-line react-hooks/exhaustive-deps
   const swapPhase = game.phase.kind === "swap" ? game.phase : null;
   const swapGiving = !!swapPhase && seated && !autoplay && !swapFlying && swapPhase.stage === "give" && !swapPhase.piles[HUMAN];
   const [swapHand, setSwapHand] = useState<number[]>([]);
@@ -1299,7 +1303,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
       );
     if (!fresh.length || !prev.width) return;
     if (roundOver) setGhost(was.piles.map((p) => p?.length ?? 0));
-    const LAND = 0.6; // landing spots apart along the way in, in tile widths - each fades as it lands, before the next arrives
+    const LAND = 0.9; // landing spots apart along the way in, in tile widths
     const STAGGER = SWAP_STAGGER_MS; // one after another, each off when the last is halfway
     const now = Date.now();
     const next: Flight[] = [];
@@ -1328,6 +1332,8 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
         const step = k * prev.width * LAND;
         next.push({
           id: now + next.length,
+          to: taker,
+          real: was.piles[f.g]![f.i]!,
           seat: f.g,
           place: f.i,
           ghost: roundOver,
@@ -1530,13 +1536,18 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
   // The hand sorted, with the just-drawn tile split off at the right.
   const handView = useMemo(() => {
     const tiles = me.hand.slice();
+    // Tiles still flying to you aren't in your hand yet.
+    for (const t of comingToMe) {
+      const i = tiles.findIndex((h) => sameTile(h, t));
+      if (i >= 0) tiles.splice(i, 1);
+    }
     let drawnTile: Tile | null = null;
     if (drawn) {
       const i = tiles.findIndex((t) => sameTile(t, drawn));
       if (i >= 0) drawnTile = tiles.splice(i, 1)[0];
     }
     return { sorted: sortTiles(tiles), drawnTile };
-  }, [me.hand, drawn]);
+  }, [me.hand, drawn, comingToMe]);
   const handTiles = handView.drawnTile ? [...handView.sorted, handView.drawnTile] : handView.sorted;
 
   const ratings = useMemo(() => (myTurn && hint && !me.riichi ? rateDiscardsFor(game, HUMAN, ADVISOR) : null), [game, myTurn, hint, me.riichi]);
@@ -1836,7 +1847,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
             topple={wonWith(seat) ? TOPPLE_WINNER : result?.winner === null || choosing ? TOPPLE_DRAW : TOPPLE_OTHERS}
           />
         ) : (
-          <EdgeTiles count={p.hand.length} side={side} drew={!over && drewSeat === seat} />
+          <EdgeTiles count={p.hand.length - incoming(seat).length} side={side} drew={!over && drewSeat === seat} />
         )}
       </div>
     );

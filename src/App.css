@@ -15994,13 +15994,33 @@ button.sc-stat:active {
   cursor: pointer;
 }
 
-/* Picked: lifted off the felt, its back rimmed in gold. */
-.play-swap-tile > .play-back {
+/* The others' piles stand too, as their owners' hands do - faces toward
+   their owners, backs to the middle - tipped up from the felt by the same
+   54deg as yours (--stand), so every pile on the table is seen alike: the
+   far one's backs toward you, the side ones' along their sides. Picked, a
+   tile slides out toward the middle (along its back), rimmed in gold. */
+.play-swap-pond.play-pond-top .play-swap-tile > .play-back {
+  --stand: rotateX(-54deg);
+  transform-origin: 50% 100%;
+}
+
+.play-swap-pond.play-pond-left .play-swap-tile > .play-back {
+  --stand: rotateY(54deg);
+  transform-origin: 100% 50%;
+}
+
+.play-swap-pond.play-pond-right .play-swap-tile > .play-back {
+  --stand: rotateY(-54deg);
+  transform-origin: 0% 50%;
+}
+
+.play-swap-pond:not(.is-standing) .play-swap-tile > .play-back {
+  transform: var(--stand, none);
   transition: transform 0.15s ease;
 }
 
-.play-swap-tile.is-picked > .play-back {
-  transform: translateZ(0.45em);
+.play-swap-pond:not(.is-standing) .play-swap-tile.is-picked > .play-back {
+  transform: var(--stand, none) translateZ(0.35em);
 }
 
 .play-swap-tile.is-picked > .play-back > .tile-top {
@@ -16057,14 +16077,29 @@ button.sc-stat:active {
    a beat, then off to their seat at its own size, fading as it lands - one
    after another with the rest of the take, never touching (see the flights
    in PlayPanel). */
-/* Hidden until its turn: till then the tile is still drawn in its pile. */
+/* Hidden until its turn: till then the tile is still drawn in its pile.
+   One smooth glide from pile to hand - a single eased interval, speeding
+   up once and slowing once (easing keyframe by keyframe, or an arc on top,
+   made it stop and start) - fading only at the very end. */
 .play-swap-flight {
   position: fixed;
   z-index: 60;
   line-height: 0;
   pointer-events: none;
   visibility: hidden;
-  animation: play-swap-fly 0.6s cubic-bezier(0.45, 0, 0.3, 1) forwards;
+  animation:
+    play-swap-fly var(--flight, 0.9s) cubic-bezier(0.37, 0, 0.25, 1) var(--delay, 0s) forwards,
+    play-swap-fade var(--flight, 0.9s) linear var(--delay, 0s) forwards;
+}
+
+@keyframes play-swap-fade {
+  0%,
+  86% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
 }
 
 .play-swap-flight img.tile-face {
@@ -16087,21 +16122,11 @@ button.sc-stat:active {
 @keyframes play-swap-fly {
   0% {
     visibility: visible;
-    transform: translate(0, 0) scale(1);
-  }
-  /* Lifted, at its own size - grown, it would touch its neighbours. */
-  25% {
-    transform: translate(calc(var(--dx) * 0.05), calc(var(--dy) * 0.05 - 0.45em)) scale(1);
-  }
-  /* Into the hand at its own size, fading only as it lands. */
-  88% {
-    transform: translate(calc(var(--dx) * 0.97), calc(var(--dy) * 0.97)) scale(1);
-    opacity: 1;
+    transform: translate(0, 0);
   }
   100% {
     visibility: visible;
-    transform: translate(var(--dx), var(--dy)) scale(1);
-    opacity: 0;
+    transform: translate(var(--dx), var(--dy));
   }
 }
 
@@ -16112,7 +16137,21 @@ button.sc-stat:active {
 }
 
 /* Your swap buttons are discs in the calls corner (.play-call): 放牌,
-   攞牌, and 照攞 for a lopsided take - amber, as a warning. */
+   攞牌, and 照攞 for a lopsided take - amber, as a warning. While you swap
+   your hand is short, so the corner above its end would run into the
+   piles on the felt: the discs sit just beside your hand instead, at its
+   height. */
+.play-calls:has(> .play-call.is-swap) {
+  bottom: 0;
+  right: auto;
+  left: calc(100% + 0.6rem);
+}
+
+/* One line each, however narrow the room beside your hand. */
+.play-call.is-swap {
+  white-space: nowrap;
+}
+
 .play-call.is-warn {
   border-color: #f0a03c;
   background: linear-gradient(180deg, #ffd59a, #f0a03c);
