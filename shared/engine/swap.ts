@@ -6,7 +6,8 @@
 // lays that many tiles face down in front of them; then, from the dealer
 // round the table, each takes the same number back from the others' piles,
 // face down - at least one from every other player, as evenly as it goes
-// (5 is 1, 2, 2). Lopsided takes (1, 1, 3) are allowed but frowned on, and
+// (5 is 1, 2, 2; 6 must be 2 from each - when it shares out exactly, that's
+// the take). Lopsided takes (1, 1, 3) are allowed but frowned on, and
 // a take that would leave someone after you no way to take from everyone
 // isn't allowed at all. Once the rounds are done the dealer draws and the
 // hand starts as usual.
@@ -70,8 +71,12 @@ const isEven = (split: Split, taker: number) => {
   return Math.max(...parts) - Math.min(...parts) <= 1;
 };
 
+// A count that shares out exactly (3, 6): the same from each, and nothing else.
+const exact = (count: number) => count % 3 === 0;
+
 // Every take `taker` could make from piles of these sizes: `count` in all,
-// at least one from every other seat, no more than a pile holds.
+// at least one from every other seat, no more than a pile holds - and when
+// the count shares out exactly, the same from each.
 export function splitsFor(sizes: number[], taker: number, count: number): Split[] {
   const others = [0, 1, 2, 3].filter((g) => g !== taker);
   const out: Split[] = [];
@@ -83,6 +88,7 @@ export function splitsFor(sizes: number[], taker: number, count: number): Split[
       split[others[0]] = a;
       split[others[1]] = b;
       split[others[2]] = c;
+      if (exact(count) && !isEven(split, taker)) continue;
       out.push(split);
     }
   return out;
@@ -111,6 +117,7 @@ export function checkTake(sizes: number[], taker: number, after: number[], count
   if (split.some((n, g) => n > sizes[g])) return { ok: false, error: "More than that pile has" };
   if (total !== count) return { ok: false, error: `Take ${count} in all` };
   if ([0, 1, 2, 3].some((g) => g !== taker && split[g] < 1)) return { ok: false, error: "Take at least one from everyone" };
+  if (exact(count) && !isEven(split, taker)) return { ok: false, error: `Take ${count / 3} from each` };
   const left = sizes.map((n, g) => n - split[g]);
   if (!completes(left, after, count, false)) return { ok: false, error: "That leaves someone after you unable to take from everyone" };
   if (!isEven(split, taker)) return { ok: true, warning: "Lopsided - an even take is the custom" };

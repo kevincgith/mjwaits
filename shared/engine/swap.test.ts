@@ -102,6 +102,15 @@ describe("taking from the piles", () => {
     expect(c.warning).toMatch(/leaves someone after you/);
   });
 
+  it("takes exactly the same from each when the count shares out", () => {
+    expect(checkTake([6, 6, 6, 6], 0, [1, 2, 3], 6, [0, 2, 2, 2])).toEqual({ ok: true });
+    expect(checkTake([6, 6, 6, 6], 0, [1, 2, 3], 6, [0, 1, 2, 3])).toEqual({ ok: false, error: "Take 2 from each" });
+    expect(checkTake([6, 6, 6, 6], 0, [1, 2, 3], 6, [0, 1, 1, 4]).ok).toBe(false);
+    expect(splitsFor([6, 6, 6, 6], 1, 6)).toEqual([[2, 0, 2, 2]]);
+    // 5 doesn't share out: lopsided is still only frowned on.
+    expect(checkTake([5, 5, 5, 5], 0, [1, 2, 3], 5, [0, 1, 1, 3]).ok).toBe(true);
+  });
+
   it("refuses a take that leaves someone after unable to take from everyone", () => {
     expect(checkTake([1, 1, 2, 2], 2, [3], 3, [1, 1, 0, 1]).ok).toBe(false);
   });

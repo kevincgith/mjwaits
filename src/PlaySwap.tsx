@@ -82,11 +82,13 @@ export function SwapDice({ phase }: { phase: SwapPhase }) {
   );
 }
 
-// The swap's line in the bar under the table: the round, what's happening,
-// and your buttons - give; take what you've tapped, or take evenly in one
-// tap. `picks`: the places you've tapped in each pile; `after`: who takes
-// after the one taking now.
-export function SwapBar({
+// The swap's controls: its line in the bar under the table (the round,
+// what's happening - `part` "bar"), and your buttons, big over the middle
+// of the table where the compass is ("actions"): give; take what you've
+// tapped, or take evenly in one tap. `picks`: the places you've tapped in
+// each pile; `after`: who takes after the one taking now.
+export function SwapControls({
+  part,
   phase,
   nameOf,
   seated,
@@ -97,6 +99,7 @@ export function SwapBar({
   onGive,
   onTake,
 }: {
+  part: "bar" | "actions";
   phase: SwapPhase;
   nameOf: (seat: number) => string;
   seated: boolean;
@@ -132,33 +135,41 @@ export function SwapBar({
       tone = check.ok ? (check.warning ? " is-warn" : " is-ok") : " is-error";
     }
   }
+  if (part === "bar")
+    return (
+      <span className="play-swap-bar">
+        <b>
+          換牌 {round}/{rounds}
+        </b>
+        <span className={`play-swap-note${tone}`}>{note}</span>
+      </span>
+    );
+  if (!mineToGive && !myTake) return null;
   return (
-    <span className="play-swap-bar">
-      <b>
-        換牌 {round}/{rounds}
-      </b>
-      <span className={`play-swap-note${tone}`}>{note}</span>
-      {mineToGive && (
-        <button type="button" className="play-swap-go" disabled={giveCount !== count} onClick={onGive}>
-          放牌 Give
-        </button>
-      )}
-      {myTake && check && taken === 0 && (
-        <button type="button" className="play-swap-go" onClick={quickTake}>
-          一按 Take evenly
-        </button>
-      )}
-      {myTake && check && taken > 0 && (
-        <>
-          <button type="button" className="play-swap-clear" onClick={() => setPicks(() => [[], [], [], []])}>
-            Clear
+    <div className="play-swap-actions">
+      <div className="play-swap-buttons">
+        {mineToGive && (
+          <button type="button" className="play-swap-go" disabled={giveCount !== count} onClick={onGive}>
+            放牌 Give {giveCount === count ? count : `${giveCount}/${count}`}
           </button>
-          <button type="button" className={`play-swap-go${check.warning ? " is-warn" : ""}`} disabled={!check.ok} onClick={() => onTake()}>
-            {check.warning ? "Take anyway" : "攞牌 Take"}
+        )}
+        {myTake && check && taken === 0 && (
+          <button type="button" className="play-swap-go" onClick={quickTake}>
+            一按 Take evenly
           </button>
-        </>
-      )}
-    </span>
+        )}
+        {myTake && check && taken > 0 && (
+          <>
+            <button type="button" className="play-swap-clear" aria-label="Clear your picks" title="Clear" onClick={() => setPicks(() => [[], [], [], []])}>
+              ↺
+            </button>
+            <button type="button" className={`play-swap-go${check.warning ? " is-warn" : ""}`} disabled={!check.ok} onClick={() => onTake()}>
+              {taken === count && check.error ? check.error : check.warning ? "Take anyway" : `攞牌 Take ${taken}/${count}`}
+            </button>
+          </>
+        )}
+      </div>
+    </div>
   );
 }
 

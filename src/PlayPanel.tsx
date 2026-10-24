@@ -59,7 +59,7 @@ import {
 import { allTileKinds, getWaits, shanten, sortTiles, tileKey, tileLabel, type Tile } from "@mjwaits/shared/engine/mahjong";
 import { blindPicks, botGive, botSplit, DEFAULT_SWAP_RULES, pileLeft, type SwapRules } from "@mjwaits/shared/engine/swap";
 import { PlayDie } from "./PlayDie";
-import { SwapBar, SwapDice, SwapPond, SwapSheet } from "./PlaySwap";
+import { SwapControls, SwapDice, SwapPond, SwapSheet } from "./PlaySwap";
 import type { BonusTile } from "@mjwaits/shared/engine/scoring";
 import { BonusGlyphSpan, TileGlyphSpan, TileSides } from "./TileGlyphs";
 import {
@@ -2212,7 +2212,8 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
             </span>
           )}
           {swapPhase && !swapRolling ? (
-            <SwapBar
+            <SwapControls
+              part="bar"
               phase={swapPhase}
               nameOf={(seat) => (seat === HUMAN ? "You" : nameOf(seat))}
               seated={seated && !autoplay}
@@ -2246,6 +2247,20 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
         {burst && <CallBurst key={burst.id} seat={burst.seat} label={burst.label} />}
 
         {swapPhase && swapRolling && !rolling && <SwapDice phase={swapPhase} />}
+        {swapPhase && !swapRolling && !rolling && !over && (
+          <SwapControls
+            part="actions"
+            phase={swapPhase}
+            nameOf={(seat) => (seat === HUMAN ? "You" : nameOf(seat))}
+            seated={seated && !autoplay}
+            picks={swapPicks}
+            setPicks={setSwapPicks}
+            after={takersAfter(swapPhase, game.dealer)}
+            giveCount={swapHand.length}
+            onGive={giveSwap}
+            onTake={takeSwap}
+          />
+        )}
 
         {rolling && game.dice && (
           <div className="play-dice" role="status">

@@ -15937,10 +15937,11 @@ button.sc-stat:active {
    tumble over the middle first; the swap's line and buttons sit in the bar
    under the table, out of the way of the piles and your hand. */
 
-/* A pile: a little bigger than discards - few tiles, and you tap them. */
+/* A pile: a little bigger than discards - few tiles, and you tap them -
+   and every seat's the same size, yours included. */
 .play-swap-pond {
   gap: 0.06em;
-  font-size: 1.3em;
+  font-size: 1.2em;
 }
 
 .play-swap-pond.play-pond-top,
@@ -15950,19 +15951,14 @@ button.sc-stat:active {
 }
 
 /* A side pile: one row along its side, as that player sees it, centred
-   on the compass - a little smaller than across, so even six stay clear
-   of your hand. */
+   on the compass - even six stay clear of your hand. */
 .play-swap-pond:is(.play-pond-left, .play-pond-right) {
   height: auto;
   flex-wrap: nowrap;
-  font-size: 1.2em;
 }
 
-/* Yours: the size of your discards - there to see, not to take from. (Never
-   faded: a 3D tile turned partly transparent is drawn flat.) */
-.play-swap-pond.play-pond-bottom {
-  font-size: 1em;
-}
+/* Yours is there to see, not to take from - but drawn like the rest (never
+   faded: a 3D tile turned partly transparent is drawn flat). */
 
 .play-swap-tile {
   position: relative;
@@ -16047,15 +16043,65 @@ button.sc-stat:active {
   color: #ff8f80;
 }
 
+/* Your buttons, big, over the compass in the middle of the table - clear of
+   every pile and of your hand. */
+.play-swap-actions {
+  position: absolute;
+  left: 50%;
+  top: 46%;
+  z-index: 6;
+  translate: -50% -50%;
+  display: grid;
+  justify-items: center;
+  gap: 0.3rem;
+  pointer-events: none;
+  animation: play-pop 0.2s ease-out both;
+}
+
+.play-swap-actions > * {
+  pointer-events: auto;
+}
+
+.play-swap-buttons {
+  display: flex;
+  gap: 0.4rem;
+}
+
 .play-swap-go,
 .play-swap-clear {
   flex: none;
-  min-height: 1.7rem;
-  padding: 0 0.75rem;
+  min-height: 2.6rem;
+  padding: 0 1.2rem;
   border: none;
   border-radius: 999px;
+  font-size: 1rem;
   font-weight: 800;
   white-space: nowrap;
+  box-shadow: 0 0.35rem 0.9rem rgba(0, 0, 0, 0.45);
+}
+
+.play-swap-go:not(:disabled) {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    0 0.35rem 0.9rem rgba(0, 0, 0, 0.45),
+    0 0 1.2rem rgba(255, 209, 102, 0.45);
+}
+
+/* Clear: a round button beside the big one - the pair fits between the
+   side piles. */
+.play-swap-clear {
+  width: 2.6rem;
+  padding: 0;
+  font-size: 1.2rem;
+}
+
+.play-swap-buttons .play-swap-go {
+  padding: 0 1rem;
+}
+
+.play-swap-go:active,
+.play-swap-clear:active {
+  transform: scale(0.96);
 }
 
 .play-swap-go {
@@ -16068,13 +16114,13 @@ button.sc-stat:active {
 }
 
 .play-swap-go:disabled {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(30, 24, 18, 0.92);
   color: var(--text-muted);
   cursor: default;
 }
 
 .play-swap-clear {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(30, 24, 18, 0.92);
   color: var(--play-on-felt);
 }
 
