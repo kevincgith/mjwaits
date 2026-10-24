@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BOT_PROFILES, botClaimFor, botTurnFor, botTurnMoveFor, danger, profileById, rememberedView, seededRng, threat, tileRisk, VOICES, voiceOf } from "@mjwaits/shared/engine/bots";
+import { BOT_PROFILES, botClaimFor, botTurnFor, botTurnMoveFor, danger, profileById, rememberedView, seededRng, threat, tileRisk, SPEECH, speechOf } from "@mjwaits/shared/engine/bots";
 import { runArena } from "./arena";
 import { applyTurnMove, dealHand, resolveClaims, SEATS, unseenCounts, type GameMeld, type GameState } from "@mjwaits/shared/engine/game";
 import type { Tile } from "@mjwaits/shared/engine/mahjong";
@@ -108,10 +108,10 @@ describe("human touches", () => {
     expect(difficulty).toBeLessThanOrEqual(1);
   });
 
-  it("gives every personality a voice for every moment", () => {
+  it("gives every personality speech bubbles for every moment", () => {
     for (const p of BOT_PROFILES) {
-      const v = voiceOf(p);
-      expect(VOICES[p.id]).toBeDefined();
+      const v = speechOf(p);
+      expect(SPEECH[p.id]).toBeDefined();
       for (const lines of Object.values(v)) expect(lines.length).toBeGreaterThan(0);
     }
   });

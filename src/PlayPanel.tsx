@@ -71,11 +71,21 @@ import {
   profileById,
   randomStyle,
   rateDiscardsFor,
-  voiceOf,
+  speechOf,
   type BotProfile,
   type CallKind,
-  type Voice,
+  type Speech,
 } from "@mjwaits/shared/engine/bots";
+import {
+  BIG_WIN_TAI,
+  CHATTINESS,
+  isComeback,
+  LineDecks,
+  MYSTERY_CHATTINESS,
+  pickSituation,
+  situations,
+  type Outcome,
+} from "@mjwaits/shared/engine/speech";
 import { scoreView, type ResultView } from "@mjwaits/shared/engine/view";
 import { MYSTERY_BOT, REACTIONS, type Reaction, type TableClientMessage, type TableState } from "@mjwaits/shared/protocol/table";
 import { BLANK, seatState } from "./lib/seatState";
@@ -924,20 +934,49 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reaction?.id]);
   const [reacting, setReacting] = useState(false);
-  const lastLine = useRef<Record<number, string>>({});
+  // Speech bubbles: each bot works through its own shuffled deck of each
+  // kind of line, speaks as readily as its personality does, and leaves gaps
+  // - the table quiet a few seconds between table talk, a bot longer.
+  const decks = useRef(new LineDecks());
+  const spoke = useRef<{ any: number; seat: Record<number, number> }>({ any: 0, seat: {} });
+  // How each seat's hands have gone this game (for 手風順 and the like).
+  const history = useRef<Outcome[][]>([[], [], [], []]);
+  const chattiness = (seat: number) => {
+    const bot = bots[seat];
+    if (!bot) return 0;
+    return mysteryStyle(bot) ? MYSTERY_CHATTINESS : (CHATTINESS[learnedStyle(bot) ?? bot.id] ?? 0.5);
+  };
   // A call says which (chow, pung, kong), so the line fits it.
-  const say = (seat: number, line: keyof Voice, call?: CallKind) => {
+  const say = (seat: number, kind: keyof Speech, call?: CallKind) => {
     const bot = bots[seat];
     if (!bot) return;
-    const lines = call ? callLines(voiceOf(bot), call) : voiceOf(bot)[line];
-    // Never the same line twice running from one bot.
-    let text = lines[Math.floor(Math.random() * lines.length)];
-    if (lines.length > 1 && text === lastLine.current[seat]) text = lines[(lines.indexOf(text) + 1 + Math.floor(Math.random() * (lines.length - 1))) % lines.length];
-    lastLine.current[seat] = text;
+    const speech = speechOf(bot);
+    const text = decks.current.next(`${bot.id}:${seat}:${call ?? kind}`, call ? callLines(speech, call) : speech[kind]);
+    if (!text) return;
+    spoke.current.any = Date.now();
+    spoke.current.seat[seat] = Date.now();
     const id = Date.now() + seat;
     setBubbles((b) => ({ ...b, [seat]: { text, id } }));
     window.setTimeout(() => setBubbles((b) => (b[seat]?.id === id ? Object.fromEntries(Object.entries(b).filter(([k]) => Number(k) !== seat)) : b)), BUBBLE_MS);
   };
+  const sayLater = (ms: number, seat: number, kind: keyof Speech) => window.setTimeout(() => say(seat, kind), ms);
+  // Not every call gets a word - the chattier, the likelier.
+  const sayCall = (seat: number, call: CallKind) => {
+    if (Math.random() < 0.3 + 0.65 * chattiness(seat)) say(seat, "call", call);
+  };
+  // 叮: said by whoever declares it - and sometimes someone else reacts.
+  const sayRiichi = (seat: number) => {
+    say(seat, "riichi");
+    const others = [1, 2, 3].filter((s) => s !== seat && bots[s] && Math.random() < chattiness(s) * 0.6);
+    if (others.length) sayLater(1100, others[Math.floor(Math.random() * others.length)], "pressure");
+  };
+  const moodOf = (seat: number) => ({
+    seat,
+    totals,
+    history: history.current[seat],
+    riichi: game.players.map((p) => !!p.riichi),
+    liveLeft: liveTilesLeft(game),
+  });
   // "You", or the bot's English name (老手 Veteran -> Veteran); online,
   // people by their nickname and bots by the name the table gives them.
   const nameOf = (seat: number): string => {
@@ -1026,20 +1065,93 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     const at = net.toLocal;
     if (lastAction.kind === "call") {
       showBurst(at(lastAction.seat), lastAction.call === "chow" ? "上" : lastAction.call === "pung" ? "碰" : "槓");
-      say(at(lastAction.seat), "call", lastAction.call);
+      sayCall(at(lastAction.seat), lastAction.call);
     } else if (lastAction.kind === "kong") showBurst(at(lastAction.seat), "槓");
     else if (lastAction.kind === "discard" && lastAction.riichi) {
       showBurst(at(lastAction.seat), "叮");
-      say(at(lastAction.seat), "riichi");
+      sayRiichi(at(lastAction.seat));
     } else if (lastAction.kind === "win") {
       const seat = at(lastAction.seats[0]);
       const n = lastAction.seats.length;
       showBurst(seat, lastAction.robKong ? "搶槓" : lastAction.from === null ? "自摸" : n > 1 ? (n === 2 ? "雙響" : "三響") : "胡");
-      say(seat, lastAction.from === null ? "selfDraw" : "win");
-      if (lastAction.from !== null) say(at(lastAction.from), "dealIn");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastAction, online?.table.hand, game.discardsMade]);
+
+  // The end of a hand, however it came (here or online): the winner's line -
+  // bigger for a big hand, a comeback from the bottom - the payer's, and a
+  // word from someone looking on. Not for a hand that was already over when
+  // this table opened.
+  const overKey =
+    game.phase.kind === "over"
+      ? JSON.stringify([online?.table.hand ?? null, game.dealer, game.dealerStreak, game.discardsMade, game.phase.result.deltas, game.phase.result.winner])
+      : null;
+  const seenOver = useRef<string | null>(overKey);
+  useEffect(() => {
+    if (!overKey || seenOver.current === overKey || game.phase.kind !== "over") return;
+    seenOver.current = overKey;
+    const r = game.phase.result;
+    const winners = r.winner === null ? [] : [{ winner: r.winner, score: r.score }, ...(r.alsoWon ?? [])];
+    for (let seat = 0; seat < SEATS; seat++)
+      history.current[seat] = [...history.current[seat], winners.some((w) => w.winner === seat) ? "win" : r.from === seat ? "dealIn" : "none"];
+    if (!winners.length) {
+      // 流局: a word or two round the table.
+      const talkers = [1, 2, 3].filter((s) => bots[s] && Math.random() < chattiness(s) * 0.55).slice(0, 2);
+      talkers.forEach((s, i) => sayLater(400 + i * 900, s, "drawGame"));
+      return;
+    }
+    winners.forEach(({ winner, score }, i) => {
+      const tai = score?.total ?? 0;
+      const kind: keyof Speech =
+        tai >= BIG_WIN_TAI && Math.random() < 0.75
+          ? "bigWin"
+          : isComeback(totals, r.deltas, winner) && Math.random() < 0.6
+            ? "comeback"
+            : situations(moodOf(winner)).includes("hot") && Math.random() < 0.35
+              ? "hot"
+              : r.from === null
+                ? "selfDraw"
+                : "win";
+      sayLater(i * 700, winner, kind);
+    });
+    if (r.from !== null && !r.robKong) sayLater(600, r.from, situations(moodOf(r.from)).includes("cold") && Math.random() < 0.35 ? "cold" : "dealIn");
+    else if (r.from !== null) sayLater(600, r.from, "dealIn");
+    const lookers = [1, 2, 3].filter((s) => s !== r.from && !winners.some((w) => w.winner === s) && bots[s]);
+    const looker = lookers[Math.floor(Math.random() * lookers.length)];
+    if (looker !== undefined && Math.random() < chattiness(looker) * 0.7) sayLater(1500, looker, "othersWin");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [overKey]);
+
+  // A fresh deal: sometimes someone says something as the tiles come in -
+  // about the hand, or how the game's going for them.
+  const freshDealKey = game.phase.kind === "turn" && game.discardsMade === 0 ? JSON.stringify([online?.table.hand ?? null, game.dealer, game.dealerStreak, game.roundWind]) : null;
+  const seenDeal = useRef<string | null>(freshDealKey);
+  useEffect(() => {
+    if (!freshDealKey || seenDeal.current === freshDealKey) return;
+    seenDeal.current = freshDealKey;
+    const talkers = [1, 2, 3].filter((s) => bots[s]);
+    const s = talkers[Math.floor(Math.random() * talkers.length)];
+    if (s === undefined || Math.random() > 0.25 + chattiness(s) * 0.4) return;
+    const mood = situations(moodOf(s)).filter((x) => x === "ahead" || x === "behind" || x === "hot" || x === "cold");
+    sayLater(900, s, mood.length && Math.random() < 0.45 ? mood[Math.floor(Math.random() * mood.length)] : "handStart");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [freshDealKey]);
+
+  // Table talk between discards: now and then, never on top of the last
+  // thing said, and never the same bot too often. What about depends on
+  // how things stand for them (see pickSituation).
+  useEffect(() => {
+    if (game.phase.kind === "over" || game.discardsMade === 0) return;
+    const now = Date.now();
+    if (now - spoke.current.any < 7000 || Math.random() > 0.16) return;
+    const ready = [1, 2, 3].filter((s) => bots[s] && now - (spoke.current.seat[s] ?? 0) > 20000);
+    const weight = ready.map(chattiness);
+    let pick = Math.random() * weight.reduce((a, b) => a + b, 0);
+    const seat = ready.find((_, i) => (pick -= weight[i]) < 0);
+    if (seat === undefined) return;
+    sayLater(500, seat, pickSituation(moodOf(seat)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [game.discardsMade]);
 
   const humanClaims = game.phase.kind === "claims" && seated && waitedOn ? claimOptions(game, HUMAN) : [];
 
@@ -1070,10 +1182,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     const seat = winningClaimSeat(game, decisions);
     if (seat !== null) {
       showBurst(seat, game.phase.kind === "claims" && game.phase.robKong ? "搶槓" : claimLabel(decisions[seat]!));
-      if (decisions[seat]!.kind === "win") {
-        say(seat, "win");
-        if (game.phase.kind === "claims") say(game.phase.from, "dealIn");
-      } else say(seat, "call", decisions[seat]!.kind as CallKind);
+      if (decisions[seat]!.kind !== "win") sayCall(seat, decisions[seat]!.kind as CallKind);
     }
     advance(resolveClaims(game, decisions));
     if (seat === HUMAN && humanClaim && humanClaim.kind !== "win") setLastCall({ before: game, decisions });
@@ -1158,10 +1267,9 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
         timer = window.setTimeout(() => {
           if (m.kind === "selfDraw") {
             showBurst(seat, "自摸");
-            say(seat, "selfDraw");
           } else if (m.kind === "discard" && m.riichi) {
             showBurst(seat, "叮");
-            say(seat, "riichi");
+            sayRiichi(seat);
           } else if (m.kind !== "discard") showBurst(seat, "槓");
           advance(applyTurnMove(game, m));
         }, botDelay(0.4, phase.drawn === null) * SPEEDS[speed].factor);
@@ -1178,10 +1286,9 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
       move = () => {
         if (m.kind === "selfDraw") {
           showBurst(phase.seat, "自摸");
-          say(phase.seat, "selfDraw");
         } else if (m.kind === "discard" && m.riichi) {
           showBurst(phase.seat, "叮");
-          say(phase.seat, "riichi");
+          sayRiichi(phase.seat);
         } else if (m.kind !== "discard") showBurst(phase.seat, "槓");
         advance(applyTurnMove(game, m));
       };
@@ -1320,6 +1427,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
 
   const startNewGame = () => {
     setTotals([0, 0, 0, 0]);
+    history.current = [[], [], [], []];
     // A new game, new mysteries.
     setOpponents((o) => o.map((id) => (id.startsWith(MYSTERY_PREFIX) ? newMystery() : id)));
     setMenuOpen(false);
