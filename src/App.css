@@ -6862,35 +6862,34 @@ html.playing body {
   height: 0;
   border: 0.15em solid transparent;
   filter: drop-shadow(0 0 0.08em rgba(255, 209, 102, 0.7));
-  /* Just above the tiles' tops, so a neighbouring tile never hides it. */
-  --marker-z: calc(var(--play-thick) + 0.06em);
 }
 
 .play-pond-bottom .play-pond-tile.is-latest::after {
   left: 50%;
-  bottom: -0.36em;
-  transform: translateX(-50%) translateZ(var(--marker-z));
+  bottom: -0.34em;
+  transform: translateX(-50%);
   border-bottom-color: var(--play-gold);
 }
 
 .play-pond-top .play-pond-tile.is-latest::after {
   left: 50%;
-  top: -0.36em;
-  transform: translateX(-50%) translateZ(var(--marker-z));
+  top: -0.34em;
+  transform: translateX(-50%);
   border-top-color: var(--play-gold);
 }
 
 .play-pond-left .play-pond-tile.is-latest::after {
   top: 50%;
-  left: -0.36em;
-  transform: translateY(-50%) translateZ(var(--marker-z));
+  /* The side players' tiles, turned, sit 0.11em in from their boxes. */
+  left: -0.23em;
+  transform: translateY(-50%);
   border-left-color: var(--play-gold);
 }
 
 .play-pond-right .play-pond-tile.is-latest::after {
   top: 50%;
-  right: -0.36em;
-  transform: translateY(-50%) translateZ(var(--marker-z));
+  right: -0.23em;
+  transform: translateY(-50%);
   border-right-color: var(--play-gold);
 }
 
