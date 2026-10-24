@@ -6836,10 +6836,10 @@ html.playing body {
   animation: play-drop 0.36s both;
 }
 
-/* The newest discard's marker: a small gold triangle on the side of the
-   tile facing the middle of the table, pointing at it - so it reads the
-   same whoever threw it (above yours, below the far player's, beside the
-   side players'). */
+/* The newest discard's marker: a small gold triangle on the tile's outer
+   side (toward its thrower), pointing at it - the newest tile is always
+   the last in its pond, which grows outward, so there it never covers a
+   tile: below yours, above the far player's, outside the side players'. */
 .play-pond-tile.is-latest::after {
   content: "";
   position: absolute;
@@ -6853,30 +6853,30 @@ html.playing body {
 
 .play-pond-bottom .play-pond-tile.is-latest::after {
   left: 50%;
-  top: -0.36em;
-  transform: translateX(-50%) translateZ(var(--marker-z));
-  border-top-color: var(--play-gold);
-}
-
-.play-pond-top .play-pond-tile.is-latest::after {
-  left: 50%;
   bottom: -0.36em;
   transform: translateX(-50%) translateZ(var(--marker-z));
   border-bottom-color: var(--play-gold);
 }
 
-.play-pond-left .play-pond-tile.is-latest::after {
-  top: 50%;
-  right: -0.36em;
-  transform: translateY(-50%) translateZ(var(--marker-z));
-  border-right-color: var(--play-gold);
+.play-pond-top .play-pond-tile.is-latest::after {
+  left: 50%;
+  top: -0.36em;
+  transform: translateX(-50%) translateZ(var(--marker-z));
+  border-top-color: var(--play-gold);
 }
 
-.play-pond-right .play-pond-tile.is-latest::after {
+.play-pond-left .play-pond-tile.is-latest::after {
   top: 50%;
   left: -0.36em;
   transform: translateY(-50%) translateZ(var(--marker-z));
   border-left-color: var(--play-gold);
+}
+
+.play-pond-right .play-pond-tile.is-latest::after {
+  top: 50%;
+  right: -0.36em;
+  transform: translateY(-50%) translateZ(var(--marker-z));
+  border-right-color: var(--play-gold);
 }
 
 /* A discard drops onto the felt from a little above and settles - moved
