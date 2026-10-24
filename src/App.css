@@ -7316,7 +7316,8 @@ html.playing body {
   font-weight: 800;
   line-height: 1;
   box-shadow: 0 0.2rem 0.6rem rgba(0, 0, 0, 0.5), inset 0 0 0 1px rgba(255, 209, 102, 0.22), inset 0 0.12rem 0.2rem rgba(255, 255, 255, 0.08);
-  animation: play-spot 0.2s ease-out;
+  /* Scale only, no fade: it sits over your 3D hand (see .play-dice). */
+  animation: play-pop 0.2s ease-out both;
 }
 
 .play-call.is-win {
@@ -8132,7 +8133,9 @@ html.playing body {
   background: rgba(16, 12, 8, 0.72);
   box-shadow: var(--shadow-float);
   pointer-events: none;
-  animation: play-spot 0.2s ease-out;
+  /* Popped in by scale alone - a fading layer over the table makes Safari
+     draw the 3D tiles under it flat. */
+  animation: play-pop 0.2s ease-out both;
 }
 
 .play-dice-row {

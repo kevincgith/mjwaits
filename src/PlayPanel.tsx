@@ -660,6 +660,12 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
     const id = window.setTimeout(() => setRolling(false), speed === "fast" ? 900 : 1700);
     return () => window.clearTimeout(id);
   }, [rolling, speed]);
+  // Online the table doesn't wait for this phone's roll: the dice go as soon
+  // as the first tile is thrown, so they never sit over tiles landing on the
+  // felt (iPhone Safari drew those flat under the fading overlay).
+  useEffect(() => {
+    if (online && rolling && game.discardsMade > 0) setRolling(false);
+  }, [online, rolling, game.discardsMade]);
   const [opponents, setOpponents] = useState<string[]>(() =>
     saved?.opponents?.length === 3 && saved.opponents.every(knownBot) ? saved.opponents : DEFAULT_OPPONENTS
   );
