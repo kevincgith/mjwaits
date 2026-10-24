@@ -1426,7 +1426,7 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
   };
 
   // The dealer's chip, with their run of wins and draws (連莊) on it.
-  const dealerChip = game.dealerStreak > 0 ? <span className="play-dealer is-streak">莊 連{game.dealerStreak}</span> : <span className="play-dealer">莊</span>;
+  const dealerChip = game.dealerStreak > 0 ? <span className="play-dealer is-streak">莊連{game.dealerStreak}</span> : <span className="play-dealer">莊</span>;
 
   // A bot's name card - flat, over the corner of the table like a HUD.
   const badge = (seat: number) => (
