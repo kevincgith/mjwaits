@@ -720,10 +720,17 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
   const [sheetHost] = useState(() => {
     const host = document.createElement("div");
     host.className = "play-sheet-host";
+    // The layer that turns (the host itself stays put - see App.css).
+    const turn = document.createElement("div");
+    turn.className = "play-sheet-turn";
+    host.appendChild(turn);
     return host;
   });
   useEffect(() => {
     document.body.appendChild(sheetHost);
+    // The page behind at its top: a scrolled page throws iPhone Safari's
+    // taps off on a turned table.
+    window.scrollTo(0, 0);
     return () => sheetHost.remove();
   }, [sheetHost]);
   // The side seats' columns both as wide as the wider seat (its melds and
@@ -1872,7 +1879,7 @@ export function PlayPanel({ onExit, onOnline, online }: { onExit: () => void; on
         )}
 
         {trackerOpen && <TileTracker game={game} onClose={() => setTrackerOpen(false)} />}
-        {scoresOpen && ledger && <PlayScores game={ledger} onClose={() => setScoresOpen(false)} host={sheetHost} />}
+        {scoresOpen && ledger && <PlayScores game={ledger} onClose={() => setScoresOpen(false)} host={sheetHost.firstElementChild} />}
         {recordOpen && <RecordSheet record={playRecord} onReset={setPlayRecord} onClose={() => setRecordOpen(false)} />}
         {reviewOpen && (
           <ReviewSheet

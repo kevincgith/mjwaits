@@ -5614,7 +5614,12 @@ html.playing body {
   pointer-events: none;
 }
 
-.play-sheet-host > * {
+.play-sheet-turn {
+  position: absolute;
+  inset: 0;
+}
+
+.play-sheet-turn > * {
   pointer-events: auto;
 }
 
@@ -5679,15 +5684,22 @@ html.playing body {
    the phone's right edge, its left the phone's top (the notch / Dynamic
    Island side), so the safe areas swap round with it. */
 @media (orientation: portrait) and (max-width: 820px) {
-  .play-screen,
-  .play-sheet-host {
-    inset: auto;
+  /* The screen itself stays put (fixed, unturned) and the table inside it
+     turns: iPhone Safari works out taps on a turned fixed element from
+     the wrong place (they landed below what was tapped). */
+  .play-screen .play-table,
+  .play-sheet-host .play-sheet-turn {
+    position: absolute;
     top: 0;
-    left: 100vw;
+    left: 100%;
     width: 100dvh;
     height: 100vw;
     transform-origin: 0 0;
     transform: rotate(90deg);
+  }
+
+  .play-screen,
+  .play-sheet-host {
     --vw: 1dvh;
     --vh: 1vw;
     --dvh: 1vw;
