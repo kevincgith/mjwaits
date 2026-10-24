@@ -15981,11 +15981,13 @@ button.sc-stat:active {
 }
 
 /* Yours stand up on the felt, faces toward you (backs to the table), as at
-   a real table - so you see which of your tiles each player takes. Leaned
-   back a little, as a hand stands, so the faces read. */
+   a real table - so you see which of your tiles each player takes - stood
+   exactly as your hand's tiles stand: the felt lies 32deg back from facing
+   you and your hand leans 22deg back, so up from the felt by 54deg, about
+   the face's foot (see .play-hand's tiles). */
 .play-swap-pond.is-standing .play-swap-tile > .tile-glyph {
-  transform-origin: 50% 100%;
-  transform: rotateX(-68deg);
+  transform-origin: 50% 100% var(--play-thick);
+  transform: rotateX(-54deg);
 }
 
 .play-swap-pond.is-pickable .play-swap-tile:not(.is-gap) {
