@@ -6358,14 +6358,16 @@ html.playing body {
 /* A hand laid down at the end topples: each tile starts standing on the
    edge nearest its owner, face toward them, and falls away from them onto
    its back - one after another along the row, quickening as it falls, with
-   a small settle. Then the winning tile drops in. (Moved only, never faded:
-   a 3D tile turned partly transparent is drawn flat.) */
+   a small settle. A winner's hand waits for the winning tile: shown first,
+   held up then set down (--win-lead), as a player does at the table.
+   (Moved only, never faded: a 3D tile turned partly transparent is drawn
+   flat.) */
 .play-topple {
   display: inline-flex;
   line-height: 0;
   transform-style: preserve-3d;
   animation: var(--topple-dur, 0.6s) cubic-bezier(0.55, 0, 1, 0.45) both;
-  animation-delay: calc(var(--topple-at, 0s) + var(--i, 0) * var(--topple-step, 0.07s));
+  animation-delay: calc(var(--topple-at, 0s) + var(--win-lead, 0s) + var(--i, 0) * var(--topple-step, 0.07s));
 }
 
 .play-seat-top .play-topple {
@@ -6384,8 +6386,32 @@ html.playing body {
 }
 
 .play-seat .play-meld.is-revealed .play-win-tile > .tile-glyph {
-  animation: play-drop 0.36s both;
-  animation-delay: calc(var(--topple-at, 0s) + var(--n, 0) * var(--topple-step, 0.07s) + var(--topple-dur, 0.6s));
+  animation: play-show 0.8s both;
+  animation-delay: var(--topple-at, 0s);
+}
+
+/* The winning tile, shown: lifted up off the table, held a beat for all to
+   see, then set down with a small settle. */
+@keyframes play-show {
+  0% {
+    transform: translateZ(2.4em);
+    animation-timing-function: cubic-bezier(0.2, 0.7, 0.4, 1);
+  }
+  45% {
+    transform: translateZ(1.8em);
+    animation-timing-function: cubic-bezier(0.5, 0, 0.9, 0.6);
+  }
+  80% {
+    transform: translateZ(0);
+    animation-timing-function: cubic-bezier(0.2, 0.6, 0.4, 1);
+  }
+  90% {
+    transform: translateZ(0.12em);
+    animation-timing-function: cubic-bezier(0.5, 0, 0.8, 0.5);
+  }
+  100% {
+    transform: translateZ(0);
+  }
 }
 
 @keyframes play-topple-far {
@@ -6444,7 +6470,36 @@ html.playing body {
 .play-hand.is-toppled .play-hand-tile :is(.tile-glyph.tile-art, .play-back) {
   /* Timed as a winner's (TOPPLE_WINNER in PlayPanel). */
   animation: play-topple-mine 0.6s cubic-bezier(0.55, 0, 1, 0.45) both;
-  animation-delay: calc(0.2s + var(--i, 0) * 0.07s);
+  animation-delay: calc(0.2s + var(--win-lead, 0s) + var(--i, 0) * 0.07s);
+}
+
+/* The tile you won with goes down first, on its own: lifted, shown, laid
+   flat - then the rest of your hand follows. */
+.play-hand.is-toppled .play-hand-tile.is-winner :is(.tile-glyph.tile-art, .play-back) {
+  animation: play-show-mine 0.8s both;
+  animation-delay: 0.2s;
+}
+
+@keyframes play-show-mine {
+  0% {
+    transform: translateY(-0.5em) rotateX(-22deg);
+    animation-timing-function: cubic-bezier(0.2, 0.7, 0.4, 1);
+  }
+  45% {
+    transform: translateY(-0.6em) rotateX(-22deg);
+    animation-timing-function: cubic-bezier(0.55, 0, 1, 0.45);
+  }
+  85% {
+    transform: translateY(0) rotateX(32deg);
+    animation-timing-function: ease-out;
+  }
+  93% {
+    transform: translateY(0) rotateX(26deg);
+    animation-timing-function: ease-in;
+  }
+  100% {
+    transform: translateY(0) rotateX(32deg);
+  }
 }
 
 @keyframes play-topple-mine {

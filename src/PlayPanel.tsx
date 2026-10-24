@@ -178,10 +178,12 @@ const BURST_MS = 1200;
 // hand falling all at once, no wave. (A 流局, or a hand shown later: at once.)
 type Topple = { at: number; step: number; dur: number };
 const TOPPLE_WINNER: Topple = { at: 0.2, step: 0.07, dur: 0.6 };
-const TOPPLE_OTHERS: Topple = { at: 2.6, step: 0, dur: 0.5 };
+// How long the winning tile is shown on its own before the hand goes down.
+const WIN_TILE_LEAD = 0.85;
+const TOPPLE_OTHERS: Topple = { at: 2.6 + WIN_TILE_LEAD, step: 0, dur: 0.5 };
 const TOPPLE_DRAW: Topple = { at: 0.15, step: 0, dur: 0.5 };
 // The result card waits for all of that.
-const WIN_SHOW_MS = 3700;
+const WIN_SHOW_MS = 3700 + WIN_TILE_LEAD * 1000;
 // A phone held upright: the table is drawn turned (as App.css's media query).
 const TURNED = "(orientation: portrait) and (max-width: 820px)";
 const DRAW_SHOW_MS = 1700;
@@ -329,8 +331,9 @@ function FlowersView({ flowers }: { flowers: BonusTile[] }) {
 // players mark it at the table.
 // On the table (a seat's hand laid down at the end) the tiles topple from
 // standing to flat one after another, as a player knocks their hand over,
-// timed by `topple` (the winner's first - see TOPPLE_WINNER); the winning
-// tile drops in after.
+// timed by `topple` (the winner's first - see TOPPLE_WINNER). A winner shows
+// the winning tile first, as a player does at a real table - held up, then
+// set down - and only then lays the rest of the hand down.
 function RevealedHandView({ tiles, winningTile, topple = TOPPLE_WINNER }: { tiles: Tile[]; winningTile: Tile | null; topple?: Topple }) {
   const sorted = sortTiles(tiles);
   const mark = winningTile ? sorted.findIndex((t) => sameTile(t, winningTile)) : -1;
@@ -338,7 +341,15 @@ function RevealedHandView({ tiles, winningTile, topple = TOPPLE_WINNER }: { tile
   return (
     <span
       className="play-meld is-revealed"
-      style={{ "--topple-at": `${topple.at}s`, "--topple-step": `${topple.step}s`, "--topple-dur": `${topple.dur}s`, "--n": rest.length } as CSSProperties}
+      style={
+        {
+          "--topple-at": `${topple.at}s`,
+          "--topple-step": `${topple.step}s`,
+          "--topple-dur": `${topple.dur}s`,
+          "--win-lead": mark >= 0 ? `${WIN_TILE_LEAD}s` : "0s",
+          "--n": rest.length,
+        } as CSSProperties
+      }
     >
       {rest.map((t, i) => (
         <span key={i} className="play-topple" style={{ "--i": i } as CSSProperties}>
@@ -1484,6 +1495,12 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
   const result = over ? shownResult : null;
   // You won this hand: your tiles topple flat, as everyone's on the table do.
   const iWon = !!result && !!result.tile && (result.winner === HUMAN || !!result.alsoWon?.some((w) => w.winner === HUMAN));
+  // The tile you won with, shown first: the one you drew, or the last of its kind.
+  const winIndex = !iWon
+    ? -1
+    : handView.drawnTile && sameTile(handView.drawnTile, result!.tile!)
+      ? handTiles.length - 1
+      : handTiles.map((t) => sameTile(t, result!.tile!)).lastIndexOf(true);
   // The card held back while the table shows how the hand ended - only when
   // it ends in front of you (a game opened already over shows it at once).
   const [cardHeld, setCardHeld] = useState(false);
@@ -2003,7 +2020,10 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
                 </>
               )}
             </div>
-            <div className={`play-hand${myTurn ? " is-turn" : ""}${iWon ? " is-toppled" : ""}`}>
+            <div
+              className={`play-hand${myTurn ? " is-turn" : ""}${iWon ? " is-toppled" : ""}`}
+              style={winIndex >= 0 ? ({ "--win-lead": `${WIN_TILE_LEAD}s` } as CSSProperties) : undefined}
+            >
               {(me.melds.length > 0 || me.flowers.length > 0) && (
                 <span className="play-my-melds">
                   {/* Flowers always leftmost, then melds, then the hand. */}
@@ -2022,6 +2042,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
                     className={[
                       "play-hand-tile",
                       isDrawn && "is-drawn",
+                      i === winIndex && "is-winner",
                       selected === i && "is-selected",
                       i === hintIndex && "is-hint",
                       hint && myTurn && dangerous.has(tileKey(t)) && "is-danger",
