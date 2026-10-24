@@ -6874,7 +6874,9 @@ html.playing body {
 /* The newest discard's marker: a small gold triangle on the tile's outer
    side (toward its thrower), pointing at it - the newest tile is always
    the last in its pond, which grows outward, so there it never covers a
-   tile: below yours, above the far player's, outside the side players'. */
+   tile: below yours, above the far player's, outside the side players'.
+   At the height of the tile's face, so it meets the face's edge (on the
+   felt, the tile's thickness opened a gap in perspective). */
 .play-pond-tile.is-latest::after {
   content: "";
   position: absolute;
@@ -6886,30 +6888,30 @@ html.playing body {
 
 .play-pond-bottom .play-pond-tile.is-latest::after {
   left: 50%;
-  bottom: -0.34em;
-  transform: translateX(-50%);
+  bottom: -0.17em;
+  transform: translateX(-50%) translateZ(var(--play-thick));
   border-bottom-color: var(--play-gold);
 }
 
 .play-pond-top .play-pond-tile.is-latest::after {
   left: 50%;
-  top: -0.34em;
-  transform: translateX(-50%);
+  top: -0.17em;
+  transform: translateX(-50%) translateZ(var(--play-thick));
   border-top-color: var(--play-gold);
 }
 
 .play-pond-left .play-pond-tile.is-latest::after {
   top: 50%;
   /* The side players' tiles, turned, sit 0.11em in from their boxes. */
-  left: -0.23em;
-  transform: translateY(-50%);
+  left: -0.03em;
+  transform: translateY(-50%) translateZ(var(--play-thick));
   border-left-color: var(--play-gold);
 }
 
 .play-pond-right .play-pond-tile.is-latest::after {
   top: 50%;
-  right: -0.23em;
-  transform: translateY(-50%);
+  right: -0.03em;
+  transform: translateY(-50%) translateZ(var(--play-thick));
   border-right-color: var(--play-gold);
 }
 
