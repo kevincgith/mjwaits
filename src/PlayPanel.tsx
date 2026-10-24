@@ -57,7 +57,7 @@ import {
   type TurnMove,
 } from "@mjwaits/shared/engine/game";
 import { allTileKinds, getWaits, shanten, sortTiles, tileKey, tileLabel, type Tile } from "@mjwaits/shared/engine/mahjong";
-import { blindPicks, botGive, botSplit, DEFAULT_SWAP_RULES, type SwapRules } from "@mjwaits/shared/engine/swap";
+import { blindPicks, botGive, botSplit, DEFAULT_SWAP_RULES, pileLeft, type SwapRules } from "@mjwaits/shared/engine/swap";
 import { PlayDie } from "./PlayDie";
 import { SwapPanel, SwapSheet } from "./PlaySwap";
 import type { BonusTile } from "@mjwaits/shared/engine/scoring";
@@ -1224,10 +1224,21 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
   const [swapHand, setSwapHand] = useState<number[]>([]);
   const [swapPicks, setSwapPicks] = useState<number[][]>([[], [], [], []]);
   const swapStep = swapPhase ? `${swapPhase.round}${swapPhase.stage}${swapPhase.taker}` : "";
+  // Your turn to give: your loneliest tiles come picked already (the bots'
+  // rule of thumb, botGive) - a suggestion; tap to change it.
   useEffect(() => {
-    setSwapHand([]);
     setSwapPicks([[], [], [], []]);
-  }, [swapStep]);
+    if (!swapGiving) return setSwapHand([]);
+    const used = new Set<number>();
+    setSwapHand(
+      botGive(handTiles, swapPhase!.count).map((t) => {
+        const i = handTiles.findIndex((h, j) => !used.has(j) && sameTile(h, t));
+        used.add(i);
+        return i;
+      })
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [swapStep, swapGiving]);
   const swapDeal = swapPhase && swapPhase.round === 1 && swapPhase.stage === "give" && swapPhase.piles.every((p) => !p) ? JSON.stringify([game.dealer, game.dealerStreak, game.roundWind, game.dice, swapPhase.dice]) : null;
   const [swapRolling, setSwapRolling] = useState(false);
   const swapRolledFor = useRef<string | null>(null);
@@ -1245,9 +1256,10 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     if (!swapPhase || swapHand.length !== swapPhase.count) return;
     advance(swapGive(game, HUMAN, swapHand.map((i) => handTiles[i])));
   };
-  const takeSwap = () => {
+  // Your take: the tiles you tapped - or, one tap, an even take of blind picks.
+  const takeSwap = (picks: number[][] = swapPicks) => {
     if (!swapPhase) return;
-    advance(swapTake(game, HUMAN, swapPicks));
+    advance(swapTake(game, HUMAN, picks));
   };
   const drawn = myTurn && game.phase.kind === "turn" ? game.phase.drawn : null;
   const forbidden = myTurn ? forbiddenDiscards(game) : [];
@@ -1309,9 +1321,8 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
       }
       if (!bot(phase.taker)) return;
       const id = window.setTimeout(() => {
-        const sizes = phase.piles.map((p) => p!.length);
-        const split = botSplit(sizes, phase.taker, takersAfter(phase, game.dealer), phase.count);
-        advance(swapTake(game, phase.taker, sizes.map((n, g) => blindPicks(n, split[g]))));
+        const split = botSplit(phase.piles.map(pileLeft), phase.taker, takersAfter(phase, game.dealer), phase.count);
+        advance(swapTake(game, phase.taker, phase.piles.map((p, g) => blindPicks(p!, split[g]))));
       }, 1300 * factor);
       return () => window.clearTimeout(id);
     }
@@ -2188,6 +2199,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
             phase={swapPhase}
             rolling={swapRolling}
             nameOf={(seat) => (seat === HUMAN ? "You" : nameOf(seat))}
+            windOf={(seat) => WIND_CHARS[seatWind(seat, game.dealer)]}
             seated={seated && !autoplay}
             picks={swapPicks}
             setPicks={setSwapPicks}

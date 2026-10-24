@@ -42,11 +42,16 @@ export interface SwapPhase {
   round: number; // 1-based
   stage: "give" | "take";
   // Each seat's face-down pile: null until they've laid it out this round.
-  piles: (Tile[] | null)[];
+  // A tile taken leaves its place empty (null) - the rest stay where they lie.
+  piles: (Pile | null)[];
   // Whose turn to take (stage "take"), and who has taken this round.
   taker: number;
   took: number[];
 }
+
+export type Pile = (Tile | null)[];
+// The tiles still in a pile.
+export const pileLeft = (pile: Pile | null) => (pile ? pile.filter(Boolean).length : 0);
 
 export const swapsOn = (rules: SwapRules | undefined, roundWind: Wind) => !!rules && rules.winds.includes(roundWind);
 export const swapRounds = (rules: SwapRules, die: number) => rules.rounds[die - 1];
@@ -126,9 +131,10 @@ export function botSplit(sizes: number[], taker: number, after: number[], count:
 }
 const isEvenWarning = (c: TakeCheck) => c.warning?.startsWith("That leaves") ?? false;
 
-// Which tiles a pile gives up for a take: blind, so any - a bot takes at random.
-export function blindPicks(pileSize: number, n: number, rng: () => number = Math.random): number[] {
-  const idx = Array.from({ length: pileSize }, (_, i) => i);
+// Which tiles a pile gives up for a take (places in it, of those still
+// there): blind, so any - a bot, or a one-tap take, picks at random.
+export function blindPicks(pile: Pile, n: number, rng: () => number = Math.random): number[] {
+  const idx = pile.flatMap((t, i) => (t ? [i] : []));
   for (let i = idx.length - 1; i > 0; i--) {
     const j = Math.floor(rng() * (i + 1));
     [idx[i], idx[j]] = [idx[j], idx[i]];
