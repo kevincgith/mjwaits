@@ -115,8 +115,10 @@ describe("一炮多響 and 反雪", () => {
 
   it("雙響/三響's tai goes on each pair, like 莊 - from 設定, kept on the hand", () => {
     expect(multiWinTai(PLAIN, 1)).toBe(0);
-    expect(multiWinTai(PLAIN, 2)).toBe(1);
-    expect(multiWinTai({ ...PLAIN, multiWinTriple: 2 }, 3)).toBe(2);
+    // The 反雪 amounts: 5 for a 雙響, 10 for a 三響.
+    expect(multiWinTai(PLAIN, 2)).toBe(5);
+    expect(multiWinTai(PLAIN, 3)).toBe(10);
+    expect(multiWinTai({ ...PLAIN, fanXueTriple: 2 }, 3)).toBe(2);
     const s = replay(game([{ ...multi(3, [0, 8], [1, 5]), multiTai: 1 } as ScoreEvent]));
     expect(s.hands[0].pairs.map((p) => [p.winner, p.multi, p.worth])).toEqual([["A", 1, 9], ["B", 1, 6]]);
     expect(s.totals).toMatchObject({ A: 9, B: 6, D: -15 });

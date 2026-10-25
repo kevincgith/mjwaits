@@ -42,10 +42,10 @@ export interface ScoreSettings {
   dealerTai: number; // 自動計算莊 - 0 = off
   streakTai: number; // 自動計算連莊, per 連莊 - 0 = off
   fanXue: boolean; // 反雪
-  fanXueDouble: number; // what each 雙響 winner pays back
-  fanXueTriple: number; // what each 三響 winner pays back
-  multiWinDouble: number; // 雙響's tai, on each winner's pair - 0 = off
-  multiWinTriple: number; // 三響's tai, on each winner's pair - 0 = off
+  // 雙響 / 三響: the tai on each winner's pair, and the 反雪 each winner pays
+  // after one - the same number for both.
+  fanXueDouble: number;
+  fanXueTriple: number;
   scoreCap: number | null; // 封頂 - the highest tai / amount the keypad lets you type; null = no limit. Input only - never changes a payment.
   drawKeepsDealer: boolean; // 流局留莊
   jackpot: boolean;
@@ -86,8 +86,6 @@ export const DEFAULT_SETTINGS: ScoreSettings = {
   fanXue: true,
   fanXueDouble: 5,
   fanXueTriple: 10,
-  multiWinDouble: 1,
-  multiWinTriple: 1,
   scoreCap: 999,
   drawKeepsDealer: true,
   jackpot: true,
@@ -329,9 +327,9 @@ export function zhaHuKicks(state: Pick<ReplayState, "lahs" | "settings">, caller
 }
 
 // What a hand of this many winners off one discard adds to each pair, by 設定:
-// 雙響 or 三響's tai, nothing for one winner.
-export function multiWinTai(settings: Pick<ScoreSettings, "multiWinDouble" | "multiWinTriple">, winners: number): number {
-  return winners === 2 ? settings.multiWinDouble : winners >= 3 ? settings.multiWinTriple : 0;
+// 雙響 or 三響's amount (the 反雪 one), nothing for one winner.
+export function multiWinTai(settings: Pick<ScoreSettings, "fanXueDouble" | "fanXueTriple">, winners: number): number {
+  return winners === 2 ? settings.fanXueDouble : winners >= 3 ? settings.fanXueTriple : 0;
 }
 
 export function dealerAmount(settings: ScoreSettings, streak: number): number {
