@@ -15992,6 +15992,15 @@ button.sc-stat:active {
   pointer-events: none;
 }
 
+/* In your standing pile a tile only ever touched the felt along its foot:
+   its gap is that footprint - the tile's width, its thickness deep, at
+   the front of its place where it stood. */
+.play-swap-pond.is-standing .play-swap-tile.is-gap::after {
+  top: auto;
+  height: var(--play-thick);
+  border-radius: 0.06em;
+}
+
 /* Yours stand up on the felt, faces toward you (backs to the table), as at
    a real table - so you see which of your tiles each player takes - stood
    exactly as your hand's tiles stand: the felt lies 32deg back from facing
