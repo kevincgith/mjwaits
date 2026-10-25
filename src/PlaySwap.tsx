@@ -277,10 +277,10 @@ export function SwapSheet({ rules, onChange, onClose }: { rules: SwapRules; onCh
   );
 }
 
-// A tile on its way from a pile to the hand that took it: lifted, then
-// flown to that seat, shrinking into the hand - face up if it's one of
-// yours, else face down. Drawn flat over the table, from where it lay
-// (`from`, on screen) by (dx, dy), after `delay`.
+// A taken tile, flown from its pile to its place in the row by the
+// taker's hand, and left there till the round's over - face up if it's
+// yours to see, else face down. Drawn flat over the table, from where it
+// lay (`from`, on screen) by (dx, dy), after `delay`.
 export interface Flight {
   id: number;
   to: number; // the seat whose hand it's flying to
@@ -290,44 +290,95 @@ export interface Flight {
   tile: Tile | null; // null: face down - not yours to see
   ghost?: boolean; // the round's last take - its pile drawn from the ghost
   from: { left: number; top: number; width: number };
-  dx: number;
-  dy: number;
+  // Where it goes, sampled evenly over the flight: offsets from where it
+  // started (px) and its turn on the table (deg) - see flightPath.
+  path: { x: number; y: number; r: number; s: number }[];
   delay: number;
 }
 
-// How long a flight takes (as .play-swap-flight's animation), and the
-// wait between one tile of a take setting off and the next.
-export const SWAP_FLIGHT_MS = 900;
-export const SWAP_STAGGER_MS = 450;
-// From a take to its last tile landing.
-export const takeFlightMs = (tiles: number) => SWAP_FLIGHT_MS + Math.max(0, tiles - 1) * SWAP_STAGGER_MS;
+// Eased progress: speeding up once, slowing once.
+const ease = (u: number) => (u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2);
+const turnBy = (x: number, y: number, deg: number) => {
+  const a = (deg * Math.PI) / 180;
+  return { x: x * Math.cos(a) - y * Math.sin(a), y: x * Math.sin(a) + y * Math.cos(a) };
+};
 
-export function SwapFlight({ flight, onStart, onDone }: { flight: Flight; onStart: () => void; onDone: () => void }) {
-  // Gone when it lands - or, should the animation's end never come (a page
-  // in the background holds animations), soon after it should have.
+// One giver's tiles in a take move as one formation: its middle glides from
+// the pile to the row while the formation turns about it - from the way the
+// tiles lay (a side seat's sideways) to the way the row runs - each tile
+// sliding along the formation from its place in the pile to its place in
+// the row. So the tiles follow their true arcs and stay in order, a tile
+// apart: they can't touch. (Straight lines would cut the corner of a turn
+// and run them into each other.)
+// Each starts at the size its pile's tile shows on screen (`sizes`, a
+// fraction of its own) and grows to its own as it lands - its formation
+// opening up in step, so the gaps keep pace.
+// `starts`/`ends`: each tile's centre on screen, leaving and landing;
+// `turnFrom`/`turnTo`: how the tiles lie, leaving and landing (deg).
+export function flightPath(
+  starts: { x: number; y: number }[],
+  ends: { x: number; y: number }[],
+  turnFrom: number,
+  turnTo: number,
+  sizes: number[] = starts.map(() => 1),
+  samples = 24
+) {
+  const mean = (ps: { x: number; y: number }[]) => ({ x: ps.reduce((t, p) => t + p.x, 0) / ps.length, y: ps.reduce((t, p) => t + p.y, 0) / ps.length });
+  const c0 = mean(starts);
+  const c1 = mean(ends);
+  let turn = turnTo - turnFrom;
+  if (turn > 180) turn -= 360;
+  if (turn <= -180) turn += 360;
+  return starts.map((start, i) => {
+    // Its place in the formation, leaving and landing - the landing one
+    // turned back into the formation's own frame.
+    const os = { x: start.x - c0.x, y: start.y - c0.y };
+    const oe = turnBy(ends[i].x - c1.x, ends[i].y - c1.y, -turn);
+    return Array.from({ length: samples + 1 }, (_, k) => {
+      const e = ease(k / samples);
+      const o = turnBy(os.x + (oe.x - os.x) * e, os.y + (oe.y - os.y) * e, turn * e);
+      return { x: c0.x + (c1.x - c0.x) * e + o.x - start.x, y: c0.y + (c1.y - c0.y) * e + o.y - start.y, r: turnFrom + turn * e, s: sizes[i] + (1 - sizes[i]) * e };
+    });
+  });
+}
+
+// How long a take's flight takes (all its tiles go together), and how long the round's rows stay once its last
+// take is down, before every tile joins its hand.
+export const SWAP_FLIGHT_MS = 600;
+export const SWAP_ROUND_HOLD_MS = 1400;
+
+export function SwapFlight({ flight, onStart, onLanded }: { flight: Flight; onStart: () => void; onLanded: () => void }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  // Flown along its path; down when it lands - or, should the animation's
+  // end never come (a page in the background holds animations), soon after
+  // it should have. It stays in its row till the round's over (PlayPanel
+  // clears them).
   useEffect(() => {
-    const id = window.setTimeout(onDone, flight.delay + SWAP_FLIGHT_MS + 400);
-    return () => window.clearTimeout(id);
+    const quick = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    const anim = ref.current?.animate(
+      flight.path.map((p) => ({ transform: `translate(${p.x}px, ${p.y}px) rotate(${p.r}deg) scale(${p.s})`, visibility: "visible" })),
+      { duration: quick ? 1 : SWAP_FLIGHT_MS, delay: flight.delay, easing: "linear", fill: "forwards" }
+    );
+    const off = window.setTimeout(onStart, flight.delay);
+    const down = window.setTimeout(onLanded, flight.delay + SWAP_FLIGHT_MS + 300);
+    anim?.finished.then(onLanded, () => {});
+    return () => {
+      window.clearTimeout(off);
+      window.clearTimeout(down);
+      // One flight per tile: a second run of this effect (React may run it
+      // twice) mustn't leave the first still playing underneath.
+      anim?.cancel();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   return (
     <span
+      ref={ref}
       className="play-swap-flight"
-      style={
-        {
-          left: flight.from.left,
-          top: flight.from.top,
-          fontSize: flight.from.width / 0.74,
-          "--dx": `${flight.dx}px`,
-          "--dy": `${flight.dy}px`,
-          "--delay": `${flight.delay}ms`,
-          "--flight": `${SWAP_FLIGHT_MS}ms`,
-        } as CSSProperties
-      }
-      // Its glide (not the fade beside it) says when it's off and in.
-      onAnimationStart={(e) => e.target === e.currentTarget && onStart()}
-      onAnimationEnd={(e) => e.target === e.currentTarget && e.animationName === "play-swap-fly" && onDone()}
+      style={{ left: flight.from.left, top: flight.from.top, fontSize: flight.from.width / 0.74 }}
       aria-hidden="true"
+      data-to={flight.to}
+      data-from={flight.seat}
     >
       {flight.tile ? <TileGlyphSpan tile={flight.tile} /> : <span className="play-swap-flight-back" />}
     </span>
