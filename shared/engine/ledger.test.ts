@@ -277,8 +277,8 @@ describe("Jackpot, bonuses, seats, undo", () => {
     sumsToZero(t);
   });
 
-  it("預設獎罰: 花 草 花草 暗槓 追 追 圍骰 receive, 蛇骰 pays - off, or at 0, they're gone", () => {
-    expect(bonusPresets(PLAIN).map((p) => `${p.name}${p.kind}${p.amount}`)).toEqual(["花獎5", "草獎3", "花草獎8", "暗槓獎5", "蛇骰罰5", "圍骰獎5", "追獎5", "追獎10", "嗌錯罰5", "7搶1獎30", "1搶7獎30", "八仙過海獎100"]);
+  it("預設獎罰: 花 草 花草 暗槓 圍骰 receive, 蛇骰 追 追 嗌錯 pay - off, or at 0, they're gone", () => {
+    expect(bonusPresets(PLAIN).map((p) => `${p.name}${p.kind}${p.amount}`)).toEqual(["花獎5", "草獎3", "花草獎8", "暗槓獎5", "蛇骰罰5", "圍骰獎5", "追罰5", "追罰10", "嗌錯罰5", "7搶1獎30", "1搶7獎30", "八仙過海獎100"]);
     expect(bonusPresets({ ...PLAIN, presetGrass: 0 }).map((p) => p.name)).not.toContain("草");
     // 7搶1 and 1搶7 are with one player, picked on the sheet.
     expect(bonusPresets(PLAIN).filter((p) => p.one).map((p) => p.name)).toEqual(["7搶1", "1搶7"]);

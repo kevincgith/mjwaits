@@ -60,8 +60,8 @@ export interface ScoreSettings {
   presetGrass: number; // 草 - receive from each
   presetBoth: number; // 花草 - receive from each
   presetKong: number; // 暗槓 - receive from each
-  presetChase: number; // 追 - receive from each (the smaller)
-  presetChaseBig: number; // 追 - receive from each (the bigger)
+  presetChase: number; // 追 - pay each (the smaller)
+  presetChaseBig: number; // 追 - pay each (the bigger)
   presetSnake: number; // 蛇骰 - pay each
   presetTriple: number; // 圍骰 - receive from each
   presetSevenOne: number; // 7搶1 - receive from one player
@@ -129,8 +129,8 @@ export function bonusPresets(settings: ScoreSettings): BonusPreset[] {
     { name: "暗槓", kind: "獎", amount: settings.presetKong },
     { name: "蛇骰", kind: "罰", amount: settings.presetSnake },
     { name: "圍骰", kind: "獎", amount: settings.presetTriple },
-    { name: "追", kind: "獎", amount: settings.presetChase },
-    { name: "追", kind: "獎", amount: settings.presetChaseBig },
+    { name: "追", kind: "罰", amount: settings.presetChase },
+    { name: "追", kind: "罰", amount: settings.presetChaseBig },
     { name: "嗌錯", kind: "罰", amount: settings.presetWrongCall },
     { name: "7搶1", kind: "獎", amount: settings.presetSevenOne, one: true },
     { name: "1搶7", kind: "獎", amount: settings.presetOneSeven, one: true },
