@@ -99,17 +99,25 @@ describe("一炮多響 and 反雪", () => {
     expect(s.totals).toMatchObject({ A: 8, B: 5, C: 0, D: -13 });
   });
 
-  it("反雪: the 雙響 victim's 自摸 next hand - each winner pays back 5", () => {
+  it("反雪: the 雙響 victim's 自摸 next hand - each winner pays 5", () => {
     const s = replay(game([multi(3, [0, 8], [1, 5]), win(3, 2, null)]));
     expect(s.hands[1].fanXue).toEqual([
       { from: "A", to: "D", amount: 5 },
       { from: "B", to: "D", amount: 5 },
     ]);
     // The 自摸 is also a 踢 on each winner's 拉: A pays 2 + ceil(8/2), B 2 + ceil(5/2),
-    // C a plain 2 - then 5 back from each of A and B on top.
+    // C a plain 2 - then 5 from each of A and B on top, into D's new 拉 on them.
     expect(s.hands[1].pairs.map((p) => [p.payer, p.worth])).toEqual([["A", 6], ["B", 5], ["C", 2]]);
     expect(s.hands[1].deltas.D).toBe(6 + 5 + 2 + 10);
     sumsToZero(s);
+  });
+
+  it("反雪 rides in the 拉 the 自摸 starts, so the next 拉 or 踢 takes half of it too", () => {
+    const s = replay(game([multi(3, [0, 8], [1, 5]), win(3, 2, null)]));
+    // D's 拉 on A and B: the 自摸's plain 2 + 反雪 5. On C, just the 2.
+    expect(s.lahs.filter((l) => l.holder === "D").map((l) => `${l.pulled} ${l.value}`).sort()).toEqual(["A 7", "B 7", "C 2"]);
+    // D wins off A again: 3 + ceil(7/2).
+    expect(replay(game([multi(3, [0, 8], [1, 5]), win(3, 2, null), win(3, 3, 0)])).hands[2].pairs[0]).toMatchObject({ lahKind: "拉", lah: 4, worth: 7 });
   });
 
   it("反雪 after a 三響 is 10 from each winner, and both amounts are settings", () => {
@@ -384,11 +392,16 @@ describe("籌碼 - chips change hands when a 拉 ends", () => {
     expect(moves([win(0, 10, null)], many([[0, 20], [1, 20]], 3))).toEqual([]);
   });
 
-  it("the 雙響's loser self-draws: each winner's 拉 ends with a 踢, less the 反雪 they pay back", () => {
-    expect(sorted(moves([many([[1, 20], [2, 20]], 3)], win(3, 10, null), { fanXue: true, fanXueDouble: 5 }))).toEqual([
-      { from: "D", to: "B", amount: 5 },
-      { from: "D", to: "C", amount: 5 },
+  it("the 雙響's loser self-draws: each winner's 拉 ends with a 踢, and the 反雪 rides in the new 拉", () => {
+    const settings = { fanXue: true, fanXueDouble: 5 };
+    // D hands over each 拉 of 20 less the 踢's half (10), the 反雪 left out.
+    expect(sorted(moves([many([[1, 20], [2, 20]], 3)], win(3, 10, null), settings))).toEqual([
+      { from: "D", to: "B", amount: 10 },
+      { from: "D", to: "C", amount: 10 },
     ]);
+    // D's new 拉 on each winner: the 自摸's plain 10 (a 踢's 拉 starts there) + 反雪 5.
+    const s = after([many([[1, 20], [2, 20]], 3), win(3, 10, null)], settings);
+    expect(s.lahs.filter((l) => l.holder === "D").map((l) => `${l.pulled} ${l.value}`).sort()).toEqual(["A 10", "B 15", "C 15"]);
   });
 
   it("pair by pair, never netted: A pulls B C D, B and D pull C, then C self-draws", () => {

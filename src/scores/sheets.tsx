@@ -407,7 +407,8 @@ export function WinSheet({
           center={
             multi === 1
               ? { label: "自摸", sub: "Self-draw", on: from === null, onPick: () => pickFrom(null) }
-              : { label: multi === 2 ? "雙響" : "三響", sub: from === null || from < 0 ? "Tap who dealt in" : `${multi} winners`, on: false }
+              : // 雙響 / 三響 lights up as soon as a second winner is held, as 自摸 does.
+                { label: multi === 2 ? "雙響" : "三響", sub: from === null || from < 0 ? "Tap who dealt in" : `${multi} winners`, on: true }
           }
         />
       </div>
@@ -995,7 +996,7 @@ export function TablePicker({
             {center.sub && <span className="sc-pick-center-sub">{center.sub}</span>}
           </button>
         ) : (
-          <span className="sc-pick-center is-label">
+          <span className={`sc-pick-center is-label${center.on ? " is-on" : ""}`}>
             <span className="sc-pick-center-label">{center.label}</span>
             {center.sub && <span className="sc-pick-center-sub">{center.sub}</span>}
           </span>
@@ -2325,7 +2326,7 @@ export const SETTING_GROUPS: { title: string; rows: { key: keyof ScoreSettings; 
       { key: "integerMode", label: "整數模式", help: "Whole numbers only", kind: "bool" },
       { key: "lahRound", label: "拉減半", help: "Rounding when a 拉 halves", kind: "round" },
       { key: "tiRound", label: "踢減半", help: "Rounding when a 踢 halves", kind: "round" },
-      { key: "fanXue", label: "反雪", help: "Paid back by each winner", kind: "bool" },
+      { key: "fanXue", label: "反雪", help: "Paid by each winner, into the 拉 on them", kind: "bool" },
       { key: "fanXueDouble", label: "雙響反雪", help: "反雪 after a 雙響", kind: "number", needs: "fanXue" },
       { key: "fanXueTriple", label: "三響反雪", help: "反雪 after a 三響", kind: "number", needs: "fanXue" },
       { key: "surrenderPrompt", label: "投降提示", help: "Prompt once a 拉 runs this many hands in a row", kind: "nullable" },

@@ -12280,6 +12280,12 @@ html.sc-fit-mode .build-version {
   cursor: default;
 }
 
+/* 雙響 / 三響, lit as 自摸 is. */
+.sc-pick-center.is-label.is-on {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
 /* ---- 食胡 sheet fits without scrolling ---- */
 
 .sc-tai-row {
