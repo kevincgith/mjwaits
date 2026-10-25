@@ -16078,44 +16078,28 @@ button.sc-stat:active {
   color: #ff8f80;
 }
 
-/* A taken tile, flying from its pile to the taker's hand: lifted and held
-   a beat, then off to their seat at its own size, fading as it lands - one
-   after another with the rest of the take, never touching (see the flights
-   in PlayPanel). */
-/* Hidden until its turn: till then the tile is still drawn in its pile.
-   One smooth glide from pile to hand - a single eased interval, speeding
-   up once and slowing once (easing keyframe by keyframe, or an arc on top,
-   made it stop and start) - fading only at the very end. */
+/* A taken tile, flown from its pile to its place in the row by the taker's
+   hand along its path (flightPath, in PlaySwap) - hidden until it sets off,
+   till then still drawn in its pile - and there it stays till the round's
+   over. */
 .play-swap-flight {
   position: fixed;
   z-index: 60;
   line-height: 0;
   pointer-events: none;
   visibility: hidden;
-  animation:
-    play-swap-fly var(--flight, 0.9s) cubic-bezier(0.37, 0, 0.25, 1) var(--delay, 0s) forwards,
-    play-swap-fade var(--flight, 0.9s) linear var(--delay, 0s) forwards;
-}
-
-@keyframes play-swap-fade {
-  0%,
-  86% {
-    opacity: 1;
-  }
-  100% {
-    opacity: 0;
-  }
 }
 
 .play-swap-flight img.tile-face {
   box-shadow: 0 0.12em 0.3em rgba(0, 0, 0, 0.45);
 }
 
-/* Face down in flight: the jade back, a tile's size, its ivory edge below. */
+/* Face down in flight: the jade back, a face-up tile's size (0.78em by
+   1em, as a tile's art is drawn), its ivory edge below. */
 .play-swap-flight-back {
   display: block;
-  width: 0.74em;
-  height: 0.96em;
+  width: 0.78em;
+  height: 1em;
   border-radius: 0.08em;
   background: linear-gradient(160deg, #4cc062, var(--play-back) 55%, var(--play-back-edge));
   box-shadow:
@@ -16124,22 +16108,9 @@ button.sc-stat:active {
     0 0.12em 0.3em rgba(0, 0, 0, 0.45);
 }
 
-@keyframes play-swap-fly {
-  0% {
-    visibility: visible;
-    transform: translate(0, 0);
-  }
-  100% {
-    visibility: visible;
-    transform: translate(var(--dx), var(--dy));
-  }
-}
 
-@media (prefers-reduced-motion: reduce) {
-  .play-swap-flight {
-    animation-duration: 0.01s;
-  }
-}
+
+
 
 /* Your swap buttons are discs in the calls corner (.play-call): 放牌,
    攞牌, and 照攞 for a lopsided take - amber, as a warning. While you swap
