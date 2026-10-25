@@ -6312,15 +6312,18 @@ function ScoringPanel({
     setLoadedTestHand(null);
   };
 
-  // Arriving from Scores: a fresh hand with that game's winds, 自摸 if it
-  // was picked there, and the camera straight away for Scan hand (a phone
-  // may refuse that without a tap here - then the Scan button is lit).
+  // Arriving from Scores: a fresh hand with that game's winds, 自摸 or
+  // 雙響/三響 if it was picked there, and the camera straight away for Scan
+  // hand (a phone may refuse that without a tap here - then the Scan button
+  // is lit).
   useEffect(() => {
     if (!forScores) return;
     handleReset();
     setSeatWind(forScores.seatWind);
     setRoundWind(forScores.roundWind);
     if (forScores.from === null) setSelfDraw(true);
+    const winners = forScores.draft?.entries.length ?? 1;
+    if (winners > 1) setMultiWin(winners === 2 ? "double" : "triple");
     if (forScores.scan) handScannerRef.current?.trigger();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [forScores?.nonce]);
@@ -7015,6 +7018,7 @@ function ScoringPanel({
           <span className="for-scores-text">
             <span>
               <strong>For Scores:</strong> {forScores.player} {forScores.zhaHu ? "詐胡 - what the hand is worth" : forScores.from === null ? "自摸" : forScores.fromName ? `食 ${forScores.fromName}` : "食胡"}
+              {(forScores.draft?.entries.length ?? 1) > 1 && ` · ${forScores.draft!.entries.length === 2 ? "雙響" : "三響"}`}
             </span>
             <span className="for-scores-sub">
               Winds set: {"東南西北"[forScores.roundWind - 1]}圈 · {"東南西北"[forScores.seatWind - 1]}家
