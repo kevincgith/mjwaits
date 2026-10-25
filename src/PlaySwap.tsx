@@ -173,7 +173,7 @@ export function SwapControls({
     return (
       <button
         type="button"
-        className="play-call is-win is-long"
+        className="play-call is-swap is-win is-long"
         disabled={giveCount !== count}
         onClick={onGive}
         aria-label={giveCount === count ? `Give these ${count}` : `Pick ${count} tiles to give`}
@@ -184,18 +184,18 @@ export function SwapControls({
   if (!check) return null;
   if (taken === 0)
     return (
-      <button type="button" className="play-call is-win is-long" onClick={quickTake} aria-label={`Take ${count} evenly, blind`}>
+      <button type="button" className="play-call is-swap is-win is-long" onClick={quickTake} aria-label={`Take ${count} evenly, blind`}>
         攞牌
       </button>
     );
   return (
     <>
-      <button type="button" className="play-call is-pass is-minor" onClick={() => setPicks(() => [[], [], [], []])} aria-label="Clear your picks">
+      <button type="button" className="play-call is-swap is-pass is-minor" onClick={() => setPicks(() => [[], [], [], []])} aria-label="Clear your picks">
         ↺
       </button>
       <button
         type="button"
-        className={`play-call is-long${check.ok && !check.warning ? " is-win" : ""}${check.warning ? " is-warn" : ""}`}
+        className={`play-call is-swap is-long${check.ok && !check.warning ? " is-win" : ""}${check.warning ? " is-warn" : ""}`}
         disabled={!check.ok}
         onClick={() => onTake()}
         aria-label={check.error ?? check.warning ?? `Take these ${taken}`}
@@ -283,6 +283,8 @@ export function SwapSheet({ rules, onChange, onClose }: { rules: SwapRules; onCh
 // (`from`, on screen) by (dx, dy), after `delay`.
 export interface Flight {
   id: number;
+  to: number; // the seat whose hand it's flying to
+  real: Tile; // what it is - joining that hand as it lands
   seat: number; // whose pile it left, and its place there - where it's
   place: number; // drawn until it sets off
   tile: Tile | null; // null: face down - not yours to see
@@ -295,8 +297,8 @@ export interface Flight {
 
 // How long a flight takes (as .play-swap-flight's animation), and the
 // wait between one tile of a take setting off and the next.
-export const SWAP_FLIGHT_MS = 600;
-export const SWAP_STAGGER_MS = 300;
+export const SWAP_FLIGHT_MS = 900;
+export const SWAP_STAGGER_MS = 450;
 // From a take to its last tile landing.
 export const takeFlightMs = (tiles: number) => SWAP_FLIGHT_MS + Math.max(0, tiles - 1) * SWAP_STAGGER_MS;
 
@@ -318,11 +320,13 @@ export function SwapFlight({ flight, onStart, onDone }: { flight: Flight; onStar
           fontSize: flight.from.width / 0.74,
           "--dx": `${flight.dx}px`,
           "--dy": `${flight.dy}px`,
-          animationDelay: `${flight.delay}ms`,
+          "--delay": `${flight.delay}ms`,
+          "--flight": `${SWAP_FLIGHT_MS}ms`,
         } as CSSProperties
       }
-      onAnimationStart={onStart}
-      onAnimationEnd={onDone}
+      // Its glide (not the fade beside it) says when it's off and in.
+      onAnimationStart={(e) => e.target === e.currentTarget && onStart()}
+      onAnimationEnd={(e) => e.target === e.currentTarget && e.animationName === "play-swap-fly" && onDone()}
       aria-hidden="true"
     >
       {flight.tile ? <TileGlyphSpan tile={flight.tile} /> : <span className="play-swap-flight-back" />}
