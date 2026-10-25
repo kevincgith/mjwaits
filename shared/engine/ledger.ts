@@ -8,7 +8,10 @@
 // What one payer owes one winner for a hand of `tai`:
 //
 //   base + tai + 莊 (dealerTai + streakTai × 連莊, when either of the two is the
-//   dealer) + the pair's 拉/踢 add-on
+//   dealer) + 雙響/三響 (on every pair of one) + the pair's 拉/踢 add-on
+//
+// 莊 and 雙響/三響 are added here, not typed into the tai: the Scoring tab
+// takes both out of a hand it sends over.
 //
 // 拉/踢 live between two players. Once A has won off B there's a 拉 of V on B:
 // - A wins off B again (拉 continues): that hand is worth its value + half of
@@ -41,6 +44,8 @@ export interface ScoreSettings {
   fanXue: boolean; // 反雪
   fanXueDouble: number; // what each 雙響 winner pays back
   fanXueTriple: number; // what each 三響 winner pays back
+  multiWinDouble: number; // 雙響's tai, on each winner's pair - 0 = off
+  multiWinTriple: number; // 三響's tai, on each winner's pair - 0 = off
   scoreCap: number | null; // 封頂 - the highest tai / amount the keypad lets you type; null = no limit. Input only - never changes a payment.
   drawKeepsDealer: boolean; // 流局留莊
   jackpot: boolean;
@@ -81,6 +86,8 @@ export const DEFAULT_SETTINGS: ScoreSettings = {
   fanXue: true,
   fanXueDouble: 5,
   fanXueTriple: 10,
+  multiWinDouble: 1,
+  multiWinTriple: 1,
   scoreCap: 999,
   drawKeepsDealer: true,
   jackpot: true,
@@ -163,7 +170,9 @@ export type ScoreEvent = ScoreEventBody & { batch?: string };
 type ScoreEventBody =
   // `from` null = 自摸 (exactly one winner); otherwise the discarder, who pays
   // each winner (one = 食胡, two or three = 雙響 / 三響).
-  | { t: "win"; at: number; winners: WinnerEntry[]; from: number | null; jackpotTo?: string; source: "quick" | "scoring" }
+  // multiTai: a 雙響/三響's tai on each pair, as 設定 had it when it went in
+  // (so a later change there leaves recorded hands as they were).
+  | { t: "win"; at: number; winners: WinnerEntry[]; from: number | null; jackpotTo?: string; source: "quick" | "scoring"; multiTai?: number }
   | { t: "draw"; at: number }
   // 特別獎罰: 獎 - the seat's player is paid `amount`; 罰 - they pay it. With
   // `other`, just that one player pays (獎) or is paid (罰); without it, each
@@ -224,6 +233,7 @@ export interface PairPayment {
   base: number;
   tai: number;
   dealer: number;
+  multi?: number; // 雙響/三響, when there's any
   lah: number; // the 拉 or 踢 add-on
   lahKind: "拉" | "踢" | null;
   lahBefore: number; // the 拉 the add-on came from
@@ -318,16 +328,24 @@ export function zhaHuKicks(state: Pick<ReplayState, "lahs" | "settings">, caller
     .filter((k) => k.amount > 0);
 }
 
+// What a hand of this many winners off one discard adds to each pair, by 設定:
+// 雙響 or 三響's tai, nothing for one winner.
+export function multiWinTai(settings: Pick<ScoreSettings, "multiWinDouble" | "multiWinTriple">, winners: number): number {
+  return winners === 2 ? settings.multiWinDouble : winners >= 3 ? settings.multiWinTriple : 0;
+}
+
 export function dealerAmount(settings: ScoreSettings, streak: number): number {
   return settings.dealerTai + settings.streakTai * streak;
 }
 
 // The payer-pairs a win would produce, given the state before it - what the
 // 食胡 sheet previews, and what replay applies. Doesn't change `state`.
+// multiTai: a 雙響/三響's tai on each pair (see multiWinTai).
 export function previewWin(
   state: Pick<ReplayState, "seats" | "dealer" | "streak" | "lahs" | "settings">,
   winners: WinnerEntry[],
-  from: number | null
+  from: number | null,
+  multiTai = 0
 ): PairPayment[] {
   const { settings, seats } = state;
   const lahs = new Map(state.lahs.map((l) => [lahKey(l.holder, l.pulled), l]));
@@ -336,7 +354,7 @@ export function previewWin(
     const payers = from === null ? [0, 1, 2, 3].filter((s) => s !== w.seat) : [from];
     for (const p of payers) {
       const dealer = w.seat === state.dealer || p === state.dealer ? dealerAmount(settings, state.streak) : 0;
-      const plain = settings.base + w.tai + dealer;
+      const plain = settings.base + w.tai + dealer + multiTai;
       const winner = seats[w.seat];
       const payer = seats[p];
       const pull = lahs.get(lahKey(winner, payer));
@@ -353,7 +371,7 @@ export function previewWin(
         lahKind = "踢";
         lahBefore = kick.value;
       }
-      pairs.push({ winner, payer, base: settings.base, tai: w.tai, dealer, lah, lahKind, lahBefore, worth: plain + lah });
+      pairs.push({ winner, payer, base: settings.base, tai: w.tai, dealer, ...(multiTai ? { multi: multiTai } : {}), lah, lahKind, lahBefore, worth: plain + lah });
     }
   }
   return pairs;
@@ -375,7 +393,7 @@ export function nextLahs(before: Lah[], pairs: PairPayment[], winnerNames: Set<s
       holder: pair.winner,
       pulled: pair.payer,
       // A fresh 拉 (or a 踢's) starts at the plain value.
-      value: pair.lahKind === "拉" ? pair.lahBefore + pair.worth : pair.base + pair.tai + pair.dealer,
+      value: pair.lahKind === "拉" ? pair.lahBefore + pair.worth : pair.base + pair.tai + pair.dealer + (pair.multi ?? 0),
       count: pair.lahKind === "拉" && prev ? prev.count + 1 : 1,
     });
   }
@@ -468,7 +486,7 @@ export function replay(game: ScoreGame): ReplayState {
 
     switch (ev.t) {
       case "win": {
-        const pairs = previewWin(state, ev.winners, ev.from);
+        const pairs = previewWin(state, ev.winners, ev.from, ev.multiTai ?? 0);
         const winnerNames = new Set(ev.winners.map((w) => state.seats[w.seat]));
         for (const pair of pairs) pay(pair.payer, pair.winner, pair.worth);
         state.lahs = nextLahs(state.lahs, pairs, winnerNames);

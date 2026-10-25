@@ -40,6 +40,8 @@ export const SettingsSchema = object(
     fanXue: optBool,
     fanXueDouble: optNum,
     fanXueTriple: optNum,
+    multiWinDouble: optNum,
+    multiWinTriple: optNum,
     scoreCap: optNullNum,
     drawKeepsDealer: optBool,
     jackpot: optBool,

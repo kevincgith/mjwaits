@@ -3,7 +3,7 @@
 // sharing, settling up and 設定.
 
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { DEFAULT_SETTINGS, SEATS, previewFanXue, previewWin, half, roundLabel, settle, type PatternNote, type ReplayState, type ScoreEvent, type ScoreGame, type ScoreSettings, type ScoreStore, type WinnerEntry, bonusPresets, type BonusPreset, evenShares, zhaHuKicks } from "@mjwaits/shared/engine/ledger";
+import { DEFAULT_SETTINGS, SEATS, previewFanXue, previewWin, multiWinTai, half, roundLabel, settle, type PatternNote, type ReplayState, type ScoreEvent, type ScoreGame, type ScoreSettings, type ScoreStore, type WinnerEntry, bonusPresets, type BonusPreset, evenShares, zhaHuKicks } from "@mjwaits/shared/engine/ledger";
 import { fullSnapshotOf, fullSnapshotUrl, snapshotOf, snapshotUrl } from "../lib/scoreShare";
 import { drawSettleCard } from "../lib/settleImage";
 import qrcode from "qrcode-generator";
@@ -323,7 +323,9 @@ export function WinSheet({
   const fromValid = from === null ? multi === 1 : from >= 0;
   // Every winner needs a tai above 0.
   const complete = fromValid && entries.every((e) => Number(e.tai) > 0);
-  const pairs = fromValid ? previewWin(state, winners, from) : [];
+  // 雙響/三響's tai, added on each pair like 莊 (設定 · 雙響 / 三響).
+  const multiTai = from !== null && from >= 0 ? multiWinTai(state.settings, multi) : 0;
+  const pairs = fromValid ? previewWin(state, winners, from, multiTai) : [];
   // 反雪 rides on the payer's line: the 自摸 after a 雙響/三響 they won.
   const fanXue = fromValid ? previewFanXue(state, winners, from) : [];
   const fanXueOf = (payer: string) => fanXue.find((f) => f.from === payer)?.amount ?? 0;
@@ -336,6 +338,7 @@ export function WinSheet({
       ...(p.base ? { base: fmt(p.base) } : {}),
       tai: fmt(p.tai),
       ...(p.dealer ? { dealer: fmt(p.dealer) } : {}),
+      ...(p.multi ? { multi: fmt(p.multi) } : {}),
       ...(p.lahKind ? { lah: fmt(p.lah) } : {}),
       ...(fanXueOf(p.payer) ? { fanXue: fmt(fanXueOf(p.payer)) } : {}),
     },
@@ -351,6 +354,7 @@ export function WinSheet({
       winners,
       from,
       source: initial?.patterns.length ? "scoring" : "quick",
+      ...(multiTai ? { multiTai } : {}),
       ...(jackpot && state.pot > 0 ? { jackpotTo: seats[winnerSeat] } : {}),
     });
   };
@@ -485,6 +489,7 @@ export function WinSheet({
           { key: "base", label: "底" },
           { key: "tai", label: "番" },
           { key: "dealer", label: "莊" },
+          { key: "multi", label: multi === 3 ? "三響" : "雙響" },
           { key: "lah", label: "拉踢" },
           { key: "fanXue", label: "反雪" },
         ].filter((c) => c.key === "tai" || payRows.some((r) => r.cells[c.key] !== undefined))}
@@ -2329,6 +2334,8 @@ export const SETTING_GROUPS: { title: string; rows: { key: keyof ScoreSettings; 
       { key: "fanXue", label: "反雪", help: "Paid by each winner, into the 拉 on them", kind: "bool" },
       { key: "fanXueDouble", label: "雙響反雪", help: "反雪 after a 雙響", kind: "number", needs: "fanXue" },
       { key: "fanXueTriple", label: "三響反雪", help: "反雪 after a 三響", kind: "number", needs: "fanXue" },
+      { key: "multiWinDouble", label: "雙響", help: "Tai added to each winner of a 雙響", kind: "number" },
+      { key: "multiWinTriple", label: "三響", help: "Tai added to each winner of a 三響", kind: "number" },
       { key: "surrenderPrompt", label: "投降提示", help: "Prompt once a 拉 runs this many hands in a row", kind: "nullable" },
     ],
   },

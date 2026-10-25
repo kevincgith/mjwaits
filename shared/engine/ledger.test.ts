@@ -15,6 +15,7 @@ import {
   replay,
   chipMoves,
   evenShares,
+  multiWinTai,
   CHIP_POT,
   settle,
   undoEvent,
@@ -110,6 +111,19 @@ describe("一炮多響 and 反雪", () => {
     expect(s.hands[1].pairs.map((p) => [p.payer, p.worth])).toEqual([["A", 6], ["B", 5], ["C", 2]]);
     expect(s.hands[1].deltas.D).toBe(6 + 5 + 2 + 10);
     sumsToZero(s);
+  });
+
+  it("雙響/三響's tai goes on each pair, like 莊 - from 設定, kept on the hand", () => {
+    expect(multiWinTai(PLAIN, 1)).toBe(0);
+    expect(multiWinTai(PLAIN, 2)).toBe(1);
+    expect(multiWinTai({ ...PLAIN, multiWinTriple: 2 }, 3)).toBe(2);
+    const s = replay(game([{ ...multi(3, [0, 8], [1, 5]), multiTai: 1 } as ScoreEvent]));
+    expect(s.hands[0].pairs.map((p) => [p.winner, p.multi, p.worth])).toEqual([["A", 1, 9], ["B", 1, 6]]);
+    expect(s.totals).toMatchObject({ A: 9, B: 6, D: -15 });
+    // The 拉 it starts counts it too.
+    expect(s.lahs.map((l) => `${l.holder}>${l.pulled} ${l.value}`).sort()).toEqual(["A>D 9", "B>D 6"]);
+    // A hand recorded before (no multiTai) pays as it did.
+    expect(replay(game([multi(3, [0, 8], [1, 5])])).totals).toMatchObject({ A: 8, B: 5, D: -13 });
   });
 
   it("反雪 rides in the 拉 the 自摸 starts, so the next 拉 or 踢 takes half of it too", () => {
