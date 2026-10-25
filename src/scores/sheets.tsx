@@ -407,7 +407,8 @@ export function WinSheet({
           center={
             multi === 1
               ? { label: "自摸", sub: "Self-draw", on: from === null, onPick: () => pickFrom(null) }
-              : { label: multi === 2 ? "雙響" : "三響", sub: from === null || from < 0 ? "Tap who dealt in" : `${multi} winners`, on: false }
+              : // 雙響 / 三響 lights up as soon as a second winner is held, as 自摸 does.
+                { label: multi === 2 ? "雙響" : "三響", sub: from === null || from < 0 ? "Tap who dealt in" : `${multi} winners`, on: true }
           }
         />
       </div>
@@ -995,7 +996,7 @@ export function TablePicker({
             {center.sub && <span className="sc-pick-center-sub">{center.sub}</span>}
           </button>
         ) : (
-          <span className="sc-pick-center is-label">
+          <span className={`sc-pick-center is-label${center.on ? " is-on" : ""}`}>
             <span className="sc-pick-center-label">{center.label}</span>
             {center.sub && <span className="sc-pick-center-sub">{center.sub}</span>}
           </span>
