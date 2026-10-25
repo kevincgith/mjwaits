@@ -7734,21 +7734,27 @@ function ScoringPanel({
               type="button"
               className={`record-to-scores${forScores ? "" : " is-quiet"}`}
               onClick={() => {
-                // Scores adds 莊/連莊 itself, so that pattern's tai comes out here.
+                // Scores adds 莊/連莊 and 雙響/三響 itself, so those patterns'
+                // tai come out here.
                 const readings = [scoring.result, ...(scoring.result.second ? [scoring.result.second] : [])];
-                const removedDealerTai = readings
-                  .flatMap((r) => r.matched)
-                  .filter((m) => m.pattern.id === "dealer-streak")
-                  .reduce((sum, m) => sum + m.tai, 0);
+                const scoresAdds = new Set(["dealer-streak", "multi-win-double", "multi-win-triple"]);
+                const taiOf = (ids: string[]) =>
+                  readings
+                    .flatMap((r) => r.matched)
+                    .filter((m) => ids.includes(m.pattern.id))
+                    .reduce((sum, m) => sum + m.tai, 0);
+                const removedDealerTai = taiOf(["dealer-streak"]);
+                const removedMultiTai = taiOf(["multi-win-double", "multi-win-triple"]);
                 onRecord({
                   seatWind,
                   selfDraw: effectiveSelfDraw,
-                  tai: scoring.result.total - removedDealerTai,
+                  tai: scoring.result.total - removedDealerTai - removedMultiTai,
                   removedDealerTai,
+                  ...(removedMultiTai ? { removedMultiTai } : {}),
                   ...(rulesFingerprint(taiRules.rules) ? { rules: rulesFingerprint(taiRules.rules)! } : {}),
                   patterns: readings.flatMap((r) =>
                     r.matched
-                      .filter((m) => m.pattern.id !== "dealer-streak")
+                      .filter((m) => !scoresAdds.has(m.pattern.id))
                       .map((m) => ({ id: m.pattern.id, name: patternDisplayName(m.pattern, r.hand), tai: m.tai }))
                   ),
                 });

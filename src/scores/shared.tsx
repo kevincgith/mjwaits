@@ -38,6 +38,7 @@ export interface RecordRequest {
   tai: number; // without 莊 - the ledger adds that
   patterns: PatternNote[];
   removedDealerTai: number;
+  removedMultiTai?: number; // 雙響/三響's, taken out the same way
   // Scored under custom tai rules: their fingerprint (see WinnerEntry.rules).
   rules?: string;
   // Set when the hand was started from a Scores 食胡 sheet (ScoreHandRequest):

@@ -885,7 +885,7 @@ export function HandsTable({ store, game, state }: { store: ScoreStore; game: Sc
 // and anything else that moved (反雪, the Jackpot).
 export function HandDetail({ h, bonuses, payIns }: { h: HandResult; bonuses: number; payIns: number }) {
   const lines: string[] = h.pairs.map((p) => {
-    const parts = [p.base ? `底${fmt(p.base)}` : null, `番${fmt(p.tai)}`, p.dealer ? `莊${fmt(p.dealer)}` : null, p.lahKind ? `${p.lahKind}${fmt(p.lah)}` : null].filter(Boolean);
+    const parts = [p.base ? `底${fmt(p.base)}` : null, `番${fmt(p.tai)}`, p.dealer ? `莊${fmt(p.dealer)}` : null, p.multi ? `${h.multi === 3 ? "三響" : "雙響"}${fmt(p.multi)}` : null, p.lahKind ? `${p.lahKind}${fmt(p.lah)}` : null].filter(Boolean);
     return `${p.payer} → ${p.winner} ${fmt(p.worth)} · ${parts.join(" ")}`;
   });
   for (const f of h.fanXue) lines.push(`${f.from} → ${f.to} ${fmt(f.amount)} · 反雪`);
