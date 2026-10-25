@@ -15975,9 +15975,30 @@ button.sc-stat:active {
   height: 0.74em;
 }
 
-/* Taken: the place stays, empty. */
-.play-swap-tile.is-gap > .play-back {
+/* Taken: the place stays, outlined dashed on the felt - the tile's own
+   footprint (the hidden block keeps its size), so you see a tile was
+   there and has gone. */
+.play-swap-tile.is-gap > :is(.play-back, .tile-glyph) {
   visibility: hidden;
+}
+
+.play-swap-tile.is-gap::after {
+  content: "";
+  position: absolute;
+  inset: 0.03em;
+  border: 0.045em dashed rgba(244, 247, 245, 0.55);
+  border-radius: 0.09em;
+  transform: translateZ(1px);
+  pointer-events: none;
+}
+
+/* In your standing pile a tile only ever touched the felt along its foot:
+   its gap is that footprint - the tile's width, its thickness deep, at
+   the front of its place where it stood. */
+.play-swap-pond.is-standing .play-swap-tile.is-gap::after {
+  top: auto;
+  height: var(--play-thick);
+  border-radius: 0.06em;
 }
 
 /* Yours stand up on the felt, faces toward you (backs to the table), as at
@@ -15994,33 +16015,17 @@ button.sc-stat:active {
   cursor: pointer;
 }
 
-/* The others' piles stand too, as their owners' hands do - faces toward
-   their owners, backs to the middle - tipped up from the felt by the same
-   54deg as yours (--stand), so every pile on the table is seen alike: the
-   far one's backs toward you, the side ones' along their sides. Picked, a
-   tile slides out toward the middle (along its back), rimmed in gold. */
-.play-swap-pond.play-pond-top .play-swap-tile > .play-back {
-  --stand: rotateX(-54deg);
-  transform-origin: 50% 100%;
-}
-
-.play-swap-pond.play-pond-left .play-swap-tile > .play-back {
-  --stand: rotateY(54deg);
-  transform-origin: 100% 50%;
-}
-
-.play-swap-pond.play-pond-right .play-swap-tile > .play-back {
-  --stand: rotateY(-54deg);
-  transform-origin: 0% 50%;
-}
-
+/* The others' piles lie flat and face down, as their discards and
+   concealed kongs do - the far one's in a row, the side ones' turned along
+   their sides (.play-swap-pond:is(.play-pond-left, .play-pond-right)) - so
+   the table's own depth and perspective draw them. Only yours stands, as
+   your hand does. Picked, a tile lifts off the felt, rimmed in gold. */
 .play-swap-pond:not(.is-standing) .play-swap-tile > .play-back {
-  transform: var(--stand, none);
   transition: transform 0.15s ease;
 }
 
 .play-swap-pond:not(.is-standing) .play-swap-tile.is-picked > .play-back {
-  transform: var(--stand, none) translateZ(0.35em);
+  transform: translateZ(0.45em);
 }
 
 .play-swap-tile.is-picked > .play-back > .tile-top {
