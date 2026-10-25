@@ -629,7 +629,14 @@ type WireClaim = Extract<TableClientMessage, { t: "claim" }>["claim"];
 export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => void; onOnline?: () => void; online?: OnlinePlay; fresh?: boolean }) {
   const saved = useMemo(loadSaved, []);
   const resume = fresh ? null : saved;
-  const [localGame, setGame] = useState<GameState>(() => resume?.game ?? newGame());
+  // A fresh table deals its first hand with the table's own rules - 截胡 or
+  // 一炮多響, and which rounds swap (a 東 round that swaps swaps from the
+  // first deal; dealt without them, it didn't).
+  const [localGame, setGame] = useState<GameState>(
+    () =>
+      resume?.game ??
+      newGame({ multiWin: saved?.multiWin ?? saved?.game?.multiWin ?? false, swapRules: saved?.swapRules ?? saved?.game?.swapRules ?? DEFAULT_SWAP_RULES })
+  );
   const [localTotals, setTotals] = useState<number[]>(() => resume?.totals ?? [0, 0, 0, 0]);
   // Online: this seat's view, turned so you're at seat 0.
   const net = useMemo(() => (online?.table.view ? seatState(online.table.view) : null), [online?.table]);
