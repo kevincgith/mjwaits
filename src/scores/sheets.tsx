@@ -2326,7 +2326,7 @@ export const SETTING_GROUPS: { title: string; rows: { key: keyof ScoreSettings; 
       { key: "integerMode", label: "整數模式", help: "Whole numbers only", kind: "bool" },
       { key: "lahRound", label: "拉減半", help: "Rounding when a 拉 halves", kind: "round" },
       { key: "tiRound", label: "踢減半", help: "Rounding when a 踢 halves", kind: "round" },
-      { key: "fanXue", label: "反雪", help: "Paid back by each winner", kind: "bool" },
+      { key: "fanXue", label: "反雪", help: "Paid by each winner, into the 拉 on them", kind: "bool" },
       { key: "fanXueDouble", label: "雙響反雪", help: "反雪 after a 雙響", kind: "number", needs: "fanXue" },
       { key: "fanXueTriple", label: "三響反雪", help: "反雪 after a 三響", kind: "number", needs: "fanXue" },
       { key: "surrenderPrompt", label: "投降提示", help: "Prompt once a 拉 runs this many hands in a row", kind: "nullable" },

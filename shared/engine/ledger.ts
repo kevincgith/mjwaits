@@ -21,8 +21,11 @@
 // "Half" is rounded by 整數模式 (0.5進1 = up), or left exact when it's off.
 //
 // 反雪: a player who dealt into a 雙響/三響 and then self-draws the next hand
-// someone wins (流局 in between don't count) is paid a fixed amount by each of
-// those winners - fanXueDouble after a 雙響 (5), fanXueTriple after a 三響 (10).
+// someone wins (流局 in between don't count) gets a fixed amount from each of
+// those winners - fanXueDouble after a 雙響 (5), fanXueTriple after a 三響
+// (10) - and it goes into their new 拉 on that winner, like the hand itself:
+// the 拉 is worth that much more for the 拉 or 踢 that follows, and the chips
+// change hands when the 拉 ends.
 //
 // Jackpot: each draw, every seated player puts jackpotPerDraw into the pot;
 // a win can take it (jackpotTo), or it can be handed out by hand - and
@@ -279,8 +282,9 @@ export interface FanXueDue {
   winners: string[];
 }
 
-// What a win pays in 反雪: each of the last 雙響/三響's winners pays its loser
-// back, when that loser now self-draws. Empty otherwise.
+// A win's 反雪: when the last 雙響/三響's loser now self-draws, what each of
+// its winners pays them (`from` pays `to`), into `to`'s 拉 on `from`. Empty
+// otherwise.
 export function previewFanXue(
   state: Pick<ReplayState, "seats" | "settings" | "fanXueDue">,
   winners: { seat: number }[],
@@ -469,9 +473,14 @@ export function replay(game: ScoreGame): ReplayState {
         for (const pair of pairs) pay(pair.payer, pair.winner, pair.worth);
         state.lahs = nextLahs(state.lahs, pairs, winnerNames);
 
-        // 反雪.
+        // 反雪: paid, and riding in the 拉 this 自摸 just started on each winner.
         const fanXue: HandResult["fanXue"] = previewFanXue(state, ev.winners, ev.from);
         for (const f of fanXue) pay(f.from, f.to, f.amount);
+        if (fanXue.length > 0)
+          state.lahs = state.lahs.map((l) => {
+            const f = fanXue.find((x) => x.to === l.holder && x.from === l.pulled);
+            return f ? { ...l, value: l.value + f.amount } : l;
+          });
         state.fanXueDue =
           ev.from !== null && ev.winners.length > 1
             ? { loser: state.seats[ev.from], winners: pairs.map((p) => p.winner) }
@@ -666,7 +675,8 @@ export function evenShares(pot: number, first: number, integer: boolean): number
 // payment goes into a 拉 and stays there: chips only change hands when that
 // 拉 ends (the holder doesn't win the next hand, a 踢, 投降, 詐胡), the pulled
 // player paying its whole value - less a 踢's half, which the 踢 pays back.
-// 獎罰, 詐胡, 反雪 and the Jackpot are paid there and then. Each 拉 is
+// 反雪 rides in its 拉 the same way; 獎罰, 詐胡 and the Jackpot are paid there
+// and then. Each 拉 is
 // settled between its own two players, so the handovers are pair by pair -
 // never netted across the table. The Jackpot is a pile of its own (彩池).
 export const CHIP_POT = "彩池";
