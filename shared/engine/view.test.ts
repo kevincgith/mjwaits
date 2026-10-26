@@ -109,6 +109,19 @@ describe("viewFor", () => {
     }
   });
 
+  it("keeps a concealed kong face down at the end - but a winner's, and your own", () => {
+    const s = states.find((x) => x.phase.kind === "over" && x.phase.result.winner !== null && x.phase.result.winner !== 0)!;
+    const winner = (s.phase as Extract<GameState["phase"], { kind: "over" }>).result.winner!;
+    const loser = [1, 2, 3].find((i) => i !== winner)!;
+    const kong = { kind: "kong" as const, tiles: Array.from({ length: 4 }, () => ({ suit: "t" as const, rank: 5 })), concealed: true, from: null };
+    const t = { ...s, players: s.players.map((p, i) => (i === winner || i === loser || i === 0 ? { ...p, melds: [...p.melds, kong] } : p)) };
+    const v = viewFor(t, 0);
+    const last = (seat: number) => v.players[seat].melds[v.players[seat].melds.length - 1];
+    expect(last(loser)).toMatchObject({ hidden: true });
+    expect(last(winner)).not.toHaveProperty("hidden");
+    expect(last(0)).not.toHaveProperty("hidden");
+  });
+
   it("is a copy: changing the view can't change the game", () => {
     const s = states[50];
     const v = viewFor(s, 0);

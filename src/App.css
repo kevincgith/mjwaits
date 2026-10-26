@@ -5604,6 +5604,11 @@ img.tile-face {
 html.playing,
 html.playing body {
   overflow: hidden;
+  /* A game: no pull-to-refresh, no rubber-band bounce, no font resizing as
+     the phone turns. */
+  overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 .play-screen,
@@ -5676,6 +5681,9 @@ html.playing body {
    button) - only what you type into still does. */
 .play-screen,
 .play-sheet-host {
+  /* Taps straight away, however quick: no double-tap zoom to wait on (a
+     second quick tap on a pile's tile - not a button - was taken for one). */
+  touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
   -webkit-touch-callout: none;
   -webkit-user-select: none;
@@ -16325,6 +16333,17 @@ button.sc-stat:active {
   right: 5.6rem;
 }
 
+/* On a narrow screen the swap's note gives way (an ellipsis), never
+   wrapping the bar onto a second line - that would shrink the table. */
+.play-bar:has(.play-swap-bar) {
+  flex-wrap: nowrap;
+}
+
+.play-bar .play-swap-bar {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
 /* How many you've picked, on 放牌 itself: a badge at its corner - gold
    once it's right, red if too many. */
 .play-call.is-swap {
@@ -16372,6 +16391,41 @@ button.sc-stat:active {
 /* One line each, however narrow the room beside your hand. */
 .play-call.is-swap {
   white-space: nowrap;
+}
+
+/* Clear your picks: small, dark and quiet, a plain ✕ - never mistaken for
+   the suggestions beside it. */
+.play-call.is-swap.is-clear {
+  align-self: center;
+  min-width: 0;
+  width: clamp(2.1rem, calc(11 * var(--vh)), 2.6rem);
+  height: clamp(2.1rem, calc(11 * var(--vh)), 2.6rem);
+  border: 1.5px solid rgba(255, 143, 128, 0.55);
+  background: rgba(30, 20, 16, 0.92);
+  color: #ff8f80;
+  font-family: system-ui, sans-serif !important;
+  font-size: clamp(0.95rem, calc(5 * var(--vh)), 1.2rem) !important;
+  font-weight: 700;
+  box-shadow: 0 0.15rem 0.4rem rgba(0, 0, 0, 0.45);
+}
+
+.play-call.is-swap.is-clear.is-idle {
+  visibility: hidden;
+}
+
+/* The next suggestion: ⟳ alone, the ✕'s size, with a green rim. */
+.play-call.is-swap.is-plan {
+  align-self: center;
+  min-width: 0;
+  width: clamp(2.1rem, calc(11 * var(--vh)), 2.6rem);
+  height: clamp(2.1rem, calc(11 * var(--vh)), 2.6rem);
+  border: 1.5px solid rgba(143, 227, 166, 0.65);
+  background: rgba(16, 36, 26, 0.92);
+  color: #bff5cf;
+  font-family: system-ui, sans-serif !important;
+  font-size: clamp(1.1rem, calc(6 * var(--vh)), 1.4rem) !important;
+  font-weight: 700;
+  box-shadow: 0 0.15rem 0.4rem rgba(0, 0, 0, 0.45);
 }
 
 .play-call.is-warn {

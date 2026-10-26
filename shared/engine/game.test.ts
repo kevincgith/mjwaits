@@ -29,6 +29,7 @@ import {
   type GameState,
 } from "./game";
 import { parseHand, type Tile } from "./mahjong";
+import { botTurnFor, profileById } from "./bots";
 
 const sameTile = (a: Tile, b: Tile) => a.suit === b.suit && a.rank === b.rank;
 const m = (rank: number): Tile => ({ suit: "m", rank });
@@ -191,8 +192,9 @@ describe("game", () => {
     // A turn begun with a draw offers them again.
     const drawn = { ...after, phase: { kind: "turn" as const, seat: 2, drawn: { suit: "z" as const, rank: 1 }, replacement: null } };
     expect(kongOptions(p, drawn.phase).length).toBe(2);
-    // Nor does a bot try one.
+    // Nor does a bot try one - either kind of bot.
     expect(botTurnMove(after).kind).toBe("discard");
+    for (const id of ["casual", "hunter", "veteran", "speedster"]) expect(botTurnFor(after, profileById(id)).move.kind).toBe("discard");
   });
 
   it("bars 食替 discards after a call", () => {
