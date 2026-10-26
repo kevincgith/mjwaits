@@ -7024,17 +7024,18 @@ html.playing body {
   border-top-color: var(--play-gold);
 }
 
+/* A side player's turned tile reaches the edge of its box: the pin's tip
+   (half its 0.3em box in) stops just short of it, clear of the face. */
 .play-pond-left .play-pond-tile.is-latest::after {
   top: 50%;
-  /* The side players' tiles, turned, sit 0.11em in from their boxes. */
-  left: -0.03em;
+  left: -0.19em;
   transform: translateY(-50%) translateZ(var(--play-thick));
   border-left-color: var(--play-gold);
 }
 
 .play-pond-right .play-pond-tile.is-latest::after {
   top: 50%;
-  right: -0.03em;
+  right: -0.19em;
   transform: translateY(-50%) translateZ(var(--play-thick));
   border-right-color: var(--play-gold);
 }
