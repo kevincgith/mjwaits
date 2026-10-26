@@ -29,6 +29,7 @@ import {
   type GameState,
 } from "./game";
 import { parseHand, type Tile } from "./mahjong";
+import { botTurnFor, profileById } from "./bots";
 
 const sameTile = (a: Tile, b: Tile) => a.suit === b.suit && a.rank === b.rank;
 const m = (rank: number): Tile => ({ suit: "m", rank });
@@ -105,6 +106,111 @@ describe("game", () => {
     expect(after.phase).toMatchObject({ kind: "turn", seat: 2 });
     expect(after.players[2].melds[0].kind).toBe("triplet");
     expect(after.players[0].discards).toEqual([]);
+  });
+
+  it("叮: a passed-up win means no more wins this hand", () => {
+    const s0 = newGame();
+    s0.players[0].hand = parseHand("12345m111222333t55b");
+    // Seat 1 is 叮, waiting on 5m (46m), every other set made.
+    s0.players[1].hand = parseHand("111222333444t55b46m");
+    s0.players[1].riichi = { state: "riichi", discard: 0, ippatsu: false };
+    const s = applyTurnMove(s0, { kind: "discard", tile: { suit: "m", rank: 5 } });
+    expect(claimOptions(s, 1).map((c) => c.kind)).toEqual(["win"]);
+    // Passed up.
+    const after = resolveClaims(s, [null, null, null, null]);
+    expect(after.players[1].riichi?.passed).toBe(true);
+    // The same tile again: no win on it.
+    const again = { ...after, phase: { kind: "claims" as const, from: 3, tile: { suit: "m" as const, rank: 5 } } };
+    expect(claimOptions(again, 1)).toEqual([]);
+    // Nor drawn: no self-draw, and it throws its draw.
+    const drew = { ...after, players: after.players.map((p, i) => (i === 1 ? { ...p, hand: [...p.hand, { suit: "m" as const, rank: 5 }] } : p)), phase: { kind: "turn" as const, seat: 1, drawn: { suit: "m" as const, rank: 5 }, replacement: null } };
+    expect(() => applyTurnMove(drew, { kind: "selfDraw" })).toThrow();
+    expect(botTurnMove(drew).kind).toBe("discard");
+    // Another 叮 hand that hasn't passed still wins as ever.
+    expect(claimOptions({ ...s, players: s.players.map((p, i) => (i === 1 ? { ...p, riichi: { ...p.riichi!, passed: false } } : p)) }, 1).map((c) => c.kind)).toEqual(["win"]);
+  });
+
+  it("過水: a passed-up win is barred, drawn too, till a throw that doesn't win", () => {
+    const m5 = { suit: "m" as const, rank: 5 };
+    const s0 = newGame();
+    s0.players[0].hand = parseHand("12345m111222333t55b");
+    // Seat 1, not 叮, waiting on 5m.
+    s0.players[1].hand = parseHand("111222333444t55b46m");
+    const s = applyTurnMove(s0, { kind: "discard", tile: m5 });
+    const after = resolveClaims(s, [null, null, null, null]);
+    expect(after.players[1].overWater).toBe(true);
+    expect(after.players[1].riichi).toBeUndefined();
+    // Off a discard: no.
+    expect(claimOptions({ ...after, phase: { kind: "claims", from: 3, tile: m5 } }, 1)).toEqual([]);
+    // Drawn: no - and throwing that winning tile keeps it barred.
+    const withTile = (t: { suit: "m" | "z"; rank: number }) => ({
+      ...after,
+      // (Its waiting hand and the tile drawn - not the tile it drew after passing.)
+      players: after.players.map((p, i) => (i === 1 ? { ...p, hand: [...parseHand("111222333444t55b46m"), t] } : p)),
+      phase: { kind: "turn" as const, seat: 1, drawn: t, replacement: null },
+    });
+    expect(() => applyTurnMove(withTile(m5), { kind: "selfDraw" })).toThrow();
+    expect(applyTurnMove(withTile(m5), { kind: "discard", tile: m5 }).players[1].overWater).toBe(true);
+    // Throwing a tile that doesn't win lifts it: the next 5m wins.
+    const z9 = { suit: "z" as const, rank: 7 };
+    const lifted = applyTurnMove(withTile(z9), { kind: "discard", tile: z9 });
+    expect(lifted.players[1].overWater).toBeUndefined();
+    expect(claimOptions({ ...lifted, phase: { kind: "claims", from: 3, tile: m5 } }, 1).map((c) => c.kind)).toEqual(["win"]);
+  });
+
+  it("a second kong is offered after the first's replacement draw", () => {
+    const s0 = newGame();
+    s0.players[0].hand = parseHand("1111b2222b345t678t9t1z");
+    s0.phase = { kind: "turn", seat: 0, drawn: s0.players[0].hand[s0.players[0].hand.length - 1], replacement: null };
+    const after = applyTurnMove(s0, { kind: "concealedKong", tile: { suit: "b", rank: 1 } });
+    expect(after.phase).toMatchObject({ kind: "turn", seat: 0 });
+    expect(kongOptions(after.players[0], after.phase)).toContainEqual({ kind: "concealedKong", tile: { suit: "b", rank: 2 } });
+  });
+
+  it("叮: throwing a self-drawn win is passing it up", () => {
+    const s0 = newGame();
+    const win = parseHand("111222333444t55b456m");
+    s0.players[0].hand = win;
+    s0.players[0].riichi = { state: "riichi", discard: 0, ippatsu: false };
+    s0.phase = { kind: "turn", seat: 0, drawn: win[win.length - 1], replacement: null };
+    const s = applyTurnMove(s0, { kind: "discard", tile: win[win.length - 1] });
+    expect(s.players[0].riichi?.passed).toBe(true);
+  });
+
+  it("offers no kong straight after claiming a run or a pung - but the fourth of the pung just claimed", () => {
+    const s0 = newGame();
+    s0.players[0].hand = parseHand("12345m111222333t55b");
+    // Seat 2 holds 555m (pung the discard, the fourth still held) and 1111b (a concealed kong).
+    s0.players[2].hand = parseHand("555m1111b2345t789t1z");
+    const s = applyTurnMove(s0, { kind: "discard", tile: { suit: "m", rank: 5 } });
+    const after = resolveClaims(s, [null, null, { kind: "pung" }, null]);
+    const p = after.players[2];
+    expect(kongOptions(p).map((k) => k.kind).sort()).toEqual(["addedKong", "concealedKong"]);
+    // Just the fourth 5m onto the pung.
+    expect(kongOptions(p, after.phase)).toEqual([{ kind: "addedKong", tile: { suit: "m", rank: 5 } }]);
+    expect(() => applyTurnMove(after, { kind: "concealedKong", tile: { suit: "b", rank: 1 } })).toThrow();
+    expect(applyTurnMove(after, { kind: "addedKong", tile: { suit: "m", rank: 5 } }).players[2].melds[0].kind).toBe("kong");
+    // A turn begun with a draw offers both again.
+    const drawn = { ...after, phase: { kind: "turn" as const, seat: 2, drawn: { suit: "z" as const, rank: 1 }, replacement: null } };
+    expect(kongOptions(p, drawn.phase).length).toBe(2);
+    // A pung without the fourth: no kong at all - for bots of every kind too.
+    const s1 = newGame();
+    s1.players[0].hand = parseHand("12345m111222333t55b");
+    s1.players[2].hand = parseHand("55m1111b2345t789t17z");
+    const t = resolveClaims(applyTurnMove(s1, { kind: "discard", tile: { suit: "m", rank: 5 } }), [null, null, { kind: "pung" }, null]);
+    expect(kongOptions(t.players[2], t.phase)).toEqual([]);
+    expect(botTurnMove(t).kind).toBe("discard");
+    for (const id of ["casual", "hunter", "veteran", "speedster"]) expect(botTurnFor(t, profileById(id)).move.kind).toBe("discard");
+  });
+
+  it("offers no kong straight after claiming a run", () => {
+    const s0 = newGame();
+    s0.players[0].hand = parseHand("12345m111222333t55b");
+    // Seat 1 (next) runs 4-5-6m off the 5m, and holds 1111b.
+    s0.players[1].hand = parseHand("46m1111b2345t789t17z");
+    const s = applyTurnMove(s0, { kind: "discard", tile: { suit: "m", rank: 5 } });
+    const after = resolveClaims(s, [null, claimOptions(s, 1).find((c) => c.kind === "chow")!, null, null]);
+    expect(kongOptions(after.players[1], after.phase)).toEqual([]);
   });
 
   it("bars 食替 discards after a call", () => {

@@ -27,7 +27,7 @@ import {
   claimOptions,
   dealHand,
   forbiddenDiscards,
-  isWinningHand,
+  canWin,
   kongOptions,
   nextHand,
   resolveClaims,
@@ -507,7 +507,7 @@ export class Table extends Hub<TableMessage> {
     const g = this.rt.game!;
     if (row.kind === "bot" && !timedOut) return botTurnMoveFor(g, profileById(row.bot), random);
     const p = g.players[seat];
-    if (!timedOut && isWinningHand(p)) return { kind: "selfDraw" };
+    if (!timedOut && canWin(p)) return { kind: "selfDraw" };
     const forced = riichiForcedDiscard(g);
     if (forced) return { kind: "discard", tile: forced };
     const drawn = g.phase.kind === "turn" ? g.phase.drawn : null;
@@ -640,7 +640,7 @@ export class Table extends Hub<TableMessage> {
       const p = g.players[seat];
       options =
         g.phase.kind === "turn"
-          ? { turn: { selfDraw: isWinningHand(p), kongs: p.riichi ? [] : kongOptions(p), riichi: riichiDiscards(g, seat), forbidden: forbiddenDiscards(g) }, claims: [] }
+          ? { turn: { selfDraw: canWin(p), kongs: p.riichi ? [] : kongOptions(p, g.phase), riichi: riichiDiscards(g, seat), forbidden: forbiddenDiscards(g) }, claims: [] }
           : { turn: null, claims: g.phase.kind === "claims" ? claimOptions(g, seat) : [] };
     }
     const people = this.people();

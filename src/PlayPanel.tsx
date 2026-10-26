@@ -26,7 +26,7 @@ import {
   claimOptions,
   forbiddenDiscards,
   HUMAN,
-  isWinningHand,
+  canWin,
   kongOptions,
   liveTilesLeft,
   meldsNeeded,
@@ -57,7 +57,7 @@ import {
   type TurnMove,
 } from "@mjwaits/shared/engine/game";
 import { allTileKinds, getWaits, shanten, sortTiles, tileKey, tileLabel, type Tile } from "@mjwaits/shared/engine/mahjong";
-import { blindPicks, botGive, botSplit, DEFAULT_SWAP_RULES, pileLeft, type SwapPhase, type SwapRules } from "@mjwaits/shared/engine/swap";
+import { blindPicks, botGive, botSplit, DEFAULT_SWAP_RULES, givePlans, pileLeft, type GivePlan, type SwapPhase, type SwapRules } from "@mjwaits/shared/engine/swap";
 import { PlayDie } from "./PlayDie";
 import { aimGroup, centreOf, SWAP_FLIGHT_MS, SWAP_ROUND_HOLD_MS, SWAP_TILT_FLAT, SWAP_TILT_STANDING, SwapControls, SwapDice, swapDiceMs, SwapFlight, SwapPond, SwapSheet, tableFrame, viewOf, type Box, type Flight, type FlightEnd } from "./PlaySwap";
 import type { BonusTile } from "@mjwaits/shared/engine/scoring";
@@ -1312,21 +1312,41 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
   // A step of the swap - in this deal (a new game's first step looks just
   // like the last game's, and mustn't keep its picks).
   const swapStep = swapPhase ? JSON.stringify([game.dealer, game.dealerStreak, game.roundWind, game.dice, swapPhase.round, swapPhase.stage, swapPhase.taker]) : "";
-  // Your turn to give: your loneliest tiles come picked already (the bots'
-  // rule of thumb, botGive) - a suggestion; tap to change it.
+  // Your turn to give: a suggestion comes picked already - your loneliest
+  // tiles (the bots' rule of thumb) - and a few more by what you might go
+  // for (斷么, 混一色...; see givePlans), one tap each to try; tap tiles to
+  // change any of it. `givePlanAt`: the plan picked (null once you've
+  // changed it, or cleared it).
+  const [givePlanList, setGivePlanList] = useState<GivePlan[]>([]);
+  const [givePlanAt, setGivePlanAt] = useState<number | null>(null);
+  const placesOf = (tiles: Tile[]) => {
+    const used = new Set<number>();
+    return tiles.map((t) => {
+      const i = handTiles.findIndex((h, j) => !used.has(j) && sameTile(h, t));
+      used.add(i);
+      return i;
+    });
+  };
   useEffect(() => {
     setSwapPicks([[], [], [], []]);
-    if (!swapGiving) return setSwapHand([]);
-    const used = new Set<number>();
-    setSwapHand(
-      botGive(handTiles, swapPhase!.count).map((t) => {
-        const i = handTiles.findIndex((h, j) => !used.has(j) && sameTile(h, t));
-        used.add(i);
-        return i;
-      })
-    );
+    if (!swapGiving) {
+      setGivePlanList([]);
+      setGivePlanAt(null);
+      return setSwapHand([]);
+    }
+    const plans = givePlans(handTiles, swapPhase!.count);
+    setGivePlanList(plans);
+    setGivePlanAt(0);
+    setSwapHand(placesOf(plans[0].tiles));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [swapStep, swapGiving]);
+  const nextGivePlan = () => {
+    if (!givePlanList.length) return;
+    const at = ((givePlanAt ?? -1) + 1) % givePlanList.length;
+    setGivePlanAt(at);
+    setSwapHand(placesOf(givePlanList[at].tiles));
+  };
+  const givePlan = { names: givePlanList.map((p) => p.name), at: givePlanAt };
   const swapDeal = swapPhase && swapPhase.round === 1 && swapPhase.stage === "give" && swapPhase.piles.every((p) => !p) ? JSON.stringify([game.dealer, game.dealerStreak, game.roundWind, game.dice, swapPhase.dice]) : null;
   const [swapRolling, setSwapRolling] = useState(false);
   const swapRolledFor = useRef<string | null>(null);
@@ -1716,7 +1736,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     if (online) {
       // The server plays the bots; a locked 叮 hand still throws its draw by itself.
       const phase = game.phase;
-      if (!myTurn || phase.kind !== "turn" || !me.riichi || isWinningHand(me) || !phase.drawn) return;
+      if (!myTurn || phase.kind !== "turn" || !me.riichi || canWin(me) || !phase.drawn) return;
       const tile = phase.drawn;
       const id = window.setTimeout(() => doTurn({ kind: "discard", tile }), 700);
       return () => window.clearTimeout(id);
@@ -1788,7 +1808,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
         } else if (m.kind !== "discard") showBurst(phase.seat, "槓");
         advance(applyTurnMove(game, m));
       };
-    } else if (phase.kind === "turn" && game.players[HUMAN].riichi && !isWinningHand(game.players[HUMAN])) {
+    } else if (phase.kind === "turn" && game.players[HUMAN].riichi && !canWin(game.players[HUMAN])) {
       // Your locked 叮 hand throws the draw by itself.
       const tile = riichiForcedDiscard(game);
       if (tile) move = () => advance(applyTurnMove(game, { kind: "discard", tile }));
@@ -1967,8 +1987,9 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     return me.hand.length === meldsNeeded(me) * 3 + 1 ? shanten(me.hand, meldsNeeded(me)) : null;
   }, [hint, myTurn, ratings, me, seated]);
 
-  const canSelfDraw = myTurn && isWinningHand(me);
-  const myKongs = myTurn && liveTilesLeft(game) > 0 ? kongOptions(me) : [];
+  const canSelfDraw = myTurn && canWin(me);
+  const myKongs = myTurn && liveTilesLeft(game) > 0 ? kongOptions(me, game.phase) : [];
+
 
   const tapTile = (index: number) => {
     if (rolling) return;
@@ -1976,6 +1997,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
       // 換牌: picking the tiles to give.
       // As many as you like - 放牌 waits for exactly the number.
       setSwapHand((sel) => (sel.includes(index) ? sel.filter((i) => i !== index) : [...sel, index]));
+      setGivePlanAt(null);
       return;
     }
     if (!myTurn || isForbidden(handTiles[index])) return;
@@ -2231,7 +2253,8 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
         <span className="play-seat-side">
           <Flowers flowers={p.flowers} />
           <span className="play-seat-melds">
-            <Melds melds={p.melds} hideConcealed={!over || hidden} />
+            {/* A concealed kong stays face down to you even at the end - unless it's a winner's. */}
+            <Melds melds={p.melds} hideConcealed={!over || hidden || !wonWith(seat)} />
             {side !== "top" && swapRow(seat)}
           </span>
         </span>
@@ -2591,7 +2614,12 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
                   after={takersAfter(swapPhase, game.dealer)}
                   giveCount={swapHand.length}
                   onGive={giveSwap}
-                  onClearGive={() => setSwapHand([])}
+                  onClearGive={() => {
+                    setSwapHand([]);
+                    setGivePlanAt(null);
+                  }}
+                  plan={givePlan}
+                  onNextPlan={nextGivePlan}
                   settling={swapFlying && swapPhase.stage === "give"}
                   onTake={takeSwap}
                 />
@@ -2769,7 +2797,12 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
               after={takersAfter(swapPhase, game.dealer)}
               giveCount={swapHand.length}
               onGive={giveSwap}
-                  onClearGive={() => setSwapHand([])}
+                  onClearGive={() => {
+                    setSwapHand([]);
+                    setGivePlanAt(null);
+                  }}
+                  plan={givePlan}
+                  onNextPlan={nextGivePlan}
                   settling={swapFlying && swapPhase.stage === "give"}
               onTake={takeSwap}
             />
@@ -2790,7 +2823,8 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
               {riichiArmed ? (selected === null ? "叮: choose the tile to throw (取消 to cancel)" : "Tap again to declare 叮") : "Tap again to discard"}
             </span>
           )}
-          {me.riichi && !over && <span className="play-bar-prompt">叮 - your hand is locked</span>}
+          {me.riichi && !over && <span className="play-bar-prompt">{me.riichi.passed ? "叮 - you passed a win: no more wins this hand" : "叮 - your hand is locked"}</span>}
+          {me.overWater && !me.riichi && !over && <span className="play-bar-prompt">過水 - no win till you throw a tile that doesn't win</span>}
         </div>
 
         {burst && <CallBurst key={burst.id} seat={burst.seat} label={burst.label} deltas={burst.deltas} />}

@@ -24,6 +24,7 @@ export interface SeatView {
   flowers: Player["flowers"];
   discards: Tile[];
   riichi?: Player["riichi"];
+  overWater?: boolean;
 }
 
 // A finished hand's result as it travels: the score as its total and the
@@ -76,17 +77,22 @@ const copyTiles = (tiles: Tile[]) => tiles.map((t) => ({ suit: t.suit, rank: t.r
 // `shown`: at a hand's end, whose hands everyone sees - all of them unless
 // the table keeps losing hands hidden (then the winners', and whoever
 // chose to show). You always see your own.
+// A concealed kong (暗槓) stays face down to the others even at a hand's
+// end - only a winner's is shown (it's part of the winning hand).
 export function viewFor(s: GameState, you: number, shown: (seat: number) => boolean = () => true): TableView {
   const over = s.phase.kind === "over";
+  const won = (seat: number) => s.phase.kind === "over" && (s.phase.result.winner === seat || (s.phase.result.alsoWon ?? []).some((w) => w.winner === seat));
   const players: SeatView[] = s.players.map((p, seat) => {
     const open = seat === you || (over && shown(seat));
+    const kongsOpen = seat === you || won(seat);
     return {
       hand: open ? copyTiles(p.hand) : null,
       handCount: p.hand.length,
-      melds: p.melds.map((m): MeldView => (m.kind === "kong" && m.concealed && !open ? { kind: "kong", concealed: true, hidden: true, from: null } : { ...m, tiles: copyTiles(m.tiles) })),
+      melds: p.melds.map((m): MeldView => (m.kind === "kong" && m.concealed && !kongsOpen ? { kind: "kong", concealed: true, hidden: true, from: null } : { ...m, tiles: copyTiles(m.tiles) })),
       flowers: p.flowers.map((f) => ({ ...f })),
       discards: copyTiles(p.discards),
       ...(p.riichi ? { riichi: { ...p.riichi } } : {}),
+      ...(p.overWater ? { overWater: true } : {}),
     };
   });
   let phase: PhaseView;

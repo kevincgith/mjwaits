@@ -150,6 +150,8 @@ export function SwapControls({
   giveCount,
   onGive,
   onClearGive,
+  plan,
+  onNextPlan,
   onTake,
   settling = false,
 }: {
@@ -163,6 +165,9 @@ export function SwapControls({
   giveCount: number; // tiles you've picked from your hand to give
   onGive: () => void;
   onClearGive: () => void;
+  // The suggested gives you can step through (see givePlans), and which is picked (null: your own picks).
+  plan?: { names: string[]; at: number | null };
+  onNextPlan?: () => void;
   settling?: boolean; // the last round's tiles still joining their hands
   onTake: (picks?: number[][]) => void;
 }) {
@@ -182,9 +187,10 @@ export function SwapControls({
   let tone = "";
   if (settling) note = "Everyone takes in what they got…";
   else if (mineToGive) {
+    const named = plan && plan.at !== null ? `${plan.names[plan.at]} · ` : "";
     note =
       giveCount === count
-        ? `${count} picked - ready to give (tap to change)`
+        ? `${named}${count} picked - ready to give (tap to change)`
         : giveCount > count
           ? `${giveCount} picked - ${giveCount - count} too many`
           : `${giveCount} of ${count} picked - tap ${count - giveCount} more`;
@@ -215,12 +221,22 @@ export function SwapControls({
   if (mineToGive)
     return (
       <>
-        {giveCount > 0 && (
-          <button type="button" className="play-call is-swap is-pass is-minor" onClick={onClearGive} aria-label="Clear your picks">
-            ↺
+        {/* Clear: a quiet ✕ - nothing like the suggestions beside it. */}
+        {clear(giveCount > 0, onClearGive)}
+        {/* The next suggestion (孤張 → 斷么 → 混萬 → ... round again): just ⟳ - the bar names the one picked. */}
+        {plan && plan.names.length > 1 && onNextPlan && (
+          <button
+            key="plan"
+            type="button"
+            className="play-call is-swap is-plan"
+            onClick={onNextPlan}
+            aria-label={`Suggest another: ${plan.names[((plan.at ?? -1) + 1) % plan.names.length]}`}
+          >
+            ⟳
           </button>
         )}
         <button
+          key="main"
           type="button"
           className="play-call is-swap is-win is-long"
           disabled={giveCount !== count}
@@ -236,29 +252,42 @@ export function SwapControls({
       </>
     );
   if (!check) return null;
-  if (taken === 0)
-    return (
-      <button type="button" className="play-call is-swap is-win is-long" onClick={quickTake} aria-label={`Take ${count} evenly, blind`}>
-        攞牌
-      </button>
-    );
+  // The same two buttons all the way (one tap takes evenly, blind; with
+  // picks, it takes those) - so quick taps never land on one that's just
+  // been swapped in, moved, or is still popping up.
   return (
     <>
-      <button type="button" className="play-call is-swap is-pass is-minor" onClick={() => setPicks(() => [[], [], [], []])} aria-label="Clear your picks">
-        ↺
-      </button>
+      {clear(taken > 0, () => setPicks(() => [[], [], [], []]))}
       <button
+        key="main"
         type="button"
-        className={`play-call is-swap is-long${check.ok && !check.warning ? " is-win" : ""}${check.warning ? " is-warn" : ""}`}
-        disabled={!check.ok}
-        onClick={() => onTake()}
-        aria-label={check.error ?? check.warning ?? `Take these ${taken}`}
+        className={`play-call is-swap is-long${taken === 0 || (check.ok && !check.warning) ? " is-win" : ""}${taken > 0 && check.warning ? " is-warn" : ""}`}
+        disabled={taken > 0 && !check.ok}
+        onClick={() => (taken === 0 ? quickTake() : onTake())}
+        aria-label={taken === 0 ? `Take ${count} evenly, blind` : (check.error ?? check.warning ?? `Take these ${taken}`)}
       >
-        {check.warning ? "照攞" : `攞 ${taken}/${count}`}
+        {taken === 0 ? "攞牌" : check.warning ? "照攞" : `攞 ${taken}/${count}`}
       </button>
     </>
   );
 }
+
+// Clear your picks: always in its place (unseen, and not to be tapped, with
+// nothing to clear), so the buttons beside it never move as you pick.
+const clear = (on: boolean, onClick: () => void) => (
+  <button
+    key="clear"
+    type="button"
+    className={`play-call is-swap is-clear${on ? "" : " is-idle"}`}
+    onClick={onClick}
+    disabled={!on}
+    aria-hidden={!on}
+    tabIndex={on ? undefined : -1}
+    aria-label="Clear your picks"
+  >
+    ✕
+  </button>
+);
 
 // The settings: which round winds swap, and what each die means.
 // The dice's mappings at a stroke - every throw the same at the two ends,

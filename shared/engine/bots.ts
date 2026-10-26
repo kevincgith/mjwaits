@@ -12,7 +12,7 @@
 import {
   claimOptions,
   forbiddenDiscards,
-  isWinningHand,
+  canWin,
   kongOptions,
   lahAddOn,
   liveTilesLeft,
@@ -605,13 +605,14 @@ export function botTurnFor(s: GameState, profile: BotProfile, rng: Rng = Math.ra
   if (s.phase.kind !== "turn") throw new Error("Not a turn");
   const seat = s.phase.seat;
   const p = s.players[seat];
-  if (isWinningHand(p)) return { move: { kind: "selfDraw" }, difficulty: 0.2 };
+  if (canWin(p)) return { move: { kind: "selfDraw" }, difficulty: 0.2 };
   const forced = riichiForcedDiscard(s);
   if (forced) return { move: { kind: "discard", tile: forced }, difficulty: 0 };
   const options = rateDiscardsFor(s, seat, profile);
   const best = options[0];
   if (liveTilesLeft(s) > 0 && !folding(s, seat, best.shanten, profile)) {
-    for (const k of kongOptions(p)) {
+    // (None straight after claiming a run or a pung.)
+    for (const k of kongOptions(p, s.phase)) {
       // An added kong costs nothing; a concealed one only if it doesn't set the hand back.
       if (k.kind === "addedKong") return { move: k, difficulty: 0.3 };
       const rest = removeTiles(p.hand, [k.tile, k.tile, k.tile, k.tile]);

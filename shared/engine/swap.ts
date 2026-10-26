@@ -156,6 +156,13 @@ export function blindPicks(pile: Pile, n: number, rng: () => number = Math.rando
 // What a bot gives away: its loneliest tiles - no pair, no neighbours to
 // make a run with - one at a time, so taking one out can make another lonely.
 export function botGive(hand: Tile[], count: number, rng: () => number = Math.random): Tile[] {
+  return pickGive(hand, count, () => false, rng);
+}
+
+// Loneliest first, as botGive - but the tiles a plan keeps (`keep`, asked
+// of each tile with what's still left in hand) only once there's nothing
+// else left to give.
+function pickGive(hand: Tile[], count: number, keep: (t: Tile, left: Tile[]) => boolean, rng: () => number): Tile[] {
   const left = hand.slice();
   const out: Tile[] = [];
   const worth = (t: Tile, i: number) => {
@@ -171,14 +178,108 @@ export function botGive(hand: Tile[], count: number, rng: () => number = Math.ra
     if (t.suit !== "z" && (t.rank === 1 || t.rank === 9)) w -= 0.3;
     return w + rng() * 0.1;
   };
-  for (let n = 0; n < count; n++) {
-    let pick = 0;
+  for (let n = 0; n < count && left.length; n++) {
+    const spare = left.some((t) => !keep(t, left));
+    let pick = -1;
     let low = Infinity;
     left.forEach((t, i) => {
+      if (spare && keep(t, left)) return;
       const w = worth(t, i);
       if (w < low) [low, pick] = [w, i];
     });
     out.push(left.splice(pick, 1)[0]);
+  }
+  return out;
+}
+
+// What you might give, by what you're going for: a few plans, each giving
+// first what it has no use for (loneliest first), only then what it keeps.
+// 孤張 (your loneliest tiles, as the bots give) always comes first; after it
+// the plans your hand is likeliest to make, best first:
+//   斷么 all simples; 混一色 your strongest suit and the honours; 么九
+//   terminals and honours; 對對 pairs and triplets - each by how much of
+//   your hand already fits it;
+//   步步高 runs stepping up one (across the three suits, or in one);
+//   三節高 three pungs in a row in one suit (連碰); 三色 the same run in all
+//   three suits; 一條龍 1-9 in one suit - each the one your hand is
+//   nearest, by how much of it you hold already, and keeping just its
+//   tiles (copies counted).
+// A plan that gives the very same tiles as one before it is left out.
+export interface GivePlan {
+  id: string;
+  name: string; // as shown: 孤張, 斷么, 混萬, 步步高...
+  tiles: Tile[];
+}
+const SUIT_CHAR: Record<string, string> = { m: "萬", t: "筒", b: "索" };
+const SUITS = ["m", "t", "b"] as const;
+const key = (t: Tile) => `${t.suit}${t.rank}`;
+const countIn = (tiles: Tile[], k: string) => tiles.filter((t) => key(t) === k).length;
+// A pattern's tiles: runs (n, n+1, n+2) and pungs (n x3), each in a suit.
+const run = (suit: string, n: number): Tile[] => [0, 1, 2].map((d) => ({ suit, rank: n + d }) as Tile);
+const pung = (suit: string, n: number): Tile[] => [0, 1, 2].map(() => ({ suit, rank: n }) as Tile);
+export const MAX_GIVE_PLANS = 5;
+export function givePlans(hand: Tile[], count: number, rng: () => number = Math.random): GivePlan[] {
+  const terminalOrHonour = (t: Tile) => t.suit === "z" || t.rank === 1 || t.rank === 9;
+  const held = (suit: string) => hand.filter((t) => t.suit === suit).length;
+  const best = [...SUITS].sort((p, q) => held(q) - held(p))[0];
+  const share = (fits: (t: Tile) => boolean) => hand.filter(fits).length / Math.max(1, hand.length);
+  type Plan = { id: string; name: string; keep: (t: Tile, left: Tile[]) => boolean; fit: number };
+  const plans: Plan[] = [
+    { id: "simples", name: "斷么", keep: (t) => !terminalOrHonour(t), fit: share((t) => !terminalOrHonour(t)) },
+    { id: "flush", name: `混${SUIT_CHAR[best]}`, keep: (t) => t.suit === "z" || t.suit === best, fit: share((t) => t.suit === "z" || t.suit === best) },
+    { id: "terminals", name: "么九", keep: terminalOrHonour, fit: share(terminalOrHonour) },
+    { id: "pungs", name: "對對", keep: (t, left) => countIn(left, key(t)) >= 2, fit: share((t) => countIn(hand, key(t)) >= 2) },
+  ];
+  // A pattern, as the one instance of it your hand is nearest: keep its
+  // tiles (no more copies of each than it needs).
+  const pattern = (id: string, name: string, shapes: Tile[][]) => {
+    let top: Tile[] | null = null;
+    let have = -1;
+    for (const shape of shapes) {
+      if (shape.some((t) => t.rank < 1 || t.rank > 9)) continue;
+      const need = new Map<string, number>();
+      shape.forEach((t) => need.set(key(t), (need.get(key(t)) ?? 0) + 1));
+      let h = 0;
+      need.forEach((n, k) => (h += Math.min(n, countIn(hand, k))));
+      if (h > have) [have, top] = [h, shape];
+    }
+    if (!top) return;
+    const need = new Map<string, number>();
+    top.forEach((t) => need.set(key(t), (need.get(key(t)) ?? 0) + 1));
+    plans.push({ id, name, keep: (t, left) => countIn(left, key(t)) <= (need.get(key(t)) ?? 0), fit: have / top.length });
+  };
+  const perms = [
+    ["m", "t", "b"],
+    ["m", "b", "t"],
+    ["t", "m", "b"],
+    ["t", "b", "m"],
+    ["b", "m", "t"],
+    ["b", "t", "m"],
+  ];
+  const ns = [1, 2, 3, 4, 5, 6, 7];
+  // 步步高: three runs each a step up - one in each suit, or all in one.
+  pattern("stepUp", "步步高", [
+    ...perms.flatMap(([a, b, c]) => ns.map((n) => [...run(a, n), ...run(b, n + 1), ...run(c, n + 2)])),
+    ...SUITS.flatMap((s) => ns.map((n) => [...run(s, n), ...run(s, n + 1), ...run(s, n + 2)])),
+  ]);
+  // 三節高 (連碰): three pungs a step apart, in one suit.
+  pattern("pungsUp", "三節高", SUITS.flatMap((s) => ns.map((n) => [...pung(s, n), ...pung(s, n + 1), ...pung(s, n + 2)])));
+  // 三色: the same run in all three suits.
+  pattern("triple", "三色", ns.map((n) => SUITS.flatMap((s) => run(s, n))));
+  // 一條龍: 1-9 in one suit.
+  pattern("dragon", "一條龍", SUITS.map((s) => [...run(s, 1), ...run(s, 4), ...run(s, 7)]));
+
+  // (Not one your hand barely touches - under a third of it held.)
+  const ranked = [{ id: "lone", name: "孤張", keep: () => false, fit: Infinity } as Plan, ...plans.filter((p) => p.fit >= 1 / 3).sort((p, q) => q.fit - p.fit)];
+  const out: GivePlan[] = [];
+  const seen = new Set<string>();
+  for (const p of ranked) {
+    if (out.length >= MAX_GIVE_PLANS) break;
+    const tiles = pickGive(hand, count, p.keep, rng);
+    const k = tiles.map(key).sort().join();
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push({ id: p.id, name: p.name, tiles });
   }
   return out;
 }

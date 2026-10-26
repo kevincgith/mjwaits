@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { dealHand, nextHand, swapGive, swapTake, takersAfter, type GameState } from "./game";
+import { dealHand, newGame, nextHand, swapGive, swapTake, takersAfter, type GameState } from "./game";
 import { seededRng } from "./bots";
-import { blindPicks, botGive, botSplit, checkTake, DEFAULT_SWAP_RULES, pileLeft, splitsFor, type SwapRules } from "./swap";
-import { tileKey, type Tile } from "./mahjong";
+import { blindPicks, botGive, botSplit, checkTake, DEFAULT_SWAP_RULES, givePlans, MAX_GIVE_PLANS, pileLeft, splitsFor, type SwapRules } from "./swap";
+import { parseHand, tileKey, type Tile } from "./mahjong";
 
 const EVERY_ROUND: SwapRules = { ...DEFAULT_SWAP_RULES, winds: [1, 2, 3, 4] };
 
@@ -131,5 +131,44 @@ describe("taking from the piles", () => {
     const hand = [t("m", 1), t("m", 2), t("m", 3), t("t", 5), t("t", 5), t("z", 7), t("b", 9), t("z", 1)];
     const given = botGive(hand, 3, seededRng(1)).map(tileKey).sort();
     expect(given).toEqual([t("b", 9), t("z", 1), t("z", 7)].map(tileKey).sort());
+  });
+
+  describe("give plans", () => {
+    const has = (hand: Tile[], tiles: Tile[]) => {
+      const left = hand.map(tileKey);
+      return tiles.every((t) => {
+        const i = left.indexOf(tileKey(t));
+        if (i < 0) return false;
+        left.splice(i, 1);
+        return true;
+      });
+    };
+    it("starts with the loneliest, a few at most, each different, each from the hand", () => {
+      for (let seed = 1; seed < 40; seed++) {
+        const rng = seededRng(seed);
+        const s = newGame();
+        const hand = s.players[(seed % 4) as 0].hand;
+        const plans = givePlans(hand, 3, rng);
+        expect(plans[0].name).toBe("孤張");
+        expect(plans.length).toBeLessThanOrEqual(MAX_GIVE_PLANS);
+        expect(new Set(plans.map((p) => p.tiles.map(tileKey).sort().join())).size).toBe(plans.length);
+        for (const p of plans) {
+          expect(p.tiles).toHaveLength(3);
+          expect(has(hand, p.tiles)).toBe(true);
+        }
+      }
+    });
+    it("goes for the pattern a hand is nearest - and keeps its tiles", () => {
+      // 111 222 33m: three pungs in a row nearly there.
+      const hand = parseHand("11122233m5t9b1357z12t");
+      const plans = givePlans(hand, 3, seededRng(2));
+      const pungs = plans.find((p) => p.name === "三節高");
+      expect(pungs).toBeDefined();
+      expect(pungs!.tiles.some((t) => t.suit === "m" && t.rank <= 3)).toBe(false);
+      // 123 456 78m: 一條龍 nearly there.
+      const dragon = givePlans(parseHand("12345678m1t5b2367z9t"), 3, seededRng(3)).find((p) => p.name === "一條龍");
+      expect(dragon).toBeDefined();
+      expect(dragon!.tiles.some((t) => t.suit === "m")).toBe(false);
+    });
   });
 });

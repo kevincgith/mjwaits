@@ -158,6 +158,7 @@ import {
   type Wind,
 } from "@mjwaits/shared/engine/scoring";
 import { TEST_HAND_BASE_CONTEXT, TEST_HANDS, type TestHand } from "@mjwaits/shared/engine/testHands";
+import { enterGameMode } from "./lib/gameMode";
 
 // A stable id per tile instance, so sorting for display never loses track
 // of which underlying tile is which (needed to revert Sort cleanly, and to
@@ -10119,10 +10120,13 @@ function App() {
   const [playScreen, setPlayScreen] = useState<"home" | "resume" | "new">("home");
   const tableFromPlay = useRef(false);
   if (mode !== "play" && mode !== "table") lastNonPlayMode.current = mode;
-  // The table fills the screen; html.playing hides the page around it.
+  // The table fills the screen; html.playing hides the page around it - and
+  // while it's up, it behaves like a game on a phone (see enterGameMode).
+  const playing = mode === "play" || mode === "table";
   useEffect(() => {
-    document.documentElement.classList.toggle("playing", mode === "play" || mode === "table");
-  }, [mode]);
+    document.documentElement.classList.toggle("playing", playing);
+    return playing ? enterGameMode() : undefined;
+  }, [playing]);
   // Lifted above TrainerPanel so stats survive switching back to the
   // Calculator tab and back - the trainers themselves unmount (and their other
   // state - the in-progress question, timer, etc. - resets) on every tab
