@@ -319,7 +319,7 @@ export function SwapSheet({ rules, onChange, onClose }: { rules: SwapRules; onCh
             ×
           </button>
         </div>
-        <p className="play-swap-note">
+        <p className="play-swap-intro">
           Everyone is dealt 16 and the dealer throws two dice: the first says how many swap rounds, the second how many tiles. Each round everyone lays that many
           face down, then from the dealer round the table each takes as many back from the others&apos; piles - at least one from each, as evenly as it goes.
         </p>
@@ -355,10 +355,112 @@ export function SwapSheet({ rules, onChange, onClose }: { rules: SwapRules; onCh
   );
 }
 
-// A taken tile, flown from its pile to its place in the row by the
-// taker's hand, and left there till the round's over - face up if it's
-// yours to see, else face down. Drawn flat over the table, from where it
-// lay (`from`, on screen) by (dx, dy), after `delay`.
+// Where things are in the table's own frame - its layout box, before it's
+// turned (on a phone held upright the whole table is drawn a quarter turned,
+// see .play-screen). The flights are laid out in that frame, so they fly the
+// same either way the phone is held.
+export interface Box {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+export interface Frame {
+  point: (x: number, y: number) => { x: number; y: number };
+  box: (el: Element) => Box;
+}
+export function tableFrame(): Frame {
+  const table = document.querySelector<HTMLElement>(".play-table");
+  let inv = new DOMMatrix();
+  if (table) {
+    const cs = getComputedStyle(table);
+    if (cs.transform && cs.transform !== "none") {
+      // Laid out at its offset in the screen (fixed, unturned), then turned about its origin.
+      const host = (table.offsetParent ?? document.body).getBoundingClientRect();
+      const [ox, oy] = cs.transformOrigin.split(" ").map(parseFloat);
+      inv = new DOMMatrix()
+        .translate(host.left + table.offsetLeft + ox, host.top + table.offsetTop + oy)
+        .multiply(new DOMMatrix(cs.transform))
+        .translate(-ox, -oy)
+        .inverse();
+    } else {
+      const r = table.getBoundingClientRect();
+      inv = new DOMMatrix().translate(-r.left, -r.top);
+    }
+  }
+  const point = (x: number, y: number) => {
+    const p = inv.transformPoint(new DOMPoint(x, y));
+    return { x: p.x, y: p.y };
+  };
+  const box = (el: Element) => {
+    const r = el.getBoundingClientRect();
+    const ps = [point(r.left, r.top), point(r.right, r.top), point(r.right, r.bottom), point(r.left, r.bottom)];
+    const xs = ps.map((p) => p.x);
+    const ys = ps.map((p) => p.y);
+    return { left: Math.min(...xs), top: Math.min(...ys), width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys) };
+  };
+  return { point, box };
+}
+export const centreOf = (b: Box) => ({ x: b.left + b.width / 2, y: b.top + b.height / 2 });
+
+// How a tile is seen where it lies: from the eye of the perspective it's
+// drawn in (the felt's, or your hand's - each has its own), tipped back
+// (rotateX: flat on the felt, or standing as your hand does), turned on the
+// table, and its sides lit as there.
+export interface View {
+  eye: { x: number; y: number; d: number };
+  tilt: number;
+  turn: number;
+  shade: [number, number]; // --shade-long, --shade-end
+}
+export function viewOf(el: Element, frame: Frame, tilt: number, turn: number): View {
+  let a = el.parentElement;
+  while (a && getComputedStyle(a).perspective === "none") a = a.parentElement;
+  const cs = getComputedStyle(el);
+  const shade: [number, number] = [parseFloat(cs.getPropertyValue("--shade-long")) || 0, parseFloat(cs.getPropertyValue("--shade-end")) || 0];
+  if (!a) return { eye: { x: 0, y: 0, d: 1100 }, tilt, turn, shade };
+  const ac = getComputedStyle(a);
+  const [ox, oy] = ac.perspectiveOrigin.split(" ").map(parseFloat);
+  const b = frame.box(a);
+  return { eye: { x: b.left + ox, y: b.top + oy, d: parseFloat(ac.perspective) || 1100 }, tilt, turn, shade };
+}
+
+// One end of a flight: the tile there (its outline in the table's frame) and how it's seen.
+export interface FlightEnd {
+  box: Box;
+  view: View;
+  // Where it lay: how far apart the tiles there sit side by side, and
+  // their middle - where its group gathers (see flightPath).
+  pitch?: number;
+  home?: { x: number; y: number };
+}
+
+// A tile at one moment of its flight: its centre (table frame), turn, size
+// (a fraction of its own), tip, the eye it's seen from, and its sides' light.
+export interface Pose {
+  x: number;
+  y: number;
+  r: number;
+  s: number;
+  t: number;
+  ex: number;
+  ey: number;
+  d: number;
+  shade: [number, number];
+}
+// As a transform of the flying tile, whose own centre (untransformed) is
+// `c`: seen from the pose's eye (so it shows the sides it would there),
+// tipped, then turned on the table, then sized - thickness too.
+export const poseTransform = (p: Pose, c: { x: number; y: number }) =>
+  `translate(${p.ex - c.x}px, ${p.ey - c.y}px) perspective(${p.d}px) translate(${p.x - p.ex}px, ${p.y - p.ey}px) rotateX(${p.t}deg) rotate(${p.r}deg) scale3d(${p.s}, ${p.s}, ${p.s})`;
+
+// A taken (or given) tile, flown from its pile to its place by the taker's
+// hand (or yours to your pile), and left there till the round's over - face
+// up if it's yours to see, else face down. Laid out in the table's frame
+// where it starts (`from`), hidden, until its path is known: then each end
+// is fitted to the tile drawn there (fitPose), so it sets off exactly as
+// its pile's tile lay and lands exactly as its place's tile lies - and in
+// between it morphs from the one to the other.
 export interface Flight {
   id: number;
   to: number; // the seat whose hand it's flying to
@@ -366,22 +468,21 @@ export interface Flight {
   seat: number; // whose pile it left, and its place there - where it's
   place: number; // drawn until it sets off
   tile: Tile | null; // null: face down - not yours to see
+  // Face down where it lay, face up where it lands (yours, from another's
+  // pile): it turns over on the way.
+  flip?: boolean;
   ghost?: boolean; // the round's last take - its pile drawn from the ghost
-  from: { left: number; top: number; width: number };
-  // Where it goes, sampled evenly over the flight: offsets from where it
-  // started (px) and its turn on the table (deg) - see flightPath.
-  // (Empty until it's known where it lands: a side or far seat's row is laid
-  // out on the felt first, then measured - see `row`.)
-  path?: { x: number; y: number; r: number; s: number }[];
+  from: { left: number; top: number; font: number };
+  start: FlightEnd;
+  end?: FlightEnd;
+  // Its poses, sampled evenly over the flight (see aimGroup). Empty until
+  // it's known where it lands: a seat's row is laid out first, then
+  // measured - see `row`.
+  path?: Pose[];
   delay: number;
-  // How it's tipped back (deg, as rotateX) where it leaves and where it
-  // lands: flat on the felt (SWAP_TILT_FLAT), or standing as your hand
-  // does (SWAP_TILT_STANDING).
-  tilt: [number, number];
-  // Landing in a row on the felt by a seat's wall: its giver's group there,
-  // and once measured, its place in that group. With what's needed to work
-  // out its path then: where it starts, at what size, turned how.
-  row?: { group: number; place?: number; start: { x: number; y: number }; size: number; turnFrom: number; turnTo: number };
+  // Landing in a row by a seat's hand: its giver's group there, and once
+  // measured, its place in that group.
+  row?: { group: number; place?: number };
 }
 
 // Eased progress: speeding up once, slowing once.
@@ -391,19 +492,27 @@ const turnBy = (x: number, y: number, deg: number) => {
   return { x: x * Math.cos(a) - y * Math.sin(a), y: x * Math.sin(a) + y * Math.cos(a) };
 };
 
-// One giver's tiles in a take move as one formation: its middle glides from
-// the pile to the row while the formation turns about it - from the way the
-// tiles lay (a side seat's sideways) to the way the row runs - each tile
-// sliding along the formation from its place in the pile to its place in
-// the row. So the tiles follow their true arcs and stay in order, a tile
-// apart: they can't touch. (Straight lines would cut the corner of a turn
-// and run them into each other.)
-// Each starts at the size its pile's tile shows on screen (`sizes`, a
-// fraction of its own) and grows or shrinks to the size it lands at
-// (`endSizes`) - its formation opening or closing in step, so the gaps keep
-// pace.
-// `starts`/`ends`: each tile's centre on screen, leaving and landing;
-// `turnFrom`/`turnTo`: how the tiles lie, leaving and landing (deg).
+// How far through a flight its tiles have gathered, and how much bigger
+// they show lifted off the table.
+const GATHER = 0.4;
+const LIFT = 1.08;
+
+// One giver's tiles in a take go in two steps. First they lift off their
+// pile and close up there - the gaps between them gone, in the order and
+// spacing they'll land in - each group by its own pile, where the givers'
+// groups are well apart. Then the group flies over as one: its middle
+// glides from the pile to the row (curving round to come in square to it,
+// when `approach` is given, so the groups landing in a row together come
+// in side by side), turning about it from the way the tiles lay (a side
+// seat's sideways) to the way the row runs - the turn mostly done early,
+// so it comes in already lined up. The tiles keep their order and their
+// spacing all the way: they can't touch.
+// Each starts at the size its pile's tile shows (`sizes`, a fraction of
+// its own), a touch bigger lifted, and lands at the size its place shows
+// (`endSizes`) - the group's spacing keeping pace with its size.
+// `starts`/`ends`: each tile's centre, leaving and landing; `turnFrom`/
+// `turnTo`: how the tiles lie, leaving and landing (deg). Each sample is the
+// tile's offset from where it started, its turn and its size.
 export function flightPath(
   starts: { x: number; y: number }[],
   ends: { x: number; y: number }[],
@@ -411,54 +520,158 @@ export function flightPath(
   turnTo: number,
   sizes: number[] = starts.map(() => 1),
   endSizes: number[] = starts.map(() => 1),
-  // The way it moves as it comes in (a unit vector): given, its middle
-  // curves round to come in square to its row - so the groups landing in a
-  // row together run in parallel lanes at the end, a stretch apart.
   approach?: { x: number; y: number },
-  samples = 24
+  // How far apart tiles lie side by side in the pile (centre to centre):
+  // the group gathers at that spacing, then takes its row's as it turns.
+  pitch?: number,
+  // Where the group gathers: its pile's middle (else where its tiles were).
+  home?: { x: number; y: number },
+  samples = 32
 ) {
   const mean = (ps: { x: number; y: number }[]) => ({ x: ps.reduce((t, p) => t + p.x, 0) / ps.length, y: ps.reduce((t, p) => t + p.y, 0) / ps.length });
   const c0 = mean(starts);
   const c1 = mean(ends);
+  const h = home ?? c0;
   // The curve's pull: back from the row along the way in, half the trip.
-  const reach = Math.hypot(c1.x - c0.x, c1.y - c0.y) * 0.5;
+  const reach = Math.hypot(c1.x - h.x, c1.y - h.y) * 0.5;
   const pull = approach ? { x: c1.x - approach.x * reach, y: c1.y - approach.y * reach } : null;
   const middle = (e: number) =>
     pull
-      ? { x: (1 - e) * (1 - e) * c0.x + 2 * (1 - e) * e * pull.x + e * e * c1.x, y: (1 - e) * (1 - e) * c0.y + 2 * (1 - e) * e * pull.y + e * e * c1.y }
-      : { x: c0.x + (c1.x - c0.x) * e, y: c0.y + (c1.y - c0.y) * e };
+      ? { x: (1 - e) * (1 - e) * h.x + 2 * (1 - e) * e * pull.x + e * e * c1.x, y: (1 - e) * (1 - e) * h.y + 2 * (1 - e) * e * pull.y + e * e * c1.y }
+      : { x: h.x + (c1.x - h.x) * e, y: h.y + (c1.y - h.y) * e };
   let turn = turnTo - turnFrom;
   if (turn > 180) turn -= 360;
   if (turn <= -180) turn += 360;
+  // The pile's way (first to last of these), and each tile's place along it.
+  const a = starts[0];
+  const b = starts[starts.length - 1];
+  const len = Math.hypot(b.x - a.x, b.y - a.y);
+  const dir = len ? { x: (b.x - a.x) / len, y: (b.y - a.y) / len } : null;
+  const rank = starts.map((p) => (dir ? (p.x - c0.x) * dir.x + (p.y - c0.y) * dir.y : 0));
+  const order = rank.map((_, i) => i).sort((p, q) => rank[p] - rank[q]);
   return starts.map((start, i) => {
-    // Its place in the formation, leaving and landing - the landing one
-    // turned back into the formation's own frame.
+    // Its place in the group, leaving and landing - the landing one turned
+    // back into the way the tiles lay - and gathered: side by side along the
+    // pile, the gaps between them gone (at the row's spacing, turned back,
+    // without the pile's own).
     const os = { x: start.x - c0.x, y: start.y - c0.y };
     const oe = turnBy(ends[i].x - c1.x, ends[i].y - c1.y, -turn);
+    const at = order.indexOf(i) - (starts.length - 1) / 2;
+    // (A touch apart - 5% - while in the air: turning and tipping shows a tile a little bigger than it lies.)
+    const og = pitch && dir ? { x: dir.x * at * pitch * 1.05, y: dir.y * at * pitch * 1.05 } : oe;
+    const lifted = sizes[i] * LIFT;
     return Array.from({ length: samples + 1 }, (_, k) => {
-      const e = ease(k / samples);
-      // The turn mostly done early, near its pile (where the groups are far
-      // apart), so it glides in already lined up with its row - rather than
-      // swinging round beside another group as they close on the same hand.
-      const te = 1 - Math.pow(1 - e, 2.5);
-      const o = turnBy(os.x + (oe.x - os.x) * e, os.y + (oe.y - os.y) * e, turn * te);
-      const c = middle(e);
-      return { x: c.x + o.x - start.x, y: c.y + o.y - start.y, r: turnFrom + turn * te, s: sizes[i] + (endSizes[i] - sizes[i]) * e };
+      const u = k / samples;
+      if (u <= GATHER) {
+        // Lifting and closing up, by its pile.
+        const g = ease(u / GATHER);
+        const s = sizes[i] + (lifted - sizes[i]) * g;
+        const k = s / (pitch ? sizes[i] : endSizes[i]);
+        const c = { x: c0.x + (h.x - c0.x) * g, y: c0.y + (h.y - c0.y) * g };
+        return { x: os.x + (og.x * k - os.x) * g + c.x - start.x, y: os.y + (og.y * k - os.y) * g + c.y - start.y, r: turnFrom, s };
+      }
+      // Flying over as one, landing.
+      const f = ease((u - GATHER) / (1 - GATHER));
+      const te = 1 - Math.pow(1 - f, 2.5);
+      const s = lifted + (endSizes[i] - lifted) * f;
+      // From the pile's spacing to the row's as it turns, sized in step.
+      const from = { x: og.x * (s / (pitch ? sizes[i] : endSizes[i])), y: og.y * (s / (pitch ? sizes[i] : endSizes[i])) };
+      const to = { x: oe.x * (s / endSizes[i]), y: oe.y * (s / endSizes[i]) };
+      const apart = 1 + 0.05 * Math.sin(Math.PI * f);
+      const o = turnBy((from.x + (to.x - from.x) * te) * apart, (from.y + (to.y - from.y) * te) * apart, turn * te);
+      const c = middle(f);
+      return { x: c.x + o.x - start.x, y: c.y + o.y - start.y, r: turnFrom + turn * te, s };
     });
   });
 }
 
 // How long a take's flight takes (all its tiles go together), and how long the round's rows stay once its last
 // take is down, before every tile joins its hand.
-export const SWAP_FLIGHT_MS = 600;
+export const SWAP_FLIGHT_MS = 750;
 export const SWAP_ROUND_HOLD_MS = 1400;
 
 // Tipped as the felt is, or as your hand's tiles stand (see .play-hand).
 export const SWAP_TILT_FLAT = 32;
 export const SWAP_TILT_STANDING = -22;
-// A tile tipped back shows less of its height: the sizes worked out on
-// screen allow for it, matched on area (see PlayPanel).
-export const tiltShown = (deg: number) => Math.cos((deg * Math.PI) / 180);
+
+// The tile in a flight that's drawn at one end: the face, or (turning over
+// on the way) the back it shows where it lay.
+const tileIn = (el: HTMLElement, atStart: boolean) =>
+  ((el.querySelector(atStart ? ".play-swap-flip-back" : ".play-swap-flip-face") ?? el).firstElementChild ?? el) as HTMLElement;
+
+// A flight's tile posed as at one end, sized and nudged till its outline
+// matches the tile drawn there (a few rounds: the eye's perspective makes
+// it not quite linear) - so nothing jumps as it sets off or lands.
+function fitPose(el: HTMLElement, frame: Frame, c: { x: number; y: number }, end: FlightEnd, atStart: boolean): Pose {
+  const target = centreOf(end.box);
+  const pose: Pose = { x: target.x, y: target.y, r: end.view.turn, s: 1, t: end.view.tilt, ex: end.view.eye.x, ey: end.view.eye.y, d: end.view.eye.d, shade: end.view.shade };
+  const tile = tileIn(el, atStart);
+  for (let i = 0; i < 4; i++) {
+    el.style.transform = poseTransform(pose, c);
+    const b = frame.box(tile);
+    if (!b.width || !b.height) break;
+    pose.s *= Math.sqrt((end.box.width * end.box.height) / (b.width * b.height));
+    const at = centreOf(b);
+    pose.x += target.x - at.x;
+    pose.y += target.y - at.y;
+  }
+  el.style.transform = "";
+  return pose;
+}
+
+const lerp = (a: number, b: number, e: number) => a + (b - a) * e;
+
+// One giver's flights in a take (or your give), as one formation: each
+// fitted at both ends to the tiles drawn there, then flown along
+// flightPath from the one pose to the other - its eye, tip and light
+// easing over with it, so it morphs from how it lay to how it lands.
+// `approach`: the way it comes in (see flightPath). Each flight's element
+// must be in the page (laid out, hidden): `els` by flight id.
+export function aimGroup(fs: Flight[], els: Map<number, HTMLElement>, frame: Frame, approach?: { x: number; y: number }, pitch?: number, home?: { x: number; y: number }): Map<number, Pose[]> {
+  const out = new Map<number, Pose[]>();
+  const fitted = fs.map((f) => {
+    const el = els.get(f.id);
+    if (!el || !f.end) return null;
+    const c = { x: el.offsetLeft + el.offsetWidth / 2, y: el.offsetTop + el.offsetHeight / 2 };
+    return { f, a: fitPose(el, frame, c, f.start, true), b: fitPose(el, frame, c, f.end, false) };
+  });
+  if (fitted.some((x) => !x)) return out;
+  const all = fitted as { f: Flight; a: Pose; b: Pose }[];
+  const paths = flightPath(
+    all.map((x) => ({ x: x.a.x, y: x.a.y })),
+    all.map((x) => ({ x: x.b.x, y: x.b.y })),
+    all[0].a.r,
+    all[0].b.r,
+    all.map((x) => x.a.s),
+    all.map((x) => x.b.s),
+    approach,
+    pitch,
+    home
+  );
+  all.forEach(({ f, a, b }, i) => {
+    const n = paths[i].length - 1;
+    out.set(
+      f.id,
+      paths[i].map((p, k) => {
+        // Held as it lay while it gathers; then seen, tipped and lit as where it lands, in step with its turn.
+        const u = k / n;
+        const e = u <= GATHER ? 0 : 1 - Math.pow(1 - ease((u - GATHER) / (1 - GATHER)), 2.5);
+        return {
+          x: a.x + p.x,
+          y: a.y + p.y,
+          r: p.r,
+          s: p.s,
+          t: lerp(a.t, b.t, e),
+          ex: lerp(a.ex, b.ex, e),
+          ey: lerp(a.ey, b.ey, e),
+          d: lerp(a.d, b.d, e),
+          shade: [lerp(a.shade[0], b.shade[0], e), lerp(a.shade[1], b.shade[1], e)],
+        };
+      })
+    );
+  });
+  return out;
+}
 
 export function SwapFlight({ flight, landed, onStart, onLanded }: { flight: Flight; landed: boolean; onStart: () => void; onLanded: () => void }) {
   const ref = useRef<HTMLSpanElement>(null);
@@ -468,47 +681,70 @@ export function SwapFlight({ flight, landed, onStart, onLanded }: { flight: Flig
   // clears them).
   useEffect(() => {
     const quick = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-    if (!flight.path) return;
-    const anim = ref.current?.animate(
-      // Tipped (in the table's perspective) before it's turned on the
-      // table, so a side seat's tile tips as the felt does, not about its
-      // own length; and scaled whole, its thickness too.
-      flight.path.map((p, k, all) => {
-        const tilt = flight.tilt[0] + (flight.tilt[1] - flight.tilt[0]) * ease(k / Math.max(1, all.length - 1));
-        return { transform: `translate(${p.x}px, ${p.y}px) perspective(1100px) rotateX(${tilt}deg) rotate(${p.r}deg) scale3d(${p.s}, ${p.s}, ${p.s})`, visibility: "visible" };
-      }),
-      { duration: quick ? 1 : SWAP_FLIGHT_MS, delay: flight.delay, easing: "linear", fill: "forwards" }
-    );
+    const el = ref.current;
+    if (!flight.path || !el) return;
+    // Nothing to fly (see PlayPanel): straight down where it goes.
+    if (!flight.path.length) {
+      onStart();
+      onLanded();
+      return;
+    }
+    const c = { x: el.offsetLeft + el.offsetWidth / 2, y: el.offsetTop + el.offsetHeight / 2 };
+    const timing: KeyframeAnimationOptions = { duration: quick ? 1 : SWAP_FLIGHT_MS, delay: flight.delay, easing: "linear", fill: "forwards" };
+    const anims = [
+      el.animate(
+        flight.path.map((p) => ({ transform: poseTransform(p, c), "--shade-long": String(p.shade[0]), "--shade-end": String(p.shade[1]), visibility: "visible" })),
+        timing
+      ),
+    ];
+    // Turned over on the way: edge on a third of the way along, where the
+    // back gives way to the face, then flat again as it lands.
+    const flip = el.querySelector<HTMLElement>(".play-swap-flip");
+    if (flight.flip && flip) {
+      anims.push(flip.animate([{ transform: "rotateY(0deg)" }, { transform: "rotateY(90deg)", offset: 0.35 }, { transform: "rotateY(0deg)" }], { ...timing, easing: "ease-in-out" }));
+      const back = flip.querySelector<HTMLElement>(".play-swap-flip-back");
+      const face = flip.querySelector<HTMLElement>(".play-swap-flip-face");
+      if (back) anims.push(back.animate([{ visibility: "visible" }, { visibility: "visible", offset: 0.35 }, { visibility: "hidden", offset: 0.35 }, { visibility: "hidden" }], timing));
+      if (face) anims.push(face.animate([{ visibility: "hidden" }, { visibility: "hidden", offset: 0.35 }, { visibility: "visible", offset: 0.35 }, { visibility: "visible" }], timing));
+    }
     const off = window.setTimeout(onStart, flight.delay);
     const down = window.setTimeout(onLanded, flight.delay + SWAP_FLIGHT_MS + 300);
-    anim?.finished.then(onLanded, () => {});
+    anims[0].finished.then(onLanded, () => {});
     return () => {
       window.clearTimeout(off);
       window.clearTimeout(down);
       // One flight per tile: a second run of this effect (React may run it
       // twice) mustn't leave the first still playing underneath.
-      anim?.cancel();
+      anims.forEach((a) => a.cancel());
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [!!flight.path]);
-  // Landed in a row on the felt, the felt's own tile takes over.
-  if (!flight.path || (landed && flight.row)) return null;
+  // Landed in a row, the row's own tile takes over.
+  if (landed && flight.row) return null;
+  const face = flight.tile && <TileGlyphSpan tile={flight.tile} block="fine" />;
+  const back = (
+    <span className="play-back">
+      <i className="tile-top" />
+      <TileSides />
+    </span>
+  );
   return (
     <span
       ref={ref}
       className="play-swap-flight"
-      style={{ left: flight.from.left, top: flight.from.top, fontSize: flight.from.width / 0.74 }}
+      style={{ left: flight.from.left, top: flight.from.top, fontSize: flight.from.font }}
       aria-hidden="true"
+      data-flight={flight.id}
       data-to={flight.to}
       data-from={flight.seat}
     >
-      {flight.tile ? (
-        <TileGlyphSpan tile={flight.tile} block />
-      ) : (
-        <span className="play-back">
-          <i className="tile-top" />
-          <TileSides />
+      {flight.flip && face ? (
+        <span className="play-swap-flip">
+          <span className="play-swap-flip-back">{back}</span>
+          <span className="play-swap-flip-face">{face}</span>
         </span>
+      ) : (
+        (face ?? back)
       )}
     </span>
   );
