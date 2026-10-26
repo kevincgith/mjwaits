@@ -900,6 +900,14 @@ export function HandDetail({ h, bonuses, payIns }: { h: HandResult; bonuses: num
         {h.streak > 0 ? ` 連${h.streak}` : ""}
         {h.multi > 1 ? ` · ${h.winners.map((w) => `${w.player} ${fmt(w.tai)}番`).join(", ")}` : ""}
       </span>
+      {/* The patterns behind each winner's tai, for a hand scored on Scoring. */}
+      {h.winners
+        .filter((w) => w.patterns?.length)
+        .map((w) => (
+          <span key={`p-${w.player}`} className="sc-sheet-patterns">
+            {w.player}: {w.patterns!.map((p) => `${p.name} ${fmt(p.tai)}`).join(" · ")}
+          </span>
+        ))}
       {lines.map((l, i) => (
         <span key={i}>{l}</span>
       ))}
