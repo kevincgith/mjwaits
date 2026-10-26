@@ -38,6 +38,10 @@ export const DEFAULT_SWAP_RULES: SwapRules = {
 // give - or, the swap done, the dealer's first turn.
 export const SWAP_PACE_MS = { dice: 4800, take: 1300, settle: 3400 };
 
+// Each give and take has this long (seconds) - whatever the turn timer is,
+// off included. Out of time, it's done for you as a bot would.
+export const SWAP_TIMER_S = 30;
+
 export const SWAP_MIN_TILES = 3;
 export const SWAP_MAX_TILES = 8;
 export const SWAP_MAX_ROUNDS = 5;
