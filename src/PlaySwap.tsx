@@ -44,6 +44,7 @@ export function SwapPond({
   onPick,
   standing,
   held,
+  arriving,
 }: {
   pile: Pile | null;
   side: "top" | "left" | "right" | "bottom";
@@ -53,7 +54,9 @@ export function SwapPond({
   standing: boolean;
   // Tiles taken but still waiting their turn to fly: drawn where they lay
   // until they set off (place -> the tile, or null face down).
-  held: Map<number, Tile | null>; // yours: stood up facing you, so you see what goes where
+  held: Map<number, Tile | null>;
+  // Yours, just given: places whose tile is still on its way down from your hand.
+  arriving?: Set<number>; // yours: stood up facing you, so you see what goes where
 }) {
   if (!pile) return null;
   return (
@@ -66,7 +69,7 @@ export function SwapPond({
         return (
           <span
             key={i}
-            className={["play-swap-tile", !t && "is-gap", picked.includes(i) && "is-picked"].filter(Boolean).join(" ")}
+            className={["play-swap-tile", !t && "is-gap", picked.includes(i) && "is-picked", arriving?.has(i) && "is-arriving"].filter(Boolean).join(" ")}
             role={onPick && slot ? "button" : undefined}
             aria-pressed={onPick && slot ? picked.includes(i) : undefined}
             aria-label={t ? (standing ? `Your ${tileLabel(t)}` : `Face-down tile ${i + 1}`) : "Taken"}
@@ -88,18 +91,45 @@ export function SwapPond({
   );
 }
 
-// The dealer's two dice, tumbling one then the other, over the middle of
-// the table - then what they mean.
-export function SwapDice({ phase }: { phase: SwapPhase }) {
+// The dealer's two dice, over the middle of the table: thrown one at a
+// time, as at a real table - the first tumbles in and says how many swap
+// rounds, then the second, how many tiles each - and held a moment.
+// `factor`: the table's speed (fast plays it quicker).
+const DIE_GAP_MS = 1300; // the first throw to the second
+const DIE_SAY_MS = 800; // a throw to what it means
+export const swapDiceMs = (factor: number) => Math.round((DIE_GAP_MS + DIE_SAY_MS + 900) * factor);
+
+export function SwapDice({ phase, factor = 1 }: { phase: SwapPhase; factor?: number }) {
+  // 0: the first die in the air; 1: it says its piece; 2: the second in
+  // the air; 3: both said.
+  const [step, setStep] = useState(0);
+  useEffect(() => {
+    const at = [DIE_SAY_MS, DIE_GAP_MS, DIE_GAP_MS + DIE_SAY_MS].map((ms) => ms * factor);
+    const ids = at.map((ms, i) => window.setTimeout(() => setStep(i + 1), ms));
+    return () => ids.forEach((id) => window.clearTimeout(id));
+  }, [factor]);
   return (
     <div className="play-dice play-swap-dice-roll" role="status">
-      <div className="play-dice-row">
-        <PlayDie value={phase.dice[0]} rolling index={0} />
-        <PlayDie value={phase.dice[1]} rolling index={1} delay={650} />
+      <span className="play-swap-dice-title">換牌</span>
+      <div className="play-swap-throws">
+        {/* Each die with what it says, big beneath it. */}
+        <div className="play-swap-throw">
+          <PlayDie value={phase.dice[0]} rolling index={0} />
+          <span className={`play-swap-result${step >= 1 ? " is-said" : ""}`}>
+            {phase.rounds}
+            <small>次</small>
+          </span>
+          <span className="play-swap-what">{phase.rounds === 1 ? "swap round" : "swap rounds"}</span>
+        </div>
+        <div className="play-swap-throw">
+          {step >= 2 ? <PlayDie value={phase.dice[1]} rolling index={0} /> : <span className="play-die-slot" aria-hidden="true" />}
+          <span className={`play-swap-result${step >= 3 ? " is-said" : ""}`}>
+            {phase.count}
+            <small>隻</small>
+          </span>
+          <span className="play-swap-what">tiles each</span>
+        </div>
       </div>
-      <span className="play-dice-caption play-swap-sum">
-        換牌 · {phase.rounds} round{phase.rounds === 1 ? "" : "s"} · {phase.count} tiles each
-      </span>
     </div>
   );
 }
@@ -119,7 +149,9 @@ export function SwapControls({
   after,
   giveCount,
   onGive,
+  onClearGive,
   onTake,
+  settling = false,
 }: {
   part: "bar" | "actions";
   phase: SwapPhase;
@@ -130,10 +162,12 @@ export function SwapControls({
   after: number[];
   giveCount: number; // tiles you've picked from your hand to give
   onGive: () => void;
+  onClearGive: () => void;
+  settling?: boolean; // the last round's tiles still joining their hands
   onTake: (picks?: number[][]) => void;
 }) {
   const { rounds, count, round, stage, piles, taker } = phase;
-  const mineToGive = seated && stage === "give" && !piles[0];
+  const mineToGive = seated && stage === "give" && !piles[0] && !settling;
   const myTake = seated && stage === "take" && taker === 0;
   const sizes = piles.map(pileLeft);
   const split = picks.map((p) => p.length);
@@ -146,8 +180,17 @@ export function SwapControls({
   };
   let note: string;
   let tone = "";
-  if (mineToGive) note = giveCount === count ? `Your loneliest ${count}, picked - tap to change` : `Tap ${count} tiles to give · ${giveCount}/${count}`;
-  else if (stage === "give") note = "Everyone lays tiles face down";
+  if (settling) note = "Everyone takes in what they got…";
+  else if (mineToGive) {
+    note =
+      giveCount === count
+        ? `${count} picked - ready to give (tap to change)`
+        : giveCount > count
+          ? `${giveCount} picked - ${giveCount - count} too many`
+          : `${giveCount} of ${count} picked - tap ${count - giveCount} more`;
+    tone = giveCount === count ? " is-ok" : giveCount > count ? " is-error" : "";
+  }
+  else if (stage === "give" && !settling) note = "Everyone lays tiles face down";
   else if (!myTake) note = `${nameOf(taker)} is taking`;
   else if (taken === 0) note = `Take ${count} - at least one from each`;
   else {
@@ -171,15 +214,26 @@ export function SwapControls({
   if (!mineToGive && !myTake) return null;
   if (mineToGive)
     return (
-      <button
-        type="button"
-        className="play-call is-swap is-win is-long"
-        disabled={giveCount !== count}
-        onClick={onGive}
-        aria-label={giveCount === count ? `Give these ${count}` : `Pick ${count} tiles to give`}
-      >
-        放牌
-      </button>
+      <>
+        {giveCount > 0 && (
+          <button type="button" className="play-call is-swap is-pass is-minor" onClick={onClearGive} aria-label="Clear your picks">
+            ↺
+          </button>
+        )}
+        <button
+          type="button"
+          className="play-call is-swap is-win is-long"
+          disabled={giveCount !== count}
+          onClick={onGive}
+          aria-label={giveCount === count ? `Give these ${count}` : `${giveCount} of ${count} picked`}
+        >
+          放牌
+          {/* How many you've picked, on the button itself. */}
+          <span className={`play-swap-count${giveCount === count ? " is-ok" : giveCount > count ? " is-over" : ""}`}>
+            {giveCount}/{count}
+          </span>
+        </button>
+      </>
     );
   if (!check) return null;
   if (taken === 0)
@@ -292,8 +346,14 @@ export interface Flight {
   from: { left: number; top: number; width: number };
   // Where it goes, sampled evenly over the flight: offsets from where it
   // started (px) and its turn on the table (deg) - see flightPath.
-  path: { x: number; y: number; r: number; s: number }[];
+  // (Empty until it's known where it lands: a side or far seat's row is laid
+  // out on the felt first, then measured - see `row`.)
+  path?: { x: number; y: number; r: number; s: number }[];
   delay: number;
+  // Landing in a row on the felt by a seat's wall: its giver's group there,
+  // and once measured, its place in that group. With what's needed to work
+  // out its path then: where it starts, at what size, turned how.
+  row?: { group: number; place?: number; start: { x: number; y: number }; size: number; turnFrom: number; turnTo: number };
 }
 
 // Eased progress: speeding up once, slowing once.
@@ -311,8 +371,9 @@ const turnBy = (x: number, y: number, deg: number) => {
 // apart: they can't touch. (Straight lines would cut the corner of a turn
 // and run them into each other.)
 // Each starts at the size its pile's tile shows on screen (`sizes`, a
-// fraction of its own) and grows to its own as it lands - its formation
-// opening up in step, so the gaps keep pace.
+// fraction of its own) and grows or shrinks to the size it lands at
+// (`endSizes`) - its formation opening or closing in step, so the gaps keep
+// pace.
 // `starts`/`ends`: each tile's centre on screen, leaving and landing;
 // `turnFrom`/`turnTo`: how the tiles lie, leaving and landing (deg).
 export function flightPath(
@@ -321,11 +382,23 @@ export function flightPath(
   turnFrom: number,
   turnTo: number,
   sizes: number[] = starts.map(() => 1),
+  endSizes: number[] = starts.map(() => 1),
+  // The way it moves as it comes in (a unit vector): given, its middle
+  // curves round to come in square to its row - so the groups landing in a
+  // row together run in parallel lanes at the end, a stretch apart.
+  approach?: { x: number; y: number },
   samples = 24
 ) {
   const mean = (ps: { x: number; y: number }[]) => ({ x: ps.reduce((t, p) => t + p.x, 0) / ps.length, y: ps.reduce((t, p) => t + p.y, 0) / ps.length });
   const c0 = mean(starts);
   const c1 = mean(ends);
+  // The curve's pull: back from the row along the way in, half the trip.
+  const reach = Math.hypot(c1.x - c0.x, c1.y - c0.y) * 0.5;
+  const pull = approach ? { x: c1.x - approach.x * reach, y: c1.y - approach.y * reach } : null;
+  const middle = (e: number) =>
+    pull
+      ? { x: (1 - e) * (1 - e) * c0.x + 2 * (1 - e) * e * pull.x + e * e * c1.x, y: (1 - e) * (1 - e) * c0.y + 2 * (1 - e) * e * pull.y + e * e * c1.y }
+      : { x: c0.x + (c1.x - c0.x) * e, y: c0.y + (c1.y - c0.y) * e };
   let turn = turnTo - turnFrom;
   if (turn > 180) turn -= 360;
   if (turn <= -180) turn += 360;
@@ -336,8 +409,13 @@ export function flightPath(
     const oe = turnBy(ends[i].x - c1.x, ends[i].y - c1.y, -turn);
     return Array.from({ length: samples + 1 }, (_, k) => {
       const e = ease(k / samples);
-      const o = turnBy(os.x + (oe.x - os.x) * e, os.y + (oe.y - os.y) * e, turn * e);
-      return { x: c0.x + (c1.x - c0.x) * e + o.x - start.x, y: c0.y + (c1.y - c0.y) * e + o.y - start.y, r: turnFrom + turn * e, s: sizes[i] + (1 - sizes[i]) * e };
+      // The turn mostly done early, near its pile (where the groups are far
+      // apart), so it glides in already lined up with its row - rather than
+      // swinging round beside another group as they close on the same hand.
+      const te = 1 - Math.pow(1 - e, 2.5);
+      const o = turnBy(os.x + (oe.x - os.x) * e, os.y + (oe.y - os.y) * e, turn * te);
+      const c = middle(e);
+      return { x: c.x + o.x - start.x, y: c.y + o.y - start.y, r: turnFrom + turn * te, s: sizes[i] + (endSizes[i] - sizes[i]) * e };
     });
   });
 }
@@ -347,7 +425,7 @@ export function flightPath(
 export const SWAP_FLIGHT_MS = 600;
 export const SWAP_ROUND_HOLD_MS = 1400;
 
-export function SwapFlight({ flight, onStart, onLanded }: { flight: Flight; onStart: () => void; onLanded: () => void }) {
+export function SwapFlight({ flight, landed, onStart, onLanded }: { flight: Flight; landed: boolean; onStart: () => void; onLanded: () => void }) {
   const ref = useRef<HTMLSpanElement>(null);
   // Flown along its path; down when it lands - or, should the animation's
   // end never come (a page in the background holds animations), soon after
@@ -355,6 +433,7 @@ export function SwapFlight({ flight, onStart, onLanded }: { flight: Flight; onSt
   // clears them).
   useEffect(() => {
     const quick = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    if (!flight.path) return;
     const anim = ref.current?.animate(
       flight.path.map((p) => ({ transform: `translate(${p.x}px, ${p.y}px) rotate(${p.r}deg) scale(${p.s})`, visibility: "visible" })),
       { duration: quick ? 1 : SWAP_FLIGHT_MS, delay: flight.delay, easing: "linear", fill: "forwards" }
@@ -370,7 +449,9 @@ export function SwapFlight({ flight, onStart, onLanded }: { flight: Flight; onSt
       anim?.cancel();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [!!flight.path]);
+  // Landed in a row on the felt, the felt's own tile takes over.
+  if (!flight.path || (landed && flight.row)) return null;
   return (
     <span
       ref={ref}

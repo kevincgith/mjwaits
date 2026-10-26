@@ -59,7 +59,7 @@ import {
 import { allTileKinds, getWaits, shanten, sortTiles, tileKey, tileLabel, type Tile } from "@mjwaits/shared/engine/mahjong";
 import { blindPicks, botGive, botSplit, DEFAULT_SWAP_RULES, pileLeft, type SwapPhase, type SwapRules } from "@mjwaits/shared/engine/swap";
 import { PlayDie } from "./PlayDie";
-import { flightPath, SWAP_FLIGHT_MS, SWAP_ROUND_HOLD_MS, SwapControls, SwapDice, SwapFlight, SwapPond, SwapSheet, type Flight } from "./PlaySwap";
+import { flightPath, SWAP_FLIGHT_MS, SWAP_ROUND_HOLD_MS, SwapControls, SwapDice, swapDiceMs, SwapFlight, SwapPond, SwapSheet, type Flight } from "./PlaySwap";
 import type { BonusTile } from "@mjwaits/shared/engine/scoring";
 import { BonusGlyphSpan, TileGlyphSpan, TileSides } from "./TileGlyphs";
 import {
@@ -1233,8 +1233,10 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
   const [flights, setFlights] = useState<Flight[]>([]);
   const [flown, setFlown] = useState<Set<number>>(new Set());
   const [landed, setLanded] = useState<Set<number>>(new Set());
+  // Yours, given: flying from your hand down to your pile.
+  const [giveFlights, setGiveFlights] = useState<Flight[]>([]);
   const swapFlying = flights.length > 0;
-  const swapAirborne = flights.some((f) => !landed.has(f.id));
+  const swapAirborne = flights.some((f) => !landed.has(f.id)) || giveFlights.length > 0;
   // A taken tile joins its new hand as it lands, not before: till then each
   // hand is drawn without the tiles still flying to it.
   const incoming = (seat: number) => flights.filter((f) => f.to === seat).map((f) => f.real);
@@ -1243,7 +1245,9 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
   const swapGiving = !!swapPhase && seated && !autoplay && !swapFlying && swapPhase.stage === "give" && !swapPhase.piles[HUMAN];
   const [swapHand, setSwapHand] = useState<number[]>([]);
   const [swapPicks, setSwapPicks] = useState<number[][]>([[], [], [], []]);
-  const swapStep = swapPhase ? `${swapPhase.round}${swapPhase.stage}${swapPhase.taker}` : "";
+  // A step of the swap - in this deal (a new game's first step looks just
+  // like the last game's, and mustn't keep its picks).
+  const swapStep = swapPhase ? JSON.stringify([game.dealer, game.dealerStreak, game.roundWind, game.dice, swapPhase.round, swapPhase.stage, swapPhase.taker]) : "";
   // Your turn to give: your loneliest tiles come picked already (the bots'
   // rule of thumb, botGive) - a suggestion; tap to change it.
   useEffect(() => {
@@ -1267,11 +1271,13 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     swapRolledFor.current = swapDeal;
     setSwapRolling(true);
   }, [swapDeal, rolling]);
+  // Timed from when the swap's dice are on screen - after the deal's own
+  // dice (rolling) - so both throws are seen in full.
   useEffect(() => {
-    if (!swapRolling) return;
-    const id = window.setTimeout(() => setSwapRolling(false), speed === "fast" ? 1300 : 2200);
+    if (!swapRolling || rolling) return;
+    const id = window.setTimeout(() => setSwapRolling(false), swapDiceMs(speed === "fast" ? 0.6 : 1));
     return () => window.clearTimeout(id);
-  }, [swapRolling, speed]);
+  }, [swapRolling, rolling, speed]);
   // Every take, flown: as it lands, the tiles taken all fly at once from
   // the piles they lay in to a row by the taker's hand - above your
   // concealed hand for yours, in front of the wall for the others' - in
@@ -1286,6 +1292,8 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
   // that take's tiles are drawn where they lay (`ghost`: each pile's length)
   // until they've all set off.
   const [ghost, setGhost] = useState<number[] | null>(null);
+  // The order each seat's row lays its givers' stretches in (see the row flights).
+  const [rowOrder, setRowOrder] = useState<Record<number, number[]>>({});
   useEffect(() => {
     if (ghost && !flights.some((f) => f.ghost && !flown.has(f.id))) setGhost(null);
   }, [ghost, flights, flown]);
@@ -1293,7 +1301,10 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
   const pilesSeen = useRef<{ phase: SwapPhase | null; spots: (DOMRect | undefined)[][]; width: number }>({ phase: null, spots: [], width: 0 });
   const swapPiles = swapPhase?.piles ?? null;
   const swapTakenBy = swapPhase?.takenBy;
-  useEffect(() => {
+  // Before the screen's drawn: a take shows its tiles flying from the very
+  // frame it's made - never a frame of the taker's wall already grown, or
+  // the piles already gapped.
+  useLayoutEffect(() => {
     const prev = pilesSeen.current;
     const spots = [0, 1, 2, 3].map((g) => [...document.querySelectorAll(`.play-swap-pond.play-pond-${SIDES[g]} .play-swap-tile`)].map((e) => e.getBoundingClientRect()));
     // One size for them all: the piles are drawn alike (a top or bottom
@@ -1322,12 +1333,6 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     const em = w / 0.74;
     const GW = 0.78 * em;
     const GH = 1.0 * em;
-    const STEP = GW * 1.12; // tile to tile along a row
-    const GROUP = GW * 0.6; // the extra gap between one giver's tiles and the next's
-    // Each giver's group leaves as the one before lands: one formation in the
-    // air at a time - they can't cross - arriving one after another, plainly
-    // from whom.
-    const LEAD = Math.round(SWAP_FLIGHT_MS * 0.9);
     // A tile lies sideways at a side seat (turned to face it), upright across
     // and at yours - in its pile and in its row alike.
     const turn = (seat: number) => (SIDES[seat] === "left" ? 90 : SIDES[seat] === "right" ? -90 : 0);
@@ -1337,94 +1342,35 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     // formation round through the tiles already down. (Only backs ever make
     // that crossing - yours sit at the bottom.)
     const landTurn = (g: number, taker: number) => (Math.abs(turn(taker) - turn(g)) === 180 ? turn(g) : turn(taker));
-    // Your row sits just above your tiles, clear of your pile.
-    const handTop = Math.min(...[...document.querySelectorAll(".play-hand-tile")].map((e) => e.getBoundingClientRect().top));
     for (const taker of new Set(fresh.map((f) => f.taker))) {
-      const anchor = (taker === HUMAN ? document.querySelector(".play-hand") : document.querySelector(`.play-seat-${SIDES[taker]}`))?.getBoundingClientRect();
-      if (!anchor) continue;
       const theirs = fresh
         .filter((f) => f.taker === taker)
         .map((f) => ({ ...f, at: prev.spots[f.g]?.[f.i] }))
         .filter((f): f is typeof f & { at: DOMRect } => !!f.at);
-      // The row's way: across for you and the far player, down the side for
-      // the side players - its groups in the order their givers sit along it.
-      const across = taker === HUMAN || SIDES[taker] === "top";
-      const along = (r: DOMRect) => (across ? r.left + r.width / 2 : r.top + r.height / 2);
-      const givers = [...new Set(theirs.map((f) => f.g))].sort((a, b) => {
-        const pa = theirs.find((f) => f.g === a)!.at;
-        const pb = theirs.find((f) => f.g === b)!.at;
-        return along(pa) - along(pb);
-      });
-      // Each giver's tiles move as one formation, turning as they go from the
-      // way they lay to the way the row runs - so they land in the order that
-      // turn carries them to, and never cross on the way.
-      const turned = (f: (typeof theirs)[number], group: typeof theirs) => {
-        const gx = group.reduce((t, x) => t + x.at.left + x.at.width / 2, 0) / group.length;
-        const gy = group.reduce((t, x) => t + x.at.top + x.at.height / 2, 0) / group.length;
-        const ox = f.at.left + f.at.width / 2 - gx;
-        const oy = f.at.top + f.at.height / 2 - gy;
-        const a = ((landTurn(f.g, taker) - turn(f.g)) * Math.PI) / 180;
-        const rx = ox * Math.cos(a) - oy * Math.sin(a);
-        const ry = ox * Math.sin(a) + oy * Math.cos(a);
-        return across ? rx : ry;
-      };
-      const rowTiles = givers.flatMap((g) => {
-        const group = theirs.filter((f) => f.g === g);
-        return group.map((f) => ({ f, key: turned(f, group) })).sort((a, b) => a.key - b.key).map((x) => x.f);
-      });
-      // Along a row every tile takes a tile's width (upright across, turned
-      // down a side, its short side runs along).
-      const length = rowTiles.length * STEP - (STEP - GW) + (givers.length - 1) * GROUP;
-      const side = taker === HUMAN ? "you" : SIDES[taker];
-      const mid = across ? anchor.left + anchor.width / 2 : anchor.top + anchor.height / 2;
-      const crossAt =
-        side === "you"
-          ? (Number.isFinite(handTop) ? handTop : anchor.top) - GH / 2 - w * 0.2
-          : side === "top"
-            ? anchor.bottom + GH / 2 + w * 0.2
-            : side === "left"
-              ? anchor.right + GH / 2 + w * 0.2
-              : anchor.left - GH / 2 - w * 0.2;
-      let pos = mid - length / 2 + GW / 2;
-      const slots = rowTiles.map((f, k) => {
-        if (k > 0 && rowTiles[k - 1].g !== f.g) pos += GROUP;
-        const at = across ? { x: pos, y: crossAt } : { x: crossAt, y: pos };
-        pos += STEP;
-        return at;
-      });
-      // Each giver's tiles fly as one formation (flightPath), a giver after
-      // the one before.
-      givers.forEach((g, gi) => {
-        const ks = rowTiles.flatMap((f, k) => (f.g === g ? [k] : []));
-        const starts = ks.map((k) => ({ x: rowTiles[k].at.left + rowTiles[k].at.width / 2, y: rowTiles[k].at.top + rowTiles[k].at.height / 2 }));
-        // Leaving at the size its pile's tile shows (a side seat's are
-        // foreshortened, and lie sideways), a little under.
-        const sizes = ks.map((k) => {
-          const r = rowTiles[k].at;
-          const fits = turn(g) ? Math.min(r.width / GH, r.height / GW) : Math.min(r.width / GW, r.height / GH);
-          return Math.min(1, fits * 0.94);
-        });
-        const paths = flightPath(
-          starts,
-          ks.map((k) => slots[k]),
-          turn(g),
-          landTurn(g, taker),
-          sizes
-        );
-        ks.forEach((k, j) => {
-          const f = rowTiles[k];
-          next.push({
-            id: now + next.length,
-            to: taker,
-            real: was.piles[f.g]![f.i]!,
-            seat: f.g,
-            place: f.i,
-            ghost: roundOver,
-            tile: seated && (taker === HUMAN || f.g === HUMAN) ? was.piles[f.g]![f.i]! : null,
-            from: { left: starts[j].x - GW / 2, top: starts[j].y - GH / 2, width: w },
-            path: paths[j],
-            delay: gi * LEAD,
-          });
+      // Every row - by a wall on the felt for the others, above your hand for
+      // yours - is laid out first and measured (see the row flights below),
+      // so its tiles land as they're drawn there: same angle, same size.
+      const givers = [...new Set(theirs.map((f) => f.g))];
+      theirs.forEach((f) => {
+        const r = f.at;
+        const fits = turn(f.g) ? Math.min(r.width / GH, r.height / GW) : Math.min(r.width / GW, r.height / GH);
+        next.push({
+          id: now + next.length,
+          to: taker,
+          real: was.piles[f.g]![f.i]!,
+          seat: f.g,
+          place: f.i,
+          ghost: roundOver,
+          tile: seated && (taker === HUMAN || f.g === HUMAN) ? was.piles[f.g]![f.i]! : null,
+          from: { left: r.left + r.width / 2 - GW / 2, top: r.top + r.height / 2 - GH / 2, width: w },
+          delay: 0,
+          row: {
+            group: givers.indexOf(f.g),
+            start: { x: r.left + r.width / 2, y: r.top + r.height / 2 },
+            size: Math.min(1, fits * 0.94),
+            turnFrom: turn(f.g),
+            turnTo: landTurn(f.g, taker),
+          },
         });
       });
     }
@@ -1435,6 +1381,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
         setFlights([]);
         setFlown(new Set());
         setLanded(new Set());
+        setRowOrder({});
       }, SWAP_FLIGHT_MS * 2.8 + SWAP_ROUND_HOLD_MS);
       roundClear.current = id;
     }
@@ -1456,13 +1403,194 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     setFlown(new Set());
     setLanded(new Set());
     setGhost(null);
+    setRowOrder({});
+    setGiveFlights([]);
+    giveFrom.current = null;
     pilesSeen.current = { phase: null, spots: [], width: 0 };
   }, [dealSeen]);
 
+  // A seat's row, laid out on the felt (swapRow) before its tiles fly: once
+  // it's there, each giver's group is matched to a stretch of it and each
+  // tile to a place - in the order they lie along it, and the order their
+  // formation's turn carries them to - and its path worked out from where
+  // it starts to that place, landing at the size the felt draws it.
+  useLayoutEffect(() => {
+    const pending = flights.filter((f) => f.row && !f.path);
+    if (!pending.length) return;
+    const done = new Map<number, Flight>();
+    for (const taker of new Set(pending.map((f) => f.to))) {
+      const mine = pending.filter((f) => f.to === taker);
+      const groupEls = [...document.querySelectorAll(`[data-swap-row="${taker}"] [data-swap-group]`)];
+      const places = groupEls.map((g) => [...g.querySelectorAll("[data-swap-place]")].map((p) => (p.firstElementChild ?? p).getBoundingClientRect()));
+      if (!places.length || places.some((p) => !p.length)) continue;
+      const centre = (r: DOMRect) => ({ x: r.left + r.width / 2, y: r.top + r.height / 2 });
+      const all = places.flat().map(centre);
+      const a0 = all[0];
+      const a1 = all[all.length - 1];
+      const len = Math.hypot(a1.x - a0.x, a1.y - a0.y) || 1;
+      // The row's way on screen (one tile? the seat's own).
+      const acrossRow = taker === HUMAN || SIDES[taker] === "top";
+      const ux = all.length > 1 ? (a1.x - a0.x) / len : acrossRow ? 1 : 0;
+      const uy = all.length > 1 ? (a1.y - a0.y) / len : acrossRow ? 0 : 1;
+      const along = (p: { x: number; y: number }) => p.x * ux + p.y * uy;
+      // Each giver keeps their own stretch (laid out for their tiles); the
+      // stretches are put in the order the givers sit along the row - if
+      // they aren't yet, that's done first, and this comes back after.
+      // (Over every group in the row, landed or not - the order is the row's.)
+      const rowFlights = flights.filter((f) => f.to === taker && f.row);
+      const giverAt = (g: number) => {
+        const fs = rowFlights.filter((f) => f.row!.group === g);
+        return fs.reduce((t, f) => t + along(f.row!.start), 0) / fs.length;
+      };
+      const wanted = [...new Set(rowFlights.map((f) => f.row!.group))].sort((p, q) => giverAt(p) - giverAt(q));
+      const domGroups = groupEls.map((g) => Number((g as HTMLElement).dataset.swapGroup));
+      const groupAt = (i: number) => places[i].reduce((t, r) => t + along(centre(r)), 0) / places[i].length;
+      // Do the stretches run along the row in the order they're laid out, or against it?
+      const forwards = places.length < 2 || groupAt(0) <= groupAt(places.length - 1);
+      const order = forwards ? wanted : [...wanted].reverse();
+      if (order.join() !== domGroups.join()) {
+        // Re-laid in that order (once - never again for the same order, so
+        // this can't go round and round), then measured afresh.
+        if (rowOrder[taker]?.join() !== order.join()) {
+          setRowOrder((o) => ({ ...o, [taker]: order }));
+          continue;
+        }
+      }
+      // Nearest pile first.
+      const rowMid = all.reduce((t, p) => ({ x: t.x + p.x / all.length, y: t.y + p.y / all.length }), { x: 0, y: 0 });
+      const away = (g: number) => {
+        const fs = rowFlights.filter((f) => f.row!.group === g);
+        return fs.reduce((t, f) => t + Math.hypot(f.row!.start.x - rowMid.x, f.row!.start.y - rowMid.y), 0) / fs.length;
+      };
+      const launch = [...wanted].sort((p, q) => away(p) - away(q));
+      const pendingGroups = new Set(mine.map((f) => f.row!.group));
+      domGroups.forEach((g, i) => {
+        if (!pendingGroups.has(g)) return;
+        const fs = mine.filter((f) => f.row!.group === g);
+        const spots = places[i].map((r, j) => ({ r, j })).sort((p, q) => along(centre(p.r)) - along(centre(q.r)));
+        if (spots.length !== fs.length) return;
+        // The formation's turn carries each tile's place in it to its order along the row.
+        const turnBy = fs[0].row!.turnTo - fs[0].row!.turnFrom;
+        const t = (turnBy * Math.PI) / 180;
+        const mx = fs.reduce((s2, f) => s2 + f.row!.start.x, 0) / fs.length;
+        const my = fs.reduce((s2, f) => s2 + f.row!.start.y, 0) / fs.length;
+        const key = (f: Flight) => {
+          const ox = f.row!.start.x - mx;
+          const oy = f.row!.start.y - my;
+          return along({ x: ox * Math.cos(t) - oy * Math.sin(t), y: ox * Math.sin(t) + oy * Math.cos(t) });
+        };
+        const ordered = [...fs].sort((p, q) => key(p) - key(q));
+        const GW = (0.78 * ordered[0].from.width) / 0.74;
+        const ends = ordered.map((_, j) => centre(spots[j].r));
+        // Landing at the size the felt draws its tile there - matched on area
+        // (the felt's perspective stretches one way or the other by seat), a
+        // touch under, so its neighbours stay clear.
+        const GH = GW / 0.78;
+        // ...and never wider along the row than the spacing of its places,
+        // so neighbours land clear of each other.
+        const pitch = spots.length > 1 ? Math.min(...spots.slice(1).map((p, j) => Math.hypot(centre(p.r).x - centre(spots[j].r).x, centre(p.r).y - centre(spots[j].r).y))) : Infinity;
+        const endSizes = ordered.map((_, j) => {
+          const r = spots[j].r;
+          return Math.min(1.3, Math.sqrt((r.width * r.height) / (GW * GH)) * 0.9, (pitch * 0.92) / GW);
+        });
+        // Coming in square to the row, toward the wall.
+        const side = SIDES[taker];
+        const approach = taker === HUMAN ? { x: 0, y: 1 } : side === "left" ? { x: -1, y: 0 } : side === "right" ? { x: 1, y: 0 } : { x: 0, y: -1 };
+        const paths = flightPath(
+          ordered.map((f) => f.row!.start),
+          ends,
+          ordered[0].row!.turnFrom,
+          ordered[0].row!.turnTo,
+          ordered.map((f) => f.row!.size),
+          endSizes,
+          approach
+        );
+        // The givers' groups set off a beat apart, the nearest first - all in
+        // the air together, but each pile cleared before another group's way
+        // passes over it.
+        const delay = launch.indexOf(g) * Math.round(SWAP_FLIGHT_MS * 0.35);
+        ordered.forEach((f, j) => done.set(f.id, { ...f, path: paths[j], delay, row: { ...f.row!, place: spots[j].j } }));
+      });
+    }
+    if (done.size) setFlights((all) => all.map((f) => done.get(f.id) ?? f));
+  }, [flights, rowOrder]);
+  // A seat's row on the felt, by its wall, as its melds lie: a group for
+  // each giver, each tile's place holding it once it's landed (yours face up,
+  // the rest face down); till then the place is there, unseen.
+  const swapRow = (seat: number) => {
+    const theirs = flights.filter((f) => f.to === seat && f.row);
+    if (!theirs.length) return null;
+    const present = [...new Set(theirs.map((f) => f.row!.group))];
+    const groups = (rowOrder[seat] ?? present.sort((a, b) => a - b)).filter((g) => present.includes(g));
+    return (
+      <span className="play-swap-got" data-swap-row={seat}>
+        {groups.map((g) => {
+          const fs = theirs.filter((f) => f.row!.group === g);
+          return (
+            <span key={g} className="play-meld play-swap-got-group" data-swap-group={g}>
+              {fs.map((_, j) => {
+                const f = fs.find((x) => x.row!.place === j);
+                const shown = !!f && landed.has(f.id);
+                return (
+                  <span key={j} className={`play-swap-got-place${shown ? "" : " is-waiting"}`} data-swap-place={j}>
+                    {f?.tile && shown ? (
+                      <TileGlyphSpan tile={f.tile} block />
+                    ) : (
+                      <span className="play-back">
+                        <i className="tile-top" />
+                        <TileSides />
+                      </span>
+                    )}
+                  </span>
+                );
+              })}
+            </span>
+          );
+        })}
+      </span>
+    );
+  };
+
+  // Your give: in the order they sit in your hand, each flying down from its
+  // place there to its place in your pile.
+  const giveFrom = useRef<{ tiles: Tile[]; at: DOMRect[] } | null>(null);
   const giveSwap = () => {
     if (!swapPhase || swapHand.length !== swapPhase.count) return;
-    advance(swapGive(game, HUMAN, swapHand.map((i) => handTiles[i])));
+    const order = [...swapHand].sort((a, b) => a - b);
+    const els = [...document.querySelectorAll(".play-hand:not(.play-swap-mine) > .play-hand-tile")];
+    giveFrom.current = { tiles: order.map((i) => handTiles[i]), at: order.map((i) => (els[i]?.firstElementChild ?? els[i])?.getBoundingClientRect()) };
+    advance(swapGive(game, HUMAN, order.map((i) => handTiles[i]), Math.random, true));
   };
+  const myPileNow = swapPhase?.piles[HUMAN] ?? null;
+  useLayoutEffect(() => {
+    const from = giveFrom.current;
+    if (!from || !myPileNow) return;
+    giveFrom.current = null;
+    const places = [...document.querySelectorAll(".play-swap-pond.play-pond-bottom .play-swap-tile")].map((e) => (e.firstElementChild ?? e).getBoundingClientRect());
+    if (places.length !== from.tiles.length || from.at.some((r) => !r)) return;
+    const w = places[0].width; // a tile's width, as your pile draws it
+    const GW = (0.78 * w) / 0.74;
+    const GH = GW / 0.78;
+    const centre = (r: DOMRect) => ({ x: r.left + r.width / 2, y: r.top + r.height / 2 });
+    const size = (r: DOMRect) => Math.sqrt((r.width * r.height) / (GW * GH)) * 0.93;
+    const starts = from.at.map(centre);
+    const paths = flightPath(starts, places.map(centre), 0, 0, from.at.map(size), places.map(size), { x: 0, y: -1 });
+    const now = Date.now();
+    setGiveFlights(
+      from.tiles.map((tile, i) => ({
+        id: now + i,
+        to: HUMAN,
+        real: tile,
+        seat: HUMAN,
+        place: i,
+        tile,
+        from: { left: starts[i].x - GW / 2, top: starts[i].y - GH / 2, width: w },
+        path: paths[i],
+        delay: 0,
+      }))
+    );
+  }, [myPileNow]);
+
   // Your take: the tiles you tapped - or, one tap, an even take of blind picks.
   const takeSwap = (picks: number[][] = swapPicks) => {
     if (!swapPhase) return;
@@ -1694,7 +1822,8 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     if (rolling) return;
     if (swapGiving) {
       // 換牌: picking the tiles to give.
-      setSwapHand((sel) => (sel.includes(index) ? sel.filter((i) => i !== index) : sel.length < swapPhase!.count ? [...sel, index] : sel));
+      // As many as you like - 放牌 waits for exactly the number.
+      setSwapHand((sel) => (sel.includes(index) ? sel.filter((i) => i !== index) : [...sel, index]));
       return;
     }
     if (!myTurn || isForbidden(handTiles[index])) return;
@@ -1916,6 +2045,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
         picked={swapPicks[seat]}
         standing={seat === HUMAN && seated && !autoplay}
         held={heldIn(seat)}
+        arriving={seat === HUMAN ? new Set(giveFlights.map((f) => f.place)) : undefined}
         onPick={
           swapPhase && myTake && seat !== HUMAN
             ? (i) =>
@@ -1950,6 +2080,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
           <Flowers flowers={p.flowers} />
           <span className="play-seat-melds">
             <Melds melds={p.melds} hideConcealed={!over || hidden} />
+            {swapRow(seat)}
           </span>
         </span>
         {over && !hidden ? (
@@ -2291,6 +2422,8 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
                   after={takersAfter(swapPhase, game.dealer)}
                   giveCount={swapHand.length}
                   onGive={giveSwap}
+                  onClearGive={() => setSwapHand([])}
+                  settling={swapFlying && swapPhase.stage === "give"}
                   onTake={takeSwap}
                 />
               )}
@@ -2377,6 +2510,8 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
                 </>
               )}
             </div>
+            {/* What you've taken, in 3D above your hand, standing as it does. */}
+            {flights.some((f) => f.to === HUMAN) && <div className="play-hand play-swap-mine">{swapRow(HUMAN)}</div>}
             <div
               className={`play-hand${myTurn ? " is-turn" : ""}${iWon ? " is-toppled" : ""}`}
               style={winIndex >= 0 ? ({ "--win-lead": `${WIN_TILE_LEAD}s` } as CSSProperties) : undefined}
@@ -2464,6 +2599,8 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
               after={takersAfter(swapPhase, game.dealer)}
               giveCount={swapHand.length}
               onGive={giveSwap}
+                  onClearGive={() => setSwapHand([])}
+                  settling={swapFlying && swapPhase.stage === "give"}
               onTake={takeSwap}
             />
           ) : waits ? (
@@ -2488,11 +2625,21 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
 
         {burst && <CallBurst key={burst.id} seat={burst.seat} label={burst.label} />}
 
-        {swapPhase && swapRolling && !rolling && <SwapDice phase={swapPhase} />}
+        {swapPhase && swapRolling && !rolling && <SwapDice phase={swapPhase} factor={speed === "fast" ? 0.6 : 1} />}
+        {giveFlights.map((f) => (
+          <SwapFlight
+            key={`give-${f.id}`}
+            flight={f}
+            landed={false}
+            onStart={() => {}}
+            onLanded={() => setGiveFlights((all) => all.filter((x) => x.id !== f.id))}
+          />
+        ))}
         {flights.map((f) => (
           <SwapFlight
             key={f.id}
             flight={f}
+            landed={landed.has(f.id)}
             onStart={() => setFlown((s) => new Set(s).add(f.id))}
             onLanded={() => setLanded((s) => (s.has(f.id) ? s : new Set(s).add(f.id)))}
           />

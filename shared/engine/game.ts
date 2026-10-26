@@ -900,8 +900,10 @@ export function nextHand(s: GameState, wall?: WallTile[], random: Random = Math.
 
 // `seat` lays `tiles` (from its hand, `count` of them) face down. Once all
 // four have, the taking starts with the dealer. The pile is shuffled: where
-// a tile lies says nothing of what it is.
-export function swapGive(state: GameState, seat: number, tiles: Tile[], random: Random = Math.random): GameState {
+// a tile lies says nothing of what it is - unless `inOrder` (you, laying
+// yours down as they left your hand: the others take blind, so their order
+// tells them nothing either).
+export function swapGive(state: GameState, seat: number, tiles: Tile[], random: Random = Math.random, inOrder = false): GameState {
   const ph = state.phase;
   if (ph.kind !== "swap" || ph.stage !== "give") throw new Error("Not giving now");
   if (ph.piles[seat]) throw new Error("Already given");
@@ -910,7 +912,7 @@ export function swapGive(state: GameState, seat: number, tiles: Tile[], random: 
   const p = s.players[seat];
   p.hand = removeTiles(p.hand, tiles);
   const piles = ph.piles.slice();
-  piles[seat] = shuffled(tiles, random);
+  piles[seat] = inOrder ? tiles.slice() : shuffled(tiles, random);
   const all = piles.every(Boolean);
   s.phase = { ...ph, piles, stage: all ? "take" : "give", taker: s.dealer, took: [] };
   return s;
