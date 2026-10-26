@@ -177,24 +177,40 @@ describe("game", () => {
     expect(s.players[0].riichi?.passed).toBe(true);
   });
 
-  it("offers no kong straight after claiming a run or a pung, then as usual", () => {
+  it("offers no kong straight after claiming a run or a pung - but the fourth of the pung just claimed", () => {
     const s0 = newGame();
     s0.players[0].hand = parseHand("12345m111222333t55b");
-    // Seat 2 holds 555m (pung the discard, and the fourth makes an added kong) and 1111b (a concealed kong).
+    // Seat 2 holds 555m (pung the discard, the fourth still held) and 1111b (a concealed kong).
     s0.players[2].hand = parseHand("555m1111b2345t789t1z");
     const s = applyTurnMove(s0, { kind: "discard", tile: { suit: "m", rank: 5 } });
     const after = resolveClaims(s, [null, null, { kind: "pung" }, null]);
     const p = after.players[2];
     expect(kongOptions(p).map((k) => k.kind).sort()).toEqual(["addedKong", "concealedKong"]);
-    expect(kongOptions(p, after.phase)).toEqual([]);
+    // Just the fourth 5m onto the pung.
+    expect(kongOptions(p, after.phase)).toEqual([{ kind: "addedKong", tile: { suit: "m", rank: 5 } }]);
     expect(() => applyTurnMove(after, { kind: "concealedKong", tile: { suit: "b", rank: 1 } })).toThrow();
-    expect(() => applyTurnMove(after, { kind: "addedKong", tile: { suit: "m", rank: 5 } })).toThrow();
-    // A turn begun with a draw offers them again.
+    expect(applyTurnMove(after, { kind: "addedKong", tile: { suit: "m", rank: 5 } }).players[2].melds[0].kind).toBe("kong");
+    // A turn begun with a draw offers both again.
     const drawn = { ...after, phase: { kind: "turn" as const, seat: 2, drawn: { suit: "z" as const, rank: 1 }, replacement: null } };
     expect(kongOptions(p, drawn.phase).length).toBe(2);
-    // Nor does a bot try one - either kind of bot.
-    expect(botTurnMove(after).kind).toBe("discard");
-    for (const id of ["casual", "hunter", "veteran", "speedster"]) expect(botTurnFor(after, profileById(id)).move.kind).toBe("discard");
+    // A pung without the fourth: no kong at all - for bots of every kind too.
+    const s1 = newGame();
+    s1.players[0].hand = parseHand("12345m111222333t55b");
+    s1.players[2].hand = parseHand("55m1111b2345t789t17z");
+    const t = resolveClaims(applyTurnMove(s1, { kind: "discard", tile: { suit: "m", rank: 5 } }), [null, null, { kind: "pung" }, null]);
+    expect(kongOptions(t.players[2], t.phase)).toEqual([]);
+    expect(botTurnMove(t).kind).toBe("discard");
+    for (const id of ["casual", "hunter", "veteran", "speedster"]) expect(botTurnFor(t, profileById(id)).move.kind).toBe("discard");
+  });
+
+  it("offers no kong straight after claiming a run", () => {
+    const s0 = newGame();
+    s0.players[0].hand = parseHand("12345m111222333t55b");
+    // Seat 1 (next) runs 4-5-6m off the 5m, and holds 1111b.
+    s0.players[1].hand = parseHand("46m1111b2345t789t17z");
+    const s = applyTurnMove(s0, { kind: "discard", tile: { suit: "m", rank: 5 } });
+    const after = resolveClaims(s, [null, claimOptions(s, 1).find((c) => c.kind === "chow")!, null, null]);
+    expect(kongOptions(after.players[1], after.phase)).toEqual([]);
   });
 
   it("bars 食替 discards after a call", () => {

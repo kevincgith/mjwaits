@@ -499,13 +499,25 @@ export type KongMove = Extract<TurnMove, { kind: "concealedKong" | "addedKong" }
 // tiles barred from the discard that follows (食替).
 export const justClaimed = (phase: GameState["phase"]) => phase.kind === "turn" && phase.forbidden !== undefined;
 
+// Right after claiming a pung, the one kong there may be: the fourth of
+// that very tile, still in hand (three held, the discard made the pung) -
+// added to it at once. A run claimed: none.
+const claimedPungTile = (p: Player) => {
+  const m = p.melds[p.melds.length - 1];
+  return m && m.kind === "triplet" && m.from !== null && tileCount(p.hand, m.tiles[0]) > 0 ? m.tiles[0] : null;
+};
+
 // `phase`: the turn it is - right after claiming a run or a pung there's no
-// kong (the claim's discard comes first).
+// kong (the claim's discard comes first) but the fourth of a pung just
+// claimed (see claimedPungTile).
 export function kongOptions(p: Player, phase?: GameState["phase"]): KongMove[] {
   const moves: KongMove[] = [];
   // A locked 叮 hand can't kong.
   if (p.riichi) return moves;
-  if (phase && justClaimed(phase)) return moves;
+  if (phase && justClaimed(phase)) {
+    const t = claimedPungTile(p);
+    return t ? [{ kind: "addedKong", tile: t }] : moves;
+  }
   const seen = new Set<string>();
   for (const t of p.hand) {
     const key = tileKey(t);
@@ -640,7 +652,8 @@ export function applyTurnMove(state: GameState, move: TurnMove): GameState {
     case "concealedKong":
     case "addedKong": {
       if (p.riichi) throw new Error("叮: a locked hand can't kong");
-      if (justClaimed(phase)) throw new Error("No kong straight after claiming a run or a pung");
+      if (justClaimed(phase) && !(move.kind === "addedKong" && claimedPungTile(p) && sameTile(claimedPungTile(p)!, move.tile)))
+        throw new Error("No kong straight after claiming a run or a pung - but the fourth of the pung just claimed");
       // Any kong ends everyone's 一發.
       for (const pl of s.players) if (pl.riichi) pl.riichi.ippatsu = false;
       if (move.kind === "concealedKong") {
