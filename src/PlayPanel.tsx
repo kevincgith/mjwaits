@@ -58,7 +58,7 @@ import {
   type TurnMove,
 } from "@mjwaits/shared/engine/game";
 import { allTileKinds, getWaits, shanten, sortTiles, tileKey, tileLabel, type Tile } from "@mjwaits/shared/engine/mahjong";
-import { blindPicks, botGive, botSplit, DEFAULT_SWAP_RULES, givePlans, pileLeft, type GivePlan, type SwapPhase, type SwapRules } from "@mjwaits/shared/engine/swap";
+import { blindPicks, botGive, SWAP_TIMER_S, botSplit, DEFAULT_SWAP_RULES, givePlans, pileLeft, type GivePlan, type SwapPhase, type SwapRules } from "@mjwaits/shared/engine/swap";
 import { PlayDie } from "./PlayDie";
 import { aimGroup, centreOf, SWAP_FLIGHT_MS, SWAP_ROUND_HOLD_MS, SWAP_TILT_FLAT, SWAP_TILT_STANDING, SwapControls, SwapDice, swapDiceMs, SwapFlight, SwapPond, SwapSheet, tableFrame, viewOf, type Box, type Flight, type FlightEnd } from "./PlaySwap";
 import type { BonusTile } from "@mjwaits/shared/engine/scoring";
@@ -1973,6 +1973,9 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
   const timerFor: unknown = swapPhase ? [game.dealer, game.dealerStreak, game.roundWind, swapPhase.round, swapPhase.stage, swapPhase.taker].join() : game;
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
   const [countdown, setCountdown] = useState<Countdown | null>(null);
+  // 換牌's give and take always have SWAP_TIMER_S; a move, the turn timer.
+  const onSwap = game.phase.kind === "swap";
+  const limit = onSwap ? SWAP_TIMER_S : timer;
   // Online, the server's deadline (it moves for you when it passes).
   const deadline = online?.table.deadline ?? null;
   useEffect(() => {
@@ -1982,26 +1985,26 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
       setCountdown(null);
       return;
     }
-    const total = online.table.settings.timer;
+    const total = onSwap ? SWAP_TIMER_S : online.table.settings.timer;
     setCountdown(total ? { total, endsAt: deadline } : null);
     // (Never more than the timer: the table's deadline can add the swap's waits to it.)
     const tick = () => setSecondsLeft(Math.max(0, Math.min(total || Infinity, Math.ceil((deadline - Date.now()) / 1000))));
     tick();
     const id = window.setInterval(tick, 250);
     return () => window.clearInterval(id);
-  }, [online, deadline]);
+  }, [online, deadline, onSwap]);
   useEffect(() => {
     if (online) return;
-    if (!timer || !deciding) {
+    if (!limit || !deciding) {
       setSecondsLeft(null);
       setCountdown(null);
       return;
     }
     const started = Date.now();
-    setSecondsLeft(timer);
-    setCountdown({ total: timer, endsAt: started + timer * 1000 });
+    setSecondsLeft(limit);
+    setCountdown({ total: limit, endsAt: started + limit * 1000 });
     const id = window.setInterval(() => {
-      const left = timer - Math.floor((Date.now() - started) / 1000);
+      const left = limit - Math.floor((Date.now() - started) / 1000);
       setSecondsLeft(Math.max(0, left));
       if (left > 0) return;
       window.clearInterval(id);
@@ -2016,7 +2019,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     }, 250);
     return () => window.clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timerFor, timer, deciding]);
+  }, [timerFor, limit, deciding]);
 
   // The hand sorted, with the just-drawn tile split off at the right.
   const handView = useMemo(() => {
@@ -2759,7 +2762,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
                   setPicks={setSwapPicks}
                   after={takersAfter(swapPhase, game.dealer)}
                   giveCount={swapHand.length}
-                  onGive={giveSwap}
+                  onGive={() => giveSwap()}
                   onClearGive={() => {
                     setSwapHand([]);
                     setGivePlanAt(null);
@@ -2942,7 +2945,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
               setPicks={setSwapPicks}
               after={takersAfter(swapPhase, game.dealer)}
               giveCount={swapHand.length}
-              onGive={giveSwap}
+              onGive={() => giveSwap()}
               onClearGive={() => {
                 setSwapHand([]);
                 setGivePlanAt(null);

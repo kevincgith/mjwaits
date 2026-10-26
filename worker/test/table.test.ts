@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import type { Tile } from "@mjwaits/shared/engine/mahjong";
 import { replay, type ScoreGame } from "@mjwaits/shared/engine/ledger";
 import { PROTOCOL_VERSION } from "@mjwaits/shared/protocol/limits";
-import { blindPicks, botSplit, takeOrder, type Pile } from "@mjwaits/shared/engine/swap";
+import { blindPicks, botSplit, SWAP_TIMER_S, takeOrder, type Pile } from "@mjwaits/shared/engine/swap";
 import type { TableServerMessage, TableState } from "@mjwaits/shared/protocol/table";
 import type { Table } from "../src/table";
 import { BASE, ORIGIN } from "./helpers";
@@ -511,6 +511,16 @@ describe("嗌錯, 自動 and bot speed", () => {
     host.send({ t: "autoplay", on: false });
     const mine = await host.table((s) => s.waitingOn.includes(0), 60_000);
     expect(mine.auto).not.toContain(0);
+  });
+
+  it("gives 換牌's give and take 30s, with the turn timer off", async () => {
+    const { host } = await withBots(0, { swapRules: { winds: [1, 2, 3, 4], rounds: [1, 1, 1, 1, 1, 1], tiles: [3, 3, 3, 3, 3, 3] } });
+    const sent = Date.now();
+    host.send({ t: "start" });
+    const s = await host.table((s) => s.view?.phase.kind === "swap" && s.waitingOn.includes(0));
+    expect(s.settings.timer).toBe(0);
+    expect(s.deadline! - sent).toBeGreaterThanOrEqual(SWAP_TIMER_S * 1000 - 50);
+    expect(s.deadline! - sent).toBeLessThan(SWAP_TIMER_S * 1000 + 2000);
   });
 
   it("paces bots at the table's bot speed", async () => {

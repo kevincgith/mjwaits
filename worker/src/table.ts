@@ -44,7 +44,7 @@ import {
   type GameState,
   type TurnMove,
 } from "@mjwaits/shared/engine/game";
-import { blindPicks, botGive, botSplit, pileLeft, SWAP_PACE_MS, type SwapRules } from "@mjwaits/shared/engine/swap";
+import { blindPicks, botGive, botSplit, pileLeft, SWAP_PACE_MS, SWAP_TIMER_S, type SwapRules } from "@mjwaits/shared/engine/swap";
 import { botClaimFor, botSurrenders, botTurnMoveFor, MYSTERY_NAME, profileById, randomStyle } from "@mjwaits/shared/engine/bots";
 import type { Tile } from "@mjwaits/shared/engine/mahjong";
 import { viewFor } from "@mjwaits/shared/engine/view";
@@ -382,7 +382,8 @@ export class Table extends Hub<TableMessage> {
         const chosen = (rt.chosen ??= []).filter((s) => s !== seat);
         rt.chosen = msg.on ? [...chosen, seat] : chosen;
         // Back in your own hands with a decision on: your time starts now.
-        if (!msg.on && !this.actsAlone(seat) && rt.deadline === null && rt.settings.timer) rt.deadline = Date.now() + rt.settings.timer * 1000;
+        const limit = rt.game?.phase.kind === "swap" ? SWAP_TIMER_S : rt.settings.timer;
+        if (!msg.on && !this.actsAlone(seat) && rt.deadline === null && limit) rt.deadline = Date.now() + limit * 1000;
         break;
       }
       case "ready": {
@@ -484,7 +485,7 @@ export class Table extends Hub<TableMessage> {
       const alone = ph.stage === "give" ? [0, 1, 2, 3].some((s) => !ph.piles[s] && this.actsAlone(s)) : this.actsAlone(ph.taker);
       const people = ph.stage === "give" ? [0, 1, 2, 3].some((s) => !ph.piles[s] && !this.actsAlone(s)) : !this.actsAlone(ph.taker);
       if (alone) rt.botAt = now + wait + this.botPause;
-      if (people && timer) rt.deadline = now + wait + timer;
+      if (people) rt.deadline = now + wait + SWAP_TIMER_S * 1000;
     } else if (g.phase.kind === "claims") {
       // Bots and away players answer at once; people with something to claim
       // are waited on; everyone else passes.
