@@ -10,8 +10,8 @@
 // a call burst by whoever calls.
 //
 // The table fills the screen (over the tab bar, with its own Leave button),
-// and a phone held upright gets a "turn to landscape" card instead, since a
-// web page can't lock orientation on iPhone.
+// and on a phone held upright it's drawn turned a quarter, filling the
+// screen sideways (a web page can't lock orientation on iPhone).
 //
 // The same table plays online (`online`, from OnlineTable.tsx): the server
 // holds the game and sends this seat's view, which seatState turns into a
@@ -45,6 +45,7 @@ import {
   wallBreak,
   SNAKE_DICE_PENALTY,
   TRIPLE_DICE_BONUS,
+  WRONG_CALL_PENALTY,
   type Dice,
   sameTile,
   SEATS,
@@ -253,6 +254,16 @@ function save(saved: Saved): void {
     // Storage unavailable - the game just won't survive a reload.
   }
 }
+
+// 換牌: a tile lies sideways at a side seat (turned to face it), upright
+// across and at yours - in its pile and in its row alike.
+const seatTurn = (seat: number) => (SIDES[seat] === "left" ? 90 : SIDES[seat] === "right" ? -90 : 0);
+// How a giver's tiles lie as they land with a taker: as the row runs - but
+// from one side seat to the other they stay as they were: a back looks the
+// same either way up, and a half turn would sweep the whole formation round
+// through the tiles already down. (Only backs ever make that crossing -
+// yours sit at the bottom.)
+const landTurn = (g: number, taker: number) => (Math.abs(seatTurn(taker) - seatTurn(g)) === 180 ? seatTurn(g) : seatTurn(taker));
 
 const claimLabel = (c: Claim) => (c.kind === "win" ? "胡" : c.kind === "kong" ? "槓" : c.kind === "pung" ? "碰" : "上");
 
@@ -860,7 +871,6 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
       const seated = lastSwap?.t === "swap" ? lastSwap.seats : l.seats;
       return names.join() === seated.join() ? l : withEvents(l, [{ t: "swap", at: Date.now(), seats: names }]);
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opponents]);
   const [scoresOpen, setScoresOpen] = useState(false);
   // 回顧: your discards this hand, each with the table just before it - for
@@ -1343,6 +1353,8 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
   // Your hand still taking in what you were given (see the hand's slide):
   // the next give waits till it's settled.
   const [handSettling, setHandSettling] = useState(false);
+  const settleTimer = useRef(0);
+  useEffect(() => () => window.clearTimeout(settleTimer.current), []);
   const swapGiving = !!swapPhase && seated && !autoplay && !swapFlying && !handSettling && swapPhase.stage === "give" && !swapPhase.piles[HUMAN];
   const [swapHand, setSwapHand] = useState<number[]>([]);
   const [swapPicks, setSwapPicks] = useState<number[][]>([[], [], [], []]);
@@ -1419,8 +1431,6 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
   useEffect(() => {
     if (ghost && !flights.some((f) => f.ghost && !flown.has(f.id))) setGhost(null);
   }, [ghost, flights, flown]);
-  // A tile lies sideways at a side seat (turned to face it), upright across
-  // and at yours - in its pile and in its row alike.
   // How far apart a row of tiles lie, centre to centre (the closest two neighbours).
   const pitchOf = (row: ({ box: Box } | undefined)[]) => {
     const cs = row.flatMap((r) => (r ? [centreOf(r.box)] : []));
@@ -1432,13 +1442,6 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     const cs = row.flatMap((r) => (r ? [centreOf(r.box)] : []));
     return cs.length ? { x: cs.reduce((t, c) => t + c.x, 0) / cs.length, y: cs.reduce((t, c) => t + c.y, 0) / cs.length } : undefined;
   };
-  const seatTurn = (seat: number) => (SIDES[seat] === "left" ? 90 : SIDES[seat] === "right" ? -90 : 0);
-  // How a giver's tiles lie as they land with a taker: as the row runs -
-  // but from one side seat to the other they stay as they were: a back
-  // looks the same either way up, and a half turn would sweep the whole
-  // formation round through the tiles already down. (Only backs ever make
-  // that crossing - yours sit at the bottom.)
-  const landTurn = (g: number, taker: number) => (Math.abs(seatTurn(taker) - seatTurn(g)) === 180 ? seatTurn(g) : seatTurn(taker));
   // What the piles were last time, and each of their tiles as it lay: its
   // outline in the table's frame, how it's seen, and its size.
   const pilesSeen = useRef<{
@@ -1674,15 +1677,20 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
       <span className="play-swap-got" data-swap-row={seat}>
         {groups.map((g) => {
           const fs = theirs.filter((f) => f.row!.group === g);
+          // A giver's tiles land all face up (yours to see) or all face down:
+          // each place, waiting, is drawn as what will land there - so the
+          // flight, fitted to it, lands exactly as it's then drawn.
+          const face = fs.find((x) => x.tile)?.tile ?? null;
           return (
             <span key={g} className="play-meld play-swap-got-group" data-swap-group={g}>
               {fs.map((_, j) => {
                 const f = fs.find((x) => x.row!.place === j);
                 const shown = !!f && landed.has(f.id);
+                const tile = f?.tile ?? face;
                 return (
                   <span key={j} className={`play-swap-got-place${shown ? "" : " is-waiting"}`} data-swap-place={j}>
-                    {f?.tile && shown ? (
-                      <TileGlyphSpan tile={f.tile} block="fine" />
+                    {tile ? (
+                      <TileGlyphSpan tile={tile} block="fine" />
                     ) : (
                       <span className="play-back">
                         <i className="tile-top" />
@@ -1924,7 +1932,8 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     }
     const total = online.table.settings.timer;
     setCountdown(total ? { total, endsAt: deadline } : null);
-    const tick = () => setSecondsLeft(Math.max(0, Math.ceil((deadline - Date.now()) / 1000)));
+    // (Never more than the timer: the table's deadline can add the swap's waits to it.)
+    const tick = () => setSecondsLeft(Math.max(0, Math.min(total || Infinity, Math.ceil((deadline - Date.now()) / 1000))));
     tick();
     const id = window.setInterval(tick, 250);
     return () => window.clearInterval(id);
@@ -1972,7 +1981,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     }
     return { sorted: sortTiles(tiles), drawnTile };
   }, [me.hand, drawn, comingToMe, swapSettling]); // eslint-disable-line react-hooks/exhaustive-deps
-  const handTiles = handView.drawnTile ? [...handView.sorted, handView.drawnTile] : handView.sorted;
+  const handTiles = useMemo(() => (handView.drawnTile ? [...handView.sorted, handView.drawnTile] : handView.sorted), [handView]);
   // Your hand rearranging (a swap's give, or its takes joining it): where
   // each tile showed just before - and any coming in from your swap row -
   // so every tile slides from there to its new place rather than jumping.
@@ -2002,7 +2011,8 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     const joins = from.some((f) => f.joining);
     if (joins) {
       setHandSettling(true);
-      window.setTimeout(() => setHandSettling(false), HAND_SLIDE_MS * 1.9);
+      window.clearTimeout(settleTimer.current);
+      settleTimer.current = window.setTimeout(() => setHandSettling(false), HAND_SLIDE_MS * 1.9);
     }
     handTileEls().forEach((el, i) => {
       const t = handTiles[i];
@@ -2684,7 +2694,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
         <div className={`play-me${autoplay ? " is-auto" : ""}`}>
           <div className="play-hand-wrap">
             <div className="play-calls">
-              {swapPhase && !swapRolling && !swapAirborne && !(swapPhase.stage === "give" && swapFlying) && !rolling && !over && (
+              {swapPhase && !swapRolling && !swapAirborne && !(swapPhase.stage === "give" && (swapFlying || handSettling)) && !rolling && !over && (
                 <SwapControls
                   part="actions"
                   phase={swapPhase}
@@ -2701,7 +2711,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
                   }}
                   plan={givePlan}
                   onNextPlan={nextGivePlan}
-                  settling={swapFlying && swapPhase.stage === "give"}
+                  settling={(swapFlying || handSettling) && swapPhase.stage === "give"}
                   onTake={takeSwap}
                 />
               )}
@@ -2726,7 +2736,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
               ) : (
                 <>
                   {canRetract && (
-                    <button type="button" className="play-call is-pass is-minor" onClick={retract} aria-label="嗌錯 - take back your call and pay 5 to each">
+                    <button type="button" className="play-call is-pass is-minor" onClick={retract} aria-label={`嗌錯 - take back your call and pay ${WRONG_CALL_PENALTY} to each`}>
                       嗌錯
                     </button>
                   )}
@@ -2878,13 +2888,13 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
               after={takersAfter(swapPhase, game.dealer)}
               giveCount={swapHand.length}
               onGive={giveSwap}
-                  onClearGive={() => {
-                    setSwapHand([]);
-                    setGivePlanAt(null);
-                  }}
-                  plan={givePlan}
-                  onNextPlan={nextGivePlan}
-                  settling={swapFlying && swapPhase.stage === "give"}
+              onClearGive={() => {
+                setSwapHand([]);
+                setGivePlanAt(null);
+              }}
+              plan={givePlan}
+              onNextPlan={nextGivePlan}
+              settling={(swapFlying || handSettling) && swapPhase.stage === "give"}
               onTake={takeSwap}
             />
           ) : waits ? (
