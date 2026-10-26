@@ -6,7 +6,8 @@ import { carriedOver, newPlayLedger, playEvents, uniqueNames } from "./playLedge
 
 // Bot hands at a table, the record kept step by step as the table would,
 // next to what the table itself paid.
-function play(hands: number, seed: number, multiWin: boolean) {
+// With `jackpot`, each draw everyone puts that in the pot and a 自摸 takes it, as the Play tab pays it.
+function play(hands: number, seed: number, multiWin: boolean, jackpot = 0) {
   const real = Math.random;
   Math.random = seededRng(seed);
   try {
@@ -18,7 +19,13 @@ function play(hands: number, seed: number, multiWin: boolean) {
     // Bots that give up every 拉 they may.
     const quitter = { ...profileById("casual"), surrender: 1 };
     const step = (next: GameState) => {
-      ledger = { ...ledger, events: [...ledger.events, ...playEvents(s, next, seats, 0)] };
+      const pot = replay(ledger).pot;
+      ledger = { ...ledger, events: [...ledger.events, ...playEvents(s, next, seats, 0, jackpot ? { perDraw: jackpot, pot } : undefined)] };
+      if (next.phase.kind === "over" && s.phase.kind !== "over") {
+        const r = next.phase.result;
+        if (r.winner === null) for (let i = 0; i < SEATS; i++) totals[i] -= jackpot;
+        else if (r.from === null) totals[r.winner] += pot;
+      }
       s = next;
     };
     // The first deal's own bonuses.
@@ -73,6 +80,15 @@ describe("a Play game as a Scores game", () => {
   it("and with 一炮多響", () => {
     play(10, 11, true);
   }, 120_000);
+
+  it("and with the jackpot: in on every draw, all of it to a 自摸", () => {
+    const { ledger } = play(24, 5, false, 5);
+    const fed = ledger.events.filter((e) => e.t === "jackpotIn").length;
+    const won = ledger.events.filter((e) => e.t === "win" && e.jackpotTo).length;
+    expect(fed).toBe(ledger.events.filter((e) => e.t === "draw").length);
+    expect(fed).toBeGreaterThan(0);
+    expect(won).toBeGreaterThan(0);
+  }, 240_000);
 
   it("catches 投降 made with the next deal in one step, as the Play tab does", () => {
     // A finished hand with a 拉 in play.

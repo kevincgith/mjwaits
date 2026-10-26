@@ -54,11 +54,19 @@ const bonusOf = (b: TableBonus, at: number) => bonusEvents(b.seat, b.deltas, b.n
 // A bonus taken back (嗌錯 hands back what the call earned): the same, the other way.
 const reversed = (b: TableBonus, at: number) => bonusEvents(b.seat, b.deltas.map((d) => -d), `${b.name} 退`, at);
 
+// Play's jackpot (獎池), a table setting: each draw everyone puts `perDraw`
+// in the pot, and a 自摸 takes all of it (`pot`: what's in it before this
+// step). Off (perDraw 0), a pot still there goes to the next 自摸 all the same.
+export interface PlayJackpot {
+  perDraw: number;
+  pot: number;
+}
+
 // What changed in one step of a Play game, as Scores-tab entries. `seats`:
-// the ledger's player names by seat (for 投降, which names them). A step
-// is one move, one claim resolved, a 投降, or the next deal - never more
-// than a hand.
-export function playEvents(before: GameState | null, after: GameState, seats: string[], at = Date.now()): ScoreEvent[] {
+// the ledger's player names by seat (for 投降, which names them, and the
+// jackpot). A step is one move, one claim resolved, a 投降, or the next
+// deal - never more than a hand.
+export function playEvents(before: GameState | null, after: GameState, seats: string[], at = Date.now(), jackpot?: PlayJackpot): ScoreEvent[] {
   const out: ScoreEvent[] = [];
   const newDeal = !before || (before.phase.kind === "over" && after.phase.kind !== "over");
   // Dice and the table's bonuses, as they come up.
@@ -70,14 +78,16 @@ export function playEvents(before: GameState | null, after: GameState, seats: st
   // A hand's end.
   if (after.phase.kind === "over" && before?.phase.kind !== "over") {
     const r = after.phase.result;
-    if (r.winner === null) out.push({ t: "draw", at });
-    else {
+    if (r.winner === null) {
+      out.push({ t: "draw", at });
+      if (jackpot && jackpot.perDraw > 0) out.push({ t: "jackpotIn", at, shares: seats.map((player) => ({ player, amount: jackpot.perDraw })) });
+    } else {
       const winners = [{ winner: r.winner, score: r.score }, ...(r.alsoWon ?? [])].map((w) => ({
         seat: w.winner,
         tai: w.score?.total ?? 0,
         ...(w.score ? { patterns: scoreView(w.score).patterns } : {}),
       }));
-      out.push({ t: "win", at, winners, from: r.from, source: "scoring" });
+      out.push({ t: "win", at, winners, from: r.from, source: "scoring", ...(r.from === null && jackpot && jackpot.pot > 0 ? { jackpotTo: seats[r.winner] } : {}) });
     }
   }
   // 投降: a 拉 gone between hands - whether the next deal is in the same

@@ -261,6 +261,16 @@ export function SwapControls({
 }
 
 // The settings: which round winds swap, and what each die means.
+// The dice's mappings at a stroke - every throw the same at the two ends,
+// the usual in between; the rounds that swap left as they are.
+const SWAP_PRESETS: { name: string; label: string; rounds: number[]; tiles: number[] }[] = [
+  { name: "Min", label: "1 round · 3 tiles", rounds: [1, 1, 1, 1, 1, 1], tiles: [3, 3, 3, 3, 3, 3] },
+  { name: "Usual", label: "1-2-3 rounds · 3-6 tiles", rounds: DEFAULT_SWAP_RULES.rounds, tiles: DEFAULT_SWAP_RULES.tiles },
+  { name: "Max", label: "3 rounds · 6 tiles", rounds: [3, 3, 3, 3, 3, 3], tiles: [6, 6, 6, 6, 6, 6] },
+];
+
+// The table's 換牌 rules, changed here and kept only on Confirm - closing
+// leaves them as they were.
 export function SwapSheet({ rules, onChange, onClose }: { rules: SwapRules; onChange: (r: SwapRules) => void; onClose: () => void }) {
   const [r, setR] = useState(rules);
   // Each change from the settings as they stand (not as last drawn), so
@@ -270,9 +280,11 @@ export function SwapSheet({ rules, onChange, onClose }: { rules: SwapRules; onCh
     const next = change(latest.current);
     latest.current = next;
     setR(next);
-    onChange(next);
   };
-  const set = (next: SwapRules) => update(() => next);
+  const confirm = () => {
+    onChange(latest.current);
+    onClose();
+  };
   const toggleWind = (w: Wind) => update((r) => ({ ...r, winds: r.winds.includes(w) ? r.winds.filter((x) => x !== w) : ([...r.winds, w].sort() as Wind[]) }));
   const mapRow = (key: "rounds" | "tiles", lo: number, hi: number, unit: string) => (
     <div className="play-swap-map">
@@ -319,12 +331,24 @@ export function SwapSheet({ rules, onChange, onClose }: { rules: SwapRules; onCh
             </button>
           ))}
         </div>
+        <h3>Presets</h3>
+        <div className="play-swap-presets">
+          {SWAP_PRESETS.map((p) => {
+            const on = p.rounds.join() === r.rounds.join() && p.tiles.join() === r.tiles.join();
+            return (
+              <button key={p.name} type="button" className={on ? "toggle-on" : undefined} aria-pressed={on} onClick={() => update((r) => ({ ...r, rounds: p.rounds, tiles: p.tiles }))}>
+                <b>{p.name}</b>
+                <span>{p.label}</span>
+              </button>
+            );
+          })}
+        </div>
         <h3>First die: swap rounds</h3>
         {mapRow("rounds", 1, SWAP_MAX_ROUNDS, "swap rounds")}
         <h3>Second die: tiles each</h3>
         {mapRow("tiles", SWAP_MIN_TILES, SWAP_MAX_TILES, "tiles each")}
-        <button type="button" className="play-swap-reset" onClick={() => set(DEFAULT_SWAP_RULES)}>
-          Back to the usual (南 北 · 1-2-3 rounds · 3-3-3-4-5-6 tiles)
+        <button type="button" className="play-swap-confirm" onClick={confirm}>
+          Confirm
         </button>
       </div>
     </div>
@@ -350,6 +374,10 @@ export interface Flight {
   // out on the felt first, then measured - see `row`.)
   path?: { x: number; y: number; r: number; s: number }[];
   delay: number;
+  // How it's tipped back (deg, as rotateX) where it leaves and where it
+  // lands: flat on the felt (SWAP_TILT_FLAT), or standing as your hand
+  // does (SWAP_TILT_STANDING).
+  tilt: [number, number];
   // Landing in a row on the felt by a seat's wall: its giver's group there,
   // and once measured, its place in that group. With what's needed to work
   // out its path then: where it starts, at what size, turned how.
@@ -425,6 +453,13 @@ export function flightPath(
 export const SWAP_FLIGHT_MS = 600;
 export const SWAP_ROUND_HOLD_MS = 1400;
 
+// Tipped as the felt is, or as your hand's tiles stand (see .play-hand).
+export const SWAP_TILT_FLAT = 32;
+export const SWAP_TILT_STANDING = -22;
+// A tile tipped back shows less of its height: the sizes worked out on
+// screen allow for it, matched on area (see PlayPanel).
+export const tiltShown = (deg: number) => Math.cos((deg * Math.PI) / 180);
+
 export function SwapFlight({ flight, landed, onStart, onLanded }: { flight: Flight; landed: boolean; onStart: () => void; onLanded: () => void }) {
   const ref = useRef<HTMLSpanElement>(null);
   // Flown along its path; down when it lands - or, should the animation's
@@ -435,7 +470,13 @@ export function SwapFlight({ flight, landed, onStart, onLanded }: { flight: Flig
     const quick = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
     if (!flight.path) return;
     const anim = ref.current?.animate(
-      flight.path.map((p) => ({ transform: `translate(${p.x}px, ${p.y}px) rotate(${p.r}deg) scale(${p.s})`, visibility: "visible" })),
+      // Tipped (in the table's perspective) before it's turned on the
+      // table, so a side seat's tile tips as the felt does, not about its
+      // own length; and scaled whole, its thickness too.
+      flight.path.map((p, k, all) => {
+        const tilt = flight.tilt[0] + (flight.tilt[1] - flight.tilt[0]) * ease(k / Math.max(1, all.length - 1));
+        return { transform: `translate(${p.x}px, ${p.y}px) perspective(1100px) rotateX(${tilt}deg) rotate(${p.r}deg) scale3d(${p.s}, ${p.s}, ${p.s})`, visibility: "visible" };
+      }),
       { duration: quick ? 1 : SWAP_FLIGHT_MS, delay: flight.delay, easing: "linear", fill: "forwards" }
     );
     const off = window.setTimeout(onStart, flight.delay);
@@ -461,7 +502,14 @@ export function SwapFlight({ flight, landed, onStart, onLanded }: { flight: Flig
       data-to={flight.to}
       data-from={flight.seat}
     >
-      {flight.tile ? <TileGlyphSpan tile={flight.tile} /> : <span className="play-swap-flight-back" />}
+      {flight.tile ? (
+        <TileGlyphSpan tile={flight.tile} block />
+      ) : (
+        <span className="play-back">
+          <i className="tile-top" />
+          <TileSides />
+        </span>
+      )}
     </span>
   );
 }
