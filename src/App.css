@@ -15981,6 +15981,11 @@ button.sc-stat:active {
   height: 0.74em;
 }
 
+/* Yours, just given: hidden till its tile's come down from your hand. */
+.play-swap-tile.is-arriving {
+  visibility: hidden;
+}
+
 /* Taken: the place stays, outlined dashed on the felt - the tile's own
    footprint (the hidden block keeps its size), so you see a tile was
    there and has gone. */
@@ -16040,15 +16045,69 @@ button.sc-stat:active {
     0 0 0.3em rgba(255, 209, 102, 0.7);
 }
 
-/* The dice, a size up from the deal's. */
-.play-swap-dice-roll .play-swap-sum {
-  opacity: 0;
-  animation: play-swap-reveal 0.3s 1.3s ease-out forwards;
+/* The swap's dice: each with what it says beneath it, big - 2 次, 5 隻 -
+   coming up as that die lands (hidden till then, holding its room). */
+.play-swap-dice-title {
+  color: var(--play-gold);
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
 }
 
+.play-swap-throws {
+  display: flex;
+  gap: 2rem;
+}
+
+.play-swap-throw {
+  display: grid;
+  justify-items: center;
+  gap: 0.15rem;
+}
+
+.play-swap-throw > .play-die,
+.play-swap-throw > .play-die-slot {
+  font-size: clamp(34px, calc(11 * var(--vh)), 52px);
+}
+
+/* The second die's place, before it's thrown. */
+.play-die-slot {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+}
+
+.play-swap-result {
+  margin-top: 0.3rem;
+  color: var(--play-on-felt);
+  font-size: 2rem;
+  font-weight: 800;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  visibility: hidden;
+}
+
+.play-swap-result small {
+  margin-left: 0.1em;
+  color: var(--play-gold);
+  font-family: var(--play-cjk);
+  font-size: 0.6em;
+}
+
+.play-swap-result.is-said {
+  visibility: visible;
+  animation: play-swap-reveal 0.3s ease-out both;
+}
+
+.play-swap-what {
+  color: var(--play-on-felt-muted);
+  font-size: 0.72rem;
+}
+
+/* What each throw means, fading in as it's said. */
 @keyframes play-swap-reveal {
-  to {
-    opacity: 1;
+  from {
+    opacity: 0;
   }
 }
 
@@ -16118,15 +16177,61 @@ button.sc-stat:active {
 
 
 
-/* Your swap buttons are discs in the calls corner (.play-call): 放牌,
-   攞牌, and 照攞 for a lopsided take - amber, as a warning. While you swap
-   your hand is short, so the corner above its end would run into the
-   piles on the felt: the discs sit just beside your hand instead, at its
-   height. */
+/* Your swap buttons are discs in the calls corner (.play-call), where 上
+   碰 槓 go: 放牌, 攞牌, and 照攞 for a lopsided take - amber, as a warning.
+   While you swap your hand is short and the corner over its end would
+   slide in toward the piles, so they keep the corner a full hand has: over
+   your hand's row, near its right, at the calls' own height. */
+.play-hand-wrap:has(> .play-calls > .play-call.is-swap) {
+  position: static;
+}
+
 .play-calls:has(> .play-call.is-swap) {
-  bottom: 0;
-  right: auto;
-  left: calc(100% + 0.6rem);
+  right: 5.6rem;
+}
+
+/* How many you've picked, on 放牌 itself: a badge at its corner - gold
+   once it's right, red if too many. */
+.play-call.is-swap {
+  position: relative;
+}
+
+.play-swap-count {
+  position: absolute;
+  top: -0.45rem;
+  right: -0.35rem;
+  min-width: 2.1rem;
+  padding: 0.12rem 0.4rem;
+  border-radius: 999px;
+  background: #1c150e;
+  box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.5);
+  color: #fff;
+  font-family: system-ui, sans-serif !important;
+  font-size: 0.85rem !important;
+  font-weight: 800;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+
+.play-swap-count.is-ok {
+  background: var(--play-gold);
+  box-shadow: none;
+  color: var(--play-ink-on-gold);
+}
+
+.play-swap-count.is-over {
+  background: #c8372d;
+  box-shadow: none;
+}
+
+/* A greyed 放牌 (the wrong number picked): dimmed itself, its count still
+   plain to read. */
+.play-call.is-swap:disabled {
+  opacity: 1;
+  border-color: rgba(255, 209, 102, 0.3);
+  background: rgba(60, 45, 30, 0.88);
+  color: rgba(255, 240, 214, 0.5);
+  box-shadow: none;
 }
 
 /* One line each, however narrow the room beside your hand. */
@@ -16219,8 +16324,56 @@ button.sc-stat:active {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .play-swap-dice-roll .play-swap-sum {
+  .play-swap-result.is-said {
     animation: none;
-    opacity: 1;
   }
+}
+
+/* 換牌: what a side or far seat took, lying by its wall on the felt as its
+   melds do (so drawn alike - same angle, same size), a group for each
+   giver; each place unseen till its tile lands there. */
+.play-swap-got {
+  display: inline-flex;
+  gap: 0.25em;
+  transform-style: preserve-3d;
+}
+
+/* Running each seat's way, as its melds do. */
+.play-seat-left .play-swap-got {
+  flex-direction: column;
+}
+
+.play-seat-right .play-swap-got {
+  flex-direction: column-reverse;
+}
+
+.play-seat-top .play-swap-got {
+  flex-direction: row-reverse;
+}
+
+.play-swap-got-place {
+  display: inline-flex;
+  line-height: 0;
+  transform-style: preserve-3d;
+}
+
+.play-swap-got-place.is-waiting {
+  visibility: hidden;
+}
+
+/* What you've taken, above your hand: the hand's own standing 3D tiles
+   (.play-hand), a little smaller, a group for each giver. */
+.play-hand.play-swap-mine {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 0.25rem);
+  z-index: 3;
+  translate: -50% 0;
+  padding-top: 0;
+  font-size: calc(var(--play-hand) * 0.8);
+  pointer-events: none;
+}
+
+.play-swap-mine .play-swap-got {
+  gap: 0.35em;
 }
