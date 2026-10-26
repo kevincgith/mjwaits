@@ -1355,7 +1355,40 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
   const [handSettling, setHandSettling] = useState(false);
   const settleTimer = useRef(0);
   useEffect(() => () => window.clearTimeout(settleTimer.current), []);
-  const swapGiving = !!swapPhase && seated && !autoplay && !swapFlying && !handSettling && swapPhase.stage === "give" && !swapPhase.piles[HUMAN];
+  const swapDeal = swapPhase && swapPhase.round === 1 && swapPhase.stage === "give" && swapPhase.piles.every((p) => !p) ? JSON.stringify([game.dealer, game.dealerStreak, game.roundWind, game.dice, swapPhase.dice]) : null;
+  const [swapRolling, setSwapRolling] = useState(false);
+  const swapRolledFor = useRef<string | null>(null);
+  // (Before the screen's drawn too: no frame of the swap before its dice.)
+  useLayoutEffect(() => {
+    if (!swapDeal || rolling || swapRolledFor.current === swapDeal) return;
+    swapRolledFor.current = swapDeal;
+    setSwapRolling(true);
+  }, [swapDeal, rolling]);
+  // Timed from when the swap's dice are on screen - after the deal's own
+  // dice (rolling) - so both throws are seen in full.
+  useEffect(() => {
+    if (!swapRolling || rolling) return;
+    const id = window.setTimeout(() => setSwapRolling(false), swapDiceMs(speed === "fast" ? 0.6 : 1));
+    return () => window.clearTimeout(id);
+  }, [swapRolling, rolling, speed]);
+  // Your give - and its suggestion - only once both throws are seen: the
+  // deal's dice, then the swap's own (else the pick is made before the
+  // dice have said how many).
+  // (Dice still to be thrown count too: a new deal's first frame comes
+  // before its dice are set rolling.)
+  const dicePending =
+    (!!game.dice && rolledFor.current !== dealKey && game.discardsMade === 0 && game.phase.kind !== "over") || (swapDeal !== null && swapRolledFor.current !== swapDeal);
+  const swapGiving =
+    !!swapPhase &&
+    seated &&
+    !autoplay &&
+    !rolling &&
+    !swapRolling &&
+    !dicePending &&
+    !swapFlying &&
+    !handSettling &&
+    swapPhase.stage === "give" &&
+    !swapPhase.piles[HUMAN];
   const [swapHand, setSwapHand] = useState<number[]>([]);
   const [swapPicks, setSwapPicks] = useState<number[][]>([[], [], [], []]);
   // A step of the swap - in this deal (a new game's first step looks just
@@ -1396,22 +1429,6 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     setSwapHand(placesOf(givePlanList[at].tiles));
   };
   const givePlan = { names: givePlanList.map((p) => p.name), at: givePlanAt };
-  const swapDeal = swapPhase && swapPhase.round === 1 && swapPhase.stage === "give" && swapPhase.piles.every((p) => !p) ? JSON.stringify([game.dealer, game.dealerStreak, game.roundWind, game.dice, swapPhase.dice]) : null;
-  const [swapRolling, setSwapRolling] = useState(false);
-  const swapRolledFor = useRef<string | null>(null);
-  // (Before the screen's drawn too: no frame of the swap before its dice.)
-  useLayoutEffect(() => {
-    if (!swapDeal || rolling || swapRolledFor.current === swapDeal) return;
-    swapRolledFor.current = swapDeal;
-    setSwapRolling(true);
-  }, [swapDeal, rolling]);
-  // Timed from when the swap's dice are on screen - after the deal's own
-  // dice (rolling) - so both throws are seen in full.
-  useEffect(() => {
-    if (!swapRolling || rolling) return;
-    const id = window.setTimeout(() => setSwapRolling(false), swapDiceMs(speed === "fast" ? 0.6 : 1));
-    return () => window.clearTimeout(id);
-  }, [swapRolling, rolling, speed]);
   // Every take, flown: as it lands, the tiles taken all fly at once from
   // the piles they lay in to a row by the taker's hand - above your
   // concealed hand for yours, in front of the wall for the others' - in
