@@ -59,7 +59,7 @@ import {
 import { allTileKinds, getWaits, shanten, sortTiles, tileKey, tileLabel, type Tile } from "@mjwaits/shared/engine/mahjong";
 import { blindPicks, botGive, botSplit, DEFAULT_SWAP_RULES, pileLeft, type SwapPhase, type SwapRules } from "@mjwaits/shared/engine/swap";
 import { PlayDie } from "./PlayDie";
-import { flightPath, SWAP_FLIGHT_MS, SWAP_ROUND_HOLD_MS, SwapControls, SwapDice, swapDiceMs, SwapFlight, SwapPond, SwapSheet, type Flight } from "./PlaySwap";
+import { flightPath, SWAP_FLIGHT_MS, SWAP_ROUND_HOLD_MS, SWAP_TILT_FLAT, SWAP_TILT_STANDING, SwapControls, SwapDice, swapDiceMs, SwapFlight, SwapPond, SwapSheet, tiltShown, type Flight } from "./PlaySwap";
 import type { BonusTile } from "@mjwaits/shared/engine/scoring";
 import { BonusGlyphSpan, TileGlyphSpan, TileSides } from "./TileGlyphs";
 import {
@@ -95,7 +95,7 @@ import {
 import { scoreView, type ResultView } from "@mjwaits/shared/engine/view";
 import { MYSTERY_BOT, REACTIONS, type Reaction, type TableClientMessage, type TableState } from "@mjwaits/shared/protocol/table";
 import { BLANK, seatState } from "./lib/seatState";
-import { withEvents, type ScoreGame } from "@mjwaits/shared/engine/ledger";
+import { replayCached, withEvents, type ScoreGame } from "@mjwaits/shared/engine/ledger";
 import { carriedOver, newPlayLedger, playEvents, uniqueNames } from "@mjwaits/shared/engine/playLedger";
 import { PlayScores } from "./scores/playScores";
 import { ReviewSheet, type Decision } from "./PlayReview";
@@ -213,6 +213,7 @@ interface Saved {
   oneTap?: boolean;
   multiWin?: boolean; // 一炮多響 (else 截胡)
   swapRules?: SwapRules; // 換牌: which rounds, and what the dice mean
+  jackpot?: number; // 獎池: each player's share per draw (0: off)
   record?: boolean;
   // The bot ids at seats 1-3.
   opponents?: string[];
@@ -496,11 +497,28 @@ function Compass({ game, active, center, countdown }: { game: GameState; active:
   );
 }
 
-function CallBurst({ seat, label }: { seat: number; label: string }) {
+// Signed, as a bubble shows what a seat got or paid: +15, −5.
+const signed = (n: number) => `${n > 0 ? "+" : "−"}${Math.abs(n)}`;
+
+// A call or a bonus, over the seat that made it - and with a bonus, what
+// every other seat it touches pays (or gets) over theirs, at the same time.
+// Seat -1: no one made it (the jackpot's share on a draw) - just the payments.
+function CallBurst({ seat, label, deltas }: { seat: number; label: string; deltas?: number[] }) {
   return (
-    <span key={`${seat}${label}`} className={`play-burst at-${SIDES[seat]}${label.length > 1 ? " is-long" : ""}`} aria-live="polite">
-      {label}
-    </span>
+    <>
+      {seat >= 0 && (
+        <span key={`${seat}${label}`} className={`play-burst at-${SIDES[seat]}${label.length > 1 ? " is-long" : ""}`} aria-live="polite">
+          {label}
+        </span>
+      )}
+      {deltas?.map((d, i) =>
+        i === seat || !d ? null : (
+          <span key={i} className={`play-burst is-long is-pay at-${SIDES[i]}${d < 0 ? " is-minus" : ""}`}>
+            {signed(d)}
+          </span>
+        )
+      )}
+    </>
   );
 }
 
@@ -653,6 +671,8 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
   const [oneTap, setOneTap] = useState(() => saved?.oneTap ?? false);
   // 一炮多響: a table setting, kept on the game itself so it carries hand to hand.
   const [multiWin, setMultiWin] = useState(() => saved?.multiWin ?? saved?.game?.multiWin ?? false);
+  // 獎池: each draw everyone puts this in the pot; a 自摸 takes it all. 0: off.
+  const [jackpot, setJackpot] = useState(() => saved?.jackpot ?? 0);
   useEffect(() => {
     if (!online && !!game.multiWin !== multiWin) setGame((g) => ({ ...g, multiWin }));
   }, [game, multiWin, online]);
@@ -692,7 +712,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     paidFor.current = game.dice ?? null;
     setTotals((t) => t.map((v, i) => v + bonus.deltas[i]));
     setGame((g) => (g.diceBonus ? { ...g, diceBonus: { ...g.diceBonus, paid: true } } : g));
-    showBurst(game.dealer, bonus.name);
+    showBurst(game.dealer, `${bonus.name} ${signed(bonus.deltas[game.dealer])}`, bonus.deltas);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rolling, game.diceBonus]);
   // Table bonuses (flowers, 暗槓) paid as they're earned, the
@@ -709,7 +729,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     if (rolling || all.length <= shownBonuses.current.count) return;
     shownBonuses.current.count = all.length;
     const last = all[all.length - 1];
-    showBurst(last.seat, `${last.name} ${last.deltas[last.seat] > 0 ? "+" : "−"}${Math.abs(last.deltas[last.seat])}`);
+    showBurst(last.seat, `${last.name} ${signed(last.deltas[last.seat])}`, last.deltas);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [online, rolling, game.tableBonuses]);
   useEffect(() => {
@@ -726,7 +746,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     for (const b of due) keys.add(String(all.indexOf(b)));
     setTotals((t) => t.map((v, i) => v + due.reduce((sum, b) => sum + b.deltas[i], 0)));
     const last = due[due.length - 1];
-    showBurst(last.seat, `${last.name} ${last.deltas[last.seat] > 0 ? "+" : "−"}${Math.abs(last.deltas[last.seat])}`);
+    showBurst(last.seat, `${last.name} ${signed(last.deltas[last.seat])}`, last.deltas);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rolling, game.tableBonuses]);
   // How long the roll shows - timed on its own, so a re-run of the effect
@@ -759,16 +779,38 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     const fresh = newPlayLedger(playerNames(opponents), localGame.dealer);
     return { ...fresh, events: playEvents(null, localGame, fresh.seats) };
   });
-  // Every change to the game adds what it scored (a hand's end, a bonus, 投降).
+  // Every change to the game adds what it scored (a hand's end, a bonus, 投降) -
+  // and, at a hand's end, the jackpot's share: into the pot on a draw, all of
+  // it to a 自摸 (the record and the totals alike).
   const ledgerFrom = useRef(localGame);
+  const [potNote, setPotNote] = useState<{ fed: number; pot: number } | { won: number; seat: number } | null>(null);
   useEffect(() => {
     const before = ledgerFrom.current;
     ledgerFrom.current = localGame;
     if (before === localGame) return;
-    const evs = playEvents(before, localGame, localLedger.seats);
+    const was = replayCached(localLedger);
+    const evs = playEvents(before, localGame, was.seats, Date.now(), { perDraw: jackpot, pot: was.pot });
     if (evs.length) setLedger((l) => withEvents(l, evs));
+    if (localGame.phase.kind !== "over" || before.phase.kind === "over") {
+      if (localGame.phase.kind !== "over") setPotNote(null);
+      return;
+    }
+    const r = localGame.phase.result;
+    if (r.winner === null && jackpot > 0) {
+      setTotals((t) => t.map((v) => v - jackpot));
+      setPotNote({ fed: jackpot, pot: was.pot + jackpot * 4 });
+      showBurst(-1, "", [0, 1, 2, 3].map(() => -jackpot));
+    } else if (r.winner !== null && r.from === null && was.pot > 0) {
+      const seat = r.winner;
+      setTotals((t) => t.map((v, i) => (i === seat ? v + was.pot : v)));
+      setPotNote({ won: was.pot, seat });
+      // After its 自摸.
+      const pot = was.pot;
+      window.setTimeout(() => showBurst(seat, `獎池 ${signed(pot)}`), BURST_MS);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [localGame]);
+  const potNow = online ? 0 : replayCached(localLedger).pot;
   // New opponents mid-game: a new seating in the record.
   useEffect(() => {
     const names = playerNames(opponents);
@@ -1003,7 +1045,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
   const initialOf = (seat: number) =>
     seat === HUMAN && seated ? "你" : bots[seat] ? (mysteryStyle(bots[seat]!) ? "?" : bots[seat]!.name[0]) : nameOf(seat).slice(0, 1).toUpperCase();
   const [selected, setSelected] = useState<number | null>(null);
-  const [burst, setBurst] = useState<{ seat: number; label: string; id: number } | null>(null);
+  const [burst, setBurst] = useState<{ seat: number; label: string; id: number; deltas?: number[] } | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   // New game wipes the running totals, so it takes a second tap.
   const [confirmNew, setConfirmNew] = useState(false);
@@ -1021,8 +1063,8 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
 
   // This device's own game (never an online one).
   useEffect(
-    () => save({ game: localGame, totals: localTotals, hint, timer, opponents, speed, oneTap, record, multiWin, swapRules, ledger: localLedger }),
-    [localGame, localTotals, hint, timer, opponents, speed, oneTap, record, multiWin, swapRules, localLedger]
+    () => save({ game: localGame, totals: localTotals, hint, timer, opponents, speed, oneTap, record, multiWin, swapRules, jackpot, ledger: localLedger }),
+    [localGame, localTotals, hint, timer, opponents, speed, oneTap, record, multiWin, swapRules, jackpot, localLedger]
   );
 
   // The menu closes on a tap anywhere outside it, and disarms New game.
@@ -1055,10 +1097,11 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     setGame(next);
   };
 
-  const showBurst = (seat: number, label: string) => {
+  // `deltas`: a bonus's payments, for the bubbles over everyone it touches.
+  const showBurst = (seat: number, label: string, deltas?: number[]) => {
     playSound(burstSound(label));
     const id = Date.now();
-    setBurst({ seat, label, id });
+    setBurst({ seat, label, id, deltas });
     window.setTimeout(() => setBurst((b) => (b?.id === id ? null : b)), BURST_MS);
   };
 
@@ -1353,7 +1396,10 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
       const givers = [...new Set(theirs.map((f) => f.g))];
       theirs.forEach((f) => {
         const r = f.at;
-        const fits = turn(f.g) ? Math.min(r.width / GH, r.height / GW) : Math.min(r.width / GW, r.height / GH);
+        // Tipped as its pile lies, its height on screen shrunk by the tip.
+        const tilt: [number, number] = [f.g === HUMAN ? SWAP_TILT_STANDING : SWAP_TILT_FLAT, taker === HUMAN ? SWAP_TILT_STANDING : SWAP_TILT_FLAT];
+        const shown = tiltShown(tilt[0]);
+        const fits = turn(f.g) ? Math.min(r.width / GH, r.height / (GW * shown)) : Math.min(r.width / GW, r.height / (GH * shown));
         next.push({
           id: now + next.length,
           to: taker,
@@ -1364,6 +1410,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
           tile: seated && (taker === HUMAN || f.g === HUMAN) ? was.piles[f.g]![f.i]! : null,
           from: { left: r.left + r.width / 2 - GW / 2, top: r.top + r.height / 2 - GH / 2, width: w },
           delay: 0,
+          tilt,
           row: {
             group: givers.indexOf(f.g),
             start: { x: r.left + r.width / 2, y: r.top + r.height / 2 },
@@ -1487,11 +1534,14 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
         // touch under, so its neighbours stay clear.
         const GH = GW / 0.78;
         // ...and never wider along the row than the spacing of its places,
-        // so neighbours land clear of each other.
+        // so neighbours land clear of each other - turned along a side
+        // seat's row, its width runs up the felt, shrunk by the tip.
+        const alongShown = ordered[0].row!.turnTo ? tiltShown(ordered[0].tilt[1]) : 1;
         const pitch = spots.length > 1 ? Math.min(...spots.slice(1).map((p, j) => Math.hypot(centre(p.r).x - centre(spots[j].r).x, centre(p.r).y - centre(spots[j].r).y))) : Infinity;
+        const shown = tiltShown(ordered[0].tilt[1]);
         const endSizes = ordered.map((_, j) => {
           const r = spots[j].r;
-          return Math.min(1.3, Math.sqrt((r.width * r.height) / (GW * GH)) * 0.9, (pitch * 0.92) / GW);
+          return Math.min(1.3, Math.sqrt((r.width * r.height) / (GW * GH * shown)) * 0.9, (pitch * 0.92) / (GW * alongShown));
         });
         // Coming in square to the row, toward the wall.
         const side = SIDES[taker];
@@ -1572,7 +1622,10 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     const GW = (0.78 * w) / 0.74;
     const GH = GW / 0.78;
     const centre = (r: DOMRect) => ({ x: r.left + r.width / 2, y: r.top + r.height / 2 });
-    const size = (r: DOMRect) => Math.sqrt((r.width * r.height) / (GW * GH)) * 0.93;
+    // Standing all the way, as your hand does - its height on screen shrunk by
+    // the tip - and a touch under, so the tiles side by side in your hand set
+    // off clear of each other.
+    const size = (r: DOMRect) => Math.sqrt((r.width * r.height) / (GW * GH * tiltShown(SWAP_TILT_STANDING))) * 0.88;
     const starts = from.at.map(centre);
     const paths = flightPath(starts, places.map(centre), 0, 0, from.at.map(size), places.map(size), { x: 0, y: -1 });
     const now = Date.now();
@@ -1587,6 +1640,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
         from: { left: starts[i].x - GW / 2, top: starts[i].y - GH / 2, width: w },
         path: paths[i],
         delay: 0,
+        tilt: [SWAP_TILT_STANDING, SWAP_TILT_STANDING],
       }))
     );
   }, [myPileNow]);
@@ -2244,6 +2298,20 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
                 </span>
               </div>
               <div className="play-menu-row">
+                {/* Each draw everyone puts this much in; a 自摸 takes the lot. */}
+                <span title="Each draw everyone puts this much in the pot; a 自摸 takes all of it">
+                  獎池 Jackpot
+                  {potNow > 0 && <span className="play-menu-note"> · {potNow} in it</span>}
+                </span>
+                <span className="play-menu-seg">
+                  {[0, 5, 10].map((n) => (
+                    <button key={n} type="button" className={jackpot === n ? "toggle-on" : undefined} aria-pressed={jackpot === n} onClick={() => setJackpot(n)}>
+                      {n ? n : "Off"}
+                    </button>
+                  ))}
+                </span>
+              </div>
+              <div className="play-menu-row">
                 <span>
                   Record my play
                   {record && recorded !== null && <span className="play-menu-note"> · {recorded}</span>}
@@ -2581,6 +2649,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
             {roundLabel(game)}
           </span>
           <span className="play-bar-left">剩:{liveTilesLeft(game)}張</span>
+          {potNow > 0 && <span className="play-bar-left play-bar-pot">獎池:{potNow}</span>}
           {game.dice && !rolling && (
             <span className="play-bar-dice" aria-label={`Dice ${game.dice.join(", ")}`}>
               {game.dice.map((d, i) => (
@@ -2623,7 +2692,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
           {me.riichi && !over && <span className="play-bar-prompt">叮 - your hand is locked</span>}
         </div>
 
-        {burst && <CallBurst key={burst.id} seat={burst.seat} label={burst.label} />}
+        {burst && <CallBurst key={burst.id} seat={burst.seat} label={burst.label} deltas={burst.deltas} />}
 
         {swapPhase && swapRolling && !rolling && <SwapDice phase={swapPhase} factor={speed === "fast" ? 0.6 : 1} />}
         {giveFlights.map((f) => (
@@ -2769,6 +2838,13 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
                   </div>
                 );
               })}
+              {potNote && (
+                <p className="play-result-pot">
+                  {"fed" in potNote
+                    ? `獎池 · everyone puts ${potNote.fed} in - ${potNote.pot} in the pot`
+                    : `獎池 · ${potNote.seat === HUMAN ? "you take" : `${nameOf(potNote.seat)} takes`} the pot, +${potNote.won}`}
+                </p>
+              )}
               {milestones.length > 0 && <p className="play-result-milestone">🏅 First time: {milestones.join(" · ")}</p>}
               <div className="play-result-deltas">
                 {result.deltas.map((d, seat) => (

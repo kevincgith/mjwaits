@@ -7358,6 +7358,20 @@ html.playing body {
   top: 34%;
 }
 
+/* What a bonus costs (or brings) the others, over each of them: a size
+   down from the bonus itself, red for paying, green for getting. */
+.play-burst.is-pay {
+  font-size: clamp(1.2rem, calc(7 * var(--vh)), 2rem);
+  color: #7ee08a;
+}
+
+.play-burst.is-pay.is-minus {
+  color: #ff8f80;
+  box-shadow:
+    0 0 0 0.05em rgba(255, 143, 128, 0.85),
+    0 0.12em 0.4em rgba(0, 0, 0, 0.5);
+}
+
 @keyframes play-burst {
   0% {
     scale: 0.3;
@@ -7677,7 +7691,8 @@ html.playing body {
    other way, the jade back on top. --tile-x/-y/-w/-h: where the top sits
    in the tile's box. */
 .play-felt,
-.play-hand {
+.play-hand,
+.play-swap-flight {
   --play-thick: 0.42em;
   /* How round a tile's upright edges are (and its top's corners). */
   --tile-r: 0.09em;
@@ -7688,7 +7703,7 @@ html.playing body {
   display: none;
 }
 
-:is(.play-felt, .play-hand) .tile-glyph.tile-art {
+:is(.play-felt, .play-hand, .play-swap-flight) .tile-glyph.tile-art {
   transform-style: preserve-3d;
   --tile-x: 0.03em;
   --tile-y: 0.043em;
@@ -7701,14 +7716,14 @@ html.playing body {
    at the felt), and inside it a plate at half its height - a core, so if
    two of its sides ever meet imperfectly you see the tile there, not the
    felt. (As a CSS die does it.) */
-:is(.play-felt, .play-hand) .tile-glyph.tile-art,
-:is(.play-felt, .play-hand) .play-back {
+:is(.play-felt, .play-hand, .play-swap-flight) .tile-glyph.tile-art,
+:is(.play-felt, .play-hand, .play-swap-flight) .play-back {
   border-radius: calc(var(--tile-r) * 1.5);
   box-shadow: 0 0.03em 0.28em rgba(0, 0, 0, 0.3);
 }
 
-:is(.play-felt, .play-hand) .tile-glyph.tile-art::after,
-:is(.play-felt, .play-hand) .play-back::after {
+:is(.play-felt, .play-hand, .play-swap-flight) .tile-glyph.tile-art::after,
+:is(.play-felt, .play-hand, .play-swap-flight) .play-back::after {
   content: "";
   position: absolute;
   left: var(--tile-x);
@@ -7720,17 +7735,17 @@ html.playing body {
   transform: translateZ(calc(var(--play-thick) / 2));
 }
 
-:is(.play-felt, .play-hand) .play-back::after {
+:is(.play-felt, .play-hand, .play-swap-flight) .play-back::after {
   background: var(--play-back);
 }
 
-:is(.play-felt, .play-hand) img.tile-face {
+:is(.play-felt, .play-hand, .play-swap-flight) img.tile-face {
   border-radius: var(--tile-r);
   transform: translateZ(var(--play-thick));
   box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.25);
 }
 
-:is(.play-felt, .play-hand) .play-back {
+:is(.play-felt, .play-hand, .play-swap-flight) .play-back {
   position: relative;
   background: none;
   box-shadow: none;
@@ -7742,7 +7757,7 @@ html.playing body {
   --tile-sides: #f2ede0, var(--play-ivory) 42%, #7fd98c 50%, var(--play-back) 60%, var(--play-back-edge);
 }
 
-:is(.play-felt, .play-hand) .play-back > .tile-top {
+:is(.play-felt, .play-hand, .play-swap-flight) .play-back > .tile-top {
   display: block;
   position: absolute;
   inset: 0;
@@ -7752,7 +7767,7 @@ html.playing body {
   transform: translateZ(var(--play-thick));
 }
 
-:is(.play-felt, .play-hand) .tile-side {
+:is(.play-felt, .play-hand, .play-swap-flight) .tile-side {
   display: block;
   position: absolute;
 }
@@ -7763,8 +7778,8 @@ html.playing body {
    the top. Light falls from in front, as on a real table: the sides facing
    you (and away) are lit, the ones facing left and right a shade darker.
    On a tile turned a quarter that's its ends facing you, so it swaps. */
-:is(.play-felt, .play-hand) .tile-glyph.tile-art,
-:is(.play-felt, .play-hand) .play-back {
+:is(.play-felt, .play-hand, .play-swap-flight) .tile-glyph.tile-art,
+:is(.play-felt, .play-hand, .play-swap-flight) .play-back {
   --shade-long: 0;
   --shade-end: 0.14;
 }
@@ -7775,7 +7790,7 @@ html.playing body {
 .play-pond-right .play-pond-tile:not(.is-riichi) > .tile-glyph,
 .play-pond-top .play-pond-tile.is-riichi > .tile-glyph,
 .play-pond-bottom .play-pond-tile.is-riichi > .tile-glyph,
-:is(.play-felt, .play-hand) .play-win-tile > .tile-glyph {
+:is(.play-felt, .play-hand, .play-swap-flight) .play-win-tile > .tile-glyph {
   --shade-long: 0.14;
   --shade-end: 0;
 }
@@ -7785,7 +7800,7 @@ html.playing body {
   --shade-end: 0.14;
 }
 
-:is(.play-felt, .play-hand) .tile-side.is-near {
+:is(.play-felt, .play-hand, .play-swap-flight) .tile-side.is-near {
   left: calc(var(--tile-x) + var(--tile-r) - 0.5px);
   top: calc(var(--tile-y) + var(--tile-h));
   width: calc(var(--tile-w) - 2 * var(--tile-r) + 1px);
@@ -7795,7 +7810,7 @@ html.playing body {
   transform: rotateX(90deg);
 }
 
-:is(.play-felt, .play-hand) .tile-side.is-far {
+:is(.play-felt, .play-hand, .play-swap-flight) .tile-side.is-far {
   left: calc(var(--tile-x) + var(--tile-r) - 0.5px);
   top: calc(var(--tile-y) - var(--play-thick));
   width: calc(var(--tile-w) - 2 * var(--tile-r) + 1px);
@@ -7805,7 +7820,7 @@ html.playing body {
   transform: rotateX(-90deg);
 }
 
-:is(.play-felt, .play-hand) .tile-side.is-right {
+:is(.play-felt, .play-hand, .play-swap-flight) .tile-side.is-right {
   left: calc(var(--tile-x) + var(--tile-w));
   top: calc(var(--tile-y) + var(--tile-r) - 0.5px);
   width: var(--play-thick);
@@ -7815,7 +7830,7 @@ html.playing body {
   transform: rotateY(-90deg);
 }
 
-:is(.play-felt, .play-hand) .tile-side.is-left {
+:is(.play-felt, .play-hand, .play-swap-flight) .tile-side.is-left {
   left: calc(var(--tile-x) - var(--play-thick));
   top: calc(var(--tile-y) + var(--tile-r) - 0.5px);
   width: var(--play-thick);
@@ -7829,90 +7844,90 @@ html.playing body {
    from its foot (a chord of the rounding) like the long sides are, and
    shaded by which way it faces - from the long side's light to the end's
    shade. (Generated: centre +/- r, angles every 30°.) */
-:is(.play-felt, .play-hand) .tile-side.is-corner {
+:is(.play-felt, .play-hand, .play-swap-flight) .tile-side.is-corner {
   width: calc(var(--tile-r) * 0.5176 + 1px);
   height: var(--play-thick);
   transform-origin: 0 0;
 }
 
-:is(.play-felt, .play-hand) .tile-side.is-nr1 {
+:is(.play-felt, .play-hand, .play-swap-flight) .tile-side.is-nr1 {
   left: calc(var(--tile-x) + var(--tile-w) - var(--tile-r) + var(--tile-r) * 0.0000);
   top: calc(var(--tile-y) + var(--tile-h) - var(--tile-r) + var(--tile-r) * 1.0000);
   background: linear-gradient(rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.26)), rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.26))), linear-gradient(to bottom, var(--tile-sides));
   transform: rotateZ(-15.00deg) rotateX(90deg);
 }
 
-:is(.play-felt, .play-hand) .tile-side.is-nr2 {
+:is(.play-felt, .play-hand, .play-swap-flight) .tile-side.is-nr2 {
   left: calc(var(--tile-x) + var(--tile-w) - var(--tile-r) + var(--tile-r) * 0.5000);
   top: calc(var(--tile-y) + var(--tile-h) - var(--tile-r) + var(--tile-r) * 0.8660);
   background: linear-gradient(rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.71)), rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.71))), linear-gradient(to bottom, var(--tile-sides));
   transform: rotateZ(-45.00deg) rotateX(90deg);
 }
 
-:is(.play-felt, .play-hand) .tile-side.is-nr3 {
+:is(.play-felt, .play-hand, .play-swap-flight) .tile-side.is-nr3 {
   left: calc(var(--tile-x) + var(--tile-w) - var(--tile-r) + var(--tile-r) * 0.8660);
   top: calc(var(--tile-y) + var(--tile-h) - var(--tile-r) + var(--tile-r) * 0.5000);
   background: linear-gradient(rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.96)), rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.96))), linear-gradient(to bottom, var(--tile-sides));
   transform: rotateZ(-75.00deg) rotateX(90deg);
 }
 
-:is(.play-felt, .play-hand) .tile-side.is-nl1 {
+:is(.play-felt, .play-hand, .play-swap-flight) .tile-side.is-nl1 {
   left: calc(var(--tile-x) + var(--tile-r) + var(--tile-r) * -1.0000);
   top: calc(var(--tile-y) + var(--tile-h) - var(--tile-r) + var(--tile-r) * 0.0000);
   background: linear-gradient(rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.96)), rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.96))), linear-gradient(to bottom, var(--tile-sides));
   transform: rotateZ(75.00deg) rotateX(90deg);
 }
 
-:is(.play-felt, .play-hand) .tile-side.is-nl2 {
+:is(.play-felt, .play-hand, .play-swap-flight) .tile-side.is-nl2 {
   left: calc(var(--tile-x) + var(--tile-r) + var(--tile-r) * -0.8660);
   top: calc(var(--tile-y) + var(--tile-h) - var(--tile-r) + var(--tile-r) * 0.5000);
   background: linear-gradient(rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.71)), rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.71))), linear-gradient(to bottom, var(--tile-sides));
   transform: rotateZ(45.00deg) rotateX(90deg);
 }
 
-:is(.play-felt, .play-hand) .tile-side.is-nl3 {
+:is(.play-felt, .play-hand, .play-swap-flight) .tile-side.is-nl3 {
   left: calc(var(--tile-x) + var(--tile-r) + var(--tile-r) * -0.5000);
   top: calc(var(--tile-y) + var(--tile-h) - var(--tile-r) + var(--tile-r) * 0.8660);
   background: linear-gradient(rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.26)), rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.26))), linear-gradient(to bottom, var(--tile-sides));
   transform: rotateZ(15.00deg) rotateX(90deg);
 }
 
-:is(.play-felt, .play-hand) .tile-side.is-fl1 {
+:is(.play-felt, .play-hand, .play-swap-flight) .tile-side.is-fl1 {
   left: calc(var(--tile-x) + var(--tile-r) + var(--tile-r) * -0.0000);
   top: calc(var(--tile-y) + var(--tile-r) + var(--tile-r) * -1.0000);
   background: linear-gradient(rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.26)), rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.26))), linear-gradient(to bottom, var(--tile-sides));
   transform: rotateZ(165.00deg) rotateX(90deg);
 }
 
-:is(.play-felt, .play-hand) .tile-side.is-fl2 {
+:is(.play-felt, .play-hand, .play-swap-flight) .tile-side.is-fl2 {
   left: calc(var(--tile-x) + var(--tile-r) + var(--tile-r) * -0.5000);
   top: calc(var(--tile-y) + var(--tile-r) + var(--tile-r) * -0.8660);
   background: linear-gradient(rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.71)), rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.71))), linear-gradient(to bottom, var(--tile-sides));
   transform: rotateZ(135.00deg) rotateX(90deg);
 }
 
-:is(.play-felt, .play-hand) .tile-side.is-fl3 {
+:is(.play-felt, .play-hand, .play-swap-flight) .tile-side.is-fl3 {
   left: calc(var(--tile-x) + var(--tile-r) + var(--tile-r) * -0.8660);
   top: calc(var(--tile-y) + var(--tile-r) + var(--tile-r) * -0.5000);
   background: linear-gradient(rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.96)), rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.96))), linear-gradient(to bottom, var(--tile-sides));
   transform: rotateZ(105.00deg) rotateX(90deg);
 }
 
-:is(.play-felt, .play-hand) .tile-side.is-fr1 {
+:is(.play-felt, .play-hand, .play-swap-flight) .tile-side.is-fr1 {
   left: calc(var(--tile-x) + var(--tile-w) - var(--tile-r) + var(--tile-r) * 1.0000);
   top: calc(var(--tile-y) + var(--tile-r) + var(--tile-r) * -0.0000);
   background: linear-gradient(rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.96)), rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.96))), linear-gradient(to bottom, var(--tile-sides));
   transform: rotateZ(-105.00deg) rotateX(90deg);
 }
 
-:is(.play-felt, .play-hand) .tile-side.is-fr2 {
+:is(.play-felt, .play-hand, .play-swap-flight) .tile-side.is-fr2 {
   left: calc(var(--tile-x) + var(--tile-w) - var(--tile-r) + var(--tile-r) * 0.8660);
   top: calc(var(--tile-y) + var(--tile-r) + var(--tile-r) * -0.5000);
   background: linear-gradient(rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.71)), rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.71))), linear-gradient(to bottom, var(--tile-sides));
   transform: rotateZ(-135.00deg) rotateX(90deg);
 }
 
-:is(.play-felt, .play-hand) .tile-side.is-fr3 {
+:is(.play-felt, .play-hand, .play-swap-flight) .tile-side.is-fr3 {
   left: calc(var(--tile-x) + var(--tile-w) - var(--tile-r) + var(--tile-r) * 0.5000);
   top: calc(var(--tile-y) + var(--tile-r) + var(--tile-r) * -0.8660);
   background: linear-gradient(rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.26)), rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.26))), linear-gradient(to bottom, var(--tile-sides));
@@ -7982,24 +7997,24 @@ html.playing body {
 
 /* One panel for a whole corner: from the first panel's foot, across the
    rounding at 45deg (see TileSides). */
-:is(.play-felt, .play-hand) .tile-side.is-corner.is-whole {
+:is(.play-felt, .play-hand, .play-swap-flight) .tile-side.is-corner.is-whole {
   width: calc(var(--tile-r) * 1.4142 + 1px);
   background: linear-gradient(rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.5)), rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.5))), linear-gradient(to bottom, var(--tile-sides));
 }
 
-:is(.play-felt, .play-hand) .tile-side.is-nr1.is-whole {
+:is(.play-felt, .play-hand, .play-swap-flight) .tile-side.is-nr1.is-whole {
   transform: rotateZ(-45deg) rotateX(90deg);
 }
 
-:is(.play-felt, .play-hand) .tile-side.is-nl1.is-whole {
+:is(.play-felt, .play-hand, .play-swap-flight) .tile-side.is-nl1.is-whole {
   transform: rotateZ(45deg) rotateX(90deg);
 }
 
-:is(.play-felt, .play-hand) .tile-side.is-fl1.is-whole {
+:is(.play-felt, .play-hand, .play-swap-flight) .tile-side.is-fl1.is-whole {
   transform: rotateZ(135deg) rotateX(90deg);
 }
 
-:is(.play-felt, .play-hand) .tile-side.is-fr1.is-whole {
+:is(.play-felt, .play-hand, .play-swap-flight) .tile-side.is-fr1.is-whole {
   transform: rotateZ(-135deg) rotateX(90deg);
 }
 
@@ -8559,6 +8574,8 @@ html.playing body {
 }
 
 /* A big pattern won for the first time, on the result card. */
+/* The jackpot's share this hand: in on a draw, or taken by a 自摸. */
+.play-result-pot,
 .play-result-milestone {
   margin: 0;
   color: var(--play-gold);
@@ -16153,24 +16170,15 @@ button.sc-stat:active {
   line-height: 0;
   pointer-events: none;
   visibility: hidden;
+  transform-style: preserve-3d;
 }
 
-.play-swap-flight img.tile-face {
-  box-shadow: 0 0.12em 0.3em rgba(0, 0, 0, 0.45);
-}
-
-/* Face down in flight: the jade back, a face-up tile's size (0.78em by
-   1em, as a tile's art is drawn), its ivory edge below. */
-.play-swap-flight-back {
-  display: block;
-  width: 0.78em;
-  height: 1em;
-  border-radius: 0.08em;
-  background: linear-gradient(160deg, #4cc062, var(--play-back) 55%, var(--play-back-edge));
-  box-shadow:
-    inset 0 0.02em 0 rgba(255, 255, 255, 0.35),
-    0 0.07em 0 var(--play-ivory),
-    0 0.12em 0.3em rgba(0, 0, 0, 0.45);
+/* In the air it's the table's own block (the 3D rules for the felt and
+   your hand take it in too): tipped as it lies where it left - flat on the
+   felt, or standing as your hand does - and tipped on the way to how it
+   lies where it lands (see SwapFlight). */
+.play-swap-flight .play-back {
+  margin: 0;
 }
 
 
@@ -16312,15 +16320,52 @@ button.sc-stat:active {
   text-align: center;
 }
 
-.play-swap-reset {
-  width: 100%;
-  margin-top: 1rem;
-  min-height: 2.4rem;
-  border: 1px solid var(--separator);
-  border-radius: 0.7rem;
-  background: none;
+.play-swap-presets {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.play-swap-presets button {
+  flex: 1;
+  display: grid;
+  gap: 0.1rem;
+  padding: 0.4rem 0.3rem;
+  border: none;
+  border-radius: 0.6rem;
+  background: var(--fill);
+  color: var(--text);
+}
+
+.play-swap-presets button b {
+  font-size: 0.95rem;
+}
+
+.play-swap-presets button span {
+  font-size: 0.7rem;
   color: var(--text-muted);
-  font-size: 0.8rem;
+}
+
+.play-swap-presets button.toggle-on {
+  background: var(--play-seg-on);
+  box-shadow: inset 0 0 0 1px var(--play-gold);
+  color: var(--play-gold);
+}
+
+/* Keeps what's set and closes (closing any other way leaves things as
+   they were) - held at the sheet's foot as it scrolls, always to hand. */
+.play-swap-confirm {
+  position: sticky;
+  bottom: 0;
+  width: 100%;
+  margin-top: 1.1rem;
+  min-height: 2.8rem;
+  border: none;
+  border-radius: 0.8rem;
+  background: var(--play-gold);
+  color: #1c120a;
+  font-size: 1rem;
+  font-weight: 800;
+  box-shadow: 0 -0.6rem 0.8rem var(--surface);
 }
 
 @media (prefers-reduced-motion: reduce) {
