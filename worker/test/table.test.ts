@@ -462,6 +462,76 @@ describe("timers", () => {
   });
 });
 
+describe("嗌錯, 自動 and bot speed", () => {
+  const state = (code: string) =>
+    runInDurableObject(stubFor(code), (_t: Table, st) => JSON.parse(st.storage.sql.exec<{ value: string }>("SELECT value FROM meta WHERE key = 'state'").one().value));
+
+  it("takes back a call (嗌錯): the discard plays on as passed, and the caller pays each player", { timeout: 120_000 }, async () => {
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const { host } = await withBots(0);
+      host.send({ t: "start" });
+      // Play (punging when offered) until a pung of yours can be taken back.
+      const called = await playUntil([host], (s) => !!s.options?.turn?.retract || s.view?.phase.kind === "over").catch(() => null);
+      if (!called || !called.options?.turn?.retract) {
+        host.ws.close(1000, "bye");
+        continue;
+      }
+      const melds = called.view!.players[0].melds.length;
+      const totals = called.totals;
+      host.send({ t: "retract", step: called.step });
+      const after = await host.table((s) => s.step > called.step);
+      expect(host.errors).toEqual([]);
+      expect(after.view!.players[0].melds.length).toBe(melds - 1);
+      expect(after.view!.tableBonuses.at(-1)).toMatchObject({ seat: 0, name: "嗌錯" });
+      expect(after.totals[0]).toBe(totals[0] - 15);
+      for (const s of [1, 2, 3]) expect(after.totals[s]).toBe(totals[s] + 5);
+      expect(after.options?.turn?.retract).toBeFalsy();
+      // Gone: a second take-back is refused.
+      host.send({ t: "retract", step: after.step });
+      expect((await host.error()).code).toMatch(/illegal|stale/);
+      return;
+    }
+    throw new Error("no pung came up to take back");
+  });
+
+  it("plays your seat as you watch (自動) - between hands too - until you take it back", { timeout: 120_000 }, async () => {
+    const { code, host } = await withBots(0);
+    // A little pause, so the hand's end is sent before the next deal (it waits a multiple of it).
+    await runInDurableObject(stubFor(code), (t: Table) => {
+      (t as unknown as { pause: number }).pause = 20;
+    });
+    host.send({ t: "start" });
+    await host.table((s) => s.phase === "playing");
+    host.send({ t: "autoplay", on: true });
+    // The whole hand and the next deal, without a word from you.
+    const next = await host.table((s) => s.hand === 2 && s.view?.phase.kind !== "over", 60_000);
+    expect(next.auto).toContain(0);
+    expect(host.states.some((s) => s.view?.phase.kind === "over")).toBe(true);
+    expect((await state(code)).chosen).toEqual([0]);
+    host.send({ t: "autoplay", on: false });
+    const mine = await host.table((s) => s.waitingOn.includes(0), 60_000);
+    expect(mine.auto).not.toContain(0);
+  });
+
+  it("paces bots at the table's bot speed", async () => {
+    const code = await createTable();
+    const { p: host } = await join(code, "Kevin");
+    await runInDurableObject(stubFor(code), (t: Table) => {
+      (t as unknown as { pause: number }).pause = 1000;
+    });
+    host.send({ t: "sit", seat: 1 });
+    for (const s of [0, 2, 3]) host.send({ t: "setBot", seat: s, bot: "casual" });
+    host.send({ t: "setup", settings: { multiWin: false, timer: 0, hold: 30, firstDealer: 0, botSpeed: "fast" } });
+    await host.table((s) => s.seats.every(Boolean) && s.settings.botSpeed === "fast");
+    const sent = Date.now();
+    host.send({ t: "start" });
+    await host.table((s) => s.phase === "playing");
+    const wait = (await state(code)).botAt - sent;
+    expect(wait).toBeGreaterThan(300);
+    expect(wait).toBeLessThan(700);
+  });
+});
+
 describe("between games", () => {
   it("sends a seated player's reaction to everyone, unstored; the host's rematch goes back to the lobby", async () => {
     const code = await createTable();

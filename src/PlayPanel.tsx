@@ -1113,8 +1113,9 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
   // 叮 armed: the next discard declares it (only tiles that leave you ready).
   const [riichiArmed, setRiichiArmed] = useState(false);
   const [resultHidden, setResultHidden] = useState(false);
-  // 自動: your seat played for you (this phone's own game only).
-  const [autoplay, setAutoplay] = useState(false);
+  // 自動: your seat played for you - online, by the table (it says whose).
+  const [localAutoplay, setAutoplay] = useState(false);
+  const autoplay = online ? online.table.you !== null && online.table.auto.includes(online.table.you) : localAutoplay;
   const autoBot = useMemo(() => botById(AUTOPLAY_BOT), []);
 
   // This device's own game (never an online one).
@@ -1301,13 +1302,19 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
   // 嗌錯: take back your call - the discard plays on as if you'd passed and
   // you pay each player. Anything the call itself earned (a kong's
   // replacement flower) is handed back.
-  const canRetract =
-    !!lastCall &&
-    game.phase.kind === "turn" &&
-    game.phase.seat === HUMAN &&
-    game.discardsMade === lastCall.before.discardsMade &&
-    game.players[HUMAN].melds.length === lastCall.before.players[HUMAN].melds.length + 1;
+  // (Online, the table keeps your call and says when it can go back.)
+  const canRetract = online
+    ? !!online.table.options?.turn?.retract
+    : !!lastCall &&
+      game.phase.kind === "turn" &&
+      game.phase.seat === HUMAN &&
+      game.discardsMade === lastCall.before.discardsMade &&
+      game.players[HUMAN].melds.length === lastCall.before.players[HUMAN].melds.length + 1;
   const retract = () => {
+    if (online) {
+      if (canRetract) online.send({ t: "retract", step: online.table.step });
+      return;
+    }
     if (!lastCall || !canRetract) return;
     const kept = lastCall.before.tableBonuses?.length ?? 0;
     const now = game.tableBonuses ?? [];
@@ -1389,6 +1396,8 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     !handSettling &&
     swapPhase.stage === "give" &&
     !swapPhase.piles[HUMAN];
+  // Your take: your turn at the piles, nothing still in the air.
+  const myTake = !!swapPhase && seated && !autoplay && !swapRolling && !swapAirborne && swapPhase.stage === "take" && swapPhase.taker === HUMAN;
   const [swapHand, setSwapHand] = useState<number[]>([]);
   const [swapPicks, setSwapPicks] = useState<number[][]>([[], [], [], []]);
   // A step of the swap - in this deal (a new game's first step looks just
@@ -1727,9 +1736,9 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
   // Your give: in the order they sit in your hand, each flying down from its
   // place there to its place in your pile.
   const giveFrom = useRef<{ tiles: Tile[]; at: ((FlightEnd & { font: number }) | null)[]; pitch?: number } | null>(null);
-  const giveSwap = () => {
-    if (!swapPhase || swapHand.length !== swapPhase.count) return;
-    const order = [...swapHand].sort((a, b) => a - b);
+  const giveSwap = (picked: number[] = swapHand) => {
+    if (!swapPhase || picked.length !== swapPhase.count) return;
+    const order = [...picked].sort((a, b) => a - b);
     const els = [...document.querySelectorAll(".play-hand:not(.play-swap-mine) > .play-hand-tile")];
     const frame = tableFrame();
     giveFrom.current = {
@@ -1800,6 +1809,29 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
       return;
     }
     advance(swapTake(game, HUMAN, picks));
+  };
+  // Out of time on the swap (see the turn timer): your picks if they're
+  // complete, else the tiles a bot would give - or an even take of blind picks.
+  const swapTimeout = useRef(() => {});
+  swapTimeout.current = () => {
+    if (!swapPhase) return;
+    if (swapPhase.stage === "give") {
+      if (swapHand.length === swapPhase.count) return giveSwap();
+      const used = new Set<number>();
+      const picked = botGive(handTiles, swapPhase.count).map((t) => {
+        const i = handTiles.findIndex((h, j) => !used.has(j) && sameTile(h, t));
+        used.add(i);
+        return i;
+      });
+      return giveSwap(picked);
+    }
+    try {
+      swapTake(game, HUMAN, swapPicks);
+      return takeSwap();
+    } catch {
+      const split = botSplit(swapPhase.piles.map(pileLeft), HUMAN, takersAfter(swapPhase, game.dealer), swapPhase.count);
+      return takeSwap(swapPhase.piles.map((p, g) => blindPicks(p!, split[g])));
+    }
   };
   // Online: the step a give or take was last sent for - no second one for it.
   const swapSent = useRef(-1);
@@ -1935,7 +1967,10 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
 
   // The turn timer (off by default): runs only while the human has to
   // decide, and on running out passes on a call or throws the drawn tile.
-  const deciding = !autoplay && (myTurn || humanClaims.length > 0);
+  const deciding = !autoplay && (myTurn || humanClaims.length > 0 || swapGiving || myTake);
+  // What the timer runs for: a move - or, on 換牌, your give or take (the
+  // bots giving alongside you don't restart it).
+  const timerFor: unknown = swapPhase ? [game.dealer, game.dealerStreak, game.roundWind, swapPhase.round, swapPhase.stage, swapPhase.taker].join() : game;
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
   const [countdown, setCountdown] = useState<Countdown | null>(null);
   // Online, the server's deadline (it moves for you when it passes).
@@ -1970,7 +2005,9 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
       setSecondsLeft(Math.max(0, left));
       if (left > 0) return;
       window.clearInterval(id);
-      if (game.phase.kind === "claims") {
+      if (game.phase.kind === "swap") {
+        swapTimeout.current();
+      } else if (game.phase.kind === "claims") {
         resolve(null);
       } else if (game.phase.kind === "turn") {
         const tile = drawn && !isForbidden(drawn) ? drawn : rateDiscardsFor(game, HUMAN, ADVISOR)[0].tile;
@@ -1979,7 +2016,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     }, 250);
     return () => window.clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [game, timer, deciding]);
+  }, [timerFor, timer, deciding]);
 
   // The hand sorted, with the just-drawn tile split off at the right.
   const handView = useMemo(() => {
@@ -2311,7 +2348,6 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
   const wonWith = (seat: number) =>
     result && result.tile && (result.winner === seat || result.alsoWon?.some((w) => w.winner === seat)) ? result.tile : null;
   // 換牌: a seat's face-down pile, where its discards go. Tappable on your take.
-  const myTake = !!swapPhase && seated && !autoplay && !swapRolling && !swapAirborne && swapPhase.stage === "take" && swapPhase.taker === HUMAN;
   const swapPond = (seat: number, side: "top" | "left" | "right" | "bottom") => {
     // A round's last take, its tiles still waiting to fly: drawn from the
     // ghost - every place empty but the ones held.
@@ -2407,12 +2443,13 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
           <button type="button" className="play-icon-button is-text" onClick={() => setTrackerOpen(true)} aria-label="Tile tracker" title="記牌器 - tiles you haven't seen">
             記牌器
           </button>
-          {!online && (
+          {seated && (
             <button
               type="button"
               className={`play-icon-button is-text${autoplay ? " is-on" : ""}`}
               onClick={() => {
-                setAutoplay((a) => !a);
+                if (online) online.send({ t: "autoplay", on: !autoplay });
+                else setAutoplay((a) => !a);
                 setSelected(null);
                 setChowChoice(false);
               }}
@@ -2461,6 +2498,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
                 Table {online.table.code} · {online.table.settings.multiWin ? "一炮多響" : "截胡"} · timer {online.table.settings.timer ? `${online.table.settings.timer}s` : "off"}
                 {online.table.settings.swapRules?.winds.length ? ` · 換牌 ${online.table.settings.swapRules.winds.map((w) => WIND_CHARS[w as 1 | 2 | 3 | 4]).join("")}` : ""}
                 {online.table.settings.jackpot ? ` · 獎池 ${online.table.settings.jackpot}` : ""}
+                {online.table.settings.botSpeed && online.table.settings.botSpeed !== "normal" ? ` · bots ${SPEEDS[online.table.settings.botSpeed].label.toLowerCase()}` : ""}
                 {online.table.watching > 0 && ` · ${online.table.watching} watching`}
               </p>
               <div className="play-menu-row">

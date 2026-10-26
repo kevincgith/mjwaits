@@ -31,6 +31,7 @@ import {
   kongOptions,
   nextHand,
   resolveClaims,
+  retractClaim,
   riichiDiscards,
   riichiForcedDiscard,
   sameTile,
@@ -51,6 +52,7 @@ import type { ScoreEvent, ScoreGame } from "@mjwaits/shared/engine/ledger";
 import { newPlayLedger, playEvents } from "@mjwaits/shared/engine/playLedger";
 import { PROTOCOL_VERSION } from "@mjwaits/shared/protocol/limits";
 import {
+  BOT_SPEEDS,
   DEFAULT_TABLE_SETTINGS,
   MYSTERY_BOT,
   parseTableMessage,
@@ -97,7 +99,20 @@ interface Runtime {
   scores: number; // entries in the record
   shown?: number[]; // this hand's end, losing hands hidden: who has shown theirs
   pot?: number; // 獎池: what's in the pot (see TableSettings.jackpot)
+  // 自動: seats whose people asked the table to play for them (unlike `auto`,
+  // kept when they're back) - as the Grandmaster.
+  chosen?: number[];
+  // The last call a person made (上 / 碰 / 槓), with the discard it came from -
+  // for 嗌錯, until their discard.
+  lastCall?: { before: GameState; decisions: (Claim | null)[]; seat: number } | null;
+  overAt?: number; // when the last hand ended
 }
+
+// Playing a seat for its person (自動): the Grandmaster, as the Play tab's 自動.
+const AUTOPLAY_BOT = "grandmaster";
+// A table where someone's on 自動 deals the next hand no sooner than this after
+// a hand ends, so the result is seen (as the Play tab's 自動).
+const AUTOPLAY_NEXT_MS = 4500;
 
 // crypto.getRandomValues as a number in [0, 1), for the wall, the dice and the bots.
 const random = () => crypto.getRandomValues(new Uint32Array(1))[0] / 2 ** 32;
@@ -115,6 +130,10 @@ export class Table extends Hub<TableMessage> {
   private rt!: Runtime; // loaded for each event
   // BOT_PAUSE_MS, unless the environment says otherwise (the tests: 0).
   protected pause = this.env.TABLE_PAUSE_MS === undefined ? BOT_PAUSE_MS : Number(this.env.TABLE_PAUSE_MS);
+  // A bot's pause at the table's Bot speed (the swap's pace keeps to `pause`).
+  private get botPause() {
+    return this.pause * BOT_SPEEDS[this.rt.settings.botSpeed ?? "normal"];
+  }
 
   protected initialize() {
     const fresh: Runtime = {
@@ -197,7 +216,7 @@ export class Table extends Hub<TableMessage> {
 
   // Bots, and people being played for, act on their own.
   private actsAlone(seat: number): boolean {
-    return this.rt.seats[seat]?.kind === "bot" || this.rt.auto.includes(seat);
+    return this.rt.seats[seat]?.kind === "bot" || this.rt.auto.includes(seat) || !!this.rt.chosen?.includes(seat);
   }
 
   protected welcome(id: string, token: string, rid?: string): TableServerMessage {
@@ -349,6 +368,23 @@ export class Table extends Hub<TableMessage> {
         this.swapStep(() => swapTake(g, seat, msg.picks), "refuse");
         break;
       }
+      case "retract": {
+        playing();
+        const seat = seated();
+        if (msg.step !== rt.step) throw new Refusal("stale", "that call has passed");
+        if (!this.canRetract(seat)) throw new Refusal("illegal", "that call can't be taken back now");
+        this.retract(seat);
+        break;
+      }
+      case "autoplay": {
+        playing();
+        const seat = seated();
+        const chosen = (rt.chosen ??= []).filter((s) => s !== seat);
+        rt.chosen = msg.on ? [...chosen, seat] : chosen;
+        // Back in your own hands with a decision on: your time starts now.
+        if (!msg.on && !this.actsAlone(seat) && rt.deadline === null && rt.settings.timer) rt.deadline = Date.now() + rt.settings.timer * 1000;
+        break;
+      }
       case "ready": {
         playing();
         const seat = seated();
@@ -402,6 +438,8 @@ export class Table extends Hub<TableMessage> {
           scores: 0,
           shown: [],
           pot: 0,
+          chosen: [],
+          lastCall: null,
         } satisfies Partial<Runtime>);
         this.sql.exec("DELETE FROM record");
         this.setMeta("recordHead", null);
@@ -435,7 +473,7 @@ export class Table extends Hub<TableMessage> {
       // The dealer's first turn after 換牌 waits for its last rows to join the hands.
       const settle = this.swapJustEnded ? this.swapWait("settle") : 0;
       this.swapJustEnded = false;
-      if (this.actsAlone(g.phase.seat)) rt.botAt = now + settle + this.pause;
+      if (this.actsAlone(g.phase.seat)) rt.botAt = now + settle + this.botPause;
       else if (timer) rt.deadline = now + settle + timer;
     } else if (g.phase.kind === "swap") {
       // 換牌: everyone gives at once (one decision for the round's give), then
@@ -445,7 +483,7 @@ export class Table extends Hub<TableMessage> {
       const wait = this.swapWait(ph.stage === "give" ? (ph.round === 1 ? "dice" : "settle") : ph.took.length ? "take" : "none");
       const alone = ph.stage === "give" ? [0, 1, 2, 3].some((s) => !ph.piles[s] && this.actsAlone(s)) : this.actsAlone(ph.taker);
       const people = ph.stage === "give" ? [0, 1, 2, 3].some((s) => !ph.piles[s] && !this.actsAlone(s)) : !this.actsAlone(ph.taker);
-      if (alone) rt.botAt = now + wait + this.pause;
+      if (alone) rt.botAt = now + wait + this.botPause;
       if (people && timer) rt.deadline = now + wait + timer;
     } else if (g.phase.kind === "claims") {
       // Bots and away players answer at once; people with something to claim
@@ -458,7 +496,7 @@ export class Table extends Hub<TableMessage> {
       // Only bots (or away players) answered, and one calls: the discard
       // stays on the table a moment before it's taken. (If someone was
       // waited on, everyone has already seen it.)
-      if (!rt.decisions.includes("waiting") && rt.decisions.some((x) => x !== null) && this.pause > 0) rt.botAt = now + this.pause * CLAIM_PAUSES;
+      if (!rt.decisions.includes("waiting") && rt.decisions.some((x) => x !== null) && this.pause > 0) rt.botAt = now + this.botPause * CLAIM_PAUSES;
     } else {
       rt.ready = [];
     }
@@ -533,6 +571,7 @@ export class Table extends Hub<TableMessage> {
     }
     const before = rt.game!;
     rt.game = next;
+    rt.lastCall = null; // any move ends the chance to take back a call
     this.record(before, next);
     const by = auto ? { auto: true } : {};
     if (move.kind === "discard" && next.phase.kind === "claims" && !next.phase.robKong) rt.last = { kind: "discard", seat, tile: move.tile, ...(move.riichi ? { riichi: true } : {}), ...by };
@@ -548,6 +587,10 @@ export class Table extends Hub<TableMessage> {
     rt.game = resolveClaims(before, decisions);
     this.record(before, rt.game);
     const g = rt.game;
+    // A person's call (not a win), for 嗌錯 - until their discard.
+    const caller = g.phase.kind === "turn" ? g.phase.seat : null;
+    const call = caller === null ? null : decisions[caller];
+    rt.lastCall = caller !== null && call && call.kind !== "win" && rt.seats[caller]?.kind === "human" && !this.actsAlone(caller) ? { before, decisions, seat: caller } : null;
     if (before.phase.kind === "claims" && g.phase.kind === "turn" && g.phase.seat !== (before.phase.from + 1) % SEATS) {
       const claim = decisions[g.phase.seat];
       if (claim && claim.kind !== "win") rt.last = { kind: "call", seat: g.phase.seat, call: claim.kind, from: before.phase.from };
@@ -564,6 +607,7 @@ export class Table extends Hub<TableMessage> {
     const rt = this.rt;
     const g = rt.game!;
     if (g.phase.kind === "over" && before.phase.kind !== "over") {
+      rt.overAt = Date.now();
       const r = g.phase.result;
       rt.last = r.winner === null ? { kind: "draw" } : { kind: "win", seats: [r.winner, ...(r.alsoWon ?? []).map((w) => w.winner)], from: r.from, ...(r.robKong ? { robKong: true } : {}) };
       if (rt.settled < rt.hand) {
@@ -581,6 +625,40 @@ export class Table extends Hub<TableMessage> {
       }
     }
     this.newDecision(Date.now());
+  }
+
+  // 嗌錯: whether `seat` can still take back their call - it's their turn off
+  // it, and they've neither discarded nor melded since.
+  private canRetract(seat: number): boolean {
+    const c = this.rt.lastCall;
+    const g = this.rt.game;
+    return (
+      !!c &&
+      !!g &&
+      c.seat === seat &&
+      g.phase.kind === "turn" &&
+      g.phase.seat === seat &&
+      g.discardsMade === c.before.discardsMade &&
+      g.players[seat].melds.length === c.before.players[seat].melds.length + 1
+    );
+  }
+
+  // The discard plays on as if they'd passed, and they pay each player.
+  // Anything the call itself earned (a kong's replacement flower) is handed back.
+  private retract(seat: number) {
+    const rt = this.rt;
+    const c = rt.lastCall!;
+    const now = rt.game!;
+    const kept = c.before.tableBonuses?.length ?? 0;
+    for (const b of (now.tableBonuses ?? []).slice(kept)) if (b.paid) for (let i = 0; i < SEATS; i++) rt.totals[i] -= b.deltas[i];
+    const next = retractClaim(c.before, c.decisions, seat);
+    next.tableBonuses = next.tableBonuses?.map((b, i) => (i < kept ? { ...b, paid: now.tableBonuses?.[i]?.paid ?? b.paid } : b));
+    rt.game = next;
+    rt.lastCall = null;
+    rt.last = null;
+    this.record(now, next);
+    this.collectBonuses();
+    this.afterStep(now);
   }
 
   // Dice and flower bonuses, paid as they come up.
@@ -605,6 +683,7 @@ export class Table extends Hub<TableMessage> {
     const row = this.rt.seats[seat]!;
     const g = this.rt.game!;
     if (row.kind === "bot") return botClaimFor(g, seat, profileById(row.bot), random);
+    if (this.rt.chosen?.includes(seat)) return botClaimFor(g, seat, profileById(AUTOPLAY_BOT), random);
     return claimOptions(g, seat).find((o) => o.kind === "win") ?? null; // played for: win if you can, else pass
   }
 
@@ -614,6 +693,7 @@ export class Table extends Hub<TableMessage> {
     const row = this.rt.seats[seat]!;
     const g = this.rt.game!;
     if (row.kind === "bot" && !timedOut) return botTurnMoveFor(g, profileById(row.bot), random);
+    if (this.rt.chosen?.includes(seat) && !timedOut) return botTurnMoveFor(g, profileById(AUTOPLAY_BOT), random);
     const p = g.players[seat];
     if (!timedOut && canWin(p)) return { kind: "selfDraw" };
     const forced = riichiForcedDiscard(g);
@@ -642,7 +722,7 @@ export class Table extends Hub<TableMessage> {
       if (g.phase.kind === "turn") {
         const seat = g.phase.seat;
         if (this.actsAlone(seat)) {
-          if (rt.botAt === null) rt.botAt = now + this.pause;
+          if (rt.botAt === null) rt.botAt = now + this.botPause;
           if (now < rt.botAt) return;
           this.applyMove(seat, this.aloneMove(seat), "fallback", rt.auto.includes(seat));
           continue;
@@ -658,7 +738,7 @@ export class Table extends Hub<TableMessage> {
         const yet = ph.stage === "give" ? [0, 1, 2, 3].filter((s) => !ph.piles[s]) : [ph.taker];
         const alone = yet.filter((s) => this.actsAlone(s));
         if (alone.length) {
-          if (rt.botAt === null) rt.botAt = now + this.pause;
+          if (rt.botAt === null) rt.botAt = now + this.botPause;
           if (now >= rt.botAt) {
             if (ph.stage === "give") this.giveForAll(alone);
             else this.swapStep(() => swapTake(g, ph.taker, this.blindTake(g, ph.taker)), "fallback");
@@ -696,14 +776,22 @@ export class Table extends Hub<TableMessage> {
           this.record(before, rt.game);
         }
       }
-      const waiting = humans.filter((h) => online.has(h.id) && !rt.auto.includes(h.seat) && !rt.ready.includes(h.seat));
+      const waiting = humans.filter((h) => online.has(h.id) && !this.actsAlone(h.seat) && !rt.ready.includes(h.seat));
       if (waiting.length) return;
+      // Someone on 自動: the result's seen before the next deal.
+      const dealAt = rt.chosen?.length && rt.overAt !== undefined ? rt.overAt + (AUTOPLAY_NEXT_MS * this.botPause) / BOT_PAUSE_MS : 0;
+      if (now < dealAt) {
+        rt.botAt = dealAt;
+        return;
+      }
       const ended = rt.game;
       rt.game = nextHand(ended, undefined, random);
       this.record(ended, rt.game);
       rt.shown = [];
       rt.hand++;
       rt.last = null;
+      rt.lastCall = null;
+      rt.botAt = null;
       this.collectBonuses();
       this.newDecision(now);
     }
@@ -768,13 +856,13 @@ export class Table extends Hub<TableMessage> {
               : this.actsAlone(g.phase.taker)
                 ? []
                 : [g.phase.taker]
-            : rt.seats.flatMap((s, i) => (s?.kind === "human" && !rt.auto.includes(i) && !rt.ready.includes(i) ? [i] : []));
+            : rt.seats.flatMap((s, i) => (s?.kind === "human" && !this.actsAlone(i) && !rt.ready.includes(i) ? [i] : []));
     let options: YourOptions | null = null;
     if (g && seat !== null && rt.phase === "playing" && waitingOn.includes(seat)) {
       const p = g.players[seat];
       options =
         g.phase.kind === "turn"
-          ? { turn: { selfDraw: canWin(p), kongs: p.riichi ? [] : kongOptions(p, g.phase), riichi: riichiDiscards(g, seat), forbidden: forbiddenDiscards(g) }, claims: [] }
+          ? { turn: { selfDraw: canWin(p), kongs: p.riichi ? [] : kongOptions(p, g.phase), riichi: riichiDiscards(g, seat), forbidden: forbiddenDiscards(g), ...(this.canRetract(seat) ? { retract: true } : {}) }, claims: [] }
           : { turn: null, claims: g.phase.kind === "claims" ? claimOptions(g, seat) : [] };
     }
     const people = this.people();
@@ -791,7 +879,7 @@ export class Table extends Hub<TableMessage> {
       deadline: rt.deadline,
       waitingOn,
       ready: rt.ready,
-      auto: rt.auto,
+      auto: [...new Set([...rt.auto, ...(rt.chosen ?? [])])],
       shown: rt.shown ?? [],
       scores: rt.scores,
       pot: rt.pot ?? 0,

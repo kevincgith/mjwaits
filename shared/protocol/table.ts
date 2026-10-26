@@ -64,6 +64,12 @@ export const SwapRulesSchema = object({
 // 獎池: each player's share into the pot on a draw (0: off); a 自摸 takes it.
 export const JACKPOTS = [0, 5, 10] as const;
 
+// How quickly the table's bots move, as the Play table's Bot speed: every
+// bot pause times this. (The swap's pacing, which every phone's animations
+// follow, isn't sped up or slowed.)
+export const BOT_SPEEDS = { slow: 1.6, normal: 1, fast: 0.45 } as const;
+export type BotSpeed = keyof typeof BOT_SPEEDS;
+
 export const TableSettingsSchema = object({
   multiWin: bool, // 一炮多響; off = 截胡
   timer: int(0, 30), // seconds per decision, one of TURN_TIMERS
@@ -75,6 +81,7 @@ export const TableSettingsSchema = object({
   // 換牌 (absent: none), and the 獎池 share (absent: off).
   swapRules: optional(SwapRulesSchema),
   jackpot: optional(int(0, 10)),
+  botSpeed: optional(oneOf("slow", "normal", "fast")), // absent: normal
 });
 export type TableSettings = Infer<typeof TableSettingsSchema>;
 
@@ -96,6 +103,10 @@ const TableClientSchema = tagged({
   // your take - the places you take from each pile, by table seat.
   give: object({ t: literal("give"), step, tiles: array(TileSchema, SWAP_MIN_TILES, SWAP_MAX_TILES), rid }),
   take: object({ t: literal("take"), step, picks: array(array(int(0, SWAP_MAX_TILES - 1), 0, SWAP_MAX_TILES), SEATS, SEATS), rid }),
+  // 嗌錯: take back the call you've just made (before your discard), paying each player.
+  retract: object({ t: literal("retract"), step, rid }),
+  // 自動: the table plays your seat (on) - or hands it back (off).
+  autoplay: object({ t: literal("autoplay"), on: bool, rid }),
   // Between hands: ready for the next deal; 投降 a 拉 that holder has on you.
   ready: object({ t: literal("ready"), rid }),
   surrender: object({ t: literal("surrender"), holder: seat, rid }),
@@ -175,7 +186,8 @@ export type SeatInfo =
 export interface YourOptions {
   // Your turn: 自摸, kongs, the discards that would declare 叮, and the
   // tiles 食替 bars you from throwing. (Any other tile in hand may go.)
-  turn: { selfDraw: boolean; kongs: KongMove[]; riichi: Tile[]; forbidden: Tile[] } | null;
+  // `retract`: 嗌錯 - the call you've just made may still be taken back.
+  turn: { selfDraw: boolean; kongs: KongMove[]; riichi: Tile[]; forbidden: Tile[]; retract?: boolean } | null;
   // A discard (or a kong being added) you may claim; empty if you can't.
   claims: Claim[];
 }

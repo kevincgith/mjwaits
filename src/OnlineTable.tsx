@@ -10,7 +10,7 @@ import { useEffect, useRef, useState } from "react";
 import { seatWind } from "@mjwaits/shared/engine/game";
 import { MYSTERY_NAME, profileById } from "@mjwaits/shared/engine/bots";
 import { cleanNickname, normalizeRoomCode } from "@mjwaits/shared/protocol/limits";
-import { JACKPOTS, MYSTERY_BOT, TABLE_BOTS, TURN_TIMERS, type TableBot, type TableClientMessage, type TableSettings, type TableState } from "@mjwaits/shared/protocol/table";
+import { BOT_SPEEDS, JACKPOTS, MYSTERY_BOT, TABLE_BOTS, type BotSpeed, TURN_TIMERS, type TableBot, type TableClientMessage, type TableSettings, type TableState } from "@mjwaits/shared/protocol/table";
 import { DEFAULT_SWAP_RULES } from "@mjwaits/shared/engine/swap";
 import { SWAP_PRESETS } from "./PlaySwap";
 import { defaultNickname, type ConnectionStatus } from "./lib/online";
@@ -631,6 +631,13 @@ function Lobby({ table, me, send, onLeave }: { table: TableState; me: Welcome; s
             {JACKPOTS.map((j) => (
               <Seg key={j} on={(s.jackpot ?? 0) === j} disabled={!me.host} onClick={() => setup({ jackpot: j })}>
                 {j ? j : "Off"}
+              </Seg>
+            ))}
+          </Setting>
+          <Setting label="Bot speed">
+            {(Object.keys(BOT_SPEEDS) as BotSpeed[]).map((sp) => (
+              <Seg key={sp} on={(s.botSpeed ?? "normal") === sp} disabled={!me.host} onClick={() => setup({ botSpeed: sp })}>
+                {sp[0].toUpperCase() + sp.slice(1)}
               </Seg>
             ))}
           </Setting>
