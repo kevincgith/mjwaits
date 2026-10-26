@@ -8,8 +8,8 @@
 # 1. DAgger (once): the start network plays, the rule bots label every
 #    decision, and a fresh network trains on the original rule-bot data plus
 #    those corrections.
-# 2. Self-play rounds, forever: the best network so far plays (two rule-bot
-#    seats at every table), PPO learns from it, and the result plays the
+# 2. Self-play rounds, forever: the best network so far plays (the two
+#    other seats a rule bot or an earlier best, see league), PPO learns from it, and the result plays the
 #    best head to head - both on the same fresh 8,192 arena hands. It
 #    becomes the new best only if it scores higher there, so a bad round
 #    costs time, never strength, and a lucky score can't set a bar nothing
@@ -117,6 +117,21 @@ failed() {
   return 0
 }
 
+# The league: up to four earlier bests, spread over the run's history (the
+# first to the most recent, not the current best - it has the other two
+# seats), for the opponent seats alongside the rule bots. The opposition
+# then gets stronger as the network does.
+league() {
+  local ids=() id n i pick=()
+  while read -r id; do
+    [ "ml/runs/$id" != "$best" ] && [ -f "ml/runs/$id/policy.onnx" ] && ids+=("$id")
+  done < <(grep -E "  long-[0-9]+: .* - new best" ml/runs/long.log | grep -oE "long-[0-9]+" | awk '!seen[$0]++')
+  n=${#ids[@]}
+  ((n)) || return 0
+  for i in 0 1 2 3; do pick+=("ml/runs/${ids[$((i * (n - 1) / 3))]}"); done
+  printf '%s\n' "${pick[@]}" | awk '!seen[$0]++' | paste -sd, -
+}
+
 better() { awk -v a="$1" -v b="$2" 'BEGIN { exit !(a > b) }'; }
 
 npx vite build --ssr scripts/ml-selfplay.ts --outDir .ml-selfplay --emptyOutDir --logLevel warn
@@ -168,7 +183,9 @@ while true; do
   round=$((round + 1))
   name="long-$round"
   log "round $round: $best self-play, $hands hands"
-  data=$(selfplay "ml/data/$name" "$hands" "$((300 + round))" --model "$best" --rules "$rules" --temp 0.5)
+  pool=$(league)
+  [ -n "$pool" ] && log "  league: ${pool//ml\/runs\//}"
+  data=$(selfplay "ml/data/$name" "$hands" "$((300 + round))" --model "$best" --rules "$rules" --temp 0.5 ${pool:+--league "$pool"})
   log "  PPO"
   ml/.venv/bin/python -u ml/train.py --rl --init "$best" --ref "$best" --data "$data" --out "ml/runs/$name" --lr 3e-5 --kl 1.0 --clip 0.1 2>&1 | grep --line-buffered -v Warning >"ml/runs/long/$name-train.log"
   rm -rf "ml/data/$name"

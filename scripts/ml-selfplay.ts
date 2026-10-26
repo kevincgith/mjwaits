@@ -1,6 +1,12 @@
 // npm run ml-selfplay -- --model ml/runs/bc2 [--hands 4000] [--session 16] [--temp 1] [--seed 1] [--out ml/data/sp1]
 //                        [--rules grandmaster,veteran,gambler]   (rule bots for two seats of every table)
 //                        [--label teacher]   (DAgger: record what the rule bot of that style would do)
+//                        [--league ml/runs/long-4,ml/runs/long-50]   (earlier networks for the opponent seats)
+//
+// --league: the two opponent seats are each a rule bot or one of these
+// earlier networks (half and half; any personality), so the opposition gets
+// stronger as the network does, while staying varied. Their decisions
+// aren't recorded.
 //
 // --label teacher: the network still plays (so the positions are the ones
 // IT reaches), but each recorded action is the rule bot's choice there -
@@ -52,7 +58,7 @@ function shuffledWall(rng: Rng): WallTile[] {
 // seats, random picks), so the network doesn't only learn to beat itself.
 // Their decisions aren't recorded.
 // `onHand`: told the hands played so far after each one (for the dashboard).
-async function selfPlay(modelDir: string, hands: number, session: number, temperature: number, seed: number, rules: BotProfile[], teacher: boolean, onHand?: (played: number) => void) {
+async function selfPlay(modelDir: string, hands: number, session: number, temperature: number, seed: number, rules: BotProfile[], teacher: boolean, league: string[], onHand?: (played: number) => void) {
   const meta = JSON.parse(readFileSync(`${modelDir}/meta.json`, "utf8")) as { styles: string[]; obsSize: number; numActions: number };
   if ((meta.obsSize !== OBS_SIZE && meta.obsSize !== OBS_SIZE_MATCH) || meta.numActions !== NUM_ACTIONS) throw new Error("Model was trained on a different encoding");
   const matchDays = meta.obsSize === OBS_SIZE_MATCH;
@@ -60,7 +66,14 @@ async function selfPlay(modelDir: string, hands: number, session: number, temper
   const links: number[] = [];
   let match: MatchContext | undefined;
   // The native runtime, one thread: several of these run side by side.
-  const net = await ort.InferenceSession.create(readFileSync(`${modelDir}/policy.onnx`), { intraOpNumThreads: 1, interOpNumThreads: 1 });
+  const load = (dir: string) => ort.InferenceSession.create(readFileSync(`${dir}/policy.onnx`), { intraOpNumThreads: 1, interOpNumThreads: 1 });
+  const net = await load(modelDir);
+  const leagueNets: ort.InferenceSession[] = [];
+  for (const dir of league) {
+    const m = JSON.parse(readFileSync(`${dir}/meta.json`, "utf8")) as { obsSize: number; numActions: number; styles: string[] };
+    if (m.obsSize !== meta.obsSize || m.numActions !== meta.numActions || m.styles.length !== meta.styles.length) throw new Error(`League network ${dir} was trained on a different encoding`);
+    leagueNets.push(await load(dir));
+  }
   const rng = seededRng(seed);
   const obsOut: Uint8Array[] = [];
   const maskOut: Uint8Array[] = [];
@@ -70,7 +83,7 @@ async function selfPlay(modelDir: string, hands: number, session: number, temper
   // One decision: run the network, sample, and return the action with its log-prob.
   // The teacher's own random stream, so labelling doesn't change the play.
   const teacherRng = seededRng(seed + 7919);
-  const decide = async (s: GameState, seat: number, style: number) => {
+  const decide = async (s: GameState, seat: number, style: number, which: ort.InferenceSession = net) => {
     const mask = legalActions(s, seat);
     let options = 0;
     for (const m of mask) options += m;
@@ -79,7 +92,7 @@ async function selfPlay(modelDir: string, hands: number, session: number, temper
     // not recorded, so no need to encode or run the network.
     if (options === 1) return { action: mask.indexOf(1), logp: 0, obs: new Uint8Array(0), mask, record: false };
     const obs = encodeObservation(s, seat, match);
-    const out = await net.run({
+    const out = await which.run({
       obs: new ort.Tensor("float32", Float32Array.from(obs), [1, obs.length]),
       style: new ort.Tensor("int64", BigInt64Array.from([BigInt(style)]), [1]),
       mask: new ort.Tensor("float32", Float32Array.from(mask), [1, NUM_ACTIONS]),
@@ -98,11 +111,16 @@ async function selfPlay(modelDir: string, hands: number, session: number, temper
   let played = 0;
   while (played < hands) {
     const styles = Array.from({ length: SEATS }, () => Math.floor(rng() * meta.styles.length));
-    // Which seats are rule bots this session (none without --rules).
+    // The two opponent seats this session: a rule bot or an earlier network
+    // each (none without --rules / --league).
     const ruleSeat: (BotProfile | null)[] = [null, null, null, null];
-    if (rules.length) {
+    const leagueSeat: (ort.InferenceSession | null)[] = [null, null, null, null];
+    if (rules.length || leagueNets.length) {
       const seats = [0, 1, 2, 3].sort(() => rng() - 0.5).slice(0, 2);
-      for (const seat of seats) ruleSeat[seat] = rules[Math.floor(rng() * rules.length)];
+      for (const seat of seats) {
+        if (leagueNets.length && (!rules.length || rng() < 0.5)) leagueSeat[seat] = leagueNets[Math.floor(rng() * leagueNets.length)];
+        else ruleSeat[seat] = rules[Math.floor(rng() * rules.length)];
+      }
     }
     const sessionStart = metaOut.length / META;
     const sessionNet = [0, 0, 0, 0];
@@ -120,6 +138,10 @@ async function selfPlay(modelDir: string, hands: number, session: number, temper
             s = applyTurnMove(s, botTurnMoveFor(s, ruleSeat[seat]!, rng));
             continue;
           }
+          if (leagueSeat[seat]) {
+            s = applyTurnMove(s, actionToTurnMove(s, (await decide(s, seat, styles[seat], leagueSeat[seat]!))!.action));
+            continue;
+          }
           const d = (await decide(s, seat, styles[seat]))!;
           if (d.record) pending.push({ obs: d.obs, mask: d.mask, action: teacher ? turnMoveAction(botTurnMoveFor(s, profileById(meta.styles[styles[seat]]), teacherRng)) : d.action, logp: d.logp, kind: 0, seat });
           s = applyTurnMove(s, actionToTurnMove(s, d.action));
@@ -128,6 +150,11 @@ async function selfPlay(modelDir: string, hands: number, session: number, temper
           for (let seat = 0; seat < SEATS; seat++) {
             if (ruleSeat[seat]) {
               claims.push(botClaimFor(s, seat, ruleSeat[seat]!, rng));
+              continue;
+            }
+            if (leagueSeat[seat]) {
+              const d = await decide(s, seat, styles[seat], leagueSeat[seat]!);
+              claims.push(d ? actionToClaim(s, seat, d.action) : null);
               continue;
             }
             const d = await decide(s, seat, styles[seat]);
@@ -176,6 +203,7 @@ if (isMainThread) {
   const session = Number(opt("session", "16"));
   const temperature = Number(opt("temp", "1"));
   const rules = opt("rules", "");
+  const league = opt("league", "");
   const teacher = opt("label", "self") === "teacher";
   const seed = Number(opt("seed", "1"));
   const out = opt("out", "ml/data/sp1");
@@ -191,7 +219,7 @@ if (isMainThread) {
   let next = 0;
   const runJob = (j: number) =>
     new Promise<void>((resolve, reject) => {
-      const worker = new Worker(new URL(import.meta.url), { workerData: { model, hands: jobs[j], session, temperature, seed: seed * 1000 + j, out, w: j, rules, teacher } });
+      const worker = new Worker(new URL(import.meta.url), { workerData: { model, hands: jobs[j], session, temperature, seed: seed * 1000 + j, out, w: j, rules, teacher, league } });
       worker.once("message", (r) => {
         results[j] = r;
         void worker.terminate();
@@ -230,8 +258,8 @@ if (isMainThread) {
   );
   console.log(`${total.toLocaleString()} self-play decisions from ${hands} hands in ${((Date.now() - t0) / 1000).toFixed(0)}s -> ${out}`);
 } else {
-  const { model, hands, session, temperature, seed, out, w, rules, teacher } = workerData as { model: string; hands: number; session: number; temperature: number; seed: number; out: string; w: number; rules: string; teacher: boolean };
-  const { obsOut, maskOut, metaOut, extraOut, handRows, links, matchDays, styles } = await selfPlay(model, hands, session, temperature, seed, rules ? rules.split(",").map(profileById) : [], teacher, (n) => writeFileSync(`${out}/progress-${w}`, String(n)));
+  const { model, hands, session, temperature, seed, out, w, rules, teacher, league } = workerData as { model: string; hands: number; session: number; temperature: number; seed: number; out: string; w: number; rules: string; teacher: boolean; league: string };
+  const { obsOut, maskOut, metaOut, extraOut, handRows, links, matchDays, styles } = await selfPlay(model, hands, session, temperature, seed, rules ? rules.split(",").map(profileById) : [], teacher, league ? league.split(",") : [], (n) => writeFileSync(`${out}/progress-${w}`, String(n)));
   const n = obsOut.length;
   const size = matchDays ? OBS_SIZE_MATCH : OBS_SIZE;
   const O = new Uint8Array(n * size);

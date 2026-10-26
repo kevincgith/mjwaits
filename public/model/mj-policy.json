@@ -10,5 +10,5 @@
   "gambler",
   "casual"
  ],
- "label": "dagger1 (perHand) - the rule-bot copy, corrected with DAgger: +1.87 tai/hand vs the rule bots over 2,048 arena hands"
+ "label": "long-113 (perHand self-play round 113): +0.27 tai/hand vs the rule bots over 8,192 arena hands, against -1.91 for the rule-bot copy it started from on the same hands"
 }
