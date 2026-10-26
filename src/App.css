@@ -1,3 +1,17 @@
+/* A tile's sides' light (see the 3D tiles): registered as numbers, so a
+   flight can ease them from one seat's light to another's. */
+@property --shade-long {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 0;
+}
+
+@property --shade-end {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 0;
+}
+
 /* Color tokens: every color is a CSS custom property, defined once here.
    The palette follows iOS's grouped-list look: a light grey page (--bg)
    with white cards (--surface), translucent grey fills for controls
@@ -6799,6 +6813,12 @@ html.playing body {
 
 .play-felt :is(.play-meld, .play-flowers) {
   box-shadow: 0 0.05em 0.5em 0.04em rgba(0, 0, 0, 0.3);
+}
+
+/* A swap row's groups: no shadow of their own - their places wait unseen
+   till their tiles land, and each tile brings its own. */
+.play-felt .play-swap-got-group {
+  box-shadow: none;
 }
 
 
@@ -16164,9 +16184,15 @@ button.sc-stat:active {
    hand along its path (flightPath, in PlaySwap) - hidden until it sets off,
    till then still drawn in its pile - and there it stays till the round's
    over. */
-.play-swap-flight {
-  position: fixed;
+.play-swap-layer {
+  position: absolute;
+  inset: 0;
   z-index: 60;
+  pointer-events: none;
+}
+
+.play-swap-flight {
+  position: absolute;
   line-height: 0;
   pointer-events: none;
   visibility: hidden;
@@ -16174,11 +16200,49 @@ button.sc-stat:active {
 }
 
 /* In the air it's the table's own block (the 3D rules for the felt and
-   your hand take it in too): tipped as it lies where it left - flat on the
-   felt, or standing as your hand does - and tipped on the way to how it
-   lies where it lands (see SwapFlight). */
+   your hand take it in too), posed from how it lay to how it lands (see
+   SwapFlight) - its sides' light too, so it takes that from the flight
+   (smoothly: registered below) rather than its own default. */
 .play-swap-flight .play-back {
   margin: 0;
+}
+
+.play-swap-flight .tile-glyph.tile-art,
+.play-swap-flight .play-back {
+  --shade-long: inherit;
+  --shade-end: inherit;
+}
+
+/* Face down where it lay, face up where it lands: the back and the face
+   one over the other, turned over on the way (one showing at a time). */
+.play-swap-flip {
+  display: grid;
+  place-items: center;
+  transform-style: preserve-3d;
+}
+
+.play-swap-flip > * {
+  grid-area: 1 / 1;
+  display: inline-flex;
+  transform-style: preserve-3d;
+}
+
+.play-swap-flip-face {
+  visibility: hidden;
+}
+
+/* What's been taken across lies just in front of that player's hand (on
+   the felt, toward the middle), a meld's size - out of the seat's layout,
+   so the hand and the table never move for it. */
+.play-swap-front {
+  position: absolute;
+  top: calc(100% + 0.6em);
+  left: 50%;
+  translate: -50% 0;
+  font-size: var(--play-tile);
+  line-height: 0;
+  transform-style: preserve-3d;
+  pointer-events: none;
 }
 
 
@@ -16268,7 +16332,8 @@ button.sc-stat:active {
   text-transform: uppercase;
 }
 
-.play-swap-note {
+/* The sheet's few lines on how it goes (not the bar's one-line note). */
+.play-swap-intro {
   margin: 0.4rem 0 0;
   color: var(--text-muted);
   font-size: 0.82rem;
@@ -16379,7 +16444,9 @@ button.sc-stat:active {
    giver; each place unseen till its tile lands there. */
 .play-swap-got {
   display: inline-flex;
-  gap: 0.25em;
+  /* Each giver's tiles a little apart from the next's - room for their
+     groups, all flying in at once, to come in side by side. */
+  gap: 0.55em;
   transform-style: preserve-3d;
 }
 
@@ -16420,5 +16487,5 @@ button.sc-stat:active {
 }
 
 .play-swap-mine .play-swap-got {
-  gap: 0.35em;
+  gap: 0.6em;
 }
