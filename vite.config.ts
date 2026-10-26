@@ -22,6 +22,7 @@ export default defineConfig({
     // worker/ has its own tests, run inside the Workers runtime (npm test
     // runs both); .claude/ holds other sessions' worktrees, full copies of
     // this repo whose tests aren't ours to run.
-    exclude: [...configDefaults.exclude, 'worker/**', '.claude/**'],
+    // e2e/ is Playwright's (npm run e2e).
+    exclude: [...configDefaults.exclude, 'worker/**', '.claude/**', 'e2e/**'],
   },
 })
