@@ -496,6 +496,10 @@ describe("嗌錯, 自動 and bot speed", () => {
 
   it("plays your seat as you watch (自動) - between hands too - until you take it back", { timeout: 120_000 }, async () => {
     const { code, host } = await withBots(0);
+    // A little pause, so the hand's end is sent before the next deal (it waits a multiple of it).
+    await runInDurableObject(stubFor(code), (t: Table) => {
+      (t as unknown as { pause: number }).pause = 20;
+    });
     host.send({ t: "start" });
     await host.table((s) => s.phase === "playing");
     host.send({ t: "autoplay", on: true });
