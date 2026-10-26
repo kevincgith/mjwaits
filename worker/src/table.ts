@@ -36,10 +36,14 @@ import {
   sameTile,
   SEATS,
   surrender,
+  swapGive,
+  swapTake,
+  takersAfter,
   type Claim,
   type GameState,
   type TurnMove,
 } from "@mjwaits/shared/engine/game";
+import { blindPicks, botGive, botSplit, pileLeft, SWAP_PACE_MS, type SwapRules } from "@mjwaits/shared/engine/swap";
 import { botClaimFor, botSurrenders, botTurnMoveFor, MYSTERY_NAME, profileById, randomStyle } from "@mjwaits/shared/engine/bots";
 import type { Tile } from "@mjwaits/shared/engine/mahjong";
 import { viewFor } from "@mjwaits/shared/engine/view";
@@ -92,6 +96,7 @@ interface Runtime {
   settled: number; // the last hand whose payments are in `totals`
   scores: number; // entries in the record
   shown?: number[]; // this hand's end, losing hands hidden: who has shown theirs
+  pot?: number; // 獎池: what's in the pot (see TableSettings.jackpot)
 }
 
 // crypto.getRandomValues as a number in [0, 1), for the wall, the dice and the bots.
@@ -152,7 +157,7 @@ export class Table extends Hub<TableMessage> {
   private record(before: GameState | null, after: GameState) {
     const head = this.meta<ScoreGame>("recordHead");
     if (!head) return;
-    this.addToRecord(playEvents(before, after, head.seats));
+    this.addToRecord(playEvents(before, after, head.seats, Date.now(), { perDraw: this.rt.settings.jackpot ?? 0, pot: this.rt.pot ?? 0 }));
   }
 
   private addToRecord(events: ScoreEvent[]) {
@@ -286,7 +291,12 @@ export class Table extends Hub<TableMessage> {
         lobby();
         hostOnly();
         if (rt.seats.some((s) => s === null)) throw new Refusal("seatsNotFull", "every seat needs a player or a bot");
-        rt.game = dealHand({ dealer: rt.settings.firstDealer, roundWind: 1, dealerStreak: 0, multiWin: rt.settings.multiWin }, undefined, random);
+        rt.game = dealHand(
+          { dealer: rt.settings.firstDealer, roundWind: 1, dealerStreak: 0, multiWin: rt.settings.multiWin, ...(rt.settings.swapRules ? { swapRules: rt.settings.swapRules as SwapRules } : {}) },
+          undefined,
+          random
+        );
+        rt.pot = 0;
         rt.phase = "playing";
         // The record starts with the first deal (its dice and flowers).
         this.setMeta("recordHead", newPlayLedger(rt.seats.map((x) => this.seatName(x!)), rt.settings.firstDealer, Date.now(), `table-${this.meta("code")}`));
@@ -319,6 +329,24 @@ export class Table extends Hub<TableMessage> {
         const claim = msg.claim as Claim | null;
         if (claim && !claimOptions(g, seat).some((o) => sameClaim(o, claim))) throw new Refusal("illegal", "you can't make that claim");
         rt.decisions![seat] = claim;
+        break;
+      }
+      case "give": {
+        playing();
+        const seat = seated();
+        const g = rt.game!;
+        if (msg.step !== rt.step) throw new Refusal("stale", "that give has passed");
+        if (g.phase.kind !== "swap" || g.phase.stage !== "give" || g.phase.piles[seat] || this.actsAlone(seat)) throw new Refusal("notYourTurn", "nothing to give right now");
+        this.swapStep(() => swapGive(g, seat, msg.tiles as Tile[], random, true), "refuse");
+        break;
+      }
+      case "take": {
+        playing();
+        const seat = seated();
+        const g = rt.game!;
+        if (msg.step !== rt.step) throw new Refusal("stale", "that take has passed");
+        if (g.phase.kind !== "swap" || g.phase.stage !== "take" || g.phase.taker !== seat || this.actsAlone(seat)) throw new Refusal("notYourTurn", "it isn't your take");
+        this.swapStep(() => swapTake(g, seat, msg.picks), "refuse");
         break;
       }
       case "ready": {
@@ -373,6 +401,7 @@ export class Table extends Hub<TableMessage> {
           settled: 0,
           scores: 0,
           shown: [],
+          pot: 0,
         } satisfies Partial<Runtime>);
         this.sql.exec("DELETE FROM record");
         this.setMeta("recordHead", null);
@@ -403,8 +432,21 @@ export class Table extends Hub<TableMessage> {
     rt.decisions = null;
     const timer = rt.settings.timer * 1000;
     if (g.phase.kind === "turn") {
-      if (this.actsAlone(g.phase.seat)) rt.botAt = now + this.pause;
-      else if (timer) rt.deadline = now + timer;
+      // The dealer's first turn after 換牌 waits for its last rows to join the hands.
+      const settle = this.swapJustEnded ? this.swapWait("settle") : 0;
+      this.swapJustEnded = false;
+      if (this.actsAlone(g.phase.seat)) rt.botAt = now + settle + this.pause;
+      else if (timer) rt.deadline = now + settle + timer;
+    } else if (g.phase.kind === "swap") {
+      // 換牌: everyone gives at once (one decision for the round's give), then
+      // each takes in turn - each step once the last has been seen (the dice,
+      // a take's flight, a round's rows; see SWAP_PACE_MS).
+      const ph = g.phase;
+      const wait = this.swapWait(ph.stage === "give" ? (ph.round === 1 ? "dice" : "settle") : ph.took.length ? "take" : "none");
+      const alone = ph.stage === "give" ? [0, 1, 2, 3].some((s) => !ph.piles[s] && this.actsAlone(s)) : this.actsAlone(ph.taker);
+      const people = ph.stage === "give" ? [0, 1, 2, 3].some((s) => !ph.piles[s] && !this.actsAlone(s)) : !this.actsAlone(ph.taker);
+      if (alone) rt.botAt = now + wait + this.pause;
+      if (people && timer) rt.deadline = now + wait + timer;
     } else if (g.phase.kind === "claims") {
       // Bots and away players answer at once; people with something to claim
       // are waited on; everyone else passes.
@@ -420,6 +462,63 @@ export class Table extends Hub<TableMessage> {
     } else {
       rt.ready = [];
     }
+  }
+
+  // ---- 換牌 -----------------------------------------------------------------------------
+
+  // Set when this step ended the swap, for the dealer's first turn (newDecision) - the same event.
+  private swapJustEnded = false;
+
+  // A pause in the swap's pace (SWAP_PACE_MS), at the table's speed (none in the tests).
+  private swapWait(kind: keyof typeof SWAP_PACE_MS | "none"): number {
+    return kind === "none" ? 0 : Math.round((SWAP_PACE_MS[kind] * this.pause) / BOT_PAUSE_MS);
+  }
+
+  // One step of the swap - a give (or several at once) or a take. While the
+  // round's give goes on, it's still the same decision: whoever's yet to
+  // give keeps their step and their time.
+  private swapStep(change: () => GameState, onIllegal: "refuse" | "fallback") {
+    const rt = this.rt;
+    const before = rt.game!;
+    let next: GameState;
+    try {
+      next = change();
+    } catch (e) {
+      if (onIllegal === "refuse") throw new Refusal("illegal", e instanceof Error ? e.message : "not allowed");
+      return;
+    }
+    rt.game = next;
+    this.record(before, next);
+    rt.last = null;
+    this.collectBonuses();
+    const b = before.phase;
+    const a = next.phase;
+    if (b.kind === "swap" && a.kind === "swap" && b.stage === "give" && a.stage === "give" && a.round === b.round) {
+      if (![0, 1, 2, 3].some((s) => !a.piles[s] && this.actsAlone(s))) rt.botAt = null;
+      return;
+    }
+    if (b.kind === "swap" && a.kind !== "swap") this.swapJustEnded = true;
+    this.newDecision(Date.now());
+  }
+
+  // A take made for a seat: an even one, blind - as a bot takes, or the one-tap take.
+  private blindTake(g: GameState, seat: number): number[][] {
+    const ph = g.phase;
+    if (ph.kind !== "swap") return [[], [], [], []];
+    const even = botSplit(ph.piles.map(pileLeft), seat, takersAfter(ph, g.dealer), ph.count, random);
+    return ph.piles.map((pile, s) => (pile ? blindPicks(pile, even[s], random) : []));
+  }
+
+  // The bots (and anyone being played for) yet to give: all at once.
+  private giveForAll(seats: number[]) {
+    this.swapStep(
+      () =>
+        seats.reduce((st, s) => {
+          const ph = st.phase;
+          return ph.kind === "swap" ? swapGive(st, s, botGive(st.players[s].hand, ph.count, random), random) : st;
+        }, this.rt.game!),
+      "fallback"
+    );
   }
 
   // `auto`: the table is moving for a person (out of time, or away).
@@ -469,6 +568,15 @@ export class Table extends Hub<TableMessage> {
       rt.last = r.winner === null ? { kind: "draw" } : { kind: "win", seats: [r.winner, ...(r.alsoWon ?? []).map((w) => w.winner)], from: r.from, ...(r.robKong ? { robKong: true } : {}) };
       if (rt.settled < rt.hand) {
         for (let i = 0; i < SEATS; i++) rt.totals[i] += r.deltas[i];
+        // 獎池: a draw puts everyone's share in; a 自摸 takes the lot.
+        const share = rt.settings.jackpot ?? 0;
+        if (r.winner === null && share > 0) {
+          for (let i = 0; i < SEATS; i++) rt.totals[i] -= share;
+          rt.pot = (rt.pot ?? 0) + share * SEATS;
+        } else if (r.winner !== null && r.from === null && (rt.pot ?? 0) > 0) {
+          rt.totals[r.winner] += rt.pot!;
+          rt.pot = 0;
+        }
         rt.settled = rt.hand;
       }
     }
@@ -541,6 +649,26 @@ export class Table extends Hub<TableMessage> {
         }
         if (rt.deadline !== null && now >= rt.deadline) {
           this.applyMove(seat, this.aloneMove(seat, true), "fallback", true);
+          continue;
+        }
+        return;
+      }
+      if (g.phase.kind === "swap") {
+        const ph = g.phase;
+        const yet = ph.stage === "give" ? [0, 1, 2, 3].filter((s) => !ph.piles[s]) : [ph.taker];
+        const alone = yet.filter((s) => this.actsAlone(s));
+        if (alone.length) {
+          if (rt.botAt === null) rt.botAt = now + this.pause;
+          if (now >= rt.botAt) {
+            if (ph.stage === "give") this.giveForAll(alone);
+            else this.swapStep(() => swapTake(g, ph.taker, this.blindTake(g, ph.taker)), "fallback");
+            continue;
+          }
+        }
+        // Out of time: given (or taken) for them, as a bot would.
+        if (rt.deadline !== null && now >= rt.deadline && yet.some((s) => !this.actsAlone(s))) {
+          if (ph.stage === "give") this.giveForAll(yet.filter((s) => !this.actsAlone(s)));
+          else this.swapStep(() => swapTake(g, ph.taker, this.blindTake(g, ph.taker)), "fallback");
           continue;
         }
         return;
@@ -634,7 +762,13 @@ export class Table extends Hub<TableMessage> {
           : [g.phase.seat]
         : g.phase.kind === "claims"
           ? (rt.decisions ?? []).flatMap((d, s) => (d === "waiting" ? [s] : []))
-          : rt.seats.flatMap((s, i) => (s?.kind === "human" && !rt.auto.includes(i) && !rt.ready.includes(i) ? [i] : []));
+          : g.phase.kind === "swap"
+            ? g.phase.stage === "give"
+              ? (g.phase.piles as unknown[]).flatMap((pile, s) => (!pile && !this.actsAlone(s) ? [s] : []))
+              : this.actsAlone(g.phase.taker)
+                ? []
+                : [g.phase.taker]
+            : rt.seats.flatMap((s, i) => (s?.kind === "human" && !rt.auto.includes(i) && !rt.ready.includes(i) ? [i] : []));
     let options: YourOptions | null = null;
     if (g && seat !== null && rt.phase === "playing" && waitingOn.includes(seat)) {
       const p = g.players[seat];
@@ -660,6 +794,7 @@ export class Table extends Hub<TableMessage> {
       auto: rt.auto,
       shown: rt.shown ?? [],
       scores: rt.scores,
+      pot: rt.pot ?? 0,
       last: rt.last,
       you: seat,
       view: g ? viewFor(g, seat ?? -1, (s) => this.handShown(g, s)) : null,

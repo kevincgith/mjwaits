@@ -12,6 +12,7 @@
 // landing on the next turn.
 
 import type { Claim, KongMove, TurnMove } from "../engine/game";
+import { SWAP_MAX_ROUNDS, SWAP_MAX_TILES, SWAP_MIN_TILES } from "../engine/swap";
 import type { Tile } from "../engine/mahjong";
 import type { TableView } from "../engine/view";
 import { MAX_MESSAGE_BYTES, NICKNAME_RAW_MAX, SEATS, TOKEN_PATTERN } from "./limits";
@@ -52,6 +53,17 @@ export const ClaimSchema = tagged({
   chow: object({ kind: literal("chow"), tiles: array(TileSchema, 2, 2) }),
 }, "kind");
 
+// 換牌's rules, as the Play tab has them (engine/swap.ts SwapRules): which
+// round winds swap, and what each die means.
+export const SwapRulesSchema = object({
+  winds: array(int(1, 4), 0, 4),
+  rounds: array(int(1, SWAP_MAX_ROUNDS), 6, 6),
+  tiles: array(int(SWAP_MIN_TILES, SWAP_MAX_TILES), 6, 6),
+});
+
+// 獎池: each player's share into the pot on a draw (0: off); a 自摸 takes it.
+export const JACKPOTS = [0, 5, 10] as const;
+
 export const TableSettingsSchema = object({
   multiWin: bool, // 一炮多響; off = 截胡
   timer: int(0, 30), // seconds per decision, one of TURN_TIMERS
@@ -60,6 +72,9 @@ export const TableSettingsSchema = object({
   // At a hand's end: everyone's hand shown (the default), or only the
   // winner's - each other player choosing whether to show theirs.
   reveal: optional(bool),
+  // 換牌 (absent: none), and the 獎池 share (absent: off).
+  swapRules: optional(SwapRulesSchema),
+  jackpot: optional(int(0, 10)),
 });
 export type TableSettings = Infer<typeof TableSettingsSchema>;
 
@@ -77,6 +92,10 @@ const TableClientSchema = tagged({
   // Playing: your turn's move, or your answer to a discard (null = pass).
   move: object({ t: literal("move"), step, move: MoveSchema, rid }),
   claim: object({ t: literal("claim"), step, claim: nullable(ClaimSchema), rid }),
+  // 換牌: the tiles you lay face down this round (in your hand's order), and
+  // your take - the places you take from each pile, by table seat.
+  give: object({ t: literal("give"), step, tiles: array(TileSchema, SWAP_MIN_TILES, SWAP_MAX_TILES), rid }),
+  take: object({ t: literal("take"), step, picks: array(array(int(0, SWAP_MAX_TILES - 1), 0, SWAP_MAX_TILES), SEATS, SEATS), rid }),
   // Between hands: ready for the next deal; 投降 a 拉 that holder has on you.
   ready: object({ t: literal("ready"), rid }),
   surrender: object({ t: literal("surrender"), holder: seat, rid }),
@@ -111,11 +130,19 @@ export function parseTableMessage(frame: string | ArrayBuffer): Result<TableClie
   if (!r.ok) return r;
   const m = r.value;
   const tiles: Tile[] =
-    m.t === "move" && "tile" in m.move ? [m.move.tile as Tile] : m.t === "claim" && m.claim?.kind === "chow" ? (m.claim.tiles as Tile[]) : [];
+    m.t === "move" && "tile" in m.move
+      ? [m.move.tile as Tile]
+      : m.t === "claim" && m.claim?.kind === "chow"
+        ? (m.claim.tiles as Tile[])
+        : m.t === "give"
+          ? (m.tiles as Tile[])
+          : [];
   if (tiles.some((t) => t.suit === "z" && t.rank > 7)) return { ok: false, error: "tile: honours are 1-7" };
   if (m.t === "claim" && m.claim?.kind === "chow" && m.claim.tiles.some((t) => t.suit === "z")) return { ok: false, error: "claim: no chow of honours" };
   if (m.t === "setup" && !(TURN_TIMERS as readonly number[]).includes(m.settings.timer))
     return { ok: false, error: `settings.timer: one of ${TURN_TIMERS.join(", ")}` };
+  if (m.t === "setup" && m.settings.jackpot !== undefined && !(JACKPOTS as readonly number[]).includes(m.settings.jackpot))
+    return { ok: false, error: `settings.jackpot: one of ${JACKPOTS.join(", ")}` };
   return r;
 }
 
@@ -180,6 +207,7 @@ export interface TableState {
   auto: number[]; // seats being played for, until their player is back
   shown: number[]; // the hand over, losing hands hidden: who has shown theirs
   scores: number; // entries in the table's record (GET /tables/<CODE>/scores) - fetch it again when this changes
+  pot: number; // 獎池: what's in the pot (see TableSettings.jackpot)
   last: TableAction | null;
   // This phone's seat (null for someone watching) and its view of the hand.
   you: number | null;

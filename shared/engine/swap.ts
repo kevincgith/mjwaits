@@ -31,6 +31,13 @@ export const DEFAULT_SWAP_RULES: SwapRules = {
 
 // Tiles each, at most: one from each of the other three is the least a take
 // can be, and a 16-tile hand can't give more than this and stay a hand.
+// How an online table paces 換牌 (ms), so every phone can show each step as
+// the Play table does: the deal's dice and then the swap's two dice, before
+// anyone gives; a take's tiles flying, before the next taker's turn; and a
+// round's rows held and then joining the hands, before the next round's
+// give - or, the swap done, the dealer's first turn.
+export const SWAP_PACE_MS = { dice: 4800, take: 1300, settle: 3400 };
+
 export const SWAP_MIN_TILES = 3;
 export const SWAP_MAX_TILES = 8;
 export const SWAP_MAX_ROUNDS = 5;

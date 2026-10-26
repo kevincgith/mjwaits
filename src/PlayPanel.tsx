@@ -644,6 +644,7 @@ export interface OnlinePlay {
 
 type WireMove = Extract<TableClientMessage, { t: "move" }>["move"];
 type WireClaim = Extract<TableClientMessage, { t: "claim" }>["claim"];
+type WireTiles = Extract<TableClientMessage, { t: "give" }>["tiles"];
 
 // `fresh`: start a new game (keeping the settings) instead of the saved one.
 export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => void; onOnline?: () => void; online?: OnlinePlay; fresh?: boolean }) {
@@ -719,6 +720,17 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     showBurst(game.dealer, `${bonus.name} ${signed(bonus.deltas[game.dealer])}`, bonus.deltas);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rolling, game.diceBonus]);
+  // Online the server pays it; the table shows it, once a deal, as the dice settle.
+  const diceShownFor = useRef<unknown>(null);
+  useEffect(() => {
+    const bonus = game.diceBonus;
+    if (!online || rolling || !bonus || diceShownFor.current === dealKey) return;
+    diceShownFor.current = dealKey;
+    // (Not on joining a hand already under way.)
+    if (game.discardsMade > 0) return;
+    showBurst(game.dealer, `${bonus.name} ${signed(bonus.deltas[game.dealer])}`, bonus.deltas);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [online, rolling, game.diceBonus, dealKey]);
   // Table bonuses (flowers, 暗槓) paid as they're earned, the
   // same way: marked paid in the game, and the ref remembers what this
   // hand has paid in case a stale copy of the game comes back unmarked.
@@ -814,7 +826,32 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [localGame]);
-  const potNow = online ? 0 : replayCached(localLedger).pot;
+  const potNow = online ? online.table.pot : replayCached(localLedger).pot;
+  // Online the table keeps the pot: as it changes at a hand's end, the same
+  // bubbles and note as here - in on a draw, all of it to a 自摸.
+  const potSeen = useRef<number | null>(null);
+  const onlinePot = online?.table.pot ?? null;
+  useEffect(() => {
+    if (onlinePot === null) return;
+    const was = potSeen.current;
+    potSeen.current = onlinePot;
+    if (game.phase.kind !== "over") {
+      if (was !== null) setPotNote(null);
+      return;
+    }
+    if (was === null || was === onlinePot) return;
+    const r = game.phase.result;
+    if (onlinePot > was) {
+      const share = (onlinePot - was) / 4;
+      setPotNote({ fed: share, pot: onlinePot });
+      showBurst(-1, "", [0, 1, 2, 3].map(() => -share));
+    } else if (r.winner !== null) {
+      const seat = r.winner;
+      setPotNote({ won: was, seat });
+      window.setTimeout(() => showBurst(seat, `獎池 ${signed(was)}`), BURST_MS);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onlinePot, game.phase.kind]);
   // New opponents mid-game: a new seating in the record.
   useEffect(() => {
     const names = playerNames(opponents);
@@ -1404,7 +1441,13 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
   const landTurn = (g: number, taker: number) => (Math.abs(seatTurn(taker) - seatTurn(g)) === 180 ? seatTurn(g) : seatTurn(taker));
   // What the piles were last time, and each of their tiles as it lay: its
   // outline in the table's frame, how it's seen, and its size.
-  const pilesSeen = useRef<{ phase: SwapPhase | null; spots: ((FlightEnd & { font: number }) | undefined)[][]; pitch: (number | undefined)[]; home: ({ x: number; y: number } | undefined)[] }>({ phase: null, spots: [], pitch: [], home: [] });
+  const pilesSeen = useRef<{
+    phase: SwapPhase | null;
+    spots: ((FlightEnd & { font: number }) | undefined)[][];
+    pitch: (number | undefined)[];
+    home: ({ x: number; y: number } | undefined)[];
+    hand: Tile[]; // yours (online, what you take shows only once it's in your hand)
+  }>({ phase: null, spots: [], pitch: [], home: [], hand: [] });
   const swapPiles = swapPhase?.piles ?? null;
   const swapTakenBy = swapPhase?.takenBy;
   // Before the screen's drawn: a take shows its tiles flying from the very
@@ -1422,7 +1465,13 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
         return { box: frame.box(tile), view: viewOf(tile, frame, tilt, seatTurn(g)), font: parseFloat(getComputedStyle(tile).fontSize) };
       });
     });
-    pilesSeen.current = { phase: swapPhase, spots: swapPhase ? spots : prev.spots, pitch: swapPhase ? spots.map(pitchOf) : prev.pitch, home: swapPhase ? spots.map(homeOf) : prev.home };
+    pilesSeen.current = {
+      phase: swapPhase,
+      spots: swapPhase ? spots : prev.spots,
+      pitch: swapPhase ? spots.map(pitchOf) : prev.pitch,
+      home: swapPhase ? spots.map(homeOf) : prev.home,
+      hand: me.hand.slice(),
+    };
     const was = prev.phase;
     if (!was || was.stage !== "take") return;
     // The taken: what this take took - or, the round over, all that was
@@ -1441,6 +1490,19 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     if (roundOver) setGhost(was.piles.map((p) => p?.length ?? 0));
     const now = Date.now();
     const next: Flight[] = [];
+    // Online, the others' piles are backs: what you took you see only as it
+    // reaches your hand - the tiles new there, one to each of your flights
+    // from a back (you took them blind: which went where nobody knows).
+    const gained = me.hand.slice();
+    for (const t of prev.hand) {
+      const i = gained.findIndex((h) => sameTile(h, t));
+      if (i >= 0) gained.splice(i, 1);
+    }
+    const back = (t: Tile) => t.suit === BLANK.suit && t.rank === BLANK.rank;
+    const realOf = (g: number, i: number, taker: number) => {
+      const t = was.piles[g]![i]!;
+      return taker === HUMAN && back(t) ? (gained.shift() ?? t) : t;
+    };
     for (const taker of new Set(fresh.map((f) => f.taker))) {
       const theirs = fresh
         .filter((f) => f.taker === taker)
@@ -1452,13 +1514,14 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
       const givers = [...new Set(theirs.map((f) => f.g))];
       theirs.forEach((f) => {
         const c = centreOf(f.at.box);
-        const tile = seated && (taker === HUMAN || f.g === HUMAN) ? was.piles[f.g]![f.i]! : null;
+        const real = realOf(f.g, f.i, taker);
+        const tile = seated && (taker === HUMAN || f.g === HUMAN) && !back(real) ? real : null;
         // Its pile showed its back (anyone's but your own standing one): face up, it turns over on the way.
         const shownFace = f.at.view.tilt === SWAP_TILT_STANDING;
         next.push({
           id: now + next.length,
           to: taker,
-          real: was.piles[f.g]![f.i]!,
+          real,
           seat: f.g,
           place: f.i,
           ghost: roundOver,
@@ -1513,7 +1576,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     setRowOrder({});
     setGiveFlights([]);
     giveFrom.current = null;
-    pilesSeen.current = { phase: null, spots: [], pitch: [], home: [] };
+    pilesSeen.current = { phase: null, spots: [], pitch: [], home: [], hand: [] };
   }, [dealSeen]);
 
   // A seat's row, laid out on the felt (swapRow) before its tiles fly: once
@@ -1653,6 +1716,13 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
       }),
     };
     captureHand();
+    if (online) {
+      // Once per give (the table's state, with your pile, comes back).
+      if (swapSent.current === online.table.step) return;
+      swapSent.current = online.table.step;
+      online.send({ t: "give", step: online.table.step, tiles: order.map((i) => handTiles[i]) as WireTiles });
+      return;
+    }
     advance(swapGive(game, HUMAN, order.map((i) => handTiles[i]), Math.random, true));
   };
   const myPileNow = swapPhase?.piles[HUMAN] ?? null;
@@ -1697,8 +1767,17 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
   // Your take: the tiles you tapped - or, one tap, an even take of blind picks.
   const takeSwap = (picks: number[][] = swapPicks) => {
     if (!swapPhase) return;
+    if (online && net) {
+      if (swapSent.current === online.table.step) return;
+      swapSent.current = online.table.step;
+      // By the table's seats.
+      online.send({ t: "take", step: online.table.step, picks: [0, 1, 2, 3].map((t) => picks[net.toLocal(t)]) });
+      return;
+    }
     advance(swapTake(game, HUMAN, picks));
   };
+  // Online: the step a give or take was last sent for - no second one for it.
+  const swapSent = useRef(-1);
   const drawn = myTurn && game.phase.kind === "turn" ? game.phase.drawn : null;
   const forbidden = myTurn ? forbiddenDiscards(game) : [];
   // Tiles you can't throw right now: 食替, a locked 叮 hand's anything-but-
@@ -2353,6 +2432,8 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
             <div className="play-menu">
               <p className="play-menu-note">
                 Table {online.table.code} · {online.table.settings.multiWin ? "一炮多響" : "截胡"} · timer {online.table.settings.timer ? `${online.table.settings.timer}s` : "off"}
+                {online.table.settings.swapRules?.winds.length ? ` · 換牌 ${online.table.settings.swapRules.winds.map((w) => WIND_CHARS[w as 1 | 2 | 3 | 4]).join("")}` : ""}
+                {online.table.settings.jackpot ? ` · 獎池 ${online.table.settings.jackpot}` : ""}
                 {online.table.watching > 0 && ` · ${online.table.watching} watching`}
               </p>
               <div className="play-menu-row">

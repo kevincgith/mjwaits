@@ -46,6 +46,7 @@ const state = (version: number, step = 1): TableState => ({
   auto: [],
   shown: [],
   scores: 0,
+  pot: 0,
   last: null,
   you: 0,
   view: null,
