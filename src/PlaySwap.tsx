@@ -292,7 +292,7 @@ const clear = (on: boolean, onClick: () => void) => (
 // The settings: which round winds swap, and what each die means.
 // The dice's mappings at a stroke - every throw the same at the two ends,
 // the usual in between; the rounds that swap left as they are.
-const SWAP_PRESETS: { name: string; label: string; rounds: number[]; tiles: number[] }[] = [
+export const SWAP_PRESETS: { name: string; label: string; rounds: number[]; tiles: number[] }[] = [
   { name: "Min", label: "1 round · 3 tiles", rounds: [1, 1, 1, 1, 1, 1], tiles: [3, 3, 3, 3, 3, 3] },
   { name: "Usual", label: "1-2-3 rounds · 3-6 tiles", rounds: DEFAULT_SWAP_RULES.rounds, tiles: DEFAULT_SWAP_RULES.tiles },
   { name: "Max", label: "3 rounds · 6 tiles", rounds: [3, 3, 3, 3, 3, 3], tiles: [6, 6, 6, 6, 6, 6] },

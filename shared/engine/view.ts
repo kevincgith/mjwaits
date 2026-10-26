@@ -51,6 +51,20 @@ export type PhaseView =
   // player drew or called is seen by all), so it can stand apart.
   | { kind: "turn"; seat: number; drawn: Tile | null; drew?: true; replacement: "flower" | "kong" | null; forbidden?: Tile[] }
   | { kind: "claims"; from: number; tile: Tile; robKong?: true } // robKong: a kong shown for 搶槓, not a discard
+  // 換牌: every pile laid face down - your own you see, the others' only as
+  // backs ("back"); a place taken, empty (null); and who took each.
+  | {
+      kind: "swap";
+      dice: [number, number];
+      rounds: number;
+      count: number;
+      round: number;
+      stage: "give" | "take";
+      piles: ((Tile | "back" | null)[] | null)[];
+      taker: number;
+      took: number[];
+      takenBy?: (number | null)[][];
+    }
   | { kind: "over"; result: ResultView };
 
 export interface TableView {
@@ -109,8 +123,19 @@ export function viewFor(s: GameState, you: number, shown: (seat: number) => bool
   } else if (s.phase.kind === "claims") {
     phase = { kind: "claims", from: s.phase.from, tile: { ...s.phase.tile }, ...(s.phase.robKong ? { robKong: true as const } : {}) };
   } else if (s.phase.kind === "swap") {
-    // 換牌 is played only at the Play table so far, never online.
-    throw new Error("No seat view of 換牌 yet");
+    const ph = s.phase;
+    phase = {
+      kind: "swap",
+      dice: [...ph.dice] as [number, number],
+      rounds: ph.rounds,
+      count: ph.count,
+      round: ph.round,
+      stage: ph.stage,
+      piles: ph.piles.map((pile, seat) => (pile ? pile.map((t) => (!t ? null : seat === you ? { suit: t.suit, rank: t.rank } : "back")) : null)),
+      taker: ph.taker,
+      took: [...ph.took],
+      ...(ph.takenBy ? { takenBy: ph.takenBy.map((row) => [...row]) } : {}),
+    };
   } else {
     const { score, alsoWon, ...rest } = s.phase.result;
     phase = {

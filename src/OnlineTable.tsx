@@ -10,7 +10,9 @@ import { useEffect, useRef, useState } from "react";
 import { seatWind } from "@mjwaits/shared/engine/game";
 import { MYSTERY_NAME, profileById } from "@mjwaits/shared/engine/bots";
 import { cleanNickname, normalizeRoomCode } from "@mjwaits/shared/protocol/limits";
-import { MYSTERY_BOT, TABLE_BOTS, TURN_TIMERS, type TableBot, type TableClientMessage, type TableSettings, type TableState } from "@mjwaits/shared/protocol/table";
+import { JACKPOTS, MYSTERY_BOT, TABLE_BOTS, TURN_TIMERS, type TableBot, type TableClientMessage, type TableSettings, type TableState } from "@mjwaits/shared/protocol/table";
+import { DEFAULT_SWAP_RULES } from "@mjwaits/shared/engine/swap";
+import { SWAP_PRESETS } from "./PlaySwap";
 import { defaultNickname, type ConnectionStatus } from "./lib/online";
 import {
   codeFromInvite,
@@ -582,6 +584,53 @@ function Lobby({ table, me, send, onLeave }: { table: TableState; me: Welcome; s
             {HOLDS.map((h) => (
               <Seg key={h} on={s.hold === h} disabled={!me.host} onClick={() => setup({ hold: h })}>
                 {h < 60 ? `${h}s` : `${h / 60}m`}
+              </Seg>
+            ))}
+          </Setting>
+          {/* 換牌, as the Play table has it: off, or a preset - and which round winds swap. */}
+          <Setting
+            label="換牌 Swap tiles"
+            note={
+              s.swapRules
+                ? `${SWAP_PRESETS.find((p) => p.rounds.join() === s.swapRules!.rounds.join() && p.tiles.join() === s.swapRules!.tiles.join())?.label ?? "your own dice"} · before each hand of the rounds below`
+                : "no swapping"
+            }
+          >
+            <Seg on={!s.swapRules} disabled={!me.host} onClick={() => setup({ swapRules: undefined })}>
+              Off
+            </Seg>
+            {SWAP_PRESETS.map((p) => (
+              <Seg
+                key={p.name}
+                on={!!s.swapRules && p.rounds.join() === s.swapRules.rounds.join() && p.tiles.join() === s.swapRules.tiles.join()}
+                disabled={!me.host}
+                onClick={() => setup({ swapRules: { winds: s.swapRules?.winds ?? DEFAULT_SWAP_RULES.winds, rounds: p.rounds, tiles: p.tiles } })}
+              >
+                {p.name}
+              </Seg>
+            ))}
+          </Setting>
+          {s.swapRules && (
+            <Setting label="Rounds that swap">
+              {[1, 2, 3, 4].map((w) => {
+                const on = s.swapRules!.winds.includes(w);
+                return (
+                  <Seg
+                    key={w}
+                    on={on}
+                    disabled={!me.host}
+                    onClick={() => setup({ swapRules: { ...s.swapRules!, winds: on ? s.swapRules!.winds.filter((x) => x !== w) : [...s.swapRules!.winds, w].sort() } })}
+                  >
+                    {"東南西北"[w - 1]}圈
+                  </Seg>
+                );
+              })}
+            </Setting>
+          )}
+          <Setting label="獎池 Jackpot" note={s.jackpot ? `each puts ${s.jackpot} in on a draw; a 自摸 takes it all` : "off"}>
+            {JACKPOTS.map((j) => (
+              <Seg key={j} on={(s.jackpot ?? 0) === j} disabled={!me.host} onClick={() => setup({ jackpot: j })}>
+                {j ? j : "Off"}
               </Seg>
             ))}
           </Setting>

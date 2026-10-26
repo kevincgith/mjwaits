@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import type { Tile } from "@mjwaits/shared/engine/mahjong";
 import { replay, type ScoreGame } from "@mjwaits/shared/engine/ledger";
 import { PROTOCOL_VERSION } from "@mjwaits/shared/protocol/limits";
+import { blindPicks, botSplit, takeOrder, type Pile } from "@mjwaits/shared/engine/swap";
 import type { TableServerMessage, TableState } from "@mjwaits/shared/protocol/table";
 import type { Table } from "../src/table";
 import { BASE, ORIGIN } from "./helpers";
@@ -111,6 +112,16 @@ function answer(p: Phone, s: TableState) {
   p.sentAt = Date.now();
   const v = s.view;
   if (v.phase.kind === "over") return p.send({ t: "ready" });
+  // 換牌: give the first tiles in hand; take evenly, blind (as the one-tap take).
+  if (v.phase.kind === "swap") {
+    const ph = v.phase;
+    if (ph.stage === "give") return p.send({ t: "give", step: s.step, tiles: v.players[s.you].hand!.slice(0, ph.count) });
+    const piles = ph.piles.map((pile) => (pile ? pile.map((t) => (t ? ({ suit: "z", rank: 1 } as Tile) : null)) : null)) as (Pile | null)[];
+    const order = takeOrder(v.dealer);
+    const after = order.slice(order.indexOf(ph.taker) + 1);
+    const even = botSplit(piles.map((pl) => (pl ? pl.filter(Boolean).length : 0)), s.you, after, ph.count);
+    return p.send({ t: "take", step: s.step, picks: piles.map((pl, g) => (pl ? blindPicks(pl, even[g]) : [])) });
+  }
   const turn = s.options?.turn;
   if (turn) {
     if (turn.selfDraw) return p.send({ t: "move", step: s.step, move: { kind: "selfDraw" } });
@@ -148,6 +159,8 @@ function expectNoLeaks(states: TableState[]) {
       if (i !== s.you && !over) expect(pl.hand).toBeNull();
       if (pl.hand) expect(pl.hand.length).toBe(pl.handCount);
     });
+    // 換牌: of the piles, only your own is face up.
+    if (s.view.phase.kind === "swap") s.view.phase.piles.forEach((pile, i) => i !== s.you && pile?.forEach((t) => expect(t === null || t === "back").toBe(true)));
     if (s.view.phase.kind === "turn" && s.view.phase.seat !== s.you) {
       expect(s.view.phase.drawn).toBeNull();
       expect(s.view.phase.forbidden).toBeUndefined();
@@ -263,6 +276,26 @@ describe("playing", () => {
     const r = replay(record);
     expect(record.seats.map((p) => r.totals[p])).toEqual(latest.totals);
     expect(r.hands.length).toBe(latest.hand - 1);
+    expect(host.errors).toEqual([]);
+    expectNoLeaks(host.states);
+  });
+
+  it("swaps tiles (換牌) and keeps a jackpot (獎池): the record and the totals agree", { timeout: 120_000 }, async () => {
+    const swapRules = { winds: [1, 2, 3, 4], rounds: [2, 2, 2, 2, 2, 2], tiles: [3, 3, 3, 3, 3, 3] };
+    const { host } = await withBots(0, { swapRules, jackpot: 5 });
+    host.send({ t: "start" });
+    const s = await playUntil([host], (s) => s.hand >= 4, 100_000);
+    const swaps = host.states.filter((x) => x.view?.phase.kind === "swap");
+    // Every hand swapped: two rounds, each with a give and four takes.
+    expect(new Set(swaps.map((x) => x.hand)).size).toBeGreaterThanOrEqual(3);
+    expect(swaps.some((x) => x.view!.phase.kind === "swap" && x.view!.phase.stage === "take" && x.view!.phase.round === 2)).toBe(true);
+    // Money stays at the table: what's out of the totals is in the pot.
+    expect(s.totals.reduce((a, b) => a + b, 0) + s.pot).toBe(0);
+    const res = await SELF.fetch(`${BASE}/tables/${s.code}/scores`, { headers: { Origin: ORIGIN } });
+    const record = (await res.json()) as ScoreGame;
+    const r = replay(record);
+    expect(record.seats.map((p) => r.totals[p])).toEqual(s.totals);
+    expect(r.pot).toBe(s.pot);
     expect(host.errors).toEqual([]);
     expectNoLeaks(host.states);
   });

@@ -49,7 +49,16 @@ export function seatState(view: TableView): SeatState {
   const vp = view.phase;
   if (vp.kind === "turn") phase = { ...vp, seat: toLocal(vp.seat) };
   else if (vp.kind === "claims") phase = { ...vp, from: toLocal(vp.from) };
-  else {
+  else if (vp.kind === "swap") {
+    // The others' piles as backs (BLANK), yours as it is; seats turned.
+    phase = {
+      ...vp,
+      piles: turn(vp.piles.map((pile) => (pile ? pile.map((t) => (t === "back" ? BLANK : t ? { ...t } : null)) : null))),
+      taker: toLocal(vp.taker),
+      took: vp.took.map(toLocal),
+      ...(vp.takenBy ? { takenBy: turn(vp.takenBy.map((row) => row.map((t) => (t === null ? null : toLocal(t))))) } : {}),
+    };
+  } else {
     const r = vp.result;
     result = {
       ...r,
