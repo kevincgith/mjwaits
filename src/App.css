@@ -13255,6 +13255,11 @@ html.sc-fit-mode .build-version {
   font-size: var(--text-xs);
 }
 
+.sc-sheet-detail .sc-sheet-patterns {
+  color: var(--text);
+  font-weight: 600;
+}
+
 /* Every board banner in one style - quiet grey, the label in ink, the
    action in the app's green. (Only one shows at a time.) */
 .sc-banner,
