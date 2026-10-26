@@ -482,9 +482,10 @@ describe("嗌錯, 自動 and bot speed", () => {
       const after = await host.table((s) => s.step > called.step);
       expect(host.errors).toEqual([]);
       expect(after.view!.players[0].melds.length).toBe(melds - 1);
-      expect(after.view!.tableBonuses.at(-1)).toMatchObject({ seat: 0, name: "嗌錯" });
-      expect(after.totals[0]).toBe(totals[0] - 15);
-      for (const s of [1, 2, 3]) expect(after.totals[s]).toBe(totals[s] + 5);
+      // The 嗌錯 is paid - and anything else since (the next player's flower, say).
+      const since = after.view!.tableBonuses.slice(called.view!.tableBonuses.length);
+      expect(since.find((b) => b.name === "嗌錯")).toMatchObject({ seat: 0, deltas: [-15, 5, 5, 5] });
+      for (let s = 0; s < 4; s++) expect(after.totals[s]).toBe(totals[s] + since.reduce((sum, b) => sum + b.deltas[s], 0));
       expect(after.options?.turn?.retract).toBeFalsy();
       // Gone: a second take-back is refused.
       host.send({ t: "retract", step: after.step });
