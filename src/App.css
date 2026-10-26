@@ -5671,6 +5671,24 @@ html.playing body {
   --play-pos: #8fe3a6;
 }
 
+/* A game, not a page: nothing on the table selects, flashes or pops up
+   Safari's copy menu when tapped or held (the buttons already don't - see
+   button) - only what you type into still does. */
+.play-screen,
+.play-sheet-host {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.play-screen :is(input, textarea, [contenteditable]),
+.play-sheet-host :is(input, textarea, [contenteditable]) {
+  -webkit-touch-callout: default;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 .play-screen .tile-glyph {
   font-size: inherit;
 }

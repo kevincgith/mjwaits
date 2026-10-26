@@ -24,6 +24,7 @@ export interface SeatView {
   flowers: Player["flowers"];
   discards: Tile[];
   riichi?: Player["riichi"];
+  overWater?: boolean;
 }
 
 // A finished hand's result as it travels: the score as its total and the
@@ -87,6 +88,7 @@ export function viewFor(s: GameState, you: number, shown: (seat: number) => bool
       flowers: p.flowers.map((f) => ({ ...f })),
       discards: copyTiles(p.discards),
       ...(p.riichi ? { riichi: { ...p.riichi } } : {}),
+      ...(p.overWater ? { overWater: true } : {}),
     };
   });
   let phase: PhaseView;

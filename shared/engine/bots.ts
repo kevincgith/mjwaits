@@ -12,7 +12,7 @@
 import {
   claimOptions,
   forbiddenDiscards,
-  isWinningHand,
+  canWin,
   kongOptions,
   lahAddOn,
   liveTilesLeft,
@@ -605,7 +605,7 @@ export function botTurnFor(s: GameState, profile: BotProfile, rng: Rng = Math.ra
   if (s.phase.kind !== "turn") throw new Error("Not a turn");
   const seat = s.phase.seat;
   const p = s.players[seat];
-  if (isWinningHand(p)) return { move: { kind: "selfDraw" }, difficulty: 0.2 };
+  if (canWin(p)) return { move: { kind: "selfDraw" }, difficulty: 0.2 };
   const forced = riichiForcedDiscard(s);
   if (forced) return { move: { kind: "discard", tile: forced }, difficulty: 0 };
   const options = rateDiscardsFor(s, seat, profile);

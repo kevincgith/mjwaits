@@ -41,6 +41,7 @@ export function seatState(view: TableView): SeatState {
     flowers: p.flowers,
     discards: p.discards,
     ...(p.riichi ? { riichi: p.riichi } : {}),
+    ...(p.overWater ? { overWater: true } : {}),
   }));
 
   let phase: Phase;

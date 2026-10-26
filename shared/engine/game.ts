@@ -73,6 +73,8 @@ export interface Riichi {
   state: Exclude<RiichiState, "none">;
   discard: number;
   ippatsu: boolean;
+  // Passed up a win (on a discard, or its own draw): no more wins this hand.
+  passed?: boolean;
 }
 
 export interface Player {
@@ -81,6 +83,9 @@ export interface Player {
   flowers: BonusTile[];
   discards: Tile[];
   riichi?: Riichi;
+  // 過水: passed up a win (not 叮) - no win, off a discard or drawn, till
+  // it throws a tile that doesn't complete its hand.
+  overWater?: boolean;
 }
 
 export type Phase =
@@ -260,6 +265,7 @@ function cloneState(s: GameState): GameState {
       flowers: p.flowers.slice(),
       discards: p.discards.slice(),
       ...(p.riichi ? { riichi: { ...p.riichi } } : {}),
+      ...(p.overWater ? { overWater: true } : {}),
     })),
     log: s.log.slice(),
     ...(s.tableBonuses ? { tableBonuses: s.tableBonuses.slice() } : {}),
@@ -469,6 +475,17 @@ export function isWinningHand(p: Player, extra?: Tile): boolean {
   return isCompleteHand(hand, meldsNeeded(p));
 }
 
+// May win with this hand (and the tile, if one's offered): a winning hand -
+// unless it's passed one up: a 叮 hand for the rest of the hand (see
+// Riichi.passed), any other till 過水 lifts (see Player.overWater).
+export const canWin = (p: Player, extra?: Tile) => !p.riichi?.passed && !p.overWater && isWinningHand(p, extra);
+
+// Passing up a win: 叮, for good; otherwise 過水.
+function passUp(p: Player) {
+  if (p.riichi) p.riichi.passed = true;
+  else p.overWater = true;
+}
+
 export type TurnMove =
   // `riichi`: declare 叮 with this discard (see riichiDiscards).
   | { kind: "discard"; tile: Tile; riichi?: boolean }
@@ -478,10 +495,17 @@ export type TurnMove =
 
 export type KongMove = Extract<TurnMove, { kind: "concealedKong" | "addedKong" }>;
 
-export function kongOptions(p: Player): KongMove[] {
+// A turn begun by claiming a run or a pung (上 / 碰) - the only turns with
+// tiles barred from the discard that follows (食替).
+export const justClaimed = (phase: GameState["phase"]) => phase.kind === "turn" && phase.forbidden !== undefined;
+
+// `phase`: the turn it is - right after claiming a run or a pung there's no
+// kong (the claim's discard comes first).
+export function kongOptions(p: Player, phase?: GameState["phase"]): KongMove[] {
   const moves: KongMove[] = [];
   // A locked 叮 hand can't kong.
   if (p.riichi) return moves;
+  if (phase && justClaimed(phase)) return moves;
   const seen = new Set<string>();
   for (const t of p.hand) {
     const key = tileKey(t);
@@ -505,7 +529,7 @@ export function claimOptions(s: GameState, seat: number): Claim[] {
   const { from, tile } = s.phase;
   const p = s.players[seat];
   const opts: Claim[] = [];
-  if (isWinningHand(p, tile)) opts.push({ kind: "win" });
+  if (canWin(p, tile)) opts.push({ kind: "win" });
   // Claims other than a win need a tile left to draw afterwards, and a
   // locked 叮 hand can only win - as can anyone robbing a kong.
   if (liveTilesLeft(s) === 0 || p.riichi || s.phase.robKong) return opts;
@@ -591,8 +615,12 @@ export function applyTurnMove(state: GameState, move: TurnMove): GameState {
         const first = p.discards.length === 0 && p.melds.length === 0 && s.firstGoAround;
         p.riichi = { state: first ? (seat === s.dealer ? "heavenly-riichi" : "earthly-riichi") : "riichi", discard: p.discards.length, ippatsu: true };
       }
+      // Throwing when it could have won on its own draw is passing up that win.
+      if (canWin(p)) passUp(p);
       p.hand = removeTiles(p.hand, [move.tile]);
       p.discards.push(move.tile);
+      // 過水 lifts with a throw that wouldn't have completed the hand.
+      if (p.overWater && !isWinningHand(p, move.tile)) delete p.overWater;
       // 追: the fourth player in a row to throw the same tile pays the rest.
       const run = s.chase && sameTile(s.chase.tile, move.tile) && (s.chase.seat + 1) % SEATS === seat ? s.chase.run + 1 : 1;
       if (run === SEATS) {
@@ -606,12 +634,13 @@ export function applyTurnMove(state: GameState, move: TurnMove): GameState {
       return s;
     }
     case "selfDraw": {
-      if (!isWinningHand(p)) throw new Error("Not a winning hand");
+      if (!canWin(p)) throw new Error(p.riichi?.passed ? "叮: passed a win - no more this hand" : "Not a winning hand");
       return finishWin(s, seat, null, phase.drawn ?? p.hand[p.hand.length - 1], phase.replacement);
     }
     case "concealedKong":
     case "addedKong": {
       if (p.riichi) throw new Error("叮: a locked hand can't kong");
+      if (justClaimed(phase)) throw new Error("No kong straight after claiming a run or a pung");
       // Any kong ends everyone's 一發.
       for (const pl of s.players) if (pl.riichi) pl.riichi.ippatsu = false;
       if (move.kind === "concealedKong") {
@@ -624,7 +653,7 @@ export function applyTurnMove(state: GameState, move: TurnMove): GameState {
       p.hand = removeTiles(p.hand, [move.tile]);
       s.firstGoAround = false;
       // 搶槓: anyone who'd win on the added tile may take it first.
-      if (s.players.some((pl, i) => i !== seat && isWinningHand(pl, move.tile))) {
+      if (s.players.some((pl, i) => i !== seat && canWin(pl, move.tile))) {
         s.phase = { kind: "claims", from: seat, tile: move.tile, robKong: true };
         return s;
       }
@@ -725,6 +754,10 @@ export function resolveClaims(state: GameState, decisions: (Claim | null)[]): Ga
   const best = winningClaimSeat(state, decisions);
 
   const s = cloneState(state);
+  // Anyone who could have won on this tile and didn't call it has passed up that win.
+  s.players.forEach((pl, seat) => {
+    if (seat !== from && decisions[seat]?.kind !== "win" && claimOptions(state, seat).some((c) => c.kind === "win")) passUp(pl);
+  });
   if (best === null) {
     // No one robbed the kong: it stands.
     if (state.phase.robKong) return completeAddedKong(s, from, tile);
@@ -1013,13 +1046,13 @@ export function rateDiscards(s: GameState, seat: number): DiscardRating[] {
 export function botTurnMove(s: GameState): TurnMove {
   if (s.phase.kind !== "turn") throw new Error("Not a turn");
   const p = s.players[s.phase.seat];
-  if (isWinningHand(p)) return { kind: "selfDraw" };
+  if (canWin(p)) return { kind: "selfDraw" };
   const forced = riichiForcedDiscard(s);
   if (forced) return { kind: "discard", tile: forced };
   const best = rateDiscards(s, s.phase.seat);
   if (liveTilesLeft(s) > 0) {
     // Kong when it doesn't set the hand back.
-    for (const k of kongOptions(p)) {
+    for (const k of kongOptions(p, s.phase)) {
       if (k.kind === "addedKong") return k;
       const rest = removeTiles(p.hand, [k.tile, k.tile, k.tile, k.tile]);
       // After a kong the replacement draw arrives, so compare at the same size as now-minus-a-discard.

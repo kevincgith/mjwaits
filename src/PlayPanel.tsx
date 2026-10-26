@@ -26,7 +26,7 @@ import {
   claimOptions,
   forbiddenDiscards,
   HUMAN,
-  isWinningHand,
+  canWin,
   kongOptions,
   liveTilesLeft,
   meldsNeeded,
@@ -1716,7 +1716,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     if (online) {
       // The server plays the bots; a locked 叮 hand still throws its draw by itself.
       const phase = game.phase;
-      if (!myTurn || phase.kind !== "turn" || !me.riichi || isWinningHand(me) || !phase.drawn) return;
+      if (!myTurn || phase.kind !== "turn" || !me.riichi || canWin(me) || !phase.drawn) return;
       const tile = phase.drawn;
       const id = window.setTimeout(() => doTurn({ kind: "discard", tile }), 700);
       return () => window.clearTimeout(id);
@@ -1788,7 +1788,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
         } else if (m.kind !== "discard") showBurst(phase.seat, "槓");
         advance(applyTurnMove(game, m));
       };
-    } else if (phase.kind === "turn" && game.players[HUMAN].riichi && !isWinningHand(game.players[HUMAN])) {
+    } else if (phase.kind === "turn" && game.players[HUMAN].riichi && !canWin(game.players[HUMAN])) {
       // Your locked 叮 hand throws the draw by itself.
       const tile = riichiForcedDiscard(game);
       if (tile) move = () => advance(applyTurnMove(game, { kind: "discard", tile }));
@@ -1967,8 +1967,8 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     return me.hand.length === meldsNeeded(me) * 3 + 1 ? shanten(me.hand, meldsNeeded(me)) : null;
   }, [hint, myTurn, ratings, me, seated]);
 
-  const canSelfDraw = myTurn && isWinningHand(me);
-  const myKongs = myTurn && liveTilesLeft(game) > 0 ? kongOptions(me) : [];
+  const canSelfDraw = myTurn && canWin(me);
+  const myKongs = myTurn && liveTilesLeft(game) > 0 ? kongOptions(me, game.phase) : [];
 
   const tapTile = (index: number) => {
     if (rolling) return;
@@ -2790,7 +2790,8 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
               {riichiArmed ? (selected === null ? "叮: choose the tile to throw (取消 to cancel)" : "Tap again to declare 叮") : "Tap again to discard"}
             </span>
           )}
-          {me.riichi && !over && <span className="play-bar-prompt">叮 - your hand is locked</span>}
+          {me.riichi && !over && <span className="play-bar-prompt">{me.riichi.passed ? "叮 - you passed a win: no more wins this hand" : "叮 - your hand is locked"}</span>}
+          {me.overWater && !me.riichi && !over && <span className="play-bar-prompt">過水 - no win till you throw a tile that doesn't win</span>}
         </div>
 
         {burst && <CallBurst key={burst.id} seat={burst.seat} label={burst.label} deltas={burst.deltas} />}
