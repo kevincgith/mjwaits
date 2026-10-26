@@ -20,7 +20,7 @@
 // Your moves go to the server instead of into the game; the bots, timer and
 // payments are the server's.
 
-import { type CSSProperties, memo, type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   applyTurnMove,
   claimOptions,
@@ -193,6 +193,8 @@ const WIN_SHOW_MS = 3700 + WIN_TILE_LEAD * 1000;
 // A phone held upright: the table is drawn turned (as App.css's media query).
 const TURNED = "(orientation: portrait) and (max-width: 820px)";
 const DRAW_SHOW_MS = 1700;
+// Your hand's tiles sliding to their new places (a swap's give or takes).
+const HAND_SLIDE_MS = 450;
 // Online, how long a discard whose claim window passed unseen shows in the bubble.
 const FLASH_MS = 900;
 // 自動 autoplay: a bot plays your seat and you watch - the Grandmaster -
@@ -259,13 +261,12 @@ const claimLabel = (c: Claim) => (c.kind === "win" ? "胡" : c.kind === "kong" ?
 // A seat's concealed tiles, seen edge-on from the middle of the table.
 // `drew`: holding a tile just drawn, which stands a little apart at the
 // player's right end (as yours does).
-function EdgeTilesView({ count, side, drew, children }: { count: number; side: Side; drew: boolean; children?: ReactNode }) {
+function EdgeTilesView({ count, side, drew }: { count: number; side: Side; drew: boolean }) {
   return (
     <span className={`play-edge play-edge-${side}${drew ? " has-drawn" : ""}`} style={{ "--count": count } as CSSProperties} aria-label={`${count} concealed tiles`}>
       {Array.from({ length: count }, (_, i) => (
         <span key={i} className="play-edge-tile" />
       ))}
-      {children}
     </span>
   );
 }
@@ -1286,6 +1287,9 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
   // Yours, given: flying from your hand down to your pile.
   const [giveFlights, setGiveFlights] = useState<Flight[]>([]);
   const swapFlying = flights.length > 0;
+  // The flights as they stand now (for a timer set earlier).
+  const flightsNow = useRef(flights);
+  flightsNow.current = flights;
   const swapAirborne = flights.some((f) => !landed.has(f.id)) || giveFlights.length > 0;
   // A taken tile joins its new hand as it lands, not before: till then each
   // hand is drawn without the tiles still flying to it.
@@ -1299,7 +1303,10 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
   const myTurn = seated && waitedOn && game.phase.kind === "turn" && game.phase.seat === HUMAN && !swapSettling;
   // The dealer's first draw, kept out of sight while the swap settles.
   const heldDraw = (seat: number) => (swapSettling && game.phase.kind === "turn" && game.phase.seat === seat && game.phase.drawn ? game.phase.drawn : null);
-  const swapGiving = !!swapPhase && seated && !autoplay && !swapFlying && swapPhase.stage === "give" && !swapPhase.piles[HUMAN];
+  // Your hand still taking in what you were given (see the hand's slide):
+  // the next give waits till it's settled.
+  const [handSettling, setHandSettling] = useState(false);
+  const swapGiving = !!swapPhase && seated && !autoplay && !swapFlying && !handSettling && swapPhase.stage === "give" && !swapPhase.piles[HUMAN];
   const [swapHand, setSwapHand] = useState<number[]>([]);
   const [swapPicks, setSwapPicks] = useState<number[][]>([[], [], [], []]);
   // A step of the swap - in this deal (a new game's first step looks just
@@ -1449,6 +1456,15 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     // The round over: its rows stay a moment, then every tile joins its hand.
     if (roundOver) {
       const id = window.setTimeout(() => {
+        // Yours slide down from your row into your hand.
+        const frame = tableFrame();
+        captureHand(
+          flightsNow.current.flatMap((f) => {
+            if (f.to !== HUMAN || !f.row || f.row.place === undefined) return [];
+            const el = document.querySelector(`[data-swap-row="${HUMAN}"] [data-swap-group="${f.row.group}"] [data-swap-place="${f.row.place}"] > *`);
+            return el ? [{ tile: f.real, box: frame.box(el) }] : [];
+          })
+        );
         setFlights([]);
         setFlown(new Set());
         setLanded(new Set());
@@ -1616,6 +1632,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
         return tile ? { box: frame.box(tile), view: viewOf(tile, frame, SWAP_TILT_STANDING, 0), font: parseFloat(getComputedStyle(tile).fontSize) } : null;
       }),
     };
+    captureHand();
     advance(swapGive(game, HUMAN, order.map((i) => handTiles[i]), Math.random, true));
   };
   const myPileNow = swapPhase?.piles[HUMAN] ?? null;
@@ -1857,6 +1874,73 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     return { sorted: sortTiles(tiles), drawnTile };
   }, [me.hand, drawn, comingToMe, swapSettling]); // eslint-disable-line react-hooks/exhaustive-deps
   const handTiles = handView.drawnTile ? [...handView.sorted, handView.drawnTile] : handView.sorted;
+  // Your hand rearranging (a swap's give, or its takes joining it): where
+  // each tile showed just before - and any coming in from your swap row -
+  // so every tile slides from there to its new place rather than jumping.
+  const handFrom = useRef<{ tile: Tile; box: Box; joining?: boolean }[] | null>(null);
+  // (As they stand now - read from a timer set earlier, too.)
+  const handTilesNow = useRef(handTiles);
+  handTilesNow.current = handTiles;
+  const handTileEls = () => [...document.querySelectorAll<HTMLElement>(".play-hand:not(.play-swap-mine) > .play-hand-tile")];
+  const captureHand = (joining: { tile: Tile; box: Box }[] = []) => {
+    const frame = tableFrame();
+    handFrom.current = [
+      ...handTileEls().flatMap((e, i) => {
+        const t = handTilesNow.current[i];
+        return t && e.firstElementChild ? [{ tile: t, box: frame.box(e.firstElementChild) }] : [];
+      }),
+      ...joining.map((j) => ({ ...j, joining: true })),
+    ];
+  };
+  useLayoutEffect(() => {
+    const from = handFrom.current;
+    if (!from) return;
+    handFrom.current = null;
+    const quick = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    if (quick) return;
+    const frame = tableFrame();
+    const used = new Set<number>();
+    const joins = from.some((f) => f.joining);
+    if (joins) {
+      setHandSettling(true);
+      window.setTimeout(() => setHandSettling(false), HAND_SLIDE_MS * 1.9);
+    }
+    handTileEls().forEach((el, i) => {
+      const t = handTiles[i];
+      const face = el.firstElementChild;
+      if (!t || !face) return;
+      const now = frame.box(face);
+      const at = centreOf(now);
+      // From the nearest place a tile like it just was.
+      let best = -1;
+      let far = Infinity;
+      from.forEach((f, k) => {
+        if (used.has(k) || !sameTile(f.tile, t)) return;
+        const c = centreOf(f.box);
+        const d = Math.hypot(c.x - at.x, c.y - at.y);
+        if (d < far) [far, best] = [d, k];
+      });
+      if (best < 0) return;
+      used.add(best);
+      const was = from[best].box;
+      const c = centreOf(was);
+      const k = was.width / now.width;
+      if (Math.abs(c.x - at.x) < 0.5 && Math.abs(c.y - at.y) < 0.5 && Math.abs(k - 1) < 0.01) return;
+      const away = { translate: `${c.x - at.x}px ${c.y - at.y}px`, scale: String(k) };
+      const home = { translate: "0px 0px", scale: "1" };
+      const ease = "cubic-bezier(0.3, 0.7, 0.2, 1)";
+      // Tiles joining from your row: your hand's own tiles first move apart
+      // to open their gaps, then the newcomers drop into them - so none pass
+      // through each other.
+      if (!joins) return void el.animate([away, home], { duration: HAND_SLIDE_MS, easing: ease });
+      el.animate(
+        from[best].joining
+          ? [{ ...away, offset: 0 }, { ...away, offset: 0.4, easing: ease }, { ...home, offset: 1 }]
+          : [{ ...away, offset: 0, easing: ease }, { ...home, offset: 0.45 }, { ...home, offset: 1 }],
+        { duration: HAND_SLIDE_MS * 1.9 }
+      );
+    });
+  }, [handTiles]);
 
   const ratings = useMemo(() => (myTurn && hint && !me.riichi ? rateDiscardsFor(game, HUMAN, ADVISOR) : null), [game, myTurn, hint, me.riichi]);
   const bestDiscard = ratings?.[0]?.tile ?? null;
@@ -2158,12 +2242,11 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
             topple={wonWith(seat) ? TOPPLE_WINNER : result?.winner === null || choosing ? TOPPLE_DRAW : TOPPLE_OTHERS}
           />
         ) : (
-          <EdgeTiles count={p.hand.length - incoming(seat).length - (heldDraw(seat) ? 1 : 0)} side={side} drew={!over && drewSeat === seat && !swapSettling}>
-            {/* Across, what they've taken lies just in front of their hand - out of the row's
-                layout, so nothing on the table moves for it. */}
-            {side === "top" && flights.some((f) => f.to === seat) && <span className="play-swap-front">{swapRow(seat)}</span>}
-          </EdgeTiles>
+          <EdgeTiles count={p.hand.length - incoming(seat).length - (heldDraw(seat) ? 1 : 0)} side={side} drew={!over && drewSeat === seat && !swapSettling} />
         )}
+        {/* Across, what they've taken lies just in front of them, on the table's middle line (with
+            their pile and the compass) - out of the seat's layout, so nothing on the table moves for it. */}
+        {side === "top" && flights.some((f) => f.to === seat) && <span className="play-swap-front">{swapRow(seat)}</span>}
       </div>
     );
   };

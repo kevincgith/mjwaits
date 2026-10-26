@@ -286,8 +286,31 @@ export function SwapSheet({ rules, onChange, onClose }: { rules: SwapRules; onCh
     onClose();
   };
   const toggleWind = (w: Wind) => update((r) => ({ ...r, winds: r.winds.includes(w) ? r.winds.filter((x) => x !== w) : ([...r.winds, w].sort() as Wind[]) }));
+  const options = (lo: number, hi: number) =>
+    Array.from({ length: hi - lo + 1 }, (_, k) => lo + k).map((n) => (
+      <option key={n} value={n}>
+        {n}
+      </option>
+    ));
   const mapRow = (key: "rounds" | "tiles", lo: number, hi: number, unit: string) => (
     <div className="play-swap-map">
+      {/* Every throw at once: one pick sets all six. */}
+      <label className="play-swap-map-cell is-all">
+        <span className="play-swap-all">All</span>
+        <select
+          value={r[key].every((x) => x === r[key][0]) ? r[key][0] : ""}
+          aria-label={`Every die: ${unit}`}
+          onChange={(e) => {
+            const n = Number(e.target.value);
+            if (n) update((r) => ({ ...r, [key]: r[key].map(() => n) }));
+          }}
+        >
+          <option value="" disabled>
+            –
+          </option>
+          {options(lo, hi)}
+        </select>
+      </label>
       {r[key].map((v, i) => (
         <label key={i} className="play-swap-map-cell">
           <PlayDie value={i + 1} rolling={false} index={0} />
@@ -299,11 +322,7 @@ export function SwapSheet({ rules, onChange, onClose }: { rules: SwapRules; onCh
               update((r) => ({ ...r, [key]: r[key].map((x, j) => (j === i ? n : x)) }));
             }}
           >
-            {Array.from({ length: hi - lo + 1 }, (_, k) => lo + k).map((n) => (
-              <option key={n} value={n}>
-                {n}
-              </option>
-            ))}
+            {options(lo, hi)}
           </select>
         </label>
       ))}
@@ -447,6 +466,9 @@ export interface Pose {
   ey: number;
   d: number;
   shade: [number, number];
+  // Its shadow on the felt: how far it falls below the tile (px), squashed
+  // to (a standing tile's foot), how soft (em) and how dark.
+  sh: { dy: number; sy: number; blur: number; a: number; ex: number; ey: number; d: number };
 }
 // As a transform of the flying tile, whose own centre (untransformed) is
 // `c`: seen from the pose's eye (so it shows the sides it would there),
@@ -568,7 +590,7 @@ export function flightPath(
         const s = sizes[i] + (lifted - sizes[i]) * g;
         const k = s / (pitch ? sizes[i] : endSizes[i]);
         const c = { x: c0.x + (h.x - c0.x) * g, y: c0.y + (h.y - c0.y) * g };
-        return { x: os.x + (og.x * k - os.x) * g + c.x - start.x, y: os.y + (og.y * k - os.y) * g + c.y - start.y, r: turnFrom, s };
+        return { x: os.x + (og.x * k - os.x) * g + c.x - start.x, y: os.y + (og.y * k - os.y) * g + c.y - start.y, r: turnFrom, s, lift: g };
       }
       // Flying over as one, landing.
       const f = ease((u - GATHER) / (1 - GATHER));
@@ -580,7 +602,7 @@ export function flightPath(
       const apart = 1 + 0.05 * Math.sin(Math.PI * f);
       const o = turnBy((from.x + (to.x - from.x) * te) * apart, (from.y + (to.y - from.y) * te) * apart, turn * te);
       const c = middle(f);
-      return { x: c.x + o.x - start.x, y: c.y + o.y - start.y, r: turnFrom + turn * te, s };
+      return { x: c.x + o.x - start.x, y: c.y + o.y - start.y, r: turnFrom + turn * te, s, lift: 1 - f * f };
     });
   });
 }
@@ -604,7 +626,7 @@ const tileIn = (el: HTMLElement, atStart: boolean) =>
 // it not quite linear) - so nothing jumps as it sets off or lands.
 function fitPose(el: HTMLElement, frame: Frame, c: { x: number; y: number }, end: FlightEnd, atStart: boolean): Pose {
   const target = centreOf(end.box);
-  const pose: Pose = { x: target.x, y: target.y, r: end.view.turn, s: 1, t: end.view.tilt, ex: end.view.eye.x, ey: end.view.eye.y, d: end.view.eye.d, shade: end.view.shade };
+  const pose: Pose = { x: target.x, y: target.y, r: end.view.turn, s: 1, t: end.view.tilt, ex: end.view.eye.x, ey: end.view.eye.y, d: end.view.eye.d, shade: end.view.shade, sh: { dy: 0, sy: 1, blur: 0, a: 0, ex: 0, ey: 0, d: 1100 } };
   const tile = tileIn(el, atStart);
   for (let i = 0; i < 4; i++) {
     el.style.transform = poseTransform(pose, c);
@@ -648,8 +670,20 @@ export function aimGroup(fs: Flight[], els: Map<number, HTMLElement>, frame: Fra
     pitch,
     home
   );
+  // Its shadow where it rests at an end: a tile lying flat casts it round
+  // itself (as the felt's tiles do); a standing one, along its foot.
+  const font = (f: Flight) => f.from.font;
+  // Shadows lie on the felt: seen from the felt's own eye, whoever's tile casts them.
+  const feltEl = document.querySelector(".play-felt");
+  const felt = feltEl ? viewOf(feltEl, frame, SWAP_TILT_FLAT, 0).eye : null;
+  const restShadow = (f: Flight, end: FlightEnd, p: Pose) =>
+    end.view.tilt === SWAP_TILT_FLAT
+      ? { dy: 0.03 * font(f) * p.s, sy: 1, blur: 0.14, a: 0.3 }
+      : { dy: end.box.height / 2 - 0.2 * font(f) * p.s, sy: 0.42, blur: 0.07, a: 0.32 };
   all.forEach(({ f, a, b }, i) => {
     const n = paths[i].length - 1;
+    const s0 = restShadow(f, f.start, a);
+    const s1 = restShadow(f, f.end!, b);
     out.set(
       f.id,
       paths[i].map((p, k) => {
@@ -666,6 +700,12 @@ export function aimGroup(fs: Flight[], els: Map<number, HTMLElement>, frame: Fra
           ey: lerp(a.ey, b.ey, e),
           d: lerp(a.d, b.d, e),
           shade: [lerp(a.shade[0], b.shade[0], e), lerp(a.shade[1], b.shade[1], e)],
+          // Lifted, it falls away below, soft and faint; down, it's as where it rests.
+          sh: ((rest, h) => {
+            const air = { dy: 0.4 * font(f) * p.s, sy: 1, blur: 0.3, a: 0.14 };
+            const eye = felt ?? { x: lerp(a.ex, b.ex, e), y: lerp(a.ey, b.ey, e), d: lerp(a.d, b.d, e) };
+            return { dy: lerp(rest.dy, air.dy, h), sy: lerp(rest.sy, air.sy, h), blur: lerp(rest.blur, air.blur, h), a: lerp(rest.a, air.a, h), ex: eye.x, ey: eye.y, d: eye.d };
+          })(u <= GATHER ? s0 : s1, p.lift),
         };
       })
     );
@@ -675,6 +715,7 @@ export function aimGroup(fs: Flight[], els: Map<number, HTMLElement>, frame: Fra
 
 export function SwapFlight({ flight, landed, onStart, onLanded }: { flight: Flight; landed: boolean; onStart: () => void; onLanded: () => void }) {
   const ref = useRef<HTMLSpanElement>(null);
+  const shadowRef = useRef<HTMLSpanElement>(null);
   // Flown along its path; down when it lands - or, should the animation's
   // end never come (a page in the background holds animations), soon after
   // it should have. It stays in its row till the round's over (PlayPanel
@@ -707,6 +748,22 @@ export function SwapFlight({ flight, landed, onStart, onLanded }: { flight: Flig
       if (back) anims.push(back.animate([{ visibility: "visible" }, { visibility: "visible", offset: 0.35 }, { visibility: "hidden", offset: 0.35 }, { visibility: "hidden" }], timing));
       if (face) anims.push(face.animate([{ visibility: "hidden" }, { visibility: "hidden", offset: 0.35 }, { visibility: "visible", offset: 0.35 }, { visibility: "visible" }], timing));
     }
+    const shadow = shadowRef.current;
+    if (shadow) {
+      const sc = { x: shadow.offsetLeft + shadow.offsetWidth / 2, y: shadow.offsetTop + shadow.offsetHeight / 2 };
+      // On the felt: flat, under where the tile is (a lifted tile's size, unlifted).
+      anims.push(
+        shadow.animate(
+          flight.path.map((p) => ({
+            transform: `${poseTransform({ ...p, y: p.y + p.sh.dy, t: SWAP_TILT_FLAT, ex: p.sh.ex, ey: p.sh.ey, d: p.sh.d }, sc)} scale(1, ${p.sh.sy})`,
+            filter: `blur(${p.sh.blur}em)`,
+            opacity: String(p.sh.a),
+            visibility: "visible",
+          })),
+          timing
+        )
+      );
+    }
     const off = window.setTimeout(onStart, flight.delay);
     const down = window.setTimeout(onLanded, flight.delay + SWAP_FLIGHT_MS + 300);
     anims[0].finished.then(onLanded, () => {});
@@ -729,6 +786,13 @@ export function SwapFlight({ flight, landed, onStart, onLanded }: { flight: Flig
     </span>
   );
   return (
+    <>
+    <span
+      ref={shadowRef}
+      className={`play-swap-shadow${flight.tile ? "" : " is-back"}`}
+      style={{ left: flight.from.left, top: flight.from.top, fontSize: flight.from.font }}
+      aria-hidden="true"
+    />
     <span
       ref={ref}
       className="play-swap-flight"
@@ -747,5 +811,6 @@ export function SwapFlight({ flight, landed, onStart, onLanded }: { flight: Flig
         (face ?? back)
       )}
     </span>
+    </>
   );
 }

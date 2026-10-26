@@ -6224,6 +6224,7 @@ html.playing body {
    end of the row across (they face you). Every tile in it is turned to
    face its owner. */
 .play-seat-top {
+  position: relative;
   grid-area: top;
   justify-self: center;
   flex-direction: row-reverse;
@@ -6805,10 +6806,10 @@ html.playing body {
   border-radius: 0.14em;
 }
 
-/* Bonus tiles (flowers, seasons) set out a size down - two thirds of the
+/* Bonus tiles (flowers, seasons) set out a size down - four fifths of the
    meld tiles beside them - wherever they're declared. */
 .play-flowers > .tile-glyph {
-  font-size: calc(2em / 3);
+  font-size: 0.8em;
 }
 
 .play-felt :is(.play-meld, .play-flowers) {
@@ -7768,7 +7769,8 @@ html.playing body {
 :is(.play-felt, .play-hand, .play-swap-flight) .play-back {
   position: relative;
   background: none;
-  box-shadow: none;
+  /* Grounded as a face-up tile is (its shadow on the felt where it rests). */
+  box-shadow: 0 0.03em 0.28em rgba(0, 0, 0, 0.3);
   transform-style: preserve-3d;
   --tile-x: 0px;
   --tile-y: 0px;
@@ -16057,6 +16059,25 @@ button.sc-stat:active {
 .play-swap-pond.is-standing .play-swap-tile > .tile-glyph {
   transform-origin: 50% 100% var(--play-thick);
   transform: rotateX(-54deg);
+  /* Standing: no shadow on its own face - one at its foot instead (below). */
+  box-shadow: none;
+}
+
+/* A standing tile's shadow: on the felt along its foot, falling toward
+   you - as your hand's do (and none where it's gone). */
+.play-swap-pond.is-standing .play-swap-tile:not(.is-gap)::before,
+.play-swap-mine .play-swap-got-place:not(.is-waiting)::before {
+  content: "";
+  position: absolute;
+  left: 0.04em;
+  right: 0.04em;
+  bottom: -0.06em;
+  height: calc(var(--play-thick) + 0.08em);
+  border-radius: 45%;
+  background: rgba(0, 0, 0, 0.32);
+  filter: blur(0.07em);
+  transform: translateZ(0.5px);
+  pointer-events: none;
 }
 
 .play-swap-pond.is-pickable .play-swap-tile:not(.is-gap) {
@@ -16193,6 +16214,7 @@ button.sc-stat:active {
 
 .play-swap-flight {
   position: absolute;
+  z-index: 1;
   line-height: 0;
   pointer-events: none;
   visibility: hidden;
@@ -16211,6 +16233,28 @@ button.sc-stat:active {
 .play-swap-flight .play-back {
   --shade-long: inherit;
   --shade-end: inherit;
+  /* In the air its shadow is cast on the felt below it (.play-swap-shadow), not stuck to it. */
+  box-shadow: none;
+}
+
+/* A flying tile's shadow on the felt: where it rests, tight and dark; as
+   it lifts, falling away from under it toward you, softer and fainter;
+   back under it as it lands - posed with it (see SwapFlight). */
+.play-swap-shadow {
+  position: absolute;
+  /* Under every flying tile, not just its own. */
+  z-index: 0;
+  width: 0.78em;
+  height: 1em;
+  border-radius: 0.12em;
+  background: #000;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.play-swap-shadow.is-back {
+  width: 0.74em;
+  height: 0.96em;
 }
 
 /* Face down where it lay, face up where it lands: the back and the face
@@ -16231,12 +16275,13 @@ button.sc-stat:active {
   visibility: hidden;
 }
 
-/* What's been taken across lies just in front of that player's hand (on
-   the felt, toward the middle), a meld's size - out of the seat's layout,
-   so the hand and the table never move for it. */
+/* What's been taken across lies just in front of that player (on the
+   felt, toward the middle), a meld's size, centred on the table's middle
+   line as their pile and the compass are (the seat is centred on it) -
+   out of the seat's layout, so the hand and the table never move for it. */
 .play-swap-front {
   position: absolute;
-  top: calc(100% + 0.6em);
+  top: calc(100% + 0.35em);
   left: 50%;
   translate: -50% 0;
   font-size: var(--play-tile);
@@ -16363,7 +16408,8 @@ button.sc-stat:active {
 
 .play-swap-map {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  /* "All", then a cell for each throw. */
+  grid-template-columns: repeat(7, 1fr);
   gap: 0.35rem;
 }
 
@@ -16372,6 +16418,21 @@ button.sc-stat:active {
   justify-items: center;
   gap: 0.3rem;
   font-size: 1.4rem;
+}
+
+/* Its label sits where a die does: a die's height, the same weight. */
+.play-swap-all {
+  display: grid;
+  place-items: center;
+  height: 1em;
+  color: var(--play-gold);
+  font-size: 0.6em;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.play-swap-map-cell.is-all select {
+  border-color: rgba(255, 209, 102, 0.55);
 }
 
 .play-swap-map-cell select {
@@ -16464,9 +16525,15 @@ button.sc-stat:active {
 }
 
 .play-swap-got-place {
+  position: relative;
   display: inline-flex;
   line-height: 0;
   transform-style: preserve-3d;
+}
+
+/* Your row's shadows are its tiles' own (above), each there once it's landed - not one under the row. */
+.play-hand.play-swap-mine::before {
+  display: none;
 }
 
 .play-swap-got-place.is-waiting {
