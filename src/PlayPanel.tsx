@@ -1017,6 +1017,35 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     watch.observe(row);
     return () => watch.disconnect();
   });
+  // The far seat's melds and bonus tiles along its row, beside its hand -
+  // in front of it (as the side seats' are) only when they won't fit across
+  // the table beside it: in front, they'd take the room the far pond grows
+  // into. Measured laid end to end, the hand at its full 17 (a slot kept for
+  // a drawn tile) - so only a call or a flower can change it, never a draw.
+  const [topFront, setTopFront] = useState(false);
+  useLayoutEffect(() => {
+    const felt = feltRef.current;
+    const seat = felt?.querySelector<HTMLElement>(".play-seat-top");
+    const row = seat?.querySelector<HTMLElement>(".play-seat-side");
+    const melds = row?.querySelector<HTMLElement>(":scope > .play-seat-melds");
+    const flowers = row?.querySelector<HTMLElement>(":scope > .play-flowers");
+    if (!felt || !seat || !row || !melds) return;
+    const gap = parseFloat(getComputedStyle(row).gap) || 0;
+    const laid = [...melds.children].reduce((n, m) => n + (m as HTMLElement).offsetWidth + gap, 0) + (flowers?.childElementCount ? flowers.offsetWidth + gap : 0);
+    const edge = seat.querySelector<HTMLElement>(".play-edge-top");
+    let hand = edge?.offsetWidth ?? 0;
+    if (!edge) {
+      const probe = document.createElement("span");
+      probe.style.cssText = "position:absolute;visibility:hidden;font-size:var(--play-wall)";
+      seat.appendChild(probe);
+      hand = 17 * 0.78 * parseFloat(getComputedStyle(probe).fontSize);
+      probe.remove();
+    }
+    const cols = getComputedStyle(felt).gridTemplateColumns.split(" ").map(parseFloat);
+    const room = cols.slice(1, -1).reduce((a, b) => a + b, 0);
+    const front = laid > 0 && hand + (parseFloat(getComputedStyle(seat).columnGap) || 0) + laid > room;
+    if (front !== topFront) setTopFront(front);
+  });
   // Another seat's melds and bonus tiles running longer than its room (a
   // side seat's hand; across, the table's width): the bonus tiles move out
   // a row, further toward the middle (as yours do) - and the melds, if still
@@ -1054,6 +1083,63 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
       return meldsLong + along(flowers) + gap > room;
     });
     if (next.join() !== seatsOut.join()) setSeatsOut(next);
+  });
+  // Each pond grows from the compass toward its owner: when its rows would
+  // reach that player's tiles (their melds and bonus tiles, standing hand,
+  // or your row), it's set a size smaller to stop short of them - a size
+  // only as small as needed, full size till then. Measured as drawn, in the
+  // table's own directions (turned a quarter on a phone held upright).
+  const [pondFit, setPondFit] = useState<Record<string, number>>({});
+  useLayoutEffect(() => {
+    const felt = feltRef.current;
+    if (!felt) return;
+    const turned = turnedTable();
+    // A screen box in the table's terms: x along its width, y from its far edge toward you.
+    const tb = (e: Element) => {
+      const r = e.getBoundingClientRect();
+      return turned ? { x0: r.top, x1: r.bottom, y0: -r.right, y1: -r.left } : { x0: r.left, x1: r.right, y0: r.top, y1: r.bottom };
+    };
+    const TILES = ".tile-glyph, .play-back, .play-edge-tile";
+    const next: Record<string, number> = {};
+    for (const side of ["top", "left", "right", "bottom"] as const) {
+      const pond = felt.querySelector(`.play-pond-slot-${side} > .play-pond`);
+      const cur = pondFit[side] ?? 1;
+      if (!pond || !pond.childElementCount) {
+        if (cur !== 1) next[side] = 1; // a new hand: full size again
+        continue;
+      }
+      // (Its tiles' own extent: they reach a little past the pond's box.)
+      const mine = [...pond.querySelectorAll(TILES)].map(tb);
+      const S = { x0: Math.min(...mine.map((b) => b.x0)), x1: Math.max(...mine.map((b) => b.x1)), y0: Math.min(...mine.map((b) => b.y0)), y1: Math.max(...mine.map((b) => b.y1)) };
+      // At full size: the shrink undone about its edge by the compass, so
+      // what's measured never depends on the size it's set (it settled on
+      // nothing, the owner's tiles in its way changing with it).
+      const grow = (lo: number, hi: number, at: "lo" | "mid" | "hi") => {
+        const o = at === "lo" ? lo : at === "hi" ? hi : (lo + hi) / 2;
+        return [o - (o - lo) / cur, o + (hi - o) / cur];
+      };
+      const [x0, x1] = grow(S.x0, S.x1, side === "left" ? "hi" : side === "right" ? "lo" : "mid");
+      const [y0, y1] = grow(S.y0, S.y1, side === "top" ? "hi" : side === "bottom" ? "lo" : "mid");
+      const P = { x0, x1, y0, y1 };
+      const owner = side === "bottom" ? document.querySelector(".play-me .play-hand") : felt.querySelector(`.play-seat-${side}`);
+      if (!owner) continue;
+      // The owner's tiles in the pond's way (across its width), and where it meets them.
+      const across = (b: ReturnType<typeof tb>) => (side === "top" || side === "bottom" ? b.x1 > P.x0 && b.x0 < P.x1 : b.y1 > P.y0 && b.y0 < P.y1);
+      const theirs = [...owner.querySelectorAll(TILES)].map(tb).filter(across);
+      if (!theirs.length) continue;
+      const gap = 4;
+      const [depth, free] =
+        side === "top"
+          ? [P.y1 - P.y0, P.y1 - Math.max(...theirs.map((b) => b.y1)) - gap]
+          : side === "bottom"
+            ? [P.y1 - P.y0, Math.min(...theirs.map((b) => b.y0)) - gap - P.y0]
+            : side === "left"
+              ? [P.x1 - P.x0, P.x1 - Math.max(...theirs.map((b) => b.x1)) - gap]
+              : [P.x1 - P.x0, Math.min(...theirs.map((b) => b.x0)) - gap - P.x0];
+      const fit = Math.max(0.4, Math.min(1, free / Math.max(1, depth)));
+      if (Math.abs(fit - cur) > 0.01) next[side] = Math.round(fit * 100) / 100;
+    }
+    if (Object.keys(next).length) setPondFit((f) => ({ ...f, ...next }));
   });
   // The table as deep as the screen allows at its one angle: its far edge
   // just under the name cards. It depends only on the screen, so it's
@@ -2493,9 +2579,10 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     // Losing hands hidden, one shown is shown later, by choice: at once.
     const choosing = online?.table.settings.reveal === false;
     return (
-      <div className={`play-seat play-seat-${side} is-front${seatsOut.includes(side) ? " has-bonus-out" : ""}`}>
-        {/* Melds and flowers in front of each player's wall, from their
-            left (the CSS turns them to face them). */}
+      <div className={`play-seat play-seat-${side}${side !== "top" || topFront ? " is-front" : ""}${seatsOut.includes(side) && (side !== "top" || topFront) ? " has-bonus-out" : ""}`}>
+        {/* Melds and flowers in front of a side player's wall, from their
+            left (the CSS turns them to face them); across, beside the far
+            player's hand along their row - or in front, if that runs long. */}
         <span className="play-seat-side">
           <Flowers flowers={p.flowers} />
           <span className="play-seat-melds">
@@ -2818,14 +2905,14 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
             {wall(2)}
             {wall(3)}
             {wall(1)}
-            <div className="play-pond-slot play-pond-slot-top">
+            <div className="play-pond-slot play-pond-slot-top" style={{ "--pond-fit": pondFit.top ?? 1 } as CSSProperties}>
               {showPiles ? (
                 swapPond(2, "top")
               ) : (
                 <Pond tiles={game.players[2].discards} riichiAt={game.players[2].riichi?.discard} side="top" pinLast={discardFrom === 2} />
               )}
             </div>
-            <div className="play-pond-slot play-pond-slot-left">
+            <div className="play-pond-slot play-pond-slot-left" style={{ "--pond-fit": pondFit.left ?? 1 } as CSSProperties}>
               {showPiles ? (
                 swapPond(3, "left")
               ) : (
@@ -2847,14 +2934,14 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
                 )
               )}
             </div>
-            <div className="play-pond-slot play-pond-slot-right">
+            <div className="play-pond-slot play-pond-slot-right" style={{ "--pond-fit": pondFit.right ?? 1 } as CSSProperties}>
               {showPiles ? (
                 swapPond(1, "right")
               ) : (
                 <Pond tiles={game.players[1].discards} riichiAt={game.players[1].riichi?.discard} side="right" pinLast={discardFrom === 1} />
               )}
             </div>
-            <div className="play-pond-slot play-pond-slot-bottom">
+            <div className="play-pond-slot play-pond-slot-bottom" style={{ "--pond-fit": pondFit.bottom ?? 1 } as CSSProperties}>
               {showPiles ? (
                 swapPond(HUMAN, "bottom")
               ) : (
