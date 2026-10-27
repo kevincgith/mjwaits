@@ -6725,9 +6725,10 @@ html.playing body {
 }
 
 /* The left wall's tiles pack at its far end - up against the table's top
-   edge: it starts a tile down, level with the right wall's. */
-.play-edge-left {
-  margin-top: 0.78em;
+   edge: the left seat (its wall and, in front, its melds and flowers)
+   starts a wall tile down, level with the right wall's. */
+.play-seat-left {
+  margin-top: calc(var(--play-wall) * 0.78);
 }
 
 .play-edge-top {
