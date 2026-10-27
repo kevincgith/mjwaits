@@ -273,11 +273,11 @@ const seatTurn = (seat: number) => (SIDES[seat] === "left" ? 90 : SIDES[seat] ==
 const landTurn = (g: number, taker: number) => (Math.abs(seatTurn(taker) - seatTurn(g)) === 180 ? seatTurn(g) : seatTurn(taker));
 
 // Why a call is greyed out (see barredClaims).
-const barredWhy = (c: Claim, p: { riichi?: { passed?: boolean } }) =>
+const barredWhy = (c: Claim, p: { riichi?: { passed?: boolean }; passedPung?: Tile }, tile?: Tile | null) =>
   c.kind === "chow"
     ? "you just threw this run's tile - not back till you draw"
     : c.kind !== "win"
-      ? "passed this pung - not again till you draw"
+      ? p.passedPung && tile && sameTile(p.passedPung, tile) ? "passed this pung - not again till you draw" : "you just threw this tile - not back till you draw"
       : p.riichi?.passed ? "叮: passed a win - no more this hand" : "過水 - no win till you throw a tile that doesn't win";
 const claimLabel = (c: Claim) => (c.kind === "win" ? "胡" : c.kind === "kong" ? "槓" : c.kind === "pung" ? "碰" : "上");
 
@@ -720,7 +720,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
   const [oneTap, setOneTap] = useState(() => saved?.oneTap ?? false);
   // 一炮多響: a table setting, kept on the game itself so it carries hand to hand.
   const [multiWin, setMultiWin] = useState(() => saved?.multiWin ?? saved?.game?.multiWin ?? false);
-  // No run back from a tile just thrown (on unless lifted): on the game, like multiWin.
+  // No claim back of a tile just thrown (on unless lifted): on the game, like multiWin.
   const [runBack, setRunBack] = useState(() => saved?.runBack ?? saved?.game?.runBack ?? false);
   useEffect(() => {
     if (!online && !!game.runBack !== runBack) setGame((g) => ({ ...g, ...(runBack ? { runBack: true } : { runBack: undefined }) }));
@@ -1484,6 +1484,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
   // Calls you'd have but for passing one up (過水, a passed pung): shown
   // greyed while the discard's on the table, not taken.
   const barredCalls = game.phase.kind === "claims" && seated && !autoplay ? barredClaims(game, HUMAN) : [];
+  const claimTile = game.phase.kind === "claims" ? game.phase.tile : null;
 
   // The bots' claims on the current discard are decided as soon as it lands
   // (they can't see what the human will do).
@@ -2433,8 +2434,8 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
               </div>
               <div className="play-menu-row">
                 <span>
-                  No run back
-                  <span className="play-menu-note" title="Threw 1m from 123m: no run with 1m or 4m till you draw"> · {runBack ? "any run may be called" : "not with a tile just thrown"}</span>
+                  No claim back
+                  <span className="play-menu-note" title="Threw 1m: no pung, kong or run with it till you draw - from 123m, no run with 4m either"> · {runBack ? "any claim may be made" : "not of a tile just thrown"}</span>
                 </span>
                 <span className="play-menu-seg">
                   {[true, false].map((on) => (
@@ -2863,7 +2864,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
                 Table {online.table.code} · {online.table.settings.multiWin ? "一炮多響" : "截胡"} · timer {online.table.settings.timer ? `${online.table.settings.timer}s` : "off"}
                 {online.table.settings.swapRules?.winds.length ? ` · 換牌 ${online.table.settings.swapRules.winds.map((w) => WIND_CHARS[w as 1 | 2 | 3 | 4]).join("")}` : ""}
                 {online.table.settings.jackpot ? ` · 獎池 ${online.table.settings.jackpot}` : ""}
-                {online.table.settings.runBack ? " · runs back allowed" : ""}
+                {online.table.settings.runBack ? " · claims back allowed" : ""}
                 {online.table.settings.botSpeed && online.table.settings.botSpeed !== "normal" ? ` · bots ${SPEEDS[online.table.settings.botSpeed].label.toLowerCase()}` : ""}
                 {online.table.watching > 0 && ` · ${online.table.watching} watching`}
               </p>
@@ -3137,7 +3138,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
                     </button>
                   ))}
                   {barredCalls.filter((c) => c.kind !== "chow").map((c) => (
-                    <button key={`barred-${c.kind}`} type="button" className={`play-call is-barred${c.kind === "win" ? " is-win" : ""}`} disabled title={barredWhy(c, me)} aria-label={`${claimLabel(c)} - ${barredWhy(c, me)}`}>
+                    <button key={`barred-${c.kind}`} type="button" className={`play-call is-barred${c.kind === "win" ? " is-win" : ""}`} disabled title={barredWhy(c, me, claimTile)} aria-label={`${claimLabel(c)} - ${barredWhy(c, me, claimTile)}`}>
                       {claimLabel(c)}
                     </button>
                   ))}
