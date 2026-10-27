@@ -621,6 +621,13 @@ export const selfDrawBarred = (p: Player) => !canWin(p) && isWinningHand(p);
 
 // ---- 叮 ----------------------------------------------------------------------
 
+// Whether some tile would complete this hand that it doesn't already hold
+// all four of - a hand whose only waits it holds itself can never win.
+function hasLiveWait(p: Player): boolean {
+  const held = [...p.hand, ...p.melds.flatMap((m) => m.tiles)];
+  return allTileKinds().some((k) => tileCount(held, k) < 4 && isWinningHand(p, k));
+}
+
 // The discards that would leave `seat` ready, i.e. the tiles it may declare
 // 叮 with - empty if it isn't its turn, it has already declared, or no tile
 // is left to draw after it.
@@ -632,7 +639,10 @@ export function riichiDiscards(s: GameState, seat: number): Tile[] {
   const out: Tile[] = [];
   for (const t of p.hand) {
     if (out.some((o) => sameTile(o, t)) || forbidden.some((f) => sameTile(f, t))) continue;
-    if (shanten(removeTiles(p.hand, [t]), meldsNeeded(p)) === 0) out.push(t);
+    // Ready, and on a wait that can still come: some tile completes it
+    // that it doesn't already hold all four of (in hand or melds).
+    const rest = removeTiles(p.hand, [t]);
+    if (shanten(rest, meldsNeeded(p)) === 0 && hasLiveWait({ ...p, hand: rest })) out.push(t);
   }
   return out;
 }

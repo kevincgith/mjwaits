@@ -512,6 +512,20 @@ describe("standardShanten / shanten", () => {
     expect(shanten(tiles)).toBe(3);
   });
 
+  it("doesn't call four of a kind plus seven pairs and two singles ready (Eight Pairs)", () => {
+    // 1111m is two of the pairs, not the triplet too: no tile completes this,
+    // so it must not read as ready (a bot declared 叮 on it).
+    const tiles = parseHand("1111m88m488t233b77z44z");
+    expect(tiles.length).toBe(16);
+    expect(getWaits(tiles)).toEqual([]);
+    expect(shanten(tiles)).toBeGreaterThan(0);
+    // A real triplet still is the spare: 111m + 6 pairs + 1m... ready on the single.
+    const ready = parseHand("111m88m88t33b77z44z55z2b");
+    expect(ready.length).toBe(16);
+    expect(shanten(ready)).toBe(0);
+    expect(getWaits(ready).map((t) => t.rank + t.suit)).toContain("2b");
+  });
+
   it("stays fast on a full 16-tile hand", () => {
     const tiles = parseHand("13579m2468t111z5577b");
     expect(tiles.length).toBe(16);

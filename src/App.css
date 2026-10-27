@@ -6292,8 +6292,8 @@ html.playing body {
   flex-direction: column-reverse;
 }
 
-/* Too long for one line: the melds and flowers in front of the hand
-   (toward the middle), still from the player's left end. */
+/* The melds and flowers in front of the hand (toward the middle), still
+   from the player's left end - every seat alike. */
 .play-seat-left.is-front {
   flex-direction: row-reverse;
   align-items: flex-start;
@@ -6722,6 +6722,13 @@ html.playing body {
 
 .play-edge-right {
   justify-content: flex-end;
+}
+
+/* The left wall's tiles pack at its far end - up against the table's top
+   edge: the left seat (its wall and, in front, its melds and flowers)
+   starts a wall tile down, level with the right wall's. */
+.play-seat-left {
+  margin-top: calc(var(--play-wall) * 0.78);
 }
 
 .play-edge-top {
