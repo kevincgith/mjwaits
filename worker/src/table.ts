@@ -30,6 +30,7 @@ import {
   canWin,
   kongOptions,
   nextHand,
+  barredClaims,
   resolveClaims,
   retractClaim,
   riichiDiscards,
@@ -311,7 +312,7 @@ export class Table extends Hub<TableMessage> {
         hostOnly();
         if (rt.seats.some((s) => s === null)) throw new Refusal("seatsNotFull", "every seat needs a player or a bot");
         rt.game = dealHand(
-          { dealer: rt.settings.firstDealer, roundWind: 1, dealerStreak: 0, multiWin: rt.settings.multiWin, ...(rt.settings.swapRules ? { swapRules: rt.settings.swapRules as SwapRules } : {}) },
+          { dealer: rt.settings.firstDealer, roundWind: 1, dealerStreak: 0, multiWin: rt.settings.multiWin, ...(rt.settings.runBack ? { runBack: true } : {}), ...(rt.settings.swapRules ? { swapRules: rt.settings.swapRules as SwapRules } : {}) },
           undefined,
           random
         );
@@ -498,6 +499,9 @@ export class Table extends Hub<TableMessage> {
       // stays on the table a moment before it's taken. (If someone was
       // waited on, everyone has already seen it.)
       if (!rt.decisions.includes("waiting") && rt.decisions.some((x) => x !== null) && this.pause > 0) rt.botAt = now + this.botPause * CLAIM_PAUSES;
+      // Someone's greyed call (one they passed up): the discard stays a moment, so it's seen.
+      else if (!rt.decisions.includes("waiting") && this.pause > 0 && [0, 1, 2, 3].some((seat) => !this.actsAlone(seat) && rt.seats[seat]?.kind === "human" && barredClaims(g, seat).length > 0))
+        rt.botAt = now + this.botPause;
     } else {
       rt.ready = [];
     }

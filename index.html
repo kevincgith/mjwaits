@@ -10,7 +10,11 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="MJWaits" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <!-- The page runs under the status bar (it keeps clear of it by the safe
+         areas). With "default", an iPhone opened on its side keeps a status
+         bar's height of blank strip at the top, though there's no status bar
+         there. (Taken when the icon is added: an icon added before keeps it.) -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <!-- Launch screens, one per iPhone / iPad size (from scripts/make-icons.mjs). -->
     <link rel="apple-touch-startup-image" href="/splash/splash-1320x2868.jpg" media="(device-width: 440px) and (device-height: 956px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" />
     <link rel="apple-touch-startup-image" href="/splash/splash-1206x2622.jpg" media="(device-width: 402px) and (device-height: 874px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" />

@@ -82,6 +82,7 @@ export const TableSettingsSchema = object({
   swapRules: optional(SwapRulesSchema),
   jackpot: optional(int(0, 10)),
   botSpeed: optional(oneOf("slow", "normal", "fast")), // absent: normal
+  runBack: optional(bool), // runs made back from a tile just thrown allowed (absent: not - see GameState.runBack)
 });
 export type TableSettings = Infer<typeof TableSettingsSchema>;
 

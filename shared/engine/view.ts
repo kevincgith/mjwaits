@@ -25,6 +25,8 @@ export interface SeatView {
   discards: Tile[];
   riichi?: Player["riichi"];
   overWater?: boolean;
+  passedPung?: Tile; // your own only (it tells what you hold)
+  threw?: Tile; // your own only: the last throw, barring a run back from it
 }
 
 // A finished hand's result as it travels: the score as its total and the
@@ -107,6 +109,8 @@ export function viewFor(s: GameState, you: number, shown: (seat: number) => bool
       discards: copyTiles(p.discards),
       ...(p.riichi ? { riichi: { ...p.riichi } } : {}),
       ...(p.overWater ? { overWater: true } : {}),
+      ...(seat === you && p.passedPung ? { passedPung: { ...p.passedPung } } : {}),
+      ...(seat === you && p.threw ? { threw: { ...p.threw } } : {}),
     };
   });
   let phase: PhaseView;

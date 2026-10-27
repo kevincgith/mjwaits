@@ -23,10 +23,12 @@
 import { type CSSProperties, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   applyTurnMove,
+  barredClaims,
   claimOptions,
   forbiddenDiscards,
   HUMAN,
   canWin,
+  selfDrawBarred,
   kongOptions,
   liveTilesLeft,
   meldsNeeded,
@@ -215,6 +217,7 @@ interface Saved {
   speed?: Speed;
   oneTap?: boolean;
   multiWin?: boolean; // 一炮多響 (else 截胡)
+  runBack?: boolean; // runs back from a tile just thrown allowed (see GameState.runBack)
   swapRules?: SwapRules; // 換牌: which rounds, and what the dice mean
   jackpot?: number; // 獎池: each player's share per draw (0: off)
   record?: boolean;
@@ -265,6 +268,13 @@ const seatTurn = (seat: number) => (SIDES[seat] === "left" ? 90 : SIDES[seat] ==
 // yours sit at the bottom.)
 const landTurn = (g: number, taker: number) => (Math.abs(seatTurn(taker) - seatTurn(g)) === 180 ? seatTurn(g) : seatTurn(taker));
 
+// Why a call is greyed out (see barredClaims).
+const barredWhy = (c: Claim, p: { riichi?: { passed?: boolean } }) =>
+  c.kind === "chow"
+    ? "you just threw this run's tile - not back till you draw"
+    : c.kind !== "win"
+      ? "passed this pung - not again till you draw"
+      : p.riichi?.passed ? "叮: passed a win - no more this hand" : "過水 - no win till you throw a tile that doesn't win";
 const claimLabel = (c: Claim) => (c.kind === "win" ? "胡" : c.kind === "kong" ? "槓" : c.kind === "pung" ? "碰" : "上");
 
 // ---- Pieces of the table ----------------------------------------------------
@@ -667,7 +677,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
   const [localGame, setGame] = useState<GameState>(
     () =>
       resume?.game ??
-      newGame({ multiWin: saved?.multiWin ?? saved?.game?.multiWin ?? false, swapRules: saved?.swapRules ?? saved?.game?.swapRules ?? DEFAULT_SWAP_RULES })
+      newGame({ multiWin: saved?.multiWin ?? saved?.game?.multiWin ?? false, runBack: saved?.runBack ?? false, swapRules: saved?.swapRules ?? saved?.game?.swapRules ?? DEFAULT_SWAP_RULES })
   );
   const [localTotals, setTotals] = useState<number[]>(() => resume?.totals ?? [0, 0, 0, 0]);
   // Online: this seat's view, turned so you're at seat 0.
@@ -685,6 +695,11 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
   const [oneTap, setOneTap] = useState(() => saved?.oneTap ?? false);
   // 一炮多響: a table setting, kept on the game itself so it carries hand to hand.
   const [multiWin, setMultiWin] = useState(() => saved?.multiWin ?? saved?.game?.multiWin ?? false);
+  // No run back from a tile just thrown (on unless lifted): on the game, like multiWin.
+  const [runBack, setRunBack] = useState(() => saved?.runBack ?? saved?.game?.runBack ?? false);
+  useEffect(() => {
+    if (!online && !!game.runBack !== runBack) setGame((g) => ({ ...g, ...(runBack ? { runBack: true } : { runBack: undefined }) }));
+  }, [game, runBack, online]);
   // 獎池: each draw everyone puts this in the pot; a 自摸 takes it all. 0: off.
   const [jackpot, setJackpot] = useState(() => saved?.jackpot ?? 0);
   useEffect(() => {
@@ -1120,8 +1135,8 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
 
   // This device's own game (never an online one).
   useEffect(
-    () => save({ game: localGame, totals: localTotals, hint, timer, opponents, speed, oneTap, record, multiWin, swapRules, jackpot, ledger: localLedger }),
-    [localGame, localTotals, hint, timer, opponents, speed, oneTap, record, multiWin, swapRules, jackpot, localLedger]
+    () => save({ game: localGame, totals: localTotals, hint, timer, opponents, speed, oneTap, record, multiWin, runBack, swapRules, jackpot, ledger: localLedger }),
+    [localGame, localTotals, hint, timer, opponents, speed, oneTap, record, multiWin, runBack, swapRules, jackpot, localLedger]
   );
 
   // The menu closes on a tap anywhere outside it, and disarms New game.
@@ -1265,6 +1280,9 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
   }, [game.discardsMade]);
 
   const humanClaims = game.phase.kind === "claims" && seated && waitedOn ? claimOptions(game, HUMAN) : [];
+  // Calls you'd have but for passing one up (過水, a passed pung): shown
+  // greyed while the discard's on the table, not taken.
+  const barredCalls = game.phase.kind === "claims" && seated && !autoplay ? barredClaims(game, HUMAN) : [];
 
   // The bots' claims on the current discard are decided as soon as it lands
   // (they can't see what the human will do).
@@ -1955,7 +1973,8 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
       move = () => resolve(mine);
       // Someone had a call to weigh: they take a moment either way; a call
       // that's coming lets the discard land first.
-      const pondered = [1, 2, 3].some((seat) => seat !== phase.from && claimOptions(game, seat).length > 0);
+      // (Your greyed call, too - so it's seen.)
+      const pondered = [1, 2, 3].some((seat) => seat !== phase.from && claimOptions(game, seat).length > 0) || barredCalls.length > 0;
       const called = mine !== null || botDecisions?.some((d) => d !== null);
       delay = called ? CLAIM_DELAY_MS : pondered ? PONDER_DELAY_MS + Math.random() * 300 : PASS_DELAY_MS;
     }
@@ -2134,6 +2153,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
   }, [hint, myTurn, ratings, me, seated]);
 
   const canSelfDraw = myTurn && canWin(me);
+  const selfDrawGrey = myTurn && !autoplay && selfDrawBarred(me);
   const myKongs = myTurn && liveTilesLeft(game) > 0 ? kongOptions(me, game.phase) : [];
 
 
@@ -2177,7 +2197,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     setMenuOpen(false);
     setSelected(null);
     setResultHidden(false);
-    const g = newGame({ multiWin, swapRules });
+    const g = newGame({ multiWin, runBack, swapRules });
     ledgerFrom.current = g;
     const fresh = newPlayLedger(playerNames(opponents), g.dealer);
     setLedger({ ...fresh, events: playEvents(null, g, fresh.seats) });
@@ -2501,6 +2521,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
                 Table {online.table.code} · {online.table.settings.multiWin ? "一炮多響" : "截胡"} · timer {online.table.settings.timer ? `${online.table.settings.timer}s` : "off"}
                 {online.table.settings.swapRules?.winds.length ? ` · 換牌 ${online.table.settings.swapRules.winds.map((w) => WIND_CHARS[w as 1 | 2 | 3 | 4]).join("")}` : ""}
                 {online.table.settings.jackpot ? ` · 獎池 ${online.table.settings.jackpot}` : ""}
+                {online.table.settings.runBack ? " · runs back allowed" : ""}
                 {online.table.settings.botSpeed && online.table.settings.botSpeed !== "normal" ? ` · bots ${SPEEDS[online.table.settings.botSpeed].label.toLowerCase()}` : ""}
                 {online.table.watching > 0 && ` · ${online.table.watching} watching`}
               </p>
@@ -2565,6 +2586,19 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
                 <span className="play-menu-seg">
                   {[false, true].map((on) => (
                     <button key={String(on)} type="button" className={multiWin === on ? "toggle-on" : undefined} aria-pressed={multiWin === on} onClick={() => setMultiWin(on)}>
+                      {on ? "On" : "Off"}
+                    </button>
+                  ))}
+                </span>
+              </div>
+              <div className="play-menu-row">
+                <span>
+                  No run back
+                  <span className="play-menu-note"> · {runBack ? "off: any run may be called" : "threw 1m from 123m: no run with 1m or 4m till you draw"}</span>
+                </span>
+                <span className="play-menu-seg">
+                  {[true, false].map((on) => (
+                    <button key={String(on)} type="button" className={!runBack === on ? "toggle-on" : undefined} aria-pressed={!runBack === on} onClick={() => setRunBack(!on)}>
                       {on ? "On" : "Off"}
                     </button>
                   ))}
@@ -2803,6 +2837,11 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
                       自摸
                     </button>
                   )}
+                  {selfDrawGrey && (
+                    <button type="button" className="play-call is-win is-long is-barred" disabled title={barredWhy({ kind: "win" }, me)} aria-label={`自摸 - ${barredWhy({ kind: "win" }, me)}`}>
+                      自摸
+                    </button>
+                  )}
                   {riichiArmed && (
                     <button
                       type="button"
@@ -2843,8 +2882,18 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
                       {claimLabel(c)}
                     </button>
                   ))}
+                  {barredCalls.filter((c) => c.kind !== "chow").map((c) => (
+                    <button key={`barred-${c.kind}`} type="button" className={`play-call is-barred${c.kind === "win" ? " is-win" : ""}`} disabled title={barredWhy(c, me)} aria-label={`${claimLabel(c)} - ${barredWhy(c, me)}`}>
+                      {claimLabel(c)}
+                    </button>
+                  ))}
                   {chows.length > 0 && (
                     <button type="button" className="play-call" onClick={() => (chows.length === 1 ? resolve(chows[0]) : setChowChoice(true))}>
+                      上
+                    </button>
+                  )}
+                  {chows.length === 0 && barredCalls.some((c) => c.kind === "chow") && (
+                    <button type="button" className="play-call is-barred" disabled title={barredWhy(barredCalls.find((c) => c.kind === "chow")!, me)} aria-label={`上 - ${barredWhy(barredCalls.find((c) => c.kind === "chow")!, me)}`}>
                       上
                     </button>
                   )}

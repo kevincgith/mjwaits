@@ -641,6 +641,13 @@ function Lobby({ table, me, send, onLeave }: { table: TableState; me: Welcome; s
               </Seg>
             ))}
           </Setting>
+          <Setting label="No run back" note={s.runBack ? "off: any run may be called" : "threw 1m from 123m: no run with 1m or 4m till you draw"}>
+            {[true, false].map((on) => (
+              <Seg key={String(on)} on={!s.runBack === on} disabled={!me.host} onClick={() => setup({ runBack: !on })}>
+                {on ? "On" : "Off"}
+              </Seg>
+            ))}
+          </Setting>
           <Setting label="First dealer (莊)">
             {[0, 1, 2, 3].map((d) => (
               <Seg key={d} on={s.firstDealer === d} disabled={!me.host} onClick={() => setup({ firstDealer: d })}>
