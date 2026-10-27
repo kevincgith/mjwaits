@@ -167,8 +167,6 @@ const botDelay = (difficulty: number, afterCall: boolean) => 300 + difficulty * 
 // A discard nobody can claim moves on after a short pause - longer when a
 // bot had a call to weigh and passed (a tell, as at a real table).
 const PASS_DELAY_MS = 380;
-// Your row this full of its width (see bonusOut): the bonus tiles move out a row.
-const BONUS_OUT_AT = 0.9;
 const PONDER_DELAY_MS = 900;
 // A discard a bot is about to take stays on the table this long first, so
 // everyone sees what was thrown before it goes into the caller's meld.
@@ -198,6 +196,8 @@ const TOPPLE_DRAW: Topple = { at: 0.15, step: 0, dur: 0.5 };
 const WIN_SHOW_MS = 3700 + WIN_TILE_LEAD * 1000;
 // A phone held upright: the table is drawn turned (as App.css's media query).
 const TURNED = "(orientation: portrait) and (max-width: 820px)";
+// The table drawn turned a quarter (a phone held upright): its rows run down the screen.
+const turnedTable = () => window.matchMedia(TURNED).matches;
 const DRAW_SHOW_MS = 1700;
 // Your hand's tiles sliding to their new places (a swap's give or takes).
 const HAND_SLIDE_MS = 450;
@@ -977,8 +977,39 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
       const flowers = row.querySelector<HTMLElement>(".play-my-melds .play-flowers");
       if (!last || !flowers || !flowers.childElementCount) return setBonusOut(false);
       const gap = parseFloat(getComputedStyle(flowers.parentElement!).columnGap) || 0;
-      const inRow = row.classList.contains("has-bonus-out") ? flowers.offsetWidth + gap : 0;
-      setBonusOut(last.offsetLeft + last.offsetWidth + inRow > wrap.clientWidth * BONUS_OUT_AT);
+      // Where the row ends as drawn (the 3D row spreads past its layout),
+      // against the seat's edge - with the bonus tiles back in the row,
+      // and always as with a tile just drawn, set apart at the end, so a
+      // draw and the discard after it never move them up and back.
+      const scale = last.getBoundingClientRect().width / (last.offsetWidth || 1);
+      const inRow = row.classList.contains("has-bonus-out") ? (flowers.offsetWidth + gap) * scale : 0;
+      // No tile drawn: one put there for a moment, unseen, to measure by
+      // (in 3D an estimate landed either side of the edge).
+      let probe: HTMLElement | null = null;
+      if (!row.querySelector(".play-hand-tile.is-drawn") && last.classList.contains("play-hand-tile")) {
+        probe = last.cloneNode(true) as HTMLElement;
+        probe.classList.add("is-drawn");
+        probe.style.visibility = "hidden";
+        probe.style.animation = "none";
+        probe.removeAttribute("id");
+        row.appendChild(probe);
+      }
+      // Where its two ends would be, bonus tiles in: the row is centred, so
+      // they'd push each end out by half their length - against the
+      // screen's own edges (the 3D row doesn't sit evenly in its seat).
+      const turned = turnedTable();
+      const lo = (r: DOMRect) => (turned ? r.top : r.left);
+      const hi = (r: DOMRect) => (turned ? r.bottom : r.right);
+      const firsts = [...row.querySelectorAll<HTMLElement>(":scope > .play-my-melds > :not(.play-flowers), :scope > .play-hand-tile")];
+      const start = Math.min(...firsts.map((e) => lo(e.getBoundingClientRect()))) - inRow / 2;
+      const end = hi((probe ?? last).getBoundingClientRect()) + inRow / 2;
+      probe?.remove();
+      const screen = turned ? window.innerHeight : window.innerWidth;
+      // Up once it runs past the screen; back down only with half a tile to
+      // spare at both ends - so it can't flip on a pixel (or loop, putting
+      // them back and taking them out again).
+      const spare = row.classList.contains("has-bonus-out") ? last.getBoundingClientRect().width / 2 : 0;
+      setBonusOut(start < spare || end > screen - spare);
     };
     fit();
     const watch = new ResizeObserver(fit);
@@ -990,7 +1021,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
   // side seat's hand; across, the table's width): the bonus tiles move out
   // a row, further toward the middle (as yours do) - and the melds, if still
   // too long, carry on in a second row (the CSS). Judged laid end to end,
-  // so it doesn't flip back and forth, and only while the hand stands.
+  // so it doesn't flip back and forth - and the same once the hand's laid down.
   const [seatsOut, setSeatsOut] = useState<string[]>([]);
   useLayoutEffect(() => {
     const felt = feltRef.current;
@@ -1002,14 +1033,24 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
       const flowers = row?.querySelector<HTMLElement>(":scope > .play-flowers");
       const melds = row?.querySelector<HTMLElement>(":scope > .play-seat-melds");
       const edge = seat?.querySelector<HTMLElement>(`.play-edge-${side}`);
-      if (!row || !melds || !flowers || !flowers.childElementCount) return false;
-      if (!edge) return seatsOut.includes(side); // the hand laid down: as it was
+      if (!seat || !row || !melds || !flowers || !flowers.childElementCount) return false;
       const along = (e: HTMLElement) => (side === "top" ? e.offsetWidth : e.offsetHeight);
+      // A side seat's room: its wall's length (17 tiles of 0.78) - measured
+      // off the wall's own size, so it holds once the hand's laid down too.
+      const wallLength = () => {
+        if (edge) return along(edge);
+        const probe = document.createElement("span");
+        probe.style.cssText = "position:absolute;visibility:hidden;font-size:var(--play-wall)";
+        seat.appendChild(probe);
+        const em = parseFloat(getComputedStyle(probe).fontSize);
+        probe.remove();
+        return 17 * 0.78 * em;
+      };
       const gap = parseFloat(getComputedStyle(row).gap) || 0;
       // The whole row laid end to end (as if its melds didn't wrap).
       const meldsLong = [...melds.children].reduce((n, m) => n + along(m as HTMLElement) + gap, 0);
       // The room: a side seat's hand; across, the table's width between the sides.
-      const room = side === "top" ? cols.slice(1, -1).reduce((a, b) => a + b, 0) : along(edge);
+      const room = side === "top" ? cols.slice(1, -1).reduce((a, b) => a + b, 0) : wallLength();
       return meldsLong + along(flowers) + gap > room;
     });
     if (next.join() !== seatsOut.join()) setSeatsOut(next);

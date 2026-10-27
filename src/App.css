@@ -6405,7 +6405,14 @@ html.playing body {
 /* A hand laid face up at the end lies where it stood: a little over wall
    size, to be read at a glance, and still about the wall's room. */
 .play-seat .play-meld.is-revealed {
-  font-size: calc(var(--play-wall) * 1.15);
+  font-size: calc(var(--play-wall) * 1.3);
+}
+
+/* At the sides it lies along the wall, and no longer than it (17 tiles of
+   0.78): as large as that allows - up to the same 1.3 for a short hand,
+   wall size for a full one (--n tiles, and room for one more laid apart). */
+:is(.play-seat-left, .play-seat-right) .play-meld.is-revealed {
+  font-size: calc(var(--play-wall) * min(1.3, 13.26 / ((var(--n) + 1) * 0.8 + 0.2)));
 }
 
 /* The tile that completed a winning hand, last and laid sideways - turned
@@ -6797,12 +6804,15 @@ html.playing body {
   height: 0.78em;
 }
 
+/* The tops of the others' standing tiles, seen from behind: jade only, a
+   shade lighter toward the face side (any ivory there read as white on
+   their backs). */
 .play-edge-left .play-edge-tile::before {
-  background: linear-gradient(to right, #fbf8ef 0 55%, #7fd98c 55% 70%, var(--play-back) 70%);
+  background: linear-gradient(to right, #6fce7e, var(--play-back) 45%);
 }
 
 .play-edge-right .play-edge-tile::before {
-  background: linear-gradient(to left, #fbf8ef 0 55%, #7fd98c 55% 70%, var(--play-back) 70%);
+  background: linear-gradient(to left, #6fce7e, var(--play-back) 45%);
 }
 
 .play-edge-left .play-edge-tile::after,
@@ -6834,11 +6844,8 @@ html.playing body {
   height: 0.55em;
 }
 
-/* Its top, seen from behind: the jade back mostly, the ivory only a thin
-   line at the far edge (half ivory, it read as white on their backs -
-   Safari showing all of it). */
 .play-edge-top .play-edge-tile::before {
-  background: linear-gradient(to bottom, #fbf8ef 0 16%, #7fd98c 16% 34%, var(--play-back) 34%);
+  background: linear-gradient(to bottom, #6fce7e, var(--play-back) 45%);
 }
 
 .play-edge-top .play-edge-tile::after {
@@ -16564,7 +16571,9 @@ button.sc-stat:active {
    out of the seat's layout, so the hand and the table never move for it. */
 .play-swap-front {
   position: absolute;
-  top: calc(100% + 0.35em);
+  /* (Less the seat's own drop below its name tag - see .play-seat-top - so
+     it keeps clear of the piles.) */
+  top: calc(100% + 0.35em - var(--play-wall) * 0.4);
   left: 50%;
   translate: -50% 0;
   font-size: var(--play-tile);
