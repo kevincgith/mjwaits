@@ -5601,6 +5601,17 @@ img.tile-face {
   --play-cjk: "PingFang HK", "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif;
 }
 
+/* Opened from the home screen on its side, iOS's idea of the page's height
+   stays the upright one's, a status bar short, until the phone turns - and
+   a page no taller than that is shown in only that much, leaving a strip.
+   Play's page, a screen tall and not scrolling, was exactly that. A pixel
+   more than the screen and it's shown whole. */
+@media (display-mode: standalone) {
+  html.playing body {
+    min-height: calc(100lvh + 1px);
+  }
+}
+
 html.playing,
 html.playing body {
   overflow: hidden;
