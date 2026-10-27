@@ -641,7 +641,7 @@ function Lobby({ table, me, send, onLeave }: { table: TableState; me: Welcome; s
               </Seg>
             ))}
           </Setting>
-          <Setting label="No run back" note={s.runBack ? "off: any run may be called" : "threw 1m from 123m: no run with 1m or 4m till you draw"}>
+          <Setting label="No claim back" note={s.runBack ? "off: any claim may be made" : "threw 1m: no pung, kong or run with it till you draw (from 123m, no 4m run either)"}>
             {[true, false].map((on) => (
               <Seg key={String(on)} on={!s.runBack === on} disabled={!me.host} onClick={() => setup({ runBack: !on })}>
                 {on ? "On" : "Off"}

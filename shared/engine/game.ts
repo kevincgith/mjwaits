@@ -93,9 +93,9 @@ export interface Player {
   // Passed up a pung (or kong) of this tile: no calling it again till the
   // next draw - the same tile thrown by someone else meanwhile is barred.
   passedPung?: Tile;
-  // The tile it last threw, till its next draw or call: no run made with
-  // that tile taken back - nor with the far end of the run it came out of
-  // (threw 1m from 123m: no run with 1m or 4m). See runBarred.
+  // The tile it last threw, till its next draw or call: no claiming that
+  // tile back (pung, kong or run) - nor a run with the far end of the run it
+  // came out of (threw 1m from 123m: no run with 1m or 4m). See runBarred.
   threw?: Tile;
 }
 
@@ -178,9 +178,10 @@ export interface GameState {
   // and is paid. Off (the default) is 截胡: the first in turn order takes it.
   // A table setting, carried from hand to hand.
   multiWin?: boolean;
-  // No run back (on unless this says otherwise): a run can't be made with a
-  // tile just thrown, nor the far end of its run (see Player.threw). `true`
-  // here lifts it. A table setting, carried like multiWin.
+  // No claim back (on unless this says otherwise): a tile just thrown can't
+  // be punged or konged back, nor taken into a run - nor the far end of the
+  // run it came out of (see Player.threw). `true` here lifts it. A table
+  // setting, carried like multiWin.
   runBack?: boolean;
 }
 
@@ -309,7 +310,7 @@ function drawInto(s: GameState, seat: number, fromBack: boolean): { tile: Tile |
   let flowered = false;
   while (s.wall.length > DEAD_WALL_SIZE) {
     delete s.players[seat].passedPung; // a draw lifts a passed pung
-    delete s.players[seat].threw; // and the bar on a run back
+    delete s.players[seat].threw; // and the bar on a claim back
     const w = back ? s.wall.pop()! : s.wall.shift()!;
     if ("bonus" in w) {
       s.players[seat].flowers.push(w.bonus);
@@ -575,7 +576,8 @@ export function claimOptions(s: GameState, seat: number): Claim[] {
   // locked 叮 hand can only win - as can anyone robbing a kong.
   if (liveTilesLeft(s) === 0 || p.riichi || s.phase.robKong) return opts;
   const held = tileCount(p.hand, tile);
-  const passed = !!p.passedPung && sameTile(p.passedPung, tile);
+  // A passed pung, or the tile just thrown (no claim back).
+  const passed = (!!p.passedPung && sameTile(p.passedPung, tile)) || (!!p.threw && sameTile(p.threw, tile));
   if (held >= 3 && !passed) opts.push({ kind: "kong" });
   if (held >= 2 && !passed) opts.push({ kind: "pung" });
   if (seat === (from + 1) % SEATS && tile.suit !== "z") {
@@ -593,7 +595,8 @@ export function claimOptions(s: GameState, seat: number): Claim[] {
 }
 
 // The calls `seat` would have on this discard but for having passed one up
-// (過水, a 叮 hand's passed win, a passed pung) - shown greyed, not taken.
+// (過水, a 叮 hand's passed win, a passed pung) or for no claim back - shown
+// greyed, not taken.
 export function barredClaims(s: GameState, seat: number): Claim[] {
   if (s.phase.kind !== "claims" || seat === s.phase.from) return [];
   const { tile } = s.phase;
@@ -601,7 +604,7 @@ export function barredClaims(s: GameState, seat: number): Claim[] {
   const out: Claim[] = [];
   if (!canWin(p, tile) && isWinningHand(p, tile)) out.push({ kind: "win" });
   if (liveTilesLeft(s) === 0 || p.riichi || s.phase.robKong) return out;
-  if (p.passedPung && sameTile(p.passedPung, tile)) {
+  if ((p.passedPung && sameTile(p.passedPung, tile)) || (p.threw && sameTile(p.threw, tile))) {
     const held = tileCount(p.hand, tile);
     if (held >= 3) out.push({ kind: "kong" });
     if (held >= 2) out.push({ kind: "pung" });
@@ -870,7 +873,7 @@ export function resolveClaims(state: GameState, decisions: (Claim | null)[]): Ga
 
   const claim = decisions[best]!;
   const p = s.players[best];
-  delete p.threw; // a call lifts the bar on a run back
+  delete p.threw; // a call lifts the bar on a claim back
   if (state.phase.robKong) {
     // Robbed: the tile goes to the winner, and the pung stays a pung.
     p.hand.push(tile);

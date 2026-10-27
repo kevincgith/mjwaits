@@ -26,7 +26,7 @@ export interface SeatView {
   riichi?: Player["riichi"];
   overWater?: boolean;
   passedPung?: Tile; // your own only (it tells what you hold)
-  threw?: Tile; // your own only: the last throw, barring a run back from it
+  threw?: Tile; // your own only: the last throw, barring a claim back of it
 }
 
 // A finished hand's result as it travels: the score as its total and the

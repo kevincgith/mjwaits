@@ -183,7 +183,7 @@ describe("game", () => {
     expect(drawn.players[2].passedPung).toBeUndefined();
   });
 
-  it("no run back from a tile just thrown: threw 1m from 123m, no 1m or 4m onto the 23m till the next draw", () => {
+  it("no claim back - runs: from a tile just thrown, threw 1m from 123m, no 1m or 4m onto the 23m till the next draw", () => {
     const s0 = newGame();
     // Seat 1 to throw, holding 123m and 56m.
     s0.players[1].hand = parseHand("123m56m111222t55b5z");
@@ -201,7 +201,7 @@ describe("game", () => {
     const one = { ...s, phase: { kind: "claims" as const, from: 0, tile: { suit: "m" as const, rank: 1 } } };
     expect(runs(claimOptions(one, 1))).toEqual([]);
     expect(runs(barredClaims(one, 1))).toEqual(["23"]);
-    // With the table's No run back off, the run back is there.
+    // With the table's No claim back off, the run back is there.
     const free = applyTurnMove({ ...s0, runBack: true }, { kind: "discard", tile: { suit: "m", rank: 1 } });
     expect(free.players[1].threw).toBeUndefined();
     expect(runs(claimOptions({ ...free, phase: { kind: "claims" as const, from: 0, tile: { suit: "m" as const, rank: 4 } } }, 1))).toEqual(["23", "35", "56"]);
@@ -209,6 +209,38 @@ describe("game", () => {
     const drew = resolveClaims({ ...s, phase: { kind: "claims" as const, from: 0, tile: { suit: "z" as const, rank: 7 } } }, [null, null, null, null]);
     expect(drew.phase).toMatchObject({ kind: "turn", seat: 1 });
     expect(drew.players[1].threw).toBeUndefined();
+  });
+
+  it("no claim back - pungs and kongs: threw 1m from 111m (or 1111m), no pung (or kong) of 1m till the next draw", () => {
+    const m1 = { suit: "m" as const, rank: 1 };
+    const kinds = (cs: ReturnType<typeof claimOptions>) => cs.map((c) => c.kind);
+    const s0 = newGame();
+    s0.players[2].hand = parseHand("111m456m111222t5z");
+    s0.phase = { kind: "turn", seat: 2, drawn: null, replacement: null };
+    const s = applyTurnMove(s0, { kind: "discard", tile: m1 });
+    // Seat 3 throws 1m straight after: no pung (greyed instead).
+    const back = { ...s, phase: { kind: "claims" as const, from: 3, tile: m1 } };
+    expect(kinds(claimOptions(back, 2))).toEqual([]);
+    expect(kinds(barredClaims(back, 2))).toEqual(["pung"]);
+    // Passing it isn't a passed pung (there was none to pass).
+    expect(resolveClaims(back, [null, null, null, null]).players[2].passedPung).toBeUndefined();
+    // Another tile it could pung is open.
+    expect(kinds(claimOptions({ ...s, phase: { kind: "claims" as const, from: 3, tile: { suit: "t", rank: 2 } } }, 2))).toEqual(["kong", "pung"]);
+    // Four held, one thrown: no kong (nor pung) of it either.
+    const k0 = newGame();
+    k0.players[2].hand = parseHand("1111m456m11222t5z");
+    k0.phase = { kind: "turn", seat: 2, drawn: null, replacement: null };
+    const k = applyTurnMove(k0, { kind: "discard", tile: m1 });
+    const kongBack = { ...k, phase: { kind: "claims" as const, from: 0, tile: m1 } };
+    expect(kinds(claimOptions(kongBack, 2))).toEqual([]);
+    expect(kinds(barredClaims(kongBack, 2))).toEqual(["kong", "pung"]);
+    // With No claim back off, the pung is there.
+    const free = applyTurnMove({ ...s0, runBack: true }, { kind: "discard", tile: m1 });
+    expect(kinds(claimOptions({ ...free, phase: { kind: "claims" as const, from: 3, tile: m1 } }, 2))).toEqual(["pung"]);
+    // Its next draw lifts it.
+    const drew = resolveClaims({ ...s, phase: { kind: "claims" as const, from: 1, tile: { suit: "z", rank: 7 } } }, [null, null, null, null]);
+    expect(drew.phase).toMatchObject({ kind: "turn", seat: 2 });
+    expect(kinds(claimOptions({ ...drew, phase: { kind: "claims" as const, from: 3, tile: m1 } }, 2))).toEqual(["pung"]);
   });
 
   it("叮 only on a hand that can win: not the hand a bot declared on, nor a dead wait", () => {
