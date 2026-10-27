@@ -9,7 +9,8 @@
 // tiles set aside and replaced from the back of the wall, chow (from the
 // player on your left only), pung, exposed / concealed / added kong with a
 // replacement draw, win off a discard or by self-draw, and an exhaustive draw
-// once the live wall is down to its last DEAD_WALL_SIZE tiles. Claim priority
+// once the wall is used up - every tile is played (HKTW keeps no dead wall;
+// see DEAD_WALL_SIZE). Claim priority
 // is win > pung/kong > chow; two wins off one discard go to the first winner
 // in turn order (截胡) - or, at a table that plays 一炮多響 (GameState
 // multiWin), every one of them wins and is paid (雙響 / 三響). 叮 (riichi): a ready player may declare with a
@@ -48,7 +49,10 @@ export const SEATS = 4;
 export const HUMAN = 0;
 // Tiles left unplayed at the back of the wall: once only these remain, the
 // hand is an exhaustive draw (流局). Taiwanese tables commonly keep 16.
-export const DEAD_WALL_SIZE = 16;
+// Tiles kept back at the wall's end, never drawn (留底). HKTW plays every
+// tile: none. (A table that kept 16 back hid them - 剩:0張 with 16 still
+// unseen.)
+export const DEAD_WALL_SIZE = 0;
 
 export type WallTile = { tile: Tile } | { bonus: BonusTile };
 
@@ -630,8 +634,19 @@ function hasLiveWait(p: Player): boolean {
 
 // The discards that would leave `seat` ready, i.e. the tiles it may declare
 // 叮 with - empty if it isn't its turn, it has already declared, or no tile
-// is left to draw after it.
+// is left to draw after it. Nor when it could 自摸 instead: throwing then
+// passes up that win, and a 叮 that has passed one up never wins (see
+// riichiBarred - shown greyed).
 export function riichiDiscards(s: GameState, seat: number): Tile[] {
+  return riichiBarred(s, seat) ? [] : riichiShapes(s, seat);
+}
+
+// 叮 there to declare but for a 自摸 you'd pass up by it.
+export function riichiBarred(s: GameState, seat: number): boolean {
+  return canWin(s.players[seat]) && riichiShapes(s, seat).length > 0;
+}
+
+function riichiShapes(s: GameState, seat: number): Tile[] {
   if (s.phase.kind !== "turn" || s.phase.seat !== seat || liveTilesLeft(s) === 0) return [];
   const p = s.players[seat];
   if (p.riichi) return [];

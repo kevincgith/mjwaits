@@ -13,6 +13,7 @@ import {
   newGame,
   nextHand,
   resolveClaims,
+  riichiBarred,
   riichiDiscards,
   riichiForcedDiscard,
   settleWin,
@@ -222,6 +223,15 @@ describe("game", () => {
     expect(dead).toContainEqual({ suit: "b", rank: 1 });
     // A real wait still may.
     expect(riichiDiscards(turn("111b888t345m888b67t77z1z"), 0).length).toBeGreaterThan(0);
+  });
+
+  it("no 叮 when 自摸 is there to take - it would pass the win up for good - shown greyed", () => {
+    const s0 = newGame();
+    // A complete hand: 自摸, and throwing any tile to declare would pass that up.
+    const s = { ...s0, players: s0.players.map((p, i) => (i === 0 ? { ...p, hand: parseHand("111b888t345m888b678t77z"), melds: [] } : p)), phase: { kind: "turn" as const, seat: 0, drawn: null, replacement: null } };
+    expect(riichiDiscards(s, 0)).toEqual([]);
+    expect(riichiBarred(s, 0)).toBe(true);
+    expect(() => applyTurnMove(s, { kind: "discard", tile: { suit: "z", rank: 7 }, riichi: true })).toThrow();
   });
 
   it("過水 and a passed 叮 win show the win greyed, not gone", () => {

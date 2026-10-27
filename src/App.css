@@ -7617,6 +7617,21 @@ html.playing body {
   font-size: 0.74em;
 }
 
+/* Your row running long: the bonus tiles out a row, on the table just
+   above it (your row's top, standing tiles and all), from its left - the
+   melds' slot stretched to the row's height, so with no melds as well. */
+.play-hand.has-bonus-out .play-my-melds {
+  position: relative;
+  align-self: stretch;
+}
+
+.play-hand.has-bonus-out .play-my-melds > .play-flowers {
+  position: absolute;
+  left: 0;
+  bottom: 100%;
+  margin-bottom: 0.15em;
+}
+
 /* Your declared melds and flowers lie face up on the table, as on a real
    one (and as the others' do): each falls from standing to flat as it's
    laid down, at the felt's angle. */
