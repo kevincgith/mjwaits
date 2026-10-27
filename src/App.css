@@ -6804,12 +6804,20 @@ html.playing body {
   height: 0.78em;
 }
 
+/* The tops of the others' standing tiles: the same layers as every block
+   on the table (see --tile-sides) - ivory to the middle from the face side,
+   a thin seam of light jade, then the jade back. One split for all three. */
+.play-edge {
+  --edge-ivory: 50%;
+  --edge-seam: 58%;
+}
+
 .play-edge-left .play-edge-tile::before {
-  background: linear-gradient(to right, #fbf8ef 0 55%, #7fd98c 55% 70%, var(--play-back) 70%);
+  background: linear-gradient(to right, #fbf8ef 0 var(--edge-ivory), #7fd98c var(--edge-ivory) var(--edge-seam), var(--play-back) var(--edge-seam));
 }
 
 .play-edge-right .play-edge-tile::before {
-  background: linear-gradient(to left, #fbf8ef 0 55%, #7fd98c 55% 70%, var(--play-back) 70%);
+  background: linear-gradient(to left, #fbf8ef 0 var(--edge-ivory), #7fd98c var(--edge-ivory) var(--edge-seam), var(--play-back) var(--edge-seam));
 }
 
 .play-edge-left .play-edge-tile::after,
@@ -6842,7 +6850,7 @@ html.playing body {
 }
 
 .play-edge-top .play-edge-tile::before {
-  background: linear-gradient(to bottom, #fbf8ef 0 45%, #7fd98c 45% 62%, var(--play-back) 62%);
+  background: linear-gradient(to bottom, #fbf8ef 0 var(--edge-ivory), #7fd98c var(--edge-ivory) var(--edge-seam), var(--play-back) var(--edge-seam));
 }
 
 .play-edge-top .play-edge-tile::after {
@@ -6973,6 +6981,11 @@ html.playing body {
      pondFit), from its edge by the compass - drawn smaller only, so nothing
      else on the table moves for it. */
   scale: var(--pond-fit, 1);
+}
+
+/* 換牌's piles in the same place keep their size (the fit is the discards'). */
+.play-pond.play-swap-pond {
+  scale: none;
 }
 
 .play-pond-slot-top .play-pond {
@@ -7964,7 +7977,8 @@ html.playing body {
   --tile-y: 0px;
   --tile-w: 100%;
   --tile-h: 100%;
-  --tile-sides: #f2ede0, var(--play-ivory) 42%, #7fd98c 50%, var(--play-back) 60%, var(--play-back-edge);
+  /* The face-up block's layers mirrored (jade on top). */
+  --tile-sides: #f2ede0, var(--play-ivory) 46%, #7fd98c 54%, var(--play-back) 62%, var(--play-back-edge);
 }
 
 :is(.play-felt, .play-hand, .play-swap-flight) .play-back > .tile-top {
@@ -9021,6 +9035,22 @@ html.playing body {
   color: var(--text-muted);
   font-size: 1.4rem !important;
   line-height: 1;
+}
+
+/* Under the tracker: every tile counted. */
+.play-tracker-census {
+  margin: 0.6rem 0 0;
+  font-size: 0.8rem;
+  text-align: center;
+}
+
+.play-tracker-census.is-ok {
+  color: var(--text-muted);
+}
+
+.play-tracker-census.is-off {
+  color: #e0573a;
+  font-weight: 600;
 }
 
 .play-tracker-grid {
@@ -16520,7 +16550,9 @@ button.sc-stat:active {
 .play-swap-layer {
   position: absolute;
   inset: 0;
-  z-index: 60;
+  /* Over the table and your hand (and the calls, the dice), under the menu,
+     the result card and the sheets - a tile in flight never crosses them. */
+  z-index: 8;
   pointer-events: none;
 }
 
@@ -16921,4 +16953,87 @@ button.sc-stat:active {
 
 .play-swap-mine .play-swap-got {
   gap: 0.6em;
+}
+
+
+/* 開局: a new game's rules, on a page of their own before the deal - the
+   menu's rows, in the play screen's dark lacquer. */
+.play-setup-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: max(0.6rem, var(--safe-top)) max(1rem, var(--safe-right)) max(0.6rem, var(--safe-bottom)) max(1rem, var(--safe-left));
+  background: radial-gradient(120% 90% at 50% 30%, #2c241c 0%, #17120d 60%, #0d0a07 100%);
+}
+
+.play-setup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  width: min(44rem, 100%);
+  max-height: 100%;
+  min-height: 0;
+}
+
+.play-setup .play-sheet-head {
+  color: var(--play-on-felt);
+}
+
+.play-menu.play-setup-rules {
+  position: static;
+  width: 100%;
+  box-sizing: border-box;
+  max-height: none;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+}
+
+.play-setup-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.play-setup-go {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.play-setup-actions button {
+  min-height: 2.75rem;
+  padding: 0 1.1rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 209, 102, 0.35);
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--play-on-felt);
+  font: inherit;
+  font-weight: 600;
+}
+
+.play-setup-actions .play-setup-start {
+  border-color: #f0b94a;
+  background: linear-gradient(180deg, #ffd166, #e0a43a);
+  color: #2a1a05;
+}
+
+.play-setup-actions .play-setup-reset.is-armed {
+  border-color: #e0573a;
+  color: #ffb4a3;
+}
+
+/* A row's label gives way (its note trimmed) before its buttons do. */
+.play-setup-rules .play-menu-row > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.play-setup-rules .play-menu-row > .play-menu-seg {
+  flex-shrink: 0;
 }

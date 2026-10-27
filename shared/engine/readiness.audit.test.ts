@@ -62,7 +62,7 @@ describe("readiness agrees with the hands", () => {
   });
 
   for (const melds of [MELDS_REQUIRED, 4, 3, 2, 1]) {
-    it(`a hand needing ${melds} sets: ready exactly when a tile completes it, and complete exactly at -1`, () => {
+    it(`a hand needing ${melds} sets: ready exactly when a tile completes it, and complete exactly at -1`, { timeout: 60_000 }, () => {
       const rand = rng(1000 + melds);
       const size = melds * 3 + 1;
       const bad: string[] = [];

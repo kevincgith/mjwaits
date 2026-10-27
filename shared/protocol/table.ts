@@ -86,7 +86,7 @@ export const TableSettingsSchema = object({
 });
 export type TableSettings = Infer<typeof TableSettingsSchema>;
 
-export const DEFAULT_TABLE_SETTINGS: TableSettings = { multiWin: false, timer: 20, hold: 30, firstDealer: 0, reveal: true };
+export const DEFAULT_TABLE_SETTINGS: TableSettings = { multiWin: false, timer: 20, hold: 30, firstDealer: 0, reveal: true, jackpot: 5 };
 
 const TableClientSchema = tagged({
   // First on every connection; `token` comes back as the same person (and seat).

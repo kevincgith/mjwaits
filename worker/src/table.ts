@@ -33,6 +33,7 @@ import {
   barredClaims,
   resolveClaims,
   retractClaim,
+  tileCensus,
   riichiDiscards,
   riichiForcedDiscard,
   sameTile,
@@ -175,6 +176,11 @@ export class Table extends Hub<TableMessage> {
 
   // What one step of the game scored, into the record.
   private record(before: GameState | null, after: GameState) {
+    // Every change passes here: every tile still there after it - logged
+    // (play goes on) if not.
+    const census = tileCensus(after);
+    if (census.total !== 144 || census.off.length)
+      console.error("Tiles not all accounted for", JSON.stringify({ table: this.meta<string>("code"), step: this.rt.step, from: before?.phase.kind, to: after.phase.kind, census }));
     const head = this.meta<ScoreGame>("recordHead");
     if (!head) return;
     this.addToRecord(playEvents(before, after, head.seats, Date.now(), { perDraw: this.rt.settings.jackpot ?? 0, pot: this.rt.pot ?? 0 }));

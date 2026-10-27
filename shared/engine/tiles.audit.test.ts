@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyTurnMove, botClaim, botTurnMove, claimOptions, newGame, nextHand, resolveClaims, swapGive, swapTake, takersAfter, type GameState } from "./game";
+import { applyTurnMove, botClaim, botTurnMove, claimOptions, newGame, nextHand, resolveClaims, swapGive, swapTake, takersAfter, tileCensus, type GameState } from "./game";
 import { botGive, blindPicks, botSplit, pileLeft, DEFAULT_SWAP_RULES } from "./swap";
 
 // Every tile, always: 4 of each of the 34 kinds and each of the 8 bonus
@@ -19,36 +19,25 @@ function rng(seed: number) {
   };
 }
 
-function census(g: GameState): Map<string, number> {
-  const n = new Map<string, number>();
-  const add = (k: string) => n.set(k, (n.get(k) ?? 0) + 1);
-  for (const w of g.wall) add("bonus" in w ? `${w.bonus.kind}${w.bonus.rank}` : `${w.tile.rank}${w.tile.suit}`);
-  for (const p of g.players) {
-    for (const t of p.hand) add(`${t.rank}${t.suit}`);
-    for (const t of p.discards) add(`${t.rank}${t.suit}`);
-    for (const m of p.melds) for (const t of m.tiles) add(`${t.rank}${t.suit}`);
-    for (const f of p.flowers) add(`${f.kind}${f.rank}`);
-  }
-  if (g.phase.kind === "swap") for (const pile of g.phase.piles) for (const t of pile ?? []) if (t) add(`${t.rank}${t.suit}`);
-  // An added kong's tile, held in the claim while it may be robbed (搶槓).
-  if (g.phase.kind === "claims" && g.phase.robKong) add(`${g.phase.tile.rank}${g.phase.tile.suit}`);
-  // 一炮多響: each winner off the one discard holds it in their winning
-  // hand, so it's there once per extra winner.
-  if (g.phase.kind === "over" && g.phase.result.tile && g.phase.result.alsoWon?.length) {
-    const k = `${g.phase.result.tile.rank}${g.phase.result.tile.suit}`;
-    n.set(k, n.get(k)! - g.phase.result.alsoWon.length);
-  }
-  return n;
-}
-
+// The game's own check (tileCensus), after every move - what the game runs too.
 function check(g: GameState, where: string) {
-  const n = census(g);
-  const total = [...n.values()].reduce((a, b) => a + b, 0);
-  const off = [...n].filter(([k, c]) => (/^(flower|season)/.test(k) ? c !== 1 : c !== 4));
-  if (total !== 144 || n.size !== 42 || off.length) throw new Error(`${where}: ${total} tiles, ${n.size} kinds, off: ${JSON.stringify(off)}`);
+  const c = tileCensus(g);
+  if (c.total !== 144 || c.off.length) throw new Error(`${where}: ${c.total} tiles, off: ${JSON.stringify(c.off)}`);
 }
 
 describe("all 144 tiles, after every move", () => {
+  it("the check names what's off: a tile lost, one doubled, a bonus tile gone", () => {
+    const g = newGame();
+    expect(tileCensus(g)).toEqual({ total: 144, off: [] });
+    const lost = { ...g, players: g.players.map((p, i) => (i === 0 ? { ...p, hand: p.hand.slice(1) } : p)) };
+    expect(tileCensus(lost).total).toBe(143);
+    expect(tileCensus(lost).off).toHaveLength(1);
+    const doubled = { ...g, players: g.players.map((p, i) => (i === 0 ? { ...p, hand: [...p.hand, p.hand[0]] } : p)) };
+    expect(tileCensus(doubled).off[0]).toMatchObject({ count: 5, expected: 4 });
+    const noBonus = { ...g, wall: g.wall.filter((w) => !("bonus" in w)), players: g.players.map((p) => ({ ...p, flowers: [] })) };
+    expect(tileCensus(noBonus).off.map((o) => o.tile)).toHaveLength(8);
+  });
+
   it("a hand nobody wins plays the wall out to its last tile - none held back", () => {
     let g = newGame();
     let moves = 0;
