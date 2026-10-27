@@ -251,6 +251,9 @@ describe("game", () => {
   it("a second kong is offered after the first's replacement draw", () => {
     const s0 = newGame();
     s0.players[0].hand = parseHand("1111b2222b345t678t9t1z");
+    // All four of each in hand: none left in the wall (else the replacement
+    // draw could be a fifth 2b, and five aren't a kong).
+    s0.wall = s0.wall.filter((w) => !("tile" in w) || w.tile.suit !== "b" || w.tile.rank > 2);
     s0.phase = { kind: "turn", seat: 0, drawn: s0.players[0].hand[s0.players[0].hand.length - 1], replacement: null };
     const after = applyTurnMove(s0, { kind: "concealedKong", tile: { suit: "b", rank: 1 } });
     expect(after.phase).toMatchObject({ kind: "turn", seat: 0 });
