@@ -6804,15 +6804,12 @@ html.playing body {
   height: 0.78em;
 }
 
-/* The tops of the others' standing tiles, seen from behind: jade only, a
-   shade lighter toward the face side (any ivory there read as white on
-   their backs). */
 .play-edge-left .play-edge-tile::before {
-  background: linear-gradient(to right, #6fce7e, var(--play-back) 45%);
+  background: linear-gradient(to right, #fbf8ef 0 55%, #7fd98c 55% 70%, var(--play-back) 70%);
 }
 
 .play-edge-right .play-edge-tile::before {
-  background: linear-gradient(to left, #6fce7e, var(--play-back) 45%);
+  background: linear-gradient(to left, #fbf8ef 0 55%, #7fd98c 55% 70%, var(--play-back) 70%);
 }
 
 .play-edge-left .play-edge-tile::after,
@@ -6845,7 +6842,7 @@ html.playing body {
 }
 
 .play-edge-top .play-edge-tile::before {
-  background: linear-gradient(to bottom, #6fce7e, var(--play-back) 45%);
+  background: linear-gradient(to bottom, #fbf8ef 0 45%, #7fd98c 45% 62%, var(--play-back) 62%);
 }
 
 .play-edge-top .play-edge-tile::after {
@@ -6972,6 +6969,26 @@ html.playing body {
   display: flex;
   flex-wrap: wrap;
   transform-style: preserve-3d;
+  /* A size smaller when its rows would reach its owner's tiles (see
+     pondFit), from its edge by the compass - drawn smaller only, so nothing
+     else on the table moves for it. */
+  scale: var(--pond-fit, 1);
+}
+
+.play-pond-slot-top .play-pond {
+  transform-origin: 50% 100%;
+}
+
+.play-pond-slot-bottom .play-pond {
+  transform-origin: 50% 0;
+}
+
+.play-pond-slot-left .play-pond {
+  transform-origin: 100% 50%;
+}
+
+.play-pond-slot-right .play-pond {
+  transform-origin: 0 50%;
 }
 
 /* Every pond fills as a player lays discards: the first row next to the
