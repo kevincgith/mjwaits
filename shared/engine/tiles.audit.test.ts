@@ -47,11 +47,31 @@ function check(g: GameState, where: string) {
 }
 
 describe("all 144 tiles, after every move", () => {
+  it("a hand nobody wins plays the wall out to its last tile - none held back", () => {
+    let g = newGame();
+    let moves = 0;
+    while (g.phase.kind !== "over" && moves++ < 400) {
+      const ph = g.phase;
+      if (ph.kind === "turn") {
+        // Throw the drawn tile, never win (a 自摸 would end it early).
+        const hand = g.players[ph.seat].hand;
+        g = applyTurnMove(g, { kind: "discard", tile: ph.drawn ?? hand[hand.length - 1] });
+      } else if (ph.kind === "claims") g = resolveClaims(g, [null, null, null, null]);
+      check(g, `move ${moves}`);
+    }
+    expect(g.phase.kind === "over" && g.phase.result.winner).toBe(null);
+    expect(g.wall.length).toBe(0);
+    // Every tile on the table: hands and ponds, flowers set aside.
+    const ponds = g.players.reduce((n, p) => n + p.discards.length, 0);
+    expect(ponds + g.players.reduce((n, p) => n + p.hand.length + p.flowers.length, 0)).toBe(144);
+  });
+
   for (const swap of [false, true]) {
     it(`whole games played out by bots${swap ? ", with 換牌" : ""}`, { timeout: 120_000 }, () => {
       const rand = rng(swap ? 77 : 7);
       let g = newGame({ multiWin: rand() < 0.5, ...(swap ? { swapRules: { ...DEFAULT_SWAP_RULES, winds: [1, 2, 3, 4] } } : {}) });
       let moves = 0;
+      let draws = 0;
       for (let hand = 0; hand < 40; hand++) {
         check(g, `hand ${hand} dealt`);
         for (let step = 0; step < 400 && g.phase.kind !== "over"; step++) {
@@ -67,6 +87,11 @@ describe("all 144 tiles, after every move", () => {
           else if (ph.kind === "claims") g = resolveClaims(g, [0, 1, 2, 3].map((s) => (s === ph.from || !claimOptions(g, s).length ? null : botClaim(g, s))));
           moves++;
           check(g, `hand ${hand}, move ${step} (${ph.kind})`);
+        }
+        // A draw (流局) plays the wall out to its last tile: none held back.
+        if (g.phase.kind === "over" && g.phase.result.winner === null) {
+          expect(g.wall.length).toBe(0);
+          draws++;
         }
         g = nextHand(g, undefined, rand);
       }
