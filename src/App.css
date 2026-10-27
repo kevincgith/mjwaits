@@ -7786,6 +7786,12 @@ html.playing body {
   width: var(--tile-w);
   height: var(--tile-h);
   border-radius: var(--tile-r);
+  /* Square where it touches a neighbour (see --join-l and the rest), so
+     the crevice between two tiles' rounded corners shows tile, not felt. */
+  border-top-left-radius: calc(var(--tile-r) * (1 - max(var(--join-f, 0), var(--join-l, 0), var(--cover-f, 0), var(--cover-l, 0))));
+  border-top-right-radius: calc(var(--tile-r) * (1 - max(var(--join-f, 0), var(--join-r, 0), var(--cover-f, 0), var(--cover-r, 0))));
+  border-bottom-left-radius: calc(var(--tile-r) * (1 - max(var(--join-n, 0), var(--join-l, 0), var(--cover-n, 0), var(--cover-l, 0))));
+  border-bottom-right-radius: calc(var(--tile-r) * (1 - max(var(--join-n, 0), var(--join-r, 0), var(--cover-n, 0), var(--cover-r, 0))));
   background: var(--play-ivory);
   transform: translateZ(calc(var(--play-thick) / 2));
 }
@@ -7857,9 +7863,9 @@ html.playing body {
 }
 
 :is(.play-felt, .play-hand, .play-swap-flight) .tile-side.is-near {
-  left: calc(var(--tile-x) + var(--tile-r) - 0.5px);
+  left: calc(var(--tile-x) + var(--tile-r) * (1 - var(--cover-l, 0)) - 0.5px - var(--cover-l, 0) * 1px);
   top: calc(var(--tile-y) + var(--tile-h));
-  width: calc(var(--tile-w) - 2 * var(--tile-r) + 1px);
+  width: calc(var(--tile-w) - var(--tile-r) * (2 - var(--cover-l, 0) - var(--cover-r, 0)) + 1px + (var(--cover-l, 0) + var(--cover-r, 0)) * 1px);
   height: var(--play-thick);
   background: linear-gradient(rgba(0, 0, 0, var(--shade-long)), rgba(0, 0, 0, var(--shade-long))), linear-gradient(to bottom, var(--tile-sides));
   transform-origin: 50% 0;
@@ -7867,9 +7873,9 @@ html.playing body {
 }
 
 :is(.play-felt, .play-hand, .play-swap-flight) .tile-side.is-far {
-  left: calc(var(--tile-x) + var(--tile-r) - 0.5px);
+  left: calc(var(--tile-x) + var(--tile-r) * (1 - var(--cover-l, 0)) - 0.5px - var(--cover-l, 0) * 1px);
   top: calc(var(--tile-y) - var(--play-thick));
-  width: calc(var(--tile-w) - 2 * var(--tile-r) + 1px);
+  width: calc(var(--tile-w) - var(--tile-r) * (2 - var(--cover-l, 0) - var(--cover-r, 0)) + 1px + (var(--cover-l, 0) + var(--cover-r, 0)) * 1px);
   height: var(--play-thick);
   background: linear-gradient(rgba(0, 0, 0, var(--shade-long)), rgba(0, 0, 0, var(--shade-long))), linear-gradient(to top, var(--tile-sides));
   transform-origin: 50% 100%;
@@ -7878,9 +7884,9 @@ html.playing body {
 
 :is(.play-felt, .play-hand, .play-swap-flight) .tile-side.is-right {
   left: calc(var(--tile-x) + var(--tile-w));
-  top: calc(var(--tile-y) + var(--tile-r) - 0.5px);
+  top: calc(var(--tile-y) + var(--tile-r) * (1 - var(--cover-f, 0)) - 0.5px - var(--cover-f, 0) * 1px);
   width: var(--play-thick);
-  height: calc(var(--tile-h) - 2 * var(--tile-r) + 1px);
+  height: calc(var(--tile-h) - var(--tile-r) * (2 - var(--cover-f, 0) - var(--cover-n, 0)) + 1px + (var(--cover-f, 0) + var(--cover-n, 0)) * 1px);
   background: linear-gradient(rgba(0, 0, 0, var(--shade-end)), rgba(0, 0, 0, var(--shade-end))), linear-gradient(to right, var(--tile-sides));
   transform-origin: 0 50%;
   transform: rotateY(-90deg);
@@ -7888,9 +7894,9 @@ html.playing body {
 
 :is(.play-felt, .play-hand, .play-swap-flight) .tile-side.is-left {
   left: calc(var(--tile-x) - var(--play-thick));
-  top: calc(var(--tile-y) + var(--tile-r) - 0.5px);
+  top: calc(var(--tile-y) + var(--tile-r) * (1 - var(--cover-f, 0)) - 0.5px - var(--cover-f, 0) * 1px);
   width: var(--play-thick);
-  height: calc(var(--tile-h) - 2 * var(--tile-r) + 1px);
+  height: calc(var(--tile-h) - var(--tile-r) * (2 - var(--cover-f, 0) - var(--cover-n, 0)) + 1px + (var(--cover-f, 0) + var(--cover-n, 0)) * 1px);
   background: linear-gradient(rgba(0, 0, 0, var(--shade-end)), rgba(0, 0, 0, var(--shade-end))), linear-gradient(to left, var(--tile-sides));
   transform-origin: 100% 50%;
   transform: rotateY(90deg);
@@ -7901,7 +7907,7 @@ html.playing body {
    shaded by which way it faces - from the long side's light to the end's
    shade. (Generated: centre +/- r, angles every 30°.) */
 :is(.play-felt, .play-hand, .play-swap-flight) .tile-side.is-corner {
-  width: calc(var(--tile-r) * 0.5176 + 1px);
+  width: calc((var(--tile-r) * 0.5176 + 1px) * (1 - var(--corner-join, 0)));
   height: var(--play-thick);
   transform-origin: 0 0;
 }
@@ -8051,10 +8057,101 @@ html.playing body {
   display: none;
 }
 
+/* Where a tile touches another, by its sides that don't show (the rules
+   above), in the tile's own left, right, near and far:
+   - covered (--cover-*): the edge runs under a tile in front of it - the
+     next row of a pond, the next tile down a side player's column. Its
+     corners there go and the sides along it run its full length (and a
+     pixel on), so nothing pokes out from under the tile in front.
+   - side by side (--join-*): two tiles in a row. Each keeps its rounded
+     corners - the small groove between them is how you tell them apart -
+     but the core below is square there, so the groove shows tile, not a
+     notch of felt. */
+:is(.play-felt, .play-hand, .play-swap-flight) .tile-side:is(.is-nr1, .is-nr2, .is-nr3) {
+  --corner-join: max(var(--cover-n, 0), var(--cover-r, 0));
+}
+
+:is(.play-felt, .play-hand, .play-swap-flight) .tile-side:is(.is-nl1, .is-nl2, .is-nl3) {
+  --corner-join: max(var(--cover-n, 0), var(--cover-l, 0));
+}
+
+:is(.play-felt, .play-hand, .play-swap-flight) .tile-side:is(.is-fl1, .is-fl2, .is-fl3) {
+  --corner-join: max(var(--cover-f, 0), var(--cover-l, 0));
+}
+
+:is(.play-felt, .play-hand, .play-swap-flight) .tile-side:is(.is-fr1, .is-fr2, .is-fr3) {
+  --corner-join: max(var(--cover-f, 0), var(--cover-r, 0));
+}
+
+/* Your pond (rows of 8, left to right) and the far one (right to left). */
+.play-pond-bottom:not(.has-riichi) > .play-pond-tile:not(:nth-child(8n + 1)) > .tile-glyph,
+.play-pond-top:not(.has-riichi) > .play-pond-tile:not(:nth-child(8n)):not(:last-child) > .tile-glyph {
+  --join-l: 1;
+}
+
+.play-pond-bottom:not(.has-riichi) > .play-pond-tile:not(:nth-child(8n)):not(:last-child) > .tile-glyph,
+.play-pond-top:not(.has-riichi) > .play-pond-tile:not(:nth-child(8n + 1)) > .tile-glyph {
+  --join-r: 1;
+}
+
+.play-pond-bottom:not(.has-riichi) > .play-pond-tile:nth-last-child(n + 9) > .tile-glyph,
+.play-pond-top:not(.has-riichi) > .play-pond-tile:nth-child(n + 9) > .tile-glyph {
+  --cover-n: 1;
+}
+
+/* The side ponds, turned a quarter: the left player's columns run down
+   (the tile's right is the one below, its left the one above), the right
+   player's up (its left the one below); the far end against the column
+   before. */
+.play-pond-left:not(.has-riichi) > .play-pond-tile:not(:nth-child(6n)):not(:last-child) > .tile-glyph,
+.play-pond-right:not(.has-riichi) > .play-pond-tile:not(:nth-child(6n)):not(:last-child) > .tile-glyph {
+  --cover-r: 1;
+}
+
+.play-pond-left:not(.has-riichi) > .play-pond-tile:not(:nth-child(6n + 1)) > .tile-glyph,
+.play-pond-right:not(.has-riichi) > .play-pond-tile:not(:nth-child(6n + 1)) > .tile-glyph {
+  --cover-l: 1;
+}
+
+:is(.play-pond-left, .play-pond-right):not(.has-riichi) > .play-pond-tile:nth-child(n + 7) > .tile-glyph {
+  --join-f: 1;
+}
+
+/* Melds and flowers, the tiles side by side: the far player's run right
+   to left; a side player's (turned) along their column; yours left to
+   right. (A kong's fourth tile, on top, isn't one of them.) */
+:is(.play-seat-left, .play-seat-right) :is(.play-meld:not(.is-revealed), .play-flowers) > :is(.tile-glyph, .play-back):not(:last-child) {
+  --cover-r: 1;
+}
+
+:is(.play-seat-left, .play-seat-right) :is(.play-meld:not(.is-revealed), .play-flowers) > :is(.tile-glyph, .play-back):not(:first-child) {
+  --cover-l: 1;
+}
+
+.play-hand:not(.is-toppled) :is(.play-meld:not(.is-revealed), .play-flowers) > :is(.tile-glyph, .play-back):not(:last-child),
+.play-seat-top :is(.play-meld:not(.is-revealed), .play-flowers) > :is(.tile-glyph, .play-back):not(:first-child) {
+  --join-r: 1;
+}
+
+.play-hand:not(.is-toppled) :is(.play-meld:not(.is-revealed), .play-flowers) > :is(.tile-glyph, .play-back):not(:first-child),
+.play-seat-top :is(.play-meld:not(.is-revealed), .play-flowers) > :is(.tile-glyph, .play-back):not(:last-child) {
+  --join-l: 1;
+}
+
+/* Your hand: between neighbours (not beside the drawn tile, set apart, or
+   one lifted to throw). */
+.play-hand:not(.is-toppled) .play-hand-tile:not(.is-selected):has(+ .play-hand-tile:not(.is-drawn):not(.is-selected)) > .tile-glyph {
+  --join-r: 1;
+}
+
+.play-hand:not(.is-toppled) .play-hand-tile:not(.is-selected) + .play-hand-tile:not(.is-drawn):not(.is-selected) > .tile-glyph {
+  --join-l: 1;
+}
+
 /* One panel for a whole corner: from the first panel's foot, across the
    rounding at 45deg (see TileSides). */
 :is(.play-felt, .play-hand, .play-swap-flight) .tile-side.is-corner.is-whole {
-  width: calc(var(--tile-r) * 1.4142 + 1px);
+  width: calc((var(--tile-r) * 1.4142 + 1px) * (1 - var(--corner-join, 0)));
   background: linear-gradient(rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.5)), rgba(0, 0, 0, calc(var(--shade-long) + (var(--shade-end) - var(--shade-long)) * 0.5))), linear-gradient(to bottom, var(--tile-sides));
 }
 
