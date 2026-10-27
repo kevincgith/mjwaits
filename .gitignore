@@ -47,3 +47,7 @@ reference-app/
 .wrangler/
 .dev.vars*
 docs/guide/img/
+
+# Playwright (npm run e2e)
+test-results/
+playwright-report/
