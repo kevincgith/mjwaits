@@ -25,6 +25,7 @@ import {
   applyTurnMove,
   barredClaims,
   claimOptions,
+  tileCensus,
   forbiddenDiscards,
   HUMAN,
   canWin,
@@ -548,7 +549,8 @@ function CallBurst({ seat, label, deltas }: { seat: number; label: string; delta
   );
 }
 
-function TileTracker({ game, onClose }: { game: GameState; onClose: () => void }) {
+// `census`: every tile counted (this device's own game; online the server checks).
+function TileTracker({ game, onClose, census }: { game: GameState; onClose: () => void; census: boolean }) {
   const unseen = unseenCounts(game, HUMAN);
   return (
     <div className="play-sheet-backdrop" onClick={onClose}>
@@ -571,8 +573,28 @@ function TileTracker({ game, onClose }: { game: GameState; onClose: () => void }
             );
           })}
         </div>
+        {census && <TileCensusLine game={game} />}
       </div>
     </div>
+  );
+}
+
+// A census key as a player reads it: 西, 3筒, 菊3.
+const censusName = (k: string) => {
+  const kind = allTileKinds().find((t) => tileKey(t) === k);
+  if (kind) return kind.suit === "z" ? "東南西北中發白"[kind.rank - 1] : `${kind.rank}${{ m: "萬", t: "筒", b: "條" }[kind.suit as "m" | "t" | "b"]}`;
+  const m = k.match(/^(flower|season)(\d)$/);
+  return m ? `${m[1] === "flower" ? ["梅", "蘭", "菊", "竹"][Number(m[2]) - 1] : ["春", "夏", "秋", "冬"][Number(m[2]) - 1]}${m[2]}` : k;
+};
+
+// All 144 tiles there (see tileCensus) - or which kinds aren't.
+function TileCensusLine({ game }: { game: GameState }) {
+  const c = tileCensus(game);
+  const ok = c.total === 144 && c.off.length === 0;
+  return (
+    <p className={`play-tracker-census${ok ? " is-ok" : " is-off"}`}>
+      {ok ? "✓ All 144 tiles accounted for" : `⚠ ${c.total} of 144 tiles: ${c.off.map((o) => `${censusName(o.tile)} ×${o.count} (should be ${o.expected})`).join(", ")}`}
+    </p>
   );
 }
 
@@ -704,7 +726,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     if (!online && !!game.runBack !== runBack) setGame((g) => ({ ...g, ...(runBack ? { runBack: true } : { runBack: undefined }) }));
   }, [game, runBack, online]);
   // 獎池: each draw everyone puts this in the pot; a 自摸 takes it all. 0: off.
-  const [jackpot, setJackpot] = useState(() => saved?.jackpot ?? 0);
+  const [jackpot, setJackpot] = useState(() => saved?.jackpot ?? 5); // (5 till you choose)
   useEffect(() => {
     if (!online && !!game.multiWin !== multiWin) setGame((g) => ({ ...g, multiWin }));
   }, [game, multiWin, online]);
@@ -1102,14 +1124,24 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     const TILES = ".tile-glyph, .play-back, .play-edge-tile";
     const next: Record<string, number> = {};
     for (const side of ["top", "left", "right", "bottom"] as const) {
-      const pond = felt.querySelector(`.play-pond-slot-${side} > .play-pond`);
+      // (The discards only - 換牌's piles keep their size.)
+      const pond = felt.querySelector(`.play-pond-slot-${side} > .play-pond:not(.play-swap-pond)`);
       const cur = pondFit[side] ?? 1;
       if (!pond || !pond.childElementCount) {
         if (cur !== 1) next[side] = 1; // a new hand: full size again
         continue;
       }
       // (Its tiles' own extent: they reach a little past the pond's box.)
+      // A tile still dropping onto it is measured where it lands - in the
+      // air it sat higher, and the pond shrank till it landed, then grew back.
+      const falling = pond.querySelectorAll(".play-pond-tile.is-latest");
+      const held: [Animation, CSSNumberish | null][] = [];
+      falling.forEach((e) => e.getAnimations().forEach((a) => {
+        held.push([a, a.currentTime]);
+        a.currentTime = Number(a.effect?.getComputedTiming().endTime ?? 0);
+      }));
       const mine = [...pond.querySelectorAll(TILES)].map(tb);
+      held.forEach(([a, t]) => (a.currentTime = t));
       const S = { x0: Math.min(...mine.map((b) => b.x0)), x1: Math.max(...mine.map((b) => b.x1)), y0: Math.min(...mine.map((b) => b.y0)), y1: Math.max(...mine.map((b) => b.y1)) };
       // At full size: the shrink undone about its edge by the compass, so
       // what's measured never depends on the size it's set (it settled on
@@ -1313,6 +1345,9 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
   // Every state change goes through here, so a finished hand's tai lands in
   // the running totals exactly once.
   const advance = (next: GameState) => {
+    // Every tile still there after the move - a warning (play goes on) if not.
+    const census = tileCensus(next);
+    if (census.total !== 144 || census.off.length) console.error("Tiles not all accounted for after a move", { from: game.phase, to: next.phase, census });
     if (next.phase.kind === "over" && game.phase.kind !== "over") {
       const { deltas } = next.phase.result;
       setTotals((t) => t.map((v, i) => v + deltas[i]));
@@ -2065,7 +2100,22 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
       if (phase.stage === "give") {
         // Not till the last round's tiles are in hand.
         if (swapFlying) return;
-        // The bots lay out their tiles together (and yours, on autoplay).
+        // On autoplay yours go first, as a bot would pick them but laid out
+        // as when you give them - each flying from your hand to your pile
+        // (the bots follow, the game moved on).
+        if (autoplay && seated && !phase.piles[HUMAN]) {
+          const id = window.setTimeout(() => {
+            const used = new Set<number>();
+            const picked = botGive(handTiles, phase.count).map((t) => {
+              const i = handTiles.findIndex((h, j) => !used.has(j) && sameTile(h, t));
+              used.add(i);
+              return i;
+            });
+            giveSwap(picked);
+          }, 900 * factor);
+          return () => window.clearTimeout(id);
+        }
+        // The bots lay out their tiles together.
         const givers = [0, 1, 2, 3].filter((seat) => !phase.piles[seat] && bot(seat));
         if (!givers.length) return;
         const id = window.setTimeout(() => {
@@ -2550,7 +2600,8 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
         side={side}
         count={swapPhase?.count ?? pile.length}
         picked={swapPicks[seat]}
-        standing={seat === HUMAN && seated && !autoplay}
+        // Yours face up even on 自動: you know what you gave.
+        standing={seat === HUMAN && seated}
         held={heldIn(seat)}
         arriving={seat === HUMAN ? new Set(giveFlights.map((f) => f.place)) : undefined}
         onPick={
@@ -3249,7 +3300,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
           </div>
         )}
 
-        {trackerOpen && <TileTracker game={game} onClose={() => setTrackerOpen(false)} />}
+        {trackerOpen && <TileTracker game={game} census={!online} onClose={() => setTrackerOpen(false)} />}
         {scoresOpen && ledger && <PlayScores game={ledger} onClose={() => setScoresOpen(false)} host={sheetHost.firstElementChild} />}
         {recordOpen && <RecordSheet record={playRecord} onReset={setPlayRecord} onClose={() => setRecordOpen(false)} />}
         {reviewOpen && (

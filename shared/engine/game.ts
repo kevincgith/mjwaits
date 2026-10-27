@@ -1091,6 +1091,41 @@ export function swapTake(state: GameState, seat: number, picks: number[][]): Gam
 
 // Copies of each tile kind a seat can't see anywhere: 4 minus its own hand,
 // every pond and every exposed meld.
+// Every tile accounted for: 4 of each of the 34 kinds and each of the 8
+// bonus tiles once - 144 - wherever it is: the wall, hands, melds, ponds,
+// bonus tiles set out, 換牌's piles, and an added kong's tile held in the
+// claim while it may be robbed (搶槓). At a 一炮多響 hand's end each extra
+// winner holds the one discard too, so it's counted once. `off` lists any
+// kind that isn't as it should be (empty: all there).
+export interface TileCensus {
+  total: number;
+  off: { tile: string; count: number; expected: number }[];
+}
+
+export function tileCensus(s: GameState): TileCensus {
+  const n = new Map<string, number>();
+  const add = (k: string, by = 1) => n.set(k, (n.get(k) ?? 0) + by);
+  const tile = (t: Tile) => add(tileKey(t));
+  for (const w of s.wall) "bonus" in w ? add(`${w.bonus.kind}${w.bonus.rank}`) : tile(w.tile);
+  for (const p of s.players) {
+    p.hand.forEach(tile);
+    p.discards.forEach(tile);
+    for (const m of p.melds) m.tiles.forEach(tile);
+    for (const f of p.flowers) add(`${f.kind}${f.rank}`);
+  }
+  if (s.phase.kind === "swap") for (const pile of s.phase.piles) for (const t of pile ?? []) if (t) tile(t);
+  if (s.phase.kind === "claims" && s.phase.robKong) tile(s.phase.tile);
+  if (s.phase.kind === "over" && s.phase.result.tile && s.phase.result.alsoWon?.length) add(tileKey(s.phase.result.tile), -s.phase.result.alsoWon.length);
+  const off: TileCensus["off"] = [];
+  for (const k of allTileKinds()) if ((n.get(tileKey(k)) ?? 0) !== 4) off.push({ tile: tileKey(k), count: n.get(tileKey(k)) ?? 0, expected: 4 });
+  for (const kind of ["flower", "season"] as const)
+    for (const rank of [1, 2, 3, 4]) if ((n.get(`${kind}${rank}`) ?? 0) !== 1) off.push({ tile: `${kind}${rank}`, count: n.get(`${kind}${rank}`) ?? 0, expected: 1 });
+  // (Anything that's no kind at all - a fifth suit, say.)
+  const known = new Set([...allTileKinds().map(tileKey), ...["flower", "season"].flatMap((k) => [1, 2, 3, 4].map((r) => `${k}${r}`))]);
+  for (const [k, c] of n) if (!known.has(k) && c) off.push({ tile: k, count: c, expected: 0 });
+  return { total: [...n.values()].reduce((a, b) => a + b, 0), off };
+}
+
 export function unseenCounts(s: GameState, seat: number): Map<string, number> {
   const counts = new Map<string, number>();
   for (const k of allTileKinds()) counts.set(tileKey(k), 4);
