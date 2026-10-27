@@ -6724,6 +6724,12 @@ html.playing body {
   justify-content: flex-end;
 }
 
+/* The left wall's tiles pack at its far end - up against the table's top
+   edge: it starts a tile down, level with the right wall's. */
+.play-edge-left {
+  margin-top: 0.78em;
+}
+
 .play-edge-top {
   width: calc(17 * 0.78em);
   justify-content: flex-end;
