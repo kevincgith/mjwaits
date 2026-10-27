@@ -790,7 +790,7 @@ export function standardShanten(tiles: Tile[], meldsRequired: number = MELDS_REQ
 
 // Eight Pairs shanten: 8 - (number of "pair units", where a kind with 2
 // copies is 1 unit and a kind with all 4 is 2 units) - minus 1 more if some
-// kind already has a 3rd (or 4th) copy in hand, the same "-1 for an already-
+// kind already has exactly a 3rd copy in hand, the same "-1 for an already-
 // satisfied completion condition" bonus standardShanten and
 // sixteenUnrelatedShanten both apply. Without it, a genuinely complete hand
 // (7 pairs + 1 triple, pairUnits=8 with one kind at count 3) scored the same
@@ -802,7 +802,10 @@ function eightPairsShanten(tiles: Tile[]): number {
   let hasSpare = false;
   for (const c of counts.values()) {
     pairUnits += Math.floor(c / 2);
-    if (c >= 3) hasSpare = true;
+    // Only a kind held three times is the spare: all four are two pairs
+    // already, and can't also be the triplet (1111 + 7 pairs + 2 singles
+    // isn't ready - it read as ready, and was declared 叮).
+    if (c === 3) hasSpare = true;
   }
   return 8 - pairUnits - (hasSpare ? 1 : 0);
 }
@@ -868,13 +871,20 @@ function sixteenUnrelatedShanten(tiles: Tile[]): number {
 
 // Overall shanten: the best of the standard shape, Eight Pairs, and Sixteen
 // Unrelated Tiles. Doesn't account for jokers (callers should check for
-// those separately) or Thirteen Orphans (whose shanten interacts with the
-// extra required meld in a way this module doesn't compute yet).
+// those separately). Thirteen Orphans (its extra meld makes its distance
+// awkward to count) is exact where it matters - complete, and ready - and
+// not counted further out.
 export function shanten(tiles: Tile[], meldsRequired: number = MELDS_REQUIRED): number {
   let best = standardShanten(tiles, meldsRequired);
   if (meldsRequired === MELDS_REQUIRED) {
     best = Math.min(best, eightPairsShanten(tiles));
     best = Math.min(best, sixteenUnrelatedShanten(tiles));
+    // (Ready or complete by it needs at least 12 of the 13 orphans in hand.)
+    const orphans = new Set(tiles.filter((t) => t.suit === "z" || t.rank === 1 || t.rank === 9).map(tileKey)).size;
+    if (orphans >= 12) {
+      if (best > -1 && tiles.length === COMPLETE_SIZE && isThirteenOrphansComplete(tiles)) best = -1;
+      else if (best > 0 && tiles.length === COMPLETE_SIZE - 1 && allTileKinds().some((t) => isThirteenOrphansComplete([...tiles, t]))) best = 0;
+    }
   }
   return best;
 }

@@ -210,6 +210,20 @@ describe("game", () => {
     expect(drew.players[1].threw).toBeUndefined();
   });
 
+  it("叮 only on a hand that can win: not the hand a bot declared on, nor a dead wait", () => {
+    const s0 = newGame();
+    const turn = (hand: string) => ({ ...s0, players: s0.players.map((p, i) => (i === 0 ? { ...p, hand: parseHand(hand), melds: [] } : p)), phase: { kind: "turn" as const, seat: 0, drawn: null, replacement: null } });
+    // 1111m + seven pairs + two singles, plus the tile to throw: no discard leaves it ready.
+    expect(riichiDiscards(turn("1111m88m488t233b77z44z1z"), 0)).toEqual([]);
+    // Throwing 1z would leave only a wait on 1b, all four held: ready by
+    // shape, but it can't win - not offered. (Throwing a 1b, waiting on 1z, is.)
+    const dead = riichiDiscards(turn("1111b888t345m888b678t1z"), 0);
+    expect(dead.some((t) => t.suit === "z")).toBe(false);
+    expect(dead).toContainEqual({ suit: "b", rank: 1 });
+    // A real wait still may.
+    expect(riichiDiscards(turn("111b888t345m888b67t77z1z"), 0).length).toBeGreaterThan(0);
+  });
+
   it("過水 and a passed 叮 win show the win greyed, not gone", () => {
     const m5 = { suit: "m" as const, rank: 5 };
     const s0 = newGame();
