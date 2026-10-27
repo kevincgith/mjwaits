@@ -312,7 +312,7 @@ export class Table extends Hub<TableMessage> {
         hostOnly();
         if (rt.seats.some((s) => s === null)) throw new Refusal("seatsNotFull", "every seat needs a player or a bot");
         rt.game = dealHand(
-          { dealer: rt.settings.firstDealer, roundWind: 1, dealerStreak: 0, multiWin: rt.settings.multiWin, ...(rt.settings.swapRules ? { swapRules: rt.settings.swapRules as SwapRules } : {}) },
+          { dealer: rt.settings.firstDealer, roundWind: 1, dealerStreak: 0, multiWin: rt.settings.multiWin, ...(rt.settings.runBack ? { runBack: true } : {}), ...(rt.settings.swapRules ? { swapRules: rt.settings.swapRules as SwapRules } : {}) },
           undefined,
           random
         );

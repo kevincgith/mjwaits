@@ -43,6 +43,7 @@ export function seatState(view: TableView): SeatState {
     ...(p.riichi ? { riichi: p.riichi } : {}),
     ...(p.overWater ? { overWater: true } : {}),
     ...(p.passedPung ? { passedPung: p.passedPung } : {}),
+    ...(p.threw ? { threw: p.threw } : {}),
   }));
 
   let phase: Phase;

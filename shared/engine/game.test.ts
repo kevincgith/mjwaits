@@ -182,6 +182,34 @@ describe("game", () => {
     expect(drawn.players[2].passedPung).toBeUndefined();
   });
 
+  it("no run back from a tile just thrown: threw 1m from 123m, no 1m or 4m onto the 23m till the next draw", () => {
+    const s0 = newGame();
+    // Seat 1 to throw, holding 123m and 56m.
+    s0.players[1].hand = parseHand("123m56m111222t55b5z");
+    s0.phase = { kind: "turn", seat: 1, drawn: null, replacement: null };
+    const s = applyTurnMove(s0, { kind: "discard", tile: { suit: "m", rank: 1 } });
+    expect(s.players[1].threw).toEqual({ suit: "m", rank: 1 });
+    // Seat 0, on its left, throws 4m: no run with it at all (greyed instead).
+    const four = { ...s, phase: { kind: "claims" as const, from: 0, tile: { suit: "m" as const, rank: 4 } } };
+    const runs = (cs: ReturnType<typeof claimOptions>) => cs.flatMap((c) => (c.kind === "chow" ? [c.tiles.map((t) => t.rank).join("")] : []));
+    expect(runs(claimOptions(four, 1))).toEqual([]);
+    expect(runs(barredClaims(four, 1))).toEqual(["23", "35", "56"]);
+    // 7m isn't barred: 567.
+    expect(runs(claimOptions({ ...s, phase: { kind: "claims" as const, from: 0, tile: { suit: "m" as const, rank: 7 } } }, 1))).toEqual(["56"]);
+    // 1m back: no run at all.
+    const one = { ...s, phase: { kind: "claims" as const, from: 0, tile: { suit: "m" as const, rank: 1 } } };
+    expect(runs(claimOptions(one, 1))).toEqual([]);
+    expect(runs(barredClaims(one, 1))).toEqual(["23"]);
+    // With the table's No run back off, the run back is there.
+    const free = applyTurnMove({ ...s0, runBack: true }, { kind: "discard", tile: { suit: "m", rank: 1 } });
+    expect(free.players[1].threw).toBeUndefined();
+    expect(runs(claimOptions({ ...free, phase: { kind: "claims" as const, from: 0, tile: { suit: "m" as const, rank: 4 } } }, 1))).toEqual(["23", "35", "56"]);
+    // A draw lifts it.
+    const drew = resolveClaims({ ...s, phase: { kind: "claims" as const, from: 0, tile: { suit: "z" as const, rank: 7 } } }, [null, null, null, null]);
+    expect(drew.phase).toMatchObject({ kind: "turn", seat: 1 });
+    expect(drew.players[1].threw).toBeUndefined();
+  });
+
   it("過水 and a passed 叮 win show the win greyed, not gone", () => {
     const m5 = { suit: "m" as const, rank: 5 };
     const s0 = newGame();

@@ -89,6 +89,21 @@ export interface Player {
   // Passed up a pung (or kong) of this tile: no calling it again till the
   // next draw - the same tile thrown by someone else meanwhile is barred.
   passedPung?: Tile;
+  // The tile it last threw, till its next draw or call: no run made with
+  // that tile taken back - nor with the far end of the run it came out of
+  // (threw 1m from 123m: no run with 1m or 4m). See runBarred.
+  threw?: Tile;
+}
+
+// Whether `threw` (see Player.threw) bars taking `tile` into a run, holding
+// `hand`: it's the thrown tile, or the far end of a run the thrown tile
+// would have made with two tiles still held.
+export function runBarred(threw: Tile | undefined, tile: Tile, hand: Tile[]): boolean {
+  if (!threw || threw.suit !== tile.suit) return false;
+  if (threw.rank === tile.rank) return true;
+  const has = (r: number) => hand.some((h) => h.suit === tile.suit && h.rank === r);
+  const d = tile.rank - threw.rank;
+  return (d === 3 && has(threw.rank + 1) && has(threw.rank + 2)) || (d === -3 && has(threw.rank - 1) && has(threw.rank - 2));
 }
 
 export type Phase =
@@ -159,6 +174,10 @@ export interface GameState {
   // and is paid. Off (the default) is 截胡: the first in turn order takes it.
   // A table setting, carried from hand to hand.
   multiWin?: boolean;
+  // No run back (on unless this says otherwise): a run can't be made with a
+  // tile just thrown, nor the far end of its run (see Player.threw). `true`
+  // here lifts it. A table setting, carried like multiWin.
+  runBack?: boolean;
 }
 
 export interface TableBonus {
@@ -286,6 +305,7 @@ function drawInto(s: GameState, seat: number, fromBack: boolean): { tile: Tile |
   let flowered = false;
   while (s.wall.length > DEAD_WALL_SIZE) {
     delete s.players[seat].passedPung; // a draw lifts a passed pung
+    delete s.players[seat].threw; // and the bar on a run back
     const w = back ? s.wall.pop()! : s.wall.shift()!;
     if ("bonus" in w) {
       s.players[seat].flowers.push(w.bonus);
@@ -412,12 +432,12 @@ function breakWall(wall: WallTile[], dice: Dice, dealer: number): WallTile[] {
   return [...wall.slice(at), ...wall.slice(0, at)];
 }
 
-export function newGame(opts: { multiWin?: boolean; swapRules?: SwapRules } = {}): GameState {
+export function newGame(opts: { multiWin?: boolean; runBack?: boolean; swapRules?: SwapRules } = {}): GameState {
   return dealHand({ dealer: 0, roundWind: 1, dealerStreak: 0, ...opts });
 }
 
 export function dealHand(
-  opts: { dealer: number; roundWind: Wind; dealerStreak: number; lahs?: Lah[]; multiWin?: boolean; swapRules?: SwapRules },
+  opts: { dealer: number; roundWind: Wind; dealerStreak: number; lahs?: Lah[]; multiWin?: boolean; runBack?: boolean; swapRules?: SwapRules },
   wall?: WallTile[],
   random: Random = Math.random
 ): GameState {
@@ -436,6 +456,7 @@ export function dealHand(
     log: [],
     lahs: opts.lahs ?? [],
     ...(opts.multiWin ? { multiWin: true } : {}),
+    ...(opts.runBack ? { runBack: true } : {}),
     ...(opts.swapRules ? { swapRules: opts.swapRules } : {}),
     ...(dice ? { dice } : {}),
   };
@@ -561,7 +582,7 @@ export function claimOptions(s: GameState, seat: number): Claim[] {
       [tile.rank - 1, tile.rank + 1],
       [tile.rank + 1, tile.rank + 2],
     ]) {
-      if (has(a) && has(b)) opts.push({ kind: "chow", tiles: [t(a), t(b)] });
+      if (has(a) && has(b) && !runBarred(p.threw, tile, p.hand)) opts.push({ kind: "chow", tiles: [t(a), t(b)] });
     }
   }
   return opts;
@@ -580,6 +601,17 @@ export function barredClaims(s: GameState, seat: number): Claim[] {
     const held = tileCount(p.hand, tile);
     if (held >= 3) out.push({ kind: "kong" });
     if (held >= 2) out.push({ kind: "pung" });
+  }
+  if (seat === (s.phase.from + 1) % SEATS && tile.suit !== "z") {
+    const has = (r: number) => r >= 1 && r <= 9 && p.hand.some((h) => h.suit === tile.suit && h.rank === r);
+    const t = (r: number): Tile => ({ suit: tile.suit, rank: r });
+    for (const [a, b] of [
+      [tile.rank - 2, tile.rank - 1],
+      [tile.rank - 1, tile.rank + 1],
+      [tile.rank + 1, tile.rank + 2],
+    ]) {
+      if (has(a) && has(b) && runBarred(p.threw, tile, p.hand)) out.push({ kind: "chow", tiles: [t(a), t(b)] });
+    }
   }
   return out;
 }
@@ -656,6 +688,7 @@ export function applyTurnMove(state: GameState, move: TurnMove): GameState {
       if (canWin(p)) passUp(p);
       p.hand = removeTiles(p.hand, [move.tile]);
       p.discards.push(move.tile);
+      if (!s.runBack) p.threw = { ...move.tile };
       // 過水 lifts with a throw that wouldn't have completed the hand.
       if (p.overWater && !isWinningHand(p, move.tile)) delete p.overWater;
       // 追: the fourth player in a row to throw the same tile pays the rest.
@@ -812,6 +845,7 @@ export function resolveClaims(state: GameState, decisions: (Claim | null)[]): Ga
 
   const claim = decisions[best]!;
   const p = s.players[best];
+  delete p.threw; // a call lifts the bar on a run back
   if (state.phase.robKong) {
     // Robbed: the tile goes to the winner, and the pung stays a pung.
     p.hand.push(tile);
@@ -960,14 +994,15 @@ export function nextHand(s: GameState, wall?: WallTile[], random: Random = Math.
   const { winner, alsoWon } = s.phase.result;
   const lahs = s.lahs ?? [];
   const multiWin = s.multiWin;
+  const runBack = s.runBack;
   const swapRules = s.swapRules;
   // The dealer stays on a draw, or when among the winners.
   if (winner === null || winner === s.dealer || alsoWon?.some((w) => w.winner === s.dealer)) {
-    return dealHand({ dealer: s.dealer, roundWind: s.roundWind, dealerStreak: s.dealerStreak + 1, lahs, multiWin, swapRules }, wall, random);
+    return dealHand({ dealer: s.dealer, roundWind: s.roundWind, dealerStreak: s.dealerStreak + 1, lahs, multiWin, runBack, swapRules }, wall, random);
   }
   const dealer = (s.dealer + 1) % SEATS;
   const roundWind = (dealer === 0 ? (s.roundWind % 4) + 1 : s.roundWind) as Wind;
-  return dealHand({ dealer, roundWind, dealerStreak: 0, lahs, multiWin, swapRules }, wall, random);
+  return dealHand({ dealer, roundWind, dealerStreak: 0, lahs, multiWin, runBack, swapRules }, wall, random);
 }
 
 // ---- 換牌 ------------------------------------------------------------------------
