@@ -958,30 +958,6 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     seats.forEach((el) => watch.observe(el));
     return () => watch.disconnect();
   }, []);
-  // The far seat's melds and flowers along its row, beside its hand - in
-  // front of the hand only when the row really won't fit across the table.
-  // The hand keeps a slot for a drawn tile, so only a call or a flower can
-  // change this, never a draw.
-  const [topFront, setTopFront] = useState(false);
-  useLayoutEffect(() => {
-    const felt = feltRef.current;
-    const seat = felt?.querySelector<HTMLElement>(".play-seat-top");
-    const side = seat?.querySelector<HTMLElement>(".play-seat-side");
-    if (!felt || !seat || !side) return;
-    const fit = () => {
-      const hand = seat.querySelector<HTMLElement>(".play-edge-top");
-      if (!hand) return; // the hand laid out at the end: leave it as it was
-      const cols = getComputedStyle(felt).gridTemplateColumns.split(" ").map(parseFloat);
-      const room = cols.slice(1, -1).reduce((a, b) => a + b, 0);
-      const gap = parseFloat(getComputedStyle(seat).columnGap) || 0;
-      setTopFront(hand.offsetWidth + gap + side.offsetWidth > room);
-    };
-    fit();
-    const watch = new ResizeObserver(fit);
-    watch.observe(felt);
-    watch.observe(side);
-    return () => watch.disconnect();
-  }, []);
   // The table as deep as the screen allows at its one angle: its far edge
   // just under the name cards. It depends only on the screen, so it's
   // worked out when that changes size - never as the game goes on, so
@@ -2411,10 +2387,9 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     // Losing hands hidden, one shown is shown later, by choice: at once.
     const choosing = online?.table.settings.reveal === false;
     return (
-      <div className={`play-seat play-seat-${side}${side !== "top" || topFront ? " is-front" : ""}`}>
-        {/* Melds and flowers in front of a side player's wall, from their
-            left (the CSS turns them to face them); across, on the far
-            player's left along their row - or in front, if that runs long. */}
+      <div className={`play-seat play-seat-${side} is-front`}>
+        {/* Melds and flowers in front of each player's wall, from their
+            left (the CSS turns them to face them). */}
         <span className="play-seat-side">
           <Flowers flowers={p.flowers} />
           <span className="play-seat-melds">

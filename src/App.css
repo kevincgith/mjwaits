@@ -6292,8 +6292,8 @@ html.playing body {
   flex-direction: column-reverse;
 }
 
-/* Too long for one line: the melds and flowers in front of the hand
-   (toward the middle), still from the player's left end. */
+/* The melds and flowers in front of the hand (toward the middle), still
+   from the player's left end - every seat alike. */
 .play-seat-left.is-front {
   flex-direction: row-reverse;
   align-items: flex-start;
