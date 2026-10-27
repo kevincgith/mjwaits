@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { seededRng } from "./bots";
-import { callLines, isComeback, LineDecks, MYSTERY_SPEECH, pickSituation, situations, SPEECH, type CallKind, type Outcome } from "./speech";
+import { callLines, isComeback, LineCounter, MYSTERY_SPEECH, pickSituation, situations, SPEECH, type CallKind, type Outcome } from "./speech";
 
 describe("call bubbles", () => {
   const all = [...Object.values(SPEECH), MYSTERY_SPEECH];
@@ -25,10 +25,10 @@ describe("call bubbles", () => {
 describe("speech bubbles", () => {
   const all = { ...SPEECH, mystery: MYSTERY_SPEECH };
 
-  it("give every bot at least 200 lines, none twice in one moment", () => {
+  it("give every bot at least 700 lines, none twice in one moment", () => {
     for (const [id, speech] of Object.entries(all)) {
       const lines = Object.values(speech).flat();
-      expect(lines.length, id).toBeGreaterThanOrEqual(200);
+      expect(lines.length, id).toBeGreaterThanOrEqual(700);
       for (const [kind, list] of Object.entries(speech)) {
         expect(list.length, `${id}.${kind}`).toBeGreaterThan(2);
         expect(new Set(list).size, `${id}.${kind}`).toBe(list.length);
@@ -37,20 +37,31 @@ describe("speech bubbles", () => {
   });
 
   it("say every line of a kind before any comes round again", () => {
-    const decks = new LineDecks(seededRng(7));
-    const lines = SPEECH.veteran.idle;
+    const lines = new LineCounter({}, seededRng(7));
+    const idle = SPEECH.veteran.idle;
     for (let round = 0; round < 3; round++) {
-      const said = Array.from({ length: lines.length }, () => decks.next("v:idle", lines));
-      expect(new Set(said).size).toBe(lines.length);
+      const said = Array.from({ length: idle.length }, () => lines.next(idle));
+      expect(new Set(said).size).toBe(idle.length);
     }
   });
 
+  it("pick up where the kept counts left off, and hold back the table's last lines", () => {
+    // Said before (another day): those come last.
+    const counter = new LineCounter({ a: 3, b: 3 }, seededRng(5));
+    expect([counter.next(["a", "b", "c", "d"]), counter.next(["a", "b", "c", "d"])].sort()).toEqual(["c", "d"]);
+    expect(counter.said()).toEqual({ a: 3, b: 3, c: 1, d: 1 });
+    // Just said by anyone: held back, even from a pool that has it at a lower count.
+    const table = new LineCounter({}, seededRng(9));
+    const first = table.next(["x", "y"]);
+    expect(table.next(["x", "y", "z"])).not.toBe(first);
+  });
+
   it("never say the same line twice running, even across a reshuffle", () => {
-    const decks = new LineDecks(seededRng(3));
+    const counter = new LineCounter({}, seededRng(3));
     const lines = ["a", "b", "c"];
     let last = "";
     for (let i = 0; i < 300; i++) {
-      const line = decks.next("k", lines);
+      const line = counter.next(lines);
       expect(line).not.toBe(last);
       last = line;
     }
