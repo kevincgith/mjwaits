@@ -986,6 +986,34 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     watch.observe(row);
     return () => watch.disconnect();
   });
+  // Another seat's melds and bonus tiles running longer than its room (a
+  // side seat's hand; across, the table's width): the bonus tiles move out
+  // a row, further toward the middle (as yours do) - and the melds, if still
+  // too long, carry on in a second row (the CSS). Judged laid end to end,
+  // so it doesn't flip back and forth, and only while the hand stands.
+  const [seatsOut, setSeatsOut] = useState<string[]>([]);
+  useLayoutEffect(() => {
+    const felt = feltRef.current;
+    if (!felt) return;
+    const cols = getComputedStyle(felt).gridTemplateColumns.split(" ").map(parseFloat);
+    const next = (["left", "right", "top"] as const).filter((side) => {
+      const seat = felt.querySelector<HTMLElement>(`.play-seat-${side}`);
+      const row = seat?.querySelector<HTMLElement>(".play-seat-side");
+      const flowers = row?.querySelector<HTMLElement>(":scope > .play-flowers");
+      const melds = row?.querySelector<HTMLElement>(":scope > .play-seat-melds");
+      const edge = seat?.querySelector<HTMLElement>(`.play-edge-${side}`);
+      if (!row || !melds || !flowers || !flowers.childElementCount) return false;
+      if (!edge) return seatsOut.includes(side); // the hand laid down: as it was
+      const along = (e: HTMLElement) => (side === "top" ? e.offsetWidth : e.offsetHeight);
+      const gap = parseFloat(getComputedStyle(row).gap) || 0;
+      // The whole row laid end to end (as if its melds didn't wrap).
+      const meldsLong = [...melds.children].reduce((n, m) => n + along(m as HTMLElement) + gap, 0);
+      // The room: a side seat's hand; across, the table's width between the sides.
+      const room = side === "top" ? cols.slice(1, -1).reduce((a, b) => a + b, 0) : along(edge);
+      return meldsLong + along(flowers) + gap > room;
+    });
+    if (next.join() !== seatsOut.join()) setSeatsOut(next);
+  });
   // The table as deep as the screen allows at its one angle: its far edge
   // just under the name cards. It depends only on the screen, so it's
   // worked out when that changes size - never as the game goes on, so
@@ -2045,6 +2073,12 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
   }, [timerFor, limit, deciding]);
 
   // The hand sorted, with the just-drawn tile split off at the right.
+  // The tile you won this hand with, if you did.
+  const myWinTile = useMemo(() => {
+    if (game.phase.kind !== "over") return null;
+    const r = game.phase.result;
+    return r.tile && (r.winner === HUMAN || r.alsoWon?.some((w) => w.winner === HUMAN)) ? r.tile : null;
+  }, [game.phase]);
   const handView = useMemo(() => {
     const tiles = me.hand.slice();
     // Tiles still flying to you aren't in your hand yet - nor, the swap still
@@ -2055,12 +2089,15 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
       if (i >= 0) tiles.splice(i, 1);
     }
     let drawnTile: Tile | null = null;
-    if (drawn) {
-      const i = tiles.findIndex((t) => sameTile(t, drawn));
+    // Set apart at the right: the tile just drawn - or, the hand won, the
+    // one you won with (drawn or claimed), not sorted in among the rest.
+    const apart = drawn ?? myWinTile;
+    if (apart) {
+      const i = tiles.findIndex((t) => sameTile(t, apart));
       if (i >= 0) drawnTile = tiles.splice(i, 1)[0];
     }
     return { sorted: sortTiles(tiles), drawnTile };
-  }, [me.hand, drawn, comingToMe, swapSettling]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [me.hand, drawn, myWinTile, comingToMe, swapSettling]); // eslint-disable-line react-hooks/exhaustive-deps
   const handTiles = useMemo(() => (handView.drawnTile ? [...handView.sorted, handView.drawnTile] : handView.sorted), [handView]);
   // Your hand rearranging (a swap's give, or its takes joining it): where
   // each tile showed just before - and any coming in from your swap row -
@@ -2415,7 +2452,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     // Losing hands hidden, one shown is shown later, by choice: at once.
     const choosing = online?.table.settings.reveal === false;
     return (
-      <div className={`play-seat play-seat-${side} is-front`}>
+      <div className={`play-seat play-seat-${side} is-front${seatsOut.includes(side) ? " has-bonus-out" : ""}`}>
         {/* Melds and flowers in front of each player's wall, from their
             left (the CSS turns them to face them). */}
         <span className="play-seat-side">
