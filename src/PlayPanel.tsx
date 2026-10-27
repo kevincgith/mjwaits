@@ -41,6 +41,7 @@ import {
   swapGive,
   swapTake,
   takersAfter,
+  riichiBarred,
   riichiDiscards,
   riichiForcedDiscard,
   roundLabel,
@@ -166,6 +167,8 @@ const botDelay = (difficulty: number, afterCall: boolean) => 300 + difficulty * 
 // A discard nobody can claim moves on after a short pause - longer when a
 // bot had a call to weigh and passed (a tell, as at a real table).
 const PASS_DELAY_MS = 380;
+// Your row this full of its width (see bonusOut): the bonus tiles move out a row.
+const BONUS_OUT_AT = 0.9;
 const PONDER_DELAY_MS = 900;
 // A discard a bot is about to take stays on the table this long first, so
 // everyone sees what was thrown before it goes into the caller's meld.
@@ -958,6 +961,31 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     seats.forEach((el) => watch.observe(el));
     return () => watch.disconnect();
   }, []);
+  // Your row running long (melds, flowers and hand past the screen's
+  // edge): the bonus tiles move out a row, onto the table above it. Judged
+  // with them in the row, so it doesn't flip back and forth; the 3D row
+  // spreads past its layout width toward its ends, hence the margin.
+  const myRowRef = useRef<HTMLDivElement>(null);
+  const [bonusOut, setBonusOut] = useState(false);
+  useLayoutEffect(() => {
+    const row = myRowRef.current;
+    // The room: your seat's whole width (the wrap itself is only as wide as the row).
+    const wrap = row?.closest<HTMLElement>(".play-me");
+    if (!row || !wrap) return;
+    const fit = () => {
+      const last = row.lastElementChild as HTMLElement | null;
+      const flowers = row.querySelector<HTMLElement>(".play-my-melds .play-flowers");
+      if (!last || !flowers || !flowers.childElementCount) return setBonusOut(false);
+      const gap = parseFloat(getComputedStyle(flowers.parentElement!).columnGap) || 0;
+      const inRow = row.classList.contains("has-bonus-out") ? flowers.offsetWidth + gap : 0;
+      setBonusOut(last.offsetLeft + last.offsetWidth + inRow > wrap.clientWidth * BONUS_OUT_AT);
+    };
+    fit();
+    const watch = new ResizeObserver(fit);
+    watch.observe(wrap);
+    watch.observe(row);
+    return () => watch.disconnect();
+  });
   // The table as deep as the screen allows at its one angle: its far edge
   // just under the name cards. It depends only on the screen, so it's
   // worked out when that changes size - never as the game goes on, so
@@ -2830,6 +2858,11 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
                       取消
                     </button>
                   )}
+                  {riichiTiles.length === 0 && myTurn && !autoplay && riichiBarred(game, HUMAN) && (
+                    <button type="button" className="play-call is-riichi is-barred" disabled title="叮 now would pass up your 自摸 - and a 叮 that passed a win never wins" aria-label="叮 - would pass up your 自摸, so it could never win">
+                      叮
+                    </button>
+                  )}
                   {riichiTiles.length > 0 && (
                     <button
                       type="button"
@@ -2883,7 +2916,8 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
             {/* What you've taken, in 3D above your hand, standing as it does. */}
             {flights.some((f) => f.to === HUMAN) && <div className="play-hand play-swap-mine">{swapRow(HUMAN)}</div>}
             <div
-              className={`play-hand${myTurn ? " is-turn" : ""}${iWon ? " is-toppled" : ""}`}
+              ref={myRowRef}
+              className={`play-hand${myTurn ? " is-turn" : ""}${iWon ? " is-toppled" : ""}${bonusOut ? " has-bonus-out" : ""}`}
               style={winIndex >= 0 ? ({ "--win-lead": `${WIN_TILE_LEAD}s` } as CSSProperties) : undefined}
             >
               {(me.melds.length > 0 || me.flowers.length > 0) && (
