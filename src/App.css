@@ -6272,6 +6272,9 @@ html.playing body {
   grid-area: top;
   justify-self: center;
   flex-direction: row-reverse;
+  /* Its tiles stand up toward you, past their footprint: down a little,
+     clear of the name tag above. */
+  margin-top: calc(var(--play-wall) * 0.4);
 }
 
 .play-seat-left,
@@ -6356,8 +6359,21 @@ html.playing body {
   margin-inline: -0.03em;
 }
 
+/* A face-down tile in a meld (a concealed kong) built as a face-up one
+   is: the same box, its block set in it the same way (--tile-x / -y / -w /
+   -h), and at the sides turned a quarter as they are - else it stood a
+   size larger than the tiles beside it, and off their line. */
+:is(.play-seat, .play-hand) .play-meld .play-back {
+  width: 0.776em;
+  height: 0.998em;
+  --tile-x: 0.03em;
+  --tile-y: 0.043em;
+  --tile-w: 0.72em;
+  --tile-h: 0.913em;
+}
+
 :is(.play-seat-top, .play-hand) .play-meld:not(.is-revealed) .play-back {
-  margin-inline: 0;
+  margin: 0 -0.03em;
 }
 
 :is(.play-seat-left, .play-seat-right) :is(.play-meld:not(.is-revealed), .play-flowers) .tile-glyph {
@@ -6365,7 +6381,15 @@ html.playing body {
 }
 
 :is(.play-seat-left, .play-seat-right) .play-meld:not(.is-revealed) .play-back {
-  margin-block: 0;
+  margin: -0.14em 0.11em;
+}
+
+.play-seat-left .play-meld .play-back {
+  rotate: 90deg;
+}
+
+.play-seat-right .play-meld .play-back {
+  rotate: -90deg;
 }
 
 .play-seat-left :is(.play-meld, .play-flowers) .tile-glyph,
@@ -6378,10 +6402,10 @@ html.playing body {
   rotate: -90deg;
 }
 
-/* A hand laid face up at the end lies where it stood: wall size, so it
-   takes the wall's room and never runs over the melds and flowers. */
+/* A hand laid face up at the end lies where it stood: a little over wall
+   size, to be read at a glance, and still about the wall's room. */
 .play-seat .play-meld.is-revealed {
-  font-size: var(--play-wall);
+  font-size: calc(var(--play-wall) * 1.15);
 }
 
 /* The tile that completed a winning hand, last and laid sideways - turned
@@ -6533,7 +6557,14 @@ html.playing body {
 }
 
 /* The tile you won with goes down first, on its own: lifted, shown, laid
-   flat - then the rest of your hand follows. */
+   flat and turned on its side, as the others' winning tiles lie - then the
+   rest of your hand follows. Set apart at the right (as a drawn tile is),
+   with room to lie sideways. (Turned about its foot, then tipped: the
+   translate sets it back over its slot, its long side on the foot's line.) */
+.play-hand.is-toppled .play-hand-tile.is-winner {
+  margin-inline: 0.12em 0.11em;
+}
+
 .play-hand.is-toppled .play-hand-tile.is-winner :is(.tile-glyph.tile-art, .play-back) {
   animation: play-show-mine 0.8s both;
   animation-delay: 0.2s;
@@ -6541,23 +6572,23 @@ html.playing body {
 
 @keyframes play-show-mine {
   0% {
-    transform: translateY(-0.5em) rotateX(-22deg);
+    transform: translateY(-0.5em) rotateX(-22deg) translate(0, 0) rotateZ(0deg);
     animation-timing-function: cubic-bezier(0.2, 0.7, 0.4, 1);
   }
   45% {
-    transform: translateY(-0.6em) rotateX(-22deg);
+    transform: translateY(-0.6em) rotateX(-22deg) translate(0, 0) rotateZ(0deg);
     animation-timing-function: cubic-bezier(0.55, 0, 1, 0.45);
   }
   85% {
-    transform: translateY(0) rotateX(32deg);
+    transform: translateY(0) rotateX(32deg) translate(-0.5em, -0.388em) rotateZ(90deg);
     animation-timing-function: ease-out;
   }
   93% {
-    transform: translateY(0) rotateX(26deg);
+    transform: translateY(0) rotateX(26deg) translate(-0.5em, -0.388em) rotateZ(90deg);
     animation-timing-function: ease-in;
   }
   100% {
-    transform: translateY(0) rotateX(32deg);
+    transform: translateY(0) rotateX(32deg) translate(-0.5em, -0.388em) rotateZ(90deg);
   }
 }
 
@@ -7617,6 +7648,50 @@ html.playing body {
   font-size: 0.74em;
 }
 
+/* Another seat's melds no longer than its hand (17 wall tiles) at the
+   sides: past that, they carry on in a second row, toward the middle. */
+.play-seat-left .play-seat-melds,
+.play-seat-right .play-seat-melds {
+  max-height: calc(17 * 0.78 * var(--play-wall));
+  flex-wrap: wrap;
+  align-content: flex-start;
+}
+
+.play-seat-right .play-seat-melds {
+  flex-wrap: wrap-reverse;
+}
+
+/* Across, the table's width (the seat's own) is the limit. */
+.play-seat-top .play-seat-melds {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+}
+
+/* Another seat's row running longer than its hand: its bonus tiles out a
+   row, further toward the middle, from that player's left end. */
+.play-seat.has-bonus-out .play-seat-side {
+  position: relative;
+}
+
+.play-seat.has-bonus-out .play-seat-side > .play-flowers {
+  position: absolute;
+}
+
+.play-seat-left.has-bonus-out .play-seat-side > .play-flowers {
+  left: calc(100% + 0.15em);
+  top: 0;
+}
+
+.play-seat-right.has-bonus-out .play-seat-side > .play-flowers {
+  right: calc(100% + 0.15em);
+  bottom: 0;
+}
+
+.play-seat-top.has-bonus-out .play-seat-side > .play-flowers {
+  top: calc(100% + 0.15em);
+  right: 0;
+}
+
 /* Your row running long: the bonus tiles out a row, on the table just
    above it (your row's top, standing tiles and all), from its left - the
    melds' slot stretched to the row's height, so with no melds as well. */
@@ -7855,7 +7930,10 @@ html.playing body {
 :is(.play-felt, .play-hand, .play-swap-flight) .play-back > .tile-top {
   display: block;
   position: absolute;
-  inset: 0;
+  left: var(--tile-x);
+  top: var(--tile-y);
+  width: var(--tile-w);
+  height: var(--tile-h);
   border-radius: var(--tile-r);
   background: var(--play-back);
   box-shadow: inset 0 0 0 0.04em var(--play-back-edge);
