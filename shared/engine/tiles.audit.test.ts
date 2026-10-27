@@ -30,6 +30,8 @@ function census(g: GameState): Map<string, number> {
     for (const f of p.flowers) add(`${f.kind}${f.rank}`);
   }
   if (g.phase.kind === "swap") for (const pile of g.phase.piles) for (const t of pile ?? []) if (t) add(`${t.rank}${t.suit}`);
+  // An added kong's tile, held in the claim while it may be robbed (搶槓).
+  if (g.phase.kind === "claims" && g.phase.robKong) add(`${g.phase.tile.rank}${g.phase.tile.suit}`);
   // 一炮多響: each winner off the one discard holds it in their winning
   // hand, so it's there once per extra winner.
   if (g.phase.kind === "over" && g.phase.result.tile && g.phase.result.alsoWon?.length) {
