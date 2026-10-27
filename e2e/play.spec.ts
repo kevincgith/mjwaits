@@ -99,8 +99,16 @@ async function autoplayToggles(page: Page) {
   await expect(auto).toHaveAttribute("aria-pressed", "false");
 }
 
-test("single player: the menu, 記牌器, 換牌's give and take, a discard, 自動", async ({ page }) => {
+test("single player: the setup page, the menu, 記牌器, 換牌's give and take, a discard, 自動", async ({ page }) => {
   await openApp(page, "New game");
+  // A new game's rules first (開局): 換牌 on for 東圈, then Start.
+  await expect(page.getByRole("dialog", { name: "New game" })).toBeVisible();
+  await page.locator(".play-setup .play-menu-link", { hasText: "換牌" }).click();
+  const east = page.locator(".play-swap-winds button", { hasText: "東" });
+  if (!(await east.evaluate((b) => b.classList.contains("toggle-on")))) await east.click();
+  await page.locator(".play-swap-confirm").click();
+  await page.locator(".play-setup-start").click();
+  await expect(page.getByRole("dialog", { name: "New game" })).toBeHidden();
   await expect(page.locator(".play-felt")).toBeVisible();
 
   // The menu opens and closes; 記牌器 opens and closes.
@@ -113,17 +121,6 @@ test("single player: the menu, 記牌器, 換牌's give and take, a discard, 自
   await expect(tracker).toBeVisible();
   await tracker.getByRole("button", { name: "Close" }).click();
   await expect(tracker).toBeHidden();
-
-  // 換牌 on for 東圈, and a new game to play it.
-  await gameMenu(page).click();
-  await page.locator(".play-menu-link", { hasText: "換牌" }).click();
-  const east = page.locator(".play-swap-winds button", { hasText: "東" });
-  if (!(await east.evaluate((b) => b.classList.contains("toggle-on")))) await east.click();
-  await page.locator(".play-swap-confirm").click();
-  await gameMenu(page).click();
-  await page.locator(".play-menu button", { hasText: "New game" }).click();
-  const again = page.locator(".play-menu button", { hasText: "Tap again" });
-  if (await again.isVisible()) await again.click();
 
   await playSwap(page);
   await discardOnce(page);

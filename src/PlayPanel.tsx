@@ -1311,6 +1311,13 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
   const [menuOpen, setMenuOpen] = useState(false);
   // New game wipes the running totals, so it takes a second tap.
   const [confirmNew, setConfirmNew] = useState(false);
+  // 開局: a new game's rules, set before it's dealt (the menu during a game
+  // keeps only what you'd change as you play). Opened for a new game - from
+  // Play's home, or New game in the menu.
+  const [setupOpen, setSetupOpen] = useState(() => !!fresh && !online);
+  const [confirmReset, setConfirmReset] = useState(false);
+  // A game started from here (so Back from the setup page returns to it).
+  const ledgerStarted = useRef(!fresh);
   const [trackerOpen, setTrackerOpen] = useState(false);
   const [chowChoice, setChowChoice] = useState(false);
   // Your last chow / pung / kong, with the discard it came from - so 嗌錯 can
@@ -2089,7 +2096,8 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
       const id = window.setTimeout(() => doTurn({ kind: "discard", tile }), 700);
       return () => window.clearTimeout(id);
     }
-    if (rolling || swapRolling) return;
+    // (Nothing moves while a new game's rules are being set.)
+    if (rolling || swapRolling || setupOpen) return;
     const phase = game.phase;
     // The swapping done, the hand starts once its last rows have joined
     // their hands.
@@ -2191,11 +2199,11 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     const id = window.setTimeout(move, delay * SPEEDS[speed].factor);
     return () => window.clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [game, rolling, swapRolling, swapFlying, swapAirborne, myTurn, autoplay]);
+  }, [game, rolling, swapRolling, swapFlying, swapAirborne, myTurn, autoplay, setupOpen]);
 
   // The turn timer (off by default): runs only while the human has to
   // decide, and on running out passes on a call or throws the drawn tile.
-  const deciding = !autoplay && (myTurn || humanClaims.length > 0 || swapGiving || myTake);
+  const deciding = !autoplay && !setupOpen && (myTurn || humanClaims.length > 0 || swapGiving || myTake);
   // What the timer runs for: a move - or, on 換牌, your give or take (the
   // bots giving alongside you don't restart it).
   const timerFor: unknown = swapPhase ? [game.dealer, game.dealerStreak, game.roundWind, swapPhase.round, swapPhase.stage, swapPhase.taker].join() : game;
@@ -2407,6 +2415,121 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     advance(nextHand(s));
   };
 
+  // The rules a new game is dealt with - on the setup page.
+  const ruleRows = (
+    <>
+              <div className="play-menu-row">
+                <span>
+                  一炮多響
+                  <span className="play-menu-note"> · {multiWin ? "everyone off one discard wins" : "截胡: first in turn takes it"}</span>
+                </span>
+                <span className="play-menu-seg">
+                  {[false, true].map((on) => (
+                    <button key={String(on)} type="button" className={multiWin === on ? "toggle-on" : undefined} aria-pressed={multiWin === on} onClick={() => setMultiWin(on)}>
+                      {on ? "On" : "Off"}
+                    </button>
+                  ))}
+                </span>
+              </div>
+              <div className="play-menu-row">
+                <span>
+                  No run back
+                  <span className="play-menu-note" title="Threw 1m from 123m: no run with 1m or 4m till you draw"> · {runBack ? "any run may be called" : "not with a tile just thrown"}</span>
+                </span>
+                <span className="play-menu-seg">
+                  {[true, false].map((on) => (
+                    <button key={String(on)} type="button" className={!runBack === on ? "toggle-on" : undefined} aria-pressed={!runBack === on} onClick={() => setRunBack(!on)}>
+                      {on ? "On" : "Off"}
+                    </button>
+                  ))}
+                </span>
+              </div>
+              <div className="play-menu-row">
+                {/* Each draw everyone puts this much in; a 自摸 takes the lot. */}
+                <span title="Each draw everyone puts this much in the pot; a 自摸 takes all of it">
+                  獎池 Jackpot
+                  {potNow > 0 && <span className="play-menu-note"> · {potNow} in it</span>}
+                </span>
+                <span className="play-menu-seg">
+                  {[0, 5, 10].map((n) => (
+                    <button key={n} type="button" className={jackpot === n ? "toggle-on" : undefined} aria-pressed={jackpot === n} onClick={() => setJackpot(n)}>
+                      {n ? n : "Off"}
+                    </button>
+                  ))}
+                </span>
+              </div>
+              <div className="play-menu-row">
+                <span>
+                  Record my play
+                  {record && recorded !== null && <span className="play-menu-note"> · {recorded}</span>}
+                </span>
+                <span className="play-menu-seg">
+                  {[false, true].map((on) => (
+                    <button
+                      key={String(on)}
+                      type="button"
+                      className={record === on ? "toggle-on" : undefined}
+                      aria-pressed={record === on}
+                      onClick={() => {
+                        setRecord(on);
+                        if (on) void countRecorded().then(setRecorded);
+                      }}
+                    >
+                      {on ? "On" : "Off"}
+                    </button>
+                  ))}
+                </span>
+              </div>
+              {record && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const { text, count } = await exportRecorded();
+                    const url = URL.createObjectURL(new Blob([text], { type: "application/x-ndjson" }));
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = `mjwaits-my-play-${new Date().toISOString().slice(0, 10)}.jsonl`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                    setRecorded(count);
+                  }}
+                >
+                  Export my play for training
+                </button>
+              )}
+              <button
+                type="button"
+                className="play-menu-link"
+                onClick={() => {
+                  
+                  setOpponentsOpen(true);
+                }}
+              >
+                <span>Opponents</span>
+                <span className="play-menu-value">{opponents.map((id) => shortName(botById(id))).join(" · ")} ›</span>
+              </button>
+              <button
+                type="button"
+                className="play-menu-link"
+                onClick={() => {
+                  
+                  setSwapSheetOpen(true);
+                }}
+              >
+                <span>換牌 Swap tiles</span>
+                <span className="play-menu-value">{swapRules.winds.length ? swapRules.winds.map((w) => ["", "東", "南", "西", "北"][w]).join(" ") : "Off"} ›</span>
+              </button>
+    </>
+  );
+  // Every rule as a first game has it.
+  const resetRules = () => {
+    setMultiWin(false);
+    setRunBack(false);
+    setJackpot(5);
+    setSwapRules(DEFAULT_SWAP_RULES);
+    setOpponents([...DEFAULT_OPPONENTS]);
+    setRecord(false);
+  };
   const startNewGame = () => {
     setTotals([0, 0, 0, 0]);
     history.current = [[], [], [], []];
@@ -2797,85 +2920,6 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
                   ))}
                 </span>
               </div>
-              <div className="play-menu-row">
-                <span>
-                  一炮多響
-                  <span className="play-menu-note"> · {multiWin ? "everyone off one discard wins" : "截胡: first in turn takes it"}</span>
-                </span>
-                <span className="play-menu-seg">
-                  {[false, true].map((on) => (
-                    <button key={String(on)} type="button" className={multiWin === on ? "toggle-on" : undefined} aria-pressed={multiWin === on} onClick={() => setMultiWin(on)}>
-                      {on ? "On" : "Off"}
-                    </button>
-                  ))}
-                </span>
-              </div>
-              <div className="play-menu-row">
-                <span>
-                  No run back
-                  <span className="play-menu-note"> · {runBack ? "off: any run may be called" : "threw 1m from 123m: no run with 1m or 4m till you draw"}</span>
-                </span>
-                <span className="play-menu-seg">
-                  {[true, false].map((on) => (
-                    <button key={String(on)} type="button" className={!runBack === on ? "toggle-on" : undefined} aria-pressed={!runBack === on} onClick={() => setRunBack(!on)}>
-                      {on ? "On" : "Off"}
-                    </button>
-                  ))}
-                </span>
-              </div>
-              <div className="play-menu-row">
-                {/* Each draw everyone puts this much in; a 自摸 takes the lot. */}
-                <span title="Each draw everyone puts this much in the pot; a 自摸 takes all of it">
-                  獎池 Jackpot
-                  {potNow > 0 && <span className="play-menu-note"> · {potNow} in it</span>}
-                </span>
-                <span className="play-menu-seg">
-                  {[0, 5, 10].map((n) => (
-                    <button key={n} type="button" className={jackpot === n ? "toggle-on" : undefined} aria-pressed={jackpot === n} onClick={() => setJackpot(n)}>
-                      {n ? n : "Off"}
-                    </button>
-                  ))}
-                </span>
-              </div>
-              <div className="play-menu-row">
-                <span>
-                  Record my play
-                  {record && recorded !== null && <span className="play-menu-note"> · {recorded}</span>}
-                </span>
-                <span className="play-menu-seg">
-                  {[false, true].map((on) => (
-                    <button
-                      key={String(on)}
-                      type="button"
-                      className={record === on ? "toggle-on" : undefined}
-                      aria-pressed={record === on}
-                      onClick={() => {
-                        setRecord(on);
-                        if (on) void countRecorded().then(setRecorded);
-                      }}
-                    >
-                      {on ? "On" : "Off"}
-                    </button>
-                  ))}
-                </span>
-              </div>
-              {record && (
-                <button
-                  type="button"
-                  onClick={async () => {
-                    const { text, count } = await exportRecorded();
-                    const url = URL.createObjectURL(new Blob([text], { type: "application/x-ndjson" }));
-                    const a = document.createElement("a");
-                    a.href = url;
-                    a.download = `mjwaits-my-play-${new Date().toISOString().slice(0, 10)}.jsonl`;
-                    a.click();
-                    URL.revokeObjectURL(url);
-                    setRecorded(count);
-                  }}
-                >
-                  Export my play for training
-                </button>
-              )}
               <button
                 type="button"
                 className="play-menu-link"
@@ -2888,28 +2932,6 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
                 <span className="play-menu-value">
                   {playRecord.hands ? `${playRecord.wins} wins / ${playRecord.hands}` : "–"} ›
                 </span>
-              </button>
-              <button
-                type="button"
-                className="play-menu-link"
-                onClick={() => {
-                  setMenuOpen(false);
-                  setOpponentsOpen(true);
-                }}
-              >
-                <span>Opponents</span>
-                <span className="play-menu-value">{opponents.map((id) => shortName(botById(id))).join(" · ")} ›</span>
-              </button>
-              <button
-                type="button"
-                className="play-menu-link"
-                onClick={() => {
-                  setMenuOpen(false);
-                  setSwapSheetOpen(true);
-                }}
-              >
-                <span>換牌 Swap tiles</span>
-                <span className="play-menu-value">{swapRules.winds.length ? swapRules.winds.map((w) => ["", "東", "南", "西", "北"][w]).join(" ") : "Off"} ›</span>
               </button>
               <div className="play-menu-row">
                 <span>Bot speed</span>
@@ -2938,8 +2960,16 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
                   <span className="play-menu-value">with friends or bots ›</span>
                 </button>
               )}
-              <button type="button" className={confirmNew ? "is-armed" : undefined} onClick={() => (confirmNew ? startNewGame() : setConfirmNew(true))}>
-                {confirmNew ? "Tap again to reset totals" : "New game"}
+              <button
+                type="button"
+                className="play-menu-link"
+                onClick={() => {
+                  setMenuOpen(false);
+                  setSetupOpen(true);
+                }}
+              >
+                <span>New game</span>
+                <span className="play-menu-value">its rules first ›</span>
               </button>
             </div>
           )}
@@ -3300,6 +3330,56 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
           </div>
         )}
 
+        {setupOpen && (
+          <div className="play-setup-backdrop">
+            <div className="play-setup" role="dialog" aria-label="New game">
+              <div className="play-sheet-head">
+                <h2>開局 New game</h2>
+                <span>The table's rules, set before the deal</span>
+              </div>
+              <div className="play-menu play-setup-rules">{ruleRows}</div>
+              <div className="play-setup-actions">
+                <button
+                  type="button"
+                  className={`play-setup-reset${confirmReset ? " is-armed" : ""}`}
+                  onClick={() => {
+                    if (!confirmReset) return setConfirmReset(true);
+                    resetRules();
+                    setConfirmReset(false);
+                  }}
+                >
+                  {confirmReset ? "Tap again to reset" : "Reset to defaults"}
+                </button>
+                <span className="play-setup-go">
+                  <button
+                    type="button"
+                    className="play-setup-back"
+                    onClick={() => {
+                      setConfirmReset(false);
+                      // Opened for a new game from Play's home: back there; else back to the game.
+                      if (fresh && !ledgerStarted.current) onExit();
+                      else setSetupOpen(false);
+                    }}
+                  >
+                    Back
+                  </button>
+                  <button
+                    type="button"
+                    className="play-setup-start"
+                    onClick={() => {
+                      setConfirmReset(false);
+                      ledgerStarted.current = true;
+                      startNewGame();
+                      setSetupOpen(false);
+                    }}
+                  >
+                    開局 Start
+                  </button>
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
         {trackerOpen && <TileTracker game={game} census={!online} onClose={() => setTrackerOpen(false)} />}
         {scoresOpen && ledger && <PlayScores game={ledger} onClose={() => setScoresOpen(false)} host={sheetHost.firstElementChild} />}
         {recordOpen && <RecordSheet record={playRecord} onReset={setPlayRecord} onClose={() => setRecordOpen(false)} />}
