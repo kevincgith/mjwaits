@@ -91,7 +91,7 @@ import {
   BIG_WIN_TAI,
   CHATTINESS,
   isComeback,
-  LineDecks,
+  LineCounter,
   MYSTERY_CHATTINESS,
   pickSituation,
   situations,
@@ -252,6 +252,24 @@ export interface SavedSummary {
 export function savedSummary(): SavedSummary | null {
   const saved = loadSaved();
   return saved && { round: roundLabel(saved.game), you: saved.totals[0] };
+}
+
+// How often each bot line has been said, on this device (see LineCounter).
+const LINES_KEY = "mjwaits.lines";
+function loadLineCounts(): Record<string, number> {
+  try {
+    const raw = localStorage.getItem(LINES_KEY);
+    return raw ? (JSON.parse(raw) as Record<string, number>) : {};
+  } catch {
+    return {};
+  }
+}
+function saveLineCounts(counts: Record<string, number>): void {
+  try {
+    localStorage.setItem(LINES_KEY, JSON.stringify(counts));
+  } catch {
+    // Storage full or off: the counts last this visit.
+  }
 }
 
 function save(saved: Saved): void {
@@ -1249,10 +1267,13 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reaction?.id]);
   const [reacting, setReacting] = useState(false);
-  // Speech bubbles: each bot works through its own shuffled deck of each
-  // kind of line, speaks as readily as its personality does, and leaves gaps
-  // - the table quiet a few seconds between table talk, a bot longer.
-  const decks = useRef(new LineDecks());
+  // Speech bubbles: the line that fits a bot has said least (counted on this
+  // device, across games - see LineCounter), as readily as its personality
+  // speaks, with gaps - the table quiet a few seconds between table talk, a
+  // bot longer.
+  const lines = useRef<LineCounter | null>(null);
+  lines.current ??= new LineCounter(loadLineCounts());
+  const keepLines = useRef(0);
   const spoke = useRef<{ any: number; seat: Record<number, number> }>({ any: 0, seat: {} });
   // How each seat's hands have gone this game (for 手風順 and the like).
   const history = useRef<Outcome[][]>([[], [], [], []]);
@@ -1266,8 +1287,10 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     const bot = bots[seat];
     if (!bot) return;
     const speech = speechOf(bot);
-    const text = decks.current.next(`${bot.id}:${seat}:${call ?? kind}`, call ? callLines(speech, call) : speech[kind]);
+    const text = lines.current!.next(call ? callLines(speech, call) : speech[kind]);
     if (!text) return;
+    window.clearTimeout(keepLines.current);
+    keepLines.current = window.setTimeout(() => saveLineCounts(lines.current!.said()), 2000);
     spoke.current.any = Date.now();
     spoke.current.seat[seat] = Date.now();
     const id = Date.now() + seat;
@@ -1275,6 +1298,15 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     window.setTimeout(() => setBubbles((b) => (b[seat]?.id === id ? Object.fromEntries(Object.entries(b).filter(([k]) => Number(k) !== seat)) : b)), BUBBLE_MS);
   };
   const sayLater = (ms: number, seat: number, kind: keyof Speech) => window.setTimeout(() => say(seat, kind), ms);
+  // A dig - at `target` if there's one (else the table) - and, as at a real
+  // table, sometimes a word back: from the target if it's a bot, else from
+  // another bot.
+  const taunt = (ms: number, seat: number, target: number | null = null) => {
+    sayLater(ms, seat, "taunt");
+    const back = target !== null ? (bots[target] ? [target] : []) : [1, 2, 3].filter((s) => s !== seat && bots[s]);
+    const s = back[Math.floor(Math.random() * back.length)];
+    if (s !== undefined && Math.random() < 0.25 + chattiness(s) * 0.5) sayLater(ms + 1800 + Math.random() * 800, s, "retort");
+  };
   // Not every call gets a word - the chattier, the likelier.
   const sayCall = (seat: number, call: CallKind) => {
     if (Math.random() < 0.3 + 0.65 * chattiness(seat)) say(seat, "call", call);
@@ -1445,7 +1477,10 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     else if (r.from !== null) sayLater(600, r.from, "dealIn");
     const lookers = [1, 2, 3].filter((s) => s !== r.from && !winners.some((w) => w.winner === s) && bots[s]);
     const looker = lookers[Math.floor(Math.random() * lookers.length)];
-    if (looker !== undefined && Math.random() < chattiness(looker) * 0.7) sayLater(1500, looker, "othersWin");
+    if (looker !== undefined && Math.random() < chattiness(looker) * 0.7) {
+      if (r.from !== null && Math.random() < 0.4) taunt(1500, looker, r.from);
+      else sayLater(1500, looker, "othersWin");
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [overKey]);
 
@@ -1459,6 +1494,12 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     const talkers = [1, 2, 3].filter((s) => bots[s]);
     const s = talkers[Math.floor(Math.random() * talkers.length)];
     if (s === undefined || Math.random() > 0.25 + chattiness(s) * 0.4) return;
+    // A poor (or fine) deal draws a remark - but a player gives nothing
+    // away: a fine hand is as often played down, a poor one bluffed up. Not
+    // online, where their hand is hidden.
+    const hand = game.players[s].hand;
+    const away = hand.some((t) => t.rank === 0) ? null : shanten(hand);
+    if (away !== null && (away >= 5 || away <= 2) && Math.random() < 0.6) return void sayLater(900, s, (away <= 2) === Math.random() < 0.5 ? "goodHand" : "badHand");
     const mood = situations(moodOf(s)).filter((x) => x === "ahead" || x === "behind" || x === "hot" || x === "cold");
     sayLater(900, s, mood.length && Math.random() < 0.45 ? mood[Math.floor(Math.random() * mood.length)] : "handStart");
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1476,9 +1517,47 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     let pick = Math.random() * weight.reduce((a, b) => a + b, 0);
     const seat = ready.find((_, i) => (pick -= weight[i]) < 0);
     if (seat === undefined) return;
-    sayLater(500, seat, pickSituation(moodOf(seat)));
+    const about = pickSituation(moodOf(seat));
+    // Ahead, half the time a dig at the rest - and now and then anyway.
+    if ((about === "ahead" && Math.random() < 0.5) || Math.random() < 0.15) taunt(500, seat);
+    else sayLater(500, seat, about);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [game.discardsMade]);
+
+  // 番子攻擊: a third (or fifth) 番子 in a row from one player - the thrower
+  // crows if it's a bot, or another bot remarks on it.
+  const ponds = useRef<number[]>(game.players.map((p) => p.discards.length));
+  useEffect(() => {
+    const before = ponds.current;
+    ponds.current = game.players.map((p) => p.discards.length);
+    const thrower = game.players.findIndex((p, i) => p.discards.length === before[i] + 1);
+    if (thrower < 0) return;
+    const pond = game.players[thrower].discards;
+    let run = 0;
+    while (run < pond.length && pond[pond.length - 1 - run].suit === "z") run++;
+    if (run !== 3 && run !== 5) return;
+    if (bots[thrower] && Math.random() < 0.3 + chattiness(thrower) * 0.6) return void sayLater(300, thrower, "honours");
+    const others = [1, 2, 3].filter((s) => s !== thrower && bots[s] && Date.now() - (spoke.current.seat[s] ?? 0) > 6000);
+    const s = others[Math.floor(Math.random() * others.length)];
+    if (s !== undefined && Math.random() < 0.2 + chattiness(s) * 0.6) sayLater(600, s, "honoursSeen");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [game.discardsMade]);
+
+  // Someone not a bot (you, or a person online) a long while over a move:
+  // now and then a bot says so - once a turn at most.
+  const slowSeat = game.phase.kind === "turn" && !bots[game.phase.seat] && !setupOpen ? game.phase.seat : null;
+  useEffect(() => {
+    if (slowSeat === null) return;
+    const wait = window.setTimeout(() => {
+      const now = Date.now();
+      if (now - spoke.current.any < 4000) return;
+      const ready = [1, 2, 3].filter((s) => s !== slowSeat && bots[s] && now - (spoke.current.seat[s] ?? 0) > 8000);
+      const s = ready[Math.floor(Math.random() * ready.length)];
+      if (s !== undefined && Math.random() < 0.3 + chattiness(s) * 0.6) say(s, "slow");
+    }, 10000 + Math.random() * 5000);
+    return () => window.clearTimeout(wait);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slowSeat, game]);
 
   const humanClaims = game.phase.kind === "claims" && seated && waitedOn ? claimOptions(game, HUMAN) : [];
   // Calls you'd have but for passing one up (過水, a passed pung): shown

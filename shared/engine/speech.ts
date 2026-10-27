@@ -1,12 +1,14 @@
 // Speech bubbles: what the bots say at the table, shown by their name. On
-// a call, a win, a self-draw, 叮, dealing in and 投降 - and the table talk
+// a call, a win, a self-draw, 叮, dealing in and 投降, someone thinking too
+// long, a run of 番子 thrown, a poor (or fine) deal, a dig at someone - and
+// the table talk
 // between, which turns on how their game is going (ahead or behind, on a run
 // or out of luck, under someone's 叮, the wall running out) and how a hand
 // ends for them (a big win, a comeback, someone else's win, 流局).
 //
 // Each personality's lines are in lines/<id>.ts - hundreds each, so a long
 // day at the table doesn't loop - and a bot works through them as a
-// shuffled deck (LineDecks), so it says every line before it says one again.
+// counter (LineCounter): the line it has said least, never one just said.
 
 import { CASUAL } from "./lines/casual";
 import { GAMBLER } from "./lines/gambler";
@@ -36,6 +38,13 @@ export interface Speech {
   comeback: string[]; // a win from the bottom of the table
   othersWin: string[]; // somebody else won (and not off them)
   drawGame: string[]; // 流局
+  slow: string[]; // someone else is taking their time over a move
+  honours: string[]; // throwing 番子 (winds, dragons) one after another
+  honoursSeen: string[]; // someone else doing that
+  badHand: string[]; // dealt a poor hand - or a fine one, played down
+  goodHand: string[]; // dealt a fine one - or a poor one, bluffed up
+  taunt: string[]; // a dig at someone - who just dealt in, or the table
+  retort: string[]; // answering a dig
 }
 
 export const SPEECH: Record<string, Speech> = {
@@ -136,34 +145,37 @@ export function isComeback(totalsAfter: number[], deltas: number[], seat: number
 
 // ---- Not the same thing twice ----------------------------------------------------------
 
-// Each bot works through a shuffled deck of each kind of line, and only
-// shuffles again once it's said them all - never starting the new deck with
-// the line it just said. So a line comes back only after all the others.
-export class LineDecks {
-  private decks = new Map<string, string[]>();
-  private last = new Map<string, string>();
+// Every line said is counted - the counts kept on the device, so they hold
+// across games and days - and a bot always picks from the lines that fit
+// the moment the one it has said least, at random among those. The table's
+// last RECENT_LINES lines (anyone's) are held back too, so nobody echoes
+// what was just said. A line comes round again only once the others that
+// fit have had their turn - and then still can, when it fits.
+export const RECENT_LINES = 40;
+export class LineCounter {
+  private counts: Record<string, number>;
+  private recent: string[] = [];
   private rand: () => number;
-  constructor(rand: () => number = Math.random) {
+  constructor(counts: Record<string, number> = {}, rand: () => number = Math.random) {
+    this.counts = { ...counts };
     this.rand = rand;
   }
 
-  next(key: string, lines: string[]): string {
+  next(lines: string[]): string {
     if (lines.length === 0) return "";
-    let deck = this.decks.get(key);
-    // A deck for a different set of lines (a call's own pool) starts afresh.
-    if (!deck || deck.some((l) => !lines.includes(l))) deck = [];
-    if (deck.length === 0) {
-      deck = lines.slice();
-      for (let i = deck.length - 1; i > 0; i--) {
-        const j = Math.floor(this.rand() * (i + 1));
-        [deck[i], deck[j]] = [deck[j], deck[i]];
-      }
-      const last = this.last.get(key);
-      if (deck.length > 1 && deck[deck.length - 1] === last) [deck[0], deck[deck.length - 1]] = [deck[deck.length - 1], deck[0]];
-    }
-    const line = deck.pop()!;
-    this.decks.set(key, deck);
-    this.last.set(key, line);
+    const fresh = lines.filter((l) => !this.recent.includes(l));
+    const notLast = lines.filter((l) => l !== this.recent[this.recent.length - 1]);
+    const pool = fresh.length ? fresh : notLast.length ? notLast : lines;
+    const least = Math.min(...pool.map((l) => this.counts[l] ?? 0));
+    const picks = pool.filter((l) => (this.counts[l] ?? 0) === least);
+    const line = picks[Math.floor(this.rand() * picks.length)];
+    this.counts[line] = (this.counts[line] ?? 0) + 1;
+    this.recent = [...this.recent, line].slice(-RECENT_LINES);
     return line;
+  }
+
+  // Each line's count, for keeping.
+  said(): Record<string, number> {
+    return { ...this.counts };
   }
 }
