@@ -3,7 +3,9 @@ import {
   applyTurnMove,
   botClaim,
   botTurnMove,
+  barredClaims,
   claimOptions,
+  selfDrawBarred,
   forbiddenDiscards,
   roundLabel,
   swapDiscardBan,
@@ -156,6 +158,42 @@ describe("game", () => {
     const lifted = applyTurnMove(withTile(z9), { kind: "discard", tile: z9 });
     expect(lifted.players[1].overWater).toBeUndefined();
     expect(claimOptions({ ...lifted, phase: { kind: "claims", from: 3, tile: m5 } }, 1).map((c) => c.kind)).toEqual(["win"]);
+  });
+
+  it("a passed-up pung is barred till that player draws - shown greyed meanwhile", () => {
+    const z5 = { suit: "z" as const, rank: 5 };
+    const s0 = newGame();
+    s0.players[0].hand = parseHand("12345m111222333t5z");
+    // Seat 2 holds two 5z: offered a pung when seat 0 throws one.
+    s0.players[2].hand = parseHand("123456789m1234t55z");
+    const s = applyTurnMove(s0, { kind: "discard", tile: z5 });
+    expect(claimOptions(s, 2).map((c) => c.kind)).toEqual(["pung"]);
+    const after = resolveClaims(s, [null, null, null, null]);
+    expect(after.players[2].passedPung).toEqual(z5);
+    // Seat 1 (between) throws another 5z: barred for seat 2, but shown.
+    const again = { ...after, phase: { kind: "claims" as const, from: 1, tile: z5 } };
+    expect(claimOptions(again, 2)).toEqual([]);
+    expect(barredClaims(again, 2).map((c) => c.kind)).toEqual(["pung"]);
+    // Another tile it could pung isn't barred.
+    expect(barredClaims({ ...after, phase: { kind: "claims" as const, from: 1, tile: { suit: "m", rank: 1 } } }, 2)).toEqual([]);
+    // Its own draw lifts it.
+    const drawn = resolveClaims({ ...after, phase: { kind: "claims" as const, from: 1, tile: { suit: "t", rank: 9 } } }, [null, null, null, null]);
+    expect(drawn.phase).toMatchObject({ kind: "turn", seat: 2 });
+    expect(drawn.players[2].passedPung).toBeUndefined();
+  });
+
+  it("過水 and a passed 叮 win show the win greyed, not gone", () => {
+    const m5 = { suit: "m" as const, rank: 5 };
+    const s0 = newGame();
+    s0.players[0].hand = parseHand("12345m111222333t55b");
+    s0.players[1].hand = parseHand("111222333444t55b46m");
+    const passed = resolveClaims(applyTurnMove(s0, { kind: "discard", tile: m5 }), [null, null, null, null]);
+    // (Its waiting hand again - not the tile it drew after passing.)
+    const after = { ...passed, players: passed.players.map((p, i) => (i === 1 ? { ...p, hand: parseHand("111222333444t55b46m") } : p)) };
+    const again = { ...after, phase: { kind: "claims" as const, from: 3, tile: m5 } };
+    expect(barredClaims(again, 1).map((c) => c.kind)).toEqual(["win"]);
+    expect(selfDrawBarred({ ...after.players[1], hand: [...after.players[1].hand, m5] })).toBe(true);
+    expect(selfDrawBarred({ ...after.players[1], overWater: undefined, hand: [...after.players[1].hand, m5] })).toBe(false);
   });
 
   it("a second kong is offered after the first's replacement draw", () => {

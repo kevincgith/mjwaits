@@ -16587,6 +16587,12 @@ button.sc-stat:active {
   cursor: default;
 }
 
+/* A call you'd have but for passing one up: there, greyed, untappable. */
+.play-call.is-barred {
+  filter: grayscale(1);
+  opacity: 0.5;
+}
+
 /* The settings sheet. */
 .play-swap-sheet h3 {
   margin: 0.9rem 0 0.4rem;

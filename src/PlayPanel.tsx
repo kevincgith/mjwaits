@@ -23,10 +23,12 @@
 import { type CSSProperties, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   applyTurnMove,
+  barredClaims,
   claimOptions,
   forbiddenDiscards,
   HUMAN,
   canWin,
+  selfDrawBarred,
   kongOptions,
   liveTilesLeft,
   meldsNeeded,
@@ -265,6 +267,9 @@ const seatTurn = (seat: number) => (SIDES[seat] === "left" ? 90 : SIDES[seat] ==
 // yours sit at the bottom.)
 const landTurn = (g: number, taker: number) => (Math.abs(seatTurn(taker) - seatTurn(g)) === 180 ? seatTurn(g) : seatTurn(taker));
 
+// Why a call is greyed out (see barredClaims).
+const barredWhy = (c: Claim, p: { riichi?: { passed?: boolean } }) =>
+  c.kind !== "win" ? "passed this pung - not again till you draw" : p.riichi?.passed ? "叮: passed a win - no more this hand" : "過水 - no win till you throw a tile that doesn't win";
 const claimLabel = (c: Claim) => (c.kind === "win" ? "胡" : c.kind === "kong" ? "槓" : c.kind === "pung" ? "碰" : "上");
 
 // ---- Pieces of the table ----------------------------------------------------
@@ -1265,6 +1270,9 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
   }, [game.discardsMade]);
 
   const humanClaims = game.phase.kind === "claims" && seated && waitedOn ? claimOptions(game, HUMAN) : [];
+  // Calls you'd have but for passing one up (過水, a passed pung): shown
+  // greyed while the discard's on the table, not taken.
+  const barredCalls = game.phase.kind === "claims" && seated && !autoplay ? barredClaims(game, HUMAN) : [];
 
   // The bots' claims on the current discard are decided as soon as it lands
   // (they can't see what the human will do).
@@ -1955,7 +1963,8 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
       move = () => resolve(mine);
       // Someone had a call to weigh: they take a moment either way; a call
       // that's coming lets the discard land first.
-      const pondered = [1, 2, 3].some((seat) => seat !== phase.from && claimOptions(game, seat).length > 0);
+      // (Your greyed call, too - so it's seen.)
+      const pondered = [1, 2, 3].some((seat) => seat !== phase.from && claimOptions(game, seat).length > 0) || barredCalls.length > 0;
       const called = mine !== null || botDecisions?.some((d) => d !== null);
       delay = called ? CLAIM_DELAY_MS : pondered ? PONDER_DELAY_MS + Math.random() * 300 : PASS_DELAY_MS;
     }
@@ -2134,6 +2143,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
   }, [hint, myTurn, ratings, me, seated]);
 
   const canSelfDraw = myTurn && canWin(me);
+  const selfDrawGrey = myTurn && !autoplay && selfDrawBarred(me);
   const myKongs = myTurn && liveTilesLeft(game) > 0 ? kongOptions(me, game.phase) : [];
 
 
@@ -2803,6 +2813,11 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
                       自摸
                     </button>
                   )}
+                  {selfDrawGrey && (
+                    <button type="button" className="play-call is-win is-long is-barred" disabled title={barredWhy({ kind: "win" }, me)} aria-label={`自摸 - ${barredWhy({ kind: "win" }, me)}`}>
+                      自摸
+                    </button>
+                  )}
                   {riichiArmed && (
                     <button
                       type="button"
@@ -2840,6 +2855,11 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
                   ))}
                   {otherClaims.map((c, i) => (
                     <button key={i} type="button" className={`play-call${c.kind === "win" ? " is-win" : ""}`} onClick={() => resolve(c)}>
+                      {claimLabel(c)}
+                    </button>
+                  ))}
+                  {barredCalls.map((c) => (
+                    <button key={`barred-${c.kind}`} type="button" className={`play-call is-barred${c.kind === "win" ? " is-win" : ""}`} disabled title={barredWhy(c, me)} aria-label={`${claimLabel(c)} - ${barredWhy(c, me)}`}>
                       {claimLabel(c)}
                     </button>
                   ))}

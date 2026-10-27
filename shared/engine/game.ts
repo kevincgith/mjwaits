@@ -86,6 +86,9 @@ export interface Player {
   // 過水: passed up a win (not 叮) - no win, off a discard or drawn, till
   // it throws a tile that doesn't complete its hand.
   overWater?: boolean;
+  // Passed up a pung (or kong) of this tile: no calling it again till the
+  // next draw - the same tile thrown by someone else meanwhile is barred.
+  passedPung?: Tile;
 }
 
 export type Phase =
@@ -282,6 +285,7 @@ function drawInto(s: GameState, seat: number, fromBack: boolean): { tile: Tile |
   let back = fromBack;
   let flowered = false;
   while (s.wall.length > DEAD_WALL_SIZE) {
+    delete s.players[seat].passedPung; // a draw lifts a passed pung
     const w = back ? s.wall.pop()! : s.wall.shift()!;
     if ("bonus" in w) {
       s.players[seat].flowers.push(w.bonus);
@@ -546,8 +550,9 @@ export function claimOptions(s: GameState, seat: number): Claim[] {
   // locked 叮 hand can only win - as can anyone robbing a kong.
   if (liveTilesLeft(s) === 0 || p.riichi || s.phase.robKong) return opts;
   const held = tileCount(p.hand, tile);
-  if (held >= 3) opts.push({ kind: "kong" });
-  if (held >= 2) opts.push({ kind: "pung" });
+  const passed = !!p.passedPung && sameTile(p.passedPung, tile);
+  if (held >= 3 && !passed) opts.push({ kind: "kong" });
+  if (held >= 2 && !passed) opts.push({ kind: "pung" });
   if (seat === (from + 1) % SEATS && tile.suit !== "z") {
     const has = (r: number) => r >= 1 && r <= 9 && p.hand.some((h) => h.suit === tile.suit && h.rank === r);
     const t = (r: number): Tile => ({ suit: tile.suit, rank: r });
@@ -561,6 +566,26 @@ export function claimOptions(s: GameState, seat: number): Claim[] {
   }
   return opts;
 }
+
+// The calls `seat` would have on this discard but for having passed one up
+// (過水, a 叮 hand's passed win, a passed pung) - shown greyed, not taken.
+export function barredClaims(s: GameState, seat: number): Claim[] {
+  if (s.phase.kind !== "claims" || seat === s.phase.from) return [];
+  const { tile } = s.phase;
+  const p = s.players[seat];
+  const out: Claim[] = [];
+  if (!canWin(p, tile) && isWinningHand(p, tile)) out.push({ kind: "win" });
+  if (liveTilesLeft(s) === 0 || p.riichi || s.phase.robKong) return out;
+  if (p.passedPung && sameTile(p.passedPung, tile)) {
+    const held = tileCount(p.hand, tile);
+    if (held >= 3) out.push({ kind: "kong" });
+    if (held >= 2) out.push({ kind: "pung" });
+  }
+  return out;
+}
+
+// On your turn: a 自摸 you'd have but for having passed a win up.
+export const selfDrawBarred = (p: Player) => !canWin(p) && isWinningHand(p);
 
 // ---- 叮 ----------------------------------------------------------------------
 
@@ -770,6 +795,9 @@ export function resolveClaims(state: GameState, decisions: (Claim | null)[]): Ga
   // Anyone who could have won on this tile and didn't call it has passed up that win.
   s.players.forEach((pl, seat) => {
     if (seat !== from && decisions[seat]?.kind !== "win" && claimOptions(state, seat).some((c) => c.kind === "win")) passUp(pl);
+    // And anyone who could have punged it and didn't, till their next draw.
+    const d = decisions[seat]?.kind;
+    if (seat !== from && d !== "pung" && d !== "kong" && d !== "win" && claimOptions(state, seat).some((c) => c.kind === "pung")) pl.passedPung = { ...tile };
   });
   if (best === null) {
     // No one robbed the kong: it stands.

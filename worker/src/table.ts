@@ -30,6 +30,7 @@ import {
   canWin,
   kongOptions,
   nextHand,
+  barredClaims,
   resolveClaims,
   retractClaim,
   riichiDiscards,
@@ -498,6 +499,9 @@ export class Table extends Hub<TableMessage> {
       // stays on the table a moment before it's taken. (If someone was
       // waited on, everyone has already seen it.)
       if (!rt.decisions.includes("waiting") && rt.decisions.some((x) => x !== null) && this.pause > 0) rt.botAt = now + this.botPause * CLAIM_PAUSES;
+      // Someone's greyed call (one they passed up): the discard stays a moment, so it's seen.
+      else if (!rt.decisions.includes("waiting") && this.pause > 0 && [0, 1, 2, 3].some((seat) => !this.actsAlone(seat) && rt.seats[seat]?.kind === "human" && barredClaims(g, seat).length > 0))
+        rt.botAt = now + this.botPause;
     } else {
       rt.ready = [];
     }

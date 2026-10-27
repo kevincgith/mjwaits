@@ -157,6 +157,7 @@ function expectNoLeaks(states: TableState[]) {
     const over = s.view.phase.kind === "over";
     s.view.players.forEach((pl, i) => {
       if (i !== s.you && !over) expect(pl.hand).toBeNull();
+      if (i !== s.you) expect(pl.passedPung).toBeUndefined();
       if (pl.hand) expect(pl.hand.length).toBe(pl.handCount);
     });
     // 換牌: of the piles, only your own is face up.
