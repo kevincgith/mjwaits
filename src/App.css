@@ -6834,8 +6834,11 @@ html.playing body {
   height: 0.55em;
 }
 
+/* Its top, seen from behind: the jade back mostly, the ivory only a thin
+   line at the far edge (half ivory, it read as white on their backs -
+   Safari showing all of it). */
 .play-edge-top .play-edge-tile::before {
-  background: linear-gradient(to bottom, #fbf8ef 0 45%, #7fd98c 45% 62%, var(--play-back) 62%);
+  background: linear-gradient(to bottom, #fbf8ef 0 16%, #7fd98c 16% 34%, var(--play-back) 34%);
 }
 
 .play-edge-top .play-edge-tile::after {
@@ -6896,6 +6899,13 @@ html.playing body {
 
 .play-felt :is(.play-meld, .play-flowers) {
   box-shadow: 0 0.05em 0.5em 0.04em rgba(0, 0, 0, 0.3);
+}
+
+/* A hand laid down at the end: each tile casts its own as it topples - the
+   row's box, a shape its tiles don't fill as they fall and lie, showed as
+   a dark rectangle under them. */
+.play-felt .play-meld.is-revealed {
+  box-shadow: none;
 }
 
 /* A swap row's groups: no shadow of their own - their places wait unseen
