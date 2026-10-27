@@ -7701,6 +7701,11 @@ html.playing body {
   justify-content: flex-start;
 }
 
+/* Beside the hand, one line (they only sit there while it fits). */
+.play-seat-top:not(.is-front) .play-seat-melds {
+  flex-wrap: nowrap;
+}
+
 /* Another seat's row running longer than its hand: its bonus tiles out a
    row, further toward the middle, from that player's left end. */
 .play-seat.has-bonus-out .play-seat-side {
