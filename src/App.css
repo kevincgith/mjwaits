@@ -7894,12 +7894,13 @@ html.playing body {
   width: var(--tile-w);
   height: var(--tile-h);
   border-radius: var(--tile-r);
-  /* Square where it touches a neighbour (see --join-l and the rest), so
-     the crevice between two tiles' rounded corners shows tile, not felt. */
-  border-top-left-radius: calc(var(--tile-r) * (1 - max(var(--join-f, 0), var(--join-l, 0), var(--cover-f, 0), var(--cover-l, 0))));
-  border-top-right-radius: calc(var(--tile-r) * (1 - max(var(--join-f, 0), var(--join-r, 0), var(--cover-f, 0), var(--cover-r, 0))));
-  border-bottom-left-radius: calc(var(--tile-r) * (1 - max(var(--join-n, 0), var(--join-l, 0), var(--cover-n, 0), var(--cover-l, 0))));
-  border-bottom-right-radius: calc(var(--tile-r) * (1 - max(var(--join-n, 0), var(--join-r, 0), var(--cover-n, 0), var(--cover-r, 0))));
+  /* Square only where the tile in front covers that edge (see --cover-l
+     and the rest). Beside a neighbour it stays round: square, its corners
+     poked out past the rounded sides of a standing tile. */
+  border-top-left-radius: calc(var(--tile-r) * (1 - max(var(--cover-f, 0), var(--cover-l, 0))));
+  border-top-right-radius: calc(var(--tile-r) * (1 - max(var(--cover-f, 0), var(--cover-r, 0))));
+  border-bottom-left-radius: calc(var(--tile-r) * (1 - max(var(--cover-n, 0), var(--cover-l, 0))));
+  border-bottom-right-radius: calc(var(--tile-r) * (1 - max(var(--cover-n, 0), var(--cover-r, 0))));
   background: var(--play-ivory);
   transform: translateZ(calc(var(--play-thick) / 2));
 }
@@ -8175,9 +8176,7 @@ html.playing body {
      corners there go and the sides along it run its full length (and a
      pixel on), so nothing pokes out from under the tile in front.
    - side by side (--join-*): two tiles in a row. Each keeps its rounded
-     corners - the small groove between them is how you tell them apart -
-     but the core below is square there, so the groove shows tile, not a
-     notch of felt. */
+     corners - the small groove between them is how you tell them apart. */
 :is(.play-felt, .play-hand, .play-swap-flight) .tile-side:is(.is-nr1, .is-nr2, .is-nr3) {
   --corner-join: max(var(--cover-n, 0), var(--cover-r, 0));
 }
