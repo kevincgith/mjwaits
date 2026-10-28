@@ -6891,6 +6891,86 @@ html.playing body {
   background: linear-gradient(to top, var(--play-back-edge), var(--play-back) 35%, #4cc06a 95%);
 }
 
+/* A standing tile as a block (see HandTiles): the footprint keeps the
+   wall's room; the block stands in it on its edge nearest its player (the
+   wall's own top and back are drawn by the block), and at a hand's end
+   tips over flat from there - the topple, the same tiles. */
+.play-edge-tile.is-block::before,
+.play-edge-tile.is-block::after {
+  display: none;
+}
+
+.play-stand {
+  position: absolute;
+  top: 0;
+  transform-style: preserve-3d;
+}
+
+.play-edge-top .play-stand {
+  left: 0;
+  width: 0.78em;
+  height: 1em;
+  transform-origin: 50% 0;
+  transform: rotateX(90deg);
+}
+
+.play-edge-left .play-stand,
+.play-edge-right .play-stand {
+  width: 1em;
+  height: 0.78em;
+}
+
+.play-edge-left .play-stand {
+  left: 0;
+  transform-origin: 0 50%;
+  transform: rotateY(-90deg);
+}
+
+.play-edge-right .play-stand {
+  right: 0;
+  transform-origin: 100% 50%;
+  transform: rotateY(90deg);
+}
+
+.play-stand > .tile-glyph {
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+
+/* At the sides, turned a quarter to face their player (as a meld's are). */
+:is(.play-edge-left, .play-edge-right) .play-stand > .tile-glyph {
+  left: 0.11em;
+  top: -0.11em;
+  --shade-long: 0.14;
+  --shade-end: 0;
+}
+
+.play-edge-left .play-stand > .tile-glyph {
+  rotate: 90deg;
+}
+
+.play-edge-right .play-stand > .tile-glyph {
+  rotate: -90deg;
+}
+
+.play-edge.is-down .play-stand {
+  animation: var(--topple-dur, 0.6s) cubic-bezier(0.55, 0, 1, 0.45) both;
+  animation-delay: calc(var(--topple-at, 0s) + var(--i, 0) * var(--topple-step, 0.07s));
+}
+
+.play-edge-top.is-down .play-stand {
+  animation-name: play-topple-far;
+}
+
+.play-edge-left.is-down .play-stand {
+  animation-name: play-topple-left;
+}
+
+.play-edge-right.is-down .play-stand {
+  animation-name: play-topple-right;
+}
+
 /* A mystery bot: a plain "?" on grey, whichever personality it is. */
 .play-avatar.is-mystery {
   background: #5d6670;
