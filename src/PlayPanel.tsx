@@ -1560,6 +1560,22 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
   // 叮 armed: the next discard declares it (only tiles that leave you ready).
   const [riichiArmed, setRiichiArmed] = useState(false);
   const [resultHidden, setResultHidden] = useState(false);
+  // Online the table moves on by itself - a timeout, a move made for you, the
+  // next hand - not through a move made here (which clears these: see
+  // apply). A tile picked out or a 叮 armed for a turn that's gone goes with
+  // it; a new hand starts with its result card to show and no 投降 armed.
+  const turnFor = online ? JSON.stringify([online.table.hand, game.discardsMade, game.phase.kind, game.phase.kind === "turn" ? game.phase.seat : null]) : null;
+  useEffect(() => {
+    if (turnFor === null) return;
+    setSelected(null);
+    setRiichiArmed(false);
+  }, [turnFor]);
+  const handFor = online ? online.table.hand : null;
+  useEffect(() => {
+    if (handFor === null) return;
+    setResultHidden(false);
+    setSurrenderArmed(null);
+  }, [handFor]);
   // 自動: your seat played for you - online, by the table (it says whose).
   const [localAutoplay, setAutoplay] = useState(false);
   const autoplay = online ? online.table.you !== null && online.table.auto.includes(online.table.you) : localAutoplay;
@@ -1619,9 +1635,11 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
   // not for whatever happened before this phone looked.
   const lastSeen = useRef<string | null>(null);
   const lastAction = online?.table.last ?? null;
+  // (With the melds laid: two kongs in a row, before a discard, are each one.)
+  const meldsLaid = game.players.reduce((n, p) => n + p.melds.length, 0);
   useEffect(() => {
     if (!online || !net) return;
-    const key = JSON.stringify([online.table.hand, game.discardsMade, lastAction]);
+    const key = JSON.stringify([online.table.hand, game.discardsMade, meldsLaid, lastAction]);
     if (!lastAction || lastSeen.current === key) return;
     const first = lastSeen.current === null;
     lastSeen.current = key;
@@ -1640,7 +1658,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
       showBurst(seat, lastAction.robKong ? "搶槓" : lastAction.from === null ? "自摸" : n > 1 ? (n === 2 ? "雙響" : "三響") : "胡");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lastAction, online?.table.hand, game.discardsMade]);
+  }, [lastAction, online?.table.hand, game.discardsMade, meldsLaid]);
 
   // The end of a hand, however it came (here or online): the winner's line -
   // bigger for a big hand, a comeback from the bottom - the payer's, and a
@@ -1655,7 +1673,9 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     if (!overKey || seenOver.current === overKey || game.phase.kind !== "over") return;
     seenOver.current = overKey;
     const r = game.phase.result;
-    const winners = r.winner === null ? [] : [{ winner: r.winner, score: r.score }, ...(r.alsoWon ?? [])];
+    // (Online the scores come with the table's result - the game's own copy has none.)
+    const scored = net?.result ?? r;
+    const winners = scored.winner === null ? [] : [{ winner: scored.winner, score: scored.score }, ...(scored.alsoWon ?? [])];
     for (let seat = 0; seat < SEATS; seat++)
       history.current[seat] = [...history.current[seat], winners.some((w) => w.winner === seat) ? "win" : r.from === seat ? "dealIn" : "none"];
     if (!winners.length) {
@@ -3200,6 +3220,21 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
                   ))}
                 </span>
               </div>
+              {seated && (
+                <button
+                  type="button"
+                  className="play-menu-link"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setRecordOpen(true);
+                  }}
+                >
+                  <span>我的紀錄 Your record</span>
+                  <span className="play-menu-value">
+                    {playRecord.hands ? `${playRecord.wins} wins / ${playRecord.hands}` : "–"} ›
+                  </span>
+                </button>
+              )}
               <SoundRow />
               <TalkRows />
               <button type="button" onClick={onExit}>
@@ -3302,6 +3337,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
                 else setAutoplay((a) => !a);
                 setSelected(null);
                 setChowChoice(false);
+                setRiichiArmed(false);
               }}
               aria-pressed={autoplay}
               aria-label="自動 Autoplay"
@@ -3817,7 +3853,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
                     ))}
                 </ul>
               )}
-              {surrenderable(game, HUMAN).map((l) => {
+              {(seated ? surrenderable(game, HUMAN) : []).map((l) => {
                 const holder = Number(l.holder);
                 const armed = surrenderArmed === l.holder;
                 return (

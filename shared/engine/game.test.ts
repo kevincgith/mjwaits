@@ -211,6 +211,41 @@ describe("game", () => {
     expect(drew.players[1].threw).toBeUndefined();
   });
 
+  it("the claim-back and passed-pung bars last through the moves in between (not just the next step)", () => {
+    const m1 = { suit: "m" as const, rank: 1 };
+    const z5 = { suit: "z" as const, rank: 5 };
+    const kinds = (cs: ReturnType<typeof claimOptions>) => cs.map((c) => c.kind);
+    // Seat 2 throws 1m from 111m; everyone passes; seat 3 draws and throws a 1m too.
+    const s0 = newGame();
+    s0.players[2].hand = parseHand("111m456m111222t5z");
+    s0.players[3].hand = parseHand("1m789m33445566t7z");
+    s0.phase = { kind: "turn", seat: 2, drawn: null, replacement: null };
+    const thrown = applyTurnMove(s0, { kind: "discard", tile: m1 });
+    const drew = resolveClaims(thrown, [null, null, null, null]);
+    expect(drew.phase).toMatchObject({ kind: "turn", seat: 3 });
+    expect(drew.players[2].threw).toEqual(m1);
+    const back = applyTurnMove(drew, { kind: "discard", tile: m1 });
+    expect(back.phase).toMatchObject({ kind: "claims", from: 3 });
+    expect(kinds(claimOptions(back, 2))).toEqual([]);
+    expect(kinds(barredClaims(back, 2))).toEqual(["pung"]);
+    // A passed pung: seat 2 passes seat 0's 5z, seat 1 draws and throws another.
+    const p0 = newGame();
+    p0.players[0].hand = parseHand("12345m111222333t5z");
+    p0.players[1].hand = parseHand("5z123456789m1234t");
+    p0.players[2].hand = parseHand("123456789m1234t55z");
+    const passed = resolveClaims(applyTurnMove(p0, { kind: "discard", tile: z5 }), [null, null, null, null]);
+    expect(passed.phase).toMatchObject({ kind: "turn", seat: 1 });
+    const again = applyTurnMove(passed, { kind: "discard", tile: z5 });
+    expect(kinds(claimOptions(again, 2))).toEqual([]);
+    expect(kinds(barredClaims(again, 2))).toEqual(["pung"]);
+  });
+
+  it("an added kong needs a pung of the tile to add to", () => {
+    const s0 = newGame();
+    s0.players[0].hand = parseHand("12345m111222333t5z");
+    expect(() => applyTurnMove(s0, { kind: "addedKong", tile: { suit: "m", rank: 1 } })).toThrow(/pung/);
+  });
+
   it("no claim back - pungs and kongs: threw 1m from 111m (or 1111m), no pung (or kong) of 1m till the next draw", () => {
     const m1 = { suit: "m" as const, rank: 1 };
     const kinds = (cs: ReturnType<typeof claimOptions>) => cs.map((c) => c.kind);

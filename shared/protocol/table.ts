@@ -168,6 +168,7 @@ export type TableErrorCode =
   | "notJoined"
   | "badToken"
   | "nameTaken"
+  | "full"
   | "notHost"
   | "seatTaken"
   | "notSeated"

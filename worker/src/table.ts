@@ -95,6 +95,7 @@ interface Runtime {
   decisions: Decision[] | null; // a claim window's answers so far
   ready: number[]; // between hands
   away: Record<number, number>; // seat -> when its player dropped
+  watching?: string[]; // people who stood to watch: not sat back down when they reconnect
   auto: number[]; // seats being played for
   last: TableAction | null;
   settled: number; // the last hand whose payments are in `totals`
@@ -161,6 +162,9 @@ export class Table extends Hub<TableMessage> {
 
   private load(): Runtime {
     this.rt = this.meta<Runtime>("state")!;
+    // A game dealt before it kept its first dealer: the table's, from its settings.
+    const g = this.rt?.game;
+    if (g && g.firstDealer === undefined && this.rt.settings.firstDealer) g.firstDealer = this.rt.settings.firstDealer;
     return this.rt;
   }
 
@@ -238,6 +242,7 @@ export class Table extends Hub<TableMessage> {
     // In the lobby, someone arriving takes the first empty seat (they can
     // move, or stand to watch).
     if (rt.phase === "lobby" && this.seatOf(personId) === null) {
+      if (rt.watching?.includes(personId)) return;
       const free = rt.seats.indexOf(null);
       if (free >= 0) {
         rt.seats[free] = { kind: "human", id: personId };
@@ -290,17 +295,20 @@ export class Table extends Hub<TableMessage> {
         if (taken && !(taken.kind === "human" && taken.id === personId)) throw new Refusal("seatTaken", "someone is in that seat");
         if (mine !== null) rt.seats[mine] = null;
         rt.seats[msg.seat] = { kind: "human", id: personId };
+        rt.watching = (rt.watching ?? []).filter((id) => id !== personId);
         break;
       }
       case "stand":
         lobby();
         if (mine !== null) rt.seats[mine] = null;
+        rt.watching = [...(rt.watching ?? []).filter((id) => id !== personId), personId];
         break;
       case "setBot": {
         lobby();
         hostOnly();
         const taken = rt.seats[msg.seat];
-        if (taken?.kind === "human") throw new Refusal("seatTaken", "someone is in that seat");
+        // (Someone who's left - their phone no longer at the table - the host can clear.)
+        if (taken?.kind === "human" && this.online().has(taken.id)) throw new Refusal("seatTaken", "someone is in that seat");
         rt.seats[msg.seat] = !msg.bot
           ? null
           : msg.bot === MYSTERY_BOT
@@ -389,8 +397,11 @@ export class Table extends Hub<TableMessage> {
         const chosen = (rt.chosen ??= []).filter((s) => s !== seat);
         rt.chosen = msg.on ? [...chosen, seat] : chosen;
         // Back in your own hands with a decision on: your time starts now.
-        const limit = rt.game?.phase.kind === "swap" ? SWAP_TIMER_S : rt.settings.timer;
-        if (!msg.on && !this.actsAlone(seat) && rt.deadline === null && limit) rt.deadline = Date.now() + limit * 1000;
+        const ph = rt.game?.phase;
+        const limit = ph?.kind === "swap" ? SWAP_TIMER_S : rt.settings.timer;
+        // (Only a decision that's yours - not a bot's turn, or between hands.)
+        const yours = ph?.kind === "turn" ? ph.seat === seat : ph?.kind === "swap" ? (ph.stage === "give" ? !ph.piles[seat] : ph.taker === seat) : false;
+        if (!msg.on && yours && !this.actsAlone(seat) && rt.deadline === null && limit) rt.deadline = Date.now() + limit * 1000;
         break;
       }
       case "ready": {
@@ -860,7 +871,8 @@ export class Table extends Hub<TableMessage> {
           ? []
           : [g.phase.seat]
         : g.phase.kind === "claims"
-          ? (rt.decisions ?? []).flatMap((d, s) => (d === "waiting" ? [s] : []))
+          ? // Only whether it's you: who else is waited on would say who can call the tile.
+            (rt.decisions ?? []).flatMap((d, s) => (d === "waiting" && s === seat ? [s] : []))
           : g.phase.kind === "swap"
             ? g.phase.stage === "give"
               ? (g.phase.piles as unknown[]).flatMap((pile, s) => (!pile && !this.actsAlone(s) ? [s] : []))
@@ -887,7 +899,8 @@ export class Table extends Hub<TableMessage> {
       totals: rt.totals,
       hand: rt.hand,
       step: rt.step,
-      deadline: rt.deadline,
+      // (In a claims window, its clock too: only for the ones it waits on.)
+      deadline: g?.phase.kind === "claims" && !waitingOn.length ? null : rt.deadline,
       waitingOn,
       ready: rt.ready,
       auto: [...new Set([...rt.auto, ...(rt.chosen ?? [])])],

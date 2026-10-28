@@ -289,7 +289,7 @@ export abstract class Hub<Msg extends { t: string; rid?: string }> extends Durab
       if (!name) throw new Refusal("badMessage", "pick a nickname");
       if (this.sql.exec("SELECT 1 FROM people WHERE name_key = ?", nameKey(name)).toArray().length)
         throw new Refusal("nameTaken", `someone here is already called ${name}`);
-      if (this.people().length >= MAX_PEOPLE) throw new Refusal("badMessage", "this room has as many people as it can take");
+      if (this.people().length >= MAX_PEOPLE) throw new Refusal("full", "this room has as many people as it can take");
       id = randomHex(8);
       this.sql.exec("INSERT INTO people (id, token_hash, name, name_key, joined_at) VALUES (?, ?, ?, ?, ?)", id, tokenHash, name, nameKey(name), Date.now());
       if (this.meta("host") === null) this.setMeta("host", id);
