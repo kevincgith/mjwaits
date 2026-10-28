@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_SETTINGS, newGame, replay, type ScoreEvent, type ScoreGame } from "@mjwaits/shared/engine/ledger";
-import { careerPlayerStats, careerStats, careerTrend, headToHead, marks, patternCounts, playerStats, rankedBy, trend, trendSummary } from "./scoreStats";
+import { careerPlayerStats, careerStats, careerTrend, smoothed, headToHead, marks, patternCounts, playerStats, rankedBy, trend, trendSummary } from "./scoreStats";
 
 const PLAIN = { ...DEFAULT_SETTINGS, dealerTai: 0, streakTai: 0, jackpot: false };
 const game = (events: ScoreEvent[], seats = ["A", "B", "C", "D"]): ScoreGame => ({ ...newGame(seats, 0, PLAIN), events });
@@ -183,19 +183,26 @@ describe("trend, patterns, career and head-to-head", () => {
 });
 
 describe("careerTrend", () => {
-  it("everyone's career total game by game, flat through games they missed", () => {
-    const g1 = { ...game([win(0, 10, 1)]), id: "g1", startedAt: 1 };
+  it("everyone's career total hand by hand, flat through hands and games they missed", () => {
+    const g1 = { ...game([win(0, 10, 1), win(0, 2, 2)]), id: "g1", startedAt: 1 };
     const g2 = { ...game([win(2, 4, 3)], ["A", "B", "C", "E"]), id: "g2", startedAt: 2 };
     const empty = { ...game([]), id: "g0", startedAt: 0 };
     const t = careerTrend([g2, empty, g1], (at) => `day${at}`);
-    expect(t.hands).toBe(2);
-    expect(t.labels).toEqual(["Start", "day1", "day2"]);
-    expect(Object.fromEntries(t.series.map((s) => [s.player, s.values]))).toEqual({
-      A: [0, 10, 10],
-      B: [0, -10, -10],
-      C: [0, 0, 4],
-      D: [0, 0, 0],
-      E: [0, 0, -4],
-    });
+    expect(t.hands).toBe(3);
+    expect(t.labels).toEqual(["Start", "day1 · 第1局", "day1 · 第2局", "day2 · 第1局"]);
+    expect(t.starts).toEqual([0, 2]);
+    const by = Object.fromEntries(t.series.map((s) => [s.player, s.values]));
+    // 局2 is off C: A +2, C -2.
+    expect(by.A).toEqual([0, 10, 12, 12]);
+    expect(by.C).toEqual([0, 0, -2, 2]);
+    expect(by.E).toEqual([0, 0, 0, -4]);
+  });
+});
+
+describe("smoothed", () => {
+  it("averages over a centred window, fewer points at the ends", () => {
+    expect(smoothed([0, 3, 6, 9], 1)).toEqual([0, 3, 6, 9]);
+    expect(smoothed([0, 3, 6, 9], 3)).toEqual([1.5, 3, 6, 7.5]);
+    expect(smoothed([0, null, 6], 3)).toEqual([0, null, 6]);
   });
 });

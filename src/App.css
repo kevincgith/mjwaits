@@ -13416,6 +13416,13 @@ html.sc-fit-mode .build-version {
   align-items: center;
 }
 
+.sc-chart .sc-game-mark {
+  stroke: var(--text-muted);
+  stroke-width: 1;
+  stroke-dasharray: 2 3;
+  opacity: 0.5;
+}
+
 .sc-sheet-tools {
   display: inline-flex;
   align-items: center;

@@ -4,27 +4,33 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { exportScores, mergeScores, parseBackup, replay, replayCached, type HandResult, type ReplayState, type ScoreGame, type ScoreStore, playTimes } from "@mjwaits/shared/engine/ledger";
 import { sheetCsv, sheetRows, type SheetRow } from "../lib/scoreViews";
-import { careerPlayerStats, careerStats, careerTrend, headToHead, marks, patternCounts, playerStats, rankedBy, RECENT_HANDS, trend, trendSummary, type PlayerStats, type Swing } from "../lib/scoreStats";
+import { careerPlayerStats, careerStats, careerTrend, smoothed, headToHead, marks, patternCounts, playerStats, rankedBy, RECENT_HANDS, trend, trendSummary, type PlayerStats, type Swing } from "../lib/scoreStats";
 import { fmt, signed, pct, tone, colorOf, Icons, SectionHead, Monogram, Sheet, Segmented, Sparkline } from "./shared";
 
 // ---- 統計 ------------------------------------------------------------------------
 
 // A line per player over the hands of one game - or any other series
-// (`data`, e.g. the 生涯 trend game by game), each point named by labelOf.
+// (`data`, e.g. the 生涯 trend over every game), each point named by labelOf.
+// smooth: lines drawn averaged over that many points (the numbers on touch
+// stay the real ones); marks: faint lines at those points (where games start).
 export function TrendChart({
   store,
   state,
   data,
   labelOf,
-  unit = "hands",
+  smooth = 1,
+  marks = [],
 }: {
   store: ScoreStore;
   state?: ReplayState;
   data?: { hands: number; series: { player: string; values: (number | null)[] }[] };
   labelOf?: (i: number) => string;
-  unit?: string;
+  smooth?: number;
+  marks?: number[];
 }) {
-  const { hands, series } = data ?? trend(state!);
+  const { hands, series: raw } = data ?? trend(state!);
+  const series = useMemo(() => raw.map((s) => ({ ...s, values: smoothed(s.values, smooth) })), [raw, smooth]);
+  const rawOf = new Map(raw.map((s) => [s.player, s.values]));
   const [hover, setHover] = useState<number | null>(null);
   // Drawn at the container's real width, so text keeps its pixel size.
   const [box, setBox] = useState<HTMLDivElement | null>(null);
@@ -76,7 +82,7 @@ export function TrendChart({
 
   return (
     <div className="sc-chart" ref={setBox}>
-      <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} role="img" aria-label={`Running totals over ${hands} ${unit}`}>
+      <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} role="img" aria-label={`Running totals over ${hands} hands`}>
         {yTicks.map((v) => (
           <g key={v}>
             <line x1={pad.l} x2={W - pad.r} y1={y(v)} y2={y(v)} className={v === 0 ? "sc-axis-zero" : "sc-grid"} />
@@ -89,6 +95,9 @@ export function TrendChart({
           <text key={i} x={x(i)} y={H - 8} className="sc-tick" textAnchor="middle">
             {i}
           </text>
+        ))}
+        {marks.map((i) => (
+          <line key={`m${i}`} x1={x(i)} x2={x(i)} y1={pad.t} y2={H - pad.b} className="sc-grid sc-game-mark" />
         ))}
         {series.map((s) => (
           <path key={s.player} d={path(s.values)} className={`sc-line sc-c${colorOf(store, s.player)}`} />
@@ -111,14 +120,14 @@ export function TrendChart({
       {hover !== null && (
         <div className={`sc-tooltip${x(hover) > W * 0.6 ? " is-left" : ""}`} style={{ left: x(hover) }}>
           <strong>{labelOf ? labelOf(hover) : hover === 0 ? "Start" : `第${hover}局`}</strong>
-          {series
+          {raw
             .filter((s) => s.values[hover] !== null && s.values[hover] !== undefined)
             .sort((a, b) => (b.values[hover] as number) - (a.values[hover] as number))
             .map((s) => (
               <span key={s.player}>
                 <span className={`sc-dot sc-c${colorOf(store, s.player)}`} />
                 {s.player}
-                <span className="sc-num">{fmt(s.values[hover] as number)}</span>
+                <span className="sc-num">{fmt(rawOf.get(s.player)![hover] as number)}</span>
               </span>
             ))}
         </div>
@@ -988,6 +997,16 @@ export function PatternsCard({ state, store }: { state: ReplayState; store: Scor
   );
 }
 
+// The 生涯 trend's smoothing: how many hands each point is averaged over, for
+// a chart of n hands - more for a longer career, so the shape stays readable.
+type Smoothing = "raw" | "smooth" | "smoother";
+const SMOOTHING: Record<Smoothing, (n: number) => number> = {
+  raw: () => 1,
+  smooth: (n) => Math.max(3, Math.round(n / 40)),
+  smoother: (n) => Math.max(5, Math.round(n / 12)),
+};
+const SMOOTHING_KEY = "mjwaits.careerSmoothing";
+
 export function HistoryCard({ store, games, current, onPick, onDelete }: { store: ScoreStore; games: ScoreGame[]; current: string; onPick: (id: string) => void; onDelete: (id: string) => void }) {
   const [confirm, setConfirm] = useState<string | null>(null);
   const [careerOpen, setCareerOpen] = useState<string | null>(null);
@@ -1001,8 +1020,25 @@ export function HistoryCard({ store, games, current, onPick, onDelete }: { store
     if (player) window.setTimeout(() => careerCardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
   };
   const h2h = useMemo(() => headToHead(games), [games]);
-  // Everyone's career total game by game, for the 生涯 trend chart.
+  // Everyone's career total hand by hand, for the 生涯 trend chart, smoothed
+  // as picked (remembered on this phone).
   const allTime = useMemo(() => careerTrend(games, (at) => new Date(at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })), [games]);
+  const [smoothing, setSmoothingState] = useState<Smoothing>(() => {
+    try {
+      const v = window.localStorage.getItem(SMOOTHING_KEY);
+      return v === "raw" || v === "smoother" ? v : "smooth";
+    } catch {
+      return "smooth";
+    }
+  });
+  const setSmoothing = (v: Smoothing) => {
+    setSmoothingState(v);
+    try {
+      window.localStorage.setItem(SMOOTHING_KEY, v);
+    } catch {
+      // Just this visit, then.
+    }
+  };
   const names = career.map((c) => c.player);
   return (
     <>
@@ -1102,16 +1138,26 @@ export function HistoryCard({ store, games, current, onPick, onDelete }: { store
           </table>
         </div>
       </div>
-      {/* Everyone's career total over every game, oldest first. */}
+      {/* Everyone's career total hand by hand over every game, oldest first. */}
       {allTime.hands > 0 && (
         <div className="card">
           <div className="sc-card-head">
             <h3>走勢 All-time trend</h3>
-            <span className="sc-help">
-              {allTime.hands} game{allTime.hands > 1 ? "s" : ""} · touch for a game
-            </span>
+            <Segmented
+              small
+              value={smoothing}
+              onChange={setSmoothing}
+              options={[
+                { value: "raw", label: "Raw" },
+                { value: "smooth", label: "Smooth" },
+                { value: "smoother", label: "Smoother" },
+              ]}
+            />
           </div>
-          <TrendChart store={store} data={allTime} labelOf={(i) => allTime.labels[i]} unit="games" />
+          <TrendChart store={store} data={allTime} labelOf={(i) => allTime.labels[i]} smooth={SMOOTHING[smoothing](allTime.hands)} marks={allTime.starts.slice(1)} />
+          <p className="sc-help sc-help-block">
+            {allTime.hands} hands over {allTime.starts.length} game{allTime.starts.length > 1 ? "s" : ""} - a faint line where each game starts. Touch for a hand.
+          </p>
         </div>
       )}
       {careerOpen !== null && careerCard.stats.some((x) => x.player === careerOpen) && (
