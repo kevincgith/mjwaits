@@ -5870,9 +5870,8 @@ html.playing body {
   transform-origin: 50% 100%;
 }
 
-/* Leave, menu and 記牌器, top left. */
-/* Above the result card and sheets (z 7-8), so Leave, the menu and
-   記牌器 always work. */
+/* Leave and the menu, top left; 自動, 記牌器 and 戰況, top right. Above the
+   result card and sheets (z 7-8), so they always work. */
 .play-corner {
   position: absolute;
   top: max(0.4rem, var(--safe-top));
@@ -5881,6 +5880,11 @@ html.playing body {
   display: flex;
   gap: 0.3rem;
   align-self: start;
+}
+
+.play-corner.is-right {
+  left: auto;
+  right: max(0.7rem, var(--safe-right, 0px));
 }
 
 .play-icon-button {
@@ -6700,14 +6704,14 @@ html.playing body {
 
 .play-edge-top::after {
   top: 0;
-  right: 0;
+  right: var(--slot);
   width: calc(var(--count, 0) * 0.78em);
   height: 0.55em;
   box-shadow: 0 0.3em 0.7em -0.05em rgba(0, 0, 0, 0.3);
 }
 
 .play-edge-left::after {
-  top: 0;
+  top: var(--slot);
   left: 0;
   width: 0.55em;
   height: calc(var(--count, 0) * 0.78em);
@@ -6715,7 +6719,7 @@ html.playing body {
 }
 
 .play-edge-right::after {
-  bottom: 0;
+  bottom: var(--slot);
   right: 0;
   width: 0.55em;
   height: calc(var(--count, 0) * 0.78em);
@@ -6755,28 +6759,46 @@ html.playing body {
 .play-edge-left,
 .play-edge-right {
   flex-direction: column;
-  height: calc((var(--count, 0) + 1) * 0.78em + 0.25em);
+  height: calc((var(--count, 0) + 1) * 0.78em + 0.25em + var(--slot));
 }
 
 :is(.play-edge-left, .play-edge-right).has-drawn {
-  height: calc(var(--count, 0) * 0.78em + 0.25em);
+  height: calc(var(--count, 0) * 0.78em + 0.25em + var(--slot));
+}
+
+.play-edge-left {
+  padding-top: var(--slot);
+}
+
+.play-edge-right {
+  padding-bottom: var(--slot);
 }
 
 .play-edge-right {
   justify-content: flex-end;
 }
 
-/* A wall as long as its tiles and a slot for the one drawn (with the gap
-   it stands apart by), its tiles packed at its player's left: drawing
-   fills the slot and throwing empties it, so nothing moves - only a call
-   or a flower, which change the hand, re-centre the seat. */
+/* A wall as long as its tiles, a slot at its player's right for the one
+   drawn (with the gap it stands apart by), and as much again at their
+   left - so the tiles sit in its middle, the left and right walls mirror
+   each other, and drawing fills the slot and throwing empties it without
+   anything moving (only a call or a flower, which change the hand,
+   re-centre the seat). */
+.play-edge-top,
+.play-edge-left,
+.play-edge-right {
+  box-sizing: border-box;
+  --slot: calc(0.78em + 0.25em);
+}
+
 .play-edge-top {
-  width: calc((var(--count, 0) + 1) * 0.78em + 0.25em);
+  width: calc((var(--count, 0) + 1) * 0.78em + 0.25em + var(--slot));
+  padding-right: var(--slot);
   justify-content: flex-end;
 }
 
 .play-edge-top.has-drawn {
-  width: calc(var(--count, 0) * 0.78em + 0.25em);
+  width: calc(var(--count, 0) * 0.78em + 0.25em + var(--slot));
 }
 
 .play-edge-tile {

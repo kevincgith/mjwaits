@@ -3083,30 +3083,6 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
               <path d="M5 7h14M5 12h14M5 17h14" />
             </svg>
           </button>
-          <button type="button" className="play-icon-button is-text" onClick={() => setTrackerOpen(true)} aria-label="Tile tracker" title="記牌器 - tiles you haven't seen">
-            記牌器
-          </button>
-          {seated && (
-            <button
-              type="button"
-              className={`play-icon-button is-text${autoplay ? " is-on" : ""}`}
-              onClick={() => {
-                if (online) online.send({ t: "autoplay", on: !autoplay });
-                else setAutoplay((a) => !a);
-                setSelected(null);
-                setChowChoice(false);
-              }}
-              aria-pressed={autoplay}
-              title={autoplay ? "自動 - the Grandmaster is playing your seat; tap to take it back" : "自動 - let the Grandmaster play your seat and watch"}
-            >
-              {autoplay ? "■ 自動" : "▶ 自動"}
-            </button>
-          )}
-          {ledger && (
-            <button type="button" className="play-icon-button is-text" onClick={() => setScoresOpen(true)} aria-label="Scores so far" title="戰況 - the scores so far, 拉, every hand and each player's stats">
-              戰況
-            </button>
-          )}
           {/* Online: quick reactions for the table, and who's watching. */}
           {online && seated && (
             <button type="button" className={`play-icon-button${reacting ? " is-on" : ""}`} onClick={() => setReacting((r) => !r)} aria-label="Send a reaction" aria-expanded={reacting}>
@@ -3254,6 +3230,41 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
                 <span className="play-menu-value">its rules first ›</span>
               </button>
             </div>
+          )}
+        </div>
+        {/* 自動, 記牌器 and 戰況, top right. */}
+        <div className="play-corner is-right">
+          {seated && (
+            <button
+              type="button"
+              className={`play-icon-button${autoplay ? " is-on" : ""}`}
+              onClick={() => {
+                if (online) online.send({ t: "autoplay", on: !autoplay });
+                else setAutoplay((a) => !a);
+                setSelected(null);
+                setChowChoice(false);
+              }}
+              aria-pressed={autoplay}
+              aria-label="自動 Autoplay"
+              title={autoplay ? "自動 - the Grandmaster is playing your seat; tap to take it back" : "自動 - let the Grandmaster play your seat and watch"}
+            >
+              {autoplay ? "■" : "▶"}
+            </button>
+          )}
+          <button type="button" className="play-icon-button" onClick={() => setTrackerOpen(true)} aria-label="記牌器 Tile tracker" title="記牌器 - tiles you haven't seen">
+            {/* A tile (白板, 7z): the tiles still to come. */}
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <rect x="5" y="3" width="14" height="18" rx="2.5" strokeWidth="2" />
+              <rect x="8.5" y="7" width="7" height="10" rx="1" strokeWidth="1.6" />
+            </svg>
+          </button>
+          {ledger && (
+            <button type="button" className="play-icon-button" onClick={() => setScoresOpen(true)} aria-label="戰況 Scores so far" title="戰況 - the scores so far, 拉, every hand and each player's stats">
+              {/* A bar chart, rising: the scores so far. */}
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" aria-hidden="true">
+                <path d="M6 19v-4M12 19V10M18 19V5" />
+              </svg>
+            </button>
           )}
         </div>
 

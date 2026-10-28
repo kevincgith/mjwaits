@@ -92,7 +92,7 @@ async function discardOnce(page: Page) {
 
 // 自動 on and off, from the button.
 async function autoplayToggles(page: Page) {
-  const auto = page.locator(".play-icon-button", { hasText: "自動" });
+  const auto = page.getByRole("button", { name: "自動 Autoplay" });
   await auto.click();
   await expect(auto).toHaveAttribute("aria-pressed", "true");
   await auto.click();
