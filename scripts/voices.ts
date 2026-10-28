@@ -1,7 +1,9 @@
 // The bots said aloud, in natural Cantonese voices (Azure neural text to
 // speech), made ahead of time into public/voices/<personality>/:
 //   - <call>.mp3: each personality's 碰, 上, 槓, 食糊, 自摸, 叮 and 搶槓, and
-//   - <lineId>.mp3: every line it says (see spokenText, lineId).
+//   - <lineId>.mp3: every line it says (see spokenText, lineId) -
+// and some in a second voice (<style>-<voice>/), and the calls alone in
+// every voice for the people at the table (you-<voice>/).
 // The game plays them (src/lib/voice.ts); a line with no clip is just shown.
 //
 //   npx tsx scripts/voices.ts             make what's missing
@@ -30,6 +32,12 @@ const env = Object.fromEntries(
     .map((l) => [l.slice(0, l.indexOf("=")), l.slice(l.indexOf("=") + 1).trim()])
 );
 const OUT = join(ROOT, "public/voices");
+
+// The five voices, by the short name the game knows them by (voice.ts).
+const VOICE: Record<string, string> = { wl: "zh-HK-WanLungNeural", ys: "yue-CN-YunSongNeural", hg: "zh-HK-HiuGaaiNeural", hm: "zh-HK-HiuMaanNeural", xm: "yue-CN-XiaoMinNeural" };
+// Some personalities' second voice - for when another bot at the table has
+// the first (see tableVoices) - into public/voices/<style>-<voice>/.
+const SECOND: Record<string, string> = { speedster: "hm", hunter: "xm", wall: "hg", gambler: "hg", mystery: "hg" };
 
 // Each personality's voice (its pace is set as it plays - see voice.ts).
 const VOICES: Record<string, string> = {
@@ -133,16 +141,24 @@ const BATCH = 40;
 const billable = (s: string) => [...s].reduce((n, c) => n + (/\p{Script=Han}/u.test(c) ? 2 : 1), 0);
 let made = 0;
 let chars = 0;
-for (const [style, voice] of Object.entries(VOICES)) {
-  mkdirSync(join(OUT, style), { recursive: true });
+// What to make: each personality in its voice (and some in a second), and
+// the calls alone in every voice for the people at the table (you-<voice>/).
+const SETS: { dir: string; voice: string; style: string | null }[] = [
+  ...Object.entries(VOICES).map(([style, voice]) => ({ dir: style, voice, style })),
+  ...Object.entries(SECOND).map(([style, v]) => ({ dir: `${style}-${v}`, voice: VOICE[v], style })),
+  ...Object.entries(VOICE).map(([v, voice]) => ({ dir: `you-${v}`, voice, style: null })),
+];
+for (const { dir, voice, style } of SETS) {
+  mkdirSync(join(OUT, dir), { recursive: true });
   for (const [call, text] of Object.entries(CALLS)) {
-    const file = join(OUT, style, `${call}.mp3`);
+    const file = join(OUT, dir, `${call}.mp3`);
     if (existsSync(file) && !callsAgain) continue;
     const body = ssmlText(text, voice, true);
     save(await synth(voice, body), file);
     chars += billable(body);
   }
-  const todo = linesOf(style).filter(({ text }) => !existsSync(join(OUT, style, `${lineId(text)}.mp3`)));
+  if (!style) continue;
+  const todo = linesOf(style).filter(({ text }) => !existsSync(join(OUT, dir, `${lineId(text)}.mp3`)));
   for (let i = 0; i < todo.length && made < limit; i += BATCH) {
     const batch = todo.slice(i, i + Math.min(BATCH, limit - made));
     const body = batch.map(({ text, call }) => ssmlText(text, voice, call)).join('<break time="3000ms"/>');
@@ -153,19 +169,19 @@ for (const [style, voice] of Object.entries(VOICES)) {
       batch.forEach(({ text }, j) => {
         const from = j === 0 ? undefined : gaps[j - 1][1] - 0.08;
         const to = j === batch.length - 1 ? undefined : gaps[j][0] + 0.12;
-        save(mp3, join(OUT, style, `${lineId(text)}.mp3`), from, to);
+        save(mp3, join(OUT, dir, `${lineId(text)}.mp3`), from, to);
       });
     } else {
       // The pauses didn't come out one between each line: one at a time.
-      console.log(`${style}: a batch of ${batch.length} cut into ${gaps.length + 1} - line by line`);
+      console.log(`${dir}: a batch of ${batch.length} cut into ${gaps.length + 1} - line by line`);
       for (const { text, call } of batch) {
         const one = ssmlText(text, voice, call);
-        save(await synth(voice, one), join(OUT, style, `${lineId(text)}.mp3`));
+        save(await synth(voice, one), join(OUT, dir, `${lineId(text)}.mp3`));
         chars += billable(one);
       }
     }
     made += batch.length;
-    console.log(`${style}: ${Math.min(i + batch.length, todo.length)}/${todo.length} (~${chars} billable characters so far)`);
+    console.log(`${dir}: ${Math.min(i + batch.length, todo.length)}/${todo.length} (~${chars} billable characters so far)`);
   }
 }
 rmSync(work, { recursive: true, force: true });
