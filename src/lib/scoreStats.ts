@@ -459,6 +459,28 @@ export function smoothed(values: (number | null)[], window: number): (number | n
   });
 }
 
+// The 生涯 summary's periods: a game's month, quarter or year, by the day it
+// started (local time). A key sorts in time order ("2026-10", "2026-Q4",
+// "2026"); periodLabel names it.
+export type Period = "month" | "quarter" | "year";
+export function periodKey(at: number, period: Period): string {
+  const d = new Date(at);
+  const y = d.getFullYear();
+  if (period === "year") return String(y);
+  if (period === "quarter") return `${y}-Q${Math.floor(d.getMonth() / 3) + 1}`;
+  return `${y}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+export function periodLabel(key: string, period: Period): string {
+  if (period === "year") return key;
+  const [y, rest] = key.split("-");
+  if (period === "quarter") return `${y} ${rest}`;
+  return new Date(Number(y), Number(rest) - 1, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" });
+}
+// Every period that has a game in it, oldest first.
+export function periodsOf(games: ScoreGame[], period: Period): string[] {
+  return [...new Set(games.map((g) => periodKey(g.startedAt, period)))].sort();
+}
+
 export interface CareerStats {
   player: string;
   games: number;
