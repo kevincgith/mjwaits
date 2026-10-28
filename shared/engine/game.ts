@@ -146,6 +146,10 @@ export interface GameState {
   dealer: number;
   roundWind: Wind;
   dealerStreak: number; // consecutive dealer wins/draws before this hand (連莊)
+  // The game's first dealer: the round wind moves on when the deal comes
+  // back to them, and 東局/南局/... count from them. Absent: seat 0 (as
+  // every game saved before it began).
+  firstDealer?: number;
   phase: Phase;
   // True until the first claim or the dealer's first discard round completes -
   // what heavenly/earthly wins need.
@@ -442,7 +446,7 @@ export function newGame(opts: { multiWin?: boolean; runBack?: boolean; swapRules
 }
 
 export function dealHand(
-  opts: { dealer: number; roundWind: Wind; dealerStreak: number; lahs?: Lah[]; multiWin?: boolean; runBack?: boolean; swapRules?: SwapRules },
+  opts: { dealer: number; roundWind: Wind; dealerStreak: number; firstDealer?: number; lahs?: Lah[]; multiWin?: boolean; runBack?: boolean; swapRules?: SwapRules },
   wall?: WallTile[],
   random: Random = Math.random
 ): GameState {
@@ -455,6 +459,8 @@ export function dealHand(
     dealer: opts.dealer,
     roundWind: opts.roundWind,
     dealerStreak: opts.dealerStreak,
+    // (A game's first hand: its dealer.)
+    ...((opts.firstDealer ?? opts.dealer) ? { firstDealer: opts.firstDealer ?? opts.dealer } : {}),
     phase: { kind: "turn", seat: opts.dealer, drawn: null, replacement: null },
     firstGoAround: true,
     discardsMade: 0,
@@ -830,7 +836,7 @@ const WIND_CHARS = ["", "東", "南", "西", "北"];
 // "東圈南局": the round wind, then which of the four deals in it this is -
 // counted from seat 0, who deals first in every round.
 export function roundLabel(s: GameState): string {
-  return `${WIND_CHARS[s.roundWind]}圈${WIND_CHARS[s.dealer + 1]}局`;
+  return `${WIND_CHARS[s.roundWind]}圈${WIND_CHARS[seatWind(s.dealer, s.firstDealer ?? 0)]}局`;
 }
 
 // 嗌錯: a player takes back a chow, pung or kong they've just called. The
@@ -1026,13 +1032,14 @@ export function nextHand(s: GameState, wall?: WallTile[], random: Random = Math.
   const multiWin = s.multiWin;
   const runBack = s.runBack;
   const swapRules = s.swapRules;
+  const firstDealer = s.firstDealer ?? 0;
   // The dealer stays on a draw, or when among the winners.
   if (winner === null || winner === s.dealer || alsoWon?.some((w) => w.winner === s.dealer)) {
-    return dealHand({ dealer: s.dealer, roundWind: s.roundWind, dealerStreak: s.dealerStreak + 1, lahs, multiWin, runBack, swapRules }, wall, random);
+    return dealHand({ dealer: s.dealer, roundWind: s.roundWind, dealerStreak: s.dealerStreak + 1, firstDealer, lahs, multiWin, runBack, swapRules }, wall, random);
   }
   const dealer = (s.dealer + 1) % SEATS;
-  const roundWind = (dealer === 0 ? (s.roundWind % 4) + 1 : s.roundWind) as Wind;
-  return dealHand({ dealer, roundWind, dealerStreak: 0, lahs, multiWin, runBack, swapRules }, wall, random);
+  const roundWind = (dealer === firstDealer ? (s.roundWind % 4) + 1 : s.roundWind) as Wind;
+  return dealHand({ dealer, roundWind, dealerStreak: 0, firstDealer, lahs, multiWin, runBack, swapRules }, wall, random);
 }
 
 // ---- 換牌 ------------------------------------------------------------------------

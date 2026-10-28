@@ -5844,6 +5844,8 @@ html.playing body {
      as in the table apps, so the side walls fit the table's depth. */
   --play-tile: calc(var(--play-hand) * 0.74);
   --play-wall: calc(var(--play-tile) * 0.62);
+  /* Across, a size up: the table's width has the room its depth doesn't. */
+  --play-wall-top: calc(var(--play-wall) * 1.3);
   /* The middle row just the compass: the far and near ponds start right by
      it and grow toward their players, the table's spare depth split beyond
      them (the far pond sits at the foot of its row, yours at the top). */
@@ -6280,7 +6282,7 @@ html.playing body {
   flex-direction: row-reverse;
   /* Its tiles stand up toward you, past their footprint: down a little,
      clear of the name tag above. */
-  margin-top: calc(var(--play-wall) * 0.4);
+  margin-top: calc(var(--play-wall-top) * 0.6);
 }
 
 .play-seat-left,
@@ -6685,45 +6687,15 @@ html.playing body {
   --play-tile-height: 1em;
 }
 
-/* One shadow for a whole row of standing tiles (they stand together, so
-   one soft shape under them all - not one per tile), on the felt under
-   just the tiles there are (--count, packed at the wall's far end), falling
-   in across the felt, as from light behind each player. */
+.play-edge-top {
+  font-size: var(--play-wall-top);
+}
+
+/* (No shadow under a row of standing tiles: drawn as one shape on the
+   felt it showed as a box under them.) */
 .play-edge {
   position: relative;
   transform-style: preserve-3d;
-}
-
-.play-edge::after {
-  content: "";
-  position: absolute;
-  border-radius: 0.1em;
-  pointer-events: none;
-  transform: translateZ(0.5px);
-}
-
-.play-edge-top::after {
-  top: 0;
-  right: var(--slot);
-  width: calc(var(--count, 0) * 0.78em);
-  height: 0.55em;
-  box-shadow: 0 0.3em 0.7em -0.05em rgba(0, 0, 0, 0.3);
-}
-
-.play-edge-left::after {
-  top: var(--slot);
-  left: 0;
-  width: 0.55em;
-  height: calc(var(--count, 0) * 0.78em);
-  box-shadow: 0.3em 0 0.7em -0.05em rgba(0, 0, 0, 0.3);
-}
-
-.play-edge-right::after {
-  bottom: var(--slot);
-  right: 0;
-  width: 0.55em;
-  height: calc(var(--count, 0) * 0.78em);
-  box-shadow: -0.3em 0 0.7em -0.05em rgba(0, 0, 0, 0.3);
 }
 
 /* A tile just drawn stands a little apart at its player's right end, as
@@ -6744,14 +6716,6 @@ html.playing body {
 
 .play-edge-right.has-drawn .play-edge-tile:first-child {
   margin-bottom: 0.25em;
-}
-
-.play-edge-top.has-drawn::after {
-  width: calc(var(--count, 0) * 0.78em + 0.25em);
-}
-
-:is(.play-edge-left, .play-edge-right).has-drawn::after {
-  height: calc(var(--count, 0) * 0.78em + 0.25em);
 }
 
 /* (The far wall's left is your right; the left wall's, the far end; the
@@ -6969,6 +6933,52 @@ html.playing body {
 
 .play-edge-right.is-down .play-stand {
   animation-name: play-topple-right;
+}
+
+/* A winner's winning tile, last: a little apart and laid sideways - turned
+   a quarter from the tiles beside it, so its slot is a tile long (across,
+   lying across the row; at the sides, upright among the turned tiles). */
+.play-edge-top .play-edge-tile.is-win {
+  width: 1em;
+  margin-left: 0.25em;
+}
+
+.play-edge-top .is-win .play-stand {
+  width: 1em;
+  height: 0.78em;
+}
+
+.play-edge-top .is-win .play-stand > .tile-glyph {
+  left: 0.11em;
+  top: -0.11em;
+  rotate: 90deg;
+  --shade-long: 0.14;
+  --shade-end: 0;
+}
+
+:is(.play-edge-left, .play-edge-right) .play-edge-tile.is-win {
+  height: 1em;
+}
+
+.play-edge-left .play-edge-tile.is-win {
+  margin-top: 0.25em;
+}
+
+.play-edge-right .play-edge-tile.is-win {
+  margin-top: 0.25em;
+}
+
+:is(.play-edge-left, .play-edge-right) .is-win .play-stand {
+  width: 0.78em;
+  height: 1em;
+}
+
+:is(.play-edge-left, .play-edge-right) .is-win .play-stand > .tile-glyph {
+  left: 0;
+  top: 0;
+  rotate: none;
+  --shade-long: 0;
+  --shade-end: 0.14;
 }
 
 /* A mystery bot: a plain "?" on grey, whichever personality it is. */
@@ -8068,11 +8078,12 @@ html.playing body {
   background: var(--play-back);
 }
 
-/* A face-up tile's underside is its back - green, as a real tile's is:
-   hidden while it lies flat, and what you see of it as it tips (a hand
-   toppling at the end), rather than the ivory core. Just off the base, so
-   it doesn't fight the felt for the same depth. */
-:is(.play-felt, .play-hand, .play-swap-flight) .tile-glyph.tile-art:not(.wait-highlight, .joker-assumed)::before {
+/* A standing tile's underside is its back - green, as a real tile's is:
+   what you see of the others' hands standing, and as they tip over at the
+   end, rather than the ivory core. Only there (and flying, when it may
+   turn): under a tile lying flat it would only peek out round its edges.
+   Just off the base, so it doesn't fight the felt for the same depth. */
+:is(.play-stand, .play-hand, .play-swap-flight) .tile-glyph.tile-art:not(.wait-highlight, .joker-assumed)::before {
   content: "";
   position: absolute;
   left: var(--tile-x);
@@ -16828,7 +16839,7 @@ button.sc-stat:active {
   position: absolute;
   /* (Less the seat's own drop below its name tag - see .play-seat-top - so
      it keeps clear of the piles.) */
-  top: calc(100% + 0.35em - var(--play-wall) * 0.4);
+  top: calc(100% + 0.35em - var(--play-wall-top) * 0.6);
   left: 50%;
   translate: -50% 0;
   font-size: var(--play-tile);

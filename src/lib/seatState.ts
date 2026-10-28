@@ -84,6 +84,8 @@ export function seatState(view: TableView): SeatState {
     dealer: toLocal(view.dealer),
     roundWind: view.roundWind,
     dealerStreak: view.dealerStreak,
+    // (Tables from before it was sent: seat 0, as they were dealt.)
+    ...(toLocal(view.firstDealer ?? 0) ? { firstDealer: toLocal(view.firstDealer ?? 0) } : {}),
     phase,
     firstGoAround: view.firstGoAround,
     discardsMade: view.discardsMade,

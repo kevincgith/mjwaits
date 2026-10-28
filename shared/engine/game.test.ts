@@ -372,6 +372,28 @@ describe("game", () => {
     expect(roundLabel({ ...s, roundWind: 2, dealer: 3 })).toBe("南圈北局");
   });
 
+  it("counts the round from the game's first dealer, wherever they sit", () => {
+    // Online the first dealer can be any seat: 東局 is theirs, and the round
+    // wind moves on only when the deal comes back round to them.
+    let s = dealHand({ dealer: 2, roundWind: 1, dealerStreak: 0 });
+    expect(s.firstDealer).toBe(2);
+    expect(roundLabel(s)).toBe("東圈東局");
+    const passOn = (g: GameState): GameState => {
+      const winner = (g.dealer + 1) % 4;
+      return nextHand({ ...g, phase: { kind: "over", result: { winner, from: null, tile: null, deltas: [0, 0, 0, 0], score: null, scoreError: null } } } as GameState);
+    };
+    const seen: string[] = [];
+    for (let i = 0; i < 5; i++) {
+      s = passOn(s);
+      seen.push(roundLabel(s));
+    }
+    expect(seen).toEqual(["東圈南局", "東圈西局", "東圈北局", "南圈東局", "南圈南局"]);
+    expect(s.dealer).toBe(3);
+    // A game saved before: seat 0 first, as ever.
+    const { firstDealer: _, ...old } = dealHand({ dealer: 1, roundWind: 1, dealerStreak: 0 });
+    expect(roundLabel(old)).toBe("東圈南局");
+  });
+
   describe("叮", () => {
     const t = (suit: Tile["suit"], rank: number): Tile => ({ suit, rank });
     // Dealer (seat 0): five melds + a single 3t and a spare 5z - throwing

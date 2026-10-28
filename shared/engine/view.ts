@@ -77,6 +77,7 @@ export interface TableView {
   dealer: number;
   roundWind: GameState["roundWind"];
   dealerStreak: number;
+  firstDealer: number;
   phase: PhaseView;
   firstGoAround: boolean;
   discardsMade: number;
@@ -158,6 +159,7 @@ export function viewFor(s: GameState, you: number, shown: (seat: number) => bool
     dealer: s.dealer,
     roundWind: s.roundWind,
     dealerStreak: s.dealerStreak,
+    firstDealer: s.firstDealer ?? 0,
     phase,
     firstGoAround: s.firstGoAround,
     discardsMade: s.discardsMade,
