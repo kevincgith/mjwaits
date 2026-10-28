@@ -216,6 +216,39 @@ const WIN_SHOW_MS = 3700 + WIN_TILE_LEAD * 1000;
 const TURNED = "(orientation: portrait) and (max-width: 820px)";
 // The table drawn turned a quarter (a phone held upright): its rows run down the screen.
 const turnedTable = () => window.matchMedia(TURNED).matches;
+
+// The other seats, by the side they sit.
+const SIDE_NAMES = ["left", "top", "right"] as const;
+// An element's box in the table's own layout - offsets up to the felt, before
+// any 3D (the felt's tilt, a tile turned to face its owner).
+interface LayoutBox {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+// Where elements are drawn, together, on screen.
+interface ScreenBox {
+  x0: number;
+  x1: number;
+  y0: number;
+  y1: number;
+}
+function screenBox(es: Element[]): ScreenBox {
+  const r = es.map((e) => e.getBoundingClientRect()).filter((q) => q.width > 0);
+  return { x0: Math.min(...r.map((q) => q.left)), x1: Math.max(...r.map((q) => q.right)), y0: Math.min(...r.map((q) => q.top)), y1: Math.max(...r.map((q) => q.bottom)) };
+}
+function layoutBox(e: HTMLElement, felt: HTMLElement): LayoutBox {
+  let x = 0;
+  let y = 0;
+  let at: HTMLElement | null = e;
+  while (at && at !== felt) {
+    x += at.offsetLeft;
+    y += at.offsetTop;
+    at = at.offsetParent as HTMLElement | null;
+  }
+  return { x, y, w: e.offsetWidth, h: e.offsetHeight };
+}
 const DRAW_SHOW_MS = 1700;
 // Your hand's tiles sliding to their new places (a swap's give or takes).
 const HAND_SLIDE_MS = 450;
@@ -1218,6 +1251,88 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
       return meldsLong + along(flowers) + gap > room;
     });
     if (next.join() !== seatsOut.join()) setSeatsOut(next);
+  });
+  // A hand laid down at the end swaps its standing tiles for face-up ones
+  // (larger, laid further apart): so it doesn't jump, each falling tile
+  // starts where the standing one stood, as large, and moves and grows to its
+  // place as it falls - and the melds beside it glide to where the wider hand
+  // leaves them. Measured in the table's own layout (before its tilt), from
+  // where the standing tiles were last seen.
+  // (Each side's standing tiles in the layout, and their extent as drawn on
+  // screen - re-measured only when that hand changes.)
+  const stood = useRef<Record<string, { key: string; tiles: LayoutBox[]; side: LayoutBox | null; drawn: ScreenBox }>>({});
+  useLayoutEffect(() => {
+    const felt = feltRef.current;
+    if (!felt || game.phase.kind === "over") return;
+    for (const side of SIDE_NAMES) {
+      const tiles = [...felt.querySelectorAll<HTMLElement>(`.play-edge-${side} .play-edge-tile`)];
+      if (!tiles.length) continue;
+      const row = felt.querySelector<HTMLElement>(`.play-seat-${side} > .play-seat-side`);
+      const key = [tiles.length, row?.offsetWidth, row?.offsetHeight, felt.offsetWidth, felt.offsetHeight].join();
+      if (stood.current[side]?.key === key) continue;
+      stood.current[side] = { key, tiles: tiles.map((t) => layoutBox(t, felt)), side: row ? layoutBox(row, felt) : null, drawn: screenBox(tiles) };
+    }
+  });
+  useLayoutEffect(() => {
+    const felt = feltRef.current;
+    if (!felt || game.phase.kind !== "over") return;
+    for (const side of SIDE_NAMES) {
+      const meld = felt.querySelector<HTMLElement>(`.play-seat-${side} .play-meld.is-revealed`);
+      const was = stood.current[side];
+      if (!meld || !was || meld.dataset.landed) continue;
+      meld.dataset.landed = "1";
+      // Both rows from their player's left: the far end of the left seat's
+      // column, the near end of the right's, your right of the row across.
+      const fromLeft = (a: LayoutBox, b: LayoutBox) => (side === "top" ? b.x - a.x : side === "left" ? a.y - b.y : b.y - a.y);
+      const old = [...was.tiles].sort(fromLeft);
+      const spans = [...meld.querySelectorAll<HTMLElement>(":scope > .play-topple")];
+      const now = spans.map((s) => layoutBox(s, felt));
+      const order = now.map((_, i) => i).sort((i, j) => fromLeft(now[i], now[j]));
+      // Each tile's start: matched along the row by their middles, and across
+      // it by the edge nearest their player (the one the tile stands on, and
+      // falls from) - then the whole row nudged and sized so that, as drawn,
+      // it starts just where the standing row was (the layout alone is a
+      // little out: a standing tile is drawn turned, and the table tilted).
+      const start = (k: number, fix: { x: number; y: number; s: number }) => {
+        const o = old[Math.min(k, old.length - 1)];
+        const n = now[order[k]];
+        const along = (side === "top" ? o.w / n.w : o.h / n.h) * fix.s;
+        const dx = (side === "top" ? o.x + o.w / 2 - (n.x + n.w / 2) : side === "left" ? o.x - n.x : o.x + o.w - (n.x + n.w)) + fix.x;
+        const dy = (side === "top" ? o.y - n.y : o.y + o.h / 2 - (n.y + n.h / 2)) + fix.y;
+        return { translate: [`${dx}px ${dy}px`, "0px 0px"], scale: [`${along} ${along} ${along}`, "1 1 1"] };
+      };
+      const anims = order.map((i, k) => {
+        const style = getComputedStyle(spans[i]);
+        return spans[i].animate(start(k, { x: 0, y: 0, s: 1 }), {
+          duration: parseFloat(style.animationDuration) * 1000 * 0.8,
+          delay: parseFloat(style.animationDelay) * 1000,
+          easing: "cubic-bezier(0.55, 0, 1, 0.45)",
+          fill: "backwards",
+        });
+      });
+      // As drawn now, against as drawn standing: the shift of the row's
+      // middle, turned back into the layout's own px. (Its size is left as
+      // the layout has it - near enough, and a row's length is mostly its
+      // spacing, too touchy to size tiles by.)
+      const seen = screenBox(spans);
+      const want = was.drawn;
+      const lengthNow = side === "top" ? seen.x1 - seen.x0 : seen.y1 - seen.y0;
+      if (lengthNow > 0) {
+        const layoutLength = side === "top" ? old[old.length - 1].x + old[old.length - 1].w - old[0].x : old[old.length - 1].y + old[old.length - 1].h - old[0].y;
+        const perPx = Math.abs(layoutLength) / lengthNow || 1;
+        const fix = { s: 1, x: ((want.x0 + want.x1 - seen.x0 - seen.x1) / 2) * perPx, y: ((want.y0 + want.y1 - seen.y0 - seen.y1) / 2) * perPx };
+        anims.forEach((a, k) => (a.effect as KeyframeEffect).setKeyframes(start(k, fix)));
+      }
+      // The melds and flowers beside the hand: from where they were, to
+      // where the laid-down hand leaves them.
+      const row = felt.querySelector<HTMLElement>(`.play-seat-${side} > .play-seat-side`);
+      if (row && was.side) {
+        const n = layoutBox(row, felt);
+        const dx = was.side.x - n.x;
+        const dy = was.side.y - n.y;
+        if (Math.abs(dx) + Math.abs(dy) > 0.5) row.animate({ translate: [`${dx}px ${dy}px`, "0px 0px"] }, { duration: 450, easing: "cubic-bezier(0.3, 0.7, 0.4, 1)" });
+      }
+    }
   });
   // Each pond grows from the compass toward its owner: when its rows would
   // reach that player's tiles (their melds and bonus tiles, standing hand,
