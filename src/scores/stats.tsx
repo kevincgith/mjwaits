@@ -3,14 +3,28 @@
 
 import { Fragment, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { exportScores, mergeScores, parseBackup, replay, replayCached, type HandResult, type ReplayState, type ScoreGame, type ScoreStore, playTimes } from "@mjwaits/shared/engine/ledger";
-import { sheetRows, type SheetRow } from "../lib/scoreViews";
-import { careerPlayerStats, careerStats, headToHead, marks, patternCounts, playerStats, rankedBy, RECENT_HANDS, trend, trendSummary, type PlayerStats, type Swing } from "../lib/scoreStats";
+import { sheetCsv, sheetRows, type SheetRow } from "../lib/scoreViews";
+import { careerPlayerStats, careerStats, careerTrend, headToHead, marks, patternCounts, playerStats, rankedBy, RECENT_HANDS, trend, trendSummary, type PlayerStats, type Swing } from "../lib/scoreStats";
 import { fmt, signed, pct, tone, colorOf, Icons, SectionHead, Monogram, Sheet, Segmented, Sparkline } from "./shared";
 
 // ---- 統計 ------------------------------------------------------------------------
 
-export function TrendChart({ store, state }: { store: ScoreStore; state: ReplayState }) {
-  const { hands, series } = trend(state);
+// A line per player over the hands of one game - or any other series
+// (`data`, e.g. the 生涯 trend game by game), each point named by labelOf.
+export function TrendChart({
+  store,
+  state,
+  data,
+  labelOf,
+  unit = "hands",
+}: {
+  store: ScoreStore;
+  state?: ReplayState;
+  data?: { hands: number; series: { player: string; values: (number | null)[] }[] };
+  labelOf?: (i: number) => string;
+  unit?: string;
+}) {
+  const { hands, series } = data ?? trend(state!);
   const [hover, setHover] = useState<number | null>(null);
   // Drawn at the container's real width, so text keeps its pixel size.
   const [box, setBox] = useState<HTMLDivElement | null>(null);
@@ -62,7 +76,7 @@ export function TrendChart({ store, state }: { store: ScoreStore; state: ReplayS
 
   return (
     <div className="sc-chart" ref={setBox}>
-      <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} role="img" aria-label={`Running totals over ${hands} hands`}>
+      <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} role="img" aria-label={`Running totals over ${hands} ${unit}`}>
         {yTicks.map((v) => (
           <g key={v}>
             <line x1={pad.l} x2={W - pad.r} y1={y(v)} y2={y(v)} className={v === 0 ? "sc-axis-zero" : "sc-grid"} />
@@ -96,7 +110,7 @@ export function TrendChart({ store, state }: { store: ScoreStore; state: ReplayS
       </svg>
       {hover !== null && (
         <div className={`sc-tooltip${x(hover) > W * 0.6 ? " is-left" : ""}`} style={{ left: x(hover) }}>
-          <strong>{hover === 0 ? "Start" : `第${hover}局`}</strong>
+          <strong>{labelOf ? labelOf(hover) : hover === 0 ? "Start" : `第${hover}局`}</strong>
           {series
             .filter((s) => s.values[hover] !== null && s.values[hover] !== undefined)
             .sort((a, b) => (b.values[hover] as number) - (a.values[hover] as number))
@@ -536,6 +550,24 @@ export function readBackedUpAt(): number | null {
   }
 }
 
+// The 局 sheet as a CSV file, as it's showing (Detailed or Simple), named for the game (or the day it started). A
+// byte-order mark first, so spreadsheet apps read the Chinese right.
+function saveSheetCsv(game: ScoreGame, state: ReplayState, players: string[], merge: boolean) {
+  const blob = new Blob(["\uFEFF" + sheetCsv(game, state, players, merge)], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const d = new Date(game.startedAt);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const day = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const name = game.name?.trim().replace(/[\\/:*?"<>|]+/g, "-");
+  a.href = url;
+  a.download = `mjwaits-${name ? `${name}-` : ""}${day}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 // Save the whole store as a dated file, and note when - for the reminders.
 export function saveBackupFile(store: ScoreStore): number {
   const now = Date.now();
@@ -827,15 +859,20 @@ export function HandsTable({ store, game, state }: { store: ScoreStore; game: Sc
     <div className="card sc-sheet-card">
       <div className="sc-card-head">
         <h3>局 Hands</h3>
-        <Segmented
-          small
-          value={detailed ? "detailed" : "simple"}
-          onChange={(v) => setDetailed(v === "detailed")}
-          options={[
-            { value: "detailed", label: "Detailed" },
-            { value: "simple", label: "Simple" },
-          ]}
-        />
+        <span className="sc-sheet-tools">
+          <Segmented
+            small
+            value={detailed ? "detailed" : "simple"}
+            onChange={(v) => setDetailed(v === "detailed")}
+            options={[
+              { value: "detailed", label: "Detailed" },
+              { value: "simple", label: "Simple" },
+            ]}
+          />
+          <button type="button" className="sc-outline sc-sheet-csv" onClick={() => saveSheetCsv(game, state, players, merge)} aria-label="Export the hands as a CSV file">
+            CSV
+          </button>
+        </span>
       </div>
       <div className="sc-sheet-table" role="table" aria-label="Every hand, and what each player won or paid">
         <div className="sc-sheet-row is-head" style={cols} role="row">
@@ -964,6 +1001,8 @@ export function HistoryCard({ store, games, current, onPick, onDelete }: { store
     if (player) window.setTimeout(() => careerCardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
   };
   const h2h = useMemo(() => headToHead(games), [games]);
+  // Everyone's career total game by game, for the 生涯 trend chart.
+  const allTime = useMemo(() => careerTrend(games, (at) => new Date(at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })), [games]);
   const names = career.map((c) => c.player);
   return (
     <>
@@ -1063,6 +1102,18 @@ export function HistoryCard({ store, games, current, onPick, onDelete }: { store
           </table>
         </div>
       </div>
+      {/* Everyone's career total over every game, oldest first. */}
+      {allTime.hands > 0 && (
+        <div className="card">
+          <div className="sc-card-head">
+            <h3>走勢 All-time trend</h3>
+            <span className="sc-help">
+              {allTime.hands} game{allTime.hands > 1 ? "s" : ""} · touch for a game
+            </span>
+          </div>
+          <TrendChart store={store} data={allTime} labelOf={(i) => allTime.labels[i]} unit="games" />
+        </div>
+      )}
       {careerOpen !== null && careerCard.stats.some((x) => x.player === careerOpen) && (
         <div ref={careerCardRef} className="sc-career-card">
         <PlayerCard

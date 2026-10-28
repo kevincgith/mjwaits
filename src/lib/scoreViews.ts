@@ -73,3 +73,36 @@ export function changeKind(before: ScoreEvent[], after: ScoreEvent[]): { kind: "
   if (n < m && (n === 0 || before[n - 1] === after[n - 1])) return { kind: "undone", surrenders: false };
   return { kind: "fixed", surrenders: false };
 }
+
+// ---- 局: the score sheet as a CSV file ---------------------------------------
+
+// The 局 sheet as it's showing - detailed (獎罰 and Jackpot on rows of their
+// own) or simple (merge: folded into the hands) - one row each: the hand
+// number, round, 莊, what happened, who won (and their tai), who dealt in, the
+// patterns behind the tai, then each player's change - and a Total row.
+// Players are the sheet's own columns, in its order.
+export function sheetCsv(game: ScoreGame, state: ReplayState, players: string[], merge = false): string {
+  const cell = (v: string | number) => {
+    const s = String(v);
+    return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const num = (n: number) => String(Math.round(n * 10) / 10);
+  const lines: (string | number)[][] = [["#", "Round", "莊", "Result", "Winners", "Dealt in", "Patterns", ...players]];
+  for (const row of sheetRows(game, state, merge)) {
+    const deltas = players.map((p) => num(row.deltas[p] ?? 0));
+    if (row.kind === "bonus") lines.push(["", "", "", row.label, "", "", "", ...deltas]);
+    else if (row.kind === "jackpot") lines.push(["", "", "", "Jackpot", "", "", "", ...deltas]);
+    else {
+      const h = row.h;
+      const result = h.kind === "draw" ? "流局" : h.multi === 2 ? "雙響" : h.multi === 3 ? "三響" : h.selfDraw ? "自摸" : "食胡";
+      const winners = h.winners.map((w) => `${w.player} ${num(w.tai)}`).join("; ");
+      const patterns = h.winners
+        .filter((w) => w.patterns?.length)
+        .map((w) => `${h.winners.length > 1 ? `${w.player}: ` : ""}${w.patterns!.map((p) => `${p.name} ${num(p.tai)}`).join(" · ")}`)
+        .join("; ");
+      lines.push([h.hand, h.label, `${h.dealer}${h.streak > 0 ? ` 連${h.streak}` : ""}`, result, winners, h.from ?? "", patterns, ...deltas]);
+    }
+  }
+  lines.push(["", "Total", "", "", "", "", "", ...players.map((p) => num(state.totals[p] ?? 0))]);
+  return lines.map((l) => l.map(cell).join(",")).join("\r\n") + "\r\n";
+}

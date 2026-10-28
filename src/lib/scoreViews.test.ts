@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_SETTINGS, newGame, replay, type ScoreEvent, type ScoreGame } from "@mjwaits/shared/engine/ledger";
-import { changeKind, provisionalEast, sheetRows } from "./scoreViews";
+import { changeKind, provisionalEast, sheetCsv, sheetRows } from "./scoreViews";
 
 const PLAIN = { ...DEFAULT_SETTINGS, dealerTai: 0, streakTai: 0, jackpot: false };
 const game = (events: ScoreEvent[], seats = ["A", "B", "C", "D"]): ScoreGame => ({ ...newGame(seats, 0, PLAIN), events });
@@ -57,5 +57,30 @@ describe("changeKind", () => {
   it("flags entries that are all 投降", () => {
     expect(changeKind([a], [a, s, s])).toEqual({ kind: "added", surrenders: true });
     expect(changeKind([a], [a, s, b]).surrenders).toBe(false);
+  });
+});
+
+describe("sheetCsv", () => {
+  it("a row per entry, the patterns, and a Total row", () => {
+    const ev: ScoreEvent = { t: "win", at: 0, winners: [{ seat: 0, tai: 10, patterns: [{ id: "x", name: "清一色", tai: 8 }, { id: "y", name: "花", tai: 2 }] }], from: 1, source: "scoring" };
+    const g = game([ev, { t: "draw", at: 0 }, bonus(2, 1)]);
+    const csv = sheetCsv(g, replay(g), ["A", "B", "C", "D"]).trim().split("\r\n");
+    expect(csv[0]).toBe("#,Round,莊,Result,Winners,Dealt in,Patterns,A,B,C,D");
+    expect(csv[1]).toBe("1,東風東局,A,食胡,A 10,B,清一色 8 · 花 2,10,-10,0,0");
+    expect(csv[2]).toMatch(/^2,.*,流局,,,,0,0,0,0$/);
+    expect(csv[3]).toBe(",,,獎,,,,-1,-1,3,-1");
+    expect(csv[4]).toBe(",Total,,,,,,9,-11,3,-1");
+  });
+
+  it("simple: 獎罰 folded into the next hand, as the sheet shows it", () => {
+    const g = game([bonus(2, 1), win(0, 10, 1)]);
+    const csv = sheetCsv(g, replay(g), ["A", "B", "C", "D"], true).trim().split("\r\n");
+    expect(csv).toHaveLength(3);
+    expect(csv[1]).toMatch(/,9,-11,3,-1$/);
+  });
+
+  it("quotes anything with a comma or quote in it", () => {
+    const g = { ...game([win(0, 3, 1)], ['Ah "W", Jr', "B", "C", "D"]) };
+    expect(sheetCsv(g, replay(g), ['Ah "W", Jr', "B"]).split("\r\n")[0]).toBe('#,Round,莊,Result,Winners,Dealt in,Patterns,"Ah ""W"", Jr",B');
   });
 });
