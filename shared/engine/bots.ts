@@ -27,6 +27,7 @@ import {
   unseenCounts,
   type Claim,
   type GameState,
+  type KongMove,
   type Player,
   type TurnMove,
 } from "./game";
@@ -598,6 +599,15 @@ export function botTurnMoveFor(s: GameState, profile: BotProfile, rng: Rng = Mat
   return botTurnFor(s, profile, rng).move;
 }
 
+// The kongs a bot will make this turn: an added kong (加槓) only with the
+// tile it's just drawn - never straight after claiming the pung, nor with a
+// fourth it kept in hand (it kept that for its hand), as no player would.
+export function botKongs(s: GameState): KongMove[] {
+  if (s.phase.kind !== "turn") return [];
+  const { drawn } = s.phase;
+  return kongOptions(s.players[s.phase.seat], s.phase).filter((k) => k.kind !== "addedKong" || (drawn !== null && sameTile(drawn, k.tile)));
+}
+
 // The move, and how hard it was to choose, 0..1 - the Play table uses it to
 // pace the bot like a person: an obvious throw goes at once, a close or
 // dangerous one gets a pause.
@@ -611,8 +621,7 @@ export function botTurnFor(s: GameState, profile: BotProfile, rng: Rng = Math.ra
   const options = rateDiscardsFor(s, seat, profile);
   const best = options[0];
   if (liveTilesLeft(s) > 0 && !folding(s, seat, best.shanten, profile)) {
-    // (None straight after claiming a run or a pung.)
-    for (const k of kongOptions(p, s.phase)) {
+    for (const k of botKongs(s)) {
       // An added kong costs nothing; a concealed one only if it doesn't set the hand back.
       if (k.kind === "addedKong") return { move: k, difficulty: 0.3 };
       const rest = removeTiles(p.hand, [k.tile, k.tile, k.tile, k.tile]);

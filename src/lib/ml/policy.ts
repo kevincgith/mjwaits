@@ -5,7 +5,8 @@
 // positions in and decisions out, through encode.ts.
 
 import type { Claim, GameState, TurnMove } from "@mjwaits/shared/engine/game";
-import { actionToClaim, actionToTurnMove, encodeObservation, legalActions, NUM_ACTIONS, OBS_SIZE } from "./encode";
+import { botKongs } from "@mjwaits/shared/engine/bots";
+import { A_KONG, actionToClaim, actionToTurnMove, encodeObservation, legalActions, NUM_ACTIONS, OBS_SIZE } from "./encode";
 import type { MatchContext } from "./match";
 
 // Runs the network on a batch of one: the raw observation, the style id and
@@ -26,6 +27,9 @@ export interface LearnedBot {
 
 async function decide(bot: LearnedBot, s: GameState, seat: number, rng: () => number): Promise<{ action: number; value: number } | null> {
   const mask = legalActions(s, seat);
+  // Its kong: only one a bot would make (see botKongs) - no 加槓 straight
+  // after its pung.
+  if (s.phase.kind === "turn" && botKongs(s).length === 0) mask[A_KONG] = 0;
   if (!mask.some(Boolean)) return null;
   const obs = Float32Array.from(encodeObservation(s, seat, bot.match?.()));
   const { logits, value } = await bot.run(obs, bot.style, Float32Array.from(mask));
@@ -52,7 +56,7 @@ export async function learnedTurnMove(bot: LearnedBot, s: GameState, rng: () => 
   if (s.phase.kind !== "turn") throw new Error("Not a turn");
   const d = await decide(bot, s, s.phase.seat, rng);
   if (!d) throw new Error("No legal move");
-  return actionToTurnMove(s, d.action);
+  return d.action === A_KONG ? botKongs(s)[0] : actionToTurnMove(s, d.action);
 }
 
 export async function learnedClaim(bot: LearnedBot, s: GameState, seat: number, rng: () => number = Math.random): Promise<Claim | null> {

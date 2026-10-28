@@ -6262,7 +6262,9 @@ html.playing body {
 }
 
 /* Each seat is one line along its edge of the table, as its player has
-   it: their melds and flowers on their left, then their standing tiles.
+   it: their melds and flowers on their left, then their standing tiles -
+   the whole of it centred on that edge (and, with the melds and flowers in
+   a row of their own in front, each row centred).
    Seen from you, that's the far end of the left seat's column (they face
    right), the near end of the right seat's (they face left), and the right
    end of the row across (they face you). Every tile in it is turned to
@@ -6279,7 +6281,7 @@ html.playing body {
 
 .play-seat-left,
 .play-seat-right {
-  align-self: start;
+  align-self: center;
 }
 
 /* Each as wide as what's in it (measured for --play-side), against its edge. */
@@ -6299,17 +6301,17 @@ html.playing body {
    from the player's left end - every seat alike. */
 .play-seat-left.is-front {
   flex-direction: row-reverse;
-  align-items: flex-start;
+  align-items: center;
 }
 
 .play-seat-right.is-front {
   flex-direction: row;
-  align-items: flex-end;
+  align-items: center;
 }
 
 .play-seat-top.is-front {
   flex-direction: column-reverse;
-  align-items: flex-end;
+  align-items: center;
 }
 
 .play-seat-side,
@@ -6748,30 +6750,33 @@ html.playing body {
   height: calc(var(--count, 0) * 0.78em + 0.25em);
 }
 
-/* A wall is a full hand long (17), its tiles packed at its player's left -
-   so drawing and throwing only change its far end, and nothing slides
-   along (the far wall's left is your right; the left wall's, the far end;
-   the right wall's, the near end). */
+/* (The far wall's left is your right; the left wall's, the far end; the
+   right wall's, the near end.) */
 .play-edge-left,
 .play-edge-right {
   flex-direction: column;
-  height: calc(17 * 0.78em);
+  height: calc((var(--count, 0) + 1) * 0.78em + 0.25em);
+}
+
+:is(.play-edge-left, .play-edge-right).has-drawn {
+  height: calc(var(--count, 0) * 0.78em + 0.25em);
 }
 
 .play-edge-right {
   justify-content: flex-end;
 }
 
-/* The left wall's tiles pack at its far end - up against the table's top
-   edge: the left seat (its wall and, in front, its melds and flowers)
-   starts a wall tile down, level with the right wall's. */
-.play-seat-left {
-  margin-top: calc(var(--play-wall) * 0.78);
+/* A wall as long as its tiles and a slot for the one drawn (with the gap
+   it stands apart by), its tiles packed at its player's left: drawing
+   fills the slot and throwing empties it, so nothing moves - only a call
+   or a flower, which change the hand, re-centre the seat. */
+.play-edge-top {
+  width: calc((var(--count, 0) + 1) * 0.78em + 0.25em);
+  justify-content: flex-end;
 }
 
-.play-edge-top {
-  width: calc(17 * 0.78em);
-  justify-content: flex-end;
+.play-edge-top.has-drawn {
+  width: calc(var(--count, 0) * 0.78em + 0.25em);
 }
 
 .play-edge-tile {
@@ -7959,6 +7964,23 @@ html.playing body {
 
 :is(.play-felt, .play-hand, .play-swap-flight) .play-back::after {
   background: var(--play-back);
+}
+
+/* A face-up tile's underside is its back - green, as a real tile's is:
+   hidden while it lies flat, and what you see of it as it tips (a hand
+   toppling at the end), rather than the ivory core. Just off the base, so
+   it doesn't fight the felt for the same depth. */
+:is(.play-felt, .play-hand, .play-swap-flight) .tile-glyph.tile-art:not(.wait-highlight, .joker-assumed)::before {
+  content: "";
+  position: absolute;
+  left: var(--tile-x);
+  top: var(--tile-y);
+  width: var(--tile-w);
+  height: var(--tile-h);
+  border-radius: var(--tile-r);
+  background: var(--play-back);
+  box-shadow: inset 0 0 0 0.04em var(--play-back-edge);
+  transform: translateZ(0.02em);
 }
 
 :is(.play-felt, .play-hand, .play-swap-flight) img.tile-face {
