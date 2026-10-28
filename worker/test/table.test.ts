@@ -11,6 +11,7 @@ import { blindPicks, botSplit, SWAP_TIMER_S, takeOrder, type Pile } from "@mjwai
 import type { TableServerMessage, TableState } from "@mjwaits/shared/protocol/table";
 import type { Table } from "../src/table";
 import { BASE, ORIGIN } from "./helpers";
+import { HOST_GONE_MS } from "../src/hub";
 
 type Msg = TableServerMessage;
 
@@ -184,7 +185,65 @@ async function withBots(seat = 0, settings: Partial<TableState["settings"]> = {}
   return { code, host };
 }
 
+describe("between hands", () => {
+  it("deals the next hand without someone who never says they're ready, once the hold has passed", async () => {
+    const code = await createTable();
+    const { p: host } = await join(code, "Kevin");
+    for (const seat of [1, 2, 3]) host.send({ t: "setBot", seat, bot: "wall" });
+    await host.table((s) => s.seats.every(Boolean));
+    host.send({ t: "start" });
+    await host.table((s) => s.phase === "playing");
+    // The hand over (a draw), and Kevin - here, not played for - never taps ready.
+    const step = (now: number) =>
+      runInDurableObject(stubFor(code), (t: Table) => {
+        const tt = t as unknown as { load(): { game: { phase: unknown; wall: unknown[] }; overAt?: number; hand: number; settings: { hold: number } }; save(): void; onAlarm(now: number): number | null };
+        const rt = tt.load();
+        if (rt.overAt === undefined) {
+          rt.game.phase = { kind: "over", result: { winner: null, from: null, tile: null, score: null, scoreError: null, deltas: [0, 0, 0, 0] } };
+          rt.overAt = now;
+          tt.save();
+        }
+        tt.onAlarm(now);
+        return { hand: tt.load().hand, hold: rt.settings.hold, overAt: rt.overAt! };
+      });
+    const start = Date.now();
+    const first = await step(start);
+    expect(first.hand).toBe(1);
+    expect((await step(start + 5_000)).hand).toBe(1); // still waiting
+    expect((await step(first.overAt + Math.max(first.hold, 30) * 1000 + 1)).hand).toBe(2);
+  });
+});
+
 describe("the lobby", () => {
+  it("hands the host on once they've been gone a while; clears a seat whose person left; leaves a watcher watching", async () => {
+    const code = await createTable();
+    const { p: host } = await join(code, "Kevin");
+    const { p: amy, welcome: amyIn } = await join(code, "Amy");
+    const { p: ben } = await join(code, "Ben");
+    // Ben stands to watch, then drops and comes back: still watching.
+    ben.send({ t: "stand" });
+    await host.table((s) => s.seats.filter(Boolean).length === 2);
+    ben.ws.close();
+    await host.table((s) => !s.seats.some((x) => x?.kind === "human" && x.name === "Ben"));
+    const { p: ben2 } = await join(code, "", ben.token);
+    const back = ben2.latest!;
+    expect(back.seats.some((x) => x?.kind === "human" && x.name === "Ben")).toBe(false);
+    // The host leaves: not straight away, but once HOST_GONE_MS has passed, Amy (joined next) hosts.
+    host.ws.close();
+    const left = await amy.table((s) => s.seats.some((x) => x?.kind === "human" && x.name === "Kevin" && !x.connected));
+    expect(left.host).not.toBe(amyIn.id);
+    await runInDurableObject(stubFor(code), (t: Table) => {
+      const hub = t as unknown as { passHost(now: number): boolean; setMeta(k: string, v: unknown): void };
+      expect(hub.passHost(Date.now() + 1000)).toBe(false);
+      expect(hub.passHost(Date.now() + HOST_GONE_MS + 1000)).toBe(true);
+    });
+    // Amy, host now, clears Kevin's empty seat (he's gone) and seats a bot there.
+    const kevinAt = left.seats.findIndex((x) => x?.kind === "human" && x.name === "Kevin");
+    amy.send({ t: "setBot", seat: kevinAt, bot: "wall" });
+    const cleared = await amy.table((s) => s.seats[kevinAt]?.kind === "bot");
+    expect(cleared.host).toBe(amyIn.id);
+  });
+
   it("seats people and bots; only the host sets up and starts, with every seat filled", async () => {
     const code = await createTable();
     const info = await SELF.fetch(`${BASE}/tables/${code}`, { headers: { Origin: ORIGIN } });

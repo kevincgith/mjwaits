@@ -31,6 +31,21 @@ export const IDLE_TTL_MS = 48 * 60 * 60 * 1000;
 
 const CLOSE_POLICY = 1008;
 
+// The heartbeat: pages ping every 20s (PING_MS in online.ts), answered
+// without waking the room (an auto-response); a connection that's pinged
+// before and has gone this long without a ping or a message is a phone
+// that's slept or dropped off - closed, so its seat is seen to go (and is
+// played for after the hold). Checked this often while anyone's pinging.
+export const QUIET_MS = 50_000;
+export const SWEEP_MS = 25_000;
+const PING = JSON.stringify({ t: "ping" });
+const PONG = JSON.stringify({ t: "pong" });
+const CLOSE_QUIET = 4000;
+
+// A room that hands on its host (see handsOnHost): the host gone this long -
+// no phone of theirs connected - and it's whoever's there who joined first.
+export const HOST_GONE_MS = 2 * 60 * 1000;
+
 // Kept on each socket (serializeAttachment), so it survives hibernation.
 export interface Conn {
   person: string | null; // set by `hello`
@@ -85,6 +100,7 @@ export abstract class Hub<Msg extends { t: string; rid?: string }> extends Durab
     super(ctx, env);
     this.sql = ctx.storage.sql;
     this.migrate();
+    ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair(PING, PONG));
     void ctx.blockConcurrencyWhile(async () => {
       if (this.meta("code") !== null && this.meta<number>("schema") !== this.schema) await this.wipe();
     });
@@ -159,6 +175,31 @@ export abstract class Hub<Msg extends { t: string; rid?: string }> extends Durab
 
   protected isHost(personId: string): boolean {
     return this.meta<string>("host") === personId;
+  }
+
+  // Whether the host passes to someone else once they've been gone a while
+  // (HOST_GONE_MS) - an online table, which can't start, change or end
+  // without one. (A live-scores room keeps its host: it's their game.)
+  protected get handsOnHost(): boolean {
+    return false;
+  }
+
+  // The host gone long enough: the first-joined of the people connected
+  // takes over. True if it moved.
+  private passHost(now: number): boolean {
+    const gone = this.meta<number>("hostGone");
+    if (!this.handsOnHost || !gone || now - gone < HOST_GONE_MS) return false;
+    const host = this.meta<string>("host");
+    const online = this.online();
+    if (host && online.has(host)) {
+      this.setMeta("hostGone", 0);
+      return false;
+    }
+    const next = this.people().find((p) => online.has(p.id));
+    if (!next) return false; // no one to take it yet - whoever comes next
+    this.setMeta("host", next.id);
+    this.setMeta("hostGone", 0);
+    return true;
   }
 
   // ---- Making the room ---------------------------------------------------------
@@ -261,6 +302,10 @@ export abstract class Hub<Msg extends { t: string; rid?: string }> extends Durab
     const conn = ws.deserializeAttachment() as Conn | null;
     // Their last connection gone: everyone sees them drop.
     if (conn?.person && !this.conns(ws).some(([, c]) => c.person === conn.person)) {
+      if (this.handsOnHost && this.isHost(conn.person)) {
+        this.setMeta("hostGone", Date.now());
+        await this.wakeAt(Date.now() + HOST_GONE_MS);
+      }
       this.onLeave(conn.person);
       this.changed(ws);
     }
@@ -297,9 +342,26 @@ export abstract class Hub<Msg extends { t: string; rid?: string }> extends Durab
     const first = !this.conns(ws).some(([, c]) => c.person === id);
     conn.person = id;
     ws.serializeAttachment(conn);
+    // The host back: they stay host. Anyone else, with the host gone long enough: it's theirs.
+    if (this.isHost(id)) this.setMeta("hostGone", 0);
+    else this.passHost(Date.now());
     this.send(ws, this.welcome(id, token, msg.rid));
     if (first) this.onArrive(id);
     this.changed();
+    await this.wakeAt(Date.now() + SWEEP_MS);
+  }
+
+  // Connections that pinged once and have gone quiet since: closed (see QUIET_MS).
+  // True if anyone's still pinging (so the room checks again).
+  private async sweep(now: number): Promise<boolean> {
+    let pinging = false;
+    for (const [ws, conn] of this.conns()) {
+      const pinged = this.ctx.getWebSocketAutoResponseTimestamp(ws)?.getTime();
+      if (pinged === undefined) continue; // a page from before the heartbeat
+      pinging = true;
+      if (now - Math.max(pinged, conn.at) > QUIET_MS) await this.webSocketClose(ws, CLOSE_QUIET, "quiet");
+    }
+    return pinging;
   }
 
   // Something everyone can see changed: count it, note when (for expiry),
@@ -323,9 +385,13 @@ export abstract class Hub<Msg extends { t: string; rid?: string }> extends Durab
   // with someone connected is never removed.
   async alarm() {
     const now = Date.now();
+    const pinging = await this.sweep(now);
+    if (this.passHost(now)) this.changed();
     const next = await this.onAlarm(now);
     if (this.conns().length > 0 || next !== null) {
-      await this.ctx.storage.setAlarm(Math.min(next ?? Infinity, now + IDLE_TTL_MS));
+      const gone = this.handsOnHost ? this.meta<number>("hostGone") : null;
+      const handOn = gone ? Math.max(now + 1000, gone + HOST_GONE_MS) : Infinity;
+      await this.ctx.storage.setAlarm(Math.min(next ?? Infinity, pinging ? now + SWEEP_MS : Infinity, handOn, now + IDLE_TTL_MS));
       return;
     }
     const joined = this.people().length > 0;

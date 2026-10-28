@@ -206,6 +206,7 @@ export type TableAction =
 export interface TableState {
   code: string;
   version: number; // one higher each send
+  host?: string | null; // the host's id (it can pass on: see the Worker's hub.ts)
   phase: "lobby" | "playing" | "ended";
   seats: (SeatInfo | null)[];
   watching: number;
