@@ -134,3 +134,31 @@ describe("the online table's bots", () => {
     expect([...TABLE_BOTS].sort()).toEqual(BOT_PROFILES.map((p) => p.id).filter((id) => id !== "basic").sort());
   });
 });
+
+describe("kongs a person would make", () => {
+  const t = (suit: Tile["suit"], rank: number) => ({ suit, rank }) as Tile;
+  const z5 = t("z", 5);
+  // Seat 1 holds three 5z; seat 0 throws the fourth... seat 1 punges, and keeps one.
+  const afterPung = (): GameState => {
+    const s0 = dealHand({ dealer: 0, roundWind: 1, dealerStreak: 0 });
+    s0.players[1].hand = [z5, z5, z5, ...[1, 2, 3, 4, 5, 6, 7, 8, 9].map((r) => t("m", r)), t("t", 1), t("t", 2), t("t", 3), t("b", 9)];
+    s0.players[0].hand = [...s0.players[0].hand.slice(1), z5];
+    s0.phase = { kind: "turn", seat: 0, drawn: null, replacement: null };
+    const s = applyTurnMove(s0, { kind: "discard", tile: z5 });
+    return resolveClaims(s, [null, { kind: "pung" }, null, null]);
+  };
+
+  it("never 加槓 straight after its pung - with the fourth it kept", () => {
+    const s = afterPung();
+    expect(s.phase).toMatchObject({ kind: "turn", seat: 1, drawn: null });
+    for (const p of BOT_PROFILES) for (let i = 0; i < 20; i++) expect(botTurnFor(s, p, seededRng(i)).move.kind, p.id).not.toBe("addedKong");
+  });
+
+  it("but 加槓 with the fourth when it draws it later", () => {
+    const s = afterPung();
+    const p1 = s.players[1];
+    // Its kept 5z thrown, and a 5z drawn on a later turn.
+    const later: GameState = { ...s, players: s.players.map((p, i) => (i === 1 ? { ...p1, hand: [...p1.hand.filter((x) => !(x.suit === "z" && x.rank === 5)), z5] } : p)), phase: { kind: "turn", seat: 1, drawn: z5, replacement: null } };
+    expect(botTurnFor(later, profileById("veteran"), seededRng(1)).move).toEqual({ kind: "addedKong", tile: z5 });
+  });
+});

@@ -126,6 +126,16 @@ const PRESETS = [
   { label: "Friendly", bots: ["casual", "casual", "casual"] },
 ] as const;
 const DEFAULT_OPPONENTS = [...PRESETS[0].bots];
+// A table of three different personalities, drawn at random - a new game's
+// line-up unless one's been picked (see randomOpponents).
+const randomLineup = (random: () => number = Math.random): string[] => {
+  const ids = BOT_PROFILES.map((p) => p.id);
+  for (let i = ids.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    [ids[i], ids[j]] = [ids[j], ids[i]];
+  }
+  return ids.slice(0, 3);
+};
 // Seats 1-3 as the opponents sheet names them.
 const SEAT_LABELS = ["", "Right", "Across", "Left"];
 // "老手 Veteran" -> "老手" / "Veteran".
@@ -234,6 +244,7 @@ interface Saved {
   record?: boolean;
   // The bot ids at seats 1-3.
   opponents?: string[];
+  randomOpponents?: boolean; // a fresh random line-up each new game (absent: yes)
   // The game so far as a Scores-tab game (playLedger.ts), for 戰況.
   ledger?: ScoreGame;
 }
@@ -697,12 +708,17 @@ function OpponentsSheet({
   opponents,
   learned,
   onChange,
+  random,
+  onRandom,
   onClose,
 }: {
   opponents: string[];
+  // A new random line-up each new game (rather than these, kept).
+  random: boolean;
   // The personalities a learned model can play, once it has loaded.
   learned: string[] | null;
   onChange: (ids: string[]) => void;
+  onRandom: () => void;
   onClose: () => void;
 }) {
   const choices = [...BOT_PROFILES, ...(learned ?? []).filter((st) => BOT_PROFILES.some((p) => p.id === st)).map(learnedProfile)];
@@ -717,8 +733,11 @@ function OpponentsSheet({
           </button>
         </div>
         <div className="play-presets">
+          <button type="button" className={random ? "toggle-on" : undefined} aria-pressed={random} onClick={onRandom} title="Three different bots, new each game">
+            Random
+          </button>
           {PRESETS.map((p) => {
-            const on = p.bots.every((id, i) => opponents[i] === id);
+            const on = !random && p.bots.every((id, i) => opponents[i] === id);
             return (
               <button key={p.label} type="button" className={on ? "toggle-on" : undefined} aria-pressed={on} onClick={() => onChange([...p.bots])}>
                 {p.label}
@@ -922,11 +941,16 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
   useEffect(() => {
     if (online && rolling && game.discardsMade > 0) setRolling(false);
   }, [online, rolling, game.discardsMade]);
+  // The opponents: a new random line-up for each new game, unless a table or
+  // a bot for each seat has been picked - then those, kept game to game.
+  const [randomOpponents, setRandomOpponents] = useState(() => saved?.randomOpponents ?? true);
   const [opponents, setOpponents] = useState<string[]>(() =>
-    saved?.opponents?.length === 3 && saved.opponents.every(knownBot)
-      ? // A new game, new mysteries.
-        saved.opponents.map((id) => (fresh && id.startsWith(MYSTERY_PREFIX) ? newMystery() : id))
-      : DEFAULT_OPPONENTS
+    fresh && randomOpponents
+      ? randomLineup()
+      : saved?.opponents?.length === 3 && saved.opponents.every(knownBot)
+        ? // A new game, new mysteries.
+          saved.opponents.map((id) => (fresh && id.startsWith(MYSTERY_PREFIX) ? newMystery() : id))
+        : DEFAULT_OPPONENTS
   );
   const [opponentsOpen, setOpponentsOpen] = useState(false);
   // The game so far as a Scores-tab game: started with the game (its first
@@ -1147,15 +1171,12 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     if (!felt || !seat || !row || !melds) return;
     const gap = parseFloat(getComputedStyle(row).gap) || 0;
     const laid = [...melds.children].reduce((n, m) => n + (m as HTMLElement).offsetWidth + gap, 0) + (flowers?.childElementCount ? flowers.offsetWidth + gap : 0);
-    const edge = seat.querySelector<HTMLElement>(".play-edge-top");
-    let hand = edge?.offsetWidth ?? 0;
-    if (!edge) {
-      const probe = document.createElement("span");
-      probe.style.cssText = "position:absolute;visibility:hidden;font-size:var(--play-wall)";
-      seat.appendChild(probe);
-      hand = 17 * 0.78 * parseFloat(getComputedStyle(probe).fontSize);
-      probe.remove();
-    }
+    // (A full hand's 17 - not the wall as drawn, which fits the hand.)
+    const probe = document.createElement("span");
+    probe.style.cssText = "position:absolute;visibility:hidden;font-size:var(--play-wall)";
+    seat.appendChild(probe);
+    const hand = 17 * 0.78 * parseFloat(getComputedStyle(probe).fontSize);
+    probe.remove();
     const cols = getComputedStyle(felt).gridTemplateColumns.split(" ").map(parseFloat);
     const room = cols.slice(1, -1).reduce((a, b) => a + b, 0);
     const front = laid > 0 && hand + (parseFloat(getComputedStyle(seat).columnGap) || 0) + laid > room;
@@ -1176,13 +1197,12 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
       const row = seat?.querySelector<HTMLElement>(".play-seat-side");
       const flowers = row?.querySelector<HTMLElement>(":scope > .play-flowers");
       const melds = row?.querySelector<HTMLElement>(":scope > .play-seat-melds");
-      const edge = seat?.querySelector<HTMLElement>(`.play-edge-${side}`);
       if (!seat || !row || !melds || !flowers || !flowers.childElementCount) return false;
       const along = (e: HTMLElement) => (side === "top" ? e.offsetWidth : e.offsetHeight);
-      // A side seat's room: its wall's length (17 tiles of 0.78) - measured
-      // off the wall's own size, so it holds once the hand's laid down too.
+      // A side seat's room: a full wall's length (17 tiles of 0.78) - not the
+      // wall as drawn, which fits its hand - so it holds once the hand's
+      // laid down too.
       const wallLength = () => {
-        if (edge) return along(edge);
         const probe = document.createElement("span");
         probe.style.cssText = "position:absolute;visibility:hidden;font-size:var(--play-wall)";
         seat.appendChild(probe);
@@ -1488,8 +1508,8 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
 
   // This device's own game (never an online one).
   useEffect(
-    () => save({ game: localGame, totals: localTotals, hint, timer, opponents, speed, oneTap, record, multiWin, runBack, swapRules, jackpot, ledger: localLedger }),
-    [localGame, localTotals, hint, timer, opponents, speed, oneTap, record, multiWin, runBack, swapRules, jackpot, localLedger]
+    () => save({ game: localGame, totals: localTotals, hint, timer, opponents, randomOpponents, speed, oneTap, record, multiWin, runBack, swapRules, jackpot, ledger: localLedger }),
+    [localGame, localTotals, hint, timer, opponents, randomOpponents, speed, oneTap, record, multiWin, runBack, swapRules, jackpot, localLedger]
   );
 
   // The menu closes on a tap anywhere outside it, and disarms New game.
@@ -2784,7 +2804,8 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     setRunBack(false);
     setJackpot(5);
     setSwapRules(DEFAULT_SWAP_RULES);
-    setOpponents([...DEFAULT_OPPONENTS]);
+    setRandomOpponents(true);
+    setOpponents(randomLineup());
     setRecord(false);
   };
   const startNewGame = () => {
@@ -3224,6 +3245,8 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
                 className="play-menu-link"
                 onClick={() => {
                   setMenuOpen(false);
+                  // A new game, a new table - unless one's been picked.
+                  if (randomOpponents) setOpponents(randomLineup());
                   setSetupOpen(true);
                 }}
               >
@@ -3650,7 +3673,16 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
           />
         )}
         {swapSheetOpen && <SwapSheet rules={swapRules} onChange={setSwapRules} onClose={() => setSwapSheetOpen(false)} />}
-        {opponentsOpen && <OpponentsSheet opponents={opponents} learned={model?.styles ?? null} onChange={setOpponents} onClose={() => setOpponentsOpen(false)} />}
+        {opponentsOpen && (
+          <OpponentsSheet
+            opponents={opponents}
+            random={randomOpponents}
+            learned={model?.styles ?? null}
+            onChange={(ids) => (setRandomOpponents(false), setOpponents(ids))}
+            onRandom={() => (setRandomOpponents(true), setOpponents(randomLineup()))}
+            onClose={() => setOpponentsOpen(false)}
+          />
+        )}
 
         {result && !resultHidden && !cardHeld && (
           <div className="play-result" role="dialog" aria-label="Hand result">
