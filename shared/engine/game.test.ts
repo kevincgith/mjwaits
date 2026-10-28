@@ -17,6 +17,7 @@ import {
   riichiDiscards,
   riichiForcedDiscard,
   settleWin,
+  scoreWin,
   lahAddOn,
   surrender,
   surrenderable,
@@ -398,6 +399,40 @@ describe("game", () => {
     // A hand of only barred tiles may throw one anyway.
     const stuck = { ...after, players: after.players.map((p, i) => (i === 1 ? { ...p, hand: [m(4), m(4)] } : p)) };
     expect(forbiddenDiscards(stuck)).toEqual([]);
+  });
+
+  it("scores 四子內/七子內/十子內 by the tiles left in the ponds when it's won", () => {
+    const b5 = { suit: "b" as const, rank: 5 };
+    const z7 = { suit: "z" as const, rank: 7 };
+    const early = (s: GameState, from: number | null) =>
+      scoreWin(s, 0, from, b5, null)
+        .matched.map((m) => m.pattern.id)
+        .filter((id) => id.startsWith("early-win"))
+        .join();
+    // So many tiles lying in the ponds (spread round the table).
+    const withPonds = (n: number) => {
+      const s = newGame();
+      s.firstGoAround = false;
+      s.players[0].hand = parseHand("123m456m789m123t456t55b");
+      s.players.forEach((p, i) => (p.discards = Array.from({ length: Math.floor(n / 4) + (i < n % 4 ? 1 : 0) }, () => z7)));
+      s.discardsMade = n + 3; // (more were thrown: some claimed into melds - they don't count)
+      return s;
+    };
+    expect(early(withPonds(0), null)).toBe("early-win-four");
+    expect(early(withPonds(4), null)).toBe("early-win-four");
+    expect(early(withPonds(5), 2)).toBe("early-win-seven");
+    expect(early(withPonds(7), null)).toBe("early-win-seven");
+    expect(early(withPonds(8), 1)).toBe("early-win-ten");
+    expect(early(withPonds(10), null)).toBe("early-win-ten");
+    expect(early(withPonds(11), 3)).toBe("");
+    // Off a discard, through the real moves: the tile won off has left the pond.
+    const s0 = withPonds(4);
+    s0.players[0].hand = parseHand("123m456m789m123t456t5b");
+    s0.players[3].hand = parseHand("5b123456789m1234t");
+    s0.phase = { kind: "turn", seat: 3, drawn: null, replacement: null };
+    const thrown = applyTurnMove(s0, { kind: "discard", tile: b5 });
+    const won = resolveClaims(thrown, [{ kind: "win" }, null, null, null]);
+    expect(won.phase.kind === "over" && won.phase.result.score!.matched.some((m) => m.pattern.id === "early-win-four")).toBe(true);
   });
 
   it("labels the round and deal", () => {
