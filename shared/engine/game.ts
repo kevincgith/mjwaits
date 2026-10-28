@@ -369,7 +369,7 @@ export const FLOWER_BONUS = { 草: 3, 花: 5, 花草: 8, 八仙過海: 100 } as 
 export const CONCEALED_KONG_BONUS = 5;
 
 // 追: four players in a row discard the same tile, with no call between -
-// the fourth pays each of the others this (an honour tile, or m/t/b).
+// the first of them pays each of the others this (an honour tile, or m/t/b).
 export const CHASE_PENALTY = { honour: 5, suited: 10 };
 
 // 7搶1 / 1搶7: the last of the eight flowers out, split seven and one - paid
@@ -719,11 +719,13 @@ export function applyTurnMove(state: GameState, move: TurnMove): GameState {
       if (!s.runBack) p.threw = { ...move.tile };
       // 過水 lifts with a throw that wouldn't have completed the hand.
       if (p.overWater && !isWinningHand(p, move.tile)) delete p.overWater;
-      // 追: the fourth player in a row to throw the same tile pays the rest.
+      // 追: the same tile thrown by four players in a row - the first of them
+      // (the one after this seat) pays the rest.
       const run = s.chase && sameTile(s.chase.tile, move.tile) && (s.chase.seat + 1) % SEATS === seat ? s.chase.run + 1 : 1;
       if (run === SEATS) {
+        const first = (seat + 1) % SEATS;
         const penalty = move.tile.suit === "z" ? CHASE_PENALTY.honour : CHASE_PENALTY.suited;
-        (s.tableBonuses ??= []).push({ seat, name: "追", deltas: collectFromEach(seat, -penalty), paid: false });
+        (s.tableBonuses ??= []).push({ seat: first, name: "追", deltas: collectFromEach(first, -penalty), paid: false });
         s.chase = undefined;
       } else s.chase = { seat, tile: move.tile, run };
       s.discardsMade++;

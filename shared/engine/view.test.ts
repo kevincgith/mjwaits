@@ -109,7 +109,7 @@ describe("viewFor", () => {
     }
   });
 
-  it("keeps a concealed kong face down at the end - but a winner's, and your own", () => {
+  it("shows a concealed kong at the end with its player's hand - and keeps it hidden with a hand kept hidden", () => {
     const s = states.find((x) => x.phase.kind === "over" && x.phase.result.winner !== null && x.phase.result.winner !== 0)!;
     const winner = (s.phase as Extract<GameState["phase"], { kind: "over" }>).result.winner!;
     const loser = [1, 2, 3].find((i) => i !== winner)!;
@@ -117,9 +117,13 @@ describe("viewFor", () => {
     const t = { ...s, players: s.players.map((p, i) => (i === winner || i === loser || i === 0 ? { ...p, melds: [...p.melds, kong] } : p)) };
     const v = viewFor(t, 0);
     const last = (seat: number) => v.players[seat].melds[v.players[seat].melds.length - 1];
-    expect(last(loser)).toMatchObject({ hidden: true });
-    expect(last(winner)).not.toHaveProperty("hidden");
-    expect(last(0)).not.toHaveProperty("hidden");
+    expect(last(loser)).toEqual(kong);
+    expect(last(winner)).toEqual(kong);
+    expect(last(0)).toEqual(kong);
+    // The loser keeping their hand hidden (online, when the table lets them).
+    const kept = viewFor(t, 0, (seat) => seat !== loser);
+    expect(kept.players[loser].melds[kept.players[loser].melds.length - 1]).toMatchObject({ hidden: true });
+    expect(kept.players[loser].hand).toBeNull();
   });
 
   it("is a copy: changing the view can't change the game", () => {

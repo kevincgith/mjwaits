@@ -589,9 +589,9 @@ describe("追", () => {
     return s;
   };
   const fresh = () => ({ ...newGame(), tableBonuses: undefined });
-  it("the fourth in a row to throw the same tile pays the rest: 5 for an honour, 10 for m/t/b", () => {
-    expect(throwAround(fresh(), [0, 1, 2, 3], "7z").tableBonuses).toEqual([{ seat: 3, name: "追", deltas: [5, 5, 5, -15], paid: false }]);
-    expect(throwAround(fresh(), [2, 3, 0, 1], "5m").tableBonuses).toEqual([{ seat: 1, name: "追", deltas: [10, -30, 10, 10], paid: false }]);
+  it("the first of four in a row to throw the same tile pays the rest: 5 for an honour, 10 for m/t/b", () => {
+    expect(throwAround(fresh(), [0, 1, 2, 3], "7z").tableBonuses).toEqual([{ seat: 0, name: "追", deltas: [-15, 5, 5, 5], paid: false }]);
+    expect(throwAround(fresh(), [2, 3, 0, 1], "5m").tableBonuses).toEqual([{ seat: 2, name: "追", deltas: [10, 10, -30, 10], paid: false }]);
   });
   it("needs four seats in turn and the same tile", () => {
     expect(throwAround(throwAround(fresh(), [0, 1, 2], "7z"), [3], "6z").tableBonuses).toBeUndefined();
@@ -603,7 +603,7 @@ describe("追", () => {
     s.players = s.players.map((p, i) => (i === 2 ? { ...p, hand: [...parseHand("1111m"), ...p.hand], riichi: undefined } : p));
     s = applyTurnMove(s, { kind: "concealedKong", tile: parseHand("1m")[0] });
     s = throwAround(s, [2, 3], "7z");
-    expect(s.tableBonuses?.filter((b) => b.name === "追")).toEqual([{ seat: 3, name: "追", deltas: [5, 5, 5, -15], paid: false }]);
+    expect(s.tableBonuses?.filter((b) => b.name === "追")).toEqual([{ seat: 0, name: "追", deltas: [-15, 5, 5, 5], paid: false }]);
   });
 });
 
