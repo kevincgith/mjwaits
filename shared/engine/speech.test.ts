@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { seededRng } from "./bots";
 import { RIVALS } from "./lines/rivals";
-import { callLines, isComeback, LineCounter, MYSTERY_SPEECH, named, pickSituation, situations, SPEECH, type CallKind, type Outcome } from "./speech";
+import { callLines, isComeback, lineId, LineCounter, MYSTERY_SPEECH, named, pickSituation, situations, SPEECH, spokenText, type CallKind, type Outcome } from "./speech";
 
 describe("call bubbles", () => {
   const all = [...Object.values(SPEECH), MYSTERY_SPEECH];
@@ -119,5 +119,23 @@ describe("lines aimed at someone", () => {
         expect(new Set(lines).size, `${me}->${at}`).toBe(lines.length);
       }
     }
+  });
+});
+
+describe("lines said aloud", () => {
+  it("leave out a name, and the call a call clip has just said", () => {
+    expect(spokenText("call", "碰！老嘢眼利。")).toBe("老嘢眼利。");
+    expect(spokenText("call", "碰！")).toBe("");
+    expect(spokenText("call", "上啦。")).toBe("上啦。");
+    expect(spokenText("win", "食糊！推牌推牌。")).toBe("推牌推牌。");
+    expect(spokenText("youCold", "{name}，你又出銃喎。")).toBe("你又出銃喎。");
+    expect(spokenText("idle", "碰！唔係呢度。")).toBe("碰！唔係呢度。");
+    expect(spokenText("idle", "……")).toBe("");
+  });
+
+  it("name each clip by what it says, the same every time", () => {
+    expect(lineId("老嘢眼利。")).toBe(lineId("老嘢眼利。"));
+    expect(lineId("老嘢眼利。")).not.toBe(lineId("老嘢眼利！"));
+    expect(lineId("老嘢眼利。")).toMatch(/^[0-9a-z]+$/);
   });
 });

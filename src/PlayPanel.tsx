@@ -101,7 +101,7 @@ import {
   type Outcome,
 } from "@mjwaits/shared/engine/speech";
 import { RIVALS } from "@mjwaits/shared/engine/lines/rivals";
-import { canSpeak, getTalk, isAloud, onVoices, setAloud, setTalk, speak, type Talk } from "./lib/voice";
+import { getTalk, isAloud, sayAloud, sayLineAloud, setAloud, setTalk, warmVoices, type Talk, type VoiceCall } from "./lib/voice";
 import { scoreView, type ResultView } from "@mjwaits/shared/engine/view";
 import { MYSTERY_BOT, REACTIONS, type Reaction, type TableClientMessage, type TableState } from "@mjwaits/shared/protocol/table";
 import { BLANK, seatState } from "./lib/seatState";
@@ -425,6 +425,9 @@ function RevealedHandView({ tiles, winningTile, topple = TOPPLE_WINNER }: { tile
   );
 }
 
+// The bursts a bot says aloud (see voice.ts).
+const VOICED: Record<string, VoiceCall> = { 碰: "pung", 上: "chow", 槓: "kong", 胡: "win", 雙響: "win", 三響: "win", 自摸: "selfDraw", 叮: "riichi", 搶槓: "robKong" };
+
 // The sound for a burst: a win, 叮, a call, or (anything longer, as 正花 +2) a bonus.
 function burstSound(label: string): Sound {
   if (/胡|自摸|搶槓|響/.test(label)) return "win";
@@ -433,13 +436,11 @@ function burstSound(label: string): Sound {
   return "bonus";
 }
 
-// 枱邊講嘢: how much the bots talk - and 講出聲, whether aloud (only where
-// the device has a Cantonese voice) - in either menu, after Sound.
+// 枱邊講嘢: how much the bots talk - and 講出聲, whether their calls are said
+// aloud - in either menu, after Sound.
 function TalkRows() {
   const [talk, setTalkState] = useState<Talk>(getTalk);
   const [aloud, setAloudState] = useState(isAloud);
-  const [voice, setVoice] = useState(canSpeak);
-  useEffect(() => onVoices(() => setVoice(canSpeak())), []);
   const talks: [Talk, string][] = [
     ["chatty", "Chatty"],
     ["quiet", "Quiet"],
@@ -460,14 +461,14 @@ function TalkRows() {
       <div className="play-menu-row">
         <span>
           講出聲 Say it aloud
-          {!voice && <span className="play-menu-note"> · no Cantonese voice on this device</span>}
+          <span className="play-menu-note"> · each bot in its own voice</span>
         </span>
         <span className="play-menu-seg">
           {[true, false].map((on) => (
             <button
               key={String(on)}
               type="button"
-              disabled={!voice || talk === "off"}
+              disabled={talk === "off"}
               className={aloud === on ? "toggle-on" : undefined}
               aria-pressed={aloud === on}
               onClick={() => (setAloud(on), setAloudState(on))}
@@ -1343,6 +1344,15 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     const bot = bots[seat];
     return bot ? (mysteryStyle(bot) ? "mystery" : (learnedStyle(bot) ?? bot.id)) : null;
   };
+  // The bots' voices fetched ahead of their first call - once a tap has woken
+  // the audio, and again for a new line-up.
+  const voiceStyles = [1, 2, 3].map(styleOf).filter((s): s is string => s !== null).join();
+  useEffect(() => {
+    const warm = () => warmVoices(voiceStyles.split(",").filter(Boolean));
+    warm();
+    window.addEventListener("pointerdown", warm, { once: true });
+    return () => window.removeEventListener("pointerdown", warm);
+  }, [voiceStyles]);
   // A person's name to call them by - online, their nickname; else none.
   const nickOf = (seat: number): string | null => {
     if (!online || !net || bots[seat]) return null;
@@ -1372,7 +1382,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     const id = Date.now() + seat;
     setBubbles((b) => ({ ...b, [seat]: { text, id } }));
     window.setTimeout(() => setBubbles((b) => (b[seat]?.id === id ? Object.fromEntries(Object.entries(b).filter(([k]) => Number(k) !== seat)) : b)), bubbleMs(text));
-    speak(text, styleOf(seat)!);
+    sayLineAloud(styleOf(seat)!, kind, raw);
   };
   const sayLater = (ms: number, seat: number, kind: keyof Speech, opts: { target?: number; pool?: string[]; tai?: number; own?: boolean } = {}) =>
     window.setTimeout(() => say(seat, kind, opts), ms);
@@ -1496,6 +1506,9 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
   // `deltas`: a bonus's payments, for the bubbles over everyone it touches.
   const showBurst = (seat: number, label: string, deltas?: number[]) => {
     playSound(burstSound(label));
+    // A bot calls it out loud, in its own voice.
+    const voiced = VOICED[label];
+    if (voiced && bots[seat]) sayAloud(styleOf(seat)!, voiced);
     const id = Date.now();
     setBurst({ seat, label, id, deltas });
     window.setTimeout(() => setBurst((b) => (b?.id === id ? null : b)), BURST_MS);

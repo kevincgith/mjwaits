@@ -1,13 +1,15 @@
 // The bots' table talk: how much of it (枱邊講嘢 - chatty, quiet or off) and
-// whether it's said aloud (講出聲) - in a Cantonese voice from the device
-// itself (speechSynthesis, nothing to load), each personality at its own
-// pitch and pace. Both remembered on this phone; aloud is off by default,
-// and never while the sound's off (see sound.ts) or with no Cantonese voice
-// to say it in (a Mandarin one would read the lines all wrong).
+// whether it's said aloud (講出聲) - each personality's calls (碰, 上, 槓, 食糊,
+// 自摸, 叮, 搶槓) and lines in a natural Cantonese voice, clips made ahead of
+// time (scripts/voices.ts) into public/voices/<personality>/. Off by
+// default. They play through the same audio as the table's sounds, so never while
+// the sound's off (see sound.ts). Both settings remembered on this phone.
 
-import { isMuted } from "./sound";
+import { lineId, spokenText, type Speech } from "@mjwaits/shared/engine/speech";
+import { awakeAudio, isMuted, madeAudio } from "./sound";
 
 export type Talk = "chatty" | "quiet" | "off";
+export type VoiceCall = "pung" | "chow" | "kong" | "win" | "selfDraw" | "riichi" | "robKong";
 
 const TALK_KEY = "mjwaits.talk";
 const VOICE_KEY = "mjwaits.voice";
@@ -32,65 +34,71 @@ export const getTalk = () => talk;
 export function setTalk(t: Talk) {
   talk = t;
   write(TALK_KEY, t);
-  if (t === "off") quiet();
 }
 
+// Off unless turned on.
 let aloud = read(VOICE_KEY) === "1";
 export const isAloud = () => aloud;
 export function setAloud(on: boolean) {
   aloud = on;
   write(VOICE_KEY, on ? "1" : "0");
-  if (!on) quiet();
 }
 
-const synth = (): SpeechSynthesis | null => (typeof window !== "undefined" && "speechSynthesis" in window ? window.speechSynthesis : null);
-
-// A Cantonese voice on this device, if there is one (the list can come late).
-function cantonese(): SpeechSynthesisVoice | null {
-  const voices = synth()?.getVoices() ?? [];
-  return voices.find((v) => /^(zh[-_]HK|yue)/i.test(v.lang)) ?? voices.find((v) => /cantonese|粵|廣東/i.test(v.name)) ?? null;
-}
-export const canSpeak = () => cantonese() !== null;
-// Calls back once the device's voices are in (or straight away if they are).
-export function onVoices(cb: () => void): () => void {
-  const s = synth();
-  if (!s) return () => {};
-  s.addEventListener("voiceschanged", cb);
-  return () => s.removeEventListener("voiceschanged", cb);
+// Each clip, fetched and decoded the first time it's wanted, then kept.
+const clips = new Map<string, Promise<AudioBuffer | null>>();
+function clip(a: AudioContext, url: string): Promise<AudioBuffer | null> {
+  let c = clips.get(url);
+  if (!c) {
+    c = fetch(url)
+      .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(String(r.status)))))
+      .then((b) => a.decodeAudioData(b))
+      .catch(() => null);
+    clips.set(url, c);
+  }
+  return c;
 }
 
-// Each personality's pitch and pace.
-const STYLE: Record<string, { pitch: number; rate: number }> = {
-  grandmaster: { pitch: 0.75, rate: 0.85 },
-  veteran: { pitch: 0.9, rate: 0.95 },
-  speedster: { pitch: 1.15, rate: 1.45 },
-  hunter: { pitch: 0.85, rate: 1.0 },
-  wall: { pitch: 0.95, rate: 0.8 },
-  gambler: { pitch: 1.05, rate: 1.2 },
-  casual: { pitch: 1.3, rate: 1.05 },
-  mystery: { pitch: 1.0, rate: 1.0 },
+// Each personality's pace - and with it, a little, its pitch: two that
+// share a voice (the Grandmaster and the Hunter, say) sound apart.
+const PACE: Record<string, number> = { grandmaster: 0.88, veteran: 0.96, speedster: 1.12, hunter: 1.04, wall: 0.9, gambler: 1.08, casual: 1.04, mystery: 1 };
+const url = (style: string, name: string) => `${import.meta.env.BASE_URL}voices/${style}/${name}.mp3`;
+
+// When the line being said ends: one line at a time (a call cuts in).
+let saying = 0;
+function playClip(a: AudioContext, style: string, name: string, line: boolean) {
+  void clip(a, url(style, name)).then((buffer) => {
+    if (!buffer || (line && a.currentTime < saying)) return;
+    const src = a.createBufferSource();
+    src.buffer = buffer;
+    src.playbackRate.value = PACE[style] ?? 1;
+    src.connect(a.destination);
+    src.start();
+    if (line) saying = a.currentTime + buffer.duration / src.playbackRate.value;
+  });
+}
+const live = () => {
+  const a = awakeAudio();
+  return a && aloud && !isMuted() && talk !== "off" ? a : null;
 };
 
-// Say a line aloud - unless something's already waiting to be said (lines
-// are short; a queue of them would run on long after the moment).
-export function speak(text: string, style: string) {
-  const s = synth();
-  const voice = cantonese();
-  if (!s || !voice || !aloud || isMuted() || talk === "off" || s.pending) return;
-  // A voice that won't take the line is no reason to lose the bubble.
-  try {
-    const u = new SpeechSynthesisUtterance(text.replace(/[…]+/g, "，").replace(/[～~]/g, ""));
-    u.voice = voice;
-    u.lang = voice.lang;
-    const { pitch, rate } = STYLE[style] ?? STYLE.mystery;
-    u.pitch = pitch;
-    u.rate = rate;
-    s.speak(u);
-  } catch {
-    // Said nothing.
-  }
+// A bot's call, aloud ("mystery" for a mystery bot - its voice is no one's).
+export function sayAloud(style: string, call: VoiceCall) {
+  const a = live();
+  if (a) playClip(a, style, call, false);
 }
 
-function quiet() {
-  synth()?.cancel();
+// A bot's line, aloud - what's left of it to say (see spokenText); a line
+// with no clip made is just shown.
+export function sayLineAloud(style: string, kind: keyof Speech, line: string) {
+  const a = live();
+  const text = spokenText(kind, line);
+  if (a && text) playClip(a, style, lineId(text), true);
+}
+
+// Fetched ahead, so the first call isn't late (once a tap has made the audio).
+export function warmVoices(styles: string[]) {
+  const a = madeAudio();
+  if (!a) return;
+  const calls: VoiceCall[] = ["pung", "chow", "kong", "win", "selfDraw", "riichi", "robKong"];
+  for (const s of styles) for (const c of calls) void clip(a, url(s, c));
 }

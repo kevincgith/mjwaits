@@ -117,6 +117,29 @@ export function named(lines: string[], name: string | null): string[] {
   return name === null ? lines.filter((l) => !l.includes(NAME)) : lines;
 }
 
+// ---- Said aloud --------------------------------------------------------------------
+
+// What of a line is said aloud: a name it'd use left out (a clip can't say
+// it), and for a call, a win or 叮, the call itself - the bot's call clip
+// has just said that (see voice.ts). "" if nothing's left.
+const CALL_WORD = /^(碰|上|槓|叮|搶槓|自摸|食糊|糊)[！!，。、…～\s]+/;
+const CALLED: (keyof Speech)[] = ["call", "riichi", "robKong", "selfDraw", "win", "bigWin"];
+export function spokenText(kind: keyof Speech, line: string): string {
+  let text = line.replace(/\{name\}[，,…\s]*/g, "");
+  if (CALLED.includes(kind)) text = text.replace(CALL_WORD, "");
+  return /[\p{L}\p{N}]/u.test(text) ? text : "";
+}
+
+// A clip's name for a line said aloud: a short hash of what's said (FNV-1a).
+export function lineId(text: string): string {
+  let h = 0x811c9dc5;
+  for (const ch of text) {
+    h ^= ch.codePointAt(0)!;
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(36);
+}
+
 // Lines about the size of a win fit only a win that size: no 雞糊 sneered
 // at a big hand, no "what a hand" for a small one - nor, from the winner
 // (`own`), crowing over a big hand that wasn't.
