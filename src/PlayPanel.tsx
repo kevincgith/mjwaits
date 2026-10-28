@@ -93,10 +93,15 @@ import {
   isComeback,
   LineCounter,
   MYSTERY_CHATTINESS,
+  forWin,
+  NAME,
+  named,
   pickSituation,
   situations,
   type Outcome,
 } from "@mjwaits/shared/engine/speech";
+import { RIVALS } from "@mjwaits/shared/engine/lines/rivals";
+import { canSpeak, getTalk, isAloud, onVoices, setAloud, setTalk, speak, type Talk } from "./lib/voice";
 import { scoreView, type ResultView } from "@mjwaits/shared/engine/view";
 import { MYSTERY_BOT, REACTIONS, type Reaction, type TableClientMessage, type TableState } from "@mjwaits/shared/protocol/table";
 import { BLANK, seatState } from "./lib/seatState";
@@ -179,6 +184,8 @@ type Speed = keyof typeof SPEEDS;
 // gets a red mark.
 const DANGER_MARK = 0.12;
 const BUBBLE_MS = 2200;
+// Long enough to read: a longer line stays up longer.
+const bubbleMs = (text: string) => Math.max(BUBBLE_MS, 900 + [...text].length * 160);
 const BURST_MS = 1200;
 // A hand's end is seen on the table first - the 胡 / 自摸 called and the
 // hands laid down - and only then the result card: this long after a win,
@@ -424,6 +431,54 @@ function burstSound(label: string): Sound {
   if (label === "叮") return "riichi";
   if (label === "碰" || label === "上" || label === "槓") return "call";
   return "bonus";
+}
+
+// 枱邊講嘢: how much the bots talk - and 講出聲, whether aloud (only where
+// the device has a Cantonese voice) - in either menu, after Sound.
+function TalkRows() {
+  const [talk, setTalkState] = useState<Talk>(getTalk);
+  const [aloud, setAloudState] = useState(isAloud);
+  const [voice, setVoice] = useState(canSpeak);
+  useEffect(() => onVoices(() => setVoice(canSpeak())), []);
+  const talks: [Talk, string][] = [
+    ["chatty", "Chatty"],
+    ["quiet", "Quiet"],
+    ["off", "Off"],
+  ];
+  return (
+    <>
+      <div className="play-menu-row">
+        <span>枱邊講嘢 Table talk</span>
+        <span className="play-menu-seg">
+          {talks.map(([t, label]) => (
+            <button key={t} type="button" className={talk === t ? "toggle-on" : undefined} aria-pressed={talk === t} onClick={() => (setTalk(t), setTalkState(t))}>
+              {label}
+            </button>
+          ))}
+        </span>
+      </div>
+      <div className="play-menu-row">
+        <span>
+          講出聲 Say it aloud
+          {!voice && <span className="play-menu-note"> · no Cantonese voice on this device</span>}
+        </span>
+        <span className="play-menu-seg">
+          {[true, false].map((on) => (
+            <button
+              key={String(on)}
+              type="button"
+              disabled={!voice || talk === "off"}
+              className={aloud === on ? "toggle-on" : undefined}
+              aria-pressed={aloud === on}
+              onClick={() => (setAloud(on), setAloudState(on))}
+            >
+              {on ? "On" : "Off"}
+            </button>
+          ))}
+        </span>
+      </div>
+    </>
+  );
 }
 
 // 音效: sound on or off, in either menu.
@@ -1258,7 +1313,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
   const showBubble = (seat: number, text: string) => {
     const id = Date.now() + seat;
     setBubbles((b) => ({ ...b, [seat]: { text, id } }));
-    window.setTimeout(() => setBubbles((b) => (b[seat]?.id === id ? Object.fromEntries(Object.entries(b).filter(([k]) => Number(k) !== seat)) : b)), BUBBLE_MS);
+    window.setTimeout(() => setBubbles((b) => (b[seat]?.id === id ? Object.fromEntries(Object.entries(b).filter(([k]) => Number(k) !== seat)) : b)), bubbleMs(text));
   };
   const reaction = online?.reaction ?? null;
   useEffect(() => {
@@ -1280,36 +1335,72 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
   const chattiness = (seat: number) => {
     const bot = bots[seat];
     if (!bot) return 0;
-    return mysteryStyle(bot) ? MYSTERY_CHATTINESS : (CHATTINESS[learnedStyle(bot) ?? bot.id] ?? 0.5);
+    const base = mysteryStyle(bot) ? MYSTERY_CHATTINESS : (CHATTINESS[learnedStyle(bot) ?? bot.id] ?? 0.5);
+    return getTalk() === "quiet" ? base * 0.5 : base;
   };
-  // A call says which (chow, pung, kong), so the line fits it.
-  const say = (seat: number, kind: keyof Speech, call?: CallKind) => {
+  // Whose lines a bot speaks: its personality's ("mystery" for a mystery bot).
+  const styleOf = (seat: number): string | null => {
     const bot = bots[seat];
-    if (!bot) return;
+    return bot ? (mysteryStyle(bot) ? "mystery" : (learnedStyle(bot) ?? bot.id)) : null;
+  };
+  // A person's name to call them by - online, their nickname; else none.
+  const nickOf = (seat: number): string | null => {
+    if (!online || !net || bots[seat]) return null;
+    const info = online.table.seats[net.toTable(seat)];
+    return info && info.kind !== "bot" ? info.name : null;
+  };
+  // A line from a bot: of a kind, or from `pool` - in a bubble that stays
+  // as long as it takes to read, and aloud if that's on. A call says which
+  // (chow, pung, kong), so the line fits it; `target`, whom it's aimed at,
+  // so a line can name them (see named). Quiet table talk lets half the
+  // small talk go - never a win, 叮 or call.
+  const say = (seat: number, kind: keyof Speech, opts: { call?: CallKind; target?: number; pool?: string[]; tai?: number; own?: boolean } = {}) => {
+    const bot = bots[seat];
+    const talk = getTalk();
+    if (!bot || talk === "off") return;
+    if (talk === "quiet" && !["call", "win", "selfDraw", "bigWin", "riichi", "robKong"].includes(kind) && Math.random() < 0.5) return;
     const speech = speechOf(bot);
-    const text = lines.current!.next(call ? callLines(speech, call) : speech[kind]);
-    if (!text) return;
+    const name = opts.target === undefined ? null : nickOf(opts.target);
+    const pool = opts.pool ?? (opts.call ? callLines(speech, opts.call, speech[kind]) : speech[kind]);
+    const raw = lines.current!.next(named(opts.tai === undefined ? pool : forWin(pool, opts.tai, opts.own), name));
+    if (!raw) return;
+    const text = name === null ? raw : raw.replaceAll(NAME, name);
     window.clearTimeout(keepLines.current);
     keepLines.current = window.setTimeout(() => saveLineCounts(lines.current!.said()), 2000);
     spoke.current.any = Date.now();
     spoke.current.seat[seat] = Date.now();
     const id = Date.now() + seat;
     setBubbles((b) => ({ ...b, [seat]: { text, id } }));
-    window.setTimeout(() => setBubbles((b) => (b[seat]?.id === id ? Object.fromEntries(Object.entries(b).filter(([k]) => Number(k) !== seat)) : b)), BUBBLE_MS);
+    window.setTimeout(() => setBubbles((b) => (b[seat]?.id === id ? Object.fromEntries(Object.entries(b).filter(([k]) => Number(k) !== seat)) : b)), bubbleMs(text));
+    speak(text, styleOf(seat)!);
   };
-  const sayLater = (ms: number, seat: number, kind: keyof Speech) => window.setTimeout(() => say(seat, kind), ms);
+  const sayLater = (ms: number, seat: number, kind: keyof Speech, opts: { target?: number; pool?: string[]; tai?: number; own?: boolean } = {}) =>
+    window.setTimeout(() => say(seat, kind, opts), ms);
+  // A bot's lines for another (see RIVALS), if it has any for that one.
+  const rivalLines = (seat: number, at: number): string[] | undefined => {
+    const me = styleOf(seat);
+    const them = styleOf(at);
+    return me && them ? RIVALS[me]?.[them] : undefined;
+  };
   // A dig - at `target` if there's one (else the table) - and, as at a real
   // table, sometimes a word back: from the target if it's a bot, else from
-  // another bot.
-  const taunt = (ms: number, seat: number, target: number | null = null) => {
-    sayLater(ms, seat, "taunt");
+  // another bot. A bot with something particular to say to that bot (or
+  // back) says that more often than not. `kind`: a dig any time, or at
+  // someone who's just dealt in.
+  const taunt = (ms: number, seat: number, target: number | null = null, kind: "taunt" | "dealInTaunt" = "taunt", tai?: number) => {
+    const aimed = target !== null ? rivalLines(seat, target) : undefined;
+    sayLater(ms, seat, kind, { ...(target !== null ? { target } : {}), ...(aimed && Math.random() < 0.6 ? { pool: aimed } : {}), ...(tai !== undefined ? { tai } : {}) });
     const back = target !== null ? (bots[target] ? [target] : []) : [1, 2, 3].filter((s) => s !== seat && bots[s]);
     const s = back[Math.floor(Math.random() * back.length)];
-    if (s !== undefined && Math.random() < 0.25 + chattiness(s) * 0.5) sayLater(ms + 1800 + Math.random() * 800, s, "retort");
+    if (s === undefined || Math.random() > 0.25 + chattiness(s) * 0.5) return;
+    const answer = rivalLines(s, seat);
+    sayLater(ms + 1800 + Math.random() * 800, s, "retort", answer && Math.random() < 0.5 ? { pool: answer } : {});
   };
-  // Not every call gets a word - the chattier, the likelier.
-  const sayCall = (seat: number, call: CallKind) => {
-    if (Math.random() < 0.3 + 0.65 * chattiness(seat)) say(seat, "call", call);
+  // Not every call gets a word - the chattier, the likelier. And sometimes
+  // the one whose discard it was has something to say about it.
+  const sayCall = (seat: number, call: CallKind, from: number) => {
+    if (Math.random() < 0.3 + 0.65 * chattiness(seat)) say(seat, "call", { call });
+    if (from !== seat && bots[from] && Math.random() < chattiness(from) * 0.35) window.setTimeout(() => say(from, "claimedFrom", { call, target: seat }), 1200);
   };
   // 叮: said by whoever declares it - and sometimes someone else reacts.
   const sayRiichi = (seat: number) => {
@@ -1424,7 +1515,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     const at = net.toLocal;
     if (lastAction.kind === "call") {
       showBurst(at(lastAction.seat), lastAction.call === "chow" ? "上" : lastAction.call === "pung" ? "碰" : "槓");
-      sayCall(at(lastAction.seat), lastAction.call);
+      sayCall(at(lastAction.seat), lastAction.call, at(lastAction.from));
     } else if (lastAction.kind === "kong") showBurst(at(lastAction.seat), "槓");
     else if (lastAction.kind === "discard" && lastAction.riichi) {
       showBurst(at(lastAction.seat), "叮");
@@ -1459,10 +1550,12 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
       talkers.forEach((s, i) => sayLater(400 + i * 900, s, "drawGame"));
       return;
     }
+    // How big a win it was - the biggest, with more than one - so what's said fits.
+    const tai = Math.max(...winners.map((w) => w.score?.total ?? 0));
     winners.forEach(({ winner, score }, i) => {
-      const tai = score?.total ?? 0;
+      const own = score?.total ?? 0;
       const kind: keyof Speech =
-        tai >= BIG_WIN_TAI && Math.random() < 0.75
+        own >= BIG_WIN_TAI && Math.random() < 0.75
           ? "bigWin"
           : isComeback(totals, r.deltas, winner) && Math.random() < 0.6
             ? "comeback"
@@ -1470,16 +1563,27 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
               ? "hot"
               : r.from === null
                 ? "selfDraw"
-                : "win";
-      sayLater(i * 700, winner, kind);
+                : r.robKong && Math.random() < 0.7
+                  ? "robKong"
+                  : "win";
+      sayLater(i * 700, winner, kind, { tai: own, own: true, ...(r.from !== null ? { target: r.from } : {}) });
     });
-    if (r.from !== null && !r.robKong) sayLater(600, r.from, situations(moodOf(r.from)).includes("cold") && Math.random() < 0.35 ? "cold" : "dealIn");
-    else if (r.from !== null) sayLater(600, r.from, "dealIn");
+    if (r.from !== null && !r.robKong) sayLater(600, r.from, situations(moodOf(r.from)).includes("cold") && Math.random() < 0.35 ? "cold" : "dealIn", { tai });
+    else if (r.from !== null) sayLater(600, r.from, Math.random() < 0.7 ? "robbed" : "dealIn", { tai });
     const lookers = [1, 2, 3].filter((s) => s !== r.from && !winners.some((w) => w.winner === s) && bots[s]);
     const looker = lookers[Math.floor(Math.random() * lookers.length)];
-    if (looker !== undefined && Math.random() < chattiness(looker) * 0.7) {
-      if (r.from !== null && Math.random() < 0.4) taunt(1500, looker, r.from);
-      else sayLater(1500, looker, "othersWin");
+    // You, at it again - dealing in, or winning, two hands of the last three.
+    const mine = history.current[HUMAN].slice(-3);
+    const youAgain =
+      seated && r.from === HUMAN && mine.filter((o) => o === "dealIn").length >= 2
+        ? "youCold"
+        : seated && winners.some((w) => w.winner === HUMAN) && mine.filter((o) => o === "win").length >= 2
+          ? "youHot"
+          : null;
+    if (looker !== undefined && youAgain && Math.random() < 0.35 + chattiness(looker) * 0.5) sayLater(1500, looker, youAgain, { target: HUMAN, tai });
+    else if (looker !== undefined && Math.random() < chattiness(looker) * 0.7) {
+      if (r.from !== null && Math.random() < 0.4) taunt(1500, looker, r.from, "dealInTaunt", tai);
+      else sayLater(1500, looker, "othersWin", { target: winners[0].winner, tai });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [overKey]);
@@ -1488,12 +1592,24 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
   // about the hand, or how the game's going for them.
   const freshDealKey = game.phase.kind === "turn" && game.discardsMade === 0 ? JSON.stringify([online?.table.hand ?? null, game.dealer, game.dealerStreak, game.roundWind]) : null;
   const seenDeal = useRef<string | null>(freshDealKey);
+  const dealtRound = useRef<number | null>(freshDealKey ? game.roundWind : null);
   useEffect(() => {
     if (!freshDealKey || seenDeal.current === freshDealKey) return;
     seenDeal.current = freshDealKey;
     const talkers = [1, 2, 3].filter((s) => bots[s]);
     const s = talkers[Math.floor(Math.random() * talkers.length)];
-    if (s === undefined || Math.random() > 0.25 + chattiness(s) * 0.4) return;
+    const newRound = dealtRound.current !== null && dealtRound.current !== game.roundWind;
+    dealtRound.current = game.roundWind;
+    if (s === undefined) return;
+    // A new round wind, the dice paying out, the dealer staying on (連莊):
+    // said more often than not.
+    if (newRound && Math.random() < 0.7) return void sayLater(900, s, "roundChange");
+    if (game.diceBonus && Math.random() < 0.6) return void sayLater(1600, s, "dice");
+    if (game.dealerStreak > 0 && Math.random() < 0.55) {
+      if (bots[game.dealer]) return void sayLater(900, game.dealer, "dealerStay");
+      return void sayLater(900, s, "dealerStaySeen", { target: game.dealer });
+    }
+    if (Math.random() > 0.25 + chattiness(s) * 0.4) return;
     // A poor (or fine) deal draws a remark - but a player gives nothing
     // away: a fine hand is as often played down, a poor one bluffed up. Not
     // online, where their hand is hidden.
@@ -1519,7 +1635,10 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     if (seat === undefined) return;
     const about = pickSituation(moodOf(seat));
     // Ahead, half the time a dig at the rest - and now and then anyway.
-    if ((about === "ahead" && Math.random() < 0.5) || Math.random() < 0.15) taunt(500, seat);
+    // Now and then a word for one bot in particular (see RIVALS).
+    const other = [1, 2, 3].filter((s) => s !== seat && rivalLines(seat, s))[Math.floor(Math.random() * 2)];
+    if (other !== undefined && Math.random() < 0.12) taunt(500, seat, other);
+    else if ((about === "ahead" && Math.random() < 0.5) || Math.random() < 0.15) taunt(500, seat);
     else sayLater(500, seat, about);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [game.discardsMade]);
@@ -1542,6 +1661,29 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     if (s !== undefined && Math.random() < 0.2 + chattiness(s) * 0.6) sayLater(600, s, "honoursSeen");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [game.discardsMade]);
+
+  // Bonuses paid at the table as they come (here or online): flowers, 追,
+  // 嗌錯 - a word from the one paid (or paying), or from someone else.
+  const talkedBonuses = useRef<{ deal: unknown; count: number }>({ deal: dealKey, count: (game.tableBonuses ?? []).length });
+  useEffect(() => {
+    const all = game.tableBonuses ?? [];
+    if (talkedBonuses.current.deal !== dealKey) talkedBonuses.current = { deal: dealKey, count: game.discardsMade === 0 ? 0 : all.length };
+    if (all.length <= talkedBonuses.current.count) return;
+    const fresh = all.slice(talkedBonuses.current.count);
+    talkedBonuses.current.count = all.length;
+    for (const b of fresh) {
+      const mine: keyof Speech | null = b.name === "追" ? "chased" : b.name === "嗌錯" || b.name === "暗槓" ? null : "flowers";
+      const seen: keyof Speech | null = b.name === "追" ? "chaseSeen" : b.name === "嗌錯" ? "wrongCallSeen" : b.name === "暗槓" ? null : "flowersSeen";
+      if (mine && bots[b.seat] && Math.random() < 0.3 + chattiness(b.seat) * 0.5) {
+        sayLater(900, b.seat, mine);
+        continue;
+      }
+      const others = [1, 2, 3].filter((s) => s !== b.seat && bots[s]);
+      const s = others[Math.floor(Math.random() * others.length)];
+      if (seen && s !== undefined && Math.random() < 0.25 + chattiness(s) * 0.5) sayLater(1100, s, seen, { target: b.seat });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [game.tableBonuses]);
 
   // Someone not a bot (you, or a person online) a long while over a move:
   // now and then a bot says so - once a turn at most.
@@ -1592,7 +1734,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     const seat = winningClaimSeat(game, decisions);
     if (seat !== null) {
       showBurst(seat, game.phase.kind === "claims" && game.phase.robKong ? "搶槓" : claimLabel(decisions[seat]!));
-      if (decisions[seat]!.kind !== "win") sayCall(seat, decisions[seat]!.kind as CallKind);
+      if (decisions[seat]!.kind !== "win" && game.phase.kind === "claims") sayCall(seat, decisions[seat]!.kind as CallKind, game.phase.from);
     }
     advance(resolveClaims(game, decisions));
     if (seat === HUMAN && humanClaim && humanClaim.kind !== "win") setLastCall({ before: game, decisions });
@@ -2775,7 +2917,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
           {lahChips(seat)}
         </span>
         {bubbles[seat] && (
-          <span key={bubbles[seat].id} className="play-bubble" role="status">
+          <span key={bubbles[seat].id} className="play-bubble" role="status" style={{ "--bubble-ms": `${bubbleMs(bubbles[seat].text)}ms` } as CSSProperties}>
             {bubbles[seat].text}
           </span>
         )}
@@ -2968,6 +3110,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
                 </span>
               </div>
               <SoundRow />
+              <TalkRows />
               <button type="button" onClick={onExit}>
                 Leave (your seat waits for you)
               </button>
@@ -3034,6 +3177,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
                 </span>
               </div>
               <SoundRow />
+              <TalkRows />
               {onOnline && (
                 <button type="button" className="play-menu-link" onClick={onOnline}>
                   <span>線上對局 Play online</span>
@@ -3301,7 +3445,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
             {me.riichi && <span className="play-riichi">叮</span>}
             {lahChips(HUMAN)}
             {bubbles[HUMAN] && (
-              <span key={bubbles[HUMAN].id} className="play-bubble is-mine" role="status">
+              <span key={bubbles[HUMAN].id} className="play-bubble is-mine" role="status" style={{ "--bubble-ms": `${bubbleMs(bubbles[HUMAN].text)}ms` } as CSSProperties}>
                 {bubbles[HUMAN].text}
               </span>
             )}

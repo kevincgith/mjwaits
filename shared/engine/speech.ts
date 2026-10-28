@@ -1,7 +1,8 @@
 // Speech bubbles: what the bots say at the table, shown by their name. On
 // a call, a win, a self-draw, 叮, dealing in and 投降, someone thinking too
-// long, a run of 番子 thrown, a poor (or fine) deal, a dig at someone - and
-// the table talk
+// long, a run of 番子 thrown, a poor (or fine) deal, a dig at someone and the
+// answer back, a discard called, a kong robbed, 連莊, a new round, 追, 嗌錯,
+// flowers and dice paying, your own streaks - and the table talk
 // between, which turns on how their game is going (ahead or behind, on a run
 // or out of luck, under someone's 叮, the wall running out) and how a hand
 // ends for them (a big win, a comeback, someone else's win, 流局).
@@ -43,8 +44,23 @@ export interface Speech {
   honoursSeen: string[]; // someone else doing that
   badHand: string[]; // dealt a poor hand - or a fine one, played down
   goodHand: string[]; // dealt a fine one - or a poor one, bluffed up
-  taunt: string[]; // a dig at someone - who just dealt in, or the table
+  taunt: string[]; // a dig at someone, or the table - any time
+  dealInTaunt: string[]; // a dig at someone who just dealt in
   retort: string[]; // answering a dig
+  claimedFrom: string[]; // someone called this bot's discard
+  robKong: string[]; // won by robbing a kong (搶槓)
+  robbed: string[]; // its kong robbed
+  dealerStay: string[]; // dealing again (連莊)
+  dealerStaySeen: string[]; // someone else dealing again
+  roundChange: string[]; // a new round wind
+  chased: string[]; // the fourth to throw the same tile, paying for it (追)
+  chaseSeen: string[]; // someone else caught by 追
+  wrongCallSeen: string[]; // someone took a call back, and paid (嗌錯)
+  flowers: string[]; // paid for its flowers (花, 八仙過海, 7搶1 ...)
+  flowersSeen: string[]; // someone else paid for theirs
+  dice: string[]; // the dice paid out before the first discard (圍骰, 蛇骰)
+  youCold: string[]; // you (the one playing) dealing in again and again
+  youHot: string[]; // you winning again and again
 }
 
 export const SPEECH: Record<string, Speech> = {
@@ -82,16 +98,37 @@ const NAMES: Record<CallKind, RegExp> = {
 };
 
 // The lines for this call: those that name it, or no call at all - never
-// a 碰 shouted over a chow.
-export function callLines(speech: Speech, kind: CallKind): string[] {
-  const fits = speech.call.filter((line) => (Object.keys(NAMES) as CallKind[]).every((k) => k === kind || !NAMES[k].test(line)));
-  return fits.length ? fits : speech.call;
+// a 碰 shouted over a chow. From the call lines, or another kind's (a
+// discard called - claimedFrom).
+export function callLines(speech: Speech, kind: CallKind, lines: string[] = speech.call): string[] {
+  const fits = lines.filter((line) => (Object.keys(NAMES) as CallKind[]).every((k) => k === kind || !NAMES[k].test(line)));
+  return fits.length ? fits : lines;
 }
 
 // ---- What to talk about ------------------------------------------------------------
 
 // How a hand went for one seat.
 export type Outcome = "win" | "dealIn" | "none";
+
+// A line aimed at someone may name them - "{name}" - where they have a name
+// to use (online, a person's nickname); elsewhere those lines are left out.
+export const NAME = "{name}";
+export function named(lines: string[], name: string | null): string[] {
+  return name === null ? lines.filter((l) => !l.includes(NAME)) : lines;
+}
+
+// Lines about the size of a win fit only a win that size: no 雞糊 sneered
+// at a big hand, no "what a hand" for a small one - nor, from the winner
+// (`own`), crowing over a big hand that wasn't.
+const SMALL_TALK = /雞糊|咁細|細糊|細牌|番數咁少|食得細|一番|冇大牌|細少少|例外/;
+const BIG_TALK = /好大鋪|咁大鋪|咁好牌|好多番|番數爆|幾大|唔細/;
+const OWN_BIG_TALK = /大牌|清一色|番數夠|夠晒台|台數|計番計到手軟|唔細|十番|傑作|藝術|傳說|傳奇|歷史|史詩|大嘅|大嘢|大格局/;
+export function forWin(lines: string[], tai: number, own = false): string[] {
+  const fit = lines.filter(
+    (l) => (tai >= BIG_WIN_TAI / 2 ? !SMALL_TALK.test(l) : true) && (tai < BIG_WIN_TAI ? !BIG_TALK.test(l) : true) && (own && tai < BIG_WIN_TAI / 2 ? !OWN_BIG_TALK.test(l) : true)
+  );
+  return fit.length > 2 ? fit : lines;
+}
 
 // What a bot knows of the table when it opens its mouth.
 export interface TableMood {
