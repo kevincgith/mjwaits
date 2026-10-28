@@ -297,6 +297,10 @@ function cloneState(s: GameState): GameState {
       discards: p.discards.slice(),
       ...(p.riichi ? { riichi: { ...p.riichi } } : {}),
       ...(p.overWater ? { overWater: true } : {}),
+      // (The bars on a claim back and a passed pung, kept - dropped here,
+      // they were gone a step after they were set.)
+      ...(p.passedPung ? { passedPung: { ...p.passedPung } } : {}),
+      ...(p.threw ? { threw: { ...p.threw } } : {}),
     })),
     log: s.log.slice(),
     ...(s.tableBonuses ? { tableBonuses: s.tableBonuses.slice() } : {}),
@@ -757,6 +761,7 @@ export function applyTurnMove(state: GameState, move: TurnMove): GameState {
         s.firstGoAround = false;
         return kongReplacement(s, seat);
       }
+      if (!p.melds.some((m) => m.kind === "triplet" && sameTile(m.tiles[0], move.tile))) throw new Error("No pung of that tile to add to");
       p.hand = removeTiles(p.hand, [move.tile]);
       s.firstGoAround = false;
       // 搶槓: anyone who'd win on the added tile may take it first.

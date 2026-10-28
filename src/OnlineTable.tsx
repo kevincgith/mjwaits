@@ -148,7 +148,7 @@ export function OnlineTable({ initialCode, onExit }: { initialCode: string | nul
       onReaction: (seat, r) => setReaction({ seat, r, id: Date.now() }),
       onStatus: setStatus,
       onError: (errorCode, message) => {
-        if (errorCode === "nameTaken" || errorCode === "version") {
+        if (errorCode === "nameTaken" || errorCode === "version" || errorCode === "full") {
           say(message);
           setCode(null);
           return;
@@ -524,7 +524,8 @@ function Lobby({ table, me, send, onLeave }: { table: TableState; me: Welcome; s
                       Stand
                     </button>
                   )}
-                  {me.host && seat?.kind !== "human" && (
+                  {/* (Someone who's left the lobby, the host can clear or put a bot in for.) */}
+                  {me.host && (seat?.kind !== "human" || (!seat.connected && i !== mySeat)) && (
                     <select
                       className="ot-mini ot-select"
                       aria-label={`Bot in seat ${i + 1}`}
@@ -534,7 +535,7 @@ function Lobby({ table, me, send, onLeave }: { table: TableState; me: Welcome; s
                       <option value="" disabled hidden>
                         {seat ? "Swap" : "+ Bot"}
                       </option>
-                      {seat && <option value={NO_BOT}>Remove the bot</option>}
+                      {seat && <option value={NO_BOT}>{seat.kind === "human" ? `Clear ${seat.name}'s seat` : "Remove the bot"}</option>}
                       {TABLE_BOTS.map((b) => (
                         <option key={b} value={b}>
                           {botName(b)}

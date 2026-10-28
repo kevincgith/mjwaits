@@ -182,7 +182,7 @@ export interface HubClientOptions<Recv extends HubServerMessage> {
 const OPEN = 1;
 const DEFAULT_BACKOFF = [500, 1000, 2000, 4000, 8000];
 // Errors that mean retrying the same way can't work.
-const FATAL: ReadonlySet<string> = new Set(["version", "nameTaken"]);
+const FATAL: ReadonlySet<string> = new Set(["version", "nameTaken", "full"]);
 
 // One live connection to a room - a live-scores room or an online table -
 // that keeps itself up: says hello (with the token, once it has one),

@@ -17,6 +17,7 @@ export type ErrorCode =
   | "notJoined" // anything before `hello`
   | "badToken" // a reconnect token this room doesn't know
   | "nameTaken" // someone here already uses that nickname
+  | "full" // the room has as many people as it can take
   | "notHost"
   | "notAllowed" // an update from someone the host hasn't let record
   | "conflict" // an update made on an older game: someone else's landed first
