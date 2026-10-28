@@ -409,28 +409,54 @@ export function trend(state: ReplayState): { hands: number; series: { player: st
   return { hands: state.hands.length, series };
 }
 
-// Everyone's career total game by game, oldest first - the 生涯 trend. Point
-// 0 is the start (0 for all); point i, each player's total after the i-th
-// game, flat through the games they sat out. Games with no hands are left
-// out. labels: what each point is (the game's day, as dayOf has it).
-export function careerTrend(games: ScoreGame[], dayOf: (at: number) => string): { hands: number; series: { player: string; values: (number | null)[] }[]; labels: string[] } {
+// Everyone's career total hand by hand, over every game oldest first - the
+// 生涯 trend. Point 0 is the start (0 for all); then a point per hand, each
+// player's career total after it - flat through hands and games they sat
+// out. Games with no hands are left out. labels: what each point is (the
+// game, by name and dayOf's day, and the 局); starts: the point before each
+// game's first hand, for the chart's game marks.
+export function careerTrend(
+  games: ScoreGame[],
+  dayOf: (at: number) => string
+): { hands: number; series: { player: string; values: (number | null)[] }[]; labels: string[]; starts: number[] } {
   const played = games.filter((g) => replayCached(g).hands.length > 0).sort((a, b) => a.startedAt - b.startedAt);
   const players: string[] = [];
   for (const g of played) for (const p of replayCached(g).players) if (!players.includes(p) && replayCached(g).hands.some((h) => h.seatsAfter.includes(p))) players.push(p);
-  const run = new Map(players.map((p) => [p, 0]));
+  const carried = new Map(players.map((p) => [p, 0]));
   const values = new Map(players.map((p) => [p, [0] as (number | null)[]]));
+  const labels = ["Start"];
+  const starts: number[] = [];
   for (const g of played) {
-    const totals = replayCached(g).totals;
-    for (const p of players) {
-      run.set(p, (run.get(p) ?? 0) + (totals[p] ?? 0));
-      values.get(p)!.push(run.get(p)!);
+    const state = replayCached(g);
+    const game = `${g.name ? `${g.name} · ` : ""}${dayOf(g.startedAt)}`;
+    starts.push(labels.length - 1);
+    for (const h of state.hands) {
+      for (const p of players) values.get(p)!.push((carried.get(p) ?? 0) + (h.totalsAfter[p] ?? 0));
+      labels.push(`${game} · 第${h.hand}局`);
     }
+    for (const p of players) carried.set(p, (carried.get(p) ?? 0) + (state.totals[p] ?? 0));
   }
-  return {
-    hands: played.length,
-    series: players.map((player) => ({ player, values: values.get(player)! })),
-    labels: ["Start", ...played.map((g) => `${g.name ? `${g.name} · ` : ""}${dayOf(g.startedAt)}`)],
-  };
+  return { hands: labels.length - 1, series: players.map((player) => ({ player, values: values.get(player)! })), labels, starts };
+}
+
+// A line's values averaged over `window` points centred on each (fewer at the
+// ends), gaps left as they are - the trend chart's smoothing. 1: as they are.
+export function smoothed(values: (number | null)[], window: number): (number | null)[] {
+  if (window <= 1) return values;
+  const half = Math.floor(window / 2);
+  return values.map((v, i) => {
+    if (v === null) return null;
+    let sum = 0;
+    let n = 0;
+    for (let j = Math.max(0, i - half); j <= Math.min(values.length - 1, i + half); j++) {
+      const x = values[j];
+      if (x !== null) {
+        sum += x;
+        n++;
+      }
+    }
+    return sum / n;
+  });
 }
 
 export interface CareerStats {
