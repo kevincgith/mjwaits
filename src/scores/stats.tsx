@@ -6,6 +6,7 @@ import { exportScores, mergeScores, parseBackup, replay, replayCached, type Hand
 import { sheetCsv, sheetRows, type SheetRow } from "../lib/scoreViews";
 import { careerPlayerStats, careerStats, careerTrend, smoothed, periodKey, periodLabel, periodsOf, type Period, headToHead, marks, patternCounts, playerStats, rankedBy, RECENT_HANDS, trend, trendSummary, type PlayerStats, type Swing } from "../lib/scoreStats";
 import { fmt, signed, pct, tone, colorOf, Icons, SectionHead, Monogram, Sheet, Segmented, Sparkline } from "./shared";
+import { NameSheet } from "./sheets";
 
 // ---- 統計 ------------------------------------------------------------------------
 
@@ -644,10 +645,10 @@ export function BackupCard({ store, setStore }: { store: ScoreStore; setStore: (
         </p>
         <div className="sc-backup-actions">
           <button type="button" className="sc-primary" onClick={download} disabled={count(store) === 0 && store.roster.length === 0}>
-            儲存 Save file
+            匯出 Export
           </button>
           <button type="button" className="sc-secondary" onClick={() => fileRef.current?.click()}>
-            還原 Restore
+            匯入 Import
           </button>
           <input ref={fileRef} type="file" accept="application/json,.json" hidden onChange={(e) => void pick(e.target.files?.[0])} />
         </div>
@@ -655,7 +656,7 @@ export function BackupCard({ store, setStore }: { store: ScoreStore; setStore: (
       </div>
       {incoming && (
         <Sheet
-          title="還原 Restore"
+          title="匯入 Import"
           subtitle={incoming.name}
           onClose={() => setIncoming(null)}
           actions={
@@ -785,6 +786,7 @@ export function StatsPanel({ store, setStore, view, setView }: { store: ScoreSto
       {view === "player" && stats.length > 0 && (
         <PlayerCard store={store} stats={stats} seriesOf={(p) => series.find((x) => x.player === p)?.values} index={Math.min(playerIndex, stats.length - 1)} onIndex={setPlayerIndex} />
       )}
+      {view === "history" && <BackupCard store={store} setStore={setStore} />}
       {view === "history" && (
         <HistoryCard
           store={store}
@@ -794,10 +796,10 @@ export function StatsPanel({ store, setStore, view, setView }: { store: ScoreSto
             setGameId(id);
             setView("trend");
           }}
+          onEdit={(next) => setStore({ ...store, history: store.history.map((g) => (g.id === next.id ? next : g)) })}
           onDelete={(id) => setStore({ ...store, history: store.history.filter((g) => g.id !== id) })}
         />
       )}
-      {view === "history" && <BackupCard store={store} setStore={setStore} />}
     </>
   );
 }
@@ -1009,8 +1011,24 @@ const SMOOTHING_KEY = "mjwaits.careerSmoothing";
 const PERIOD_KEY = "mjwaits.careerPeriod";
 const GAMES_OPEN_KEY = "mjwaits.pastGamesOpen";
 
-export function HistoryCard({ store, games: allGames, current, onPick, onDelete }: { store: ScoreStore; games: ScoreGame[]; current: string; onPick: (id: string) => void; onDelete: (id: string) => void }) {
+export function HistoryCard({
+  store,
+  games: allGames,
+  current,
+  onPick,
+  onEdit,
+  onDelete,
+}: {
+  store: ScoreStore;
+  games: ScoreGame[];
+  current: string;
+  onPick: (id: string) => void;
+  onEdit: (game: ScoreGame) => void;
+  onDelete: (id: string) => void;
+}) {
   const [confirm, setConfirm] = useState<string | null>(null);
+  // The past game whose name, date, times and place are being changed.
+  const [editing, setEditing] = useState<ScoreGame | null>(null);
   // The period shown - all time, or one month, quarter or year (the latest
   // with a game, until ‹ › picks another). Everything on the page follows it.
   const [period, setPeriodState] = useState<Period | "all">(() => {
@@ -1110,6 +1128,19 @@ export function HistoryCard({ store, games: allGames, current, onPick, onDelete 
           </span>
         )}
       </div>
+      {/* Everyone's total over the period picked, the leader in bold. */}
+      {career.length > 0 && (
+        <div className="card sc-period-totals">
+          <span className="sc-help">Total</span>
+          <span className="sc-game-totals">
+            {career.map((c, i) => (
+              <span key={c.player} className={i === 0 ? "is-first" : undefined}>
+                {c.player} <span className={tone(c.net)}>{signed(c.net)}</span>
+              </span>
+            ))}
+          </span>
+        </div>
+      )}
       <button type="button" className="sc-games-toggle" onClick={() => setListOpen(!listOpen)} aria-expanded={listOpen}>
         <span className="section-title">
           過往<span className="section-title-en">Games</span>
@@ -1138,12 +1169,16 @@ export function HistoryCard({ store, games: allGames, current, onPick, onDelete 
                 <span className="sc-game-totals">
                   {ranked.map((p, i) => (
                     <span key={p} className={i === 0 ? "is-first" : undefined}>
-                      {i === 0 && "🏆 "}
                       {p} <span className={tone(st.totals[p] ?? 0)}>{signed(st.totals[p] ?? 0)}</span>
                     </span>
                   ))}
                 </span>
               </button>
+              {g !== store.active && (
+                <button type="button" className="sc-icon-button" onClick={() => setEditing(g)} aria-label="Change this game's name, date, times or place">
+                  {Icons.edit}
+                </button>
+              )}
               {g !== store.active && (
                 <button type="button" className={`sc-icon-button${confirm === g.id ? " is-armed" : ""}`} onClick={() => (confirm === g.id ? onDelete(g.id) : setConfirm(g.id))} aria-label={confirm === g.id ? "Tap again to delete this game" : "Delete this game"}>
                   {confirm === g.id ? <span className="sc-armed-text">Delete</span> : Icons.close}
@@ -1153,6 +1188,16 @@ export function HistoryCard({ store, games: allGames, current, onPick, onDelete 
           );
         })}
       </div>
+      )}
+      {editing && (
+        <NameSheet
+          initial={{ name: editing.name ?? "", startedAt: editing.startedAt, startTime: editing.startTime ?? "", endTime: editing.endTime ?? "", location: editing.location ?? "" }}
+          onClose={() => setEditing(null)}
+          onSave={({ name, startedAt, startTime, endTime, location }) => {
+            onEdit({ ...editing, name: name || undefined, startedAt, startTime: startTime || undefined, endTime: endTime || undefined, location: location || undefined, updatedAt: Date.now() });
+            setEditing(null);
+          }}
+        />
       )}
       <SectionHead zh="生涯" en="Career">
         <span className="sc-help">撳一行睇詳情 · Tap a player</span>

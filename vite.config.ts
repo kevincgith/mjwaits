@@ -18,6 +18,11 @@ export default defineConfig({
   define: {
     __BUILD_TIME__: JSON.stringify(buildTimeHKT()),
   },
+  // The dev server also answers on this Mac's Tailscale name (*.ts.net),
+  // which stays the same on any network - unlike the LAN IP.
+  server: {
+    allowedHosts: ['.ts.net'],
+  },
   test: {
     // worker/ has its own tests, run inside the Workers runtime (npm test
     // runs both); .claude/ holds other sessions' worktrees, full copies of

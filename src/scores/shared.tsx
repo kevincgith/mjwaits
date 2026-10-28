@@ -251,6 +251,13 @@ export const Icons = {
       <path d="M9 5l7 7-7 7" />
     </svg>
   ),
+  // A pencil: change a game's name, date, times or place.
+  edit: (
+    <svg {...ICON} width={18} height={18}>
+      <path d="M4 20h4L19 9l-4-4L4 16z" />
+      <path d="M13.5 6.5l4 4" />
+    </svg>
+  ),
   backspace: (
     <svg {...ICON}>
       <path d="M9 5h10.5A1.5 1.5 0 0 1 21 6.5v11a1.5 1.5 0 0 1-1.5 1.5H9l-6-7z" />
