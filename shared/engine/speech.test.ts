@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { seededRng } from "./bots";
-import { callLines, isComeback, LineCounter, MYSTERY_SPEECH, pickSituation, situations, SPEECH, type CallKind, type Outcome } from "./speech";
+import { RIVALS } from "./lines/rivals";
+import { callLines, isComeback, LineCounter, MYSTERY_SPEECH, named, pickSituation, situations, SPEECH, type CallKind, type Outcome } from "./speech";
 
 describe("call bubbles", () => {
   const all = [...Object.values(SPEECH), MYSTERY_SPEECH];
@@ -95,5 +96,28 @@ describe("what a bot talks about", () => {
   it("spots a win from the bottom of the table", () => {
     expect(isComeback([10, -5, -8, 3], [24, -8, -8, -8], 0)).toBe(true);
     expect(isComeback([40, -15, -13, -12], [24, -8, -8, -8], 0)).toBe(false);
+  });
+});
+
+describe("lines aimed at someone", () => {
+  it("name them only where there's a name to use", () => {
+    const lines = ["你又出銃。", "{name}，你又出銃。"];
+    expect(named(lines, null)).toEqual(["你又出銃。"]);
+    expect(named(lines, "Kev")).toEqual(lines);
+    // Every kind still has lines left with no name to use.
+    for (const speech of [...Object.values(SPEECH), MYSTERY_SPEECH])
+      for (const [kind, list] of Object.entries(speech)) expect(named(list, null).length, kind).toBeGreaterThan(2);
+  });
+
+  it("have something from each personality for each other one", () => {
+    const ids = [...Object.keys(SPEECH), "mystery"];
+    expect(Object.keys(RIVALS).sort()).toEqual([...ids].sort());
+    for (const [me, them] of Object.entries(RIVALS)) {
+      for (const at of ids) if (at !== me) expect(them[at], `${me}->${at}`).toBeDefined();
+      for (const [at, lines] of Object.entries(them)) {
+        expect(lines.length, `${me}->${at}`).toBeGreaterThanOrEqual(5);
+        expect(new Set(lines).size, `${me}->${at}`).toBe(lines.length);
+      }
+    }
   });
 });
