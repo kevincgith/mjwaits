@@ -453,12 +453,42 @@ function Entry({
 const PLACES = ["bottom", "right", "top", "left"] as const;
 const NO_BOT = "-";
 
+// How long lobby settings sent wait to be confirmed by the table (see Lobby).
+const DRAFT_MS = 4000;
+// The same settings, whatever order their keys came in (and with an unset one the same as absent).
+const sortedJson = (v: unknown): string =>
+  v && typeof v === "object" && !Array.isArray(v)
+    ? `{${Object.keys(v)
+        .filter((k) => (v as Record<string, unknown>)[k] !== undefined)
+        .sort()
+        .map((k) => `${JSON.stringify(k)}:${sortedJson((v as Record<string, unknown>)[k])}`)
+        .join(",")}}`
+    : JSON.stringify(v);
+const sameSettings = (a: TableSettings, b: TableSettings) => sortedJson(a) === sortedJson(b);
+
 function Lobby({ table, me, send, onLeave }: { table: TableState; me: Welcome; send: (m: Send) => void; onLeave: () => void }) {
   const mySeat = table.seats.findIndex((s) => s?.kind === "human" && s.id === me.id);
   const full = table.seats.every(Boolean);
   const filled = table.seats.filter(Boolean).length;
-  const s = table.settings;
-  const setup = (patch: Partial<TableSettings>) => send({ t: "setup", settings: { ...s, ...patch } });
+  // Each change goes as the whole settings - built on the ones still on their
+  // way, not just the last the table sent, so quick taps don't undo each
+  // other. Shown at once; let go once the table has them (or after a while,
+  // if it never does - a change it refused).
+  const [draft, setDraft] = useState<TableSettings | null>(null);
+  const s = draft ?? table.settings;
+  const setup = (patch: Partial<TableSettings>) => {
+    const next = { ...s, ...patch };
+    setDraft(next);
+    send({ t: "setup", settings: next });
+  };
+  useEffect(() => {
+    if (draft && sameSettings(draft, table.settings)) setDraft(null);
+  }, [draft, table.settings]);
+  useEffect(() => {
+    if (!draft) return;
+    const t = window.setTimeout(() => setDraft(null), DRAFT_MS);
+    return () => window.clearTimeout(t);
+  }, [draft]);
   const link = tableLink(table.code);
   const [shared, setShared] = useState(false);
   const share = async () => {
