@@ -217,38 +217,6 @@ const TURNED = "(orientation: portrait) and (max-width: 820px)";
 // The table drawn turned a quarter (a phone held upright): its rows run down the screen.
 const turnedTable = () => window.matchMedia(TURNED).matches;
 
-// The other seats, by the side they sit.
-const SIDE_NAMES = ["left", "top", "right"] as const;
-// An element's box in the table's own layout - offsets up to the felt, before
-// any 3D (the felt's tilt, a tile turned to face its owner).
-interface LayoutBox {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-}
-// Where elements are drawn, together, on screen.
-interface ScreenBox {
-  x0: number;
-  x1: number;
-  y0: number;
-  y1: number;
-}
-function screenBox(es: Element[]): ScreenBox {
-  const r = es.map((e) => e.getBoundingClientRect()).filter((q) => q.width > 0);
-  return { x0: Math.min(...r.map((q) => q.left)), x1: Math.max(...r.map((q) => q.right)), y0: Math.min(...r.map((q) => q.top)), y1: Math.max(...r.map((q) => q.bottom)) };
-}
-function layoutBox(e: HTMLElement, felt: HTMLElement): LayoutBox {
-  let x = 0;
-  let y = 0;
-  let at: HTMLElement | null = e;
-  while (at && at !== felt) {
-    x += at.offsetLeft;
-    y += at.offsetTop;
-    at = at.offsetParent as HTMLElement | null;
-  }
-  return { x, y, w: e.offsetWidth, h: e.offsetHeight };
-}
 const DRAW_SHOW_MS = 1700;
 // Your hand's tiles sliding to their new places (a swap's give or takes).
 const HAND_SLIDE_MS = 450;
@@ -352,14 +320,57 @@ const claimLabel = (c: Claim) => (c.kind === "win" ? "胡" : c.kind === "kong" ?
 
 // ---- Pieces of the table ----------------------------------------------------
 
-// A seat's concealed tiles, seen edge-on from the middle of the table.
-// `drew`: holding a tile just drawn, which stands a little apart at the
-// player's right end (as yours does).
-function EdgeTilesView({ count, side, drew }: { count: number; side: Side; drew: boolean }) {
+// A seat's concealed tiles, standing on the felt with their backs to you:
+// each the same block every tile on the table is, stood on its edge nearest
+// its player (in its footprint - the wall's room, the drawn tile's slot -
+// as ever). `drew`: holding a tile just drawn, which stands a little apart
+// at the player's right end (as yours does).
+// At a hand's end, shown (`down`), the same tiles tip over flat where they
+// stand - nothing swapped for anything else, nothing resized or moved -
+// timed by `topple`; sorted first, while their faces are still turned away.
+// A winner's winning tile goes last, in the drawn tile's place, marked.
+// `tiles`: what they are - only drawn once they're down: standing, every
+// face is a blank (online the table never sends a hand till it's shown; on
+// this phone, nothing of a bot's hand is in the page either).
+const UNSEEN: Tile = { suit: "z", rank: 7 };
+function HandTilesView({
+  count,
+  tiles,
+  side,
+  drew,
+  down,
+  winningTile,
+  topple = TOPPLE_OTHERS,
+}: {
+  count: number;
+  tiles: Tile[] | null;
+  side: Side;
+  drew: boolean;
+  down: boolean;
+  winningTile: Tile | null;
+  topple?: Topple;
+}) {
+  let faces: Tile[];
+  let mark = -1;
+  if (down && tiles) {
+    const sorted = sortTiles(tiles);
+    const at = winningTile ? sorted.findIndex((t) => sameTile(t, winningTile)) : -1;
+    faces = at < 0 ? sorted : [...sorted.filter((_, i) => i !== at), sorted[at]];
+    if (at >= 0) mark = faces.length - 1;
+  } else faces = Array.from({ length: count }, () => UNSEEN);
+  const apart = down ? mark >= 0 : drew;
   return (
-    <span className={`play-edge play-edge-${side}${drew ? " has-drawn" : ""}`} style={{ "--count": count } as CSSProperties} aria-label={`${count} concealed tiles`}>
-      {Array.from({ length: count }, (_, i) => (
-        <span key={i} className="play-edge-tile" />
+    <span
+      className={`play-edge play-edge-${side}${apart ? " has-drawn" : ""}${down ? " is-down" : ""}`}
+      style={{ "--count": faces.length, "--topple-at": `${topple.at}s`, "--topple-step": `${topple.step}s`, "--topple-dur": `${topple.dur}s` } as CSSProperties}
+      aria-label={down ? undefined : `${faces.length} concealed tiles`}
+    >
+      {faces.map((t, i) => (
+        <span key={i} className="play-edge-tile is-block" style={{ "--i": i } as CSSProperties}>
+          <span className="play-stand">
+            <TileGlyphSpan tile={t} block highlight={i === mark} />
+          </span>
+        </span>
       ))}
     </span>
   );
@@ -596,7 +607,17 @@ function PondView({ tiles, side, pinLast, riichiAt }: { tiles: Tile[]; side: Sid
 const tilesKey = (ts: Tile[]) => ts.map(tileKey).join();
 const meldsKey = (ms: GameMeld[]) =>
   ms.map((m) => `${m.kind}${m.concealed ? "c" : ""}${tilesKey(m.tiles)}${m.claimed ? tileKey(m.claimed) : ""}`).join("|");
-const EdgeTiles = memo(EdgeTilesView);
+const HandTiles = memo(
+  HandTilesView,
+  (a, b) =>
+    a.count === b.count &&
+    a.side === b.side &&
+    a.drew === b.drew &&
+    a.down === b.down &&
+    a.topple === b.topple &&
+    (a.tiles ? tilesKey(a.tiles) : "") === (b.tiles ? tilesKey(b.tiles) : "") &&
+    (a.winningTile ? tileKey(a.winningTile) : "") === (b.winningTile ? tileKey(b.winningTile) : "")
+);
 const Melds = memo(MeldsView, (a, b) => a.hideConcealed === b.hideConcealed && a.inRow === b.inRow && meldsKey(a.melds) === meldsKey(b.melds));
 const Flowers = memo(FlowersView, (a, b) => a.flowers.map((f) => f.kind + f.rank).join() === b.flowers.map((f) => f.kind + f.rank).join());
 const RevealedHand = memo(
@@ -1251,126 +1272,6 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
       return meldsLong + along(flowers) + gap > room;
     });
     if (next.join() !== seatsOut.join()) setSeatsOut(next);
-  });
-  // A hand laid down at the end swaps its standing tiles for face-up ones
-  // (larger, laid further apart): so it doesn't jump, each falling tile
-  // starts where the standing one stood, as large, and moves and grows to its
-  // place as it falls - and the melds beside it glide to where the wider hand
-  // leaves them. Measured in the table's own layout (before its tilt), from
-  // where the standing tiles were last seen.
-  // (Each side's standing tiles in the layout, and their extent as drawn on
-  // screen - measured fresh every time, the last time before the hand ends:
-  // a seat can move without its hand changing, and a stale place sent the
-  // tiles flying in from it.)
-  const stood = useRef<Record<string, { tiles: LayoutBox[]; side: LayoutBox | null; drawn: ScreenBox[] }>>({});
-  useLayoutEffect(() => {
-    const felt = feltRef.current;
-    if (!felt || game.phase.kind === "over") return;
-    for (const side of SIDE_NAMES) {
-      const tiles = [...felt.querySelectorAll<HTMLElement>(`.play-edge-${side} .play-edge-tile`)];
-      const row = felt.querySelector<HTMLElement>(`.play-seat-${side} > .play-seat-side`);
-      if (tiles.length) stood.current[side] = { tiles: tiles.map((t) => layoutBox(t, felt)), side: row ? layoutBox(row, felt) : null, drawn: tiles.map((t) => screenBox([t])) };
-      else delete stood.current[side];
-    }
-  });
-  useLayoutEffect(() => {
-    const felt = feltRef.current;
-    if (!felt || game.phase.kind !== "over") return;
-    for (const side of SIDE_NAMES) {
-      const meld = felt.querySelector<HTMLElement>(`.play-seat-${side} .play-meld.is-revealed`);
-      const was = stood.current[side];
-      if (!meld || !was || meld.dataset.landed) continue;
-      meld.dataset.landed = "1";
-      // Both rows from their player's left: the far end of the left seat's
-      // column, the near end of the right's, your right of the row across.
-      const fromLeft = (a: LayoutBox, b: LayoutBox) => (side === "top" ? b.x - a.x : side === "left" ? a.y - b.y : b.y - a.y);
-      const byLeft = was.tiles.map((_, i) => i).sort((i, j) => fromLeft(was.tiles[i], was.tiles[j]));
-      const old = byLeft.map((i) => was.tiles[i]);
-      const spans = [...meld.querySelectorAll<HTMLElement>(":scope > .play-topple")];
-      // Not the hand that was standing (a count well off): just topple in place.
-      if (!spans.length || Math.abs(spans.length - old.length) > 2) continue;
-      // The standing tiles these are laid down from, as drawn - from their
-      // player's left, as many as are laid (a winner's last, the tile drawn
-      // or called, is laid apart).
-      const want = (() => {
-        const boxes = byLeft.slice(0, spans.length).map((i) => was.drawn[i]);
-        return { x0: Math.min(...boxes.map((q) => q.x0)), x1: Math.max(...boxes.map((q) => q.x1)), y0: Math.min(...boxes.map((q) => q.y0)), y1: Math.max(...boxes.map((q) => q.y1)) };
-      })();
-      const laidOld = old.slice(0, spans.length);
-      const layoutLength = Math.abs(side === "top" ? laidOld[laidOld.length - 1].x + laidOld[laidOld.length - 1].w - laidOld[0].x : laidOld[laidOld.length - 1].y + laidOld[laidOld.length - 1].h - laidOld[0].y);
-      // Each tile's start, from where it lies now: matched along the row by
-      // the middles, and across it by the edge nearest their player (the one
-      // the tile stands on, and falls from); plus `fix`, the whole row's
-      // nudge to start just where the standing row was drawn (a standing
-      // tile is drawn turned, and the table tilted, so the layout alone is a
-      // little out).
-      const starts = (fix: { x: number; y: number }) => {
-        const now = spans.map((sp) => layoutBox(sp, felt));
-        const order = now.map((_, i) => i).sort((i, j) => fromLeft(now[i], now[j]));
-        const out: Keyframe[][] = spans.map(() => []);
-        order.forEach((i, k) => {
-          const o = old[Math.min(k, old.length - 1)];
-          const n = now[i];
-          const along = side === "top" ? o.w / n.w : o.h / n.h;
-          const dx = (side === "top" ? o.x + o.w / 2 - (n.x + n.w / 2) : side === "left" ? o.x - n.x : o.x + o.w - (n.x + n.w)) + fix.x;
-          const dy = (side === "top" ? o.y - n.y : o.y + o.h / 2 - (n.y + n.h / 2)) + fix.y;
-          out[i] = [
-            { translate: `${dx}px ${dy}px`, scale: `${along} ${along} ${along}` },
-            { translate: "0px 0px", scale: "1 1 1" },
-          ];
-        });
-        return out;
-      };
-      let fix = { x: 0, y: 0 };
-      const first = starts(fix);
-      const anims = spans.map((sp, i) => {
-        const style = getComputedStyle(sp);
-        return sp.animate(first[i], {
-          duration: parseFloat(style.animationDuration) * 1000 * 0.8,
-          delay: parseFloat(style.animationDelay) * 1000,
-          easing: "cubic-bezier(0.55, 0, 1, 0.45)",
-          fill: "backwards",
-        });
-      });
-      // Till they fall, every frame: the starts again from wherever the tiles
-      // now lie (the seat can re-lay itself once the wider hand is down - its
-      // melds moving in front, its bonus tiles out a row), and the nudge
-      // checked against the standing row as drawn - small, or none.
-      const before = (an: Animation) => Number(an.currentTime ?? 0) < Number(an.effect?.getTiming().delay ?? 0);
-      const waiting = () => anims.some(before);
-      // A screen box in the table's own directions (turned a quarter on a
-      // phone held upright: the screen's down is the table's across).
-      const tableBox = (q: ScreenBox): ScreenBox => (turnedTable() ? { x0: q.y0, x1: q.y1, y0: -q.x1, y1: -q.x0 } : q);
-      const wantT = tableBox(want);
-      const settle = () => {
-        if (!meld.isConnected || !waiting()) return;
-        const seen = tableBox(screenBox(spans));
-        const lengthNow = side === "top" ? seen.x1 - seen.x0 : seen.y1 - seen.y0;
-        if (lengthNow > 0 && Number.isFinite(wantT.x0)) {
-          const perPx = layoutLength / lengthNow || 1;
-          const nudge = { x: fix.x + ((wantT.x0 + wantT.x1 - seen.x0 - seen.x1) / 2) * perPx, y: fix.y + ((wantT.y0 + wantT.y1 - seen.y0 - seen.y1) / 2) * perPx };
-          // (A standing tile and a laid one stood up are a few px apart at
-          // most; anything bigger is a measure gone wrong - not followed.)
-          const cap = 24;
-          fix = Math.hypot(nudge.x, nudge.y) <= cap ? nudge : { x: 0, y: 0 };
-        }
-        const next = starts(fix);
-        anims.forEach((an, i) => {
-          if (before(an)) (an.effect as KeyframeEffect).setKeyframes(next[i]);
-        });
-        requestAnimationFrame(settle);
-      };
-      settle();
-      // The melds and flowers beside the hand: from where they were, to
-      // where the laid-down hand leaves them.
-      const row = felt.querySelector<HTMLElement>(`.play-seat-${side} > .play-seat-side`);
-      if (row && was.side) {
-        const n = layoutBox(row, felt);
-        const dx = was.side.x - n.x;
-        const dy = was.side.y - n.y;
-        if (Math.abs(dx) + Math.abs(dy) > 0.5) row.animate({ translate: [`${dx}px ${dy}px`, "0px 0px"] }, { duration: 450, easing: "cubic-bezier(0.3, 0.7, 0.4, 1)" });
-      }
-    }
   });
   // Each pond grows from the compass toward its owner: when its rows would
   // reach that player's tiles (their melds and bonus tiles, standing hand,
@@ -3196,15 +3097,15 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
             {side !== "top" && swapRow(seat)}
           </span>
         </span>
-        {over && !hidden ? (
-          <RevealedHand
-            tiles={p.hand}
-            winningTile={wonWith(seat)}
-            topple={wonWith(seat) ? TOPPLE_WINNER : result?.winner === null || choosing ? TOPPLE_DRAW : TOPPLE_OTHERS}
-          />
-        ) : (
-          <EdgeTiles count={p.hand.length - incoming(seat).length - (heldDraw(seat) ? 1 : 0)} side={side} drew={!over && drewSeat === seat && !swapSettling} />
-        )}
+        <HandTiles
+          count={over ? p.hand.length : p.hand.length - incoming(seat).length - (heldDraw(seat) ? 1 : 0)}
+          tiles={p.hand}
+          side={side}
+          drew={!over && drewSeat === seat && !swapSettling}
+          down={over && !hidden}
+          winningTile={wonWith(seat)}
+          topple={wonWith(seat) ? TOPPLE_WINNER : result?.winner === null || choosing ? TOPPLE_DRAW : TOPPLE_OTHERS}
+        />
         {/* Across, what they've taken lies just in front of them, on the table's middle line (with
             their pile and the compass) - out of the seat's layout, so nothing on the table moves for it. */}
         {side === "top" && flights.some((f) => f.to === seat) && <span className="play-swap-front">{swapRow(seat)}</span>}
