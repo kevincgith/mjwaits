@@ -328,7 +328,8 @@ const claimLabel = (c: Claim) => (c.kind === "win" ? "胡" : c.kind === "kong" ?
 // At a hand's end, shown (`down`), the same tiles tip over flat where they
 // stand - nothing swapped for anything else, nothing resized or moved -
 // timed by `topple`; sorted first, while their faces are still turned away.
-// A winner's winning tile goes last, in the drawn tile's place, marked.
+// A winner's winning tile goes last, a little apart and laid sideways -
+// turned a quarter from the tiles beside it.
 // `tiles`: what they are - only drawn once they're down: standing, every
 // face is a blank (online the table never sends a hand till it's shown; on
 // this phone, nothing of a bot's hand is in the page either).
@@ -358,17 +359,16 @@ function HandTilesView({
     faces = at < 0 ? sorted : [...sorted.filter((_, i) => i !== at), sorted[at]];
     if (at >= 0) mark = faces.length - 1;
   } else faces = Array.from({ length: count }, () => UNSEEN);
-  const apart = down ? mark >= 0 : drew;
   return (
     <span
-      className={`play-edge play-edge-${side}${apart ? " has-drawn" : ""}${down ? " is-down" : ""}`}
+      className={`play-edge play-edge-${side}${drew && !down ? " has-drawn" : ""}${down ? " is-down" : ""}`}
       style={{ "--count": faces.length, "--topple-at": `${topple.at}s`, "--topple-step": `${topple.step}s`, "--topple-dur": `${topple.dur}s` } as CSSProperties}
       aria-label={down ? undefined : `${faces.length} concealed tiles`}
     >
       {faces.map((t, i) => (
-        <span key={i} className="play-edge-tile is-block" style={{ "--i": i } as CSSProperties}>
+        <span key={i} className={`play-edge-tile is-block${i === mark ? " is-win" : ""}`} style={{ "--i": i } as CSSProperties}>
           <span className="play-stand">
-            <TileGlyphSpan tile={t} block highlight={i === mark} />
+            <TileGlyphSpan tile={t} block />
           </span>
         </span>
       ))}
@@ -1227,7 +1227,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     const laid = [...melds.children].reduce((n, m) => n + (m as HTMLElement).offsetWidth + gap, 0) + (flowers?.childElementCount ? flowers.offsetWidth + gap : 0);
     // (A full hand's 17 - not the wall as drawn, which fits the hand.)
     const probe = document.createElement("span");
-    probe.style.cssText = "position:absolute;visibility:hidden;font-size:var(--play-wall)";
+    probe.style.cssText = "position:absolute;visibility:hidden;font-size:var(--play-wall-top)";
     seat.appendChild(probe);
     const hand = 17 * 0.78 * parseFloat(getComputedStyle(probe).fontSize);
     probe.remove();
@@ -1549,6 +1549,11 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
   const ledgerStarted = useRef(!fresh);
   const [trackerOpen, setTrackerOpen] = useState(false);
   const [chowChoice, setChowChoice] = useState(false);
+  // Choosing which 上 lasts only as long as the tile it's for: once the
+  // table moves on (online, someone else's call or the window closing
+  // reaches you from the table, not through a move made here), it's gone.
+  const claimFor = game.phase.kind === "claims" ? `${online?.table.hand ?? ""}:${game.discardsMade}:${tileKey(game.phase.tile)}` : null;
+  useEffect(() => setChowChoice(false), [claimFor]);
   // Your last chow / pung / kong, with the discard it came from - so 嗌錯 can
   // take it back until you discard.
   const [lastCall, setLastCall] = useState<{ before: GameState; decisions: (Claim | null)[] } | null>(null);
@@ -3408,7 +3413,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
                   Show result
                 </button>
               )}
-              {chowChoice ? (
+              {chowChoice && chows.length > 1 ? (
                 <>
                   {chows.map((c, i) => (
                     <button key={i} type="button" className="play-call is-chow-shape" onClick={() => resolve(c)} aria-label={`Chow with ${c.tiles.map(tileLabel).join(" and ")}`}>
