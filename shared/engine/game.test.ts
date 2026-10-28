@@ -240,7 +240,8 @@ describe("game", () => {
     // Its next draw lifts it.
     const drew = resolveClaims({ ...s, phase: { kind: "claims" as const, from: 1, tile: { suit: "z", rank: 7 } } }, [null, null, null, null]);
     expect(drew.phase).toMatchObject({ kind: "turn", seat: 2 });
-    expect(kinds(claimOptions({ ...drew, phase: { kind: "claims" as const, from: 3, tile: m1 } }, 2))).toEqual(["pung"]);
+    // (A kong too, if the draw happened to be the fourth 1m.)
+    expect(kinds(claimOptions({ ...drew, phase: { kind: "claims" as const, from: 3, tile: m1 } }, 2))).toContain("pung");
   });
 
   it("叮 only on a hand that can win: not the hand a bot declared on, nor a dead wait", () => {
