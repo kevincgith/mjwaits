@@ -3,7 +3,7 @@
 
 import { Fragment, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { exportScores, mergeScores, parseBackup, replay, replayCached, type HandResult, type ReplayState, type ScoreGame, type ScoreStore, playTimes } from "@mjwaits/shared/engine/ledger";
-import { sheetRows, type SheetRow } from "../lib/scoreViews";
+import { sheetCsv, sheetRows, type SheetRow } from "../lib/scoreViews";
 import { careerPlayerStats, careerStats, headToHead, marks, patternCounts, playerStats, rankedBy, RECENT_HANDS, trend, trendSummary, type PlayerStats, type Swing } from "../lib/scoreStats";
 import { fmt, signed, pct, tone, colorOf, Icons, SectionHead, Monogram, Sheet, Segmented, Sparkline } from "./shared";
 
@@ -536,6 +536,24 @@ export function readBackedUpAt(): number | null {
   }
 }
 
+// The 局 sheet as a CSV file, as it's showing (Detailed or Simple), named for the game (or the day it started). A
+// byte-order mark first, so spreadsheet apps read the Chinese right.
+function saveSheetCsv(game: ScoreGame, state: ReplayState, players: string[], merge: boolean) {
+  const blob = new Blob(["\uFEFF" + sheetCsv(game, state, players, merge)], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const d = new Date(game.startedAt);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const day = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const name = game.name?.trim().replace(/[\\/:*?"<>|]+/g, "-");
+  a.href = url;
+  a.download = `mjwaits-${name ? `${name}-` : ""}${day}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 // Save the whole store as a dated file, and note when - for the reminders.
 export function saveBackupFile(store: ScoreStore): number {
   const now = Date.now();
@@ -827,15 +845,20 @@ export function HandsTable({ store, game, state }: { store: ScoreStore; game: Sc
     <div className="card sc-sheet-card">
       <div className="sc-card-head">
         <h3>局 Hands</h3>
-        <Segmented
-          small
-          value={detailed ? "detailed" : "simple"}
-          onChange={(v) => setDetailed(v === "detailed")}
-          options={[
-            { value: "detailed", label: "Detailed" },
-            { value: "simple", label: "Simple" },
-          ]}
-        />
+        <span className="sc-sheet-tools">
+          <Segmented
+            small
+            value={detailed ? "detailed" : "simple"}
+            onChange={(v) => setDetailed(v === "detailed")}
+            options={[
+              { value: "detailed", label: "Detailed" },
+              { value: "simple", label: "Simple" },
+            ]}
+          />
+          <button type="button" className="sc-outline sc-sheet-csv" onClick={() => saveSheetCsv(game, state, players, merge)} aria-label="Export the hands as a CSV file">
+            CSV
+          </button>
+        </span>
       </div>
       <div className="sc-sheet-table" role="table" aria-label="Every hand, and what each player won or paid">
         <div className="sc-sheet-row is-head" style={cols} role="row">
