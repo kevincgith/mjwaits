@@ -4,7 +4,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { exportScores, mergeScores, parseBackup, replay, replayCached, type HandResult, type ReplayState, type ScoreGame, type ScoreStore, playTimes } from "@mjwaits/shared/engine/ledger";
 import { sheetCsv, sheetRows, type SheetRow } from "../lib/scoreViews";
-import { careerPlayerStats, careerStats, careerTrend, smoothed, headToHead, marks, patternCounts, playerStats, rankedBy, RECENT_HANDS, trend, trendSummary, type PlayerStats, type Swing } from "../lib/scoreStats";
+import { careerPlayerStats, careerStats, careerTrend, smoothed, periodKey, periodLabel, periodsOf, type Period, headToHead, marks, patternCounts, playerStats, rankedBy, RECENT_HANDS, trend, trendSummary, type PlayerStats, type Swing } from "../lib/scoreStats";
 import { fmt, signed, pct, tone, colorOf, Icons, SectionHead, Monogram, Sheet, Segmented, Sparkline } from "./shared";
 
 // ---- 統計 ------------------------------------------------------------------------
@@ -1006,9 +1006,53 @@ const SMOOTHING: Record<Smoothing, (n: number) => number> = {
   smoother: (n) => Math.max(5, Math.round(n / 12)),
 };
 const SMOOTHING_KEY = "mjwaits.careerSmoothing";
+const PERIOD_KEY = "mjwaits.careerPeriod";
+const GAMES_OPEN_KEY = "mjwaits.pastGamesOpen";
 
-export function HistoryCard({ store, games, current, onPick, onDelete }: { store: ScoreStore; games: ScoreGame[]; current: string; onPick: (id: string) => void; onDelete: (id: string) => void }) {
+export function HistoryCard({ store, games: allGames, current, onPick, onDelete }: { store: ScoreStore; games: ScoreGame[]; current: string; onPick: (id: string) => void; onDelete: (id: string) => void }) {
   const [confirm, setConfirm] = useState<string | null>(null);
+  // The period shown - all time, or one month, quarter or year (the latest
+  // with a game, until ‹ › picks another). Everything on the page follows it.
+  const [period, setPeriodState] = useState<Period | "all">(() => {
+    try {
+      const v = window.localStorage.getItem(PERIOD_KEY);
+      return v === "month" || v === "quarter" || v === "year" ? v : "all";
+    } catch {
+      return "all";
+    }
+  });
+  const [periodAt, setPeriodAt] = useState<string | null>(null);
+  const setPeriod = (v: Period | "all") => {
+    setPeriodState(v);
+    setPeriodAt(null);
+    try {
+      window.localStorage.setItem(PERIOD_KEY, v);
+    } catch {
+      // Just this visit, then.
+    }
+  };
+  const keys = useMemo(() => (period === "all" ? [] : periodsOf(allGames, period)), [allGames, period]);
+  const key = period === "all" ? null : periodAt !== null && keys.includes(periodAt) ? periodAt : (keys[keys.length - 1] ?? null);
+  const games = useMemo(() => (period === "all" || key === null ? allGames : allGames.filter((g) => periodKey(g.startedAt, period) === key)), [allGames, period, key]);
+  const step = (by: number) => key !== null && setPeriodAt(keys[keys.indexOf(key) + by] ?? key);
+  // Each game's number, #1 the first ever played - the same in every period.
+  const numberOf = useMemo(() => new Map(allGames.slice().sort((a, b) => a.startedAt - b.startedAt).map((g, i) => [g.id, i + 1])), [allGames]);
+  // The games list folds away under its header (remembered on this phone).
+  const [listOpen, setListOpenState] = useState(() => {
+    try {
+      return window.localStorage.getItem(GAMES_OPEN_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const setListOpen = (open: boolean) => {
+    setListOpenState(open);
+    try {
+      window.localStorage.setItem(GAMES_OPEN_KEY, open ? "1" : "0");
+    } catch {
+      // Just this visit, then.
+    }
+  };
   const [careerOpen, setCareerOpen] = useState<string | null>(null);
   const career = useMemo(() => careerStats(games), [games]);
   // The 玩家 card's numbers over every game, for the card a row opens.
@@ -1042,6 +1086,39 @@ export function HistoryCard({ store, games, current, onPick, onDelete }: { store
   const names = career.map((c) => c.player);
   return (
     <>
+      <div className="sc-period">
+        <Segmented
+          small
+          value={period}
+          onChange={setPeriod}
+          options={[
+            { value: "all", label: "All" },
+            { value: "year", label: "Year" },
+            { value: "quarter", label: "Quarter" },
+            { value: "month", label: "Month" },
+          ]}
+        />
+        {period !== "all" && key !== null && (
+          <span className="sc-period-step">
+            <button type="button" className="sc-icon-button" onClick={() => step(-1)} disabled={keys.indexOf(key) === 0} aria-label="Earlier">
+              {Icons.back}
+            </button>
+            <strong>{periodLabel(key, period)}</strong>
+            <button type="button" className="sc-icon-button" onClick={() => step(1)} disabled={keys.indexOf(key) === keys.length - 1} aria-label="Later">
+              {Icons.forward}
+            </button>
+          </span>
+        )}
+      </div>
+      <button type="button" className="sc-games-toggle" onClick={() => setListOpen(!listOpen)} aria-expanded={listOpen}>
+        <span className="section-title">
+          過往<span className="section-title-en">Games</span>
+        </span>
+        <span className="sc-help">
+          {games.length} game{games.length === 1 ? "" : "s"} {listOpen ? "▴" : "▾"}
+        </span>
+      </button>
+      {listOpen && (
       <div className="card sc-list-card">
         {games.map((g) => {
           const st = replayCached(g);
@@ -1050,6 +1127,7 @@ export function HistoryCard({ store, games, current, onPick, onDelete }: { store
             <div key={g.id} className={`sc-game${g.id === current ? " is-current" : ""}`}>
               <button type="button" className="sc-game-main" onClick={() => onPick(g.id)}>
                 <span className="sc-game-date">
+                  <span className="sc-game-no">#{numberOf.get(g.id)}</span>
                   {g.name && <strong>{g.name} · </strong>}
                   {g === store.active ? "In progress" : new Date(g.startedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
                   {playTimes(g) && ` · ${playTimes(g)}`}
@@ -1075,6 +1153,7 @@ export function HistoryCard({ store, games, current, onPick, onDelete }: { store
           );
         })}
       </div>
+      )}
       <SectionHead zh="生涯" en="Career">
         <span className="sc-help">撳一行睇詳情 · Tap a player</span>
       </SectionHead>
@@ -1156,7 +1235,7 @@ export function HistoryCard({ store, games, current, onPick, onDelete }: { store
           </div>
           <TrendChart store={store} data={allTime} labelOf={(i) => allTime.labels[i]} smooth={SMOOTHING[smoothing](allTime.hands)} marks={allTime.starts.slice(1)} />
           <p className="sc-help sc-help-block">
-            {allTime.hands} hands over {allTime.starts.length} game{allTime.starts.length > 1 ? "s" : ""} - a faint line where each game starts. Touch for a hand.
+            {allTime.hands} hand{allTime.hands > 1 ? "s" : ""} over {allTime.starts.length} game{allTime.starts.length > 1 ? "s" : ""} - a faint line where each game starts. Touch for a hand.
           </p>
         </div>
       )}

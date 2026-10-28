@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_SETTINGS, newGame, replay, type ScoreEvent, type ScoreGame } from "@mjwaits/shared/engine/ledger";
-import { careerPlayerStats, careerStats, careerTrend, smoothed, headToHead, marks, patternCounts, playerStats, rankedBy, trend, trendSummary } from "./scoreStats";
+import { careerPlayerStats, careerStats, careerTrend, smoothed, periodKey, periodLabel, periodsOf, headToHead, marks, patternCounts, playerStats, rankedBy, trend, trendSummary } from "./scoreStats";
 
 const PLAIN = { ...DEFAULT_SETTINGS, dealerTai: 0, streakTai: 0, jackpot: false };
 const game = (events: ScoreEvent[], seats = ["A", "B", "C", "D"]): ScoreGame => ({ ...newGame(seats, 0, PLAIN), events });
@@ -204,5 +204,22 @@ describe("smoothed", () => {
     expect(smoothed([0, 3, 6, 9], 1)).toEqual([0, 3, 6, 9]);
     expect(smoothed([0, 3, 6, 9], 3)).toEqual([1.5, 3, 6, 7.5]);
     expect(smoothed([0, null, 6], 3)).toEqual([0, null, 6]);
+  });
+});
+
+describe("periods", () => {
+  const at = (y: number, m: number, d = 1) => new Date(y, m - 1, d, 20).getTime();
+  it("keys a game by month, quarter or year, in time order", () => {
+    expect(periodKey(at(2026, 10, 28), "month")).toBe("2026-10");
+    expect(periodKey(at(2026, 10, 28), "quarter")).toBe("2026-Q4");
+    expect(periodKey(at(2026, 3, 31), "quarter")).toBe("2026-Q1");
+    expect(periodKey(at(2026, 10, 28), "year")).toBe("2026");
+    expect(periodLabel("2026-Q4", "quarter")).toBe("2026 Q4");
+  });
+  it("lists the periods that have games, oldest first", () => {
+    const gs = [at(2026, 10, 2), at(2025, 12, 30), at(2026, 10, 20), at(2026, 1, 5)].map((t, i) => ({ ...game([]), id: `g${i}`, startedAt: t }));
+    expect(periodsOf(gs, "month")).toEqual(["2025-12", "2026-01", "2026-10"]);
+    expect(periodsOf(gs, "quarter")).toEqual(["2025-Q4", "2026-Q1", "2026-Q4"]);
+    expect(periodsOf(gs, "year")).toEqual(["2025", "2026"]);
   });
 });
