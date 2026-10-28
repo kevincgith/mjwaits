@@ -946,7 +946,10 @@ export function scoreWin(
     instantWin: p.riichi?.ippatsu ?? false,
     // 食叮: winning off a discard from a player who has declared 叮.
     eatRiichi: from !== null && !!s.players[from].riichi,
-    earlyWin: "none",
+    // 四子內/七子內/十子內: won with that many tiles or fewer in the ponds -
+    // the tiles still lying there: not the one won off (it's left the pond
+    // by now), nor any claimed into a meld.
+    earlyWin: ((n) => (n <= 4 ? "four" : n <= 7 ? "seven" : n <= 10 ? "ten" : "none"))(s.players.reduce((n, pl) => n + pl.discards.length, 0)),
     multiWin: winnersOffOne >= 3 ? "triple" : winnersOffOne === 2 ? "double" : "none",
     heavenlyWin:
       s.firstGoAround && selfDraw && s.discardsMade === 0 && isDealer
