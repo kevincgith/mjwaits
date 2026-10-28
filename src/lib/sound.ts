@@ -44,6 +44,13 @@ export function wakeAudio() {
   audio();
 }
 
+// The audio context once a tap has woken it (null before), for other
+// sounds to play through - the bots' voices (see voice.ts).
+export const awakeAudio = (): AudioContext | null => (ctx && ctx.state === "running" ? ctx : null);
+// The audio context if a tap has made it, woken yet or not (clips can be
+// decoded ahead while it wakes).
+export const madeAudio = (): AudioContext | null => ctx;
+
 // A short burst of filtered noise: the click of tile on tile.
 function clack(a: AudioContext, at: number, { freq, q, length, gain }: { freq: number; q: number; length: number; gain: number }) {
   const buffer = a.createBuffer(1, Math.ceil(a.sampleRate * length), a.sampleRate);
