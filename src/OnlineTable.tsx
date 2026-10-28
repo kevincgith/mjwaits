@@ -199,11 +199,15 @@ export function OnlineTable({ initialCode, onExit }: { initialCode: string | nul
     setTable(null);
   };
 
+  // Whether you're host now: the table says (it hands the host on when they've
+  // been gone a while); a table from before it said, as you joined.
+  const you: Welcome | null = me && { ...me, host: table?.host ? table.host === me.id : me.host };
+
   // The hand itself: the Play tab's table.
-  if (code && table?.phase === "playing" && table.view && me)
+  if (code && table?.phase === "playing" && table.view && you)
     return (
       <>
-        <PlayPanel onExit={leave} online={{ table, send, host: me.host, scores, reaction }} />
+        <PlayPanel onExit={leave} online={{ table, send, host: you.host, scores, reaction }} />
         {status !== "open" && <div className="ot-status">{status === "closed" ? "Disconnected" : "Reconnecting…"}</div>}
         {toast && (
           <div className="ot-toast" role="status">
@@ -229,7 +233,7 @@ export function OnlineTable({ initialCode, onExit }: { initialCode: string | nul
           onEnter={enter}
           onExit={onExit}
         />
-      ) : !table || !me ? (
+      ) : !table || !you ? (
         <div className="ot-center-card">
           <span className="ot-dots" aria-hidden="true">
             <i />
@@ -242,9 +246,9 @@ export function OnlineTable({ initialCode, onExit }: { initialCode: string | nul
           </button>
         </div>
       ) : table.phase === "lobby" ? (
-        <Lobby table={table} me={me} send={send} onLeave={leave} />
+        <Lobby table={table} me={you} send={send} onLeave={leave} />
       ) : table.phase === "ended" ? (
-        <Ended table={table} scores={scores} onLeave={leave} host={me.host} onRematch={() => send({ t: "rematch" })} />
+        <Ended table={table} scores={scores} onLeave={leave} host={you.host} onRematch={() => send({ t: "rematch" })} />
       ) : null}
       {code && table && status !== "open" && <div className="ot-status">{status === "closed" ? "Disconnected" : "Reconnecting…"}</div>}
       {toast && (

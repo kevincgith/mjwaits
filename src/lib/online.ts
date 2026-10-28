@@ -184,6 +184,15 @@ const DEFAULT_BACKOFF = [500, 1000, 2000, 4000, 8000];
 // Errors that mean retrying the same way can't work.
 const FATAL: ReadonlySet<string> = new Set(["version", "nameTaken", "full"]);
 
+// The heartbeat: a ping this often while connected (answered by the room
+// without waking it - see the Worker's hub.ts). Nothing heard back for
+// DEAD_MS - a socket that still looks open after the phone slept or the
+// network changed - and it's dropped and opened again; on coming back to
+// the front, quiet for WAKE_MS is enough.
+export const PING_MS = 20_000;
+export const DEAD_MS = 50_000;
+export const WAKE_MS = 25_000;
+
 // One live connection to a room - a live-scores room or an online table -
 // that keeps itself up: says hello (with the token, once it has one),
 // reconnects with backoff, rejoins afresh if the room forgot the token, and
@@ -194,6 +203,8 @@ export abstract class HubClient<Send extends { t: string }, Recv extends HubServ
   private status: ConnectionStatus = "connecting";
   private retries = 0;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
+  private pinger: ReturnType<typeof setInterval> | null = null;
+  private heard = 0; // when anything last came from the room
   private stopped = false;
   private nextRid = 1;
   private token: string | undefined;
@@ -226,9 +237,12 @@ export abstract class HubClient<Send extends { t: string }, Recv extends HubServ
     socket.onopen = () => {
       opened = true;
       this.retries = 0;
+      this.heard = Date.now();
+      this.beat();
       this.raw({ t: "hello", v: PROTOCOL_VERSION, name: this.opts.name, ...(this.token ? { token: this.token } : {}) });
     };
     socket.onmessage = (ev) => {
+      if (this.socket === socket) this.heard = Date.now();
       if (typeof ev.data !== "string") return;
       let msg: Recv;
       try {
@@ -241,6 +255,7 @@ export abstract class HubClient<Send extends { t: string }, Recv extends HubServ
     socket.onclose = () => {
       if (this.socket !== socket) return;
       this.socket = null;
+      this.unbeat();
       if (this.stopped) return this.setStatus("closed");
       this.setStatus("reconnecting");
       this.scheduleRetry();
@@ -294,9 +309,45 @@ export abstract class HubClient<Send extends { t: string }, Recv extends HubServ
     }, wait);
   }
 
+  private beat() {
+    this.unbeat();
+    this.pinger = setInterval(() => {
+      if (Date.now() - this.heard > DEAD_MS) this.drop();
+      else this.raw({ t: "ping" });
+    }, PING_MS);
+  }
+
+  private unbeat() {
+    if (this.pinger) clearInterval(this.pinger);
+    this.pinger = null;
+  }
+
+  // A socket that's gone quiet: let it go (its close may never come) and connect again.
+  private drop() {
+    const socket = this.socket;
+    if (!socket) return;
+    this.socket = null;
+    this.unbeat();
+    try {
+      socket.close(4000, "quiet");
+    } catch {
+      // Already gone.
+    }
+    this.setStatus("reconnecting");
+    this.retries = 0;
+    this.open();
+  }
+
   // Try again now - the page came back to the front, or the network did.
+  // Still connected but quiet a while: most likely a socket that died while
+  // the phone slept, so a fresh one.
   nudge() {
-    if (this.stopped || this.socket) return;
+    if (this.stopped) return;
+    if (this.socket) {
+      if (this.socket.readyState === OPEN && Date.now() - this.heard > WAKE_MS) this.drop();
+      else this.raw({ t: "ping" });
+      return;
+    }
     if (this.retryTimer) clearTimeout(this.retryTimer);
     this.retryTimer = null;
     this.retries = 0;
@@ -322,6 +373,7 @@ export abstract class HubClient<Send extends { t: string }, Recv extends HubServ
 
   stop() {
     this.stopped = true;
+    this.unbeat();
     if (this.retryTimer) clearTimeout(this.retryTimer);
     this.retryTimer = null;
     const socket = this.socket;

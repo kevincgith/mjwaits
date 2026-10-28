@@ -3,7 +3,7 @@ import { PROTOCOL_VERSION } from "@mjwaits/shared/protocol/limits";
 import type { RoomView, ServerMessage } from "@mjwaits/shared/protocol/server";
 import { withEvent, type ScoreGame } from "@mjwaits/shared/engine/ledger";
 import { sampleGame } from "@mjwaits/shared/protocol/sampleGame";
-import { createRoom, gameKey, GameSync, loadOnline, ONLINE_KEY, RoomClient, roomFromSearch, roomInfo, saveOnline, tokenFor, withoutRoom, withSharing, withToken, type SocketLike } from "./online";
+import { createRoom, DEAD_MS, gameKey, GameSync, PING_MS, WAKE_MS, loadOnline, ONLINE_KEY, RoomClient, roomFromSearch, roomInfo, saveOnline, tokenFor, withoutRoom, withSharing, withToken, type SocketLike } from "./online";
 
 // A WebSocket stand-in the test drives by hand.
 class FakeSocket implements SocketLike {
@@ -103,6 +103,47 @@ describe("RoomClient", () => {
       { t: "stop", rid: "1" },
       { t: "ping", rid: "2" },
     ]);
+  });
+
+  it("pings while connected, and drops a socket that's gone quiet for a fresh one", () => {
+    const { sockets, events } = client();
+    sockets[0].open();
+    sockets[0].deliver({ t: "welcome", v: PROTOCOL_VERSION, token: TOKEN, id: "0123456789abcdef", name: "Kevin", host: false });
+    vi.advanceTimersByTime(PING_MS);
+    expect(sockets[0].sent.at(-1)).toEqual({ t: "ping" });
+    // Answered: still the same socket.
+    sockets[0].deliver({ t: "pong" });
+    vi.advanceTimersByTime(PING_MS * 2);
+    expect(sockets).toHaveLength(1);
+    // Then nothing at all (a phone that slept): let go, connect again, with the token.
+    vi.advanceTimersByTime(DEAD_MS);
+    expect(sockets[0].closed).toBe(true);
+    expect(sockets).toHaveLength(2);
+    expect(events.status.at(-1)).toBe("reconnecting");
+    sockets[1].open();
+    expect(sockets[1].sent[0]).toMatchObject({ t: "hello", token: TOKEN });
+  });
+
+  it("on coming back to the front, a socket quiet a while is replaced at once", () => {
+    const { c, sockets } = client();
+    sockets[0].open();
+    sockets[0].deliver({ t: "welcome", v: PROTOCOL_VERSION, token: TOKEN, id: "0123456789abcdef", name: "Kevin", host: false });
+    c.nudge(); // just heard from: a ping, nothing more
+    expect(sockets).toHaveLength(1);
+    expect(sockets[0].sent.at(-1)).toEqual({ t: "ping" });
+    vi.setSystemTime(Date.now() + WAKE_MS + 1000);
+    c.nudge();
+    expect(sockets[0].closed).toBe(true);
+    expect(sockets).toHaveLength(2);
+  });
+
+  it("stops pinging once stopped", () => {
+    const { c, sockets } = client();
+    sockets[0].open();
+    c.stop();
+    const sent = sockets[0].sent.length;
+    vi.advanceTimersByTime(PING_MS * 3);
+    expect(sockets[0].sent).toHaveLength(sent);
   });
 
   it("ignores a room older than the one it has", () => {

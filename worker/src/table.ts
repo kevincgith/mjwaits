@@ -116,6 +116,8 @@ const AUTOPLAY_BOT = "grandmaster";
 // A table where someone's on 自動 deals the next hand no sooner than this after
 // a hand ends, so the result is seen (as the Play tab's 自動).
 const AUTOPLAY_NEXT_MS = 4500;
+// Between hands, the least time the table waits for someone not yet ready (see readyBy).
+const READY_MIN_S = 30;
 
 // crypto.getRandomValues as a number in [0, 1), for the wall, the dice and the bots.
 const random = () => crypto.getRandomValues(new Uint32Array(1))[0] / 2 ** 32;
@@ -158,6 +160,10 @@ export class Table extends Hub<TableMessage> {
       scores: 0,
     };
     this.setMeta("state", fresh);
+  }
+
+  protected get handsOnHost(): boolean {
+    return true;
   }
 
   private load(): Runtime {
@@ -789,7 +795,8 @@ export class Table extends Hub<TableMessage> {
         continue;
       }
       // Between hands: bots surrender a long 拉 by personality; the next hand
-      // is dealt once every person here (and not played for) is ready.
+      // is dealt once every person here (and not played for) is ready - or,
+      // anyone still not, once the hold has passed (see readyBy).
       for (const [s, row] of rt.seats.entries()) {
         if (row?.kind !== "bot") continue;
         for (const holder of botSurrenders(g, s, profileById(row.bot))) {
@@ -799,7 +806,7 @@ export class Table extends Hub<TableMessage> {
         }
       }
       const waiting = humans.filter((h) => online.has(h.id) && !this.actsAlone(h.seat) && !rt.ready.includes(h.seat));
-      if (waiting.length) return;
+      if (waiting.length && now < this.readyBy()) return;
       // Someone on 自動: the result's seen before the next deal.
       const dealAt = rt.chosen?.length && rt.overAt !== undefined ? rt.overAt + (AUTOPLAY_NEXT_MS * this.botPause) / BOT_PAUSE_MS : 0;
       if (now < dealAt) {
@@ -821,12 +828,22 @@ export class Table extends Hub<TableMessage> {
 
   // ---- The alarm: bots, deadlines, held seats ----------------------------------------
 
+  // Between hands, how long the table waits for someone who's here but
+  // hasn't said they're ready: the hold (as for a dropped player), at least
+  // READY_MIN_S - time to read the result.
+  private readyBy(): number {
+    const rt = this.rt;
+    if (rt.game?.phase.kind !== "over" || rt.overAt === undefined) return Infinity;
+    return rt.overAt + Math.max(rt.settings.hold, READY_MIN_S) * 1000;
+  }
+
   // The next moment something is due.
   private nextDue(): number | null {
     const rt = this.rt;
+    const ready = this.readyBy();
     if (rt.phase !== "playing") return null;
     const holds = Object.entries(rt.away).map(([seat, since]) => (rt.auto.includes(Number(seat)) ? Infinity : since + rt.settings.hold * 1000));
-    const due = Math.min(rt.botAt ?? Infinity, rt.deadline ?? Infinity, ...holds);
+    const due = Math.min(rt.botAt ?? Infinity, rt.deadline ?? Infinity, ready > Date.now() ? ready : Infinity, ...holds);
     return Number.isFinite(due) ? due : null;
   }
 
@@ -834,7 +851,9 @@ export class Table extends Hub<TableMessage> {
   // was met - so it only fires when there's something to do.
   private async schedule() {
     const due = this.nextDue();
-    if (due !== null) await this.ctx.storage.setAlarm(due);
+    // (Only ever sooner: the alarm also keeps the heartbeat - see Hub.sweep -
+    // and works out the next due time itself whenever it goes off.)
+    if (due !== null) await this.wakeAt(due);
   }
 
   protected onAlarm(now: number): number | null {
@@ -892,6 +911,7 @@ export class Table extends Hub<TableMessage> {
     return {
       code: this.meta<string>("code")!,
       version: this.clock.version,
+      host: this.meta<string>("host"),
       phase: rt.phase,
       seats,
       watching: people.filter((p) => online.has(p.id) && !rt.seats.some((s) => s?.kind === "human" && s.id === p.id)).length,
