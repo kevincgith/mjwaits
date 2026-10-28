@@ -409,6 +409,30 @@ export function trend(state: ReplayState): { hands: number; series: { player: st
   return { hands: state.hands.length, series };
 }
 
+// Everyone's career total game by game, oldest first - the 生涯 trend. Point
+// 0 is the start (0 for all); point i, each player's total after the i-th
+// game, flat through the games they sat out. Games with no hands are left
+// out. labels: what each point is (the game's day, as dayOf has it).
+export function careerTrend(games: ScoreGame[], dayOf: (at: number) => string): { hands: number; series: { player: string; values: (number | null)[] }[]; labels: string[] } {
+  const played = games.filter((g) => replayCached(g).hands.length > 0).sort((a, b) => a.startedAt - b.startedAt);
+  const players: string[] = [];
+  for (const g of played) for (const p of replayCached(g).players) if (!players.includes(p) && replayCached(g).hands.some((h) => h.seatsAfter.includes(p))) players.push(p);
+  const run = new Map(players.map((p) => [p, 0]));
+  const values = new Map(players.map((p) => [p, [0] as (number | null)[]]));
+  for (const g of played) {
+    const totals = replayCached(g).totals;
+    for (const p of players) {
+      run.set(p, (run.get(p) ?? 0) + (totals[p] ?? 0));
+      values.get(p)!.push(run.get(p)!);
+    }
+  }
+  return {
+    hands: played.length,
+    series: players.map((player) => ({ player, values: values.get(player)! })),
+    labels: ["Start", ...played.map((g) => `${g.name ? `${g.name} · ` : ""}${dayOf(g.startedAt)}`)],
+  };
+}
+
 export interface CareerStats {
   player: string;
   games: number;

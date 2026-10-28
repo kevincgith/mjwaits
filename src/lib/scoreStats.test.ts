@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_SETTINGS, newGame, replay, type ScoreEvent, type ScoreGame } from "@mjwaits/shared/engine/ledger";
-import { careerPlayerStats, careerStats, headToHead, marks, patternCounts, playerStats, rankedBy, trend, trendSummary } from "./scoreStats";
+import { careerPlayerStats, careerStats, careerTrend, headToHead, marks, patternCounts, playerStats, rankedBy, trend, trendSummary } from "./scoreStats";
 
 const PLAIN = { ...DEFAULT_SETTINGS, dealerTai: 0, streakTai: 0, jackpot: false };
 const game = (events: ScoreEvent[], seats = ["A", "B", "C", "D"]): ScoreGame => ({ ...newGame(seats, 0, PLAIN), events });
@@ -179,5 +179,23 @@ describe("trend, patterns, career and head-to-head", () => {
   it("nets head-to-head both ways", () => {
     const h = headToHead([g1, g2]);
     expect(h.A.B).toBe(-h.B.A);
+  });
+});
+
+describe("careerTrend", () => {
+  it("everyone's career total game by game, flat through games they missed", () => {
+    const g1 = { ...game([win(0, 10, 1)]), id: "g1", startedAt: 1 };
+    const g2 = { ...game([win(2, 4, 3)], ["A", "B", "C", "E"]), id: "g2", startedAt: 2 };
+    const empty = { ...game([]), id: "g0", startedAt: 0 };
+    const t = careerTrend([g2, empty, g1], (at) => `day${at}`);
+    expect(t.hands).toBe(2);
+    expect(t.labels).toEqual(["Start", "day1", "day2"]);
+    expect(Object.fromEntries(t.series.map((s) => [s.player, s.values]))).toEqual({
+      A: [0, 10, 10],
+      B: [0, -10, -10],
+      C: [0, 0, 4],
+      D: [0, 0, 0],
+      E: [0, 0, -4],
+    });
   });
 });
