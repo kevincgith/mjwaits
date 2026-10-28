@@ -628,32 +628,43 @@ const RevealedHand = memo(
 const Pond = memo(PondView, (a, b) => a.side === b.side && a.pinLast === b.pinLast && a.riichiAt === b.riichiAt && tilesKey(a.tiles) === tilesKey(b.tiles));
 
 // The turn timer as a light bar around the compass's rim, from the top and
-// clockwise: full when the clock starts, gone when it runs out. Drawn every
-// frame from the clock's end itself, so it always agrees with the number in
+// clockwise: full when the clock starts, gone when it runs out. One animation
+// set to where the clock's end puts it, so it always agrees with the number in
 // the middle (a CSS animation only starts when it's first painted, and ran
-// behind). Red for the last stretch.
+// behind) - in small steps, not every frame: online it runs all game, and
+// redrawing it at the screen's rate kept a phone's GPU busy (and hot). Red for
+// the last stretch.
 interface Countdown {
   total: number; // seconds
   endsAt: number; // ms
 }
 
 const COUNTDOWN_SHORT = 0.3;
+const COUNTDOWN_STEPS_PER_S = 24;
 
 function CountdownRing({ total, endsAt }: Countdown) {
   const bar = useRef<SVGPathElement>(null);
   useEffect(() => {
-    let frame = 0;
-    const draw = () => {
-      const left = Math.min(1, Math.max(0, (endsAt - Date.now()) / (total * 1000)));
-      const el = bar.current;
-      if (el) {
-        el.style.strokeDashoffset = String(left - 1);
-        el.classList.toggle("is-short", left < COUNTDOWN_SHORT);
-      }
-      if (left > 0) frame = requestAnimationFrame(draw);
+    const el = bar.current;
+    if (!el) return;
+    const ms = total * 1000;
+    const left = Math.min(1, Math.max(0, (endsAt - Date.now()) / ms));
+    el.classList.toggle("is-short", left < COUNTDOWN_SHORT);
+    if (left <= 0 || !el.animate) {
+      el.style.strokeDashoffset = String(left - 1);
+      return;
+    }
+    const run = el.animate([{ strokeDashoffset: 0 }, { strokeDashoffset: -1 }], {
+      duration: ms,
+      easing: `steps(${Math.max(1, Math.round(total * COUNTDOWN_STEPS_PER_S))})`,
+      fill: "forwards",
+    });
+    run.currentTime = ms * (1 - left);
+    const short = window.setTimeout(() => el.classList.add("is-short"), endsAt - ms * COUNTDOWN_SHORT - Date.now());
+    return () => {
+      run.cancel();
+      window.clearTimeout(short);
     };
-    draw();
-    return () => cancelAnimationFrame(frame);
   }, [total, endsAt]);
   return (
     <svg className="play-countdown" viewBox="0 0 36 36">
@@ -666,9 +677,38 @@ function CountdownRing({ total, endsAt }: Countdown) {
 // The compass's rounded edge, from the middle of its top edge clockwise.
 const RIM = "M18 1H27A8 8 0 0 1 35 9V27A8 8 0 0 1 27 35H9A8 8 0 0 1 1 27V9A8 8 0 0 1 9 1Z";
 
+// The seconds left in the compass's middle, kept here so the clock ticking
+// draws only this number again - not the whole table, once a second all game
+// online. Wakes once each time the number changes.
+interface Clock {
+  endsAt: number; // ms
+  cap: number; // seconds: never shows more than this
+}
+
+function ClockNumber({ endsAt, cap }: Clock) {
+  const secondsAt = () => Math.max(0, Math.min(cap, Math.ceil((endsAt - Date.now()) / 1000)));
+  const [seconds, setSeconds] = useState(secondsAt);
+  useEffect(() => {
+    let id = 0;
+    const tick = () => {
+      const now = secondsAt();
+      setSeconds(now);
+      if (now <= 0) return;
+      // Until the number next drops (a little after, so it has).
+      const ms = endsAt - Date.now() - (now - 1) * 1000;
+      id = window.setTimeout(tick, Math.max(16, ms + 5));
+    };
+    tick();
+    return () => window.clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [endsAt, cap]);
+  return <>{String(seconds).padStart(2, "0")}</>;
+}
+
 // The wind compass: the four seats' winds where those seats sit, the one to
-// act lit gold with a beam toward them, and a number in the middle.
-function Compass({ game, active, center, countdown }: { game: GameState; active: number | null; center: string; countdown: Countdown | null }) {
+// act lit gold with a beam toward them, and a number in the middle: the
+// seconds left while a clock runs, else `idle` (the tiles left).
+function Compass({ game, active, clock, idle, countdown }: { game: GameState; active: number | null; clock: Clock | null; idle: string; countdown: Countdown | null }) {
   return (
     <div className="play-compass" aria-hidden="true">
       {countdown && <CountdownRing key={countdown.endsAt} {...countdown} />}
@@ -677,7 +717,7 @@ function Compass({ game, active, center, countdown }: { game: GameState; active:
           {WIND_CHARS[seatWind(seat, game.dealer)]}
         </span>
       ))}
-      <span className="play-compass-center">{center}</span>
+      <span className="play-compass-center">{clock ? <ClockNumber key={clock.endsAt} {...clock} /> : idle}</span>
     </div>
   );
 }
@@ -2563,7 +2603,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
   // What the timer runs for: a move - or, on 換牌, your give or take (the
   // bots giving alongside you don't restart it).
   const timerFor: unknown = swapPhase ? [game.dealer, game.dealerStreak, game.roundWind, swapPhase.round, swapPhase.stage, swapPhase.taker].join() : game;
-  const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
+  const [clock, setClock] = useState<Clock | null>(null);
   const [countdown, setCountdown] = useState<Countdown | null>(null);
   // 換牌's give and take always have SWAP_TIMER_S; a move, the turn timer.
   const onSwap = game.phase.kind === "swap";
@@ -2573,33 +2613,26 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
   useEffect(() => {
     if (!online) return;
     if (deadline === null) {
-      setSecondsLeft(null);
+      setClock(null);
       setCountdown(null);
       return;
     }
     const total = onSwap ? SWAP_TIMER_S : online.table.settings.timer;
     setCountdown(total ? { total, endsAt: deadline } : null);
     // (Never more than the timer: the table's deadline can add the swap's waits to it.)
-    const tick = () => setSecondsLeft(Math.max(0, Math.min(total || Infinity, Math.ceil((deadline - Date.now()) / 1000))));
-    tick();
-    const id = window.setInterval(tick, 250);
-    return () => window.clearInterval(id);
+    setClock({ endsAt: deadline, cap: total || Infinity });
   }, [online, deadline, onSwap]);
   useEffect(() => {
     if (online) return;
     if (!limit || !deciding) {
-      setSecondsLeft(null);
+      setClock(null);
       setCountdown(null);
       return;
     }
-    const started = Date.now();
-    setSecondsLeft(limit);
-    setCountdown({ total: limit, endsAt: started + limit * 1000 });
-    const id = window.setInterval(() => {
-      const left = limit - Math.floor((Date.now() - started) / 1000);
-      setSecondsLeft(Math.max(0, left));
-      if (left > 0) return;
-      window.clearInterval(id);
+    const endsAt = Date.now() + limit * 1000;
+    setClock({ endsAt, cap: limit });
+    setCountdown({ total: limit, endsAt });
+    const id = window.setTimeout(() => {
       if (game.phase.kind === "swap") {
         swapTimeout.current();
       } else if (game.phase.kind === "claims") {
@@ -2608,8 +2641,8 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
         const tile = drawn && !isForbidden(drawn) ? drawn : rateDiscardsFor(game, HUMAN, ADVISOR)[0].tile;
         advance(applyTurnMove(game, { kind: "discard", tile }));
       }
-    }, 250);
-    return () => window.clearInterval(id);
+    }, limit * 1000);
+    return () => window.clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timerFor, limit, deciding]);
 
@@ -3002,8 +3035,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
   // Online, between hands: whether you've said you're ready, and who hasn't.
   const meReady = !!online && online.table.you !== null && online.table.ready.includes(online.table.you);
   const notReady = online && net ? online.table.waitingOn.filter((s) => s !== online.table.you).map((s) => nameOf(net.toLocal(s))) : [];
-  const compassCenter =
-    secondsLeft !== null ? String(secondsLeft).padStart(2, "0") : String(liveTilesLeft(game)).padStart(2, "0");
+  const tilesLeftLabel = String(liveTilesLeft(game)).padStart(2, "0");
 
   const total = (seat: number) => (
     <span className={`play-total${totals[seat] < 0 ? " is-neg" : ""}`}>{totals[seat] > 0 ? `+${totals[seat]}` : totals[seat]}</span>
@@ -3389,7 +3421,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
               )}
             </div>
             <div className="play-middle">
-              <Compass game={game} active={over ? null : activeSeat} center={compassCenter} countdown={over ? null : countdown} />
+              <Compass game={game} active={over ? null : activeSeat} clock={clock} idle={tilesLeftLabel} countdown={over ? null : countdown} />
               {game.phase.kind === "claims" ? (
                 <span key={game.discardsMade} className={`play-spotlight from-${SIDES[game.phase.from]}`}>
                   <TileGlyphSpan tile={game.phase.tile} block />

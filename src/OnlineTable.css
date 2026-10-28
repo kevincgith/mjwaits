@@ -806,17 +806,36 @@
   box-shadow: 0 0 0.5rem rgba(255, 209, 102, 0.6);
 }
 
+/* The felt's light holds still here: a table can sit waiting a long while,
+   and the breathing redrew the whole screen every frame for it. */
+.ot-screen .ph-glow {
+  animation: none;
+}
+
+/* The start button breathing once the table's full: a glow of its own that
+   fades in and out (an opacity the GPU moves alone - a shadow that changes
+   is painted again every frame). */
 .ot-screen .ph-item.is-ready {
+  position: relative;
+}
+
+.ot-screen .ph-item.is-ready::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow:
+    0 0.45rem 1.4rem rgba(226, 154, 28, 0.45),
+    0 0 2.6rem rgba(255, 209, 102, 0.4);
+  opacity: 0;
+  pointer-events: none;
+  will-change: opacity;
   animation: ot-ready 1.8s ease-in-out infinite;
 }
 
 @keyframes ot-ready {
   50% {
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.55),
-      inset 0 -2px 0 rgba(120, 70, 0, 0.35),
-      0 0.45rem 1.4rem rgba(226, 154, 28, 0.55),
-      0 0 2.6rem rgba(255, 209, 102, 0.45);
+    opacity: 1;
   }
 }
 
@@ -1014,7 +1033,7 @@
   .ot-final li,
   .ot-trophy,
   .ot-dots i,
-  .ot-screen .ph-item.is-ready {
+  .ot-screen .ph-item.is-ready::after {
     animation: none !important;
   }
 }
