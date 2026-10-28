@@ -321,9 +321,11 @@ function EdgeTilesView({ count, side, drew }: { count: number; side: Side; drew:
   );
 }
 
-// `hideConcealed`: a bot's concealed kong lies fully face down - nothing
-// about it shows until the hand is over. Your own shows its two middle
-// tiles, so you can see what you've set aside.
+// `hideConcealed`: another player's concealed kong lies fully face down -
+// nothing about it shows until the hand is over and their hand is shown,
+// when its middle tile and the one stacked on it turn up (the ends stay
+// down). Your own shows its two middle tiles, so you can see what you've
+// set aside.
 // A called run's tiles in table order: the claimed one between the other two.
 function runOrder(tiles: Tile[], claimed: Tile): number[] {
   const c = tiles.findIndex((t) => sameTile(t, claimed));
@@ -340,8 +342,11 @@ function MeldsView({ melds, hideConcealed, inRow }: { melds: GameMeld[]; hideCon
   return (
     <>
       {melds.map((m, i) => {
+        // Face down, of a concealed kong: all of it while hidden; else its
+        // ends - in a row the first and last, stacked the two either side.
+        const stacked = m.kind === "kong" && m.tiles.length === 4 && !inRow;
         const tile = (j: number) =>
-          m.concealed && (hideConcealed || j === 0 || j === 3) ? (
+          m.concealed && (hideConcealed || j === 0 || j === (stacked ? 2 : 3)) ? (
             // Face down: on the table, a block with its back up.
             <span key={j} className="play-back">
               <i className="tile-top" />
@@ -356,7 +361,7 @@ function MeldsView({ melds, hideConcealed, inRow }: { melds: GameMeld[]; hideCon
               // A called run shows the claimed tile in the middle: 1-3-2 for
               // a 3 taken to 1-2.
               runOrder(m.tiles, m.claimed).map((j) => tile(j))
-            ) : m.kind === "kong" && m.tiles.length === 4 && !inRow ? (
+            ) : stacked ? (
               <>
                 {tile(0)}
                 <span className="play-kong-stack">
@@ -3012,8 +3017,8 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
         <span className="play-seat-side">
           <Flowers flowers={p.flowers} />
           <span className="play-seat-melds">
-            {/* A concealed kong stays face down to you even at the end - unless it's a winner's. */}
-            <Melds melds={p.melds} hideConcealed={!over || hidden || !wonWith(seat)} />
+            {/* A concealed kong stays face down till the hand's over and theirs is shown. */}
+            <Melds melds={p.melds} hideConcealed={!over || hidden} />
             {side !== "top" && swapRow(seat)}
           </span>
         </span>

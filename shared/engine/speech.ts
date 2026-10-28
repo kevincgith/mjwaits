@@ -53,7 +53,7 @@ export interface Speech {
   dealerStay: string[]; // dealing again (連莊)
   dealerStaySeen: string[]; // someone else dealing again
   roundChange: string[]; // a new round wind
-  chased: string[]; // the fourth to throw the same tile, paying for it (追)
+  chased: string[]; // threw a tile the next three all threw too, and pays for it (追)
   chaseSeen: string[]; // someone else caught by 追
   wrongCallSeen: string[]; // someone took a call back, and paid (嗌錯)
   flowers: string[]; // paid for its flowers (花, 八仙過海, 7搶1 ...)

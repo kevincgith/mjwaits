@@ -93,18 +93,17 @@ const copyTiles = (tiles: Tile[]) => tiles.map((t) => ({ suit: t.suit, rank: t.r
 // `shown`: at a hand's end, whose hands everyone sees - all of them unless
 // the table keeps losing hands hidden (then the winners', and whoever
 // chose to show). You always see your own.
-// A concealed kong (暗槓) stays face down to the others even at a hand's
-// end - only a winner's is shown (it's part of the winning hand).
+// A concealed kong (暗槓) stays face down to the others till the hand's
+// over - then it's shown with the rest of that player's hand (a hand kept
+// hidden keeps it hidden too).
 export function viewFor(s: GameState, you: number, shown: (seat: number) => boolean = () => true): TableView {
   const over = s.phase.kind === "over";
-  const won = (seat: number) => s.phase.kind === "over" && (s.phase.result.winner === seat || (s.phase.result.alsoWon ?? []).some((w) => w.winner === seat));
   const players: SeatView[] = s.players.map((p, seat) => {
     const open = seat === you || (over && shown(seat));
-    const kongsOpen = seat === you || won(seat);
     return {
       hand: open ? copyTiles(p.hand) : null,
       handCount: p.hand.length,
-      melds: p.melds.map((m): MeldView => (m.kind === "kong" && m.concealed && !kongsOpen ? { kind: "kong", concealed: true, hidden: true, from: null } : { ...m, tiles: copyTiles(m.tiles) })),
+      melds: p.melds.map((m): MeldView => (m.kind === "kong" && m.concealed && !open ? { kind: "kong", concealed: true, hidden: true, from: null } : { ...m, tiles: copyTiles(m.tiles) })),
       flowers: p.flowers.map((f) => ({ ...f })),
       discards: copyTiles(p.discards),
       ...(p.riichi ? { riichi: { ...p.riichi } } : {}),
