@@ -781,9 +781,9 @@ export function applyTurnMove(state: GameState, move: TurnMove): GameState {
       if (liveTilesLeft(state) === 0) throw new Error("No kong once the wall is empty - nothing left to replace it");
       if (justClaimed(phase) && !(move.kind === "addedKong" && claimedPungTile(p) && sameTile(claimedPungTile(p)!, move.tile)))
         throw new Error("No kong straight after claiming a run or a pung - but the fourth of the pung just claimed");
-      // Any kong ends everyone's 一發.
-      for (const pl of s.players) if (pl.riichi) pl.riichi.ippatsu = false;
       if (move.kind === "concealedKong") {
+        // A kong that stands ends everyone's 一發.
+        for (const pl of s.players) if (pl.riichi) pl.riichi.ippatsu = false;
         p.hand = removeTiles(p.hand, [move.tile, move.tile, move.tile, move.tile]);
         p.melds.push({ kind: "kong", tiles: [move.tile, move.tile, move.tile, move.tile], concealed: true, from: null });
         (s.tableBonuses ??= []).push({ seat, name: "暗槓", deltas: collectFromEach(seat, CONCEALED_KONG_BONUS), paid: false });
@@ -812,7 +812,9 @@ export function applyTurnMove(state: GameState, move: TurnMove): GameState {
 // stands and its replacement is drawn. Only an added kong can be robbed.
 
 // The pung becomes a kong; then the replacement draw.
+// (Robbed instead, it never stands: a 叮 player who robs it keeps 一發.)
 function completeAddedKong(s: GameState, seat: number, tile: Tile): GameState {
+  for (const pl of s.players) if (pl.riichi) pl.riichi.ippatsu = false;
   const m = s.players[seat].melds.find((m) => m.kind === "triplet" && sameTile(m.tiles[0], tile))!;
   m.kind = "kong";
   m.tiles.push(tile);
