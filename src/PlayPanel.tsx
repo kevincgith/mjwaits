@@ -1288,9 +1288,14 @@ export function PlayPanel({ onExit, online, fresh }: { onExit: () => void; onlin
   // The far seat's melds and bonus tiles along its row, beside its hand -
   // in front of it (as the side seats' are) only when they won't fit across
   // the table beside it: in front, they'd take the room the far pond grows
-  // into. Measured laid end to end, the hand at its full 17 (a slot kept for
-  // a drawn tile) - so only a call or a flower can change it, never a draw.
+  // into. Measured laid end to end, the hand as long as its wall stands with
+  // that many melds down (16 less 3 a meld, and the slot kept for a drawn
+  // tile) - so only a call or a flower can change it, never a draw, nor the
+  // hand laid down at the end. Too long with the bonus tiles but not without
+  // them, the melds stay beside the hand and the bonus tiles go out a row
+  // in front of them (topOut).
   const [topFront, setTopFront] = useState(false);
+  const [topOut, setTopOut] = useState(false);
   useLayoutEffect(() => {
     const felt = feltRef.current;
     const seat = felt?.querySelector<HTMLElement>(".play-seat-top");
@@ -1299,17 +1304,24 @@ export function PlayPanel({ onExit, online, fresh }: { onExit: () => void; onlin
     const flowers = row?.querySelector<HTMLElement>(":scope > .play-flowers");
     if (!felt || !seat || !row || !melds) return;
     const gap = parseFloat(getComputedStyle(row).gap) || 0;
-    const laid = [...melds.children].reduce((n, m) => n + (m as HTMLElement).offsetWidth + gap, 0) + (flowers?.childElementCount ? flowers.offsetWidth + gap : 0);
-    // (A full hand's 17 - not the wall as drawn, which fits the hand.)
+    const meldsLong = [...melds.children].reduce((n, m) => n + (m as HTMLElement).offsetWidth + gap, 0);
+    const laid = meldsLong + (flowers?.childElementCount ? flowers.offsetWidth + gap : 0);
     const probe = document.createElement("span");
     probe.style.cssText = "position:absolute;visibility:hidden;font-size:var(--play-wall-top)";
     seat.appendChild(probe);
-    const hand = 17 * EDGE_PITCH * parseFloat(getComputedStyle(probe).fontSize);
+    const em = parseFloat(getComputedStyle(probe).fontSize);
     probe.remove();
+    // (The wall's own length - see .play-edge-top: a tile's room each, one
+    // more for the drawn tile's slot, and the gap it stands apart by twice.)
+    const standing = Math.max(0, 16 - 3 * game.players[2].melds.length);
+    const hand = ((standing + 2) * EDGE_PITCH + 0.5) * em;
     const cols = getComputedStyle(felt).gridTemplateColumns.split(" ").map(parseFloat);
     const room = cols.slice(1, -1).reduce((a, b) => a + b, 0);
-    const front = laid > 0 && hand + (parseFloat(getComputedStyle(seat).columnGap) || 0) + laid > room;
+    const beside = hand + (parseFloat(getComputedStyle(seat).columnGap) || 0);
+    const out = laid > 0 && beside + laid > room && (meldsLong === 0 || beside + meldsLong <= room);
+    const front = laid > 0 && beside + laid > room && !out;
     if (front !== topFront) setTopFront(front);
+    if (out !== topOut) setTopOut(out);
   });
   // Another seat's melds and bonus tiles running longer than its room (a
   // side seat's hand; across, the table's width): the bonus tiles move out
@@ -3196,7 +3208,7 @@ export function PlayPanel({ onExit, online, fresh }: { onExit: () => void; onlin
     // Losing hands hidden, one shown is shown later, by choice: at once.
     const choosing = online?.table.settings.reveal === false;
     return (
-      <div className={`play-seat play-seat-${side}${side !== "top" || topFront ? " is-front" : ""}${seatsOut.includes(side) && (side !== "top" || topFront) ? " has-bonus-out" : ""}`}>
+      <div className={`play-seat play-seat-${side}${side !== "top" || topFront ? " is-front" : ""}${(seatsOut.includes(side) && (side !== "top" || topFront)) || (side === "top" && topOut) ? " has-bonus-out" : ""}`}>
         {/* Melds and flowers in front of a side player's wall, from their
             left (the CSS turns them to face them); across, beside the far
             player's hand along their row - or in front, if that runs long. */}
