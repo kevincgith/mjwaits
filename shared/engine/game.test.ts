@@ -31,6 +31,7 @@ import {
   kongOptions,
   SEATS,
   type GameState,
+  type WallTile,
 } from "./game";
 import { parseHand, type Tile } from "./mahjong";
 import { botTurnFor, profileById } from "./bots";
@@ -435,6 +436,107 @@ describe("game", () => {
     expect(won.phase.kind === "over" && won.phase.result.score!.matched.some((m) => m.pattern.id === "early-win-four")).toBe(true);
   });
 
+  it("scores 人胡 for a win off a discard in the first go-around, and not after a call", () => {
+    const b5 = { suit: "b" as const, rank: 5 };
+    const fresh = (multiWin = false) => {
+      const s = newGame({ multiWin });
+      s.firstGoAround = true;
+      s.discardsMade = 0;
+      s.players.forEach((p) => {
+        p.discards = [];
+        p.melds = [];
+        p.flowers = [];
+      });
+      s.players[0].hand = parseHand("5b123456789m1234t");
+      s.players[1].hand = parseHand("123m456m789m123t456t5b");
+      s.players[2].hand = parseHand("123m456m789m123t456t5b");
+      s.phase = { kind: "turn", seat: 0, drawn: null, replacement: null };
+      return s;
+    };
+    const human = (s: GameState, seat: number) =>
+      s.phase.kind === "over" &&
+      [s.phase.result, ...(s.phase.result.alsoWon ?? [])].find((w) => w.winner === seat)!.score!.matched.some((m) => m.pattern.id === "human-win");
+    // Off the dealer's first discard.
+    const won = resolveClaims(applyTurnMove(fresh(), { kind: "discard", tile: b5 }), [null, { kind: "win" }, null, null]);
+    expect(human(won, 1)).toBe(true);
+    // 雙響 off it: both winners.
+    const both = resolveClaims(applyTurnMove(fresh(true), { kind: "discard", tile: b5 }), [null, { kind: "win" }, { kind: "win" }, null]);
+    expect(human(both, 1) && human(both, 2)).toBe(true);
+    // Once the go-around is over, no 人胡.
+    const late = fresh();
+    late.firstGoAround = false;
+    expect(human(resolveClaims(applyTurnMove(late, { kind: "discard", tile: b5 }), [null, { kind: "win" }, null, null]), 1)).toBe(false);
+  });
+
+  it("counts every kong and bonus tile replaced on the way to a self-drawn win (槓摸 / 花摸)", () => {
+    const filler = fullWall().filter((w) => !("bonus" in w)).slice(0, 40);
+    const t = (hand: string) => ({ tile: parseHand(hand)[0] });
+    const flower = { bonus: { kind: "flower" as const, rank: 1 as const } };
+    const drawFor = (chain: number) => (s: GameState) => {
+      const id = (pid: string) => (s.phase.kind === "over" ? s.phase.result.score!.matched.find((m) => m.pattern.id === pid)?.tai ?? 0 : -1);
+      return chain ? { kong: id("kong-draw"), flower: id("flower-draw") } : null;
+    };
+    const turn = (hand: string, back: WallTile[]) => {
+      const s = newGame();
+      s.firstGoAround = false;
+      s.players.forEach((p) => {
+        p.melds = [];
+        p.flowers = [];
+      });
+      s.players[0].hand = parseHand(hand);
+      s.wall = [...filler, ...back];
+      s.phase = { kind: "turn", seat: 0, drawn: null, replacement: null };
+      return s;
+    };
+    const m1 = parseHand("1m")[0];
+    const m2 = parseHand("2m")[0];
+    // Kong, kong, win on the second replacement: 槓摸×2.
+    let s = turn("1111m2222m345t678t45b9b", [t("9b"), t("6b")]);
+    s = applyTurnMove(s, { kind: "concealedKong", tile: m1 });
+    s = applyTurnMove(s, { kind: "concealedKong", tile: m2 });
+    expect(drawFor(1)(applyTurnMove(s, { kind: "selfDraw" }))).toEqual({ kong: 25, flower: 0 });
+    // Kong, a flower off its replacement, win on the next: 槓摸 and 花摸 both.
+    s = turn("1111m345t678t456b789b9b", [t("9b"), flower]);
+    s = applyTurnMove(s, { kind: "concealedKong", tile: m1 });
+    expect(drawFor(1)(applyTurnMove(s, { kind: "selfDraw" }))).toEqual({ kong: 5, flower: 2 });
+  });
+
+  it("scores 明絕 / 絕絕 by every copy in sight: the ponds and every exposed meld", () => {
+    const [m3] = parseHand("3m");
+    const won = (hand: string, ponds: string[], melds: { tiles: string; concealed: boolean }[] = []) => {
+      const s = newGame();
+      s.firstGoAround = false;
+      s.players.forEach((p, i) => {
+        p.discards = parseHand(ponds[i] ?? "");
+        p.melds = [];
+        p.flowers = [];
+      });
+      s.players[3].melds = melds.map((m) => ({ kind: "triplet" as const, tiles: parseHand(m.tiles), concealed: m.concealed, from: m.concealed ? null : 2 }));
+      s.players[1].hand = parseHand(hand);
+      return scoreWin(s, 1, 0, m3, null)
+        .matched.map((m) => m.pattern.id)
+        .filter((id) => id.startsWith("visible-"))
+        .join();
+    };
+    // 明絕: the other three 3m lying in the ponds.
+    expect(won("123m456m789m123t456t55b", ["", "", "3m3m", "3m"])).toBe("visible-triple-win");
+    expect(won("123m456m789m123t456t55b", ["", "", "3m3m", ""])).toBe("");
+    // 絕絕: waiting on 3m / 6m, every 6m and the other 3m in sight - the
+    // winning tile was the one copy left unseen (it takes 明絕's place).
+    expect(won("345m123t456t789t789b11b", ["", "", "3m3m", "3m6m"], [{ tiles: "666m", concealed: false }])).toBe("visible-exhausted-multi-wait");
+    // A concealed kong's copies aren't in sight.
+    expect(won("345m123t456t789t789b11b", ["", "", "3m3m", "3m6m"], [{ tiles: "666m", concealed: true }])).toBe("visible-triple-win");
+  });
+
+  it("charges the dealer 莊 on another player's 自摸, on the dealer's pair alone", () => {
+    const worth = (pairs: ReturnType<typeof settleWin>) => Object.fromEntries(pairs.map((p) => [p.payer, p.worth]));
+    // Dealer 0 on 連莊 2: 1 + 2×2 = 5 more from the dealer.
+    expect(worth(settleWin([], 0, 1, null, 10, 2))).toEqual({ "0": 15, "2": 10, "3": 10 });
+    // The dealer's own 自摸, or a win off a discard: 莊 is in the hand's farn already.
+    expect(worth(settleWin([], 0, 0, null, 10, 2))).toEqual({ "1": 10, "2": 10, "3": 10 });
+    expect(worth(settleWin([], 0, 1, 0, 10, 2))).toEqual({ "0": 10 });
+  });
+
   it("labels the round and deal", () => {
     const s = newGame();
     expect(roundLabel(s)).toBe("東圈東局");
@@ -550,7 +652,7 @@ describe("game", () => {
       ];
       const pairs = settleWin(lahs, 2, 0, null, 12);
       const by = Object.fromEntries(pairs.map((p) => [p.payer, p.worth]));
-      expect(by).toEqual({ "1": 12 + 5, "2": 12, "3": 12 + 4 });
+      expect(by).toEqual({ "1": 12 + 5, "2": 12 + 1, "3": 12 + 4 }); // (seat 2 deals: 莊 on top)
       // A 流局 hand keeps them, and the next deal carries them on.
       const s0 = newGame();
       s0.lahs = lahs;

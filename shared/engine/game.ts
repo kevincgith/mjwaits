@@ -25,6 +25,7 @@
 
 import {
   allTileKinds,
+  getWaits,
   isCompleteHand,
   MELDS_REQUIRED,
   shanten,
@@ -114,14 +115,26 @@ export type Phase =
   // `seat` holds a full hand (3k+2 tiles) and must discard, kong or win.
   // `forbidden`: 食替 - tiles that can't be discarded straight after a chow or
   // pung (see swapDiscardBan). Optional so games saved before it load as "none".
-  | { kind: "turn"; seat: number; drawn: Tile | null; replacement: "flower" | "kong" | null; forbidden?: Tile[] }
+  // `chain`: the kongs and bonus tiles replaced so far this turn, for 槓摸 /
+  // 花摸 on a win at the end of it.
+  | { kind: "turn"; seat: number; drawn: Tile | null; replacement: "flower" | "kong" | null; forbidden?: Tile[]; chain?: Chain }
   // `seat` just discarded `tile`; the others may claim it. `robKong`: `seat`
   // is adding `tile` to a pung instead - the others may only win on it (搶槓),
-  // and it's in no one's pond.
-  | { kind: "claims"; from: number; tile: Tile; robKong?: true }
+  // and it's in no one's pond; `chain` is that turn's, carried on if the kong
+  // stands.
+  | { kind: "claims"; from: number; tile: Tile; robKong?: true; chain?: Chain }
   | { kind: "over"; result: HandResult }
   // 換牌 before the first draw, on a round that swaps (see swap.ts).
   | SwapPhase;
+
+export type Chain = { kongs: number; flowers: number };
+
+// The chain so far with one more kong and/or `flowers` more bonus tiles;
+// left off the phase while it's empty.
+function extendChain(chain: Chain | undefined, kongs: number, flowers: number): { chain?: Chain } {
+  const next = { kongs: (chain?.kongs ?? 0) + kongs, flowers: (chain?.flowers ?? 0) + flowers };
+  return next.kongs || next.flowers ? { chain: next } : {};
+}
 
 export interface HandResult {
   winner: number | null; // null = exhaustive draw
@@ -198,20 +211,26 @@ export interface TableBonus {
 
 // Seats as the ledger names players, and its settlement with everything
 // the tai list already counts (底, 莊, 連莊) switched off so nothing is
-// counted twice - leaving the 拉/踢 add-on.
+// counted twice - leaving the 拉/踢 add-on, and 莊 on another player's 自摸
+// (see settleWins).
 const SEAT_IDS = ["0", "1", "2", "3"];
 export const PLAY_LAH_SETTINGS: ScoreSettings = { ...DEFAULT_SETTINGS, base: 0, dealerTai: 0, streakTai: 0, integerMode: true, lahRound: "up", tiRound: "up" };
 
 // What one winner collects, per payer, given the 拉 in play - the same
 // numbers the Scores tab's 食胡 sheet would show.
-export function settleWin(lahs: Lah[], dealer: number, winner: number, from: number | null, tai: number): PairPayment[] {
-  return settleWins(lahs, dealer, [{ seat: winner, tai }], from);
+export function settleWin(lahs: Lah[], dealer: number, winner: number, from: number | null, tai: number, dealerStreak = 0): PairPayment[] {
+  return settleWins(lahs, dealer, [{ seat: winner, tai }], from, dealerStreak);
 }
 
 // The same for several winners off one discard (一炮多響): the Scores tab's
 // 雙響 / 三響 settlement.
-export function settleWins(lahs: Lah[], dealer: number, winners: { seat: number; tai: number }[], from: number | null): PairPayment[] {
-  return previewWin({ seats: SEAT_IDS, dealer, streak: 0, lahs, settings: PLAY_LAH_SETTINGS }, winners, from);
+// 莊 is in the hand's farn when the dealer wins or deals in. On another
+// player's 自摸 the dealer still pays it (1 + 2 per 連莊), as the Scores tab
+// has it - on the dealer's own pair alone.
+export function settleWins(lahs: Lah[], dealer: number, winners: { seat: number; tai: number }[], from: number | null, dealerStreak = 0): PairPayment[] {
+  const dealerPays = from === null && !winners.some((w) => w.seat === dealer);
+  const extra = dealerPays ? DEFAULT_SETTINGS.dealerTai + DEFAULT_SETTINGS.streakTai * dealerStreak : 0;
+  return previewWin({ seats: SEAT_IDS, dealer, streak: 0, lahs, settings: PLAY_LAH_SETTINGS }, winners, from, 0, extra);
 }
 
 // The 拉/踢 add-on `winner` would get from `payer` right now (0 if none).
@@ -313,9 +332,9 @@ export const liveTilesLeft = (s: GameState) => Math.max(0, s.wall.length - DEAD_
 // replacement), setting aside any bonus tiles and replacing them from the
 // back. Returns the ordinary tile that ends up in hand, or null if the live
 // wall ran out first. Mutates `s`.
-function drawInto(s: GameState, seat: number, fromBack: boolean): { tile: Tile | null; flowered: boolean } {
+function drawInto(s: GameState, seat: number, fromBack: boolean): { tile: Tile | null; flowered: boolean; flowers: number } {
   let back = fromBack;
-  let flowered = false;
+  let flowers = 0;
   while (s.wall.length > DEAD_WALL_SIZE) {
     delete s.players[seat].passedPung; // a draw lifts a passed pung
     delete s.players[seat].threw; // and the bar on a claim back
@@ -326,14 +345,14 @@ function drawInto(s: GameState, seat: number, fromBack: boolean): { tile: Tile |
       for (const name of earned) (s.tableBonuses ??= []).push({ seat, name, deltas: collectFromEach(seat, FLOWER_BONUS[name]), paid: false });
       const rob = flowerRobbery(s.players.map((p) => p.flowers.length), seat);
       if (rob) (s.tableBonuses ??= []).push({ seat: rob.seat, name: rob.name, deltas: collectFromOne(rob.seat, rob.from, FLOWER_ROBBERY), paid: false });
-      flowered = true;
+      flowers++;
       back = true;
       continue;
     }
     s.players[seat].hand.push(w.tile);
-    return { tile: w.tile, flowered };
+    return { tile: w.tile, flowered: flowers > 0, flowers };
   }
-  return { tile: null, flowered };
+  return { tile: null, flowered: flowers > 0, flowers };
 }
 
 // ---- Dealing --------------------------------------------------------------
@@ -501,8 +520,8 @@ export function dealHand(
     return s;
   }
   // The dealer's 17th tile: their first draw.
-  const { tile, flowered } = drawInto(s, opts.dealer, false);
-  s.phase = { kind: "turn", seat: opts.dealer, drawn: tile, replacement: flowered ? "flower" : null };
+  const { tile, flowered, flowers } = drawInto(s, opts.dealer, false);
+  s.phase = { kind: "turn", seat: opts.dealer, drawn: tile, replacement: flowered ? "flower" : null, ...extendChain(undefined, 0, flowers) };
   return s;
 }
 
@@ -686,9 +705,9 @@ export function riichiForcedDiscard(s: GameState): Tile | null {
 // ---- Transitions ----------------------------------------------------------
 
 function nextTurn(s: GameState, seat: number): GameState {
-  const { tile, flowered } = drawInto(s, seat, false);
+  const { tile, flowered, flowers } = drawInto(s, seat, false);
   if (!tile) return endInDraw(s);
-  s.phase = { kind: "turn", seat, drawn: tile, replacement: flowered ? "flower" : null };
+  s.phase = { kind: "turn", seat, drawn: tile, replacement: flowered ? "flower" : null, ...extendChain(undefined, 0, flowers) };
   return s;
 }
 
@@ -745,7 +764,7 @@ export function applyTurnMove(state: GameState, move: TurnMove): GameState {
     }
     case "selfDraw": {
       if (!canWin(p)) throw new Error(p.riichi?.passed ? "叮: passed a win - no more this hand" : "Not a winning hand");
-      return finishWin(s, seat, null, phase.drawn ?? p.hand[p.hand.length - 1], phase.replacement);
+      return finishWin(s, seat, null, phase.drawn ?? p.hand[p.hand.length - 1], phase.chain ?? null);
     }
     case "concealedKong":
     case "addedKong": {
@@ -766,7 +785,7 @@ export function applyTurnMove(state: GameState, move: TurnMove): GameState {
       s.firstGoAround = false;
       // 搶槓: anyone who'd win on the added tile may take it first.
       if (s.players.some((pl, i) => i !== seat && canWin(pl, move.tile))) {
-        s.phase = { kind: "claims", from: seat, tile: move.tile, robKong: true };
+        s.phase = { kind: "claims", from: seat, tile: move.tile, robKong: true, ...(phase.chain ? { chain: { ...phase.chain } } : {}) };
         return s;
       }
       return completeAddedKong(s, seat, move.tile);
@@ -791,9 +810,11 @@ function completeAddedKong(s: GameState, seat: number, tile: Tile): GameState {
 }
 
 function kongReplacement(s: GameState, seat: number): GameState {
-  const { tile, flowered } = drawInto(s, seat, true);
+  // The turn's chain so far (an added kong passes it through 搶槓's claims).
+  const before = s.phase.kind === "turn" || s.phase.kind === "claims" ? s.phase.chain : undefined;
+  const { tile, flowered, flowers } = drawInto(s, seat, true);
   if (!tile) return endInDraw(s);
-  s.phase = { kind: "turn", seat, drawn: tile, replacement: flowered ? "flower" : "kong" };
+  s.phase = { kind: "turn", seat, drawn: tile, replacement: flowered ? "flower" : "kong", ...extendChain(before, 1, flowers) };
   return s;
 }
 
@@ -894,14 +915,15 @@ export function resolveClaims(state: GameState, decisions: (Claim | null)[]): Ga
   }
   // The claimed tile leaves the discarder's pond.
   s.players[from].discards.pop();
-  s.firstGoAround = false;
   s.chase = undefined;
-  // A call ends everyone's 一發 (a win ends the hand anyway).
-  if (claim.kind !== "win") for (const pl of s.players) if (pl.riichi) pl.riichi.ippatsu = false;
+  // A win is scored while the first go-around still stands (人胡).
   if (claim.kind === "win") {
     p.hand.push(tile);
     return finishWin(s, best, from, tile, null);
   }
+  // A call ends the first go-around, and everyone's 一發.
+  s.firstGoAround = false;
+  for (const pl of s.players) if (pl.riichi) pl.riichi.ippatsu = false;
   if (claim.kind === "chow") {
     p.hand = removeTiles(p.hand, claim.tiles);
     p.melds.push({ kind: "run", tiles: sortTiles([...claim.tiles, tile]), concealed: false, from, claimed: tile });
@@ -917,9 +939,9 @@ export function resolveClaims(state: GameState, decisions: (Claim | null)[]): Ga
   // Exposed kong: replacement draw.
   p.hand = removeTiles(p.hand, [tile, tile, tile]);
   p.melds.push({ kind: "kong", tiles: [tile, tile, tile, tile], concealed: false, from });
-  const { tile: drawn, flowered } = drawInto(s, best, true);
+  const { tile: drawn, flowered, flowers } = drawInto(s, best, true);
   if (!drawn) return endInDraw(s);
-  s.phase = { kind: "turn", seat: best, drawn, replacement: flowered ? "flower" : "kong" };
+  s.phase = { kind: "turn", seat: best, drawn, replacement: flowered ? "flower" : "kong", ...extendChain(undefined, 1, flowers) };
   return s;
 }
 
@@ -928,7 +950,7 @@ export function scoreWin(
   winner: number,
   from: number | null,
   tile: Tile,
-  replacement: "flower" | "kong" | null,
+  chain: Chain | null, // the replacement draws that led to a self-drawn win
   robKong = false,
   winnersOffOne = 1 // 一炮多響: how many won off this discard
 ): ScoreResult {
@@ -937,6 +959,14 @@ export function scoreWin(
   const selfDraw = from === null;
   const isDealer = winner === s.dealer;
   const lastTile = liveTilesLeft(s) === 0;
+  // 明絕 / 絕絕 count every copy in sight: in the ponds and in every exposed
+  // meld at the table (a concealed kong stays hidden).
+  const seen = (t: Tile) =>
+    s.players.reduce(
+      (n, pl) => n + pl.discards.filter((d) => sameTile(d, t)).length + pl.melds.filter((m) => !m.concealed).reduce((k, m) => k + m.tiles.filter((x) => sameTile(x, t)).length, 0),
+      0
+    );
+  const waits = getWaits(removeTiles(p.hand, [tile]), meldsNeeded(p));
   const ctx: GameContext = {
     seatWind: seatWind(winner, s.dealer),
     roundWind: s.roundWind,
@@ -960,13 +990,17 @@ export function scoreWin(
             ? "man"
             : "none",
     lastTileWin: lastTile ? (selfDraw ? "sea-bottom" : "river-bottom") : "none",
-    flowerDraw: selfDraw && replacement === "flower" ? 1 : 0,
-    kongDraw: selfDraw && replacement === "kong" ? 1 : 0,
+    // 花摸 / 槓摸: every bonus tile and kong replaced on the way to the
+    // winning draw this turn.
+    flowerDraw: selfDraw ? Math.min(8, chain?.flowers ?? 0) : 0,
+    kongDraw: selfDraw ? Math.min(5, chain?.kongs ?? 0) : 0,
     robKong: robKong ? 1 : 0,
     // 莊 counts when the dealer wins or pays; 連莊 adds the streak.
     dealerStreak: isDealer || from === s.dealer ? s.dealerStreak + 1 : 0,
-    manualVisibleTripleWin: false,
-    manualVisibleExhaustedMultiWait: false,
+    // 明絕: the other three copies of the winning tile are all in sight.
+    manualVisibleTripleWin: seen(tile) === 3,
+    // 絕絕: a wait on two or more tiles with only one copy of them all unseen.
+    manualVisibleExhaustedMultiWait: waits.length >= 2 && waits.reduce((n, w) => n + 4 - seen(w), 0) === 1,
   };
   return scoreParsedHand({ declaredMelds, freeTiles: p.hand, bonusTiles: p.flowers }, ctx);
 }
@@ -976,19 +1010,19 @@ function finishWin(
   winner: number,
   from: number | null,
   tile: Tile,
-  replacement: "flower" | "kong" | null,
+  chain: Chain | null,
   robKong = false
 ): GameState {
   let score: ScoreResult | null = null;
   let scoreError: string | null = null;
   try {
-    score = scoreWin(s, winner, from, tile, replacement, robKong);
+    score = scoreWin(s, winner, from, tile, chain, robKong);
   } catch (e) {
     scoreError = e instanceof Error ? e.message : String(e);
   }
   const tai = score?.total ?? 0;
   // Each payer pays the tai plus any 拉/踢 add-on between the two of them.
-  const pairs = settleWin(s.lahs ?? [], s.dealer, winner, from, tai);
+  const pairs = settleWin(s.lahs ?? [], s.dealer, winner, from, tai, s.dealerStreak);
   const deltas = [0, 0, 0, 0];
   for (const p of pairs) {
     deltas[Number(p.winner)] += p.worth;
@@ -1005,7 +1039,6 @@ function finishWin(
 function finishWins(s: GameState, seats: number[], from: number, tile: Tile, robKong: boolean): GameState {
   // The discard leaves the pond (a robbed kong's tile was never in it).
   if (!robKong) s.players[from].discards.pop();
-  s.firstGoAround = false;
   s.chase = undefined;
   for (const seat of seats) s.players[seat].hand.push(tile);
   const scored = seats.map((seat) => {
@@ -1102,8 +1135,8 @@ export function swapTake(state: GameState, seat: number, picks: number[][]): Gam
     s.phase = { ...ph, round: ph.round + 1, stage: "give", piles: [null, null, null, null], took: [], takenBy: undefined, taker: s.dealer };
     return s;
   }
-  const { tile, flowered } = drawInto(s, s.dealer, false);
-  s.phase = { kind: "turn", seat: s.dealer, drawn: tile, replacement: flowered ? "flower" : null };
+  const { tile, flowered, flowers } = drawInto(s, s.dealer, false);
+  s.phase = { kind: "turn", seat: s.dealer, drawn: tile, replacement: flowered ? "flower" : null, ...extendChain(undefined, 0, flowers) };
   return s;
 }
 

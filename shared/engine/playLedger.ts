@@ -87,7 +87,17 @@ export function playEvents(before: GameState | null, after: GameState, seats: st
         tai: w.score?.total ?? 0,
         ...(w.score ? { patterns: scoreView(w.score).patterns } : {}),
       }));
-      out.push({ t: "win", at, winners, from: r.from, source: "scoring", ...(r.from === null && jackpot && jackpot.pot > 0 ? { jackpotTo: seats[r.winner] } : {}) });
+      // 莊 the dealer paid on top of another player's 自摸.
+      const dealerExtra = (r.pairs ?? []).reduce((n, p) => n + p.dealer, 0);
+      out.push({
+        t: "win",
+        at,
+        winners,
+        from: r.from,
+        source: "scoring",
+        ...(r.from === null && jackpot && jackpot.pot > 0 ? { jackpotTo: seats[r.winner] } : {}),
+        ...(dealerExtra ? { dealerExtra } : {}),
+      });
     }
   }
   // 投降: a 拉 gone between hands - whether the next deal is in the same
