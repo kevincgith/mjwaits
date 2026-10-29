@@ -10396,11 +10396,6 @@ function App() {
           <PlayPanel
             fresh={playScreen === "new"}
             onExit={() => setPlayScreen("home")}
-            onOnline={() => {
-              tableFromPlay.current = true;
-              setPlayScreen("home");
-              setMode("table");
-            }}
           />
         ))}
       {!sharedScores && mode === "table" && (

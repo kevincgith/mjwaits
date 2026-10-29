@@ -75,7 +75,7 @@ export const SettingsSchema = object(
 
 export const EventSchema = tagged({
   win: object(
-    { t: literal("win"), at, winners: array(WinnerEntry, 1, 3), from: nullable(seat), jackpotTo: optional(name), source: optional(oneOf("quick", "scoring")), multiTai: optNum, dealerExtra: optNum, batch },
+    { t: literal("win"), at, winners: array(WinnerEntry, 1, 3), from: nullable(seat), jackpotTo: optional(name), source: optional(oneOf("quick", "scoring")), multiTai: optNum, dealerExtra: optNum, fanXuePaid: optional(array(object({ from: name, to: name, amount }, strip), 1, 3)), batch },
     strip
   ),
   draw: object({ t: literal("draw"), at, batch }, strip),

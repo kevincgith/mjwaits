@@ -240,6 +240,7 @@ interface Saved {
   oneTap?: boolean;
   multiWin?: boolean; // 一炮多響 (else 截胡)
   runBack?: boolean; // runs back from a tile just thrown allowed (see GameState.runBack)
+  fanXue?: boolean; // 反雪 (absent: on)
   swapRules?: SwapRules; // 換牌: which rounds, and what the dice mean
   jackpot?: number; // 獎池: each player's share per draw (0: off)
   record?: boolean;
@@ -522,7 +523,6 @@ function TalkRows() {
       <div className="play-menu-row">
         <span>
           講出聲 Say it aloud
-          <span className="play-menu-note"> · each bot in its own voice</span>
         </span>
         <span className="play-menu-seg">
           {[true, false].map((on) => (
@@ -542,7 +542,6 @@ function TalkRows() {
       <div className="play-menu-row">
         <span>
           你把聲 Your voice
-          <span className="play-menu-note"> · your calls aloud</span>
         </span>
         <span className="play-menu-seg">
           {(["male", "female"] as YourVoice[]).map((v) => (
@@ -899,7 +898,10 @@ type WireClaim = Extract<TableClientMessage, { t: "claim" }>["claim"];
 type WireTiles = Extract<TableClientMessage, { t: "give" }>["tiles"];
 
 // `fresh`: start a new game (keeping the settings) instead of the saved one.
-export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => void; onOnline?: () => void; online?: OnlinePlay; fresh?: boolean }) {
+// The others' standing tiles: each this many of the wall's em along its row (--edge-pitch).
+const EDGE_PITCH = 0.72;
+
+export function PlayPanel({ onExit, online, fresh }: { onExit: () => void; online?: OnlinePlay; fresh?: boolean }) {
   const saved = useMemo(loadSaved, []);
   const resume = fresh ? null : saved;
   // A fresh table deals its first hand with the table's own rules - 截胡 or
@@ -908,7 +910,12 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
   const [localGame, setGame] = useState<GameState>(
     () =>
       resume?.game ??
-      newGame({ multiWin: saved?.multiWin ?? saved?.game?.multiWin ?? false, runBack: saved?.runBack ?? false, swapRules: saved?.swapRules ?? saved?.game?.swapRules ?? DEFAULT_SWAP_RULES })
+      newGame({
+        multiWin: saved?.multiWin ?? saved?.game?.multiWin ?? true,
+        runBack: saved?.runBack ?? false,
+        noFanXue: saved?.fanXue === false,
+        swapRules: saved?.swapRules ?? saved?.game?.swapRules ?? DEFAULT_SWAP_RULES,
+      })
   );
   const [localTotals, setTotals] = useState<number[]>(() => resume?.totals ?? [0, 0, 0, 0]);
   // Online: this seat's view, turned so you're at seat 0.
@@ -925,12 +932,17 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
   // One-tap discard: a single tap throws the tile (off: tap to lift, tap again).
   const [oneTap, setOneTap] = useState(() => saved?.oneTap ?? false);
   // 一炮多響: a table setting, kept on the game itself so it carries hand to hand.
-  const [multiWin, setMultiWin] = useState(() => saved?.multiWin ?? saved?.game?.multiWin ?? false);
+  const [multiWin, setMultiWin] = useState(() => saved?.multiWin ?? saved?.game?.multiWin ?? true);
   // No claim back of a tile just thrown (on unless lifted): on the game, like multiWin.
   const [runBack, setRunBack] = useState(() => saved?.runBack ?? saved?.game?.runBack ?? false);
   useEffect(() => {
     if (!online && !!game.runBack !== runBack) setGame((g) => ({ ...g, ...(runBack ? { runBack: true } : { runBack: undefined }) }));
   }, [game, runBack, online]);
+  // 反雪 (on unless turned off): on the game too.
+  const [fanXue, setFanXue] = useState(() => saved?.fanXue ?? !saved?.game?.noFanXue);
+  useEffect(() => {
+    if (!online && !game.noFanXue !== fanXue) setGame((g) => ({ ...g, ...(fanXue ? { noFanXue: undefined } : { noFanXue: true }) }));
+  }, [game, fanXue, online]);
   // 獎池: each draw everyone puts this in the pot; a 自摸 takes it all. 0: off.
   const [jackpot, setJackpot] = useState(() => saved?.jackpot ?? 5); // (5 till you choose)
   useEffect(() => {
@@ -1131,8 +1143,16 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
         { t: "swap", at, seats: names },
       ])
     );
-    if (ended.length) {
-      const g = { ...localGame, lahs: (localGame.lahs ?? []).filter((l) => !ended.includes(l)) };
+    // Nor any 反雪 owed with that seat.
+    const due = localGame.fanXueDue;
+    const dueLeft = due && !changed.has(String(due.loser)) ? due.winners.filter((w) => !changed.has(String(w))) : [];
+    const keepDue = due && dueLeft.length === due.winners.length;
+    if (ended.length || (due && !keepDue)) {
+      const g: GameState = { ...localGame, lahs: (localGame.lahs ?? []).filter((l) => !ended.includes(l)) };
+      if (due && !keepDue) {
+        if (dueLeft.length) g.fanXueDue = { ...due, winners: dueLeft };
+        else delete g.fanXueDue;
+      }
       ledgerFrom.current = g; // (recorded just above)
       setGame(g);
     }
@@ -1284,7 +1304,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     const probe = document.createElement("span");
     probe.style.cssText = "position:absolute;visibility:hidden;font-size:var(--play-wall-top)";
     seat.appendChild(probe);
-    const hand = 17 * 0.78 * parseFloat(getComputedStyle(probe).fontSize);
+    const hand = 17 * EDGE_PITCH * parseFloat(getComputedStyle(probe).fontSize);
     probe.remove();
     const cols = getComputedStyle(felt).gridTemplateColumns.split(" ").map(parseFloat);
     const room = cols.slice(1, -1).reduce((a, b) => a + b, 0);
@@ -1308,7 +1328,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
       const melds = row?.querySelector<HTMLElement>(":scope > .play-seat-melds");
       if (!seat || !row || !melds || !flowers || !flowers.childElementCount) return false;
       const along = (e: HTMLElement) => (side === "top" ? e.offsetWidth : e.offsetHeight);
-      // A side seat's room: a full wall's length (17 tiles of 0.78) - not the
+      // A side seat's room: a full wall's length (17 tiles of EDGE_PITCH) - not the
       // wall as drawn, which fits its hand - so it holds once the hand's
       // laid down too.
       const wallLength = () => {
@@ -1317,7 +1337,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
         seat.appendChild(probe);
         const em = parseFloat(getComputedStyle(probe).fontSize);
         probe.remove();
-        return 17 * 0.78 * em;
+        return 17 * EDGE_PITCH * em;
       };
       const gap = parseFloat(getComputedStyle(row).gap) || 0;
       // The whole row laid end to end (as if its melds didn't wrap).
@@ -1640,8 +1660,8 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
 
   // This device's own game (never an online one).
   useEffect(
-    () => save({ game: localGame, totals: localTotals, hint, timer, opponents, randomOpponents, speed, oneTap, record, multiWin, runBack, swapRules, jackpot, ledger: localLedger }),
-    [localGame, localTotals, hint, timer, opponents, randomOpponents, speed, oneTap, record, multiWin, runBack, swapRules, jackpot, localLedger]
+    () => save({ game: localGame, totals: localTotals, hint, timer, opponents, randomOpponents, speed, oneTap, record, multiWin, runBack, fanXue, swapRules, jackpot, ledger: localLedger }),
+    [localGame, localTotals, hint, timer, opponents, randomOpponents, speed, oneTap, record, multiWin, runBack, fanXue, swapRules, jackpot, localLedger]
   );
 
   // The menu closes on a tap anywhere outside it, and disarms New game.
@@ -2838,6 +2858,19 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
                 </span>
               </div>
               <div className="play-menu-row">
+                <span title="Dealt into a 雙響 / 三響, then self-drew the next hand anyone won: 5 (or 10) back from each of those winners, into your new 拉 on them">
+                  反雪
+                  <span className="play-menu-note"> · {fanXue ? "5 back from each 雙響 winner (10 for 三響)" : "off"}</span>
+                </span>
+                <span className="play-menu-seg">
+                  {[false, true].map((on) => (
+                    <button key={String(on)} type="button" className={fanXue === on ? "toggle-on" : undefined} aria-pressed={fanXue === on} onClick={() => setFanXue(on)}>
+                      {on ? "On" : "Off"}
+                    </button>
+                  ))}
+                </span>
+              </div>
+              <div className="play-menu-row">
                 <span>
                   No claim back
                   <span className="play-menu-note" title="Threw 1m: no pung, kong or run with it till you draw - from 123m, no run with 4m either"> · {runBack ? "any claim may be made" : "not of a tile just thrown"}</span>
@@ -2929,8 +2962,9 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
   );
   // Every rule as a first game has it.
   const resetRules = () => {
-    setMultiWin(false);
+    setMultiWin(true);
     setRunBack(false);
+    setFanXue(true);
     setJackpot(5);
     setSwapRules(DEFAULT_SWAP_RULES);
     setRandomOpponents(true);
@@ -2945,7 +2979,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     setMenuOpen(false);
     setSelected(null);
     setResultHidden(false);
-    const g = newGame({ multiWin, runBack, swapRules });
+    const g = newGame({ multiWin, runBack, noFanXue: !fanXue, swapRules });
     ledgerFrom.current = g;
     const fresh = newPlayLedger(playerNames(opponents), g.dealer);
     setLedger({ ...fresh, events: playEvents(null, g, fresh.seats) });
@@ -3087,6 +3121,9 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
   // The dealer's chip, with their run of wins and draws (連莊) on it.
   const dealerChip = game.dealerStreak > 0 ? <span className="play-dealer is-streak">莊連{game.dealerStreak}</span> : <span className="play-dealer">莊</span>;
 
+  // 起莊: who dealt the game's first hand - a gold wedge in the table's
+  // corner at their left.
+  const firstDealer = game.firstDealer ?? 0;
   // A bot's name card - flat, over the corner of the table like a HUD.
   const badge = (seat: number) => (
     <span className={`play-badge at-${SIDES[seat]}${activeSeat === seat ? " is-active" : ""}`}>
@@ -3353,12 +3390,6 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
               </div>
               <SoundRow />
               <TalkRows />
-              {onOnline && (
-                <button type="button" className="play-menu-link" onClick={onOnline}>
-                  <span>線上對局 Play online</span>
-                  <span className="play-menu-value">with friends or bots ›</span>
-                </button>
-              )}
               <button
                 type="button"
                 className="play-menu-link"
@@ -3420,6 +3451,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
             and the bar stay flat in front of it. */}
         <div className="play-stage">
           <div className="play-felt" ref={feltRef}>
+            <span className={`play-first-dealer at-${SIDES[firstDealer]}`} title={`起莊: ${nameOf(firstDealer)}`} aria-label={`起莊 ${nameOf(firstDealer)}`} />
             {wall(2)}
             {wall(3)}
             {wall(1)}
@@ -3891,8 +3923,14 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
                     {w.scoreError && <p className="play-result-error">Couldn't score this hand: {w.scoreError}</p>}
                   </div>
                 ))}
-              {(result.pairs ?? []).some((p) => p.lah || p.dealer) && (
+              {((result.pairs ?? []).some((p) => p.lah || p.dealer) || !!result.fanXue?.length) && (
                 <ul className="play-result-lah">
+                  {/* 反雪: the last 雙響 / 三響's winners pay its loser back. */}
+                  {(result.fanXue ?? []).map((f) => (
+                    <li key={`反雪-${f.from}`}>
+                      反雪 · {nameOf(f.from)} {isMe(f.from) ? "pay" : "pays"} {nameOf(f.to)} +{f.amount} back
+                    </li>
+                  ))}
                   {/* 莊 on another player's 自摸: the dealer pays it on top. */}
                   {(result.pairs ?? [])
                     .filter((p) => p.dealer)

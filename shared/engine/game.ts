@@ -154,6 +154,9 @@ export interface HandResult {
   // 一炮多響: the other winners off the same discard, in turn order after
   // `winner`. Their payments are in `deltas` and `pairs` with the first's.
   alsoWon?: { winner: number; score: ScoreResult | null; scoreError: string | null }[];
+  // 反雪 paid on this 自摸: each of the last 雙響 / 三響's winners to the
+  // player who dealt into it (see GameState.fanXueDue). In `deltas` too.
+  fanXue?: { from: number; to: number; amount: number }[];
 }
 
 export interface GameState {
@@ -203,6 +206,14 @@ export interface GameState {
   // run it came out of (see Player.threw). `true` here lifts it. A table
   // setting, carried like multiWin.
   runBack?: boolean;
+  // 反雪 (on unless this says otherwise; see the Scores tab's, ledger.ts):
+  // the player who dealt into a 雙響 / 三響 and self-draws the next hand
+  // anyone wins gets FAN_XUE from each of those winners, into their new 拉
+  // on them. `true` here turns it off. A table setting, carried like multiWin.
+  noFanXue?: boolean;
+  // The last 雙響 / 三響 - who dealt in, who won, and what each would pay
+  // back - till the next win (a draw keeps it).
+  fanXueDue?: { loser: number; winners: number[]; amount: number };
 }
 
 export interface TableBonus {
@@ -468,12 +479,23 @@ function breakWall(wall: WallTile[], dice: Dice, dealer: number): WallTile[] {
   return [...wall.slice(at), ...wall.slice(0, at)];
 }
 
-export function newGame(opts: { multiWin?: boolean; runBack?: boolean; swapRules?: SwapRules } = {}): GameState {
+export function newGame(opts: { multiWin?: boolean; runBack?: boolean; noFanXue?: boolean; swapRules?: SwapRules } = {}): GameState {
   return dealHand({ dealer: 0, roundWind: 1, dealerStreak: 0, ...opts });
 }
 
 export function dealHand(
-  opts: { dealer: number; roundWind: Wind; dealerStreak: number; firstDealer?: number; lahs?: Lah[]; multiWin?: boolean; runBack?: boolean; swapRules?: SwapRules },
+  opts: {
+    dealer: number;
+    roundWind: Wind;
+    dealerStreak: number;
+    firstDealer?: number;
+    lahs?: Lah[];
+    multiWin?: boolean;
+    runBack?: boolean;
+    noFanXue?: boolean;
+    fanXueDue?: GameState["fanXueDue"];
+    swapRules?: SwapRules;
+  },
   wall?: WallTile[],
   random: Random = Math.random
 ): GameState {
@@ -495,6 +517,8 @@ export function dealHand(
     lahs: opts.lahs ?? [],
     ...(opts.multiWin ? { multiWin: true } : {}),
     ...(opts.runBack ? { runBack: true } : {}),
+    ...(opts.noFanXue ? { noFanXue: true } : {}),
+    ...(opts.fanXueDue ? { fanXueDue: opts.fanXueDue } : {}),
     ...(opts.swapRules ? { swapRules: opts.swapRules } : {}),
     ...(dice ? { dice } : {}),
   };
@@ -1047,8 +1071,31 @@ function finishWin(
     deltas[Number(p.payer)] -= p.worth;
   }
   s.lahs = nextLahs(s.lahs ?? [], pairs, new Set([SEAT_IDS[winner]]));
-  s.phase = { kind: "over", result: { winner, from, tile, score, scoreError, deltas, pairs, ...(robKong ? { robKong: true as const } : {}) } };
+  // 反雪: paid, and riding in the 拉 this 自摸 just started on each of them.
+  const fanXue = fanXueOn(s, winner, from);
+  for (const f of fanXue) {
+    deltas[f.to] += f.amount;
+    deltas[f.from] -= f.amount;
+  }
+  s.lahs = s.lahs.map((l) => {
+    const f = fanXue.find((x) => SEAT_IDS[x.to] === l.holder && SEAT_IDS[x.from] === l.pulled);
+    return f ? { ...l, value: l.value + f.amount } : l;
+  });
+  delete s.fanXueDue;
+  s.phase = {
+    kind: "over",
+    result: { winner, from, tile, score, scoreError, deltas, pairs, ...(robKong ? { robKong: true as const } : {}), ...(fanXue.length ? { fanXue } : {}) },
+  };
   return s;
+}
+
+// 反雪 owed on this win: `winner` self-drew the first hand anyone has won
+// since dealing into a 雙響 / 三響 - each of its winners pays them back.
+const FAN_XUE = { double: DEFAULT_SETTINGS.fanXueDouble, triple: DEFAULT_SETTINGS.fanXueTriple };
+function fanXueOn(s: GameState, winner: number, from: number | null): { from: number; to: number; amount: number }[] {
+  const due = s.fanXueDue;
+  if (s.noFanXue || from !== null || !due || due.loser !== winner) return [];
+  return due.winners.map((w) => ({ from: w, to: winner, amount: due.amount }));
 }
 
 // 一炮多響: several winners off one discard (or one robbed kong), in turn
@@ -1073,6 +1120,8 @@ function finishWins(s: GameState, seats: number[], from: number, tile: Tile, rob
     deltas[Number(p.payer)] -= p.worth;
   }
   s.lahs = nextLahs(s.lahs ?? [], pairs, new Set(seats.map((seat) => SEAT_IDS[seat])));
+  // Owed back as 反雪 if `from` self-draws the next hand anyone wins.
+  s.fanXueDue = { loser: from, winners: seats.slice(), amount: seats.length >= 3 ? FAN_XUE.triple : FAN_XUE.double };
   const [first, ...rest] = scored;
   s.phase = {
     kind: "over",
@@ -1092,13 +1141,14 @@ export function nextHand(s: GameState, wall?: WallTile[], random: Random = Math.
   const runBack = s.runBack;
   const swapRules = s.swapRules;
   const firstDealer = s.firstDealer ?? 0;
+  const carried = { firstDealer, lahs, multiWin, runBack, swapRules, noFanXue: s.noFanXue, fanXueDue: s.fanXueDue };
   // The dealer stays on a draw, or when among the winners.
   if (winner === null || winner === s.dealer || alsoWon?.some((w) => w.winner === s.dealer)) {
-    return dealHand({ dealer: s.dealer, roundWind: s.roundWind, dealerStreak: s.dealerStreak + 1, firstDealer, lahs, multiWin, runBack, swapRules }, wall, random);
+    return dealHand({ dealer: s.dealer, roundWind: s.roundWind, dealerStreak: s.dealerStreak + 1, ...carried }, wall, random);
   }
   const dealer = (s.dealer + 1) % SEATS;
   const roundWind = (dealer === firstDealer ? (s.roundWind % 4) + 1 : s.roundWind) as Wind;
-  return dealHand({ dealer, roundWind, dealerStreak: 0, firstDealer, lahs, multiWin, runBack, swapRules }, wall, random);
+  return dealHand({ dealer, roundWind, dealerStreak: 0, ...carried }, wall, random);
 }
 
 // ---- 換牌 ------------------------------------------------------------------------
