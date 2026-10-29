@@ -2,7 +2,7 @@
 // per-player stats (the 統計 card), the running-totals series (走勢), career
 // stats across games, head-to-head and pattern counts.
 
-import { CHIP_POT, replayCached, stepAt, type HandResult, type ReplayState, type ScoreGame } from "@mjwaits/shared/engine/ledger";
+import { CHIP_POT, replayCached, stepAt, type HandResult, type PatternNote, type ReplayState, type ScoreGame } from "@mjwaits/shared/engine/ledger";
 
 export interface AtHand {
   value: number;
@@ -678,4 +678,27 @@ export function patternCounts(state: ReplayState): { name: string; count: number
     }
   }
   return [...by.values()].sort((a, b) => b.count - a.count);
+}
+
+// Each player's winning hands, biggest tai first - with the patterns behind
+// them when the hand came from Scoring - and the players in order of their
+// biggest hand. A 雙響 / 三響 counts once for each winner.
+export interface WonHand {
+  hand: number;
+  label: string;
+  tai: number;
+  selfDraw: boolean;
+  from: string | null;
+  patterns: PatternNote[];
+}
+
+export function handsByPlayer(state: ReplayState): { player: string; hands: WonHand[] }[] {
+  const by = new Map<string, WonHand[]>(state.players.map((p) => [p, []]));
+  for (const h of state.hands) {
+    if (h.kind !== "win") continue;
+    for (const w of h.winners) by.get(w.player)?.push({ hand: h.hand, label: h.label, tai: w.tai, selfDraw: h.selfDraw, from: h.from, patterns: w.patterns ?? [] });
+  }
+  return [...by.entries()]
+    .map(([player, hands]) => ({ player, hands: hands.sort((a, b) => b.tai - a.tai || a.hand - b.hand) }))
+    .sort((a, b) => (b.hands[0]?.tai ?? -1) - (a.hands[0]?.tai ?? -1));
 }

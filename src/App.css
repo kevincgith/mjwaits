@@ -11714,6 +11714,65 @@ details.sc-stat-group:not([open]) {
   text-align: right;
 }
 
+/* 牌型's biggest hand, and each player's hands biggest first. */
+.sc-top-hand {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin-bottom: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: var(--radius-md);
+  background: var(--fill);
+}
+
+.sc-top-hand-main {
+  font-size: var(--text-md);
+  font-variant-numeric: tabular-nums;
+}
+
+.sc-top-hand-main .sc-dot {
+  margin-right: 0.35rem;
+}
+
+.sc-hands-by {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.sc-hands-by li {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.6rem 0;
+}
+
+.sc-hands-by li + li {
+  border-top: 1px solid var(--separator);
+}
+
+.sc-hands-by-who {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+
+.sc-hands-by-hand {
+  display: grid;
+  grid-template-columns: 2.75rem minmax(0, 1fr);
+  gap: 0.5rem;
+  align-items: baseline;
+}
+
+.sc-hands-by-hand > span {
+  display: flex;
+  flex-direction: column;
+}
+
+.sc-hands-by .sc-text-button {
+  align-self: flex-start;
+}
+
 .sc-pattern-who {
   grid-area: who;
   display: flex;
@@ -13628,19 +13687,19 @@ html.sc-fit-mode .build-version {
 
 .sc-chart /* 紀錄: the period picker (All / Year / Quarter / Month, ‹ which one ›), and
    the games list's fold-away header. */
+/* All / Year / Quarter / Month across the full width, and under it the
+   period shown, stepped by ‹ › at either end. */
 .sc-period {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
+  flex-direction: column;
+  gap: 0.4rem;
   margin-bottom: 0.75rem;
 }
 
 .sc-period-step {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 0.25rem;
+  justify-content: space-between;
   font-size: var(--text-sm);
 }
 
@@ -13653,7 +13712,7 @@ html.sc-fit-mode .build-version {
 }
 
 .sc-period-step strong {
-  min-width: 7.5rem;
+  flex: 1;
   text-align: center;
 }
 
@@ -13670,7 +13729,8 @@ html.sc-fit-mode .build-version {
   align-items: baseline;
   justify-content: space-between;
   border: none;
-  padding: 0.25rem 0;
+  /* Lined up with the other section heads. */
+  padding: 0.25rem 0.25rem 0.25rem var(--list-inset);
   margin-bottom: 0.5rem;
   background: none;
   color: inherit;

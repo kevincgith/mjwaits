@@ -4,7 +4,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { exportScores, mergeScores, parseBackup, replay, replayCached, type HandResult, type ReplayState, type ScoreGame, type ScoreStore, playTimes } from "@mjwaits/shared/engine/ledger";
 import { sheetCsv, sheetRows, type SheetRow } from "../lib/scoreViews";
-import { careerPlayerStats, careerStats, careerTrend, smoothed, periodKey, periodLabel, periodsOf, type Period, headToHead, marks, patternCounts, playerStats, rankedBy, RECENT_HANDS, trend, trendSummary, type PlayerStats, type Swing } from "../lib/scoreStats";
+import { careerPlayerStats, careerStats, careerTrend, smoothed, periodKey, periodLabel, periodsOf, type Period, headToHead, marks, patternCounts, handsByPlayer, type WonHand, playerStats, rankedBy, RECENT_HANDS, trend, trendSummary, type PlayerStats, type Swing } from "../lib/scoreStats";
 import { fmt, signed, pct, tone, colorOf, Icons, SectionHead, Monogram, Sheet, Segmented, Sparkline } from "./shared";
 import { NameSheet } from "./sheets";
 
@@ -786,7 +786,6 @@ export function StatsPanel({ store, setStore, view, setView }: { store: ScoreSto
       {view === "player" && stats.length > 0 && (
         <PlayerCard store={store} stats={stats} seriesOf={(p) => series.find((x) => x.player === p)?.values} index={Math.min(playerIndex, stats.length - 1)} onIndex={setPlayerIndex} />
       )}
-      {view === "history" && <BackupCard store={store} setStore={setStore} />}
       {view === "history" && (
         <HistoryCard
           store={store}
@@ -800,6 +799,7 @@ export function StatsPanel({ store, setStore, view, setView }: { store: ScoreSto
           onDelete={(id) => setStore({ ...store, history: store.history.filter((g) => g.id !== id) })}
         />
       )}
+      {view === "history" && <BackupCard store={store} setStore={setStore} />}
     </>
   );
 }
@@ -963,16 +963,101 @@ export function HandDetail({ h, bonuses, payIns }: { h: HandResult; bonuses: num
   );
 }
 
+// What a won hand was: 自摸, or who dealt in.
+const howWon = (h: WonHand) => (h.selfDraw ? "自摸" : h.from ? `off ${h.from}` : "");
+const patternLine = (h: WonHand) => h.patterns.map((p) => `${p.name} ${fmt(p.tai)}`).join(" · ");
+const HANDS_SHOWN = 5;
+const PATTERNS_VIEW_KEY = "mjwaits.patternsView";
+
+// 牌型: the game's biggest hand up top, then either each pattern's count or
+// each player's hands, biggest first (picked, and remembered on this phone).
 export function PatternsCard({ state, store }: { state: ReplayState; store: ScoreStore }) {
   const rows = patternCounts(state);
+  const players = useMemo(() => handsByPlayer(state), [state]);
   const max = Math.max(1, ...rows.map((r) => r.count));
+  const [view, setViewState] = useState<"player" | "pattern">(() => {
+    try {
+      return window.localStorage.getItem(PATTERNS_VIEW_KEY) === "pattern" ? "pattern" : "player";
+    } catch {
+      return "player";
+    }
+  });
+  const setView = (v: "player" | "pattern") => {
+    setViewState(v);
+    try {
+      window.localStorage.setItem(PATTERNS_VIEW_KEY, v);
+    } catch {
+      // Just this visit, then.
+    }
+  };
+  const [open, setOpen] = useState<string | null>(null);
+  // The biggest hand of the game (the first, if two tie).
+  const top = players
+    .flatMap((x) => x.hands.map((h) => ({ player: x.player, h })))
+    .sort((a, b) => b.h.tai - a.h.tai || a.h.hand - b.h.hand)[0];
   return (
     <div className="card">
       <div className="sc-card-head">
         <h3>牌型 Patterns</h3>
-        <span className="sc-help">計番送嚟嘅牌 · Hands from Scoring</span>
+        <Segmented
+          small
+          value={view}
+          onChange={setView}
+          options={[
+            { value: "player", label: "By player" },
+            { value: "pattern", label: "By pattern" },
+          ]}
+        />
       </div>
-      {rows.length === 0 ? (
+      {top && (
+        <div className="sc-top-hand">
+          <span className="sc-help">最大一舖 · Biggest hand</span>
+          <span className="sc-top-hand-main">
+            <span className={`sc-dot sc-c${colorOf(store, top.player)}`} />
+            <strong>{top.player}</strong> {fmt(top.h.tai)}番 <span className="sc-help">· {top.h.label}{howWon(top.h) && ` · ${howWon(top.h)}`}</span>
+          </span>
+          {top.h.patterns.length > 0 && <span className="sc-sheet-patterns">{patternLine(top.h)}</span>}
+        </div>
+      )}
+      {view === "player" ? (
+        !top ? (
+          <p className="sc-empty">No wins yet.</p>
+        ) : (
+          <ul className="sc-hands-by">
+            {players.map(({ player, hands }) => {
+              const all = open === player;
+              return (
+                <li key={player}>
+                  <span className="sc-hands-by-who">
+                    <span className={`sc-dot sc-c${colorOf(store, player)}`} />
+                    <strong>{player}</strong>
+                    <span className="sc-help">
+                      {hands.length === 0 ? "no wins" : `${hands.length} win${hands.length === 1 ? "" : "s"}`}
+                    </span>
+                  </span>
+                  {(all ? hands : hands.slice(0, HANDS_SHOWN)).map((h) => (
+                    <span key={h.hand} className="sc-hands-by-hand">
+                      <strong className="sc-num">{fmt(h.tai)}番</strong>
+                      <span>
+                        <span className="sc-help">
+                          {h.label}
+                          {howWon(h) && ` · ${howWon(h)}`}
+                        </span>
+                        {h.patterns.length > 0 && <span className="sc-sheet-patterns">{patternLine(h)}</span>}
+                      </span>
+                    </span>
+                  ))}
+                  {hands.length > HANDS_SHOWN && (
+                    <button type="button" className="sc-text-button" onClick={() => setOpen(all ? null : player)}>
+                      {all ? "Show fewer" : `${hands.length - HANDS_SHOWN} more`}
+                    </button>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )
+      ) : rows.length === 0 ? (
         <p className="sc-empty">Use Record to Scores on the Scoring tab, and the patterns behind each hand show up here.</p>
       ) : (
         <ul className="sc-patterns">
@@ -1106,7 +1191,6 @@ export function HistoryCard({
     <>
       <div className="sc-period">
         <Segmented
-          small
           value={period}
           onChange={setPeriod}
           options={[
