@@ -900,6 +900,17 @@ type WireTiles = Extract<TableClientMessage, { t: "give" }>["tiles"];
 // `fresh`: start a new game (keeping the settings) instead of the saved one.
 // The others' standing tiles: each this many of the wall's em along its row (--edge-pitch).
 const EDGE_PITCH = 0.72;
+// A side wall's tiles, as a share of a meld's (--play-wall over --play-tile).
+const SIDE_WALL = 0.72;
+
+// A side player's standing tiles, grown into the room their melds leave
+// along the wall: its full length (a 16-tile hand and the drawn tile's
+// slot) over what's left standing - never past a meld's size. Steps up
+// only on a call, as everything along that edge moves then anyway.
+function sideWallGrow(melds: number): number {
+  const length = (standing: number) => (standing + 2) * EDGE_PITCH + 0.5;
+  return Math.min(1 / SIDE_WALL, length(16) / length(Math.max(0, 16 - 3 * melds)));
+}
 
 export function PlayPanel({ onExit, online, fresh }: { onExit: () => void; online?: OnlinePlay; fresh?: boolean }) {
   const saved = useMemo(loadSaved, []);
@@ -1318,7 +1329,8 @@ export function PlayPanel({ onExit, online, fresh }: { onExit: () => void; onlin
     const cols = getComputedStyle(felt).gridTemplateColumns.split(" ").map(parseFloat);
     const room = cols.slice(1, -1).reduce((a, b) => a + b, 0);
     const beside = hand + (parseFloat(getComputedStyle(seat).columnGap) || 0);
-    const out = laid > 0 && beside + laid > room && (meldsLong === 0 || beside + meldsLong <= room);
+    // (Out a row they hang under the melds: with none, they go in front.)
+    const out = meldsLong > 0 && beside + laid > room && beside + meldsLong <= room;
     const front = laid > 0 && beside + laid > room && !out;
     if (front !== topFront) setTopFront(front);
     if (out !== topOut) setTopOut(out);
@@ -1411,7 +1423,19 @@ export function PlayPanel({ onExit, online, fresh }: { onExit: () => void; onlin
       if (!owner) continue;
       // The owner's tiles in the pond's way (across its width), and where it meets them.
       const across = (b: ReturnType<typeof tb>) => (side === "top" || side === "bottom" ? b.x1 > P.x0 && b.x0 < P.x1 : b.y1 > P.y0 && b.y0 < P.y1);
-      const theirs = [...owner.querySelectorAll(TILES)].map(tb).filter(across);
+      // Measured where they come to rest - a tile just drawn slides in from
+      // above, and a tile picked to throw is lifted - so a draw or a tap
+      // never sizes a pond that nothing new has landed in.
+      const moving: [Animation, CSSNumberish | null][] = [];
+      owner.getAnimations({ subtree: true }).forEach((a) => {
+        moving.push([a, a.currentTime]);
+        a.currentTime = Number(a.effect?.getComputedTiming().endTime ?? 0);
+      });
+      const theirs = [...owner.querySelectorAll(TILES)]
+        .filter((e) => !e.closest(".is-selected"))
+        .map(tb)
+        .filter(across);
+      moving.forEach(([a, t]) => (a.currentTime = t));
       if (!theirs.length) continue;
       const gap = 4;
       const [depth, free] =
@@ -3208,7 +3232,10 @@ export function PlayPanel({ onExit, online, fresh }: { onExit: () => void; onlin
     // Losing hands hidden, one shown is shown later, by choice: at once.
     const choosing = online?.table.settings.reveal === false;
     return (
-      <div className={`play-seat play-seat-${side}${side !== "top" || topFront ? " is-front" : ""}${(seatsOut.includes(side) && (side !== "top" || topFront)) || (side === "top" && topOut) ? " has-bonus-out" : ""}`}>
+      <div
+        className={`play-seat play-seat-${side}${side !== "top" || topFront ? " is-front" : ""}${(seatsOut.includes(side) && (side !== "top" || topFront)) || (side === "top" && topOut) ? " has-bonus-out" : ""}`}
+        style={side === "top" ? undefined : ({ "--wall-grow": sideWallGrow(p.melds.length) } as CSSProperties)}
+      >
         {/* Melds and flowers in front of a side player's wall, from their
             left (the CSS turns them to face them); across, beside the far
             player's hand along their row - or in front, if that runs long. */}
@@ -3690,6 +3717,8 @@ export function PlayPanel({ onExit, online, fresh }: { onExit: () => void; onlin
                   </button>
                 );
               })}
+              {/* No tile drawn: its place kept, so drawing one (and throwing it) never moves the hand. */}
+              {handView.drawnTile === null && handTiles.length > 0 && <span className="play-hand-slot" aria-hidden="true" />}
             </div>
           </div>
         </div>

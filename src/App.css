@@ -6331,7 +6331,7 @@ html.playing body {
 }
 
 :is(.play-seat-left, .play-seat-right).is-front {
-  gap: calc(0.3em + var(--play-wall) * 0.5);
+  gap: calc(0.3em + var(--play-wall) * var(--wall-grow, 1) * 0.5);
 }
 
 .play-seat-side,
@@ -6747,6 +6747,12 @@ html.playing body {
 
 .play-edge-top {
   font-size: var(--play-wall-top);
+}
+
+/* A side player's, grown as their melds leave room along the wall (see
+   sideWallGrow). */
+:is(.play-edge-left, .play-edge-right) {
+  font-size: calc(var(--play-wall) * var(--wall-grow, 1));
 }
 
 /* (No shadow under a row of standing tiles: drawn as one shape on the
@@ -7964,6 +7970,14 @@ html.playing body {
 
 .play-hand-tile:disabled {
   cursor: default;
+}
+
+/* Where the tile you draw goes, kept while you hold none: a tile wide (its
+   box, less the hair the tiles overlap by) and set apart as it is. */
+.play-hand-slot {
+  flex: none;
+  width: calc(0.776em - 0.03em);
+  margin-left: 0.3em;
 }
 
 .play-hand-tile.is-drawn {
