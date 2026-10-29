@@ -5,7 +5,7 @@
 A browser toolkit for 16-tile (Taiwanese / Hong Kong house rules) Mahjong. It started as a waits calculator — build a
 hand, see what completes it and which discard gives the best odds — and has grown five tabs:
 
-- **Scoring** — score a finished hand against a concrete house tai (番) list (~140 patterns).
+- **Scoring** — score a finished hand against a concrete house farn (番) list (~140 patterns).
 - **Calculator** — the original: waits, shanten, joker resolution, and discard analysis.
 - **Trainer** — timed quizzes: a **Waits** drill (name every tile that completes a hand) and a
   **Discards** drill (just drew — pick the single best tile to throw).
@@ -32,13 +32,13 @@ online, and an app left open (or paused in the background, as iPhone does) shows
 
 **User guide:** [docs/user-guide.pdf](docs/user-guide.pdf) - a step-by-step PDF of every tab, with screenshots.
 
-![The Scoring tab: a fully concealed pure-flush self-draw scored at 198 tai, with the matched-pattern list — 底, 門前清, 清一色, 暗清龍, 暗四歸一… — each row expandable to the exact tiles behind it](docs/scoring.png)
+![The Scoring tab: a fully concealed pure-flush self-draw scored at 198 farn, with the matched-pattern list — 底, 門前清, 清一色, 暗清龍, 暗四歸一… — each row expandable to the exact tiles behind it](docs/scoring.png)
 
-## Scoring calculator (tai / 番)
+## Scoring calculator (farn / 番)
 
 The Scoring tab (the default on load) scores a **complete** winning hand against one concrete
-house tai list — nearly 140 patterns, built up one at a time rather than as a configurable
-ruleset. It totals tai; there's no point/currency conversion yet.
+house farn list — nearly 140 patterns, built up one at a time rather than as a configurable
+ruleset. It totals farn; there's no point/currency conversion yet.
 
 ### Entering the hand
 
@@ -83,15 +83,15 @@ still running.
 Special hands — 十三么 (Thirteen Orphans), 嚦咕嚦咕 (Eight Pairs), 十六不搭 (Sixteen Unrelated) —
 are detected up front and scored by their own dedicated logic. Everything else is run through
 **every** valid meld/pair decomposition of the hand, and the reading with the **highest total
-tai** wins — which decomposition you pick genuinely changes the score. When a pattern lists an
+farn** wins — which decomposition you pick genuinely changes the score. When a pattern lists an
 exclusion, a matching "bigger" pattern suppresses the smaller one it names; unrelated patterns
 stack freely, and several (清龍, 步步高, 四歸, …) fire more than once when a segment repeats
 (the count is the product of the repeated segments' meld counts). A hand that is simultaneously
 a valid Eight Pairs and a valid ordinary hand (嚦咕雙食) is shown scored both ways.
 
-The result is the **tai total** plus a **matched-pattern list**: each row is a pattern name and
-its tai, and tapping a row expands it to the exact tiles behind that pattern — one sub-row per
-stacking instance. A sort toggle cycles the list through check-order / tai ↓ / tai ↑, and
+The result is the **farn total** plus a **matched-pattern list**: each row is a pattern name and
+its farn, and tapping a row expands it to the exact tiles behind that pattern — one sub-row per
+stacking instance. A sort toggle cycles the list through check-order / farn ↓ / farn ↑, and
 pressing and holding one of an expanded row's groups lights it up in the hand strip under the
 toolbar, which shows the scored decomposition (so the result doesn't repeat it).
 
@@ -116,7 +116,7 @@ tile. Kept deliberately narrow: no jokers, no concealed kongs.
   entry with what was found (waits, shanten, or a winning hand). Building a hand up tile by tile, or
   trimming it, keeps updating one entry.
 
-[`docs/scoring-rules.md`](docs/scoring-rules.md) is the full reference — every tai value, its
+[`docs/scoring-rules.md`](docs/scoring-rules.md) is the full reference — every farn value, its
 criteria and exclusions, the 明 / 暗 (open / concealed) distinction, and the duplicate-instance
 counting rules — kept in sync with the code.
 
@@ -294,7 +294,7 @@ survives switching sub-tabs.
 
 ## Scores (計分)
 
-A score keeper for a real game at the table, in tai, with the house rules of a 港式台牌
+A score keeper for a real game at the table, in farn, with the house rules of a 港式台牌
 game. Everything is kept on this device (localStorage `mjwaits.scores`): the game in
 progress, finished games and the player roster.
 
@@ -309,17 +309,17 @@ card of whoever holds it, −29 in red on the one being pulled. 流局 and the J
 middle. Tap a player to record for them - one sheet (rising from the bottom on a phone) with
 two tabs:
 
-- **食胡** — pick the 輸家 (or 自摸) and type the tai on the keypad. A breakdown shows what
+- **食胡** — pick the 輸家 (or 自摸) and type the farn on the keypad. A breakdown shows what
   each payer owes, split into 底 · 番 · 莊 · 拉 · 總, and flags a payment over the 高分
   threshold. **一炮多響** switches to 雙響 / 三響: pick the discarder, the other winners and
-  each one's tai. A **Jackpot** toggle appears when the pot has something in it.
+  each one's farn. A **Jackpot** toggle appears when the pot has something in it.
 - **特別獎罰** — a free-form 獎 (reward) or 罰 (penalty), either with everyone (each of the
   other three pays, or is paid, the amount) or with one player picked as From / To.
 
 After each entry a toast offers a one-tap 還原.
 
 The centre **流局** button records a draw. The toolbar: **新局** (結帳 · 新局: the fewest
-payments that settle everyone, × 倍數 ($ per tai), to share as text or a picture - then file this
+payments that settle everyone, × 倍數 ($ per farn), to share as text or a picture - then file this
 game in History and start another), **還原** / **重做** (undo / redo the last entry), **座位**
 (swap seats, or bring in a 候補 player - totals stay with the player; set the dealer and 連莊,
 optionally back to 東風東局; or run the Dice tab's seating ceremony), **拉踢** (every live 拉,
@@ -327,7 +327,7 @@ each with 投降), **最近** (every hand so far), **設定** and **線上**.
 
 **How a payment is worked out.** One payer owes one winner: 底 + 番 + 莊 (自動計算莊 + 連莊 ×
 自動計算連莊, only when one of the two is the dealer) + the pair's 拉/踢. (**封頂**, 999 by
-default, only limits what the keypad accepts - no tai or 獎罰 amount above it can be typed - and
+default, only limits what the keypad accepts - no farn or 獎罰 amount above it can be typed - and
 never changes a payment.)
 
 - **拉** — once you've won off someone, the next hand you win off them is worth its value +
@@ -348,7 +348,7 @@ never changes a payment.)
   a full lap moves the round wind (執位提示 reminds you to re-seat).
 
 The **Scoring** tab's result gets a **Record to Scores** button while a game is in progress:
-it opens the 食胡 sheet with the winner picked by 門風, 自摸 set, and the tai minus any 莊/連莊
+it opens the 食胡 sheet with the winner picked by 門風, 自摸 set, and the farn minus any 莊/連莊
 (the ledger adds its own), and keeps the hand's patterns for the stats.
 
 **統計.** 玩家統計 cards (net, 胡 / 摸 / 銃 / 獎) over five views: **局** (every hand with each
@@ -357,7 +357,7 @@ end-of-line labels), **牌型** (patterns from hands sent from Scoring), **玩�
 full grid - 食胡, 自摸, 出銃, 獎罰, 彩池, 最高番數, 平均食胡番 / 出銃番, 拉人 / 被拉 / 踢人 / 被踢 and
 their records, 多響, 反雪, 最高得分 / 失分, 總自摸 / 出銃 得分 and 失分, 連勝, 助攻 and 助攻率, 正分率,
 首名率 - with 👑 for the best at the table and 💀 the worst) and **紀錄** (every game, career
-stats per player and head-to-head net tai).
+stats per player and head-to-head net farn).
 
 ### 線上 live scores
 
@@ -436,7 +436,7 @@ held upright is asked to turn sideways.
     your pond and a 叮 tag goes on your name.
   - **After declaring** the hand is locked: each draw that doesn't win is thrown for you,
     and you can't call or kong, only win.
-  - **Tai** (from the Scoring tab's list):
+  - **Farn** (from the Scoring tab's list):
     - 叮 5, or 門清叮 10 with a concealed hand;
     - 天叮 60 (dealer) or 地叮 50, when declared with your first discard before any call;
     - 一發 5, a win before your next discard with no call in between;
@@ -496,9 +496,9 @@ held upright is asked to turn sideways.
   roster, with each one's style shown. When a trained model is installed
   (`public/model/mj-policy.onnx`), learned versions of each personality (學, ringed
   avatars) appear too; see `ml/README.md`.
-- **Scoring:** a win is scored by the same tai list as the Scoring tab, with what the table
+- **Scoring:** a win is scored by the same farn list as the Scoring tab, with what the table
   knows filled in (seat and round wind, self-draw, the winning tile, last-tile and
-  replacement-draw wins, 天胡/地胡/人胡, 莊 and 連莊). The discarder pays the tai; on a
+  replacement-draw wins, 天胡/地胡/人胡, 莊 and 連莊). The discarder pays the farn; on a
   self-draw all three do. Running totals sit on each seat badge.
 - **拉 / 踢** carry from hand to hand by the same house rules as the Scores tab (shared code in
   `ledger.ts`): a repeat win off the same player adds half the 拉 and grows it, winning it back
@@ -514,7 +514,7 @@ held upright is asked to turn sideways.
   it back.
 - **Bots** (`shared/engine/bots.ts`) all run one decision engine, and a personality sets its
   weights. A discard is ranked first on building the hand: shanten, then the unseen tiles
-  that would improve it, then where its tai are heading (flushes, all-pungs, honour pungs,
+  that would improve it, then where its farn are heading (flushes, all-pungs, honour pungs,
   門清). Expected value then trades that against danger. A step toward ready is worth what it
   adds to the chance of winning × the hand's worth, and a throw costs its chance of dealing
   in × what that costs. So a far-off hand against a hot table simply throws safe tiles,
@@ -534,7 +534,7 @@ held upright is asked to turn sideways.
     really cost - their 拉 on you adds half its value; your 拉 on them is a 踢, adding half
     and losing the 拉 itself - so a tile that player might want is far more dangerous than
     the same tile against someone with no 拉 on you. Wins count the 拉 they'd collect too.
-    In 16-hand sessions, 拉-aware bots beat 拉-blind copies of themselves by about 2 tai a
+    In 16-hand sessions, 拉-aware bots beat 拉-blind copies of themselves by about 2 farn a
     hand (the Iron Wall, which already folds against everyone, showed no gain).
   - **Human feel:**
     - a softmax "noise" picks among near-equal moves, and the occasional lazy "slip" happens;
@@ -566,17 +566,17 @@ held upright is asked to turn sideways.
     - **Before 叮, speed beat everything.** Every win carries a solid 底 and about a third
       are self-draws, which every player pays, so every defensive setting lost more wins
       than it saved deal-ins.
-    - **Declaring 叮 pays.** Always declaring when ready: +2.3 tai a hand, against −2.0 for
+    - **Declaring 叮 pays.** Always declaring when ready: +2.3 farn a hand, against −2.0 for
       never declaring.
     - **With 叮 in play, moderate defence pays too,** because a declared player is known to
       be ready. Caution 0.35: +1.2, against −1.3 for none and −0.4 for heavy.
     - **Defending only against clearly-ready players** (a `focus` setting) did worse than
       the light all-round caution.
     - **The Veteran** (always 叮, caution 0.35, eager calls, a little human noise) scores
-      **+2.5 tai a hand to the original bot's +0.2**.
+      **+2.5 farn a hand to the original bot's +0.2**.
   - **Hints** use the Veteran's judgement.
 - **Arena** (`npm run arena`): the bots play each other headless and a results table prints:
-  - net tai per hand;
+  - net farn per hand;
   - win, self-draw and deal-in rates;
   - average win and loss;
   - win speed, calls per hand and biggest win.
@@ -596,7 +596,7 @@ held upright is asked to turn sideways.
   an Iron Wall stays careful), so evolution finds the strongest version of each style rather
   than turning every bot into the same one; the Grandmaster species has no limits.
   - **Each generation:** the whole population is shuffled into mixed tables of four and
-    plays duplicate-dealt hands. Within each species the best half (by lifetime net tai a
+    plays duplicate-dealt hands. Within each species the best half (by lifetime net farn a
     hand, shrunk while a bot has few hands) survive, and the rest are replaced by children
     of two survivors - each setting from one parent, then mutated within the limits.
   - **Benchmark:** every few generations each species' champion plays a fixed table of the
@@ -615,7 +615,7 @@ held upright is asked to turn sideways.
       almost no defence. With full memory and table reading added it became the
       **Grandmaster**. The two are about level - each won one of two 1,200-hand tables
       against the evolved roster - so the reads add little; against three copies of the
-      original efficiency-only bot the Grandmaster scores **+2.4 tai a hand**.
+      original efficiency-only bot the Grandmaster scores **+2.4 farn a hand**.
   - The engine is fast enough for this because hand-distance (shanten) results are cached
     per suit shape and the pruning of meld options is linear; together about 4× faster.
 - **戰況** (top left, by 記牌器): the game so far as the Scores tab shows a game - the players
@@ -693,7 +693,7 @@ npm run build    # typecheck + production build
 The repo is an npm workspace of three parts:
 
 - the app at the root (`src/`, built by Vite to GitHub Pages);
-- [`shared/`](shared/) (`@mjwaits/shared`) — the rules engine (`engine/`: tiles, tai scoring, the
+- [`shared/`](shared/) (`@mjwaits/shared`) — the rules engine (`engine/`: tiles, farn scoring, the
   hand engine, the score ledger) and the multiplayer protocol (`protocol/`), with no
   dependencies and no browser APIs, imported by both the app and the server;
 - [`worker/`](worker/README.md) — the 線上 live-scores server: a Cloudflare Worker with one
@@ -706,7 +706,7 @@ The core engine (parsing, shanten, waits, joker resolution, discard analysis) li
 the trickier joker and shanten logic. Trainer question generation is in
 [`src/lib/trainer.ts`](src/lib/trainer.ts) with property-based checks across all levels and flush
 mode. The scoring engine — notation parsing, the all-decompositions search, and the `PATTERNS`
-tai list — is in [`shared/engine/scoring.ts`](shared/engine/scoring.ts), tested in
+farn list — is in [`shared/engine/scoring.ts`](shared/engine/scoring.ts), tested in
 [`shared/engine/scoring.test.ts`](shared/engine/scoring.test.ts); see
 [`docs/scoring-rules.md`](docs/scoring-rules.md) for what each pattern does. The client-side tile
 detector (letterboxing, ONNX inference, non-max suppression) is in

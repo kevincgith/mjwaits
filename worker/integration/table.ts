@@ -215,11 +215,11 @@ async function untilSomeoneWins() {
     const won = phones[0].states.find((s) => s.view?.phase.kind === "over" && s.view.phase.result.winner !== null);
     if (won && won.view!.phase.kind === "over") {
       const r = won.view!.phase.result;
-      check(r.score !== null && r.score.total > 0, `a won hand has its tai (${JSON.stringify(r.score)})`);
+      check(r.score !== null && r.score.total > 0, `a won hand has its farn (${JSON.stringify(r.score)})`);
       check(r.deltas.reduce((a, b) => a + b, 0) === 0 && r.deltas.some((d) => d !== 0), `a won hand's payments add up to nothing: ${r.deltas}`);
       check(won.totals.reduce((a, b) => a + b, 0) === 0 && won.totals.some((t) => t !== 0), `totals move and add up to nothing: ${won.totals}`);
       const names = won.seats.map((x) => x?.name ?? "?");
-      console.log(`With bots, hand ${won.hand}: ${names[r.winner!]} won${r.from === null ? " (自摸)" : ` off ${names[r.from]}`}, ${r.score?.total} 台 (${r.score?.patterns.map((x) => x.name).join(", ")}); totals ${won.totals.join(" / ")}`);
+      console.log(`With bots, hand ${won.hand}: ${names[r.winner!]} won${r.from === null ? " (自摸)" : ` off ${names[r.from]}`}, ${r.score?.total} 番 (${r.score?.patterns.map((x) => x.name).join(", ")}); totals ${won.totals.join(" / ")}`);
       break;
     }
     if (Date.now() > deadline) throw new Error("with bots: no one won in time");
@@ -303,7 +303,7 @@ async function main() {
     check(totals.reduce((a, b) => a + b, 0) === 0, `totals add up to nothing: ${totals}`);
 
     const result = end.view!.phase.kind === "over" ? end.view!.phase.result : null;
-    const outcome = !result || result.winner === null ? "流局" : `${phones[result.winner].name} won${result.from === null ? " (自摸)" : ` off ${phones[result.from].name}`}, ${result.score?.total ?? "?"} 台`;
+    const outcome = !result || result.winner === null ? "流局" : `${phones[result.winner].name} won${result.from === null ? " (自摸)" : ` off ${phones[result.from].name}`}, ${result.score?.total ?? "?"} 番`;
     console.log(`Hand 1: ${outcome}; totals ${totals.join(" / ")}`);
     console.log(`Messages: ${phones.map((p) => `${p.name} ${p.states.length}`).join(", ")}, Dan ${watcher.states.length}; ${((Date.now() - t0) / 1000).toFixed(1)} s`);
 

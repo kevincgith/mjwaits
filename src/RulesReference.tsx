@@ -96,10 +96,10 @@ function valueOf(id: string, rule: PatternRule): { value: string; type: string; 
   }
   if (v.kind === "streak") {
     const first = rule.first ?? v.first;
-    return { value: `${first} +${rule.tai}`, type: "連莊", long: `${first} tai as dealer, +${rule.tai} per 連莊` };
+    return { value: `${first} +${rule.tai}`, type: "連莊", long: `${first} farn as dealer, +${rule.tai} per 連莊` };
   }
-  if (v.kind === "per") return { value: String(rule.tai), type: "each", long: `${rule.tai} tai each` };
-  return { value: String(rule.tai), type: "", long: `${rule.tai} tai` };
+  if (v.kind === "per") return { value: String(rule.tai), type: "each", long: `${rule.tai} farn each` };
+  return { value: String(rule.tai), type: "", long: `${rule.tai} farn` };
 }
 
 export function RulesReference({ name, rules, onClose }: { name: string; rules: TaiRules; onClose: () => void }) {
@@ -145,7 +145,7 @@ export function RulesReference({ name, rules, onClose }: { name: string; rules: 
           {/* ---- Page 1: everything at a glance ---- */}
           <section className="rr-page rr-summary">
             <header className="rr-head">
-              <div className="rr-kicker">MJWaits · 台數規則 Tai rules reference</div>
+              <div className="rr-kicker">MJWaits · 番數規則 Farn rules reference</div>
               <h1 className="rr-title">{title}</h1>
               <div className="rr-sub">
                 {date}

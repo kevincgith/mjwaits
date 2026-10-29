@@ -472,7 +472,7 @@ export function Board({
     const seat = request.seat ?? [0, 1, 2, 3].find((s) => ((s - state.dealer + SEATS) % SEATS) + 1 === request.seatWind) ?? 0;
     const taken = [request.removedDealerTai ? `莊 ${request.removedDealerTai}` : null, request.removedMultiTai ? `雙響/三響 ${request.removedMultiTai}` : null].filter(Boolean);
     const dealerNote = taken.length ? ` (${taken.join(", ")} taken out — Scores adds its own)` : "";
-    const rulesNote = request.rules ? " · scored under custom tai rules" : "";
+    const rulesNote = request.rules ? " · scored under custom farn rules" : "";
     // A 雙響/三響: the sheet comes back whole, with only the scored winner's
     // tai (and patterns) new. Who dealt in stands - one discard, several
     // winners, so Scoring's 自摸 doesn't apply.
@@ -496,7 +496,7 @@ export function Board({
           zhaHu: request.reopenOnly
             ? request.zhaHu
             : request.zhaHu.map((x) => ({ player: x.player, amount: Math.max(floor, worth(state.seats.indexOf(x.player))) })),
-          ...(request.reopenOnly ? {} : { note: `From Scoring: ${request.tai} tai${dealerNote} - each pays what it's worth to them, ${fmt(floor)} at least.` }),
+          ...(request.reopenOnly ? {} : { note: `From Scoring: ${request.tai} farn${dealerNote} - each pays what it's worth to them, ${fmt(floor)} at least.` }),
         },
       });
       onRequestDone();
@@ -516,7 +516,7 @@ export function Board({
           jackpot: request.jackpot,
           entries: request.reopenOnly ? draft.entries : draft.entries.map((e) => (e.seat === scored ? { ...e, tai: String(request.tai) } : e)),
           patternsFor: scored,
-          ...(request.reopenOnly ? {} : { note: `From Scoring: ${state.seats[scored]} ${request.tai} tai${dealerNote}${rulesNote}.` }),
+          ...(request.reopenOnly ? {} : { note: `From Scoring: ${state.seats[scored]} ${request.tai} farn${dealerNote}${rulesNote}.` }),
         },
       });
       onRequestDone();
@@ -539,8 +539,8 @@ export function Board({
         ...(request.seat !== undefined ? { from: request.selfDraw ? null : request.from === null || request.from === undefined ? -1 : request.from, jackpot: request.jackpot } : {}),
         note:
           request.seat !== undefined
-            ? `From Scoring: ${request.tai} tai${dealerNote}${rulesNote}.`
-            : `From Scoring: ${request.tai} tai${dealerNote}${rulesNote}. Winner picked by 門風 ${WIND_CHARS[request.seatWind - 1]}.`,
+            ? `From Scoring: ${request.tai} farn${dealerNote}${rulesNote}.`
+            : `From Scoring: ${request.tai} farn${dealerNote}${rulesNote}. Winner picked by 門風 ${WIND_CHARS[request.seatWind - 1]}.`,
       },
     });
     onRequestDone();
