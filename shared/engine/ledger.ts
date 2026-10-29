@@ -170,7 +170,9 @@ type ScoreEventBody =
   // each winner (one = 食胡, two or three = 雙響 / 三響).
   // multiTai: a 雙響/三響's tai on each pair, as 設定 had it when it went in
   // (so a later change there leaves recorded hands as they were).
-  | { t: "win"; at: number; winners: WinnerEntry[]; from: number | null; jackpotTo?: string; source: "quick" | "scoring"; multiTai?: number }
+  // dealerExtra: a Play hand's 莊 the dealer paid on another player's 自摸
+  // (Play's own settings leave 莊 to the hand's tai, which can't carry it).
+  | { t: "win"; at: number; winners: WinnerEntry[]; from: number | null; jackpotTo?: string; source: "quick" | "scoring"; multiTai?: number; dealerExtra?: number }
   | { t: "draw"; at: number }
   // 特別獎罰: 獎 - the seat's player is paid `amount`; 罰 - they pay it. With
   // `other`, just that one player pays (獎) or is paid (罰); without it, each
@@ -338,12 +340,14 @@ export function dealerAmount(settings: ScoreSettings, streak: number): number {
 
 // The payer-pairs a win would produce, given the state before it - what the
 // 食胡 sheet previews, and what replay applies. Doesn't change `state`.
-// multiTai: a 雙響/三響's tai on each pair (see multiWinTai).
+// multiTai: a 雙響/三響's tai on each pair (see multiWinTai). dealerExtra:
+// 莊 the dealer pays on top on another player's 自摸 (a Play hand's).
 export function previewWin(
   state: Pick<ReplayState, "seats" | "dealer" | "streak" | "lahs" | "settings">,
   winners: WinnerEntry[],
   from: number | null,
-  multiTai = 0
+  multiTai = 0,
+  dealerExtra = 0
 ): PairPayment[] {
   const { settings, seats } = state;
   const lahs = new Map(state.lahs.map((l) => [lahKey(l.holder, l.pulled), l]));
@@ -351,7 +355,8 @@ export function previewWin(
   for (const w of winners) {
     const payers = from === null ? [0, 1, 2, 3].filter((s) => s !== w.seat) : [from];
     for (const p of payers) {
-      const dealer = w.seat === state.dealer || p === state.dealer ? dealerAmount(settings, state.streak) : 0;
+      const dealer =
+        (w.seat === state.dealer || p === state.dealer ? dealerAmount(settings, state.streak) : 0) + (from === null && p === state.dealer ? dealerExtra : 0);
       const plain = settings.base + w.tai + dealer + multiTai;
       const winner = seats[w.seat];
       const payer = seats[p];
@@ -484,7 +489,7 @@ export function replay(game: ScoreGame): ReplayState {
 
     switch (ev.t) {
       case "win": {
-        const pairs = previewWin(state, ev.winners, ev.from, ev.multiTai ?? 0);
+        const pairs = previewWin(state, ev.winners, ev.from, ev.multiTai ?? 0, ev.dealerExtra ?? 0);
         const winnerNames = new Set(ev.winners.map((w) => state.seats[w.seat]));
         for (const pair of pairs) pay(pair.payer, pair.winner, pair.worth);
         state.lahs = nextLahs(state.lahs, pairs, winnerNames);

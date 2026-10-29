@@ -3874,8 +3874,16 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
                     {w.scoreError && <p className="play-result-error">Couldn't score this hand: {w.scoreError}</p>}
                   </div>
                 ))}
-              {(result.pairs ?? []).some((p) => p.lah) && (
+              {(result.pairs ?? []).some((p) => p.lah || p.dealer) && (
                 <ul className="play-result-lah">
+                  {/* 莊 on another player's 自摸: the dealer pays it on top. */}
+                  {(result.pairs ?? [])
+                    .filter((p) => p.dealer)
+                    .map((p) => (
+                      <li key={`莊-${p.winner}-${p.payer}`}>
+                        莊 · {nameOf(Number(p.payer))} {Number(p.payer) === HUMAN ? "pay" : "pays"} {nameOf(Number(p.winner))} +{p.dealer} on top
+                      </li>
+                    ))}
                   {(result.pairs ?? [])
                     .filter((p) => p.lah)
                     .map((p) => (
