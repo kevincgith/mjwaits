@@ -10,7 +10,7 @@
 // scoring.ts - also fixed, not a setting.
 
 /** Count as a self-draw: switching one on turns 自摸 on. */
-const SELF_DRAWN = ["flower-draw", "kong-draw", "river-bottom-win", "sea-bottom-win", "sea-bottom-win-one-tong", "heavenly-win"];
+const SELF_DRAWN = ["flower-draw", "kong-draw", "river-bottom-win", "sea-bottom-win", "sea-bottom-win-one-tong", "heavenly-win", "human-win"];
 /** Won off another player: switching one on turns 自摸 (and SELF_DRAWN) off. */
 const CLAIMED = ["rob-kong", "multi-win-double", "multi-win-triple", "earthly-win", "riichi-eat"];
 const SELF_DRAW = ["self-draw", "concealed-self-draw"];
@@ -25,6 +25,7 @@ const CONFLICTS: [string[], string[]][] = [
   [EARLY, LAST_TILE],
   [FIRST_TURN, LAST_TILE],
   [FIRST_TURN, RIICHI],
+  [FIRST_TURN, EARLY],
 ];
 
 // One button cycling through these - only one at a time by construction.

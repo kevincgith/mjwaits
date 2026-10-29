@@ -3413,11 +3413,11 @@ export const PATTERNS: TaiPattern[] = [
     // excludes the whole 叮 family per the user: winning on the very
     // initial deal means no turn (let alone a discard) has happened yet,
     // so a riichi declaration couldn't have happened either - same logic
-    // applies to 地胡 (won on your own first draw, before your first
-    // discard) and 人胡 (won off the very first discard in the game,
-    // before even your own first turn).
+    // applies to 地胡 (won off the dealer's very first discard, before
+    // your own first turn) and 人胡 (a non-dealer's 自摸 on their own
+    // first draw, before their first discard).
     score: (hand, ctx) => (ctx.heavenlyWin === "heaven" && isFullyConcealed(hand) ? 160 : 0),
-    excludes: ["concealed-except-kongs", "riichi", "concealed-riichi", "heavenly-riichi", "earthly-riichi"],
+    excludes: ["concealed-except-kongs", "riichi", "concealed-riichi", "heavenly-riichi", "earthly-riichi", "early-win-four", "early-win-seven", "early-win-ten"],
   },
   {
     id: "earthly-win",
@@ -3425,7 +3425,7 @@ export const PATTERNS: TaiPattern[] = [
     // Same declared-meld (kong included) guard as 天胡 above, and same 叮
     // family exclusion.
     score: (hand, ctx) => (ctx.heavenlyWin === "earth" && isFullyConcealed(hand) ? 120 : 0),
-    excludes: ["concealed-except-kongs", "riichi", "concealed-riichi", "heavenly-riichi", "earthly-riichi"],
+    excludes: ["concealed-except-kongs", "riichi", "concealed-riichi", "heavenly-riichi", "earthly-riichi", "early-win-four", "early-win-seven", "early-win-ten"],
   },
   {
     id: "human-win",
@@ -3433,7 +3433,7 @@ export const PATTERNS: TaiPattern[] = [
     // Same declared-meld (kong included) guard as 天胡 above, and same 叮
     // family exclusion.
     score: (hand, ctx) => (ctx.heavenlyWin === "man" && isFullyConcealed(hand) ? 80 : 0),
-    excludes: ["concealed-except-kongs", "riichi", "concealed-riichi", "heavenly-riichi", "earthly-riichi"],
+    excludes: ["concealed-except-kongs", "riichi", "concealed-riichi", "heavenly-riichi", "earthly-riichi", "early-win-four", "early-win-seven", "early-win-ten"],
   },
   {
     id: "river-bottom-win",

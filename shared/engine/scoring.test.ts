@@ -1988,11 +1988,17 @@ describe("PATTERNS: 天胡/地胡/人胡", () => {
     expect(tai(result, "human-win")).toBe(0);
   });
 
-  it("stacks freely with 四/七/十子內 and 雙/三響 - those are fully independent", () => {
+  it("replaces 四/七/十子內, and stacks freely with 雙/三響", () => {
     const result = scoreHand(hand, ctx({ heavenlyWin: "heaven", earlyWin: "four", multiWin: "triple" }));
     expect(tai(result, "heavenly-win")).toBe(160);
-    expect(tai(result, "early-win-four")).toBe(60);
+    expect(tai(result, "early-win-four")).toBe(0);
     expect(tai(result, "multi-win-triple")).toBe(10);
+    for (const heavenlyWin of ["earth", "man"] as const)
+      for (const earlyWin of ["four", "seven", "ten"] as const) {
+        const r = scoreHand(hand, ctx({ heavenlyWin, earlyWin }));
+        expect(tai(r, `early-win-${earlyWin}`)).toBe(0);
+        expect(r.matched.some((m) => m.pattern.id === (heavenlyWin === "earth" ? "earthly-win" : "human-win"))).toBe(true);
+      }
   });
 
   it("each excludes 門前清 - its own tai shouldn't also pick up the plain concealed-hand bonus", () => {
@@ -2570,17 +2576,17 @@ describe("PATTERNS: every purely-declared button pattern applies to the special 
   });
 
   it("scores 四子內/雙響/天胡 for a 十六不搭 hand", () => {
-    const result = scoreHand("147m147t258b11234567z", ctx({ earlyWin: "four", multiWin: "double", heavenlyWin: "heaven" }));
+    const result = scoreHand("147m147t258b11234567z", ctx({ earlyWin: "four", multiWin: "double" }));
     expect(tai(result, "early-win-four")).toBe(60);
     expect(tai(result, "multi-win-double")).toBe(5);
-    expect(tai(result, "heavenly-win")).toBe(160);
+    expect(tai(scoreHand("147m147t258b11234567z", ctx({ heavenlyWin: "heaven" })), "heavenly-win")).toBe(160);
   });
 
   it("scores 七子內/三響/地胡 for a 嚦咕嚦咕 hand", () => {
-    const result = scoreHand("1111m223344m5566777t", ctx({ earlyWin: "seven", multiWin: "triple", heavenlyWin: "earth" }));
+    const result = scoreHand("1111m223344m5566777t", ctx({ earlyWin: "seven", multiWin: "triple" }));
     expect(tai(result, "early-win-seven")).toBe(30);
     expect(tai(result, "multi-win-triple")).toBe(10);
-    expect(tai(result, "earthly-win")).toBe(120);
+    expect(tai(scoreHand("1111m223344m5566777t", ctx({ heavenlyWin: "earth" })), "earthly-win")).toBe(120);
   });
 
   it("scores 莊 for all 3 special hands", () => {

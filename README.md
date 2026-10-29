@@ -72,7 +72,7 @@ The input models the table, not a text string:
   winners on one discard); **天胡 / 地胡 / 人胡**; **河底撈魚 / 海底撈月 / 海底撈月(一筒)** (won
   on the very last tile); count-based **花摸 / 槓摸 / 搶槓** (×N, each capped at the bonus tiles
   or kongs actually present); and a shared **明絕 / 絕絕**. These buttons wire each other up the
-  way the rules interact — e.g. 自摸 auto-activates with 花摸 / 槓摸, any last-tile win, or 天胡,
+  way the rules interact — e.g. 自摸 auto-activates with 花摸 / 槓摸, any last-tile win, 天胡 or 人胡,
   and is mutually exclusive with 搶槓 / 雙響 / 三響 / 地胡 / 食叮.
 
 **Reset** clears the hand, the winds, and every one of these toggles, and cancels a scan that's

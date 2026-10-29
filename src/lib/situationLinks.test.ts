@@ -31,7 +31,12 @@ describe("situation links", () => {
 
   it("describes 自摸's links in full", () => {
     const self = situationLinks("self-draw")!;
-    expect(self.turnedOnBy.sort()).toEqual(["flower-draw", "heavenly-win", "kong-draw", "river-bottom-win", "sea-bottom-win", "sea-bottom-win-one-tong"].sort());
+    expect(self.turnedOnBy.sort()).toEqual(["flower-draw", "heavenly-win", "human-win", "kong-draw", "river-bottom-win", "sea-bottom-win", "sea-bottom-win-one-tong"].sort());
     expect(self.clears.sort()).toEqual(["earthly-win", "multi-win-double", "multi-win-triple", "riichi-eat", "rob-kong"].sort());
+  });
+
+  it("has 天胡/地胡/人胡 and 四子內/七子內/十子內 clear each other", () => {
+    for (const id of ["heavenly-win", "earthly-win", "human-win"]) expect(situationLinks(id)!.clears).toEqual(expect.arrayContaining(["early-win-four", "early-win-seven", "early-win-ten"]));
+    expect(situationLinks("early-win-seven")!.clears).toEqual(expect.arrayContaining(["heavenly-win", "earthly-win", "human-win"]));
   });
 });

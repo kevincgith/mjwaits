@@ -436,7 +436,7 @@ describe("game", () => {
     expect(won.phase.kind === "over" && won.phase.result.score!.matched.some((m) => m.pattern.id === "early-win-four")).toBe(true);
   });
 
-  it("scores 人胡 for a win off a discard in the first go-around, and not after a call", () => {
+  it("scores 地胡 off the dealer's first discard and 人胡 on a non-dealer's first-draw 自摸, before any call", () => {
     const b5 = { suit: "b" as const, rank: 5 };
     const fresh = (multiWin = false) => {
       const s = newGame({ multiWin });
@@ -453,19 +453,36 @@ describe("game", () => {
       s.phase = { kind: "turn", seat: 0, drawn: null, replacement: null };
       return s;
     };
-    const human = (s: GameState, seat: number) =>
-      s.phase.kind === "over" &&
-      [s.phase.result, ...(s.phase.result.alsoWon ?? [])].find((w) => w.winner === seat)!.score!.matched.some((m) => m.pattern.id === "human-win");
-    // Off the dealer's first discard.
-    const won = resolveClaims(applyTurnMove(fresh(), { kind: "discard", tile: b5 }), [null, { kind: "win" }, null, null]);
-    expect(human(won, 1)).toBe(true);
-    // 雙響 off it: both winners.
+    const first = (s: GameState, seat: number) =>
+      s.phase.kind === "over"
+        ? [s.phase.result, ...(s.phase.result.alsoWon ?? [])]
+            .find((w) => w.winner === seat)!
+            .score!.matched.map((m) => m.pattern.id)
+            .filter((id) => ["heavenly-win", "earthly-win", "human-win"].includes(id))
+            .join()
+        : "not over";
+    // Off the dealer's first discard: 地胡 - for each winner of a 雙響 too.
+    expect(first(resolveClaims(applyTurnMove(fresh(), { kind: "discard", tile: b5 }), [null, { kind: "win" }, null, null]), 1)).toBe("earthly-win");
     const both = resolveClaims(applyTurnMove(fresh(true), { kind: "discard", tile: b5 }), [null, { kind: "win" }, { kind: "win" }, null]);
-    expect(human(both, 1) && human(both, 2)).toBe(true);
-    // Once the go-around is over, no 人胡.
+    expect([first(both, 1), first(both, 2)]).toEqual(["earthly-win", "earthly-win"]);
+    // Off a later discard of the first go-around: neither.
+    const second = fresh();
+    second.discardsMade = 1;
+    second.players[1].hand = parseHand("5b123456789m1234t");
+    second.phase = { kind: "turn", seat: 1, drawn: null, replacement: null };
+    expect(first(resolveClaims(applyTurnMove(second, { kind: "discard", tile: b5 }), [null, null, { kind: "win" }, null]), 2)).toBe("");
+    // A non-dealer's 自摸 on their first draw: 人胡.
+    const draw = fresh();
+    draw.discardsMade = 1;
+    draw.players[1].hand = parseHand("123m456m789m123t456t55b");
+    draw.phase = { kind: "turn", seat: 1, drawn: b5, replacement: null };
+    expect(first(applyTurnMove(draw, { kind: "selfDraw" }), 1)).toBe("human-win");
+    // Once the go-around is over (all four have thrown, or a call): none.
     const late = fresh();
     late.firstGoAround = false;
-    expect(human(resolveClaims(applyTurnMove(late, { kind: "discard", tile: b5 }), [null, { kind: "win" }, null, null]), 1)).toBe(false);
+    expect(first(resolveClaims(applyTurnMove(late, { kind: "discard", tile: b5 }), [null, { kind: "win" }, null, null]), 1)).toBe("");
+    draw.firstGoAround = false;
+    expect(first(applyTurnMove(draw, { kind: "selfDraw" }), 1)).toBe("");
   });
 
   it("counts every kong and bonus tile replaced on the way to a self-drawn win (槓摸 / 花摸)", () => {
