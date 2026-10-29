@@ -98,6 +98,9 @@ export interface Player {
   // tile back (pung, kong or run) - nor a run with the far end of the run it
   // came out of (threw 1m from 123m: no run with 1m or 4m). See runBarred.
   threw?: Tile;
+  // Has thrown a tile this hand (its pond can be empty again once a discard
+  // is claimed): its first turn is behind it - for 地叮 / 人胡.
+  played?: true;
 }
 
 // Whether `threw` (see Player.threw) bars taking `tile` into a run, holding
@@ -320,6 +323,7 @@ function cloneState(s: GameState): GameState {
       // they were gone a step after they were set.)
       ...(p.passedPung ? { passedPung: { ...p.passedPung } } : {}),
       ...(p.threw ? { threw: { ...p.threw } } : {}),
+      ...(p.played ? { played: true as const } : {}),
     })),
     log: s.log.slice(),
     ...(s.tableBonuses ? { tableBonuses: s.tableBonuses.slice() } : {}),
@@ -528,6 +532,8 @@ export function dealHand(
 // ---- What a seat can do ---------------------------------------------------
 
 export const meldsNeeded = (p: Player) => MELDS_REQUIRED - p.melds.length;
+// Past its first turn (a game saved before `played` was kept goes by its pond).
+const hasPlayed = (p: Player) => !!p.played || p.discards.length > 0;
 
 export function isWinningHand(p: Player, extra?: Tile): boolean {
   const hand = extra ? [...p.hand, extra] : p.hand;
@@ -738,13 +744,16 @@ export function applyTurnMove(state: GameState, move: TurnMove): GameState {
       }
       if (move.riichi && !riichiDiscards(state, seat).some((t) => sameTile(t, move.tile))) throw new Error("叮: that discard doesn't leave the hand ready");
       if (move.riichi) {
-        const first = p.discards.length === 0 && p.melds.length === 0 && s.firstGoAround;
+        // 天叮 / 地叮: on your own first discard, with no meld of your own (a
+        // concealed kong included). Others' calls before it don't matter.
+        const first = !hasPlayed(p) && p.melds.length === 0;
         p.riichi = { state: first ? (seat === s.dealer ? "heavenly-riichi" : "earthly-riichi") : "riichi", discard: p.discards.length, ippatsu: true };
       }
       // Throwing when it could have won on its own draw is passing up that win.
       if (canWin(p)) passUp(p);
       p.hand = removeTiles(p.hand, [move.tile]);
       p.discards.push(move.tile);
+      p.played = true;
       if (!s.runBack) p.threw = { ...move.tile };
       // 過水 lifts with a throw that wouldn't have completed the hand.
       if (p.overWater && !isWinningHand(p, move.tile)) delete p.overWater;
@@ -769,6 +778,7 @@ export function applyTurnMove(state: GameState, move: TurnMove): GameState {
     case "concealedKong":
     case "addedKong": {
       if (p.riichi) throw new Error("叮: a locked hand can't kong");
+      if (liveTilesLeft(state) === 0) throw new Error("No kong once the wall is empty - nothing left to replace it");
       if (justClaimed(phase) && !(move.kind === "addedKong" && claimedPungTile(p) && sameTile(claimedPungTile(p)!, move.tile)))
         throw new Error("No kong straight after claiming a run or a pung - but the fourth of the pung just claimed");
       // Any kong ends everyone's 一發.
@@ -981,15 +991,18 @@ export function scoreWin(
     // by now), nor any claimed into a meld.
     earlyWin: ((n) => (n <= 4 ? "four" : n <= 7 ? "seven" : n <= 10 ? "ten" : "none"))(s.players.reduce((n, pl) => n + pl.discards.length, 0)),
     multiWin: winnersOffOne >= 3 ? "triple" : winnersOffOne === 2 ? "double" : "none",
-    // 天胡: the dealer's opening hand. 地胡: off the dealer's first discard.
-    // 人胡: a non-dealer's 自摸 on their first draw. All before any call.
-    heavenlyWin: !s.firstGoAround
-      ? "none"
-      : selfDraw && isDealer && s.discardsMade === 0
+    // 天胡: the dealer's opening hand, before any kong. 地胡: off the dealer's
+    // very first discard (a concealed kong of theirs before it doesn't
+    // matter). 人胡: any other win by a non-dealer before they've thrown a
+    // tile - 自摸 on their first draw, or off a later discard - with no meld
+    // of their own (so not off a kong's replacement); others' calls before
+    // it don't matter.
+    heavenlyWin:
+      selfDraw && isDealer && s.discardsMade === 0 && s.firstGoAround
         ? "heaven"
-        : !selfDraw && from === s.dealer && s.discardsMade === 1
+        : !selfDraw && !robKong && from === s.dealer && s.discardsMade === 1 && p.melds.length === 0
           ? "earth"
-          : selfDraw && !isDealer
+          : !isDealer && !robKong && !hasPlayed(p) && p.melds.length === 0
             ? "man"
             : "none",
     lastTileWin: lastTile ? (selfDraw ? "sea-bottom" : "river-bottom") : "none",

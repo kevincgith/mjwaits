@@ -29,6 +29,7 @@ import {
   forbiddenDiscards,
   canWin,
   kongOptions,
+  liveTilesLeft,
   nextHand,
   barredClaims,
   resolveClaims,
@@ -904,7 +905,7 @@ export class Table extends Hub<TableMessage> {
       const p = g.players[seat];
       options =
         g.phase.kind === "turn"
-          ? { turn: { selfDraw: canWin(p), kongs: p.riichi ? [] : kongOptions(p, g.phase), riichi: riichiDiscards(g, seat), forbidden: forbiddenDiscards(g), ...(this.canRetract(seat) ? { retract: true } : {}) }, claims: [] }
+          ? { turn: { selfDraw: canWin(p), kongs: p.riichi || liveTilesLeft(g) === 0 ? [] : kongOptions(p, g.phase), riichi: riichiDiscards(g, seat), forbidden: forbiddenDiscards(g), ...(this.canRetract(seat) ? { retract: true } : {}) }, claims: [] }
           : { turn: null, claims: g.phase.kind === "claims" ? claimOptions(g, seat) : [] };
     }
     const people = this.people();

@@ -61,6 +61,19 @@ function encodeSituation(ctx: Partial<GameContext>): string {
   return btoa(JSON.stringify(plain)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
+// What each cycled situation can be, and how far each count goes - a link
+// carrying anything else (hand-made, or from a newer version) drops it.
+const CHOICES: Partial<Record<CtxKey, readonly string[]>> = {
+  riichi: ["none", "riichi", "heavenly-riichi", "earthly-riichi"],
+  earlyWin: ["none", "four", "seven", "ten"],
+  multiWin: ["none", "double", "triple"],
+  heavenlyWin: ["none", "heaven", "earth", "man"],
+  lastTileWin: ["none", "river-bottom", "sea-bottom"],
+  seatWind: ["1", "2", "3", "4"],
+  roundWind: ["1", "2", "3", "4"],
+};
+const MOST: Partial<Record<CtxKey, number>> = { flowerDraw: 8, kongDraw: 5, robKong: 5, dealerStreak: 99 };
+
 function decodeSituation(text: string): Partial<GameContext> | null {
   try {
     const plain = JSON.parse(atob(text.replace(/-/g, "+").replace(/_/g, "/"))) as Record<string, unknown>;
@@ -71,7 +84,10 @@ function decodeSituation(text: string): Partial<GameContext> | null {
         const [tile] = parseHand(String(plain.winningTile));
         ctx.winningTile = tile ?? null;
       } else if (typeof plain[key] === typeof TEST_HAND_BASE_CONTEXT[key]) {
-        (ctx as Record<CtxKey, unknown>)[key] = plain[key];
+        const v = plain[key];
+        if (CHOICES[key] && !CHOICES[key]!.includes(String(v))) continue;
+        if (key in MOST && (!Number.isInteger(v) || (v as number) < 0 || (v as number) > MOST[key]!)) continue;
+        (ctx as Record<CtxKey, unknown>)[key] = v;
       }
     }
     return ctx;

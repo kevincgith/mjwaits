@@ -105,7 +105,7 @@ import { getTalk, getYourVoice, isAloud, sayAloud, sayLineAloud, setAloud, setTa
 import { scoreView, type ResultView } from "@mjwaits/shared/engine/view";
 import { MYSTERY_BOT, REACTIONS, type Reaction, type TableClientMessage, type TableState } from "@mjwaits/shared/protocol/table";
 import { BLANK, seatState } from "./lib/seatState";
-import { replayCached, withEvents, type ScoreGame } from "@mjwaits/shared/engine/ledger";
+import { replayCached, withEvents, type ScoreEvent, type ScoreGame } from "@mjwaits/shared/engine/ledger";
 import { carriedOver, newPlayLedger, playEvents, uniqueNames } from "@mjwaits/shared/engine/playLedger";
 import { PlayScores } from "./scores/playScores";
 import { ReviewSheet, type Decision } from "./PlayReview";
@@ -1114,14 +1114,29 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onlinePot, game.phase.kind]);
-  // New opponents mid-game: a new seating in the record.
+  // New opponents mid-game: a new seating in the record. A newcomer takes
+  // over no 拉: any to or from a seat that changes hands ends there (as a
+  // 投降 does, nothing paid) - at the table and in the record alike.
   useEffect(() => {
     const names = playerNames(opponents);
-    setLedger((l) => {
-      const lastSwap = l.events.findLast((e) => e.t === "swap");
-      const seated = lastSwap?.t === "swap" ? lastSwap.seats : l.seats;
-      return names.join() === seated.join() ? l : withEvents(l, [{ t: "swap", at: Date.now(), seats: names }]);
-    });
+    const lastSwap = localLedger.events.findLast((e) => e.t === "swap");
+    const seated = lastSwap?.t === "swap" ? lastSwap.seats : localLedger.seats;
+    if (names.join() === seated.join()) return;
+    const at = Date.now();
+    const changed = new Set(names.flatMap((n, i) => (n === seated[i] ? [] : [String(i)])));
+    const ended = (localGame.lahs ?? []).filter((l) => changed.has(l.holder) || changed.has(l.pulled));
+    setLedger((l) =>
+      withEvents(l, [
+        ...ended.map((x): ScoreEvent => ({ t: "surrender", at, holder: seated[Number(x.holder)], pulled: seated[Number(x.pulled)] })),
+        { t: "swap", at, seats: names },
+      ])
+    );
+    if (ended.length) {
+      const g = { ...localGame, lahs: (localGame.lahs ?? []).filter((l) => !ended.includes(l)) };
+      ledgerFrom.current = g; // (recorded just above)
+      setGame(g);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opponents]);
   const [scoresOpen, setScoresOpen] = useState(false);
   // 回顧: your discards this hand, each with the table just before it - for
@@ -1563,8 +1578,10 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
   });
   // "You", or the bot's English name (老手 Veteran -> Veteran); online,
   // people by their nickname and bots by the name the table gives them.
+  // Your own seat - a spectator has none (their seat 0 is the table's).
+  const isMe = (seat: number | null) => seated && seat === HUMAN;
   const nameOf = (seat: number): string => {
-    if (seat === HUMAN && seated) return "You";
+    if (isMe(seat)) return "You";
     if (online && net) {
       const info = online.table.seats[net.toTable(seat)];
       if (!info) return "?";
@@ -3827,12 +3844,12 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
             <div className="play-result-card">
               <h2>
                 {result.winner !== null && result.alsoWon?.length
-                  ? `${result.alsoWon.length === 1 ? "雙響" : "三響"}! ${[result.winner, ...result.alsoWon.map((w) => w.winner)].map((w) => (w === HUMAN ? "You" : nameOf(w))).join(" and ")} won off ${
-                      result.from === HUMAN ? "your" : `${nameOf(result.from!)}'s`
+                  ? `${result.alsoWon.length === 1 ? "雙響" : "三響"}! ${[result.winner, ...result.alsoWon.map((w) => w.winner)].map((w) => nameOf(w)).join(" and ")} won off ${
+                      isMe(result.from) ? "your" : `${nameOf(result.from!)}'s`
                     } ${result.robKong ? "kong (搶槓)" : "discard"}`
                   : result.winner === null
                   ? "Draw - wall exhausted (流局)"
-                  : result.winner === HUMAN
+                  : isMe(result.winner)
                     ? result.from === null
                       ? "You won by self-draw! (自摸)"
                       : result.robKong
@@ -3842,8 +3859,8 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
                         result.from === null
                           ? "won by self-draw"
                           : result.robKong
-                            ? `robbed ${result.from === HUMAN ? "your" : `${nameOf(result.from)}'s`} kong (搶槓)`
-                            : result.from === HUMAN
+                            ? `robbed ${isMe(result.from) ? "your" : `${nameOf(result.from)}'s`} kong (搶槓)`
+                            : isMe(result.from)
                               ? "won off your discard"
                               : `won off ${nameOf(result.from)}`
                       }`}
@@ -3851,7 +3868,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
               {result.winner !== null &&
                 [{ winner: result.winner, score: result.score, scoreError: result.scoreError }, ...(result.alsoWon ?? [])].map((w) => (
                   <div key={w.winner} className="play-result-winner">
-                    {result.alsoWon?.length ? <h3 className="play-result-who">{w.winner === HUMAN ? "You" : nameOf(w.winner)}</h3> : null}
+                    {result.alsoWon?.length ? <h3 className="play-result-who">{nameOf(w.winner)}</h3> : null}
                     <div className="play-result-hand">
                       <Flowers flowers={game.players[w.winner].flowers} />
                       <Melds melds={game.players[w.winner].melds} inRow />
@@ -3881,14 +3898,14 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
                     .filter((p) => p.dealer)
                     .map((p) => (
                       <li key={`莊-${p.winner}-${p.payer}`}>
-                        莊 · {nameOf(Number(p.payer))} {Number(p.payer) === HUMAN ? "pay" : "pays"} {nameOf(Number(p.winner))} +{p.dealer} on top
+                        莊 · {nameOf(Number(p.payer))} {isMe(Number(p.payer)) ? "pay" : "pays"} {nameOf(Number(p.winner))} +{p.dealer} on top
                       </li>
                     ))}
                   {(result.pairs ?? [])
                     .filter((p) => p.lah)
                     .map((p) => (
                       <li key={`${p.winner}-${p.payer}`}>
-                        {p.lahKind === "踢" ? "踢" : "拉"} · {nameOf(Number(p.payer))} {Number(p.payer) === HUMAN ? "pay" : "pays"} {nameOf(Number(p.winner))} +{p.lah} on top (from {p.lahBefore})
+                        {p.lahKind === "踢" ? "踢" : "拉"} · {nameOf(Number(p.payer))} {isMe(Number(p.payer)) ? "pay" : "pays"} {nameOf(Number(p.winner))} +{p.lah} on top (from {p.lahBefore})
                       </li>
                     ))}
                 </ul>
@@ -3920,7 +3937,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
                 <p className="play-result-pot">
                   {"fed" in potNote
                     ? `獎池 · everyone puts ${potNote.fed} in - ${potNote.pot} in the pot`
-                    : `獎池 · ${potNote.seat === HUMAN ? "you take" : `${nameOf(potNote.seat)} takes`} the pot, +${potNote.won}`}
+                    : `獎池 · ${isMe(potNote.seat) ? "you take" : `${nameOf(potNote.seat)} takes`} the pot, +${potNote.won}`}
                 </p>
               )}
               {milestones.length > 0 && <p className="play-result-milestone">🏅 First time: {milestones.join(" · ")}</p>}

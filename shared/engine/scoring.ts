@@ -750,7 +750,9 @@ const isConcealedExceptKongs = (hand: ResolvedHand): boolean =>
 // means some call happened at some point (even 加槓 starts from an
 // already-pon'd triplet), which contradicts every one of these being an
 // untouched initial-turn win.
-const isFullyConcealed = (hand: ResolvedHand): boolean => hand.melds.every((m) => m.concealed);
+// A concealed kong (暗槓) counts too: it's declared on a turn of your own,
+// so the hand isn't on its first turn any more.
+const isFullyConcealed = (hand: ResolvedHand): boolean => hand.melds.every((m) => m.concealed && m.kind !== "kong");
 
 const isNoHonorsNoFlowers = (hand: ResolvedHand): boolean =>
   allHandTiles(hand).every((t) => !isHonorTile(t)) && hand.bonusTiles.length === 0;

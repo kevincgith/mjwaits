@@ -100,7 +100,7 @@ export const PATTERN_GUIDE: Record<string, string> = {
   "multi-win-triple": "Three players won off the same discard (三響).",
   "heavenly-win": "The dealer's starting hand was already complete (天胡), fully concealed.",
   "earthly-win": "地胡 declared - a non-dealer won off the dealer's very first discard, with a fully concealed hand.",
-  "human-win": "人胡 declared - a non-dealer won by 自摸 on their own first draw, before any call, with a fully concealed hand.",
+  "human-win": "人胡 declared - a non-dealer won before throwing their first tile (自摸 on their first draw, or off a later discard), with a fully concealed hand.",
   "river-bottom-win": "Won by claiming the very last discard of the game (河底撈魚).",
   "sea-bottom-win": "Won by self-drawing the very last tile in the wall (海底撈月).",
   "sea-bottom-win-one-tong": "海底撈月, and that last tile was 一筒.",
@@ -284,6 +284,6 @@ export const GENERAL_RULES: { title: string; text: string }[] = [
   },
   {
     title: "Situations",
-    text: "自摸, 叮, 莊 and the other situations are declared on the Scoring tab's 情況 buttons. They can't be seen in the tiles. The buttons keep them consistent: anything self-drawn (花摸, 槓摸, 海底, 天胡, 人胡) turns 自摸 on, a claimed win (搶槓, 雙響, 地胡, 食叮) turns it off, and situations that can't happen together clear each other. Each situation's card says how its button links; that's how the app works, not part of a rule set.",
+    text: "自摸, 叮, 莊 and the other situations are declared on the Scoring tab's 情況 buttons. They can't be seen in the tiles. The buttons keep them consistent: anything self-drawn (花摸, 槓摸, 海底, 天胡) turns 自摸 on, a claimed win (搶槓, 雙響, 地胡, 食叮) turns it off, and situations that can't happen together clear each other. Each situation's card says how its button links; that's how the app works, not part of a rule set.",
   },
 ];

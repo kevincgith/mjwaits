@@ -1970,7 +1970,7 @@ describe("PATTERNS: 天胡/地胡/人胡", () => {
   const hand = "123456789m234t678t22b";
 
   it("scores 天胡 (160 tai)", () => {
-    expect(tai(scoreHand(hand, ctx({ heavenlyWin: "heaven" })), "heavenly-win")).toBe(160);
+    expect(tai(scoreHand(hand, ctx({ selfDraw: true, heavenlyWin: "heaven" })), "heavenly-win")).toBe(160);
   });
 
   it("scores 地胡 (120 tai)", () => {
@@ -1986,6 +1986,15 @@ describe("PATTERNS: 天胡/地胡/人胡", () => {
     expect(tai(result, "heavenly-win")).toBe(0);
     expect(tai(result, "earthly-win")).toBe(0);
     expect(tai(result, "human-win")).toBe(0);
+  });
+
+  it("are ruled out by a concealed kong (暗槓) too - it's declared on a turn of your own", () => {
+    const konged = "[1111z]123456789m234t22b";
+    expect(tai(scoreHand(konged, ctx({ heavenlyWin: "heaven" })), "heavenly-win")).toBe(0);
+    expect(tai(scoreHand(konged, ctx({ heavenlyWin: "earth" })), "earthly-win")).toBe(0);
+    expect(tai(scoreHand(konged, ctx({ heavenlyWin: "man" })), "human-win")).toBe(0);
+    expect(tai(scoreHand(konged, ctx({ riichi: "heavenly-riichi" })), "heavenly-riichi")).toBe(0);
+    expect(tai(scoreHand(konged, ctx({ riichi: "earthly-riichi" })), "earthly-riichi")).toBe(0);
   });
 
   it("replaces 四/七/十子內, and stacks freely with 雙/三響", () => {
@@ -2579,7 +2588,7 @@ describe("PATTERNS: every purely-declared button pattern applies to the special 
     const result = scoreHand("147m147t258b11234567z", ctx({ earlyWin: "four", multiWin: "double" }));
     expect(tai(result, "early-win-four")).toBe(60);
     expect(tai(result, "multi-win-double")).toBe(5);
-    expect(tai(scoreHand("147m147t258b11234567z", ctx({ heavenlyWin: "heaven" })), "heavenly-win")).toBe(160);
+    expect(tai(scoreHand("147m147t258b11234567z", ctx({ selfDraw: true, heavenlyWin: "heaven" })), "heavenly-win")).toBe(160);
   });
 
   it("scores 七子內/三響/地胡 for a 嚦咕嚦咕 hand", () => {

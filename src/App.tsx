@@ -4354,10 +4354,10 @@ const HEAVENLY_WIN_LABELS: Record<HeavenlyWinState, string> = {
   man: "人胡",
 };
 // 天胡 (the dealer's initial deal is already complete, before anyone
-// discards) and 人胡 (a non-dealer's own first draw) force 自摸 on, same
-// reasoning as 花摸/槓摸/海底撈月 above - 地胡 (off the dealer's first
-// discard) is a claimed win instead.
-const isSelfDrawHeavenlyWin = (s: HeavenlyWinState): boolean => s === "heaven" || s === "man";
+// discards) forces 自摸 on, same reasoning as 花摸/槓摸/海底撈月 above -
+// 地胡 (off the dealer's first discard) is a claimed win instead, and 人胡
+// (a non-dealer's win before their first discard) can be either.
+const isSelfDrawHeavenlyWin = (s: HeavenlyWinState): boolean => s === "heaven";
 
 // Same cycling idiom, for 河底撈魚/海底撈月 - 海底撈月(一筒) isn't its own
 // state to cycle to (see LastTileWinState's own comment in scoring.ts): it
@@ -5685,13 +5685,10 @@ function ScoringPanel({
   // 槓摸/搶槓's tai-by-count, for their buttons' tooltips.
   const kongDrawTable = taiRules.rules.patterns["kong-draw"]?.table ?? [];
   const robKongTable = taiRules.rules.patterns["rob-kong"]?.table ?? [];
-  // 天叮/地叮/天胡/地胡/人胡 all require a fully concealed hand (see
-  // isFullyConcealed in scoring.ts) - a call means a declared OPEN meld, so
-  // this only looks at `concealed: false` entries. A concealed kong (暗槓,
-  // meldKind "concealed-kong") doesn't count: it comes from upgrading your
-  // own already-held meld with a self-drawn tile, not a call, matching
-  // scoring.ts's own `m.concealed` check exactly.
-  const hasOpenDeclaredMeld = declaredMelds.some((m) => !m.concealed);
+  // 天叮/地叮/天胡/地胡/人胡 all need a hand with no declared meld at all
+  // (see isFullyConcealed in scoring.ts) - a concealed kong (暗槓) included:
+  // it's declared on a turn of your own, so it's not your first any more.
+  const hasDeclaredMeld = declaredMelds.length > 0;
   // Bonus tiles (flowers/seasons) live in 門前牌區 alongside declared melds
   // (see BonusTile's doc comment in scoring.ts) but aren't melds themselves
   // and don't count toward hand completeness - kept as separate state rather
@@ -5721,7 +5718,7 @@ function ScoringPanel({
   // (see its own JSX below), so this branch is mostly defensive - mirrors
   // cycleHeavenlyWin's own reciprocal clearing of riichi.
   const cycleRiichi = () => {
-    const reachable: RiichiState[] = hasOpenDeclaredMeld ? ["none", "riichi"] : RIICHI_CYCLE;
+    const reachable: RiichiState[] = hasDeclaredMeld ? ["none", "riichi"] : RIICHI_CYCLE;
     setRiichi((prev) => {
       const fromIdx = reachable.indexOf(prev);
       const next = reachable[(fromIdx === -1 ? 0 : fromIdx + 1) % reachable.length];
@@ -5747,10 +5744,10 @@ function ScoringPanel({
   };
   const [multiWin, setMultiWin] = useState<MultiWinState>("none");
   const [heavenlyWin, setHeavenlyWin] = useState<HeavenlyWinState>("none");
-  // 天胡 and 人胡 force 自摸 on (the dealer's initial deal, or a
-  // non-dealer's own first draw - inherently self-drawn); 地胡 forces it off
-  // (this house rule's 地胡 is winning off the dealer's very first discard -
-  // claimed, not self-drawn, joining 搶槓/雙響/三響's group). All 3 (天胡/地胡/人胡) are also mutually exclusive with
+  // 天胡 forces 自摸 on (the dealer's initial deal - inherently self-drawn);
+  // 地胡 forces it off (this house rule's 地胡 is winning off the dealer's
+  // very first discard - claimed, not self-drawn, joining 搶槓/雙響/三響's
+  // group); 人胡 (self-drawn or claimed) is left unlinked either way. All 3 (天胡/地胡/人胡) are also mutually exclusive with
   // 河底撈魚/海底撈月 - both describe extreme ends of the hand (won on
   // essentially the very first tile vs. the very last one),
   // so activating any of the 3 clears lastTileWin, same shape as
@@ -5762,7 +5759,7 @@ function ScoringPanel({
   // below).
   const cycleHeavenlyWin = () => {
     const next = HEAVENLY_WIN_CYCLE[(HEAVENLY_WIN_CYCLE.indexOf(heavenlyWin) + 1) % HEAVENLY_WIN_CYCLE.length];
-    if (next === "heaven" || next === "man") deactivateClaimedWinGroup();
+    if (next === "heaven") deactivateClaimedWinGroup();
     else if (next === "earth") deactivateSelfDrawGroup();
     if (next !== "none") {
       setLastTileWin("none");
@@ -6150,15 +6147,15 @@ function ScoringPanel({
   useEffect(() => {
     setKongDraw((c) => Math.min(c, kongCount));
   }, [kongCount]);
-  // Same clamp idiom as flowerDraw/kongDraw above: adding an open declared
+  // Same clamp idiom as flowerDraw/kongDraw above: adding a declared
   // meld AFTER 天叮/地叮/天胡/地胡/人胡 was already set (rather than being
   // blocked by the disabled button/skipped cycle step up front) would
   // otherwise leave a stale, now-invalid value in place.
   useEffect(() => {
-    if (!hasOpenDeclaredMeld) return;
+    if (!hasDeclaredMeld) return;
     setRiichi((r) => (r === "heavenly-riichi" || r === "earthly-riichi" ? "riichi" : r));
     setHeavenlyWin("none");
-  }, [hasOpenDeclaredMeld]);
+  }, [hasDeclaredMeld]);
 
   const addConcealedTile = (tile: Tile) => {
     if (atCapRef() || totalCopiesUsedRef(tile) >= 4) return;
@@ -6355,7 +6352,24 @@ function ScoringPanel({
     setConcealedTiles(nextConcealed);
     setBonusTiles(bonus);
     resetConditions();
-    const c = t.ctx;
+    // A shared link or a Recent hand goes by the 情況 buttons' links: one
+    // from before a rule changed can hold a pair they'd no longer allow, and
+    // 自摸 is saved as shown - held on by 海底撈月/人胡…, not set by hand.
+    // (The developer sheet's test hands load exactly as written.)
+    const c = t.group
+      ? t.ctx
+      : (() => {
+          const first = !!t.ctx.heavenlyWin && t.ctx.heavenlyWin !== "none";
+          const early = !!t.ctx.earlyWin && t.ctx.earlyWin !== "none";
+          const held =
+            !!t.ctx.flowerDraw || !!t.ctx.kongDraw || isSelfDrawLastTileWin(t.ctx.lastTileWin ?? "none") || isSelfDrawHeavenlyWin(t.ctx.heavenlyWin ?? "none");
+          return {
+            ...t.ctx,
+            ...(first ? { earlyWin: undefined } : {}),
+            ...(first || early ? { lastTileWin: undefined } : {}),
+            ...(held ? { selfDraw: undefined } : {}),
+          };
+        })();
     if (c.seatWind) setSeatWind(c.seatWind);
     if (c.roundWind) setRoundWind(c.roundWind);
     if (c.selfDraw) setSelfDraw(true);
@@ -7538,7 +7552,7 @@ function ScoringPanel({
               onClick={() => {
                 if (effectiveSelfDraw) {
                   // Turning off while forced/held on by 花摸/槓摸/河底撈魚/
-                  // 海底撈月/天胡/人胡 cascades to turning those off too (see
+                  // 海底撈月/天胡 cascades to turning those off too (see
                   // deactivateSelfDrawGroup), not just flip the
                   // (possibly already false) manual flag and leave 自摸 stuck
                   // on regardless.
@@ -7548,7 +7562,7 @@ function ScoringPanel({
                   deactivateClaimedWinGroup();
                 }
               }}
-              title="自摸 - self-draw vs won off a discard (also turned on by 花摸/槓摸/河底撈魚/海底撈月/天胡/人胡, and mutually exclusive with 搶槓/雙響/三響/地胡/食叮 - turning any one of these on turns the others off)"
+              title="自摸 - self-draw vs won off a discard (also turned on by 花摸/槓摸/河底撈魚/海底撈月/天胡, and mutually exclusive with 搶槓/雙響/三響/地胡/食叮 - turning any one of these on turns the others off)"
             >
               自摸
             </button>
@@ -7561,7 +7575,7 @@ function ScoringPanel({
               title={
                 heavenlyWin !== "none"
                   ? "叮 - blocked by 天胡/地胡/人胡: winning on the very first opportunity leaves no prior turn to have declared riichi on"
-                  : hasOpenDeclaredMeld
+                  : hasDeclaredMeld
                     ? "叮 - tap to cycle 叮 / off (天叮/地叮 need a fully concealed hand - a declared meld rules them out)"
                     : "叮 - tap to cycle 叮 / 天叮 / 地叮 / off"
               }
@@ -7620,14 +7634,14 @@ function ScoringPanel({
               type="button"
               className={heavenlyWin !== "none" ? "toggle-on" : undefined}
               aria-pressed={heavenlyWin !== "none"}
-              disabled={hasOpenDeclaredMeld || riichi !== "none"}
+              disabled={hasDeclaredMeld || riichi !== "none"}
               onClick={cycleHeavenlyWin}
               title={
-                hasOpenDeclaredMeld
+                hasDeclaredMeld
                   ? "天胡/地胡/人胡 all need a fully concealed hand (an untouched initial-turn win) - a declared meld rules them out"
                   : riichi !== "none"
                     ? "天胡/地胡/人胡 - blocked by 叮: these describe winning before any turn, which couldn't have happened once riichi was already declared"
-                    : "Tap to cycle 天胡(160) / 地胡(120) / 人胡(80) / off - 天胡 and 人胡 also turn on 自摸 (deactivating 搶槓/雙響/三響/地胡), 地胡 also turns off 自摸; all 3 are mutually exclusive with 河底撈魚/海底撈月"
+                    : "Tap to cycle 天胡(160) / 地胡(120) / 人胡(80) / off - 天胡 also turns on 自摸 (deactivating 搶槓/雙響/三響/地胡), 地胡 also turns off 自摸; all 3 are mutually exclusive with 河底撈魚/海底撈月"
               }
             >
               {HEAVENLY_WIN_LABELS[heavenlyWin]}
