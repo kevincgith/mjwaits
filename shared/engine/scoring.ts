@@ -3353,9 +3353,9 @@ export const PATTERNS: TaiPattern[] = [
     // excludes the whole 叮 family per the user: winning on the very
     // initial deal means no turn (let alone a discard) has happened yet,
     // so a riichi declaration couldn't have happened either - same logic
-    // applies to 地胡 (won on your own first draw, before your first
-    // discard) and 人胡 (won off the very first discard in the game,
-    // before even your own first turn).
+    // applies to 地胡 (won off the dealer's very first discard, before
+    // your own first turn) and 人胡 (a non-dealer's 自摸 on their own
+    // first draw, before their first discard).
     score: (hand, ctx) => (ctx.heavenlyWin === "heaven" && isFullyConcealed(hand) ? 1 : 0),
   },
   {

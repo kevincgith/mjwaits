@@ -916,7 +916,7 @@ export function resolveClaims(state: GameState, decisions: (Claim | null)[]): Ga
   // The claimed tile leaves the discarder's pond.
   s.players[from].discards.pop();
   s.chase = undefined;
-  // A win is scored while the first go-around still stands (人胡).
+  // A win is scored while the first go-around still stands (地胡).
   if (claim.kind === "win") {
     p.hand.push(tile);
     return finishWin(s, best, from, tile, null);
@@ -981,12 +981,15 @@ export function scoreWin(
     // by now), nor any claimed into a meld.
     earlyWin: ((n) => (n <= 4 ? "four" : n <= 7 ? "seven" : n <= 10 ? "ten" : "none"))(s.players.reduce((n, pl) => n + pl.discards.length, 0)),
     multiWin: winnersOffOne >= 3 ? "triple" : winnersOffOne === 2 ? "double" : "none",
-    heavenlyWin:
-      s.firstGoAround && selfDraw && s.discardsMade === 0 && isDealer
+    // 天胡: the dealer's opening hand. 地胡: off the dealer's first discard.
+    // 人胡: a non-dealer's 自摸 on their first draw. All before any call.
+    heavenlyWin: !s.firstGoAround
+      ? "none"
+      : selfDraw && isDealer && s.discardsMade === 0
         ? "heaven"
-        : s.firstGoAround && selfDraw && !isDealer
+        : !selfDraw && from === s.dealer && s.discardsMade === 1
           ? "earth"
-          : s.firstGoAround && !selfDraw && !isDealer
+          : selfDraw && !isDealer
             ? "man"
             : "none",
     lastTileWin: lastTile ? (selfDraw ? "sea-bottom" : "river-bottom") : "none",

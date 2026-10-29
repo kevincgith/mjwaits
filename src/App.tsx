@@ -4354,9 +4354,10 @@ const HEAVENLY_WIN_LABELS: Record<HeavenlyWinState, string> = {
   man: "人胡",
 };
 // 天胡 (the dealer's initial deal is already complete, before anyone
-// discards) forces 自摸 on, same reasoning as 花摸/槓摸/海底撈月 above -
-// 地胡/人胡 are deliberately left alone here, not asserted either way.
-const isSelfDrawHeavenlyWin = (s: HeavenlyWinState): boolean => s === "heaven";
+// discards) and 人胡 (a non-dealer's own first draw) force 自摸 on, same
+// reasoning as 花摸/槓摸/海底撈月 above - 地胡 (off the dealer's first
+// discard) is a claimed win instead.
+const isSelfDrawHeavenlyWin = (s: HeavenlyWinState): boolean => s === "heaven" || s === "man";
 
 // Same cycling idiom, for 河底撈魚/海底撈月 - 海底撈月(一筒) isn't its own
 // state to cycle to (see LastTileWinState's own comment in scoring.ts): it
@@ -5733,19 +5734,23 @@ function ScoringPanel({
   // 四子內/七子內/十子內 (won within the first N discards) and 河底撈魚/
   // 海底撈月 (won on the very last tile) are mutually exclusive by
   // definition - the wall can't be both nearly full and exhausted at once
-  // - so activating either cycle clears the other back to "none".
+  // - so activating either cycle clears the other back to "none". 天胡/地胡/
+  // 人胡 take their place (the house rule: they don't stack), so the two
+  // clear each other too.
   const cycleEarlyWin = () => {
     const next = EARLY_WIN_CYCLE[(EARLY_WIN_CYCLE.indexOf(earlyWin) + 1) % EARLY_WIN_CYCLE.length];
-    if (next !== "none") setLastTileWin("none");
+    if (next !== "none") {
+      setLastTileWin("none");
+      setHeavenlyWin("none");
+    }
     setEarlyWin(next);
   };
   const [multiWin, setMultiWin] = useState<MultiWinState>("none");
   const [heavenlyWin, setHeavenlyWin] = useState<HeavenlyWinState>("none");
-  // 天胡 forces 自摸 on (the dealer's initial deal is already a complete
-  // hand - inherently self-drawn); 地胡 forces it off (this house rule's
-  // 地胡 is winning off the very first discard - claimed, not self-drawn,
-  // joining 搶槓/雙響/三響's group); 人胡 is deliberately left unlinked
-  // either way. All 3 (天胡/地胡/人胡) are also mutually exclusive with
+  // 天胡 and 人胡 force 自摸 on (the dealer's initial deal, or a
+  // non-dealer's own first draw - inherently self-drawn); 地胡 forces it off
+  // (this house rule's 地胡 is winning off the dealer's very first discard -
+  // claimed, not self-drawn, joining 搶槓/雙響/三響's group). All 3 (天胡/地胡/人胡) are also mutually exclusive with
   // 河底撈魚/海底撈月 - both describe extreme ends of the hand (won on
   // essentially the very first tile vs. the very last one),
   // so activating any of the 3 clears lastTileWin, same shape as
@@ -5757,10 +5762,11 @@ function ScoringPanel({
   // below).
   const cycleHeavenlyWin = () => {
     const next = HEAVENLY_WIN_CYCLE[(HEAVENLY_WIN_CYCLE.indexOf(heavenlyWin) + 1) % HEAVENLY_WIN_CYCLE.length];
-    if (next === "heaven") deactivateClaimedWinGroup();
+    if (next === "heaven" || next === "man") deactivateClaimedWinGroup();
     else if (next === "earth") deactivateSelfDrawGroup();
     if (next !== "none") {
       setLastTileWin("none");
+      setEarlyWin("none"); // see cycleEarlyWin's own comment
       // 天胡/地胡/人胡 block the whole 叮 family (see scoring.ts) - winning
       // on the very first opportunity leaves no prior turn to have
       // declared riichi on at all, not even plain 叮.
@@ -7532,18 +7538,17 @@ function ScoringPanel({
               onClick={() => {
                 if (effectiveSelfDraw) {
                   // Turning off while forced/held on by 花摸/槓摸/河底撈魚/
-                  // 海底撈月/天胡 cascades to turning those off too (see
+                  // 海底撈月/天胡/人胡 cascades to turning those off too (see
                   // deactivateSelfDrawGroup), not just flip the
                   // (possibly already false) manual flag and leave 自摸 stuck
-                  // on regardless. 人胡 is untouched - it doesn't force 自摸 on
-                  // in the first place.
+                  // on regardless.
                   deactivateSelfDrawGroup();
                 } else {
                   setSelfDraw(true);
                   deactivateClaimedWinGroup();
                 }
               }}
-              title="自摸 - self-draw vs won off a discard (also turned on by 花摸/槓摸/河底撈魚/海底撈月/天胡, and mutually exclusive with 搶槓/雙響/三響/地胡/食叮 - turning any one of these on turns the others off)"
+              title="自摸 - self-draw vs won off a discard (also turned on by 花摸/槓摸/河底撈魚/海底撈月/天胡/人胡, and mutually exclusive with 搶槓/雙響/三響/地胡/食叮 - turning any one of these on turns the others off)"
             >
               自摸
             </button>
@@ -7622,7 +7627,7 @@ function ScoringPanel({
                   ? "天胡/地胡/人胡 all need a fully concealed hand (an untouched initial-turn win) - a declared meld rules them out"
                   : riichi !== "none"
                     ? "天胡/地胡/人胡 - blocked by 叮: these describe winning before any turn, which couldn't have happened once riichi was already declared"
-                    : "Tap to cycle 天胡(160) / 地胡(120) / 人胡(80) / off - 天胡 also turns on 自摸 (deactivating 搶槓/雙響/三響/地胡), 地胡 also turns off 自摸; all 3 are mutually exclusive with 河底撈魚/海底撈月"
+                    : "Tap to cycle 天胡(160) / 地胡(120) / 人胡(80) / off - 天胡 and 人胡 also turn on 自摸 (deactivating 搶槓/雙響/三響/地胡), 地胡 also turns off 自摸; all 3 are mutually exclusive with 河底撈魚/海底撈月"
               }
             >
               {HEAVENLY_WIN_LABELS[heavenlyWin]}
