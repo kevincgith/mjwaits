@@ -69,6 +69,19 @@ function play(hands: number, seed: number, multiWin: boolean, jackpot = 0) {
 describe("a Play game as a Scores game", () => {
   it("names each player once", () => {
     expect(uniqueNames(["You", "Casual", "Casual", "Casual"])).toEqual(["You", "Casual", "Casual 2", "Casual 3"]);
+    // A player already called "Bob 2" doesn't get doubled up.
+    expect(uniqueNames(["Bob", "Bob", "Bob 2", "Ann"])).toEqual(["Bob", "Bob 2", "Bob 2 2", "Ann"]);
+  });
+
+  it("records a 嗌錯 that takes back a bonus and adds its own at once", () => {
+    const s = newGame();
+    s.phase = { kind: "turn", seat: 1, drawn: null, replacement: null };
+    const flower = { seat: 1, name: "花" as const, deltas: [-10, 30, -10, -10], paid: true };
+    const wrong = { seat: 1, name: "嗌錯" as const, deltas: [5, -15, 5, 5], paid: false };
+    const before = { ...s, tableBonuses: [flower] };
+    const after = { ...s, tableBonuses: [wrong] };
+    const evs = playEvents(before, after, ["A", "B", "C", "D"], 1);
+    expect(evs.map((e) => (e.t === "bonus" ? `${e.name} ${e.kind} ${e.amount}` : e.t))).toEqual(["花 退 罰 10", "嗌錯 罰 5"]);
   });
 
   it("keeps the same totals, 拉 and dealer as the table, 截胡", () => {

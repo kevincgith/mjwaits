@@ -18,13 +18,15 @@ import { scoreView } from "./view";
 // no Jackpot; the dealer keeps the deal on a 流局, as at the table).
 export const PLAY_SCORE_SETTINGS: ScoreSettings = { ...PLAY_LAH_SETTINGS, fanXue: false, jackpot: false, drawKeepsDealer: true };
 
-// Each name once: a second "Casual" becomes "Casual 2".
+// Each name once: a second "Casual" becomes "Casual 2" (or "Casual 3", if
+// there's a "Casual 2" already).
 export function uniqueNames(names: string[]): string[] {
-  const seen = new Map<string, number>();
+  const used = new Set<string>();
   return names.map((n) => {
-    const k = (seen.get(n) ?? 0) + 1;
-    seen.set(n, k);
-    return k === 1 ? n : `${n} ${k}`;
+    let name = n;
+    for (let k = 2; used.has(name); k++) name = `${n} ${k}`;
+    used.add(name);
+    return name;
   });
 }
 
@@ -71,10 +73,15 @@ export function playEvents(before: GameState | null, after: GameState, seats: st
   const newDeal = !before || (before.phase.kind === "over" && after.phase.kind !== "over");
   // Dice and the table's bonuses, as they come up.
   if (newDeal && after.diceBonus) out.push(...bonusEvents(after.dealer, after.diceBonus.deltas, after.diceBonus.name, at));
+  // Past what the two have in common: a 嗌錯 can take bonuses back and add
+  // its own at once, so the lists can differ at the same length.
   const was = newDeal ? [] : (before?.tableBonuses ?? []);
   const now = after.tableBonuses ?? [];
-  for (const b of now.slice(was.length)) out.push(...bonusOf(b, at));
-  for (const b of was.slice(now.length)) out.push(...reversed(b, at));
+  const same = (a: TableBonus, b: TableBonus) => a.seat === b.seat && a.name === b.name && a.deltas.join() === b.deltas.join();
+  let common = 0;
+  while (common < was.length && common < now.length && same(was[common], now[common])) common++;
+  for (const b of was.slice(common)) out.push(...reversed(b, at));
+  for (const b of now.slice(common)) out.push(...bonusOf(b, at));
   // A hand's end.
   if (after.phase.kind === "over" && before?.phase.kind !== "over") {
     const r = after.phase.result;

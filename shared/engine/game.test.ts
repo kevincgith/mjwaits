@@ -31,6 +31,7 @@ import {
   kongOptions,
   SEATS,
   type GameState,
+  type Player,
   type WallTile,
 } from "./game";
 import { parseHand, type Tile } from "./mahjong";
@@ -436,7 +437,7 @@ describe("game", () => {
     expect(won.phase.kind === "over" && won.phase.result.score!.matched.some((m) => m.pattern.id === "early-win-four")).toBe(true);
   });
 
-  it("scores 地胡 off the dealer's first discard and 人胡 on a non-dealer's first-draw 自摸, before any call", () => {
+  it("scores 地胡 off the dealer's first discard, and 人胡 for a non-dealer's other win before their first throw", () => {
     const b5 = { suit: "b" as const, rank: 5 };
     const fresh = (multiWin = false) => {
       const s = newGame({ multiWin });
@@ -465,24 +466,60 @@ describe("game", () => {
     expect(first(resolveClaims(applyTurnMove(fresh(), { kind: "discard", tile: b5 }), [null, { kind: "win" }, null, null]), 1)).toBe("earthly-win");
     const both = resolveClaims(applyTurnMove(fresh(true), { kind: "discard", tile: b5 }), [null, { kind: "win" }, { kind: "win" }, null]);
     expect([first(both, 1), first(both, 2)]).toEqual(["earthly-win", "earthly-win"]);
-    // Off a later discard of the first go-around: neither.
+    // Off a later discard, before the winner's own first throw: 人胡.
     const second = fresh();
     second.discardsMade = 1;
     second.players[1].hand = parseHand("5b123456789m1234t");
     second.phase = { kind: "turn", seat: 1, drawn: null, replacement: null };
-    expect(first(resolveClaims(applyTurnMove(second, { kind: "discard", tile: b5 }), [null, null, { kind: "win" }, null]), 2)).toBe("");
+    expect(first(resolveClaims(applyTurnMove(second, { kind: "discard", tile: b5 }), [null, null, { kind: "win" }, null]), 2)).toBe("human-win");
+    // A winner who has thrown a tile already: neither (nor the dealer).
+    const third = fresh();
+    third.discardsMade = 2;
+    third.players[1].played = true;
+    third.players[2].hand = parseHand("5b123456789m1234t");
+    third.phase = { kind: "turn", seat: 2, drawn: null, replacement: null };
+    expect(first(resolveClaims(applyTurnMove(third, { kind: "discard", tile: b5 }), [null, { kind: "win" }, null, null]), 1)).toBe("");
     // A non-dealer's 自摸 on their first draw: 人胡.
     const draw = fresh();
     draw.discardsMade = 1;
     draw.players[1].hand = parseHand("123m456m789m123t456t55b");
     draw.phase = { kind: "turn", seat: 1, drawn: b5, replacement: null };
     expect(first(applyTurnMove(draw, { kind: "selfDraw" }), 1)).toBe("human-win");
-    // Once the go-around is over (all four have thrown, or a call): none.
-    const late = fresh();
-    late.firstGoAround = false;
-    expect(first(resolveClaims(applyTurnMove(late, { kind: "discard", tile: b5 }), [null, { kind: "win" }, null, null]), 1)).toBe("");
+    // The dealer's concealed kong before that first discard doesn't stop 地胡.
+    const konged = fresh();
+    konged.firstGoAround = false;
+    konged.players[0].melds = [{ kind: "kong", tiles: parseHand("1111z"), concealed: true, from: null }];
+    konged.players[0].hand = parseHand("5b123456789m1t");
+    expect(first(resolveClaims(applyTurnMove(konged, { kind: "discard", tile: b5 }), [null, { kind: "win" }, null, null]), 1)).toBe("earthly-win");
+    // Others' calls before a non-dealer's first draw don't stop 人胡...
     draw.firstGoAround = false;
+    draw.discardsMade = 3;
+    expect(first(applyTurnMove(draw, { kind: "selfDraw" }), 1)).toBe("human-win");
+    // ...but once they've thrown a tile (even one claimed off their pond), no.
+    draw.players[1].played = true;
     expect(first(applyTurnMove(draw, { kind: "selfDraw" }), 1)).toBe("");
+    // 天胡 needs the dealer's opening hand untouched: no kong first.
+    const dealt = fresh();
+    dealt.players[0].hand = parseHand("123m456m789m123t456t55b");
+    dealt.phase = { kind: "turn", seat: 0, drawn: b5, replacement: null };
+    expect(first(applyTurnMove(dealt, { kind: "selfDraw" }), 0)).toBe("heavenly-win");
+    dealt.firstGoAround = false; // (as a kong leaves it)
+    expect(first(applyTurnMove(dealt, { kind: "selfDraw" }), 0)).toBe("");
+  });
+
+  it("gives 地叮 on a non-dealer's own first discard even after others' calls, but not after a kong of their own", () => {
+    const z7 = parseHand("7z")[0];
+    const at = (melds: Player["melds"], hand: string) => {
+      const s = newGame();
+      s.firstGoAround = false; // someone else has called
+      s.discardsMade = 2;
+      s.players[2].melds = melds;
+      s.players[2].hand = parseHand(hand);
+      s.phase = { kind: "turn", seat: 2, drawn: z7, replacement: null };
+      return applyTurnMove(s, { kind: "discard", tile: z7, riichi: true }).players[2].riichi!.state;
+    };
+    expect(at([], "123m456m789m123t456t5b7z")).toBe("earthly-riichi");
+    expect(at([{ kind: "kong", tiles: parseHand("1111z"), concealed: true, from: null }], "123m456m789m123t5b7z")).toBe("riichi");
   });
 
   it("counts every kong and bonus tile replaced on the way to a self-drawn win (槓摸 / 花摸)", () => {

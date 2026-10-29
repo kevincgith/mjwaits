@@ -1519,7 +1519,15 @@ export const TEST_HANDS: TestHand[] = [
     "hand": "147m147t258b11234567z",
     "ctx": {
       "earlyWin": "four",
-      "multiWin": "double",
+      "multiWin": "double"
+    }
+  },
+  {
+    "group": "PATTERNS: every purely-declared button pattern applies to the special hands too",
+    "name": "scores 四子內/雙響/天胡 for a 十六不搭 hand",
+    "hand": "147m147t258b11234567z",
+    "ctx": {
+      "selfDraw": true,
       "heavenlyWin": "heaven"
     }
   },
@@ -1529,7 +1537,14 @@ export const TEST_HANDS: TestHand[] = [
     "hand": "1111m223344m5566777t",
     "ctx": {
       "earlyWin": "seven",
-      "multiWin": "triple",
+      "multiWin": "triple"
+    }
+  },
+  {
+    "group": "PATTERNS: every purely-declared button pattern applies to the special hands too",
+    "name": "scores 七子內/三響/地胡 for a 嚦咕嚦咕 hand",
+    "hand": "1111m223344m5566777t",
+    "ctx": {
       "heavenlyWin": "earth"
     }
   },

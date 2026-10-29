@@ -10,7 +10,7 @@
 // scoring.ts - also fixed, not a setting.
 
 /** Count as a self-draw: switching one on turns 自摸 on. */
-const SELF_DRAWN = ["flower-draw", "kong-draw", "river-bottom-win", "sea-bottom-win", "sea-bottom-win-one-tong", "heavenly-win", "human-win"];
+const SELF_DRAWN = ["flower-draw", "kong-draw", "river-bottom-win", "sea-bottom-win", "sea-bottom-win-one-tong", "heavenly-win"];
 /** Won off another player: switching one on turns 自摸 (and SELF_DRAWN) off. */
 const CLAIMED = ["rob-kong", "multi-win-double", "multi-win-triple", "earthly-win", "riichi-eat"];
 const SELF_DRAW = ["self-draw", "concealed-self-draw"];
@@ -45,13 +45,13 @@ const TURNS_ON: Record<string, string[]> = {
 
 const NEEDS: Record<string, string> = {
   "concealed-riichi": "叮 on a 門前清 hand",
-  "heavenly-riichi": "no declared melds, kongs included (the 叮 button skips it otherwise)",
-  "earthly-riichi": "no declared melds, kongs included (the 叮 button skips it otherwise)",
+  "heavenly-riichi": "no declared melds, concealed kongs included (the 叮 button skips it otherwise)",
+  "earthly-riichi": "no declared melds, concealed kongs included (the 叮 button skips it otherwise)",
   "riichi-instant-win": "叮, 天叮 or 地叮 declared (the button is off without it)",
   "concealed-self-draw": "自摸 on a 門前清 hand",
-  "heavenly-win": "no declared melds, kongs included",
-  "earthly-win": "no declared melds, kongs included",
-  "human-win": "no declared melds, kongs included",
+  "heavenly-win": "no declared melds, concealed kongs included",
+  "earthly-win": "no declared melds, concealed kongs included",
+  "human-win": "no declared melds, concealed kongs included",
   "sea-bottom-win-one-tong": "海底撈月 and 自摸, won on 1筒 - counted by itself, no button",
   "everyone-else-completes-it": "every meld declared, won off a discard",
   "half-everyone-else-completes-it": "every meld declared, self-drawn",
