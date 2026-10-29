@@ -6693,6 +6693,43 @@ html.playing body {
   transform: translateZ(1px);
 }
 
+/* 起莊: a gold wedge lying in the table's corner at the first dealer's
+   left - yours bottom left, the left seat's far left, across's far right,
+   the right seat's near right. */
+.play-first-dealer {
+  position: absolute;
+  width: 2rem;
+  height: 2rem;
+  background: var(--play-gold);
+  opacity: 0.85;
+  transform: translateZ(1px);
+  pointer-events: none;
+}
+
+.play-first-dealer.at-bottom {
+  left: 0.35rem;
+  bottom: 0.35rem;
+  clip-path: polygon(0 0, 0 100%, 100% 100%);
+}
+
+.play-first-dealer.at-left {
+  left: 0.35rem;
+  top: 0.35rem;
+  clip-path: polygon(0 0, 100% 0, 0 100%);
+}
+
+.play-first-dealer.at-top {
+  right: 0.35rem;
+  top: 0.35rem;
+  clip-path: polygon(0 0, 100% 0, 100% 100%);
+}
+
+.play-first-dealer.at-right {
+  right: 0.35rem;
+  bottom: 0.35rem;
+  clip-path: polygon(100% 0, 100% 100%, 0 100%);
+}
+
 .play-edge {
   display: inline-flex;
   font-size: var(--play-wall);
@@ -8552,20 +8589,6 @@ html.playing body {
   align-items: center;
   gap: 0.3rem;
   font-weight: 600;
-}
-
-/* 起莊: a gold corner on the first dealer's tag, round its top left. */
-:is(.play-badge, .play-bar-you).is-first-dealer::before {
-  content: "";
-  position: absolute;
-  top: -0.2rem;
-  left: -0.2rem;
-  width: 0.7rem;
-  height: 0.7rem;
-  border-top: 0.16rem solid var(--play-gold);
-  border-left: 0.16rem solid var(--play-gold);
-  border-top-left-radius: 0.45rem;
-  pointer-events: none;
 }
 
 .play-bar-you.is-active .play-badge-wind {

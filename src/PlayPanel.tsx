@@ -3121,12 +3121,12 @@ export function PlayPanel({ onExit, online, fresh }: { onExit: () => void; onlin
   // The dealer's chip, with their run of wins and draws (連莊) on it.
   const dealerChip = game.dealerStreak > 0 ? <span className="play-dealer is-streak">莊連{game.dealerStreak}</span> : <span className="play-dealer">莊</span>;
 
-  // 起莊: who dealt the game's first hand - a gold corner on their tag.
+  // 起莊: who dealt the game's first hand - a gold wedge in the table's
+  // corner at their left.
   const firstDealer = game.firstDealer ?? 0;
-  const firstMark = (seat: number) => (seat === firstDealer ? " is-first-dealer" : "");
   // A bot's name card - flat, over the corner of the table like a HUD.
   const badge = (seat: number) => (
-    <span className={`play-badge at-${SIDES[seat]}${activeSeat === seat ? " is-active" : ""}${firstMark(seat)}`} title={seat === firstDealer ? "起莊" : undefined}>
+    <span className={`play-badge at-${SIDES[seat]}${activeSeat === seat ? " is-active" : ""}`}>
       <span className="play-badge-wind">{WIND_CHARS[seatWind(seat, game.dealer)]}</span>
       {bots[seat] && <Avatar bot={bots[seat]!} />}
       <span className="play-badge-name">
@@ -3451,6 +3451,7 @@ export function PlayPanel({ onExit, online, fresh }: { onExit: () => void; onlin
             and the bar stay flat in front of it. */}
         <div className="play-stage">
           <div className="play-felt" ref={feltRef}>
+            <span className={`play-first-dealer at-${SIDES[firstDealer]}`} title={`起莊: ${nameOf(firstDealer)}`} aria-label={`起莊 ${nameOf(firstDealer)}`} />
             {wall(2)}
             {wall(3)}
             {wall(1)}
@@ -3682,7 +3683,7 @@ export function PlayPanel({ onExit, online, fresh }: { onExit: () => void; onlin
         </div>
 
         <div className="play-bar">
-          <span className={`play-bar-you${activeSeat === HUMAN ? " is-active" : ""}${firstMark(HUMAN)}`} title={HUMAN === firstDealer ? "起莊" : undefined}>
+          <span className={`play-bar-you${activeSeat === HUMAN ? " is-active" : ""}`}>
             <span className="play-badge-wind">{WIND_CHARS[seatWind(HUMAN, game.dealer)]}</span>
             You
             {game.dealer === HUMAN && dealerChip}
