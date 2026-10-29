@@ -522,6 +522,27 @@ describe("game", () => {
     expect(at([{ kind: "kong", tiles: parseHand("1111z"), concealed: true, from: null }], "123m456m789m123t5b7z")).toBe("riichi");
   });
 
+  it("keeps 一發 for a 叮 player who robs a kong; a kong that stands ends it", () => {
+    const m5 = parseHand("5m")[0];
+    const set = () => {
+      const s = newGame();
+      s.firstGoAround = false;
+      s.players.forEach((p) => (p.flowers = []));
+      s.players[0].melds = [{ kind: "triplet", tiles: [m5, m5, m5], concealed: false, from: 2 }];
+      s.players[0].hand = parseHand("5m123t456t789t123b4b");
+      s.players[1].melds = [];
+      s.players[1].hand = parseHand("34m123t456t789t123b55z");
+      s.players[1].riichi = { state: "riichi", discard: 0, ippatsu: true };
+      s.phase = { kind: "turn", seat: 0, drawn: m5, replacement: null };
+      return applyTurnMove(s, { kind: "addedKong", tile: m5 });
+    };
+    const robbed = resolveClaims(set(), [null, { kind: "win" }, null, null]);
+    const ids = robbed.phase.kind === "over" ? robbed.phase.result.score!.matched.map((m) => m.pattern.id) : [];
+    expect(ids).toEqual(expect.arrayContaining(["rob-kong", "riichi-instant-win"]));
+    // Passed up, the kong stands - and 一發 is gone.
+    expect(resolveClaims(set(), [null, null, null, null]).players[1].riichi!.ippatsu).toBe(false);
+  });
+
   it("counts every kong and bonus tile replaced on the way to a self-drawn win (槓摸 / 花摸)", () => {
     const filler = fullWall().filter((w) => !("bonus" in w)).slice(0, 40);
     const t = (hand: string) => ({ tile: parseHand(hand)[0] });
