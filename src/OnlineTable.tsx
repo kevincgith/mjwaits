@@ -676,6 +676,13 @@ function Lobby({ table, me, send, onLeave }: { table: TableState; me: Welcome; s
               </Seg>
             ))}
           </Setting>
+          <Setting label="反雪" note={s.fanXue === false ? "off" : "dealt into a 雙響 / 三響, then self-drew the next hand won: 5 (10) back from each of those winners"}>
+            {[true, false].map((on) => (
+              <Seg key={String(on)} on={(s.fanXue !== false) === on} disabled={!me.host} onClick={() => setup({ fanXue: on })}>
+                {on ? "On" : "Off"}
+              </Seg>
+            ))}
+          </Setting>
           <Setting label="No claim back" note={s.runBack ? "off: any claim may be made" : "threw 1m: no pung, kong or run with it till you draw (from 123m, no 4m run either)"}>
             {[true, false].map((on) => (
               <Seg key={String(on)} on={!s.runBack === on} disabled={!me.host} onClick={() => setup({ runBack: !on })}>

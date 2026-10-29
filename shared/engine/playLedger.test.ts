@@ -16,6 +16,7 @@ function play(hands: number, seed: number, multiWin: boolean, jackpot = 0) {
     let ledger: ScoreGame = newPlayLedger(names, s.dealer, 0);
     const seats = ledger.seats;
     const totals = [0, 0, 0, 0];
+    let fanXue = 0; // 反雪 paid
     // Bots that give up every 拉 they may.
     const quitter = { ...profileById("casual"), surrender: 1 };
     const step = (next: GameState) => {
@@ -23,6 +24,7 @@ function play(hands: number, seed: number, multiWin: boolean, jackpot = 0) {
       ledger = { ...ledger, events: [...ledger.events, ...playEvents(s, next, seats, 0, jackpot ? { perDraw: jackpot, pot } : undefined)] };
       if (next.phase.kind === "over" && s.phase.kind !== "over") {
         const r = next.phase.result;
+        if (r.fanXue) fanXue++;
         if (r.winner === null) for (let i = 0; i < SEATS; i++) totals[i] -= jackpot;
         else if (r.from === null) totals[r.winner] += pot;
       }
@@ -60,7 +62,7 @@ function play(hands: number, seed: number, multiWin: boolean, jackpot = 0) {
       expect(after.dealer).toBe(s.dealer);
       expect(after.streak).toBe(s.dealerStreak);
     }
-    return { ledger, s };
+    return { ledger, s, fanXue };
   } finally {
     Math.random = real;
   }
@@ -126,4 +128,9 @@ describe("a Play game as a Scores game", () => {
     expect(["You", "A", "B", "C"].map((p) => r.totals[p])).toEqual([-30, 50, -5, -15]);
     expect(r.dealer).toBe(1);
   });
+
+  it("and with 反雪: the 雙響's loser self-drawing it back", () => {
+    // (Seed 22's 24 hands pay one: the record agrees with the table throughout.)
+    expect(play(24, 22, true).fanXue).toBe(1);
+  }, 300_000);
 });

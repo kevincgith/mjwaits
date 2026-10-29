@@ -172,7 +172,19 @@ type ScoreEventBody =
   // (so a later change there leaves recorded hands as they were).
   // dealerExtra: a Play hand's 莊 the dealer paid on another player's 自摸
   // (Play's own settings leave 莊 to the hand's tai, which can't carry it).
-  | { t: "win"; at: number; winners: WinnerEntry[]; from: number | null; jackpotTo?: string; source: "quick" | "scoring"; multiTai?: number; dealerExtra?: number }
+  // fanXuePaid: a Play hand's 反雪, as the table paid it (Play's settings
+  // leave 反雪 off: the table works it out).
+  | {
+      t: "win";
+      at: number;
+      winners: WinnerEntry[];
+      from: number | null;
+      jackpotTo?: string;
+      source: "quick" | "scoring";
+      multiTai?: number;
+      dealerExtra?: number;
+      fanXuePaid?: { from: string; to: string; amount: number }[];
+    }
   | { t: "draw"; at: number }
   // 特別獎罰: 獎 - the seat's player is paid `amount`; 罰 - they pay it. With
   // `other`, just that one player pays (獎) or is paid (罰); without it, each
@@ -495,7 +507,7 @@ export function replay(game: ScoreGame): ReplayState {
         state.lahs = nextLahs(state.lahs, pairs, winnerNames);
 
         // 反雪: paid, and riding in the 拉 this 自摸 just started on each winner.
-        const fanXue: HandResult["fanXue"] = previewFanXue(state, ev.winners, ev.from);
+        const fanXue: HandResult["fanXue"] = ev.fanXuePaid ?? previewFanXue(state, ev.winners, ev.from);
         for (const f of fanXue) pay(f.from, f.to, f.amount);
         if (fanXue.length > 0)
           state.lahs = state.lahs.map((l) => {

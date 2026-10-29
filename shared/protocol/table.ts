@@ -83,10 +83,11 @@ export const TableSettingsSchema = object({
   jackpot: optional(int(0, 10)),
   botSpeed: optional(oneOf("slow", "normal", "fast")), // absent: normal
   runBack: optional(bool), // claims back of a tile just thrown allowed (absent: not - the No claim back rule, see GameState.runBack)
+  fanXue: optional(bool), // 反雪 (absent: on - see GameState.noFanXue)
 });
 export type TableSettings = Infer<typeof TableSettingsSchema>;
 
-export const DEFAULT_TABLE_SETTINGS: TableSettings = { multiWin: false, timer: 20, hold: 30, firstDealer: 0, reveal: true, jackpot: 5 };
+export const DEFAULT_TABLE_SETTINGS: TableSettings = { multiWin: true, timer: 20, hold: 30, firstDealer: 0, reveal: true, jackpot: 5 };
 
 const TableClientSchema = tagged({
   // First on every connection; `token` comes back as the same person (and seat).

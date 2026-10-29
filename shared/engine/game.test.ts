@@ -543,6 +543,44 @@ describe("game", () => {
     expect(resolveClaims(set(), [null, null, null, null]).players[1].riichi!.ippatsu).toBe(false);
   });
 
+  it("pays 反雪: who dealt into a 雙響 and self-draws the next hand anyone wins gets it back, into the new 拉", () => {
+    const b5 = { suit: "b" as const, rank: 5 };
+    const ready = "123m456m789m123t456t5b";
+    const s0 = newGame({ multiWin: true });
+    s0.firstGoAround = false;
+    s0.players.forEach((p) => ((p.melds = []), (p.flowers = [])));
+    s0.players[0].hand = parseHand("5b123456789m1234t");
+    s0.players[1].hand = parseHand(ready);
+    s0.players[2].hand = parseHand(ready);
+    s0.phase = { kind: "turn", seat: 0, drawn: null, replacement: null };
+    const both = resolveClaims(applyTurnMove(s0, { kind: "discard", tile: b5 }), [null, { kind: "win" }, { kind: "win" }, null]);
+    expect(both.fanXueDue).toEqual({ loser: 0, winners: [1, 2], amount: 5 });
+    // A 流局 between keeps it owed.
+    const drawn = { ...nextHand(both), phase: { kind: "over" as const, result: { winner: null, from: null, tile: null, score: null, scoreError: null, deltas: [0, 0, 0, 0] } } };
+    const s1 = nextHand(drawn);
+    expect(s1.fanXueDue).toEqual({ loser: 0, winners: [1, 2], amount: 5 });
+    // Seat 0 self-draws: 5 back from each of the two.
+    s1.firstGoAround = false;
+    s1.players.forEach((p) => ((p.melds = []), (p.flowers = [])));
+    s1.players[0].hand = parseHand("123m456m789m123t456t55b");
+    s1.phase = { kind: "turn", seat: 0, drawn: b5, replacement: null };
+    const won = applyTurnMove(s1, { kind: "selfDraw" });
+    if (won.phase.kind !== "over") throw new Error("not over");
+    expect(won.phase.result.fanXue).toEqual([
+      { from: 1, to: 0, amount: 5 },
+      { from: 2, to: 0, amount: 5 },
+    ]);
+    expect(won.fanXueDue).toBeUndefined();
+    // Off by the table setting: nothing back - and against that, on adds 5
+    // to what each pays and to the 拉 on each.
+    const off = applyTurnMove({ ...s1, noFanXue: true }, { kind: "selfDraw" });
+    if (off.phase.kind !== "over") throw new Error("not over");
+    expect(off.phase.result.fanXue).toBeUndefined();
+    expect(won.phase.result.deltas.map((d, i) => d - (off.phase.kind === "over" ? off.phase.result.deltas[i] : 0))).toEqual([10, -5, -5, 0]);
+    const lah = (g: GameState, pulled: string) => g.lahs!.find((l) => l.holder === "0" && l.pulled === pulled)!.value;
+    expect([lah(won, "1") - lah(off, "1"), lah(won, "2") - lah(off, "2")]).toEqual([5, 5]);
+  });
+
   it("counts every kong and bonus tile replaced on the way to a self-drawn win (槓摸 / 花摸)", () => {
     const filler = fullWall().filter((w) => !("bonus" in w)).slice(0, 40);
     const t = (hand: string) => ({ tile: parseHand(hand)[0] });

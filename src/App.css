@@ -5843,9 +5843,11 @@ html.playing body {
      discards; the walls of standing tiles along each edge a size smaller,
      as in the table apps, so the side walls fit the table's depth. */
   --play-tile: calc(var(--play-hand) * 0.74);
-  --play-wall: calc(var(--play-tile) * 0.62);
+  /* (The side walls as big as leaves them clear of your hand and the
+     table's far edge, a little room each end - checked at phone sizes.) */
+  --play-wall: calc(var(--play-tile) * 0.72);
   /* Across, a size up: the table's width has the room its depth doesn't. */
-  --play-wall-top: calc(var(--play-wall) * 1.3);
+  --play-wall-top: calc(var(--play-tile) * 0.97);
   /* The middle row just the compass: the far and near ponds start right by
      it and grow toward their players, the table's spare depth split beyond
      them (the far pond sits at the foot of its row, yours at the top). */
@@ -6320,6 +6322,18 @@ html.playing body {
   align-items: center;
 }
 
+/* In front, the melds keep clear of where the hand lies once it's laid
+   down at the end (a tile flat reaches a face's height toward the middle,
+   standing only its thickness) - set there from the start, so nothing
+   moves when it falls. */
+.play-seat-top.is-front {
+  gap: calc(0.3em + var(--play-wall-top) * 0.5);
+}
+
+:is(.play-seat-left, .play-seat-right).is-front {
+  gap: calc(0.3em + var(--play-wall) * 0.5);
+}
+
 .play-seat-side,
 .play-seat-melds,
 .play-seat .play-meld,
@@ -6683,8 +6697,10 @@ html.playing body {
   display: inline-flex;
   font-size: var(--play-wall);
   /* A tile standing: as tall as a face, its footprint a face wide along
-     the row and its thickness across. */
+     the row and its thickness across. The row spaces them at the face's
+     own width, so they stand touching - no felt between. */
   --play-tile-height: 1em;
+  --edge-pitch: 0.72em;
 }
 
 .play-edge-top {
@@ -6723,11 +6739,11 @@ html.playing body {
 .play-edge-left,
 .play-edge-right {
   flex-direction: column;
-  height: calc((var(--count, 0) + 1) * 0.78em + 0.25em + var(--slot));
+  height: calc((var(--count, 0) + 1) * var(--edge-pitch) + 0.25em + var(--slot));
 }
 
 :is(.play-edge-left, .play-edge-right).has-drawn {
-  height: calc(var(--count, 0) * 0.78em + 0.25em + var(--slot));
+  height: calc(var(--count, 0) * var(--edge-pitch) + 0.25em + var(--slot));
 }
 
 .play-edge-left {
@@ -6752,17 +6768,17 @@ html.playing body {
 .play-edge-left,
 .play-edge-right {
   box-sizing: border-box;
-  --slot: calc(0.78em + 0.25em);
+  --slot: calc(var(--edge-pitch) + 0.25em);
 }
 
 .play-edge-top {
-  width: calc((var(--count, 0) + 1) * 0.78em + 0.25em + var(--slot));
+  width: calc((var(--count, 0) + 1) * var(--edge-pitch) + 0.25em + var(--slot));
   padding-right: var(--slot);
   justify-content: flex-end;
 }
 
 .play-edge-top.has-drawn {
-  width: calc(var(--count, 0) * 0.78em + 0.25em + var(--slot));
+  width: calc(var(--count, 0) * var(--edge-pitch) + 0.25em + var(--slot));
 }
 
 .play-edge-tile {
@@ -6792,7 +6808,7 @@ html.playing body {
 .play-edge-left .play-edge-tile,
 .play-edge-right .play-edge-tile {
   width: 0.55em;
-  height: 0.78em;
+  height: var(--edge-pitch);
 }
 
 /* The tops of the others' standing tiles: the same layers as every block
@@ -6836,7 +6852,7 @@ html.playing body {
 
 /* Far wall: footprints run along the top, backs face you. */
 .play-edge-top .play-edge-tile {
-  width: 0.78em;
+  width: var(--edge-pitch);
   height: 0.55em;
 }
 
@@ -6870,8 +6886,10 @@ html.playing body {
   transform-style: preserve-3d;
 }
 
+/* (A tile's box is a hair wider than its block - 0.03em each side - so
+   the box is set that much back, the block on its footprint.) */
 .play-edge-top .play-stand {
-  left: 0;
+  left: -0.03em;
   width: 0.78em;
   height: 1em;
   transform-origin: 50% 0;
@@ -6880,6 +6898,7 @@ html.playing body {
 
 .play-edge-left .play-stand,
 .play-edge-right .play-stand {
+  top: -0.03em;
   width: 1em;
   height: 0.78em;
 }
@@ -7127,7 +7146,7 @@ html.playing body {
    (their left is your right), rows going up. */
 .play-pond-top,
 .play-pond-bottom {
-  width: calc(8 * 0.74em);
+  width: calc(9 * 0.74em);
   justify-content: flex-start;
   align-content: flex-start;
 }
@@ -7137,14 +7156,14 @@ html.playing body {
   flex-wrap: wrap-reverse;
 }
 
-/* A side player's discards face them: their rows of six run up and down
+/* A side player's discards face them: their rows of seven run up and down
    the screen, each from their left - top to bottom for the left seat,
    bottom to top for the right. The tile laid sideways for 叮 stands
    upright among them. */
 .play-pond-left,
 .play-pond-right {
   flex-direction: column;
-  height: calc(6 * 0.74em);
+  height: calc(7 * 0.74em);
   align-content: flex-start;
 }
 
@@ -7816,7 +7835,7 @@ html.playing body {
    sides: past that, they carry on in a second row, toward the middle. */
 .play-seat-left .play-seat-melds,
 .play-seat-right .play-seat-melds {
-  max-height: calc(17 * 0.78 * var(--play-wall));
+  max-height: calc(17 * 0.72 * var(--play-wall));
   flex-wrap: wrap;
   align-content: flex-start;
 }
@@ -8303,7 +8322,7 @@ html.playing body {
      quarter) the end facing the table's edge;
    - an end pressed against the next tile in its row;
    - the edge covered by a tile lying right in front of it in the next row.
-   Rows are 8 long across, 6 down the sides; a pond with a 叮 tile (laid
+   Rows are 9 long across, 7 down the sides; a pond with a 叮 tile (laid
    sideways, a wider slot) keeps everything but the faces away from you. A
    corner goes only where both its sides do. */
 :is(.play-pond-top, .play-pond-bottom) .play-pond-tile:not(.is-riichi) .tile-side.is-far,
@@ -8315,18 +8334,18 @@ html.playing body {
 
 /* Your pond and the far one: ends inside a row; the edge toward you under
    the next row's tile (yours grows toward you, theirs away). */
-.play-pond:is(.play-pond-top, .play-pond-bottom):not(.has-riichi) .play-pond-tile:not(:nth-child(8n + 1)):not(:nth-child(8n)):not(:last-child) .tile-side:is(.is-left, .is-right),
-.play-pond-bottom:not(.has-riichi) .play-pond-tile:nth-last-child(n + 9) .tile-side.is-near,
-.play-pond-top:not(.has-riichi) .play-pond-tile:nth-child(n + 9) .tile-side.is-near {
+.play-pond:is(.play-pond-top, .play-pond-bottom):not(.has-riichi) .play-pond-tile:not(:nth-child(9n + 1)):not(:nth-child(9n)):not(:last-child) .tile-side:is(.is-left, .is-right),
+.play-pond-bottom:not(.has-riichi) .play-pond-tile:nth-last-child(n + 10) .tile-side.is-near,
+.play-pond-top:not(.has-riichi) .play-pond-tile:nth-child(n + 10) .tile-side.is-near {
   display: none;
 }
 
 /* The side ponds: the edge toward you under the tile below it in the
    column (the left player's columns run down, the right's up); the end
    toward the middle under the previous column. */
-.play-pond-left:not(.has-riichi) .play-pond-tile:not(:nth-child(6n)):not(:last-child) .tile-side.is-right,
-.play-pond-right:not(.has-riichi) .play-pond-tile:not(:nth-child(6n + 1)) .tile-side.is-left,
-:is(.play-pond-left, .play-pond-right):not(.has-riichi) .play-pond-tile:nth-child(n + 7) .tile-side.is-far {
+.play-pond-left:not(.has-riichi) .play-pond-tile:not(:nth-child(7n)):not(:last-child) .tile-side.is-right,
+.play-pond-right:not(.has-riichi) .play-pond-tile:not(:nth-child(7n + 1)) .tile-side.is-left,
+:is(.play-pond-left, .play-pond-right):not(.has-riichi) .play-pond-tile:nth-child(n + 8) .tile-side.is-far {
   display: none;
 }
 
@@ -8381,19 +8400,19 @@ html.playing body {
   --corner-join: max(var(--cover-f, 0), var(--cover-r, 0));
 }
 
-/* Your pond (rows of 8, left to right) and the far one (right to left). */
-.play-pond-bottom:not(.has-riichi) > .play-pond-tile:not(:nth-child(8n + 1)) > .tile-glyph,
-.play-pond-top:not(.has-riichi) > .play-pond-tile:not(:nth-child(8n)):not(:last-child) > .tile-glyph {
+/* Your pond (rows of 9, left to right) and the far one (right to left). */
+.play-pond-bottom:not(.has-riichi) > .play-pond-tile:not(:nth-child(9n + 1)) > .tile-glyph,
+.play-pond-top:not(.has-riichi) > .play-pond-tile:not(:nth-child(9n)):not(:last-child) > .tile-glyph {
   --join-l: 1;
 }
 
-.play-pond-bottom:not(.has-riichi) > .play-pond-tile:not(:nth-child(8n)):not(:last-child) > .tile-glyph,
-.play-pond-top:not(.has-riichi) > .play-pond-tile:not(:nth-child(8n + 1)) > .tile-glyph {
+.play-pond-bottom:not(.has-riichi) > .play-pond-tile:not(:nth-child(9n)):not(:last-child) > .tile-glyph,
+.play-pond-top:not(.has-riichi) > .play-pond-tile:not(:nth-child(9n + 1)) > .tile-glyph {
   --join-r: 1;
 }
 
-.play-pond-bottom:not(.has-riichi) > .play-pond-tile:nth-last-child(n + 9) > .tile-glyph,
-.play-pond-top:not(.has-riichi) > .play-pond-tile:nth-child(n + 9) > .tile-glyph {
+.play-pond-bottom:not(.has-riichi) > .play-pond-tile:nth-last-child(n + 10) > .tile-glyph,
+.play-pond-top:not(.has-riichi) > .play-pond-tile:nth-child(n + 10) > .tile-glyph {
   --cover-n: 1;
 }
 
@@ -8401,17 +8420,17 @@ html.playing body {
    (the tile's right is the one below, its left the one above), the right
    player's up (its left the one below); the far end against the column
    before. */
-.play-pond-left:not(.has-riichi) > .play-pond-tile:not(:nth-child(6n)):not(:last-child) > .tile-glyph,
-.play-pond-right:not(.has-riichi) > .play-pond-tile:not(:nth-child(6n)):not(:last-child) > .tile-glyph {
+.play-pond-left:not(.has-riichi) > .play-pond-tile:not(:nth-child(7n)):not(:last-child) > .tile-glyph,
+.play-pond-right:not(.has-riichi) > .play-pond-tile:not(:nth-child(7n)):not(:last-child) > .tile-glyph {
   --cover-r: 1;
 }
 
-.play-pond-left:not(.has-riichi) > .play-pond-tile:not(:nth-child(6n + 1)) > .tile-glyph,
-.play-pond-right:not(.has-riichi) > .play-pond-tile:not(:nth-child(6n + 1)) > .tile-glyph {
+.play-pond-left:not(.has-riichi) > .play-pond-tile:not(:nth-child(7n + 1)) > .tile-glyph,
+.play-pond-right:not(.has-riichi) > .play-pond-tile:not(:nth-child(7n + 1)) > .tile-glyph {
   --cover-l: 1;
 }
 
-:is(.play-pond-left, .play-pond-right):not(.has-riichi) > .play-pond-tile:nth-child(n + 7) > .tile-glyph {
+:is(.play-pond-left, .play-pond-right):not(.has-riichi) > .play-pond-tile:nth-child(n + 8) > .tile-glyph {
   --join-f: 1;
 }
 
@@ -8533,6 +8552,20 @@ html.playing body {
   align-items: center;
   gap: 0.3rem;
   font-weight: 600;
+}
+
+/* 起莊: a gold corner on the first dealer's tag, round its top left. */
+:is(.play-badge, .play-bar-you).is-first-dealer::before {
+  content: "";
+  position: absolute;
+  top: -0.2rem;
+  left: -0.2rem;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-top: 0.16rem solid var(--play-gold);
+  border-left: 0.16rem solid var(--play-gold);
+  border-top-left-radius: 0.45rem;
+  pointer-events: none;
 }
 
 .play-bar-you.is-active .play-badge-wind {

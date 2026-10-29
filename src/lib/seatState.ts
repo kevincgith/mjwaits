@@ -69,6 +69,7 @@ export function seatState(view: TableView): SeatState {
       deltas: turn(r.deltas),
       ...(r.pairs ? { pairs: r.pairs.map((p) => ({ ...p, winner: id(p.winner), payer: id(p.payer) })) } : {}),
       ...(r.alsoWon ? { alsoWon: r.alsoWon.map((w) => ({ ...w, winner: toLocal(w.winner) })) } : {}),
+      ...(r.fanXue ? { fanXue: r.fanXue.map((f) => ({ ...f, from: toLocal(f.from), to: toLocal(f.to) })) } : {}),
     };
     // The game's own copy: the same, without scores (the table shows `result`'s).
     const { alsoWon, ...rest } = result;

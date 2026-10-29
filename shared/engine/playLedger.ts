@@ -3,6 +3,7 @@
 // the 拉 / 踢 in play, every hand, the trend, each player's stats - works for
 // a game against bots or at an online table too.
 //
+// (反雪 and the dealer's 莊 on another's 自摸 ride on the win event itself.)
 // Play already settles the way the ledger does (settleWins is previewWin
 // with 底 / 莊 / 連莊 off - its tai count them), so a hand is just its winners'
 // tai and who paid; the table's bonuses (flowers, dice, 暗槓, 追, 嗌錯) are
@@ -104,6 +105,7 @@ export function playEvents(before: GameState | null, after: GameState, seats: st
         source: "scoring",
         ...(r.from === null && jackpot && jackpot.pot > 0 ? { jackpotTo: seats[r.winner] } : {}),
         ...(dealerExtra ? { dealerExtra } : {}),
+        ...(r.fanXue?.length ? { fanXuePaid: r.fanXue.map((f) => ({ from: seats[f.from], to: seats[f.to], amount: f.amount })) } : {}),
       });
     }
   }
