@@ -1355,10 +1355,13 @@ export function PlayPanel({ onExit, online, fresh }: { onExit: () => void; onlin
       if (wall) {
         const b = box(wall);
         // (A face's height flat, past its footprint, less what it slides back - see --topple-back.)
-        const lying = Math.max(0, parseFloat(getComputedStyle(wall).fontSize) * 0.5 - 0.6 * parseFloat(getComputedStyle(document.documentElement).fontSize));
+        const lying = Math.max(0, parseFloat(getComputedStyle(wall).fontSize) * 0.5 - 0.9 * parseFloat(getComputedStyle(document.documentElement).fontSize));
         reach(side === "left" ? { x0: b.x0, x1: b.x1 + lying } : { x0: b.x0 - lying, x1: b.x1 });
       }
       for (const t of other.querySelectorAll<HTMLElement>(":is(.play-seat-melds, .play-flowers) :is(.tile-glyph, .play-back)")) {
+        // (Not 換牌's taken tiles waiting there: gone when the swap is - and
+        // judged without them, across's row stays put through it.)
+        if (t.closest(".play-swap-got")) continue;
         const b = box(t);
         if (b.y1 <= band.y0 || b.y0 >= band.y1) continue;
         // (Turned a quarter at the sides: its long side may run across.)

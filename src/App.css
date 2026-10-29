@@ -6292,17 +6292,21 @@ html.playing body {
   align-self: center;
 }
 
-/* Each as wide as what's in it (measured for --play-side), against its edge. */
+/* Each as wide as what's in it (measured for --play-side), against its
+   edge - a little in from it, so the standing tiles, seen at the table's
+   angle, don't lean out over its rim. */
 .play-seat-left {
   grid-area: lseat;
   justify-self: start;
   flex-direction: column;
+  margin-left: 0.5rem;
 }
 
 .play-seat-right {
   grid-area: rseat;
   justify-self: end;
   flex-direction: column-reverse;
+  margin-right: 0.5rem;
 }
 
 /* The melds and flowers in front of the hand (toward the middle), still
@@ -6331,7 +6335,7 @@ html.playing body {
 }
 
 :is(.play-seat-left, .play-seat-right).is-front {
-  gap: calc(0.3em + max(0px, var(--play-wall) * var(--wall-grow, 1) * 0.5 - 0.6rem));
+  gap: calc(0.3em + max(0px, var(--play-wall) * var(--wall-grow, 1) * 0.5 - 0.9rem));
 }
 
 .play-seat-side,
@@ -7001,7 +7005,7 @@ html.playing body {
 }
 
 :is(.play-edge-left, .play-edge-right) {
-  --topple-back: min(0.45em, 0.6rem);
+  --topple-back: min(0.45em, 0.9rem);
 }
 
 .play-edge.is-down .play-stand {
