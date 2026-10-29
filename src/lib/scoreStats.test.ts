@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_SETTINGS, newGame, replay, type ScoreEvent, type ScoreGame } from "@mjwaits/shared/engine/ledger";
-import { careerPlayerStats, careerStats, careerTrend, smoothed, periodKey, periodLabel, periodsOf, headToHead, marks, patternCounts, playerStats, rankedBy, trend, trendSummary } from "./scoreStats";
+import { careerPlayerStats, careerStats, careerTrend, smoothed, periodKey, periodLabel, periodsOf, headToHead, marks, patternCounts, handsByPlayer, playerStats, rankedBy, trend, trendSummary } from "./scoreStats";
 
 const PLAIN = { ...DEFAULT_SETTINGS, dealerTai: 0, streakTai: 0, jackpot: false };
 const game = (events: ScoreEvent[], seats = ["A", "B", "C", "D"]): ScoreGame => ({ ...newGame(seats, 0, PLAIN), events });
@@ -221,5 +221,19 @@ describe("periods", () => {
     expect(periodsOf(gs, "month")).toEqual(["2025-12", "2026-01", "2026-10"]);
     expect(periodsOf(gs, "quarter")).toEqual(["2025-Q4", "2026-Q1", "2026-Q4"]);
     expect(periodsOf(gs, "year")).toEqual(["2025", "2026"]);
+  });
+});
+
+describe("handsByPlayer", () => {
+  it("lists each player's wins biggest first, players by their biggest hand", () => {
+    const list = handsByPlayer(replay(game(EVENTS)));
+    expect(list.map((x) => x.player)).toEqual(["A", "B", "C", "D"]);
+    expect(list[0].hands.map((h) => [h.hand, h.tai])).toEqual([
+      [1, 10],
+      [6, 8],
+      [2, 4],
+    ]);
+    expect(list[0].hands[1].patterns).toEqual([{ id: "x", name: "清一色", tai: 8 }]);
+    expect(list[2].hands[0]).toMatchObject({ tai: 3, selfDraw: true, from: null });
   });
 });
