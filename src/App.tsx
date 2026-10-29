@@ -4562,13 +4562,13 @@ function PatternRow({
     !!ctx.rules &&
     ctx.rules.engine === "custom" &&
     (isRuleChanged(pattern.id, ctx.rules.patterns[pattern.id]) || (!!ladder && isLadderChanged(ctx.rules, ladder.id)));
-  const customMark = custom && <span className="custom-rule-dot" title="Custom tai rule (設定)" aria-label="custom rule" />;
+  const customMark = custom && <span className="custom-rule-dot" title="Custom farn rule (設定)" aria-label="custom rule" />;
   // Counted more than once (二連刻 twice, 大三連刻 over three overlapping
   // windows…): "30 × 3", so a stacked total reads as one value times a count.
   const perRule = PATTERN_CATALOG[pattern.id]?.value.kind === "per" ? (ctx.rules ?? DEFAULT_TAI_RULES).patterns[pattern.id] : undefined;
   const times = perRule && perRule.tai > 0 ? Math.round(tai / perRule.tai) : 1;
   const timesMark = times > 1 && (
-    <span className="scoring-pattern-times" title={`${perRule!.tai} tai × ${times}`}>
+    <span className="scoring-pattern-times" title={`${perRule!.tai} farn × ${times}`}>
       {perRule!.tai} × {times}
     </span>
   );
@@ -4580,7 +4580,7 @@ function PatternRow({
           <span className="scoring-pattern-meta">
             {customMark}
             {timesMark}
-            <span className="scoring-pattern-tai">{tai}<span className="visually-hidden"> tai</span></span>
+            <span className="scoring-pattern-tai">{tai}<span className="visually-hidden"> farn</span></span>
           </span>
         </div>
       </div>
@@ -4593,7 +4593,7 @@ function PatternRow({
         <span className="scoring-pattern-meta">
           {customMark}
           {timesMark}
-          <span className="scoring-pattern-tai">{tai}<span className="visually-hidden"> tai</span></span>
+          <span className="scoring-pattern-tai">{tai}<span className="visually-hidden"> farn</span></span>
         </span>
       </button>
       <CollapsiblePanel open={expanded}>
@@ -4813,11 +4813,11 @@ function ScoringBreakdown({
     patternSort === "order"
       ? matched
       : [...matched].sort((a, b) => (patternSort === "tai-desc" ? b.tai - a.tai : a.tai - b.tai));
-  const patternSortLabel: Record<PatternSort, string> = { order: "Sort: order", "tai-desc": "Sort: tai ↓", "tai-asc": "Sort: tai ↑" };
+  const patternSortLabel: Record<PatternSort, string> = { order: "Sort: order", "tai-desc": "Sort: farn ↓", "tai-asc": "Sort: farn ↑" };
   const patternSortTitle: Record<PatternSort, string> = {
-    order: "Sorted in the order they were checked - tap to sort by tai, highest first",
-    "tai-desc": "Sorted by tai, highest first - tap to sort by tai, lowest first",
-    "tai-asc": "Sorted by tai, lowest first - tap to sort by the order they were checked",
+    order: "Sorted in the order they were checked - tap to sort by farn, highest first",
+    "tai-desc": "Sorted by farn, highest first - tap to sort by farn, lowest first",
+    "tai-asc": "Sorted by farn, lowest first - tap to sort by the order they were checked",
   };
   return (
     <>
@@ -4849,7 +4849,7 @@ function ScoringBreakdown({
           <span className="scoring-pattern-meta patterns-subtotal-meta">
             <span className="patterns-subtotal" title="Sum of these patterns">
               {matched.reduce((sum, m) => sum + m.tai, 0)}
-              <span className="visually-hidden"> tai</span>
+              <span className="visually-hidden"> farn</span>
             </span>
           </span>
         </div>
@@ -4977,7 +4977,7 @@ function DiscardOptionRow({
           setOpened(true);
         }}
         aria-expanded={expanded}
-        aria-label={`Discard ${tileLabel(discard)}: ${waits.length} wait${waits.length === 1 ? "" : "s"}, ${liveTotal} live tile${liveTotal === 1 ? "" : "s"}, ${topTai === null ? "all waits dead" : `up to ${topTai} tai`}, tap for waits`}
+        aria-label={`Discard ${tileLabel(discard)}: ${waits.length} wait${waits.length === 1 ? "" : "s"}, ${liveTotal} live tile${liveTotal === 1 ? "" : "s"}, ${topTai === null ? "all waits dead" : `up to ${topTai} farn`}, tap for waits`}
       >
         <TileGlyphSpan tile={discard} />
         <span className="discard-arrow">→</span>
@@ -4996,7 +4996,7 @@ function DiscardOptionRow({
           <span className="discard-option-live" title="Live tiles across these waits">
             {liveTotal} left
           </span>
-          <span className="projected-wait-tai" title={topTai === null ? "Every wait is dead" : "Best tai among the live waits"}>
+          <span className="projected-wait-tai" title={topTai === null ? "Every wait is dead" : "Best farn among the live waits"}>
             {topTai === null ? "dead" : `best ${topTai}`}
           </span>
           <span className={`projected-wait-caret${expanded ? " open" : ""}`} aria-hidden="true">
@@ -5045,7 +5045,7 @@ function ProjectedWaitRow({
         className="projected-wait-head"
         onClick={() => setExpanded((e) => !e)}
         aria-expanded={expanded}
-        aria-label={`${tileLabel(wait)} (${live === 0 ? "dead, no copies left to draw" : `${live} left`}) — ${result ? `${result.total} tai` : "not scoreable"}, tap for breakdown`}
+        aria-label={`${tileLabel(wait)} (${live === 0 ? "dead, no copies left to draw" : `${live} left`}) — ${result ? `${result.total} farn` : "not scoreable"}, tap for breakdown`}
       >
         <TileGlyphSpan tile={wait} />
         <span
@@ -5058,7 +5058,7 @@ function ProjectedWaitRow({
         >
           {live} left
         </span>
-        <span className="projected-wait-tai" title="Tai">
+        <span className="projected-wait-tai" title="Farn">
           {result ? result.total : "—"}
         </span>
         <span className={`projected-wait-caret${expanded ? " open" : ""}`} aria-hidden="true">
@@ -5475,7 +5475,7 @@ function RecentHandRow({ entry, onLoad, rulesNow }: { entry: RecentHand; onLoad:
   const when = timeAgo(entry.at);
   return (
     <div className="recent-row">
-      <button type="button" className="recent-load" onClick={onLoad} title="Load this hand" aria-label={`Load this ${entry.total}-tai hand`}>
+      <button type="button" className="recent-load" onClick={onLoad} title="Load this hand" aria-label={`Load this ${entry.total}-farn hand`}>
         {resolved ? (
           <HandSections
             hand={resolved.hand}
@@ -5490,12 +5490,12 @@ function RecentHandRow({ entry, onLoad, rulesNow }: { entry: RecentHand; onLoad:
       <div className="recent-meta">
         <span className="recent-total">{entry.total}</span>
         {otherRules && (
-          <span className="recent-rules" title="Scored under different tai rules than the ones in use now">
+          <span className="recent-rules" title="Scored under different farn rules than the ones in use now">
             other rules
           </span>
         )}
         <span className="recent-when">{when}</span>
-        <ShareButton url={() => shareUrl(entry)} text={`A ${entry.total}-tai hand on MJWaits`} className="recent-share" />
+        <ShareButton url={() => shareUrl(entry)} text={`A ${entry.total}-farn hand on MJWaits`} className="recent-share" />
       </div>
     </div>
   );
@@ -7087,7 +7087,7 @@ function ScoringPanel({
           type="button"
           className={`toolbar-button toolbar-rules${rulesAffectScoring(taiRules.rules) ? " is-custom" : ""}`}
           onClick={() => setRulesOpen(true)}
-          title={`設定 - the tai rules (${taiRules.name})`}
+          title={`設定 - the farn rules (${taiRules.name})`}
         >
           <ToolbarIcon kind="settings" />
           <span className="toolbar-label">設定</span>
@@ -7112,7 +7112,7 @@ function ScoringPanel({
               title="Jump to the score breakdown"
             >
               {scoring.result.total}
-              <span className="visually-hidden"> tai</span>
+              <span className="visually-hidden"> farn</span>
             </button>
           )}
         </span>
@@ -7511,7 +7511,7 @@ function ScoringPanel({
                 className={`stepper-value${dealerStreak > 0 ? " toggle-on" : ""}`}
                 aria-pressed={dealerStreak > 0}
                 onClick={toggleDealerStreak}
-                title={dealerStreak > 0 ? "莊 - tap to turn off (0 tai)" : "莊 - tap to declare (1 tai); use + / − to build up a 連莊 streak"}
+                title={dealerStreak > 0 ? "莊 - tap to turn off (0 farn)" : "莊 - tap to declare (1 farn); use + / − to build up a 連莊 streak"}
               >
                 {dealerStreakLabel(dealerStreak)}
               </button>
@@ -7520,7 +7520,7 @@ function ScoringPanel({
                 className="stepper-step"
                 onClick={() => bumpDealerStreak(1)}
                 aria-label="Increase dealer streak"
-                title={dealerStreak > 0 ? "莊 - step the streak up by 1 (連莊)" : "莊 - declare dealer (1 tai)"}
+                title={dealerStreak > 0 ? "莊 - step the streak up by 1 (連莊)" : "莊 - declare dealer (1 farn)"}
               >
                 +
               </button>
@@ -7572,7 +7572,7 @@ function ScoringPanel({
               title={
                 riichi === "none"
                   ? "一發 - only counts once 叮 is declared"
-                  : "一發 - the hand completed within the immediate round after declaring - adds 5 tai"
+                  : "一發 - the hand completed within the immediate round after declaring - adds 5 farn"
               }
             >
               一發
@@ -7589,7 +7589,7 @@ function ScoringPanel({
                 // deactivateSelfDrawGroup's own comment.
                 if (next) deactivateSelfDrawGroup();
               }}
-              title="食叮 - adds 5 tai regardless of whether 叮 is declared; mutually exclusive with 自摸/花摸/槓摸/河底撈魚/海底撈月/天胡"
+              title="食叮 - adds 5 farn regardless of whether 叮 is declared; mutually exclusive with 自摸/花摸/槓摸/河底撈魚/海底撈月/天胡"
             >
               食叮
             </button>
@@ -7645,7 +7645,7 @@ function ScoringPanel({
               title={
                 bonusTiles.length === 0
                   ? "花摸 - no bonus tiles in hand to have flowered off of"
-                  : `Tap to cycle 花摸x0-x${bonusTiles.length} (2 tai each, capped at the ${bonusTiles.length} bonus tile${bonusTiles.length === 1 ? "" : "s"} in hand) - also turns on 自摸, deactivating 搶槓/雙響/三響`
+                  : `Tap to cycle 花摸x0-x${bonusTiles.length} (2 farn each, capped at the ${bonusTiles.length} bonus tile${bonusTiles.length === 1 ? "" : "s"} in hand) - also turns on 自摸, deactivating 搶槓/雙響/三響`
               }
             >
               {countLabel("花摸", flowerDraw)}
@@ -7659,7 +7659,7 @@ function ScoringPanel({
               title={
                 kongCount === 0
                   ? "槓摸 - no kongs declared to have drawn a replacement tile for"
-                  : `Tap to cycle 槓摸x0-x${kongCount} (tai: ${kongDrawTable.slice(1, kongCount + 1).join("/")}, capped at the ${kongCount} kong${kongCount === 1 ? "" : "s"} declared) - also turns on 自摸, deactivating 搶槓/雙響/三響`
+                  : `Tap to cycle 槓摸x0-x${kongCount} (farn: ${kongDrawTable.slice(1, kongCount + 1).join("/")}, capped at the ${kongCount} kong${kongCount === 1 ? "" : "s"} declared) - also turns on 自摸, deactivating 搶槓/雙響/三響`
               }
             >
               {countLabel("槓摸", kongDraw)}
@@ -7669,7 +7669,7 @@ function ScoringPanel({
               className={robKong > 0 ? "toggle-on" : undefined}
               aria-pressed={robKong > 0}
               onClick={cycleRobKong}
-              title={`Tap to cycle 搶槓x0-x5 (tai: ${robKongTable.slice(1).join("/")}) - mutually exclusive with 自摸`}
+              title={`Tap to cycle 搶槓x0-x5 (farn: ${robKongTable.slice(1).join("/")}) - mutually exclusive with 自摸`}
             >
               {countLabel("搶槓", robKong)}
             </button>
@@ -7683,7 +7683,7 @@ function ScoringPanel({
                 visibleExhaustAuto === "exhausted"
                   ? "絕絕 - already true from this hand's own declared melds"
                   : visibleExhaustAuto === "triple"
-                    ? "明絕 already true from this hand's own declared melds - tap to also declare 絕絕(10 tai) manually"
+                    ? "明絕 already true from this hand's own declared melds - tap to also declare 絕絕(10 farn) manually"
                     : visibleExhaustManualBlocked
                       ? "Can't declare manually - the winning tile is also sitting elsewhere in this hand's own concealed tiles, so it wasn't the last copy anywhere"
                       : !visibleExhaustGenuineMultiWait
@@ -7727,7 +7727,7 @@ function ScoringPanel({
             </span>
             <span className="result-total-value">
               {scoring.result.total}
-              <span className="visually-hidden"> tai</span>
+              <span className="visually-hidden"> farn</span>
             </span>
           </div>
           {canRecord && (
@@ -7871,11 +7871,11 @@ function ScoringPanel({
                   onClick={() => setDiscardSort((s) => (s === "score" ? "live" : "score"))}
                   title={
                     discardSort === "score"
-                      ? "Sorted by best tai — tap to sort by live tiles"
-                      : "Sorted by live tiles — tap to sort by best tai"
+                      ? "Sorted by best farn — tap to sort by live tiles"
+                      : "Sorted by live tiles — tap to sort by best farn"
                   }
                 >
-                  {discardSort === "score" ? "Sort: tai" : "Sort: left"}
+                  {discardSort === "score" ? "Sort: farn" : "Sort: left"}
                 </button>
               )}
               {discardsFoldable && (

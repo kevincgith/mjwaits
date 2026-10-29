@@ -23,8 +23,8 @@ export function RecordSheet({ record, onReset, onClose }: { record: PlayRecord; 
           <Stat label="食糊 Wins" value={String(record.wins)} sub={pct(record.wins, record.hands)} />
           <Stat label="自摸 Self-draws" value={String(record.selfDraws)} sub={pct(record.selfDraws, record.wins) + " of wins"} />
           <Stat label="出銃 Deal-ins" value={String(record.dealIns)} sub={pct(record.dealIns, record.hands)} />
-          <Stat label="平均 Avg 台" value={record.wins ? (record.taiWon / record.wins).toFixed(1) : "–"} sub="per win" />
-          <Stat label="最大 Best" value={record.best ? `${record.best.tai} 台` : "–"} sub={record.best ? record.best.patterns.slice(0, 3).join(" · ") : ""} />
+          <Stat label="平均 Avg 番" value={record.wins ? (record.taiWon / record.wins).toFixed(1) : "–"} sub="per win" />
+          <Stat label="最大 Best" value={record.best ? `${record.best.tai} 番` : "–"} sub={record.best ? record.best.patterns.slice(0, 3).join(" · ") : ""} />
           <Stat label="流局 Draws" value={String(record.draws)} sub={pct(record.draws, record.hands)} />
         </div>
         {vs.length > 0 && (

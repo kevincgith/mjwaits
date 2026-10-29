@@ -419,10 +419,10 @@ export function WinSheet({
 
       <div className="sc-tai-row">
         {/* Fixed width, as on 特別獎罰 and 詐胡, so the field sits in the same place on every tab. */}
-        <span className="sc-label sc-label-fixed">番 Tai</span>
+        <span className="sc-label sc-label-fixed">番 Farn</span>
         <div className="sc-tai-fields">
           {entries.map((e, i) => (
-            <button key={e.seat} type="button" className={`sc-tai${focus === i ? " is-focus" : ""}`} onClick={() => setFocus(i)} aria-label={`${seats[e.seat]}'s tai`}>
+            <button key={e.seat} type="button" className={`sc-tai${focus === i ? " is-focus" : ""}`} onClick={() => setFocus(i)} aria-label={`${seats[e.seat]}'s farn`}>
               {multi > 1 && <span className="sc-tai-who">{seats[e.seat]}</span>}
               <span className={`sc-tai-value${e.tai ? "" : " is-empty"}`}>{e.tai || "0"}</span>
             </button>
@@ -495,7 +495,7 @@ export function WinSheet({
         ].filter((c) => c.key === "tai" || payRows.some((r) => r.cells[c.key] !== undefined))}
         rows={payRows}
         empty="Pick who dealt in to see who pays what"
-        highTitle={`高分 — ${state.settings.highScore} or more. Double-check the tai.`}
+        highTitle={`高分 — ${state.settings.highScore} or more. Double-check the farn.`}
       />
     </Sheet>
   );
@@ -2256,7 +2256,7 @@ export function SettleSheet({
     >
       <div className="sc-row sc-row-boxed">
         <span>
-          倍數<span className="sc-help"> · $ per tai</span>
+          倍數<span className="sc-help"> · $ per farn</span>
         </span>
         <input className="sc-input sc-input-short" inputMode="decimal" value={multiplier} onChange={(e) => setMultiplier(e.target.value.replace(/[^0-9.]/g, ""))} aria-label="Multiplier" />
       </div>
@@ -2321,7 +2321,7 @@ export const SETTING_GROUPS: { title: string; rows: { key: keyof ScoreSettings; 
       { key: "dealerTai", label: "自動計算莊", help: "When the dealer wins or pays", kind: "number" },
       { key: "streakTai", label: "自動計算連莊", help: "Per 連莊", kind: "number" },
       { key: "drawKeepsDealer", label: "流局留莊", help: "The dealer stays after a 流局", kind: "bool" },
-      { key: "scoreCap", label: "封頂", help: "The highest tai or amount you can type", kind: "nullable" },
+      { key: "scoreCap", label: "封頂", help: "The highest farn or amount you can type", kind: "nullable" },
       { key: "zhaHu", label: "詐胡", help: "A false win - the caller pays each player", kind: "nullable" },
     ],
   },

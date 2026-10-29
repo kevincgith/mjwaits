@@ -388,7 +388,7 @@ export function TaiRulesSheet({
   return (
     <>
       <Sheet
-        title="設定 · 台數規則"
+        title="設定 · 番數規則"
         subtitle={
           incoming
             ? "Shared with you · review, then use"
@@ -508,7 +508,7 @@ export function TaiRulesSheet({
                     <span aria-hidden="true">→</span>
                   </>
                 )}
-                <strong>{draftTotal}</strong> tai
+                <strong>{draftTotal}</strong> farn
               </span>
         </div>
         )}
@@ -737,7 +737,7 @@ function PatternRow({
           {flatOrPer ? (
             <span className="tr-value">
               <span className="tr-unit">{rule.tai === 0 ? "off" : value.kind === "per" ? "each" : ""}</span>
-              <NumberField value={rule.tai} onChange={(tai) => onChange({ tai, enabled: true })} label={`${zh} tai (0 = off)`} pill />
+              <NumberField value={rule.tai} onChange={(tai) => onChange({ tai, enabled: true })} label={`${zh} farn (0 = off)`} pill />
             </span>
           ) : (
             <span className="tr-value">
@@ -809,7 +809,7 @@ function PairRow({
                 <NumberField
                   value={side.rule.tai}
                   onChange={(tai) => onChange(side.id, { tai, enabled: true })}
-                  label={`${zh} ${side.label} tai (0 = off)`}
+                  label={`${zh} ${side.label} farn (0 = off)`}
                   pill
                 />
               </span>
@@ -875,12 +875,12 @@ function PatternDetails({
       <PatternExampleView id={id} rules={draft} />
       {value.kind === "table" && (
         <div className="tr-detail">
-          <div className="tr-detail-label">Tai by count</div>
+          <div className="tr-detail-label">Farn by count</div>
           <div className="tr-table">
             {(rule.table ?? []).slice(1).map((v, i) => (
               <label key={i} className="tr-table-cell">
                 <span>×{i + 1}</span>
-                <NumberField value={v} onChange={(n) => onChange({ table: (rule.table ?? []).map((old, j) => (j === i + 1 ? n : old)) })} label={`Tai at ${i + 1}`} pill />
+                <NumberField value={v} onChange={(n) => onChange({ table: (rule.table ?? []).map((old, j) => (j === i + 1 ? n : old)) })} label={`Farn at ${i + 1}`} pill />
               </label>
             ))}
           </div>
@@ -890,11 +890,11 @@ function PatternDetails({
         <div className="tr-detail tr-streak">
           <label className="tr-table-cell">
             <span>莊</span>
-            <NumberField value={rule.first ?? value.first} onChange={(first) => onChange({ first })} label="Tai as dealer" pill />
+            <NumberField value={rule.first ?? value.first} onChange={(first) => onChange({ first })} label="Farn as dealer" pill />
           </label>
           <label className="tr-table-cell">
             <span>+ each 連莊</span>
-            <NumberField value={rule.tai} onChange={(tai) => onChange({ tai })} label="Tai per 連莊" pill />
+            <NumberField value={rule.tai} onChange={(tai) => onChange({ tai })} label="Farn per 連莊" pill />
           </label>
         </div>
       )}
@@ -1073,7 +1073,7 @@ function ShareRulesSheet({
               onClick={async () => {
                 if (!url) return;
                 try {
-                  await navigator.share({ title: name ? `MJWaits rules: ${name}` : "MJWaits tai rules", url });
+                  await navigator.share({ title: name ? `MJWaits rules: ${name}` : "MJWaits farn rules", url });
                 } catch {
                   // Dismissed.
                 }

@@ -3867,7 +3867,7 @@ export function PlayPanel({ onExit, onOnline, online, fresh }: { onExit: () => v
                         ))}
                         <li className="play-result-total">
                           <span>Total</span>
-                          <span>{w.score.total} 台</span>
+                          <span>{w.score.total} 番</span>
                         </li>
                       </ul>
                     )}

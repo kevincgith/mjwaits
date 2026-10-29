@@ -215,11 +215,11 @@ export const STAT_GROUPS: { zh: string; en: string; rows: StatRow[] }[] = [
   },
   {
     zh: "番數",
-    en: "Tai",
+    en: "Farn",
     rows: [
       { key: "maxTai", zh: "最高番", en: "Biggest hand", show: (s) => (s.maxTai ? fmt(s.maxTai.value) : "–"), sub: (s) => handOf(s.maxTai) },
-      { key: "avgWinTai", zh: "平均食糊番", en: "Avg tai per win", show: (s) => oneDp(s.avgWinTai) },
-      { key: "avgDealInTai", zh: "平均出銃番", en: "Avg tai dealt in", show: (s) => oneDp(s.avgDealInTai) },
+      { key: "avgWinTai", zh: "平均食糊番", en: "Avg farn per win", show: (s) => oneDp(s.avgWinTai) },
+      { key: "avgDealInTai", zh: "平均出銃番", en: "Avg farn dealt in", show: (s) => oneDp(s.avgDealInTai) },
     ],
   },
   {

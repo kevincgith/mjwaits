@@ -145,7 +145,7 @@ export function lineId(text: string): string {
 // (`own`), crowing over a big hand that wasn't.
 const SMALL_TALK = /雞糊|咁細|細糊|細牌|番數咁少|食得細|一番|冇大牌|細少少|例外/;
 const BIG_TALK = /好大鋪|咁大鋪|咁好牌|好多番|番數爆|幾大|唔細/;
-const OWN_BIG_TALK = /大牌|清一色|番數夠|夠晒台|台數|計番計到手軟|唔細|十番|傑作|藝術|傳說|傳奇|歷史|史詩|大嘅|大嘢|大格局/;
+const OWN_BIG_TALK = /大牌|清一色|番數夠|夠晒番|番數|計番計到手軟|唔細|十番|傑作|藝術|傳說|傳奇|歷史|史詩|大嘅|大嘢|大格局/;
 export function forWin(lines: string[], tai: number, own = false): string[] {
   const fit = lines.filter(
     (l) => (tai >= BIG_WIN_TAI / 2 ? !SMALL_TALK.test(l) : true) && (tai < BIG_WIN_TAI ? !BIG_TALK.test(l) : true) && (own && tai < BIG_WIN_TAI / 2 ? !OWN_BIG_TALK.test(l) : true)

@@ -186,7 +186,7 @@ export function PatternExampleView({ id, rules }: { id: string; rules: TaiRules 
       <div className="tr-example-worth">
         {worth === null ? null : worth > 0 ? (
           <>
-            Worth <strong>{worth}</strong> tai here
+            Worth <strong>{worth}</strong> farn here
           </>
         ) : (
           "Doesn't count here under this set"
