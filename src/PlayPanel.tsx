@@ -1015,19 +1015,6 @@ export function PlayPanel({ onExit, online, fresh }: { onExit: () => void; onlin
   // same way: marked paid in the game, and the ref remembers what this
   // hand has paid in case a stale copy of the game comes back unmarked.
   const paidBonuses = useRef<{ hand: Dice | undefined; keys: Set<string> }>({ hand: undefined, keys: new Set() });
-  // Online the server pays them; the table just shows each new one. (On
-  // joining mid-hand, the ones already paid aren't shown again.)
-  const shownBonuses = useRef<{ deal: unknown; count: number }>({ deal: undefined, count: 0 });
-  useEffect(() => {
-    if (!online) return;
-    const all = game.tableBonuses ?? [];
-    if (shownBonuses.current.deal !== dealKey) shownBonuses.current = { deal: dealKey, count: game.discardsMade === 0 ? 0 : all.length };
-    if (rolling || all.length <= shownBonuses.current.count) return;
-    shownBonuses.current.count = all.length;
-    const last = all[all.length - 1];
-    showBurst(last.seat, `${last.name} ${signed(last.deltas[last.seat])}`, last.deltas);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [online, rolling, game.tableBonuses]);
   useEffect(() => {
     if (online) return;
     if (paidBonuses.current.hand !== game.dice) paidBonuses.current = { hand: game.dice, keys: new Set() };
@@ -1816,6 +1803,22 @@ export function PlayPanel({ onExit, online, fresh }: { onExit: () => void; onlin
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastAction, online?.table.hand, game.discardsMade, meldsLaid]);
+
+  // Online table bonuses (flowers, 暗槓): the server pays them; the table
+  // just shows each new one. After the call's burst above, so a kong's 暗槓
+  // (or its replacement flower) shows over the 槓, as it does offline. (On
+  // joining mid-hand, the ones already paid aren't shown again.)
+  const shownBonuses = useRef<{ deal: unknown; count: number }>({ deal: undefined, count: 0 });
+  useEffect(() => {
+    if (!online) return;
+    const all = game.tableBonuses ?? [];
+    if (shownBonuses.current.deal !== dealKey) shownBonuses.current = { deal: dealKey, count: game.discardsMade === 0 ? 0 : all.length };
+    if (rolling || all.length <= shownBonuses.current.count) return;
+    shownBonuses.current.count = all.length;
+    const last = all[all.length - 1];
+    showBurst(last.seat, `${last.name} ${signed(last.deltas[last.seat])}`, last.deltas);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [online, rolling, game.tableBonuses]);
 
   // The end of a hand, however it came (here or online): the winner's line -
   // bigger for a big hand, a comeback from the bottom - the payer's, and a
