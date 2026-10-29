@@ -1324,10 +1324,51 @@ export function PlayPanel({ onExit, online, fresh }: { onExit: () => void; onlin
     probe.remove();
     // (The wall's own length - see .play-edge-top: a tile's room each, one
     // more for the drawn tile's slot, and the gap it stands apart by twice.)
+    // (Beside it, the wall drops the blank that centres it at that end -
+    // see .has-beside - keeping the drawn tile's slot at the other.)
     const standing = Math.max(0, 16 - 3 * game.players[2].melds.length);
-    const hand = ((standing + 2) * EDGE_PITCH + 0.5) * em;
-    const cols = getComputedStyle(felt).gridTemplateColumns.split(" ").map(parseFloat);
-    const room = cols.slice(1, -1).reduce((a, b) => a + b, 0);
+    const hand = ((standing + 1) * EDGE_PITCH + 0.25) * em;
+    // The room: what's actually beside the row, at its height - the side
+    // walls (as they'll lie at the end, so the reveal can't change it) and
+    // any of the side seats' melds or bonus tiles reaching up that far -
+    // not their columns' width, which their melds further down widen.
+    // In the felt's own flat plane (its layout, before the tilt).
+    const box = (el: HTMLElement) => {
+      let x = 0, y = 0;
+      for (let e: HTMLElement | null = el; e && e !== felt; e = e.offsetParent as HTMLElement | null) {
+        x += e.offsetLeft;
+        y += e.offsetTop;
+      }
+      return { x0: x, y0: y, x1: x + el.offsetWidth, y1: y + el.offsetHeight };
+    };
+    const me = box(seat);
+    const tile = parseFloat(getComputedStyle(seat).fontSize);
+    const band = { y0: me.y0, y1: me.y0 + Math.max(seat.querySelector<HTMLElement>(".play-edge-top")?.offsetHeight ?? 0, tile * 1.05) };
+    const centre = (me.x0 + me.x1) / 2;
+    let left = 0;
+    let right = felt.clientWidth;
+    for (const side of ["left", "right"] as const) {
+      const other = felt.querySelector<HTMLElement>(`.play-seat-${side}`);
+      if (!other) continue;
+      const reach = (b: { x0: number; x1: number }) => (side === "left" ? (left = Math.max(left, b.x1)) : (right = Math.min(right, b.x0)));
+      const wall = other.querySelector<HTMLElement>(".play-edge");
+      if (wall) {
+        const b = box(wall);
+        // (A face's height flat, past its footprint, less what it slides back - see --topple-back.)
+        const lying = Math.max(0, parseFloat(getComputedStyle(wall).fontSize) * 0.5 - 0.6 * parseFloat(getComputedStyle(document.documentElement).fontSize));
+        reach(side === "left" ? { x0: b.x0, x1: b.x1 + lying } : { x0: b.x0 - lying, x1: b.x1 });
+      }
+      for (const t of other.querySelectorAll<HTMLElement>(":is(.play-seat-melds, .play-flowers) :is(.tile-glyph, .play-back)")) {
+        const b = box(t);
+        if (b.y1 <= band.y0 || b.y0 >= band.y1) continue;
+        // (Turned a quarter at the sides: its long side may run across.)
+        const half = Math.max(b.x1 - b.x0, b.y1 - b.y0) / 2;
+        const cx = (b.x0 + b.x1) / 2;
+        reach({ x0: cx - half, x1: cx + half });
+      }
+    }
+    // The row stays centred on the table: as long as the nearer side allows, twice over.
+    const room = 2 * Math.min(centre - left, right - centre) - 8;
     const beside = hand + (parseFloat(getComputedStyle(seat).columnGap) || 0);
     // (Out a row they hang under the melds: with none, they go in front.)
     const out = meldsLong > 0 && beside + laid > room && beside + meldsLong <= room;
@@ -3233,7 +3274,7 @@ export function PlayPanel({ onExit, online, fresh }: { onExit: () => void; onlin
     const choosing = online?.table.settings.reveal === false;
     return (
       <div
-        className={`play-seat play-seat-${side}${side !== "top" || topFront ? " is-front" : ""}${(seatsOut.includes(side) && (side !== "top" || topFront)) || (side === "top" && topOut) ? " has-bonus-out" : ""}`}
+        className={`play-seat play-seat-${side}${side !== "top" || topFront ? " is-front" : ""}${(seatsOut.includes(side) && (side !== "top" || topFront)) || (side === "top" && topOut) ? " has-bonus-out" : ""}${side === "top" && !topFront && (p.melds.length > 0 || p.flowers.length > 0) ? " has-beside" : ""}`}
         style={side === "top" ? undefined : ({ "--wall-grow": sideWallGrow(p.melds.length) } as CSSProperties)}
       >
         {/* Melds and flowers in front of a side player's wall, from their
