@@ -6695,11 +6695,12 @@ html.playing body {
 
 /* 起莊: a gold wedge lying in the table's corner at the first dealer's
    left - yours bottom left, the left seat's far left, across's far right,
-   the right seat's near right. */
+   the right seat's near right - flush in the corner, rounded as the felt's
+   corner is (1.4rem far, 0.6rem near). */
 .play-first-dealer {
   position: absolute;
-  width: 2rem;
-  height: 2rem;
+  width: 2.2rem;
+  height: 2.2rem;
   background: var(--play-gold);
   opacity: 0.85;
   transform: translateZ(1px);
@@ -6707,26 +6708,30 @@ html.playing body {
 }
 
 .play-first-dealer.at-bottom {
-  left: 0.35rem;
-  bottom: 0.35rem;
+  left: 0;
+  bottom: 0;
+  border-bottom-left-radius: 0.6rem;
   clip-path: polygon(0 0, 0 100%, 100% 100%);
 }
 
 .play-first-dealer.at-left {
-  left: 0.35rem;
-  top: 0.35rem;
+  left: 0;
+  top: 0;
+  border-top-left-radius: 1.4rem;
   clip-path: polygon(0 0, 100% 0, 0 100%);
 }
 
 .play-first-dealer.at-top {
-  right: 0.35rem;
-  top: 0.35rem;
+  right: 0;
+  top: 0;
+  border-top-right-radius: 1.4rem;
   clip-path: polygon(0 0, 100% 0, 100% 100%);
 }
 
 .play-first-dealer.at-right {
-  right: 0.35rem;
-  bottom: 0.35rem;
+  right: 0;
+  bottom: 0;
+  border-bottom-right-radius: 0.6rem;
   clip-path: polygon(100% 0, 100% 100%, 0 100%);
 }
 
