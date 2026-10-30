@@ -26,11 +26,14 @@ export function PlayHome({
   onPlay,
   onOnline,
   onExit,
+  edition,
 }: {
   saved: SavedSummary | null;
   onPlay: (fresh: boolean) => void;
   onOnline: () => void;
   onExit: () => void;
+  // Which table this opens, when it isn't Play's own ("Play 2.0").
+  edition?: string;
 }) {
   const [record, setRecord] = useState(loadRecord);
   const [recordOpen, setRecordOpen] = useState(false);
@@ -60,7 +63,7 @@ export function PlayHome({
             <span className="ph-title-zh">麻雀</span>
             <span className="ph-title-en">MJWaits</span>
           </h1>
-          <p className="ph-tagline">港式台灣牌 · 十六張</p>
+          <p className="ph-tagline">港式台灣牌 · 十六張{edition && ` · ${edition}`}</p>
         </div>
 
         <nav className="ph-menu" aria-label="Play">

@@ -20,7 +20,7 @@
 // Your moves go to the server instead of into the game; the bots, timer and
 // payments are the server's.
 
-import { type CSSProperties, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, lazy, memo, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   applyTurnMove,
   barredClaims,
@@ -114,12 +114,15 @@ import { ReviewSheet, type Decision } from "./PlayReview";
 import { RecordSheet } from "./PlayRecord";
 import { isMuted, play as playSound, setMuted, wakeAudio, type Sound } from "./lib/sound";
 import { addHand, loadRecord, saveRecord, type Opponent } from "./lib/playRecord";
+import type { GLTableView, GLWall } from "./play3d/types";
 import { loadLearnedModel, type LearnedModel } from "./lib/ml/browser";
 import { learnedClaim, learnedTurnMove, type LearnedBot } from "./lib/ml/policy";
 import { claimDecisionAction, encodeObservation, legalActions, turnMoveAction } from "./lib/ml/encode";
 import { countRecorded, exportRecorded, finishHand, recordDecision } from "./lib/ml/recorder";
 
 const WIND_CHARS = ["", "東", "南", "西", "北"];
+// Play 2.0's tiles, drawn by WebGL: three.js and all, loaded only for it.
+const TableGL = lazy(() => import("./play3d/TableGL"));
 // Ready-made tables: who sits at Right / Across / Left (seats 1-3).
 const PRESETS = [
   { label: "Mixed", bots: ["veteran", "hunter", "speedster"] },
@@ -948,7 +951,22 @@ function pastDeal(g: GameState, swaps: boolean): boolean {
 
 // `quick`: that new game is dealt at once, with the rules as they were last
 // set (or the defaults), rather than opening on the 開局 setup page.
-export function PlayPanel({ onExit, online, fresh, quick }: { onExit: () => void; online?: OnlinePlay; fresh?: boolean; quick?: boolean }) {
+// `renderer`: "webgl" for Play 2.0 - the same game, its tiles drawn by
+// WebGL (see play3d/) instead of the page's 3D CSS.
+export function PlayPanel({
+  onExit,
+  online,
+  fresh,
+  quick,
+  renderer = "dom",
+}: {
+  onExit: () => void;
+  online?: OnlinePlay;
+  fresh?: boolean;
+  quick?: boolean;
+  renderer?: "dom" | "webgl";
+}) {
+  const gl = renderer === "webgl";
   const saved = useMemo(loadSaved, []);
   const resume = fresh ? null : saved;
   // A fresh table deals its first hand with the table's own rules - 截胡 or
@@ -1265,6 +1283,9 @@ export function PlayPanel({ onExit, online, fresh, quick }: { onExit: () => void
   // The side seats' columns both as wide as the wider seat (its melds and
   // flowers included), so a call on one side never pushes the middle over.
   const feltRef = useRef<HTMLDivElement>(null);
+  // Play 2.0's: the table its canvas covers, and the compass it places.
+  const tableRef = useRef<HTMLDivElement>(null);
+  const middleRef = useRef<HTMLDivElement>(null);
   // (The table's fits below - bonusOut, topFront, seatsOut, pondFit - are
   // run together further down, with the hand: these columns changing is
   // one of the things they're run again for.)
@@ -1273,7 +1294,8 @@ export function PlayPanel({ onExit, online, fresh, quick }: { onExit: () => void
   const [sideCols, setSideCols] = useState(0);
   useLayoutEffect(() => {
     const felt = feltRef.current;
-    if (!felt) return;
+    // (Play 2.0 lays its table out itself - see play3d/layout.ts.)
+    if (!felt || gl) return;
     const seats = [...felt.querySelectorAll<HTMLElement>(".play-seat-left, .play-seat-right")];
     // Not while a swap row lies by a side seat: it's there only a moment, and
     // the middle mustn't move for it (it fits in front of the hand).
@@ -2945,6 +2967,7 @@ export function PlayPanel({ onExit, online, fresh, quick }: { onExit: () => void
   // moves nothing. Those that only read go first, then those that put
   // something down to measure by.
   fitTable.current = () => {
+    if (gl) return;
     fitSeats();
     fitTop();
     fitBonus();
@@ -3506,6 +3529,49 @@ export function PlayPanel({ onExit, online, fresh, quick }: { onExit: () => void
     );
   };
 
+  // Play 2.0: what's on the table, for its WebGL tiles - the same tiles
+  // wall(), the ponds, the spotlight and your row draw here.
+  const glWall = (seat: number): GLWall => {
+    const p = game.players[seat];
+    const hidden = p.hand.some((t) => t === BLANK);
+    const down = over && !hidden;
+    return {
+      count: over ? p.hand.length : p.hand.length - incoming(seat).length - (heldDraw(seat) ? 1 : 0),
+      tiles: down ? p.hand : null,
+      drew: !over && drewSeat === seat && !swapSettling,
+      down,
+      winningTile: wonWith(seat),
+      melds: p.melds,
+      hideConcealed: !over || hidden,
+      flowers: p.flowers,
+      wallGrow: SIDES[seat] === "top" ? 1 : sideWallGrow(p.melds.length),
+    };
+  };
+  const glPond = (seat: number) => ({ tiles: showPiles ? [] : game.players[seat].discards, riichiAt: game.players[seat].riichi?.discard, pinLast: discardFrom === seat });
+  const spot = game.phase.kind === "claims" ? { tile: game.phase.tile, seat: game.phase.from } : flash && game.phase.kind !== "over" ? { tile: flash.tile, seat: flash.seat } : null;
+  const glView: GLTableView | null = gl
+    ? {
+        walls: { right: glWall(1), top: glWall(2), left: glWall(3) },
+        ponds: { bottom: glPond(HUMAN), right: glPond(1), top: glPond(2), left: glPond(3) },
+        mine: {
+          tiles: handTiles.map((t, i) => ({
+            tile: t === BLANK ? null : t,
+            drawn: handView.drawnTile !== null && i === handTiles.length - 1,
+            selected: selected === i || swapHand.includes(i),
+            hint: i === hintIndex,
+            danger: hint && myTurn && dangerous.has(tileKey(t)),
+            barred: isForbidden(t),
+            winner: i === winIndex,
+          })),
+          melds: me.melds,
+          hideConcealed: !seated,
+          flowers: me.flowers,
+          toppled: iWon,
+        },
+        spotlight: spot ? { tile: spot.tile, from: SIDES[spot.seat] } : null,
+      }
+    : null;
+
   // Your ways to make a run with the discard - each run once (with only one,
   // 上 takes it at once; the choice shows only when there's a real choice).
   const chows = humanClaims
@@ -3515,7 +3581,7 @@ export function PlayPanel({ onExit, online, fresh, quick }: { onExit: () => void
 
   return (
     <div className="play-screen">
-      <div className="play-table">
+      <div className="play-table" ref={tableRef}>
         <div className="play-corner">
           <button type="button" className="play-icon-button" onClick={onExit} aria-label="Leave the table" title="Leave">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
@@ -3734,8 +3800,15 @@ export function PlayPanel({ onExit, online, fresh, quick }: { onExit: () => void
         {/* The table itself, tipped away from you in perspective; your hand
             and the bar stay flat in front of it. */}
         <div className="play-stage">
-          <div className="play-felt" ref={feltRef}>
+          <div className={gl ? "play-felt is-gl" : "play-felt"} ref={feltRef}>
             <span className={`play-first-dealer at-${SIDES[firstDealer]}`} title={`起莊: ${nameOf(firstDealer)}`} aria-label={`起莊 ${nameOf(firstDealer)}`} />
+            {gl ? (
+              // Play 2.0: just the compass on the page's felt, where its layout puts the middle.
+              <div className="play-middle" ref={middleRef}>
+                <Compass game={game} active={over ? null : activeSeat} clock={clock} idle={tilesLeftLabel} countdown={over ? null : countdown} />
+              </div>
+            ) : (
+              <>
             {wall(2)}
             {wall(3)}
             {wall(1)}
@@ -3782,8 +3855,15 @@ export function PlayPanel({ onExit, online, fresh, quick }: { onExit: () => void
                 <Pond tiles={me.discards} riichiAt={me.riichi?.discard} side="bottom" pinLast={discardFrom === HUMAN} />
               )}
             </div>
+              </>
+            )}
           </div>
         </div>
+        {glView && (
+          <Suspense fallback={null}>
+            <TableGL view={glView} rootRef={tableRef} feltRef={feltRef} handRef={myRowRef} middleRef={middleRef} />
+          </Suspense>
+        )}
 
         <div className={`play-me${autoplay ? " is-auto" : ""}`}>
           <div className="play-hand-wrap">
@@ -3914,6 +3994,10 @@ export function PlayPanel({ onExit, online, fresh, quick }: { onExit: () => void
             </div>
             {/* What you've taken, in 3D above your hand, standing as it does. */}
             {flights.some((f) => f.to === HUMAN) && <div className="play-hand play-swap-mine">{swapRow(HUMAN)}</div>}
+            {gl ? (
+              // Play 2.0: your row's box, sized to the tiles the WebGL table draws in it.
+              <div ref={myRowRef} className="play-hand is-gl" />
+            ) : (
             <div
               ref={myRowRef}
               className={`play-hand${myTurn ? " is-turn" : ""}${iWon ? " is-toppled" : ""}${bonusOut ? " has-bonus-out" : ""}`}
@@ -3965,6 +4049,7 @@ export function PlayPanel({ onExit, online, fresh, quick }: { onExit: () => void
               {/* No tile drawn: its place kept, so drawing one (and throwing it) never moves the hand. */}
               {handView.drawnTile === null && handTiles.length > 0 && <span className="play-hand-slot" aria-hidden="true" />}
             </div>
+            )}
           </div>
         </div>
 
