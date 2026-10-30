@@ -275,14 +275,20 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
     }
     const colW = (c: Group[]) => Math.max(...c.map((g) => g.across));
     const colLen = (c: Group[]) => sum(c.map((g) => g.along)) + gap * (c.length - 1);
-    const meldsW = sum(cols.map(colW));
-    const meldsH = cols.length ? Math.max(...cols.map(colLen)) : 0;
+    // 換牌: what they've taken this round lies among their melds as one
+    // more item - on down the last column if it fits, else a column of its
+    // own toward the middle (as .play-seat-melds wraps it).
+    const row = view.rows[which];
+    const rowLen = row ? sum(row.groups.map((g) => g.tiles.length * 0.72 * T + 0.08 * T)) + 0.55 * T * (row.groups.length - 1) : 0;
+    const rowIn: "none" | "first" | "last" | "next" = !row ? "none" : !cols.length ? "first" : colLen(cols[cols.length - 1]) + gap + rowLen <= maxLen + 0.5 ? "last" : "next";
+    const meldsW = sum(cols.map(colW)) + (rowIn === "first" ? 1.08 * T : 0);
+    const meldsH = Math.max(cols.length ? Math.max(...cols.map(colLen)) : 0, rowIn === "first" || rowIn === "next" ? rowLen : 0, rowIn === "last" ? colLen(cols[cols.length - 1]) + gap + rowLen : 0);
     const sideW = Math.max(flowers?.across ?? 0, meldsW);
-    const sideH = (flowers?.along ?? 0) + meldsH + (flowers && cols.length ? gap : 0);
+    const sideH = (flowers?.along ?? 0) + meldsH + (flowers && meldsH ? gap : 0);
     const extra = Math.max(0, Wg * 0.5 - 0.9 * rem);
     const seatGap = 0.3 * T + extra;
     const meldIn = w.down ? 0 : 0.45 * T + extra;
-    return { w, Wg, p, slot, faces, win, drew, edgeW, edgeH, flowers, cols, colW, meldsW, meldsH, sideW, sideH, seatGap, meldIn, width: edgeW + seatGap + sideW };
+    return { w, Wg, p, slot, faces, win, drew, edgeW, edgeH, flowers, cols, colW, meldsW, meldsH, sideW, sideH, seatGap, meldIn, rowIn, width: edgeW + seatGap + sideW };
   };
   const L = side("left");
   const R = side("right");
@@ -486,8 +492,8 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
       y += dir * (S.flowers.along + 0.15 * T);
     }
     let colX = which === "left" ? sideMid - S.meldsW / 2 : sideMid + S.meldsW / 2;
-    // (Where a 換牌 row would go: on down the melds' last column.)
-    rowAt[which] = { x: sideMid, y, dir };
+    // (Where a 換牌 row goes: see rowIn.)
+    if (S.rowIn === "first") rowAt[which] = { x: colX + (dir * 1.08 * T) / 2, y, dir };
     for (const col of S.cols) {
       const cw = S.colW(col);
       let gy = y;
@@ -495,9 +501,10 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
         run(g, colX + (dir * cw) / 2, gy);
         gy += dir * (g.along + 0.15 * T);
       }
-      rowAt[which] = { x: colX + (dir * cw) / 2, y: gy, dir };
+      if (S.rowIn === "last") rowAt[which] = { x: colX + (dir * cw) / 2, y: gy, dir };
       colX += dir * cw;
     }
+    if (S.rowIn === "next") rowAt[which] = { x: colX + (dir * 1.08 * T) / 2, y, dir };
     owned[which].push({ x0: edgeX0, y0: edgeY0, x1: edgeX0 + S.edgeW, y1: edgeY0 + S.edgeH });
     ownSince(which, from);
   }
