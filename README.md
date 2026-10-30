@@ -3,7 +3,7 @@
 <img src="public/favicon.svg" width="64" alt="MJWaits logo: a glass 白板 tile beside an empty glass tile (the wait) on green" align="right">
 
 A browser toolkit for 16-tile (Taiwanese / Hong Kong house rules) Mahjong. It started as a waits calculator — build a
-hand, see what completes it and which discard gives the best odds — and has grown five tabs:
+hand, see what completes it and which discard gives the best odds — and has grown six tabs:
 
 - **Scoring** — score a finished hand against a concrete house farn (番) list (~140 patterns).
 - **Calculator** — the original: waits, shanten, joker resolution, and discard analysis.
@@ -13,9 +13,11 @@ hand, see what completes it and which discard gives the best odds — and has gr
   反雪, Jackpot), with a stats page per player — and **線上**, the game live on everyone's
   phone as it's scored.
 - **Dice** — roll for the wall, and see exactly where it breaks.
+- **Play** — a full hand against three bots, or online with friends (see below).
 
-On a phone the five tabs sit in a bottom tab bar; on wider screens they're a segmented control
-under the title. In the Scoring tab a sticky toolbar keeps Reset / Scan / Photos, the tile count
+On a phone the tabs sit in a bottom tab bar — Scoring, Scores, Play, Calculator and More, with
+Trainer, Dice and Credits in More's menu; on wider screens all six are a segmented control under
+the title. In the Scoring tab a sticky toolbar keeps Reset / Scan / Photos, the tile count
 (or, once the hand scores, the total — tap it to jump to the breakdown) in view while scrolling.
 
 Everything runs client-side, including the camera tile scanner. No hand ever leaves the browser.
@@ -396,10 +398,9 @@ in progress).
   itself (a token is kept on the phone), and the host's own changes made offline go up when it's
   back. A shared game's room closes two days after its last change.
 
-## Play (hidden, in progress)
+## Play
 
-Not in the tab bar while it's being built: **long-press the logo** to open it (‹ on the table
-goes back). A full hand of 16-tile mahjong against three bots that run in the browser, laid
+The Play tab (‹ on the table goes back). A full hand of 16-tile mahjong against three bots that run in the browser, laid
 out like a commercial 16-tile app. It's a landscape table: it fills the screen, and a phone
 held upright is asked to turn sideways.
 

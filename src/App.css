@@ -552,6 +552,13 @@ button {
   display: inline-flex;
 }
 
+/* Wide screens show every tab; the More button and its menu are phone-only. */
+.tab-bar .tab-bar-more,
+.tab-more-menu,
+.tab-more-backdrop {
+  display: none;
+}
+
 .tab-bar-icon svg {
   width: 20px;
   height: 20px;
@@ -4739,6 +4746,93 @@ img.tile-face {
   .tab-bar-icon svg {
     width: 26px;
     height: 26px;
+  }
+
+  /* Five tabs fit: Trainer and Dice fold into More. */
+  .tab-bar .tab-bar-more-item {
+    display: none;
+  }
+
+  .tab-bar .tab-bar-more {
+    display: flex;
+  }
+
+  .tab-more-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 51;
+  }
+
+  /* A small iOS-style menu rising from the More tab. */
+  .tab-more-menu {
+    display: flex;
+    flex-direction: column;
+    position: fixed;
+    right: max(0.5rem, env(safe-area-inset-right));
+    bottom: calc(var(--tab-bar-h) + env(safe-area-inset-bottom) + 0.4rem);
+    z-index: 52;
+    min-width: 12rem;
+    padding: 0.3rem 0;
+    background: rgba(249, 249, 251, 0.94);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    backdrop-filter: saturate(180%) blur(20px);
+    border-radius: 14px;
+    box-shadow:
+      0 0 0 0.5px rgba(0, 0, 0, 0.12),
+      0 10px 30px rgba(0, 0, 0, 0.18);
+    transform-origin: bottom right;
+    animation: tab-more-in 0.16s ease-out;
+  }
+
+  .tab-more-menu button {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.7rem 1rem;
+    border: none;
+    background: transparent;
+    color: var(--text);
+    font-size: var(--text-md);
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .tab-more-menu button + button {
+    box-shadow: 0 -0.5px 0 rgba(0, 0, 0, 0.12);
+  }
+
+  .tab-more-menu button.is-current {
+    color: var(--accent);
+  }
+
+  .tab-more-menu .tab-bar-icon svg {
+    width: 22px;
+    height: 22px;
+  }
+
+  /* Credits: set apart from the tabs above it by a thicker rule. */
+  .tab-more-menu button.tab-more-secondary {
+    box-shadow: none;
+    border-top: 6px solid rgba(0, 0, 0, 0.05);
+    color: var(--text-secondary);
+  }
+
+  .footer-credits {
+    display: none;
+  }
+
+  .tab-more-check {
+    width: 18px;
+    height: 18px;
+    margin-left: auto;
+  }
+}
+
+@keyframes tab-more-in {
+  from {
+    opacity: 0;
+    transform: scale(0.92) translateY(6px);
   }
 }
 
