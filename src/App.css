@@ -6358,11 +6358,11 @@ html.playing body {
    the melds would otherwise sit a little further out), and still in line
    with them once they're laid down. */
 .play-seat-top.has-beside > .play-seat-side {
-  translate: 0 -0.1em;
+  translate: 0 -0.25em;
 }
 
 .play-seat-top.has-beside:not(.is-down) > .play-seat-side {
-  translate: 0 -0.45em;
+  translate: 0 -0.58em;
 }
 
 /* (Out as it goes down; back in at once for the next deal.) */
