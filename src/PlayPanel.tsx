@@ -3603,7 +3603,10 @@ export function PlayPanel({
   const glPile = (seat: number): GLPile | undefined => {
     const pile = swapPhase?.piles[seat] ?? (ghost?.[seat] ? Array<null>(ghost[seat]).fill(null) : null);
     if (swapRolling || !pile) return undefined;
-    const held = heldIn(seat);
+    // (Not a tile already in the air: once its flight's placed, the table
+    // draws it flying - drawn in its pile too it showed twice for a frame
+    // or two, till the flight was marked off.)
+    const held = new Map(flights.filter((f) => f.seat === seat && !flown.has(f.id) && f.row?.place === undefined).map((f) => [f.place, f.tile]));
     const standing = seat === HUMAN && seated;
     return {
       slots: pile.map((slot, i) => {
