@@ -779,9 +779,11 @@ export class Table extends Hub<TableMessage> {
 
   // `run`, guarded: an engine error leaves the table as it was before it -
   // logged, told to everyone, and tried again in a while (the bots choose
-  // at random) - rather than half moved on.
+  // at random) - rather than half moved on. (Copied as it's saved - as JSON:
+  // a hand's score carries its patterns' functions, which structuredClone
+  // refuses.)
   private advance(now: number) {
-    const was = structuredClone(this.rt);
+    const was = JSON.parse(JSON.stringify(this.rt)) as Runtime;
     const staged = this.staged.length;
     try {
       this.run(now);
