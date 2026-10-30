@@ -734,8 +734,9 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
       const coming = side === "bottom" && view.mine.given && givenAt.has(i) ? view.mine.given.key : null;
       const arrive: Anim | undefined = coming === null ? undefined : { key: `give:${coming}:${i}`, delay: 0, dur: GIVE_S, pose: () => scale(0) };
       felt.push({ face: slot === "back" ? BACK : faceOf(slot), m, shade: rot ? TURNED : LIT, tint: 1, pick: pile.pickable ? [side, i] : undefined, anim: arrive });
-      if (standing) feltQuads.push({ kind: "shadow", m: chain(translate(x, y + 0.42 * P, 0.4), scale(SHADOW_W * P, 0.75 * P, 1)) });
-      else feltQuads.push(shadowAt(x, y, P, rot));
+      // (Its shadow lands with it.)
+      const shadow = standing ? { kind: "shadow" as const, m: chain(translate(x, y + 0.42 * P, 0.4), scale(SHADOW_W * P, 0.75 * P, 1)) } : shadowAt(x, y, P, rot);
+      feltQuads.push(arrive ? { ...shadow, anim: { ...arrive, key: `${arrive.key}:shadow` } } : shadow);
       // Picked: lifted off the felt, rimmed in gold.
       if (lift) feltQuads.push({ kind: "picked", m: chain(translate(x, y, lift + THICK * P + 0.5), rotateZ(rot), scale(0.92 * P, 1.11 * P, 1)) });
       return spot;

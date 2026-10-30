@@ -211,3 +211,22 @@ describe("a side seat's 換牌 row, alone in front of the wall", () => {
       else expect(Math.max(...row)).toBeLessThan(Math.min(...wall));
     });
 });
+
+describe("your give on the WebGL table", () => {
+  it("shows each tile's shadow on your pile only once the tile has landed", () => {
+    const v = take("right", 1);
+    const tiles = [1, 2, 3].map((rank) => ({ suit: "m" as const, rank }));
+    const mine = { slots: tiles, standing: true, picked: [], arriving: [], pickable: false };
+    const view = { ...v, piles: { bottom: mine }, flights: [], rows: {}, mine: { ...v.mine, given: { key: 7, tiles, from: [0, 1, 2], count: 16 } } };
+    const out = layoutTable(view, DIMS).felt;
+    const pile = out.pieces.filter((p) => p.face.startsWith("m"));
+    const shadows = out.quads.filter((q) => q.kind === "shadow" && q.anim?.key.startsWith("give:"));
+    expect(pile.every((p) => p.anim)).toBe(true);
+    expect(shadows.length).toBe(3);
+    // Hidden (no size) until it lands, with its tile.
+    for (const q of shadows) {
+      expect(q.anim!.dur).toBe(pile[0].anim!.dur);
+      expect(Math.hypot(...q.anim!.pose(0.5).slice(0, 3))).toBe(0);
+    }
+  });
+});
