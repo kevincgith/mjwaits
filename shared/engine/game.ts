@@ -859,15 +859,37 @@ function kongReplacement(s: GameState, seat: number): GameState {
 // The seats after `from`, in turn order.
 const claimOrder = (from: number) => [1, 2, 3].map((i) => (from + i) % SEATS);
 
+// A claim's standing: a win over a pung or kong, over a run.
+const claimRank = (c: Claim | null | undefined) => (!c ? 0 : c.kind === "win" ? 3 : c.kind === "chow" ? 1 : 2);
+
 export function winningClaimSeat(state: GameState, decisions: (Claim | null)[]): number | null {
   if (state.phase.kind !== "claims") return null;
   const order = [1, 2, 3].map((i) => (state.phase.kind === "claims" ? state.phase.from + i : i) % SEATS);
-  const rank = (c: Claim | null) => (!c ? 0 : c.kind === "win" ? 3 : c.kind === "chow" ? 1 : 2);
   let best: number | null = null;
   for (const seat of order) {
-    if (rank(decisions[seat]) > (best === null ? 0 : rank(decisions[best]))) best = seat;
+    if (claimRank(decisions[seat]) > (best === null ? 0 : claimRank(decisions[best]))) best = seat;
   }
   return best;
+}
+
+// Whether `seat`'s answer on the discard could still change who takes it,
+// given the answers already in (undefined: not answered yet). A run needn't
+// be waited for once someone's called a pung, kong or win; nor anything
+// but another win (and only one that comes first, or 一炮多響) once
+// someone's called a win.
+export function claimMatters(state: GameState, decisions: (Claim | null | undefined)[], seat: number): boolean {
+  const phase = state.phase;
+  if (phase.kind !== "claims") return false;
+  // (Robbing a kong is a win or nothing.)
+  const options = claimOptions(state, seat).filter((c) => !phase.robKong || c.kind === "win");
+  const mine = Math.max(0, ...options.map(claimRank));
+  const best = winningClaimSeat(state, decisions.map((d) => d ?? null));
+  if (best === null) return mine > 0;
+  const theirs = claimRank(decisions[best]);
+  if (mine !== theirs) return mine > theirs;
+  if (mine === 3 && state.multiWin) return true;
+  const after = (s: number) => (s - phase.from + SEATS) % SEATS;
+  return after(seat) < after(best);
 }
 
 // 食替: straight after a call you can't throw the tile you just claimed - nor,

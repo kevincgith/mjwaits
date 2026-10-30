@@ -4,6 +4,7 @@ import {
   botClaim,
   botTurnMove,
   barredClaims,
+  claimMatters,
   claimOptions,
   selfDrawBarred,
   forbiddenDiscards,
@@ -1088,5 +1089,29 @@ describe("一炮多響 (several winners off one discard)", () => {
     expect(done.phase.result.robKong).toBe(true);
     expect(done.phase.result.alsoWon?.map((w) => w.winner)).toEqual([2]);
     expect(ids(done.phase.result.score)).toEqual(expect.arrayContaining(["rob-kong", "multi-win-double"]));
+  });
+});
+
+describe("who a discard waits on", () => {
+  // Seat 0 throws 5m: seat 1 (next) can run it with 34m; seat 2 can pung it with 55m.
+  const s0 = newGame();
+  s0.players[1].hand = parseHand("34m147t258b369t12z");
+  s0.players[2].hand = parseHand("55m147t258b369t12z");
+  s0.players[3].hand = parseHand("1234567t147b258b");
+  const s = { ...s0, phase: { kind: "claims" as const, from: 0, tile: { suit: "m" as const, rank: 5 } } };
+  const pung = claimOptions(s, 2).find((c) => c.kind === "pung")!;
+  const chow = claimOptions(s, 1).find((c) => c.kind === "chow")!;
+
+  it("not on a run once someone's called a pung", () => {
+    expect(claimMatters(s, [null, undefined, undefined, null], 1)).toBe(true);
+    expect(claimMatters(s, [null, undefined, pung, null], 1)).toBe(false);
+  });
+
+  it("still on a pung once someone's called a run", () => {
+    expect(claimMatters(s, [null, chow, undefined, null], 2)).toBe(true);
+  });
+
+  it("not on someone with no call", () => {
+    expect(claimMatters(s, [null, undefined, undefined, undefined], 3)).toBe(false);
   });
 });
