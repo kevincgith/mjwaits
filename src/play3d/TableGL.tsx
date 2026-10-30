@@ -161,6 +161,7 @@ export default function TableGL({
     if (!atlas || !canvas) return;
     const e = new Engine(canvas, atlas);
     engine.current = e;
+    if (import.meta.env.DEV) (window as unknown as { __gl: Engine }).__gl = e;
     draw.current(true);
     // Re-measured whenever the table, the felt (its depth is fitted to the
     // screen) or your row changes size.

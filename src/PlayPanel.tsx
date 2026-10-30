@@ -3535,7 +3535,10 @@ export function PlayPanel({
     const p = game.players[seat];
     const hidden = p.hand.some((t) => t === BLANK);
     const down = over && !hidden;
+    const choosing = online?.table.settings.reveal === false;
+    const topple = wonWith(seat) ? TOPPLE_WINNER : result?.winner === null || choosing ? TOPPLE_DRAW : TOPPLE_OTHERS;
     return {
+      topple,
       count: over ? p.hand.length : p.hand.length - incoming(seat).length - (heldDraw(seat) ? 1 : 0),
       tiles: down ? p.hand : null,
       drew: !over && drewSeat === seat && !swapSettling,
@@ -3548,7 +3551,12 @@ export function PlayPanel({
     };
   };
   const glPond = (seat: number) => ({ tiles: showPiles ? [] : game.players[seat].discards, riichiAt: game.players[seat].riichi?.discard, pinLast: discardFrom === seat });
-  const spot = game.phase.kind === "claims" ? { tile: game.phase.tile, seat: game.phase.from } : flash && game.phase.kind !== "over" ? { tile: flash.tile, seat: flash.seat } : null;
+  const spot =
+    game.phase.kind === "claims"
+      ? { tile: game.phase.tile, seat: game.phase.from, key: `c${game.discardsMade}` }
+      : flash && game.phase.kind !== "over"
+        ? { tile: flash.tile, seat: flash.seat, key: `f${flash.id}` }
+        : null;
   const glView: GLTableView | null = gl
     ? {
         walls: { right: glWall(1), top: glWall(2), left: glWall(3) },
@@ -3568,8 +3576,10 @@ export function PlayPanel({
           hideConcealed: !seated,
           flowers: me.flowers,
           toppled: iWon,
+          drawKey: String(liveTilesLeft(game)),
+          winLead: winIndex >= 0 ? WIN_TILE_LEAD : 0,
         },
-        spotlight: spot ? { tile: spot.tile, from: SIDES[spot.seat] } : null,
+        spotlight: spot ? { tile: spot.tile, from: SIDES[spot.seat], key: spot.key } : null,
       }
     : null;
 
