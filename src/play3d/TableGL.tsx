@@ -9,7 +9,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { Engine, type Frame } from "./engine";
-import { bubbleBox, feltToHand, layoutTable, type Dims } from "./layout";
+import { bubbleBox, feltToHand, layoutTable, SWAP_ROW, type Dims } from "./layout";
 import { buildAtlas, type Atlas } from "./textures";
 import type { GLSide, GLTableView } from "./types";
 
@@ -149,6 +149,8 @@ export default function TableGL({
       hand.style.height = `${1.2 * d.hand}px`;
       const f = readFrame(root, felt, hand);
       d.handTop = feltYAt(f, f.hand.y + 0.2 * d.hand, d.feltW / 2, d.feltH);
+      // (Its tiles 0.8 of your hand's, standing a row's height above it, leant back as yours.)
+      d.rowTop = feltYAt(f, f.hand.y - 0.25 * d.rem - 1.12 * SWAP_ROW * d.hand, d.feltW / 2, d.feltH);
       d.rowRoom = root.clientWidth;
       // The felt as seen from your row: from the middle of its top edge (it's centred, so that stays put).
       const tilt = new DOMMatrix(f.felt);
