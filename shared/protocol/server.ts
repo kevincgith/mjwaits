@@ -23,7 +23,8 @@ export type ErrorCode =
   | "conflict" // an update made on an older game: someone else's landed first
   | "badGame" // a game the ledger can't use
   | "ended" // the host stopped sharing
-  | "noSuchPerson";
+  | "noSuchPerson"
+  | "server"; // the room's own error, not a refusal: logged
 
 export interface PersonView {
   id: string;

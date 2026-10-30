@@ -3,7 +3,7 @@ import { PROTOCOL_VERSION } from "@mjwaits/shared/protocol/limits";
 import type { RoomView, ServerMessage } from "@mjwaits/shared/protocol/server";
 import { withEvent, type ScoreGame } from "@mjwaits/shared/engine/ledger";
 import { sampleGame } from "@mjwaits/shared/protocol/sampleGame";
-import { createRoom, DEAD_MS, gameKey, GameSync, PING_MS, WAKE_MS, loadOnline, ONLINE_KEY, RoomClient, roomFromSearch, roomInfo, saveOnline, tokenFor, withoutRoom, withSharing, withToken, type SocketLike } from "./online";
+import { CONNECT_MS, createRoom, gameKey, GameSync, PING_MS, STUCK_MS, WAKE_MS, loadOnline, ONLINE_KEY, RoomClient, roomFromSearch, roomInfo, saveOnline, tokenFor, withoutRoom, withSharing, withToken, type SocketLike } from "./online";
 
 // A WebSocket stand-in the test drives by hand.
 class FakeSocket implements SocketLike {
@@ -116,7 +116,7 @@ describe("RoomClient", () => {
     vi.advanceTimersByTime(PING_MS * 2);
     expect(sockets).toHaveLength(1);
     // Then nothing at all (a phone that slept): let go, connect again, with the token.
-    vi.advanceTimersByTime(DEAD_MS);
+    vi.advanceTimersByTime(PING_MS); // DEAD_MS since the pong, at the next ping
     expect(sockets[0].closed).toBe(true);
     expect(sockets).toHaveLength(2);
     expect(events.status.at(-1)).toBe("reconnecting");
@@ -183,6 +183,30 @@ describe("RoomClient", () => {
     c.nudge();
     expect(sockets).toHaveLength(2);
     c.nudge(); // already trying
+    expect(sockets).toHaveLength(2);
+  });
+
+  it("gives up on a socket that never opens, and tries again", async () => {
+    const { sockets, events } = client({ roomExists: async () => true });
+    await vi.advanceTimersByTimeAsync(CONNECT_MS - 1);
+    expect(sockets).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(sockets[0].closed).toBe(true);
+    expect(events.status).toEqual(["reconnecting"]);
+    await vi.advanceTimersByTimeAsync(150);
+    expect(sockets).toHaveLength(2);
+    sockets[1].open();
+    await vi.advanceTimersByTimeAsync(CONNECT_MS);
+    expect(sockets).toHaveLength(2); // opened in time: kept
+  });
+
+  it("on coming back to the front, a socket still connecting a while is replaced at once", () => {
+    const { c, sockets } = client();
+    c.nudge(); // only just begun
+    expect(sockets).toHaveLength(1);
+    vi.advanceTimersByTime(STUCK_MS + 1);
+    c.nudge();
+    expect(sockets[0].closed).toBe(true);
     expect(sockets).toHaveLength(2);
   });
 
@@ -318,7 +342,7 @@ describe("GameSync", () => {
     let lost = 0;
     let online = true;
     const s = new GameSync({
-      send: (base, game) => online && sent.push({ base, game }) > 0,
+      send: (base, game) => online && String(sent.push({ base, game })),
       adopt: (g) => adopted.push(g),
       lost: () => lost++,
     });
@@ -380,6 +404,52 @@ describe("GameSync", () => {
     expect(lost()).toBe(1);
     s.local(adopted[0]);
     expect(sent).toHaveLength(1); // nothing more to send
+  });
+
+  it("lets go of an update the room turned down, and only that one", () => {
+    const { s, sent } = sync();
+    const g = sampleGame();
+    s.local(g);
+    s.room(view(1, g, 1));
+    const g2 = draw(g, 2);
+    s.local(g2);
+    expect(sent).toHaveLength(1);
+    s.refused("99"); // some other message
+    s.room(view(2, g, 1));
+    expect(sent).toHaveLength(1); // still waiting on it
+    s.refused("1"); // that one: not allowed (yet)
+    s.room(view(3, g, 1));
+    expect(sent).toHaveLength(2); // goes again with the next room view
+  });
+
+  it("doesn't send a game the room can't take again till it changes", () => {
+    const { s, sent } = sync();
+    const g = sampleGame();
+    s.local(g);
+    s.room(view(1, g, 1));
+    s.local(draw(g, 2));
+    s.refused(undefined, false); // too large: no rid
+    s.room(view(2, g, 1));
+    expect(sent).toHaveLength(1);
+    const g3 = draw(g, 3);
+    s.local(g3);
+    expect(sent.at(-1)).toEqual({ base: 1, game: g3 });
+  });
+
+  it("told to slow down, sends again when asked to", () => {
+    const { s, sent } = sync();
+    const g = sampleGame();
+    s.local(g);
+    s.room(view(1, g, 1));
+    const g2 = draw(g, 2);
+    s.local(g2);
+    s.refused(); // rate limited
+    expect(sent).toHaveLength(1);
+    s.retry();
+    expect(sent).toEqual([
+      { base: 1, game: g2 },
+      { base: 1, game: g2 },
+    ]);
   });
 
   it("ignores room views that don't change the game", () => {

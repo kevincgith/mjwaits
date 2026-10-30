@@ -5,6 +5,7 @@
 import { env, runDurableObjectAlarm, runInDurableObject, SELF } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import type { Tile } from "@mjwaits/shared/engine/mahjong";
+import { applyTurnMove, claimOptions, dealHand, type GameState } from "@mjwaits/shared/engine/game";
 import { replay, type ScoreGame } from "@mjwaits/shared/engine/ledger";
 import { PROTOCOL_VERSION } from "@mjwaits/shared/protocol/limits";
 import { blindPicks, botSplit, SWAP_TIMER_S, takeOrder, type Pile } from "@mjwaits/shared/engine/swap";
@@ -519,6 +520,165 @@ describe("timers", () => {
     expect(mine.auto).not.toContain(1);
     expect(mine.you).toBe(1);
     expect(mine.view!.players[1].hand).not.toBeNull();
+  });
+
+  it("gives a player back on their turn their own time, with no bot's pause left over - and never wakes the room for a time gone by", async () => {
+    const code = await createTable();
+    const { p: host } = await join(code, "Kevin");
+    const { p: amy } = await join(code, "Amy");
+    await runInDurableObject(stubFor(code), (t: Table) => {
+      (t as unknown as { pause: number }).pause = 700;
+    });
+    host.send({ t: "sit", seat: 0 });
+    amy.send({ t: "sit", seat: 1 });
+    host.send({ t: "setBot", seat: 2, bot: "wall" });
+    host.send({ t: "setBot", seat: 3, bot: "wall" });
+    host.send({ t: "setup", settings: { multiWin: false, timer: 10, hold: 10, firstDealer: 1 } });
+    await host.table((s) => s.seats.every(Boolean) && s.settings.timer === 10);
+    host.send({ t: "start" });
+    await host.table((s) => s.phase === "playing");
+    const token = amy.token;
+    amy.ws.close(1000, "bye");
+    await host.table((s) => s.seats[1]?.kind === "human" && !s.seats[1].connected);
+    // Held long enough: played for, her turn waits a bot's pause.
+    await patch(code, '$.away."1"', 1);
+    await runDurableObjectAlarm(stubFor(code));
+    const played = await state(code);
+    expect(played.auto).toContain(1);
+    expect(played.botAt).toBeGreaterThan(Date.now() - 1000);
+    // Back before it's made: her turn, her time, no pause left over.
+    await join(code, "Amy", token);
+    const back = await state(code);
+    expect(back.auto).not.toContain(1);
+    expect(back.botAt).toBeNull();
+    expect(back.deadline).toBeGreaterThan(Date.now() + 5000);
+    // A bot's pause gone by, on a person's turn: not a reason to wake.
+    const due = await runInDurableObject(stubFor(code), async (t: Table, st) => {
+      const tt = t as unknown as { load(): { botAt: number | null }; save(): void; onAlarm(now: number): number | null };
+      tt.load().botAt = 1;
+      tt.save();
+      return { next: tt.onAlarm(Date.now()), botAt: tt.load().botAt, alarm: await st.storage.getAlarm() };
+    });
+    expect(due.botAt).toBeNull();
+    expect(due.next).toBeGreaterThan(Date.now());
+    expect(due.alarm).toBeGreaterThan(Date.now() - 1000);
+  });
+
+  it("stops a person's clock while no one at the table is here", async () => {
+    const { code, host } = await withBots(0, { timer: 10 });
+    await runInDurableObject(stubFor(code), (t: Table) => {
+      (t as unknown as { pause: number }).pause = 700;
+    });
+    host.send({ t: "start" });
+    const mine = await host.table((s) => !!s.options?.turn);
+    host.ws.close(1000, "bye");
+    await expect.poll(async () => (await state(code)).pausedAt, { timeout: 2000 }).toBeTypeOf("number");
+    // Left with 8s to go, a minute ago.
+    const now = Date.now();
+    await patch(code, "$.pausedAt", now - 60_000);
+    await patch(code, "$.deadline", now - 52_000);
+    await join(code, "", host.token);
+    const back = await state(code);
+    expect(back.step).toBe(mine.step); // not thrown for him
+    expect(back.pausedAt).toBeUndefined();
+    expect(back.deadline).toBeGreaterThan(now + 7000);
+    expect(back.deadline).toBeLessThan(now + 10_000);
+  });
+});
+
+describe("what the table shows of a move", () => {
+  type Rt = { game: GameState; decisions: unknown; last: TableState["last"] };
+  type Inside = { load(): Rt; applyMove(seat: number, move: unknown, onIllegal: string, auto?: boolean): void; resolve(): void };
+
+  it("shows the move a refused one fell back to, not the refused one", async () => {
+    const { code, host } = await withBots(0);
+    host.send({ t: "start" });
+    const s = await host.table((s) => !!s.options?.turn);
+    const hand = s.view!.players[0].hand!;
+    const missing = [1, 2, 3, 4, 5, 6, 7].map((rank) => ({ suit: "z", rank }) as Tile).find((t) => !hand.some((h) => same(h, t)))!;
+    const r = await runInDurableObject(stubFor(code), (t: Table) => {
+      const tt = t as unknown as Inside;
+      const rt = tt.load();
+      tt.applyMove(0, { kind: "discard", tile: missing }, "fallback");
+      return { last: rt.last, phase: rt.game.phase, pond: rt.game.players[0].discards };
+    });
+    // (The dealer's first turn: a discard, as a rule - then it's the tile that went.)
+    if (r.phase.kind === "claims") {
+      expect(r.last).toMatchObject({ kind: "discard", seat: 0 });
+      if (r.last?.kind === "discard") {
+        expect(same(r.last.tile, r.phase.tile)).toBe(true);
+        expect(same(r.last.tile, missing)).toBe(false);
+      }
+    }
+  });
+
+  it("shows 下家's pung as a call, as anyone else's", async () => {
+    const { code, host } = await withBots(0);
+    host.send({ t: "start" });
+    await host.table((s) => !!s.options?.turn);
+    const last = await runInDurableObject(stubFor(code), (t: Table) => {
+      const tt = t as unknown as Inside;
+      const rt = tt.load();
+      rt.game = thrownTo(rt.game, 1, 2);
+      if (!claimOptions(rt.game, 1).some((c) => c.kind === "pung")) throw new Error("no pung to call");
+      rt.decisions = [null, { kind: "pung" }, null, null];
+      tt.resolve();
+      return rt.last;
+    });
+    expect(last).toEqual({ kind: "call", seat: 1, call: "pung", from: 0 });
+  });
+});
+
+// Seat 0's turn in `g` made into its throw of a tile seat `to` holds `n`
+// of: copies traded into `to`'s hand from elsewhere, every tile still there.
+function thrownTo(state: GameState, to: number, n: number): GameState {
+  const g = structuredClone(state);
+  const tile = g.players[0].hand[0];
+  const theirs = g.players[to].hand;
+  type Spot = [() => Tile, (x: Tile) => void];
+  const inHand = (p: number) => g.players[p].hand.map((_, i): Spot => [() => g.players[p].hand[i], (x) => (g.players[p].hand[i] = x)]);
+  const spots: Spot[] = [
+    ...inHand(0).slice(1),
+    ...[1, 2, 3].filter((p) => p !== to).flatMap(inHand),
+    ...g.wall.flatMap((w, i): Spot[] => ("tile" in w ? [[() => (g.wall[i] as { tile: Tile }).tile, (x) => (g.wall[i] = { tile: x })]] : [])),
+  ];
+  for (const [get, put] of spots) {
+    if (theirs.filter((x) => same(x, tile)).length >= n) break;
+    if (!same(get(), tile)) continue;
+    const i = theirs.findIndex((x) => !same(x, tile));
+    put(theirs[i]);
+    theirs[i] = { ...tile };
+  }
+  return applyTurnMove(g, { kind: "discard", tile });
+}
+
+describe("嗌錯 on a kong", () => {
+  it("takes back a pung, never a kong (its replacement's been drawn)", async () => {
+    const { code, host } = await withBots(1);
+    host.send({ t: "start" });
+    await host.table((s) => s.phase === "playing");
+    const can = await runInDurableObject(stubFor(code), (t: Table) => {
+      const tt = t as unknown as { load(): { game: GameState; decisions: unknown; lastCall: unknown; step: number }; resolve(): void; canRetract(seat: number): boolean; save(): void };
+      const out: Record<string, boolean | number> = {};
+      for (const call of ["pung", "kong"] as const) {
+        const rt = tt.load();
+        rt.lastCall = null;
+        rt.game = thrownTo(dealHand({ dealer: 0, roundWind: 1, dealerStreak: 0 }), 1, call === "kong" ? 3 : 2);
+        if (!claimOptions(rt.game, 1).some((c) => c.kind === call)) throw new Error(`no ${call} to call`);
+        rt.decisions = [null, { kind: call }, null, null];
+        tt.resolve();
+        out[call] = tt.canRetract(1);
+        if (call === "kong") {
+          tt.save();
+          out.step = rt.step;
+        }
+      }
+      return out;
+    });
+    expect(can).toMatchObject({ pung: true, kong: false });
+    // And the table, asked, says no.
+    host.send({ t: "retract", step: can.step });
+    expect((await host.error()).code).toBe("illegal");
   });
 });
 

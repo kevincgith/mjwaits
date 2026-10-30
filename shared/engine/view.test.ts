@@ -126,6 +126,26 @@ describe("viewFor", () => {
     expect(kept.players[loser].hand).toBeNull();
   });
 
+  it("tells only the seat itself (or anyone, its hand shown) that it passed up a win; its first turn and the turn's chain, everyone", () => {
+    const s = structuredClone(states.find((x) => x.phase.kind === "turn")!);
+    s.players[1].overWater = true;
+    s.players[2].riichi = { state: "riichi", discard: 0, ippatsu: true, passed: true };
+    s.players[2].played = true;
+    if (s.phase.kind === "turn") s.phase.chain = { kongs: 1, flowers: 2 };
+    const theirs = viewFor(s, 1);
+    expect(theirs.players[1].overWater).toBe(true);
+    expect(viewFor(s, 2).players[2].riichi).toEqual({ state: "riichi", discard: 0, ippatsu: true, passed: true });
+    const other = viewFor(s, 0);
+    expect(other.players[1]).not.toHaveProperty("overWater");
+    expect(other.players[2].riichi).toEqual({ state: "riichi", discard: 0, ippatsu: true });
+    expect(other.players[2].played).toBe(true);
+    expect(other.phase).toMatchObject({ kind: "turn", chain: { kongs: 1, flowers: 2 } });
+    // At the end: whoever's hand is shown, for all to see - a hand kept hidden keeps it too.
+    const over = { ...s, phase: { kind: "over", result: { winner: null, from: null, tile: null, score: null, scoreError: null, deltas: [0, 0, 0, 0] } } } as GameState;
+    expect(viewFor(over, 0).players[1].overWater).toBe(true);
+    expect(viewFor(over, 0, (seat) => seat !== 2).players[2].riichi).not.toHaveProperty("passed");
+  });
+
   it("is a copy: changing the view can't change the game", () => {
     const s = states[50];
     const v = viewFor(s, 0);

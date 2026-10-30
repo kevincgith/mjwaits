@@ -44,6 +44,7 @@ export function seatState(view: TableView): SeatState {
     ...(p.overWater ? { overWater: true } : {}),
     ...(p.passedPung ? { passedPung: p.passedPung } : {}),
     ...(p.threw ? { threw: p.threw } : {}),
+    ...(p.played ? { played: true as const } : {}),
   }));
 
   let phase: Phase;

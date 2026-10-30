@@ -9,7 +9,7 @@
 // everything the seat can't see is shuffled.
 
 import type { Tile } from "./mahjong";
-import { DEAD_WALL_SIZE, liveTilesLeft, type GameMeld, type GameState, type HandResult, type Player, type TableBonus } from "./game";
+import { DEAD_WALL_SIZE, liveTilesLeft, type Chain, type GameMeld, type GameState, type HandResult, type Player, type TableBonus } from "./game";
 import { patternDisplayName, type ScoreResult } from "./scoring";
 
 // A meld as another seat sees it: a concealed kong is four face-down tiles.
@@ -23,8 +23,9 @@ export interface SeatView {
   melds: MeldView[];
   flowers: Player["flowers"];
   discards: Tile[];
-  riichi?: Player["riichi"];
-  overWater?: boolean;
+  riichi?: Player["riichi"]; // `passed` your own only (it tells you held a win)
+  overWater?: boolean; // your own only, likewise
+  played?: true; // past its first turn (地叮 / 人胡)
   passedPung?: Tile; // your own only (it tells what you hold)
   threw?: Tile; // your own only: the last throw, barring a claim back of it
 }
@@ -51,7 +52,8 @@ export type PhaseView =
   // `drawn` and `forbidden` only for the seat whose turn it is; `drew` for
   // everyone - that they're holding a tile just drawn (not which: whether a
   // player drew or called is seen by all), so it can stand apart.
-  | { kind: "turn"; seat: number; drawn: Tile | null; drew?: true; replacement: "flower" | "kong" | null; forbidden?: Tile[] }
+  // `chain` (the kongs and bonus tiles replaced this turn) for everyone: all were seen.
+  | { kind: "turn"; seat: number; drawn: Tile | null; drew?: true; replacement: "flower" | "kong" | null; forbidden?: Tile[]; chain?: Chain }
   | { kind: "claims"; from: number; tile: Tile; robKong?: true } // robKong: a kong shown for 搶槓, not a discard
   // 換牌: every pile laid face down - your own you see, the others' only as
   // backs ("back"); a place taken, empty (null); and who took each.
@@ -107,8 +109,10 @@ export function viewFor(s: GameState, you: number, shown: (seat: number) => bool
       melds: p.melds.map((m): MeldView => (m.kind === "kong" && m.concealed && !open ? { kind: "kong", concealed: true, hidden: true, from: null } : { ...m, tiles: copyTiles(m.tiles) })),
       flowers: p.flowers.map((f) => ({ ...f })),
       discards: copyTiles(p.discards),
-      ...(p.riichi ? { riichi: { ...p.riichi } } : {}),
-      ...(p.overWater ? { overWater: true } : {}),
+      // A passed-up win says the hand was ready: only to whoever sees the hand.
+      ...(p.riichi ? { riichi: open ? { ...p.riichi } : { state: p.riichi.state, discard: p.riichi.discard, ippatsu: p.riichi.ippatsu } } : {}),
+      ...(open && p.overWater ? { overWater: true } : {}),
+      ...(p.played ? { played: true as const } : {}),
       ...(seat === you && p.passedPung ? { passedPung: { ...p.passedPung } } : {}),
       ...(seat === you && p.threw ? { threw: { ...p.threw } } : {}),
     };
@@ -123,6 +127,7 @@ export function viewFor(s: GameState, you: number, shown: (seat: number) => bool
       ...(s.phase.drawn ? { drew: true as const } : {}),
       replacement: s.phase.replacement,
       ...(mine && s.phase.forbidden ? { forbidden: copyTiles(s.phase.forbidden) } : {}),
+      ...(s.phase.chain ? { chain: { ...s.phase.chain } } : {}),
     };
   } else if (s.phase.kind === "claims") {
     phase = { kind: "claims", from: s.phase.from, tile: { ...s.phase.tile }, ...(s.phase.robKong ? { robKong: true as const } : {}) };

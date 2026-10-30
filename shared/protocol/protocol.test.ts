@@ -1,7 +1,7 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
 import type { ScoreEvent, ScoreGame, ScoreSettings } from "../engine/ledger";
 import { parseClientMessage, type ClientMessage } from "./client";
-import { checkGame, EventSchema, GameSchema, MAX_EVENTS, SettingsSchema } from "./game";
+import { checkGame, EventSchema, GameSchema, MAX_EVENTS, MAX_UNDONE, SettingsSchema } from "./game";
 import { cleanNickname, MAX_MESSAGE_BYTES, normalizeRoomCode, ROOM_CODE_ALPHABET } from "./limits";
 import type { Infer } from "./schema";
 import { sampleGame } from "./sampleGame";
@@ -57,6 +57,17 @@ describe("parseClientMessage", () => {
     const at = g.startedAt;
     const big = { ...g, events: Array.from({ length: MAX_EVENTS }, (_, i): ScoreEvent => (i % 3 ? { t: "draw", at } : { t: "win", at, winners: [{ seat: i % 4, tai: 88 }], from: null, source: "quick" })) };
     expect(parse({ t: "update", base: 123456, game: big }).ok).toBe(true);
+  });
+
+  it("fits a game at both entry caps, every entry a Play table's win with its patterns", () => {
+    const g = sampleGame();
+    const at = g.startedAt;
+    const patterns = ["底", "莊", "門前清 Concealed", "自摸 Self-drawn", "清一色 Full Flush", "對對糊 All Pungs", "花 Flower"].map((name, i) => ({ id: `pattern-${i}`, name, tai: i + 1 }));
+    const win = (i: number): ScoreEvent => ({ t: "win", at, winners: [{ seat: i % 4, tai: 28, patterns }], from: i % 4 === 0 ? null : 0, source: "scoring", dealerExtra: 1 });
+    const big = { ...g, events: Array.from({ length: MAX_EVENTS }, (_, i) => win(i)), undone: Array.from({ length: MAX_UNDONE }, (_, i) => win(i)) };
+    const frame = JSON.stringify({ t: "update", base: 123456, game: big });
+    expect(new TextEncoder().encode(frame).length / (MAX_EVENTS + MAX_UNDONE)).toBeGreaterThan(400); // (as big as they come, on average)
+    expect(parseClientMessage(frame).ok).toBe(true);
   });
 });
 

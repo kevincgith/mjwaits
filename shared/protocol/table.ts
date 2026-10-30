@@ -12,7 +12,7 @@
 // landing on the next turn.
 
 import type { Claim, KongMove, TurnMove } from "../engine/game";
-import { SWAP_MAX_ROUNDS, SWAP_MAX_TILES, SWAP_MIN_TILES } from "../engine/swap";
+import { DEFAULT_SWAP_RULES, SWAP_MAX_ROUNDS, SWAP_MAX_TILES, SWAP_MIN_TILES } from "../engine/swap";
 import type { Tile } from "../engine/mahjong";
 import type { TableView } from "../engine/view";
 import { MAX_MESSAGE_BYTES, NICKNAME_RAW_MAX, SEATS, TOKEN_PATTERN } from "./limits";
@@ -87,7 +87,8 @@ export const TableSettingsSchema = object({
 });
 export type TableSettings = Infer<typeof TableSettingsSchema>;
 
-export const DEFAULT_TABLE_SETTINGS: TableSettings = { multiWin: true, timer: 20, hold: 30, firstDealer: 0, reveal: true, jackpot: 5 };
+// (換牌 as the Play tab has it to start with.)
+export const DEFAULT_TABLE_SETTINGS: TableSettings = { multiWin: true, timer: 20, hold: 30, firstDealer: 0, reveal: true, jackpot: 5, swapRules: DEFAULT_SWAP_RULES };
 
 const TableClientSchema = tagged({
   // First on every connection; `token` comes back as the same person (and seat).
@@ -179,7 +180,8 @@ export type TableErrorCode =
   | "notYourTurn"
   | "stale" // a move or claim for a decision that's already gone
   | "illegal" // not a legal move or claim right now
-  | "ended";
+  | "ended"
+  | "server"; // the table's own error: logged, the step it failed undone (and tried again)
 
 export type SeatInfo =
   | { kind: "human"; id: string; name: string; connected: boolean; host: boolean }
