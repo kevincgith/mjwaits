@@ -14,6 +14,7 @@ import { sortTiles, type Tile } from "@mjwaits/shared/engine/mahjong";
 import type { BonusTile } from "@mjwaits/shared/engine/scoring";
 import { bezier, EASE_IN, EASE_OUT, keyframes } from "./anim";
 import { about, chain, rotateX, rotateY, rotateZ, scale, translate, type Mat } from "./mat";
+import { acrossTable } from "./swapOrder";
 import type { GLHandTile, GLPond, GLSide, GLSwapRow, GLTableView, GLWall } from "./types";
 
 // The block, in ems of its tile size (as the CSS has it: --tile-w / -h, --play-thick, --tile-r).
@@ -287,15 +288,19 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
     // own toward the middle (as .play-seat-melds wraps it).
     const row = view.rows[which];
     const rowLen = row ? sum(row.groups.map((g) => g.tiles.length * 0.72 * T + 0.08 * T)) + 0.55 * T * (row.groups.length - 1) : 0;
-    const rowIn: "none" | "first" | "last" | "next" = !row ? "none" : !cols.length ? "first" : colLen(cols[cols.length - 1]) + gap + rowLen <= maxLen + 0.5 ? "last" : "next";
-    const meldsW = sum(cols.map(colW)) + (rowIn === "first" ? 1.08 * T : 0);
-    const meldsH = Math.max(cols.length ? Math.max(...cols.map(colLen)) : 0, rowIn === "first" || rowIn === "next" ? rowLen : 0, rowIn === "last" ? colLen(cols[cols.length - 1]) + gap + rowLen : 0);
+    // The melds and bonus tiles keep their places while it's there (only
+    // for the moment of the swap): it goes on down the last column only as
+    // far as the wall reaches, else into a column of its own.
+    const meldsW = sum(cols.map(colW));
+    const meldsH = cols.length ? Math.max(...cols.map(colLen)) : 0;
     const sideW = Math.max(flowers?.across ?? 0, meldsW);
     const sideH = (flowers?.along ?? 0) + meldsH + (flowers && meldsH ? gap : 0);
+    const reach = Math.max(edgeH, maxLen) / 2 + sideH / 2 - (flowers ? flowers.along + gap : 0);
+    const rowIn: "none" | "first" | "last" | "next" = !row ? "none" : !cols.length ? "first" : colLen(cols[cols.length - 1]) + gap + rowLen <= reach ? "last" : "next";
     const extra = Math.max(0, Wg * 0.5 - 0.9 * rem);
     const seatGap = 0.3 * T + extra;
     const meldIn = w.down ? 0 : 0.45 * T + extra;
-    return { w, Wg, p, slot, faces, win, drew, edgeW, edgeH, flowers, cols, colW, meldsW, meldsH, sideW, sideH, seatGap, meldIn, rowIn, width: edgeW + seatGap + sideW };
+    return { w, Wg, p, slot, faces, win, drew, edgeW, edgeH, flowers, cols, colW, meldsW, meldsH, sideW, sideH, seatGap, meldIn, rowIn, rowLen, width: edgeW + seatGap + sideW };
   };
   const L = side("left");
   const R = side("right");
@@ -500,7 +505,8 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
     }
     let colX = which === "left" ? sideMid - S.meldsW / 2 : sideMid + S.meldsW / 2;
     // (Where a 換牌 row goes: see rowIn.)
-    if (S.rowIn === "first") rowAt[which] = { x: colX + (dir * 1.08 * T) / 2, y, dir };
+    // (Alone in front of the wall, it's centred along it.)
+    if (S.rowIn === "first") rowAt[which] = { x: sideMid, y: S.flowers ? y : midSeatY - (dir * S.rowLen) / 2, dir };
     for (const col of S.cols) {
       const cw = S.colW(col);
       let gy = y;
@@ -738,14 +744,17 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
     const from = ok.map((f) => spots[f.from]![f.place]);
     const to = ok.map((f) => places[f.to]![f.group][f.slot]);
     const a = alongLine(from, from[0].rot);
-    const b = alongLine(to, to[0].rot);
+    // (Side to side, face down, they land a half turn round - see acrossTable.)
+    const half = acrossTable(ok[0].from, ok[0].to) && ok.every((f) => !f.tile) ? 180 : 0;
+    const b = alongLine(to, to[0].rot + half);
     ok.forEach((f, k) => {
       const p = to[k];
+      const rot = p.rot + half;
       const start: FlightEnd = { x: a.x, y: a.y, along: a.along[k], rot: from[k].rot, em: P, alpha: from[k].standing ? -54 : 180, tilt: 0 };
-      const end: FlightEnd = { x: b.x, y: b.y, along: b.along[k], rot: p.rot, em: T, alpha: f.tile ? 0 : 180, tilt: 0 };
+      const end: FlightEnd = { x: b.x, y: b.y, along: b.along[k], rot, em: T, alpha: f.tile ? 0 : 180, tilt: 0 };
       felt.push({
         face: f.tile ? faceOf(f.tile) : BACK,
-        m: f.tile ? lying(p.x, p.y, T, p.rot) : lyingDown(p.x, p.y, T, p.rot),
+        m: f.tile ? lying(p.x, p.y, T, rot) : lyingDown(p.x, p.y, T, rot),
         shade: p.rot ? TURNED : LIT,
         tint: 1,
         fly: { key: `fly:${f.id}`, from: from[k].m, dur: 0.75, lift: 1.4 * T, pose: inFormation(start, end, 1.4 * T) },

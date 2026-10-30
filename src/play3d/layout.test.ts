@@ -59,3 +59,41 @@ describe("換牌 flights on the WebGL table", () => {
       }
     });
 });
+
+describe("換牌 rows on the WebGL table", () => {
+  for (const taker of ["left", "right"] as const)
+    it(`leave the piles where they lie when ${taker}'s row lands`, () => {
+      const before = take(taker, 3);
+      const piles = (v: GLTableView) => layoutTable({ ...v, flights: [] }, DIMS).felt.pieces.filter((p) => p.face === "back").map((p) => centre(p.m).map((n) => Math.round(n)).join());
+      const shown = { ...before, rows: { [taker]: { groups: before.rows[taker]!.groups.map((g) => ({ ...g, shown: g.shown.map(() => true) })) } } };
+      const noRow = { ...before, rows: {} };
+      // (The pile places only - every back on the felt but the row's own.)
+      const a = piles(noRow);
+      const b = piles(shown);
+      expect(b.filter((p) => !a.includes(p)).length).toBe(9);
+      expect(a.every((p) => b.includes(p))).toBe(true);
+    });
+  it("turn a formation at most a quarter on the way across", () => {
+    for (const taker of SIDES) {
+      const out = layoutTable(take(taker, 3), DIMS);
+      for (const p of flying(taker === "bottom" ? out.hand.pieces : out.felt.pieces)) {
+        const a = p.fly!.pose!(0.15);
+        const b = p.fly!.pose!(0.85);
+        const turn = Math.abs(((Math.atan2(b[1], b[0]) - Math.atan2(a[1], a[0])) * 180) / Math.PI);
+        expect(Math.min(turn, 360 - turn), `to ${taker}`).toBeLessThanOrEqual(91);
+      }
+    }
+  });
+});
+
+describe("a side seat's melds on the WebGL table", () => {
+  for (const taker of ["left", "right"] as const)
+    it(`stay put while ${taker}'s 換牌 row is there`, () => {
+      const v = take(taker, 3);
+      const meld = { kind: "pung" as const, tiles: [1, 1, 1].map(() => ({ suit: "m" as const, rank: 5 })), concealed: false };
+      const withMelds = { ...v, walls: { ...v.walls, [taker]: { ...v.walls[taker], melds: [meld, meld] } } };
+      const melds = (w: GLTableView) => layoutTable({ ...w, flights: [] }, DIMS).felt.pieces.filter((p) => p.face === "m5").map((p) => centre(p.m).map((n) => Math.round(n)).join());
+      const shown = { ...withMelds, rows: { [taker]: { groups: withMelds.rows[taker]!.groups.map((g) => ({ ...g, shown: g.shown.map(() => true) })) } } };
+      expect(melds(shown)).toEqual(melds({ ...withMelds, rows: {} }));
+    });
+});

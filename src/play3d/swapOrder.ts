@@ -10,10 +10,17 @@ import type { GLSide } from "./types";
 const pileRuns = (s: GLSide) => (s === "top" ? -1 : 1);
 const rowRuns = (s: GLSide) => (s === "top" ? -1 : 1);
 
+// From one side seat's pile to the other's row the tiles would turn half
+// round on the way - their lines face opposite ways. They're face down
+// (neither seat is yours), and a back looks the same either way round, so
+// they land turned that half turn instead: the line keeps its heading, and
+// its order runs the other way along the row.
+export const acrossTable = (from: GLSide, to: GLSide) => (from === "left" && to === "right") || (from === "right" && to === "left");
+
 // A giver's pile places, in the order they take the row's places.
 export function swapSlots(from: GLSide, to: GLSide, places: number[]): number[] {
   const along = [...places].sort((a, b) => pileRuns(from) * (a - b));
-  return rowRuns(to) > 0 ? along : along.reverse();
+  return rowRuns(to) * (acrossTable(from, to) ? -1 : 1) > 0 ? along : along.reverse();
 }
 
 // Where each pile lies about the middle, and which way each row's groups run.
