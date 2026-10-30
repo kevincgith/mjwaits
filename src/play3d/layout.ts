@@ -549,9 +549,12 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
       colX += dir * cw;
     }
     if (S.row) {
+      // (Clear of the standing tiles: the seat's gap in front of the wall,
+      // not stepped in as the melds are till the hand goes down.)
+      const wallInner = which === "left" ? edgeX0 + S.edgeW : edgeX0;
       const alone = !S.flowers && !S.cols.length;
       const nextX = S.cols.length ? colX + (dir * 1.08 * T) / 2 : sideMid + dir * (S.sideW / 2 + 0.15 * T + 0.54 * T);
-      rowAt[which] = alone ? ownColumn(sideMid) : fits(after.y) ? { ...after, dir } : ownColumn(nextX);
+      rowAt[which] = alone ? ownColumn(wallInner + dir * (S.seatGap + 0.54 * T)) : fits(after.y) ? { ...after, dir } : ownColumn(nextX);
     }
     owned[which].push({ x0: edgeX0, y0: edgeY0, x1: edgeX0 + S.edgeW, y1: edgeY0 + S.edgeH });
     ownSince(which, from);
@@ -714,9 +717,10 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
               : [col4x0 + 0.5 * P, midY + along];
       const standing = pile.standing && side === "bottom";
       const lift = pile.picked.includes(i) ? 0.45 * P : 0;
-      // Yours stand on the felt as your hand does: up from it 54deg, about the face's foot.
+      // Yours stand up on the felt, leaning back as your hand does (54deg up
+      // from it) - on their near foot, so they rest on the felt, not over it.
       const m = standing
-        ? chain(translate(x - 0.39 * P, y - 0.5 * P, 0), about(0.39 * P, P, THICK * P, rotateX(-54)), translate(0.39 * P, 0.5 * P, 0), scale(P))
+        ? chain(translate(x - 0.39 * P, y - 0.5 * P, 0), about(0.39 * P, (0.5 + TILE_H / 2) * P, 0, rotateX(-54)), translate(0.39 * P, 0.5 * P, 0), scale(P))
         : lyingDown(x, y, P, rot, lift);
       const spot = { x, y, rot, standing, m: standing ? m : lyingDown(x, y, P, rot) };
       if (slot === null) {
