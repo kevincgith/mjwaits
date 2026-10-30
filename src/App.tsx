@@ -2431,7 +2431,7 @@ function Calculator({
   // a winning hand) - the 選牌 header has no room left on a phone.
   const shareControl =
     summary !== null ? (
-      <ShareButton url={() => calcShareUrl(notation)} text={`A Calculator hand on MJWaits: ${summary}`} className="section-share" />
+      <ShareButton url={() => calcShareUrl(notation)} text={`A hand's waits on MJWaits: ${summary}`} className="section-share" />
     ) : null;
 
   // Recent: hands the Calculator analysed, newest first; building a hand up
@@ -5538,7 +5538,7 @@ function RecentCalcRow({ entry, onLoad }: { entry: RecentCalcHand; onLoad: () =>
       <div className="recent-meta">
         <span className="recent-summary">{entry.summary}</span>
         <span className="recent-when">{timeAgo(entry.at)}</span>
-        <ShareButton url={() => calcShareUrl(entry.hand)} text={`A Calculator hand on MJWaits: ${entry.summary}`} className="recent-share" />
+        <ShareButton url={() => calcShareUrl(entry.hand)} text={`A hand's waits on MJWaits: ${entry.summary}`} className="recent-share" />
       </div>
     </div>
   );
@@ -7041,7 +7041,7 @@ function ScoringPanel({
         <div className="for-scores-banner" role="status">
           <span className="for-scores-text">
             <span>
-              <strong>For Scores:</strong> {forScores.player} {forScores.zhaHu ? "詐胡 - what the hand is worth" : forScores.from === null ? "自摸" : forScores.fromName ? `食 ${forScores.fromName}` : "食胡"}
+              <strong>For Ledger:</strong> {forScores.player} {forScores.zhaHu ? "詐胡 - what the hand is worth" : forScores.from === null ? "自摸" : forScores.fromName ? `食 ${forScores.fromName}` : "食胡"}
               {(forScores.draft?.entries.length ?? 1) > 1 && ` · ${forScores.draft!.entries.length === 2 ? "雙響" : "三響"}`}
             </span>
             <span className="for-scores-sub">
@@ -7783,7 +7783,7 @@ function ScoringPanel({
                 });
               }}
             >
-              {forScores ? "Back to Scores" : "Record to Scores ›"}
+              {forScores ? "Back to Ledger" : "Record to Ledger ›"}
             </button>
           )}
 
@@ -9579,7 +9579,7 @@ function DeveloperTools({
       </section>
 
       <section className="dev-section">
-        <h3 className="dev-heading">Trainer</h3>
+        <h3 className="dev-heading">Drills</h3>
         <div className="dev-row">
           <SheetSwitch on={debug.trainerReveal} onChange={(on) => setDebug({ trainerReveal: on })} label="Reveal answers" />
           <SheetSwitch on={debug.trainerRepeat} onChange={(on) => setDebug({ trainerRepeat: on })} label="Repeat question" />
@@ -10017,9 +10017,9 @@ const TAB_ICON_PROPS = {
   strokeLinejoin: "round",
 } as const;
 
-// Play isn't in the tab bar while it's being worked on: a long-press on the
-// logo opens it (see logoPress in App).
-const TAB_ITEMS: { id: Exclude<AppMode, "play" | "table">; label: string; icon: ReactNode }[] = [
+// Phones fit five tabs, so the ones marked `more` fold into a More menu
+// there; wide screens show every tab in the row.
+const TAB_ITEMS: { id: Exclude<AppMode, "table">; label: string; icon: ReactNode; more?: true }[] = [
   {
     id: "scoring",
     label: "Scoring",
@@ -10032,30 +10032,8 @@ const TAB_ITEMS: { id: Exclude<AppMode, "play" | "table">; label: string; icon: 
     ),
   },
   {
-    id: "calculator",
-    label: "Calculator",
-    icon: (
-      <svg {...TAB_ICON_PROPS}>
-        <rect x="5" y="3" width="14" height="18" rx="2.5" />
-        <rect x="8" y="6" width="8" height="3.5" rx="0.8" />
-        <path d="M8.5 13h.01M12 13h.01M15.5 13h.01M8.5 16.5h.01M12 16.5h.01M15.5 16.5h.01" strokeWidth={2.6} />
-      </svg>
-    ),
-  },
-  {
-    id: "trainer",
-    label: "Trainer",
-    icon: (
-      <svg {...TAB_ICON_PROPS}>
-        <circle cx="12" cy="12" r="8.5" />
-        <circle cx="12" cy="12" r="5" />
-        <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none" />
-      </svg>
-    ),
-  },
-  {
     id: "scores",
-    label: "Scores",
+    label: "Ledger",
     icon: (
       <svg {...TAB_ICON_PROPS}>
         {/* A podium: 1st in the middle with a star, 2nd and 3rd either side. */}
@@ -10065,7 +10043,43 @@ const TAB_ITEMS: { id: Exclude<AppMode, "play" | "table">; label: string; icon: 
     ),
   },
   {
+    id: "play",
+    label: "Play",
+    icon: (
+      <svg {...TAB_ICON_PROPS}>
+        {/* Two tiles leaning in to clink, sparks above where they meet. */}
+        <rect x="3" y="7" width="8" height="12" rx="1.8" transform="rotate(-14 7 19)" />
+        <rect x="13" y="7" width="8" height="12" rx="1.8" transform="rotate(14 17 19)" />
+        <path d="M12 2.5v2.2M9 3.5l1 1.6M15 3.5l-1 1.6" strokeWidth={1.5} />
+      </svg>
+    ),
+  },
+  {
+    id: "trainer",
+    more: true,
+    label: "Drills",
+    icon: (
+      <svg {...TAB_ICON_PROPS}>
+        <circle cx="12" cy="12" r="8.5" />
+        <circle cx="12" cy="12" r="5" />
+        <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none" />
+      </svg>
+    ),
+  },
+  {
+    id: "calculator",
+    label: "Waits",
+    icon: (
+      <svg {...TAB_ICON_PROPS}>
+        <rect x="5" y="3" width="14" height="18" rx="2.5" />
+        <rect x="8" y="6" width="8" height="3.5" rx="0.8" />
+        <path d="M8.5 13h.01M12 13h.01M15.5 13h.01M8.5 16.5h.01M12 16.5h.01M15.5 16.5h.01" strokeWidth={2.6} />
+      </svg>
+    ),
+  },
+  {
     id: "dice",
+    more: true,
     label: "Dice",
     icon: (
       <svg {...TAB_ICON_PROPS}>
@@ -10077,6 +10091,100 @@ const TAB_ITEMS: { id: Exclude<AppMode, "play" | "table">; label: string; icon: 
     ),
   },
 ];
+
+// The Play tab's own page, inside the normal app: quick ways in - carry
+// on, deal a game against the bots - and the full start screen, for the
+// rest (online tables among it). Each takes over the whole screen (and asks
+// a phone to turn sideways), so nothing opens until one's tapped.
+const PLAY_INTRO_TILES: Tile[] = [
+  { suit: "z", rank: 6 },
+  { suit: "z", rank: 5 },
+  { suit: "z", rank: 7 },
+];
+
+function PlayIntro({
+  onContinue,
+  onQuickStart,
+  onMore,
+}: {
+  onContinue: () => void;
+  onQuickStart: () => void;
+  onMore: () => void;
+}) {
+  const saved = savedSummary();
+  // A quick start ends the game in progress: the first tap asks.
+  const [confirmNew, setConfirmNew] = useState(false);
+  // On a phone the page is sized to the screen while this is up, so it
+  // doesn't scroll (see html.play-intro-shown).
+  useEffect(() => {
+    document.documentElement.classList.add("play-intro-shown");
+    return () => document.documentElement.classList.remove("play-intro-shown");
+  }, []);
+  return (
+    <section className="panel play-intro">
+      <div className="play-intro-felt">
+        <div className="play-intro-hero">
+          <div className="play-intro-tiles" aria-hidden="true">
+            {PLAY_INTRO_TILES.map((t, i) => (
+              <span key={i} className={`ph-tile is-${i}`}>
+                <TileGlyphSpan tile={t} />
+              </span>
+            ))}
+          </div>
+          <h2 className="play-intro-title">
+            <span lang="zh-Hant">麻雀</span>
+            <small>Play · 港式台灣牌 十六張</small>
+          </h2>
+        </div>
+
+        <div className="play-intro-menu">
+          {saved && (
+            <button type="button" className="ph-item is-primary" onClick={onContinue}>
+              <span className="ph-item-zh">繼續</span>
+              <span className="ph-item-text">
+                <strong>Continue</strong>
+                <small>
+                  {saved.round} · You {saved.you > 0 ? `+${saved.you}` : saved.you}
+                </small>
+              </span>
+              <IntroChevron />
+            </button>
+          )}
+          <button
+            type="button"
+            className={`ph-item${saved ? "" : " is-primary"}${confirmNew ? " is-armed" : ""}`}
+            onClick={() => (saved && !confirmNew ? setConfirmNew(true) : onQuickStart())}
+            onBlur={() => setConfirmNew(false)}
+          >
+            <span className="ph-item-zh">快開</span>
+            <span className="ph-item-text">
+              <strong>{confirmNew ? "Tap again to start over" : "Quick start"}</strong>
+              <small>{confirmNew ? "The game in progress ends" : "Deal now · you against three bots"}</small>
+            </span>
+            <IntroChevron />
+          </button>
+          <button type="button" className="ph-item" onClick={onMore}>
+            <span className="ph-item-zh">大廳</span>
+            <span className="ph-item-text">
+              <strong>Full game</strong>
+              <small>Your rules · online tables · record</small>
+            </span>
+            <IntroChevron />
+          </button>
+        </div>
+      </div>
+      <p className="play-intro-note">Play fills the screen. On a phone, turn it sideways.</p>
+    </section>
+  );
+}
+
+function IntroChevron() {
+  return (
+    <svg className="ph-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
+      <path d="M9 5l7 7-7 7" />
+    </svg>
+  );
+}
 
 function App() {
   // A table invite (?room=…) opens the Scores tab's 線上 on that table.
@@ -10153,12 +10261,14 @@ function App() {
   // Play opens on its start screen; from there, the table - the saved game
   // ("resume") or a new one ("new") - or an online table, which comes back
   // to the start screen when you leave it.
-  const [playScreen, setPlayScreen] = useState<"home" | "resume" | "new">("home");
+  const [playScreen, setPlayScreen] = useState<"home" | "resume" | "new" | "quick">("home");
   const tableFromPlay = useRef(false);
   if (mode !== "play" && mode !== "table") lastNonPlayMode.current = mode;
   // The table fills the screen; html.playing hides the page around it - and
   // while it's up, it behaves like a game on a phone (see enterGameMode).
-  const playing = mode === "play" || mode === "table";
+  // Picking the Play tab shows PlayIntro first; its Start button sets this.
+  const [playStarted, setPlayStarted] = useState(false);
+  const playing = (mode === "play" && playStarted) || mode === "table";
   useEffect(() => {
     document.documentElement.classList.toggle("playing", playing);
     return playing ? enterGameMode() : undefined;
@@ -10264,7 +10374,23 @@ function App() {
       setTestHandsOpen(true);
     }
   };
-  const logoPress = useTapAndLongPress(onLogoTap, () => setMode("play"));
+  const logoPress = useTapAndLongPress(onLogoTap, NOOP);
+  // The phone tab bar's More menu (Trainer, Dice).
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreActive = TAB_ITEMS.some((item) => item.more && item.id === mode);
+  const openTab = (id: Exclude<AppMode, "table">) => {
+    // Leaving a shared scores view: back to this phone's own app.
+    if (sharedScores) {
+      window.history.replaceState(null, "", window.location.pathname + window.location.search);
+      setSharedScores(null);
+    }
+    if (id === "play") {
+      setPlayScreen("home");
+      setPlayStarted(false);
+    }
+    setMoreOpen(false);
+    setMode(id);
+  };
   const pickTestHand = (hand: TestHand) => {
     setTestHandRequest({ hand, nonce: Date.now() });
     setMode("scoring");
@@ -10291,20 +10417,13 @@ function App() {
           screens, a fixed translucent iOS-style tab bar on phones (see
           .tab-bar in App.css). Same buttons either way. */}
       <nav className="tab-bar" aria-label="Sections">
-        {TAB_ITEMS.map(({ id, label, icon }) => (
+        {TAB_ITEMS.map(({ id, label, icon, more }) => (
           <button
             key={id}
             type="button"
-            className={!sharedScores && mode === id ? "toggle-on" : undefined}
+            className={[!sharedScores && mode === id && "toggle-on", more && "tab-bar-more-item"].filter(Boolean).join(" ") || undefined}
             aria-pressed={!sharedScores && mode === id}
-            onClick={() => {
-              // Leaving a shared scores view: back to this phone's own app.
-              if (sharedScores) {
-                window.history.replaceState(null, "", window.location.pathname + window.location.search);
-                setSharedScores(null);
-              }
-              setMode(id);
-            }}
+            onClick={() => openTab(id)}
           >
             <span className="tab-bar-icon" aria-hidden="true">
               {icon}
@@ -10312,7 +10431,67 @@ function App() {
             <span className="tab-bar-label">{label}</span>
           </button>
         ))}
+        <button
+          type="button"
+          className={`tab-bar-more${!sharedScores && moreActive ? " toggle-on" : ""}`}
+          aria-haspopup="menu"
+          aria-expanded={moreOpen}
+          onClick={() => setMoreOpen((open) => !open)}
+        >
+          <span className="tab-bar-icon" aria-hidden="true">
+            <svg {...TAB_ICON_PROPS}>
+              <circle cx="5.5" cy="12" r="1.6" fill="currentColor" stroke="none" />
+              <circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none" />
+              <circle cx="18.5" cy="12" r="1.6" fill="currentColor" stroke="none" />
+            </svg>
+          </span>
+          <span className="tab-bar-label">More</span>
+        </button>
       </nav>
+      {moreOpen && (
+        <>
+          <div className="tab-more-backdrop" onClick={() => setMoreOpen(false)} />
+          <div className="tab-more-menu" role="menu">
+            {TAB_ITEMS.filter((item) => item.more).map(({ id, label, icon }) => (
+              <button
+                key={id}
+                type="button"
+                role="menuitem"
+                className={!sharedScores && mode === id ? "is-current" : undefined}
+                onClick={() => openTab(id)}
+              >
+                <span className="tab-bar-icon" aria-hidden="true">
+                  {icon}
+                </span>
+                <span>{label}</span>
+                {!sharedScores && mode === id && (
+                  <svg className="tab-more-check" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                )}
+              </button>
+            ))}
+            <button
+              type="button"
+              role="menuitem"
+              className="tab-more-secondary"
+              onClick={() => {
+                setMoreOpen(false);
+                setCreditsOpen(true);
+              }}
+            >
+              <span className="tab-bar-icon" aria-hidden="true">
+                <svg {...TAB_ICON_PROPS}>
+                  <circle cx="12" cy="12" r="8.5" />
+                  <path d="M12 11v5.5" />
+                  <circle cx="12" cy="7.8" r="1.2" fill="currentColor" stroke="none" />
+                </svg>
+              </span>
+              <span>Credits</span>
+            </button>
+          </div>
+        </>
+      )}
       {sharedScores && (
         <SharedScoresView
           snap={sharedScores}
@@ -10399,18 +10578,31 @@ function App() {
       )}
       {!sharedScores &&
         mode === "play" &&
-        (playScreen === "home" ? (
+        (!playStarted ? (
+          <PlayIntro
+            onContinue={() => {
+              setPlayScreen("resume");
+              setPlayStarted(true);
+            }}
+            onQuickStart={() => {
+              setPlayScreen("quick");
+              setPlayStarted(true);
+            }}
+            onMore={() => setPlayStarted(true)}
+          />
+        ) : playScreen === "home" ? (
           <PlayHome
             onPlay={(fresh) => setPlayScreen(fresh ? "new" : "resume")}
             onOnline={() => {
               tableFromPlay.current = true;
               setMode("table");
             }}
-            onExit={() => setMode(lastNonPlayMode.current)}
+            onExit={() => setPlayStarted(false)}
           />
         ) : (
           <PlayPanel
-            fresh={playScreen === "new"}
+            fresh={playScreen === "new" || playScreen === "quick"}
+            quick={playScreen === "quick"}
             onExit={() => setPlayScreen("home")}
           />
         ))}
@@ -10457,10 +10649,13 @@ function App() {
         </a>
         <span className="footer-fine">
           v{__BUILD_TIME__}
-          {" · "}
-          <button type="button" className="footer-link" onClick={() => setCreditsOpen(true)}>
-            Credits
-          </button>
+          {/* On phones Credits lives in the tab bar's More menu instead. */}
+          <span className="footer-credits">
+            {" · "}
+            <button type="button" className="footer-link" onClick={() => setCreditsOpen(true)}>
+              Credits
+            </button>
+          </span>
         </span>
       </footer>
       {debug.layoutOverlay && <LayoutOverlay />}

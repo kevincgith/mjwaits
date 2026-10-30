@@ -552,6 +552,13 @@ button {
   display: inline-flex;
 }
 
+/* Wide screens show every tab; the More button and its menu are phone-only. */
+.tab-bar .tab-bar-more,
+.tab-more-menu,
+.tab-more-backdrop {
+  display: none;
+}
+
 .tab-bar-icon svg {
   width: 20px;
   height: 20px;
@@ -4739,6 +4746,93 @@ img.tile-face {
   .tab-bar-icon svg {
     width: 26px;
     height: 26px;
+  }
+
+  /* Five tabs fit: Trainer and Dice fold into More. */
+  .tab-bar .tab-bar-more-item {
+    display: none;
+  }
+
+  .tab-bar .tab-bar-more {
+    display: flex;
+  }
+
+  .tab-more-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 51;
+  }
+
+  /* A small iOS-style menu rising from the More tab. */
+  .tab-more-menu {
+    display: flex;
+    flex-direction: column;
+    position: fixed;
+    right: max(0.5rem, env(safe-area-inset-right));
+    bottom: calc(var(--tab-bar-h) + env(safe-area-inset-bottom) + 0.4rem);
+    z-index: 52;
+    min-width: 12rem;
+    padding: 0.3rem 0;
+    background: rgba(249, 249, 251, 0.94);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    backdrop-filter: saturate(180%) blur(20px);
+    border-radius: 14px;
+    box-shadow:
+      0 0 0 0.5px rgba(0, 0, 0, 0.12),
+      0 10px 30px rgba(0, 0, 0, 0.18);
+    transform-origin: bottom right;
+    animation: tab-more-in 0.16s ease-out;
+  }
+
+  .tab-more-menu button {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.7rem 1rem;
+    border: none;
+    background: transparent;
+    color: var(--text);
+    font-size: var(--text-md);
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .tab-more-menu button + button {
+    box-shadow: 0 -0.5px 0 rgba(0, 0, 0, 0.12);
+  }
+
+  .tab-more-menu button.is-current {
+    color: var(--accent);
+  }
+
+  .tab-more-menu .tab-bar-icon svg {
+    width: 22px;
+    height: 22px;
+  }
+
+  /* Credits: set apart from the tabs above it by a thicker rule. */
+  .tab-more-menu button.tab-more-secondary {
+    box-shadow: none;
+    border-top: 6px solid rgba(0, 0, 0, 0.05);
+    color: var(--text-secondary);
+  }
+
+  .footer-credits {
+    display: none;
+  }
+
+  .tab-more-check {
+    width: 18px;
+    height: 18px;
+    margin-left: auto;
+  }
+}
+
+@keyframes tab-more-in {
+  from {
+    opacity: 0;
+    transform: scale(0.92) translateY(6px);
   }
 }
 
@@ -17520,4 +17614,161 @@ button.sc-stat:active {
 
 .play-setup-rules .play-menu-row > .play-menu-seg {
   flex-shrink: 0;
+}
+
+/* ---- Play tab's page -------------------------------------------------------
+   What the Play tab shows before the full-screen table (see PlayIntro): a
+   felt card in Play's own look - the fanned 發中白, then its ways in, in the
+   start screen's lacquer and gold (.ph-item). */
+
+.play-intro-felt {
+  /* The start screen's buttons size by these, and read their colours from
+     the table's chrome. */
+  --vw: 1vw;
+  --vh: 1vh;
+  --text: #f3ede2;
+  --text-muted: rgba(243, 237, 226, 0.62);
+  --play-ink-on-gold: #2e1d0b;
+  position: relative;
+  display: grid;
+  gap: 1.1rem;
+  padding: 1.4rem 1rem 1rem;
+  border-radius: var(--radius-lg, 18px);
+  overflow: hidden;
+  color: var(--play-on-felt);
+  background:
+    radial-gradient(60% 45% at 50% 18%, rgba(255, 209, 102, 0.16), transparent 70%),
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.018) 0 2px, transparent 2px 6px),
+    radial-gradient(130% 110% at 30% 20%, #1f6a45 0%, #134b30 45%, #0b2c1c 100%);
+  box-shadow: 0 6px 20px rgba(11, 44, 28, 0.25);
+}
+
+.play-intro-hero {
+  display: grid;
+  justify-items: center;
+  gap: 0.55rem;
+}
+
+.play-intro-tiles {
+  display: flex;
+  align-items: flex-end;
+  height: 1.3em;
+  font-size: 4rem;
+}
+
+.play-intro-tiles .tile-glyph {
+  font-size: inherit;
+}
+
+.play-intro-title {
+  display: grid;
+  justify-items: center;
+  gap: 0.25rem;
+  margin: 0;
+  line-height: 1;
+}
+
+.play-intro-title > span {
+  font-size: 2.1rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  background: linear-gradient(180deg, #ffe9a8, var(--play-gold) 55%, var(--play-gold-deep));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.play-intro-title small {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--play-on-felt-muted);
+}
+
+.play-intro-menu {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.play-intro-menu .ph-item {
+  animation: ph-rise 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.play-intro-menu > :nth-child(2) {
+  animation-delay: 0.05s;
+}
+
+.play-intro-menu > :nth-child(3) {
+  animation-delay: 0.1s;
+}
+
+.play-intro-note {
+  margin: 0.6rem 0 0;
+  text-align: center;
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+}
+
+/* Phones: the page fits the screen exactly - header, the felt card, the tab
+   bar - so there's nothing to scroll. svh: the screen with the browser's
+   bars showing, so it fits either way. */
+@media (max-width: 700px) {
+  html.play-intro-shown {
+    overscroll-behavior: none;
+  }
+
+  html.play-intro-shown .page {
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    height: 100svh;
+  }
+
+  html.play-intro-shown .build-version {
+    display: none;
+  }
+
+  .play-intro {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+  }
+
+  .play-intro-felt {
+    flex: 1;
+    min-height: 0;
+    align-content: center;
+    gap: clamp(0.6rem, 2.4svh, 1.4rem);
+  }
+
+  .play-intro-tiles {
+    font-size: clamp(2.4rem, 8svh, 4.4rem);
+  }
+
+  .play-intro-menu {
+    gap: clamp(0.4rem, 1.3svh, 0.6rem);
+  }
+
+  .play-intro-note {
+    margin-top: 0.5rem;
+  }
+}
+
+/* A short phone (an SE, or held sideways): the tiles, the tagline and the
+   note go, and the ways in tighten up - every one of them still fits. */
+@media (max-width: 700px) and (max-height: 640px) {
+  .play-intro-tiles,
+  .play-intro-title small,
+  .play-intro-note {
+    display: none;
+  }
+
+  .play-intro-felt {
+    padding-top: 1rem;
+  }
+
+  .play-intro-menu .ph-item {
+    padding-block: 0.45rem;
+  }
 }

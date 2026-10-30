@@ -545,7 +545,7 @@ export function InviteBlock({ code }: { code: string }) {
     <div className="ol-invite">
       <div className="sc-qr ol-qr" dangerouslySetInnerHTML={{ __html: svg }} role="img" aria-label={`QR code to join ${code}`} />
       <div className="ol-invite-side">
-        <span className="sc-help">Scan, or open Scores → 線上 and enter</span>
+        <span className="sc-help">Scan, or open Ledger → 線上 and enter</span>
         <span className="ol-code ol-code-big">{code}</span>
         <span className="ol-row-actions">
           <button

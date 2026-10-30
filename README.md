@@ -3,19 +3,21 @@
 <img src="public/favicon.svg" width="64" alt="MJWaits logo: a glass 白板 tile beside an empty glass tile (the wait) on green" align="right">
 
 A browser toolkit for 16-tile (Taiwanese / Hong Kong house rules) Mahjong. It started as a waits calculator — build a
-hand, see what completes it and which discard gives the best odds — and has grown five tabs:
+hand, see what completes it and which discard gives the best odds — and has grown six tabs:
 
 - **Scoring** — score a finished hand against a concrete house farn (番) list (~140 patterns).
-- **Calculator** — the original: waits, shanten, joker resolution, and discard analysis.
-- **Trainer** — timed quizzes: a **Waits** drill (name every tile that completes a hand) and a
+- **Waits** — the original: waits, shanten, joker resolution, and discard analysis.
+- **Drills** — timed quizzes: a **Waits** drill (name every tile that completes a hand) and a
   **Discards** drill (just drew — pick the single best tile to throw).
-- **Scores** — keep score of a real game at the table (港式台牌 rules: 莊/連莊, 拉/踢, 一炮多響,
+- **Ledger** — keep score of a real game at the table (港式台牌 rules: 莊/連莊, 拉/踢, 一炮多響,
   反雪, Jackpot), with a stats page per player — and **線上**, the game live on everyone's
   phone as it's scored.
 - **Dice** — roll for the wall, and see exactly where it breaks.
+- **Play** — a full hand against three bots, or online with friends (see below).
 
-On a phone the five tabs sit in a bottom tab bar; on wider screens they're a segmented control
-under the title. In the Scoring tab a sticky toolbar keeps Reset / Scan / Photos, the tile count
+On a phone the tabs sit in a bottom tab bar — Scoring, Ledger, Play, Waits and More, with
+Drills, Dice and Credits in More's menu; on wider screens all six are a segmented control under
+the title. In the Scoring tab a sticky toolbar keeps Reset / Scan / Photos, the tile count
 (or, once the hand scores, the total — tap it to jump to the breakdown) in view while scrolling.
 
 Everything runs client-side, including the camera tile scanner. No hand ever leaves the browser.
@@ -54,7 +56,7 @@ The input models the table, not a text string:
   lists every tap and long-press; **Clear** there empties every tile, after a second, confirming
   tap.
 - **Classic or Numpad** — the two icons next to 選牌 switch the picker's layout (remembered,
-  and shared with the Calculator). Classic shows every suit at once; Numpad shows one group at a
+  and shared with the Waits tab). Classic shows every suit at once; Numpad shows one group at a
   time — tabs for 花 字 | 萬 筒 索, lined up under 手牌 | 門前 — as a keypad of bigger keys: 1–9
   in a 3×3 grid for a suit, 東南西北 over 中發白 for the honors, the flowers over the seasons.
 - **Your hand** shows both regions in one card: **門前 (Declared)** — everything laid in front of
@@ -111,8 +113,8 @@ tile. Kept deliberately narrow: no jokers, no concealed kongs.
 - **最近 Recent**, at the bottom of the tab, keeps the last 10 hands that scored, on this device.
   Tap one to load it back, or share it from its row; changing only a hand's situation updates its
   entry rather than adding another. **Clear** (two taps) forgets them.
-- The **Calculator** has the same: a share icon in its result caption (聽牌 Waits, 打牌 Discards or
-  食糊) whose link opens on the Calculator with that hand, and its own **最近 Recent** list - each
+- The **Waits** tab has the same: a share icon in its result caption (聽牌 Waits, 打牌 Discards or
+  食糊) whose link opens on the Waits tab with that hand, and its own **最近 Recent** list - each
   entry with what was found (waits, shanten, or a winning hand). Building a hand up tile by tile, or
   trimming it, keeps updating one entry.
 
@@ -120,7 +122,7 @@ tile. Kept deliberately narrow: no jokers, no concealed kongs.
 criteria and exclusions, the 明 / 暗 (open / concealed) distinction, and the duplicate-instance
 counting rules — kept in sync with the code.
 
-## Calculator
+## Waits
 
 ![A tenpai hand — 123456789m111z11t22b — with Breakdown on, showing a shanpon (dual-pair) wait on 1 Pin / 2 Sou and both meld/pair readings](docs/preview.png)
 
@@ -237,7 +239,7 @@ from 0.738 to 0.871, at a small cost in box-localization tightness on upright ph
 full validation split the deployed checkpoint scores mAP50 0.916 / mAP50-95 0.683 / precision
 0.955 / recall 0.906. See [training/README.md](training/README.md) for the full pipeline.
 
-## Trainer
+## Drills
 
 Three drills, on their own sub-tabs. **Waits** and **Discards** are timed one-shot quizzes with
 five levels (Level 1 is a 1-meld hand, Level 5 the full 16-tile size), a **Flush mode** that
@@ -253,7 +255,7 @@ Each question is a randomly generated hand (3·level + 1 tiles) guaranteed to ha
 wait. The answer picker only shows suits actually present in the question, since a wait can never
 come from a suit that isn't already there. Mark your guess, then submit: the picker flags each
 pick as a correct hit, a wrong guess, or a wait you missed, and a full breakdown (same as the
-Calculator's) shows how each real wait completes the hand. Stats: answered, correct, wrong,
+Waits tab's) shows how each real wait completes the hand. Stats: answered, correct, wrong,
 % correct, average time.
 
 ### Discards
@@ -261,7 +263,7 @@ Calculator's) shows how each real wait completes the hand. Stats: answered, corr
 ![A Level 3 discard question answered: an 11-tile hand with the picked tile outlined red and the best discards highlighted amber, a "gave up 14.6 pts of win probability" banner, and the full ranked list of every discard below](docs/discard-trainer.png)
 
 Each question is a random "just drew" hand (3·level + 2 tiles — a tenpai hand plus one drawn
-tile). Tap the single tile you'd throw, then submit. It's graded against the Calculator's
+tile). Tap the single tile you'd throw, then submit. It's graded against the Waits tab's
 *Discard options* analysis: the best discard is the one with the highest win probability over the
 next 8 draws. Your pick and every equally-best discard are highlighted on the hand, and the full
 list of every discard — ranked, with tenpai/win percentages — is shown below. Stats track how
@@ -347,7 +349,7 @@ never changes a payment.)
 - The dealer stays on a dealer win, or on a 流局 with 流局留莊; otherwise the deal moves on, and
   a full lap moves the round wind (執位提示 reminds you to re-seat).
 
-The **Scoring** tab's result gets a **Record to Scores** button while a game is in progress:
+The **Scoring** tab's result gets a **Record to Ledger** button while a game is in progress:
 it opens the 食胡 sheet with the winner picked by 門風, 自摸 set, and the farn minus any 莊/連莊
 (the ledger adds its own), and keeps the hand's patterns for the stats.
 
@@ -396,10 +398,12 @@ in progress).
   itself (a token is kept on the phone), and the host's own changes made offline go up when it's
   back. A shared game's room closes two days after its last change.
 
-## Play (hidden, in progress)
+## Play
 
-Not in the tab bar while it's being built: **long-press the logo** to open it (‹ on the table
-goes back). A full hand of 16-tile mahjong against three bots that run in the browser, laid
+The Play tab opens on a page of quick ways in — **Continue**, **Quick start** (a game against the
+bots dealt at once, with the rules last set) — and **Full game**, the full start screen, for the
+rest: your own rules, online tables, your record. None goes full screen till it's tapped (‹ on the
+table goes back). A full hand of 16-tile mahjong against three bots that run in the browser, laid
 out like a commercial 16-tile app. It's a landscape table: it fills the screen, and a phone
 held upright is asked to turn sideways.
 

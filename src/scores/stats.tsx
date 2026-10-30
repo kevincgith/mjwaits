@@ -625,7 +625,7 @@ export function BackupCard({ store, setStore }: { store: ScoreStore; setStore: (
     if (fileRef.current) fileRef.current.value = "";
     if (!file) return;
     const parsed = parseBackup(await file.text());
-    if (!parsed) return setMessage({ text: `${file.name} isn't a Scores backup.`, bad: true });
+    if (!parsed) return setMessage({ text: `${file.name} isn't a Ledger backup.`, bad: true });
     setIncoming({ name: file.name, store: parsed });
   };
 
@@ -1058,7 +1058,7 @@ export function PatternsCard({ state, store }: { state: ReplayState; store: Scor
           </ul>
         )
       ) : rows.length === 0 ? (
-        <p className="sc-empty">Use Record to Scores on the Scoring tab, and the patterns behind each hand show up here.</p>
+        <p className="sc-empty">Use Record to Ledger on the Scoring tab, and the patterns behind each hand show up here.</p>
       ) : (
         <ul className="sc-patterns">
           {rows.map((r) => (
