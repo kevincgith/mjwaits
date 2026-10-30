@@ -45,6 +45,9 @@ export interface Dims {
   project?: (x: number, y: number, z: number) => { x: number; y: number; s: number };
   // How wide your row may run: the table's width (the screen, as it's held).
   rowRoom?: number;
+  // In 換牌: your row's width so far, kept so the row doesn't re-centre as
+  // tiles leave it (set by TableGL while the swap's on).
+  handMinWidth?: number;
   // The felt's plane into your row's space so that it's drawn exactly where
   // the felt's own view draws it (from the middle of the row's top edge):
   // the two views differ only by where their perspective is from - a shear.
@@ -72,7 +75,7 @@ export interface Piece {
   // Moving as Play's CSS animates it, or easing to where it now lies when
   // that changes (CSS's transition) - see anim.ts and engine.ts.
   anim?: Anim;
-  ease?: { key: string; dur: number; curve: (t: number) => number };
+  ease?: { key: string; dur: number; curve: (t: number) => number; delay?: number };
 }
 
 // An animation: from when `key` first appears, after `delay` seconds, `dur`
@@ -204,8 +207,9 @@ const SETTLE = bezier(0.2, 0.8, 0.3, 1);
 // Your hand rearranging in 換牌 (HAND_SLIDE_MS in PlayPanel).
 const SLIDE = bezier(0.3, 0.7, 0.2, 1);
 const SLIDE_S = 0.45;
-// Your given tiles, down to your pile.
+// Your given tiles, down to your pile - lifted clear of the row by this far in.
 const GIVE_S = 0.6;
+const GIVE_CLEAR_S = 0.22;
 // A tile tipping over (play-topple-*): from standing (`from` deg) down flat,
 // quickening as it falls, a small bounce back up (7deg) and settled; slid
 // back `back` as it goes - [angle, back].
@@ -989,7 +993,9 @@ function layoutHand(view: GLTableView, d: Dims, spots: Partial<Record<GLSide, Sp
       ease: winner
         ? undefined
         : mine.sliding
-          ? { key: ident(t.tile ? faceOf(t.tile) : BACK), dur: SLIDE_S, curve: SLIDE }
+          ? // (Just after a give, once the given tiles have lifted clear of
+            // their gaps - so nothing passes through anything.)
+            { key: ident(t.tile ? faceOf(t.tile) : BACK), dur: SLIDE_S, curve: SLIDE, delay: mine.given ? GIVE_CLEAR_S : 0 }
           : { key: `h:${i}:${Math.round(x0)}`, dur: 0.16, curve: SETTLE },
     });
     // Hints: the bots' pick underlined in gold; a risky tile barred in red.
@@ -998,7 +1004,9 @@ function layoutHand(view: GLTableView, d: Dims, spots: Partial<Record<GLSide, Sp
   });
   // No tile drawn: its place kept.
   if (mine.tiles.length && !mine.tiles.some((t) => t.drawn) && !winner) x += 0.3 * H + 0.746 * H;
-  const width = x;
+  // In 換牌 the row keeps its width (see handMinWidth) - it's centred, and
+  // re-centred as tiles leave it every tile would jump.
+  const width = Math.max(x, mine.sliding ? (d.handMinWidth ?? 0) : 0);
   // One soft shadow under the standing row.
   if (mine.tiles.length && !winner) quads.unshift({ kind: "row-shadow", m: chain(translate(width / 2, height - 0.05 * H, 0), scale(width - 0.2 * H + 0.36 * H, 0.3 * H + 0.36 * H, 1)) });
   // 換牌: what you've taken, above your hand - standing as your tiles do,

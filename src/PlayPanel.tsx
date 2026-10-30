@@ -3644,7 +3644,9 @@ export function PlayPanel({
           tiles: handTiles.map((t, i) => ({
             tile: t === BLANK ? null : t,
             drawn: handView.drawnTile !== null && i === handTiles.length - 1,
-            selected: selected === i || swapHand.includes(i),
+            // (Your picks to give only while you're picking: once given, the
+            // places they name are other tiles' for a moment.)
+            selected: selected === i || (swapGiving && swapHand.includes(i)),
             hint: i === hintIndex,
             danger: hint && myTurn && dangerous.has(tileKey(t)),
             barred: isForbidden(t),

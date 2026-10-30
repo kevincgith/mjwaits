@@ -230,3 +230,20 @@ describe("your give on the WebGL table", () => {
     }
   });
 });
+
+describe("your row in 換牌", () => {
+  const tile = (rank: number) => ({ tile: { suit: "m" as const, rank }, drawn: false, selected: false, hint: false, danger: false, barred: false, winner: false, enabled: true });
+  it("keeps its width as you give - nothing re-centres - and closes its gaps once the given tiles are clear", () => {
+    const v = take("right", 1);
+    const before = { ...v, piles: null, flights: [], rows: {}, mine: { ...v.mine, tiles: Array.from({ length: 16 }, (_, i) => tile((i % 9) + 1)), sliding: true } };
+    const b = layoutTable(before, DIMS).hand;
+    const gave = [2, 5, 9];
+    const tiles = before.mine.tiles.filter((_, i) => !gave.includes(i));
+    const after = { ...before, mine: { ...before.mine, tiles, given: { key: 1, tiles: gave.map((i) => before.mine.tiles[i].tile), from: gave, count: 16 } } };
+    const a = layoutTable(after, { ...DIMS, handMinWidth: b.width }).hand;
+    expect(a.width).toBe(b.width);
+    const first = (h: typeof a) => h.pieces.find((p) => p.hit === 0)!.m[12];
+    expect(first(a)).toBeCloseTo(first(b), 3);
+    expect(a.pieces.filter((p) => p.hit !== undefined).every((p) => (p.ease?.delay ?? 0) > 0)).toBe(true);
+  });
+});
