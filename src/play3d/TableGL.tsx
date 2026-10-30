@@ -1,11 +1,11 @@
-// Play 2.0's tiles: a WebGL canvas over the table (see engine.ts), drawing
+// Play's tiles: a WebGL canvas over the table (see engine.ts), drawing
 // what PlayPanel says is on it (GLTableView) where layout.ts lays it out.
 // The table's own sizes are read off the page only when the screen changes
 // size; the compass is set where the layout puts the middle, and your
 // row's box is sized to the tiles drawn in it, so the call buttons above it
 // and the bar under it sit as they do in Play.
 //
-// Loaded on its own (with three.js) only when Play 2.0 opens.
+// Loaded on its own (with three.js) - see lib/lazyParts.ts.
 
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { Engine, type Frame } from "./engine";

@@ -1,4 +1,4 @@
-// Play 2.0's renderer: the table's tiles drawn by WebGL (three.js) on one
+// Play's renderer: the table's tiles drawn by WebGL (three.js) on one
 // canvas over the table, the felt and everything else staying the page's
 // own. Every tile is the same block - rounded at its four upright edges,
 // the face on top, sides running from the jade back to the ivory under the

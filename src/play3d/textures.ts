@@ -1,4 +1,4 @@
-// The pictures Play 2.0's table draws with, painted once onto canvases:
+// The pictures Play's WebGL table draws with, painted once onto canvases:
 // every tile face from the app's own SVG art (one atlas), the jade back,
 // and the soft marks - shadows, the newest discard's pin, the hint and
 // danger bars, the spotlight's bubble.

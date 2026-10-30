@@ -6,6 +6,9 @@
 
 const loaders = {
   play: () => import("../PlayPanel"),
+  // Play's WebGL table (three.js), which PlayPanel loads itself - here so
+  // it's fetched with the rest, and Play works offline.
+  table3d: () => import("../play3d/TableGL"),
   playHome: () => import("../PlayHome"),
   online: () => import("../OnlineTable"),
   scores: () => import("../ScoresPanel"),

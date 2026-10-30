@@ -32,7 +32,7 @@ export function PlayHome({
   onPlay: (fresh: boolean) => void;
   onOnline: () => void;
   onExit: () => void;
-  // Which table this opens, when it isn't Play's own ("Play 2.0").
+  // Which table this opens, when it isn't Play's own ("Legacy").
   edition?: string;
 }) {
   const [record, setRecord] = useState(loadRecord);

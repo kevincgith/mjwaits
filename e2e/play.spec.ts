@@ -10,6 +10,9 @@ test.beforeEach(async ({ page }) => {
   page.on("console", (m) => m.type() === "error" && !/vibrate|favicon/i.test(m.text()) && errors.push(m.text()));
   let loads = 0;
   page.on("load", () => ++loads > 1 && errors.push(`the page reloaded (${page.url()})`));
+  // These flows tap Legacy's table, its tiles page elements (see
+  // lib/playRenderer.ts); the WebGL table's own test sets it back.
+  await page.addInitScript(() => localStorage.setItem("mjwaits.playRenderer", "dom"));
 });
 test.afterEach(async ({ page }) => {
   expect(pageErrors.get(page), "errors on the page").toEqual([]);
@@ -151,5 +154,36 @@ test("online: a table with bots - 換牌's give and take, a discard, 自動", as
 
   await playSwap(page);
   await discardOnce(page);
+  await autoplayToggles(page);
+});
+
+// Play's own table, drawn by WebGL: its tiles are on a canvas, so a tap is
+// aimed at your drawn tile's place (the right end of your row) and checked
+// by the game saved after it.
+test("the WebGL table: a discard by tapping the canvas, 自動", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("mjwaits.playRenderer", "webgl"));
+  await openApp(page, "New game");
+  await page.locator(".play-setup-start").click();
+  await expect(page.locator("canvas.play-gl")).toBeVisible({ timeout: 30_000 });
+  const saved = () =>
+    page.evaluate(() => {
+      const g = JSON.parse(localStorage.getItem("mjwaits.play") ?? "{}").game;
+      return { mine: g?.phase?.kind === "turn" && g.phase.seat === 0 && !!g.phase.drawn, thrown: g?.players?.[0]?.discards?.length ?? 0 };
+    });
+  const pass = page.locator(".play-call", { hasText: /^過$/ });
+  const until = Date.now() + 120_000;
+  while (!(await saved()).mine) {
+    if (Date.now() > until) throw new Error("your turn never came");
+    if (await pass.isVisible()) await pass.click();
+    await page.waitForTimeout(150);
+  }
+  await page.waitForTimeout(500); // (the drawn tile's slide in)
+  const before = (await saved()).thrown;
+  const row = (await page.locator(".play-hand.is-gl").boundingBox())!;
+  const at = { x: row.x + row.width - row.height * 0.3, y: row.y + row.height * 0.55 };
+  await page.mouse.click(at.x, at.y);
+  await expect(page.getByText("Tap again to discard")).toBeVisible({ timeout: 5_000 });
+  await page.mouse.click(at.x, at.y - row.height * 0.1);
+  await expect.poll(async () => (await saved()).thrown, { message: "the second tap should throw the tile", timeout: 5_000 }).toBe(before + 1);
   await autoplayToggles(page);
 });

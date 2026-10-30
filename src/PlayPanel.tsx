@@ -121,7 +121,7 @@ import { claimDecisionAction, encodeObservation, legalActions, turnMoveAction } 
 import { countRecorded, exportRecorded, finishHand, recordDecision } from "./lib/ml/recorder";
 
 const WIND_CHARS = ["", "東", "南", "西", "北"];
-// Play 2.0's tiles, drawn by WebGL: three.js and all, loaded only for it.
+// The table's tiles drawn by WebGL: three.js and all, loaded in its own part.
 const TableGL = lazy(() => import("./play3d/TableGL"));
 // Ready-made tables: who sits at Right / Across / Left (seats 1-3).
 const PRESETS = [
@@ -951,8 +951,8 @@ function pastDeal(g: GameState, swaps: boolean): boolean {
 
 // `quick`: that new game is dealt at once, with the rules as they were last
 // set (or the defaults), rather than opening on the 開局 setup page.
-// `renderer`: "webgl" for Play 2.0 - the same game, its tiles drawn by
-// WebGL (see play3d/) instead of the page's 3D CSS.
+// `renderer`: "webgl" - the table's tiles drawn by WebGL (see play3d/) - or
+// "dom", Legacy: drawn by the page's own 3D CSS (kept as a backup).
 export function PlayPanel({
   onExit,
   online,
@@ -1283,7 +1283,7 @@ export function PlayPanel({
   // The side seats' columns both as wide as the wider seat (its melds and
   // flowers included), so a call on one side never pushes the middle over.
   const feltRef = useRef<HTMLDivElement>(null);
-  // Play 2.0's: the table its canvas covers, and the compass it places.
+  // The WebGL table's: the table its canvas covers, and the compass it places.
   const tableRef = useRef<HTMLDivElement>(null);
   const middleRef = useRef<HTMLDivElement>(null);
   // (The table's fits below - bonusOut, topFront, seatsOut, pondFit - are
@@ -1294,7 +1294,7 @@ export function PlayPanel({
   const [sideCols, setSideCols] = useState(0);
   useLayoutEffect(() => {
     const felt = feltRef.current;
-    // (Play 2.0 lays its table out itself - see play3d/layout.ts.)
+    // (The WebGL table is laid out by itself - see play3d/layout.ts.)
     if (!felt || gl) return;
     const seats = [...felt.querySelectorAll<HTMLElement>(".play-seat-left, .play-seat-right")];
     // Not while a swap row lies by a side seat: it's there only a moment, and
@@ -2362,7 +2362,7 @@ export function PlayPanel({
     const prev = pilesSeen.current;
     const frame = tableFrame();
     const spots = [0, 1, 2, 3].map((g) => {
-      // Play 2.0 draws the piles itself: a place each, seen as the WebGL table shows it.
+      // The WebGL table draws the piles itself: a place each, seen as the WebGL table shows it.
       if (gl)
         return (swapPhase?.piles[g] ?? []).map(() => ({
           box: { left: 0, top: 0, width: 0, height: 0 },
@@ -2499,7 +2499,7 @@ export function PlayPanel({
   useLayoutEffect(() => {
     const pending = flights.filter((f) => f.row && !f.path);
     if (!pending.length) return;
-    // Play 2.0: each tile to its place in its giver's group, in its pile's
+    // The WebGL table: each tile to its place in its giver's group, in its pile's
     // order; the WebGL table flies it there (play3d/), timed from here.
     if (gl) {
       const placed = new Map<number, Flight>();
@@ -2635,7 +2635,7 @@ export function PlayPanel({
   // Your give: in the order they sit in your hand, each flying down from its
   // place there to its place in your pile.
   const giveFrom = useRef<{ tiles: Tile[]; at: ((FlightEnd & { font: number }) | null)[]; pitch?: number } | null>(null);
-  // Play 2.0: your give, for its tiles to fly down to your pile (see GLMine.given).
+  // The WebGL table: your give, for its tiles to fly down to your pile (see GLMine.given).
   const [glGiven, setGlGiven] = useState<GLMine["given"]>(null);
   const giveSwap = (picked: number[] = swapHand) => {
     if (!swapPhase || picked.length !== swapPhase.count) return;
@@ -3555,7 +3555,7 @@ export function PlayPanel({
     );
   };
 
-  // Play 2.0: what's on the table, for its WebGL tiles - the same tiles
+  // The WebGL table: what's on the table, for its WebGL tiles - the same tiles
   // wall(), the ponds, the spotlight and your row draw here.
   const glWall = (seat: number): GLWall => {
     const p = game.players[seat];
@@ -3882,7 +3882,7 @@ export function PlayPanel({
           <div className={gl ? "play-felt is-gl" : "play-felt"} ref={feltRef}>
             <span className={`play-first-dealer at-${SIDES[firstDealer]}`} title={`起莊: ${nameOf(firstDealer)}`} aria-label={`起莊 ${nameOf(firstDealer)}`} />
             {gl ? (
-              // Play 2.0: just the compass on the page's felt, where its layout puts the middle.
+              // The WebGL table: just the compass on the page's felt, where its layout puts the middle.
               <div className="play-middle" ref={middleRef}>
                 <Compass game={game} active={over ? null : activeSeat} clock={clock} idle={tilesLeftLabel} countdown={over ? null : countdown} />
               </div>
@@ -4074,7 +4074,7 @@ export function PlayPanel({
             {/* What you've taken, in 3D above your hand, standing as it does. */}
             {flights.some((f) => f.to === HUMAN) && <div className="play-hand play-swap-mine">{swapRow(HUMAN)}</div>}
             {gl ? (
-              // Play 2.0: your row's box, sized to the tiles the WebGL table draws in it.
+              // The WebGL table: your row's box, sized to the tiles the WebGL table draws in it.
               <div ref={myRowRef} className="play-hand is-gl" />
             ) : (
             <div
