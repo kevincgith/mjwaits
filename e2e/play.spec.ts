@@ -177,12 +177,14 @@ test("the WebGL table: a discard by tapping the canvas, 自動", async ({ page }
     if (await pass.isVisible()) await pass.click();
     await page.waitForTimeout(150);
   }
-  await page.waitForTimeout(500); // (the drawn tile's slide in)
   const before = (await saved()).thrown;
   const row = (await page.locator(".play-hand.is-gl").boundingBox())!;
   const at = { x: row.x + row.width - row.height * 0.3, y: row.y + row.height * 0.55 };
-  await page.mouse.click(at.x, at.y);
-  await expect(page.getByText("Tap again to discard")).toBeVisible({ timeout: 5_000 });
+  // (Tapped again till it takes: a tap while the deal's dice still roll goes unheeded.)
+  await expect(async () => {
+    await page.mouse.click(at.x, at.y);
+    await expect(page.getByText("Tap again to discard")).toBeVisible({ timeout: 1000 });
+  }).toPass({ timeout: 20_000 });
   await page.mouse.click(at.x, at.y - row.height * 0.1);
   await expect.poll(async () => (await saved()).thrown, { message: "the second tap should throw the tile", timeout: 5_000 }).toBe(before + 1);
   await autoplayToggles(page);
