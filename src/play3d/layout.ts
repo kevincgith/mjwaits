@@ -49,6 +49,8 @@ export interface Piece {
   shade: [number, number];
   // 1, or 0 for a tile you can't throw now (食替), drawn dimmed.
   tint: number;
+  // Your tile's place in your hand, for taps on it.
+  hit?: number;
 }
 
 // Flat marks: shadows on the felt, the newest discard's pin, the hint and
@@ -561,7 +563,7 @@ function layoutHand(view: GLTableView, d: Dims): Layout["hand"] {
   }
   // Your tiles: each in a 0.78em box, 0.75em apart; the drawn one 0.3em apart.
   const winner = mine.toppled;
-  mine.tiles.forEach((t: GLHandTile) => {
+  mine.tiles.forEach((t: GLHandTile, i) => {
     let x0: number;
     if (t.drawn) {
       x0 = x + 0.3 * H;
@@ -585,6 +587,7 @@ function layoutHand(view: GLTableView, d: Dims): Layout["hand"] {
       m: t.tile ? chain(m, scale(H)) : chain(m, translate(0, 0, THICK * H), rotateY(180), scale(H)),
       shade: winner && t.winner ? TURNED : LIT,
       tint: t.barred ? 0 : 1,
+      hit: i,
     });
     // Hints: the bots' pick underlined in gold; a risky tile barred in red.
     if (t.hint) quads.push({ kind: "hint", m: chain(translate(x0 + 0.39 * H, y0 + H + 0.09 * H, 0), scale(0.78 * H * 0.64, 0.06 * H, 1)) });

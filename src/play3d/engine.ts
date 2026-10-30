@@ -199,6 +199,8 @@ class Space {
   face: THREE.InstancedBufferAttribute;
   shade: THREE.InstancedBufferAttribute;
   tint: THREE.InstancedBufferAttribute;
+  // Each tile's place in your hand (for taps), by instance.
+  hits: (number | undefined)[] = [];
   constructor(geometry: THREE.BufferGeometry, material: THREE.Material, max: number) {
     this.root.matrixAutoUpdate = false;
     this.scene.add(this.root);
@@ -235,7 +237,9 @@ class Space {
       this.tint.setX(i, p.tint);
     }
     this.tiles.count = n;
+    this.hits = pieces.slice(0, n).map((p) => p.hit);
     this.tiles.instanceMatrix.needsUpdate = true;
+    this.tiles.computeBoundingSphere();
     this.face.needsUpdate = this.shade.needsUpdate = this.tint.needsUpdate = true;
     for (const [kind, mesh] of this.marks) {
       const mine = quads.filter((q) => q.kind === kind);
@@ -265,6 +269,7 @@ export class Engine {
   hand: Space;
   rects: Atlas["rects"];
   bubbles = new Map<string, THREE.Texture>();
+  private ray = new THREE.Raycaster();
   private disposables: { dispose(): void }[] = [];
   constructor(canvas: HTMLCanvasElement, atlas: Atlas) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, premultipliedAlpha: true });
@@ -324,6 +329,25 @@ export class Engine {
     r.render(this.felt.scene, this.felt.camera);
     r.clearDepth();
     r.render(this.hand.scene, this.hand.camera);
+  }
+
+  // The tile of yours under a point of the canvas (its CSS pixels), if any:
+  // a ray from the eye through it, into your row's blocks.
+  pickHand(x: number, y: number, width: number, height: number): number | null {
+    const space = this.hand;
+    space.scene.updateMatrixWorld();
+    const ndc = (z: number) => new THREE.Vector3((x / width) * 2 - 1, 1 - (y / height) * 2, z).applyMatrix4(space.camera.projectionMatrixInverse);
+    const near = ndc(-1);
+    const far = ndc(1);
+    this.ray.ray.set(near, far.sub(near).normalize());
+    // (Where the tiles are now; and either side - the blocks are drawn by
+    // their back faces, see tileMaterial.)
+    space.tiles.computeBoundingSphere();
+    const material = space.tiles.material as THREE.Material;
+    material.side = THREE.DoubleSide;
+    const hit = this.ray.intersectObject(space.tiles, false).find((h) => h.instanceId !== undefined && space.hits[h.instanceId] !== undefined);
+    material.side = THREE.BackSide;
+    return hit ? space.hits[hit.instanceId!]! : null;
   }
 
   dispose() {

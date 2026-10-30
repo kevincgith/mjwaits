@@ -38,6 +38,8 @@ export interface GLHandTile {
   danger: boolean;
   barred: boolean;
   winner: boolean;
+  // Whether a tap on it does anything (your turn, or picking for 換牌).
+  enabled: boolean;
 }
 
 export interface GLMine {

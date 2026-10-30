@@ -3562,6 +3562,7 @@ export function PlayPanel({
             danger: hint && myTurn && dangerous.has(tileKey(t)),
             barred: isForbidden(t),
             winner: i === winIndex,
+            enabled: (myTurn || swapGiving) && !isForbidden(t) && !autoplay,
           })),
           melds: me.melds,
           hideConcealed: !seated,
@@ -3861,7 +3862,7 @@ export function PlayPanel({
         </div>
         {glView && (
           <Suspense fallback={null}>
-            <TableGL view={glView} rootRef={tableRef} feltRef={feltRef} handRef={myRowRef} middleRef={middleRef} />
+            <TableGL view={glView} rootRef={tableRef} feltRef={feltRef} handRef={myRowRef} middleRef={middleRef} onTile={tapTile} />
           </Suspense>
         )}
 

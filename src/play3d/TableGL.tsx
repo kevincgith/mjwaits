@@ -100,8 +100,11 @@ export default function TableGL({
   feltRef,
   handRef,
   middleRef,
+  onTile,
 }: {
   view: GLTableView;
+  // A tap on one of your tiles (by its place in your hand).
+  onTile: (index: number) => void;
   rootRef: RefObject<HTMLElement | null>;
   feltRef: RefObject<HTMLElement | null>;
   handRef: RefObject<HTMLElement | null>;
@@ -113,6 +116,8 @@ export default function TableGL({
   const dims = useRef<Dims | null>(null);
   const viewRef = useRef(view);
   viewRef.current = view;
+  const onTileRef = useRef(onTile);
+  onTileRef.current = onTile;
 
   useEffect(() => {
     let live = true;
@@ -167,6 +172,35 @@ export default function TableGL({
       e.dispose();
     };
   }, [atlas, rootRef, feltRef]);
+
+  // Taps on your tiles: a ray from where you tapped into your row (the
+  // canvas lets taps through to the page; buttons and sheets keep theirs).
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    let down: { x: number; y: number; at: number } | null = null;
+    const onDown = (e: PointerEvent) => {
+      down = e.isPrimary ? { x: e.clientX, y: e.clientY, at: e.timeStamp } : null;
+    };
+    const onUp = (e: PointerEvent) => {
+      const start = down;
+      down = null;
+      const e3 = engine.current;
+      if (!start || !e3 || !e.isPrimary || Math.hypot(e.clientX - start.x, e.clientY - start.y) > 10 || e.timeStamp - start.at > 800) return;
+      if ((e.target as Element | null)?.closest("button, a, input, [role=dialog], [role=menu], .play-menu, .play-calls, .sc-sheet")) return;
+      // Into the table's own pixels - it's drawn turned a quarter on a phone held upright.
+      const turn = new DOMMatrix(getComputedStyle(root).transform === "none" ? undefined : getComputedStyle(root).transform);
+      const p = turn.inverse().transformPoint(new DOMPoint(e.clientX - root.offsetLeft, e.clientY - root.offsetTop));
+      const i = e3.pickHand(p.x, p.y, root.clientWidth, root.clientHeight);
+      if (i !== null && viewRef.current.mine.tiles[i]?.enabled) onTileRef.current(i);
+    };
+    root.addEventListener("pointerdown", onDown);
+    root.addEventListener("pointerup", onUp);
+    return () => {
+      root.removeEventListener("pointerdown", onDown);
+      root.removeEventListener("pointerup", onUp);
+    };
+  }, [rootRef]);
 
   // Drawn again only when what's on the table changes.
   const shown = useRef("");
