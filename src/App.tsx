@@ -2432,7 +2432,7 @@ function Calculator({
   // a winning hand) - the 選牌 header has no room left on a phone.
   const shareControl =
     summary !== null ? (
-      <ShareButton url={() => calcShareUrl(notation)} text={`A Calculator hand on MJWaits: ${summary}`} className="section-share" />
+      <ShareButton url={() => calcShareUrl(notation)} text={`A hand's waits on MJWaits: ${summary}`} className="section-share" />
     ) : null;
 
   // Recent: hands the Calculator analysed, newest first; building a hand up
@@ -5539,7 +5539,7 @@ function RecentCalcRow({ entry, onLoad }: { entry: RecentCalcHand; onLoad: () =>
       <div className="recent-meta">
         <span className="recent-summary">{entry.summary}</span>
         <span className="recent-when">{timeAgo(entry.at)}</span>
-        <ShareButton url={() => calcShareUrl(entry.hand)} text={`A Calculator hand on MJWaits: ${entry.summary}`} className="recent-share" />
+        <ShareButton url={() => calcShareUrl(entry.hand)} text={`A hand's waits on MJWaits: ${entry.summary}`} className="recent-share" />
       </div>
     </div>
   );
@@ -7038,7 +7038,7 @@ function ScoringPanel({
         <div className="for-scores-banner" role="status">
           <span className="for-scores-text">
             <span>
-              <strong>For Scores:</strong> {forScores.player} {forScores.zhaHu ? "詐胡 - what the hand is worth" : forScores.from === null ? "自摸" : forScores.fromName ? `食 ${forScores.fromName}` : "食胡"}
+              <strong>For Ledger:</strong> {forScores.player} {forScores.zhaHu ? "詐胡 - what the hand is worth" : forScores.from === null ? "自摸" : forScores.fromName ? `食 ${forScores.fromName}` : "食胡"}
               {(forScores.draft?.entries.length ?? 1) > 1 && ` · ${forScores.draft!.entries.length === 2 ? "雙響" : "三響"}`}
             </span>
             <span className="for-scores-sub">
@@ -7780,7 +7780,7 @@ function ScoringPanel({
                 });
               }}
             >
-              {forScores ? "Back to Scores" : "Record to Scores ›"}
+              {forScores ? "Back to Ledger" : "Record to Ledger ›"}
             </button>
           )}
 
@@ -9576,7 +9576,7 @@ function DeveloperTools({
       </section>
 
       <section className="dev-section">
-        <h3 className="dev-heading">Trainer</h3>
+        <h3 className="dev-heading">Drills</h3>
         <div className="dev-row">
           <SheetSwitch on={debug.trainerReveal} onChange={(on) => setDebug({ trainerReveal: on })} label="Reveal answers" />
           <SheetSwitch on={debug.trainerRepeat} onChange={(on) => setDebug({ trainerRepeat: on })} label="Repeat question" />
@@ -10020,7 +10020,7 @@ const TAB_ITEMS: { id: Exclude<AppMode, "table">; label: string; icon: ReactNode
   },
   {
     id: "scores",
-    label: "Scores",
+    label: "Ledger",
     icon: (
       <svg {...TAB_ICON_PROPS}>
         {/* A podium: 1st in the middle with a star, 2nd and 3rd either side. */}
@@ -10044,7 +10044,7 @@ const TAB_ITEMS: { id: Exclude<AppMode, "table">; label: string; icon: ReactNode
   {
     id: "trainer",
     more: true,
-    label: "Trainer",
+    label: "Drills",
     icon: (
       <svg {...TAB_ICON_PROPS}>
         <circle cx="12" cy="12" r="8.5" />
@@ -10055,7 +10055,7 @@ const TAB_ITEMS: { id: Exclude<AppMode, "table">; label: string; icon: ReactNode
   },
   {
     id: "calculator",
-    label: "Calculator",
+    label: "Waits",
     icon: (
       <svg {...TAB_ICON_PROPS}>
         <rect x="5" y="3" width="14" height="18" rx="2.5" />

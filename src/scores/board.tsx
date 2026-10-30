@@ -471,7 +471,7 @@ export function Board({
     // is whoever has the 門風 entered in Scoring.
     const seat = request.seat ?? [0, 1, 2, 3].find((s) => ((s - state.dealer + SEATS) % SEATS) + 1 === request.seatWind) ?? 0;
     const taken = [request.removedDealerTai ? `莊 ${request.removedDealerTai}` : null, request.removedMultiTai ? `雙響/三響 ${request.removedMultiTai}` : null].filter(Boolean);
-    const dealerNote = taken.length ? ` (${taken.join(", ")} taken out — Scores adds its own)` : "";
+    const dealerNote = taken.length ? ` (${taken.join(", ")} taken out — Ledger adds its own)` : "";
     const rulesNote = request.rules ? " · scored under custom farn rules" : "";
     // A 雙響/三響: the sheet comes back whole, with only the scored winner's
     // tai (and patterns) new. Who dealt in stands - one discard, several
