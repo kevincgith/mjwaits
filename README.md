@@ -400,7 +400,10 @@ in progress).
 
 ## Play
 
-The Play tab (‹ on the table goes back). A full hand of 16-tile mahjong against three bots that run in the browser, laid
+The Play tab opens on a page of quick ways in — **Continue**, **Quick start** (a game against the
+bots dealt at once, with the rules last set), **Open a table** online, or **Join** one by its
+code — and **More** for the full start screen; none goes full screen till it's tapped (‹ on the
+table goes back). A full hand of 16-tile mahjong against three bots that run in the browser, laid
 out like a commercial 16-tile app. It's a landscape table: it fills the screen, and a phone
 held upright is asked to turn sideways.
 

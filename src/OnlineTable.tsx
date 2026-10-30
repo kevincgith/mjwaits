@@ -81,11 +81,13 @@ function BotFace() {
 
 // ---- The screen ------------------------------------------------------------------------
 
-export function OnlineTable({ initialCode, onExit }: { initialCode: string | null; onExit: () => void }) {
+// `go`: picked on the Play tab - a table code to join, or "new" to open a
+// table - done straight away (as the nickname last used), not shown as an invite.
+export function OnlineTable({ initialCode, go, onExit }: { initialCode: string | null; go?: string; onExit: () => void }) {
   const [memory, setMemory] = useState(loadTables);
   useEffect(() => saveTables(memory), [memory]);
   const [code, setCode] = useState<string | null>(initialCode && tableToken(loadTables(), initialCode) ? initialCode : null);
-  const [joinCode, setJoinCode] = useState(initialCode ?? "");
+  const [joinCode, setJoinCode] = useState(go && go !== "new" ? go : (initialCode ?? ""));
   const [name, setName] = useState(() => memory.name || defaultNickname());
   const [table, setTable] = useState<TableState | null>(null);
   const [me, setMe] = useState<Welcome | null>(null);
@@ -203,6 +205,13 @@ export function OnlineTable({ initialCode, onExit }: { initialCode: string | nul
     }
   };
 
+  const joined = useRef(false);
+  useEffect(() => {
+    if (!go || code || joined.current) return;
+    joined.current = true;
+    void enter(go);
+  });
+
   const leave = () => {
     setCode(null);
     setTable(null);
@@ -235,7 +244,7 @@ export function OnlineTable({ initialCode, onExit }: { initialCode: string | nul
           setName={setName}
           joinCode={joinCode}
           setJoinCode={setJoinCode}
-          invited={initialCode}
+          invited={go ? null : initialCode}
           recent={memory.tables.map((t) => t.code)}
           onForget={(c) => setMemory((m) => withoutTable(m, c))}
           busy={busy}

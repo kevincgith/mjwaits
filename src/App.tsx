@@ -44,6 +44,7 @@ import { PlayPanel, savedSummary } from "./PlayPanel";
 import { PlayHome } from "./PlayHome";
 import { OnlineTable } from "./OnlineTable";
 import { inviteLaunch, startInstallAtInvite } from "./lib/onlineTable";
+import { normalizeRoomCode } from "@mjwaits/shared/protocol/limits";
 import { ScoresPanel, SharedScoresView, type RecordRequest, type ScoreHandRequest, type SeatingResult } from "./ScoresPanel";
 import { GAME_HASH, snapshotFromAnyHash, snapshotFromHash } from "./lib/scoreShare";
 import { roomFromSearch } from "./lib/online";
@@ -10079,29 +10080,124 @@ const TAB_ITEMS: { id: Exclude<AppMode, "table">; label: string; icon: ReactNode
   },
 ];
 
-// The Play tab's own page, inside the normal app: the table takes over the
-// whole screen (and asks a phone to turn sideways), so it waits for a tap on
-// Start rather than opening the moment the tab is picked.
-function PlayIntro({ onStart }: { onStart: () => void }) {
+// The Play tab's own page, inside the normal app: quick ways in - carry
+// on, deal a game against the bots, open an online table or join one by its
+// code - and
+// the full start screen. Each of those takes over the whole screen (and asks
+// a phone to turn sideways), so nothing opens until one's tapped.
+const PLAY_INTRO_TILES: Tile[] = [
+  { suit: "z", rank: 6 },
+  { suit: "z", rank: 5 },
+  { suit: "z", rank: 7 },
+];
+
+function PlayIntro({
+  onContinue,
+  onQuickStart,
+  onJoin,
+  onOpenTable,
+  onMore,
+}: {
+  onContinue: () => void;
+  onQuickStart: () => void;
+  onJoin: (code: string) => void;
+  onOpenTable: () => void;
+  onMore: () => void;
+}) {
   const saved = savedSummary();
+  // A quick start ends the game in progress: the first tap asks.
+  const [confirmNew, setConfirmNew] = useState(false);
+  const [code, setCode] = useState("");
+  const normalized = normalizeRoomCode(code);
   return (
     <section className="panel play-intro">
-      <div className="card play-intro-card">
-        <h2 className="play-intro-title">
-          <span lang="zh-Hant">麻雀</span> Play
-        </h2>
-        <p className="play-intro-text">A full hand of 16-tile mahjong against three bots, or online with friends on their own phones.</p>
-        {saved && (
-          <p className="play-intro-saved">
-            Game in progress · {saved.round} · you {saved.you > 0 ? `+${saved.you}` : saved.you}
-          </p>
-        )}
-        <button type="button" className="play-intro-start" onClick={onStart}>
-          Start playing
-        </button>
-        <p className="play-intro-note">Opens full screen. On a phone, turn it sideways.</p>
+      <div className="play-intro-felt">
+        <div className="play-intro-hero">
+          <div className="play-intro-tiles" aria-hidden="true">
+            {PLAY_INTRO_TILES.map((t, i) => (
+              <span key={i} className={`ph-tile is-${i}`}>
+                <TileGlyphSpan tile={t} />
+              </span>
+            ))}
+          </div>
+          <h2 className="play-intro-title">
+            <span lang="zh-Hant">麻雀</span>
+            <small>Play · 港式台灣牌 十六張</small>
+          </h2>
+        </div>
+
+        <div className="play-intro-menu">
+          {saved && (
+            <button type="button" className="ph-item is-primary" onClick={onContinue}>
+              <span className="ph-item-zh">繼續</span>
+              <span className="ph-item-text">
+                <strong>Continue</strong>
+                <small>
+                  {saved.round} · You {saved.you > 0 ? `+${saved.you}` : saved.you}
+                </small>
+              </span>
+              <IntroChevron />
+            </button>
+          )}
+          <button
+            type="button"
+            className={`ph-item${saved ? "" : " is-primary"}${confirmNew ? " is-armed" : ""}`}
+            onClick={() => (saved && !confirmNew ? setConfirmNew(true) : onQuickStart())}
+            onBlur={() => setConfirmNew(false)}
+          >
+            <span className="ph-item-zh">快開</span>
+            <span className="ph-item-text">
+              <strong>{confirmNew ? "Tap again to start over" : "Quick start"}</strong>
+              <small>{confirmNew ? "The game in progress ends" : "Deal now · you against three bots"}</small>
+            </span>
+            <IntroChevron />
+          </button>
+          <button type="button" className="ph-item" onClick={onOpenTable}>
+            <span className="ph-item-zh">開枱</span>
+            <span className="ph-item-text">
+              <strong>Open a table</strong>
+              <small>Online · invite friends with a code</small>
+            </span>
+            <IntroChevron />
+          </button>
+          <form
+            className="ot-join"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (normalized) onJoin(normalized);
+            }}
+          >
+            <span className="ph-item-zh">入座</span>
+            <input
+              value={code}
+              onChange={(e) => setCode(e.target.value.toUpperCase())}
+              placeholder="CODE"
+              aria-label="Table code to join"
+              maxLength={8}
+              autoCapitalize="characters"
+              autoComplete="off"
+              spellCheck={false}
+            />
+            <button type="submit" className="ot-go" disabled={!normalized}>
+              Join
+            </button>
+          </form>
+          <button type="button" className="play-intro-more" onClick={onMore}>
+            More: your own rules, online tables, your record
+            <IntroChevron />
+          </button>
+        </div>
       </div>
+      <p className="play-intro-note">Play fills the screen. On a phone, turn it sideways.</p>
     </section>
+  );
+}
+
+function IntroChevron() {
+  return (
+    <svg className="ph-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
+      <path d="M9 5l7 7-7 7" />
+    </svg>
   );
 }
 
@@ -10176,7 +10272,10 @@ function App() {
   // Play opens on its start screen; from there, the table - the saved game
   // ("resume") or a new one ("new") - or an online table, which comes back
   // to the start screen when you leave it.
-  const [playScreen, setPlayScreen] = useState<"home" | "resume" | "new">("home");
+  const [playScreen, setPlayScreen] = useState<"home" | "resume" | "new" | "quick">("home");
+  // Picked on the Play tab: a table code to join, or "new" to open one -
+  // done as the online table opens.
+  const [onlineGo, setOnlineGo] = useState<string | null>(null);
   const tableFromPlay = useRef(false);
   if (mode !== "play" && mode !== "table") lastNonPlayMode.current = mode;
   // The table fills the screen; html.playing hides the page around it - and
@@ -10494,7 +10593,27 @@ function App() {
       {!sharedScores &&
         mode === "play" &&
         (!playStarted ? (
-          <PlayIntro onStart={() => setPlayStarted(true)} />
+          <PlayIntro
+            onContinue={() => {
+              setPlayScreen("resume");
+              setPlayStarted(true);
+            }}
+            onQuickStart={() => {
+              setPlayScreen("quick");
+              setPlayStarted(true);
+            }}
+            onJoin={(code) => {
+              setOnlineGo(code);
+              tableFromPlay.current = true;
+              setMode("table");
+            }}
+            onOpenTable={() => {
+              setOnlineGo("new");
+              tableFromPlay.current = true;
+              setMode("table");
+            }}
+            onMore={() => setPlayStarted(true)}
+          />
         ) : playScreen === "home" ? (
           <PlayHome
             saved={savedSummary()}
@@ -10507,14 +10626,17 @@ function App() {
           />
         ) : (
           <PlayPanel
-            fresh={playScreen === "new"}
+            fresh={playScreen === "new" || playScreen === "quick"}
+            quick={playScreen === "quick"}
             onExit={() => setPlayScreen("home")}
           />
         ))}
       {!sharedScores && mode === "table" && (
         <OnlineTable
           initialCode={tableCode}
+          go={onlineGo ?? undefined}
           onExit={() => {
+            setOnlineGo(null);
             if (tableFromPlay.current) {
               tableFromPlay.current = false;
               setPlayScreen("home");

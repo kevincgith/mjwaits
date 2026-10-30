@@ -434,7 +434,6 @@ button {
 .btn-primary,
 .trainer-submit,
 .dice-roll,
-.play-intro-start,
 .panel-header button.btn-primary,
 .crop-actions-right button:last-child,
 .scan-review-actions button:last-child {
@@ -17538,41 +17537,113 @@ button.sc-stat:active {
 }
 
 /* ---- Play tab's page -------------------------------------------------------
-   What the Play tab shows before the full-screen table: a short card with a
-   Start button (see PlayIntro). */
+   What the Play tab shows before the full-screen table (see PlayIntro): a
+   felt card in Play's own look - the fanned 發中白, then its ways in, in the
+   start screen's lacquer and gold (.ph-item, .ot-join). */
 
-.play-intro-card {
+.play-intro-felt {
+  /* The start screen's buttons size by these, and read their colours from
+     the table's chrome. */
+  --vw: 1vw;
+  --vh: 1vh;
+  --text: #f3ede2;
+  --text-muted: rgba(243, 237, 226, 0.62);
+  --play-ink-on-gold: #2e1d0b;
+  position: relative;
+  display: grid;
+  gap: 1.1rem;
+  padding: 1.4rem 1rem 1rem;
+  border-radius: var(--radius-lg, 18px);
+  overflow: hidden;
+  color: var(--play-on-felt);
+  background:
+    radial-gradient(60% 45% at 50% 18%, rgba(255, 209, 102, 0.16), transparent 70%),
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.018) 0 2px, transparent 2px 6px),
+    radial-gradient(130% 110% at 30% 20%, #1f6a45 0%, #134b30 45%, #0b2c1c 100%);
+  box-shadow: 0 6px 20px rgba(11, 44, 28, 0.25);
+}
+
+.play-intro-hero {
+  display: grid;
+  justify-items: center;
+  gap: 0.55rem;
+}
+
+.play-intro-tiles {
   display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-  text-align: center;
+  align-items: flex-end;
+  height: 1.3em;
+  font-size: 4rem;
+}
+
+.play-intro-tiles .tile-glyph {
+  font-size: inherit;
 }
 
 .play-intro-title {
-  margin: 0.25rem 0 0;
-  font-size: var(--text-xl);
-}
-
-.play-intro-text,
-.play-intro-saved,
-.play-intro-note {
+  display: grid;
+  justify-items: center;
+  gap: 0.25rem;
   margin: 0;
+  line-height: 1;
 }
 
-.play-intro-text {
-  color: var(--text-secondary);
+.play-intro-title > span {
+  font-size: 2.1rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  background: linear-gradient(180deg, #ffe9a8, var(--play-gold) 55%, var(--play-gold-deep));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
-.play-intro-saved {
+.play-intro-title small {
+  font-size: var(--text-sm);
   font-weight: 600;
-  color: var(--text);
+  letter-spacing: 0.06em;
+  color: var(--play-on-felt-muted);
 }
 
-.play-intro-start {
-  margin-top: 0.4rem;
+.play-intro-menu {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.play-intro-menu .ph-item,
+.play-intro-menu .ot-join {
+  animation: ph-rise 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.play-intro-menu > :nth-child(2) {
+  animation-delay: 0.05s;
+}
+
+.play-intro-menu > :nth-child(3) {
+  animation-delay: 0.1s;
+}
+
+.play-intro-menu > :nth-child(4) {
+  animation-delay: 0.15s;
+}
+
+.play-intro-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  padding: 0.5rem;
+  border: none;
+  background: none;
+  color: var(--play-on-felt-muted);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
 }
 
 .play-intro-note {
+  margin: 0.6rem 0 0;
+  text-align: center;
   font-size: var(--text-sm);
   color: var(--text-tertiary);
 }
