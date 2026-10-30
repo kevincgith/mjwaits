@@ -45,6 +45,9 @@ export interface Dims {
   project?: (x: number, y: number, z: number) => { x: number; y: number; s: number };
   // How wide your row may run: the table's width (the screen, as it's held).
   rowRoom?: number;
+  // How far down the felt the row of what you take in 換牌 reaches, as seen
+  // (its top edge, where it meets the felt's plane).
+  rowTop?: number;
   // In 換牌: your row's width so far, kept so the row doesn't re-centre as
   // tiles leave it (set by TableGL while the swap's on).
   handMinWidth?: number;
@@ -693,6 +696,10 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
   // tiles taken flying to a row by the taker's hand.
   const P = 1.2 * T;
   const spots: Partial<Record<GLSide, Spot[]>> = {};
+  // Your pile: kept clear of the row of what you take (shown just above
+  // your hand) - up toward the compass as far as that needs, never into it,
+  // the whole swap long so it never moves mid-way.
+  const mineAt = Math.max(row4y0 + 0.5 * P - 0.1 * T, Math.min(row4y0 + 0.3 * T + 0.5 * P, (d.rowTop ?? Infinity) - 4 - 0.5 * P));
   // Your give: each place in your pile, and the given tile (by its order in the give) that went there.
   const givenAt = new Map<number, number>();
   if (view.mine.given && view.piles?.bottom) {
@@ -715,7 +722,7 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
         side === "top"
           ? [centreX + along, row2y1 - 0.5 * P]
           : side === "bottom"
-            ? [centreX - along, row4y0 + 0.3 * T + 0.5 * P]
+            ? [centreX - along, mineAt]
             : side === "left"
               ? [col2x1 - 0.5 * P, midY - along]
               : [col4x0 + 0.5 * P, midY + along];
