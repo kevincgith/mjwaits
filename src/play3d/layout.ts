@@ -12,6 +12,7 @@
 import { sameTile, type GameMeld } from "@mjwaits/shared/engine/game";
 import { sortTiles, type Tile } from "@mjwaits/shared/engine/mahjong";
 import type { BonusTile } from "@mjwaits/shared/engine/scoring";
+import { bezier, EASE_IN, EASE_OUT, keyframes } from "./anim";
 import { about, chain, rotateX, rotateY, rotateZ, scale, translate, type Mat } from "./mat";
 import type { GLHandTile, GLPond, GLSide, GLTableView, GLWall } from "./types";
 
@@ -51,6 +52,19 @@ export interface Piece {
   tint: number;
   // Your tile's place in your hand, for taps on it.
   hit?: number;
+  // Moving as Play's CSS animates it, or easing to where it now lies when
+  // that changes (CSS's transition) - see anim.ts and engine.ts.
+  anim?: Anim;
+  ease?: { key: string; dur: number; curve: (t: number) => number };
+}
+
+// An animation: from when `key` first appears, after `delay` seconds, `dur`
+// seconds long, where it is at each point (0..1) through it.
+export interface Anim {
+  key: string;
+  delay: number;
+  dur: number;
+  pose: (t: number) => Mat;
 }
 
 // Flat marks: shadows on the felt, the newest discard's pin, the hint and
@@ -60,6 +74,7 @@ export interface Quad {
   kind: QuadKind;
   // The unit square (-0.5..0.5 each way, at z 0) to where it's drawn.
   m: Mat;
+  anim?: Anim;
 }
 
 export interface Layout {
@@ -158,6 +173,43 @@ function wallFaces(w: GLWall): { faces: string[]; win: number } {
 }
 
 const sum = (ns: number[]) => ns.reduce((a, b) => a + b, 0);
+
+// Play's easings (App.css).
+const FALL = bezier(0.55, 0, 1, 0.45);
+const SETTLE = bezier(0.2, 0.8, 0.3, 1);
+// A tile tipping over (play-topple-*): from standing (`from` deg) down flat,
+// quickening as it falls, a small bounce back up (7deg) and settled; slid
+// back `back` as it goes - [angle, back].
+const toppleFrames = (from: number, bounce: number, back: number) => [
+  { at: 0, v: [from, 0], ease: FALL },
+  { at: 0.8, v: [0, back], ease: EASE_OUT },
+  { at: 0.9, v: [bounce, back], ease: EASE_IN },
+  { at: 1, v: [0, back] },
+];
+// Your tiles tipping back onto the table (play-topple-mine): from leaning
+// toward you (-22deg) to the felt's 32deg.
+const MINE_FRAMES = [
+  { at: 0, v: [-22], ease: FALL },
+  { at: 0.8, v: [32], ease: EASE_OUT },
+  { at: 0.9, v: [26], ease: EASE_IN },
+  { at: 1, v: [32] },
+];
+// A laid-down hand's i-th tile tipping over, timed by its wall's topple.
+const topple = (key: string, w: GLWall, i: number, from: number, bounce: number, back: number, pose: (angle: number, back: number) => Mat): Anim => ({
+  key,
+  delay: w.topple.at + i * w.topple.step,
+  dur: w.topple.dur,
+  pose: (k) => {
+    const [a, b] = keyframes(toppleFrames(from, bounce, back), k);
+    return pose(a, b);
+  },
+});
+
+// A toppling tile's shadow: only once it's nearly down.
+const landing = (q: Quad, key: string, w: GLWall, i: number): Quad => ({
+  ...q,
+  anim: { key: `${key}:shadow`, delay: w.topple.at + i * w.topple.step, dur: w.topple.dur, pose: (k) => (k < 0.7 ? scale(0) : q.m) },
+});
 
 // The spotlight's bubble: its tile (a size up on the table's), padded 0.38em round.
 export function bubbleBox(d: Dims) {
@@ -320,12 +372,16 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
         felt.push({ face: f, m: chain(translate(fx + 0.36 * Wt, edgeY0, 0), rotateX(90), translate(0, 0.5 * Wt, 0), scale(Wt)), shade: LIT, tint: 1 });
         return;
       }
-      // Laid down: tipped over away from its player, slid back 0.45em.
+      // Laid down: tipped over away from its player about its foot, slid
+      // back 0.45em (a winning tile, last, lying sideways).
       const isWin = i === tw.win;
-      const cx = isWin ? fx - 0.03 * Wt + 0.5 * Wt : fx + 0.36 * Wt;
+      const ox = fx - 0.03 * Wt + (isWin ? 0.5 : 0.39) * Wt;
+      const pose = (a: number, b: number) =>
+        chain(translate(ox, edgeY0 - b, 0), rotateX(a), translate(0, (isWin ? 0.39 : 0.5) * Wt, 0), rotateZ(isWin ? 90 : 0), scale(Wt));
+      const cx = ox;
       const cy = edgeY0 - 0.45 * Wt + (isWin ? 0.39 : 0.5) * Wt;
-      felt.push({ face: f, m: lying(cx, cy, Wt, isWin ? 90 : 0), shade: isWin ? TURNED : LIT, tint: 1 });
-      feltQuads.push(shadowAt(cx, cy, Wt, isWin ? 90 : 0));
+      felt.push({ face: f, m: pose(0, 0.45 * Wt), shade: isWin ? TURNED : LIT, tint: 1, anim: topple(`top:down:${i}`, top, i, 90, 7, 0.45 * Wt, pose) });
+      feltQuads.push(landing(shadowAt(cx, cy, Wt, isWin ? 90 : 0), `top:down:${i}`, top, i));
     });
     // Melds and bonus tiles from the right end (their left), each group's
     // tiles right to left.
@@ -388,11 +444,15 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
         return;
       }
       const isWin = i === win;
-      const cx = which === "left" ? fx - tb + (isWin ? 0.39 : 0.5) * Wg : fx + tb - (isWin ? 0.39 : 0.5) * Wg;
-      const cy = isWin ? fy - 0.03 * Wg + 0.5 * Wg : fy + 0.36 * Wg;
+      // Tipped over toward the middle about its outer foot (play-topple-left / -right).
+      const oy = isWin ? fy - 0.03 * Wg + 0.5 * Wg : fy + 0.36 * Wg;
       const rot = isWin ? 0 : 90 * dir;
-      felt.push({ face: f, m: lying(cx, cy, Wg, rot), shade: isWin ? LIT : TURNED, tint: 1 });
-      feltQuads.push(shadowAt(cx, cy, Wg, rot));
+      const reach = (isWin ? 0.39 : 0.5) * Wg;
+      const pose = (a: number, b: number) => chain(translate(fx - dir * b, oy, 0), rotateY(a), translate(dir * reach, 0, 0), rotateZ(rot), scale(Wg));
+      const cx = fx - dir * tb + dir * reach;
+      const cy = oy;
+      felt.push({ face: f, m: pose(0, tb), shade: isWin ? LIT : TURNED, tint: 1, anim: topple(`${which}:down:${i}`, S.w, i, -90 * dir, -7 * dir, tb, pose) });
+      feltQuads.push(landing(shadowAt(cx, cy, Wg, rot), `${which}:down:${i}`, S.w, i));
     });
     // The melds: in front of the wall, stepped in toward it till the hand's
     // laid down; columns from the player's left (the far end for the left
@@ -494,7 +554,22 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
         [x, y] = [col4x0 + (x - col4x0) * fit, midY + (y - midY) * fit];
       }
       const turned = (side === "left" || side === "right") !== riichi;
-      felt.push({ face: faceOf(t), m: lying(x, y, em, rot), shade: turned ? TURNED : LIT, tint: 1 });
+      const m = lying(x, y, em, rot);
+      // The newest discard drops onto the felt from a little above and settles (play-drop).
+      const drop =
+        pond.pinLast && i === pond.tiles.length - 1
+          ? {
+              key: `${side}:drop:${i}`,
+              delay: 0,
+              dur: 0.36,
+              pose: (k: number) =>
+                chain(
+                  translate(0, 0, keyframes([{ at: 0, v: [1.4 * em], ease: bezier(0.5, 0, 0.9, 0.6) }, { at: 0.72, v: [0], ease: bezier(0.2, 0.6, 0.4, 1) }, { at: 0.86, v: [0.12 * em], ease: bezier(0.5, 0, 0.8, 0.5) }, { at: 1, v: [0] }], k)[0]),
+                  m
+                ),
+            }
+          : undefined;
+      felt.push({ face: faceOf(t), m, shade: turned ? TURNED : LIT, tint: 1, anim: drop });
       feltQuads.push(shadowAt(x, y, em, rot));
       // The newest discard's pin: a gold point on its thrower's side.
       if (pond.pinLast && i === pond.tiles.length - 1) {
@@ -521,12 +596,15 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
     const sx = middle.x + (from === "left" ? -3.6 : from === "right" ? 3.6 : 0) * em;
     const sy = middle.y + (from === "top" ? -3.1 : from === "bottom" ? 3.1 : 0) * em;
     const { te, bw, bh } = bubbleBox(d);
-    // Stood up about its foot, lifted 1.3em, facing you.
-    const stand = chain(translate(sx, sy + bh / 2, 1.3 * em), rotateX(-32));
-    feltQuads.push({ kind: `bubble-${from}`, m: chain(stand, translate(0, -bh / 2, 0), scale(bw + 2 * em, bh + 2 * em, 1)) });
+    // Stood up about its foot, lifted 1.3em, facing you - popped in from
+    // half size (play-pop, 0.22s).
+    const stand = (s: number) => chain(translate(sx, sy + bh / 2, 1.3 * em), rotateX(-32), scale(s, s, 1));
+    const bubble = (s: number) => chain(stand(s), translate(0, -bh / 2, 0), scale(bw + 2 * em, bh + 2 * em, 1));
     // The tile in it, tipped back from its foot to show its thickness.
-    const foot = chain(stand, translate(0, -0.38 * em, 0));
-    felt.push({ face: faceOf(view.spotlight.tile), m: chain(foot, translate(0, 0, 0.55 * te), rotateX(30), translate(0, -0.5 * te, 0), scale(te)), shade: LIT, tint: 1 });
+    const tile = (s: number) => chain(stand(s), translate(0, -0.38 * em, 0), translate(0, 0, 0.55 * te), rotateX(30), translate(0, -0.5 * te, 0), scale(te));
+    const pop = (pose: (s: number) => Mat, part: string): Anim => ({ key: `spot:${view.spotlight!.key}:${part}`, delay: 0, dur: 0.22, pose: (k) => pose(0.5 + 0.5 * EASE_OUT(k)) });
+    feltQuads.push({ kind: `bubble-${from}`, m: bubble(1), anim: pop(bubble, "bubble") });
+    felt.push({ face: faceOf(view.spotlight.tile), m: tile(1), shade: LIT, tint: 1, anim: pop(tile, "tile") });
   }
 
   return { felt: { pieces: felt, quads: feltQuads }, hand: layoutHand(view, d), middle };
@@ -547,15 +625,26 @@ function layoutHand(view: GLTableView, d: Dims): Layout["hand"] {
   const M = 0.74 * H;
   const groups = [flowerGroup(mine.flowers, M), ...mine.melds.map((m) => meldGroup(m, mine.hideConcealed, true, M))].filter((g): g is Group => !!g);
   if (groups.length) {
+    const named = mine.flowers.length ? ["f", ...mine.melds.map((_, i) => `m${i}`)] : mine.melds.map((_, i) => `m${i}`);
     groups.forEach((g, gi) => {
       const pitch = 0.72 * g.em;
       const ty = foot - g.pad - 0.5 * g.em;
       g.slots.forEach((s, k) => {
         const cx = x + g.pad + pitch * (k + 0.5);
         // (Turned about the foot of its face, as your standing tiles are -
-        // the CSS's transform-origin for both.)
-        const flat = chain(translate(cx, ty, 0), about(0, 0.5 * g.em, THICK * g.em, rotateX(32)));
-        pieces.push({ face: s.face ?? BACK, m: s.face ? chain(flat, scale(g.em)) : chain(flat, translate(0, 0, THICK * g.em), rotateY(180), scale(g.em)), shade: LIT, tint: 1 });
+        // the CSS's transform-origin for both.) Laid down from standing
+        // as it's declared (play-topple-mine, 0.5s).
+        const pose = (a: number) => {
+          const flat = chain(translate(cx, ty, 0), about(0, 0.5 * g.em, THICK * g.em, rotateX(a)));
+          return s.face ? chain(flat, scale(g.em)) : chain(flat, translate(0, 0, THICK * g.em), rotateY(180), scale(g.em));
+        };
+        pieces.push({
+          face: s.face ?? BACK,
+          m: pose(32),
+          shade: LIT,
+          tint: 1,
+          anim: { key: `h:${named[gi]}:${k}`, delay: 0, dur: 0.5, pose: (t) => pose(keyframes(MINE_FRAMES, t)[0]) },
+        });
       });
       x += g.along + (gi < groups.length - 1 ? 0.12 * M : 0);
     });
@@ -578,16 +667,44 @@ function layoutHand(view: GLTableView, d: Dims): Layout["hand"] {
     const y0 = 0.2 * H - (t.selected ? 0.2 * H : 0);
     // Standing on its foot (at the face's depth), leant back 22deg; laid
     // flat at the felt's 32deg once your hand's down.
-    const pivot = (m: Mat) => chain(translate(x0, y0, 0), about(0.39 * H, H, THICK * H, m));
+    const block = (m: Mat) => {
+      const c = chain(translate(x0, y0, 0), about(0.39 * H, H, THICK * H, m), translate(0.39 * H, 0.5 * H, 0));
+      return t.tile ? chain(c, scale(H)) : chain(c, translate(0, 0, THICK * H), rotateY(180), scale(H));
+    };
+    // The tile you won with: lifted and shown, then laid flat and turned on
+    // its side (play-show-mine) - the rest of your hand tipping back onto
+    // the table after it, one by one (play-topple-mine).
+    const shown = ([ty, rx, tx2, ty2, rz]: number[]) => block(chain(translate(0, ty, 0), rotateX(rx), translate(tx2, ty2, 0), rotateZ(rz)));
+    const SHOW = [
+      { at: 0, v: [-0.5 * H, -22, 0, 0, 0], ease: bezier(0.2, 0.7, 0.4, 1) },
+      { at: 0.45, v: [-0.6 * H, -22, 0, 0, 0], ease: FALL },
+      { at: 0.85, v: [0, 32, -0.5 * H, -0.388 * H, 90], ease: EASE_OUT },
+      { at: 0.93, v: [0, 26, -0.5 * H, -0.388 * H, 90], ease: EASE_IN },
+      { at: 1, v: [0, 32, -0.5 * H, -0.388 * H, 90] },
+    ];
+    let anim: Anim | undefined;
     let m: Mat;
-    if (winner && t.winner) m = chain(pivot(chain(rotateX(32), translate(-0.5 * H, -0.388 * H, 0), rotateZ(90))), translate(0.39 * H, 0.5 * H, 0));
-    else m = chain(pivot(rotateX(winner ? 32 : -22)), translate(0.39 * H, 0.5 * H, 0));
+    if (winner && t.winner) {
+      m = shown(SHOW[4].v);
+      anim = { key: `h:show:${i}`, delay: 0.2, dur: 0.8, pose: (k) => shown(keyframes(SHOW, k)) };
+    } else if (winner) {
+      m = block(rotateX(32));
+      anim = { key: `h:down:${i}`, delay: 0.2 + mine.winLead + i * 0.07, dur: 0.6, pose: (k) => block(rotateX(keyframes(MINE_FRAMES, k)[0])) };
+    } else {
+      m = block(rotateX(-22));
+      // A tile just drawn slides in from the wall's side (play-draw).
+      if (t.drawn) anim = { key: `h:draw:${mine.drawKey}`, delay: 0, dur: 0.32, pose: (k) => chain(translate(0.5 * H * (1 - SETTLE(k)), -0.35 * H * (1 - SETTLE(k)), 0), m) };
+    }
     pieces.push({
       face: t.tile ? faceOf(t.tile) : BACK,
-      m: t.tile ? chain(m, scale(H)) : chain(m, translate(0, 0, THICK * H), rotateY(180), scale(H)),
+      m,
       shade: winner && t.winner ? TURNED : LIT,
       tint: t.barred ? 0 : 1,
       hit: i,
+      anim,
+      // Picked up and put back eased, not snapped (.play-hand-tile's
+      // transition - on its lift only: moved along the row, it jumps).
+      ease: winner ? undefined : { key: `h:${i}:${Math.round(x0)}`, dur: 0.16, curve: SETTLE },
     });
     // Hints: the bots' pick underlined in gold; a risky tile barred in red.
     if (t.hint) quads.push({ kind: "hint", m: chain(translate(x0 + 0.39 * H, y0 + H + 0.09 * H, 0), scale(0.78 * H * 0.64, 0.06 * H, 1)) });

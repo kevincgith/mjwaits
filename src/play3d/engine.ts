@@ -13,6 +13,7 @@
 
 import * as THREE from "three";
 import { THICK, TILE_H, TILE_R, TILE_W, type Layout, type Piece, type Quad, type QuadKind } from "./layout";
+import type { Mat } from "./mat";
 import type { Atlas } from "./textures";
 import { bar, bubble, pin, rowShadow, tileShadow } from "./textures";
 
@@ -225,29 +226,89 @@ class Space {
     this.root.add(m);
     this.marks.set(kind, m);
   }
-  set(pieces: Piece[], quads: Quad[], rects: Atlas["rects"]) {
+  // What's shown, and how it moves: when each animation began (by its
+  // key, from the frame it first appeared), and each eased move under way.
+  private pieces: Piece[] = [];
+  private quads = new Map<QuadKind, Quad[]>();
+  private starts = new Map<string, number>();
+  private eases = new Map<string, { from: THREE.Matrix4; to: Mat; start: number; dur: number; curve: (t: number) => number }>();
+  private shown = new Map<string, THREE.Matrix4>();
+
+  set(pieces: Piece[], quads: Quad[], rects: Atlas["rects"], now: number) {
     const n = Math.min(pieces.length, this.tiles.instanceMatrix.count);
-    const mat = new THREE.Matrix4();
+    this.pieces = pieces.slice(0, n);
+    const keys = new Set<string>();
+    const begin = (a: { key: string } | undefined) => {
+      if (!a) return;
+      keys.add(a.key);
+      if (!this.starts.has(a.key)) this.starts.set(a.key, now);
+    };
     for (let i = 0; i < n; i++) {
       const p = pieces[i];
-      this.tiles.setMatrixAt(i, mat.fromArray(p.m));
+      begin(p.anim);
+      // Moved: eased from where it shows now to its new place.
+      if (p.ease) {
+        keys.add(p.ease.key);
+        const was = this.eases.get(p.ease.key);
+        const target = was?.to ?? this.shown.get(p.ease.key)?.toArray();
+        if (target && target.some((v, j) => Math.abs(v - p.m[j]) > 1e-3)) {
+          const from = this.shown.get(p.ease.key)!.clone();
+          this.eases.set(p.ease.key, { from, to: p.m, start: now, dur: p.ease.dur, curve: p.ease.curve });
+        } else if (!was) this.shown.set(p.ease.key, new THREE.Matrix4().fromArray(p.m));
+      }
       const r = rects.get(p.face) ?? rects.get("back")!;
       this.face.setXYZW(i, r[0], r[1], r[2], r[3]);
       this.shade.setXY(i, p.shade[0], p.shade[1]);
       this.tint.setX(i, p.tint);
     }
     this.tiles.count = n;
-    this.hits = pieces.slice(0, n).map((p) => p.hit);
-    this.tiles.instanceMatrix.needsUpdate = true;
-    this.tiles.computeBoundingSphere();
+    this.hits = this.pieces.map((p) => p.hit);
     this.face.needsUpdate = this.shade.needsUpdate = this.tint.needsUpdate = true;
     for (const [kind, mesh] of this.marks) {
-      const mine = quads.filter((q) => q.kind === kind);
-      const k = Math.min(mine.length, mesh.instanceMatrix.count);
-      for (let i = 0; i < k; i++) mesh.setMatrixAt(i, mat.fromArray(mine[i].m));
-      mesh.count = k;
+      const mine = quads.filter((q) => q.kind === kind).slice(0, mesh.instanceMatrix.count);
+      mine.forEach((q) => begin(q.anim));
+      this.quads.set(kind, mine);
+      mesh.count = mine.length;
+    }
+    for (const k of [...this.starts.keys()]) if (!keys.has(k)) this.starts.delete(k);
+    for (const k of [...this.shown.keys()]) if (!keys.has(k)) (this.shown.delete(k), this.eases.delete(k));
+    this.tick(now);
+  }
+
+  // Everything where it is at `now` (ms); whether anything's still moving.
+  tick(now: number): boolean {
+    let moving = false;
+    const mat = new THREE.Matrix4();
+    const at = (item: Piece | Quad): Mat => {
+      const a = item.anim;
+      if (!a) return item.m;
+      const t = (now - (this.starts.get(a.key) ?? now)) / 1000 - a.delay;
+      if (t >= a.dur) return item.m;
+      moving = true;
+      return a.pose(Math.max(0, t) / a.dur);
+    };
+    this.pieces.forEach((p, i) => {
+      const e = p.ease && this.eases.get(p.ease.key);
+      if (e && !(p.anim && (now - (this.starts.get(p.anim.key) ?? 0)) / 1000 < p.anim.delay + p.anim.dur)) {
+        const k = Math.min(1, (now - e.start) / 1000 / e.dur);
+        const v = e.curve(k);
+        const [p0, q0, s0] = [new THREE.Vector3(), new THREE.Quaternion(), new THREE.Vector3()];
+        const [p1, q1, s1] = [new THREE.Vector3(), new THREE.Quaternion(), new THREE.Vector3()];
+        e.from.decompose(p0, q0, s0);
+        mat.fromArray(e.to).decompose(p1, q1, s1);
+        mat.compose(p0.lerp(p1, v), q0.slerp(q1, v), s0.lerp(s1, v));
+        if (k >= 1) this.eases.delete(p.ease!.key);
+        else moving = true;
+      } else mat.fromArray(at(p));
+      if (p.ease) this.shown.set(p.ease.key, mat.clone());
+      this.tiles.setMatrixAt(i, mat);
+    });
+    this.tiles.instanceMatrix.needsUpdate = true;
+    for (const [kind, mesh] of this.marks) {
+      (this.quads.get(kind) ?? []).forEach((q, i) => mesh.setMatrixAt(i, mat.fromArray(at(q))));
       mesh.instanceMatrix.needsUpdate = true;
     }
+    return moving;
   }
 }
 
@@ -319,16 +380,27 @@ export class Engine {
   }
 
   show(layout: Layout) {
-    this.felt.set(layout.felt.pieces, layout.felt.quads, this.rects);
-    this.hand.set(layout.hand.pieces, layout.hand.quads, this.rects);
+    const now = performance.now();
+    this.felt.set(layout.felt.pieces, layout.felt.quads, this.rects, now);
+    this.hand.set(layout.hand.pieces, layout.hand.quads, this.rects, now);
   }
 
+  // Drawn now - and every frame after while anything's moving.
+  private looping = 0;
   render() {
     const r = this.renderer;
+    const now = performance.now();
+    const moving = [this.felt.tick(now), this.hand.tick(now)].some(Boolean);
     r.clear();
     r.render(this.felt.scene, this.felt.camera);
     r.clearDepth();
     r.render(this.hand.scene, this.hand.camera);
+    if (moving && !this.looping) {
+      this.looping = requestAnimationFrame(() => {
+        this.looping = 0;
+        this.render();
+      });
+    }
   }
 
   // The tile of yours under a point of the canvas (its CSS pixels), if any:
@@ -340,11 +412,18 @@ export class Engine {
     const near = ndc(-1);
     const far = ndc(1);
     this.ray.ray.set(near, far.sub(near).normalize());
+    // (Either side: the blocks are drawn by their back faces - see tileMaterial.)
+    // (Where the tiles are now - one may have been mid-move when last set.)
+    space.tiles.computeBoundingSphere();
+    const material = space.tiles.material as THREE.Material;
+    material.side = THREE.DoubleSide;
     const hit = this.ray.intersectObject(space.tiles, false).find((h) => h.instanceId !== undefined && space.hits[h.instanceId] !== undefined);
+    material.side = THREE.BackSide;
     return hit ? space.hits[hit.instanceId!]! : null;
   }
 
   dispose() {
+    cancelAnimationFrame(this.looping);
     this.disposables.forEach((d) => d.dispose());
     this.renderer.dispose();
   }
