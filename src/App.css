@@ -8788,6 +8788,39 @@ html.playing body {
   box-shadow: none;
 }
 
+/* ---- Play 2.0: the tiles drawn by WebGL ----
+   One canvas over the whole table (above the felt, under your row's call
+   buttons and the bar), drawing every tile; the felt keeps only the
+   compass, set where the table's layout puts its middle, and your row only
+   its box, sized to the tiles drawn in it (see play3d/). */
+.play-gl {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.play-felt.is-gl {
+  display: block;
+}
+
+.play-felt.is-gl > .play-middle {
+  position: absolute;
+  translate: -50% -50%;
+}
+
+.play-hand.is-gl {
+  box-sizing: border-box;
+  padding: 0;
+}
+
+.play-hand.is-gl::before {
+  display: none;
+}
+
 /* ---- Bottom bar ---- */
 
 .play-bar {

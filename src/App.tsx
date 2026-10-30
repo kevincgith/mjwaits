@@ -10375,7 +10375,16 @@ function App() {
       setTestHandsOpen(true);
     }
   };
-  const logoPress = useTapAndLongPress(onLogoTap, NOOP);
+  // Play 2.0 (a long press on the logo): Play's start screen, and the same
+  // game on a table whose tiles are drawn by WebGL.
+  const [play2, setPlay2] = useState(false);
+  const openPlay2 = () => {
+    setPlay2(true);
+    setPlayScreen("home");
+    setPlayStarted(true);
+    setMode("play");
+  };
+  const logoPress = useTapAndLongPress(onLogoTap, openPlay2);
   // The phone tab bar's More menu (Trainer, Dice).
   const [moreOpen, setMoreOpen] = useState(false);
   const moreActive = TAB_ITEMS.some((item) => item.more && item.id === mode);
@@ -10388,6 +10397,7 @@ function App() {
     if (id === "play") {
       setPlayScreen("home");
       setPlayStarted(false);
+      setPlay2(false);
     }
     setMoreOpen(false);
     setMode(id);
@@ -10598,13 +10608,19 @@ function App() {
               tableFromPlay.current = true;
               setMode("table");
             }}
-            onExit={() => setPlayStarted(false)}
+            onExit={() => {
+              setPlayStarted(false);
+              setPlay2(false);
+            }}
+            edition={play2 ? "Play 2.0" : undefined}
           />
         ) : (
           <PlayPanel
+            key={play2 ? "webgl" : "dom"}
             fresh={playScreen === "new" || playScreen === "quick"}
             quick={playScreen === "quick"}
             onExit={() => setPlayScreen("home")}
+            renderer={play2 ? "webgl" : undefined}
           />
         ))}
       {!sharedScores && mode === "table" && (
