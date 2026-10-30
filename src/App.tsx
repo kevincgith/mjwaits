@@ -10004,9 +10004,9 @@ const TAB_ICON_PROPS = {
   strokeLinejoin: "round",
 } as const;
 
-// Play isn't in the tab bar while it's being worked on: a long-press on the
-// logo opens it (see logoPress in App).
-const TAB_ITEMS: { id: Exclude<AppMode, "play" | "table">; label: string; icon: ReactNode }[] = [
+// Phones fit five tabs, so the ones marked `more` fold into a More menu
+// there; wide screens show every tab in the row.
+const TAB_ITEMS: { id: Exclude<AppMode, "table">; label: string; icon: ReactNode; more?: true }[] = [
   {
     id: "scoring",
     label: "Scoring",
@@ -10015,28 +10015,6 @@ const TAB_ITEMS: { id: Exclude<AppMode, "play" | "table">; label: string; icon: 
         <path d="M7 4h10v5a5 5 0 0 1-10 0z" />
         <path d="M7 6H4.5a2.5 2.5 0 0 0 2.6 3.6M17 6h2.5a2.5 2.5 0 0 1-2.6 3.6" />
         <path d="M12 14v3M8.5 20h7M10 17h4l.5 3h-5z" />
-      </svg>
-    ),
-  },
-  {
-    id: "calculator",
-    label: "Calculator",
-    icon: (
-      <svg {...TAB_ICON_PROPS}>
-        <rect x="5" y="3" width="14" height="18" rx="2.5" />
-        <rect x="8" y="6" width="8" height="3.5" rx="0.8" />
-        <path d="M8.5 13h.01M12 13h.01M15.5 13h.01M8.5 16.5h.01M12 16.5h.01M15.5 16.5h.01" strokeWidth={2.6} />
-      </svg>
-    ),
-  },
-  {
-    id: "trainer",
-    label: "Trainer",
-    icon: (
-      <svg {...TAB_ICON_PROPS}>
-        <circle cx="12" cy="12" r="8.5" />
-        <circle cx="12" cy="12" r="5" />
-        <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none" />
       </svg>
     ),
   },
@@ -10052,7 +10030,43 @@ const TAB_ITEMS: { id: Exclude<AppMode, "play" | "table">; label: string; icon: 
     ),
   },
   {
+    id: "play",
+    label: "Play",
+    icon: (
+      <svg {...TAB_ICON_PROPS}>
+        {/* Two tiles leaning in to clink, sparks above where they meet. */}
+        <rect x="3" y="7" width="8" height="12" rx="1.8" transform="rotate(-14 7 19)" />
+        <rect x="13" y="7" width="8" height="12" rx="1.8" transform="rotate(14 17 19)" />
+        <path d="M12 2.5v2.2M9 3.5l1 1.6M15 3.5l-1 1.6" strokeWidth={1.5} />
+      </svg>
+    ),
+  },
+  {
+    id: "trainer",
+    more: true,
+    label: "Trainer",
+    icon: (
+      <svg {...TAB_ICON_PROPS}>
+        <circle cx="12" cy="12" r="8.5" />
+        <circle cx="12" cy="12" r="5" />
+        <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none" />
+      </svg>
+    ),
+  },
+  {
+    id: "calculator",
+    label: "Calculator",
+    icon: (
+      <svg {...TAB_ICON_PROPS}>
+        <rect x="5" y="3" width="14" height="18" rx="2.5" />
+        <rect x="8" y="6" width="8" height="3.5" rx="0.8" />
+        <path d="M8.5 13h.01M12 13h.01M15.5 13h.01M8.5 16.5h.01M12 16.5h.01M15.5 16.5h.01" strokeWidth={2.6} />
+      </svg>
+    ),
+  },
+  {
     id: "dice",
+    more: true,
     label: "Dice",
     icon: (
       <svg {...TAB_ICON_PROPS}>
@@ -10247,7 +10261,20 @@ function App() {
       setTestHandsOpen(true);
     }
   };
-  const logoPress = useTapAndLongPress(onLogoTap, () => setMode("play"));
+  const logoPress = useTapAndLongPress(onLogoTap, NOOP);
+  // The phone tab bar's More menu (Trainer, Dice).
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreActive = TAB_ITEMS.some((item) => item.more && item.id === mode);
+  const openTab = (id: Exclude<AppMode, "table">) => {
+    // Leaving a shared scores view: back to this phone's own app.
+    if (sharedScores) {
+      window.history.replaceState(null, "", window.location.pathname + window.location.search);
+      setSharedScores(null);
+    }
+    if (id === "play") setPlayScreen("home");
+    setMoreOpen(false);
+    setMode(id);
+  };
   const pickTestHand = (hand: TestHand) => {
     setTestHandRequest({ hand, nonce: Date.now() });
     setMode("scoring");
@@ -10274,20 +10301,13 @@ function App() {
           screens, a fixed translucent iOS-style tab bar on phones (see
           .tab-bar in App.css). Same buttons either way. */}
       <nav className="tab-bar" aria-label="Sections">
-        {TAB_ITEMS.map(({ id, label, icon }) => (
+        {TAB_ITEMS.map(({ id, label, icon, more }) => (
           <button
             key={id}
             type="button"
-            className={!sharedScores && mode === id ? "toggle-on" : undefined}
+            className={[!sharedScores && mode === id && "toggle-on", more && "tab-bar-more-item"].filter(Boolean).join(" ") || undefined}
             aria-pressed={!sharedScores && mode === id}
-            onClick={() => {
-              // Leaving a shared scores view: back to this phone's own app.
-              if (sharedScores) {
-                window.history.replaceState(null, "", window.location.pathname + window.location.search);
-                setSharedScores(null);
-              }
-              setMode(id);
-            }}
+            onClick={() => openTab(id)}
           >
             <span className="tab-bar-icon" aria-hidden="true">
               {icon}
@@ -10295,7 +10315,67 @@ function App() {
             <span className="tab-bar-label">{label}</span>
           </button>
         ))}
+        <button
+          type="button"
+          className={`tab-bar-more${!sharedScores && moreActive ? " toggle-on" : ""}`}
+          aria-haspopup="menu"
+          aria-expanded={moreOpen}
+          onClick={() => setMoreOpen((open) => !open)}
+        >
+          <span className="tab-bar-icon" aria-hidden="true">
+            <svg {...TAB_ICON_PROPS}>
+              <circle cx="5.5" cy="12" r="1.6" fill="currentColor" stroke="none" />
+              <circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none" />
+              <circle cx="18.5" cy="12" r="1.6" fill="currentColor" stroke="none" />
+            </svg>
+          </span>
+          <span className="tab-bar-label">More</span>
+        </button>
       </nav>
+      {moreOpen && (
+        <>
+          <div className="tab-more-backdrop" onClick={() => setMoreOpen(false)} />
+          <div className="tab-more-menu" role="menu">
+            {TAB_ITEMS.filter((item) => item.more).map(({ id, label, icon }) => (
+              <button
+                key={id}
+                type="button"
+                role="menuitem"
+                className={!sharedScores && mode === id ? "is-current" : undefined}
+                onClick={() => openTab(id)}
+              >
+                <span className="tab-bar-icon" aria-hidden="true">
+                  {icon}
+                </span>
+                <span>{label}</span>
+                {!sharedScores && mode === id && (
+                  <svg className="tab-more-check" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                )}
+              </button>
+            ))}
+            <button
+              type="button"
+              role="menuitem"
+              className="tab-more-secondary"
+              onClick={() => {
+                setMoreOpen(false);
+                setCreditsOpen(true);
+              }}
+            >
+              <span className="tab-bar-icon" aria-hidden="true">
+                <svg {...TAB_ICON_PROPS}>
+                  <circle cx="12" cy="12" r="8.5" />
+                  <path d="M12 11v5.5" />
+                  <circle cx="12" cy="7.8" r="1.2" fill="currentColor" stroke="none" />
+                </svg>
+              </span>
+              <span>Credits</span>
+            </button>
+          </div>
+        </>
+      )}
       {sharedScores && (
         <SharedScoresView
           snap={sharedScores}
@@ -10441,10 +10521,13 @@ function App() {
         </a>
         <span className="footer-fine">
           v{__BUILD_TIME__}
-          {" · "}
-          <button type="button" className="footer-link" onClick={() => setCreditsOpen(true)}>
-            Credits
-          </button>
+          {/* On phones Credits lives in the tab bar's More menu instead. */}
+          <span className="footer-credits">
+            {" · "}
+            <button type="button" className="footer-link" onClick={() => setCreditsOpen(true)}>
+              Credits
+            </button>
+          </span>
         </span>
       </footer>
       {debug.layoutOverlay && <LayoutOverlay />}
