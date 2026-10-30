@@ -119,6 +119,7 @@ export default function TableGL({
   const dims = useRef<Dims | null>(null);
   const viewRef = useRef(view);
   viewRef.current = view;
+  if (import.meta.env.DEV) (window as unknown as { __glView: GLTableView }).__glView = view;
   const onTileRef = useRef(onTile);
   onTileRef.current = onTile;
   const onPileRef = useRef(onPile);
