@@ -340,7 +340,13 @@ export class Engine {
     const near = ndc(-1);
     const far = ndc(1);
     this.ray.ray.set(near, far.sub(near).normalize());
+    // (Where the tiles are now; and either side - the blocks are drawn by
+    // their back faces, see tileMaterial.)
+    space.tiles.computeBoundingSphere();
+    const material = space.tiles.material as THREE.Material;
+    material.side = THREE.DoubleSide;
     const hit = this.ray.intersectObject(space.tiles, false).find((h) => h.instanceId !== undefined && space.hits[h.instanceId] !== undefined);
+    material.side = THREE.BackSide;
     return hit ? space.hits[hit.instanceId!]! : null;
   }
 
