@@ -45,6 +45,10 @@ export interface Dims {
   project?: (x: number, y: number, z: number) => { x: number; y: number; s: number };
   // How wide your row may run: the table's width (the screen, as it's held).
   rowRoom?: number;
+  // The felt's plane into your row's space so that it's drawn exactly where
+  // the felt's own view draws it (from the middle of the row's top edge):
+  // the two views differ only by where their perspective is from - a shear.
+  feltToHand?: Mat;
 }
 
 // A tile: its face ("m1", "flower2"... or "back" face down), where it lies,
@@ -235,6 +239,18 @@ const landing = (q: Quad, key: string, w: GLWall, i: number): Quad => ({
   ...q,
   anim: { key: `${key}:shadow`, delay: w.topple.at + i * w.topple.step, dur: w.topple.dur, pose: (k) => (k < 0.7 ? scale(0) : q.m) },
 });
+
+// The felt's plane into your row's space (from the middle of the row's top
+// edge, `handMid` and `handY` in the canvas), so a tile on the felt is drawn
+// in your row's view exactly where the felt's own view draws it: the views
+// differ only by where they're seen from - a point at depth z shows shifted
+// by the eyes' difference, z/d of it. `felt`: the felt into the canvas.
+export function feltToHand(felt: Mat, stage: { d: number; ox: number; oy: number }, row: { ox: number; oy: number }, handMid: number, handY: number): Mat {
+  const shear = scale(1);
+  shear[8] = -(stage.ox - row.ox) / stage.d;
+  shear[9] = -(stage.oy - row.oy) / stage.d;
+  return chain(translate(-handMid, -handY, 0), shear, felt);
+}
 
 // The spotlight's bubble: its tile (a size up on the table's), padded 0.38em round.
 export function bubbleBox(d: Dims) {
@@ -761,8 +777,8 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
     ok.forEach((f, k) => {
       const p = to[k];
       const rot = p.rot + half;
-      const start: FlightEnd = { x: a.x, y: a.y, along: a.along[k], rot: from[k].rot, em: P, alpha: from[k].standing ? -54 : 180, tilt: 0 };
-      const end: FlightEnd = { x: b.x, y: b.y, along: b.along[k], rot, em: T, alpha: f.tile ? 0 : 180, tilt: 0 };
+      const start: FlightEnd = { x: a.x, y: a.y, along: a.along[k], rot: from[k].rot, em: P, pitch: from[k].standing ? -54 : 0, flip: from[k].standing ? 0 : 180, tilt: 0 };
+      const end: FlightEnd = { x: b.x, y: b.y, along: b.along[k], rot, em: T, pitch: 0, flip: f.tile ? 0 : 180, tilt: 0 };
       felt.push({
         face: f.tile ? faceOf(f.tile) : BACK,
         m: f.tile ? lying(p.x, p.y, T, rot) : lyingDown(p.x, p.y, T, rot),
@@ -780,14 +796,18 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
 // how far along its giver's line it lies (`along`, from the line's middle),
 // which way the line runs (`rot`, as the tile's own turn - its x runs along
 // the line), its size, and how it's turned over / stood up about the line
-// (`alpha`) and tipped with the felt (`tilt`, in your row's space).
+// (`pitch`: stood up about its x, as your tiles stand; `flip`: turned over
+// about its y, as every face-down tile on the table is - so a back stays
+// the same way round from pile to row) and tipped with the felt (`tilt`,
+// in your row's space).
 interface FlightEnd {
   x: number;
   y: number;
   along: number;
   rot: number;
   em: number;
-  alpha: number;
+  pitch: number;
+  flip: number;
   tilt: number;
 }
 const near = (a: number, to: number) => a + 360 * Math.round((to - a) / 360);
@@ -797,7 +817,7 @@ const near = (a: number, to: number) => a + 360 * Math.round((to - a) / 360);
 // crosses or touches another; lifted (and a size up) at the top of the arc.
 function inFormation(a: FlightEnd, b: FlightEnd, lift: number): (v: number) => Mat {
   const rot1 = near(b.rot, a.rot);
-  const alpha0 = near(a.alpha, b.alpha);
+  const flip0 = near(a.flip, b.flip);
   return (v) => {
     const up = 1 + 0.08 * Math.sin(Math.PI * v);
     const em = (a.em + (b.em - a.em) * v) * up;
@@ -808,7 +828,8 @@ function inFormation(a: FlightEnd, b: FlightEnd, lift: number): (v: number) => M
       rotateZ(a.rot + (rot1 - a.rot) * v),
       translate((a.along + (b.along - a.along) * v) * up, 0, 0),
       translate(0, 0, half),
-      rotateX(alpha0 + (b.alpha - alpha0) * v),
+      rotateX(a.pitch + (b.pitch - a.pitch) * v),
+      rotateY(flip0 + (b.flip - flip0) * v),
       translate(0, 0, -half),
       scale(em)
     );
@@ -1003,9 +1024,10 @@ function layoutHand(view: GLTableView, d: Dims, spots: Partial<Record<GLSide, Sp
       ok.forEach((f, k) => {
         const seen = d.project!(from[k].x, from[k].y, 0);
         const P = 1.2 * d.tile * seen.s;
-        const start = chain(translate(width / 2 + seen.x, seen.y, 0), rotateX(32), rotateZ(from[k].rot), translate(0, 0, THICK * P), rotateY(180), scale(P));
-        const a: FlightEnd = { x: width / 2 + seenMid.x, y: seenMid.y, along: flat.along[k] * seenMid.s, rot: from[k].rot, em: 1.2 * d.tile * seenMid.s, alpha: 180, tilt: 32 };
-        const z: FlightEnd = { x: b.x, y: b.y, along: b.along[k], rot: 0, em: Rm, alpha: f.tile ? -22 : 158, tilt: 0 };
+        // Exactly where it lay, as your row's view draws it (see feltToHand).
+        const start = d.feltToHand ? chain(translate(width / 2, 0, 0), d.feltToHand, from[k].m) : chain(translate(width / 2 + seen.x, seen.y, 0), rotateX(32), rotateZ(from[k].rot), translate(0, 0, THICK * P), rotateY(180), scale(P));
+        const a: FlightEnd = { x: width / 2 + seenMid.x, y: seenMid.y, along: flat.along[k] * seenMid.s, rot: from[k].rot, em: 1.2 * d.tile * seenMid.s, pitch: 0, flip: 180, tilt: 32 };
+        const z: FlightEnd = { x: b.x, y: b.y, along: b.along[k], rot: 0, em: Rm, pitch: -22, flip: f.tile ? 0 : 180, tilt: 0 };
         pieces.push({
           face: f.tile ? faceOf(f.tile) : BACK,
           m: standing(placeAt[f.group][f.slot], f.tile),
@@ -1027,7 +1049,8 @@ function layoutHand(view: GLTableView, d: Dims, spots: Partial<Record<GLSide, Sp
       const start = chain(translate(x0, 0, 0), about(0.39 * H, H, THICK * H, rotateX(-22)), translate(0.39 * H, 0.5 * H, 0), scale(H));
       const seenAt = d.project(spot.x, spot.y - 0.5 * 1.2 * d.tile, 0);
       const P = 1.2 * d.tile * seenAt.s;
-      const end = chain(translate(width / 2 + seenAt.x, seenAt.y + 0.5 * P, 0), rotateX(-22), scale(P));
+      // Landing exactly where your pile's tile stands, as your row's view draws it.
+      const end = d.feltToHand ? chain(translate(width / 2, 0, 0), d.feltToHand, spot.m) : chain(translate(width / 2 + seenAt.x, seenAt.y + 0.5 * P, 0), rotateX(-22), scale(P));
       pieces.push({
         face: faceOf(given.tiles[j]),
         m: end,
