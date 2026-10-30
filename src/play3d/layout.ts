@@ -265,6 +265,10 @@ export function bubbleBox(d: Dims) {
   return { te, em: d.middle, bw: 0.78 * te + 0.76 * d.middle, bh: te + 0.76 * d.middle };
 }
 
+// What you take in 換牌, standing above your hand: nine tenths of your
+// tiles - nearer you than your pile on the felt, so bigger than it shows.
+export const SWAP_ROW = 0.9;
+
 export function layoutTable(view: GLTableView, d: Dims): Layout {
   const felt: Piece[] = [];
   const feltQuads: Quad[] = [];
@@ -696,10 +700,10 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
   // tiles taken flying to a row by the taker's hand.
   const P = 1.2 * T;
   const spots: Partial<Record<GLSide, Spot[]>> = {};
-  // Your pile: kept clear of the row of what you take (shown just above
-  // your hand) - up toward the compass as far as that needs, never into it,
-  // the whole swap long so it never moves mid-way.
-  const mineAt = Math.max(row4y0 + 0.5 * P - 0.1 * T, Math.min(row4y0 + 0.3 * T + 0.5 * P, (d.rowTop ?? Infinity) - 4 - 0.5 * P));
+  // Your pile: right under the compass (its tiles lean back toward it), so
+  // it's clear of the row of what you take, shown just above your hand -
+  // the whole swap long, so it never moves mid-way.
+  const mineAt = Math.min(row4y0 + 0.3 * P, (d.rowTop ?? Infinity) - 4 - 0.5 * P);
   // Your give: each place in your pile, and the given tile (by its order in the give) that went there.
   const givenAt = new Map<number, number>();
   if (view.mine.given && view.piles?.bottom) {
@@ -1021,7 +1025,7 @@ function layoutHand(view: GLTableView, d: Dims, spots: Partial<Record<GLSide, Sp
   // the piles (drawn from where they're seen on the felt).
   const row = view.rows.bottom;
   if (row) {
-    const Rm = 0.8 * H;
+    const Rm = SWAP_ROW * H;
     const long = row.groups.reduce((t, g) => t + g.tiles.length * 0.72 * Rm + 0.08 * Rm, 0) + 0.6 * Rm * (row.groups.length - 1);
     const foot = -0.25 * d.rem - 0.04 * Rm;
     let at = width / 2 - long / 2;

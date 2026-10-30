@@ -4090,7 +4090,7 @@ export function PlayPanel({
               )}
             </div>
             {/* What you've taken, in 3D above your hand, standing as it does. */}
-            {flights.some((f) => f.to === HUMAN) && <div className="play-hand play-swap-mine">{swapRow(HUMAN)}</div>}
+            {!gl && flights.some((f) => f.to === HUMAN) && <div className="play-hand play-swap-mine">{swapRow(HUMAN)}</div>}
             {gl ? (
               // The WebGL table: your row's box, sized to the tiles the WebGL table draws in it.
               <div ref={myRowRef} className="play-hand is-gl" />
