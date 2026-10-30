@@ -117,8 +117,10 @@ export default function TableGL({
   const [atlas, setAtlas] = useState<Atlas | null>(null);
   const engine = useRef<Engine | null>(null);
   const dims = useRef<Dims | null>(null);
+  const keptWidth = useRef(0);
   const viewRef = useRef(view);
   viewRef.current = view;
+  if (import.meta.env.DEV) (window as unknown as { __glView: GLTableView }).__glView = view;
   const onTileRef = useRef(onTile);
   onTileRef.current = onTile;
   const onPileRef = useRef(onPile);
@@ -161,7 +163,10 @@ export default function TableGL({
       const b = bubbleBox(dims.current);
       e.sizeBubbles(b.bw, b.bh, b.em, Math.min(3, window.devicePixelRatio || 1) * 1.5);
     }
+    // (In 換牌 your row keeps the widest it's been, so it never re-centres.)
+    dims.current.handMinWidth = viewRef.current.mine.sliding ? keptWidth.current : 0;
     const layout = layoutTable(viewRef.current, dims.current);
+    keptWidth.current = viewRef.current.mine.sliding ? Math.max(keptWidth.current, layout.hand.width) : 0;
     middle.style.left = `${layout.middle.x}px`;
     middle.style.top = `${layout.middle.y}px`;
     hand.style.width = `${layout.hand.width}px`;

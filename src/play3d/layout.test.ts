@@ -211,3 +211,39 @@ describe("a side seat's 換牌 row, alone in front of the wall", () => {
       else expect(Math.max(...row)).toBeLessThan(Math.min(...wall));
     });
 });
+
+describe("your give on the WebGL table", () => {
+  it("shows each tile's shadow on your pile only once the tile has landed", () => {
+    const v = take("right", 1);
+    const tiles = [1, 2, 3].map((rank) => ({ suit: "m" as const, rank }));
+    const mine = { slots: tiles, standing: true, picked: [], arriving: [], pickable: false };
+    const view = { ...v, piles: { bottom: mine }, flights: [], rows: {}, mine: { ...v.mine, given: { key: 7, tiles, from: [0, 1, 2], count: 16 } } };
+    const out = layoutTable(view, DIMS).felt;
+    const pile = out.pieces.filter((p) => p.face.startsWith("m"));
+    const shadows = out.quads.filter((q) => q.kind === "shadow" && q.anim?.key.startsWith("give:"));
+    expect(pile.every((p) => p.anim)).toBe(true);
+    expect(shadows.length).toBe(3);
+    // Hidden (no size) until it lands, with its tile.
+    for (const q of shadows) {
+      expect(q.anim!.dur).toBe(pile[0].anim!.dur);
+      expect(Math.hypot(...q.anim!.pose(0.5).slice(0, 3))).toBe(0);
+    }
+  });
+});
+
+describe("your row in 換牌", () => {
+  const tile = (rank: number) => ({ tile: { suit: "m" as const, rank }, drawn: false, selected: false, hint: false, danger: false, barred: false, winner: false, enabled: true });
+  it("keeps its width as you give - nothing re-centres - and closes its gaps once the given tiles are clear", () => {
+    const v = take("right", 1);
+    const before = { ...v, piles: null, flights: [], rows: {}, mine: { ...v.mine, tiles: Array.from({ length: 16 }, (_, i) => tile((i % 9) + 1)), sliding: true } };
+    const b = layoutTable(before, DIMS).hand;
+    const gave = [2, 5, 9];
+    const tiles = before.mine.tiles.filter((_, i) => !gave.includes(i));
+    const after = { ...before, mine: { ...before.mine, tiles, given: { key: 1, tiles: gave.map((i) => before.mine.tiles[i].tile), from: gave, count: 16 } } };
+    const a = layoutTable(after, { ...DIMS, handMinWidth: b.width }).hand;
+    expect(a.width).toBe(b.width);
+    const first = (h: typeof a) => h.pieces.find((p) => p.hit === 0)!.m[12];
+    expect(first(a)).toBeCloseTo(first(b), 3);
+    expect(a.pieces.filter((p) => p.hit !== undefined).every((p) => (p.ease?.delay ?? 0) > 0)).toBe(true);
+  });
+});

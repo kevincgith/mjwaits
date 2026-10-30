@@ -2332,8 +2332,11 @@ export function PlayPanel({
   // The order each seat's row lays its givers' stretches in (see the row flights).
   const [rowOrder, setRowOrder] = useState<Record<number, number[]>>({});
   useEffect(() => {
-    if (ghost && !flights.some((f) => f.ghost && !flown.has(f.id))) setGhost(null);
-  }, [ghost, flights, flown]);
+    // (The WebGL table flies them from the ghost itself, so it stays till
+    // they're down, not just off.)
+    const gone = gl ? landed : flown;
+    if (ghost && !flights.some((f) => f.ghost && !gone.has(f.id))) setGhost(null);
+  }, [ghost, flights, flown, landed, gl]);
   // How far apart a row of tiles lie, centre to centre (the closest two neighbours).
   const pitchOf = (row: ({ box: Box } | undefined)[]) => {
     const cs = row.flatMap((r) => (r ? [centreOf(r.box)] : []));
@@ -3641,7 +3644,9 @@ export function PlayPanel({
           tiles: handTiles.map((t, i) => ({
             tile: t === BLANK ? null : t,
             drawn: handView.drawnTile !== null && i === handTiles.length - 1,
-            selected: selected === i || swapHand.includes(i),
+            // (Your picks to give only while you're picking: once given, the
+            // places they name are other tiles' for a moment.)
+            selected: selected === i || (swapGiving && swapHand.includes(i)),
             hint: i === hintIndex,
             danger: hint && myTurn && dangerous.has(tileKey(t)),
             barred: isForbidden(t),

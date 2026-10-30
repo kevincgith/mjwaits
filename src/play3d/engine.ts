@@ -255,7 +255,7 @@ class Space {
         const target = was?.to ?? this.shown.get(p.ease.key)?.toArray();
         if (target && target.some((v, j) => Math.abs(v - p.m[j]) > 1e-3)) {
           const from = this.shown.get(p.ease.key)!.clone();
-          this.eases.set(p.ease.key, { from, to: p.m, start: now, dur: p.ease.dur, curve: p.ease.curve });
+          this.eases.set(p.ease.key, { from, to: p.m, start: now + (p.ease.delay ?? 0) * 1000, dur: p.ease.dur, curve: p.ease.curve });
         } else if (!was) this.shown.set(p.ease.key, new THREE.Matrix4().fromArray(p.m));
       }
       const r = rects.get(p.face) ?? rects.get("back")!;
@@ -293,7 +293,7 @@ class Space {
     this.pieces.forEach((p, i) => {
       const e = p.ease && this.eases.get(p.ease.key);
       if (e && !(p.anim && (now - (this.starts.get(p.anim.key) ?? 0)) / 1000 < p.anim.delay + p.anim.dur)) {
-        const k = Math.min(1, (now - e.start) / 1000 / e.dur);
+        const k = Math.min(1, Math.max(0, now - e.start) / 1000 / e.dur);
         const v = e.curve(k);
         const [p0, q0, s0] = [new THREE.Vector3(), new THREE.Quaternion(), new THREE.Vector3()];
         const [p1, q1, s1] = [new THREE.Vector3(), new THREE.Quaternion(), new THREE.Vector3()];
