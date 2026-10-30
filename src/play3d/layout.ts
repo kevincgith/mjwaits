@@ -59,7 +59,7 @@ export interface Piece {
   pick?: [GLSide, number];
   // Flying in from `from` (a 換牌 take): eased there over `dur` seconds,
   // lifted `lift` at the top of its arc.
-  fly?: { key: string; from: Mat; dur: number; lift: number };
+  fly?: { key: string; from: Mat; dur: number; lift: number; pose?: (v: number) => Mat };
   // Not drawn once this many seconds into its flight.
   hideAfter?: number;
   // Moving as Play's CSS animates it, or easing to where it now lies when
@@ -183,6 +183,13 @@ function wallFaces(w: GLWall): { faces: string[]; win: number } {
 }
 
 const sum = (ns: number[]) => ns.reduce((a, b) => a + b, 0);
+
+// A take's flights, by the taker and the giver's group they land in.
+const flightGroups = <F extends { to: string; group: number }>(fs: F[]): F[][] => {
+  const by = new Map<string, F[]>();
+  for (const f of fs) by.set(`${f.to}:${f.group}`, [...(by.get(`${f.to}:${f.group}`) ?? []), f]);
+  return [...by.values()];
+};
 
 // Play's easings (App.css).
 const FALL = bezier(0.55, 0, 1, 0.45);
@@ -724,21 +731,76 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
       })
     );
   }
-  // The tiles in the air (to your row: see layoutHand).
-  for (const f of view.flights) {
-    const from = spots[f.from]?.[f.place];
-    const p = f.to !== "bottom" ? places[f.to]?.[f.group]?.[f.slot] : undefined;
-    if (!from || !p) continue;
-    felt.push({
-      face: f.tile ? faceOf(f.tile) : BACK,
-      m: f.tile ? lying(p.x, p.y, T, p.rot) : lyingDown(p.x, p.y, T, p.rot),
-      shade: p.rot ? TURNED : LIT,
-      tint: 1,
-      fly: { key: `fly:${f.id}`, from: from.m, dur: 0.75, lift: 1.4 * T },
+  // The tiles in the air (to your row: see layoutHand), each giver's as a formation.
+  for (const fs of flightGroups(view.flights.filter((f) => f.to !== "bottom"))) {
+    const ok = fs.filter((f) => spots[f.from]?.[f.place] && places[f.to]?.[f.group]?.[f.slot]);
+    if (!ok.length) continue;
+    const from = ok.map((f) => spots[f.from]![f.place]);
+    const to = ok.map((f) => places[f.to]![f.group][f.slot]);
+    const a = alongLine(from, from[0].rot);
+    const b = alongLine(to, to[0].rot);
+    ok.forEach((f, k) => {
+      const p = to[k];
+      const start: FlightEnd = { x: a.x, y: a.y, along: a.along[k], rot: from[k].rot, em: P, alpha: from[k].standing ? -54 : 180, tilt: 0 };
+      const end: FlightEnd = { x: b.x, y: b.y, along: b.along[k], rot: p.rot, em: T, alpha: f.tile ? 0 : 180, tilt: 0 };
+      felt.push({
+        face: f.tile ? faceOf(f.tile) : BACK,
+        m: f.tile ? lying(p.x, p.y, T, p.rot) : lyingDown(p.x, p.y, T, p.rot),
+        shade: p.rot ? TURNED : LIT,
+        tint: 1,
+        fly: { key: `fly:${f.id}`, from: from[k].m, dur: 0.75, lift: 1.4 * T, pose: inFormation(start, end, 1.4 * T) },
+      });
     });
   }
 
   return { felt: { pieces: felt, quads: feltQuads }, hand: layoutHand(view, d, spots, givenAt), middle };
+}
+
+// A tile at one end of a 換牌 flight, for flying in formation: its centre,
+// how far along its giver's line it lies (`along`, from the line's middle),
+// which way the line runs (`rot`, as the tile's own turn - its x runs along
+// the line), its size, and how it's turned over / stood up about the line
+// (`alpha`) and tipped with the felt (`tilt`, in your row's space).
+interface FlightEnd {
+  x: number;
+  y: number;
+  along: number;
+  rot: number;
+  em: number;
+  alpha: number;
+  tilt: number;
+}
+const near = (a: number, to: number) => a + 360 * Math.round((to - a) / 360);
+// One tile of a formation, at `v` (0..1, eased) through its flight: the
+// giver's tiles move as one rigid line - turning together, spaced a little
+// more than a tile apart till they butt up in the row - so none ever
+// crosses or touches another; lifted (and a size up) at the top of the arc.
+function inFormation(a: FlightEnd, b: FlightEnd, lift: number): (v: number) => Mat {
+  const rot1 = near(b.rot, a.rot);
+  const alpha0 = near(a.alpha, b.alpha);
+  return (v) => {
+    const up = 1 + 0.08 * Math.sin(Math.PI * v);
+    const em = (a.em + (b.em - a.em) * v) * up;
+    const half = (THICK * em) / 2;
+    return chain(
+      translate(a.x + (b.x - a.x) * v, a.y + (b.y - a.y) * v, Math.sin(Math.PI * v) * lift),
+      rotateX(a.tilt + (b.tilt - a.tilt) * v),
+      rotateZ(a.rot + (rot1 - a.rot) * v),
+      translate((a.along + (b.along - a.along) * v) * up, 0, 0),
+      translate(0, 0, half),
+      rotateX(alpha0 + (b.alpha - alpha0) * v),
+      translate(0, 0, -half),
+      scale(em)
+    );
+  };
+}
+// A group's tiles laid along their line: each one's offset from the middle.
+function alongLine(ps: { x: number; y: number }[], rot: number): { x: number; y: number; along: number[] } {
+  const x = sum(ps.map((p) => p.x)) / ps.length;
+  const y = sum(ps.map((p) => p.y)) / ps.length;
+  const ux = Math.cos((rot * Math.PI) / 180);
+  const uy = Math.sin((rot * Math.PI) / 180);
+  return { x, y, along: ps.map((p) => (p.x - x) * ux + (p.y - y) * uy) };
 }
 
 // A pile's place on the felt: where its tile lies, and how.
@@ -892,17 +954,30 @@ function layoutHand(view: GLTableView, d: Dims, spots: Partial<Record<GLSide, Sp
         if (g.shown[k]) pieces.push({ face: t ? faceOf(t) : BACK, m: standing(placeAt[gi][k], t), shade: LIT, tint: 1, ease: { key: ident(t ? faceOf(t) : BACK), dur: SLIDE_S, curve: SLIDE } });
       })
     );
-    for (const f of view.flights) {
-      const from = f.to === "bottom" ? spots[f.from]?.[f.place] : undefined;
-      const x0 = placeAt[f.group]?.[f.slot];
-      if (!from || x0 === undefined || !d.project) continue;
-      const seen = d.project(from.x, from.y, 0);
-      const P = 1.2 * d.tile * seen.s;
-      // Lying as it's seen on the felt (tipped back its 32deg), face down unless it was yours, standing.
-      const start = from.standing
-        ? chain(translate(width / 2 + seen.x, seen.y, 0), rotateX(-22), scale(P))
-        : chain(translate(width / 2 + seen.x, seen.y, 0), rotateX(32), rotateZ(from.rot), translate(0, 0, THICK * P), rotateY(180), scale(P));
-      pieces.push({ face: f.tile ? faceOf(f.tile) : BACK, m: standing(x0, f.tile), shade: LIT, tint: 1, fly: { key: `fly:${f.id}`, from: start, dur: 0.75, lift: 1.4 * d.tile } });
+    // Flying in from the piles, each giver's as a formation - starting as
+    // they're seen on the felt (tipped back its 32deg, face down).
+    for (const fs of flightGroups(view.flights.filter((f) => f.to === "bottom"))) {
+      const ok = fs.filter((f) => spots[f.from]?.[f.place] && placeAt[f.group]?.[f.slot] !== undefined);
+      if (!ok.length || !d.project) continue;
+      const from = ok.map((f) => spots[f.from]![f.place]);
+      const flat = alongLine(from, from[0].rot);
+      const seenMid = d.project(flat.x, flat.y, 0);
+      const ends = ok.map((f) => ({ x: placeAt[f.group][f.slot] + 0.39 * Rm, y: foot - 0.5 * Rm }));
+      const b = alongLine(ends, 0);
+      ok.forEach((f, k) => {
+        const seen = d.project!(from[k].x, from[k].y, 0);
+        const P = 1.2 * d.tile * seen.s;
+        const start = chain(translate(width / 2 + seen.x, seen.y, 0), rotateX(32), rotateZ(from[k].rot), translate(0, 0, THICK * P), rotateY(180), scale(P));
+        const a: FlightEnd = { x: width / 2 + seenMid.x, y: seenMid.y, along: flat.along[k] * seenMid.s, rot: from[k].rot, em: 1.2 * d.tile * seenMid.s, alpha: 180, tilt: 32 };
+        const z: FlightEnd = { x: b.x, y: b.y, along: b.along[k], rot: 0, em: Rm, alpha: f.tile ? -22 : 158, tilt: 0 };
+        pieces.push({
+          face: f.tile ? faceOf(f.tile) : BACK,
+          m: standing(placeAt[f.group][f.slot], f.tile),
+          shade: LIT,
+          tint: 1,
+          fly: { key: `fly:${f.id}`, from: start, dur: 0.75, lift: 1.4 * d.tile, pose: inFormation(a, z, 1.4 * d.tile) },
+        });
+      });
     }
   }
   // Your give: each tile from where it stood (lifted, picked) in your hand

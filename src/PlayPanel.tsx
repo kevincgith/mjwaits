@@ -115,6 +115,7 @@ import { RecordSheet } from "./PlayRecord";
 import { isMuted, play as playSound, setMuted, wakeAudio, type Sound } from "./lib/sound";
 import { addHand, loadRecord, saveRecord, type Opponent } from "./lib/playRecord";
 import type { GLFlight, GLMine, GLPile, GLSwapRow, GLTableView, GLWall } from "./play3d/types";
+import { giverOrder, swapSlots } from "./play3d/swapOrder";
 import { loadLearnedModel, type LearnedModel } from "./lib/ml/browser";
 import { learnedClaim, learnedTurnMove, type LearnedBot } from "./lib/ml/policy";
 import { claimDecisionAction, encodeObservation, legalActions, turnMoveAction } from "./lib/ml/encode";
@@ -2502,12 +2503,24 @@ export function PlayPanel({
     // The WebGL table: each tile to its place in its giver's group, in its pile's
     // order; the WebGL table flies it there (play3d/), timed from here.
     if (gl) {
+      // (In the order that keeps a take's formations apart - see swapOrder.)
       const placed = new Map<number, Flight>();
       for (const f of pending) {
-        const group = pending.filter((x) => x.to === f.to && x.row!.group === f.row!.group).sort((a, b) => a.place - b.place);
-        placed.set(f.id, { ...f, path: [], delay: 0, row: { ...f.row!, place: group.indexOf(f) } });
+        const group = pending.filter((x) => x.to === f.to && x.row!.group === f.row!.group);
+        const order = swapSlots(SIDES[f.seat], SIDES[f.to], group.map((x) => x.place));
+        placed.set(f.id, { ...f, path: [], delay: 0, row: { ...f.row!, place: order.indexOf(f.place) } });
       }
       setFlights((all) => all.map((f) => placed.get(f.id) ?? f));
+      const takers = [...new Set(pending.map((f) => f.to))];
+      setRowOrder((o) => {
+        const next = { ...o };
+        for (const taker of takers) {
+          const theirs = flights.filter((f) => f.to === taker && f.row);
+          const givers = [...new Map(theirs.map((f) => [f.row!.group, { side: SIDES[f.seat], key: f.row!.group }])).values()];
+          next[taker] = giverOrder(SIDES[taker], givers);
+        }
+        return next;
+      });
       const quick = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
       for (const id of placed.keys()) {
         window.setTimeout(() => flightNews("flown", id), 0);

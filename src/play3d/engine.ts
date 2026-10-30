@@ -310,11 +310,25 @@ class Space {
         const v = k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
         const [p0, q0, s0] = [new THREE.Vector3(), new THREE.Quaternion(), new THREE.Vector3()];
         const [p1, q1, s1] = [new THREE.Vector3(), new THREE.Quaternion(), new THREE.Vector3()];
-        mat.fromArray(p.fly.from).decompose(p0, q0, s0);
-        mat.fromArray(p.m).decompose(p1, q1, s1);
-        p0.lerp(p1, v);
-        p0.z += Math.sin(Math.PI * v) * p.fly.lift;
-        mat.compose(p0, q0.slerp(q1, v), s0.lerp(s1, v));
+        // Between two poses, `u` of the way.
+        const blend = (a: Mat, b: Mat, u: number) => {
+          mat.fromArray(a).decompose(p0, q0, s0);
+          mat.fromArray(b).decompose(p1, q1, s1);
+          mat.compose(p0.lerp(p1, u), q0.slerp(q1, u), s0.lerp(s1, u));
+        };
+        if (p.fly.pose) {
+          // In formation - eased out of the pile at the start, and into its
+          // place at the end, from wherever the formation has it.
+          const f = p.fly.pose(v);
+          if (k < 0.15) blend(p.fly.from, f, k / 0.15);
+          else if (k > 0.85) blend(f, p.m, (k - 0.85) / 0.15);
+          else mat.fromArray(f);
+        } else {
+          blend(p.fly.from, p.m, v);
+          mat.decompose(p0, q0, s0);
+          p0.z += Math.sin(Math.PI * v) * p.fly.lift;
+          mat.compose(p0, q0, s0);
+        }
         moving = true;
       } else mat.fromArray(at(p));
       if (p.ease) this.shown.set(p.ease.key, mat.clone());
