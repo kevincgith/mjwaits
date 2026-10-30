@@ -940,7 +940,9 @@ function pastDeal(g: GameState, swaps: boolean): boolean {
   return swaps;
 }
 
-export function PlayPanel({ onExit, online, fresh }: { onExit: () => void; online?: OnlinePlay; fresh?: boolean }) {
+// `quick`: that new game is dealt at once, with the rules as they were last
+// set (or the defaults), rather than opening on the 開局 setup page.
+export function PlayPanel({ onExit, online, fresh, quick }: { onExit: () => void; online?: OnlinePlay; fresh?: boolean; quick?: boolean }) {
   const saved = useMemo(loadSaved, []);
   const resume = fresh ? null : saved;
   // A fresh table deals its first hand with the table's own rules - 截胡 or
@@ -1730,10 +1732,10 @@ export function PlayPanel({ onExit, online, fresh }: { onExit: () => void; onlin
   // 開局: a new game's rules, set before it's dealt (the menu during a game
   // keeps only what you'd change as you play). Opened for a new game - from
   // Play's home, or New game in the menu.
-  const [setupOpen, setSetupOpen] = useState(() => !!fresh && !online);
+  const [setupOpen, setSetupOpen] = useState(() => !!fresh && !online && !quick);
   const [confirmReset, setConfirmReset] = useState(false);
   // A game started from here (so Back from the setup page returns to it).
-  const ledgerStarted = useRef(!fresh);
+  const ledgerStarted = useRef(!fresh || !!quick);
   const [trackerOpen, setTrackerOpen] = useState(false);
   const [chowChoice, setChowChoice] = useState(false);
   // Choosing which 上 lasts only as long as the tile it's for: once the

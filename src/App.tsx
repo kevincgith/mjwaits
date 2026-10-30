@@ -10079,6 +10079,100 @@ const TAB_ITEMS: { id: Exclude<AppMode, "table">; label: string; icon: ReactNode
   },
 ];
 
+// The Play tab's own page, inside the normal app: quick ways in - carry
+// on, deal a game against the bots - and the full start screen, for the
+// rest (online tables among it). Each takes over the whole screen (and asks
+// a phone to turn sideways), so nothing opens until one's tapped.
+const PLAY_INTRO_TILES: Tile[] = [
+  { suit: "z", rank: 6 },
+  { suit: "z", rank: 5 },
+  { suit: "z", rank: 7 },
+];
+
+function PlayIntro({
+  onContinue,
+  onQuickStart,
+  onMore,
+}: {
+  onContinue: () => void;
+  onQuickStart: () => void;
+  onMore: () => void;
+}) {
+  const saved = savedSummary();
+  // A quick start ends the game in progress: the first tap asks.
+  const [confirmNew, setConfirmNew] = useState(false);
+  // On a phone the page is sized to the screen while this is up, so it
+  // doesn't scroll (see html.play-intro-shown).
+  useEffect(() => {
+    document.documentElement.classList.add("play-intro-shown");
+    return () => document.documentElement.classList.remove("play-intro-shown");
+  }, []);
+  return (
+    <section className="panel play-intro">
+      <div className="play-intro-felt">
+        <div className="play-intro-hero">
+          <div className="play-intro-tiles" aria-hidden="true">
+            {PLAY_INTRO_TILES.map((t, i) => (
+              <span key={i} className={`ph-tile is-${i}`}>
+                <TileGlyphSpan tile={t} />
+              </span>
+            ))}
+          </div>
+          <h2 className="play-intro-title">
+            <span lang="zh-Hant">麻雀</span>
+            <small>Play · 港式台灣牌 十六張</small>
+          </h2>
+        </div>
+
+        <div className="play-intro-menu">
+          {saved && (
+            <button type="button" className="ph-item is-primary" onClick={onContinue}>
+              <span className="ph-item-zh">繼續</span>
+              <span className="ph-item-text">
+                <strong>Continue</strong>
+                <small>
+                  {saved.round} · You {saved.you > 0 ? `+${saved.you}` : saved.you}
+                </small>
+              </span>
+              <IntroChevron />
+            </button>
+          )}
+          <button
+            type="button"
+            className={`ph-item${saved ? "" : " is-primary"}${confirmNew ? " is-armed" : ""}`}
+            onClick={() => (saved && !confirmNew ? setConfirmNew(true) : onQuickStart())}
+            onBlur={() => setConfirmNew(false)}
+          >
+            <span className="ph-item-zh">快開</span>
+            <span className="ph-item-text">
+              <strong>{confirmNew ? "Tap again to start over" : "Quick start"}</strong>
+              <small>{confirmNew ? "The game in progress ends" : "Deal now · you against three bots"}</small>
+            </span>
+            <IntroChevron />
+          </button>
+          <button type="button" className="ph-item" onClick={onMore}>
+            <span className="ph-item-zh">大廳</span>
+            <span className="ph-item-text">
+              <strong>Full game</strong>
+              <small>Your rules · online tables · record</small>
+            </span>
+            <IntroChevron />
+          </button>
+        </div>
+      </div>
+      <p className="play-intro-note">Play fills the screen. On a phone, turn it sideways.</p>
+    </section>
+  );
+}
+
+function IntroChevron() {
+  return (
+    <svg className="ph-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
+      <path d="M9 5l7 7-7 7" />
+    </svg>
+  );
+}
+
 function App() {
   // A table invite (?room=…) opens the Scores tab's 線上 on that table.
   const [joinCode] = useState(() => roomFromSearch(window.location.search));
@@ -10150,12 +10244,14 @@ function App() {
   // Play opens on its start screen; from there, the table - the saved game
   // ("resume") or a new one ("new") - or an online table, which comes back
   // to the start screen when you leave it.
-  const [playScreen, setPlayScreen] = useState<"home" | "resume" | "new">("home");
+  const [playScreen, setPlayScreen] = useState<"home" | "resume" | "new" | "quick">("home");
   const tableFromPlay = useRef(false);
   if (mode !== "play" && mode !== "table") lastNonPlayMode.current = mode;
   // The table fills the screen; html.playing hides the page around it - and
   // while it's up, it behaves like a game on a phone (see enterGameMode).
-  const playing = mode === "play" || mode === "table";
+  // Picking the Play tab shows PlayIntro first; its Start button sets this.
+  const [playStarted, setPlayStarted] = useState(false);
+  const playing = (mode === "play" && playStarted) || mode === "table";
   useEffect(() => {
     document.documentElement.classList.toggle("playing", playing);
     return playing ? enterGameMode() : undefined;
@@ -10271,7 +10367,10 @@ function App() {
       window.history.replaceState(null, "", window.location.pathname + window.location.search);
       setSharedScores(null);
     }
-    if (id === "play") setPlayScreen("home");
+    if (id === "play") {
+      setPlayScreen("home");
+      setPlayStarted(false);
+    }
     setMoreOpen(false);
     setMode(id);
   };
@@ -10462,7 +10561,19 @@ function App() {
       )}
       {!sharedScores &&
         mode === "play" &&
-        (playScreen === "home" ? (
+        (!playStarted ? (
+          <PlayIntro
+            onContinue={() => {
+              setPlayScreen("resume");
+              setPlayStarted(true);
+            }}
+            onQuickStart={() => {
+              setPlayScreen("quick");
+              setPlayStarted(true);
+            }}
+            onMore={() => setPlayStarted(true)}
+          />
+        ) : playScreen === "home" ? (
           <PlayHome
             saved={savedSummary()}
             onPlay={(fresh) => setPlayScreen(fresh ? "new" : "resume")}
@@ -10470,11 +10581,12 @@ function App() {
               tableFromPlay.current = true;
               setMode("table");
             }}
-            onExit={() => setMode(lastNonPlayMode.current)}
+            onExit={() => setPlayStarted(false)}
           />
         ) : (
           <PlayPanel
-            fresh={playScreen === "new"}
+            fresh={playScreen === "new" || playScreen === "quick"}
+            quick={playScreen === "quick"}
             onExit={() => setPlayScreen("home")}
           />
         ))}
