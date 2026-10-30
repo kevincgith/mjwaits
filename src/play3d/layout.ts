@@ -210,6 +210,8 @@ const SETTLE = bezier(0.2, 0.8, 0.3, 1);
 // Your hand rearranging in 換牌 (HAND_SLIDE_MS in PlayPanel).
 const SLIDE = bezier(0.3, 0.7, 0.2, 1);
 const SLIDE_S = 0.45;
+// Your pile's tiles stand up from the felt this far (54deg), leaning back as your hand's do.
+const MINE_LEAN = 54;
 // Your given tiles, down to your pile - lifted clear of the row by this far in.
 const GIVE_S = 0.6;
 const GIVE_CLEAR_S = 0.22;
@@ -735,13 +737,17 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
       // Yours stand up on the felt, leaning back as your hand does (54deg up
       // from it) - on their near foot, so they rest on the felt, not over it.
       const m = standing
-        ? chain(translate(x - 0.39 * P, y - 0.5 * P, 0), about(0.39 * P, (0.5 + TILE_H / 2) * P, 0, rotateX(-54)), translate(0.39 * P, 0.5 * P, 0), scale(P))
+        ? chain(translate(x - 0.39 * P, y - 0.5 * P, 0), about(0.39 * P, (0.5 + TILE_H / 2) * P, 0, rotateX(-MINE_LEAN)), translate(0.39 * P, 0.5 * P, 0), scale(P))
         : lyingDown(x, y, P, rot, lift);
       const spot = { x, y, rot, standing, m: standing ? m : lyingDown(x, y, P, rot) };
       if (slot === null) {
         // Taken: its place outlined on the felt.
-        const deep = standing ? THICK * P : 0.913 * P;
-        feltQuads.push({ kind: "gap", m: chain(translate(x, standing ? y + 0.5 * P - deep / 2 : y, 0.5), rotateZ(rot), scale(0.72 * P, deep, 1)) });
+        // (A standing tile met the felt along its near foot: its gap is that
+        // foot - from the edge it rested on, out as far as its thickness
+        // shows in front of it, leaning back.)
+        const foot = (0.5 + TILE_H / 2) * P;
+        const deep = standing ? THICK * P * Math.sin((MINE_LEAN * Math.PI) / 180) : 0.913 * P;
+        feltQuads.push({ kind: "gap", m: chain(translate(x, standing ? y - 0.5 * P + foot + deep / 2 : y, 0.5), rotateZ(rot), scale(0.72 * P, deep, 1)) });
         return spot;
       }
       if (pile.arriving.includes(i)) return spot;

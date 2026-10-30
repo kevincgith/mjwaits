@@ -247,3 +247,20 @@ describe("your row in 換牌", () => {
     expect(a.pieces.filter((p) => p.hit !== undefined).every((p) => (p.ease?.delay ?? 0) > 0)).toBe(true);
   });
 });
+
+describe("your 換牌 pile's gaps", () => {
+  it("outline where a taken tile met the felt, in line with the tiles still standing", () => {
+    const v = take("right", 1);
+    const mine = { slots: [{ suit: "m" as const, rank: 1 }, null, { suit: "m" as const, rank: 3 }], standing: true, picked: [], arriving: [], pickable: false };
+    const out = layoutTable({ ...v, piles: { bottom: mine }, flights: [], rows: {} }, DIMS).felt;
+    const tile = out.pieces.find((p) => p.face === "m1")!;
+    const gap = out.quads.find((q) => q.kind === "gap")!;
+    // The standing tile's foot: the edge it rests on, and its near top edge seen from above.
+    const rest = apply(tile.m, 0, 0.4565, 0);
+    const front = apply(tile.m, 0, 0.4565, 0.42);
+    expect(rest[2]).toBeCloseTo(0, 3);
+    const [cy, half] = [gap.m[13], gap.m[5] / 2];
+    expect(cy - half).toBeCloseTo(rest[1], 1);
+    expect(cy + half).toBeCloseTo(front[1], 1);
+  });
+});
