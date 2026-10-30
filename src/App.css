@@ -6355,8 +6355,12 @@ html.playing body {
 }
 
 /* Across, beside the hand: in line with the standing tiles (lying flat,
-   the melds would otherwise sit a little further out), and back down in
-   line with them as they're laid down. */
+   the melds would otherwise sit a little further out), and still in line
+   with them once they're laid down. */
+.play-seat-top.has-beside > .play-seat-side {
+  translate: 0 -0.1em;
+}
+
 .play-seat-top.has-beside:not(.is-down) > .play-seat-side {
   translate: 0 -0.45em;
 }
@@ -6857,7 +6861,9 @@ html.playing body {
   justify-content: flex-end;
 }
 
-.play-edge-top.has-drawn {
+/* (The winning tile, laid down with the rest, in the drawn tile's place:
+   the row no longer than it stood - so nothing beside it moves.) */
+.play-edge-top:is(.has-drawn, .has-win) {
   width: calc(var(--count, 0) * var(--edge-pitch) + 0.25em + var(--slot));
 }
 

@@ -364,7 +364,7 @@ function HandTilesView({
   } else faces = Array.from({ length: count }, () => UNSEEN);
   return (
     <span
-      className={`play-edge play-edge-${side}${drew && !down ? " has-drawn" : ""}${down ? " is-down" : ""}`}
+      className={`play-edge play-edge-${side}${drew && !down ? " has-drawn" : ""}${down ? " is-down" : ""}${mark >= 0 ? " has-win" : ""}`}
       style={{ "--count": faces.length, "--topple-at": `${topple.at}s`, "--topple-step": `${topple.step}s`, "--topple-dur": `${topple.dur}s` } as CSSProperties}
       aria-label={down ? undefined : `${faces.length} concealed tiles`}
     >
