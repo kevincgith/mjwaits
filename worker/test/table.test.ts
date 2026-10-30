@@ -858,3 +858,39 @@ describe("自摸 online", () => {
     expect(phase.result.from).toBe(null);
   });
 });
+
+describe("a claim window", () => {
+  it("doesn't wait on a run once someone's called a pung", async () => {
+    const code = await createTable();
+    const { p: host } = await join(code, "Kevin");
+    host.send({ t: "sit", seat: 1 });
+    const { p: other } = await join(code, "Amy");
+    other.send({ t: "sit", seat: 2 });
+    host.send({ t: "setup", settings: { multiWin: false, timer: 0, hold: 30, firstDealer: 0 } });
+    host.send({ t: "setBot", seat: 0, bot: "wall" });
+    host.send({ t: "setBot", seat: 3, bot: "wall" });
+    await host.table((s) => s.seats.every(Boolean));
+    host.send({ t: "start" });
+    await host.table((s) => s.phase === "playing");
+    // Seat 0 has thrown 5m: Kevin (next) could run it with 34m, Amy pung it with 55m.
+    const { step, pung } = await runInDurableObject(stubFor(code), (t: Table) => {
+      const tt = t as unknown as { load(): { game: GameState; decisions: unknown; step: number; botAt: number | null; deadline: number | null }; save(): void };
+      const rt = tt.load();
+      const g = rt.game;
+      g.players[1].hand = [3, 4].map((rank) => ({ suit: "m", rank }) as Tile).concat(g.players[1].hand.filter((x) => x.suit !== "m").slice(0, 11));
+      g.players[2].hand = [5, 5].map((rank) => ({ suit: "m", rank }) as Tile).concat(g.players[2].hand.filter((x) => x.suit !== "m").slice(0, 11));
+      g.phase = { kind: "claims", from: 0, tile: { suit: "m", rank: 5 } };
+      rt.decisions = [null, "waiting", "waiting", null];
+      rt.botAt = null;
+      rt.deadline = null;
+      tt.save();
+      return { step: rt.step, pung: claimOptions(g, 2).find((c) => c.kind === "pung") };
+    });
+    expect(pung).toBeDefined();
+    other.send({ t: "claim", step, claim: pung });
+    // Taken by Amy, without Kevin's answer.
+    const s = await host.table((s) => s.view?.phase.kind === "turn");
+    expect(s.view!.phase).toMatchObject({ kind: "turn", seat: 2 });
+    expect(host.errors.concat(other.errors)).toEqual([]);
+  });
+});

@@ -24,6 +24,7 @@ import { type CSSProperties, lazy, memo, Suspense, useEffect, useLayoutEffect, u
 import {
   applyTurnMove,
   barredClaims,
+  claimMatters,
   claimOptions,
   tileCensus,
   forbiddenDiscards,
@@ -2119,18 +2120,23 @@ export function PlayPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slowSeat, game]);
 
-  const humanClaims = game.phase.kind === "claims" && seated && waitedOn ? claimOptions(game, HUMAN) : [];
-  // Calls you'd have but for passing one up (過水, a passed pung): shown
-  // greyed while the discard's on the table, not taken.
-  const barredCalls = game.phase.kind === "claims" && seated && !autoplay ? barredClaims(game, HUMAN) : [];
-  const claimTile = game.phase.kind === "claims" ? game.phase.tile : null;
-
   // The bots' claims on the current discard are decided as soon as it lands
   // (they can't see what the human will do).
   const botDecisions = useMemo(
     () => (!online && game.phase.kind === "claims" ? Array.from({ length: SEATS }, (_, seat) => (seat === HUMAN ? null : botClaimFor(game, seat, bots[seat]!))) : null),
     [game, bots, online]
   );
+  // Your calls on it - none once a bot's call beats anything you could make
+  // (your run when one pungs): you're not waited for. (A learned bot's call
+  // comes later; online, the table says who it waits on.)
+  const outcalled =
+    !!botDecisions && !claimMatters(game, botDecisions.map((d, seat) => (seat === HUMAN || learnedBot(seat) ? undefined : d)), HUMAN);
+  const humanClaims = game.phase.kind === "claims" && seated && waitedOn && !outcalled ? claimOptions(game, HUMAN) : [];
+  // Calls you'd have but for passing one up (過水, a passed pung): shown
+  // greyed while the discard's on the table, not taken.
+  const barredCalls = game.phase.kind === "claims" && seated && !autoplay ? barredClaims(game, HUMAN) : [];
+  const claimTile = game.phase.kind === "claims" ? game.phase.tile : null;
+
 
   // Learned bots decide their claims through the network (async); a resolve
   // already under way for this discard ignores a second call.

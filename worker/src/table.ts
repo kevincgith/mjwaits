@@ -24,6 +24,7 @@
 import {
   applyTurnMove,
   botTurnMove,
+  claimMatters,
   claimOptions,
   dealHand,
   forbiddenDiscards,
@@ -559,6 +560,7 @@ export class Table extends Hub<TableMessage> {
         if (g.phase.kind !== "claims" || seat === g.phase.from || claimOptions(g, seat).length === 0) return null;
         return this.actsAlone(seat) ? this.aloneClaim(seat) : "waiting";
       });
+      this.unwait();
       if (timer && rt.decisions.includes("waiting")) rt.deadline = now + timer;
       // Only bots (or away players) answered, and one calls: the discard
       // stays on the table a moment before it's taken. (If someone was
@@ -652,6 +654,15 @@ export class Table extends Hub<TableMessage> {
     else if (move.kind === "concealedKong" || move.kind === "addedKong") rt.last = { kind: "kong", seat, concealed: move.kind === "concealedKong", ...by };
     this.collectBonuses();
     this.afterStep(before);
+  }
+
+  // A claim window's people whose answer can no longer change who takes the
+  // discard (a run, once someone's called a pung): passed, not waited for.
+  private unwait() {
+    const g = this.rt.game!;
+    const d = this.rt.decisions!;
+    const known = d.map((x) => (x === "waiting" ? undefined : x));
+    for (let s = 0; s < SEATS; s++) if (d[s] === "waiting" && !claimMatters(g, known, s)) d[s] = null;
   }
 
   private resolve() {
@@ -859,6 +870,7 @@ export class Table extends Hub<TableMessage> {
         const d = rt.decisions!;
         // Someone who's just become away, or is now played for, answers alone.
         for (let s = 0; s < SEATS; s++) if (d[s] === "waiting" && this.actsAlone(s)) d[s] = this.aloneClaim(s);
+        this.unwait();
         if (d.includes("waiting")) {
           if (rt.deadline !== null && now >= rt.deadline) d.forEach((x, s) => x === "waiting" && (d[s] = null)); // out of time: pass
           else return;
