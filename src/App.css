@@ -17637,3 +17637,72 @@ button.sc-stat:active {
   font-size: var(--text-sm);
   color: var(--text-tertiary);
 }
+
+/* Phones: the page fits the screen exactly - header, the felt card, the tab
+   bar - so there's nothing to scroll. Not overflow: hidden, which would stop
+   the keyboard scrolling the code box into view. svh: the screen with the
+   browser's bars showing, so it fits either way. */
+@media (max-width: 700px) {
+  html.play-intro-shown {
+    overscroll-behavior: none;
+  }
+
+  html.play-intro-shown .page {
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    height: 100svh;
+  }
+
+  html.play-intro-shown .build-version {
+    display: none;
+  }
+
+  .play-intro {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+  }
+
+  .play-intro-felt {
+    flex: 1;
+    min-height: 0;
+    align-content: center;
+    gap: clamp(0.6rem, 2.4svh, 1.4rem);
+  }
+
+  .play-intro-tiles {
+    font-size: clamp(2.4rem, 8svh, 4.4rem);
+  }
+
+  .play-intro-menu {
+    gap: clamp(0.4rem, 1.3svh, 0.6rem);
+  }
+
+  .play-intro-note {
+    margin-top: 0.5rem;
+  }
+}
+
+/* A short phone (an SE, or held sideways): the tiles, the tagline and the
+   note go, and the ways in tighten up - every one of them still fits. */
+@media (max-width: 700px) and (max-height: 640px) {
+  .play-intro-tiles,
+  .play-intro-title small,
+  .play-intro-note {
+    display: none;
+  }
+
+  .play-intro-felt {
+    padding-top: 1rem;
+  }
+
+  .play-intro-menu .ph-item {
+    padding-block: 0.45rem;
+  }
+
+  .play-intro-menu .ot-join {
+    padding-block: 0.35rem;
+  }
+}

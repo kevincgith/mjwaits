@@ -10109,6 +10109,13 @@ function PlayIntro({
   const [confirmNew, setConfirmNew] = useState(false);
   const [code, setCode] = useState("");
   const normalized = normalizeRoomCode(code);
+  // On a phone the page is sized to the screen while this is up, so it
+  // doesn't scroll (see html.play-intro-shown) - without stopping scrolling,
+  // which the keyboard needs to bring the code box into view.
+  useEffect(() => {
+    document.documentElement.classList.add("play-intro-shown");
+    return () => document.documentElement.classList.remove("play-intro-shown");
+  }, []);
   return (
     <section className="panel play-intro">
       <div className="play-intro-felt">
