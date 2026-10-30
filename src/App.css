@@ -17539,7 +17539,7 @@ button.sc-stat:active {
 /* ---- Play tab's page -------------------------------------------------------
    What the Play tab shows before the full-screen table (see PlayIntro): a
    felt card in Play's own look - the fanned 發中白, then its ways in, in the
-   start screen's lacquer and gold (.ph-item, .ot-join). */
+   start screen's lacquer and gold (.ph-item). */
 
 .play-intro-felt {
   /* The start screen's buttons size by these, and read their colours from
@@ -17610,8 +17610,7 @@ button.sc-stat:active {
   gap: 0.6rem;
 }
 
-.play-intro-menu .ph-item,
-.play-intro-menu .ot-join {
+.play-intro-menu .ph-item {
   animation: ph-rise 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
@@ -17623,14 +17622,6 @@ button.sc-stat:active {
   animation-delay: 0.1s;
 }
 
-.play-intro-menu > :nth-child(4) {
-  animation-delay: 0.15s;
-}
-
-.play-intro-menu > :nth-child(5) {
-  animation-delay: 0.2s;
-}
-
 .play-intro-note {
   margin: 0.6rem 0 0;
   text-align: center;
@@ -17639,9 +17630,8 @@ button.sc-stat:active {
 }
 
 /* Phones: the page fits the screen exactly - header, the felt card, the tab
-   bar - so there's nothing to scroll. Not overflow: hidden, which would stop
-   the keyboard scrolling the code box into view. svh: the screen with the
-   browser's bars showing, so it fits either way. */
+   bar - so there's nothing to scroll. svh: the screen with the browser's
+   bars showing, so it fits either way. */
 @media (max-width: 700px) {
   html.play-intro-shown {
     overscroll-behavior: none;
@@ -17700,9 +17690,5 @@ button.sc-stat:active {
 
   .play-intro-menu .ph-item {
     padding-block: 0.45rem;
-  }
-
-  .play-intro-menu .ot-join {
-    padding-block: 0.35rem;
   }
 }

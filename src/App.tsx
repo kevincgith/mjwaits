@@ -44,7 +44,6 @@ import { PlayPanel, savedSummary } from "./PlayPanel";
 import { PlayHome } from "./PlayHome";
 import { OnlineTable } from "./OnlineTable";
 import { inviteLaunch, startInstallAtInvite } from "./lib/onlineTable";
-import { normalizeRoomCode } from "@mjwaits/shared/protocol/limits";
 import { ScoresPanel, SharedScoresView, type RecordRequest, type ScoreHandRequest, type SeatingResult } from "./ScoresPanel";
 import { GAME_HASH, snapshotFromAnyHash, snapshotFromHash } from "./lib/scoreShare";
 import { roomFromSearch } from "./lib/online";
@@ -10081,9 +10080,8 @@ const TAB_ITEMS: { id: Exclude<AppMode, "table">; label: string; icon: ReactNode
 ];
 
 // The Play tab's own page, inside the normal app: quick ways in - carry
-// on, deal a game against the bots, open an online table or join one by its
-// code - and
-// the full start screen. Each of those takes over the whole screen (and asks
+// on, deal a game against the bots - and the full start screen, for the
+// rest (online tables among it). Each takes over the whole screen (and asks
 // a phone to turn sideways), so nothing opens until one's tapped.
 const PLAY_INTRO_TILES: Tile[] = [
   { suit: "z", rank: 6 },
@@ -10094,24 +10092,17 @@ const PLAY_INTRO_TILES: Tile[] = [
 function PlayIntro({
   onContinue,
   onQuickStart,
-  onJoin,
-  onOpenTable,
   onMore,
 }: {
   onContinue: () => void;
   onQuickStart: () => void;
-  onJoin: (code: string) => void;
-  onOpenTable: () => void;
   onMore: () => void;
 }) {
   const saved = savedSummary();
   // A quick start ends the game in progress: the first tap asks.
   const [confirmNew, setConfirmNew] = useState(false);
-  const [code, setCode] = useState("");
-  const normalized = normalizeRoomCode(code);
   // On a phone the page is sized to the screen while this is up, so it
-  // doesn't scroll (see html.play-intro-shown) - without stopping scrolling,
-  // which the keyboard needs to bring the code box into view.
+  // doesn't scroll (see html.play-intro-shown).
   useEffect(() => {
     document.documentElement.classList.add("play-intro-shown");
     return () => document.documentElement.classList.remove("play-intro-shown");
@@ -10159,41 +10150,11 @@ function PlayIntro({
             </span>
             <IntroChevron />
           </button>
-          <button type="button" className="ph-item" onClick={onOpenTable}>
-            <span className="ph-item-zh">開枱</span>
-            <span className="ph-item-text">
-              <strong>Open a table</strong>
-              <small>Online · invite friends with a code</small>
-            </span>
-            <IntroChevron />
-          </button>
-          <form
-            className="ot-join"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (normalized) onJoin(normalized);
-            }}
-          >
-            <span className="ph-item-zh">入座</span>
-            <input
-              value={code}
-              onChange={(e) => setCode(e.target.value.toUpperCase())}
-              placeholder="CODE"
-              aria-label="Table code to join"
-              maxLength={8}
-              autoCapitalize="characters"
-              autoComplete="off"
-              spellCheck={false}
-            />
-            <button type="submit" className="ot-go" disabled={!normalized}>
-              Join
-            </button>
-          </form>
           <button type="button" className="ph-item" onClick={onMore}>
             <span className="ph-item-zh">大廳</span>
             <span className="ph-item-text">
               <strong>Full game</strong>
-              <small>Set the rules · online · your record</small>
+              <small>Your rules · online tables · record</small>
             </span>
             <IntroChevron />
           </button>
@@ -10284,9 +10245,6 @@ function App() {
   // ("resume") or a new one ("new") - or an online table, which comes back
   // to the start screen when you leave it.
   const [playScreen, setPlayScreen] = useState<"home" | "resume" | "new" | "quick">("home");
-  // Picked on the Play tab: a table code to join, or "new" to open one -
-  // done as the online table opens.
-  const [onlineGo, setOnlineGo] = useState<string | null>(null);
   const tableFromPlay = useRef(false);
   if (mode !== "play" && mode !== "table") lastNonPlayMode.current = mode;
   // The table fills the screen; html.playing hides the page around it - and
@@ -10613,16 +10571,6 @@ function App() {
               setPlayScreen("quick");
               setPlayStarted(true);
             }}
-            onJoin={(code) => {
-              setOnlineGo(code);
-              tableFromPlay.current = true;
-              setMode("table");
-            }}
-            onOpenTable={() => {
-              setOnlineGo("new");
-              tableFromPlay.current = true;
-              setMode("table");
-            }}
             onMore={() => setPlayStarted(true)}
           />
         ) : playScreen === "home" ? (
@@ -10645,9 +10593,7 @@ function App() {
       {!sharedScores && mode === "table" && (
         <OnlineTable
           initialCode={tableCode}
-          go={onlineGo ?? undefined}
           onExit={() => {
-            setOnlineGo(null);
             if (tableFromPlay.current) {
               tableFromPlay.current = false;
               setPlayScreen("home");
