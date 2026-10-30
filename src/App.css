@@ -6329,13 +6329,41 @@ html.playing body {
 /* In front, the melds keep clear of where the hand lies once it's laid
    down at the end (a tile flat reaches a face's height toward the middle,
    standing only its thickness, less what it slides back - see
-   --topple-back) - set there from the start, so nothing moves when it falls. */
+   --topple-back) - room kept from the start, so nothing else moves when it
+   falls. Till then they sit in close to the standing tiles (--meld-in),
+   and step out into that room as the hand goes down. */
 .play-seat-top.is-front {
   gap: calc(0.3em + var(--play-wall-top) * 0.05);
+  --meld-in: calc(0.45em + var(--play-wall-top) * 0.05);
 }
 
 :is(.play-seat-left, .play-seat-right).is-front {
   gap: calc(0.3em + max(0px, var(--play-wall) * var(--wall-grow, 1) * 0.5 - 0.9rem));
+  --meld-in: calc(0.45em + max(0px, var(--play-wall) * var(--wall-grow, 1) * 0.5 - 0.9rem));
+}
+
+.play-seat-top.is-front:not(.is-down) > .play-seat-side {
+  translate: 0 calc(-1 * var(--meld-in));
+}
+
+.play-seat-left.is-front:not(.is-down) > .play-seat-side {
+  translate: calc(-1 * var(--meld-in)) 0;
+}
+
+.play-seat-right.is-front:not(.is-down) > .play-seat-side {
+  translate: var(--meld-in) 0;
+}
+
+/* Across, beside the hand: in line with the standing tiles (lying flat,
+   the melds would otherwise sit a little further out), and back down in
+   line with them as they're laid down. */
+.play-seat-top.has-beside:not(.is-down) > .play-seat-side {
+  translate: 0 -0.45em;
+}
+
+/* (Out as it goes down; back in at once for the next deal.) */
+.play-seat:is(.is-front, .has-beside).is-down > .play-seat-side {
+  transition: translate var(--topple-dur, 0.5s) cubic-bezier(0.55, 0, 1, 0.45) var(--topple-at, 0s);
 }
 
 .play-seat-side,
