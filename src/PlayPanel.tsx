@@ -106,6 +106,7 @@ import { getTalk, getYourVoice, isAloud, sayAloud, sayLineAloud, setAloud, setTa
 import { scoreView, type ResultView } from "@mjwaits/shared/engine/view";
 import { MYSTERY_BOT, REACTIONS, type Reaction, type TableClientMessage, type TableState } from "@mjwaits/shared/protocol/table";
 import { BLANK, seatState } from "./lib/seatState";
+import { PLAY_SAVE_KEY } from "./lib/playSaved";
 import { replayCached, withEvents, type ScoreEvent, type ScoreGame } from "@mjwaits/shared/engine/ledger";
 import { carriedOver, newPlayLedger, playEvents, uniqueNames } from "@mjwaits/shared/engine/playLedger";
 import { PlayScores } from "./scores/playScores";
@@ -181,6 +182,20 @@ type Side = (typeof SIDES)[number];
 // 0..1 from botTurnFor), with a little jitter, and a beat more after a
 // call while it re-plans its hand.
 const botDelay = (difficulty: number, afterCall: boolean) => 300 + difficulty * 1300 + Math.random() * 260 + (afterCall ? 300 : 0);
+// A bot works out its move this far into that pause (scaled with it), not
+// at once: thinking takes a while on a phone, and then the tile just thrown
+// has started to fall unhindered. Less than the shortest pause.
+const BOT_THINK_AFTER_MS = 250;
+// After the next frame's on screen (a frame, then a task): for work that
+// shouldn't hold up the frame that shows what just happened.
+function afterPaint(fn: () => void): () => void {
+  let task = 0;
+  const frame = requestAnimationFrame(() => (task = window.setTimeout(fn)));
+  return () => {
+    cancelAnimationFrame(frame);
+    window.clearTimeout(task);
+  };
+}
 // A discard nobody can claim moves on after a short pause - longer when a
 // bot had a call to weigh and passed (a tell, as at a real table).
 const PASS_DELAY_MS = 380;
@@ -230,7 +245,7 @@ const AUTOPLAY_NEXT_MS = 4500;
 const TIMER_CHOICES = [0, 10, 20] as const;
 type TimerSetting = (typeof TIMER_CHOICES)[number];
 
-const SAVE_KEY = "mjwaits.play";
+const SAVE_KEY = PLAY_SAVE_KEY;
 
 interface Saved {
   game: GameState;
@@ -265,16 +280,6 @@ function loadSaved(): Saved | null {
   }
 }
 
-// The game left on this phone, for the start screen's Continue.
-export interface SavedSummary {
-  round: string;
-  you: number; // your total
-}
-
-export function savedSummary(): SavedSummary | null {
-  const saved = loadSaved();
-  return saved && { round: roundLabel(saved.game), you: saved.totals[0] };
-}
 
 // How often each bot line has been said, on this device (see LineCounter).
 const LINES_KEY = "mjwaits.lines";
@@ -716,6 +721,7 @@ function Compass({ game, active, clock, idle, countdown }: { game: GameState; ac
       {SIDES.map((side, seat) => (
         <span key={side} className={`play-compass-q play-compass-${side}${active === seat ? " is-active" : ""}`}>
           {WIND_CHARS[seatWind(seat, game.dealer)]}
+          <span className="play-compass-lit">{WIND_CHARS[seatWind(seat, game.dealer)]}</span>
         </span>
       ))}
       <span className="play-compass-center">{clock ? <ClockNumber key={clock.endsAt} {...clock} /> : idle}</span>
@@ -1200,7 +1206,20 @@ export function PlayPanel({ onExit, online, fresh, quick }: { onExit: () => void
   const [scoresOpen, setScoresOpen] = useState(false);
   // 回顧: your discards this hand, each with the table just before it - for
   // the review on the result card. A new deal starts a new list.
-  const [decisions, setDecisions] = useState<Decision[]>([]);
+  // (Kept as the table's drawn - from an effect, it drew it all a second
+  // time after each of your discards.)
+  const movesSeen = useRef<{ game: GameState | null; decisions: Decision[] }>({ game: null, decisions: [] });
+  if (movesSeen.current.game !== game) {
+    const prev = movesSeen.current.game;
+    let decisions = movesSeen.current.decisions;
+    const mine = game.players[HUMAN].discards;
+    if (prev?.phase.kind === "over" && game.phase.kind !== "over") decisions = [];
+    // (Someone watching has no discards of their own to look back on.)
+    else if (prev && seated && prev.phase.kind === "turn" && prev.phase.seat === HUMAN && mine.length === prev.players[HUMAN].discards.length + 1)
+      decisions = [...decisions, { before: prev, tile: mine[mine.length - 1] }];
+    movesSeen.current = { game, decisions };
+  }
+  const decisions = movesSeen.current.decisions;
   const [reviewOpen, setReviewOpen] = useState(false);
   // Sound: woken by the first tap (iPhones need one); a clack whenever a
   // tile hits a pond, a softer tick as you draw.
@@ -1218,21 +1237,13 @@ export function PlayPanel({ onExit, online, fresh, quick }: { onExit: () => void
     if (count(game) > count(prev)) playSound("discard");
     else if (game.phase.kind === "turn" && game.phase.seat === HUMAN && game.phase.drawn && !(prev.phase.kind === "turn" && prev.phase.drawn)) playSound("draw");
   }, [game]);
+  // A new deal: the last hand's review closed.
   const beforeMove = useRef<GameState | null>(null);
   useEffect(() => {
     const prev = beforeMove.current;
     beforeMove.current = game;
-    if (!prev) return;
-    if (prev.phase.kind === "over" && game.phase.kind !== "over") {
-      setDecisions([]);
-      setReviewOpen(false);
-      return;
-    }
-    const mine = game.players[HUMAN].discards;
-    // (Someone watching has no discards of their own to look back on.)
-    if (seated && prev.phase.kind === "turn" && prev.phase.seat === HUMAN && mine.length === prev.players[HUMAN].discards.length + 1)
-      setDecisions((d) => [...d, { before: prev, tile: mine[mine.length - 1] }]);
-  }, [game, seated]);
+    if (prev?.phase.kind === "over" && game.phase.kind !== "over") setReviewOpen(false);
+  }, [game]);
   // Where the scores sheet is drawn: outside the table (in the app's own
   // colours), but turned with it on a phone held upright.
   const [sheetHost] = useState(() => {
@@ -1254,6 +1265,12 @@ export function PlayPanel({ onExit, online, fresh, quick }: { onExit: () => void
   // The side seats' columns both as wide as the wider seat (its melds and
   // flowers included), so a call on one side never pushes the middle over.
   const feltRef = useRef<HTMLDivElement>(null);
+  // (The table's fits below - bonusOut, topFront, seatsOut, pondFit - are
+  // run together further down, with the hand: these columns changing is
+  // one of the things they're run again for.)
+  const fitTable = useRef(() => {});
+  const fitsMounted = useRef(false);
+  const [sideCols, setSideCols] = useState(0);
   useLayoutEffect(() => {
     const felt = feltRef.current;
     if (!felt) return;
@@ -1262,69 +1279,83 @@ export function PlayPanel({ onExit, online, fresh, quick }: { onExit: () => void
     // the middle mustn't move for it (it fits in front of the hand).
     const fit = () => {
       if (felt.querySelector(".play-seat .play-swap-got")) return;
-      felt.style.setProperty("--play-side", `${Math.max(...seats.map((el) => el.offsetWidth))}px`);
+      const side = `${Math.max(...seats.map((el) => el.offsetWidth))}px`;
+      if (felt.style.getPropertyValue("--play-side") === side) return;
+      felt.style.setProperty("--play-side", side);
+      setSideCols((n) => n + 1);
     };
     fit();
     const watch = new ResizeObserver(fit);
     seats.forEach((el) => watch.observe(el));
     return () => watch.disconnect();
   }, []);
+  // A wall's tile size (its em) at a seat, off a probe put there for a
+  // moment - read once for the screen's size: the table's tile sizes change
+  // only when that does (see .play-felt).
+  const wallEms = useRef<{ screen: string; em: Record<string, number> }>({ screen: "", em: {} });
+  const wallEm = (seat: HTMLElement, side: string, size: "--play-wall" | "--play-wall-top") => {
+    const screen = `${window.innerWidth}x${window.innerHeight}`;
+    if (wallEms.current.screen !== screen) wallEms.current = { screen, em: {} };
+    const ems = wallEms.current.em;
+    const key = `${side} ${size}`;
+    if (ems[key] === undefined) {
+      const probe = document.createElement("span");
+      probe.style.cssText = `position:absolute;visibility:hidden;font-size:var(${size})`;
+      seat.appendChild(probe);
+      ems[key] = parseFloat(getComputedStyle(probe).fontSize);
+      probe.remove();
+    }
+    return ems[key];
+  };
   // Your row running long (melds, flowers and hand past the screen's
   // edge): the bonus tiles move out a row, onto the table above it. Judged
   // with them in the row, so it doesn't flip back and forth; the 3D row
   // spreads past its layout width toward its ends, hence the margin.
   const myRowRef = useRef<HTMLDivElement>(null);
   const [bonusOut, setBonusOut] = useState(false);
-  useLayoutEffect(() => {
+  // (Measured with the table's other fits, further down.)
+  const fitBonus = () => {
     const row = myRowRef.current;
-    // The room: your seat's whole width (the wrap itself is only as wide as the row).
-    const wrap = row?.closest<HTMLElement>(".play-me");
-    if (!row || !wrap) return;
-    const fit = () => {
-      const last = row.lastElementChild as HTMLElement | null;
-      const flowers = row.querySelector<HTMLElement>(".play-my-melds .play-flowers");
-      if (!last || !flowers || !flowers.childElementCount) return setBonusOut(false);
-      const gap = parseFloat(getComputedStyle(flowers.parentElement!).columnGap) || 0;
-      // Where the row ends as drawn (the 3D row spreads past its layout),
-      // against the seat's edge - with the bonus tiles back in the row,
-      // and always as with a tile just drawn, set apart at the end, so a
-      // draw and the discard after it never move them up and back.
-      const scale = last.getBoundingClientRect().width / (last.offsetWidth || 1);
-      const inRow = row.classList.contains("has-bonus-out") ? (flowers.offsetWidth + gap) * scale : 0;
-      // No tile drawn: one put there for a moment, unseen, to measure by
-      // (in 3D an estimate landed either side of the edge).
-      let probe: HTMLElement | null = null;
-      if (!row.querySelector(".play-hand-tile.is-drawn") && last.classList.contains("play-hand-tile")) {
-        probe = last.cloneNode(true) as HTMLElement;
-        probe.classList.add("is-drawn");
-        probe.style.visibility = "hidden";
-        probe.style.animation = "none";
-        probe.removeAttribute("id");
-        row.appendChild(probe);
-      }
-      // Where its two ends would be, bonus tiles in: the row is centred, so
-      // they'd push each end out by half their length - against the
-      // screen's own edges (the 3D row doesn't sit evenly in its seat).
-      const turned = turnedTable();
-      const lo = (r: DOMRect) => (turned ? r.top : r.left);
-      const hi = (r: DOMRect) => (turned ? r.bottom : r.right);
-      const firsts = [...row.querySelectorAll<HTMLElement>(":scope > .play-my-melds > :not(.play-flowers), :scope > .play-hand-tile")];
-      const start = Math.min(...firsts.map((e) => lo(e.getBoundingClientRect()))) - inRow / 2;
-      const end = hi((probe ?? last).getBoundingClientRect()) + inRow / 2;
-      probe?.remove();
-      const screen = turned ? window.innerHeight : window.innerWidth;
-      // Up once it runs past the screen; back down only with half a tile to
-      // spare at both ends - so it can't flip on a pixel (or loop, putting
-      // them back and taking them out again).
-      const spare = row.classList.contains("has-bonus-out") ? last.getBoundingClientRect().width / 2 : 0;
-      setBonusOut(start < spare || end > screen - spare);
-    };
-    fit();
-    const watch = new ResizeObserver(fit);
-    watch.observe(wrap);
-    watch.observe(row);
-    return () => watch.disconnect();
-  });
+    if (!row) return;
+    const last = row.lastElementChild as HTMLElement | null;
+    const flowers = row.querySelector<HTMLElement>(".play-my-melds .play-flowers");
+    if (!last || !flowers || !flowers.childElementCount) return setBonusOut(false);
+    const gap = parseFloat(getComputedStyle(flowers.parentElement!).columnGap) || 0;
+    // Where the row ends as drawn (the 3D row spreads past its layout),
+    // against the seat's edge - with the bonus tiles back in the row,
+    // and always as with a tile just drawn, set apart at the end, so a
+    // draw and the discard after it never move them up and back.
+    const lastWide = last.getBoundingClientRect().width;
+    const scale = lastWide / (last.offsetWidth || 1);
+    const inRow = row.classList.contains("has-bonus-out") ? (flowers.offsetWidth + gap) * scale : 0;
+    // Up once it runs past the screen; back down only with half a tile to
+    // spare at both ends - so it can't flip on a pixel (or loop, putting
+    // them back and taking them out again).
+    const spare = row.classList.contains("has-bonus-out") ? lastWide / 2 : 0;
+    // No tile drawn: one put there for a moment, unseen, to measure by
+    // (in 3D an estimate landed either side of the edge).
+    let probe: HTMLElement | null = null;
+    if (!row.querySelector(".play-hand-tile.is-drawn") && last.classList.contains("play-hand-tile")) {
+      probe = last.cloneNode(true) as HTMLElement;
+      probe.classList.add("is-drawn");
+      probe.style.visibility = "hidden";
+      probe.style.animation = "none";
+      probe.removeAttribute("id");
+      row.appendChild(probe);
+    }
+    // Where its two ends would be, bonus tiles in: the row is centred, so
+    // they'd push each end out by half their length - against the
+    // screen's own edges (the 3D row doesn't sit evenly in its seat).
+    const turned = turnedTable();
+    const lo = (r: DOMRect) => (turned ? r.top : r.left);
+    const hi = (r: DOMRect) => (turned ? r.bottom : r.right);
+    const firsts = [...row.querySelectorAll<HTMLElement>(":scope > .play-my-melds > :not(.play-flowers), :scope > .play-hand-tile")];
+    const start = Math.min(...firsts.map((e) => lo(e.getBoundingClientRect()))) - inRow / 2;
+    const end = hi((probe ?? last).getBoundingClientRect()) + inRow / 2;
+    probe?.remove();
+    const screen = turned ? window.innerHeight : window.innerWidth;
+    setBonusOut(start < spare || end > screen - spare);
+  };
   // The far seat's melds and bonus tiles along its row, beside its hand -
   // in front of it (as the side seats' are) only when they won't fit across
   // the table beside it: in front, they'd take the room the far pond grows
@@ -1336,7 +1367,7 @@ export function PlayPanel({ onExit, online, fresh, quick }: { onExit: () => void
   // in front of them (topOut).
   const [topFront, setTopFront] = useState(false);
   const [topOut, setTopOut] = useState(false);
-  useLayoutEffect(() => {
+  const fitTop = () => {
     const felt = feltRef.current;
     const seat = felt?.querySelector<HTMLElement>(".play-seat-top");
     const row = seat?.querySelector<HTMLElement>(".play-seat-side");
@@ -1346,11 +1377,7 @@ export function PlayPanel({ onExit, online, fresh, quick }: { onExit: () => void
     const gap = parseFloat(getComputedStyle(row).gap) || 0;
     const meldsLong = [...melds.children].reduce((n, m) => n + (m as HTMLElement).offsetWidth + gap, 0);
     const laid = meldsLong + (flowers?.childElementCount ? flowers.offsetWidth + gap : 0);
-    const probe = document.createElement("span");
-    probe.style.cssText = "position:absolute;visibility:hidden;font-size:var(--play-wall-top)";
-    seat.appendChild(probe);
-    const em = parseFloat(getComputedStyle(probe).fontSize);
-    probe.remove();
+    const em = wallEm(seat, "top", "--play-wall-top");
     // (The wall's own length - see .play-edge-top: a tile's room each, one
     // more for the drawn tile's slot, and the gap it stands apart by twice.)
     // (Beside it, the wall drops the blank that centres it at that end -
@@ -1407,14 +1434,14 @@ export function PlayPanel({ onExit, online, fresh, quick }: { onExit: () => void
     const front = laid > 0 && beside + laid > room && !out;
     if (front !== topFront) setTopFront(front);
     if (out !== topOut) setTopOut(out);
-  });
+  };
   // Another seat's melds and bonus tiles running longer than its room (a
   // side seat's hand; across, the table's width): the bonus tiles move out
   // a row, further toward the middle (as yours do) - and the melds, if still
   // too long, carry on in a second row (the CSS). Judged laid end to end,
   // so it doesn't flip back and forth - and the same once the hand's laid down.
   const [seatsOut, setSeatsOut] = useState<string[]>([]);
-  useLayoutEffect(() => {
+  const fitSeats = () => {
     const felt = feltRef.current;
     if (!felt) return;
     const cols = getComputedStyle(felt).gridTemplateColumns.split(" ").map(parseFloat);
@@ -1428,14 +1455,7 @@ export function PlayPanel({ onExit, online, fresh, quick }: { onExit: () => void
       // A side seat's room: a full wall's length (17 tiles of EDGE_PITCH) - not the
       // wall as drawn, which fits its hand - so it holds once the hand's
       // laid down too.
-      const wallLength = () => {
-        const probe = document.createElement("span");
-        probe.style.cssText = "position:absolute;visibility:hidden;font-size:var(--play-wall)";
-        seat.appendChild(probe);
-        const em = parseFloat(getComputedStyle(probe).fontSize);
-        probe.remove();
-        return 17 * EDGE_PITCH * em;
-      };
+      const wallLength = () => 17 * EDGE_PITCH * wallEm(seat, side, "--play-wall");
       const gap = parseFloat(getComputedStyle(row).gap) || 0;
       // The whole row laid end to end (as if its melds didn't wrap).
       const meldsLong = [...melds.children].reduce((n, m) => n + along(m as HTMLElement) + gap, 0);
@@ -1444,14 +1464,14 @@ export function PlayPanel({ onExit, online, fresh, quick }: { onExit: () => void
       return meldsLong + along(flowers) + gap > room;
     });
     if (next.join() !== seatsOut.join()) setSeatsOut(next);
-  });
+  };
   // Each pond grows from the compass toward its owner: when its rows would
   // reach that player's tiles (their melds and bonus tiles, standing hand,
   // or your row), it's set a size smaller to stop short of them - a size
   // only as small as needed, full size till then. Measured as drawn, in the
   // table's own directions (turned a quarter on a phone held upright).
   const [pondFit, setPondFit] = useState<Record<string, number>>({});
-  useLayoutEffect(() => {
+  const fitPonds = () => {
     const felt = feltRef.current;
     if (!felt) return;
     const turned = turnedTable();
@@ -1462,26 +1482,42 @@ export function PlayPanel({ onExit, online, fresh, quick }: { onExit: () => void
     };
     const TILES = ".tile-glyph, .play-back, .play-edge-tile";
     const next: Record<string, number> = {};
-    for (const side of ["top", "left", "right", "bottom"] as const) {
+    const ponds = (["top", "left", "right", "bottom"] as const).flatMap((side) => {
       // (The discards only - 換牌's piles keep their size.)
       const pond = felt.querySelector(`.play-pond-slot-${side} > .play-pond:not(.play-swap-pond)`);
       const cur = pondFit[side] ?? 1;
       if (!pond || !pond.childElementCount) {
         if (cur !== 1) next[side] = 1; // a new hand: full size again
-        continue;
+        return [];
       }
-      // (Its tiles' own extent: they reach a little past the pond's box.)
-      // A tile still dropping onto it is measured where it lands - in the
-      // air it sat higher, and the pond shrank till it landed, then grew back.
-      const falling = pond.querySelectorAll(".play-pond-tile.is-latest");
-      const held: [Animation, CSSNumberish | null][] = [];
-      falling.forEach((e) => e.getAnimations().forEach((a) => {
-        held.push([a, a.currentTime]);
-        a.currentTime = Number(a.effect?.getComputedTiming().endTime ?? 0);
-      }));
-      const mine = [...pond.querySelectorAll(TILES)].map(tb);
+      const owner = side === "bottom" ? document.querySelector(".play-me .play-hand") : felt.querySelector(`.play-seat-${side}`);
+      return [{ side, pond, cur, owner }];
+    });
+    // Every animation in `anims` run to its end while `read` measures, then
+    // set back - all at once, so the page is laid out again once, not once each.
+    const settled = <T,>(anims: Animation[], read: () => T) => {
+      const held = [...new Set(anims)].map((a): [Animation, CSSNumberish | null] => [a, a.currentTime]);
+      held.forEach(([a]) => (a.currentTime = Number(a.effect?.getComputedTiming().endTime ?? 0)));
+      const out = read();
       held.forEach(([a, t]) => (a.currentTime = t));
-      const S = { x0: Math.min(...mine.map((b) => b.x0)), x1: Math.max(...mine.map((b) => b.x1)), y0: Math.min(...mine.map((b) => b.y0)), y1: Math.max(...mine.map((b) => b.y1)) };
+      return out;
+    };
+    // (Its tiles' own extent: they reach a little past the pond's box.)
+    // A tile still dropping onto it is measured where it lands - in the
+    // air it sat higher, and the pond shrank till it landed, then grew back.
+    const mine = settled(
+      ponds.flatMap(({ pond }) => [...pond.querySelectorAll(".play-pond-tile.is-latest")].flatMap((e) => e.getAnimations())),
+      () => ponds.map(({ pond }) => [...pond.querySelectorAll(TILES)].map(tb))
+    );
+    // The owner's tiles measured where they come to rest - a tile just
+    // drawn slides in from above, and a tile picked to throw is lifted - so
+    // a draw or a tap never sizes a pond that nothing new has landed in.
+    const owned = settled(
+      ponds.flatMap(({ owner }) => owner?.getAnimations({ subtree: true }) ?? []),
+      () => ponds.map(({ owner }) => (owner ? [...owner.querySelectorAll(TILES)].filter((e) => !e.closest(".is-selected")).map(tb) : null))
+    );
+    ponds.forEach(({ side, cur }, k) => {
+      const S = { x0: Math.min(...mine[k].map((b) => b.x0)), x1: Math.max(...mine[k].map((b) => b.x1)), y0: Math.min(...mine[k].map((b) => b.y0)), y1: Math.max(...mine[k].map((b) => b.y1)) };
       // At full size: the shrink undone about its edge by the compass, so
       // what's measured never depends on the size it's set (it settled on
       // nothing, the owner's tiles in its way changing with it).
@@ -1492,24 +1528,11 @@ export function PlayPanel({ onExit, online, fresh, quick }: { onExit: () => void
       const [x0, x1] = grow(S.x0, S.x1, side === "left" ? "hi" : side === "right" ? "lo" : "mid");
       const [y0, y1] = grow(S.y0, S.y1, side === "top" ? "hi" : side === "bottom" ? "lo" : "mid");
       const P = { x0, x1, y0, y1 };
-      const owner = side === "bottom" ? document.querySelector(".play-me .play-hand") : felt.querySelector(`.play-seat-${side}`);
-      if (!owner) continue;
+      if (!owned[k]) return;
       // The owner's tiles in the pond's way (across its width), and where it meets them.
       const across = (b: ReturnType<typeof tb>) => (side === "top" || side === "bottom" ? b.x1 > P.x0 && b.x0 < P.x1 : b.y1 > P.y0 && b.y0 < P.y1);
-      // Measured where they come to rest - a tile just drawn slides in from
-      // above, and a tile picked to throw is lifted - so a draw or a tap
-      // never sizes a pond that nothing new has landed in.
-      const moving: [Animation, CSSNumberish | null][] = [];
-      owner.getAnimations({ subtree: true }).forEach((a) => {
-        moving.push([a, a.currentTime]);
-        a.currentTime = Number(a.effect?.getComputedTiming().endTime ?? 0);
-      });
-      const theirs = [...owner.querySelectorAll(TILES)]
-        .filter((e) => !e.closest(".is-selected"))
-        .map(tb)
-        .filter(across);
-      moving.forEach(([a, t]) => (a.currentTime = t));
-      if (!theirs.length) continue;
+      const theirs = owned[k].filter(across);
+      if (!theirs.length) return;
       const gap = 4;
       const [depth, free] =
         side === "top"
@@ -1521,9 +1544,14 @@ export function PlayPanel({ onExit, online, fresh, quick }: { onExit: () => void
               : [P.x1 - P.x0, Math.min(...theirs.map((b) => b.x0)) - gap - P.x0];
       const fit = Math.max(0.4, Math.min(1, free / Math.max(1, depth)));
       if (Math.abs(fit - cur) > 0.01) next[side] = Math.round(fit * 100) / 100;
-    }
+    });
     if (Object.keys(next).length) setPondFit((f) => ({ ...f, ...next }));
-  });
+  };
+  // The fits' first run, though, is here: at the table's first draw,
+  // before its depth is set (just below) - as always, so a game opened
+  // mid-hand sizes its ponds just as it did (each settles within a
+  // hundredth of where it was first measured from).
+  useLayoutEffect(() => fitTable.current(), []);
   // The table as deep as the screen allows at its one angle: its far edge
   // just under the name cards. It depends only on the screen, so it's
   // worked out when that changes size - never as the game goes on, so
@@ -2149,6 +2177,23 @@ export function PlayPanel({ onExit, online, fresh, quick }: { onExit: () => void
   const [landed, setLanded] = useState<Set<number>>(new Set());
   // Yours, given: flying from your hand down to your pile.
   const [giveFlights, setGiveFlights] = useState<Flight[]>([]);
+  // The flights' news - set off, landed - gathered for a moment and taken
+  // in together: a take's tiles all go (and land) at once, each saying so,
+  // and the table was drawn again for every tile.
+  const newsDue = useRef<{ flown: number[]; landed: number[]; timer: number }>({ flown: [], landed: [], timer: 0 });
+  const flightNews = useRef((kind: "flown" | "landed", id: number) => {
+    const due = newsDue.current;
+    due[kind].push(id);
+    if (due.timer) return;
+    due.timer = window.setTimeout(() => {
+      const { flown: off, landed: down } = due;
+      newsDue.current = { flown: [], landed: [], timer: 0 };
+      const added = (s: Set<number>, ids: number[]) => (ids.every((id) => s.has(id)) ? s : new Set([...s, ...ids]));
+      if (off.length) setFlown((s) => added(s, off));
+      if (down.length) setLanded((s) => added(s, down));
+    });
+  }).current;
+  useEffect(() => () => window.clearTimeout(newsDue.current.timer), []);
   const swapFlying = flights.length > 0;
   // The flights as they stand now (for a timer set earlier).
   const flightsNow = useRef(flights);
@@ -2778,17 +2823,27 @@ export function PlayPanel({ onExit, online, fresh, quick }: { onExit: () => void
       };
     }
     if (phase.kind === "turn" && (phase.seat !== HUMAN || autoplay)) {
-      // Decide now, so the pause can match how hard the choice was.
-      const { move: m, difficulty } = botTurnFor(game, phase.seat === HUMAN ? autoBot : bots[phase.seat]!);
-      delay = botDelay(difficulty, phase.drawn === null);
-      move = () => {
-        if (m.kind === "selfDraw") {
-          showBurst(phase.seat, "自摸");
-        } else if (m.kind === "discard" && m.riichi) {
-          showBurst(phase.seat, "叮");
-          sayRiichi(phase.seat);
-        } else if (m.kind !== "discard") showBurst(phase.seat, "槓");
-        advance(applyTurnMove(game, m));
+      // Decide a moment in, so the pause can match how hard the choice was
+      // - that moment taken off it, so the pace is as it was.
+      const factor = SPEEDS[speed].factor;
+      const asked = performance.now();
+      let timer = 0;
+      const think = window.setTimeout(() => {
+        const waited = performance.now() - asked;
+        const { move: m, difficulty } = botTurnFor(game, phase.seat === HUMAN ? autoBot : bots[phase.seat]!);
+        timer = window.setTimeout(() => {
+          if (m.kind === "selfDraw") {
+            showBurst(phase.seat, "自摸");
+          } else if (m.kind === "discard" && m.riichi) {
+            showBurst(phase.seat, "叮");
+            sayRiichi(phase.seat);
+          } else if (m.kind !== "discard") showBurst(phase.seat, "槓");
+          advance(applyTurnMove(game, m));
+        }, Math.max(0, botDelay(difficulty, phase.drawn === null) * factor - waited));
+      }, BOT_THINK_AFTER_MS * factor);
+      return () => {
+        window.clearTimeout(think);
+        window.clearTimeout(timer);
       };
     } else if (phase.kind === "turn" && game.players[HUMAN].riichi && !canWin(game.players[HUMAN])) {
       // Your locked 叮 hand throws the draw by itself.
@@ -2818,25 +2873,17 @@ export function PlayPanel({ onExit, online, fresh, quick }: { onExit: () => void
   // What the timer runs for: a move - or, on 換牌, your give or take (the
   // bots giving alongside you don't restart it).
   const timerFor: unknown = swapPhase ? [game.dealer, game.dealerStreak, game.roundWind, swapPhase.round, swapPhase.stage, swapPhase.taker].join() : game;
-  const [clock, setClock] = useState<Clock | null>(null);
-  const [countdown, setCountdown] = useState<Countdown | null>(null);
+  const [localClock, setClock] = useState<Clock | null>(null);
+  const [localCountdown, setCountdown] = useState<Countdown | null>(null);
   // 換牌's give and take always have SWAP_TIMER_S; a move, the turn timer.
   const onSwap = game.phase.kind === "swap";
   const limit = onSwap ? SWAP_TIMER_S : timer;
   // Online, the server's deadline (it moves for you when it passes).
   const deadline = online?.table.deadline ?? null;
-  useEffect(() => {
-    if (!online) return;
-    if (deadline === null) {
-      setClock(null);
-      setCountdown(null);
-      return;
-    }
-    const total = onSwap ? SWAP_TIMER_S : online.table.settings.timer;
-    setCountdown(total ? { total, endsAt: deadline } : null);
-    // (Never more than the timer: the table's deadline can add the swap's waits to it.)
-    setClock({ endsAt: deadline, cap: total || Infinity });
-  }, [online, deadline, onSwap]);
+  const onlineTotal = onSwap ? SWAP_TIMER_S : (online?.table.settings.timer ?? 0);
+  const countdown = !online ? localCountdown : deadline !== null && onlineTotal ? { total: onlineTotal, endsAt: deadline } : null;
+  // (Never more than the timer: the table's deadline can add the swap's waits to it.)
+  const clock = !online ? localClock : deadline !== null ? { endsAt: deadline, cap: onlineTotal || Infinity } : null;
   useEffect(() => {
     if (online) return;
     if (!limit || !deciding) {
@@ -2888,6 +2935,37 @@ export function PlayPanel({ onExit, online, fresh, quick }: { onExit: () => void
     return { sorted: sortTiles(tiles), drawnTile };
   }, [me.hand, drawn, myWinTile, comingToMe, swapSettling]); // eslint-disable-line react-hooks/exhaustive-deps
   const handTiles = useMemo(() => (handView.drawnTile ? [...handView.sorted, handView.drawnTile] : handView.sorted), [handView]);
+  // The table's fits - your bonus tiles out a row (fitBonus), across's
+  // melds beside or in front (fitTop), the others' bonus tiles out
+  // (fitSeats), the ponds' sizes (fitPonds) - measured again only when
+  // something on the table can have moved: a move, a swap's tiles, a tile
+  // picked, a fit itself, the side seats' columns (see --play-side) - or
+  // your row, your seat or the table changing size (the screen turned, say).
+  // Not on every draw of the table: a bubble, a burst or a pin's light
+  // moves nothing. Those that only read go first, then those that put
+  // something down to measure by.
+  fitTable.current = () => {
+    fitSeats();
+    fitTop();
+    fitBonus();
+    fitPonds();
+  };
+  useLayoutEffect(
+    () => {
+      if (!fitsMounted.current) return void (fitsMounted.current = true);
+      fitTable.current();
+    },
+    [game, flights, flown, landed, giveFlights, ghost, rowOrder, swapPicks, swapHand, swapRolling, swapGiving, rolling, selected, riichiArmed, myTurn, autoplay, seated, clock?.endsAt, countdown?.endsAt, bonusOut, topFront, topOut, seatsOut, pondFit, sideCols]
+  );
+  // (Your row's room: your seat's whole width - the row itself is only as wide as it is.)
+  useLayoutEffect(() => {
+    const felt = feltRef.current;
+    const row = myRowRef.current;
+    if (!felt || !row) return;
+    const watch = new ResizeObserver(() => fitTable.current());
+    [felt, row, row.closest(".play-me")].forEach((el) => el && watch.observe(el));
+    return () => watch.disconnect();
+  }, []);
   // Your hand rearranging (a swap's give, or its takes joining it): where
   // each tile showed just before - and any coming in from your swap row -
   // so every tile slides from there to its new place rather than jumping.
@@ -2957,7 +3035,17 @@ export function PlayPanel({ onExit, online, fresh, quick }: { onExit: () => void
     });
   }, [handTiles]);
 
-  const ratings = useMemo(() => (myTurn && hint && !me.riichi ? rateDiscardsFor(game, HUMAN, ADVISOR) : null), [game, myTurn, hint, me.riichi]);
+  // Hints: the Veteran's read of your discards - worked out once the frame
+  // that shows your draw is up (it takes a while on a phone), then shown.
+  // Till then, a read of this same turn if there's one: online the table's
+  // news brings a new copy of the game, nothing in it changed.
+  const rateFor = myTurn && hint && !me.riichi ? game : null;
+  const [rated, setRated] = useState<{ game: GameState; ratings: ReturnType<typeof rateDiscardsFor> } | null>(null);
+  useEffect(() => {
+    if (rateFor) return afterPaint(() => setRated({ game: rateFor, ratings: rateDiscardsFor(rateFor, HUMAN, ADVISOR) }));
+  }, [rateFor]);
+  const sameTurn = (a: GameState, b: GameState) => a.discardsMade === b.discardsMade && tilesKey(a.players[HUMAN].hand) === tilesKey(b.players[HUMAN].hand);
+  const ratings = rateFor && rated && (rated.game === rateFor || sameTurn(rated.game, rateFor)) ? rated.ratings : null;
   const bestDiscard = ratings?.[0]?.tile ?? null;
   // Hints underline one copy - the drawn tile when that's the pick.
   const hintIndex = bestDiscard
@@ -3176,25 +3264,31 @@ export function PlayPanel({ onExit, online, fresh, quick }: { onExit: () => void
   // drop, no pin, no bubble for most bot discards). Gone once it's claimed
   // or the hand ends. Online, a discard whose claim window passed unseen
   // still flashes in the bubble for a moment.
-  const pondSizes = useRef<number[] | null>(null);
-  const [latest, setLatest] = useState<{ seat: number; count: number; tile: Tile; id: number } | null>(null);
-  const [flash, setFlash] = useState<{ seat: number; tile: Tile; id: number } | null>(null);
-  useEffect(() => {
-    const sizes = game.players.map((p) => p.discards.length);
-    const prev = pondSizes.current;
-    pondSizes.current = sizes;
-    if (!prev) return;
-    const seat = sizes.findIndex((n, i) => n > prev[i]);
-    if (seat < 0) return;
-    const tile = game.players[seat].discards[sizes[seat] - 1];
-    const id = Date.now();
-    setLatest({ seat, count: sizes[seat], tile, id });
-    if (online && game.phase.kind !== "claims") {
-      setFlash({ seat, tile, id });
-      window.setTimeout(() => setFlash((f) => (f?.id === id ? null : f)), FLASH_MS);
+  // (Seen as the table's drawn - not after, from an effect, which drew it
+  // all a second time for every discard.)
+  const pondsSeen = useRef<{ sizes: number[] | null; latest: { seat: number; count: number; tile: Tile; id: number } | null; flash: { seat: number; tile: Tile; id: number } | null }>({ sizes: null, latest: null, flash: null });
+  const sizes = game.players.map((p) => p.discards.length);
+  const prevSizes = pondsSeen.current.sizes;
+  if (!prevSizes || sizes.some((n, i) => n !== prevSizes[i])) {
+    pondsSeen.current.sizes = sizes;
+    const seat = prevSizes ? sizes.findIndex((n, i) => n > prevSizes[i]) : -1;
+    if (seat >= 0) {
+      const tile = game.players[seat].discards[sizes[seat] - 1];
+      const id = Date.now();
+      pondsSeen.current.latest = { seat, count: sizes[seat], tile, id };
+      if (online && game.phase.kind !== "claims") pondsSeen.current.flash = { seat, tile, id };
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [game]);
+  }
+  const latest = pondsSeen.current.latest;
+  // Each flash gone a moment after its discard (a newer one stays its own while).
+  const [flashDone, setFlashDone] = useState(0);
+  const flashId = pondsSeen.current.flash?.id ?? 0;
+  useEffect(() => {
+    if (!flashId) return;
+    const id = window.setTimeout(() => setFlashDone(flashId), FLASH_MS);
+    return () => window.clearTimeout(id);
+  }, [flashId]);
+  const flash = flashId > flashDone ? pondsSeen.current.flash : null;
   const discardFrom =
     game.phase.kind === "over" ? null : latest && game.players[latest.seat].discards.length === latest.count ? latest.seat : null;
   // The finished hand, with its scores as the card shows them (online, as the server sent them).
@@ -3960,8 +4054,8 @@ export function PlayPanel({ onExit, online, fresh, quick }: { onExit: () => void
               key={f.id}
               flight={f}
               landed={landed.has(f.id)}
-              onStart={() => setFlown((s) => new Set(s).add(f.id))}
-              onLanded={() => setLanded((s) => (s.has(f.id) ? s : new Set(s).add(f.id)))}
+              onStart={() => flightNews("flown", f.id)}
+              onLanded={() => flightNews("landed", f.id)}
             />
           ))}
         </div>

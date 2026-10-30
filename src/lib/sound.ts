@@ -51,11 +51,21 @@ export const awakeAudio = (): AudioContext | null => (ctx && ctx.state === "runn
 // decoded ahead while it wakes).
 export const madeAudio = (): AudioContext | null => ctx;
 
-// A short burst of filtered noise: the click of tile on tile.
-function clack(a: AudioContext, at: number, { freq, q, length, gain }: { freq: number; q: number; length: number; gain: number }) {
-  const buffer = a.createBuffer(1, Math.ceil(a.sampleRate * length), a.sampleRate);
+// A short burst of filtered noise: the click of tile on tile. Each kind's
+// noise is made once and reused.
+const noises = new Map<string, AudioBuffer>();
+function noise(a: AudioContext, freq: number, length: number): AudioBuffer {
+  const key = `${freq}/${length}`;
+  let buffer = noises.get(key);
+  if (buffer && buffer.sampleRate === a.sampleRate) return buffer;
+  buffer = a.createBuffer(1, Math.ceil(a.sampleRate * length), a.sampleRate);
   const data = buffer.getChannelData(0);
   for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length) ** 3;
+  noises.set(key, buffer);
+  return buffer;
+}
+function clack(a: AudioContext, at: number, { freq, q, length, gain }: { freq: number; q: number; length: number; gain: number }) {
+  const buffer = noise(a, freq, length);
   const src = a.createBufferSource();
   src.buffer = buffer;
   const band = a.createBiquadFilter();

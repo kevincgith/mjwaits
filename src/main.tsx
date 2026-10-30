@@ -2,6 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
+import { warmLazyParts } from './lib/lazyParts'
 
 // Offline support and installing to the home screen (see public/sw.js).
 // Production only - in dev it would cache files that change on every save.
@@ -34,3 +35,6 @@ createRoot(document.getElementById('root')!).render(
     <App />
   </StrictMode>,
 )
+
+// Then Play, Scores and the rest, at idle (see lib/lazyParts.ts).
+warmLazyParts()

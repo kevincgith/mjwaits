@@ -9,7 +9,7 @@ import { PATTERN_EXAMPLES } from "./lib/patternExamples";
 import { parseScoringHand, PATTERNS, scoreParsedHand, waitsBeforeWin, type GameContext, type TaiRules } from "@mjwaits/shared/engine/scoring";
 import { PATTERN_CATALOG } from "@mjwaits/shared/engine/taiCatalog";
 import { exampleRulesFor } from "@mjwaits/shared/engine/taiRules";
-import { TEST_HAND_BASE_CONTEXT } from "@mjwaits/shared/engine/testHands";
+import { TEST_HAND_BASE_CONTEXT } from "./lib/testHandContext";
 
 const WINDS = ["東", "南", "西", "北"];
 

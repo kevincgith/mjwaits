@@ -19,14 +19,16 @@ test.afterEach(async ({ page }) => {
 // by what they say. Each step checks the tap did what it should - so a
 // button that's there but does nothing fails here, not on someone's phone.
 
-// The app's menu (held on the logo), then one of its items.
+// The Play tab, its Full game (the start screen), then one of its items.
 async function openApp(page: Page, item: string) {
   await page.goto("./");
-  const box = (await page.locator(".app-logo").boundingBox())!;
-  await page.mouse.move(box.x + 10, box.y + 10);
-  await page.mouse.down();
-  await page.locator(".ph-item").first().waitFor();
-  await page.mouse.up();
+  // (A tap in the first moment after load can go unheeded: tapped again till it takes.)
+  const tab = page.getByRole("button", { name: "Play", exact: true });
+  await expect(async () => {
+    await tab.click();
+    await expect(tab).toHaveAttribute("aria-pressed", "true", { timeout: 1000 });
+  }).toPass();
+  await page.locator("button", { hasText: "Full game" }).first().click();
   await page.locator(".ph-item", { hasText: item }).click();
 }
 

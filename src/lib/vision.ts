@@ -15,11 +15,12 @@
 //    (tile-detector.onnx), ~13 MB + ~3.4 MB. Imported from the "/wasm"
 //    subpath rather than the package root, whose bundle registers every
 //    backend and pulls in a binary roughly 2x the size.
-// The GPU build is only ever loaded via a dynamic import, so a device
-// without WebGPU never downloads it. Both models come from the same
+// Both builds are loaded via a dynamic import, the first time a scan needs
+// one, so the app's first screen doesn't wait on them - and a device
+// without WebGPU never downloads the GPU one. Both models come from the same
 // trained checkpoint (see training/README.md), so they find the same tiles
 // up to 8-bit rounding.
-import * as ortWasm from "onnxruntime-web/wasm";
+import type * as ortWasm from "onnxruntime-web/wasm";
 import {
   allTileKinds,
   COMPLETE_SIZE,
@@ -31,6 +32,7 @@ import {
   type Suit,
   type Tile,
 } from "@mjwaits/shared/engine/mahjong";
+import { modelUrl } from "./modelUrl";
 
 export const IMG_SIZE = 640;
 const CONFIDENCE_THRESHOLD = 0.4;
@@ -130,7 +132,7 @@ function emitProgress(p: ScanProgress) {
 }
 
 async function fetchModelBuffer(file: string, onProgress?: (loaded: number, total: number | null) => void): Promise<ArrayBuffer> {
-  const response = await fetch(`${import.meta.env.BASE_URL}model/${file}`);
+  const response = await fetch(modelUrl(file));
   if (!response.ok) throw new Error(`Could not download the tile detector (${response.status})`);
   if (!response.body) return response.arrayBuffer();
 
@@ -157,10 +159,13 @@ async function fetchModelBuffer(file: string, onProgress?: (loaded: number, tota
 const reportDownload = (loaded: number, total: number | null) => emitProgress({ phase: "downloading-model", loaded, total });
 
 async function createWasmEngine(): Promise<Engine> {
+  const engine = import("onnxruntime-web/wasm");
+  engine.catch(() => {}); // awaited below, after the model
   const buffer = await fetchModelBuffer("tile-detector.onnx", reportDownload);
+  const ort = await engine;
   emitProgress({ phase: "initializing" });
-  const session = await ortWasm.InferenceSession.create(buffer, { executionProviders: ["wasm"] });
-  return { ort: ortWasm, session, backend: "wasm" };
+  const session = await ort.InferenceSession.create(buffer, { executionProviders: ["wasm"] });
+  return { ort, session, backend: "wasm" };
 }
 
 // The GPU engine, or null if this browser can't give us one - no WebGPU at

@@ -40,14 +40,13 @@ import {
   type TileStyle,
 } from "./tileArt";
 import { BonusGlyphSpan, TileGlyphSpan } from "./TileGlyphs";
-import { PlayPanel, savedSummary } from "./PlayPanel";
-import { PlayHome } from "./PlayHome";
-import { OnlineTable } from "./OnlineTable";
+import { OnlineTable, PlayHome, PlayPanel, ScoresPanel, SharedScoresView, TaiRulesSheet } from "./LazyParts";
+import { savedSummary } from "./lib/playSaved";
+import { loadTestHands } from "./lib/lazyParts";
 import { inviteLaunch, startInstallAtInvite } from "./lib/onlineTable";
-import { ScoresPanel, SharedScoresView, type RecordRequest, type ScoreHandRequest, type SeatingResult } from "./ScoresPanel";
+import type { RecordRequest, ScoreHandRequest, SeatingResult } from "./ScoresPanel";
 import { GAME_HASH, snapshotFromAnyHash, snapshotFromHash } from "./lib/scoreShare";
 import { roomFromSearch } from "./lib/online";
-import { TaiRulesSheet } from "./TaiRulesSheet";
 import { isLadderChanged, isRuleChanged, ladderOf, rulesAffectScoring, rulesFingerprint } from "@mjwaits/shared/engine/taiRules";
 import { PATTERN_CATALOG } from "@mjwaits/shared/engine/taiCatalog";
 import {
@@ -157,7 +156,8 @@ import {
   type TaiPattern,
   type Wind,
 } from "@mjwaits/shared/engine/scoring";
-import { TEST_HAND_BASE_CONTEXT, TEST_HANDS, type TestHand } from "@mjwaits/shared/engine/testHands";
+import type { TestHand } from "@mjwaits/shared/engine/testHands";
+import { TEST_HAND_BASE_CONTEXT } from "./lib/testHandContext";
 import { enterGameMode } from "./lib/gameMode";
 
 // A stable id per tile instance, so sorting for display never loses track
@@ -5998,7 +5998,11 @@ function ScoringPanel({
       window.removeEventListener("scroll", onScroll);
       cancelAnimationFrame(frame);
     };
-  });
+    // trimScrollRoom only reads refs, so the first one serves throughout.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // After every render, on purpose (anything can change the page's
+  // height) - cheap while the room is empty: it returns before measuring.
   useEffect(() => {
     trimScrollRoom();
   });
@@ -9709,6 +9713,15 @@ function TestHandsSheet({
 }) {
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState<"hands" | "tools">("hands");
+  // The list is only fetched for this sheet (see lib/lazyParts.ts).
+  const [TEST_HANDS, setTestHands] = useState<TestHand[]>([]);
+  useEffect(() => {
+    let live = true;
+    void loadTestHands().then((m) => live && setTestHands(m.TEST_HANDS));
+    return () => {
+      live = false;
+    };
+  }, []);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -9765,6 +9778,7 @@ function TestHandsSheet({
         <button
           type="button"
           className="btn-primary sheet-random"
+          disabled={TEST_HANDS.length === 0}
           onClick={() => onPick(TEST_HANDS[Math.floor(Math.random() * TEST_HANDS.length)])}
         >
           Random hand
@@ -10231,7 +10245,11 @@ function App() {
   // false when this phone couldn't keep the last change (storage full or
   // blocked) - the Scores tab warns, since a reload would lose it.
   const [scoresSaved, setScoresSaved] = useState(true);
-  useEffect(() => setScoresSaved(saveScores(scoreStore)), [scoreStore]);
+  // Not the store just loaded: it's what's saved already.
+  const loadedScores = useRef(scoreStore);
+  useEffect(() => {
+    if (scoreStore !== loadedScores.current) setScoresSaved(saveScores(scoreStore));
+  }, [scoreStore]);
   const [recordRequest, setRecordRequest] = useState<RecordRequest | null>(null);
   // A Scores 食胡 sheet asked Scoring to work a hand out (see ScoreHandRequest).
   // Dropped if you leave Scoring any other way than Back to Scores / Cancel.
@@ -10575,7 +10593,6 @@ function App() {
           />
         ) : playScreen === "home" ? (
           <PlayHome
-            saved={savedSummary()}
             onPlay={(fresh) => setPlayScreen(fresh ? "new" : "resume")}
             onOnline={() => {
               tableFromPlay.current = true;

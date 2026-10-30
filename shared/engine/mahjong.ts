@@ -181,6 +181,21 @@ function countsForSuit(tiles: Tile[], suit: Suit, size: number): number[] {
   return counts;
 }
 
+// countsForSuit for m, t, b and z at once, in one pass.
+function suitCounts(tiles: Tile[]): number[][] {
+  const m = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+  const t = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+  const b = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+  const z = [0, 0, 0, 0, 0, 0, 0, 0];
+  for (const x of tiles) {
+    if (x.suit === "m") m[x.rank]++;
+    else if (x.suit === "t") t[x.rank]++;
+    else if (x.suit === "b") b[x.rank]++;
+    else if (x.suit === "z") z[x.rank]++;
+  }
+  return [m, t, b, z];
+}
+
 // Can `counts` (1-indexed, index 0 unused) be fully decomposed into triplets
 // (and runs, if `allowRuns`) with nothing left over?
 function canDecompose(counts: number[], allowRuns: boolean): boolean {
@@ -282,6 +297,27 @@ const ORPHAN_TILES: Tile[] = [
 ];
 const ORPHAN_KEYS = new Set(ORPHAN_TILES.map(tileKey));
 
+// The 34 kinds as indexes 0-33 (m1-9, t1-9, b1-9, z1-7), for the hot
+// special-hand checks.
+const KINDS = 34;
+const SUIT_BASE: Record<string, number> = { m: 0, t: 9, b: 18, z: 27 };
+const kindIndex = (t: Tile) => SUIT_BASE[t.suit] + t.rank - 1;
+const ORPHAN_INDEXES = ORPHAN_TILES.map(kindIndex);
+const IS_ORPHAN = new Uint8Array(KINDS);
+for (const k of ORPHAN_INDEXES) IS_ORPHAN[k] = 1;
+
+// Counts per kind, or null if any tile isn't one of the 34 (a joker), where
+// callers keep the string-keyed path.
+function kindCounts(tiles: Tile[]): Uint8Array | null {
+  const kc = new Uint8Array(KINDS);
+  for (const t of tiles) {
+    const base = SUIT_BASE[t.suit];
+    if (base === undefined || !Number.isInteger(t.rank) || t.rank < 1 || t.rank > (t.suit === "z" ? 7 : 9)) return null;
+    kc[base + t.rank - 1]++;
+  }
+  return kc;
+}
+
 function countAll(tiles: Tile[]): Map<string, number> {
   const counts = new Map<string, number>();
   for (const t of tiles) {
@@ -338,6 +374,57 @@ function candidateMelds(tiles: Tile[]): Tile[][] {
 // standard "N melds + pair" shape, so it's checked separately.
 export function isThirteenOrphansComplete(tiles: Tile[]): boolean {
   if (tiles.length !== COMPLETE_SIZE) return false;
+  const kc = kindCounts(tiles);
+  return kc ? orphansFromCounts(kc) : orphansByKeys(tiles);
+}
+
+// The same check on the 34 kind counts: every orphan held, at least 14 of
+// them, then each meld taken out in place.
+function orphansFromCounts(kc: Uint8Array): boolean {
+  let orphanTiles = 0;
+  for (const k of ORPHAN_INDEXES) {
+    if (kc[k] === 0) return false;
+    orphanTiles += kc[k];
+  }
+  if (orphanTiles < 14) return false;
+  for (let k = 0; k < KINDS; k++) {
+    if (kc[k] < 3) continue;
+    kc[k] -= 3;
+    const ok = orphanRemainderCounts(kc);
+    kc[k] += 3;
+    if (ok) return true;
+  }
+  for (let s = 0; s < 27; s += 9) {
+    for (let k = s; k < s + 7; k++) {
+      if (!kc[k] || !kc[k + 1] || !kc[k + 2]) continue;
+      kc[k]--, kc[k + 1]--, kc[k + 2]--;
+      const ok = orphanRemainderCounts(kc);
+      kc[k]++, kc[k + 1]++, kc[k + 2]++;
+      if (ok) return true;
+    }
+  }
+  return false;
+}
+
+function orphanRemainderCounts(kc: Uint8Array): boolean {
+  let total = 0;
+  let pairs = 0;
+  for (let k = 0; k < KINDS; k++) {
+    const c = kc[k];
+    if (!IS_ORPHAN[k]) {
+      if (c > 0) return false;
+      continue;
+    }
+    if (c < 1 || c > 2) return false;
+    if (c === 2) pairs++;
+    total += c;
+  }
+  return pairs === 1 && total === 14;
+}
+
+// The original search, kept for hands with tiles outside the 34 kinds
+// (jokers).
+function orphansByKeys(tiles: Tile[]): boolean {
   for (const meld of candidateMelds(tiles)) {
     const counts = countAll(tiles);
     for (const t of meld) {
@@ -397,11 +484,24 @@ export function decomposeThirteenOrphans(tiles: Tile[]): ThirteenOrphansBreakdow
 // as all 4 copies at once, counting as two of the 8 pairs.
 export function isEightPairsComplete(tiles: Tile[]): boolean {
   if (tiles.length !== COMPLETE_SIZE) return false;
+  const kc = kindCounts(tiles);
+  if (kc) return eightPairsFromCounts(kc);
   const counts = countAll(tiles);
   let tripleKinds = 0;
   for (const c of counts.values()) {
     if (c === 3) tripleKinds++;
     else if (c !== 2 && c !== 4) return false; // a lone single or 5+ copies breaks the pattern
+  }
+  return tripleKinds === 1;
+}
+
+function eightPairsFromCounts(kc: Uint8Array): boolean {
+  let tripleKinds = 0;
+  for (let k = 0; k < KINDS; k++) {
+    const c = kc[k];
+    if (c === 0) continue;
+    if (c === 3) tripleKinds++;
+    else if (c !== 2 && c !== 4) return false;
   }
   return tripleKinds === 1;
 }
@@ -450,6 +550,8 @@ function unrelatedRanksOk(ranks: number[]): boolean {
 // 16 to form the pair (15*1 + 1*2 = 17 tiles total).
 export function isSixteenUnrelatedComplete(tiles: Tile[]): boolean {
   if (tiles.length !== COMPLETE_SIZE) return false;
+  const kc = kindCounts(tiles);
+  if (kc) return sixteenUnrelatedFromCounts(kc);
   const counts = countAll(tiles);
   let pairKinds = 0;
   for (const c of counts.values()) {
@@ -467,6 +569,29 @@ export function isSixteenUnrelatedComplete(tiles: Tile[]): boolean {
     if (suit === "m" || suit === "t" || suit === "b") bySuit[suit].push(Number(key.slice(1)));
   }
   return (["m", "t", "b"] as const).every((suit) => unrelatedRanksOk(bySuit[suit]));
+}
+
+function sixteenUnrelatedFromCounts(kc: Uint8Array): boolean {
+  let pairKinds = 0;
+  for (let k = 0; k < KINDS; k++) {
+    if (kc[k] > 2) return false;
+    if (kc[k] === 2) pairKinds++;
+  }
+  if (pairKinds !== 1) return false;
+  for (let k = 27; k < KINDS; k++) if (kc[k] < 1) return false;
+  // Each numbered suit: exactly 3 ranks, each 3+ apart.
+  for (let s = 0; s < 27; s += 9) {
+    let n = 0;
+    let last = -9;
+    for (let r = 0; r < 9; r++) {
+      if (!kc[s + r]) continue;
+      if (r - last < 3) return false;
+      last = r;
+      n++;
+    }
+    if (n !== 3) return false;
+  }
+  return true;
 }
 
 export interface SixteenUnrelatedBreakdown {
@@ -495,33 +620,47 @@ export function decomposeSixteenUnrelated(tiles: Tile[]): SixteenUnrelatedBreakd
 // plus exactly one pair, i.e. tiles.length must be meldsRequired * 3 + 2.
 export function isCompleteHand(tiles: Tile[], meldsRequired: number = MELDS_REQUIRED): boolean {
   if (tiles.length !== meldsRequired * 3 + 2) return false;
-  if (
-    meldsRequired === MELDS_REQUIRED &&
-    (isThirteenOrphansComplete(tiles) || isEightPairsComplete(tiles) || isSixteenUnrelatedComplete(tiles))
-  ) {
-    return true;
+  if (meldsRequired === MELDS_REQUIRED) {
+    const kc = kindCounts(tiles);
+    if (kc ? specialFromCounts(kc) : isThirteenOrphansComplete(tiles) || isEightPairsComplete(tiles) || isSixteenUnrelatedComplete(tiles)) {
+      return true;
+    }
   }
-
-  const m = countsForSuit(tiles, "m", 9);
-  const t = countsForSuit(tiles, "t", 9);
-  const b = countsForSuit(tiles, "b", 9);
-  const z = countsForSuit(tiles, "z", 7);
-
-  const suitsData: { counts: number[]; allowRuns: boolean }[] = [
+  const [m, t, b, z] = suitCounts(tiles);
+  return standardComplete([
     { counts: m, allowRuns: true },
     { counts: t, allowRuns: true },
     { counts: b, allowRuns: true },
     { counts: z, allowRuns: false },
-  ];
+  ]);
+}
 
-  for (const { counts } of suitsData) {
-    for (let rank = 1; rank < counts.length; rank++) {
-      if (counts[rank] >= 2) {
-        counts[rank] -= 2;
-        const ok = suitsData.every((sd) => canDecompose(sd.counts, sd.allowRuns));
-        counts[rank] += 2;
-        if (ok) return true;
-      }
+// A 17-tile hand of the 34 kinds: one of the three special hands?
+function specialFromCounts(kc: Uint8Array): boolean {
+  return orphansFromCounts(kc) || eightPairsFromCounts(kc) || sixteenUnrelatedFromCounts(kc);
+}
+
+// Melds plus one pair, counts restored on return. A suit only splits into
+// melds when its tiles number a multiple of 3, so the pair can only be in
+// the one suit two over.
+function standardComplete(suitsData: { counts: number[]; allowRuns: boolean }[]): boolean {
+  let pairSuit = -1;
+  for (let i = 0; i < suitsData.length; i++) {
+    const { counts } = suitsData[i];
+    let n = 0;
+    for (let rank = 1; rank < counts.length; rank++) n += counts[rank];
+    if (n % 3 === 0) continue;
+    if (n % 3 !== 2 || pairSuit >= 0) return false;
+    pairSuit = i;
+  }
+  if (pairSuit < 0) return false;
+  const { counts } = suitsData[pairSuit];
+  for (let rank = 1; rank < counts.length; rank++) {
+    if (counts[rank] >= 2) {
+      counts[rank] -= 2;
+      const ok = suitsData.every((sd) => canDecompose(sd.counts, sd.allowRuns));
+      counts[rank] += 2;
+      if (ok) return true;
     }
   }
   return false;
@@ -625,28 +764,80 @@ function paretoPrune(options: BlockOption[]): BlockOption[] {
 // shapes recur constantly (every pair / single tried by standardShanten,
 // every candidate discard and draw the bots weigh), so results are kept
 // across calls. Callers only read the returned arrays.
-const suitOptionsCache = new Map<string, BlockOption[]>();
+// Keys pack the counts 3 bits a rank; a shape that doesn't fit (a count
+// past 7, an odd length) just isn't cached.
+interface SuitShape {
+  base: BlockOption[];
+  // With a pair, or a single (tanki), set aside somewhere in the suit: the
+  // options of every choice folded together, or null if there's none.
+  pair: BlockOption[] | null;
+  tanki: BlockOption[] | null;
+}
+const runShapes = new Map<number, SuitShape>();
+const honorShapes = new Map<number, SuitShape>();
+const runOptions = new Map<number, BlockOption[]>();
+const honorOptions = new Map<number, BlockOption[]>();
+
+function packCounts(counts: number[], allowRuns: boolean): number {
+  if (counts.length !== (allowRuns ? 10 : 8)) return -1;
+  let key = 0;
+  for (let r = counts.length - 1; r >= 1; r--) {
+    const c = counts[r];
+    if (!(c >= 0 && c <= 7) || !Number.isInteger(c)) return -1;
+    key = key * 8 + c;
+  }
+  return key;
+}
 
 function suitBlockOptions(counts: number[], allowRuns: boolean): BlockOption[] {
-  const cacheKey = (allowRuns ? "r" : "h") + counts.join("");
-  const hit = suitOptionsCache.get(cacheKey);
+  const key = packCounts(counts, allowRuns);
+  if (key < 0) return suitBlockOptionsUncached(counts, allowRuns);
+  const cache = allowRuns ? runOptions : honorOptions;
+  const hit = cache.get(key);
   if (hit) return hit;
   const result = suitBlockOptionsUncached(counts, allowRuns);
-  if (suitOptionsCache.size > 200_000) suitOptionsCache.clear();
-  suitOptionsCache.set(cacheKey, result);
+  if (cache.size > 200_000) cache.clear();
+  cache.set(key, result);
   return result;
+}
+
+function suitShape(counts: number[], allowRuns: boolean): SuitShape {
+  const key = packCounts(counts, allowRuns);
+  const cache = allowRuns ? runShapes : honorShapes;
+  const hit = key >= 0 ? cache.get(key) : undefined;
+  if (hit) return hit;
+  const set = (take: number): BlockOption[] | null => {
+    const all: BlockOption[] = [];
+    for (let rank = 1; rank < counts.length; rank++) {
+      if (counts[rank] < take) continue;
+      counts[rank] -= take;
+      for (const o of suitBlockOptions(counts, allowRuns)) all.push(o);
+      counts[rank] += take;
+    }
+    return all.length ? paretoPrune(all) : null;
+  };
+  const shape = { base: suitBlockOptions(counts, allowRuns), pair: set(2), tanki: set(1) };
+  if (key >= 0) {
+    if (cache.size > 100_000) cache.clear();
+    cache.set(key, shape);
+  }
+  return shape;
 }
 
 function suitBlockOptionsUncached(counts: number[], allowRuns: boolean): BlockOption[] {
   const size = counts.length - 1;
-  const memo = new Map<string, BlockOption[]>();
+  const memo = new Map<number | string, BlockOption[]>();
+  const small = counts.every((c) => c >= 0 && c <= 7 && Number.isInteger(c));
 
   function search(from: number): BlockOption[] {
     let i = from;
     while (i <= size && counts[i] === 0) i++;
     if (i > size) return [{ melds: 0, partials: 0 }];
 
-    const key = counts.slice(i, size + 1).join(",");
+    // Packed 3 bits a rank behind the start (counts only drop in here).
+    let key: number | string = i;
+    if (small) for (let r = size; r >= i; r--) key = key * 8 + counts[r];
+    else key = counts.slice(i, size + 1).join(",");
     const cached = memo.get(key);
     if (cached) return cached;
 
@@ -708,14 +899,31 @@ function suitBlockOptionsUncached(counts: number[], allowRuns: boolean): BlockOp
 // achievable (melds, partials) totals across the whole hand.
 function combineBlockOptions(perSuit: BlockOption[][]): BlockOption[] {
   let combined: BlockOption[] = [{ melds: 0, partials: 0 }];
-  for (const options of perSuit) {
-    const next: BlockOption[] = [];
-    for (const c of combined) {
-      for (const o of options) next.push({ melds: c.melds + o.melds, partials: c.partials + o.partials });
-    }
-    combined = paretoPrune(next);
-  }
+  for (const options of perSuit) combined = combineTwo(combined, options);
   return combined;
+}
+
+// paretoPrune of every sum of one option from each, without building them.
+const bestByMelds: number[] = [];
+function combineTwo(xs: BlockOption[], ys: BlockOption[]): BlockOption[] {
+  let maxMelds = 0;
+  for (const x of xs) {
+    for (const y of ys) {
+      const m = x.melds + y.melds;
+      const p = x.partials + y.partials;
+      while (maxMelds <= m) bestByMelds[maxMelds++] = -1;
+      if (p > bestByMelds[m]) bestByMelds[m] = p;
+    }
+  }
+  const out: BlockOption[] = [];
+  let top = -1;
+  for (let m = maxMelds - 1; m >= 0; m--) {
+    if (bestByMelds[m] > top) {
+      out.push({ melds: m, partials: bestByMelds[m] });
+      top = bestByMelds[m];
+    }
+  }
+  return out;
 }
 
 // Standard-shape shanten for a hand at any checkpoint size (works the same
@@ -724,12 +932,8 @@ function combineBlockOptions(perSuit: BlockOption[][]): BlockOption[] {
 // (Thirteen Orphans, Eight Pairs) - see shanten() below, which folds in
 // Eight Pairs.
 export function standardShanten(tiles: Tile[], meldsRequired: number = MELDS_REQUIRED): number {
-  const suitsData: { counts: number[]; allowRuns: boolean }[] = [
-    { counts: countsForSuit(tiles, "m", 9), allowRuns: true },
-    { counts: countsForSuit(tiles, "t", 9), allowRuns: true },
-    { counts: countsForSuit(tiles, "b", 9), allowRuns: true },
-    { counts: countsForSuit(tiles, "z", 7), allowRuns: false },
-  ];
+  const [m, t, b, z] = suitCounts(tiles);
+  const shapes = [suitShape(m, true), suitShape(t, true), suitShape(b, true), suitShape(z, false)];
 
   const scoreCombos = (combos: BlockOption[], hasPair: boolean): number => {
     let best = Infinity;
@@ -743,22 +947,19 @@ export function standardShanten(tiles: Tile[], meldsRequired: number = MELDS_REQ
     return best;
   };
 
-  // Each suit's options only ever depend on that suit's own counts, so
-  // reserving a pair/tanki in one suit never needs the other 3 suits'
-  // options recomputed - only swap out the one that actually changed.
-  const baseOptions = suitsData.map((sd) => suitBlockOptions(sd.counts, sd.allowRuns));
+  // Each suit's options only ever depend on that suit's own counts, so a
+  // pair or tanki set aside in one suit only swaps out that suit's options -
+  // and every pair (or single) in a suit is folded into one option set,
+  // since shanten never gets worse with more melds or partials.
+  const baseOptions = shapes.map((sh) => sh.base);
   let overallBest = scoreCombos(combineBlockOptions(baseOptions), false);
 
-  for (let i = 0; i < suitsData.length; i++) {
-    const sd = suitsData[i];
-    for (let rank = 1; rank < sd.counts.length; rank++) {
-      if (sd.counts[rank] < 2) continue;
-      sd.counts[rank] -= 2;
-      const perSuit = baseOptions.slice();
-      perSuit[i] = suitBlockOptions(sd.counts, sd.allowRuns);
-      sd.counts[rank] += 2;
-      overallBest = Math.min(overallBest, scoreCombos(combineBlockOptions(perSuit), true));
-    }
+  for (let i = 0; i < shapes.length; i++) {
+    const pair = shapes[i].pair;
+    if (!pair) continue;
+    const perSuit = baseOptions.slice();
+    perSuit[i] = pair;
+    overallBest = Math.min(overallBest, scoreCombos(combineBlockOptions(perSuit), true));
   }
 
   // Try reserving a single tile as a tanki (pair-in-progress) candidate -
@@ -768,20 +969,15 @@ export function standardShanten(tiles: Tile[], meldsRequired: number = MELDS_REQ
   // 123m9m, one meld plus a tanki wait on 9m) was scored as if nothing were
   // held back at all, overstating shanten by 1 - the block search above
   // only ever considers a *complete* pair (>=2 matching), never a single.
-  for (let i = 0; i < suitsData.length; i++) {
-    const sd = suitsData[i];
-    for (let rank = 1; rank < sd.counts.length; rank++) {
-      if (sd.counts[rank] < 1) continue;
-      sd.counts[rank] -= 1;
-      const perSuit = baseOptions.slice();
-      perSuit[i] = suitBlockOptions(sd.counts, sd.allowRuns);
-      sd.counts[rank] += 1;
-      const combos = combineBlockOptions(perSuit);
-      for (const { melds, partials } of combos) {
-        const cappedPartials = Math.min(partials, meldsRequired - melds);
-        const sh = 2 * (meldsRequired - melds) - cappedPartials; // no -1 (pair isn't complete), no +1 (a tile IS held back)
-        overallBest = Math.min(overallBest, sh);
-      }
+  for (let i = 0; i < shapes.length; i++) {
+    const tanki = shapes[i].tanki;
+    if (!tanki) continue;
+    const perSuit = baseOptions.slice();
+    perSuit[i] = tanki;
+    for (const { melds, partials } of combineBlockOptions(perSuit)) {
+      const cappedPartials = Math.min(partials, meldsRequired - melds);
+      const sh = 2 * (meldsRequired - melds) - cappedPartials; // no -1 (pair isn't complete), no +1 (a tile IS held back)
+      overallBest = Math.min(overallBest, sh);
     }
   }
 
@@ -796,11 +992,11 @@ export function standardShanten(tiles: Tile[], meldsRequired: number = MELDS_REQ
 // (7 pairs + 1 triple, pairUnits=8 with one kind at count 3) scored the same
 // 8-8=0 as a merely-tenpai one (8 clean pairs, pairUnits=8, no kind past 2) -
 // both need to be distinguishable as -1 vs 0.
-function eightPairsShanten(tiles: Tile[]): number {
-  const counts = countAll(tiles);
+function eightPairsShanten(tiles: Tile[], kc: Uint8Array | null = kindCounts(tiles)): number {
+  const counts = kc ?? countAll(tiles).values();
   let pairUnits = 0;
   let hasSpare = false;
-  for (const c of counts.values()) {
+  for (const c of counts) {
     pairUnits += Math.floor(c / 2);
     // Only a kind held three times is the spare: all four are two pairs
     // already, and can't also be the triplet (1111 + 7 pairs + 2 singles
@@ -850,11 +1046,11 @@ function maxUnrelatedWithPair(counts: number[]): UnrelatedDpState {
 // pair without needing a dedicated 17th tile. Only meaningful at the full
 // 16-tile hand size, matching the special hand itself.
 function sixteenUnrelatedShanten(tiles: Tile[]): number {
-  const mState = maxUnrelatedWithPair(countsForSuit(tiles, "m", 9));
-  const tState = maxUnrelatedWithPair(countsForSuit(tiles, "t", 9));
-  const bState = maxUnrelatedWithPair(countsForSuit(tiles, "b", 9));
+  const [m, t, b, zCounts] = suitCounts(tiles);
+  const mState = maxUnrelatedWithPair(m);
+  const tState = maxUnrelatedWithPair(t);
+  const bState = maxUnrelatedWithPair(b);
 
-  const zCounts = countsForSuit(tiles, "z", 7);
   let honorUnits = 0;
   let honorHasPair = false;
   for (let r = 1; r <= 7; r++) {
@@ -877,9 +1073,19 @@ function sixteenUnrelatedShanten(tiles: Tile[]): number {
 export function shanten(tiles: Tile[], meldsRequired: number = MELDS_REQUIRED): number {
   let best = standardShanten(tiles, meldsRequired);
   if (meldsRequired === MELDS_REQUIRED) {
-    best = Math.min(best, eightPairsShanten(tiles));
+    const kc = kindCounts(tiles);
+    best = Math.min(best, eightPairsShanten(tiles, kc));
     best = Math.min(best, sixteenUnrelatedShanten(tiles));
     // (Ready or complete by it needs at least 12 of the 13 orphans in hand.)
+    if (kc) {
+      let orphans = 0;
+      for (const k of ORPHAN_INDEXES) if (kc[k]) orphans++;
+      if (orphans >= 12) {
+        if (best > -1 && tiles.length === COMPLETE_SIZE && orphansFromCounts(kc)) best = -1;
+        else if (best > 0 && tiles.length === COMPLETE_SIZE - 1 && orphansWithAnyDraw(kc)) best = 0;
+      }
+      return best;
+    }
     const orphans = new Set(tiles.filter((t) => t.suit === "z" || t.rank === 1 || t.rank === 9).map(tileKey)).size;
     if (orphans >= 12) {
       if (best > -1 && tiles.length === COMPLETE_SIZE && isThirteenOrphansComplete(tiles)) best = -1;
@@ -889,17 +1095,52 @@ export function shanten(tiles: Tile[], meldsRequired: number = MELDS_REQUIRED): 
   return best;
 }
 
+// Does some drawn kind make it Thirteen Orphans? Counts restored on return.
+function orphansWithAnyDraw(kc: Uint8Array): boolean {
+  for (let k = 0; k < KINDS; k++) {
+    kc[k]++;
+    const ok = orphansFromCounts(kc);
+    kc[k]--;
+    if (ok) return true;
+  }
+  return false;
+}
+
 // For a hand one tile short of meldsRequired melds + a pair (length
 // meldsRequired * 3 + 1), returns every tile kind that completes it.
 export function getWaits(tiles: Tile[], meldsRequired: number = MELDS_REQUIRED): Tile[] {
   if (tiles.length !== meldsRequired * 3 + 1) return [];
 
   const waits: Tile[] = [];
-  for (const candidate of allTileKinds()) {
-    if (tileCount(tiles, candidate) >= 4) continue; // all 4 copies already used, can't draw a 5th
-    if (isCompleteHand([...tiles, candidate], meldsRequired)) {
-      waits.push(candidate);
+  const kc = kindCounts(tiles);
+  if (!kc) {
+    for (const candidate of allTileKinds()) {
+      if (tileCount(tiles, candidate) >= 4) continue; // all 4 copies already used, can't draw a 5th
+      if (isCompleteHand([...tiles, candidate], meldsRequired)) {
+        waits.push(candidate);
+      }
     }
+    return waits;
+  }
+
+  // Counted once, each candidate added and taken back in place.
+  const [m, t, b, z] = suitCounts(tiles);
+  const suitsData = [
+    { counts: m, allowRuns: true },
+    { counts: t, allowRuns: true },
+    { counts: b, allowRuns: true },
+    { counts: z, allowRuns: false },
+  ];
+  const special = meldsRequired === MELDS_REQUIRED;
+  for (const candidate of allTileKinds()) {
+    const k = kindIndex(candidate);
+    if (kc[k] >= 4) continue; // all 4 copies already used, can't draw a 5th
+    const suit = suitsData[k < 27 ? Math.floor(k / 9) : 3].counts;
+    kc[k]++;
+    suit[candidate.rank]++;
+    if ((special && specialFromCounts(kc)) || standardComplete(suitsData)) waits.push(candidate);
+    kc[k]--;
+    suit[candidate.rank]--;
   }
   return waits;
 }

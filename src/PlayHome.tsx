@@ -10,7 +10,7 @@ import { TileGlyphSpan } from "./TileGlyphs";
 import { RecordSheet } from "./PlayRecord";
 import { loadRecord } from "./lib/playRecord";
 import { isMuted, setMuted, wakeAudio } from "./lib/sound";
-import type { SavedSummary } from "./PlayPanel";
+import type { SavedSummary } from "./lib/playSaved";
 
 // 發 中 白, fanned.
 const HERO: Tile[] = [
