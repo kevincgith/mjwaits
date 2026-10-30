@@ -240,6 +240,7 @@ interface Saved {
   speed?: Speed;
   oneTap?: boolean;
   multiWin?: boolean; // 一炮多響 (else 截胡)
+  multiWinSet?: boolean; // multiWin picked since it came on by default (else on)
   runBack?: boolean; // runs back from a tile just thrown allowed (see GameState.runBack)
   fanXue?: boolean; // 反雪 (absent: on)
   swapRules?: SwapRules; // 換牌: which rounds, and what the dice mean
@@ -363,7 +364,7 @@ function HandTilesView({
   } else faces = Array.from({ length: count }, () => UNSEEN);
   return (
     <span
-      className={`play-edge play-edge-${side}${drew && !down ? " has-drawn" : ""}${down ? " is-down" : ""}`}
+      className={`play-edge play-edge-${side}${drew && !down ? " has-drawn" : ""}${down ? " is-down" : ""}${mark >= 0 ? " has-win" : ""}`}
       style={{ "--count": faces.length, "--topple-at": `${topple.at}s`, "--topple-step": `${topple.step}s`, "--topple-dur": `${topple.dur}s` } as CSSProperties}
       aria-label={down ? undefined : `${faces.length} concealed tiles`}
     >
@@ -949,7 +950,7 @@ export function PlayPanel({ onExit, online, fresh }: { onExit: () => void; onlin
     () =>
       resume?.game ??
       newGame({
-        multiWin: saved?.multiWin ?? saved?.game?.multiWin ?? true,
+        multiWin: saved?.multiWinSet ? (saved.multiWin ?? true) : true,
         runBack: saved?.runBack ?? false,
         noFanXue: saved?.fanXue === false,
         swapRules: saved?.swapRules ?? saved?.game?.swapRules ?? DEFAULT_SWAP_RULES,
@@ -978,7 +979,10 @@ export function PlayPanel({ onExit, online, fresh }: { onExit: () => void; onlin
   // One-tap discard: a single tap throws the tile (off: tap to lift, tap again).
   const [oneTap, setOneTap] = useState(() => saved?.oneTap ?? false);
   // 一炮多響: a table setting, kept on the game itself so it carries hand to hand.
-  const [multiWin, setMultiWin] = useState(() => saved?.multiWin ?? saved?.game?.multiWin ?? true);
+  // A new game has it on unless you've picked it since that became the
+  // default (an off from before then isn't kept); a game resumed keeps its own.
+  const [multiWinSet, setMultiWinSet] = useState(() => !!saved?.multiWinSet);
+  const [multiWin, setMultiWin] = useState(() => (resume ? (saved?.multiWin ?? resume.game.multiWin ?? true) : saved?.multiWinSet ? (saved.multiWin ?? true) : true));
   // No claim back of a tile just thrown (on unless lifted): on the game, like multiWin.
   const [runBack, setRunBack] = useState(() => saved?.runBack ?? saved?.game?.runBack ?? false);
   useEffect(() => {
@@ -1766,8 +1770,8 @@ export function PlayPanel({ onExit, online, fresh }: { onExit: () => void; onlin
 
   // This device's own game (never an online one).
   useEffect(
-    () => save({ game: localGame, totals: localTotals, hint, timer, opponents, randomOpponents, speed, oneTap, record, multiWin, runBack, fanXue, swapRules, jackpot, ledger: localLedger }),
-    [localGame, localTotals, hint, timer, opponents, randomOpponents, speed, oneTap, record, multiWin, runBack, fanXue, swapRules, jackpot, localLedger]
+    () => save({ game: localGame, totals: localTotals, hint, timer, opponents, randomOpponents, speed, oneTap, record, multiWin, multiWinSet, runBack, fanXue, swapRules, jackpot, ledger: localLedger }),
+    [localGame, localTotals, hint, timer, opponents, randomOpponents, speed, oneTap, record, multiWin, multiWinSet, runBack, fanXue, swapRules, jackpot, localLedger]
   );
 
   // The menu closes on a tap anywhere outside it, and disarms New game.
@@ -3023,7 +3027,12 @@ export function PlayPanel({ onExit, online, fresh }: { onExit: () => void; onlin
                 </span>
                 <span className="play-menu-seg">
                   {[false, true].map((on) => (
-                    <button key={String(on)} type="button" className={multiWin === on ? "toggle-on" : undefined} aria-pressed={multiWin === on} onClick={() => setMultiWin(on)}>
+                    <button key={String(on)} type="button" className={multiWin === on ? "toggle-on" : undefined} aria-pressed={multiWin === on}
+                      onClick={() => {
+                        setMultiWin(on);
+                        setMultiWinSet(true);
+                      }}
+                    >
                       {on ? "On" : "Off"}
                     </button>
                   ))}
@@ -3048,7 +3057,7 @@ export function PlayPanel({ onExit, online, fresh }: { onExit: () => void; onlin
                   <span className="play-menu-note" title="Threw 1m: no pung, kong or run with it till you draw - from 123m, no run with 4m either"> · {runBack ? "any claim may be made" : "not of a tile just thrown"}</span>
                 </span>
                 <span className="play-menu-seg">
-                  {[true, false].map((on) => (
+                  {[false, true].map((on) => (
                     <button key={String(on)} type="button" className={!runBack === on ? "toggle-on" : undefined} aria-pressed={!runBack === on} onClick={() => setRunBack(!on)}>
                       {on ? "On" : "Off"}
                     </button>
@@ -3367,10 +3376,12 @@ export function PlayPanel({ onExit, online, fresh }: { onExit: () => void; onlin
     const hidden = p.hand.some((t) => t === BLANK);
     // Losing hands hidden, one shown is shown later, by choice: at once.
     const choosing = online?.table.settings.reveal === false;
+    const down = over && !hidden;
+    const topple = wonWith(seat) ? TOPPLE_WINNER : result?.winner === null || choosing ? TOPPLE_DRAW : TOPPLE_OTHERS;
     return (
       <div
-        className={`play-seat play-seat-${side}${side !== "top" || topFront ? " is-front" : ""}${(seatsOut.includes(side) && (side !== "top" || topFront)) || (side === "top" && topOut) ? " has-bonus-out" : ""}${side === "top" && !topFront && (p.melds.length > 0 || p.flowers.length > 0) ? " has-beside" : ""}`}
-        style={side === "top" ? undefined : ({ "--wall-grow": sideWallGrow(p.melds.length) } as CSSProperties)}
+        className={`play-seat play-seat-${side}${side !== "top" || topFront ? " is-front" : ""}${down ? " is-down" : ""}${(seatsOut.includes(side) && (side !== "top" || topFront)) || (side === "top" && topOut) ? " has-bonus-out" : ""}${side === "top" && !topFront && (p.melds.length > 0 || p.flowers.length > 0) ? " has-beside" : ""}`}
+        style={{ ...(side === "top" ? {} : { "--wall-grow": sideWallGrow(p.melds.length) }), "--topple-at": `${topple.at}s`, "--topple-dur": `${topple.dur}s` } as CSSProperties}
       >
         {/* Melds and flowers in front of a side player's wall, from their
             left (the CSS turns them to face them); across, beside the far
@@ -3388,9 +3399,9 @@ export function PlayPanel({ onExit, online, fresh }: { onExit: () => void; onlin
           tiles={p.hand}
           side={side}
           drew={!over && drewSeat === seat && !swapSettling}
-          down={over && !hidden}
+          down={down}
           winningTile={wonWith(seat)}
-          topple={wonWith(seat) ? TOPPLE_WINNER : result?.winner === null || choosing ? TOPPLE_DRAW : TOPPLE_OTHERS}
+          topple={topple}
         />
         {/* Across, what they've taken lies just in front of them, on the table's middle line (with
             their pile and the compass) - out of the seat's layout, so nothing on the table moves for it. */}
