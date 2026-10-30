@@ -829,3 +829,32 @@ describe("hiding losing hands", () => {
     expect(shown).toEqual({ hidden: [true, false, true, false], open: [true, true, true, true] });
   });
 });
+
+describe("自摸 online", () => {
+  it("wins a hand by self-draw, from the move the app sends", async () => {
+    const { code, host } = await withBots(0);
+    host.send({ t: "start" });
+    const s = await host.table((s) => !!s.options?.turn);
+    // Seat 0's turn, its hand made a winning one: 111 222 333 444 555 of characters, 99 dots.
+    await runInDurableObject(stubFor(code), (t: Table) => {
+      const tt = t as unknown as { load(): { game: GameState }; save(): void };
+      const rt = tt.load();
+      const g = rt.game;
+      const win: Tile[] = [1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4, 5, 5, 5].map((rank) => ({ suit: "m", rank }) as Tile).concat([{ suit: "t", rank: 9 } as Tile]);
+      const drawn = { suit: "t", rank: 9 } as Tile;
+      g.players[0].melds = [];
+      if (g.phase.kind !== "turn") throw new Error("not a turn");
+      g.phase = { ...g.phase, seat: 0, drawn };
+      g.players[0].hand = [...win, drawn];
+      tt.save();
+    });
+    host.send({ t: "move", step: s.step, move: { kind: "selfDraw" } });
+    // (Its score's patterns carry functions - the table once failed copying it.)
+    const end = await host.table((t) => t.view?.phase.kind === "over");
+    expect(host.errors).toEqual([]);
+    const phase = end.view!.phase;
+    if (phase.kind !== "over") throw new Error("not over");
+    expect(phase.result.winner).toBe(0);
+    expect(phase.result.from).toBe(null);
+  });
+});
