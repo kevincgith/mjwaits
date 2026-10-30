@@ -302,6 +302,8 @@ class Space {
         mat.compose(p0.lerp(p1, v), q0.slerp(q1, v), s0.lerp(s1, v));
         if (k >= 1) this.eases.delete(p.ease!.key);
         else moving = true;
+      } else if (p.fly && p.hideAfter !== undefined && (now - (this.starts.get(p.fly.key) ?? now)) / 1000 >= p.hideAfter) {
+        mat.makeScale(0, 0, 0);
       } else if (p.fly && (now - (this.starts.get(p.fly.key) ?? now)) / 1000 < p.fly.dur) {
         // In the air: eased along, turning to how it lands, lifted mid-way.
         const k = (now - this.starts.get(p.fly.key)!) / 1000 / p.fly.dur;

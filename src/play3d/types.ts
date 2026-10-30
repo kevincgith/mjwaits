@@ -55,6 +55,12 @@ export interface GLMine {
   drawKey: string;
   // A won hand: how long the winning tile is shown before the rest go down.
   winLead: number;
+  // 換牌 under way: tiles leaving and joining your hand slide to their new
+  // places rather than jump.
+  sliding: boolean;
+  // Your give, just made: the tiles you gave and where they stood in your
+  // hand (of `count` tiles) - each flies down to your pile.
+  given: { key: number; tiles: Tile[]; from: number[]; count: number } | null;
 }
 
 // 換牌: a seat's pile where its discards go - each place a tile face down
