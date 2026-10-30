@@ -35,9 +35,15 @@ const CLOSE_POLICY = 1008;
 // without waking the room (an auto-response); a connection that's pinged
 // before and has gone this long without a ping or a message is a phone
 // that's slept or dropped off - closed, so its seat is seen to go (and is
-// played for after the hold). Checked this often while anyone's pinging.
+// played for after the hold). Checked this often while anyone's connected.
 export const QUIET_MS = 50_000;
 export const SWEEP_MS = 25_000;
+// A page from before the heartbeat never pings: closed once it's gone this
+// long without a message. (It opens again, if it's still there.)
+export const UNPINGED_MS = 5 * 60_000;
+// A connection that hasn't said hello this long after opening is closed:
+// it holds a place (MAX_CONNECTIONS) for no one.
+export const HELLO_MS = 15_000;
 const PING = JSON.stringify({ t: "ping" });
 const PONG = JSON.stringify({ t: "pong" });
 const CLOSE_QUIET = 4000;
@@ -52,6 +58,7 @@ export interface Conn {
   tokens: number; // rate limit bucket
   at: number; // when the bucket was last topped up
   strikes: number;
+  opened?: number; // (absent: a connection from before it was kept)
 }
 
 export interface Clock {
@@ -224,8 +231,10 @@ export abstract class Hub<Msg extends { t: string; rid?: string }> extends Durab
     if (this.ctx.getWebSockets().length >= MAX_CONNECTIONS) return new Response("room is full", { status: 503 });
     const { 0: client, 1: server } = new WebSocketPair();
     this.ctx.acceptWebSocket(server);
-    const conn: Conn = { person: null, tokens: RATE_BURST, at: Date.now(), strikes: 0 };
+    const now = Date.now();
+    const conn: Conn = { person: null, tokens: RATE_BURST, at: now, strikes: 0, opened: now };
     server.serializeAttachment(conn);
+    await this.wakeAt(now + HELLO_MS); // (to close it if no hello comes)
     return new Response(null, { status: 101, webSocket: client });
   }
 
@@ -288,7 +297,14 @@ export abstract class Hub<Msg extends { t: string; rid?: string }> extends Durab
       else if (!conn.person) throw new Refusal("notJoined", "say hello first");
       else await this.act(conn.person, msg as Msg, ws);
     } catch (e) {
-      if (!(e instanceof Refusal)) throw e;
+      // The room's own error, not a refusal: logged and said, and the room
+      // goes on (a room type checks before it writes - a table writes once,
+      // at the end: see table.ts save).
+      if (!(e instanceof Refusal)) {
+        console.error("Message failed", JSON.stringify({ room: this.meta<string>("code"), t: msg.t, error: e instanceof Error ? (e.stack ?? e.message) : String(e) }));
+        this.refuse(ws, "server", "something went wrong here - try again", msg.rid);
+        return;
+      }
       this.refuse(ws, e.code, e.message, msg.rid);
     }
   }
@@ -351,17 +367,21 @@ export abstract class Hub<Msg extends { t: string; rid?: string }> extends Durab
     await this.wakeAt(Date.now() + SWEEP_MS);
   }
 
-  // Connections that pinged once and have gone quiet since: closed (see QUIET_MS).
-  // True if anyone's still pinging (so the room checks again).
+  // Connections gone quiet (see QUIET_MS, UNPINGED_MS), or that never said
+  // hello (HELLO_MS): closed. True if any are left open (so the room checks again).
   private async sweep(now: number): Promise<boolean> {
-    let pinging = false;
+    let open = false;
     for (const [ws, conn] of this.conns()) {
+      if (!conn.person && now - (conn.opened ?? conn.at) > HELLO_MS) {
+        await this.webSocketClose(ws, CLOSE_POLICY, "no hello");
+        continue;
+      }
       const pinged = this.ctx.getWebSocketAutoResponseTimestamp(ws)?.getTime();
-      if (pinged === undefined) continue; // a page from before the heartbeat
-      pinging = true;
-      if (now - Math.max(pinged, conn.at) > QUIET_MS) await this.webSocketClose(ws, CLOSE_QUIET, "quiet");
+      const quiet = pinged === undefined ? now - conn.at > UNPINGED_MS : now - Math.max(pinged, conn.at) > QUIET_MS;
+      if (quiet) await this.webSocketClose(ws, CLOSE_QUIET, "quiet");
+      else open = true;
     }
-    return pinging;
+    return open;
   }
 
   // Something everyone can see changed: count it, note when (for expiry),
@@ -385,13 +405,13 @@ export abstract class Hub<Msg extends { t: string; rid?: string }> extends Durab
   // with someone connected is never removed.
   async alarm() {
     const now = Date.now();
-    const pinging = await this.sweep(now);
+    const open = await this.sweep(now);
     if (this.passHost(now)) this.changed();
     const next = await this.onAlarm(now);
     if (this.conns().length > 0 || next !== null) {
       const gone = this.handsOnHost ? this.meta<number>("hostGone") : null;
       const handOn = gone ? Math.max(now + 1000, gone + HOST_GONE_MS) : Infinity;
-      await this.ctx.storage.setAlarm(Math.min(next ?? Infinity, pinging ? now + SWEEP_MS : Infinity, handOn, now + IDLE_TTL_MS));
+      await this.ctx.storage.setAlarm(Math.min(next ?? Infinity, open ? now + SWEEP_MS : Infinity, handOn, now + IDLE_TTL_MS));
       return;
     }
     const joined = this.people().length > 0;

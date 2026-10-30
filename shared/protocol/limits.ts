@@ -9,9 +9,11 @@ export const PROTOCOL_VERSION = 3; // 2: the room shares a whole Scores-tab game
 export const SEATS = 4;
 
 // Largest message either side accepts, in UTF-8 bytes. An update carries the
-// whole game: a long evening is tens of kilobytes, the 3,000-entry cap a few
-// hundred. (Cloudflare's own WebSocket limit is 1 MiB.)
-export const MAX_MESSAGE_BYTES = 512 * 1024;
+// whole game: a long evening is tens of kilobytes; a game at the entry caps
+// (game.ts MAX_EVENTS, MAX_UNDONE) of the Play table's wins, about 500 bytes
+// each with their patterns, some 900. (Cloudflare's own WebSocket limit is
+// 1 MiB: the rest is room for what goes around it.)
+export const MAX_MESSAGE_BYTES = 960 * 1024;
 
 // Per connection: a burst of RATE_BURST messages, refilled at RATE_PER_SECOND
 // (a token bucket - the Worker enforces it).

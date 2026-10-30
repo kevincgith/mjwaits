@@ -11,8 +11,11 @@
 import { replay, type ScoreGame } from "../engine/ledger";
 import { array, bool, int, literal, nullable, num, object, oneOf, optional, str, tagged, type Infer, type Result } from "./schema";
 
-// Long enough for any real evening's game, several times over.
-export const MAX_EVENTS = 3000;
+// Long enough for any real evening's game (a hundred hands is some 150
+// entries), several times over - and the redo list; together they fit a
+// message (limits.ts MAX_MESSAGE_BYTES).
+export const MAX_EVENTS = 1500;
+export const MAX_UNDONE = 300;
 export const MAX_NAME = 64;
 
 const strip = { strip: true };
@@ -113,7 +116,7 @@ export const GameSchema = object(
     firstDealer: seat,
     settings: SettingsSchema,
     events: array(EventSchema, 0, MAX_EVENTS),
-    undone: optional(array(EventSchema, 0, MAX_EVENTS)),
+    undone: optional(array(EventSchema, 0, MAX_UNDONE)),
     updatedAt: optional(at),
   },
   strip

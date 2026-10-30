@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import { MAX_MESSAGE_BYTES, PROTOCOL_VERSION, RATE_BURST, ROOM_CODE_PATTERN } from "@mjwaits/shared/protocol/limits";
 import { isAllowedOrigin, randomRoomCode } from "../src/index";
 import { IDLE_TTL_MS, MAX_CONNECTIONS, UNUSED_TTL_MS, type Room } from "../src/room";
-import { QUIET_MS } from "../src/hub";
+import { HELLO_MS, QUIET_MS, UNPINGED_MS } from "../src/hub";
 import { BASE, connect, createRoom, join, ORIGIN, sharing } from "./helpers";
 
 describe("the Worker's routes", () => {
@@ -197,7 +197,7 @@ describe("limits", () => {
     a.c.send({ t: "ping" });
     expect(await a.c.next("pong")).toEqual({ t: "pong" });
     // Past QUIET_MS since A's last ping: the sweep closes A. B never pinged
-    // (a page from before the heartbeat) and is left alone.
+    // (a page from before the heartbeat) and is left alone - for a while.
     const sweep = (now: number) =>
       runInDurableObject(env.ROOMS.getByName(code), (room: Room) => (room as unknown as { sweep(now: number): Promise<boolean> }).sweep(now));
     expect(await sweep(Date.now() + 1000)).toBe(true);
@@ -205,6 +205,21 @@ describe("limits", () => {
     await sweep(Date.now() + QUIET_MS + 1000);
     await expect.poll(() => a.c.closed, { timeout: 2000 }).toBe(true);
     expect(b.c.closed).toBe(false);
+    await sweep(Date.now() + UNPINGED_MS + 1000);
+    await expect.poll(() => b.c.closed, { timeout: 2000 }).toBe(true);
+  });
+
+  it("closes a connection that never says hello, and wakes to do it", async () => {
+    const code = await createRoom();
+    const silent = await connect(code);
+    const alarm = await runInDurableObject(env.ROOMS.getByName(code), (_room: Room, state) => state.storage.getAlarm());
+    expect(alarm).toBeLessThanOrEqual(Date.now() + HELLO_MS);
+    const sweep = (now: number) =>
+      runInDurableObject(env.ROOMS.getByName(code), (room: Room) => (room as unknown as { sweep(now: number): Promise<boolean> }).sweep(now));
+    await sweep(Date.now() + 1000);
+    expect(silent.closed).toBe(false);
+    await sweep(Date.now() + HELLO_MS + 1000);
+    await expect.poll(() => silent.closed, { timeout: 2000 }).toBe(true);
   });
 
   it("caps connections per room", async () => {

@@ -30,6 +30,9 @@ export const STATUS_TEXT: Record<ConnectionStatus, string> = {
 
 // ---- The connection -----------------------------------------------------------------
 
+// Told to slow down, an update waits this long (ms) before it goes again.
+const RETRY_MS = 2000;
+
 // One room, kept up while `code` is set. `local` is this phone's copy of the
 // game (null for someone who only watches, or before the game is up);
 // `onAdopt` is called with the room's game whenever someone else changed it.
@@ -66,7 +69,7 @@ export function useLiveGame({
     setGone(false);
     if (!code) return;
     const s = new GameSync({
-      send: (base, game) => client.current?.send({ t: "update", base, game, ...(colorsRef.current ? { colors: colorsRef.current } : {}) }) !== false,
+      send: (base, game) => client.current?.send({ t: "update", base, game, ...(colorsRef.current ? { colors: colorsRef.current } : {}) }) ?? false,
       adopt: (game) => adopt.current(game),
       lost: () =>
         setProblem({ code: "lost", message: "Someone else recorded at the same moment - yours wasn't saved, please enter it again", at: Date.now() }),
@@ -88,8 +91,12 @@ export function useLiveGame({
         setStatus(st);
         if (st !== "open") s.reset();
       },
-      onError: (errCode, message) => {
-        if (errCode === "conflict" || errCode === "notAllowed") s.refused();
+      onError: (errCode, message, rid) => {
+        // The update on its way, if that's what it was turned down (or may
+        // have been - no rid): let go of. One the room can't take isn't sent
+        // again as it is; told to slow down, it goes again in a moment.
+        s.refused(rid, !(errCode === "badGame" || errCode === "tooLarge" || errCode === "badMessage"));
+        if (errCode === "rateLimited") window.setTimeout(() => sync.current === s && s.retry(), RETRY_MS);
         // A conflict is settled by the room view that follows (GameSync
         // reports a lost change itself); everything else is worth saying.
         if (errCode !== "conflict") setProblem({ code: errCode, message, at: Date.now() });

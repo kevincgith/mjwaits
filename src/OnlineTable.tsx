@@ -96,6 +96,7 @@ export function OnlineTable({ initialCode, onExit }: { initialCode: string | nul
   // The table's record (for 戰況), fetched again whenever it grows.
   const [scores, setScores] = useState<ScoreGame | null>(null);
   const [reaction, setReaction] = useState<OnlinePlay["reaction"]>(null);
+  const [refused, setRefused] = useState<OnlinePlay["refused"]>(null);
   const scoreCount = table?.scores ?? 0;
   const started = !!table && table.phase !== "lobby";
   useEffect(() => {
@@ -103,7 +104,8 @@ export function OnlineTable({ initialCode, onExit }: { initialCode: string | nul
     let live = true;
     tableScores(code)
       .then((g) => live && setScores(g))
-      .catch(() => {});
+      // (Kept quiet - 戰況 just waits for the next try.)
+      .catch((e) => console.warn("Couldn't fetch the table's record", e));
     return () => {
       live = false;
     };
@@ -134,8 +136,12 @@ export function OnlineTable({ initialCode, onExit }: { initialCode: string | nul
   useEffect(() => {
     if (!code) return;
     const mem = loadTables();
+    // Nothing of the last table carries over.
     setTable(null);
     setMe(null);
+    setScores(null);
+    setReaction(null);
+    setRefused(null);
     const c = new TableClient({
       code,
       name: mem.name,
@@ -147,7 +153,8 @@ export function OnlineTable({ initialCode, onExit }: { initialCode: string | nul
       onTable: setTable,
       onReaction: (seat, r) => setReaction({ seat, r, id: Date.now() }),
       onStatus: setStatus,
-      onError: (errorCode, message) => {
+      onError: (errorCode, message, rid) => {
+        setRefused({ rid, id: Date.now() });
         if (errorCode === "nameTaken" || errorCode === "version" || errorCode === "full") {
           say(message);
           setCode(null);
@@ -174,7 +181,9 @@ export function OnlineTable({ initialCode, onExit }: { initialCode: string | nul
   }, [code]);
 
   const send = (msg: Send) => {
-    if (client.current?.send(msg) === false) say("Not connected - wait a moment");
+    const rid = client.current?.send(msg) ?? false;
+    if (rid === false) say("Not connected - wait a moment");
+    return rid;
   };
 
   // Joining: the nickname first, kept for next time.
@@ -207,7 +216,7 @@ export function OnlineTable({ initialCode, onExit }: { initialCode: string | nul
   if (code && table?.phase === "playing" && table.view && you)
     return (
       <>
-        <PlayPanel onExit={leave} online={{ table, send, host: you.host, scores, reaction }} />
+        <PlayPanel onExit={leave} online={{ table, send, host: you.host, scores, reaction, refused }} />
         {status !== "open" && <div className="ot-status">{status === "closed" ? "Disconnected" : "Reconnecting…"}</div>}
         {toast && (
           <div className="ot-toast" role="status">

@@ -192,6 +192,11 @@ const FATAL: ReadonlySet<string> = new Set(["version", "nameTaken", "full"]);
 export const PING_MS = 20_000;
 export const DEAD_MS = 50_000;
 export const WAKE_MS = 25_000;
+// A socket still not open after CONNECT_MS is given up on and tried again
+// (one can hang connecting for good on a network that's changed); on coming
+// back to the front, still connecting after STUCK_MS is enough.
+export const CONNECT_MS = 8_000;
+export const STUCK_MS = 2_000;
 
 // One live connection to a room - a live-scores room or an online table -
 // that keeps itself up: says hello (with the token, once it has one),
@@ -205,6 +210,7 @@ export abstract class HubClient<Send extends { t: string }, Recv extends HubServ
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private pinger: ReturnType<typeof setInterval> | null = null;
   private heard = 0; // when anything last came from the room
+  private began = 0; // when the socket now connecting was opened
   private stopped = false;
   private nextRid = 1;
   private token: string | undefined;
@@ -233,9 +239,31 @@ export abstract class HubClient<Send extends { t: string }, Recv extends HubServ
     const url = `${wsBase(this.opts.base ?? serverBase())}/${this.path}/${this.opts.code}/ws`;
     const socket = (this.opts.makeSocket ?? ((u) => new WebSocket(u) as unknown as SocketLike))(url);
     this.socket = socket;
+    this.began = Date.now();
     let opened = false;
+    const lost = () => {
+      if (this.socket !== socket) return;
+      this.socket = null;
+      this.unbeat();
+      clearTimeout(slow);
+      if (this.stopped) return this.setStatus("closed");
+      this.setStatus("reconnecting");
+      this.scheduleRetry();
+      if (!opened) void this.checkGone();
+    };
+    // No answer in time: let it go, as one that failed.
+    const slow = setTimeout(() => {
+      if (opened || this.socket !== socket) return;
+      try {
+        socket.close(4000, "slow");
+      } catch {
+        // Already gone.
+      }
+      lost();
+    }, CONNECT_MS);
     socket.onopen = () => {
       opened = true;
+      clearTimeout(slow);
       this.retries = 0;
       this.heard = Date.now();
       this.beat();
@@ -252,15 +280,7 @@ export abstract class HubClient<Send extends { t: string }, Recv extends HubServ
       }
       this.handle(msg);
     };
-    socket.onclose = () => {
-      if (this.socket !== socket) return;
-      this.socket = null;
-      this.unbeat();
-      if (this.stopped) return this.setStatus("closed");
-      this.setStatus("reconnecting");
-      this.scheduleRetry();
-      if (!opened) void this.checkGone();
-    };
+    socket.onclose = lost;
     socket.onerror = () => {
       // A close always follows; that's where the retry happens.
     };
@@ -340,11 +360,12 @@ export abstract class HubClient<Send extends { t: string }, Recv extends HubServ
 
   // Try again now - the page came back to the front, or the network did.
   // Still connected but quiet a while: most likely a socket that died while
-  // the phone slept, so a fresh one.
+  // the phone slept, so a fresh one - as for one still connecting a while.
   nudge() {
     if (this.stopped) return;
     if (this.socket) {
-      if (this.socket.readyState === OPEN && Date.now() - this.heard > WAKE_MS) this.drop();
+      const open = this.socket.readyState === OPEN;
+      if (open ? Date.now() - this.heard > WAKE_MS : Date.now() - this.began > STUCK_MS) this.drop();
       else this.raw({ t: "ping" });
       return;
     }
@@ -429,8 +450,9 @@ export function gameKey(game: ScoreGame): string {
 }
 
 export interface GameSyncIO {
-  // Send this game as an update made on `base`; false if not connected.
-  send(base: number, game: ScoreGame): boolean;
+  // Send this game as an update made on `base`: the message's rid, or false
+  // if not connected.
+  send(base: number, game: ScoreGame): string | false;
   // Someone else's change: show this game from now on.
   adopt(game: ScoreGame): void;
   // A change made here was overtaken by someone else's and is gone (the
@@ -450,8 +472,10 @@ export class GameSync {
   private latest: ScoreGame | null = null;
   // The room's game as last confirmed: its gameVersion and key.
   private confirmed: { version: number; key: string } | null = null;
-  // An update on its way: the version it was made on, and its game's key.
-  private inflight: { base: number; key: string } | null = null;
+  // An update on its way: the version it was made on, its game's key, and its rid.
+  private inflight: { base: number; key: string; rid: string } | null = null;
+  // A game the room couldn't take at all: not sent again till it changes.
+  private held: string | null = null;
   private ended = false;
 
   constructor(io: GameSyncIO) {
@@ -500,10 +524,20 @@ export class GameSync {
     this.io.adopt(view.game);
   }
 
-  // The room turned an update down (a conflict, or not allowed): the next
-  // room view settles what's shown.
-  refused() {
+  // The room turned something down - the update on its way, if `rid` is its
+  // (or the error didn't say which: too large, rate limited). Let go of, the
+  // next room view settles what's shown; `again` false: a game the room
+  // can't take (a bad game, too large), not sent again as it is.
+  refused(rid?: string, again = true) {
+    const f = this.inflight;
+    if (!f || (rid !== undefined && rid !== f.rid)) return;
     this.inflight = null;
+    if (!again) this.held = f.key;
+  }
+
+  // Send what's waiting, if anything (after being told to slow down).
+  retry() {
+    this.flush();
   }
 
   // Connection lost: whatever was in flight may or may not have landed - the
@@ -515,7 +549,8 @@ export class GameSync {
   private flush() {
     if (!this.latest || this.inflight || !this.confirmed || this.ended) return;
     const key = gameKey(this.latest);
-    if (key === this.confirmed.key) return;
-    if (this.io.send(this.confirmed.version, this.latest)) this.inflight = { base: this.confirmed.version, key };
+    if (key === this.confirmed.key || key === this.held) return;
+    const rid = this.io.send(this.confirmed.version, this.latest);
+    if (rid !== false) this.inflight = { base: this.confirmed.version, key, rid };
   }
 }
