@@ -7,6 +7,7 @@ import type { PlayPanel as PlayPanelView } from "./PlayPanel";
 import type { OnlineTable as OnlineTableView } from "./OnlineTable";
 import type { ScoresPanel as ScoresPanelView, SharedScoresView as SharedScoresViewView } from "./ScoresPanel";
 import type { TaiRulesSheet as TaiRulesSheetView } from "./TaiRulesSheet";
+import { savedSummary } from "./lib/playSaved";
 import { loadedPart, loadOnline, loadPlay, loadPlayHome, loadRulesSheet, loadScoresPanel, PartLoadError } from "./lib/lazyParts";
 
 // `ready`: the part, if it's here already - then it's handed to React at
@@ -23,16 +24,13 @@ function lazyPart<P>(ready: () => ComponentType<P> | undefined, load: () => Prom
 // The start screen reads the saved game itself, so App needn't load Play
 // to ask.
 type PlayHomeProps = Omit<ComponentProps<typeof PlayHomeView>, "saved">;
-const playHome = (home: typeof import("./PlayHome"), play: typeof import("./PlayPanel")) => (props: PlayHomeProps) => (
-  <home.PlayHome {...props} saved={play.savedSummary()} />
-);
+const playHome = (home: typeof import("./PlayHome")) => (props: PlayHomeProps) => <home.PlayHome {...props} saved={savedSummary()} />;
 const PlayHomeLazy = lazyPart(
   () => {
     const home = loadedPart("playHome");
-    const play = loadedPart("play");
-    return home && play ? playHome(home, play) : undefined;
+    return home ? playHome(home) : undefined;
   },
-  () => Promise.all([loadPlayHome(), loadPlay()]).then(([home, play]) => playHome(home, play)),
+  () => loadPlayHome().then(playHome),
 );
 const PlayPanelLazy = lazyPart(() => loadedPart("play")?.PlayPanel, () => loadPlay().then((m) => m.PlayPanel));
 const OnlineTableLazy = lazyPart(() => loadedPart("online")?.OnlineTable, () => loadOnline().then((m) => m.OnlineTable));

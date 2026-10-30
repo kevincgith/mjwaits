@@ -41,6 +41,7 @@ import {
 } from "./tileArt";
 import { BonusGlyphSpan, TileGlyphSpan } from "./TileGlyphs";
 import { OnlineTable, PlayHome, PlayPanel, ScoresPanel, SharedScoresView, TaiRulesSheet } from "./LazyParts";
+import { savedSummary } from "./lib/playSaved";
 import { loadTestHands } from "./lib/lazyParts";
 import { inviteLaunch, startInstallAtInvite } from "./lib/onlineTable";
 import type { RecordRequest, ScoreHandRequest, SeatingResult } from "./ScoresPanel";

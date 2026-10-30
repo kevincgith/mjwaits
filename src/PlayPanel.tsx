@@ -106,6 +106,7 @@ import { getTalk, getYourVoice, isAloud, sayAloud, sayLineAloud, setAloud, setTa
 import { scoreView, type ResultView } from "@mjwaits/shared/engine/view";
 import { MYSTERY_BOT, REACTIONS, type Reaction, type TableClientMessage, type TableState } from "@mjwaits/shared/protocol/table";
 import { BLANK, seatState } from "./lib/seatState";
+import { PLAY_SAVE_KEY } from "./lib/playSaved";
 import { replayCached, withEvents, type ScoreEvent, type ScoreGame } from "@mjwaits/shared/engine/ledger";
 import { carriedOver, newPlayLedger, playEvents, uniqueNames } from "@mjwaits/shared/engine/playLedger";
 import { PlayScores } from "./scores/playScores";
@@ -244,7 +245,7 @@ const AUTOPLAY_NEXT_MS = 4500;
 const TIMER_CHOICES = [0, 10, 20] as const;
 type TimerSetting = (typeof TIMER_CHOICES)[number];
 
-const SAVE_KEY = "mjwaits.play";
+const SAVE_KEY = PLAY_SAVE_KEY;
 
 interface Saved {
   game: GameState;
@@ -279,16 +280,6 @@ function loadSaved(): Saved | null {
   }
 }
 
-// The game left on this phone, for the start screen's Continue.
-export interface SavedSummary {
-  round: string;
-  you: number; // your total
-}
-
-export function savedSummary(): SavedSummary | null {
-  const saved = loadSaved();
-  return saved && { round: roundLabel(saved.game), you: saved.totals[0] };
-}
 
 // How often each bot line has been said, on this device (see LineCounter).
 const LINES_KEY = "mjwaits.lines";
