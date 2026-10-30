@@ -43,6 +43,8 @@ export interface Dims {
   // A point on the felt as seen, in your row's terms: from the middle of
   // its top edge, and how much nearer (bigger) it shows there.
   project?: (x: number, y: number, z: number) => { x: number; y: number; s: number };
+  // How wide your row may run: the table's width (the screen, as it's held).
+  rowRoom?: number;
 }
 
 // A tile: its face ("m1", "flower2"... or "back" face down), where it lies,
@@ -321,9 +323,18 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
   const tGap = 0.15 * T;
   const meldsLong = sum(tMelds.map((g) => g.along + tGap));
   const laid = meldsLong + (tFlowers ? tFlowers.along + tGap : 0);
-  // Room beside it: as far as the side seats allow, the row kept centred (fitTop).
-  const leftReach = cx0 + 0.5 * rem + L.width;
-  const rightReach = cx1 - 0.5 * rem - R.width;
+  // Room beside it: as far as what of the side seats is beside it allows -
+  // their walls (as they'll lie at the end), and their melds and bonus
+  // tiles if they reach up that far - the row kept centred (fitTop).
+  const band = [cy0 + 0.6 * d.wallTop, cy0 + 0.6 * d.wallTop + Math.max(0.55 * d.wallTop, 1.05 * T)];
+  const reachOf = (S: typeof L) => {
+    const lying = Math.max(0, S.Wg * 0.5 - 0.9 * rem);
+    const sideTop = (cy0 + cy1) / 2 - S.sideH / 2;
+    const sideReaches = S.sideW > 0 && sideTop < band[1] && sideTop + S.sideH > band[0];
+    return sideReaches ? S.width : S.edgeW + lying;
+  };
+  const leftReach = cx0 + 0.5 * rem + reachOf(L);
+  const rightReach = cx1 - 0.5 * rem - reachOf(R);
   const room = 2 * Math.min(centreX - leftReach, rightReach - centreX) - 8;
   const standing = Math.max(0, 16 - 3 * top.melds.length);
   const beside = (standing + 1) * tp + 0.25 * Wt + 0.3 * T;
@@ -834,9 +845,25 @@ function layoutHand(view: GLTableView, d: Dims, spots: Partial<Record<GLSide, Sp
   let x = 0;
   // Melds and flowers, a size down, flowers first; each lying at 32deg.
   const M = 0.74 * H;
-  const groups = [flowerGroup(mine.flowers, M), ...mine.melds.map((m) => meldGroup(m, mine.hideConcealed, true, M))].filter((g): g is Group => !!g);
+  const flowers = flowerGroup(mine.flowers, M);
+  const melds = mine.melds.map((m) => meldGroup(m, mine.hideConcealed, true, M));
+  // Your row running past the screen's edges (judged with the bonus tiles
+  // in it, and a tile drawn): the bonus tiles move out a row, onto the
+  // table just above it, from its left (bonusOut).
+  const inRow = (gs: Group[]) => (gs.length ? sum(gs.map((g) => g.along)) + 0.12 * M * (gs.length - 1) + 0.3 * M : 0);
+  const rowLong = inRow([...(flowers ? [flowers] : []), ...melds]) + mine.tiles.filter((t) => !t.drawn).length * 0.75 * H + 1.065 * H;
+  const bonusOut = !!flowers && !!d.rowRoom && rowLong > d.rowRoom;
+  const groups = [...(flowers && !bonusOut ? [flowers] : []), ...melds];
+  if (flowers && bonusOut) {
+    const ty = -0.15 * M - flowers.pad - 0.5 * flowers.em;
+    flowers.slots.forEach((s, k) => {
+      const cx = flowers.pad + 0.72 * flowers.em * (k + 0.5);
+      const pose = (a: number) => chain(translate(cx, ty, 0), about(0, 0.5 * flowers.em, THICK * flowers.em, rotateX(a)), scale(flowers.em));
+      pieces.push({ face: s.face!, m: pose(32), shade: LIT, tint: 1, anim: { key: `h:f:${k}`, delay: 0, dur: 0.5, pose: (t) => pose(keyframes(MINE_FRAMES, t)[0]) } });
+    });
+  }
   if (groups.length) {
-    const named = mine.flowers.length ? ["f", ...mine.melds.map((_, i) => `m${i}`)] : mine.melds.map((_, i) => `m${i}`);
+    const named = flowers && !bonusOut ? ["f", ...mine.melds.map((_, i) => `m${i}`)] : mine.melds.map((_, i) => `m${i}`);
     groups.forEach((g, gi) => {
       const pitch = 0.72 * g.em;
       const ty = foot - g.pad - 0.5 * g.em;

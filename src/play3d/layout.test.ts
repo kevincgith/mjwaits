@@ -90,10 +90,23 @@ describe("a side seat's melds on the WebGL table", () => {
   for (const taker of ["left", "right"] as const)
     it(`stay put while ${taker}'s 換牌 row is there`, () => {
       const v = take(taker, 3);
-      const meld = { kind: "pung" as const, tiles: [1, 1, 1].map(() => ({ suit: "m" as const, rank: 5 })), concealed: false };
+      const meld = { kind: "triplet" as const, tiles: [1, 1, 1].map(() => ({ suit: "m" as const, rank: 5 })), concealed: false, from: 1 };
       const withMelds = { ...v, walls: { ...v.walls, [taker]: { ...v.walls[taker], melds: [meld, meld] } } };
       const melds = (w: GLTableView) => layoutTable({ ...w, flights: [] }, DIMS).felt.pieces.filter((p) => p.face === "m5").map((p) => centre(p.m).map((n) => Math.round(n)).join());
       const shown = { ...withMelds, rows: { [taker]: { groups: withMelds.rows[taker]!.groups.map((g) => ({ ...g, shown: g.shown.map(() => true) })) } } };
       expect(melds(shown)).toEqual(melds({ ...withMelds, rows: {} }));
     });
+});
+
+describe("your row on the WebGL table", () => {
+  it("puts your bonus tiles out a row, above it, once it runs past the screen", () => {
+    const v = take("bottom", 1);
+    const meld = { kind: "triplet" as const, tiles: [1, 1, 1].map(() => ({ suit: "b" as const, rank: 2 })), concealed: false, from: 1 };
+    const flowers = [1, 2, 3, 4].map((rank) => ({ kind: "flower" as const, rank: rank as 1 | 2 | 3 | 4 }));
+    const tiles = Array.from({ length: 7 }, () => ({ tile: { suit: "m" as const, rank: 3 }, drawn: false, selected: false, hint: false, danger: false, barred: false, winner: false, enabled: false }));
+    const mine = { ...v.mine, tiles, melds: [meld, meld, meld], flowers, sliding: false };
+    const row = (room: number) => layoutTable({ ...v, mine, rows: {}, flights: [] }, { ...DIMS, rowRoom: room }).hand.pieces.filter((p) => p.face.startsWith("flower"));
+    expect(row(5000).every((p) => p.m[13] > 0)).toBe(true);
+    expect(row(400).every((p) => p.m[13] < 0)).toBe(true);
+  });
 });

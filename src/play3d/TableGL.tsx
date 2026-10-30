@@ -147,6 +147,7 @@ export default function TableGL({
       hand.style.height = `${1.2 * d.hand}px`;
       const f = readFrame(root, felt, hand);
       d.handTop = feltYAt(f, f.hand.y + 0.2 * d.hand, d.feltW / 2, d.feltH);
+      d.rowRoom = root.clientWidth;
       // The felt as seen from your row: from the middle of its top edge (it's centred, so that stays put).
       const tilt = new DOMMatrix(f.felt);
       const handMid = f.hand.x + hand.offsetWidth / 2;
