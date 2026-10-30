@@ -10625,6 +10625,7 @@ function App() {
         ))}
       {!sharedScores && mode === "table" && (
         <OnlineTable
+          renderer={play2 && tableFromPlay.current ? "webgl" : undefined}
           initialCode={tableCode}
           onExit={() => {
             if (tableFromPlay.current) {
