@@ -434,6 +434,7 @@ button {
 .btn-primary,
 .trainer-submit,
 .dice-roll,
+.play-intro-start,
 .panel-header button.btn-primary,
 .crop-actions-right button:last-child,
 .scan-review-actions button:last-child {
@@ -17534,4 +17535,44 @@ button.sc-stat:active {
 
 .play-setup-rules .play-menu-row > .play-menu-seg {
   flex-shrink: 0;
+}
+
+/* ---- Play tab's page -------------------------------------------------------
+   What the Play tab shows before the full-screen table: a short card with a
+   Start button (see PlayIntro). */
+
+.play-intro-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  text-align: center;
+}
+
+.play-intro-title {
+  margin: 0.25rem 0 0;
+  font-size: var(--text-xl);
+}
+
+.play-intro-text,
+.play-intro-saved,
+.play-intro-note {
+  margin: 0;
+}
+
+.play-intro-text {
+  color: var(--text-secondary);
+}
+
+.play-intro-saved {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.play-intro-start {
+  margin-top: 0.4rem;
+}
+
+.play-intro-note {
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
 }

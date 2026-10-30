@@ -10079,6 +10079,32 @@ const TAB_ITEMS: { id: Exclude<AppMode, "table">; label: string; icon: ReactNode
   },
 ];
 
+// The Play tab's own page, inside the normal app: the table takes over the
+// whole screen (and asks a phone to turn sideways), so it waits for a tap on
+// Start rather than opening the moment the tab is picked.
+function PlayIntro({ onStart }: { onStart: () => void }) {
+  const saved = savedSummary();
+  return (
+    <section className="panel play-intro">
+      <div className="card play-intro-card">
+        <h2 className="play-intro-title">
+          <span lang="zh-Hant">麻雀</span> Play
+        </h2>
+        <p className="play-intro-text">A full hand of 16-tile mahjong against three bots, or online with friends on their own phones.</p>
+        {saved && (
+          <p className="play-intro-saved">
+            Game in progress · {saved.round} · you {saved.you > 0 ? `+${saved.you}` : saved.you}
+          </p>
+        )}
+        <button type="button" className="play-intro-start" onClick={onStart}>
+          Start playing
+        </button>
+        <p className="play-intro-note">Opens full screen. On a phone, turn it sideways.</p>
+      </div>
+    </section>
+  );
+}
+
 function App() {
   // A table invite (?room=…) opens the Scores tab's 線上 on that table.
   const [joinCode] = useState(() => roomFromSearch(window.location.search));
@@ -10155,7 +10181,9 @@ function App() {
   if (mode !== "play" && mode !== "table") lastNonPlayMode.current = mode;
   // The table fills the screen; html.playing hides the page around it - and
   // while it's up, it behaves like a game on a phone (see enterGameMode).
-  const playing = mode === "play" || mode === "table";
+  // Picking the Play tab shows PlayIntro first; its Start button sets this.
+  const [playStarted, setPlayStarted] = useState(false);
+  const playing = (mode === "play" && playStarted) || mode === "table";
   useEffect(() => {
     document.documentElement.classList.toggle("playing", playing);
     return playing ? enterGameMode() : undefined;
@@ -10271,7 +10299,10 @@ function App() {
       window.history.replaceState(null, "", window.location.pathname + window.location.search);
       setSharedScores(null);
     }
-    if (id === "play") setPlayScreen("home");
+    if (id === "play") {
+      setPlayScreen("home");
+      setPlayStarted(false);
+    }
     setMoreOpen(false);
     setMode(id);
   };
@@ -10462,7 +10493,9 @@ function App() {
       )}
       {!sharedScores &&
         mode === "play" &&
-        (playScreen === "home" ? (
+        (!playStarted ? (
+          <PlayIntro onStart={() => setPlayStarted(true)} />
+        ) : playScreen === "home" ? (
           <PlayHome
             saved={savedSummary()}
             onPlay={(fresh) => setPlayScreen(fresh ? "new" : "resume")}
@@ -10470,7 +10503,7 @@ function App() {
               tableFromPlay.current = true;
               setMode("table");
             }}
-            onExit={() => setMode(lastNonPlayMode.current)}
+            onExit={() => setPlayStarted(false)}
           />
         ) : (
           <PlayPanel
