@@ -10182,8 +10182,12 @@ function PlayIntro({
               Join
             </button>
           </form>
-          <button type="button" className="play-intro-more" onClick={onMore}>
-            More: your own rules, online tables, your record
+          <button type="button" className="ph-item" onClick={onMore}>
+            <span className="ph-item-zh">大廳</span>
+            <span className="ph-item-text">
+              <strong>Full game</strong>
+              <small>Set the rules · online · your record</small>
+            </span>
             <IntroChevron />
           </button>
         </div>

@@ -17627,18 +17627,8 @@ button.sc-stat:active {
   animation-delay: 0.15s;
 }
 
-.play-intro-more {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.3rem;
-  padding: 0.5rem;
-  border: none;
-  background: none;
-  color: var(--play-on-felt-muted);
-  font-size: var(--text-sm);
-  font-weight: 600;
-  cursor: pointer;
+.play-intro-menu > :nth-child(5) {
+  animation-delay: 0.2s;
 }
 
 .play-intro-note {
