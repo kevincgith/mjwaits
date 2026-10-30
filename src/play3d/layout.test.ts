@@ -159,3 +159,24 @@ describe("the felt seen from your row (feltToHand)", () => {
     }
   });
 });
+
+describe("a side seat's 換牌 row", () => {
+  for (const taker of ["left", "right"] as const)
+    for (const setup of ["a flower", "a flower and two melds", "nothing else"] as const)
+      it(`stays within ${taker}'s wall with ${setup} in front of it`, () => {
+        const v = take(taker, 2);
+        const meld = { kind: "triplet" as const, tiles: [1, 1, 1].map(() => ({ suit: "m" as const, rank: 5 })), concealed: false, from: 1 };
+        const wall = { ...v.walls[taker], flowers: setup === "nothing else" ? [] : [{ kind: "flower" as const, rank: 1 as const }], melds: setup.includes("melds") ? [meld, meld] : [] };
+        const shown = { ...v, piles: null, walls: { ...v.walls, [taker]: wall }, flights: [], rows: { [taker]: { groups: v.rows[taker]!.groups.map((g) => ({ ...g, shown: g.shown.map(() => true) })) } } };
+        const out = layoutTable(shown, DIMS).felt.pieces;
+        const theirs = (p: Piece) => (taker === "left" ? p.m[12] < DIMS.feltW * 0.3 : p.m[12] > DIMS.feltW * 0.7);
+        const wallYs = out.filter((p) => p.face === "z7" && theirs(p)).map((p) => p.m[13]);
+        const rowYs = out.filter((p) => p.face === "back" && theirs(p)).map((p) => p.m[13]);
+        expect(rowYs.length).toBe(6);
+        const [lo, hi] = [Math.min(...wallYs), Math.max(...wallYs)];
+        for (const y of rowYs) {
+          expect(y).toBeGreaterThanOrEqual(lo - DIMS.tile);
+          expect(y).toBeLessThanOrEqual(hi + DIMS.tile);
+        }
+      });
+});

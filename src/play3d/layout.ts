@@ -313,12 +313,12 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
     const meldsH = cols.length ? Math.max(...cols.map(colLen)) : 0;
     const sideW = Math.max(flowers?.across ?? 0, meldsW);
     const sideH = (flowers?.along ?? 0) + meldsH + (flowers && meldsH ? gap : 0);
-    const reach = Math.max(edgeH, maxLen) / 2 + sideH / 2 - (flowers ? flowers.along + gap : 0);
-    const rowIn: "none" | "first" | "last" | "next" = !row ? "none" : !cols.length ? "first" : colLen(cols[cols.length - 1]) + gap + rowLen <= reach ? "last" : "next";
+    // (Where exactly: see the seat's placing below.)
+    const span = Math.max(edgeH, maxLen) / 2;
     const extra = Math.max(0, Wg * 0.5 - 0.9 * rem);
     const seatGap = 0.3 * T + extra;
     const meldIn = w.down ? 0 : 0.45 * T + extra;
-    return { w, Wg, p, slot, faces, win, drew, edgeW, edgeH, flowers, cols, colW, meldsW, meldsH, sideW, sideH, seatGap, meldIn, rowIn, rowLen, width: edgeW + seatGap + sideW };
+    return { w, Wg, p, slot, faces, win, drew, edgeW, edgeH, flowers, cols, colW, meldsW, meldsH, sideW, sideH, seatGap, meldIn, row, rowLen, span, gap, width: edgeW + seatGap + sideW };
   };
   const L = side("left");
   const R = side("right");
@@ -531,9 +531,13 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
       y += dir * (S.flowers.along + 0.15 * T);
     }
     let colX = which === "left" ? sideMid - S.meldsW / 2 : sideMid + S.meldsW / 2;
-    // (Where a 換牌 row goes: see rowIn.)
-    // (Alone in front of the wall, it's centred along it.)
-    if (S.rowIn === "first") rowAt[which] = { x: sideMid, y: S.flowers ? y : midSeatY - (dir * S.rowLen) / 2, dir };
+    // A 換牌 row: on after what's in front of the wall (the bonus tiles,
+    // the melds' last column) if it ends within the wall's length; else a
+    // column of its own toward the middle, centred along the wall - never
+    // past the wall's end. Alone, it's centred.
+    const fits = (from: number) => dir * (from + dir * S.rowLen - midSeatY) <= S.span + 0.5;
+    const ownColumn = (x: number) => ({ x, y: midSeatY - (dir * S.rowLen) / 2, dir });
+    let after = { x: sideMid, y };
     for (const col of S.cols) {
       const cw = S.colW(col);
       let gy = y;
@@ -541,10 +545,14 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
         run(g, colX + (dir * cw) / 2, gy);
         gy += dir * (g.along + 0.15 * T);
       }
-      if (S.rowIn === "last") rowAt[which] = { x: colX + (dir * cw) / 2, y: gy, dir };
+      after = { x: colX + (dir * cw) / 2, y: gy };
       colX += dir * cw;
     }
-    if (S.rowIn === "next") rowAt[which] = { x: colX + (dir * 1.08 * T) / 2, y, dir };
+    if (S.row) {
+      const alone = !S.flowers && !S.cols.length;
+      const nextX = S.cols.length ? colX + (dir * 1.08 * T) / 2 : sideMid + dir * (S.sideW / 2 + 0.15 * T + 0.54 * T);
+      rowAt[which] = alone ? ownColumn(sideMid) : fits(after.y) ? { ...after, dir } : ownColumn(nextX);
+    }
     owned[which].push({ x0: edgeX0, y0: edgeY0, x1: edgeX0 + S.edgeW, y1: edgeY0 + S.edgeH });
     ownSince(which, from);
   }
