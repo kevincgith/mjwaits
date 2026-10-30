@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { layoutTable, type Dims, type Piece } from "./layout";
+import { feltToHand, layoutTable, type Dims, type Piece } from "./layout";
+import { apply, chain, rotateX, translate } from "./mat";
 import { giverOrder, swapSlots } from "./swapOrder";
 import type { GLFlight, GLSide, GLSwapRow, GLTableView, GLWall } from "./types";
 
@@ -108,5 +109,53 @@ describe("your row on the WebGL table", () => {
     const row = (room: number) => layoutTable({ ...v, mine, rows: {}, flights: [] }, { ...DIMS, rowRoom: room }).hand.pieces.filter((p) => p.face.startsWith("flower"));
     expect(row(5000).every((p) => p.m[13] > 0)).toBe(true);
     expect(row(400).every((p) => p.m[13] < 0)).toBe(true);
+  });
+});
+
+describe("換牌 flights keep their tiles' orientation", () => {
+  // The way a tile's own x and y point, as drawn (unit vectors).
+  const axes = (m: Float32Array) => {
+    const n = (i: number) => {
+      const v = [m[i], m[i + 1], m[i + 2]];
+      const l = Math.hypot(...v);
+      return v.map((x) => x / l);
+    };
+    return [n(0), n(4)];
+  };
+  const angle = (a: number[], b: number[]) => (Math.acos(Math.max(-1, Math.min(1, a[0] * b[0] + a[1] * b[1] + a[2] * b[2]))) * 180) / Math.PI;
+  for (const taker of SIDES)
+    it(`from pile to ${taker}'s row - no turn when the formation takes over, nor when it hands over`, () => {
+      const d = { ...DIMS, feltToHand: undefined };
+      const out = layoutTable(take(taker, 3), d);
+      for (const p of flying(taker === "bottom" ? out.hand.pieces : out.felt.pieces)) {
+        const [sx, sy] = axes(p.fly!.from);
+        const [fx, fy] = axes(p.fly!.pose!(0));
+        const [ex, ey] = axes(p.m);
+        const [gx, gy] = axes(p.fly!.pose!(1));
+        // (Your row's flights start as seen on the tilted felt: allow its 32deg.)
+        const slack = taker === "bottom" ? 35 : 1;
+        expect(Math.max(angle(sx, fx), angle(sy, fy)), "at take-off").toBeLessThanOrEqual(slack);
+        expect(Math.max(angle(ex, gx), angle(ey, gy)), "at landing").toBeLessThanOrEqual(slack);
+      }
+    });
+});
+
+describe("the felt seen from your row (feltToHand)", () => {
+  it("draws a felt point exactly where the felt's own view does", () => {
+    // The felt tipped back 32deg about its foot, in a canvas; the two eyes apart.
+    const felt = chain(translate(60, 40, 0), translate(356, 520, 0), rotateX(32), translate(-356, -520, 0));
+    const stage = { d: 1100, ox: 422, oy: 160 };
+    const row = { ox: 430, oy: 310 - 0.6 * 60 };
+    const hand = { x: 120, y: 310 };
+    const handMid = hand.x + 300;
+    const seen = (d: number, ox: number, oy: number, p: number[]) => [ox + ((p[0] - ox) * d) / (d - p[2]), oy + ((p[1] - oy) * d) / (d - p[2])];
+    const m = feltToHand(felt, stage, row, handMid, hand.y);
+    for (const q of [[0, 0, 0], [700, 500, 0], [350, 260, 18], [120, 480, 40]]) {
+      const byFelt = seen(stage.d, stage.ox, stage.oy, apply(felt, q[0], q[1], q[2]));
+      const inRow = apply(m, q[0], q[1], q[2]);
+      const byRow = seen(stage.d, row.ox, row.oy, [inRow[0] + handMid, inRow[1] + hand.y, inRow[2]]);
+      expect(byRow[0]).toBeCloseTo(byFelt[0], 3);
+      expect(byRow[1]).toBeCloseTo(byFelt[1], 3);
+    }
   });
 });
