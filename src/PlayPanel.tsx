@@ -114,7 +114,7 @@ import { ReviewSheet, type Decision } from "./PlayReview";
 import { RecordSheet } from "./PlayRecord";
 import { isMuted, play as playSound, setMuted, wakeAudio, type Sound } from "./lib/sound";
 import { addHand, loadRecord, saveRecord, type Opponent } from "./lib/playRecord";
-import type { GLFlight, GLPile, GLSwapRow, GLTableView, GLWall } from "./play3d/types";
+import type { GLFlight, GLMine, GLPile, GLSwapRow, GLTableView, GLWall } from "./play3d/types";
 import { loadLearnedModel, type LearnedModel } from "./lib/ml/browser";
 import { learnedClaim, learnedTurnMove, type LearnedBot } from "./lib/ml/policy";
 import { claimDecisionAction, encodeObservation, legalActions, turnMoveAction } from "./lib/ml/encode";
@@ -2635,11 +2635,14 @@ export function PlayPanel({
   // Your give: in the order they sit in your hand, each flying down from its
   // place there to its place in your pile.
   const giveFrom = useRef<{ tiles: Tile[]; at: ((FlightEnd & { font: number }) | null)[]; pitch?: number } | null>(null);
+  // Play 2.0: your give, for its tiles to fly down to your pile (see GLMine.given).
+  const [glGiven, setGlGiven] = useState<GLMine["given"]>(null);
   const giveSwap = (picked: number[] = swapHand) => {
     if (!swapPhase || picked.length !== swapPhase.count) return;
     // Online, once per give (the table's state, with your pile, comes back).
     if (online && swapSent.current?.step === online.table.step) return;
     const order = [...picked].sort((a, b) => a - b);
+    if (gl) setGlGiven({ key: Date.now(), tiles: order.map((i) => handTiles[i]), from: order, count: handTiles.length });
     const els = [...document.querySelectorAll(".play-hand:not(.play-swap-mine) > .play-hand-tile")];
     const frame = tableFrame();
     giveFrom.current = {
@@ -3638,6 +3641,8 @@ export function PlayPanel({
           toppled: iWon,
           drawKey: String(liveTilesLeft(game)),
           winLead: winIndex >= 0 ? WIN_TILE_LEAD : 0,
+          sliding: !!swapPhase || swapFlying,
+          given: swapPhase?.piles[HUMAN] ? glGiven : null,
         },
         spotlight: spot ? { tile: spot.tile, from: SIDES[spot.seat], key: spot.key } : null,
         piles: showPiles ? { bottom: glPile(HUMAN), right: glPile(1), top: glPile(2), left: glPile(3) } : null,
