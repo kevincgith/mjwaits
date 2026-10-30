@@ -57,10 +57,45 @@ export interface GLMine {
   winLead: number;
 }
 
+// 換牌: a seat's pile where its discards go - each place a tile face down
+// ("back"), a face (yours, standing so you see what each player takes),
+// or null where one's been taken.
+export interface GLPile {
+  slots: (Tile | "back" | null)[];
+  standing: boolean;
+  picked: number[];
+  // Yours, just given: places still waiting for their tile.
+  arriving: number[];
+  // Tappable on your take.
+  pickable: boolean;
+}
+
+// What a seat's taken this round, in a row by its hand: a group per giver,
+// each place shown once its tile has landed (a face, or face down).
+export interface GLSwapRow {
+  groups: { tiles: (Tile | null)[]; shown: boolean[] }[];
+}
+
+// A taken tile flying from its pile to its place in the taker's row.
+export interface GLFlight {
+  id: number;
+  from: GLSide;
+  place: number;
+  to: GLSide;
+  group: number; // its giver's group in that row, as laid out
+  slot: number; // its place in that group
+  tile: Tile | null; // face down when null
+  flip: boolean; // face down where it lay, face up where it lands
+}
+
 export interface GLTableView {
   walls: { right: GLWall; top: GLWall; left: GLWall };
   ponds: Record<GLSide, GLPond>;
   mine: GLMine;
   // The discard up for grabs, in its bubble by the compass.
   spotlight: { tile: Tile; from: GLSide; key: string } | null;
+  // 換牌, while it's on.
+  piles: Partial<Record<GLSide, GLPile>> | null;
+  rows: Partial<Record<GLSide, GLSwapRow>>;
+  flights: GLFlight[];
 }

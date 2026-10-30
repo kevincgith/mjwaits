@@ -114,7 +114,7 @@ import { ReviewSheet, type Decision } from "./PlayReview";
 import { RecordSheet } from "./PlayRecord";
 import { isMuted, play as playSound, setMuted, wakeAudio, type Sound } from "./lib/sound";
 import { addHand, loadRecord, saveRecord, type Opponent } from "./lib/playRecord";
-import type { GLTableView, GLWall } from "./play3d/types";
+import type { GLFlight, GLPile, GLSwapRow, GLTableView, GLWall } from "./play3d/types";
 import { loadLearnedModel, type LearnedModel } from "./lib/ml/browser";
 import { learnedClaim, learnedTurnMove, type LearnedBot } from "./lib/ml/policy";
 import { claimDecisionAction, encodeObservation, legalActions, turnMoveAction } from "./lib/ml/encode";
@@ -2362,6 +2362,13 @@ export function PlayPanel({
     const prev = pilesSeen.current;
     const frame = tableFrame();
     const spots = [0, 1, 2, 3].map((g) => {
+      // Play 2.0 draws the piles itself: a place each, seen as the WebGL table shows it.
+      if (gl)
+        return (swapPhase?.piles[g] ?? []).map(() => ({
+          box: { left: 0, top: 0, width: 0, height: 0 },
+          view: { eye: { x: 0, y: 0, d: 1 }, tilt: g === HUMAN && seated ? SWAP_TILT_STANDING : SWAP_TILT_FLAT, turn: seatTurn(g), shade: [0, 0] as [number, number] },
+          font: 1,
+        }));
       const pond = document.querySelector(`.play-swap-pond.play-pond-${SIDES[g]}`);
       // Yours stand facing you (when you're the one playing them); the rest lie flat.
       const tilt = pond?.classList.contains("is-standing") ? SWAP_TILT_STANDING : SWAP_TILT_FLAT;
@@ -2492,6 +2499,22 @@ export function PlayPanel({
   useLayoutEffect(() => {
     const pending = flights.filter((f) => f.row && !f.path);
     if (!pending.length) return;
+    // Play 2.0: each tile to its place in its giver's group, in its pile's
+    // order; the WebGL table flies it there (play3d/), timed from here.
+    if (gl) {
+      const placed = new Map<number, Flight>();
+      for (const f of pending) {
+        const group = pending.filter((x) => x.to === f.to && x.row!.group === f.row!.group).sort((a, b) => a.place - b.place);
+        placed.set(f.id, { ...f, path: [], delay: 0, row: { ...f.row!, place: group.indexOf(f) } });
+      }
+      setFlights((all) => all.map((f) => placed.get(f.id) ?? f));
+      const quick = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+      for (const id of placed.keys()) {
+        window.setTimeout(() => flightNews("flown", id), 0);
+        window.setTimeout(() => flightNews("landed", id), quick ? 1 : SWAP_FLIGHT_MS);
+      }
+      return;
+    }
     const frame = tableFrame();
     const els = new Map([...document.querySelectorAll<HTMLElement>(".play-swap-layer [data-flight]")].map((e) => [Number(e.dataset.flight), e]));
     const done = new Map<number, Flight>();
@@ -3454,6 +3477,15 @@ export function PlayPanel({
   // The tile a seat won with (to lay sideways in its hand), if it won.
   const wonWith = (seat: number) =>
     result && result.tile && (result.winner === seat || result.alsoWon?.some((w) => w.winner === seat)) ? result.tile : null;
+  // On your take: a tile of a pile picked, or put back.
+  const pickFrom = (seat: number, i: number) => {
+    if (!swapPhase) return;
+    setSwapPicks((now) => {
+      const has = now[seat].includes(i);
+      if (!has && now.flat().length >= swapPhase.count) return now;
+      return now.map((p, g) => (g !== seat ? p : has ? p.filter((x) => x !== i) : [...p, i]));
+    });
+  };
   // 換牌: a seat's face-down pile, where its discards go. Tappable on your take.
   const swapPond = (seat: number, side: "top" | "left" | "right" | "bottom") => {
     // A round's last take, its tiles still waiting to fly: drawn from the
@@ -3470,16 +3502,7 @@ export function PlayPanel({
         standing={seat === HUMAN && seated}
         held={heldIn(seat)}
         arriving={seat === HUMAN ? new Set(giveFlights.map((f) => f.place)) : undefined}
-        onPick={
-          swapPhase && myTake && seat !== HUMAN
-            ? (i) =>
-                setSwapPicks((now) => {
-                  const has = now[seat].includes(i);
-                  if (!has && now.flat().length >= swapPhase.count) return now;
-                  return now.map((p, g) => (g !== seat ? p : has ? p.filter((x) => x !== i) : [...p, i]));
-                })
-            : null
-        }
+        onPick={swapPhase && myTake && seat !== HUMAN ? (i) => pickFrom(seat, i) : null}
       />
     );
   };
@@ -3557,6 +3580,43 @@ export function PlayPanel({
       : flash && game.phase.kind !== "over"
         ? { tile: flash.tile, seat: flash.seat, key: `f${flash.id}` }
         : null;
+  // 換牌's piles, rows and flights, as swapPond, swapRow and SwapFlight draw them.
+  const glPile = (seat: number): GLPile | undefined => {
+    const pile = swapPhase?.piles[seat] ?? (ghost?.[seat] ? Array<null>(ghost[seat]).fill(null) : null);
+    if (swapRolling || !pile) return undefined;
+    const held = heldIn(seat);
+    const standing = seat === HUMAN && seated;
+    return {
+      slots: pile.map((slot, i) => {
+        const t = slot ?? (held.has(i) ? (held.get(i) ?? "back") : null);
+        return t && t !== "back" && standing ? t : t ? "back" : null;
+      }),
+      standing,
+      picked: swapPicks[seat],
+      arriving: seat === HUMAN ? giveFlights.map((f) => f.place) : [],
+      pickable: !!(swapPhase && myTake && seat !== HUMAN),
+    };
+  };
+  const rowGroups = (seat: number) => {
+    const theirs = flights.filter((f) => f.to === seat && f.row);
+    const present = [...new Set(theirs.map((f) => f.row!.group))];
+    return { theirs, groups: (rowOrder[seat] ?? present.sort((a, b) => a - b)).filter((g) => present.includes(g)) };
+  };
+  const glRow = (seat: number): GLSwapRow | undefined => {
+    const { theirs, groups } = rowGroups(seat);
+    if (!theirs.length) return undefined;
+    return {
+      groups: groups.map((g) => {
+        const fs = theirs.filter((f) => f.row!.group === g);
+        const face = fs.find((x) => x.tile)?.tile ?? null;
+        const at = fs.map((_, j) => fs.find((x) => x.row!.place === j));
+        return { tiles: at.map((f) => f?.tile ?? face), shown: at.map((f) => !!f && landed.has(f.id)) };
+      }),
+    };
+  };
+  const glFlights: GLFlight[] = flights
+    .filter((f) => f.row?.place !== undefined && !landed.has(f.id))
+    .map((f) => ({ id: f.id, from: SIDES[f.seat], place: f.place, to: SIDES[f.to], group: rowGroups(f.to).groups.indexOf(f.row!.group), slot: f.row!.place!, tile: f.tile, flip: !!f.flip }));
   const glView: GLTableView | null = gl
     ? {
         walls: { right: glWall(1), top: glWall(2), left: glWall(3) },
@@ -3580,6 +3640,9 @@ export function PlayPanel({
           winLead: winIndex >= 0 ? WIN_TILE_LEAD : 0,
         },
         spotlight: spot ? { tile: spot.tile, from: SIDES[spot.seat], key: spot.key } : null,
+        piles: showPiles ? { bottom: glPile(HUMAN), right: glPile(1), top: glPile(2), left: glPile(3) } : null,
+        rows: { bottom: glRow(HUMAN), right: glRow(1), top: glRow(2), left: glRow(3) },
+        flights: glFlights,
       }
     : null;
 
@@ -3872,7 +3935,7 @@ export function PlayPanel({
         </div>
         {glView && (
           <Suspense fallback={null}>
-            <TableGL view={glView} rootRef={tableRef} feltRef={feltRef} handRef={myRowRef} middleRef={middleRef} onTile={tapTile} />
+            <TableGL view={glView} rootRef={tableRef} feltRef={feltRef} handRef={myRowRef} middleRef={middleRef} onTile={tapTile} onPile={(side, i) => myTake && pickFrom(SIDES.indexOf(side), i)} />
           </Suspense>
         )}
 
@@ -4136,7 +4199,7 @@ export function PlayPanel({
         {swapPhase && swapRolling && !rolling && <SwapDice phase={swapPhase} factor={speed === "fast" ? 0.6 : 1} />}
         {/* The swap's tiles in the air, laid out in the table's own frame (see tableFrame). */}
         <div className="play-swap-layer">
-          {giveFlights.map((f) => (
+          {!gl && giveFlights.map((f) => (
             <SwapFlight
               key={`give-${f.id}`}
               flight={f}
@@ -4145,7 +4208,7 @@ export function PlayPanel({
               onLanded={() => setGiveFlights((all) => all.filter((x) => x.id !== f.id))}
             />
           ))}
-          {flights.map((f) => (
+          {!gl && flights.map((f) => (
             <SwapFlight
               key={f.id}
               flight={f}

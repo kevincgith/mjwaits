@@ -162,6 +162,36 @@ export function pin(): HTMLCanvasElement {
   });
 }
 
+// A picked pile tile's gold rim and glow (.play-swap-tile.is-picked), over
+// its top: the quad is the face plus a tenth of a tile round it.
+export function pickedRim(): HTMLCanvasElement {
+  const w = 184;
+  const h = 222;
+  return paintCanvas(w, h, (ctx) => {
+    const x = 0.1 * 200;
+    const y = 0.1 * 200;
+    const fw = 144;
+    const fh = 182;
+    ctx.shadowColor = "rgba(255, 209, 102, 0.7)";
+    ctx.shadowBlur = 16;
+    roundRect(ctx, x, y, fw, fh, 18);
+    ctx.lineWidth = 12;
+    ctx.strokeStyle = "#ffd166";
+    ctx.stroke();
+  });
+}
+
+// A taken pile tile's place: its footprint outlined, dashed.
+export function gapOutline(): HTMLCanvasElement {
+  return paintCanvas(144, 182, (ctx) => {
+    roundRect(ctx, 5, 5, 134, 172, 16);
+    ctx.setLineDash([14, 10]);
+    ctx.lineWidth = 7;
+    ctx.strokeStyle = "rgba(244, 247, 245, 0.55)";
+    ctx.stroke();
+  });
+}
+
 // A hint's gold underline, or a risky tile's red bar.
 export function bar(colour: string): HTMLCanvasElement {
   return paintCanvas(128, 16, (ctx) => {
