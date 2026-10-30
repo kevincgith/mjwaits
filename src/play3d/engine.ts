@@ -15,7 +15,7 @@ import * as THREE from "three";
 import { THICK, TILE_H, TILE_R, TILE_W, type Layout, type Piece, type Quad, type QuadKind } from "./layout";
 import type { Mat } from "./mat";
 import type { Atlas } from "./textures";
-import { bar, bubble, pin, rowShadow, tileShadow } from "./textures";
+import { bar, bubble, gapOutline, pickedRim, pin, rowShadow, tileShadow } from "./textures";
 
 const MAX_FELT = 260;
 const MAX_HAND = 48;
@@ -200,8 +200,9 @@ class Space {
   face: THREE.InstancedBufferAttribute;
   shade: THREE.InstancedBufferAttribute;
   tint: THREE.InstancedBufferAttribute;
-  // Each tile's place in your hand (for taps), by instance.
+  // Each tile's place in your hand (for taps), by instance; a pile's tile, likewise.
   hits: (number | undefined)[] = [];
+  picks: ([string, number] | undefined)[] = [];
   constructor(geometry: THREE.BufferGeometry, material: THREE.Material, max: number) {
     this.root.matrixAutoUpdate = false;
     this.scene.add(this.root);
@@ -246,6 +247,7 @@ class Space {
     for (let i = 0; i < n; i++) {
       const p = pieces[i];
       begin(p.anim);
+      begin(p.fly);
       // Moved: eased from where it shows now to its new place.
       if (p.ease) {
         keys.add(p.ease.key);
@@ -263,6 +265,7 @@ class Space {
     }
     this.tiles.count = n;
     this.hits = this.pieces.map((p) => p.hit);
+    this.picks = this.pieces.map((p) => p.pick);
     this.face.needsUpdate = this.shade.needsUpdate = this.tint.needsUpdate = true;
     for (const [kind, mesh] of this.marks) {
       const mine = quads.filter((q) => q.kind === kind).slice(0, mesh.instanceMatrix.count);
@@ -299,6 +302,18 @@ class Space {
         mat.compose(p0.lerp(p1, v), q0.slerp(q1, v), s0.lerp(s1, v));
         if (k >= 1) this.eases.delete(p.ease!.key);
         else moving = true;
+      } else if (p.fly && (now - (this.starts.get(p.fly.key) ?? now)) / 1000 < p.fly.dur) {
+        // In the air: eased along, turning to how it lands, lifted mid-way.
+        const k = (now - this.starts.get(p.fly.key)!) / 1000 / p.fly.dur;
+        const v = k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
+        const [p0, q0, s0] = [new THREE.Vector3(), new THREE.Quaternion(), new THREE.Vector3()];
+        const [p1, q1, s1] = [new THREE.Vector3(), new THREE.Quaternion(), new THREE.Vector3()];
+        mat.fromArray(p.fly.from).decompose(p0, q0, s0);
+        mat.fromArray(p.m).decompose(p1, q1, s1);
+        p0.lerp(p1, v);
+        p0.z += Math.sin(Math.PI * v) * p.fly.lift;
+        mat.compose(p0, q0.slerp(q1, v), s0.lerp(s1, v));
+        moving = true;
       } else mat.fromArray(at(p));
       if (p.ease) this.shown.set(p.ease.key, mat.clone());
       this.tiles.setMatrixAt(i, mat);
@@ -347,6 +362,8 @@ export class Engine {
     const shadow = markMaterial(canvasTexture(tileShadow()));
     this.felt.addMarks("shadow", shadow, MAX_FELT, 0);
     this.felt.addMarks("pin", markMaterial(canvasTexture(pin())), 4, 2);
+    this.felt.addMarks("picked", markMaterial(canvasTexture(pickedRim())), 16, 2);
+    this.felt.addMarks("gap", markMaterial(canvasTexture(gapOutline())), 32, 0);
     for (const side of ["top", "bottom", "left", "right"] as const) this.felt.addMarks(`bubble-${side}`, markMaterial(canvasTexture(bubble(10, 10, 1, side, 1))), 1, 2);
     this.hand.addMarks("row-shadow", markMaterial(canvasTexture(rowShadow())), 1, 0);
     this.hand.addMarks("hint", markMaterial(canvasTexture(bar("#ffd166"))), MAX_HAND, 2);
@@ -406,7 +423,17 @@ export class Engine {
   // The tile of yours under a point of the canvas (its CSS pixels), if any:
   // a ray from the eye through it, into your row's blocks.
   pickHand(x: number, y: number, width: number, height: number): number | null {
-    const space = this.hand;
+    const i = this.pickIn(this.hand, x, y, width, height, (n) => this.hand.hits[n] !== undefined);
+    return i === null ? null : this.hand.hits[i]!;
+  }
+
+  // A pile's tile under a point, on your take (換牌).
+  pickPile(x: number, y: number, width: number, height: number): [string, number] | null {
+    const i = this.pickIn(this.felt, x, y, width, height, (n) => this.felt.picks[n] !== undefined);
+    return i === null ? null : this.felt.picks[i]!;
+  }
+
+  private pickIn(space: Space, x: number, y: number, width: number, height: number, ok: (instance: number) => boolean): number | null {
     space.scene.updateMatrixWorld();
     const ndc = (z: number) => new THREE.Vector3((x / width) * 2 - 1, 1 - (y / height) * 2, z).applyMatrix4(space.camera.projectionMatrixInverse);
     const near = ndc(-1);
@@ -417,9 +444,9 @@ export class Engine {
     space.tiles.computeBoundingSphere();
     const material = space.tiles.material as THREE.Material;
     material.side = THREE.DoubleSide;
-    const hit = this.ray.intersectObject(space.tiles, false).find((h) => h.instanceId !== undefined && space.hits[h.instanceId] !== undefined);
+    const hit = this.ray.intersectObject(space.tiles, false).find((h) => h.instanceId !== undefined && ok(h.instanceId));
     material.side = THREE.BackSide;
-    return hit ? space.hits[hit.instanceId!]! : null;
+    return hit ? hit.instanceId! : null;
   }
 
   dispose() {

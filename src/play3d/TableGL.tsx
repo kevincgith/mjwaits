@@ -11,7 +11,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "re
 import { Engine, type Frame } from "./engine";
 import { bubbleBox, layoutTable, type Dims } from "./layout";
 import { buildAtlas, type Atlas } from "./textures";
-import type { GLTableView } from "./types";
+import type { GLSide, GLTableView } from "./types";
 
 // An element's layout box within `root` (its offsets - transforms aside).
 function offsetIn(el: HTMLElement, root: HTMLElement): { x: number; y: number } {
@@ -101,8 +101,11 @@ export default function TableGL({
   handRef,
   middleRef,
   onTile,
+  onPile,
 }: {
   view: GLTableView;
+  // A tap on a pile's tile, on your take (換牌).
+  onPile: (side: GLSide, index: number) => void;
   // A tap on one of your tiles (by its place in your hand).
   onTile: (index: number) => void;
   rootRef: RefObject<HTMLElement | null>;
@@ -118,6 +121,8 @@ export default function TableGL({
   viewRef.current = view;
   const onTileRef = useRef(onTile);
   onTileRef.current = onTile;
+  const onPileRef = useRef(onPile);
+  onPileRef.current = onPile;
 
   useEffect(() => {
     let live = true;
@@ -142,6 +147,14 @@ export default function TableGL({
       hand.style.height = `${1.2 * d.hand}px`;
       const f = readFrame(root, felt, hand);
       d.handTop = feltYAt(f, f.hand.y + 0.2 * d.hand, d.feltW / 2, d.feltH);
+      // The felt as seen from your row: from the middle of its top edge (it's centred, so that stays put).
+      const tilt = new DOMMatrix(f.felt);
+      const handMid = f.hand.x + hand.offsetWidth / 2;
+      d.project = (x, y, z) => {
+        const p = tilt.transformPoint(new DOMPoint(x, y, z));
+        const s = f.stage.d / (f.stage.d - p.z);
+        return { x: f.stage.ox + (p.x - f.stage.ox) * s - handMid, y: f.stage.oy + (p.y - f.stage.oy) * s - f.hand.y, s };
+      };
       dims.current = d;
       const b = bubbleBox(dims.current);
       e.sizeBubbles(b.bw, b.bh, b.em, Math.min(3, window.devicePixelRatio || 1) * 1.5);
@@ -193,7 +206,12 @@ export default function TableGL({
       const turn = new DOMMatrix(getComputedStyle(root).transform === "none" ? undefined : getComputedStyle(root).transform);
       const p = turn.inverse().transformPoint(new DOMPoint(e.clientX - root.offsetLeft, e.clientY - root.offsetTop));
       const i = e3.pickHand(p.x, p.y, root.clientWidth, root.clientHeight);
-      if (i !== null && viewRef.current.mine.tiles[i]?.enabled) onTileRef.current(i);
+      if (i !== null) {
+        if (viewRef.current.mine.tiles[i]?.enabled) onTileRef.current(i);
+        return;
+      }
+      const pile = e3.pickPile(p.x, p.y, root.clientWidth, root.clientHeight);
+      if (pile) onPileRef.current(pile[0] as GLSide, pile[1]);
     };
     root.addEventListener("pointerdown", onDown);
     root.addEventListener("pointerup", onUp);

@@ -14,7 +14,7 @@ import { sortTiles, type Tile } from "@mjwaits/shared/engine/mahjong";
 import type { BonusTile } from "@mjwaits/shared/engine/scoring";
 import { bezier, EASE_IN, EASE_OUT, keyframes } from "./anim";
 import { about, chain, rotateX, rotateY, rotateZ, scale, translate, type Mat } from "./mat";
-import type { GLHandTile, GLPond, GLSide, GLTableView, GLWall } from "./types";
+import type { GLHandTile, GLPond, GLSide, GLSwapRow, GLTableView, GLWall } from "./types";
 
 // The block, in ems of its tile size (as the CSS has it: --tile-w / -h, --play-thick, --tile-r).
 export const TILE_W = 0.72;
@@ -39,6 +39,9 @@ export interface Dims {
   // How far down the felt your row's tiles reach, as seen (where their top
   // edge meets the felt's plane) - your pond stops short of it.
   handTop: number;
+  // A point on the felt as seen, in your row's terms: from the middle of
+  // its top edge, and how much nearer (bigger) it shows there.
+  project?: (x: number, y: number, z: number) => { x: number; y: number; s: number };
 }
 
 // A tile: its face ("m1", "flower2"... or "back" face down), where it lies,
@@ -52,6 +55,11 @@ export interface Piece {
   tint: number;
   // Your tile's place in your hand, for taps on it.
   hit?: number;
+  // A pile's tile you can pick on your take (換牌).
+  pick?: [GLSide, number];
+  // Flying in from `from` (a 換牌 take): eased there over `dur` seconds,
+  // lifted `lift` at the top of its arc.
+  fly?: { key: string; from: Mat; dur: number; lift: number };
   // Moving as Play's CSS animates it, or easing to where it now lies when
   // that changes (CSS's transition) - see anim.ts and engine.ts.
   anim?: Anim;
@@ -69,7 +77,7 @@ export interface Anim {
 
 // Flat marks: shadows on the felt, the newest discard's pin, the hint and
 // danger marks under and over your tiles, the spotlight's bubble.
-export type QuadKind = "shadow" | "row-shadow" | "pin" | "hint" | "danger" | "bubble-top" | "bubble-bottom" | "bubble-left" | "bubble-right";
+export type QuadKind = "shadow" | "row-shadow" | "pin" | "hint" | "danger" | "bubble-top" | "bubble-bottom" | "bubble-left" | "bubble-right" | "picked" | "gap";
 export interface Quad {
   kind: QuadKind;
   // The unit square (-0.5..0.5 each way, at z 0) to where it's drawn.
@@ -402,6 +410,7 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
     ownSince("top", from);
   }
 
+  const rowAt: Partial<Record<"left" | "right", { x: number; y: number; dir: number }>> = {};
   // ---- The side seats, centred top to bottom: the wall against the edge,
   // the melds' columns in front of it.
   for (const which of ["left", "right"] as const) {
@@ -470,6 +479,8 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
       y += dir * (S.flowers.along + 0.15 * T);
     }
     let colX = which === "left" ? sideMid - S.meldsW / 2 : sideMid + S.meldsW / 2;
+    // (Where a 換牌 row would go: on down the melds' last column.)
+    rowAt[which] = { x: sideMid, y, dir };
     for (const col of S.cols) {
       const cw = S.colW(col);
       let gy = y;
@@ -477,6 +488,7 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
         run(g, colX + (dir * cw) / 2, gy);
         gy += dir * (g.along + 0.15 * T);
       }
+      rowAt[which] = { x: colX + (dir * cw) / 2, y: gy, dir };
       colX += dir * cw;
     }
     owned[which].push({ x0: edgeX0, y0: edgeY0, x1: edgeX0 + S.edgeW, y1: edgeY0 + S.edgeH });
@@ -607,13 +619,114 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
     felt.push({ face: faceOf(view.spotlight.tile), m: tile(1), shade: LIT, tint: 1, anim: pop(tile, "tile") });
   }
 
-  return { felt: { pieces: felt, quads: feltQuads }, hand: layoutHand(view, d), middle };
+  // ---- 換牌: each seat's pile where its discards go, a little bigger than
+  // a discard - the others' face down, yours standing up facing you; the
+  // tiles taken flying to a row by the taker's hand.
+  const P = 1.2 * T;
+  const spots: Partial<Record<GLSide, Spot[]>> = {};
+  for (const side of ["top", "bottom", "left", "right"] as const) {
+    const pile = view.piles?.[side];
+    if (!pile) continue;
+    const n = pile.slots.length;
+    const len = n * 0.78 * P + (n - 1) * 0.06 * P;
+    const rot = side === "left" ? 90 : side === "right" ? -90 : 0;
+    spots[side] = pile.slots.map((slot, i) => {
+      const along = len / 2 - 0.39 * P - i * 0.84 * P;
+      const [x, y] =
+        side === "top"
+          ? [centreX + along, row2y1 - 0.5 * P]
+          : side === "bottom"
+            ? [centreX - along, row4y0 + 0.3 * T + 0.5 * P]
+            : side === "left"
+              ? [col2x1 - 0.5 * P, midY - along]
+              : [col4x0 + 0.5 * P, midY + along];
+      const standing = pile.standing && side === "bottom";
+      const lift = pile.picked.includes(i) ? 0.45 * P : 0;
+      // Yours stand on the felt as your hand does: up from it 54deg, about the face's foot.
+      const m = standing
+        ? chain(translate(x - 0.39 * P, y - 0.5 * P, 0), about(0.39 * P, P, THICK * P, rotateX(-54)), translate(0.39 * P, 0.5 * P, 0), scale(P))
+        : lyingDown(x, y, P, rot, lift);
+      const spot = { x, y, rot, standing, m: standing ? m : lyingDown(x, y, P, rot) };
+      if (slot === null) {
+        // Taken: its place outlined on the felt.
+        const deep = standing ? THICK * P : 0.913 * P;
+        feltQuads.push({ kind: "gap", m: chain(translate(x, standing ? y + 0.5 * P - deep / 2 : y, 0.5), rotateZ(rot), scale(0.72 * P, deep, 1)) });
+        return spot;
+      }
+      if (pile.arriving.includes(i)) return spot;
+      felt.push({ face: slot === "back" ? BACK : faceOf(slot), m, shade: rot ? TURNED : LIT, tint: 1, pick: pile.pickable ? [side, i] : undefined });
+      if (standing) feltQuads.push({ kind: "shadow", m: chain(translate(x, y + 0.42 * P, 0.4), scale(SHADOW_W * P, 0.75 * P, 1)) });
+      else feltQuads.push(shadowAt(x, y, P, rot));
+      // Picked: lifted off the felt, rimmed in gold.
+      if (lift) feltQuads.push({ kind: "picked", m: chain(translate(x, y, lift + THICK * P + 0.5), rotateZ(rot), scale(0.92 * P, 1.11 * P, 1)) });
+      return spot;
+    });
+  }
+  // The rows on the felt: a side seat's on down its melds, turned to face
+  // it; across's in front of it on the middle line - a group per giver.
+  const places: Partial<Record<GLSide, { x: number; y: number; rot: number }[][]>> = {};
+  const rowPlaces = (row: GLSwapRow, start: [number, number], dir: [number, number], rot: number) => {
+    let at = 0;
+    return row.groups.map((g) => {
+      const ps = g.tiles.map((_, k) => {
+        const s = at + 0.04 * T + 0.72 * T * (k + 0.5);
+        return { x: start[0] + dir[0] * s, y: start[1] + dir[1] * s, rot };
+      });
+      at += g.tiles.length * 0.72 * T + 0.08 * T + 0.55 * T;
+      return ps;
+    });
+  };
+  for (const which of ["left", "right"] as const) {
+    const row = view.rows[which];
+    const a = rowAt[which];
+    if (row && a) places[which] = rowPlaces(row, [a.x, a.y], [0, a.dir], 90 * a.dir);
+  }
+  if (view.rows.top) {
+    const row = view.rows.top;
+    const long = row.groups.reduce((t, g) => t + g.tiles.length * 0.72 * T + 0.08 * T, 0) + 0.55 * T * (row.groups.length - 1);
+    places.top = rowPlaces(row, [centreX + long / 2, tSeatY0 + tSeatH + 0.35 * T - 0.6 * Wt + 0.54 * T], [-1, 0], 0);
+  }
+  for (const side of ["left", "right", "top"] as const) {
+    const row = view.rows[side];
+    row?.groups.forEach((g, gi) =>
+      g.tiles.forEach((t, k) => {
+        const p = places[side]![gi][k];
+        if (!g.shown[k]) return;
+        felt.push({ face: t ? faceOf(t) : BACK, m: t ? lying(p.x, p.y, T, p.rot) : lyingDown(p.x, p.y, T, p.rot), shade: p.rot ? TURNED : LIT, tint: 1 });
+        feltQuads.push(shadowAt(p.x, p.y, T, p.rot));
+      })
+    );
+  }
+  // The tiles in the air (to your row: see layoutHand).
+  for (const f of view.flights) {
+    const from = spots[f.from]?.[f.place];
+    const p = f.to !== "bottom" ? places[f.to]?.[f.group]?.[f.slot] : undefined;
+    if (!from || !p) continue;
+    felt.push({
+      face: f.tile ? faceOf(f.tile) : BACK,
+      m: f.tile ? lying(p.x, p.y, T, p.rot) : lyingDown(p.x, p.y, T, p.rot),
+      shade: p.rot ? TURNED : LIT,
+      tint: 1,
+      fly: { key: `fly:${f.id}`, from: from.m, dur: 0.75, lift: 1.4 * T },
+    });
+  }
+
+  return { felt: { pieces: felt, quads: feltQuads }, hand: layoutHand(view, d, spots), middle };
+}
+
+// A pile's place on the felt: where its tile lies, and how.
+interface Spot {
+  x: number;
+  y: number;
+  rot: number;
+  standing: boolean;
+  m: Mat;
 }
 
 // ---- Your row: melds and bonus tiles lying at the felt's angle, then your
 // tiles standing, leaning toward you, the drawn tile set apart (or its
 // place kept) - in .play-hand's own box.
-function layoutHand(view: GLTableView, d: Dims): Layout["hand"] {
+function layoutHand(view: GLTableView, d: Dims, spots: Partial<Record<GLSide, Spot[]>>): Layout["hand"] {
   const pieces: Piece[] = [];
   const quads: Quad[] = [];
   const H = d.hand;
@@ -715,5 +828,41 @@ function layoutHand(view: GLTableView, d: Dims): Layout["hand"] {
   const width = x;
   // One soft shadow under the standing row.
   if (mine.tiles.length && !winner) quads.unshift({ kind: "row-shadow", m: chain(translate(width / 2, height - 0.05 * H, 0), scale(width - 0.2 * H + 0.36 * H, 0.3 * H + 0.36 * H, 1)) });
+  // 換牌: what you've taken, above your hand - standing as your tiles do,
+  // a size smaller, a group per giver - and the tiles flying in to it from
+  // the piles (drawn from where they're seen on the felt).
+  const row = view.rows.bottom;
+  if (row) {
+    const Rm = 0.8 * H;
+    const long = row.groups.reduce((t, g) => t + g.tiles.length * 0.72 * Rm + 0.08 * Rm, 0) + 0.6 * Rm * (row.groups.length - 1);
+    const foot = -0.25 * d.rem - 0.04 * Rm;
+    let at = width / 2 - long / 2;
+    const placeAt = row.groups.map((g) => {
+      const ps = g.tiles.map((_, k) => at + 0.04 * Rm + 0.72 * Rm * k - 0.03 * Rm);
+      at += g.tiles.length * 0.72 * Rm + 0.08 * Rm + 0.6 * Rm;
+      return ps;
+    });
+    const standing = (x0: number, t: Tile | null) => {
+      const c = chain(translate(x0, foot - Rm, 0), about(0.39 * Rm, Rm, THICK * Rm, rotateX(-22)), translate(0.39 * Rm, 0.5 * Rm, 0));
+      return t ? chain(c, scale(Rm)) : chain(c, translate(0, 0, THICK * Rm), rotateY(180), scale(Rm));
+    };
+    row.groups.forEach((g, gi) =>
+      g.tiles.forEach((t, k) => {
+        if (g.shown[k]) pieces.push({ face: t ? faceOf(t) : BACK, m: standing(placeAt[gi][k], t), shade: LIT, tint: 1 });
+      })
+    );
+    for (const f of view.flights) {
+      const from = f.to === "bottom" ? spots[f.from]?.[f.place] : undefined;
+      const x0 = placeAt[f.group]?.[f.slot];
+      if (!from || x0 === undefined || !d.project) continue;
+      const seen = d.project(from.x, from.y, 0);
+      const P = 1.2 * d.tile * seen.s;
+      // Lying as it's seen on the felt (tipped back its 32deg), face down unless it was yours, standing.
+      const start = from.standing
+        ? chain(translate(width / 2 + seen.x, seen.y, 0), rotateX(-22), scale(P))
+        : chain(translate(width / 2 + seen.x, seen.y, 0), rotateX(32), rotateZ(from.rot), translate(0, 0, THICK * P), rotateY(180), scale(P));
+      pieces.push({ face: f.tile ? faceOf(f.tile) : BACK, m: standing(x0, f.tile), shade: LIT, tint: 1, fly: { key: `fly:${f.id}`, from: start, dur: 0.75, lift: 1.4 * d.tile } });
+    }
+  }
   return { pieces, quads, width, height };
 }
