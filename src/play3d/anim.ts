@@ -1,4 +1,4 @@
-// Play 2.0's tile animations, timed as Play's CSS times them: its
+// The WebGL table's tile animations, timed as Play's CSS times them: its
 // cubic-bezier easings and keyframes, worked out per frame for the
 // WebGL table instead of by the browser.
 

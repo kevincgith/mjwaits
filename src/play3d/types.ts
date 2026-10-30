@@ -1,4 +1,4 @@
-// What Play 2.0's WebGL table draws: the tiles on the table, as PlayPanel
+// What Play's WebGL table draws: the tiles on the table, as PlayPanel
 // works them out from the game - nothing of three.js, so the panel can
 // build it without loading the renderer.
 

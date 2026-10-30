@@ -40,6 +40,7 @@ import {
   type TileStyle,
 } from "./tileArt";
 import { BonusGlyphSpan, TileGlyphSpan } from "./TileGlyphs";
+import { playRenderer, type PlayRenderer } from "./lib/playRenderer";
 import { OnlineTable, PlayHome, PlayPanel, ScoresPanel, SharedScoresView, TaiRulesSheet } from "./LazyParts";
 import { savedSummary } from "./lib/playSaved";
 import { loadTestHands } from "./lib/lazyParts";
@@ -9438,10 +9439,12 @@ function DeveloperTools({
   onLoadNotation,
   tileStyle,
   onTileStyleChange,
+  onPlayLegacy,
 }: {
   onLoadNotation: (notation: string) => void;
   tileStyle: TileStyle;
   onTileStyleChange: (style: TileStyle) => void;
+  onPlayLegacy: () => void;
 }) {
   const debug = useDebug();
   const [notation, setNotation] = useState("");
@@ -9532,6 +9535,16 @@ function DeveloperTools({
         </div>
         <SheetSwitch on={debug.layoutOverlay} onChange={(on) => setDebug({ layoutOverlay: on })} label="Layout overlay" />
         <span className="dev-note">Page height, bottom spacer and space below the footer, live; the spacer shows striped.</span>
+      </section>
+
+      <section className="dev-section">
+        <h3 className="dev-heading">Play</h3>
+        <div className="dev-row">
+          <button type="button" className="btn-primary" onClick={onPlayLegacy}>
+            Open Play (Legacy)
+          </button>
+        </div>
+        <span className="dev-note">The old table, its tiles drawn by the page's 3D CSS - kept as a backup. The same game and saved game.</span>
       </section>
 
       <section className="dev-section">
@@ -9705,11 +9718,13 @@ function TestHandsSheet({
   onClose,
   tileStyle,
   onTileStyleChange,
+  onPlayLegacy,
 }: {
   onPick: (hand: TestHand) => void;
   onClose: () => void;
   tileStyle: TileStyle;
   onTileStyleChange: (style: TileStyle) => void;
+  onPlayLegacy: () => void;
 }) {
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState<"hands" | "tools">("hands");
@@ -9771,6 +9786,7 @@ function TestHandsSheet({
               onLoadNotation={(hand) => onPick({ group: "", name: "Pasted hand", hand, ctx: {} })}
               tileStyle={tileStyle}
               onTileStyleChange={onTileStyleChange}
+              onPlayLegacy={onPlayLegacy}
             />
           </div>
         ) : (
@@ -10375,16 +10391,18 @@ function App() {
       setTestHandsOpen(true);
     }
   };
-  // Play 2.0 (a long press on the logo): Play's start screen, and the same
-  // game on a table whose tiles are drawn by WebGL.
-  const [play2, setPlay2] = useState(false);
-  const openPlay2 = () => {
-    setPlay2(true);
+  // Play draws its table with WebGL (play3d/); Legacy - the page's own 3D
+  // CSS, kept as a backup - opens from the developer sheet, on Play's start
+  // screen: the same game on the old table.
+  const [legacy, setLegacy] = useState(false);
+  const renderer: PlayRenderer = legacy ? "dom" : playRenderer();
+  const openLegacy = () => {
+    setLegacy(true);
     setPlayScreen("home");
     setPlayStarted(true);
     setMode("play");
   };
-  const logoPress = useTapAndLongPress(onLogoTap, openPlay2);
+  const logoPress = useTapAndLongPress(onLogoTap, NOOP);
   // The phone tab bar's More menu (Trainer, Dice).
   const [moreOpen, setMoreOpen] = useState(false);
   const moreActive = TAB_ITEMS.some((item) => item.more && item.id === mode);
@@ -10397,7 +10415,7 @@ function App() {
     if (id === "play") {
       setPlayScreen("home");
       setPlayStarted(false);
-      setPlay2(false);
+      setLegacy(false);
     }
     setMoreOpen(false);
     setMode(id);
@@ -10610,22 +10628,22 @@ function App() {
             }}
             onExit={() => {
               setPlayStarted(false);
-              setPlay2(false);
+              setLegacy(false);
             }}
-            edition={play2 ? "Play 2.0" : undefined}
+            edition={legacy ? "Legacy" : undefined}
           />
         ) : (
           <PlayPanel
-            key={play2 ? "webgl" : "dom"}
+            key={renderer}
             fresh={playScreen === "new" || playScreen === "quick"}
             quick={playScreen === "quick"}
             onExit={() => setPlayScreen("home")}
-            renderer={play2 ? "webgl" : undefined}
+            renderer={renderer}
           />
         ))}
       {!sharedScores && mode === "table" && (
         <OnlineTable
-          renderer={play2 && tableFromPlay.current ? "webgl" : undefined}
+          renderer={legacy && tableFromPlay.current ? "dom" : playRenderer()}
           initialCode={tableCode}
           onExit={() => {
             if (tableFromPlay.current) {
@@ -10685,6 +10703,10 @@ function App() {
           onClose={() => setTestHandsOpen(false)}
           tileStyle={tileStyle}
           onTileStyleChange={changeTileStyle}
+          onPlayLegacy={() => {
+            setTestHandsOpen(false);
+            openLegacy();
+          }}
         />
       )}
       {/* Last, so it sits above any sheet a link was tapped in. */}

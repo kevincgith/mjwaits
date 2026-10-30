@@ -1,4 +1,4 @@
-// Play 2.0's table laid out in its own coordinates: where every tile lies,
+// Play's WebGL table laid out in its own coordinates: where every tile lies,
 // worked out from the table's sizes and what's on it - the same places
 // Play's CSS puts them (its grid, its rows of 9 and 7, the walls and their
 // slots), without measuring a single tile on the page.

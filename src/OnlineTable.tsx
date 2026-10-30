@@ -81,7 +81,7 @@ function BotFace() {
 
 // ---- The screen ------------------------------------------------------------------------
 
-// `renderer`: "webgl" when opened from Play 2.0 - the hand's table drawn by WebGL.
+// `renderer`: how the hand's table is drawn - WebGL, or Legacy (see PlayPanel).
 export function OnlineTable({ initialCode, onExit, renderer }: { initialCode: string | null; onExit: () => void; renderer?: "dom" | "webgl" }) {
   const [memory, setMemory] = useState(loadTables);
   useEffect(() => saveTables(memory), [memory]);
