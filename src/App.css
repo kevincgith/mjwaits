@@ -7434,9 +7434,6 @@ html.playing body {
   color: rgba(255, 255, 255, 0.5);
   font-size: 0.62em;
   font-weight: 700;
-  transition:
-    color 0.25s ease,
-    text-shadow 0.25s ease;
 }
 
 /* The light bar along a seat's edge. */
@@ -7445,9 +7442,6 @@ html.playing body {
   position: absolute;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.1);
-  transition:
-    background 0.25s ease,
-    box-shadow 0.25s ease;
 }
 
 .play-compass-top {
@@ -7457,7 +7451,8 @@ html.playing body {
   padding-top: 0.32em;
 }
 
-.play-compass-top::after {
+.play-compass-top::after,
+.play-compass-top > .play-compass-lit::after {
   top: 0;
   left: 26%;
   right: 26%;
@@ -7471,7 +7466,8 @@ html.playing body {
   padding-bottom: 0.32em;
 }
 
-.play-compass-bottom::after {
+.play-compass-bottom::after,
+.play-compass-bottom > .play-compass-lit::after {
   bottom: 0;
   left: 26%;
   right: 26%;
@@ -7485,7 +7481,8 @@ html.playing body {
   padding-left: 0.42em;
 }
 
-.play-compass-left::after {
+.play-compass-left::after,
+.play-compass-left > .play-compass-lit::after {
   left: 0;
   top: 26%;
   bottom: 26%;
@@ -7499,21 +7496,49 @@ html.playing body {
   padding-right: 0.42em;
 }
 
-.play-compass-right::after {
+.play-compass-right::after,
+.play-compass-right > .play-compass-lit::after {
   right: 0;
   top: 26%;
   bottom: 26%;
   width: 0.16em;
 }
 
-.play-compass-q.is-active {
+/* The one to act: their bar turns gold at once, and a lit copy of their
+   wind and the bar's glow (.play-compass-lit, laid out as they are) fades
+   in over them - only its opacity moves, so a turn's light never holds up
+   the frame. Once it's up the plain wind under it goes, so its edges
+   never show round the lit one. */
+.play-compass-lit {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: inherit;
+  padding: inherit;
   color: var(--play-gold);
   text-shadow: 0 0 0.4em rgba(255, 209, 102, 0.55);
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+
+.play-compass-lit::after {
+  content: "";
+  position: absolute;
+  border-radius: 999px;
+  box-shadow: 0 0 0.35em rgba(255, 209, 102, 0.75);
+}
+
+.play-compass-q.is-active > .play-compass-lit {
+  opacity: 1;
+}
+
+.play-compass-q.is-active {
+  color: transparent;
+  transition: color 0s 0.25s;
 }
 
 .play-compass-q.is-active::after {
   background: linear-gradient(var(--play-gold), var(--play-gold-deep));
-  box-shadow: 0 0 0.35em rgba(255, 209, 102, 0.75);
 }
 
 .play-compass-center {
@@ -7871,13 +7896,42 @@ html.playing body {
 }
 
 .play-call.is-riichi.is-armed {
-  box-shadow: 0 0 0 0.2rem var(--play-gold), 0 0.2rem 0.5rem rgba(0, 0, 0, 0.4);
+  position: relative;
+  box-shadow: none;
+  animation: none;
+}
+
+/* Armed, its gold ring swells to a fainter 0.35rem and back, each second.
+   Behind the button (it covers the ring's inside), so only the ring's size
+   and opacity move: scaled from where it stands 0.2rem out on a phone-sized
+   button (a hair off that on the smallest and largest). Under it, the
+   button's own shadow, as it was below the ring. */
+.play-call.is-riichi.is-armed::before,
+.play-call.is-riichi.is-armed::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: -2px;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.play-call.is-riichi.is-armed::before {
+  box-shadow: 0 0.2rem 0.5rem rgba(0, 0, 0, 0.4);
+}
+
+.play-call.is-riichi.is-armed::after {
+  box-shadow: 0 0 0 0.35rem var(--play-gold);
   animation: play-armed 1s ease-in-out infinite alternate;
 }
 
 @keyframes play-armed {
+  from {
+    transform: scale(0.931);
+  }
   to {
-    box-shadow: 0 0 0 0.35rem rgba(255, 209, 102, 0.35), 0 0.2rem 0.5rem rgba(0, 0, 0, 0.4);
+    transform: none;
+    opacity: 0.35;
   }
 }
 
@@ -16972,7 +17026,7 @@ button.sc-stat:active {
 /* In the air it's the table's own block (the 3D rules for the felt and
    your hand take it in too), posed from how it lay to how it lands (see
    SwapFlight) - its sides' light too, so it takes that from the flight
-   (smoothly: registered below) rather than its own default. */
+   (in small steps - see SwapFlight) rather than its own default. */
 .play-swap-flight .play-back {
   margin: 0;
 }
@@ -16994,15 +17048,41 @@ button.sc-stat:active {
   z-index: 0;
   width: 0.78em;
   height: 1em;
-  border-radius: 0.12em;
-  background: #000;
-  visibility: hidden;
   pointer-events: none;
 }
 
 .play-swap-shadow.is-back {
   width: 0.74em;
   height: 0.96em;
+}
+
+/* Its looks - as where it lay, as where it lands, and lifted: the tile's
+   outline (0.12em round), blurred already (as blur() would, by --soft),
+   so in flight only their opacity moves. Hidden till it sets off. */
+.play-swap-shadow > i {
+  position: absolute;
+  inset: calc(var(--soft) * -3);
+  background: var(--look) 0 0 / 100% 100% no-repeat;
+  opacity: 0;
+}
+
+.play-swap-shadow.is-back > i {
+  inset: calc(var(--soft) * -2.88) calc(var(--soft) * -2.846);
+}
+
+.play-swap-shadow > .is-standing {
+  --soft: 0.07em;
+  --look: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 142' preserveAspectRatio='none'%3E%3Cfilter id='b' filterUnits='userSpaceOnUse' x='0' y='0' width='120' height='142'%3E%3CfeGaussianBlur stdDeviation='7'/%3E%3C/filter%3E%3Crect x='21' y='21' width='78' height='100' rx='12' filter='url(%23b)'/%3E%3C/svg%3E");
+}
+
+.play-swap-shadow > .is-flat {
+  --soft: 0.14em;
+  --look: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 162 184' preserveAspectRatio='none'%3E%3Cfilter id='b' filterUnits='userSpaceOnUse' x='0' y='0' width='162' height='184'%3E%3CfeGaussianBlur stdDeviation='14'/%3E%3C/filter%3E%3Crect x='42' y='42' width='78' height='100' rx='12' filter='url(%23b)'/%3E%3C/svg%3E");
+}
+
+.play-swap-shadow > .is-air {
+  --soft: 0.3em;
+  --look: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 258 280' preserveAspectRatio='none'%3E%3Cfilter id='b' filterUnits='userSpaceOnUse' x='0' y='0' width='258' height='280'%3E%3CfeGaussianBlur stdDeviation='30'/%3E%3C/filter%3E%3Crect x='90' y='90' width='78' height='100' rx='12' filter='url(%23b)'/%3E%3C/svg%3E");
 }
 
 /* Face down where it lay, face up where it lands: the back and the face

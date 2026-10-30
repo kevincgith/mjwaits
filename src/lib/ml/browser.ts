@@ -3,7 +3,7 @@
 // WASM build. Resolves to null when there's no model (or it can't load), so
 // the Play table simply doesn't offer learned opponents.
 
-import * as ortWasm from "onnxruntime-web/wasm";
+import { modelUrl } from "../modelUrl";
 import { NUM_ACTIONS, OBS_SIZE } from "./encode";
 import type { PolicyRunner } from "./policy";
 
@@ -25,7 +25,8 @@ export function loadLearnedModel(): Promise<LearnedModel | null> {
       const meta = (await metaResponse.json()) as { styles: string[]; obsSize: number; numActions: number; label?: string };
       // A model trained on another encoding would read the table wrong.
       if (meta.obsSize !== OBS_SIZE || meta.numActions !== NUM_ACTIONS) return null;
-      const buffer = await (await fetch(`${base}mj-policy.onnx`)).arrayBuffer();
+      // (The runtime only once a learned bot is wanted - not with the Play table.)
+      const [ortWasm, buffer] = await Promise.all([import("onnxruntime-web/wasm"), fetch(modelUrl("mj-policy.onnx")).then((r) => r.arrayBuffer())]);
       const session = await ortWasm.InferenceSession.create(buffer, { executionProviders: ["wasm"] });
       const run: PolicyRunner = async (obs, style, mask) => {
         const out = await session.run({

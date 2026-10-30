@@ -44,17 +44,25 @@ export function setAloud(on: boolean) {
   write(VOICE_KEY, on ? "1" : "0");
 }
 
-// Each clip, fetched and decoded the first time it's wanted, then kept.
-const clips = new Map<string, Promise<AudioBuffer | null>>();
-function clip(a: AudioContext, url: string): Promise<AudioBuffer | null> {
-  let c = clips.get(url);
-  if (!c) {
-    c = fetch(url)
-      .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(String(r.status)))))
-      .then((b) => a.decodeAudioData(b))
-      .catch(() => null);
-    clips.set(url, c);
+// Each clip, fetched and decoded the first time it's wanted. The calls are
+// few and kept; the lines are many, so only the last LINES_KEPT said are.
+const calls = new Map<string, Promise<AudioBuffer | null>>();
+const lines = new Map<string, Promise<AudioBuffer | null>>();
+const LINES_KEPT = 20;
+function clip(a: AudioContext, url: string, line: boolean): Promise<AudioBuffer | null> {
+  const kept = line ? lines : calls;
+  let c = kept.get(url);
+  if (c) {
+    // Most recent last.
+    if (line) kept.delete(url), kept.set(url, c);
+    return c;
   }
+  c = fetch(url)
+    .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(String(r.status)))))
+    .then((b) => a.decodeAudioData(b))
+    .catch(() => null);
+  kept.set(url, c);
+  if (line && kept.size > LINES_KEPT) kept.delete(kept.keys().next().value!);
   return c;
 }
 
@@ -132,7 +140,7 @@ const url = (dir: string, name: string) => `${import.meta.env.BASE_URL}voices/${
 // When the line being said ends: one line at a time (a call cuts in).
 let saying = 0;
 function playClip(a: AudioContext, who: Speaker, name: string, line: boolean) {
-  void clip(a, url(who.dir, name)).then((buffer) => {
+  void clip(a, url(who.dir, name), line).then((buffer) => {
     if (!buffer || (line && a.currentTime < saying)) return;
     const src = a.createBufferSource();
     src.buffer = buffer;
@@ -165,6 +173,6 @@ export function sayLineAloud(who: Speaker, kind: keyof Speech, line: string) {
 export function warmVoices(dirs: string[]) {
   const a = madeAudio();
   if (!a) return;
-  const calls: VoiceCall[] = ["pung", "chow", "kong", "win", "selfDraw", "riichi", "robKong"];
-  for (const d of dirs) for (const c of calls) void clip(a, url(d, c));
+  const names: VoiceCall[] = ["pung", "chow", "kong", "win", "selfDraw", "riichi", "robKong"];
+  for (const d of dirs) for (const c of names) void clip(a, url(d, c), false);
 }

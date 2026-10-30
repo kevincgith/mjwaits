@@ -256,8 +256,20 @@ export const profileById = (id: string): BotProfile => BOT_PROFILES.find((p) => 
 // Shanten is the hot path (every discard x every improving draw), and the
 // same hands recur turn to turn, so results are memoised by sorted hand.
 const shantenCache = new Map<string, number>();
+const KIND_BASE: Record<string, number> = { m: 0, t: 9, b: 18, z: 27 };
+const handCounts = new Uint8Array(34);
+// The hand as a count per kind - the same multiset as sorting, quicker.
+function handKey(tiles: Tile[], melds: number): string {
+  handCounts.fill(0);
+  for (const t of tiles) {
+    const base = KIND_BASE[t.suit];
+    if (base === undefined || !Number.isInteger(t.rank) || t.rank < 1 || t.rank > (t.suit === "z" ? 7 : 9)) return melds + ":" + tiles.map(tileKey).sort().join("");
+    handCounts[base + t.rank - 1]++;
+  }
+  return melds + "|" + String.fromCharCode.apply(null, handCounts as unknown as number[]);
+}
 function shanten(tiles: Tile[], melds: number): number {
-  const key = melds + ":" + tiles.map(tileKey).sort().join("");
+  const key = handKey(tiles, melds);
   let v = shantenCache.get(key);
   if (v === undefined) {
     v = rawShanten(tiles, melds);

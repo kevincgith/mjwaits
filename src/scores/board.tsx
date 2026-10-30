@@ -547,20 +547,6 @@ export function Board({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [request]);
 
-  // A card too short for its total and 上局 both (a small phone with a
-  // banner up) drops the 上局 rather than letting it slide under the footer.
-  // Checked after every render and on resize; Recent still has every hand.
-  useLayoutEffect(() => {
-    const check = () =>
-      document.querySelectorAll<HTMLElement>(".sc-board .sc-card-score").forEach((el) => {
-        el.classList.remove("is-tight");
-        if (el.scrollHeight > el.clientHeight + 1) el.classList.add("is-tight");
-      });
-    check();
-    window.addEventListener("resize", check);
-    return () => window.removeEventListener("resize", check);
-  });
-
   // The table fills exactly the space between the header and the tab bar, so
   // the board view never scrolls: measure what's left and hand it to the
   // .sc-fit column, which shares it out (the seats take the rest). On a
@@ -588,6 +574,22 @@ export function Board({
       root.classList.remove("sc-fit-mode");
     };
   }, []);
+
+  // A card too short for its total and 上局 both (a small phone with a
+  // banner up) drops the 上局 rather than letting it slide under the footer.
+  // Checked when the board changes and on resize; Recent still has every
+  // hand. All cleared, then all read, then all set: one layout, not one a card.
+  useLayoutEffect(() => {
+    const check = () => {
+      const els = [...document.querySelectorAll<HTMLElement>(".sc-board .sc-card-score")];
+      for (const el of els) el.classList.remove("is-tight");
+      const tight = els.map((el) => el.scrollHeight > el.clientHeight + 1);
+      els.forEach((el, i) => tight[i] && el.classList.add("is-tight"));
+    };
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, [store, game, state, fitHeight, chips.moves, sheet, toast, reminderHidden, backedUpAt, backupNudgeAt, surrenderSeen, live?.on, recorder]);
 
   // The 執位 reminder comes back after each 北風北局.
   useEffect(() => setReminderHidden(false), [state.roundWind]);

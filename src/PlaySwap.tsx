@@ -496,8 +496,9 @@ export interface Pose {
   d: number;
   shade: [number, number];
   // Its shadow on the felt: how far it falls below the tile (px), squashed
-  // to (a standing tile's foot), how soft (em) and how dark.
-  sh: { dy: number; sy: number; blur: number; a: number; ex: number; ey: number; d: number };
+  // to (a standing tile's foot), and how dark each of its looks shows - as
+  // where it lay, as where it lands, and lifted (see SwapFlight).
+  sh: { dy: number; sy: number; o: [number, number, number]; ex: number; ey: number; d: number };
 }
 // As a transform of the flying tile, whose own centre (untransformed) is
 // `c`: seen from the pose's eye (so it shows the sides it would there),
@@ -655,7 +656,7 @@ const tileIn = (el: HTMLElement, atStart: boolean) =>
 // it not quite linear) - so nothing jumps as it sets off or lands.
 function fitPose(el: HTMLElement, frame: Frame, c: { x: number; y: number }, end: FlightEnd, atStart: boolean): Pose {
   const target = centreOf(end.box);
-  const pose: Pose = { x: target.x, y: target.y, r: end.view.turn, s: 1, t: end.view.tilt, ex: end.view.eye.x, ey: end.view.eye.y, d: end.view.eye.d, shade: end.view.shade, sh: { dy: 0, sy: 1, blur: 0, a: 0, ex: 0, ey: 0, d: 1100 } };
+  const pose: Pose = { x: target.x, y: target.y, r: end.view.turn, s: 1, t: end.view.tilt, ex: end.view.eye.x, ey: end.view.eye.y, d: end.view.eye.d, shade: end.view.shade, sh: { dy: 0, sy: 1, o: [0, 0, 0], ex: 0, ey: 0, d: 1100 } };
   const tile = tileIn(el, atStart);
   for (let i = 0; i < 4; i++) {
     el.style.transform = poseTransform(pose, c);
@@ -700,15 +701,16 @@ export function aimGroup(fs: Flight[], els: Map<number, HTMLElement>, frame: Fra
     home
   );
   // Its shadow where it rests at an end: a tile lying flat casts it round
-  // itself (as the felt's tiles do); a standing one, along its foot.
+  // itself (as the felt's tiles do); a standing one, along its foot. (How
+  // soft: .play-swap-shadow's looks.)
   const font = (f: Flight) => f.from.font;
   // Shadows lie on the felt: seen from the felt's own eye, whoever's tile casts them.
   const feltEl = document.querySelector(".play-felt");
   const felt = feltEl ? viewOf(feltEl, frame, SWAP_TILT_FLAT, 0).eye : null;
   const restShadow = (f: Flight, end: FlightEnd, p: Pose) =>
     end.view.tilt === SWAP_TILT_FLAT
-      ? { dy: 0.03 * font(f) * p.s, sy: 1, blur: 0.14, a: 0.3 }
-      : { dy: end.box.height / 2 - 0.2 * font(f) * p.s, sy: 0.42, blur: 0.07, a: 0.32 };
+      ? { dy: 0.03 * font(f) * p.s, sy: 1, a: 0.3 }
+      : { dy: end.box.height / 2 - 0.2 * font(f) * p.s, sy: 0.42, a: 0.32 };
   all.forEach(({ f, a, b }, i) => {
     const n = paths[i].length - 1;
     const s0 = restShadow(f, f.start, a);
@@ -730,11 +732,12 @@ export function aimGroup(fs: Flight[], els: Map<number, HTMLElement>, frame: Fra
           d: lerp(a.d, b.d, e),
           shade: [lerp(a.shade[0], b.shade[0], e), lerp(a.shade[1], b.shade[1], e)],
           // Lifted, it falls away below, soft and faint; down, it's as where it rests.
-          sh: ((rest, h) => {
-            const air = { dy: 0.4 * font(f) * p.s, sy: 1, blur: 0.3, a: 0.14 };
+          sh: ((rest, h, lay) => {
+            const air = { dy: 0.4 * font(f) * p.s, sy: 1, a: 0.14 };
             const eye = felt ?? { x: lerp(a.ex, b.ex, e), y: lerp(a.ey, b.ey, e), d: lerp(a.d, b.d, e) };
-            return { dy: lerp(rest.dy, air.dy, h), sy: lerp(rest.sy, air.sy, h), blur: lerp(rest.blur, air.blur, h), a: lerp(rest.a, air.a, h), ex: eye.x, ey: eye.y, d: eye.d };
-          })(u <= GATHER ? s0 : s1, p.lift),
+            const down = rest.a * (1 - h);
+            return { dy: lerp(rest.dy, air.dy, h), sy: lerp(rest.sy, air.sy, h), o: [lay ? down : 0, lay ? 0 : down, air.a * h], ex: eye.x, ey: eye.y, d: eye.d };
+          })(u <= GATHER ? s0 : s1, p.lift, u <= GATHER),
         };
       })
     );
@@ -760,13 +763,22 @@ export function SwapFlight({ flight, landed, onStart, onLanded }: { flight: Flig
       return;
     }
     const c = { x: el.offsetLeft + el.offsetWidth / 2, y: el.offsetTop + el.offsetHeight / 2 };
-    const timing: KeyframeAnimationOptions = { duration: quick ? 1 : SWAP_FLIGHT_MS, delay: flight.delay, easing: "linear", fill: "forwards" };
-    const anims = [
-      el.animate(
-        flight.path.map((p) => ({ transform: poseTransform(p, c), "--shade-long": String(p.shade[0]), "--shade-end": String(p.shade[1]), visibility: "visible" })),
-        timing
-      ),
-    ];
+    const ms = quick ? 1 : SWAP_FLIGHT_MS;
+    const timing: KeyframeAnimationOptions = { duration: ms, delay: flight.delay, easing: "linear", fill: "forwards" };
+    // Moved by its transform alone, so the flight runs on the compositor.
+    const anims = [el.animate(flight.path.map((p) => ({ transform: poseTransform(p, c) })), timing)];
+    // Set at a moment of the flight and held: shown as it sets off, its
+    // sides' light eased over in a few small steps (light animated smoothly
+    // would hold every frame on the main thread).
+    const at = (e: HTMLElement, u: number, kf: Keyframe) => anims.push(e.animate([kf, kf], { duration: 0, delay: flight.delay + u * ms, fill: "forwards" }));
+    const n = flight.path.length - 1 || 1;
+    let lit = "";
+    flight.path.forEach((p, k) => {
+      const shade = p.shade.map((x) => String(Math.round(x * 50) / 50));
+      if (shade.join() === lit) return;
+      lit = shade.join();
+      at(el, k / n, { "--shade-long": shade[0], "--shade-end": shade[1], ...(k ? {} : { visibility: "visible" }) });
+    });
     // Turned over on the way: edge on a third of the way along, where the
     // back gives way to the face, then flat again as it lands.
     const flip = el.querySelector<HTMLElement>(".play-swap-flip");
@@ -774,24 +786,19 @@ export function SwapFlight({ flight, landed, onStart, onLanded }: { flight: Flig
       anims.push(flip.animate([{ transform: "rotateY(0deg)" }, { transform: "rotateY(90deg)", offset: 0.35 }, { transform: "rotateY(0deg)" }], { ...timing, easing: "ease-in-out" }));
       const back = flip.querySelector<HTMLElement>(".play-swap-flip-back");
       const face = flip.querySelector<HTMLElement>(".play-swap-flip-face");
-      if (back) anims.push(back.animate([{ visibility: "visible" }, { visibility: "visible", offset: 0.35 }, { visibility: "hidden", offset: 0.35 }, { visibility: "hidden" }], timing));
-      if (face) anims.push(face.animate([{ visibility: "hidden" }, { visibility: "hidden", offset: 0.35 }, { visibility: "visible", offset: 0.35 }, { visibility: "visible" }], timing));
+      if (back) at(back, 0.35, { visibility: "hidden" });
+      if (face) at(face, 0.35, { visibility: "visible" });
     }
     const shadow = shadowRef.current;
     if (shadow) {
       const sc = { x: shadow.offsetLeft + shadow.offsetWidth / 2, y: shadow.offsetTop + shadow.offsetHeight / 2 };
       // On the felt: flat, under where the tile is (a lifted tile's size, unlifted).
-      anims.push(
-        shadow.animate(
-          flight.path.map((p) => ({
-            transform: `${poseTransform({ ...p, y: p.y + p.sh.dy, t: SWAP_TILT_FLAT, ex: p.sh.ex, ey: p.sh.ey, d: p.sh.d }, sc)} scale(1, ${p.sh.sy})`,
-            filter: `blur(${p.sh.blur}em)`,
-            opacity: String(p.sh.a),
-            visibility: "visible",
-          })),
-          timing
-        )
-      );
+      anims.push(shadow.animate(flight.path.map((p) => ({ transform: `${poseTransform({ ...p, y: p.y + p.sh.dy, t: SWAP_TILT_FLAT, ex: p.sh.ex, ey: p.sh.ey, d: p.sh.d }, sc)} scale(1, ${p.sh.sy})` })), timing));
+      // Its looks, each blurred already, faded one into the next as it lifts and lands.
+      const path = flight.path;
+      [...shadow.children].forEach((look, i) => {
+        if (path.some((p) => p.sh.o[i] > 0)) anims.push((look as HTMLElement).animate(path.map((p) => ({ opacity: String(p.sh.o[i]) })), timing));
+      });
     }
     const off = window.setTimeout(onStart, flight.delay);
     const down = window.setTimeout(onLanded, flight.delay + SWAP_FLIGHT_MS + 300);
@@ -821,7 +828,13 @@ export function SwapFlight({ flight, landed, onStart, onLanded }: { flight: Flig
       className={`play-swap-shadow${flight.tile ? "" : " is-back"}`}
       style={{ left: flight.from.left, top: flight.from.top, fontSize: flight.from.font }}
       aria-hidden="true"
-    />
+    >
+      {/* As where it lay, as where it lands, and lifted. */}
+      {[flight.start, flight.end].map((end, i) => (
+        <i key={i} className={end?.view.tilt === SWAP_TILT_FLAT ? "is-flat" : "is-standing"} />
+      ))}
+      <i className="is-air" />
+    </span>
     <span
       ref={ref}
       className="play-swap-flight"

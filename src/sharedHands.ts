@@ -5,7 +5,7 @@
 
 import { parseHand, type Tile } from "@mjwaits/shared/engine/mahjong";
 import { parseScoringHand, type BonusTile, type GameContext } from "@mjwaits/shared/engine/scoring";
-import { TEST_HAND_BASE_CONTEXT } from "@mjwaits/shared/engine/testHands";
+import { TEST_HAND_BASE_CONTEXT } from "./lib/testHandContext";
 
 export interface SharedHand {
   /** Scoring notation - "(123m)" declared, "[1111z]" 暗槓, the rest concealed. */
