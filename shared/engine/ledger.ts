@@ -184,6 +184,7 @@ type ScoreEventBody =
       multiTai?: number;
       dealerExtra?: number;
       fanXuePaid?: { from: string; to: string; amount: number }[];
+      bao?: number; // 包自摸: a 自摸 paid by this seat alone (its own share)
     }
   | { t: "draw"; at: number }
   // 特別獎罰: 獎 - the seat's player is paid `amount`; 罰 - they pay it. With
@@ -359,13 +360,15 @@ export function previewWin(
   winners: WinnerEntry[],
   from: number | null,
   multiTai = 0,
-  dealerExtra = 0
+  dealerExtra = 0,
+  // 包自摸 (a Play table's): on a 自摸, only this seat pays - its own share.
+  bao: number | null = null
 ): PairPayment[] {
   const { settings, seats } = state;
   const lahs = new Map(state.lahs.map((l) => [lahKey(l.holder, l.pulled), l]));
   const pairs: PairPayment[] = [];
   for (const w of winners) {
-    const payers = from === null ? [0, 1, 2, 3].filter((s) => s !== w.seat) : [from];
+    const payers = from === null ? [0, 1, 2, 3].filter((s) => s !== w.seat && (bao === null || s === bao)) : [from];
     for (const p of payers) {
       const dealer =
         (w.seat === state.dealer || p === state.dealer ? dealerAmount(settings, state.streak) : 0) + (from === null && p === state.dealer ? dealerExtra : 0);
@@ -501,7 +504,7 @@ export function replay(game: ScoreGame): ReplayState {
 
     switch (ev.t) {
       case "win": {
-        const pairs = previewWin(state, ev.winners, ev.from, ev.multiTai ?? 0, ev.dealerExtra ?? 0);
+        const pairs = previewWin(state, ev.winners, ev.from, ev.multiTai ?? 0, ev.dealerExtra ?? 0, ev.bao ?? null);
         const winnerNames = new Set(ev.winners.map((w) => state.seats[w.seat]));
         for (const pair of pairs) pay(pair.payer, pair.winner, pair.worth);
         state.lahs = nextLahs(state.lahs, pairs, winnerNames);

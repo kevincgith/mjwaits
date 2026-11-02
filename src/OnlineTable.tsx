@@ -693,6 +693,13 @@ function Lobby({ table, me, send, onLeave }: { table: TableState; me: Welcome; s
               </Seg>
             ))}
           </Setting>
+          <Setting label="包自摸" note={s.baoZimo === false ? "off" : "konged someone's discard, then self-drew off its replacement: only that discarder pays (their own share)"}>
+            {[true, false].map((on) => (
+              <Seg key={String(on)} on={(s.baoZimo !== false) === on} disabled={!me.host} onClick={() => setup({ baoZimo: on })}>
+                {on ? "On" : "Off"}
+              </Seg>
+            ))}
+          </Setting>
           <Setting label="No claim back" note={s.runBack ? "off: any claim may be made" : "threw 1m: no pung, kong or run with it till you draw (from 123m, no 4m run either)"}>
             {[true, false].map((on) => (
               <Seg key={String(on)} on={!s.runBack === on} disabled={!me.host} onClick={() => setup({ runBack: !on })}>

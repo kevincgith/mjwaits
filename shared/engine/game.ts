@@ -131,12 +131,13 @@ export type Phase =
   // 換牌 before the first draw, on a round that swaps (see swap.ts).
   | SwapPhase;
 
-export type Chain = { kongs: number; flowers: number };
+// `bao`: the seat whose discard the chain's first kong was claimed off (包自摸).
+export type Chain = { kongs: number; flowers: number; bao?: number };
 
 // The chain so far with one more kong and/or `flowers` more bonus tiles;
 // left off the phase while it's empty.
 function extendChain(chain: Chain | undefined, kongs: number, flowers: number): { chain?: Chain } {
-  const next = { kongs: (chain?.kongs ?? 0) + kongs, flowers: (chain?.flowers ?? 0) + flowers };
+  const next: Chain = { kongs: (chain?.kongs ?? 0) + kongs, flowers: (chain?.flowers ?? 0) + flowers, ...(chain?.bao !== undefined ? { bao: chain.bao } : {}) };
   return next.kongs || next.flowers ? { chain: next } : {};
 }
 
@@ -158,6 +159,9 @@ export interface HandResult {
   // 反雪 paid on this 自摸: each of the last 雙響 / 三響's winners to the
   // player who dealt into it (see GameState.fanXueDue). In `deltas` too.
   fanXue?: { from: number; to: number; amount: number }[];
+  // 包自摸: a 自摸 at the end of a chain a kong off this seat's discard
+  // started - this seat alone paid (its own share; see Chain.bao).
+  bao?: number;
 }
 
 export interface GameState {
@@ -212,6 +216,11 @@ export interface GameState {
   // anyone wins gets FAN_XUE from each of those winners, into their new 拉
   // on them. `true` here turns it off. A table setting, carried like multiWin.
   noFanXue?: boolean;
+  // 包自摸 (on unless this says otherwise): a self-drawn win at the end of
+  // a chain started by a kong off someone's discard is paid by that
+  // discarder alone - their own share, the others nothing. `true` here turns
+  // it off. A table setting, carried like multiWin.
+  noBaoZimo?: boolean;
   // The last 雙響 / 三響 - who dealt in, who won, and what each would pay
   // back - till the next win (a draw keeps it).
   fanXueDue?: { loser: number; winners: number[]; amount: number };
@@ -233,8 +242,9 @@ export const PLAY_LAH_SETTINGS: ScoreSettings = { ...DEFAULT_SETTINGS, base: 0, 
 
 // What one winner collects, per payer, given the 拉 in play - the same
 // numbers the Scores tab's 食胡 sheet would show.
-export function settleWin(lahs: Lah[], dealer: number, winner: number, from: number | null, tai: number, dealerStreak = 0): PairPayment[] {
-  return settleWins(lahs, dealer, [{ seat: winner, tai }], from, dealerStreak);
+// `bao`: 包自摸 - on a 自摸, only this seat pays (its own share).
+export function settleWin(lahs: Lah[], dealer: number, winner: number, from: number | null, tai: number, dealerStreak = 0, bao: number | null = null): PairPayment[] {
+  return settleWins(lahs, dealer, [{ seat: winner, tai }], from, dealerStreak, bao);
 }
 
 // The same for several winners off one discard (一炮多響): the Scores tab's
@@ -242,10 +252,10 @@ export function settleWin(lahs: Lah[], dealer: number, winner: number, from: num
 // 莊 is in the hand's farn when the dealer wins or deals in. On another
 // player's 自摸 the dealer still pays it (1 + 2 per 連莊), as the Scores tab
 // has it - on the dealer's own pair alone.
-export function settleWins(lahs: Lah[], dealer: number, winners: { seat: number; tai: number }[], from: number | null, dealerStreak = 0): PairPayment[] {
+export function settleWins(lahs: Lah[], dealer: number, winners: { seat: number; tai: number }[], from: number | null, dealerStreak = 0, bao: number | null = null): PairPayment[] {
   const dealerPays = from === null && !winners.some((w) => w.seat === dealer);
   const extra = dealerPays ? DEFAULT_SETTINGS.dealerTai + DEFAULT_SETTINGS.streakTai * dealerStreak : 0;
-  return previewWin({ seats: SEAT_IDS, dealer, streak: 0, lahs, settings: PLAY_LAH_SETTINGS }, winners, from, 0, extra);
+  return previewWin({ seats: SEAT_IDS, dealer, streak: 0, lahs, settings: PLAY_LAH_SETTINGS }, winners, from, 0, extra, bao);
 }
 
 // The 拉/踢 add-on `winner` would get from `payer` right now (0 if none).
@@ -480,7 +490,7 @@ function breakWall(wall: WallTile[], dice: Dice, dealer: number): WallTile[] {
   return [...wall.slice(at), ...wall.slice(0, at)];
 }
 
-export function newGame(opts: { multiWin?: boolean; runBack?: boolean; noFanXue?: boolean; swapRules?: SwapRules } = {}): GameState {
+export function newGame(opts: { multiWin?: boolean; runBack?: boolean; noFanXue?: boolean; noBaoZimo?: boolean; swapRules?: SwapRules } = {}): GameState {
   return dealHand({ dealer: 0, roundWind: 1, dealerStreak: 0, ...opts });
 }
 
@@ -494,6 +504,7 @@ export function dealHand(
     multiWin?: boolean;
     runBack?: boolean;
     noFanXue?: boolean;
+    noBaoZimo?: boolean;
     fanXueDue?: GameState["fanXueDue"];
     swapRules?: SwapRules;
   },
@@ -519,6 +530,7 @@ export function dealHand(
     ...(opts.multiWin ? { multiWin: true } : {}),
     ...(opts.runBack ? { runBack: true } : {}),
     ...(opts.noFanXue ? { noFanXue: true } : {}),
+    ...(opts.noBaoZimo ? { noBaoZimo: true } : {}),
     ...(opts.fanXueDue ? { fanXueDue: opts.fanXueDue } : {}),
     ...(opts.swapRules ? { swapRules: opts.swapRules } : {}),
     ...(dice ? { dice } : {}),
@@ -995,7 +1007,8 @@ export function resolveClaims(state: GameState, decisions: (Claim | null)[]): Ga
   p.melds.push({ kind: "kong", tiles: [tile, tile, tile, tile], concealed: false, from });
   const { tile: drawn, flowered, flowers } = drawInto(s, best, true);
   if (!drawn) return endInDraw(s);
-  s.phase = { kind: "turn", seat: best, drawn, replacement: flowered ? "flower" : "kong", ...extendChain(undefined, 1, flowers) };
+  // (包自摸: the chain remembers whose discard it began with.)
+  s.phase = { kind: "turn", seat: best, drawn, replacement: flowered ? "flower" : "kong", ...extendChain(s.noBaoZimo ? undefined : { kongs: 0, flowers: 0, bao: from }, 1, flowers) };
   return s;
 }
 
@@ -1081,8 +1094,10 @@ function finishWin(
     scoreError = e instanceof Error ? e.message : String(e);
   }
   const tai = score?.total ?? 0;
+  // 包自摸: a 自摸 at the end of a chain a kong off someone's discard began.
+  const bao = from === null && chain?.bao !== undefined && chain.bao !== winner ? chain.bao : null;
   // Each payer pays the tai plus any 拉/踢 add-on between the two of them.
-  const pairs = settleWin(s.lahs ?? [], s.dealer, winner, from, tai, s.dealerStreak);
+  const pairs = settleWin(s.lahs ?? [], s.dealer, winner, from, tai, s.dealerStreak, bao);
   const deltas = [0, 0, 0, 0];
   for (const p of pairs) {
     deltas[Number(p.winner)] += p.worth;
@@ -1102,7 +1117,7 @@ function finishWin(
   delete s.fanXueDue;
   s.phase = {
     kind: "over",
-    result: { winner, from, tile, score, scoreError, deltas, pairs, ...(robKong ? { robKong: true as const } : {}), ...(fanXue.length ? { fanXue } : {}) },
+    result: { winner, from, tile, score, scoreError, deltas, pairs, ...(robKong ? { robKong: true as const } : {}), ...(fanXue.length ? { fanXue } : {}), ...(bao !== null ? { bao } : {}) },
   };
   return s;
 }
@@ -1159,7 +1174,7 @@ export function nextHand(s: GameState, wall?: WallTile[], random: Random = Math.
   const runBack = s.runBack;
   const swapRules = s.swapRules;
   const firstDealer = s.firstDealer ?? 0;
-  const carried = { firstDealer, lahs, multiWin, runBack, swapRules, noFanXue: s.noFanXue, fanXueDue: s.fanXueDue };
+  const carried = { firstDealer, lahs, multiWin, runBack, swapRules, noFanXue: s.noFanXue, noBaoZimo: s.noBaoZimo, fanXueDue: s.fanXueDue };
   // The dealer stays on a draw, or when among the winners.
   if (winner === null || winner === s.dealer || alsoWon?.some((w) => w.winner === s.dealer)) {
     return dealHand({ dealer: s.dealer, roundWind: s.roundWind, dealerStreak: s.dealerStreak + 1, ...carried }, wall, random);

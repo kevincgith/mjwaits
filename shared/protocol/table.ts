@@ -84,6 +84,7 @@ export const TableSettingsSchema = object({
   botSpeed: optional(oneOf("slow", "normal", "fast")), // absent: normal
   runBack: optional(bool), // claims back of a tile just thrown allowed (absent: not - the No claim back rule, see GameState.runBack)
   fanXue: optional(bool), // 反雪 (absent: on - see GameState.noFanXue)
+  baoZimo: optional(bool), // 包自摸 (absent: on - see GameState.noBaoZimo)
 });
 export type TableSettings = Infer<typeof TableSettingsSchema>;
 

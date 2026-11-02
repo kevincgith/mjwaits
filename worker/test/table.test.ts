@@ -894,3 +894,15 @@ describe("a claim window", () => {
     expect(host.errors.concat(other.errors)).toEqual([]);
   });
 });
+
+describe("包自摸 at an online table", () => {
+  it("is on unless the host turns it off", async () => {
+    for (const baoZimo of [undefined, false]) {
+      const { code, host } = await withBots(0, baoZimo === undefined ? {} : { baoZimo });
+      host.send({ t: "start" });
+      await host.table((s) => s.phase === "playing");
+      const off = await runInDurableObject(stubFor(code), (t: Table) => (t as unknown as { load(): { game: GameState } }).load().game.noBaoZimo === true);
+      expect(off).toBe(baoZimo === false);
+    }
+  });
+});

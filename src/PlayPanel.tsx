@@ -263,6 +263,7 @@ interface Saved {
   multiWinSet?: boolean; // multiWin picked since it came on by default (else on)
   runBack?: boolean; // runs back from a tile just thrown allowed (see GameState.runBack)
   fanXue?: boolean; // 反雪 (absent: on)
+  baoZimo?: boolean; // 包自摸 (absent: on)
   swapRules?: SwapRules; // 換牌: which rounds, and what the dice mean
   jackpot?: number; // 獎池: each player's share per draw (0: off)
   record?: boolean;
@@ -981,6 +982,7 @@ export function PlayPanel({
         multiWin: saved?.multiWinSet ? (saved.multiWin ?? true) : true,
         runBack: saved?.runBack ?? false,
         noFanXue: saved?.fanXue === false,
+        noBaoZimo: saved?.baoZimo === false,
         swapRules: saved?.swapRules ?? saved?.game?.swapRules ?? DEFAULT_SWAP_RULES,
       })
   );
@@ -1021,6 +1023,11 @@ export function PlayPanel({
   useEffect(() => {
     if (!online && !game.noFanXue !== fanXue) setGame((g) => ({ ...g, ...(fanXue ? { noFanXue: undefined } : { noFanXue: true }) }));
   }, [game, fanXue, online]);
+  // 包自摸 (on unless turned off): on the game too.
+  const [baoZimo, setBaoZimo] = useState(() => saved?.baoZimo ?? !saved?.game?.noBaoZimo);
+  useEffect(() => {
+    if (!online && !game.noBaoZimo !== baoZimo) setGame((g) => ({ ...g, ...(baoZimo ? { noBaoZimo: undefined } : { noBaoZimo: true }) }));
+  }, [game, baoZimo, online]);
   // 獎池: each draw everyone puts this in the pot; a 自摸 takes it all. 0: off.
   const [jackpot, setJackpot] = useState(() => saved?.jackpot ?? 5); // (5 till you choose)
   useEffect(() => {
@@ -1824,8 +1831,8 @@ export function PlayPanel({
 
   // This device's own game (never an online one).
   useEffect(
-    () => save({ game: localGame, totals: localTotals, hint, timer, opponents, randomOpponents, speed, oneTap, record, multiWin, multiWinSet, runBack, fanXue, swapRules, jackpot, ledger: localLedger }),
-    [localGame, localTotals, hint, timer, opponents, randomOpponents, speed, oneTap, record, multiWin, multiWinSet, runBack, fanXue, swapRules, jackpot, localLedger]
+    () => save({ game: localGame, totals: localTotals, hint, timer, opponents, randomOpponents, speed, oneTap, record, multiWin, multiWinSet, runBack, fanXue, baoZimo, swapRules, jackpot, ledger: localLedger }),
+    [localGame, localTotals, hint, timer, opponents, randomOpponents, speed, oneTap, record, multiWin, multiWinSet, runBack, fanXue, baoZimo, swapRules, jackpot, localLedger]
   );
 
   // The menu closes on a tap anywhere outside it, and disarms New game.
@@ -3229,6 +3236,19 @@ export function PlayPanel({
                 </span>
               </div>
               <div className="play-menu-row">
+                <span title="Konged someone's discard, then self-drew off the kong's replacement (bonus tiles and more kongs on the way included): only that discarder pays - their own share">
+                  包自摸
+                  <span className="play-menu-note"> · {baoZimo ? "自摸 off a discard's kong: its discarder pays alone" : "off"}</span>
+                </span>
+                <span className="play-menu-seg">
+                  {[false, true].map((on) => (
+                    <button key={String(on)} type="button" className={baoZimo === on ? "toggle-on" : undefined} aria-pressed={baoZimo === on} onClick={() => setBaoZimo(on)}>
+                      {on ? "On" : "Off"}
+                    </button>
+                  ))}
+                </span>
+              </div>
+              <div className="play-menu-row">
                 <span>
                   No claim back
                   <span className="play-menu-note" title="Threw 1m: no pung, kong or run with it till you draw - from 123m, no run with 4m either"> · {runBack ? "any claim may be made" : "not of a tile just thrown"}</span>
@@ -3323,6 +3343,7 @@ export function PlayPanel({
     setMultiWin(true);
     setRunBack(false);
     setFanXue(true);
+    setBaoZimo(true);
     setJackpot(5);
     setSwapRules(DEFAULT_SWAP_RULES);
     setRandomOpponents(true);
@@ -3337,7 +3358,7 @@ export function PlayPanel({
     setMenuOpen(false);
     setSelected(null);
     setResultHidden(false);
-    const g = newGame({ multiWin, runBack, noFanXue: !fanXue, swapRules });
+    const g = newGame({ multiWin, runBack, noFanXue: !fanXue, noBaoZimo: !baoZimo, swapRules });
     ledgerFrom.current = g;
     const fresh = newPlayLedger(playerNames(opponents), g.dealer);
     setLedger({ ...fresh, events: playEvents(null, g, fresh.seats) });
@@ -3754,6 +3775,7 @@ export function PlayPanel({
                 {online.table.settings.jackpot ? ` · 獎池 ${online.table.settings.jackpot}` : ""}
                 {online.table.settings.runBack ? " · claims back allowed" : ""}
                 {online.table.settings.fanXue === false ? " · 反雪 off" : ""}
+                {online.table.settings.baoZimo === false ? " · 包自摸 off" : ""}
                 {online.table.settings.reveal === false ? " · losing hands hidden" : ""}
                 {online.table.settings.botSpeed && online.table.settings.botSpeed !== "normal" ? ` · bots ${SPEEDS[online.table.settings.botSpeed].label.toLowerCase()}` : ""}
                 {online.table.watching > 0 && ` · ${online.table.watching} watching`}
@@ -4416,8 +4438,14 @@ export function PlayPanel({
                     {w.scoreError && <p className="play-result-error">Couldn't score this hand: {w.scoreError}</p>}
                   </div>
                 ))}
-              {((result.pairs ?? []).some((p) => p.lah || p.dealer) || !!result.fanXue?.length) && (
+              {((result.pairs ?? []).some((p) => p.lah || p.dealer) || !!result.fanXue?.length || result.bao !== undefined) && (
                 <ul className="play-result-lah">
+                  {/* 包自摸: a 自摸 off a kong of someone's discard - they pay alone. */}
+                  {result.bao !== undefined && result.winner !== null && (
+                    <li key="包自摸">
+                      包自摸 · {nameOf(result.bao)} {isMe(result.bao) ? "pay" : "pays"} alone - {nameOf(result.winner)} konged {isMe(result.bao) ? "your" : "their"} discard
+                    </li>
+                  )}
                   {/* 反雪: the last 雙響 / 三響's winners pay its loser back. */}
                   {(result.fanXue ?? []).map((f) => (
                     <li key={`反雪-${f.from}`}>
