@@ -2811,6 +2811,20 @@ export function PlayPanel({
   const riichiTiles = useMemo(() => (myTurn ? riichiDiscards(game, HUMAN) : []), [game, myTurn]);
   const isForbidden = (t: Tile) =>
     forbidden.some((f) => sameTile(f, t)) || (forced !== null && !sameTile(forced, t)) || (riichiArmed && !riichiTiles.some((r) => sameTile(r, t)));
+  // Out of time on your turn (see the turn timer) - read as it runs out, so a
+  // 叮 armed since it started still declares: with the tile you've picked,
+  // else the draw, else any that leaves you ready. Else the draw, or the
+  // advisor's discard.
+  const turnTimeout = useRef(() => {});
+  turnTimeout.current = () => {
+    if (riichiArmed && riichiTiles.length) {
+      const ready = (t: Tile | null | undefined): t is Tile => !!t && riichiTiles.some((r) => sameTile(r, t));
+      const pick = selected !== null ? handTiles[selected] : null;
+      return doTurn({ kind: "discard", tile: [pick, drawn].find(ready) ?? riichiTiles[0], riichi: true });
+    }
+    const tile = drawn && !isForbidden(drawn) ? drawn : rateDiscardsFor(game, HUMAN, ADVISOR)[0].tile;
+    advance(applyTurnMove(game, { kind: "discard", tile }));
+  };
 
   // Record my play: one of your decisions, if it was a real choice.
   const recordMine = (kind: 0 | 1, action: number) => {
@@ -2993,13 +3007,20 @@ export function PlayPanel({
       } else if (game.phase.kind === "claims") {
         resolve(null);
       } else if (game.phase.kind === "turn") {
-        const tile = drawn && !isForbidden(drawn) ? drawn : rateDiscardsFor(game, HUMAN, ADVISOR)[0].tile;
-        advance(applyTurnMove(game, { kind: "discard", tile }));
+        turnTimeout.current();
       }
     }, limit * 1000);
     return () => window.clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timerFor, limit, deciding]);
+  // Online the table moves for you at its deadline, not knowing a 叮 is
+  // armed here: declare it just before then.
+  const armedBy = online && riichiArmed && myTurn ? deadline : null;
+  useEffect(() => {
+    if (armedBy === null) return;
+    const id = window.setTimeout(() => turnTimeout.current(), Math.max(0, armedBy - Date.now() - 800));
+    return () => window.clearTimeout(id);
+  }, [armedBy]);
 
   // The hand sorted, with the just-drawn tile split off at the right.
   // The tile you won this hand with, if you did.
