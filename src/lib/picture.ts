@@ -1,3 +1,5 @@
+import { downloadBlob } from "./files";
+
 // One-page pictures of the Stats views, to share or keep: a game's 走勢 (the
 // standings and everyone's running total) and one player's stats. Drawn
 // straight onto a canvas rather than copied from the page, so they come out
@@ -69,9 +71,16 @@ function canvasOf(height: number): [HTMLCanvasElement, CanvasRenderingContext2D]
 }
 
 function card(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) {
+  const r = 28;
   ctx.fillStyle = CARD;
   ctx.beginPath();
-  ctx.roundRect(x, y, w, h, 28);
+  // By hand rather than roundRect, which an iPhone before iOS 16 lacks.
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
   ctx.fill();
 }
 
@@ -112,7 +121,9 @@ function chart(ctx: CanvasRenderingContext2D, lines: PictureLine[], x: number, y
   let lo = Math.min(0, ...all);
   let hi = Math.max(0, ...all);
   if (lo === hi) hi = lo + 10;
-  const step = niceStep((hi - lo) / 4);
+  // Whole-number steps: the labels are rounded, so a step under 1 would
+  // print the same number twice.
+  const step = Math.max(1, niceStep((hi - lo) / 4));
   lo = Math.floor(lo / step) * step;
   hi = Math.ceil(hi / step) * step;
   const labelW = mini ? 16 : 150;
@@ -421,10 +432,14 @@ export function playerPicture({
 }
 
 // Hand the picture over: the share sheet where there is one (on a phone,
-// Save Image puts it in Photos), else a download.
+// Save Image puts it in Photos), else a download. The PNG is made at once
+// (toDataURL, not the async toBlob) so share() is still called inside the
+// tap - iPhone refuses a share sheet once the tap's moment has passed.
 export async function savePicture(canvas: HTMLCanvasElement, filename: string): Promise<void> {
-  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
-  if (!blob) return;
+  const data = atob(canvas.toDataURL("image/png").split(",")[1]);
+  const bytes = new Uint8Array(data.length);
+  for (let i = 0; i < data.length; i++) bytes[i] = data.charCodeAt(i);
+  const blob = new Blob([bytes], { type: "image/png" });
   const file = new File([blob], filename, { type: "image/png" });
   if (navigator.canShare?.({ files: [file] })) {
     try {
@@ -434,14 +449,7 @@ export async function savePicture(canvas: HTMLCanvasElement, filename: string): 
       if ((e as Error).name === "AbortError") return;
     }
   }
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  downloadBlob(blob, filename);
 }
 
 // A player's colour as the page draws it (--sc-cN, or the neutral grey for

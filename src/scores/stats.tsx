@@ -8,6 +8,7 @@ import { careerPlayerStats, careerStats, careerTrend, smoothed, periodKey, perio
 import { fmt, signed, pct, tone, colorOf, Icons, SectionHead, Monogram, Sheet, Segmented, Sparkline } from "./shared";
 import { NameSheet } from "./sheets";
 import { playerColor, playerPicture, savePicture, trendPicture } from "../lib/picture";
+import { dayStamp, downloadBlob, fileSafe } from "../lib/files";
 
 // ---- 統計 ------------------------------------------------------------------------
 
@@ -598,18 +599,8 @@ export function readBackedUpAt(): number | null {
 // byte-order mark first, so spreadsheet apps read the Chinese right.
 function saveSheetCsv(game: ScoreGame, state: ReplayState, players: string[], merge: boolean) {
   const blob = new Blob(["\uFEFF" + sheetCsv(game, state, players, merge)], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  const d = new Date(game.startedAt);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  const day = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-  const name = game.name?.trim().replace(/[\\/:*?"<>|]+/g, "-");
-  a.href = url;
-  a.download = `mjwaits-${name ? `${name}-` : ""}${day}.csv`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  const name = game.name ? fileSafe(game.name) : "";
+  downloadBlob(blob, `mjwaits-${name ? `${name}-` : ""}${dayStamp(game.startedAt)}.csv`);
 }
 
 // Save the whole store as a dated file, and note when - for the reminders.
@@ -767,11 +758,7 @@ function PictureButton({ onClick }: { onClick: () => void }) {
 
 // A game's title for a picture and its file name: its name, else its day.
 const gameTitle = (game: ScoreGame) => game.name ?? new Date(game.startedAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
-const pictureFile = (game: ScoreGame, what: string) => {
-  const d = new Date(game.startedAt);
-  const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  return `mjwaits-${what}-${day}.png`;
-};
+const pictureFile = (game: ScoreGame, what: string) => `mjwaits-${fileSafe(what)}-${dayStamp(game.startedAt)}.png`;
 
 export function StatsPanel({ store, setStore, view, setView }: { store: ScoreStore; setStore: (s: ScoreStore) => void; view: StatsView; setView: (v: StatsView) => void }) {
   const games = useMemo(() => [...(store.active ? [store.active] : []), ...store.history], [store]);
@@ -1287,7 +1274,7 @@ export function HistoryCard({
   // The period as a picture names it, and its file.
   const periodName =
     period === "all" ? "All time" : period === "last" ? (last ? `#${numberOf.get(last.id)} · ${gameTitle(last)}` : "Last game") : key !== null ? periodLabel(key, period) : "All time";
-  const careerFile = (what: string) => `mjwaits-career-${what}-${periodName.replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-|-$/g, "")}.png`;
+  const careerFile = (what: string) => `mjwaits-career-${fileSafe(what)}-${fileSafe(periodName.replace(/[#·]/g, " "))}.png`;
   // 生涯 as a picture: the career table as standings, the all-time trend as
   // shown (smoothed as picked), and 對戰.
   const saveCareerPicture = () =>

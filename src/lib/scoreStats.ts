@@ -476,9 +476,10 @@ export function periodLabel(key: string, period: Period): string {
   if (period === "quarter") return `${y} ${rest}`;
   return new Date(Number(y), Number(rest) - 1, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" });
 }
-// Every period that has a game in it, oldest first.
+// Every period with a game played in it (a hand at least - a game just
+// started doesn't open a new month), oldest first.
 export function periodsOf(games: ScoreGame[], period: Period): string[] {
-  return [...new Set(games.map((g) => periodKey(g.startedAt, period)))].sort();
+  return [...new Set(games.filter((g) => replayCached(g).hands.length > 0).map((g) => periodKey(g.startedAt, period)))].sort();
 }
 
 export interface CareerStats {
@@ -682,7 +683,9 @@ export function patternCounts(state: ReplayState): { name: string; count: number
 
 // Each player's winning hands, biggest tai first - with the patterns behind
 // them when the hand came from Scoring - and the players in order of their
-// biggest hand. A 雙響 / 三響 counts once for each winner.
+// biggest hand. A 雙響 / 三響 counts once for each winner. The tai is what was
+// paid on: the hand's own, plus the 莊 / 連莊 and 雙響 / 三響 tai the ledger
+// adds (the most on any one payer).
 export interface WonHand {
   hand: number;
   label: string;
@@ -696,7 +699,10 @@ export function handsByPlayer(state: ReplayState): { player: string; hands: WonH
   const by = new Map<string, WonHand[]>(state.players.map((p) => [p, []]));
   for (const h of state.hands) {
     if (h.kind !== "win") continue;
-    for (const w of h.winners) by.get(w.player)?.push({ hand: h.hand, label: h.label, tai: w.tai, selfDraw: h.selfDraw, from: h.from, patterns: w.patterns ?? [] });
+    for (const w of h.winners) {
+      const paid = h.pairs.filter((p) => p.winner === w.player).map((p) => p.tai + p.dealer + (p.multi ?? 0));
+      by.get(w.player)?.push({ hand: h.hand, label: h.label, tai: Math.max(w.tai, ...paid), selfDraw: h.selfDraw, from: h.from, patterns: w.patterns ?? [] });
+    }
   }
   return [...by.entries()]
     .map(([player, hands]) => ({ player, hands: hands.sort((a, b) => b.tai - a.tai || a.hand - b.hand) }))

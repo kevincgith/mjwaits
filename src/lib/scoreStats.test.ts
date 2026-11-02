@@ -216,8 +216,10 @@ describe("periods", () => {
     expect(periodKey(at(2026, 10, 28), "year")).toBe("2026");
     expect(periodLabel("2026-Q4", "quarter")).toBe("2026 Q4");
   });
-  it("lists the periods that have games, oldest first", () => {
-    const gs = [at(2026, 10, 2), at(2025, 12, 30), at(2026, 10, 20), at(2026, 1, 5)].map((t, i) => ({ ...game([]), id: `g${i}`, startedAt: t }));
+  it("lists the periods that have games played, oldest first", () => {
+    const played = [at(2026, 10, 2), at(2025, 12, 30), at(2026, 10, 20), at(2026, 1, 5)].map((t, i) => ({ ...game([win(0, 2, 1)]), id: `g${i}`, startedAt: t }));
+    // A game started in December with no hand yet doesn't open December.
+    const gs = [...played, { ...game([]), id: "new", startedAt: at(2026, 12, 1) }];
     expect(periodsOf(gs, "month")).toEqual(["2025-12", "2026-01", "2026-10"]);
     expect(periodsOf(gs, "quarter")).toEqual(["2025-Q4", "2026-Q1", "2026-Q4"]);
     expect(periodsOf(gs, "year")).toEqual(["2025", "2026"]);
@@ -235,5 +237,13 @@ describe("handsByPlayer", () => {
     ]);
     expect(list[0].hands[1].patterns).toEqual([{ id: "x", name: "清一色", tai: 8 }]);
     expect(list[2].hands[0]).toMatchObject({ tai: 3, selfDraw: true, from: null });
+  });
+});
+
+describe("handsByPlayer's tai", () => {
+  it("counts the 莊 tai the ledger adds", () => {
+    // A deals (莊 1 tai) and wins 10 off B: paid on 11.
+    const g = { ...newGame(["A", "B", "C", "D"], 0, { ...PLAIN, dealerTai: 1 }), events: [win(0, 10, 1)] };
+    expect(handsByPlayer(replay(g))[0].hands[0].tai).toBe(11);
   });
 });
