@@ -43,7 +43,18 @@ const load = (url: string) =>
     img.src = url;
   });
 
-export async function buildAtlas(): Promise<Atlas> {
+// Painted once, the first time Play's table opens, and kept for every
+// table after (each engine makes its own texture of it).
+let painted: Promise<Atlas> | null = null;
+export function sharedAtlas(): Promise<Atlas> {
+  painted ??= buildAtlas().catch((e: unknown) => {
+    painted = null;
+    throw e;
+  });
+  return painted;
+}
+
+async function buildAtlas(): Promise<Atlas> {
   const names = Object.keys(ART).map((k) => k.replace(/^.*\/(.*)\.svg$/, "$1"));
   const images = await Promise.all(names.map((n) => load(ART[`../assets/tiles/${n}.svg`])));
   const canvas = document.createElement("canvas");

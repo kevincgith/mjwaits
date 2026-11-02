@@ -10,7 +10,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { Engine, type Frame } from "./engine";
 import { bubbleBox, feltToHand, layoutTable, SWAP_ROW, type Dims } from "./layout";
-import { buildAtlas, type Atlas } from "./textures";
+import { sharedAtlas, type Atlas } from "./textures";
 import type { GLSide, GLTableView } from "./types";
 
 // An element's layout box within `root` (its offsets - transforms aside).
@@ -94,6 +94,10 @@ function feltYAt(f: Frame, screenY: number, x: number, depth: number): number {
   return lo;
 }
 
+// Canvases whose context has been given back (see Engine.dispose): one
+// can't be drawn on again, so the next engine gets a fresh canvas.
+const spent = new WeakSet<HTMLCanvasElement>();
+
 export default function TableGL({
   view,
   rootRef,
@@ -115,6 +119,11 @@ export default function TableGL({
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [atlas, setAtlas] = useState<Atlas | null>(null);
+  // The browser wouldn't give it WebGL (iOS can refuse): a message and a
+  // retry, over the felt - the game itself carries on in PlayPanel.
+  const [failed, setFailed] = useState(false);
+  const [tries, setTries] = useState(0);
+  const [canvasKey, setCanvasKey] = useState(0);
   const engine = useRef<Engine | null>(null);
   const dims = useRef<Dims | null>(null);
   const keptWidth = useRef(0);
@@ -128,11 +137,17 @@ export default function TableGL({
 
   useEffect(() => {
     let live = true;
-    void buildAtlas().then((a) => live && setAtlas(a));
+    sharedAtlas().then(
+      (a) => live && setAtlas(a),
+      (err: unknown) => {
+        console.error("Play's table: no tile faces", err);
+        if (live) setFailed(true);
+      }
+    );
     return () => {
       live = false;
     };
-  }, []);
+  }, [tries]);
 
   // Lay the table out and draw it: the compass where the middle is, your
   // row's box the size of what's in it, then the tiles.
@@ -180,8 +195,21 @@ export default function TableGL({
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!atlas || !canvas) return;
-    const e = new Engine(canvas, atlas);
+    if (!atlas || !canvas || failed) return;
+    // (Its context already given back - React's dev double mount: a new canvas.)
+    if (spent.has(canvas)) {
+      setCanvasKey((k) => k + 1);
+      return;
+    }
+    let e: Engine;
+    try {
+      e = new Engine(canvas, atlas);
+    } catch (err) {
+      console.error("Play's table couldn't start", err);
+      spent.add(canvas);
+      setFailed(true);
+      return;
+    }
     engine.current = e;
     if (import.meta.env.DEV) (window as unknown as { __gl: Engine }).__gl = e;
     draw.current(true);
@@ -189,12 +217,33 @@ export default function TableGL({
     // screen) or your row changes size.
     const watch = new ResizeObserver(() => draw.current(true));
     [rootRef.current, feltRef.current].forEach((el) => el && watch.observe(el));
+    // iOS drops the context when the app's put away: kept restorable, and
+    // drawn again in full once it's back (three uploads everything again,
+    // but only draws when told to) - and on coming back to the app.
+    const lost = (ev: Event) => ev.preventDefault();
+    // (Again a frame later: the browser can show the first frame after a
+    // restore blank, or black.)
+    let again = 0;
+    const restored = () => {
+      draw.current(true);
+      cancelAnimationFrame(again);
+      again = requestAnimationFrame(() => draw.current(false));
+    };
+    const back = () => document.visibilityState === "visible" && draw.current(true);
+    canvas.addEventListener("webglcontextlost", lost);
+    canvas.addEventListener("webglcontextrestored", restored);
+    document.addEventListener("visibilitychange", back);
     return () => {
+      canvas.removeEventListener("webglcontextlost", lost);
+      canvas.removeEventListener("webglcontextrestored", restored);
+      document.removeEventListener("visibilitychange", back);
+      cancelAnimationFrame(again);
       watch.disconnect();
       engine.current = null;
+      spent.add(canvas);
       e.dispose();
     };
-  }, [atlas, rootRef, feltRef]);
+  }, [atlas, failed, canvasKey, rootRef, feltRef]);
 
   // Taps on your tiles: a ray from where you tapped into your row (the
   // canvas lets taps through to the page; buttons and sheets keep theirs).
@@ -239,5 +288,27 @@ export default function TableGL({
     draw.current(false);
   });
 
-  return <canvas ref={canvasRef} className="play-gl" aria-hidden="true" />;
+  return (
+    <>
+      <canvas key={canvasKey} ref={canvasRef} className="play-gl" aria-hidden="true" />
+      {failed && (
+        <div role="alert" style={{ position: "absolute", inset: 0, zIndex: 2, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.6rem", padding: "0.9rem 1.2rem", borderRadius: "0.8rem", background: "rgba(14, 18, 16, 0.92)", border: "1px solid rgba(255, 209, 102, 0.85)", color: "#f4f7f5", textAlign: "center", pointerEvents: "auto" }}>
+            <span>The table couldn't start</span>
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => {
+                setFailed(false);
+                setCanvasKey((k) => k + 1);
+                setTries((t) => t + 1);
+              }}
+            >
+              再試 Try again
+            </button>
+          </div>
+        </div>
+      )}
+    </>
+  );
 }

@@ -190,6 +190,9 @@ function cssProjection(d: number, ox: number, oy: number, cw: number, ch: number
   return new THREE.Matrix4().set(2 * d / cw, 0, 1 - (2 * ox) / cw, -d, 0, (-2 * d) / ch, (2 * oy) / ch - 1, d, 0, 0, a, b, 0, 0, -1, d);
 }
 
+// Anything the GPU holds a copy of.
+type Freeable = { dispose(): void };
+
 // One space's tiles and marks: a scene seen through its own projection.
 class Space {
   scene = new THREE.Scene();
@@ -203,24 +206,27 @@ class Space {
   // Each tile's place in your hand (for taps), by instance; a pile's tile, likewise.
   hits: (number | undefined)[] = [];
   picks: ([string, number] | undefined)[] = [];
-  constructor(geometry: THREE.BufferGeometry, material: THREE.Material, max: number) {
+  // Everything it makes for the GPU goes through `keep`, to be freed with the engine.
+  private keep: <T extends Freeable>(d: T) => T;
+  constructor(geometry: THREE.BufferGeometry, material: THREE.Material, max: number, keep: <T extends Freeable>(d: T) => T) {
+    this.keep = keep;
     this.root.matrixAutoUpdate = false;
     this.scene.add(this.root);
-    const g = geometry.clone();
+    const g = keep(geometry.clone());
     this.face = new THREE.InstancedBufferAttribute(new Float32Array(max * 4), 4);
     this.shade = new THREE.InstancedBufferAttribute(new Float32Array(max * 2), 2);
     this.tint = new THREE.InstancedBufferAttribute(new Float32Array(max), 1);
     g.setAttribute("aFace", this.face);
     g.setAttribute("aShade", this.shade);
     g.setAttribute("aTint", this.tint);
-    this.tiles = new THREE.InstancedMesh(g, material, max);
+    this.tiles = keep(new THREE.InstancedMesh(g, material, max));
     this.tiles.frustumCulled = false;
     this.tiles.count = 0;
     this.tiles.renderOrder = 1;
     this.root.add(this.tiles);
   }
   addMarks(kind: QuadKind, material: THREE.Material, max: number, order: number) {
-    const m = new THREE.InstancedMesh(unitQuad(), material, max);
+    const m = this.keep(new THREE.InstancedMesh(this.keep(unitQuad()), material, max));
     m.frustumCulled = false;
     m.count = 0;
     m.renderOrder = order;
@@ -360,31 +366,34 @@ export class Engine {
   felt: Space;
   hand: Space;
   rects: Atlas["rects"];
-  bubbles = new Map<string, THREE.Texture>();
   private ray = new THREE.Raycaster();
-  private disposables: { dispose(): void }[] = [];
+  // Every geometry, material, texture and mesh it's made - all freed in dispose().
+  readonly kept = new Set<Freeable>();
+  private keep = <T extends Freeable>(d: T): T => (this.kept.add(d), d);
   constructor(canvas: HTMLCanvasElement, atlas: Atlas) {
+    // (Throws if the browser won't give it a context - see TableGL.)
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, premultipliedAlpha: true });
     this.renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
     this.renderer.setClearColor(0x000000, 0);
     this.renderer.autoClear = false;
     this.rects = atlas.rects;
-    const tex = canvasTexture(atlas.canvas);
+    const keep = this.keep;
+    // (The atlas's canvas is shared by every engine; its texture is this one's.)
+    const tex = keep(canvasTexture(atlas.canvas));
     tex.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
-    const geometry = tileGeometry();
-    const material = tileMaterial(tex, atlas.rects.get("back")!);
-    this.felt = new Space(geometry, material, MAX_FELT);
-    this.hand = new Space(geometry, material, MAX_HAND);
-    const shadow = markMaterial(canvasTexture(tileShadow()));
-    this.felt.addMarks("shadow", shadow, MAX_FELT, 0);
-    this.felt.addMarks("pin", markMaterial(canvasTexture(pin())), 4, 2);
-    this.felt.addMarks("picked", markMaterial(canvasTexture(pickedRim())), 16, 2);
-    this.felt.addMarks("gap", markMaterial(canvasTexture(gapOutline())), 32, 0);
-    for (const side of ["top", "bottom", "left", "right"] as const) this.felt.addMarks(`bubble-${side}`, markMaterial(canvasTexture(bubble(10, 10, 1, side, 1))), 1, 2);
-    this.hand.addMarks("row-shadow", markMaterial(canvasTexture(rowShadow())), 1, 0);
-    this.hand.addMarks("hint", markMaterial(canvasTexture(bar("#ffd166"))), MAX_HAND, 2);
-    this.hand.addMarks("danger", markMaterial(canvasTexture(bar("#ff6b5a"))), MAX_HAND, 2);
-    this.disposables.push(geometry, material, tex);
+    const geometry = keep(tileGeometry());
+    const material = keep(tileMaterial(tex, atlas.rects.get("back")!));
+    this.felt = new Space(geometry, material, MAX_FELT, keep);
+    this.hand = new Space(geometry, material, MAX_HAND, keep);
+    const mark = (c: HTMLCanvasElement) => keep(markMaterial(keep(canvasTexture(c))));
+    this.felt.addMarks("shadow", mark(tileShadow()), MAX_FELT, 0);
+    this.felt.addMarks("pin", mark(pin()), 4, 2);
+    this.felt.addMarks("picked", mark(pickedRim()), 16, 2);
+    this.felt.addMarks("gap", mark(gapOutline()), 32, 0);
+    for (const side of ["top", "bottom", "left", "right"] as const) this.felt.addMarks(`bubble-${side}`, mark(bubble(10, 10, 1, side, 1)), 1, 2);
+    this.hand.addMarks("row-shadow", mark(rowShadow()), 1, 0);
+    this.hand.addMarks("hint", mark(bar("#ffd166")), MAX_HAND, 2);
+    this.hand.addMarks("danger", mark(bar("#ff6b5a")), MAX_HAND, 2);
   }
 
   // The spotlight's bubbles, painted at the table's size.
@@ -392,8 +401,10 @@ export class Engine {
     for (const side of ["top", "bottom", "left", "right"] as const) {
       const mesh = this.felt.marks.get(`bubble-${side}`)!;
       const mat = mesh.material as THREE.ShaderMaterial;
-      (mat.uniforms.uMap.value as THREE.Texture).dispose();
-      mat.uniforms.uMap.value = canvasTexture(bubble(bw, bh, em, side, scale));
+      const old = mat.uniforms.uMap.value as THREE.Texture;
+      old.dispose();
+      this.kept.delete(old);
+      mat.uniforms.uMap.value = this.keep(canvasTexture(bubble(bw, bh, em, side, scale)));
     }
   }
 
@@ -465,9 +476,14 @@ export class Engine {
     return hit ? hit.instanceId! : null;
   }
 
+  // Everything freed, and the context given back at once (iOS holds only a
+  // few, and won't wait for the canvas to be collected).
   dispose() {
     cancelAnimationFrame(this.looping);
-    this.disposables.forEach((d) => d.dispose());
+    this.looping = 0;
+    this.kept.forEach((d) => d.dispose());
+    this.kept.clear();
     this.renderer.dispose();
+    this.renderer.forceContextLoss();
   }
 }

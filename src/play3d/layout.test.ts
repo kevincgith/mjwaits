@@ -303,3 +303,26 @@ describe("a hand laid down on the WebGL table", () => {
     for (const side of ["left", "top", "right"] as const) expect(reading(side), side).toEqual(["m1", "m3", "m4", "m2"]);
   });
 });
+
+describe("your hand's lift on the WebGL table", () => {
+  const tile = (rank: number, selected = false) => ({ tile: { suit: "m" as const, rank }, drawn: false, selected, hint: false, danger: false, barred: false, winner: false, enabled: true });
+  const hand = (tiles: ReturnType<typeof tile>[]) => {
+    const v = take("bottom", 0);
+    return layoutTable({ ...v, piles: null, flights: [], rows: {}, mine: { ...v.mine, tiles, sliding: false } }, DIMS).hand.pieces.filter((p) => p.hit !== undefined);
+  };
+  const keys = (ps: Piece[]) => ps.map((p) => p.ease!.key);
+  it("eases a tile's own lift and drop", () => {
+    const ranks = [1, 2, 3, 5, 5, 7];
+    expect(keys(hand(ranks.map((r, i) => tile(r, i === 3))))).toEqual(keys(hand(ranks.map((r) => tile(r)))));
+  });
+  it("never hands a thrown tile's lift to the tile that takes its place", () => {
+    for (const ranks of [
+      [1, 2, 3, 4, 7],
+      [1, 2, 5, 5, 7],
+    ]) {
+      const before = keys(hand(ranks.map((r, i) => tile(r, i === 2))));
+      const after = keys(hand(ranks.filter((_, i) => i !== 2).map((r) => tile(r))));
+      expect(after.filter((k) => before.includes(k))).toEqual([]);
+    }
+  });
+});
