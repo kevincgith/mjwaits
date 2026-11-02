@@ -3,6 +3,7 @@ import { applyTurnMove, botClaim, botTurnMove, newGame, nextHand, resolveClaims,
 import { botSurrenders, profileById, seededRng } from "./bots";
 import { replay, type ScoreGame } from "./ledger";
 import { carriedOver, newPlayLedger, playEvents, uniqueNames } from "./playLedger";
+import { parseHand } from "./mahjong";
 
 // Bot hands at a table, the record kept step by step as the table would,
 // next to what the table itself paid.
@@ -133,4 +134,39 @@ describe("a Play game as a Scores game", () => {
     // (Seed 22's 24 hands pay one: the record agrees with the table throughout.)
     expect(play(24, 22, true).fanXue).toBe(1);
   }, 300_000);
+});
+
+describe("包自摸 in the record", () => {
+  // 東 (seat 0) throws 5z; 南 (seat 1) kongs it and self-draws 2t off the replacement.
+  const konged = (lahs: GameState["lahs"]) => {
+    const s0 = newGame();
+    s0.players.forEach((p) => ((p.flowers = []), (p.melds = [])));
+    s0.tableBonuses = [];
+    s0.lahs = lahs;
+    s0.players[1].hand = parseHand("555z123m456m789m111b2t");
+    s0.players[0].discards = [{ suit: "z", rank: 5 }];
+    s0.wall = [...s0.wall.filter((w) => !("bonus" in w)), { tile: { suit: "t", rank: 2 } }];
+    s0.phase = { kind: "claims", from: 0, tile: { suit: "z", rank: 5 } };
+    const s1 = resolveClaims(s0, [null, { kind: "kong" }, null, null]);
+    return { s1, won: applyTurnMove(s1, { kind: "selfDraw" }) };
+  };
+
+  it("pays it as the table did: the kong's discarder alone", () => {
+    const { s1, won } = konged([]);
+    if (won.phase.kind !== "over") throw new Error("no win");
+    expect(won.phase.result.bao).toBe(0);
+    const seats = ["A", "B", "C", "D"];
+    const ledger: ScoreGame = newPlayLedger(seats, 0, 0);
+    ledger.events.push(...playEvents(s1, won, seats, 0));
+    const r = replay(ledger);
+    expect(seats.map((p) => r.totals[p] ?? 0)).toEqual(won.phase.result.deltas);
+    expect(won.phase.result.deltas.filter((d) => d !== 0).length).toBe(2);
+  });
+
+  it("leaves the winner's 拉 on another player as it was - not paid, not grown", () => {
+    const { won } = konged([{ holder: "1", pulled: "2", value: 30, count: 1 }]);
+    if (won.phase.kind !== "over") throw new Error("no win");
+    expect(won.phase.result.deltas[2]).toBe(0);
+    expect((won.lahs ?? []).find((l) => l.holder === "1" && l.pulled === "2")).toMatchObject({ value: 30, count: 1 });
+  });
 });

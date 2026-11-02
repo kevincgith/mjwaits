@@ -766,6 +766,76 @@ describe("game", () => {
     });
   });
 
+  describe("包自摸", () => {
+    const t = (suit: Tile["suit"], rank: number): Tile => ({ suit, rank });
+    // 東 (dealer) throws 5z; 南 kongs it and self-draws off the replacement. `then`: the
+    // tiles the replacement draws come off (the wall's back), last first.
+    function konged(then: WallTile[], opts: { noBaoZimo?: boolean } = {}) {
+      const s0 = newGame(opts);
+      s0.players.forEach((p) => ((p.flowers = []), (p.melds = [])));
+      s0.lahs = [];
+      s0.tableBonuses = [];
+      s0.players[1].hand = parseHand("555z123m456m789m111b2t");
+      s0.players[0].discards = [t("z", 5)];
+      s0.wall = [...s0.wall.filter((w) => !("bonus" in w)), ...then];
+      s0.phase = { kind: "claims", from: 0, tile: t("z", 5) };
+      return resolveClaims(s0, [null, { kind: "kong" }, null, null]);
+    }
+
+    it("the kong's discarder alone pays a 自摸 off its replacement - their own share", () => {
+      const s = konged([{ tile: t("t", 2) }]);
+      if (s.phase.kind !== "turn") throw new Error("no turn");
+      expect(s.phase.chain?.bao).toBe(0);
+      const won = applyTurnMove(s, { kind: "selfDraw" });
+      if (won.phase.kind !== "over") throw new Error("no win");
+      const r = won.phase.result;
+      expect(r.bao).toBe(0);
+      expect(r.pairs?.map((p) => p.payer)).toEqual(["0"]);
+      // 東 pays what they'd pay on a plain 自摸 (with 莊 on top); 西 and 北 nothing.
+      const plain = settleWin([], 0, 1, null, r.score!.total, 0);
+      expect(r.deltas[0]).toBe(-plain.find((p) => p.payer === "0")!.worth);
+      expect(r.deltas[2]).toBe(0);
+      expect(r.deltas[3]).toBe(0);
+      expect(r.deltas[1]).toBe(-r.deltas[0]);
+    });
+
+    it("holds through bonus tiles and another kong on the way", () => {
+      // The replacement: a flower, then 9b (a concealed kong of 9b), then the winning 2t.
+      const s0 = newGame();
+      s0.players.forEach((p) => ((p.flowers = []), (p.melds = [])));
+      s0.lahs = [];
+      s0.players[1].hand = parseHand("555z123m456m789m999b2t");
+      s0.players[0].discards = [t("z", 5)];
+      s0.wall = [...s0.wall.filter((w) => !("bonus" in w)), { tile: t("t", 2) }, { tile: t("b", 9) }, { bonus: { kind: "flower", rank: 1 } } as WallTile];
+      s0.phase = { kind: "claims", from: 0, tile: t("z", 5) };
+      const s1 = resolveClaims(s0, [null, { kind: "kong" }, null, null]);
+      if (s1.phase.kind !== "turn") throw new Error("no turn");
+      expect(s1.phase.drawn).toEqual(t("b", 9));
+      const s2 = applyTurnMove(s1, { kind: "concealedKong", tile: t("b", 9) });
+      if (s2.phase.kind !== "turn") throw new Error("no turn");
+      expect(s2.phase.drawn).toEqual(t("t", 2));
+      expect(s2.phase.chain).toMatchObject({ kongs: 2, flowers: 1, bao: 0 });
+      const won = applyTurnMove(s2, { kind: "selfDraw" });
+      if (won.phase.kind !== "over") throw new Error("no win");
+      expect(won.phase.result.bao).toBe(0);
+      expect(won.phase.result.deltas.filter((d) => d < 0).length).toBe(1);
+    });
+
+    it("off: a plain 自摸, everyone pays", () => {
+      const s = konged([{ tile: t("t", 2) }], { noBaoZimo: true });
+      const won = applyTurnMove(s, { kind: "selfDraw" });
+      if (won.phase.kind !== "over") throw new Error("no win");
+      expect(won.phase.result.bao).toBeUndefined();
+      expect(won.phase.result.pairs?.length).toBe(3);
+    });
+
+    it("ends with the turn: a later 自摸 is paid by all", () => {
+      const s = konged([{ tile: t("b", 8) }]);
+      const thrown = applyTurnMove(s, { kind: "discard", tile: t("b", 8) });
+      expect(thrown.phase.kind === "claims" && thrown.phase.chain).toBeFalsy();
+    });
+  });
+
   describe("拉 / 踢", () => {
     // Your examples: 11, then a 20-tai repeat is worth 26 and the 拉 is 37;
     // 拉 29, then a 20-tai 踢 is worth 35 and the kicker's new 拉 is 20.

@@ -106,6 +106,7 @@ export function playEvents(before: GameState | null, after: GameState, seats: st
         ...(r.from === null && jackpot && jackpot.pot > 0 ? { jackpotTo: seats[r.winner] } : {}),
         ...(dealerExtra ? { dealerExtra } : {}),
         ...(r.fanXue?.length ? { fanXuePaid: r.fanXue.map((f) => ({ from: seats[f.from], to: seats[f.to], amount: f.amount })) } : {}),
+        ...(r.bao !== undefined ? { bao: r.bao } : {}),
       });
     }
   }
