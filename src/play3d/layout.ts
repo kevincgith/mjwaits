@@ -620,14 +620,14 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
       if (side === "top") {
         const x1 = centreX + limit / 2;
         x = x1 - before - step(i) / 2;
-        y = row2y1 - (r + 0.5) * rowDepth + (riichi ? 0.11 * T : 0);
+        y = row2y1 - (r + 0.5) * rowDepth;
         rot = riichi ? 90 : 0;
         [x, y] = [centreX + (x - centreX) * fit, row2y1 + (y - row2y1) * fit];
       } else if (side === "bottom") {
         const x0 = centreX - limit / 2;
         x = x0 + before + step(i) / 2;
         const top0 = row4y0 + 0.3 * T;
-        y = top0 + (r + 0.5) * rowDepth + (riichi ? 0.11 * T : 0);
+        y = top0 + (r + 0.5) * rowDepth;
         rot = riichi ? 90 : 0;
         [x, y] = [centreX + (x - centreX) * fit, top0 + (y - top0) * fit];
       } else if (side === "left") {
@@ -664,11 +664,13 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
       // The newest discard's pin: a gold point on its thrower's side.
       if (pond.pinLast && i === pond.tiles.length - 1) {
         const pin = 0.3 * em;
+        // (From its near edge - a 叮 tile, lying across its row, is shallower.)
+        const half = riichi ? 0.39 * em : 0.5 * em;
         const at =
           side === "bottom"
-            ? chain(translate(x, y + 0.5 * em + 0.075 * em, THICK * em * 0.5), scale(pin, 0.15 * em, 1))
+            ? chain(translate(x, y + half + 0.075 * em, THICK * em * 0.5), scale(pin, 0.15 * em, 1))
             : side === "top"
-              ? chain(translate(x, y - 0.5 * em - 0.075 * em, THICK * em), rotateZ(180), scale(pin, 0.15 * em, 1))
+              ? chain(translate(x, y - half - 0.075 * em, THICK * em), rotateZ(180), scale(pin, 0.15 * em, 1))
               : side === "left"
                 ? chain(translate(x - 0.615 * em, y, THICK * em), rotateZ(90), scale(pin, 0.15 * em, 1))
                 : chain(translate(x + 0.615 * em, y, THICK * em), rotateZ(-90), scale(pin, 0.15 * em, 1));

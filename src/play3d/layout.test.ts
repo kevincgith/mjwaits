@@ -264,3 +264,22 @@ describe("your 換牌 pile's gaps", () => {
     expect(cy + half).toBeCloseTo(front[1], 1);
   });
 });
+
+describe("叮 on the WebGL table", () => {
+  it("lays the declaring discard sideways in the middle of its row, on every side", () => {
+    const suits = { bottom: "m", top: "t", left: "b", right: "s" } as const;
+    const base = take("bottom", 0);
+    const ponds = Object.fromEntries(
+      SIDES.map((side) => [side, { tiles: [1, 2, 3, 4].map((rank) => ({ suit: side === "right" ? "m" : suits[side], rank: side === "right" ? rank + 5 : rank })), pinLast: false, riichiAt: 1 }])
+    ) as unknown as GLTableView["ponds"];
+    const felt = layoutTable({ ...base, piles: {}, rows: {}, flights: [], ponds }, DIMS).felt.pieces;
+    for (const side of SIDES) {
+      const faces = ponds[side].tiles.map((t) => `${t.suit}${t.rank}`);
+      const [a, ding, c] = faces.slice(0, 3).map((f) => centre(felt.find((p) => p.face === f)!.m));
+      // Across its row (y for you and across, x for the sides), in line with its neighbours.
+      const k = side === "bottom" || side === "top" ? 1 : 0;
+      expect(ding[k], side).toBeCloseTo(a[k], 3);
+      expect(ding[k], side).toBeCloseTo(c[k], 3);
+    }
+  });
+});
