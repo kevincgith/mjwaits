@@ -523,7 +523,7 @@ describe("game", () => {
     expect(at([{ kind: "kong", tiles: parseHand("1111z"), concealed: true, from: null }], "123m456m789m123t5b7z")).toBe("riichi");
   });
 
-  it("keeps 一發 for a 叮 player who robs a kong; a kong that stands ends it", () => {
+  it("keeps 一發 for a 叮 player who robs a kong - and when the kong stands", () => {
     const m5 = parseHand("5m")[0];
     const set = () => {
       const s = newGame();
@@ -540,8 +540,8 @@ describe("game", () => {
     const robbed = resolveClaims(set(), [null, { kind: "win" }, null, null]);
     const ids = robbed.phase.kind === "over" ? robbed.phase.result.score!.matched.map((m) => m.pattern.id) : [];
     expect(ids).toEqual(expect.arrayContaining(["rob-kong", "riichi-instant-win"]));
-    // Passed up, the kong stands - and 一發 is gone.
-    expect(resolveClaims(set(), [null, null, null, null]).players[1].riichi!.ippatsu).toBe(false);
+    // Passed up, the kong stands - and 一發 stays (only its player's own discard ends it).
+    expect(resolveClaims(set(), [null, null, null, null]).players[1].riichi!.ippatsu).toBe(true);
   });
 
   it("pays 反雪: who dealt into a 雙響 and self-draws the next hand anyone wins gets it back, into the new 拉", () => {
@@ -736,6 +736,33 @@ describe("game", () => {
       const eaten = resolveClaims(s2, [null, { kind: "win" }, null, null]);
       const eatIds = eaten.phase.kind === "over" ? eaten.phase.result.score?.matched.map((x) => x.pattern.id) : [];
       expect(eatIds).toContain("riichi-eat");
+    });
+  });
+
+  describe("一發 through calls", () => {
+    const t = (suit: Tile["suit"], rank: number): Tile => ({ suit, rank });
+    it("holds through another player's kong off the declaring discard - 天叮, kong, then the winning tile", () => {
+      const s0 = newGame();
+      s0.players[0].hand = parseHand("123456789m111222t3t5z");
+      s0.players[1].hand = parseHand("555z3t147m258b369b1z");
+      s0.phase = { kind: "turn", seat: 0, drawn: t("z", 5), replacement: null };
+      const declared = applyTurnMove(s0, { kind: "discard", tile: t("z", 5), riichi: true });
+      const konged = resolveClaims(declared, [null, { kind: "kong" }, null, null]);
+      expect(konged.players[0].riichi?.ippatsu).toBe(true);
+      const thrown = applyTurnMove(konged, { kind: "discard", tile: t("t", 3) });
+      const won = resolveClaims(thrown, [{ kind: "win" }, null, null, null]);
+      const ids = won.phase.kind === "over" ? won.phase.result.score!.matched.map((m) => m.pattern.id) : [];
+      expect(ids).toEqual(expect.arrayContaining(["heavenly-riichi", "riichi-instant-win"]));
+    });
+
+    it("holds through a pung called by someone else", () => {
+      const s0 = newGame();
+      s0.players[0].hand = parseHand("123456789m111222t3t5z");
+      s0.players[1].hand = parseHand("55z3t147m258b369b11z");
+      s0.phase = { kind: "turn", seat: 0, drawn: t("z", 5), replacement: null };
+      const declared = applyTurnMove(s0, { kind: "discard", tile: t("z", 5), riichi: true });
+      const punged = resolveClaims(declared, [null, { kind: "pung" }, null, null]);
+      expect(punged.players[0].riichi?.ippatsu).toBe(true);
     });
   });
 
