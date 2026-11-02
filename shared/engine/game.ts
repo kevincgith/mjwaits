@@ -73,7 +73,8 @@ export interface GameMeld {
 // call only a win. `state` is 天叮 (dealer) / 地叮 when declared with the
 // player's first discard before any call, else plain 叮. `discard` is the
 // index in the pond of the declaring tile (drawn sideways). `ippatsu` (一發)
-// holds until the player's next discard or any call at the table.
+// holds until the player's own next discard - calls and kongs at the table
+// don't end it.
 export interface Riichi {
   state: Exclude<RiichiState, "none">;
   discard: number;
@@ -806,8 +807,6 @@ export function applyTurnMove(state: GameState, move: TurnMove): GameState {
       if (justClaimed(phase) && !(move.kind === "addedKong" && claimedPungTile(p) && sameTile(claimedPungTile(p)!, move.tile)))
         throw new Error("No kong straight after claiming a run or a pung - but the fourth of the pung just claimed");
       if (move.kind === "concealedKong") {
-        // A kong that stands ends everyone's 一發.
-        for (const pl of s.players) if (pl.riichi) pl.riichi.ippatsu = false;
         p.hand = removeTiles(p.hand, [move.tile, move.tile, move.tile, move.tile]);
         p.melds.push({ kind: "kong", tiles: [move.tile, move.tile, move.tile, move.tile], concealed: true, from: null });
         (s.tableBonuses ??= []).push({ seat, name: "暗槓", deltas: collectFromEach(seat, CONCEALED_KONG_BONUS), paid: false });
@@ -836,9 +835,7 @@ export function applyTurnMove(state: GameState, move: TurnMove): GameState {
 // stands and its replacement is drawn. Only an added kong can be robbed.
 
 // The pung becomes a kong; then the replacement draw.
-// (Robbed instead, it never stands: a 叮 player who robs it keeps 一發.)
 function completeAddedKong(s: GameState, seat: number, tile: Tile): GameState {
-  for (const pl of s.players) if (pl.riichi) pl.riichi.ippatsu = false;
   const m = s.players[seat].melds.find((m) => m.kind === "triplet" && sameTile(m.tiles[0], tile))!;
   m.kind = "kong";
   m.tiles.push(tile);
@@ -979,9 +976,8 @@ export function resolveClaims(state: GameState, decisions: (Claim | null)[]): Ga
     p.hand.push(tile);
     return finishWin(s, best, from, tile, null);
   }
-  // A call ends the first go-around, and everyone's 一發.
+  // A call ends the first go-around (not 一發 - only its player's own discard does).
   s.firstGoAround = false;
-  for (const pl of s.players) if (pl.riichi) pl.riichi.ippatsu = false;
   if (claim.kind === "chow") {
     p.hand = removeTiles(p.hand, claim.tiles);
     p.melds.push({ kind: "run", tiles: sortTiles([...claim.tiles, tile]), concealed: false, from, claimed: tile });
