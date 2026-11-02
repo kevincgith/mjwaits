@@ -1041,8 +1041,10 @@ export function scoreWin(
     winningTile: tile,
     riichi: p.riichi?.state ?? "none",
     instantWin: p.riichi?.ippatsu ?? false,
-    // 食叮: winning off a discard from a player who has declared 叮.
-    eatRiichi: from !== null && !!s.players[from].riichi,
+    // 食叮: winning off the very tile a player declared 叮 with - not a later
+    // discard of theirs. Their 一發 stands from declaring till their next
+    // discard, so it's still on exactly while their declaring tile is up.
+    eatRiichi: from !== null && !!s.players[from].riichi?.ippatsu,
     // 四子內/七子內/十子內: won with that many tiles or fewer in the ponds -
     // the tiles still lying there: not the one won off (it's left the pond
     // by now), nor any claimed into a meld.

@@ -737,6 +737,24 @@ describe("game", () => {
       const eatIds = eaten.phase.kind === "over" ? eaten.phase.result.score?.matched.map((x) => x.pattern.id) : [];
       expect(eatIds).toContain("riichi-eat");
     });
+
+    it("scores no 食叮 off a declared player's later discard", () => {
+      const s0 = newGame();
+      s0.players[0].hand = parseHand("123456789m111222t3t5z");
+      s0.players[1].hand = parseHand("123456789m111222t4z");
+      s0.phase = { kind: "turn", seat: 0, drawn: t("z", 5), replacement: null };
+      // Seat 0 declares 叮 with 5z; no one takes it. Its next throw (which
+      // ends its 一發) is a 4z, and seat 1 wins off that.
+      const declared = applyTurnMove(s0, { kind: "discard", tile: t("z", 5), riichi: true });
+      const later: GameState = {
+        ...declared,
+        players: declared.players.map((p, i) => (i === 0 ? { ...p, discards: [...p.discards, t("z", 4)], riichi: { ...p.riichi!, ippatsu: false } } : p)),
+        phase: { kind: "claims", from: 0, tile: t("z", 4) },
+      };
+      const won = resolveClaims(later, [null, { kind: "win" }, null, null]);
+      const ids = won.phase.kind === "over" ? won.phase.result.score!.matched.map((x) => x.pattern.id) : [];
+      expect(ids).not.toContain("riichi-eat");
+    });
   });
 
   describe("一發 through calls", () => {
