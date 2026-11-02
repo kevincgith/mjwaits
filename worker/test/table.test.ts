@@ -376,7 +376,9 @@ describe("playing", () => {
     // One hand to its end, then everyone ready for the next.
     await playUntil(phones, (s) => s.hand === 2);
     for (const p of phones) {
-      expect(p.errors).toEqual([]);
+      // (A claim can arrive just after the table went ahead without it - a
+      // run, once someone else's pung came in - and is refused as stale.)
+      expect(p.errors.filter((e) => !(e.code === "stale" && e.message === "that discard has gone"))).toEqual([]);
       expectNoLeaks(p.states);
       // Its own tiles, every time it saw a hand in play.
       for (const s of p.states) if (s.view && s.view.phase.kind !== "over") expect(s.view.players[s.you!].hand).not.toBeNull();
