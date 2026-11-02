@@ -559,18 +559,34 @@ export function Board({
     const root = document.documentElement;
     const measure = () => {
       const top = el.getBoundingClientRect().top + window.scrollY;
+      // The fixed tab bar's own top, not innerHeight less its height: an
+      // iPhone home-screen app can report innerHeight off by the status bar
+      // at launch (and never fire resize), which pushed the bottom card
+      // under the bar with no way to scroll to it.
       const bar = document.querySelector<HTMLElement>(".tab-bar");
-      const barHeight = bar && getComputedStyle(bar).position === "fixed" ? bar.getBoundingClientRect().height : 0;
-      const room = Math.floor(window.innerHeight - top - barHeight - FIT_GAP);
+      const bottom = bar && getComputedStyle(bar).position === "fixed" ? bar.getBoundingClientRect().top : window.innerHeight;
+      const room = Math.floor(bottom - top - FIT_GAP);
       const fits = room >= FIT_MIN;
       setFitHeight(fits ? room : null);
       root.classList.toggle("sc-fit-mode", fits);
     };
     window.scrollTo(0, 0);
     measure();
+    // Again whenever the screen or anything above the board changes size
+    // (the header, the toolbar, a banner), and once things have settled.
+    const observer = new ResizeObserver(measure);
+    observer.observe(document.body);
+    if (el.parentElement) observer.observe(el.parentElement);
+    const settle = window.setTimeout(measure, 500);
     window.addEventListener("resize", measure);
+    window.visualViewport?.addEventListener("resize", measure);
+    window.addEventListener("pageshow", measure);
     return () => {
+      observer.disconnect();
+      window.clearTimeout(settle);
       window.removeEventListener("resize", measure);
+      window.visualViewport?.removeEventListener("resize", measure);
+      window.removeEventListener("pageshow", measure);
       root.classList.remove("sc-fit-mode");
     };
   }, []);
