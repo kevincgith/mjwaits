@@ -962,6 +962,15 @@ function layoutHand(view: GLTableView, d: Dims, spots: Partial<Record<GLSide, Sp
     seen.set(face, n + 1);
     return `id:${face}#${n}`;
   };
+  // Outside 換牌, likewise by what it is - and where, in a hand of so many -
+  // so it eases only its own lift and drop: thrown, no other tile takes its
+  // place lifted, and moved along the row it jumps.
+  const kinds = new Map<string, number>();
+  const own = (face: string, x0: number) => {
+    const n = kinds.get(face) ?? 0;
+    kinds.set(face, n + 1);
+    return `h:${mine.tiles.length}:${face}#${n}@${Math.round(x0)}`;
+  };
   mine.tiles.forEach((t: GLHandTile, i) => {
     let x0: number;
     if (t.drawn) {
@@ -1021,7 +1030,7 @@ function layoutHand(view: GLTableView, d: Dims, spots: Partial<Record<GLSide, Sp
           ? // (Just after a give, once the given tiles have lifted clear of
             // their gaps - so nothing passes through anything.)
             { key: ident(t.tile ? faceOf(t.tile) : BACK), dur: SLIDE_S, curve: SLIDE, delay: mine.given ? GIVE_CLEAR_S : 0 }
-          : { key: `h:${i}:${Math.round(x0)}`, dur: 0.16, curve: SETTLE },
+          : { key: own(t.tile ? faceOf(t.tile) : BACK, x0), dur: 0.16, curve: SETTLE },
     });
     // Hints: the bots' pick underlined in gold; a risky tile barred in red.
     if (t.hint) quads.push({ kind: "hint", m: chain(translate(x0 + 0.39 * H, y0 + H + 0.09 * H, 0), scale(0.78 * H * 0.64, 0.06 * H, 1)) });
