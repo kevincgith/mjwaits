@@ -186,13 +186,16 @@ function placeGroup(g: Group, at: (k: number) => [number, number], rot: number, 
 }
 
 // The standing hand's faces, as HandTilesView has them: blanks till it's laid
-// down; then sorted, a winning tile last.
-function wallFaces(w: GLWall): { faces: string[]; win: number } {
+// down; then sorted from its player's left, a winning tile at their right.
+// (`reversed`: a wall laid out from its player's right - across's and the
+// right seat's - so its faces come the other way round, the winning tile first.)
+function wallFaces(w: GLWall, reversed = false): { faces: string[]; win: number } {
   if (!(w.down && w.tiles)) return { faces: Array<string>(w.count).fill(UNSEEN), win: -1 };
   const sorted = sortTiles(w.tiles);
   const at = w.winningTile ? sorted.findIndex((t) => sameTile(t, w.winningTile!)) : -1;
   const faces = (at < 0 ? sorted : [...sorted.filter((_, i) => i !== at), sorted[at]]).map(faceOf);
-  return { faces, win: at < 0 ? -1 : faces.length - 1 };
+  if (reversed) faces.reverse();
+  return { faces, win: at < 0 ? -1 : reversed ? 0 : faces.length - 1 };
 }
 
 const sum = (ns: number[]) => ns.reduce((a, b) => a + b, 0);
@@ -290,7 +293,7 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
     const Wg = d.wall * w.wallGrow;
     const p = 0.72 * Wg;
     const slot = 0.97 * Wg;
-    const { faces, win } = wallFaces(w);
+    const { faces, win } = wallFaces(w, which === "right");
     const drew = w.drew && !w.down;
     const n = faces.length;
     const edgeW = 0.55 * Wg;
@@ -342,7 +345,7 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
   const Wt = d.wallTop;
   const tp = 0.72 * Wt;
   const tslot = 0.97 * Wt;
-  const tw = wallFaces(top);
+  const tw = wallFaces(top, true);
   const tdrew = top.drew && !top.down;
   const tn = tw.faces.length;
   const tEdgeW = (tdrew || tw.win >= 0 ? tn * tp : (tn + 1) * tp) + 0.25 * Wt + tslot;
@@ -429,7 +432,8 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
       sideY = tSeatY0 + tSeatH / 2 - (hasBeside ? (top.down ? 0.25 : 0.58) * T : 0);
     }
     // The tiles from the right of the wall's content (its slot padding at
-    // the right): a drawn tile first, at the left, 0.25em apart.
+    // the right): a drawn tile (or winning one) first, at the left - its
+    // player's right - 0.25em apart.
     const contentX1 = edgeX0 + tEdgeW - tslot;
     let x = contentX1;
     const xs: number[] = [];
@@ -437,7 +441,7 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
       const wide = i === tw.win ? Wt : tp;
       x -= wide;
       xs[i] = x;
-      if (i === tw.win || (i === 1 && tdrew)) x -= 0.25 * Wt;
+      if (i === 1 && (tdrew || tw.win === 0)) x -= 0.25 * Wt;
     }
     tw.faces.forEach((f, i) => {
       const fx = xs[i];
@@ -446,7 +450,7 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
         return;
       }
       // Laid down: tipped over away from its player about its foot, slid
-      // back 0.45em (a winning tile, last, lying sideways).
+      // back 0.45em (a winning tile, at its player's right, lying sideways).
       const isWin = i === tw.win;
       const ox = fx - 0.03 * Wt + (isWin ? 0.5 : 0.39) * Wt;
       const pose = (a: number, b: number) =>
@@ -488,7 +492,7 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
     const edgeX0 = which === "left" ? seatX0 : seatX0 + S.width - S.edgeW;
     const { Wg, p, slot, faces, win, drew } = S;
     // The left wall from its far end (padding: the slot at the top); the
-    // right's from its near end. A drawn tile at the player's right.
+    // right's from its near end. A drawn (or winning) tile at the player's right.
     const ys: number[] = [];
     if (which === "left") {
       let y = edgeY0 + slot;
@@ -502,7 +506,7 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
       for (let i = faces.length - 1; i >= 0; i--) {
         y -= i === win ? Wg : p;
         ys[i] = y;
-        if ((i === 1 && drew) || i === win) y -= 0.25 * Wg;
+        if (i === 1 && (drew || win === 0)) y -= 0.25 * Wg;
       }
     }
     const tb = Math.min(0.45 * Wg, 0.9 * rem);
@@ -614,31 +618,33 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
       const r = lines.findIndex((l) => l.includes(i));
       const before = sum(lines[r].filter((j) => j < i).map(step));
       const riichi = i === pond.riichiAt;
+      // A 叮 tile, laid the other way, sits flush with its row's compass side.
+      const lean = riichi ? ((TILE_H - TILE_W) / 2) * T : 0;
       let x: number;
       let y: number;
       let rot: number;
       if (side === "top") {
         const x1 = centreX + limit / 2;
         x = x1 - before - step(i) / 2;
-        y = row2y1 - (r + 0.5) * rowDepth;
+        y = row2y1 - (r + 0.5) * rowDepth + lean;
         rot = riichi ? 90 : 0;
         [x, y] = [centreX + (x - centreX) * fit, row2y1 + (y - row2y1) * fit];
       } else if (side === "bottom") {
         const x0 = centreX - limit / 2;
         x = x0 + before + step(i) / 2;
         const top0 = row4y0 + 0.3 * T;
-        y = top0 + (r + 0.5) * rowDepth;
+        y = top0 + (r + 0.5) * rowDepth - lean;
         rot = riichi ? 90 : 0;
         [x, y] = [centreX + (x - centreX) * fit, top0 + (y - top0) * fit];
       } else if (side === "left") {
         const y0 = midY - limit / 2;
-        x = col2x1 - (r + 0.5) * rowDepth;
+        x = col2x1 - (r + 0.5) * rowDepth + lean;
         y = y0 + before + step(i) / 2;
         rot = riichi ? 0 : 90;
         [x, y] = [col2x1 + (x - col2x1) * fit, midY + (y - midY) * fit];
       } else {
         const y1 = midY + limit / 2;
-        x = col4x0 + (r + 0.5) * rowDepth;
+        x = col4x0 + (r + 0.5) * rowDepth - lean;
         y = y1 - before - step(i) / 2;
         rot = riichi ? 0 : -90;
         [x, y] = [col4x0 + (x - col4x0) * fit, midY + (y - midY) * fit];
@@ -664,7 +670,7 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
       // The newest discard's pin: a gold point on its thrower's side.
       if (pond.pinLast && i === pond.tiles.length - 1) {
         const pin = 0.3 * em;
-        // (From its near edge - a 叮 tile, lying across its row, is shallower.)
+        // (From its near edge - a 叮 tile, laid the other way, is shallower.)
         const half = riichi ? 0.39 * em : 0.5 * em;
         const at =
           side === "bottom"
@@ -672,8 +678,8 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
             : side === "top"
               ? chain(translate(x, y - half - 0.075 * em, THICK * em), rotateZ(180), scale(pin, 0.15 * em, 1))
               : side === "left"
-                ? chain(translate(x - 0.615 * em, y, THICK * em), rotateZ(90), scale(pin, 0.15 * em, 1))
-                : chain(translate(x + 0.615 * em, y, THICK * em), rotateZ(-90), scale(pin, 0.15 * em, 1));
+                ? chain(translate(x - half - 0.115 * em, y, THICK * em), rotateZ(90), scale(pin, 0.15 * em, 1))
+                : chain(translate(x + half + 0.115 * em, y, THICK * em), rotateZ(-90), scale(pin, 0.15 * em, 1));
         feltQuads.push({ kind: "pin", m: at });
       }
     });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { feltToHand, layoutTable, type Dims, type Piece } from "./layout";
+import { feltToHand, layoutTable, TILE_H, TILE_W, type Dims, type Piece } from "./layout";
 import { apply, chain, rotateX, translate } from "./mat";
 import { giverOrder, swapSlots } from "./swapOrder";
 import type { GLFlight, GLSide, GLSwapRow, GLTableView, GLWall } from "./types";
@@ -266,20 +266,40 @@ describe("your 換牌 pile's gaps", () => {
 });
 
 describe("叮 on the WebGL table", () => {
-  it("lays the declaring discard sideways in the middle of its row, on every side", () => {
+  it("lays the declaring discard the other way, flush with its row's compass side, on every side", () => {
     const suits = { bottom: "m", top: "t", left: "b", right: "s" } as const;
     const base = take("bottom", 0);
     const ponds = Object.fromEntries(
       SIDES.map((side) => [side, { tiles: [1, 2, 3, 4].map((rank) => ({ suit: side === "right" ? "m" : suits[side], rank: side === "right" ? rank + 5 : rank })), pinLast: false, riichiAt: 1 }])
     ) as unknown as GLTableView["ponds"];
     const felt = layoutTable({ ...base, piles: {}, rows: {}, flights: [], ponds }, DIMS).felt.pieces;
+    // Toward the compass: up from you, down from across, right from the left seat, left from the right.
+    const toCompass = { bottom: [1, -1], top: [1, 1], left: [0, 1], right: [0, -1] } as const;
     for (const side of SIDES) {
       const faces = ponds[side].tiles.map((t) => `${t.suit}${t.rank}`);
-      const [a, ding, c] = faces.slice(0, 3).map((f) => centre(felt.find((p) => p.face === f)!.m));
-      // Across its row (y for you and across, x for the sides), in line with its neighbours.
-      const k = side === "bottom" || side === "top" ? 1 : 0;
-      expect(ding[k], side).toBeCloseTo(a[k], 3);
-      expect(ding[k], side).toBeCloseTo(c[k], 3);
+      const [a, ding] = faces.slice(0, 2).map((f) => felt.find((p) => p.face === f)!);
+      const [k, dir] = toCompass[side];
+      const em = size(a.m);
+      // Its compass-side edge (half a tile's width out) where its neighbour's is (half its length out).
+      expect(ding.m[12 + k] + (dir * TILE_W * em) / 2, side).toBeCloseTo(a.m[12 + k] + (dir * TILE_H * em) / 2, 3);
     }
+  });
+});
+
+describe("a hand laid down on the WebGL table", () => {
+  it("puts the winning tile at its player's right, the rest in order from their left", () => {
+    const tiles = [1, 2, 3, 4].map((rank) => ({ suit: "m" as const, rank }));
+    const base = take("bottom", 0);
+    // Where each of its player's tiles lies, along the way they read: from their left to their right.
+    const reading = (side: "left" | "top" | "right") => {
+      const won = { ...wall(4), down: true, tiles, winningTile: tiles[1] };
+      const felt = layoutTable({ ...base, piles: {}, rows: {}, flights: [], walls: { ...base.walls, [side]: won } }, DIMS).felt.pieces;
+      const along = (p: Piece) => (side === "top" ? -p.m[12] : side === "left" ? p.m[13] : -p.m[13]);
+      return felt
+        .filter((p) => /^m[1-4]$/.test(p.face))
+        .sort((a, b) => along(a) - along(b))
+        .map((p) => p.face);
+    };
+    for (const side of ["left", "top", "right"] as const) expect(reading(side), side).toEqual(["m1", "m3", "m4", "m2"]);
   });
 });
