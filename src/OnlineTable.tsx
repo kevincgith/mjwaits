@@ -161,6 +161,10 @@ export function OnlineTable({ initialCode, onExit, renderer }: { initialCode: st
           setCode(null);
           return;
         }
+        // A move the table had already gone past (a run tapped just as
+        // someone else's pung took the tile): the table's own update shows
+        // what happened instead.
+        if (errorCode === "stale") return;
         say(message);
       },
       onGone: () => {
