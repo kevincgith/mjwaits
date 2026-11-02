@@ -98,8 +98,14 @@ interface Runtime {
   hand: number;
   step: number; // one higher at each new decision
   deadline: number | null; // the people being waited on must act by then
+  // A person's deadline put aside while their seat is played for (自動): theirs
+  // again - not a fresh one - if they take it back on the same step (see retime).
+  heldDeadline?: { step: number; at: number } | null;
   botAt: number | null; // when the next bot (or away player) acts
   decisions: Decision[] | null; // a claim window's answers so far
+  // People the window passed without asking (see unwait) - asked again if a
+  // call that outranked theirs is taken back (嗌錯).
+  unwaited?: number[];
   ready: number[]; // between hands
   away: Record<number, number>; // seat -> when its player dropped
   watching?: string[]; // people who stood to watch: not sat back down when they reconnect
@@ -113,8 +119,9 @@ interface Runtime {
   // kept when they're back) - as the Grandmaster.
   chosen?: number[];
   // The last call a person made (上 / 碰 / 槓), with the discard it came from -
-  // for 嗌錯, until their discard.
-  lastCall?: { before: GameState; decisions: (Claim | null)[]; seat: number } | null;
+  // for 嗌錯, until their discard. `unwaited`: who the window passed without
+  // asking, for it to reopen to.
+  lastCall?: { before: GameState; decisions: (Claim | null)[]; seat: number; unwaited?: number[] } | null;
   overAt?: number; // when the last hand ended
   pausedAt?: number; // when the last person at the table left (see run)
 }
@@ -512,7 +519,10 @@ export class Table extends Hub<TableMessage> {
 
   // Who acts on the decision in hand has changed (someone back, 自動 on or
   // off): a bot's pause only while a bot (or someone played for) has it to
-  // make, and a person's time running - from now, if it wasn't.
+  // make, and a person's time running - from now, if it wasn't. A deadline
+  // set aside while the seat was played for comes back as it was, not
+  // restarted - or 自動 off and on again would stall the table for good. (If
+  // it's gone by, the move is made for them at once.)
   private retime(now: number) {
     const rt = this.rt;
     const ph = rt.game?.phase;
@@ -522,20 +532,26 @@ export class Table extends Hub<TableMessage> {
     if (!yet) return;
     if (!yet.some((s) => this.actsAlone(s))) rt.botAt = null;
     const limit = ph.kind === "swap" ? SWAP_TIMER_S : rt.settings.timer;
-    if (!yet.some((s) => !this.actsAlone(s))) rt.deadline = null;
-    else if (rt.deadline === null && limit) rt.deadline = now + limit * 1000;
+    if (!yet.some((s) => !this.actsAlone(s))) {
+      if (rt.deadline !== null) rt.heldDeadline = { step: rt.step, at: rt.deadline };
+      rt.deadline = null;
+    } else if (rt.deadline === null && limit) rt.deadline = rt.heldDeadline?.step === rt.step ? rt.heldDeadline.at : now + limit * 1000;
   }
 
   // ---- Moving the hand on -------------------------------------------------------------
 
-  // A new decision: count it, and set who's waited on until when.
-  private newDecision(now: number) {
+  // A new decision: count it, and set who's waited on until when. A claim
+  // window reopened (嗌錯) keeps the answers already given (`answered`;
+  // undefined: asked again).
+  private newDecision(now: number, answered?: (Claim | null | undefined)[]) {
     const rt = this.rt;
     const g = rt.game!;
     rt.step++;
     rt.deadline = null;
+    rt.heldDeadline = null;
     rt.botAt = null;
     rt.decisions = null;
+    rt.unwaited = [];
     const timer = rt.settings.timer * 1000;
     if (g.phase.kind === "turn") {
       // The dealer's first turn after 換牌 waits for its last rows to join the hands.
@@ -558,6 +574,7 @@ export class Table extends Hub<TableMessage> {
       // are waited on; everyone else passes.
       rt.decisions = Array.from({ length: SEATS }, (_, seat): Decision => {
         if (g.phase.kind !== "claims" || seat === g.phase.from || claimOptions(g, seat).length === 0) return null;
+        if (answered?.[seat] !== undefined) return answered[seat];
         return this.actsAlone(seat) ? this.aloneClaim(seat) : "waiting";
       });
       this.unwait();
@@ -662,7 +679,11 @@ export class Table extends Hub<TableMessage> {
     const g = this.rt.game!;
     const d = this.rt.decisions!;
     const known = d.map((x) => (x === "waiting" ? undefined : x));
-    for (let s = 0; s < SEATS; s++) if (d[s] === "waiting" && !claimMatters(g, known, s)) d[s] = null;
+    for (let s = 0; s < SEATS; s++)
+      if (d[s] === "waiting" && !claimMatters(g, known, s)) {
+        d[s] = null;
+        (this.rt.unwaited ??= []).push(s);
+      }
   }
 
   private resolve() {
@@ -675,7 +696,8 @@ export class Table extends Hub<TableMessage> {
     // A person's call (not a win), for 嗌錯 - until their discard.
     const caller = g.phase.kind === "turn" ? g.phase.seat : null;
     const call = caller === null ? null : decisions[caller];
-    rt.lastCall = caller !== null && call && call.kind !== "win" && rt.seats[caller]?.kind === "human" && !this.actsAlone(caller) ? { before, decisions, seat: caller } : null;
+    const unwaited = rt.unwaited?.length ? { unwaited: rt.unwaited } : {};
+    rt.lastCall = caller !== null && call && call.kind !== "win" && rt.seats[caller]?.kind === "human" && !this.actsAlone(caller) ? { before, decisions, seat: caller, ...unwaited } : null;
     // The turn on a call (下家's too: a pung or kong as well as a run).
     if (before.phase.kind === "claims" && g.phase.kind === "turn") {
       const claim = decisions[g.phase.seat];
@@ -730,20 +752,33 @@ export class Table extends Hub<TableMessage> {
 
   // The discard plays on as if they'd passed, and they pay each player.
   // Anything the call itself earned (a kong's replacement flower) is handed back.
+  // Anyone the window passed without asking - a run, outranked by the call
+  // now taken back - is asked again: the window reopens on the discard, the
+  // rest of its answers kept (theirs a pass), as the Play tab's bots' answers
+  // stand. Asked no one: it plays on at once.
   private retract(seat: number) {
     const rt = this.rt;
     const c = rt.lastCall!;
     const now = rt.game!;
     const kept = c.before.tableBonuses?.length ?? 0;
     for (const b of (now.tableBonuses ?? []).slice(kept)) if (b.paid) for (let i = 0; i < SEATS; i++) rt.totals[i] -= b.deltas[i];
-    const next = retractClaim(c.before, c.decisions, seat);
+    const passed = retractClaim(c.before, c.decisions, seat);
+    const reopen = c.unwaited?.filter((s) => s !== seat) ?? [];
+    let next = passed;
+    if (reopen.length) {
+      // The discard back on the table, with the 嗌錯 (the last thing retractClaim adds) to pay.
+      next = JSON.parse(JSON.stringify(c.before)) as GameState;
+      next.tableBonuses = [...(next.tableBonuses ?? []), passed.tableBonuses!.at(-1)!];
+      next.log.push(passed.log.at(-1)!);
+    }
     next.tableBonuses = next.tableBonuses?.map((b, i) => (i < kept ? { ...b, paid: now.tableBonuses?.[i]?.paid ?? b.paid } : b));
     rt.game = next;
     rt.lastCall = null;
     rt.last = null;
     this.record(now, next);
     this.collectBonuses();
-    this.afterStep(now);
+    if (!reopen.length) return this.afterStep(now);
+    this.newDecision(Date.now(), c.decisions.map((d, s) => (reopen.includes(s) ? undefined : s === seat ? null : d)));
   }
 
   // Dice and flower bonuses, paid as they come up.
@@ -822,6 +857,7 @@ export class Table extends Hub<TableMessage> {
     // Back from that: a person's clock goes on from where it stopped.
     if (rt.pausedAt !== undefined) {
       if (rt.deadline !== null) rt.deadline += Math.max(0, now - rt.pausedAt);
+      if (rt.heldDeadline) rt.heldDeadline.at += Math.max(0, now - rt.pausedAt);
       delete rt.pausedAt;
     }
     // Seats held long enough are played for.
