@@ -1008,6 +1008,11 @@ export function PlayPanel({
   const [timer, setTimer] = useState<TimerSetting>(() => saved?.timer ?? 0);
   // One-tap discard: a single tap throws the tile (off: tap to lift, tap again).
   const [oneTap, setOneTap] = useState(() => saved?.oneTap ?? false);
+  // 開局: a new game's rules, set before it's dealt (the menu during a game
+  // keeps only what you'd change as you play). Opened for a new game - from
+  // Play's home, or New game in the menu. Nothing set there touches the game
+  // in progress till 開局 Start (Back puts it all back).
+  const [setupOpen, setSetupOpen] = useState(() => !!fresh && !online && !quick);
   // 一炮多響: a table setting, kept on the game itself so it carries hand to hand.
   // A new game has it on unless you've picked it since that became the
   // default (an off from before then isn't kept); a game resumed keeps its own.
@@ -1016,28 +1021,28 @@ export function PlayPanel({
   // No claim back of a tile just thrown (on unless lifted): on the game, like multiWin.
   const [runBack, setRunBack] = useState(() => saved?.runBack ?? saved?.game?.runBack ?? false);
   useEffect(() => {
-    if (!online && !!game.runBack !== runBack) setGame((g) => ({ ...g, ...(runBack ? { runBack: true } : { runBack: undefined }) }));
-  }, [game, runBack, online]);
+    if (!online && !setupOpen && !!game.runBack !== runBack) setGame((g) => ({ ...g, ...(runBack ? { runBack: true } : { runBack: undefined }) }));
+  }, [game, runBack, online, setupOpen]);
   // 反雪 (on unless turned off): on the game too.
   const [fanXue, setFanXue] = useState(() => saved?.fanXue ?? !saved?.game?.noFanXue);
   useEffect(() => {
-    if (!online && !game.noFanXue !== fanXue) setGame((g) => ({ ...g, ...(fanXue ? { noFanXue: undefined } : { noFanXue: true }) }));
-  }, [game, fanXue, online]);
+    if (!online && !setupOpen && !game.noFanXue !== fanXue) setGame((g) => ({ ...g, ...(fanXue ? { noFanXue: undefined } : { noFanXue: true }) }));
+  }, [game, fanXue, online, setupOpen]);
   // 包自摸 (on unless turned off): on the game too.
   const [baoZimo, setBaoZimo] = useState(() => saved?.baoZimo ?? !saved?.game?.noBaoZimo);
   useEffect(() => {
-    if (!online && !game.noBaoZimo !== baoZimo) setGame((g) => ({ ...g, ...(baoZimo ? { noBaoZimo: undefined } : { noBaoZimo: true }) }));
-  }, [game, baoZimo, online]);
+    if (!online && !setupOpen && !game.noBaoZimo !== baoZimo) setGame((g) => ({ ...g, ...(baoZimo ? { noBaoZimo: undefined } : { noBaoZimo: true }) }));
+  }, [game, baoZimo, online, setupOpen]);
   // 獎池: each draw everyone puts this in the pot; a 自摸 takes it all. 0: off.
   const [jackpot, setJackpot] = useState(() => saved?.jackpot ?? 5); // (5 till you choose)
   useEffect(() => {
-    if (!online && !!game.multiWin !== multiWin) setGame((g) => ({ ...g, multiWin }));
-  }, [game, multiWin, online]);
+    if (!online && !setupOpen && !!game.multiWin !== multiWin) setGame((g) => ({ ...g, multiWin }));
+  }, [game, multiWin, online, setupOpen]);
   // 換牌's settings ride on the game like multiWin, from the next deal.
   const [swapRules, setSwapRules] = useState<SwapRules>(() => saved?.swapRules ?? saved?.game?.swapRules ?? DEFAULT_SWAP_RULES);
   useEffect(() => {
-    if (!online && JSON.stringify(game.swapRules) !== JSON.stringify(swapRules)) setGame((g) => ({ ...g, swapRules }));
-  }, [game, swapRules, online]);
+    if (!online && !setupOpen && JSON.stringify(game.swapRules) !== JSON.stringify(swapRules)) setGame((g) => ({ ...g, swapRules }));
+  }, [game, swapRules, online, setupOpen]);
   const [swapSheetOpen, setSwapSheetOpen] = useState(false);
   // Record my play (off by default): your decisions, kept in this browser for
   // training a learned bot that plays like you (lib/ml/recorder.ts).
@@ -1202,6 +1207,8 @@ export function PlayPanel({
   // over no 拉: any to or from a seat that changes hands ends there (as a
   // 投降 does, nothing paid) - at the table and in the record alike.
   useEffect(() => {
+    // (Not while a new game's being set up: it starts with its own seating.)
+    if (setupOpen) return;
     const names = playerNames(opponents);
     const lastSwap = localLedger.events.findLast((e) => e.t === "swap");
     const seated = lastSwap?.t === "swap" ? lastSwap.seats : localLedger.seats;
@@ -1788,11 +1795,9 @@ export function PlayPanel({
   const [menuOpen, setMenuOpen] = useState(false);
   // New game wipes the running totals, so it takes a second tap.
   const [confirmNew, setConfirmNew] = useState(false);
-  // 開局: a new game's rules, set before it's dealt (the menu during a game
-  // keeps only what you'd change as you play). Opened for a new game - from
-  // Play's home, or New game in the menu.
-  const [setupOpen, setSetupOpen] = useState(() => !!fresh && !online && !quick);
   const [confirmReset, setConfirmReset] = useState(false);
+  // The settings as they were when the setup page was opened mid-game (Back restores them).
+  const setupFrom = useRef<{ opponents: string[]; randomOpponents: boolean; multiWin: boolean; runBack: boolean; fanXue: boolean; baoZimo: boolean; jackpot: number; swapRules: SwapRules; record: boolean } | null>(null);
   // A game started from here (so Back from the setup page returns to it).
   const ledgerStarted = useRef(!fresh || !!quick);
   const [trackerOpen, setTrackerOpen] = useState(false);
@@ -1831,8 +1836,11 @@ export function PlayPanel({
 
   // This device's own game (never an online one).
   useEffect(
-    () => save({ game: localGame, totals: localTotals, hint, timer, opponents, randomOpponents, speed, oneTap, record, multiWin, multiWinSet, runBack, fanXue, baoZimo, swapRules, jackpot, ledger: localLedger }),
-    [localGame, localTotals, hint, timer, opponents, randomOpponents, speed, oneTap, record, multiWin, multiWinSet, runBack, fanXue, baoZimo, swapRules, jackpot, localLedger]
+    // (Nor saved while a new game's being set up: the game there stays as it
+    // was till 開局 Start - a new one opened from Play's home isn't saved
+    // over the one there till then.)
+    () => void (ledgerStarted.current && !setupOpen && save({ game: localGame, totals: localTotals, hint, timer, opponents, randomOpponents, speed, oneTap, record, multiWin, multiWinSet, runBack, fanXue, baoZimo, swapRules, jackpot, ledger: localLedger })),
+    [localGame, localTotals, hint, timer, opponents, randomOpponents, speed, oneTap, record, multiWin, multiWinSet, runBack, fanXue, baoZimo, swapRules, jackpot, localLedger, setupOpen]
   );
 
   // The menu closes on a tap anywhere outside it, and disarms New game.
@@ -2160,7 +2168,8 @@ export function PlayPanel({
     if (humanClaims.length && !autoplay) recordMine(1, claimDecisionAction(game, humanClaim));
     for (let seat = 1; seat < SEATS; seat++) {
       const net = learnedBot(seat);
-      if (net) decisions[seat] = await learnedClaim(net, game, seat);
+      // (If the network fails - a phone out of memory - its seat's usual bot answers.)
+      if (net) decisions[seat] = await learnedClaim(net, game, seat).catch((e) => (console.warn("Learned claim failed", e), decisions[seat]));
     }
     const seat = winningClaimSeat(game, decisions);
     if (seat !== null) {
@@ -2912,18 +2921,21 @@ export function PlayPanel({
       let cancelled = false;
       let timer = 0;
       const seat = phase.seat;
-      void learnedTurnMove(learnedBot(seat)!, game).then((m) => {
-        if (cancelled) return;
-        timer = window.setTimeout(() => {
-          if (m.kind === "selfDraw") {
-            showBurst(seat, "自摸");
-          } else if (m.kind === "discard" && m.riichi) {
-            showBurst(seat, "叮");
-            sayRiichi(seat);
-          } else if (m.kind !== "discard") showBurst(seat, "槓");
-          advance(applyTurnMove(game, m));
-        }, botDelay(0.4, phase.drawn === null) * SPEEDS[speed].factor);
-      });
+      // (If the network fails - a phone out of memory - its seat's usual bot moves.)
+      void learnedTurnMove(learnedBot(seat)!, game)
+        .catch((e) => (console.warn("Learned move failed", e), botTurnFor(game, bots[seat]!).move))
+        .then((m) => {
+          if (cancelled) return;
+          timer = window.setTimeout(() => {
+            if (m.kind === "selfDraw") {
+              showBurst(seat, "自摸");
+            } else if (m.kind === "discard" && m.riichi) {
+              showBurst(seat, "叮");
+              sayRiichi(seat);
+            } else if (m.kind !== "discard") showBurst(seat, "槓");
+            advance(applyTurnMove(game, m));
+          }, botDelay(0.4, phase.drawn === null) * SPEEDS[speed].factor);
+        });
       return () => {
         cancelled = true;
         window.clearTimeout(timer);
@@ -3378,6 +3390,9 @@ export function PlayPanel({
     setOpponents((o) => o.map((id) => (id.startsWith(MYSTERY_PREFIX) ? newMystery() : id)));
     setMenuOpen(false);
     setSelected(null);
+    setChowChoice(false);
+    setRiichiArmed(false);
+    setLastCall(null);
     setResultHidden(false);
     const g = newGame({ multiWin, runBack, noFanXue: !fanXue, noBaoZimo: !baoZimo, swapRules });
     ledgerFrom.current = g;
@@ -3910,6 +3925,7 @@ export function PlayPanel({
                 className="play-menu-link"
                 onClick={() => {
                   setMenuOpen(false);
+                  setupFrom.current = { opponents, randomOpponents, multiWin, runBack, fanXue, baoZimo, jackpot, swapRules, record };
                   // A new game, a new table - unless one's been picked.
                   if (randomOpponents) setOpponents(randomLineup());
                   setSetupOpen(true);
@@ -4362,8 +4378,21 @@ export function PlayPanel({
                     onClick={() => {
                       setConfirmReset(false);
                       // Opened for a new game from Play's home: back there; else back to the game.
-                      if (fresh && !ledgerStarted.current) onExit();
-                      else setSetupOpen(false);
+                      if (fresh && !ledgerStarted.current) return onExit();
+                      // Back to the game, as it was.
+                      const was = setupFrom.current;
+                      if (was) {
+                        setOpponents(was.opponents);
+                        setRandomOpponents(was.randomOpponents);
+                        setMultiWin(was.multiWin);
+                        setRunBack(was.runBack);
+                        setFanXue(was.fanXue);
+                        setBaoZimo(was.baoZimo);
+                        setJackpot(was.jackpot);
+                        setSwapRules(was.swapRules);
+                        setRecord(was.record);
+                      }
+                      setSetupOpen(false);
                     }}
                   >
                     Back
