@@ -119,6 +119,9 @@ describe("tables over HTTP and the device's memory", () => {
     expect(back.tables.map((t) => t.code)).toEqual(["AAAAA", "CCCCC"]);
     expect(tableToken(back, "AAAAA")).toBe("3".repeat(32));
     expect(withoutTable(back, "AAAAA").tables.map((t) => t.code)).toEqual(["CCCCC"]);
+    // Older than the server keeps an idle table: gone from the list.
+    saveTables({ ...back, tables: [{ code: "DDDDD", token: "4".repeat(32), at: Date.now() - 49 * 60 * 60 * 1000 }, ...back.tables] }, storage);
+    expect(loadTables(storage).tables.map((t) => t.code)).toEqual(["AAAAA", "CCCCC"]);
     store.set(TABLES_KEY, "not json");
     expect(loadTables(storage).tables).toEqual([]);
   });

@@ -14,7 +14,7 @@
 // connection is sent (broadcast).
 
 import { DurableObject } from "cloudflare:workers";
-import { cleanNickname, PROTOCOL_VERSION, RATE_BURST, RATE_PER_SECOND } from "@mjwaits/shared/protocol/limits";
+import { cleanNickname, IDLE_TTL_MS, PROTOCOL_VERSION, RATE_BURST, RATE_PER_SECOND, UNUSED_TTL_MS } from "@mjwaits/shared/protocol/limits";
 import type { Result } from "@mjwaits/shared/protocol/schema";
 import type { Env } from "./index";
 
@@ -24,10 +24,8 @@ export const MAX_CONNECTIONS = 16;
 export const MAX_PEOPLE = 12;
 // A connection over its rate limit this many times in a row is closed.
 export const RATE_STRIKES = 10;
-// A room no one has joined is gone after an hour; any other, two days after
-// the last change once no one is connected.
-export const UNUSED_TTL_MS = 60 * 60 * 1000;
-export const IDLE_TTL_MS = 48 * 60 * 60 * 1000;
+// How long an idle room lives (shared/protocol/limits.ts).
+export { IDLE_TTL_MS, UNUSED_TTL_MS };
 
 const CLOSE_POLICY = 1008;
 

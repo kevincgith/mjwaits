@@ -35,6 +35,12 @@ export function normalizeRoomCode(input: string): string | null {
 // Reconnect tokens: 32 hex characters (128 random bits), made by the server.
 export const TOKEN_PATTERN = /^[0-9a-f]{32}$/;
 
+// A room no one has joined is gone after an hour; any other, two days after
+// the last change once no one is connected (the Worker's alarm - hub.ts). A
+// phone's lists of rooms and tables keep them no longer than that.
+export const UNUSED_TTL_MS = 60 * 60 * 1000;
+export const IDLE_TTL_MS = 48 * 60 * 60 * 1000;
+
 // Nicknames: up to 12 characters (counted as the reader sees them, so 陳大文
 // is 3), trimmed, inner runs of spaces collapsed, and with no control or
 // invisible formatting characters and none of < > & " ' ` - nothing that
