@@ -567,6 +567,10 @@ export function Board({
       const bottom = bar && getComputedStyle(bar).position === "fixed" ? bar.getBoundingClientRect().top : window.innerHeight;
       const room = Math.floor(bottom - top - FIT_GAP);
       const fits = room >= FIT_MIN;
+      // The room is what's left with the page at the top, and fit mode stops
+      // it scrolling - so go back to the top, or a page scrolled down when it
+      // starts to fit would stay stuck there.
+      if (fits && window.scrollY !== 0) window.scrollTo(0, 0);
       setFitHeight(fits ? room : null);
       root.classList.toggle("sc-fit-mode", fits);
     };
@@ -578,14 +582,14 @@ export function Board({
     observer.observe(document.body);
     if (el.parentElement) observer.observe(el.parentElement);
     const settle = window.setTimeout(measure, 500);
+    // (Not the visual viewport's resize: that's the keyboard or a pinch,
+    // which don't change the page's layout.)
     window.addEventListener("resize", measure);
-    window.visualViewport?.addEventListener("resize", measure);
     window.addEventListener("pageshow", measure);
     return () => {
       observer.disconnect();
       window.clearTimeout(settle);
       window.removeEventListener("resize", measure);
-      window.visualViewport?.removeEventListener("resize", measure);
       window.removeEventListener("pageshow", measure);
       root.classList.remove("sc-fit-mode");
     };

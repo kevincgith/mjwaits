@@ -83,7 +83,10 @@ export function changeKind(before: ScoreEvent[], after: ScoreEvent[]): { kind: "
 // Players are the sheet's own columns, in its order.
 export function sheetCsv(game: ScoreGame, state: ReplayState, players: string[], merge = false): string {
   const cell = (v: string | number) => {
-    const s = String(v);
+    let s = String(v);
+    // Text a spreadsheet would run as a formula (a name typed as "=..."): an
+    // apostrophe in front keeps it text. Numbers, "-5" among them, stay numbers.
+    if (/^[=+\-@\t\r]/.test(s) && Number.isNaN(Number(s))) s = `'${s}`;
     return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   const num = (n: number) => String(Math.round(n * 10) / 10);

@@ -84,3 +84,13 @@ describe("sheetCsv", () => {
     expect(sheetCsv(g, replay(g), ['Ah "W", Jr', "B"]).split("\r\n")[0]).toBe('#,Round,莊,Result,Winners,Dealt in,Patterns,"Ah ""W"", Jr",B');
   });
 });
+
+describe("sheetCsv cells", () => {
+  it("keeps a formula-looking name as text, and negative numbers as numbers", () => {
+    const g = game([win(0, 10, 1)], ["=SUM(1)", "B", "C", "D"]);
+    const csv = sheetCsv(g, replay(g), ["=SUM(1)", "B", "C", "D"]);
+    expect(csv.split("\r\n")[0]).toContain(",'=SUM(1),");
+    expect(csv).not.toMatch(/,=SUM/);
+    expect(csv).toMatch(/,-10,/);
+  });
+});
