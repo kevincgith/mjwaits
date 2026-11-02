@@ -2233,10 +2233,13 @@ export function PlayPanel({
   const incoming = (seat: number) => flights.filter((f) => f.to === seat).map((f) => f.real);
   const comingToMe = useMemo(() => incoming(HUMAN), [flights]); // eslint-disable-line react-hooks/exhaustive-deps
   const swapPhase = game.phase.kind === "swap" ? game.phase : null;
+  // The rows just cleared: on the WebGL table your row's tiles are still
+  // sliding down into your hand (HAND_SLIDE_MS).
+  const [swapJoining, setSwapJoining] = useState(false);
   // The swapping done (the dealer has drawn), but its last rows still out:
   // the hand waits for them to join their hands - the dealer's draw shown,
   // and their turn (and its timer) begun, only then.
-  const swapSettling = !swapPhase && swapFlying;
+  const swapSettling = !swapPhase && (swapFlying || swapJoining);
   const myTurn = seated && waitedOn && game.phase.kind === "turn" && game.phase.seat === HUMAN && !swapSettling;
   // The dealer's first draw, kept out of sight while the swap settles.
   const heldDraw = (seat: number) => (swapSettling && game.phase.kind === "turn" && game.phase.seat === seat && game.phase.drawn ? game.phase.drawn : null);
@@ -2474,13 +2477,24 @@ export function PlayPanel({
         setFlown(new Set());
         setLanded(new Set());
         setRowOrder({});
+        if (gl) {
+          setSwapJoining(true);
+          joinClear.current = window.setTimeout(() => setSwapJoining(false), HAND_SLIDE_MS + 150);
+        }
       }, SWAP_FLIGHT_MS + 200 + SWAP_ROUND_HOLD_MS);
       roundClear.current = id;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [swapPiles, swapTakenBy, swapPhase?.round, swapPhase?.stage]);
   const roundClear = useRef(0);
-  useEffect(() => () => window.clearTimeout(roundClear.current), []);
+  const joinClear = useRef(0);
+  useEffect(
+    () => () => {
+      window.clearTimeout(roundClear.current);
+      window.clearTimeout(joinClear.current);
+    },
+    []
+  );
   // A new deal (a new game mid-swap, say) leaves nothing of the last one
   // flying or waiting to land - else the swap would wait for it forever.
   // (The deal: who deals, the streak, the round, the dice - the same all
@@ -2491,6 +2505,8 @@ export function PlayPanel({
     if (lastDeal.current === dealSeen) return;
     lastDeal.current = dealSeen;
     window.clearTimeout(roundClear.current);
+    window.clearTimeout(joinClear.current);
+    setSwapJoining(false);
     setFlights([]);
     setFlown(new Set());
     setLanded(new Set());
@@ -2827,7 +2843,7 @@ export function PlayPanel({
     const phase = game.phase;
     // The swapping done, the hand starts once its last rows have joined
     // their hands.
-    if (phase.kind !== "swap" && swapFlying) return;
+    if (swapSettling) return;
     if (phase.kind === "swap") {
       const factor = SPEEDS[speed].factor;
       const bot = (seat: number) => seat !== HUMAN || autoplay;
@@ -2935,7 +2951,7 @@ export function PlayPanel({
     const id = window.setTimeout(move, delay * SPEEDS[speed].factor);
     return () => window.clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [game, rolling, swapRolling, swapFlying, swapAirborne, myTurn, autoplay, setupOpen]);
+  }, [game, rolling, swapRolling, swapFlying, swapSettling, swapAirborne, myTurn, autoplay, setupOpen]);
 
   // The turn timer (off by default): runs only while the human has to
   // decide, and on running out passes on a call or throws the drawn tile.
@@ -3668,7 +3684,7 @@ export function PlayPanel({
           toppled: iWon,
           drawKey: String(liveTilesLeft(game)),
           winLead: winIndex >= 0 ? WIN_TILE_LEAD : 0,
-          sliding: !!swapPhase || swapFlying,
+          sliding: !!swapPhase || swapFlying || swapJoining,
           given: swapPhase?.piles[HUMAN] ? glGiven : null,
         },
         spotlight: spot ? { tile: spot.tile, from: SIDES[spot.seat], key: spot.key } : null,
