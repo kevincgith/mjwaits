@@ -320,7 +320,7 @@ describe("this device's memory", () => {
     expect(withSharing(back, "4AC9X", "g1").hosted.map((h) => h.code)).toEqual(["4AC9X"]);
     expect(withoutRoom(back, "3AC9X")).toMatchObject({ current: null, sharing: null, hosted: [], rooms: [{ code: "4AC9X" }] });
 
-    const stale = { ...back, rooms: [{ code: "9AC9X", token: TOKEN, at: Date.now() - 8 * 24 * 60 * 60 * 1000 }] };
+    const stale = { ...back, rooms: [{ code: "9AC9X", token: TOKEN, at: Date.now() - 49 * 60 * 60 * 1000 }] };
     mem.set(ONLINE_KEY, JSON.stringify(stale));
     expect(loadOnline(storage).rooms).toEqual([]);
     mem.set(ONLINE_KEY, "{oops");

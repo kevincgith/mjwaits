@@ -14,7 +14,7 @@ import type { ScoreGame } from "@mjwaits/shared/engine/ledger";
 import type { ClientMessage } from "@mjwaits/shared/protocol/client";
 import { stableJson } from "@mjwaits/shared/protocol/audit";
 import { GameSchema } from "@mjwaits/shared/protocol/game";
-import { normalizeRoomCode, PROTOCOL_VERSION } from "@mjwaits/shared/protocol/limits";
+import { IDLE_TTL_MS, normalizeRoomCode, PROTOCOL_VERSION } from "@mjwaits/shared/protocol/limits";
 import type { ErrorCode, RoomView, ServerMessage } from "@mjwaits/shared/protocol/server";
 
 // Where the server is: VITE_MP_URL when the build sets it; otherwise, in
@@ -55,15 +55,14 @@ export interface OnlineMemory {
 }
 
 const EMPTY: OnlineMemory = { name: "", rooms: [], current: null, sharing: null, hosted: [] };
-// Old rooms expire on the server after two idle days; a week's list is plenty.
-const MEMORY_DAYS = 7;
 
 export function loadOnline(storage: Pick<Storage, "getItem"> | null = safeStorage()): OnlineMemory {
   try {
     const raw = storage?.getItem(ONLINE_KEY);
     if (!raw) return EMPTY;
     const saved = JSON.parse(raw) as Partial<OnlineMemory>;
-    const cutoff = Date.now() - MEMORY_DAYS * 24 * 60 * 60 * 1000;
+    // A room last visited longer ago than the server keeps an idle one is gone.
+    const cutoff = Date.now() - IDLE_TTL_MS;
     return {
       name: typeof saved.name === "string" ? saved.name : "",
       rooms: Array.isArray(saved.rooms)
@@ -105,6 +104,8 @@ export const tokenFor = (memory: OnlineMemory, code: string) => memory.rooms.fin
 export const withToken = (memory: OnlineMemory, code: string, token: string): OnlineMemory => ({
   ...memory,
   rooms: [{ code, token, at: Date.now() }, ...memory.rooms.filter((r) => r.code !== code)],
+  // Back in the room: a game shared there is kept as long as the room is.
+  hosted: memory.hosted.map((h) => (h.code === code ? { ...h, at: Date.now() } : h)),
 });
 
 export const withoutRoom = (memory: OnlineMemory, code: string): OnlineMemory => ({

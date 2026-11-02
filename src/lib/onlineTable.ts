@@ -6,7 +6,7 @@
 // No React here; OnlineTable.tsx turns it into a screen.
 
 import type { ScoreGame } from "@mjwaits/shared/engine/ledger";
-import { normalizeRoomCode } from "@mjwaits/shared/protocol/limits";
+import { IDLE_TTL_MS, normalizeRoomCode } from "@mjwaits/shared/protocol/limits";
 import type { Reaction, TableClientMessage, TableServerMessage, TableState } from "@mjwaits/shared/protocol/table";
 import { HubClient, serverBase, type HubClientOptions } from "./online";
 
@@ -109,7 +109,6 @@ export function tableFromSearch(search: string): string | null {
 // ---- This device's memory ----------------------------------------------------------
 
 export const TABLES_KEY = "mjwaits.tables";
-const MEMORY_DAYS = 7;
 
 export interface TableMemory {
   name: string;
@@ -119,7 +118,8 @@ export interface TableMemory {
 export function loadTables(storage: Pick<Storage, "getItem"> | null = safeStorage()): TableMemory {
   try {
     const saved = JSON.parse(storage?.getItem(TABLES_KEY) ?? "null") as Partial<TableMemory> | null;
-    const cutoff = Date.now() - MEMORY_DAYS * 24 * 60 * 60 * 1000;
+    // A table last visited longer ago than the server keeps an idle one is gone.
+    const cutoff = Date.now() - IDLE_TTL_MS;
     return {
       name: typeof saved?.name === "string" ? saved.name : "",
       tables: Array.isArray(saved?.tables)
