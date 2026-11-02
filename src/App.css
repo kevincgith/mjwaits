@@ -11952,6 +11952,18 @@ details.sc-stat-group:not([open]) {
   text-align: right;
 }
 
+/* Save as a picture: a small PNG button like the 局 sheet's CSV, top
+   right of 走勢 and beside a player's total. */
+.sc-card-head .sc-picture-button {
+  align-self: center;
+  margin-left: auto;
+}
+
+/* The trend's note drops under the title, clear of the icon. */
+.sc-card-head:has(.sc-picture-button) > .sc-help {
+  flex-basis: 100%;
+}
+
 /* 牌型's biggest hand, and each player's hands biggest first. */
 .sc-top-hand {
   display: flex;

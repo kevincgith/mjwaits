@@ -7,6 +7,7 @@ import { sheetCsv, sheetRows, type SheetRow } from "../lib/scoreViews";
 import { careerPlayerStats, careerStats, careerTrend, smoothed, periodKey, periodLabel, periodsOf, type Period, headToHead, marks, patternCounts, handsByPlayer, type WonHand, playerStats, rankedBy, RECENT_HANDS, trend, trendSummary, type PlayerStats, type Swing } from "../lib/scoreStats";
 import { fmt, signed, pct, tone, colorOf, Icons, SectionHead, Monogram, Sheet, Segmented, Sparkline } from "./shared";
 import { NameSheet } from "./sheets";
+import { playerColor, playerPicture, savePicture, trendPicture } from "../lib/picture";
 
 // ---- 統計 ------------------------------------------------------------------------
 
@@ -410,6 +411,7 @@ export function PlayerCard({
   index,
   onIndex,
   games,
+  picture,
 }: {
   store: ScoreStore;
   stats: PlayerStats[];
@@ -417,6 +419,8 @@ export function PlayerCard({
   index: number;
   onIndex: (i: number) => void;
   games?: number;
+  // What the Save picture button calls the game and the file; none, no button.
+  picture?: { title: string; file: (player: string) => string };
 }) {
   const s = stats[index];
   const markFor = useMemo(() => Object.fromEntries(STAT_GROUPS.flatMap((g) => g.rows).map((r) => [r.key, marks(stats, r.key)])), [stats]);
@@ -447,6 +451,36 @@ export function PlayerCard({
       <div className="sc-profile-score">
         <span className={`sc-profile-net ${tone(s.net)}`}>{signed(s.net)}</span>
         {values && <Sparkline values={values} className={`sc-c${colorOf(store, s.player)}`} />}
+        {picture && (
+          <PictureButton
+            onClick={() =>
+              void savePicture(
+                playerPicture({
+                  title: s.player,
+                  subtitle: `${picture.title} · 第${rank}名（${stats.length}人）· ${games !== undefined ? `${games}場 · ` : ""}${s.hands}局`,
+                  net: s.net,
+                  line: values ? { name: s.player, color: playerColor(colorOf(store, s.player)), values } : null,
+                  kpis: [
+                    { label: "胡 Wins", value: String(s.wins + s.selfDraws) },
+                    { label: "摸 Self-draws", value: String(s.selfDraws) },
+                    { label: "銃 Deal-ins", value: String(s.dealIns) },
+                    { label: "每局 Per hand", value: signedDp(s.perHand) },
+                  ],
+                  groups: [
+                    ...STAT_GROUPS.map((g) => ({
+                      title: `${g.zh} ${g.en}`,
+                      rows: g.rows.map((r) => ({ label: r.zh, en: r.en, value: r.show(s), sub: r.sub?.(s), tone: r.tone?.(s), mark: markFor[r.key]?.get(s.player) })),
+                    })),
+                    ...(s.opponents.length > 0
+                      ? [{ title: "對手 Against each player", rows: s.opponents.map((o) => ({ label: o.player, value: signed(o.net), tone: o.net })) }]
+                      : []),
+                  ],
+                }),
+                picture.file(s.player),
+              )
+            }
+          />
+        )}
       </div>
       {/* 胡 here is every win, 自摸 included - 戰績 below splits them. */}
       <div className="sc-kpis">
@@ -483,9 +517,9 @@ export function PlayerCard({
           </ul>
         </div>
       )}
-      {/* The first two groups open; the rest fold away until wanted. */}
-      {STAT_GROUPS.map((g, gi) => (
-        <details key={g.zh} className="sc-stat-group" open={gi < 2}>
+      {/* Every group open; each still folds away with a tap. */}
+      {STAT_GROUPS.map((g) => (
+        <details key={g.zh} className="sc-stat-group" open>
           <summary className="sc-stat-title">
             {g.zh} <small>{g.en}</small>
           </summary>
@@ -517,7 +551,7 @@ export function PlayerCard({
         </details>
       ))}
       {s.opponents.length > 0 && (
-        <details className="sc-stat-group">
+        <details className="sc-stat-group" open>
           <summary className="sc-stat-title">
             對手 <small>Against each player</small>
           </summary>
@@ -722,6 +756,23 @@ export function Leaderboard({
   );
 }
 
+// Save this view as a one-page picture (see lib/picture).
+function PictureButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button type="button" className="sc-outline sc-sheet-csv sc-picture-button" onClick={onClick} aria-label="Save as a picture (PNG)">
+      PNG
+    </button>
+  );
+}
+
+// A game's title for a picture and its file name: its name, else its day.
+const gameTitle = (game: ScoreGame) => game.name ?? new Date(game.startedAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+const pictureFile = (game: ScoreGame, what: string) => {
+  const d = new Date(game.startedAt);
+  const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return `mjwaits-${what}-${day}.png`;
+};
+
 export function StatsPanel({ store, setStore, view, setView }: { store: ScoreStore; setStore: (s: ScoreStore) => void; view: StatsView; setView: (v: StatsView) => void }) {
   const games = useMemo(() => [...(store.active ? [store.active] : []), ...store.history], [store]);
   const [gameId, setGameId] = useState<string | null>(null);
@@ -730,6 +781,7 @@ export function StatsPanel({ store, setStore, view, setView }: { store: ScoreSto
   const state = useMemo(() => (game ? replay(game) : null), [game]);
   const stats = useMemo(() => (game && state ? playerStats(state, game).filter((s) => s.hands > 0) : []), [game, state]);
   const series = useMemo(() => (state ? trend(state).series : []), [state]);
+  const gameH2h = useMemo(() => (game ? headToHead([game]) : {}), [game]);
 
   if (!game || !state)
     return (
@@ -776,15 +828,51 @@ export function StatsPanel({ store, setStore, view, setView }: { store: ScoreSto
         <div className="card">
           <div className="sc-card-head">
             <h3>走勢 Trend</h3>
+            <PictureButton
+              onClick={() =>
+                void savePicture(
+                  trendPicture({
+                    title: `走勢 · ${gameTitle(game)}`,
+                    subtitle: `${state.hands.length}局${isActive ? " · In progress" : ""}${game.location ? ` · ${game.location}` : ""}`,
+                    standings: stats
+                      .slice()
+                      .sort((a, b) => b.net - a.net)
+                      .map((x) => ({
+                        name: x.player,
+                        color: playerColor(colorOf(store, x.player)),
+                        total: x.net,
+                        metrics: [
+                          { label: "胡", value: String(x.wins + x.selfDraws) },
+                          { label: "摸", value: String(x.selfDraws) },
+                          { label: "銃", value: String(x.dealIns) },
+                          { label: "獎罰", value: signed(x.bonus) },
+                          { label: "每局", value: signedDp(x.perHand) },
+                        ],
+                      })),
+                    lines: series.map((x) => ({ name: x.player, color: playerColor(colorOf(store, x.player)), values: x.values })),
+                    h2h: gameH2h,
+                  }),
+                  pictureFile(game, "trend"),
+                )
+              }
+            />
             <span className="sc-help">累計分數 · Running totals, touch for a 局</span>
           </div>
           <TrendChart store={store} state={state} />
           <TrendSummary state={state} />
         </div>
       )}
+      {view === "trend" && <HeadToHead store={store} names={stats.map((x) => x.player)} h2h={gameH2h} />}
       {view === "patterns" && <PatternsCard state={state} store={store} />}
       {view === "player" && stats.length > 0 && (
-        <PlayerCard store={store} stats={stats} seriesOf={(p) => series.find((x) => x.player === p)?.values} index={Math.min(playerIndex, stats.length - 1)} onIndex={setPlayerIndex} />
+        <PlayerCard
+          store={store}
+          stats={stats}
+          seriesOf={(p) => series.find((x) => x.player === p)?.values}
+          index={Math.min(playerIndex, stats.length - 1)}
+          onIndex={setPlayerIndex}
+          picture={{ title: gameTitle(game), file: (p) => pictureFile(game, p) }}
+        />
       )}
       {view === "history" && (
         <HistoryCard
@@ -1114,18 +1202,19 @@ export function HistoryCard({
   const [confirm, setConfirm] = useState<string | null>(null);
   // The past game whose name, date, times and place are being changed.
   const [editing, setEditing] = useState<ScoreGame | null>(null);
-  // The period shown - all time, or one month, quarter or year (the latest
-  // with a game, until ‹ › picks another). Everything on the page follows it.
-  const [period, setPeriodState] = useState<Period | "all">(() => {
+  // The period shown - all time, one month, quarter or year (the latest
+  // with a game, until ‹ › picks another), or just the last game. Everything
+  // on the page follows it.
+  const [period, setPeriodState] = useState<Period | "all" | "last">(() => {
     try {
       const v = window.localStorage.getItem(PERIOD_KEY);
-      return v === "month" || v === "quarter" || v === "year" ? v : "all";
+      return v === "month" || v === "quarter" || v === "year" || v === "last" ? v : "all";
     } catch {
       return "all";
     }
   });
   const [periodAt, setPeriodAt] = useState<string | null>(null);
-  const setPeriod = (v: Period | "all") => {
+  const setPeriod = (v: Period | "all" | "last") => {
     setPeriodState(v);
     setPeriodAt(null);
     try {
@@ -1134,9 +1223,17 @@ export function HistoryCard({
       // Just this visit, then.
     }
   };
-  const keys = useMemo(() => (period === "all" ? [] : periodsOf(allGames, period)), [allGames, period]);
-  const key = period === "all" ? null : periodAt !== null && keys.includes(periodAt) ? periodAt : (keys[keys.length - 1] ?? null);
-  const games = useMemo(() => (period === "all" || key === null ? allGames : allGames.filter((g) => periodKey(g.startedAt, period) === key)), [allGames, period, key]);
+  const keys = useMemo(() => (period === "all" || period === "last" ? [] : periodsOf(allGames, period)), [allGames, period]);
+  const key = period === "all" || period === "last" ? null : periodAt !== null && keys.includes(periodAt) ? periodAt : (keys[keys.length - 1] ?? null);
+  // Last: the game being played, once it has a hand - else the latest one.
+  const last = useMemo(() => {
+    if (store.active && replayCached(store.active).hands.length > 0) return store.active;
+    return allGames.filter((g) => g !== store.active).sort((a, b) => b.startedAt - a.startedAt)[0] ?? store.active ?? null;
+  }, [allGames, store.active]);
+  const games = useMemo(
+    () => (period === "last" ? (last ? [last] : []) : period === "all" || key === null ? allGames : allGames.filter((g) => periodKey(g.startedAt, period) === key)),
+    [allGames, period, key, last],
+  );
   const step = (by: number) => key !== null && setPeriodAt(keys[keys.indexOf(key) + by] ?? key);
   // Each game's number, #1 the first ever played - the same in every period.
   const numberOf = useMemo(() => new Map(allGames.slice().sort((a, b) => a.startedAt - b.startedAt).map((g, i) => [g.id, i + 1])), [allGames]);
@@ -1187,6 +1284,35 @@ export function HistoryCard({
     }
   };
   const names = career.map((c) => c.player);
+  // The period as a picture names it, and its file.
+  const periodName =
+    period === "all" ? "All time" : period === "last" ? (last ? `#${numberOf.get(last.id)} · ${gameTitle(last)}` : "Last game") : key !== null ? periodLabel(key, period) : "All time";
+  const careerFile = (what: string) => `mjwaits-career-${what}-${periodName.replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-|-$/g, "")}.png`;
+  // 生涯 as a picture: the career table as standings, the all-time trend as
+  // shown (smoothed as picked), and 對戰.
+  const saveCareerPicture = () =>
+    void savePicture(
+      trendPicture({
+        title: `生涯 · ${periodName}`,
+        subtitle: `${games.length} game${games.length === 1 ? "" : "s"} · ${allTime.hands}局`,
+        chartTitle: "走勢 All-time trend",
+        standings: career.map((c) => ({
+          name: c.player,
+          color: playerColor(colorOf(store, c.player)),
+          total: c.net,
+          metrics: [
+            { label: "場", value: String(c.games) },
+            { label: "第一", value: String(c.firsts) },
+            { label: "平均", value: fmt(Math.round(c.avgNet * 10) / 10) },
+            { label: "食糊率", value: pct(c.winRate) },
+            { label: "出銃率", value: pct(c.dealInRate) },
+          ],
+        })),
+        lines: allTime.series.map((x) => ({ name: x.player, color: playerColor(colorOf(store, x.player)), values: smoothed(x.values, SMOOTHING[smoothing](allTime.hands)) })),
+        h2h,
+      }),
+      careerFile("all"),
+    );
   return (
     <>
       <div className="sc-period">
@@ -1198,9 +1324,19 @@ export function HistoryCard({
             { value: "year", label: "Year" },
             { value: "quarter", label: "Quarter" },
             { value: "month", label: "Month" },
+            { value: "last", label: "Last" },
           ]}
         />
-        {period !== "all" && key !== null && (
+        {period === "last" && last && (
+          <span className="sc-period-step">
+            <strong>
+              #{numberOf.get(last.id)}
+              {last.name ? ` · ${last.name}` : ""} ·{" "}
+              {last === store.active ? "In progress" : new Date(last.startedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+            </strong>
+          </span>
+        )}
+        {period !== "all" && period !== "last" && key !== null && (
           <span className="sc-period-step">
             <button type="button" className="sc-icon-button" onClick={() => step(-1)} disabled={keys.indexOf(key) === 0} aria-label="Earlier">
               {Icons.back}
@@ -1285,6 +1421,7 @@ export function HistoryCard({
       )}
       <SectionHead zh="生涯" en="Career">
         <span className="sc-help">撳一行睇詳情 · Tap a player</span>
+        {career.length > 0 && <PictureButton onClick={saveCareerPicture} />}
       </SectionHead>
       <div className="card sc-table-card">
         <div className="sc-table-wrap">
@@ -1377,50 +1514,57 @@ export function HistoryCard({
           index={careerCard.stats.findIndex((x) => x.player === careerOpen)}
           onIndex={(i) => setCareerOpen(careerCard.stats[i].player)}
           games={career.find((c) => c.player === careerOpen)?.games ?? 0}
+          picture={{ title: `生涯 · ${periodName}`, file: careerFile }}
         />
         </div>
       )}
-      {names.length > 1 && (
-        <>
-          <SectionHead zh="對戰" en="Head-to-head">
-            <span className="sc-help">橫行對直行 · Row vs column</span>
-          </SectionHead>
-          <div className="card sc-table-card">
-            <div className="sc-table-wrap">
-              <table className="sc-table sc-h2h">
-                <thead>
-                  <tr>
-                    <th />
-                    {names.map((n) => (
-                      <th key={n}>{n}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {names.map((a) => (
-                    <tr key={a}>
-                      <th>
-                        <span className="sc-table-player">
-                          <Monogram store={store} player={a} size="sm" />
-                          {a}
-                        </span>
-                      </th>
-                      {names.map((b) => {
-                        const v = a === b ? null : (h2h[a]?.[b] ?? 0);
-                        return (
-                          <td key={b} className={v === null ? "sc-cell-self" : tone(v)}>
-                            {v === null ? "" : signed(v)}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </>
-      )}
+      <HeadToHead store={store} names={names} h2h={h2h} />
+    </>
+  );
+}
+
+// 對戰: what each player won or lost against each other one, row vs column.
+export function HeadToHead({ store, names, h2h }: { store: ScoreStore; names: string[]; h2h: Record<string, Record<string, number>> }) {
+  if (names.length < 2) return null;
+  return (
+    <>
+      <SectionHead zh="對戰" en="Head-to-head">
+        <span className="sc-help">橫行對直行 · Row vs column</span>
+      </SectionHead>
+      <div className="card sc-table-card">
+        <div className="sc-table-wrap">
+          <table className="sc-table sc-h2h">
+            <thead>
+              <tr>
+                <th />
+                {names.map((n) => (
+                  <th key={n}>{n}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {names.map((a) => (
+                <tr key={a}>
+                  <th>
+                    <span className="sc-table-player">
+                      <Monogram store={store} player={a} size="sm" />
+                      {a}
+                    </span>
+                  </th>
+                  {names.map((b) => {
+                    const v = a === b ? null : (h2h[a]?.[b] ?? 0);
+                    return (
+                      <td key={b} className={v === null ? "sc-cell-self" : tone(v)}>
+                        {v === null ? "" : signed(v)}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </>
   );
 }
