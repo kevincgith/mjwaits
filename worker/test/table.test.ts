@@ -736,6 +736,38 @@ describe("嗌錯, 自動 and bot speed", () => {
     expect(mine.auto).not.toContain(0);
   });
 
+  it("keeps your turn's deadline through 自動 on and off - never a fresh one - and moves for you once it's passed", async () => {
+    const { code, host } = await withBots(0, { timer: 10 });
+    // A long bot's pause: 自動 is taken back before it plays the turn.
+    await runInDurableObject(stubFor(code), (t: Table) => {
+      (t as unknown as { pause: number }).pause = 60_000;
+    });
+    host.send({ t: "start" });
+    const mine = await host.table((s) => !!s.options?.turn);
+    const deadline = (await state(code)).deadline as number;
+    expect(deadline).toBeGreaterThan(Date.now());
+    for (let i = 0; i < 3; i++) {
+      host.send({ t: "autoplay", on: true });
+      const on = await host.table((s) => s.auto.includes(0));
+      expect(on.deadline).toBeNull();
+      await new Promise((r) => setTimeout(r, 20));
+      host.send({ t: "autoplay", on: false });
+      const off = await host.table((s) => !s.auto.includes(0));
+      expect(off.step).toBe(mine.step);
+      expect(off.deadline).toBe(deadline);
+      expect((await state(code)).deadline).toBe(deadline);
+    }
+    // Run out while on 自動 (its move not yet made): taken back, the move's made at once.
+    host.send({ t: "autoplay", on: true });
+    await host.table((s) => s.auto.includes(0));
+    await runInDurableObject(stubFor(code), (_t: Table, st) => {
+      st.storage.sql.exec("UPDATE meta SET value = json_set(value, '$.heldDeadline.at', 1) WHERE key = 'state'");
+    });
+    host.send({ t: "autoplay", on: false });
+    const moved = await host.table((s) => s.step > mine.step);
+    expect(moved.last).toMatchObject({ kind: "discard", seat: 0, auto: true });
+  });
+
   it("gives 換牌's give and take 30s, with the turn timer off", async () => {
     const { host } = await withBots(0, { swapRules: { winds: [1, 2, 3, 4], rounds: [1, 1, 1, 1, 1, 1], tiles: [3, 3, 3, 3, 3, 3] } });
     const sent = Date.now();
@@ -891,6 +923,57 @@ describe("a claim window", () => {
     // Taken by Amy, without Kevin's answer.
     const s = await host.table((s) => s.view?.phase.kind === "turn");
     expect(s.view!.phase).toMatchObject({ kind: "turn", seat: 2 });
+    expect(host.errors.concat(other.errors)).toEqual([]);
+  });
+});
+
+describe("嗌錯 with a run passed over", () => {
+  it("asks the player who could run the discard again, once the pung that outranked it is taken back", async () => {
+    const code = await createTable();
+    const { p: host } = await join(code, "Kevin");
+    host.send({ t: "sit", seat: 1 });
+    const { p: other } = await join(code, "Amy");
+    other.send({ t: "sit", seat: 2 });
+    host.send({ t: "setup", settings: { multiWin: false, timer: 10, hold: 30, firstDealer: 0 } });
+    host.send({ t: "setBot", seat: 0, bot: "wall" });
+    host.send({ t: "setBot", seat: 3, bot: "wall" });
+    await host.table((s) => s.seats.every(Boolean) && s.settings.timer === 10);
+    host.send({ t: "start" });
+    await host.table((s) => s.phase === "playing");
+    // Seat 0 has thrown 5m: Kevin (next) could run it with 34m, Amy pung it with 55m.
+    const { step, pung } = await runInDurableObject(stubFor(code), (t: Table) => {
+      const tt = t as unknown as { load(): { game: GameState; decisions: unknown; step: number; botAt: number | null; deadline: number | null; lastCall: unknown }; save(): void };
+      const rt = tt.load();
+      const g = rt.game;
+      g.players[1].hand = [3, 4].map((rank) => ({ suit: "m", rank }) as Tile).concat(g.players[1].hand.filter((x) => x.suit !== "m").slice(0, 11));
+      g.players[2].hand = [5, 5].map((rank) => ({ suit: "m", rank }) as Tile).concat(g.players[2].hand.filter((x) => x.suit !== "m").slice(0, 11));
+      g.phase = { kind: "claims", from: 0, tile: { suit: "m", rank: 5 } };
+      rt.decisions = [null, "waiting", "waiting", null];
+      rt.botAt = null;
+      rt.deadline = null;
+      rt.lastCall = null;
+      tt.save();
+      return { step: rt.step, pung: claimOptions(g, 2).find((c) => c.kind === "pung") };
+    });
+    expect(pung).toBeDefined();
+    other.send({ t: "claim", step, claim: pung });
+    // Amy's pung, without Kevin's answer - then she takes it back.
+    const called = await other.table((s) => !!s.options?.turn?.retract);
+    expect(called.view!.phase).toMatchObject({ kind: "turn", seat: 2 });
+    other.send({ t: "retract", step: called.step });
+    // The discard's back on the table, and Kevin is asked, with his own time.
+    const asked = await host.table((s) => s.waitingOn.includes(1));
+    expect(asked.view!.phase).toMatchObject({ kind: "claims", from: 0 });
+    expect(asked.deadline).toBeGreaterThan(Date.now() + 5000);
+    const chow = asked.options!.claims.find((c) => c.kind === "chow");
+    expect(chow).toBeDefined();
+    expect(asked.view!.tableBonuses.find((b) => b.name === "嗌錯")).toMatchObject({ seat: 2, deltas: [5, 5, -15, 5] });
+    expect(asked.totals[2]).toBe(called.totals[2] - 15);
+    host.send({ t: "claim", step: asked.step, claim: chow });
+    const ran = await host.table((s) => s.view?.phase.kind === "turn");
+    expect(ran.view!.phase).toMatchObject({ kind: "turn", seat: 1 });
+    expect(ran.view!.players[1].melds.at(-1)).toMatchObject({ kind: "run" });
+    expect(ran.view!.players[2].melds.length).toBe(called.view!.players[2].melds.length - 1);
     expect(host.errors.concat(other.errors)).toEqual([]);
   });
 });
