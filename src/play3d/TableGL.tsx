@@ -108,6 +108,7 @@ export default function TableGL({
   onPile,
   sweep = false,
   onSweep,
+  tileXRef,
 }: {
   view: GLTableView;
   // A tap on a pile's tile, on your take (換牌).
@@ -119,6 +120,9 @@ export default function TableGL({
   // pressed. The press is no tap then.
   sweep?: boolean;
   onSweep?: (index: number, first: boolean) => void;
+  // Set to where one of your tiles is seen: the x of its middle, from your
+  // row's box's left (null: not drawn) - for what's shown over it.
+  tileXRef?: RefObject<((index: number) => number | null) | null>;
   rootRef: RefObject<HTMLElement | null>;
   feltRef: RefObject<HTMLElement | null>;
   handRef: RefObject<HTMLElement | null>;
@@ -159,6 +163,18 @@ export default function TableGL({
       live = false;
     };
   }, [tries]);
+
+  useEffect(() => {
+    if (!tileXRef) return;
+    tileXRef.current = (i) => {
+      const e3 = engine.current;
+      const root = rootRef.current;
+      const hand = handRef.current;
+      const x = e3 && root && hand ? e3.handTileX(i, root.clientWidth) : null;
+      return x === null ? null : x - offsetIn(hand!, root!).x;
+    };
+    return () => void (tileXRef.current = null);
+  }, [tileXRef, rootRef, handRef]);
 
   // Lay the table out and draw it: the compass where the middle is, your
   // row's box the size of what's in it, then the tiles.

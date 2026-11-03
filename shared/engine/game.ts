@@ -1024,8 +1024,19 @@ export function scoreWin(
   robKong = false,
   winnersOffOne = 1 // 一炮多響: how many won off this discard
 ): ScoreResult {
-  const p = s.players[winner];
+  return scoreHeld(s, winner, winContext(s, winner, from, tile, chain, robKong, winnersOffOne));
+}
+
+// `seat`'s hand (the winning tile in it) scored in `ctx`.
+function scoreHeld(s: GameState, seat: number, ctx: GameContext): ScoreResult {
+  const p = s.players[seat];
   const declaredMelds: MeldDeclaration[] = p.melds.map((m) => ({ tiles: m.tiles, kind: m.kind, concealed: m.concealed }));
+  return scoreParsedHand({ declaredMelds, freeTiles: p.hand, bonusTiles: p.flowers }, ctx);
+}
+
+// How a win came about, for its scoring (see scoreWin).
+function winContext(s: GameState, winner: number, from: number | null, tile: Tile, chain: Chain | null, robKong: boolean, winnersOffOne: number): GameContext {
+  const p = s.players[winner];
   const selfDraw = from === null;
   const isDealer = winner === s.dealer;
   const lastTile = liveTilesLeft(s) === 0;
@@ -1037,7 +1048,7 @@ export function scoreWin(
       0
     );
   const waits = getWaits(removeTiles(p.hand, [tile]), meldsNeeded(p));
-  const ctx: GameContext = {
+  return {
     seatWind: seatWind(winner, s.dealer),
     roundWind: s.roundWind,
     selfDraw,
@@ -1080,7 +1091,6 @@ export function scoreWin(
     // 絕絕: a wait on two or more tiles with only one copy of them all unseen.
     manualVisibleExhaustedMultiWait: waits.length >= 2 && waits.reduce((n, w) => n + 4 - seen(w), 0) === 1,
   };
-  return scoreParsedHand({ declaredMelds, freeTiles: p.hand, bonusTiles: p.flowers }, ctx);
 }
 
 function finishWin(
@@ -1296,6 +1306,60 @@ export function unseenCounts(s: GameState, seat: number): Map<string, number> {
     for (const m of p.melds) if (!m.concealed || i === seat) m.tiles.forEach(see);
   }
   return counts;
+}
+
+// ---- 聽: what a ready hand waits on, and what each would be worth -----------
+
+export interface WaitValue {
+  tile: Tile;
+  // Copies its player can't see (see unseenCounts) - 0: a dead wait.
+  left: number;
+  // 番 the hand would be worth won on it off a discard - the hand's own,
+  // without what depends on how and when the win comes (see waitValues).
+  // null: couldn't be scored.
+  fan: number | null;
+}
+
+// `seat`'s waits while it holds a ready hand, worked out from what it can
+// see: its own hand and what's on the table - never another's hand.
+export function waitValues(s: GameState, seat: number): WaitValue[] {
+  const p = s.players[seat];
+  if (p.hand.length !== meldsNeeded(p) * 3 + 1) return [];
+  const unseen = unseenCounts(s, seat);
+  const worth = (tile: Tile) => {
+    const won = { ...s, players: s.players.map((pl, i) => (i === seat ? { ...pl, hand: [...pl.hand, tile] } : pl)) };
+    try {
+      // Off the next seat's discard - and without 莊, 四子內 and the like,
+      // 天/地/人胡, 海底/河底, 一發, 食叮, 明絕/絕絕: what they'd add
+      // depends on who throws it, and when.
+      const ctx = winContext(won, seat, (seat + 1) % SEATS, tile, null, false, 1);
+      return scoreHeld(won, seat, {
+        ...ctx,
+        dealerStreak: 0,
+        earlyWin: "none",
+        heavenlyWin: "none",
+        lastTileWin: "none",
+        instantWin: false,
+        eatRiichi: false,
+        manualVisibleTripleWin: false,
+        manualVisibleExhaustedMultiWait: false,
+      }).total;
+    } catch {
+      return null;
+    }
+  };
+  return getWaits(p.hand, meldsNeeded(p)).map((tile) => ({ tile, left: Math.max(0, unseen.get(tileKey(tile)) ?? 0), fan: worth(tile) }));
+}
+
+// The same, were `seat` to throw `tile` on its turn now (declaring 叮 with
+// it, if `riichi`) - empty if that wouldn't leave it ready.
+export function waitsAfterDiscard(s: GameState, seat: number, tile: Tile, riichi = false): WaitValue[] {
+  if (s.phase.kind !== "turn" || s.phase.seat !== seat) return [];
+  try {
+    return waitValues(applyTurnMove(s, { kind: "discard", tile, ...(riichi ? { riichi: true } : {}) }), seat);
+  } catch {
+    return [];
+  }
 }
 
 export interface DiscardRating {

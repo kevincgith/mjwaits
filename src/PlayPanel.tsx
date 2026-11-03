@@ -56,14 +56,17 @@ import {
   SEATS,
   seatWind,
   unseenCounts,
+  waitsAfterDiscard,
+  waitValues,
   winningClaimSeat,
   type Claim,
   type GameMeld,
   type GameState,
   type TableBonus,
   type TurnMove,
+  type WaitValue,
 } from "@mjwaits/shared/engine/game";
-import { allTileKinds, getWaits, shanten, sortTiles, tileKey, tileLabel, type Tile } from "@mjwaits/shared/engine/mahjong";
+import { allTileKinds, shanten, sortTiles, tileKey, tileLabel, type Tile } from "@mjwaits/shared/engine/mahjong";
 import { blindPicks, botGive, SWAP_TIMER_S, botSplit, DEFAULT_SWAP_RULES, givePlans, pileLeft, type GivePlan, type SwapPhase, type SwapRules } from "@mjwaits/shared/engine/swap";
 import { PlayDie } from "./PlayDie";
 import { SWAP_FLIGHT_MS, SWAP_ROUND_HOLD_MS, SwapControls, SwapDice, swapDiceMs, SwapSheet, type Flight } from "./PlaySwap";
@@ -256,6 +259,7 @@ interface Saved {
   timer?: TimerSetting;
   speed?: Speed;
   oneTap?: boolean;
+  waits?: boolean; // 聽 Waits: what a ready hand waits on, and its 番 (absent: on)
   multiWin?: boolean; // 一炮多響 (else 截胡)
   multiWinSet?: boolean; // multiWin picked since it came on by default (else on)
   runBack?: boolean; // runs back from a tile just thrown allowed (see GameState.runBack)
@@ -317,6 +321,46 @@ function save(saved: Saved): boolean {
 const SAVE_DELAY_MS = 500;
 
 // Why a call is greyed out (see barredClaims).
+// 聽 Waits, for a tile lifted to throw: throwing it would leave you ready -
+// on these, each with how many you can't see and the hand's 番 on it. Over
+// the tile (`anchorX`: where it's seen, from your row's left).
+function WaitsCard({ tile, waits, anchorX }: { tile: Tile; waits: WaitValue[]; anchorX: () => number | null }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const card = ref.current;
+    const row = card?.parentElement;
+    if (!card || !row) return;
+    const x = anchorX();
+    const w = card.offsetWidth;
+    // Over the tile - kept within your row's width.
+    const left = x === null ? 0 : Math.max(0, Math.min(row.offsetWidth - w, x - w / 2));
+    card.style.left = `${left}px`;
+    // Above the call buttons over the row's right end, if it would meet them.
+    const calls = row.querySelector<HTMLElement>(".play-calls");
+    const meet = !!calls && calls.childElementCount > 0 && left + w > row.offsetWidth - calls.offsetWidth;
+    card.style.bottom = meet ? `calc(100% + 0.7rem + ${calls.offsetHeight}px)` : "";
+  });
+  return (
+    <div
+      ref={ref}
+      className={`play-waits-card${waits.length > 4 ? " is-wide" : ""}`}
+      role="status"
+      aria-label={`Throw ${tileLabel(tile)}, and you're ready: waiting on ${waits.map((w) => `${tileLabel(w.tile)} (${w.left} left, ${w.fan ?? "?"} 番)`).join("; ")}`}
+    >
+      <span className="play-waits-head">
+        打<TileGlyphSpan tile={tile} /> → 聽
+      </span>
+      {waits.map((w) => (
+        <span key={tileKey(w.tile)} className={`play-waits-row${w.left === 0 ? " is-dead" : ""}`}>
+          <TileGlyphSpan tile={w.tile} />
+          <span className="play-waits-left">{w.left} left</span>
+          <span className="play-waits-fan">{w.fan ?? "–"}番</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
 const barredWhy = (c: Claim, p: { riichi?: { passed?: boolean }; passedPung?: Tile }, tile?: Tile | null) =>
   c.kind === "chow"
     ? "you just threw this run's tile - not back till you draw"
@@ -915,6 +959,9 @@ export function PlayPanel({
   const [timer, setTimer] = useState<TimerSetting>(() => saved?.timer ?? 0);
   // One-tap discard: a single tap throws the tile (off: tap to lift, tap again).
   const [oneTap, setOneTap] = useState(() => saved?.oneTap ?? false);
+  // 聽 Waits: when you're ready - or a tile lifted to throw would leave you
+  // ready - what you'd wait on, and what each would be worth.
+  const [showWaits, setShowWaits] = useState(() => saved?.waits ?? true);
   // 開局: a new game's rules, set before it's dealt (the menu during a game
   // keeps only what you'd change as you play). Opened for a new game - from
   // Play's home, or New game in the menu. Nothing set there touches the game
@@ -1411,6 +1458,8 @@ export function PlayPanel({
   const initialOf = (seat: number) =>
     seat === HUMAN && seated ? "你" : bots[seat] ? (mysteryStyle(bots[seat]!) ? "?" : bots[seat]!.name[0]) : nameOf(seat).slice(0, 1).toUpperCase();
   const [selected, setSelected] = useState<number | null>(null);
+  // Where the WebGL table draws one of your tiles (see TableGL's tileXRef).
+  const tileXRef = useRef<((index: number) => number | null) | null>(null);
   const [burst, setBurst] = useState<{ seat: number; label: string; id: number; deltas?: number[] } | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   // New game wipes the running totals, so it takes a second tap.
@@ -1460,7 +1509,7 @@ export function PlayPanel({
     // was till 開局 Start - a new one opened from Play's home isn't saved
     // over the one there till then. What was waiting from before goes now.)
     if (!ledgerStarted.current || setupOpen) return void pendingSave.current?.();
-    const data: Saved = { game: localGame, totals: localTotals, hint, timer, opponents, randomOpponents, speed, oneTap, record, multiWin, multiWinSet, runBack, fanXue, baoZimo, swapRules, jackpot, ledger: localLedger };
+    const data: Saved = { game: localGame, totals: localTotals, hint, timer, opponents, randomOpponents, speed, oneTap, waits: showWaits, record, multiWin, multiWinSet, runBack, fanXue, baoZimo, swapRules, jackpot, ledger: localLedger };
     // (Not saved: still waiting - tried again on leaving, or the next change.)
     const write = () => {
       const ok = save(data);
@@ -1470,7 +1519,7 @@ export function PlayPanel({
     pendingSave.current = write;
     const id = window.setTimeout(write, SAVE_DELAY_MS);
     return () => window.clearTimeout(id);
-  }, [localGame, localTotals, hint, timer, opponents, randomOpponents, speed, oneTap, record, multiWin, multiWinSet, runBack, fanXue, baoZimo, swapRules, jackpot, localLedger, setupOpen]);
+  }, [localGame, localTotals, hint, timer, opponents, randomOpponents, speed, oneTap, showWaits, record, multiWin, multiWinSet, runBack, fanXue, baoZimo, swapRules, jackpot, localLedger, setupOpen]);
   // The page hidden or going (a phone may not come back to it): saved now.
   useEffect(() => {
     const now = () => pendingSave.current?.();
@@ -2465,15 +2514,20 @@ export function PlayPanel({
     : -1;
   // Hints: tiles risky enough to mark red, by the Veteran's read of the table.
   const dangerous = useMemo(() => new Set((ratings ?? []).filter((r) => r.danger >= DANGER_MARK).map((r) => tileKey(r.tile))), [ratings]);
-  // When you're ready (聽): what you're waiting on, and how many of each are
-  // still unseen. Shown whether or not hints are on - any player knows this.
+  // When you're ready (聽): what you're waiting on, how many of each are
+  // still unseen, and its 番. Shown whether or not hints are on - any player
+  // knows this - unless 聽 Waits is off.
   const waits = useMemo(() => {
-    if (!seated || myTurn || me.hand.length !== meldsNeeded(me) * 3 + 1) return null;
-    const ws = getWaits(me.hand, meldsNeeded(me));
-    if (ws.length === 0) return null;
-    const unseen = unseenCounts(game, HUMAN);
-    return ws.map((t) => ({ tile: t, left: Math.max(0, unseen.get(tileKey(t)) ?? 0) }));
-  }, [game, me, myTurn, seated]);
+    if (!showWaits || !seated || myTurn || me.hand.length !== meldsNeeded(me) * 3 + 1) return null;
+    const ws = waitValues(game, HUMAN);
+    return ws.length ? ws : null;
+  }, [game, me, myTurn, seated, showWaits]);
+  // The same for a tile lifted to throw, if throwing it would leave you ready.
+  const liftedTile = myTurn && selected !== null && !autoplay ? (handTiles[selected] ?? null) : null;
+  const liftedWaits = useMemo(
+    () => (showWaits && liftedTile ? waitsAfterDiscard(game, HUMAN, liftedTile, riichiArmed) : []),
+    [game, liftedTile, riichiArmed, showWaits]
+  );
   const myShanten = useMemo(() => {
     if (!hint || !seated) return null;
     if (myTurn) return ratings?.[0]?.shanten ?? null;
@@ -3065,6 +3119,16 @@ export function PlayPanel({
                   ))}
                 </span>
               </div>
+              <div className="play-menu-row">
+                <span>聽 Waits</span>
+                <span className="play-menu-seg">
+                  {[false, true].map((on) => (
+                    <button key={String(on)} type="button" className={showWaits === on ? "toggle-on" : undefined} aria-pressed={showWaits === on} onClick={() => setShowWaits(on)}>
+                      {on ? "On" : "Off"}
+                    </button>
+                  ))}
+                </span>
+              </div>
               {seated && (
                 <button
                   type="button"
@@ -3109,6 +3173,16 @@ export function PlayPanel({
                 <span className="play-menu-seg">
                   {[false, true].map((on) => (
                     <button key={String(on)} type="button" className={oneTap === on ? "toggle-on" : undefined} aria-pressed={oneTap === on} onClick={() => setOneTap(on)}>
+                      {on ? "On" : "Off"}
+                    </button>
+                  ))}
+                </span>
+              </div>
+              <div className="play-menu-row">
+                <span>聽 Waits</span>
+                <span className="play-menu-seg">
+                  {[false, true].map((on) => (
+                    <button key={String(on)} type="button" className={showWaits === on ? "toggle-on" : undefined} aria-pressed={showWaits === on} onClick={() => setShowWaits(on)}>
                       {on ? "On" : "Off"}
                     </button>
                   ))}
@@ -3219,7 +3293,7 @@ export function PlayPanel({
           </div>
         </div>
         <Suspense fallback={null}>
-          <TableGL view={glView} rootRef={tableRef} feltRef={feltRef} handRef={myRowRef} middleRef={middleRef} onTile={tapTile} onPile={(side, i) => myTake && pickFrom(SIDES.indexOf(side), i)} sweep={swapGiving} onSweep={sweepTile} />
+          <TableGL view={glView} rootRef={tableRef} feltRef={feltRef} handRef={myRowRef} middleRef={middleRef} onTile={tapTile} onPile={(side, i) => myTake && pickFrom(SIDES.indexOf(side), i)} sweep={swapGiving} onSweep={sweepTile} tileXRef={tileXRef} />
         </Suspense>
 
         <div className={`play-me${autoplay ? " is-auto" : ""}`}>
@@ -3349,6 +3423,7 @@ export function PlayPanel({
                 </>
               )}
             </div>
+            {liftedTile && selected !== null && liftedWaits.length > 0 && <WaitsCard tile={liftedTile} waits={liftedWaits} anchorX={() => tileXRef.current?.(selected) ?? null} />}
             {/* Your row's box, sized to the tiles the WebGL table draws in it. */}
             <div ref={myRowRef} className="play-hand is-gl" />
           </div>
@@ -3406,11 +3481,12 @@ export function PlayPanel({
               onTake={takeSwap}
             />
           ) : waits ? (
-            <span className="play-bar-waits" aria-label={`Ready, waiting on ${waits.map((w) => `${tileLabel(w.tile)} (${w.left} left)`).join(", ")}`}>
+            <span className="play-bar-waits" aria-label={`Ready, waiting on ${waits.map((w) => `${tileLabel(w.tile)} (${w.left} left, ${w.fan ?? "?"} 番)`).join(", ")}`}>
               聽
               {waits.map((w) => (
                 <span key={tileKey(w.tile)} className={`play-wait${w.left === 0 ? " is-dead" : ""}`}>
                   <TileGlyphSpan tile={w.tile} />×{w.left}
+                  <span className="play-wait-fan">{w.fan ?? "–"}番</span>
                 </span>
               ))}
             </span>
