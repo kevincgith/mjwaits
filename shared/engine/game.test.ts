@@ -297,6 +297,26 @@ describe("game", () => {
     expect(riichiDiscards(turn("111b888t345m888b67t77z1z"), 0).length).toBeGreaterThan(0);
   });
 
+  it("no 叮 on a wait whose every copy is in sight: thrown, or in someone's open meld", () => {
+    const s0 = newGame();
+    const z7 = { suit: "z" as const, rank: 7 };
+    const table = (others: (p: GameState["players"][number], i: number) => Partial<GameState["players"][number]>) => ({
+      ...s0,
+      players: s0.players.map((p, i) => (i === 0 ? { ...p, hand: parseHand("111b888t345m888b678t7z1z"), melds: [] } : { ...p, discards: [], melds: [], ...others(p, i) })),
+      phase: { kind: "turn" as const, seat: 0, drawn: null, replacement: null },
+    });
+    // Throwing 1z would wait on 7z alone; throwing 7z, on 1z. Nothing in sight: both.
+    expect(riichiDiscards(table(() => ({})), 0)).toEqual(expect.arrayContaining([z7, { suit: "z", rank: 1 }]));
+    // The other three 7z in sight - in an open pung, or thrown: the 7z wait is dead.
+    const punged = table((_, i) => (i === 2 ? { melds: [{ kind: "triplet" as const, tiles: [z7, z7, z7], concealed: false, from: 1 }] } : {}));
+    expect(riichiDiscards(punged, 0)).toEqual([z7]);
+    const thrown = table((_, i) => (i === 0 ? {} : { discards: [z7] }));
+    expect(riichiDiscards(thrown, 0)).toEqual([z7]);
+    // In someone's hand, unseen: it might still come, as far as you can tell.
+    const hidden = table((p, i) => (i === 1 ? { hand: [...p.hand.slice(3), z7, z7, z7] } : {}));
+    expect(riichiDiscards(hidden, 0)).toEqual(expect.arrayContaining([z7, { suit: "z", rank: 1 }]));
+  });
+
   it("no 叮 when 自摸 is there to take - it would pass the win up for good - shown greyed", () => {
     const s0 = newGame();
     // A complete hand: 自摸, and throwing any tile to declare would pass that up.
