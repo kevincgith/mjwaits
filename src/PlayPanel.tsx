@@ -2550,8 +2550,10 @@ export function PlayPanel({
     }
     if (!myTurn || isForbidden(handTiles[index])) return;
     // One-tap throws straight away - except when declaring 叮, which always
-    // takes the confirming second tap.
-    if (selected === index || (oneTap && !riichiArmed)) doTurn({ kind: "discard", tile: handTiles[index], ...(riichiArmed ? { riichi: true } : {}) });
+    // takes the confirming second tap, and (聽 Waits on) a tile that would
+    // leave you ready: lifted first, its waits shown.
+    const showsWaits = () => showWaits && waitsAfterDiscard(game, HUMAN, handTiles[index]).length > 0;
+    if (selected === index || (oneTap && !riichiArmed && !showsWaits())) doTurn({ kind: "discard", tile: handTiles[index], ...(riichiArmed ? { riichi: true } : {}) });
     else setSelected(index);
   };
 
