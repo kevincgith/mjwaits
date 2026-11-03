@@ -108,6 +108,7 @@ export default function TableGL({
   onPile,
   sweep = false,
   onSweep,
+  onPress,
   tileXRef,
 }: {
   view: GLTableView;
@@ -120,6 +121,9 @@ export default function TableGL({
   // pressed. The press is no tap then.
   sweep?: boolean;
   onSweep?: (index: number, first: boolean) => void;
+  // The tile a finger is held on in your row, from press to let go (null:
+  // none - let go, or slid off it, which is no tap).
+  onPress?: (index: number | null) => void;
   // Set to where one of your tiles is seen: the x of its middle, from your
   // row's box's left (null: not drawn) - for what's shown over it.
   tileXRef?: RefObject<((index: number) => number | null) | null>;
@@ -149,6 +153,8 @@ export default function TableGL({
   sweepRef.current = sweep;
   const onSweepRef = useRef(onSweep);
   onSweepRef.current = onSweep;
+  const onPressRef = useRef(onPress);
+  onPressRef.current = onPress;
 
   useEffect(() => {
     let live = true;
@@ -281,6 +287,14 @@ export default function TableGL({
     let down: { x: number; y: number; at: number } | null = null;
     // A sweep under way: the tile the finger was last over.
     let swept: number | null = null;
+    // The tile a finger's held on (see onPress).
+    let pressed: number | null = null;
+    const press = (i: number | null) => {
+      if (i === pressed) return;
+      pressed = i;
+      onPressRef.current?.(i);
+    };
+    const moved = (e: PointerEvent, from: { x: number; y: number }) => Math.hypot(e.clientX - from.x, e.clientY - from.y) > 10;
     // Where a pointer is, in the table's own pixels - it's drawn turned a
     // quarter on a phone held upright.
     const at = (e: PointerEvent) => {
@@ -298,14 +312,18 @@ export default function TableGL({
     const onDown = (e: PointerEvent) => {
       down = e.isPrimary ? { x: e.clientX, y: e.clientY, at: e.timeStamp } : null;
       swept = null;
-      if (!down || !sweepRef.current || outside(e)) return;
+      if (!down || outside(e)) return;
       const i = tileAt(e);
+      if (!sweepRef.current) return press(i);
       if (i === null) return;
       swept = i;
       onSweepRef.current?.(i, true);
     };
     const onMove = (e: PointerEvent) => {
-      if (swept === null || !e.isPrimary) return;
+      if (!e.isPrimary) return;
+      // Held on a tile: slid off it, it's let go (no tap now).
+      if (pressed !== null && down) press(moved(e, down) ? null : (tileAt(e) ?? pressed));
+      if (swept === null) return;
       const i = tileAt(e);
       if (i === null || i === swept) return;
       // Every tile between, too - a quick slide can pass one between two
@@ -317,10 +335,14 @@ export default function TableGL({
     const onUp = (e: PointerEvent) => {
       const start = down;
       down = null;
+      const held = pressed;
+      press(null);
       // (A sweep has done its picking as it went.)
       if (swept !== null) return void (swept = null);
       const e3 = engine.current;
-      if (!start || !e3 || !e.isPrimary || Math.hypot(e.clientX - start.x, e.clientY - start.y) > 10 || e.timeStamp - start.at > 800) return;
+      // (A long press is a tap still if it was held on one of your tiles -
+      // to read its waits.)
+      if (!start || !e3 || !e.isPrimary || moved(e, start) || (e.timeStamp - start.at > 800 && held === null)) return;
       if (outside(e)) return;
       const p = at(e);
       const i = e3.pickHand(p.x, p.y, root.clientWidth, root.clientHeight);
@@ -334,6 +356,7 @@ export default function TableGL({
     const onCancel = () => {
       down = null;
       swept = null;
+      press(null);
     };
     root.addEventListener("pointerdown", onDown);
     root.addEventListener("pointermove", onMove);
