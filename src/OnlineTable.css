@@ -2,8 +2,10 @@
    The start screen's felt, gold and lacquer (PlayHome, .ph-* in App.css):
    a title over the four winds and the ways in; the lobby as the table
    itself, seats round the felt and the code in the middle, its rules
-   beside; the final scores as a podium. Laid out for a phone on its side,
-   stacked when it's upright (these pages stay unturned - they take typing).
+   beside; the final scores as a podium. Laid out for a phone on its side -
+   on a phone held upright, drawn turned as the table and Play's start
+   screen are, so it's all one way round from start to finish; stacked only
+   on a tall screen that isn't turned (a tablet upright).
    The hands are played on the Play table itself (PlayPanel). */
 
 .ot-screen {
@@ -14,6 +16,27 @@
   background: radial-gradient(130% 110% at 30% 20%, #1f6a45 0%, #134b30 38%, #0b2c1c 72%, #071a10 100%);
 }
 
+/* The pages' stage: turned a quarter on a phone held upright (as
+   .ph-stage is), its size and safe areas swapped round with it (.play-screen). */
+.ot-turn {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+@media (orientation: portrait) and (max-width: 820px) {
+  .ot-screen .ot-turn {
+    right: auto;
+    bottom: auto;
+    left: 100%;
+    width: 100dvh;
+    height: 100vw;
+    transform-origin: 0 0;
+    transform: rotate(90deg);
+  }
+}
+
 .ot-page {
   position: relative;
   flex: 1;
@@ -21,31 +44,31 @@
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   align-items: center;
   justify-items: center;
-  gap: clamp(1rem, 4vw, 3.5rem);
+  gap: clamp(1rem, calc(4 * var(--vw)), 3.5rem);
   width: 100%;
   max-width: 62rem;
   min-height: 0;
   margin: 0 auto;
-  padding: max(0.9rem, env(safe-area-inset-top)) max(1.25rem, env(safe-area-inset-right)) max(0.9rem, env(safe-area-inset-bottom))
-    max(1.25rem, env(safe-area-inset-left));
+  padding: max(0.9rem, var(--safe-top, env(safe-area-inset-top))) max(1.25rem, var(--safe-right, env(safe-area-inset-right))) max(0.9rem, var(--safe-bottom, env(safe-area-inset-bottom)))
+    max(1.25rem, var(--safe-left, env(safe-area-inset-left)));
   box-sizing: border-box;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
 
-@media (orientation: portrait) {
+@media (orientation: portrait) and (min-width: 821px) {
   .ot-page {
     grid-template-columns: minmax(0, 1fr);
     align-content: start;
     max-width: 30rem;
-    padding-top: calc(max(0.9rem, env(safe-area-inset-top)) + 2.6rem);
+    padding-top: calc(max(0.9rem, var(--safe-top, env(safe-area-inset-top))) + 2.6rem);
   }
 }
 
 .ot-back {
   position: absolute;
-  top: max(0.75rem, env(safe-area-inset-top));
-  left: max(0.75rem, env(safe-area-inset-left));
+  top: max(0.75rem, var(--safe-top, env(safe-area-inset-top)));
+  left: max(0.75rem, var(--safe-left, env(safe-area-inset-left)));
   z-index: 3;
 }
 
@@ -80,7 +103,7 @@
   align-items: flex-end;
   height: 1.2em;
   margin-bottom: 0.15em;
-  font-size: clamp(2.6rem, min(14vh, 9vw), 4.6rem);
+  font-size: clamp(2.6rem, min(calc(14 * var(--vh)), calc(9 * var(--vw))), 4.6rem);
 }
 
 .ot-wind-tile {
@@ -116,7 +139,7 @@
 
 .ot-title-zh {
   margin-right: -0.1em;
-  font-size: clamp(2rem, min(11vh, 7vw), 3.6rem);
+  font-size: clamp(2rem, min(calc(11 * var(--vh)), calc(7 * var(--vw))), 3.6rem);
   font-weight: 800;
   letter-spacing: 0.1em;
   background: linear-gradient(180deg, #fff3cc 0%, var(--play-gold) 45%, var(--play-gold-deep) 100%);
@@ -143,7 +166,7 @@
   letter-spacing: 0.04em;
 }
 
-@media (orientation: portrait) {
+@media (orientation: portrait) and (min-width: 821px) {
   .ot-winds {
     font-size: clamp(2.4rem, 13vw, 4rem);
   }
@@ -164,7 +187,7 @@
 }
 
 /* On its side, the ways in scroll by themselves beside the title. */
-@media (orientation: landscape) {
+@media (orientation: landscape), (max-width: 820px) {
   .ot-entry,
   .ot-ended {
     overflow: hidden;
@@ -881,7 +904,7 @@
   }
 }
 
-@media (orientation: portrait) {
+@media (orientation: portrait) and (min-width: 821px) {
   .ot-lobby {
     grid-template-columns: minmax(0, 1fr);
     align-items: start;
@@ -906,9 +929,9 @@
 
   .ot-start {
     position: sticky;
-    bottom: calc(-1 * max(0.9rem, env(safe-area-inset-bottom)));
+    bottom: calc(-1 * max(0.9rem, var(--safe-bottom, env(safe-area-inset-bottom))));
     margin-inline: -1rem;
-    padding: 1.4rem 1rem max(0.9rem, env(safe-area-inset-bottom));
+    padding: 1.4rem 1rem max(0.9rem, var(--safe-bottom, env(safe-area-inset-bottom)));
     background: linear-gradient(rgba(8, 32, 15, 0), #08200f 1.1rem);
   }
 }
@@ -1041,7 +1064,7 @@
 /* Connection and messages. */
 .ot-status {
   position: fixed;
-  top: calc(env(safe-area-inset-top) + 0.4rem);
+  top: calc(var(--safe-top, env(safe-area-inset-top)) + 0.4rem);
   left: 50%;
   z-index: 70;
   translate: -50% 0;
@@ -1056,9 +1079,9 @@
 .ot-toast {
   position: fixed;
   left: 50%;
-  bottom: calc(env(safe-area-inset-bottom) + 6rem);
+  bottom: calc(var(--safe-bottom, env(safe-area-inset-bottom)) + 6rem);
   z-index: 70;
-  max-width: calc(100vw - 2rem);
+  max-width: calc(100 * var(--vw, 1vw) - 2rem);
   translate: -50% 0;
   padding: 0.6rem 1rem;
   border-radius: 0.8rem;
