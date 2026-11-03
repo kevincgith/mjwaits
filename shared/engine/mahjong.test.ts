@@ -7,6 +7,7 @@ import {
   analyzeDiscardChoices,
   analyzeDiscardEfficiency,
   analyzeDiscards,
+  bestWaitTotalAfterDiscard,
   decomposeEightPairs,
   decomposeHand,
   decomposeSixteenUnrelated,
@@ -17,6 +18,7 @@ import {
   isCheckpointSize,
   isCompleteHand,
   isEightPairsComplete,
+  isUniversalWait,
   isSixteenUnrelatedComplete,
   isThirteenOrphansComplete,
   parseHand,
@@ -1008,5 +1010,32 @@ describe("analyzeDiscardChoices", () => {
   it("returns nothing for hand sizes that aren't a valid checkpoint", () => {
     const outcome = analyzeDiscardChoices(parseHand("11m1b"));
     expect(outcome).toEqual({ alreadyComplete: false, choices: [] });
+  });
+});
+
+describe("bestWaitTotalAfterDiscard", () => {
+  it("counts the follow-up discard as gone when it's also a wait", () => {
+    // 23455m: throw 4 -> 2355m waits 1m/4m. With the thrown 4m gone too, 4m has
+    // 3 live copies, not 4 - so 4 + 3 = 7 (throwing 2 -> 3455m waits 2m/5m
+    // likewise has 3 + 2 = 5, not 6).
+    expect(bestWaitTotalAfterDiscard(parseHand("23455m"), parseHand("9m")[0], 1)).toBe(7);
+  });
+});
+
+describe("isUniversalWait", () => {
+  it("is every kind the hand can still wait on, not always all 34", () => {
+    // 1111m + 3 jokers: any tile but 1m (no 5th copy) completes the hand.
+    const hand = parseHand("1111mjjj");
+    const outcome = getWaitsWithJokers(hand, 2);
+    if (outcome.overflowed) throw new Error("unexpected overflow");
+    expect(outcome.results.length).toBe(33);
+    expect(isUniversalWait(outcome.results.length, hand)).toBe(true);
+    expect(isUniversalWait(32, hand)).toBe(false);
+  });
+
+  it("needs all 34 when no kind is used up, and never for no waits", () => {
+    expect(isUniversalWait(34, parseHand("1mjjj"))).toBe(true);
+    expect(isUniversalWait(33, parseHand("1mjjj"))).toBe(false);
+    expect(isUniversalWait(0, [])).toBe(false);
   });
 });

@@ -235,6 +235,32 @@ export function regretForOutcome(
   return Math.max(0, bestWinProbability - choice.winProbability);
 }
 
+// Why a pick wasn't a best discard, for the Endless verdict: it gave up win
+// probability; it raised shanten (a "loose" discard); or - at 2+ shanten,
+// where win% can't separate discards - it kept the same shanten but left fewer
+// tiles working toward tenpai (`picked` vs the best's `best`, the same counts
+// gradeDiscardOutcome ranks by). null for a best discard.
+export type DiscardMiss =
+  | { kind: "regret"; regret: number }
+  | { kind: "loose"; shantenLost: number }
+  | { kind: "fewer-draws"; picked: number; best: number };
+
+export function discardMiss(outcome: DiscardChoicesOutcome, pickedKey: string): DiscardMiss | null {
+  const { bestWinProbability, optimalKeys } = gradeDiscardOutcome(outcome);
+  if (optimalKeys.has(pickedKey)) return null;
+  const regret = regretForOutcome(outcome, bestWinProbability, pickedKey);
+  if (regret > 0) return { kind: "regret", regret };
+  const choice = outcome.choices.find((c) => tileKey(c.discard) === pickedKey);
+  const minShanten = Math.min(...outcome.choices.map((c) => c.resultingShanten));
+  const shantenLost = (choice?.resultingShanten ?? minShanten) - minShanten;
+  if (shantenLost > 0) return { kind: "loose", shantenLost };
+  const best = Math.max(
+    0,
+    ...outcome.choices.filter((c) => optimalKeys.has(tileKey(c.discard))).map((c) => c.improvingDrawsTotalExcludingRedraw)
+  );
+  return { kind: "fewer-draws", picked: choice?.improvingDrawsTotalExcludingRedraw ?? 0, best };
+}
+
 export function discardRegret(question: DiscardTrainerQuestion, pickedKey: string): number {
   return regretForOutcome(question.outcome, question.bestWinProbability, pickedKey);
 }
