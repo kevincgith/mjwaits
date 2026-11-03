@@ -6,7 +6,7 @@
 // No React here; OnlineTable.tsx turns it into a screen.
 
 import type { ScoreGame } from "@mjwaits/shared/engine/ledger";
-import { IDLE_TTL_MS, normalizeRoomCode } from "@mjwaits/shared/protocol/limits";
+import { normalizeRoomCode } from "@mjwaits/shared/protocol/limits";
 import type { Reaction, TableClientMessage, TableServerMessage, TableState } from "@mjwaits/shared/protocol/table";
 import { HubClient, serverBase, type HubClientOptions } from "./online";
 
@@ -118,12 +118,12 @@ export interface TableMemory {
 export function loadTables(storage: Pick<Storage, "getItem"> | null = safeStorage()): TableMemory {
   try {
     const saved = JSON.parse(storage?.getItem(TABLES_KEY) ?? "null") as Partial<TableMemory> | null;
-    // A table last visited longer ago than the server keeps an idle one is gone.
-    const cutoff = Date.now() - IDLE_TTL_MS;
+    // (Every table's token is kept: one the others played on lives on, and
+    // you get back in as yourself. Only the list hides old ones - see isRecent.)
     return {
       name: typeof saved?.name === "string" ? saved.name : "",
       tables: Array.isArray(saved?.tables)
-        ? saved.tables.filter((t) => t && typeof t.code === "string" && typeof t.token === "string" && typeof t.at === "number" && t.at > cutoff)
+        ? saved.tables.filter((t) => t && typeof t.code === "string" && typeof t.token === "string" && typeof t.at === "number")
         : [],
     };
   } catch {

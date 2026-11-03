@@ -8860,6 +8860,17 @@ html.playing body {
   font-variant-numeric: tabular-nums;
 }
 
+/* The game couldn't be saved on this phone (storage full or blocked). */
+.play-bar-unsaved {
+  padding: 0.1em 0.5em;
+  border-radius: 999px;
+  background: #b3261e;
+  color: #fff;
+  font-size: 0.85em;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 .play-bar-shanten,
 .play-bar-prompt {
   color: var(--play-on-felt-muted);
