@@ -3253,6 +3253,18 @@ export function PlayPanel({
     else setSelected(index);
   };
 
+  // 換牌's give by sweeping (WebGL table): a press on a tile picks it - or,
+  // already picked, lets it go - and each tile the finger then slides over
+  // goes the same way, without lifting it.
+  const sweepPicks = useRef(true);
+  const sweepTile = (index: number, first: boolean) => {
+    if (rolling || !swapGiving) return;
+    if (first) sweepPicks.current = !swapHand.includes(index);
+    const pick = sweepPicks.current;
+    setSwapHand((sel) => (pick ? (sel.includes(index) ? sel : [...sel, index]) : sel.filter((i) => i !== index)));
+    setGivePlanAt(null);
+  };
+
   // Next hand: first any bot allowed to 投降 decides (and says so), then deal.
   const nextHandWithSurrenders = () => {
     if (online) {
@@ -3794,7 +3806,7 @@ export function PlayPanel({
   const otherClaims = humanClaims.filter((c) => c.kind !== "chow");
 
   return (
-    <div className="play-screen">
+    <div className={`play-screen${gl && swapGiving ? " is-sweeping" : ""}`}>
       <div className="play-table" ref={tableRef}>
         <div className="play-corner">
           <button type="button" className="play-icon-button" onClick={onExit} aria-label="Leave the table" title="Leave">
@@ -4077,7 +4089,7 @@ export function PlayPanel({
         </div>
         {glView && (
           <Suspense fallback={null}>
-            <TableGL view={glView} rootRef={tableRef} feltRef={feltRef} handRef={myRowRef} middleRef={middleRef} onTile={tapTile} onPile={(side, i) => myTake && pickFrom(SIDES.indexOf(side), i)} />
+            <TableGL view={glView} rootRef={tableRef} feltRef={feltRef} handRef={myRowRef} middleRef={middleRef} onTile={tapTile} onPile={(side, i) => myTake && pickFrom(SIDES.indexOf(side), i)} sweep={swapGiving} onSweep={sweepTile} />
           </Suspense>
         )}
 

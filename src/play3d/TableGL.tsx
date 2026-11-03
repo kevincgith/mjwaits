@@ -106,12 +106,19 @@ export default function TableGL({
   middleRef,
   onTile,
   onPile,
+  sweep = false,
+  onSweep,
 }: {
   view: GLTableView;
   // A tap on a pile's tile, on your take (換牌).
   onPile: (side: GLSide, index: number) => void;
   // A tap on one of your tiles (by its place in your hand).
   onTile: (index: number) => void;
+  // `sweep`: a press on one of your tiles and a slide across others, finger
+  // down all the while (換牌's give) - each tile in turn, `first` the one
+  // pressed. The press is no tap then.
+  sweep?: boolean;
+  onSweep?: (index: number, first: boolean) => void;
   rootRef: RefObject<HTMLElement | null>;
   feltRef: RefObject<HTMLElement | null>;
   handRef: RefObject<HTMLElement | null>;
@@ -134,6 +141,10 @@ export default function TableGL({
   onTileRef.current = onTile;
   const onPileRef = useRef(onPile);
   onPileRef.current = onPile;
+  const sweepRef = useRef(sweep);
+  sweepRef.current = sweep;
+  const onSweepRef = useRef(onSweep);
+  onSweepRef.current = onSweep;
 
   useEffect(() => {
     let live = true;
@@ -247,22 +258,55 @@ export default function TableGL({
 
   // Taps on your tiles: a ray from where you tapped into your row (the
   // canvas lets taps through to the page; buttons and sheets keep theirs).
+  // While sweeping is on, a press on a tile and the slide after it instead.
   useEffect(() => {
     const root = rootRef.current;
     if (!root) return;
     let down: { x: number; y: number; at: number } | null = null;
+    // A sweep under way: the tile the finger was last over.
+    let swept: number | null = null;
+    // Where a pointer is, in the table's own pixels - it's drawn turned a
+    // quarter on a phone held upright.
+    const at = (e: PointerEvent) => {
+      const turn = new DOMMatrix(getComputedStyle(root).transform === "none" ? undefined : getComputedStyle(root).transform);
+      return turn.inverse().transformPoint(new DOMPoint(e.clientX - root.offsetLeft, e.clientY - root.offsetTop));
+    };
+    const tileAt = (e: PointerEvent): number | null => {
+      const e3 = engine.current;
+      if (!e3) return null;
+      const p = at(e);
+      const i = e3.pickHand(p.x, p.y, root.clientWidth, root.clientHeight);
+      return i !== null && viewRef.current.mine.tiles[i]?.enabled ? i : null;
+    };
+    const outside = (e: PointerEvent) => !!(e.target as Element | null)?.closest("button, a, input, [role=dialog], [role=menu], .play-menu, .play-calls, .sc-sheet");
     const onDown = (e: PointerEvent) => {
       down = e.isPrimary ? { x: e.clientX, y: e.clientY, at: e.timeStamp } : null;
+      swept = null;
+      if (!down || !sweepRef.current || outside(e)) return;
+      const i = tileAt(e);
+      if (i === null) return;
+      swept = i;
+      onSweepRef.current?.(i, true);
+    };
+    const onMove = (e: PointerEvent) => {
+      if (swept === null || !e.isPrimary) return;
+      const i = tileAt(e);
+      if (i === null || i === swept) return;
+      // Every tile between, too - a quick slide can pass one between two
+      // moves. (Your row's places run in order across it.)
+      const step = i > swept ? 1 : -1;
+      for (let k = swept + step; k !== i + step; k += step) if (viewRef.current.mine.tiles[k]?.enabled) onSweepRef.current?.(k, false);
+      swept = i;
     };
     const onUp = (e: PointerEvent) => {
       const start = down;
       down = null;
+      // (A sweep has done its picking as it went.)
+      if (swept !== null) return void (swept = null);
       const e3 = engine.current;
       if (!start || !e3 || !e.isPrimary || Math.hypot(e.clientX - start.x, e.clientY - start.y) > 10 || e.timeStamp - start.at > 800) return;
-      if ((e.target as Element | null)?.closest("button, a, input, [role=dialog], [role=menu], .play-menu, .play-calls, .sc-sheet")) return;
-      // Into the table's own pixels - it's drawn turned a quarter on a phone held upright.
-      const turn = new DOMMatrix(getComputedStyle(root).transform === "none" ? undefined : getComputedStyle(root).transform);
-      const p = turn.inverse().transformPoint(new DOMPoint(e.clientX - root.offsetLeft, e.clientY - root.offsetTop));
+      if (outside(e)) return;
+      const p = at(e);
       const i = e3.pickHand(p.x, p.y, root.clientWidth, root.clientHeight);
       if (i !== null) {
         if (viewRef.current.mine.tiles[i]?.enabled) onTileRef.current(i);
@@ -271,11 +315,19 @@ export default function TableGL({
       const pile = e3.pickPile(p.x, p.y, root.clientWidth, root.clientHeight);
       if (pile) onPileRef.current(pile[0] as GLSide, pile[1]);
     };
+    const onCancel = () => {
+      down = null;
+      swept = null;
+    };
     root.addEventListener("pointerdown", onDown);
+    root.addEventListener("pointermove", onMove);
     root.addEventListener("pointerup", onUp);
+    root.addEventListener("pointercancel", onCancel);
     return () => {
       root.removeEventListener("pointerdown", onDown);
+      root.removeEventListener("pointermove", onMove);
       root.removeEventListener("pointerup", onUp);
+      root.removeEventListener("pointercancel", onCancel);
     };
   }, [rootRef]);
 
