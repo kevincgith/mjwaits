@@ -70,8 +70,6 @@ export interface GLPile {
   slots: (Tile | "back" | null)[];
   standing: boolean;
   picked: number[];
-  // Yours, just given: places still waiting for their tile.
-  arriving: number[];
   // Tappable on your take.
   pickable: boolean;
 }

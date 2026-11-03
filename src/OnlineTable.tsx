@@ -81,8 +81,7 @@ function BotFace() {
 
 // ---- The screen ------------------------------------------------------------------------
 
-// `renderer`: how the hand's table is drawn - WebGL, or Legacy (see PlayPanel).
-export function OnlineTable({ initialCode, onExit, renderer }: { initialCode: string | null; onExit: () => void; renderer?: "dom" | "webgl" }) {
+export function OnlineTable({ initialCode, onExit }: { initialCode: string | null; onExit: () => void }) {
   const [memory, setMemory] = useState(loadTables);
   useEffect(() => saveTables(memory), [memory]);
   const [code, setCode] = useState<string | null>(initialCode && tableToken(loadTables(), initialCode) ? initialCode : null);
@@ -221,7 +220,7 @@ export function OnlineTable({ initialCode, onExit, renderer }: { initialCode: st
   if (code && table?.phase === "playing" && table.view && you)
     return (
       <>
-        <PlayPanel onExit={leave} online={{ table, send, host: you.host, scores, reaction, refused }} renderer={renderer} />
+        <PlayPanel onExit={leave} online={{ table, send, host: you.host, scores, reaction, refused }} />
         {status !== "open" && <div className="ot-status">{status === "closed" ? "Disconnected" : "Reconnecting…"}</div>}
         {toast && (
           <div className="ot-toast" role="status">

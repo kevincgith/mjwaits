@@ -1,6 +1,5 @@
-// The WebGL table's tile animations, timed as Play's CSS times them: its
-// cubic-bezier easings and keyframes, worked out per frame for the
-// WebGL table instead of by the browser.
+// The WebGL table's tile animations: CSS-style cubic-bezier easings and
+// keyframes, worked out per frame for the WebGL table.
 
 // CSS's cubic-bezier(x1, y1, x2, y2): progress in time -> progress in value.
 export function bezier(x1: number, y1: number, x2: number, y2: number): (t: number) => number {

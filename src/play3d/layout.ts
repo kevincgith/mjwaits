@@ -1,7 +1,7 @@
 // Play's WebGL table laid out in its own coordinates: where every tile lies,
-// worked out from the table's sizes and what's on it - the same places
-// Play's CSS puts them (its grid, its rows of 9 and 7, the walls and their
-// slots), without measuring a single tile on the page.
+// worked out from the table's sizes and what's on it (its grid, its rows of
+// 9 and 7, the walls and their slots), without measuring a single tile on
+// the page.
 //
 // Two spaces, each in CSS pixels with CSS's axes (x right, y down, z up off
 // the table): the felt's own plane, before its tilt (the WebGL table tilts
@@ -17,7 +17,7 @@ import { about, chain, rotateX, rotateY, rotateZ, scale, translate, type Mat } f
 import { acrossTable } from "./swapOrder";
 import type { GLHandTile, GLPond, GLSide, GLSwapRow, GLTableView, GLWall } from "./types";
 
-// The block, in ems of its tile size (as the CSS has it: --tile-w / -h, --play-thick, --tile-r).
+// The block, in ems of its tile size: width, height, thickness and how round its edges are.
 export const TILE_W = 0.72;
 export const TILE_H = 0.913;
 export const THICK = 0.42;
@@ -58,8 +58,8 @@ export interface Dims {
 }
 
 // A tile: its face ("m1", "flower2"... or "back" face down), where it lies,
-// and how its sides are shaded - as the CSS's --shade-long / --shade-end:
-// how much darker its long sides and its ends are than its face.
+// and how its sides are shaded: how much darker its long sides and its
+// ends are than its face.
 export interface Piece {
   face: string;
   m: Mat;
@@ -75,8 +75,8 @@ export interface Piece {
   fly?: { key: string; from: Mat; dur: number; lift: number; pose?: (v: number) => Mat };
   // Not drawn once this many seconds into its flight.
   hideAfter?: number;
-  // Moving as Play's CSS animates it, or easing to where it now lies when
-  // that changes (CSS's transition) - see anim.ts and engine.ts.
+  // Moving through its keyframes, or easing to where it now lies when that
+  // changes (as a CSS transition would) - see anim.ts and engine.ts.
   anim?: Anim;
   ease?: { key: string; dur: number; curve: (t: number) => number; delay?: number };
 }
@@ -218,7 +218,7 @@ const MINE_LEAN = 54;
 // Your given tiles, down to your pile - lifted clear of the row by this far in.
 const GIVE_S = 0.6;
 const GIVE_CLEAR_S = 0.22;
-// A tile tipping over (play-topple-*): from standing (`from` deg) down flat,
+// A tile tipping over: from standing (`from` deg) down flat,
 // quickening as it falls, a small bounce back up (7deg) and settled; slid
 // back `back` as it goes - [angle, back].
 const toppleFrames = (from: number, bounce: number, back: number) => [
@@ -227,7 +227,7 @@ const toppleFrames = (from: number, bounce: number, back: number) => [
   { at: 0.9, v: [bounce, back], ease: EASE_IN },
   { at: 1, v: [0, back] },
 ];
-// Your tiles tipping back onto the table (play-topple-mine): from leaning
+// Your tiles tipping back onto the table: from leaning
 // toward you (-22deg) to the felt's 32deg.
 const MINE_FRAMES = [
   { at: 0, v: [-22], ease: FALL },
@@ -278,7 +278,8 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
   const felt: Piece[] = [];
   const feltQuads: Quad[] = [];
   const { rem, tile: T } = d;
-  // .play-felt's padding, grid gaps and the grid's content box.
+  // The felt's padding (.play-felt), the gaps kept between the table's
+  // parts, and the room inside.
   const cx0 = 0.7 * rem;
   const cx1 = d.feltW - 0.7 * rem;
   const cy0 = 0.45 * rem;
@@ -319,7 +320,7 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
     const colLen = (c: Group[]) => sum(c.map((g) => g.along)) + gap * (c.length - 1);
     // 換牌: what they've taken this round lies among their melds as one
     // more item - on down the last column if it fits, else a column of its
-    // own toward the middle (as .play-seat-melds wraps it).
+    // own toward the middle.
     const row = view.rows[which];
     const rowLen = row ? sum(row.groups.map((g) => g.tiles.length * 0.72 * T + 0.08 * T)) + 0.55 * T * (row.groups.length - 1) : 0;
     // The melds and bonus tiles keep their places while it's there (only
@@ -522,7 +523,7 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
         return;
       }
       const isWin = i === win;
-      // Tipped over toward the middle about its outer foot (play-topple-left / -right).
+      // Tipped over toward the middle about its outer foot.
       const oy = isWin ? fy - 0.03 * Wg + 0.5 * Wg : fy + 0.36 * Wg;
       const rot = isWin ? 0 : 90 * dir;
       const reach = (isWin ? 0.39 : 0.5) * Wg;
@@ -651,7 +652,7 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
       }
       const turned = (side === "left" || side === "right") !== riichi;
       const m = lying(x, y, em, rot);
-      // The newest discard drops onto the felt from a little above and settles (play-drop).
+      // The newest discard drops onto the felt from a little above and settles.
       const drop =
         pond.pinLast && i === pond.tiles.length - 1
           ? {
@@ -758,7 +759,6 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
         feltQuads.push({ kind: "gap", m: chain(translate(x, standing ? y - 0.5 * P + foot + deep / 2 : y, 0.5), rotateZ(rot), scale(0.72 * P, deep, 1)) });
         return spot;
       }
-      if (pile.arriving.includes(i)) return spot;
       // Just given: unseen till its tile has come down from your hand.
       const coming = side === "bottom" && view.mine.given && givenAt.has(i) ? view.mine.given.key : null;
       const arrive: Anim | undefined = coming === null ? undefined : { key: `give:${coming}:${i}`, delay: 0, dur: GIVE_S, pose: () => scale(0) };
@@ -932,9 +932,8 @@ function layoutHand(view: GLTableView, d: Dims, spots: Partial<Record<GLSide, Sp
       const ty = foot - g.pad - 0.5 * g.em;
       g.slots.forEach((s, k) => {
         const cx = x + g.pad + pitch * (k + 0.5);
-        // (Turned about the foot of its face, as your standing tiles are -
-        // the CSS's transform-origin for both.) Laid down from standing
-        // as it's declared (play-topple-mine, 0.5s).
+        // (Turned about the foot of its face, as your standing tiles are.)
+        // Laid down from standing as it's declared (0.5s).
         const pose = (a: number) => {
           const flat = chain(translate(cx, ty, 0), about(0, 0.5 * g.em, THICK * g.em, rotateX(a)));
           return s.face ? chain(flat, scale(g.em)) : chain(flat, translate(0, 0, THICK * g.em), rotateY(180), scale(g.em));
@@ -991,8 +990,8 @@ function layoutHand(view: GLTableView, d: Dims, spots: Partial<Record<GLSide, Sp
       return t.tile ? chain(c, scale(H)) : chain(c, translate(0, 0, THICK * H), rotateY(180), scale(H));
     };
     // The tile you won with: lifted and shown, then laid flat and turned on
-    // its side (play-show-mine) - the rest of your hand tipping back onto
-    // the table after it, one by one (play-topple-mine).
+    // its side - the rest of your hand tipping back onto the table after
+    // it, one by one.
     const shown = ([ty, rx, tx2, ty2, rz]: number[]) => block(chain(translate(0, ty, 0), rotateX(rx), translate(tx2, ty2, 0), rotateZ(rz)));
     const SHOW = [
       { at: 0, v: [-0.5 * H, -22, 0, 0, 0], ease: bezier(0.2, 0.7, 0.4, 1) },
@@ -1011,7 +1010,7 @@ function layoutHand(view: GLTableView, d: Dims, spots: Partial<Record<GLSide, Sp
       anim = { key: `h:down:${i}`, delay: 0.2 + mine.winLead + i * 0.07, dur: 0.6, pose: (k) => block(rotateX(keyframes(MINE_FRAMES, k)[0])) };
     } else {
       m = block(rotateX(-22));
-      // A tile just drawn slides in from the wall's side (play-draw).
+      // A tile just drawn slides in from the wall's side.
       if (t.drawn) anim = { key: `h:draw:${mine.drawKey}`, delay: 0, dur: 0.32, pose: (k) => chain(translate(0.5 * H * (1 - SETTLE(k)), -0.35 * H * (1 - SETTLE(k)), 0), m) };
     }
     pieces.push({
@@ -1021,9 +1020,9 @@ function layoutHand(view: GLTableView, d: Dims, spots: Partial<Record<GLSide, Sp
       tint: t.barred ? 0 : 1,
       hit: i,
       anim,
-      // Picked up and put back eased, not snapped (.play-hand-tile's
-      // transition - on its lift only: moved along the row, it jumps -
-      // but in 換牌, slid along the row to its new place).
+      // Picked up and put back eased, not snapped (on its lift only: moved
+      // along the row, it jumps - but in 換牌, slid along the row to its
+      // new place).
       ease: winner
         ? undefined
         : mine.sliding

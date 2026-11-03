@@ -25,7 +25,7 @@ function take(taker: GLSide, n: number): GLTableView {
     slots.forEach((place, slot) => flights.push({ id: flights.length + 1, from, place, to: taker, group, slot, tile: null, flip: false }));
     rowGroups.push({ tiles: places.map(() => null), shown: places.map(() => false) });
   });
-  const pile = { slots: Array.from({ length: 6 }, () => "back" as const), standing: false, picked: [], arriving: [], pickable: false };
+  const pile = { slots: Array.from({ length: 6 }, () => "back" as const), standing: false, picked: [], pickable: false };
   return {
     walls: { right: wall(16), top: wall(16), left: wall(16) },
     ponds: { bottom: { tiles: [], pinLast: false }, right: { tiles: [], pinLast: false }, top: { tiles: [], pinLast: false }, left: { tiles: [], pinLast: false } },
@@ -198,7 +198,7 @@ describe("a side seat's 換牌 row", () => {
 describe("your 換牌 pile", () => {
   it("stands on the felt, not over it", () => {
     const v = take("right", 1);
-    const mine = { slots: [1, 2, 3].map((rank) => ({ suit: "m" as const, rank })), standing: true, picked: [], arriving: [], pickable: false };
+    const mine = { slots: [1, 2, 3].map((rank) => ({ suit: "m" as const, rank })), standing: true, picked: [], pickable: false };
     const out = layoutTable({ ...v, piles: { bottom: mine }, flights: [], rows: {} }, DIMS).felt.pieces.filter((p) => p.face.startsWith("m"));
     expect(out.length).toBe(3);
     for (const p of out) {
@@ -230,7 +230,7 @@ describe("your give on the WebGL table", () => {
   it("shows each tile's shadow on your pile only once the tile has landed", () => {
     const v = take("right", 1);
     const tiles = [1, 2, 3].map((rank) => ({ suit: "m" as const, rank }));
-    const mine = { slots: tiles, standing: true, picked: [], arriving: [], pickable: false };
+    const mine = { slots: tiles, standing: true, picked: [], pickable: false };
     const view = { ...v, piles: { bottom: mine }, flights: [], rows: {}, mine: { ...v.mine, given: { key: 7, tiles, from: [0, 1, 2], count: 16 } } };
     const out = layoutTable(view, DIMS).felt;
     const pile = out.pieces.filter((p) => p.face.startsWith("m"));
@@ -265,7 +265,7 @@ describe("your row in 換牌", () => {
 describe("your 換牌 pile's gaps", () => {
   it("outline where a taken tile met the felt, in line with the tiles still standing", () => {
     const v = take("right", 1);
-    const mine = { slots: [{ suit: "m" as const, rank: 1 }, null, { suit: "m" as const, rank: 3 }], standing: true, picked: [], arriving: [], pickable: false };
+    const mine = { slots: [{ suit: "m" as const, rank: 1 }, null, { suit: "m" as const, rank: 3 }], standing: true, picked: [], pickable: false };
     const out = layoutTable({ ...v, piles: { bottom: mine }, flights: [], rows: {} }, DIMS).felt;
     const tile = out.pieces.find((p) => p.face === "m1")!;
     const gap = out.quads.find((q) => q.kind === "gap")!;

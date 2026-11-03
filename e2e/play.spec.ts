@@ -10,9 +10,6 @@ test.beforeEach(async ({ page }) => {
   page.on("console", (m) => m.type() === "error" && !/vibrate|favicon/i.test(m.text()) && errors.push(m.text()));
   let loads = 0;
   page.on("load", () => ++loads > 1 && errors.push(`the page reloaded (${page.url()})`));
-  // These flows tap Legacy's table, its tiles page elements (see
-  // lib/playRenderer.ts); the WebGL table's own test sets it back.
-  await page.addInitScript(() => localStorage.setItem("mjwaits.playRenderer", "dom"));
 });
 test.afterEach(async ({ page }) => {
   expect(pageErrors.get(page), "errors on the page").toEqual([]);
@@ -36,9 +33,42 @@ async function openApp(page: Page, item: string) {
 }
 
 const gameMenu = (page: Page) => page.getByRole("button", { name: "Game menu" });
-const myPile = (page: Page) => page.locator(".play-swap-pond.play-pond-bottom .play-swap-tile");
-const myPond = (page: Page) => page.locator(".play-pond-bottom .play-pond-tile");
-const drawnTile = (page: Page) => page.locator(".play-hand-tile.is-drawn");
+
+// The table's tiles are drawn by WebGL, on a canvas: what's on it is read
+// from what the table was told to draw - the dev build keeps it on the page
+// (window.__glView: play3d/TableGL.tsx; its type, GLTableView, in
+// play3d/types.ts - just the parts looked at here).
+type GLView = {
+  mine: { tiles: { drawn: boolean; enabled: boolean }[] };
+  ponds: { bottom: { tiles: unknown[] } };
+  piles: { bottom?: { slots: unknown[] } } | null;
+};
+const table = (page: Page) =>
+  page.evaluate(() => {
+    const view = (globalThis as unknown as { __glView?: GLView }).__glView;
+    const mine = view?.mine.tiles ?? [];
+    return {
+      // Your 換牌 pile: its tiles (a place empties as its tile's taken).
+      pile: view?.piles?.bottom?.slots.filter((s) => s !== null).length ?? 0,
+      // Your pond: the tiles you've thrown.
+      pond: view?.ponds.bottom.tiles.length ?? 0,
+      // Your turn, a tile drawn: it's set apart at the right, and your tiles take a tap.
+      drawn: mine.some((t) => t.drawn) && mine.some((t) => t.enabled),
+    };
+  });
+
+// Your drawn tile thrown: a tap aimed at its place (the right end of your
+// row), then a second, as a player would - the tile lifts between them.
+async function tapDrawn(page: Page) {
+  const row = (await page.locator(".play-hand.is-gl").boundingBox())!;
+  const at = { x: row.x + row.width - row.height * 0.3, y: row.y + row.height * 0.55 };
+  // (Tapped again till it takes: a tap while the deal's dice still roll goes unheeded.)
+  await expect(async () => {
+    await page.mouse.click(at.x, at.y);
+    await expect(page.getByText("Tap again to discard")).toBeVisible({ timeout: 1000 });
+  }).toPass({ timeout: 20_000 });
+  await page.mouse.click(at.x, at.y - row.height * 0.1);
+}
 
 // 換牌 through to its end: 放牌 your picked tiles each round, 攞牌 (an even
 // blind take) on your turn - each tap checked to have landed.
@@ -55,14 +85,14 @@ async function playSwap(page: Page) {
       const n = Number((await give.getAttribute("aria-label"))!.match(/\d+/)![0]);
       await give.click();
       // Given: your pile is laid out, and the button's gone.
-      await expect(myPile(page), "放牌 should lay your tiles out").toHaveCount(n, { timeout: 5_000 });
+      await expect.poll(async () => (await table(page)).pile, { message: "放牌 should lay your tiles out", timeout: 5_000 }).toBe(n);
       await expect(give).toBeHidden({ timeout: 5_000 });
       gave++;
     } else if ((await take.isVisible()) && (await take.isEnabled())) {
       await take.click();
       await expect(take, "攞牌 should take").toBeHidden({ timeout: 5_000 });
       took++;
-    } else if (await drawnTile(page).isVisible()) {
+    } else if ((await table(page)).drawn) {
       break; // the swap's over: someone's turn (yours, here)
     } else if (gave > 0 && (await page.locator(".play-swap-bar").count()) === 0) {
       // The bar gone - and staying gone (between rounds the piles go a moment).
@@ -83,16 +113,14 @@ async function playSwap(page: Page) {
 async function discardOnce(page: Page) {
   const pass = page.locator(".play-call", { hasText: /^過$/ });
   const until = Date.now() + 120_000;
-  while (!(await drawnTile(page).isVisible())) {
+  while (!(await table(page)).drawn) {
     if (Date.now() > until) throw new Error("your turn never came");
     if (await pass.isVisible()) await pass.click();
     await page.waitForTimeout(150);
   }
-  const before = await myPond(page).count();
-  await drawnTile(page).click();
-  await expect(page.getByText("Tap again to discard")).toBeVisible({ timeout: 5_000 });
-  await drawnTile(page).click();
-  await expect(myPond(page), "the second tap should throw the tile").toHaveCount(before + 1, { timeout: 5_000 });
+  const before = (await table(page)).pond;
+  await tapDrawn(page);
+  await expect.poll(async () => (await table(page)).pond, { message: "the second tap should throw the tile", timeout: 5_000 }).toBe(before + 1);
 }
 
 // 自動 on and off, from the button.
@@ -114,7 +142,7 @@ test("single player: the setup page, the menu, 記牌器, 換牌's give and take
   await page.locator(".play-swap-confirm").click();
   await page.locator(".play-setup-start").click();
   await expect(page.getByRole("dialog", { name: "New game" })).toBeHidden();
-  await expect(page.locator(".play-felt")).toBeVisible();
+  await expect(page.locator("canvas.play-gl")).toBeVisible({ timeout: 30_000 });
 
   // The menu opens and closes; 記牌器 opens and closes.
   await gameMenu(page).click();
@@ -150,18 +178,16 @@ test("online: a table with bots - 換牌's give and take, a discard, 自動", as
   await setting("Rounds that swap", "東圈");
   await setting("Bot speed", "Fast");
   await page.getByRole("button", { name: /Start the game/ }).click();
-  await expect(page.locator(".play-felt")).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator("canvas.play-gl")).toBeVisible({ timeout: 30_000 });
 
   await playSwap(page);
   await discardOnce(page);
   await autoplayToggles(page);
 });
 
-// Play's own table, drawn by WebGL: its tiles are on a canvas, so a tap is
-// aimed at your drawn tile's place (the right end of your row) and checked
-// by the game saved after it.
-test("the WebGL table: a discard by tapping the canvas, 自動", async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem("mjwaits.playRenderer", "webgl"));
+// A tap on the canvas checked by the game itself - the one this phone saves
+// after it - rather than by what the table was told to draw.
+test("the saved game: a discard by tapping the canvas, 自動", async ({ page }) => {
   await openApp(page, "New game");
   await page.locator(".play-setup-start").click();
   await expect(page.locator("canvas.play-gl")).toBeVisible({ timeout: 30_000 });
@@ -178,14 +204,7 @@ test("the WebGL table: a discard by tapping the canvas, 自動", async ({ page }
     await page.waitForTimeout(150);
   }
   const before = (await saved()).thrown;
-  const row = (await page.locator(".play-hand.is-gl").boundingBox())!;
-  const at = { x: row.x + row.width - row.height * 0.3, y: row.y + row.height * 0.55 };
-  // (Tapped again till it takes: a tap while the deal's dice still roll goes unheeded.)
-  await expect(async () => {
-    await page.mouse.click(at.x, at.y);
-    await expect(page.getByText("Tap again to discard")).toBeVisible({ timeout: 1000 });
-  }).toPass({ timeout: 20_000 });
-  await page.mouse.click(at.x, at.y - row.height * 0.1);
+  await tapDrawn(page);
   await expect.poll(async () => (await saved()).thrown, { message: "the second tap should throw the tile", timeout: 5_000 }).toBe(before + 1);
   await autoplayToggles(page);
 });
