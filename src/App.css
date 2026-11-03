@@ -7165,7 +7165,7 @@ html.playing body {
   color: var(--play-gold);
 }
 
-/* 聽 Waits, for a tile lifted to throw: a card over that tile (placed by
+/* 聽 Waits, for a tile held or lifted to throw: a card over that tile (placed by
    WaitsCard; above the call buttons if it would meet them), one row per
    wait - in two columns when there are many. */
 .play-waits-card {

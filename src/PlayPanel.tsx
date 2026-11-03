@@ -321,7 +321,7 @@ function save(saved: Saved): boolean {
 const SAVE_DELAY_MS = 500;
 
 // Why a call is greyed out (see barredClaims).
-// 聽 Waits, for a tile lifted to throw: throwing it would leave you ready -
+// 聽 Waits, for a tile held or lifted to throw: throwing it would leave you ready -
 // on these, each with how many you can't see and the hand's 番 on it. Over
 // the tile (`anchorX`: where it's seen, from your row's left).
 function WaitsCard({ tile, waits, anchorX }: { tile: Tile; waits: WaitValue[]; anchorX: () => number | null }) {
@@ -1458,6 +1458,8 @@ export function PlayPanel({
   const initialOf = (seat: number) =>
     seat === HUMAN && seated ? "你" : bots[seat] ? (mysteryStyle(bots[seat]!) ? "?" : bots[seat]!.name[0]) : nameOf(seat).slice(0, 1).toUpperCase();
   const [selected, setSelected] = useState<number | null>(null);
+  // The tile a finger's held on in your row (see TableGL's onPress).
+  const [pressed, setPressed] = useState<number | null>(null);
   // Where the WebGL table draws one of your tiles (see TableGL's tileXRef).
   const tileXRef = useRef<((index: number) => number | null) | null>(null);
   const [burst, setBurst] = useState<{ seat: number; label: string; id: number; deltas?: number[] } | null>(null);
@@ -2522,11 +2524,13 @@ export function PlayPanel({
     const ws = waitValues(game, HUMAN);
     return ws.length ? ws : null;
   }, [game, me, myTurn, seated, showWaits]);
-  // The same for a tile lifted to throw, if throwing it would leave you ready.
-  const liftedTile = myTurn && selected !== null && !autoplay ? (handTiles[selected] ?? null) : null;
-  const liftedWaits = useMemo(
-    () => (showWaits && liftedTile ? waitsAfterDiscard(game, HUMAN, liftedTile, riichiArmed) : []),
-    [game, liftedTile, riichiArmed, showWaits]
+  // The same for a tile held down, or lifted, to throw - if throwing it
+  // would leave you ready. (Held: one-tap discard throws it on letting go.)
+  const waitsAt = myTurn && !autoplay ? (pressed ?? selected) : null;
+  const waitsTile = waitsAt !== null ? (handTiles[waitsAt] ?? null) : null;
+  const tileWaits = useMemo(
+    () => (showWaits && waitsTile ? waitsAfterDiscard(game, HUMAN, waitsTile, riichiArmed) : []),
+    [game, waitsTile, riichiArmed, showWaits]
   );
   const myShanten = useMemo(() => {
     if (!hint || !seated) return null;
@@ -2550,10 +2554,8 @@ export function PlayPanel({
     }
     if (!myTurn || isForbidden(handTiles[index])) return;
     // One-tap throws straight away - except when declaring 叮, which always
-    // takes the confirming second tap, and (聽 Waits on) a tile that would
-    // leave you ready: lifted first, its waits shown.
-    const showsWaits = () => showWaits && waitsAfterDiscard(game, HUMAN, handTiles[index]).length > 0;
-    if (selected === index || (oneTap && !riichiArmed && !showsWaits())) doTurn({ kind: "discard", tile: handTiles[index], ...(riichiArmed ? { riichi: true } : {}) });
+    // takes the confirming second tap.
+    if (selected === index || (oneTap && !riichiArmed)) doTurn({ kind: "discard", tile: handTiles[index], ...(riichiArmed ? { riichi: true } : {}) });
     else setSelected(index);
   };
 
@@ -3295,7 +3297,7 @@ export function PlayPanel({
           </div>
         </div>
         <Suspense fallback={null}>
-          <TableGL view={glView} rootRef={tableRef} feltRef={feltRef} handRef={myRowRef} middleRef={middleRef} onTile={tapTile} onPile={(side, i) => myTake && pickFrom(SIDES.indexOf(side), i)} sweep={swapGiving} onSweep={sweepTile} tileXRef={tileXRef} />
+          <TableGL view={glView} rootRef={tableRef} feltRef={feltRef} handRef={myRowRef} middleRef={middleRef} onTile={tapTile} onPile={(side, i) => myTake && pickFrom(SIDES.indexOf(side), i)} sweep={swapGiving} onSweep={sweepTile} onPress={setPressed} tileXRef={tileXRef} />
         </Suspense>
 
         <div className={`play-me${autoplay ? " is-auto" : ""}`}>
@@ -3425,7 +3427,7 @@ export function PlayPanel({
                 </>
               )}
             </div>
-            {liftedTile && selected !== null && liftedWaits.length > 0 && <WaitsCard tile={liftedTile} waits={liftedWaits} anchorX={() => tileXRef.current?.(selected) ?? null} />}
+            {waitsTile && waitsAt !== null && tileWaits.length > 0 && <WaitsCard tile={waitsTile} waits={tileWaits} anchorX={() => tileXRef.current?.(waitsAt) ?? null} />}
             {/* Your row's box, sized to the tiles the WebGL table draws in it. */}
             <div ref={myRowRef} className="play-hand is-gl" />
           </div>
