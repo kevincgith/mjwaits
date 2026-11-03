@@ -189,7 +189,9 @@ export function playerStats(state: ReplayState, game: ScoreGame): PlayerStats[] 
     const won = hands.filter((h) => h.winners.some((w) => w.player === player));
     const myTai = won.map((h) => ({ value: h.winners.find((w) => w.player === player)!.tai, hand: h.hand }));
     const dealtIn = hands.filter((h) => h.kind === "win" && !h.selfDraw && h.from === player);
-    const paidSelfDraw = hands.filter((h) => h.selfDraw && h.winners[0].player !== player && h.seatsAfter.includes(player));
+    // The 自摸 this player paid on - not every seat does: on a 包自摸 the 包
+    // seat alone pays.
+    const paidSelfDraw = hands.filter((h) => h.selfDraw && h.pairs.some((p) => p.payer === player));
     const pairsAsWinner = hands.flatMap((h) => h.pairs.filter((p) => p.winner === player));
     const pairsAsPayer = hands.flatMap((h) => h.pairs.filter((p) => p.payer === player));
     const kicksPerHand = hands.map((h) => h.pairs.filter((p) => p.winner === player && p.lahKind === "踢").length).filter((n) => n > 0);
@@ -358,6 +360,17 @@ function dealing(hands: HandResult[], player: string) {
   };
 }
 
+// One player's number for a stat: a plain number, or the number inside a
+// record (a peak's or best hand's value, a run's count, the recent net).
+function statValue(s: PlayerStats, key: keyof PlayerStats): number | null {
+  const v = s[key] as unknown;
+  if (typeof v === "number") return v;
+  if (v && typeof v === "object" && "value" in v) return (v as { value: number }).value;
+  if (v && typeof v === "object" && "count" in v) return (v as { count: number }).count;
+  if (v && typeof v === "object" && "net" in v) return (v as { net: number }).net;
+  return null;
+}
+
 // 👍 / 👎 for one stat across the table: the best and worst players, or
 // nothing when everyone is level.
 export function marks(stats: PlayerStats[], key: keyof PlayerStats): Map<string, "best" | "worst"> {
@@ -366,8 +379,8 @@ export function marks(stats: PlayerStats[], key: keyof PlayerStats): Map<string,
   if (!dir) return out;
   const values = stats
     .filter((s) => s.hands > 0)
-    .map((s) => ({ p: s.player, v: s[key] as number | null }))
-    .filter((x): x is { p: string; v: number } => typeof x.v === "number");
+    .map((s) => ({ p: s.player, v: statValue(s, key) }))
+    .filter((x): x is { p: string; v: number } => x.v !== null);
   if (values.length < 2) return out;
   const hi = Math.max(...values.map((x) => x.v));
   const lo = Math.min(...values.map((x) => x.v));
@@ -384,15 +397,7 @@ export function marks(stats: PlayerStats[], key: keyof PlayerStats): Map<string,
 // for it (a rate with nothing to rate) come last, unranked.
 export function rankedBy(stats: PlayerStats[], key: keyof PlayerStats): { player: string; rank: number | null }[] {
   const dir = STAT_DIRECTION[key] ?? "high";
-  const num = (s: PlayerStats): number | null => {
-    const v = s[key] as unknown;
-    if (typeof v === "number") return v;
-    if (v && typeof v === "object" && "value" in v) return (v as { value: number }).value;
-    if (v && typeof v === "object" && "count" in v) return (v as { count: number }).count;
-    if (v && typeof v === "object" && "net" in v) return (v as { net: number }).net;
-    return null;
-  };
-  const scored = stats.filter((s) => s.hands > 0).map((s) => ({ player: s.player, v: num(s) }));
+  const scored = stats.filter((s) => s.hands > 0).map((s) => ({ player: s.player, v: statValue(s, key) }));
   const better = (a: number, b: number) => (dir === "high" ? a > b : a < b);
   return scored
     .map((x) => ({ player: x.player, v: x.v, rank: x.v === null ? null : 1 + scored.filter((y) => y.v !== null && better(y.v, x.v!)).length }))

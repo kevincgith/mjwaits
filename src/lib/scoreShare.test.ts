@@ -61,4 +61,30 @@ describe("share snapshot", () => {
   it("ignores a #z= that isn't a game", async () => {
     expect(await snapshotFromAnyHash("#z=bm90LWRlZmxhdGU")).toBeNull();
   });
+
+  // A bad link must never reach the shared view: it would throw while
+  // drawing, and the hash would bring it back on every reload.
+  it("refuses a link whose players, pays or game have the wrong shape", async () => {
+    const s = store();
+    const snap = snapshotOf(s, s.active!, 100);
+    const full = fullSnapshotOf(s, s.active!, 100);
+    const v1 = (x: unknown) => decodeSnapshot(encodeSnapshot(x as never));
+    const v2 = async (x: unknown) => decodeFull(await encodeFull(x as never));
+    expect(v1({ v: 1, players: [{}], pays: [] })).toBeNull();
+    expect(v1({ ...snap, players: [{ ...snap.players[0], n: 7 }] })).toBeNull();
+    expect(v1({ ...snap, players: [null] })).toBeNull();
+    expect(v1({ ...snap, pays: [["a", "b"]] })).toBeNull();
+    expect(v1({ ...snap, pays: [["a", "b", "3"]] })).toBeNull();
+    expect(v1({ ...snap, label: undefined })).toBeNull();
+    expect(v1({ ...snap, at: "yesterday" })).toBeNull();
+    expect(v1({ ...snap, v: 3 })).toBeNull();
+    expect(v1({ ...snap, v: 2, game: {} })).toBeNull();
+    expect(await v2({ ...full, game: {} })).toBeNull();
+    expect(await v2({ ...full, game: { ...full.game, seats: ["a", "a", "b", "c"] } })).toBeNull();
+    expect(await v2({ ...full, game: { ...full.game, events: [{ t: "win" }] } })).toBeNull();
+    expect(await v2({ ...full, colors: { Mandy: "red" } })).toBeNull();
+    expect(await v2({ ...full, v: 1 })).toBeNull();
+    // Unknown fields are dropped, not refused.
+    expect(v1({ ...snap, extra: { deep: true } })).toEqual(snap);
+  });
 });

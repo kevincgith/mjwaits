@@ -4,6 +4,8 @@
 // shared, and a newer link replaces it.
 
 import { replay, settle, type ScoreGame, type ScoreStore } from "@mjwaits/shared/engine/ledger";
+import { checkGame } from "@mjwaits/shared/protocol/game";
+import { array, bool, int, num, object, optional, record, str, type Schema } from "@mjwaits/shared/protocol/schema";
 
 export interface SnapshotPlayer {
   n: string; // name
@@ -70,13 +72,66 @@ export function encodeSnapshot(snap: ScoreSnapshot): string {
   return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
+// A link is anyone's text, so it's checked field by field before the shared
+// view draws it: a crafted or garbled one that got through would throw while
+// drawing, and the hash would bring it back on every reload. Unknown fields
+// are dropped, as for a game from a phone.
+const strip = { strip: true };
+const text = str(200);
+const count = int(0, 1_000_000);
+const total = num(-1e12, 1e12);
+const colour = int(-1, 1000);
+const Pay: Schema<[string, string, number]> = {
+  check: (v, path) => {
+    if (!Array.isArray(v) || v.length !== 3) return { ok: false, error: `${path}: expected [from, to, amount]` };
+    const from = text.check(v[0], `${path}[0]`);
+    if (!from.ok) return from;
+    const to = text.check(v[1], `${path}[1]`);
+    if (!to.ok) return to;
+    const amount = total.check(v[2], `${path}[2]`);
+    if (!amount.ok) return amount;
+    return { ok: true, value: [from.value, to.value, amount.value] };
+  },
+};
+const SnapshotSchema = object(
+  {
+    v: int(1, 2),
+    name: optional(text),
+    at: num(0, 1e14),
+    started: num(0, 1e14),
+    label: text,
+    hands: count,
+    east: count,
+    circle: count,
+    dealer: text,
+    players: array(object({ n: text, t: total, c: colour, w: count, s: count, d: count }, strip), 0, 32),
+    pays: array(Pay, 0, 32),
+    ended: bool,
+    colors: optional(record(text, colour, 64)),
+  },
+  strip
+);
+
+// The snapshot as checked, or null. A v2 game must pass the server's own
+// check too (checkGame: its shape, and that the ledger can replay it).
+function checkSnapshot(value: unknown, versions: number[]): ScoreSnapshot | null {
+  const r = SnapshotSchema.check(value, "snapshot");
+  if (!r.ok || !versions.includes(r.value.v)) return null;
+  const snap: ScoreSnapshot = { ...r.value, v: r.value.v as 1 | 2 };
+  const game = (value as { game?: unknown }).game;
+  if (game !== undefined) {
+    const checked = checkGame(game);
+    if (!checked.ok) return null;
+    snap.game = checked.value;
+  }
+  return snap;
+}
+
 export function decodeSnapshot(code: string): ScoreSnapshot | null {
   try {
     const bin = atob(code.replace(/-/g, "+").replace(/_/g, "/"));
     const bytes = Uint8Array.from(bin, (ch) => ch.charCodeAt(0));
-    const snap = JSON.parse(new TextDecoder().decode(bytes)) as ScoreSnapshot;
-    if ((snap?.v !== 1 && snap?.v !== 2) || !Array.isArray(snap.players) || !Array.isArray(snap.pays)) return null;
-    return snap;
+    return checkSnapshot(JSON.parse(new TextDecoder().decode(bytes)), [1, 2]);
   } catch {
     return null;
   }
@@ -127,9 +182,7 @@ export async function encodeFull(snap: ScoreSnapshot): Promise<string> {
 
 export async function decodeFull(code: string): Promise<ScoreSnapshot | null> {
   try {
-    const snap = JSON.parse(new TextDecoder().decode(await pipe(fromBase64url(code), new DecompressionStream("deflate-raw")))) as ScoreSnapshot;
-    if (snap?.v !== 2 || !Array.isArray(snap.players) || !Array.isArray(snap.pays)) return null;
-    return snap;
+    return checkSnapshot(JSON.parse(new TextDecoder().decode(await pipe(fromBase64url(code), new DecompressionStream("deflate-raw")))), [2]);
   } catch {
     return null;
   }

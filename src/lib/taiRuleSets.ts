@@ -68,15 +68,36 @@ function normalizeStore(raw: unknown): RuleSetStore | null {
   return { v: 1, active, sets };
 }
 
+// Saved sets that couldn't be read are copied here before anything new is
+// saved over them (as the scores are - see scoreStore.ts), so they're never
+// lost.
+export const UNREADABLE_RULE_SETS_KEY = `${RULE_SETS_KEY}.unreadable`;
+
+function keepUnreadable(raw: string) {
+  try {
+    window.localStorage.setItem(UNREADABLE_RULE_SETS_KEY, raw);
+  } catch {
+    // No room even for that - the next save would still overwrite it.
+  }
+}
+
 /** The saved sets. The first release's single saved ruleset
  *  (mjwaits.taiRules) becomes a set called "My rules", in use. `corrupt`
- *  when what was saved couldn't be read. */
+ *  when what was saved couldn't be read - not when storage is blocked (a
+ *  private window), where nothing was saved to read. */
 export function loadRuleSets(): { store: RuleSetStore; corrupt: boolean } {
+  let raw: string | null;
   try {
-    const raw = window.localStorage.getItem(RULE_SETS_KEY);
+    raw = window.localStorage.getItem(RULE_SETS_KEY);
+  } catch {
+    return { store: EMPTY_STORE, corrupt: false };
+  }
+  try {
     if (raw !== null) {
       const store = normalizeStore(JSON.parse(raw));
-      return store ? { store, corrupt: false } : { store: EMPTY_STORE, corrupt: true };
+      if (store) return { store, corrupt: false };
+      keepUnreadable(raw);
+      return { store: EMPTY_STORE, corrupt: true };
     }
     const old = window.localStorage.getItem(TAI_RULES_KEY);
     if (old === null) return { store: EMPTY_STORE, corrupt: false };
@@ -89,6 +110,9 @@ export function loadRuleSets(): { store: RuleSetStore; corrupt: boolean } {
     window.localStorage.removeItem(TAI_RULES_KEY);
     return { store, corrupt };
   } catch {
+    // A first-release ruleset that can't be read stays where it was:
+    // it's only removed once moved.
+    if (raw !== null) keepUnreadable(raw);
     return { store: EMPTY_STORE, corrupt: true };
   }
 }

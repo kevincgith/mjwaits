@@ -432,7 +432,7 @@ export function TaiRulesSheet({
         }
       >
         {confirmClose && <div className="tr-notice is-warning">These changes aren't saved yet. Keep editing to save them, or discard them.</div>}
-        {corrupt && !incoming && <div className="tr-notice">Your saved rule sets couldn't be read, so these are the house rules.</div>}
+        {corrupt && !incoming && <div className="tr-notice">Your saved rule sets couldn't be read, so these are the house rules. A copy of them is kept on this device.</div>}
         {legacy && (
           <div className="tr-notice is-warning">Scoring with the original built-in engine, so rule sets don't apply. Switch back under Advanced, at the bottom.</div>
         )}
