@@ -264,6 +264,12 @@ export class Table extends Hub<TableMessage> {
 
   // ---- Arriving and leaving ----------------------------------------------------
 
+  // (Someone holding a seat keeps their place, here or not.)
+  protected forgettable(personId: string): boolean {
+    this.load();
+    return this.seatOf(personId) === null;
+  }
+
   protected onArrive(personId: string) {
     const rt = this.load();
     // In the lobby, someone arriving takes the first empty seat (they can

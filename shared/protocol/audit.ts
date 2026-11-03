@@ -52,21 +52,19 @@ export function diffGames(before: ScoreGame | null, after: ScoreGame): AuditChan
 
 // For each entry in the game now: who put it in, and who last changed it
 // (if someone did after). Built by replaying the log over the entries.
-export function entryAuthors(log: AuditEntry[]): { by: string; editedBy?: string }[] {
-  const owners: { by: string; editedBy?: string }[] = [];
-  for (const e of log) {
-    if (e.kind === "share") {
-      owners.length = 0;
-      for (let i = 0; i < e.added; i++) owners.push({ by: e.by });
-      continue;
-    }
-    const replaced = owners.slice(e.from, e.from + e.removed);
-    const added = Array.from({ length: e.added }, (_, i) =>
-      // An entry replaced in place keeps its author: it was edited.
-      e.kind === "edit" && replaced[i] ? { by: replaced[i].by, editedBy: e.by } : { by: e.by }
-    );
-    owners.splice(e.from, e.removed, ...added);
-  }
+export type EntryAuthor = { by: string; editedBy?: string };
+export const entryAuthors = (log: AuditEntry[]): EntryAuthor[] => log.reduce(withAuthors, []);
+
+// One more change to the log, over who wrote what so far.
+export function withAuthors(authors: EntryAuthor[], e: AuditEntry): EntryAuthor[] {
+  if (e.kind === "share") return Array.from({ length: e.added }, () => ({ by: e.by }));
+  const owners = authors.slice();
+  const replaced = owners.slice(e.from, e.from + e.removed);
+  const added = Array.from({ length: e.added }, (_, i) =>
+    // An entry replaced in place keeps its author: it was edited.
+    e.kind === "edit" && replaced[i] ? { by: replaced[i].by, editedBy: e.by } : { by: e.by }
+  );
+  owners.splice(e.from, e.removed, ...added);
   return owners;
 }
 

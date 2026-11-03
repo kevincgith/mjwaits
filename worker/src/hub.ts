@@ -20,7 +20,8 @@ import type { Env } from "./index";
 
 // Open connections per room (everyone together).
 export const MAX_CONNECTIONS = 16;
-// Nicknames a room will remember - connected or not.
+// Nicknames a room will remember - connected or not. A new one with the room
+// full takes the place of the longest-gone who's let go (see forgettable).
 export const MAX_PEOPLE = 12;
 // A connection over its rate limit this many times in a row is closed.
 export const RATE_STRIKES = 10;
@@ -121,6 +122,11 @@ export abstract class Hub<Msg extends { t: string; rid?: string }> extends Durab
   protected initialize(_now: number): void {}
   protected extraTables(): string {
     return "";
+  }
+  // Whether someone not here may be forgotten, for a new person to have their
+  // place (a table keeps whoever holds a seat).
+  protected forgettable(_personId: string): boolean {
+    return true;
   }
   // A person's last connection opened or closed.
   protected onArrive(_personId: string): void {}
@@ -348,7 +354,7 @@ export abstract class Hub<Msg extends { t: string; rid?: string }> extends Durab
       if (!name) throw new Refusal("badMessage", "pick a nickname");
       if (this.sql.exec("SELECT 1 FROM people WHERE name_key = ?", nameKey(name)).toArray().length)
         throw new Refusal("nameTaken", `someone here is already called ${name}`);
-      if (this.people().length >= MAX_PEOPLE) throw new Refusal("full", "this room has as many people as it can take");
+      if (this.people().length >= MAX_PEOPLE && !this.forgetOne()) throw new Refusal("full", "this room has as many people as it can take");
       id = randomHex(8);
       this.sql.exec("INSERT INTO people (id, token_hash, name, name_key, joined_at) VALUES (?, ?, ?, ?, ?)", id, tokenHash, name, nameKey(name), Date.now());
       if (this.meta("host") === null) this.setMeta("host", id);
@@ -363,6 +369,17 @@ export abstract class Hub<Msg extends { t: string; rid?: string }> extends Durab
     if (first) this.onArrive(id);
     this.changed();
     await this.wakeAt(Date.now() + SWEEP_MS);
+  }
+
+  // The room full: let go of the first-joined person who isn't here, isn't
+  // host and may be forgotten - their token stops working, so if they come
+  // back they join afresh (their name free again). False if there's no one.
+  private forgetOne(): boolean {
+    const online = this.online();
+    const gone = this.people().find((p) => !online.has(p.id) && !this.isHost(p.id) && this.forgettable(p.id));
+    if (!gone) return false;
+    this.sql.exec("DELETE FROM people WHERE id = ?", gone.id);
+    return true;
   }
 
   // Connections gone quiet (see QUIET_MS, UNPINGED_MS), or that never said
