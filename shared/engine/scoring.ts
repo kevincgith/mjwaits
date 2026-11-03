@@ -242,10 +242,20 @@ export function parseScoringHand(input: string): ParsedScoringHand {
     throw new ParseError(`Could not parse: "${trimmed}"`);
   }
 
-  // 4-copies-per-kind cap, counted across declared melds and free tiles
-  // together. A rank with exactly 4 free copies isn't extracted as a kong
-  // here (see ParsedScoringHand's doc comment) - it's still just 4 tiles
-  // for this cap check.
+  // A rank with exactly 4 free copies isn't extracted as a kong here (see
+  // ParsedScoringHand's doc comment) - it's still just 4 tiles for this
+  // cap check.
+  checkTileCopies(declaredMelds, freeTiles);
+
+  return { declaredMelds, freeTiles, bonusTiles: [] };
+}
+
+// The 4-copies-per-kind cap, counted across declared melds and free tiles
+// together (bonus tiles are their own set, never counted here). Throws a
+// ParseError naming the first kind over it. Typed notation is checked by
+// parseScoringHand; the Scoring tab also runs it on a scanned hand, where
+// a misread tile can turn up a 5th copy.
+export function checkTileCopies(declaredMelds: MeldDeclaration[], freeTiles: Tile[]): void {
   const totalCounts = new Map<string, number>();
   for (const meld of declaredMelds) for (const t of meld.tiles) totalCounts.set(tileKey(t), (totalCounts.get(tileKey(t)) ?? 0) + 1);
   for (const t of freeTiles) totalCounts.set(tileKey(t), (totalCounts.get(tileKey(t)) ?? 0) + 1);
@@ -256,8 +266,6 @@ export function parseScoringHand(input: string): ParsedScoringHand {
       throw new ParseError(`Too many copies of ${tileLabel({ suit, rank })} (max 4)`);
     }
   }
-
-  return { declaredMelds, freeTiles, bonusTiles: [] };
 }
 
 export interface ResolvedMeld {

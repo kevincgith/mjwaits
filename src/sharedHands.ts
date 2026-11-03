@@ -109,13 +109,17 @@ export function readSharedHand(search: string): SharedHand | null {
   const params = new URLSearchParams(search);
   const hand = params.get("h");
   if (!hand) return null;
+  let kongs: number;
   try {
-    parseScoringHand(hand);
+    kongs = parseScoringHand(hand).declaredMelds.filter((m) => m.kind === "kong").length;
   } catch {
     return null;
   }
   const bonus = parseBonus(params.get("b") ?? "") ?? [];
   const ctx = params.get("c") ? (decodeSituation(params.get("c")!) ?? {}) : {};
+  // 花摸/槓摸 can't count more bonus tiles/kongs than the hand has.
+  if (ctx.flowerDraw && ctx.flowerDraw > bonus.length) ctx.flowerDraw = bonus.length;
+  if (ctx.kongDraw && ctx.kongDraw > kongs) ctx.kongDraw = kongs;
   return { hand, bonus, ctx };
 }
 

@@ -32,6 +32,13 @@ describe("share links", () => {
     expect(readSharedHand("?h=12x")).toBeNull();
   });
 
+  it("cuts 花摸/槓摸 down to the bonus tiles and kongs the hand has", () => {
+    const c = btoa(JSON.stringify({ flowerDraw: 8, kongDraw: 5 })).replace(/=+$/, "");
+    expect(readSharedHand(`?h=123m&c=${c}`)?.ctx).toEqual({ flowerDraw: 0, kongDraw: 0 });
+    // One flower, one 暗槓 (written [1111z]) - each can count once.
+    expect(readSharedHand(`?h=%5B1111z%5D123m&b=f1&c=${c}`)?.ctx).toEqual({ flowerDraw: 1, kongDraw: 1 });
+  });
+
   it("drops a broken situation rather than the whole hand", () => {
     expect(readSharedHand("?h=123m&c=not-json")).toEqual({ hand: "123m", bonus: [], ctx: {} });
   });
