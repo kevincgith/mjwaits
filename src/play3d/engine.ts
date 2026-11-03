@@ -8,8 +8,7 @@
 // It draws in the table's own CSS pixels: the canvas covers .play-table,
 // and each space is projected exactly as the CSS would - the felt through
 // .play-stage's perspective after .play-felt's tilt, your hand through
-// .play-hand's own - so the tiles sit on the page's felt, by its compass,
-// as Play's own would.
+// .play-hand's own - so the tiles sit on the page's felt, by its compass.
 
 import * as THREE from "three";
 import { THICK, TILE_H, TILE_R, TILE_W, type Layout, type Piece, type Quad, type QuadKind } from "./layout";
@@ -81,8 +80,8 @@ function tileGeometry(): THREE.BufferGeometry {
 
 const hex = (h: number) => `vec3(${(((h >> 16) & 255) / 255).toFixed(4)}, ${(((h >> 8) & 255) / 255).toFixed(4)}, ${((h & 255) / 255).toFixed(4)})`;
 
-// Colours as the CSS has them (sRGB, unconverted), the sides' gradient its
-// --tile-sides: jade at the foot, a light seam, ivory up to the face.
+// Colours as the CSS has them (sRGB, unconverted); the sides' gradient:
+// jade at the foot, a light seam, ivory up to the face.
 const tileMaterial = (atlas: THREE.Texture, back: [number, number, number, number]) =>
   new THREE.ShaderMaterial({
     uniforms: { uAtlas: { value: atlas }, uBack: { value: new THREE.Vector4(...back) } },

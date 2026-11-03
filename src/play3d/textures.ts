@@ -173,7 +173,7 @@ export function pin(): HTMLCanvasElement {
   });
 }
 
-// A picked pile tile's gold rim and glow (.play-swap-tile.is-picked), over
+// A picked pile tile's gold rim and glow, over
 // its top: the quad is the face plus a tenth of a tile round it.
 export function pickedRim(): HTMLCanvasElement {
   const w = 184;
@@ -212,7 +212,7 @@ export function bar(colour: string): HTMLCanvasElement {
   });
 }
 
-// The spotlight's bubble (.play-spotlight): dark, ringed in gold, with its
+// The spotlight's bubble: dark, ringed in gold, with its
 // point toward whoever threw the tile - `bw` x `bh` px with an em of
 // margin round it for its shadow and point, at `scale` canvas px a px.
 export function bubble(bw: number, bh: number, em: number, from: "top" | "bottom" | "left" | "right", scale: number): HTMLCanvasElement {

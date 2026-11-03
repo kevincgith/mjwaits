@@ -1,46 +1,20 @@
 // The tile glyph components shared by every tab: one ordinary tile or one
 // flower/season, drawn in the current tile style (art or Unicode).
 
-import { memo } from "react";
 import { tileGlyph, tileLabel, type Tile } from "@mjwaits/shared/engine/mahjong";
 import type { BonusTile } from "@mjwaits/shared/engine/scoring";
 import { bonusArtUrl, bonusTileLabel, tileArtUrl, useTileArtUrl, useTileStyle } from "./tileArt";
-
-// A tile's sides, for one drawn as a solid block on a 3D table (the Play
-// tab's felt): four sides and the four rounded corners between them, which
-// its CSS stands up round the face; anywhere else they're hidden.
-// Each rounded corner in three panels (see .tile-side.is-corner) when
-// `fine` (your hand, the biggest tiles); elsewhere in one (.is-whole) - at
-// a few pixels' rounding it looks the same, and a full table has a lot of
-// tiles, so that's a third of the pieces to draw.
-const CORNERS = ["nr1", "nr2", "nr3", "nl1", "nl2", "nl3", "fl1", "fl2", "fl3", "fr1", "fr2", "fr3"];
-const WHOLE_CORNERS = ["nr1", "nl1", "fl1", "fr1"];
-export const TileSides = memo(function TileSides({ fine = false }: { fine?: boolean }) {
-  return (
-    <>
-      <i className="tile-side is-near" />
-      <i className="tile-side is-far" />
-      <i className="tile-side is-left" />
-      <i className="tile-side is-right" />
-      {fine
-        ? CORNERS.map((c) => <i key={c} className={`tile-side is-corner is-${c}`} />)
-        : WHOLE_CORNERS.map((c) => <i key={c} className={`tile-side is-corner is-${c} is-whole`} />)}
-    </>
-  );
-});
 
 export function TileGlyphSpan({
   tile,
   large,
   highlight,
   jokerAssumed,
-  block,
 }: {
   tile: Tile;
   large?: boolean;
   highlight?: boolean;
   jokerAssumed?: boolean;
-  block?: boolean | "fine"; // with its sides (see TileSides)
 }) {
   const art = useTileStyle() === "art";
   const artUrl = useTileArtUrl();
@@ -60,7 +34,6 @@ export function TileGlyphSpan({
       title={jokerAssumed ? "Assumed from a joker" : undefined}
     >
       {art ? <img className="tile-face" src={artUrl(tileArtUrl(tile))} alt="" draggable={false} /> : tileGlyph(tile)}
-      {art && block && <TileSides fine={block === "fine"} />}
     </span>
   );
 }
@@ -97,7 +70,7 @@ function bonusTileGlyph(tile: BonusTile): string {
 }
 
 // A flower/season tile, in the current tile style (see TileGlyphSpan).
-export function BonusGlyphSpan({ tile, large, label, block }: { tile: BonusTile; large?: boolean; label?: boolean; block?: boolean }) {
+export function BonusGlyphSpan({ tile, large, label }: { tile: BonusTile; large?: boolean; label?: boolean }) {
   const art = useTileStyle() === "art";
   const artUrl = useTileArtUrl();
   return (
@@ -107,7 +80,6 @@ export function BonusGlyphSpan({ tile, large, label, block }: { tile: BonusTile;
       {...(label ? { role: "img", "aria-label": bonusTileLabel(tile) } : {})}
     >
       {art ? <img className="tile-face" src={artUrl(bonusArtUrl(tile))} alt="" draggable={false} /> : bonusTileGlyph(tile)}
-      {art && block && <TileSides />}
     </span>
   );
 }
