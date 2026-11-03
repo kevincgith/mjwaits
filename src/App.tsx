@@ -140,6 +140,7 @@ import {
   patternDisplayName,
   ScoringError,
   DEFAULT_TAI_RULES,
+  checkTileCopies,
   scoreParsedHand,
   type BonusTile,
   type GameContext,
@@ -577,6 +578,13 @@ function useTapAndLongPress(onTap: () => void, onLongPress: () => void, disabled
     startRef.current = null;
   };
 
+  // A finger sliding off the tile (a scroll) isn't a hold - otherwise the
+  // long-press still fires once the finger has been down long enough.
+  const onPointerMove = (e: ReactPointerEvent) => {
+    const start = startRef.current;
+    if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 10) clearTimer();
+  };
+
   const onClick = () => {
     if (disabled) return;
     if (longPressFired.current) {
@@ -586,7 +594,7 @@ function useTapAndLongPress(onTap: () => void, onLongPress: () => void, disabled
     onTap();
   };
 
-  return { onPointerDown, onPointerUp, onPointerCancel, onClick };
+  return { onPointerDown, onPointerMove, onPointerUp, onPointerCancel, onClick };
 }
 
 function TileButton({
@@ -1398,12 +1406,14 @@ function CropOverlay({
     setRotating(true);
     try {
       const rotated = await rotateImage(displayImage, clockwise);
-      setDisplayImage(rotated);
       // The old regions are invalid regardless (rotating changes the
       // aspect ratio) - re-fit against the now-upright photo, falling back
       // to the fixed defaults same as before if that doesn't find a clean
-      // 2-row split.
-      setRegions((await runAutoFit(rotated)) ?? defaultCropRegions());
+      // 2-row split. The turned photo only goes up with its new boxes, so
+      // the old ones are never shown over it.
+      const fitted = (await runAutoFit(rotated)) ?? defaultCropRegions();
+      setDisplayImage(rotated);
+      setRegions(fitted);
     } finally {
       setRotating(false);
     }
@@ -1590,7 +1600,7 @@ function CropOverlay({
           <button type="button" onClick={onCancel}>
             Cancel
           </button>
-          <button type="button" onClick={() => onConfirm(displayImage, regions)}>
+          <button type="button" onClick={() => onConfirm(displayImage, regions)} disabled={busy}>
             Scan
           </button>
         </div>
@@ -1704,6 +1714,12 @@ const HandScanner = forwardRef<
   // back: on iOS that comes before the photo does, and would drop it.)
   const onAbandonRef = useRef(onAbandon);
   onAbandonRef.current = onAbandon;
+  // The checks as of now, not as of when the scan started - the hand can
+  // change while the model downloads (a meld declared meanwhile).
+  const autoApplyRef = useRef(autoApply);
+  autoApplyRef.current = autoApply;
+  const recheckUnlessRef = useRef(recheckUnless);
+  recheckUnlessRef.current = recheckUnless;
   const pickerOpenRef = useRef(false);
   useEffect(() => {
     const inputs = [fileInputRef.current, libraryFileInputRef.current].filter((el): el is HTMLInputElement => el !== null);
@@ -1725,9 +1741,10 @@ const HandScanner = forwardRef<
   const nextDetectionId = useRef(0);
   const [cropImage, setCropImage] = useState<HTMLImageElement | null>(null);
   // Row-detection's guess at where the 2 crop regions should start (see
-  // handleScanFile) - null falls back to defaultCropRegions() untouched,
-  // either because detection hasn't run yet, found something other than a
-  // clean 2-row split, or failed outright.
+  // handleScanFile), then the regions last scanned (see runScan) - null
+  // falls back to defaultCropRegions() untouched, either because detection
+  // hasn't run yet, found something other than a clean 2-row split, or
+  // failed outright.
   const [autoFitRegions, setAutoFitRegions] = useState<CropRect[] | null>(null);
   // Bumped by resetScan to invalidate whatever runScan call is currently
   // in flight - its await'd detectTiles call has no way to actually abort
@@ -1839,6 +1856,11 @@ const HandScanner = forwardRef<
     e.target.value = ""; // allow re-selecting the same file next time
     if (!file) return;
     const myGeneration = scanGeneration.current;
+    // A new photo hasn't been applied yet, whatever the last one was -
+    // cancelling its crop backs out, rather than landing on the last
+    // photo's "applied" banner.
+    appliedOnceRef.current = false;
+    setAutoFitRegions(null);
     setScanError(null);
     try {
       const image = await loadImageFile(file);
@@ -1907,7 +1929,8 @@ const HandScanner = forwardRef<
     recordTiming("Scan · detect", ms);
     setDebug({ lastScan: { at: Date.now(), ms, regions: firstPass.map(({ box, detections }) => ({ canvas: box.canvas, detections })) } });
     const regions = firstPass.map(({ crop, box, detections }) => toReviewRegion(crop, box, detections));
-    if (!recheckUnless || recheckUnless(regions)) return regions;
+    const addsUp = recheckUnlessRef.current;
+    if (!addsUp || addsUp(regions)) return regions;
 
     const merged: RecheckedDetection[][] = [];
     for (const { rect, detections } of firstPass) merged.push(await recheckRegion(image, rect, detections, onProgress));
@@ -1951,6 +1974,10 @@ const HandScanner = forwardRef<
 
   const runScan = async (image: HTMLImageElement, rects: CropRect[]) => {
     const myGeneration = scanGeneration.current;
+    // "Select region"/"Adjust" reopen the crop screen as it was left - the
+    // photo turned the way the user turned it, the boxes where they put them.
+    setCropImage(image);
+    setAutoFitRegions(rects);
     setScanStatus("loading");
     setScanError(null);
     setScanProgress({ phase: "downloading-model", loaded: 0, total: null });
@@ -1965,7 +1992,7 @@ const HandScanner = forwardRef<
       // this hand" review step. Anything else (not winning, or no
       // autoApply at all - the Calculator) goes to review as before.
       const plain = regions.map((r) => ({ detections: r.detections }));
-      if (autoApply?.(plain)) {
+      if (autoApplyRef.current?.(plain)) {
         onConfirm(plain);
         appliedOnceRef.current = true;
         setScanStatus("auto-applied");
@@ -2003,7 +2030,7 @@ const HandScanner = forwardRef<
       });
       if (scanGeneration.current !== myGeneration) return;
       const plain = regions.map((r) => ({ detections: r.detections }));
-      if (autoApply!(plain)) {
+      if (autoApplyRef.current?.(plain)) {
         onConfirm(plain);
         appliedOnceRef.current = true;
         setScanStatus("auto-applied");
@@ -6357,6 +6384,11 @@ function ScoringPanel({
     setConcealedTiles(nextConcealed);
     setBonusTiles(bonus);
     resetConditions();
+    // 花摸/槓摸 can't count more bonus tiles/kongs than the hand has - a link
+    // or Recent hand may say otherwise, and the clamps above only run when
+    // those counts change, so a stale count would otherwise stick.
+    const kongs = nextDeclared.filter((m) => m.kind === "kong").length;
+    const fitted = { ...t.ctx, flowerDraw: Math.min(t.ctx.flowerDraw ?? 0, bonus.length), kongDraw: Math.min(t.ctx.kongDraw ?? 0, kongs) };
     // A shared link or a Recent hand goes by the 情況 buttons' links: one
     // from before a rule changed can hold a pair they'd no longer allow, and
     // 自摸 is saved as shown - held on by 海底撈月/人胡…, not set by hand.
@@ -6364,12 +6396,12 @@ function ScoringPanel({
     const c = t.group
       ? t.ctx
       : (() => {
-          const first = !!t.ctx.heavenlyWin && t.ctx.heavenlyWin !== "none";
-          const early = !!t.ctx.earlyWin && t.ctx.earlyWin !== "none";
+          const first = !!fitted.heavenlyWin && fitted.heavenlyWin !== "none";
+          const early = !!fitted.earlyWin && fitted.earlyWin !== "none";
           const held =
-            !!t.ctx.flowerDraw || !!t.ctx.kongDraw || isSelfDrawLastTileWin(t.ctx.lastTileWin ?? "none") || isSelfDrawHeavenlyWin(t.ctx.heavenlyWin ?? "none");
+            !!fitted.flowerDraw || !!fitted.kongDraw || isSelfDrawLastTileWin(fitted.lastTileWin ?? "none") || isSelfDrawHeavenlyWin(fitted.heavenlyWin ?? "none");
           return {
-            ...t.ctx,
+            ...fitted,
             ...(first ? { earlyWin: undefined } : {}),
             ...(first || early ? { lastTileWin: undefined } : {}),
             ...(held ? { selfDraw: undefined } : {}),
@@ -6592,7 +6624,11 @@ function ScoringPanel({
   // declared-region grouping with leftover tiles is also treated as "no" -
   // the same bar declaredRegionIssue already blocks review's own confirm
   // button on, so the streamlined path never applies something the manual
-  // one would have flagged as broken.
+  // one would have flagged as broken. So is a 5th copy of any tile (a
+  // misread, or a concealed pair of a tile already declared as a triplet):
+  // scoring alone doesn't catch that. The hand on screen is read from the
+  // refs, not this render's state - a meld declared while the model was
+  // still downloading counts too.
   const isScannedHandWinning = (regions: { detections: ReviewDetection[] }[]): boolean => {
     const [concealedRegion, declaredRegion] = regions;
     if (!concealedRegion) return false;
@@ -6606,10 +6642,11 @@ function ScoringPanel({
       nextDeclaredMelds = melds;
       nextBonusTiles = scannedBonusTiles(concealedRegion.detections, declaredBonus)!;
     } else {
-      nextDeclaredMelds = declaredMelds.map(({ kind, concealed, tiles }) => ({ kind, concealed, tiles }));
-      nextBonusTiles = scannedBonusTiles(concealedRegion.detections, null) ?? bonusTiles;
+      nextDeclaredMelds = declaredRef.current.map(({ kind, concealed, tiles }) => ({ kind, concealed, tiles }));
+      nextBonusTiles = scannedBonusTiles(concealedRegion.detections, null) ?? bonusRef.current;
     }
     try {
+      checkTileCopies(nextDeclaredMelds, freeTiles);
       scoreParsedHand({ declaredMelds: nextDeclaredMelds, freeTiles, bonusTiles: nextBonusTiles }, ctx);
       return true;
     } catch {
@@ -6625,9 +6662,12 @@ function ScoringPanel({
       bonusTiles,
     };
     try {
+      // A 5th copy can only come from a scan confirmed as it was read -
+      // the tile picker stops at 4 - but it's never a real hand.
+      checkTileCopies(parsed.declaredMelds, parsed.freeTiles);
       return { ok: true as const, result: timed("Scoring · score", () => scoreParsedHand(parsed, ctx)) };
     } catch (e) {
-      const message = e instanceof ScoringError ? e.message : "Could not score hand";
+      const message = e instanceof ScoringError || e instanceof ParseError ? e.message : "Could not score hand";
       return { ok: false as const, message };
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

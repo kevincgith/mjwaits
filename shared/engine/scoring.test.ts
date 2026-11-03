@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parseHand, tileKey } from "./mahjong";
 import {
+  checkTileCopies,
   decomposeHandAll,
   groupDeclaredTiles,
   isDealer,
@@ -122,6 +123,20 @@ describe("groupDeclaredTiles", () => {
     const result = groupDeclaredTiles(scrambled);
     expect(result.leftover).toEqual([]);
     expect(result.melds.map((m) => m.kind).sort()).toEqual(["run", "triplet"]);
+  });
+});
+
+describe("checkTileCopies", () => {
+  // A scanned hand: 555m declared, and the concealed pair read as 55m too.
+  const declared = parseScoringHand("(555m)").declaredMelds;
+
+  it("rejects a 5th copy across declared melds and concealed tiles", () => {
+    expect(() => checkTileCopies(declared, parseHand("55m123456789t11z"))).toThrow(/Too many copies of 5 Man/);
+    expect(() => checkTileCopies([], Array.from({ length: 5 }, () => ({ suit: "z" as const, rank: 1 })))).toThrow(/Too many copies/);
+  });
+
+  it("allows all four copies", () => {
+    expect(() => checkTileCopies(declared, parseHand("5m123456789t11z"))).not.toThrow();
   });
 });
 

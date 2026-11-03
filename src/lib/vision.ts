@@ -203,13 +203,26 @@ function cpuForced(): boolean {
   return typeof location !== "undefined" && new URLSearchParams(location.search).get("backend") === "cpu";
 }
 
+// Set once the GPU engine has failed mid-session - from then on this page
+// only loads the CPU engine.
+let gpuFailed = false;
+
 function getEngine(onProgress?: (p: ScanProgress) => void): Promise<Engine> {
   if (!enginePromise) {
-    enginePromise = (async () => (!cpuForced() && (await createWebGpuEngine())) || createWasmEngine())();
+    const promise = (async () => (!cpuForced() && !gpuFailed && (await createWebGpuEngine())) || createWasmEngine())();
+    enginePromise = promise;
+    // A load that fails (the download cut off by a bad signal, say) isn't
+    // kept, so the next scan tries again instead of failing until a reload.
+    promise.catch(() => {
+      if (enginePromise === promise) enginePromise = null;
+    });
   }
   if (onProgress) {
     progressListeners.add(onProgress);
-    enginePromise.finally(() => progressListeners.delete(onProgress));
+    // .then rather than .finally - .finally would pass a failed load on as
+    // a second, unhandled rejection.
+    const stopListening = () => progressListeners.delete(onProgress);
+    enginePromise.then(stopListening, stopListening);
   }
   return enginePromise;
 }
@@ -222,10 +235,10 @@ export async function detectorBackend(): Promise<"webgpu" | "wasm"> {
 
 // Kicks off the model download/init ahead of time, so it's already done (or
 // further along) by the time the user finishes cropping and detectTiles
-// actually needs it. Safe to call more than once - getSession only starts
-// the fetch on the first call. Errors are swallowed here; if the fetch is
-// genuinely broken, the later detectTiles call awaits the same rejected
-// sessionPromise and reports it through the normal scan error UI then.
+// actually needs it. Safe to call more than once - getEngine only starts
+// the fetch on the first call. Errors are swallowed here; a failed fetch
+// isn't kept, so the later detectTiles call starts it again and reports
+// any error through the normal scan error UI then.
 export function prefetchModel(): void {
   getEngine().catch(() => {});
 }
@@ -356,7 +369,12 @@ async function detectTilesOnce(box: Letterbox, onProgress?: (p: ScanProgress) =>
     if (engine.backend !== "webgpu") throw err;
     // The GPU engine failed mid-session (a lost device, a driver
     // hiccup) - switch this page to the CPU engine for good and retry.
-    enginePromise = createWasmEngine();
+    // Another scan may already have made the switch.
+    if (!gpuFailed) {
+      gpuFailed = true;
+      enginePromise = null;
+      engine.session.release().catch(() => {});
+    }
     engine = await getEngine(onProgress);
     outputs = await engine.session.run({ images: toTensor(engine.ort, box.canvas) });
   }
