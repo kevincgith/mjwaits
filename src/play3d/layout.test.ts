@@ -179,6 +179,20 @@ describe("a side seat's 換牌 row", () => {
           expect(y).toBeLessThanOrEqual(hi + DIMS.tile);
         }
       });
+  for (const taker of ["left", "right"] as const)
+    it(`lies in front of ${taker}'s bonus tiles, not on in line with them`, () => {
+      // (Three from one giver: short enough to go on in line after them.)
+      const v = take(taker, 3);
+      const wall = { ...v.walls[taker], flowers: [{ kind: "flower" as const, rank: 1 as const }] };
+      const shown = { ...v, piles: null, walls: { ...v.walls, [taker]: wall }, flights: [], rows: { [taker]: { groups: v.rows[taker]!.groups.slice(0, 1).map((g) => ({ ...g, shown: g.shown.map(() => true) })) } } };
+      const out = layoutTable(shown, DIMS).felt.pieces;
+      const flowerX = out.find((p) => p.face.startsWith("flower"))!.m[12];
+      const theirs = (p: Piece) => (taker === "left" ? p.m[12] < DIMS.feltW * 0.3 : p.m[12] > DIMS.feltW * 0.7);
+      const rowXs = out.filter((p) => p.face === "back" && theirs(p)).map((p) => p.m[12]);
+      expect(rowXs.length).toBe(3);
+      // Toward the middle of the table by more than a tile.
+      for (const x of rowXs) expect(taker === "left" ? x - flowerX : flowerX - x).toBeGreaterThan(0.9 * DIMS.tile);
+    });
 });
 
 describe("your 換牌 pile", () => {
