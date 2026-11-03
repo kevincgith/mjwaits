@@ -548,10 +548,10 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
       y += dir * (S.flowers.along + 0.15 * T);
     }
     let colX = which === "left" ? sideMid - S.meldsW / 2 : sideMid + S.meldsW / 2;
-    // A 換牌 row: on after what's in front of the wall (the bonus tiles,
-    // the melds' last column) if it ends within the wall's length; else a
-    // column of its own toward the middle, centred along the wall - never
-    // past the wall's end. Alone, it's centred.
+    // A 換牌 row: on down the melds' last column if it ends within the
+    // wall's length; else a column of its own toward the middle, centred
+    // along the wall - never past the wall's end. Bonus tiles alone, it's
+    // always in front of them, never on in line with them. Alone, it's centred.
     const fits = (from: number) => dir * (from + dir * S.rowLen - midSeatY) <= S.span + 0.5;
     const ownColumn = (x: number) => ({ x, y: midSeatY - (dir * S.rowLen) / 2, dir });
     let after = { x: sideMid, y };
@@ -571,7 +571,7 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
       const wallInner = which === "left" ? edgeX0 + S.edgeW : edgeX0;
       const alone = !S.flowers && !S.cols.length;
       const nextX = S.cols.length ? colX + (dir * 1.08 * T) / 2 : sideMid + dir * (S.sideW / 2 + 0.15 * T + 0.54 * T);
-      rowAt[which] = alone ? ownColumn(wallInner + dir * (S.seatGap + 0.54 * T)) : fits(after.y) ? { ...after, dir } : ownColumn(nextX);
+      rowAt[which] = alone ? ownColumn(wallInner + dir * (S.seatGap + 0.54 * T)) : S.cols.length && fits(after.y) ? { ...after, dir } : ownColumn(nextX);
     }
     owned[which].push({ x0: edgeX0, y0: edgeY0, x1: edgeX0 + S.edgeW, y1: edgeY0 + S.edgeH });
     ownSince(which, from);
