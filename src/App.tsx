@@ -81,6 +81,7 @@ import {
   isCheckpointSize,
   isCompleteCheckpointSize,
   isCompleteHand,
+  isUniversalWait,
   meldsForCompleteSize,
   meldsForSize,
   parseHand,
@@ -102,6 +103,7 @@ import {
   MAX_TRAINER_LEVEL,
   MIN_TRAINER_LEVEL,
   dealEndlessHand,
+  discardMiss,
   discardRegret,
   drawFromWall,
   generateDiscardQuestion,
@@ -113,6 +115,15 @@ import {
   type DiscardTrainerQuestion,
   type TrainerQuestion,
 } from "./lib/trainer";
+import {
+  type DiscardTrainerStatsEntry,
+  type EndlessStats,
+  type SavedTrainerStats,
+  type TrainerStatsEntry,
+  EMPTY_ENDLESS_STATS,
+  addEndlessStats,
+  parseTrainerStats,
+} from "./lib/trainerStats";
 import {
   classToBonusTile,
   cropRegion,
@@ -140,6 +151,7 @@ import {
   patternDisplayName,
   ScoringError,
   DEFAULT_TAI_RULES,
+  checkTileCopies,
   scoreParsedHand,
   type BonusTile,
   type GameContext,
@@ -477,12 +489,30 @@ function CorrectionPanel({
 // single capture-phase listener on the document blocks any click that
 // arrives within a short window of a real touch tap, regardless of which
 // element it targets.
+//
+// That window mustn't swallow a NEW tap, though - e.g. Submit tapped right
+// after a tile, on a plain button whose only path is its click. So each
+// touch that goes down is remembered, and its click is let through when it
+// lands where that touch went down and no tap handler has claimed the touch
+// since (a useTap pointerup moves lastTouchTapAt past it). The stray click of
+// an earlier tap still lands at that tap's spot, away from the new touch, so
+// it stays blocked even if it arrives late.
 let lastTouchTapAt = 0;
+let lastTouchDown: { at: number; x: number; y: number } | null = null;
 if (typeof document !== "undefined") {
+  document.addEventListener(
+    "pointerdown",
+    (e) => {
+      if (e.pointerType !== "mouse") lastTouchDown = { at: performance.now(), x: e.clientX, y: e.clientY };
+    },
+    true
+  );
   document.addEventListener(
     "click",
     (e) => {
       if (performance.now() - lastTouchTapAt < 500) {
+        const down = lastTouchDown;
+        if (down && down.at > lastTouchTapAt && Math.hypot(e.clientX - down.x, e.clientY - down.y) <= 24) return;
         e.preventDefault();
         e.stopPropagation();
       }
@@ -577,6 +607,13 @@ function useTapAndLongPress(onTap: () => void, onLongPress: () => void, disabled
     startRef.current = null;
   };
 
+  // A finger sliding off the tile (a scroll) isn't a hold - otherwise the
+  // long-press still fires once the finger has been down long enough.
+  const onPointerMove = (e: ReactPointerEvent) => {
+    const start = startRef.current;
+    if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 10) clearTimer();
+  };
+
   const onClick = () => {
     if (disabled) return;
     if (longPressFired.current) {
@@ -586,7 +623,7 @@ function useTapAndLongPress(onTap: () => void, onLongPress: () => void, disabled
     onTap();
   };
 
-  return { onPointerDown, onPointerUp, onPointerCancel, onClick };
+  return { onPointerDown, onPointerMove, onPointerUp, onPointerCancel, onClick };
 }
 
 function TileButton({
@@ -1398,12 +1435,14 @@ function CropOverlay({
     setRotating(true);
     try {
       const rotated = await rotateImage(displayImage, clockwise);
-      setDisplayImage(rotated);
       // The old regions are invalid regardless (rotating changes the
       // aspect ratio) - re-fit against the now-upright photo, falling back
       // to the fixed defaults same as before if that doesn't find a clean
-      // 2-row split.
-      setRegions((await runAutoFit(rotated)) ?? defaultCropRegions());
+      // 2-row split. The turned photo only goes up with its new boxes, so
+      // the old ones are never shown over it.
+      const fitted = (await runAutoFit(rotated)) ?? defaultCropRegions();
+      setDisplayImage(rotated);
+      setRegions(fitted);
     } finally {
       setRotating(false);
     }
@@ -1590,7 +1629,7 @@ function CropOverlay({
           <button type="button" onClick={onCancel}>
             Cancel
           </button>
-          <button type="button" onClick={() => onConfirm(displayImage, regions)}>
+          <button type="button" onClick={() => onConfirm(displayImage, regions)} disabled={busy}>
             Scan
           </button>
         </div>
@@ -1704,6 +1743,12 @@ const HandScanner = forwardRef<
   // back: on iOS that comes before the photo does, and would drop it.)
   const onAbandonRef = useRef(onAbandon);
   onAbandonRef.current = onAbandon;
+  // The checks as of now, not as of when the scan started - the hand can
+  // change while the model downloads (a meld declared meanwhile).
+  const autoApplyRef = useRef(autoApply);
+  autoApplyRef.current = autoApply;
+  const recheckUnlessRef = useRef(recheckUnless);
+  recheckUnlessRef.current = recheckUnless;
   const pickerOpenRef = useRef(false);
   useEffect(() => {
     const inputs = [fileInputRef.current, libraryFileInputRef.current].filter((el): el is HTMLInputElement => el !== null);
@@ -1725,9 +1770,10 @@ const HandScanner = forwardRef<
   const nextDetectionId = useRef(0);
   const [cropImage, setCropImage] = useState<HTMLImageElement | null>(null);
   // Row-detection's guess at where the 2 crop regions should start (see
-  // handleScanFile) - null falls back to defaultCropRegions() untouched,
-  // either because detection hasn't run yet, found something other than a
-  // clean 2-row split, or failed outright.
+  // handleScanFile), then the regions last scanned (see runScan) - null
+  // falls back to defaultCropRegions() untouched, either because detection
+  // hasn't run yet, found something other than a clean 2-row split, or
+  // failed outright.
   const [autoFitRegions, setAutoFitRegions] = useState<CropRect[] | null>(null);
   // Bumped by resetScan to invalidate whatever runScan call is currently
   // in flight - its await'd detectTiles call has no way to actually abort
@@ -1839,6 +1885,11 @@ const HandScanner = forwardRef<
     e.target.value = ""; // allow re-selecting the same file next time
     if (!file) return;
     const myGeneration = scanGeneration.current;
+    // A new photo hasn't been applied yet, whatever the last one was -
+    // cancelling its crop backs out, rather than landing on the last
+    // photo's "applied" banner.
+    appliedOnceRef.current = false;
+    setAutoFitRegions(null);
     setScanError(null);
     try {
       const image = await loadImageFile(file);
@@ -1907,7 +1958,8 @@ const HandScanner = forwardRef<
     recordTiming("Scan · detect", ms);
     setDebug({ lastScan: { at: Date.now(), ms, regions: firstPass.map(({ box, detections }) => ({ canvas: box.canvas, detections })) } });
     const regions = firstPass.map(({ crop, box, detections }) => toReviewRegion(crop, box, detections));
-    if (!recheckUnless || recheckUnless(regions)) return regions;
+    const addsUp = recheckUnlessRef.current;
+    if (!addsUp || addsUp(regions)) return regions;
 
     const merged: RecheckedDetection[][] = [];
     for (const { rect, detections } of firstPass) merged.push(await recheckRegion(image, rect, detections, onProgress));
@@ -1951,6 +2003,10 @@ const HandScanner = forwardRef<
 
   const runScan = async (image: HTMLImageElement, rects: CropRect[]) => {
     const myGeneration = scanGeneration.current;
+    // "Select region"/"Adjust" reopen the crop screen as it was left - the
+    // photo turned the way the user turned it, the boxes where they put them.
+    setCropImage(image);
+    setAutoFitRegions(rects);
     setScanStatus("loading");
     setScanError(null);
     setScanProgress({ phase: "downloading-model", loaded: 0, total: null });
@@ -1965,7 +2021,7 @@ const HandScanner = forwardRef<
       // this hand" review step. Anything else (not winning, or no
       // autoApply at all - the Calculator) goes to review as before.
       const plain = regions.map((r) => ({ detections: r.detections }));
-      if (autoApply?.(plain)) {
+      if (autoApplyRef.current?.(plain)) {
         onConfirm(plain);
         appliedOnceRef.current = true;
         setScanStatus("auto-applied");
@@ -2003,7 +2059,7 @@ const HandScanner = forwardRef<
       });
       if (scanGeneration.current !== myGeneration) return;
       const plain = regions.map((r) => ({ detections: r.detections }));
-      if (autoApply!(plain)) {
+      if (autoApplyRef.current?.(plain)) {
         onConfirm(plain);
         appliedOnceRef.current = true;
         setScanStatus("auto-applied");
@@ -2423,7 +2479,7 @@ function Calculator({
     discardChoices?.alreadyComplete
       ? "winning hand"
       : outcome !== null && !outcome.overflowed && outcome.results.length > 0
-        ? outcome.results.length === allTileKinds().length
+        ? isUniversalWait(outcome.results.length, hand)
           ? "any tile wins"
           : `${outcome.results.length} wait${outcome.results.length === 1 ? "" : "s"}`
         : shantenValue !== null && (discardEfficiency !== null || discardChoices !== null)
@@ -2673,7 +2729,7 @@ function Calculator({
             {breakdownToggles}
           </div>
           <div className={`card${breakdownMode !== "off" ? " breakdown-list" : " wait-tiles"}`}>
-            {outcome.results.length === allTileKinds().length && (
+            {isUniversalWait(outcome.results.length, hand) && (
               <span className="waits-label universal-wait">Universal wait — any tile completes this hand.</span>
             )}
             {breakdownMode !== "off"
@@ -2840,78 +2896,15 @@ function Calculator({
 // neither a wait nor something the user picked - nothing to call out.
 type TrainerTileStatus = "hit" | "false-positive" | "missed" | null;
 
-// Accumulated results for one (level, flush) combination - stats are kept
-// separate per combination since difficulty varies a lot between them, and
-// lumping e.g. Level 1 and Level 5 together would wash out both.
-interface TrainerStatsEntry {
-  level: number;
-  flush: boolean;
-  total: number;
-  correct: number;
-  timeTotalMs: number;
-}
-
-// Same shape as TrainerStatsEntry plus regretTotal: the discard trainer grades
-// on how much win probability an answer gave up versus the best discard, not
-// just right/wrong, so it also tracks the running sum of that regret.
-interface DiscardTrainerStatsEntry {
-  level: number;
-  flush: boolean;
-  total: number;
-  correct: number;
-  timeTotalMs: number;
-  regretTotal: number;
-}
-
-// Endless mode is one running session, not per-level buckets: cumulative counts
-// across every hand played this session.
-interface EndlessStats {
-  hands: number;
-  handsWon: number;
-  turns: number; // discards made
-  optimalCount: number; // discards that were a best pick
-  looseCount: number; // discards that needlessly raised shanten
-  regretTotal: number; // summed win-probability given up
-  turnsToTenpaiTotal: number; // summed over hands that reached tenpai
-  tenpaiReachedCount: number;
-  turnsToWinTotal: number; // summed over won hands
-}
-
-const EMPTY_ENDLESS_STATS: EndlessStats = {
-  hands: 0,
-  handsWon: 0,
-  turns: 0,
-  optimalCount: 0,
-  looseCount: 0,
-  regretTotal: 0,
-  turnsToTenpaiTotal: 0,
-  tenpaiReachedCount: 0,
-  turnsToWinTotal: 0,
-};
-
 // Trainer stats survive a reload: all three stores saved together under one
 // key, the per-level ones as their entries (keyed by trainerStatsKey).
 const TRAINER_STATS_KEY = "mjwaits.trainerStats";
 
-interface SavedTrainerStats {
-  waits: TrainerStatsEntry[];
-  discards: DiscardTrainerStatsEntry[];
-  endless: EndlessStats;
-}
-
 function loadTrainerStats(): SavedTrainerStats {
-  const empty: SavedTrainerStats = { waits: [], discards: [], endless: EMPTY_ENDLESS_STATS };
   try {
-    const raw = window.localStorage.getItem(TRAINER_STATS_KEY);
-    if (!raw) return empty;
-    const saved = JSON.parse(raw) as Partial<SavedTrainerStats>;
-    return {
-      waits: Array.isArray(saved.waits) ? saved.waits : [],
-      discards: Array.isArray(saved.discards) ? saved.discards : [],
-      endless: { ...EMPTY_ENDLESS_STATS, ...saved.endless },
-    };
+    return parseTrainerStats(window.localStorage.getItem(TRAINER_STATS_KEY));
   } catch {
-    return empty;
+    return parseTrainerStats(null);
   }
 }
 
@@ -2928,23 +2921,6 @@ function saveTrainerStats(stats: SavedTrainerStats): void {
 const statsMap = <T extends { level: number; flush: boolean }>(entries: T[]): Map<string, T> =>
   new Map(entries.map((e) => [trainerStatsKey(e.level, e.flush), e]));
 
-// Adds (sign +1) or subtracts (sign -1) one EndlessStats from another - used to
-// apply a turn's deltas and to roll them back on undo/redo. regretTotal is
-// clamped so float residue can't drive it negative.
-function addEndlessStats(a: EndlessStats, b: EndlessStats, sign: 1 | -1 = 1): EndlessStats {
-  return {
-    hands: a.hands + sign * b.hands,
-    handsWon: a.handsWon + sign * b.handsWon,
-    turns: a.turns + sign * b.turns,
-    optimalCount: a.optimalCount + sign * b.optimalCount,
-    looseCount: a.looseCount + sign * b.looseCount,
-    regretTotal: Math.max(0, a.regretTotal + sign * b.regretTotal),
-    turnsToTenpaiTotal: a.turnsToTenpaiTotal + sign * b.turnsToTenpaiTotal,
-    tenpaiReachedCount: a.tenpaiReachedCount + sign * b.tenpaiReachedCount,
-    turnsToWinTotal: a.turnsToWinTotal + sign * b.turnsToWinTotal,
-  };
-}
-
 // The graded analysis of the hand as it stood right before the most recent
 // Endless discard, shown to the user each turn.
 interface EndlessTrainerLastMove {
@@ -2955,6 +2931,16 @@ interface EndlessTrainerLastMove {
   optimal: boolean;
   shantenLost: number; // resulting shanten of the pick minus the best achievable
   drawn: Tile | null;
+}
+
+// The verdict for a pick that wasn't a best discard. "Loose" is only for one
+// that raised shanten; at 2+ shanten a same-shanten pick can still miss by
+// leaving fewer tiles working toward tenpai.
+function endlessMissText(move: EndlessTrainerLastMove): string {
+  const miss = discardMiss(move.outcome, move.pickedKey);
+  if (miss?.kind === "loose") return `✗ loose — raises shanten${miss.shantenLost > 1 ? ` by ${miss.shantenLost}` : ""}`;
+  if (miss?.kind === "fewer-draws") return `✗ fewer useful draws — ${miss.picked} vs ${miss.best}`;
+  return `✗ gave up ${formatRegret(move.regret)} win prob`;
 }
 
 // The whole mutable state of one Endless hand in play - kept as a single object
@@ -3922,7 +3908,12 @@ function EndlessTrainer({
             <ConfirmButton
               label="Reset"
               className="endless-reset-stats"
-              onConfirm={() => setStats(() => EMPTY_ENDLESS_STATS)}
+              onConfirm={() => {
+                // The undo/redo history holds deltas against the old totals -
+                // undoing one after a reset would push the counts below zero.
+                clearHistory();
+                setStats(() => EMPTY_ENDLESS_STATS);
+              }}
               title="Clear these stats"
             />
           )}
@@ -3982,12 +3973,8 @@ function EndlessTrainer({
                 <span className="endless-verdict-good">
                   {lastMove.bestKeys.size >= lastMove.outcome.choices.length ? "any discard is fine" : "best ✓"}
                 </span>
-              ) : lastMove.regret > 0 ? (
-                <span className="endless-verdict-bad">✗ gave up {formatRegret(lastMove.regret)} win prob</span>
               ) : (
-                <span className="endless-verdict-bad">
-                  ✗ loose — raises shanten{lastMove.shantenLost > 1 ? ` by ${lastMove.shantenLost}` : ""}
-                </span>
+                <span className="endless-verdict-bad">{endlessMissText(lastMove)}</span>
               )}
             </div>
             {!lastMove.optimal && lastMove.bestKeys.size < lastMove.outcome.choices.length && (
@@ -6357,6 +6344,11 @@ function ScoringPanel({
     setConcealedTiles(nextConcealed);
     setBonusTiles(bonus);
     resetConditions();
+    // 花摸/槓摸 can't count more bonus tiles/kongs than the hand has - a link
+    // or Recent hand may say otherwise, and the clamps above only run when
+    // those counts change, so a stale count would otherwise stick.
+    const kongs = nextDeclared.filter((m) => m.kind === "kong").length;
+    const fitted = { ...t.ctx, flowerDraw: Math.min(t.ctx.flowerDraw ?? 0, bonus.length), kongDraw: Math.min(t.ctx.kongDraw ?? 0, kongs) };
     // A shared link or a Recent hand goes by the 情況 buttons' links: one
     // from before a rule changed can hold a pair they'd no longer allow, and
     // 自摸 is saved as shown - held on by 海底撈月/人胡…, not set by hand.
@@ -6364,12 +6356,12 @@ function ScoringPanel({
     const c = t.group
       ? t.ctx
       : (() => {
-          const first = !!t.ctx.heavenlyWin && t.ctx.heavenlyWin !== "none";
-          const early = !!t.ctx.earlyWin && t.ctx.earlyWin !== "none";
+          const first = !!fitted.heavenlyWin && fitted.heavenlyWin !== "none";
+          const early = !!fitted.earlyWin && fitted.earlyWin !== "none";
           const held =
-            !!t.ctx.flowerDraw || !!t.ctx.kongDraw || isSelfDrawLastTileWin(t.ctx.lastTileWin ?? "none") || isSelfDrawHeavenlyWin(t.ctx.heavenlyWin ?? "none");
+            !!fitted.flowerDraw || !!fitted.kongDraw || isSelfDrawLastTileWin(fitted.lastTileWin ?? "none") || isSelfDrawHeavenlyWin(fitted.heavenlyWin ?? "none");
           return {
-            ...t.ctx,
+            ...fitted,
             ...(first ? { earlyWin: undefined } : {}),
             ...(first || early ? { lastTileWin: undefined } : {}),
             ...(held ? { selfDraw: undefined } : {}),
@@ -6592,7 +6584,11 @@ function ScoringPanel({
   // declared-region grouping with leftover tiles is also treated as "no" -
   // the same bar declaredRegionIssue already blocks review's own confirm
   // button on, so the streamlined path never applies something the manual
-  // one would have flagged as broken.
+  // one would have flagged as broken. So is a 5th copy of any tile (a
+  // misread, or a concealed pair of a tile already declared as a triplet):
+  // scoring alone doesn't catch that. The hand on screen is read from the
+  // refs, not this render's state - a meld declared while the model was
+  // still downloading counts too.
   const isScannedHandWinning = (regions: { detections: ReviewDetection[] }[]): boolean => {
     const [concealedRegion, declaredRegion] = regions;
     if (!concealedRegion) return false;
@@ -6606,10 +6602,11 @@ function ScoringPanel({
       nextDeclaredMelds = melds;
       nextBonusTiles = scannedBonusTiles(concealedRegion.detections, declaredBonus)!;
     } else {
-      nextDeclaredMelds = declaredMelds.map(({ kind, concealed, tiles }) => ({ kind, concealed, tiles }));
-      nextBonusTiles = scannedBonusTiles(concealedRegion.detections, null) ?? bonusTiles;
+      nextDeclaredMelds = declaredRef.current.map(({ kind, concealed, tiles }) => ({ kind, concealed, tiles }));
+      nextBonusTiles = scannedBonusTiles(concealedRegion.detections, null) ?? bonusRef.current;
     }
     try {
+      checkTileCopies(nextDeclaredMelds, freeTiles);
       scoreParsedHand({ declaredMelds: nextDeclaredMelds, freeTiles, bonusTiles: nextBonusTiles }, ctx);
       return true;
     } catch {
@@ -6625,9 +6622,12 @@ function ScoringPanel({
       bonusTiles,
     };
     try {
+      // A 5th copy can only come from a scan confirmed as it was read -
+      // the tile picker stops at 4 - but it's never a real hand.
+      checkTileCopies(parsed.declaredMelds, parsed.freeTiles);
       return { ok: true as const, result: timed("Scoring · score", () => scoreParsedHand(parsed, ctx)) };
     } catch (e) {
-      const message = e instanceof ScoringError ? e.message : "Could not score hand";
+      const message = e instanceof ScoringError || e instanceof ParseError ? e.message : "Could not score hand";
       return { ok: false as const, message };
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -7845,7 +7845,7 @@ function ScoringPanel({
               <span className="waits-label">Not tenpai — no tile completes this hand.</span>
             ) : (
               <>
-                {displayedProjectedWaits.length === allTileKinds().length && (
+                {isUniversalWait(displayedProjectedWaits.length, concealedTiles) && (
                   <span className="waits-label universal-wait">Universal wait — any tile completes this hand.</span>
                 )}
                 {displayedProjectedWaits.map((pw) => (
@@ -9409,7 +9409,11 @@ function DiceTab({
             onResetNames={onResetSeatNames}
             fullNames={gameNames !== undefined}
             onUse={gameNames ? onUseSeating : undefined}
-            initialEast={gameNames ? gameEast : null}
+            // gameEast is the last winner's place on the Scores board, which
+            // is also their player index (gameOrder starts in board order).
+            // Swaps outlive Reset and switching sub-tabs, so pass where that
+            // person sits now - Reset puts 東 back on them, not on the seat.
+            initialEast={gameNames && gameEast !== null ? gameOrder.indexOf(gameEast) : null}
           />
         )}
       </div>
