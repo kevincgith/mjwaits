@@ -453,6 +453,18 @@ export class Engine {
     return i === null ? null : this.hand.hits[i]!;
   }
 
+  // Where your row's tile `index` is seen: the x of its middle, in the
+  // table's own pixels (null: not drawn).
+  handTileX(index: number, width: number): number | null {
+    const n = this.hand.hits.indexOf(index);
+    if (n < 0) return null;
+    this.hand.scene.updateMatrixWorld();
+    const m = new THREE.Matrix4();
+    this.hand.tiles.getMatrixAt(n, m);
+    const p = new THREE.Vector3().setFromMatrixPosition(m.premultiply(this.hand.tiles.matrixWorld)).applyMatrix4(this.hand.camera.projectionMatrix);
+    return ((p.x + 1) / 2) * width;
+  }
+
   // A pile's tile under a point, on your take (換牌).
   pickPile(x: number, y: number, width: number, height: number): [string, number] | null {
     const i = this.pickIn(this.felt, x, y, width, height, (n) => this.felt.picks[n] !== undefined);

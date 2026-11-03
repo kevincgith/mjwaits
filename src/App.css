@@ -7159,6 +7159,77 @@ html.playing body {
   text-decoration: line-through;
 }
 
+/* Its 番 off a discard. */
+.play-wait-fan {
+  margin-left: 0.15rem;
+  color: var(--play-gold);
+}
+
+/* 聽 Waits, for a tile lifted to throw: a card over that tile (placed by
+   WaitsCard; above the call buttons if it would meet them), one row per
+   wait - in two columns when there are many. */
+.play-waits-card {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 0.35rem);
+  z-index: 4;
+  display: grid;
+  grid-template-columns: repeat(3, auto);
+  align-items: center;
+  gap: 0.2rem 0.7rem;
+  padding: 0.4rem 0.7rem;
+  border: 1px solid var(--play-gold);
+  border-radius: 10px;
+  background: rgba(12, 40, 26, 0.92);
+  color: var(--play-on-felt);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.play-waits-card.is-wide {
+  grid-template-columns: repeat(6, auto);
+}
+
+.play-waits-head {
+  grid-column: 1 / -1;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--play-gold);
+  font-weight: 700;
+}
+
+.play-waits-row {
+  display: contents;
+}
+
+.play-waits-head .tile-glyph {
+  font-size: 1.4rem;
+}
+
+.play-waits-row .tile-glyph {
+  font-size: 1.9rem;
+}
+
+.play-waits-fan {
+  justify-self: start;
+  padding: 0 0.45em;
+  border-radius: 999px;
+  background: var(--play-gold);
+  color: #3b2c05;
+  font-weight: 700;
+}
+
+.play-waits-row.is-dead > * {
+  opacity: 0.45;
+}
+
+.play-waits-row.is-dead > .play-waits-left {
+  text-decoration: line-through;
+}
+
 /* ---- A bot's speech bubble, by its name card ---- */
 
 .play-badge {

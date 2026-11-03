@@ -19,6 +19,7 @@ import {
   riichiForcedDiscard,
   settleWin,
   scoreWin,
+  waitsAfterDiscard,
   lahAddOn,
   surrender,
   surrenderable,
@@ -315,6 +316,41 @@ describe("game", () => {
     // In someone's hand, unseen: it might still come, as far as you can tell.
     const hidden = table((p, i) => (i === 1 ? { hand: [...p.hand.slice(3), z7, z7, z7] } : {}));
     expect(riichiDiscards(hidden, 0)).toEqual(expect.arrayContaining([z7, { suit: "z", rank: 1 }]));
+  });
+
+  it("聽 waits after a discard: each tile, how many are left, and the hand's own 番 on it", () => {
+    const s0 = newGame();
+    const z1 = { suit: "z" as const, rank: 1 };
+    const z7 = { suit: "z" as const, rank: 7 };
+    const turn = (others: (p: GameState["players"][number], i: number) => Partial<GameState["players"][number]> = () => ({}), dealer = 0): GameState => ({
+      ...s0,
+      dealer,
+      players: s0.players.map((p, i) => (i === 0 ? { ...p, hand: parseHand("111b888t345m888b678t7z1z"), melds: [] } : { ...p, discards: [], melds: [], ...others(p, i) })),
+      phase: { kind: "turn" as const, seat: 0, drawn: null, replacement: null },
+    });
+    const wonOn = (s: GameState, tile: Tile) => {
+      const after = applyTurnMove(s, { kind: "discard", tile: z1 });
+      return { ...after, players: after.players.map((p, i) => (i === 0 ? { ...p, hand: [...p.hand, tile] } : p)) };
+    };
+    const s = turn();
+    // Throwing 1z leaves a wait on 7z: three copies unseen (one's in hand).
+    const [w, ...more] = waitsAfterDiscard(s, 0, z1);
+    expect(more).toEqual([]);
+    expect(w.tile).toEqual(z7);
+    expect(w.left).toBe(3);
+    // Without what depends on who throws it and when - here 莊 (you're the
+    // dealer) and 四子內 (next to nothing thrown yet).
+    expect(w.fan).toBeLessThan(scoreWin(wonOn(s, z7), 0, 1, z7, null).total);
+    // Where none of that comes in, worth what the win itself would score.
+    const plain = turn((_, i) => ({ discards: parseHand(["2m5m9m3t", "2t5t9t3b", "2b5b9b3m"][i - 1]), played: true }), 2);
+    expect(waitsAfterDiscard(plain, 0, z1)[0].fan).toBe(scoreWin(wonOn(plain, z7), 0, 1, z7, null).total);
+    // A throw that doesn't leave it ready: nothing.
+    expect(waitsAfterDiscard(s, 0, { suit: "b", rank: 1 })).toEqual([]);
+    // The other copies in sight: none left. Someone else's hand isn't looked at.
+    expect(waitsAfterDiscard(turn(() => ({ discards: [z7] })), 0, z1)[0].left).toBe(0);
+    expect(waitsAfterDiscard(turn((p, i) => (i === 1 ? { hand: [...p.hand.slice(2), z7, z7] } : {})), 0, z1)).toEqual([w]);
+    // Not its turn: nothing.
+    expect(waitsAfterDiscard({ ...s, phase: { kind: "turn", seat: 1, drawn: null, replacement: null } }, 0, z1)).toEqual([]);
   });
 
   it("no 叮 when 自摸 is there to take - it would pass the win up for good - shown greyed", () => {
