@@ -81,6 +81,7 @@ import {
   isCheckpointSize,
   isCompleteCheckpointSize,
   isCompleteHand,
+  isUniversalWait,
   meldsForCompleteSize,
   meldsForSize,
   parseHand,
@@ -102,6 +103,7 @@ import {
   MAX_TRAINER_LEVEL,
   MIN_TRAINER_LEVEL,
   dealEndlessHand,
+  discardMiss,
   discardRegret,
   drawFromWall,
   generateDiscardQuestion,
@@ -113,6 +115,15 @@ import {
   type DiscardTrainerQuestion,
   type TrainerQuestion,
 } from "./lib/trainer";
+import {
+  type DiscardTrainerStatsEntry,
+  type EndlessStats,
+  type SavedTrainerStats,
+  type TrainerStatsEntry,
+  EMPTY_ENDLESS_STATS,
+  addEndlessStats,
+  parseTrainerStats,
+} from "./lib/trainerStats";
 import {
   classToBonusTile,
   cropRegion,
@@ -478,12 +489,30 @@ function CorrectionPanel({
 // single capture-phase listener on the document blocks any click that
 // arrives within a short window of a real touch tap, regardless of which
 // element it targets.
+//
+// That window mustn't swallow a NEW tap, though - e.g. Submit tapped right
+// after a tile, on a plain button whose only path is its click. So each
+// touch that goes down is remembered, and its click is let through when it
+// lands where that touch went down and no tap handler has claimed the touch
+// since (a useTap pointerup moves lastTouchTapAt past it). The stray click of
+// an earlier tap still lands at that tap's spot, away from the new touch, so
+// it stays blocked even if it arrives late.
 let lastTouchTapAt = 0;
+let lastTouchDown: { at: number; x: number; y: number } | null = null;
 if (typeof document !== "undefined") {
+  document.addEventListener(
+    "pointerdown",
+    (e) => {
+      if (e.pointerType !== "mouse") lastTouchDown = { at: performance.now(), x: e.clientX, y: e.clientY };
+    },
+    true
+  );
   document.addEventListener(
     "click",
     (e) => {
       if (performance.now() - lastTouchTapAt < 500) {
+        const down = lastTouchDown;
+        if (down && down.at > lastTouchTapAt && Math.hypot(e.clientX - down.x, e.clientY - down.y) <= 24) return;
         e.preventDefault();
         e.stopPropagation();
       }
@@ -2450,7 +2479,7 @@ function Calculator({
     discardChoices?.alreadyComplete
       ? "winning hand"
       : outcome !== null && !outcome.overflowed && outcome.results.length > 0
-        ? outcome.results.length === allTileKinds().length
+        ? isUniversalWait(outcome.results.length, hand)
           ? "any tile wins"
           : `${outcome.results.length} wait${outcome.results.length === 1 ? "" : "s"}`
         : shantenValue !== null && (discardEfficiency !== null || discardChoices !== null)
@@ -2700,7 +2729,7 @@ function Calculator({
             {breakdownToggles}
           </div>
           <div className={`card${breakdownMode !== "off" ? " breakdown-list" : " wait-tiles"}`}>
-            {outcome.results.length === allTileKinds().length && (
+            {isUniversalWait(outcome.results.length, hand) && (
               <span className="waits-label universal-wait">Universal wait — any tile completes this hand.</span>
             )}
             {breakdownMode !== "off"
@@ -2867,78 +2896,15 @@ function Calculator({
 // neither a wait nor something the user picked - nothing to call out.
 type TrainerTileStatus = "hit" | "false-positive" | "missed" | null;
 
-// Accumulated results for one (level, flush) combination - stats are kept
-// separate per combination since difficulty varies a lot between them, and
-// lumping e.g. Level 1 and Level 5 together would wash out both.
-interface TrainerStatsEntry {
-  level: number;
-  flush: boolean;
-  total: number;
-  correct: number;
-  timeTotalMs: number;
-}
-
-// Same shape as TrainerStatsEntry plus regretTotal: the discard trainer grades
-// on how much win probability an answer gave up versus the best discard, not
-// just right/wrong, so it also tracks the running sum of that regret.
-interface DiscardTrainerStatsEntry {
-  level: number;
-  flush: boolean;
-  total: number;
-  correct: number;
-  timeTotalMs: number;
-  regretTotal: number;
-}
-
-// Endless mode is one running session, not per-level buckets: cumulative counts
-// across every hand played this session.
-interface EndlessStats {
-  hands: number;
-  handsWon: number;
-  turns: number; // discards made
-  optimalCount: number; // discards that were a best pick
-  looseCount: number; // discards that needlessly raised shanten
-  regretTotal: number; // summed win-probability given up
-  turnsToTenpaiTotal: number; // summed over hands that reached tenpai
-  tenpaiReachedCount: number;
-  turnsToWinTotal: number; // summed over won hands
-}
-
-const EMPTY_ENDLESS_STATS: EndlessStats = {
-  hands: 0,
-  handsWon: 0,
-  turns: 0,
-  optimalCount: 0,
-  looseCount: 0,
-  regretTotal: 0,
-  turnsToTenpaiTotal: 0,
-  tenpaiReachedCount: 0,
-  turnsToWinTotal: 0,
-};
-
 // Trainer stats survive a reload: all three stores saved together under one
 // key, the per-level ones as their entries (keyed by trainerStatsKey).
 const TRAINER_STATS_KEY = "mjwaits.trainerStats";
 
-interface SavedTrainerStats {
-  waits: TrainerStatsEntry[];
-  discards: DiscardTrainerStatsEntry[];
-  endless: EndlessStats;
-}
-
 function loadTrainerStats(): SavedTrainerStats {
-  const empty: SavedTrainerStats = { waits: [], discards: [], endless: EMPTY_ENDLESS_STATS };
   try {
-    const raw = window.localStorage.getItem(TRAINER_STATS_KEY);
-    if (!raw) return empty;
-    const saved = JSON.parse(raw) as Partial<SavedTrainerStats>;
-    return {
-      waits: Array.isArray(saved.waits) ? saved.waits : [],
-      discards: Array.isArray(saved.discards) ? saved.discards : [],
-      endless: { ...EMPTY_ENDLESS_STATS, ...saved.endless },
-    };
+    return parseTrainerStats(window.localStorage.getItem(TRAINER_STATS_KEY));
   } catch {
-    return empty;
+    return parseTrainerStats(null);
   }
 }
 
@@ -2955,23 +2921,6 @@ function saveTrainerStats(stats: SavedTrainerStats): void {
 const statsMap = <T extends { level: number; flush: boolean }>(entries: T[]): Map<string, T> =>
   new Map(entries.map((e) => [trainerStatsKey(e.level, e.flush), e]));
 
-// Adds (sign +1) or subtracts (sign -1) one EndlessStats from another - used to
-// apply a turn's deltas and to roll them back on undo/redo. regretTotal is
-// clamped so float residue can't drive it negative.
-function addEndlessStats(a: EndlessStats, b: EndlessStats, sign: 1 | -1 = 1): EndlessStats {
-  return {
-    hands: a.hands + sign * b.hands,
-    handsWon: a.handsWon + sign * b.handsWon,
-    turns: a.turns + sign * b.turns,
-    optimalCount: a.optimalCount + sign * b.optimalCount,
-    looseCount: a.looseCount + sign * b.looseCount,
-    regretTotal: Math.max(0, a.regretTotal + sign * b.regretTotal),
-    turnsToTenpaiTotal: a.turnsToTenpaiTotal + sign * b.turnsToTenpaiTotal,
-    tenpaiReachedCount: a.tenpaiReachedCount + sign * b.tenpaiReachedCount,
-    turnsToWinTotal: a.turnsToWinTotal + sign * b.turnsToWinTotal,
-  };
-}
-
 // The graded analysis of the hand as it stood right before the most recent
 // Endless discard, shown to the user each turn.
 interface EndlessTrainerLastMove {
@@ -2982,6 +2931,16 @@ interface EndlessTrainerLastMove {
   optimal: boolean;
   shantenLost: number; // resulting shanten of the pick minus the best achievable
   drawn: Tile | null;
+}
+
+// The verdict for a pick that wasn't a best discard. "Loose" is only for one
+// that raised shanten; at 2+ shanten a same-shanten pick can still miss by
+// leaving fewer tiles working toward tenpai.
+function endlessMissText(move: EndlessTrainerLastMove): string {
+  const miss = discardMiss(move.outcome, move.pickedKey);
+  if (miss?.kind === "loose") return `✗ loose — raises shanten${miss.shantenLost > 1 ? ` by ${miss.shantenLost}` : ""}`;
+  if (miss?.kind === "fewer-draws") return `✗ fewer useful draws — ${miss.picked} vs ${miss.best}`;
+  return `✗ gave up ${formatRegret(move.regret)} win prob`;
 }
 
 // The whole mutable state of one Endless hand in play - kept as a single object
@@ -3949,7 +3908,12 @@ function EndlessTrainer({
             <ConfirmButton
               label="Reset"
               className="endless-reset-stats"
-              onConfirm={() => setStats(() => EMPTY_ENDLESS_STATS)}
+              onConfirm={() => {
+                // The undo/redo history holds deltas against the old totals -
+                // undoing one after a reset would push the counts below zero.
+                clearHistory();
+                setStats(() => EMPTY_ENDLESS_STATS);
+              }}
               title="Clear these stats"
             />
           )}
@@ -4009,12 +3973,8 @@ function EndlessTrainer({
                 <span className="endless-verdict-good">
                   {lastMove.bestKeys.size >= lastMove.outcome.choices.length ? "any discard is fine" : "best ✓"}
                 </span>
-              ) : lastMove.regret > 0 ? (
-                <span className="endless-verdict-bad">✗ gave up {formatRegret(lastMove.regret)} win prob</span>
               ) : (
-                <span className="endless-verdict-bad">
-                  ✗ loose — raises shanten{lastMove.shantenLost > 1 ? ` by ${lastMove.shantenLost}` : ""}
-                </span>
+                <span className="endless-verdict-bad">{endlessMissText(lastMove)}</span>
               )}
             </div>
             {!lastMove.optimal && lastMove.bestKeys.size < lastMove.outcome.choices.length && (
@@ -7885,7 +7845,7 @@ function ScoringPanel({
               <span className="waits-label">Not tenpai — no tile completes this hand.</span>
             ) : (
               <>
-                {displayedProjectedWaits.length === allTileKinds().length && (
+                {isUniversalWait(displayedProjectedWaits.length, concealedTiles) && (
                   <span className="waits-label universal-wait">Universal wait — any tile completes this hand.</span>
                 )}
                 {displayedProjectedWaits.map((pw) => (
@@ -9449,7 +9409,11 @@ function DiceTab({
             onResetNames={onResetSeatNames}
             fullNames={gameNames !== undefined}
             onUse={gameNames ? onUseSeating : undefined}
-            initialEast={gameNames ? gameEast : null}
+            // gameEast is the last winner's place on the Scores board, which
+            // is also their player index (gameOrder starts in board order).
+            // Swaps outlive Reset and switching sub-tabs, so pass where that
+            // person sits now - Reset puts 東 back on them, not on the seat.
+            initialEast={gameNames && gameEast !== null ? gameOrder.indexOf(gameEast) : null}
           />
         )}
       </div>

@@ -1357,6 +1357,15 @@ export type JokerWaitsOutcome =
   | { overflowed: false; results: JokerWaitResult[] }
   | { overflowed: true; estimatedCombinations: number };
 
+// Is `waitCount` waits every kind `held` could still be waiting on - "any tile
+// completes this hand"? A kind the hand already holds all 4 of can never be a
+// wait (there's no 5th copy), so it's every other kind, not always all 34.
+// Jokers in `held` aren't copies of any kind.
+export function isUniversalWait(waitCount: number, held: Tile[]): boolean {
+  if (waitCount === 0) return false;
+  return waitCount >= allTileKinds().filter((k) => tileCount(held, k) < 4).length;
+}
+
 // Joker-aware version of getWaits. Behaves exactly like getWaits when there
 // are no jokers; otherwise combines the fast wildcard-decomposition search
 // (standard N-melds + pair shape, any joker count) with a small bounded
@@ -1700,7 +1709,7 @@ function getWaitsCached(tiles: Tile[], meldsRequired: number): Tile[] {
 // resultingShanten===1 branch of analyzeDiscardChoices calls this across every
 // improving draw.
 const bestWaitTotalMemo = new Map<string, number>();
-function bestWaitTotalAfterDiscard(
+export function bestWaitTotalAfterDiscard(
   hand: Tile[],
   pileDiscard: Tile,
   meldsRequired: number,
@@ -1714,9 +1723,11 @@ function bestWaitTotalAfterDiscard(
   for (const follow of uniqueTileKinds(hand)) {
     const idx = hand.findIndex((t) => t.suit === follow.suit && t.rank === follow.rank);
     const rest = [...hand.slice(0, idx), ...hand.slice(idx + 1)];
-    const waits = getWaitsCached(rest, meldsRequired).filter((w) => remainingCopies(rest, pileDiscard, w, seen) > 0);
+    // Live copies are counted against `hand`, not `rest`: the follow-up
+    // discard is gone too, so a wait of the same kind has one fewer to draw.
+    const waits = getWaitsCached(rest, meldsRequired).filter((w) => remainingCopies(hand, pileDiscard, w, seen) > 0);
     if (waits.length === 0) continue;
-    const total = waits.reduce((sum, w) => sum + remainingCopies(rest, pileDiscard, w, seen), 0);
+    const total = waits.reduce((sum, w) => sum + remainingCopies(hand, pileDiscard, w, seen), 0);
     if (total > best) best = total;
   }
 
