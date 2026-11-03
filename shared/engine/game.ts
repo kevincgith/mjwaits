@@ -700,11 +700,12 @@ export const selfDrawBarred = (p: Player) => !canWin(p) && isWinningHand(p);
 
 // ---- 叮 ----------------------------------------------------------------------
 
-// Whether some tile would complete this hand that it doesn't already hold
-// all four of - a hand whose only waits it holds itself can never win.
-function hasLiveWait(p: Player): boolean {
-  const held = [...p.hand, ...p.melds.flatMap((m) => m.tiles)];
-  return allTileKinds().some((k) => tileCount(held, k) < 4 && isWinningHand(p, k));
+// Whether some tile would complete this hand that can still come - one
+// with a copy `unseen` by its player (see unseenCounts: not in their hand
+// or melds, nor thrown, nor in anyone's open melds). A hand whose only
+// waits are all in sight is a dead wait: it can never win.
+function hasLiveWait(p: Player, unseen: Map<string, number>): boolean {
+  return allTileKinds().some((k) => (unseen.get(tileKey(k)) ?? 0) > 0 && isWinningHand(p, k));
 }
 
 // The discards that would leave `seat` ready, i.e. the tiles it may declare
@@ -726,13 +727,15 @@ function riichiShapes(s: GameState, seat: number): Tile[] {
   const p = s.players[seat];
   if (p.riichi) return [];
   const forbidden = forbiddenDiscards(s);
+  // (Counted with the tile to throw still in hand - it's in sight in the
+  // pond once thrown, all the same.)
+  const unseen = unseenCounts(s, seat);
   const out: Tile[] = [];
   for (const t of p.hand) {
     if (out.some((o) => sameTile(o, t)) || forbidden.some((f) => sameTile(f, t))) continue;
-    // Ready, and on a wait that can still come: some tile completes it
-    // that it doesn't already hold all four of (in hand or melds).
+    // Ready, and on a wait that can still come (see hasLiveWait).
     const rest = removeTiles(p.hand, [t]);
-    if (shanten(rest, meldsNeeded(p)) === 0 && hasLiveWait({ ...p, hand: rest })) out.push(t);
+    if (shanten(rest, meldsNeeded(p)) === 0 && hasLiveWait({ ...p, hand: rest }, unseen)) out.push(t);
   }
   return out;
 }
