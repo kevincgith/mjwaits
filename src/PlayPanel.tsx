@@ -305,13 +305,19 @@ function saveLineCounts(counts: Record<string, number>): void {
   }
 }
 
-function save(saved: Saved): void {
+// false: not saved (storage full or blocked) - the game wouldn't survive a
+// reload, so the table says so.
+function save(saved: Saved): boolean {
   try {
     window.localStorage.setItem(SAVE_KEY, JSON.stringify(saved));
+    return true;
   } catch {
-    // Storage unavailable - the game just won't survive a reload.
+    return false;
   }
 }
+// The game's saved this long after it last changed (not at every step - the
+// whole game and its record each time), and at once when the page goes.
+const SAVE_DELAY_MS = 500;
 
 // 換牌: a tile lies sideways at a side seat (turned to face it), upright
 // across and at yours - in its pile and in its row alike.
@@ -957,7 +963,7 @@ function pastDeal(g: GameState, swaps: boolean): boolean {
 // `renderer`: "webgl" - the table's tiles drawn by WebGL (see play3d/) - or
 // "dom", Legacy: drawn by the page's own 3D CSS (kept as a backup).
 export function PlayPanel({
-  onExit,
+  onExit: leaveTable,
   online,
   fresh,
   quick,
@@ -971,6 +977,14 @@ export function PlayPanel({
 }) {
   const gl = renderer === "webgl";
   const saved = useMemo(loadSaved, []);
+  // A save waiting its moment (see SAVE_DELAY_MS), and whether the last one failed.
+  const pendingSave = useRef<(() => void) | null>(null);
+  const [saveFailed, setSaveFailed] = useState(false);
+  // Leaving: the game saved first, for Play's home to show as it is.
+  const onExit = () => {
+    pendingSave.current?.();
+    leaveTable();
+  };
   const resume = fresh ? null : saved;
   // A fresh table deals its first hand with the table's own rules - 截胡 or
   // 一炮多響, and which rounds swap (a 東 round that swaps swaps from the
@@ -1834,14 +1848,35 @@ export function PlayPanel({
   const autoplay = online ? online.table.you !== null && online.table.auto.includes(online.table.you) : localAutoplay;
   const autoBot = useMemo(() => botById(AUTOPLAY_BOT), []);
 
-  // This device's own game (never an online one).
-  useEffect(
+  // This device's own game (never an online one), a moment after it changes.
+  useEffect(() => {
     // (Nor saved while a new game's being set up: the game there stays as it
     // was till 開局 Start - a new one opened from Play's home isn't saved
-    // over the one there till then.)
-    () => void (ledgerStarted.current && !setupOpen && save({ game: localGame, totals: localTotals, hint, timer, opponents, randomOpponents, speed, oneTap, record, multiWin, multiWinSet, runBack, fanXue, baoZimo, swapRules, jackpot, ledger: localLedger })),
-    [localGame, localTotals, hint, timer, opponents, randomOpponents, speed, oneTap, record, multiWin, multiWinSet, runBack, fanXue, baoZimo, swapRules, jackpot, localLedger, setupOpen]
-  );
+    // over the one there till then. What was waiting from before goes now.)
+    if (!ledgerStarted.current || setupOpen) return void pendingSave.current?.();
+    const data: Saved = { game: localGame, totals: localTotals, hint, timer, opponents, randomOpponents, speed, oneTap, record, multiWin, multiWinSet, runBack, fanXue, baoZimo, swapRules, jackpot, ledger: localLedger };
+    // (Not saved: still waiting - tried again on leaving, or the next change.)
+    const write = () => {
+      const ok = save(data);
+      pendingSave.current = ok ? null : write;
+      setSaveFailed(!ok);
+    };
+    pendingSave.current = write;
+    const id = window.setTimeout(write, SAVE_DELAY_MS);
+    return () => window.clearTimeout(id);
+  }, [localGame, localTotals, hint, timer, opponents, randomOpponents, speed, oneTap, record, multiWin, multiWinSet, runBack, fanXue, baoZimo, swapRules, jackpot, localLedger, setupOpen]);
+  // The page hidden or going (a phone may not come back to it): saved now.
+  useEffect(() => {
+    const now = () => pendingSave.current?.();
+    const hidden = () => document.visibilityState === "hidden" && now();
+    document.addEventListener("visibilitychange", hidden);
+    window.addEventListener("pagehide", now);
+    return () => {
+      document.removeEventListener("visibilitychange", hidden);
+      window.removeEventListener("pagehide", now);
+      now();
+    };
+  }, []);
 
   // The menu closes on a tap anywhere outside it, and disarms New game.
   useEffect(() => {
@@ -4253,6 +4288,11 @@ export function PlayPanel({
           </span>
           <span className="play-bar-left">剩:{liveTilesLeft(game)}張</span>
           {potNow > 0 && <span className="play-bar-left play-bar-pot">獎池:{potNow}</span>}
+          {saveFailed && !online && (
+            <span className="play-bar-unsaved" role="alert" title="This phone's storage is full or blocked - a reload would lose this game">
+              未儲存 Not saved
+            </span>
+          )}
           {game.dice && !rolling && (
             <span className="play-bar-dice" aria-label={`Dice ${game.dice.join(", ")}`}>
               {game.dice.map((d, i) => (

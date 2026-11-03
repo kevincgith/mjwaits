@@ -3,7 +3,7 @@ import { PROTOCOL_VERSION } from "@mjwaits/shared/protocol/limits";
 import type { RoomView, ServerMessage } from "@mjwaits/shared/protocol/server";
 import { withEvent, type ScoreGame } from "@mjwaits/shared/engine/ledger";
 import { sampleGame } from "@mjwaits/shared/protocol/sampleGame";
-import { CONNECT_MS, createRoom, gameKey, GameSync, PING_MS, STUCK_MS, WAKE_MS, loadOnline, ONLINE_KEY, RoomClient, roomFromSearch, roomInfo, saveOnline, tokenFor, withoutRoom, withSharing, withToken, type SocketLike } from "./online";
+import { CONNECT_MS, createRoom, gameKey, GameSync, isRecent, PING_MS, STUCK_MS, WAKE_MS, loadOnline, ONLINE_KEY, RoomClient, roomFromSearch, roomInfo, saveOnline, tokenFor, withoutRoom, withSharing, withToken, type SocketLike } from "./online";
 
 // A WebSocket stand-in the test drives by hand.
 class FakeSocket implements SocketLike {
@@ -322,7 +322,10 @@ describe("this device's memory", () => {
 
     const stale = { ...back, rooms: [{ code: "9AC9X", token: TOKEN, at: Date.now() - 49 * 60 * 60 * 1000 }] };
     mem.set(ONLINE_KEY, JSON.stringify(stale));
-    expect(loadOnline(storage).rooms).toEqual([]);
+    // Kept (its token gets you back in as yourself), just not recent enough to list.
+    expect(tokenFor(loadOnline(storage), "9AC9X")).toBe(TOKEN);
+    expect(isRecent(stale.rooms[0].at)).toBe(false);
+    expect(isRecent(Date.now() - 47 * 60 * 60 * 1000)).toBe(true);
     mem.set(ONLINE_KEY, "{oops");
     expect(loadOnline(storage)).toEqual({ name: "", rooms: [], current: null, sharing: null, hosted: [] });
   });
@@ -336,17 +339,22 @@ describe("this device's memory", () => {
 
 describe("GameSync", () => {
   const draw = (g: ScoreGame, at = 1): ScoreGame => ({ ...withEvent(g, { t: "draw", at }), updatedAt: at });
-  function sync() {
+  function sync(since?: number) {
     const sent: { base: number; game: ScoreGame }[] = [];
     const adopted: ScoreGame[] = [];
+    const confirmed: number[] = [];
     let lost = 0;
     let online = true;
-    const s = new GameSync({
-      send: (base, game) => online && String(sent.push({ base, game })),
-      adopt: (g) => adopted.push(g),
-      lost: () => lost++,
-    });
-    return { s, sent, adopted, lost: () => lost, offline: (v: boolean) => (online = !v) };
+    const s = new GameSync(
+      {
+        send: (base, game) => online && String(sent.push({ base, game })),
+        adopt: (g) => adopted.push(g),
+        lost: () => lost++,
+        confirmed: (v) => confirmed.push(v),
+      },
+      since
+    );
+    return { s, sent, adopted, confirmed, lost: () => lost, offline: (v: boolean) => (online = !v) };
   }
 
   it("puts the host's game up when the room is empty, then sends each change made on the confirmed one", () => {
@@ -478,6 +486,44 @@ describe("GameSync", () => {
     b.s.room(view(1, recorded, 5));
     expect(b.adopted.map(gameKey)).toEqual([gameKey(recorded)]);
     expect(b.sent).toEqual([]);
+  });
+
+  it("on reconnecting after a reload, sends this phone's change only if the room hasn't moved on since", () => {
+    const g = sampleGame();
+    const offlineEdit = draw(g, 9e12);
+    // The room still at the version this phone last had: sent (however the clocks compare).
+    const a = sync(4);
+    a.s.local(draw(g, 1));
+    a.s.room(view(1, g, 4));
+    expect(a.sent).toHaveLength(1);
+    expect(a.sent[0].base).toBe(4);
+    // Someone recorded meanwhile: theirs kept, this phone told its change was lost.
+    const b = sync(4);
+    b.s.local(offlineEdit);
+    const recorded = draw(g, 5);
+    b.s.room(view(1, recorded, 5));
+    expect(b.sent).toEqual([]);
+    expect(b.adopted.map(gameKey)).toEqual([gameKey(recorded)]);
+    expect(b.lost()).toBe(1);
+    expect(b.confirmed).toEqual([5]);
+    // Only behind the room: taken, nothing said.
+    const c = sync(4);
+    c.s.local({ ...g, updatedAt: 1 });
+    c.s.room(view(1, recorded, 5));
+    expect(c.adopted.map(gameKey)).toEqual([gameKey(recorded)]);
+    expect(c.lost()).toBe(0);
+  });
+
+  it("keeps the room's version as each change lands", () => {
+    const { s, confirmed } = sync();
+    const g = sampleGame();
+    s.local(g);
+    s.room(view(1)); // waiting: no game yet, nothing to keep
+    s.room(view(2, g, 1));
+    const g2 = draw(g, 2);
+    s.local(g2);
+    s.room(view(3, g2, 2));
+    expect(confirmed).toEqual([1, 2]);
   });
 
   it("matches a game from an older app version once the server has tidied it", () => {

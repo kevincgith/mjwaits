@@ -13,7 +13,7 @@ import { cleanNickname, normalizeRoomCode } from "@mjwaits/shared/protocol/limit
 import { BOT_SPEEDS, JACKPOTS, MYSTERY_BOT, TABLE_BOTS, type BotSpeed, TURN_TIMERS, type TableBot, type TableClientMessage, type TableSettings, type TableState } from "@mjwaits/shared/protocol/table";
 import { DEFAULT_SWAP_RULES } from "@mjwaits/shared/engine/swap";
 import { SWAP_PRESETS } from "./PlaySwap";
-import { defaultNickname, type ConnectionStatus } from "./lib/online";
+import { defaultNickname, isRecent, type ConnectionStatus } from "./lib/online";
 import {
   codeFromInvite,
   createTable,
@@ -243,7 +243,7 @@ export function OnlineTable({ initialCode, onExit, renderer }: { initialCode: st
             joinCode={joinCode}
             setJoinCode={setJoinCode}
             invited={initialCode}
-            recent={memory.tables.map((t) => t.code)}
+            recent={memory.tables.filter((t) => isRecent(t.at)).map((t) => t.code)}
             onForget={(c) => setMemory((m) => withoutTable(m, c))}
             busy={busy}
             onEnter={enter}

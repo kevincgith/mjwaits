@@ -46,8 +46,9 @@ export const ONLINE_KEY = "mjwaits.online";
 
 export interface OnlineMemory {
   name: string;
-  // Rooms joined on this device, newest first, with the token to get back in.
-  rooms: { code: string; token: string; at: number }[];
+  // Rooms joined on this device, newest first, with the token to get back in
+  // and the room's gameVersion this phone last had (see GameSync's `since`).
+  rooms: { code: string; token: string; at: number; version?: number }[];
   current: string | null; // the room being followed (shown in 戰況)
   sharing: { code: string; gameId: string } | null; // this phone's 戰況 game, live in that room
   // Games this phone has shared, newest first, and their rooms - to resume.
@@ -61,18 +62,20 @@ export function loadOnline(storage: Pick<Storage, "getItem"> | null = safeStorag
     const raw = storage?.getItem(ONLINE_KEY);
     if (!raw) return EMPTY;
     const saved = JSON.parse(raw) as Partial<OnlineMemory>;
-    // A room last visited longer ago than the server keeps an idle one is gone.
-    const cutoff = Date.now() - IDLE_TTL_MS;
+    // (Every room's token is kept, however old: a room the others kept using
+    // lives on, and you get back in as yourself. Only the lists hide old ones - see isRecent.)
     return {
       name: typeof saved.name === "string" ? saved.name : "",
       rooms: Array.isArray(saved.rooms)
-        ? saved.rooms.filter((r) => r && typeof r.code === "string" && typeof r.token === "string" && typeof r.at === "number" && r.at > cutoff)
+        ? saved.rooms
+            .filter((r) => r && typeof r.code === "string" && typeof r.token === "string" && typeof r.at === "number")
+            .map((r) => ({ code: r.code, token: r.token, at: r.at, ...(typeof r.version === "number" ? { version: r.version } : {}) }))
         : [],
       current: typeof saved.current === "string" ? saved.current : null,
       sharing:
         saved.sharing && typeof saved.sharing.code === "string" && typeof saved.sharing.gameId === "string" ? { code: saved.sharing.code, gameId: saved.sharing.gameId } : null,
       hosted: Array.isArray(saved.hosted)
-        ? saved.hosted.filter((h) => h && typeof h.code === "string" && typeof h.gameId === "string" && typeof h.at === "number" && h.at > cutoff)
+        ? saved.hosted.filter((h) => h && typeof h.code === "string" && typeof h.gameId === "string" && typeof h.at === "number")
         : [],
     };
   } catch {
@@ -99,11 +102,28 @@ function safeStorage(): Storage | null {
 // A name to start from, until you pick your own: Player and two digits.
 export const defaultNickname = (random: () => number = Math.random) => `Player${Math.floor(random() * 90) + 10}`;
 
+// Visited since the server last could have cleared the room away (it keeps an
+// idle one IDLE_TTL_MS): worth listing. An older one is most likely gone.
+export const isRecent = (at: number) => at > Date.now() - IDLE_TTL_MS;
+
+// The rooms remembered, at most: the oldest are let go.
+const ROOMS_KEPT = 30;
+
 export const tokenFor = (memory: OnlineMemory, code: string) => memory.rooms.find((r) => r.code === code)?.token;
+export const syncedVersion = (memory: OnlineMemory, code: string) => memory.rooms.find((r) => r.code === code)?.version;
+const versionOf = (memory: OnlineMemory, code: string) => {
+  const version = syncedVersion(memory, code);
+  return version === undefined ? {} : { version };
+};
+// The room's gameVersion this phone now has.
+export const withSyncedVersion = (memory: OnlineMemory, code: string, version: number): OnlineMemory => ({
+  ...memory,
+  rooms: memory.rooms.map((r) => (r.code === code ? { ...r, version } : r)),
+});
 
 export const withToken = (memory: OnlineMemory, code: string, token: string): OnlineMemory => ({
   ...memory,
-  rooms: [{ code, token, at: Date.now() }, ...memory.rooms.filter((r) => r.code !== code)],
+  rooms: [{ code, token, at: Date.now(), ...versionOf(memory, code) }, ...memory.rooms.filter((r) => r.code !== code)].slice(0, ROOMS_KEPT),
   // Back in the room: a game shared there is kept as long as the room is.
   hosted: memory.hosted.map((h) => (h.code === code ? { ...h, at: Date.now() } : h)),
 });
@@ -459,6 +479,9 @@ export interface GameSyncIO {
   // A change made here was overtaken by someone else's and is gone (the
   // room's game was adopted instead) - say so, so it can be entered again.
   lost?(): void;
+  // The room's game as this phone now has it: its gameVersion, to keep
+  // (see GameSync's `since`).
+  confirmed?(version: number): void;
 }
 
 // One phone's copy of a room's game, kept in step with it. `local` whenever
@@ -467,7 +490,9 @@ export interface GameSyncIO {
 // last one the room confirmed - one update at a time, each made on that
 // confirmed version - and adopts every change made elsewhere. When both
 // changed at once the room's wins: there's no merging two people's entries
-// behind their backs.
+// behind their backs. `since`: the room's gameVersion this phone last had
+// (kept across reloads) - a game changed here while away is sent on
+// reconnecting only if the room hasn't moved on from it since.
 export class GameSync {
   private readonly io: GameSyncIO;
   private latest: ScoreGame | null = null;
@@ -478,9 +503,16 @@ export class GameSync {
   // A game the room couldn't take at all: not sent again till it changes.
   private held: string | null = null;
   private ended = false;
+  private readonly since: number | undefined;
 
-  constructor(io: GameSyncIO) {
+  constructor(io: GameSyncIO, since?: number) {
     this.io = io;
+    this.since = since;
+  }
+
+  private confirm(version: number, key: string) {
+    this.confirmed = { version, key };
+    if (key) this.io.confirmed?.(version);
   }
 
   local(game: ScoreGame) {
@@ -500,7 +532,7 @@ export class GameSync {
     if (inflight && view.gameVersion === inflight.base + 1 && key === inflight.key) {
       // Ours, accepted.
       this.inflight = null;
-      this.confirmed = { version: view.gameVersion, key };
+      this.confirm(view.gameVersion, key);
       return this.flush();
     }
     if (this.confirmed && view.gameVersion === this.confirmed.version) return this.flush(); // nothing new in the game
@@ -508,19 +540,24 @@ export class GameSync {
     const localKey = this.latest ? gameKey(this.latest) : null;
     if (localKey === key) {
       // Already showing it (connected to a room with this phone's game).
-      this.confirmed = { version: view.gameVersion, key };
+      this.confirm(view.gameVersion, key);
       this.inflight = null;
       return this.flush();
     }
     const changedHere = localKey !== null && localKey !== key && (first || localKey !== this.confirmed!.key);
-    this.confirmed = { version: view.gameVersion, key };
     this.inflight = null;
-    if (changedHere && first && (this.latest!.updatedAt ?? 0) > (view.game.updatedAt ?? 0)) {
-      // Just connected, and this phone's game is the newer (changed while
-      // offline, nothing changed in the room since): send it.
+    // Just connected with a game changed here while away: sent if the room
+    // hasn't moved on since this phone last had it (when that's not known -
+    // kept by an older version - if this phone's is the newer).
+    const newerHere = (this.latest?.updatedAt ?? 0) > (view.game.updatedAt ?? 0);
+    const unmoved = this.since === undefined ? newerHere : view.gameVersion === this.since;
+    if (changedHere && first && unmoved) {
+      this.confirmed = { version: view.gameVersion, key };
       return this.flush();
     }
-    if (changedHere && !first) this.io.lost?.();
+    this.confirm(view.gameVersion, key);
+    // (Just connected, this phone's game merely behind the room's: nothing lost.)
+    if (changedHere && (!first || newerHere)) this.io.lost?.();
     this.latest = view.game;
     this.io.adopt(view.game);
   }

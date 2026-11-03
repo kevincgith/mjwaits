@@ -16,7 +16,7 @@ import { replay, type ScoreGame, type ScoreStore } from "@mjwaits/shared/engine/
 import { cleanNickname, NICKNAME_MAX, normalizeRoomCode, ROOM_CODE_LENGTH } from "@mjwaits/shared/protocol/limits";
 import { describeChange } from "@mjwaits/shared/protocol/audit";
 import type { ErrorCode, RoomView } from "@mjwaits/shared/protocol/server";
-import { createRoom, defaultNickname, GameSync, joinLink, loadOnline, RoomClient, roomInfo, saveOnline, tokenFor, withoutRoom, withSharing, withToken, type ConnectionStatus } from "../lib/online";
+import { createRoom, defaultNickname, GameSync, isRecent, joinLink, loadOnline, RoomClient, roomInfo, saveOnline, syncedVersion, tokenFor, withoutRoom, withSharing, withSyncedVersion, withToken, type ConnectionStatus } from "../lib/online";
 import { colorOf, Sheet, Toggle } from "./shared";
 
 export type Problem = { code: ErrorCode | "offline" | "lost"; message: string; at: number };
@@ -73,7 +73,8 @@ export function useLiveGame({
       adopt: (game) => adopt.current(game),
       lost: () =>
         setProblem({ code: "lost", message: "Someone else recorded at the same moment - yours wasn't saved, please enter it again", at: Date.now() }),
-    });
+      confirmed: (version) => saveOnline(withSyncedVersion(loadOnline(), code, version)),
+    }, syncedVersion(loadOnline(), code));
     sync.current = s;
     const c = new RoomClient({
       code,
@@ -340,11 +341,13 @@ export function LiveSheet({
   const failed = (e: unknown) => setProblem(e instanceof Error && e.message !== "Failed to fetch" ? e.message : "Couldn't reach the server - check the connection");
 
   const active = store.active;
-  const resumable = active ? memory.hosted.find((h) => h.gameId === active.id) : undefined;
-  const reopenable = memory.hosted
+  // (Rooms not visited since the server could have cleared them away: not listed.)
+  const hosted = memory.hosted.filter((h) => isRecent(h.at));
+  const resumable = active ? hosted.find((h) => h.gameId === active.id) : undefined;
+  const reopenable = hosted
     .map((h) => ({ ...h, game: store.history.find((g) => g.id === h.gameId) }))
     .filter((h): h is typeof h & { game: ScoreGame } => !!h.game);
-  const followed = memory.rooms.filter((r) => !memory.hosted.some((h) => h.code === r.code));
+  const followed = memory.rooms.filter((r) => isRecent(r.at) && !memory.hosted.some((h) => h.code === r.code));
   const follow = async (joining = normalizeRoomCode(code)) => {
     if (needName()) return;
     if (!joining) return setProblem(`A code is ${ROOM_CODE_LENGTH} letters and numbers`);

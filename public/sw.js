@@ -1,6 +1,7 @@
 // MJWaits' service worker: keeps the app working with no signal at the table.
 //
-//  - The page itself (any navigation): network first - revalidated with the
+//  - The page itself (a navigation to the app - not to another page here,
+//    which would be stored in its place): network first - revalidated with the
 //    server, past the HTTP cache - so an update shows up as soon as there's a
 //    connection; the last copy is used when offline, or when the network
 //    takes over 2.5s (a weak signal mustn't hold up the launch - the fresh
@@ -16,8 +17,9 @@
 //    src/lib/modelUrl.ts): cache first, like /assets/ - a retrained model
 //    comes with a new hash, and the old copy is dropped.
 //  - Anything else on this site - a model asked for without a hash, icons,
-//    the manifest: the cached copy at once, re-checked in the background (an
-//    unchanged file is just a quick 304).
+//    the manifest, the bots' voice clips: the cached copy at once, re-checked
+//    in the background (an unchanged file is just a quick 304) - once each
+//    while this worker runs, not every time it's used (a clip said again).
 //
 // Bump VERSION to start over with fresh caches - but that also drops the
 // files an open page of the last build may still load later, so only when
@@ -88,9 +90,14 @@ async function networkFirst(event) {
   }
 }
 
+// Files re-checked since this worker started.
+const checked = new Set();
+
 async function staleWhileRevalidate(request) {
   const cache = await caches.open(CACHE);
   const hit = await cache.match(request);
+  if (hit && checked.has(request.url)) return hit;
+  checked.add(request.url);
   const refresh = fetch(request)
     .then((response) => {
       if (response.ok) cache.put(request, response.clone());
@@ -107,7 +114,10 @@ self.addEventListener("fetch", (event) => {
   // The app's own "is there a new version?" check asks for no-store - let
   // it go straight to the network, untouched and uncached.
   if (request.cache === "no-store") return;
-  if (request.mode === "navigate") event.respondWith(networkFirst(event));
+  if (request.mode === "navigate") {
+    // (Another page here - a dev page - goes straight to the network.)
+    if (url.pathname === SCOPE || url.pathname === `${SCOPE}index.html`) event.respondWith(networkFirst(event));
+  }
   else if (url.pathname.startsWith(`${SCOPE}assets/`)) event.respondWith(cacheFirst(request, olderBuild(url)));
   else if (url.pathname.startsWith(`${SCOPE}model/`) && url.searchParams.has("v")) event.respondWith(cacheFirst(request, olderModel(url)));
   else event.respondWith(staleWhileRevalidate(request));
