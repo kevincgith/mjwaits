@@ -234,42 +234,45 @@ export function OnlineTable({ initialCode, onExit, renderer }: { initialCode: st
   return (
     <div className="play-screen ot-screen">
       <div className="ph-glow" aria-hidden="true" />
-      {!code ? (
-        <Entry
-          name={name}
-          setName={setName}
-          joinCode={joinCode}
-          setJoinCode={setJoinCode}
-          invited={initialCode}
-          recent={memory.tables.map((t) => t.code)}
-          onForget={(c) => setMemory((m) => withoutTable(m, c))}
-          busy={busy}
-          onEnter={enter}
-          onExit={onExit}
-        />
-      ) : !table || !you ? (
-        <div className="ot-center-card">
-          <span className="ot-dots" aria-hidden="true">
-            <i />
-            <i />
-            <i />
-          </span>
-          <p>{status === "reconnecting" ? "Reconnecting…" : `Joining table ${code}…`}</p>
-          <button type="button" className="ot-chip-button" onClick={leave}>
-            Cancel
-          </button>
-        </div>
-      ) : table.phase === "lobby" ? (
-        <Lobby table={table} me={you} send={send} onLeave={leave} />
-      ) : table.phase === "ended" ? (
-        <Ended table={table} scores={scores} onLeave={leave} host={you.host} onRematch={() => send({ t: "rematch" })} />
-      ) : null}
-      {code && table && status !== "open" && <div className="ot-status">{status === "closed" ? "Disconnected" : "Reconnecting…"}</div>}
-      {toast && (
-        <div className="ot-toast" role="status">
-          {toast}
-        </div>
-      )}
+      {/* (Turned with the table on a phone held upright: see .ot-turn.) */}
+      <div className="ot-turn">
+        {!code ? (
+          <Entry
+            name={name}
+            setName={setName}
+            joinCode={joinCode}
+            setJoinCode={setJoinCode}
+            invited={initialCode}
+            recent={memory.tables.map((t) => t.code)}
+            onForget={(c) => setMemory((m) => withoutTable(m, c))}
+            busy={busy}
+            onEnter={enter}
+            onExit={onExit}
+          />
+        ) : !table || !you ? (
+          <div className="ot-center-card">
+            <span className="ot-dots" aria-hidden="true">
+              <i />
+              <i />
+              <i />
+            </span>
+            <p>{status === "reconnecting" ? "Reconnecting…" : `Joining table ${code}…`}</p>
+            <button type="button" className="ot-chip-button" onClick={leave}>
+              Cancel
+            </button>
+          </div>
+        ) : table.phase === "lobby" ? (
+          <Lobby table={table} me={you} send={send} onLeave={leave} />
+        ) : table.phase === "ended" ? (
+          <Ended table={table} scores={scores} onLeave={leave} host={you.host} onRematch={() => send({ t: "rematch" })} />
+        ) : null}
+        {code && table && status !== "open" && <div className="ot-status">{status === "closed" ? "Disconnected" : "Reconnecting…"}</div>}
+        {toast && (
+          <div className="ot-toast" role="status">
+            {toast}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
