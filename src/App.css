@@ -5784,6 +5784,12 @@ html.playing body {
 /* A game, not a page: nothing on the table selects, flashes or pops up
    Safari's copy menu when tapped or held (the buttons already don't - see
    button) - only what you type into still does. */
+/* 換牌's give, picked by sliding a finger across your tiles: the slide is
+   the table's, never the page's to pan (which would cancel it). */
+.play-screen.is-sweeping .play-table {
+  touch-action: none;
+}
+
 .play-screen,
 .play-sheet-host {
   /* Taps straight away, however quick: no double-tap zoom to wait on (a
