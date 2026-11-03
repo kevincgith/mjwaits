@@ -14,6 +14,21 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
   })
 }
 
+// Ask the browser to keep this phone's saved games, ledger and settings
+// even when it's short of space (Android clears sites' storage then, least
+// used first). Chrome decides by itself, with no prompt - an installed app
+// is let keep it. Only from the home screen or in Chrome, as Firefox would
+// ask the player.
+const installed = window.matchMedia('(display-mode: standalone)').matches
+if (navigator.storage?.persist && (installed || 'userAgentData' in navigator)) {
+  void navigator.storage
+    .persisted()
+    .then((kept) => kept || navigator.storage.persist())
+    .catch(() => {
+      // Not allowed here (e.g. a private window) - storage works as before.
+    })
+}
+
 // The in-app splash (index.html), shown when opened from the home screen:
 // held until at least 700ms after launch, so it reads as a splash and not a
 // flicker, then faded out and removed. In a browser tab it's never shown.
