@@ -1,9 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { analyzeDiscardChoices, getWaits, isCompleteHand, shanten, tileKey } from "@mjwaits/shared/engine/mahjong";
+import {
+  type DiscardChoice,
+  analyzeDiscardChoices,
+  getWaits,
+  isCompleteHand,
+  parseHand,
+  shanten,
+  tileKey,
+} from "@mjwaits/shared/engine/mahjong";
 import {
   MAX_TRAINER_LEVEL,
   MIN_TRAINER_LEVEL,
   dealEndlessHand,
+  discardMiss,
   discardRegret,
   drawFromWall,
   generateDiscardQuestion,
@@ -184,6 +193,55 @@ describe("gradeDiscardOutcome / regretForOutcome", () => {
       }
     }
     expect(checked).toBeGreaterThan(0);
+  });
+});
+
+describe("discardMiss", () => {
+  // A choice with just the fields the grade reads.
+  const choice = (notation: string, resultingShanten: number, draws: number, winProbability = 0): DiscardChoice => ({
+    discard: parseHand(notation)[0],
+    resultingShanten,
+    waits: [],
+    waitsTotal: 0,
+    improvingDraws: [],
+    improvingDrawsTotal: draws,
+    improvingDrawsTotalExcludingRedraw: draws,
+    tenpaiProbability: 0,
+    winProbability,
+    acceptance: 0,
+  });
+
+  it("at 2+ shanten, a same-shanten pick with fewer draws is 'fewer draws', not loose", () => {
+    const outcome = { alreadyComplete: false, choices: [choice("1m", 2, 30), choice("9m", 2, 22), choice("1z", 3, 40)] };
+    expect(discardMiss(outcome, "m1")).toBeNull();
+    expect(discardMiss(outcome, "m9")).toEqual({ kind: "fewer-draws", picked: 22, best: 30 });
+    expect(discardMiss(outcome, "z1")).toEqual({ kind: "loose", shantenLost: 1 });
+  });
+
+  it("is the win probability given up once near tenpai", () => {
+    const outcome = { alreadyComplete: false, choices: [choice("1m", 0, 0, 0.5), choice("9m", 0, 0, 0.3), choice("1z", 1, 20, 0.1)] };
+    expect(discardMiss(outcome, "m1")).toBeNull();
+    expect(discardMiss(outcome, "m9")).toEqual({ kind: "regret", regret: expect.closeTo(0.2, 12) });
+    expect(discardMiss(outcome, "z1")).toEqual({ kind: "regret", regret: expect.closeTo(0.4, 12) });
+  });
+
+  it("agrees with the grade on real hands: no miss for a best pick, loose only when shanten rises", () => {
+    for (let trial = 0; trial < 10; trial++) {
+      const dealt = dealEndlessHand();
+      const drew = drawFromWall(dealt.wall);
+      const outcome = analyzeDiscardChoices([...dealt.hand, drew.tile!], 5);
+      const { optimalKeys } = gradeDiscardOutcome(outcome);
+      const minShanten = Math.min(...outcome.choices.map((c) => c.resultingShanten));
+      for (const c of outcome.choices) {
+        const miss = discardMiss(outcome, tileKey(c.discard));
+        expect(miss === null).toBe(optimalKeys.has(tileKey(c.discard)));
+        if (miss?.kind === "loose") expect(c.resultingShanten).toBeGreaterThan(minShanten);
+        if (miss?.kind === "fewer-draws") {
+          expect(c.resultingShanten).toBe(minShanten);
+          expect(miss.picked).toBeLessThan(miss.best);
+        }
+      }
+    }
   });
 });
 
