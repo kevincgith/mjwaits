@@ -16,7 +16,7 @@
 // room going to everyone (see RoomView).
 
 import type { ScoreGame } from "@mjwaits/shared/engine/ledger";
-import { diffGames, entryAuthors, type AuditEntry } from "@mjwaits/shared/protocol/audit";
+import { diffGames, entryAuthors, withAuthors, type AuditEntry, type EntryAuthor } from "@mjwaits/shared/protocol/audit";
 import { parseClientMessage, type ClientMessage } from "@mjwaits/shared/protocol/client";
 import { checkGame } from "@mjwaits/shared/protocol/game";
 import { PROTOCOL_VERSION } from "@mjwaits/shared/protocol/limits";
@@ -83,6 +83,7 @@ export class Room extends Hub<RoomMessage> {
         if (msg.base !== gameVersion) throw new Refusal("conflict", "someone else's change landed first");
         const entry: AuditEntry = { v: gameVersion + 1, at: Date.now(), by: me.name, ...diffGames(current, checked.value) };
         this.sql.exec("INSERT INTO audit (v, body) VALUES (?, ?)", entry.v, JSON.stringify(entry));
+        this.setMeta("authors", withAuthors(this.authors(), entry));
         this.setMeta("game", checked.value);
         this.setMeta("gameVersion", gameVersion + 1);
         if (isHost && msg.colors) this.setMeta("colors", msg.colors);
@@ -107,10 +108,26 @@ export class Room extends Hub<RoomMessage> {
     this.changed();
   }
 
+  // Who wrote each entry, kept as changes land (not replayed from the whole
+  // log every time) - a room from before it was kept: replayed once.
+  private authors(): EntryAuthor[] {
+    const kept = this.meta<EntryAuthor[]>("authors");
+    if (kept) return kept;
+    const log = this.sql.exec<{ body: string }>("SELECT body FROM audit ORDER BY v").toArray().map((r) => JSON.parse(r.body) as AuditEntry);
+    const authors = entryAuthors(log);
+    this.setMeta("authors", authors);
+    return authors;
+  }
+
   // ---- Broadcasting -------------------------------------------------------
 
   private view(except?: WebSocket): RoomView {
-    const log = this.sql.exec<{ body: string }>("SELECT body FROM audit ORDER BY v").toArray().map((r) => JSON.parse(r.body) as AuditEntry);
+    // (Only the latest changes are sent - read just those.)
+    const recent = this.sql
+      .exec<{ body: string }>("SELECT body FROM audit ORDER BY v DESC LIMIT ?", RECENT_CHANGES)
+      .toArray()
+      .map((r) => JSON.parse(r.body) as AuditEntry)
+      .reverse();
     const online = this.online(except);
     const people: PersonView[] = this.people().map((p) => ({
       id: p.id,
@@ -127,8 +144,8 @@ export class Room extends Hub<RoomMessage> {
       game: this.meta<ScoreGame>("game"),
       gameVersion: this.meta<number>("gameVersion") ?? 0,
       colors: this.meta<Record<string, number>>("colors") ?? {},
-      authors: entryAuthors(log),
-      changes: log.slice(-RECENT_CHANGES),
+      authors: this.authors(),
+      changes: recent,
     };
   }
 

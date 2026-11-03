@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import { MAX_MESSAGE_BYTES, PROTOCOL_VERSION, RATE_BURST, ROOM_CODE_PATTERN } from "@mjwaits/shared/protocol/limits";
 import { isAllowedOrigin, randomRoomCode } from "../src/index";
 import { IDLE_TTL_MS, MAX_CONNECTIONS, UNUSED_TTL_MS, type Room } from "../src/room";
-import { HELLO_MS, QUIET_MS, UNPINGED_MS } from "../src/hub";
+import { HELLO_MS, MAX_PEOPLE, QUIET_MS, UNPINGED_MS } from "../src/hub";
 import { BASE, connect, createRoom, join, ORIGIN, sharing } from "./helpers";
 
 describe("the Worker's routes", () => {
@@ -154,6 +154,27 @@ describe("reconnecting", () => {
     expect(back.welcome.host).toBe(true);
     back.c.send({ t: "stop" });
     expect((await back.c.room((v) => v.phase === "ended")).phase).toBe("ended");
+  });
+
+  it("full, makes room for a newcomer by forgetting the first to have left", async () => {
+    const code = await createRoom();
+    const host = await join(code, "Host");
+    const gone: Awaited<ReturnType<typeof join>>[] = [];
+    for (let i = 1; i < MAX_PEOPLE; i++) {
+      const p = await join(code, `P${i}`);
+      await p.c.closeAndWait();
+      gone.push(p);
+    }
+    await host.c.room((v) => v.people.length === MAX_PEOPLE && v.people.filter((p) => p.connected).length === 1);
+    const { room: view } = await join(code, "Late");
+    expect(view.people).toHaveLength(MAX_PEOPLE);
+    expect(view.people.map((p) => p.name)).not.toContain("P1");
+    // P1's token no longer works; they join afresh, and their name's free.
+    const c = await connect(code);
+    c.send({ t: "hello", v: PROTOCOL_VERSION, name: "P1", token: gone[0].welcome.token });
+    expect(await c.error()).toMatchObject({ code: "badToken" });
+    c.send({ t: "hello", v: PROTOCOL_VERSION, name: "P1" });
+    expect((await c.next("welcome")).name).toBe("P1");
   });
 
   it("refuses a token the room doesn't know", async () => {
