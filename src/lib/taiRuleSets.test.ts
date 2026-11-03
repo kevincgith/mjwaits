@@ -16,6 +16,7 @@ import {
   rulesOfSet,
   saveRuleSets,
   uniqueName,
+  UNREADABLE_RULE_SETS_KEY,
   type RuleSet,
 } from "./taiRuleSets";
 
@@ -73,6 +74,34 @@ describe("rule sets in storage", () => {
   it("reports unreadable storage and falls back to the house rules", () => {
     memory.set(RULE_SETS_KEY, "not json");
     expect(loadRuleSets()).toEqual({ store: { v: 1, active: null, sets: [] }, corrupt: true });
+  });
+
+  it("keeps a copy of unreadable sets before anything is saved over them", () => {
+    memory.set(RULE_SETS_KEY, "not json");
+    loadRuleSets();
+    saveRuleSets({ v: 1, active: "a", sets: [set("a", "From a link")] });
+    expect(memory.get(UNREADABLE_RULE_SETS_KEY)).toBe("not json");
+    // Read, but not a store (no sets list): kept too.
+    memory.set(RULE_SETS_KEY, JSON.stringify({ v: 1 }));
+    expect(loadRuleSets().corrupt).toBe(true);
+    expect(memory.get(UNREADABLE_RULE_SETS_KEY)).toBe(JSON.stringify({ v: 1 }));
+  });
+
+  it("doesn't call blocked storage unreadable", () => {
+    (globalThis as { window?: unknown }).window = {
+      localStorage: {
+        getItem: () => {
+          throw new Error("SecurityError");
+        },
+        setItem: () => {
+          throw new Error("SecurityError");
+        },
+        removeItem: () => {
+          throw new Error("SecurityError");
+        },
+      },
+    };
+    expect(loadRuleSets()).toEqual({ store: { v: 1, active: null, sets: [] }, corrupt: false });
   });
 
   it("drops a missing active set back to the house rules", () => {

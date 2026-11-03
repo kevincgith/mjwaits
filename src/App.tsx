@@ -61,7 +61,7 @@ import {
   saveRuleSets,
   type RuleSetStore,
 } from "./lib/taiRuleSets";
-import { loadScores, saveScores } from "./lib/scoreStore";
+import { loadScores, saveScores, SCORES_KEY } from "./lib/scoreStore";
 import {
   COMPLETE_SIZE,
   compareTiles,
@@ -9432,9 +9432,28 @@ function SheetSwitch({ on, onChange, label }: { on: boolean; onChange: (on: bool
   );
 }
 
+// What the developer sheet's "Reset saved settings" clears: settings
+// alone, never games, scores or rule sets.
+const RESETTABLE_SETTINGS = [
+  "mjwaits.tileStyle",
+  "mjwaits.pickerLayout",
+  "mjwaits.debugLayout",
+  "mjwaits.sheetView",
+  "mjwaits.patternsView",
+  "mjwaits.careerSmoothing",
+  "mjwaits.careerPeriod",
+  "mjwaits.pastGamesOpen",
+  "mjwaits.talk",
+  "mjwaits.voice",
+  "mjwaits.yourVoice",
+  "mjwaits.soundOff",
+  "mjwaits.playRenderer",
+  "mjwaits.installTip",
+];
+
 // The developer sheet's Tools tab: layout and device diagnostics, hand
 // notation in and out of Scoring, calculation timings, Trainer switches,
-// the last scan's raw detections, and a reset for everything saved.
+// the last scan's raw detections, and a reset for saved settings.
 function DeveloperTools({
   onLoadNotation,
   tileStyle,
@@ -9492,11 +9511,15 @@ function DeveloperTools({
     ["Build", __BUILD_TIME__],
   ];
 
+  // Only settings - how things look and sound - never what's been played or
+  // made: games and scores (and their unreadable copies), rule sets, Play's
+  // saved game and record, online passes, trainer stats, recent hands. It's
+  // a list of what to clear, so anything saved later is kept unless added.
   const savedKeys: string[] = [];
   try {
     for (let i = 0; i < window.localStorage.length; i++) {
       const key = window.localStorage.key(i);
-      if (key?.startsWith("mjwaits.")) savedKeys.push(key);
+      if (key && RESETTABLE_SETTINGS.includes(key)) savedKeys.push(key);
     }
   } catch {
     // Storage blocked - nothing saved to list.
@@ -9632,12 +9655,14 @@ function DeveloperTools({
 
       <section className="dev-section">
         <h3 className="dev-heading">Saved settings</h3>
-        <span className="dev-note">{savedKeys.length ? savedKeys.join(", ") : "Nothing saved."}</span>
+        <span className="dev-note">
+          {savedKeys.length ? `Clears: ${savedKeys.join(", ")}.` : "No settings saved."} Games, scores, rule sets, Play's game and online tables are kept.
+        </span>
         <ConfirmButton
           label="Reset saved settings"
           onConfirm={resetSaved}
           className="sheet-switch"
-          title="Clear everything this app saved in the browser, then reload"
+          title="Clear the settings listed (not games, scores or rule sets), then reload"
         />
       </section>
     </div>
@@ -10266,6 +10291,21 @@ function App() {
   useEffect(() => {
     if (scoreStore !== loadedScores.current) setScoresSaved(saveScores(scoreStore));
   }, [scoreStore]);
+  // Another copy of the app open on this device (the installed app and a
+  // browser tab) saved its scores: take them up, or this copy's next save
+  // would write back over the hands it recorded. What's taken up counts as
+  // saved already, so it isn't written straight back.
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.storageArea !== window.localStorage || (e.key !== null && e.key !== SCORES_KEY)) return;
+      const saved = loadScores();
+      loadedScores.current = saved;
+      setScoreStore(saved);
+      setScoresSaved(true);
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
   const [recordRequest, setRecordRequest] = useState<RecordRequest | null>(null);
   // A Scores 食胡 sheet asked Scoring to work a hand out (see ScoreHandRequest).
   // Dropped if you leave Scoring any other way than Back to Scores / Cancel.

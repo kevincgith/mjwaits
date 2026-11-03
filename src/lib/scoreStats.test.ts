@@ -111,6 +111,26 @@ describe("playerStats", () => {
     expect([...m.values()]).toContain("worst");
     expect(marks(all, "hands").size).toBe(0);
   });
+
+  it("marks records by the number inside them, as they're ranked", () => {
+    const all = playerStats(state, g);
+    // 最高番數: A's 10 is the biggest hand.
+    expect(marks(all, "maxTai").get("A")).toBe("best");
+    // 最高位 and 近況 are records too ({ value }, { net }).
+    const peak = marks(all, "peak");
+    expect(peak.get(rankedBy(all, "peak")[0].player)).toBe("best");
+    expect([...peak.values()]).toContain("worst");
+    expect(marks(all, "recent").get(rankedBy(all, "recent")[0].player)).toBe("best");
+    expect(marks(all, "worstHand").size).toBeGreaterThan(0);
+  });
+
+  it("被自摸 counts only who paid: a 包自摸 is the 包 seat's alone", () => {
+    const bao = game([{ t: "win", at: 0, winners: [{ seat: 0, tai: 3 }], from: null, source: "quick", bao: 2 }]);
+    const s = Object.fromEntries(playerStats(replay(bao), bao).map((x) => [x.player, x]));
+    expect(s.C).toMatchObject({ assists: 1 });
+    expect(s.B).toMatchObject({ assists: 0, selfDrawLoss: 0 });
+    expect(s.D).toMatchObject({ assists: 0 });
+  });
 });
 
 describe("trend, patterns, career and head-to-head", () => {

@@ -57,7 +57,8 @@ export function TrendChart({
   const yMax = Math.max(hi, yTicks[yTicks.length - 1]);
   const x = (i: number) => pad.l + (i / Math.max(1, hands)) * (W - pad.l - pad.r);
   const y = (v: number) => pad.t + (1 - (v - yMin) / (yMax - yMin || 1)) * (H - pad.t - pad.b);
-  const xStep = niceStep(hands / 5) || 1;
+  // Hands are whole: a game of 1 or 2 would otherwise tick at 0.2, 0.4...
+  const xStep = Math.max(1, niceStep(hands / 5));
   const xTicks: number[] = [];
   for (let i = 0; i <= hands; i += xStep) xTicks.push(i);
   const path = (values: (number | null)[]) =>
