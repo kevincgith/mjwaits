@@ -2524,6 +2524,32 @@ export function PlayPanel({
     const ws = waitValues(game, HUMAN);
     return ws.length ? ws : null;
   }, [game, me, myTurn, seated, showWaits]);
+  // The bar's 聽 keeps to one line (a second would shrink the table): its
+  // 番 go when they don't fit - the card still shows them - and then, still
+  // too long, it's cut short. Measured with them in, for these waits at
+  // this size.
+  const barWaitsRef = useRef<HTMLSpanElement>(null);
+  const waitsKey = waits ? waits.map((w) => tileKey(w.tile)).join() : "";
+  const [tightFor, setTightFor] = useState<string | null>(null);
+  const waitsTight = !!waits && tightFor === waitsKey;
+  // (Measured again, 番 back in, when the screen changes size.)
+  const [resized, setResized] = useState(0);
+  useLayoutEffect(() => {
+    const el = barWaitsRef.current;
+    if (!el) return;
+    const over = el.scrollWidth > el.clientWidth;
+    if (!waitsTight && over) setTightFor(waitsKey);
+    // Cut short even so: its end fades out.
+    el.classList.toggle("is-cut", waitsTight && over);
+  }, [waits, waitsKey, waitsTight, resized]);
+  useEffect(() => {
+    const again = () => {
+      setTightFor(null);
+      setResized((n) => n + 1);
+    };
+    window.addEventListener("resize", again);
+    return () => window.removeEventListener("resize", again);
+  }, []);
   // The same for a tile held down, or lifted, to throw - if throwing it
   // would leave you ready. (Held: one-tap discard throws it on letting go.)
   const waitsAt = myTurn && !autoplay ? (pressed ?? selected) : null;
@@ -3485,12 +3511,12 @@ export function PlayPanel({
               onTake={takeSwap}
             />
           ) : waits ? (
-            <span className="play-bar-waits" aria-label={`Ready, waiting on ${waits.map((w) => `${tileLabel(w.tile)} (${w.left} left, ${w.fan ?? "?"} 番)`).join(", ")}`}>
+            <span ref={barWaitsRef} className="play-bar-waits" aria-label={`Ready, waiting on ${waits.map((w) => `${tileLabel(w.tile)} (${w.left} left, ${w.fan ?? "?"} 番)`).join(", ")}`}>
               聽
               {waits.map((w) => (
                 <span key={tileKey(w.tile)} className={`play-wait${w.left === 0 ? " is-dead" : ""}`}>
                   <TileGlyphSpan tile={w.tile} />×{w.left}
-                  <span className="play-wait-fan">{w.fan ?? "–"}番</span>
+                  {!waitsTight && <span className="play-wait-fan">{w.fan ?? "–"}番</span>}
                 </span>
               ))}
             </span>

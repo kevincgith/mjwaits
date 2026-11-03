@@ -7159,6 +7159,22 @@ html.playing body {
   text-decoration: line-through;
 }
 
+/* Never onto a second line (that would shrink the table): the 聽 gives way
+   - its 番 dropped (see PlayPanel), then cut short. */
+.play-bar:has(> .play-bar-waits) {
+  flex-wrap: nowrap;
+}
+
+.play-bar > .play-bar-waits {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.play-bar > .play-bar-waits.is-cut {
+  mask-image: linear-gradient(to right, #000 calc(100% - 1.5rem), transparent);
+}
+
 /* Its 番 off a discard. */
 .play-wait-fan {
   margin-left: 0.15rem;
