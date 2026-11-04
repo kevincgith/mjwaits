@@ -869,13 +869,16 @@ const EDGE_PITCH = 0.72;
 // A side wall's tiles, as a share of a meld's (--play-wall over --play-tile).
 const SIDE_WALL = 0.72;
 
-// A side player's standing tiles, grown into the room their melds leave
-// along the wall: its full length (a 16-tile hand and the drawn tile's
-// slot) over what's left standing - never past a meld's size. Steps up
-// only on a call, as everything along that edge moves then anyway.
+// A side player's standing tiles, sized to the room along the wall: as
+// long as a 15-tile hand and the drawn tile's slot (a tile short of a full
+// hand's - the wall sits half a tile low, its far end clear of the table's
+// edge, its near end where a full one's is: see layout.ts), however many
+// are left standing - so grown into the room their melds leave, never past
+// a meld's size. Steps up only on a call, as everything along that edge
+// moves then anyway.
 function sideWallGrow(melds: number): number {
   const length = (standing: number) => (standing + 2) * EDGE_PITCH + 0.5;
-  return Math.min(1 / SIDE_WALL, length(16) / length(Math.max(0, 16 - 3 * melds)));
+  return Math.min(1 / SIDE_WALL, length(15) / length(Math.max(0, 16 - 3 * melds)));
 }
 
 // The bonuses in `all` not among those `seen` (as bonusKey has them) - by
