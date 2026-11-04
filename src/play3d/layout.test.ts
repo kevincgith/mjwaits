@@ -325,6 +325,13 @@ describe("a hand laid down on the WebGL table", () => {
       layoutTable({ ...base, piles: {}, rows: {}, flights: [], walls: { ...base.walls, [side]: w } }, DIMS).felt.pieces.filter((p) => (side === "left" ? p.m[12] < DIMS.feltW / 8 : p.m[12] > (7 * DIMS.feltW) / 8));
     const across = layoutTable({ ...base, piles: {}, rows: {}, flights: [] }, DIMS).felt.pieces.filter((p) => Math.abs(p.m[12] - DIMS.feltW / 2) < DIMS.feltW / 4 && p.m[13] < DIMS.feltH / 4);
     const acrossFront = Math.max(...across.map((p) => p.m[13] + (TILE_H * size(p.m)) / 2));
+    // A tile drawn moves nothing - the left player's below their hand, where it's seen.
+    const ys = (side: "left" | "right", w: GLWall) => sideTiles(side, w).map((p) => Math.round(p.m[13])).sort((a, b) => a - b);
+    const mid = (0.45 * DIMS.rem + DIMS.feltH - DIMS.under - 0.35 * DIMS.rem) / 2;
+    expect(ys("left", { ...wall(17), drew: true }).slice(0, -1)).toEqual(ys("left", wall(16)));
+    const standing = ys("left", wall(16));
+    // (Half a tile below the middle: see layout.ts.)
+    expect((standing[0] + standing[standing.length - 1]) / 2).toBeCloseTo(mid + 0.36 * DIMS.wall, -0.5);
     for (const w of [{ ...wall(17), drew: true }, { ...wall(17), down: true, tiles, winningTile: tiles[12] }]) {
       const [l, r] = (["left", "right"] as const).map((side) => sideTiles(side, w).map((p) => p.m[13]).sort((a, b) => a - b));
       // The same tiles in hand on both sides; the one set apart below the left's, above the right's.

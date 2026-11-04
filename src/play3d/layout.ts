@@ -492,14 +492,17 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
     const edgeX0 = which === "left" ? seatX0 : seatX0 + S.width - S.edgeW;
     const { Wg, p, faces, win, drew } = S;
     // The two side hands mirror each other: the tiles in hand in the same
-    // place on both sides - centred a tile below the middle, as the far end
-    // has less room - and a tile drawn (or the winning tile) set apart at
-    // the player's right: below the left player's hand, above the right's.
-    // (Top to bottom: the left wall from its far end, the right's from its
-    // near end.)
+    // place on both sides, and a tile drawn (or the winning tile) set apart
+    // at the player's right: below the left player's hand, above the
+    // right's. Half a full-size tile below the middle: a side wall's a tile
+    // shorter than a full hand's (sideWallGrow, in PlayPanel), so its near
+    // end - the left player's drawn tile, clear of your hand - is where a
+    // full one's would be, and its far end a tile lower: room there for the
+    // right player's winning tile past a full concealed hand. (Top to
+    // bottom: the left wall from its far end, the right's from its near end.)
     const apart = drew || win >= 0;
     const held = faces.length - (apart ? 1 : 0);
-    const handY0 = midSeatY + p - (held * p) / 2;
+    const handY0 = midSeatY + 0.5 * 0.72 * d.wall - (held * p) / 2;
     const ys: number[] = [];
     if (which === "left") {
       let y = handY0;
