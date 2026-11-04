@@ -70,7 +70,7 @@ import { allTileKinds, shanten, sortTiles, tileKey, tileLabel, type Tile } from 
 import { blindPicks, botGive, SWAP_TIMER_S, botSplit, DEFAULT_SWAP_RULES, givePlans, pileLeft, type GivePlan, type SwapPhase, type SwapRules } from "@mjwaits/shared/engine/swap";
 import { PlayDie } from "./PlayDie";
 import { SWAP_FLIGHT_MS, SWAP_ROUND_HOLD_MS, SwapControls, SwapDice, swapDiceMs, SwapSheet, type Flight } from "./PlaySwap";
-import type { BonusTile } from "@mjwaits/shared/engine/scoring";
+import { sortBonusTiles, type BonusTile } from "@mjwaits/shared/engine/scoring";
 import { BonusGlyphSpan, TileGlyphSpan } from "./TileGlyphs";
 import {
   BOT_PROFILES,
@@ -431,7 +431,7 @@ function FlowersView({ flowers }: { flowers: BonusTile[] }) {
   if (flowers.length === 0) return null;
   return (
     <span className="play-flowers">
-      {flowers.map((f, i) => (
+      {sortBonusTiles(flowers).map((f, i) => (
         <BonusGlyphSpan key={i} tile={f} />
       ))}
     </span>
