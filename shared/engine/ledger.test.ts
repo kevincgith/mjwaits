@@ -184,7 +184,7 @@ describe("圈 and 東", () => {
 
   it("a 莊家 change before the first hand is who deals first: the 圈 starts there", () => {
     const s = replay(game([dealer(3), win(3, 2, null)]));
-    expect(s.hands[0].label).toBe("東風東局");
+    expect(s.hands[0].label).toBe("東圈東局");
     expect(s.roundStartDealer).toBe(3);
   });
 
@@ -192,30 +192,30 @@ describe("圈 and 東", () => {
     // Four non-dealer wins pass the deal once round: 東風 → 南風.
     const round = [win(1, 1, 0), win(2, 1, 0), win(3, 1, 0), win(0, 1, 1)];
     expect(replay(game([])).circle).toBe(1);
-    expect(replay(game(round))).toMatchObject({ circle: 2, east: 1, label: "南風東局" });
+    expect(replay(game(round))).toMatchObject({ circle: 2, east: 1, label: "南圈東局" });
     const s = replay(game([...round, ...round, ...round, ...round]));
-    expect(s).toMatchObject({ circle: 5, east: 2, label: "東風東局" });
+    expect(s).toMatchObject({ circle: 5, east: 2, label: "東圈東局" });
   });
 
   it("a 莊家 change can set any 風局", () => {
     const set = (seat: number, wind: number, hand: number): ScoreEvent => ({ t: "dealer", at: 0, seat, streak: 0, resetRound: false, round: { wind, hand } });
-    // B deals 南風西局: the 圈 started two seats back, at D.
+    // B deals 南圈西局: the 圈 started two seats back, at D.
     const s = replay(game([set(1, 1, 2)]));
-    expect(s).toMatchObject({ label: "南風西局", roundWind: 1, roundStartDealer: 3, circle: 1, east: 1 });
-    // From there the deal goes on as usual: C deals 南風北局, then D starts 西風.
-    expect(replay(game([set(1, 1, 2), win(2, 1, 1)])).label).toBe("南風北局");
-    expect(replay(game([set(1, 1, 2), win(2, 1, 1), win(3, 1, 2)])).label).toBe("西風東局");
+    expect(s).toMatchObject({ label: "南圈西局", roundWind: 1, roundStartDealer: 3, circle: 1, east: 1 });
+    // From there the deal goes on as usual: C deals 南圈北局, then D starts 西風.
+    expect(replay(game([set(1, 1, 2), win(2, 1, 1)])).label).toBe("南圈北局");
+    expect(replay(game([set(1, 1, 2), win(2, 1, 1), win(3, 1, 2)])).label).toBe("西圈東局");
     // After hands, a new wind starts a new 圈 - and a new 東 if it lands on 東風.
-    expect(replay(game([win(1, 1, 0), set(2, 1, 0)]))).toMatchObject({ circle: 2, east: 1, label: "南風東局" });
+    expect(replay(game([win(1, 1, 0), set(2, 1, 0)]))).toMatchObject({ circle: 2, east: 1, label: "南圈東局" });
     const back = replay(game([win(1, 1, 0), set(2, 1, 0), win(3, 1, 2), set(0, 0, 0)]));
-    expect(back).toMatchObject({ circle: 3, east: 2, label: "東風東局" });
+    expect(back).toMatchObject({ circle: 3, east: 2, label: "東圈東局" });
     // The same wind is just a relabel - e.g. 莊 moving seat and keeping the round.
-    expect(replay(game([win(1, 1, 0), set(3, 0, 1)]))).toMatchObject({ circle: 1, east: 1, label: "東風南局" });
+    expect(replay(game([win(1, 1, 0), set(3, 0, 1)]))).toMatchObject({ circle: 1, east: 1, label: "東圈南局" });
   });
 
-  it("a reset back to 東風東局 starts a new 圈 and 東 only after hands were played", () => {
+  it("a reset back to 東圈東局 starts a new 圈 and 東 only after hands were played", () => {
     expect(replay(game([dealer(2, true)]))).toMatchObject({ circle: 1, east: 1 });
-    expect(replay(game([win(1, 1, 0), dealer(2, true)]))).toMatchObject({ circle: 2, east: 2, label: "東風東局" });
+    expect(replay(game([win(1, 1, 0), dealer(2, true)]))).toMatchObject({ circle: 2, east: 2, label: "東圈東局" });
   });
 });
 
@@ -238,19 +238,19 @@ describe("莊 and the deal", () => {
 
   it("moves the round wind after a full lap of dealers", () => {
     const s = replay(game([win(1, 1, 0), win(2, 1, 0), win(3, 1, 0)]));
-    expect(s.label).toBe("東風北局");
+    expect(s.label).toBe("東圈北局");
     const lap = replay(game([win(1, 1, 0), win(2, 1, 0), win(3, 1, 0), win(1, 1, 0)]));
-    expect(lap.label).toBe("南風東局");
+    expect(lap.label).toBe("南圈東局");
     expect(lap.seatChangeDue).toBe(false);
   });
 
-  it("flags 執位 only after 北風北局, until the next hand", () => {
+  it("flags 執位 only after 北圈北局, until the next hand", () => {
     // Each non-dealer win passes the deal: 4 hands a wind, 16 a 圈.
     const pass = (n: number) => Array.from({ length: n }, (_, i) => win((i + 1) % 4, 1, i % 4));
     for (const n of [4, 8, 12]) expect(replay(game(pass(n))).seatChangeDue).toBe(false);
-    expect(replay(game(pass(15))).label).toBe("北風北局");
+    expect(replay(game(pass(15))).label).toBe("北圈北局");
     const full = game(pass(16));
-    expect(replay(full).label).toBe("東風東局");
+    expect(replay(full).label).toBe("東圈東局");
     expect(replay(full).seatChangeDue).toBe(true);
     expect(replay(withEvent(full, draw)).seatChangeDue).toBe(false);
     expect(replay(game(pass(16), { seatReminder: false })).seatChangeDue).toBe(false);
@@ -258,7 +258,7 @@ describe("莊 and the deal", () => {
 
   it("莊家設定 sets dealer and streak, and can restart the round", () => {
     const s = replay(game([win(1, 1, 0), { t: "dealer", at: 0, seat: 3, streak: 2, resetRound: true }]));
-    expect(s).toMatchObject({ dealer: 3, streak: 2, roundWind: 0, label: "東風東局" });
+    expect(s).toMatchObject({ dealer: 3, streak: 2, roundWind: 0, label: "東圈東局" });
   });
 });
 

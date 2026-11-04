@@ -203,6 +203,24 @@
     overflow-y: auto;
     overscroll-behavior: contain;
     scrollbar-width: none;
+    /* (No scrollbar: what runs on below fades out at the bottom edge.) */
+    mask-image: linear-gradient(to bottom, #000 calc(100% - 1.2rem), transparent);
+  }
+}
+
+/* A phone on its side: closer together, so the tips fit too. */
+@media (orientation: landscape) and (max-height: 430px) {
+  .ot-entry .ot-panel {
+    gap: 0.45rem;
+  }
+
+  .ot-entry .ot-tip {
+    gap: 0.3rem;
+    padding: 0.6rem 0.85rem;
+  }
+
+  .ot-entry .ot-tip p {
+    line-height: 1.35;
   }
 }
 

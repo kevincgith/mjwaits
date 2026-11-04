@@ -337,7 +337,7 @@ function WaitsCard({ tile, waits, anchorX }: { tile: Tile; waits: WaitValue[]; a
     card.style.left = `${left}px`;
     // Above the call buttons over the row's right end, if it would meet them.
     const calls = row.querySelector<HTMLElement>(".play-calls");
-    const meet = !!calls && calls.childElementCount > 0 && left + w > row.offsetWidth - calls.offsetWidth;
+    const meet = !!calls && calls.childElementCount > 0 && left + w > calls.offsetLeft;
     card.style.bottom = meet ? `calc(100% + 0.7rem + ${calls.offsetHeight}px)` : "";
   });
   return (
@@ -519,7 +519,7 @@ function TalkRows() {
           講出聲 Say it aloud
         </span>
         <span className="play-menu-seg">
-          {[true, false].map((on) => (
+          {[false, true].map((on) => (
             <button
               key={String(on)}
               type="button"
@@ -556,7 +556,7 @@ function SoundRow() {
     <div className="play-menu-row">
       <span>音效 Sound</span>
       <span className="play-menu-seg">
-        {[true, false].map((on) => (
+        {[false, true].map((on) => (
           <button
             key={String(on)}
             type="button"
@@ -749,15 +749,12 @@ const censusName = (k: string) => {
   return m ? `${m[1] === "flower" ? ["梅", "蘭", "菊", "竹"][Number(m[2]) - 1] : ["春", "夏", "秋", "冬"][Number(m[2]) - 1]}${m[2]}` : k;
 };
 
-// All 144 tiles there (see tileCensus) - or which kinds aren't.
+// Which tile kinds aren't all there (see tileCensus) - nothing, when all
+// 144 are: that's the game working, not news for the players.
 function TileCensusLine({ game }: { game: GameState }) {
   const c = tileCensus(game);
-  const ok = c.total === 144 && c.off.length === 0;
-  return (
-    <p className={`play-tracker-census${ok ? " is-ok" : " is-off"}`}>
-      {ok ? "✓ All 144 tiles accounted for" : `⚠ ${c.total} of 144 tiles: ${c.off.map((o) => `${censusName(o.tile)} ×${o.count} (should be ${o.expected})`).join(", ")}`}
-    </p>
-  );
+  if (c.total === 144 && c.off.length === 0) return null;
+  return <p className="play-tracker-census is-off">{`⚠ ${c.total} of 144 tiles: ${c.off.map((o) => `${censusName(o.tile)} ×${o.count} (should be ${o.expected})`).join(", ")}`}</p>;
 }
 
 // Who you play against: a ready-made table, or a bot per seat from the
@@ -3157,7 +3154,7 @@ export function PlayPanel({
                 {online.table.watching > 0 && ` · ${online.table.watching} watching`}
               </p>
               <div className="play-menu-row">
-                <span>Hints</span>
+                <span>提示 Hints</span>
                 <span className="play-menu-seg">
                   {[false, true].map((on) => (
                     <button key={String(on)} type="button" className={hint === on ? "toggle-on" : undefined} aria-pressed={hint === on} onClick={() => setHint(on)}>
@@ -3167,7 +3164,7 @@ export function PlayPanel({
                 </span>
               </div>
               <div className="play-menu-row">
-                <span>One-tap discard</span>
+                <span>一按打牌 One-tap discard</span>
                 <span className="play-menu-seg">
                   {[false, true].map((on) => (
                     <button key={String(on)} type="button" className={oneTap === on ? "toggle-on" : undefined} aria-pressed={oneTap === on} onClick={() => setOneTap(on)}>
@@ -3197,7 +3194,7 @@ export function PlayPanel({
                 >
                   <span>我的紀錄 Your record</span>
                   <span className="play-menu-value">
-                    {playRecord.hands ? `${playRecord.wins} wins / ${playRecord.hands}` : "–"} ›
+                    {playRecord.hands ? `${playRecord.wins} ${playRecord.wins === 1 ? "win" : "wins"} / ${playRecord.hands}` : "–"} ›
                   </span>
                 </button>
               )}
@@ -3216,7 +3213,7 @@ export function PlayPanel({
           {menuOpen && !online && (
             <div className="play-menu">
               <div className="play-menu-row">
-                <span>Hints</span>
+                <span>提示 Hints</span>
                 <span className="play-menu-seg">
                   {[false, true].map((on) => (
                     <button key={String(on)} type="button" className={hint === on ? "toggle-on" : undefined} aria-pressed={hint === on} onClick={() => setHint(on)}>
@@ -3226,7 +3223,7 @@ export function PlayPanel({
                 </span>
               </div>
               <div className="play-menu-row">
-                <span>One-tap discard</span>
+                <span>一按打牌 One-tap discard</span>
                 <span className="play-menu-seg">
                   {[false, true].map((on) => (
                     <button key={String(on)} type="button" className={oneTap === on ? "toggle-on" : undefined} aria-pressed={oneTap === on} onClick={() => setOneTap(on)}>
@@ -3255,11 +3252,11 @@ export function PlayPanel({
               >
                 <span>我的紀錄 Your record</span>
                 <span className="play-menu-value">
-                  {playRecord.hands ? `${playRecord.wins} wins / ${playRecord.hands}` : "–"} ›
+                  {playRecord.hands ? `${playRecord.wins} ${playRecord.wins === 1 ? "win" : "wins"} / ${playRecord.hands}` : "–"} ›
                 </span>
               </button>
               <div className="play-menu-row">
-                <span>Bot speed</span>
+                <span>速度 Bot speed</span>
                 <span className="play-menu-seg">
                   {(Object.keys(SPEEDS) as Speed[]).map((sp) => (
                     <button key={sp} type="button" className={speed === sp ? "toggle-on" : undefined} aria-pressed={speed === sp} onClick={() => setSpeed(sp)}>
@@ -3269,7 +3266,7 @@ export function PlayPanel({
                 </span>
               </div>
               <div className="play-menu-row">
-                <span>Turn timer</span>
+                <span>限時 Turn timer</span>
                 <span className="play-menu-seg">
                   {TIMER_CHOICES.map((t) => (
                     <button key={t} type="button" className={timer === t ? "toggle-on" : undefined} aria-pressed={timer === t} onClick={() => setTimer(t)}>
@@ -3291,7 +3288,7 @@ export function PlayPanel({
                   setSetupOpen(true);
                 }}
               >
-                <span>New game</span>
+                <span>開局 New game</span>
                 <span className="play-menu-value">its rules first ›</span>
               </button>
             </div>

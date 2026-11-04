@@ -66,7 +66,7 @@ describe("sheetCsv", () => {
     const g = game([ev, { t: "draw", at: 0 }, bonus(2, 1)]);
     const csv = sheetCsv(g, replay(g), ["A", "B", "C", "D"]).trim().split("\r\n");
     expect(csv[0]).toBe("#,Round,莊,Result,Winners,Dealt in,Patterns,A,B,C,D");
-    expect(csv[1]).toBe("1,東風東局,A,食胡,A 10,B,清一色 8 · 花 2,10,-10,0,0");
+    expect(csv[1]).toBe("1,東圈東局,A,食胡,A 10,B,清一色 8 · 花 2,10,-10,0,0");
     expect(csv[2]).toMatch(/^2,.*,流局,,,,0,0,0,0$/);
     expect(csv[3]).toBe(",,,獎,,,,-1,-1,3,-1");
     expect(csv[4]).toBe(",Total,,,,,,9,-11,3,-1");

@@ -21,7 +21,7 @@ export interface ScoreSnapshot {
   name?: string;
   at: number; // when it was shared
   started: number;
-  label: string; // 東風南局
+  label: string; // 東圈南局
   hands: number;
   east: number;
   circle: number;
