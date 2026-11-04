@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { applyTurnMove, botClaim, botTurnMove, claimOptions, kongOptions, newGame, resolveClaims, riichiDiscards, seatWind, SEATS, unseenCounts, type GameState } from "@mjwaits/shared/engine/game";
+import { applyTurnMove, botClaim, botTurnMove, claimOptions, dealHand, kongOptions, newGame, resolveClaims, riichiDiscards, seatWind, SEATS, swapGive, swapTake, unseenCounts, type GameState } from "@mjwaits/shared/engine/game";
 import { profileById, rateDiscardsFor, seededRng } from "@mjwaits/shared/engine/bots";
 import { tileKey } from "@mjwaits/shared/engine/mahjong";
 import { viewFor } from "@mjwaits/shared/engine/view";
-import { BLANK, seatState } from "./seatState";
+import { BLANK, seatState, takenFaces } from "./seatState";
 
 // A few moves into a hand, with bots at every seat.
 function midHand(steps: number): GameState {
@@ -98,4 +98,26 @@ describe("seatState", () => {
     const { game } = seatState(viewFor(real, -1));
     expect(game.players.every((p) => p.hand.every((t) => t === BLANK))).toBe(true);
   });
+});
+
+describe("takenFaces", () => {
+  // Four tiles each; the dealer takes first.
+  const rules = { winds: [1, 2, 3, 4], rounds: [1, 1, 1, 1, 1, 1], tiles: [4, 4, 4, 4, 4, 4] };
+  for (const seat of [0, 1, 2, 3]) {
+    it(`puts each tile a blind take brought in on the place it came from - at seat ${seat}`, () => {
+      let s = dealHand({ dealer: seat, roundWind: 1, dealerStreak: 0, swapRules: rules as never }, undefined, seededRng(7 + seat));
+      for (let g = 0; g < SEATS; g++) s = swapGive(s, g, s.players[g].hand.slice(0, 4));
+      const before = seatState(viewFor(s, seat));
+      // Out of place order, as tapped: two from across, last place first.
+      const local = [[], [1], [3, 0], [2]];
+      const after = swapTake(s, seat, [0, 1, 2, 3].map((t) => local[before.toLocal(t)]));
+      const now = seatState(viewFor(after, seat));
+      const taken = local.flatMap((places, g) => places.map((i) => ({ g, i })));
+      const faces = takenFaces(taken, before.game.players[0].hand, now.game.players[0].hand, before.toTable, local);
+      if (s.phase.kind !== "swap") throw new Error("no swap");
+      const piles = s.phase.piles;
+      for (const { g, i } of taken) expect(faces.get(`${g}:${i}`)).toEqual(piles[before.toTable(g)]![i]);
+      expect(faces.size).toBe(4);
+    });
+  }
 });
