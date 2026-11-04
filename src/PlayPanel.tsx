@@ -109,7 +109,7 @@ import { RIVALS } from "@mjwaits/shared/engine/lines/rivals";
 import { getTalk, getYourVoice, isAloud, sayAloud, sayLineAloud, setAloud, setTalk, setYourVoice, tableVoices, warmVoices, type Talk, type VoiceCall, type YourVoice } from "./lib/voice";
 import { scoreView, type ResultView } from "@mjwaits/shared/engine/view";
 import { MYSTERY_BOT, REACTIONS, type Reaction, type TableClientMessage, type TableState } from "@mjwaits/shared/protocol/table";
-import { BLANK, seatState } from "./lib/seatState";
+import { BLANK, seatState, takenFaces } from "./lib/seatState";
 import { PLAY_SAVE_KEY } from "./lib/playSaved";
 import { replayCached, withEvents, type ScoreEvent, type ScoreGame } from "@mjwaits/shared/engine/ledger";
 import { carriedOver, newPlayLedger, playEvents, uniqueNames } from "@mjwaits/shared/engine/playLedger";
@@ -2046,6 +2046,9 @@ export function PlayPanel({
   }>({ phase: null, hand: [] });
   const swapPiles = swapPhase?.piles ?? null;
   const swapTakenBy = swapPhase?.takenBy;
+  // Online, the picks your last take sent (places per pile, yours turned):
+  // the order its tiles come into your hand (see the flights below).
+  const tookPicks = useRef<number[][] | null>(null);
   // Before the screen's drawn: a take shows its tiles flying from the very
   // frame it's made - never a frame of the taker's wall already grown, or
   // the piles already gapped.
@@ -2071,24 +2074,22 @@ export function PlayPanel({
     const now = Date.now();
     const next: Flight[] = [];
     // Online, the others' piles are backs: what you took you see only as it
-    // reaches your hand - the tiles new there, one to each of your flights
-    // from a back (you took them blind: which went where nobody knows).
-    const gained = me.hand.slice();
-    for (const t of prev.hand) {
-      const i = gained.findIndex((h) => sameTile(h, t));
-      if (i >= 0) gained.splice(i, 1);
-    }
+    // reaches your hand - the tiles new there, each to the flight from the
+    // place it was taken from (see takenFaces).
     const back = (t: Tile) => t.suit === BLANK.suit && t.rank === BLANK.rank;
-    const realOf = (g: number, i: number, taker: number) => {
+    const blindTaken = fresh.filter((f) => f.taker === HUMAN && back(was.piles[f.g]![f.i]!));
+    const faces = blindTaken.length && net ? takenFaces(blindTaken, prev.hand, me.hand, net.toTable, tookPicks.current) : null;
+    if (blindTaken.length) tookPicks.current = null;
+    const realOf = (g: number, i: number) => {
       const t = was.piles[g]![i]!;
-      return taker === HUMAN && back(t) ? (gained.shift() ?? t) : t;
+      return faces?.get(`${g}:${i}`) ?? t;
     };
     for (const taker of new Set(fresh.map((f) => f.taker))) {
       const theirs = fresh.filter((f) => f.taker === taker);
       // Each lands in its giver's group in the taker's row (placed below).
       const givers = [...new Set(theirs.map((f) => f.g))];
       theirs.forEach((f) => {
-        const real = realOf(f.g, f.i, taker);
+        const real = realOf(f.g, f.i);
         const tile = seated && (taker === HUMAN || f.g === HUMAN) && !back(real) ? real : null;
         // Its pile showed its back (anyone's but your own standing one): face up, it turns over on the way.
         const shownFace = f.g === HUMAN && seated;
@@ -2207,7 +2208,10 @@ export function PlayPanel({
       if (swapSent.current?.step === online.table.step) return;
       // By the table's seats.
       const rid = online.send({ t: "take", step: online.table.step, picks: [0, 1, 2, 3].map((t) => picks[net.toLocal(t)]) });
-      if (rid !== false) swapSent.current = { step: online.table.step, rid };
+      if (rid !== false) {
+        swapSent.current = { step: online.table.step, rid };
+        tookPicks.current = picks;
+      }
       return;
     }
     advance(swapTake(game, HUMAN, picks));

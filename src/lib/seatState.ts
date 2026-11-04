@@ -101,3 +101,28 @@ export function seatState(view: TableView): SeatState {
   };
   return { game, result, toLocal, toTable };
 }
+
+// Online, the tiles your 換牌 take brought into your hand (`hand`, against
+// `before`), each to the place it was taken from (`taken`: by this screen's
+// seats). The table adds them pile by pile in its own seats' order - not
+// this screen's, which starts from you - each pile's in the order they were
+// picked (`picks`, as sent, by this screen's seats; without them, in place
+// order). Keyed "pile:place".
+export function takenFaces(
+  taken: { g: number; i: number }[],
+  before: Tile[],
+  hand: Tile[],
+  toTable: (seat: number) => number,
+  picks: number[][] | null
+): Map<string, Tile> {
+  const gained = hand.slice();
+  for (const t of before) {
+    const i = gained.findIndex((h) => h.suit === t.suit && h.rank === t.rank);
+    if (i >= 0) gained.splice(i, 1);
+  }
+  const pickOrder = (g: number, i: number) => (picks?.[g]?.includes(i) ? picks[g].indexOf(i) : i);
+  const inOrder = [...taken].sort((a, b) => toTable(a.g) - toTable(b.g) || pickOrder(a.g, a.i) - pickOrder(b.g, b.i));
+  const faces = new Map<string, Tile>();
+  inOrder.forEach((f, n) => gained[n] && faces.set(`${f.g}:${f.i}`, gained[n]));
+  return faces;
+}
