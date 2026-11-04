@@ -63,17 +63,22 @@ class LoadFailed extends Component<{ fallback: ReactNode; children: ReactNode },
   }
 }
 
-function Part({ fallback, children }: { fallback: ReactNode; children: ReactNode }) {
+// `loading`: shown while it's fetched, if not `fallback` (a Play screen's
+// blank with a spinner that fades in should it take a moment).
+function Part({ fallback, loading = fallback, children }: { fallback: ReactNode; loading?: ReactNode; children: ReactNode }) {
   return (
     <LoadFailed fallback={fallback}>
-      <Suspense fallback={fallback}>{children}</Suspense>
+      <Suspense fallback={loading}>{children}</Suspense>
     </LoadFailed>
   );
 }
 
+// A Play screen's blank: `kind` its own look (its felt), while it loads.
+const playBlank = (kind: string, loading = false) => <div className={`play-screen${kind ? ` ${kind}` : ""}${loading ? " is-loading" : ""}`} />;
+
 export function PlayHome(props: Omit<ComponentProps<typeof PlayHomeView>, "saved">) {
   return (
-    <Part fallback={<div className="play-screen ph-screen" />}>
+    <Part fallback={playBlank("ph-screen")} loading={playBlank("ph-screen", true)}>
       <PlayHomeLazy {...props} />
     </Part>
   );
@@ -81,7 +86,7 @@ export function PlayHome(props: Omit<ComponentProps<typeof PlayHomeView>, "saved
 
 export function PlayPanel(props: ComponentProps<typeof PlayPanelView>) {
   return (
-    <Part fallback={<div className="play-screen" />}>
+    <Part fallback={playBlank("")} loading={playBlank("", true)}>
       <PlayPanelLazy {...props} />
     </Part>
   );
@@ -89,7 +94,7 @@ export function PlayPanel(props: ComponentProps<typeof PlayPanelView>) {
 
 export function OnlineTable(props: ComponentProps<typeof OnlineTableView>) {
   return (
-    <Part fallback={<div className="play-screen ot-screen" />}>
+    <Part fallback={playBlank("ot-screen")} loading={playBlank("ot-screen", true)}>
       <OnlineTableLazy {...props} />
     </Part>
   );

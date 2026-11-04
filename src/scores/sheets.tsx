@@ -15,11 +15,15 @@ import { WIND_CHARS, SEAT_AREAS, fmt, signed, colorOf, Icons, SectionHead, Monog
 export function Setup({ store, suggestion, onStart, waitingHand }: { store: ScoreStore; suggestion: readonly string[]; onStart: (seats: string[], dealer: number) => void; waitingHand: boolean }) {
   const last = store.history[0]?.seats;
   // Each row keeps an id, so a drag moves the player (their typing and 莊
-  // with them) while the 東南西北 labels stay with the seats.
-  const [rows, setRows] = useState(() => (last ?? suggestion).slice(0, SEATS).map((name, id) => ({ id, name: String(name) })));
+  // with them) while the 東南西北 labels stay with the seats. The last
+  // game's players to start with; else empty, the suggested names (the Dice
+  // tab's seats) shown as placeholders - and used for any left blank.
+  const [rows, setRows] = useState(() =>
+    Array.from({ length: SEATS }, (_, id) => ({ id, name: last ? String(last[id] ?? "") : "", hint: String(suggestion[id] ?? `P${id + 1}`) }))
+  );
   const [dealerId, setDealerId] = useState(0);
   const dealer = Math.max(0, rows.findIndex((r) => r.id === dealerId));
-  const trimmed = rows.map((r) => r.name.trim());
+  const trimmed = rows.map((r) => r.name.trim() || r.hint);
   const valid = trimmed.every(Boolean) && new Set(trimmed).size === SEATS;
 
   // Drag to reorder, by the grip: the row follows the finger, and the others
@@ -100,6 +104,7 @@ export function Setup({ store, suggestion, onStart, waitingHand }: { store: Scor
                 <input
                   className="sc-input"
                   value={r.name}
+                  placeholder={r.hint}
                   maxLength={12}
                   autoComplete="off"
                   onChange={(e) => setRows((prev) => prev.map((x) => (x.id === r.id ? { ...x, name: e.target.value } : x)))}
@@ -1109,7 +1114,7 @@ export function SeatsSheet({
   const startDealer = state.seats[state.dealer];
   const [dealerName, setDealerName] = useState(startDealer);
   const [streak, setStreak] = useState(state.streak);
-  // 風局: keep the round going, reset to 東風東局 from the dealer, or set any
+  // 風局: keep the round going, reset to 東圈東局 from the dealer, or set any
   // 風 and 局. Keep until a new 莊 is picked - that's usually 執位, so it then
   // flips to Reset, unless it was chosen by hand.
   const [round, setRound] = useState<"keep" | "reset" | "set">("keep");
@@ -1376,7 +1381,7 @@ export function SeatsSheet({
 
 
   // From the seat ceremony: once the sheet has slid up, everyone slides to
-  // the seat they drew and the 莊 badge flies to 東 - a new 東風東局 at 連0.
+  // the seat they drew and the 莊 badge flies to 東 - a new 東圈東局 at 連0.
   useEffect(() => {
     if (!proposal) return;
     const timer = window.setTimeout(() => {
@@ -1627,7 +1632,7 @@ export function SeatsSheet({
             options={[
               { value: "keep", label: <RoundOption verb="Keep" label={state.label} /> },
               { value: "reset", label: <RoundOption verb="Reset" label={roundLabel(0, dealer, dealer)} /> },
-              { value: "set", label: <RoundOption verb="Set" label={round === "set" ? `${WIND_CHARS[custom.wind]}風${WIND_CHARS[custom.hand]}局` : "any 風局"} /> },
+              { value: "set", label: <RoundOption verb="Set" label={round === "set" ? `${WIND_CHARS[custom.wind]}圈${WIND_CHARS[custom.hand]}局` : "any 風局"} /> },
             ]}
           />
           {round === "set" && (
@@ -2366,7 +2371,7 @@ export const SETTING_GROUPS: { title: string; rows: { key: keyof ScoreSettings; 
     title: "顯示 Display",
     rows: [
       { key: "showLah", label: "拉數提示", help: "拉 on the player cards", kind: "bool" },
-      { key: "seatReminder", label: "執位提示", help: "After 北風北局", kind: "bool" },
+      { key: "seatReminder", label: "執位提示", help: "After 北圈北局", kind: "bool" },
       { key: "highScore", label: "高分提示", help: "Flag a payment this big", kind: "nullable" },
       { key: "showTally", label: "胡摸銃數", help: "Counts on the cards: 胡 black, 摸 green, 銃 red", kind: "bool" },
       { key: "quickScan", label: "快速掃描", help: "A Scan button on each player's card", kind: "bool" },

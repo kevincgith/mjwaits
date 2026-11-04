@@ -54,7 +54,7 @@ export interface ScoreSettings {
   lahRound: "up" | "down"; // 拉's half: 0.5進1 (up) or drop it
   tiRound: "up" | "down"; // 踢's half
   showLah: boolean; // 拉數提示 - 拉 badges on the cards
-  seatReminder: boolean; // 執位提示 - remind to re-seat after 北風北局
+  seatReminder: boolean; // 執位提示 - remind to re-seat after 北圈北局
   highScore: number | null; // 高分提示 - flag a payment at or above this
   surrenderPrompt: number | null; // 投降提示 - prompt once a 拉 runs this many hands in a row; null = off. A prompt only - 投降 itself is never restricted.
   showTally: boolean; // 胡摸銃數 - win / self-draw / deal-in counts on the cards
@@ -200,7 +200,7 @@ type ScoreEventBody =
   // the caller holds ends there, each pulled player paid its 踢 half too.
   | { t: "zhaHu"; at: number; seat: number; pays: { player: string; amount: number }[] }
   | { t: "swap"; at: number; seats: string[] } // the whole new seating
-  // resetRound: back to 東風東局 from this dealer. Or `round` sets any 風局:
+  // resetRound: back to 東圈東局 from this dealer. Or `round` sets any 風局:
   // wind 0-3 (東南西北) and hand 0-3 (this dealer's 東局 … 北局).
   | { t: "dealer"; at: number; seat: number; streak: number; resetRound: boolean; round?: { wind: number; hand: number } }
   | { t: "settings"; at: number; settings: ScoreSettings };
@@ -295,7 +295,7 @@ export interface ReplayState {
   // Everything each player has paid each other (and the Jackpot pile,
   // CHIP_POT), as "from>to" - for the chips that change hands pair by pair.
   paid: Record<string, number>;
-  seatChangeDue: boolean; // 北風北局 just ended and 執位提示 is on
+  seatChangeDue: boolean; // 北圈北局 just ended and 執位提示 is on
   fanXueDue: FanXueDue | null; // the last hand's 雙響/三響, which a 自摸 by its loser next would 反雪
   label: string;
 }
@@ -327,7 +327,7 @@ export function half(value: number, round: "up" | "down", integer: boolean): num
 }
 
 export function roundLabel(roundWind: number, dealer: number, roundStartDealer: number): string {
-  return `${WIND_CHARS[roundWind]}風${WIND_CHARS[(dealer - roundStartDealer + SEATS) % SEATS]}局`;
+  return `${WIND_CHARS[roundWind]}圈${WIND_CHARS[(dealer - roundStartDealer + SEATS) % SEATS]}局`;
 }
 
 const lahKey = (holder: string, pulled: string) => `${holder}>${pulled}`;
@@ -468,7 +468,7 @@ export function replay(game: ScoreGame): ReplayState {
     label: "",
   };
 
-  // Hands played in the current 圈 - a reset back to 東風東局 only starts a
+  // Hands played in the current 圈 - a reset back to 東圈東局 only starts a
   // new 圈 (and a new 東) when this one had any.
   let handsThisCircle = 0;
   const nextCircle = () => {
@@ -482,7 +482,7 @@ export function replay(game: ScoreGame): ReplayState {
       state.roundWind = (state.roundWind + 1) % 4;
       nextCircle();
       if (state.roundWind === 0) state.east++;
-      // 執位 once a whole 圈 is done: after 北風北局, back round to 東.
+      // 執位 once a whole 圈 is done: after 北圈北局, back round to 東.
       if (state.roundWind === 0) state.seatChangeDue = state.settings.seatReminder;
     }
   };
@@ -652,7 +652,7 @@ export function replay(game: ScoreGame): ReplayState {
         } else if (ev.resetRound || state.hands.length === 0) {
           if (handsThisCircle > 0) {
             nextCircle();
-            state.east++; // back to 東風東局: a new 東
+            state.east++; // back to 東圈東局: a new 東
           }
           state.roundWind = 0;
           state.roundStartDealer = ev.seat;

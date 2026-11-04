@@ -2467,10 +2467,6 @@ img.tile-face {
   font-size: var(--tile-input);
 }
 
-.suit-row .joker-slot {
-  grid-column: 9;
-}
-
 /* The 選牌 header's Classic / Numpad switch: two icon segments, sitting
    right after the title (the header's other actions stay on the right). */
 .segmented.layout-toggle {
@@ -5802,6 +5798,43 @@ html.playing body {
   cursor: pointer;
 }
 
+/* A Play screen still loading (LazyParts): a spinner in the middle, faded
+   in only if it takes a moment - nothing flashes when it's quick. */
+.play-screen.is-loading::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 2rem;
+  height: 2rem;
+  margin: -1rem 0 0 -1rem;
+  border: 3px solid rgba(255, 209, 102, 0.25);
+  border-top-color: #ffd166;
+  border-radius: 50%;
+  opacity: 0;
+  animation:
+    play-loading-in 0.2s 0.35s forwards,
+    play-loading-spin 0.8s linear infinite;
+}
+
+@keyframes play-loading-in {
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes play-loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .play-screen.is-loading::after {
+    animation: play-loading-in 0.2s 0.35s forwards;
+  }
+}
+
 /* Upright phone: ask for landscape. */
 .play-next,
 .play-view-table,
@@ -6837,10 +6870,11 @@ html.playing body {
   min-width: 0;
 }
 
-/* Call buttons: big round badges above the right end of your hand. */
+/* Call buttons: big round badges above the right end of your hand -
+   stepped in from it, clear of the near end of the right player's wall. */
 .play-calls {
   position: absolute;
-  right: 0;
+  right: 2rem;
   bottom: calc(100% + 0.35rem);
   z-index: 4;
   display: flex;
@@ -7842,15 +7876,11 @@ html.playing body {
   line-height: 1;
 }
 
-/* Under the tracker: every tile counted. */
+/* Under the tracker, only if tiles have gone astray: which. */
 .play-tracker-census {
   margin: 0.6rem 0 0;
   font-size: 0.8rem;
   text-align: center;
-}
-
-.play-tracker-census.is-ok {
-  color: var(--text-muted);
 }
 
 .play-tracker-census.is-off {
@@ -8065,6 +8095,47 @@ html.playing body {
 .play-show-result {
   background: linear-gradient(#f0c766, var(--play-gold-deep));
   color: var(--play-ink-on-gold);
+}
+
+/* 戰況 over the table (the Scores tab's own sheet, scores/playScores.tsx):
+   in Play's dark lacquer and gold like the menu and 記牌器, not the Scores
+   tab's light page - the same parts, their colours turned. */
+.sc-sheet:has(.play-scores) {
+  --text: #f2ede2;
+  --text-strong: #fff;
+  --text-secondary: #ddd6c7;
+  --text-tertiary: #b9b2a3;
+  --text-muted: #a8a194;
+  --text-subtle: #8f897d;
+  --text-faint: #8f897d;
+  --faint: #5c564c;
+  --bg: #17120d;
+  --bg-inset: #1d1712;
+  --surface: #221b14;
+  --surface-sunken: #19140f;
+  --hover-bg: #30281f;
+  --hover-bg-2: #2a221a;
+  --fill: rgba(255, 255, 255, 0.08);
+  --fill-strong: rgba(255, 255, 255, 0.15);
+  --separator: rgba(255, 255, 255, 0.1);
+  --border: #3b3229;
+  --border-2: #342c23;
+  --border-3: #2d261e;
+  --accent: #ffd166;
+  --accent-hover-bg: rgba(255, 209, 102, 0.16);
+  --accent-active: #f0b94a;
+  --accent-bg: rgba(255, 209, 102, 0.1);
+  --accent-tint: rgba(255, 209, 102, 0.2);
+  --accent-bg-2: rgba(255, 209, 102, 0.06);
+  --accent-border-light: rgba(255, 209, 102, 0.3);
+  --accent-border-dashed: rgba(255, 209, 102, 0.35);
+  --on-accent: #1a1209;
+  border: 1px solid rgba(255, 209, 102, 0.25);
+}
+
+.sc-sheet:has(.play-scores) .segmented button.toggle-on {
+  background: rgba(255, 209, 102, 0.2);
+  color: #ffd166;
 }
 
 /* "Show result": brings the card back after View table, where the call
@@ -15390,7 +15461,7 @@ button.sc-stat:active {
 }
 
 .play-calls:has(> .play-call.is-swap) {
-  right: 5.6rem;
+  right: 7.6rem;
 }
 
 /* On a narrow screen the swap's note gives way (an ellipsis), never
@@ -15709,12 +15780,12 @@ button.sc-stat:active {
   color: #ffb4a3;
 }
 
-/* A row's label gives way (its note trimmed) before its buttons do. */
+/* A row's label gives way before its buttons do: its note wraps onto a
+   second line, read in full (the rules scroll if they must). */
 .play-setup-rules .play-menu-row > span:first-child {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  line-height: 1.25;
 }
 
 .play-setup-rules .play-menu-row > .play-menu-seg {

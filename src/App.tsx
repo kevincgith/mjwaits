@@ -152,6 +152,7 @@ import {
   DEFAULT_TAI_RULES,
   checkTileCopies,
   scoreParsedHand,
+  sortBonusTiles,
   type BonusTile,
   type GameContext,
   type MeldDeclaration,
@@ -296,11 +297,12 @@ function bonusClassLabel(b: BonusTile): string {
   return `${b.rank}${b.kind === "flower" ? "f" : "s"}`;
 }
 
-// All 8 bonus tile kinds (4 flowers then 4 seasons), for the correction
-// picker's bonus row - mirrors the Bonus tiles picker in ScoringPanel.
+// All 8 bonus tile kinds (4 seasons then 4 flowers, as the table sets
+// them out - sortBonusTiles), for the correction picker's bonus row -
+// mirrors the Bonus tiles picker in ScoringPanel.
 const CORRECTION_BONUS_TILES: BonusTile[] = [
-  ...([1, 2, 3, 4] as const).map((rank) => ({ kind: "flower" as const, rank })),
   ...([1, 2, 3, 4] as const).map((rank) => ({ kind: "season" as const, rank })),
+  ...([1, 2, 3, 4] as const).map((rank) => ({ kind: "flower" as const, rank })),
 ];
 
 // Groups the 34 real tile kinds into suit rows for the correction picker,
@@ -2562,7 +2564,6 @@ function Calculator({
       tile={JOKER_TILE}
       onClick={() => addTile(JOKER_TILE)}
       disabled={hand.length >= COMPLETE_SIZE}
-      extraClass="joker-slot"
     />
   );
 
@@ -2680,9 +2681,8 @@ function Calculator({
                   {allTileKinds()
                     .filter((t) => t.suit === suit)
                     .map(renderPickerTile)}
-                  {/* The joker shares the honors row, pinned to the last column
-                      (under 9) with one empty slot after 白, rather than taking
-                      a row of its own. */}
+                  {/* The joker shares the honors row, straight after 白,
+                      rather than taking a row of its own. */}
                   {suit === "z" && jokerButton}
                 </div>
               ))}
@@ -4049,7 +4049,7 @@ function TrainerPanel({
           aria-pressed={sub === "waits"}
           onClick={() => setSub("waits")}
         >
-          Waits
+          聽 Waits
         </button>
         <button
           type="button"
@@ -4057,7 +4057,7 @@ function TrainerPanel({
           aria-pressed={sub === "discards"}
           onClick={() => setSub("discards")}
         >
-          Discards
+          打牌 Discards
         </button>
         <button
           type="button"
@@ -4065,7 +4065,7 @@ function TrainerPanel({
           aria-pressed={sub === "endless"}
           onClick={() => setSub("endless")}
         >
-          Endless
+          連打 Endless
         </button>
       </div>
       <div className="card">
@@ -4193,7 +4193,7 @@ type NumpadGroup = "bonus" | "z" | "m" | "t" | "b";
 
 const NUMPAD_GROUP_LABELS: Record<NumpadGroup, string> = { bonus: "花", z: "字", m: "萬", t: "筒", b: "索" };
 
-const BONUS_TILES: BonusTile[] = (["flower", "season"] as const).flatMap((kind) =>
+const BONUS_TILES: BonusTile[] = (["season", "flower"] as const).flatMap((kind) =>
   ([1, 2, 3, 4] as const).map((rank) => ({ kind, rank }))
 );
 
@@ -4392,14 +4392,6 @@ const VISIBLE_EXHAUST_LABELS: Record<VisibleExhaustState, string> = {
   exhausted: "絕絕",
 };
 
-// Canonical display order for the declared-melds box's bonus-tile row -
-// all 4 flowers (by rank) then all 4 seasons (by rank), same order as the
-// picker itself (CORRECTION_BONUS_TILES above) and independent of
-// whatever order the tiles were actually added in (tap order, or a scanned
-// photo's own detection order).
-function sortBonusTiles(tiles: BonusTile[]): BonusTile[] {
-  return [...tiles].sort((a, b) => (a.kind === b.kind ? a.rank - b.rank : a.kind === "flower" ? -1 : 1));
-}
 
 function BonusTileButton({
   tile,
@@ -9373,7 +9365,7 @@ function DiceTab({
           aria-pressed={sub === "wall"}
           onClick={() => setSub("wall")}
         >
-          Dice &amp; wall
+          擲骰 Dice
         </button>
         <button
           type="button"
@@ -9381,7 +9373,7 @@ function DiceTab({
           aria-pressed={sub === "exchange"}
           onClick={() => setSub("exchange")}
         >
-          Exchange tiles
+          換牌 Swap
         </button>
         <button
           type="button"
@@ -9389,7 +9381,7 @@ function DiceTab({
           aria-pressed={sub === "seating"}
           onClick={() => setSub("seating")}
         >
-          Seating
+          座位 Seats
         </button>
       </div>
       <div className="card">

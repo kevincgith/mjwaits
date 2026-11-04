@@ -168,7 +168,7 @@ export function EventRow({ ev, deltas }: { ev: ScoreEvent; deltas: Record<string
         : ev.t === "swap"
           ? `換人 · ${ev.seats.join(" · ")}`
           : ev.t === "dealer"
-            ? `莊家設定${ev.streak > 0 ? ` · 連${ev.streak}` : ""}${ev.resetRound ? " · back to 東風東局" : ""}`
+            ? `莊家設定${ev.streak > 0 ? ` · 連${ev.streak}` : ""}${ev.resetRound ? " · back to 東圈東局" : ""}`
             : ev.t === "jackpot"
               ? "Jackpot handed out"
               : ev.t === "jackpotIn"
@@ -611,7 +611,7 @@ export function Board({
     return () => window.removeEventListener("resize", check);
   }, [store, game, state, fitHeight, chips.moves, sheet, toast, reminderHidden, backedUpAt, backupNudgeAt, surrenderSeen, live?.on, recorder]);
 
-  // The 執位 reminder comes back after each 北風北局.
+  // The 執位 reminder comes back after each 北圈北局.
   useEffect(() => setReminderHidden(false), [state.roundWind]);
 
   // quiet: from 最近, where the list itself shows what changed (a toast

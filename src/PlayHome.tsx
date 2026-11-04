@@ -101,7 +101,7 @@ export function PlayHome({
           <div className="ph-minor">
             <button type="button" className="ph-chip" onClick={() => setRecordOpen(true)}>
               <span>我的紀錄</span>
-              <small>{record.hands ? `${record.wins} wins / ${record.hands}` : "No hands yet"}</small>
+              <small>{record.hands ? `${record.wins} ${record.wins === 1 ? "win" : "wins"} / ${record.hands}` : "No hands yet"}</small>
             </button>
             <button
               type="button"
