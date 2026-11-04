@@ -345,6 +345,27 @@ describe("a hand laid down on the WebGL table", () => {
   });
 });
 
+describe("bonus tiles on the WebGL table", () => {
+  it("set out seasons 1-4, then flowers 1-4, from each player's left - however they were drawn", () => {
+    const drawn = [
+      { kind: "flower" as const, rank: 3 as const },
+      { kind: "season" as const, rank: 4 as const },
+      { kind: "flower" as const, rank: 1 as const },
+      { kind: "season" as const, rank: 2 as const },
+    ];
+    const base = take("bottom", 0);
+    const v = { ...base, piles: {}, rows: {}, flights: [], walls: { left: { ...wall(12), flowers: drawn }, top: { ...wall(12), flowers: drawn }, right: { ...wall(12), flowers: drawn } }, mine: { ...base.mine, flowers: drawn } };
+    const out = layoutTable(v, DIMS);
+    // From each player's left to their right.
+    const along = { bottom: (p: Piece) => p.m[12], top: (p: Piece) => -p.m[12], left: (p: Piece) => p.m[13], right: (p: Piece) => -p.m[13] };
+    const near = { bottom: () => true, top: (p: Piece) => p.m[13] < DIMS.feltH / 3, left: (p: Piece) => p.m[12] < DIMS.feltW / 3 && p.m[13] > DIMS.feltH / 5, right: (p: Piece) => p.m[12] > (2 * DIMS.feltW) / 3 && p.m[13] > DIMS.feltH / 5 };
+    for (const side of SIDES) {
+      const ps = (side === "bottom" ? out.hand.pieces : out.felt.pieces).filter((p) => /^(season|flower)\d$/.test(p.face) && near[side](p));
+      expect(ps.sort((a, b) => along[side](a) - along[side](b)).map((p) => p.face), side).toEqual(["season2", "season4", "flower1", "flower3"]);
+    }
+  });
+});
+
 describe("your hand's lift on the WebGL table", () => {
   const tile = (rank: number, selected = false) => ({ tile: { suit: "m" as const, rank }, drawn: false, selected, hint: false, danger: false, barred: false, winner: false, enabled: true });
   const hand = (tiles: ReturnType<typeof tile>[]) => {

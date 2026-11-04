@@ -11,6 +11,7 @@ import {
   scoreHand,
   scoreParsedHand,
   ScoringError,
+  sortBonusTiles,
   type GameContext,
 } from "./scoring";
 
@@ -3463,5 +3464,18 @@ describe("PATTERNS: winning tile that could complete either a triplet or a run (
 
   it("self-drawn totals the same 32 either way (the 對碰 reading and the 假獨 reading tie at +2)", () => {
     expect(scoreHand(hand, ctx({ winningTile: w, selfDraw: true })).total).toBe(32);
+  });
+});
+
+describe("sortBonusTiles", () => {
+  it("sets the seasons out 1-4, then the flowers 1-4, however they were drawn", () => {
+    const drawn = [
+      { kind: "flower" as const, rank: 3 as const },
+      { kind: "season" as const, rank: 4 as const },
+      { kind: "flower" as const, rank: 1 as const },
+      { kind: "season" as const, rank: 2 as const },
+    ];
+    expect(sortBonusTiles(drawn).map((b) => `${b.rank}${b.kind[0]}`).join("")).toBe("2s4s1f3f");
+    expect(drawn[0]).toEqual({ kind: "flower", rank: 3 });
   });
 });

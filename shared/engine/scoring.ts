@@ -58,6 +58,11 @@ export interface BonusTile {
   rank: 1 | 2 | 3 | 4;
 }
 
+// Bonus tiles in the order they're set out on the table: the seasons 1-4,
+// then the flowers 1-4 - however they were drawn.
+export const sortBonusTiles = (tiles: BonusTile[]): BonusTile[] =>
+  [...tiles].sort((a, b) => (a.kind === b.kind ? a.rank - b.rank : a.kind === "season" ? -1 : 1));
+
 export interface ParsedScoringHand {
   // Melds fixed by the notation (see parseScoringHand): exposed
   // triplets/runs/kongs written in parens, and concealed kongs (暗槓)

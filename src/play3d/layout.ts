@@ -11,7 +11,7 @@
 
 import { sameTile, type GameMeld } from "@mjwaits/shared/engine/game";
 import { sortTiles, type Tile } from "@mjwaits/shared/engine/mahjong";
-import type { BonusTile } from "@mjwaits/shared/engine/scoring";
+import { sortBonusTiles, type BonusTile } from "@mjwaits/shared/engine/scoring";
 import { bezier, EASE_IN, EASE_OUT, keyframes } from "./anim";
 import { about, chain, rotateX, rotateY, rotateZ, scale, translate, type Mat } from "./mat";
 import { acrossTable } from "./swapOrder";
@@ -168,7 +168,7 @@ const meldGroup = (m: GameMeld, hide: boolean, inRow: boolean, em: number): Grou
 };
 // Bonus tiles four fifths the size, in a group padded as a meld (by the meld's em).
 const flowerGroup = (fs: BonusTile[], em: number): Group | null =>
-  fs.length ? { slots: fs.map((f) => ({ face: bonusFace(f) })), em: em * 0.8, pad: 0.04 * em, along: fs.length * 0.72 * 0.8 * em + 0.08 * em, across: 0.8 * em + 0.08 * em } : null;
+  fs.length ? { slots: sortBonusTiles(fs).map((f) => ({ face: bonusFace(f) })), em: em * 0.8, pad: 0.04 * em, along: fs.length * 0.72 * 0.8 * em + 0.08 * em, across: 0.8 * em + 0.08 * em } : null;
 
 // Lays a group's tiles from one end. `at(k)`: the centre of the k-th slot
 // from where the row starts. `rot`: how the tiles turn to face their owner.
