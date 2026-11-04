@@ -489,27 +489,35 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
     const dir = which === "left" ? 1 : -1; // toward the middle
     const seatX0 = which === "left" ? cx0 + 0.5 * rem : cx1 - 0.5 * rem - S.width;
     const midSeatY = (cy0 + cy1) / 2;
-    const edgeY0 = midSeatY - S.edgeH / 2;
     const edgeX0 = which === "left" ? seatX0 : seatX0 + S.width - S.edgeW;
-    const { Wg, p, slot, faces, win, drew } = S;
-    // The left wall from its far end (padding: the slot at the top); the
-    // right's from its near end. A drawn (or winning) tile at the player's right.
+    const { Wg, p, faces, win, drew } = S;
+    // The two side hands mirror each other: the tiles in hand in the same
+    // place on both sides - centred a tile below the middle, as the far end
+    // has less room - and a tile drawn (or the winning tile) set apart at
+    // the player's right: below the left player's hand, above the right's.
+    // (Top to bottom: the left wall from its far end, the right's from its
+    // near end.)
+    const apart = drew || win >= 0;
+    const held = faces.length - (apart ? 1 : 0);
+    const handY0 = midSeatY + p - (held * p) / 2;
     const ys: number[] = [];
     if (which === "left") {
-      let y = edgeY0 + slot;
+      let y = handY0;
       faces.forEach((_, i) => {
         if ((i === faces.length - 1 && drew) || i === win) y += 0.25 * Wg;
         ys[i] = y;
         y += i === win ? Wg : p;
       });
     } else {
-      let y = edgeY0 + S.edgeH - slot;
-      for (let i = faces.length - 1; i >= 0; i--) {
-        y -= i === win ? Wg : p;
+      let y = handY0 - (apart ? 0.25 * Wg + (win === 0 ? Wg : p) : 0);
+      faces.forEach((_, i) => {
         ys[i] = y;
-        if (i === 1 && (drew || win === 0)) y -= 0.25 * Wg;
-      }
+        y += i === win ? Wg : p;
+        if (i === 0 && apart) y += 0.25 * Wg;
+      });
     }
+    const edgeY0 = ys.length ? Math.min(...ys) : handY0;
+    const edgeY1 = ys.length ? Math.max(...ys.map((y, i) => y + (i === win ? Wg : p))) : handY0;
     const tb = Math.min(0.45 * Wg, 0.9 * rem);
     faces.forEach((f, i) => {
       const fy = ys[i];
@@ -574,7 +582,7 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
       const nextX = S.cols.length ? colX + (dir * 1.08 * T) / 2 : sideMid + dir * (S.sideW / 2 + 0.15 * T + 0.54 * T);
       rowAt[which] = alone ? ownColumn(wallInner + dir * (S.seatGap + 0.54 * T)) : S.cols.length && fits(after.y) ? { ...after, dir } : ownColumn(nextX);
     }
-    owned[which].push({ x0: edgeX0, y0: edgeY0, x1: edgeX0 + S.edgeW, y1: edgeY0 + S.edgeH });
+    owned[which].push({ x0: edgeX0, y0: edgeY0, x1: edgeX0 + S.edgeW, y1: edgeY1 });
     ownSince(which, from);
   }
 
