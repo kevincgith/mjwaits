@@ -481,6 +481,9 @@ function RevealedHandView({ tiles, winningTile, topple = TOPPLE_WINNER }: { tile
 const VOICED: Record<string, VoiceCall> = { 碰: "pung", 上: "chow", 槓: "kong", 胡: "win", 雙響: "win", 三響: "win", 自摸: "selfDraw", 叮: "riichi", 搶槓: "robKong" };
 
 // The sound for a burst: a win, 叮, a call, or (anything longer, as 正花 +2) a bonus.
+// A bonus tile drawn - its replacement drawn too (see the burst for it).
+const FLOWER_DRAW = "補花";
+
 function burstSound(label: string): Sound {
   if (/胡|自摸|搶槓|響/.test(label)) return "win";
   if (label === "叮") return "riichi";
@@ -1047,6 +1050,19 @@ export function PlayPanel({
     showBurst(game.dealer, `${bonus.name} ${signed(bonus.deltas[game.dealer])}`, bonus.deltas);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [online, rolling, game.diceBonus, dealKey]);
+  // 補花: a bonus tile drawn in play (not those set out at the deal, nor
+  // what was there when this table opened) - its player's burst, before
+  // any bonus it earns. Here and online alike: everyone's bonus tiles are
+  // in sight.
+  const flowersSeen = useRef<{ deal: unknown; counts: number[] }>({ deal: undefined, counts: [] });
+  useEffect(() => {
+    const counts = game.players.map((p) => p.flowers.length);
+    const was = flowersSeen.current;
+    flowersSeen.current = { deal: dealKey, counts };
+    if (was.deal !== dealKey) return;
+    counts.forEach((n, seat) => n > (was.counts[seat] ?? n) && showBurst(seat, FLOWER_DRAW));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [game.players, dealKey]);
   // Table bonuses (flowers, 暗槓) paid as they're earned, the
   // same way: marked paid in the game, and the ref remembers what this
   // hand has paid in case a stale copy of the game comes back unmarked.
@@ -1572,14 +1588,18 @@ export function PlayPanel({
   };
 
   // `deltas`: a bonus's payments, for the bubbles over everyone it touches.
-  // A bonus's burst on another's put up a moment ago (the dice's and a
-  // flower's, as the roll settles) waits its turn rather than replacing it.
-  // Anything else - a call, or a kong's own 暗槓 over its 槓 - shows at once.
-  const burstAt = useRef({ at: 0, paid: false });
+  // A bonus's burst on another's or a 補花 put up a moment ago (the dice's
+  // and a flower's, as the roll settles) waits its turn rather than
+  // replacing it; so does a 補花 on anything (a kong's replacement draw:
+  // 槓, then 補花, then any bonus it earns). Anything else - a call, or a
+  // kong's own 暗槓 over its 槓 - shows at once.
+  const burstAt = useRef<{ at: number; kind: "paid" | "flower" | "call" }>({ at: 0, kind: "call" });
   const showBurst = (seat: number, label: string, deltas?: number[]) => {
     const now = Date.now();
-    const at = deltas && burstAt.current.paid && burstAt.current.at > now - 100 ? burstAt.current.at + BURST_MS : now;
-    burstAt.current = { at, paid: !!deltas };
+    const kind = label === FLOWER_DRAW ? "flower" : deltas ? "paid" : "call";
+    const waits = burstAt.current.at > now - 100 && (kind === "flower" || (kind === "paid" && burstAt.current.kind !== "call"));
+    const at = waits ? burstAt.current.at + BURST_MS : now;
+    burstAt.current = { at, kind };
     if (at > now) window.setTimeout(() => putBurst(seat, label, deltas), at - now);
     else putBurst(seat, label, deltas);
   };

@@ -8068,10 +8068,16 @@ html.playing body {
 }
 
 /* "Show result": brings the card back after View table, where the call
-   buttons go (nothing can be called once the hand is over). */
+   buttons go (nothing can be called once the hand is over) - but centred
+   over your hand, clear of the right player's wall at its right end. */
 .play-show-result {
   padding: 0.45rem 1rem;
   box-shadow: var(--shadow-float);
+}
+
+.play-calls:has(> .play-show-result) {
+  right: 50%;
+  transform: translateX(50%);
 }
 
 /* ---- Scores tab: a 港式台牌 score keeper ----------------------------------
