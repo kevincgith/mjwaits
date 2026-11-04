@@ -316,6 +316,26 @@ describe("a hand laid down on the WebGL table", () => {
     };
     for (const side of ["left", "top", "right"] as const) expect(reading(side), side).toEqual(["m1", "m3", "m4", "m2"]);
   });
+
+  it("mirrors the side hands - a tile set apart past the right end - and keeps a full concealed hand on the felt", () => {
+    // Sixteen in hand, no melds - the side walls at their longest - and the winning tile.
+    const tiles = [...[1, 2, 3, 4, 5, 6, 7, 8, 9].map((rank) => ({ suit: "m" as const, rank })), ...[1, 2, 3, 4, 5, 6, 7, 8].map((rank) => ({ suit: "t" as const, rank }))];
+    const base = take("bottom", 0);
+    const sideTiles = (side: "left" | "right", w: GLWall) =>
+      layoutTable({ ...base, piles: {}, rows: {}, flights: [], walls: { ...base.walls, [side]: w } }, DIMS).felt.pieces.filter((p) => (side === "left" ? p.m[12] < DIMS.feltW / 8 : p.m[12] > (7 * DIMS.feltW) / 8));
+    const across = layoutTable({ ...base, piles: {}, rows: {}, flights: [] }, DIMS).felt.pieces.filter((p) => Math.abs(p.m[12] - DIMS.feltW / 2) < DIMS.feltW / 4 && p.m[13] < DIMS.feltH / 4);
+    const acrossFront = Math.max(...across.map((p) => p.m[13] + (TILE_H * size(p.m)) / 2));
+    for (const w of [{ ...wall(17), drew: true }, { ...wall(17), down: true, tiles, winningTile: tiles[12] }]) {
+      const [l, r] = (["left", "right"] as const).map((side) => sideTiles(side, w).map((p) => p.m[13]).sort((a, b) => a - b));
+      // The same tiles in hand on both sides; the one set apart below the left's, above the right's.
+      expect(r.slice(1).map(Math.round), w.down ? "won" : "drew").toEqual(l.slice(0, -1).map(Math.round));
+      for (const side of ["left", "right"] as const) {
+        const ends = sideTiles(side, w).map((p) => [p.m[13] - (TILE_H * size(p.m)) / 2, p.m[13] + (TILE_H * size(p.m)) / 2]);
+        expect(Math.min(...ends.map((e) => e[0])), side).toBeGreaterThan(acrossFront);
+        expect(Math.max(...ends.map((e) => e[1])), side).toBeLessThanOrEqual(DIMS.feltH - DIMS.under);
+      }
+    }
+  });
 });
 
 describe("your hand's lift on the WebGL table", () => {
