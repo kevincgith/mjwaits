@@ -1411,8 +1411,10 @@ function oldYoungTripletInstances(hand: ResolvedHand): number {
 // Returns the matching rank(s) - the first fit, lowest rank first - or null.
 function commonRankAcrossNonHonorMelds(hand: ResolvedHand): number[] | null {
   const nonHonorMelds = hand.melds.filter((m) => m.tiles[0].suit !== "z");
-  if (nonHonorMelds.length === 0) return null;
   const pair = hand.pair[0];
+  // Every meld honors + a numbered pair qualifies (the pair sets X) - see
+  // scoring.ts's own copy of this function.
+  if (nonHonorMelds.length === 0 && isHonorTile(pair)) return null;
   for (let rank = 1; rank <= 9; rank++) {
     if (nonHonorMelds.every((m) => m.tiles.some((t) => t.rank === rank)) && (isHonorTile(pair) || pair.rank === rank)) return [rank];
   }
