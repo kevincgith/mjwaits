@@ -1461,17 +1461,18 @@ function oldYoungTripletInstances(hand: ResolvedHand): number {
 
 // 混帶X: is there some single rank 1-9 that every *non-honor* meld contains
 // a tile of? Honor melds are naturally exempt (they have no numeric rank to
-// match), and so is the pair (the pattern is about melds only). Requires at
-// least one non-honor meld to check - a hand with none (e.g. 字一色) has
-// nothing to unify around and shouldn't vacuously qualify. The pair must
-// also match the shared rank, unless the pair is honors - a pair (2 tiles,
-// 1 rank) can only ever match a *single* rank, which is exactly what 混帶X
-// itself needs, so this works the same way an honor meld's exemption does.
+// match). The pair must also match the shared rank, unless the pair is
+// honors - a pair (2 tiles, 1 rank) can only ever match a *single* rank,
+// which is exactly what 混帶X itself needs, so this works the same way an
+// honor meld's exemption does. Needs at least one non-honor group (meld OR
+// pair) to define X: per the user, every meld honors plus a numbered pair
+// (e.g. (111z)222333444555z33m) qualifies, with the pair setting X; only a
+// hand with nothing numbered at all (字一色) is left out.
 // Returns the matching rank(s) - the first fit, lowest rank first - or null.
 function commonRankAcrossNonHonorMelds(hand: ResolvedHand): number[] | null {
   const nonHonorMelds = hand.melds.filter((m) => m.tiles[0].suit !== "z");
-  if (nonHonorMelds.length === 0) return null;
   const pair = hand.pair[0];
+  if (nonHonorMelds.length === 0 && isHonorTile(pair)) return null;
   for (let rank = 1; rank <= 9; rank++) {
     if (nonHonorMelds.every((m) => m.tiles.some((t) => t.rank === rank)) && (isHonorTile(pair) || pair.rank === rank)) return [rank];
   }

@@ -919,6 +919,15 @@ describe("PATTERNS: 混帶X (common rank across every non-honor meld)", () => {
     // An honor pair is exempt even though it doesn't numerically match.
     expect(tai(scoreHand("123234345m333b111z22z", ctx()), "mixed-common-rank")).toBe(30);
   });
+
+  it("scores when every meld is honors and only the pair is numbered - the pair sets X", () => {
+    const result = scoreHand("(111z)222333444555z33m", ctx());
+    expect(tai(result, "mixed-common-rank")).toBe(30);
+  });
+
+  it("still doesn't score when nothing in the hand is numbered (字一色)", () => {
+    expect(tai(scoreHand("(111z)(222z)(333z)(444z)(555z)66z", ctx()), "mixed-common-rank")).toBe(0);
+  });
 });
 
 describe("PATTERNS: 混帶XY (common rank pair across every non-honor meld)", () => {
