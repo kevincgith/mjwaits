@@ -1130,6 +1130,23 @@ describe("PATTERNS: 明/暗四歸二 (pair + 2 runs using all 4 copies of a rank
     expect(tai(result, "four-returns-to-two-hidden")).toBe(30);
     expect(tai(result, "four-returns-to-two-open")).toBe(0);
   });
+
+  it("is 明 when a claimed discard of X won, even read as completing the pair", () => {
+    const result = scoreHand("(234m)(678m)23456666778t", ctx({ winningTile: { suit: "t", rank: 6 } }));
+    expect(tai(result, "four-returns-to-two-open")).toBe(15);
+    expect(tai(result, "four-returns-to-two-hidden")).toBe(0);
+  });
+
+  it("stays 暗 when the same X was self-drawn", () => {
+    const result = scoreHand("(234m)(678m)23456666778t", ctx({ winningTile: { suit: "t", rank: 6 }, selfDraw: true }));
+    expect(tai(result, "four-returns-to-two-hidden")).toBe(30);
+    expect(tai(result, "four-returns-to-two-open")).toBe(0);
+  });
+
+  it("stays 暗 when the claimed discard sits outside the pattern (2t in 234t)", () => {
+    const result = scoreHand("(234m)(678m)23456666778t", ctx({ winningTile: { suit: "t", rank: 2 } }));
+    expect(tai(result, "four-returns-to-two-hidden")).toBe(30);
+  });
 });
 
 describe("PATTERNS: 明/暗四歸四 (4 runs using all 4 copies of a rank)", () => {
