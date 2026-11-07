@@ -48,6 +48,7 @@ import type { RecordRequest, ScoreHandRequest, SeatingResult } from "./ScoresPan
 import { GAME_HASH, snapshotFromAnyHash, snapshotFromHash } from "./lib/scoreShare";
 import { roomFromSearch } from "./lib/online";
 import { isLadderChanged, isRuleChanged, ladderOf, rulesAffectScoring, rulesFingerprint } from "@mjwaits/shared/engine/taiRules";
+import { PATTERN_NAME_MAX } from "@mjwaits/shared/protocol/limits";
 import { PATTERN_CATALOG } from "@mjwaits/shared/engine/taiCatalog";
 import {
   activeSet,
@@ -7771,7 +7772,7 @@ function ScoringPanel({
                   patterns: readings.flatMap((r) =>
                     r.matched
                       .filter((m) => !scoresAdds.has(m.pattern.id))
-                      .map((m) => ({ id: m.pattern.id, name: patternDisplayName(m.pattern, r.hand), tai: m.tai }))
+                      .map((m) => ({ id: m.pattern.id, name: patternDisplayName(m.pattern, r.hand).slice(0, PATTERN_NAME_MAX), tai: m.tai }))
                   ),
                 });
               }}

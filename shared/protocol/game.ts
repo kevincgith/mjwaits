@@ -10,6 +10,7 @@
 
 import { replay, type ScoreGame } from "../engine/ledger";
 import { array, bool, int, literal, nullable, num, object, oneOf, optional, str, tagged, type Infer, type Result } from "./schema";
+import { PATTERN_NAME_MAX } from "./limits";
 
 // Long enough for any real evening's game (a hundred hands is some 150
 // entries), several times over - and the redo list; together they fit a
@@ -26,7 +27,8 @@ const at = num(0, 1e14); // a Date.now() timestamp
 const batch = optional(str(64));
 const text = (max: number) => optional(str(max));
 
-const PatternNote = object({ id: str(64), name: str(64), tai: num(-1_000_000, 1_000_000) }, strip);
+// The name as Scoring shows it, ranks and English and all (see limits.ts).
+const PatternNote = object({ id: str(64), name: str(PATTERN_NAME_MAX), tai: num(-1_000_000, 1_000_000) }, strip);
 const WinnerEntry = object({ seat, tai: amount, patterns: optional(array(PatternNote, 0, 200)), rules: text(200) }, strip);
 const Shares = array(object({ player: name, amount: num(-1_000_000, 1_000_000) }, strip), 0, 16);
 

@@ -15,6 +15,11 @@ export const SEATS = 4;
 // 1 MiB: the rest is room for what goes around it.)
 export const MAX_MESSAGE_BYTES = 960 * 1024;
 
+// A Scores-tab pattern note's name, as Scoring shows it: the longest, with
+// its ranks and the English after it, run past 90 characters (64 refused
+// the whole game's sync).
+export const PATTERN_NAME_MAX = 200;
+
 // Per connection: a burst of RATE_BURST messages, refilled at RATE_PER_SECOND
 // (a token bucket - the Worker enforces it).
 export const RATE_BURST = 20;
