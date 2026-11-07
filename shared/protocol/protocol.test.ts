@@ -77,6 +77,14 @@ describe("a game, as the server checks it", () => {
     expect(checkGame(JSON.parse(JSON.stringify(g)))).toEqual({ ok: true, value: JSON.parse(JSON.stringify(g)) });
   });
 
+  it("takes a win with Scoring's longest pattern names", () => {
+    const g = sampleGame();
+    const name = "小三色連刻(3,4,5) (3 consecutive ranks across all 3 suits, pair at one + 2 triplets/kongs)";
+    const win: ScoreEvent = { t: "win", at: g.startedAt, winners: [{ seat: 0, tai: 13, patterns: [{ id: "small-three-colour-pungs", name, tai: 13 }] }], from: 1, source: "scoring" };
+    expect(name.length).toBeGreaterThan(64);
+    expect(checkGame({ ...g, events: [...g.events, win], undone: [win] }).ok).toBe(true);
+  });
+
   it("drops fields it doesn't know, from older or newer app versions", () => {
     const g = { ...JSON.parse(JSON.stringify(sampleGame())), legacy: 1 };
     g.events[0].oldField = "x";
