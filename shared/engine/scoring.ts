@@ -1628,6 +1628,18 @@ function fourReturnsToTwoRuns(hand: ResolvedHand): [ResolvedMeld, ResolvedMeld] 
   return runs.length >= 2 ? [runs[0], runs[1]] : null;
 }
 
+// 明 if either run is open, or if a claimed discard of the pair's kind won
+// the hand. The pair is part of this pattern's shape (unlike most patterns,
+// which isMeldOpen deliberately judges without the pair - see
+// isSmallTwinIdenticalSequencesOpen for the same reasoning). Without this,
+// the "the pair completed it" reading leaves both runs concealed and the
+// max-over-readings picks 暗四歸二 for a hand won off someone's discarded X.
+function fourReturnsToTwoOpen(runs: [ResolvedMeld, ResolvedMeld], hand: ResolvedHand, ctx: GameContext): boolean {
+  if (isMeldOpen(runs[0], ctx, hand) || isMeldOpen(runs[1], ctx, hand)) return true;
+  if (ctx.winningTile === null || ctx.selfDraw) return false;
+  return hand.pair.some((t) => t.suit === ctx.winningTile!.suit && t.rank === ctx.winningTile!.rank);
+}
+
 // 四歸四: 4 separate runs, each containing X (1 + 1 + 1 + 1 = the 4 copies).
 // A single hand can only ever hold one *group* of 4 runs (needs 4 of its 5
 // melds), but that doesn't cap it at 1 instance the way 四歸二 is capped
@@ -2642,11 +2654,11 @@ export const PATTERNS: TaiPattern[] = [
     name: "明四歸二 (Pair + 2 runs, open)",
     score: (hand, ctx) => {
       const runs = fourReturnsToTwoRuns(hand);
-      return runs && (isMeldOpen(runs[0], ctx, hand) || isMeldOpen(runs[1], ctx, hand)) ? 1 : 0;
+      return runs && fourReturnsToTwoOpen(runs, hand, ctx) ? 1 : 0;
     },
     tiles: (hand, ctx) => {
       const runs = fourReturnsToTwoRuns(hand);
-      return runs && (isMeldOpen(runs[0], ctx, hand) || isMeldOpen(runs[1], ctx, hand)) ? [[runs[0].tiles, runs[1].tiles, hand.pair]] : [];
+      return runs && fourReturnsToTwoOpen(runs, hand, ctx) ? [[runs[0].tiles, runs[1].tiles, hand.pair]] : [];
     },
   },
   {
@@ -2654,11 +2666,11 @@ export const PATTERNS: TaiPattern[] = [
     name: "暗四歸二 (Pair + 2 runs, concealed)",
     score: (hand, ctx) => {
       const runs = fourReturnsToTwoRuns(hand);
-      return runs && !isMeldOpen(runs[0], ctx, hand) && !isMeldOpen(runs[1], ctx, hand) ? 1 : 0;
+      return runs && !fourReturnsToTwoOpen(runs, hand, ctx) ? 1 : 0;
     },
     tiles: (hand, ctx) => {
       const runs = fourReturnsToTwoRuns(hand);
-      return runs && !isMeldOpen(runs[0], ctx, hand) && !isMeldOpen(runs[1], ctx, hand) ? [[runs[0].tiles, runs[1].tiles, hand.pair]] : [];
+      return runs && !fourReturnsToTwoOpen(runs, hand, ctx) ? [[runs[0].tiles, runs[1].tiles, hand.pair]] : [];
     },
   },
   {
