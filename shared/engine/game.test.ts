@@ -21,6 +21,7 @@ import {
   scoreWin,
   secondChanceFan,
   secondChance,
+  settleSecondChance,
   waitsAfterDiscard,
   lahAddOn,
   surrender,
@@ -1222,6 +1223,23 @@ describe("一炮多響 (several winners off one discard)", () => {
     const water = table([1, 2], true);
     water.players[2].overWater = true;
     expect(secondChance(water, allWin([1]))).toBeNull();
+  });
+
+  it("second chance: those who act alone join a win, and are counted with who's taking it; only people are asked", () => {
+    const decisions: (Claim | null)[] = allWin([1]);
+    const chance = secondChance(table([1, 2, 3], true), decisions)!;
+    const { by, asked } = settleSecondChance(chance, decisions, (seat) => seat === 2);
+    expect(by).toEqual([1, 2]);
+    expect(asked.map((o) => o.seat)).toEqual([3]);
+    expect(decisions).toEqual(allWin([1, 2]));
+  });
+
+  it("second chance: those who act alone keep what they chose when it's a run or a pung being taken", () => {
+    const decisions: (Claim | null)[] = [null, null, null, null];
+    const { by, asked } = settleSecondChance({ call: "pung", by: [3], offers: [{ seat: 2, claims: [{ kind: "win" }] }] }, decisions, () => true);
+    expect(by).toEqual([3]);
+    expect(asked).toEqual([]);
+    expect(decisions).toEqual([null, null, null, null]);
   });
 
   it("second chance: a pung or kong passed, when only a run is taking the tile", () => {

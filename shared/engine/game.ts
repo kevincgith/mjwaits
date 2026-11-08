@@ -983,12 +983,21 @@ export function secondChance(state: GameState, decisions: (Claim | null)[]): Sec
   const best = winningClaimSeat(state, decisions);
   const call = best === null ? null : decisions[best]!.kind;
   if (call === null || (call === "win" && !state.multiWin)) return null;
-  const by = Array.from({ length: SEATS }, (_, i) => (from + 1 + i) % SEATS).filter((seat) => decisions[seat]?.kind === call);
-  const offers = [0, 1, 2, 3]
-    .filter((seat) => seat !== from && !by.includes(seat))
+  const by = claimOrder(from).filter((seat) => decisions[seat]?.kind === call);
+  const offers = claimOrder(from)
+    .filter((seat) => !by.includes(seat))
     .map((seat) => ({ seat, claims: claimOptions(state, seat).filter((c) => chanceAllows(call, c)) }))
     .filter((o) => o.claims.length > 0);
   return offers.length ? { call, by, offers } : null;
+}
+
+// Those who act alone (bots, 自動) aren't asked: they join a win - the hand's
+// ending - and otherwise keep what they chose. Their joining goes into
+// `decisions`. Returns who's left to ask, and everyone then taking the tile.
+export function settleSecondChance(chance: SecondChance, decisions: (Claim | null | "waiting")[], alone: (seat: number) => boolean) {
+  const joined = chance.call === "win" ? chance.offers.filter((o) => alone(o.seat)).map((o) => o.seat) : [];
+  for (const seat of joined) decisions[seat] = { kind: "win" };
+  return { by: [...chance.by, ...joined], asked: chance.offers.filter((o) => !alone(o.seat)) };
 }
 
 // What `seat`'s win on this tile would score, joining `others` already

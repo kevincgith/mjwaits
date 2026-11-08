@@ -6983,8 +6983,9 @@ html.playing body {
 /* A second chance: who's taking the tile, and how long you have to join in. */
 .play-chance {
   position: relative;
+  flex: none;
   overflow: hidden;
-  padding: 0.4rem 0.8rem 0.55rem;
+  padding: 0.4rem 0.8rem 0.65rem;
   border: 1px solid var(--play-gold);
   border-radius: 10px;
   background: rgba(12, 40, 26, 0.92);
@@ -6994,18 +6995,47 @@ html.playing body {
   white-space: nowrap;
 }
 
+/* A long name gives way, so the 番 and the buttons never do. */
+.play-chance-name {
+  display: inline-block;
+  max-width: 9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+}
+
+.play-chance-name:has(~ .play-chance-name),
+.play-chance-name ~ .play-chance-name {
+  max-width: 5rem;
+}
+
+.play-chance ~ .play-call {
+  flex: none;
+  white-space: nowrap;
+}
+
 .play-chance-fan {
   margin-left: 0.5rem;
   color: var(--play-gold);
 }
 
+/* The time left: bright on a dim track, not the gold of the border beside it. */
+.play-chance::before,
 .play-chance-time {
   position: absolute;
   left: 0;
   right: 0;
   bottom: 0;
-  height: 3px;
-  background: var(--play-gold);
+  height: 4px;
+}
+
+.play-chance::before {
+  content: "";
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.play-chance-time {
+  background: #fff3d6;
   transform-origin: left;
   animation: play-chance-time linear forwards;
 }

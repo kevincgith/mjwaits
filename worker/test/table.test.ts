@@ -1187,6 +1187,40 @@ describe("a second chance", () => {
     const s = await host.table((s) => s.view?.phase.kind === "turn" || !!s.secondChance);
     expect(s.secondChance).toBeNull();
   });
+
+  it("counts a bot that joins the win among those taking the tile", async () => {
+    const { code, host, other, step } = await claimWindow([WINS, WINS], {});
+    await runInDurableObject(stubFor(code), (t: Table) => {
+      const tt = t as unknown as { load(): { game: GameState }; save(): void };
+      tt.load().game.players[3].hand = parseHand(WINS);
+      tt.save();
+    });
+    host.send({ t: "claim", step, claim: { kind: "win" } });
+    other.send({ t: "claim", step, claim: null });
+    const open = await other.table((s) => !!s.secondChance);
+    expect(open.secondChance).toEqual({ call: "win", by: [1, 3] });
+    other.send({ t: "claim", step: open.step, claim: { kind: "win" } });
+    const end = await host.table((s) => s.view?.phase.kind === "over");
+    const phase = end.view!.phase;
+    if (phase.kind !== "over") throw new Error("not over");
+    expect([phase.result.winner, ...(phase.result.alsoWon ?? []).map((w) => w.winner)].sort()).toEqual([1, 2, 3]);
+  });
+
+  it("keeps a lesser call through a second chance let go by, should the call taking the tile be taken back", async () => {
+    const { host, other, step } = await claimWindow([WINS, "55m1379t1379b1234z"], {});
+    host.send({ t: "claim", step, claim: { kind: "chow", tiles: [{ suit: "m", rank: 4 }, { suit: "m", rank: 6 }] } });
+    other.send({ t: "claim", step, claim: { kind: "pung" } });
+    const open = await host.table((s) => !!s.secondChance);
+    expect(open.secondChance).toEqual({ call: "pung", by: [2] });
+    expect(open.options!.claims).toEqual([{ kind: "win" }]);
+    host.send({ t: "claim", step: open.step, claim: null });
+    const called = await other.table((s) => !!s.options?.turn?.retract);
+    expect(called.view!.phase).toMatchObject({ kind: "turn", seat: 2 });
+    other.send({ t: "retract", step: called.step });
+    const ran = await host.table((s) => s.view?.phase.kind === "turn" && (s.view.phase as { seat: number }).seat === 1);
+    expect(ran.view!.players[1].melds.at(-1)).toMatchObject({ kind: "run" });
+    expect(host.errors.concat(other.errors)).toEqual([]);
+  });
 });
 
 describe("嗌錯 with a run passed over", () => {
