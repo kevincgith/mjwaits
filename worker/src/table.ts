@@ -56,7 +56,7 @@ import type { Tile } from "@mjwaits/shared/engine/mahjong";
 import { viewFor } from "@mjwaits/shared/engine/view";
 import type { ScoreEvent, ScoreGame } from "@mjwaits/shared/engine/ledger";
 import { newPlayLedger, playEvents } from "@mjwaits/shared/engine/playLedger";
-import { PROTOCOL_VERSION } from "@mjwaits/shared/protocol/limits";
+import { PROTOCOL_VERSION, VOICE_MAX_MS, VOICE_QUIET_MS } from "@mjwaits/shared/protocol/limits";
 import {
   BOT_SPEEDS,
   DEFAULT_TABLE_SETTINGS,
@@ -155,6 +155,14 @@ export class Table extends Hub<TableMessage> {
   protected get schema() {
     return 2;
   }
+
+  protected get streamType() {
+    return "voice";
+  }
+
+  // The walkie-talkie's floor: one talker at a time. Only ever in memory -
+  // if the table is put away mid-sentence, the turn just ends.
+  private floor: { person: string; seat: number; since: number; heard: number } | null = null;
 
   private rt!: Runtime; // loaded for each event
   // BOT_PAUSE_MS, unless the environment says otherwise (the tests: 0).
@@ -304,6 +312,7 @@ export class Table extends Hub<TableMessage> {
   }
 
   protected onLeave(personId: string) {
+    if (this.floor?.person === personId) this.setFloor(null);
     const rt = this.load();
     const seat = this.seatOf(personId);
     if (seat === null || rt.phase !== "playing") return;
@@ -317,7 +326,43 @@ export class Table extends Hub<TableMessage> {
 
   // ---- Messages -------------------------------------------------------------------
 
-  protected async act(personId: string, msg: TableMessage) {
+  // Everyone who's joined hears who has the floor.
+  private setFloor(floor: Table["floor"]) {
+    this.floor = floor;
+    for (const [ws, c] of this.conns()) if (c.person) this.send(ws, { t: "talking", seat: floor?.seat ?? null });
+  }
+
+  private talk(personId: string, on: boolean, ws: WebSocket) {
+    if (!on) {
+      if (this.floor?.person === personId) this.setFloor(null);
+      return;
+    }
+    this.load();
+    const seat = this.seatOf(personId);
+    if (seat === null) throw new Refusal("notSeated", "only the players at the table can do that");
+    const now = Date.now();
+    const held = this.floor;
+    if (held && held.person !== personId && now - held.heard <= VOICE_QUIET_MS && now - held.since <= VOICE_MAX_MS + VOICE_QUIET_MS) {
+      this.send(ws, { t: "talking", seat: held.seat });
+      return;
+    }
+    this.setFloor({ person: personId, seat, since: now, heard: now });
+  }
+
+  // A frame goes straight out to everyone else; nothing is read or written
+  // (ten of these a second), and only whoever has the floor is heard.
+  private relayVoice(personId: string, a: string, from: WebSocket) {
+    const floor = this.floor;
+    if (floor?.person !== personId) return;
+    const now = Date.now();
+    if (now - floor.since > VOICE_MAX_MS + VOICE_QUIET_MS) return this.setFloor(null);
+    floor.heard = now;
+    for (const [ws, c] of this.conns(from)) if (c.person && c.person !== personId) this.send(ws, { t: "voice", seat: floor.seat, a });
+  }
+
+  protected async act(personId: string, msg: TableMessage, ws: WebSocket) {
+    if (msg.t === "voice") return this.relayVoice(personId, msg.a, ws);
+    if (msg.t === "talk") return this.talk(personId, msg.on, ws);
     try {
       this.apply(personId, msg);
     } catch (e) {

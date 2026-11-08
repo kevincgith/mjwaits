@@ -799,6 +799,86 @@ describe("嗌錯, 自動 and bot speed", () => {
   });
 });
 
+describe("the walkie-talkie", () => {
+  const FRAME = "AAEC".repeat(268); // the largest frame there is
+
+  async function table() {
+    const code = await createTable();
+    const { p: host } = await join(code, "Kevin");
+    const { p: amy } = await join(code, "Amy");
+    host.send({ t: "setBot", seat: 2, bot: "wall" });
+    host.send({ t: "setBot", seat: 3, bot: "grandmaster" });
+    await host.table((s) => s.seats.every(Boolean));
+    const { p: dan } = await join(code, "Dan"); // watching
+    host.send({ t: "start" });
+    await host.table((s) => s.phase === "playing");
+    return { code, host, amy, dan };
+  }
+
+  it("gives one person the floor and passes their voice to everyone else, unstored", async () => {
+    const { code, host, amy, dan } = await table();
+    const version = host.latest!.version;
+    amy.send({ t: "talk", on: true });
+    for (const p of [host, amy, dan]) expect(await p.next("talking")).toEqual({ t: "talking", seat: 1 });
+    amy.send({ t: "voice", a: FRAME });
+    for (const p of [host, dan]) expect(await p.next("voice")).toEqual({ t: "voice", seat: 1, a: FRAME });
+
+    // Taken: the other player is told who has it, and isn't heard.
+    host.send({ t: "talk", on: true });
+    expect(await host.next("talking")).toEqual({ t: "talking", seat: 1 });
+    host.send({ t: "voice", a: FRAME });
+
+    amy.send({ t: "talk", on: false });
+    for (const p of [host, amy, dan]) expect(await p.next("talking")).toEqual({ t: "talking", seat: null });
+    expect(amy.inbox.some((m) => m.t === "voice")).toBe(false);
+    expect(host.inbox.some((m) => m.t === "voice")).toBe(false);
+    expect(host.latest!.version).toBe(version); // not a change to the table
+    expect(JSON.stringify(await runInDurableObject(stubFor(code), (t: Table) => t.scores()))).not.toContain(FRAME);
+
+    // Free again.
+    host.send({ t: "talk", on: true });
+    expect(await amy.next("talking")).toEqual({ t: "talking", seat: 0 });
+  });
+
+  it("is only for the players, in frames of the right form", async () => {
+    const { amy, dan } = await table();
+    dan.send({ t: "talk", on: true });
+    expect((await dan.error()).code).toBe("notSeated");
+    amy.send({ t: "voice", a: "not base64!" });
+    expect((await amy.error()).code).toBe("badMessage");
+    amy.send({ t: "voice", a: "A".repeat(1073) });
+    expect((await amy.error()).code).toBe("badMessage");
+  });
+
+  it("frees the floor when the talker's connection goes", async () => {
+    const { host, amy } = await table();
+    amy.send({ t: "talk", on: true });
+    expect(await host.next("talking")).toEqual({ t: "talking", seat: 1 });
+    amy.ws.close();
+    expect(await host.next("talking")).toEqual({ t: "talking", seat: null });
+  });
+
+  it("carries a full turn of frames without tripping the rate limit, on a limit of its own", async () => {
+    const { host, amy } = await table();
+    amy.send({ t: "talk", on: true });
+    await amy.next("talking");
+    await host.next("talking");
+    for (let i = 0; i < 50; i++) amy.send({ t: "voice", a: FRAME });
+    for (let i = 0; i < 50; i++) await host.next("voice");
+    expect(amy.errors.filter((e) => e.code === "rateLimited")).toEqual([]);
+    expect(amy.closed).toBe(false);
+    // The ordinary limit is untouched by all that.
+    amy.send({ t: "react", r: "👍" });
+    expect(await host.next("reaction")).toMatchObject({ seat: 1 });
+  });
+
+  it("doesn't let another message ride on the voice limit", async () => {
+    const { amy } = await table();
+    amy.ws.send('{"t":"voice","t":"react","r":"👍"}');
+    expect((await amy.error()).code).toBe("badMessage");
+  });
+});
+
 describe("between games", () => {
   it("sends a seated player's reaction to everyone, unstored; the host's rematch goes back to the lobby", async () => {
     const code = await createTable();

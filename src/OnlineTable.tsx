@@ -29,6 +29,7 @@ import {
   withTable,
 } from "./lib/onlineTable";
 import type { ScoreGame } from "@mjwaits/shared/engine/ledger";
+import { TableVoice, type VoiceView } from "./lib/tableVoice";
 import { PlayScores } from "./scores/playScores";
 import { PlayPanel, type OnlinePlay } from "./PlayPanel";
 import type { Tile } from "@mjwaits/shared/engine/mahjong";
@@ -97,6 +98,9 @@ export function OnlineTable({ initialCode, onExit }: { initialCode: string | nul
   const [scores, setScores] = useState<ScoreGame | null>(null);
   const [reaction, setReaction] = useState<OnlinePlay["reaction"]>(null);
   const [refused, setRefused] = useState<OnlinePlay["refused"]>(null);
+  // The walkie-talkie.
+  const voice = useRef<TableVoice | null>(null);
+  const [voiceView, setVoiceView] = useState<VoiceView>({ mine: "idle", talking: null, muted: [] });
   const scoreCount = table?.scores ?? 0;
   const started = !!table && table.phase !== "lobby";
   useEffect(() => {
@@ -142,6 +146,22 @@ export function OnlineTable({ initialCode, onExit }: { initialCode: string | nul
     setScores(null);
     setReaction(null);
     setRefused(null);
+    const v = new TableVoice(
+      {
+        code,
+        send: (msg) => c.send(msg),
+        backlog: () => c.backlog,
+        seat: () => c.table?.you ?? null,
+        person: (seat) => {
+          const s = c.table?.seats[seat];
+          return s?.kind === "human" ? s.id : null;
+        },
+      },
+      setVoiceView,
+      say
+    );
+    voice.current = v;
+    setVoiceView(v.view);
     const c = new TableClient({
       code,
       name: mem.name,
@@ -152,6 +172,8 @@ export function OnlineTable({ initialCode, onExit }: { initialCode: string | nul
       },
       onTable: setTable,
       onReaction: (seat, r) => setReaction({ seat, r, id: Date.now() }),
+      onTalking: (seat) => v.onTalking(seat),
+      onVoice: (seat, a) => v.onVoice(seat, a),
       onStatus: setStatus,
       onError: (errorCode, message, rid) => {
         setRefused({ rid, id: Date.now() });
@@ -174,15 +196,26 @@ export function OnlineTable({ initialCode, onExit }: { initialCode: string | nul
     });
     client.current = c;
     const wake = () => document.visibilityState === "visible" && c.nudge();
+    // The app put away mid-sentence: the microphone goes off.
+    const hide = () => document.visibilityState === "hidden" && v.release();
     document.addEventListener("visibilitychange", wake);
+    document.addEventListener("visibilitychange", hide);
     window.addEventListener("online", wake);
     return () => {
       document.removeEventListener("visibilitychange", wake);
+      document.removeEventListener("visibilitychange", hide);
       window.removeEventListener("online", wake);
+      v.dispose();
+      voice.current = null;
       c.stop();
       client.current = null;
     };
   }, [code]);
+
+  // The connection lost mid-sentence: the same.
+  useEffect(() => {
+    if (status !== "open") voice.current?.release();
+  }, [status]);
 
   const send = (msg: Send) => {
     const rid = client.current?.send(msg) ?? false;
@@ -220,7 +253,7 @@ export function OnlineTable({ initialCode, onExit }: { initialCode: string | nul
   if (code && table?.phase === "playing" && table.view && you)
     return (
       <>
-        <PlayPanel onExit={leave} online={{ table, send, host: you.host, scores, reaction, refused }} />
+        <PlayPanel onExit={leave} online={{ table, send, host: you.host, scores, reaction, refused, voice: { ...voiceView, press: () => voice.current?.press(), release: () => voice.current?.release(), toggleMute: (id) => voice.current?.toggleMute(id) } }} />
         {status !== "open" && <div className="ot-status">{status === "closed" ? "Disconnected" : "Reconnecting…"}</div>}
         {toast && (
           <div className="ot-toast" role="status">

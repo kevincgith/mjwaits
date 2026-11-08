@@ -14,7 +14,7 @@
 // connection is sent (broadcast).
 
 import { DurableObject } from "cloudflare:workers";
-import { cleanNickname, IDLE_TTL_MS, PROTOCOL_VERSION, RATE_BURST, RATE_PER_SECOND, UNUSED_TTL_MS } from "@mjwaits/shared/protocol/limits";
+import { cleanNickname, IDLE_TTL_MS, PROTOCOL_VERSION, RATE_BURST, RATE_PER_SECOND, UNUSED_TTL_MS, VOICE_RATE_BURST, VOICE_RATE_PER_SECOND } from "@mjwaits/shared/protocol/limits";
 import type { Result } from "@mjwaits/shared/protocol/schema";
 import type { Env } from "./index";
 
@@ -58,6 +58,9 @@ export interface Conn {
   at: number; // when the bucket was last topped up
   strikes: number;
   opened?: number; // (absent: a connection from before it was kept)
+  // The rate limit for voice frames, kept apart (absent: none sent yet).
+  voiceTokens?: number;
+  voiceAt?: number;
 }
 
 export interface Clock {
@@ -120,6 +123,10 @@ export abstract class Hub<Msg extends { t: string; rid?: string }> extends Durab
   protected abstract broadcast(except?: WebSocket): void;
   protected abstract welcome(id: string, token: string, rid?: string): object;
   protected initialize(_now: number): void {}
+  // A message type that streams, with a rate limit of its own (null: none).
+  protected get streamType(): string | null {
+    return null;
+  }
   protected extraTables(): string {
     return "";
   }
@@ -269,24 +276,35 @@ export abstract class Hub<Msg extends { t: string; rid?: string }> extends Durab
   }
 
   // Token bucket: true if this frame may go through.
-  private admit(ws: WebSocket, conn: Conn): boolean {
+  private admit(ws: WebSocket, conn: Conn, streamed: boolean): boolean {
     const now = Date.now();
-    conn.tokens = Math.min(RATE_BURST, conn.tokens + ((now - conn.at) / 1000) * RATE_PER_SECOND);
-    conn.at = now;
-    const ok = conn.tokens >= 1;
-    if (ok) {
-      conn.tokens -= 1;
-      conn.strikes = 0;
-    } else conn.strikes += 1;
+    const burst = streamed ? VOICE_RATE_BURST : RATE_BURST;
+    const perSecond = streamed ? VOICE_RATE_PER_SECOND : RATE_PER_SECOND;
+    const held = streamed ? (conn.voiceTokens ?? burst) : conn.tokens;
+    const since = streamed ? (conn.voiceAt ?? now) : conn.at;
+    const filled = Math.min(burst, held + ((now - since) / 1000) * perSecond);
+    const ok = filled >= 1;
+    const left = ok ? filled - 1 : filled;
+    if (streamed) {
+      conn.voiceTokens = left;
+      conn.voiceAt = now;
+    } else {
+      conn.tokens = left;
+      conn.at = now;
+    }
+    conn.strikes = ok ? 0 : conn.strikes + 1;
     ws.serializeAttachment(conn);
     return ok;
   }
 
   async webSocketMessage(ws: WebSocket, frame: string | ArrayBuffer) {
     const conn = ws.deserializeAttachment() as Conn;
-    if (!this.admit(ws, conn)) {
+    const stream = this.streamType;
+    const streamed = stream !== null && typeof frame === "string" && frame.startsWith(`{"t":"${stream}"`);
+    if (!this.admit(ws, conn, streamed)) {
       if (conn.strikes >= RATE_STRIKES) ws.close(CLOSE_POLICY, "rate limit");
-      else this.refuse(ws, "rateLimited", "too many messages - slow down");
+      // (A stream's lost frame is just a gap: nothing to say about it.)
+      else if (!streamed) this.refuse(ws, "rateLimited", "too many messages - slow down");
       return;
     }
     const parsed = this.parse(frame);
@@ -295,6 +313,12 @@ export abstract class Hub<Msg extends { t: string; rid?: string }> extends Durab
       return;
     }
     const msg = parsed.value;
+    // Only the stream's own messages go by the stream's limit (JSON can name
+    // a field twice, so the start of the frame doesn't settle it).
+    if (streamed && msg.t !== stream) {
+      this.refuse(ws, "badMessage", "message: not what it starts as");
+      return;
+    }
     try {
       if (msg.t === "hello") await this.hello(ws, conn, msg as Hello);
       else if (msg.t === "ping") this.send(ws, { t: "pong", ...(msg.rid === undefined ? {} : { rid: msg.rid }) });

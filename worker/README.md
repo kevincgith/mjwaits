@@ -174,6 +174,8 @@ counts here:
   (bots and timers keep it ticking), so its cost is duration - every awake object is billed as
   128 MB, so an hour awake is 460 GB-s and the free 13,000 GB-s a day is about 28 table-hours.
   Storage stays small: the whole table is one row, written once per move (plus the clock row).
+- **Walkie-talkie.** Ten small frames a second from whoever is talking, passed straight on and
+  never stored. At 20:1 the free requests cover about 55 hours of talking a day, across all tables.
 - **CPU.** Each change is checked by replaying the game with the ledger: a millisecond or so for
   a long game. Tai scoring isn't done on the server at all.
 
