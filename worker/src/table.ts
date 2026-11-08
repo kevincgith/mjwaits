@@ -27,6 +27,7 @@ import {
   claimMatters,
   SECOND_CHANCE_S,
   secondChance,
+  settleSecondChance,
   chanceAllows,
   claimOptions,
   dealHand,
@@ -115,6 +116,7 @@ interface Runtime {
   // reopened by a 嗌錯, whose caller doesn't get to think again.
   secondChance?: { call: Claim["kind"]; by: number[] } | null;
   chanceSpent?: boolean;
+  chanceKept?: Record<number, Claim> | null; // the lesser calls those being asked had made
   ready: number[]; // between hands
   away: Record<number, number>; // seat -> when its player dropped
   watching?: string[]; // people who stood to watch: not sat back down when they reconnect
@@ -615,6 +617,7 @@ export class Table extends Hub<TableMessage> {
     rt.unwaited = [];
     rt.secondChance = null;
     rt.chanceSpent = false;
+    rt.chanceKept = null;
     const timer = rt.settings.timer * 1000;
     if (g.phase.kind === "turn") {
       // The dealer's first turn after 換牌 waits for its last rows to join the hands.
@@ -765,14 +768,18 @@ export class Table extends Hub<TableMessage> {
     rt.chanceSpent = true;
     const chance = secondChance(rt.game!, rt.decisions!.map((d) => (d === "waiting" ? null : d)));
     if (!chance) return false;
-    const people = chance.offers.filter((o) => !this.actsAlone(o.seat));
-    if (chance.call === "win") for (const o of chance.offers) if (this.actsAlone(o.seat)) rt.decisions![o.seat] = { kind: "win" };
-    if (!people.length) return false;
-    rt.secondChance = { call: chance.call, by: chance.by };
+    const { by, asked } = settleSecondChance(chance, rt.decisions!, (seat) => this.actsAlone(seat));
+    if (!asked.length) return false;
+    rt.secondChance = { call: chance.call, by };
     rt.step++;
     rt.heldDeadline = null;
     rt.botAt = null;
-    for (const o of people) rt.decisions![o.seat] = "waiting";
+    rt.chanceKept = {};
+    for (const o of asked) {
+      const had = rt.decisions![o.seat];
+      if (had && had !== "waiting") rt.chanceKept[o.seat] = had;
+      rt.decisions![o.seat] = "waiting";
+    }
     rt.deadline = now + SECOND_CHANCE_S * 1000;
     return true;
   }
@@ -780,7 +787,8 @@ export class Table extends Hub<TableMessage> {
   private resolve() {
     const rt = this.rt;
     const before = rt.game!;
-    const decisions = rt.decisions!.map((d) => (d === "waiting" ? null : d));
+    // (Whoever let a second chance go by still has the call they'd made.)
+    const decisions = rt.decisions!.map((d, seat) => (d === "waiting" || d === null ? (rt.chanceKept?.[seat] ?? null) : d));
     rt.game = resolveClaims(before, decisions);
     this.record(before, rt.game);
     const g = rt.game;

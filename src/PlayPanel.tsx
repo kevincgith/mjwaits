@@ -20,7 +20,7 @@
 // Your moves go to the server instead of into the game; the bots, timer and
 // payments are the server's.
 
-import { type CSSProperties, lazy, memo, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, Fragment, lazy, memo, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   applyTurnMove,
   barredClaims,
@@ -47,6 +47,7 @@ import {
   riichiDiscards,
   SECOND_CHANCE_S,
   secondChance,
+  settleSecondChance,
   secondChanceFan,
   riichiForcedDiscard,
   roundLabel,
@@ -1713,7 +1714,7 @@ export function PlayPanel({
     // Shown already, while the table gave someone a second chance (below).
     const said = chanceSaid.current;
     chanceSaid.current = null;
-    if (said !== null && ((lastAction.kind === "call" && at(lastAction.seat) === said) || (lastAction.kind === "win" && lastAction.seats.length === 1))) return;
+    if (said !== null && ((lastAction.kind === "call" && at(lastAction.seat) === said) || (lastAction.kind === "win" && lastAction.seats.length === 1 && at(lastAction.seats[0]) === said))) return;
     if (lastAction.kind === "call") {
       showBurst(at(lastAction.seat), lastAction.call === "chow" ? "上" : lastAction.call === "pung" ? "碰" : "槓");
       sayCall(at(lastAction.seat), lastAction.call, at(lastAction.from));
@@ -1975,6 +1976,13 @@ export function PlayPanel({
     : heldChance?.game === game
       ? heldChance
       : null;
+  // Your 番 if you take it (joining whoever's winning off it).
+  const chanceWin = !!offeredChance?.claims.some((c) => c.kind === "win");
+  const chanceOthers = offeredChance?.call === "win" ? offeredChance.by.length : 0;
+  const chanceFan = useMemo(() => (chanceWin ? secondChanceFan(game, HUMAN, chanceOthers) : null), [chanceWin, game, chanceOthers]);
+  // How far the table's clock on it has run (a phone back mid-window picks it up there).
+  const chanceDeadline = online?.table.secondChance ? online.table.deadline : null;
+  const chanceGoneMs = useMemo(() => (chanceDeadline === null ? 0 : Math.min(SECOND_CHANCE_S * 1000, Math.max(0, SECOND_CHANCE_S * 1000 - (chanceDeadline - Date.now())))), [chanceDeadline]);
   const humanClaims = game.phase.kind === "claims" && seated && waitedOn && !outcalled && !offeredChance ? claimOptions(game, HUMAN) : [];
   // Calls you'd have but for passing one up (過水, a passed pung): shown
   // greyed while the discard's on the table, not taken.
@@ -1994,7 +2002,6 @@ export function PlayPanel({
     resolving.current = game;
     const decisions = botDecisions.slice();
     decisions[HUMAN] = humanClaim;
-    if (humanClaims.length && !autoplay) recordMine(1, claimDecisionAction(game, humanClaim));
     for (let seat = 1; seat < SEATS; seat++) {
       const net = learnedBot(seat);
       // (If the network fails - a phone out of memory - its seat's usual bot answers.)
@@ -2004,13 +2011,15 @@ export function PlayPanel({
     // a bot (or 自動) joins a win then, the hand's ending; otherwise it stays
     // with what it chose.
     const chance = secondChance(game, decisions);
-    if (chance?.call === "win") for (const o of chance.offers) if (o.seat !== HUMAN || autoplay) decisions[o.seat] = { kind: "win" };
-    const mine = !autoplay && chance?.offers.find((o) => o.seat === HUMAN);
-    if (chance && mine) {
+    const settled = chance && settleSecondChance(chance, decisions, (seat) => seat !== HUMAN || autoplay);
+    const mine = settled?.asked[0];
+    if (chance && settled && mine) {
       announceClaim(chance.by[0], decisions);
-      setHeldChance({ game, decisions, call: chance.call, by: chance.call === "win" ? [...chance.by, ...chance.offers.filter((o) => o.seat !== HUMAN).map((o) => o.seat)] : chance.by, claims: mine.claims });
+      setHeldChance({ game, decisions, call: chance.call, by: settled.by, claims: mine.claims });
       return;
     }
+    // (Held for a second chance: it's the answer to that that's recorded.)
+    if (humanClaims.length && !autoplay) recordMine(1, claimDecisionAction(game, humanClaim));
     const seat = winningClaimSeat(game, decisions);
     if (seat !== null) announceClaim(seat, decisions);
     advance(resolveClaims(game, decisions));
@@ -2029,21 +2038,29 @@ export function PlayPanel({
     if (!heldChance || heldChance.game !== game) return;
     setHeldChance(null);
     const decisions = heldChance.decisions.slice();
-    decisions[HUMAN] = claim;
+    // (Let it go by: any lesser call you'd made still stands, should the one taking it be taken back.)
+    decisions[HUMAN] = claim ?? decisions[HUMAN];
+    recordMine(1, claimDecisionAction(game, decisions[HUMAN]));
     // (Passed again: the call that's taking it has been shown already.)
     const wins = decisions.filter((d) => d?.kind === "win").length;
-    if (wins > 1 && claim) showBurst(winningClaimSeat(game, decisions)!, wins >= 3 ? "三響" : "雙響");
+    if (wins > 1 && claim) showBurst(winningClaimSeat(game, decisions)!, game.phase.kind === "claims" && game.phase.robKong ? "搶槓" : wins >= 3 ? "三響" : "雙響");
     else if (claim) announceClaim(HUMAN, decisions);
     advance(resolveClaims(game, decisions));
     if (claim && claim.kind !== "win") setLastCall({ before: game, decisions });
   };
   // Out of time: your pass stands. (Online the table keeps the time.)
+  // (Waits while the setup page is up; starts again when it goes.)
+  const chanceTimeout = useRef(answerChance);
+  chanceTimeout.current = answerChance;
   useEffect(() => {
-    if (!heldChance) return;
-    const id = window.setTimeout(() => answerChance(null), SECOND_CHANCE_S * 1000);
+    if (!heldChance || setupOpen) return;
+    const id = window.setTimeout(() => chanceTimeout.current(null), SECOND_CHANCE_S * 1000);
     return () => window.clearTimeout(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [heldChance]);
+  }, [heldChance, setupOpen]);
+  // The game it was held on replaced (a new game): it goes with it.
+  useEffect(() => {
+    if (heldChance && heldChance.game !== game) setHeldChance(null);
+  }, [heldChance, game]);
 
   // 嗌錯: take back your chow or pung - the discard plays on as if you'd
   // passed and you pay each player. Not a kong: its replacement tile's been
@@ -3265,7 +3282,6 @@ export function PlayPanel({
 
   // Your ways to make a run with the discard - each run once (with only one,
   // 上 takes it at once; the choice shows only when there's a real choice).
-  const chanceFan = offeredChance?.claims.some((c) => c.kind === "win") ? secondChanceFan(game, HUMAN, offeredChance.call === "win" ? offeredChance.by.length : 0) : null;
   const chows = humanClaims
     .filter((c): c is Extract<Claim, { kind: "chow" }> => c.kind === "chow")
     .filter((c, i, all) => all.findIndex((d) => tilesKey(sortTiles([...d.tiles])) === tilesKey(sortTiles([...c.tiles]))) === i);
@@ -3561,9 +3577,15 @@ export function PlayPanel({
               {offeredChance && (
                 <>
                   <span className="play-chance" role="status">
-                    {offeredChance.by.map(nameOf).join("、")} {claimLabel({ kind: offeredChance.call } as Claim)} · 你{offeredChance.call === "win" ? "都胡" : offeredChance.claims.map(claimLabel).join("/")}?
+                    {offeredChance.by.map((seat, i) => (
+                      <Fragment key={seat}>
+                        {i > 0 && "、"}
+                        <span className="play-chance-name">{nameOf(seat)}</span>
+                      </Fragment>
+                    ))}{" "}
+                    {claimLabel({ kind: offeredChance.call } as Claim)} · 你{offeredChance.call === "win" ? "都胡" : offeredChance.claims.map(claimLabel).join("/")}?
                     {chanceFan !== null && <span className="play-chance-fan">{chanceFan} 番</span>}
-                    <i className="play-chance-time" style={{ animationDuration: `${SECOND_CHANCE_S}s` }} />
+                    <i key={String(setupOpen)} className="play-chance-time" style={{ animationDuration: `${SECOND_CHANCE_S}s`, animationDelay: `-${chanceGoneMs}ms` }} />
                   </span>
                   {offeredChance.claims.map((c, i) => (
                     <button key={i} type="button" className={`play-call${c.kind === "win" ? " is-win" : ""}`} onClick={() => answerChance(c)}>
