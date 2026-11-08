@@ -10,7 +10,7 @@ import { useEffect, useRef, useState } from "react";
 import { seatWind } from "@mjwaits/shared/engine/game";
 import { MYSTERY_NAME, profileById } from "@mjwaits/shared/engine/bots";
 import { cleanNickname, normalizeRoomCode } from "@mjwaits/shared/protocol/limits";
-import { BOT_SPEEDS, JACKPOTS, MYSTERY_BOT, TABLE_BOTS, type BotSpeed, TURN_TIMERS, type TableBot, type TableClientMessage, type TableSettings, type TableState } from "@mjwaits/shared/protocol/table";
+import { BOT_SPEEDS, JACKPOTS, MYSTERY_BOT, TABLE_BOTS, type BotSpeed, type ChatMessage, TURN_TIMERS, type TableBot, type TableClientMessage, type TableSettings, type TableState } from "@mjwaits/shared/protocol/table";
 import { DEFAULT_SWAP_RULES } from "@mjwaits/shared/engine/swap";
 import { SWAP_PRESETS } from "./PlaySwap";
 import { defaultNickname, isRecent, type ConnectionStatus } from "./lib/online";
@@ -20,6 +20,7 @@ import {
   isAppleMobile,
   isInstalledApp,
   loadTables,
+  mergeChat,
   saveTables,
   TableClient,
   tableLink,
@@ -30,6 +31,7 @@ import {
 } from "./lib/onlineTable";
 import type { ScoreGame } from "@mjwaits/shared/engine/ledger";
 import { TableVoice, type VoiceView } from "./lib/tableVoice";
+import { TableChat, type OnlineChat } from "./TableChat";
 import { PlayScores } from "./scores/playScores";
 import { PlayPanel, type OnlinePlay } from "./PlayPanel";
 import type { Tile } from "@mjwaits/shared/engine/mahjong";
@@ -79,6 +81,25 @@ function BotFace() {
   );
 }
 
+// A discard held up by someone's answer, past a normal pause: said, so it
+// doesn't look like a fault. (Not to whoever it's waiting on: they have the
+// buttons. A new decision starts the wait again.)
+const WAITING_NOTICE_MS = 3000;
+function WaitingNotice({ table }: { table: TableState }) {
+  const waiting = !!table.holding && !(table.you !== null && table.waitingOn.includes(table.you));
+  const [shownFor, setShownFor] = useState<number | null>(null);
+  useEffect(() => {
+    if (!waiting) return;
+    const id = window.setTimeout(() => setShownFor(table.step), WAITING_NOTICE_MS);
+    return () => window.clearTimeout(id);
+  }, [waiting, table.step]);
+  if (!waiting || shownFor !== table.step) return null;
+  return (
+    <div className="ot-waiting" role="status">
+      等緊玩家 Waiting for a player…
+    </div>
+  );
+}
 
 // ---- The screen ------------------------------------------------------------------------
 
@@ -101,6 +122,20 @@ export function OnlineTable({ initialCode, onExit }: { initialCode: string | nul
   // The walkie-talkie.
   const voice = useRef<TableVoice | null>(null);
   const [voiceView, setVoiceView] = useState<VoiceView>({ mine: "idle", talking: null, muted: [] });
+  // The chat: every line this phone has, how many it hasn't seen, and the
+  // last to show as a bubble at the table. (Read from the connection's
+  // callbacks, so kept in refs too.)
+  const [chatLines, setChatLines] = useState<ChatMessage[]>([]);
+  const [chatUnread, setChatUnread] = useState(0);
+  const [chatOpen, setChatOpenState] = useState(false);
+  const [chatBubble, setChatBubble] = useState<OnlineChat["bubble"]>(null);
+  const chatOpenNow = useRef(false);
+  const myId = useRef<string | null>(null);
+  const setChatOpen = (open: boolean) => {
+    chatOpenNow.current = open;
+    setChatOpenState(open);
+    if (open) setChatUnread(0);
+  };
   const scoreCount = table?.scores ?? 0;
   const started = !!table && table.phase !== "lobby";
   useEffect(() => {
@@ -146,6 +181,11 @@ export function OnlineTable({ initialCode, onExit }: { initialCode: string | nul
     setScores(null);
     setReaction(null);
     setRefused(null);
+    setChatLines([]);
+    setChatUnread(0);
+    setChatBubble(null);
+    setChatOpen(false);
+    myId.current = null;
     const v = new TableVoice(
       {
         code,
@@ -167,6 +207,7 @@ export function OnlineTable({ initialCode, onExit }: { initialCode: string | nul
       name: mem.name,
       token: tableToken(mem, code),
       onWelcome: (w) => {
+        myId.current = w.id;
         setMe({ id: w.id, host: w.host });
         setMemory((m) => withTable(m, code, w.token));
       },
@@ -174,6 +215,13 @@ export function OnlineTable({ initialCode, onExit }: { initialCode: string | nul
       onReaction: (seat, r) => setReaction({ seat, r, id: Date.now() }),
       onTalking: (seat) => v.onTalking(seat),
       onVoice: (seat, a) => v.onVoice(seat, a),
+      onChatLog: (messages) => setChatLines((have) => mergeChat(have, messages)),
+      onChat: (m) => {
+        setChatLines((have) => mergeChat(have, [m]));
+        if (v.view.muted.includes(m.id)) return;
+        if (m.seat !== null) setChatBubble({ seat: m.seat, text: m.text, id: Date.now() });
+        if (m.id !== myId.current && !chatOpenNow.current) setChatUnread((n) => n + 1);
+      },
       onStatus: setStatus,
       onError: (errorCode, message, rid) => {
         setRefused({ rid, id: Date.now() });
@@ -249,12 +297,23 @@ export function OnlineTable({ initialCode, onExit }: { initialCode: string | nul
   // been gone a while); a table from before it said, as you joined.
   const you: Welcome | null = me && { ...me, host: table?.host ? table.host === me.id : me.host };
 
+  const chat: OnlineChat = {
+    messages: chatLines.filter((m) => !voiceView.muted.includes(m.id)),
+    unread: chatUnread,
+    open: chatOpen,
+    setOpen: setChatOpen,
+    send: (text) => send({ t: "chat", text }) !== false,
+    bubble: chatBubble,
+    me: me?.id ?? null,
+  };
+
   // The hand itself: the Play tab's table.
   if (code && table?.phase === "playing" && table.view && you)
     return (
       <>
-        <PlayPanel onExit={leave} online={{ table, send, host: you.host, scores, reaction, refused, voice: { ...voiceView, press: () => voice.current?.press(), release: () => voice.current?.release(), toggleMute: (id) => voice.current?.toggleMute(id) } }} />
+        <PlayPanel onExit={leave} online={{ table, send, host: you.host, scores, reaction, refused, chat, voice: { ...voiceView, press: () => voice.current?.press(), release: () => voice.current?.release(), toggleMute: (id) => voice.current?.toggleMute(id) } }} />
         {status !== "open" && <div className="ot-status">{status === "closed" ? "Disconnected" : "Reconnecting…"}</div>}
+        {status === "open" && <WaitingNotice table={table} />}
         {toast && (
           <div className="ot-toast" role="status">
             {toast}
@@ -298,6 +357,11 @@ export function OnlineTable({ initialCode, onExit }: { initialCode: string | nul
         ) : table.phase === "ended" ? (
           <Ended table={table} scores={scores} onLeave={leave} host={you.host} onRematch={() => send({ t: "rematch" })} />
         ) : null}
+        {code && table && you && (
+          <div className="ot-chat">
+            <TableChat chat={chat} />
+          </div>
+        )}
         {code && table && status !== "open" && <div className="ot-status">{status === "closed" ? "Disconnected" : "Reconnecting…"}</div>}
         {toast && (
           <div className="ot-toast" role="status">

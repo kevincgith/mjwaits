@@ -780,6 +780,25 @@ describe("嗌錯, 自動 and bot speed", () => {
     expect(s.deadline! - sent).toBeLessThan(SWAP_TIMER_S * 1000 + 2000);
   });
 
+  it("moves a bot on even when its alarm never comes", async () => {
+    const code = await createTable();
+    const { p: host } = await join(code, "Kevin");
+    await runInDurableObject(stubFor(code), (t: Table) => {
+      (t as unknown as { pause: number }).pause = 300;
+    });
+    for (const s of [1, 2, 3]) host.send({ t: "setBot", seat: s, bot: "casual" });
+    host.send({ t: "setup", settings: { multiWin: false, timer: 0, hold: 30, firstDealer: 1 } });
+    await host.table((s) => s.seats.every(Boolean) && s.settings.firstDealer === 1);
+    host.send({ t: "start" });
+    const dealt = await host.table((s) => s.phase === "playing");
+    const from = Date.now();
+    await runInDurableObject(stubFor(code), (_t: Table, state: DurableObjectState) => state.storage.deleteAlarm());
+    expect(await runInDurableObject(stubFor(code), (_t: Table, state: DurableObjectState) => state.storage.getAlarm())).toBeNull();
+    await host.table((s) => s.step > dealt.step, 4000);
+    expect(Date.now() - from).toBeLessThan(3000);
+    expect(host.errors).toEqual([]);
+  });
+
   it("paces bots at the table's bot speed", async () => {
     const code = await createTable();
     const { p: host } = await join(code, "Kevin");
@@ -876,6 +895,37 @@ describe("the walkie-talkie", () => {
     const { amy } = await table();
     amy.ws.send('{"t":"voice","t":"react","r":"👍"}');
     expect((await amy.error()).code).toBe("badMessage");
+  });
+});
+
+describe("the chat", () => {
+  it("reaches everyone, watchers can join in, and the last lines wait for whoever arrives", async () => {
+    const code = await createTable();
+    const { p: host } = await join(code, "Kevin");
+    const { p: amy } = await join(code, "Amy");
+    await host.next("table");
+    amy.send({ t: "chat", text: "  hi   <b>there</b>\n" });
+    for (const p of [host, amy]) expect((await p.next("chat")).m).toMatchObject({ name: "Amy", seat: 1, text: "hi <b>there</b>" });
+    host.send({ t: "stand" });
+    await host.table((s) => s.seats[0] === null);
+    host.send({ t: "chat", text: "watching now" });
+    expect((await amy.next("chat")).m).toMatchObject({ name: "Kevin", seat: null, text: "watching now" });
+    const { p: dan } = await join(code, "Dan");
+    const log = await dan.next("chatLog");
+    expect(log.messages.map((m) => m.text)).toEqual(["hi <b>there</b>", "watching now"]);
+  });
+
+  it("turns down an empty line and one sent too soon, and cuts a long one", async () => {
+    const code = await createTable();
+    const { p: host } = await join(code, "Kevin");
+    host.send({ t: "chat", text: "   " });
+    expect((await host.error()).code).toBe("badMessage");
+    host.send({ t: "chat", text: "一".repeat(500) });
+    expect((await host.next("chat")).m.text.length).toBe(120);
+    host.send({ t: "chat", text: "again" });
+    expect((await host.error()).code).toBe("rateLimited");
+    host.send({ t: "chat", text: "x".repeat(601) });
+    expect((await host.error()).code).toBe("badMessage");
   });
 });
 
@@ -1041,6 +1091,17 @@ describe("a second chance", () => {
   }
   const WINS = "46m111222333t456b77z";
   const NONE = "1379m1357t1357b123z";
+
+  it("tells everyone a discard is waiting on someone, but not who", async () => {
+    const { host, other, step } = await claimWindow([WINS, WINS], { secondChance: false });
+    host.send({ t: "claim", step, claim: null });
+    const held = await host.table((s) => s.waitingOn.length === 0 && s.view?.phase.kind === "claims");
+    expect(held.holding).toBe(true);
+    expect(held.options).toBeNull();
+    other.send({ t: "claim", step, claim: null });
+    const moved = await host.table((s) => s.view?.phase.kind !== "claims");
+    expect(moved.holding).toBe(false);
+  });
 
   it("a pass of a win is asked again once someone else has won - and joining makes it a 雙響", async () => {
     const { host, other, step } = await claimWindow([WINS, WINS], {});

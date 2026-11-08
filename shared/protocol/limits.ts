@@ -38,6 +38,13 @@ export const VOICE_MAX_MS = 15_000;
 // A talker silent this long has lost the floor: their phone has gone.
 export const VOICE_QUIET_MS = 3_000;
 
+// The table's chat: a line of text, the last few kept for whoever joins, and
+// a moment between one person's lines.
+export const CHAT_MAX = 120; // as the reader counts characters
+export const CHAT_RAW_MAX = 600; // what may be sent, before cleaning
+export const CHAT_HISTORY = 40;
+export const CHAT_GAP_MS = 400;
+
 // Room codes: 5 characters from an alphabet with nothing that reads like
 // something else (no 0/O, 1/I/L, 5/S, 2/Z, 8/B) - 25^5, about 9.8 million
 // codes. Typed in any case; the canonical form is upper case.
@@ -84,4 +91,18 @@ export function cleanNickname(raw: string): string | null {
   if (!cleaned) return null;
   const chars = graphemes(cleaned);
   return chars.length > NICKNAME_MAX ? chars.slice(0, NICKNAME_MAX).join("").trimEnd() : cleaned;
+}
+
+// A chat line, or null if nothing is left: as a nickname, one line, but
+// keeping < > & and quotes - it's only ever shown as text.
+export function cleanChat(raw: string): string | null {
+  const cleaned = raw
+    .normalize("NFC")
+    .replace(/[\r\n\t]+/g, " ")
+    .replace(/(?!‍)[\p{Cc}\p{Cf}\p{Co}\p{Cn}\p{Zl}\p{Zp}]/gu, "")
+    .replace(/\s+/gu, " ")
+    .trim();
+  if (!cleaned) return null;
+  const chars = graphemes(cleaned);
+  return chars.length > CHAT_MAX ? chars.slice(0, CHAT_MAX).join("").trimEnd() : cleaned;
 }

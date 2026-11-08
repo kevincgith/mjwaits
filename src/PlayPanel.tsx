@@ -113,6 +113,7 @@ import { getTalk, getYourVoice, isAloud, sayAloud, sayLineAloud, setAloud, setTa
 import { scoreView, type ResultView } from "@mjwaits/shared/engine/view";
 import { MYSTERY_BOT, REACTIONS, type Reaction, type TableClientMessage, type TableState } from "@mjwaits/shared/protocol/table";
 import type { VoiceView } from "./lib/tableVoice";
+import { TableChat, type OnlineChat } from "./TableChat";
 import { BLANK, seatState, takenFaces } from "./lib/seatState";
 import { PLAY_SAVE_KEY } from "./lib/playSaved";
 import { replayCached, withEvents, type ScoreEvent, type ScoreGame } from "@mjwaits/shared/engine/ledger";
@@ -605,7 +606,7 @@ function VoiceRows({ table, voice }: { table: TableState; voice: OnlineVoice }) 
       {table.seats.map((s, seat) =>
         s?.kind === "human" && seat !== table.you ? (
           <div className="play-menu-row" key={s.id}>
-            <span>對講 Voice: {s.name}</span>
+            <span>對講傾偈 Voice/chat: {s.name}</span>
             <span className="play-menu-seg">
               {[false, true].map((on) => (
                 <button key={String(on)} type="button" className={voice.muted.includes(s.id) !== on ? "toggle-on" : undefined} aria-pressed={voice.muted.includes(s.id) !== on} onClick={() => voice.muted.includes(s.id) === on && voice.toggleMute(s.id)}>
@@ -929,6 +930,7 @@ export interface OnlinePlay {
   refused: { rid?: string; id: number } | null;
   host: boolean;
   voice: OnlineVoice;
+  chat: OnlineChat;
 }
 
 // The table's walkie-talkie (lib/tableVoice.ts).
@@ -1436,6 +1438,13 @@ export function PlayPanel({
     showBubble(net.toLocal(reaction.seat), reaction.r);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reaction?.id]);
+  // A line of chat shows the same way.
+  const chatBubble = online?.chat.bubble ?? null;
+  useEffect(() => {
+    if (!chatBubble || !net || chatBubble.id < openedAt.current) return;
+    showBubble(net.toLocal(chatBubble.seat), chatBubble.text);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chatBubble?.id]);
   const [reacting, setReacting] = useState(false);
   // Speech bubbles: the line that fits a bot has said least (counted on this
   // device, across games - see LineCounter), as readily as its personality
@@ -3290,11 +3299,15 @@ export function PlayPanel({
           </button>
           {/* Online: quick reactions for the table, and who's watching. */}
           {online && seated && (
-            <button type="button" className={`play-icon-button${reacting ? " is-on" : ""}`} onClick={() => setReacting((r) => !r)} aria-label="Send a reaction" aria-expanded={reacting}>
+            <button type="button" className={`play-icon-button${reacting ? " is-on" : ""}`} onClick={() => {
+              online.chat.setOpen(false);
+              setReacting((r) => !r);
+            }} aria-label="Send a reaction" aria-expanded={reacting}>
               😊
             </button>
           )}
           {online && seated && online.table.you !== null && <TalkButton voice={online.voice} seat={online.table.you} />}
+          {online && <TableChat chat={online.chat} onOpen={() => setReacting(false)} />}
           {online && online.table.watching > 0 && (
             <span className="play-watching" title={`${online.table.watching} watching`}>
               👁 {online.table.watching}

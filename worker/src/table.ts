@@ -56,12 +56,13 @@ import type { Tile } from "@mjwaits/shared/engine/mahjong";
 import { viewFor } from "@mjwaits/shared/engine/view";
 import type { ScoreEvent, ScoreGame } from "@mjwaits/shared/engine/ledger";
 import { newPlayLedger, playEvents } from "@mjwaits/shared/engine/playLedger";
-import { PROTOCOL_VERSION, VOICE_MAX_MS, VOICE_QUIET_MS } from "@mjwaits/shared/protocol/limits";
+import { CHAT_GAP_MS, CHAT_HISTORY, cleanChat, PROTOCOL_VERSION, VOICE_MAX_MS, VOICE_QUIET_MS } from "@mjwaits/shared/protocol/limits";
 import {
   BOT_SPEEDS,
   DEFAULT_TABLE_SETTINGS,
   MYSTERY_BOT,
   parseTableMessage,
+  type ChatMessage,
   type SeatInfo,
   type TableAction,
   type TableBot,
@@ -71,7 +72,7 @@ import {
   type TableState,
   type YourOptions,
 } from "@mjwaits/shared/protocol/table";
-import { Hub, Refusal } from "./hub";
+import { Hub, randomHex, Refusal } from "./hub";
 
 // A bot's (or an away player's) move waits this long, so people can follow.
 export const BOT_PAUSE_MS = 700;
@@ -84,6 +85,10 @@ const CLAIM_PAUSES = 1.6;
 const PASS_PAUSES = 380 / BOT_PAUSE_MS;
 // An engine error: the table tries the same step again this long after.
 const RETRY_MS = 30_000;
+// How long after something's due the table moves on without its alarm, and
+// how far ahead that's kept up: within this a table stays awake regardless.
+const BACKSTOP_MS = 1500;
+const BACKSTOP_RANGE_MS = 10_000;
 
 // A mystery bot keeps its personality here and nowhere else: phones are
 // sent only "mystery".
@@ -360,7 +365,27 @@ export class Table extends Hub<TableMessage> {
     for (const [ws, c] of this.conns(from)) if (c.person && c.person !== personId) this.send(ws, { t: "voice", seat: floor.seat, a });
   }
 
+  // A line of chat: kept with the table (the last few), for whoever joins.
+  private chatAt = new Map<string, number>();
+  private chat(personId: string, raw: string) {
+    const text = cleanChat(raw);
+    if (!text) throw new Refusal("badMessage", "say something first");
+    const now = Date.now();
+    if (now - (this.chatAt.get(personId) ?? 0) < CHAT_GAP_MS) throw new Refusal("rateLimited", "a little slower");
+    this.chatAt.set(personId, now);
+    this.load();
+    const m: ChatMessage = { k: `${now.toString(36)}${randomHex(2)}`, id: personId, name: this.person(personId)!.name, seat: this.seatOf(personId), text, at: now };
+    this.setMeta("chat", [...(this.meta<ChatMessage[]>("chat") ?? []), m].slice(-CHAT_HISTORY));
+    for (const [ws, c] of this.conns()) if (c.person) this.send(ws, { t: "chat", m });
+  }
+
+  protected onWelcomed(ws: WebSocket) {
+    const messages = this.meta<ChatMessage[]>("chat");
+    if (messages?.length) this.send(ws, { t: "chatLog", messages });
+  }
+
   protected async act(personId: string, msg: TableMessage, ws: WebSocket) {
+    if (msg.t === "chat") return this.chat(personId, msg.text);
     if (msg.t === "voice") return this.relayVoice(personId, msg.a, ws);
     if (msg.t === "talk") return this.talk(personId, msg.on, ws);
     try {
@@ -1073,9 +1098,36 @@ export class Table extends Hub<TableMessage> {
   // was met - so it only fires when there's something to do.
   private async schedule(now = Date.now()) {
     const due = this.nextDue(now);
+    this.armBackstop(due, now);
     // (Only ever sooner: the alarm also keeps the heartbeat - see Hub.sweep -
     // and works out the next due time itself whenever it goes off.)
     if (due !== null) await this.wakeAt(due);
+  }
+
+  // Now and then a live table's alarm doesn't come (about one move in 800,
+  // with the right time set: a bot sat until the 25-second heartbeat, on
+  // everyone's phone). So a timer in memory follows each near due time; if
+  // the alarm has done its work, there's nothing left for it to do.
+  private backstop: ReturnType<typeof setTimeout> | null = null;
+  private armBackstop(due: number | null, now: number) {
+    if (this.backstop !== null) clearTimeout(this.backstop);
+    this.backstop = null;
+    if (due === null || due - now > BACKSTOP_RANGE_MS) return;
+    this.backstop = setTimeout(() => this.rescue(), due - now + BACKSTOP_MS);
+  }
+
+  private rescue() {
+    this.backstop = null;
+    if (this.meta("code") === null) return;
+    const now = Date.now();
+    const before = JSON.stringify(this.load());
+    this.advance(now);
+    if (JSON.stringify(this.rt) !== before) {
+      console.warn("Table alarm missed", JSON.stringify({ table: this.meta<string>("code"), step: this.rt.step }));
+      this.save();
+      this.changed();
+    }
+    void this.schedule(now);
   }
 
   protected onAlarm(now: number): number | null {
@@ -1088,7 +1140,9 @@ export class Table extends Hub<TableMessage> {
     }
     // Paused (no one here) or idle: nothing of the table's own is pending.
     const humansHere = this.rt.seats.some((s) => s?.kind === "human" && this.online().has(s.id));
-    return humansHere ? this.nextDue(now) : null;
+    const next = humansHere ? this.nextDue(now) : null;
+    this.armBackstop(next, now);
+    return next;
   }
 
   // ---- What each phone is sent ------------------------------------------------------------
@@ -1150,6 +1204,7 @@ export class Table extends Hub<TableMessage> {
       pot: rt.pot ?? 0,
       last: rt.last,
       secondChance: rt.secondChance ?? null,
+      holding: g?.phase.kind === "claims" && !!rt.decisions?.includes("waiting"),
       you: seat,
       view: g ? viewFor(g, seat ?? -1, (s) => this.handShown(g, s)) : null,
       options,

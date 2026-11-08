@@ -24,6 +24,7 @@ describe("parseTableMessage", () => {
       { t: "setup", settings: { multiWin: true, timer: 0, hold: 60, firstDealer: 2 } },
       { t: "start" },
       { t: "talk", on: true },
+      { t: "chat", text: "hello" },
       { t: "voice", a: "AAECAw==" },
       { t: "move", step: 7, move: { kind: "discard", tile: m5 } },
       { t: "move", step: 7, move: { kind: "discard", tile: { suit: "z", rank: 7 }, riichi: true } },

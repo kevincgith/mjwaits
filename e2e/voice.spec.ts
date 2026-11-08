@@ -132,7 +132,7 @@ test("online: hold to talk, one at a time, heard at the other phone; mute", asyn
 
   // Bo mutes Amy: she still shows as talking, but nothing plays.
   await bo.getByRole("button", { name: "Game menu" }).click();
-  const row = bo.locator(".play-menu-row", { hasText: "對講 Voice: Amy" });
+  const row = bo.locator(".play-menu-row", { hasText: "Voice/chat: Amy" });
   await row.getByRole("button", { name: "Off", exact: true }).click();
   await expect(row.getByRole("button", { name: "Off", exact: true })).toHaveAttribute("aria-pressed", "true");
   await bo.getByRole("button", { name: "Game menu" }).click();
