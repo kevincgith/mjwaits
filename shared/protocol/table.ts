@@ -15,7 +15,7 @@ import type { Claim, KongMove, TurnMove } from "../engine/game";
 import { DEFAULT_SWAP_RULES, SWAP_MAX_ROUNDS, SWAP_MAX_TILES, SWAP_MIN_TILES } from "../engine/swap";
 import type { Tile } from "../engine/mahjong";
 import type { TableView } from "../engine/view";
-import { MAX_MESSAGE_BYTES, NICKNAME_RAW_MAX, SEATS, TOKEN_PATTERN } from "./limits";
+import { MAX_MESSAGE_BYTES, NICKNAME_RAW_MAX, SEATS, TOKEN_PATTERN, VOICE_FRAME_MAX_CHARS } from "./limits";
 import { array, bool, int, literal, nullable, object, oneOf, optional, str, tagged, type Infer, type Result } from "./schema";
 
 // The personalities a host can seat (the Play tab's roster, bots.ts).
@@ -122,6 +122,10 @@ const TableClientSchema = tagged({
   rematch: object({ t: literal("rematch"), rid }),
   // Seated: a quick reaction for everyone at the table.
   react: object({ t: literal("react"), r: oneOf(...REACTIONS), rid }),
+  // Seated: the walkie-talkie. Ask for the floor (or let it go); while you
+  // have it, your voice in frames (src/lib/adpcm.ts), passed on, never stored.
+  talk: object({ t: literal("talk"), on: bool, rid }),
+  voice: object({ t: literal("voice"), a: str(VOICE_FRAME_MAX_CHARS, /^[A-Za-z0-9+/]+={0,2}$/), rid }),
   ping: object({ t: literal("ping"), rid }),
 });
 
@@ -243,6 +247,8 @@ export type TableServerMessage =
   | { t: "welcome"; v: number; token: string; id: string; name: string; host: boolean; seat: number | null; rid?: string }
   | { t: "table"; table: TableState }
   | { t: "reaction"; seat: number; r: Reaction }
+  | { t: "talking"; seat: number | null } // who has the walkie-talkie's floor
+  | { t: "voice"; seat: number; a: string }
   | { t: "error"; code: TableErrorCode; message: string; rid?: string }
   | { t: "pong"; rid?: string };
 

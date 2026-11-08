@@ -167,6 +167,7 @@ export type ConnectionStatus = "connecting" | "open" | "reconnecting" | "closed"
 // The parts of WebSocket this needs, so tests can hand in a fake.
 export interface SocketLike {
   readyState: number;
+  bufferedAmount?: number;
   send(data: string): void;
   close(code?: number, reason?: string): void;
   onopen: ((ev: unknown) => void) | null;
@@ -407,6 +408,11 @@ export abstract class HubClient<Send extends { t: string }, Recv extends HubServ
     const rid = String(this.nextRid++);
     this.socket.send(JSON.stringify({ ...msg, rid }));
     return rid;
+  }
+
+  // Bytes sent but still waiting on the network.
+  get backlog(): number {
+    return this.socket?.bufferedAmount ?? 0;
   }
 
   get connection(): ConnectionStatus {

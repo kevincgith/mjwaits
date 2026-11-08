@@ -161,17 +161,23 @@ export const withoutTable = (memory: TableMemory, code: string): TableMemory => 
 export interface TableClientOptions extends HubClientOptions<TableServerMessage> {
   onTable?: (table: TableState) => void;
   onReaction?: (seat: number, r: Reaction) => void;
+  onTalking?: (seat: number | null) => void;
+  onVoice?: (seat: number, a: string) => void;
 }
 
 export class TableClient extends HubClient<TableClientMessage, TableServerMessage> {
   table: TableState | null = null;
   private readonly onTable?: (table: TableState) => void;
   private readonly onReaction?: (seat: number, r: Reaction) => void;
+  private readonly onTalking?: (seat: number | null) => void;
+  private readonly onVoice?: (seat: number, a: string) => void;
 
   constructor(opts: TableClientOptions) {
     super("tables", opts);
     this.onTable = opts.onTable;
     this.onReaction = opts.onReaction;
+    this.onTalking = opts.onTalking;
+    this.onVoice = opts.onVoice;
   }
 
   protected exists(code: string) {
@@ -180,6 +186,8 @@ export class TableClient extends HubClient<TableClientMessage, TableServerMessag
 
   protected receive(msg: TableServerMessage) {
     if (msg.t === "reaction") return this.onReaction?.(msg.seat, msg.r);
+    if (msg.t === "talking") return this.onTalking?.(msg.seat);
+    if (msg.t === "voice") return this.onVoice?.(msg.seat, msg.a);
     if (msg.t !== "table") return;
     if (this.table && msg.table.version < this.table.version) return; // a straggler
     this.table = msg.table;

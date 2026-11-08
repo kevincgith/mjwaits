@@ -7607,6 +7607,48 @@ html.playing body {
   font-size: 1rem;
 }
 
+/* The walkie-talkie: held, so no long-press menu or selection on a phone. */
+.play-talk {
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.play-talk.is-opening {
+  border-color: var(--play-gold);
+  color: var(--play-gold);
+}
+
+.play-talk.is-live {
+  border-color: #ff6b5e;
+  background: #c8352a;
+  color: #fff;
+  animation: play-talking 1s ease-in-out infinite;
+}
+
+.play-talk.is-busy {
+  opacity: 0.45;
+}
+
+.play-talking {
+  display: inline-grid;
+  place-items: center;
+  color: #ff8a7e;
+  animation: play-talking 1s ease-in-out infinite;
+}
+
+.play-talking svg {
+  width: 0.85rem;
+  height: 0.85rem;
+}
+
+@keyframes play-talking {
+  50% {
+    opacity: 0.55;
+  }
+}
+
 .play-watching {
   display: inline-flex;
   align-items: center;

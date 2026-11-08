@@ -25,6 +25,19 @@ export const PATTERN_NAME_MAX = 200;
 export const RATE_BURST = 20;
 export const RATE_PER_SECOND = 5;
 
+// The table's walkie-talkie: 16 kHz speech in 100 ms frames, each 803 bytes
+// of ADPCM (src/lib/adpcm.ts) sent as base64. Voice has its own rate limit -
+// ten frames a second would use up the one above at once.
+export const VOICE_SAMPLE_RATE = 16_000;
+export const VOICE_FRAME_SAMPLES = 1600;
+export const VOICE_FRAME_MAX_CHARS = 1072;
+export const VOICE_RATE_BURST = 60;
+export const VOICE_RATE_PER_SECOND = 15;
+// One turn on the floor, at most.
+export const VOICE_MAX_MS = 15_000;
+// A talker silent this long has lost the floor: their phone has gone.
+export const VOICE_QUIET_MS = 3_000;
+
 // Room codes: 5 characters from an alphabet with nothing that reads like
 // something else (no 0/O, 1/I/L, 5/S, 2/Z, 8/B) - 25^5, about 9.8 million
 // codes. Typed in any case; the canonical form is upper case.

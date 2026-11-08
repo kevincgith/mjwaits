@@ -112,6 +112,7 @@ import { RIVALS } from "@mjwaits/shared/engine/lines/rivals";
 import { getTalk, getYourVoice, isAloud, sayAloud, sayLineAloud, setAloud, setTalk, setYourVoice, tableVoices, warmVoices, type Talk, type VoiceCall, type YourVoice } from "./lib/voice";
 import { scoreView, type ResultView } from "@mjwaits/shared/engine/view";
 import { MYSTERY_BOT, REACTIONS, type Reaction, type TableClientMessage, type TableState } from "@mjwaits/shared/protocol/table";
+import type { VoiceView } from "./lib/tableVoice";
 import { BLANK, seatState, takenFaces } from "./lib/seatState";
 import { PLAY_SAVE_KEY } from "./lib/playSaved";
 import { replayCached, withEvents, type ScoreEvent, type ScoreGame } from "@mjwaits/shared/engine/ledger";
@@ -553,6 +554,72 @@ function TalkRows() {
   );
 }
 
+const MicIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+    <rect x="9" y="3" width="6" height="11" rx="3" />
+    <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
+  </svg>
+);
+
+// The walkie-talkie: down to talk, up to stop. Held with the pointer captured,
+// so a thumb sliding off doesn't leave the microphone on.
+function TalkButton({ voice, seat }: { voice: OnlineVoice; seat: number }) {
+  const busy = voice.talking !== null && voice.talking !== seat;
+  // Gone from the screen mid-sentence (the game over): the turn ends with it.
+  const release = useRef(voice.release);
+  release.current = voice.release;
+  useEffect(() => () => release.current(), []);
+  const state = voice.mine === "live" ? " is-live" : voice.mine !== "idle" ? " is-opening" : busy ? " is-busy" : "";
+  return (
+    <button
+      type="button"
+      className={`play-icon-button play-talk${state}`}
+      aria-label={busy ? "Someone is talking" : "Hold to talk"}
+      aria-pressed={voice.mine !== "idle"}
+      aria-disabled={busy}
+      title="Hold to talk"
+      onPointerDown={(e) => {
+        if (e.button !== 0) return;
+        e.currentTarget.setPointerCapture?.(e.pointerId);
+        voice.press();
+      }}
+      onPointerUp={() => voice.release()}
+      onPointerCancel={() => voice.release()}
+      onLostPointerCapture={() => voice.release()}
+      onContextMenu={(e) => e.preventDefault()}
+      onKeyDown={(e) => {
+        if ((e.key === " " || e.key === "Enter") && !e.repeat) voice.press();
+      }}
+      onKeyUp={() => voice.release()}
+      onBlur={() => voice.release()}
+    >
+      <MicIcon />
+    </button>
+  );
+}
+
+// 對講: whose voice this phone plays - one row for each other person at the table.
+function VoiceRows({ table, voice }: { table: TableState; voice: OnlineVoice }) {
+  return (
+    <>
+      {table.seats.map((s, seat) =>
+        s?.kind === "human" && seat !== table.you ? (
+          <div className="play-menu-row" key={s.id}>
+            <span>對講 Voice: {s.name}</span>
+            <span className="play-menu-seg">
+              {[false, true].map((on) => (
+                <button key={String(on)} type="button" className={voice.muted.includes(s.id) !== on ? "toggle-on" : undefined} aria-pressed={voice.muted.includes(s.id) !== on} onClick={() => voice.muted.includes(s.id) === on && voice.toggleMute(s.id)}>
+                  {on ? "On" : "Off"}
+                </button>
+              ))}
+            </span>
+          </div>
+        ) : null
+      )}
+    </>
+  );
+}
+
 // 音效: sound on or off, in either menu.
 function SoundRow() {
   const [off, setOff] = useState(isMuted);
@@ -861,6 +928,14 @@ export interface OnlinePlay {
   // the message, when it says.
   refused: { rid?: string; id: number } | null;
   host: boolean;
+  voice: OnlineVoice;
+}
+
+// The table's walkie-talkie (lib/tableVoice.ts).
+export interface OnlineVoice extends VoiceView {
+  press: () => void;
+  release: () => void;
+  toggleMute: (id: string) => void;
 }
 
 type WireMove = Extract<TableClientMessage, { t: "move" }>["move"];
@@ -3040,6 +3115,13 @@ export function PlayPanel({
   // 起莊: who dealt the game's first hand - a gold wedge in the table's
   // corner at their left.
   const firstDealer = game.firstDealer ?? 0;
+  // Whoever has the walkie-talkie: a pulsing mic by their name.
+  const talkChip = (seat: number) =>
+    online && net && online.voice.talking !== null && net.toLocal(online.voice.talking) === seat ? (
+      <span className="play-talking" role="status" aria-label="Talking">
+        <MicIcon />
+      </span>
+    ) : null;
   // A bot's name card - flat, over the corner of the table like a HUD.
   const badge = (seat: number) => (
     <span className={`play-badge at-${SIDES[seat]}${activeSeat === seat ? " is-active" : ""}`}>
@@ -3048,6 +3130,7 @@ export function PlayPanel({
       <span className="play-badge-name">
         <span className="play-badge-name-text">{nameOf(seat)}</span>
         <span className="play-badge-chips">
+          {talkChip(seat)}
           {seatTag(seat)}
           {seat === game.dealer && dealerChip}
           {game.players[seat].riichi && <span className="play-riichi">叮</span>}
@@ -3211,6 +3294,7 @@ export function PlayPanel({
               😊
             </button>
           )}
+          {online && seated && online.table.you !== null && <TalkButton voice={online.voice} seat={online.table.you} />}
           {online && online.table.watching > 0 && (
             <span className="play-watching" title={`${online.table.watching} watching`}>
               👁 {online.table.watching}
@@ -3294,6 +3378,7 @@ export function PlayPanel({
               )}
               <SoundRow />
               <TalkRows />
+              <VoiceRows table={online.table} voice={online.voice} />
               <button type="button" onClick={onExit}>
                 Leave (your seat waits for you)
               </button>
@@ -3598,6 +3683,7 @@ export function PlayPanel({
           <span className={`play-bar-you${activeSeat === HUMAN ? " is-active" : ""}`}>
             <span className="play-badge-wind">{WIND_CHARS[seatWind(HUMAN, game.dealer)]}</span>
             You
+            {talkChip(HUMAN)}
             {game.dealer === HUMAN && dealerChip}
             {me.riichi && <span className="play-riichi">叮</span>}
             {lahChips(HUMAN)}
