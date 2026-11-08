@@ -25,6 +25,9 @@ import {
   applyTurnMove,
   botTurnMove,
   claimMatters,
+  SECOND_CHANCE_S,
+  secondChance,
+  chanceAllows,
   claimOptions,
   dealHand,
   forbiddenDiscards,
@@ -106,6 +109,12 @@ interface Runtime {
   // People the window passed without asking (see unwait) - asked again if a
   // call that outranked theirs is taken back (嗌錯).
   unwaited?: number[];
+  // A second chance, open: the call taking the tile and who made it, while
+  // those who let a better one go by may change their mind (see
+  // openSecondChance). `chanceSpent`: this window's had one - or was
+  // reopened by a 嗌錯, whose caller doesn't get to think again.
+  secondChance?: { call: Claim["kind"]; by: number[] } | null;
+  chanceSpent?: boolean;
   ready: number[]; // between hands
   away: Record<number, number>; // seat -> when its player dropped
   watching?: string[]; // people who stood to watch: not sat back down when they reconnect
@@ -380,7 +389,7 @@ export class Table extends Hub<TableMessage> {
         hostOnly();
         if (rt.seats.some((s) => s === null)) throw new Refusal("seatsNotFull", "every seat needs a player or a bot");
         rt.game = dealHand(
-          { dealer: rt.settings.firstDealer, roundWind: 1, dealerStreak: 0, multiWin: rt.settings.multiWin, ...(rt.settings.runBack ? { runBack: true } : {}), ...(rt.settings.fanXue === false ? { noFanXue: true } : {}), ...(rt.settings.baoZimo === false ? { noBaoZimo: true } : {}), ...(rt.settings.swapRules ? { swapRules: rt.settings.swapRules as SwapRules } : {}) },
+          { dealer: rt.settings.firstDealer, roundWind: 1, dealerStreak: 0, multiWin: rt.settings.multiWin, ...(rt.settings.runBack ? { runBack: true } : {}), ...(rt.settings.fanXue === false ? { noFanXue: true } : {}), ...(rt.settings.baoZimo === false ? { noBaoZimo: true } : {}), ...(rt.settings.secondChance === false ? { noSecondChance: true } : {}), ...(rt.settings.swapRules ? { swapRules: rt.settings.swapRules as SwapRules } : {}) },
           undefined,
           random
         );
@@ -417,6 +426,7 @@ export class Table extends Hub<TableMessage> {
         if (g.phase.kind !== "claims" || rt.decisions?.[seat] !== "waiting") throw new Refusal("notYourTurn", "nothing to claim right now");
         const claim = msg.claim as Claim | null;
         if (claim && !claimOptions(g, seat).some((o) => sameClaim(o, claim))) throw new Refusal("illegal", "you can't make that claim");
+        if (claim && rt.secondChance && !this.chanceClaim(claim)) throw new Refusal("illegal", "that call has gone");
         rt.decisions![seat] = claim;
         break;
       }
@@ -558,6 +568,8 @@ export class Table extends Hub<TableMessage> {
     rt.botAt = null;
     rt.decisions = null;
     rt.unwaited = [];
+    rt.secondChance = null;
+    rt.chanceSpent = false;
     const timer = rt.settings.timer * 1000;
     if (g.phase.kind === "turn") {
       // The dealer's first turn after 換牌 waits for its last rows to join the hands.
@@ -692,6 +704,34 @@ export class Table extends Hub<TableMessage> {
       }
   }
 
+  // What a second chance still allows.
+  private chanceClaim(c: Claim): boolean {
+    return !!this.rt.secondChance && chanceAllows(this.rt.secondChance.call, c);
+  }
+
+  // Everyone has answered, and someone's taking the tile: whoever let a
+  // better call go by may change their mind, for a moment - a new step, with
+  // only those calls (see secondChance). Bots, and anyone played for, join a
+  // win at once - the hand's ending - and otherwise leave things as they
+  // left them. False if nobody's asked.
+  private openSecondChance(now: number): boolean {
+    const rt = this.rt;
+    if (rt.chanceSpent) return false;
+    rt.chanceSpent = true;
+    const chance = secondChance(rt.game!, rt.decisions!.map((d) => (d === "waiting" ? null : d)));
+    if (!chance) return false;
+    const people = chance.offers.filter((o) => !this.actsAlone(o.seat));
+    if (chance.call === "win") for (const o of chance.offers) if (this.actsAlone(o.seat)) rt.decisions![o.seat] = { kind: "win" };
+    if (!people.length) return false;
+    rt.secondChance = { call: chance.call, by: chance.by };
+    rt.step++;
+    rt.heldDeadline = null;
+    rt.botAt = null;
+    for (const o of people) rt.decisions![o.seat] = "waiting";
+    rt.deadline = now + SECOND_CHANCE_S * 1000;
+    return true;
+  }
+
   private resolve() {
     const rt = this.rt;
     const before = rt.game!;
@@ -785,6 +825,7 @@ export class Table extends Hub<TableMessage> {
     this.collectBonuses();
     if (!reopen.length) return this.afterStep(now);
     this.newDecision(Date.now(), c.decisions.map((d, s) => (reopen.includes(s) ? undefined : s === seat ? null : d)));
+    rt.chanceSpent = true;
   }
 
   // Dice and flower bonuses, paid as they come up.
@@ -911,7 +952,7 @@ export class Table extends Hub<TableMessage> {
       if (g.phase.kind === "claims") {
         const d = rt.decisions!;
         // Someone who's just become away, or is now played for, answers alone.
-        for (let s = 0; s < SEATS; s++) if (d[s] === "waiting" && this.actsAlone(s)) d[s] = this.aloneClaim(s);
+        for (let s = 0; s < SEATS; s++) if (d[s] === "waiting" && this.actsAlone(s)) d[s] = rt.secondChance ? (rt.secondChance.call === "win" ? { kind: "win" } : null) : this.aloneClaim(s);
         this.unwait();
         if (d.includes("waiting")) {
           if (rt.deadline !== null && now >= rt.deadline) d.forEach((x, s) => x === "waiting" && (d[s] = null)); // out of time: pass
@@ -919,6 +960,7 @@ export class Table extends Hub<TableMessage> {
         }
         // A bot's call: the discard is seen on the table first (see newDecision).
         if (rt.botAt !== null && now < rt.botAt) return;
+        if (this.openSecondChance(now)) continue;
         this.resolve();
         continue;
       }
@@ -1039,7 +1081,7 @@ export class Table extends Hub<TableMessage> {
       options =
         g.phase.kind === "turn"
           ? { turn: { selfDraw: canWin(p), kongs: p.riichi || liveTilesLeft(g) === 0 ? [] : kongOptions(p, g.phase), riichi: riichiDiscards(g, seat), forbidden: forbiddenDiscards(g), ...(this.canRetract(seat) ? { retract: true } : {}) }, claims: [] }
-          : { turn: null, claims: g.phase.kind === "claims" ? claimOptions(g, seat) : [] };
+          : { turn: null, claims: g.phase.kind === "claims" ? claimOptions(g, seat).filter((c) => !rt.secondChance || this.chanceClaim(c)) : [] };
     }
     const people = this.people();
     return {
@@ -1062,6 +1104,7 @@ export class Table extends Hub<TableMessage> {
       scores: rt.scores,
       pot: rt.pot ?? 0,
       last: rt.last,
+      secondChance: rt.secondChance ?? null,
       you: seat,
       view: g ? viewFor(g, seat ?? -1, (s) => this.handShown(g, s)) : null,
       options,

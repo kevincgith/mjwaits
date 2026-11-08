@@ -45,6 +45,9 @@ import {
   takersAfter,
   riichiBarred,
   riichiDiscards,
+  SECOND_CHANCE_S,
+  secondChance,
+  secondChanceFan,
   riichiForcedDiscard,
   roundLabel,
   wallBreak,
@@ -265,6 +268,7 @@ interface Saved {
   runBack?: boolean; // runs back from a tile just thrown allowed (see GameState.runBack)
   fanXue?: boolean; // 反雪 (absent: on)
   baoZimo?: boolean; // 包自摸 (absent: on)
+  secondChance?: boolean; // a second chance on a call let go by (absent: on)
   swapRules?: SwapRules; // 換牌: which rounds, and what the dice mean
   jackpot?: number; // 獎池: each player's share per draw (0: off)
   record?: boolean;
@@ -937,6 +941,7 @@ export function PlayPanel({
         runBack: saved?.runBack ?? false,
         noFanXue: saved?.fanXue === false,
         noBaoZimo: saved?.baoZimo === false,
+        noSecondChance: saved?.secondChance === false,
         swapRules: saved?.swapRules ?? saved?.game?.swapRules ?? DEFAULT_SWAP_RULES,
       })
   );
@@ -990,6 +995,11 @@ export function PlayPanel({
   useEffect(() => {
     if (!online && !setupOpen && !game.noBaoZimo !== baoZimo) setGame((g) => ({ ...g, ...(baoZimo ? { noBaoZimo: undefined } : { noBaoZimo: true }) }));
   }, [game, baoZimo, online, setupOpen]);
+  // A second chance (on unless turned off): on the game too.
+  const [secondChanceOn, setSecondChanceOn] = useState(() => saved?.secondChance ?? !saved?.game?.noSecondChance);
+  useEffect(() => {
+    if (!online && !setupOpen && !game.noSecondChance !== secondChanceOn) setGame((g) => ({ ...g, ...(secondChanceOn ? { noSecondChance: undefined } : { noSecondChance: true }) }));
+  }, [game, secondChanceOn, online, setupOpen]);
   // 獎池: each draw everyone puts this in the pot; a 自摸 takes it all. 0: off.
   const [jackpot, setJackpot] = useState(() => saved?.jackpot ?? 5); // (5 till you choose)
   useEffect(() => {
@@ -1484,7 +1494,7 @@ export function PlayPanel({
   const [confirmNew, setConfirmNew] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
   // The settings as they were when the setup page was opened mid-game (Back restores them).
-  const setupFrom = useRef<{ opponents: string[]; randomOpponents: boolean; multiWin: boolean; runBack: boolean; fanXue: boolean; baoZimo: boolean; jackpot: number; swapRules: SwapRules; record: boolean } | null>(null);
+  const setupFrom = useRef<{ opponents: string[]; randomOpponents: boolean; multiWin: boolean; runBack: boolean; fanXue: boolean; baoZimo: boolean; secondChanceOn: boolean; jackpot: number; swapRules: SwapRules; record: boolean } | null>(null);
   // A game started from here (so Back from the setup page returns to it).
   const ledgerStarted = useRef(!fresh || !!quick);
   const [trackerOpen, setTrackerOpen] = useState(false);
@@ -1527,7 +1537,7 @@ export function PlayPanel({
     // was till 開局 Start - a new one opened from Play's home isn't saved
     // over the one there till then. What was waiting from before goes now.)
     if (!ledgerStarted.current || setupOpen) return void pendingSave.current?.();
-    const data: Saved = { game: localGame, totals: localTotals, hint, timer, opponents, randomOpponents, speed, oneTap, waits: showWaits, record, multiWin, multiWinSet, runBack, fanXue, baoZimo, swapRules, jackpot, ledger: localLedger };
+    const data: Saved = { game: localGame, totals: localTotals, hint, timer, opponents, randomOpponents, speed, oneTap, waits: showWaits, record, multiWin, multiWinSet, runBack, fanXue, baoZimo, secondChance: secondChanceOn, swapRules, jackpot, ledger: localLedger };
     // (Not saved: still waiting - tried again on leaving, or the next change.)
     const write = () => {
       const ok = save(data);
@@ -1537,7 +1547,7 @@ export function PlayPanel({
     pendingSave.current = write;
     const id = window.setTimeout(write, SAVE_DELAY_MS);
     return () => window.clearTimeout(id);
-  }, [localGame, localTotals, hint, timer, opponents, randomOpponents, speed, oneTap, showWaits, record, multiWin, multiWinSet, runBack, fanXue, baoZimo, swapRules, jackpot, localLedger, setupOpen]);
+  }, [localGame, localTotals, hint, timer, opponents, randomOpponents, speed, oneTap, showWaits, record, multiWin, multiWinSet, runBack, fanXue, baoZimo, secondChanceOn, swapRules, jackpot, localLedger, setupOpen]);
   // The page hidden or going (a phone may not come back to it): saved now.
   useEffect(() => {
     const now = () => pendingSave.current?.();
@@ -1625,6 +1635,10 @@ export function PlayPanel({
     lastSeen.current = key;
     if (first || !lastAction) return;
     const at = net.toLocal;
+    // Shown already, while the table gave someone a second chance (below).
+    const said = chanceSaid.current;
+    chanceSaid.current = null;
+    if (said !== null && ((lastAction.kind === "call" && at(lastAction.seat) === said) || (lastAction.kind === "win" && lastAction.seats.length === 1))) return;
     if (lastAction.kind === "call") {
       showBurst(at(lastAction.seat), lastAction.call === "chow" ? "上" : lastAction.call === "pung" ? "碰" : "槓");
       sayCall(at(lastAction.seat), lastAction.call, at(lastAction.from));
@@ -1639,6 +1653,23 @@ export function PlayPanel({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastAction, online?.table.hand, game.discardsMade, meldsLaid]);
+
+  // Online, a second chance opening: the call that's taking the tile is seen
+  // (and heard) by everyone while the table waits.
+  const chanceSaid = useRef<number | null>(null);
+  const chanceSeen = useRef<string | null>(null);
+  useEffect(() => {
+    const c = online?.table.secondChance;
+    if (!online || !net || !c || game.phase.kind !== "claims") return;
+    const key = JSON.stringify([online.table.hand, online.table.step]);
+    if (chanceSeen.current === key) return;
+    chanceSeen.current = key;
+    const seat = net.toLocal(c.by[0]);
+    chanceSaid.current = seat;
+    showBurst(seat, game.phase.robKong ? "搶槓" : claimLabel({ kind: c.call } as Claim));
+    if (c.call !== "win") sayCall(seat, c.call as CallKind, game.phase.from);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [online?.table.secondChance]);
 
   // Online table bonuses (flowers, 暗槓): the server pays them; the table
   // just shows each new one. After the call's burst above, so a kong's 暗槓
@@ -1858,7 +1889,18 @@ export function PlayPanel({
   // comes later; online, the table says who it waits on.)
   const outcalled =
     !!botDecisions && !claimMatters(game, botDecisions.map((d, seat) => (seat === HUMAN || learnedBot(seat) ? undefined : d)), HUMAN);
-  const humanClaims = game.phase.kind === "claims" && seated && waitedOn && !outcalled ? claimOptions(game, HUMAN) : [];
+  // A second chance (see secondChance in the engine): you let a better call
+  // go by, and now you see who's taking the tile. Here it's held till you
+  // answer, with the other answers; online the table holds it.
+  const [heldChance, setHeldChance] = useState<{ game: GameState; decisions: (Claim | null)[]; call: Claim["kind"]; by: number[]; claims: Claim[] } | null>(null);
+  const offeredChance = online
+    ? net && online.table.secondChance && waitedOn
+      ? { ...online.table.secondChance, by: online.table.secondChance.by.map(net.toLocal), claims: online.table.options?.claims ?? [] }
+      : null
+    : heldChance?.game === game
+      ? heldChance
+      : null;
+  const humanClaims = game.phase.kind === "claims" && seated && waitedOn && !outcalled && !offeredChance ? claimOptions(game, HUMAN) : [];
   // Calls you'd have but for passing one up (過水, a passed pung): shown
   // greyed while the discard's on the table, not taken.
   const barredCalls = game.phase.kind === "claims" && seated && !autoplay ? barredClaims(game, HUMAN) : [];
@@ -1883,14 +1925,50 @@ export function PlayPanel({
       // (If the network fails - a phone out of memory - its seat's usual bot answers.)
       if (net) decisions[seat] = await learnedClaim(net, game, seat).catch((e) => (console.warn("Learned claim failed", e), decisions[seat]));
     }
-    const seat = winningClaimSeat(game, decisions);
-    if (seat !== null) {
-      showBurst(seat, game.phase.kind === "claims" && game.phase.robKong ? "搶槓" : claimLabel(decisions[seat]!));
-      if (decisions[seat]!.kind !== "win" && game.phase.kind === "claims") sayCall(seat, decisions[seat]!.kind as CallKind, game.phase.from);
+    // Who let a better call go by sees who's taking it, and may think again:
+    // a bot (or 自動) joins a win then, the hand's ending; otherwise it stays
+    // with what it chose.
+    const chance = secondChance(game, decisions);
+    if (chance?.call === "win") for (const o of chance.offers) if (o.seat !== HUMAN || autoplay) decisions[o.seat] = { kind: "win" };
+    const mine = !autoplay && chance?.offers.find((o) => o.seat === HUMAN);
+    if (chance && mine) {
+      announceClaim(chance.by[0], decisions);
+      setHeldChance({ game, decisions, call: chance.call, by: chance.call === "win" ? [...chance.by, ...chance.offers.filter((o) => o.seat !== HUMAN).map((o) => o.seat)] : chance.by, claims: mine.claims });
+      return;
     }
+    const seat = winningClaimSeat(game, decisions);
+    if (seat !== null) announceClaim(seat, decisions);
     advance(resolveClaims(game, decisions));
     if (seat === HUMAN && humanClaim && humanClaim.kind !== "win") setLastCall({ before: game, decisions });
   };
+  const announceClaim = (seat: number, decisions: (Claim | null)[]) => {
+    showBurst(seat, game.phase.kind === "claims" && game.phase.robKong ? "搶槓" : claimLabel(decisions[seat]!));
+    if (decisions[seat]!.kind !== "win" && game.phase.kind === "claims") sayCall(seat, decisions[seat]!.kind as CallKind, game.phase.from);
+  };
+  // Your answer to a second chance: its call, or null to let it go by after all.
+  const answerChance = (claim: Claim | null) => {
+    if (online) {
+      online.send({ t: "claim", step: online.table.step, claim: claim as WireClaim });
+      return;
+    }
+    if (!heldChance || heldChance.game !== game) return;
+    setHeldChance(null);
+    const decisions = heldChance.decisions.slice();
+    decisions[HUMAN] = claim;
+    // (Passed again: the call that's taking it has been shown already.)
+    const wins = decisions.filter((d) => d?.kind === "win").length;
+    if (wins > 1 && claim) showBurst(winningClaimSeat(game, decisions)!, wins >= 3 ? "三響" : "雙響");
+    else if (claim) announceClaim(HUMAN, decisions);
+    advance(resolveClaims(game, decisions));
+    if (claim && claim.kind !== "win") setLastCall({ before: game, decisions });
+  };
+  // Out of time: your pass stands. (Online the table keeps the time.)
+  useEffect(() => {
+    if (!heldChance) return;
+    const id = window.setTimeout(() => answerChance(null), SECOND_CHANCE_S * 1000);
+    return () => window.clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [heldChance]);
 
   // 嗌錯: take back your chow or pung - the discard plays on as if you'd
   // passed and you pay each player. Not a kong: its replacement tile's been
@@ -2458,7 +2536,7 @@ export function PlayPanel({
   const limit = onSwap ? SWAP_TIMER_S : timer;
   // Online, the server's deadline (it moves for you when it passes).
   const deadline = online?.table.deadline ?? null;
-  const onlineTotal = onSwap ? SWAP_TIMER_S : (online?.table.settings.timer ?? 0);
+  const onlineTotal = onSwap ? SWAP_TIMER_S : online?.table.secondChance ? SECOND_CHANCE_S : (online?.table.settings.timer ?? 0);
   const countdown = !online ? localCountdown : deadline !== null && onlineTotal ? { total: onlineTotal, endsAt: deadline } : null;
   // (Never more than the timer: the table's deadline can add the swap's waits to it.)
   const clock = !online ? localClock : deadline !== null ? { endsAt: deadline, cap: onlineTotal || Infinity } : null;
@@ -2685,6 +2763,19 @@ export function PlayPanel({
                 </span>
               </div>
               <div className="play-menu-row">
+                <span title="Passed a win, then someone calls the tile (another win only under 一炮多響), or passed a pung or kong, then a run is taking it: 5 seconds to change your mind">
+                  再諗過 Second chance
+                  <span className="play-menu-note"> · {secondChanceOn ? "passed a call? think again when it's taken" : "off"}</span>
+                </span>
+                <span className="play-menu-seg">
+                  {[false, true].map((on) => (
+                    <button key={String(on)} type="button" className={secondChanceOn === on ? "toggle-on" : undefined} aria-pressed={secondChanceOn === on} onClick={() => setSecondChanceOn(on)}>
+                      {on ? "On" : "Off"}
+                    </button>
+                  ))}
+                </span>
+              </div>
+              <div className="play-menu-row">
                 <span>
                   No claim back
                   <span className="play-menu-note" title="Threw 1m: no pung, kong or run with it till you draw - from 123m, no run with 4m either"> · {runBack ? "any claim may be made" : "not of a tile just thrown"}</span>
@@ -2780,6 +2871,7 @@ export function PlayPanel({
     setRunBack(false);
     setFanXue(true);
     setBaoZimo(true);
+    setSecondChanceOn(true);
     setJackpot(5);
     setSwapRules(DEFAULT_SWAP_RULES);
     setRandomOpponents(true);
@@ -2797,7 +2889,7 @@ export function PlayPanel({
     setRiichiArmed(false);
     setLastCall(null);
     setResultHidden(false);
-    const g = newGame({ multiWin, runBack, noFanXue: !fanXue, noBaoZimo: !baoZimo, swapRules });
+    const g = newGame({ multiWin, runBack, noFanXue: !fanXue, noBaoZimo: !baoZimo, noSecondChance: !secondChanceOn, swapRules });
     ledgerFrom.current = g;
     const fresh = newPlayLedger(playerNames(opponents), g.dealer);
     setLedger({ ...fresh, events: playEvents(null, g, fresh.seats) });
@@ -3090,6 +3182,7 @@ export function PlayPanel({
 
   // Your ways to make a run with the discard - each run once (with only one,
   // 上 takes it at once; the choice shows only when there's a real choice).
+  const chanceFan = offeredChance?.claims.some((c) => c.kind === "win") ? secondChanceFan(game, HUMAN, offeredChance.call === "win" ? offeredChance.by.length : 0) : null;
   const chows = humanClaims
     .filter((c): c is Extract<Claim, { kind: "chow" }> => c.kind === "chow")
     .filter((c, i, all) => all.findIndex((d) => tilesKey(sortTiles([...d.tiles])) === tilesKey(sortTiles([...c.tiles]))) === i);
@@ -3149,6 +3242,7 @@ export function PlayPanel({
                 {online.table.settings.runBack ? " · claims back allowed" : ""}
                 {online.table.settings.fanXue === false ? " · 反雪 off" : ""}
                 {online.table.settings.baoZimo === false ? " · 包自摸 off" : ""}
+                {online.table.settings.secondChance === false ? " · second chance off" : ""}
                 {online.table.settings.reveal === false ? " · losing hands hidden" : ""}
                 {online.table.settings.botSpeed && online.table.settings.botSpeed !== "normal" ? ` · bots ${SPEEDS[online.table.settings.botSpeed].label.toLowerCase()}` : ""}
                 {online.table.watching > 0 && ` · ${online.table.watching} watching`}
@@ -3282,7 +3376,7 @@ export function PlayPanel({
                 className="play-menu-link"
                 onClick={() => {
                   setMenuOpen(false);
-                  setupFrom.current = { opponents, randomOpponents, multiWin, runBack, fanXue, baoZimo, jackpot, swapRules, record };
+                  setupFrom.current = { opponents, randomOpponents, multiWin, runBack, fanXue, baoZimo, secondChanceOn, jackpot, swapRules, record };
                   // A new game, a new table - unless one's been picked.
                   if (randomOpponents) setOpponents(randomLineup());
                   setSetupOpen(true);
@@ -3378,6 +3472,23 @@ export function PlayPanel({
                 <button type="button" className="play-show-result" onClick={() => setResultHidden(false)}>
                   Show result
                 </button>
+              )}
+              {offeredChance && (
+                <>
+                  <span className="play-chance" role="status">
+                    {offeredChance.by.map(nameOf).join("、")} {claimLabel({ kind: offeredChance.call } as Claim)} · 你{offeredChance.call === "win" ? "都胡" : offeredChance.claims.map(claimLabel).join("/")}?
+                    {chanceFan !== null && <span className="play-chance-fan">{chanceFan} 番</span>}
+                    <i className="play-chance-time" style={{ animationDuration: `${SECOND_CHANCE_S}s` }} />
+                  </span>
+                  {offeredChance.claims.map((c, i) => (
+                    <button key={i} type="button" className={`play-call${c.kind === "win" ? " is-win" : ""}`} onClick={() => answerChance(c)}>
+                      {claimLabel(c)}
+                    </button>
+                  ))}
+                  <button type="button" className={`play-call is-pass${offeredChance.claims.every((c) => c.kind === "win") ? " is-long" : ""}`} onClick={() => answerChance(null)}>
+                    {offeredChance.claims.every((c) => c.kind === "win") ? "唔胡" : "過"}
+                  </button>
+                </>
               )}
               {chowChoice && chows.length > 1 ? (
                 <>
@@ -3621,6 +3732,7 @@ export function PlayPanel({
                         setRunBack(was.runBack);
                         setFanXue(was.fanXue);
                         setBaoZimo(was.baoZimo);
+                        setSecondChanceOn(was.secondChanceOn);
                         setJackpot(was.jackpot);
                         setSwapRules(was.swapRules);
                         setRecord(was.record);
