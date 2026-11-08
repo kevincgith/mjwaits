@@ -6,9 +6,17 @@
 // No React here; OnlineTable.tsx turns it into a screen.
 
 import type { ScoreGame } from "@mjwaits/shared/engine/ledger";
-import { normalizeRoomCode } from "@mjwaits/shared/protocol/limits";
-import type { Reaction, TableClientMessage, TableServerMessage, TableState } from "@mjwaits/shared/protocol/table";
+import { CHAT_HISTORY, normalizeRoomCode } from "@mjwaits/shared/protocol/limits";
+import type { ChatMessage, Reaction, TableClientMessage, TableServerMessage, TableState } from "@mjwaits/shared/protocol/table";
 import { HubClient, serverBase, type HubClientOptions } from "./online";
+
+// New chat lines into the ones this phone has: each once, oldest first, the
+// last few kept.
+export function mergeChat(have: ChatMessage[], incoming: ChatMessage[]): ChatMessage[] {
+  const known = new Set(have.map((m) => m.k));
+  const all = [...have, ...incoming.filter((m) => !known.has(m.k))];
+  return all.sort((a, b) => a.at - b.at).slice(-CHAT_HISTORY);
+}
 
 // ---- Over HTTP -------------------------------------------------------------------
 
@@ -163,6 +171,8 @@ export interface TableClientOptions extends HubClientOptions<TableServerMessage>
   onReaction?: (seat: number, r: Reaction) => void;
   onTalking?: (seat: number | null) => void;
   onVoice?: (seat: number, a: string) => void;
+  onChat?: (m: ChatMessage) => void;
+  onChatLog?: (messages: ChatMessage[]) => void;
 }
 
 export class TableClient extends HubClient<TableClientMessage, TableServerMessage> {
@@ -171,6 +181,8 @@ export class TableClient extends HubClient<TableClientMessage, TableServerMessag
   private readonly onReaction?: (seat: number, r: Reaction) => void;
   private readonly onTalking?: (seat: number | null) => void;
   private readonly onVoice?: (seat: number, a: string) => void;
+  private readonly onChat?: (m: ChatMessage) => void;
+  private readonly onChatLog?: (messages: ChatMessage[]) => void;
 
   constructor(opts: TableClientOptions) {
     super("tables", opts);
@@ -178,6 +190,8 @@ export class TableClient extends HubClient<TableClientMessage, TableServerMessag
     this.onReaction = opts.onReaction;
     this.onTalking = opts.onTalking;
     this.onVoice = opts.onVoice;
+    this.onChat = opts.onChat;
+    this.onChatLog = opts.onChatLog;
   }
 
   protected exists(code: string) {
@@ -188,6 +202,8 @@ export class TableClient extends HubClient<TableClientMessage, TableServerMessag
     if (msg.t === "reaction") return this.onReaction?.(msg.seat, msg.r);
     if (msg.t === "talking") return this.onTalking?.(msg.seat);
     if (msg.t === "voice") return this.onVoice?.(msg.seat, msg.a);
+    if (msg.t === "chat") return this.onChat?.(msg.m);
+    if (msg.t === "chatLog") return this.onChatLog?.(msg.messages);
     if (msg.t !== "table") return;
     if (this.table && msg.table.version < this.table.version) return; // a straggler
     this.table = msg.table;

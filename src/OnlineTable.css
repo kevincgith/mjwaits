@@ -1094,6 +1094,135 @@
   font-weight: 600;
 }
 
+/* The chat room: in the lobby and at the end, top right; at the table, in
+   the top left corner with the other buttons. */
+.ot-chat {
+  position: absolute;
+  top: max(0.75rem, var(--safe-top, env(safe-area-inset-top)));
+  right: max(0.75rem, var(--safe-right, env(safe-area-inset-right)));
+  z-index: 4;
+}
+
+.ot-chat .play-chat {
+  right: 0;
+  left: auto;
+}
+
+.play-chat-button {
+  position: relative;
+}
+
+.play-chat-count {
+  position: absolute;
+  top: -0.3rem;
+  right: -0.3rem;
+  min-width: 1rem;
+  height: 1rem;
+  padding: 0 0.2rem;
+  border-radius: 0.5rem;
+  background: #c8352a;
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 700;
+  line-height: 1rem;
+  text-align: center;
+}
+
+.play-chat {
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  left: 0;
+  z-index: 8;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  width: min(21rem, calc(100 * var(--vw) - 2rem));
+  max-height: min(15rem, calc(100 * var(--dvh) - 3.6rem - var(--safe-top, 0px) - var(--safe-bottom, 0px)));
+  padding: 0.45rem;
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-float);
+}
+
+.play-chat-form {
+  display: flex;
+  flex: none;
+  gap: 0.35rem;
+}
+
+.play-chat-form input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text);
+  font-size: 16px; /* (Smaller, and an iPhone zooms the page to type.) */
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.play-chat-form button {
+  padding: 0 0.8rem;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: var(--play-gold);
+  color: #2a1d0f;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.play-chat-form button:disabled {
+  opacity: 0.45;
+}
+
+.play-chat-lines {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.play-chat-lines p {
+  margin: 0;
+  padding: 0.18rem 0.15rem;
+  color: var(--text);
+  font-size: 0.85rem;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.play-chat-lines strong {
+  margin-right: 0.4rem;
+  color: var(--play-gold);
+}
+
+.play-chat-lines .is-mine strong {
+  opacity: 0.7;
+}
+
+.play-chat-lines .play-chat-empty {
+  opacity: 0.6;
+}
+
+/* Under the far player's tiles: a note, not a warning. */
+.ot-waiting {
+  position: fixed;
+  top: calc(var(--safe-top, env(safe-area-inset-top)) + 4.2rem);
+  left: 50%;
+  z-index: 70;
+  translate: -50% 0;
+  padding: 0.25rem 0.8rem;
+  border-radius: 1rem;
+  background: rgba(20, 15, 10, 0.82);
+  color: #f3e3c0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 .ot-toast {
   position: fixed;
   left: 50%;

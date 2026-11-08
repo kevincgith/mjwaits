@@ -130,6 +130,8 @@ export abstract class Hub<Msg extends { t: string; rid?: string }> extends Durab
   protected extraTables(): string {
     return "";
   }
+  // A connection has just been welcomed: anything only it needs to hear.
+  protected onWelcomed(_ws: WebSocket): void {}
   // Whether someone not here may be forgotten, for a new person to have their
   // place (a table keeps whoever holds a seat).
   protected forgettable(_personId: string): boolean {
@@ -390,6 +392,7 @@ export abstract class Hub<Msg extends { t: string; rid?: string }> extends Durab
     if (this.isHost(id)) this.setMeta("hostGone", 0);
     else this.passHost(Date.now());
     this.send(ws, this.welcome(id, token, msg.rid));
+    this.onWelcomed(ws);
     if (first) this.onArrive(id);
     this.changed();
     await this.wakeAt(Date.now() + SWEEP_MS);

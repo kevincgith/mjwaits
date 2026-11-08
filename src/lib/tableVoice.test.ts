@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { VOICE_FRAME_MAX_CHARS, VOICE_FRAME_SAMPLES, VOICE_MAX_MS, VOICE_QUIET_MS } from "@mjwaits/shared/protocol/limits";
+import { CHAT_HISTORY, VOICE_FRAME_MAX_CHARS, VOICE_FRAME_SAMPLES, VOICE_MAX_MS, VOICE_QUIET_MS } from "@mjwaits/shared/protocol/limits";
+import { mergeChat } from "./onlineTable";
 import { decodeAdpcm, encodeAdpcm, fromBase64, newAdpcmState, toBase64 } from "./adpcm";
 import { Downsampler, TableVoice, Upsampler, type VoiceLink, type VoicePlayer } from "./tableVoice";
 
@@ -176,5 +177,16 @@ describe("the walkie-talkie", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("chat lines", () => {
+  const line = (k: string, at: number) => ({ k, id: "a", name: "Amy", seat: 0, text: k, at });
+  it("are kept once each, in order, the last few only", () => {
+    expect(mergeChat([line("b", 2)], [line("a", 1), line("b", 2), line("c", 3)]).map((m) => m.k)).toEqual(["a", "b", "c"]);
+    const many = Array.from({ length: CHAT_HISTORY + 5 }, (_, i) => line(`m${i}`, i));
+    const kept = mergeChat([], many);
+    expect(kept.length).toBe(CHAT_HISTORY);
+    expect(kept[0].k).toBe("m5");
   });
 });

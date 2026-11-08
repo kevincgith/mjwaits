@@ -15,7 +15,7 @@ import type { Claim, KongMove, TurnMove } from "../engine/game";
 import { DEFAULT_SWAP_RULES, SWAP_MAX_ROUNDS, SWAP_MAX_TILES, SWAP_MIN_TILES } from "../engine/swap";
 import type { Tile } from "../engine/mahjong";
 import type { TableView } from "../engine/view";
-import { MAX_MESSAGE_BYTES, NICKNAME_RAW_MAX, SEATS, TOKEN_PATTERN, VOICE_FRAME_MAX_CHARS } from "./limits";
+import { CHAT_RAW_MAX, MAX_MESSAGE_BYTES, NICKNAME_RAW_MAX, SEATS, TOKEN_PATTERN, VOICE_FRAME_MAX_CHARS } from "./limits";
 import { array, bool, int, literal, nullable, object, oneOf, optional, str, tagged, type Infer, type Result } from "./schema";
 
 // The personalities a host can seat (the Play tab's roster, bots.ts).
@@ -28,7 +28,7 @@ export const MYSTERY_BOT = "mystery";
 
 // Quick reactions a seated player can send the table (no free text: nothing
 // to moderate). Shown by their name card for a moment; never stored.
-export const REACTIONS = ["👍", "😂", "😮", "😭", "🔥", "好牌！", "快啲啦", "承讓"] as const;
+export const REACTIONS = ["👍", "👏", "😂", "😮", "😭", "😱", "🤔", "🙏", "🔥", "💪", "好牌！", "好嘢！", "勁喎！", "好彩啫", "承讓", "多謝晒", "唔好意思", "快啲啦", "等等我", "諗緊…", "唔係掛？", "冇眼睇", "衰啦", "再嚟過！"] as const;
 export type Reaction = (typeof REACTIONS)[number];
 
 // Seconds a player gets for each decision; 0 = no timer.
@@ -125,6 +125,8 @@ const TableClientSchema = tagged({
   // Seated: the walkie-talkie. Ask for the floor (or let it go); while you
   // have it, your voice in frames (src/lib/adpcm.ts), passed on, never stored.
   talk: object({ t: literal("talk"), on: bool, rid }),
+  // Anyone at the table, watching too: a line in its chat.
+  chat: object({ t: literal("chat"), text: str(CHAT_RAW_MAX), rid }),
   voice: object({ t: literal("voice"), a: str(VOICE_FRAME_MAX_CHARS, /^[A-Za-z0-9+/]+={0,2}$/), rid }),
   ping: object({ t: literal("ping"), rid }),
 });
@@ -237,16 +239,31 @@ export interface TableState {
   // seats), while whoever let a better one go by (`waitingOn`, for them; the
   // calls left in `options`) may change their mind.
   secondChance?: { call: Claim["kind"]; by: number[] } | null;
+  // A discard waiting on someone's answer: that it is, for everyone - not who
+  // or what they could call - so a long pause doesn't look like a fault.
+  holding?: boolean;
   // This phone's seat (null for someone watching) and its view of the hand.
   you: number | null;
   view: TableView | null;
   options: YourOptions | null;
 }
 
+// A line in the table's chat. `k` tells it apart; `seat` is null for someone watching.
+export interface ChatMessage {
+  k: string;
+  id: string;
+  name: string;
+  seat: number | null;
+  text: string;
+  at: number;
+}
+
 export type TableServerMessage =
   | { t: "welcome"; v: number; token: string; id: string; name: string; host: boolean; seat: number | null; rid?: string }
   | { t: "table"; table: TableState }
   | { t: "reaction"; seat: number; r: Reaction }
+  | { t: "chat"; m: ChatMessage }
+  | { t: "chatLog"; messages: ChatMessage[] } // the last few, on joining
   | { t: "talking"; seat: number | null } // who has the walkie-talkie's floor
   | { t: "voice"; seat: number; a: string }
   | { t: "error"; code: TableErrorCode; message: string; rid?: string }
