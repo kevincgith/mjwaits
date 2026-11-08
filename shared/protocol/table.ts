@@ -85,6 +85,7 @@ export const TableSettingsSchema = object({
   runBack: optional(bool), // claims back of a tile just thrown allowed (absent: not - the No claim back rule, see GameState.runBack)
   fanXue: optional(bool), // 反雪 (absent: on - see GameState.noFanXue)
   baoZimo: optional(bool), // 包自摸 (absent: on - see GameState.noBaoZimo)
+  secondChance: optional(bool), // a second chance on a call let go by (absent: on - see GameState.noSecondChance)
 });
 export type TableSettings = Infer<typeof TableSettingsSchema>;
 
@@ -228,6 +229,10 @@ export interface TableState {
   scores: number; // entries in the table's record (GET /tables/<CODE>/scores) - fetch it again when this changes
   pot: number; // 獎池: what's in the pot (see TableSettings.jackpot)
   last: TableAction | null;
+  // A second chance, open: the call taking the tile and who made it (table
+  // seats), while whoever let a better one go by (`waitingOn`, for them; the
+  // calls left in `options`) may change their mind.
+  secondChance?: { call: Claim["kind"]; by: number[] } | null;
   // This phone's seat (null for someone watching) and its view of the hand.
   you: number | null;
   view: TableView | null;

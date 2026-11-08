@@ -6980,6 +6980,42 @@ html.playing body {
   color: rgba(243, 237, 226, 0.85);
 }
 
+/* A second chance: who's taking the tile, and how long you have to join in. */
+.play-chance {
+  position: relative;
+  overflow: hidden;
+  padding: 0.4rem 0.8rem 0.55rem;
+  border: 1px solid var(--play-gold);
+  border-radius: 10px;
+  background: rgba(12, 40, 26, 0.92);
+  color: var(--play-on-felt);
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.play-chance-fan {
+  margin-left: 0.5rem;
+  color: var(--play-gold);
+}
+
+.play-chance-time {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: var(--play-gold);
+  transform-origin: left;
+  animation: play-chance-time linear forwards;
+}
+
+@keyframes play-chance-time {
+  to {
+    transform: scaleX(0);
+  }
+}
+
 .play-call.has-tile {
   padding: 0 0.6rem 0 0.75rem;
 }

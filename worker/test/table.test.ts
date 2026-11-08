@@ -4,7 +4,7 @@
 
 import { env, runDurableObjectAlarm, runInDurableObject, SELF } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
-import type { Tile } from "@mjwaits/shared/engine/mahjong";
+import { parseHand, type Tile } from "@mjwaits/shared/engine/mahjong";
 import { applyTurnMove, claimOptions, dealHand, type GameState } from "@mjwaits/shared/engine/game";
 import { replay, type ScoreGame } from "@mjwaits/shared/engine/ledger";
 import { PROTOCOL_VERSION } from "@mjwaits/shared/protocol/limits";
@@ -926,6 +926,125 @@ describe("a claim window", () => {
     const s = await host.table((s) => s.view?.phase.kind === "turn");
     expect(s.view!.phase).toMatchObject({ kind: "turn", seat: 2 });
     expect(host.errors.concat(other.errors)).toEqual([]);
+  });
+});
+
+describe("a second chance", () => {
+  // Kevin at seat 1, Amy at seat 2, bots at 0 and 3 - seat 0 has just thrown
+  // 5m. `hands`: Kevin's and Amy's; both are waited on.
+  async function claimWindow(hands: [string, string], settings: Partial<TableState["settings"]>) {
+    const code = await createTable();
+    const { p: host } = await join(code, "Kevin");
+    host.send({ t: "sit", seat: 1 });
+    const { p: other } = await join(code, "Amy");
+    other.send({ t: "sit", seat: 2 });
+    host.send({ t: "setup", settings: { multiWin: true, timer: 0, hold: 30, firstDealer: 0, ...settings } });
+    host.send({ t: "setBot", seat: 0, bot: "wall" });
+    host.send({ t: "setBot", seat: 3, bot: "wall" });
+    await host.table((s) => s.seats.every(Boolean));
+    host.send({ t: "start" });
+    await host.table((s) => s.phase === "playing");
+    const opened = await runInDurableObject(stubFor(code), (t: Table) => {
+      const tt = t as unknown as { load(): { game: GameState; decisions: unknown; step: number; botAt: number | null; deadline: number | null }; save(): void };
+      const rt = tt.load();
+      const g = rt.game;
+      g.players[1].hand = parseHand(hands[0]);
+      g.players[2].hand = parseHand(hands[1]);
+      g.phase = { kind: "claims", from: 0, tile: { suit: "m", rank: 5 } };
+      rt.decisions = [null, "waiting", "waiting", null];
+      rt.botAt = null;
+      rt.deadline = null;
+      tt.save();
+      return { step: rt.step, g };
+    });
+    return { code, host, other, ...opened };
+  }
+  const WINS = "46m111222333t456b77z";
+  const NONE = "1379m1357t1357b123z";
+
+  it("a pass of a win is asked again once someone else has won - and joining makes it a 雙響", async () => {
+    const { host, other, step } = await claimWindow([WINS, WINS], {});
+    host.send({ t: "claim", step, claim: { kind: "win" } });
+    other.send({ t: "claim", step, claim: null });
+    const open = await other.table((s) => !!s.secondChance);
+    expect(open.secondChance).toEqual({ call: "win", by: [1] });
+    expect(open.step).toBe(step + 1);
+    expect(open.waitingOn).toEqual([2]);
+    expect(open.options?.claims).toEqual([{ kind: "win" }]);
+    expect(open.deadline).not.toBeNull();
+    other.send({ t: "claim", step: open.step, claim: { kind: "win" } });
+    const over = await host.table((s) => s.view?.phase.kind === "over");
+    expect(over.last).toMatchObject({ kind: "win", seats: [1, 2] });
+    expect(host.errors.concat(other.errors)).toEqual([]);
+  });
+
+  it("isn't offered with the setting off", async () => {
+    const { host, other, step } = await claimWindow([WINS, WINS], { secondChance: false });
+    other.send({ t: "claim", step, claim: null });
+    host.send({ t: "claim", step, claim: { kind: "win" } });
+    const over = await host.table((s) => s.view?.phase.kind === "over");
+    expect(over.last).toMatchObject({ kind: "win", seats: [1] });
+  });
+
+  it("isn't offered under 截胡", async () => {
+    const { host, other, step } = await claimWindow([WINS, WINS], { multiWin: false });
+    other.send({ t: "claim", step, claim: null });
+    host.send({ t: "claim", step, claim: { kind: "win" } });
+    const over = await host.table((s) => s.view?.phase.kind === "over");
+    expect(over.last).toMatchObject({ kind: "win", seats: [1] });
+  });
+
+  it("a pung passed is asked again when only a run is taking the tile - and takes it from the run", async () => {
+    const { host, other, step, g } = await claimWindow(["34m111222333t456b7z", "55m1357t1357b1234z"], {});
+    const chow = claimOptions(g, 1).find((c) => c.kind === "chow")!;
+    const pung = claimOptions(g, 2).find((c) => c.kind === "pung")!;
+    other.send({ t: "claim", step, claim: null });
+    host.send({ t: "claim", step, claim: chow });
+    const open = await other.table((s) => !!s.secondChance);
+    expect(open.secondChance).toEqual({ call: "chow", by: [1] });
+    expect(open.options?.claims).toEqual([pung]);
+    // (Only what's better than the run: the table says no to anything else.)
+    other.send({ t: "claim", step: open.step, claim: pung });
+    const s = await host.table((s) => s.view?.phase.kind === "turn");
+    expect(s.view!.phase).toMatchObject({ kind: "turn", seat: 2 });
+    expect(s.secondChance).toBeNull();
+    expect(host.errors.concat(other.errors)).toEqual([]);
+  });
+
+  it("a win passed is asked again when someone melds the tile - under 截胡 too", async () => {
+    const { host, other, step, g } = await claimWindow(["34m111222333t456b7z", WINS], { multiWin: false });
+    const chow = claimOptions(g, 1).find((c) => c.kind === "chow")!;
+    other.send({ t: "claim", step, claim: null });
+    host.send({ t: "claim", step, claim: chow });
+    const open = await other.table((s) => !!s.secondChance);
+    expect(open.secondChance).toEqual({ call: "chow", by: [1] });
+    expect(open.options?.claims).toEqual([{ kind: "win" }]);
+    other.send({ t: "claim", step: open.step, claim: { kind: "win" } });
+    const over = await host.table((s) => s.view?.phase.kind === "over");
+    expect(over.last).toMatchObject({ kind: "win", seats: [2] });
+  });
+
+  it("no answer in time: the pass stands, and the run goes on", async () => {
+    const { host, other, code, step, g } = await claimWindow(["34m111222333t456b7z", "55m1357t1357b1234z"], {});
+    const chow = claimOptions(g, 1).find((c) => c.kind === "chow")!;
+    other.send({ t: "claim", step, claim: null });
+    host.send({ t: "claim", step, claim: chow });
+    await other.table((s) => !!s.secondChance);
+    await runInDurableObject(stubFor(code), (t: Table) => {
+      const tt = t as unknown as { load(): { deadline: number | null }; save(): void };
+      tt.load().deadline = Date.now() - 1;
+      tt.save();
+    });
+    await runDurableObjectAlarm(stubFor(code));
+    const s = await host.table((s) => s.view?.phase.kind === "turn");
+    expect(s.view!.phase).toMatchObject({ kind: "turn", seat: 1 });
+  });
+
+  it("isn't asked when nobody's taking the tile", async () => {
+    const { host, other, step } = await claimWindow([NONE, WINS], {});
+    other.send({ t: "claim", step, claim: null });
+    const s = await host.table((s) => s.view?.phase.kind === "turn" || !!s.secondChance);
+    expect(s.secondChance).toBeNull();
   });
 });
 

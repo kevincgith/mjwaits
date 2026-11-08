@@ -706,6 +706,13 @@ function Lobby({ table, me, send, onLeave }: { table: TableState; me: Welcome; s
               </Seg>
             ))}
           </Setting>
+          <Setting label="再諗過 Second chance" note={s.secondChance === false ? "off" : "passed a win or a pung, then saw who's taking the tile: 5 seconds to change your mind"}>
+            {[true, false].map((on) => (
+              <Seg key={String(on)} on={(s.secondChance !== false) === on} disabled={!me.host} onClick={() => setup({ secondChance: on })}>
+                {on ? "On" : "Off"}
+              </Seg>
+            ))}
+          </Setting>
           <Setting label="No claim back" note={s.runBack ? "off: any claim may be made" : "threw 1m: no pung, kong or run with it till you draw (from 123m, no 4m run either)"}>
             {[true, false].map((on) => (
               <Seg key={String(on)} on={!s.runBack === on} disabled={!me.host} onClick={() => setup({ runBack: !on })}>

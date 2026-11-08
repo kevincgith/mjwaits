@@ -221,6 +221,9 @@ export interface GameState {
   // discarder alone - their own share, the others nothing. `true` here turns
   // it off. A table setting, carried like multiWin.
   noBaoZimo?: boolean;
+  // A second chance (on unless this says otherwise; see secondChance): `true`
+  // here turns it off. A table setting, carried like multiWin.
+  noSecondChance?: boolean;
   // The last 雙響 / 三響 - who dealt in, who won, and what each would pay
   // back - till the next win (a draw keeps it).
   fanXueDue?: { loser: number; winners: number[]; amount: number };
@@ -490,7 +493,7 @@ function breakWall(wall: WallTile[], dice: Dice, dealer: number): WallTile[] {
   return [...wall.slice(at), ...wall.slice(0, at)];
 }
 
-export function newGame(opts: { multiWin?: boolean; runBack?: boolean; noFanXue?: boolean; noBaoZimo?: boolean; swapRules?: SwapRules } = {}): GameState {
+export function newGame(opts: { multiWin?: boolean; runBack?: boolean; noFanXue?: boolean; noBaoZimo?: boolean; noSecondChance?: boolean; swapRules?: SwapRules } = {}): GameState {
   return dealHand({ dealer: 0, roundWind: 1, dealerStreak: 0, ...opts });
 }
 
@@ -505,6 +508,7 @@ export function dealHand(
     runBack?: boolean;
     noFanXue?: boolean;
     noBaoZimo?: boolean;
+    noSecondChance?: boolean;
     fanXueDue?: GameState["fanXueDue"];
     swapRules?: SwapRules;
   },
@@ -531,6 +535,7 @@ export function dealHand(
     ...(opts.runBack ? { runBack: true } : {}),
     ...(opts.noFanXue ? { noFanXue: true } : {}),
     ...(opts.noBaoZimo ? { noBaoZimo: true } : {}),
+    ...(opts.noSecondChance ? { noSecondChance: true } : {}),
     ...(opts.fanXueDue ? { fanXueDue: opts.fanXueDue } : {}),
     ...(opts.swapRules ? { swapRules: opts.swapRules } : {}),
     ...(dice ? { dice } : {}),
@@ -949,6 +954,58 @@ export function retractClaim(before: GameState, decisions: (Claim | null)[], sea
   return s;
 }
 
+// A second chance: how long someone who let a call go by has to change
+// their mind, once they've seen who's taking the tile.
+export const SECOND_CHANCE_S = 5;
+
+export interface SecondChance {
+  // The call that's taking the tile, and who made it.
+  call: Claim["kind"];
+  by: number[];
+  // Who let a better call go by, and what they may still call.
+  offers: { seat: number; claims: Claim[] }[];
+}
+
+// What a second chance on `call` still allows: a win over anything; a pung
+// or kong over a run.
+export const chanceAllows = (call: Claim["kind"], c: Claim) => c.kind === "win" || (call === "chow" && c.kind !== "chow");
+
+// As at a real table, a pass can be taken back once you see who's taking the
+// tile. A win let go by, when someone calls the tile: you pass for a bigger
+// hand, and now it's going. A pung or kong let go by, when a run is taking
+// it. Before resolveClaims: till the tile's settled, a pass costs nothing
+// (過水, a passed 叮, a passed pung). A win against a win only under 一炮多響:
+// under 截胡 it would take the tile from the one who called it. null: nobody
+// to ask.
+export function secondChance(state: GameState, decisions: (Claim | null)[]): SecondChance | null {
+  if (state.phase.kind !== "claims" || state.noSecondChance) return null;
+  const { from } = state.phase;
+  const best = winningClaimSeat(state, decisions);
+  const call = best === null ? null : decisions[best]!.kind;
+  if (call === null || (call === "win" && !state.multiWin)) return null;
+  const by = Array.from({ length: SEATS }, (_, i) => (from + 1 + i) % SEATS).filter((seat) => decisions[seat]?.kind === call);
+  const offers = [0, 1, 2, 3]
+    .filter((seat) => seat !== from && !by.includes(seat))
+    .map((seat) => ({ seat, claims: claimOptions(state, seat).filter((c) => chanceAllows(call, c)) }))
+    .filter((o) => o.claims.length > 0);
+  return offers.length ? { call, by, offers } : null;
+}
+
+// What `seat`'s win on this tile would score, joining `others` already
+// winning off it (see finishWins) - from what it can see. null: couldn't be scored.
+export function secondChanceFan(state: GameState, seat: number, others: number): number | null {
+  if (state.phase.kind !== "claims") return null;
+  const { from, tile, robKong } = state.phase;
+  const s = cloneState(state);
+  if (!robKong) s.players[from].discards.pop();
+  s.players[seat].hand.push(tile);
+  try {
+    return scoreWin(s, seat, from, tile, null, !!robKong, others + 1).total;
+  } catch {
+    return null;
+  }
+}
+
 export function resolveClaims(state: GameState, decisions: (Claim | null)[]): GameState {
   if (state.phase.kind !== "claims") throw new Error("No discard to claim");
   const { from, tile } = state.phase;
@@ -1189,7 +1246,7 @@ export function nextHand(s: GameState, wall?: WallTile[], random: Random = Math.
   const runBack = s.runBack;
   const swapRules = s.swapRules;
   const firstDealer = s.firstDealer ?? 0;
-  const carried = { firstDealer, lahs, multiWin, runBack, swapRules, noFanXue: s.noFanXue, noBaoZimo: s.noBaoZimo, fanXueDue: s.fanXueDue };
+  const carried = { firstDealer, lahs, multiWin, runBack, swapRules, noFanXue: s.noFanXue, noBaoZimo: s.noBaoZimo, noSecondChance: s.noSecondChance, fanXueDue: s.fanXueDue };
   // The dealer stays on a draw, or when among the winners.
   if (winner === null || winner === s.dealer || alsoWon?.some((w) => w.winner === s.dealer)) {
     return dealHand({ dealer: s.dealer, roundWind: s.roundWind, dealerStreak: s.dealerStreak + 1, ...carried }, wall, random);

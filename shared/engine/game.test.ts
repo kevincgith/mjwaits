@@ -19,6 +19,8 @@ import {
   riichiForcedDiscard,
   settleWin,
   scoreWin,
+  secondChanceFan,
+  secondChance,
   waitsAfterDiscard,
   lahAddOn,
   surrender,
@@ -32,6 +34,7 @@ import {
   fullWall,
   kongOptions,
   SEATS,
+  type Claim,
   type GameState,
   type Player,
   type WallTile,
@@ -1201,6 +1204,70 @@ describe("一炮多響 (several winners off one discard)", () => {
   };
   const allWin = (seats: number[]) => Array.from({ length: SEATS }, (_, i) => (seats.includes(i) ? ({ kind: "win" } as const) : null));
   const ids = (score: { matched: { pattern: { id: string } }[] } | null) => score?.matched.map((x) => x.pattern.id) ?? [];
+
+  it("second chance: who passed a win while someone else called one - only under 一炮多響", () => {
+    const pass = Array.from({ length: SEATS }, () => null);
+    const seats = (st: GameState, d: (Claim | null)[]) => secondChance(st, d)?.offers.map((o) => o.seat) ?? [];
+    expect(secondChance(table([1, 2], true), allWin([1]))).toEqual({ call: "win", by: [1], offers: [{ seat: 2, claims: [{ kind: "win" }] }] });
+    expect(seats(table([1, 2, 3], true), allWin([2]))).toEqual([1, 3]);
+    // Nobody won: passing stands, and the game goes on.
+    expect(secondChance(table([1, 2], true), pass)).toBeNull();
+    // Everyone who could win did.
+    expect(secondChance(table([1, 2], true), allWin([1, 2]))).toBeNull();
+    // 截胡: a late call would take the win from the one who made it.
+    expect(secondChance(table([1, 2], false), allWin([1]))).toBeNull();
+    // Turned off at the table.
+    expect(secondChance({ ...table([1, 2], true), noSecondChance: true }, allWin([1]))).toBeNull();
+    // Someone already under 過水 has no win to change their mind about.
+    const water = table([1, 2], true);
+    water.players[2].overWater = true;
+    expect(secondChance(water, allWin([1]))).toBeNull();
+  });
+
+  it("second chance: a pung or kong passed, when only a run is taking the tile", () => {
+    // Seat 0 threw 5m: seat 1 (next) can run it, seat 2 can pung or kong it.
+    const s = table([], false);
+    s.players[1].hand = parseHand("34m111222333t456b7z");
+    s.players[2].hand = parseHand("555m1357t1357b123z");
+    const chow = claimOptions(s, 1).find((c) => c.kind === "chow")!;
+    const pung = claimOptions(s, 2).find((c) => c.kind === "pung")!;
+    const kong = claimOptions(s, 2).find((c) => c.kind === "kong")!;
+    const d = (a: Claim | null, b: Claim | null) => [null, a, b, null];
+    expect(secondChance(s, d(chow, null))).toEqual({ call: "chow", by: [1], offers: [{ seat: 2, claims: expect.arrayContaining([pung, kong]) }] });
+    // Nothing to reconsider once the pung's called, or if nobody's taking it.
+    expect(secondChance(s, d(chow, pung))).toBeNull();
+    expect(secondChance(s, d(null, null))).toBeNull();
+    // Passed for good, as ever: no claiming it till the next draw - unless they take the chance.
+    const passed = resolveClaims(s, d(chow, null));
+    expect(passed.players[2].passedPung).toEqual(m(5));
+    const taken = resolveClaims(s, d(chow, pung));
+    expect(taken.phase).toMatchObject({ kind: "turn", seat: 2 });
+  });
+
+  it("second chance: a win let go by, when someone calls the tile - under 截胡 too", () => {
+    for (const multiWin of [true, false]) {
+      const s = table([2], multiWin);
+      s.players[1].hand = parseHand("34m111222333t456b7z");
+      const chow = claimOptions(s, 1).find((c) => c.kind === "chow")!;
+      expect(secondChance(s, [null, chow, null, null])).toEqual({ call: "chow", by: [1], offers: [{ seat: 2, claims: [{ kind: "win" }] }] });
+      s.players[3].hand = parseHand("55m1357t1357b1234z");
+      const pung = claimOptions(s, 3).find((c) => c.kind === "pung")!;
+      expect(secondChance(s, [null, null, null, pung])).toEqual({ call: "pung", by: [3], offers: [{ seat: 2, claims: [{ kind: "win" }] }] });
+      // Passed for good if they let it go again: 過水, as ever.
+      expect(resolveClaims(s, [null, null, null, pung]).players[2].overWater).toBe(true);
+    }
+  });
+
+  it("second chance: its 番 are what the win then scores, and a pass left standing costs nothing", () => {
+    const s = table([1, 2], true);
+    const both = resolveClaims(s, allWin([1, 2]));
+    if (both.phase.kind !== "over") throw new Error("over");
+    const second = [{ winner: both.phase.result.winner, score: both.phase.result.score }, ...(both.phase.result.alsoWon ?? [])].find((w) => w.winner === 2)!;
+    expect(secondChanceFan(s, 2, 1)).toBe(second.score!.total);
+    // (It only looks: the game's as it was.)
+    expect(s.players[2].hand.length).toBe(16);
+    expect(s.players[0].discards.length).toBe(1);
+  });
 
   it("is off by default: two wins, the first in turn order takes it (截胡)", () => {
     const s = resolveClaims(table([1, 2], false), allWin([1, 2]));
