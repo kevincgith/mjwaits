@@ -67,7 +67,7 @@ function claim(s: GameState, seat: number, profile: BotProfile, rng: Rng): Claim
 export type Observer = (s: GameState) => void;
 
 export function playHand(wall: WallTile[], dealer: number, seats: BotProfile[], rng: Rng, observe?: Observer): { end: GameState; calls: number[] } {
-  return playFrom(dealHand({ dealer, roundWind: 1, dealerStreak: 0 }, wall.slice()), seats, rng, observe);
+  return playFrom(dealHand({ dealer, roundWind: 1, dealerStreak: 0 }, wall.slice(), rng), seats, rng, observe);
 }
 
 // Plays a dealt hand to its end.
@@ -107,7 +107,7 @@ export function runArena(bots: BotProfile[], walls: number, seed = 1, observe?: 
       // Bot b sits at seat (b + rot) % 4.
       const seats = Array.from({ length: SEATS }, (_, seat) => bots[(seat - rot + SEATS) % SEATS]);
       const botAt = (seat: number) => (seat - rot + SEATS) % SEATS;
-      let start = dealHand({ dealer: firstDealer, roundWind: 1, dealerStreak: 0 }, sessionWalls[0].slice());
+      let start = dealHand({ dealer: firstDealer, roundWind: 1, dealerStreak: 0 }, sessionWalls[0].slice(), rng);
       for (let h = 0; h < sessionWalls.length; h++) {
         const { end, calls } = playFrom(start, seats, rng, observe);
         hands++;
@@ -128,7 +128,7 @@ export function runArena(bots: BotProfile[], walls: number, seed = 1, observe?: 
             between = surrender(between, holder, seat);
             stats[botAt(seat)].surrenders++;
           }
-        start = nextHand(between, sessionWalls[h + 1].slice());
+        start = nextHand(between, sessionWalls[h + 1].slice(), rng);
       }
     }
   }

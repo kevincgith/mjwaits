@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { BOT_PROFILES, botClaimFor, botTurnFor, botTurnMoveFor, danger, goesForSixteen, profileById, rateDiscardsFor, rememberedView, seededRng, threat, tileRisk, SPEECH, speechOf } from "@mjwaits/shared/engine/bots";
+import { BOT_PROFILES, botClaimFor, botTurnFor, botTurnMoveFor, danger, longShotChance, profileById, rateDiscardsFor, rememberedView, seededRng, specialRoutes, threat, tileRisk, SPEECH, speechOf, type BotProfile } from "@mjwaits/shared/engine/bots";
 import { runArena } from "./arena";
 import { applyTurnMove, dealHand, resolveClaims, SEATS, unseenCounts, type GameMeld, type GameState } from "@mjwaits/shared/engine/game";
-import { parseHand, type Tile } from "@mjwaits/shared/engine/mahjong";
+import { allTileKinds, parseHand, specialDistances, tileKey, type Tile } from "@mjwaits/shared/engine/mahjong";
+import { viewFor } from "@mjwaits/shared/engine/view";
 
 const t = (suit: Tile["suit"], rank: number): Tile => ({ suit, rank });
 
@@ -163,42 +164,97 @@ describe("kongs a person would make", () => {
   });
 });
 
-describe("十六不搭 by personality", () => {
-  const withFrom = (sixteenFrom: number) => ({ ...profileById("veteran"), sixteenFrom });
-  const unseen = () => new Map(Array.from({ length: 7 }, (_, i) => [`z${i + 1}`, 4]));
-  const threeHonours = parseHand("147m147t147b123z1m1t1b1z");
-  const fiveHonours = parseHand("147m147t147b12345z1m");
+describe("special hands: how far a bot will chase them", () => {
+  const tester = (over: Partial<BotProfile> = {}): BotProfile => ({ ...profileById("veteran"), longShot: 0.6, longShotFade: 0.5, longShotReach: 2, ...over });
+  const allLeft = () => new Map(allTileKinds().map((k) => [tileKey(k), 4]));
+  const base = dealHand({ dealer: 0, roundWind: 1, dealerStreak: 0 });
+  const routes = (hand: Tile[], mood: number, profile = tester(), unseen = allLeft(), melds: GameMeld[] = []) =>
+    specialRoutes(withPlayer({ ...base, moods: [0, mood, 0, 0] }, 1, { hand, melds }), 1, profile, unseen);
 
-  it("waits for that bot's number of honours", () => {
-    expect(goesForSixteen(threeHonours, withFrom(3), unseen())).toBe(true);
-    expect(goesForSixteen(threeHonours, withFrom(5), unseen())).toBe(false);
-    expect(goesForSixteen(fiveHonours, withFrom(5), unseen())).toBe(true);
-    expect(goesForSixteen(fiveHonours, withFrom(8), unseen())).toBe(false);
+  const pairsOneAway = parseHand("11223344m5566t77b1z2z");
+  const pairsTwoAway = parseHand("1122m3344t5566b7z8m9m1b");
+  const sixteenReady = parseHand("147m147t147b123456z1m");
+  const orphansReady = parseHand("19m19t19b1234567z1m23m");
+  const orphansOneAway = parseHand("19m19t19b12345z1m234m9m");
+
+  it("measures the distance to each one", () => {
+    expect(specialDistances(pairsOneAway).pairs).toBe(1);
+    expect(specialDistances(pairsTwoAway).pairs).toBe(2);
+    expect(specialDistances(sixteenReady).sixteen).toBe(0);
+    expect(specialDistances(orphansReady).orphans).toBe(0);
+    expect(specialDistances(orphansOneAway).orphans).toBe(1);
   });
 
-  it("suits each personality: only the Gambler tries it on three honours", () => {
-    const willing = (hand: Tile[]) => BOT_PROFILES.filter((p) => goesForSixteen(hand, p, unseen())).map((p) => p.id);
-    expect(willing(threeHonours)).toEqual(["gambler"]);
-    expect(willing(parseHand("147m147t147b1234z1m1t"))).toEqual(["hunter", "wall", "gambler"]);
-    expect(willing(parseHand("147m147t147b123456z"))).toEqual(BOT_PROFILES.map((p) => p.id));
+  it("fades with distance, and stops past the bot's reach", () => {
+    const p = tester();
+    expect(longShotChance(p, 0)).toBe(1);
+    expect(longShotChance(p, -1)).toBe(1);
+    expect(longShotChance(p, 1)).toBeCloseTo(0.6);
+    expect(longShotChance(p, 2)).toBeCloseTo(0.3);
+    expect(longShotChance(p, 3)).toBe(0);
   });
 
-  it("gives up once an honour it still needs is gone", () => {
-    const gone = unseen();
-    gone.set("z7", 0);
-    expect(goesForSixteen(fiveHonours, withFrom(0), gone)).toBe(false);
+  it("counts one only when this hand's mood is under the chance", () => {
+    expect(routes(pairsOneAway, 0.5).pairs).toBe(true);
+    expect(routes(pairsOneAway, 0.7).pairs).toBe(false);
+  });
+
+  it("can come round to one as the hand gets closer", () => {
+    expect(routes(pairsTwoAway, 0.5).pairs).toBe(false);
+    expect(routes(pairsOneAway, 0.5).pairs).toBe(true);
+  });
+
+  it("always counts one that's ready, whatever the mood", () => {
+    expect(routes(sixteenReady, 0.99).sixteen).toBe(true);
+    expect(routes(orphansReady, 0.99).orphans).toBe(true);
+  });
+
+  it("drops them all once it has called", () => {
+    const meld: GameMeld = { kind: "triplet", tiles: [t("m", 5), t("m", 5), t("m", 5)], concealed: false, from: 0 };
+    expect(routes(pairsOneAway.slice(0, 13), 0, tester(), allLeft(), [meld])).toEqual({ sixteen: false, pairs: false, orphans: false });
+  });
+
+  it("gives up once a kind it still needs is gone", () => {
+    const noWhite = allLeft();
+    noWhite.set("z7", 0);
+    expect(routes(sixteenReady, 0, tester(), noWhite).sixteen).toBe(false);
+    expect(routes(orphansOneAway, 0, tester(), noWhite).orphans).toBe(false);
     // (One it already holds doesn't matter.)
-    gone.set("z7", 4);
-    gone.set("z1", 0);
-    expect(goesForSixteen(fiveHonours, withFrom(0), gone)).toBe(true);
+    const noEast = allLeft();
+    noEast.set("z1", 0);
+    expect(routes(sixteenReady, 0, tester(), noEast).sixteen).toBe(true);
+    expect(routes(orphansOneAway, 0, tester(), noEast).orphans).toBe(true);
+  });
+
+  it("suits each personality", () => {
+    const chance = (id: string, away: number) => longShotChance(profileById(id), away);
+    expect(chance("gambler", 3)).toBeGreaterThan(chance("veteran", 3));
+    expect(chance("hunter", 4)).toBeGreaterThan(0);
+    expect(chance("gambler", 4)).toBeGreaterThan(0);
+    for (const id of ["speedster", "casual"]) expect(chance(id, 3)).toBe(0);
+    for (const id of ["grandmaster", "veteran", "wall"]) expect(chance(id, 4)).toBe(0);
+    for (const p of BOT_PROFILES) for (let away = 1; away < 6; away++) expect(longShotChance(p, away + 1)).toBeLessThanOrEqual(longShotChance(p, away));
   });
 
   it("doesn't count the shape as close for a bot that wouldn't go for it", () => {
-    const base = dealHand({ dealer: 0, roundWind: 1, dealerStreak: 0 });
     const hand = parseHand("156b158m259t12234577z");
-    const s = withPlayer({ ...base, phase: { ...base.phase, kind: "turn", seat: 1 } as GameState["phase"] }, 1, { hand, melds: [], discards: [] });
-    const near = Math.min(...rateDiscardsFor(s, 1, withFrom(0)).map((o) => o.shanten));
-    const far = Math.min(...rateDiscardsFor(s, 1, withFrom(8)).map((o) => o.shanten));
-    expect(far).toBeGreaterThan(near);
+    const s = withPlayer({ ...base, moods: [0.5, 0.5, 0.5, 0.5], phase: { ...base.phase, kind: "turn", seat: 1 } as GameState["phase"] }, 1, { hand, melds: [], discards: [] });
+    const best = (p: BotProfile) => Math.min(...rateDiscardsFor(s, 1, p).map((o) => o.shanten));
+    expect(best(tester({ longShot: 1, longShotFade: 1, longShotReach: 16 }))).toBeLessThan(best(tester({ longShotReach: 0 })));
+  });
+
+  it("draws a mood for each seat at the deal, and keeps it off the phones", () => {
+    const dealt = dealHand({ dealer: 0, roundWind: 1, dealerStreak: 0 }, undefined, seededRng(7));
+    expect(dealt.moods).toHaveLength(SEATS);
+    for (const m of dealt.moods!) expect(m >= 0 && m < 1).toBe(true);
+    expect(dealHand({ dealer: 0, roundWind: 1, dealerStreak: 0 }, undefined, seededRng(7)).moods).toEqual(dealt.moods);
+    expect(JSON.stringify(viewFor(dealt, 0))).not.toContain(String(dealt.moods![1]));
+    expect(JSON.stringify(viewFor(dealt, 0))).not.toContain("moods");
+  });
+
+  it("plays a hand dealt before moods existed", () => {
+    const old: GameState = { ...base };
+    delete old.moods;
+    expect(() => specialRoutes(old, 1, tester(), allLeft())).not.toThrow();
   });
 });
