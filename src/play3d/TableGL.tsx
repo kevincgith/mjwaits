@@ -150,6 +150,7 @@ export default function TableGL({
   onSweep,
   onPress,
   tileXRef,
+  onCameraMove,
 }: {
   view: GLTableView;
   // A tap on a pile's tile, on your take (換牌).
@@ -167,6 +168,8 @@ export default function TableGL({
   // Set to where one of your tiles is seen: the x of its middle, from your
   // row's box's left (null: not drawn) - for what's shown over it.
   tileXRef?: RefObject<((index: number) => number | null) | null>;
+  // The corner camera's been dragged.
+  onCameraMove?: () => void;
   rootRef: RefObject<HTMLElement | null>;
   feltRef: RefObject<HTMLElement | null>;
   handRef: RefObject<HTMLElement | null>;
@@ -414,6 +417,8 @@ export default function TableGL({
     };
   }, [rootRef]);
 
+  const cameraMoved = useRef(onCameraMove);
+  cameraMoved.current = onCameraMove;
   // The free camera: a drag across the table circles it (side to side) and
   // lays it back or stands it up (up and down), the table following the
   // finger; a double tap puts the camera back where it started.
@@ -423,6 +428,10 @@ export default function TableGL({
     let drag: (CornerCamera & { x: number; y: number; moved: boolean }) | null = null;
     let lastTap = 0;
     let queued = 0;
+    const letGo = () => {
+      drag = null;
+      root.classList.remove("is-dragging");
+    };
     const redraw = () => {
       if (queued) return;
       queued = requestAnimationFrame(() => {
@@ -437,10 +446,16 @@ export default function TableGL({
     };
     const onMove = (e: PointerEvent) => {
       if (!drag || !e.isPrimary) return;
+      // Let go outside the window: no pointerup ever came.
+      if (e.pointerType === "mouse" && e.buttons === 0) return letGo();
       const p = pointerIn(root, e);
       const dx = p.x - drag.x;
       const dy = p.y - drag.y;
       if (!drag.moved && Math.hypot(dx, dy) < 4) return;
+      if (!drag.moved) {
+        root.classList.add("is-dragging");
+        cameraMoved.current?.();
+      }
       drag.moved = true;
       camera.current = { yaw: drag.yaw - dx * DRAG_YAW, tilt: Math.max(CORNER_TILT_MIN, Math.min(CORNER_TILT_MAX, drag.tilt - dy * DRAG_TILT)) };
       redraw();
@@ -448,7 +463,7 @@ export default function TableGL({
     const onUp = (e: PointerEvent) => {
       if (!drag || !e.isPrimary) return;
       const tapped = !drag.moved;
-      drag = null;
+      letGo();
       if (!tapped) return;
       if (e.timeStamp - lastTap < DOUBLE_TAP_MS) {
         lastTap = 0;
@@ -456,7 +471,7 @@ export default function TableGL({
         redraw();
       } else lastTap = e.timeStamp;
     };
-    const onCancel = () => void (drag = null);
+    const onCancel = letGo;
     root.addEventListener("pointerdown", onDown);
     root.addEventListener("pointermove", onMove);
     root.addEventListener("pointerup", onUp);

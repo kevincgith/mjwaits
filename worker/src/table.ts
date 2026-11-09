@@ -144,8 +144,11 @@ interface Runtime {
 
 // Playing a seat for its person (自動): the Grandmaster, as the Play tab's 自動.
 const AUTOPLAY_BOT = "grandmaster";
-// A table where someone's on 自動 deals the next hand no sooner than this after
-// a hand ends, so the result is seen (as the Play tab's 自動).
+// A table where someone's on 自動, or only observers are left, deals on by
+// itself: once the hand's end has played out on their screens (the Play tab's
+// WIN_SHOW_MS or DRAW_SHOW_MS) and the result has been up this long (its 自動).
+const WIN_SHOW_MS = 4550;
+const DRAW_SHOW_MS = 1700;
 const AUTOPLAY_NEXT_MS = 4500;
 // Between hands, the least time the table waits for someone not yet ready (see readyBy).
 const READY_MIN_S = 30;
@@ -1078,7 +1081,9 @@ export class Table extends Hub<TableMessage> {
         return;
       }
       // Someone on 自動, or only observers here: the result's seen before the next deal.
-      const dealAt = (rt.chosen?.length || !humans.some((h) => online.has(h.id))) && rt.overAt !== undefined ? rt.overAt + (AUTOPLAY_NEXT_MS * this.botPause) / BOT_PAUSE_MS : 0;
+      // (However fast the bots: reading the result takes as long.)
+      const shownFor = (rt.last?.kind === "draw" ? DRAW_SHOW_MS : WIN_SHOW_MS) + AUTOPLAY_NEXT_MS;
+      const dealAt = (rt.chosen?.length || !humans.some((h) => online.has(h.id))) && rt.overAt !== undefined ? rt.overAt + (shownFor * this.pause) / BOT_PAUSE_MS : 0;
       if (now < dealAt) {
         rt.botAt = dealAt;
         return;

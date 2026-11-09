@@ -125,7 +125,7 @@ import { RecordSheet } from "./PlayRecord";
 import { isMuted, play as playSound, setMuted, wakeAudio, type Sound } from "./lib/sound";
 import { addHand, loadRecord, saveRecord, type Opponent } from "./lib/playRecord";
 import type { GLFlight, GLMine, GLPile, GLSwapRow, GLTableView, GLWall } from "./play3d/types";
-import type { Observe, ObserveMode } from "./lib/observer";
+import { cornerDragged, noteCornerDragged, wallCounts, type Observe, type ObserveMode } from "./lib/observer";
 import { giverOrder, swapSlots } from "./play3d/swapOrder";
 import { loadLearnedModel, type LearnedModel } from "./lib/ml/browser";
 import { learnedClaim, learnedTurnMove, type LearnedBot } from "./lib/ml/policy";
@@ -786,14 +786,14 @@ function CallBurst({ seat, label, deltas }: { seat: number; label: string; delta
 }
 
 // `census`: every tile counted (this device's own game; online the server checks).
-function TileTracker({ game, onClose, census }: { game: GameState; onClose: () => void; census: boolean }) {
-  const unseen = unseenCounts(game, HUMAN);
+// `unseen`: what to count, and `note` what those counts are of.
+function TileTracker({ game, onClose, census, unseen, note }: { game: GameState; onClose: () => void; census: boolean; unseen: Map<string, number>; note: string }) {
   return (
     <div className="play-sheet-backdrop" onClick={onClose}>
       <div className="play-sheet play-tracker" role="dialog" aria-label="Tile tracker" onClick={(e) => e.stopPropagation()}>
         <div className="play-sheet-head">
           <h2>記牌器</h2>
-          <span>Tiles you haven't seen yet</span>
+          <span>{note}</span>
           <button type="button" className="play-sheet-close" onClick={onClose} aria-label="Close">
             ×
           </button>
@@ -927,11 +927,30 @@ const OBSERVE_MODES: { mode: ObserveMode; zh: string; en: string }[] = [
 
 // An observer's choice of view: from one seat, from the corner between two, or
 // every hand open - and whose seat is at the bottom.
-function ObservePicker({ observe, names }: { observe: NonNullable<OnlinePlay["observe"]>; names: string[] }) {
+function ObservePicker({ observe, names, winds, onOpen }: { observe: NonNullable<OnlinePlay["observe"]>; names: string[]; winds: string[]; onOpen: () => void }) {
   const { mode, seat, set, open, setOpen } = observe;
+  // It's over the table: a tap anywhere else, or Esc, puts it away.
+  useEffect(() => {
+    if (!open) return;
+    const onPointer = (e: PointerEvent) => {
+      if (!(e.target as Element | null)?.closest(".play-observe, .play-observe-toggle")) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open, setOpen]);
   return (
     <>
-      <button type="button" className={`play-icon-button${open ? " is-on" : ""}`} onClick={() => setOpen(!open)} aria-label="Change your view" aria-expanded={open} title="觀戰 - change your view">
+      <button type="button" className={`play-icon-button play-observe-toggle${open ? " is-on" : ""}`} onClick={() => {
+        if (!open) onOpen();
+        setOpen(!open);
+      }} aria-label="Change your view" aria-expanded={open} title="觀戰 - change your view">
         🎥
       </button>
       {open && (
@@ -944,11 +963,22 @@ function ObservePicker({ observe, names }: { observe: NonNullable<OnlinePlay["ob
             ))}
           </div>
           <div className="play-observe-row">
-            {names.map((name, i) => (
-              <button key={i} type="button" role="menuitemradio" aria-checked={seat === i} className={seat === i ? "is-on" : undefined} onClick={() => set({ mode, seat: i })}>
-                {mode === "corner" ? `${name} + ${names[(i + 1) % 4]}` : name}
-              </button>
-            ))}
+            {names.map((name, i) => {
+              const next = (i + 1) % 4;
+              return (
+                <button key={i} type="button" role="menuitemradio" aria-checked={seat === i} className={seat === i ? "is-on" : undefined} onClick={() => set({ mode, seat: i })}>
+                  {mode === "corner" ? (
+                    <>
+                      <b>{winds[i]}{winds[next]}</b> {name} + {names[next]}
+                    </>
+                  ) : (
+                    <>
+                      <b>{winds[i]}</b> {name}
+                    </>
+                  )}
+                </button>
+              );
+            })}
           </div>
           {mode === "corner" && <p className="play-observe-hint">Drag the table to move the camera · double-tap to reset</p>}
         </div>
@@ -956,6 +986,9 @@ function ObservePicker({ observe, names }: { observe: NonNullable<OnlinePlay["ob
     </>
   );
 }
+
+// A seat's name at the table: a bot's in English (it's "街坊 Casual" in full).
+const seatName = (info: TableState["seats"][number]) => (!info ? "?" : info.kind === "bot" ? info.name.split(" ").slice(1).join(" ") || info.name : info.name);
 
 export interface OnlinePlay {
   table: TableState;
@@ -1075,6 +1108,12 @@ export function PlayPanel({
   const watch = online?.observe ?? null;
   const corner = watch?.mode === "corner";
   const handSeen = seated || !!watch;
+  // How to move the corner camera, shown until this phone has.
+  const [dragHint, setDragHint] = useState(() => !cornerDragged());
+  const cameraMoved = () => {
+    setDragHint(false);
+    noteCornerDragged();
+  };
   // Online, whether the table is waiting on you (it isn't once you've
   // answered, or while it's playing for you).
   const waitedOn = !online || (online.table.you !== null && online.table.waitingOn.includes(online.table.you));
@@ -1424,7 +1463,7 @@ export function PlayPanel({
     };
     // The corner camera: a square table, as big as fits turned 45deg and laid back.
     if (corner) {
-      const fit = () => felt.style.setProperty("--corner-side", `${Math.round(Math.min(stage.clientWidth * 0.76, stage.clientHeight * 1.36))}px`);
+      const fit = () => felt.style.setProperty("--corner-side", `${Math.round(Math.min(stage.clientWidth * 0.69, stage.clientHeight * 1.36))}px`);
       fit();
       const sized = new ResizeObserver(fit);
       sized.observe(stage);
@@ -1612,12 +1651,13 @@ export function PlayPanel({
   const nameOf = (seat: number): string => {
     if (isMe(seat)) return "You";
     if (online && net) {
-      const info = online.table.seats[net.toTable(seat)];
-      if (!info) return "?";
-      return info.kind === "bot" ? info.name.split(" ").slice(1).join(" ") || info.name : info.name;
+      return seatName(online.table.seats[net.toTable(seat)]);
     }
     return englishName(bots[seat]!);
   };
+  // In a sentence: with the seat's wind, when another seat has the same name.
+  const labelOf = (seat: number): string =>
+    [0, 1, 2, 3].some((other) => other !== seat && nameOf(other) === nameOf(seat)) ? `${WIND_CHARS[seatWind(seat, game.dealer)]} ${nameOf(seat)}` : nameOf(seat);
   // One character for a seat: 你, a bot's avatar character, a person's initial.
   const initialOf = (seat: number) =>
     seat === HUMAN && seated ? "你" : bots[seat] ? (mysteryStyle(bots[seat]!) ? "?" : bots[seat]!.name[0]) : nameOf(seat).slice(0, 1).toUpperCase();
@@ -3381,7 +3421,17 @@ export function PlayPanel({
           )}
           {online && seated && online.table.you !== null && <TalkButton voice={online.voice} seat={online.table.you} />}
           {online && <TableChat chat={online.chat} onOpen={() => setReacting(false)} />}
-          {watch && online && <ObservePicker observe={watch} names={online.table.seats.map((s) => s?.name ?? "?")} />}
+          {watch && online && (
+            <ObservePicker
+              observe={watch}
+              names={online.table.seats.map(seatName)}
+              winds={[0, 1, 2, 3].map((s) => WIND_CHARS[seatWind(s, online.table.view?.dealer ?? 0)])}
+              onOpen={() => {
+                setMenuOpen(false);
+                online.chat.setOpen(false);
+              }}
+            />
+          )}
           {online && online.table.watching > 0 && (
             <span className="play-watching" title={`${online.table.watching} watching`}>
               👁 {online.table.watching}
@@ -3418,36 +3468,40 @@ export function PlayPanel({
                 {online.table.settings.botSpeed && online.table.settings.botSpeed !== "normal" ? ` · bots ${SPEEDS[online.table.settings.botSpeed].label.toLowerCase()}` : ""}
                 {online.table.watching > 0 && ` · ${online.table.watching} watching`}
               </p>
-              <div className="play-menu-row">
-                <span>提示 Hints</span>
-                <span className="play-menu-seg">
-                  {[false, true].map((on) => (
-                    <button key={String(on)} type="button" className={hint === on ? "toggle-on" : undefined} aria-pressed={hint === on} onClick={() => setHint(on)}>
-                      {on ? "On" : "Off"}
-                    </button>
-                  ))}
-                </span>
-              </div>
-              <div className="play-menu-row">
-                <span>一按打牌 One-tap discard</span>
-                <span className="play-menu-seg">
-                  {[false, true].map((on) => (
-                    <button key={String(on)} type="button" className={oneTap === on ? "toggle-on" : undefined} aria-pressed={oneTap === on} onClick={() => setOneTap(on)}>
-                      {on ? "On" : "Off"}
-                    </button>
-                  ))}
-                </span>
-              </div>
-              <div className="play-menu-row">
-                <span>聽 Waits</span>
-                <span className="play-menu-seg">
-                  {[false, true].map((on) => (
-                    <button key={String(on)} type="button" className={showWaits === on ? "toggle-on" : undefined} aria-pressed={showWaits === on} onClick={() => setShowWaits(on)}>
-                      {on ? "On" : "Off"}
-                    </button>
-                  ))}
-                </span>
-              </div>
+              {seated && (
+                <>
+                <div className="play-menu-row">
+                  <span>提示 Hints</span>
+                  <span className="play-menu-seg">
+                    {[false, true].map((on) => (
+                      <button key={String(on)} type="button" className={hint === on ? "toggle-on" : undefined} aria-pressed={hint === on} onClick={() => setHint(on)}>
+                        {on ? "On" : "Off"}
+                      </button>
+                    ))}
+                  </span>
+                </div>
+                <div className="play-menu-row">
+                  <span>一按打牌 One-tap discard</span>
+                  <span className="play-menu-seg">
+                    {[false, true].map((on) => (
+                      <button key={String(on)} type="button" className={oneTap === on ? "toggle-on" : undefined} aria-pressed={oneTap === on} onClick={() => setOneTap(on)}>
+                        {on ? "On" : "Off"}
+                      </button>
+                    ))}
+                  </span>
+                </div>
+                <div className="play-menu-row">
+                  <span>聽 Waits</span>
+                  <span className="play-menu-seg">
+                    {[false, true].map((on) => (
+                      <button key={String(on)} type="button" className={showWaits === on ? "toggle-on" : undefined} aria-pressed={showWaits === on} onClick={() => setShowWaits(on)}>
+                        {on ? "On" : "Off"}
+                      </button>
+                    ))}
+                  </span>
+                </div>
+                </>
+              )}
               {seated && (
                 <button
                   type="button"
@@ -3467,7 +3521,7 @@ export function PlayPanel({
               <TalkRows />
               <VoiceRows table={online.table} voice={online.voice} />
               <button type="button" onClick={onExit}>
-                Leave (your seat waits for you)
+                {seated ? "Leave (your seat waits for you)" : "Stop watching"}
               </button>
               {online.host && (
                 <button type="button" className={confirmNew ? "is-armed" : undefined} onClick={() => (confirmNew ? online.send({ t: "end" }) : setConfirmNew(true))}>
@@ -3580,7 +3634,7 @@ export function PlayPanel({
               {autoplay ? "■" : "▶"}
             </button>
           )}
-          <button type="button" className="play-icon-button" onClick={() => setTrackerOpen(true)} aria-label="記牌器 Tile tracker" title="記牌器 - tiles you haven't seen">
+          <button type="button" className="play-icon-button" onClick={() => setTrackerOpen(true)} aria-label="記牌器 Tile tracker" title={seated ? "記牌器 - tiles you haven't seen" : "記牌器 - the tiles still to come"}>
             {/* A tile (白板, 7z): the tiles still to come. */}
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <rect x="5" y="3" width="14" height="18" rx="2.5" strokeWidth="2" />
@@ -3601,6 +3655,7 @@ export function PlayPanel({
         {badge(3)}
         {badge(1)}
         {corner && badge(HUMAN)}
+        {corner && dragHint && <p className="play-corner-hint">Drag to move the camera · double-tap to reset</p>}
 
         {/* The table itself, tipped away from you in perspective; your hand
             and the bar stay flat in front of it. */}
@@ -3614,7 +3669,7 @@ export function PlayPanel({
           </div>
         </div>
         <Suspense fallback={null}>
-          <TableGL view={glView} rootRef={tableRef} feltRef={feltRef} handRef={myRowRef} middleRef={middleRef} onTile={tapTile} onPile={(side, i) => myTake && pickFrom(SIDES.indexOf(side), i)} sweep={swapGiving} onSweep={sweepTile} onPress={setPressed} tileXRef={tileXRef} />
+          <TableGL view={glView} rootRef={tableRef} feltRef={feltRef} handRef={myRowRef} middleRef={middleRef} onTile={tapTile} onPile={(side, i) => myTake && pickFrom(SIDES.indexOf(side), i)} sweep={swapGiving} onSweep={sweepTile} onPress={setPressed} tileXRef={tileXRef} onCameraMove={cameraMoved} />
         </Suspense>
 
         <div className={`play-me${autoplay ? " is-auto" : ""}`}>
@@ -3774,20 +3829,25 @@ export function PlayPanel({
         </div>
 
         <div className="play-bar">
-          <span className={`play-bar-you${activeSeat === HUMAN ? " is-active" : ""}`}>
-            <span className="play-badge-wind">{WIND_CHARS[seatWind(HUMAN, game.dealer)]}</span>
-            {seated ? "You" : nameOf(HUMAN)}
-            {talkChip(HUMAN)}
-            {game.dealer === HUMAN && dealerChip}
-            {me.riichi && <span className="play-riichi">叮</span>}
-            {lahChips(HUMAN)}
-            {bubbles[HUMAN] && (
-              <span key={bubbles[HUMAN].id} className="play-bubble is-mine" role="status" style={{ "--bubble-ms": `${bubbleMs(bubbles[HUMAN].text)}ms` } as CSSProperties}>
-                {bubbles[HUMAN].text}
+          {/* The corner camera has no seat of its own: all four are on the table, with their cards. */}
+          {!corner && (
+            <>
+              <span className={`play-bar-you${activeSeat === HUMAN ? " is-active" : ""}`}>
+                <span className="play-badge-wind">{WIND_CHARS[seatWind(HUMAN, game.dealer)]}</span>
+                {seated ? "You" : nameOf(HUMAN)}
+                {talkChip(HUMAN)}
+                {game.dealer === HUMAN && dealerChip}
+                {me.riichi && <span className="play-riichi">叮</span>}
+                {lahChips(HUMAN)}
+                {bubbles[HUMAN] && (
+                  <span key={bubbles[HUMAN].id} className="play-bubble is-mine" role="status" style={{ "--bubble-ms": `${bubbleMs(bubbles[HUMAN].text)}ms` } as CSSProperties}>
+                    {bubbles[HUMAN].text}
+                  </span>
+                )}
               </span>
-            )}
-          </span>
-          {total(HUMAN)}
+              {total(HUMAN)}
+            </>
+          )}
           <span className="play-bar-round">
             {roundLabel(game)}
           </span>
@@ -3939,7 +3999,15 @@ export function PlayPanel({
             </div>
           </div>
         )}
-        {trackerOpen && <TileTracker game={game} census={!online} onClose={() => setTrackerOpen(false)} />}
+        {trackerOpen && (
+          <TileTracker
+            game={game}
+            census={!online}
+            onClose={() => setTrackerOpen(false)}
+            unseen={watch && watch.mode !== "pov" ? wallCounts(game) : unseenCounts(game, HUMAN)}
+            note={watch && watch.mode !== "pov" ? "Tiles still to come" : seated ? "Tiles you haven't seen yet" : watch ? `Tiles ${nameOf(HUMAN)} hasn't seen yet` : "Tiles not yet shown"}
+          />
+        )}
         {scoresOpen && ledger && <PlayScores game={ledger} onClose={() => setScoresOpen(false)} host={sheetHost.firstElementChild} />}
         {recordOpen && <RecordSheet record={playRecord} onReset={setPlayRecord} onClose={() => setRecordOpen(false)} />}
         {reviewOpen && (
@@ -3966,8 +4034,8 @@ export function PlayPanel({
             <div className="play-result-card">
               <h2>
                 {result.winner !== null && result.alsoWon?.length
-                  ? `${result.alsoWon.length === 1 ? "雙響" : "三響"}! ${[result.winner, ...result.alsoWon.map((w) => w.winner)].map((w) => nameOf(w)).join(" and ")} won off ${
-                      isMe(result.from) ? "your" : `${nameOf(result.from!)}'s`
+                  ? `${result.alsoWon.length === 1 ? "雙響" : "三響"}! ${[result.winner, ...result.alsoWon.map((w) => w.winner)].map((w) => labelOf(w)).join(" and ")} won off ${
+                      isMe(result.from) ? "your" : `${labelOf(result.from!)}'s`
                     } ${result.robKong ? "kong (搶槓)" : "discard"}`
                   : result.winner === null
                   ? "Draw - wall exhausted (流局)"
@@ -3975,22 +4043,22 @@ export function PlayPanel({
                     ? result.from === null
                       ? "You won by self-draw! (自摸)"
                       : result.robKong
-                        ? `You robbed ${nameOf(result.from)}'s kong! (搶槓)`
-                        : `You won off ${nameOf(result.from)}'s discard!`
-                    : `${nameOf(result.winner)} ${
+                        ? `You robbed ${labelOf(result.from)}'s kong! (搶槓)`
+                        : `You won off ${labelOf(result.from)}'s discard!`
+                    : `${labelOf(result.winner)} ${
                         result.from === null
                           ? "won by self-draw"
                           : result.robKong
-                            ? `robbed ${isMe(result.from) ? "your" : `${nameOf(result.from)}'s`} kong (搶槓)`
+                            ? `robbed ${isMe(result.from) ? "your" : `${labelOf(result.from)}'s`} kong (搶槓)`
                             : isMe(result.from)
                               ? "won off your discard"
-                              : `won off ${nameOf(result.from)}`
+                              : `won off ${labelOf(result.from)}`
                       }`}
               </h2>
               {result.winner !== null &&
                 [{ winner: result.winner, score: result.score, scoreError: result.scoreError }, ...(result.alsoWon ?? [])].map((w) => (
                   <div key={w.winner} className="play-result-winner">
-                    {result.alsoWon?.length ? <h3 className="play-result-who">{nameOf(w.winner)}</h3> : null}
+                    {result.alsoWon?.length ? <h3 className="play-result-who">{labelOf(w.winner)}</h3> : null}
                     <div className="play-result-hand">
                       <Flowers flowers={game.players[w.winner].flowers} />
                       <Melds melds={game.players[w.winner].melds} inRow />
@@ -4018,7 +4086,7 @@ export function PlayPanel({
                   {/* 包自摸: a 自摸 off a kong of someone's discard - they pay alone. */}
                   {result.bao !== undefined && result.winner !== null && (
                     <li key="包自摸">
-                      包自摸 · {nameOf(result.bao)} {isMe(result.bao) ? "pay" : "pays"} alone - {nameOf(result.winner)} konged {isMe(result.bao) ? "your" : "their"} discard
+                      包自摸 · {labelOf(result.bao)} {isMe(result.bao) ? "pay" : "pays"} alone - {labelOf(result.winner)} konged {isMe(result.bao) ? "your" : "their"} discard
                     </li>
                   )}
                   {/* 反雪: the last 雙響 / 三響's winners pay its loser back. */}

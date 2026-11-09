@@ -31,7 +31,7 @@ import {
 } from "./lib/onlineTable";
 import type { ScoreGame } from "@mjwaits/shared/engine/ledger";
 import { TableVoice, type VoiceView } from "./lib/tableVoice";
-import { observedView, type Observe } from "./lib/observer";
+import { loadObserve, observedView, saveObserve, type Observe } from "./lib/observer";
 import { TableChat, type OnlineChat } from "./TableChat";
 import { PlayScores } from "./scores/playScores";
 import { PlayPanel, type OnlinePlay } from "./PlayPanel";
@@ -99,7 +99,7 @@ export function OnlineTable({ initialCode, onExit }: { initialCode: string | nul
   // Joining to watch, not for a seat - and, watching a table that shows
   // its observers everything, how this phone is looking at it.
   const joinToWatch = useRef(false);
-  const [observe, setObserve] = useState<Observe>({ mode: "god", seat: 0 });
+  const [observe, setObserve] = useState<Observe>(loadObserve);
   const [observeOpen, setObserveOpen] = useState(false);
   // The table's record (for 戰況), fetched again whenever it grows.
   const [scores, setScores] = useState<ScoreGame | null>(null);
@@ -283,6 +283,11 @@ export function OnlineTable({ initialCode, onExit }: { initialCode: string | nul
 
   // Watching a table that sends its observers every hand: as this phone is looking at it.
   const observing = !!table && table.you === null && !!table.settings.observers;
+  const chooseView = (o: Observe) => {
+    setObserve(o);
+    saveObserve(o);
+    setObserveOpen(false);
+  };
   const shownTable = useMemo(() => (table?.view && observing ? { ...table, view: observedView(table.view, observe) } : table), [table, observing, observe]);
 
   // Whether you're host now: the table says (it hands the host on when they've
@@ -304,7 +309,7 @@ export function OnlineTable({ initialCode, onExit }: { initialCode: string | nul
     return (
       <>
         {/* (Another view is another table to draw: started afresh, nothing of the last carried over.) */}
-        <PlayPanel key={observing ? `${observe.mode}:${observe.seat}` : "seat"} onExit={leave} online={{ table: shownTable, observe: observing ? { ...observe, set: setObserve, open: observeOpen, setOpen: setObserveOpen } : undefined, send, host: you.host, scores, reaction, refused, chat, voice: { ...voiceView, press: () => voice.current?.press(), release: () => voice.current?.release(), toggleMute: (id) => voice.current?.toggleMute(id) } }} />
+        <PlayPanel key={observing ? `${observe.mode}:${observe.seat}` : "seat"} onExit={leave} online={{ table: shownTable, observe: observing ? { ...observe, set: chooseView, open: observeOpen, setOpen: setObserveOpen } : undefined, send, host: you.host, scores, reaction, refused, chat, voice: { ...voiceView, press: () => voice.current?.press(), release: () => voice.current?.release(), toggleMute: (id) => voice.current?.toggleMute(id) } }} />
         {status !== "open" && <div className="ot-status">{status === "closed" ? "Disconnected" : "Reconnecting…"}</div>}
         {toast && (
           <div className="ot-toast" role="status">
