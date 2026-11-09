@@ -1212,7 +1212,6 @@ export class Table extends Hub<TableMessage> {
       pot: rt.pot ?? 0,
       last: rt.last,
       secondChance: rt.secondChance ?? null,
-      holding: g?.phase.kind === "claims" && !!rt.decisions?.includes("waiting"),
       you: seat,
       view: g ? viewFor(g, seat ?? -1, (s) => this.handShown(g, s)) : null,
       options,

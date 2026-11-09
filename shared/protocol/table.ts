@@ -239,9 +239,6 @@ export interface TableState {
   // seats), while whoever let a better one go by (`waitingOn`, for them; the
   // calls left in `options`) may change their mind.
   secondChance?: { call: Claim["kind"]; by: number[] } | null;
-  // A discard waiting on someone's answer: that it is, for everyone - not who
-  // or what they could call - so a long pause doesn't look like a fault.
-  holding?: boolean;
   // This phone's seat (null for someone watching) and its view of the hand.
   you: number | null;
   view: TableView | null;
