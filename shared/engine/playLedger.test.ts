@@ -131,8 +131,8 @@ describe("a Play game as a Scores game", () => {
   });
 
   it("and with 反雪: the 雙響's loser self-drawing it back", () => {
-    // (Seed 22's 24 hands pay one: the record agrees with the table throughout.)
-    expect(play(24, 22, true).fanXue).toBe(1);
+    // (Seed 6's 24 hands pay one: the record agrees with the table throughout.)
+    expect(play(24, 6, true).fanXue).toBe(1);
   }, 300_000);
 });
 

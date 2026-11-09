@@ -1069,14 +1069,22 @@ function sixteenUnrelatedShanten(tiles: Tile[]): number {
 // Unrelated Tiles. Doesn't account for jokers (callers should check for
 // those separately). Thirteen Orphans (its extra meld makes its distance
 // awkward to count) is exact where it matters - complete, and ready - and
-// not counted further out. `sixteen` false leaves Sixteen Unrelated Tiles out
-// (a bot that wouldn't go for it: see BotProfile.sixteenFrom).
-export function shanten(tiles: Tile[], meldsRequired: number = MELDS_REQUIRED, sixteen = true): number {
+// not counted further out. `routes` picks the special hands counted from any
+// distance (bots choose theirs: see specialRoutes in bots.ts).
+export interface SpecialRoutes {
+  sixteen: boolean;
+  pairs: boolean;
+  orphans: boolean;
+}
+const USUAL_ROUTES: SpecialRoutes = { sixteen: true, pairs: true, orphans: false };
+
+export function shanten(tiles: Tile[], meldsRequired: number = MELDS_REQUIRED, routes: SpecialRoutes = USUAL_ROUTES): number {
   let best = standardShanten(tiles, meldsRequired);
   if (meldsRequired === MELDS_REQUIRED) {
     const kc = kindCounts(tiles);
-    best = Math.min(best, eightPairsShanten(tiles, kc));
-    if (sixteen) best = Math.min(best, sixteenUnrelatedShanten(tiles));
+    if (routes.pairs) best = Math.min(best, eightPairsShanten(tiles, kc));
+    if (routes.sixteen) best = Math.min(best, sixteenUnrelatedShanten(tiles));
+    if (routes.orphans && kc) best = Math.min(best, orphansShanten(kc));
     // (Ready or complete by it needs at least 12 of the 13 orphans in hand.)
     if (kc) {
       let orphans = 0;
@@ -1094,6 +1102,39 @@ export function shanten(tiles: Tile[], meldsRequired: number = MELDS_REQUIRED, s
     }
   }
   return best;
+}
+
+// Thirteen Orphans from any distance, in the same units as shanten: one of
+// each orphan, then the best of the spare tiles toward the pair (a second of
+// any orphan) and the meld.
+function orphansShanten(kc: Uint8Array): number {
+  const spare = kc.slice();
+  let held = 0;
+  for (const k of ORPHAN_INDEXES) {
+    if (!spare[k]) continue;
+    held++;
+    spare[k]--;
+  }
+  const towardMeld = () => {
+    let best = 0;
+    for (let k = 0; k < KINDS; k++) best = Math.max(best, Math.min(3, spare[k]));
+    for (const base of [0, 9, 18]) for (let r = 0; r < 7; r++) best = Math.max(best, (spare[base + r] ? 1 : 0) + (spare[base + r + 1] ? 1 : 0) + (spare[base + r + 2] ? 1 : 0));
+    return best;
+  };
+  let used = towardMeld();
+  for (const k of ORPHAN_INDEXES) {
+    if (!spare[k]) continue;
+    spare[k]--;
+    used = Math.max(used, 1 + towardMeld());
+    spare[k]++;
+  }
+  return 16 - held - used;
+}
+
+// How far a hand is from each special hand (0: ready, -1: complete).
+export function specialDistances(tiles: Tile[]): { sixteen: number; pairs: number; orphans: number } {
+  const kc = kindCounts(tiles);
+  return { sixteen: sixteenUnrelatedShanten(tiles), pairs: eightPairsShanten(tiles, kc), orphans: kc ? orphansShanten(kc) : Infinity };
 }
 
 // Does some drawn kind make it Thirteen Orphans? Counts restored on return.
