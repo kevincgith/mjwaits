@@ -82,3 +82,25 @@ in that file). Confirm the definitions and the text can be made exact:
 - Still open from [docs/scoring-rules.md](docs/scoring-rules.md) ("Assumptions made without
   explicit confirmation"): whether the 三色連刻 / 三色步步高 / 三兄弟 families really never replace one
   another. (二連刻 / 小三連刻 stacking is settled: 連刻 are now tiers.)
+
+## Play: closer to a real table
+
+Ideas only, none started. In the order they'd be worth building: the first two change how you play,
+the rest how it feels. Each one has to work at online tables too, not just against bots.
+
+- **Real table mode.** A table setting. Every discard gets the same short call window (about 1.5
+  seconds), with 上 / 碰 / 槓 / 胡 always on screen, so nothing tells you that you can call: you have
+  to spot it. Hints and wait counts off; a wrong 胡 costs a 詐胡 penalty. It also closes the last
+  tell at online tables: today a discard is held while someone decides, so a long pause says
+  someone has a call. (The "waiting for a player" notice said so outright and was removed for it.)
+  With every discard taking the same time there's no pause to read. The cost is slower hands.
+- **手切 / 摸切.** Show whether a discard came from the hand or was the tile just drawn. It's what
+  experienced players watch at a real table, and it's public, so it's fair to show online.
+- **Blind draw (摸牌).** The drawn tile arrives face down; press and slide a thumb to reveal it.
+- **Arrange your own hand.** Drag tiles to group them, instead of always being auto-sorted.
+- **Wash and build between hands (洗牌).** Tiles mixed with that clatter, then the walls rise,
+  instead of the next hand just appearing.
+- **Draw for seats (抓位).** Everyone picks a face-down wind tile to set seats at the start, and
+  seats change after a full round.
+- **Chips on the felt.** At settlement, chips slide from payer to winner rather than only the
+  numbers changing.

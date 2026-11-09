@@ -1092,15 +1092,15 @@ describe("a second chance", () => {
   const WINS = "46m111222333t456b77z";
   const NONE = "1379m1357t1357b123z";
 
-  it("tells everyone a discard is waiting on someone, but not who", async () => {
+  it("doesn't tell anyone else that a discard is waiting on someone's answer", async () => {
     const { host, other, step } = await claimWindow([WINS, WINS], { secondChance: false });
     host.send({ t: "claim", step, claim: null });
     const held = await host.table((s) => s.waitingOn.length === 0 && s.view?.phase.kind === "claims");
-    expect(held.holding).toBe(true);
+    expect(held).not.toHaveProperty("holding");
+    expect(held.deadline).toBeNull();
     expect(held.options).toBeNull();
     other.send({ t: "claim", step, claim: null });
-    const moved = await host.table((s) => s.view?.phase.kind !== "claims");
-    expect(moved.holding).toBe(false);
+    await host.table((s) => s.view?.phase.kind !== "claims");
   });
 
   it("a pass of a win is asked again once someone else has won - and joining makes it a 雙響", async () => {

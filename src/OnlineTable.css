@@ -1206,23 +1206,6 @@
   opacity: 0.6;
 }
 
-/* Under the far player's tiles: a note, not a warning. */
-.ot-waiting {
-  position: fixed;
-  top: calc(var(--safe-top, env(safe-area-inset-top)) + 4.2rem);
-  left: 50%;
-  z-index: 70;
-  translate: -50% 0;
-  padding: 0.25rem 0.8rem;
-  border-radius: 1rem;
-  background: rgba(20, 15, 10, 0.82);
-  color: #f3e3c0;
-  font-size: 0.8rem;
-  font-weight: 600;
-  white-space: nowrap;
-  pointer-events: none;
-}
-
 .ot-toast {
   position: fixed;
   left: 50%;

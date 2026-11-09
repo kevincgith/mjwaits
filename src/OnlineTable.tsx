@@ -81,26 +81,6 @@ function BotFace() {
   );
 }
 
-// A discard held up by someone's answer, past a normal pause: said, so it
-// doesn't look like a fault. (Not to whoever it's waiting on: they have the
-// buttons. A new decision starts the wait again.)
-const WAITING_NOTICE_MS = 3000;
-function WaitingNotice({ table }: { table: TableState }) {
-  const waiting = !!table.holding && !(table.you !== null && table.waitingOn.includes(table.you));
-  const [shownFor, setShownFor] = useState<number | null>(null);
-  useEffect(() => {
-    if (!waiting) return;
-    const id = window.setTimeout(() => setShownFor(table.step), WAITING_NOTICE_MS);
-    return () => window.clearTimeout(id);
-  }, [waiting, table.step]);
-  if (!waiting || shownFor !== table.step) return null;
-  return (
-    <div className="ot-waiting" role="status">
-      等緊玩家 Waiting for a player…
-    </div>
-  );
-}
-
 // ---- The screen ------------------------------------------------------------------------
 
 export function OnlineTable({ initialCode, onExit }: { initialCode: string | null; onExit: () => void }) {
@@ -313,7 +293,6 @@ export function OnlineTable({ initialCode, onExit }: { initialCode: string | nul
       <>
         <PlayPanel onExit={leave} online={{ table, send, host: you.host, scores, reaction, refused, chat, voice: { ...voiceView, press: () => voice.current?.press(), release: () => voice.current?.release(), toggleMute: (id) => voice.current?.toggleMute(id) } }} />
         {status !== "open" && <div className="ot-status">{status === "closed" ? "Disconnected" : "Reconnecting…"}</div>}
-        {status === "open" && <WaitingNotice table={table} />}
         {toast && (
           <div className="ot-toast" role="status">
             {toast}
