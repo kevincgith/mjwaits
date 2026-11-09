@@ -192,6 +192,9 @@ export interface GameState {
   // The dealer's three dice for this deal (see rollDice); absent when the
   // wall was laid out in advance (the arena's duplicate deals).
   dice?: Dice;
+  // A number 0..1 per seat, drawn at the deal: how a bot feels about a long
+  // shot this hand (see specialRoutes in bots.ts). Never sent to a phone.
+  moods?: number[];
   // What the dice pay before the first discard (圍骰), per seat, and whether
   // the table has already paid it - so a reload can't pay it twice.
   diceBonus?: { name: string; deltas: number[]; paid: boolean };
@@ -542,6 +545,7 @@ export function dealHand(
   };
   const bonus = dice ? diceBonus(dice, opts.dealer) : null;
   if (bonus) s.diceBonus = { ...bonus, paid: false };
+  s.moods = Array.from({ length: SEATS }, () => random());
   // 16 each, in deal order from the dealer; bonus tiles are replaced as they come.
   for (let i = 0; i < SEATS; i++) {
     const seat = (opts.dealer + i) % SEATS;

@@ -31,7 +31,7 @@ import {
   type Player,
   type TurnMove,
 } from "./game";
-import { allTileKinds, shanten as rawShanten, tileCount, tileKey, type Tile } from "./mahjong";
+import { allTileKinds, shanten as rawShanten, specialDistances, tileCount, tileKey, type SpecialRoutes, type Tile } from "./mahjong";
 import { MYSTERY_SPEECH, SPEECH, type Speech } from "./speech";
 
 export interface BotProfile {
@@ -76,12 +76,17 @@ export interface BotProfile {
   // straight after a hand the holder won from it). 1 concedes a 拉 of 30
   // or more; 0 never concedes. Optional, default 0.3.
   surrender?: number;
-  // How many different honours it must already hold before 十六不搭 is a
-  // hand it would go for. The shape needs all seven, and has no second pair:
-  // a hand counted as heading there throws its pairs away. 0 = whatever it
-  // holds; 8 = never. Optional, default 5. Set by character, not evolved: in
-  // the arena no personality's setting cost it more than the noise.
-  sixteenFrom?: number;
+  // The special hands (十六不搭, 十三么, 嚦咕), from how far away. Each hand a
+  // bot draws one mood; it counts a special hand as a route when that mood is
+  // under its chance at the current distance. So the chance rises as the hand
+  // gets closer, and a bot can come round to one, but won't flip back and
+  // forth. `longShot`: the chance one tile from ready; `longShotFade`: what
+  // each tile further multiplies that by; `longShotReach`: beyond this many
+  // tiles, never. Ready, it always counts. Set by character, not evolved: in
+  // the arena they made no personality clearly weaker.
+  longShot?: number;
+  longShotFade?: number;
+  longShotReach?: number;
   // ---- Human feel ----
   // Softmax temperature over near-equal choices (0 = always the top pick).
   noise: number;
@@ -114,7 +119,9 @@ export const BOT_PROFILES: BotProfile[] = [
     slip: 0,
     focus: 0,
     surrender: 0.5,
-    sixteenFrom: 6,
+    longShot: 0.9,
+    longShotFade: 0.55,
+    longShotReach: 3,
   },
   {
     id: "veteran",
@@ -132,7 +139,9 @@ export const BOT_PROFILES: BotProfile[] = [
     slip: 0.003,
     focus: 0,
     surrender: 0.5,
-    sixteenFrom: 5,
+    longShot: 0.7,
+    longShotFade: 0.5,
+    longShotReach: 3,
   },
   {
     id: "speedster",
@@ -151,7 +160,9 @@ export const BOT_PROFILES: BotProfile[] = [
     memory: 0.7,
     focus: 0.324,
     surrender: 0.3,
-    sixteenFrom: 6,
+    longShot: 0.5,
+    longShotFade: 0.4,
+    longShotReach: 2,
   },
   {
     id: "hunter",
@@ -168,7 +179,9 @@ export const BOT_PROFILES: BotProfile[] = [
     noise: 0.06,
     slip: 0.02,
     surrender: 0.4,
-    sixteenFrom: 4,
+    longShot: 0.95,
+    longShotFade: 0.75,
+    longShotReach: 4,
   },
   {
     id: "wall",
@@ -186,7 +199,9 @@ export const BOT_PROFILES: BotProfile[] = [
     slip: 0.068,
     focus: 0.876,
     surrender: 0.9,
-    sixteenFrom: 4,
+    longShot: 0.7,
+    longShotFade: 0.5,
+    longShotReach: 3,
   },
   {
     id: "gambler",
@@ -205,7 +220,9 @@ export const BOT_PROFILES: BotProfile[] = [
     memory: 0.5,
     focus: 0,
     surrender: 0,
-    sixteenFrom: 3,
+    longShot: 1,
+    longShotFade: 0.85,
+    longShotReach: 4,
   },
   {
     id: "casual",
@@ -224,7 +241,9 @@ export const BOT_PROFILES: BotProfile[] = [
     memory: 0.3,
     focus: 0.108,
     surrender: 0.6,
-    sixteenFrom: 6,
+    longShot: 0.5,
+    longShotFade: 0.5,
+    longShotReach: 2,
   },
 ];
 
@@ -281,11 +300,11 @@ function handKey(tiles: Tile[], melds: number): string {
   }
   return melds + "|" + String.fromCharCode.apply(null, handCounts as unknown as number[]);
 }
-function shanten(tiles: Tile[], melds: number, sixteen = true): number {
-  const key = sixteen ? handKey(tiles, melds) : `${handKey(tiles, melds)}-`;
+function shanten(tiles: Tile[], melds: number, routes: SpecialRoutes = USUAL): number {
+  const key = routes === USUAL ? handKey(tiles, melds) : `${handKey(tiles, melds)}:${routes.sixteen ? 1 : 0}${routes.pairs ? 1 : 0}${routes.orphans ? 1 : 0}`;
   let v = shantenCache.get(key);
   if (v === undefined) {
-    v = rawShanten(tiles, melds, sixteen);
+    v = rawShanten(tiles, melds, routes);
     if (shantenCache.size > 400_000) shantenCache.clear();
     shantenCache.set(key, v);
   }
@@ -293,6 +312,7 @@ function shanten(tiles: Tile[], melds: number, sixteen = true): number {
 }
 
 const ALL_KINDS = allTileKinds();
+const USUAL: SpecialRoutes = { sixteen: true, pairs: true, orphans: false };
 
 function removeTiles(hand: Tile[], tiles: Tile[]): Tile[] {
   const rest = hand.slice();
@@ -314,23 +334,40 @@ function improvers(hand: Tile[]): Tile[] {
   return ALL_KINDS.filter((k) => keys.has(tileKey(k)));
 }
 
-function acceptance(rest: Tile[], melds: number, sh: number, unseen: Map<string, number>, sixteen: boolean): number {
+function acceptance(rest: Tile[], melds: number, sh: number, unseen: Map<string, number>, routes: SpecialRoutes, anyKind: boolean): number {
   let n = 0;
-  for (const k of improvers(rest)) {
+  // (A special hand can want a kind nothing in the hand is near.)
+  for (const k of anyKind ? ALL_KINDS : improvers(rest)) {
     const left = unseen.get(tileKey(k)) ?? 0;
-    if (left > 0 && shanten([...rest, k], melds, sixteen) < sh) n += left;
+    if (left > 0 && shanten([...rest, k], melds, routes) < sh) n += left;
   }
   return n;
 }
 
-// Would this bot go for 十六不搭 with this hand? Not short of its own number
-// of honours (see BotProfile.sixteenFrom), nor once every copy of an honour
-// it still needs is gone, as far as it can tell.
-export function goesForSixteen(hand: Tile[], profile: BotProfile, unseen: Map<string, number>): boolean {
-  const held = new Set(hand.filter((t) => t.suit === "z").map((t) => t.rank));
-  if (held.size < (profile.sixteenFrom ?? 5)) return false;
-  for (let rank = 1; rank <= 7; rank++) if (!held.has(rank) && (unseen.get(`z${rank}`) ?? 0) <= 0) return false;
-  return true;
+// A bot's chance of counting a special hand this many tiles from ready.
+export function longShotChance(profile: BotProfile, away: number): number {
+  if (away <= 0) return 1;
+  if (away > (profile.longShotReach ?? 2)) return 0;
+  return (profile.longShot ?? 0.6) * (profile.longShotFade ?? 0.5) ** (away - 1);
+}
+
+const NO_ROUTES: SpecialRoutes = { sixteen: false, pairs: false, orphans: false };
+const ORPHANS: Tile[] = [...(["m", "t", "b"] as const).flatMap((suit) => [1, 9].map((rank) => ({ suit, rank }))), ...[1, 2, 3, 4, 5, 6, 7].map((rank) => ({ suit: "z" as const, rank }))];
+const HONOURS = ORPHANS.filter((t) => t.suit === "z");
+
+// The special hands this bot is playing toward right now. A hand needing a
+// kind with no copies left, as far as it can tell, is no route at all.
+export function specialRoutes(s: GameState, seat: number, profile: BotProfile, unseen: Map<string, number>): SpecialRoutes {
+  const p = s.players[seat];
+  if (p.melds.length) return NO_ROUTES;
+  const mood = s.moods?.[seat] ?? 0.5;
+  const away = specialDistances(p.hand);
+  const possible = (kinds: Tile[]) => kinds.every((k) => tileCount(p.hand, k) > 0 || (unseen.get(tileKey(k)) ?? 0) > 0);
+  return {
+    sixteen: mood < longShotChance(profile, away.sixteen) && possible(HONOURS),
+    pairs: mood < longShotChance(profile, away.pairs),
+    orphans: mood < longShotChance(profile, away.orphans) && possible(ORPHANS),
+  };
 }
 
 const isValueHonor = (t: Tile, s: GameState, seat: number) =>
@@ -603,7 +640,8 @@ export function rateDiscardsFor(s: GameState, seat: number, profile: BotProfile)
   const unseen = unseenCounts(view, seat);
   let unseenTotal = 0;
   for (const v of unseen.values()) unseenTotal += Math.max(0, v);
-  const sixteen = goesForSixteen(p.hand, profile, unseen);
+  const routes = specialRoutes(s, seat, profile, unseen);
+  const anyKind = routes.sixteen || routes.orphans;
   const forbidden = s.phase.kind === "turn" && s.phase.seat === seat ? forbiddenDiscards(s) : [];
   const seen = new Set<string>();
   const out: (DiscardChoice & { build: number })[] = [];
@@ -611,8 +649,8 @@ export function rateDiscardsFor(s: GameState, seat: number, profile: BotProfile)
     if (seen.has(tileKey(t)) || forbidden.some((f) => sameTile(f, t))) continue;
     seen.add(tileKey(t));
     const rest = removeTiles(p.hand, [t]);
-    const sh = shanten(rest, melds, sixteen);
-    const acc = acceptance(rest, melds, sh, unseen, sixteen);
+    const sh = shanten(rest, melds, routes);
+    const acc = acceptance(rest, melds, sh, unseen, routes, anyKind);
     const value = handValue(s, seat, rest, p);
     const d = danger(s, seat, t, profile.read, unseen, profile.focus, view, profile.pullSense ?? 1);
     // In shanten steps: one step = 1.
@@ -708,7 +746,7 @@ export function botClaimFor(s: GameState, seat: number, profile: BotProfile, rng
     return { kind: "win" };
   }
   const melds = meldsNeeded(p);
-  const now = shanten(p.hand, melds, goesForSixteen(p.hand, profile, unseenCounts(rememberedView(s, seat, profile.memory), seat)));
+  const now = shanten(p.hand, melds, specialRoutes(s, seat, profile, unseenCounts(rememberedView(s, seat, profile.memory), seat)));
   if (folding(s, seat, now, profile)) return null;
   const valueNow = handValue(s, seat, p.hand, p);
   const concealed = p.melds.every((m) => m.concealed);
