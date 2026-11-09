@@ -107,27 +107,27 @@ export interface Layout {
   middle: { x: number; y: number };
 }
 
-const UNSEEN = "z7";
-const BACK = "back";
-const LIT: [number, number] = [0, 0.14];
+export const UNSEEN = "z7";
+export const BACK = "back";
+export const LIT: [number, number] = [0, 0.14];
 // Turned a quarter, a tile's long sides face the way its ends did.
-const TURNED: [number, number] = [0.14, 0];
+export const TURNED: [number, number] = [0.14, 0];
 
 export const faceOf = (t: Tile): string => (t.suit === "j" ? "joker" : `${t.suit}${t.rank}`);
 const bonusFace = (b: BonusTile): string => `${b.kind}${b.rank}`;
 
 // A block lying face up with its centre at (x, y), `em` its tile size,
 // turned `rot` degrees (as CSS's rotate).
-const lying = (x: number, y: number, em: number, rot = 0, z = 0): Mat => chain(translate(x, y, z), rotateZ(rot), scale(em));
+export const lying = (x: number, y: number, em: number, rot = 0, z = 0): Mat => chain(translate(x, y, z), rotateZ(rot), scale(em));
 // Face down: turned over where it lies.
-const lyingDown = (x: number, y: number, em: number, rot = 0, z = 0): Mat =>
+export const lyingDown = (x: number, y: number, em: number, rot = 0, z = 0): Mat =>
   chain(translate(x, y, z), rotateZ(rot), translate(0, 0, THICK * em), rotateY(180), scale(em));
 
 // A tile's shadow on the felt (its box-shadow: 0 0.03em 0.28em, round its
 // 0.78em x 1em box) - the quad covers the box and the blur round it.
 export const SHADOW_W = 0.78 + 0.8;
 export const SHADOW_H = 1 + 0.8;
-const shadowAt = (x: number, y: number, em: number, rot = 0): Quad => ({
+export const shadowAt = (x: number, y: number, em: number, rot = 0): Quad => ({
   kind: "shadow",
   m: chain(translate(x, y, 0.4), rotateZ(rot), translate(0, 0.03 * em, 0), scale(SHADOW_W * em, SHADOW_H * em, 1)),
 });
@@ -155,24 +155,24 @@ function meldSlots(m: GameMeld, hideConcealed: boolean, inRow: boolean): Slot[] 
 // A group of tiles side by side (a meld, the bonus tiles), as one box in
 // its row: its tiles at `pitch` apart (0.72em - they butt up), padded
 // 0.04em round. `along`: its length; `across`: its depth.
-interface Group {
+export interface Group {
   slots: Slot[];
   em: number; // the tiles' size
   pad: number;
   along: number;
   across: number;
 }
-const meldGroup = (m: GameMeld, hide: boolean, inRow: boolean, em: number): Group => {
+export const meldGroup = (m: GameMeld, hide: boolean, inRow: boolean, em: number): Group => {
   const slots = meldSlots(m, hide, inRow);
   return { slots, em, pad: 0.04 * em, along: slots.length * 0.72 * em + 0.08 * em, across: 1.08 * em };
 };
 // Bonus tiles four fifths the size, in a group padded as a meld (by the meld's em).
-const flowerGroup = (fs: BonusTile[], em: number): Group | null =>
+export const flowerGroup = (fs: BonusTile[], em: number): Group | null =>
   fs.length ? { slots: sortBonusTiles(fs).map((f) => ({ face: bonusFace(f) })), em: em * 0.8, pad: 0.04 * em, along: fs.length * 0.72 * 0.8 * em + 0.08 * em, across: 0.8 * em + 0.08 * em } : null;
 
 // Lays a group's tiles from one end. `at(k)`: the centre of the k-th slot
 // from where the row starts. `rot`: how the tiles turn to face their owner.
-function placeGroup(g: Group, at: (k: number) => [number, number], rot: number, shade: [number, number], pieces: Piece[], quads: Quad[], tableZ = true) {
+export function placeGroup(g: Group, at: (k: number) => [number, number], rot: number, shade: [number, number], pieces: Piece[], quads: Quad[], tableZ = true) {
   g.slots.forEach((s, k) => {
     const [x, y] = at(k);
     pieces.push({ face: s.face ?? BACK, m: s.face ? lying(x, y, g.em, rot) : lyingDown(x, y, g.em, rot), shade, tint: 1 });
@@ -189,7 +189,7 @@ function placeGroup(g: Group, at: (k: number) => [number, number], rot: number, 
 // down; then sorted from its player's left, a winning tile at their right.
 // (`reversed`: a wall laid out from its player's right - across's and the
 // right seat's - so its faces come the other way round, the winning tile first.)
-function wallFaces(w: GLWall, reversed = false): { faces: string[]; win: number } {
+export function wallFaces(w: GLWall, reversed = false): { faces: string[]; win: number } {
   if (!(w.down && w.tiles)) return { faces: Array<string>(w.count).fill(UNSEEN), win: -1 };
   const sorted = sortTiles(w.tiles);
   const at = w.winningTile ? sorted.findIndex((t) => sameTile(t, w.winningTile!)) : -1;

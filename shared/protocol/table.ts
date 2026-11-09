@@ -86,6 +86,9 @@ export const TableSettingsSchema = object({
   fanXue: optional(bool), // 反雪 (absent: on - see GameState.noFanXue)
   baoZimo: optional(bool), // 包自摸 (absent: on - see GameState.noBaoZimo)
   secondChance: optional(bool), // a second chance on a call let go by (absent: on - see GameState.noSecondChance)
+  // Whoever's watching, not seated, is sent every hand (absent: off - they see
+  // only what's face up).
+  observers: optional(bool),
 });
 export type TableSettings = Infer<typeof TableSettingsSchema>;
 
@@ -94,7 +97,8 @@ export const DEFAULT_TABLE_SETTINGS: TableSettings = { multiWin: true, timer: 20
 
 const TableClientSchema = tagged({
   // First on every connection; `token` comes back as the same person (and seat).
-  hello: object({ t: literal("hello"), v: int(0, 1_000_000), name: str(NICKNAME_RAW_MAX), token: optional(str(32, TOKEN_PATTERN)), rid }),
+  // `watch`: joining to watch - not to be given a free seat.
+  hello: object({ t: literal("hello"), v: int(0, 1_000_000), name: str(NICKNAME_RAW_MAX), token: optional(str(32, TOKEN_PATTERN)), watch: optional(bool), rid }),
   // In the lobby.
   sit: object({ t: literal("sit"), seat, rid }),
   stand: object({ t: literal("stand"), rid }),

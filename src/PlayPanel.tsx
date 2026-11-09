@@ -124,7 +124,8 @@ import { ReviewSheet, type Decision } from "./PlayReview";
 import { RecordSheet } from "./PlayRecord";
 import { isMuted, play as playSound, setMuted, wakeAudio, type Sound } from "./lib/sound";
 import { addHand, loadRecord, saveRecord, type Opponent } from "./lib/playRecord";
-import type { GLFlight, GLMine, GLPile, GLSwapRow, GLTableView, GLWall } from "./play3d/types";
+import { CORNER_TILT, type GLFlight, type GLMine, type GLPile, type GLSwapRow, type GLTableView, type GLWall } from "./play3d/types";
+import type { Observe, ObserveMode } from "./lib/observer";
 import { giverOrder, swapSlots } from "./play3d/swapOrder";
 import { loadLearnedModel, type LearnedModel } from "./lib/ml/browser";
 import { learnedClaim, learnedTurnMove, type LearnedBot } from "./lib/ml/policy";
@@ -918,6 +919,43 @@ function OpponentsSheet({
 // ---- The table ------------------------------------------------------------
 
 // Playing at an online table: what the server sent, and how to answer it.
+const OBSERVE_MODES: { mode: ObserveMode; zh: string; en: string }[] = [
+  { mode: "pov", zh: "一家", en: "One seat" },
+  { mode: "corner", zh: "斜角", en: "Corner" },
+  { mode: "god", zh: "全知", en: "All hands" },
+];
+
+// An observer's choice of view: from one seat, from the corner between two, or
+// every hand open - and whose seat is at the bottom.
+function ObservePicker({ observe, names }: { observe: NonNullable<OnlinePlay["observe"]>; names: string[] }) {
+  const { mode, seat, set, open, setOpen } = observe;
+  return (
+    <>
+      <button type="button" className={`play-icon-button${open ? " is-on" : ""}`} onClick={() => setOpen(!open)} aria-label="Change your view" aria-expanded={open} title="觀戰 - change your view">
+        🎥
+      </button>
+      {open && (
+        <div className="play-observe" role="menu">
+          <div className="play-observe-row">
+            {OBSERVE_MODES.map((m) => (
+              <button key={m.mode} type="button" role="menuitemradio" aria-checked={mode === m.mode} className={mode === m.mode ? "is-on" : undefined} onClick={() => set({ mode: m.mode, seat })}>
+                <b>{m.zh}</b> {m.en}
+              </button>
+            ))}
+          </div>
+          <div className="play-observe-row">
+            {names.map((name, i) => (
+              <button key={i} type="button" role="menuitemradio" aria-checked={seat === i} className={seat === i ? "is-on" : undefined} onClick={() => set({ mode, seat: i })}>
+                {mode === "corner" ? `${name} + ${names[(i + 1) % 4]}` : name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 export interface OnlinePlay {
   table: TableState;
   // The last quick reaction someone at the table sent (a new id each time).
@@ -932,6 +970,8 @@ export interface OnlinePlay {
   host: boolean;
   voice: OnlineVoice;
   chat: OnlineChat;
+  // Watching a table that shows its observers everything: the view chosen.
+  observe?: Observe & { set: (o: Observe) => void; open: boolean; setOpen: (open: boolean) => void };
 }
 
 // The table's walkie-talkie (lib/tableVoice.ts).
@@ -1030,6 +1070,10 @@ export function PlayPanel({
   const totals = online && net ? [0, 1, 2, 3].map((i) => online.table.totals[net.toTable(i)]) : localTotals;
   // Online, someone watching sits in seat 0's place but has no hand to play.
   const seated = !online || online.table.you !== null;
+  // An observer's view of the table, and whether the bottom seat's tiles are theirs to see.
+  const watch = online?.observe ?? null;
+  const corner = watch?.mode === "corner";
+  const handSeen = seated || !!watch;
   // Online, whether the table is waiting on you (it isn't once you've
   // answered, or while it's playing for you).
   const waitedOn = !online || (online.table.you !== null && online.table.waitingOn.includes(online.table.you));
@@ -1377,6 +1421,14 @@ export function PlayPanel({
       const r = el.getBoundingClientRect();
       return turned.matches ? -r.right : r.top;
     };
+    // The corner camera: a square table, as big as fits turned 45deg and laid back.
+    if (corner) {
+      const fit = () => felt.style.setProperty("--corner-side", `${Math.round(Math.min(stage.clientWidth * 0.76, stage.clientHeight * 1.36))}px`);
+      fit();
+      const sized = new ResizeObserver(fit);
+      sized.observe(stage);
+      return () => sized.disconnect();
+    }
     const fitDepth = () => {
       felt.style.height = "";
       const limit = topOf(stage) + parseFloat(getComputedStyle(stage).paddingTop);
@@ -2289,9 +2341,9 @@ export function PlayPanel({
       const givers = [...new Set(theirs.map((f) => f.g))];
       theirs.forEach((f) => {
         const real = realOf(f.g, f.i);
-        const tile = seated && (taker === HUMAN || f.g === HUMAN) && !back(real) ? real : null;
+        const tile = handSeen && (taker === HUMAN || f.g === HUMAN) && !back(real) ? real : null;
         // Its pile showed its back (anyone's but your own standing one): face up, it turns over on the way.
-        const shownFace = f.g === HUMAN && seated;
+        const shownFace = f.g === HUMAN && handSeen;
         next.push({
           id: now + next.length,
           to: taker,
@@ -2450,7 +2502,7 @@ export function PlayPanel({
   }, [refused?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   // Your drawn tile, set apart on your turn - online too while the table
   // plays it for you (自動), when it isn't waiting on you.
-  const drawn = seated && game.phase.kind === "turn" && game.phase.seat === HUMAN && !swapSettling ? game.phase.drawn : null;
+  const drawn = handSeen && game.phase.kind === "turn" && game.phase.seat === HUMAN && !swapSettling ? game.phase.drawn : null;
   const forbidden = myTurn ? forbiddenDiscards(game) : [];
   // Tiles you can't throw right now: 食替, a locked 叮 hand's anything-but-
   // the-draw, and, with 叮 armed, anything that wouldn't leave you ready.
@@ -3196,18 +3248,21 @@ export function PlayPanel({
   const glWall = (seat: number): GLWall => {
     const p = game.players[seat];
     const hidden = p.hand.some((t) => t === BLANK);
-    const down = over && !hidden;
+    // (God mode: every hand lies open all along - nothing to tip over.)
+    const god = watch?.mode === "god";
+    const down = (over || god) && !hidden;
     const choosing = online?.table.settings.reveal === false;
-    const topple = wonWith(seat) ? TOPPLE_WINNER : result?.winner === null || choosing ? TOPPLE_DRAW : TOPPLE_OTHERS;
+    const topple = god ? { at: 0, step: 0, dur: 0 } : wonWith(seat) ? TOPPLE_WINNER : result?.winner === null || choosing ? TOPPLE_DRAW : TOPPLE_OTHERS;
     return {
       topple,
       count: over ? p.hand.length : p.hand.length - incoming(seat).length - (heldDraw(seat) ? 1 : 0),
-      tiles: down ? p.hand : null,
+      tiles: down || (corner && !hidden) ? p.hand : null,
+      drawnTile: game.phase.kind === "turn" && game.phase.seat === seat ? game.phase.drawn : null,
       drew: !over && drewSeat === seat && !swapSettling,
       down,
       winningTile: wonWith(seat),
       melds: p.melds,
-      hideConcealed: !over || hidden,
+      hideConcealed: hidden || (!over && !watch),
       flowers: p.flowers,
       wallGrow: SIDES[seat] === "top" ? 1 : sideWallGrow(p.melds.length),
     };
@@ -3227,7 +3282,7 @@ export function PlayPanel({
     // draws it flying - drawn in its pile too it showed twice for a frame
     // or two, till the flight was marked off.)
     const held = new Map(flights.filter((f) => f.seat === seat && !flown.has(f.id) && f.row?.place === undefined).map((f) => [f.place, f.tile]));
-    const standing = seat === HUMAN && seated;
+    const standing = seat === HUMAN && handSeen && !corner;
     return {
       slots: pile.map((slot, i) => {
         const t = slot ?? (held.has(i) ? (held.get(i) ?? "back") : null);
@@ -3275,7 +3330,7 @@ export function PlayPanel({
         enabled: (myTurn || swapGiving) && !isForbidden(t) && !autoplay,
       })),
       melds: me.melds,
-      hideConcealed: !seated,
+      hideConcealed: !handSeen,
       flowers: me.flowers,
       toppled: iWon,
       drawKey: String(liveTilesLeft(game)),
@@ -3287,6 +3342,7 @@ export function PlayPanel({
     piles: showPiles ? { bottom: glPile(HUMAN), right: glPile(1), top: glPile(2), left: glPile(3) } : null,
     rows: { bottom: glRow(HUMAN), right: glRow(1), top: glRow(2), left: glRow(3) },
     flights: glFlights,
+    ...(corner ? { corner: { bottom: glWall(HUMAN) } } : {}),
   };
 
   // Your ways to make a run with the discard - each run once (with only one,
@@ -3298,7 +3354,7 @@ export function PlayPanel({
 
   return (
     <div className={`play-screen${swapGiving ? " is-sweeping" : ""}`}>
-      <div className="play-table" ref={tableRef}>
+      <div className={`play-table${corner ? " is-corner" : ""}`} ref={tableRef}>
         <div className="play-corner">
           <button type="button" className="play-icon-button" onClick={onExit} aria-label="Leave the table" title="Leave">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
@@ -3324,6 +3380,7 @@ export function PlayPanel({
           )}
           {online && seated && online.table.you !== null && <TalkButton voice={online.voice} seat={online.table.you} />}
           {online && <TableChat chat={online.chat} onOpen={() => setReacting(false)} />}
+          {watch && online && <ObservePicker observe={watch} names={online.table.seats.map((s) => s?.name ?? "?")} />}
           {online && online.table.watching > 0 && (
             <span className="play-watching" title={`${online.table.watching} watching`}>
               👁 {online.table.watching}
@@ -3542,11 +3599,12 @@ export function PlayPanel({
         {badge(2)}
         {badge(3)}
         {badge(1)}
+        {corner && badge(HUMAN)}
 
         {/* The table itself, tipped away from you in perspective; your hand
             and the bar stay flat in front of it. */}
-        <div className="play-stage">
-          <div className="play-felt is-gl" ref={feltRef}>
+        <div className={`play-stage${corner ? " is-corner" : ""}`}>
+          <div className={`play-felt is-gl${corner ? " is-corner" : ""}`} ref={feltRef} style={corner ? ({ "--corner-tilt": `${CORNER_TILT}deg` } as CSSProperties) : undefined}>
             <span className={`play-first-dealer at-${SIDES[firstDealer]}`} title={`起莊: ${nameOf(firstDealer)}`} aria-label={`起莊 ${nameOf(firstDealer)}`} />
             {/* The WebGL table: just the compass on the page's felt, where its layout puts the middle. */}
             <div className="play-middle" ref={middleRef}>
@@ -3717,7 +3775,7 @@ export function PlayPanel({
         <div className="play-bar">
           <span className={`play-bar-you${activeSeat === HUMAN ? " is-active" : ""}`}>
             <span className="play-badge-wind">{WIND_CHARS[seatWind(HUMAN, game.dealer)]}</span>
-            You
+            {seated ? "You" : nameOf(HUMAN)}
             {talkChip(HUMAN)}
             {game.dealer === HUMAN && dealerChip}
             {me.riichi && <span className="play-riichi">叮</span>}

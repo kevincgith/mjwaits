@@ -10,6 +10,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { Engine, type Frame } from "./engine";
 import { bubbleBox, feltToHand, layoutTable, SWAP_ROW, type Dims } from "./layout";
+import { layoutCorner } from "./corner";
 import { sharedAtlas, type Atlas } from "./textures";
 import type { GLSide, GLTableView } from "./types";
 
@@ -215,7 +216,7 @@ export default function TableGL({
     }
     // (In 換牌 your row keeps the widest it's been, so it never re-centres.)
     dims.current.handMinWidth = viewRef.current.mine.sliding ? keptWidth.current : 0;
-    const layout = layoutTable(viewRef.current, dims.current);
+    const layout = viewRef.current.corner ? layoutCorner(viewRef.current, dims.current) : layoutTable(viewRef.current, dims.current);
     keptWidth.current = viewRef.current.mine.sliding ? Math.max(keptWidth.current, layout.hand.width) : 0;
     middle.style.left = `${layout.middle.x}px`;
     middle.style.top = `${layout.middle.y}px`;

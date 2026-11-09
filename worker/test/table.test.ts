@@ -439,6 +439,87 @@ describe("playing", () => {
   });
 });
 
+describe("observers", () => {
+  const seatBots = async (host: Phone) => {
+    for (let seat = 1; seat < 4; seat++) host.send({ t: "setBot", seat, bot: "casual" });
+    await host.table((s) => s.seats.every(Boolean));
+  };
+  const allOn = (settings: TableState["settings"]) => ({ t: "setup", settings: { ...settings, observers: true, timer: 0, swapRules: undefined } });
+
+  it("sends a watcher every hand only when the table allows it; the players still see only their own", async () => {
+    const code = await createTable();
+    const { p: host } = await join(code, "Kevin");
+    await seatBots(host);
+    const { p: off } = await join(code, "Dan");
+    host.send({ t: "start" });
+    await off.table((s) => !!s.view);
+    expect(off.latest!.view!.players.every((pl) => pl.hand === null)).toBe(true);
+
+    const on = await createTable();
+    const { p: host2 } = await join(on, "Kevin");
+    await seatBots(host2);
+    host2.send(allOn(host2.latest!.settings));
+    await host2.table((s) => !!s.settings.observers);
+    const { p: dan } = await join(on, "Dan");
+    host2.send({ t: "start" });
+    const seen = await dan.table((s) => !!s.view);
+    expect(seen.you).toBeNull();
+    expect(seen.options).toBeNull();
+    expect(seen.view!.players.every((pl) => pl.hand !== null)).toBe(true);
+    const played = await host2.table((s) => !!s.view);
+    expect(played.view!.players.filter((pl) => pl.hand !== null)).toHaveLength(1);
+    expectNoLeaks(host2.states);
+    dan.send({ t: "move", step: seen.step, move: { kind: "selfDraw" } });
+    expect((await dan.error()).code).toBe("notSeated");
+  });
+
+  it("joins to watch without taking a free seat", async () => {
+    const code = await createTable();
+    const { p: host } = await join(code, "Kevin");
+    const res = await SELF.fetch(`${BASE}/tables/${code}/ws`, { headers: { Upgrade: "websocket", Origin: ORIGIN } });
+    const dan = new Phone(res.webSocket!);
+    dan.send({ t: "hello", v: PROTOCOL_VERSION, name: "Dan", watch: true });
+    await dan.next("welcome");
+    await dan.table((s) => s.watching === 1);
+    expect(dan.latest!.you).toBeNull();
+    expect(dan.latest!.seats.filter(Boolean)).toHaveLength(1);
+    expect(host.errors).toEqual([]);
+  });
+
+  it("lets everyone hear an observer's chat during a hand, and keeps it in the chat log", async () => {
+    const code = await createTable();
+    const { p: host } = await join(code, "Kevin");
+    await seatBots(host);
+    host.send(allOn(host.latest!.settings));
+    await host.table((s) => !!s.settings.observers);
+    const { p: dan } = await join(code, "Dan");
+    host.send({ t: "start" });
+    await dan.table((s) => !!s.view);
+    dan.send({ t: "chat", text: "nice hand" });
+    expect((await host.next("chat")).m.text).toBe("nice hand");
+    // Back on a new connection: it's in the seat's chat log too.
+    host.ws.close();
+    const back = await SELF.fetch(`${BASE}/tables/${code}/ws`, { headers: { Upgrade: "websocket", Origin: ORIGIN } });
+    const again = new Phone(back.webSocket!);
+    again.send({ t: "hello", v: PROTOCOL_VERSION, name: "Kevin", token: host.token });
+    expect((await again.next("chatLog")).messages.map((m) => m.text)).toEqual(["nice hand"]);
+  });
+
+  it("plays on a table of bots while an observer watches, and stops when they've gone", async () => {
+    const code = await createTable();
+    const { p: host } = await join(code, "Kevin");
+    host.send({ t: "stand" });
+    await host.table((s) => s.seats.every((x) => x === null));
+    for (let seat = 0; seat < 4; seat++) host.send({ t: "setBot", seat, bot: "casual" });
+    await host.table((s) => s.seats.every(Boolean));
+    host.send(allOn(host.latest!.settings));
+    await host.table((s) => !!s.settings.observers);
+    host.send({ t: "start" });
+    const first = await host.table((s) => !!s.view);
+    await host.table((s) => (s.view?.discardsMade ?? 0) > (first.view?.discardsMade ?? 0), 10_000);
+  });
+});
+
 describe("timers", () => {
   const state = (code: string) =>
     runInDurableObject(stubFor(code), (_t: Table, st) => JSON.parse(st.storage.sql.exec<{ value: string }>("SELECT value FROM meta WHERE key = 'state'").one().value));

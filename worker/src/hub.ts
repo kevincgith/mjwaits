@@ -79,6 +79,7 @@ export interface Hello {
   v: number;
   name: string;
   token?: string;
+  watch?: boolean; // (a table) joining to watch, not to be given a free seat
   rid?: string;
 }
 
@@ -138,7 +139,7 @@ export abstract class Hub<Msg extends { t: string; rid?: string }> extends Durab
     return true;
   }
   // A person's last connection opened or closed.
-  protected onArrive(_personId: string): void {}
+  protected onArrive(_personId: string, _watch: boolean): void {}
   protected onLeave(_personId: string): void {}
   // The alarm went off: do what's due, and say when to wake next (null: no
   // timer of the room type's own is pending). Expiry is handled here.
@@ -393,7 +394,7 @@ export abstract class Hub<Msg extends { t: string; rid?: string }> extends Durab
     else this.passHost(Date.now());
     this.send(ws, this.welcome(id, token, msg.rid));
     this.onWelcomed(ws);
-    if (first) this.onArrive(id);
+    if (first) this.onArrive(id, msg.watch === true);
     this.changed();
     await this.wakeAt(Date.now() + SWEEP_MS);
   }

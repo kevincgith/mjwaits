@@ -16059,3 +16059,113 @@ button.sc-stat:active {
     padding-block: 0.45rem;
   }
 }
+
+/* ---- An observer's view: which, and the corner camera ----
+   The corner camera turns the whole table 45deg and lays it back, so the two
+   near seats' hands face the viewer (see play3d/corner.ts); the side, near and
+   far seats' name cards go to the screen's four corners. */
+.play-observe {
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  width: max-content;
+  max-width: min(32rem, calc(100 * var(--vw) - 2rem));
+  padding: 0.35rem;
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-float);
+}
+
+.play-observe-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.play-observe button {
+  min-height: 2.2rem;
+  padding: 0 0.7rem;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.play-observe button.is-on {
+  background: var(--play-gold);
+  color: var(--play-ink-on-gold);
+}
+
+.play-stage.is-corner {
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  /* Seen from further off than the usual table: its near corner comes a long way toward you. */
+  perspective: 2600px;
+  perspective-origin: 50% 50%;
+}
+
+.play-felt.is-corner {
+  flex: none;
+  width: var(--corner-side);
+  height: var(--corner-side);
+  margin: 0;
+  padding: 0;
+  border-radius: 1.4rem;
+  transform: rotateX(var(--corner-tilt)) rotateZ(45deg);
+  transform-origin: 50% 50%;
+}
+
+/* No row of your own: the bar and the table get the room. */
+.play-table.is-corner .play-me {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 2.6rem;
+  padding: 0;
+  pointer-events: none;
+}
+
+.play-table.is-corner .play-calls button {
+  pointer-events: auto;
+}
+
+.play-table.is-corner .play-badge.at-top,
+.play-table.is-corner .play-badge.at-left,
+.play-table.is-corner .play-badge.at-right,
+.play-table.is-corner .play-badge.at-bottom {
+  position: absolute;
+  z-index: 4;
+  top: auto;
+  left: auto;
+  right: auto;
+  bottom: auto;
+  translate: none;
+  background: rgba(10, 8, 6, 0.62);
+}
+
+.play-table.is-corner .play-badge.at-left {
+  top: 3.2rem;
+  left: 7%;
+}
+
+.play-table.is-corner .play-badge.at-top {
+  top: 3.2rem;
+  right: 7%;
+}
+
+.play-table.is-corner .play-badge.at-bottom {
+  bottom: 3.6rem;
+  left: 3%;
+}
+
+.play-table.is-corner .play-badge.at-right {
+  bottom: 3.6rem;
+  right: 3%;
+}
