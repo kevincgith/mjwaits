@@ -1,7 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { applyTurnMove, botTurnMove, dealHand } from "@mjwaits/shared/engine/game";
 import { viewFor } from "@mjwaits/shared/engine/view";
-import { observedView, seatsSeen } from "./observer";
+import { loadObserve, observedView, saveObserve, seatsSeen, wallCounts } from "./observer";
 import { seatState } from "./seatState";
 
 // A hand a few turns in, as the server sends it to an observer.
@@ -37,5 +37,35 @@ describe("what an observer's view shows", () => {
     const god = observedView(all, { mode: "god", seat: 2 });
     expect(god.players.every((p) => p.hand !== null)).toBe(true);
     expect(seatState(god).toTable(0)).toBe(2);
+  });
+});
+
+describe("an observer's tile count", () => {
+  it("counts only what's in no one's hand, with every hand open", () => {
+    const s = table();
+    const left = [...wallCounts(s).values()].reduce((a, b) => a + b, 0);
+    const out = s.players.reduce((n, p) => n + p.hand.length + p.discards.length + p.melds.reduce((m, x) => m + x.tiles.length, 0), 0);
+    expect(left).toBe(136 - out);
+  });
+});
+
+describe("remembering an observer's view", () => {
+  const stubbed = (raw: string | null) => {
+    const store = new Map(raw === null ? [] : [["mjwaits.observe", raw]]);
+    vi.stubGlobal("localStorage", { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v) });
+  };
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("comes back to the view chosen", () => {
+    stubbed(null);
+    saveObserve({ mode: "corner", seat: 2 });
+    expect(loadObserve()).toEqual({ mode: "corner", seat: 2 });
+  });
+
+  it("starts from all hands, with nothing or nonsense saved", () => {
+    for (const raw of [null, "not json", JSON.stringify({ mode: "x", seat: 1 }), JSON.stringify({ mode: "pov", seat: 9 })]) {
+      stubbed(raw);
+      expect(loadObserve()).toEqual({ mode: "god", seat: 0 });
+    }
   });
 });

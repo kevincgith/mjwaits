@@ -16094,6 +16094,10 @@ button.sc-stat:active {
   font: inherit;
   font-size: 0.82rem;
   cursor: pointer;
+  max-width: 15rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .play-observe button.is-on {
@@ -16124,6 +16128,40 @@ button.sc-stat:active {
 /* A drag on it moves the camera (see TableGL), not the page. */
 .play-table.is-corner {
   touch-action: none;
+  cursor: grab;
+}
+
+.play-table.is-corner.is-dragging {
+  cursor: grabbing;
+}
+
+/* Until this phone has moved the camera: how. */
+.play-corner-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 3.2rem;
+  z-index: 5;
+  translate: -50% 0;
+  margin: 0;
+  padding: 0.35rem 0.8rem;
+  max-width: calc(100% - 2rem);
+  width: max-content;
+  border-radius: var(--radius-pill);
+  background: rgba(10, 8, 6, 0.72);
+  color: #fff;
+  font-size: 0.82rem;
+  pointer-events: none;
+  animation: play-corner-hint 6s ease forwards;
+}
+
+@keyframes play-corner-hint {
+  0%,
+  85% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
 }
 
 .play-observe-hint {
