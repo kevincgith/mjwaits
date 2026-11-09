@@ -294,12 +294,17 @@ export class Table extends Hub<TableMessage> {
     return this.seatOf(personId) === null;
   }
 
-  protected onArrive(personId: string) {
+  protected onArrive(personId: string, watch: boolean) {
     const rt = this.load();
     // In the lobby, someone arriving takes the first empty seat (they can
-    // move, or stand to watch).
+    // move, or stand to watch) - unless they came to watch.
     if (rt.phase === "lobby" && this.seatOf(personId) === null) {
       if (rt.watching?.includes(personId)) return;
+      if (watch) {
+        rt.watching = [...(rt.watching ?? []), personId];
+        this.save();
+        return;
+      }
       const free = rt.seats.indexOf(null);
       if (free >= 0) {
         rt.seats[free] = { kind: "human", id: personId };
@@ -308,7 +313,16 @@ export class Table extends Hub<TableMessage> {
       return;
     }
     const seat = this.seatOf(personId);
-    if (seat === null) return;
+    if (seat === null) {
+      // An observer arriving: a table paused for want of anyone to see it goes on.
+      if (rt.phase === "playing" && rt.settings.observers) {
+        const now = Date.now();
+        this.advance(now);
+        this.save();
+        void this.schedule(now);
+      }
+      return;
+    }
     delete rt.away[seat];
     rt.auto = rt.auto.filter((s) => s !== seat);
     const now = Date.now();
@@ -325,8 +339,7 @@ export class Table extends Hub<TableMessage> {
     if (seat === null || rt.phase !== "playing") return;
     rt.away[seat] = Date.now();
     // The last person at the table gone: its clocks stop (see run).
-    const online = this.online();
-    if (!rt.seats.some((s) => s?.kind === "human" && online.has(s.id))) rt.pausedAt ??= Date.now();
+    if (!this.attended()) rt.pausedAt ??= Date.now();
     this.save();
     void this.schedule();
   }
@@ -384,6 +397,12 @@ export class Table extends Hub<TableMessage> {
   protected onWelcomed(ws: WebSocket) {
     const messages = this.meta<ChatMessage[]>("chat");
     if (messages?.length) this.send(ws, { t: "chatLog", messages });
+  }
+
+  // Whether anyone's here for the table to play on for: someone seated, or,
+  // at a table with observers, someone watching it (a table of bots, say).
+  private attended(online = this.online()): boolean {
+    return this.rt.seats.some((s) => s?.kind === "human" && online.has(s.id)) || (!!this.rt.settings.observers && online.size > 0);
   }
 
   protected async act(personId: string, msg: TableMessage, ws: WebSocket) {
@@ -677,7 +696,7 @@ export class Table extends Hub<TableMessage> {
       // Passed by all: a moment still while a person sees it (see PASS_PAUSES).
       else if (!rt.decisions.includes("waiting") && this.pause > 0) {
         const from = g.phase.from;
-        if ([0, 1, 2, 3].some((seat) => seat !== from && rt.seats[seat]?.kind === "human" && !this.actsAlone(seat))) rt.botAt = now + this.botPause * PASS_PAUSES;
+        if (rt.settings.observers || [0, 1, 2, 3].some((seat) => seat !== from && rt.seats[seat]?.kind === "human" && !this.actsAlone(seat))) rt.botAt = now + this.botPause * PASS_PAUSES;
       }
     } else {
       rt.ready = [];
@@ -975,7 +994,7 @@ export class Table extends Hub<TableMessage> {
     // Nobody at the table is here: nothing moves until someone's back.
     const online = this.online();
     const humans = rt.seats.flatMap((s, i) => (s?.kind === "human" ? [{ seat: i, id: s.id }] : []));
-    if (!humans.some((h) => online.has(h.id))) {
+    if (!this.attended(online)) {
       rt.pausedAt ??= now;
       return;
     }
@@ -1058,8 +1077,8 @@ export class Table extends Hub<TableMessage> {
         rt.botAt = null;
         return;
       }
-      // Someone on 自動: the result's seen before the next deal.
-      const dealAt = rt.chosen?.length && rt.overAt !== undefined ? rt.overAt + (AUTOPLAY_NEXT_MS * this.botPause) / BOT_PAUSE_MS : 0;
+      // Someone on 自動, or only observers here: the result's seen before the next deal.
+      const dealAt = (rt.chosen?.length || !humans.some((h) => online.has(h.id))) && rt.overAt !== undefined ? rt.overAt + (AUTOPLAY_NEXT_MS * this.botPause) / BOT_PAUSE_MS : 0;
       if (now < dealAt) {
         rt.botAt = dealAt;
         return;
@@ -1147,8 +1166,7 @@ export class Table extends Hub<TableMessage> {
       this.changed();
     }
     // Paused (no one here) or idle: nothing of the table's own is pending.
-    const humansHere = this.rt.seats.some((s) => s?.kind === "human" && this.online().has(s.id));
-    const next = humansHere ? this.nextDue(now) : null;
+    const next = this.attended() ? this.nextDue(now) : null;
     this.armBackstop(next, now);
     return next;
   }
@@ -1213,7 +1231,7 @@ export class Table extends Hub<TableMessage> {
       last: rt.last,
       secondChance: rt.secondChance ?? null,
       you: seat,
-      view: g ? viewFor(g, seat ?? -1, (s) => this.handShown(g, s)) : null,
+      view: g ? viewFor(g, seat ?? -1, (s) => this.handShown(g, s), seat === null && !!rt.settings.observers) : null,
       options,
     };
   }

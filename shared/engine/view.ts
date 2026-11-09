@@ -95,14 +95,15 @@ const copyTiles = (tiles: Tile[]) => tiles.map((t) => ({ suit: t.suit, rank: t.r
 
 // `shown`: at a hand's end, whose hands everyone sees - all of them unless
 // the table keeps losing hands hidden (then the winners', and whoever
-// chose to show). You always see your own.
+// chose to show). You always see your own. `seeAll`: someone watching a table
+// that lets its observers see every tile (TableSettings.observers).
 // A concealed kong (暗槓) stays face down to the others till the hand's
 // over - then it's shown with the rest of that player's hand (a hand kept
 // hidden keeps it hidden too).
-export function viewFor(s: GameState, you: number, shown: (seat: number) => boolean = () => true): TableView {
+export function viewFor(s: GameState, you: number, shown: (seat: number) => boolean = () => true, seeAll = false): TableView {
   const over = s.phase.kind === "over";
   const players: SeatView[] = s.players.map((p, seat) => {
-    const open = seat === you || (over && shown(seat));
+    const open = seeAll || seat === you || (over && shown(seat));
     return {
       hand: open ? copyTiles(p.hand) : null,
       handCount: p.hand.length,
@@ -119,7 +120,7 @@ export function viewFor(s: GameState, you: number, shown: (seat: number) => bool
   });
   let phase: PhaseView;
   if (s.phase.kind === "turn") {
-    const mine = s.phase.seat === you;
+    const mine = seeAll || s.phase.seat === you;
     phase = {
       kind: "turn",
       seat: s.phase.seat,
@@ -140,7 +141,7 @@ export function viewFor(s: GameState, you: number, shown: (seat: number) => bool
       count: ph.count,
       round: ph.round,
       stage: ph.stage,
-      piles: ph.piles.map((pile, seat) => (pile ? pile.map((t) => (!t ? null : seat === you ? { suit: t.suit, rank: t.rank } : "back")) : null)),
+      piles: ph.piles.map((pile, seat) => (pile ? pile.map((t) => (!t ? null : seeAll || seat === you ? { suit: t.suit, rank: t.rank } : "back")) : null)),
       taker: ph.taker,
       took: [...ph.took],
       ...(ph.takenBy ? { takenBy: ph.takenBy.map((row) => [...row]) } : {}),

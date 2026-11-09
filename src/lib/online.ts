@@ -183,6 +183,7 @@ type HubServerMessage = Welcome | HubError | { t: "pong" } | { t: string };
 type ErrorCodeOf<Recv> = Recv extends { t: "error"; code: infer C } ? C : never;
 
 export interface HubClientOptions<Recv extends HubServerMessage> {
+  watch?: boolean; // a table: joining to watch, not to be given a free seat
   code: string;
   name: string;
   token?: string;
@@ -289,7 +290,7 @@ export abstract class HubClient<Send extends { t: string }, Recv extends HubServ
       this.retries = 0;
       this.heard = Date.now();
       this.beat();
-      this.raw({ t: "hello", v: PROTOCOL_VERSION, name: this.opts.name, ...(this.token ? { token: this.token } : {}) });
+      this.raw({ t: "hello", v: PROTOCOL_VERSION, name: this.opts.name, ...(this.token ? { token: this.token } : this.opts.watch ? { watch: true } : {}) });
     };
     socket.onmessage = (ev) => {
       if (this.socket === socket) this.heard = Date.now();
@@ -319,7 +320,7 @@ export abstract class HubClient<Send extends { t: string }, Recv extends HubServ
       // A token the room no longer knows: forget it and join afresh.
       if (e.code === "badToken" && this.token) {
         this.token = undefined;
-        this.raw({ t: "hello", v: PROTOCOL_VERSION, name: this.opts.name });
+        this.raw({ t: "hello", v: PROTOCOL_VERSION, name: this.opts.name, ...(this.opts.watch ? { watch: true } : {}) });
         return;
       }
       if (FATAL.has(e.code)) this.stop();
