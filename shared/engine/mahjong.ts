@@ -1069,13 +1069,14 @@ function sixteenUnrelatedShanten(tiles: Tile[]): number {
 // Unrelated Tiles. Doesn't account for jokers (callers should check for
 // those separately). Thirteen Orphans (its extra meld makes its distance
 // awkward to count) is exact where it matters - complete, and ready - and
-// not counted further out.
-export function shanten(tiles: Tile[], meldsRequired: number = MELDS_REQUIRED): number {
+// not counted further out. `sixteen` false leaves Sixteen Unrelated Tiles out
+// (a bot that wouldn't go for it: see BotProfile.sixteenFrom).
+export function shanten(tiles: Tile[], meldsRequired: number = MELDS_REQUIRED, sixteen = true): number {
   let best = standardShanten(tiles, meldsRequired);
   if (meldsRequired === MELDS_REQUIRED) {
     const kc = kindCounts(tiles);
     best = Math.min(best, eightPairsShanten(tiles, kc));
-    best = Math.min(best, sixteenUnrelatedShanten(tiles));
+    if (sixteen) best = Math.min(best, sixteenUnrelatedShanten(tiles));
     // (Ready or complete by it needs at least 12 of the 13 orphans in hand.)
     if (kc) {
       let orphans = 0;
