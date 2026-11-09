@@ -14,7 +14,7 @@ function table() {
 describe("what an observer's view shows", () => {
   it("names the seats each view shows", () => {
     expect(seatsSeen({ mode: "pov", seat: 3 })).toEqual([3]);
-    expect(seatsSeen({ mode: "corner", seat: 3 })).toEqual([3, 0]);
+    expect(seatsSeen({ mode: "corner", seat: 3 })).toEqual([0, 1, 2, 3]);
     expect(seatsSeen({ mode: "god", seat: 3 })).toEqual([0, 1, 2, 3]);
   });
 
@@ -30,10 +30,10 @@ describe("what an observer's view shows", () => {
     }
   });
 
-  it("shows two neighbours from a corner, and every hand in god mode, the chosen seat at the bottom", () => {
+  it("has every hand from the corner and in god mode, the chosen seat at the bottom", () => {
     const all = viewFor(table(), -1, () => true, true);
     const corner = observedView(all, { mode: "corner", seat: 3 });
-    expect(corner.players.map((p) => p.hand !== null)).toEqual([true, false, false, true]);
+    expect(corner.players.every((p) => p.hand !== null)).toBe(true);
     const god = observedView(all, { mode: "god", seat: 2 });
     expect(god.players.every((p) => p.hand !== null)).toBe(true);
     expect(seatState(god).toTable(0)).toBe(2);

@@ -1,36 +1,44 @@
-// An observer's corner view of the table: the whole table turned 45deg, as
-// from a chair at the corner between two players. Each seat is laid out the
+// An observer's free view of the table: turned and laid back as the camera
+// says, starting from a chair at the corner between two players. Each seat is laid out the
 // same way - its standing hand at its edge, its melds and bonus tiles in front,
 // its pond by the compass - in its own frame (the table's centre at the origin,
 // +y toward its player), then turned round to its side of a square table.
 //
-// A hand's faces look outward, to its player. So from this corner the near two
-// (bottom and right) show their faces, and the far two only their backs - as
-// they would to anyone sitting there.
+// Every hand is real tiles, faces looking outward to its player. So whichever
+// seats the camera is behind show their faces, and the far ones only their
+// backs - as they would to anyone sitting there.
 
 import { sameTile } from "@mjwaits/shared/engine/game";
 import { sortTiles } from "@mjwaits/shared/engine/mahjong";
 import { bezier, EASE_OUT, keyframes } from "./anim";
-import { BACK, faceOf, flowerGroup, LIT, lying, lyingDown, meldGroup, placeGroup, shadowAt, THICK, TILE_H, TILE_W, TURNED, UNSEEN, wallFaces, type Anim, type Dims, type Group, type Layout, type Piece, type Quad } from "./layout";
+import { BACK, bubbleBox, faceOf, flowerGroup, LIT, lying, lyingDown, meldGroup, placeGroup, shadowAt, THICK, TILE_H, TILE_W, TURNED, UNSEEN, wallFaces, type Anim, type Dims, type Group, type Layout, type Piece, type Quad } from "./layout";
 import { chain, rotateX, rotateZ, scale, translate, type Mat } from "./mat";
-import { CORNER_TILT, type GLSide, type GLTableView, type GLWall } from "./types";
+import { CORNER_TILT, type CornerCamera, type GLSide, type GLTableView, type GLWall } from "./types";
 
 // How each seat's frame is turned onto the table.
 const TURN: Record<GLSide, number> = { bottom: 0, right: -90, top: 180, left: 90 };
 const POND_ROW = 6;
 const sum = (ns: number[]) => ns.reduce((a, b) => a + b, 0);
 
-// A hand's faces as they stand: the near seats' real ones (a drawn tile last,
-// set apart), the far seats' blanks - their faces are turned away.
-function standingFaces(w: GLWall, near: boolean): { faces: string[]; apart: boolean } {
-  if (!near || !w.tiles) return { faces: Array<string>(w.count).fill(UNSEEN), apart: w.drew };
+// How much smaller the table's drawn for this camera: the felt is sized for
+// the starting view, and only a flatter look down at it takes more of the
+// screen's height than that.
+export function cornerZoom({ yaw, tilt }: CornerCamera): number {
+  const rad = (deg: number) => (deg * Math.PI) / 180;
+  const across = (y: number) => Math.abs(Math.cos(rad(y))) + Math.abs(Math.sin(rad(y)));
+  return Math.min(1, (across(45) * Math.cos(rad(CORNER_TILT))) / (across(yaw) * Math.cos(rad(tilt))));
+}
+
+// A hand's faces as they stand (a drawn tile last, set apart).
+function standingFaces(w: GLWall): { faces: string[]; apart: boolean } {
+  if (!w.tiles) return { faces: Array<string>(w.count).fill(UNSEEN), apart: w.drew };
   const rest = w.tiles.slice();
   const at = w.drawnTile ? rest.findIndex((t) => sameTile(t, w.drawnTile!)) : -1;
   const drawn = at >= 0 ? rest.splice(at, 1)[0] : null;
   return { faces: [...sortTiles(rest), ...(drawn ? [drawn] : [])].map(faceOf), apart: !!drawn };
 }
 
-export function layoutCorner(view: GLTableView, d: Dims): Layout {
+export function layoutCorner(view: GLTableView, d: Dims, camera: CornerCamera): Layout {
   const pieces: Piece[] = [];
   const quads: Quad[] = [];
   const S = d.feltW;
@@ -47,7 +55,6 @@ export function layoutCorner(view: GLTableView, d: Dims): Layout {
 
   for (const side of ["top", "left", "right", "bottom"] as const) {
     const w = side === "bottom" ? view.corner!.bottom : view.walls[side];
-    const near = side === "bottom" || side === "right";
     const shade: [number, number] = side === "left" || side === "right" ? TURNED : LIT;
     const seat = chain(translate(middle.x, middle.y, 0), rotateZ(TURN[side]));
     const mine: Piece[] = [];
@@ -65,7 +72,7 @@ export function layoutCorner(view: GLTableView, d: Dims): Layout {
         marks.push(shadowAt(x, foot, H));
       });
     } else {
-      const { faces, apart } = standingFaces(w, near);
+      const { faces, apart } = standingFaces(w);
       const pitch = TILE_W * H;
       const gap = apart ? 0.3 * H : 0;
       const x0 = -(faces.length * pitch + gap) / 2;
@@ -143,15 +150,26 @@ export function layoutCorner(view: GLTableView, d: Dims): Layout {
     for (const q of marks) quads.push({ ...q, m: placed(q.m), anim: q.anim && { ...q.anim, pose: (k) => placed(q.anim!.pose(k)) } });
   }
 
-  // The discard up for grabs: held up over the table on its thrower's side,
-  // squarely facing the camera.
+  // The discard up for grabs, in its bubble as on the usual table: held up
+  // over the table on its thrower's side, squarely facing the camera, its
+  // tail pointing the way the thrower is on the screen.
   if (view.spotlight) {
     const { from, tile, key } = view.spotlight;
-    const em = 1.9 * T;
-    const r = pondFrom + 0.3 * em;
-    const [dx, dy] = from === "bottom" ? [0, r] : from === "right" ? [r, 0] : from === "top" ? [0, -r] : [-r, 0];
-    const facing = (s: number) => chain(translate(middle.x + dx, middle.y + dy, 2.2 * em), rotateZ(-45), rotateX(-CORNER_TILT), translate(0, 0, (-THICK / 2) * em), scale(em * s));
-    pieces.push({ face: faceOf(tile), m: facing(1), shade: LIT, tint: 1, anim: { key: `spot:${key}`, delay: 0, dur: 0.22, pose: (k) => facing(0.5 + 0.5 * EASE_OUT(k)) } });
+    const { te, bw, bh, em } = bubbleBox(d);
+    const r = d.compass / 2 + 0.35 * bh;
+    const [dx, dy] = from === "bottom" ? [0, 1] : from === "right" ? [1, 0] : from === "top" ? [0, -1] : [-1, 0];
+    const yaw = (camera.yaw * Math.PI) / 180;
+    const sx = dx * Math.cos(yaw) - dy * Math.sin(yaw);
+    const sy = dx * Math.sin(yaw) + dy * Math.cos(yaw);
+    const tail = Math.abs(sx) > Math.abs(sy) ? (sx > 0 ? "right" : "left") : sy > 0 ? "bottom" : "top";
+    // Its foot, facing the camera - popped in from half size.
+    const stand = (s: number) => chain(translate(middle.x + dx * r, middle.y + dy * r, 0.5 * bh + 0.4 * em), rotateZ(-camera.yaw), rotateX(-camera.tilt), translate(0, bh / 2, 0), scale(s, s, 1));
+    const bubble = (s: number) => chain(stand(s), translate(0, -bh / 2, 0), scale(bw + 2 * em, bh + 2 * em, 1));
+    // The tile in it, tipped back from its foot to show its thickness.
+    const held = (s: number) => chain(stand(s), translate(0, -0.38 * em, 0), translate(0, 0, 0.55 * te), rotateX(30), translate(0, -0.5 * te, 0), scale(te));
+    const pop = (pose: (s: number) => Mat, part: string): Anim => ({ key: `spot:${key}:${part}`, delay: 0, dur: 0.22, pose: (k) => pose(0.5 + 0.5 * EASE_OUT(k)) });
+    quads.push({ kind: `bubble-${tail}`, m: bubble(1), anim: pop(bubble, "bubble") });
+    pieces.push({ face: faceOf(tile), m: held(1), shade: LIT, tint: 1, anim: pop(held, "tile") });
   }
 
   return { felt: { pieces, quads }, hand: { pieces: [], quads: [], width: 0, height: 0 }, middle };

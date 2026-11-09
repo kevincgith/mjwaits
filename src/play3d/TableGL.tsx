@@ -10,9 +10,9 @@
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { Engine, type Frame } from "./engine";
 import { bubbleBox, feltToHand, layoutTable, SWAP_ROW, type Dims } from "./layout";
-import { layoutCorner } from "./corner";
+import { cornerZoom, layoutCorner } from "./corner";
 import { sharedAtlas, type Atlas } from "./textures";
-import type { GLSide, GLTableView } from "./types";
+import { CORNER_TILT, CORNER_TILT_MAX, CORNER_TILT_MIN, CORNER_YAW, type CornerCamera, type GLSide, type GLTableView } from "./types";
 
 // An element's layout box within `root` (its offsets - transforms aside).
 function offsetIn(el: HTMLElement, root: HTMLElement): { x: number; y: number } {
@@ -95,6 +95,45 @@ function feltYAt(f: Frame, screenY: number, x: number, depth: number): number {
   return lo;
 }
 
+// Where a pointer is, in the table's own pixels - it's drawn turned a quarter
+// on a phone held upright.
+function pointerIn(root: HTMLElement, e: PointerEvent): DOMPoint {
+  const turn = new DOMMatrix(getComputedStyle(root).transform === "none" ? undefined : getComputedStyle(root).transform);
+  return turn.inverse().transformPoint(new DOMPoint(e.clientX - root.offsetLeft, e.clientY - root.offsetTop));
+}
+
+// A press on the page's own controls, not on the table.
+const offTable = (e: PointerEvent) => !!(e.target as Element | null)?.closest("button, a, input, [role=dialog], [role=menu], .play-menu, .play-calls, .sc-sheet");
+
+// The free camera: degrees per pixel dragged, and the longest gap between a double tap's taps.
+const DRAG_YAW = 0.4;
+const DRAG_TILT = 0.25;
+const DOUBLE_TAP_MS = 320;
+
+// Each seat's name card outside its edge of the table, wherever the
+// camera has put that, kept on the screen and clear of the top buttons and the bar.
+function placeBadges(root: HTMLElement, f: Frame, feltW: number) {
+  const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+  const m = new DOMMatrix(f.felt);
+  const c = feltW / 2;
+  // (Far enough out to clear the hand standing at that edge.)
+  const out = c * 1.45;
+  for (const [side, dx, dy] of [["bottom", 0, 1], ["right", 1, 0], ["top", 0, -1], ["left", -1, 0]] as const) {
+    const el = root.querySelector<HTMLElement>(`.play-badge.at-${side}`);
+    if (!el) continue;
+    const p = m.transformPoint(new DOMPoint(c + dx * out, c + dy * out, 0));
+    const s = f.stage.d / (f.stage.d - p.z);
+    const hw = el.offsetWidth / 2;
+    const hh = el.offsetHeight / 2;
+    const fit = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+    const x = fit(f.stage.ox + (p.x - f.stage.ox) * s, hw + 6, f.width - hw - 6);
+    // (Only under the buttons at the screen's top corners need it stay lower.)
+    const top = x - hw > 12.5 * rem && x + hw < f.width - 6.5 * rem ? 0.45 * rem : 3 * rem;
+    el.style.left = `${x}px`;
+    el.style.top = `${fit(f.stage.oy + (p.y - f.stage.oy) * s, top + hh, f.height - 2.6 * rem - hh)}px`;
+  }
+}
+
 // Canvases whose context has been given back (see Engine.dispose): one
 // can't be drawn on again, so the next engine gets a fresh canvas.
 const spent = new WeakSet<HTMLCanvasElement>();
@@ -143,6 +182,7 @@ export default function TableGL({
   const engine = useRef<Engine | null>(null);
   const dims = useRef<Dims | null>(null);
   const keptWidth = useRef(0);
+  const camera = useRef<CornerCamera>({ yaw: CORNER_YAW, tilt: CORNER_TILT });
   const viewRef = useRef(view);
   viewRef.current = view;
   if (import.meta.env.DEV) (window as unknown as { __glView: GLTableView }).__glView = view;
@@ -192,6 +232,12 @@ export default function TableGL({
     const hand = handRef.current;
     const middle = middleRef.current;
     if (!e || !root || !felt || !hand || !middle) return;
+    const corner = !!viewRef.current.corner;
+    if (corner) {
+      felt.style.setProperty("--corner-yaw", `${camera.current.yaw}deg`);
+      felt.style.setProperty("--corner-tilt", `${camera.current.tilt}deg`);
+      felt.style.setProperty("--corner-zoom", String(cornerZoom(camera.current)));
+    }
     if (remeasure || !dims.current) {
       const d = readDims(felt, middle);
       // Where your standing tiles' tops are seen, on the felt (your pond stops short of them).
@@ -216,13 +262,15 @@ export default function TableGL({
     }
     // (In 換牌 your row keeps the widest it's been, so it never re-centres.)
     dims.current.handMinWidth = viewRef.current.mine.sliding ? keptWidth.current : 0;
-    const layout = viewRef.current.corner ? layoutCorner(viewRef.current, dims.current) : layoutTable(viewRef.current, dims.current);
+    const layout = corner ? layoutCorner(viewRef.current, dims.current, camera.current) : layoutTable(viewRef.current, dims.current);
     keptWidth.current = viewRef.current.mine.sliding ? Math.max(keptWidth.current, layout.hand.width) : 0;
     middle.style.left = `${layout.middle.x}px`;
     middle.style.top = `${layout.middle.y}px`;
     hand.style.width = `${layout.hand.width}px`;
     hand.style.height = `${layout.hand.height}px`;
-    e.frame(readFrame(root, felt, hand), Math.min(3, window.devicePixelRatio || 1));
+    const frame = readFrame(root, felt, hand);
+    e.frame(frame, Math.min(3, window.devicePixelRatio || 1));
+    if (corner) placeBadges(root, frame, dims.current.feltW);
     e.show(layout);
     e.render();
   });
@@ -296,12 +344,7 @@ export default function TableGL({
       onPressRef.current?.(i);
     };
     const moved = (e: PointerEvent, from: { x: number; y: number }) => Math.hypot(e.clientX - from.x, e.clientY - from.y) > 10;
-    // Where a pointer is, in the table's own pixels - it's drawn turned a
-    // quarter on a phone held upright.
-    const at = (e: PointerEvent) => {
-      const turn = new DOMMatrix(getComputedStyle(root).transform === "none" ? undefined : getComputedStyle(root).transform);
-      return turn.inverse().transformPoint(new DOMPoint(e.clientX - root.offsetLeft, e.clientY - root.offsetTop));
-    };
+    const at = (e: PointerEvent) => pointerIn(root, e);
     const tileAt = (e: PointerEvent): number | null => {
       const e3 = engine.current;
       if (!e3) return null;
@@ -309,7 +352,7 @@ export default function TableGL({
       const i = e3.pickHand(p.x, p.y, root.clientWidth, root.clientHeight);
       return i !== null && viewRef.current.mine.tiles[i]?.enabled ? i : null;
     };
-    const outside = (e: PointerEvent) => !!(e.target as Element | null)?.closest("button, a, input, [role=dialog], [role=menu], .play-menu, .play-calls, .sc-sheet");
+    const outside = offTable;
     const onDown = (e: PointerEvent) => {
       down = e.isPrimary ? { x: e.clientX, y: e.clientY, at: e.timeStamp } : null;
       swept = null;
@@ -364,6 +407,62 @@ export default function TableGL({
     root.addEventListener("pointerup", onUp);
     root.addEventListener("pointercancel", onCancel);
     return () => {
+      root.removeEventListener("pointerdown", onDown);
+      root.removeEventListener("pointermove", onMove);
+      root.removeEventListener("pointerup", onUp);
+      root.removeEventListener("pointercancel", onCancel);
+    };
+  }, [rootRef]);
+
+  // The free camera: a drag across the table circles it (side to side) and
+  // lays it back or stands it up (up and down), the table following the
+  // finger; a double tap puts the camera back where it started.
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    let drag: (CornerCamera & { x: number; y: number; moved: boolean }) | null = null;
+    let lastTap = 0;
+    let queued = 0;
+    const redraw = () => {
+      if (queued) return;
+      queued = requestAnimationFrame(() => {
+        queued = 0;
+        draw.current(false);
+      });
+    };
+    const onDown = (e: PointerEvent) => {
+      if (!viewRef.current.corner || !e.isPrimary || offTable(e)) return;
+      const p = pointerIn(root, e);
+      drag = { ...camera.current, x: p.x, y: p.y, moved: false };
+    };
+    const onMove = (e: PointerEvent) => {
+      if (!drag || !e.isPrimary) return;
+      const p = pointerIn(root, e);
+      const dx = p.x - drag.x;
+      const dy = p.y - drag.y;
+      if (!drag.moved && Math.hypot(dx, dy) < 4) return;
+      drag.moved = true;
+      camera.current = { yaw: drag.yaw - dx * DRAG_YAW, tilt: Math.max(CORNER_TILT_MIN, Math.min(CORNER_TILT_MAX, drag.tilt - dy * DRAG_TILT)) };
+      redraw();
+    };
+    const onUp = (e: PointerEvent) => {
+      if (!drag || !e.isPrimary) return;
+      const tapped = !drag.moved;
+      drag = null;
+      if (!tapped) return;
+      if (e.timeStamp - lastTap < DOUBLE_TAP_MS) {
+        lastTap = 0;
+        camera.current = { yaw: CORNER_YAW, tilt: CORNER_TILT };
+        redraw();
+      } else lastTap = e.timeStamp;
+    };
+    const onCancel = () => void (drag = null);
+    root.addEventListener("pointerdown", onDown);
+    root.addEventListener("pointermove", onMove);
+    root.addEventListener("pointerup", onUp);
+    root.addEventListener("pointercancel", onCancel);
+    return () => {
+      cancelAnimationFrame(queued);
       root.removeEventListener("pointerdown", onDown);
       root.removeEventListener("pointermove", onMove);
       root.removeEventListener("pointerup", onUp);

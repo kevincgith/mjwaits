@@ -7,11 +7,12 @@ import type { MeldView, SeatView, TableView } from "@mjwaits/shared/engine/view"
 export type ObserveMode = "pov" | "corner" | "god";
 export interface Observe {
   mode: ObserveMode;
-  seat: number; // table seat at the bottom (corner: at the lower left, the next seat at the lower right)
+  seat: number; // table seat at the bottom (corner: where the camera starts, this seat at the lower left, the next at the lower right)
 }
 
-// The table seats whose hands this view shows.
-export const seatsSeen = ({ mode, seat }: Observe): number[] => (mode === "god" ? [0, 1, 2, 3] : mode === "corner" ? [seat, (seat + 1) % 4] : [seat]);
+// The table seats whose hands this view has. (The corner camera has them
+// all: it can be moved, and which faces it sees is down to where it is.)
+export const seatsSeen = ({ mode, seat }: Observe): number[] => (mode === "pov" ? [seat] : [0, 1, 2, 3]);
 
 const hidden = (m: MeldView): MeldView => ("hidden" in m || !(m.kind === "kong" && m.concealed) ? m : { kind: "kong", concealed: true, hidden: true, from: null });
 
