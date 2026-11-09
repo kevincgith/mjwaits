@@ -8,16 +8,24 @@ import type { BonusTile } from "@mjwaits/shared/engine/scoring";
 
 export type GLSide = "bottom" | "right" | "top" | "left";
 
-// The corner camera's tilt (an observer's view): how far the table's plane
-// is laid back, the table turned 45deg on it.
+// The corner camera (an observer's view): `yaw` how far the table is turned,
+// `tilt` how far its plane is laid back, both in degrees. It starts at the
+// corner between two seats; dragging moves it (see TableGL).
+export interface CornerCamera {
+  yaw: number;
+  tilt: number;
+}
+export const CORNER_YAW = 45;
 export const CORNER_TILT = 62;
+export const CORNER_TILT_MIN = 30;
+export const CORNER_TILT_MAX = 80;
 
 // Another seat's tiles: its standing hand (laid down at the end), and its
 // melds and bonus tiles in front of it - as HandTiles, Melds and Flowers have them.
 export interface GLWall {
   count: number;
   tiles: Tile[] | null;
-  // Which tile they've just drawn, when the corner camera shows their hand.
+  // Which tile they've just drawn, when the corner camera has their hand.
   drawnTile?: Tile | null;
   drew: boolean;
   down: boolean;
@@ -108,8 +116,8 @@ export interface GLTableView {
   piles: Partial<Record<GLSide, GLPile>> | null;
   rows: Partial<Record<GLSide, GLSwapRow>>;
   flights: GLFlight[];
-  // An observer at the corner between the bottom and right seats: the whole
-  // table turned 45deg, both of those hands standing to face them (the seat
-  // that's usually your row, here, is one more wall).
+  // An observer's free camera: the whole table turned and laid back, every
+  // hand standing at its edge (the seat that's usually your row, here, is one
+  // more wall).
   corner?: { bottom: GLWall };
 }

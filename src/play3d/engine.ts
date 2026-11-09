@@ -407,9 +407,16 @@ export class Engine {
     }
   }
 
+  private sized = "";
   frame(f: Frame, dpr: number) {
-    this.renderer.setPixelRatio(dpr);
-    this.renderer.setSize(f.width, f.height, false);
+    // (Only when it's changed: setting a canvas's size reallocates it, and a
+    // camera being dragged comes through here every frame.)
+    const size = `${f.width}x${f.height}@${dpr}`;
+    if (size !== this.sized) {
+      this.sized = size;
+      this.renderer.setPixelRatio(dpr);
+      this.renderer.setSize(f.width, f.height, false);
+    }
     this.felt.root.matrix.fromArray(f.felt);
     this.felt.root.matrixWorldNeedsUpdate = true;
     const fp = cssProjection(f.stage.d, f.stage.ox, f.stage.oy, f.width, f.height);

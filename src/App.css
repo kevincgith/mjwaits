@@ -16061,9 +16061,8 @@ button.sc-stat:active {
 }
 
 /* ---- An observer's view: which, and the corner camera ----
-   The corner camera turns the whole table 45deg and lays it back, so the two
-   near seats' hands face the viewer (see play3d/corner.ts); the side, near and
-   far seats' name cards go to the screen's four corners. */
+   The corner camera turns the whole table and lays it back, so the seats it's
+   behind show their faces (see play3d/corner.ts), and a drag moves it. */
 .play-observe {
   position: absolute;
   top: calc(100% + 0.35rem);
@@ -16118,8 +16117,20 @@ button.sc-stat:active {
   margin: 0;
   padding: 0;
   border-radius: 1.4rem;
-  transform: rotateX(var(--corner-tilt)) rotateZ(45deg);
+  transform: scale3d(var(--corner-zoom, 1), var(--corner-zoom, 1), var(--corner-zoom, 1)) rotateX(var(--corner-tilt, 62deg)) rotateZ(var(--corner-yaw, 45deg));
   transform-origin: 50% 50%;
+}
+
+/* A drag on it moves the camera (see TableGL), not the page. */
+.play-table.is-corner {
+  touch-action: none;
+}
+
+.play-observe-hint {
+  margin: 0;
+  padding: 0 0.3rem;
+  font-size: 0.72rem;
+  color: var(--text-muted);
 }
 
 /* No row of your own: the bar and the table get the room. */
@@ -16140,32 +16151,12 @@ button.sc-stat:active {
 .play-table.is-corner .play-badge.at-left,
 .play-table.is-corner .play-badge.at-right,
 .play-table.is-corner .play-badge.at-bottom {
+  /* Placed by the table, just outside its seat's edge (see TableGL's placeBadges). */
   position: absolute;
   z-index: 4;
-  top: auto;
-  left: auto;
   right: auto;
   bottom: auto;
-  translate: none;
+  translate: -50% -50%;
+  pointer-events: none;
   background: rgba(10, 8, 6, 0.62);
-}
-
-.play-table.is-corner .play-badge.at-left {
-  top: 3.2rem;
-  left: 7%;
-}
-
-.play-table.is-corner .play-badge.at-top {
-  top: 3.2rem;
-  right: 7%;
-}
-
-.play-table.is-corner .play-badge.at-bottom {
-  bottom: 3.6rem;
-  left: 3%;
-}
-
-.play-table.is-corner .play-badge.at-right {
-  bottom: 3.6rem;
-  right: 3%;
 }

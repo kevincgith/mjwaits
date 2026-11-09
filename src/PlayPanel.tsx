@@ -124,7 +124,7 @@ import { ReviewSheet, type Decision } from "./PlayReview";
 import { RecordSheet } from "./PlayRecord";
 import { isMuted, play as playSound, setMuted, wakeAudio, type Sound } from "./lib/sound";
 import { addHand, loadRecord, saveRecord, type Opponent } from "./lib/playRecord";
-import { CORNER_TILT, type GLFlight, type GLMine, type GLPile, type GLSwapRow, type GLTableView, type GLWall } from "./play3d/types";
+import type { GLFlight, GLMine, GLPile, GLSwapRow, GLTableView, GLWall } from "./play3d/types";
 import type { Observe, ObserveMode } from "./lib/observer";
 import { giverOrder, swapSlots } from "./play3d/swapOrder";
 import { loadLearnedModel, type LearnedModel } from "./lib/ml/browser";
@@ -950,6 +950,7 @@ function ObservePicker({ observe, names }: { observe: NonNullable<OnlinePlay["ob
               </button>
             ))}
           </div>
+          {mode === "corner" && <p className="play-observe-hint">Drag the table to move the camera · double-tap to reset</p>}
         </div>
       )}
     </>
@@ -3604,7 +3605,7 @@ export function PlayPanel({
         {/* The table itself, tipped away from you in perspective; your hand
             and the bar stay flat in front of it. */}
         <div className={`play-stage${corner ? " is-corner" : ""}`}>
-          <div className={`play-felt is-gl${corner ? " is-corner" : ""}`} ref={feltRef} style={corner ? ({ "--corner-tilt": `${CORNER_TILT}deg` } as CSSProperties) : undefined}>
+          <div className={`play-felt is-gl${corner ? " is-corner" : ""}`} ref={feltRef}>
             <span className={`play-first-dealer at-${SIDES[firstDealer]}`} title={`起莊: ${nameOf(firstDealer)}`} aria-label={`起莊 ${nameOf(firstDealer)}`} />
             {/* The WebGL table: just the compass on the page's felt, where its layout puts the middle. */}
             <div className="play-middle" ref={middleRef}>
