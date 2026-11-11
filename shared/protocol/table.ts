@@ -89,6 +89,7 @@ export const TableSettingsSchema = object({
   // Whoever's watching, not seated, is sent every hand (absent: off - they see
   // only what's face up).
   observers: optional(bool),
+  peeking: optional(bool), // after declaring 叮, a look at the others' tiles (absent: on)
 });
 export type TableSettings = Infer<typeof TableSettingsSchema>;
 
@@ -116,6 +117,8 @@ const TableClientSchema = tagged({
   retract: object({ t: literal("retract"), step, rid }),
   // 自動: the table plays your seat (on) - or hands it back (off).
   autoplay: object({ t: literal("autoplay"), on: bool, rid }),
+  // After 叮: start looking at that seat's tiles (null: stop).
+  peek: object({ t: literal("peek"), seat: nullable(seat), rid }),
   // Between hands: ready for the next deal; 投降 a 拉 that holder has on you.
   ready: object({ t: literal("ready"), rid }),
   surrender: object({ t: literal("surrender"), holder: seat, rid }),

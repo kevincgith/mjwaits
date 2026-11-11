@@ -54,7 +54,7 @@ import {
 import { blindPicks, botGive, botSplit, pileLeft, SWAP_PACE_MS, SWAP_TIMER_S, type SwapRules } from "@mjwaits/shared/engine/swap";
 import { botClaimFor, botSurrenders, botTurnMoveFor, MYSTERY_NAME, profileById, randomStyle } from "@mjwaits/shared/engine/bots";
 import type { Tile } from "@mjwaits/shared/engine/mahjong";
-import { viewFor } from "@mjwaits/shared/engine/view";
+import { mayPeek, viewFor } from "@mjwaits/shared/engine/view";
 import type { ScoreEvent, ScoreGame } from "@mjwaits/shared/engine/ledger";
 import { newPlayLedger, playEvents } from "@mjwaits/shared/engine/playLedger";
 import { CHAT_GAP_MS, CHAT_HISTORY, cleanChat, PROTOCOL_VERSION, VOICE_MAX_MS, VOICE_QUIET_MS } from "@mjwaits/shared/protocol/limits";
@@ -130,6 +130,7 @@ interface Runtime {
   settled: number; // the last hand whose payments are in `totals`
   scores: number; // entries in the record
   shown?: number[]; // this hand's end, losing hands hidden: who has shown theirs
+  peeks?: Record<number, number>; // after 叮: who's looking at whose tiles, by seat
   pot?: number; // 獎池: what's in the pot (see TableSettings.jackpot)
   // 自動: seats whose people asked the table to play for them (unlike `auto`,
   // kept when they're back) - as the Grandmaster.
@@ -341,6 +342,7 @@ export class Table extends Hub<TableMessage> {
     const seat = this.seatOf(personId);
     if (seat === null || rt.phase !== "playing") return;
     rt.away[seat] = Date.now();
+    if (rt.peeks) delete rt.peeks[seat];
     // The last person at the table gone: its clocks stop (see run).
     if (!this.attended()) rt.pausedAt ??= Date.now();
     this.save();
@@ -565,6 +567,15 @@ export class Table extends Hub<TableMessage> {
         if (!rt.ready.includes(seat)) rt.ready.push(seat);
         break;
       }
+      case "peek": {
+        playing();
+        const seat = seated();
+        const peeks = (rt.peeks ??= {});
+        // (Not allowed by the time it got here - the hand's just ended, say: no look.)
+        if (msg.seat !== null && rt.settings.peeking !== false && rt.game && mayPeek(rt.game, seat, msg.seat)) peeks[seat] = msg.seat;
+        else delete peeks[seat];
+        break;
+      }
       case "show": {
         playing();
         const seat = seated();
@@ -610,6 +621,7 @@ export class Table extends Hub<TableMessage> {
           settled: 0,
           scores: 0,
           shown: [],
+          peeks: {},
           pot: 0,
           chosen: [],
           lastCall: null,
@@ -1092,6 +1104,7 @@ export class Table extends Hub<TableMessage> {
       rt.game = nextHand(ended, undefined, random);
       this.record(ended, rt.game);
       rt.shown = [];
+      rt.peeks = {};
       rt.hand++;
       rt.last = null;
       rt.lastCall = null;
@@ -1236,13 +1249,20 @@ export class Table extends Hub<TableMessage> {
       last: rt.last,
       secondChance: rt.secondChance ?? null,
       you: seat,
-      view: g ? viewFor(g, seat ?? -1, (s) => this.handShown(g, s), seat === null && !!rt.settings.observers) : null,
+      view: g ? viewFor(g, seat ?? -1, (s) => this.handShown(g, s), seat === null && !!rt.settings.observers, this.peeksFor(seat)) : null,
       options,
     };
   }
 
   // At a hand's end, whether everyone sees this seat's hand: always, unless
   // the table keeps losing hands hidden - then a winner's, or one shown.
+  // Who this seat is looking at, and who's looking at it (see mayPeek).
+  private peeksFor(seat: number | null): { at: number | null; by: number[] } {
+    const peeks = this.rt.peeks;
+    if (seat === null || !peeks || this.rt.settings.peeking === false) return { at: null, by: [] };
+    return { at: peeks[seat] ?? null, by: Object.keys(peeks).map(Number).filter((p) => peeks[p] === seat) };
+  }
+
   private handShown(g: GameState, seat: number): boolean {
     if (this.rt.settings.reveal !== false || g.phase.kind !== "over") return true;
     const r = g.phase.result;
