@@ -192,6 +192,25 @@ describe("game", () => {
     expect(drawn.players[2].passedPung).toBeUndefined();
   });
 
+  it("taking a run off a tile you hold a pair of lifts the passed pung: the next one thrown can be punged", () => {
+    const m2 = { suit: "m" as const, rank: 2 };
+    const s0 = newGame();
+    s0.players[0].hand = parseHand("12345m111222333t2m");
+    // Seat 1 holds 1223m: offered a pung and runs on seat 0's 2m.
+    s0.players[1].hand = parseHand("1223m147b147t123457z");
+    const s = applyTurnMove(s0, { kind: "discard", tile: m2 });
+    expect(claimOptions(s, 1).map((c) => c.kind)).toEqual(["pung", "chow"]);
+    // It runs 123m, leaving 22m, and throws a tile.
+    const ran = resolveClaims(s, [null, { kind: "chow", tiles: [{ suit: "m", rank: 1 }, { suit: "m", rank: 3 }] }, null, null]);
+    expect(ran.phase).toMatchObject({ kind: "turn", seat: 1 });
+    expect(ran.players[1].passedPung).toBeUndefined();
+    const threw = applyTurnMove(ran, { kind: "discard", tile: { suit: "t", rank: 4 } });
+    // Seat 2 throws another 2m: the pung is there, not greyed.
+    const again = { ...threw, phase: { kind: "claims" as const, from: 2, tile: m2 } };
+    expect(claimOptions(again, 1).map((c) => c.kind)).toEqual(["pung"]);
+    expect(barredClaims(again, 1)).toEqual([]);
+  });
+
   it("no claim back - runs: from a tile just thrown, threw 1m from 123m, no 1m or 4m onto the 23m till the next draw", () => {
     const s0 = newGame();
     // Seat 1 to throw, holding 123m and 56m.
