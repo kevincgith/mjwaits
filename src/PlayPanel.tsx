@@ -1221,6 +1221,30 @@ export function PlayPanel({
   // Which deal it is: the dice themselves here; online, the hand number
   // (every message brings a fresh copy of the game).
   const dealKey: unknown = online ? online.table.hand : game.dice;
+  // 換牌's takes fly to rows by their takers' hands (flights, see below).
+  const [flights, setFlights] = useState<Flight[]>([]);
+  const swapFlying = flights.length > 0;
+  const swapPhase = game.phase.kind === "swap" ? game.phase : null;
+  // The rows just cleared: your row's tiles are still sliding down into
+  // your hand (HAND_SLIDE_MS).
+  const [swapJoining, setSwapJoining] = useState(false);
+  // What the piles were last time, and your hand then.
+  const pilesSeen = useRef<{
+    phase: SwapPhase | null;
+    hand: Tile[]; // yours (online, what you take shows only once it's in your hand)
+  }>({ phase: null, hand: [] });
+  // The swapping done - its last take and the dealer's first draw are one
+  // move, here and online - but its last rows still out (or, for the one
+  // render before they're placed, the swap just seen ending): the hand
+  // waits for them to join their hands - the dealer's draw shown, and their
+  // turn (and its timer) begun, only then.
+  const swapSettling = !swapPhase && (swapFlying || swapJoining || pilesSeen.current.phase?.stage === "take");
+  // And what that draw brought waits with it - bonus tiles set out (their
+  // bursts, payments and words too) and a tile off the wall: till then the
+  // table shows them as the swap left them.
+  const swapEnd = useRef<{ flowers: BonusTile[][]; left: number } | null>(null);
+  if (swapPhase) swapEnd.current = { flowers: game.players.map((p) => p.flowers), left: liveTilesLeft(game) };
+  const settled = swapSettling ? swapEnd.current : null;
   const rolledFor = useRef<unknown>(null);
   // Before the screen's drawn, so a new deal never shows a frame of the
   // table (or a swap's buttons) before its dice.
@@ -1260,13 +1284,14 @@ export function PlayPanel({
   // in sight.
   const flowersSeen = useRef<{ deal: unknown; counts: number[] }>({ deal: undefined, counts: [] });
   useEffect(() => {
+    if (swapSettling) return;
     const counts = game.players.map((p) => p.flowers.length);
     const was = flowersSeen.current;
     flowersSeen.current = { deal: dealKey, counts };
     if (was.deal !== dealKey) return;
     counts.forEach((n, seat) => n > (was.counts[seat] ?? n) && showBurst(seat, FLOWER_DRAW));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [game.players, dealKey]);
+  }, [game.players, dealKey, swapSettling]);
   // Table bonuses (flowers, 暗槓) paid as they're earned, the
   // same way: marked paid in the game, and the ref remembers what this
   // hand has paid in case a stale copy of the game comes back unmarked.
@@ -1276,7 +1301,7 @@ export function PlayPanel({
     if (paidBonuses.current.hand !== game.dice) paidBonuses.current = { hand: game.dice, keys: new Set() };
     const keys = paidBonuses.current.keys;
     const unpaid = (game.tableBonuses ?? []).filter((b) => !b.paid);
-    if (rolling || !unpaid.length) return;
+    if (rolling || swapSettling || !unpaid.length) return;
     setGame((g) => (g.tableBonuses ? { ...g, tableBonuses: g.tableBonuses.map((b) => ({ ...b, paid: true })) } : g));
     // Keyed by place in the list, which only grows during a hand.
     const all = game.tableBonuses ?? [];
@@ -1287,7 +1312,7 @@ export function PlayPanel({
     const last = due[due.length - 1];
     showBurst(last.seat, `${last.name} ${signed(last.deltas[last.seat])}`, last.deltas);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rolling, game.tableBonuses]);
+  }, [rolling, swapSettling, game.tableBonuses]);
   // How long the roll shows - timed on its own, so a re-run of the effect
   // above (which skips a deal it has seen) can't leave it showing forever.
   useEffect(() => {
@@ -1894,13 +1919,13 @@ export function PlayPanel({
     const all = game.tableBonuses ?? [];
     if (shownBonuses.current.deal !== dealKey) shownBonuses.current = { deal: dealKey, seen: dealFresh ? [] : all.map(bonusKey) };
     const fresh = newBonuses(all, shownBonuses.current.seen);
-    if (rolling) return;
+    if (rolling || swapSettling) return;
     shownBonuses.current.seen = all.map(bonusKey);
     if (!fresh.length) return;
     const last = fresh[fresh.length - 1];
     showBurst(last.seat, `${last.name} ${signed(last.deltas[last.seat])}`, last.deltas);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [online, rolling, game.tableBonuses]);
+  }, [online, rolling, swapSettling, game.tableBonuses]);
 
   // The end of a hand, however it came (here or online): the winner's line -
   // bigger for a big hand, a comeback from the bottom - the payer's, and a
@@ -2044,6 +2069,7 @@ export function PlayPanel({
   useEffect(() => {
     const all = game.tableBonuses ?? [];
     if (talkedBonuses.current.deal !== dealKey) talkedBonuses.current = { deal: dealKey, seen: dealFresh ? [] : all.map(bonusKey) };
+    if (swapSettling) return;
     const fresh = newBonuses(all, talkedBonuses.current.seen);
     talkedBonuses.current.seen = all.map(bonusKey);
     for (const b of fresh) {
@@ -2058,7 +2084,7 @@ export function PlayPanel({
       if (seen && s !== undefined && Math.random() < 0.25 + chattiness(s) * 0.5) sayLater(1100, s, seen, { target: b.seat });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [game.tableBonuses]);
+  }, [game.tableBonuses, swapSettling]);
 
   // Online a bot's 投降 comes with no word from the table: between hands, a
   // 拉 on a bot gone since the last view is one it gave up - and it says so
@@ -2236,7 +2262,6 @@ export function PlayPanel({
   // taker's hand and stays there till the round ends - so nobody gives for
   // the next round before they've had what they took (swapFlying), and
   // nobody takes while tiles are still in the air (swapAirborne).
-  const [flights, setFlights] = useState<Flight[]>([]);
   const [flown, setFlown] = useState<Set<number>>(new Set());
   const [landed, setLanded] = useState<Set<number>>(new Set());
   // The flights' news - set off, landed - gathered for a moment and taken
@@ -2256,20 +2281,11 @@ export function PlayPanel({
     });
   }).current;
   useEffect(() => () => window.clearTimeout(newsDue.current.timer), []);
-  const swapFlying = flights.length > 0;
   const swapAirborne = flights.some((f) => !landed.has(f.id));
   // A taken tile joins its new hand as it lands, not before: till then each
   // hand is drawn without the tiles still flying to it.
   const incoming = (seat: number) => flights.filter((f) => f.to === seat).map((f) => f.real);
   const comingToMe = useMemo(() => incoming(HUMAN), [flights]); // eslint-disable-line react-hooks/exhaustive-deps
-  const swapPhase = game.phase.kind === "swap" ? game.phase : null;
-  // The rows just cleared: your row's tiles are still sliding down into
-  // your hand (HAND_SLIDE_MS).
-  const [swapJoining, setSwapJoining] = useState(false);
-  // The swapping done (the dealer has drawn), but its last rows still out:
-  // the hand waits for them to join their hands - the dealer's draw shown,
-  // and their turn (and its timer) begun, only then.
-  const swapSettling = !swapPhase && (swapFlying || swapJoining);
   const myTurn = seated && waitedOn && game.phase.kind === "turn" && game.phase.seat === HUMAN && !swapSettling;
   // The dealer's first draw, kept out of sight while the swap settles.
   const heldDraw = (seat: number) => (swapSettling && game.phase.kind === "turn" && game.phase.seat === seat && game.phase.drawn ? game.phase.drawn : null);
@@ -2366,11 +2382,6 @@ export function PlayPanel({
   useEffect(() => {
     if (ghost && !flights.some((f) => f.ghost && !landed.has(f.id))) setGhost(null);
   }, [ghost, flights, landed]);
-  // What the piles were last time, and your hand then.
-  const pilesSeen = useRef<{
-    phase: SwapPhase | null;
-    hand: Tile[]; // yours (online, what you take shows only once it's in your hand)
-  }>({ phase: null, hand: [] });
   const swapPiles = swapPhase?.piles ?? null;
   const swapTakenBy = swapPhase?.takenBy;
   // Online, the picks your last take sent (places per pile, yours turned):
@@ -3184,7 +3195,8 @@ export function PlayPanel({
       ...(alsoWon ? { alsoWon: alsoWon.map((w) => ({ winner: w.winner, score: w.score ? scoreView(w.score) : null, scoreError: w.scoreError })) } : {}),
     };
   }, [game, net]);
-  const activeSeat = game.phase.kind === "turn" ? game.phase.seat : game.phase.kind === "claims" ? game.phase.from : null;
+  // (Nobody yet while the swap settles: the dealer's turn begins once it has.)
+  const activeSeat = swapSettling ? null : game.phase.kind === "turn" ? game.phase.seat : game.phase.kind === "claims" ? game.phase.from : null;
   const over = game.phase.kind === "over";
   const result = over ? shownResult : null;
   // You won this hand: your tiles topple flat, as everyone's on the table do.
@@ -3245,7 +3257,8 @@ export function PlayPanel({
   // Online, between hands: whether you've said you're ready, and who hasn't.
   const meReady = !!online && online.table.you !== null && online.table.ready.includes(online.table.you);
   const notReady = online && net ? online.table.waitingOn.filter((s) => s !== online.table.you).map((s) => nameOf(net.toLocal(s))) : [];
-  const tilesLeftLabel = String(liveTilesLeft(game)).padStart(2, "0");
+  const tilesLeft = settled?.left ?? liveTilesLeft(game);
+  const tilesLeftLabel = String(tilesLeft).padStart(2, "0");
 
   const total = (seat: number) => (
     <span className={`play-total${totals[seat] < 0 ? " is-neg" : ""}`}>{totals[seat] > 0 ? `+${totals[seat]}` : totals[seat]}</span>
@@ -3369,7 +3382,7 @@ export function PlayPanel({
       winningTile: wonWith(seat),
       melds: p.melds,
       hideConcealed: hidden || (!over && !watch),
-      flowers: p.flowers,
+      flowers: settled?.flowers[seat] ?? p.flowers,
       wallGrow: SIDES[seat] === "top" ? 1 : sideWallGrow(p.melds.length),
       ...(peekKongs.current[seat] ? { glassKongs: peekKongs.current[seat], peekOpen: !!peeked && peekSeat === seat } : {}),
     };
@@ -3438,9 +3451,9 @@ export function PlayPanel({
       })),
       melds: me.melds,
       hideConcealed: !handSeen,
-      flowers: me.flowers,
+      flowers: settled?.flowers[HUMAN] ?? me.flowers,
       toppled: iWon,
-      drawKey: String(liveTilesLeft(game)),
+      drawKey: String(tilesLeft),
       winLead: winIndex >= 0 ? WIN_TILE_LEAD : 0,
       sliding: !!swapPhase || swapFlying || swapJoining,
       given: swapPhase?.piles[HUMAN] ? glGiven : null,
@@ -3920,7 +3933,7 @@ export function PlayPanel({
           <span className="play-bar-round">
             {roundLabel(game)}
           </span>
-          <span className="play-bar-left">剩:{liveTilesLeft(game)}張</span>
+          <span className="play-bar-left">剩:{tilesLeft}張</span>
           {potNow > 0 && <span className="play-bar-left play-bar-pot">獎池:{potNow}</span>}
           {saveFailed && !online && (
             <span className="play-bar-unsaved" role="alert" title="This phone's storage is full or blocked - a reload would lose this game">
