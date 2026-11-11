@@ -93,7 +93,7 @@ export interface Player {
   // it throws a tile that doesn't complete its hand.
   overWater?: boolean;
   // Passed up a pung (or kong) of this tile: no calling it again till the
-  // next draw - the same tile thrown by someone else meanwhile is barred.
+  // next draw or call - the same tile thrown by someone else meanwhile is barred.
   passedPung?: Tile;
   // The tile it last threw, till its next draw or call: no claiming that
   // tile back (pung, kong or run) - nor a run with the far end of the run it
@@ -1048,6 +1048,9 @@ export function resolveClaims(state: GameState, decisions: (Claim | null)[]): Ga
   const claim = decisions[best]!;
   const p = s.players[best];
   delete p.threw; // a call lifts the bar on a claim back
+  // And a passed pung, as a draw would: taking a run off a tile you hold a
+  // pair of isn't passing it up for the rest of the go-around.
+  delete p.passedPung;
   if (state.phase.robKong) {
     // Robbed: the tile goes to the winner, and the pung stays a pung.
     p.hand.push(tile);
