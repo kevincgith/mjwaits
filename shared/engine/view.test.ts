@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { applyTurnMove, botClaim, botTurnMove, dealHand, resolveClaims, SEATS, type GameState, type WallTile } from "./game";
 import type { Tile } from "./mahjong";
-import { viewFor } from "./view";
+import { mayPeek, viewFor } from "./view";
 
 // A seeded random source, so a failure can be replayed.
 function seeded(seed: number) {
@@ -183,5 +183,63 @@ describe("viewFor, 一炮多響", () => {
     expect(v.phase.result.alsoWon?.[0]).toMatchObject({ winner: 2, scoreError: null });
     expect(v.phase.result.alsoWon?.[0].score?.patterns.map((x) => x.id)).toContain("multi-win-double");
     expect(() => JSON.stringify(v)).not.toThrow();
+  });
+});
+
+describe("peeking (after 叮)", () => {
+  const tile = (suit: Tile["suit"], rank: number) => ({ suit, rank }) as Tile;
+  const drawn = tile("m", 9);
+  const kong = [tile("z", 1), tile("z", 1), tile("z", 1), tile("z", 1)];
+  // Seat 0 has declared 叮; seat 1 has just drawn, holds a concealed kong and has passed a win.
+  function table(riichi = true): GameState {
+    const s = dealHand({ dealer: 0, roundWind: 1, dealerStreak: 0 }, undefined, seeded(4));
+    return {
+      ...s,
+      phase: { kind: "turn", seat: 1, drawn, replacement: null },
+      players: s.players.map((p, seat) =>
+        seat === 0 && riichi
+          ? { ...p, riichi: { state: "riichi" as never, discard: 0, ippatsu: false } }
+          : seat === 1
+            ? { ...p, hand: [tile("t", 5), tile("b", 2), drawn], melds: [{ kind: "kong" as const, tiles: kong, concealed: true, from: null }], overWater: true }
+            : p
+      ),
+    };
+  }
+  const all = () => true;
+
+  it("only after 叮, and never your own", () => {
+    expect(mayPeek(table(), 0, 1)).toBe(true);
+    expect(mayPeek(table(), 0, 0)).toBe(false);
+    expect(mayPeek(table(false), 0, 1)).toBe(false);
+    expect(mayPeek(table(), -1, 1)).toBe(false);
+    expect(viewFor(table(false), 0, all, false, { at: 1, by: [] }).peek).toBeUndefined();
+  });
+
+  it("not once the hand's over", () => {
+    const over = { ...table(), phase: { kind: "over", result: { winner: null, from: null, deltas: [0, 0, 0, 0] } } } as unknown as GameState;
+    expect(mayPeek(over, 0, 1)).toBe(false);
+  });
+
+  it("shows the standing tiles and concealed kongs, without the tile just drawn", () => {
+    const peek = viewFor(table(), 0, all, false, { at: 1, by: [] }).peek!;
+    expect(peek.seat).toBe(1);
+    expect(peek.tiles).toHaveLength(2);
+    expect(peek.tiles).toEqual(expect.arrayContaining([tile("b", 2), tile("t", 5)]));
+    expect(peek.tiles.some((t) => t.suit === "m" && t.rank === 9)).toBe(false);
+    expect(peek.kongs).toEqual([kong]);
+  });
+
+  it("leaves the seat itself closed: its hand, its kong, what it passed, its draw", () => {
+    const v = viewFor(table(), 0, all, false, { at: 1, by: [] });
+    expect(v.players[1].hand).toBeNull();
+    expect(v.players[1].melds[0]).toMatchObject({ hidden: true });
+    expect(v.players[1].overWater).toBeUndefined();
+    expect(v.phase).toMatchObject({ kind: "turn", drawn: null });
+  });
+
+  it("tells only the player looked at, and only while the peeker may", () => {
+    expect(viewFor(table(), 1, all, false, { at: null, by: [0] }).peekedBy).toEqual([0]);
+    expect(viewFor(table(), 2, all, false, { at: null, by: [] }).peekedBy).toBeUndefined();
+    expect(viewFor(table(false), 1, all, false, { at: null, by: [0] }).peekedBy).toBeUndefined();
   });
 });

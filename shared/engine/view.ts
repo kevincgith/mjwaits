@@ -8,7 +8,7 @@
 // as at a real table. view.test.ts checks that a view doesn't change when
 // everything the seat can't see is shuffled.
 
-import type { Tile } from "./mahjong";
+import { sortTiles, type Tile } from "./mahjong";
 import { DEAD_WALL_SIZE, liveTilesLeft, type Chain, type GameMeld, type GameState, type HandResult, type Player, type TableBonus } from "./game";
 import { patternDisplayName, type ScoreResult } from "./scoring";
 
@@ -71,7 +71,37 @@ export type PhaseView =
     }
   | { kind: "over"; result: ResultView };
 
+// A look at another seat's tiles (see mayPeek): what's standing in its hand,
+// without a tile just drawn, and its concealed kongs. Nothing else of what it
+// knows or has passed up.
+export interface PeekView {
+  seat: number;
+  tiles: Tile[];
+  kongs: Tile[][];
+}
+
+// 偷睇: a player who has declared 叮 may look at another seat's tiles while the
+// hand is on. Their own hand is locked, so what they see can't change it.
+export function mayPeek(s: GameState, you: number, seat: number): boolean {
+  return you >= 0 && seat >= 0 && seat !== you && !!s.players[you]?.riichi && !!s.players[seat] && (s.phase.kind === "turn" || s.phase.kind === "claims");
+}
+
+export function peekView(s: GameState, seat: number): PeekView {
+  const p = s.players[seat];
+  const tiles = copyTiles(p.hand);
+  const drawn = s.phase.kind === "turn" && s.phase.seat === seat ? s.phase.drawn : null;
+  if (drawn) {
+    const at = tiles.findIndex((t) => t.suit === drawn.suit && t.rank === drawn.rank);
+    if (at >= 0) tiles.splice(at, 1);
+  }
+  return { seat, tiles: sortTiles(tiles), kongs: p.melds.filter((m) => m.kind === "kong" && m.concealed).map((m) => copyTiles(m.tiles)) };
+}
+
 export interface TableView {
+  // The seat you're peeking at, while you are (see mayPeek).
+  peek?: PeekView;
+  // Who's peeking at you, right now. Only you are told.
+  peekedBy?: number[];
   you: number;
   players: SeatView[];
   wallLeft: number; // live tiles left to draw
@@ -100,7 +130,8 @@ const copyTiles = (tiles: Tile[]) => tiles.map((t) => ({ suit: t.suit, rank: t.r
 // A concealed kong (暗槓) stays face down to the others till the hand's
 // over - then it's shown with the rest of that player's hand (a hand kept
 // hidden keeps it hidden too).
-export function viewFor(s: GameState, you: number, shown: (seat: number) => boolean = () => true, seeAll = false): TableView {
+// `peek`: the seat you're looking at, and who's looking at you.
+export function viewFor(s: GameState, you: number, shown: (seat: number) => boolean = () => true, seeAll = false, peek?: { at: number | null; by: number[] }): TableView {
   const over = s.phase.kind === "over";
   const players: SeatView[] = s.players.map((p, seat) => {
     const open = seeAll || seat === you || (over && shown(seat));
@@ -157,7 +188,10 @@ export function viewFor(s: GameState, you: number, shown: (seat: number) => bool
       },
     };
   }
+  const peekedBy = peek?.by.filter((seat) => mayPeek(s, seat, you)) ?? [];
   return {
+    ...(peek && peek.at !== null && mayPeek(s, you, peek.at) ? { peek: peekView(s, peek.at) } : {}),
+    ...(peekedBy.length ? { peekedBy } : {}),
     you,
     players,
     wallLeft: liveTilesLeft(s),

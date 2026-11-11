@@ -1140,6 +1140,79 @@ describe("a claim window", () => {
   });
 });
 
+describe("peeking", () => {
+  // Kevin (seat 1) has declared 叮; Amy (seat 2) holds a concealed kong; bots at 0 and 3.
+  async function table(settings: Partial<TableState["settings"]> = {}, riichi = true) {
+    const code = await createTable();
+    const { p: host } = await join(code, "Kevin");
+    host.send({ t: "sit", seat: 1 });
+    const { p: other } = await join(code, "Amy");
+    other.send({ t: "sit", seat: 2 });
+    host.send({ t: "setup", settings: { multiWin: true, timer: 0, hold: 30, firstDealer: 0, ...settings } });
+    host.send({ t: "setBot", seat: 0, bot: "wall" });
+    host.send({ t: "setBot", seat: 3, bot: "wall" });
+    await host.table((s) => s.seats.every(Boolean));
+    host.send({ t: "start" });
+    await host.table((s) => s.phase === "playing");
+    await runInDurableObject(stubFor(code), (t: Table) => {
+      const tt = t as unknown as { load(): { game: GameState; decisions: unknown; botAt: number | null; deadline: number | null }; save(): void };
+      const rt = tt.load();
+      const g = rt.game;
+      if (riichi) g.players[1].riichi = { state: "riichi", discard: 0, ippatsu: false } as never;
+      g.players[2].hand = parseHand("1379m1357t1357b1z");
+      g.players[2].melds = [{ kind: "kong", tiles: parseHand("5555z"), concealed: true, from: null }];
+      g.phase = { kind: "claims", from: 0, tile: { suit: "m", rank: 5 } };
+      rt.decisions = [null, "waiting", "waiting", null];
+      rt.botAt = null;
+      rt.deadline = null;
+      tt.save();
+    });
+    return { code, host, other };
+  }
+
+  it("is sent only while it's held, tells only that player, and stops on letting go", async () => {
+    const { host, other } = await table();
+    host.send({ t: "peek", seat: 2 });
+    const seen = await host.table((s) => !!s.view?.peek);
+    expect(seen.view!.peek).toMatchObject({ seat: 2, kongs: [parseHand("5555z")] });
+    expect(seen.view!.peek!.tiles).toHaveLength(13);
+    expect(seen.view!.players[2].hand).toBeNull();
+    expect((await other.table((s) => !!s.view?.peekedBy)).view!.peekedBy).toEqual([1]);
+    expect(other.latest!.view!.peek).toBeUndefined();
+    expect(host.latest!.view!.peekedBy).toBeUndefined();
+    expectNoLeaks(host.states);
+    host.send({ t: "peek", seat: null });
+    await host.table((s) => !s.view?.peek);
+    await other.table((s) => !s.view?.peekedBy);
+  });
+
+  it("isn't given before 叮", async () => {
+    const { host, other } = await table({}, false);
+    host.send({ t: "peek", seat: 2 });
+    host.send({ t: "ping" });
+    await host.next("pong");
+    expect(host.states.some((s) => s.view?.peek)).toBe(false);
+    expect(other.states.some((s) => s.view?.peekedBy)).toBe(false);
+  });
+
+  it("isn't given with the setting off", async () => {
+    const { host, other } = await table({ peeking: false });
+    host.send({ t: "peek", seat: 2 });
+    host.send({ t: "ping" });
+    await host.next("pong");
+    expect(host.states.some((s) => s.view?.peek)).toBe(false);
+    expect(other.states.some((s) => s.view?.peekedBy)).toBe(false);
+  });
+
+  it("ends when the peeker's connection goes", async () => {
+    const { host, other } = await table();
+    host.send({ t: "peek", seat: 2 });
+    await other.table((s) => !!s.view?.peekedBy);
+    host.ws.close();
+    await other.table((s) => !s.view?.peekedBy);
+  });
+});
+
 describe("a second chance", () => {
   // Kevin at seat 1, Amy at seat 2, bots at 0 and 3 - seat 0 has just thrown
   // 5m. `hands`: Kevin's and Amy's; both are waited on.
