@@ -89,6 +89,24 @@ export function saveObserve(o: Observe): void {
 
 // Whether this phone has moved the corner camera yet (until it has, the table says how).
 const DRAGGED_KEY = "mjwaits.cornerDragged";
+const PEEKED_KEY = "mjwaits.peeked";
+
+// Whether this phone has peeked yet (till then, how to is shown after 叮).
+export function hasPeeked(): boolean {
+  try {
+    return localStorage.getItem(PEEKED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function notePeeked(): void {
+  try {
+    localStorage.setItem(PEEKED_KEY, "1");
+  } catch {
+    // Storage blocked: the hint just comes back next time.
+  }
+}
 
 export function cornerDragged(): boolean {
   try {

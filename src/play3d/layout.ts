@@ -15,7 +15,7 @@ import { sortBonusTiles, type BonusTile } from "@mjwaits/shared/engine/scoring";
 import { bezier, EASE_IN, EASE_OUT, keyframes } from "./anim";
 import { about, chain, rotateX, rotateY, rotateZ, scale, translate, type Mat } from "./mat";
 import { acrossTable } from "./swapOrder";
-import type { GLHandTile, GLPond, GLSide, GLSwapRow, GLTableView, GLWall } from "./types";
+import type { GLHandTile, GLPond, GLSide, GLSwapRow, GLTableView, GLWall, PeekSide } from "./types";
 
 // The block, in ems of its tile size: width, height, thickness and how round its edges are.
 export const TILE_W = 0.72;
@@ -92,7 +92,7 @@ export interface Anim {
 
 // Flat marks: shadows on the felt, the newest discard's pin, the hint and
 // danger marks under and over your tiles, the spotlight's bubble.
-export type QuadKind = "shadow" | "row-shadow" | "pin" | "hint" | "danger" | "bubble-top" | "bubble-bottom" | "bubble-left" | "bubble-right" | "picked" | "gap";
+export type QuadKind = "tray" | "shadow" | "row-shadow" | "pin" | "hint" | "danger" | "bubble-top" | "bubble-bottom" | "bubble-left" | "bubble-right" | "picked" | "gap";
 export interface Quad {
   kind: QuadKind;
   // The unit square (-0.5..0.5 each way, at z 0) to where it's drawn.
@@ -100,8 +100,18 @@ export interface Quad {
   anim?: Anim;
 }
 
+// A seat's standing hand, for a peek: each tile's centre along the rack, and
+// the part of the felt a finger counts as on it.
+export interface Rack {
+  side: PeekSide;
+  axis: "x" | "y";
+  centres: number[];
+  box: { x0: number; y0: number; x1: number; y1: number };
+}
+
 export interface Layout {
-  felt: { pieces: Piece[]; quads: Quad[] };
+  // (`glass`: a peek's tiles, clear enough to see through, drawn over the rest.)
+  felt: { pieces: Piece[]; quads: Quad[]; glass?: Piece[]; glassQuads?: Quad[]; racks?: Rack[] };
   hand: { pieces: Piece[]; quads: Quad[]; width: number; height: number };
   // The compass's centre on the felt.
   middle: { x: number; y: number };
@@ -161,6 +171,9 @@ export interface Group {
   pad: number;
   along: number;
   across: number;
+  // A concealed kong a peek has seen: its face, and whether its top tile is
+  // turned up to show it now.
+  glass?: { face: string; open: boolean; key: string };
 }
 export const meldGroup = (m: GameMeld, hide: boolean, inRow: boolean, em: number): Group => {
   const slots = meldSlots(m, hide, inRow);
@@ -180,10 +193,39 @@ export function placeGroup(g: Group, at: (k: number) => [number, number], rot: n
     // A kong's fourth, on the middle one (a hair above its face).
     if (s.top !== undefined) {
       const z = THICK * g.em + 1;
-      pieces.push({ face: s.top ?? BACK, m: s.top ? lying(x, y, g.em, rot, z) : lyingDown(x, y, g.em, rot, z), shade, tint: 1 });
+      if (g.glass) {
+        // Turned up to the one looking, tipped toward them; or lying as it was.
+        const up = chain(translate(x, y, z + 0.5 * g.em), rotateX(-24), scale(g.em * 1.08));
+        pieces.push({ face: g.glass.face, m: g.glass.open ? up : lyingDown(x, y, g.em, rot, z), shade, tint: 1, ease: { key: g.glass.key, dur: 0.24, curve: SETTLE } });
+      } else pieces.push({ face: s.top ?? BACK, m: s.top ? lying(x, y, g.em, rot, z) : lyingDown(x, y, g.em, rot, z), shade, tint: 1 });
     }
   });
 }
+
+// A seat's melds, its concealed kongs marked with what a peek has seen of them.
+function seeThrough(side: PeekSide, w: GLWall, groups: Group[]): Group[] {
+  let k = 0;
+  return groups.map((g, i) => {
+    const m = w.melds[i];
+    if (!(m.kind === "kong" && m.concealed)) return g;
+    const n = k++;
+    const tiles = w.glassKongs?.[n];
+    return tiles ? { ...g, glass: { face: faceOf(tiles[0]), open: !!w.peekOpen, key: `kong:${side}:${n}` } } : g;
+  });
+}
+
+// A peek: how far either side of the finger it reaches; each tile by how far
+// from it - its size (in pond tiles) and how solid; how solid a tile seen
+// through in the rack is; how far back the lifted tiles lean from upright.
+const PEEK_REACH = 2;
+const PEEK_SIZE = [1.3, 1.14, 1];
+const PEEK_SOLID = [1, 0.95, 0.8];
+const PEEK_CLEAR = 0.32;
+const PEEK_LEAN = 66;
+// The tray a peek's tiles stand on: its width in the row's places, its depth
+// in pond tiles (the shape peekTray is painted to).
+export const TRAY_W = 5.4;
+export const TRAY_H = 2.2;
 
 // The standing hand's faces, as HandTilesView has them: blanks till it's laid
 // down; then sorted from its player's left, a winning tile at their right.
@@ -277,7 +319,62 @@ export const SWAP_ROW = 0.9;
 export function layoutTable(view: GLTableView, d: Dims): Layout {
   const felt: Piece[] = [];
   const feltQuads: Quad[] = [];
+  const glass: Piece[] = [];
+  const glassQuads: Quad[] = [];
+  const racks: Rack[] = [];
   const { rem, tile: T } = d;
+  const peek = view.peek;
+  // A standing tile in the peek's window goes clear.
+  const seenThrough = (side: PeekSide, i: number) => peek?.side === side && !peek.closing && !!peek.tiles && Math.abs(i - peek.at) <= PEEK_REACH;
+  const standingTile = (side: PeekSide, i: number, face: string, m: Mat, shade: [number, number]) =>
+    seenThrough(side, i) ? glass.push({ face, m, shade, tint: PEEK_CLEAR }) : felt.push({ face, m, shade, tint: 1 });
+  // A rack's place for a finger, and a peek at it: the tiles round the finger
+  // lift out and stand in a row facing you, starting at `lane` (running
+  // `dir` from it, a side rack; centred under the finger, across's), and
+  // settle back into the rack on letting go.
+  const addRack = (rack: Rack, lane: number, poses: Mat[], reversed: boolean, apart: boolean, dir: number) => {
+    racks.push(rack);
+    if (peek?.side !== rack.side || !peek.tiles || !rack.centres.length) return;
+    const at = Math.min(peek.at, rack.centres.length - 1);
+    const tiles = reversed ? [...peek.tiles].reverse() : peek.tiles;
+    // (A tile just drawn stands apart at the start of a reversed row, and isn't shown.)
+    const skip = reversed && apart ? 1 : 0;
+    const pitch = 1.02 * T;
+    const side = rack.axis === "y";
+    const margin = 2.6 * pitch;
+    const across = Math.max(margin, Math.min(d.feltW - margin, rack.centres[at]));
+    const middleX = side ? lane + dir * 2.5 * pitch : across;
+    const foot = side ? Math.max(cy0 + 1.7 * T, Math.min(cy1 - 1.5 * T, rack.centres[at] + 0.55 * T)) : lane + 1.4 * T;
+    // What they stand on, to keep them clear of whatever's on the table behind.
+    if (!peek.closing) {
+      const tray = (s: number) => chain(translate(middleX, foot - 0.62 * T, 0.5), scale(TRAY_W * pitch * s, TRAY_H * T * s, 1));
+      glassQuads.push({ kind: "tray", m: tray(1), anim: { key: `tray:${rack.side}`, delay: 0, dur: 0.2, pose: (t) => tray(0.7 + 0.3 * SETTLE(t)) } });
+    }
+    for (let i = at - PEEK_REACH; i <= at + PEEK_REACH; i++) {
+      const tile = tiles[i - skip];
+      if (!tile || !poses[i]) continue;
+      const n = Math.abs(i - at);
+      const key = `peek:${rack.side}:${i}`;
+      const em = PEEK_SIZE[n] * T;
+      const x = middleX + (side ? dir : 1) * (i - at) * pitch;
+      const yaw = (side ? dir : 1) * (i - at) * -4;
+      const lift = 0.14 * T;
+      const stood = (v: number, from: Mat): Mat => {
+        const fromScale = Math.hypot(from[0], from[1], from[2]);
+        const size = fromScale + (em - fromScale) * v;
+        const turn = (side ? (rack.side === "left" ? -90 : 90) : 180) * (1 - v);
+        return chain(translate(from[12] + (x - from[12]) * v, from[13] + (foot - from[13]) * v, lift * v), rotateZ(yaw * v + turn), rotateX(-90 + (90 - PEEK_LEAN) * v), translate(0, (-TILE_H / 2) * size, 0), scale(size));
+      };
+      const out = stood(1, poses[i]);
+      const face = faceOf(tile);
+      const ease = { key, dur: 0.18, curve: SETTLE };
+      if (peek.closing) glass.push({ face, m: poses[i], shade: LIT, tint: PEEK_SOLID[n], ease });
+      else {
+        glass.push({ face, m: out, shade: LIT, tint: PEEK_SOLID[n], ease, anim: { key: `${key}:out`, delay: 0, dur: 0.22, pose: (t) => stood(SETTLE(t), poses[i]) } });
+      }
+    }
+  };
+
   // The felt's padding (.play-felt), the gaps kept between the table's
   // parts, and the room inside.
   const cx0 = 0.7 * rem;
@@ -307,7 +404,7 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
     const maxLen = 17 * 0.72 * d.wall;
     const cols: Group[][] = [];
     let len = 0;
-    for (const g of w.melds.map((m) => meldGroup(m, w.hideConcealed, false, T))) {
+    for (const g of seeThrough(which, w, w.melds.map((m) => meldGroup(m, w.hideConcealed, false, T)))) {
       if (!cols.length || len + gap + g.along > maxLen + 0.5) {
         cols.push([g]);
         len = g.along;
@@ -352,7 +449,7 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
   const tEdgeW = (tdrew || tw.win >= 0 ? tn * tp : (tn + 1) * tp) + 0.25 * Wt + tslot;
   const tEdgeH = 0.55 * Wt;
   const tFlowers = flowerGroup(top.flowers, T);
-  const tMelds = top.melds.map((m) => meldGroup(m, top.hideConcealed, false, T));
+  const tMelds = seeThrough("top", top, top.melds.map((m) => meldGroup(m, top.hideConcealed, false, T)));
   const tGap = 0.15 * T;
   const meldsLong = sum(tMelds.map((g) => g.along + tGap));
   const laid = meldsLong + (tFlowers ? tFlowers.along + tGap : 0);
@@ -444,10 +541,12 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
       xs[i] = x;
       if (i === 1 && (tdrew || tw.win === 0)) x -= 0.25 * Wt;
     }
+    const topPoses: Mat[] = [];
     tw.faces.forEach((f, i) => {
       const fx = xs[i];
       if (!top.down) {
-        felt.push({ face: f, m: chain(translate(fx + 0.36 * Wt, edgeY0, 0), rotateX(90), translate(0, 0.5 * Wt, 0), scale(Wt)), shade: LIT, tint: 1 });
+        topPoses[i] = chain(translate(fx + 0.36 * Wt, edgeY0, 0), rotateX(90), translate(0, 0.5 * Wt, 0), scale(Wt));
+        standingTile("top", i, f, topPoses[i], LIT);
         return;
       }
       // Laid down: tipped over away from its player about its foot, slid
@@ -461,6 +560,11 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
       felt.push({ face: f, m: pose(0, 0.45 * Wt), shade: isWin ? TURNED : LIT, tint: 1, anim: topple(`top:down:${i}`, top, i, 90, 7, 0.45 * Wt, pose) });
       feltQuads.push(landing(shadowAt(cx, cy, Wt, isWin ? 90 : 0), `top:down:${i}`, top, i));
     });
+    if (!top.down) {
+      // (In front of its melds, when they're in front of it.)
+      const lane = (topFront ? tSeatY0 + tSeatH : edgeY0 + tEdgeH) + 0.75 * T;
+      addRack({ side: "top", axis: "x", centres: xs.map((v) => v + 0.36 * Wt), box: { x0: edgeX0 - tp, y0: edgeY0 - 1.3 * Wt, x1: edgeX0 + tEdgeW + tp, y1: lane + 0.6 * T } }, lane, topPoses, true, tdrew, 1);
+    }
     // Melds and bonus tiles from the right end (their left), each group's
     // tiles right to left.
     let gx = sideX1;
@@ -522,6 +626,7 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
     const edgeY0 = ys.length ? Math.min(...ys) : handY0;
     const edgeY1 = ys.length ? Math.max(...ys.map((y, i) => y + (i === win ? Wg : p))) : handY0;
     const tb = Math.min(0.45 * Wg, 0.9 * rem);
+    const poses: Mat[] = [];
     faces.forEach((f, i) => {
       const fy = ys[i];
       const fx = which === "left" ? edgeX0 : edgeX0 + S.edgeW;
@@ -530,7 +635,8 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
           which === "left"
             ? chain(translate(fx, fy + 0.36 * Wg, 0), rotateY(-90), translate(0.5 * Wg, 0, 0), rotateZ(90), scale(Wg))
             : chain(translate(fx, fy + 0.36 * Wg, 0), rotateY(90), translate(-0.5 * Wg, 0, 0), rotateZ(-90), scale(Wg));
-        felt.push({ face: f, m, shade: TURNED, tint: 1 });
+        poses[i] = m;
+        standingTile(which, i, f, m, TURNED);
         return;
       }
       const isWin = i === win;
@@ -544,6 +650,13 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
       felt.push({ face: f, m: pose(0, tb), shade: isWin ? LIT : TURNED, tint: 1, anim: topple(`${which}:down:${i}`, S.w, i, -90 * dir, -7 * dir, tb, pose) });
       feltQuads.push(landing(shadowAt(cx, cy, Wg, rot), `${which}:down:${i}`, S.w, i));
     });
+    if (!S.w.down) {
+      // (In front of its melds and bonus tiles.)
+      const clear = (S.sideW ? S.seatGap - S.meldIn + S.sideW : 0) + 0.75 * T;
+      const lane = which === "left" ? edgeX0 + S.edgeW + clear : edgeX0 - clear;
+      const [bx0, bx1] = which === "left" ? [edgeX0 - 1.5 * Wg, lane + 0.6 * T] : [lane - 0.6 * T, edgeX0 + S.edgeW + 1.5 * Wg];
+      addRack({ side: which, axis: "y", centres: ys.map((v) => v + 0.36 * Wg), box: { x0: bx0, y0: edgeY0 - p, x1: bx1, y1: edgeY1 + p } }, lane, poses, which === "right", drew, dir);
+    }
     // The melds: in front of the wall, stepped in toward it till the hand's
     // laid down; columns from the player's left (the far end for the left
     // seat, the near end for the right), wrapping toward the middle.
@@ -842,7 +955,7 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
     });
   }
 
-  return { felt: { pieces: felt, quads: feltQuads }, hand: layoutHand(view, d, spots, givenAt), middle };
+  return { felt: { pieces: felt, quads: feltQuads, glass, glassQuads, racks }, hand: layoutHand(view, d, spots, givenAt), middle };
 }
 
 // A tile at one end of a 換牌 flight, for flying in formation: its centre,

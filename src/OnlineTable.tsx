@@ -817,6 +817,13 @@ function Lobby({ table, me, send, onLeave }: { table: TableState; me: Welcome; s
               </Seg>
             ))}
           </Setting>
+          <Setting label="Peeking (after declaring 叮)" note={s.peeking === false ? "off" : "after 叮, drag along a rack to look at that player's tiles - they're told"}>
+            {[true, false].map((on) => (
+              <Seg key={String(on)} on={(s.peeking !== false) === on} disabled={!me.host} onClick={() => setup({ peeking: on })}>
+                {on ? "On" : "Off"}
+              </Seg>
+            ))}
+          </Setting>
           <Setting label="No claim back" note={s.runBack ? "off: any claim may be made" : "threw 1m: no pung, kong or run with it till you draw (from 123m, no 4m run either)"}>
             {[true, false].map((on) => (
               <Seg key={String(on)} on={!s.runBack === on} disabled={!me.host} onClick={() => setup({ runBack: !on })}>

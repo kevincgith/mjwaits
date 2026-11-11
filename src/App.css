@@ -16198,3 +16198,35 @@ button.sc-stat:active {
   pointer-events: none;
   background: rgba(10, 8, 6, 0.62);
 }
+
+/* A peek (after 叮): the table shifts a touch toward the rack you're looking at. */
+.play-gl,
+.play-stage {
+  transition: translate 0.26s ease-out;
+}
+.play-table[data-peek="left"] :is(.play-gl, .play-stage) {
+  translate: 0.8% 0;
+}
+.play-table[data-peek="right"] :is(.play-gl, .play-stage) {
+  translate: -0.8% 0;
+}
+.play-table[data-peek="top"] :is(.play-gl, .play-stage) {
+  translate: 0 1%;
+}
+@media (prefers-reduced-motion: reduce) {
+  .play-table[data-peek] :is(.play-gl, .play-stage) {
+    translate: none;
+  }
+}
+.play-peek-hint {
+  bottom: 7rem;
+}
+.play-peek-eye {
+  display: inline-grid;
+  place-items: center;
+  height: 1.15rem;
+  padding: 0 0.25rem;
+  border-radius: 0.3rem;
+  background: #ffd166;
+  color: #3a2a06;
+}

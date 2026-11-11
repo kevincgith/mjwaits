@@ -17,7 +17,7 @@ vi.mock("three", async (actual) => ({
 }));
 vi.mock("./textures", () => {
   const canvas = () => ({ width: 1, height: 1 });
-  return { tileShadow: canvas, rowShadow: canvas, pin: canvas, pickedRim: canvas, gapOutline: canvas, bar: canvas, bubble: canvas };
+  return { tileShadow: canvas, rowShadow: canvas, pin: canvas, pickedRim: canvas, gapOutline: canvas, bar: canvas, bubble: canvas, peekTray: canvas };
 });
 vi.stubGlobal("cancelAnimationFrame", () => {});
 
@@ -28,7 +28,7 @@ describe("the WebGL table's engine", () => {
     e.sizeBubbles(100, 60, 16, 2);
     // Everything the scenes hold: meshes, geometries, materials, and their textures.
     const used = new Set<THREE.EventDispatcher<{ dispose: object }>>();
-    for (const scene of [e.felt.scene, e.hand.scene])
+    for (const scene of [e.felt.scene, e.glass.scene, e.hand.scene])
       scene.traverse((o) => {
         if (!(o instanceof THREE.InstancedMesh)) return;
         const m = o.material as THREE.ShaderMaterial;

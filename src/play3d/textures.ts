@@ -251,3 +251,17 @@ export function bubble(bw: number, bh: number, em: number, from: "top" | "bottom
     ctx.fill();
   });
 }
+
+// What a peek's tiles stand on: as the discard's spotlight is, dark with a gold rim.
+export function peekTray(): HTMLCanvasElement {
+  const w = 1024;
+  const h = 394;
+  return paintCanvas(w, h, (ctx) => {
+    roundRect(ctx, 8, 8, w - 16, h - 16, 56);
+    ctx.fillStyle = "rgba(14, 18, 16, 0.84)";
+    ctx.fill();
+    ctx.lineWidth = 7;
+    ctx.strokeStyle = "rgba(255, 209, 102, 0.85)";
+    ctx.stroke();
+  });
+}
