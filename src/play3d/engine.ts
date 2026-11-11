@@ -14,10 +14,12 @@ import * as THREE from "three";
 import { THICK, TILE_H, TILE_R, TILE_W, type Layout, type Piece, type Quad, type QuadKind } from "./layout";
 import type { Mat } from "./mat";
 import type { Atlas } from "./textures";
-import { bar, bubble, gapOutline, pickedRim, pin, rowShadow, tileShadow } from "./textures";
+import { bar, bubble, gapOutline, peekTray, pickedRim, pin, rowShadow, tileShadow } from "./textures";
 
 const MAX_FELT = 260;
 const MAX_HAND = 48;
+// A peek's tiles: those seen through in the rack, and those lifted out of it.
+const MAX_GLASS = 16;
 
 // The block, in ems: its rounded footprint stood up `THICK` high, a cap at
 // either end. aPart: 0 a side, 1 the face (top), 2 the back (bottom).
@@ -82,48 +84,80 @@ const hex = (h: number) => `vec3(${(((h >> 16) & 255) / 255).toFixed(4)}, ${(((h
 
 // Colours as the CSS has them (sRGB, unconverted); the sides' gradient:
 // jade at the foot, a light seam, ivory up to the face.
+const TILE_VERTEX = /* glsl */ `
+  attribute float aPart;
+  attribute vec4 aFace;
+  attribute vec2 aShade;
+  attribute float aTint;
+  uniform vec4 uBack;
+  varying vec2 vUv;
+  varying float vPart;
+  varying float vZ;
+  varying float vShade;
+  varying float vTint;
+  varying vec4 vRect;
+  void main() {
+    vUv = uv;
+    vPart = aPart;
+    vZ = position.z / ${THICK.toFixed(3)};
+    // Its long sides (facing along y) shaded one way, its ends another,
+    // a rounded corner between them by how far round it faces.
+    vShade = mix(aShade.x, aShade.y, abs(normal.x));
+    vTint = aTint;
+    vRect = aPart > 1.5 ? uBack : aFace;
+    gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0);
+  }
+`;
+const TILE_FRAGMENT_HEAD = /* glsl */ `
+  uniform sampler2D uAtlas;
+  varying vec2 vUv;
+  varying float vPart;
+  varying float vZ;
+  varying float vShade;
+  varying float vTint;
+  varying vec4 vRect;
+  vec3 side(float z) {
+    vec3 c = mix(${hex(0x1f7a32)}, ${hex(0x35a84a)}, clamp(z / 0.38, 0.0, 1.0));
+    c = mix(c, ${hex(0x7fd98c)}, clamp((z - 0.38) / 0.08, 0.0, 1.0));
+    c = mix(c, ${hex(0xe6dfcb)}, clamp((z - 0.46) / 0.08, 0.0, 1.0));
+    c = mix(c, ${hex(0xf2ede0)}, clamp((z - 0.54) / 0.46, 0.0, 1.0));
+    return c;
+  }
+`;
+
+// A tile seen through (a peek): the same block, its body clear enough to see
+// the table behind it and its face nearly solid. `aTint` is how solid it is.
+const glassMaterial = (atlas: THREE.Texture, back: [number, number, number, number]) =>
+  new THREE.ShaderMaterial({
+    uniforms: { uAtlas: { value: atlas }, uBack: { value: new THREE.Vector4(...back) } },
+    vertexShader: TILE_VERTEX,
+    fragmentShader: /* glsl */ `
+      ${TILE_FRAGMENT_HEAD}
+      void main() {
+        vec3 c;
+        float a;
+        if (vPart < 0.5) {
+          c = mix(side(vZ) * (1.0 - vShade), vec3(0.86, 1.0, 0.9), 0.22);
+          a = 0.58;
+        } else {
+          c = texture2D(uAtlas, vRect.xy + vUv * vRect.zw).rgb;
+          a = vPart > 1.5 ? 0.5 : 0.95;
+        }
+        a *= vTint;
+        gl_FragColor = vec4(c * a, a);
+      }
+    `,
+    transparent: true,
+    premultipliedAlpha: true,
+    side: THREE.BackSide,
+  });
+
 const tileMaterial = (atlas: THREE.Texture, back: [number, number, number, number]) =>
   new THREE.ShaderMaterial({
     uniforms: { uAtlas: { value: atlas }, uBack: { value: new THREE.Vector4(...back) } },
-    vertexShader: /* glsl */ `
-      attribute float aPart;
-      attribute vec4 aFace;
-      attribute vec2 aShade;
-      attribute float aTint;
-      uniform vec4 uBack;
-      varying vec2 vUv;
-      varying float vPart;
-      varying float vZ;
-      varying float vShade;
-      varying float vTint;
-      varying vec4 vRect;
-      void main() {
-        vUv = uv;
-        vPart = aPart;
-        vZ = position.z / ${THICK.toFixed(3)};
-        // Its long sides (facing along y) shaded one way, its ends another,
-        // a rounded corner between them by how far round it faces.
-        vShade = mix(aShade.x, aShade.y, abs(normal.x));
-        vTint = aTint;
-        vRect = aPart > 1.5 ? uBack : aFace;
-        gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0);
-      }
-    `,
+    vertexShader: TILE_VERTEX,
     fragmentShader: /* glsl */ `
-      uniform sampler2D uAtlas;
-      varying vec2 vUv;
-      varying float vPart;
-      varying float vZ;
-      varying float vShade;
-      varying float vTint;
-      varying vec4 vRect;
-      vec3 side(float z) {
-        vec3 c = mix(${hex(0x1f7a32)}, ${hex(0x35a84a)}, clamp(z / 0.38, 0.0, 1.0));
-        c = mix(c, ${hex(0x7fd98c)}, clamp((z - 0.38) / 0.08, 0.0, 1.0));
-        c = mix(c, ${hex(0xe6dfcb)}, clamp((z - 0.46) / 0.08, 0.0, 1.0));
-        c = mix(c, ${hex(0xf2ede0)}, clamp((z - 0.54) / 0.46, 0.0, 1.0));
-        return c;
-      }
+      ${TILE_FRAGMENT_HEAD}
       void main() {
         vec3 c;
         if (vPart < 0.5) c = side(vZ) * (1.0 - vShade);
@@ -369,6 +403,8 @@ export class Engine {
   // Every geometry, material, texture and mesh it's made - all freed in dispose().
   readonly kept = new Set<Freeable>();
   private keep = <T extends Freeable>(d: T): T => (this.kept.add(d), d);
+  // A peek's tiles: seen as the felt is, drawn over it.
+  glass: Space;
   constructor(canvas: HTMLCanvasElement, atlas: Atlas) {
     // (Throws if the browser won't give it a context - see TableGL.)
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, premultipliedAlpha: true });
@@ -385,6 +421,8 @@ export class Engine {
     this.felt = new Space(geometry, material, MAX_FELT, keep);
     this.hand = new Space(geometry, material, MAX_HAND, keep);
     const mark = (c: HTMLCanvasElement) => keep(markMaterial(keep(canvasTexture(c))));
+    this.glass = new Space(geometry, keep(glassMaterial(tex, atlas.rects.get("back")!)), MAX_GLASS, keep);
+    this.glass.addMarks("tray", mark(peekTray()), 1, 0);
     this.felt.addMarks("shadow", mark(tileShadow()), MAX_FELT, 0);
     this.felt.addMarks("pin", mark(pin()), 4, 2);
     this.felt.addMarks("picked", mark(pickedRim()), 16, 2);
@@ -422,6 +460,10 @@ export class Engine {
     const fp = cssProjection(f.stage.d, f.stage.ox, f.stage.oy, f.width, f.height);
     this.felt.camera.projectionMatrix.copy(fp);
     this.felt.camera.projectionMatrixInverse.copy(fp).invert();
+    this.glass.root.matrix.fromArray(f.felt);
+    this.glass.root.matrixWorldNeedsUpdate = true;
+    this.glass.camera.projectionMatrix.copy(fp);
+    this.glass.camera.projectionMatrixInverse.copy(fp).invert();
     this.hand.root.matrix.makeTranslation(f.hand.x, f.hand.y, 0);
     this.hand.root.matrixWorldNeedsUpdate = true;
     const hp = cssProjection(f.hand.d, f.hand.ox, f.hand.oy, f.width, f.height);
@@ -433,6 +475,7 @@ export class Engine {
     const now = performance.now();
     this.felt.set(layout.felt.pieces, layout.felt.quads, this.rects, now);
     this.hand.set(layout.hand.pieces, layout.hand.quads, this.rects, now);
+    this.glass.set(layout.felt.glass ?? [], layout.felt.glassQuads ?? [], this.rects, now);
   }
 
   // Drawn now - and every frame after while anything's moving.
@@ -440,9 +483,11 @@ export class Engine {
   render() {
     const r = this.renderer;
     const now = performance.now();
-    const moving = [this.felt.tick(now), this.hand.tick(now)].some(Boolean);
+    const moving = [this.felt.tick(now), this.glass.tick(now), this.hand.tick(now)].some(Boolean);
     r.clear();
     r.render(this.felt.scene, this.felt.camera);
+    r.clearDepth();
+    r.render(this.glass.scene, this.glass.camera);
     r.clearDepth();
     r.render(this.hand.scene, this.hand.camera);
     if (moving && !this.looping) {
@@ -470,6 +515,17 @@ export class Engine {
     this.hand.tiles.getMatrixAt(n, m);
     const p = new THREE.Vector3().setFromMatrixPosition(m.premultiply(this.hand.tiles.matrixWorld)).applyMatrix4(this.hand.camera.projectionMatrix);
     return ((p.x + 1) / 2) * width;
+  }
+
+  // Where a point of the canvas falls on the felt's plane, in the felt's own pixels.
+  feltPoint(x: number, y: number, width: number, height: number): { x: number; y: number } | null {
+    const space = this.felt;
+    space.scene.updateMatrixWorld();
+    const ndc = (z: number) => new THREE.Vector3((x / width) * 2 - 1, 1 - (y / height) * 2, z).applyMatrix4(space.camera.projectionMatrixInverse);
+    const near = ndc(-1);
+    const ray = new THREE.Ray(near, ndc(1).sub(near).normalize()).applyMatrix4(space.root.matrixWorld.clone().invert());
+    const p = ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 0, 1), 0), new THREE.Vector3());
+    return p && { x: p.x, y: p.y };
   }
 
   // A pile's tile under a point, on your take (換牌).

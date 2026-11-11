@@ -9,10 +9,10 @@
 
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { Engine, type Frame } from "./engine";
-import { bubbleBox, feltToHand, layoutTable, SWAP_ROW, type Dims } from "./layout";
+import { bubbleBox, feltToHand, layoutTable, SWAP_ROW, type Dims, type Rack } from "./layout";
 import { cornerZoom, layoutCorner } from "./corner";
 import { sharedAtlas, type Atlas } from "./textures";
-import { CORNER_TILT, CORNER_TILT_MAX, CORNER_TILT_MIN, CORNER_YAW, type CornerCamera, type GLSide, type GLTableView } from "./types";
+import { CORNER_TILT, CORNER_TILT_MAX, CORNER_TILT_MIN, CORNER_YAW, type CornerCamera, type GLSide, type GLTableView, type PeekSide } from "./types";
 
 // An element's layout box within `root` (its offsets - transforms aside).
 function offsetIn(el: HTMLElement, root: HTMLElement): { x: number; y: number } {
@@ -151,6 +151,7 @@ export default function TableGL({
   onPress,
   tileXRef,
   onCameraMove,
+  onPeek,
 }: {
   view: GLTableView;
   // A tap on a pile's tile, on your take (換牌).
@@ -170,6 +171,9 @@ export default function TableGL({
   tileXRef?: RefObject<((index: number) => number | null) | null>;
   // The corner camera's been dragged.
   onCameraMove?: () => void;
+  // A finger on another seat's rack, after your 叮: which, and the place along
+  // it (null: let go).
+  onPeek?: (side: PeekSide | null, at: number) => void;
   rootRef: RefObject<HTMLElement | null>;
   feltRef: RefObject<HTMLElement | null>;
   handRef: RefObject<HTMLElement | null>;
@@ -188,6 +192,9 @@ export default function TableGL({
   const camera = useRef<CornerCamera>({ yaw: CORNER_YAW, tilt: CORNER_TILT });
   const viewRef = useRef(view);
   viewRef.current = view;
+  const racks = useRef<Rack[]>([]);
+  const onPeekRef = useRef(onPeek);
+  onPeekRef.current = onPeek;
   if (import.meta.env.DEV) (window as unknown as { __glView: GLTableView }).__glView = view;
   const onTileRef = useRef(onTile);
   onTileRef.current = onTile;
@@ -267,6 +274,7 @@ export default function TableGL({
     dims.current.handMinWidth = viewRef.current.mine.sliding ? keptWidth.current : 0;
     const layout = corner ? layoutCorner(viewRef.current, dims.current, camera.current) : layoutTable(viewRef.current, dims.current);
     keptWidth.current = viewRef.current.mine.sliding ? Math.max(keptWidth.current, layout.hand.width) : 0;
+    racks.current = layout.felt.racks ?? [];
     middle.style.left = `${layout.middle.x}px`;
     middle.style.top = `${layout.middle.y}px`;
     hand.style.width = `${layout.hand.width}px`;
@@ -482,6 +490,66 @@ export default function TableGL({
       root.removeEventListener("pointermove", onMove);
       root.removeEventListener("pointerup", onUp);
       root.removeEventListener("pointercancel", onCancel);
+    };
+  }, [rootRef]);
+
+  // A peek: a press on another seat's rack, and a slide along it.
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    let held: { rack: Rack; at: number; id: number } | null = null;
+    const feltAt = (e: PointerEvent) => {
+      const p = pointerIn(root, e);
+      return engine.current?.feltPoint(p.x, p.y, root.clientWidth, root.clientHeight) ?? null;
+    };
+    // The tile of a rack nearest a point on the felt.
+    const placeOn = (rack: Rack, p: { x: number; y: number }) => {
+      const v = rack.axis === "x" ? p.x : p.y;
+      return rack.centres.reduce((best, c, i) => (Math.abs(c - v) < Math.abs(rack.centres[best] - v) ? i : best), 0);
+    };
+    const letGo = () => {
+      if (!held) return;
+      held = null;
+      delete root.dataset.peek;
+      onPeekRef.current?.(null, 0);
+    };
+    const onDown = (e: PointerEvent) => {
+      const e3 = engine.current;
+      if (!e3 || !viewRef.current.peek || !e.isPrimary || offTable(e)) return;
+      const q = pointerIn(root, e);
+      if (e3.pickHand(q.x, q.y, root.clientWidth, root.clientHeight) !== null) return;
+      const p = feltAt(e);
+      const rack = p && racks.current.find((r) => r.centres.length && p.x >= r.box.x0 && p.x <= r.box.x1 && p.y >= r.box.y0 && p.y <= r.box.y1);
+      if (!p || !rack) return;
+      held = { rack, at: placeOn(rack, p), id: e.pointerId };
+      root.setPointerCapture(e.pointerId);
+      root.dataset.peek = rack.side;
+      onPeekRef.current?.(rack.side, held.at);
+    };
+    const onMove = (e: PointerEvent) => {
+      if (!held || e.pointerId !== held.id) return;
+      // Let go outside the window: no pointerup ever came.
+      if (e.pointerType === "mouse" && e.buttons === 0) return letGo();
+      const p = feltAt(e);
+      if (!p) return;
+      const at = placeOn(held.rack, p);
+      if (at === held.at) return;
+      held.at = at;
+      onPeekRef.current?.(held.rack.side, at);
+    };
+    const onEnd = (e: PointerEvent) => {
+      if (held && e.pointerId === held.id) letGo();
+    };
+    root.addEventListener("pointerdown", onDown);
+    root.addEventListener("pointermove", onMove);
+    root.addEventListener("pointerup", onEnd);
+    root.addEventListener("pointercancel", onEnd);
+    return () => {
+      letGo();
+      root.removeEventListener("pointerdown", onDown);
+      root.removeEventListener("pointermove", onMove);
+      root.removeEventListener("pointerup", onEnd);
+      root.removeEventListener("pointercancel", onEnd);
     };
   }, [rootRef]);
 

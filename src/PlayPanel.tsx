@@ -20,7 +20,7 @@
 // Your moves go to the server instead of into the game; the bots, timer and
 // payments are the server's.
 
-import { type CSSProperties, Fragment, lazy, memo, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, Fragment, lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   applyTurnMove,
   barredClaims,
@@ -124,8 +124,9 @@ import { ReviewSheet, type Decision } from "./PlayReview";
 import { RecordSheet } from "./PlayRecord";
 import { isMuted, play as playSound, setMuted, wakeAudio, type Sound } from "./lib/sound";
 import { addHand, loadRecord, saveRecord, type Opponent } from "./lib/playRecord";
-import type { GLFlight, GLMine, GLPile, GLSwapRow, GLTableView, GLWall } from "./play3d/types";
-import { cornerDragged, noteCornerDragged, wallCounts, type Observe, type ObserveMode } from "./lib/observer";
+import type { GLFlight, GLMine, GLPile, GLSwapRow, GLTableView, GLWall, PeekSide } from "./play3d/types";
+import { cornerDragged, hasPeeked, noteCornerDragged, notePeeked, wallCounts, type Observe, type ObserveMode } from "./lib/observer";
+import { mayPeek, peekView, type PeekView } from "@mjwaits/shared/engine/view";
 import { giverOrder, swapSlots } from "./play3d/swapOrder";
 import { loadLearnedModel, type LearnedModel } from "./lib/ml/browser";
 import { learnedClaim, learnedTurnMove, type LearnedBot } from "./lib/ml/policy";
@@ -191,6 +192,8 @@ const newMystery = () => MYSTERY_PREFIX + randomStyle();
 const ADVISOR = profileById("veteran");
 // Where each seat sits on screen, by seat index.
 const SIDES = ["bottom", "right", "top", "left"] as const;
+// A peek let go: how long its tiles take to settle back into the rack.
+const PEEK_CLOSE_MS = 200;
 // How long a bot "thinks" before a move, like a person: an obvious throw
 // goes almost at once, a close or risky one gets a real pause (difficulty
 // 0..1 from botTurnFor), with a little jitter, and a beat more after a
@@ -273,6 +276,7 @@ interface Saved {
   fanXue?: boolean; // 反雪 (absent: on)
   baoZimo?: boolean; // 包自摸 (absent: on)
   secondChance?: boolean; // a second chance on a call let go by (absent: on)
+  peeking?: boolean; // after 叮, a look at the others' tiles (absent: on)
   swapRules?: SwapRules; // 換牌: which rounds, and what the dice mean
   jackpot?: number; // 獎池: each player's share per draw (0: off)
   record?: boolean;
@@ -1163,6 +1167,36 @@ export function PlayPanel({
   useEffect(() => {
     if (!online && !setupOpen && !game.noSecondChance !== secondChanceOn) setGame((g) => ({ ...g, ...(secondChanceOn ? { noSecondChance: undefined } : { noSecondChance: true }) }));
   }, [game, secondChanceOn, online, setupOpen]);
+  // 偷睇: after your 叮, a finger on another seat's rack. Online the server
+  // sends that seat's tiles only while it's held, and tells that player.
+  const [peekingOn, setPeekingOn] = useState(() => saved?.peeking ?? true);
+  const [peekHold, setPeekHold] = useState<{ side: PeekSide; at: number; closing?: boolean } | null>(null);
+  const peekClosing = useRef(0);
+  const [peekHint, setPeekHint] = useState(() => !hasPeeked());
+  const canPeek = seated && !watch && (online ? online.table.settings.peeking !== false : peekingOn) && mayPeek(game, HUMAN, HUMAN + 1);
+  const peekSeat = canPeek && peekHold && !peekHold.closing ? SIDES.indexOf(peekHold.side) : null;
+  // Who's peeking at you, by this screen's seats.
+  const peekers = online && net ? (online.table.view?.peekedBy ?? []).map(net.toLocal) : [];
+  const peekSent = useRef<number | null>(null);
+  const peekLast = useRef<PeekView | null>(null);
+  const peekKongs = useRef<Record<number, Tile[][]>>({});
+  useEffect(() => {
+    if (!online || !net || peekSent.current === peekSeat) return;
+    peekSent.current = peekSeat;
+    online.send({ t: "peek", seat: peekSeat === null ? null : net.toTable(peekSeat) });
+  }, [online, net, peekSeat]);
+  const onPeek = useCallback((side: PeekSide | null, at: number) => {
+    window.clearTimeout(peekClosing.current);
+    if (side) {
+      setPeekHold({ side, at });
+      setPeekHint(false);
+      notePeeked();
+    } else {
+      // Let go: the tiles settle back into the rack, then they're gone.
+      setPeekHold((h) => h && { ...h, closing: true });
+      peekClosing.current = window.setTimeout(() => setPeekHold(null), PEEK_CLOSE_MS);
+    }
+  }, []);
   // 獎池: each draw everyone puts this in the pot; a 自摸 takes it all. 0: off.
   const [jackpot, setJackpot] = useState(() => saved?.jackpot ?? 5); // (5 till you choose)
   useEffect(() => {
@@ -1673,7 +1707,7 @@ export function PlayPanel({
   const [confirmNew, setConfirmNew] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
   // The settings as they were when the setup page was opened mid-game (Back restores them).
-  const setupFrom = useRef<{ opponents: string[]; randomOpponents: boolean; multiWin: boolean; runBack: boolean; fanXue: boolean; baoZimo: boolean; secondChanceOn: boolean; jackpot: number; swapRules: SwapRules; record: boolean } | null>(null);
+  const setupFrom = useRef<{ opponents: string[]; randomOpponents: boolean; multiWin: boolean; runBack: boolean; fanXue: boolean; baoZimo: boolean; secondChanceOn: boolean; peekingOn: boolean; jackpot: number; swapRules: SwapRules; record: boolean } | null>(null);
   // A game started from here (so Back from the setup page returns to it).
   const ledgerStarted = useRef(!fresh || !!quick);
   const [trackerOpen, setTrackerOpen] = useState(false);
@@ -1716,7 +1750,7 @@ export function PlayPanel({
     // was till 開局 Start - a new one opened from Play's home isn't saved
     // over the one there till then. What was waiting from before goes now.)
     if (!ledgerStarted.current || setupOpen) return void pendingSave.current?.();
-    const data: Saved = { game: localGame, totals: localTotals, hint, timer, opponents, randomOpponents, speed, oneTap, waits: showWaits, record, multiWin, multiWinSet, runBack, fanXue, baoZimo, secondChance: secondChanceOn, swapRules, jackpot, ledger: localLedger };
+    const data: Saved = { game: localGame, totals: localTotals, hint, timer, opponents, randomOpponents, speed, oneTap, waits: showWaits, record, multiWin, multiWinSet, runBack, fanXue, baoZimo, secondChance: secondChanceOn, peeking: peekingOn, swapRules, jackpot, ledger: localLedger };
     // (Not saved: still waiting - tried again on leaving, or the next change.)
     const write = () => {
       const ok = save(data);
@@ -1726,7 +1760,7 @@ export function PlayPanel({
     pendingSave.current = write;
     const id = window.setTimeout(write, SAVE_DELAY_MS);
     return () => window.clearTimeout(id);
-  }, [localGame, localTotals, hint, timer, opponents, randomOpponents, speed, oneTap, showWaits, record, multiWin, multiWinSet, runBack, fanXue, baoZimo, secondChanceOn, swapRules, jackpot, localLedger, setupOpen]);
+  }, [localGame, localTotals, hint, timer, opponents, randomOpponents, speed, oneTap, showWaits, record, multiWin, multiWinSet, runBack, fanXue, baoZimo, secondChanceOn, peekingOn, swapRules, jackpot, localLedger, setupOpen]);
   // The page hidden or going (a phone may not come back to it): saved now.
   useEffect(() => {
     const now = () => pendingSave.current?.();
@@ -2971,6 +3005,19 @@ export function PlayPanel({
                 </span>
               </div>
               <div className="play-menu-row">
+                <span title="After declaring 叮, drag along another player's rack to look at their tiles">
+                  Peeking (after declaring 叮)
+                  <span className="play-menu-note"> · {peekingOn ? "drag along a rack to look" : "off"}</span>
+                </span>
+                <span className="play-menu-seg">
+                  {[false, true].map((on) => (
+                    <button key={String(on)} type="button" className={peekingOn === on ? "toggle-on" : undefined} aria-pressed={peekingOn === on} onClick={() => setPeekingOn(on)}>
+                      {on ? "On" : "Off"}
+                    </button>
+                  ))}
+                </span>
+              </div>
+              <div className="play-menu-row">
                 <span>
                   No claim back
                   <span className="play-menu-note" title="Threw 1m: no pung, kong or run with it till you draw - from 123m, no run with 4m either"> · {runBack ? "any claim may be made" : "not of a tile just thrown"}</span>
@@ -3067,6 +3114,7 @@ export function PlayPanel({
     setFanXue(true);
     setBaoZimo(true);
     setSecondChanceOn(true);
+    setPeekingOn(true);
     setJackpot(5);
     setSwapRules(DEFAULT_SWAP_RULES);
     setRandomOpponents(true);
@@ -3254,6 +3302,14 @@ export function PlayPanel({
           {seatTag(seat)}
           {seat === game.dealer && dealerChip}
           {game.players[seat].riichi && <span className="play-riichi">叮</span>}
+          {peekers.includes(seat) && (
+            <span className="play-peek-eye" role="status" aria-label="Peeking at you" title="Peeking at you">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z" />
+                <circle cx="12" cy="12" r="3" />
+              </svg>
+            </span>
+          )}
           {lahChips(seat)}
         </span>
         {bubbles[seat] && (
@@ -3285,6 +3341,14 @@ export function PlayPanel({
   // discards go shows the piles.
   const showPiles = !!swapPhase || (!!ghost && game.discardsMade === 0);
 
+  // What a peek's showing: online, as the server sent it.
+  const sentPeek = online?.table.view?.peek;
+  const peeked = peekSeat === null ? null : online ? (sentPeek && net?.toLocal(sentPeek.seat) === peekSeat ? sentPeek : null) : peekView(game, peekSeat);
+  // What's been seen stays for the tiles to settle back with: this hand's only.
+  if (!canPeek) (peekLast.current = null), (peekKongs.current = {});
+  else if (peeked && peekSeat !== null) (peekLast.current = peeked), (peekKongs.current[peekSeat] = peeked.kongs);
+  const peekTiles = peeked?.tiles ?? (peekHold?.closing ? (peekLast.current?.tiles ?? null) : null);
+
   // The WebGL table: what's on the table, for its WebGL tiles - each seat's
   // standing hand, melds and bonus tiles, the ponds, the spotlight and your row.
   const glWall = (seat: number): GLWall => {
@@ -3307,6 +3371,7 @@ export function PlayPanel({
       hideConcealed: hidden || (!over && !watch),
       flowers: p.flowers,
       wallGrow: SIDES[seat] === "top" ? 1 : sideWallGrow(p.melds.length),
+      ...(peekKongs.current[seat] ? { glassKongs: peekKongs.current[seat], peekOpen: !!peeked && peekSeat === seat } : {}),
     };
   };
   const glPond = (seat: number) => ({ tiles: showPiles ? [] : game.players[seat].discards, riichiAt: game.players[seat].riichi?.discard, pinLast: discardFrom === seat });
@@ -3385,6 +3450,7 @@ export function PlayPanel({
     rows: { bottom: glRow(HUMAN), right: glRow(1), top: glRow(2), left: glRow(3) },
     flights: glFlights,
     ...(corner ? { corner: { bottom: glWall(HUMAN) } } : {}),
+    ...(canPeek ? { peek: { side: peekHold?.side ?? null, at: peekHold?.at ?? 0, tiles: peekTiles, ...(peekHold?.closing ? { closing: true } : {}) } } : {}),
   };
 
   // Your ways to make a run with the discard - each run once (with only one,
@@ -3602,7 +3668,7 @@ export function PlayPanel({
                 className="play-menu-link"
                 onClick={() => {
                   setMenuOpen(false);
-                  setupFrom.current = { opponents, randomOpponents, multiWin, runBack, fanXue, baoZimo, secondChanceOn, jackpot, swapRules, record };
+                  setupFrom.current = { opponents, randomOpponents, multiWin, runBack, fanXue, baoZimo, secondChanceOn, peekingOn, jackpot, swapRules, record };
                   // A new game, a new table - unless one's been picked.
                   if (randomOpponents) setOpponents(randomLineup());
                   setSetupOpen(true);
@@ -3658,6 +3724,7 @@ export function PlayPanel({
         {badge(1)}
         {corner && badge(HUMAN)}
         {corner && dragHint && <p className="play-corner-hint">Drag to move the camera · double-tap to reset</p>}
+        {canPeek && peekHint && <p className="play-corner-hint play-peek-hint">Drag along a player's rack to peek · they'll know</p>}
 
         {/* The table itself, tipped away from you in perspective; your hand
             and the bar stay flat in front of it. */}
@@ -3671,7 +3738,7 @@ export function PlayPanel({
           </div>
         </div>
         <Suspense fallback={null}>
-          <TableGL view={glView} rootRef={tableRef} feltRef={feltRef} handRef={myRowRef} middleRef={middleRef} onTile={tapTile} onPile={(side, i) => myTake && pickFrom(SIDES.indexOf(side), i)} sweep={swapGiving} onSweep={sweepTile} onPress={setPressed} tileXRef={tileXRef} onCameraMove={cameraMoved} />
+          <TableGL view={glView} rootRef={tableRef} feltRef={feltRef} handRef={myRowRef} middleRef={middleRef} onTile={tapTile} onPile={(side, i) => myTake && pickFrom(SIDES.indexOf(side), i)} sweep={swapGiving} onSweep={sweepTile} onPress={setPressed} tileXRef={tileXRef} onCameraMove={cameraMoved} onPeek={onPeek} />
         </Suspense>
 
         <div className={`play-me${autoplay ? " is-auto" : ""}`}>
@@ -3975,6 +4042,7 @@ export function PlayPanel({
                         setFanXue(was.fanXue);
                         setBaoZimo(was.baoZimo);
                         setSecondChanceOn(was.secondChanceOn);
+                        setPeekingOn(was.peekingOn);
                         setJackpot(was.jackpot);
                         setSwapRules(was.swapRules);
                         setRecord(was.record);

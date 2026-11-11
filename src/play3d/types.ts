@@ -7,6 +7,7 @@ import type { Tile } from "@mjwaits/shared/engine/mahjong";
 import type { BonusTile } from "@mjwaits/shared/engine/scoring";
 
 export type GLSide = "bottom" | "right" | "top" | "left";
+export type PeekSide = Exclude<GLSide, "bottom">;
 
 // The corner camera (an observer's view): `yaw` how far the table is turned,
 // `tilt` how far its plane is laid back, both in degrees. It starts at the
@@ -25,6 +26,10 @@ export const CORNER_TILT_MAX = 80;
 export interface GLWall {
   count: number;
   tiles: Tile[] | null;
+  // What a peek's seen of this seat's concealed kongs, and whether a peek at
+  // it is on now (each one's top tile turned up).
+  glassKongs?: Tile[][];
+  peekOpen?: boolean;
   // Which tile they've just drawn, when the corner camera has their hand.
   drawnTile?: Tile | null;
   drew: boolean;
@@ -116,6 +121,10 @@ export interface GLTableView {
   piles: Partial<Record<GLSide, GLPile>> | null;
   rows: Partial<Record<GLSide, GLSwapRow>>;
   flights: GLFlight[];
+  // Peeking allowed (after your 叮): which rack a finger's on and the place
+  // along it, and that seat's tiles once they've come. `closing`: let go,
+  // the tiles settling back.
+  peek?: { side: PeekSide | null; at: number; tiles: Tile[] | null; closing?: boolean };
   // An observer's free camera: the whole table turned and laid back, every
   // hand standing at its edge (the seat that's usually your row, here, is one
   // more wall).

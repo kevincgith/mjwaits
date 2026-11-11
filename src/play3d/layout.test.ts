@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { feltToHand, layoutTable, TILE_H, TILE_W, type Dims, type Piece } from "./layout";
+import { feltToHand, layoutTable, THICK, TILE_H, TILE_W, type Dims, type Piece } from "./layout";
 import { apply, chain, rotateX, translate } from "./mat";
 import { giverOrder, swapSlots } from "./swapOrder";
+import type { Tile } from "@mjwaits/shared/engine/mahjong";
 import type { GLFlight, GLSide, GLSwapRow, GLTableView, GLWall } from "./types";
 
 // A phone on its side (844 x 390), as the table measures it there.
@@ -386,5 +387,82 @@ describe("your hand's lift on the WebGL table", () => {
       const after = keys(hand(ranks.filter((_, i) => i !== 2).map((r) => tile(r))));
       expect(after.filter((k) => before.includes(k))).toEqual([]);
     }
+  });
+});
+
+describe("a peek on the WebGL table", () => {
+  const face = (rank: number): Tile => ({ suit: "m", rank }) as Tile;
+  const tiles = Array.from({ length: 16 }, (_, i) => face((i % 9) + 1));
+  const table = (peek?: GLTableView["peek"], top = wall(16)): GLTableView => ({ ...take("bottom", 0), piles: null, rows: {}, flights: [], walls: { right: wall(16), top, left: wall(16) }, peek });
+  const lifted = (ps: Piece[]) => ps.filter((p) => p.ease?.key.startsWith("peek:"));
+  const clear = (ps: Piece[]) => ps.filter((p) => !p.ease);
+
+  it("marks out a rack for each other seat, and draws nothing till a finger's on one", () => {
+    const out = layoutTable(table({ side: null, at: 0, tiles: null }), DIMS);
+    expect(out.felt.racks!.map((r) => r.side).sort()).toEqual(["left", "right", "top"]);
+    for (const r of out.felt.racks!) expect(r.centres).toHaveLength(16);
+    expect(out.felt.glass).toEqual([]);
+  });
+
+  it("lifts five real tiles out, the one by the finger biggest and most solid", () => {
+    const ps = lifted(layoutTable(table({ side: "left", at: 8, tiles }), DIMS).felt.glass!);
+    expect(ps).toHaveLength(5);
+    expect(ps.map((p) => p.tint)).toEqual([0.8, 0.95, 1, 0.95, 0.8]);
+    const sizes = ps.map((p) => size(p.m));
+    expect(sizes[2]).toBeGreaterThan(sizes[1]);
+    expect(sizes[1]).toBeGreaterThan(sizes[0]);
+    for (const p of ps) expect(p.anim).toBeDefined();
+  });
+
+  it("stands them in a row, side by side, on the table", () => {
+    for (const side of ["left", "right", "top"] as const) {
+      const ps = lifted(layoutTable(table({ side, at: 8, tiles }), DIMS).felt.glass!);
+      const xs = ps.map((p) => p.m[12]).sort((a, b) => a - b);
+      for (let i = 1; i < xs.length; i++) expect(xs[i] - xs[i - 1]).toBeGreaterThan(0.8 * DIMS.tile);
+      for (const x of xs) expect(x > 0 && x < DIMS.feltW).toBe(true);
+      expect(new Set(ps.map((p) => Math.round(p.m[13] / 12))).size).toBeLessThanOrEqual(2);
+    }
+  });
+
+  it("stands them on a tray, gone once it's let go", () => {
+    expect(layoutTable(table({ side: "left", at: 8, tiles }), DIMS).felt.glassQuads!.map((q) => q.kind)).toEqual(["tray"]);
+    expect(layoutTable(table({ side: "left", at: 8, tiles, closing: true }), DIMS).felt.glassQuads).toEqual([]);
+    expect(layoutTable(table({ side: null, at: 0, tiles: null }), DIMS).felt.glassQuads).toEqual([]);
+  });
+
+  it("shows fewer at the end of the rack", () => {
+    expect(lifted(layoutTable(table({ side: "right", at: 0, tiles }), DIMS).felt.glass!)).toHaveLength(3);
+  });
+
+  it("makes the standing tiles it's looking through clear, and leaves the rest", () => {
+    const out = layoutTable(table({ side: "top", at: 8, tiles }), DIMS);
+    expect(clear(out.felt.glass!)).toHaveLength(5);
+    expect(clear(out.felt.glass!).every((p) => p.tint < 0.5)).toBe(true);
+    const none = layoutTable(table({ side: null, at: 0, tiles: null }), DIMS);
+    expect(out.felt.pieces.length).toBe(none.felt.pieces.length - 5);
+  });
+
+  it("settles them back into the rack on letting go", () => {
+    const out = layoutTable(table({ side: "top", at: 8, tiles, closing: true }), DIMS);
+    const ps = lifted(out.felt.glass!);
+    expect(ps).toHaveLength(5);
+    for (const p of ps) expect(p.anim).toBeUndefined();
+    expect(clear(out.felt.glass!)).toHaveLength(0);
+  });
+
+  const kong = { kind: "kong" as const, tiles: [face(5), face(5), face(5), face(5)], concealed: true, from: null };
+  const kongTop = (open: boolean) => layoutTable(table({ side: "top", at: 3, tiles: tiles.slice(0, 13) }, { ...wall(13), melds: [kong], glassKongs: [kong.tiles], peekOpen: open }), DIMS).felt.pieces.find((p) => p.ease?.key === "kong:top:0")!;
+
+  it("turns a concealed kong's top tile up, and lays it back", () => {
+    expect(kongTop(true).face).toBe("m5");
+    // Lifted clear of the stack while it's up; face down again after.
+    expect(kongTop(true).m[14]).toBeGreaterThan(kongTop(false).m[14] - THICK * DIMS.tile);
+    expect(kongTop(true).m).not.toEqual(kongTop(false).m);
+  });
+
+  it("lays out as before with no peek allowed", () => {
+    const out = layoutTable(table(undefined), DIMS);
+    expect(out.felt.glass).toEqual([]);
+    expect(out.felt.pieces.every((p) => p.tint === 1)).toBe(true);
   });
 });
