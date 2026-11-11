@@ -7640,17 +7640,41 @@ html.playing body {
   font-size: 1rem;
 }
 
-/* The walkie-talkie: held, so no long-press menu or selection on a phone. */
+/* The walkie-talkie: held, so a big target, in the dark corner under the
+   right-hand icons - clear of the table. The side players' cards start
+   below it (both sides, to stay level). Scales with a short screen. */
+.play-table.has-talk {
+  --play-talk: min(4.5rem, calc(18.5 * var(--vh)));
+}
+
+.play-table.has-talk .play-badge.at-left,
+.play-table.has-talk .play-badge.at-right {
+  top: calc(max(0.4rem, var(--safe-top)) + 2.1rem + 0.25rem + var(--play-talk) + 0.35rem);
+}
+
+/* No long-press menu or selection on a phone. */
 .play-talk {
+  position: absolute;
+  top: calc(100% + 0.25rem);
+  right: 0;
+  width: var(--play-talk);
+  min-width: 0;
+  height: var(--play-talk);
+  border: 2px solid var(--play-gold);
+  color: var(--play-gold);
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
 }
 
+.play-talk svg {
+  width: 45%;
+  height: 45%;
+}
+
 .play-talk.is-opening {
-  border-color: var(--play-gold);
-  color: var(--play-gold);
+  background: rgba(255, 209, 102, 0.22);
 }
 
 .play-talk.is-live {

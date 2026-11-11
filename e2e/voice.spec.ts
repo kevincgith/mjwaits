@@ -93,6 +93,12 @@ test("online: hold to talk, one at a time, heard at the other phone; mute", asyn
   const boTalk = bo.locator(".play-talk");
   await expect(amyTalk).toBeVisible();
   await expect(boTalk).toBeVisible();
+  // Big enough to hold, in the top-right corner, above the player's card there.
+  const button = (await amyTalk.boundingBox())!;
+  const card = (await amy.locator(".play-badge.at-right").boundingBox())!;
+  expect(button.width).toBeGreaterThanOrEqual(60);
+  expect(button.x + button.width / 2).toBeGreaterThan(700);
+  expect(button.y + button.height).toBeLessThanOrEqual(card.y);
   // (The tap that wakes a phone's audio.)
   await bo.locator(".play-bar").click();
 

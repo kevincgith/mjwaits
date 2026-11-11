@@ -1107,6 +1107,7 @@ export function PlayPanel({
   // An observer's view of the table, and whether the bottom seat's tiles are theirs to see.
   const watch = online?.observe ?? null;
   const corner = watch?.mode === "corner";
+  const canTalk = !!online && online.table.you !== null;
   const handSeen = seated || !!watch;
   // How to move the corner camera, shown until this phone has.
   const [dragHint, setDragHint] = useState(() => !cornerDragged());
@@ -3395,7 +3396,7 @@ export function PlayPanel({
 
   return (
     <div className={`play-screen${swapGiving ? " is-sweeping" : ""}`}>
-      <div className={`play-table${corner ? " is-corner" : ""}`} ref={tableRef}>
+      <div className={`play-table${corner ? " is-corner" : ""}${canTalk ? " has-talk" : ""}`} ref={tableRef}>
         <div className="play-corner">
           <button type="button" className="play-icon-button" onClick={onExit} aria-label="Leave the table" title="Leave">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
@@ -3419,7 +3420,6 @@ export function PlayPanel({
               😊
             </button>
           )}
-          {online && seated && online.table.you !== null && <TalkButton voice={online.voice} seat={online.table.you} />}
           {online && <TableChat chat={online.chat} onOpen={() => setReacting(false)} />}
           {watch && online && (
             <ObservePicker
@@ -3649,6 +3649,8 @@ export function PlayPanel({
               </svg>
             </button>
           )}
+          {/* Held while you talk: big, and off the table, in the dark corner under these. */}
+          {canTalk && <TalkButton voice={online.voice} seat={online.table.you!} />}
         </div>
 
         {badge(2)}
