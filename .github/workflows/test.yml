@@ -29,7 +29,18 @@ jobs:
       - run: npm test
       - run: npm run build
       # Play tapped through in a browser (e2e/): the dev app, and a local Worker for the online table.
-      - run: npx playwright install --with-deps chromium
+      # Its system packages come from Ubuntu's mirrors, which the runner
+      # sometimes can't reach (a DNS failure on security.ubuntu.com failed
+      # whole runs): tried twice, then the browser alone - the runner image
+      # already carries Chrome and the libraries it needs.
+      - name: Install the test browser
+        run: |
+          for attempt in 1 2; do
+            npx playwright install --with-deps chromium && exit 0
+            echo "::warning::Playwright's system packages didn't install (attempt $attempt)"
+            sleep 15
+          done
+          npx playwright install chromium
       - run: npm run e2e
       - uses: actions/upload-artifact@v4
         if: failure()
