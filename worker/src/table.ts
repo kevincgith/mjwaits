@@ -51,7 +51,7 @@ import {
   type GameState,
   type TurnMove,
 } from "@mjwaits/shared/engine/game";
-import { blindPicks, botGive, botSplit, pileLeft, SWAP_PACE_MS, SWAP_TIMER_S, type SwapRules } from "@mjwaits/shared/engine/swap";
+import { blindPicks, botGive, botSplit, pileLeft, quickSwap, SWAP_PACE_MS, SWAP_TIMER_S, type SwapRules } from "@mjwaits/shared/engine/swap";
 import { botClaimFor, botSurrenders, botTurnMoveFor, MYSTERY_NAME, profileById, randomStyle } from "@mjwaits/shared/engine/bots";
 import type { Tile } from "@mjwaits/shared/engine/mahjong";
 import { mayPeek, viewFor } from "@mjwaits/shared/engine/view";
@@ -489,6 +489,7 @@ export class Table extends Hub<TableMessage> {
           undefined,
           random
         );
+        this.justDealt = true;
         rt.pot = 0;
         rt.phase = "playing";
         delete rt.pausedAt; // (a pause from the last game's no part of this one)
@@ -679,9 +680,11 @@ export class Table extends Hub<TableMessage> {
     rt.chanceKept = null;
     const timer = rt.settings.timer * 1000;
     if (g.phase.kind === "turn") {
-      // The dealer's first turn after 換牌 waits for its last rows to join the hands.
-      const settle = this.swapJustEnded ? this.swapWait("settle") : 0;
+      // The dealer's first turn after 換牌 waits for its last rows to join the
+      // hands; straight after the deal, for its dice.
+      const settle = this.swapJustEnded ? this.swapWait("settle") : this.justDealt ? this.swapWait("deal") : 0;
       this.swapJustEnded = false;
+      this.justDealt = false;
       if (this.actsAlone(g.phase.seat)) rt.botAt = now + settle + this.botPause;
       else if (timer) rt.deadline = now + settle + timer;
     } else if (g.phase.kind === "swap") {
@@ -689,7 +692,8 @@ export class Table extends Hub<TableMessage> {
       // each takes in turn - each step once the last has been seen (the dice,
       // a take's flight, a round's rows; see SWAP_PACE_MS).
       const ph = g.phase;
-      const wait = this.swapWait(ph.stage === "give" ? (ph.round === 1 ? "dice" : "settle") : ph.took.length ? "take" : "none");
+      this.justDealt = false; // (the deal's dice are in "dice")
+      const wait = this.swapWait(ph.stage === "give" ? (ph.round === 1 ? "dice" : "settle") : ph.took.length ? (quickSwap(g.swapRules) ? "quickTake" : "take") : "none");
       const alone = ph.stage === "give" ? [0, 1, 2, 3].some((s) => !ph.piles[s] && this.actsAlone(s)) : this.actsAlone(ph.taker);
       const people = ph.stage === "give" ? [0, 1, 2, 3].some((s) => !ph.piles[s] && !this.actsAlone(s)) : !this.actsAlone(ph.taker);
       if (alone) rt.botAt = now + wait + this.botPause;
@@ -722,6 +726,8 @@ export class Table extends Hub<TableMessage> {
 
   // Set when this step ended the swap, for the dealer's first turn (newDecision) - the same event.
   private swapJustEnded = false;
+  // Set when a hand's just been dealt, likewise: its dice roll before the dealer's first turn.
+  private justDealt = false;
 
   // A pause in the swap's pace (SWAP_PACE_MS), at the table's speed (none in the tests).
   private swapWait(kind: keyof typeof SWAP_PACE_MS | "none"): number {
@@ -1102,6 +1108,7 @@ export class Table extends Hub<TableMessage> {
       }
       const ended = rt.game;
       rt.game = nextHand(ended, undefined, random);
+      this.justDealt = true;
       this.record(ended, rt.game);
       rt.shown = [];
       rt.peeks = {};

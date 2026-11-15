@@ -28,8 +28,11 @@ const WIND_CHARS = ["", "東", "南", "西", "北"];
 // rounds, then the second, how many tiles each - and held a moment.
 // `factor`: the table's speed (fast plays it quicker).
 const DIE_GAP_MS = 1300; // the first throw to the second
-const DIE_SAY_MS = 800; // a throw to what it means
+export const DIE_SAY_MS = 800; // a throw to what it means
 export const swapDiceMs = (factor: number) => Math.round((DIE_GAP_MS + DIE_SAY_MS + 900) * factor);
+// The deal's three dice keep the same time: thrown together, what they
+// mean said as they land (DIE_SAY_MS), and held as long as the swap's.
+export const dealDiceMs = swapDiceMs;
 
 export function SwapDice({ phase, factor = 1 }: { phase: SwapPhase; factor?: number }) {
   // 0: the first die in the air; 1: it says its piece; 2: the second in
@@ -323,6 +326,17 @@ export function SwapSheet({ rules, onChange, onClose }: { rules: SwapRules; onCh
             );
           })}
         </div>
+        <h3>快換 Quick swap</h3>
+        <div className="play-swap-quick">
+          <span>Taken tiles grey out where they lie; once everyone has taken, they all fly at once.</span>
+          <span className="play-menu-seg">
+            {[false, true].map((on) => (
+              <button key={String(on)} type="button" className={(r.quick !== false) === on ? "toggle-on" : undefined} aria-pressed={(r.quick !== false) === on} onClick={() => update((r) => ({ ...r, quick: on }))}>
+                {on ? "On" : "Off"}
+              </button>
+            ))}
+          </span>
+        </div>
         <h3>First die: swap rounds</h3>
         {mapRow("rounds", 1, SWAP_MAX_ROUNDS, "swap rounds")}
         <h3>Second die: tiles each</h3>
@@ -349,6 +363,9 @@ export interface Flight {
   // pile): it turns over on the way.
   flip?: boolean;
   ghost?: boolean; // the round's last take - its pile drawn from the ghost
+  // Quick swap: taken, but held where it lay (greyed) till the round's last
+  // take - then every one sets off together.
+  waiting?: boolean;
   // Its giver's group in the taker's row, and once worked out, its place in that group.
   row?: { group: number; place?: number };
 }

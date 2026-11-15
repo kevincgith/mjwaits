@@ -430,6 +430,7 @@ export class Engine {
     for (const side of ["top", "bottom", "left", "right"] as const) this.felt.addMarks(`bubble-${side}`, mark(bubble(10, 10, 1, side, 1)), 1, 2);
     this.hand.addMarks("row-shadow", mark(rowShadow()), 1, 0);
     this.hand.addMarks("hint", mark(bar("#ffd166")), MAX_HAND, 2);
+    this.hand.addMarks("ready", mark(bar("#3ccf7a")), MAX_HAND, 2);
     this.hand.addMarks("danger", mark(bar("#ff6b5a")), MAX_HAND, 2);
   }
 

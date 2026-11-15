@@ -21,22 +21,32 @@ export interface SwapRules {
   winds: Wind[]; // the round winds that swap
   rounds: number[]; // by the first die (1-6): how many swap rounds
   tiles: number[]; // by the second die (1-6): how many tiles each
+  // 快換 Quick swap: a take's tiles greyed where they lie, not flown at once -
+  // the round's takes then fly together, once everyone has taken. The same
+  // takes, quicker. (Absent: on.)
+  quick?: boolean;
 }
 
 export const DEFAULT_SWAP_RULES: SwapRules = {
   winds: [2, 4],
   rounds: [1, 1, 2, 2, 3, 3],
   tiles: [3, 3, 3, 4, 5, 6],
+  quick: true,
 };
+
+export const quickSwap = (rules: Pick<SwapRules, "quick"> | undefined) => rules?.quick !== false;
 
 // Tiles each, at most: one from each of the other three is the least a take
 // can be, and a 16-tile hand can't give more than this and stay a hand.
-// How an online table paces 換牌 (ms), so every phone can show each step as
-// the Play table does: the deal's dice and then the swap's two dice, before
-// anyone gives; a take's tiles flying, before the next taker's turn; and a
-// round's rows held and then joining the hands, before the next round's
-// give - or, the swap done, the dealer's first turn.
-export const SWAP_PACE_MS = { dice: 4800, take: 1300, settle: 3400 };
+// How an online table paces the deal's dice and 換牌 (ms), so every phone
+// can show each step as the Play table does: the deal's dice (3s, as the
+// swap's - see dealDiceMs in PlaySwap), before the dealer's first turn; the
+// deal's dice and then the swap's two dice, before anyone gives; a take's
+// tiles flying, before the next taker's turn; and a round's rows held and
+// then joining the hands, before the next round's give - or, the swap done,
+// the dealer's first turn.
+// (Quick swap: a take's tiles greyed where they lie - quickTake - not flown.)
+export const SWAP_PACE_MS = { deal: 3100, dice: 6100, take: 1300, quickTake: 450, settle: 3400 };
 
 // Each give and take has this long (seconds) - whatever the turn timer is,
 // off included. Out of time, it's done for you as a bot would.

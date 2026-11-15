@@ -49,6 +49,9 @@ export interface GLPond {
   tiles: Tile[];
   riichiAt?: number;
   pinLast: boolean;
+  // A tile you're holding or have lifted to throw: every other one in the
+  // pond greyed, so its copies already out stand out (Seen copies).
+  focus?: Tile | null;
 }
 
 // One of your concealed tiles - null when it's face down (watching, not seated).
@@ -58,6 +61,8 @@ export interface GLHandTile {
   selected: boolean;
   hint: boolean;
   danger: boolean;
+  // 聽 Waits: throwing it would leave you ready - a green bar on its foot.
+  ready?: boolean;
   barred: boolean;
   winner: boolean;
   // Whether a tap on it does anything (your turn, or picking for 換牌).
@@ -91,6 +96,9 @@ export interface GLPile {
   picked: number[];
   // Tappable on your take.
   pickable: boolean;
+  // Quick swap: places taken this round, their tiles still lying there -
+  // greyed, and no longer to be picked.
+  taken?: boolean[];
 }
 
 // What a seat's taken this round, in a row by its hand: a group per giver,

@@ -92,7 +92,7 @@ export interface Anim {
 
 // Flat marks: shadows on the felt, the newest discard's pin, the hint and
 // danger marks under and over your tiles, the spotlight's bubble.
-export type QuadKind = "tray" | "shadow" | "row-shadow" | "pin" | "hint" | "danger" | "bubble-top" | "bubble-bottom" | "bubble-left" | "bubble-right" | "picked" | "gap";
+export type QuadKind = "tray" | "shadow" | "row-shadow" | "pin" | "hint" | "ready" | "danger" | "bubble-top" | "bubble-bottom" | "bubble-left" | "bubble-right" | "picked" | "gap";
 export interface Quad {
   kind: QuadKind;
   // The unit square (-0.5..0.5 each way, at z 0) to where it's drawn.
@@ -147,6 +147,8 @@ export const shadowAt = (x: number, y: number, em: number, rot = 0): Quad => ({
 interface Slot {
   face: string | null;
   top?: string | null;
+  // A concealed kong shown at last (the hand over): its top tile turns over.
+  flip?: boolean;
 }
 function runOrder(tiles: Tile[], claimed: Tile): number[] {
   const c = tiles.findIndex((t) => sameTile(t, claimed));
@@ -156,9 +158,11 @@ function runOrder(tiles: Tile[], claimed: Tile): number[] {
 }
 function meldSlots(m: GameMeld, hideConcealed: boolean, inRow: boolean): Slot[] {
   const stacked = m.kind === "kong" && m.tiles.length === 4 && !inRow;
-  const face = (j: number) => (m.concealed && (hideConcealed || j === 0 || j === (stacked ? 2 : 3)) ? null : faceOf(m.tiles[j]));
+  // A concealed kong: in a row, its middle two shown; stacked, only its top
+  // (the one under it stays face down - covered, it was turned up unseen).
+  const face = (j: number) => (m.concealed && (hideConcealed || (stacked ? j !== 3 : j === 0 || j === 3)) ? null : faceOf(m.tiles[j]));
   if (m.kind === "run" && m.claimed && m.tiles.length === 3) return runOrder(m.tiles, m.claimed).map((j) => ({ face: face(j) }));
-  if (stacked) return [{ face: face(0) }, { face: face(1), top: face(3) }, { face: face(2) }];
+  if (stacked) return [{ face: face(0) }, { face: face(1), top: face(3), ...(m.concealed && !hideConcealed ? { flip: true } : {}) }, { face: face(2) }];
   return m.tiles.map((_, j) => ({ face: face(j) }));
 }
 
@@ -174,6 +178,9 @@ export interface Group {
   // A concealed kong a peek has seen: its face, and whether its top tile is
   // turned up to show it now.
   glass?: { face: string; open: boolean; key: string };
+  // When a concealed kong's top tile turns over at the hand's end (s): as
+  // its player's hand goes down.
+  flipAt?: number;
 }
 export const meldGroup = (m: GameMeld, hide: boolean, inRow: boolean, em: number): Group => {
   const slots = meldSlots(m, hide, inRow);
@@ -197,7 +204,22 @@ export function placeGroup(g: Group, at: (k: number) => [number, number], rot: n
         // Turned up to the one looking, tipped toward them; or lying as it was.
         const up = chain(translate(x, y, z + 0.5 * g.em), rotateX(-24), scale(g.em * 1.08));
         pieces.push({ face: g.glass.face, m: g.glass.open ? up : lyingDown(x, y, g.em, rot, z), shade, tint: 1, ease: { key: g.glass.key, dur: 0.24, curve: SETTLE } });
-      } else pieces.push({ face: s.top ?? BACK, m: s.top ? lying(x, y, g.em, rot, z) : lyingDown(x, y, g.em, rot, z), shade, tint: 1 });
+      } else {
+        // A concealed kong shown at the hand's end: its top tile lifts off,
+        // turns over along its length and settles face up.
+        const flip = s.flip && s.top
+          ? {
+              key: `kong:flip:${Math.round(x)}:${Math.round(y)}`,
+              delay: g.flipAt ?? KONG_FLIP_DELAY,
+              dur: 0.6,
+              pose: (k: number) => {
+                const e = SETTLE(k);
+                return chain(translate(x, y, z + Math.sin(Math.PI * e) * 0.8 * g.em), rotateZ(rot), translate(0, 0, (THICK * g.em) / 2), rotateY(180 * (1 - e)), translate(0, 0, (-THICK * g.em) / 2), scale(g.em));
+              },
+            }
+          : undefined;
+        pieces.push({ face: s.top ?? BACK, m: s.top ? lying(x, y, g.em, rot, z) : lyingDown(x, y, g.em, rot, z), shade, tint: 1, anim: flip });
+      }
     }
   });
 }
@@ -217,6 +239,12 @@ function seeThrough(side: PeekSide, w: GLWall, groups: Group[]): Group[] {
 // A peek: how far either side of the finger it reaches; each tile by how far
 // from it - its size (in pond tiles) and how solid; how solid a tile seen
 // through in the rack is; how far back the lifted tiles lean from upright.
+// Seen copies: a pond's tiles other than the one you're holding, greyed
+// further than a 食替 tile (tint 0): 43% bright, mostly drained of colour.
+const POND_GREY = -0.5;
+// A concealed kong turned up at the hand's end, if its group doesn't say
+// when (flipAt): a beat after it's over.
+const KONG_FLIP_DELAY = 0.35;
 const PEEK_REACH = 2;
 const PEEK_SIZE = [1.3, 1.14, 1];
 const PEEK_SOLID = [1, 0.95, 0.8];
@@ -404,7 +432,7 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
     const maxLen = 17 * 0.72 * d.wall;
     const cols: Group[][] = [];
     let len = 0;
-    for (const g of seeThrough(which, w, w.melds.map((m) => meldGroup(m, w.hideConcealed, false, T)))) {
+    for (const g of seeThrough(which, w, w.melds.map((m) => ({ ...meldGroup(m, w.hideConcealed, false, T), flipAt: w.topple.at })))) {
       if (!cols.length || len + gap + g.along > maxLen + 0.5) {
         cols.push([g]);
         len = g.along;
@@ -449,7 +477,7 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
   const tEdgeW = (tdrew || tw.win >= 0 ? tn * tp : (tn + 1) * tp) + 0.25 * Wt + tslot;
   const tEdgeH = 0.55 * Wt;
   const tFlowers = flowerGroup(top.flowers, T);
-  const tMelds = seeThrough("top", top, top.melds.map((m) => meldGroup(m, top.hideConcealed, false, T)));
+  const tMelds = seeThrough("top", top, top.melds.map((m) => ({ ...meldGroup(m, top.hideConcealed, false, T), flipAt: top.topple.at })));
   const tGap = 0.15 * T;
   const meldsLong = sum(tMelds.map((g) => g.along + tGap));
   const laid = meldsLong + (tFlowers ? tFlowers.along + tGap : 0);
@@ -790,7 +818,8 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
                 ),
             }
           : undefined;
-      felt.push({ face: faceOf(t), m, shade: turned ? TURNED : LIT, tint: 1, anim: drop });
+      const unlike = !!pond.focus && faceOf(pond.focus) !== faceOf(t);
+      felt.push({ face: faceOf(t), m, shade: turned ? TURNED : LIT, tint: unlike ? POND_GREY : 1, anim: drop });
       feltQuads.push(shadowAt(x, y, em, rot));
       // The newest discard's pin: a gold point on its thrower's side.
       if (pond.pinLast && i === pond.tiles.length - 1) {
@@ -886,7 +915,8 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
       // Just given: unseen till its tile has come down from your hand.
       const coming = side === "bottom" && view.mine.given && givenAt.has(i) ? view.mine.given.key : null;
       const arrive: Anim | undefined = coming === null ? undefined : { key: `give:${coming}:${i}`, delay: 0, dur: GIVE_S, pose: () => scale(0) };
-      felt.push({ face: slot === "back" ? BACK : faceOf(slot), m, shade: rot ? TURNED : LIT, tint: 1, pick: pile.pickable ? [side, i] : undefined, anim: arrive });
+      const taken = !!pile.taken?.[i];
+      felt.push({ face: slot === "back" ? BACK : faceOf(slot), m, shade: rot ? TURNED : LIT, tint: taken ? POND_GREY : 1, pick: pile.pickable && !taken ? [side, i] : undefined, anim: arrive });
       // (Its shadow lands with it.)
       const shadow = standing ? { kind: "shadow" as const, m: chain(translate(x, y + 0.42 * P, 0.4), scale(SHADOW_W * P, 0.75 * P, 1)) } : shadowAt(x, y, P, rot);
       feltQuads.push(arrive ? { ...shadow, anim: { ...arrive, key: `${arrive.key}:shadow` } } : shadow);
@@ -1156,8 +1186,17 @@ function layoutHand(view: GLTableView, d: Dims, spots: Partial<Record<GLSide, Sp
           : { key: own(t.tile ? faceOf(t.tile) : BACK, x0), dur: 0.16, curve: SETTLE },
     });
     // Hints: the bots' pick underlined in gold; a risky tile barred in red.
-    if (t.hint) quads.push({ kind: "hint", m: chain(translate(x0 + 0.39 * H, y0 + H + 0.09 * H, 0), scale(0.78 * H * 0.64, 0.06 * H, 1)) });
-    if (t.danger) quads.push({ kind: "danger", m: chain(translate(x0 + 0.39 * H, y0 - 0.13 * H, 0), scale(0.78 * H * 0.7, 0.06 * H, 1)) });
+    // Each in its tile's own face plane, leant back with it - drawn flat in
+    // front of the row, the perspective put them off centre (most at the
+    // row's ends, and the red bar over the leant-back top furthest).
+    // (The gold one on the face's foot margin, just proud of it: below the
+    // tile it was all but hidden under the bar beneath the table.)
+    const bar = (y: number, w: number, proud = 0) => chain(translate(x0, y0, 0), about(0.39 * H, H, THICK * H, rotateX(-22)), translate(0.39 * H, y, (THICK + proud) * H), scale(w, 0.06 * H, 1));
+    // A tile that would leave you ready (聽 Waits): green on that margin -
+    // the gold, on one that's both, just above it.
+    if (t.ready) quads.push({ kind: "ready", m: bar(0.935 * H, 0.78 * H * 0.7, 0.01) });
+    if (t.hint) quads.push({ kind: "hint", m: bar(t.ready ? 0.87 * H : 0.935 * H, 0.78 * H * 0.64, 0.012) });
+    if (t.danger) quads.push({ kind: "danger", m: bar(-0.13 * H, 0.78 * H * 0.7) });
   });
   // No tile drawn: its place kept.
   if (mine.tiles.length && !mine.tiles.some((t) => t.drawn) && !winner) x += 0.3 * H + 0.746 * H;
