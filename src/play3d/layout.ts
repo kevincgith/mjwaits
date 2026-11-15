@@ -217,6 +217,9 @@ function seeThrough(side: PeekSide, w: GLWall, groups: Group[]): Group[] {
 // A peek: how far either side of the finger it reaches; each tile by how far
 // from it - its size (in pond tiles) and how solid; how solid a tile seen
 // through in the rack is; how far back the lifted tiles lean from upright.
+// Seen copies: a pond's tiles other than the one you're holding, greyed
+// further than a 食替 tile (tint 0): 43% bright, mostly drained of colour.
+const POND_GREY = -0.5;
 const PEEK_REACH = 2;
 const PEEK_SIZE = [1.3, 1.14, 1];
 const PEEK_SOLID = [1, 0.95, 0.8];
@@ -790,7 +793,8 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
                 ),
             }
           : undefined;
-      felt.push({ face: faceOf(t), m, shade: turned ? TURNED : LIT, tint: 1, anim: drop });
+      const unlike = !!pond.focus && faceOf(pond.focus) !== faceOf(t);
+      felt.push({ face: faceOf(t), m, shade: turned ? TURNED : LIT, tint: unlike ? POND_GREY : 1, anim: drop });
       feltQuads.push(shadowAt(x, y, em, rot));
       // The newest discard's pin: a gold point on its thrower's side.
       if (pond.pinLast && i === pond.tiles.length - 1) {

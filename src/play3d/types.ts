@@ -49,6 +49,9 @@ export interface GLPond {
   tiles: Tile[];
   riichiAt?: number;
   pinLast: boolean;
+  // A tile you're holding or have lifted to throw: every other one in the
+  // pond greyed, so its copies already out stand out (Seen copies).
+  focus?: Tile | null;
 }
 
 // One of your concealed tiles - null when it's face down (watching, not seated).

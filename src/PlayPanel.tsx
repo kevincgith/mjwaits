@@ -272,6 +272,7 @@ interface Saved {
   timer?: TimerSetting;
   speed?: Speed;
   oneTap?: boolean;
+  seenCopies?: boolean; // 見牌: holding a tile greys the ponds' others (absent: on)
   waits?: boolean; // 聽 Waits: what a ready hand waits on, and its 番 (absent: on)
   multiWin?: boolean; // 一炮多響 (else 截胡)
   multiWinSet?: boolean; // multiWin picked since it came on by default (else on)
@@ -1140,6 +1141,9 @@ export function PlayPanel({
   // 聽 Waits: when you're ready - or a tile lifted to throw would leave you
   // ready - what you'd wait on, and what each would be worth.
   const [showWaits, setShowWaits] = useState(() => saved?.waits ?? true);
+  // 見牌 Seen copies: a tile held (or lifted) to throw greys every other tile
+  // in the ponds - its copies already out stand out.
+  const [seenCopies, setSeenCopies] = useState(() => saved?.seenCopies ?? true);
   // 開局: a new game's rules, set before it's dealt (the menu during a game
   // keeps only what you'd change as you play). Opened for a new game - from
   // Play's home, or New game in the menu. Nothing set there touches the game
@@ -1788,7 +1792,7 @@ export function PlayPanel({
     // was till 開局 Start - a new one opened from Play's home isn't saved
     // over the one there till then. What was waiting from before goes now.)
     if (!ledgerStarted.current || setupOpen) return void pendingSave.current?.();
-    const data: Saved = { game: localGame, totals: localTotals, hint, timer, opponents, randomOpponents, speed, oneTap, waits: showWaits, record, multiWin, multiWinSet, runBack, fanXue, baoZimo, secondChance: secondChanceOn, peeking: peekingOn, swapRules, jackpot, ledger: localLedger };
+    const data: Saved = { game: localGame, totals: localTotals, hint, timer, opponents, randomOpponents, speed, oneTap, seenCopies, waits: showWaits, record, multiWin, multiWinSet, runBack, fanXue, baoZimo, secondChance: secondChanceOn, peeking: peekingOn, swapRules, jackpot, ledger: localLedger };
     // (Not saved: still waiting - tried again on leaving, or the next change.)
     const write = () => {
       const ok = save(data);
@@ -1798,7 +1802,7 @@ export function PlayPanel({
     pendingSave.current = write;
     const id = window.setTimeout(write, SAVE_DELAY_MS);
     return () => window.clearTimeout(id);
-  }, [localGame, localTotals, hint, timer, opponents, randomOpponents, speed, oneTap, showWaits, record, multiWin, multiWinSet, runBack, fanXue, baoZimo, secondChanceOn, peekingOn, swapRules, jackpot, localLedger, setupOpen]);
+  }, [localGame, localTotals, hint, timer, opponents, randomOpponents, speed, oneTap, seenCopies, showWaits, record, multiWin, multiWinSet, runBack, fanXue, baoZimo, secondChanceOn, peekingOn, swapRules, jackpot, localLedger, setupOpen]);
   // The page hidden or going (a phone may not come back to it): saved now.
   useEffect(() => {
     const now = () => pendingSave.current?.();
@@ -3438,7 +3442,10 @@ export function PlayPanel({
       ...(peekKongs.current[seat] ? { glassKongs: peekKongs.current[seat], peekOpen: !!peeked && peekSeat === seat } : {}),
     };
   };
-  const glPond = (seat: number) => ({ tiles: showPiles ? [] : game.players[seat].discards, riichiAt: game.players[seat].riichi?.discard, pinLast: discardFrom === seat });
+  // 見牌: the tile you're holding or have lifted to throw, its copies lit.
+  const focusAt = seenCopies && myTurn && !autoplay && !rolling ? (pressing ? pressed : selected) : null;
+  const pondFocus = focusAt !== null ? (handTiles[focusAt] ?? null) : null;
+  const glPond = (seat: number) => ({ tiles: showPiles ? [] : game.players[seat].discards, riichiAt: game.players[seat].riichi?.discard, pinLast: discardFrom === seat, focus: pondFocus === BLANK ? null : pondFocus });
   const spot =
     game.phase.kind === "claims"
       ? { tile: game.phase.tile, seat: game.phase.from, key: `c${game.discardsMade}` }
@@ -3631,6 +3638,16 @@ export function PlayPanel({
                     ))}
                   </span>
                 </div>
+                <div className="play-menu-row">
+                  <span>見牌 Seen copies</span>
+                  <span className="play-menu-seg">
+                    {[false, true].map((on) => (
+                      <button key={String(on)} type="button" className={seenCopies === on ? "toggle-on" : undefined} aria-pressed={seenCopies === on} onClick={() => setSeenCopies(on)}>
+                        {on ? "On" : "Off"}
+                      </button>
+                    ))}
+                  </span>
+                </div>
                 </>
               )}
               {seated && (
@@ -3688,6 +3705,16 @@ export function PlayPanel({
                 <span className="play-menu-seg">
                   {[false, true].map((on) => (
                     <button key={String(on)} type="button" className={showWaits === on ? "toggle-on" : undefined} aria-pressed={showWaits === on} onClick={() => setShowWaits(on)}>
+                      {on ? "On" : "Off"}
+                    </button>
+                  ))}
+                </span>
+              </div>
+              <div className="play-menu-row">
+                <span>見牌 Seen copies</span>
+                <span className="play-menu-seg">
+                  {[false, true].map((on) => (
+                    <button key={String(on)} type="button" className={seenCopies === on ? "toggle-on" : undefined} aria-pressed={seenCopies === on} onClick={() => setSeenCopies(on)}>
                       {on ? "On" : "Off"}
                     </button>
                   ))}
