@@ -70,7 +70,7 @@ import {
   type TurnMove,
   type WaitValue,
 } from "@mjwaits/shared/engine/game";
-import { allTileKinds, shanten, sortTiles, tileKey, tileLabel, type Tile } from "@mjwaits/shared/engine/mahjong";
+import { allTileKinds, getWaits, shanten, sortTiles, tileKey, tileLabel, type Tile } from "@mjwaits/shared/engine/mahjong";
 import { blindPicks, botGive, SWAP_TIMER_S, botSplit, DEFAULT_SWAP_RULES, givePlans, pileLeft, type GivePlan, type SwapPhase, type SwapRules } from "@mjwaits/shared/engine/swap";
 import { PlayDie } from "./PlayDie";
 import { dealDiceMs, DIE_SAY_MS, SWAP_FLIGHT_MS, SWAP_ROUND_HOLD_MS, SwapControls, SwapDice, swapDiceMs, SwapSheet, type Flight } from "./PlaySwap";
@@ -2942,6 +2942,20 @@ export function PlayPanel({
     () => (showWaits && waitsTile ? waitsAfterDiscard(game, HUMAN, waitsTile, riichiArmed) : []),
     [game, waitsTile, riichiArmed, showWaits]
   );
+  // 聽 Waits, on your turn: the tiles that would leave you ready if thrown
+  // (by kind) - each with a green bar on its foot.
+  const readyKinds = useMemo(() => {
+    const out = new Set<string>();
+    if (!showWaits || !myTurn || autoplay || me.riichi) return out;
+    const melds = meldsNeeded(me);
+    for (const t of me.hand) {
+      const key = tileKey(t);
+      if (out.has(key)) continue;
+      const at = me.hand.indexOf(t);
+      if (getWaits([...me.hand.slice(0, at), ...me.hand.slice(at + 1)], melds).length) out.add(key);
+    }
+    return out;
+  }, [showWaits, myTurn, autoplay, me]);
   const myShanten = useMemo(() => {
     if (!hint || !seated) return null;
     if (myTurn) return ratings?.[0]?.shanten ?? null;
@@ -3503,6 +3517,7 @@ export function PlayPanel({
         // (A finger held on one of yours lifts that one instead.)
         selected: (pressing ? pressed === i : selected === i) || (swapGiving && swapHand.includes(i)),
         hint: i === hintIndex,
+        ready: t !== BLANK && readyKinds.has(tileKey(t)) && !isForbidden(t),
         danger: hint && myTurn && dangerous.has(tileKey(t)),
         barred: isForbidden(t),
         winner: i === winIndex,

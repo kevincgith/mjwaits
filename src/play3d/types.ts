@@ -61,6 +61,8 @@ export interface GLHandTile {
   selected: boolean;
   hint: boolean;
   danger: boolean;
+  // 聽 Waits: throwing it would leave you ready - a green bar on its foot.
+  ready?: boolean;
   barred: boolean;
   winner: boolean;
   // Whether a tap on it does anything (your turn, or picking for 換牌).

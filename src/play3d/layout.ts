@@ -92,7 +92,7 @@ export interface Anim {
 
 // Flat marks: shadows on the felt, the newest discard's pin, the hint and
 // danger marks under and over your tiles, the spotlight's bubble.
-export type QuadKind = "tray" | "shadow" | "row-shadow" | "pin" | "hint" | "danger" | "bubble-top" | "bubble-bottom" | "bubble-left" | "bubble-right" | "picked" | "gap";
+export type QuadKind = "tray" | "shadow" | "row-shadow" | "pin" | "hint" | "ready" | "danger" | "bubble-top" | "bubble-bottom" | "bubble-left" | "bubble-right" | "picked" | "gap";
 export interface Quad {
   kind: QuadKind;
   // The unit square (-0.5..0.5 each way, at z 0) to where it's drawn.
@@ -1160,8 +1160,17 @@ function layoutHand(view: GLTableView, d: Dims, spots: Partial<Record<GLSide, Sp
           : { key: own(t.tile ? faceOf(t.tile) : BACK, x0), dur: 0.16, curve: SETTLE },
     });
     // Hints: the bots' pick underlined in gold; a risky tile barred in red.
-    if (t.hint) quads.push({ kind: "hint", m: chain(translate(x0 + 0.39 * H, y0 + H + 0.09 * H, 0), scale(0.78 * H * 0.64, 0.06 * H, 1)) });
-    if (t.danger) quads.push({ kind: "danger", m: chain(translate(x0 + 0.39 * H, y0 - 0.13 * H, 0), scale(0.78 * H * 0.7, 0.06 * H, 1)) });
+    // Each in its tile's own face plane, leant back with it - drawn flat in
+    // front of the row, the perspective put them off centre (most at the
+    // row's ends, and the red bar over the leant-back top furthest).
+    // (The gold one on the face's foot margin, just proud of it: below the
+    // tile it was all but hidden under the bar beneath the table.)
+    const bar = (y: number, w: number, proud = 0) => chain(translate(x0, y0, 0), about(0.39 * H, H, THICK * H, rotateX(-22)), translate(0.39 * H, y, (THICK + proud) * H), scale(w, 0.06 * H, 1));
+    // A tile that would leave you ready (聽 Waits): green on that margin -
+    // the gold, on one that's both, just above it.
+    if (t.ready) quads.push({ kind: "ready", m: bar(0.935 * H, 0.78 * H * 0.7, 0.01) });
+    if (t.hint) quads.push({ kind: "hint", m: bar(t.ready ? 0.87 * H : 0.935 * H, 0.78 * H * 0.64, 0.012) });
+    if (t.danger) quads.push({ kind: "danger", m: bar(-0.13 * H, 0.78 * H * 0.7) });
   });
   // No tile drawn: its place kept.
   if (mine.tiles.length && !mine.tiles.some((t) => t.drawn) && !winner) x += 0.3 * H + 0.746 * H;
