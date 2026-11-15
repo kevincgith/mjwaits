@@ -8,9 +8,9 @@ import { parseHand, type Tile } from "@mjwaits/shared/engine/mahjong";
 import { applyTurnMove, claimOptions, dealHand, type GameState } from "@mjwaits/shared/engine/game";
 import { replay, type ScoreGame } from "@mjwaits/shared/engine/ledger";
 import { PROTOCOL_VERSION } from "@mjwaits/shared/protocol/limits";
-import { blindPicks, botSplit, SWAP_TIMER_S, takeOrder, type Pile } from "@mjwaits/shared/engine/swap";
+import { blindPicks, botSplit, SWAP_PACE_MS, SWAP_TIMER_S, takeOrder, type Pile } from "@mjwaits/shared/engine/swap";
 import type { TableServerMessage, TableState } from "@mjwaits/shared/protocol/table";
-import type { Table } from "../src/table";
+import { BOT_PAUSE_MS, type Table } from "../src/table";
 import { BASE, ORIGIN } from "./helpers";
 import { HOST_GONE_MS } from "../src/hub";
 
@@ -875,8 +875,10 @@ describe("嗌錯, 自動 and bot speed", () => {
     const from = Date.now();
     await runInDurableObject(stubFor(code), (_t: Table, state: DurableObjectState) => state.storage.deleteAlarm());
     expect(await runInDurableObject(stubFor(code), (_t: Table, state: DurableObjectState) => state.storage.getAlarm())).toBeNull();
-    await host.table((s) => s.step > dealt.step, 4000);
-    expect(Date.now() - from).toBeLessThan(3000);
+    // (After the deal's dice: see SWAP_PACE_MS.deal.)
+    const dice = (SWAP_PACE_MS.deal * 300) / BOT_PAUSE_MS;
+    await host.table((s) => s.step > dealt.step, 4000 + dice);
+    expect(Date.now() - from).toBeLessThan(3000 + dice);
     expect(host.errors).toEqual([]);
   });
 
@@ -893,7 +895,8 @@ describe("嗌錯, 自動 and bot speed", () => {
     const sent = Date.now();
     host.send({ t: "start" });
     await host.table((s) => s.phase === "playing");
-    const wait = (await state(code)).botAt - sent;
+    // The dealer's first move: after the deal's dice (SWAP_PACE_MS.deal), then its pause.
+    const wait = (await state(code)).botAt - sent - (SWAP_PACE_MS.deal * 1000) / BOT_PAUSE_MS;
     expect(wait).toBeGreaterThan(300);
     expect(wait).toBeLessThan(700);
   });

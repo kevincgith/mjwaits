@@ -73,7 +73,7 @@ import {
 import { allTileKinds, shanten, sortTiles, tileKey, tileLabel, type Tile } from "@mjwaits/shared/engine/mahjong";
 import { blindPicks, botGive, SWAP_TIMER_S, botSplit, DEFAULT_SWAP_RULES, givePlans, pileLeft, type GivePlan, type SwapPhase, type SwapRules } from "@mjwaits/shared/engine/swap";
 import { PlayDie } from "./PlayDie";
-import { SWAP_FLIGHT_MS, SWAP_ROUND_HOLD_MS, SwapControls, SwapDice, swapDiceMs, SwapSheet, type Flight } from "./PlaySwap";
+import { dealDiceMs, DIE_SAY_MS, SWAP_FLIGHT_MS, SWAP_ROUND_HOLD_MS, SwapControls, SwapDice, swapDiceMs, SwapSheet, type Flight } from "./PlaySwap";
 import { sortBonusTiles, type BonusTile } from "@mjwaits/shared/engine/scoring";
 import { BonusGlyphSpan, TileGlyphSpan } from "./TileGlyphs";
 import {
@@ -117,7 +117,7 @@ import type { VoiceView } from "./lib/tableVoice";
 import { TableChat, type OnlineChat } from "./TableChat";
 import { BLANK, seatState, takenFaces } from "./lib/seatState";
 import { PLAY_SAVE_KEY } from "./lib/playSaved";
-import { replayCached, withEvents, type ScoreEvent, type ScoreGame } from "@mjwaits/shared/engine/ledger";
+import { replayCached, withEvents, type Lah, type ScoreEvent, type ScoreGame } from "@mjwaits/shared/engine/ledger";
 import { carriedOver, newPlayLedger, playEvents, uniqueNames } from "@mjwaits/shared/engine/playLedger";
 import { PlayScores } from "./scores/playScores";
 import { ReviewSheet, type Decision } from "./PlayReview";
@@ -230,6 +230,9 @@ const BUBBLE_MS = 2200;
 // Long enough to read: a longer line stays up longer.
 const bubbleMs = (text: string) => Math.max(BUBBLE_MS, 900 + [...text].length * 160);
 const BURST_MS = 1200;
+// 投降: its burst, and how long the 拉 it ended stays struck through.
+const SURRENDER = "投降";
+const SURRENDER_SHOW_MS = 4000;
 // A hand's end is seen on the table first - the 胡 / 自摸 called and the
 // hands laid down - and only then the result card: this long after a win,
 // less after a 流局 (no call to see).
@@ -1247,12 +1250,14 @@ export function PlayPanel({
   const settled = swapSettling ? swapEnd.current : null;
   const rolledFor = useRef<unknown>(null);
   // Before the screen's drawn, so a new deal never shows a frame of the
-  // table (or a swap's buttons) before its dice.
+  // table (or a swap's buttons) before its dice. (A new game's first deal
+  // waits for its setup page to close: thrown behind it, its roll was
+  // half over - or all - by Start.)
   useLayoutEffect(() => {
-    if (!game.dice || rolledFor.current === dealKey || !dealFresh || game.phase.kind === "over") return;
+    if (setupOpen || !game.dice || rolledFor.current === dealKey || !dealFresh || game.phase.kind === "over") return;
     rolledFor.current = dealKey;
     setRolling(true);
-  }, [game, dealKey, dealFresh]);
+  }, [game, dealKey, dealFresh, setupOpen]);
   // A roll that pays (圍骰 / 蛇骰): into the totals once, as the dice
   // settle. The saved paid mark stops a reload paying again; the ref stops
   // a second run of this effect before that mark has landed.
@@ -1315,10 +1320,18 @@ export function PlayPanel({
   }, [rolling, swapSettling, game.tableBonuses]);
   // How long the roll shows - timed on its own, so a re-run of the effect
   // above (which skips a deal it has seen) can't leave it showing forever.
+  // (The swap's time - see dealDiceMs - with what they mean said as they land.)
+  const [diceSaid, setDiceSaid] = useState(false);
   useEffect(() => {
     if (!rolling) return;
-    const id = window.setTimeout(() => setRolling(false), speed === "fast" ? 900 : 1700);
-    return () => window.clearTimeout(id);
+    const factor = speed === "fast" ? 0.6 : 1;
+    setDiceSaid(false);
+    const said = window.setTimeout(() => setDiceSaid(true), DIE_SAY_MS * factor);
+    const id = window.setTimeout(() => setRolling(false), dealDiceMs(factor));
+    return () => {
+      window.clearTimeout(said);
+      window.clearTimeout(id);
+    };
   }, [rolling, speed]);
   // Online the table doesn't wait for this phone's roll: the dice go as soon
   // as the first tile is thrown, so they never sit over tiles landing on the
@@ -1841,7 +1854,8 @@ export function PlayPanel({
   const burstAt = useRef<{ at: number; kind: "paid" | "flower" | "call" }>({ at: 0, kind: "call" });
   const showBurst = (seat: number, label: string, deltas?: number[]) => {
     const now = Date.now();
-    const kind = label === FLOWER_DRAW ? "flower" : deltas ? "paid" : "call";
+    // (Several 投降 at once each have their turn, as 補花 do.)
+    const kind = label === FLOWER_DRAW || label === SURRENDER ? "flower" : deltas ? "paid" : "call";
     const waits = burstAt.current.at > now - 100 && (kind === "flower" || (kind === "paid" && burstAt.current.kind !== "call"));
     const at = waits ? burstAt.current.at + BURST_MS : now;
     burstAt.current = { at, kind };
@@ -2086,9 +2100,32 @@ export function PlayPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [game.tableBonuses, swapSettling]);
 
-  // Online a bot's 投降 comes with no word from the table: between hands, a
-  // 拉 on a bot gone since the last view is one it gave up - and it says so
-  // (as it does here, see nextHandWithSurrenders), once.
+  // 投降: a 拉 given up between hands - a bot's as Next hand deals (see
+  // nextHandWithSurrenders), yours on the result card, or online anyone's
+  // (below). Each is shown once the next deal's dice have settled: a 投降
+  // burst over whoever gave it up (and a word from a bot), and the 拉 struck
+  // through among its holder's chips a while (SURRENDER_SHOW_MS) before it goes.
+  const [surrendered, setSurrendered] = useState<{ lah: Lah; id: number; shown: boolean }[]>([]);
+  const noteSurrender = (gone: Lah[]) => {
+    if (!gone.length) return;
+    const id = Date.now();
+    setSurrendered((was) => [...was, ...gone.map((lah, i) => ({ lah, id: id + i, shown: false }))]);
+  };
+  const diceDue = rolling || (!!game.dice && rolledFor.current !== dealKey && dealFresh && game.phase.kind !== "over");
+  useEffect(() => {
+    const due = surrendered.filter((x) => !x.shown);
+    if (!due.length || diceDue) return;
+    setSurrendered((was) => was.map((x) => (due.includes(x) ? { ...x, shown: true } : x)));
+    for (const seat of new Set(due.map((x) => Number(x.lah.pulled)))) {
+      showBurst(seat, SURRENDER);
+      if (bots[seat]) window.setTimeout(() => say(seat, "surrender"), 300);
+    }
+    const ids = new Set(due.map((x) => x.id));
+    window.setTimeout(() => setSurrendered((was) => was.filter((x) => !ids.has(x.id))), SURRENDER_SHOW_MS);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [surrendered, diceDue]);
+  // Online the 投降 comes with no word from the table: between hands, a 拉
+  // gone since the last view is one given up.
   const lahsBefore = useRef<{ over: boolean; lahs: NonNullable<GameState["lahs"]> } | null>(null);
   useEffect(() => {
     if (!online) return;
@@ -2096,8 +2133,7 @@ export function PlayPanel({
     const lahs = game.lahs ?? [];
     lahsBefore.current = { over: game.phase.kind === "over", lahs };
     if (!before?.over) return;
-    const gone = before.lahs.filter((l) => !lahs.some((n) => n.holder === l.holder && n.pulled === l.pulled));
-    for (const seat of new Set(gone.map((l) => Number(l.pulled)))) if (bots[seat]) window.setTimeout(() => say(seat, "surrender"), 300);
+    noteSurrender(before.lahs.filter((l) => !lahs.some((n) => n.holder === l.holder && n.pulled === l.pulled)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [game.lahs, game.phase.kind]);
 
@@ -2294,10 +2330,10 @@ export function PlayPanel({
   const swapRolledFor = useRef<string | null>(null);
   // (Before the screen's drawn too: no frame of the swap before its dice.)
   useLayoutEffect(() => {
-    if (!swapDeal || rolling || swapRolledFor.current === swapDeal) return;
+    if (!swapDeal || rolling || setupOpen || swapRolledFor.current === swapDeal) return;
     swapRolledFor.current = swapDeal;
     setSwapRolling(true);
-  }, [swapDeal, rolling]);
+  }, [swapDeal, rolling, setupOpen]);
   // Timed from when the swap's dice are on screen - after the deal's own
   // dice (rolling) - so both throws are seen in full.
   useEffect(() => {
@@ -2948,8 +2984,8 @@ export function PlayPanel({
     let s = game;
     for (let seat = 1; seat < SEATS; seat++) {
       const holders = botSurrenders(s, seat, bots[seat]!);
+      noteSurrender((s.lahs ?? []).filter((l) => l.pulled === String(seat) && holders.includes(Number(l.holder))));
       for (const holder of holders) s = surrender(s, holder, seat);
-      if (holders.length) window.setTimeout(() => say(seat, "surrender"), 300);
     }
     setSurrenderArmed(null);
     advance(nextHand(s));
@@ -3266,19 +3302,29 @@ export function PlayPanel({
 
   // The 拉 a seat holds, as chips: who it's on (their avatar character, or 你
   // for you) and its value - red when it's on you, green when it's yours.
-  const lahChips = (seat: number) =>
-    (game.lahs ?? [])
-      .filter((l) => l.holder === String(seat))
-      .map((l) => {
-        const on = Number(l.pulled);
-        const who = initialOf(on);
-        const tone = on === HUMAN ? " is-on-you" : seat === HUMAN ? " is-yours" : "";
-        return (
-          <span key={l.pulled} className={`play-lah${tone}`} title={`${nameOf(seat)} 拉 ${nameOf(on)}: ${l.value} (${l.count} in a row)`}>
+  // One given up (投降) stays a moment, struck through.
+  const lahChips = (seat: number) => {
+    const held = (l: Lah) => l.holder === String(seat);
+    const live = (game.lahs ?? []).filter(held).map((l) => ({ l, ended: false }));
+    const ended = surrendered.filter((x) => x.shown && held(x.lah) && !live.some(({ l }) => l.pulled === x.lah.pulled)).map((x) => ({ l: x.lah, ended: true }));
+    return [...live, ...ended].map(({ l, ended }) => {
+      const on = Number(l.pulled);
+      const who = initialOf(on);
+      const tone = on === HUMAN ? " is-on-you" : seat === HUMAN ? " is-yours" : "";
+      return ended ? (
+        <span key={l.pulled} className={`play-lah${tone} is-ended`} role="status" title={`${nameOf(on)} 投降: ${nameOf(seat)}'s 拉 of ${l.value} ends`}>
+          <s>
             拉{who} {l.value}
-          </span>
-        );
-      });
+          </s>
+          <span className="play-lah-gone">投降</span>
+        </span>
+      ) : (
+        <span key={l.pulled} className={`play-lah${tone}`} title={`${nameOf(seat)} 拉 ${nameOf(on)}: ${l.value} (${l.count} in a row)`}>
+          拉{who} {l.value}
+        </span>
+      );
+    });
+  };
 
   // Online: a person whose phone has dropped, or whom the table is playing for.
   const seatTag = (seat: number) => {
@@ -3999,7 +4045,7 @@ export function PlayPanel({
                 <PlayDie key={i} value={d} rolling index={i} />
               ))}
             </div>
-            <span className="play-dice-caption">
+            <span className={`play-dice-caption${diceSaid ? " is-said" : ""}`}>
               {game.dice.join(" + ")} = {game.dice[0] + game.dice[1] + game.dice[2]} ·{" "}
               {(() => {
                 const brk = wallBreak(game.dice, game.dealer);
@@ -4007,7 +4053,7 @@ export function PlayPanel({
               })()}
             </span>
             {game.diceBonus && (
-              <span className="play-dice-bonus">
+              <span className={`play-dice-bonus${diceSaid ? " is-said" : ""}`}>
                 {game.diceBonus.name} ·{" "}
                 {game.diceBonus.deltas[game.dealer] > 0
                   ? `${game.dealer === HUMAN ? "you collect" : `${nameOf(game.dealer)} collects`} ${game.diceBonus.deltas[game.dealer]} (${TRIPLE_DICE_BONUS} from each)`
@@ -4210,7 +4256,10 @@ export function PlayPanel({
                         if (!armed) return setSurrenderArmed(l.holder);
                         setSurrenderArmed(null);
                         if (online && net) online.send({ t: "surrender", holder: net.toTable(holder) });
-                        else setGame(surrender(game, holder, HUMAN));
+                        else {
+                          noteSurrender([l]);
+                          setGame(surrender(game, holder, HUMAN));
+                        }
                       }}
                     >
                       {armed ? "Tap again to 投降" : "投降"}

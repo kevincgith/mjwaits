@@ -287,6 +287,22 @@
    WinningTileHandButton/DeclaredMeldButton) also pops up Safari's native
    selection UI over the button, since a <button>'s label text is
    otherwise still selectable like any other text. */
+/* The whole app is tapped, not read like a page: no text selected by a
+   press, a double-tap or a drag, and no press-and-hold callout (copy /
+   look up / the loupe) - anywhere. Typing boxes keep theirs. */
+html,
+body {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+:is(input, textarea, [contenteditable]:not([contenteditable="false"])) {
+  -webkit-touch-callout: default;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 button {
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
@@ -7519,6 +7535,24 @@ html.playing body {
   color: var(--play-gold);
   font-size: 0.9rem;
   font-weight: 700;
+}
+
+/* What the deal's dice mean, said once they've landed (as the swap's). */
+.play-dice-caption:not(.is-said),
+.play-dice-bonus:not(.is-said) {
+  visibility: hidden;
+}
+
+.play-dice-caption.is-said,
+.play-dice-bonus.is-said {
+  animation: play-swap-reveal 0.3s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .play-dice-caption.is-said,
+  .play-dice-bonus.is-said {
+    animation: none;
+  }
 }
 
 /* An ivory cube, pips on a 3x3 grid; red on the 1 and 4 (big on the 1). */
@@ -16253,4 +16287,44 @@ button.sc-stat:active {
   border-radius: 0.3rem;
   background: #ffd166;
   color: #3a2a06;
+}
+
+/* 拉 given up (投降): struck through, tagged, then faded away. */
+.play-lah.is-ended {
+  gap: 0.25rem;
+  grid-auto-flow: column;
+  animation: play-lah-ended 4s ease-in forwards;
+}
+
+.play-lah.is-ended s {
+  opacity: 0.75;
+  text-decoration-thickness: 2px;
+}
+
+.play-lah-gone {
+  padding: 0 0.25rem;
+  border-radius: 0.2rem;
+  background: #f4d27a;
+  color: #3a2a06;
+  font-size: 0.62rem;
+}
+
+@keyframes play-lah-ended {
+  0% {
+    transform: scale(1.15);
+  }
+  12%,
+  70% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .play-lah.is-ended {
+    animation: none;
+  }
 }
