@@ -15765,6 +15765,20 @@ button.sc-stat:active {
   line-height: 1.45;
 }
 
+/* 快換 Quick swap's switch on the swap sheet: what it does, and On/Off. */
+.play-swap-quick {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+.play-swap-quick .play-menu-seg {
+  flex: none;
+}
+
 .play-swap-winds {
   display: flex;
   gap: 0.35rem;

@@ -59,6 +59,7 @@ export const SwapRulesSchema = object({
   winds: array(int(1, 4), 0, 4),
   rounds: array(int(1, SWAP_MAX_ROUNDS), 6, 6),
   tiles: array(int(SWAP_MIN_TILES, SWAP_MAX_TILES), 6, 6),
+  quick: optional(bool),
 });
 
 // 獎池: each player's share into the pot on a draw (0: off); a 自摸 takes it.

@@ -326,6 +326,17 @@ export function SwapSheet({ rules, onChange, onClose }: { rules: SwapRules; onCh
             );
           })}
         </div>
+        <h3>快換 Quick swap</h3>
+        <div className="play-swap-quick">
+          <span>Taken tiles grey out where they lie; once everyone has taken, they all fly at once.</span>
+          <span className="play-menu-seg">
+            {[false, true].map((on) => (
+              <button key={String(on)} type="button" className={(r.quick !== false) === on ? "toggle-on" : undefined} aria-pressed={(r.quick !== false) === on} onClick={() => update((r) => ({ ...r, quick: on }))}>
+                {on ? "On" : "Off"}
+              </button>
+            ))}
+          </span>
+        </div>
         <h3>First die: swap rounds</h3>
         {mapRow("rounds", 1, SWAP_MAX_ROUNDS, "swap rounds")}
         <h3>Second die: tiles each</h3>
@@ -352,6 +363,9 @@ export interface Flight {
   // pile): it turns over on the way.
   flip?: boolean;
   ghost?: boolean; // the round's last take - its pile drawn from the ghost
+  // Quick swap: taken, but held where it lay (greyed) till the round's last
+  // take - then every one sets off together.
+  waiting?: boolean;
   // Its giver's group in the taker's row, and once worked out, its place in that group.
   row?: { group: number; place?: number };
 }

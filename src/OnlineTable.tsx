@@ -759,7 +759,7 @@ function Lobby({ table, me, send, onLeave }: { table: TableState; me: Welcome; s
                 key={p.name}
                 on={!!s.swapRules && p.rounds.join() === s.swapRules.rounds.join() && p.tiles.join() === s.swapRules.tiles.join()}
                 disabled={!me.host}
-                onClick={() => setup({ swapRules: { winds: s.swapRules?.winds ?? DEFAULT_SWAP_RULES.winds, rounds: p.rounds, tiles: p.tiles } })}
+                onClick={() => setup({ swapRules: { winds: s.swapRules?.winds ?? DEFAULT_SWAP_RULES.winds, rounds: p.rounds, tiles: p.tiles, ...(s.swapRules?.quick === false ? { quick: false } : {}) } })}
               >
                 {p.name}
               </Seg>
@@ -780,6 +780,15 @@ function Lobby({ table, me, send, onLeave }: { table: TableState; me: Welcome; s
                   </Seg>
                 );
               })}
+            </Setting>
+          )}
+          {s.swapRules && (
+            <Setting label="快換 Quick swap" note={s.swapRules.quick !== false ? "taken tiles grey out; each round's fly together at its end" : "each take's tiles fly as it's made"}>
+              {[false, true].map((on) => (
+                <Seg key={String(on)} on={(s.swapRules!.quick !== false) === on} disabled={!me.host} onClick={() => setup({ swapRules: { ...s.swapRules!, quick: on } })}>
+                  {on ? "On" : "Off"}
+                </Seg>
+              ))}
             </Setting>
           )}
           <Setting label="獎池 Jackpot" note={s.jackpot ? `each puts ${s.jackpot} in on a draw; a 自摸 takes it all` : "off"}>

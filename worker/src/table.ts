@@ -51,7 +51,7 @@ import {
   type GameState,
   type TurnMove,
 } from "@mjwaits/shared/engine/game";
-import { blindPicks, botGive, botSplit, pileLeft, SWAP_PACE_MS, SWAP_TIMER_S, type SwapRules } from "@mjwaits/shared/engine/swap";
+import { blindPicks, botGive, botSplit, pileLeft, quickSwap, SWAP_PACE_MS, SWAP_TIMER_S, type SwapRules } from "@mjwaits/shared/engine/swap";
 import { botClaimFor, botSurrenders, botTurnMoveFor, MYSTERY_NAME, profileById, randomStyle } from "@mjwaits/shared/engine/bots";
 import type { Tile } from "@mjwaits/shared/engine/mahjong";
 import { mayPeek, viewFor } from "@mjwaits/shared/engine/view";
@@ -693,7 +693,7 @@ export class Table extends Hub<TableMessage> {
       // a take's flight, a round's rows; see SWAP_PACE_MS).
       const ph = g.phase;
       this.justDealt = false; // (the deal's dice are in "dice")
-      const wait = this.swapWait(ph.stage === "give" ? (ph.round === 1 ? "dice" : "settle") : ph.took.length ? "take" : "none");
+      const wait = this.swapWait(ph.stage === "give" ? (ph.round === 1 ? "dice" : "settle") : ph.took.length ? (quickSwap(g.swapRules) ? "quickTake" : "take") : "none");
       const alone = ph.stage === "give" ? [0, 1, 2, 3].some((s) => !ph.piles[s] && this.actsAlone(s)) : this.actsAlone(ph.taker);
       const people = ph.stage === "give" ? [0, 1, 2, 3].some((s) => !ph.piles[s] && !this.actsAlone(s)) : !this.actsAlone(ph.taker);
       if (alone) rt.botAt = now + wait + this.botPause;

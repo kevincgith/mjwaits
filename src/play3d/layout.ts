@@ -915,7 +915,8 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
       // Just given: unseen till its tile has come down from your hand.
       const coming = side === "bottom" && view.mine.given && givenAt.has(i) ? view.mine.given.key : null;
       const arrive: Anim | undefined = coming === null ? undefined : { key: `give:${coming}:${i}`, delay: 0, dur: GIVE_S, pose: () => scale(0) };
-      felt.push({ face: slot === "back" ? BACK : faceOf(slot), m, shade: rot ? TURNED : LIT, tint: 1, pick: pile.pickable ? [side, i] : undefined, anim: arrive });
+      const taken = !!pile.taken?.[i];
+      felt.push({ face: slot === "back" ? BACK : faceOf(slot), m, shade: rot ? TURNED : LIT, tint: taken ? POND_GREY : 1, pick: pile.pickable && !taken ? [side, i] : undefined, anim: arrive });
       // (Its shadow lands with it.)
       const shadow = standing ? { kind: "shadow" as const, m: chain(translate(x, y + 0.42 * P, 0.4), scale(SHADOW_W * P, 0.75 * P, 1)) } : shadowAt(x, y, P, rot);
       feltQuads.push(arrive ? { ...shadow, anim: { ...arrive, key: `${arrive.key}:shadow` } } : shadow);

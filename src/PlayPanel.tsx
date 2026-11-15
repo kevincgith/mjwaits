@@ -71,7 +71,7 @@ import {
   type WaitValue,
 } from "@mjwaits/shared/engine/game";
 import { allTileKinds, getWaits, shanten, sortTiles, tileKey, tileLabel, type Tile } from "@mjwaits/shared/engine/mahjong";
-import { blindPicks, botGive, SWAP_TIMER_S, botSplit, DEFAULT_SWAP_RULES, givePlans, pileLeft, type GivePlan, type SwapPhase, type SwapRules } from "@mjwaits/shared/engine/swap";
+import { blindPicks, botGive, SWAP_TIMER_S, botSplit, DEFAULT_SWAP_RULES, givePlans, pileLeft, quickSwap, type GivePlan, type SwapPhase, type SwapRules } from "@mjwaits/shared/engine/swap";
 import { PlayDie } from "./PlayDie";
 import { dealDiceMs, DIE_SAY_MS, SWAP_FLIGHT_MS, SWAP_ROUND_HOLD_MS, SwapControls, SwapDice, swapDiceMs, SwapSheet, type Flight } from "./PlaySwap";
 import { sortBonusTiles, type BonusTile } from "@mjwaits/shared/engine/scoring";
@@ -2321,7 +2321,8 @@ export function PlayPanel({
     });
   }).current;
   useEffect(() => () => window.clearTimeout(newsDue.current.timer), []);
-  const swapAirborne = flights.some((f) => !landed.has(f.id));
+  // (Quick swap's takes held where they lay aren't in the air.)
+  const swapAirborne = flights.some((f) => !f.waiting && !landed.has(f.id));
   // A taken tile joins its new hand as it lands, not before: till then each
   // hand is drawn without the tiles still flying to it.
   const incoming = (seat: number) => flights.filter((f) => f.to === seat).map((f) => f.real);
@@ -2484,7 +2485,12 @@ export function PlayPanel({
         });
       });
     }
-    setFlights((f) => [...f, ...next]);
+    // Quick swap: a take's tiles stay where they lay (greyed) - and the
+    // round's last take sets them all off together, its own with them.
+    // (Online, as the table's set: the view a phone's sent has no swapRules.)
+    const quick = quickSwap(online ? online.table.settings.swapRules : game.swapRules);
+    if (quick && !roundOver) next.forEach((f) => (f.waiting = true));
+    setFlights((f) => [...(roundOver ? f.map((x) => (x.waiting ? { ...x, waiting: false, ghost: true } : x)) : f), ...next]);
     // The round over: its rows stay a moment, then every tile joins its hand.
     if (roundOver) {
       const id = window.setTimeout(() => {
@@ -2534,7 +2540,7 @@ export function PlayPanel({
   // givers' groups in the order they sit along the row (giverOrder). The
   // WebGL table flies it there (play3d/), timed from here.
   useLayoutEffect(() => {
-    const pending = flights.filter((f) => f.row && f.row.place === undefined);
+    const pending = flights.filter((f) => f.row && f.row.place === undefined && !f.waiting);
     if (!pending.length) return;
     const placed = new Map<number, Flight>();
     for (const f of pending) {
@@ -2547,7 +2553,7 @@ export function PlayPanel({
     setRowOrder((o) => {
       const next = { ...o };
       for (const taker of takers) {
-        const theirs = flights.filter((f) => f.to === taker && f.row);
+        const theirs = flights.filter((f) => f.to === taker && f.row && !f.waiting);
         const givers = [...new Map(theirs.map((f) => [f.row!.group, { side: SIDES[f.seat], key: f.row!.group }])).values()];
         next[taker] = giverOrder(SIDES[taker], givers);
       }
@@ -2728,7 +2734,7 @@ export function PlayPanel({
       const id = window.setTimeout(() => {
         const split = botSplit(phase.piles.map(pileLeft), phase.taker, takersAfter(phase, game.dealer), phase.count);
         advance(swapTake(game, phase.taker, phase.piles.map((p, g) => blindPicks(p!, split[g]))));
-      }, 1100 * factor);
+      }, (quickSwap(game.swapRules) ? 650 : 1100) * factor);
       return () => window.clearTimeout(id);
     }
     let move: (() => void) | null = null;
@@ -3483,10 +3489,11 @@ export function PlayPanel({
       standing,
       picked: swapPicks[seat],
       pickable: !!(swapPhase && myTake && seat !== HUMAN),
+      taken: pile.map((_, i) => flights.some((f) => f.waiting && f.seat === seat && f.place === i)),
     };
   };
   const rowGroups = (seat: number) => {
-    const theirs = flights.filter((f) => f.to === seat && f.row);
+    const theirs = flights.filter((f) => f.to === seat && f.row && !f.waiting);
     const present = [...new Set(theirs.map((f) => f.row!.group))];
     return { theirs, groups: (rowOrder[seat] ?? present.sort((a, b) => a - b)).filter((g) => present.includes(g)) };
   };

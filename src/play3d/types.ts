@@ -96,6 +96,9 @@ export interface GLPile {
   picked: number[];
   // Tappable on your take.
   pickable: boolean;
+  // Quick swap: places taken this round, their tiles still lying there -
+  // greyed, and no longer to be picked.
+  taken?: boolean[];
 }
 
 // What a seat's taken this round, in a row by its hand: a group per giver,
