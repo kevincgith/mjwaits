@@ -147,6 +147,8 @@ export const shadowAt = (x: number, y: number, em: number, rot = 0): Quad => ({
 interface Slot {
   face: string | null;
   top?: string | null;
+  // A concealed kong shown at last (the hand over): its top tile turns over.
+  flip?: boolean;
 }
 function runOrder(tiles: Tile[], claimed: Tile): number[] {
   const c = tiles.findIndex((t) => sameTile(t, claimed));
@@ -156,9 +158,11 @@ function runOrder(tiles: Tile[], claimed: Tile): number[] {
 }
 function meldSlots(m: GameMeld, hideConcealed: boolean, inRow: boolean): Slot[] {
   const stacked = m.kind === "kong" && m.tiles.length === 4 && !inRow;
-  const face = (j: number) => (m.concealed && (hideConcealed || j === 0 || j === (stacked ? 2 : 3)) ? null : faceOf(m.tiles[j]));
+  // A concealed kong: in a row, its middle two shown; stacked, only its top
+  // (the one under it stays face down - covered, it was turned up unseen).
+  const face = (j: number) => (m.concealed && (hideConcealed || (stacked ? j !== 3 : j === 0 || j === 3)) ? null : faceOf(m.tiles[j]));
   if (m.kind === "run" && m.claimed && m.tiles.length === 3) return runOrder(m.tiles, m.claimed).map((j) => ({ face: face(j) }));
-  if (stacked) return [{ face: face(0) }, { face: face(1), top: face(3) }, { face: face(2) }];
+  if (stacked) return [{ face: face(0) }, { face: face(1), top: face(3), ...(m.concealed && !hideConcealed ? { flip: true } : {}) }, { face: face(2) }];
   return m.tiles.map((_, j) => ({ face: face(j) }));
 }
 
@@ -174,6 +178,9 @@ export interface Group {
   // A concealed kong a peek has seen: its face, and whether its top tile is
   // turned up to show it now.
   glass?: { face: string; open: boolean; key: string };
+  // When a concealed kong's top tile turns over at the hand's end (s): as
+  // its player's hand goes down.
+  flipAt?: number;
 }
 export const meldGroup = (m: GameMeld, hide: boolean, inRow: boolean, em: number): Group => {
   const slots = meldSlots(m, hide, inRow);
@@ -197,7 +204,22 @@ export function placeGroup(g: Group, at: (k: number) => [number, number], rot: n
         // Turned up to the one looking, tipped toward them; or lying as it was.
         const up = chain(translate(x, y, z + 0.5 * g.em), rotateX(-24), scale(g.em * 1.08));
         pieces.push({ face: g.glass.face, m: g.glass.open ? up : lyingDown(x, y, g.em, rot, z), shade, tint: 1, ease: { key: g.glass.key, dur: 0.24, curve: SETTLE } });
-      } else pieces.push({ face: s.top ?? BACK, m: s.top ? lying(x, y, g.em, rot, z) : lyingDown(x, y, g.em, rot, z), shade, tint: 1 });
+      } else {
+        // A concealed kong shown at the hand's end: its top tile lifts off,
+        // turns over along its length and settles face up.
+        const flip = s.flip && s.top
+          ? {
+              key: `kong:flip:${Math.round(x)}:${Math.round(y)}`,
+              delay: g.flipAt ?? KONG_FLIP_DELAY,
+              dur: 0.6,
+              pose: (k: number) => {
+                const e = SETTLE(k);
+                return chain(translate(x, y, z + Math.sin(Math.PI * e) * 0.8 * g.em), rotateZ(rot), translate(0, 0, (THICK * g.em) / 2), rotateY(180 * (1 - e)), translate(0, 0, (-THICK * g.em) / 2), scale(g.em));
+              },
+            }
+          : undefined;
+        pieces.push({ face: s.top ?? BACK, m: s.top ? lying(x, y, g.em, rot, z) : lyingDown(x, y, g.em, rot, z), shade, tint: 1, anim: flip });
+      }
     }
   });
 }
@@ -220,6 +242,9 @@ function seeThrough(side: PeekSide, w: GLWall, groups: Group[]): Group[] {
 // Seen copies: a pond's tiles other than the one you're holding, greyed
 // further than a 食替 tile (tint 0): 43% bright, mostly drained of colour.
 const POND_GREY = -0.5;
+// A concealed kong turned up at the hand's end, if its group doesn't say
+// when (flipAt): a beat after it's over.
+const KONG_FLIP_DELAY = 0.35;
 const PEEK_REACH = 2;
 const PEEK_SIZE = [1.3, 1.14, 1];
 const PEEK_SOLID = [1, 0.95, 0.8];
@@ -407,7 +432,7 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
     const maxLen = 17 * 0.72 * d.wall;
     const cols: Group[][] = [];
     let len = 0;
-    for (const g of seeThrough(which, w, w.melds.map((m) => meldGroup(m, w.hideConcealed, false, T)))) {
+    for (const g of seeThrough(which, w, w.melds.map((m) => ({ ...meldGroup(m, w.hideConcealed, false, T), flipAt: w.topple.at })))) {
       if (!cols.length || len + gap + g.along > maxLen + 0.5) {
         cols.push([g]);
         len = g.along;
@@ -452,7 +477,7 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
   const tEdgeW = (tdrew || tw.win >= 0 ? tn * tp : (tn + 1) * tp) + 0.25 * Wt + tslot;
   const tEdgeH = 0.55 * Wt;
   const tFlowers = flowerGroup(top.flowers, T);
-  const tMelds = seeThrough("top", top, top.melds.map((m) => meldGroup(m, top.hideConcealed, false, T)));
+  const tMelds = seeThrough("top", top, top.melds.map((m) => ({ ...meldGroup(m, top.hideConcealed, false, T), flipAt: top.topple.at })));
   const tGap = 0.15 * T;
   const meldsLong = sum(tMelds.map((g) => g.along + tGap));
   const laid = meldsLong + (tFlowers ? tFlowers.along + tGap : 0);
