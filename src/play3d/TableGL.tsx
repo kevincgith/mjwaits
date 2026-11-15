@@ -157,7 +157,8 @@ export default function TableGL({
   // A tap on a pile's tile, on your take (換牌).
   onPile: (side: GLSide, index: number) => void;
   // A tap on one of your tiles (by its place in your hand).
-  onTile: (index: number) => void;
+  // `dragged`: a press carried along your row to this tile (see the taps, below).
+  onTile: (index: number, dragged?: boolean) => void;
   // `sweep`: a press on one of your tiles and a slide across others, finger
   // down all the while (換牌's give) - each tile in turn, `first` the one
   // pressed. The press is no tap then.
@@ -341,14 +342,21 @@ export default function TableGL({
   // Taps on your tiles: a ray from where you tapped into your row (the
   // canvas lets taps through to the page; buttons and sheets keep theirs).
   // While sweeping is on, a press on a tile and the slide after it instead.
+  // A press on a tile follows the finger along your row (the tile under it
+  // is the one pressed - lifted, its waits shown) and is let go where the
+  // finger lifts: a tap on that tile, `dragged` if it moved. Off the row,
+  // it's dropped - no tap, whatever happens after.
   useEffect(() => {
     const root = rootRef.current;
     if (!root) return;
     let down: { x: number; y: number; at: number } | null = null;
     // A sweep under way: the tile the finger was last over.
     let swept: number | null = null;
-    // The tile a finger's held on (see onPress).
+    // The tile a finger's held on (see onPress), and whether it's moved on
+    // from the tile it went down on - or been dropped, off your row.
     let pressed: number | null = null;
+    let slid = false;
+    let dropped = false;
     const press = (i: number | null) => {
       if (i === pressed) return;
       pressed = i;
@@ -364,9 +372,19 @@ export default function TableGL({
       return i !== null && viewRef.current.mine.tiles[i]?.enabled ? i : null;
     };
     const outside = offTable;
+    // Still over your row: its box, with room above for the lifted tile and
+    // a finger's width either side.
+    const onRow = (e: PointerEvent) => {
+      const r = handRef.current?.getBoundingClientRect();
+      if (!r) return false;
+      const pad = r.height * 0.6;
+      return e.clientX >= r.left - pad && e.clientX <= r.right + pad && e.clientY >= r.top - pad && e.clientY <= r.bottom + pad * 0.5;
+    };
     const onDown = (e: PointerEvent) => {
       down = e.isPrimary ? { x: e.clientX, y: e.clientY, at: e.timeStamp } : null;
       swept = null;
+      slid = false;
+      dropped = false;
       if (!down || outside(e)) return;
       const i = tileAt(e);
       if (!sweepRef.current) return press(i);
@@ -376,8 +394,19 @@ export default function TableGL({
     };
     const onMove = (e: PointerEvent) => {
       if (!e.isPrimary) return;
-      // Held on a tile: slid off it, it's let go (no tap now).
-      if (pressed !== null && down) press(moved(e, down) ? null : (tileAt(e) ?? pressed));
+      // Held on a tile: it follows the finger along your row (between
+      // tiles, or over one that can't be played, the last stays); off the
+      // row, it's dropped.
+      if (pressed !== null && down) {
+        if (!onRow(e)) {
+          dropped = true;
+          press(null);
+        } else {
+          const i = tileAt(e);
+          if (i !== null && i !== pressed) slid = true;
+          press(i ?? pressed);
+        }
+      }
       if (swept === null) return;
       const i = tileAt(e);
       if (i === null || i === swept) return;
@@ -394,6 +423,12 @@ export default function TableGL({
       press(null);
       // (A sweep has done its picking as it went.)
       if (swept !== null) return void (swept = null);
+      // A press carried along your row: let go on the tile it's on.
+      if (dropped) return;
+      if (held !== null && e.isPrimary && (slid || (start && moved(e, start)))) {
+        if (viewRef.current.mine.tiles[held]?.enabled) onTileRef.current(held, true);
+        return;
+      }
       const e3 = engine.current;
       // (A long press is a tap still if it was held on one of your tiles -
       // to read its waits.)
@@ -411,6 +446,7 @@ export default function TableGL({
     const onCancel = () => {
       down = null;
       swept = null;
+      dropped = true;
       press(null);
     };
     root.addEventListener("pointerdown", onDown);
@@ -423,7 +459,7 @@ export default function TableGL({
       root.removeEventListener("pointerup", onUp);
       root.removeEventListener("pointercancel", onCancel);
     };
-  }, [rootRef]);
+  }, [rootRef, handRef]);
 
   const cameraMoved = useRef(onCameraMove);
   cameraMoved.current = onCameraMove;

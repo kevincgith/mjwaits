@@ -7185,6 +7185,8 @@ html.playing body {
 .play-hand.is-gl {
   box-sizing: border-box;
   padding: 0;
+  /* A press carried along your tiles is the table's, never a pan. */
+  touch-action: none;
 }
 
 .play-hand.is-gl::before {

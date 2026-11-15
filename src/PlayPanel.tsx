@@ -2930,6 +2930,8 @@ export function PlayPanel({
   }, []);
   // The same for a tile held down, or lifted, to throw - if throwing it
   // would leave you ready. (Held: one-tap discard throws it on letting go.)
+  // A finger held on one of your tiles, your turn to throw (see TableGL's taps).
+  const pressing = myTurn && !autoplay && !rolling && pressed !== null;
   const waitsAt = myTurn && !autoplay ? (pressed ?? selected) : null;
   const waitsTile = waitsAt !== null ? (handTiles[waitsAt] ?? null) : null;
   const tileWaits = useMemo(
@@ -2947,7 +2949,10 @@ export function PlayPanel({
   const myKongs = myTurn && liveTilesLeft(game) > 0 ? kongOptions(me, game.phase) : [];
 
 
-  const tapTile = (index: number) => {
+  // `dragged`: a press carried along your row onto this tile - with
+  // one-tap it throws it, as a tap; otherwise it's only picked (never the
+  // second tap's throw).
+  const tapTile = (index: number, dragged = false) => {
     if (rolling) return;
     if (swapGiving) {
       // 換牌: picking the tiles to give.
@@ -2959,7 +2964,7 @@ export function PlayPanel({
     if (!myTurn || isForbidden(handTiles[index])) return;
     // One-tap throws straight away - except when declaring 叮, which always
     // takes the confirming second tap.
-    if (selected === index || (oneTap && !riichiArmed)) doTurn({ kind: "discard", tile: handTiles[index], ...(riichiArmed ? { riichi: true } : {}) });
+    if ((selected === index && !dragged) || (oneTap && !riichiArmed)) doTurn({ kind: "discard", tile: handTiles[index], ...(riichiArmed ? { riichi: true } : {}) });
     else setSelected(index);
   };
 
@@ -3488,7 +3493,8 @@ export function PlayPanel({
         drawn: handView.drawnTile !== null && i === handTiles.length - 1,
         // (Your picks to give only while you're picking: once given, the
         // places they name are other tiles' for a moment.)
-        selected: selected === i || (swapGiving && swapHand.includes(i)),
+        // (A finger held on one of yours lifts that one instead.)
+        selected: (pressing ? pressed === i : selected === i) || (swapGiving && swapHand.includes(i)),
         hint: i === hintIndex,
         danger: hint && myTurn && dangerous.has(tileKey(t)),
         barred: isForbidden(t),
