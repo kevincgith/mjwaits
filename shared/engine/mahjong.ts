@@ -175,6 +175,18 @@ export function sortTiles(tiles: Tile[]): Tile[] {
   return [...tiles].sort(compareTiles);
 }
 
+// The suits' usual order (萬 筒 索 字), and any other a player prefers.
+export const DEFAULT_SUIT_ORDER = "mtbz";
+export const isSuitOrder = (order: unknown): order is string =>
+  typeof order === "string" && order.length === 4 && [...DEFAULT_SUIT_ORDER].every((s) => order.includes(s));
+
+// Sorted with the suits in `order` (as "mtbz", each once; jokers last).
+export function sortTilesBy(tiles: Tile[], order: string): Tile[] {
+  if (order === DEFAULT_SUIT_ORDER || !isSuitOrder(order)) return sortTiles(tiles);
+  const at = (s: Suit) => (s === "j" ? 4 : order.indexOf(s));
+  return [...tiles].sort((a, b) => at(a.suit) - at(b.suit) || a.rank - b.rank);
+}
+
 function countsForSuit(tiles: Tile[], suit: Suit, size: number): number[] {
   const counts = new Array(size + 1).fill(0);
   for (const t of tiles) if (t.suit === suit) counts[t.rank]++;

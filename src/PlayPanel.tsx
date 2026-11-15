@@ -70,7 +70,7 @@ import {
   type TurnMove,
   type WaitValue,
 } from "@mjwaits/shared/engine/game";
-import { allTileKinds, getWaits, shanten, sortTiles, tileKey, tileLabel, type Tile } from "@mjwaits/shared/engine/mahjong";
+import { allTileKinds, DEFAULT_SUIT_ORDER, getWaits, isSuitOrder, shanten, sortTiles, sortTilesBy, tileKey, tileLabel, type Tile } from "@mjwaits/shared/engine/mahjong";
 import { blindPicks, botGive, SWAP_TIMER_S, botSplit, DEFAULT_SWAP_RULES, givePlans, pileLeft, quickSwap, type GivePlan, type SwapPhase, type SwapRules } from "@mjwaits/shared/engine/swap";
 import { PlayDie } from "./PlayDie";
 import { dealDiceMs, DIE_SAY_MS, SWAP_FLIGHT_MS, SWAP_ROUND_HOLD_MS, SwapControls, SwapDice, swapDiceMs, SwapSheet, type Flight } from "./PlaySwap";
@@ -273,6 +273,7 @@ interface Saved {
   speed?: Speed;
   oneTap?: boolean;
   seenCopies?: boolean; // 見牌: holding a tile greys the ponds' others (absent: on)
+  sortOrder?: string; // 排序: the suits' order in your hand, as "mtbz" (absent: that)
   waits?: boolean; // 聽 Waits: what a ready hand waits on, and its 番 (absent: on)
   multiWin?: boolean; // 一炮多響 (else 截胡)
   multiWinSet?: boolean; // multiWin picked since it came on by default (else on)
@@ -462,8 +463,8 @@ function FlowersView({ flowers }: { flowers: BonusTile[] }) {
 // timed by `topple` (the winner's first - see TOPPLE_WINNER). A winner shows
 // the winning tile first, as a player does at a real table - held up, then
 // set down - and only then lays the rest of the hand down.
-function RevealedHandView({ tiles, winningTile, topple = TOPPLE_WINNER }: { tiles: Tile[]; winningTile: Tile | null; topple?: Topple }) {
-  const sorted = sortTiles(tiles);
+function RevealedHandView({ tiles, winningTile, topple = TOPPLE_WINNER, order = DEFAULT_SUIT_ORDER }: { tiles: Tile[]; winningTile: Tile | null; topple?: Topple; order?: string }) {
+  const sorted = sortTilesBy(tiles, order);
   const mark = winningTile ? sorted.findIndex((t) => sameTile(t, winningTile)) : -1;
   const rest = mark < 0 ? sorted : sorted.filter((_, i) => i !== mark);
   return (
@@ -669,7 +670,7 @@ const Flowers = memo(FlowersView, (a, b) => a.flowers.map((f) => f.kind + f.rank
 const RevealedHand = memo(
   RevealedHandView,
   (a, b) =>
-    a.topple === b.topple && tilesKey(a.tiles) === tilesKey(b.tiles) && (a.winningTile ? tileKey(a.winningTile) : "") === (b.winningTile ? tileKey(b.winningTile) : "")
+    a.topple === b.topple && a.order === b.order && tilesKey(a.tiles) === tilesKey(b.tiles) && (a.winningTile ? tileKey(a.winningTile) : "") === (b.winningTile ? tileKey(b.winningTile) : "")
 );
 
 // The turn timer as a light bar around the compass's rim, from the top and
@@ -1144,6 +1145,24 @@ export function PlayPanel({
   // 見牌 Seen copies: a tile held (or lifted) to throw greys every other tile
   // in the ponds - its copies already out stand out.
   const [seenCopies, setSeenCopies] = useState(() => saved?.seenCopies ?? true);
+  // 排序 Sort order: the suits' order in your hand (萬 筒 索 字 as usual). A
+  // tap on a suit moves it one earlier - the first, round to the end.
+  const [sortOrder, setSortOrder] = useState(() => (isSuitOrder(saved?.sortOrder) ? saved.sortOrder : DEFAULT_SUIT_ORDER));
+  const SUIT_NAMES: Record<string, string> = { m: "萬", t: "筒", b: "索", z: "字" };
+  const sortOrderChips = (
+    <span className="play-menu-seg play-sort-order" role="group" aria-label="Suit order">
+      {[...sortOrder].map((s, i) => (
+        <button
+          key={s}
+          type="button"
+          aria-label={i === 0 ? `${SUIT_NAMES[s]} to the end` : `${SUIT_NAMES[s]} earlier`}
+          onClick={() => setSortOrder((o) => (i === 0 ? o.slice(1) + o[0] : o.slice(0, i - 1) + o[i] + o[i - 1] + o.slice(i + 1)))}
+        >
+          {SUIT_NAMES[s]}
+        </button>
+      ))}
+    </span>
+  );
   // 開局: a new game's rules, set before it's dealt (the menu during a game
   // keeps only what you'd change as you play). Opened for a new game - from
   // Play's home, or New game in the menu. Nothing set there touches the game
@@ -1792,7 +1811,7 @@ export function PlayPanel({
     // was till 開局 Start - a new one opened from Play's home isn't saved
     // over the one there till then. What was waiting from before goes now.)
     if (!ledgerStarted.current || setupOpen) return void pendingSave.current?.();
-    const data: Saved = { game: localGame, totals: localTotals, hint, timer, opponents, randomOpponents, speed, oneTap, seenCopies, waits: showWaits, record, multiWin, multiWinSet, runBack, fanXue, baoZimo, secondChance: secondChanceOn, peeking: peekingOn, swapRules, jackpot, ledger: localLedger };
+    const data: Saved = { game: localGame, totals: localTotals, hint, timer, opponents, randomOpponents, speed, oneTap, seenCopies, sortOrder, waits: showWaits, record, multiWin, multiWinSet, runBack, fanXue, baoZimo, secondChance: secondChanceOn, peeking: peekingOn, swapRules, jackpot, ledger: localLedger };
     // (Not saved: still waiting - tried again on leaving, or the next change.)
     const write = () => {
       const ok = save(data);
@@ -1802,7 +1821,7 @@ export function PlayPanel({
     pendingSave.current = write;
     const id = window.setTimeout(write, SAVE_DELAY_MS);
     return () => window.clearTimeout(id);
-  }, [localGame, localTotals, hint, timer, opponents, randomOpponents, speed, oneTap, seenCopies, showWaits, record, multiWin, multiWinSet, runBack, fanXue, baoZimo, secondChanceOn, peekingOn, swapRules, jackpot, localLedger, setupOpen]);
+  }, [localGame, localTotals, hint, timer, opponents, randomOpponents, speed, oneTap, seenCopies, sortOrder, showWaits, record, multiWin, multiWinSet, runBack, fanXue, baoZimo, secondChanceOn, peekingOn, swapRules, jackpot, localLedger, setupOpen]);
   // The page hidden or going (a phone may not come back to it): saved now.
   useEffect(() => {
     const now = () => pendingSave.current?.();
@@ -2881,8 +2900,8 @@ export function PlayPanel({
       const i = tiles.findIndex((t) => sameTile(t, apart));
       if (i >= 0) drawnTile = tiles.splice(i, 1)[0];
     }
-    return { sorted: sortTiles(tiles), drawnTile };
-  }, [me.hand, drawn, myWinTile, comingToMe, swapSettling]); // eslint-disable-line react-hooks/exhaustive-deps
+    return { sorted: sortTilesBy(tiles, sortOrder), drawnTile };
+  }, [me.hand, drawn, myWinTile, comingToMe, swapSettling, sortOrder]); // eslint-disable-line react-hooks/exhaustive-deps
   const handTiles = useMemo(() => (handView.drawnTile ? [...handView.sorted, handView.drawnTile] : handView.sorted), [handView]);
   // Hints: the Veteran's read of your discards - worked out once the frame
   // that shows your draw is up (it takes a while on a phone), then shown.
@@ -3661,6 +3680,10 @@ export function PlayPanel({
                   </span>
                 </div>
                 <div className="play-menu-row">
+                  <span>排序 Sort order</span>
+                  {sortOrderChips}
+                </div>
+                <div className="play-menu-row">
                   <span>見牌 Seen copies</span>
                   <span className="play-menu-seg">
                     {[false, true].map((on) => (
@@ -3731,6 +3754,10 @@ export function PlayPanel({
                     </button>
                   ))}
                 </span>
+              </div>
+              <div className="play-menu-row">
+                <span>排序 Sort order</span>
+                {sortOrderChips}
               </div>
               <div className="play-menu-row">
                 <span>見牌 Seen copies</span>
@@ -4246,7 +4273,7 @@ export function PlayPanel({
                     <div className="play-result-hand">
                       <Flowers flowers={game.players[w.winner].flowers} />
                       <Melds melds={game.players[w.winner].melds} inRow />
-                      <RevealedHand tiles={game.players[w.winner].hand} winningTile={result.tile} />
+                      <RevealedHand tiles={game.players[w.winner].hand} winningTile={result.tile} order={sortOrder} />
                     </div>
                     {w.score && (
                       <ul className="play-result-patterns">

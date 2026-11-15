@@ -1039,3 +1039,16 @@ describe("isUniversalWait", () => {
     expect(isUniversalWait(0, [])).toBe(false);
   });
 });
+
+describe("sortTilesBy", () => {
+  it("sorts the suits in a player's order, ranks within each - and the usual order otherwise", async () => {
+    const { sortTilesBy, parseHand } = await import("./mahjong");
+    const hand = parseHand("19m28t37b15z");
+    const order = (o: string) => sortTilesBy(hand, o).map((t) => `${t.rank}${t.suit}`).join(" ");
+    expect(order("zbtm")).toBe("1z 5z 3b 7b 2t 8t 1m 9m");
+    expect(order("tmzb")).toBe("2t 8t 1m 9m 1z 5z 3b 7b");
+    expect(order("mtbz")).toBe("1m 9m 2t 8t 3b 7b 1z 5z");
+    // Not an order of the four: the usual one.
+    expect(order("mm")).toBe("1m 9m 2t 8t 3b 7b 1z 5z");
+  });
+});
