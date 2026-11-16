@@ -117,6 +117,7 @@ export interface GLFlight {
   slot: number; // its place in that group
   tile: Tile | null; // face down when null
   flip: boolean; // face down where it lay, face up where it lands
+  greyed?: boolean; // quick swap: greyed where it lay, brightening as it flies
 }
 
 export interface GLTableView {

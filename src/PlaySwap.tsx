@@ -366,6 +366,9 @@ export interface Flight {
   // Quick swap: taken, but held where it lay (greyed) till the round's last
   // take - then every one sets off together.
   waiting?: boolean;
+  // Quick swap: it waited greyed - and stays so till it lifts off, then
+  // brightens on the way (not a blink bright first).
+  greyed?: boolean;
   // Its giver's group in the taker's row, and once worked out, its place in that group.
   row?: { group: number; place?: number };
 }

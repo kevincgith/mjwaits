@@ -2519,7 +2519,7 @@ export function PlayPanel({
     // (Online, as the table's set: the view a phone's sent has no swapRules.)
     const quick = quickSwap(online ? online.table.settings.swapRules : game.swapRules);
     if (quick && !roundOver) next.forEach((f) => (f.waiting = true));
-    setFlights((f) => [...(roundOver ? f.map((x) => (x.waiting ? { ...x, waiting: false, ghost: true } : x)) : f), ...next]);
+    setFlights((f) => [...(roundOver ? f.map((x) => (x.waiting ? { ...x, waiting: false, ghost: true, greyed: true } : x)) : f), ...next]);
     // The round over: its rows stay a moment, then every tile joins its hand.
     if (roundOver) {
       const id = window.setTimeout(() => {
@@ -3535,7 +3535,7 @@ export function PlayPanel({
       standing,
       picked: swapPicks[seat],
       pickable: !!(swapPhase && myTake && seat !== HUMAN),
-      taken: pile.map((_, i) => flights.some((f) => f.waiting && f.seat === seat && f.place === i)),
+      taken: pile.map((_, i) => flights.some((f) => (f.waiting || f.greyed) && f.seat === seat && f.place === i)),
     };
   };
   const rowGroups = (seat: number) => {
@@ -3557,7 +3557,7 @@ export function PlayPanel({
   };
   const glFlights: GLFlight[] = flights
     .filter((f) => f.row?.place !== undefined && !landed.has(f.id))
-    .map((f) => ({ id: f.id, from: SIDES[f.seat], place: f.place, to: SIDES[f.to], group: rowGroups(f.to).groups.indexOf(f.row!.group), slot: f.row!.place!, tile: f.tile, flip: !!f.flip }));
+    .map((f) => ({ id: f.id, from: SIDES[f.seat], place: f.place, to: SIDES[f.to], group: rowGroups(f.to).groups.indexOf(f.row!.group), slot: f.row!.place!, tile: f.tile, flip: !!f.flip, greyed: !!f.greyed }));
   const glView: GLTableView = {
     focus: pondFocus === BLANK ? null : pondFocus,
     walls: { right: glWall(1), top: glWall(2), left: glWall(3) },
