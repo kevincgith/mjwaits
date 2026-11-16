@@ -165,8 +165,9 @@ export default function TableGL({
   sweep?: boolean;
   onSweep?: (index: number, first: boolean) => void;
   // The tile a finger is held on in your row, from press to let go (null:
-  // none - let go, or slid off it, which is no tap).
-  onPress?: (index: number | null) => void;
+  // none - let go, or slid off it, which is no tap). `dropped`: the finger
+  // went off your row altogether - the selection's cancelled too.
+  onPress?: (index: number | null, dropped?: boolean) => void;
   // Set to where one of your tiles is seen: the x of its middle, from your
   // row's box's left (null: not drawn) - for what's shown over it.
   tileXRef?: RefObject<((index: number) => number | null) | null>;
@@ -365,10 +366,10 @@ export default function TableGL({
     let holding = false;
     let slid = false;
     let dropped = false;
-    const press = (i: number | null) => {
-      if (i === pressed) return;
+    const press = (i: number | null, gone = false) => {
+      if (i === pressed && !gone) return;
       pressed = i;
-      onPressRef.current?.(i);
+      onPressRef.current?.(i, gone);
     };
     const moved = (e: PointerEvent, from: { x: number; y: number }) => Math.hypot(e.clientX - from.x, e.clientY - from.y) > 10;
     const at = (e: PointerEvent) => pointerIn(root, e);
@@ -409,7 +410,7 @@ export default function TableGL({
       if (holding && down && !dropped) {
         if (!onRow(e)) {
           dropped = true;
-          press(null);
+          press(null, true);
         } else {
           const e3 = engine.current;
           const p = at(e);

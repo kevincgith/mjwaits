@@ -3016,6 +3016,12 @@ export function PlayPanel({
   // `dragged`: a press carried along your row onto this tile - with
   // one-tap it throws it, as a tap; otherwise it's only picked (never the
   // second tap's throw).
+  // A finger on your row (see TableGL's onPress): dragged off it altogether,
+  // nothing stays lifted - the press and any tile picked before it.
+  const pressTile = (index: number | null, dropped = false) => {
+    setPressed(index);
+    if (dropped) setSelected(null);
+  };
   const tapTile = (index: number, dragged = false) => {
     if (rolling) return;
     if (swapGiving) {
@@ -3902,7 +3908,7 @@ export function PlayPanel({
           </div>
         </div>
         <Suspense fallback={null}>
-          <TableGL view={glView} rootRef={tableRef} feltRef={feltRef} handRef={myRowRef} middleRef={middleRef} onTile={tapTile} onPile={(side, i) => myTake && pickFrom(SIDES.indexOf(side), i)} sweep={swapGiving} onSweep={sweepTile} onPress={setPressed} tileXRef={tileXRef} onCameraMove={cameraMoved} onPeek={onPeek} />
+          <TableGL view={glView} rootRef={tableRef} feltRef={feltRef} handRef={myRowRef} middleRef={middleRef} onTile={tapTile} onPile={(side, i) => myTake && pickFrom(SIDES.indexOf(side), i)} sweep={swapGiving} onSweep={sweepTile} onPress={pressTile} tileXRef={tileXRef} onCameraMove={cameraMoved} onPeek={onPeek} />
         </Suspense>
 
         <div className={`play-me${autoplay ? " is-auto" : ""}`}>
