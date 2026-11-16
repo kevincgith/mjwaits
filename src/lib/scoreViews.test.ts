@@ -47,6 +47,14 @@ describe("changeKind", () => {
   const b = win(1, 3, 0);
   const s: ScoreEvent = { t: "surrender", at: 0, holder: "A", pulled: "B" };
 
+  it("tells a game that came over the network apart the same way (copies, not the same objects)", () => {
+    const before = [win(0, 10, 1), win(1, 4, 2)];
+    const copy = (evs: ScoreEvent[]) => JSON.parse(JSON.stringify(evs)) as ScoreEvent[];
+    expect(changeKind(before, copy([...before, win(2, 3, null)])).kind).toBe("added");
+    expect(changeKind(before, copy(before.slice(0, 1))).kind).toBe("undone");
+    expect(changeKind(before, copy([win(0, 12, 1), win(1, 4, 2)])).kind).toBe("fixed");
+  });
+
   it("tells added, undone and fixed apart", () => {
     expect(changeKind([a], [a, b])).toEqual({ kind: "added", surrenders: false });
     expect(changeKind([], [a])).toEqual({ kind: "added", surrenders: false });

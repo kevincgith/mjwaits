@@ -150,6 +150,8 @@ export type HandInitial = {
   bonus?: { kind: "獎" | "罰"; other: number | null; amount: number; name?: string };
   // Fixing a 詐胡 entry: each player's amount as recorded.
   zhaHu?: { player: string; amount: number }[];
+  // Scored on Scoring: its tiles and situation, for Back to Scoring.
+  scoring?: unknown;
 };
 
 // The 胡 sheet's views: 食胡, 特別獎罰, and 詐胡 - part of the 食胡 tab, opened
@@ -160,7 +162,20 @@ export type DraftEntry = { seat: number; tai: string };
 
 // What the 食胡 sheet hands over when asking Scoring to work a hand out:
 // `target` is the winner being scored, `entries` the whole draft.
-export type ScoreHandAsk = { from: number | null; jackpot: boolean; scan: boolean; target: number; entries: DraftEntry[]; zhaHu?: { player: string; amount: number }[] };
+export type ScoreHandAsk = {
+  from: number | null;
+  jackpot: boolean;
+  scan: boolean;
+  target: number;
+  entries: DraftEntry[];
+  zhaHu?: { player: string; amount: number }[];
+  // Back to Scoring: the hand to open again, and this sheet as it is now.
+  restore?: unknown;
+  reopen?: { seat: number; initial: HandInitial };
+};
+
+// Two taps on one player this close together are a double tap.
+const DOUBLE_TAP_MS = 350;
 
 export function HandSheet({
   store,
@@ -182,7 +197,10 @@ export function HandSheet({
   onScoreHand?: (ask: ScoreHandAsk) => void;
 }) {
   const [mode, setMode] = useState<HandMode>(startMode);
-  const player = state.seats[seat];
+  // Whose hand it is: the player tapped, until a double tap on 食胡 moves the
+  // win to someone else (the wrong card was tapped to begin with).
+  const [who, setWho] = useState(seat);
+  const player = state.seats[who];
   const zhaHuOn = state.settings.zhaHu !== null || initial?.zhaHu !== undefined;
   const onZhaHu = zhaHuOn ? () => setMode("zhaHu") : undefined;
   const zhaHuRef = useRef<HTMLDivElement>(null);
@@ -208,7 +226,8 @@ export function HandSheet({
       <WinSheet
         store={store}
         state={state}
-        winnerSeat={seat}
+        winnerSeat={who}
+        onSwitchWinner={setWho}
         initial={initial?.zhaHu ? undefined : initial}
         onDone={onDone}
         onClose={onClose}
@@ -218,9 +237,10 @@ export function HandSheet({
         frame={{ ref: winRef, minHeight, hidden: mode !== "win" }}
       />
       <BonusSheet
+        key={`bonus-${who}`}
         store={store}
         state={state}
-        seat={seat}
+        seat={who}
         onDone={onDone}
         onClose={onClose}
         onWin={() => setMode("win")}
@@ -230,9 +250,10 @@ export function HandSheet({
       />
       {zhaHuOn && (
         <ZhaHuSheet
+          key={`zhahu-${who}`}
           store={store}
           state={state}
-          seat={seat}
+          seat={who}
           player={player}
           initial={initial?.zhaHu}
           note={initial?.zhaHu ? initial.note : undefined}
@@ -268,6 +289,7 @@ export function WinSheet({
   store,
   state,
   winnerSeat,
+  onSwitchWinner,
   initial,
   onDone,
   onClose,
@@ -279,6 +301,8 @@ export function WinSheet({
   store: ScoreStore;
   state: ReplayState;
   winnerSeat: number;
+  // A double tap on another player makes them the winner instead.
+  onSwitchWinner?: (seat: number) => void;
   initial?: HandInitial;
   onDone: (ev: ScoreEvent) => void;
   onClose: () => void;
@@ -296,7 +320,8 @@ export function WinSheet({
   );
   // Back from Scoring on a 雙響/三響: the winner just scored is in focus.
   const [focus, setFocus] = useState(() => Math.max(0, initial?.entries?.findIndex((e) => e.seat === initial.patternsFor) ?? 0));
-  const patternsFor = initial?.patternsFor ?? winnerSeat;
+  // Whose tai the patterns from Scoring are - they move with the win.
+  const [patternsFor, setPatternsFor] = useState(initial?.patternsFor ?? winnerSeat);
   const [jackpot, setJackpot] = useState(initial?.jackpot ?? false);
 
   // One winner, or two or three (雙響/三響) - however many have been picked.
@@ -319,6 +344,27 @@ export function WinSheet({
     setFocus(has ? 0 : next.length - 1);
     if (next.length === 3) setFrom([0, 1, 2, 3].find((x) => !next.some((e) => e.seat === x))!);
     else if (from === null) setFrom(-1);
+  };
+  // A double tap on another player: they won, not the player tapped on the
+  // board. The tai (and any patterns) go with the win; if they'd been picked
+  // as dealing in, it's the other way round, so the first player dealt in.
+  // One winner only - on a 雙響/三響 taps keep their usual meaning.
+  const lastTap = useRef<{ seat: number; at: number; from: number | null; entries: DraftEntry[]; focus: number } | null>(null);
+  const tapPlayer = (seat: number) => {
+    const now = performance.now();
+    const last = lastTap.current;
+    if (onSwitchWinner && last && last.seat === seat && now - last.at < DOUBLE_TAP_MS && last.entries.length === 1) {
+      lastTap.current = null;
+      const old = winnerSeat;
+      setEntries([{ ...last.entries[0], seat }]);
+      setFrom(last.from === seat ? old : last.from);
+      setFocus(0);
+      setPatternsFor((p) => (p === old ? seat : p));
+      onSwitchWinner(seat);
+      return;
+    }
+    lastTap.current = { seat, at: now, from, entries, focus };
+    pickFrom(from === seat ? -1 : seat);
   };
   const winners: WinnerEntry[] = entries.map((e) => ({
     seat: e.seat,
@@ -366,6 +412,22 @@ export function WinSheet({
 
   const verb = multi === 1 ? (from === null ? "自摸" : "食胡") : multi === 2 ? "雙響" : "三響";
 
+  // Back to Scoring with the hand that was scored (patternsFor's), and what
+  // this sheet holds now, so Cancel there brings it back unchanged.
+  const backToScoring = () =>
+    onScoreHand?.({
+      from,
+      jackpot,
+      scan: false,
+      target: patternsFor,
+      entries,
+      restore: initial?.scoring,
+      reopen: {
+        seat: winnerSeat,
+        initial: { ...initial!, selfDraw: from === null, from, jackpot, tai: Number(entries[0].tai || 0), entries: multi > 1 ? entries : undefined, patternsFor },
+      },
+    });
+
   return (
     <Sheet
       title={
@@ -386,12 +448,25 @@ export function WinSheet({
         </>
       }
     >
-      {initial?.note && <p className="sc-note">{initial.note}</p>}
+      {initial?.note && (
+        <p className="sc-note">
+          {initial.note}
+          {/* The hand as scanned and set up, to check or fix - not a fresh scan. */}
+          {initial.scoring !== undefined && onScoreHand && (
+            <>
+              {" "}
+              <button type="button" className="sc-text-button sc-back-to-scoring" onClick={backToScoring}>
+                Back to Scoring ›
+              </button>
+            </>
+          )}
+        </p>
+      )}
 
       <div className="sc-field">
         <div className="sc-field-head">
           <span className="sc-label">Who dealt in?</span>
-          <span className="sc-help">{onZhaHu ? "Hold a player for 多響 · 詐胡" : "Hold a player for 多響"}</span>
+          <span className="sc-help">{onZhaHu ? "Hold: 多響 · 詐胡 · Double-tap: 胡" : "Hold: 多響 · Double-tap: 胡"}</span>
         </div>
         <TablePicker
           store={store}
@@ -402,7 +477,7 @@ export function WinSheet({
           selfLabel="胡"
           selfTone="win"
           isOn={(seat) => from === seat || entries.some((e) => e.seat === seat)}
-          onPick={(seat) => pickFrom(from === seat ? -1 : seat)}
+          onPick={tapPlayer}
           onLongPress={toggleExtra}
           // 詐胡 - a called win that wasn't: hold the caller.
           onSelfLongPress={onZhaHu}

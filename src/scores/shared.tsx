@@ -4,6 +4,7 @@
 
 import { type RefObject, useEffect, useState, type ReactNode } from "react";
 import { PLAYER_COLORS, type PatternNote, type ScoreStore } from "@mjwaits/shared/engine/ledger";
+import type { HandInitial } from "./sheets";
 
 export const WIND_CHARS = ["東", "南", "西", "北"];
 // Where each seat sits on the board, by seat index (turn order runs
@@ -50,6 +51,11 @@ export interface RecordRequest {
   reopenOnly?: boolean;
   draft?: ScoreHandRequest["draft"]; // a 雙響/三響 sheet to put back together
   zhaHu?: ScoreHandRequest["zhaHu"]; // a 詐胡 sheet to put back together
+  // Scoring's tiles and situation as they were, kept with the hand so Back to
+  // Scoring on the 食胡 sheet can open them again (Scoring's own shape).
+  scoring?: unknown;
+  // Back to Scoring, then Cancel: the 食胡 sheet exactly as it was left.
+  reopen?: ScoreHandRequest["reopen"];
 
   nonce: number;
 }
@@ -72,6 +78,11 @@ export interface ScoreHandRequest {
   // A 詐胡: each player's amount so far. The scored hand comes back as what
   // it would pay each of them off their discard, 詐胡's 設定 amount at least.
   zhaHu?: { player: string; amount: number }[];
+  // Back to Scoring: the tiles and situation it had (RecordRequest.scoring)
+  // to open again instead of a fresh hand, and the sheet to go back to if
+  // it's cancelled.
+  restore?: unknown;
+  reopen?: { seat: number; initial: HandInitial };
   nonce: number;
 }
 

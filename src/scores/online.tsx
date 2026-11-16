@@ -6,7 +6,7 @@
 // you get the same 戰況 board they have, and what you enter goes to everyone.
 // 線上 in the toolbar shows the room's status, and Leave.
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { replay, type ScoreGame, type ScoreStore } from "@mjwaits/shared/engine/ledger";
 import type { RoomView } from "@mjwaits/shared/protocol/server";
 import { Board, RecentRows } from "./board";
@@ -30,12 +30,15 @@ export function FollowView({
   store,
   setStore,
   onLeave,
+  onGame,
 }: {
   code: string;
   name: string;
   store: ScoreStore;
   setStore: (s: ScoreStore) => void;
   onLeave: (forget?: boolean) => void;
+  // The followed game as a store of its own, for 統計 (null till it's up).
+  onGame?: (game: ScoreStore | null) => void;
 }) {
   // This phone's copy of the game: what a recorder edits, kept in step.
   const [copy, setCopy] = useState<ScoreGame | null>(null);
@@ -46,6 +49,11 @@ export function FollowView({
   const host = room?.people.find((p) => p.host);
   const canRecord = (meHere?.canRecord ?? false) && room?.phase === "live";
   const game = copy ?? room?.game ?? null;
+  const colors = room?.colors;
+  useEffect(() => {
+    onGame?.(game && colors ? liveStore(game, colors) : null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [game, colors]);
   const stuck = status === "closed" && live.problem && (live.problem.code === "nameTaken" || live.problem.code === "version");
   const ended = room?.phase === "ended";
 

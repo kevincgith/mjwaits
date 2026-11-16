@@ -761,7 +761,9 @@ function PictureButton({ onClick }: { onClick: () => void }) {
 const gameTitle = (game: ScoreGame) => game.name ?? new Date(game.startedAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
 const pictureFile = (game: ScoreGame, what: string) => `mjwaits-${fileSafe(what)}-${dayStamp(game.startedAt)}.png`;
 
-export function StatsPanel({ store, setStore, view, setView }: { store: ScoreStore; setStore: (s: ScoreStore) => void; view: StatsView; setView: (v: StatsView) => void }) {
+// setStore left out: a followed game, read-only here (no backup card, no
+// changing or deleting games).
+export function StatsPanel({ store, setStore, view, setView }: { store: ScoreStore; setStore?: (s: ScoreStore) => void; view: StatsView; setView: (v: StatsView) => void }) {
   const games = useMemo(() => [...(store.active ? [store.active] : []), ...store.history], [store]);
   const [gameId, setGameId] = useState<string | null>(null);
   const game = games.find((g) => g.id === gameId) ?? games[0] ?? null;
@@ -777,7 +779,7 @@ export function StatsPanel({ store, setStore, view, setView }: { store: ScoreSto
         <div className="card sc-empty-card">
           <p className="sc-empty">No games yet — start one on 戰況.</p>
         </div>
-        <BackupCard store={store} setStore={setStore} />
+        {setStore && <BackupCard store={store} setStore={setStore} />}
       </>
     );
 
@@ -871,11 +873,11 @@ export function StatsPanel({ store, setStore, view, setView }: { store: ScoreSto
             setGameId(id);
             setView("trend");
           }}
-          onEdit={(next) => setStore({ ...store, history: store.history.map((g) => (g.id === next.id ? next : g)) })}
-          onDelete={(id) => setStore({ ...store, history: store.history.filter((g) => g.id !== id) })}
+          onEdit={(next) => setStore?.({ ...store, history: store.history.map((g) => (g.id === next.id ? next : g)) })}
+          onDelete={(id) => setStore?.({ ...store, history: store.history.filter((g) => g.id !== id) })}
         />
       )}
-      {view === "history" && <BackupCard store={store} setStore={setStore} />}
+      {view === "history" && setStore && <BackupCard store={store} setStore={setStore} />}
     </>
   );
 }

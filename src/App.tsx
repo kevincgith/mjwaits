@@ -4385,6 +4385,29 @@ const dealerStreakLabel = (n: number): string => (n <= 1 ? "莊" : `莊連${n - 
 // still takes the two original manualVisibleTripleWin/
 // manualVisibleExhaustedMultiWait booleans, derived from this below.
 type VisibleExhaustState = "none" | "triple" | "exhausted";
+
+// Scoring's hand and Situation card, as Back to Scoring brings them back.
+type ScoringSnapshot = {
+  concealed: HandTile[];
+  declared: DeclaredMeldTile[];
+  bonus: BonusTile[];
+  winningTile: HandTile | null;
+  seatWind: Wind;
+  roundWind: Wind;
+  selfDraw: boolean;
+  riichi: RiichiState;
+  instantWin: boolean;
+  eatRiichi: boolean;
+  earlyWin: EarlyWinState;
+  multiWin: MultiWinState;
+  heavenlyWin: HeavenlyWinState;
+  lastTileWin: LastTileWinState;
+  flowerDraw: number;
+  kongDraw: number;
+  robKong: number;
+  dealerStreak: number;
+  manualVisibleExhaust: VisibleExhaustState;
+};
 const VISIBLE_EXHAUST_CYCLE: VisibleExhaustState[] = ["none", "triple", "exhausted"];
 const VISIBLE_EXHAUST_RANK: Record<VisibleExhaustState, number> = { none: 0, triple: 1, exhausted: 2 };
 const VISIBLE_EXHAUST_LABELS: Record<VisibleExhaustState, string> = {
@@ -6300,12 +6323,71 @@ function ScoringPanel({
     setLoadedTestHand(null);
   };
 
+  // The hand and the Situation card as they stand, kept with a hand sent to
+  // the Ledger so its 食胡 sheet can bring them back (Back to Scoring).
+  const snapshot = (): ScoringSnapshot => ({
+    concealed: concealedTiles,
+    declared: declaredMelds,
+    bonus: bonusTiles,
+    winningTile,
+    seatWind,
+    roundWind,
+    selfDraw,
+    riichi,
+    instantWin,
+    eatRiichi,
+    earlyWin,
+    multiWin,
+    heavenlyWin,
+    lastTileWin,
+    flowerDraw,
+    kongDraw,
+    robKong,
+    dealerStreak,
+    manualVisibleExhaust,
+  });
+  const restoreSnapshot = (snap: ScoringSnapshot) => {
+    concealedRef.current = snap.concealed;
+    declaredRef.current = snap.declared;
+    bonusRef.current = snap.bonus;
+    setConcealedTiles(snap.concealed);
+    setDeclaredMelds(snap.declared);
+    setBonusTiles(snap.bonus);
+    setWinningTile(snap.winningTile);
+    // New tiles get ids past the ones coming back.
+    nextTileId.current = Math.max(nextTileId.current, ...snap.concealed.map((t) => t.id + 1), ...(snap.winningTile ? [snap.winningTile.id + 1] : []));
+    setSeatWind(snap.seatWind);
+    setRoundWind(snap.roundWind);
+    setSelfDraw(snap.selfDraw);
+    setRiichi(snap.riichi);
+    setInstantWin(snap.instantWin);
+    setEatRiichi(snap.eatRiichi);
+    setEarlyWin(snap.earlyWin);
+    setMultiWin(snap.multiWin);
+    setHeavenlyWin(snap.heavenlyWin);
+    setLastTileWin(snap.lastTileWin);
+    setFlowerDraw(snap.flowerDraw);
+    setKongDraw(snap.kongDraw);
+    setRobKong(snap.robKong);
+    setDealerStreak(snap.dealerStreak);
+    setManualVisibleExhaust(snap.manualVisibleExhaust);
+  };
+
   // Arriving from Scores: a fresh hand with that game's winds, 自摸 or
   // 雙響/三響 if it was picked there, and the camera straight away for Scan
   // hand (a phone may refuse that without a tap here - then the Scan button
   // is lit).
   useEffect(() => {
     if (!forScores) return;
+    // Back to Scoring: the hand as it was scored, to check or fix. The winds
+    // still come from the game (the winner may have been changed since).
+    if (forScores.restore) {
+      handScannerRef.current?.reset();
+      restoreSnapshot(forScores.restore as ScoringSnapshot);
+      setSeatWind(forScores.seatWind);
+      setRoundWind(forScores.roundWind);
+      return;
+    }
     handleReset();
     setSeatWind(forScores.seatWind);
     setRoundWind(forScores.roundWind);
@@ -7774,6 +7856,7 @@ function ScoringPanel({
                       .filter((m) => !scoresAdds.has(m.pattern.id))
                       .map((m) => ({ id: m.pattern.id, name: patternDisplayName(m.pattern, r.hand).slice(0, PATTERN_NAME_MAX), tai: m.tai }))
                   ),
+                  scoring: snapshot(),
                 });
               }}
             >
@@ -10560,8 +10643,11 @@ function App() {
           onIncomingRulesHandled={dropIncomingRules}
           onCancelForScores={() => {
             // Back to the 食胡 sheet it came from, as it was - or just the
-            // table, for a card's own Scan button.
-            if (scoreFor && !scoreFor.fromCard)
+            // table, for a card's own Scan button. After Back to Scoring,
+            // the sheet as it was left, its tai and patterns too.
+            if (scoreFor?.reopen)
+              setRecordRequest({ seatWind: scoreFor.seatWind, selfDraw: false, tai: 0, patterns: [], removedDealerTai: 0, reopen: scoreFor.reopen, nonce: Date.now() });
+            else if (scoreFor && !scoreFor.fromCard)
               setRecordRequest({
                 seatWind: scoreFor.seatWind,
                 selfDraw: scoreFor.from === null,

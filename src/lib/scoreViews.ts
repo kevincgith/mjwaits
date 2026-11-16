@@ -69,9 +69,15 @@ export function provisionalEast(state: Pick<ReplayState, "hands" | "seats" | "de
 export function changeKind(before: ScoreEvent[], after: ScoreEvent[]): { kind: "added" | "undone" | "fixed"; surrenders: boolean } {
   const n = after.length;
   const m = before.length;
-  if (n > m && (m === 0 || after[m - 1] === before[m - 1])) return { kind: "added", surrenders: after.slice(m).every((ev) => ev.t === "surrender") };
-  if (n < m && (n === 0 || before[n - 1] === after[n - 1])) return { kind: "undone", surrenders: false };
+  if (n > m && (m === 0 || sameEvent(after[m - 1], before[m - 1]))) return { kind: "added", surrenders: after.slice(m).every((ev) => ev.t === "surrender") };
+  if (n < m && (n === 0 || sameEvent(before[n - 1], after[n - 1]))) return { kind: "undone", surrenders: false };
   return { kind: "fixed", surrenders: false };
+}
+
+// The same entry: the same object here, or - a game that came over the
+// network, unpacked afresh with every update - the same contents.
+function sameEvent(a: ScoreEvent, b: ScoreEvent): boolean {
+  return a === b || JSON.stringify(a) === JSON.stringify(b);
 }
 
 // ---- 局: the score sheet as a CSV file ---------------------------------------
