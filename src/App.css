@@ -11026,6 +11026,16 @@ html.sc-fit-mode .build-version {
   height: 1.2rem;
 }
 
+/* Back to Scoring: the scanned hand again, as a labelled button in place
+   of the scan and tiles ones. */
+.sc-score-hand > button.sc-back-to-scoring {
+  width: auto;
+  gap: 0.15rem;
+  padding: 0 0.6rem 0 0.35rem;
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+
 /* A picker whose players can be held (雙響): no text selection or iOS
    callout on a long press. */
 .sc-table-pick.can-hold .sc-pick {
