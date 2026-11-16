@@ -4454,36 +4454,6 @@ img.tile-face {
 
 }
 
-/* Phones, while tiles are going in: each box holds one line and scrolls
-   inside itself, a line at a time, so the card never grows under the
-   picker. The card drops .is-entering (set in Calculator) once the hand is
-   done, and expands. Kept from shrinking back after that by an inline min-height. */
-@media (max-width: 700px) {
-  .panel .hand-card.is-entering .hand-display {
-    position: relative;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    scroll-snap-type: y mandatory;
-    scroll-padding-top: 0.2rem;
-  }
-
-  /* One grid row (grid-auto-rows); the padding sits outside this. */
-  .panel .hand-card.is-entering .hand-display:not(.breakdown-groups) {
-    box-sizing: content-box;
-    max-height: 2.75rem;
-  }
-
-  .panel .hand-card.is-entering .hand-display:not(.breakdown-groups) .hand-tile-button,
-  .panel .hand-card.is-entering .hand-display.breakdown-groups > * {
-    scroll-snap-align: start;
-  }
-
-  .panel .hand-card.is-entering .hand-display.breakdown-groups {
-    max-height: 2.9rem;
-    align-content: flex-start;
-  }
-}
-
 .hand-region {
   display: flex;
   flex-direction: column;
