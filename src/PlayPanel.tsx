@@ -753,17 +753,16 @@ function ClockNumber({ endsAt, cap }: Clock) {
   return <>{String(seconds).padStart(2, "0")}</>;
 }
 
-// The wind compass: the four seats' winds where those seats sit, the one to
-// act lit gold with a beam toward them, and a number in the middle: the
-// seconds left while a clock runs, else `idle` (the tiles left).
-function Compass({ game, active, clock, idle, countdown }: { game: GameState; active: number | null; clock: Clock | null; idle: string; countdown: Countdown | null }) {
+// The compass: a bar by each seat's edge, the one to act's lit gold, and a
+// number in the middle: the seconds left while a clock runs, else `idle`
+// (the tiles left). (Each seat's wind is on its card.)
+function Compass({ active, clock, idle, countdown }: { active: number | null; clock: Clock | null; idle: string; countdown: Countdown | null }) {
   return (
     <div className="play-compass" aria-hidden="true">
       {countdown && <CountdownRing key={countdown.endsAt} {...countdown} />}
       {SIDES.map((side, seat) => (
         <span key={side} className={`play-compass-q play-compass-${side}${active === seat ? " is-active" : ""}`}>
-          {WIND_CHARS[seatWind(seat, game.dealer)]}
-          <span className="play-compass-lit">{WIND_CHARS[seatWind(seat, game.dealer)]}</span>
+          <span className="play-compass-lit" />
         </span>
       ))}
       <span className="play-compass-center">{clock ? <ClockNumber key={clock.endsAt} {...clock} /> : idle}</span>
@@ -3898,7 +3897,7 @@ export function PlayPanel({
             <span className={`play-first-dealer at-${SIDES[firstDealer]}`} title={`起莊: ${nameOf(firstDealer)}`} aria-label={`起莊 ${nameOf(firstDealer)}`} />
             {/* The WebGL table: just the compass on the page's felt, where its layout puts the middle. */}
             <div className="play-middle" ref={middleRef}>
-              <Compass game={game} active={over ? null : activeSeat} clock={clock} idle={tilesLeftLabel} countdown={over ? null : countdown} />
+              <Compass active={over ? null : activeSeat} clock={clock} idle={tilesLeftLabel} countdown={over ? null : countdown} />
             </div>
           </div>
         </div>

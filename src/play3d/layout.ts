@@ -17,6 +17,10 @@ import { about, chain, identity, rotateX, rotateY, rotateZ, scale, translate, ty
 import { acrossTable } from "./swapOrder";
 import type { GLHandTile, GLPond, GLSide, GLSwapRow, GLTableView, GLWall, PeekSide } from "./types";
 
+// The most a side seat's wall grows (its standing tiles fewer as it melds:
+// PlayPanel's sideWallGrow caps at this).
+export const SIDE_WALL_GROW = 1 / 0.72;
+
 // The block, in ems of its tile size: width, height, thickness and how round its edges are.
 export const TILE_W = 0.72;
 export const TILE_H = 0.913;
@@ -445,6 +449,8 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
   const colGap = 0.5 * rem;
   const rowGap = 0.25 * rem;
   const centreX = d.feltW / 2;
+  // Across's row: the band of the felt its wall (and what's beside it) lies in.
+  const band = [cy0 + 0.6 * d.wallTop, cy0 + 0.6 * d.wallTop + Math.max(0.55 * d.wallTop, 1.05 * T)];
 
   // ---- The side seats: their wall at the edge, melds and bonus tiles in front.
   const side = (which: "left" | "right") => {
@@ -463,10 +469,14 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
     const flowers = flowerGroup(w.flowers, T);
     const gap = 0.15 * T;
     const maxLen = 17 * 0.72 * d.wall;
+    // (Never so long they reach up level with across's row - else across
+    // would have to make way, its tiles jumping at a side seat's call:
+    // they wrap toward the middle first.)
+    const colMax = Math.min(maxLen, 2 * ((cy0 + cy1) / 2 - band[1]) - (flowers ? flowers.along + gap : 0));
     const cols: Group[][] = [];
     let len = 0;
     for (const g of seeThrough(which, w, w.melds.map((m) => ({ ...meldGroup(m, w.hideConcealed, false, T), flipAt: w.topple.at })))) {
-      if (!cols.length || len + gap + g.along > maxLen + 0.5) {
+      if (!cols.length || len + gap + g.along > colMax + 0.5) {
         cols.push([g]);
         len = g.along;
       } else {
@@ -517,12 +527,14 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
   // Room beside it: as far as what of the side seats is beside it allows -
   // their walls (as they'll lie at the end), and their melds and bonus
   // tiles if they reach up that far - the row kept centred (fitTop).
-  const band = [cy0 + 0.6 * d.wallTop, cy0 + 0.6 * d.wallTop + Math.max(0.55 * d.wallTop, 1.05 * T)];
+  // (The side walls as big as they grow - see SIDE_WALL_GROW - so across's
+  // room is the same all hand, whatever the side seats call.)
   const reachOf = (S: typeof L) => {
-    const lying = Math.max(0, S.Wg * 0.5 - 0.9 * rem);
+    const Wg = d.wall * SIDE_WALL_GROW;
+    const lying = Math.max(0, Wg * 0.5 - 0.9 * rem);
     const sideTop = (cy0 + cy1) / 2 - S.sideH / 2;
     const sideReaches = S.sideW > 0 && sideTop < band[1] && sideTop + S.sideH > band[0];
-    return sideReaches ? S.width : S.edgeW + lying;
+    return sideReaches ? S.width : 0.55 * Wg + lying;
   };
   const leftReach = cx0 + 0.5 * rem + reachOf(L);
   const rightReach = cx1 - 0.5 * rem - reachOf(R);
@@ -880,7 +892,9 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
     const em = d.middle;
     const from = view.spotlight.from;
     const sx = middle.x + (from === "left" ? -3.6 : from === "right" ? 3.6 : 0) * em;
-    const sy = middle.y + (from === "top" ? -3.1 : from === "bottom" ? 3.1 : 0) * em;
+    // (Above and below: 1.3em past the compass's edge, whatever its size.)
+    const off = d.compass / 2 + 1.3 * em;
+    const sy = middle.y + (from === "top" ? -off : from === "bottom" ? off : 0);
     const { te, bw, bh } = bubbleBox(d);
     // Stood up about its foot, lifted 1.3em, facing you square on (upright
     // as the screen is) - so a bubble off to the side shows its tile just
