@@ -2589,7 +2589,16 @@ export function PlayPanel({
   // Your give: in the order they sit in your hand, each flying down from its
   // place there to its place in your pile (see GLMine.given).
   const [glGiven, setGlGiven] = useState<GLMine["given"]>(null);
-  const giveSwap = (picked: number[] = swapHand) => {
+  // Let go once it's down: kept, it played again whenever one of those tiles
+  // was taken (quick swap leaves it in your pile, greyed - and for a moment
+  // its place was empty, so the table started its fall over).
+  const givenDown = !!glGiven && !!swapPhase?.piles[HUMAN];
+  useEffect(() => {
+    if (!givenDown) return;
+    const id = window.setTimeout(() => setGlGiven(null), 1200);
+    return () => window.clearTimeout(id);
+  }, [givenDown, glGiven]);
+  const giveSwap =(picked: number[] = swapHand) => {
     if (!swapPhase || picked.length !== swapPhase.count) return;
     // Online, once per give (the table's state, with your pile, comes back).
     if (online && swapSent.current?.step === online.table.step) return;
