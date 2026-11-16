@@ -267,6 +267,11 @@ export default function TableGL({
         const s = f.stage.d / (f.stage.d - p.z);
         return { x: f.stage.ox + (p.x - f.stage.ox) * s - handMid, y: f.stage.oy + (p.y - f.stage.oy) * s - f.hand.y, s };
       };
+      const eye = tilt.inverse().transformPoint(new DOMPoint(f.stage.ox, f.stage.oy, f.stage.d));
+      d.eye = [eye.x / eye.w, eye.y / eye.w, eye.z / eye.w];
+      const below = tilt.inverse().transformPoint(new DOMPoint(f.stage.ox, f.stage.oy + 100, 0));
+      const at = tilt.inverse().transformPoint(new DOMPoint(f.stage.ox, f.stage.oy, 0));
+      d.eyeDown = [below.x / below.w - at.x / at.w, below.y / below.w - at.y / at.w, below.z / below.w - at.z / at.w];
       dims.current = d;
       const b = bubbleBox(dims.current);
       e.sizeBubbles(b.bw, b.bh, b.em, Math.min(3, window.devicePixelRatio || 1) * 1.5);
