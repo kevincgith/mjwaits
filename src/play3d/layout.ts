@@ -469,21 +469,32 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
     const flowers = flowerGroup(w.flowers, T);
     const gap = 0.15 * T;
     const maxLen = 17 * 0.72 * d.wall;
-    // (Never so long they reach up level with across's row - else across
-    // would have to make way, its tiles jumping at a side seat's call:
-    // they wrap toward the middle first.)
-    const colMax = Math.min(maxLen, 2 * ((cy0 + cy1) / 2 - band[1]) - (flowers ? flowers.along + gap : 0));
-    const cols: Group[][] = [];
-    let len = 0;
-    for (const g of seeThrough(which, w, w.melds.map((m) => ({ ...meldGroup(m, w.hideConcealed, false, T), flipAt: w.topple.at })))) {
-      if (!cols.length || len + gap + g.along > colMax + 0.5) {
-        cols.push([g]);
-        len = g.along;
-      } else {
-        cols[cols.length - 1].push(g);
-        len += gap + g.along;
+    // A column runs as long as the side allows - from level with across's
+    // row (never up into it: else across would have make way, its tiles
+    // jumping at a side seat's call) to your end - and only then wraps
+    // toward the middle. The bonus tiles head the first column - unless
+    // that would wrap a meld that fits without them: then they're a column
+    // of their own, toward the middle (flowersOwn).
+    const room = cy1 - band[1];
+    const melds = seeThrough(which, w, w.melds.map((m) => ({ ...meldGroup(m, w.hideConcealed, false, T), flipAt: w.topple.at })));
+    const columns = (colMax: number) => {
+      const cs: Group[][] = [];
+      let len = 0;
+      for (const g of melds) {
+        if (!cs.length || len + gap + g.along > colMax + 0.5) {
+          cs.push([g]);
+          len = g.along;
+        } else {
+          cs[cs.length - 1].push(g);
+          len += gap + g.along;
+        }
       }
-    }
+      return cs;
+    };
+    const headed = columns(room - (flowers ? flowers.along + gap : 0));
+    const alone = flowers ? columns(room) : headed;
+    const flowersOwn = !!flowers && alone.length < headed.length;
+    const cols = flowersOwn ? alone : headed;
     const colW = (c: Group[]) => Math.max(...c.map((g) => g.across));
     const colLen = (c: Group[]) => sum(c.map((g) => g.along)) + gap * (c.length - 1);
     // 換牌: what they've taken this round lies among their melds as one
@@ -496,14 +507,17 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
     // far as the wall reaches, else into a column of its own.
     const meldsW = sum(cols.map(colW));
     const meldsH = cols.length ? Math.max(...cols.map(colLen)) : 0;
-    const sideW = Math.max(flowers?.across ?? 0, meldsW);
-    const sideH = (flowers?.along ?? 0) + meldsH + (flowers && meldsH ? gap : 0);
+    const sideW = flowersOwn ? meldsW + flowers!.across : Math.max(flowers?.across ?? 0, meldsW);
+    const sideH = flowersOwn ? Math.max(meldsH, flowers!.along) : (flowers?.along ?? 0) + meldsH + (flowers && meldsH ? gap : 0);
+    // Centred along the side - or, too long for that, slid toward your end
+    // just enough to stay clear of across's row.
+    const sideTop = Math.max(band[1], Math.min((cy0 + cy1) / 2 - sideH / 2, cy1 - sideH));
     // (Where exactly: see the seat's placing below.)
     const span = Math.max(edgeH, maxLen) / 2;
     const extra = Math.max(0, Wg * 0.5 - 0.9 * rem);
     const seatGap = 0.3 * T + extra;
     const meldIn = w.down ? 0 : 0.45 * T + extra;
-    return { w, Wg, p, slot, faces, win, drew, edgeW, edgeH, flowers, cols, colW, meldsW, meldsH, sideW, sideH, seatGap, meldIn, row, rowLen, span, gap, width: edgeW + seatGap + sideW };
+    return { w, Wg, p, slot, faces, win, drew, edgeW, edgeH, flowers, flowersOwn, cols, colW, meldsW, meldsH, sideW, sideH, sideTop, seatGap, meldIn, row, rowLen, span, gap, width: edgeW + seatGap + sideW };
   };
   const L = side("left");
   const R = side("right");
@@ -532,8 +546,7 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
   const reachOf = (S: typeof L) => {
     const Wg = d.wall * SIDE_WALL_GROW;
     const lying = Math.max(0, Wg * 0.5 - 0.9 * rem);
-    const sideTop = (cy0 + cy1) / 2 - S.sideH / 2;
-    const sideReaches = S.sideW > 0 && sideTop < band[1] && sideTop + S.sideH > band[0];
+    const sideReaches = S.sideW > 0 && S.sideTop < band[1] && S.sideTop + S.sideH > band[0];
     return sideReaches ? S.width : 0.55 * Wg + lying;
   };
   const leftReach = cx0 + 0.5 * rem + reachOf(L);
@@ -738,16 +751,16 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
     // (The left player's runs from the far end, down; the right's from the near end, up.)
     const sideX0 = which === "left" ? edgeX0 + S.edgeW + S.seatGap - S.meldIn : edgeX0 - S.seatGap + S.meldIn - S.sideW;
     const sideMid = sideX0 + S.sideW / 2;
-    let y = midSeatY - (dir * S.sideH) / 2;
+    let y = S.sideTop + S.sideH / 2 - (dir * S.sideH) / 2;
     const run = (g: Group, cx: number, from: number) => {
       const pitch = 0.72 * g.em;
       placeGroup(g, (k) => [cx, from + dir * (g.pad + pitch * (k + 0.5))], 90 * dir, TURNED, felt, feltQuads);
     };
-    if (S.flowers) {
+    if (S.flowers && !S.flowersOwn) {
       run(S.flowers, sideMid, y);
       y += dir * (S.flowers.along + 0.15 * T);
     }
-    let colX = which === "left" ? sideMid - S.meldsW / 2 : sideMid + S.meldsW / 2;
+    let colX = sideMid - (dir * (S.flowersOwn ? S.sideW : S.meldsW)) / 2;
     // A 換牌 row: on down the melds' last column if it ends within the
     // wall's length; else a column of its own toward the middle, centred
     // along the wall - never past the wall's end. Bonus tiles alone, it's
@@ -765,6 +778,8 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
       after = { x: colX + (dir * cw) / 2, y: gy };
       colX += dir * cw;
     }
+    // (Their own column: past the melds', from the same end.)
+    if (S.flowers && S.flowersOwn) run(S.flowers, colX + (dir * S.flowers.across) / 2, y);
     if (S.row) {
       // (Clear of the standing tiles: the seat's gap in front of the wall,
       // not stepped in as the melds are till the hand goes down.)
