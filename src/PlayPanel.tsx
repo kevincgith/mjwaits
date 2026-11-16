@@ -71,7 +71,7 @@ import {
   type WaitValue,
 } from "@mjwaits/shared/engine/game";
 import { allTileKinds, DEFAULT_SUIT_ORDER, getWaits, isSuitOrder, shanten, sortTiles, sortTilesBy, tileKey, tileLabel, type Tile } from "@mjwaits/shared/engine/mahjong";
-import { blindPicks, botGive, SWAP_TIMER_S, botSplit, DEFAULT_SWAP_RULES, givePlans, pileLeft, quickSwap, type GivePlan, type SwapPhase, type SwapRules } from "@mjwaits/shared/engine/swap";
+import { blindPicks, botGive, SWAP_TIMER_S, botSplit, DEFAULT_SWAP_RULES, givePlans, pileLeft, quickSwap, SWAP_PACE_MS, type GivePlan, type SwapPhase, type SwapRules } from "@mjwaits/shared/engine/swap";
 import { PlayDie } from "./PlayDie";
 import { dealDiceMs, DIE_SAY_MS, SWAP_FLIGHT_MS, SWAP_ROUND_HOLD_MS, SwapControls, SwapDice, swapDiceMs, SwapSheet, type Flight } from "./PlaySwap";
 import { sortBonusTiles, type BonusTile } from "@mjwaits/shared/engine/scoring";
@@ -233,6 +233,8 @@ const BURST_MS = 1200;
 // 投降: its burst, and how long the 拉 it ended stays struck through.
 const SURRENDER = "投降";
 const SURRENDER_SHOW_MS = 4000;
+// 見牌 Seen copies: a tile held this long (ms) greys the ponds but its copies.
+const SEEN_HOLD_MS = 500;
 // A hand's end is seen on the table first - the 胡 / 自摸 called and the
 // hands laid down - and only then the result card: this long after a win,
 // less after a 流局 (no call to see).
@@ -1142,7 +1144,7 @@ export function PlayPanel({
   // 聽 Waits: when you're ready - or a tile lifted to throw would leave you
   // ready - what you'd wait on, and what each would be worth.
   const [showWaits, setShowWaits] = useState(() => saved?.waits ?? true);
-  // 見牌 Seen copies: a tile held (or lifted) to throw greys every other tile
+  // 見牌 Seen copies: a tile held a moment greys every other tile
   // in the ponds - its copies already out stand out.
   const [seenCopies, setSeenCopies] = useState(() => saved?.seenCopies ?? true);
   // 排序 Sort order: the suits' order in your hand (萬 筒 索 字 as usual). A
@@ -1760,6 +1762,15 @@ export function PlayPanel({
   const [selected, setSelected] = useState<number | null>(null);
   // The tile a finger's held on in your row (see TableGL's onPress).
   const [pressed, setPressed] = useState<number | null>(null);
+  // Held a moment (SEEN_HOLD_MS) - not a tap - and still held, on whichever tile.
+  const isHeld = pressed !== null;
+  const [heldLong, setHeldLong] = useState(false);
+  useEffect(() => {
+    setHeldLong(false);
+    if (!isHeld) return;
+    const id = window.setTimeout(() => setHeldLong(true), SEEN_HOLD_MS);
+    return () => window.clearTimeout(id);
+  }, [isHeld]);
   // Where the WebGL table draws one of your tiles (see TableGL's tileXRef).
   const tileXRef = useRef<((index: number) => number | null) | null>(null);
   const [burst, setBurst] = useState<{ seat: number; label: string; id: number; deltas?: number[] } | null>(null);
@@ -2759,10 +2770,12 @@ export function PlayPanel({
       if (!bot(phase.taker)) return;
       // Not while the last take's tiles are still in the air.
       if (swapAirborne) return;
+      // Nor while your give's still flying down to your pile: it lands first.
+      const giveLeft = glGiven ? Math.max(0, glGiven.key + SWAP_PACE_MS.given - Date.now()) : 0;
       const id = window.setTimeout(() => {
         const split = botSplit(phase.piles.map(pileLeft), phase.taker, takersAfter(phase, game.dealer), phase.count);
         advance(swapTake(game, phase.taker, phase.piles.map((p, g) => blindPicks(p!, split[g]))));
-      }, (quickSwap(game.swapRules) ? 650 : 1100) * factor);
+      }, giveLeft + (quickSwap(game.swapRules) ? 650 : 1100) * factor);
       return () => window.clearTimeout(id);
     }
     let move: (() => void) | null = null;
@@ -3490,10 +3503,10 @@ export function PlayPanel({
       ...(peekKongs.current[seat] ? { glassKongs: peekKongs.current[seat], peekOpen: !!peeked && peekSeat === seat } : {}),
     };
   };
-  // 見牌: the tile you're holding or have lifted to throw, its copies lit.
-  const focusAt = seenCopies && myTurn && !autoplay && !rolling ? (pressing ? pressed : selected) : null;
+  // 見牌: the tile you're holding - held a moment, not tapped - its copies lit.
+  const focusAt = seenCopies && pressing && heldLong ? pressed : null;
   const pondFocus = focusAt !== null ? (handTiles[focusAt] ?? null) : null;
-  const glPond = (seat: number) => ({ tiles: showPiles ? [] : game.players[seat].discards, riichiAt: game.players[seat].riichi?.discard, pinLast: discardFrom === seat, focus: pondFocus === BLANK ? null : pondFocus });
+  const glPond = (seat: number) => ({ tiles: showPiles ? [] : game.players[seat].discards, riichiAt: game.players[seat].riichi?.discard, pinLast: discardFrom === seat });
   const spot =
     game.phase.kind === "claims"
       ? { tile: game.phase.tile, seat: game.phase.from, key: `c${game.discardsMade}` }
@@ -3541,6 +3554,7 @@ export function PlayPanel({
     .filter((f) => f.row?.place !== undefined && !landed.has(f.id))
     .map((f) => ({ id: f.id, from: SIDES[f.seat], place: f.place, to: SIDES[f.to], group: rowGroups(f.to).groups.indexOf(f.row!.group), slot: f.row!.place!, tile: f.tile, flip: !!f.flip }));
   const glView: GLTableView = {
+    focus: pondFocus === BLANK ? null : pondFocus,
     walls: { right: glWall(1), top: glWall(2), left: glWall(3) },
     ponds: { bottom: glPond(HUMAN), right: glPond(1), top: glPond(2), left: glPond(3) },
     mine: {
@@ -3564,6 +3578,7 @@ export function PlayPanel({
       toppled: iWon,
       drawKey: String(tilesLeft),
       winLead: winIndex >= 0 ? WIN_TILE_LEAD : 0,
+      hints: hint,
       sliding: !!swapPhase || swapFlying || swapJoining,
       given: swapPhase?.piles[HUMAN] ? glGiven : null,
     },

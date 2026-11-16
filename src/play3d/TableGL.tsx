@@ -267,6 +267,11 @@ export default function TableGL({
         const s = f.stage.d / (f.stage.d - p.z);
         return { x: f.stage.ox + (p.x - f.stage.ox) * s - handMid, y: f.stage.oy + (p.y - f.stage.oy) * s - f.hand.y, s };
       };
+      const eye = tilt.inverse().transformPoint(new DOMPoint(f.stage.ox, f.stage.oy, f.stage.d));
+      d.eye = [eye.x / eye.w, eye.y / eye.w, eye.z / eye.w];
+      const below = tilt.inverse().transformPoint(new DOMPoint(f.stage.ox, f.stage.oy + 100, 0));
+      const at = tilt.inverse().transformPoint(new DOMPoint(f.stage.ox, f.stage.oy, 0));
+      d.eyeDown = [below.x / below.w - at.x / at.w, below.y / below.w - at.y / at.w, below.z / below.w - at.z / at.w];
       dims.current = d;
       const b = bubbleBox(dims.current);
       e.sizeBubbles(b.bw, b.bh, b.em, Math.min(3, window.devicePixelRatio || 1) * 1.5);
@@ -344,8 +349,9 @@ export default function TableGL({
   // While sweeping is on, a press on a tile and the slide after it instead.
   // A press on a tile follows the finger along your row (the tile under it
   // is the one pressed - lifted, its waits shown) and is let go where the
-  // finger lifts: a tap on that tile, `dragged` if it moved. Off the row,
-  // it's dropped - no tap, whatever happens after.
+  // finger lifts: a tap on that tile, `dragged` if it moved. Over a tile
+  // that can't be played (greyed), nothing's pressed - let go there, no tap.
+  // Off the row, it's dropped - no tap, whatever happens after.
   useEffect(() => {
     const root = rootRef.current;
     if (!root) return;
@@ -355,6 +361,8 @@ export default function TableGL({
     // The tile a finger's held on (see onPress), and whether it's moved on
     // from the tile it went down on - or been dropped, off your row.
     let pressed: number | null = null;
+    // Whether this touch went down on one of your tiles (and so is a press, even while over none).
+    let holding = false;
     let slid = false;
     let dropped = false;
     const press = (i: number | null) => {
@@ -387,6 +395,7 @@ export default function TableGL({
       dropped = false;
       if (!down || outside(e)) return;
       const i = tileAt(e);
+      holding = !sweepRef.current && i !== null;
       if (!sweepRef.current) return press(i);
       if (i === null) return;
       swept = i;
@@ -395,16 +404,19 @@ export default function TableGL({
     const onMove = (e: PointerEvent) => {
       if (!e.isPrimary) return;
       // Held on a tile: it follows the finger along your row (between
-      // tiles, or over one that can't be played, the last stays); off the
-      // row, it's dropped.
-      if (pressed !== null && down) {
+      // tiles the last stays; over one that can't be played, none is
+      // pressed); off the row, it's dropped.
+      if (holding && down && !dropped) {
         if (!onRow(e)) {
           dropped = true;
           press(null);
         } else {
-          const i = tileAt(e);
-          if (i !== null && i !== pressed) slid = true;
-          press(i ?? pressed);
+          const e3 = engine.current;
+          const p = at(e);
+          const over = e3 ? e3.pickHand(p.x, p.y, root.clientWidth, root.clientHeight) : null;
+          const i = over !== null && viewRef.current.mine.tiles[over]?.enabled ? over : null;
+          if (over !== null && i !== pressed) slid = true;
+          press(over === null ? pressed : i);
         }
       }
       if (swept === null) return;
@@ -420,11 +432,15 @@ export default function TableGL({
       const start = down;
       down = null;
       const held = pressed;
+      const wasHolding = holding;
+      holding = false;
       press(null);
       // (A sweep has done its picking as it went.)
       if (swept !== null) return void (swept = null);
       // A press carried along your row: let go on the tile it's on.
       if (dropped) return;
+      // (Let go over a tile that can't be played: nothing.)
+      if (wasHolding && held === null) return;
       if (held !== null && e.isPrimary && (slid || (start && moved(e, start)))) {
         if (viewRef.current.mine.tiles[held]?.enabled) onTileRef.current(held, true);
         return;
@@ -447,6 +463,7 @@ export default function TableGL({
       down = null;
       swept = null;
       dropped = true;
+      holding = false;
       press(null);
     };
     root.addEventListener("pointerdown", onDown);

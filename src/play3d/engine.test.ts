@@ -17,7 +17,7 @@ vi.mock("three", async (actual) => ({
 }));
 vi.mock("./textures", () => {
   const canvas = () => ({ width: 1, height: 1 });
-  return { tileShadow: canvas, rowShadow: canvas, pin: canvas, pickedRim: canvas, gapOutline: canvas, bar: canvas, bubble: canvas, peekTray: canvas };
+  return { tileShadow: canvas, rowShadow: canvas, pin: canvas, pickedRim: canvas, gapOutline: canvas, bar: canvas, triangle: canvas, bubble: canvas, peekTray: canvas };
 });
 vi.stubGlobal("cancelAnimationFrame", () => {});
 
