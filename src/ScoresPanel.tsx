@@ -251,7 +251,11 @@ export function ScoresPanel({
     const now = loadOnline();
     saveOnline(forget && following ? withoutRoom(now, following) : { ...now, current: null });
     setFollowing(null);
+    setFollowed(null);
   };
+  // The followed game as its own store: what 統計 shows while following, not
+  // this phone's own games.
+  const [followed, setFollowed] = useState<ScoreStore | null>(null);
   const [view, setView] = useState<StatsView>("trend");
   useEffect(() => {
     if (request || seatingResult) setSub("board");
@@ -281,10 +285,15 @@ export function ScoresPanel({
           統計 Stats
         </button>
       </div>
+      {/* A followed game stays connected under 統計, so it's still live when
+          you come back, and its numbers there keep up. */}
+      {following && (
+        <div hidden={sub !== "board"}>
+          <FollowView key={following} code={following} name={loadOnline().name} store={store} setStore={setStore} onLeave={unfollow} onGame={setFollowed} />
+        </div>
+      )}
       {sub === "board" &&
-        (following ? (
-          <FollowView key={following} code={following} name={loadOnline().name} store={store} setStore={setStore} onLeave={unfollow} />
-        ) : game && state ? (
+        (following ? null : game && state ? (
           <Board
             store={store}
             game={game}
@@ -312,7 +321,16 @@ export function ScoresPanel({
             <BackupCard store={store} setStore={setStore} />
           </>
         ))}
-      {sub === "stats" && <StatsPanel store={store} setStore={setStore} view={view} setView={setView} />}
+      {sub === "stats" &&
+        (!following ? (
+          <StatsPanel store={store} setStore={setStore} view={view} setView={setView} />
+        ) : followed ? (
+          <StatsPanel store={followed} view={view} setView={setView} />
+        ) : (
+          <div className="card sc-empty-card">
+            <p className="sc-empty">Waiting for the game to come in…</p>
+          </div>
+        ))}
       {liveOpen && <LiveSheet live={live} store={store} joinCode={joinCode} onFollow={follow} onClose={() => setLiveOpen(false)} />}
       {!following && <Toast toast={liveToast} />}
     </section>

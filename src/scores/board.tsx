@@ -27,6 +27,9 @@ export type BoardSheet =
 // 籌碼提示: the chips to hand over for each change (see chipMoves) - a new
 // entry, or an undo / redo / fix / delete, which hands back the difference.
 // Stays up until dismissed or the next change that moves chips replaces it.
+// The smallest a player's name on a card shrinks to, to fit (then it trails off).
+const NAME_MIN_PX = 12;
+
 export function useChipMoves(game: ScoreGame, state: ReplayState) {
   const last = useRef<{ id: string; events: ScoreEvent[]; state: ReplayState } | null>(null);
   // 投降 after 投降 (one by one in 拉踢) add up on the one card, from the
@@ -467,6 +470,12 @@ export function Board({
   // A hand sent from Scoring opens the 食胡 sheet for whoever has that 門風.
   useEffect(() => {
     if (!request) return;
+    // Back to Scoring, then Cancel: the sheet exactly as it was left.
+    if (request.reopen) {
+      setSheet({ kind: "hand", seat: request.reopen.seat, initial: request.reopen.initial });
+      onRequestDone();
+      return;
+    }
     // Started from this sheet: back to the same winner. Otherwise the winner
     // is whoever has the 門風 entered in Scoring.
     const seat = request.seat ?? [0, 1, 2, 3].find((s) => ((s - state.dealer + SEATS) % SEATS) + 1 === request.seatWind) ?? 0;
@@ -516,6 +525,7 @@ export function Board({
           jackpot: request.jackpot,
           entries: request.reopenOnly ? draft.entries : draft.entries.map((e) => (e.seat === scored ? { ...e, tai: String(request.tai) } : e)),
           patternsFor: scored,
+          ...(request.reopenOnly || request.scoring === undefined ? {} : { scoring: request.scoring }),
           ...(request.reopenOnly ? {} : { note: `From Scoring: ${state.seats[scored]} ${request.tai} farn${dealerNote}${rulesNote}.` }),
         },
       });
@@ -535,6 +545,7 @@ export function Board({
         tai: request.tai,
         patterns: request.patterns,
         rules: request.rules,
+        ...(request.scoring !== undefined ? { scoring: request.scoring } : {}),
         // Scoring has the last word on 自摸; who dealt in carries over otherwise.
         ...(request.seat !== undefined ? { from: request.selfDraw ? null : request.from === null || request.from === undefined ? -1 : request.from, jackpot: request.jackpot } : {}),
         note:
@@ -566,7 +577,9 @@ export function Board({
       const bar = document.querySelector<HTMLElement>(".tab-bar");
       const bottom = bar && getComputedStyle(bar).position === "fixed" ? bar.getBoundingClientRect().top : window.innerHeight;
       const room = Math.floor(bottom - top - FIT_GAP);
-      const fits = room >= FIT_MIN;
+      // Not on screen (a followed game's board, kept connected while 統計 is
+      // up): no fitting, or the page it's hidden under couldn't scroll.
+      const fits = el.getClientRects().length > 0 && room >= FIT_MIN;
       // The room is what's left with the page at the top, and fit mode stops
       // it scrolling - so go back to the top, or a page scrolled down when it
       // starts to fit would stay stuck there.
@@ -597,14 +610,23 @@ export function Board({
 
   // A card too short for its total and 上局 both (a small phone with a
   // banner up) drops the 上局 rather than letting it slide under the footer.
-  // Checked when the board changes and on resize; Recent still has every
-  // hand. All cleared, then all read, then all set: one layout, not one a card.
+  // And a name too wide for its card shrinks just enough to fit (to a floor,
+  // then it trails off) - every other name keeps the full size, however many
+  // characters it has. Checked when the board changes and on resize; Recent
+  // still has every hand. All cleared, then all read, then all set: one
+  // layout, not one a card.
   useLayoutEffect(() => {
     const check = () => {
       const els = [...document.querySelectorAll<HTMLElement>(".sc-board .sc-card-score")];
+      const names = [...document.querySelectorAll<HTMLElement>(".sc-board .sc-card-top .sc-card-name")];
       for (const el of els) el.classList.remove("is-tight");
+      for (const el of names) el.style.fontSize = "";
       const tight = els.map((el) => el.scrollHeight > el.clientHeight + 1);
+      const sizes = names.map((el) =>
+        el.scrollWidth > el.clientWidth + 1 ? Math.max(NAME_MIN_PX, (parseFloat(getComputedStyle(el).fontSize) * el.clientWidth) / el.scrollWidth) : null,
+      );
       els.forEach((el, i) => tight[i] && el.classList.add("is-tight"));
+      names.forEach((el, i) => sizes[i] !== null && (el.style.fontSize = `${Math.floor(sizes[i]! * 10) / 10}px`));
     };
     check();
     window.addEventListener("resize", check);
@@ -808,7 +830,7 @@ export function Board({
                   <span className="sc-qi-corner" role="img" aria-label="起莊" title="起莊 - this 圈 started here" />
                 )}
                 {/* A long name gets a little smaller, so it isn't cut off. 莊N: N = 連莊. */}
-                <span className={`sc-card-top${[...player].length >= 6 ? " is-long" : ""}`}>
+                <span className="sc-card-top">
                   <span className="sc-card-name">{player}</span>
                   {isDealer && (
                     <span className="sc-zhuang-tag" aria-label={state.streak > 0 ? `莊連${state.streak}` : "莊"}>
@@ -868,20 +890,19 @@ export function Board({
                 )}
               </div>
               {/* 拉 pins on the edge facing the other player: + on the holder's card,
-                  − on the pulled player's. */}
+                  − on the pulled player's. Just labels - taps go through to the
+                  card under them (its 食胡, its 胡·摸·銃 foot); 拉踢 opens from
+                  the toolbar. */}
               {state.settings.showLah &&
                 pins.map((pin) => (
-                  <button
-                    type="button"
+                  <span
                     key={`${pin.other}`}
                     className={`sc-pin at-${facing(seat, pin.otherSeat)} ${pin.sign > 0 ? "is-pos" : "is-neg"}`}
-                    onClick={() => setSheet({ kind: "lah" })}
-                    title={pin.sign > 0 ? `${player} 拉 ${pin.other}: ${fmt(pin.value)} (${pin.count}次)` : `${pin.other} 拉 ${player}: ${fmt(pin.value)} (${pin.count}次)`}
-                    aria-label={`${pin.sign > 0 ? `${player} has 拉 ${fmt(pin.value)} on ${pin.other}` : `${pin.other} has 拉 ${fmt(pin.value)} on ${player}`}. Open 拉踢`}
+                    aria-label={pin.sign > 0 ? `${player} has 拉 ${fmt(pin.value)} on ${pin.other}` : `${pin.other} has 拉 ${fmt(pin.value)} on ${player}`}
                   >
                     {pin.sign > 0 ? "+" : "−"}
                     {fmt(pin.value)}
-                  </button>
+                  </span>
                 ))}
               </div>
             </div>
@@ -944,6 +965,8 @@ export function Board({
                 scan: ask.scan,
                 ...(ask.entries.length > 1 ? { draft: { sheetSeat: sheet.seat, entries: ask.entries } } : {}),
                 ...(ask.zhaHu ? { zhaHu: ask.zhaHu } : {}),
+                ...(ask.restore !== undefined ? { restore: ask.restore } : {}),
+                ...(ask.reopen ? { reopen: ask.reopen } : {}),
               });
               close();
             }

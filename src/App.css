@@ -11348,16 +11348,8 @@ html.sc-fit-mode .build-version {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
-  border: none;
-  font-family: inherit;
-  cursor: pointer;
-}
-
-/* A bigger invisible hit area than the pill itself. */
-.sc-pin::after {
-  content: "";
-  position: absolute;
-  inset: -0.4rem -0.25rem;
+  /* Taps go through to the card under it. */
+  pointer-events: none;
 }
 
 .sc-pin.is-pos {
@@ -12272,12 +12264,6 @@ html.sc-fit-mode .build-version {
 
 .sc-sheet .sc-pick .sc-pick-name {
   min-width: 0;
-}
-
-/* Long names on the board (six characters or more). */
-.sc-card-top.is-long .sc-card-name,
-.sc-fit .sc-card-top.is-long .sc-card-name {
-  font-size: clamp(var(--text-sm), min(2.6vh, 13cqi), var(--text-xl));
 }
 
 .sc-card-score.is-tight .sc-delta {
