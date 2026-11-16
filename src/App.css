@@ -4454,60 +4454,6 @@ img.tile-face {
 
 }
 
-/* Phones, while tiles are going in: each box holds one line, clipped, and
-   moves a whole line at a time (useBoxLines) - so the card never grows
-   under the picker. The card drops .is-entering (set in Calculator) once
-   the hand is done, and expands. Kept from shrinking back after that by an
-   inline min-height. */
-@media (max-width: 700px) {
-  .panel .hand-card.is-entering .hand-region {
-    position: relative;
-  }
-
-  .panel .hand-card.is-entering .hand-display {
-    position: relative;
-    overflow: hidden;
-    /* A vertical drag here steps between lines rather than scrolling. */
-    touch-action: none;
-  }
-
-  /* One grid row (grid-auto-rows); the padding sits outside this. */
-  .panel .hand-card.is-entering .hand-display:not(.breakdown-groups) {
-    box-sizing: content-box;
-    max-height: 2.75rem;
-  }
-
-  .panel .hand-card.is-entering .hand-display.breakdown-groups {
-    max-height: 2.9rem;
-    align-content: flex-start;
-  }
-
-  /* The clear prompt covers the line on show, not the first one. */
-  .panel .hand-card.is-entering .box-clear-prompt {
-    transform: translateY(var(--line-offset, 0px));
-  }
-}
-
-/* Which line of a one-line box is showing (1/2), sat on its top edge; a
-   tap shows the next. */
-.box-line-chip {
-  position: absolute;
-  top: -0.55rem;
-  right: 0.6rem;
-  z-index: 3;
-  min-width: 2.2rem;
-  padding: 0.05rem 0.45rem;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--surface);
-  color: var(--text-muted);
-  font-size: var(--text-xs);
-  font-weight: 600;
-  line-height: 1.3;
-  font-variant-numeric: tabular-nums;
-  touch-action: manipulation;
-}
-
 .hand-region {
   display: flex;
   flex-direction: column;
