@@ -6010,6 +6010,57 @@ function ScoringPanel({
     trimScrollRoom();
   });
 
+  // On a phone, a hand that wraps grows the card down over the space below
+  // it (the 選牌 header and the add-to buttons) instead of pushing the picker
+  // down - the tiles stay exactly where the finger is. Only as far as 6px
+  // above the picker's first row of tiles; past that the card pushes the
+  // page down as usual. Done with a negative bottom margin the size of the
+  // wrapped lines, so the card takes up its one-line height in the page.
+  const naturalGap = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    const card = handCardRef.current;
+    const next = card?.nextElementSibling as HTMLElement | null | undefined;
+    const tiles = addToRowRef.current?.nextElementSibling;
+    if (!card || !next) return;
+    if (naturalGap.current === null) {
+      // The space between the card and the 選牌 header (their margins
+      // collapse to the larger one), read before any overlap is applied.
+      naturalGap.current = Math.max(
+        parseFloat(getComputedStyle(card).marginBottom) || 0,
+        parseFloat(getComputedStyle(next).marginTop) || 0
+      );
+    }
+    let overlap = 0;
+    if (tiles && !pickerCollapsed && window.matchMedia("(max-width: 700px)").matches) {
+      // How much taller the boxes are than one line each.
+      let extra = 0;
+      card.querySelectorAll<HTMLElement>(".hand-display").forEach((box) => {
+        const kids = [...box.children].filter((k) => !(k as HTMLElement).classList.contains("box-clear-prompt"));
+        if (kids.length < 2) return;
+        const rects = kids.map((k) => k.getBoundingClientRect()).filter((r) => r.height > 0);
+        if (!rects.length) return;
+        const top = Math.min(...rects.map((r) => r.top));
+        const bottom = Math.max(...rects.map((r) => r.bottom));
+        const line = Math.max(...rects.map((r) => r.height));
+        extra += Math.max(0, bottom - top - line);
+      });
+      // Room from the card's one-line bottom down to 6px above the tiles -
+      // measured from the header, which moves with the page (the card may
+      // be pinned), plus the gap the card's margin currently takes away.
+      const room = tiles.getBoundingClientRect().top - next.getBoundingClientRect().top + naturalGap.current - 6;
+      overlap = Math.max(0, Math.min(Math.round(extra), Math.floor(room)));
+    }
+    // A negative margin collapses with the header's positive one into their
+    // sum, so this leaves the gap at naturalGap - overlap.
+    const headerMargin = parseFloat(getComputedStyle(next).marginTop) || 0;
+    const value = overlap ? `${headerMargin - naturalGap.current - overlap}px` : "";
+    if (card.style.marginBottom !== value) card.style.marginBottom = value;
+    // Once the card reaches the 選牌 header, hide the header rather than
+    // leave a sliver of it peeking out from under the card.
+    const hideHeader = overlap > naturalGap.current ? "hidden" : "";
+    if (next.style.visibility !== hideHeader) next.style.visibility = hideHeader;
+  });
+
   const cardGrowth = useRef({ height: 0, tiles: 0, animating: false });
   useLayoutEffect(() => {
     const card = handCardRef.current;
