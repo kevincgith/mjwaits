@@ -49,9 +49,6 @@ export interface GLPond {
   tiles: Tile[];
   riichiAt?: number;
   pinLast: boolean;
-  // A tile you're holding or have lifted to throw: every other one in the
-  // pond greyed, so its copies already out stand out (Seen copies).
-  focus?: Tile | null;
 }
 
 // One of your concealed tiles - null when it's face down (watching, not seated).
@@ -61,7 +58,8 @@ export interface GLHandTile {
   selected: boolean;
   hint: boolean;
   danger: boolean;
-  // 聽 Waits: throwing it would leave you ready - a green bar on its foot.
+  // 聽 Waits: throwing it would leave you ready - a yellow triangle over it
+  // (over where hints' red bar goes, while hints are on: see GLMine.hints).
   ready?: boolean;
   barred: boolean;
   winner: boolean;
@@ -79,6 +77,8 @@ export interface GLMine {
   drawKey: string;
   // A won hand: how long the winning tile is shown before the rest go down.
   winLead: number;
+  // Hints on: the red bar's place over your tiles is kept for it.
+  hints?: boolean;
   // 換牌 under way: tiles leaving and joining your hand slide to their new
   // places rather than jump.
   sliding: boolean;
@@ -137,4 +137,7 @@ export interface GLTableView {
   // hand standing at its edge (the seat that's usually your row, here, is one
   // more wall).
   corner?: { bottom: GLWall };
+  // 見牌 Seen copies: the tile you're holding - every other tile out in the
+  // open (ponds, melds, bonus tiles) greyed, so its copies stand out.
+  focus?: Tile | null;
 }

@@ -212,6 +212,24 @@ export function bar(colour: string): HTMLCanvasElement {
   });
 }
 
+// A small triangle pointing down at its tile, softly rounded, a dark rim
+// so it reads on the felt.
+export function triangle(colour: string): HTMLCanvasElement {
+  return paintCanvas(64, 64, (ctx) => {
+    ctx.beginPath();
+    ctx.moveTo(8, 12);
+    ctx.lineTo(56, 12);
+    ctx.lineTo(32, 54);
+    ctx.closePath();
+    ctx.lineJoin = "round";
+    ctx.lineWidth = 7;
+    ctx.strokeStyle = "rgba(40, 28, 0, 0.55)";
+    ctx.stroke();
+    ctx.fillStyle = colour;
+    ctx.fill();
+  });
+}
+
 // The spotlight's bubble: dark, ringed in gold, with its
 // point toward whoever threw the tile - `bw` x `bh` px with an em of
 // margin round it for its shadow and point, at `scale` canvas px a px.

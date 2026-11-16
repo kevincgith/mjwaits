@@ -14,7 +14,7 @@ import * as THREE from "three";
 import { THICK, TILE_H, TILE_R, TILE_W, type Layout, type Piece, type Quad, type QuadKind } from "./layout";
 import type { Mat } from "./mat";
 import type { Atlas } from "./textures";
-import { bar, bubble, gapOutline, peekTray, pickedRim, pin, rowShadow, tileShadow } from "./textures";
+import { bar, bubble, gapOutline, peekTray, pickedRim, pin, rowShadow, tileShadow, triangle } from "./textures";
 
 const MAX_FELT = 260;
 const MAX_HAND = 48;
@@ -273,6 +273,12 @@ class Space {
   private starts = new Map<string, number>();
   private eases = new Map<string, { from: THREE.Matrix4; to: Mat; start: number; dur: number; curve: (t: number) => number }>();
   private shown = new Map<string, THREE.Matrix4>();
+  // Tints fading (Piece.fade): from, to, when it began, how long.
+  private fades = new Map<string, { from: number; to: number; start: number; dur: number }>();
+  private fadeAt(f: { from: number; to: number; start: number; dur: number }, now: number) {
+    const k = f.dur > 0 ? Math.min(1, Math.max(0, (now - f.start) / 1000 / f.dur)) : 1;
+    return f.from + (f.to - f.from) * (k * k * (3 - 2 * k));
+  }
 
   set(pieces: Piece[], quads: Quad[], rects: Atlas["rects"], now: number) {
     const n = Math.min(pieces.length, this.tiles.instanceMatrix.count);
@@ -300,7 +306,17 @@ class Space {
       const r = rects.get(p.face) ?? rects.get("back")!;
       this.face.setXYZW(i, r[0], r[1], r[2], r[3]);
       this.shade.setXY(i, p.shade[0], p.shade[1]);
-      this.tint.setX(i, p.tint);
+      let tint = p.tint;
+      if (p.fade) {
+        keys.add(p.fade.key);
+        const f = this.fades.get(p.fade.key);
+        if (!f) this.fades.set(p.fade.key, { from: p.tint, to: p.tint, start: now, dur: 0 });
+        else if (f.to !== p.tint) {
+          tint = this.fadeAt(f, now);
+          this.fades.set(p.fade.key, { from: tint, to: p.tint, start: now, dur: p.fade.dur });
+        } else tint = this.fadeAt(f, now);
+      }
+      this.tint.setX(i, tint);
     }
     this.tiles.count = n;
     this.hits = this.pieces.map((p) => p.hit);
@@ -314,12 +330,14 @@ class Space {
     }
     for (const k of [...this.starts.keys()]) if (!keys.has(k)) this.starts.delete(k);
     for (const k of [...this.shown.keys()]) if (!keys.has(k)) (this.shown.delete(k), this.eases.delete(k));
+    for (const k of [...this.fades.keys()]) if (!keys.has(k)) this.fades.delete(k);
     this.tick(now);
   }
 
   // Everything where it is at `now` (ms); whether anything's still moving.
   tick(now: number): boolean {
     let moving = false;
+    let fading = false;
     const mat = new THREE.Matrix4();
     const at = (item: Piece | Quad): Mat => {
       const a = item.anim;
@@ -372,8 +390,15 @@ class Space {
       } else mat.fromArray(at(p));
       if (p.ease) this.shown.set(p.ease.key, mat.clone());
       this.tiles.setMatrixAt(i, mat);
+      const f = p.fade && this.fades.get(p.fade.key);
+      if (f && f.dur > 0 && now - f.start < f.dur * 1000 + 50) {
+        this.tint.setX(i, this.fadeAt(f, now));
+        fading = true;
+        moving = true;
+      }
     });
     this.tiles.instanceMatrix.needsUpdate = true;
+    if (fading) this.tint.needsUpdate = true;
     for (const [kind, mesh] of this.marks) {
       (this.quads.get(kind) ?? []).forEach((q, i) => mesh.setMatrixAt(i, mat.fromArray(at(q))));
       mesh.instanceMatrix.needsUpdate = true;
@@ -430,7 +455,7 @@ export class Engine {
     for (const side of ["top", "bottom", "left", "right"] as const) this.felt.addMarks(`bubble-${side}`, mark(bubble(10, 10, 1, side, 1)), 1, 2);
     this.hand.addMarks("row-shadow", mark(rowShadow()), 1, 0);
     this.hand.addMarks("hint", mark(bar("#ffd166")), MAX_HAND, 2);
-    this.hand.addMarks("ready", mark(bar("#3ccf7a")), MAX_HAND, 2);
+    this.hand.addMarks("ready", mark(triangle("#ffd23f")), MAX_HAND, 2);
     this.hand.addMarks("danger", mark(bar("#ff6b5a")), MAX_HAND, 2);
   }
 

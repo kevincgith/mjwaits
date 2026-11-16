@@ -79,6 +79,12 @@ export interface Piece {
   // changes (as a CSS transition would) - see anim.ts and engine.ts.
   anim?: Anim;
   ease?: { key: string; dur: number; curve: (t: number) => number; delay?: number };
+  // Its tint faded to a new one over `dur` seconds, not snapped (by `key`).
+  fade?: { key: string; dur: number };
+  // A tile out in the open - a pond's, a meld's, a bonus tile - greyed by
+  // 見牌 Seen copies unless it's a copy of the tile held (see seenCopies);
+  // its fade's key.
+  seen?: string;
 }
 
 // An animation: from when `key` first appears, after `delay` seconds, `dur`
@@ -195,7 +201,7 @@ export const flowerGroup = (fs: BonusTile[], em: number): Group | null =>
 export function placeGroup(g: Group, at: (k: number) => [number, number], rot: number, shade: [number, number], pieces: Piece[], quads: Quad[], tableZ = true) {
   g.slots.forEach((s, k) => {
     const [x, y] = at(k);
-    pieces.push({ face: s.face ?? BACK, m: s.face ? lying(x, y, g.em, rot) : lyingDown(x, y, g.em, rot), shade, tint: 1 });
+    pieces.push({ face: s.face ?? BACK, m: s.face ? lying(x, y, g.em, rot) : lyingDown(x, y, g.em, rot), shade, tint: 1, seen: `seen:${Math.round(x)}:${Math.round(y)}` });
     if (tableZ) quads.push(shadowAt(x, y, g.em, rot));
     // A kong's fourth, on the middle one (a hair above its face).
     if (s.top !== undefined) {
@@ -218,7 +224,7 @@ export function placeGroup(g: Group, at: (k: number) => [number, number], rot: n
               },
             }
           : undefined;
-        pieces.push({ face: s.top ?? BACK, m: s.top ? lying(x, y, g.em, rot, z) : lyingDown(x, y, g.em, rot, z), shade, tint: 1, anim: flip });
+        pieces.push({ face: s.top ?? BACK, m: s.top ? lying(x, y, g.em, rot, z) : lyingDown(x, y, g.em, rot, z), shade, tint: 1, anim: flip, seen: `seen:${Math.round(x)}:${Math.round(y)}:top` });
       }
     }
   });
@@ -242,6 +248,8 @@ function seeThrough(side: PeekSide, w: GLWall, groups: Group[]): Group[] {
 // Seen copies: a pond's tiles other than the one you're holding, greyed
 // further than a 食替 tile (tint 0): 43% bright, mostly drained of colour.
 const POND_GREY = -0.5;
+// 見牌: how long the ponds take to grey (and come back).
+const POND_FADE_S = 0.35;
 // A concealed kong turned up at the hand's end, if its group doesn't say
 // when (flipAt): a beat after it's over.
 const KONG_FLIP_DELAY = 0.35;
@@ -818,8 +826,7 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
                 ),
             }
           : undefined;
-      const unlike = !!pond.focus && faceOf(pond.focus) !== faceOf(t);
-      felt.push({ face: faceOf(t), m, shade: turned ? TURNED : LIT, tint: unlike ? POND_GREY : 1, anim: drop });
+      felt.push({ face: faceOf(t), m, shade: turned ? TURNED : LIT, tint: 1, anim: drop, seen: `${side}:pond:${i}` });
       feltQuads.push(shadowAt(x, y, em, rot));
       // The newest discard's pin: a gold point on its thrower's side.
       if (pond.pinLast && i === pond.tiles.length - 1) {
@@ -985,7 +992,22 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
     });
   }
 
-  return { felt: { pieces: felt, quads: feltQuads, glass, glassQuads, racks }, hand: layoutHand(view, d, spots, givenAt), middle };
+  const hand = layoutHand(view, d, spots, givenAt);
+  seenCopies(felt, view.focus);
+  seenCopies(hand.pieces, view.focus);
+  return { felt: { pieces: felt, quads: feltQuads, glass, glassQuads, racks }, hand, middle };
+}
+
+// 見牌 Seen copies: with a tile held, every tile out in the open (the ponds,
+// the melds - yours too - and the bonus tiles) greyed but its copies, fading
+// there and back. (Your own concealed tiles stay as they are.)
+function seenCopies(pieces: Piece[], focus: Tile | null | undefined) {
+  const held = focus ? faceOf(focus) : null;
+  for (const p of pieces) {
+    if (!p.seen) continue;
+    if (held !== null && p.face !== held) p.tint = Math.min(p.tint, POND_GREY);
+    p.fade = { key: p.seen, dur: POND_FADE_S };
+  }
 }
 
 // A tile at one end of a 換牌 flight, for flying in formation: its centre,
@@ -1076,7 +1098,7 @@ function layoutHand(view: GLTableView, d: Dims, spots: Partial<Record<GLSide, Sp
     flowers.slots.forEach((s, k) => {
       const cx = flowers.pad + 0.72 * flowers.em * (k + 0.5);
       const pose = (a: number) => chain(translate(cx, ty, 0), about(0, 0.5 * flowers.em, THICK * flowers.em, rotateX(a)), scale(flowers.em));
-      pieces.push({ face: s.face!, m: pose(32), shade: LIT, tint: 1, anim: { key: `h:f:${k}`, delay: 0, dur: 0.5, pose: (t) => pose(keyframes(MINE_FRAMES, t)[0]) } });
+      pieces.push({ face: s.face!, m: pose(32), shade: LIT, tint: 1, anim: { key: `h:f:${k}`, delay: 0, dur: 0.5, pose: (t) => pose(keyframes(MINE_FRAMES, t)[0]) }, seen: `h:f:${k}` });
     });
   }
   if (groups.length) {
@@ -1098,6 +1120,7 @@ function layoutHand(view: GLTableView, d: Dims, spots: Partial<Record<GLSide, Sp
           shade: LIT,
           tint: 1,
           anim: { key: `h:${named[gi]}:${k}`, delay: 0, dur: 0.5, pose: (t) => pose(keyframes(MINE_FRAMES, t)[0]) },
+          seen: `h:${named[gi]}:${k}`,
         });
       });
       x += g.along + (gi < groups.length - 1 ? 0.12 * M : 0);
@@ -1192,10 +1215,12 @@ function layoutHand(view: GLTableView, d: Dims, spots: Partial<Record<GLSide, Sp
     // (The gold one on the face's foot margin, just proud of it: below the
     // tile it was all but hidden under the bar beneath the table.)
     const bar = (y: number, w: number, proud = 0) => chain(translate(x0, y0, 0), about(0.39 * H, H, THICK * H, rotateX(-22)), translate(0.39 * H, y, (THICK + proud) * H), scale(w, 0.06 * H, 1));
-    // A tile that would leave you ready (聽 Waits): green on that margin -
-    // the gold, on one that's both, just above it.
-    if (t.ready) quads.push({ kind: "ready", m: bar(0.935 * H, 0.78 * H * 0.7, 0.01) });
-    if (t.hint) quads.push({ kind: "hint", m: bar(t.ready ? 0.87 * H : 0.935 * H, 0.78 * H * 0.64, 0.012) });
+    // A tile that would leave you ready (聽 Waits): a yellow triangle over
+    // it, pointing down at it - over the red bar's place while hints are on
+    // (in a row, whichever tiles are barred red).
+    const tri = 0.3 * H;
+    if (t.ready) quads.push({ kind: "ready", m: chain(translate(x0, y0, 0), about(0.39 * H, H, THICK * H, rotateX(-22)), translate(0.39 * H, (mine.hints ? -0.2 : -0.07) * H - tri / 2, THICK * H), scale(tri, tri, 1)) });
+    if (t.hint) quads.push({ kind: "hint", m: bar(0.935 * H, 0.78 * H * 0.64, 0.012) });
     if (t.danger) quads.push({ kind: "danger", m: bar(-0.13 * H, 0.78 * H * 0.7) });
   });
   // No tile drawn: its place kept.
