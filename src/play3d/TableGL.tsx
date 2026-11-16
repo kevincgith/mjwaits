@@ -381,14 +381,13 @@ export default function TableGL({
       return i !== null && viewRef.current.mine.tiles[i]?.enabled ? i : null;
     };
     const outside = offTable;
-    // Still over your row: its box (a lifted tile stays inside it), give or
-    // take a little - a finger's slack, not room: a slide up off the tiles,
-    // onto the felt, has left it.
+    // Still over your row: its box (a lifted tile stays inside it) - the
+    // moment the finger's past its edge, onto the felt, it's left.
+    // (Below, to the screen's foot: there's nothing else there.)
     const onRow = (e: PointerEvent) => {
       const r = handRef.current?.getBoundingClientRect();
       if (!r) return false;
-      const pad = r.height * 0.12;
-      return e.clientX >= r.left - 2 * pad && e.clientX <= r.right + 2 * pad && e.clientY >= r.top - pad && e.clientY <= r.bottom + 3 * pad;
+      return e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top;
     };
     const onDown = (e: PointerEvent) => {
       down = e.isPrimary ? { x: e.clientX, y: e.clientY, at: e.timeStamp } : null;
