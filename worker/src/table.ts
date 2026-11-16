@@ -693,7 +693,9 @@ export class Table extends Hub<TableMessage> {
       // a take's flight, a round's rows; see SWAP_PACE_MS).
       const ph = g.phase;
       this.justDealt = false; // (the deal's dice are in "dice")
-      const wait = this.swapWait(ph.stage === "give" ? (ph.round === 1 ? "dice" : "settle") : ph.took.length ? (quickSwap(g.swapRules) ? "quickTake" : "take") : "none");
+      const given = this.giveJustMade;
+      this.giveJustMade = false;
+      const wait = this.swapWait(ph.stage === "give" ? (ph.round === 1 ? "dice" : "settle") : ph.took.length ? (quickSwap(g.swapRules) ? "quickTake" : "take") : given ? "given" : "none");
       const alone = ph.stage === "give" ? [0, 1, 2, 3].some((s) => !ph.piles[s] && this.actsAlone(s)) : this.actsAlone(ph.taker);
       const people = ph.stage === "give" ? [0, 1, 2, 3].some((s) => !ph.piles[s] && !this.actsAlone(s)) : !this.actsAlone(ph.taker);
       if (alone) rt.botAt = now + wait + this.botPause;
@@ -728,6 +730,9 @@ export class Table extends Hub<TableMessage> {
   private swapJustEnded = false;
   // Set when a hand's just been dealt, likewise: its dice roll before the dealer's first turn.
   private justDealt = false;
+  // Set when a person's give ended the round's give: the first take waits for
+  // its tiles to land in their pile (they fly there on their screen).
+  private giveJustMade = false;
 
   // A pause in the swap's pace (SWAP_PACE_MS), at the table's speed (none in the tests).
   private swapWait(kind: keyof typeof SWAP_PACE_MS | "none"): number {
@@ -760,6 +765,7 @@ export class Table extends Hub<TableMessage> {
       return;
     }
     if (b.kind === "swap" && a.kind !== "swap") this.swapJustEnded = true;
+    if (person && b.kind === "swap" && a.kind === "swap" && b.stage === "give" && a.stage === "take") this.giveJustMade = true;
     this.newDecision(Date.now());
   }
 

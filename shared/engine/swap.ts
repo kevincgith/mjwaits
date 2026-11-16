@@ -46,7 +46,9 @@ export const quickSwap = (rules: Pick<SwapRules, "quick"> | undefined) => rules?
 // then joining the hands, before the next round's give - or, the swap done,
 // the dealer's first turn.
 // (Quick swap: a take's tiles greyed where they lie - quickTake - not flown.)
-export const SWAP_PACE_MS = { deal: 3100, dice: 6100, take: 1300, quickTake: 450, settle: 3400 };
+// And a person's give ending the round's give: its tiles still flying down
+// to their pile (given) - the first take waits for them to land.
+export const SWAP_PACE_MS = { deal: 3100, dice: 6100, given: 700, take: 1300, quickTake: 450, settle: 3400 };
 
 // Each give and take has this long (seconds) - whatever the turn timer is,
 // off included. Out of time, it's done for you as a bot would.
