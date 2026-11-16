@@ -6027,9 +6027,18 @@ function ScoringPanel({
     // screen the hand fits one line and the pointer isn't in the way).
     if (!from || height - from < 4 || !addedTiles || pickerCollapsed || !row) return;
     if (!window.matchMedia("(max-width: 700px)").matches) return;
+    // Only when the grown card now covers the picker's first row of tiles
+    // (the top 萬 row) - otherwise the page stays put, so tapping in tile
+    // after tile isn't interrupted by the page moving under the finger.
+    const firstTiles = row.nextElementSibling;
+    if (!firstTiles) return;
+    const covered = card.getBoundingClientRect().bottom - firstTiles.getBoundingClientRect().top;
+    if (covered <= 0) return;
 
-    // Where everything ends up, measured now at the final layout.
-    const target = pickerScrollTarget(card, height, row);
+    // Just far enough to bring that row out from under the card, 6px clear -
+    // not on to the add-to buttons above it - so the page travels as little
+    // as it can.
+    const target = Math.max(0, window.scrollY - (covered + 6));
 
     // Ease the card from its old height to the new one (clipping the new
     // line as it opens), and the scroll from here to the target, together.
