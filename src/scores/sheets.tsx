@@ -448,20 +448,7 @@ export function WinSheet({
         </>
       }
     >
-      {initial?.note && (
-        <p className="sc-note">
-          {initial.note}
-          {/* The hand as scanned and set up, to check or fix - not a fresh scan. */}
-          {initial.scoring !== undefined && onScoreHand && (
-            <>
-              {" "}
-              <button type="button" className="sc-text-button sc-back-to-scoring" onClick={backToScoring}>
-                Back to Scoring ›
-              </button>
-            </>
-          )}
-        </p>
-      )}
+      {initial?.note && <p className="sc-note">{initial.note}</p>}
 
       <div className="sc-field">
         <div className="sc-field-head">
@@ -511,7 +498,16 @@ export function WinSheet({
         {/* Work the tai out on the Scoring tab instead - by photo or by tiles -
             and come back here with it filled in. One winner only. */}
         {/* On a 雙響/三響 they score the winner whose tai is in focus. */}
-        {onScoreHand && (
+        {/* Scored on Scoring already: one button back to that hand as it was
+            scanned and set up, to check or fix - in this row, so the sheet
+            is no taller (a rescan is Scoring's own Scan button). */}
+        {onScoreHand && initial?.scoring !== undefined && entries[focus]?.seat === patternsFor ? (
+          <span className="sc-score-hand">
+            <button type="button" className="sc-secondary sc-back-to-scoring" onClick={backToScoring} aria-label="Back to Scoring" title="Back to Scoring">
+              {Icons.back} Scoring
+            </button>
+          </span>
+        ) : onScoreHand && (
           <span className="sc-score-hand">
             <button
               type="button"
