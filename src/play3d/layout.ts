@@ -224,10 +224,13 @@ const rowShift = (s: Slot, em: number) => (s.row ?? 0) * 0.5 * TILE_H * em;
 
 // Lays a group's tiles from one end. `at(k)`: the centre of the k-th slot
 // from where the row starts. `rot`: how the tiles turn to face their owner.
-export function placeGroup(g: Group, at: (k: number) => [number, number], rot: number, shade: [number, number], pieces: Piece[], quads: Quad[], tableZ = true) {
+// `owner`: which way along its tiles' own y its owner sits (1: toward their
+// feet - the side seats', turned to them; -1: across's, upright to you) - a
+// second row of bonus tiles' full set goes that side.
+export function placeGroup(g: Group, at: (k: number) => [number, number], rot: number, shade: [number, number], pieces: Piece[], quads: Quad[], tableZ = true, owner = 1) {
   g.slots.forEach((s, k) => {
     const [ax, ay] = at(s.col ?? k);
-    const dy = rowShift(s, g.em);
+    const dy = owner * rowShift(s, g.em);
     const r = (rot * Math.PI) / 180;
     const [x, y] = [ax - Math.sin(r) * dy, ay + Math.cos(r) * dy];
     pieces.push({ face: s.face ?? BACK, m: s.face ? lying(x, y, g.em, rot) : lyingDown(x, y, g.em, rot), shade, tint: 1, seen: `seen:${Math.round(x)}:${Math.round(y)}` });
@@ -659,14 +662,14 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
     for (const g of tSideItems) {
       const x1 = gx - g.pad;
       const pitch = 0.72 * g.em;
-      placeGroup(g, (k) => [x1 - pitch * (k + 0.5), sideY], 0, LIT, felt, feltQuads);
+      placeGroup(g, (k) => [x1 - pitch * (k + 0.5), sideY], 0, LIT, felt, feltQuads, true, -1);
       gx -= g.along + tGap;
     }
     // Bonus tiles out a row, under the melds, from the right.
     if (topOut && tFlowers) {
       const y = sideY + tSideH / 2 + 0.15 * T + tFlowers.across / 2;
       const x1 = sideX1 - tFlowers.pad;
-      placeGroup(tFlowers, (k) => [x1 - 0.72 * tFlowers.em * (k + 0.5), y], 0, LIT, felt, feltQuads);
+      placeGroup(tFlowers, (k) => [x1 - 0.72 * tFlowers.em * (k + 0.5), y], 0, LIT, felt, feltQuads, true, -1);
     }
     owned.top.push({ x0: edgeX0, y0: edgeY0, x1: edgeX0 + tEdgeW, y1: edgeY0 + tEdgeH });
     ownSince("top", from);
@@ -794,8 +797,8 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
 
   // ---- The ponds, each from the compass toward its player.
   const pondTiles = (side: GLSide, pond: GLPond) => {
-    const along = side === "top" || side === "bottom";
-    const limit = along ? 9 * 0.74 * T : 7 * 0.74 * T;
+    // (9 tiles a row on every side: the side ponds as long as the others.)
+    const limit = 9 * 0.74 * T;
     // Each tile's length along its row, and the rows' depth.
     const step = (i: number) => (i === pond.riichiAt ? 0.95 : 0.73) * T;
     const rowDepth = 0.93 * T;
