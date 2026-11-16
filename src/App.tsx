@@ -5186,104 +5186,6 @@ function ConfirmTextAction({ label, onConfirm, title }: { label: string; onConfi
 // spare the room. Spread `handlers` on the box and render `prompt` inside
 // it; a box that also has a tap action checks `consumeLongPress()` first,
 // since the click that ends a long-press isn't a tap.
-// Two sets of pointer handlers on one element, each called in turn.
-type PointerHandlers = Partial<
-  Record<"onPointerDown" | "onPointerMove" | "onPointerUp" | "onPointerCancel" | "onPointerLeave", (e: ReactPointerEvent) => void>
->;
-function mergeHandlers<A extends PointerHandlers>(a: A, b: PointerHandlers): A {
-  const out: PointerHandlers = { ...a };
-  for (const key of Object.keys(b) as (keyof PointerHandlers)[]) {
-    const first = a[key];
-    const second = b[key];
-    if (second) out[key] = first ? (e) => { first(e); second(e); } : second;
-  }
-  return out as A;
-}
-
-// One box of the Scoring hand card while tiles are going in on a phone (see
-// Calculator's handExpanded): clipped to a single line, moved a whole line
-// at a time - never scrolled freely, which on iOS could stop between two
-// lines and cut the tiles in half. Lines are the distinct rows the box's
-// items sit on, measured from the layout. `show` moves to the line holding
-// an element; the 1/2 chip and a vertical swipe on the box step through.
-function useBoxLines(boxRef: React.RefObject<HTMLDivElement | null>, active: boolean) {
-  const [line, setLine] = useState(0);
-  const [count, setCount] = useState(1);
-  const swipe = useRef<{ y: number; swiped: boolean }>({ y: 0, swiped: false });
-  // The top of each line, grouping items within a few px of one another
-  // (a line's items can differ by a hair in how they're centred).
-  const lineTops = (): number[] => {
-    const box = boxRef.current;
-    if (!box) return [0];
-    const tops: number[] = [];
-    for (const child of Array.from(box.children)) {
-      if (!(child instanceof HTMLElement) || child.classList.contains("box-clear-prompt")) continue;
-      const top = child.offsetTop;
-      if (!tops.some((t) => Math.abs(t - top) < 8)) tops.push(top);
-    }
-    return tops.length ? tops.sort((a, b) => a - b) : [0];
-  };
-  useLayoutEffect(() => {
-    const box = boxRef.current;
-    if (!box) return;
-    if (!active) {
-      box.scrollTop = 0;
-      box.style.removeProperty("--line-offset");
-      if (count !== 1) setCount(1);
-      if (line !== 0) setLine(0);
-      return;
-    }
-    const tops = lineTops();
-    if (tops.length !== count) setCount(tops.length);
-    const shown = Math.min(line, tops.length - 1);
-    if (shown !== line) setLine(shown);
-    const offset = tops[shown] - tops[0];
-    box.scrollTop = offset;
-    box.style.setProperty("--line-offset", `${box.scrollTop}px`);
-  });
-  const show = (el: Element | null | undefined) => {
-    if (!(el instanceof HTMLElement)) return;
-    const tops = lineTops();
-    const index = tops.findIndex((t) => Math.abs(t - el.offsetTop) < 8);
-    if (index >= 0) setLine(index);
-  };
-  const step = (by: number) => setLine((l) => Math.max(0, Math.min(count - 1, l + by)));
-  const next = () => setLine((l) => (l + 1) % count);
-  const handlers = {
-    onPointerDown: (e: ReactPointerEvent) => {
-      swipe.current = { y: e.clientY, swiped: false };
-    },
-    onPointerUp: (e: ReactPointerEvent) => {
-      const dy = e.clientY - swipe.current.y;
-      if (!active || count < 2 || Math.abs(dy) < 20) return;
-      swipe.current.swiped = true;
-      step(dy < 0 ? 1 : -1);
-    },
-  };
-  // A swipe isn't a tap on the box - see focusPicker.
-  const consumeSwipe = () => {
-    const swiped = swipe.current.swiped;
-    swipe.current.swiped = false;
-    return swiped;
-  };
-  const chip =
-    active && count > 1 ? (
-      <button
-        type="button"
-        className="box-line-chip"
-        onClick={(e) => {
-          e.stopPropagation();
-          next();
-        }}
-        aria-label={`Line ${line + 1} of ${count} - show the next`}
-        title="Show the next line (or swipe the box up and down)"
-      >
-        {line + 1}/{count}
-      </button>
-    ) : null;
-  return { show, handlers, consumeSwipe, chip };
-}
-
 function useBoxClear(label: string, empty: boolean, onClear: () => void) {
   const [open, setOpen] = useState(false);
   const press = useRef<{ timer: number | null; x: number; y: number; fired: boolean }>({ timer: null, x: 0, y: 0, fired: false });
@@ -6116,8 +6018,6 @@ function ScoringPanel({
   const focusPicker = (region: "declared" | "concealed") => (e: React.MouseEvent) => {
     // The click that ends a long-press isn't a tap.
     if ((region === "declared" ? declaredClear : concealedClear).consumeLongPress()) return;
-    // Nor is the click that ends a swipe between the box's lines.
-    if ((region === "declared" ? declaredLines : concealedLines).consumeSwipe()) return;
     if ((e.target as Element).closest("button")) return;
     if (region === "concealed") setAddTo("hand");
     else if (addTo === "hand") {
@@ -6219,14 +6119,11 @@ function ScoringPanel({
     const height = parseFloat(getComputedStyle(card).height);
     if (height > held) card.style.minHeight = `${height}px`;
   });
-  // While entering, each box shows one line at a time (useBoxLines): the
-  // line holding what just went in - the new tile's place in the sorted
-  // 手牌, the last meld for a new one, the flowers (which sit first) for a
-  // new flower.
+  // Collapsed, each box scrolls to the line holding what just went in: the
+  // new tile's place in the sorted 手牌, the end of 門前 for a new meld, its
+  // start for a new flower (the flowers sit first).
   const declaredBoxRef = useRef<HTMLDivElement>(null);
   const concealedBoxRef = useRef<HTMLDivElement>(null);
-  const declaredLines = useBoxLines(declaredBoxRef, !handExpanded);
-  const concealedLines = useBoxLines(concealedBoxRef, !handExpanded);
   const boxCounts = useRef({ concealed: 0, melds: 0, bonus: 0 });
   useLayoutEffect(() => {
     const before = boxCounts.current;
@@ -6236,16 +6133,12 @@ function ScoringPanel({
     if (concealedBox && concealedTiles.length > before.concealed) {
       const newest = concealedTiles[concealedTiles.length - 1];
       const index = (sortTiles(concealedTiles) as HandTile[]).findIndex((t) => t.id === newest.id);
-      concealedLines.show(concealedBox.querySelectorAll(".hand-tile-button")[index]);
+      const button = concealedBox.querySelectorAll<HTMLElement>(".hand-tile-button")[index];
+      if (button) concealedBox.scrollTop = button.offsetTop;
     }
     const declaredBox = declaredBoxRef.current;
-    if (declaredBox && declaredMelds.length > before.melds) {
-      const melds = declaredBox.querySelectorAll(".meld-remove");
-      declaredLines.show(melds[melds.length - 1]);
-    }
-    else if (declaredBox && bonusTiles.length > before.bonus) declaredLines.show(declaredBox.querySelector(".bonus-tile-group"));
-    // The line hooks' `show` only sets state, so the latest one serves.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (declaredBox && declaredMelds.length > before.melds) declaredBox.scrollTop = declaredBox.scrollHeight;
+    else if (declaredBox && bonusTiles.length > before.bonus) declaredBox.scrollTop = 0;
   }, [concealedTiles, declaredMelds, bonusTiles, handExpanded]);
   const meldsFull = declaredMelds.length >= 5;
   // Render-time counterpart of meldRoomRef - see its own comment.
@@ -7464,7 +7357,7 @@ function ScoringPanel({
               className="hand-display breakdown-groups is-focusable"
               ref={declaredBoxRef}
               onClick={focusPicker("declared")}
-              {...mergeHandlers(declaredClear.handlers, declaredLines.handlers)}
+              {...declaredClear.handlers}
               title={declaredEmpty ? "門前 - tap to declare a meld (上 / 碰 / 明槓 / 暗槓), or tap a flower below" : undefined}
             >
               {declaredClear.prompt}
@@ -7498,7 +7391,6 @@ function ScoringPanel({
                 </>
               )}
             </div>
-            {declaredLines.chip}
           </div>
           <div className={`hand-region${addTo === "hand" ? " is-target" : ""}`}>
             {/* Same as 門前: empty, the label sits inside the box (the
@@ -7507,7 +7399,7 @@ function ScoringPanel({
               className="hand-display is-focusable"
               ref={concealedBoxRef}
               onClick={focusPicker("concealed")}
-              {...mergeHandlers(concealedClear.handlers, concealedLines.handlers)}
+              {...concealedClear.handlers}
               title={concealedTiles.length === 0 ? "手牌 - tap to pick tiles below" : undefined}
             >
               {concealedClear.prompt}
@@ -7535,7 +7427,6 @@ function ScoringPanel({
                 )
               )}
             </div>
-            {concealedLines.chip}
           </div>
         </div>
 
