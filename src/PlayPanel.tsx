@@ -2519,7 +2519,7 @@ export function PlayPanel({
     // (Online, as the table's set: the view a phone's sent has no swapRules.)
     const quick = quickSwap(online ? online.table.settings.swapRules : game.swapRules);
     if (quick && !roundOver) next.forEach((f) => (f.waiting = true));
-    setFlights((f) => [...(roundOver ? f.map((x) => (x.waiting ? { ...x, waiting: false, ghost: true } : x)) : f), ...next]);
+    setFlights((f) => [...(roundOver ? f.map((x) => (x.waiting ? { ...x, waiting: false, ghost: true, greyed: true } : x)) : f), ...next]);
     // The round over: its rows stay a moment, then every tile joins its hand.
     if (roundOver) {
       const id = window.setTimeout(() => {
@@ -3016,6 +3016,12 @@ export function PlayPanel({
   // `dragged`: a press carried along your row onto this tile - with
   // one-tap it throws it, as a tap; otherwise it's only picked (never the
   // second tap's throw).
+  // A finger on your row (see TableGL's onPress): dragged off it altogether,
+  // nothing stays lifted - the press and any tile picked before it.
+  const pressTile = (index: number | null, dropped = false) => {
+    setPressed(index);
+    if (dropped) setSelected(null);
+  };
   const tapTile = (index: number, dragged = false) => {
     if (rolling) return;
     if (swapGiving) {
@@ -3529,7 +3535,7 @@ export function PlayPanel({
       standing,
       picked: swapPicks[seat],
       pickable: !!(swapPhase && myTake && seat !== HUMAN),
-      taken: pile.map((_, i) => flights.some((f) => f.waiting && f.seat === seat && f.place === i)),
+      taken: pile.map((_, i) => flights.some((f) => (f.waiting || f.greyed) && f.seat === seat && f.place === i)),
     };
   };
   const rowGroups = (seat: number) => {
@@ -3551,7 +3557,7 @@ export function PlayPanel({
   };
   const glFlights: GLFlight[] = flights
     .filter((f) => f.row?.place !== undefined && !landed.has(f.id))
-    .map((f) => ({ id: f.id, from: SIDES[f.seat], place: f.place, to: SIDES[f.to], group: rowGroups(f.to).groups.indexOf(f.row!.group), slot: f.row!.place!, tile: f.tile, flip: !!f.flip }));
+    .map((f) => ({ id: f.id, from: SIDES[f.seat], place: f.place, to: SIDES[f.to], group: rowGroups(f.to).groups.indexOf(f.row!.group), slot: f.row!.place!, tile: f.tile, flip: !!f.flip, greyed: !!f.greyed }));
   const glView: GLTableView = {
     focus: pondFocus === BLANK ? null : pondFocus,
     walls: { right: glWall(1), top: glWall(2), left: glWall(3) },
@@ -3902,7 +3908,7 @@ export function PlayPanel({
           </div>
         </div>
         <Suspense fallback={null}>
-          <TableGL view={glView} rootRef={tableRef} feltRef={feltRef} handRef={myRowRef} middleRef={middleRef} onTile={tapTile} onPile={(side, i) => myTake && pickFrom(SIDES.indexOf(side), i)} sweep={swapGiving} onSweep={sweepTile} onPress={setPressed} tileXRef={tileXRef} onCameraMove={cameraMoved} onPeek={onPeek} />
+          <TableGL view={glView} rootRef={tableRef} feltRef={feltRef} handRef={myRowRef} middleRef={middleRef} onTile={tapTile} onPile={(side, i) => myTake && pickFrom(SIDES.indexOf(side), i)} sweep={swapGiving} onSweep={sweepTile} onPress={pressTile} tileXRef={tileXRef} onCameraMove={cameraMoved} onPeek={onPeek} />
         </Suspense>
 
         <div className={`play-me${autoplay ? " is-auto" : ""}`}>

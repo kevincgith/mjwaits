@@ -165,8 +165,9 @@ export default function TableGL({
   sweep?: boolean;
   onSweep?: (index: number, first: boolean) => void;
   // The tile a finger is held on in your row, from press to let go (null:
-  // none - let go, or slid off it, which is no tap).
-  onPress?: (index: number | null) => void;
+  // none - let go, or slid off it, which is no tap). `dropped`: the finger
+  // went off your row altogether - the selection's cancelled too.
+  onPress?: (index: number | null, dropped?: boolean) => void;
   // Set to where one of your tiles is seen: the x of its middle, from your
   // row's box's left (null: not drawn) - for what's shown over it.
   tileXRef?: RefObject<((index: number) => number | null) | null>;
@@ -365,10 +366,10 @@ export default function TableGL({
     let holding = false;
     let slid = false;
     let dropped = false;
-    const press = (i: number | null) => {
-      if (i === pressed) return;
+    const press = (i: number | null, gone = false) => {
+      if (i === pressed && !gone) return;
       pressed = i;
-      onPressRef.current?.(i);
+      onPressRef.current?.(i, gone);
     };
     const moved = (e: PointerEvent, from: { x: number; y: number }) => Math.hypot(e.clientX - from.x, e.clientY - from.y) > 10;
     const at = (e: PointerEvent) => pointerIn(root, e);
@@ -380,13 +381,14 @@ export default function TableGL({
       return i !== null && viewRef.current.mine.tiles[i]?.enabled ? i : null;
     };
     const outside = offTable;
-    // Still over your row: its box, with room above for the lifted tile and
-    // a finger's width either side.
+    // Still over your row: its box (a lifted tile stays inside it), give or
+    // take a little - a finger's slack, not room: a slide up off the tiles,
+    // onto the felt, has left it.
     const onRow = (e: PointerEvent) => {
       const r = handRef.current?.getBoundingClientRect();
       if (!r) return false;
-      const pad = r.height * 0.6;
-      return e.clientX >= r.left - pad && e.clientX <= r.right + pad && e.clientY >= r.top - pad && e.clientY <= r.bottom + pad * 0.5;
+      const pad = r.height * 0.12;
+      return e.clientX >= r.left - 2 * pad && e.clientX <= r.right + 2 * pad && e.clientY >= r.top - pad && e.clientY <= r.bottom + 3 * pad;
     };
     const onDown = (e: PointerEvent) => {
       down = e.isPrimary ? { x: e.clientX, y: e.clientY, at: e.timeStamp } : null;
@@ -409,7 +411,7 @@ export default function TableGL({
       if (holding && down && !dropped) {
         if (!onRow(e)) {
           dropped = true;
-          press(null);
+          press(null, true);
         } else {
           const e3 = engine.current;
           const p = at(e);

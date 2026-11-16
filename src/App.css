@@ -288,10 +288,13 @@
    selection UI over the button, since a <button>'s label text is
    otherwise still selectable like any other text. */
 /* The whole app is tapped, not read like a page: no text selected by a
-   press, a double-tap or a drag, and no press-and-hold callout (copy /
-   look up / the loupe) - anywhere. Typing boxes keep theirs. */
+   press, a double-tap or a drag, no press-and-hold callout (copy / look up
+   / the loupe), and no grey flash where a tap lands (iOS's tap highlight -
+   on the table it flashed over the tiles at every tap) - anywhere. Typing
+   boxes keep theirs. */
 html,
 body {
+  -webkit-tap-highlight-color: transparent;
   -webkit-touch-callout: none;
   -webkit-user-select: none;
   user-select: none;

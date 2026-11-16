@@ -87,8 +87,9 @@ export interface Piece {
   // changes (as a CSS transition would) - see anim.ts and engine.ts.
   anim?: Anim;
   ease?: { key: string; dur: number; curve: (t: number) => number; delay?: number };
-  // Its tint faded to a new one over `dur` seconds, not snapped (by `key`).
-  fade?: { key: string; dur: number };
+  // Its tint faded to a new one over `dur` seconds, not snapped (by `key`) -
+  // from `from` when it first shows, if given.
+  fade?: { key: string; dur: number; from?: number };
   // A tile out in the open - a pond's, a meld's, a bonus tile - greyed by
   // 見牌 Seen copies unless it's a copy of the tile held (see seenCopies);
   // its fade's key.
@@ -1051,6 +1052,7 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
         shade: p.rot ? TURNED : LIT,
         tint: 1,
         fly: { key: `fly:${f.id}`, from: from[k].m, dur: 0.75, lift: 1.4 * T, pose: inFormation(start, end, 1.4 * T) },
+        ...(f.greyed ? { fade: { key: `fly:${f.id}:tint`, dur: 0.6, from: POND_GREY } } : {}),
       });
     });
   }
@@ -1358,6 +1360,7 @@ function layoutHand(view: GLTableView, d: Dims, spots: Partial<Record<GLSide, Sp
           shade: LIT,
           tint: 1,
           fly: { key: `fly:${f.id}`, from: start, dur: 0.75, lift: 1.4 * d.tile, pose: inFormation(a, z, 1.4 * d.tile) },
+          ...(f.greyed ? { fade: { key: `fly:${f.id}:tint`, dur: 0.6, from: POND_GREY } } : {}),
         });
       });
     }

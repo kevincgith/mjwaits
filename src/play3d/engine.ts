@@ -310,7 +310,11 @@ class Space {
       if (p.fade) {
         keys.add(p.fade.key);
         const f = this.fades.get(p.fade.key);
-        if (!f) this.fades.set(p.fade.key, { from: p.tint, to: p.tint, start: now, dur: 0 });
+        if (!f) {
+          const from = p.fade.from ?? p.tint;
+          this.fades.set(p.fade.key, { from, to: p.tint, start: now, dur: from === p.tint ? 0 : p.fade.dur });
+          tint = from;
+        }
         else if (f.to !== p.tint) {
           tint = this.fadeAt(f, now);
           this.fades.set(p.fade.key, { from: tint, to: p.tint, start: now, dur: p.fade.dur });
