@@ -5922,15 +5922,10 @@ function ScoringPanel({
   const [pickerCollapsed, setPickerCollapsed] = useState(false);
   const [situationCollapsed, setSituationCollapsed] = useState(false);
 
-  // The hand card grows a line as the hand needs one (手牌's second line,
-  // 門前 wrapping). It's sticky and in the page's flow, so growing pushes
-  // the picker down - or, once pinned, covers more of it. So when a tile
-  // makes it grow, the card eases open to its new height while the page
-  // scrolls in step, ending with the picker's add-to row (Concealed / 門前
-  // Declared) just under the card - past the 選牌 heading - and the whole
-  // picker showing below it. The scroll is animated here rather than with
-  // scrollTo's "smooth", which iOS Safari can skip mid-tap or cut short on
-  // the next one.
+  // Tapping the 門前 or 手牌 box scrolls the page so the picker's add-to
+  // row (Concealed / 門前 Declared) sits just under the card - see
+  // focusPicker. Animated here rather than with scrollTo's "smooth", which
+  // iOS Safari can skip mid-tap or cut short on the next one.
   const addToRowRef = useRef<HTMLDivElement>(null);
   // Empty room at the bottom of the panel, grown just enough when the page
   // is too short for that scroll to reach (little below the picker yet).
@@ -6008,49 +6003,6 @@ function ScoringPanel({
   // height) - cheap while the room is empty: it returns before measuring.
   useEffect(() => {
     trimScrollRoom();
-  });
-
-  const cardGrowth = useRef({ height: 0, tiles: 0, animating: false });
-  useLayoutEffect(() => {
-    const card = handCardRef.current;
-    const row = addToRowRef.current;
-    const state = cardGrowth.current;
-    if (!card || state.animating) return;
-    const height = card.offsetHeight;
-    const from = state.height;
-    const addedTiles = totalTiles > state.tiles;
-    state.height = height;
-    state.tiles = totalTiles;
-    // Only a tile going in grows it on purpose - not the first render, a
-    // window resize, or a collapsed picker with nothing to keep in view -
-    // and only on phones, where the picker is under a finger (on a wide
-    // screen the hand fits one line and the pointer isn't in the way).
-    if (!from || height - from < 4 || !addedTiles || pickerCollapsed || !row) return;
-    if (!window.matchMedia("(max-width: 700px)").matches) return;
-
-    // Where everything ends up, measured now at the final layout.
-    const target = pickerScrollTarget(card, height, row);
-
-    // Ease the card from its old height to the new one (clipping the new
-    // line as it opens), and the scroll from here to the target, together.
-    state.animating = true;
-    // Heights here are measured with padding, so animate them that way.
-    card.style.boxSizing = "border-box";
-    card.style.overflow = "hidden";
-    card.style.height = `${from}px`;
-    animateScroll(
-      target,
-      (k) => {
-        card.style.height = `${from + (height - from) * k}px`;
-      },
-      () => {
-        card.style.height = "";
-        card.style.overflow = "";
-        card.style.boxSizing = "";
-        state.animating = false;
-        state.height = card.offsetHeight;
-      }
-    );
   });
 
   // Tapping the 門前 or 手牌 box (not a tile in it - those remove) points
@@ -6141,6 +6093,53 @@ function ScoringPanel({
     if (totalTiles === 0 && scrollRoomRef.current) scrollRoomRef.current.style.height = "";
   }, [totalTiles]);
   const atCap = totalTiles >= requiredSize;
+
+  // Phones: while tiles go in, the hand card never changes height. Each box
+  // shows one line and scrolls inside itself (see .hand-card.is-entering in
+  // App.css), so the picker never moves under the finger. Once input is
+  // done - the hand is full, or the picker is collapsed - the card expands
+  // to show every line, and stays expanded (it doesn't shrink back as tiles
+  // come out, which would move the picker too) until the hand is emptied.
+  const [handExpanded, setHandExpanded] = useState(false);
+  useEffect(() => {
+    if (totalTiles === 0 && declaredMelds.length === 0 && bonusTiles.length === 0) setHandExpanded(false);
+    else if (atCap || pickerCollapsed) setHandExpanded(true);
+  }, [totalTiles, declaredMelds.length, bonusTiles.length, atCap, pickerCollapsed]);
+  // Expanded, the card keeps the tallest height it has reached.
+  useLayoutEffect(() => {
+    const card = handCardRef.current;
+    if (!card) return;
+    if (!handExpanded) {
+      card.style.minHeight = "";
+      return;
+    }
+    // The computed height is measured the way min-height applies (the
+    // card's own box-sizing), so holding it never adds the padding again.
+    const held = parseFloat(card.style.minHeight) || 0;
+    const height = parseFloat(getComputedStyle(card).height);
+    if (height > held) card.style.minHeight = `${height}px`;
+  });
+  // Collapsed, each box scrolls to the line holding what just went in: the
+  // new tile's place in the sorted 手牌, the end of 門前 for a new meld, its
+  // start for a new flower (the flowers sit first).
+  const declaredBoxRef = useRef<HTMLDivElement>(null);
+  const concealedBoxRef = useRef<HTMLDivElement>(null);
+  const boxCounts = useRef({ concealed: 0, melds: 0, bonus: 0 });
+  useLayoutEffect(() => {
+    const before = boxCounts.current;
+    boxCounts.current = { concealed: concealedTiles.length, melds: declaredMelds.length, bonus: bonusTiles.length };
+    if (handExpanded) return;
+    const concealedBox = concealedBoxRef.current;
+    if (concealedBox && concealedTiles.length > before.concealed) {
+      const newest = concealedTiles[concealedTiles.length - 1];
+      const index = (sortTiles(concealedTiles) as HandTile[]).findIndex((t) => t.id === newest.id);
+      const button = concealedBox.querySelectorAll<HTMLElement>(".hand-tile-button")[index];
+      if (button) concealedBox.scrollTop = button.offsetTop;
+    }
+    const declaredBox = declaredBoxRef.current;
+    if (declaredBox && declaredMelds.length > before.melds) declaredBox.scrollTop = declaredBox.scrollHeight;
+    else if (declaredBox && bonusTiles.length > before.bonus) declaredBox.scrollTop = 0;
+  }, [concealedTiles, declaredMelds, bonusTiles, handExpanded]);
   const meldsFull = declaredMelds.length >= 5;
   // Render-time counterpart of meldRoomRef - see its own comment.
   const meldRoom = requiredSize - totalTiles;
@@ -7348,7 +7347,7 @@ function ScoringPanel({
           once scrolled past the picker the card leaves with the area, and
           the toolbar's compact strip takes over. */}
       <div className="input-zone">
-        <div className="card hand-card" ref={handCardRef}>
+        <div className={`card hand-card${handExpanded ? "" : " is-entering"}`} ref={handCardRef}>
           <div className={`hand-region${addTo === "hand" ? "" : " is-target"}`}>
             {/* No label line: the sticky card is kept to just its two boxes.
                 An empty box carries its label inside; once filled, its tiles
@@ -7356,6 +7355,7 @@ function ScoringPanel({
                 or a tap on a tile. */}
             <div
               className="hand-display breakdown-groups is-focusable"
+              ref={declaredBoxRef}
               onClick={focusPicker("declared")}
               {...declaredClear.handlers}
               title={declaredEmpty ? "門前 - tap to declare a meld (上 / 碰 / 明槓 / 暗槓), or tap a flower below" : undefined}
@@ -7397,6 +7397,7 @@ function ScoringPanel({
                 long-presses are listed under the 選牌 header's ?). */}
             <div
               className="hand-display is-focusable"
+              ref={concealedBoxRef}
               onClick={focusPicker("concealed")}
               {...concealedClear.handlers}
               title={concealedTiles.length === 0 ? "手牌 - tap to pick tiles below" : undefined}
