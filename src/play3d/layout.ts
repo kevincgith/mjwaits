@@ -13,7 +13,7 @@ import { sameTile, type GameMeld } from "@mjwaits/shared/engine/game";
 import { sortTiles, type Tile } from "@mjwaits/shared/engine/mahjong";
 import { sortBonusTiles, type BonusTile } from "@mjwaits/shared/engine/scoring";
 import { bezier, EASE_IN, EASE_OUT, keyframes } from "./anim";
-import { about, chain, identity, rotateX, rotateY, rotateZ, scale, translate, type Mat } from "./mat";
+import { about, apply, chain, identity, rotateX, rotateY, rotateZ, scale, translate, type Mat } from "./mat";
 import { acrossTable } from "./swapOrder";
 import type { GLHandTile, GLPond, GLSide, GLSwapRow, GLTableView, GLWall, PeekSide } from "./types";
 
@@ -940,11 +940,15 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
   // the whole swap long, so it never moves mid-way.
   const mineAt = Math.min(row4y0 + 0.3 * P, (d.rowTop ?? Infinity) - 4 - 0.5 * P);
   // Your give: each place in your pile, and the given tile (by its order in the give) that went there.
+  // (Not one already taken: it's down, and long since - its place went
+  // empty for a moment as it was taken, and drawn as given again its fall
+  // from your hand started over.)
   const givenAt = new Map<number, number>();
   if (view.mine.given && view.piles?.bottom) {
     const left = view.mine.given.tiles.map((t, j) => ({ face: faceOf(t), j }));
-    view.piles.bottom.slots.forEach((s, i) => {
-      if (!s || s === "back") return;
+    const mine = view.piles.bottom;
+    mine.slots.forEach((s, i) => {
+      if (!s || s === "back" || mine.taken?.[i]) return;
       const k = left.findIndex((g) => g.face === faceOf(s));
       if (k >= 0) givenAt.set(i, left.splice(k, 1)[0].j);
     });
@@ -1032,30 +1036,38 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
     );
   }
   // The tiles in the air (to your row: see layoutHand), each giver's as a formation.
-  for (const fs of flightGroups(view.flights.filter((f) => f.to !== "bottom"))) {
+  const formations = flightGroups(view.flights.filter((f) => f.to !== "bottom")).flatMap((fs) => {
     const ok = fs.filter((f) => spots[f.from]?.[f.place] && places[f.to]?.[f.group]?.[f.slot]);
-    if (!ok.length) continue;
+    if (!ok.length) return [];
     const from = ok.map((f) => spots[f.from]![f.place]);
     const to = ok.map((f) => places[f.to]![f.group][f.slot]);
     const a = alongLine(from, from[0].rot);
     // (Side to side, face down, they land a half turn round - see acrossTable.)
     const half = acrossTable(ok[0].from, ok[0].to) && ok.every((f) => !f.tile) ? 180 : 0;
     const b = alongLine(to, to[0].rot + half);
+    const ends = ok.map((f, k): [FlightEnd, FlightEnd] => [
+      { x: a.x, y: a.y, along: a.along[k], rot: from[k].rot, em: P, pitch: from[k].standing ? -54 : 0, flip: from[k].standing ? 0 : 180, tilt: 0 },
+      { x: b.x, y: b.y, along: b.along[k], rot: to[k].rot + half, em: T, pitch: 0, flip: f.tile ? 0 : 180, tilt: 0 },
+    ]);
+    return [{ ok, from, to, ends }];
+  });
+  const levels = airLevels(formations.map((fm) => fm.ends), T);
+  formations.forEach(({ ok, from, to, ends }, n) => {
+    const lift = 1.4 * T;
+    const raise = levels[n] * AIR_STEP * T;
     ok.forEach((f, k) => {
       const p = to[k];
-      const rot = p.rot + half;
-      const start: FlightEnd = { x: a.x, y: a.y, along: a.along[k], rot: from[k].rot, em: P, pitch: from[k].standing ? -54 : 0, flip: from[k].standing ? 0 : 180, tilt: 0 };
-      const end: FlightEnd = { x: b.x, y: b.y, along: b.along[k], rot, em: T, pitch: 0, flip: f.tile ? 0 : 180, tilt: 0 };
+      const [start, end] = ends[k];
       felt.push({
         face: f.tile ? faceOf(f.tile) : BACK,
-        m: f.tile ? lying(p.x, p.y, T, rot) : lyingDown(p.x, p.y, T, rot),
+        m: f.tile ? lying(p.x, p.y, T, end.rot) : lyingDown(p.x, p.y, T, end.rot),
         shade: p.rot ? TURNED : LIT,
         tint: 1,
-        fly: { key: `fly:${f.id}`, from: from[k].m, dur: 0.75, lift: 1.4 * T, pose: inFormation(start, end, 1.4 * T) },
+        fly: { key: `fly:${f.id}`, from: from[k].m, dur: 0.75, lift, pose: inFormation(start, end, lift, raise) },
         ...(f.greyed ? { fade: { key: `fly:${f.id}:tint`, dur: 0.6, from: POND_GREY } } : {}),
       });
     });
-  }
+  });
 
   const hand = layoutHand(view, d, spots, givenAt);
   seenCopies(felt, view.focus);
@@ -1114,7 +1126,7 @@ const near = (a: number, to: number) => a + 360 * Math.round((to - a) / 360);
 // giver's tiles move as one rigid line - turning together, spaced a little
 // more than a tile apart till they butt up in the row - so none ever
 // crosses or touches another; lifted (and a size up) at the top of the arc.
-function inFormation(a: FlightEnd, b: FlightEnd, lift: number): (v: number) => Mat {
+function inFormation(a: FlightEnd, b: FlightEnd, lift: number, raise = 0): (v: number) => Mat {
   const rot1 = near(b.rot, a.rot);
   const flip0 = near(a.flip, b.flip);
   return (v) => {
@@ -1122,7 +1134,7 @@ function inFormation(a: FlightEnd, b: FlightEnd, lift: number): (v: number) => M
     const em = (a.em + (b.em - a.em) * v) * up;
     const half = (THICK * em) / 2;
     return chain(
-      translate(a.x + (b.x - a.x) * v, a.y + (b.y - a.y) * v, Math.sin(Math.PI * v) * lift),
+      translate(a.x + (b.x - a.x) * v, a.y + (b.y - a.y) * v, Math.sin(Math.PI * v) * lift + raise * airRamp(v)),
       rotateX(a.tilt + (b.tilt - a.tilt) * v),
       rotateZ(a.rot + (rot1 - a.rot) * v),
       translate((a.along + (b.along - a.along) * v) * up, 0, 0),
@@ -1134,6 +1146,44 @@ function inFormation(a: FlightEnd, b: FlightEnd, lift: number): (v: number) => M
     );
   };
 }
+// Formations in the air at once (a quick swap's round sets them all off
+// together) whose tiles would meet - over the same spot at the same moment,
+// their arcs alike - pass through each other: each flies the lowest it can
+// while clearing, at that moment, every one it meets (by its height in
+// tiles, `AIR_STEP` a level - risen to soon after it sets off, and kept
+// till it's nearly down: see airRamp). Meeting is coming closer than a tile's
+// length, and closer than the two were where they set off or where they
+// land (out of one pile, or into one row, they're side by side - not in each
+// other's way - unless they cross over). (In tiles: `T` a tile.)
+const AIR_STEP = 0.9;
+const airRamp = (v: number) => Math.min(1, Math.sin(Math.PI * v) / 0.08);
+export function airLevels(fms: [FlightEnd, FlightEnd][][], T: number): number[] {
+  const STEPS = 25;
+  const moments = [0, ...Array.from({ length: STEPS }, (_, s) => 0.02 + (0.96 * s) / (STEPS - 1)), 1];
+  // Each formation's tiles, flat on the felt, at each moment.
+  const at = fms.map((ends) => {
+    const poses = ends.map(([a, b]) => inFormation(a, b, 0));
+    return moments.map((v) => poses.map((p) => apply(p(v), 0, 0, THICK / 2)));
+  });
+  const apart = (p: number[], q: number[]) => Math.hypot(p[0] - q[0], p[1] - q[1]);
+  const last = moments.length - 1;
+  const levels: number[] = [];
+  at.forEach((mine, n) => {
+    const meets = new Set<number>();
+    for (let m = 0; m < n; m++)
+      for (let s = 1; s < last; s++) {
+        const met = mine[s].some((a, i) =>
+          at[m][s].some((b, j) => apart(a, b) < Math.min(1.05 * T, 0.9 * apart(mine[0][i], at[m][0][j]), 0.9 * apart(mine[last][i], at[m][last][j])))
+        );
+        if (met) meets.add(levels[m]);
+      }
+    let l = 0;
+    while (meets.has(l)) l++;
+    levels.push(l);
+  });
+  return levels;
+}
+
 // A group's tiles laid along their line: each one's offset from the middle.
 function alongLine(ps: { x: number; y: number }[], rot: number): { x: number; y: number; along: number[] } {
   const x = sum(ps.map((p) => p.x)) / ps.length;

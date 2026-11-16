@@ -1,3 +1,4 @@
+import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 import { feltToHand, layoutTable, THICK, TILE_H, TILE_W, type Dims, type Piece } from "./layout";
 import { apply, chain, rotateX, translate } from "./mat";
@@ -227,6 +228,50 @@ describe("a side seat's 換牌 row, alone in front of the wall", () => {
     });
 });
 
+describe("a quick swap's round-end flights", () => {
+  // Every take of the round at once: each seat takes one from each other's pile.
+  function roundEnd(): GLTableView {
+    const v = take("right", 1);
+    const flights: GLFlight[] = [];
+    const rows: GLTableView["rows"] = {};
+    for (const taker of SIDES) {
+      const givers = SIDES.filter((s) => s !== taker);
+      const order = giverOrder(taker, givers.map((side, key) => ({ side, key })));
+      order.forEach((key, group) => {
+        const from = givers[key];
+        // (Each pile's three: one to each of the others, by where they sit.)
+        const place = SIDES.filter((s) => s !== from).indexOf(taker);
+        flights.push({ id: flights.length + 1, from, place, to: taker, group, slot: 0, tile: null, flip: false });
+      });
+      rows[taker] = { groups: order.map(() => ({ tiles: [null], shown: [false] })) };
+    }
+    const pile = { slots: Array.from({ length: 3 }, () => "back" as const), standing: false, picked: [], pickable: false };
+    return { ...v, piles: { bottom: pile, right: pile, top: pile, left: pile }, rows, flights };
+  }
+  // A tile's block, sampled: does any of its points lie inside the other's?
+  const box = (m: Float32Array | number[]) => new THREE.Matrix4().fromArray(m as number[]);
+  const pts: [number, number, number][] = [];
+  for (const x of [-0.5, -0.25, 0, 0.25, 0.5]) for (const y of [-0.5, -0.25, 0, 0.25, 0.5]) for (const z of [0, 0.5, 1]) pts.push([x * TILE_W, y * TILE_H, z * THICK]);
+  const inside = (a: THREE.Matrix4, bInv: THREE.Matrix4) =>
+    pts.some(([x, y, z]) => {
+      const q = new THREE.Vector3(x, y, z).applyMatrix4(a).applyMatrix4(bInv);
+      return Math.abs(q.x) < 0.48 * TILE_W && Math.abs(q.y) < 0.48 * TILE_H && q.z > 0.02 * THICK && q.z < 0.98 * THICK;
+    });
+  it("fly clear of each other - none passes through another", () => {
+    const out = layoutTable(roundEnd(), DIMS).felt;
+    const fl = flying(out.pieces);
+    expect(fl.length).toBe(9);
+    const hits: string[] = [];
+    for (let s = 0; s <= 48; s++) {
+      const v = 0.02 + (0.96 * s) / 48;
+      const ms = fl.map((p) => box(p.fly!.pose!(v)));
+      const inv = ms.map((m) => m.clone().invert());
+      for (let i = 0; i < ms.length; i++) for (let j = 0; j < ms.length; j++) if (i !== j && inside(ms[i], inv[j])) hits.push(`${fl[i].fly!.key}/${fl[j].fly!.key}@${v.toFixed(2)}`);
+    }
+    expect(hits).toEqual([]);
+  });
+});
+
 describe("your give on the WebGL table", () => {
   it("shows each tile's shadow on your pile only once the tile has landed", () => {
     const v = take("right", 1);
@@ -243,6 +288,17 @@ describe("your give on the WebGL table", () => {
       expect(q.anim!.dur).toBe(pile[0].anim!.dur);
       expect(Math.hypot(...q.anim!.pose(0.5).slice(0, 3))).toBe(0);
     }
+  });
+
+  it("doesn't drop a given tile from your hand again once it's taken (quick swap greys it in your pile)", () => {
+    const v = take("right", 1);
+    const tiles = [1, 2, 3].map((rank) => ({ suit: "m" as const, rank }));
+    const mine = { slots: tiles, standing: true, picked: [], pickable: false, taken: [true, false, false] };
+    const view = { ...v, piles: { bottom: mine }, flights: [], rows: {}, mine: { ...v.mine, given: { key: 7, tiles, from: [0, 1, 2], count: 16 } } };
+    const out = layoutTable(view, DIMS);
+    const keys = [...out.felt.pieces, ...out.hand.pieces].flatMap((p) => [p.anim?.key, p.fly?.key]).filter((k) => k?.startsWith("give:"));
+    expect(keys.some((k) => k!.startsWith("give:7:0"))).toBe(false);
+    expect(keys.some((k) => k!.startsWith("give:7:1"))).toBe(true);
   });
 });
 
