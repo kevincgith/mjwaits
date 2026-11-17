@@ -39,7 +39,7 @@ const gameMenu = (page: Page) => page.getByRole("button", { name: "Game menu" })
 // (window.__glView: play3d/TableGL.tsx; its type, GLTableView, in
 // play3d/types.ts - just the parts looked at here).
 type GLView = {
-  mine: { tiles: { drawn: boolean; enabled: boolean }[] };
+  mine: { tiles: { drawn: boolean; enabled: boolean; selected: boolean }[] };
   ponds: { bottom: { tiles: unknown[] } };
   piles: { bottom?: { slots: unknown[] } } | null;
 };
@@ -60,14 +60,22 @@ const table = (page: Page) =>
 // Your drawn tile thrown: a tap aimed at its place (the right end of your
 // row), then a second, as a player would - the tile lifts between them.
 async function tapDrawn(page: Page) {
-  const row = (await page.locator(".play-hand.is-gl").boundingBox())!;
-  const at = { x: row.x + row.width - row.height * 0.3, y: row.y + row.height * 0.55 };
+  const hand = page.locator(".play-hand.is-gl");
+  let row = { x: 0, y: 0, width: 0, height: 0 };
+  const at = () => ({ x: row.x + row.width - row.height * 0.3, y: row.y + row.height * 0.55 });
   // (Tapped again till it takes: a tap while the deal's dice still roll goes unheeded.)
+  // (Your row measured each try: till the table's first drawn, its box is
+  // empty - no size, at the screen's middle - and a tap aimed there lands on
+  // a middle tile, at its very foot, once the row's laid out.)
   await expect(async () => {
-    await page.mouse.click(at.x, at.y);
+    row = (await hand.boundingBox())!;
+    expect(row.width, "your row laid out").toBeGreaterThan(row.height);
+    await page.mouse.click(at().x, at().y);
     await expect(page.getByText("Tap again to discard")).toBeVisible({ timeout: 1000 });
+    // (The drawn tile picked - not another.)
+    expect(await page.evaluate(() => (globalThis as unknown as { __glView?: GLView }).__glView?.mine.tiles.some((t) => t.drawn && t.selected))).toBe(true);
   }).toPass({ timeout: 20_000 });
-  await page.mouse.click(at.x, at.y - row.height * 0.1);
+  await page.mouse.click(at().x, at().y - row.height * 0.1);
 }
 
 // 換牌 through to its end: 放牌 your picked tiles each round, 攞牌 (an even
