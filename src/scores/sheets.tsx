@@ -1453,8 +1453,17 @@ export function SeatsSheet({
 
   // From the seat ceremony: once the sheet has slid up, everyone slides to
   // the seat they drew and the 莊 badge flies to 東 - a new 東圈東局 at 連0.
+  // Then the table turns - everyone keeps their neighbours - till whoever
+  // sat at the bottom is there again: they hold the phone and keep the
+  // scores, so the board stays the way they see it. (Only the board's
+  // drawing: who sits next to whom is the ceremony's.)
   useEffect(() => {
     if (!proposal) return;
+    const drawn = proposal.seats.slice();
+    const turn = Math.max(0, drawn.indexOf(state.seats[0]));
+    const turned = drawn.map((_, i) => drawn[(i + turn) % SEATS]);
+    const moved = drawn.some((p, i) => p !== seats[i]);
+    let turnTimer = 0;
     const timer = window.setTimeout(() => {
       roundTouched.current = true;
       setRound("reset");
@@ -1463,9 +1472,14 @@ export function SeatsSheet({
         badgeFrom.current = diamondRef.current?.querySelector(".sc-zhuang")?.getBoundingClientRect() ?? null;
         setDealerName(proposal.east);
       }
-      if (proposal.seats.some((p, i) => p !== seats[i])) moveSeats(() => proposal.seats.slice());
+      if (moved) moveSeats(() => drawn);
+      // Once they've landed, with a beat to see where they drew.
+      if (turn) turnTimer = window.setTimeout(() => moveSeats(() => turned), moved ? SEAT_MOVE_MS + 450 : 0);
     }, 380);
-    return () => window.clearTimeout(timer);
+    return () => {
+      window.clearTimeout(timer);
+      window.clearTimeout(turnTimer);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const seatPress = (s2: number) => ({

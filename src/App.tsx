@@ -1,6 +1,8 @@
 import {
   Fragment,
   forwardRef,
+  lazy,
+  Suspense,
   useEffect,
   useId,
   useImperativeHandle,
@@ -45,6 +47,7 @@ import { savedSummary } from "./lib/playSaved";
 import { loadTestHands } from "./lib/lazyParts";
 import { inviteLaunch, startInstallAtInvite } from "./lib/onlineTable";
 import type { RecordRequest, ScoreHandRequest, SeatingResult } from "./ScoresPanel";
+import type { SeatsTable } from "./play3d/diceScenes";
 import { GAME_HASH, snapshotFromAnyHash, snapshotFromHash } from "./lib/scoreShare";
 import { roomFromSearch } from "./lib/online";
 import { isLadderChanged, isRuleChanged, ladderOf, rulesAffectScoring, rulesFingerprint } from "@mjwaits/shared/engine/taiRules";
@@ -8223,7 +8226,6 @@ function Die({
 // (each bar's far end juts one bar-width past its neighbour, the near end butts
 // against the next), which is how a real wall is pushed together before the deal.
 const WALL_STACKS_PER_SIDE = 18;
-const WALL_BAR_DEPTH = 2;
 
 type WallSide = "top" | "right" | "bottom" | "left";
 
@@ -8252,79 +8254,6 @@ function wallBreak(total: number | null): WallBreak | null {
   const mod = total % 4;
   const side: WallSide = mod === 3 ? "top" : mod === 0 ? "left" : mod === 1 ? "bottom" : "right";
   return { side, n: total, gapAfter: total };
-}
-
-function WallGap({ withMarker }: { withMarker: boolean }) {
-  return (
-    <div className="wall-gap">
-      {withMarker && (
-        <span className="wall-break-marker" aria-hidden="true">
-          {/* An arrowhead pointing right, rotated per wall in CSS - drawn
-              rather than an emoji, so it matches the app's icons. */}
-          <svg viewBox="0 0 10 12" width="10" height="12">
-            <path d="M1 1 L9 6 L1 11 Z" />
-          </svg>
-        </span>
-      )}
-    </div>
-  );
-}
-
-function WallBar({
-  orientation,
-  brk,
-}: {
-  orientation: "h" | "v";
-  brk: WallBreak | null;
-}) {
-  const breakAt = brk?.gapAfter ?? null;
-  // Draw the pointing finger off the outer face of the bar: that is the first
-  // line for the top/left bars, the last line for the bottom/right bars.
-  const markerLine = brk && (brk.side === "bottom" || brk.side === "right") ? WALL_BAR_DEPTH - 1 : 0;
-  return (
-    <div className={`wall-bar wall-bar-${orientation}`}>
-      {Array.from({ length: WALL_BAR_DEPTH }, (_, line) => (
-        <div className="wall-bar-line" key={line}>
-          {Array.from({ length: WALL_STACKS_PER_SIDE }, (_, i) => {
-            // Stacks render in clockwise order, so the first `gapAfter` are the counted run.
-            const counted = breakAt != null && i < breakAt;
-            return (
-              <Fragment key={i}>
-                {breakAt === i && <WallGap withMarker={line === markerLine} />}
-                <div className={`wall-seg${counted ? " wall-seg-counted" : ""}`} />
-              </Fragment>
-            );
-          })}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function Wall({ total, children }: { total: number | null; children?: ReactNode }) {
-  const brk = wallBreak(total);
-  const slot = (side: WallSide, orientation: "h" | "v") => (
-    <div className={`wall-bar-slot wall-${side}`}>
-      <WallBar orientation={orientation} brk={brk?.side === side ? brk : null} />
-    </div>
-  );
-  return (
-    <div
-      className="wall"
-      role="img"
-      aria-label={
-        brk
-          ? `Mahjong wall broken on the ${WALL_SIDE_LABEL[brk.side]} side, ${brk.n} stacks clockwise`
-          : `Built mahjong wall: four ${WALL_BAR_DEPTH} by ${WALL_STACKS_PER_SIDE} bars of tile stacks in a pinwheel`
-      }
-    >
-      {slot("top", "h")}
-      {slot("right", "v")}
-      {slot("bottom", "h")}
-      {slot("left", "v")}
-      {children}
-    </div>
-  );
 }
 
 // The dice on the table inside the wall, as 3D cubes thrown by a small
@@ -8561,7 +8490,27 @@ function simulateThrow(bounds: { l: number; t: number; r: number; b: number }, n
   return frames;
 }
 
-function WallDice({ faces, target, rollCount }: { faces: number[]; target: number[] | null; rollCount: number }) {
+// The Dice tab's tables (擲骰's wall, 座位's seats): Play's WebGL tiles on a
+// tipped felt (see play3d/FeltGL), fetched with the tab.
+const WallTilesGL = lazy(() => import("./play3d/DiceTableGL").then((m) => ({ default: m.WallTilesGL })));
+const SeatTilesGL = lazy(() => import("./play3d/DiceTableGL").then((m) => ({ default: m.SeatTilesGL })));
+
+// Where on a tipped felt its dice land: an unseen box on the felt (`style`,
+// fractions of it), read off the page as it's seen - in the flat dice
+// layer's own px (see WallDice's `area`).
+function useFeltDiceArea(box: { l: number; t: number; r: number; b: number }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const style: CSSProperties = { left: `${box.l * 100}%`, top: `${box.t * 100}%`, width: `${(box.r - box.l) * 100}%`, height: `${(box.b - box.t) * 100}%` };
+  const area = (layer: HTMLElement) => {
+    const r = ref.current!.getBoundingClientRect();
+    const b = layer.getBoundingClientRect();
+    return { l: r.left - b.left, t: r.top - b.top, r: r.right - b.left, b: r.bottom - b.top };
+  };
+  return { ref, style, area };
+}
+
+// `area`: where they may land, in the layer's own px.
+function WallDice({ faces, target, rollCount, area }: { faces: number[]; target: number[] | null; rollCount: number; area: (layer: HTMLElement) => { l: number; t: number; r: number; b: number } }) {
   // Mid-throw the cube already heads for the result (decided at the roll's
   // start), so it lands showing exactly what the tray will.
   const values = target ?? faces;
@@ -8569,17 +8518,8 @@ function WallDice({ faces, target, rollCount }: { faces: number[]; target: numbe
 
   useLayoutEffect(() => {
     const layer = layerRef.current;
-    const wall = layer?.parentElement;
-    if (!layer || !wall) return;
-    // The table: inside the four bars, in the layer's own px.
-    const box = layer.getBoundingClientRect();
-    const bar = (side: string) => wall.querySelector(`.wall-${side}`)!.getBoundingClientRect();
-    const bounds = {
-      l: bar("left").right - box.left + 2,
-      r: bar("right").left - box.left - 2,
-      t: bar("top").bottom - box.top + 2,
-      b: bar("bottom").top - box.top - 2,
-    };
+    if (!layer) return;
+    const bounds = area(layer);
     const dice = [...layer.querySelectorAll<HTMLElement>(".wall-die")];
     const place = (die: HTMLElement, x: number, y: number, rest: Quat) => {
       die.style.left = `${x}px`;
@@ -8747,6 +8687,11 @@ function useDiceRoll(count: number, blankUntilRolled = false, rollMs = 600) {
   return { dice, faces: tumbling ?? dice, rolling, ready, rollCount, target, roll, bumpDie };
 }
 
+// Inside the walls, as fractions of the felt: the square that fits upright
+// within them, turned as they are (see diceScenes' wallScene - its middle
+// ~47%), a little in from their inner edges.
+const WALL_DICE_AREA = { l: 0.28, t: 0.28, r: 0.72, b: 0.72 };
+
 function DicePanel() {
   const { dice, faces, rolling, ready, rollCount, target, roll, bumpDie } = useDiceRoll(3, true, WALL_THROW_MS);
 
@@ -8754,6 +8699,9 @@ function DicePanel() {
   // Nothing to show until there's a result: no total, no break.
   const shown = ready && !rolling;
   const brk = shown ? wallBreak(total) : null;
+  const feltRef = useRef<HTMLDivElement>(null);
+  // The dice land inside the walls (see diceScenes' wallScene).
+  const diceArea = useFeltDiceArea(WALL_DICE_AREA);
 
   // Highlight two notable rolls (based on the settled dice): a three-of-a-kind
   // (green) and a 1-2-3 in any order (red).
@@ -8783,10 +8731,25 @@ function DicePanel() {
         <span className="scoring-total-value">{shown ? total : "–"}</span>
       </div>
 
-      <Wall total={shown ? total : null}>{(ready || rolling) && <WallDice faces={dice} target={target} rollCount={rollCount} />}</Wall>
-      {!ready && !rolling && (
+      {/* The wall: Play's tiles on a tipped felt (see play3d/diceScenes),
+          the dice thrown inside it. */}
+      <div className="gl-stage">
+        <div className="gl-felt" ref={feltRef}>
+          <div className="gl-dice-area" ref={diceArea.ref} style={diceArea.style} />
+        </div>
+        <Suspense fallback={null}>
+          <WallTilesGL feltRef={feltRef} brk={brk && { side: brk.side, gapAfter: brk.gapAfter }} />
+        </Suspense>
+        {(ready || rolling) && (
+          <div className="gl-dice-layer">
+            <WallDice faces={dice} target={target} rollCount={rollCount} area={diceArea.area} />
+          </div>
+        )}
+      </div>
+      {/* (Kept through the roll, so nothing below jumps.) */}
+      {!brk && (
         <div className="wall-break-caption">
-          <span className="wall-break-detail">Roll the dice, or tap a die to set it</span>
+          <span className="wall-break-detail">{rolling ? "Rolling…" : "Roll the dice, or tap a die to set it"}</span>
         </div>
       )}
 
@@ -8915,11 +8878,12 @@ const CEREMONY_TILES: Tile[] = [
 // out so stepping 0 -> 1 -> 2 -> 3 goes counter-clockwise on screen (bottom,
 // right, top, left) - i.e. mahjong turn order, with each seat's CCW neighbour
 // to its "right". Every "count round the players" helper steps +index.
+// (On the felt, a little in from its edges: each seat at the table's side.)
 const SEAT_ANCHORS = [
-  { left: "50%", top: "100%" },
-  { left: "100%", top: "50%" },
-  { left: "50%", top: "0%" },
-  { left: "0%", top: "50%" },
+  { left: "50%", top: "93.6%" },
+  { left: "93.6%", top: "50%" },
+  { left: "50%", top: "6.4%" },
+  { left: "6.4%", top: "50%" },
 ];
 
 // The shuffled row: a permutation of 0..5 into CEREMONY_TILES. (The two dice
@@ -8960,44 +8924,38 @@ function dealWinds(
 }
 
 const SEATING_STEPS = 9; // 0..8
+// The button's label at each step: what it does next.
+const SEATING_NEXT = [
+  "First throw",
+  "Count to the real East",
+  "Second throw",
+  "Turn the tiles over",
+  "一筒 / 二筒 to the ends",
+  "Count to the first pick",
+  "Deal the winds",
+  "Take your seats",
+];
 const SEATING_CAPTIONS_HELP = [
   "Tap: provisional East · Double-tap: swap seats · Long-press: rename",
   "The provisional East makes the first throw.",
   "The first throw's total picks the real East seat.",
   "The player now at the real East seat makes the second throw.",
   "Turn all six tiles face up.",
-  "一筒 / 二筒 slide out to the edges; the winds keep their order.",
+  "一筒 / 二筒 slide out to the ends; the winds keep their order.",
   "The second throw's total picks who takes the first wind.",
-  "Deal the four winds out from the parity edge.",
+  "Deal the four winds out from the parity end.",
   "Everyone moves to the seat of the wind they were dealt.",
 ];
 
-// Fixed geometry for the seating diagram (must match the .seat-* CSS). Kept in
-// px so the deal animation can be computed analytically - no DOM measuring.
-const SEAT_TILE_W = 32;
-const SEAT_TILE_GAP = 6;
-const SEAT_TILE_PITCH = SEAT_TILE_W + SEAT_TILE_GAP;
-const SEAT_TILE_H = SEAT_TILE_W * 1.35;
-const SEAT_TABLE_PX = 132;
-const SEAT_STAGE_GAP = 22;
-const SEAT_STAGE_W = SEAT_TILE_W * 6 + SEAT_TILE_GAP * 5;
-const SEAT_TABLE_LEFT = (SEAT_STAGE_W - SEAT_TABLE_PX) / 2;
+// Where on the felt the dice are thrown (fractions of it): below the six
+// tiles, clear of the players round its edges (see diceScenes' SEAT_UNITS
+// geometry).
+const SEAT_DICE_AREA = { l: 0.18, t: 0.44, r: 0.82, b: 0.78 };
 
-// translate() to fly the wind tile at row-slot `slot` onto the token at
-// position `posIdx`, in the shared stage coordinate space.
-function windFlyTransform(slot: number, posIdx: number): string {
-  const a = SEAT_ANCHORS[posIdx];
-  const fx = parseFloat(a.left) / 100;
-  const fy = parseFloat(a.top) / 100;
-  // Land just inside the token, on the table felt in front of the player, so
-  // it clears the player's letter - like their tile placed on the table.
-  const IN = 28;
-  const tokenX = SEAT_TABLE_LEFT + fx * SEAT_TABLE_PX - Math.sign(fx - 0.5) * IN;
-  const tokenY = fy * SEAT_TABLE_PX - Math.sign(fy - 0.5) * IN;
-  const tileX = slot * SEAT_TILE_PITCH + SEAT_TILE_W / 2;
-  const tileY = SEAT_TABLE_PX + SEAT_STAGE_GAP + SEAT_TILE_H / 2;
-  return `translate(${tokenX - tileX}px, ${tokenY - tileY}px) scale(0.62)`;
-}
+// Run all: how long each step stays on screen before the next (a throw's
+// counted from its dice landing) - long enough to read the caption and see
+// the tiles move.
+const SEATING_AUTO_MS = [700, 1000, 1400, 1000, 900, 1000, 1400, 1300];
 
 // Two taps on the same player within this window count as a double-tap
 // (select for a seat swap) rather than two single taps.
@@ -9337,6 +9295,7 @@ function SeatingPanel({
 
   const reset = () => {
     cancelPendingTap();
+    setAuto(false);
     setOrder(newShuffle());
     setProvEast(initialEast);
     setSwapFrom(null);
@@ -9355,27 +9314,48 @@ function SeatingPanel({
   const canNext =
     !rollingNow && step < SEATING_STEPS - 1 && !(step === 0 && provEast === null);
 
+  // Run all: the rest of the ceremony in one go, a step at a time (no
+  // provisional East yet: one picked at random). Pause stops it where it is;
+  // Next or Run all carry on from there.
+  const [auto, setAuto] = useState(false);
+  const advanceRef = useRef(advance);
+  advanceRef.current = advance;
+  useEffect(() => {
+    if (!auto) return;
+    if (step >= SEATING_STEPS - 1) return setAuto(false);
+    if (rollingNow) return;
+    const id = window.setTimeout(() => advanceRef.current(), SEATING_AUTO_MS[step]);
+    return () => window.clearTimeout(id);
+  }, [auto, step, rollingNow]);
+  const runAll = () => {
+    cancelPendingTap();
+    setSwapFrom(null);
+    if (provEastRef.current === null) setProvEast(Math.floor(Math.random() * 4));
+    setAuto(true);
+  };
+  // The progress bar: the SEATING_STEPS done - running, filling on to the next one
+  // over the time it'll take (held while the dice tumble).
+  const filling = auto && !rollingNow && step < SEATING_STEPS - 1;
+  const progress = (filling ? step + 1 : step) / (SEATING_STEPS - 1);
+
   // Where the token that started at position `p` is drawn right now (its
   // final seat once everyone has re-seated at step 8).
   const tokenPos = (p: number) => (step >= 8 && finalPos ? finalPos[p] : p);
-  // Which slot each tile occupies right now.
-  const tileSlot = (t: Tile) => (step < 5 ? revealed.indexOf(t) : edgedRow.indexOf(t));
-
-  // From step 7 the four middle winds are "dealt": each flies from its slot in
-  // the row onto its player's token (following it to the final seat at step 8),
-  // staggered like dealing a hand. Purely computed - see windFlyTransform.
-  const windStyle = (t: Tile): CSSProperties | undefined => {
-    if (t.suit !== "z" || step < 7 || !dealt || !finalPos) return undefined;
-    const player = dealt.indexOf(t.rank as Wind);
-    const posIdx = step >= 8 ? finalPos[player] : player;
-    return {
-      transform: windFlyTransform(edgedRow.indexOf(t), posIdx),
-      transitionDelay:
-        step === 7 && firstPerson !== null
-          ? `${((player - firstPerson + 4) % 4) * 90}ms`
-          : "0ms",
-      zIndex: 5,
-    };
+  // The six tiles on the felt, for Play's engine (see play3d/diceScenes):
+  // the shuffled row, the row with the 筒 at its ends, and from step 7 each
+  // wind's player - where they sat when it was dealt, where they sit after,
+  // and its turn in the deal (from the first pick, round the table).
+  const feltRef = useRef<HTMLDivElement>(null);
+  const diceArea = useFeltDiceArea(SEAT_DICE_AREA);
+  const tileFace = (t: Tile) => `${t.suit}${t.rank}`;
+  const seatsTable: SeatsTable = {
+    step,
+    revealed: revealed.map(tileFace),
+    edged: edgedRow.map(tileFace),
+    dealt:
+      dealt && finalPos && firstPerson !== null
+        ? Object.fromEntries(dealt.map((w, player) => [`z${w}`, { at: player, seat: finalPos[player], order: (player - firstPerson + 4) % 4 }]))
+        : null,
   };
 
   const eastHolder = dealt ? dealt.indexOf(1) : null; // player dealt 東
@@ -9395,21 +9375,20 @@ function SeatingPanel({
 
   const diceFaces =
     step === 0 ? null : step <= 2 ? throw1.faces : throw2.faces;
-  const throwSum: number | "–" | null =
-    step === 0 ? null : rollingNow ? "–" : diceFaces!.reduce((a, b) => a + b, 0);
+  const thrown = step === 0 || step >= 7 ? null : step <= 2 ? throw1 : throw2;
 
   const caption = (() => {
     const L = nameAt;
     switch (step) {
       case 0:
-        if (swapFrom !== null) return `${L(swapFrom)} selected — tap another player to swap.`;
+        if (swapFrom !== null) return `${L(swapFrom)} picked - tap another to swap.`;
         return provEast === null
           ? "Pick the provisional East."
           : `Provisional East: ${L(provEast)}.`;
       case 1:
         return rollingNow ? "First throw…" : `First throw: ${sum1}.`;
       case 2:
-        return `Count ${sum1} from ${L(provEast!)} → real East seat: ${L(realEast!)}.`;
+        return `Count ${sum1} from ${L(provEast!)} → East: ${L(realEast!)}.`;
       case 3:
         return rollingNow
           ? "Second throw…"
@@ -9417,11 +9396,11 @@ function SeatingPanel({
       case 4:
         return "Reveal the six tiles.";
       case 5:
-        return "一筒 / 二筒 to the edges; winds keep their order.";
+        return "一筒 / 二筒 to the ends.";
       case 6:
-        return `Count ${sum2} from ${L(realEast!)} → first pick: ${L(firstPerson!)}.`;
+        return `Count ${sum2} from ${L(realEast!)} → first: ${L(firstPerson!)}.`;
       case 7:
-        return `Deal the winds from the ${dealFromTwoPin ? "二筒" : "一筒"} edge.`;
+        return `Deal from the ${dealFromTwoPin ? "二筒" : "一筒"} end.`;
       case 8:
         return "Final seating.";
       default:
@@ -9431,16 +9410,60 @@ function SeatingPanel({
 
   return (
     <div className="seat-sim">
-      <div className="seat-caption">
+      {/* Laid out as 擲骰 Dice is: the dice, the button, the result bar,
+          the felt, a hint under it. */}
+      <div className="dice-tray">
+        {[0, 1, 2].map((i) => (
+          <Die key={i} value={diceFaces?.[i] ?? 0} onBump={NOOP} disabled />
+        ))}
+      </div>
+
+      <div className="seat-main">
+        {/* At the end, from Scores: back there with this seating. */}
+        {step === SEATING_STEPS - 1 && onUse ? (
+          <button
+            type="button"
+            className="dice-roll seat-next"
+            onClick={() => {
+              const seats = finalSeats();
+              if (seats && realEast !== null) onUse(seats, realEast);
+            }}
+          >
+            Use in Scores
+          </button>
+        ) : step === SEATING_STEPS - 1 ? (
+          <button type="button" className="dice-roll seat-next" disabled>
+            Seated
+          </button>
+        ) : auto ? (
+          <button type="button" className="dice-roll seat-next" onClick={() => setAuto(false)}>
+            Pause
+          </button>
+        ) : (
+          <>
+            <button type="button" className="dice-roll seat-next" onClick={advance} disabled={!canNext}>
+              {SEATING_NEXT[step]}
+            </button>
+            <button type="button" className="seat-run-all" onClick={runAll} disabled={rollingNow} title="Every step in one go">
+              Run all
+            </button>
+          </>
+        )}
+      </div>
+
+      <div className="waits seat-status">
         <span className="seat-step-n">
           {step + 1}/{SEATING_STEPS}
         </span>
-        <span>{caption}</span>
+        <span className="seat-caption">{caption}</span>
+        <div className="seat-progress" role="progressbar" aria-label="Seating ceremony" aria-valuemin={0} aria-valuemax={SEATING_STEPS - 1} aria-valuenow={step}>
+          <span style={{ width: `${progress * 100}%`, transitionDuration: filling ? `${SEATING_AUTO_MS[step]}ms` : undefined }} />
+        </div>
       </div>
-      <p className="seat-help">{SEATING_CAPTIONS_HELP[step]}</p>
 
-      <div className="seat-stage">
-        <div className="seat-table">
+      <div className="gl-stage">
+        <div className="gl-felt" ref={feltRef}>
+          <div className="gl-dice-area" ref={diceArea.ref} style={diceArea.style} />
           {/* Rendered in fixed player order (keyed by player), with each one's
               position looked up - so a swap just changes two tokens' left/top
               and they slide, rather than React reordering DOM nodes (which
@@ -9457,7 +9480,7 @@ function SeatingPanel({
                 eastMark={eastAt === seat ? (step < 2 ? "provisional" : "real") : null}
                 // Not while a rename is open: a long-press that opened it via
                 // the context-menu path mustn't also land as a tap on release.
-                interactive={step === 0 && renaming === null}
+                interactive={step === 0 && renaming === null && !auto}
                 swapSelected={step === 0 && swapFrom === seat}
                 onTap={() => onTokenTap(seat)}
                 onRename={fullNames ? NOOP : () => openRename(player)}
@@ -9467,71 +9490,36 @@ function SeatingPanel({
           })}
         </div>
 
-        <div className="seat-tile-row">
-          {revealed.map((t) => (
-            <div
-              key={`${t.suit}${t.rank}`}
-              className={`seat-tile${step >= 4 ? " is-face-up" : ""}`}
-              style={{
-                left: `calc(${tileSlot(t)} * (var(--seat-tile-w) + var(--seat-tile-gap)))`,
-                ...windStyle(t),
-              }}
-            >
-              <span className="seat-tile-back" />
-              <span className="seat-tile-face">
-                <TileGlyphSpan tile={t} />
-              </span>
-            </div>
-          ))}
-        </div>
+        {/* The tiles: Play's own, drawn by its engine over the felt. */}
+        <Suspense fallback={null}>
+          <SeatTilesGL feltRef={feltRef} table={seatsTable} />
+        </Suspense>
+        {/* The throw under way (or just made), over the felt as Play's dice
+            are - landing where the felt's dice area is seen - and gone once
+            the winds are dealt. */}
+        {thrown && (
+          <div className="gl-dice-layer">
+            <WallDice key={step <= 2 ? "first" : "second"} faces={thrown.dice} target={thrown.target} rollCount={thrown.rollCount} area={diceArea.area} />
+          </div>
+        )}
       </div>
 
-      <div className="dice-tray seat-dice">
-        {diceFaces
-          ? diceFaces.map((v, i) => (
-              <Die key={i} value={v} onBump={() => {}} disabled />
-            ))
-          : [0, 1, 2].map((i) => <div key={i} className="die die-empty" />)}
+      <div className="wall-break-caption">
+        <span className="wall-break-detail">{SEATING_CAPTIONS_HELP[step]}</span>
       </div>
-      {throwSum !== null && <div className="seat-throw-sum">Sum: {throwSum}</div>}
-
-      <div className="seat-controls">
-        {/* At the end, from Scores: back there with this seating. */}
-        {step === SEATING_STEPS - 1 && onUse ? (
+      <div className="seat-secondary">
+        <button type="button" className="seat-reset" onClick={reset}>
+          Reset
+        </button>
+        {!fullNames && !isDefaultSeatNames(names) && (
           <button
             type="button"
-            className="dice-roll seat-next"
-            onClick={() => {
-              const seats = finalSeats();
-              if (seats && realEast !== null) onUse(seats, realEast);
-            }}
+            className={`seat-reset${confirmingResetNames ? " is-confirming" : ""}`}
+            onClick={onResetNamesClick}
           >
-            Use in Scores
-          </button>
-        ) : (
-          <button
-            type="button"
-            className="dice-roll seat-next"
-            onClick={advance}
-            disabled={!canNext}
-          >
-            {step < SEATING_STEPS - 1 ? "Next" : "Done"}
+            {confirmingResetNames ? "Tap again to reset names" : "Reset names"}
           </button>
         )}
-        <div className="seat-secondary">
-          <button type="button" className="seat-reset" onClick={reset}>
-            Reset
-          </button>
-          {!fullNames && !isDefaultSeatNames(names) && (
-            <button
-              type="button"
-              className={`seat-reset${confirmingResetNames ? " is-confirming" : ""}`}
-              onClick={onResetNamesClick}
-            >
-              {confirmingResetNames ? "Tap again to reset names" : "Reset names"}
-            </button>
-          )}
-        </div>
       </div>
 
       {renaming !== null && (

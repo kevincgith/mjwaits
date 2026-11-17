@@ -102,9 +102,7 @@
      gold - the one thing the diagram points at. */
   --felt: radial-gradient(90% 75% at 50% 45%, #1f6b43 0%, #164f30 70%, #0f3b23 100%);
   --felt-edge: #0c2f1c;
-  --wall-seg: #ece7da;
   --wall-seg-outline: #b9b29f;
-  --wall-seg-counted: #f0c45a;
   /* Tile glyph sizes - three jobs, one size each (phones override below):
      input = the picker; hand = a hand being edited or played; row = any
      tiles shown in a row (results, patterns, discard/wait rows, the hand
@@ -3270,49 +3268,7 @@ img.tile-face {
   background: var(--danger-bg-1);
 }
 
-/* --seg: one stack's width along its wall (a tile seen face-on); --tile: a
-   single tile's height, so a bar is 2 * --tile deep (two tiles high). Each bar
-   runs 18 * --seg long. --jut is how far each bar pokes past its neighbour in
-   the pinwheel (three stacks' worth). --gap is the break slot; a broken bar
-   grows by that much toward its clockwise-far end, so the figure carries one
-   --gap of slack on every edge: (18 * --seg + --bar + --jut + 2 * --gap) square. */
-.wall {
-  /* Scales down on narrow screens so the whole pinwheel - about 23.7 stacks
-     plus two gaps across - and its felt border always fit the card. */
-  --seg: min(14px, calc((100vw - 48px - 54px) / 23.72));
-  --tile: calc(var(--seg) * 1.357);
-  --bar: calc(2 * var(--tile));
-  --len: calc(var(--seg) * 18);
-  --jut: calc(3 * var(--seg));
-  --gap: 9px;
-  position: relative;
-  isolation: isolate;
-  width: calc(var(--len) + var(--bar) + var(--jut) + 2 * var(--gap));
-  height: calc(var(--len) + var(--bar) + var(--jut) + 2 * var(--gap));
-  /* Room above for the felt, which reaches 16px past the wall. */
-  margin: calc(1rem + 16px) auto 0;
-}
-
-/* The felt table under the wall, bigger than it on every side so the outer
-   stacks never crowd its edge - even a broken bar, which grows one --gap
-   toward its far end, keeps 16px of felt. The table itself never moves. */
-.wall::before {
-  content: "";
-  position: absolute;
-  inset: -16px;
-  z-index: -1;
-  border-radius: 18px;
-  background: var(--felt);
-  box-shadow:
-    inset 0 0 0 1px var(--felt-edge),
-    inset 0 2px 10px rgba(0, 0, 0, 0.35);
-}
-
-.wall-bar-slot {
-  position: absolute;
-}
-
-/* The table inside the wall, where the thrown dice land (see WallDice). */
+/* The felt where the thrown dice land (see WallDice). */
 .wall-dice {
   position: absolute;
   inset: 0;
@@ -3524,116 +3480,11 @@ img.tile-face {
 .wall-die-side-2 { transform: rotateX(90deg) translateZ(calc(var(--size) / 2)); }
 .wall-die-side-5 { transform: rotateX(-90deg) translateZ(calc(var(--size) / 2)); }
 
-/* The whole pinwheel is inset by one --gap from the top/left so the bottom and
-   left bars (anchored at their far edge) have room to grow when broken. */
-.wall-top {
-  left: calc(var(--bar) + var(--jut) + var(--gap));
-  top: calc(var(--jut) + var(--gap));
-}
-.wall-right {
-  left: calc(var(--len) + var(--gap));
-  top: calc(var(--bar) + var(--jut) + var(--gap));
-}
-.wall-bottom {
-  right: calc(var(--bar) + var(--jut) + var(--gap));
-  top: calc(var(--len) + var(--gap));
-}
-.wall-left {
-  left: calc(var(--jut) + var(--gap));
-  bottom: calc(var(--bar) + var(--jut) + var(--gap));
-}
-
-.wall-bar {
-  display: flex;
-  box-sizing: border-box;
-}
-.wall-bar-h {
-  flex-direction: column;
-  height: var(--bar);
-}
-.wall-bar-v {
-  flex-direction: row;
-  width: var(--bar);
-}
-
-/* One of the two tile-high rows that make up a bar. Each line lays its stacks
-   out in clockwise order, so the reversed directions go on the bottom/left. */
-.wall-bar-line {
-  display: flex;
-  flex: 1;
-}
-.wall-bar-h .wall-bar-line {
-  flex-direction: row;
-}
-.wall-bar-v .wall-bar-line {
-  flex-direction: column;
-}
-.wall-bottom .wall-bar-line {
-  flex-direction: row-reverse;
-}
-.wall-left .wall-bar-line {
-  flex-direction: column-reverse;
-}
-
-/* Fixed-size stacks (never squashed by the gap), outlined with an inset,
-   layout-free box-shadow: it stays within the stack so perpendicular bars
-   meeting at a corner touch cleanly instead of bleeding over each other. */
-.wall-seg {
-  flex: 0 0 var(--seg);
-  box-sizing: border-box;
-  background: var(--wall-seg);
-  box-shadow: inset 0 0 0 1px var(--wall-seg-outline);
-}
-/* The `sum` stacks counted off clockwise, lightened so the sum | 18-sum split reads. */
-.wall-seg-counted {
-  background: var(--wall-seg-counted);
-}
-
-/* The break: a clean empty slot; a broken bar is one --gap longer than a whole one. */
-.wall-gap {
-  flex: 0 0 var(--gap);
-  align-self: stretch;
-  position: relative;
-}
-
-.wall-break-marker {
-  position: absolute;
-  display: flex;
-  line-height: 1;
-  pointer-events: none;
-}
-
-.wall-break-marker svg {
-  display: block;
-  fill: var(--red);
-}
-.wall-top .wall-break-marker {
-  left: 50%;
-  bottom: calc(100% + 3px);
-  transform: translateX(-50%) rotate(90deg);
-}
-.wall-bottom .wall-break-marker {
-  left: 50%;
-  top: calc(100% + 3px);
-  transform: translateX(-50%) rotate(-90deg);
-}
-.wall-left .wall-break-marker {
-  top: 50%;
-  right: calc(100% + 3px);
-  transform: translateY(-50%);
-}
-.wall-right .wall-break-marker {
-  top: 50%;
-  left: calc(100% + 3px);
-  transform: translateY(-50%) rotate(180deg);
-}
-
 .wall-break-caption {
   display: flex;
   flex-direction: column;
   gap: 0.15rem;
-  /* Clear of the felt, which reaches 16px below the wall itself. */
-  margin-top: calc(1rem + 16px);
+  margin-top: 1rem;
   text-align: center;
   font-size: var(--text-md);
   color: var(--text);
@@ -3644,22 +3495,88 @@ img.tile-face {
   color: var(--text-muted);
 }
 
+/* ---- The Dice tab's tables (擲骰's wall, 座位's seats) --------------------
+   As Play's: the felt tipped away from you under a perspective, its tiles
+   drawn by Play's engine on the canvas over it (see play3d/FeltGL), the
+   thrown dice over it flat to you, as Play's are. Tipped about its near
+   edge, which keeps the felt's own width; the stage only as tall as the
+   tipped felt is seen. */
+.gl-stage {
+  /* Play's wooden rim round the felt, and the felt inside it - the two
+     together as wide as 擲骰's wall table always was. */
+  --felt-rim: 0.6rem;
+  --felt-w: min(382px - 2 * var(--felt-rim), 100vw - 52px - 2 * var(--felt-rim));
+  /* Tipped only a little - with the wall turned on it, more reads as much
+     steeper than it is. */
+  --felt-tilt: 12deg;
+  /* How much of its depth the tipped felt is seen to take (measured, at
+     this tilt and perspective). */
+  --felt-seen: 0.9457;
+  position: relative;
+  width: var(--felt-w);
+  height: calc(var(--felt-w) * var(--felt-seen));
+  /* (Room for the rim, above and below.) */
+  margin: var(--felt-rim) auto;
+  /* In proportion to the felt (1000px at 350), so it looks the same tipped
+     at any width - and seen as if the stage were the felt's full square. */
+  perspective: calc(var(--felt-w) * 2.857);
+  perspective-origin: 50% calc(var(--felt-w) * (0.5 - (1 - var(--felt-seen))));
+}
+.gl-felt {
+  position: absolute;
+  left: 0;
+  top: calc(var(--felt-w) * (var(--felt-seen) - 1));
+  width: var(--felt-w);
+  height: var(--felt-w);
+  border-radius: 18px;
+  background: var(--felt);
+  /* As Play's table: the felt's own shading, then its wooden rim and the
+     shadow it throws. */
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06),
+    inset 0 0 2.5rem rgba(0, 0, 0, 0.35),
+    0 0 0 0.45rem #3a2717,
+    0 0 0 var(--felt-rim) #1c120a,
+    0 1.2rem 2.4rem rgba(0, 0, 0, 0.6);
+  transform-origin: 50% 100%;
+  transform: rotateX(var(--felt-tilt));
+  transform-style: preserve-3d;
+}
+.felt-gl {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+/* Where the dice land, marked on the felt unseen; and the flat layer over
+   the table they're thrown in. */
+.gl-dice-area {
+  position: absolute;
+  pointer-events: none;
+}
+.gl-dice-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
 /* Seating ceremony sub-tab */
 .seat-sim {
-  /* These four MUST match the SEAT_* constants in App.tsx (the deal animation
-     is computed from them, not measured). */
-  --seat-tile-w: 32px;
-  --seat-tile-gap: 6px;
-  --seat-table: 132px;
-  --seat-stage-gap: 22px;
   text-align: center;
 }
 
-.seat-caption {
-  display: flex;
-  align-items: baseline;
+/* The result bar, as 擲骰's Total: the step, what's happening, and the
+   ceremony's progress along its foot. */
+.seat-status {
+  position: relative;
+  overflow: hidden;
   justify-content: center;
   gap: 0.5rem;
+  text-align: center;
+  font-size: var(--text-lg);
+}
+.seat-caption {
   font-weight: 600;
   color: var(--text-strong);
 }
@@ -3672,35 +3589,12 @@ img.tile-face {
   border-radius: var(--radius-pill);
   padding: 0.05rem 0.5rem;
 }
-.seat-help {
-  margin: 0.25rem 0 0;
-  font-size: var(--text-sm);
-  color: var(--text-muted);
-}
-
-.seat-stage {
-  position: relative;
-  width: calc(var(--seat-tile-w) * 6 + var(--seat-tile-gap) * 5);
-  height: calc(var(--seat-table) + var(--seat-stage-gap) + var(--seat-tile-w) * 1.35);
-  margin: 2.25rem auto 1.25rem;
-}
-
-.seat-table {
-  position: absolute;
-  left: 50%;
-  top: 0;
-  transform: translateX(-50%);
-  width: var(--seat-table);
-  height: var(--seat-table);
-  background: var(--felt);
-  border: 2px solid var(--felt-edge);
-  border-radius: var(--radius-sm);
-  box-sizing: border-box;
-}
 
 .seat-token {
   position: absolute;
-  transform: translate(-50%, -50%);
+  /* Standing up off the tipped felt, facing you - raised clear of it, so
+     no half of it sinks into the felt as it turns. */
+  transform: translate(-50%, -50%) translateZ(12px) rotateX(calc(-1 * var(--felt-tilt)));
   transition: left 0.45s ease, top 0.45s ease, box-shadow 0.2s ease, transform 0.15s ease;
   width: 34px;
   height: 34px;
@@ -3744,7 +3638,7 @@ img.tile-face {
 /* Double-tapped, waiting for a second player to swap seats with: lifted and
    ringed with a dashed outline so it reads differently from .is-active. */
 .seat-token.is-swap-selected {
-  transform: translate(-50%, -50%) scale(1.15);
+  transform: translate(-50%, -50%) translateZ(12px) rotateX(calc(-1 * var(--felt-tilt))) scale(1.15);
   outline: 2px dashed var(--accent);
   outline-offset: 3px;
   z-index: 2;
@@ -3900,65 +3794,56 @@ img.tile-face {
   cursor: default;
 }
 
-.seat-tile-row {
-  position: absolute;
-  left: 50%;
-  top: calc(var(--seat-table) + var(--seat-stage-gap));
-  transform: translateX(-50%);
-  height: calc(var(--seat-tile-w) * 1.35);
-  width: calc(var(--seat-tile-w) * 6 + var(--seat-tile-gap) * 5);
+
+/* Reset sits a little below the hint. */
+.seat-sim .seat-secondary {
+  margin-top: 0.75rem;
 }
-.seat-tile {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: var(--seat-tile-w);
-  height: calc(var(--seat-tile-w) * 1.35);
-  transition: left 0.4s ease, transform 0.55s cubic-bezier(0.2, 0.7, 0.3, 1);
-}
-.seat-tile > span {
-  position: absolute;
-  inset: 0;
+
+
+/* The button, full width as 擲骰's Roll the dice - with Run all beside it
+   (Pause alone while it runs). */
+.seat-main {
   display: flex;
-  align-items: center;
   justify-content: center;
-  border-radius: var(--radius-sm);
-  transition: opacity 0.25s ease;
-}
-.seat-tile-back {
-  background: var(--surface-sunken);
-  border: 1px solid var(--border);
-  opacity: 1;
-}
-.seat-tile-face {
-  background: var(--tile-bg);
-  border: 1px solid var(--border);
-  opacity: 0;
-}
-.seat-tile.is-face-up .seat-tile-back {
-  opacity: 0;
-}
-.seat-tile.is-face-up .seat-tile-face {
-  opacity: 1;
-}
-
-.seat-dice {
-  margin-bottom: 0.4rem;
-}
-.seat-throw-sum {
+  align-items: stretch;
+  gap: 0.5rem;
   margin-bottom: 1rem;
-  font-weight: 700;
-  color: var(--text-strong);
 }
-
-.seat-controls {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.4rem;
+.seat-main > .seat-next {
+  margin: 0;
 }
-.seat-next {
-  min-width: 150px;
+.seat-run-all {
+  border: none;
+  border-radius: var(--radius-md);
+  padding: 0 1.1rem;
+  white-space: nowrap;
+  background: var(--accent-bg);
+  color: var(--accent);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.seat-run-all:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+/* The ceremony's progress, along the result bar's foot: steps done - with
+   Run all, filling on through each step's wait. */
+.seat-progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: var(--fill);
+}
+.seat-progress > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.25s ease;
+  transition-timing-function: linear;
 }
 /* Seating's Reset / Reset names: quiet grey buttons like every other
    secondary action (not underlined links). */
@@ -5074,6 +4959,13 @@ img.tile-face {
   .dice-roll,
   .trainer-submit {
     width: 100%;
+  }
+
+  /* 座位's button shares the row with Run all: it takes the rest. */
+  .seat-main > .seat-next {
+    width: auto;
+    flex: 1;
+    min-width: 0;
   }
 }
 

@@ -454,7 +454,8 @@ export class Engine {
     this.glass.addMarks("tray", mark(peekTray()), 1, 0);
     this.felt.addMarks("shadow", mark(tileShadow()), MAX_FELT, 0);
     this.felt.addMarks("pin", mark(pin()), 4, 2);
-    this.felt.addMarks("picked", mark(pickedRim()), 16, 2);
+    // (18: the Dice tab's counted run along a whole side.)
+    this.felt.addMarks("picked", mark(pickedRim()), 18, 2);
     this.felt.addMarks("gap", mark(gapOutline()), 32, 0);
     for (const side of ["top", "bottom", "left", "right"] as const) this.felt.addMarks(`bubble-${side}`, mark(bubble(10, 10, 1, side, 1)), 1, 2);
     this.hand.addMarks("row-shadow", mark(rowShadow()), 1, 0);
