@@ -71,9 +71,9 @@ import {
   type WaitValue,
 } from "@mjwaits/shared/engine/game";
 import { allTileKinds, DEFAULT_SUIT_ORDER, getWaits, isSuitOrder, shanten, sortTiles, sortTilesBy, tileKey, tileLabel, type Tile } from "@mjwaits/shared/engine/mahjong";
-import { blindPicks, botGive, SWAP_TIMER_S, botSplit, DEFAULT_SWAP_RULES, givePlans, pileLeft, quickSwap, SWAP_PACE_MS, type GivePlan, type SwapPhase, type SwapRules } from "@mjwaits/shared/engine/swap";
+import { botGive, SWAP_TIMER_S, DEFAULT_SWAP_RULES, givePlans, quickSwap, SWAP_PACE_MS, type GivePlan, type SwapPhase, type SwapRules } from "@mjwaits/shared/engine/swap";
 import { PlayDie } from "./PlayDie";
-import { dealDiceMs, DIE_SAY_MS, SWAP_FLIGHT_MS, SWAP_ROUND_HOLD_MS, SwapControls, SwapDice, swapDiceMs, SwapSheet, type Flight } from "./PlaySwap";
+import { AUTO_TAKE_MS, dealDiceMs, DIE_SAY_MS, evenTake, SWAP_FLIGHT_MS, SWAP_ROUND_HOLD_MS, SwapControls, SwapDice, swapDiceMs, SwapSheet, type Flight } from "./PlaySwap";
 import { sortBonusTiles, type BonusTile } from "@mjwaits/shared/engine/scoring";
 import { BonusGlyphSpan, TileGlyphSpan } from "./TileGlyphs";
 import {
@@ -2702,10 +2702,25 @@ export function PlayPanel({
       swapTake(game, HUMAN, swapPicks);
       return takeSwap();
     } catch {
-      const split = botSplit(swapPhase.piles.map(pileLeft), HUMAN, takersAfter(swapPhase, game.dealer), swapPhase.count);
-      return takeSwap(swapPhase.piles.map((p, g) => blindPicks(p!, split[g])));
+      return takeSwap(evenTake(swapPhase, HUMAN, takersAfter(swapPhase, game.dealer)));
     }
   };
+  // 快換: your take comes by itself, an even take, after a beat (AUTO_TAKE_MS,
+  // by the table's speed - and after your give's landed, as a bot's would) -
+  // unless you've tapped a tile to pick by hand. (Online too, by the table's 快換.)
+  const autoTakeMs =
+    myTake && quickSwap(online ? online.table.settings.swapRules : game.swapRules) && swapPicks.every((p) => !p.length)
+      ? Math.round(AUTO_TAKE_MS * SPEEDS[speed].factor)
+      : null;
+  const autoTake = useRef(() => {});
+  autoTake.current = () => swapPhase && takeSwap(evenTake(swapPhase, HUMAN, takersAfter(swapPhase, game.dealer)));
+  useEffect(() => {
+    if (autoTakeMs === null) return;
+    const giveLeft = glGiven ? Math.max(0, glGiven.key + SWAP_PACE_MS.given - Date.now()) : 0;
+    const id = window.setTimeout(() => autoTake.current(), Math.max(autoTakeMs, giveLeft));
+    return () => window.clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoTakeMs, swapStep]);
   // Online: the step a give or take was last sent for - no second one for it,
   // unless the table turned it down (or said no to something, not saying
   // what): then it may go again, and a give's tiles don't fly.
@@ -2817,8 +2832,7 @@ export function PlayPanel({
       // Nor while your give's still flying down to your pile: it lands first.
       const giveLeft = glGiven ? Math.max(0, glGiven.key + SWAP_PACE_MS.given - Date.now()) : 0;
       const id = window.setTimeout(() => {
-        const split = botSplit(phase.piles.map(pileLeft), phase.taker, takersAfter(phase, game.dealer), phase.count);
-        advance(swapTake(game, phase.taker, phase.piles.map((p, g) => blindPicks(p!, split[g]))));
+        advance(swapTake(game, phase.taker, evenTake(phase, phase.taker, takersAfter(phase, game.dealer))));
       }, giveLeft + (quickSwap(game.swapRules) ? 650 : 1100) * factor);
       return () => window.clearTimeout(id);
     }
@@ -3995,6 +4009,7 @@ export function PlayPanel({
                   onNextPlan={nextGivePlan}
                   settling={swapFlying && swapPhase.stage === "give"}
                   onTake={takeSwap}
+                  autoTakeMs={autoTakeMs}
                 />
               )}
               {result && resultHidden && !cardHeld && (
@@ -4185,6 +4200,7 @@ export function PlayPanel({
               onNextPlan={nextGivePlan}
               settling={swapFlying && swapPhase.stage === "give"}
               onTake={takeSwap}
+              autoTakeMs={autoTakeMs}
             />
           ) : waits ? (
             <span ref={barWaitsRef} className="play-bar-waits" aria-label={`Ready, waiting on ${waits.map((w) => `${tileLabel(w.tile)} (${w.left} left, ${w.fan ?? "?"} 番)`).join(", ")}`}>

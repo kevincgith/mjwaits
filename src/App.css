@@ -15634,6 +15634,26 @@ button.sc-stat:active {
   white-space: nowrap;
 }
 
+/* 快換: 攞牌 lit, your take coming by itself - its own gold frame running
+   out clockwise from the top over the frame dimmed, as the compass's turn
+   timer runs round its rim (see TakeRing). */
+.play-call.is-swap.is-auto {
+  border-color: rgba(255, 209, 102, 0.22);
+}
+
+.play-take-ring {
+  position: absolute;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.play-take-ring path {
+  fill: none;
+  stroke: var(--play-gold);
+  stroke-dasharray: 1 1;
+  stroke-linecap: round;
+}
+
 /* Clear your picks: small, dark and quiet, a plain ✕ - never mistaken for
    the suggestions beside it. */
 .play-call.is-swap.is-clear {

@@ -4,7 +4,7 @@
 // and what the dice mean. The piles, rows and flying tiles themselves are
 // the WebGL table's (play3d/).
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   blindPicks,
   botSplit,
@@ -69,6 +69,16 @@ export function SwapDice({ phase, factor = 1 }: { phase: SwapPhase; factor?: num
   );
 }
 
+// An even take (the fairest there is) for `seat`: blind picks from each pile.
+export const evenTake = (phase: SwapPhase, seat: number, after: number[]) => {
+  const even = botSplit(phase.piles.map(pileLeft), seat, after, phase.count);
+  return phase.piles.map((p, g) => (p ? blindPicks(p, even[g]) : []));
+};
+
+// 快換: your take comes by itself (an even take) after this long - a beat
+// to see it's yours, as long as a bot's take; the table's speed scales it.
+export const AUTO_TAKE_MS = 1300;
+
 // The swap's controls: its line in the bar under the table (the round,
 // what's happening - `part` "bar"), and your buttons ("actions") in the
 // calls corner like 上 碰 槓: give; take what you've tapped, or take evenly
@@ -88,6 +98,7 @@ export function SwapControls({
   plan,
   onNextPlan,
   onTake,
+  autoTakeMs = null,
   settling = false,
 }: {
   part: "bar" | "actions";
@@ -105,6 +116,9 @@ export function SwapControls({
   onNextPlan?: () => void;
   settling?: boolean; // the last round's tiles still joining their hands
   onTake: (picks?: number[][]) => void;
+  // 快換: your take coming by itself in this long (ms) - 攞牌 lit, its time
+  // running out across it; a tap takes now, a tile tapped picks by hand.
+  autoTakeMs?: number | null;
 }) {
   const { rounds, count, round, stage, piles, taker } = phase;
   const mineToGive = seated && stage === "give" && !piles[0] && !settling;
@@ -113,11 +127,9 @@ export function SwapControls({
   const split = picks.map((p) => p.length);
   const taken = split.reduce((a, b) => a + b, 0);
   const check = myTake ? checkTake(sizes, 0, after, count, split) : null;
-  // One tap: an even take (the fairest there is), blind picks from each.
-  const quickTake = () => {
-    const even = botSplit(sizes, 0, after, count);
-    onTake(piles.map((p, g) => blindPicks(p!, even[g])));
-  };
+  // One tap: an even take, blind.
+  const quickTake = () => onTake(evenTake(phase, 0, after));
+  const auto = autoTakeMs !== null && taken === 0;
   let note: string;
   let tone = "";
   if (settling) note = "Everyone takes in what they got…";
@@ -133,6 +145,7 @@ export function SwapControls({
   }
   else if (stage === "give" && !settling) note = "Everyone lays tiles face down";
   else if (!myTake) note = `${nameOf(taker)} is taking`;
+  else if (auto) note = `Taking ${count} evenly - tap a tile to pick`;
   else if (taken === 0) note = `Take ${count} - at least one from each`;
   else {
     note = `${[3, 2, 1].map((g) => split[g]).join("·")} (${taken}/${count})`;
@@ -196,14 +209,49 @@ export function SwapControls({
       <button
         key="main"
         type="button"
-        className={`play-call is-swap is-long${taken === 0 || (check.ok && !check.warning) ? " is-win" : ""}${taken > 0 && check.warning ? " is-warn" : ""}`}
+        className={`play-call is-swap is-long${taken === 0 || (check.ok && !check.warning) ? " is-win" : ""}${taken > 0 && check.warning ? " is-warn" : ""}${auto ? " is-auto" : ""}`}
         disabled={taken > 0 && !check.ok}
         onClick={() => (taken === 0 ? quickTake() : onTake())}
         aria-label={taken === 0 ? `Take ${count} evenly, blind` : (check.error ?? check.warning ?? `Take these ${taken}`)}
       >
+        {auto && <TakeRing ms={autoTakeMs} />}
         {taken === 0 ? "攞牌" : check.warning ? "照攞" : `攞 ${taken}/${count}`}
       </button>
     </>
+  );
+}
+
+// 快換's auto take, counting down: the button's own gold frame running out
+// clockwise from the top - as the compass's turn timer does its rim - over
+// the frame dimmed. (Drawn to the button's own size, whatever its width.)
+function TakeRing({ ms }: { ms: number }) {
+  const svg = useRef<SVGSVGElement>(null);
+  const bar = useRef<SVGPathElement>(null);
+  // The button's size (its border included) and the border's width.
+  const [size, setSize] = useState<[number, number, number] | null>(null);
+  useLayoutEffect(() => {
+    const button = svg.current?.parentElement;
+    if (!button) return;
+    const measure = () => setSize([button.offsetWidth, button.offsetHeight, parseFloat(getComputedStyle(button).borderTopWidth) || 2]);
+    measure();
+    const seen = new ResizeObserver(measure);
+    seen.observe(button);
+    return () => seen.disconnect();
+  }, []);
+  const drawn = size !== null;
+  useEffect(() => {
+    const run = bar.current?.animate?.([{ strokeDashoffset: 0 }, { strokeDashoffset: -1 }], { duration: ms, fill: "forwards" });
+    return () => run?.cancel();
+  }, [ms, drawn]);
+  // Along the middle of the border: a pill, from the top's middle.
+  const [w, h, b] = size ?? [0, 0, 2];
+  const a = b / 2;
+  const r = Math.min(h / 2 - a, w / 2 - a);
+  const d = `M${w / 2} ${a}H${w - a - r}A${r} ${r} 0 0 1 ${w - a - r} ${h - a}H${a + r}A${r} ${r} 0 0 1 ${a + r} ${a}Z`;
+  return (
+    <svg ref={svg} className="play-take-ring" style={{ top: -b, left: -b }} width={w} height={h} viewBox={`0 0 ${w} ${h}`} aria-hidden="true">
+      {drawn && <path ref={bar} d={d} pathLength={1} strokeWidth={b} />}
+    </svg>
   );
 }
 
