@@ -4,7 +4,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { exportScores, mergeScores, parseBackup, patternNoteCount, withoutPatternNotes, replay, replayCached, type HandResult, type ReplayState, type ScoreGame, type ScoreStore, playTimes } from "@mjwaits/shared/engine/ledger";
 import { sheetCsv, sheetRows, type SheetRow } from "../lib/scoreViews";
-import { careerPlayerStats, careerStats, careerTrend, smoothed, periodKey, periodLabel, periodsOf, type Period, headToHead, marks, patternCounts, handsByPlayer, type WonHand, playerStats, rankedBy, RECENT_HANDS, trend, trendSummary, type PlayerStats, type Swing } from "../lib/scoreStats";
+import { careerPlayerStats, careerStats, careerTrend, smoothed, periodKey, periodLabel, periodsOf, type Period, headToHead, marks, patternCounts, handsByPlayer, type WonHand, playerStats, rankedBy, RECENT_HANDS, SEAT_WINDS, POSITIONS, trend, trendSummary, type PlayerStats, type Swing, type SeatLine, type PositionLine } from "../lib/scoreStats";
 import { fmt, signed, pct, tone, colorOf, Icons, SectionHead, Monogram, Sheet, Segmented, Sparkline } from "./shared";
 import { NameSheet } from "./sheets";
 import { playerColor, playerPicture, savePicture, trendPicture } from "../lib/picture";
@@ -476,6 +476,19 @@ export function PlayerCard({
                     ...(s.opponents.length > 0
                       ? [{ title: "對手 Against each player", rows: s.opponents.map((o) => ({ label: o.player, value: signed(o.net), tone: o.net })) }]
                       : []),
+                    ...(s.hands > 0
+                      ? [
+                          {
+                            title: "座位 Seats",
+                            rows: [
+                              ...s.seatWinds.flatMap((l, i) =>
+                                l.hands > 0 ? [{ label: `${SEAT_WINDS[i]}位`, en: seatLineText(l), value: signed(l.net), tone: l.net }] : [],
+                              ),
+                              ...s.positions.map((l, i) => ({ label: POSITIONS[i].zh, en: positionText(l), value: signed(l.net), tone: l.net })),
+                            ],
+                          },
+                        ]
+                      : []),
                   ],
                 }),
                 picture.file(s.player),
@@ -573,11 +586,69 @@ export function PlayerCard({
           </ul>
         </details>
       )}
+      {s.hands > 0 && <SeatsCard s={s} />}
       {ranking && <StatRanking store={store} stats={stats} row={ranking} player={s.player} onClose={() => setRanking(null)} />}
       <p className="sc-help sc-stat-key">撳任何一項睇全場排名 · Tap a stat to see everyone<br />
         <span className="sc-mark is-best">{Icons.thumbUp}</span> 全場最好 · <span className="sc-mark is-worst">{Icons.thumbDown}</span> 全場最差 - best and lowest at the table
       </p>
     </div>
+  );
+}
+
+const seatLineText = (l: SeatLine) => `${l.hands}局 · 胡${l.wins}${l.selfDraws ? `（摸${l.selfDraws}）` : ""} · 銃${l.dealIns}`;
+const positionText = (l: PositionLine) => `食佢${l.wonOff} · 出銃俾佢${l.dealtInTo}`;
+
+// 座位: how a player did from each 門風, and against whoever sat 上家, 對家
+// and 下家 of them - whoever it was that hand.
+function SeatsCard({ s }: { s: PlayerStats }) {
+  const posMax = Math.max(1, ...s.positions.map((l) => Math.abs(l.net)));
+  const best = Math.max(...s.seatWinds.filter((l) => l.hands > 0).map((l) => l.net));
+  return (
+    <details className="sc-stat-group" open>
+      <summary className="sc-stat-title">
+        座位 <small>Seats</small>
+      </summary>
+      <div className="sc-seat-winds">
+        {s.seatWinds.map((l, i) => (
+          <div key={SEAT_WINDS[i]} className={`sc-seat-wind${l.hands === 0 ? " is-empty" : ""}${l.hands > 0 && l.net === best && best > 0 ? " is-best" : ""}`}>
+            <span className="sc-seat-wind-name">
+              {SEAT_WINDS[i]}
+              <small>位</small>
+            </span>
+            <strong className={tone(l.net)}>{l.hands > 0 ? signed(l.net) : "–"}</strong>
+            <small>{l.hands}局</small>
+            {l.hands > 0 && (
+              <>
+                <small>胡 {pct(l.wins / l.hands)}</small>
+                <small>銃 {pct(l.dealIns / l.hands)}</small>
+              </>
+            )}
+          </div>
+        ))}
+      </div>
+      <p className="sc-help sc-seat-note">門風 that hand - 東 is the dealer · Points, win and deal-in rates from each seat</p>
+      <ul className="sc-opponents sc-positions">
+        {[2, 1, 0].map((i) => {
+          const l = s.positions[i];
+          return (
+            <li key={POSITIONS[i].zh}>
+              <span className="sc-opponent-name sc-position-name">
+                {POSITIONS[i].zh}
+                <small>{POSITIONS[i].en}</small>
+              </span>
+              <span className="sc-position-mid">
+                <span className="sc-opponent-bar" aria-hidden="true">
+                  <span className={l.net > 0 ? "is-pos" : "is-neg"} style={{ width: `${(Math.abs(l.net) / posMax) * 50}%` }} />
+                </span>
+                <small>{positionText(l)}</small>
+              </span>
+              <strong className={tone(l.net)}>{signed(l.net)}</strong>
+            </li>
+          );
+        })}
+      </ul>
+      <p className="sc-help sc-seat-note">Against whoever sat there that hand · 食佢: won off their discard · 出銃俾佢: dealt in to them</p>
+    </details>
   );
 }
 

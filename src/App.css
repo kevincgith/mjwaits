@@ -13243,6 +13243,96 @@ html.sc-fit-mode .build-version {
   text-align: right;
 }
 
+/* 座位: a tile per 門風, then 上家 / 對家 / 下家 as 對手-style rows. */
+.sc-seat-winds {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  background: var(--separator);
+}
+
+.sc-seat-wind {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
+  min-width: 0;
+  padding: 0.55rem 0.25rem 0.6rem;
+  background: var(--surface-sunken);
+  text-align: center;
+}
+
+.sc-seat-wind.is-best {
+  box-shadow: inset 0 3px 0 var(--sc-pos);
+}
+
+.sc-seat-wind.is-empty {
+  opacity: 0.5;
+}
+
+.sc-seat-wind-name {
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.sc-seat-wind-name small {
+  margin-left: 1px;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  font-weight: 500;
+}
+
+.sc-seat-wind strong {
+  font-size: 1.05rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.sc-seat-wind > small {
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.sc-seat-note {
+  margin: 0.35rem 0 0.75rem;
+}
+
+.sc-seat-note:last-child {
+  margin-bottom: 0;
+}
+
+.sc-position-name {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  line-height: 1.2;
+}
+
+.sc-position-name small {
+  color: var(--text-muted);
+  font-size: 0.65rem;
+  font-weight: 500;
+}
+
+.sc-position-mid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.sc-position-mid small {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Career table: Cantonese headers, the English under each. */
 .sc-th-two th small {
   display: block;

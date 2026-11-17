@@ -57,6 +57,10 @@ export interface PlayerStats {
   // 對手 - net against each other player this game (every payment between
   // the two: hands, 反雪, 獎罰, 詐胡), best first.
   opponents: { player: string; net: number }[];
+  // 座位: how they did from each seat wind (東 南 西 北 - their 門風 that
+  // hand), and against whoever sat 下家 / 對家 / 上家 of them.
+  seatWinds: SeatLine[];
+  positions: PositionLine[];
   // 走勢 - read off the running total after each hand they sat in (from 0).
   peak: AtHand | null; // 最高位
   trough: AtHand | null; // 最低位
@@ -66,6 +70,72 @@ export interface PlayerStats {
   longestLosingRun: number; // 最長連跌 - hands in a row losing points
   recent: { hands: number; net: number }; // 近況 - the last RECENT_HANDS hands
   avgSwing: number | null; // 平均波幅 - points moved per hand, either way
+}
+
+// One seat wind's hands: what came of them, and their net.
+export type SeatLine = {
+  hands: number;
+  wins: number; // 食胡 and 自摸 both
+  selfDraws: number;
+  dealIns: number;
+  net: number;
+};
+
+// One relative seat (下家, 對家 or 上家 - whoever sat there that hand): the
+// hands played that way round, the net between the two (each hand's
+// payments and 反雪 between them), the wins off their discard and the
+// deal-ins to them.
+export type PositionLine = {
+  hands: number;
+  net: number;
+  wonOff: number;
+  dealtInTo: number;
+};
+
+// 門風 and relative seats are read in turn order: 東 南 西 北 from the
+// dealer; 下家 plays after you, 對家 across, 上家 before you.
+export const SEAT_WINDS = ["東", "南", "西", "北"] as const;
+export const POSITIONS = [
+  { zh: "下家", en: "Next (right)" },
+  { zh: "對家", en: "Across" },
+  { zh: "上家", en: "Before (left)" },
+] as const;
+
+const emptySeat = (): SeatLine => ({ hands: 0, wins: 0, selfDraws: 0, dealIns: 0, net: 0 });
+const emptyPosition = (): PositionLine => ({ hands: 0, net: 0, wonOff: 0, dealtInTo: 0 });
+
+function seating(hands: HandResult[], player: string): { seatWinds: SeatLine[]; positions: PositionLine[] } {
+  const seatWinds = SEAT_WINDS.map(emptySeat);
+  const positions = POSITIONS.map(emptyPosition);
+  for (const h of hands) {
+    const seats = h.seatsAfter;
+    const me = seats.indexOf(player);
+    const dealer = seats.indexOf(h.dealer);
+    if (me < 0 || dealer < 0 || seats.length !== 4) continue;
+    const won = h.winners.find((w) => w.player === player);
+    const line = seatWinds[(me - dealer + 4) % 4];
+    line.hands++;
+    if (won) line.wins++;
+    if (won && h.selfDraw) line.selfDraws++;
+    if (h.kind === "win" && !h.selfDraw && h.from === player) line.dealIns++;
+    line.net += h.deltas[player] ?? 0;
+    for (let k = 0; k < 3; k++) {
+      const other = seats[(me + 1 + k) % 4];
+      const pos = positions[k];
+      pos.hands++;
+      for (const p of h.pairs) {
+        if (p.winner === player && p.payer === other) pos.net += p.worth;
+        if (p.winner === other && p.payer === player) pos.net -= p.worth;
+      }
+      for (const f of h.fanXue) {
+        if (f.to === player && f.from === other) pos.net += f.amount;
+        if (f.to === other && f.from === player) pos.net -= f.amount;
+      }
+      if (won && !h.selfDraw && h.from === other) pos.wonOff++;
+      if (h.from === player && h.winners.some((w) => w.player === other)) pos.dealtInTo++;
+    }
+  }
+  return { seatWinds, positions };
 }
 
 export interface Swing {
@@ -258,6 +328,7 @@ export function playerStats(state: ReplayState, game: ScoreGame): PlayerStats[] 
       lahNet:
         pairsAsWinner.reduce((t, p) => t + (p.lahKind ? p.lah : 0), 0) - pairsAsPayer.reduce((t, p) => t + (p.lahKind ? p.lah : 0), 0),
       ...trendOf(seated, player),
+      ...seating(hands, player),
       opponents: state.players
         .filter((q) => q !== player)
         .map((q) => ({ player: q, net: (state.paid[`${q}>${player}`] ?? 0) - (state.paid[`${player}>${q}`] ?? 0) }))
@@ -551,6 +622,13 @@ export function careerStats(games: ScoreGame[]): CareerStats[] {
 // worked out again from those totals (not averaged), records the best of
 // any game (with the game's day), opponents summed, and 走勢 read off one
 // running total through the games in the order they were played.
+// Lines of numbers added field by field (a career's seat lines, from each game's).
+function addLines<T extends Record<string, number>>(lines: T[]): T {
+  const out = { ...lines[0] };
+  for (const l of lines.slice(1)) for (const k of Object.keys(l) as (keyof T)[]) out[k] = ((out[k] as number) + (l[k] as number)) as T[keyof T];
+  return out;
+}
+
 export function careerPlayerStats(games: ScoreGame[], dayOf: (at: number) => string): { stats: PlayerStats[]; series: Map<string, number[]> } {
   const played = games.slice().sort((a, b) => a.startedAt - b.startedAt);
   const per = new Map<string, { s: PlayerStats; game: ScoreGame }[]>();
@@ -642,6 +720,8 @@ export function careerPlayerStats(games: ScoreGame[], dayOf: (at: number) => str
       avgDealInLoss: rate(sum((s) => s.discardLoss), dealIns),
       lahNet: sum((s) => s.lahNet),
       opponents: [...opp].filter(([, v]) => v !== 0).map(([p, v]) => ({ player: p, net: v })).sort((a, b) => b.net - a.net),
+      seatWinds: SEAT_WINDS.map((_, i) => addLines(list.map((x) => x.s.seatWinds[i]))),
+      positions: POSITIONS.map((_, i) => addLines(list.map((x) => x.s.positions[i]))),
       ...curve(points.get(player) ?? [{ hand: 0, v: 0 }]),
     };
   });
