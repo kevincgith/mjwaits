@@ -23,20 +23,24 @@ interface Pose {
 
 // The felt in units of 1/250 of its width (the old diagram's px): the six
 // tiles in a row across it above the middle, and each player's place to put
-// a dealt wind - in front of them, turned to face them. A tile is 32 units
-// wide, as Play's (0.72 x 0.913, 0.42 thick).
+// a dealt wind - in front of them, upright to you (so every wind reads at a
+// glance), clear of their name tag: above or below it, or inside it at the
+// sides. A tile is 32 units wide, as Play's (0.72 x 0.913, 0.42 thick).
 export const SEAT_UNITS = 250;
 const SEAT_TILE = 32;
 const ROW_LEFT = 14;
 const ROW_PITCH = 38;
 const ROW_Y = 72;
 const DEALT_IN = 56;
+const DEALT_SIDE = 68;
 const DEALT: { x: number; y: number; rot: number }[] = [
   { x: 125, y: SEAT_UNITS - DEALT_IN, rot: 0 },
-  { x: SEAT_UNITS - DEALT_IN, y: 125, rot: -90 },
-  { x: 125, y: DEALT_IN, rot: 180 },
-  { x: DEALT_IN, y: 125, rot: 90 },
+  { x: SEAT_UNITS - DEALT_SIDE, y: 125, rot: 0 },
+  { x: 125, y: DEALT_IN, rot: 0 },
+  { x: DEALT_SIDE, y: 125, rot: 0 },
 ];
+// Where the 筒 go once everyone's seated: off the far edge of the table.
+const AWAY_Y = -40;
 
 // The ceremony as the table shows it: the six faces in the shuffled row,
 // the row once the 筒 are at its ends, and (once dealt) each wind's player
@@ -83,6 +87,14 @@ export function seatsScene(feltW: number, t: SeatsTable): FeltScene {
     else if (t.step === 4) {
       pose = was;
       anim = { key: `flip:${face}`, delay: i * 0.06, dur: 0.5, from: turnOver(was), shadow: () => shadow(was) };
+    } else if (pin && t.step >= 8) {
+      // Done with: swept off the table as everyone takes their seat.
+      pose = { ...edged, y: AWAY_Y * u };
+      const to = pose;
+      const off = between(edged, to, 0.3 * em);
+      pieces.push({ face, m: scale(0), shade: LIT, tint: 1, anim: { key: `away:${face}`, delay: 0, dur: 0.5, pose: off } });
+      quads.push({ kind: "shadow", m: scale(0), anim: { key: `away:${face}:shadow`, delay: 0, dur: 0.5, pose: (k) => shadow({ ...edged, y: lerp(edged.y, to.y, ease(k)) }) } });
+      return;
     } else if (t.step < 7 || pin || !deal) {
       pose = edged;
       const slide = between(was, edged, 0.3 * em);
@@ -92,6 +104,9 @@ export function seatsScene(feltW: number, t: SeatsTable): FeltScene {
       const toss = between(edged, pose, 1.4 * em);
       const to = pose;
       anim = { key: `deal:${face}`, delay: deal.order * 0.09, dur: 0.6, from: toss, shadow: (k) => shadow({ ...to, x: lerp(edged.x, to.x, ease(k)), y: lerp(edged.y, to.y, ease(k)) }) };
+    } else if (deal.at === deal.seat) {
+      // Their own seat already: it stays put.
+      pose = atSeat(deal.seat);
     } else {
       const from = atSeat(deal.at);
       pose = atSeat(deal.seat);
@@ -151,6 +166,18 @@ const turned = (x: number, y: number): [number, number] => {
   const dy = y - SPAN / 2;
   return [dx * Math.cos(TILT) - dy * Math.sin(TILT), dx * Math.sin(TILT) + dy * Math.cos(TILT)];
 };
+// The wall's inner face, all round (the dice bounce off it): its corners,
+// in the felt's px.
+export function wallFence(feltW: number): [number, number][] {
+  const w = (feltW / 2 - WALL_BORDER) / REACH;
+  const lo = WALL_JUT + DEPTH;
+  const hi = WALL_STACKS;
+  return ([[lo, lo], [hi, lo], [hi, hi], [lo, hi]] as const).map(([x, y]) => {
+    const [tx, ty] = turned(x, y);
+    return [feltW / 2 + tx * w, feltW / 2 + ty * w];
+  });
+}
+
 // How far the turned wall reaches from the middle, either way (in stacks):
 // every stack's corners.
 const REACH = Math.max(

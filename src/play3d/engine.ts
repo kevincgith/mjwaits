@@ -11,6 +11,7 @@
 // .play-hand's own - so the tiles sit on the page's felt, by its compass.
 
 import * as THREE from "three";
+import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { THICK, TILE_H, TILE_R, TILE_W, type Layout, type Piece, type Quad, type QuadKind } from "./layout";
 import type { Mat } from "./mat";
 import type { Atlas } from "./textures";
@@ -20,6 +21,8 @@ const MAX_FELT = 260;
 const MAX_HAND = 48;
 // A peek's tiles: those seen through in the rack, and those lifted out of it.
 const MAX_GLASS = 16;
+// The Dice tab's dice.
+const MAX_DICE = 3;
 
 // The block, in ems: its rounded footprint stood up `THICK` high, a cap at
 // either end. aPart: 0 a side, 1 the face (top), 2 the back (bottom).
@@ -195,6 +198,70 @@ const markMaterial = (map: THREE.Texture) =>
     side: THREE.DoubleSide,
   });
 
+// A die: a rounded cube a unit across, centred on its middle, as the
+// Dice tab's own dice are drawn above the table (.die): white, its pips
+// in the same ink and red, set the same way - its top as bright as theirs,
+// matt, and the sides it shows you in a warm shade (as .die's side), so it
+// reads as a block, as the tiles do. Its pips on each face by value: 1 up
+// (+z), 6 down, 2 and 5 toward and away from you (+y, -y), 3 and 4 right
+// and left (+x, -x) - see dice.ts's FACE_UP. Chinese dice: the 1 and the 4
+// red, the 1 big.
+const dieMaterial = () =>
+  new THREE.ShaderMaterial({
+    vertexShader: /* glsl */ `
+      varying vec3 vP;
+      varying vec3 vN;
+      varying vec3 vLit;
+      void main() {
+        vP = position;
+        vN = normal;
+        vLit = mat3(instanceMatrix) * normal;
+        gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      varying vec3 vP;
+      varying vec3 vN;
+      varying vec3 vLit;
+      float pip(vec2 uv, vec2 c, float r) {
+        float d = length(uv - c) - r;
+        float w = fwidth(d) * 0.75;
+        return 1.0 - smoothstep(-w, w, d);
+      }
+      float pips(vec2 uv, float v) {
+        if (v < 0.5) return 0.0;
+        if (v < 1.5) return pip(uv, vec2(0.0), 0.16);
+        float g = 0.255;
+        float r = 0.092;
+        float m = max(pip(uv, vec2(-g, -g), r), pip(uv, vec2(g, g), r));
+        if (v > 3.5) m = max(m, max(pip(uv, vec2(-g, g), r), pip(uv, vec2(g, -g), r)));
+        if (abs(v - 3.0) < 0.5 || abs(v - 5.0) < 0.5) m = max(m, pip(uv, vec2(0.0), r));
+        if (v > 5.5) m = max(m, max(pip(uv, vec2(-g, 0.0), r), pip(uv, vec2(g, 0.0), r)));
+        return m;
+      }
+      void main() {
+        // Which face: the way it mostly faces (its rounded edges too).
+        vec3 a = abs(vN);
+        float v;
+        vec2 uv;
+        if (a.z >= a.x && a.z >= a.y) { v = vN.z > 0.0 ? 1.0 : 6.0; uv = vP.xy; }
+        else if (a.y >= a.x) { v = vN.y > 0.0 ? 2.0 : 5.0; uv = vP.xz; }
+        else { v = vN.x > 0.0 ? 3.0 : 4.0; uv = vP.yz; }
+        float red = abs(v - 1.0) < 0.5 || abs(v - 4.0) < 0.5 ? 1.0 : 0.0;
+        vec3 ink = mix(${hex(0x1a1a1a)}, ${hex(0xb3261e)}, red);
+        vec3 c = mix(vec3(1.0), ink, pips(uv, v));
+        // Matt: the top full white, a side by how far it's turned from the
+        // light - down to .die's warm side shade.
+        vec3 n = normalize(vLit);
+        float lit = clamp(dot(n, normalize(vec3(-0.2, 0.35, 1.0))) / 0.85, 0.0, 1.0);
+        c *= mix(${hex(0xe2ded6)}, vec3(1.0), lit);
+        gl_FragColor = vec4(c, 1.0);
+      }
+    `,
+    // (As the tiles: CSS's mirrored axes turn its outsides into back faces.)
+    side: THREE.BackSide,
+  });
+
 function unitQuad(): THREE.BufferGeometry {
   const g = new THREE.BufferGeometry();
   g.setAttribute("position", new THREE.Float32BufferAttribute([-0.5, -0.5, 0, 0.5, -0.5, 0, 0.5, 0.5, 0, -0.5, -0.5, 0, 0.5, 0.5, 0, -0.5, 0.5, 0], 3));
@@ -258,6 +325,17 @@ class Space {
     this.tiles.renderOrder = 1;
     this.root.add(this.tiles);
   }
+  // The Dice tab's dice, and where they are (see dice.ts).
+  dice: THREE.InstancedMesh | null = null;
+  private diceItems: { m: Mat; anim?: Quad["anim"] }[] = [];
+  addDice(geometry: THREE.BufferGeometry, material: THREE.Material, max: number) {
+    const m = this.keep(new THREE.InstancedMesh(geometry, material, max));
+    m.frustumCulled = false;
+    m.count = 0;
+    m.renderOrder = 1;
+    this.root.add(m);
+    this.dice = m;
+  }
   addMarks(kind: QuadKind, material: THREE.Material, max: number, order: number) {
     const m = this.keep(new THREE.InstancedMesh(this.keep(unitQuad()), material, max));
     m.frustumCulled = false;
@@ -280,7 +358,7 @@ class Space {
     return f.from + (f.to - f.from) * (k * k * (3 - 2 * k));
   }
 
-  set(pieces: Piece[], quads: Quad[], rects: Atlas["rects"], now: number) {
+  set(pieces: Piece[], quads: Quad[], rects: Atlas["rects"], now: number, dice: { m: Mat; anim?: Quad["anim"] }[] = []) {
     const n = Math.min(pieces.length, this.tiles.instanceMatrix.count);
     this.pieces = pieces.slice(0, n);
     const keys = new Set<string>();
@@ -326,6 +404,11 @@ class Space {
     this.hits = this.pieces.map((p) => p.hit);
     this.picks = this.pieces.map((p) => p.pick);
     this.face.needsUpdate = this.shade.needsUpdate = this.tint.needsUpdate = true;
+    if (this.dice) {
+      this.diceItems = dice.slice(0, this.dice.instanceMatrix.count);
+      this.diceItems.forEach((d) => begin(d.anim));
+      this.dice.count = this.diceItems.length;
+    }
     for (const [kind, mesh] of this.marks) {
       const mine = quads.filter((q) => q.kind === kind).slice(0, mesh.instanceMatrix.count);
       mine.forEach((q) => begin(q.anim));
@@ -343,7 +426,7 @@ class Space {
     let moving = false;
     let fading = false;
     const mat = new THREE.Matrix4();
-    const at = (item: Piece | Quad): Mat => {
+    const at = (item: { m: Mat; anim?: Quad["anim"] }): Mat => {
       const a = item.anim;
       if (!a) return item.m;
       const t = (now - (this.starts.get(a.key) ?? now)) / 1000 - a.delay;
@@ -403,6 +486,10 @@ class Space {
     });
     this.tiles.instanceMatrix.needsUpdate = true;
     if (fading) this.tint.needsUpdate = true;
+    if (this.dice) {
+      this.diceItems.forEach((d, i) => this.dice!.setMatrixAt(i, mat.fromArray(at(d))));
+      this.dice.instanceMatrix.needsUpdate = true;
+    }
     for (const [kind, mesh] of this.marks) {
       (this.quads.get(kind) ?? []).forEach((q, i) => mesh.setMatrixAt(i, mat.fromArray(at(q))));
       mesh.instanceMatrix.needsUpdate = true;
@@ -453,6 +540,7 @@ export class Engine {
     this.glass = new Space(geometry, keep(glassMaterial(tex, atlas.rects.get("back")!)), MAX_GLASS, keep);
     this.glass.addMarks("tray", mark(peekTray()), 1, 0);
     this.felt.addMarks("shadow", mark(tileShadow()), MAX_FELT, 0);
+    this.felt.addDice(keep(new RoundedBoxGeometry(1, 1, 1, 5, 0.13)), keep(dieMaterial()), MAX_DICE);
     this.felt.addMarks("pin", mark(pin()), 4, 2);
     // (18: the Dice tab's counted run along a whole side.)
     this.felt.addMarks("picked", mark(pickedRim()), 18, 2);
@@ -504,7 +592,7 @@ export class Engine {
 
   show(layout: Layout) {
     const now = performance.now();
-    this.felt.set(layout.felt.pieces, layout.felt.quads, this.rects, now);
+    this.felt.set(layout.felt.pieces, layout.felt.quads, this.rects, now, layout.felt.dice);
     this.hand.set(layout.hand.pieces, layout.hand.quads, this.rects, now);
     this.glass.set(layout.felt.glass ?? [], layout.felt.glassQuads ?? [], this.rects, now);
   }

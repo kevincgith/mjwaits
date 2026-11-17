@@ -1466,11 +1466,17 @@ export function SeatsSheet({
   // sat at the bottom is there again: they hold the phone and keep the
   // scores, so the board stays the way they see it. (Only the board's
   // drawing: who sits next to whom is the ceremony's.)
+  // (Turned from the seats as they are when it comes - a swap made since
+  // stays - and, if Done comes first, in what's saved.)
+  const toPhone = (at: string[]) => {
+    const t = at.indexOf(state.seats[0]);
+    return t <= 0 ? at : at.map((_, i) => at[(i + t) % SEATS]);
+  };
+  const turnPending = useRef(false);
   useEffect(() => {
     if (!proposal) return;
     const drawn = proposal.seats.slice();
     const turn = Math.max(0, drawn.indexOf(state.seats[0]));
-    const turned = drawn.map((_, i) => drawn[(i + turn) % SEATS]);
     const moved = drawn.some((p, i) => p !== seats[i]);
     let turnTimer = 0;
     const timer = window.setTimeout(() => {
@@ -1483,7 +1489,13 @@ export function SeatsSheet({
       }
       if (moved) moveSeats(() => drawn);
       // Once they've landed, with a beat to see where they drew.
-      if (turn) turnTimer = window.setTimeout(() => moveSeats(() => turned), moved ? SEAT_MOVE_MS + 450 : 0);
+      if (turn) {
+        turnPending.current = true;
+        turnTimer = window.setTimeout(() => {
+          turnPending.current = false;
+          moveSeats(toPhone);
+        }, moved ? SEAT_MOVE_MS + 450 : 0);
+      }
     }, 380);
     return () => {
       window.clearTimeout(timer);
@@ -1581,23 +1593,29 @@ export function SeatsSheet({
   const anything = seatsChanged || dealerChanged || reset || added.length > 0 || removed.length > 0;
   // 起莊 as the drafted round would leave it, for the gold corner.
   const qiSeat = (dealer - (round === "reset" ? 0 : round === "set" ? custom.hand : hereHand) + SEATS) % SEATS;
-  const submit = () =>
+  const submit = () => {
+    // Done before the table's turned to the phone (see the ceremony's
+    // effect): saved turned, as it was about to be.
+    const final = turnPending.current ? toPhone(seats) : seats;
+    const finalChanged = final.some((p, i) => p !== state.seats[i]);
+    const finalDealer = Math.max(0, final.indexOf(dealerName));
     onDone({
-      seats: seatsChanged ? seats : null,
+      seats: finalChanged ? final : null,
       newNames: added,
       removedNames: removed,
       dealer:
-        dealerChanged || reset
+        finalDealer !== state.dealer || streak !== state.streak || reset
           ? {
               t: "dealer",
               at: Date.now(),
-              seat: dealer,
+              seat: finalDealer,
               streak,
               resetRound: round === "reset",
               ...(round === "set" ? { round: custom } : round === "keep" ? { round: { wind: state.roundWind, hand: hereHand } } : {}),
             }
           : null,
     });
+  };
 
   return (
     <Sheet

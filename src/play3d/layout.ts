@@ -126,7 +126,8 @@ export interface Rack {
 
 export interface Layout {
   // (`glass`: a peek's tiles, clear enough to see through, drawn over the rest.)
-  felt: { pieces: Piece[]; quads: Quad[]; glass?: Piece[]; glassQuads?: Quad[]; racks?: Rack[] };
+  // (`dice`: the Dice tab's - see dice.ts.)
+  felt: { pieces: Piece[]; quads: Quad[]; glass?: Piece[]; glassQuads?: Quad[]; racks?: Rack[]; dice?: { m: Mat; anim?: Anim }[] };
   hand: { pieces: Piece[]; quads: Quad[]; width: number; height: number };
   // The compass's centre on the felt.
   middle: { x: number; y: number };
