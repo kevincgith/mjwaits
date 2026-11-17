@@ -102,8 +102,9 @@ describe("tables over HTTP and the device's memory", () => {
   });
 
   it("reads a table invite from the address", () => {
-    expect(tableFromSearch("?table=3ac9x")).toBe("3AC9X");
-    expect(tableFromSearch("?room=3AC9X")).toBeNull();
+    expect(tableFromSearch("?table=3ac9")).toBe("3AC9");
+    expect(tableFromSearch("?table=3ac9x")).toBeNull();
+    expect(tableFromSearch("?room=3AC9")).toBeNull();
     expect(tableFromSearch("?table=nope!")).toBeNull();
   });
 
@@ -130,8 +131,8 @@ describe("tables over HTTP and the device's memory", () => {
 
 describe("codeFromInvite", () => {
   it("reads the table from a copied invite link, or a bare code", () => {
-    expect(codeFromInvite("https://app.kevinlhc.com/mjwaits/?table=GGEAE")).toBe("GGEAE");
-    expect(codeFromInvite("  ggeae ")).toBe("GGEAE");
+    expect(codeFromInvite("https://app.kevinlhc.com/mjwaits/?table=GGEA")).toBe("GGEA");
+    expect(codeFromInvite("  ggea ")).toBe("GGEA");
     expect(codeFromInvite("https://example.com/")).toBeNull();
     expect(codeFromInvite("hello there")).toBeNull();
   });

@@ -141,7 +141,18 @@ interface Runtime {
   lastCall?: { before: GameState; decisions: (Claim | null)[]; seat: number; unwaited?: number[] } | null;
   overAt?: number; // when the last hand ended
   pausedAt?: number; // when the last person at the table left (see run)
+  // The first of the hands in a row that ended with nobody playing a seat
+  // themself - every seat a bot's or played for (自動, or its person gone) -
+  // and, after WATCH_HANDS of them, the table waiting to be told someone's
+  // still watching (see run).
+  idleSince?: number | null;
+  asking?: boolean;
 }
+
+// A table nobody's playing at themself deals this many hands, then asks
+// whoever's there if they're still watching - and waits for a tap: a
+// forgotten tab doesn't keep it dealing (and writing) for ever.
+export const WATCH_HANDS = 4;
 
 // Playing a seat for its person (自動): the Grandmaster, as the Play tab's 自動.
 const AUTOPLAY_BOT = "grandmaster";
@@ -207,6 +218,13 @@ export class Table extends Hub<TableMessage> {
 
   protected get handsOnHost(): boolean {
     return true;
+  }
+
+  // The host passes on only to someone with a seat - not to whoever's just
+  // watching (who could end the table, or wipe its record with a rematch).
+  protected canHost(personId: string): boolean {
+    this.load(); // (asked between events - a hello, the alarm: the seats as they are now)
+    return this.seatOf(personId) !== null;
   }
 
   private load(): Runtime {
@@ -561,11 +579,22 @@ export class Table extends Hub<TableMessage> {
         this.retime(Date.now());
         break;
       }
+      case "here":
+        // Still watching (anyone at the table, seated or not): it deals on.
+        playing();
+        rt.idleSince = rt.hand + 1; // (the next few hands count afresh)
+        rt.asking = false;
+        break;
       case "ready": {
         playing();
         const seat = seated();
         if (rt.game?.phase.kind !== "over") throw new Refusal("notYourTurn", "the hand isn't over");
         if (!rt.ready.includes(seat)) rt.ready.push(seat);
+        // (Asked if anyone's still watching: "Next hand" says so too.)
+        if (rt.asking) {
+          rt.idleSince = rt.hand + 1;
+          rt.asking = false;
+        }
         break;
       }
       case "peek": {
@@ -626,6 +655,8 @@ export class Table extends Hub<TableMessage> {
           pot: 0,
           chosen: [],
           lastCall: null,
+          idleSince: null,
+          asking: false,
         } satisfies Partial<Runtime>);
         this.sql.exec("DELETE FROM record");
         this.setMeta("recordHead", null);
@@ -634,7 +665,7 @@ export class Table extends Hub<TableMessage> {
       case "react": {
         // Straight out to everyone - not stored, not a change to the table.
         const seat = seated();
-        for (const [ws] of this.conns()) this.send(ws, { t: "reaction", seat, r: msg.r });
+        for (const [ws, c] of this.conns()) if (c.person) this.send(ws, { t: "reaction", seat, r: msg.r });
         return;
       }
     }
@@ -1112,6 +1143,20 @@ export class Table extends Hub<TableMessage> {
         rt.botAt = dealAt;
         return;
       }
+      // Nobody playing a seat themself (bots, 自動, people gone): after
+      // WATCH_HANDS such hands the table asks if anyone's still watching,
+      // and waits to be told (`here`) - no timer, nothing written meanwhile.
+      const idle = !humans.some((h) => online.has(h.id) && !this.actsAlone(h.seat));
+      if (!idle) rt.idleSince = null;
+      else {
+        rt.idleSince ??= rt.hand;
+        if (rt.hand - rt.idleSince + 1 >= WATCH_HANDS) {
+          rt.asking = true;
+          rt.botAt = null;
+          return;
+        }
+      }
+      rt.asking = false;
       const ended = rt.game;
       rt.game = nextHand(ended, undefined, random);
       this.justDealt = true;
@@ -1240,13 +1285,17 @@ export class Table extends Hub<TableMessage> {
           : { turn: null, claims: g.phase.kind === "claims" ? claimOptions(g, seat).filter((c) => !rt.secondChance || this.chanceClaim(c)) : [] };
     }
     const people = this.people();
+    // Who's here without a seat, by name: the players are told who's watching.
+    const watchers = people.filter((p) => online.has(p.id) && !rt.seats.some((s) => s?.kind === "human" && s.id === p.id)).map((p) => p.name);
     return {
       code: this.meta<string>("code")!,
       version: this.clock.version,
       host: this.meta<string>("host"),
       phase: rt.phase,
       seats,
-      watching: people.filter((p) => online.has(p.id) && !rt.seats.some((s) => s?.kind === "human" && s.id === p.id)).length,
+      watching: watchers.length,
+      watchers,
+      ...(rt.asking ? { asking: true } : {}),
       settings: rt.settings,
       totals: rt.totals,
       hand: rt.hand,

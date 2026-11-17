@@ -172,10 +172,11 @@ describe("cleanNickname", () => {
 
 describe("room codes", () => {
   it("accept any case and surrounding spaces, and only the code alphabet", () => {
-    expect(normalizeRoomCode(" 3ac9x ")).toBe("3AC9X");
-    expect(normalizeRoomCode("3AC9")).toBeNull();
-    expect(normalizeRoomCode("3AC9XY")).toBeNull();
-    expect(normalizeRoomCode("0OIL1")).toBeNull();
+    expect(normalizeRoomCode(" 3ac9 ")).toBe("3AC9");
+    expect(normalizeRoomCode("3AC")).toBeNull();
+    // (The five-character codes there used to be: no longer read.)
+    expect(normalizeRoomCode("3AC9X")).toBeNull();
+    expect(normalizeRoomCode("0OIL")).toBeNull();
   });
 
   it("use no look-alike characters", () => {

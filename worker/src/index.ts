@@ -23,6 +23,22 @@ export interface Env {
   TABLES: DurableObjectNamespace<Table>;
   ALLOWED_ORIGINS: string;
   TABLE_PAUSE_MS?: string; // how long a bot's move waits (tests: 0)
+  // Per address (wrangler.jsonc's ratelimits): rooms made, codes asked after.
+  CREATE_LIMIT?: RateLimit;
+  LOOKUP_LIMIT?: RateLimit;
+}
+
+// Whether this address is within `limiter`'s rate. (Cloudflare gives every
+// request its caller's address; one without - a test, local development -
+// isn't counted.)
+async function within(limiter: RateLimit | undefined, request: Request): Promise<boolean> {
+  const ip = request.headers.get("CF-Connecting-IP");
+  if (!limiter || !ip) return true;
+  try {
+    return (await limiter.limit({ key: ip })).success;
+  } catch {
+    return true; // the limiter's own trouble isn't the caller's
+  }
 }
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
@@ -87,6 +103,7 @@ export default {
       if (request.method === "OPTIONS")
         return new Response(null, { status: 204, headers: { ...cors(origin!), "Access-Control-Allow-Methods": "POST", "Access-Control-Max-Age": "86400" } });
       if (request.method !== "POST") return json({ error: "method not allowed" }, 405, { Allow: "POST", ...cors(origin!) });
+      if (!(await within(env.CREATE_LIMIT, request))) return json({ error: "too many rooms made - try again in a minute" }, 429, { "Retry-After": "60", ...cors(origin!) });
       for (let i = 0; i < CREATE_TRIES; i++) {
         const code = randomRoomCode();
         if (await stubFor(env, make[1], code).create(code)) return json({ code }, 201, cors(origin!));
@@ -98,6 +115,7 @@ export default {
     if (info) {
       if (!isAllowedOrigin(origin, env.ALLOWED_ORIGINS)) return json({ error: "origin not allowed" }, 403);
       if (request.method !== "GET") return json({ error: "method not allowed" }, 405, { Allow: "GET", ...cors(origin!) });
+      if (!(await within(env.LOOKUP_LIMIT, request))) return json({ error: "too many tries - wait a minute" }, 429, { "Retry-After": "60", ...cors(origin!) });
       const code = normalizeRoomCode(info[2]);
       const room = code ? await stubFor(env, info[1], code).info() : null;
       return room ? json({ code, ...room }, 200, cors(origin!)) : json({ error: "no such room" }, 404, cors(origin!));
@@ -107,6 +125,7 @@ export default {
     if (scores) {
       if (!isAllowedOrigin(origin, env.ALLOWED_ORIGINS)) return json({ error: "origin not allowed" }, 403);
       if (request.method !== "GET") return json({ error: "method not allowed" }, 405, { Allow: "GET", ...cors(origin!) });
+      if (!(await within(env.LOOKUP_LIMIT, request))) return json({ error: "too many tries - wait a minute" }, 429, { "Retry-After": "60", ...cors(origin!) });
       const code = normalizeRoomCode(scores[1]);
       const game = code ? await env.TABLES.getByName(code).scores() : null;
       return game ? json(game, 200, cors(origin!)) : json({ error: "no record yet" }, 404, cors(origin!));
@@ -117,6 +136,7 @@ export default {
       if (!isAllowedOrigin(origin, env.ALLOWED_ORIGINS)) return new Response("origin not allowed", { status: 403 });
       if (request.method !== "GET" || request.headers.get("Upgrade")?.toLowerCase() !== "websocket")
         return new Response("expected a WebSocket upgrade", { status: 426, headers: { Upgrade: "websocket" } });
+      if (!(await within(env.LOOKUP_LIMIT, request))) return new Response("too many tries - wait a minute", { status: 429, headers: { "Retry-After": "60" } });
       const code = normalizeRoomCode(ws[2]);
       if (!code) return new Response("no such room", { status: 404 });
       return stubFor(env, ws[1], code).fetch(request);

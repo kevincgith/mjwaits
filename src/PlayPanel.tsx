@@ -1636,6 +1636,25 @@ export function PlayPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatBubble?.id]);
   const [reacting, setReacting] = useState(false);
+  // Online: who's watching, by name - and whoever's just started, said for a
+  // few seconds (not whoever was already there when this phone joined).
+  const watcherNames = online?.table.watchers ?? [];
+  const watcherKey = watcherNames.join("\n");
+  const watchersSeen = useRef<string[] | null>(null);
+  const [nowWatching, setNowWatching] = useState<string | null>(null);
+  useEffect(() => {
+    if (!online) return;
+    const before = watchersSeen.current;
+    watchersSeen.current = watcherNames;
+    const came = before ? watcherNames.filter((n) => !before.includes(n)) : [];
+    if (came.length) setNowWatching(came.join(", "));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [watcherKey]);
+  useEffect(() => {
+    if (!nowWatching) return;
+    const id = window.setTimeout(() => setNowWatching(null), 6000);
+    return () => window.clearTimeout(id);
+  }, [nowWatching]);
   // Speech bubbles: the line that fits a bot has said least (counted on this
   // device, across games - see LineCounter), as readily as its personality
   // speaks, with gaps - the table quiet a few seconds between table talk, a
@@ -3640,9 +3659,11 @@ export function PlayPanel({
               }}
             />
           )}
+          {/* Who's watching: one or two by name (the count past that) - and
+              whoever's just started, said outright for a few seconds. */}
           {online && online.table.watching > 0 && (
-            <span className="play-watching" title={`${online.table.watching} watching`}>
-              👁 {online.table.watching}
+            <span className={`play-watching${nowWatching ? " is-new" : ""}`} title={watcherNames.length ? `Watching: ${watcherNames.join(", ")}` : `${online.table.watching} watching`} role={nowWatching ? "status" : undefined}>
+              👁 {nowWatching ? `${nowWatching} started watching` : watcherNames.length > 0 && watcherNames.length <= 2 ? watcherNames.join(", ") : online.table.watching}
             </span>
           )}
           {reacting && online && (
@@ -3907,6 +3928,17 @@ export function PlayPanel({
             </div>
           </div>
         </div>
+        {/* Online, nobody playing a seat themself (bots, 自動): after a few
+            hands the table stops and asks - a tap from anyone deals on. */}
+        {online?.table.asking && (
+          <div className="play-asking" role="dialog" aria-label="Still watching?">
+            <strong>Still watching?</strong>
+            <span>Nobody's playing their own seat, so the table has stopped for now.</span>
+            <button type="button" onClick={() => online.send({ t: "here" })}>
+              Keep going
+            </button>
+          </div>
+        )}
         <Suspense fallback={null}>
           <TableGL view={glView} rootRef={tableRef} feltRef={feltRef} handRef={myRowRef} middleRef={middleRef} onTile={tapTile} onPile={(side, i) => myTake && pickFrom(SIDES.indexOf(side), i)} sweep={swapGiving} onSweep={sweepTile} onPress={pressTile} tileXRef={tileXRef} onCameraMove={cameraMoved} onPeek={onPeek} />
         </Suspense>

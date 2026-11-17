@@ -331,7 +331,8 @@ describe("this device's memory", () => {
   });
 
   it("reads a room code from a link", () => {
-    expect(roomFromSearch("?room=3ac9x")).toBe("3AC9X");
+    expect(roomFromSearch("?room=3ac9")).toBe("3AC9");
+    expect(roomFromSearch("?room=3ac9x")).toBeNull();
     expect(roomFromSearch("?room=nope")).toBeNull();
     expect(roomFromSearch("?h=abc")).toBeNull();
   });

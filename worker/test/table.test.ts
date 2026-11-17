@@ -10,7 +10,7 @@ import { replay, type ScoreGame } from "@mjwaits/shared/engine/ledger";
 import { PROTOCOL_VERSION } from "@mjwaits/shared/protocol/limits";
 import { blindPicks, botSplit, SWAP_PACE_MS, SWAP_TIMER_S, takeOrder, type Pile } from "@mjwaits/shared/engine/swap";
 import type { TableServerMessage, TableState } from "@mjwaits/shared/protocol/table";
-import { BOT_PAUSE_MS, type Table } from "../src/table";
+import { BOT_PAUSE_MS, WATCH_HANDS, type Table } from "../src/table";
 import { BASE, ORIGIN } from "./helpers";
 import { HOST_GONE_MS } from "../src/hub";
 
@@ -243,6 +243,33 @@ describe("the lobby", () => {
     amy.send({ t: "setBot", seat: kevinAt, bot: "wall" });
     const cleared = await amy.table((s) => s.seats[kevinAt]?.kind === "bot");
     expect(cleared.host).toBe(amyIn.id);
+    // Kevin back: the table he made is his to host again.
+    const { welcome: kevinBack } = await join(code, "", host.token);
+    expect(kevinBack.host).toBe(true);
+    expect((await amy.table((s) => s.host !== amyIn.id)).host).toBe(kevinBack.id);
+  });
+
+  it("doesn't hand the host on to someone who's only watching", async () => {
+    const code = await createTable();
+    const { p: host } = await join(code, "Kevin");
+    const { p: dan, welcome: danIn } = await join(code, "Dan");
+    dan.send({ t: "stand" });
+    const watching = await host.table((s) => !s.seats.some((x) => x?.kind === "human" && x.name === "Dan"));
+    // (Who's watching is told by name.)
+    expect(watching.watchers).toEqual(["Dan"]);
+    host.ws.close();
+    await dan.table((s) => s.seats.some((x) => x?.kind === "human" && x.name === "Kevin" && !x.connected));
+    await runInDurableObject(stubFor(code), (t: Table) => {
+      expect((t as unknown as { passHost(now: number): boolean }).passHost(Date.now() + HOST_GONE_MS + 1000)).toBe(false);
+    });
+    // Dan takes a seat: now the table may pass to him.
+    dan.send({ t: "sit", seat: 2 });
+    await dan.table((s) => s.seats[2]?.kind === "human");
+    await runInDurableObject(stubFor(code), (t: Table) => {
+      expect((t as unknown as { passHost(now: number): boolean }).passHost(Date.now() + HOST_GONE_MS + 1000)).toBe(true);
+    });
+    dan.send({ t: "setBot", seat: 3, bot: "wall" });
+    expect((await dan.table((s) => s.seats[3]?.kind === "bot")).host).toBe(danIn.id);
   });
 
   it("seats people and bots; only the host sets up and starts, with every seat filled", async () => {
@@ -517,6 +544,28 @@ describe("observers", () => {
     host.send({ t: "start" });
     const first = await host.table((s) => !!s.view);
     await host.table((s) => (s.view?.discardsMade ?? 0) > (first.view?.discardsMade ?? 0), 10_000);
+  });
+
+  it("asks if anyone's still watching after every four hands nobody played themself, and deals on once told", { timeout: 180_000 }, async () => {
+    const code = await createTable();
+    const { p: host } = await join(code, "Kevin");
+    host.send({ t: "stand" });
+    await host.table((s) => s.seats.every((x) => x === null));
+    for (let seat = 0; seat < 4; seat++) host.send({ t: "setBot", seat, bot: "casual" });
+    await host.table((s) => s.seats.every(Boolean));
+    host.send(allOn(host.latest!.settings));
+    await host.table((s) => !!s.settings.observers);
+    host.send({ t: "start" });
+    // Four hands, then it waits: the fourth over, a fifth not dealt.
+    const asked = await host.table((s) => !!s.asking, 80_000);
+    expect(asked.hand).toBe(WATCH_HANDS);
+    expect(asked.view?.phase.kind).toBe("over");
+    // No timer left running for it: nothing moves until someone answers.
+    expect(await runInDurableObject(stubFor(code), (t: Table) => (t as unknown as { load(): { botAt: number | null; deadline: number | null } }).load())).toMatchObject({ botAt: null, deadline: null });
+    host.send({ t: "here" });
+    const again = await host.table((s) => !!s.asking, 80_000);
+    expect(again.hand).toBe(2 * WATCH_HANDS);
+    expect(host.errors).toEqual([]);
   });
 });
 

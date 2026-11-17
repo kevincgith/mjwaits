@@ -9,7 +9,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { seatWind } from "@mjwaits/shared/engine/game";
 import { MYSTERY_NAME, profileById } from "@mjwaits/shared/engine/bots";
-import { cleanNickname, normalizeRoomCode } from "@mjwaits/shared/protocol/limits";
+import { cleanNickname, normalizeRoomCode, ROOM_CODE_LENGTH } from "@mjwaits/shared/protocol/limits";
 import { BOT_SPEEDS, JACKPOTS, MYSTERY_BOT, TABLE_BOTS, type BotSpeed, type ChatMessage, TURN_TIMERS, type TableBot, type TableClientMessage, type TableSettings, type TableState } from "@mjwaits/shared/protocol/table";
 import { DEFAULT_SWAP_RULES } from "@mjwaits/shared/engine/swap";
 import { SWAP_PRESETS } from "./PlaySwap";
@@ -483,7 +483,7 @@ function Entry({
             onKeyDown={(e) => e.key === "Enter" && normalized && onEnter(normalized)}
             placeholder="CODE"
             aria-label="Table code"
-            maxLength={8}
+            maxLength={ROOM_CODE_LENGTH + 2}
             autoCapitalize="characters"
             autoComplete="off"
             spellCheck={false}
@@ -636,7 +636,12 @@ function Lobby({ table, me, send, onLeave }: { table: TableState; me: Welcome; s
               </svg>
               {shared ? "Link copied" : "Invite"}
             </button>
-            {table.watching > 0 && <span className="ot-watching">{table.watching} watching</span>}
+            {/* (Who, where the table says: up to three by name.) */}
+            {table.watching > 0 && (
+              <span className="ot-watching" title={table.watchers?.join(", ")}>
+                {table.watchers?.length && table.watchers.length <= 3 ? `${table.watchers.join(", ")} watching` : `${table.watching} watching`}
+              </span>
+            )}
           </div>
           {[0, 1, 2, 3].map((k) => {
             const i = (near + k) % 4;
