@@ -21,7 +21,8 @@
 // - 自摸 counts, one payer-pair at a time. A draw keeps every 拉. 投降 lets
 //   the pulled player end one with nothing paid. A hand the holder doesn't
 //   win ends all their 拉.
-// "Half" is rounded by 整數模式 (0.5進1 = up), or left exact when it's off.
+// "Half" is always a whole number: rounded up (0.5進1) or down, as set. (There
+// was a setting to keep it exact, 整數模式 off - nobody played that way.)
 //
 // 反雪: a player who dealt into a 雙響/三響 and then self-draws the next hand
 // someone wins (流局 in between don't count) gets a fixed amount from each of
@@ -50,7 +51,8 @@ export interface ScoreSettings {
   drawKeepsDealer: boolean; // 流局留莊
   jackpot: boolean;
   jackpotPerDraw: number; // from each seated player, per draw
-  integerMode: boolean; // 整數模式
+  /** Gone (整數模式): whole numbers always. Only what a game saved before still carries - never read. */
+  integerMode?: boolean;
   lahRound: "up" | "down"; // 拉's half: 0.5進1 (up) or drop it
   tiRound: "up" | "down"; // 踢's half
   showLah: boolean; // 拉數提示 - 拉 badges on the cards
@@ -90,7 +92,6 @@ export const DEFAULT_SETTINGS: ScoreSettings = {
   drawKeepsDealer: true,
   jackpot: true,
   jackpotPerDraw: 5,
-  integerMode: true,
   lahRound: "up",
   tiRound: "up",
   showLah: true,
@@ -321,8 +322,7 @@ export function previewFanXue(
   return due.winners.filter((w) => seats.includes(w)).map((w) => ({ from: w, to: due.loser, amount: back }));
 }
 
-export function half(value: number, round: "up" | "down", integer: boolean): number {
-  if (!integer) return value / 2;
+export function half(value: number, round: "up" | "down"): number {
   return round === "up" ? Math.ceil(value / 2) : Math.floor(value / 2);
 }
 
@@ -337,7 +337,7 @@ const lahKey = (holder: string, pulled: string) => `${holder}>${pulled}`;
 export function zhaHuKicks(state: Pick<ReplayState, "lahs" | "settings">, caller: string): { player: string; amount: number }[] {
   return state.lahs
     .filter((l) => l.holder === caller)
-    .map((l) => ({ player: l.pulled, amount: half(l.value, state.settings.tiRound, state.settings.integerMode) }))
+    .map((l) => ({ player: l.pulled, amount: half(l.value, state.settings.tiRound) }))
     .filter((k) => k.amount > 0);
 }
 
@@ -381,11 +381,11 @@ export function previewWin(
       let lahKind: PairPayment["lahKind"] = null;
       let lahBefore = 0;
       if (pull) {
-        lah = half(pull.value, settings.lahRound, settings.integerMode);
+        lah = half(pull.value, settings.lahRound);
         lahKind = "拉";
         lahBefore = pull.value;
       } else if (kick) {
-        lah = half(kick.value, settings.tiRound, settings.integerMode);
+        lah = half(kick.value, settings.tiRound);
         lahKind = "踢";
         lahBefore = kick.value;
       }
@@ -695,14 +695,13 @@ export function settle(totals: Record<string, number>, multiplier = 1): { from: 
 }
 
 // The Jackpot split as evenly as it goes, by seat: what won't divide is
-// spread one unit each (1, or 0.1 off 整數模式), from `first` (the 起莊 seat)
-// on round the table - 11 is 3 · 3 · 3 · 2 from seat 0.
-export function evenShares(pot: number, first: number, integer: boolean): number[] {
-  const unit = integer ? 1 : 0.1;
-  const units = Math.round(pot / unit);
-  const each = Math.floor(units / SEATS);
-  const left = units - each * SEATS;
-  return [0, 1, 2, 3].map((seat) => Math.round((each + ((seat - first + SEATS) % SEATS < left ? 1 : 0)) * unit * 10) / 10);
+// spread one each, from `first` (the 起莊 seat) on round the table - 11 is
+// 3 · 3 · 3 · 2 from seat 0.
+export function evenShares(pot: number, first: number): number[] {
+  const whole = Math.round(pot);
+  const each = Math.floor(whole / SEATS);
+  const left = whole - each * SEATS;
+  return [0, 1, 2, 3].map((seat) => each + ((seat - first + SEATS) % SEATS < left ? 1 : 0));
 }
 
 // ---- Chips -----------------------------------------------------------------
@@ -716,6 +715,14 @@ export function evenShares(pot: number, first: number, integer: boolean): number
 // settled between its own two players, so the handovers are pair by pair -
 // never netted across the table. The Jackpot is a pile of its own (彩池).
 export const CHIP_POT = "彩池";
+
+// What's wrong with a player's name, if anything (to tell whoever typed it):
+// ">" joins two names in the ledger's "from>to" keys, and 彩池 is the pot's.
+export function nameProblem(name: string): string | null {
+  if (name.includes(">")) return `Names can't have ">" in them.`;
+  if (name.trim() === CHIP_POT) return `${CHIP_POT} is the Jackpot's name - pick another.`;
+  return null;
+}
 
 export function chipMoves(before: Pick<ReplayState, "paid" | "lahs">, after: Pick<ReplayState, "paid" | "lahs">): { from: string; to: string; amount: number }[] {
   // Between each two players, what has changed hands in chips so far: what
@@ -786,6 +793,27 @@ export function normalizeStore(saved: Partial<ScoreStore>): ScoreStore {
 // A backup file is the whole store, wrapped so an import can tell it apart
 // from any other JSON. Older or newer versions read it the same way a saved
 // store is read (normalizeStore), so a backup outlives app updates.
+
+// ---- 牌型 details ----------------------------------------------------------
+// The patterns a win carries from Scoring are good to look back on at the
+// table, and most of a saved game's size after. A game that's over can drop
+// them: its tai, who won, who dealt in and every payment stay as they were.
+
+// How many of a game's wins carry their patterns.
+export function patternNoteCount(game: ScoreGame): number {
+  return game.events.reduce((n, ev) => n + (ev.t === "win" ? ev.winners.filter((w) => w.patterns?.length).length : 0), 0);
+}
+
+// The game without them (and marked as changed `at`, so a merge with an
+// older backup keeps this copy, not the backup's with its patterns).
+export function withoutPatternNotes(game: ScoreGame, at = Date.now()): ScoreGame {
+  if (patternNoteCount(game) === 0) return game;
+  const events = game.events.map((ev) => {
+    if (ev.t !== "win" || !ev.winners.some((w) => w.patterns?.length)) return ev;
+    return { ...ev, winners: ev.winners.map((w) => (w.patterns?.length ? { seat: w.seat, tai: w.tai } : w)) };
+  });
+  return { ...game, events, updatedAt: at };
+}
 
 const BACKUP_KIND = "mjwaits.scores";
 const BACKUP_VERSION = 1;

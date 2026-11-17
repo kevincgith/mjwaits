@@ -43,6 +43,7 @@ import {
 } from "./tileArt";
 import { BonusGlyphSpan, TileGlyphSpan } from "./TileGlyphs";
 import { OnlineTable, PlayHome, PlayPanel, ScoresPanel, SharedScoresView, TaiRulesSheet } from "./LazyParts";
+import { Crashed } from "./Crashed";
 import { savedSummary } from "./lib/playSaved";
 import { loadTestHands } from "./lib/lazyParts";
 import { inviteLaunch, startInstallAtInvite } from "./lib/onlineTable";
@@ -6489,6 +6490,8 @@ function ScoringPanel({
     setWinningTile(snap.winningTile);
     // New tiles get ids past the ones coming back.
     nextTileId.current = Math.max(nextTileId.current, ...snap.concealed.map((t) => t.id + 1), ...(snap.winningTile ? [snap.winningTile.id + 1] : []));
+    // (Melds too: a new one mustn't share an id with one that came back.)
+    nextMeldId.current = Math.max(nextMeldId.current, ...snap.declared.map((m) => m.id + 1));
     setSeatWind(snap.seatWind);
     setRoundWind(snap.roundWind);
     setSelfDraw(snap.selfDraw);
@@ -10735,6 +10738,9 @@ function App() {
           </div>
         </>
       )}
+      {/* (A tab that throws as it's drawn says so in its own place - the
+          tab bar and the other tabs go on working: see Crashed.) */}
+      <Crashed resetKey={sharedScores ? "shared" : mode}>
       {sharedScores && (
         <SharedScoresView
           snap={sharedScores}
@@ -10881,6 +10887,7 @@ function App() {
           }}
         />
       )}
+      </Crashed>
       {/* The maker's credit first and clearest (linking to the source on
           GitHub), then the build and a Credits link - every attribution the
           tile art and the scanner ask for - small beneath it. */}

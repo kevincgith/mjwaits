@@ -2,6 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
+import { Crashed } from './Crashed'
 import { warmLazyParts } from './lib/lazyParts'
 
 // Offline support and installing to the home screen (see public/sw.js).
@@ -47,7 +48,10 @@ if (splash && getComputedStyle(splash).display !== 'none') {
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    {/* The last resort: anything that throws outside a tab (see Crashed). */}
+    <Crashed whole>
+      <App />
+    </Crashed>
   </StrictMode>,
 )
 

@@ -49,6 +49,8 @@ export const SettingsSchema = object(
     drawKeepsDealer: optBool,
     jackpot: optBool,
     jackpotPerDraw: optNum,
+    // (A setting that's gone - the ledger is whole numbers always - still
+    // in games saved before, and sent by apps not yet updated: let through.)
     integerMode: optBool,
     lahRound: optional(oneOf("up", "down")),
     tiRound: optional(oneOf("up", "down")),

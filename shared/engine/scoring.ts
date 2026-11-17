@@ -103,8 +103,9 @@ function classifyDeclaredMeld(ranks: number[], suit: Suit, raw: string): MeldKin
     if (!allSame) throw new ParseError(`Invalid kong "(${raw})" (all 4 tiles must match)`);
     return "kong";
   }
-  if (allSame) return "triplet";
-  if (suit !== "z" && ranks[1] === ranks[0] + 1 && ranks[2] === ranks[1] + 1) return "run";
+  // (Three tiles exactly: "(11m)" or "(12345m)" is no meld.)
+  if (ranks.length === 3 && allSame) return "triplet";
+  if (ranks.length === 3 && suit !== "z" && ranks[1] === ranks[0] + 1 && ranks[2] === ranks[1] + 1) return "run";
   throw new ParseError(`Invalid meld "(${raw})" (must be a triplet, or a run of 3 consecutive tiles)`);
 }
 
@@ -3493,8 +3494,10 @@ export const PATTERNS: TaiPattern[] = [
     // directly rather than reading the already-filtered/excluded PATTERNS
     // result, since this needs to know what *would* fire, not what
     // survives exclusion.
+    // (Checked here too, not left to 自摸 firing: with 自摸 set to 0 台 or
+    // ignored it wouldn't stop this, and 大雞 and 大鴨 never count together.)
     score: (hand, ctx) =>
-      hand.bonusTiles.length > 1 || anyOtherPatternFires(hand, ctx, [])
+      ctx.selfDraw || hand.bonusTiles.length > 1 || anyOtherPatternFires(hand, ctx, [])
         ? 0
         : 1,
   },

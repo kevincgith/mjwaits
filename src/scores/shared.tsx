@@ -94,7 +94,8 @@ export interface SeatingResult {
   nonce: number;
 }
 
-// Numbers: a true minus sign, one decimal only when 整數模式 is off.
+// Numbers: a true minus sign (one decimal for a game from before the ledger
+// was whole numbers only).
 export const fmt = (n: number) => {
   const s = Number.isInteger(n) ? String(Math.abs(n)) : Math.abs(n).toFixed(1);
   return n < 0 ? `−${s}` : s;

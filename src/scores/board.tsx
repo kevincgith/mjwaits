@@ -294,8 +294,9 @@ export function RecentRows({
 export function winInitial(ev: Extract<ScoreEvent, { t: "win" }>): HandInitial {
   const first = ev.winners[0];
   const base = { from: ev.from, jackpot: ev.jackpotTo !== undefined, patterns: first.patterns ?? [], patternsFor: first.seat, rules: first.rules };
+  // (A 雙響/三響: every winner's own patterns come back with them.)
   return ev.winners.length > 1
-    ? { ...base, selfDraw: false, entries: ev.winners.map((w) => ({ seat: w.seat, tai: String(w.tai) })) }
+    ? { ...base, selfDraw: false, entries: ev.winners.map((w) => ({ seat: w.seat, tai: String(w.tai), ...(w.patterns?.length ? { patterns: w.patterns, ...(w.rules ? { rules: w.rules } : {}) } : {}) })) }
     : { ...base, selfDraw: ev.from === null, tai: first.tai };
 }
 
@@ -523,7 +524,11 @@ export function Board({
           rules: request.reopenOnly ? undefined : request.rules,
           from: request.from ?? -1,
           jackpot: request.jackpot,
-          entries: request.reopenOnly ? draft.entries : draft.entries.map((e) => (e.seat === scored ? { ...e, tai: String(request.tai) } : e)),
+          // (The winner just scored takes their tai and their patterns; the
+          // others keep what they had.)
+          entries: request.reopenOnly
+            ? draft.entries
+            : draft.entries.map((e) => (e.seat === scored ? { seat: e.seat, tai: String(request.tai), patterns: request.patterns, ...(request.rules ? { rules: request.rules } : {}) } : e)),
           patternsFor: scored,
           ...(request.reopenOnly || request.scoring === undefined ? {} : { scoring: request.scoring }),
           ...(request.reopenOnly ? {} : { note: `From Scoring: ${state.seats[scored]} ${request.tai} farn${dealerNote}${rulesNote}.` }),
