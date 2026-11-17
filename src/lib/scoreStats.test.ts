@@ -64,6 +64,30 @@ describe("playerStats", () => {
     expect(stats.C.avgDealInLoss).toBeNull();
   });
 
+  it("座位: each seat wind and each relative seat add up", () => {
+    for (const p of Object.values(stats)) {
+      // Every hand once per wind; hands' nets add up to the net, less 獎罰.
+      expect(p.seatWinds.reduce((t, l) => t + l.hands, 0)).toBe(p.hands);
+      expect(p.seatWinds.reduce((t, l) => t + l.net, 0)).toBe(p.net - p.bonus);
+      expect(p.seatWinds.reduce((t, l) => t + l.wins, 0)).toBe(p.wins + p.selfDraws);
+      expect(p.seatWinds.reduce((t, l) => t + l.dealIns, 0)).toBe(p.dealIns);
+      expect(p.positions.every((l) => l.hands === p.hands)).toBe(true);
+    }
+  });
+
+  it("座位: 門風 from the dealer, and 下家 / 對家 / 上家 in turn order", () => {
+    const g1 = game([win(1, 10, 0), win(0, 4, null)]);
+    const s1 = Object.fromEntries(playerStats(replay(g1), g1).map((s) => [s.player, s]));
+    // 局1: A deals (東) and deals in to B, A's 下家 - the deal passes. 局2: B
+    // deals, so A is 北, and self-draws (3 × 4, and 踢s B for 5 more).
+    expect(s1.A.seatWinds[0]).toEqual({ hands: 1, wins: 0, selfDraws: 0, dealIns: 1, net: -10 });
+    expect(s1.A.seatWinds[3]).toEqual({ hands: 1, wins: 1, selfDraws: 1, dealIns: 0, net: 17 });
+    expect(s1.B.seatWinds[1]).toEqual({ hands: 1, wins: 1, selfDraws: 0, dealIns: 0, net: 10 });
+    expect(s1.A.positions[0]).toEqual({ hands: 2, net: -1, wonOff: 0, dealtInTo: 1 });
+    expect(s1.B.positions[2]).toEqual({ hands: 2, net: 1, wonOff: 1, dealtInTo: 0 });
+    expect(s1.C.positions[1]).toEqual({ hands: 2, net: -4, wonOff: 0, dealtInTo: 0 });
+  });
+
   it("拉踢淨額: what 拉 and 踢 add-ons made, less what they paid", () => {
     // A: +5 拉 in 局2, then 踢 by B (-10) and by D's 自摸 (-4).
     expect(stats.A.lahNet).toBe(-9);
