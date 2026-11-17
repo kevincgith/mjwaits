@@ -18,6 +18,8 @@ import {
   multiWinTai,
   CHIP_POT,
   nameProblem,
+  patternNoteCount,
+  withoutPatternNotes,
   settle,
   undoEvent,
   withEvent,
@@ -69,9 +71,10 @@ describe("拉 / 踢", () => {
     expect(s.lahs).toEqual([{ holder: "B", pulled: "A", value: 20, count: 1 }]);
   });
 
-  it("rounds the half down when asked, and keeps it exact outside 整數模式", () => {
+  it("rounds the half down when asked - a whole number always, whatever an old game's 整數模式 says", () => {
     expect(replay(game([win(0, 11, 1), win(0, 20, 1)], { lahRound: "down" })).hands[1].pairs[0].worth).toBe(25);
-    expect(replay(game([win(0, 11, 1), win(0, 20, 1)], { integerMode: false })).hands[1].pairs[0].worth).toBe(25.5);
+    expect(replay(game([win(0, 11, 1), win(0, 20, 1)])).hands[1].pairs[0].worth).toBe(26);
+    expect(replay(game([win(0, 11, 1), win(0, 20, 1)], { integerMode: false })).hands[1].pairs[0].worth).toBe(26);
   });
 
   it("自摸 counts per payer: an existing 拉 grows, the others start fresh", () => {
@@ -446,14 +449,34 @@ describe("籌碼 - chips change hands when a 拉 ends", () => {
 
 describe("Jackpot split evenly", () => {
   it("spreads what won't divide one each, from the 起莊 seat on", () => {
-    expect(evenShares(11, 0, true)).toEqual([3, 3, 3, 2]);
-    expect(evenShares(11, 2, true)).toEqual([3, 2, 3, 3]);
-    expect(evenShares(20, 1, true)).toEqual([5, 5, 5, 5]);
-    expect(evenShares(2, 3, true)).toEqual([1, 0, 0, 1]);
+    expect(evenShares(11, 0)).toEqual([3, 3, 3, 2]);
+    expect(evenShares(11, 2)).toEqual([3, 2, 3, 3]);
+    expect(evenShares(20, 1)).toEqual([5, 5, 5, 5]);
+    expect(evenShares(2, 3)).toEqual([1, 0, 0, 1]);
+  });
+});
+
+describe("牌型 details dropped from a game that's over", () => {
+  const notes = [{ id: "all-pungs", name: "對對胡", tai: 30 }];
+  const scored: ScoreEvent = { t: "win", at: 5, winners: [{ seat: 0, tai: 35, patterns: notes, rules: "abc" }, { seat: 2, tai: 8 }], from: 1, source: "scoring" };
+  const played = game([win(1, 3, 0), scored, draw]);
+
+  it("counts the wins that carry them, and takes them off - tai, winners and every payment as they were", () => {
+    expect(patternNoteCount(played)).toBe(1);
+    const bare = withoutPatternNotes(played, 99);
+    expect(patternNoteCount(bare)).toBe(0);
+    expect(bare.updatedAt).toBe(99);
+    expect(bare.events[1]).toEqual({ ...scored, winners: [{ seat: 0, tai: 35 }, { seat: 2, tai: 8 }] });
+    expect(replay(bare).totals).toEqual(replay(played).totals);
+    // (Nothing to drop: the game itself, untouched.)
+    expect(withoutPatternNotes(bare, 100)).toBe(bare);
   });
 
-  it("goes to 0.1 off 整數模式", () => {
-    expect(evenShares(11, 0, false)).toEqual([2.8, 2.8, 2.7, 2.7]);
+  it("is kept over an older backup's copy when merged", () => {
+    const store = (history: ScoreGame[]): ScoreStore => ({ active: null, history, roster: [], settings: PLAIN });
+    const bare = withoutPatternNotes(played, played.startedAt + 1000);
+    expect(patternNoteCount(mergeScores(store([bare]), store([played])).history[0])).toBe(0);
+    expect(patternNoteCount(mergeScores(store([played]), store([bare])).history[0])).toBe(0);
   });
 });
 

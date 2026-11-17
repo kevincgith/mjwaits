@@ -2,7 +2,7 @@
 // past games and backups.
 
 import { Fragment, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { exportScores, mergeScores, parseBackup, replay, replayCached, type HandResult, type ReplayState, type ScoreGame, type ScoreStore, playTimes } from "@mjwaits/shared/engine/ledger";
+import { exportScores, mergeScores, parseBackup, patternNoteCount, withoutPatternNotes, replay, replayCached, type HandResult, type ReplayState, type ScoreGame, type ScoreStore, playTimes } from "@mjwaits/shared/engine/ledger";
 import { sheetCsv, sheetRows, type SheetRow } from "../lib/scoreViews";
 import { careerPlayerStats, careerStats, careerTrend, smoothed, periodKey, periodLabel, periodsOf, type Period, headToHead, marks, patternCounts, handsByPlayer, type WonHand, playerStats, rankedBy, RECENT_HANDS, trend, trendSummary, type PlayerStats, type Swing } from "../lib/scoreStats";
 import { fmt, signed, pct, tone, colorOf, Icons, SectionHead, Monogram, Sheet, Segmented, Sparkline } from "./shared";
@@ -633,7 +633,27 @@ export const handsSinceBackup = (game: ScoreGame, backedUpAt: number | null) =>
 // The board's nudge comes every this many hands without a backup.
 export const BACKUP_NUDGE_HANDS = 16;
 
-export function BackupCard({ store, setStore }: { store: ScoreStore; setStore: (s: ScoreStore) => void }) {
+// Dropping the 牌型 details wins carry from Scoring, once a game's over: good
+// to look back on at the table, most of what a saved game weighs after. Two
+// taps (it can't be taken back); nothing to show with none to drop.
+function DropPatterns({ count, what, onDrop }: { count: number; what: string; onDrop: () => void }) {
+  const [armed, setArmed] = useState(false);
+  if (count === 0) return null;
+  return (
+    <div className="sc-drop-patterns">
+      <p className="sc-help">
+        {count} win{count === 1 ? "" : "s"} in {what} keep{count === 1 ? "s" : ""} the 牌型 worked out on Scoring. Removing them makes the saved scores and backup files smaller: the 台, who won and every payment stay, but those hands leave the 牌型 stats. It can't be undone.
+      </p>
+      <button type="button" className={armed ? "sc-danger" : "sc-secondary"} onClick={() => (armed ? (setArmed(false), onDrop()) : setArmed(true))} onBlur={() => setArmed(false)}>
+        {armed ? "Tap again to remove" : "Remove 牌型 details"}
+      </button>
+    </div>
+  );
+}
+
+// `cleanup`: with the way to drop the 牌型 details of the games that are over
+// (紀錄's card - not the one on the setup screen).
+export function BackupCard({ store, setStore, cleanup }: { store: ScoreStore; setStore: (s: ScoreStore) => void; cleanup?: boolean }) {
   const [backedUpAt, setBackedUpAt] = useState(readBackedUpAt);
   const [incoming, setIncoming] = useState<{ name: string; store: ScoreStore } | null>(null);
   const [message, setMessage] = useState<{ text: string; bad?: boolean } | null>(null);
@@ -679,6 +699,16 @@ export function BackupCard({ store, setStore }: { store: ScoreStore; setStore: (
           <input ref={fileRef} type="file" accept="application/json,.json" hidden onChange={(e) => void pick(e.target.files?.[0])} />
         </div>
         {message && <p className={message.bad ? "sc-warn sc-backup-message" : "sc-help sc-backup-message"}>{message.text}</p>}
+        {/* The games that are over (never the one in progress). */}
+        {cleanup && <DropPatterns
+          count={store.history.reduce((n, g) => n + patternNoteCount(g), 0)}
+          what="the games that are over"
+          onDrop={() => {
+            const at = Date.now();
+            setStore({ ...store, history: store.history.map((g) => withoutPatternNotes(g, at)) });
+            setMessage({ text: "牌型 details removed from the games that are over." });
+          }}
+        />}
       </div>
       {incoming && (
         <Sheet
@@ -877,7 +907,7 @@ export function StatsPanel({ store, setStore, view, setView }: { store: ScoreSto
           onDelete={(id) => setStore?.({ ...store, history: store.history.filter((g) => g.id !== id) })}
         />
       )}
-      {view === "history" && setStore && <BackupCard store={store} setStore={setStore} />}
+      {view === "history" && setStore && <BackupCard store={store} setStore={setStore} cleanup />}
     </>
   );
 }
@@ -1407,6 +1437,16 @@ export function HistoryCard({
             onEdit({ ...editing, name: name || undefined, startedAt, startTime: startTime || undefined, endTime: endTime || undefined, location: location || undefined, updatedAt: Date.now() });
             setEditing(null);
           }}
+          footer={
+            <DropPatterns
+              count={patternNoteCount(editing)}
+              what="this game"
+              onDrop={() => {
+                onEdit(withoutPatternNotes(editing));
+                setEditing(null);
+              }}
+            />
+          }
         />
       )}
       <SectionHead zh="生涯" en="Career">

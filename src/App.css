@@ -10019,6 +10019,22 @@ html.playing body {
   margin: 0.6rem 0 0;
 }
 
+/* Removing the 牌型 details of games that are over: what it does, then the
+   button (see DropPatterns). */
+.sc-drop-patterns {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin-top: 0.9rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--separator, rgba(60, 60, 67, 0.12));
+}
+
+.sc-drop-patterns > p {
+  margin: 0;
+}
+
 /* 走勢 chart */
 .sc-chart {
   position: relative;

@@ -160,7 +160,10 @@ export type HandInitial = {
 // from its foot when it's switched on in 設定.
 export type HandMode = "win" | "bonus" | "zhaHu";
 
-export type DraftEntry = { seat: number; tai: string };
+// (A winner's own patterns, once their hand's been scored on Scoring - and
+// the tai rules it was scored under, if custom: kept with them, so a
+// 雙響/三響 keeps every winner's.)
+export type DraftEntry = { seat: number; tai: string; patterns?: PatternNote[]; rules?: string };
 
 // What the 食胡 sheet hands over when asking Scoring to work a hand out:
 // `target` is the winner being scored, `entries` the whole draft.
@@ -368,11 +371,15 @@ export function WinSheet({
     lastTap.current = { seat, at: now, from, entries, focus };
     pickFrom(from === seat ? -1 : seat);
   };
-  const winners: WinnerEntry[] = entries.map((e) => ({
-    seat: e.seat,
-    tai: Number(e.tai || 0),
-    ...(e.seat === patternsFor && initial?.patterns.length ? { patterns: initial.patterns, ...(initial.rules ? { rules: initial.rules } : {}) } : {}),
-  }));
+  // Each winner's patterns: their own (a 雙響/三響 - see DraftEntry), or the
+  // ones this sheet opened with, for whoever they're for.
+  const notesOf = (e: DraftEntry): { patterns?: PatternNote[]; rules?: string } =>
+    e.patterns?.length
+      ? { patterns: e.patterns, ...(e.rules ? { rules: e.rules } : {}) }
+      : e.seat === patternsFor && initial?.patterns.length
+        ? { patterns: initial.patterns, ...(initial.rules ? { rules: initial.rules } : {}) }
+        : {};
+  const winners: WinnerEntry[] = entries.map((e) => ({ seat: e.seat, tai: Number(e.tai || 0), ...notesOf(e) }));
   const fromValid = from === null ? multi === 1 : from >= 0;
   // Every winner needs a tai above 0.
   const complete = fromValid && entries.every((e) => Number(e.tai) > 0);
@@ -406,7 +413,7 @@ export function WinSheet({
       at: Date.now(),
       winners,
       from,
-      source: initial?.patterns.length ? "scoring" : "quick",
+      source: winners.some((w) => w.patterns?.length) ? "scoring" : "quick",
       ...(multiTai ? { multiTai } : {}),
       ...(jackpot && state.pot > 0 ? { jackpotTo: seats[winnerSeat] } : {}),
     });
@@ -1825,7 +1832,7 @@ export function LahSheet({
     .sort((x, y) => y.total - x.total);
   // What the next hand between the two adds, whoever wins it: half the 拉
   // (拉 and 踢 take the same half, give or take a rounding setting).
-  const next = (value: number) => half(value, state.settings.lahRound, state.settings.integerMode);
+  const next = (value: number) => half(value, state.settings.lahRound);
   // 投降 takes two taps: the first arms it (確定), the second ends that 拉. A tap
   // anywhere else disarms it.
   const [armed, setArmed] = useState<string | null>(null);
@@ -1950,7 +1957,7 @@ export function JackpotSheet({
     setMode(m);
     setShares(state.seats.map(() => 0));
   };
-  const evenly = () => setShares(evenShares(state.pot, state.roundStartDealer, state.settings.integerMode));
+  const evenly = () => setShares(evenShares(state.pot, state.roundStartDealer));
   const out = mode === "out";
   const ok = total > 0 && (!out || total <= state.pot);
   const sharesOf = () => state.seats.map((player, i) => ({ player, amount: shares[i] })).filter((x) => x.amount > 0);
@@ -2088,7 +2095,8 @@ export function ClearableInput({
 
 export type GameLabel = { name: string; startedAt: number; startTime: string; endTime: string; location: string };
 
-export function NameSheet({ initial, onSave, onClose }: { initial: GameLabel; onSave: (label: GameLabel) => void; onClose: () => void }) {
+// `footer`: anything else there is to do to this game, under its fields.
+export function NameSheet({ initial, onSave, onClose, footer }: { initial: GameLabel; onSave: (label: GameLabel) => void; onClose: () => void; footer?: ReactNode }) {
   const [text, setText] = useState(initial.name);
   const trimmed = text.trim();
   const day = (at: number) => {
@@ -2166,6 +2174,7 @@ export function NameSheet({ initial, onSave, onClose }: { initial: GameLabel; on
         </label>
       </div>
       <span className="sc-help">Location, start and end are optional - left empty, they aren't shown.</span>
+      {footer}
     </Sheet>
   );
 }
@@ -2426,7 +2435,6 @@ export const SETTING_GROUPS: { title: string; rows: { key: keyof ScoreSettings; 
   {
     title: "拉踢 Pull & kick",
     rows: [
-      { key: "integerMode", label: "整數模式", help: "Whole numbers only", kind: "bool" },
       { key: "lahRound", label: "拉減半", help: "Rounding when a 拉 halves", kind: "round" },
       { key: "tiRound", label: "踢減半", help: "Rounding when a 踢 halves", kind: "round" },
       { key: "fanXue", label: "反雪", help: "Paid by each winner, into the 拉 on them", kind: "bool" },
