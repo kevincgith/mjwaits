@@ -1134,6 +1134,23 @@ export function PlayPanel({
   const joinedHand = useRef(online && pastDeal(game, !!online.table.settings.swapRules?.winds.includes(game.roundWind)) ? online.table.hand : null);
   // A deal just begun - and seen beginning.
   const dealFresh = game.discardsMade === 0 && !(online && joinedHand.current === online.table.hand);
+  // Something the table says or shows a moment on (a bot's line, a burst,
+  // 獎池): `later`, not a bare timeout, so it's dropped when the table's left
+  // or a new game starts - and never heard on Play's home, or said by the
+  // last game's line-up in the next.
+  const pendingSays = useRef(new Set<number>());
+  const later = (fn: () => void, ms: number) => {
+    const id = window.setTimeout(() => {
+      pendingSays.current.delete(id);
+      fn();
+    }, ms);
+    pendingSays.current.add(id);
+  };
+  const dropPendingSays = () => {
+    pendingSays.current.forEach((id) => window.clearTimeout(id));
+    pendingSays.current.clear();
+  };
+  useEffect(() => dropPendingSays, []);
   // When this table opened: anything the table said before then (a reaction, a refusal) is old news.
   const openedAt = useRef(Date.now());
   const [hint, setHint] = useState(() => saved?.hint ?? false);
@@ -1412,7 +1429,7 @@ export function PlayPanel({
       setPotNote({ won: was.pot, seat });
       // After its 自摸.
       const pot = was.pot;
-      window.setTimeout(() => showBurst(seat, `獎池 ${signed(pot)}`), BURST_MS);
+      later(() => showBurst(seat, `獎池 ${signed(pot)}`), BURST_MS);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [localGame]);
@@ -1438,7 +1455,7 @@ export function PlayPanel({
     } else if (r.winner !== null) {
       const seat = r.winner;
       setPotNote({ won: was, seat });
-      window.setTimeout(() => showBurst(seat, `獎池 ${signed(was)}`), BURST_MS);
+      later(() => showBurst(seat, `獎池 ${signed(was)}`), BURST_MS);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onlinePot, game.phase.kind]);
@@ -1494,12 +1511,21 @@ export function PlayPanel({
   }
   const decisions = movesSeen.current.decisions;
   const [reviewOpen, setReviewOpen] = useState(false);
-  // Sound: woken by the first tap (iPhones need one); a clack whenever a
-  // tile hits a pond, a softer tick as you draw.
+  // Sound: woken by a tap (iPhones need one) - every tap, not just the first:
+  // after a call, Siri or the lock screen the phone leaves the audio asleep,
+  // and the table stayed silent for the rest of the game. (Nothing to do
+  // when it's running.) Back on screen, it's tried too - where the phone
+  // allows it without a tap. A clack whenever a tile hits a pond, a softer
+  // tick as you draw.
   useEffect(() => {
     const wake = () => wakeAudio();
-    window.addEventListener("pointerdown", wake, { once: true });
-    return () => window.removeEventListener("pointerdown", wake);
+    const shown = () => document.visibilityState === "visible" && wakeAudio();
+    window.addEventListener("pointerdown", wake);
+    document.addEventListener("visibilitychange", shown);
+    return () => {
+      window.removeEventListener("pointerdown", wake);
+      document.removeEventListener("visibilitychange", shown);
+    };
   }, []);
   const soundBefore = useRef<GameState | null>(null);
   useEffect(() => {
@@ -1720,7 +1746,7 @@ export function PlayPanel({
     if (voices[seat]) sayLineAloud(voices[seat]!, kind, raw);
   };
   const sayLater = (ms: number, seat: number, kind: keyof Speech, opts: { target?: number; pool?: string[]; tai?: number; own?: boolean } = {}) =>
-    window.setTimeout(() => say(seat, kind, opts), ms);
+    later(() => say(seat, kind, opts), ms);
   // A bot's lines for another (see RIVALS), if it has any for that one.
   const rivalLines = (seat: number, at: number): string[] | undefined => {
     const me = styleOf(seat);
@@ -1745,7 +1771,7 @@ export function PlayPanel({
   // the one whose discard it was has something to say about it.
   const sayCall = (seat: number, call: CallKind, from: number) => {
     if (Math.random() < 0.3 + 0.65 * chattiness(seat)) say(seat, "call", { call });
-    if (from !== seat && bots[from] && Math.random() < chattiness(from) * 0.35) window.setTimeout(() => say(from, "claimedFrom", { call, target: seat }), 1200);
+    if (from !== seat && bots[from] && Math.random() < chattiness(from) * 0.35) later(() => say(from, "claimedFrom", { call, target: seat }), 1200);
   };
   // 叮: said by whoever declares it - and sometimes someone else reacts.
   const sayRiichi = (seat: number) => {
@@ -1911,7 +1937,7 @@ export function PlayPanel({
     const waits = burstAt.current.at > now - 100 && (kind === "flower" || (kind === "paid" && burstAt.current.kind !== "call"));
     const at = waits ? burstAt.current.at + BURST_MS : now;
     burstAt.current = { at, kind };
-    if (at > now) window.setTimeout(() => putBurst(seat, label, deltas), at - now);
+    if (at > now) later(() => putBurst(seat, label, deltas), at - now);
     else putBurst(seat, label, deltas);
   };
   const putBurst = (seat: number, label: string, deltas?: number[]) => {
@@ -2170,7 +2196,7 @@ export function PlayPanel({
     setSurrendered((was) => was.map((x) => (due.includes(x) ? { ...x, shown: true } : x)));
     for (const seat of new Set(due.map((x) => Number(x.lah.pulled)))) {
       showBurst(seat, SURRENDER);
-      if (bots[seat]) window.setTimeout(() => say(seat, "surrender"), 300);
+      if (bots[seat]) later(() => say(seat, "surrender"), 300);
     }
     const ids = new Set(due.map((x) => x.id));
     window.setTimeout(() => setSurrendered((was) => was.filter((x) => !ids.has(x.id))), SURRENDER_SHOW_MS);
@@ -2870,7 +2896,9 @@ export function PlayPanel({
 
   // The turn timer (off by default): runs only while the human has to
   // decide, and on running out passes on a call or throws the drawn tile.
-  const deciding = !autoplay && !setupOpen && (myTurn || humanClaims.length > 0 || swapGiving || myTake);
+  // (Not while the deal's dice are rolling: no tap is taken then, so the
+  // dealer's first turn isn't timed until they've landed.)
+  const deciding = !autoplay && !setupOpen && !rolling && (myTurn || humanClaims.length > 0 || swapGiving || myTake);
   // What the timer runs for: a move - or, on 換牌, your give or take (the
   // bots giving alongside you don't restart it).
   const timerFor: unknown = swapPhase ? [game.dealer, game.dealerStreak, game.roundWind, swapPhase.round, swapPhase.stage, swapPhase.taker].join() : game;
@@ -3263,6 +3291,8 @@ export function PlayPanel({
     setRecord(false);
   };
   const startNewGame = () => {
+    // (Nothing the last game was about to say is said in this one.)
+    dropPendingSays();
     setTotals([0, 0, 0, 0]);
     history.current = [[], [], [], []];
     // A new game, new mysteries.
