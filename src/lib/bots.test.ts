@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { BOT_PROFILES, botClaimFor, botTurnFor, botTurnMoveFor, danger, longShotChance, profileById, rateDiscardsFor, rememberedView, seededRng, specialRoutes, threat, tileRisk, SPEECH, speechOf, type BotProfile } from "@mjwaits/shared/engine/bots";
 import { runArena } from "./arena";
-import { applyTurnMove, dealHand, resolveClaims, SEATS, unseenCounts, type GameMeld, type GameState } from "@mjwaits/shared/engine/game";
+import { applyTurnMove, dealHand, resolveClaims, secondChanceFan, SEATS, unseenCounts, type GameMeld, type GameState } from "@mjwaits/shared/engine/game";
 import { allTileKinds, parseHand, specialDistances, tileKey, type Tile } from "@mjwaits/shared/engine/mahjong";
 import { viewFor } from "@mjwaits/shared/engine/view";
 
@@ -256,5 +256,28 @@ describe("special hands: how far a bot will chase them", () => {
     const old: GameState = { ...base };
     delete old.moods;
     expect(() => specialRoutes(old, 1, tester(), allLeft())).not.toThrow();
+  });
+});
+
+describe("a bot's minimum for a win", () => {
+  it("counts the win as the table would score it - the tile it's won off out of the pond", () => {
+    // Seat 1 is ready on 5b, and seat 0 throws it: the fifth tile in the
+    // ponds, so the fourth once it's taken - a 四子內 win.
+    const base = dealHand({ dealer: 0, roundWind: 1, dealerStreak: 0 });
+    const tile = t("b", 5);
+    const pond = [t("z", 1), t("z", 2), t("z", 3), tile];
+    let s: GameState = { ...base, discardsMade: 5, firstGoAround: false, phase: { kind: "claims", from: 0, tile } };
+    s = withPlayer(s, 0, { discards: pond });
+    // (Seat 1 has thrown a tile of its own: no 人胡.)
+    s = withPlayer(s, 1, { hand: parseHand("123456789m123456t5b"), melds: [], discards: [t("z", 4)], flowers: [] });
+    for (const seat of [2, 3]) s = withPlayer(s, seat, { discards: [] });
+    const worth = secondChanceFan(s, 1, 0)!;
+    // (With one more in the pond - as the tile, left there, would make it - it's 七子內: worth less.)
+    const stale = secondChanceFan(withPlayer(s, 0, { discards: [...pond, tile] }), 1, 0)!;
+    expect(worth).toBeGreaterThan(stale);
+    // A bot that wants exactly what it's worth takes it; one that wants more lets it by.
+    const wants = (minTai: number): BotProfile => ({ ...profileById("hunter"), minTai });
+    expect(botClaimFor(s, 1, wants(worth), seededRng(1))).toEqual({ kind: "win" });
+    expect(botClaimFor(s, 1, wants(worth + 1), seededRng(1))).toBeNull();
   });
 });

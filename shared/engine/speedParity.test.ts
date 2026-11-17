@@ -493,7 +493,9 @@ function eightPairsShanten(tiles: Tile[]): number {
     // isn't ready - it read as ready, and was declared 叮).
     if (c === 3) hasSpare = true;
   }
-  return 8 - pairUnits - (hasSpare ? 1 : 0);
+  // (Eight pairs all made of fours wait for nothing: one more away, not ready.)
+  const away = 8 - pairUnits - (hasSpare ? 1 : 0);
+  return away === 0 && !hasSpare && ![...counts.values()].includes(2) ? 1 : away;
 }
 
 interface UnrelatedDpState {
@@ -505,24 +507,19 @@ interface UnrelatedDpState {
   hasPair: boolean;
 }
 
+// The most of a finished three (ranks each 3+ apart) that's held - every
+// such three tried in turn. (Not just the most held ranks 3 apart: 3 and 7
+// are, but no third rank joins them.)
 function maxUnrelatedWithPair(counts: number[]): UnrelatedDpState {
-  let prev3: UnrelatedDpState = { units: 0, hasPair: false };
-  let prev2: UnrelatedDpState = { units: 0, hasPair: false };
-  let prev1: UnrelatedDpState = { units: 0, hasPair: false };
-  let current: UnrelatedDpState = { units: 0, hasPair: false };
-  for (let r = 1; r <= 9; r++) {
-    const base = r - 3 >= 0 ? prev3 : { units: 0, hasPair: false };
-    current = prev1; // skip r
-    if (counts[r] > 0) {
-      const use: UnrelatedDpState = { units: base.units + 1, hasPair: base.hasPair || counts[r] >= 2 };
-      if (use.units > current.units) current = use;
-      else if (use.units === current.units) current = { units: current.units, hasPair: current.hasPair || use.hasPair };
-    }
-    prev3 = prev2;
-    prev2 = prev1;
-    prev1 = current;
-  }
-  return current;
+  let best: UnrelatedDpState = { units: 0, hasPair: false };
+  for (let a = 1; a <= 3; a++)
+    for (let b = a + 3; b <= 6; b++)
+      for (let c = b + 3; c <= 9; c++) {
+        const held = [a, b, c].filter((r) => counts[r] > 0);
+        const hasPair = held.some((r) => counts[r] >= 2);
+        if (held.length > best.units || (held.length === best.units && hasPair && !best.hasPair)) best = { units: held.length, hasPair };
+      }
+  return best;
 }
 
 function sixteenUnrelatedShanten(tiles: Tile[]): number {
