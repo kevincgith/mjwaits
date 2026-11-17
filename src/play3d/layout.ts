@@ -1094,11 +1094,12 @@ function facingEye(at: [number, number, number], eye: [number, number, number], 
 
 // 見牌 Seen copies: with a tile held, every tile out in the open (the ponds,
 // the melds - yours too - and the bonus tiles) greyed but its copies, fading
-// there and back. (Your own concealed tiles stay as they are.)
+// there and back. (Your own concealed tiles stay as they are; so does a tile
+// lying face down - a concealed kong's - which shows nothing to count.)
 function seenCopies(pieces: Piece[], focus: Tile | null | undefined) {
   const held = focus ? faceOf(focus) : null;
   for (const p of pieces) {
-    if (!p.seen) continue;
+    if (!p.seen || p.face === BACK) continue;
     if (held !== null && p.face !== held) p.tint = Math.min(p.tint, POND_GREY);
     p.fade = { key: p.seen, dur: POND_FADE_S };
   }
