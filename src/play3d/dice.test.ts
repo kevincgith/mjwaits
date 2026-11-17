@@ -14,25 +14,43 @@ const seeded = (seed: number) => () => {
 const W = 350;
 const SIZE = 0.105 * W;
 const land = { l: 0.18 * W, t: 0.46 * W, r: 0.82 * W, b: 0.76 * W };
+// 座位's: anywhere below the six tiles, the table's edge solid all round.
+const keep = { l: 0, t: 0.42 * W, r: W, b: W };
+const RIM = 0.012 * W;
+// The face up at a turn: which of the cube's axes points most up, and which way.
+const upFace = (q: [number, number, number, number]) => {
+  const [w, x, y, z] = q;
+  const zs = [2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)];
+  const i = zs.reduce((best, v, j) => (Math.abs(v) > Math.abs(zs[best]) ? j : best), 0);
+  return i * 2 + (zs[i] > 0 ? 0 : 1);
+};
 
 describe("the Dice tab's thrown dice", () => {
-  it("fall from a hand held high, tumble, and stop where they're meant to - with no unseen walls", () => {
+  it("fall from a hand held high, tumble over and over, and stop on the table below the tiles", () => {
     const turns: number[] = [];
+    const rolls: number[] = [];
     for (let s = 1; s <= 30; s++) {
-      const paths = simulateThrow({ width: W, land, size: SIZE, n: 3, random: seeded(s) });
+      const paths = simulateThrow({ width: W, land, keep, size: SIZE, n: 3, rim: RIM, random: seeded(s) });
       for (const path of paths) {
         // Thrown from well above the table, over your side of it.
         expect(path[0].z).toBeGreaterThan(SIZE * 3);
-        expect(path[0].y).toBeGreaterThan(W * 0.7);
+        expect(path[0].y).toBeGreaterThan(W * 0.6);
         const end = path[path.length - 1];
         // Lying flat on the felt.
         expect(end.z).toBeCloseTo(SIZE / 2, 5);
-        expect(end.x).toBeGreaterThan(land.l - SIZE);
-        expect(end.x).toBeLessThan(land.r + SIZE);
-        expect(end.y).toBeGreaterThan(land.t - SIZE);
-        expect(end.y).toBeLessThan(land.b + SIZE);
-        // Never through the felt.
+        expect(end.y).toBeGreaterThan(keep.t - SIZE);
+        // Never through the felt, nor over its edge (once in).
         for (const f of path) expect(f.z).toBeGreaterThan(SIZE * 0.45);
+        for (const f of path.slice(path.findIndex((f) => f.y < W - RIM - SIZE)))
+          for (const c of [f.x, f.y]) {
+            expect(c).toBeGreaterThan(RIM + SIZE * 0.5);
+            expect(c).toBeLessThan(W - RIM - SIZE * 0.5);
+          }
+        // Rolling on over the felt once down: the face up changing.
+        const down = path.findIndex((f) => f.z < SIZE * 0.75);
+        let changes = 0;
+        for (let i = down + 1; i < path.length; i++) if (upFace(path[i].q) !== upFace(path[i - 1].q)) changes++;
+        rolls.push(changes);
         let turned = 0;
         for (let i = 1; i < path.length; i++) {
           const [a, b] = [path[i - 1].q, path[i].q];
@@ -41,9 +59,13 @@ describe("the Dice tab's thrown dice", () => {
         turns.push(turned / (2 * Math.PI));
       }
     }
-    // Tumbling: a full turn and more, as a rule.
+    // Tumbling: a full turn and more, as a rule - and over on the felt, not
+    // stopped dead where it lands.
     turns.sort((a, b) => a - b);
     expect(turns[turns.length >> 1]).toBeGreaterThan(1);
+    rolls.sort((a, b) => a - b);
+    expect(rolls[rolls.length >> 1]).toBeGreaterThanOrEqual(1);
+    expect(rolls.filter((r) => r === 0).length).toBeLessThan(rolls.length * 0.45);
   });
 
   it("are thrown differently each time", () => {
