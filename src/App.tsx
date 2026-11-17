@@ -2423,6 +2423,20 @@ function Calculator({
     setText(formatHand(forDisplay(handRef.current, next)));
   };
   const handleReset = () => commitHand([]);
+  // The hand being entered, kept when the tab's left and back on return (a
+  // hand from a link takes its place: see initialHand).
+  useEffect(() => {
+    const kept = waitsDraft;
+    waitsDraft = null;
+    if (kept?.length && !initialHand) {
+      nextId.current = Math.max(nextId.current, ...kept.map((t) => t.id + 1));
+      commitHand(kept);
+    }
+    return () => {
+      waitsDraft = handRef.current;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   // Long-press the hand box to be asked whether to clear it.
   const handClear = useBoxClear("手牌", hand.length === 0, handleReset);
   const removeTile = (id: number) => commitHand(handRef.current.filter((t) => t.id !== id));
@@ -4401,6 +4415,12 @@ const dealerStreakLabel = (n: number): string => (n <= 1 ? "莊" : `莊連${n - 
 // still takes the two original manualVisibleTripleWin/
 // manualVisibleExhaustedMultiWait booleans, derived from this below.
 type VisibleExhaustState = "none" | "triple" | "exhausted";
+
+// The hand being entered on Scoring - and on Waits - when its tab was last
+// left: back when it's opened again (see ScoringPanel, Calculator). In
+// memory only: a reload starts clean.
+let scoringDraft: ScoringSnapshot | null = null;
+let waitsDraft: HandTile[] | null = null;
 
 // Scoring's hand and Situation card, as Back to Scoring brings them back.
 type ScoringSnapshot = {
@@ -6508,6 +6528,26 @@ function ScoringPanel({
     setDealerStreak(snap.dealerStreak);
     setManualVisibleExhaust(snap.manualVisibleExhaust);
   };
+
+  // The hand being entered is kept when the tab's left (this panel is only
+  // there while its tab shows) and brought back on return - so a look at the
+  // Ledger or 設定 mid-hand doesn't lose it. Not a hand being worked out for
+  // Scores (that one's theirs), and not while one's coming in from there or
+  // from the test hands: whatever was kept waits for the next plain visit.
+  const draftNow = useRef<ScoringSnapshot | null>(null);
+  draftNow.current = forScores ? null : snapshot();
+  useEffect(() => {
+    if (!forScores && !testHandRequest) {
+      const kept = scoringDraft;
+      scoringDraft = null;
+      if (kept && (kept.concealed.length || kept.declared.length || kept.bonus.length || kept.winningTile)) restoreSnapshot(kept);
+    }
+    return () => {
+      if (draftNow.current) scoringDraft = draftNow.current;
+    };
+    // (Once, on arriving - and its cleanup on leaving.)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Arriving from Scores: a fresh hand with that game's winds, 自摸 or
   // 雙響/三響 if it was picked there, and the camera straight away for Scan

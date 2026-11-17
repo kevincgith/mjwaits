@@ -53,7 +53,7 @@ class LoadFailed extends Component<{ fallback: ReactNode; children: ReactNode },
       <>
         {this.props.fallback}
         <div className="update-bar" role="alert">
-          <span>Couldn't open this - no connection?</span>
+          <span>Couldn't open this - no connection, or an update's out</span>
           <button type="button" className="update-bar-reload" onClick={() => window.location.reload()}>
             Reload
           </button>
