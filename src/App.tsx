@@ -8300,8 +8300,9 @@ function wallBreak(total: number | null): WallBreak | null {
 }
 
 // The longest a throw on the Dice tab's table lasts (see play3d/dice.ts's
-// THROW_MS); the result shows as it ends (see useDiceRoll).
-const WALL_THROW_MS = 1900;
+// THROW_MS); the result shows as it ends (see useDiceRoll) - or as soon as
+// the table says its dice lie still (landIn).
+const WALL_THROW_MS = 2200;
 
 // The Dice tab's tables (擲骰's wall, 座位's seats): Play's WebGL tiles on a
 // tipped felt (see play3d/FeltGL), fetched with the tab.
@@ -8313,6 +8314,46 @@ const SeatTilesGL = lazy(() => import("./play3d/DiceTableGL").then((m) => ({ def
 function diceOnTable(values: number[], rollCount: number, lastThrow: number[] | null, which = "") {
   const thrown = lastThrow !== null && values.every((v, i) => v === lastThrow[i]);
   return { key: thrown ? `${which}t${rollCount}` : `${which}l${values.join("")}`, values, thrown };
+}
+
+// The Dice tab's table no bigger than leaves the whole tab on screen: its
+// felt narrowed by as much as the page runs past the screen's foot (and back
+// to its usual width when there's room), so the tab never scrolls.
+// (No smaller than this, though: on a screen that short the tab scrolls.)
+const FELT_MIN = 230;
+function useFitStage() {
+  const stageRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    let frame = 0;
+    const fit = () => {
+      cancelAnimationFrame(frame);
+      stage.style.removeProperty("--felt-fit");
+      const page = document.scrollingElement ?? document.documentElement;
+      const over = page.scrollHeight - (window.visualViewport?.height ?? window.innerHeight);
+      if (over <= 0) return;
+      const seen = parseFloat(getComputedStyle(stage).getPropertyValue("--felt-seen")) || 1;
+      stage.style.setProperty("--felt-fit", `${Math.max(FELT_MIN, Math.floor(stage.offsetWidth - over / seen))}px`);
+    };
+    const soon = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(fit);
+    };
+    fit();
+    window.addEventListener("resize", soon);
+    window.visualViewport?.addEventListener("resize", soon);
+    // (What's round it changing height - a caption, a step's buttons.)
+    const seen = new ResizeObserver(soon);
+    for (const el of stage.parentElement?.children ?? []) if (el !== stage) seen.observe(el);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("resize", soon);
+      window.visualViewport?.removeEventListener("resize", soon);
+      seen.disconnect();
+    };
+  }, []);
+  return stageRef;
 }
 
 // Shared dice-roll state: `count` d6 that cycle 1..6 when a die is tapped
@@ -8339,6 +8380,8 @@ function useDiceRoll(count: number, blankUntilRolled = false, rollMs = 600) {
   // were thrown; changed by a tap since, they were set by hand.
   const [lastThrow, setLastThrow] = useState<number[] | null>(null);
   const rollTimer = useRef<number | null>(null);
+  // When the roll ends (ms, as Date.now()).
+  const rollEnds = useRef(0);
 
   useEffect(
     () => () => {
@@ -8357,11 +8400,10 @@ function useDiceRoll(count: number, blankUntilRolled = false, rollMs = 600) {
     setLastThrow(result);
     setRollCount((n) => n + 1);
     setTumbling(rollOnce());
-    let ticks = 0;
+    rollEnds.current = Date.now() + rollMs;
     if (rollTimer.current !== null) window.clearInterval(rollTimer.current);
     rollTimer.current = window.setInterval(() => {
-      ticks += 1;
-      if (ticks >= Math.round(rollMs / 60)) {
+      if (Date.now() >= rollEnds.current) {
         if (rollTimer.current !== null) window.clearInterval(rollTimer.current);
         rollTimer.current = null;
         setDice(result);
@@ -8371,6 +8413,12 @@ function useDiceRoll(count: number, blankUntilRolled = false, rollMs = 600) {
         setTumbling(rollOnce());
       }
     }, 60);
+  };
+
+  // The table's thrown this roll's dice: they lie still in `ms`, and the
+  // roll ends then (not at rollMs, the longest a throw can last).
+  const landIn = (ms: number) => {
+    if (rollTimer.current !== null) rollEnds.current = Date.now() + ms;
   };
 
   // A roll stopped where it is (the ceremony reset mid-throw): nothing
@@ -8384,22 +8432,26 @@ function useDiceRoll(count: number, blankUntilRolled = false, rollMs = 600) {
 
   const bumpDie = (idx: number) => {
     if (rolling) return;
+    // Set by hand from now on, till the next roll - even tapped round to
+    // what was thrown (else the table would throw them all over again).
+    setLastThrow(null);
     // The first tap on unrolled dice sets them all to 1; after that a tap
     // cycles just that die.
     setDice((d) => (d.every((v) => v > 0) ? d.map((v, i) => (i === idx ? (v % 6) + 1 : v)) : d.map(() => 1)));
   };
 
-  return { dice, faces: tumbling ?? dice, rolling, ready, rollCount, target, lastThrow, roll, cancel, bumpDie };
+  return { dice, faces: tumbling ?? dice, rolling, ready, rollCount, target, lastThrow, roll, landIn, cancel, bumpDie };
 }
 
 function DicePanel() {
-  const { dice, faces, rolling, ready, rollCount, target, lastThrow, roll, bumpDie } = useDiceRoll(3, true, WALL_THROW_MS);
+  const { dice, faces, rolling, ready, rollCount, target, lastThrow, roll, landIn, bumpDie } = useDiceRoll(3, true, WALL_THROW_MS);
 
   const total = dice[0] + dice[1] + dice[2];
   // Nothing to show until there's a result: no total, no break.
   const shown = ready && !rolling;
   const brk = shown ? wallBreak(total) : null;
   const feltRef = useRef<HTMLDivElement>(null);
+  const stageRef = useFitStage();
   // The dice land inside the walls (see diceScenes' wallScene).
   // The dice on the table: thrown with each roll, laid there when set by tap.
   const onTable = ready || rolling ? diceOnTable(target ?? dice, rollCount, lastThrow) : null;
@@ -8434,17 +8486,19 @@ function DicePanel() {
 
       {/* The wall: Play's tiles on a tipped felt (see play3d/diceScenes),
           the dice thrown inside it. */}
-      <div className="gl-stage">
+      <div className="gl-stage" ref={stageRef}>
         <div className="gl-felt" ref={feltRef}>
         </div>
         <Suspense fallback={null}>
-          <WallTilesGL feltRef={feltRef} brk={brk && { side: brk.side, gapAfter: brk.gapAfter }} dice={onTable} />
+          <WallTilesGL feltRef={feltRef} brk={brk && { side: brk.side, gapAfter: brk.gapAfter }} dice={onTable} onThrown={(key, ms) => key === onTable?.key && landIn(ms)} />
         </Suspense>
       </div>
-      {/* (Kept through the roll, so nothing below jumps.) */}
+      {/* (Kept through the roll, two lines as the break's are - so nothing
+          below jumps, nor the table shrink to fit as it shows: useFitStage.) */}
       {!brk && (
         <div className="wall-break-caption">
-          <span className="wall-break-detail">{rolling ? "Rolling…" : "Roll the dice, or tap a die to set it"}</span>
+          <strong>{rolling ? "Rolling…" : "Roll the dice"}</strong>
+          <span className="wall-break-detail">{rolling ? "\u00a0" : "or tap a die to set it"}</span>
         </div>
       )}
 
@@ -9038,6 +9092,7 @@ function SeatingPanel({
   // wind's player - where they sat when it was dealt, where they sit after,
   // and its turn in the deal (from the first pick, round the table).
   const feltRef = useRef<HTMLDivElement>(null);
+  const stageRef = useFitStage();
   const tileFace = (t: Tile) => `${t.suit}${t.rank}`;
   const seatsTable: SeatsTable = {
     step,
@@ -9067,6 +9122,7 @@ function SeatingPanel({
   const diceFaces =
     step === 0 ? null : step <= 2 ? throw1.faces : throw2.faces;
   const thrown = step === 0 || step >= 7 ? null : step <= 2 ? throw1 : throw2;
+  const onTable = thrown && diceOnTable(thrown.target ?? thrown.dice, thrown.rollCount, thrown.lastThrow, step <= 2 ? "first" : "second");
 
   const caption = (() => {
     const L = nameAt;
@@ -9152,7 +9208,7 @@ function SeatingPanel({
         </div>
       </div>
 
-      <div className="gl-stage">
+      <div className="gl-stage" ref={stageRef}>
         <div className="gl-felt" ref={feltRef}>
           {/* Rendered in fixed player order (keyed by player), with each one's
               position looked up - so a swap just changes two tokens' left/top
@@ -9164,7 +9220,7 @@ function SeatingPanel({
             the dice, from a throw under way (or just made) until the winds
             are dealt. */}
         <Suspense fallback={null}>
-          <SeatTilesGL feltRef={feltRef} table={seatsTable} dice={thrown && diceOnTable(thrown.target ?? thrown.dice, thrown.rollCount, thrown.lastThrow, step <= 2 ? "first" : "second")} />
+          <SeatTilesGL feltRef={feltRef} table={seatsTable} dice={onTable} onThrown={(key, ms) => key === onTable?.key && thrown?.landIn(ms)} />
         </Suspense>
         {/* The players' name tags, over the tiles: the same felt again, bare,
             so they're never hidden as they travel. */}
@@ -9192,7 +9248,9 @@ function SeatingPanel({
         </div>
       </div>
 
-      <div className="wall-break-caption">
+      {/* (Two lines' room always, however long the step's - so the table
+          keeps its size from step to step: useFitStage.) */}
+      <div className="wall-break-caption is-two-lines">
         <span className="wall-break-detail">{SEATING_CAPTIONS_HELP[step]}</span>
       </div>
       <div className="seat-secondary">

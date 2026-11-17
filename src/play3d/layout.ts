@@ -113,6 +113,8 @@ export interface Quad {
   // The unit square (-0.5..0.5 each way, at z 0) to where it's drawn.
   m: Mat;
   anim?: Anim;
+  // Moved: eased from where it shows to its new place, as a Piece's ease.
+  ease?: Piece["ease"];
 }
 
 // A seat's standing hand, for a peek: each tile's centre along the rack, and

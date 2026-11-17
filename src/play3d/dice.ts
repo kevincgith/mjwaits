@@ -103,23 +103,28 @@ export interface ThrowFrame {
 }
 export const THROW_FPS = 60;
 // The longest a throw lasts (the result shows as it ends).
-export const THROW_MS = 1900;
+export const THROW_MS = 2200;
 
 // A cube `size` px across (its weight 1). Gravity and speeds scale with it,
-// so a throw looks the same at any size. The felt grips (friction) and
-// gives a little (restitution) - a hard hit bounces, a soft one doesn't.
+// so a throw looks the same at any size. The table's lively, not a pillow:
+// a hit bounces back well (a cube on a corner turns most of a hit into spin,
+// so it hops far less than this says) and the cloth grips lightly - the dice
+// skip and tumble over and over before they lie still. A soft hit doesn't
+// bounce.
 const physics = (size: number) => {
   const k = size / 37;
   return {
     g: 3000 * k,
     inertia: (size * size) / 6,
-    bounce: 0.38,
+    bounce: 0.9,
     still: 70 * k,
-    grip: 0.45,
+    grip: 0.25,
     // Dice knocking together: as balls this far round.
     rad: size * 0.56,
   };
 };
+// How far they roll on after first hitting the felt (in dice), as thrown.
+const ROLL_ON = [1.5, 3.5];
 const STEP = 1 / 600;
 const PER_FRAME = 600 / THROW_FPS;
 
@@ -128,8 +133,8 @@ interface Body {
   v: Vec;
   q: Quat;
   w: Vec;
-  // Inside the wall yet (it's thrown in over it), and where it first hit the felt.
-  inside: boolean;
+  // Inside each fence yet (thrown in over the wall), and where it first hit the felt.
+  inside: boolean[];
   firstHit: [number, number] | null;
 }
 type Fence = { a: [number, number]; nx: number; ny: number }[];
@@ -137,7 +142,7 @@ type Fence = { a: [number, number]; nx: number; ny: number }[];
 // The dice as thrown, till all lie still (or THROW_MS is up, when they're
 // laid flat): each die's place and turn at THROW_FPS; and whether they came
 // to rest by themselves.
-function simulate(size: number, bodies: Body[], fence?: Fence): { frames: ThrowFrame[][]; settled: boolean } {
+function simulate(size: number, bodies: Body[], fences: Fence[]): { frames: ThrowFrame[][]; settled: boolean } {
   const P = physics(size);
   const h = size / 2;
   const corners: Vec[] = [];
@@ -194,14 +199,14 @@ function simulate(size: number, bodies: Body[], fence?: Fence): { frames: ThrowF
       if (low < 0) b.p[2] -= low;
       // On the felt it slows: the cloth drags at whatever's turning on it.
       if (touching) {
-        const k = 1 - 1.2 * STEP;
+        const k = 1 - 0.5 * STEP;
         b.w = [b.w[0] * k, b.w[1] * k, b.w[2] * (1 - 6 * STEP)];
-        b.v = [b.v[0] * (1 - 0.6 * STEP), b.v[1] * (1 - 0.6 * STEP), b.v[2]];
+        b.v = [b.v[0] * (1 - 0.3 * STEP), b.v[1] * (1 - 0.3 * STEP), b.v[2]];
       }
-      // The wall: once in, it bounces back off it.
-      if (fence) {
+      // The wall, and the table's edge: once in, it bounces back off them.
+      fences.forEach((fence, f) => {
         const into = fence.map((e) => (b.p[0] - e.a[0]) * e.nx + (b.p[1] - e.a[1]) * e.ny);
-        if (!b.inside) b.inside = into.every((s) => s >= P.rad);
+        if (!b.inside[f]) b.inside[f] = into.every((s) => s >= P.rad);
         else
           fence.forEach((e, i) => {
             if (into[i] >= P.rad) return;
@@ -215,7 +220,7 @@ function simulate(size: number, bodies: Body[], fence?: Fence): { frames: ThrowF
               b.w[2] += vn * 0.02;
             }
           });
-      }
+      });
     }
     // Dice knocking together.
     for (let i = 0; i < bodies.length; i++)
@@ -276,32 +281,59 @@ function fenceEdges(fence: [number, number][]): Fence {
   });
 }
 
-// `n` dice thrown onto a felt `width` px square, to come to rest inside
-// `land` (and inside `fence`, the wall, if there is one): each die's path.
-export function simulateThrow(o: { width: number; land: Box; size: number; n: number; fence?: [number, number][]; random?: () => number }): ThrowFrame[][] {
+// The felt's edge, `inset` px in: solid all round.
+const rimOf = (W: number, inset: number): [number, number][] => [
+  [inset, inset],
+  [W - inset, inset],
+  [W - inset, W - inset],
+  [inset, W - inset],
+];
+
+// Where a throw's dice are thrown to, and kept: aimed at `land`, to come to
+// rest inside `keep` (land, if not given); inside `fence` (the wall), if
+// there is one; and off `rim` (px in from the felt's edge, solid), if given.
+export interface ThrowAt {
+  width: number;
+  land: Box;
+  keep?: Box;
+  size: number;
+  fence?: [number, number][];
+  rim?: number;
+  random?: () => number;
+}
+
+// `n` dice thrown onto a felt `width` px square (see ThrowAt): each die's path.
+export function simulateThrow(o: ThrowAt & { n: number }): ThrowFrame[][] {
   const rnd = o.random ?? Math.random;
   const between = (a: number, b: number) => a + (b - a) * rnd();
   const { size, n, land, width: W } = o;
   const P = physics(size);
-  const fence = o.fence ? fenceEdges(o.fence) : undefined;
-  const insideFence = (x: number, y: number) => !fence || fence.every((e) => (x - e.a[0]) * e.nx + (y - e.a[1]) * e.ny >= P.rad * 0.6);
+  const keep = o.keep ?? land;
+  const fences = [o.fence, o.rim === undefined ? undefined : rimOf(W, o.rim)].filter((f) => f !== undefined).map(fenceEdges);
+  const insideFence = (x: number, y: number) => fences.every((fence) => fence.every((e) => (x - e.a[0]) * e.nx + (y - e.a[1]) * e.ny >= P.rad * 0.6));
   let best: { frames: ThrowFrame[][]; miss: number } | null = null;
   for (let attempt = 0; attempt < 24; attempt++) {
     // The hand: over your side of the table, somewhere along it, high up.
-    const hand: Vec = [W * between(0.22, 0.78), W * between(0.8, 0.95), size * between(4, 7.5)];
+    const hand: Vec = [W * between(0.22, 0.78), W * between(0.8, 0.95), size * between(3.5, 6.5)];
     // Where they're thrown to: somewhere in the box - and they first hit
-    // the felt part of the way there, tumbling on the rest.
+    // the felt a few dice short of it, rolling over and over the rest.
     const aim: [number, number] = [between(land.l, land.r), between(land.t + (land.b - land.t) * 0.2, land.b - (land.b - land.t) * 0.2)];
-    const short = between(0.25, 0.6);
     const dx = aim[0] - hand[0];
     const dy = aim[1] - hand[1];
     const dist = Math.hypot(dx, dy);
     const dir: [number, number] = [dx / dist, dy / dist];
     const side: [number, number] = [-dir[1], dir[0]];
-    // Tossed up a little, flung flat, or thrown down.
-    const vz = size * between(-3, 9);
+    // (Inside the wall, if there is one: past where its line crosses it.)
+    let inside = 0;
+    for (const e of fences.flat()) {
+      const into = dir[0] * e.nx + dir[1] * e.ny;
+      if (into > 0) inside = Math.max(inside, (P.rad + size * 0.4 - ((hand[0] - e.a[0]) * e.nx + (hand[1] - e.a[1]) * e.ny)) / into);
+    }
+    const toHit = Math.min(dist, Math.max(dist * 0.3, inside, dist - size * between(ROLL_ON[0], ROLL_ON[1])));
+    // Tossed up a little, flung flat, or thrown down - and hard.
+    const vz = size * between(-6, 5);
     const fall = (vz + Math.sqrt(vz * vz + 2 * P.g * hand[2])) / P.g;
-    const speed = Math.min((dist * short) / fall, size * 30);
+    const speed = Math.min(toHit / fall, size * 40);
     const bodies: Body[] = Array.from({ length: n }, (_, i) => {
       const lane = i - (n - 1) / 2;
       const spread = size * between(0.9, 1.4);
@@ -312,28 +344,28 @@ export function simulateThrow(o: { width: number; land: Box; size: number; n: nu
       const sp = speed * between(0.85, 1.15);
       const hx = dir[0] * Math.cos(veer) - dir[1] * Math.sin(veer);
       const hy = dir[0] * Math.sin(veer) + dir[1] * Math.cos(veer);
-      const roll = between(10, 24);
+      const roll = between(16, 30);
       const a = rnd() * Math.PI * 2;
       const b = Math.acos(2 * rnd() - 1);
-      const free = between(10, 24);
+      const free = between(4, 10);
       return {
         p,
         v: [hx * sp, hy * sp, vz * between(0.85, 1.15)],
         q: qNorm([rnd() - 0.5, rnd() - 0.5, rnd() - 0.5, rnd() - 0.5]),
         // (Forward: about the level axis square to its heading.)
         w: [-hy * roll + Math.sin(b) * Math.cos(a) * free, hx * roll + Math.sin(b) * Math.sin(a) * free, Math.cos(b) * free],
-        inside: false,
+        inside: fences.map(() => false),
         firstHit: null,
       };
     });
-    const { frames, settled } = simulate(size, bodies, fence);
+    const { frames, settled } = simulate(size, bodies, fences);
     // How far from right it went: off where they're meant to stop, a first
     // hit off the felt or on the wall, or not done in time.
     const pad = size * 0.3;
     let miss = settled ? 0 : size * 4;
     bodies.forEach((b, i) => {
       const end = frames[i][frames[i].length - 1];
-      miss += Math.max(0, land.l - pad - end.x, end.x - land.r - pad) + Math.max(0, land.t - pad - end.y, end.y - land.b - pad);
+      miss += Math.max(0, keep.l - pad - end.x, end.x - keep.r - pad) + Math.max(0, keep.t - pad - end.y, end.y - keep.b - pad);
       const hit = b.firstHit;
       if (!hit || hit[0] < size || hit[0] > W - size || hit[1] < size || hit[1] > W - size || !insideFence(hit[0], hit[1])) miss += size * 3;
     });
@@ -354,8 +386,8 @@ export interface Thrown {
   faces: Quat[];
 }
 
-export function throwDice(o: { key: string; width: number; land: Box; size: number; values: number[]; fence?: [number, number][]; random?: () => number }): Thrown {
-  const paths = simulateThrow({ width: o.width, land: o.land, size: o.size, n: o.values.length, fence: o.fence, random: o.random });
+export function throwDice(o: ThrowAt & { key: string; values: number[] }): Thrown {
+  const paths = simulateThrow({ ...o, n: o.values.length });
   return {
     key: o.key,
     width: o.width,

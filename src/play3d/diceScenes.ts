@@ -4,7 +4,7 @@
 // tiles (by key: each move plays once, when its key first shows).
 
 import { chain, rotateY, rotateZ, scale, translate, type Mat } from "./mat";
-import { BACK, LIT, THICK, TILE_H, TILE_W, TURNED, lying, lyingDown, shadowAt, type Piece, type Quad } from "./layout";
+import { BACK, LIT, THICK, TILE_H, TILE_W, TURNED, lying, lyingDown, shadowAt, type Anim, type Piece, type Quad } from "./layout";
 import type { FeltScene } from "./FeltGL";
 
 const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
@@ -191,6 +191,18 @@ const REACH = Math.max(
   )
 );
 
+// A mark of the break (the tiles picked out, the pin), shown once the wall's
+// tiles have moved to open it - popping up where it goes, not before them.
+const popIn = (key: string, m: Mat): Anim => ({
+  key,
+  delay: WALL_EASE,
+  dur: 0.18,
+  pose: (k) => {
+    const s = k === 0 ? 0 : 0.6 + 0.4 * (1 - Math.pow(1 - k, 3));
+    return chain(translate(m[12], m[13], m[14]), scale(s, s, 1), translate(-m[12], -m[13], -m[14]), m);
+  },
+});
+
 export function wallScene(feltW: number, brk: WallBreakAt | null): FeltScene {
   // A stack's width, in px.
   const w = (feltW / 2 - WALL_BORDER) / REACH;
@@ -217,9 +229,12 @@ export function wallScene(feltW: number, brk: WallBreakAt | null): FeltScene {
           ease: { key: `wall:${side}:${i}:${layer}`, dur: WALL_EASE, curve: ease },
         });
       }
-      quads.push(shadowAt(x, y, em, rot));
-      if (broken !== null && i < broken)
-        quads.push({ kind: "picked", m: chain(translate(x, y, 2 * THICK * em + 0.5), rotateZ(rot), scale(0.92 * em, 1.11 * em, 1)) });
+      // (Its shadow moving with it.)
+      quads.push({ ...shadowAt(x, y, em, rot), ease: { key: `wall:${side}:${i}:shadow`, dur: WALL_EASE, curve: ease } });
+      if (broken !== null && i < broken) {
+        const m = chain(translate(x, y, 2 * THICK * em + 0.5), rotateZ(rot), scale(0.92 * em, 1.11 * em, 1));
+        quads.push({ kind: "picked", m, anim: popIn(`picked:${side}${broken}:${i}`, m) });
+      }
     }
     if (broken !== null) {
       const along = broken - 0.5 + gap / 2;
@@ -227,7 +242,8 @@ export function wallScene(feltW: number, brk: WallBreakAt | null): FeltScene {
       const [x, y] = at(first[0] + dir[0] * along + out[0] * off, first[1] + dir[1] * along + out[1] * off);
       // (Its point toward the wall.)
       const point = (out[1] === -1 ? 180 : out[0] === 1 ? -90 : out[0] === -1 ? 90 : 0) + WALL_SKEW;
-      quads.push({ kind: "pin", m: chain(translate(x, y, 0.5), rotateZ(point), scale(0.9 * w, 0.45 * w, 1)) });
+      const m = chain(translate(x, y, 0.5), rotateZ(point), scale(0.9 * w, 0.45 * w, 1));
+      quads.push({ kind: "pin", m, anim: popIn(`pin:${side}${broken}`, m) });
     }
   }
   return { pieces, quads };

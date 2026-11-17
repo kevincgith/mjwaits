@@ -367,20 +367,22 @@ class Space {
       keys.add(a.key);
       if (!this.starts.has(a.key)) this.starts.set(a.key, now);
     };
+    // Moved: eased from where it shows now to its new place.
+    const track = (p: { m: Mat; ease?: Piece["ease"] }) => {
+      if (!p.ease) return;
+      keys.add(p.ease.key);
+      const was = this.eases.get(p.ease.key);
+      const target = was?.to ?? this.shown.get(p.ease.key)?.toArray();
+      if (target && target.some((v, j) => Math.abs(v - p.m[j]) > 1e-3)) {
+        const from = this.shown.get(p.ease.key)!.clone();
+        this.eases.set(p.ease.key, { from, to: p.m, start: now + (p.ease.delay ?? 0) * 1000, dur: p.ease.dur, curve: p.ease.curve });
+      } else if (!was) this.shown.set(p.ease.key, new THREE.Matrix4().fromArray(p.m));
+    };
     for (let i = 0; i < n; i++) {
       const p = pieces[i];
       begin(p.anim);
       begin(p.fly);
-      // Moved: eased from where it shows now to its new place.
-      if (p.ease) {
-        keys.add(p.ease.key);
-        const was = this.eases.get(p.ease.key);
-        const target = was?.to ?? this.shown.get(p.ease.key)?.toArray();
-        if (target && target.some((v, j) => Math.abs(v - p.m[j]) > 1e-3)) {
-          const from = this.shown.get(p.ease.key)!.clone();
-          this.eases.set(p.ease.key, { from, to: p.m, start: now + (p.ease.delay ?? 0) * 1000, dur: p.ease.dur, curve: p.ease.curve });
-        } else if (!was) this.shown.set(p.ease.key, new THREE.Matrix4().fromArray(p.m));
-      }
+      track(p);
       const r = rects.get(p.face) ?? rects.get("back")!;
       this.face.setXYZW(i, r[0], r[1], r[2], r[3]);
       this.shade.setXY(i, p.shade[0], p.shade[1]);
@@ -411,7 +413,7 @@ class Space {
     }
     for (const [kind, mesh] of this.marks) {
       const mine = quads.filter((q) => q.kind === kind).slice(0, mesh.instanceMatrix.count);
-      mine.forEach((q) => begin(q.anim));
+      mine.forEach((q) => (begin(q.anim), track(q)));
       this.quads.set(kind, mine);
       mesh.count = mine.length;
     }
@@ -434,18 +436,23 @@ class Space {
       moving = true;
       return a.pose(Math.max(0, t) / a.dur);
     };
+    // An eased move (see set's track), `mat` set to where it is now.
+    const easing = (key: string) => {
+      const e = this.eases.get(key)!;
+      const k = Math.min(1, Math.max(0, now - e.start) / 1000 / e.dur);
+      const v = e.curve(k);
+      const [p0, q0, s0] = [new THREE.Vector3(), new THREE.Quaternion(), new THREE.Vector3()];
+      const [p1, q1, s1] = [new THREE.Vector3(), new THREE.Quaternion(), new THREE.Vector3()];
+      e.from.decompose(p0, q0, s0);
+      mat.fromArray(e.to).decompose(p1, q1, s1);
+      mat.compose(p0.lerp(p1, v), q0.slerp(q1, v), s0.lerp(s1, v));
+      if (k >= 1) this.eases.delete(key);
+      else moving = true;
+    };
     this.pieces.forEach((p, i) => {
       const e = p.ease && this.eases.get(p.ease.key);
       if (e && !(p.anim && (now - (this.starts.get(p.anim.key) ?? 0)) / 1000 < p.anim.delay + p.anim.dur)) {
-        const k = Math.min(1, Math.max(0, now - e.start) / 1000 / e.dur);
-        const v = e.curve(k);
-        const [p0, q0, s0] = [new THREE.Vector3(), new THREE.Quaternion(), new THREE.Vector3()];
-        const [p1, q1, s1] = [new THREE.Vector3(), new THREE.Quaternion(), new THREE.Vector3()];
-        e.from.decompose(p0, q0, s0);
-        mat.fromArray(e.to).decompose(p1, q1, s1);
-        mat.compose(p0.lerp(p1, v), q0.slerp(q1, v), s0.lerp(s1, v));
-        if (k >= 1) this.eases.delete(p.ease!.key);
-        else moving = true;
+        easing(p.ease!.key);
       } else if (p.fly && p.hideAfter !== undefined && (now - (this.starts.get(p.fly.key) ?? now)) / 1000 >= p.hideAfter) {
         mat.makeScale(0, 0, 0);
       } else if (p.fly && (now - (this.starts.get(p.fly.key) ?? now)) / 1000 < p.fly.dur) {
@@ -491,7 +498,12 @@ class Space {
       this.dice.instanceMatrix.needsUpdate = true;
     }
     for (const [kind, mesh] of this.marks) {
-      (this.quads.get(kind) ?? []).forEach((q, i) => mesh.setMatrixAt(i, mat.fromArray(at(q))));
+      (this.quads.get(kind) ?? []).forEach((q, i) => {
+        if (q.ease && this.eases.has(q.ease.key)) easing(q.ease.key);
+        else mat.fromArray(at(q));
+        if (q.ease) this.shown.set(q.ease.key, mat.clone());
+        mesh.setMatrixAt(i, mat);
+      });
       mesh.instanceMatrix.needsUpdate = true;
     }
     return moving;

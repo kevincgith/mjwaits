@@ -3259,23 +3259,23 @@ img.tile-face {
 
 .dice-tray {
   display: flex;
-  gap: 1rem;
+  gap: 0.85rem;
   justify-content: center;
-  margin-bottom: 1.25rem;
+  margin-bottom: 0.8rem;
 }
 
 .die {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   grid-template-rows: repeat(3, 1fr);
-  gap: 0.15rem;
-  width: 64px;
-  height: 64px;
-  padding: 0.5rem;
+  gap: 0.12rem;
+  width: 54px;
+  height: 54px;
+  padding: 0.42rem;
   /* A block, as the table's dice are: its top lit from above, and below it
      the side that faces you, in shade - seen from a little above. */
-  --die-side: 7px;
-  margin-bottom: 7px;
+  --die-side: 6px;
+  margin-bottom: 6px;
   background: linear-gradient(165deg, color-mix(in srgb, var(--tile-bg) 85%, #fff), var(--tile-bg) 55%);
   border: 1px solid var(--tile-edge);
   border-radius: var(--radius-lg);
@@ -3319,7 +3319,7 @@ img.tile-face {
 .die:not(:disabled):active {
   border-color: var(--accent);
   /* Pressed down into the table a little. */
-  transform: translateY(3px);
+  transform: translateY(2px);
   --die-side: 4px;
 }
 
@@ -3331,8 +3331,8 @@ img.tile-face {
   display: block;
   align-self: center;
   justify-self: center;
-  width: 12px;
-  height: 12px;
+  width: 10px;
+  height: 10px;
   background: var(--tile-ink);
   border-radius: 50%;
   /* Drilled into the face. */
@@ -3341,13 +3341,14 @@ img.tile-face {
 
 .dice-roll {
   display: block;
-  margin: 0 auto 1rem;
+  margin: 0 auto 0.7rem;
   min-width: 12rem;
 }
 
 .dice-total {
   justify-content: center;
   font-size: var(--text-lg);
+  padding-block: 0.5rem;
 }
 
 .dice-hint {
@@ -3374,18 +3375,22 @@ img.tile-face {
 }
 
 .die.is-one .die-pip {
-  width: 20px;
-  height: 20px;
+  width: 17px;
+  height: 17px;
 }
 
 .wall-break-caption {
   display: flex;
   flex-direction: column;
   gap: 0.15rem;
-  margin-top: 1rem;
+  margin-top: 0.6rem;
   text-align: center;
   font-size: var(--text-md);
   color: var(--text);
+}
+
+.wall-break-caption.is-two-lines .wall-break-detail {
+  min-height: 2lh;
 }
 
 .wall-break-detail {
@@ -3403,7 +3408,8 @@ img.tile-face {
   /* Play's wooden rim round the felt, and the felt inside it - the two
      together as wide as 擲骰's wall table always was. */
   --felt-rim: 0.6rem;
-  --felt-w: min(382px - 2 * var(--felt-rim), 100vw - 52px - 2 * var(--felt-rim));
+  /* (And no wider than leaves the whole tab on screen - see useFitStage.) */
+  --felt-w: min(382px - 2 * var(--felt-rim), 100vw - 52px - 2 * var(--felt-rim), var(--felt-fit, 9999px));
   /* Tipped only a little - with the wall turned on it, more reads as much
      steeper than it is. */
   --felt-tilt: 12deg;
