@@ -10471,6 +10471,19 @@ function App() {
   // read-only view over the app; "Open MJWaits" drops the hash and carries on
   // as normal. #z= is compressed, so it's read once the page is up.
   const [sharedScores, setSharedScores] = useState(() => snapshotFromHash(window.location.hash));
+  // A link opened while the app's already up (the installed app, taking a
+  // shared hand's or scores' link from a chat): only its part after the #
+  // changes, so the page isn't loaded again - it's read here as at the start.
+  const [hashSeen, setHashSeen] = useState(0);
+  useEffect(() => {
+    const changed = () => {
+      const snap = snapshotFromHash(window.location.hash);
+      if (snap) setSharedScores(snap);
+      setHashSeen((n) => n + 1);
+    };
+    window.addEventListener("hashchange", changed);
+    return () => window.removeEventListener("hashchange", changed);
+  }, []);
   useEffect(() => {
     if (!window.location.hash.startsWith(GAME_HASH)) return;
     let live = true;
@@ -10478,7 +10491,7 @@ function App() {
     return () => {
       live = false;
     };
-  }, []);
+  }, [hashSeen]);
   // The Scoring tab's tai rule sets and scoring engine (設定), saved in
   // localStorage - here so a shared rules link reaches them. taiRules is
   // what scoring uses: the active set, under the chosen engine.
@@ -10504,7 +10517,7 @@ function App() {
       setIncomingRules(shared);
       setMode("scoring");
     });
-  }, []);
+  }, [hashSeen]);
   const dropIncomingRules = () => {
     setIncomingRules(null);
     if (window.location.hash.startsWith("#r=")) window.history.replaceState(null, "", window.location.pathname + window.location.search);

@@ -4,6 +4,7 @@ import './index.css'
 import App from './App.tsx'
 import { Crashed } from './Crashed'
 import { warmLazyParts } from './lib/lazyParts'
+import { installBackButton } from './lib/backButton'
 
 // Offline support and installing to the home screen (see public/sw.js).
 // Production only - in dev it would cache files that change on every save.
@@ -54,6 +55,9 @@ createRoot(document.getElementById('root')!).render(
     </Crashed>
   </StrictMode>,
 )
+
+// Android's Back closes what's open before it leaves the app (lib/backButton.ts).
+installBackButton()
 
 // Then Play, Scores and the rest, at idle (see lib/lazyParts.ts).
 warmLazyParts()
