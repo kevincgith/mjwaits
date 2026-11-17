@@ -381,13 +381,17 @@ export default function TableGL({
       return i !== null && viewRef.current.mine.tiles[i]?.enabled ? i : null;
     };
     const outside = offTable;
-    // Still over your row: its box (a lifted tile stays inside it) - the
-    // moment the finger's past its edge, onto the felt, it's left.
+    // Still over your row: its box (a lifted tile stays inside it), or any
+    // of its tiles (the drawn one, set apart, reaches past the box's end) -
+    // the moment the finger's past them, onto the felt, it's left.
     // (Below, to the screen's foot: there's nothing else there.)
     const onRow = (e: PointerEvent) => {
       const r = handRef.current?.getBoundingClientRect();
       if (!r) return false;
-      return e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top;
+      if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top) return true;
+      const e3 = engine.current;
+      const p = at(e);
+      return !!e3 && e3.pickHand(p.x, p.y, root.clientWidth, root.clientHeight) !== null;
     };
     const onDown = (e: PointerEvent) => {
       down = e.isPrimary ? { x: e.clientX, y: e.clientY, at: e.timeStamp } : null;
@@ -406,9 +410,10 @@ export default function TableGL({
       if (!e.isPrimary) return;
       // Held on a tile: it follows the finger along your row (between
       // tiles the last stays; over one that can't be played, none is
-      // pressed); off the row, it's dropped.
+      // pressed); off the row, it's dropped. (Not by a tap's wobble: a
+      // finger that's not moved on as far as a tap may stays a tap.)
       if (holding && down && !dropped) {
-        if (!onRow(e)) {
+        if (!onRow(e) && moved(e, down)) {
           dropped = true;
           press(null, true);
         } else {
@@ -452,7 +457,10 @@ export default function TableGL({
       if (!start || !e3 || !e.isPrimary || moved(e, start) || (e.timeStamp - start.at > 800 && held === null)) return;
       if (outside(e)) return;
       const p = at(e);
-      const i = e3.pickHand(p.x, p.y, root.clientWidth, root.clientHeight);
+      // (Held on a tile, it's that one: pressed, it's lifted out from under
+      // where the finger went down - near its edge, the finger's no longer
+      // on it.)
+      const i = held ?? e3.pickHand(p.x, p.y, root.clientWidth, root.clientHeight);
       if (i !== null) {
         if (viewRef.current.mine.tiles[i]?.enabled) onTileRef.current(i);
         return;

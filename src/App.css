@@ -2566,6 +2566,41 @@ img.tile-face {
   font-size: 2.75rem;
 }
 
+/* The picker's ⌫ (Scoring, Waits): a key, not a tile - in Classic it takes
+   the last row's spare corner (after 竹; after the joker), in Numpad it runs
+   under the keypad. */
+.backspace-key {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--fill);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: transform 0.08s ease;
+}
+
+.backspace-key:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.backspace-key:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.suit-row .backspace-key {
+  width: 100%;
+  height: 100%;
+}
+
+.numpad-grid .backspace-key {
+  grid-column: 1 / -1;
+  height: 2.75rem;
+}
+
 /* 字 and 花 go four to a row - 東南西北 over 中發白 (the Calculator's
    joker after 白), 梅蘭菊竹 over 春夏秋冬 - so each row is one set. */
 .numpad-grid.is-four {
@@ -10772,6 +10807,11 @@ details.sc-stat-group:not([open]) {
 .toolbar-button.is-attention {
   background: var(--accent);
   color: var(--on-accent);
+}
+
+/* (Its camera too - in the accent, it vanished into the lit button.) */
+.toolbar-button.is-attention .toolbar-icon {
+  color: inherit;
 }
 
 .record-to-scores {

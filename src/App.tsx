@@ -2422,6 +2422,12 @@ function Calculator({
   // Long-press the hand box to be asked whether to clear it.
   const handClear = useBoxClear("手牌", hand.length === 0, handleReset);
   const removeTile = (id: number) => commitHand(handRef.current.filter((t) => t.id !== id));
+  // ⌫: the last tile in (the hand keeps the order they came in - typed
+  // ones, the order typed).
+  const takeBackLast = () => {
+    const last = handRef.current.at(-1);
+    if (last) removeTile(last.id);
+  };
 
   const canCalculate = isCheckpointSize(hand.length);
   const upcoming = nextCheckpoint(hand.length);
@@ -2674,7 +2680,7 @@ function Calculator({
         <CollapsiblePanel open={!pickerCollapsed}>
           <div className="card picker-card">
             {pickerLayout === "numpad" ? (
-              <NumpadPicker renderTile={renderPickerTile} extraHonor={jokerButton} />
+              <NumpadPicker renderTile={renderPickerTile} extraHonor={jokerButton} backspace={<BackspaceKey onClick={takeBackLast} disabled={hand.length === 0} />} />
             ) : (
             <div className="tile-picker">
               {SUIT_ORDER.map((suit) => (
@@ -2683,8 +2689,10 @@ function Calculator({
                     .filter((t) => t.suit === suit)
                     .map(renderPickerTile)}
                   {/* The joker shares the honors row, straight after 白,
-                      rather than taking a row of its own. */}
+                      rather than taking a row of its own - and ⌫ the
+                      corner after it, last of all. */}
                   {suit === "z" && jokerButton}
+                  {suit === "z" && <BackspaceKey onClick={takeBackLast} disabled={hand.length === 0} />}
                 </div>
               ))}
             </div>
@@ -4204,14 +4212,17 @@ const BONUS_TILES: BonusTile[] = (["season", "flower"] as const).flatMap((kind) 
 // return the same buttons the Classic rows use, so taps and long-presses
 // behave the same in both layouts. 花 only shows when `renderBonus` is
 // given; `extraHonor` (the Calculator's joker) takes the cell after 白.
+// `backspace` (Scoring's ⌫) runs the width of the keypad, under every group.
 function NumpadPicker({
   renderTile,
   renderBonus,
   extraHonor,
+  backspace,
 }: {
   renderTile: (tile: Tile) => ReactNode;
   renderBonus?: (tile: BonusTile) => ReactNode;
   extraHonor?: ReactNode;
+  backspace?: ReactNode;
 }) {
   // With 花 (Scoring) the tabs split like the add-to row above them - 花 字
   // under 手牌, 萬 筒 索 under 門前's four - so the three bars line up.
@@ -4248,6 +4259,7 @@ function NumpadPicker({
       </div>
       <div className={`numpad-grid${group === "bonus" || group === "z" ? " is-four" : ""}`} role="tabpanel">
         {cells}
+        {backspace}
       </div>
     </div>
   );
@@ -5551,6 +5563,18 @@ function RecentCalcRow({ entry, onLoad }: { entry: RecentCalcHand; onLoad: () =>
 // The app's name, centred in the sticky toolbar once the page's own header
 // has scrolled away (html.header-hidden, set by App) - like an iOS title
 // bar. Tapping it goes back to the top.
+// The picker's ⌫: takes back the last tile (or meld, or bonus tile) added.
+function BackspaceKey({ onClick, disabled }: { onClick: () => void; disabled: boolean }) {
+  return (
+    <button type="button" className="backspace-key" onClick={onClick} disabled={disabled} aria-label="Remove the last tile added" title="Remove the last tile added">
+      <svg width="26" height="20" viewBox="0 0 26 20" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M8 2h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H8l-6.5-8z" />
+        <path d="M12 6.5l7 7M19 6.5l-7 7" />
+      </svg>
+    </button>
+  );
+}
+
 function ToolbarLogo() {
   return (
     <button type="button" className="toolbar-logo" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })} aria-label="Back to top" tabIndex={-1}>
@@ -6016,8 +6040,13 @@ function ScoringPanel({
   // above the picker's first row of tiles; past that the card pushes the
   // page down as usual. Done with a negative bottom margin the size of the
   // wrapped lines, so the card takes up its one-line height in the page.
+  // At the page's top, though, it grows down as usual, the picker with it -
+  // there's nowhere further up to scroll to see what it would cover (the
+  // 選牌 header and its buttons). `released`: the wrapped lines given back
+  // that way, when the page was (or came back) to the top.
   const naturalGap = useRef<number | null>(null);
-  useLayoutEffect(() => {
+  const released = useRef(0);
+  const fitCard = () => {
     const card = handCardRef.current;
     const next = card?.nextElementSibling as HTMLElement | null | undefined;
     const tiles = addToRowRef.current?.nextElementSibling;
@@ -6044,6 +6073,8 @@ function ScoringPanel({
         const line = Math.max(...rects.map((r) => r.height));
         extra += Math.max(0, bottom - top - line);
       });
+      released.current = window.scrollY <= 0 ? extra : Math.min(released.current, extra);
+      extra -= released.current;
       // Room from the card's one-line bottom down to 6px above the tiles -
       // measured from the header, which moves with the page (the card may
       // be pinned), plus the gap the card's margin currently takes away.
@@ -6059,7 +6090,18 @@ function ScoringPanel({
     // leave a sliver of it peeking out from under the card.
     const hideHeader = overlap > naturalGap.current ? "hidden" : "";
     if (next.style.visibility !== hideHeader) next.style.visibility = hideHeader;
-  });
+  };
+  useLayoutEffect(fitCard);
+  const fitCardRef = useRef(fitCard);
+  fitCardRef.current = fitCard;
+  // Back at the top: the card lets go of what it's covering.
+  useEffect(() => {
+    const onScroll = () => {
+      if (window.scrollY <= 0) fitCardRef.current();
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
 
   const cardGrowth = useRef({ height: 0, tiles: 0, animating: false });
   useLayoutEffect(() => {
@@ -6152,6 +6194,8 @@ function ScoringPanel({
   const concealedRef = useRef<HandTile[]>([]);
   const declaredRef = useRef<DeclaredMeldTile[]>([]);
   const bonusRef = useRef<BonusTile[]>([]);
+  // What the picker's added, in order - for ⌫ (see takeBackLast).
+  const addedOrder = useRef<({ kind: "tile" | "meld"; id: number } | { kind: "bonus"; tile: BonusTile })[]>([]);
 
   const totalCopiesUsedRef = (tile: Tile): number => {
     let n = tileCount(concealedRef.current, tile);
@@ -6226,7 +6270,9 @@ function ScoringPanel({
 
   const addConcealedTile = (tile: Tile) => {
     if (atCapRef() || totalCopiesUsedRef(tile) >= 4) return;
-    const next = [...concealedRef.current, { ...tile, id: nextTileId.current++ }];
+    const id = nextTileId.current++;
+    addedOrder.current.push({ kind: "tile", id });
+    const next = [...concealedRef.current, { ...tile, id }];
     concealedRef.current = next;
     setConcealedTiles(next);
   };
@@ -6235,6 +6281,7 @@ function ScoringPanel({
   const addWinningTile = (tile: Tile) => {
     if (atCapRef() || totalCopiesUsedRef(tile) >= 4) return;
     const added: HandTile = { ...tile, id: nextTileId.current++ };
+    addedOrder.current.push({ kind: "tile", id: added.id });
     const next = [...concealedRef.current, added];
     concealedRef.current = next;
     setConcealedTiles(next);
@@ -6249,7 +6296,9 @@ function ScoringPanel({
 
   const pushMeld = (kind: MeldKind, concealed: boolean, tiles: Tile[]) => {
     if (meldRoomRef() < 3 || declaredRef.current.length >= 5) return;
-    const next = [...declaredRef.current, { id: nextMeldId.current++, kind, concealed, tiles }];
+    const id = nextMeldId.current++;
+    addedOrder.current.push({ kind: "meld", id });
+    const next = [...declaredRef.current, { id, kind, concealed, tiles }];
     declaredRef.current = next;
     setDeclaredMelds(next);
   };
@@ -6294,6 +6343,7 @@ function ScoringPanel({
   const hasBonusTile = (tile: BonusTile) => bonusTiles.some((b) => b.kind === tile.kind && b.rank === tile.rank);
   const addBonusTile = (tile: BonusTile) => {
     if (hasBonusTileRef(tile)) return;
+    addedOrder.current.push({ kind: "bonus", tile });
     const next = [...bonusRef.current, tile];
     bonusRef.current = next;
     setBonusTiles(next);
@@ -6302,6 +6352,24 @@ function ScoringPanel({
     const next = bonusRef.current.filter((b) => !(b.kind === tile.kind && b.rank === tile.rank));
     bonusRef.current = next;
     setBonusTiles(next);
+  };
+  // ⌫: takes back the last thing added - a tile, a whole declared meld, a
+  // bonus tile. (Anything already gone is passed over; a hand that came in
+  // whole - a scan, a link - goes from its end: 手牌's last tile, then
+  // 門前's last meld, then its last bonus tile.)
+  const takeBackLast = () => {
+    while (addedOrder.current.length) {
+      const a = addedOrder.current.pop()!;
+      if (a.kind === "tile" && concealedRef.current.some((t) => t.id === a.id)) return removeConcealedTile(a.id);
+      if (a.kind === "meld" && declaredRef.current.some((m) => m.id === a.id)) return removeMeld(a.id);
+      if (a.kind === "bonus" && hasBonusTileRef(a.tile)) return removeBonusTile(a.tile);
+    }
+    const tile = concealedRef.current.at(-1);
+    if (tile) return removeConcealedTile(tile.id);
+    const meld = declaredRef.current.at(-1);
+    if (meld) return removeMeld(meld.id);
+    const bonus = bonusRef.current.at(-1);
+    if (bonus) removeBonusTile(bonus);
   };
 
   const canAddMeldTile = (tile: Tile): boolean => {
@@ -6407,6 +6475,8 @@ function ScoringPanel({
     manualVisibleExhaust,
   });
   const restoreSnapshot = (snap: ScoringSnapshot) => {
+    // (Its ids are the ones it had: none of what's been added since.)
+    addedOrder.current = [];
     concealedRef.current = snap.concealed;
     declaredRef.current = snap.declared;
     bonusRef.current = snap.bonus;
@@ -6793,6 +6863,7 @@ function ScoringPanel({
 
   // One picker tile - shared by the Classic rows and the Numpad keypad, so
   // both layouts tap and long-press the same way.
+  const backspaceKey = <BackspaceKey onClick={takeBackLast} disabled={handEmpty} />;
   const renderPickerTile = (t: Tile): ReactNode =>
     addTo === "hand" ? (
       <LongPressTileButton
@@ -7573,7 +7644,7 @@ function ScoringPanel({
             </div>
 
             {pickerLayout === "numpad" ? (
-              <NumpadPicker renderTile={renderPickerTile} renderBonus={renderPickerBonus} />
+              <NumpadPicker renderTile={renderPickerTile} renderBonus={renderPickerBonus} backspace={backspaceKey} />
             ) : (
             <div className="tile-picker">
               {SUIT_ORDER.map((suit) => (
@@ -7583,7 +7654,11 @@ function ScoringPanel({
                     .map(renderPickerTile)}
                 </div>
               ))}
-              <div className="suit-row bonus-row">{BONUS_TILES.map(renderPickerBonus)}</div>
+              {/* ⌫ last of all, in the corner after 竹. */}
+              <div className="suit-row bonus-row">
+                {BONUS_TILES.map(renderPickerBonus)}
+                {backspaceKey}
+              </div>
             </div>
             )}
           </div>
