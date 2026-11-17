@@ -2,8 +2,9 @@
 // load): a tile's clack for a draw or a discard, a deeper knock for a call,
 // a bell for 叮 and a little chime for a win or a bonus - with a short
 // buzz on phones that allow it (Android; an iPhone page can't vibrate).
-// iPhones only let a page make sound after a tap, so the first tap on the
-// page wakes the audio up. Muting is remembered on this phone.
+// iPhones only let a page make sound after a tap, so a tap on the page wakes
+// the audio up - the first, and any after the phone has put it to sleep (a
+// call, Siri, the lock screen). Muting is remembered on this phone.
 
 export type Sound = "draw" | "discard" | "call" | "riichi" | "win" | "bonus";
 
@@ -36,7 +37,9 @@ function audio(): AudioContext | null {
   const AC = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
   if (!AC) return null;
   ctx ??= new AC();
-  if (ctx.state === "suspended") void ctx.resume();
+  // Anything but running: "suspended", or what an iPhone leaves it in after
+  // a call, Siri or the lock screen ("interrupted" - not in the type yet).
+  if ((ctx.state as string) !== "running") void ctx.resume().catch(() => {});
   return ctx;
 }
 

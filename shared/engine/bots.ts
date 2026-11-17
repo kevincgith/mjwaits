@@ -21,7 +21,7 @@ import {
   riichiForcedDiscard,
   surrenderable,
   sameTile,
-  scoreWin,
+  secondChanceFan,
   SEATS,
   seatWind,
   unseenCounts,
@@ -724,14 +724,14 @@ function shouldRiichi(s: GameState, seat: number, choice: DiscardChoice, profile
   return rng() < want;
 }
 
-// The tai a win off this discard would score.
-function winTai(s: GameState, seat: number, tile: Tile, from: number): number {
-  const trial: GameState = { ...s, players: s.players.map((pl, i) => (i === seat ? { ...pl, hand: [...pl.hand, tile] } : pl)) };
-  try {
-    return scoreWin(trial, seat, from, tile, null).total;
-  } catch {
-    return 0;
-  }
+// The tai a win off the tile up for claiming would score - worked out as the
+// table would score it (secondChanceFan): the tile out of the discarder's
+// pond first (left there, the ponds read one tile fuller - a 四/七/十子內
+// win at its last tile read as past it, and 明絕 counted the winning tile
+// among those in sight), and a kong robbed scored as one. (On its own: who
+// else wins off it isn't known yet.)
+function winTai(s: GameState, seat: number): number {
+  return secondChanceFan(s, seat, 0) ?? 0;
 }
 
 export function botClaimFor(s: GameState, seat: number, profile: BotProfile, rng: Rng = Math.random): Claim | null {
@@ -742,7 +742,7 @@ export function botClaimFor(s: GameState, seat: number, profile: BotProfile, rng
   if (options.some((o) => o.kind === "win")) {
     // The Hunter lets a small win go by while the wall is deep.
     // (A 拉 or 踢 on the discarder counts toward it.)
-    if (profile.minTai > 0 && liveTilesLeft(s) > 36 && winTai(s, seat, tile, from) + lahAddOn(s.lahs, seat, from).amount < profile.minTai) return null;
+    if (profile.minTai > 0 && liveTilesLeft(s) > 36 && winTai(s, seat) + lahAddOn(s.lahs, seat, from).amount < profile.minTai) return null;
     return { kind: "win" };
   }
   const melds = meldsNeeded(p);

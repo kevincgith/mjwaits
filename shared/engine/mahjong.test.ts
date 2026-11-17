@@ -528,6 +528,34 @@ describe("standardShanten / shanten", () => {
     expect(getWaits(ready).map((t) => t.rank + t.suit)).toContain("2b");
   });
 
+  it("doesn't call eight pairs all made of fours ready (Eight Pairs)", () => {
+    // 1111 2222 3333 4444: eight pairs, and no kind held twice to take a
+    // third of - nothing completes it. One exchange away (throw a 1m: 111m,
+    // six pairs and the tile drawn, waiting for its pair).
+    const fours = parseHand("1111m2222m3333t4444t");
+    expect(fours.length).toBe(16);
+    expect(getWaits(fours)).toEqual([]);
+    expect(shanten(fours)).toBe(1);
+    // With one plain pair among them it does wait: for that pair's third.
+    const waits = parseHand("1111m2222m3333t44t55t");
+    expect(shanten(waits)).toBe(0);
+    expect(getWaits(waits).map((t) => t.rank + t.suit)).toEqual(expect.arrayContaining(["4t", "5t"]));
+  });
+
+  it("doesn't call two ranks no third can join ready (Sixteen Unrelated Tiles)", () => {
+    // 3m and 7m are three apart, but no rank is three from both: one of them
+    // has to go before the suit can have its three. Read as ready, it had no
+    // tile to wait for - and a bot held it to the end of the hand.
+    const stuck = parseHand("37m147t147b12345677z");
+    expect(stuck.length).toBe(16);
+    expect(getWaits(stuck)).toEqual([]);
+    expect(shanten(stuck)).toBe(1);
+    // 1m and 7m take a 4m between them: that one is ready.
+    const ready = parseHand("17m147t147b12345677z");
+    expect(shanten(ready)).toBe(0);
+    expect(getWaits(ready).map((t) => t.rank + t.suit)).toEqual(["4m"]);
+  });
+
   it("stays fast on a full 16-tile hand", () => {
     const tiles = parseHand("13579m2468t111z5577b");
     expect(tiles.length).toBe(16);

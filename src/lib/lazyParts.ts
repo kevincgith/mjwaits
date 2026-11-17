@@ -32,26 +32,15 @@ function fetchPart<K extends keyof Parts>(key: K): Promise<Part<K>> {
 }
 export const loadedPart = <K extends keyof Parts>(key: K) => loaded.get(key) as Part<K> | undefined;
 
-// A file of the build this page came with that's gone from the server
-// (a newer build is up): reload once, onto the new build.
-const RELOAD_KEY = "mjwaits.chunkReload";
-function reloadOnce(): boolean {
-  try {
-    if (!navigator.onLine || sessionStorage.getItem(RELOAD_KEY)) return false;
-    sessionStorage.setItem(RELOAD_KEY, "1");
-  } catch {
-    return false;
-  }
-  window.location.reload();
-  return true;
-}
-
 // Thrown when a part can't be fetched - told apart from the part's own errors.
+// (No signal, or a file of the build this page came with that's gone from
+// the server - a newer build is up. Either way it's said, with a Reload to
+// tap: see LazyParts' LoadFailed. The page doesn't reload itself - a hand
+// being entered on Scoring would go with it.)
 export class PartLoadError extends Error {}
 
 function load<K extends keyof Parts>(key: K): Promise<Part<K>> {
   return fetchPart(key).catch((e: unknown) => {
-    if (reloadOnce()) return new Promise<never>(() => {});
     throw new PartLoadError(String(e));
   });
 }
@@ -92,15 +81,7 @@ function idle(fn: () => void) {
 export function warmLazyParts(): void {
   if (!import.meta.env.PROD) return;
   idle(() => {
-    const parts = Promise.allSettled((Object.keys(loaders) as (keyof Parts)[]).map(fetchPart)).then((results) => {
-      if (results.every((r) => r.status === "fulfilled")) {
-        try {
-          sessionStorage.removeItem(RELOAD_KEY);
-        } catch {
-          // No storage: nothing to clear.
-        }
-      }
-    });
+    const parts = Promise.allSettled((Object.keys(loaders) as (keyof Parts)[]).map(fetchPart));
     if (!("serviceWorker" in navigator)) return;
     void Promise.all([parts, whenControlled()]).then(() => {
       // Every tile's art too, not just those shown so far (the joker, say).

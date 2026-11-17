@@ -1008,14 +1008,20 @@ function eightPairsShanten(tiles: Tile[], kc: Uint8Array | null = kindCounts(til
   const counts = kc ?? countAll(tiles).values();
   let pairUnits = 0;
   let hasSpare = false;
+  let hasPlainPair = false;
   for (const c of counts) {
     pairUnits += Math.floor(c / 2);
     // Only a kind held three times is the spare: all four are two pairs
     // already, and can't also be the triplet (1111 + 7 pairs + 2 singles
     // isn't ready - it read as ready, and was declared 叮).
     if (c === 3) hasSpare = true;
+    if (c === 2) hasPlainPair = true;
   }
-  return 8 - pairUnits - (hasSpare ? 1 : 0);
+  const away = 8 - pairUnits - (hasSpare ? 1 : 0);
+  // Eight pairs and no triplet waits for a third of one of them - of a kind
+  // held twice. Eight pairs all made of fours (1111 2222 3333 4444) has no
+  // such kind: nothing to wait for, so one more exchange away, not ready.
+  return away === 0 && !hasSpare && !hasPlainPair ? 1 : away;
 }
 
 interface UnrelatedDpState {
@@ -1031,24 +1037,28 @@ interface UnrelatedDpState {
 // that every selected pair of ranks is at least 3 apart - a DP over rank,
 // capped at 3 selected ranks (see unrelatedRanksOk for why 3 is the ceiling
 // in 1-9).
+//
+// Counted against the suit's possible finished threes (UNRELATED_THREES), not
+// just "the most held ranks 3 apart": 3 and 7 are 3 apart, but no third rank
+// is 3 from both, so they're one rank of a finished three plus one to swap -
+// 1 unit toward it, not 2 (which read `37m 147t 147b` + the honours as ready,
+// with nothing to wait for).
+const UNRELATED_THREES: [number, number, number][] = [];
+for (let a = 1; a <= 9; a++) for (let b = a + 3; b <= 9; b++) for (let c = b + 3; c <= 9; c++) UNRELATED_THREES.push([a, b, c]);
+
 function maxUnrelatedWithPair(counts: number[]): UnrelatedDpState {
-  let prev3: UnrelatedDpState = { units: 0, hasPair: false };
-  let prev2: UnrelatedDpState = { units: 0, hasPair: false };
-  let prev1: UnrelatedDpState = { units: 0, hasPair: false };
-  let current: UnrelatedDpState = { units: 0, hasPair: false };
-  for (let r = 1; r <= 9; r++) {
-    const base = r - 3 >= 0 ? prev3 : { units: 0, hasPair: false };
-    current = prev1; // skip r
-    if (counts[r] > 0) {
-      const use: UnrelatedDpState = { units: base.units + 1, hasPair: base.hasPair || counts[r] >= 2 };
-      if (use.units > current.units) current = use;
-      else if (use.units === current.units) current = { units: current.units, hasPair: current.hasPair || use.hasPair };
+  let best: UnrelatedDpState = { units: 0, hasPair: false };
+  for (const three of UNRELATED_THREES) {
+    let units = 0;
+    let hasPair = false;
+    for (const r of three) {
+      if (counts[r] > 0) units++;
+      if (counts[r] >= 2) hasPair = true;
     }
-    prev3 = prev2;
-    prev2 = prev1;
-    prev1 = current;
+    if (units > best.units) best = { units, hasPair };
+    else if (units === best.units && hasPair) best = { units, hasPair: true };
   }
-  return current;
+  return best;
 }
 
 // Sixteen Unrelated Tiles shanten: the target shape has 16 "slots" - all 7
