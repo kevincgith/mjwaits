@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { existsSync, readdirSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { defineConfig, type Plugin } from 'vite'
 import { configDefaults } from 'vitest/config'
@@ -44,10 +44,54 @@ function devOnlyFiles(): Plugin {
   }
 }
 
+// What this build is made of, for the page to say how much of it is stored
+// for use with no signal (src/lib/offline.ts, the sheet behind the MJWaits
+// icon) and to fetch the rest: offline.json - the app's own files, and the
+// scanner's (its engine and model, by the engine a phone uses) - and
+// offline-voices.json, the bots' voice clips (thousands: read only when
+// asked for). Each file with its size in bytes, addressed from the base.
+function offlineManifest(): Plugin {
+  let outDir = 'dist'
+  const walk = (dir: string, under: string): [string, number][] =>
+    !existsSync(dir)
+      ? []
+      : readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+          e.isDirectory() ? walk(join(dir, e.name), `${under}${e.name}/`) : [[`${under}${e.name}`, statSync(join(dir, e.name)).size] as [string, number]],
+        )
+  return {
+    name: 'mjwaits-offline-manifest',
+    apply: 'build',
+    configResolved(config) {
+      outDir = resolve(config.root, config.build.outDir)
+    },
+    closeBundle() {
+      const versions = modelVersions()
+      const model = (file: string): [string, number][] =>
+        existsSync(join(outDir, 'model', file)) ? [[`model/${file}${versions[file] ? `?v=${versions[file]}` : ''}`, statSync(join(outDir, 'model', file)).size]] : []
+      const assets = walk(join(outDir, 'assets'), 'assets/')
+      // The scanner's engine (onnxruntime): its GPU build ("webgpu", and the
+      // "asyncify" wasm it runs on) or its plain one.
+      const engine = (f: string) => /\/ort[-.]/.test(f)
+      const gpu = (f: string) => /webgpu|asyncify|jsep/.test(f)
+      const manifest = {
+        core: assets.filter(([f]) => !engine(f)),
+        scanner: {
+          wasm: [...assets.filter(([f]) => engine(f) && !gpu(f)), ...model('tile-detector.onnx')],
+          webgpu: [...assets.filter(([f]) => engine(f) && gpu(f)), ...model('tile-detector-fp32.onnx')],
+        },
+        voices: walk(join(outDir, 'voices'), 'voices/').reduce((t, [, b]) => ({ files: t.files + 1, bytes: t.bytes + b }), { files: 0, bytes: 0 }),
+      }
+      writeFileSync(join(outDir, 'offline.json'), JSON.stringify(manifest))
+      writeFileSync(join(outDir, 'offline-voices.json'), JSON.stringify(walk(join(outDir, 'voices'), 'voices/')))
+    },
+  }
+}
+
 // https://vite.dev/config/
 export default defineConfig({
   base: '/mjwaits/',
-  plugins: [react(), devOnlyFiles()],
+  // (offlineManifest after devOnlyFiles: it lists what's left.)
+  plugins: [react(), devOnlyFiles(), offlineManifest()],
   define: {
     __BUILD_TIME__: JSON.stringify(buildTimeHKT()),
     __MODEL_VERSIONS__: JSON.stringify(modelVersions()),
