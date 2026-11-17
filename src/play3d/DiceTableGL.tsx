@@ -34,8 +34,7 @@ function useDice(dice: DiceOnTable | null, land: Box, fence?: (w: number) => [nu
       const box = { l: land.l * w, t: land.t * w, r: land.r * w, b: land.b * w };
       const still = !dice.thrown || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
       const o = { key: dice.key, width: w, land: box, size: DIE_SIZE * w, values: dice.values };
-      // Thrown in from your edge of the table.
-      made.current = still ? laidDice(o) : throwDice({ ...o, from: w + DIE_SIZE * w, fence: fence?.(w) });
+      made.current = still ? laidDice(o) : throwDice({ ...o, fence: fence?.(w) });
     }
     const { dice: cubes, quads } = diceScene(made.current, w);
     return { pieces: [], quads, dice: cubes };

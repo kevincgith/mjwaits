@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
-import { feltToHand, layoutTable, THICK, TILE_H, TILE_W, type Dims, type Piece } from "./layout";
+import { BACK, feltToHand, layoutTable, THICK, TILE_H, TILE_W, type Dims, type Piece } from "./layout";
 import { apply, chain, rotateX, translate } from "./mat";
 import { giverOrder, swapSlots } from "./swapOrder";
 import type { Tile } from "@mjwaits/shared/engine/mahjong";
@@ -520,5 +520,23 @@ describe("a peek on the WebGL table", () => {
     const out = layoutTable(table(undefined), DIMS);
     expect(out.felt.glass).toEqual([]);
     expect(out.felt.pieces.every((p) => p.tint === 1)).toBe(true);
+  });
+});
+
+describe("見牌 seen copies on the WebGL table", () => {
+  const m = (rank: number): Tile => ({ suit: "m", rank }) as Tile;
+  const kong = { kind: "kong" as const, tiles: [m(5), m(5), m(5), m(5)], concealed: true, from: null };
+  const pong = { kind: "triplet" as const, tiles: [m(2), m(2), m(2)], concealed: false, from: 1 };
+  const held = (focus: Tile | null) => {
+    const v = take("bottom", 0);
+    return layoutTable({ ...v, piles: null, rows: {}, flights: [], walls: { ...v.walls, right: { ...wall(10), melds: [kong, pong] } }, focus }, DIMS).felt.pieces.filter((p) => p.seen?.startsWith("seen:"));
+  };
+
+  it("greys the open tiles that aren't the one held - never a concealed kong's, face down", () => {
+    const out = held(m(9));
+    const down = out.filter((p) => p.face === BACK);
+    expect(down.length).toBeGreaterThan(0);
+    expect(down.every((p) => p.tint === 1 && !p.fade)).toBe(true);
+    expect(out.filter((p) => p.face === "m2").every((p) => p.tint < 1)).toBe(true);
   });
 });

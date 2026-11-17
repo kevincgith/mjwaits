@@ -16,29 +16,47 @@ const SIZE = 0.105 * W;
 const land = { l: 0.18 * W, t: 0.46 * W, r: 0.82 * W, b: 0.76 * W };
 
 describe("the Dice tab's thrown dice", () => {
-  it("come in from your edge and stop where they're meant to - with no unseen walls to bounce off", () => {
-    for (let s = 1; s <= 40; s++) {
-      const paths = simulateThrow({ land, from: W + SIZE, size: SIZE, n: 3, random: seeded(s) });
+  it("fall from a hand held high, tumble, and stop where they're meant to - with no unseen walls", () => {
+    const turns: number[] = [];
+    for (let s = 1; s <= 30; s++) {
+      const paths = simulateThrow({ width: W, land, size: SIZE, n: 3, random: seeded(s) });
       for (const path of paths) {
-        expect(path[0].y).toBeGreaterThan(W);
+        // Thrown from well above the table, over your side of it.
+        expect(path[0].z).toBeGreaterThan(SIZE * 3);
+        expect(path[0].y).toBeGreaterThan(W * 0.7);
         const end = path[path.length - 1];
-        expect(end.z).toBe(0);
-        // (Knocked about by each other, a die may stray a little.)
+        // Lying flat on the felt.
+        expect(end.z).toBeCloseTo(SIZE / 2, 5);
         expect(end.x).toBeGreaterThan(land.l - SIZE);
         expect(end.x).toBeLessThan(land.r + SIZE);
         expect(end.y).toBeGreaterThan(land.t - SIZE);
         expect(end.y).toBeLessThan(land.b + SIZE);
-        // Up the table all the way: nothing turns it back.
-        for (let i = 1; i < path.length; i++) expect(path[i].y).toBeLessThanOrEqual(path[i - 1].y + SIZE * 0.6);
+        // Never through the felt.
+        for (const f of path) expect(f.z).toBeGreaterThan(SIZE * 0.45);
+        let turned = 0;
+        for (let i = 1; i < path.length; i++) {
+          const [a, b] = [path[i - 1].q, path[i].q];
+          turned += 2 * Math.acos(Math.min(1, Math.abs(a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3])));
+        }
+        turns.push(turned / (2 * Math.PI));
       }
     }
+    // Tumbling: a full turn and more, as a rule.
+    turns.sort((a, b) => a - b);
+    expect(turns[turns.length >> 1]).toBeGreaterThan(1);
+  });
+
+  it("are thrown differently each time", () => {
+    const starts = [1, 2, 3, 4, 5].map((s) => simulateThrow({ width: W, land, size: SIZE, n: 3, random: seeded(s) })[0][0]);
+    expect(new Set(starts.map((f) => Math.round(f.x / 10))).size).toBeGreaterThan(2);
+    expect(new Set(starts.map((f) => Math.round(f.z / 10))).size).toBeGreaterThan(2);
   });
 
   it("stay inside 擲骰's wall", () => {
     const fence = wallFence(W);
     const box = { l: 0.32 * W, t: 0.32 * W, r: 0.68 * W, b: 0.68 * W };
     for (let s = 1; s <= 20; s++) {
-      const paths = simulateThrow({ land: box, from: W + SIZE, size: SIZE, n: 3, fence, random: seeded(s) });
+      const paths = simulateThrow({ width: W, land: box, size: SIZE, n: 3, fence, random: seeded(s) });
       for (const path of paths) {
         const end = path[path.length - 1];
         // Inside the wall's inner face, on every side.
@@ -55,7 +73,7 @@ describe("the Dice tab's thrown dice", () => {
   it("land showing the values thrown, face up, resting on the felt", () => {
     const values = [1, 2, 3, 4, 5, 6];
     for (const v of values) {
-      const t = throwDice({ key: "k", width: W, land, from: W + SIZE, size: SIZE, values: [v], random: seeded(v) });
+      const t = throwDice({ key: "k", width: W, land, size: SIZE, values: [v], random: seeded(v) });
       const { dice } = diceScene(t, W);
       const m = dice[0].m;
       // The cube's +z face (1) carried to where it rests: which of its faces
@@ -83,7 +101,7 @@ describe("the Dice tab's thrown dice", () => {
   });
 
   it("are drawn to the felt's width now, wherever they were thrown", () => {
-    const t = throwDice({ key: "k", width: W, land, from: W + SIZE, size: SIZE, values: [2, 4], random: seeded(9) });
+    const t = throwDice({ key: "k", width: W, land, size: SIZE, values: [2, 4], random: seeded(9) });
     const a = diceScene(t, W).dice[0].m;
     const b = diceScene(t, W * 2).dice[0].m;
     expect(b[12]).toBeCloseTo(a[12] * 2, 3);

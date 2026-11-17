@@ -1,9 +1,17 @@
 // The Dice tab's dice, as Play's engine draws them (see engine's die mesh):
 // real rounded cubes on the felt, lit as the tiles are, thrown by a small
-// physics simulation - in from your edge of the table, in the air, a bounce
-// or two on the felt, then rolling to a stop. They hit only what's there:
-// each other, and (擲骰) the wall round them - never an unseen edge; each
-// throw is aimed so the dice come to rest where they're meant to land.
+// rigid-body simulation. They leave a hand held high over your side of the
+// table, spinning, and fall onto the felt: each cube lands on a corner or
+// an edge and is kicked into a new spin, tumbles over edge to edge, rocks
+// on its last face and lies still. They hit only what's there - the felt,
+// each other, and (擲骰) the wall round them - never an unseen edge; of a
+// few throws tried, one that comes to rest where the dice are meant to
+// land is kept. Every throw is different: where the hand is, how high, which
+// way and how hard, the spin.
+//
+// What a die shows is the roll's, not the simulation's: once a throw's done,
+// each cube's faces are relabelled (a turn of the cube onto itself, so it
+// looks no different) so the face that came up is the value rolled.
 //
 // All in the felt's own px and CSS's axes (x right, y down, z up off it).
 
@@ -12,6 +20,7 @@ import type { Anim, Quad } from "./layout";
 
 // Rotations as quaternions [w, x, y, z].
 export type Quat = [number, number, number, number];
+type Vec = [number, number, number];
 export const qMul = (a: Quat, b: Quat): Quat => [
   a[0] * b[0] - a[1] * b[1] - a[2] * b[2] - a[3] * b[3],
   a[0] * b[1] + a[1] * b[0] + a[2] * b[3] - a[3] * b[2],
@@ -22,7 +31,10 @@ export const qAxis = (x: number, y: number, z: number, angle: number): Quat => {
   const h = Math.sin(angle / 2);
   return [Math.cos(angle / 2), x * h, y * h, z * h];
 };
-const qConj = (q: Quat): Quat => [q[0], -q[1], -q[2], -q[3]];
+const qNorm = (q: Quat): Quat => {
+  const l = Math.hypot(...q);
+  return [q[0] / l, q[1] / l, q[2] / l, q[3] / l];
+};
 // The rotation as a matrix (column-major, as mat.ts).
 function qMat([w, x, y, z]: Quat): Mat {
   const m = new Float32Array(16);
@@ -38,25 +50,43 @@ function qMat([w, x, y, z]: Quat): Mat {
   m[15] = 1;
   return m;
 }
+// A vector turned by the rotation `m` (as qMat makes it).
+const turn = (m: Mat, v: Vec): Vec => [m[0] * v[0] + m[4] * v[1] + m[8] * v[2], m[1] * v[0] + m[5] * v[1] + m[9] * v[2], m[2] * v[0] + m[6] * v[1] + m[10] * v[2]];
+const cross = (a: Vec, b: Vec): Vec => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const dot = (a: Vec, b: Vec) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 // Between two rotations, `t` of the way (the short way round).
 function qBlend(a: Quat, b: Quat, t: number): Quat {
   const s = a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3] < 0 ? -1 : 1;
-  const q = a.map((v, i) => v + (s * b[i] - v) * t) as Quat;
-  const l = Math.hypot(...q);
-  return q.map((v) => v / l) as Quat;
+  return qNorm(a.map((v, i) => v + (s * b[i] - v) * t) as Quat);
 }
 
 // The cube's faces (see the engine's die shader): 1 up (+z), 6 down, 2 and
 // 5 toward and away from you (+y, -y), 3 and 4 right and left (+x, -x).
-// The turn that brings each value's face up.
-const FACE_UP: Record<number, Quat> = {
-  1: [1, 0, 0, 0],
-  2: qAxis(1, 0, 0, Math.PI / 2),
-  3: qAxis(0, 1, 0, -Math.PI / 2),
-  4: qAxis(0, 1, 0, Math.PI / 2),
-  5: qAxis(1, 0, 0, -Math.PI / 2),
-  6: qAxis(1, 0, 0, Math.PI),
-};
+const FACES: Record<number, Vec> = { 1: [0, 0, 1], 6: [0, 0, -1], 2: [0, 1, 0], 5: [0, -1, 0], 3: [1, 0, 0], 4: [-1, 0, 0] };
+// Which face of a cube turned by q is up, and how squarely.
+function faceUp(q: Quat): [number, number] {
+  const m = qMat(q);
+  let best: [number, number] = [1, -2];
+  for (const [v, n] of Object.entries(FACES)) {
+    const up = turn(m, n)[2];
+    if (up > best[1]) best = [+v, up];
+  }
+  return best;
+}
+// The cube turned onto itself so face `from` is where face `to` was.
+function relabel(from: number, to: number): Quat {
+  const a = FACES[from];
+  const b = FACES[to];
+  const d = dot(a, b);
+  if (d > 0.5) return [1, 0, 0, 0];
+  if (d < -0.5) {
+    // Opposite: half a turn about an axis square to them both.
+    const ax: Vec = a[0] ? [0, 0, 1] : [1, 0, 0];
+    return qAxis(ax[0], ax[1], ax[2], Math.PI);
+  }
+  const ax = cross(a, b);
+  return qAxis(ax[0], ax[1], ax[2], Math.PI / 2);
+}
 
 export interface Box {
   l: number;
@@ -67,46 +97,171 @@ export interface Box {
 export interface ThrowFrame {
   x: number;
   y: number;
-  /** Height above the felt, px. */
+  /** The die's middle, above the felt (px). */
   z: number;
   q: Quat;
 }
 export const THROW_FPS = 60;
 // The longest a throw lasts (the result shows as it ends).
-export const THROW_MS = 1300;
+export const THROW_MS = 1900;
 
-// The physics, for dice `size` px across (as the old 30px dice had it,
-// scaled): gravity, the felt's drag on a rolling die, the bounce.
+// A cube `size` px across (its weight 1). Gravity and speeds scale with it,
+// so a throw looks the same at any size. The felt grips (friction) and
+// gives a little (restitution) - a hard hit bounces, a soft one doesn't.
 const physics = (size: number) => {
-  const k = size / 30;
-  return { g: 1100 * k, drag: 160 * k, settle: 45 * k, rad: size * 0.62 };
+  const k = size / 37;
+  return {
+    g: 3000 * k,
+    inertia: (size * size) / 6,
+    bounce: 0.38,
+    still: 70 * k,
+    grip: 0.45,
+    // Dice knocking together: as balls this far round.
+    rad: size * 0.56,
+  };
 };
+const STEP = 1 / 600;
+const PER_FRAME = 600 / THROW_FPS;
 
-// One die alone on the felt: how far it goes, thrown at `speed`.
-function travel(size: number, speed: number, z: number, vz: number): number {
-  const { g, drag, settle } = physics(size);
-  const dt = 1 / 240;
-  let v = speed;
-  let d = 0;
-  for (let step = 0; step < (240 * THROW_MS) / 1000; step++) {
-    if (z > 0 || vz > 0) {
-      vz -= g * dt;
-      z += vz * dt;
-      if (z <= 0) {
-        z = 0;
-        vz = -vz * 0.38;
-        if (vz < settle) vz = 0;
+interface Body {
+  p: Vec;
+  v: Vec;
+  q: Quat;
+  w: Vec;
+  // Inside the wall yet (it's thrown in over it), and where it first hit the felt.
+  inside: boolean;
+  firstHit: [number, number] | null;
+}
+type Fence = { a: [number, number]; nx: number; ny: number }[];
+
+// The dice as thrown, till all lie still (or THROW_MS is up, when they're
+// laid flat): each die's place and turn at THROW_FPS; and whether they came
+// to rest by themselves.
+function simulate(size: number, bodies: Body[], fence?: Fence): { frames: ThrowFrame[][]; settled: boolean } {
+  const P = physics(size);
+  const h = size / 2;
+  const corners: Vec[] = [];
+  for (const x of [-h, h]) for (const y of [-h, h]) for (const z of [-h, h]) corners.push([x, y, z]);
+  const frames: ThrowFrame[][] = bodies.map(() => []);
+  const record = () => bodies.forEach((b, i) => frames[i].push({ x: b.p[0], y: b.p[1], z: b.p[2], q: b.q }));
+  record();
+  let quiet = 0;
+  let settled = false;
+  const steps = Math.round(THROW_MS / 1000 / STEP);
+  for (let step = 1; step <= steps; step++) {
+    for (const b of bodies) {
+      b.v[2] -= P.g * STEP;
+      b.p = [b.p[0] + b.v[0] * STEP, b.p[1] + b.v[1] * STEP, b.p[2] + b.v[2] * STEP];
+      const dq = qMul([0, b.w[0], b.w[1], b.w[2]], b.q);
+      b.q = qNorm([b.q[0] + 0.5 * STEP * dq[0], b.q[1] + 0.5 * STEP * dq[1], b.q[2] + 0.5 * STEP * dq[2], b.q[3] + 0.5 * STEP * dq[3]]);
+      // The felt, at each corner under it: pushed back up, the push and the
+      // felt's grip turning the cube about that corner. (Only near the felt
+      // can a corner reach it.)
+      let low = 0;
+      let touching = false;
+      if (b.p[2] < h * 1.75)
+        for (let pass = 0; pass < 2; pass++) {
+          const m = qMat(b.q);
+          for (const c of corners) {
+            const r = turn(m, c);
+            const z = b.p[2] + r[2];
+            if (z >= 0) continue;
+            touching = true;
+            low = Math.min(low, z);
+            if (!b.firstHit) b.firstHit = [b.p[0], b.p[1]];
+            const u = cross(b.w, r).map((x, i) => x + b.v[i]) as Vec;
+            if (u[2] >= 0) continue;
+            const apply = (j: Vec) => {
+              b.v = [b.v[0] + j[0], b.v[1] + j[1], b.v[2] + j[2]];
+              const t = cross(r, j);
+              b.w = [b.w[0] + t[0] / P.inertia, b.w[1] + t[1] / P.inertia, b.w[2] + t[2] / P.inertia];
+            };
+            const rn = cross(r, [0, 0, 1]);
+            const jn = (-(1 + (-u[2] > P.still ? P.bounce : 0)) * u[2]) / (1 + dot(rn, rn) / P.inertia);
+            apply([0, 0, jn]);
+            // Grip: the corner's slide across the felt, stopped as far as
+            // friction allows.
+            const u2 = cross(b.w, r).map((x, i) => x + b.v[i]) as Vec;
+            const slide = Math.hypot(u2[0], u2[1]);
+            if (slide > 1e-6) {
+              const t: Vec = [-u2[0] / slide, -u2[1] / slide, 0];
+              const rt = cross(r, t);
+              const jt = Math.min(slide / (1 + dot(rt, rt) / P.inertia), P.grip * jn);
+              apply([t[0] * jt, t[1] * jt, 0]);
+            }
+          }
+        }
+      if (low < 0) b.p[2] -= low;
+      // On the felt it slows: the cloth drags at whatever's turning on it.
+      if (touching) {
+        const k = 1 - 1.2 * STEP;
+        b.w = [b.w[0] * k, b.w[1] * k, b.w[2] * (1 - 6 * STEP)];
+        b.v = [b.v[0] * (1 - 0.6 * STEP), b.v[1] * (1 - 0.6 * STEP), b.v[2]];
+      }
+      // The wall: once in, it bounces back off it.
+      if (fence) {
+        const into = fence.map((e) => (b.p[0] - e.a[0]) * e.nx + (b.p[1] - e.a[1]) * e.ny);
+        if (!b.inside) b.inside = into.every((s) => s >= P.rad);
+        else
+          fence.forEach((e, i) => {
+            if (into[i] >= P.rad) return;
+            b.p[0] += (P.rad - into[i]) * e.nx;
+            b.p[1] += (P.rad - into[i]) * e.ny;
+            const vn = b.v[0] * e.nx + b.v[1] * e.ny;
+            if (vn < 0) {
+              b.v[0] -= 1.5 * vn * e.nx;
+              b.v[1] -= 1.5 * vn * e.ny;
+              // (A knock on the wall sets it spinning about the upright.)
+              b.w[2] += vn * 0.02;
+            }
+          });
       }
     }
-    if (z <= 0.5) v = Math.max(0, v * (1 - 1.5 * dt) - drag * dt);
-    d += v * dt;
-    if (v === 0 && z === 0 && vz === 0) break;
+    // Dice knocking together.
+    for (let i = 0; i < bodies.length; i++)
+      for (let j = i + 1; j < bodies.length; j++) {
+        const a = bodies[i];
+        const b = bodies[j];
+        const d: Vec = [b.p[0] - a.p[0], b.p[1] - a.p[1], b.p[2] - a.p[2]];
+        const dist = Math.hypot(...d) || 0.01;
+        if (dist >= P.rad * 2) continue;
+        const n = d.map((x) => x / dist) as Vec;
+        const push = (P.rad * 2 - dist) / 2;
+        a.p = a.p.map((x, k) => x - n[k] * push) as Vec;
+        b.p = b.p.map((x, k) => x + n[k] * push) as Vec;
+        const closing = dot(a.v.map((x, k) => x - b.v[k]) as Vec, n);
+        if (closing > 0) {
+          const imp = (closing * 1.6) / 2;
+          a.v = a.v.map((x, k) => x - imp * n[k]) as Vec;
+          b.v = b.v.map((x, k) => x + imp * n[k]) as Vec;
+          // A glancing knock spins them a little.
+          a.w = [a.w[0] - n[1] * imp * 0.02, a.w[1] + n[0] * imp * 0.02, a.w[2] + imp * 0.01];
+          b.w = [b.w[0] + n[1] * imp * 0.02, b.w[1] - n[0] * imp * 0.02, b.w[2] - imp * 0.01];
+        }
+      }
+    if (step % PER_FRAME === 0) record();
+    // Still: every die hardly moving, flat on a face - for a moment.
+    const calm = bodies.every((b) => Math.hypot(...b.v) < 6 * (size / 37) && Math.hypot(...b.w) < 0.5 && b.p[2] < h + 0.5) && bodies.every((b) => faceUp(b.q)[1] > 0.995);
+    quiet = calm ? quiet + 1 : 0;
+    if (quiet > 0.08 / STEP) {
+      settled = true;
+      break;
+    }
   }
-  return d;
+  // Laid flat on the face that's up, exactly (a hair's turn at most when it
+  // came to rest by itself).
+  bodies.forEach((b, i) => {
+    const n = turn(qMat(b.q), FACES[faceUp(b.q)[0]]);
+    const ax = cross(n, [0, 0, 1]);
+    const s = Math.hypot(...ax);
+    const flat = s > 1e-6 ? qNorm(qMul(qAxis(ax[0] / s, ax[1] / s, ax[2] / s, Math.asin(Math.min(1, s))), b.q)) : b.q;
+    frames[i].push({ x: b.p[0], y: b.p[1], z: h, q: flat });
+  });
+  return { frames, settled };
 }
 
-// The edges of a convex fence (the wall's inner face), each with the way in.
-function fenceEdges(fence: [number, number][]) {
+// The wall's inner face, each edge with the way in.
+function fenceEdges(fence: [number, number][]): Fence {
   const cx = fence.reduce((s, p) => s + p[0], 0) / fence.length;
   const cy = fence.reduce((s, p) => s + p[1], 0) / fence.length;
   return fence.map((a, i) => {
@@ -121,128 +276,67 @@ function fenceEdges(fence: [number, number][]) {
   });
 }
 
-// `n` dice thrown up the table from `from` (the y they leave the hand at,
-// at your edge), to come to rest inside `land`. Each die's place and turn
-// at THROW_FPS, until all have stopped; its last frame is where it rests.
-export function simulateThrow(o: { land: Box; from: number; size: number; n: number; fence?: [number, number][]; random?: () => number }): ThrowFrame[][] {
+// `n` dice thrown onto a felt `width` px square, to come to rest inside
+// `land` (and inside `fence`, the wall, if there is one): each die's path.
+export function simulateThrow(o: { width: number; land: Box; size: number; n: number; fence?: [number, number][]; random?: () => number }): ThrowFrame[][] {
   const rnd = o.random ?? Math.random;
-  const { size, n, land } = o;
-  const { g, drag, settle, rad } = physics(size);
-  const edges = o.fence ? fenceEdges(o.fence) : [];
-  const W = land.r - land.l;
-  const H = land.b - land.t;
+  const between = (a: number, b: number) => a + (b - a) * rnd();
+  const { size, n, land, width: W } = o;
+  const P = physics(size);
+  const fence = o.fence ? fenceEdges(o.fence) : undefined;
+  const insideFence = (x: number, y: number) => !fence || fence.every((e) => (x - e.a[0]) * e.nx + (y - e.a[1]) * e.ny >= P.rad * 0.6);
   let best: { frames: ThrowFrame[][]; miss: number } | null = null;
-  for (let attempt = 0; attempt < 12; attempt++) {
-    const dice = Array.from({ length: n }, (_, i) => {
+  for (let attempt = 0; attempt < 24; attempt++) {
+    // The hand: over your side of the table, somewhere along it, high up.
+    const hand: Vec = [W * between(0.22, 0.78), W * between(0.8, 0.95), size * between(4, 7.5)];
+    // Where they're thrown to: somewhere in the box - and they first hit
+    // the felt part of the way there, tumbling on the rest.
+    const aim: [number, number] = [between(land.l, land.r), between(land.t + (land.b - land.t) * 0.2, land.b - (land.b - land.t) * 0.2)];
+    const short = between(0.25, 0.6);
+    const dx = aim[0] - hand[0];
+    const dy = aim[1] - hand[1];
+    const dist = Math.hypot(dx, dy);
+    const dir: [number, number] = [dx / dist, dy / dist];
+    const side: [number, number] = [-dir[1], dir[0]];
+    // Tossed up a little, flung flat, or thrown down.
+    const vz = size * between(-3, 9);
+    const fall = (vz + Math.sqrt(vz * vz + 2 * P.g * hand[2])) / P.g;
+    const speed = Math.min((dist * short) / fall, size * 30);
+    const bodies: Body[] = Array.from({ length: n }, (_, i) => {
       const lane = i - (n - 1) / 2;
-      // Where it's meant to stop: its own share of the box, across.
-      const tx = land.l + W / 2 + lane * (W / n) * 0.75 + (rnd() - 0.5) * (W / n) * 0.35;
-      const ty = land.t + H * (0.25 + rnd() * 0.5);
-      const x = tx + (rnd() - 0.5) * size * 1.5 + lane * size * 0.4;
-      const y = o.from;
-      const z = (38 + rnd() * 14) * (size / 30);
-      const vz = (40 + rnd() * 60) * (size / 30);
-      const dist = Math.hypot(tx - x, ty - y);
-      // As fast as takes it there (the farther, the faster - by halves).
-      let lo = 0;
-      let hi = 8000 * (size / 30);
-      for (let k = 0; k < 24; k++) {
-        const mid = (lo + hi) / 2;
-        if (travel(size, mid, z, vz) < dist) lo = mid;
-        else hi = mid;
-      }
-      const speed = (lo + hi) / 2;
-      const sa = rnd() * Math.PI * 2;
-      const sb = Math.acos(2 * rnd() - 1);
+      const spread = size * between(0.9, 1.4);
+      const p: Vec = [hand[0] + side[0] * lane * spread + between(-0.2, 0.2) * size, hand[1] + side[1] * lane * spread + between(-0.3, 0.3) * size, hand[2] + between(-0.4, 0.4) * size];
+      // Each its own way a little: speed, heading, and spin - a tumble
+      // forward off the fingers, and some every which way.
+      const veer = between(-0.14, 0.14) + lane * 0.06;
+      const sp = speed * between(0.85, 1.15);
+      const hx = dir[0] * Math.cos(veer) - dir[1] * Math.sin(veer);
+      const hy = dir[0] * Math.sin(veer) + dir[1] * Math.cos(veer);
+      const roll = between(10, 24);
+      const a = rnd() * Math.PI * 2;
+      const b = Math.acos(2 * rnd() - 1);
+      const free = between(10, 24);
       return {
-        x,
-        y,
-        z,
-        vz,
-        vx: ((tx - x) / dist) * speed,
-        vy: ((ty - y) / dist) * speed,
-        spin: [Math.sin(sb) * Math.cos(sa), Math.sin(sb) * Math.sin(sa), Math.cos(sb)] as const,
-        q: qAxis(0, 0, 1, (rnd() - 0.5) * Math.PI),
-        // Inside the wall yet (it's thrown in over it).
+        p,
+        v: [hx * sp, hy * sp, vz * between(0.85, 1.15)],
+        q: qNorm([rnd() - 0.5, rnd() - 0.5, rnd() - 0.5, rnd() - 0.5]),
+        // (Forward: about the level axis square to its heading.)
+        w: [-hy * roll + Math.sin(b) * Math.cos(a) * free, hx * roll + Math.sin(b) * Math.sin(a) * free, Math.cos(b) * free],
         inside: false,
+        firstHit: null,
       };
     });
-    const frames: ThrowFrame[][] = dice.map(() => []);
-    const dt = 1 / 240;
-    for (let step = 0; step < (240 * THROW_MS) / 1000; step++) {
-      for (const d of dice) {
-        if (d.z > 0 || d.vz > 0) {
-          d.vz -= g * dt;
-          d.z += d.vz * dt;
-          if (d.z <= 0) {
-            d.z = 0;
-            d.vz = -d.vz * 0.38;
-            if (d.vz < settle) d.vz = 0;
-          }
-        }
-        const flying = d.z > 0.5;
-        const v = Math.hypot(d.vx, d.vy);
-        const nv = flying ? v : Math.max(0, v * (1 - 1.5 * dt) - drag * dt);
-        if (v > 0) {
-          d.vx *= nv / v;
-          d.vy *= nv / v;
-        }
-        d.x += d.vx * dt;
-        d.y += d.vy * dt;
-        // The wall: once it's in, it bounces back off it.
-        if (edges.length) {
-          const into = edges.map((e) => (d.x - e.a[0]) * e.nx + (d.y - e.a[1]) * e.ny);
-          if (!d.inside) d.inside = into.every((s) => s >= rad);
-          else
-            edges.forEach((e, k) => {
-              if (into[k] >= rad) return;
-              d.x += (rad - into[k]) * e.nx;
-              d.y += (rad - into[k]) * e.ny;
-              const vn = d.vx * e.nx + d.vy * e.ny;
-              if (vn < 0) {
-                d.vx -= 1.6 * vn * e.nx;
-                d.vy -= 1.6 * vn * e.ny;
-              }
-            });
-        }
-        // In the air it spins freely; on the felt it rolls without sliding.
-        const dist = nv * dt;
-        if (flying) d.q = qMul(qAxis(d.spin[0], d.spin[1], d.spin[2], 16 * dt), d.q);
-        else if (dist > 0) d.q = qMul(qAxis(-d.vy / nv, d.vx / nv, 0, dist / (size / 2)), d.q);
-      }
-      // Dice knock into each other: pushed apart, trading speed along the hit.
-      for (let i = 0; i < n; i++)
-        for (let j = i + 1; j < n; j++) {
-          const a = dice[i];
-          const b = dice[j];
-          if (Math.abs(a.z - b.z) > size) continue;
-          const dx = b.x - a.x;
-          const dy = b.y - a.y;
-          const d = Math.hypot(dx, dy) || 0.01;
-          if (d >= rad * 2) continue;
-          const nx = dx / d;
-          const ny = dy / d;
-          const push = (rad * 2 - d) / 2;
-          a.x -= nx * push;
-          a.y -= ny * push;
-          b.x += nx * push;
-          b.y += ny * push;
-          const closing = (a.vx - b.vx) * nx + (a.vy - b.vy) * ny;
-          if (closing > 0) {
-            const k = (closing * 1.75) / 2;
-            a.vx -= k * nx;
-            a.vy -= k * ny;
-            b.vx += k * nx;
-            b.vy += k * ny;
-          }
-        }
-      if (step % (240 / THROW_FPS) === 0) dice.forEach((d, i) => frames[i].push({ x: d.x, y: d.y, z: d.z, q: d.q }));
-      if (step > 60 && dice.every((d) => d.z === 0 && d.vz === 0 && Math.hypot(d.vx, d.vy) < 4)) break;
-    }
-    dice.forEach((d, i) => frames[i].push({ x: d.x, y: d.y, z: 0, q: d.q }));
-    // How far outside where they should be (knocked about, they may stray):
-    // the throw that lands best is kept.
-    const miss = dice.reduce((s, d) => s + Math.max(0, land.l - d.x, d.x - land.r) + Math.max(0, land.t - d.y, d.y - land.b), 0);
+    const { frames, settled } = simulate(size, bodies, fence);
+    // How far from right it went: off where they're meant to stop, a first
+    // hit off the felt or on the wall, or not done in time.
+    const pad = size * 0.3;
+    let miss = settled ? 0 : size * 4;
+    bodies.forEach((b, i) => {
+      const end = frames[i][frames[i].length - 1];
+      miss += Math.max(0, land.l - pad - end.x, end.x - land.r - pad) + Math.max(0, land.t - pad - end.y, end.y - land.b - pad);
+      const hit = b.firstHit;
+      if (!hit || hit[0] < size || hit[0] > W - size || hit[1] < size || hit[1] > W - size || !insideFence(hit[0], hit[1])) miss += size * 3;
+    });
     if (!best || miss < best.miss) best = { frames, miss };
     if (miss === 0) break;
   }
@@ -250,20 +344,26 @@ export function simulateThrow(o: { land: Box; from: number; size: number; n: num
 }
 
 // A throw, ready to draw: each die's path (in the felt px it was thrown at,
-// `width`), the turn it rests at, and the value it shows.
+// `width`), and how its faces are relabelled to show the value rolled.
 export interface Thrown {
   key: string;
   width: number;
   size: number;
   values: number[];
   paths: ThrowFrame[][];
-  rest: Quat[];
+  faces: Quat[];
 }
 
-export function throwDice(o: { key: string; width: number; land: Box; from: number; size: number; values: number[]; fence?: [number, number][]; random?: () => number }): Thrown {
-  const rnd = o.random ?? Math.random;
-  const paths = simulateThrow({ land: o.land, from: o.from, size: o.size, n: o.values.length, fence: o.fence, random: rnd });
-  return { key: o.key, width: o.width, size: o.size, values: o.values, paths, rest: o.values.map(() => qAxis(0, 0, 1, ((rnd() - 0.5) * 70 * Math.PI) / 180)) };
+export function throwDice(o: { key: string; width: number; land: Box; size: number; values: number[]; fence?: [number, number][]; random?: () => number }): Thrown {
+  const paths = simulateThrow({ width: o.width, land: o.land, size: o.size, n: o.values.length, fence: o.fence, random: o.random });
+  return {
+    key: o.key,
+    width: o.width,
+    size: o.size,
+    values: o.values,
+    paths,
+    faces: o.values.map((v, i) => relabel(v, faceUp(paths[i][paths[i].length - 1].q)[0])),
+  };
 }
 
 // Set by hand (or no motion wanted): resting in a row across the box.
@@ -276,8 +376,10 @@ export function laidDice(o: { key: string; width: number; land: Box; size: numbe
     width: o.width,
     size: o.size,
     values: o.values,
-    paths: o.values.map((_, i) => [{ x: o.land.l + ((i + 0.5) / n) * (o.land.r - o.land.l), y: y + (i % 2 ? 6 : -6) * (o.size / 30), z: 0, q: [1, 0, 0, 0] }]),
-    rest: o.values.map((_, i) => qAxis(0, 0, 1, (yaws[i % 3] * Math.PI) / 180)),
+    paths: o.values.map((_, i) => [
+      { x: o.land.l + ((i + 0.5) / n) * (o.land.r - o.land.l), y: y + (i % 2 ? 6 : -6) * (o.size / 30), z: o.size / 2, q: qAxis(0, 0, 1, (yaws[i % 3] * Math.PI) / 180) },
+    ]),
+    faces: o.values.map((v) => relabel(v, 1)),
   };
 }
 
@@ -295,14 +397,14 @@ export function diceScene(t: Thrown, width: number): { dice: DieItem[]; quads: Q
   const quads: Quad[] = [];
   t.paths.forEach((path, i) => {
     const end = path[path.length - 1];
-    // Every frame turned by the same amount, so the last is exactly at rest
-    // (face up, at its angle) - the rolling itself untouched.
-    const fix = qMul(qConj(end.q), t.rest[i]);
-    const up = FACE_UP[t.values[i]] ?? FACE_UP[1];
-    const at = (x: number, y: number, z: number, q: Quat) => chain(translate(x * f, y * f, z * f + s / 2), qMat(qMul(qMul(q, fix), up)), scale(s));
+    const faces = t.faces[i];
+    const at = (p: ThrowFrame) => chain(translate(p.x * f, p.y * f, p.z * f), qMat(qMul(p.q, faces)), scale(s));
     // Its shadow, falling further off and smaller the higher it is.
-    const shade = (x: number, y: number, z: number) => chain(translate((x + z * 0.35) * f, (y + z * 0.55) * f, 0.4), scale(s * 1.3 / (1 + z / 110)));
-    const pose = (k: number) => {
+    const shade = (p: ThrowFrame) => {
+      const up = Math.max(0, p.z - t.size / 2);
+      return chain(translate((p.x + up * 0.12) * f, (p.y + up * 0.2) * f, 0.4), scale((s * 1.3) / (1 + up / 160)));
+    };
+    const pose = (k: number): ThrowFrame => {
       const p = k * (path.length - 1);
       const j = Math.min(path.length - 2, Math.floor(p));
       const u = p - j;
@@ -312,39 +414,8 @@ export function diceScene(t: Thrown, width: number): { dice: DieItem[]; quads: Q
     };
     const dur = (path.length - 1) / THROW_FPS;
     const moving = path.length > 1;
-    dice.push({
-      m: at(end.x, end.y, 0, end.q),
-      ...(moving
-        ? {
-            anim: {
-              key: `die:${t.key}:${i}`,
-              delay: 0,
-              dur,
-              pose: (k: number) => {
-                const p = pose(k);
-                return at(p.x, p.y, p.z, p.q);
-              },
-            },
-          }
-        : {}),
-    });
-    quads.push({
-      kind: "shadow",
-      m: shade(end.x, end.y, 0),
-      ...(moving
-        ? {
-            anim: {
-              key: `die:${t.key}:${i}:shadow`,
-              delay: 0,
-              dur,
-              pose: (k: number) => {
-                const p = pose(k);
-                return shade(p.x, p.y, p.z);
-              },
-            },
-          }
-        : {}),
-    });
+    dice.push({ m: at(end), ...(moving ? { anim: { key: `die:${t.key}:${i}`, delay: 0, dur, pose: (k: number) => at(pose(k)) } } : {}) });
+    quads.push({ kind: "shadow", m: shade(end), ...(moving ? { anim: { key: `die:${t.key}:${i}:shadow`, delay: 0, dur, pose: (k: number) => shade(pose(k)) } } : {}) });
   });
   return { dice, quads };
 }

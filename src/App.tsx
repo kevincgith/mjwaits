@@ -8301,7 +8301,7 @@ function wallBreak(total: number | null): WallBreak | null {
 
 // The longest a throw on the Dice tab's table lasts (see play3d/dice.ts's
 // THROW_MS); the result shows as it ends (see useDiceRoll).
-const WALL_THROW_MS = 1300;
+const WALL_THROW_MS = 1900;
 
 // The Dice tab's tables (擲骰's wall, 座位's seats): Play's WebGL tiles on a
 // tipped felt (see play3d/FeltGL), fetched with the tab.
