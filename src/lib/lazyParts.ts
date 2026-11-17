@@ -9,6 +9,8 @@ const loaders = {
   // Play's WebGL table (three.js), which PlayPanel loads itself - here so
   // it's fetched with the rest, and Play works offline.
   table3d: () => import("../play3d/TableGL"),
+  // The Dice tab's tables, on the same engine - so the tab works offline too.
+  diceTable: () => import("../play3d/DiceTableGL"),
   playHome: () => import("../PlayHome"),
   online: () => import("../OnlineTable"),
   scores: () => import("../ScoresPanel"),
