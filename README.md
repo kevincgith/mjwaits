@@ -12,7 +12,8 @@ hand, see what completes it and which discard gives the best odds — and has gr
 - **Ledger** — keep score of a real game at the table (港式台牌 rules: 莊/連莊, 拉/踢, 一炮多響,
   反雪, Jackpot), with a stats page per player — and **線上**, the game live on everyone's
   phone as it's scored.
-- **Dice** — roll for the wall, and see exactly where it breaks.
+- **Dice** — roll for the wall and see exactly where it breaks, roll for the tile swap, and
+  run the 座位 seating ceremony.
 - **Play** — a full hand against three bots, or online with friends (see below).
 
 On a phone the tabs sit in a bottom tab bar — Scoring, Ledger, Play, Waits and More, with
@@ -358,7 +359,7 @@ player's change), **走勢** (running totals hand by hand, with a crosshair tool
 end-of-line labels), **牌型** (patterns from hands sent from Scoring), **玩家** (one player's
 full grid - 食胡, 自摸, 出銃, 獎罰, 彩池, 最高番數, 平均食胡番 / 出銃番, 拉人 / 被拉 / 踢人 / 被踢 and
 their records, 多響, 反雪, 最高得分 / 失分, 總自摸 / 出銃 得分 and 失分, 連勝, 助攻 and 助攻率, 正分率,
-首名率 - with 👑 for the best at the table and 💀 the worst) and **紀錄** (every game, career
+首名率 - with a thumbs-up for the best at the table and a thumbs-down for the lowest) and **紀錄** (every game, career
 stats per player and head-to-head net farn).
 
 ### 線上 live scores
@@ -658,18 +659,28 @@ and 記牌器 - just with the others' moves coming from the server.
 
 ## Dice
 
-![The Dice & wall sub-tab: three dice showing 4, 5, 3 (total 12), the built wall drawn as a four-bar pinwheel, and a 👉 marking where a count of 12 breaks the left wall](docs/dice.png)
+![The 擲骰 Dice sub-tab: three dice showing 4, 5, 3 (total 12), the wall's four walls of green two-high stacks in a pinwheel on the tipped felt, the twelve counted stacks of the left wall rimmed in gold with a marker at the break, and the caption "Break the left wall"](docs/dice.png)
 
-Two sub-tabs:
+Three sub-tabs. 擲骰 and 座位 are drawn with Play's own WebGL tiles on a green felt tipped back
+12°, inside Play's wooden rim, and the thrown dice land on the felt.
 
-- **Dice & wall** — three tappable d6 (tap a die to nudge its face, or roll for an animated
-  tumble that settles on one result). The total sits in a box tinted green for a three-of-a-kind
-  and red for a 1-2-3. Below it the full built wall is drawn as four 2×18 tile-back bars in a
-  pinwheel offset, and the dice sum breaks it: the app counts round to the right seat, marks the
-  opening with a 👉, and captions which side is broken and how many stacks are counted off.
-- **Exchange tiles** — a two-die roller for the pre-deal exchange. One die (a labelled "Round"
-  box) picks a round 1–3, the other ("Tiles") a count with a floor of 3, and it shows Round,
-  Tiles, and their product.
+- **擲骰 Dice** — three tappable d6 (tap a die to step its face, or **Roll the dice** to throw
+  them onto the table). The total sits in a box tinted green for a three-of-a-kind and red for a
+  1-2-3. The wall is four walls of 18 two-high stacks in a spinning-wheel pinwheel, turned 15° on
+  the table, and the dice total breaks it: the app counts round to the right seat, rims the
+  counted run of stacks in gold, eases the gap open and points at it, and captions which wall
+  breaks and how many stacks are counted off.
+- **換牌 Swap** — a two-die roller for the pre-deal exchange. One die (a labelled "Round" box)
+  picks a round 1–3, the other ("Tiles") a count with a floor of 3, and it shows Round, Tiles,
+  and their product.
+- **座位 Seats** — the seating ceremony for players A–D (long-press to rename, double-tap two to
+  swap them, tap one to make them the provisional East). Six tiles - 東南西北 plus 一筒 and 二筒 -
+  lie face down; a button names each next step: the provisional East's throw picks the real East,
+  the real East throws again, the tiles turn over, 一筒 / 二筒 slide to the ends, the second total
+  picks who takes the first wind, the winds are dealt from the 二筒 end (even) or the 一筒 end
+  (odd), and everyone moves to their wind's seat, tile in hand. **Run all** plays every step in
+  one go (**Pause** stops it). Run from the Ledger's **座位** sheet, the result goes back to the
+  game, with the table turned so whoever sits at the bottom - holding the phone - stays there.
 
 ## Notation reference
 
