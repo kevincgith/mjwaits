@@ -36,8 +36,10 @@ async function within(limiter: RateLimit | undefined, request: Request): Promise
   if (!limiter || !ip) return true;
   try {
     return (await limiter.limit({ key: ip })).success;
-  } catch {
-    return true; // the limiter's own trouble isn't the caller's
+  } catch (e) {
+    // The limiter's own trouble isn't the caller's - but it's said.
+    console.warn("Rate limiter failed", e instanceof Error ? e.message : String(e));
+    return true;
   }
 }
 
