@@ -2422,6 +2422,12 @@ function Calculator({
   // Long-press the hand box to be asked whether to clear it.
   const handClear = useBoxClear("手牌", hand.length === 0, handleReset);
   const removeTile = (id: number) => commitHand(handRef.current.filter((t) => t.id !== id));
+  // ⌫: the last tile in (the hand keeps the order they came in - typed
+  // ones, the order typed).
+  const takeBackLast = () => {
+    const last = handRef.current.at(-1);
+    if (last) removeTile(last.id);
+  };
 
   const canCalculate = isCheckpointSize(hand.length);
   const upcoming = nextCheckpoint(hand.length);
@@ -2674,7 +2680,7 @@ function Calculator({
         <CollapsiblePanel open={!pickerCollapsed}>
           <div className="card picker-card">
             {pickerLayout === "numpad" ? (
-              <NumpadPicker renderTile={renderPickerTile} extraHonor={jokerButton} />
+              <NumpadPicker renderTile={renderPickerTile} extraHonor={jokerButton} backspace={<BackspaceKey onClick={takeBackLast} disabled={hand.length === 0} />} />
             ) : (
             <div className="tile-picker">
               {SUIT_ORDER.map((suit) => (
@@ -2683,8 +2689,10 @@ function Calculator({
                     .filter((t) => t.suit === suit)
                     .map(renderPickerTile)}
                   {/* The joker shares the honors row, straight after 白,
-                      rather than taking a row of its own. */}
+                      rather than taking a row of its own - and ⌫ the
+                      corner after it, last of all. */}
                   {suit === "z" && jokerButton}
+                  {suit === "z" && <BackspaceKey onClick={takeBackLast} disabled={hand.length === 0} />}
                 </div>
               ))}
             </div>

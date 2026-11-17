@@ -2566,8 +2566,9 @@ img.tile-face {
   font-size: 2.75rem;
 }
 
-/* The picker's ⌫ (Scoring): a key, not a tile - in Classic it takes the
-   corner after 竹, in Numpad it runs under the keypad. */
+/* The picker's ⌫ (Scoring, Waits): a key, not a tile - in Classic it takes
+   the last row's spare corner (after 竹; after the joker), in Numpad it runs
+   under the keypad. */
 .backspace-key {
   display: flex;
   align-items: center;
