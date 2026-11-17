@@ -192,6 +192,15 @@ describe("parseScoringHand", () => {
     expect(() => parseScoringHand("[1234m]123456789m234t22b")).toThrow(/concealed kong/);
   });
 
+  it("rejects round brackets around anything but three tiles in a meld, or four of one", () => {
+    // One or two of a tile are no 碰, and five in a row no 上.
+    expect(() => parseScoringHand("(1m)123456789m234t22b")).toThrow(/Invalid meld/);
+    expect(() => parseScoringHand("(11m)123456789m234t22b")).toThrow(/Invalid meld/);
+    expect(() => parseScoringHand("(12345m)123456789t22b")).toThrow(/Invalid meld/);
+    expect(() => parseScoringHand("(11111m)123456789t22b")).toThrow(/Invalid meld/);
+    expect(() => parseScoringHand("(111m)(123t)(4444b)")).not.toThrow();
+  });
+
   it("leaves four loose copies loose - only square brackets declare a concealed kong", () => {
     const parsed = parseScoringHand("1111z123456789m234t22b");
     expect(parsed.declaredMelds).toEqual([]);

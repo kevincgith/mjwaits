@@ -98,8 +98,9 @@ function classifyDeclaredMeld(ranks: number[], suit: Suit, raw: string): MeldKin
     if (!allSame) throw new ParseError(`Invalid kong "(${raw})" (all 4 tiles must match)`);
     return "kong";
   }
-  if (allSame) return "triplet";
-  if (suit !== "z" && ranks[1] === ranks[0] + 1 && ranks[2] === ranks[1] + 1) return "run";
+  // (Three tiles exactly: "(11m)" or "(12345m)" is no meld.)
+  if (ranks.length === 3 && allSame) return "triplet";
+  if (ranks.length === 3 && suit !== "z" && ranks[1] === ranks[0] + 1 && ranks[2] === ranks[1] + 1) return "run";
   throw new ParseError(`Invalid meld "(${raw})" (must be a triplet, or a run of 3 consecutive tiles)`);
 }
 

@@ -3,7 +3,7 @@
 // sharing, settling up and 設定.
 
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { DEFAULT_SETTINGS, SEATS, previewFanXue, previewWin, multiWinTai, half, roundLabel, settle, type PatternNote, type ReplayState, type ScoreEvent, type ScoreGame, type ScoreSettings, type ScoreStore, type WinnerEntry, bonusPresets, type BonusPreset, evenShares, zhaHuKicks } from "@mjwaits/shared/engine/ledger";
+import { DEFAULT_SETTINGS, SEATS, nameProblem, previewFanXue, previewWin, multiWinTai, half, roundLabel, settle, type PatternNote, type ReplayState, type ScoreEvent, type ScoreGame, type ScoreSettings, type ScoreStore, type WinnerEntry, bonusPresets, type BonusPreset, evenShares, zhaHuKicks } from "@mjwaits/shared/engine/ledger";
 import { fullSnapshotOf, fullSnapshotUrl, snapshotOf, snapshotUrl } from "../lib/scoreShare";
 import { drawSettleCard } from "../lib/settleImage";
 import qrcode from "qrcode-generator";
@@ -24,7 +24,9 @@ export function Setup({ store, suggestion, onStart, waitingHand }: { store: Scor
   const [dealerId, setDealerId] = useState(0);
   const dealer = Math.max(0, rows.findIndex((r) => r.id === dealerId));
   const trimmed = rows.map((r) => r.name.trim() || r.hint);
-  const valid = trimmed.every(Boolean) && new Set(trimmed).size === SEATS;
+  // (A name the ledger can't keep: said, not quietly changed.)
+  const badName = trimmed.map(nameProblem).find(Boolean) ?? null;
+  const valid = !badName && trimmed.every(Boolean) && new Set(trimmed).size === SEATS;
 
   // Drag to reorder, by the grip: the row follows the finger, and the others
   // slide out of its way as it passes their middle.
@@ -123,7 +125,7 @@ export function Setup({ store, suggestion, onStart, waitingHand }: { store: Scor
             <option key={p.name} value={p.name} />
           ))}
         </datalist>
-        {!valid && <p className="sc-warn">Four different names, please.</p>}
+        {!valid && <p className="sc-warn" role="alert">{badName ?? "Four different names, please."}</p>}
         <button type="button" className="sc-primary sc-wide" disabled={!valid} onClick={() => onStart(trimmed, dealer)}>
           開始 Start game
         </button>
@@ -1555,9 +1557,10 @@ export function SeatsSheet({
     seatBench(picked, name);
     setPicked(null);
   };
+  const newNameProblem = nameProblem(newName);
   const addName = () => {
     const n = newName.trim();
-    if (!n || seats.includes(n) || bench.includes(n)) return;
+    if (!n || newNameProblem || seats.includes(n) || bench.includes(n)) return;
     if (removed.includes(n)) setRemoved((r) => r.filter((x) => x !== n));
     else setAdded((a) => [...a, n]);
     setNewName("");
@@ -1787,11 +1790,12 @@ export function SeatsSheet({
         {!collapsed && (
         <div className="sc-add">
           <input className="sc-input" value={newName} maxLength={12} placeholder="Add a player" onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addName()} aria-label="New player name" />
-          <button type="button" className="sc-secondary" onClick={addName} disabled={!newName.trim()}>
+          <button type="button" className="sc-secondary" onClick={addName} disabled={!newName.trim() || !!newNameProblem}>
             Add
           </button>
         </div>
         )}
+        {!collapsed && newNameProblem && <p className="sc-warn" role="alert">{newNameProblem}</p>}
         </div>
       </div>
     </Sheet>
@@ -2269,7 +2273,10 @@ export function SettleSheet({
   const lastAt = game.events.length ? game.events[game.events.length - 1].at : game.startedAt;
   const backedUp = backedUpAt !== null && backedUpAt >= lastAt;
   const [multiplier, setMultiplier] = useState("1");
-  const m = Number(multiplier) || 0;
+  // (Nothing readable in the box: said, with nothing to copy or share - not
+  // every payment at $0.)
+  const multiplierOk = /^(\d+\.?\d*|\.\d+)$/.test(multiplier) && Number(multiplier) > 0;
+  const m = multiplierOk ? Number(multiplier) : 0;
   const payments = settle(state.totals, m);
   const [confirm, setConfirm] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -2348,19 +2355,20 @@ export function SettleSheet({
         <span>
           倍數<span className="sc-help"> · $ per farn</span>
         </span>
-        <input className="sc-input sc-input-short" inputMode="decimal" value={multiplier} onChange={(e) => setMultiplier(e.target.value.replace(/[^0-9.]/g, ""))} aria-label="Multiplier" />
+        <input className="sc-input sc-input-short" inputMode="decimal" value={multiplier} onChange={(e) => setMultiplier(e.target.value.replace(/[^0-9.]/g, "").replace(/(\..*)\./g, "$1"))} aria-label="Multiplier" aria-invalid={!multiplierOk} />
       </div>
+      {!multiplierOk && <p className="sc-warn" role="alert">Enter a multiplier above 0 (1, 0.5, 10…) to see who pays what.</p>}
       {state.pot > 0 && <p className="sc-note">Jackpot {fmt(state.pot)} is still in the pot — hand it out first if it should count.</p>}
       <div className="sc-share-row">
-        <button type="button" className="sc-outline" onClick={copy}>
+        <button type="button" className="sc-outline" onClick={copy} disabled={!multiplierOk}>
           {copied ? "Copied ✓" : "Copy as text"}
         </button>
         {"share" in navigator && (
-          <button type="button" className="sc-outline" onClick={share}>
+          <button type="button" className="sc-outline" onClick={share} disabled={!multiplierOk}>
             Share text…
           </button>
         )}
-        <button type="button" className="sc-outline" onClick={() => void shareImage()} disabled={imaging}>
+        <button type="button" className="sc-outline" onClick={() => void shareImage()} disabled={imaging || !multiplierOk}>
           {imaging ? "Drawing…" : "Image"}
         </button>
         <button type="button" className="sc-outline" onClick={() => setShareLink(true)}>

@@ -208,6 +208,18 @@ describe("大雞/大鴨's ignore list", () => {
     const result = scoreHand(BORING_HAND, ctx(rules, { selfDraw: true }));
     expect(tai(result, "big-duck")).toBe(15);
   });
+
+  it("never counts 大雞 and 大鴨 together - self-drawn it's 大鴨, however 自摸 is set", () => {
+    for (const patch of [{ tai: 0 }, { enabled: false }, { blocksChicken: false }]) {
+      const rules = withRules({ "self-draw": patch, "concealed-self-draw": patch });
+      const drawn = scoreHand(BORING_HAND, ctx(rules, { selfDraw: true }));
+      expect(tai(drawn, "big-chicken")).toBe(0);
+      expect(tai(drawn, "big-duck")).toBe(15);
+      const claimed = scoreHand(BORING_HAND, ctx(rules, { selfDraw: false }));
+      expect(tai(claimed, "big-chicken")).toBe(30);
+      expect(tai(claimed, "big-duck")).toBe(0);
+    }
+  });
 });
 
 describe("the original engine and the fallback", () => {

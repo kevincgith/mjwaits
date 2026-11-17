@@ -17,6 +17,7 @@ import {
   evenShares,
   multiWinTai,
   CHIP_POT,
+  nameProblem,
   settle,
   undoEvent,
   withEvent,
@@ -453,6 +454,15 @@ describe("Jackpot split evenly", () => {
 
   it("goes to 0.1 off 整數模式", () => {
     expect(evenShares(11, 0, false)).toEqual([2.8, 2.8, 2.7, 2.7]);
+  });
+});
+
+describe("names the ledger can't keep", () => {
+  it("says what's wrong with a name that has > in it, or is the pot's", () => {
+    expect(nameProblem("A>B")).toMatch(/>/);
+    expect(nameProblem(` ${CHIP_POT} `)).toMatch(/Jackpot/);
+    expect(nameProblem("Kevin")).toBeNull();
+    expect(nameProblem("彩池王")).toBeNull();
   });
 });
 

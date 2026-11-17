@@ -67,8 +67,10 @@ function pointerIn(root: HTMLElement, e: PointerEvent): DOMPoint {
   return turn.inverse().transformPoint(new DOMPoint(e.clientX - root.offsetLeft, e.clientY - root.offsetTop));
 }
 
-// A press on the page's own controls, not on the table.
-const offTable = (e: PointerEvent) => !!(e.target as Element | null)?.closest("button, a, input, [role=dialog], [role=menu], .play-menu, .play-calls, .sc-sheet");
+// A press on the page's own controls, not on the table - a sheet's dimmed
+// backdrop too (tapped to close it: not a tap on the tile under it).
+const offTable = (e: PointerEvent) =>
+  !!(e.target as Element | null)?.closest("button, a, input, [role=dialog], [role=menu], .play-menu, .play-calls, .sc-sheet, .play-sheet-backdrop, .play-setup-backdrop");
 
 // The free camera: degrees per pixel dragged, and the longest gap between a double tap's taps.
 const DRAG_YAW = 0.4;

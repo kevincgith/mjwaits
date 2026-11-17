@@ -88,7 +88,8 @@ export function cleanNickname(raw: string): string | null {
     .replace(/[<>&"'`]/g, "")
     .replace(/\s+/gu, " ")
     .trim();
-  if (!cleaned) return null;
+  // (彩池 is the ledger's own name for the Jackpot: not a player's.)
+  if (!cleaned || cleaned === "彩池") return null;
   const chars = graphemes(cleaned);
   return chars.length > NICKNAME_MAX ? chars.slice(0, NICKNAME_MAX).join("").trimEnd() : cleaned;
 }

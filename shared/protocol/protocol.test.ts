@@ -152,6 +152,9 @@ describe("cleanNickname", () => {
 
   it("strips markup characters and invisible ones", () => {
     expect(cleanNickname("<b>Kev</b>")).toBe("bKev/b");
+    // (彩池 is the ledger's name for the Jackpot: nobody's nickname.)
+    expect(cleanNickname(" 彩池 ")).toBeNull();
+    expect(cleanNickname("彩池王")).toBe("彩池王");
     expect(cleanNickname("A​B‮C\u0000D")).toBe("ABCD");
     expect(cleanNickname(`Tom "T" O'Neil & co`)).toBe("Tom T ONeil");
   });

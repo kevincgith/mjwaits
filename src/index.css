@@ -14,3 +14,47 @@ body {
   background: var(--bg);
   -webkit-font-smoothing: antialiased;
 }
+
+/* Something couldn't be drawn (see Crashed.tsx): said in its place, with a
+   way on. Here, not in App.css, so it's there for the whole page too. */
+.crashed {
+  max-width: 26rem;
+  margin: 2rem auto;
+  padding: 1.25rem;
+  border-radius: 16px;
+  background: rgba(127, 127, 127, 0.12);
+  color: inherit;
+  text-align: center;
+}
+.crashed.is-whole {
+  margin-top: 20vh;
+}
+.crashed h2 {
+  margin: 0 0 0.4rem;
+  font-size: 1.1rem;
+}
+.crashed p {
+  margin: 0 0 1rem;
+  font-size: 0.95rem;
+  line-height: 1.4;
+  opacity: 0.8;
+}
+.crashed-actions {
+  display: flex;
+  justify-content: center;
+  gap: 0.5rem;
+}
+.crashed-button {
+  border: none;
+  border-radius: 999px;
+  padding: 0.5rem 1.1rem;
+  background: rgba(127, 127, 127, 0.22);
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.crashed-button.is-primary {
+  background: #0a7d4f;
+  color: #fff;
+}

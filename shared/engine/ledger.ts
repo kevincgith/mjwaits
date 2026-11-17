@@ -717,6 +717,14 @@ export function evenShares(pot: number, first: number, integer: boolean): number
 // never netted across the table. The Jackpot is a pile of its own (彩池).
 export const CHIP_POT = "彩池";
 
+// What's wrong with a player's name, if anything (to tell whoever typed it):
+// ">" joins two names in the ledger's "from>to" keys, and 彩池 is the pot's.
+export function nameProblem(name: string): string | null {
+  if (name.includes(">")) return `Names can't have ">" in them.`;
+  if (name.trim() === CHIP_POT) return `${CHIP_POT} is the Jackpot's name - pick another.`;
+  return null;
+}
+
 export function chipMoves(before: Pick<ReplayState, "paid" | "lahs">, after: Pick<ReplayState, "paid" | "lahs">): { from: string; to: string; amount: number }[] {
   // Between each two players, what has changed hands in chips so far: what
   // one has paid the other, less what's still riding in a 拉 between them.
