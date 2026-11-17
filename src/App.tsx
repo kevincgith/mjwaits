@@ -44,6 +44,7 @@ import {
 import { BonusGlyphSpan, TileGlyphSpan } from "./TileGlyphs";
 import { OnlineTable, PlayHome, PlayPanel, ScoresPanel, SharedScoresView, TaiRulesSheet } from "./LazyParts";
 import { Crashed } from "./Crashed";
+import { OfflineSheet } from "./OfflineSheet";
 import { savedSummary } from "./lib/playSaved";
 import { loadTestHands } from "./lib/lazyParts";
 import { inviteLaunch, startInstallAtInvite } from "./lib/onlineTable";
@@ -10662,17 +10663,21 @@ function App() {
       document.documentElement.classList.remove("header-hidden");
     };
   }, []);
-  const logoTaps = useRef({ count: 0, last: 0 });
+  const logoTaps = useRef({ count: 0, last: 0, open: 0 });
   const onLogoTap = () => {
     const now = Date.now();
     const taps = logoTaps.current;
     taps.count = now - taps.last < 800 ? taps.count + 1 : 1;
     taps.last = now;
+    // One tap: what's stored for offline use - once it's clear no more taps
+    // are coming (three open the test hands).
+    window.clearTimeout(taps.open);
     if (taps.count >= 3) {
       taps.count = 0;
       setTestHandsOpen(true);
-    }
+    } else if (taps.count === 1) taps.open = window.setTimeout(() => setOfflineOpen(true), 450);
   };
+  const [offlineOpen, setOfflineOpen] = useState(false);
   const logoPress = useTapAndLongPress(onLogoTap, NOOP);
   // The phone tab bar's More menu (Trainer, Dice).
   const [moreOpen, setMoreOpen] = useState(false);
@@ -10967,6 +10972,7 @@ function App() {
       {debug.layoutOverlay && <LayoutOverlay />}
       <UpdateBar />
       {creditsOpen && <CreditsSheet onClose={() => setCreditsOpen(false)} />}
+      {offlineOpen && <OfflineSheet onClose={() => setOfflineOpen(false)} />}
       {testHandsOpen && (
         <TestHandsSheet
           onPick={pickTestHand}

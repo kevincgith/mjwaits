@@ -4,6 +4,8 @@
 // they're all fetched anyway, so they open at once and work offline (see
 // public/sw.js).
 
+import { downloadPart, preloadScanner } from "./offline";
+
 const loaders = {
   play: () => import("../PlayPanel"),
   // Play's WebGL table (three.js), which PlayPanel loads itself - here so
@@ -91,6 +93,13 @@ export function warmLazyParts(): void {
         for (const e of performance.getEntriesByType("resource")) if (e.name.startsWith(assets)) urls.add(e.name);
       }
       for (const u of urls) fetch(u).catch(() => {});
+      // Then whatever else the build has that hasn't been asked for yet
+      // (its full list: see lib/offline.ts) - so "App & Play" is all there
+      // with no signal - and after it the scanner's engine and model, so
+      // the first scan opens without a wait.
+      void downloadPart("core")
+        .catch(() => {})
+        .then(preloadScanner);
     });
   });
 }

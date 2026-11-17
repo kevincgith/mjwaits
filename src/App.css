@@ -223,6 +223,92 @@
   color: #fff;
 }
 
+/* Offline use (behind the MJWaits icon): a row per part of the app - what
+   it is, how much of it is stored, a button to fetch the rest. */
+.offline-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding-bottom: 0.5rem;
+}
+
+.offline-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.offline-row-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.offline-row h3 {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: 600;
+}
+
+.offline-row p {
+  margin: 0.1rem 0 0.4rem;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.offline-state {
+  margin-left: 0.35rem;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+
+.offline-state.is-ready {
+  color: var(--accent);
+}
+
+.offline-bar {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border-3);
+  overflow: hidden;
+}
+
+.offline-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+
+.offline-get {
+  flex: none;
+  border: none;
+  border-radius: var(--radius-pill);
+  padding: 0.45rem 0.9rem;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.offline-get:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.offline-note,
+.offline-row p.offline-problem {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.offline-row p.offline-problem {
+  margin-top: 0.35rem;
+  color: var(--sc-neg, #c0392b);
+}
+
 /* The Credits sheet: one row per work - name and author, licence, note. */
 .credits-list {
   display: flex;
