@@ -18,8 +18,14 @@ import { cleanNickname, IDLE_TTL_MS, PROTOCOL_VERSION, RATE_BURST, RATE_PER_SECO
 import type { Result } from "@mjwaits/shared/protocol/schema";
 import type { Env } from "./index";
 
-// Open connections per room (everyone together).
+// Open connections per room that have joined (said hello), everyone together.
 export const MAX_CONNECTIONS = 16;
+// ...and, on top, the few that have only just opened and not said hello yet.
+// One more than that pushes the oldest of them out, so connections that
+// never join can't keep anyone from the room; and someone the room must let
+// back in (its host, a table's seated player) takes the place of someone
+// who's only watching if the room is full (see hello).
+export const MAX_PENDING = 4;
 // Nicknames a room will remember - connected or not. A new one with the room
 // full takes the place of the longest-gone who's let go (see forgettable).
 export const MAX_PEOPLE = 12;
@@ -41,8 +47,9 @@ export const SWEEP_MS = 25_000;
 // long without a message. (It opens again, if it's still there.)
 export const UNPINGED_MS = 5 * 60_000;
 // A connection that hasn't said hello this long after opening is closed:
-// it holds a place (MAX_CONNECTIONS) for no one.
-export const HELLO_MS = 15_000;
+// it holds a place (MAX_PENDING) for no one. (A page says hello the moment
+// it's open.)
+export const HELLO_MS = 5_000;
 const PING = JSON.stringify({ t: "ping" });
 const PONG = JSON.stringify({ t: "pong" });
 const CLOSE_QUIET = 4000;
@@ -106,9 +113,16 @@ export abstract class Hub<Msg extends { t: string; rid?: string }> extends Durab
   // constructor below reads it before a subclass's fields are set.)
   protected abstract get schema(): number;
 
+  // Whether this object has its tables: only a room that's been made does. A
+  // code that was only ever asked about (a guess, a stale link) is answered
+  // "no such room" without writing anything - so it leaves nothing behind.
+  private hasTables: boolean;
+
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     this.sql = ctx.storage.sql;
+    this.hasTables = this.sql.exec("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'meta'").toArray().length > 0;
+    if (!this.hasTables) return;
     this.migrate();
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair(PING, PONG));
     void ctx.blockConcurrencyWhile(async () => {
@@ -138,6 +152,11 @@ export abstract class Hub<Msg extends { t: string; rid?: string }> extends Durab
   protected forgettable(_personId: string): boolean {
     return true;
   }
+  // Whether the host may pass to them when the host's been gone a while (a
+  // table: only someone with a seat - not whoever's just watching).
+  protected canHost(_personId: string): boolean {
+    return true;
+  }
   // A person's last connection opened or closed.
   protected onArrive(_personId: string, _watch: boolean): void {}
   protected onLeave(_personId: string): void {}
@@ -149,9 +168,11 @@ export abstract class Hub<Msg extends { t: string; rid?: string }> extends Durab
 
   // ---- Storage ---------------------------------------------------------------
 
-  // Run on every start, and again after a room's storage is wiped (deleteAll
-  // drops the tables too) in case its code is handed out again.
+  // Run when a room that exists starts, and when one is made (a new code, or
+  // one handed out again after its room was wiped - deleteAll drops the
+  // tables too).
   protected migrate() {
+    this.hasTables = true;
     this.sql.exec(`
       CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS people (
@@ -169,10 +190,18 @@ export abstract class Hub<Msg extends { t: string; rid?: string }> extends Durab
   protected async wipe() {
     await this.ctx.storage.deleteAlarm();
     await this.ctx.storage.deleteAll();
-    this.migrate(); // this object lives on: answer "no such room" from empty tables
+    // (Nothing kept: this object, if it lives on, answers "no such room" as
+    // one that was never made does.)
+    this.hasTables = false;
+  }
+
+  // Whether there's a room here at all (a subclass's own queries ask first).
+  protected get exists(): boolean {
+    return this.hasTables && this.meta("code") !== null;
   }
 
   protected meta<T>(key: string): T | null {
+    if (!this.hasTables) return null;
     const row = this.sql.exec<{ value: string }>("SELECT value FROM meta WHERE key = ?", key).toArray()[0];
     return row ? (JSON.parse(row.value) as T) : null;
   }
@@ -216,8 +245,11 @@ export abstract class Hub<Msg extends { t: string; rid?: string }> extends Durab
       this.setMeta("hostGone", 0);
       return false;
     }
-    const next = this.people().find((p) => online.has(p.id));
+    const next = this.people().find((p) => online.has(p.id) && this.canHost(p.id));
     if (!next) return false; // no one to take it yet - whoever comes next
+    // (Who it was handed on from - the first to lose it this way - has it
+    // back when they return: see hello.)
+    if (host && !this.meta<string>("hostFrom")) this.setMeta("hostFrom", host);
     this.setMeta("host", next.id);
     this.setMeta("hostGone", 0);
     return true;
@@ -228,8 +260,9 @@ export abstract class Hub<Msg extends { t: string; rid?: string }> extends Durab
   // Called by the Worker with a fresh random code: true if this room is new
   // (and now exists), false if the code is already in use.
   async create(code: string): Promise<boolean> {
+    if (this.exists) return false;
     this.migrate();
-    if (this.meta("code") !== null) return false;
+    this.ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair(PING, PONG));
     const now = Date.now();
     this.setMeta("schema", this.schema);
     this.setMeta("code", code);
@@ -242,7 +275,14 @@ export abstract class Hub<Msg extends { t: string; rid?: string }> extends Durab
 
   async fetch(_request: Request): Promise<Response> {
     if (this.meta("code") === null) return new Response("no such room", { status: 404 });
-    if (this.ctx.getWebSockets().length >= MAX_CONNECTIONS) return new Response("room is full", { status: 503 });
+    // Room for it is made, not refused: with as many unjoined connections as
+    // there may be, the oldest goes (a page says hello at once - one that
+    // hasn't is holding a place for no one). Whether the room has room for
+    // who this turns out to be is settled when they say hello.
+    const pending = this.conns()
+      .filter(([, c]) => !c.person)
+      .sort(([, a], [, b]) => (a.opened ?? a.at) - (b.opened ?? b.at));
+    if (pending.length >= MAX_PENDING) await this.webSocketClose(pending[0][0], CLOSE_POLICY, "no hello");
     const { 0: client, 1: server } = new WebSocketPair();
     this.ctx.acceptWebSocket(server);
     const now = Date.now();
@@ -372,6 +412,7 @@ export abstract class Hub<Msg extends { t: string; rid?: string }> extends Durab
     // Another hello on this socket may have finished while this one waited.
     if ((ws.deserializeAttachment() as Conn).person) throw new Refusal("badMessage", "already joined");
     let id: string;
+    let fresh = false; // someone new, just added (taken out again if the room turns out full)
     if (msg.token) {
       const row = this.sql.exec<{ id: string }>("SELECT id FROM people WHERE token_hash = ?", tokenHash).toArray()[0];
       if (!row) throw new Refusal("badToken", "this room doesn't know you - join again");
@@ -383,15 +424,40 @@ export abstract class Hub<Msg extends { t: string; rid?: string }> extends Durab
         throw new Refusal("nameTaken", `someone here is already called ${name}`);
       if (this.people().length >= MAX_PEOPLE && !this.forgetOne()) throw new Refusal("full", "this room has as many people as it can take");
       id = randomHex(8);
+      fresh = true;
       this.sql.exec("INSERT INTO people (id, token_hash, name, name_key, joined_at) VALUES (?, ?, ?, ?, ?)", id, tokenHash, name, nameKey(name), Date.now());
       if (this.meta("host") === null) this.setMeta("host", id);
+    }
+    // The room full of joined connections: someone it must let back in (its
+    // host, a table's seated player) takes the place of a connection of
+    // someone it needn't keep - a watcher's, the one with the most open
+    // first. Anyone else is told it's full.
+    const joined = this.conns(ws).filter(([, c]) => c.person);
+    if (joined.length >= MAX_CONNECTIONS) {
+      const kept = (p: string) => this.isHost(p) || !this.forgettable(p);
+      const count = new Map<string, number>();
+      for (const [, c] of joined) count.set(c.person!, (count.get(c.person!) ?? 0) + 1);
+      const spare = kept(id) ? joined.filter(([, c]) => !kept(c.person!)).sort(([, a], [, b]) => count.get(b.person!)! - count.get(a.person!)!)[0] : undefined;
+      if (!spare) {
+        if (fresh && !this.isHost(id)) this.sql.exec("DELETE FROM people WHERE id = ?", id);
+        this.refuse(ws, "full", "this room has as many connections as it can take", msg.rid);
+        ws.close(CLOSE_POLICY, "room is full");
+        return;
+      }
+      await this.webSocketClose(spare[0], CLOSE_POLICY, "room is full");
     }
     const first = !this.conns(ws).some(([, c]) => c.person === id);
     conn.person = id;
     ws.serializeAttachment(conn);
-    // The host back: they stay host. Anyone else, with the host gone long enough: it's theirs.
+    // The host back: they stay host. The one it was handed on from, back:
+    // it's theirs again (they made the table; it only went on for want of
+    // them). Anyone else, with the host gone long enough: it's theirs.
     if (this.isHost(id)) this.setMeta("hostGone", 0);
-    else this.passHost(Date.now());
+    else if (this.meta<string>("hostFrom") === id) {
+      this.setMeta("host", id);
+      this.setMeta("hostFrom", null);
+      this.setMeta("hostGone", 0);
+    } else this.passHost(Date.now());
     this.send(ws, this.welcome(id, token, msg.rid));
     this.onWelcomed(ws);
     if (first) this.onArrive(id, msg.watch === true);
@@ -415,7 +481,7 @@ export abstract class Hub<Msg extends { t: string; rid?: string }> extends Durab
   private async sweep(now: number): Promise<boolean> {
     let open = false;
     for (const [ws, conn] of this.conns()) {
-      if (!conn.person && now - (conn.opened ?? conn.at) > HELLO_MS) {
+      if (!conn.person && now - (conn.opened ?? conn.at) >= HELLO_MS) {
         await this.webSocketClose(ws, CLOSE_POLICY, "no hello");
         continue;
       }
@@ -447,6 +513,7 @@ export abstract class Hub<Msg extends { t: string; rid?: string }> extends Durab
   // room type's timer needs it sooner - no storage write per message. A room
   // with someone connected is never removed.
   async alarm() {
+    if (!this.exists) return; // (a room that's gone: nothing to do, nothing to write)
     const now = Date.now();
     const open = await this.sweep(now);
     if (this.passHost(now)) this.changed();

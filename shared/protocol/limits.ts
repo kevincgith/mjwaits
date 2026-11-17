@@ -4,7 +4,7 @@
 
 // Bumped whenever a message changes shape. The server answers a `hello` with
 // a different version with an error asking the page to reload.
-export const PROTOCOL_VERSION = 3; // 2: the room shares a whole Scores-tab game; 3: tables play 換牌 and 獎池
+export const PROTOCOL_VERSION = 4; // 2: the room shares a whole Scores-tab game; 3: tables play 換牌 and 獎池; 4: codes are 4 characters, a table asks if anyone's still watching (`here`)
 
 export const SEATS = 4;
 
@@ -45,10 +45,13 @@ export const CHAT_RAW_MAX = 600; // what may be sent, before cleaning
 export const CHAT_HISTORY = 40;
 export const CHAT_GAP_MS = 400;
 
-// Room codes: 5 characters from an alphabet with nothing that reads like
-// something else (no 0/O, 1/I/L, 5/S, 2/Z, 8/B) - 25^5, about 9.8 million
-// codes. Typed in any case; the canonical form is upper case.
-export const ROOM_CODE_LENGTH = 5;
+// Room codes: 4 characters from an alphabet with nothing that reads like
+// something else (no 0/O, 1/I/L, 5/S, 2/Z, 8/B) - 25^4, about 390,000
+// codes: short to say and type, for the few tables there are at once (the
+// Worker limits how fast anyone can try them - see its index.ts). Typed in
+// any case; the canonical form is upper case. (They were 5 long: those are
+// no longer read.)
+export const ROOM_CODE_LENGTH = 4;
 export const ROOM_CODE_ALPHABET = "34679ACDEFGHJKMNPQRTUVWXY";
 export const ROOM_CODE_PATTERN = new RegExp(`^[${ROOM_CODE_ALPHABET}]{${ROOM_CODE_LENGTH}}$`);
 

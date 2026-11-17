@@ -7641,6 +7641,57 @@ html.playing body {
   font-size: 0.78rem;
 }
 
+/* (Someone's just started watching: said outright, lit for a few seconds.) */
+.play-watching.is-new {
+  background: var(--play-gold, #e9c46a);
+  color: #1c1c1e;
+  font-weight: 600;
+}
+
+/* Online, nobody playing their own seat: the table's stopped, and asks. */
+/* (A band across the top, over the hand's result - which stays readable
+   under it.) */
+.play-asking {
+  position: absolute;
+  left: 50%;
+  top: 3rem;
+  z-index: 12;
+  transform: translateX(-50%);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem 0.7rem;
+  width: max-content;
+  max-width: min(34rem, 92%);
+  padding: 0.5rem 0.6rem 0.5rem 1rem;
+  border-radius: 1rem;
+  background: rgba(20, 20, 22, 0.94);
+  color: #fff;
+  text-align: center;
+  box-shadow: 0 0.6rem 1.8rem rgba(0, 0, 0, 0.45);
+}
+
+.play-asking > strong {
+  font-size: 0.95rem;
+}
+
+.play-asking > span {
+  font-size: 0.8rem;
+  opacity: 0.8;
+}
+
+.play-asking > button {
+  border: none;
+  border-radius: var(--radius-pill);
+  padding: 0.5rem 1.2rem;
+  background: var(--play-gold, #e9c46a);
+  color: #1c1c1e;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
 /* Your own reaction: above your name in the bar. */
 .play-bubble.is-mine {
   top: auto;

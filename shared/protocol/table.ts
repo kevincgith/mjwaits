@@ -121,6 +121,9 @@ const TableClientSchema = tagged({
   // After 叮: start looking at that seat's tiles (null: stop).
   peek: object({ t: literal("peek"), seat: nullable(seat), rid }),
   // Between hands: ready for the next deal; 投降 a 拉 that holder has on you.
+  // `here`: still watching - a table nobody's playing at themself asks every
+  // few hands (TableState.asking), and deals on once anyone answers.
+  here: object({ t: literal("here"), rid }),
   ready: object({ t: literal("ready"), rid }),
   surrender: object({ t: literal("surrender"), holder: seat, rid }),
   // A hand over, losing hands hidden: show yours to the table.
@@ -229,6 +232,13 @@ export interface TableState {
   phase: "lobby" | "playing" | "ended";
   seats: (SeatInfo | null)[];
   watching: number;
+  // ...and who they are, by name - so the players see who's started watching
+  // (at a table that shows its observers every hand, most of all). Absent
+  // from a server not yet sending it.
+  watchers?: string[];
+  // Nobody's playing a seat themself (bots, 自動) and it's dealt its few
+  // hands: the table's waiting for anyone to say they're still watching (`here`).
+  asking?: boolean;
   settings: TableSettings;
   totals: number[]; // per seat, over the hands played
   hand: number; // hands dealt so far

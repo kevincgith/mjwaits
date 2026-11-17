@@ -20,6 +20,13 @@
     { "tag": "v1", "new_sqlite_classes": ["Room"] },
     { "tag": "v2", "new_sqlite_classes": ["Table"] }
   ],
+  // How fast one address may make rooms, and ask after codes (a lookup, the
+  // scores, a connection): see index.ts. Codes are 4 characters - these are
+  // what keeps them from being run through.
+  "ratelimits": [
+    { "name": "CREATE_LIMIT", "namespace_id": "1001", "simple": { "limit": 6, "period": 60 } },
+    { "name": "LOOKUP_LIMIT", "namespace_id": "1002", "simple": { "limit": 40, "period": 60 } }
+  ],
   "vars": {
     // Pages allowed to connect, comma-separated, besides localhost (always
     // allowed, for development). Override for a LAN test in .dev.vars.

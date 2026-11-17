@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import { MAX_MESSAGE_BYTES, PROTOCOL_VERSION, RATE_BURST, ROOM_CODE_PATTERN } from "@mjwaits/shared/protocol/limits";
 import { isAllowedOrigin, randomRoomCode } from "../src/index";
 import { IDLE_TTL_MS, MAX_CONNECTIONS, UNUSED_TTL_MS, type Room } from "../src/room";
-import { HELLO_MS, MAX_PEOPLE, QUIET_MS, UNPINGED_MS } from "../src/hub";
+import { HELLO_MS, MAX_PENDING, MAX_PEOPLE, QUIET_MS, UNPINGED_MS } from "../src/hub";
 import { BASE, connect, createRoom, join, ORIGIN, sharing } from "./helpers";
 
 describe("the Worker's routes", () => {
@@ -71,7 +71,7 @@ describe("the Worker's routes", () => {
 
   it("makes codes from the alphabet, evenly", () => {
     const counts = new Map<string, number>();
-    for (let i = 0; i < 2000; i++) {
+    for (let i = 0; i < 2500; i++) {
       const code = randomRoomCode();
       expect(code).toMatch(ROOM_CODE_PATTERN);
       for (const ch of code) counts.set(ch, (counts.get(ch) ?? 0) + 1);
@@ -243,12 +243,43 @@ describe("limits", () => {
     await expect.poll(() => silent.closed, { timeout: 2000 }).toBe(true);
   });
 
-  it("caps connections per room", async () => {
+  it("keeps only a few connections that haven't joined: one more pushes the oldest out", async () => {
     const code = await createRoom();
-    const open = [];
-    for (let i = 0; i < MAX_CONNECTIONS; i++) open.push(await connect(code));
-    const res = await SELF.fetch(`${BASE}/rooms/${code}/ws`, { headers: { Upgrade: "websocket", Origin: ORIGIN } });
-    expect(res.status).toBe(503);
+    const open: Awaited<ReturnType<typeof connect>>[] = [];
+    for (let i = 0; i < MAX_PENDING; i++) open.push(await connect(code));
+    const extra = await connect(code);
+    await expect.poll(() => open[0].closed, { timeout: 2000 }).toBe(true);
+    expect(open[1].closed).toBe(false);
+    expect(extra.closed).toBe(false);
+  });
+
+  it("full of joined connections, tells a newcomer so - and still lets the host back in, in a watcher's place", async () => {
+    const code = await createRoom();
+    const host = await join(code, "Kevin");
+    const amy = await join(code, "Amy");
+    // Amy's phone, over and over: the room's sixteen connections.
+    const amys = [amy.c];
+    for (let i = amys.length + 1; i < MAX_CONNECTIONS; i++) amys.push((await join(code, "", amy.welcome.token)).c);
+    // Someone new: the room has no place for them, and doesn't keep their name.
+    const ben = await connect(code);
+    ben.send({ t: "hello", v: PROTOCOL_VERSION, name: "Ben" });
+    expect((await ben.error()).code).toBe("full");
+    await expect.poll(() => ben.closed, { timeout: 2000 }).toBe(true);
+    expect((await host.c.room()).people.map((p) => p.name)).not.toContain("Ben");
+    // The host's phone again (its first connection still open): let in, one of Amy's closed for it.
+    const back = await join(code, "", host.welcome.token);
+    expect(back.welcome.host).toBe(true);
+    await expect.poll(() => amys.some((c) => c.closed), { timeout: 2000 }).toBe(true);
+    expect(host.c.closed).toBe(false);
+  });
+
+  it("answers for a code that was never made without keeping anything for it", async () => {
+    const stub = env.ROOMS.getByName("WXYA");
+    expect(await stub.info()).toBeNull();
+    const tables = await runInDurableObject(stub, (_room: Room, state) => state.storage.sql.exec("SELECT name FROM sqlite_master WHERE type = 'table'").toArray().length);
+    expect(tables).toBe(0);
+    const res = await SELF.fetch(`${BASE}/rooms/WXYA/ws`, { headers: { Upgrade: "websocket", Origin: ORIGIN } });
+    expect(res.status).toBe(404);
   });
 });
 
