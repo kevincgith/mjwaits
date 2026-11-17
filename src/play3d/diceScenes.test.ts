@@ -50,13 +50,33 @@ describe("座位's tiles on the WebGL felt", () => {
     const seated = seatsScene(350, table(8)).pieces.filter((p) => p.face.startsWith("z"));
     expect(dealt.every((p) => p.anim?.key.startsWith("deal:"))).toBe(true);
     expect(seated.every((p) => p.anim?.key.startsWith("seat:"))).toBe(true);
+    // (Whoever keeps their seat: their wind stays put.)
+    const kept = seatsScene(350, { ...table(8), dealt: { ...table(8).dealt!, z1: { at: 2, seat: 2, order: 0 } } }).pieces.find((p) => p.face === "z1")!;
+    expect(kept.anim).toBeUndefined();
     // z1 was dealt to the bottom seat (0) and goes to the top (2).
     const z1 = seated.find((p) => p.face === "z1")!;
     expect(centre(z1.anim!.pose(0))).toEqual(centre(dealt.find((p) => p.face === "z1")!.m));
     expect(z1.m[13]).toBeLessThan(350 / 2);
     // Same size as the 筒 left in the row.
     const size = (m: Float32Array | number[]) => Math.hypot(m[0], m[1], m[2]);
-    const pin = seatsScene(350, table(8)).pieces.find((p) => p.face === "t1")!;
-    for (const p of seated) expect(size(p.m)).toBeCloseTo(size(pin.m), 5);
+    const edged = seatsScene(350, table(7)).pieces.find((p) => p.face === "t1")!;
+    for (const p of seated) expect(size(p.m)).toBeCloseTo(size(edged.m), 5);
+  });
+
+  it("deals every wind upright to you, wherever it's dealt", () => {
+    for (const p of seatsScene(350, table(8)).pieces.filter((p) => p.face.startsWith("z"))) {
+      // Not turned: its x axis still runs along the felt's x.
+      expect(p.m[1]).toBeCloseTo(0, 5);
+      expect(p.m[0]).toBeGreaterThan(0);
+    }
+  });
+
+  it("sweeps the 筒 off the table once everyone's seated", () => {
+    const pins = seatsScene(350, table(8)).pieces.filter((p) => p.face.startsWith("t"));
+    expect(pins.map((p) => p.anim?.key)).toEqual(["away:t1", "away:t2"]);
+    // Gone once they're off: drawn at nothing.
+    for (const p of pins) expect(Math.hypot(p.m[0], p.m[1], p.m[2])).toBe(0);
+    // Off past the far edge as they go.
+    for (const p of pins) expect(p.anim!.pose(1)[13]).toBeLessThan(0);
   });
 });

@@ -3272,12 +3272,20 @@ img.tile-face {
   width: 64px;
   height: 64px;
   padding: 0.5rem;
-  background: var(--tile-bg);
+  /* A block, as the table's dice are: its top lit from above, and below it
+     the side that faces you, in shade - seen from a little above. */
+  --die-side: 7px;
+  margin-bottom: 7px;
+  background: linear-gradient(165deg, color-mix(in srgb, var(--tile-bg) 85%, #fff), var(--tile-bg) 55%);
   border: 1px solid var(--tile-edge);
   border-radius: var(--radius-lg);
   box-shadow:
-    0 2px 0 var(--tile-edge),
-    0 3px 8px rgba(0, 0, 0, 0.08);
+    inset 0 1px 0 rgba(255, 255, 255, 0.75),
+    inset 0 -2px 4px rgba(0, 0, 0, 0.05),
+    0 var(--die-side) 0 -1px color-mix(in srgb, var(--tile-bg) 74%, #6f6046),
+    0 var(--die-side) 0 0 var(--tile-edge),
+    0 calc(var(--die-side) + 4px) 12px rgba(0, 0, 0, 0.22);
+  transition: transform 0.08s ease;
   cursor: pointer;
 }
 
@@ -3310,6 +3318,9 @@ img.tile-face {
 
 .die:not(:disabled):active {
   border-color: var(--accent);
+  /* Pressed down into the table a little. */
+  transform: translateY(3px);
+  --die-side: 4px;
 }
 
 .die-cell {
@@ -3324,6 +3335,8 @@ img.tile-face {
   height: 12px;
   background: var(--tile-ink);
   border-radius: 50%;
+  /* Drilled into the face. */
+  box-shadow: inset 0 1.5px 2px rgba(0, 0, 0, 0.5);
 }
 
 .dice-roll {
@@ -3354,196 +3367,9 @@ img.tile-face {
   background: var(--danger-bg-1);
 }
 
-/* The felt where the thrown dice land (see WallDice). */
-.wall-dice {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
-
-.wall-die {
-  --size: 30px; /* WALL_DIE_SIZE */
-  position: absolute;
-  width: var(--size);
-  height: var(--size);
-  margin: calc(var(--size) / -2) 0 0 calc(var(--size) / -2);
-}
-
-.wall-die {
-  perspective: 220px;
-}
-
-/* A soft shadow on the felt under the die (pushed away while it's in the
-   air - see WallDice). */
-.wall-die-shadow {
-  position: absolute;
-  inset: 3px -1px -4px 3px;
-  border-radius: 6px;
-  background: rgba(0, 0, 0, 0.32);
-  filter: blur(3px);
-}
-
-/* The roll (animated in WallDice), then the cube turned to its value. */
-.wall-die-roll,
-.wall-die-cube {
-  position: absolute;
-  inset: 0;
-  transform-style: preserve-3d;
-}
-
-/* A bevelled cube: each face is a little smaller than the cube (--c in from
-   every edge), the twelve edges are 45° strips between faces, and a solid
-   core fills the corners - so it reads as rounded from any angle, with no
-   cut corners for anything to show through. */
-.wall-die-cube {
-  --c: 4px; /* WALL_DIE_BEVEL */
-  --len: calc(var(--size) - 2 * var(--c));
-  --w: calc(var(--c) * 1.4142 + 0.6px);
-  --d: calc((var(--size) / 2 - var(--c) / 2) * 1.4142);
-}
-
-.wall-die-side {
-  position: absolute;
-  left: var(--c);
-  top: var(--c);
-  width: var(--len);
-  height: var(--len);
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  grid-template-rows: repeat(3, 1fr);
-  gap: 1px;
-  box-sizing: border-box;
-  padding: 3px;
-  border-radius: 2px;
-  background: radial-gradient(farthest-side, #ffffff 55%, var(--rim) 100%);
-}
-
-/* The rounded edges and corners (WALL_DIE_MESH), shaded as one smooth
-   curve with the faces: a face is white in the middle easing to --rim at its
-   edge, each edge strip runs from --rim where it meets a face to --crest at
-   the middle of the curve, and the corners sit at --crest. Where two pieces
-   meet they're the same shade, so there's no line - only a soft gradient. */
-.wall-die-cube {
-  --rim: #f4f4f4;
-  --crest: #e9e9e9;
-}
-
-.wall-die-bevel {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 100px;
-  height: 100px;
-  transform-origin: 0 0;
-}
-
-/* (A strip's own y runs across the curve: from its first angle to its last.) */
-.wall-die-bevel.is-edge-in {
-  background: linear-gradient(var(--rim) 7%, var(--crest) 93%);
-}
-
-.wall-die-bevel.is-edge-out {
-  background: linear-gradient(var(--crest) 7%, var(--rim) 93%);
-}
-
-.wall-die-bevel.is-corner {
-  background: var(--crest);
-}
-
-/* A corner triangle touching a face: rim at the point on the face, easing
-   to the crest - so the corner shades like the edges either side of it (a
-   flat grey patch there showed as a separate piece). Its point on the face
-   is at its top left (a), top right (b) or bottom left (c). */
-.wall-die-bevel.is-corner-a {
-  background: linear-gradient(to bottom right, var(--rim) 0%, var(--crest) 45%);
-}
-
-.wall-die-bevel.is-corner-b {
-  background: linear-gradient(to bottom left, var(--rim) 0%, var(--crest) 45%);
-}
-
-.wall-die-bevel.is-corner-c {
-  background: linear-gradient(to top right, var(--rim) 0%, var(--crest) 45%);
-}
-
-/* Behind each face, a backing plate the size of the whole cube, set in by
-   the bevel - together an inner core, so wherever two pieces of the curve
-   meet imperfectly the die's own white shows there, never the table. */
-.wall-die-side {
-  transform-style: preserve-3d;
-}
-
-.wall-die-side::before {
-  content: "";
-  position: absolute;
-  inset: calc(-1 * var(--c));
-  /* Rounded by the bevel, so its corners stay inside the rounded ones. */
-  border-radius: var(--c);
-  background: var(--crest);
-  transform: translateZ(calc(-1 * var(--c)));
-}
-
-/* The landed die: flat, fully rounded, at the cube's top face height (so the
-   same perspective sizes it, just covering the cube's outline), with the
-   face's own pip layout. Once landed (.is-resting) it fades in over the
-   still-solid cube, the cube drops out unseen behind it, and then its
-   corners slowly round off - a morph with nothing to pop. (The cube itself
-   never fades: a 3D object turned partly transparent is drawn flat for that
-   moment, which jumps.) */
-.wall-die-flat {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  grid-template-rows: repeat(3, 1fr);
-  gap: 1px;
-  box-sizing: border-box;
-  padding: calc(4px + 3px); /* the bevel (--c) plus the face's own padding */
-  border-radius: 4px;
-  background: radial-gradient(farthest-side, #ffffff 70%, #ececec 100%);
-  transform: translateZ(calc(var(--size) / 2));
-  opacity: 0;
-  /* First it covers the cube (with the cube's own gentle corners), then -
-     with the cube already gone behind it - the corners slowly round off. */
-  transition:
-    opacity 0.2s ease-out,
-    border-radius 0.6s ease-in-out 0.22s;
-}
-
-.wall-die-flat .die-pip {
-  width: 4.5px;
-  height: 4.5px;
-}
-
-.wall-die-flat.is-red .die-pip {
-  background: var(--red);
-}
-
-.wall-die-flat.is-one .die-pip {
-  width: 9px;
-  height: 9px;
-}
-
-.wall-die.is-resting .wall-die-flat {
-  opacity: 1;
-  border-radius: 8px;
-}
-
-/* Dropped once the flat die fully covers it - before its corners round. */
-.wall-die.is-resting .wall-die-cube {
-  visibility: hidden;
-  transition: visibility 0s 0.2s;
-}
-
-.wall-die-side .die-pip {
-  width: 4.5px;
-  height: 4.5px;
-}
-
 /* Chinese dice: red pips on the 1 and the 4, and a big single pip on the 1
-   (here and in the tray, .die). */
-.die.is-red .die-pip,
-.wall-die-side.is-red .die-pip {
+   (the tray's; the table's are drawn so too - see play3d/engine's die). */
+.die.is-red .die-pip {
   background: var(--red);
 }
 
@@ -3551,20 +3377,6 @@ img.tile-face {
   width: 20px;
   height: 20px;
 }
-
-.wall-die-side.is-one .die-pip {
-  width: 9px;
-  height: 9px;
-}
-
-
-
-.wall-die-side-1 { transform: translateZ(calc(var(--size) / 2)); }
-.wall-die-side-6 { transform: rotateY(180deg) translateZ(calc(var(--size) / 2)); }
-.wall-die-side-3 { transform: rotateY(90deg) translateZ(calc(var(--size) / 2)); }
-.wall-die-side-4 { transform: rotateY(-90deg) translateZ(calc(var(--size) / 2)); }
-.wall-die-side-2 { transform: rotateX(90deg) translateZ(calc(var(--size) / 2)); }
-.wall-die-side-5 { transform: rotateX(-90deg) translateZ(calc(var(--size) / 2)); }
 
 .wall-break-caption {
   display: flex;
@@ -3584,7 +3396,7 @@ img.tile-face {
 /* ---- The Dice tab's tables (擲骰's wall, 座位's seats) --------------------
    As Play's: the felt tipped away from you under a perspective, its tiles
    drawn by Play's engine on the canvas over it (see play3d/FeltGL), the
-   thrown dice over it flat to you, as Play's are. Tipped about its near
+   thrown dice on it as real cubes (see play3d/dice). Tipped about its near
    edge, which keeps the felt's own width; the stage only as tall as the
    tipped felt is seen. */
 .gl-stage {
@@ -3635,16 +3447,11 @@ img.tile-face {
   height: 100%;
   pointer-events: none;
 }
-/* Where the dice land, marked on the felt unseen; and the flat layer over
-   the table they're thrown in. */
-.gl-dice-area {
-  position: absolute;
-  pointer-events: none;
-}
-.gl-dice-layer {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
+/* The same felt again, bare, over the canvas: what sits on it that's
+   never under a tile (座位's name tags). */
+.gl-felt.gl-felt-over {
+  background: none;
+  box-shadow: none;
 }
 
 /* Seating ceremony sub-tab */

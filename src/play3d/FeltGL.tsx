@@ -3,8 +3,8 @@
 // tiles are Play's own - the same blocks, light and motion. The felt is
 // `feltRef`; its parent, the stage, gives the perspective and holds the
 // canvas. `scene` lays the tiles out on the felt (in its own px) and is
-// called on every render (cheap: the engine keeps each animation going by
-// its key).
+// called whenever `look` changes (and on a resize); the engine keeps each
+// animation going by its key.
 //
 // Loaded on its own, with three.js (see DiceTableGL).
 
@@ -13,17 +13,22 @@ import { Engine } from "./engine";
 import { readFrame } from "./frame";
 import type { Piece, Quad } from "./layout";
 import { sharedAtlas, type Atlas } from "./textures";
+import type { DieItem } from "./dice";
 
 export interface FeltScene {
   pieces: Piece[];
   quads: Quad[];
+  // Its dice (see dice.ts).
+  dice?: DieItem[];
 }
 
 // A canvas whose context has been given back (React's dev double mount):
 // a new one is made rather than used again.
 const spent = new WeakSet<HTMLCanvasElement>();
 
-export function FeltGL({ feltRef, scene }: { feltRef: RefObject<HTMLElement | null>; scene: (feltW: number, feltH: number) => FeltScene }) {
+// `look`: what's on the table, in a word - drawn again only when it changes
+// (the page round it re-renders far more often: a die tumbling in the tray).
+export function FeltGL({ feltRef, scene, look }: { feltRef: RefObject<HTMLElement | null>; scene: (feltW: number, feltH: number) => FeltScene; look: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const engine = useRef<Engine | null>(null);
   const [atlas, setAtlas] = useState<Atlas | null>(null);
@@ -52,8 +57,7 @@ export function FeltGL({ feltRef, scene }: { feltRef: RefObject<HTMLElement | nu
     e.show({ felt: s, hand: { pieces: [], quads: [], width: 0, height: 0 }, middle: { x: 0, y: 0 } });
     e.render();
   });
-  // Every render: what's on the table may have changed.
-  useLayoutEffect(() => draw.current());
+  useLayoutEffect(() => draw.current(), [look]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
