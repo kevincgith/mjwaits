@@ -11,7 +11,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { Engine } from "./engine";
 import { readFrame } from "./frame";
-import type { Piece, Quad } from "./layout";
+import type { Card, Piece, Quad } from "./layout";
 import { sharedAtlas, type Atlas } from "./textures";
 import type { DieItem } from "./dice";
 
@@ -20,6 +20,10 @@ export interface FeltScene {
   quads: Quad[];
   // Its dice (see dice.ts).
   dice?: DieItem[];
+  // What stands on it besides its tiles - its players' name cards and the
+  // dealer's disc - and the cards' faces (see cards.ts).
+  props?: Record<string, Card[]>;
+  cardFaces?: HTMLCanvasElement;
 }
 
 // A canvas whose context has been given back (React's dev double mount):

@@ -233,8 +233,9 @@ const BURST_MS = 1200;
 // 投降: its burst, and how long the 拉 it ended stays struck through.
 const SURRENDER = "投降";
 const SURRENDER_SHOW_MS = 4000;
-// 見牌 Seen copies: a tile held this long (ms) greys the ponds but its copies.
-const SEEN_HOLD_MS = 500;
+// 見牌 Seen copies: a tile held this long (ms) greys the ponds but its copies
+// - just longer than a tap, so it answers as soon as it's a hold.
+const SEEN_HOLD_MS = 250;
 // A hand's end is seen on the table first - the 胡 / 自摸 called and the
 // hands laid down - and only then the result card: this long after a win,
 // less after a 流局 (no call to see).
@@ -2705,12 +2706,12 @@ export function PlayPanel({
       return takeSwap(evenTake(swapPhase, HUMAN, takersAfter(swapPhase, game.dealer)));
     }
   };
-  // 快換: your take comes by itself, an even take, after a beat (AUTO_TAKE_MS,
-  // by the table's speed - and after your give's landed, as a bot's would) -
-  // unless you've tapped a tile to pick by hand. (Online too, by the table's 快換.)
+  // 快換: your take comes by itself, an even take, after AUTO_TAKE_MS (and
+  // after your give's landed, as a bot's would) - unless you've tapped a tile
+  // to pick by hand. (Online too, by the table's 快換.)
   const autoTakeMs =
     myTake && quickSwap(online ? online.table.settings.swapRules : game.swapRules) && swapPicks.every((p) => !p.length)
-      ? Math.round(AUTO_TAKE_MS * SPEEDS[speed].factor)
+      ? AUTO_TAKE_MS
       : null;
   const autoTake = useRef(() => {});
   autoTake.current = () => swapPhase && takeSwap(evenTake(swapPhase, HUMAN, takersAfter(swapPhase, game.dealer)));

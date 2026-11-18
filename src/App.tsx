@@ -49,6 +49,7 @@ import { loadTestHands } from "./lib/lazyParts";
 import { inviteLaunch, startInstallAtInvite } from "./lib/onlineTable";
 import type { RecordRequest, ScoreHandRequest, SeatingResult } from "./ScoresPanel";
 import type { SeatsTable } from "./play3d/diceScenes";
+import type { SeatCard } from "./play3d/cards";
 import { GAME_HASH, snapshotFromAnyHash, snapshotFromHash } from "./lib/scoreShare";
 import { roomFromSearch } from "./lib/online";
 import { isLadderChanged, isRuleChanged, ladderOf, rulesAffectScoring, rulesFingerprint } from "@mjwaits/shared/engine/taiRules";
@@ -8574,9 +8575,9 @@ function ExchangePanel() {
 // (x + n - 1) mod 4, so n = 1,5,9,13,17 comes back to the roller.
 
 // Default player names. Any player can be renamed to one- or two-letter
-// initials (A..Z, AA..ZZ) by long-pressing their token - see SeatRenamePicker.
-// The default also keys the token's colour (seat-token-a..d), so colours
-// follow the player, not whatever name they've chosen.
+// initials (A..Z, AA..ZZ) by long-pressing their card - see SeatRenamePicker.
+// Each player's place in this list also keys their card's colours (see
+// play3d/cards), so colours follow the player, not whatever name they've chosen.
 const DEFAULT_SEAT_NAMES = ["A", "B", "C", "D"] as const;
 const ALPHABET = Array.from({ length: 26 }, (_, i) => String.fromCharCode(65 + i));
 
@@ -8627,12 +8628,13 @@ const CEREMONY_TILES: Tile[] = [
 // out so stepping 0 -> 1 -> 2 -> 3 goes counter-clockwise on screen (bottom,
 // right, top, left) - i.e. mahjong turn order, with each seat's CCW neighbour
 // to its "right". Every "count round the players" helper steps +index.
-// (On the felt, a little in from its edges: each seat at the table's side.)
+// (On the felt, a little in from its edges: where each player's name card
+// stands - as play3d/cards' CARD_AT.)
 const SEAT_ANCHORS = [
-  { left: "50%", top: "93.6%" },
-  { left: "93.6%", top: "50%" },
-  { left: "50%", top: "6.4%" },
-  { left: "6.4%", top: "50%" },
+  { left: "50%", top: "92%" },
+  { left: "88.8%", top: "50%" },
+  { left: "50%", top: "8%" },
+  { left: "11.2%", top: "50%" },
 ];
 
 // The shuffled row: a permutation of 0..5 into CEREMONY_TILES. (The two dice
@@ -8705,51 +8707,33 @@ const SEATING_AUTO_MS = [700, 1000, 1400, 1000, 900, 1000, 1400, 1300];
 // (select for a seat swap) rather than two single taps.
 const DOUBLE_TAP_MS = 250;
 
-// One player on the seating table. While `interactive` (step 0 only) its
-// taps go to `onTap`, which SeatingPanel sorts into single-tap (provisional
-// East / complete a swap) vs double-tap (select for a swap). A long-press -
-// or right-click / the context-menu key on desktop - opens the rename picker
-// at any step. Never `disabled`, since a disabled button wouldn't receive
-// the long-press.
+// One player on the seating table: an unseen button over their name card
+// (drawn on the table - see play3d/cards). While `interactive` (step 0
+// only) its taps go to `onTap`, which SeatingPanel sorts into single-tap
+// (provisional East / complete a swap) vs double-tap (select for a swap). A
+// long-press - or right-click / the context-menu key on desktop - opens the
+// rename picker at any step. Never `disabled`, since a disabled button
+// wouldn't receive the long-press.
 function SeatToken({
   name,
-  colorKey,
   pos,
-  active,
-  eastMark,
   interactive,
   swapSelected,
   onTap,
   onRename,
-  fullName,
 }: {
   name: string;
-  colorKey: string;
   pos: number;
-  active: boolean;
-  eastMark: "real" | "provisional" | null;
   interactive: boolean;
   swapSelected: boolean;
   onTap: () => void;
   onRename: () => void;
-  fullName?: boolean; // a whole name (from Scores) in a pill, not initials
 }) {
   const press = useTapAndLongPress(interactive ? onTap : NOOP, onRename);
-  const classes = [
-    "seat-token",
-    `seat-token-${colorKey}`,
-    active && "is-active",
-    interactive && "is-pickable",
-    swapSelected && "is-swap-selected",
-    name.length > 1 && "is-long",
-    fullName && "is-name",
-  ]
-    .filter(Boolean)
-    .join(" ");
   return (
     <button
       type="button"
-      className={classes}
+      className={`seat-token${interactive ? " is-pickable" : ""}`}
       style={SEAT_ANCHORS[pos]}
       aria-label={
         swapSelected
@@ -8763,14 +8747,7 @@ function SeatToken({
         onRename();
       }}
       {...press}
-    >
-      <span className="seat-token-label">{name}</span>
-      {eastMark && (
-        <span className={`seat-token-east${eastMark === "provisional" ? " is-provisional" : ""}`}>
-          東
-        </span>
-      )}
-    </button>
+    />
   );
 }
 
@@ -9105,18 +9082,9 @@ function SeatingPanel({
   };
 
   const eastHolder = dealt ? dealt.indexOf(1) : null; // player dealt 東
-  const highlighted =
-    step === 1
-      ? provEast
-      : step === 2 || step === 3
-        ? realEast
-        : step === 6
-          ? firstPerson
-          : step === 8
-            ? eastHolder
-            : null;
-  // Through the throws the 東 badge marks the real-East seat (the 2nd thrower);
-  // once everyone has re-seated it marks whoever actually holds 東.
+  // The 東 lies by the East: the provisional one (who makes the first
+  // throw), then the real one (the second) - and once everyone has
+  // re-seated, it's whoever actually holds 東.
   const eastAt = step >= 8 ? eastHolder : step >= 2 ? realEast : provEast;
 
   const diceFaces =
@@ -9154,6 +9122,19 @@ function SeatingPanel({
         return "";
     }
   })();
+
+  // The players' name cards on the table (see play3d/cards).
+  const seatCards: SeatCard[] = DEFAULT_SEAT_NAMES.map((_, player) => {
+    const seat = seatOrder.indexOf(player);
+    return {
+      name: names[player],
+      player,
+      at: tokenPos(seat),
+      // (Once the winds are dealt, the 東 dealt to East says it.)
+      east: eastAt === seat && step < 7,
+      picked: step === 0 && swapFrom === seat,
+    };
+  });
 
   return (
     <div className="seat-sim">
@@ -9220,10 +9201,10 @@ function SeatingPanel({
             the dice, from a throw under way (or just made) until the winds
             are dealt. */}
         <Suspense fallback={null}>
-          <SeatTilesGL feltRef={feltRef} table={seatsTable} dice={onTable} onThrown={(key, ms) => key === onTable?.key && thrown?.landIn(ms)} />
+          <SeatTilesGL feltRef={feltRef} table={seatsTable} cards={seatCards} dice={onTable} onThrown={(key, ms) => key === onTable?.key && thrown?.landIn(ms)} />
         </Suspense>
-        {/* The players' name tags, over the tiles: the same felt again, bare,
-            so they're never hidden as they travel. */}
+        {/* Where the players' name cards stand (drawn on the table, as solid
+            as its tiles - see play3d/cards): each one's taps, over its card. */}
         <div className="gl-felt gl-felt-over">
           {DEFAULT_SEAT_NAMES.map((defaultName, player) => {
             const seat = seatOrder.indexOf(player);
@@ -9231,17 +9212,13 @@ function SeatingPanel({
               <SeatToken
                 key={defaultName}
                 name={names[player]}
-                colorKey={defaultName.toLowerCase()}
                 pos={tokenPos(seat)}
-                active={highlighted === seat}
-                eastMark={eastAt === seat ? (step < 2 ? "provisional" : "real") : null}
                 // Not while a rename is open: a long-press that opened it via
                 // the context-menu path mustn't also land as a tap on release.
                 interactive={step === 0 && renaming === null && !auto}
                 swapSelected={step === 0 && swapFrom === seat}
                 onTap={() => onTokenTap(seat)}
                 onRename={fullNames ? NOOP : () => openRename(player)}
-                fullName={fullNames}
               />
             );
           })}

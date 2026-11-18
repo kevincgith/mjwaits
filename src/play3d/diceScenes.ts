@@ -31,8 +31,8 @@ const SEAT_TILE = 32;
 const ROW_LEFT = 14;
 const ROW_PITCH = 38;
 const ROW_Y = 72;
-const DEALT_IN = 56;
-const DEALT_SIDE = 68;
+const DEALT_IN = 62;
+const DEALT_SIDE = 74;
 const DEALT: { x: number; y: number; rot: number }[] = [
   { x: 125, y: SEAT_UNITS - DEALT_IN, rot: 0 },
   { x: SEAT_UNITS - DEALT_SIDE, y: 125, rot: 0 },

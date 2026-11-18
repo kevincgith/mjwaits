@@ -86,7 +86,8 @@ export interface Piece {
   // Moving through its keyframes, or easing to where it now lies when that
   // changes (as a CSS transition would) - see anim.ts and engine.ts.
   anim?: Anim;
-  ease?: { key: string; dur: number; curve: (t: number) => number; delay?: number };
+  // (`lift`: raised this high mid-way, to clear what's in its path.)
+  ease?: { key: string; dur: number; curve: (t: number) => number; delay?: number; lift?: number };
   // Its tint faded to a new one over `dur` seconds, not snapped (by `key`) -
   // from `from` when it first shows, if given.
   fade?: { key: string; dur: number; from?: number };
@@ -126,10 +127,30 @@ export interface Rack {
   box: { x0: number; y0: number; x1: number; y1: number };
 }
 
+// Something standing on the felt (a name card, the dealer's disc): its unit
+// shape to where it stands, showing the `face`th of its faces.
+export interface Card {
+  m: Mat;
+  face: number;
+  ease?: Piece["ease"];
+}
+
 export interface Layout {
   // (`glass`: a peek's tiles, clear enough to see through, drawn over the rest.)
   // (`dice`: the Dice tab's - see dice.ts.)
-  felt: { pieces: Piece[]; quads: Quad[]; glass?: Piece[]; glassQuads?: Quad[]; racks?: Rack[]; dice?: { m: Mat; anim?: Anim }[] };
+  // (`props`: what stands on the felt besides its tiles, by name - the Dice
+  // tab's name cards, each showing face `face` of `cardFaces`, and its
+  // dealer's disc: see cards.ts.)
+  felt: {
+    pieces: Piece[];
+    quads: Quad[];
+    glass?: Piece[];
+    glassQuads?: Quad[];
+    racks?: Rack[];
+    dice?: { m: Mat; anim?: Anim }[];
+    props?: Record<string, Card[]>;
+    cardFaces?: HTMLCanvasElement;
+  };
   hand: { pieces: Piece[]; quads: Quad[]; width: number; height: number };
   // The compass's centre on the felt.
   middle: { x: number; y: number };
@@ -285,7 +306,7 @@ function seeThrough(side: PeekSide, w: GLWall, groups: Group[]): Group[] {
 // further than a 食替 tile (tint 0): 43% bright, mostly drained of colour.
 const POND_GREY = -0.5;
 // 見牌: how long the ponds take to grey (and come back).
-const POND_FADE_S = 0.35;
+const POND_FADE_S = 0.2;
 // A concealed kong turned up at the hand's end, if its group doesn't say
 // when (flipAt): a beat after it's over.
 const KONG_FLIP_DELAY = 0.35;

@@ -75,9 +75,9 @@ export const evenTake = (phase: SwapPhase, seat: number, after: number[]) => {
   return phase.piles.map((p, g) => (p ? blindPicks(p, even[g]) : []));
 };
 
-// 快換: your take comes by itself (an even take) after this long - a beat
-// to see it's yours, as long as a bot's take; the table's speed scales it.
-export const AUTO_TAKE_MS = 1300;
+// 快換: your take comes by itself (an even take) after this long - time to
+// see it's yours, and to tap a tile to pick by hand; the same at any speed.
+export const AUTO_TAKE_MS = 5000;
 
 // The swap's controls: its line in the bar under the table (the round,
 // what's happening - `part` "bar"), and your buttons ("actions") in the
