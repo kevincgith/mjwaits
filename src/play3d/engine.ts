@@ -23,6 +23,8 @@ const MAX_HAND = 48;
 const MAX_GLASS = 16;
 // The Dice tab's dice.
 const MAX_DICE = 3;
+// A tile that would go over the others but only slides along: this long (s).
+const SLIDE_ALONG_S = 0.45;
 // The Dice tab's players' name cards.
 const MAX_CARDS = 4;
 
@@ -454,7 +456,7 @@ class Space {
     };
     // Moved: eased from where it shows now to its new place. (`fresh`: the
     // moves just begun that would go over the others - see `over`.)
-    const fresh: { key: string; x0: number; x1: number; dy: number; over: number }[] = [];
+    const fresh: { key: string; x0: number; x1: number; dy: number; over: number; wait: number }[] = [];
     const track = (p: { m: Mat; ease?: Piece["ease"] }) => {
       if (!p.ease) return;
       keys.add(p.ease.key);
@@ -470,7 +472,7 @@ class Space {
         const delay = p.ease.over && !along ? 0 : (p.ease.delay ?? 0);
         const dur = p.ease.over && !along ? Math.min(p.ease.dur, 0.2) : p.ease.dur;
         this.eases.set(p.ease.key, { from, to: p.m, start: now + delay * 1000, dur, curve: p.ease.curve, lift: across ? (p.ease.lift ?? 0) : 0, over: 0 });
-        if (p.ease.over) fresh.push({ key: p.ease.key, x0: from.elements[12], x1: p.m[12], dy: p.m[13] - from.elements[13], over: p.ease.over });
+        if (p.ease.over && along) fresh.push({ key: p.ease.key, x0: from.elements[12], x1: p.m[12], dy: p.m[13] - from.elements[13], over: p.ease.over, wait: p.ease.overDelay ?? 0 });
       } else if (!was) this.shown.set(p.ease.key, new THREE.Matrix4().fromArray(p.m));
     };
     for (let i = 0; i < n; i++) {
@@ -500,10 +502,24 @@ class Space {
     // Taken over the others only if it changes places with one of them (or
     // comes in from above the row): just shifting along, it slides.
     if (fresh.length) {
-      const at = this.pieces.flatMap((p) => (p.ease ? [{ key: p.ease.key, x0: this.shown.get(p.ease.key)?.elements[12] ?? p.m[12], x1: p.m[12] }] : []));
+      // (Changing places is judged among the pieces staying in the row: one
+      // coming in from above - which goes over anyway - doesn't make those
+      // shifting along to make room for it go over too.)
+      const at = this.pieces.flatMap((p) => {
+        if (!p.ease) return [];
+        const was = this.shown.get(p.ease.key)?.elements;
+        return [{ key: p.ease.key, x0: was?.[12] ?? p.m[12], x1: p.m[12], dy: was ? p.m[13] - was[13] : 0 }];
+      });
       for (const f of fresh) {
-        const swaps = at.some((o) => o.key !== f.key && Math.abs(f.x0 - o.x0) > 1 && Math.abs(f.x1 - o.x1) > 1 && Math.sign(f.x0 - o.x0) !== Math.sign(f.x1 - o.x1));
-        if (swaps || Math.abs(f.dy) > 0.25 * f.over) this.eases.get(f.key)!.over = f.over;
+        const level = (dy: number) => Math.abs(dy) <= 0.25 * f.over;
+        const swaps = level(f.dy) && at.some((o) => o.key !== f.key && level(o.dy) && Math.abs(f.x0 - o.x0) > 1 && Math.abs(f.x1 - o.x1) > 1 && Math.sign(f.x0 - o.x0) !== Math.sign(f.x1 - o.x1));
+        const e = this.eases.get(f.key)!;
+        if (swaps || Math.abs(f.dy) > 0.25 * f.over) {
+          e.over = f.over;
+          e.start += f.wait * 1000;
+          // (Just sliding along, all together - a row closing up, or making
+          // room - a little quicker than going over.)
+        } else e.dur = Math.min(e.dur, SLIDE_ALONG_S);
       }
     }
     this.tiles.count = n;

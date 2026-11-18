@@ -1026,7 +1026,9 @@ export class Table extends Hub<TableMessage> {
       rt.lastCall = null;
       rt.last = null;
     }
-    this.newDecision(Date.now(), decisions.map((d, s) => (s === seat || unwaited.includes(s) ? undefined : d)));
+    // (The only call they had: nothing to choose again - let go at once.)
+    const only = claimOptions(rt.game!, seat).length === 1;
+    this.newDecision(Date.now(), decisions.map((d, s) => (s === seat ? (only ? null : undefined) : unwaited.includes(s) ? undefined : d)));
     // (Its caller doesn't get to think again; a win let go by stays gone.)
     rt.chanceSpent = true;
     rt.firstCall = { seat, kind: first };

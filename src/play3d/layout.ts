@@ -90,7 +90,8 @@ export interface Piece {
   // taken up this high (up the screen) and over, then set down - but only
   // when it changes places with another piece; moving along with the rest,
   // it slides. See engine's easing.)
-  ease?: { key: string; dur: number; curve: (t: number) => number; delay?: number; lift?: number; over?: number };
+  // (`overDelay`: a further wait, only if it goes over.)
+  ease?: { key: string; dur: number; curve: (t: number) => number; delay?: number; lift?: number; over?: number; overDelay?: number };
   // Its tint faded to a new one over `dur` seconds, not snapped (by `key`) -
   // from `from` when it first shows, if given.
   fade?: { key: string; dur: number; from?: number };
@@ -348,11 +349,11 @@ const flightGroups = <F extends { to: string; group: number }>(fs: F[]): F[][] =
 // Play's easings (App.css).
 const FALL = bezier(0.55, 0, 1, 0.45);
 const SETTLE = bezier(0.2, 0.8, 0.3, 1);
-// Your hand rearranging in 換牌 (HAND_SLIDE_MS in PlayPanel): a suit at a
-// time, in the hand's order, SUIT_STEP_S apart. A tile that changes places
-// with others is taken up over the row (SLIDE_OVER tiles' height), across,
-// and set down in its place - never through them; one just shifting along
-// (a gap closing) slides.
+// Your hand rearranging in 換牌 (HAND_SLIDE_MS in PlayPanel): a tile that
+// changes places with others is taken up over the row (SLIDE_OVER tiles'
+// height), across, and set down in its place - never through them - a suit
+// at a time, in the hand's order, SUIT_STEP_S apart. One just shifting along
+// (a gap closing, room made) slides, all of them in one go.
 const SLIDE = bezier(0.3, 0.7, 0.2, 1);
 const SLIDE_S = 0.6;
 const SUIT_STEP_S = 0.2;
@@ -1381,8 +1382,9 @@ function layoutHand(view: GLTableView, d: Dims, spots: Partial<Record<GLSide, Sp
               key: ident(t.tile ? faceOf(t.tile) : BACK),
               dur: SLIDE_S,
               curve: SLIDE,
-              delay: (mine.given ? GIVE_CLEAR_S : 0) + suits.indexOf(t.tile?.suit ?? "") * SUIT_STEP_S,
+              delay: mine.given ? GIVE_CLEAR_S : 0,
               over: SLIDE_OVER * H,
+              overDelay: suits.indexOf(t.tile?.suit ?? "") * SUIT_STEP_S,
             }
           : { key: own(t.tile ? faceOf(t.tile) : BACK, x0), dur: 0.16, curve: SETTLE },
     });
