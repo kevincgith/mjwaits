@@ -345,9 +345,14 @@ const flightGroups = <F extends { to: string; group: number }>(fs: F[]): F[][] =
 // Play's easings (App.css).
 const FALL = bezier(0.55, 0, 1, 0.45);
 const SETTLE = bezier(0.2, 0.8, 0.3, 1);
-// Your hand rearranging in 換牌 (HAND_SLIDE_MS in PlayPanel).
+// Your hand rearranging in 換牌 (HAND_SLIDE_MS in PlayPanel): a suit at a
+// time, in the hand's order, SUIT_STEP_S apart - each tile that moves lifted
+// toward you (SLIDE_LIFT tiles' height) as it goes, so it passes in front of
+// the rest of the row, never through it.
 const SLIDE = bezier(0.3, 0.7, 0.2, 1);
 const SLIDE_S = 0.45;
+const SUIT_STEP_S = 0.2;
+const SLIDE_LIFT = 0.55;
 // Your pile's tiles stand up from the felt this far (54deg), leaning back as your hand's do.
 const MINE_LEAN = 54;
 // Your given tiles, down to your pile - lifted clear of the row by this far in.
@@ -1306,6 +1311,9 @@ function layoutHand(view: GLTableView, d: Dims, spots: Partial<Record<GLSide, Sp
     kinds.set(face, n + 1);
     return `h:${mine.tiles.length}:${face}#${n}@${Math.round(x0)}`;
   };
+  // (The suits in the order the hand holds them, for its slides.)
+  const suits: string[] = [];
+  for (const t of mine.tiles) if (!suits.includes(t.tile?.suit ?? "")) suits.push(t.tile?.suit ?? "");
   mine.tiles.forEach((t: GLHandTile, i) => {
     let x0: number;
     if (t.drawn) {
@@ -1363,8 +1371,15 @@ function layoutHand(view: GLTableView, d: Dims, spots: Partial<Record<GLSide, Sp
         ? undefined
         : mine.sliding
           ? // (Just after a give, once the given tiles have lifted clear of
-            // their gaps - so nothing passes through anything.)
-            { key: ident(t.tile ? faceOf(t.tile) : BACK), dur: SLIDE_S, curve: SLIDE, delay: mine.given ? GIVE_CLEAR_S : 0 }
+            // their gaps; then a suit at a time, lifted past the rest - so
+            // nothing passes through anything.)
+            {
+              key: ident(t.tile ? faceOf(t.tile) : BACK),
+              dur: SLIDE_S,
+              curve: SLIDE,
+              delay: (mine.given ? GIVE_CLEAR_S : 0) + suits.indexOf(t.tile?.suit ?? "") * SUIT_STEP_S,
+              lift: SLIDE_LIFT * H,
+            }
           : { key: own(t.tile ? faceOf(t.tile) : BACK, x0), dur: 0.16, curve: SETTLE },
     });
     // Hints: the bots' pick underlined in gold; a risky tile barred in red.
