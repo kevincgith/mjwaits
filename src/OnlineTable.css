@@ -198,8 +198,10 @@
     align-self: stretch;
     align-content: safe center;
     max-height: 100%;
-    margin: -0.6rem -0.6rem;
-    padding: 0.6rem;
+    /* (Room round its cards for the gold one's glow, which a scrolling box
+       cuts off at its edge - a hard line through it, otherwise.) */
+    margin: -0.6rem -1.8rem;
+    padding: 0.6rem 1.8rem;
     overflow-y: auto;
     overscroll-behavior: contain;
     scrollbar-width: none;
