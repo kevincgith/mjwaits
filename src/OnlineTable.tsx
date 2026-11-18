@@ -709,13 +709,6 @@ function Lobby({ table, me, send, onLeave }: { table: TableState; me: Welcome; s
             枱例 Table rules
             {!me.host && <small> · set by the host</small>}
           </h2>
-          <Setting label="One discard, several winners" note={s.multiWin ? "一炮多響: everyone who can win, wins" : "截糊: the first in turn takes it"}>
-            {[false, true].map((on) => (
-              <Seg key={String(on)} on={s.multiWin === on} disabled={!me.host} onClick={() => setup({ multiWin: on })}>
-                {on ? "一炮多響" : "截糊"}
-              </Seg>
-            ))}
-          </Setting>
           <Setting
             label="Losing hands at a hand's end"
             note={s.reveal === false ? "only the winner's is shown - each other player chooses whether to show theirs" : "everyone's hand is shown"}
@@ -810,20 +803,6 @@ function Lobby({ table, me, send, onLeave }: { table: TableState; me: Welcome; s
               </Seg>
             ))}
           </Setting>
-          <Setting label="反雪" note={s.fanXue === false ? "off" : "dealt into a 雙響 / 三響, then self-drew the next hand won: 5 (10) back from each of those winners"}>
-            {[true, false].map((on) => (
-              <Seg key={String(on)} on={(s.fanXue !== false) === on} disabled={!me.host} onClick={() => setup({ fanXue: on })}>
-                {on ? "On" : "Off"}
-              </Seg>
-            ))}
-          </Setting>
-          <Setting label="包自摸" note={s.baoZimo === false ? "off" : "konged someone's discard, then self-drew off its replacement: only that discarder pays (their own share)"}>
-            {[true, false].map((on) => (
-              <Seg key={String(on)} on={(s.baoZimo !== false) === on} disabled={!me.host} onClick={() => setup({ baoZimo: on })}>
-                {on ? "On" : "Off"}
-              </Seg>
-            ))}
-          </Setting>
           <Setting label="再諗過 Second chance" note={s.secondChance === false ? "off" : "passed a win or a pung, then saw who's taking the tile: 5 seconds to change your mind"}>
             {[true, false].map((on) => (
               <Seg key={String(on)} on={(s.secondChance !== false) === on} disabled={!me.host} onClick={() => setup({ secondChance: on })}>
@@ -838,13 +817,6 @@ function Lobby({ table, me, send, onLeave }: { table: TableState; me: Welcome; s
               </Seg>
             ))}
           </Setting>
-          <Setting label="No claim back" note={s.runBack ? "off: any claim may be made" : "threw 1m: no pung, kong or run with it till you draw (from 123m, no 4m run either)"}>
-            {[true, false].map((on) => (
-              <Seg key={String(on)} on={!s.runBack === on} disabled={!me.host} onClick={() => setup({ runBack: !on })}>
-                {on ? "On" : "Off"}
-              </Seg>
-            ))}
-          </Setting>
           <Setting label="First dealer (莊)">
             {[0, 1, 2, 3].map((d) => (
               <Seg key={d} on={s.firstDealer === d} disabled={!me.host} onClick={() => setup({ firstDealer: d })}>
@@ -852,6 +824,31 @@ function Lobby({ table, me, send, onLeave }: { table: TableState; me: Welcome; s
               </Seg>
             ))}
           </Setting>
+          {/* The rules hardly anyone changes, out of the way. */}
+          <details className="ot-more">
+            <summary>More · 一炮多響 · 反雪 · 包自摸</summary>
+          <Setting label="One discard, several winners" note={s.multiWin ? "一炮多響: everyone who can win, wins" : "截糊: the first in turn takes it"}>
+            {[false, true].map((on) => (
+              <Seg key={String(on)} on={s.multiWin === on} disabled={!me.host} onClick={() => setup({ multiWin: on })}>
+                {on ? "一炮多響" : "截糊"}
+              </Seg>
+            ))}
+          </Setting>
+          <Setting label="反雪" note={s.fanXue === false ? "off" : "dealt into a 雙響 / 三響, then self-drew the next hand won: 5 (10) back from each of those winners"}>
+            {[true, false].map((on) => (
+              <Seg key={String(on)} on={(s.fanXue !== false) === on} disabled={!me.host} onClick={() => setup({ fanXue: on })}>
+                {on ? "On" : "Off"}
+              </Seg>
+            ))}
+          </Setting>
+          <Setting label="包自摸" note={s.baoZimo === false ? "off" : "konged someone's discard, then self-drew off its replacement: only that discarder pays (their own share)"}>
+            {[true, false].map((on) => (
+              <Seg key={String(on)} on={(s.baoZimo !== false) === on} disabled={!me.host} onClick={() => setup({ baoZimo: on })}>
+                {on ? "On" : "Off"}
+              </Seg>
+            ))}
+          </Setting>
+          </details>
         </section>
 
         <div className="ot-start">

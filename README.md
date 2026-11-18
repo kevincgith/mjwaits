@@ -489,9 +489,16 @@ held upright is asked to turn sideways.
 - **暗槓:** each concealed kong collects 5 from each other player as it's declared.
 - **追:** four players in a row throw the same tile, with no call between - the
   fourth pays each of the others 5 for an honour (東南西北中發白), 10 for a suited tile.
-- **嗌錯:** after calling a chow, pung or kong, a **嗌錯** button takes the call back
-  until you discard: the discard plays on as if you'd passed, and you pay 5 to each
-  player.
+- **嗌錯:** after calling a chow or pung, a **嗌錯** button takes the call back until
+  you discard - you're offered the same tile again, to make another call on it
+  (another run, the pung, the kong, a win) or let it go. A kong called off a discard
+  is held 2 seconds before its replacement is drawn, 嗌錯 on offer; once drawn, it
+  stands. It's free unless you end with less than you first called: a pung or kong
+  taken down to a run, or to nothing, pays 5 to each player - once, whatever you chose
+  in between. A run first is always free; so is ending on a win. Your own kongs (暗槓,
+  加槓) and wins can't be taken back.
+- **No claim back:** a tile you've just thrown can't be claimed back - no pung, kong or
+  run with it till your next draw (threw 1m out of 123m: no run with 4m either).
 - **聽:** whenever your hand is ready, the bottom band shows each tile you're waiting on and
   how many of it are still unseen (struck through when none are left).
 - **Look:** menus, sheets and the result card share the table's dark lacquer and gold, so
