@@ -434,7 +434,7 @@ class Space {
   private pieces: Piece[] = [];
   private quads = new Map<QuadKind, Quad[]>();
   private starts = new Map<string, number>();
-  private eases = new Map<string, { from: THREE.Matrix4; to: Mat; start: number; dur: number; curve: (t: number) => number; lift: number }>();
+  private eases = new Map<string, { from: THREE.Matrix4; to: Mat; start: number; dur: number; curve: (t: number) => number; lift: number; over: number }>();
   private shown = new Map<string, THREE.Matrix4>();
   // Tints fading (Piece.fade): from, to, when it began, how long.
   private fades = new Map<string, { from: number; to: number; start: number; dur: number }>();
@@ -452,7 +452,9 @@ class Space {
       keys.add(a.key);
       if (!this.starts.has(a.key)) this.starts.set(a.key, now);
     };
-    // Moved: eased from where it shows now to its new place.
+    // Moved: eased from where it shows now to its new place. (`fresh`: the
+    // moves just begun that would go over the others - see `over`.)
+    const fresh: { key: string; x0: number; x1: number; dy: number; over: number }[] = [];
     const track = (p: { m: Mat; ease?: Piece["ease"] }) => {
       if (!p.ease) return;
       keys.add(p.ease.key);
@@ -462,7 +464,13 @@ class Space {
         const from = this.shown.get(p.ease.key)!.clone();
         // (Lifted only to go somewhere - not to rise where it is.)
         const across = Math.hypot(p.m[12] - from.elements[12], p.m[13] - from.elements[13]) > 1;
-        this.eases.set(p.ease.key, { from, to: p.m, start: now + (p.ease.delay ?? 0) * 1000, dur: p.ease.dur, curve: p.ease.curve, lift: across ? (p.ease.lift ?? 0) : 0 });
+        // (An `over` move waits its turn only to go along the row: picked
+        // up or put down where it is - a give's suggestion - it goes at once.)
+        const along = Math.abs(p.m[12] - from.elements[12]) > 1;
+        const delay = p.ease.over && !along ? 0 : (p.ease.delay ?? 0);
+        const dur = p.ease.over && !along ? Math.min(p.ease.dur, 0.2) : p.ease.dur;
+        this.eases.set(p.ease.key, { from, to: p.m, start: now + delay * 1000, dur, curve: p.ease.curve, lift: across ? (p.ease.lift ?? 0) : 0, over: 0 });
+        if (p.ease.over) fresh.push({ key: p.ease.key, x0: from.elements[12], x1: p.m[12], dy: p.m[13] - from.elements[13], over: p.ease.over });
       } else if (!was) this.shown.set(p.ease.key, new THREE.Matrix4().fromArray(p.m));
     };
     for (let i = 0; i < n; i++) {
@@ -488,6 +496,15 @@ class Space {
         } else tint = this.fadeAt(f, now);
       }
       this.tint.setX(i, tint);
+    }
+    // Taken over the others only if it changes places with one of them (or
+    // comes in from above the row): just shifting along, it slides.
+    if (fresh.length) {
+      const at = this.pieces.flatMap((p) => (p.ease ? [{ key: p.ease.key, x0: this.shown.get(p.ease.key)?.elements[12] ?? p.m[12], x1: p.m[12] }] : []));
+      for (const f of fresh) {
+        const swaps = at.some((o) => o.key !== f.key && Math.abs(f.x0 - o.x0) > 1 && Math.abs(f.x1 - o.x1) > 1 && Math.sign(f.x0 - o.x0) !== Math.sign(f.x1 - o.x1));
+        if (swaps || Math.abs(f.dy) > 0.25 * f.over) this.eases.get(f.key)!.over = f.over;
+      }
     }
     this.tiles.count = n;
     this.hits = this.pieces.map((p) => p.hit);
@@ -538,8 +555,21 @@ class Space {
       const [p1, q1, s1] = [new THREE.Vector3(), new THREE.Quaternion(), new THREE.Vector3()];
       e.from.decompose(p0, q0, s0);
       mat.fromArray(e.to).decompose(p1, q1, s1);
-      p0.lerp(p1, v);
-      p0.z += Math.sin(Math.PI * v) * e.lift;
+      if (e.over) {
+        // Up over the others (up the screen, and a touch toward you), across,
+        // and down into its place.
+        const s = (a: number, b: number) => {
+          const u = Math.min(1, Math.max(0, (k - a) / (b - a)));
+          return u * u * (3 - 2 * u);
+        };
+        const top = Math.min(p0.y, p1.y) - e.over;
+        const up = Math.min(s(0, 0.3), 1 - s(0.7, 1));
+        const y = k < 0.3 ? p0.y + (top - p0.y) * s(0, 0.3) : k < 0.7 ? top : top + (p1.y - top) * s(0.7, 1);
+        p0.set(p0.x + (p1.x - p0.x) * s(0.2, 0.8), y, p0.z + (p1.z - p0.z) * k + up * 0.3 * e.over);
+      } else {
+        p0.lerp(p1, v);
+        p0.z += Math.sin(Math.PI * v) * e.lift;
+      }
       mat.compose(p0, q0.slerp(q1, v), s0.lerp(s1, v));
       if (k >= 1) this.eases.delete(key);
       else moving = true;

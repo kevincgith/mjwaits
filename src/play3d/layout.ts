@@ -86,8 +86,11 @@ export interface Piece {
   // Moving through its keyframes, or easing to where it now lies when that
   // changes (as a CSS transition would) - see anim.ts and engine.ts.
   anim?: Anim;
-  // (`lift`: raised this high mid-way, to clear what's in its path.)
-  ease?: { key: string; dur: number; curve: (t: number) => number; delay?: number; lift?: number };
+  // (`lift`: raised this high mid-way, to clear what's in its path. `over`:
+  // taken up this high (up the screen) and over, then set down - but only
+  // when it changes places with another piece; moving along with the rest,
+  // it slides. See engine's easing.)
+  ease?: { key: string; dur: number; curve: (t: number) => number; delay?: number; lift?: number; over?: number };
   // Its tint faded to a new one over `dur` seconds, not snapped (by `key`) -
   // from `from` when it first shows, if given.
   fade?: { key: string; dur: number; from?: number };
@@ -346,13 +349,14 @@ const flightGroups = <F extends { to: string; group: number }>(fs: F[]): F[][] =
 const FALL = bezier(0.55, 0, 1, 0.45);
 const SETTLE = bezier(0.2, 0.8, 0.3, 1);
 // Your hand rearranging in 換牌 (HAND_SLIDE_MS in PlayPanel): a suit at a
-// time, in the hand's order, SUIT_STEP_S apart - each tile that moves lifted
-// toward you (SLIDE_LIFT tiles' height) as it goes, so it passes in front of
-// the rest of the row, never through it.
+// time, in the hand's order, SUIT_STEP_S apart. A tile that changes places
+// with others is taken up over the row (SLIDE_OVER tiles' height), across,
+// and set down in its place - never through them; one just shifting along
+// (a gap closing) slides.
 const SLIDE = bezier(0.3, 0.7, 0.2, 1);
-const SLIDE_S = 0.45;
+const SLIDE_S = 0.6;
 const SUIT_STEP_S = 0.2;
-const SLIDE_LIFT = 0.55;
+const SLIDE_OVER = 0.9;
 // Your pile's tiles stand up from the felt this far (54deg), leaning back as your hand's do.
 const MINE_LEAN = 54;
 // Your given tiles, down to your pile - lifted clear of the row by this far in.
@@ -1378,7 +1382,7 @@ function layoutHand(view: GLTableView, d: Dims, spots: Partial<Record<GLSide, Sp
               dur: SLIDE_S,
               curve: SLIDE,
               delay: (mine.given ? GIVE_CLEAR_S : 0) + suits.indexOf(t.tile?.suit ?? "") * SUIT_STEP_S,
-              lift: SLIDE_LIFT * H,
+              over: SLIDE_OVER * H,
             }
           : { key: own(t.tile ? faceOf(t.tile) : BACK, x0), dur: 0.16, curve: SETTLE },
     });
