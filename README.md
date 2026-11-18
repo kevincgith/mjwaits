@@ -492,7 +492,7 @@ held upright is asked to turn sideways.
 - **嗌錯:** after calling a chow or pung, a **嗌錯** button takes the call back until
   you discard - you're offered the same tile again, to make another call on it
   (another run, the pung, the kong, a win) or let it go. A kong called off a discard
-  is held 2 seconds before its replacement is drawn, 嗌錯 on offer; once drawn, it
+  is held 1.5 seconds before its replacement is drawn, 嗌錯 on offer; once drawn, it
   stands. It's free unless you end with less than you first called: a pung or kong
   taken down to a run, or to nothing, pays 5 to each player - once, whatever you chose
   in between. A run first is always free; so is ending on a win. Your own kongs (暗槓,
