@@ -947,7 +947,7 @@ export const WRONG_CALL_PENALTY = 5;
 // A kong called on a discard is held this long (ms) before it's made - its
 // replacement drawn - with 嗌錯 on offer: a wrong call can be taken back
 // before anything's been seen. (After the draw, it stands.)
-export const KONG_BEAT_MS = 2000;
+export const KONG_BEAT_MS = 1500;
 const CALL_RANK: Record<Claim["kind"], number> = { chow: 1, pung: 2, kong: 3, win: 4 };
 
 // Whether ending on `end` (null: no call) after first calling `first` costs 嗌錯.

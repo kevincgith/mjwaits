@@ -77,7 +77,7 @@ export const evenTake = (phase: SwapPhase, seat: number, after: number[]) => {
 
 // 快換: your take comes by itself (an even take) after this long - time to
 // see it's yours, and to tap a tile to pick by hand; the same at any speed.
-export const AUTO_TAKE_MS = 5000;
+export const AUTO_TAKE_MS = 4000;
 
 // The swap's controls: its line in the bar under the table (the round,
 // what's happening - `part` "bar"), and your buttons ("actions") in the

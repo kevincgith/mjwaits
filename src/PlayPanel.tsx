@@ -2517,6 +2517,9 @@ export function PlayPanel({
     !swapRolling &&
     !dicePending &&
     !swapFlying &&
+    // (Nor while last round's takes are still sliding into the hand: the
+    // next give's picks lift once they're in.)
+    !swapJoining &&
     swapPhase.stage === "give" &&
     !swapPhase.piles[HUMAN];
   // Your take: your turn at the piles, nothing still in the air.
@@ -2881,8 +2884,8 @@ export function PlayPanel({
       const factor = SPEEDS[speed].factor;
       const bot = (seat: number) => seat !== HUMAN || autoplay;
       if (phase.stage === "give") {
-        // Not till the last round's tiles are in hand.
-        if (swapFlying) return;
+        // Not till the last round's tiles are in hand (flown, and slid in).
+        if (swapFlying || swapJoining) return;
         // On autoplay yours go first, as a bot would pick them but laid out
         // as when you give them - each flying from your hand to your pile
         // (the bots follow, the game moved on).
@@ -2988,7 +2991,7 @@ export function PlayPanel({
     const id = window.setTimeout(move, delay * SPEEDS[speed].factor);
     return () => window.clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [game, rolling, swapRolling, swapFlying, swapSettling, swapAirborne, myTurn, autoplay, setupOpen]);
+  }, [game, rolling, swapRolling, swapFlying, swapJoining, swapSettling, swapAirborne, myTurn, autoplay, setupOpen]);
 
   // The turn timer (off by default): runs only while the human has to
   // decide, and on running out passes on a call or throws the drawn tile.
