@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   applyTurnMove,
+  type GameMeld,
   botClaim,
   botTurnMove,
   barredClaims,
@@ -169,6 +170,25 @@ describe("game", () => {
     const lifted = applyTurnMove(withTile(z9), { kind: "discard", tile: z9 });
     expect(lifted.players[1].overWater).toBeUndefined();
     expect(claimOptions({ ...lifted, phase: { kind: "claims", from: 3, tile: m5 } }, 1).map((c) => c.kind)).toEqual(["win"]);
+  });
+
+  it("過水 lifts with a kong too - unless the hand's already complete", () => {
+    const s0 = newGame();
+    const t1 = { suit: "t" as const, rank: 1 };
+    const b1 = { suit: "b" as const, rank: 1 };
+    const turn = (hand: string, drawn: { suit: "t" | "b"; rank: number }, melds: GameMeld[] = []) => ({
+      ...s0,
+      players: s0.players.map((p, i) => (i === 0 ? { ...p, hand: parseHand(hand), melds, overWater: true } : p)),
+      phase: { kind: "turn" as const, seat: 0, drawn, replacement: null },
+    });
+    // Drew the fourth 1t, not a winning tile: 暗槓 lifts it.
+    expect(applyTurnMove(turn("1111222333444t55b46m", t1), { kind: "concealedKong", tile: t1 }).players[0].overWater).toBeUndefined();
+    // Drew the fourth 1b, and it completes the hand: still 過水 after the kong.
+    expect(applyTurnMove(turn("1111b23b888t345m888b77z", b1), { kind: "concealedKong", tile: b1 }).players[0].overWater).toBe(true);
+    // 加槓 likewise: the fourth 1t onto a pung of 1t.
+    const pung: GameMeld[] = [{ kind: "triplet", tiles: [t1, t1, t1], concealed: false, from: 2 }];
+    expect(applyTurnMove(turn("1222333444t55b46m", t1, pung), { kind: "addedKong", tile: t1 }).players[0].overWater).toBeUndefined();
+    expect(applyTurnMove(turn("123t888t345m888b77z", t1, pung), { kind: "addedKong", tile: t1 }).players[0].overWater).toBe(true);
   });
 
   it("a passed-up pung is barred till that player draws - shown greyed meanwhile", () => {
@@ -377,6 +397,11 @@ describe("game", () => {
     expect(riichiDiscards(s, 0)).toEqual([]);
     expect(riichiBarred(s, 0)).toBe(true);
     expect(() => applyTurnMove(s, { kind: "discard", tile: { suit: "z", rank: 7 }, riichi: true })).toThrow();
+    // Under 過水 too, though its 自摸 is barred: the hand's already complete.
+    const over = { ...s, players: s.players.map((p, i) => (i === 0 ? { ...p, overWater: true } : p)) };
+    expect(riichiDiscards(over, 0)).toEqual([]);
+    expect(riichiBarred(over, 0)).toBe(true);
+    expect(() => applyTurnMove(over, { kind: "discard", tile: { suit: "z", rank: 7 }, riichi: true })).toThrow();
   });
 
   it("過水 and a passed 叮 win show the win greyed, not gone", () => {

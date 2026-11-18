@@ -90,7 +90,8 @@ export interface Player {
   discards: Tile[];
   riichi?: Riichi;
   // 過水: passed up a win (not 叮) - no win, off a discard or drawn, till
-  // it throws a tile that doesn't complete its hand.
+  // it throws a tile that doesn't complete its hand, or kongs (暗槓/加槓)
+  // with a hand that isn't complete.
   overWater?: boolean;
   // Passed up a pung (or kong) of this tile: no calling it again till the
   // next draw or call - the same tile thrown by someone else meanwhile is barred.
@@ -712,16 +713,17 @@ function hasLiveWait(p: Player, unseen: Map<string, number>): boolean {
 
 // The discards that would leave `seat` ready, i.e. the tiles it may declare
 // 叮 with - empty if it isn't its turn, it has already declared, or no tile
-// is left to draw after it. Nor when it could 自摸 instead: throwing then
-// passes up that win, and a 叮 that has passed one up never wins (see
+// is left to draw after it. Nor when its hand is already complete: throwing
+// then passes up a 自摸, and a 叮 that has passed one up never wins - and
+// under 過水, with the 自摸 barred, still no 叮 on a hand that's done (see
 // riichiBarred - shown greyed).
 export function riichiDiscards(s: GameState, seat: number): Tile[] {
   return riichiBarred(s, seat) ? [] : riichiShapes(s, seat);
 }
 
-// 叮 there to declare but for a 自摸 you'd pass up by it.
+// 叮 there to declare but for a complete hand (a 自摸, or one 過水 bars).
 export function riichiBarred(s: GameState, seat: number): boolean {
-  return canWin(s.players[seat]) && riichiShapes(s, seat).length > 0;
+  return isWinningHand(s.players[seat]) && riichiShapes(s, seat).length > 0;
 }
 
 function riichiShapes(s: GameState, seat: number): Tile[] {
@@ -823,6 +825,9 @@ export function applyTurnMove(state: GameState, move: TurnMove): GameState {
       if (liveTilesLeft(state) === 0) throw new Error("No kong once the wall is empty - nothing left to replace it");
       if (justClaimed(phase) && !(move.kind === "addedKong" && claimedPungTile(p) && sameTile(claimedPungTile(p)!, move.tile)))
         throw new Error("No kong straight after claiming a run or a pung - but the fourth of the pung just claimed");
+      // 過水 lifts with a kong, as with a throw, when the hand isn't already
+      // complete; konging off a complete hand keeps it.
+      if (p.overWater && !isWinningHand(p)) delete p.overWater;
       if (move.kind === "concealedKong") {
         p.hand = removeTiles(p.hand, [move.tile, move.tile, move.tile, move.tile]);
         p.melds.push({ kind: "kong", tiles: [move.tile, move.tile, move.tile, move.tile], concealed: true, from: null });
