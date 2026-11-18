@@ -12,7 +12,7 @@
 
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
-import { THICK, TILE_H, TILE_R, TILE_W, type Layout, type Piece, type Quad, type QuadKind } from "./layout";
+import { THICK, TILE_H, TILE_R, TILE_W, type Card, type Layout, type Piece, type Quad, type QuadKind } from "./layout";
 import type { Mat } from "./mat";
 import type { Atlas } from "./textures";
 import { bar, bubble, gapOutline, peekTray, pickedRim, pin, rowShadow, tileShadow, triangle } from "./textures";
@@ -23,6 +23,8 @@ const MAX_HAND = 48;
 const MAX_GLASS = 16;
 // The Dice tab's dice.
 const MAX_DICE = 3;
+// The Dice tab's players' name cards.
+const MAX_CARDS = 4;
 
 // The block, in ems: its rounded footprint stood up `THICK` high, a cap at
 // either end. aPart: 0 a side, 1 the face (top), 2 the back (bottom).
@@ -262,6 +264,71 @@ const dieMaterial = () =>
     side: THREE.BackSide,
   });
 
+// A player's name card (see cards.ts), as a casino's high-value plaque
+// is: a thick slab a unit across, deep and thick, its corners and edges
+// rounded. On top its face - the `aCard`th of the faces stacked down the
+// card faces' canvas (uFaces of them), upright to you: the player's colour,
+// framed in gold, their name in gold foil - under a polished top that
+// catches the light in a streak across it. Round its edge, the colour a
+// shade deeper with a gold pinstripe. A soft gloss over it all, brightest on
+// the rounded edges.
+const cardMaterial = () =>
+  new THREE.ShaderMaterial({
+    uniforms: { uMap: { value: null }, uFaces: { value: 1 } },
+    vertexShader: /* glsl */ `
+      attribute float aCard;
+      varying vec3 vP;
+      varying vec3 vN;
+      varying vec3 vLit;
+      varying float vCard;
+      void main() {
+        vP = position;
+        vN = normal;
+        vLit = mat3(instanceMatrix) * normal;
+        vCard = aCard;
+        gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      uniform sampler2D uMap;
+      uniform float uFaces;
+      varying vec3 vP;
+      varying vec3 vN;
+      varying vec3 vLit;
+      varying float vCard;
+      vec3 face(vec2 at) {
+        vec4 t = texture2D(uMap, vec2(clamp(at.x, 0.002, 0.998), (vCard + clamp(at.y, 0.002, 0.998)) / uFaces));
+        return t.rgb / max(t.a, 0.001);
+      }
+      void main() {
+        vec3 c = face(vec2(0.004, 0.5)) * 0.82;
+        if (uFaces < 0.5) c = vec3(0.8);
+        else if (vN.z > 0.6) {
+          c = face(vP.xy + 0.5);
+          // The polish: a broad streak of light across it, and a thin one.
+          float s = vP.x * 0.55 + vP.y;
+          float streak = smoothstep(-0.34, -0.22, s) - smoothstep(-0.1, 0.02, s);
+          float thin = smoothstep(0.16, 0.2, s) - smoothstep(0.24, 0.28, s);
+          c += vec3(1.0) * (0.1 * streak + 0.06 * thin);
+        } else if (vN.z > -0.6) {
+          // The edge: a gold pinstripe round its middle.
+          float w = fwidth(vP.z) * 0.8;
+          float stripe = 1.0 - smoothstep(0.09 - w, 0.09 + w, abs(vP.z));
+          c = mix(c, ${hex(0xd4ad5a)}, stripe);
+        }
+        vec3 n = normalize(vLit);
+        vec3 l = normalize(vec3(-0.2, 0.35, 1.0));
+        float lit = clamp(dot(n, l) / 0.85, 0.0, 1.0);
+        c *= mix(vec3(0.62), vec3(1.0), lit);
+        // Gloss: the light off it, toward you.
+        vec3 h = normalize(l + normalize(vec3(0.0, 0.3, 1.0)));
+        c += vec3(1.0, 0.98, 0.93) * pow(max(dot(n, h), 0.0), 50.0) * 0.3;
+        gl_FragColor = vec4(min(c, vec3(1.0)), 1.0);
+      }
+    `,
+    side: THREE.BackSide,
+  });
+
 function unitQuad(): THREE.BufferGeometry {
   const g = new THREE.BufferGeometry();
   g.setAttribute("position", new THREE.Float32BufferAttribute([-0.5, -0.5, 0, 0.5, -0.5, 0, 0.5, 0.5, 0, -0.5, -0.5, 0, 0.5, 0.5, 0, -0.5, 0.5, 0], 3));
@@ -336,6 +403,24 @@ class Space {
     this.root.add(m);
     this.dice = m;
   }
+  // Things standing on the felt besides its tiles - the Dice tab's name
+  // cards (see cards.ts) - by name: each an instance of one
+  // mesh, eased to where it's set, showing face `face` (aCard).
+  private props = new Map<string, { mesh: THREE.InstancedMesh; items: Card[]; face: THREE.InstancedBufferAttribute }>();
+  addProps(name: string, geometry: THREE.BufferGeometry, material: THREE.Material, max: number) {
+    const g = this.keep(geometry.clone());
+    const face = new THREE.InstancedBufferAttribute(new Float32Array(max), 1);
+    g.setAttribute("aCard", face);
+    const mesh = this.keep(new THREE.InstancedMesh(g, material, max));
+    mesh.frustumCulled = false;
+    mesh.count = 0;
+    mesh.renderOrder = 1;
+    this.root.add(mesh);
+    this.props.set(name, { mesh, items: [], face });
+  }
+  propMesh(name: string) {
+    return this.props.get(name)?.mesh;
+  }
   addMarks(kind: QuadKind, material: THREE.Material, max: number, order: number) {
     const m = this.keep(new THREE.InstancedMesh(this.keep(unitQuad()), material, max));
     m.frustumCulled = false;
@@ -349,7 +434,7 @@ class Space {
   private pieces: Piece[] = [];
   private quads = new Map<QuadKind, Quad[]>();
   private starts = new Map<string, number>();
-  private eases = new Map<string, { from: THREE.Matrix4; to: Mat; start: number; dur: number; curve: (t: number) => number }>();
+  private eases = new Map<string, { from: THREE.Matrix4; to: Mat; start: number; dur: number; curve: (t: number) => number; lift: number }>();
   private shown = new Map<string, THREE.Matrix4>();
   // Tints fading (Piece.fade): from, to, when it began, how long.
   private fades = new Map<string, { from: number; to: number; start: number; dur: number }>();
@@ -358,7 +443,7 @@ class Space {
     return f.from + (f.to - f.from) * (k * k * (3 - 2 * k));
   }
 
-  set(pieces: Piece[], quads: Quad[], rects: Atlas["rects"], now: number, dice: { m: Mat; anim?: Quad["anim"] }[] = []) {
+  set(pieces: Piece[], quads: Quad[], rects: Atlas["rects"], now: number, dice: { m: Mat; anim?: Quad["anim"] }[] = [], props: Record<string, Card[]> = {}) {
     const n = Math.min(pieces.length, this.tiles.instanceMatrix.count);
     this.pieces = pieces.slice(0, n);
     const keys = new Set<string>();
@@ -375,7 +460,9 @@ class Space {
       const target = was?.to ?? this.shown.get(p.ease.key)?.toArray();
       if (target && target.some((v, j) => Math.abs(v - p.m[j]) > 1e-3)) {
         const from = this.shown.get(p.ease.key)!.clone();
-        this.eases.set(p.ease.key, { from, to: p.m, start: now + (p.ease.delay ?? 0) * 1000, dur: p.ease.dur, curve: p.ease.curve });
+        // (Lifted only to go somewhere - not to rise where it is.)
+        const across = Math.hypot(p.m[12] - from.elements[12], p.m[13] - from.elements[13]) > 1;
+        this.eases.set(p.ease.key, { from, to: p.m, start: now + (p.ease.delay ?? 0) * 1000, dur: p.ease.dur, curve: p.ease.curve, lift: across ? (p.ease.lift ?? 0) : 0 });
       } else if (!was) this.shown.set(p.ease.key, new THREE.Matrix4().fromArray(p.m));
     };
     for (let i = 0; i < n; i++) {
@@ -411,6 +498,12 @@ class Space {
       this.diceItems.forEach((d) => begin(d.anim));
       this.dice.count = this.diceItems.length;
     }
+    for (const [name, prop] of this.props) {
+      prop.items = (props[name] ?? []).slice(0, prop.mesh.instanceMatrix.count);
+      prop.items.forEach((c, i) => (track(c), prop.face.setX(i, c.face)));
+      prop.face.needsUpdate = true;
+      prop.mesh.count = prop.items.length;
+    }
     for (const [kind, mesh] of this.marks) {
       const mine = quads.filter((q) => q.kind === kind).slice(0, mesh.instanceMatrix.count);
       mine.forEach((q) => (begin(q.anim), track(q)));
@@ -445,7 +538,9 @@ class Space {
       const [p1, q1, s1] = [new THREE.Vector3(), new THREE.Quaternion(), new THREE.Vector3()];
       e.from.decompose(p0, q0, s0);
       mat.fromArray(e.to).decompose(p1, q1, s1);
-      mat.compose(p0.lerp(p1, v), q0.slerp(q1, v), s0.lerp(s1, v));
+      p0.lerp(p1, v);
+      p0.z += Math.sin(Math.PI * v) * e.lift;
+      mat.compose(p0, q0.slerp(q1, v), s0.lerp(s1, v));
       if (k >= 1) this.eases.delete(key);
       else moving = true;
     };
@@ -496,6 +591,15 @@ class Space {
     if (this.dice) {
       this.diceItems.forEach((d, i) => this.dice!.setMatrixAt(i, mat.fromArray(at(d))));
       this.dice.instanceMatrix.needsUpdate = true;
+    }
+    for (const { mesh, items } of this.props.values()) {
+      items.forEach((c, i) => {
+        if (c.ease && this.eases.has(c.ease.key)) easing(c.ease.key);
+        else mat.fromArray(c.m);
+        if (c.ease) this.shown.set(c.ease.key, mat.clone());
+        mesh.setMatrixAt(i, mat);
+      });
+      mesh.instanceMatrix.needsUpdate = true;
     }
     for (const [kind, mesh] of this.marks) {
       (this.quads.get(kind) ?? []).forEach((q, i) => {
@@ -553,6 +657,7 @@ export class Engine {
     this.glass.addMarks("tray", mark(peekTray()), 1, 0);
     this.felt.addMarks("shadow", mark(tileShadow()), MAX_FELT, 0);
     this.felt.addDice(keep(new RoundedBoxGeometry(1, 1, 1, 5, 0.13)), keep(dieMaterial()), MAX_DICE);
+    this.felt.addProps("cards", keep(new RoundedBoxGeometry(1, 1, 1, 5, 0.14)), keep(cardMaterial()), MAX_CARDS);
     this.felt.addMarks("pin", mark(pin()), 4, 2);
     // (18: the Dice tab's counted run along a whole side.)
     this.felt.addMarks("picked", mark(pickedRim()), 18, 2);
@@ -604,9 +709,27 @@ export class Engine {
 
   show(layout: Layout) {
     const now = performance.now();
-    this.felt.set(layout.felt.pieces, layout.felt.quads, this.rects, now, layout.felt.dice);
+    if (layout.felt.cardFaces) this.cardFaces(layout.felt.cardFaces);
+    this.felt.set(layout.felt.pieces, layout.felt.quads, this.rects, now, layout.felt.dice, layout.felt.props);
     this.hand.set(layout.hand.pieces, layout.hand.quads, this.rects, now);
     this.glass.set(layout.felt.glass ?? [], layout.felt.glassQuads ?? [], this.rects, now);
+  }
+
+  // The name cards' faces (see cards.ts): painted afresh on the same canvas
+  // when they change - a texture made of it once, updated after.
+  private cardTex: THREE.Texture | null = null;
+  private cardFaces(c: HTMLCanvasElement) {
+    const mat = this.felt.propMesh("cards")?.material as THREE.ShaderMaterial | undefined;
+    if (!mat) return;
+    if (this.cardTex?.image !== c) {
+      if (this.cardTex) {
+        this.cardTex.dispose();
+        this.kept.delete(this.cardTex);
+      }
+      this.cardTex = this.keep(canvasTexture(c));
+      mat.uniforms.uMap.value = this.cardTex;
+    } else this.cardTex.needsUpdate = true;
+    mat.uniforms.uFaces.value = Number(c.dataset.faces ?? 1);
   }
 
   // Drawn now - and every frame after while anything's moving.

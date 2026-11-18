@@ -5,10 +5,11 @@
 
 import { useRef, type RefObject } from "react";
 import { FeltGL, type FeltScene } from "./FeltGL";
-import { laidDice, diceScene, throwDice, THROW_FPS, type Box, type Thrown } from "./dice";
+import { laidDice, diceScene, throwDice, THROW_FPS, type Block, type Box, type Thrown } from "./dice";
+import { cardBlocks, cardsScene, paintCardFaces, type SeatCard } from "./cards";
 import { seatsScene, wallFence, wallScene, type SeatsTable, type WallBreakAt } from "./diceScenes";
 
-export type { SeatsTable, WallBreakAt };
+export type { SeatCard, SeatsTable, WallBreakAt };
 
 // The dice on a table: what they show, and whether they were thrown
 // (`key` new for each throw - and for each change by hand).
@@ -32,8 +33,16 @@ const RIM = 0.012;
 // roll above the table ends as they do.
 type OnThrown = (key: string, ms: number) => void;
 
-// The throw for `dice`, made once (by its key) at the felt's width then.
-function useDice(dice: DiceOnTable | null, land: Box, keep: Box | undefined, fence?: (w: number) => [number, number][], onThrown?: OnThrown) {
+// The throw for `dice`, made once (by its key) at the felt's width then:
+// aimed at `land`, to rest in `keep`; inside `fence` and off `blocks`, if
+// there are any.
+interface Aim {
+  land: Box;
+  keep?: Box;
+  fence?: (w: number) => [number, number][];
+  blocks?: (w: number) => Block[];
+}
+function useDice(dice: DiceOnTable | null, { land, keep, fence, blocks }: Aim, onThrown?: OnThrown) {
   const made = useRef<Thrown | null>(null);
   return (w: number): FeltScene => {
     if (!dice) return { pieces: [], quads: [] };
@@ -42,7 +51,7 @@ function useDice(dice: DiceOnTable | null, land: Box, keep: Box | undefined, fen
       const box = px(land);
       const still = !dice.thrown || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
       const o = { key: dice.key, width: w, land: box, size: DIE_SIZE * w, values: dice.values };
-      made.current = still ? laidDice(o) : throwDice({ ...o, keep: keep && px(keep), fence: fence?.(w), rim: RIM * w });
+      made.current = still ? laidDice(o) : throwDice({ ...o, keep: keep && px(keep), fence: fence?.(w), blocks: blocks?.(w), rim: RIM * w });
       if (!still) onThrown?.(dice.key, (Math.max(...made.current.paths.map((p) => p.length - 1)) / THROW_FPS) * 1000);
     }
     const { dice: cubes, quads } = diceScene(made.current, w);
@@ -50,14 +59,32 @@ function useDice(dice: DiceOnTable | null, land: Box, keep: Box | undefined, fen
   };
 }
 
-const withDice = (a: FeltScene, b: FeltScene): FeltScene => ({ pieces: a.pieces, quads: [...b.quads, ...a.quads], dice: b.dice });
+const withDice = (a: FeltScene, b: FeltScene): FeltScene => ({ ...a, quads: [...b.quads, ...a.quads], dice: b.dice });
 
-export function SeatTilesGL({ feltRef, table, dice, onThrown }: { feltRef: RefObject<HTMLElement | null>; table: SeatsTable; dice: DiceOnTable | null; onThrown?: OnThrown }) {
-  const onTable = useDice(dice, SEAT_LAND, SEAT_KEEP, undefined, onThrown);
-  return <FeltGL feltRef={feltRef} scene={(w) => withDice(seatsScene(w, table), onTable(w))} look={`${JSON.stringify(table)}|${dice?.key ?? ""}`} />;
+// 座位: the six tiles, the players' name plaques at their seats with the 東
+// by East's, and the dice (which bounce off them).
+export function SeatTilesGL({ feltRef, table, cards, dice, onThrown }: { feltRef: RefObject<HTMLElement | null>; table: SeatsTable; cards: SeatCard[]; dice: DiceOnTable | null; onThrown?: OnThrown }) {
+  const onTable = useDice(dice, { land: SEAT_LAND, keep: SEAT_KEEP, blocks: (w) => cardBlocks(w, cards) }, onThrown);
+  // The cards' faces: painted again only when a name changes.
+  const faces = useRef<{ canvas: HTMLCanvasElement; painted: string } | null>(null);
+  const shown = JSON.stringify(cards.map((c) => c.name));
+  const facesNow = () => {
+    faces.current ??= { canvas: document.createElement("canvas"), painted: "" };
+    if (faces.current.painted !== shown) {
+      paintCardFaces(faces.current.canvas, cards);
+      faces.current.painted = shown;
+    }
+    return faces.current.canvas;
+  };
+  const scene = (w: number): FeltScene => {
+    const tiles = seatsScene(w, table);
+    const onFelt = cardsScene(w, cards);
+    return withDice({ pieces: [...tiles.pieces, ...onFelt.pieces], quads: [...onFelt.quads, ...tiles.quads], props: onFelt.props, cardFaces: facesNow() }, onTable(w));
+  };
+  return <FeltGL feltRef={feltRef} scene={scene} look={`${JSON.stringify(table)}|${JSON.stringify(cards)}|${dice?.key ?? ""}`} />;
 }
 
 export function WallTilesGL({ feltRef, brk, dice, onThrown }: { feltRef: RefObject<HTMLElement | null>; brk: WallBreakAt | null; dice: DiceOnTable | null; onThrown?: OnThrown }) {
-  const onTable = useDice(dice, WALL_LAND, undefined, wallFence, onThrown);
+  const onTable = useDice(dice, { land: WALL_LAND, fence: wallFence }, onThrown);
   return <FeltGL feltRef={feltRef} scene={(w) => withDice(wallScene(w, brk), onTable(w))} look={`${brk ? `${brk.side}${brk.gapAfter}` : ""}|${dice?.key ?? ""}`} />;
 }

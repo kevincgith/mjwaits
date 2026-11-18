@@ -138,11 +138,20 @@ interface Body {
   firstHit: [number, number] | null;
 }
 type Fence = { a: [number, number]; nx: number; ny: number }[];
+// Something solid standing on the felt (座位's name cards): its middle, half
+// its width and depth (square to the table's edges), and its height (px).
+export interface Block {
+  x: number;
+  y: number;
+  hw: number;
+  hd: number;
+  h: number;
+}
 
 // The dice as thrown, till all lie still (or THROW_MS is up, when they're
 // laid flat): each die's place and turn at THROW_FPS; and whether they came
 // to rest by themselves.
-function simulate(size: number, bodies: Body[], fences: Fence[]): { frames: ThrowFrame[][]; settled: boolean } {
+function simulate(size: number, bodies: Body[], fences: Fence[], blocks: Block[] = []): { frames: ThrowFrame[][]; settled: boolean } {
   const P = physics(size);
   const h = size / 2;
   const corners: Vec[] = [];
@@ -222,6 +231,35 @@ function simulate(size: number, bodies: Body[], fences: Fence[]): { frames: Thro
           });
       });
     }
+    // Anything standing on the felt: knocked into, it bounces back off it
+    // (and goes over it, high enough).
+    for (const b of bodies)
+      for (const k of blocks) {
+        if (b.p[2] - h > k.h) continue;
+        const dx = b.p[0] - k.x;
+        const dy = b.p[1] - k.y;
+        let nx = dx - Math.max(-k.hw, Math.min(k.hw, dx));
+        let ny = dy - Math.max(-k.hd, Math.min(k.hd, dy));
+        let dist = Math.hypot(nx, ny);
+        if (dist >= P.rad) continue;
+        if (dist < 1e-6) {
+          // (Its middle over it: out the nearer side.)
+          const ox = k.hw - Math.abs(dx);
+          const oy = k.hd - Math.abs(dy);
+          [nx, ny, dist] = ox < oy ? [Math.sign(dx) || 1, 0, -ox] : [0, Math.sign(dy) || 1, -oy];
+        } else {
+          nx /= dist;
+          ny /= dist;
+        }
+        b.p[0] += (P.rad - dist) * nx;
+        b.p[1] += (P.rad - dist) * ny;
+        const vn = b.v[0] * nx + b.v[1] * ny;
+        if (vn < 0) {
+          b.v[0] -= 1.5 * vn * nx;
+          b.v[1] -= 1.5 * vn * ny;
+          b.w[2] += vn * 0.02;
+        }
+      }
     // Dice knocking together.
     for (let i = 0; i < bodies.length; i++)
       for (let j = i + 1; j < bodies.length; j++) {
@@ -291,7 +329,8 @@ const rimOf = (W: number, inset: number): [number, number][] => [
 
 // Where a throw's dice are thrown to, and kept: aimed at `land`, to come to
 // rest inside `keep` (land, if not given); inside `fence` (the wall), if
-// there is one; and off `rim` (px in from the felt's edge, solid), if given.
+// there is one; and off `rim` (px in from the felt's edge, solid), if given,
+// and `blocks` (standing on the felt).
 export interface ThrowAt {
   width: number;
   land: Box;
@@ -299,6 +338,7 @@ export interface ThrowAt {
   size: number;
   fence?: [number, number][];
   rim?: number;
+  blocks?: Block[];
   random?: () => number;
 }
 
@@ -358,7 +398,7 @@ export function simulateThrow(o: ThrowAt & { n: number }): ThrowFrame[][] {
         firstHit: null,
       };
     });
-    const { frames, settled } = simulate(size, bodies, fences);
+    const { frames, settled } = simulate(size, bodies, fences, o.blocks);
     // How far from right it went: off where they're meant to stop, a first
     // hit off the felt or on the wall, or not done in time.
     const pad = size * 0.3;

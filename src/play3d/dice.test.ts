@@ -74,6 +74,30 @@ describe("the Dice tab's thrown dice", () => {
     expect(new Set(starts.map((f) => Math.round(f.z / 10))).size).toBeGreaterThan(2);
   });
 
+  it("bounce off 座位's name cards, never through them", () => {
+    // A card in the middle of where they land, and one by your seat.
+    const blocks = [
+      { x: 0.5 * W, y: 0.62 * W, hw: 0.085 * W, hd: 0.045 * W, h: 0.05 * W },
+      { x: 0.5 * W, y: 0.93 * W, hw: 0.085 * W, hd: 0.045 * W, h: 0.05 * W },
+    ];
+    let knocked = 0;
+    for (let s = 1; s <= 30; s++) {
+      const paths = simulateThrow({ width: W, land, keep, size: SIZE, n: 3, rim: RIM, blocks, random: seeded(s) });
+      for (const path of paths)
+        for (const f of path)
+          for (const k of blocks) {
+            // Low enough to meet it: never overlapping it by much.
+            if (f.z - SIZE / 2 > k.h) continue;
+            const ox = Math.abs(f.x - k.x) - k.hw;
+            const oy = Math.abs(f.y - k.y) - k.hd;
+            expect(Math.max(ox, oy)).toBeGreaterThan(SIZE * 0.3);
+            if (Math.max(ox, oy) < SIZE * 0.7) knocked++;
+          }
+    }
+    // (And they do meet them.)
+    expect(knocked).toBeGreaterThan(0);
+  });
+
   it("stay inside 擲骰's wall", () => {
     const fence = wallFence(W);
     const box = { l: 0.32 * W, t: 0.32 * W, r: 0.68 * W, b: 0.68 * W };
