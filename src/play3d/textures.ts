@@ -192,6 +192,37 @@ export function pickedRim(): HTMLCanvasElement {
   });
 }
 
+// A glowing gold ring on the felt round something on it (座位's first
+// player's plaque, the 筒 the deal starts from), the same `RING_GAP` clear of
+// it all round, whatever it is. Sizes are fractions of the felt's width
+// (`RING_K` px to it on the canvas, so every ring's line is as thick), with
+// `RING_PAD` px of glow round the ring.
+export interface Ringed {
+  w: number;
+  h: number;
+  // Its corners' radius.
+  r: number;
+}
+const RING_K = 2400;
+const RING_PAD = 44;
+const RING_GAP = 0.02;
+export function goldRing(o: Ringed): HTMLCanvasElement {
+  const [w, h] = [(o.w + 2 * RING_GAP) * RING_K, (o.h + 2 * RING_GAP) * RING_K];
+  return paintCanvas(Math.round(w + 2 * RING_PAD), Math.round(h + 2 * RING_PAD), (ctx) => {
+    ctx.shadowColor = "rgba(255, 209, 102, 0.85)";
+    ctx.shadowBlur = 26;
+    roundRect(ctx, RING_PAD, RING_PAD, w, h, (o.r + RING_GAP) * RING_K);
+    ctx.lineWidth = 17;
+    ctx.strokeStyle = "#ffd166";
+    ctx.stroke();
+  });
+}
+// Its quad on a felt `feltW` px across: across, and front to back.
+export const ringQuad = (o: Ringed, feltW: number): [number, number] => [
+  ((Math.round((o.w + 2 * RING_GAP) * RING_K + 2 * RING_PAD)) / RING_K) * feltW,
+  ((Math.round((o.h + 2 * RING_GAP) * RING_K + 2 * RING_PAD)) / RING_K) * feltW,
+];
+
 // A taken pile tile's place: its footprint outlined, dashed.
 export function gapOutline(): HTMLCanvasElement {
   return paintCanvas(144, 182, (ctx) => {

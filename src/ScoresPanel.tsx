@@ -223,7 +223,7 @@ export function ScoresPanel({
   request: RecordRequest | null;
   onRequestDone: () => void;
   onScoreHand?: (req: Omit<ScoreHandRequest, "nonce">) => void;
-  onOpenSeating?: (names: string[], east: number | null) => void; // the Dice tab's Seating, for the seat ceremony (east: the provisional East's seat)
+  onOpenSeating?: (names: string[], east: number | null, colors: string[]) => void; // the Dice tab's Seating, for the seat ceremony (east: the provisional East's seat)
   seatingResult?: SeatingResult | null; // ...and what it came back with
   onSeatingResultDone?: () => void;
   joinCode?: string | null; // a ?room= link: follow that game (or open 線上 to join it)

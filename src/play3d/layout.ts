@@ -89,7 +89,8 @@ export interface Piece {
   // (`lift`: raised this high mid-way, to clear what's in its path. `over`:
   // taken up this high (up the screen) and over, then set down - but only
   // when it changes places with another piece; moving along with the rest,
-  // it slides. See engine's easing.)
+  // it slides; joining the row from above, it goes straight in once the
+  // others have made room. See engine's easing.)
   // (`overDelay`: a further wait, only if it goes over.)
   ease?: { key: string; dur: number; curve: (t: number) => number; delay?: number; lift?: number; over?: number; overDelay?: number };
   // Its tint faded to a new one over `dur` seconds, not snapped (by `key`) -
@@ -112,7 +113,7 @@ export interface Anim {
 
 // Flat marks: shadows on the felt, the newest discard's pin, the hint and
 // danger marks under and over your tiles, the spotlight's bubble.
-export type QuadKind = "tray" | "shadow" | "row-shadow" | "pin" | "hint" | "ready" | "danger" | "bubble-top" | "bubble-bottom" | "bubble-left" | "bubble-right" | "picked" | "gap";
+export type QuadKind = "tray" | "shadow" | "row-shadow" | "pin" | "hint" | "ready" | "danger" | "bubble-top" | "bubble-bottom" | "bubble-left" | "bubble-right" | "picked" | "gap" | "ring" | "tile-ring";
 export interface Quad {
   kind: QuadKind;
   // The unit square (-0.5..0.5 each way, at z 0) to where it's drawn.
@@ -353,7 +354,8 @@ const SETTLE = bezier(0.2, 0.8, 0.3, 1);
 // changes places with others is taken up over the row (SLIDE_OVER tiles'
 // height), across, and set down in its place - never through them - a suit
 // at a time, in the hand's order, SUIT_STEP_S apart. One just shifting along
-// (a gap closing, room made) slides, all of them in one go.
+// (a gap closing, room made) slides, all of them in one go; one taken, coming
+// down from above, waits for its room and goes straight into it.
 const SLIDE = bezier(0.3, 0.7, 0.2, 1);
 const SLIDE_S = 0.6;
 const SUIT_STEP_S = 0.2;

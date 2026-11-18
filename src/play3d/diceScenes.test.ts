@@ -71,12 +71,16 @@ describe("座位's tiles on the WebGL felt", () => {
     }
   });
 
-  it("sweeps the 筒 off the table once everyone's seated", () => {
+  it("puts the 筒 away once everyone's seated", () => {
     const pins = seatsScene(350, table(8)).pieces.filter((p) => p.face.startsWith("t"));
     expect(pins.map((p) => p.anim?.key)).toEqual(["away:t1", "away:t2"]);
     // Gone once they're off: drawn at nothing.
     for (const p of pins) expect(Math.hypot(p.m[0], p.m[1], p.m[2])).toBe(0);
-    // Off past the far edge as they go.
-    for (const p of pins) expect(p.anim!.pose(1)[13]).toBeLessThan(0);
+    // Lifted and gone as they go - never off past the felt's edge.
+    for (const p of pins) {
+      expect(p.anim!.pose(0.5)[14]).toBeGreaterThan(0);
+      expect(Math.hypot(p.anim!.pose(1)[0], p.anim!.pose(1)[1])).toBeCloseTo(0);
+      for (const k of [0, 0.25, 0.5, 0.75, 1]) expect(p.anim!.pose(k)[13]).toBeGreaterThan(0);
+    }
   });
 });
