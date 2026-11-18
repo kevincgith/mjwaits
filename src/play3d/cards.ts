@@ -1,30 +1,38 @@
 // 座位's players as name cards on the felt, real things on a real table:
 // each a heavy plaque at the player's seat, as a casino's high-value chips
-// are - a thick, polished slab in the player's colour, rounded at its
+// are - a thick, matte slab in the player's colour, rounded at its
 // corners and edges, a gold pinstripe round its edge, and on top a double
 // gold frame with their name in gold foil, upright to you whatever the seat.
-// Nothing printed on it ever changes. Picked to swap seats, it's
+// Picked to swap seats, it's
 // picked up off the felt; moving seats, it's lifted over what's between and
-// set down at the new one. Who's East is shown with a real tile: the 東
-// lying beside their plaque, slid across when East changes (till the winds are
-// dealt - then the 東 dealt in front of them says it). Plaques and tile are
-// solid: the dice bounce off them (see dice.ts's blocks).
+// set down at the new one. Who's East is shown as the Ledger shows its
+// dealer: a plain gold corner over their plaque's top left (till the winds are
+// dealt - then the 東 dealt in front of them says it). The plaques are solid:
+// the dice bounce off them (see dice.ts's blocks). Whoever's dealt the first
+// tile has a gold ring round theirs.
 
 import { chain, scale, translate } from "./mat";
-import { LIT, TILE_H, TILE_W, lying, shadowAt, type Card, type Piece, type Quad } from "./layout";
+import type { Card, Quad } from "./layout";
 import type { Block } from "./dice";
+import { ringQuad, type Ringed } from "./textures";
 
 export interface SeatCard {
   // Initials, or a whole name (opened from Scores).
   name: string;
-  // Whose colours: 0..3.
+  // Whose plaque: 0..3 (its own colours, unless `color`).
   player: number;
+  // Their colour, if they have one (opened from Scores: the Ledger's), as
+  // "#rrggbb".
+  color?: string;
   // The seat it lies at: 0 bottom (you), 1 right, 2 top, 3 left.
   at: number;
-  // East (provisional or real), before the winds are dealt: the 東 beside it.
+  // East (provisional or real), before the winds are dealt: its gold corner.
   east: boolean;
   // Picked up to swap seats.
   picked: boolean;
+  // Dealt the first tile (as the deal's counted to them and made): a gold
+  // ring round it.
+  first?: boolean;
 }
 
 // Where each seat's plaque lies (fractions of the felt) - as App's
@@ -37,16 +45,8 @@ export const CARD_AT: [number, number][] = [
 ];
 // A plaque, against the felt's width: across, front to back, and thick.
 export const CARD = { w: 0.2, d: 0.12, t: 0.03 };
-// The 東 beside it: the tile's width, and its gap from the plaque.
-const EAST = { w: 0.07, gap: 0.014 };
-// Which side of each seat's plaque the 東 lies: to the right of the top and
-// bottom ones, toward you from the side ones - clear of the six tiles' row.
-const BESIDE: [number, number][] = [
-  [1, 0],
-  [0, 1],
-  [1, 0],
-  [0, 1],
-];
+// ...as its gold ring goes round it (its corners as rounded as they look).
+export const PLAQUE_RINGED: Ringed = { w: CARD.w, h: CARD.d, r: 0.024 };
 // Moving to another seat.
 const MOVE_S = 0.45;
 const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
@@ -60,18 +60,17 @@ const BODY = [
   ["#8357c2", "#5d3999", "#371f63"],
 ];
 
-// Where the 東 lies for a plaque at seat `at` (felt px), and its scale.
-function eastAt(feltW: number, at: number): { x: number; y: number; em: number } {
-  const [x, y] = CARD_AT[at].map((f) => f * feltW);
-  const [ix, iy] = BESIDE[at];
-  const em = (EAST.w * feltW) / TILE_W;
-  const half = ix ? (TILE_W * em) / 2 : (TILE_H * em) / 2;
-  const out = ((ix ? CARD.w : CARD.d) / 2 + EAST.gap) * feltW + half;
-  return { x: x + ix * out, y: y + iy * out, em };
+// A plaque's shades from one colour: a little lighter, itself, much deeper.
+function shades(hex: string): string[] | null {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return null;
+  const rgb = [0, 2, 4].map((i) => parseInt(m[1].slice(i, i + 2), 16));
+  const mix = (to: number, k: number) => `rgb(${rgb.map((v) => Math.round(v + (to - v) * k)).join(", ")})`;
+  return [mix(255, 0.12), mix(0, 0.12), mix(0, 0.55)];
 }
 
-// The plaques, the 東 and their shadows, on a felt `feltW` px across.
-export function cardsScene(feltW: number, cards: SeatCard[]): { props: Record<string, Card[]>; pieces: Piece[]; quads: Quad[] } {
+// The plaques and their shadows, on a felt `feltW` px across.
+export function cardsScene(feltW: number, cards: SeatCard[]): { props: Record<string, Card[]>; quads: Quad[] } {
   const [w, d, t] = [CARD.w * feltW, CARD.d * feltW, CARD.t * feltW];
   const move = { dur: MOVE_S, curve: ease };
   const out: Card[] = [];
@@ -88,36 +87,28 @@ export function cardsScene(feltW: number, cards: SeatCard[]): { props: Record<st
       ease: { key: `card:${c.player}:shadow`, ...move },
     });
   }
-  const pieces: Piece[] = [];
-  const east = cards.find((c) => c.east);
-  if (east) {
-    const { x, y, em } = eastAt(feltW, east.at);
-    pieces.push({ face: "z1", m: lying(x, y, em), shade: LIT, tint: 1, ease: { key: "east", ...move, lift: t * 4 } });
-    quads.push({ ...shadowAt(x, y, em), ease: { key: "east:shadow", ...move } });
+  const first = cards.find((c) => c.first);
+  if (first) {
+    const [x, y] = CARD_AT[first.at].map((f) => f * feltW);
+    const [rw, rd] = ringQuad(PLAQUE_RINGED, feltW);
+    quads.push({ kind: "ring", m: chain(translate(x, y, 0.5), scale(rw, rd, 1)) });
   }
-  return { props: { cards: out }, pieces, quads };
+  return { props: { cards: out }, quads };
 }
 
-// The plaques and the 東 as the dice meet them: each one's footprint and
-// height (px).
+// The plaques as the dice meet them: each one's footprint and height (px).
 export function cardBlocks(feltW: number, cards: SeatCard[]): Block[] {
-  const blocks: Block[] = cards.map((c) => {
+  return cards.map((c) => {
     const [x, y] = CARD_AT[c.at].map((f) => f * feltW);
     return { x, y, hw: (CARD.w * feltW) / 2, hd: (CARD.d * feltW) / 2, h: CARD.t * feltW };
   });
-  const east = cards.find((c) => c.east);
-  if (east) {
-    const { x, y, em } = eastAt(feltW, east.at);
-    blocks.push({ x, y, hw: (TILE_W * em) / 2, hd: (TILE_H * em) / 2, h: 0.42 * em });
-  }
-  return blocks;
 }
 
 // The plaques' printed tops, one under another on `canvas` (the `player`th
-// for each player): painted afresh only when a name changes. Each the
-// player's colour, deepest at its edges, with a fine engraved pattern over
-// it; a double gold frame; and the name in gold foil, embossed - as big as
-// fits.
+// for each player): painted afresh only when a name, colour or East changes.
+// Each the player's colour, deepest at its edges, with a fine engraved
+// pattern over it; a double gold frame; East's, the gold corner; and the name
+// in gold foil, embossed - as big as fits.
 const CELL_W = 512;
 const CELL_H = Math.round((CELL_W * CARD.d) / CARD.w);
 const FONT = (px: number) => `800 ${px}px system-ui, -apple-system, "PingFang TC", sans-serif`;
@@ -138,6 +129,18 @@ function gold(ctx: CanvasRenderingContext2D, y0: number, y1: number) {
   g.addColorStop(1, "#9c7027");
   return g;
 }
+// East's corner, as the Ledger's dealer's: plain gold over the top left, the
+// size it is on a card there.
+const CORNER = 190;
+function eastCorner(ctx: CanvasRenderingContext2D) {
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(CORNER, 0);
+  ctx.lineTo(0, CORNER);
+  ctx.closePath();
+  ctx.fillStyle = "#f2c14e";
+  ctx.fill();
+}
 export function paintCardFaces(canvas: HTMLCanvasElement, cards: SeatCard[]) {
   canvas.width = CELL_W;
   canvas.height = CELL_H * 4;
@@ -145,7 +148,7 @@ export function paintCardFaces(canvas: HTMLCanvasElement, cards: SeatCard[]) {
   const ctx = canvas.getContext("2d")!;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   for (const c of cards) {
-    const [light, mid, deep] = BODY[c.player];
+    const [light, mid, deep] = (c.color && shades(c.color)) || BODY[c.player];
     ctx.save();
     ctx.translate(0, c.player * CELL_H);
     // The colour, deepest at the edges.
@@ -177,6 +180,7 @@ export function paintCardFaces(canvas: HTMLCanvasElement, cards: SeatCard[]) {
     ctx.lineWidth = 3;
     roundRect(ctx, 34, 34, CELL_W - 68, CELL_H - 68, 14);
     ctx.stroke();
+    if (c.east) eastCorner(ctx);
     // The name in gold foil, embossed.
     const room = CELL_W - 120;
     let size = Math.round(CELL_H * (c.name.length > 2 ? 0.46 : 0.58));

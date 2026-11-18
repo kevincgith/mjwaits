@@ -6,6 +6,7 @@ import { DEFAULT_SETTINGS, SEATS, previewWin, canRedo, redoEvent, replay, delete
 import { changeKind, provisionalEast } from "../lib/scoreViews";
 import { WIND_CHARS, SEAT_AREAS, facing, FIT_MIN, FIT_GAP, type RecordRequest, type ScoreHandRequest, type SeatingResult, fmt, signed, tone, colorOf, Icons, Monogram, Sheet, withRoster } from "./shared";
 import { type HandInitial, type HandMode, HandSheet, SeatsSheet, LahSheet, JackpotSheet, NameSheet, SettleSheet, SettingsSheet, Confirm } from "./sheets";
+import { playerColor } from "../lib/picture";
 import { readBackedUpAt, saveBackupFile, handsSinceBackup, BACKUP_NUDGE_HANDS } from "./stats";
 
 // ---- The board (戰況) -----------------------------------------------------------
@@ -374,7 +375,7 @@ export function Board({
   request: RecordRequest | null;
   onRequestDone: () => void;
   onScoreHand?: (req: Omit<ScoreHandRequest, "nonce">) => void;
-  onOpenSeating?: (names: string[], east: number | null) => void;
+  onOpenSeating?: (names: string[], east: number | null, colors: string[]) => void;
   seatingResult: SeatingResult | null;
   onSeatingResultDone?: () => void;
   // 線上: the host's button for sharing this game live (on: it is).
@@ -1060,7 +1061,7 @@ export function Board({
             onOpenSeating &&
             (() => {
               close();
-              onOpenSeating(state.seats, provisionalEast(state));
+              onOpenSeating(state.seats, provisionalEast(state), state.seats.map((p) => playerColor(colorOf(store, p))));
             })
           }
           onDone={({ seats, newNames, removedNames, dealer }) => {

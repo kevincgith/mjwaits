@@ -9,7 +9,7 @@
 // Loaded on its own, with three.js (see DiceTableGL).
 
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
-import { Engine } from "./engine";
+import { Engine, type Frame } from "./engine";
 import { readFrame } from "./frame";
 import type { Card, Piece, Quad } from "./layout";
 import { sharedAtlas, type Atlas } from "./textures";
@@ -24,6 +24,22 @@ export interface FeltScene {
   // dealer's disc - and the cards' faces (see cards.ts).
   props?: Record<string, Card[]>;
   cardFaces?: HTMLCanvasElement;
+}
+
+// The canvas runs past the stage at its top (see .felt-gl's CSS), so a thing
+// lifted off the felt's far edge - a plaque picked up, a die in the air -
+// isn't cut off there: the frame, read against the stage, moved into the
+// canvas's own px.
+function bled(f: Frame, canvas: HTMLCanvasElement): Frame {
+  const [dx, dy] = [-canvas.offsetLeft, -canvas.offsetTop];
+  const felt = new DOMMatrix().translate(dx, dy).multiply(DOMMatrix.fromFloat32Array(Float32Array.from(f.felt)));
+  return {
+    ...f,
+    width: canvas.clientWidth,
+    height: canvas.clientHeight,
+    felt: Array.from(felt.toFloat32Array()),
+    stage: { ...f.stage, ox: f.stage.ox + dx, oy: f.stage.oy + dy },
+  };
 }
 
 // A canvas whose context has been given back (React's dev double mount):
@@ -54,9 +70,10 @@ export function FeltGL({ feltRef, scene, look }: { feltRef: RefObject<HTMLElemen
   const draw = useRef(() => {
     const e = engine.current;
     const felt = feltRef.current;
-    const root = canvasRef.current?.parentElement;
-    if (!e || !felt || !root) return;
-    e.frame(readFrame(root, felt), Math.min(3, window.devicePixelRatio || 1));
+    const canvas = canvasRef.current;
+    const root = canvas?.parentElement;
+    if (!e || !felt || !canvas || !root) return;
+    e.frame(bled(readFrame(root, felt), canvas), Math.min(3, window.devicePixelRatio || 1));
     const s = sceneRef.current(felt.offsetWidth, felt.offsetHeight);
     e.show({ felt: s, hand: { pieces: [], quads: [], width: 0, height: 0 }, middle: { x: 0, y: 0 } });
     e.render();

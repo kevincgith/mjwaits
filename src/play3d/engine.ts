@@ -15,7 +15,9 @@ import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeom
 import { THICK, TILE_H, TILE_R, TILE_W, type Card, type Layout, type Piece, type Quad, type QuadKind } from "./layout";
 import type { Mat } from "./mat";
 import type { Atlas } from "./textures";
-import { bar, bubble, gapOutline, peekTray, pickedRim, pin, rowShadow, tileShadow, triangle } from "./textures";
+import { PLAQUE_RINGED } from "./cards";
+import { SEAT_TILE_RINGED } from "./diceScenes";
+import { bar, bubble, gapOutline, peekTray, goldRing, pickedRim, pin, rowShadow, tileShadow, triangle } from "./textures";
 
 const MAX_FELT = 260;
 const MAX_HAND = 48;
@@ -25,6 +27,8 @@ const MAX_GLASS = 16;
 const MAX_DICE = 3;
 // A tile that would go over the others but only slides along: this long (s).
 const SLIDE_ALONG_S = 0.45;
+// ...and one joining the row, into the room made for it (after that).
+const JOIN_S = 0.5;
 // The Dice tab's players' name cards.
 const MAX_CARDS = 4;
 
@@ -270,10 +274,8 @@ const dieMaterial = () =>
 // is: a thick slab a unit across, deep and thick, its corners and edges
 // rounded. On top its face - the `aCard`th of the faces stacked down the
 // card faces' canvas (uFaces of them), upright to you: the player's colour,
-// framed in gold, their name in gold foil - under a polished top that
-// catches the light in a streak across it. Round its edge, the colour a
-// shade deeper with a gold pinstripe. A soft gloss over it all, brightest on
-// the rounded edges.
+// framed in gold, their name in gold foil - a matte top, no shine. Round
+// its edge, the colour a shade deeper with a gold pinstripe.
 const cardMaterial = () =>
   new THREE.ShaderMaterial({
     uniforms: { uMap: { value: null }, uFaces: { value: 1 } },
@@ -305,14 +307,8 @@ const cardMaterial = () =>
       void main() {
         vec3 c = face(vec2(0.004, 0.5)) * 0.82;
         if (uFaces < 0.5) c = vec3(0.8);
-        else if (vN.z > 0.6) {
-          c = face(vP.xy + 0.5);
-          // The polish: a broad streak of light across it, and a thin one.
-          float s = vP.x * 0.55 + vP.y;
-          float streak = smoothstep(-0.34, -0.22, s) - smoothstep(-0.1, 0.02, s);
-          float thin = smoothstep(0.16, 0.2, s) - smoothstep(0.24, 0.28, s);
-          c += vec3(1.0) * (0.1 * streak + 0.06 * thin);
-        } else if (vN.z > -0.6) {
+        else if (vN.z > 0.6) c = face(vP.xy + 0.5);
+        else if (vN.z > -0.6) {
           // The edge: a gold pinstripe round its middle.
           float w = fwidth(vP.z) * 0.8;
           float stripe = 1.0 - smoothstep(0.09 - w, 0.09 + w, abs(vP.z));
@@ -321,10 +317,8 @@ const cardMaterial = () =>
         vec3 n = normalize(vLit);
         vec3 l = normalize(vec3(-0.2, 0.35, 1.0));
         float lit = clamp(dot(n, l) / 0.85, 0.0, 1.0);
+        // (Matte: lit and shaded, no shine off it.)
         c *= mix(vec3(0.62), vec3(1.0), lit);
-        // Gloss: the light off it, toward you.
-        vec3 h = normalize(l + normalize(vec3(0.0, 0.3, 1.0)));
-        c += vec3(1.0, 0.98, 0.93) * pow(max(dot(n, h), 0.0), 50.0) * 0.3;
         gl_FragColor = vec4(min(c, vec3(1.0)), 1.0);
       }
     `,
@@ -499,12 +493,13 @@ class Space {
       }
       this.tint.setX(i, tint);
     }
-    // Taken over the others only if it changes places with one of them (or
-    // comes in from above the row): just shifting along, it slides.
+    // Taken over the others only if it changes places with one of them:
+    // just shifting along, it slides; coming in from above the row, it waits
+    // for the room made for it and goes straight in.
     if (fresh.length) {
       // (Changing places is judged among the pieces staying in the row: one
-      // coming in from above - which goes over anyway - doesn't make those
-      // shifting along to make room for it go over too.)
+      // coming in from above doesn't make those shifting along to make room
+      // for it go over.)
       const at = this.pieces.flatMap((p) => {
         if (!p.ease) return [];
         const was = this.shown.get(p.ease.key)?.elements;
@@ -514,9 +509,15 @@ class Space {
         const level = (dy: number) => Math.abs(dy) <= 0.25 * f.over;
         const swaps = level(f.dy) && at.some((o) => o.key !== f.key && level(o.dy) && Math.abs(f.x0 - o.x0) > 1 && Math.abs(f.x1 - o.x1) > 1 && Math.sign(f.x0 - o.x0) !== Math.sign(f.x1 - o.x1));
         const e = this.eases.get(f.key)!;
-        if (swaps || Math.abs(f.dy) > 0.25 * f.over) {
+        if (swaps) {
           e.over = f.over;
           e.start += f.wait * 1000;
+        } else if (Math.abs(f.dy) > 0.25 * f.over) {
+          // Joining the row from off it (換牌's taken tiles, from above your
+          // hand): the give the other way - once the row's made room, straight
+          // into its gap.
+          e.start += SLIDE_ALONG_S * 1000;
+          e.dur = Math.min(e.dur, JOIN_S);
           // (Just sliding along, all together - a row closing up, or making
           // room - a little quicker than going over.)
         } else e.dur = Math.min(e.dur, SLIDE_ALONG_S);
@@ -708,6 +709,8 @@ export class Engine {
     // (18: the Dice tab's counted run along a whole side.)
     this.felt.addMarks("picked", mark(pickedRim()), 18, 2);
     this.felt.addMarks("gap", mark(gapOutline()), 32, 0);
+    this.felt.addMarks("ring", mark(goldRing(PLAQUE_RINGED)), 1, 0);
+    this.felt.addMarks("tile-ring", mark(goldRing(SEAT_TILE_RINGED)), 1, 0);
     for (const side of ["top", "bottom", "left", "right"] as const) this.felt.addMarks(`bubble-${side}`, mark(bubble(10, 10, 1, side, 1)), 1, 2);
     this.hand.addMarks("row-shadow", mark(rowShadow()), 1, 0);
     this.hand.addMarks("hint", mark(bar("#ffd166")), MAX_HAND, 2);

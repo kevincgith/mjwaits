@@ -4,8 +4,10 @@
 // tiles (by key: each move plays once, when its key first shows).
 
 import { chain, rotateY, rotateZ, scale, translate, type Mat } from "./mat";
-import { BACK, LIT, THICK, TILE_H, TILE_W, TURNED, lying, lyingDown, shadowAt, type Anim, type Piece, type Quad } from "./layout";
+import { BACK, LIT, THICK, TILE_H, TILE_R, TILE_W, TURNED, lying, lyingDown, shadowAt, type Anim, type Piece, type Quad } from "./layout";
 import type { FeltScene } from "./FeltGL";
+import type { Block } from "./dice";
+import { ringQuad, type Ringed } from "./textures";
 
 const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
@@ -28,6 +30,12 @@ interface Pose {
 // sides. A tile is 32 units wide, as Play's (0.72 x 0.913, 0.42 thick).
 export const SEAT_UNITS = 250;
 const SEAT_TILE = 32;
+// A tile, as its gold ring goes round it (fractions of the felt's width).
+export const SEAT_TILE_RINGED: Ringed = {
+  w: SEAT_TILE / SEAT_UNITS,
+  h: ((SEAT_TILE / SEAT_UNITS) * TILE_H) / TILE_W,
+  r: ((SEAT_TILE / SEAT_UNITS) * TILE_R) / TILE_W,
+};
 const ROW_LEFT = 14;
 const ROW_PITCH = 38;
 const ROW_Y = 72;
@@ -40,7 +48,8 @@ const DEALT: { x: number; y: number; rot: number }[] = [
   { x: DEALT_SIDE, y: 125, rot: 0 },
 ];
 // Where the 筒 go once everyone's seated: off the far edge of the table.
-const AWAY_Y = -40;
+// (How far back a 筒 put away is drawn as it goes, in ems.)
+const AWAY_BACK = 0.6;
 
 // The ceremony as the table shows it: the six faces in the shuffled row,
 // the row once the 筒 are at its ends, and (once dealt) each wind's player
@@ -51,6 +60,9 @@ export interface SeatsTable {
   revealed: string[];
   edged: string[];
   dealt: Record<string, { at: number; seat: number; order: number }> | null;
+  // The 筒 at the end the deal starts from, as the deal's counted and made: a
+  // gold ring on the felt round it (as round the first player's plaque).
+  dealFrom?: string | null;
 }
 
 export function seatsScene(feltW: number, t: SeatsTable): FeltScene {
@@ -66,6 +78,15 @@ export function seatsScene(feltW: number, t: SeatsTable): FeltScene {
     let turn = b.rot - a.rot;
     turn -= 360 * Math.round(turn / 360);
     return place({ x: lerp(a.x, b.x, v), y: lerp(a.y, b.y, v), rot: a.rot + turn * v, up: b.up }, Math.sin(Math.PI * v) * lift);
+  };
+  // Lifted clear of the row first, across while it's up, and set down: over
+  // the tiles it passes, never through them (`high`: over the other 筒 too,
+  // where they cross).
+  const over = (a: Pose, b: Pose, high: boolean) => (k: number) => {
+    const s = (k0: number, k1: number) => ease(Math.min(1, Math.max(0, (k - k0) / (k1 - k0))));
+    const z = (s(0, 0.3) - s(0.7, 1)) * (high ? 2 * THICK + 0.35 : THICK + 0.25) * em;
+    const v = s(0.2, 0.8);
+    return place({ x: lerp(a.x, b.x, v), y: lerp(a.y, b.y, v), rot: a.rot, up: b.up }, z);
   };
   // Turned over where it lies, about its long axis, lifted a little.
   const turnOver = (p: Pose) => (k: number) => {
@@ -88,17 +109,31 @@ export function seatsScene(feltW: number, t: SeatsTable): FeltScene {
       pose = was;
       anim = { key: `flip:${face}`, delay: i * 0.06, dur: 0.5, from: turnOver(was), shadow: () => shadow(was) };
     } else if (pin && t.step >= 8) {
-      // Done with: swept off the table as everyone takes their seat.
-      pose = { ...edged, y: AWAY_Y * u };
-      const to = pose;
-      const off = between(edged, to, 0.3 * em);
-      pieces.push({ face, m: scale(0), shade: LIT, tint: 1, anim: { key: `away:${face}`, delay: 0, dur: 0.5, pose: off } });
-      quads.push({ kind: "shadow", m: scale(0), anim: { key: `away:${face}:shadow`, delay: 0, dur: 0.5, pose: (k) => shadow({ ...edged, y: lerp(edged.y, to.y, ease(k)) }) } });
+      // Done with: picked up off the table and put away as everyone takes
+      // their seat - lifted, drawn back a little, and gone (never past the
+      // felt's edge, where the canvas runs on over the page).
+      const to = { ...edged, y: edged.y - AWAY_BACK * em };
+      const off = between(edged, to, 1.2 * em);
+      const gone = (k: number) => 1 - ease(Math.min(1, Math.max(0, (k - 0.35) / 0.65)));
+      const shrink = (m: Mat, s: number) => chain(translate(m[12], m[13], m[14]), scale(s, s, s), translate(-m[12], -m[13], -m[14]), m);
+      pieces.push({ face, m: scale(0), shade: LIT, tint: 1, anim: { key: `away:${face}`, delay: 0, dur: 0.5, pose: (k) => shrink(off(k), gone(k)) } });
+      quads.push({ kind: "shadow", m: scale(0), anim: { key: `away:${face}:shadow`, delay: 0, dur: 0.5, pose: (k) => shrink(shadow({ ...edged, y: lerp(edged.y, to.y, ease(k)) }), gone(k)) } });
       return;
     } else if (t.step < 7 || pin || !deal) {
       pose = edged;
-      const slide = between(was, edged, 0.3 * em);
-      anim = { key: `edge:${face}`, delay: 0, dur: 0.45, from: slide, shadow: (k) => shadow({ ...edged, x: lerp(was.x, edged.x, ease(k)) }) };
+      // (The 筒 lifted over the rest to the ends; a wind only shifting slides
+      // flat, as they're on their way over; one staying where it is doesn't
+      // move.)
+      if (Math.abs(was.x - edged.x) > 0.5) {
+        // (The two 筒 crossing: 二筒 goes over 一筒.)
+        const [p1, p2] = ["t1", "t2"].map((f) => [t.revealed.indexOf(f), t.edged.indexOf(f)]);
+        const cross = Math.sign(p1[0] - p2[0]) !== Math.sign(p1[1] - p2[1]);
+        const path = pin ? over(was, edged, cross && face === "t2") : between(was, edged, 0);
+        const v = (k: number) => (pin ? ease(Math.min(1, Math.max(0, (k - 0.2) / 0.6))) : ease(k));
+        // (A wind sets off once the 筒 is up, and is in its place before the
+        // 筒 comes down.)
+        anim = { key: `edge:${face}`, delay: pin ? 0 : 0.15, dur: pin ? 0.75 : 0.4, from: path, shadow: (k) => shadow({ ...edged, x: lerp(was.x, edged.x, v(k)) }) };
+      }
     } else if (t.step === 7) {
       pose = atSeat(deal.at);
       const toss = between(edged, pose, 1.4 * em);
@@ -113,6 +148,10 @@ export function seatsScene(feltW: number, t: SeatsTable): FeltScene {
       const to = pose;
       anim = { key: `seat:${face}`, delay: 0, dur: 0.5, from: between(from, pose, 0.6 * em), shadow: (k) => shadow({ ...to, x: lerp(from.x, to.x, ease(k)), y: lerp(from.y, to.y, ease(k)) }) };
     }
+    if (face === t.dealFrom) {
+      const [rw, rh] = ringQuad(SEAT_TILE_RINGED, feltW);
+      quads.push({ kind: "tile-ring", m: chain(translate(pose.x, pose.y, 0.5), rotateZ(pose.rot), scale(rw, rh, 1)) });
+    }
     pieces.push({
       face,
       m: place(pose),
@@ -123,6 +162,26 @@ export function seatsScene(feltW: number, t: SeatsTable): FeltScene {
     quads.push({ kind: "shadow", m: shadow(pose), ...(anim ? { anim: { key: `${anim.key}:shadow`, delay: anim.delay, dur: anim.dur, pose: anim.shadow } } : {}) });
   });
   return { pieces, quads };
+}
+
+// The tiles lying on the felt as the dice meet them (see dice.ts's blocks):
+// each one's footprint, square to the table (turned a quarter, its width and
+// depth swap), and its thickness - where it's laid, not where it's moving
+// from. (Swept off the table: not there.)
+export function tileBlocks(pieces: Piece[]): Block[] {
+  const out: Block[] = [];
+  for (const { m } of pieces) {
+    const em = Math.hypot(m[0], m[1], m[2]);
+    if (em < 1e-6) continue;
+    out.push({
+      x: m[12],
+      y: m[13],
+      hw: (Math.abs(m[0]) * TILE_W + Math.abs(m[4]) * TILE_H) / 2,
+      hd: (Math.abs(m[1]) * TILE_W + Math.abs(m[5]) * TILE_H) / 2,
+      h: THICK * em,
+    });
+  }
+  return out;
 }
 
 // ---- 擲骰 Dice: the wall ---------------------------------------------------

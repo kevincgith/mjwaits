@@ -8884,6 +8884,7 @@ function SeatingPanel({
   fullNames,
   onUse,
   initialEast = null,
+  colors,
 }: {
   names: readonly string[];
   seatOrder: readonly number[];
@@ -8898,6 +8899,9 @@ function SeatingPanel({
   onUse?: (seats: string[], east: number) => void;
   // A position to start as the provisional East (from Scores: the last winner).
   initialEast?: number | null;
+  // Each player's colour (from Scores: their Ledger colour) - else the plaques'
+  // own four.
+  colors?: readonly string[];
 }) {
   const [order, setOrder] = useState<number[]>(newShuffle);
   // Which player's rename picker is open (player index), if any.
@@ -9079,6 +9083,8 @@ function SeatingPanel({
       dealt && finalPos && firstPerson !== null
         ? Object.fromEntries(dealt.map((w, player) => [`z${w}`, { at: player, seat: finalPos[player], order: (player - firstPerson + 4) % 4 }]))
         : null,
+    // (Counting to the first, and dealing: the end it starts from.)
+    dealFrom: step === 6 || step === 7 ? tileFace(dealFromTwoPin ? edgedRow.find((t) => t.suit === "t" && t.rank === 2)! : edgedRow.find((t) => t.suit === "t" && t.rank === 1)!) : null,
   };
 
   const eastHolder = dealt ? dealt.indexOf(1) : null; // player dealt 東
@@ -9129,10 +9135,13 @@ function SeatingPanel({
     return {
       name: names[player],
       player,
+      color: colors?.[player],
       at: tokenPos(seat),
       // (Once the winds are dealt, the 東 dealt to East says it.)
       east: eastAt === seat && step < 7,
       picked: step === 0 && swapFrom === seat,
+      // (Counting to them, and dealing: who's dealt the first tile.)
+      first: (step === 6 || step === 7) && firstPerson === seat,
     };
   });
 
@@ -9270,6 +9279,7 @@ function DiceTab({
   onResetSeatNames,
   gameNames,
   gameEast = null,
+  gameColors,
   onUseSeating,
 }: {
   seatNames: readonly string[];
@@ -9283,6 +9293,7 @@ function DiceTab({
   // letters and their order stay as they were).
   gameNames?: readonly string[];
   gameEast?: number | null; // ...with whoever won last as the provisional East
+  gameColors?: readonly string[]; // ...and each in their Ledger colour
 }) {
   const [sub, setSub] = useState<"wall" | "exchange" | "seating">(gameNames ? "seating" : "wall");
   const [gameOrder, setGameOrder] = useState<readonly number[]>([0, 1, 2, 3]);
@@ -9329,6 +9340,7 @@ function DiceTab({
             }
             onResetNames={onResetSeatNames}
             fullNames={gameNames !== undefined}
+            colors={gameColors}
             onUse={gameNames ? onUseSeating : undefined}
             // gameEast is the last winner's place on the Scores board, which
             // is also their player index (gameOrder starts in board order).
@@ -10288,7 +10300,7 @@ function App() {
   const [seatOrder, setSeatOrder] = useState<readonly number[]>([0, 1, 2, 3]);
   // Scores' 座位 Dice button opens the Dice tab on Seating; leaving Dice
   // clears it, so the tab's own button still opens on Dice & wall.
-  const [diceSeating, setDiceSeating] = useState<{ names: readonly string[]; east: number | null } | null>(null);
+  const [diceSeating, setDiceSeating] = useState<{ names: readonly string[]; east: number | null; colors: readonly string[] } | null>(null);
   // ...and the ceremony's final seating on its way back to 座位.
   const [seatingResult, setSeatingResult] = useState<SeatingResult | null>(null);
   useEffect(() => {
@@ -10556,8 +10568,8 @@ function App() {
             setScoreFor({ ...req, nonce: Date.now() });
             setMode("scoring");
           }}
-          onOpenSeating={(names, east) => {
-            setDiceSeating({ names, east });
+          onOpenSeating={(names, east, colors) => {
+            setDiceSeating({ names, east, colors });
             setMode("dice");
           }}
           seatingResult={seatingResult}
@@ -10612,6 +10624,7 @@ function App() {
           key={diceSeating ? "seating" : "dice"}
           gameNames={diceSeating?.names}
           gameEast={diceSeating?.east ?? null}
+          gameColors={diceSeating?.colors}
           seatNames={seatNames}
           seatOrder={seatOrder}
           onRenameSeat={renameSeat}
