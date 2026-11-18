@@ -388,7 +388,7 @@ const barredWhy = (c: Claim, p: { riichi?: { passed?: boolean }; passedPung?: Ti
     ? "you just threw this run's tile - not back till you draw"
     : c.kind !== "win"
       ? p.passedPung && tile && sameTile(p.passedPung, tile) ? "passed this pung - not again till you draw" : "you just threw this tile - not back till you draw"
-      : p.riichi?.passed ? "叮: passed a win - no more this hand" : "過水 - no win till you throw a tile that doesn't win";
+      : p.riichi?.passed ? "叮: passed a win - no more this hand" : "過水 - no win till you throw or kong a tile that doesn't win";
 const claimLabel = (c: Claim) => (c.kind === "win" ? "胡" : c.kind === "kong" ? "槓" : c.kind === "pung" ? "碰" : "上");
 
 // ---- Pieces of the table ----------------------------------------------------
@@ -4173,7 +4173,13 @@ export function PlayPanel({
                     </button>
                   )}
                   {riichiTiles.length === 0 && myTurn && !autoplay && riichiBarred(game, HUMAN) && (
-                    <button type="button" className="play-call is-riichi is-barred" disabled title="叮 now would pass up your 自摸 - and a 叮 that passed a win never wins" aria-label="叮 - would pass up your 自摸, so it could never win">
+                    <button
+                      type="button"
+                      className="play-call is-riichi is-barred"
+                      disabled
+                      title={selfDrawGrey ? "Your hand is already complete - no 叮 on it (過水 bars the 自摸)" : "叮 now would pass up your 自摸 - and a 叮 that passed a win never wins"}
+                      aria-label={selfDrawGrey ? "叮 - your hand is already complete" : "叮 - would pass up your 自摸, so it could never win"}
+                    >
                       叮
                     </button>
                   )}
@@ -4310,7 +4316,7 @@ export function PlayPanel({
             </span>
           )}
           {me.riichi && !over && <span className="play-bar-prompt">{me.riichi.passed ? "叮 - you passed a win: no more wins this hand" : "叮 - your hand is locked"}</span>}
-          {me.overWater && !me.riichi && !over && <span className="play-bar-prompt">過水 - no win till you throw a tile that doesn't win</span>}
+          {me.overWater && !me.riichi && !over && <span className="play-bar-prompt">過水 - no win till you throw or kong a tile that doesn't win</span>}
         </div>
 
         {burst && <CallBurst key={burst.id} seat={burst.seat} label={burst.label} deltas={burst.deltas} />}
