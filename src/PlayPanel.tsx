@@ -259,7 +259,7 @@ const DRAW_SHOW_MS = 1700;
 // Your hand's tiles sliding to their new places (a swap's give or takes) -
 // a suit at a time, so up to four steps (see play3d/layout's SLIDE_S,
 // SUIT_STEP_S).
-const HAND_SLIDE_MS = 450 + 3 * 200;
+const HAND_SLIDE_MS = 600 + 3 * 200;
 // Online, how long a discard whose claim window passed unseen shows in the bubble.
 const FLASH_MS = 900;
 // 自動 autoplay: a bot plays your seat and you watch - the Grandmaster -
