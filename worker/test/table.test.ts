@@ -831,11 +831,14 @@ describe("嗌錯, 自動 and bot speed", () => {
       const melds = called.view!.players[0].melds.length;
       const totals = called.totals;
       host.send({ t: "retract", step: called.step });
-      // The discard's back, to choose again: let go.
-      const again = await host.table((s) => s.step > called.step && !!s.options?.claims.length);
-      expect(again.view!.phase.kind).toBe("claims");
-      host.send({ t: "claim", step: again.step, claim: null });
-      const after = await host.table((s) => s.step > again.step);
+      // The discard's back - offered again if there was another call to
+      // make (then let go), else let go at once.
+      let after = await host.table((s) => s.step > called.step);
+      if (after.view!.phase.kind === "claims" && after.options?.claims.length) {
+        host.send({ t: "claim", step: after.step, claim: null });
+        const asked = after.step;
+        after = await host.table((s) => s.step > asked);
+      }
       expect(host.errors).toEqual([]);
       expect(after.view!.players[0].melds.length).toBe(melds - 1);
       // The 嗌錯 is paid - and anything else since (the next player's flower, say).
@@ -1427,9 +1430,7 @@ describe("a second chance", () => {
     const called = await other.table((s) => !!s.options?.turn?.retract);
     expect(called.view!.phase).toMatchObject({ kind: "turn", seat: 2 });
     other.send({ t: "retract", step: called.step });
-    // Amy's offered the tile again, and lets it go: Kevin's run takes it.
-    const again = await other.table((s) => s.step > called.step && !!s.options?.claims.length);
-    other.send({ t: "claim", step: again.step, claim: null });
+    // The pung was all Amy had: let go at once, and Kevin's run takes it.
     const ran = await host.table((s) => s.view?.phase.kind === "turn" && (s.view.phase as { seat: number }).seat === 1);
     expect(ran.view!.players[1].melds.at(-1)).toMatchObject({ kind: "run" });
     expect(host.errors.concat(other.errors)).toEqual([]);
@@ -1520,15 +1521,14 @@ describe("嗌錯 with a run passed over", () => {
     const called = await other.table((s) => !!s.options?.turn?.retract);
     expect(called.view!.phase).toMatchObject({ kind: "turn", seat: 2 });
     other.send({ t: "retract", step: called.step });
-    // The discard's back on the table, and Kevin is asked, with his own time -
-    // Amy too, to choose again; she lets it go.
+    // The discard's back on the table, and Kevin is asked, with his own time.
+    // (The pung was all Amy had: let go at once, not asked again.)
     const asked = await host.table((s) => s.waitingOn.includes(1));
     expect(asked.view!.phase).toMatchObject({ kind: "claims", from: 0 });
     expect(asked.deadline).toBeGreaterThan(Date.now() + 5000);
+    expect(asked.waitingOn).not.toContain(2);
     const chow = asked.options!.claims.find((c) => c.kind === "chow");
     expect(chow).toBeDefined();
-    const amy = await other.table((s) => s.step === asked.step && !!s.options?.claims.length);
-    other.send({ t: "claim", step: amy.step, claim: null });
     host.send({ t: "claim", step: asked.step, claim: chow });
     const ran = await host.table((s) => s.view?.phase.kind === "turn");
     expect(ran.view!.phase).toMatchObject({ kind: "turn", seat: 1 });

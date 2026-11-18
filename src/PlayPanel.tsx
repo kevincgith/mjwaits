@@ -2428,6 +2428,8 @@ export function PlayPanel({
     const back: GameState = { ...lastCall.before, tableBonuses: lastCall.before.tableBonuses?.map((b, i) => ({ ...b, paid: now[i]?.paid ?? b.paid })) };
     paidBonuses.current.keys = new Set([...paidBonuses.current.keys].filter((k) => Number(k) < kept));
     const { decisions, first } = lastCall;
+    // The only call you had: nothing to choose again - let go at once.
+    if (claimOptions(back, HUMAN).length === 1) return settleClaim(back, decisions, null, first);
     advance(back);
     setRechoose({ before: back, decisions, first });
   };
