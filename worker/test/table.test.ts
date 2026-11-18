@@ -818,7 +818,7 @@ describe("嗌錯, 自動 and bot speed", () => {
   const state = (code: string) =>
     runInDurableObject(stubFor(code), (_t: Table, st) => JSON.parse(st.storage.sql.exec<{ value: string }>("SELECT value FROM meta WHERE key = 'state'").one().value));
 
-  it("takes back a call (嗌錯): the discard plays on as passed, and the caller pays each player", { timeout: 120_000 }, async () => {
+  it("takes back a call (嗌錯): offered the discard again, a pung let go pays each player", { timeout: 120_000 }, async () => {
     for (let attempt = 0; attempt < 8; attempt++) {
       const { host } = await withBots(0);
       host.send({ t: "start" });
@@ -831,7 +831,11 @@ describe("嗌錯, 自動 and bot speed", () => {
       const melds = called.view!.players[0].melds.length;
       const totals = called.totals;
       host.send({ t: "retract", step: called.step });
-      const after = await host.table((s) => s.step > called.step);
+      // The discard's back, to choose again: let go.
+      const again = await host.table((s) => s.step > called.step && !!s.options?.claims.length);
+      expect(again.view!.phase.kind).toBe("claims");
+      host.send({ t: "claim", step: again.step, claim: null });
+      const after = await host.table((s) => s.step > again.step);
       expect(host.errors).toEqual([]);
       expect(after.view!.players[0].melds.length).toBe(melds - 1);
       // The 嗌錯 is paid - and anything else since (the next player's flower, say).
@@ -1423,8 +1427,61 @@ describe("a second chance", () => {
     const called = await other.table((s) => !!s.options?.turn?.retract);
     expect(called.view!.phase).toMatchObject({ kind: "turn", seat: 2 });
     other.send({ t: "retract", step: called.step });
+    // Amy's offered the tile again, and lets it go: Kevin's run takes it.
+    const again = await other.table((s) => s.step > called.step && !!s.options?.claims.length);
+    other.send({ t: "claim", step: again.step, claim: null });
     const ran = await host.table((s) => s.view?.phase.kind === "turn" && (s.view.phase as { seat: number }).seat === 1);
     expect(ran.view!.players[1].melds.at(-1)).toMatchObject({ kind: "run" });
+    expect(host.errors.concat(other.errors)).toEqual([]);
+  });
+
+  it("holds a kong a beat before it's made: everyone sees it, and its caller may take it back and choose again", async () => {
+    const { host, other, step } = await claimWindow(["555m1379t1357b12z", NONE], {});
+    host.send({ t: "claim", step, claim: { kind: "kong" } });
+    // (Amy has nothing to call: not waited on.)
+    const held = await host.table((s) => !!s.kongBeat);
+    expect(held.kongBeat!.by).toBe(1);
+    expect(held.view!.phase.kind).toBe("claims");
+    expect(held.options).toMatchObject({ claims: [], retract: true });
+    // Amy sees it too, with nothing to do.
+    const seen = await other.table((s) => !!s.kongBeat);
+    expect(seen.options).toBeNull();
+    host.send({ t: "retract", step: held.step });
+    const again = await host.table((s) => !s.kongBeat && !!s.options?.claims.length);
+    expect(again.options!.claims.map((c) => c.kind)).toEqual(expect.arrayContaining(["kong", "pung"]));
+    host.send({ t: "claim", step: again.step, claim: { kind: "pung" } });
+    const punged = await host.table((s) => s.view?.phase.kind === "turn");
+    expect(punged.view!.players[1].melds.at(-1)).toMatchObject({ kind: "triplet" });
+    // A kong taken down to a pung: 5 to each.
+    expect(punged.view!.tableBonuses.find((b) => b.name === "嗌錯")).toMatchObject({ seat: 1, deltas: [5, -15, 5, 5] });
+    expect(host.errors.concat(other.errors)).toEqual([]);
+  });
+
+  it("makes a kong once its beat runs out - after that it stands", async () => {
+    const { host, other, step } = await claimWindow(["555m1379t1357b12z", NONE], {});
+    host.send({ t: "claim", step, claim: { kind: "kong" } });
+    // (Amy has nothing to call: not waited on.)
+    const held = await host.table((s) => !!s.kongBeat);
+    const made = await host.table((s) => s.view?.phase.kind === "turn");
+    expect(Date.now()).toBeGreaterThanOrEqual(held.kongBeat!.endsAt - 50);
+    expect(made.view!.players[1].melds.at(-1)).toMatchObject({ kind: "kong" });
+    expect(made.view!.tableBonuses.find((b) => b.name === "嗌錯")).toBeUndefined();
+    expect(made.options?.turn?.retract).toBeFalsy();
+    expect(host.errors.concat(other.errors)).toEqual([]);
+  });
+
+  it("switches a run taken back to the pung for free", async () => {
+    const { host, other, step } = await claimWindow(["4556m1379t1357b1z", NONE], {});
+    host.send({ t: "claim", step, claim: { kind: "chow", tiles: [{ suit: "m", rank: 4 }, { suit: "m", rank: 6 }] } });
+    // (Amy has nothing to call: not waited on.)
+    const called = await host.table((s) => !!s.options?.turn?.retract);
+    expect(called.view!.players[1].melds.at(-1)).toMatchObject({ kind: "run" });
+    host.send({ t: "retract", step: called.step });
+    const again = await host.table((s) => s.step > called.step && !!s.options?.claims.length);
+    host.send({ t: "claim", step: again.step, claim: { kind: "pung" } });
+    const punged = await host.table((s) => s.view?.phase.kind === "turn" && s.step > again.step);
+    expect(punged.view!.players[1].melds.at(-1)).toMatchObject({ kind: "triplet" });
+    expect(punged.view!.tableBonuses.find((b) => b.name === "嗌錯")).toBeUndefined();
     expect(host.errors.concat(other.errors)).toEqual([]);
   });
 });
@@ -1463,19 +1520,23 @@ describe("嗌錯 with a run passed over", () => {
     const called = await other.table((s) => !!s.options?.turn?.retract);
     expect(called.view!.phase).toMatchObject({ kind: "turn", seat: 2 });
     other.send({ t: "retract", step: called.step });
-    // The discard's back on the table, and Kevin is asked, with his own time.
+    // The discard's back on the table, and Kevin is asked, with his own time -
+    // Amy too, to choose again; she lets it go.
     const asked = await host.table((s) => s.waitingOn.includes(1));
     expect(asked.view!.phase).toMatchObject({ kind: "claims", from: 0 });
     expect(asked.deadline).toBeGreaterThan(Date.now() + 5000);
     const chow = asked.options!.claims.find((c) => c.kind === "chow");
     expect(chow).toBeDefined();
-    expect(asked.view!.tableBonuses.find((b) => b.name === "嗌錯")).toMatchObject({ seat: 2, deltas: [5, 5, -15, 5] });
-    expect(asked.totals[2]).toBe(called.totals[2] - 15);
+    const amy = await other.table((s) => s.step === asked.step && !!s.options?.claims.length);
+    other.send({ t: "claim", step: amy.step, claim: null });
     host.send({ t: "claim", step: asked.step, claim: chow });
     const ran = await host.table((s) => s.view?.phase.kind === "turn");
     expect(ran.view!.phase).toMatchObject({ kind: "turn", seat: 1 });
     expect(ran.view!.players[1].melds.at(-1)).toMatchObject({ kind: "run" });
     expect(ran.view!.players[2].melds.length).toBe(called.view!.players[2].melds.length - 1);
+    // Her pung let go: 5 to each.
+    expect(ran.view!.tableBonuses.find((b) => b.name === "嗌錯")).toMatchObject({ seat: 2, deltas: [5, 5, -15, 5] });
+    expect(ran.totals[2]).toBe(called.totals[2] - 15);
     expect(host.errors.concat(other.errors)).toEqual([]);
   });
 });

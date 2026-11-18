@@ -209,11 +209,6 @@ export interface GameState {
   // and is paid. Off (the default) is 截胡: the first in turn order takes it.
   // A table setting, carried from hand to hand.
   multiWin?: boolean;
-  // No claim back (on unless this says otherwise): a tile just thrown can't
-  // be punged or konged back, nor taken into a run - nor the far end of the
-  // run it came out of (see Player.threw). `true` here lifts it. A table
-  // setting, carried like multiWin.
-  runBack?: boolean;
   // 反雪 (on unless this says otherwise; see the Scores tab's, ledger.ts):
   // the player who dealt into a 雙響 / 三響 and self-draws the next hand
   // anyone wins gets FAN_XUE from each of those winners, into their new 拉
@@ -496,7 +491,7 @@ function breakWall(wall: WallTile[], dice: Dice, dealer: number): WallTile[] {
   return [...wall.slice(at), ...wall.slice(0, at)];
 }
 
-export function newGame(opts: { multiWin?: boolean; runBack?: boolean; noFanXue?: boolean; noBaoZimo?: boolean; noSecondChance?: boolean; swapRules?: SwapRules } = {}): GameState {
+export function newGame(opts: { multiWin?: boolean; noFanXue?: boolean; noBaoZimo?: boolean; noSecondChance?: boolean; swapRules?: SwapRules } = {}): GameState {
   return dealHand({ dealer: 0, roundWind: 1, dealerStreak: 0, ...opts });
 }
 
@@ -508,7 +503,6 @@ export function dealHand(
     firstDealer?: number;
     lahs?: Lah[];
     multiWin?: boolean;
-    runBack?: boolean;
     noFanXue?: boolean;
     noBaoZimo?: boolean;
     noSecondChance?: boolean;
@@ -535,7 +529,6 @@ export function dealHand(
     log: [],
     lahs: opts.lahs ?? [],
     ...(opts.multiWin ? { multiWin: true } : {}),
-    ...(opts.runBack ? { runBack: true } : {}),
     ...(opts.noFanXue ? { noFanXue: true } : {}),
     ...(opts.noBaoZimo ? { noBaoZimo: true } : {}),
     ...(opts.noSecondChance ? { noSecondChance: true } : {}),
@@ -803,7 +796,7 @@ export function applyTurnMove(state: GameState, move: TurnMove): GameState {
       p.hand = removeTiles(p.hand, [move.tile]);
       p.discards.push(move.tile);
       p.played = true;
-      if (!s.runBack) p.threw = { ...move.tile };
+      p.threw = { ...move.tile };
       // 過水 lifts with a throw that wouldn't have completed the hand.
       if (p.overWater && !isWinningHand(p, move.tile)) delete p.overWater;
       // 追: the same tile thrown by four players in a row - the first of them
@@ -944,17 +937,36 @@ export function roundLabel(s: GameState): string {
   return `${WIND_CHARS[s.roundWind]}圈${WIND_CHARS[seatWind(s.dealer, s.firstDealer ?? 0)]}局`;
 }
 
-// 嗌錯: a player takes back a chow, pung or kong they've just called. The
-// discard is resolved again from `before` (its claims phase) as if they'd
-// passed, and they pay this to each of the others.
+// 嗌錯: a player takes back a call they've just made off a discard (a chow,
+// a pung, or a kong before its replacement draw) and chooses again - another
+// call on the tile, or none. Free unless they end with less than they first
+// called on it: a pung or a kong taken down to a run, or to nothing, costs
+// this to each of the others - once, whatever they chose in between. A run
+// first costs nothing however it ends; so does ending on a win.
 export const WRONG_CALL_PENALTY = 5;
+// A kong called on a discard is held this long (ms) before it's made - its
+// replacement drawn - with 嗌錯 on offer: a wrong call can be taken back
+// before anything's been seen. (After the draw, it stands.)
+export const KONG_BEAT_MS = 2000;
+const CALL_RANK: Record<Claim["kind"], number> = { chow: 1, pung: 2, kong: 3, win: 4 };
 
-export function retractClaim(before: GameState, decisions: (Claim | null)[], seat: number): GameState {
-  const passed = decisions.slice();
-  passed[seat] = null;
-  const s = resolveClaims(before, passed);
-  (s.tableBonuses ??= []).push({ seat, name: "嗌錯", deltas: collectFromEach(seat, -WRONG_CALL_PENALTY), paid: false });
-  s.log.push(`Seat ${seat} took back a call (嗌錯)`);
+// Whether ending on `end` (null: no call) after first calling `first` costs 嗌錯.
+export function takeBackCosts(first: Claim["kind"], end: Claim["kind"] | null): boolean {
+  if (first !== "pung" && first !== "kong") return false;
+  return end === null || CALL_RANK[end] < CALL_RANK[first];
+}
+
+// The discard resolved again from `before` (its claims phase), `seat` now
+// calling `claim` (null: passing) and everyone else as they answered - and,
+// if it costs (see takeBackCosts), the 嗌錯 for `seat` to pay.
+export function remakeClaim(before: GameState, decisions: (Claim | null)[], seat: number, claim: Claim | null, first: Claim["kind"]): GameState {
+  const made = decisions.slice();
+  made[seat] = claim;
+  const s = resolveClaims(before, made);
+  if (takeBackCosts(first, claim?.kind ?? null)) {
+    (s.tableBonuses ??= []).push({ seat, name: "嗌錯", deltas: collectFromEach(seat, -WRONG_CALL_PENALTY), paid: false });
+    s.log.push(`Seat ${seat} took back a call (嗌錯)`);
+  }
   return s;
 }
 
@@ -1259,10 +1271,9 @@ export function nextHand(s: GameState, wall?: WallTile[], random: Random = Math.
   const { winner, alsoWon } = s.phase.result;
   const lahs = s.lahs ?? [];
   const multiWin = s.multiWin;
-  const runBack = s.runBack;
   const swapRules = s.swapRules;
   const firstDealer = s.firstDealer ?? 0;
-  const carried = { firstDealer, lahs, multiWin, runBack, swapRules, noFanXue: s.noFanXue, noBaoZimo: s.noBaoZimo, noSecondChance: s.noSecondChance, fanXueDue: s.fanXueDue };
+  const carried = { firstDealer, lahs, multiWin, swapRules, noFanXue: s.noFanXue, noBaoZimo: s.noBaoZimo, noSecondChance: s.noSecondChance, fanXueDue: s.fanXueDue };
   // The dealer stays on a draw, or when among the winners.
   if (winner === null || winner === s.dealer || alsoWon?.some((w) => w.winner === s.dealer)) {
     return dealHand({ dealer: s.dealer, roundWind: s.roundWind, dealerStreak: s.dealerStreak + 1, ...carried }, wall, random);

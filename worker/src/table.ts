@@ -37,7 +37,9 @@ import {
   liveTilesLeft,
   nextHand,
   resolveClaims,
-  retractClaim,
+  KONG_BEAT_MS,
+  remakeClaim,
+  winningClaimSeat,
   tileCensus,
   riichiDiscards,
   riichiForcedDiscard,
@@ -138,7 +140,15 @@ interface Runtime {
   // The last call a person made (上 / 碰 / 槓), with the discard it came from -
   // for 嗌錯, until their discard. `unwaited`: who the window passed without
   // asking, for it to reopen to.
-  lastCall?: { before: GameState; decisions: (Claim | null)[]; seat: number; unwaited?: number[] } | null;
+  // `first`: the first call they made on that discard (嗌錯's cost is by it).
+  lastCall?: { before: GameState; decisions: (Claim | null)[]; seat: number; first: Claim["kind"]; unwaited?: number[] } | null;
+  // 嗌錯 taken: the seat choosing again on the discard, and the first call
+  // they made on it - paid for at its resolve if they end with less (see
+  // takeBackCosts).
+  firstCall?: { seat: number; kind: Claim["kind"] } | null;
+  // A person's kong on the discard, held till `endsAt` before it's made (its
+  // replacement drawn) - everyone sees the 槓, and they may take it back.
+  kongBeat?: { seat: number; endsAt: number } | null;
   overAt?: number; // when the last hand ended
   pausedAt?: number; // when the last person at the table left (see run)
   // The first of the hands in a row that ended with nobody playing a seat
@@ -503,7 +513,7 @@ export class Table extends Hub<TableMessage> {
         hostOnly();
         if (rt.seats.some((s) => s === null)) throw new Refusal("seatsNotFull", "every seat needs a player or a bot");
         rt.game = dealHand(
-          { dealer: rt.settings.firstDealer, roundWind: 1, dealerStreak: 0, multiWin: rt.settings.multiWin, ...(rt.settings.runBack ? { runBack: true } : {}), ...(rt.settings.fanXue === false ? { noFanXue: true } : {}), ...(rt.settings.baoZimo === false ? { noBaoZimo: true } : {}), ...(rt.settings.secondChance === false ? { noSecondChance: true } : {}), ...(rt.settings.swapRules ? { swapRules: rt.settings.swapRules as SwapRules } : {}) },
+          { dealer: rt.settings.firstDealer, roundWind: 1, dealerStreak: 0, multiWin: rt.settings.multiWin, ...(rt.settings.fanXue === false ? { noFanXue: true } : {}), ...(rt.settings.baoZimo === false ? { noBaoZimo: true } : {}), ...(rt.settings.secondChance === false ? { noSecondChance: true } : {}), ...(rt.settings.swapRules ? { swapRules: rt.settings.swapRules as SwapRules } : {}) },
           undefined,
           random
         );
@@ -709,6 +719,8 @@ export class Table extends Hub<TableMessage> {
     rt.secondChance = null;
     rt.chanceSpent = false;
     rt.chanceKept = null;
+    rt.firstCall = null;
+    rt.kongBeat = null;
     const timer = rt.settings.timer * 1000;
     if (g.phase.kind === "turn") {
       // The dealer's first turn after 換牌 waits for its last rows to join the
@@ -886,19 +898,49 @@ export class Table extends Hub<TableMessage> {
     return true;
   }
 
+  // The window's answers, settled. (Whoever let a second chance go by still
+  // has the call they'd made.)
+  private answers(): (Claim | null)[] {
+    const rt = this.rt;
+    return rt.decisions!.map((d, seat) => (d === "waiting" || d === null ? (rt.chanceKept?.[seat] ?? null) : d));
+  }
+
+  // A person's kong taking the tile is held a beat before it's made (see
+  // KONG_BEAT_MS): everyone sees the 槓, and they may take it back (嗌錯).
+  // True while it's held.
+  private holdKong(now: number): boolean {
+    const rt = this.rt;
+    if (rt.kongBeat) {
+      if (now >= rt.kongBeat.endsAt) return false;
+      rt.botAt = rt.kongBeat.endsAt;
+      return true;
+    }
+    const decisions = this.answers();
+    const seat = winningClaimSeat(rt.game!, decisions);
+    if (seat === null || decisions[seat]?.kind !== "kong" || rt.seats[seat]?.kind !== "human" || this.actsAlone(seat)) return false;
+    rt.kongBeat = { seat, endsAt: now + KONG_BEAT_MS };
+    rt.botAt = rt.kongBeat.endsAt;
+    return true;
+  }
+
   private resolve() {
     const rt = this.rt;
     const before = rt.game!;
-    // (Whoever let a second chance go by still has the call they'd made.)
-    const decisions = rt.decisions!.map((d, seat) => (d === "waiting" || d === null ? (rt.chanceKept?.[seat] ?? null) : d));
-    rt.game = resolveClaims(before, decisions);
+    const decisions = this.answers();
+    rt.kongBeat = null;
+    // Chosen again after 嗌錯: paid for if it ends with less (see takeBackCosts).
+    const first = rt.firstCall;
+    rt.game = first ? remakeClaim(before, decisions, first.seat, decisions[first.seat], first.kind) : resolveClaims(before, decisions);
     this.record(before, rt.game);
     const g = rt.game;
     // A person's call (not a win), for 嗌錯 - until their discard.
     const caller = g.phase.kind === "turn" ? g.phase.seat : null;
     const call = caller === null ? null : decisions[caller];
     const unwaited = rt.unwaited?.length ? { unwaited: rt.unwaited } : {};
-    rt.lastCall = caller !== null && call && call.kind !== "win" && rt.seats[caller]?.kind === "human" && !this.actsAlone(caller) ? { before, decisions, seat: caller, ...unwaited } : null;
+    rt.lastCall =
+      caller !== null && call && call.kind !== "win" && rt.seats[caller]?.kind === "human" && !this.actsAlone(caller)
+        ? { before, decisions, seat: caller, first: first?.seat === caller ? first.kind : call.kind, ...unwaited }
+        : null;
     // The turn on a call (下家's too: a pung or kong as well as a run).
     if (before.phase.kind === "claims" && g.phase.kind === "turn") {
       const claim = decisions[g.phase.seat];
@@ -933,12 +975,14 @@ export class Table extends Hub<TableMessage> {
     this.newDecision(Date.now());
   }
 
-  // 嗌錯: whether `seat` can still take back their call - it's their turn off
-  // it, and they've neither discarded nor melded since. Not a kong: its
-  // replacement tile has been drawn.
+  // 嗌錯: whether `seat` can still take back their call - their kong in its
+  // beat; or their chow or pung, it's their turn off it and they've neither
+  // discarded nor melded since. (Not a kong once made: its replacement tile
+  // has been drawn.)
   private canRetract(seat: number): boolean {
     const c = this.rt.lastCall;
     const g = this.rt.game;
+    if (this.rt.kongBeat?.seat === seat && g?.phase.kind === "claims") return true;
     return (
       !!c &&
       !!g &&
@@ -951,36 +995,41 @@ export class Table extends Hub<TableMessage> {
     );
   }
 
-  // The discard plays on as if they'd passed, and they pay each player.
-  // Anything the call itself earned (a kong's replacement flower) is handed back.
-  // Anyone the window passed without asking - a run, outranked by the call
-  // now taken back - is asked again: the window reopens on the discard, the
-  // rest of its answers kept (theirs a pass), as the Play tab's bots' answers
-  // stand. Asked no one: it plays on at once.
+  // 嗌錯: the call taken back, and its caller choosing again on the same
+  // discard - back on the table as it was, anything paid since handed back -
+  // with everyone else's answers kept (asked again: anyone the window passed
+  // without asking, as the call taken back outranked theirs). Paid for at the
+  // resolve if they end with less than they first called (see
+  // takeBackCosts). In a kong's beat nothing's been made: the window simply
+  // reopens to them.
   private retract(seat: number) {
     const rt = this.rt;
-    const c = rt.lastCall!;
-    const now = rt.game!;
-    const kept = c.before.tableBonuses?.length ?? 0;
-    for (const b of (now.tableBonuses ?? []).slice(kept)) if (b.paid) for (let i = 0; i < SEATS; i++) rt.totals[i] -= b.deltas[i];
-    const passed = retractClaim(c.before, c.decisions, seat);
-    const reopen = c.unwaited?.filter((s) => s !== seat) ?? [];
-    let next = passed;
-    if (reopen.length) {
-      // The discard back on the table, with the 嗌錯 (the last thing retractClaim adds) to pay.
-      next = JSON.parse(JSON.stringify(c.before)) as GameState;
-      next.tableBonuses = [...(next.tableBonuses ?? []), passed.tableBonuses!.at(-1)!];
-      next.log.push(passed.log.at(-1)!);
+    let decisions: (Claim | null)[];
+    let first: Claim["kind"];
+    let unwaited: number[];
+    if (rt.kongBeat?.seat === seat) {
+      decisions = this.answers();
+      first = rt.firstCall?.seat === seat ? rt.firstCall.kind : "kong";
+      unwaited = rt.unwaited ?? [];
+    } else {
+      const c = rt.lastCall!;
+      const now = rt.game!;
+      const kept = c.before.tableBonuses?.length ?? 0;
+      for (const b of (now.tableBonuses ?? []).slice(kept)) if (b.paid) for (let i = 0; i < SEATS; i++) rt.totals[i] -= b.deltas[i];
+      const back = JSON.parse(JSON.stringify(c.before)) as GameState;
+      back.tableBonuses = back.tableBonuses?.map((b, i) => ({ ...b, paid: now.tableBonuses?.[i]?.paid ?? b.paid }));
+      rt.game = back;
+      this.record(now, back);
+      decisions = c.decisions;
+      first = c.first;
+      unwaited = c.unwaited ?? [];
+      rt.lastCall = null;
+      rt.last = null;
     }
-    next.tableBonuses = next.tableBonuses?.map((b, i) => (i < kept ? { ...b, paid: now.tableBonuses?.[i]?.paid ?? b.paid } : b));
-    rt.game = next;
-    rt.lastCall = null;
-    rt.last = null;
-    this.record(now, next);
-    this.collectBonuses();
-    if (!reopen.length) return this.afterStep(now);
-    this.newDecision(Date.now(), c.decisions.map((d, s) => (reopen.includes(s) ? undefined : s === seat ? null : d)));
+    this.newDecision(Date.now(), decisions.map((d, s) => (s === seat || unwaited.includes(s) ? undefined : d)));
+    // (Its caller doesn't get to think again; a win let go by stays gone.)
     rt.chanceSpent = true;
+    rt.firstCall = { seat, kind: first };
   }
 
   // Dice and flower bonuses, paid as they come up.
@@ -1116,6 +1165,7 @@ export class Table extends Hub<TableMessage> {
         // A bot's call: the discard is seen on the table first (see newDecision).
         if (rt.botAt !== null && now < rt.botAt) return;
         if (this.openSecondChance(now)) continue;
+        if (this.holdKong(now)) return;
         this.resolve();
         continue;
       }
@@ -1268,7 +1318,7 @@ export class Table extends Hub<TableMessage> {
           : [g.phase.seat]
         : g.phase.kind === "claims"
           ? // Only whether it's you: who else is waited on would say who can call the tile.
-            (rt.decisions ?? []).flatMap((d, s) => (d === "waiting" && s === seat ? [s] : []))
+            (rt.decisions ?? []).flatMap((d, s) => ((d === "waiting" || rt.kongBeat?.seat === s) && s === seat ? [s] : []))
           : g.phase.kind === "swap"
             ? g.phase.stage === "give"
               ? (g.phase.piles as unknown[]).flatMap((pile, s) => (!pile && !this.actsAlone(s) ? [s] : []))
@@ -1282,7 +1332,9 @@ export class Table extends Hub<TableMessage> {
       options =
         g.phase.kind === "turn"
           ? { turn: { selfDraw: canWin(p), kongs: p.riichi || liveTilesLeft(g) === 0 ? [] : kongOptions(p, g.phase), riichi: riichiDiscards(g, seat), forbidden: forbiddenDiscards(g), ...(this.canRetract(seat) ? { retract: true } : {}) }, claims: [] }
-          : { turn: null, claims: g.phase.kind === "claims" ? claimOptions(g, seat).filter((c) => !rt.secondChance || this.chanceClaim(c)) : [] };
+          : rt.kongBeat?.seat === seat
+            ? { turn: null, claims: [], retract: true }
+            : { turn: null, claims: g.phase.kind === "claims" ? claimOptions(g, seat).filter((c) => !rt.secondChance || this.chanceClaim(c)) : [] };
     }
     const people = this.people();
     // Who's here without a seat, by name: the players are told who's watching.
@@ -1310,6 +1362,7 @@ export class Table extends Hub<TableMessage> {
       pot: rt.pot ?? 0,
       last: rt.last,
       secondChance: rt.secondChance ?? null,
+      kongBeat: rt.kongBeat ? { by: rt.kongBeat.seat, endsAt: rt.kongBeat.endsAt } : null,
       you: seat,
       view: g ? viewFor(g, seat ?? -1, (s) => this.handShown(g, s), seat === null && !!rt.settings.observers, this.peeksFor(seat)) : null,
       options,

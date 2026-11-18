@@ -83,7 +83,9 @@ export const TableSettingsSchema = object({
   swapRules: optional(SwapRulesSchema),
   jackpot: optional(int(0, 10)),
   botSpeed: optional(oneOf("slow", "normal", "fast")), // absent: normal
-  runBack: optional(bool), // claims back of a tile just thrown allowed (absent: not - the No claim back rule, see GameState.runBack)
+  // (No longer a setting: No claim back is always the rule - see Player.threw.
+  // Still read, and ignored, from tables set up before.)
+  runBack: optional(bool),
   fanXue: optional(bool), // 反雪 (absent: on - see GameState.noFanXue)
   baoZimo: optional(bool), // 包自摸 (absent: on - see GameState.noBaoZimo)
   secondChance: optional(bool), // a second chance on a call let go by (absent: on - see GameState.noSecondChance)
@@ -214,6 +216,9 @@ export interface YourOptions {
   turn: { selfDraw: boolean; kongs: KongMove[]; riichi: Tile[]; forbidden: Tile[]; retract?: boolean } | null;
   // A discard (or a kong being added) you may claim; empty if you can't.
   claims: Claim[];
+  // 嗌錯 in a kong's beat (see kongBeat): the kong you've just called may be
+  // taken back before it's made.
+  retract?: boolean;
 }
 
 // What just happened, for the table to show it (a burst, a sound). `auto`:
@@ -257,6 +262,10 @@ export interface TableState {
   // seats), while whoever let a better one go by (`waitingOn`, for them; the
   // calls left in `options`) may change their mind.
   secondChance?: { call: Claim["kind"]; by: number[] } | null;
+  // A kong called on the discard, held a beat before it's made (its
+  // replacement drawn) - who called it, and when the beat ends (ms) - so
+  // everyone sees the 槓, and its caller may take it back (嗌錯) till then.
+  kongBeat?: { by: number; endsAt: number } | null;
   // This phone's seat (null for someone watching) and its view of the hand.
   you: number | null;
   view: TableView | null;

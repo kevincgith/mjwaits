@@ -31,7 +31,8 @@ import {
   dealHand,
   flowerBonus,
   flowerRobbery,
-  retractClaim,
+  remakeClaim,
+  takeBackCosts,
   fullWall,
   kongOptions,
   SEATS,
@@ -229,10 +230,6 @@ describe("game", () => {
     const one = { ...s, phase: { kind: "claims" as const, from: 0, tile: { suit: "m" as const, rank: 1 } } };
     expect(runs(claimOptions(one, 1))).toEqual([]);
     expect(runs(barredClaims(one, 1))).toEqual(["23"]);
-    // With the table's No claim back off, the run back is there.
-    const free = applyTurnMove({ ...s0, runBack: true }, { kind: "discard", tile: { suit: "m", rank: 1 } });
-    expect(free.players[1].threw).toBeUndefined();
-    expect(runs(claimOptions({ ...free, phase: { kind: "claims" as const, from: 0, tile: { suit: "m" as const, rank: 4 } } }, 1))).toEqual(["23", "35", "56"]);
     // A draw lifts it.
     const drew = resolveClaims({ ...s, phase: { kind: "claims" as const, from: 0, tile: { suit: "z" as const, rank: 7 } } }, [null, null, null, null]);
     expect(drew.phase).toMatchObject({ kind: "turn", seat: 1 });
@@ -297,9 +294,6 @@ describe("game", () => {
     const kongBack = { ...k, phase: { kind: "claims" as const, from: 0, tile: m1 } };
     expect(kinds(claimOptions(kongBack, 2))).toEqual([]);
     expect(kinds(barredClaims(kongBack, 2))).toEqual(["kong", "pung"]);
-    // With No claim back off, the pung is there.
-    const free = applyTurnMove({ ...s0, runBack: true }, { kind: "discard", tile: m1 });
-    expect(kinds(claimOptions({ ...free, phase: { kind: "claims" as const, from: 3, tile: m1 } }, 2))).toEqual(["pung"]);
     // Its next draw lifts it.
     const drew = resolveClaims({ ...s, phase: { kind: "claims" as const, from: 1, tile: { suit: "z", rank: 7 } } }, [null, null, null, null]);
     expect(drew.phase).toMatchObject({ kind: "turn", seat: 2 });
@@ -1110,19 +1104,61 @@ describe("追", () => {
 });
 
 describe("嗌錯", () => {
-  it("takes back a call: the discard plays on as if passed, and the caller pays 5 to each", () => {
+  // Seat 0 throws 5m; seat 1 (下家) can run it (3-4m or 4-6m... here 4 6m) and pung it.
+  const table = () => {
     const s0 = { ...newGame(), tableBonuses: undefined };
     s0.players[0].hand = parseHand("12345m111222333t55b");
-    s0.players[1].hand = parseHand("46m111222333t12345b");
-    const before = applyTurnMove({ ...s0, phase: { kind: "turn", seat: 0, drawn: null, replacement: null } }, { kind: "discard", tile: parseHand("5m")[0] });
-    const [four, six] = parseHand("46m");
-    const decisions: Parameters<typeof resolveClaims>[1] = [null, { kind: "chow", tiles: [four, six] }, null, null];
-    expect(resolveClaims(before, decisions).players[1].melds).toHaveLength(1);
-    const s = retractClaim(before, decisions, 1);
+    s0.players[1].hand = parseHand("4556m11122233t12b");
+    return applyTurnMove({ ...s0, phase: { kind: "turn", seat: 0, drawn: null, replacement: null } }, { kind: "discard", tile: parseHand("5m")[0] });
+  };
+  const [four, five, six] = parseHand("456m");
+  const run: Claim = { kind: "chow", tiles: [four, six] };
+  const pung: Claim = { kind: "pung" };
+  const wrongCalls = (s: GameState) => s.tableBonuses?.filter((b) => b.name === "嗌錯") ?? [];
+
+  it("costs nothing when the first call was a run, however it ends", () => {
+    expect(takeBackCosts("chow", null)).toBe(false);
+    expect(takeBackCosts("chow", "chow")).toBe(false);
+    expect(takeBackCosts("chow", "pung")).toBe(false);
+    expect(takeBackCosts("chow", "kong")).toBe(false);
+  });
+
+  it("costs when a pung or kong first called ends as less - a run, or nothing", () => {
+    expect(takeBackCosts("pung", null)).toBe(true);
+    expect(takeBackCosts("pung", "chow")).toBe(true);
+    expect(takeBackCosts("kong", "pung")).toBe(true);
+    expect(takeBackCosts("kong", null)).toBe(true);
+    // ...but not when it ends as much or more, or on a win.
+    expect(takeBackCosts("pung", "pung")).toBe(false);
+    expect(takeBackCosts("pung", "kong")).toBe(false);
+    expect(takeBackCosts("kong", "kong")).toBe(false);
+    expect(takeBackCosts("pung", "win")).toBe(false);
+  });
+
+  it("chooses again on the same discard: the new call made, the caller paying only if it costs", () => {
+    const before = table();
+    const decisions: (Claim | null)[] = [null, pung, null, null];
+    // The pung taken back for the run: it's made, and 5 to each.
+    const toRun = remakeClaim(before, decisions, 1, run, "pung");
+    expect(toRun.players[1].melds.map((m) => m.kind)).toEqual(["run"]);
+    expect(wrongCalls(toRun)).toEqual([{ seat: 1, name: "嗌錯", deltas: [5, -15, 5, 5], paid: false }]);
+    // The run taken back for the pung: free.
+    const toPung = remakeClaim(before, [null, run, null, null], 1, pung, "chow");
+    expect(toPung.players[1].melds.map((m) => m.kind)).toEqual(["triplet"]);
+    expect(wrongCalls(toPung)).toEqual([]);
+    // Pung, then run, then pung again: as it began - free.
+    expect(wrongCalls(remakeClaim(before, decisions, 1, pung, "pung"))).toEqual([]);
+  });
+
+  it("taken back to nothing: the discard plays on as if passed", () => {
+    const before = table();
+    const s = remakeClaim(before, [null, pung, null, null], 1, null, "pung");
     expect(s.players[1].melds).toHaveLength(0);
-    expect(s.players[0].discards.at(-1)).toEqual(parseHand("5m")[0]);
+    expect(s.players[0].discards.at(-1)).toEqual(five);
     expect(s.phase.kind === "turn" && s.phase.seat).toBe(1);
-    expect(s.tableBonuses?.filter((b) => b.name === "嗌錯")).toEqual([{ seat: 1, name: "嗌錯", deltas: [5, -15, 5, 5], paid: false }]);
+    expect(wrongCalls(s)).toHaveLength(1);
+    // A run taken back to nothing: free.
+    expect(wrongCalls(remakeClaim(before, [null, run, null, null], 1, null, "chow"))).toEqual([]);
   });
 });
 

@@ -224,7 +224,7 @@ export function SwapControls({
 // 快換's auto take, counting down: the button's own gold frame running out
 // clockwise from the top - as the compass's turn timer does its rim - over
 // the frame dimmed. (Drawn to the button's own size, whatever its width.)
-function TakeRing({ ms }: { ms: number }) {
+export function TakeRing({ ms }: { ms: number }) {
   const svg = useRef<SVGSVGElement>(null);
   const bar = useRef<SVGPathElement>(null);
   // The button's size (its border included) and the border's width.
@@ -304,94 +304,103 @@ export function SwapSheet({ rules, onChange, onClose }: { rules: SwapRules; onCh
         {n}
       </option>
     ));
-  const mapRow = (key: "rounds" | "tiles", lo: number, hi: number, unit: string) => (
-    <div className="play-swap-map">
-      {/* Every throw at once: one pick sets all six. */}
-      <label className="play-swap-map-cell is-all">
-        <span className="play-swap-all">All</span>
+  // A die's row: "All" (one pick sets all six), then a pick for each throw.
+  const mapRow = (key: "rounds" | "tiles", lo: number, hi: number, label: string, unit: string) => (
+    <>
+      <span className="play-swap-grid-label">{label}</span>
+      <select
+        className="is-all"
+        value={r[key].every((x) => x === r[key][0]) ? r[key][0] : ""}
+        aria-label={`Every die: ${unit}`}
+        onChange={(e) => {
+          const n = Number(e.target.value);
+          if (n) update((r) => ({ ...r, [key]: r[key].map(() => n) }));
+        }}
+      >
+        <option value="" disabled>
+          –
+        </option>
+        {options(lo, hi)}
+      </select>
+      {r[key].map((v, i) => (
         <select
-          value={r[key].every((x) => x === r[key][0]) ? r[key][0] : ""}
-          aria-label={`Every die: ${unit}`}
+          key={i}
+          value={v}
+          aria-label={`Die ${i + 1}: ${unit}`}
           onChange={(e) => {
             const n = Number(e.target.value);
-            if (n) update((r) => ({ ...r, [key]: r[key].map(() => n) }));
+            update((r) => ({ ...r, [key]: r[key].map((x, j) => (j === i ? n : x)) }));
           }}
         >
-          <option value="" disabled>
-            –
-          </option>
           {options(lo, hi)}
         </select>
-      </label>
-      {r[key].map((v, i) => (
-        <label key={i} className="play-swap-map-cell">
-          <PlayDie value={i + 1} rolling={false} index={0} />
-          <select
-            value={v}
-            aria-label={`Die ${i + 1}: ${unit}`}
-            onChange={(e) => {
-              const n = Number(e.target.value);
-              update((r) => ({ ...r, [key]: r[key].map((x, j) => (j === i ? n : x)) }));
-            }}
-          >
-            {options(lo, hi)}
-          </select>
-        </label>
       ))}
-    </div>
+    </>
   );
+  // On one screen, a phone held sideways: which rounds swap, a preset and
+  // 快換 on the left; on the right what each throw of the two dice means.
   return (
     <div className="play-sheet-backdrop" onClick={onClose}>
       <div className="play-sheet play-swap-sheet" role="dialog" aria-label="Swap tiles" onClick={(e) => e.stopPropagation()}>
         <div className="play-sheet-head">
           <h2>換牌 Swap tiles</h2>
           <span>From the next hand dealt</span>
+          <button type="button" className="play-swap-confirm" onClick={confirm}>
+            Confirm
+          </button>
           <button type="button" className="play-sheet-close" onClick={onClose} aria-label="Close">
             ×
           </button>
         </div>
-        <p className="play-swap-intro">
-          Everyone is dealt 16 and the dealer throws two dice: the first says how many swap rounds, the second how many tiles. Each round everyone lays that many
-          face down, then from the dealer round the table each takes as many back from the others&apos; piles - at least one from each, as evenly as it goes.
-        </p>
-        <h3>Rounds that swap</h3>
-        <div className="play-swap-winds">
-          {([1, 2, 3, 4] as Wind[]).map((w) => (
-            <button key={w} type="button" className={r.winds.includes(w) ? "toggle-on" : undefined} aria-pressed={r.winds.includes(w)} onClick={() => toggleWind(w)}>
-              {WIND_CHARS[w]}圈
-            </button>
-          ))}
+        <p className="play-swap-intro">Dealt 16; the dealer&apos;s first die says how many rounds, the second how many tiles each lays face down and takes back.</p>
+        <div className="play-swap-cols">
+          <div className="play-swap-col">
+            <h3>Rounds that swap</h3>
+            <div className="play-swap-winds">
+              {([1, 2, 3, 4] as Wind[]).map((w) => (
+                <button key={w} type="button" className={r.winds.includes(w) ? "toggle-on" : undefined} aria-pressed={r.winds.includes(w)} onClick={() => toggleWind(w)}>
+                  {WIND_CHARS[w]}圈
+                </button>
+              ))}
+            </div>
+            <h3>Presets</h3>
+            <div className="play-swap-presets">
+              {SWAP_PRESETS.map((p) => {
+                const on = p.rounds.join() === r.rounds.join() && p.tiles.join() === r.tiles.join();
+                return (
+                  <button key={p.name} type="button" className={on ? "toggle-on" : undefined} aria-pressed={on} onClick={() => update((r) => ({ ...r, rounds: p.rounds, tiles: p.tiles }))}>
+                    <b>{p.name}</b>
+                    <span>{p.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="play-swap-quick" title="Taken tiles grey out where they lie; once everyone has taken, they all fly at once - and your own take comes by itself">
+              <b>快換 Quick swap</b>
+              <span className="play-menu-seg">
+                {[false, true].map((on) => (
+                  <button key={String(on)} type="button" className={(r.quick !== false) === on ? "toggle-on" : undefined} aria-pressed={(r.quick !== false) === on} onClick={() => update((r) => ({ ...r, quick: on }))}>
+                    {on ? "On" : "Off"}
+                  </button>
+                ))}
+              </span>
+            </div>
+          </div>
+          <div className="play-swap-col">
+            <h3>Each throw</h3>
+            <div className="play-swap-grid">
+              <span />
+              <span className="play-swap-all">All</span>
+              {[1, 2, 3, 4, 5, 6].map((v) => (
+                <span key={v} className="play-swap-grid-die">
+                  <PlayDie value={v} rolling={false} index={0} />
+                </span>
+              ))}
+              {mapRow("rounds", 1, SWAP_MAX_ROUNDS, "Rounds", "swap rounds")}
+              {mapRow("tiles", SWAP_MIN_TILES, SWAP_MAX_TILES, "Tiles", "tiles each")}
+            </div>
+          </div>
         </div>
-        <h3>Presets</h3>
-        <div className="play-swap-presets">
-          {SWAP_PRESETS.map((p) => {
-            const on = p.rounds.join() === r.rounds.join() && p.tiles.join() === r.tiles.join();
-            return (
-              <button key={p.name} type="button" className={on ? "toggle-on" : undefined} aria-pressed={on} onClick={() => update((r) => ({ ...r, rounds: p.rounds, tiles: p.tiles }))}>
-                <b>{p.name}</b>
-                <span>{p.label}</span>
-              </button>
-            );
-          })}
-        </div>
-        <h3>快換 Quick swap</h3>
-        <div className="play-swap-quick">
-          <span>Taken tiles grey out where they lie; once everyone has taken, they all fly at once.</span>
-          <span className="play-menu-seg">
-            {[false, true].map((on) => (
-              <button key={String(on)} type="button" className={(r.quick !== false) === on ? "toggle-on" : undefined} aria-pressed={(r.quick !== false) === on} onClick={() => update((r) => ({ ...r, quick: on }))}>
-                {on ? "On" : "Off"}
-              </button>
-            ))}
-          </span>
-        </div>
-        <h3>First die: swap rounds</h3>
-        {mapRow("rounds", 1, SWAP_MAX_ROUNDS, "swap rounds")}
-        <h3>Second die: tiles each</h3>
-        {mapRow("tiles", SWAP_MIN_TILES, SWAP_MAX_TILES, "tiles each")}
-        <button type="button" className="play-swap-confirm" onClick={confirm}>
-          Confirm
-        </button>
       </div>
     </div>
   );
