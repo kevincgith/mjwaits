@@ -652,6 +652,18 @@ describe("game", () => {
     expect(at([{ kind: "kong", tiles: parseHand("1111z"), concealed: true, from: null }], "123m456m789m123t5b7z")).toBe("riichi");
   });
 
+  it("notes where each pond stood at a 叮 - the new row a table starts", () => {
+    const z7 = parseHand("7z")[0];
+    const s = newGame();
+    s.firstGoAround = false;
+    s.discardsMade = 7;
+    s.players.forEach((p, i) => (p.discards = parseHand(["19m", "28m", "37m", "4m"][i])));
+    s.players[2].hand = parseHand("123m456m789m123t456t5b7z");
+    s.phase = { kind: "turn", seat: 2, drawn: z7, replacement: null };
+    const after = applyTurnMove(s, { kind: "discard", tile: z7, riichi: true });
+    expect(after.players[2].riichi).toMatchObject({ discard: 2, ponds: [2, 2, 2, 1] });
+  });
+
   it("keeps 一發 for a 叮 player who robs a kong - and when the kong stands", () => {
     const m5 = parseHand("5m")[0];
     const set = () => {
@@ -824,7 +836,7 @@ describe("game", () => {
 
     it("declares with a discard that leaves the hand ready - 天叮 on the dealer's first", () => {
       const s = declared();
-      expect(s.players[0].riichi).toEqual({ state: "heavenly-riichi", discard: 0, ippatsu: true });
+      expect(s.players[0].riichi).toEqual({ state: "heavenly-riichi", discard: 0, ippatsu: true, ponds: [0, 0, 0, 0] });
       const s0 = newGame();
       s0.players[0].hand = parseHand("123456789m111222t3t5z");
       s0.phase = { kind: "turn", seat: 0, drawn: t("z", 5), replacement: null };

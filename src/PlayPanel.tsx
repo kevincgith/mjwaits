@@ -129,7 +129,7 @@ import { ReviewSheet, type Decision } from "./PlayReview";
 import { RecordSheet } from "./PlayRecord";
 import { isMuted, play as playSound, setMuted, wakeAudio, type Sound } from "./lib/sound";
 import { addHand, loadRecord, saveRecord, type Opponent } from "./lib/playRecord";
-import type { GLFlight, GLMine, GLPile, GLSwapRow, GLTableView, GLWall, PeekSide } from "./play3d/types";
+import type { DingWind, GLFlight, GLMine, GLPile, GLSwapRow, GLTableView, GLWall, PeekSide } from "./play3d/types";
 import { cornerDragged, hasPeeked, noteCornerDragged, notePeeked, wallCounts, type Observe, type ObserveMode } from "./lib/observer";
 import { mayPeek, peekView, type PeekView } from "@mjwaits/shared/engine/view";
 import { giverOrder, swapSlots } from "./play3d/swapOrder";
@@ -286,6 +286,7 @@ interface Saved {
   speed?: Speed;
   oneTap?: boolean;
   seenCopies?: boolean; // 見牌: holding a tile greys the ponds' others (absent: on)
+  dingMarks?: DingMarks; // 叮 marks: where a 叮 fell in each pond (absent: coin)
   sortOrder?: string; // 排序: the suits' order in your hand, as "mtbz" (absent: that)
   waits?: boolean; // 聽 Waits: what a ready hand waits on, and its 番 (absent: on)
   multiWin?: boolean; // 一炮多響 (else 截胡)
@@ -518,6 +519,28 @@ function burstSound(label: string): Sound {
   if (label === "叮") return "riichi";
   if (label === "碰" || label === "上" || label === "槓") return "call";
   return "bonus";
+}
+
+// 叮 marks: where each 叮 fell in the others' ponds.
+type DingMarks = "off" | "coin" | "row";
+function DingMarksRow({ value, set }: { value: DingMarks; set: (v: DingMarks) => void }) {
+  const choices: [DingMarks, string][] = [
+    ["off", "Off"],
+    ["coin", "Coin"],
+    ["row", "New row"],
+  ];
+  return (
+    <div className="play-menu-row">
+      <span>叮 marks</span>
+      <span className="play-menu-seg">
+        {choices.map(([v, label]) => (
+          <button key={v} type="button" className={value === v ? "toggle-on" : undefined} aria-pressed={value === v} onClick={() => set(v)}>
+            {label}
+          </button>
+        ))}
+      </span>
+    </div>
+  );
 }
 
 // 枱邊講嘢: how much the bots talk - and 講出聲, whether their calls are said
@@ -1174,6 +1197,9 @@ export function PlayPanel({
   // 見牌 Seen copies: a tile held a moment greys every other tile
   // in the ponds - its copies already out stand out.
   const [seenCopies, setSeenCopies] = useState(() => saved?.seenCopies ?? true);
+  // 叮 marks: where each 叮 fell in the others' ponds - a gold line and coin
+  // on the seam, or the tiles since on a new row (as a table does).
+  const [dingMarks, setDingMarks] = useState<DingMarks>(() => saved?.dingMarks ?? "coin");
   // 排序 Sort order: the suits' order in your hand (萬 筒 索 字 as usual). A
   // tap on a suit moves it one earlier - the first, round to the end.
   const [sortOrder, setSortOrder] = useState(() => (isSuitOrder(saved?.sortOrder) ? saved.sortOrder : DEFAULT_SUIT_ORDER));
@@ -1887,7 +1913,7 @@ export function PlayPanel({
     // was till 開局 Start - a new one opened from Play's home isn't saved
     // over the one there till then. What was waiting from before goes now.)
     if (!ledgerStarted.current || setupOpen) return void pendingSave.current?.();
-    const data: Saved = { game: localGame, totals: localTotals, hint, timer, opponents, randomOpponents, speed, oneTap, seenCopies, sortOrder, waits: showWaits, record, multiWin, multiWinSet, fanXue, baoZimo, secondChance: secondChanceOn, peeking: peekingOn, swapRules, jackpot, ledger: localLedger };
+    const data: Saved = { game: localGame, totals: localTotals, hint, timer, opponents, randomOpponents, speed, oneTap, seenCopies, dingMarks, sortOrder, waits: showWaits, record, multiWin, multiWinSet, fanXue, baoZimo, secondChance: secondChanceOn, peeking: peekingOn, swapRules, jackpot, ledger: localLedger };
     // (Not saved: still waiting - tried again on leaving, or the next change.)
     const write = () => {
       const ok = save(data);
@@ -1897,7 +1923,7 @@ export function PlayPanel({
     pendingSave.current = write;
     const id = window.setTimeout(write, SAVE_DELAY_MS);
     return () => window.clearTimeout(id);
-  }, [localGame, localTotals, hint, timer, opponents, randomOpponents, speed, oneTap, seenCopies, sortOrder, showWaits, record, multiWin, multiWinSet, fanXue, baoZimo, secondChanceOn, peekingOn, swapRules, jackpot, localLedger, setupOpen]);
+  }, [localGame, localTotals, hint, timer, opponents, randomOpponents, speed, oneTap, seenCopies, dingMarks, sortOrder, showWaits, record, multiWin, multiWinSet, fanXue, baoZimo, secondChanceOn, peekingOn, swapRules, jackpot, localLedger, setupOpen]);
   // The page hidden or going (a phone may not come back to it): saved now.
   useEffect(() => {
     const now = () => pendingSave.current?.();
@@ -3730,7 +3756,20 @@ export function PlayPanel({
   // 見牌: the tile you're holding - held a moment, not tapped - its copies lit.
   const focusAt = seenCopies && pressing && heldLong ? pressed : null;
   const pondFocus = focusAt !== null ? (handTiles[focusAt] ?? null) : null;
-  const glPond = (seat: number) => ({ tiles: showPiles ? [] : game.players[seat].discards, riichiAt: game.players[seat].riichi?.discard, pinLast: discardFrom === seat });
+  // The others' 叮s in a pond: where each fell, by its declarer's wind.
+  const dingsIn = (seat: number) =>
+    dingMarks === "off"
+      ? []
+      : [0, 1, 2, 3]
+          .filter((o) => o !== seat && game.players[o].riichi?.ponds)
+          .map((o) => ({ at: game.players[o].riichi!.ponds![seat], wind: WIND_CHARS[seatWind(o, game.dealer)] as DingWind }));
+  const glPond = (seat: number) => ({
+    tiles: showPiles ? [] : game.players[seat].discards,
+    riichiAt: game.players[seat].riichi?.discard,
+    pinLast: discardFrom === seat,
+    dings: dingsIn(seat),
+    dingMark: dingMarks === "row" ? ("row" as const) : ("coin" as const),
+  });
   const spot =
     game.phase.kind === "claims"
       ? { tile: game.phase.tile, seat: game.phase.from, key: `c${game.discardsMade}` }
@@ -3942,6 +3981,7 @@ export function PlayPanel({
                     ))}
                   </span>
                 </div>
+                <DingMarksRow value={dingMarks} set={setDingMarks} />
                 </>
               )}
               {seated && (
@@ -4018,6 +4058,7 @@ export function PlayPanel({
                   ))}
                 </span>
               </div>
+              <DingMarksRow value={dingMarks} set={setDingMarks} />
               <button
                 type="button"
                 className="play-menu-link"

@@ -24,6 +24,16 @@ function midHand(steps: number): GameState {
 const withoutBlanks = (m: Map<string, number>) => new Map([...m].filter(([k]) => k !== tileKey(BLANK)));
 
 describe("seatState", () => {
+  it("turns a 叮's pond counts with the seats, for every seat watching", () => {
+    const real = midHand(20);
+    real.players[1].riichi = { state: "riichi", discard: 3, ippatsu: false, ponds: [10, 11, 12, 13] };
+    for (const seat of [0, 1, 2, 3]) {
+      const { game, toLocal, toTable } = seatState(viewFor(real, seat));
+      const ponds = game.players[toLocal(1)].riichi!.ponds!;
+      for (let i = 0; i < SEATS; i++) expect(ponds[i]).toBe(10 + toTable(i));
+    }
+  });
+
   for (const seat of [0, 1, 2, 3]) {
     it(`shows seat ${seat} at the bottom, with only what it may see`, () => {
       for (const steps of [0, 7, 20, 41]) {

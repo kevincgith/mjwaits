@@ -15,7 +15,7 @@ import { sortBonusTiles, type BonusTile } from "@mjwaits/shared/engine/scoring";
 import { bezier, EASE_IN, EASE_OUT, keyframes } from "./anim";
 import { about, apply, chain, identity, rotateX, rotateY, rotateZ, scale, translate, type Mat } from "./mat";
 import { acrossTable } from "./swapOrder";
-import type { GLHandTile, GLPond, GLSide, GLSwapRow, GLTableView, GLWall, PeekSide } from "./types";
+import type { DingWind, GLHandTile, GLPond, GLSide, GLSwapRow, GLTableView, GLWall, PeekSide } from "./types";
 
 // The most a side seat's wall grows (its standing tiles fewer as it melds:
 // PlayPanel's sideWallGrow caps at this).
@@ -113,7 +113,7 @@ export interface Anim {
 
 // Flat marks: shadows on the felt, the newest discard's pin, the hint and
 // danger marks under and over your tiles, the spotlight's bubble.
-export type QuadKind = "tray" | "shadow" | "row-shadow" | "pin" | "hint" | "ready" | "danger" | "bubble-top" | "bubble-bottom" | "bubble-left" | "bubble-right" | "picked" | "gap" | "ring" | "tile-ring";
+export type QuadKind = "tray" | "shadow" | "row-shadow" | "pin" | "hint" | "ready" | "danger" | "bubble-top" | "bubble-bottom" | "bubble-left" | "bubble-right" | "picked" | "gap" | "ring" | "tile-ring" | "ding-line" | `ding-${DingWind}`;
 export interface Quad {
   kind: QuadKind;
   // The unit square (-0.5..0.5 each way, at z 0) to where it's drawn.
@@ -839,17 +839,28 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
     // Each tile's length along its row, and the rows' depth.
     const step = (i: number) => (i === pond.riichiAt ? 0.95 : 0.73) * T;
     const rowDepth = 0.93 * T;
+    // The others' 叮s: on a new row, the tiles thrown since each start one;
+    // as coins, a line and coin on the seam each fell at - placed where its
+    // tile is, or, before any tile's thrown since, where the next will go
+    // (`n`, a place held for it).
+    const dings = (pond.dings ?? []).map((g) => ({ ...g, at: Math.min(g.at, pond.tiles.length) }));
+    const newRows = pond.dingMark === "row";
+    const coins = pond.dingMark === "coin" ? dings : [];
+    const n = pond.tiles.length;
+    const held = coins.some((g) => g.at === n) ? n + 1 : n;
     const lines: number[][] = [[]];
     let len = 0;
-    pond.tiles.forEach((_, i) => {
-      if (len + step(i) > limit + 0.01 && lines[lines.length - 1].length) {
+    for (let i = 0; i < held; i++) {
+      const full = len + step(i) > limit + 0.01;
+      const fresh = newRows && dings.some((g) => g.at === i);
+      if ((full || fresh) && lines[lines.length - 1].length) {
         lines.push([]);
         len = 0;
       }
       lines[lines.length - 1].push(i);
       len += step(i);
-    });
-    if (!pond.tiles.length) return;
+    }
+    if (!held) return;
     // A size smaller when its rows would reach its owner's tiles - only as
     // small as that needs (pondFit), from its edge by the compass.
     const depth = lines.length * rowDepth + 0.07 * T;
@@ -937,6 +948,30 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
                 : chain(translate(x + half + 0.115 * em, y, THICK * em), rotateZ(-90), scale(pin, 0.15 * em, 1));
         feltQuads.push({ kind: "pin", m: at });
       }
+    });
+    // The coins: each 叮's line along its seam - the near edge of its tile
+    // (the start of its row, if it's first there) - and its coin, upright to
+    // you, at the line's end on the pond's owner's side. A coin keeps a size
+    // to read however small its pond is drawn.
+    coins.forEach((g) => {
+      const r = lines.findIndex((l) => l.includes(g.at));
+      const along = sum(lines[r].filter((j) => j < g.at).map(step));
+      const deep = (r + 0.5) * rowDepth;
+      let x: number;
+      let y: number;
+      if (side === "top") [x, y] = [centreX + (centreX + limit / 2 - along - centreX) * fit, row2y1 - deep * fit];
+      else if (side === "bottom") [x, y] = [centreX + (centreX - limit / 2 + along - centreX) * fit, row4y0 + 0.3 * T + deep * fit];
+      else if (side === "left") [x, y] = [col2x1 - deep * fit, midY + (midY - limit / 2 + along - midY) * fit];
+      else [x, y] = [col4x0 + deep * fit, midY + (midY + limit / 2 - along - midY) * fit];
+      const z = THICK * em * 1.05;
+      const long = TILE_H * em;
+      const thin = 0.13 * em;
+      const across = side === "top" || side === "bottom";
+      feltQuads.push({ kind: "ding-line", m: chain(translate(x, y, z), rotateZ(across ? 0 : 90), scale(thin, long, 1)) });
+      const coin = 0.62 * Math.max(em, 0.7 * T);
+      const half = long / 2;
+      const [cx, cy] = side === "bottom" ? [x, y + half] : side === "top" ? [x, y - half] : side === "left" ? [x - half, y] : [x + half, y];
+      feltQuads.push({ kind: `ding-${g.wind}`, m: chain(translate(cx, cy, z * 1.02), scale(coin, coin, 1)) });
     });
   };
   (["top", "left", "right", "bottom"] as const).forEach((s) => pondTiles(s, view.ponds[s]));
