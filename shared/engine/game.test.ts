@@ -191,6 +191,37 @@ describe("game", () => {
     expect(applyTurnMove(turn("123t888t345m888b77z", t1, pung), { kind: "addedKong", tile: t1 }).players[0].overWater).toBe(true);
   });
 
+  it("a kong made off a hand that could 自摸 passes that win up: no win on the replacement", () => {
+    const s0 = newGame();
+    const b1 = { suit: "b" as const, rank: 1 };
+    // Drew the fourth 1b, completing the hand - not under 過水 - and kongs it.
+    const s = applyTurnMove(
+      { ...s0, players: s0.players.map((p, i) => (i === 0 ? { ...p, hand: parseHand("1111b23b888t345m888b77z"), melds: [] } : p)), phase: { kind: "turn" as const, seat: 0, drawn: b1, replacement: null } },
+      { kind: "concealedKong", tile: b1 }
+    );
+    expect(s.players[0].overWater).toBe(true);
+    if (s.phase.kind === "turn") expect(() => applyTurnMove(s, { kind: "selfDraw" })).toThrow();
+  });
+
+  it("a kong claimed off a discard lifts 過水 - unless that tile would have won", () => {
+    const s0 = newGame();
+    const t1 = { suit: "t" as const, rank: 1 };
+    const claimed = (hand: string) => {
+      const state: GameState = {
+        ...s0,
+        players: s0.players.map((p, i) => (i === 0 ? { ...p, discards: [t1] } : i === 2 ? { ...p, hand: parseHand(hand), melds: [], overWater: true } : p)),
+        phase: { kind: "claims", from: 0, tile: t1 },
+      };
+      return resolveClaims(state, [null, null, { kind: "kong" }, null]).players[2];
+    };
+    // 1t doesn't complete this hand: the kong lifts 過水.
+    const lifted = claimed("111t234567t89m46b77z1m");
+    expect(lifted.melds.at(-1)).toMatchObject({ kind: "kong" });
+    expect(lifted.overWater).toBeUndefined();
+    // 1t would have completed this one (111t 123t 456m 789m 222b 77z): still 過水.
+    expect(claimed("111t23t456789m222b77z").overWater).toBe(true);
+  });
+
   it("a passed-up pung is barred till that player draws - shown greyed meanwhile", () => {
     const z5 = { suit: "z" as const, rank: 5 };
     const s0 = newGame();

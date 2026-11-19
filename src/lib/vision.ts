@@ -33,6 +33,7 @@ import {
   type Tile,
 } from "@mjwaits/shared/engine/mahjong";
 import { modelUrl } from "./modelUrl";
+import { rememberScanEngine } from "./scanEngine";
 
 export const IMG_SIZE = 640;
 const CONFIDENCE_THRESHOLD = 0.4;
@@ -211,6 +212,13 @@ function getEngine(onProgress?: (p: ScanProgress) => void): Promise<Engine> {
   if (!enginePromise) {
     const promise = (async () => (!cpuForced() && !gpuFailed && (await createWebGpuEngine())) || createWasmEngine())();
     enginePromise = promise;
+    // Which engine this phone really ends up on (the GPU one can be there
+    // and still not run): kept, so what's fetched ahead for use with no
+    // signal is that one's files (lib/offline.ts).
+    void promise.then(
+      (engine) => rememberScanEngine(engine.backend),
+      () => {}
+    );
     // A load that fails (the download cut off by a bad signal, say) isn't
     // kept, so the next scan tries again instead of failing until a reload.
     promise.catch(() => {

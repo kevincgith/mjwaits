@@ -1021,7 +1021,10 @@ function eightPairsShanten(tiles: Tile[], kc: Uint8Array | null = kindCounts(til
   // Eight pairs and no triplet waits for a third of one of them - of a kind
   // held twice. Eight pairs all made of fours (1111 2222 3333 4444) has no
   // such kind: nothing to wait for, so one more exchange away, not ready.
-  return away === 0 && !hasSpare && !hasPlainPair ? 1 : away;
+  // (Of a hand between turns. With the tile just drawn - 17 - it is ready:
+  // a throw from one of the fours leaves a triplet, six pairs and the tile
+  // drawn, waiting for its pair.)
+  return away === 0 && !hasSpare && !hasPlainPair && tiles.length !== COMPLETE_SIZE ? 1 : away;
 }
 
 interface UnrelatedDpState {
@@ -1114,6 +1117,15 @@ export function shanten(tiles: Tile[], meldsRequired: number = MELDS_REQUIRED, r
       if (orphans >= 12) {
         if (best > -1 && tiles.length === COMPLETE_SIZE && orphansFromCounts(kc)) best = -1;
         else if (best > 0 && tiles.length === COMPLETE_SIZE - 1 && orphansWithAnyDraw(kc)) best = 0;
+        // (With the tile just drawn: ready if some throw leaves it ready.)
+        else if (best > 0 && tiles.length === COMPLETE_SIZE) {
+          for (let k = 0; k < KINDS && best > 0; k++) {
+            if (!kc[k]) continue;
+            kc[k]--;
+            if (orphansWithAnyDraw(kc)) best = 0;
+            kc[k]++;
+          }
+        }
       }
       return best;
     }
@@ -1121,6 +1133,7 @@ export function shanten(tiles: Tile[], meldsRequired: number = MELDS_REQUIRED, r
     if (orphans >= 12) {
       if (best > -1 && tiles.length === COMPLETE_SIZE && isThirteenOrphansComplete(tiles)) best = -1;
       else if (best > 0 && tiles.length === COMPLETE_SIZE - 1 && allTileKinds().some((t) => isThirteenOrphansComplete([...tiles, t]))) best = 0;
+      else if (best > 0 && tiles.length === COMPLETE_SIZE && tiles.some((_, i) => allTileKinds().some((t) => isThirteenOrphansComplete([...tiles.filter((_, j) => j !== i), t])))) best = 0;
     }
   }
   return best;

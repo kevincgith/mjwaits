@@ -704,6 +704,17 @@ export const handsSinceBackup = (game: ScoreGame, backedUpAt: number | null) =>
 // The board's nudge comes every this many hands without a backup.
 export const BACKUP_NUDGE_HANDS = 16;
 
+// A past game with its details as the Game details sheet has them.
+const labelled = (game: ScoreGame, { name, startedAt, startTime, endTime, location }: { name: string; startedAt: number; startTime: string; endTime: string; location: string }): ScoreGame => ({
+  ...game,
+  name: name || undefined,
+  startedAt,
+  startTime: startTime || undefined,
+  endTime: endTime || undefined,
+  location: location || undefined,
+  updatedAt: Date.now(),
+});
+
 // Dropping the 牌型 details wins carry from Scoring, once a game's over: good
 // to look back on at the table, most of what a saved game weighs after. Two
 // taps (it can't be taken back); nothing to show with none to drop.
@@ -1504,20 +1515,21 @@ export function HistoryCard({
         <NameSheet
           initial={{ name: editing.name ?? "", startedAt: editing.startedAt, startTime: editing.startTime ?? "", endTime: editing.endTime ?? "", location: editing.location ?? "" }}
           onClose={() => setEditing(null)}
-          onSave={({ name, startedAt, startTime, endTime, location }) => {
-            onEdit({ ...editing, name: name || undefined, startedAt, startTime: startTime || undefined, endTime: endTime || undefined, location: location || undefined, updatedAt: Date.now() });
+          onSave={(label) => {
+            onEdit(labelled(editing, label));
             setEditing(null);
           }}
-          footer={
+          footer={(label) => (
             <DropPatterns
               count={patternNoteCount(editing)}
               what="this game"
               onDrop={() => {
-                onEdit(withoutPatternNotes(editing));
+                // (With whatever's been typed above: not lost for tapping this first.)
+                onEdit(withoutPatternNotes(labelled(editing, label)));
                 setEditing(null);
               }}
             />
-          }
+          )}
         />
       )}
       <SectionHead zh="生涯" en="Career">

@@ -624,6 +624,18 @@ export function replay(game: ScoreGame): ReplayState {
           state.pot += s.amount;
         }
         for (const [p, d] of Object.entries(deltas)) add(state.totals, p, d);
+        // The Play tab pays a 流局 into the pot as an entry of its own, right
+        // behind the draw (same moment): that money belongs to the hand, as
+        // a Ledger draw's does - its per-hand figures count it.
+        const before = game.events[eventIndex - 1];
+        const hand = state.hands[state.hands.length - 1];
+        if (before?.t === "draw" && before.at === ev.at && hand?.eventIndex === eventIndex - 1 && hand.jackpotFed === 0) {
+          const merged = { ...hand.deltas };
+          for (const [p, d] of Object.entries(deltas)) add(merged, p, d);
+          hand.deltas = merged;
+          hand.totalsAfter = { ...state.totals };
+          hand.jackpotFed = -Object.values(deltas).reduce((s, d) => s + d, 0);
+        }
         break;
       }
       case "swap":
@@ -800,19 +812,20 @@ export function normalizeStore(saved: Partial<ScoreStore>): ScoreStore {
 // them: its tai, who won, who dealt in and every payment stay as they were.
 
 // How many of a game's wins carry their patterns.
+// (Entries taken back - kept for 重做 - carry theirs too: counted, and dropped, with the rest.)
 export function patternNoteCount(game: ScoreGame): number {
-  return game.events.reduce((n, ev) => n + (ev.t === "win" ? ev.winners.filter((w) => w.patterns?.length).length : 0), 0);
+  return [...game.events, ...(game.undone ?? [])].reduce((n, ev) => n + (ev.t === "win" ? ev.winners.filter((w) => w.patterns?.length).length : 0), 0);
 }
 
 // The game without them (and marked as changed `at`, so a merge with an
 // older backup keeps this copy, not the backup's with its patterns).
 export function withoutPatternNotes(game: ScoreGame, at = Date.now()): ScoreGame {
   if (patternNoteCount(game) === 0) return game;
-  const events = game.events.map((ev) => {
+  const bare = (ev: ScoreEvent): ScoreEvent => {
     if (ev.t !== "win" || !ev.winners.some((w) => w.patterns?.length)) return ev;
     return { ...ev, winners: ev.winners.map((w) => (w.patterns?.length ? { seat: w.seat, tai: w.tai } : w)) };
-  });
-  return { ...game, events, updatedAt: at };
+  };
+  return { ...game, events: game.events.map(bare), ...(game.undone ? { undone: game.undone.map(bare) } : {}), updatedAt: at };
 }
 
 const BACKUP_KIND = "mjwaits.scores";

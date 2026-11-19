@@ -43,6 +43,7 @@ import {
 import { BonusGlyphSpan, TileGlyphSpan } from "./TileGlyphs";
 import { OnlineTable, PlayHome, PlayPanel, ScoresPanel, SharedScoresView, TaiRulesSheet } from "./LazyParts";
 import { Crashed } from "./Crashed";
+import { rewriteAddress, useBackClose } from "./lib/backButton";
 import { OfflineSheet } from "./OfflineSheet";
 import { savedSummary } from "./lib/playSaved";
 import { loadTestHands } from "./lib/lazyParts";
@@ -67,6 +68,8 @@ import {
   type RuleSetStore,
 } from "./lib/taiRuleSets";
 import { loadScores, saveScores, SCORES_KEY } from "./lib/scoreStore";
+import { ledgerHandOff } from "./lib/handOff";
+import { DEFAULT_SETTINGS as LEDGER_DEFAULTS, replayCached, type ScoreSettings } from "@mjwaits/shared/engine/ledger";
 import {
   COMPLETE_SIZE,
   compareTiles,
@@ -435,7 +438,7 @@ function CorrectionPanel({
           Model guessed <strong>{detection.originalClassName}</strong> ({Math.round(detection.confidence * 100)}%) - tap
           the right tile:
         </span>
-        <button type="button" className="correction-panel-close" onClick={onCancel} aria-label="Cancel correction">
+        <button type="button" className="correction-panel-close" onClick={onCancel} aria-label="Cancel correction" data-back-close="over">
           ✕
         </button>
       </div>
@@ -1633,7 +1636,7 @@ function CropOverlay({
       </div>
       <div className="crop-actions">
         <div className="crop-actions-right">
-          <button type="button" onClick={onCancel}>
+          <button type="button" onClick={onCancel} data-back-close="over">
             Cancel
           </button>
           <button type="button" onClick={() => onConfirm(displayImage, regions)} disabled={busy}>
@@ -2429,12 +2432,13 @@ function Calculator({
   useEffect(() => {
     const kept = waitsDraft;
     waitsDraft = null;
+    draftsDropped = false;
     if (kept?.length && !initialHand) {
       nextId.current = Math.max(nextId.current, ...kept.map((t) => t.id + 1));
       commitHand(kept);
     }
     return () => {
-      waitsDraft = handRef.current;
+      if (!draftsDropped) waitsDraft = handRef.current;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -4422,6 +4426,15 @@ type VisibleExhaustState = "none" | "triple" | "exhausted";
 // memory only: a reload starts clean.
 let scoringDraft: ScoringSnapshot | null = null;
 let waitsDraft: HandTile[] | null = null;
+// A tab that couldn't be drawn (see Crashed) lets go of its hand: brought
+// back, it would only fail the same way on Try again. Set as it fails, so
+// the panel going away doesn't keep it after all; a fresh panel clears it.
+let draftsDropped = false;
+function dropDrafts() {
+  draftsDropped = true;
+  scoringDraft = null;
+  waitsDraft = null;
+}
 
 // Scoring's hand and Situation card, as Back to Scoring brings them back.
 type ScoringSnapshot = {
@@ -5682,6 +5695,7 @@ function ScoringPanel({
   testHandRequest,
   onTestHandLoaded,
   canRecord,
+  ledgerSettings,
   onRecord,
   forScores,
   onCancelForScores,
@@ -5695,6 +5709,9 @@ function ScoringPanel({
   onTestHandLoaded: () => void;
   // A Scores game is in progress, so a scored hand can be sent to it.
   canRecord: boolean;
+  // That game's 設定 as they stand: what it adds itself (底, 莊/連莊, 雙響/三響)
+  // comes out of a hand sent to it.
+  ledgerSettings: ScoreSettings | null;
   onRecord: (request: Omit<RecordRequest, "nonce">) => void;
   // Opened from a Scores 食胡 sheet to work out one winner's hand: start
   // fresh with that game's winds (and 自摸), say who it's for, and send the
@@ -6535,16 +6552,23 @@ function ScoringPanel({
   // Ledger or 設定 mid-hand doesn't lose it. Not a hand being worked out for
   // Scores (that one's theirs), and not while one's coming in from there or
   // from the test hands: whatever was kept waits for the next plain visit.
+  // Nor a hand that's been sent to the Ledger: that one's done - the tab
+  // comes back empty for the next (kept, it sat there with Record live, a
+  // tap from being recorded twice).
   const draftNow = useRef<ScoringSnapshot | null>(null);
   draftNow.current = forScores ? null : snapshot();
+  const recorded = useRef(false);
   useEffect(() => {
+    draftsDropped = false;
     if (!forScores && !testHandRequest) {
       const kept = scoringDraft;
       scoringDraft = null;
       if (kept && (kept.concealed.length || kept.declared.length || kept.bonus.length || kept.winningTile)) restoreSnapshot(kept);
     }
     return () => {
-      if (draftNow.current) scoringDraft = draftNow.current;
+      if (draftsDropped) return;
+      if (recorded.current) scoringDraft = null;
+      else if (draftNow.current) scoringDraft = draftNow.current;
     };
     // (Once, on arriving - and its cleanup on leaving.)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -7039,7 +7063,13 @@ function ScoringPanel({
     const declared = declaredMelds.map(({ kind, concealed: c, tiles }) => ({ kind, concealed: c, tiles }));
     // Canonical tile order; the display-order toggle re-sorts a copy of
     // this without recomputing any scores.
-    return timed("Scoring · waits", () => projectWaits(concealed, declared, bonusTiles, ctx, totalCopiesUsed));
+    // (A hand this can't work out shows no waits - it doesn't take the tab down.)
+    try {
+      return timed("Scoring · waits", () => projectWaits(concealed, declared, bonusTiles, ctx, totalCopiesUsed));
+    } catch (e) {
+      console.error("Scoring: couldn't project the waits", e);
+      return null;
+    }
     // Same deps as `scoring` above minus winningTile (overridden per wait); ctx
     // is rebuilt every render so its primitive inputs are listed individually.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -7086,7 +7116,14 @@ function ScoringPanel({
         rest.findIndex((t) => tileKey(t) === tileKey(discard)),
         1
       );
-      const waits = projectWaits(rest, declared, bonusTiles, ctx, totalCopiesUsed);
+      // (A discard this can't work out is left off the list - not the tab taken down.)
+      let waits: ProjectedWait[];
+      try {
+        waits = projectWaits(rest, declared, bonusTiles, ctx, totalCopiesUsed);
+      } catch (e) {
+        console.error("Scoring: couldn't work out a discard", e);
+        continue;
+      }
       if (waits.length === 0) continue;
       options.push({
         discard,
@@ -8015,27 +8052,22 @@ function ScoringPanel({
               type="button"
               className={`record-to-scores${forScores ? "" : " is-quiet"}`}
               onClick={() => {
-                // Scores adds 莊/連莊 and 雙響/三響 itself, so those patterns'
-                // tai come out here.
+                // Whatever of 底, 莊/連莊 and 雙響/三響 this Ledger game adds
+                // itself comes out here; what it's set not to add stays in.
                 const readings = [scoring.result, ...(scoring.result.second ? [scoring.result.second] : [])];
-                const scoresAdds = new Set(["dealer-streak", "multi-win-double", "multi-win-triple"]);
-                const taiOf = (ids: string[]) =>
-                  readings
-                    .flatMap((r) => r.matched)
-                    .filter((m) => ids.includes(m.pattern.id))
-                    .reduce((sum, m) => sum + m.tai, 0);
-                const removedDealerTai = taiOf(["dealer-streak"]);
-                const removedMultiTai = taiOf(["multi-win-double", "multi-win-triple"]);
+                const off = ledgerHandOff(readings, scoring.result.total, ledgerSettings ?? LEDGER_DEFAULTS);
+                recorded.current = true;
                 onRecord({
                   seatWind,
                   selfDraw: effectiveSelfDraw,
-                  tai: scoring.result.total - removedDealerTai - removedMultiTai,
-                  removedDealerTai,
-                  ...(removedMultiTai ? { removedMultiTai } : {}),
+                  tai: off.tai,
+                  removedDealerTai: off.removedDealerTai,
+                  ...(off.removedMultiTai ? { removedMultiTai: off.removedMultiTai } : {}),
+                  ...(off.removedBaseTai ? { removedBaseTai: off.removedBaseTai } : {}),
                   ...(rulesFingerprint(taiRules.rules) ? { rules: rulesFingerprint(taiRules.rules)! } : {}),
                   patterns: readings.flatMap((r) =>
                     r.matched
-                      .filter((m) => !scoresAdds.has(m.pattern.id))
+                      .filter((m) => !off.ledgerAdds(m.pattern.id))
                       .map((m) => ({ id: m.pattern.id, name: patternDisplayName(m.pattern, r.hand).slice(0, PATTERN_NAME_MAX), tai: m.tai }))
                   ),
                   scoring: snapshot(),
@@ -8805,7 +8837,7 @@ function SeatRenamePicker({
       >
         <div className="seat-rename-header">
           <span id={titleId}>Rename {currentName}</span>
-          <button type="button" className="seat-rename-close" onClick={onClose} aria-label="Cancel">
+          <button type="button" className="seat-rename-close" onClick={onClose} aria-label="Cancel" data-back-close="over">
             ✕
           </button>
         </div>
@@ -10163,6 +10195,15 @@ function App() {
   // read-only view over the app; "Open MJWaits" drops the hash and carries on
   // as normal. #z= is compressed, so it's read once the page is up.
   const [sharedScores, setSharedScores] = useState(() => snapshotFromHash(window.location.hash));
+  // (Android's Back, on someone's shared scores: to this phone's own app.)
+  useBackClose(
+    sharedScores &&
+      (() => {
+        rewriteAddress(window.location.pathname + window.location.search);
+        setSharedScores(null);
+        setMode("scores");
+      }),
+  );
   // A link opened while the app's already up (the installed app, taking a
   // shared hand's or scores' link from a chat): only its part after the #
   // changes, so the page isn't loaded again - it's read here as at the start.
@@ -10212,7 +10253,7 @@ function App() {
   }, [hashSeen]);
   const dropIncomingRules = () => {
     setIncomingRules(null);
-    if (window.location.hash.startsWith("#r=")) window.history.replaceState(null, "", window.location.pathname + window.location.search);
+    if (window.location.hash.startsWith("#r=")) rewriteAddress(window.location.pathname + window.location.search);
   };
   // The Scores tab's games and roster - here so the Scoring tab can send a
   // hand to the game in progress. Saved on every change.
@@ -10332,7 +10373,7 @@ function App() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.has("h") || params.has("calc") || params.has("room")) {
-      window.history.replaceState(null, "", window.location.pathname + window.location.hash);
+      rewriteAddress(window.location.pathname + window.location.hash);
     }
   }, []);
   const debug = useDebug();
@@ -10376,7 +10417,7 @@ function App() {
   const openTab = (id: Exclude<AppMode, "table">) => {
     // Leaving a shared scores view: back to this phone's own app.
     if (sharedScores) {
-      window.history.replaceState(null, "", window.location.pathname + window.location.search);
+      rewriteAddress(window.location.pathname + window.location.search);
       setSharedScores(null);
     }
     if (id === "play") {
@@ -10489,12 +10530,12 @@ function App() {
       )}
       {/* (A tab that throws as it's drawn says so in its own place - the
           tab bar and the other tabs go on working: see Crashed.) */}
-      <Crashed resetKey={sharedScores ? "shared" : mode}>
+      <Crashed resetKey={sharedScores ? "shared" : mode} onCrash={dropDrafts}>
       {sharedScores && (
         <SharedScoresView
           snap={sharedScores}
           onClose={() => {
-            window.history.replaceState(null, "", window.location.pathname + window.location.search);
+            rewriteAddress(window.location.pathname + window.location.search);
             setSharedScores(null);
             setMode("scores");
           }}
@@ -10505,6 +10546,7 @@ function App() {
           testHandRequest={testHandRequest}
           onTestHandLoaded={() => setTestHandRequest(null)}
           canRecord={scoreStore.active !== null}
+          ledgerSettings={scoreStore.active ? replayCached(scoreStore.active).settings : null}
           onRecord={(request) => {
             // Back to the sheet it came from: same winner, 銃 and Jackpot.
             // (A 雙響/三響 also brings its whole draft back.)

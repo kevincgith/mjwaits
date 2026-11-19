@@ -91,7 +91,8 @@ export function drawSettleCard(snap: ScoreSnapshot, pays: { from: string; to: st
     g.fillStyle = ACCENT;
     g.font = `800 40px ${FONT}`;
     g.textAlign = "right";
-    g.fillText(`$${money(p.amount)}`, W - pad, mid + 14);
+    // (Money, to the cent: farn times the 倍數.)
+    g.fillText(`$${String(Math.round(p.amount * 100) / 100)}`, W - pad, mid + 14);
     g.textAlign = "left";
     y += payH;
   }

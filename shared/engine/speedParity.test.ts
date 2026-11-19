@@ -495,7 +495,7 @@ function eightPairsShanten(tiles: Tile[]): number {
   }
   // (Eight pairs all made of fours wait for nothing: one more away, not ready.)
   const away = 8 - pairUnits - (hasSpare ? 1 : 0);
-  return away === 0 && !hasSpare && ![...counts.values()].includes(2) ? 1 : away;
+  return away === 0 && !hasSpare && ![...counts.values()].includes(2) && tiles.length !== COMPLETE_SIZE ? 1 : away;
 }
 
 interface UnrelatedDpState {
@@ -552,6 +552,7 @@ function oldShanten(tiles: Tile[], meldsRequired: number = MELDS_REQUIRED): numb
     if (orphans >= 12) {
       if (best > -1 && tiles.length === COMPLETE_SIZE && oldIsThirteenOrphansComplete(tiles)) best = -1;
       else if (best > 0 && tiles.length === COMPLETE_SIZE - 1 && allTileKinds().some((t) => oldIsThirteenOrphansComplete([...tiles, t]))) best = 0;
+      else if (best > 0 && tiles.length === COMPLETE_SIZE && tiles.some((_, i) => allTileKinds().some((t) => oldIsThirteenOrphansComplete([...tiles.filter((_, j) => j !== i), t])))) best = 0;
     }
   }
   return best;

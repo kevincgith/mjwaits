@@ -36,10 +36,11 @@ export const FIT_GAP = 10;
 export interface RecordRequest {
   seatWind: number; // 1-4, the winner's 門風 as entered in Scoring
   selfDraw: boolean;
-  tai: number; // without 莊 - the ledger adds that
+  tai: number; // without what this Ledger game adds itself (see ledgerHandOff)
   patterns: PatternNote[];
   removedDealerTai: number;
   removedMultiTai?: number; // 雙響/三響's, taken out the same way
+  removedBaseTai?: number; // 底's
   // Scored under custom tai rules: their fingerprint (see WinnerEntry.rules).
   rules?: string;
   // Set when the hand was started from a Scores 食胡 sheet (ScoreHandRequest):
@@ -101,6 +102,9 @@ export const fmt = (n: number) => {
   return n < 0 ? `−${s}` : s;
 };
 export const signed = (n: number) => (n > 0 ? `+${fmt(n)}` : fmt(n));
+// Money (結帳's payments, farn times the 倍數): to the cent - 3 farn at 0.25
+// is 0.75, not 0.8.
+export const cash = (n: number) => String(Math.round(n * 100) / 100);
 export const pct = (r: number | null) => (r === null ? "–" : `${Math.round(r * 100)}%`);
 export const tone = (n: number) => (n > 0 ? "is-pos" : n < 0 ? "is-neg" : "is-zero");
 

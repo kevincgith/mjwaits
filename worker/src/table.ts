@@ -26,6 +26,9 @@ import {
   botTurnMove,
   claimMatters,
   SECOND_CHANCE_S,
+  TIME_CHIP_FROM_MS,
+  RECHOOSE_MIN_MS,
+  TIME_CHIP_MS,
   secondChance,
   settleSecondChance,
   chanceAllows,
@@ -157,6 +160,8 @@ interface Runtime {
   // still watching (see run).
   idleSince?: number | null;
   asking?: boolean;
+  // The time chip: who's used theirs this hand (by seat), and at which step.
+  chips?: Record<number, number>;
 }
 
 // A table nobody's playing at themself deals this many hands, then asks
@@ -308,6 +313,18 @@ export class Table extends Hub<TableMessage> {
     return i >= 0 ? i : null;
   }
 
+  // Whether the table's clock is running for this seat's own decision: its
+  // turn, its answer to a discard (not a kong's beat - that's its own short
+  // wait), its give or take in a 換牌.
+  private onTheClock(seat: number): boolean {
+    const g = this.rt.game;
+    if (!g || this.actsAlone(seat)) return false;
+    if (g.phase.kind === "turn") return g.phase.seat === seat;
+    if (g.phase.kind === "claims") return this.rt.decisions?.[seat] === "waiting";
+    if (g.phase.kind === "swap") return g.phase.stage === "give" ? !(g.phase.piles as unknown[])[seat] : g.phase.taker === seat;
+    return false;
+  }
+
   // Bots, and people being played for, act on their own.
   private actsAlone(seat: number): boolean {
     return this.rt.seats[seat]?.kind === "bot" || this.rt.auto.includes(seat) || !!this.rt.chosen?.includes(seat);
@@ -452,6 +469,9 @@ export class Table extends Hub<TableMessage> {
     const now = Date.now();
     this.advance(now);
     this.save();
+    // (Someone's taken a seat: with the host long gone, the table's theirs.
+    // After the save - it reads the seats as they're stored.)
+    if (msg.t === "sit") this.reconsiderHost();
     this.changed();
     await this.schedule(now);
   }
@@ -526,6 +546,7 @@ export class Table extends Hub<TableMessage> {
         this.record(null, rt.game);
         rt.hand = 1;
         rt.step = 1;
+        rt.chips = {};
         rt.totals = [0, 0, 0, 0];
         // Anyone seated but not here is away from the first deal.
         const online = this.online();
@@ -589,6 +610,22 @@ export class Table extends Hub<TableMessage> {
         this.retime(Date.now());
         break;
       }
+      case "extend": {
+        // The time chip: ten seconds more on the clock you're being waited
+        // on by - once a hand each, and only as it runs out.
+        playing();
+        const seat = seated();
+        if (msg.step !== rt.step) throw new Refusal("stale", "that turn has passed");
+        const now = Date.now();
+        // (Not the few seconds of a second chance: that's a look, not a turn.)
+        if (rt.deadline === null || rt.secondChance || !this.onTheClock(seat)) throw new Refusal("notYourTurn", "there's no clock running for you");
+        if (rt.chips?.[seat] !== undefined) throw new Refusal("illegal", "your time chip's been used this hand");
+        // (A little grace over the app's own "under five seconds": the message takes a moment.)
+        if (rt.deadline - now > TIME_CHIP_FROM_MS + 1500) throw new Refusal("illegal", "there's time enough yet");
+        rt.deadline = Math.max(rt.deadline, now) + TIME_CHIP_MS;
+        rt.chips = { ...(rt.chips ?? {}), [seat]: rt.step };
+        break;
+      }
       case "here":
         // Still watching (anyone at the table, seated or not): it deals on.
         playing();
@@ -640,6 +677,10 @@ export class Table extends Hub<TableMessage> {
         rt.phase = "ended";
         rt.deadline = null;
         rt.botAt = null;
+        // (Nothing left waiting to be answered: not "Still watching?", nor a kong's beat.)
+        rt.asking = false;
+        rt.idleSince = null;
+        rt.kongBeat = null;
         break;
       case "rematch": {
         hostOnly();
@@ -665,6 +706,7 @@ export class Table extends Hub<TableMessage> {
           pot: 0,
           chosen: [],
           lastCall: null,
+          chips: {},
           idleSince: null,
           asking: false,
         } satisfies Partial<Runtime>);
@@ -939,7 +981,10 @@ export class Table extends Hub<TableMessage> {
     const unwaited = rt.unwaited?.length ? { unwaited: rt.unwaited } : {};
     rt.lastCall =
       caller !== null && call && call.kind !== "win" && rt.seats[caller]?.kind === "human" && !this.actsAlone(caller)
-        ? { before, decisions, seat: caller, first: first?.seat === caller ? first.kind : call.kind, ...unwaited }
+        ? // (Chosen again after a 嗌錯 already, this one stands: one take-back to a discard.)
+          first?.seat === caller
+          ? null
+          : { before, decisions, seat: caller, first: call.kind, ...unwaited }
         : null;
     // The turn on a call (下家's too: a pung or kong as well as a run).
     if (before.phase.kind === "claims" && g.phase.kind === "turn") {
@@ -982,7 +1027,8 @@ export class Table extends Hub<TableMessage> {
   private canRetract(seat: number): boolean {
     const c = this.rt.lastCall;
     const g = this.rt.game;
-    if (this.rt.kongBeat?.seat === seat && g?.phase.kind === "claims") return true;
+    // (A kong's beat - unless it's the kong chosen after a 嗌錯: that one stands.)
+    if (this.rt.kongBeat?.seat === seat && g?.phase.kind === "claims") return this.rt.firstCall?.seat !== seat;
     return (
       !!c &&
       !!g &&
@@ -1028,7 +1074,13 @@ export class Table extends Hub<TableMessage> {
     }
     // (The only call they had: nothing to choose again - let go at once.)
     const only = claimOptions(rt.game!, seat).length === 1;
-    this.newDecision(Date.now(), decisions.map((d, s) => (s === seat ? (only ? null : undefined) : unwaited.includes(s) ? undefined : d)));
+    // Choosing again runs on the clock they had - what's left of it (a few
+    // seconds at least, to choose in) - not a fresh one: a take-back isn't
+    // more time.
+    const had = rt.deadline;
+    const now = Date.now();
+    this.newDecision(now, decisions.map((d, s) => (s === seat ? (only ? null : undefined) : unwaited.includes(s) ? undefined : d)));
+    if (had !== null && rt.deadline !== null) rt.deadline = Math.min(rt.deadline, Math.max(had, now + RECHOOSE_MIN_MS));
     // (Its caller doesn't get to think again; a win let go by stays gone.)
     rt.chanceSpent = true;
     rt.firstCall = { seat, kind: first };
@@ -1216,6 +1268,7 @@ export class Table extends Hub<TableMessage> {
       rt.shown = [];
       rt.peeks = {};
       rt.hand++;
+      rt.chips = {}; // (everyone's time chip back for the new hand)
       rt.last = null;
       rt.lastCall = null;
       rt.botAt = null;
@@ -1357,6 +1410,11 @@ export class Table extends Hub<TableMessage> {
       // (In a claims window, its clock too: only for the ones it waits on.)
       deadline: g?.phase.kind === "claims" && !waitingOn.length ? null : rt.deadline,
       waitingOn,
+      // Who's used their time chip this hand - but not, of anyone else, one
+      // being used on the discard up now: that would say who can call it.
+      chips: Object.entries(rt.chips ?? {})
+        .filter(([s, step]) => Number(s) === seat || !(g?.phase.kind === "claims" && step === rt.step))
+        .map(([s]) => Number(s)),
       ready: rt.ready,
       auto: [...new Set([...rt.auto, ...(rt.chosen ?? [])])],
       shown: rt.shown ?? [],

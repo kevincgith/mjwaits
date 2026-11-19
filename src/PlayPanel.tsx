@@ -47,6 +47,9 @@ import {
   riichiBarred,
   riichiDiscards,
   SECOND_CHANCE_S,
+  TIME_CHIP_FROM_MS,
+  RECHOOSE_MIN_MS,
+  TIME_CHIP_MS,
   secondChance,
   settleSecondChance,
   secondChanceFan,
@@ -72,7 +75,7 @@ import {
   type WaitValue,
 } from "@mjwaits/shared/engine/game";
 import { allTileKinds, DEFAULT_SUIT_ORDER, getWaits, isSuitOrder, shanten, sortTiles, sortTilesBy, tileKey, tileLabel, type Tile } from "@mjwaits/shared/engine/mahjong";
-import { botGive, SWAP_TIMER_S, DEFAULT_SWAP_RULES, givePlans, quickSwap, SWAP_PACE_MS, type GivePlan, type SwapPhase, type SwapRules } from "@mjwaits/shared/engine/swap";
+import { botGive, SWAP_TIMER_S, DEFAULT_SWAP_RULES, givePlans, quickSwap, SWAP_JOIN_MS, SWAP_PACE_MS, type GivePlan, type SwapPhase, type SwapRules } from "@mjwaits/shared/engine/swap";
 import { PlayDie } from "./PlayDie";
 import { AUTO_TAKE_MS, dealDiceMs, DIE_SAY_MS, evenTake, SWAP_FLIGHT_MS, SWAP_ROUND_HOLD_MS, SwapControls, SwapDice, swapDiceMs, SwapSheet, TakeRing, type Flight } from "./PlaySwap";
 import { sortBonusTiles, type BonusTile } from "@mjwaits/shared/engine/scoring";
@@ -233,6 +236,8 @@ const bubbleMs = (text: string) => Math.max(BUBBLE_MS, 900 + [...text].length * 
 const BURST_MS = 1200;
 // 投降: its burst, and how long the 拉 it ended stays struck through.
 const SURRENDER = "投降";
+// A time chip played: said at its player's seat.
+const TIME_CHIP_LABEL = "+10s";
 const SURRENDER_SHOW_MS = 4000;
 // 見牌 Seen copies: a tile held this long (ms) greys the ponds but its copies
 // - just longer than a tap, so it answers as soon as it's a hold.
@@ -259,7 +264,8 @@ const DRAW_SHOW_MS = 1700;
 // Your hand's tiles sliding to their new places (a swap's give or takes) -
 // a suit at a time, so up to four steps (see play3d/layout's SLIDE_S,
 // SUIT_STEP_S).
-const HAND_SLIDE_MS = 600 + 3 * 200;
+// (Its length is the online table's to know too - shared/engine/swap.)
+const HAND_SLIDE_MS = SWAP_JOIN_MS;
 // Online, how long a discard whose claim window passed unseen shows in the bubble.
 const FLASH_MS = 900;
 // 自動 autoplay: a bot plays your seat and you watch - the Grandmaster -
@@ -1666,12 +1672,17 @@ export function PlayPanel({
   const watcherNames = online?.table.watchers ?? [];
   const watcherKey = watcherNames.join("\n");
   const watchersSeen = useRef<string[] | null>(null);
+  // (When each was last seen to go: a phone that drops and is straight back
+  // hasn't started watching again - not said twice within a minute.)
+  const watchersGone = useRef(new Map<string, number>());
   const [nowWatching, setNowWatching] = useState<string | null>(null);
   useEffect(() => {
     if (!online) return;
     const before = watchersSeen.current;
     watchersSeen.current = watcherNames;
-    const came = before ? watcherNames.filter((n) => !before.includes(n)) : [];
+    const now = Date.now();
+    for (const n of before ?? []) if (!watcherNames.includes(n)) watchersGone.current.set(n, now);
+    const came = before ? watcherNames.filter((n) => !before.includes(n) && now - (watchersGone.current.get(n) ?? 0) > 60_000) : [];
     if (came.length) setNowWatching(came.join(", "));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [watcherKey]);
@@ -1841,7 +1852,8 @@ export function PlayPanel({
   const [rechoose, setRechoose] = useState<{ before: GameState; decisions: (Claim | null)[]; first: Claim["kind"] } | null>(null);
   // A kong you've called on a discard, held KONG_BEAT_MS before it's made
   // (its replacement drawn) - 嗌錯 can take it back till then.
-  const [kongBeat, setKongBeat] = useState<{ before: GameState; decisions: (Claim | null)[]; first: Claim["kind"] } | null>(null);
+  // (`stands`: chosen after a 嗌錯 already - one take-back to a discard.)
+  const [kongBeat, setKongBeat] = useState<{ before: GameState; decisions: (Claim | null)[]; first: Claim["kind"]; stands?: boolean } | null>(null);
   // 叮 armed: the next discard declares it (only tiles that leave you ready).
   const [riichiArmed, setRiichiArmed] = useState(false);
   const [resultHidden, setResultHidden] = useState(false);
@@ -2351,9 +2363,11 @@ export function PlayPanel({
     decisions[HUMAN] = claim;
     const seat = winningClaimSeat(before, decisions);
     if (seat !== null) announceClaim(seat, decisions);
-    if (seat === HUMAN && claim?.kind === "kong" && !autoplay) return setKongBeat({ before, decisions, first: first ?? "kong" });
+    // (What's chosen after a 嗌錯 stands - one take-back to a discard, as
+    // online: `first` is only there on a choice made again.)
+    if (seat === HUMAN && claim?.kind === "kong" && !autoplay) return setKongBeat({ before, decisions, first: first ?? "kong", stands: first !== null });
     advance(first ? remakeClaim(before, decisions, HUMAN, claim, first) : resolveClaims(before, decisions));
-    if (seat === HUMAN && claim && claim.kind !== "win") setLastCall({ before, decisions, first: first ?? claim.kind });
+    if (seat === HUMAN && claim && claim.kind !== "win" && first === null) setLastCall({ before, decisions, first: claim.kind });
   };
   const announceClaim = (seat: number, decisions: (Claim | null)[]) => {
     showBurst(seat, game.phase.kind === "claims" && game.phase.robKong ? "搶槓" : claimLabel(decisions[seat]!));
@@ -2401,7 +2415,7 @@ export function PlayPanel({
   // (Online, the table keeps your call and says when it can go back.)
   const canRetract = online
     ? !!online.table.options?.turn?.retract || !!online.table.options?.retract
-    : !!kongBeat ||
+    : (!!kongBeat && !kongBeat.stands) ||
       (!!lastCall &&
       game.phase.kind === "turn" &&
       game.phase.seat === HUMAN &&
@@ -2415,6 +2429,7 @@ export function PlayPanel({
     }
     // In a kong's beat: nothing's been made - straight back to the choice.
     if (kongBeat) {
+      if (kongBeat.stands) return;
       setKongBeat(null);
       setRechoose(kongBeat);
       return;
@@ -2430,12 +2445,17 @@ export function PlayPanel({
     const { decisions, first } = lastCall;
     // The only call you had: nothing to choose again - let go at once.
     if (claimOptions(back, HUMAN).length === 1) return settleClaim(back, decisions, null, first);
+    // (No fresh clock for choosing again: what the taken-back call's turn had
+    // left, RECHOOSE_MIN_MS at least - as an online table has it.)
+    const had = timerEnds.current?.endsAt;
+    if (had !== undefined) timerEnds.current = { for: back, endsAt: Math.max(had, Date.now() + RECHOOSE_MIN_MS) };
     advance(back);
     setRechoose({ before: back, decisions, first });
   };
   // A kong's beat run out: it's made, its replacement drawn.
+  // (Held while the setup page's up: nothing touches the game till Start.)
   useEffect(() => {
-    if (!kongBeat) return;
+    if (!kongBeat || setupOpen) return;
     if (kongBeat.before !== game) return setKongBeat(null);
     const id = window.setTimeout(() => {
       setKongBeat(null);
@@ -2443,7 +2463,7 @@ export function PlayPanel({
     }, KONG_BEAT_MS);
     return () => window.clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [kongBeat, game]);
+  }, [kongBeat, game, setupOpen]);
   // Choosing again, and the game's moved on another way (a new game): let it go.
   useEffect(() => {
     if (rechoose && rechoose.before !== game) setRechoose(null);
@@ -2794,7 +2814,7 @@ export function PlayPanel({
   // after your give's landed, as a bot's would) - unless you've tapped a tile
   // to pick by hand. (Online too, by the table's 快換.)
   const autoTakeMs =
-    myTake && quickSwap(online ? online.table.settings.swapRules : game.swapRules) && swapPicks.every((p) => !p.length)
+    myTake && !setupOpen && quickSwap(online ? online.table.settings.swapRules : game.swapRules) && swapPicks.every((p) => !p.length)
       ? AUTO_TAKE_MS
       : null;
   const autoTake = useRef(() => {});
@@ -3009,31 +3029,81 @@ export function PlayPanel({
   // Online, the server's deadline (it moves for you when it passes).
   const deadline = online?.table.deadline ?? null;
   const onlineTotal = onSwap ? SWAP_TIMER_S : online?.table.secondChance ? SECOND_CHANCE_S : (online?.table.settings.timer ?? 0);
+  // (A time chip played this hand: the clock may read that much over the timer.)
+  const onlineMost = onlineTotal ? onlineTotal + (online?.table.chips?.length ? TIME_CHIP_MS / 1000 : 0) : 0;
   const countdown = !online ? localCountdown : deadline !== null && onlineTotal ? { total: onlineTotal, endsAt: deadline } : null;
   // (Never more than the timer: the table's deadline can add the swap's waits to it.)
-  const clock = !online ? localClock : deadline !== null ? { endsAt: deadline, cap: onlineTotal || Infinity } : null;
+  const clock = !online ? localClock : deadline !== null ? { endsAt: deadline, cap: onlineMost || Infinity } : null;
+  // (When this decision's clock ends - kept, so the time chip can add to it:
+  // the same decision runs on from there; a new one starts a fresh clock.)
+  const timerEnds = useRef<{ for: unknown; endsAt: number } | null>(null);
+  const [chipTick, setChipTick] = useState(0);
   useEffect(() => {
     if (online) return;
     if (!limit || !deciding) {
       setClock(null);
       setCountdown(null);
+      timerEnds.current = null;
       return;
     }
-    const endsAt = Date.now() + limit * 1000;
-    setClock({ endsAt, cap: limit });
-    setCountdown({ total: limit, endsAt });
-    const id = window.setTimeout(() => {
-      if (game.phase.kind === "swap") {
-        swapTimeout.current();
-      } else if (game.phase.kind === "claims") {
-        resolve(null);
-      } else if (game.phase.kind === "turn") {
-        turnTimeout.current();
-      }
-    }, limit * 1000);
+    const running = timerEnds.current;
+    const endsAt = running && running.for === timerFor ? running.endsAt : Date.now() + limit * 1000;
+    timerEnds.current = { for: timerFor, endsAt };
+    const total = Math.max(limit, Math.ceil((endsAt - Date.now()) / 1000));
+    setClock({ endsAt, cap: total });
+    setCountdown({ total, endsAt });
+    const id = window.setTimeout(
+      () => {
+        if (game.phase.kind === "swap") {
+          swapTimeout.current();
+        } else if (game.phase.kind === "claims") {
+          resolve(null);
+        } else if (game.phase.kind === "turn") {
+          turnTimeout.current();
+        }
+      },
+      Math.max(0, endsAt - Date.now())
+    );
     return () => window.clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timerFor, limit, deciding]);
+  }, [timerFor, limit, deciding, chipTick]);
+  // The time chip, as at a poker table: once a hand, with your clock nearly
+  // out (under TIME_CHIP_FROM_MS left), ten seconds more. Shown only then -
+  // not on every turn - and only while you still have it. Online the table
+  // adds the time (and says who's used theirs); here it's this clock's own.
+  const handKey = [game.dealer, game.dealerStreak, game.roundWind, JSON.stringify(game.dice ?? null)].join("/");
+  const [chipUsedIn, setChipUsedIn] = useState<string | null>(null);
+  const chipUsed = online ? online.table.you !== null && !!online.table.chips?.includes(online.table.you) : chipUsedIn === handKey;
+  const chipClock = online
+    ? seated && !autoplay && waitedOn && !online.table.secondChance && game.phase.kind !== "over" && online.table.phase === "playing"
+      ? deadline
+      : null
+    : (localCountdown?.endsAt ?? null);
+  const [chipDue, setChipDue] = useState(false);
+  useEffect(() => {
+    setChipDue(false);
+    if (chipClock === null || chipUsed) return;
+    const id = window.setTimeout(() => setChipDue(true), Math.max(0, chipClock - TIME_CHIP_FROM_MS - Date.now()));
+    return () => window.clearTimeout(id);
+  }, [chipClock, chipUsed]);
+  const playChip = () => {
+    if (online) return void online.send({ t: "extend", step: online.table.step });
+    if (!timerEnds.current || chipUsed) return;
+    timerEnds.current.endsAt = Math.max(timerEnds.current.endsAt, Date.now()) + TIME_CHIP_MS;
+    setChipUsedIn(handKey);
+    setChipTick((n) => n + 1);
+    showBurst(HUMAN, TIME_CHIP_LABEL);
+  };
+  // Online: someone's used theirs - said at their seat.
+  const chipSeats = online?.table.chips ?? [];
+  const chipsSeen = useRef<number[] | null>(null);
+  useEffect(() => {
+    if (!online || !net) return;
+    const before = chipsSeen.current;
+    chipsSeen.current = chipSeats;
+    if (before) for (const s of chipSeats) if (!before.includes(s)) showBurst(net.toLocal(s), TIME_CHIP_LABEL);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chipSeats.join()]);
   // Online the table moves for you at its deadline, not knowing a 叮 is
   // armed here: declare it just before then.
   const armedBy = online && riichiArmed && myTurn ? deadline : null;
@@ -4056,7 +4126,7 @@ export function PlayPanel({
         </div>
         {/* Online, nobody playing a seat themself (bots, 自動): after a few
             hands the table stops and asks - a tap from anyone deals on. */}
-        {online?.table.asking && (
+        {online?.table.asking && online.table.phase === "playing" && (
           <div className="play-asking" role="dialog" aria-label="Still watching?">
             <strong>Still watching?</strong>
             <span>Nobody's playing their own seat, so the table has stopped for now.</span>
@@ -4072,6 +4142,12 @@ export function PlayPanel({
         <div className={`play-me${autoplay ? " is-auto" : ""}`}>
           <div className="play-hand-wrap">
             <div className="play-calls">
+              {/* The time chip: only as your clock runs out, once a hand. */}
+              {chipDue && !chipUsed && (
+                <button type="button" className="play-call play-time-chip" onClick={playChip} aria-label="Add ten seconds - your time chip, once a hand">
+                  +10s
+                </button>
+              )}
               {swapPhase && !swapRolling && !swapAirborne && !(swapPhase.stage === "give" && swapFlying) && !rolling && !over && (
                 <SwapControls
                   part="actions"
@@ -4089,7 +4165,7 @@ export function PlayPanel({
                   }}
                   plan={givePlan}
                   onNextPlan={nextGivePlan}
-                  settling={swapFlying && swapPhase.stage === "give"}
+                  settling={(swapFlying || swapJoining) && swapPhase.stage === "give"}
                   onTake={takeSwap}
                   autoTakeMs={autoTakeMs}
                 />
@@ -4293,7 +4369,7 @@ export function PlayPanel({
               }}
               plan={givePlan}
               onNextPlan={nextGivePlan}
-              settling={swapFlying && swapPhase.stage === "give"}
+              settling={(swapFlying || swapJoining) && swapPhase.stage === "give"}
               onTake={takeSwap}
               autoTakeMs={autoTakeMs}
             />
@@ -4371,6 +4447,7 @@ export function PlayPanel({
                   <button
                     type="button"
                     className="play-setup-back"
+                    data-back-close=""
                     onClick={() => {
                       setConfirmReset(false);
                       // Opened for a new game from Play's home: back there; else back to the game.
@@ -4572,7 +4649,7 @@ export function PlayPanel({
                 </button>
               )}
               <div className="play-result-actions">
-                <button type="button" className="play-view-table" onClick={() => setResultHidden(true)}>
+                <button type="button" className="play-view-table" onClick={() => setResultHidden(true)} data-back-close="">
                   View table
                 </button>
                 {seated && decisions.length > 0 && (

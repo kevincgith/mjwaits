@@ -540,6 +540,14 @@ describe("standardShanten / shanten", () => {
     const waits = parseHand("1111m2222m3333t44t55t");
     expect(shanten(waits)).toBe(0);
     expect(getWaits(waits).map((t) => t.rank + t.suit)).toEqual(expect.arrayContaining(["4t", "5t"]));
+    // The fours with a tile just drawn (17): ready - a throw from a four
+    // leaves a triplet, six pairs and that tile, waiting for its pair.
+    expect(shanten(parseHand("1111m2222m3333t4444t9b"))).toBe(0);
+  });
+
+  it("reads a hand with its drawn tile as ready when a throw leaves it ready (Thirteen Orphans)", () => {
+    // 4m thrown, it waits for 發: twelve of the orphans, a pair of 9b, and 678t.
+    expect(shanten(parseHand("149m1t678t9t199b12345z7z"))).toBe(0);
   });
 
   it("doesn't call two ranks no third can join ready (Sixteen Unrelated Tiles)", () => {

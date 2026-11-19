@@ -151,7 +151,10 @@ export interface Block {
 // The dice as thrown, till all lie still (or THROW_MS is up, when they're
 // laid flat): each die's place and turn at THROW_FPS; and whether they came
 // to rest by themselves.
-function simulate(size: number, bodies: Body[], fences: Fence[], blocks: Block[] = []): { frames: ThrowFrame[][]; settled: boolean } {
+// (`jumped`: a die was put clear of something standing on the felt all at
+// once - come down over it, it's set down beside it - which shows as a jump.)
+function simulate(size: number, bodies: Body[], fences: Fence[], blocks: Block[] = []): { frames: ThrowFrame[][]; settled: boolean; jumped: boolean } {
+  let jumped = false;
   const P = physics(size);
   const h = size / 2;
   const corners: Vec[] = [];
@@ -251,6 +254,7 @@ function simulate(size: number, bodies: Body[], fences: Fence[], blocks: Block[]
           nx /= dist;
           ny /= dist;
         }
+        if (P.rad - dist > size * 0.2) jumped = true;
         b.p[0] += (P.rad - dist) * nx;
         b.p[1] += (P.rad - dist) * ny;
         const vn = b.v[0] * nx + b.v[1] * ny;
@@ -300,8 +304,45 @@ function simulate(size: number, bodies: Body[], fences: Fence[], blocks: Block[]
     const flat = s > 1e-6 ? qNorm(qMul(qAxis(ax[0] / s, ax[1] / s, ax[2] / s, Math.asin(Math.min(1, s))), b.q)) : b.q;
     frames[i].push({ x: b.p[0], y: b.p[1], z: h, q: flat });
   });
-  return { frames, settled };
+  return { frames, settled, jumped };
 }
+
+// Where a die lying flat stands on the felt: its four corners (px).
+export function footprint(end: ThrowFrame, size: number): [number, number][] {
+  const m = qMat(end.q);
+  const h = size / 2;
+  // The two of its axes that lie level.
+  const level = ([[1, 0, 0], [0, 1, 0], [0, 0, 1]] as Vec[]).map((a) => turn(m, a)).filter((a) => Math.abs(a[2]) < 0.5);
+  const at = (sx: number, sy: number): [number, number] => [end.x + h * (sx * level[0][0] + sy * level[1][0]), end.y + h * (sx * level[0][1] + sy * level[1][1])];
+  return [at(-1, -1), at(1, -1), at(1, 1), at(-1, 1)];
+}
+
+// How far two four-sided shapes overlap (0: apart) - the least they'd have
+// to move to be clear of each other.
+export function overlap(A: [number, number][], B: [number, number][]): number {
+  let least = Infinity;
+  for (const poly of [A, B])
+    for (let i = 0; i < 4; i++) {
+      const a = poly[i];
+      const b = poly[(i + 1) % 4];
+      const nx = a[1] - b[1];
+      const ny = b[0] - a[0];
+      const l = Math.hypot(nx, ny);
+      const along = (p: [number, number]) => (p[0] * nx + p[1] * ny) / l;
+      const pa = A.map(along);
+      const pb = B.map(along);
+      const pen = Math.min(Math.max(...pa), Math.max(...pb)) - Math.max(Math.min(...pa), Math.min(...pb));
+      if (pen <= 0) return 0;
+      least = Math.min(least, pen);
+    }
+  return least;
+}
+const blockFoot = (k: Block): [number, number][] => [
+  [k.x - k.hw, k.y - k.hd],
+  [k.x + k.hw, k.y - k.hd],
+  [k.x + k.hw, k.y + k.hd],
+  [k.x - k.hw, k.y + k.hd],
+];
 
 // The wall's inner face, each edge with the way in.
 function fenceEdges(fence: [number, number][]): Fence {
@@ -342,6 +383,10 @@ export interface ThrowAt {
   random?: () => number;
 }
 
+// How many throws are tried for one that goes right (the first that does is
+// the one shown; failing that, the nearest to it).
+const ATTEMPTS = 40;
+
 // `n` dice thrown onto a felt `width` px square (see ThrowAt): each die's path.
 export function simulateThrow(o: ThrowAt & { n: number }): ThrowFrame[][] {
   const rnd = o.random ?? Math.random;
@@ -352,7 +397,7 @@ export function simulateThrow(o: ThrowAt & { n: number }): ThrowFrame[][] {
   const fences = [o.fence, o.rim === undefined ? undefined : rimOf(W, o.rim)].filter((f) => f !== undefined).map(fenceEdges);
   const insideFence = (x: number, y: number) => fences.every((fence) => fence.every((e) => (x - e.a[0]) * e.nx + (y - e.a[1]) * e.ny >= P.rad * 0.6));
   let best: { frames: ThrowFrame[][]; miss: number } | null = null;
-  for (let attempt = 0; attempt < 24; attempt++) {
+  for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
     // The hand: over your side of the table, somewhere along it, high up.
     const hand: Vec = [W * between(0.22, 0.78), W * between(0.8, 0.95), size * between(3.5, 6.5)];
     // Where they're thrown to: somewhere in the box - and they first hit
@@ -398,11 +443,24 @@ export function simulateThrow(o: ThrowAt & { n: number }): ThrowFrame[][] {
         firstHit: null,
       };
     });
-    const { frames, settled } = simulate(size, bodies, fences, o.blocks);
+    const { frames, settled, jumped } = simulate(size, bodies, fences, o.blocks);
     // How far from right it went: off where they're meant to stop, a first
     // hit off the felt or on the wall, or not done in time.
     const pad = size * 0.3;
     let miss = settled ? 0 : size * 4;
+    // ...or wrong to look at. The dice knock about as balls, and what stands
+    // on the felt is only met from the side - true enough in flight, but it
+    // lets a die be set down beside a plaque it came down on (a jump), and
+    // lets cubes come to rest with a corner in one another, in a plaque or a
+    // tile, or through the wall. Such a throw isn't the one shown.
+    if (jumped) miss += size * 3;
+    const feet = frames.map((f) => footprint(f[f.length - 1], size));
+    const tight = size * 0.03;
+    for (let a = 0; a < feet.length; a++) {
+      for (let b = a + 1; b < feet.length; b++) if (overlap(feet[a], feet[b]) > tight) miss += size * 3;
+      for (const k of o.blocks ?? []) if (overlap(feet[a], blockFoot(k)) > tight) miss += size * 3;
+      if (feet[a].some(([x, y]) => fences.some((fence) => fence.some((e) => (x - e.a[0]) * e.nx + (y - e.a[1]) * e.ny < -tight)))) miss += size * 3;
+    }
     bodies.forEach((b, i) => {
       const end = frames[i][frames[i].length - 1];
       miss += Math.max(0, keep.l - pad - end.x, end.x - keep.r - pad) + Math.max(0, keep.t - pad - end.y, end.y - keep.b - pad);

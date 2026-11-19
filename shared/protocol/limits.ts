@@ -4,7 +4,7 @@
 
 // Bumped whenever a message changes shape. The server answers a `hello` with
 // a different version with an error asking the page to reload.
-export const PROTOCOL_VERSION = 4; // 2: the room shares a whole Scores-tab game; 3: tables play 換牌 and 獎池; 4: codes are 4 characters, a table asks if anyone's still watching (`here`)
+export const PROTOCOL_VERSION = 5; // 2: the room shares a whole Scores-tab game; 3: tables play 換牌 and 獎池; 4: codes are 4 characters, a table asks if anyone's still watching (`here`); 5: a table's time chip (`extend`, `chips`)
 
 export const SEATS = 4;
 

@@ -6653,6 +6653,15 @@ html.playing body {
   animation: play-pop 0.2s ease-out both;
 }
 
+/* The time chip (+10s): a call button, in plain figures - there only as
+   your clock runs out. */
+.play-call.play-time-chip {
+  padding: 0 0.7rem;
+  font-family: inherit !important;
+  font-size: clamp(0.95rem, calc(5 * var(--vh)), 1.2rem) !important;
+  font-variant-numeric: tabular-nums;
+}
+
 .play-call.is-win {
   border-color: var(--play-gold);
   background: var(--play-call-win);

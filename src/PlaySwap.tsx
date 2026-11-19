@@ -432,5 +432,6 @@ export interface Flight {
 
 // How long a take's flight takes (all its tiles go together), and how long the round's rows stay once its last
 // take is down, before every tile joins its hand.
-export const SWAP_FLIGHT_MS = 750;
-export const SWAP_ROUND_HOLD_MS = 1400;
+// (Kept with the online table's own pace, which has to cover them: see
+// shared/engine/swap's SWAP_PACE_MS.)
+export { SWAP_FLIGHT_MS, SWAP_ROUND_HOLD_MS } from "@mjwaits/shared/engine/swap";

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { diceScene, laidDice, simulateThrow, throwDice } from "./dice";
-import { wallFence } from "./diceScenes";
+import { diceScene, footprint, laidDice, overlap, simulateThrow, throwDice, type Block } from "./dice";
+import { seatsScene, tileBlocks, wallFence } from "./diceScenes";
+import { cardBlocks } from "./cards";
 
 // A repeatable random.
 const seeded = (seed: number) => () => {
@@ -144,6 +145,72 @@ describe("the Dice tab's thrown dice", () => {
     expect(dice.length).toBe(3);
     expect(dice.every((d) => !d.anim)).toBe(true);
     expect(quads.filter((q) => q.kind === "shadow").length).toBe(3);
+  });
+
+  // The two tables as the Dice tab sets them, over many throws: how often a
+  // throw that's shown has a die set down beside something all at once, or
+  // lying with a corner in another die, in a plaque or a tile, or through
+  // the wall. (A throw is the best of several tried - this is what's left.)
+  const flaws = (n: number, make: (random: () => number) => { thrown: ReturnType<typeof throwDice>; blocks: Block[]; fence?: [number, number][] }) => {
+    let diceIn = 0;
+    let blockIn = 0;
+    let wallIn = 0;
+    let jumps = 0;
+    for (let i = 0; i < n; i++) {
+      const { thrown, blocks, fence } = make(seeded(i * 7919 + 13));
+      const size = thrown.size;
+      const feet = thrown.paths.map((p) => footprint(p[p.length - 1], size));
+      const tight = size * 0.05;
+      if (feet.some((a, x) => feet.some((b, y) => y > x && overlap(a, b) > tight))) diceIn++;
+      const rect = (k: Block): [number, number][] => [
+        [k.x - k.hw, k.y - k.hd],
+        [k.x + k.hw, k.y - k.hd],
+        [k.x + k.hw, k.y + k.hd],
+        [k.x - k.hw, k.y + k.hd],
+      ];
+      if (feet.some((f) => blocks.some((k) => overlap(f, rect(k)) > tight))) blockIn++;
+      if (fence) {
+        const cx = fence.reduce((s, p) => s + p[0], 0) / fence.length;
+        const cy = fence.reduce((s, p) => s + p[1], 0) / fence.length;
+        const out = (p: [number, number]) =>
+          fence.some((a, e) => {
+            const b = fence[(e + 1) % fence.length];
+            let nx = a[1] - b[1];
+            let ny = b[0] - a[0];
+            const l = Math.hypot(nx, ny);
+            if ((cx - a[0]) * nx + (cy - a[1]) * ny < 0) [nx, ny] = [-nx, -ny];
+            return ((p[0] - a[0]) * nx + (p[1] - a[1]) * ny) / l < -tight;
+          });
+        if (feet.some((f) => f.some(out))) wallIn++;
+      }
+      // A frame's move far beyond its neighbours': set down somewhere else.
+      const jumped = thrown.paths.some((p) => {
+        const d = (k: number) => Math.hypot(p[k].x - p[k - 1].x, p[k].y - p[k - 1].y);
+        for (let k = 2; k < p.length - 2; k++) if (d(k) > 0.35 * size + 2 * Math.max(d(k - 1), d(k + 1))) return true;
+        return false;
+      });
+      if (jumped) jumps++;
+    }
+    return { diceIn, blockIn, wallIn, jumps };
+  };
+
+  it("on 擲骰's table, hardly ever lie in one another or through the wall", { timeout: 300_000 }, () => {
+    const fence = wallFence(W);
+    const N = 120;
+    const f = flaws(N, (random) => ({ blocks: [], fence, thrown: throwDice({ key: "k", width: W, land: { l: 0.32 * W, t: 0.32 * W, r: 0.68 * W, b: 0.68 * W }, size: SIZE, values: [1, 2, 3], fence, rim: RIM, random }) }));
+    expect(f.diceIn).toBeLessThanOrEqual(N * 0.02);
+    expect(f.wallIn).toBeLessThanOrEqual(N * 0.02);
+  });
+
+  it("on 座位's table, hardly ever jump clear of a plaque or come to rest in one", { timeout: 300_000 }, () => {
+    const table = { step: 1, revealed: ["z1", "z2", "z3", "z4", "t1", "t2"], edged: ["t1", "z1", "z2", "z3", "z4", "t2"], dealt: null };
+    const cards = [0, 1, 2, 3].map((p) => ({ name: "A", player: p, at: p, east: false, picked: false }));
+    const blocks = [...cardBlocks(W, cards as never), ...tileBlocks(seatsScene(W, table as never).pieces)];
+    const N = 120;
+    const f = flaws(N, (random) => ({ blocks, thrown: throwDice({ key: "k", width: W, land, keep, size: SIZE, values: [1, 2, 3], blocks, rim: RIM, random }) }));
+    expect(f.jumps).toBeLessThanOrEqual(N * 0.03);
+    expect(f.blockIn).toBeLessThanOrEqual(N * 0.02);
+    expect(f.diceIn).toBeLessThanOrEqual(N * 0.02);
   });
 
   it("are drawn to the felt's width now, wherever they were thrown", () => {

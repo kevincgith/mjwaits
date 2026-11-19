@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import { MAX_MESSAGE_BYTES, PROTOCOL_VERSION, RATE_BURST, ROOM_CODE_PATTERN } from "@mjwaits/shared/protocol/limits";
 import { isAllowedOrigin, randomRoomCode } from "../src/index";
 import { IDLE_TTL_MS, MAX_CONNECTIONS, UNUSED_TTL_MS, type Room } from "../src/room";
-import { HELLO_MS, MAX_PENDING, MAX_PEOPLE, QUIET_MS, UNPINGED_MS } from "../src/hub";
+import { HELLO_MS, MAX_PENDING, MAX_PEOPLE, MAX_PER_PERSON, QUIET_MS, UNPINGED_MS } from "../src/hub";
 import { BASE, connect, createRoom, join, ORIGIN, sharing } from "./helpers";
 
 describe("the Worker's routes", () => {
@@ -257,21 +257,39 @@ describe("limits", () => {
   it("full of joined connections, tells a newcomer so - and still lets the host back in, in a watcher's place", async () => {
     const code = await createRoom();
     const host = await join(code, "Kevin");
-    const amy = await join(code, "Amy");
-    // Amy's phone, over and over: the room's sixteen connections.
-    const amys = [amy.c];
-    for (let i = amys.length + 1; i < MAX_CONNECTIONS; i++) amys.push((await join(code, "", amy.welcome.token)).c);
+    // Five others, three phones each: with the host's, the room's sixteen connections.
+    const others: Awaited<ReturnType<typeof connect>>[] = [];
+    for (const name of ["Amy", "Ben", "Cat", "Dan", "Eve"]) {
+      const first = await join(code, name);
+      others.push(first.c);
+      for (let i = 1; i < MAX_PER_PERSON; i++) others.push((await join(code, "", first.welcome.token)).c);
+    }
+    expect(others.length + 1).toBe(MAX_CONNECTIONS);
     // Someone new: the room has no place for them, and doesn't keep their name.
-    const ben = await connect(code);
-    ben.send({ t: "hello", v: PROTOCOL_VERSION, name: "Ben" });
-    expect((await ben.error()).code).toBe("full");
-    await expect.poll(() => ben.closed, { timeout: 2000 }).toBe(true);
-    expect((await host.c.room()).people.map((p) => p.name)).not.toContain("Ben");
-    // The host's phone again (its first connection still open): let in, one of Amy's closed for it.
+    const fay = await connect(code);
+    fay.send({ t: "hello", v: PROTOCOL_VERSION, name: "Fay" });
+    expect((await fay.error()).code).toBe("full");
+    await expect.poll(() => fay.closed, { timeout: 2000 }).toBe(true);
+    const people = await runInDurableObject(env.ROOMS.getByName(code), (_room: Room, state) => state.storage.sql.exec<{ name: string }>("SELECT name FROM people").toArray().map((p) => p.name));
+    expect(people).not.toContain("Fay");
+    // The host's phone again (its first connection still open): let in, one of the others' closed for it.
     const back = await join(code, "", host.welcome.token);
     expect(back.welcome.host).toBe(true);
-    await expect.poll(() => amys.some((c) => c.closed), { timeout: 2000 }).toBe(true);
+    await expect.poll(() => others.filter((c) => c.closed).length, { timeout: 2000 }).toBe(1);
     expect(host.c.closed).toBe(false);
+  });
+
+  it("keeps one person to a few connections: another closes their oldest", async () => {
+    const code = await createRoom();
+    const host = await join(code, "Kevin");
+    const more = [host.c];
+    for (let i = 1; i < MAX_PER_PERSON; i++) more.push((await join(code, "", host.welcome.token)).c);
+    expect(more.some((c) => c.closed)).toBe(false);
+    const extra = await join(code, "", host.welcome.token);
+    await expect.poll(() => more[0].closed, { timeout: 2000 }).toBe(true);
+    expect(more.slice(1).some((c) => c.closed)).toBe(false);
+    expect(extra.c.closed).toBe(false);
+    expect(extra.welcome.host).toBe(true);
   });
 
   it("answers for a code that was never made without keeping anything for it", async () => {
