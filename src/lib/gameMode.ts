@@ -34,3 +34,32 @@ export function enterGameMode(): () => void {
     document.removeEventListener("contextmenu", menu);
   };
 }
+
+// The home-screen app's status bar is a plain strip in theme-color, so it's
+// kept the colour of the page's top edge under it and the page runs on into
+// it: the light page, Play's felt (start screen, online lobby) - set by App -
+// or, while a table is up over it, the table's dark room.
+export const STATUS_LIGHT = "#f2f2f7";
+export const STATUS_FELT = "#1a5639";
+export const STATUS_TABLE = "#15110c";
+let statusBase = STATUS_LIGHT;
+let statusHeld: string | null = null;
+
+function paintStatusBar() {
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", statusHeld ?? statusBase);
+}
+
+export function setStatusBar(colour: string) {
+  statusBase = colour;
+  paintStatusBar();
+}
+
+// For as long as a full-screen part is up (call its return to let go).
+export function holdStatusBar(colour: string): () => void {
+  statusHeld = colour;
+  paintStatusBar();
+  return () => {
+    statusHeld = null;
+    paintStatusBar();
+  };
+}
