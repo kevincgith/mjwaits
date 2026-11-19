@@ -120,6 +120,7 @@ import { MYSTERY_BOT, REACTIONS, type Reaction, type TableClientMessage, type Ta
 import type { VoiceView } from "./lib/tableVoice";
 import { TableChat, type OnlineChat } from "./TableChat";
 import { BLANK, seatState, takenFaces } from "./lib/seatState";
+import { holdStatusBar, STATUS_TABLE } from "./lib/gameMode";
 import { PLAY_SAVE_KEY } from "./lib/playSaved";
 import { replayCached, withEvents, type Lah, type ScoreEvent, type ScoreGame } from "@mjwaits/shared/engine/ledger";
 import { carriedOver, newPlayLedger, playEvents, uniqueNames } from "@mjwaits/shared/engine/playLedger";
@@ -1091,6 +1092,8 @@ export function PlayPanel({
   fresh?: boolean;
   quick?: boolean;
 }) {
+  // The status bar in the table's dark room while it's up.
+  useEffect(() => holdStatusBar(STATUS_TABLE), []);
   const saved = useMemo(loadSaved, []);
   // A save waiting its moment (see SAVE_DELAY_MS), and whether the last one failed.
   const pendingSave = useRef<(() => void) | null>(null);

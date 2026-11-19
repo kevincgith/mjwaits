@@ -180,7 +180,7 @@ import {
 } from "@mjwaits/shared/engine/scoring";
 import type { TestHand } from "@mjwaits/shared/engine/testHands";
 import { TEST_HAND_BASE_CONTEXT } from "./lib/testHandContext";
-import { enterGameMode } from "./lib/gameMode";
+import { enterGameMode, setStatusBar, STATUS_FELT, STATUS_LIGHT } from "./lib/gameMode";
 
 // A stable id per tile instance, so sorting for display never loses track
 // of which underlying tile is which (needed to revert Sort cleanly, and to
@@ -10305,6 +10305,9 @@ function App() {
     document.documentElement.classList.toggle("playing", playing);
     return playing ? enterGameMode() : undefined;
   }, [playing]);
+  // The status bar runs on from the page: Play's felt while it's up (the
+  // table, over it, holds its own - see PlayPanel), else the light page.
+  useEffect(() => setStatusBar(playing ? STATUS_FELT : STATUS_LIGHT), [playing]);
   // Lifted above TrainerPanel so stats survive switching back to the
   // Calculator tab and back - the trainers themselves unmount (and their other
   // state - the in-progress question, timer, etc. - resets) on every tab
