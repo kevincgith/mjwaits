@@ -79,6 +79,10 @@ export interface Riichi {
   state: Exclude<RiichiState, "none">;
   discard: number;
   ippatsu: boolean;
+  // How many tiles each pond held when it was declared (by seat; its own the
+  // tiles before its declaring one): every tile thrown since is past it - the
+  // new row a table starts at a 叮.
+  ponds?: number[];
   // Passed up a win (on a discard, or its own draw): no more wins this hand.
   passed?: boolean;
 }
@@ -794,7 +798,12 @@ export function applyTurnMove(state: GameState, move: TurnMove): GameState {
         // 天叮 / 地叮: on your own first discard, with no meld of your own (a
         // concealed kong included). Others' calls before it don't matter.
         const first = !hasPlayed(p) && p.melds.length === 0;
-        p.riichi = { state: first ? (seat === s.dealer ? "heavenly-riichi" : "earthly-riichi") : "riichi", discard: p.discards.length, ippatsu: true };
+        p.riichi = {
+          state: first ? (seat === s.dealer ? "heavenly-riichi" : "earthly-riichi") : "riichi",
+          discard: p.discards.length,
+          ippatsu: true,
+          ponds: s.players.map((o) => o.discards.length),
+        };
       }
       // Throwing when it could have won on its own draw is passing up that win.
       if (canWin(p)) passUp(p);

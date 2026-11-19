@@ -40,7 +40,8 @@ export function seatState(view: TableView): SeatState {
     ),
     flowers: p.flowers,
     discards: p.discards,
-    ...(p.riichi ? { riichi: p.riichi } : {}),
+    // (Its ponds by table seat, turned as the seats are.)
+    ...(p.riichi ? { riichi: p.riichi.ponds ? { ...p.riichi, ponds: turn(p.riichi.ponds) } : p.riichi } : {}),
     ...(p.overWater ? { overWater: true } : {}),
     ...(p.passedPung ? { passedPung: p.passedPung } : {}),
     ...(p.threw ? { threw: p.threw } : {}),

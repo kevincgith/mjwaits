@@ -45,10 +45,19 @@ export interface GLWall {
   topple: { at: number; step: number; dur: number };
 }
 
+// A 叮's coin: its declarer's seat wind.
+export type DingWind = "東" | "南" | "西" | "北";
+export const DING_WINDS: DingWind[] = ["東", "南", "西", "北"];
+
 export interface GLPond {
   tiles: Tile[];
   riichiAt?: number;
   pinLast: boolean;
+  // Where the others' 叮s fell in this pond - before tile `at` - by their
+  // declarers' winds, and how they're shown: a gold line and coin on that
+  // seam, or the tiles since on a new row.
+  dings?: { at: number; wind: DingWind }[];
+  dingMark?: "coin" | "row";
 }
 
 // One of your concealed tiles - null when it's face down (watching, not seated).

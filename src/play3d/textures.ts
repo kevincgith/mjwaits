@@ -314,3 +314,44 @@ export function peekTray(): HTMLCanvasElement {
     ctx.stroke();
   });
 }
+
+// 叮 marks in a pond (Play's 叮 marks: coin): a gold line along the seam
+// the 叮 fell at, its dark edges so it reads on ivory and felt alike...
+export function dingLine(): HTMLCanvasElement {
+  return paintCanvas(16, 128, (ctx) => {
+    roundRect(ctx, 2, 1, 12, 126, 5);
+    ctx.fillStyle = "rgba(40, 28, 0, 0.6)";
+    ctx.fill();
+    roundRect(ctx, 5, 3, 6, 122, 3);
+    ctx.fillStyle = "#ffd166";
+    ctx.fill();
+  });
+}
+
+// ...and the coin at its foot, in the table's dark lacquer with a gold rim,
+// carrying the wind of whoever declared it.
+export function dingCoin(wind: string): HTMLCanvasElement {
+  return paintCanvas(128, 128, (ctx) => {
+    ctx.beginPath();
+    ctx.arc(64, 64, 60, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(20, 13, 6, 0.55)";
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(64, 64, 55, 0, Math.PI * 2);
+    ctx.fillStyle = "#ffd166";
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(64, 64, 47, 0, Math.PI * 2);
+    const g = ctx.createRadialGradient(56, 48, 4, 64, 64, 47);
+    g.addColorStop(0, "#4a3522");
+    g.addColorStop(0.6, "#2a1d12");
+    g.addColorStop(1, "#1a120b");
+    ctx.fillStyle = g;
+    ctx.fill();
+    ctx.fillStyle = "#ffd166";
+    ctx.font = '600 62px "PingFang HK", "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif';
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(wind, 64, 68);
+  });
+}

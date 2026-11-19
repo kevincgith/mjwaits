@@ -142,7 +142,7 @@ export function viewFor(s: GameState, you: number, shown: (seat: number) => bool
       flowers: p.flowers.map((f) => ({ ...f })),
       discards: copyTiles(p.discards),
       // A passed-up win says the hand was ready: only to whoever sees the hand.
-      ...(p.riichi ? { riichi: open ? { ...p.riichi } : { state: p.riichi.state, discard: p.riichi.discard, ippatsu: p.riichi.ippatsu } } : {}),
+      ...(p.riichi ? { riichi: open ? { ...p.riichi } : { state: p.riichi.state, discard: p.riichi.discard, ippatsu: p.riichi.ippatsu, ...(p.riichi.ponds ? { ponds: p.riichi.ponds } : {}) } } : {}),
       ...(open && p.overWater ? { overWater: true } : {}),
       ...(p.played ? { played: true as const } : {}),
       ...(seat === you && p.passedPung ? { passedPung: { ...p.passedPung } } : {}),
