@@ -26,6 +26,8 @@ export const MAX_CONNECTIONS = 16;
 // back in (its host, a table's seated player) takes the place of someone
 // who's only watching if the room is full (see hello).
 export const MAX_PENDING = 4;
+// ...and no more than this many joined connections for any one person.
+export const MAX_PER_PERSON = 3;
 // Nicknames a room will remember - connected or not. A new one with the room
 // full takes the place of the longest-gone who's let go (see forgettable).
 export const MAX_PEOPLE = 12;
@@ -255,6 +257,12 @@ export abstract class Hub<Msg extends { t: string; rid?: string }> extends Durab
     return true;
   }
 
+  // Something's changed about who could host (a watcher's taken a seat):
+  // with the host gone long enough, it passes now. True if it moved.
+  protected reconsiderHost(): boolean {
+    return this.passHost(Date.now());
+  }
+
   // ---- Making the room ---------------------------------------------------------
 
   // Called by the Worker with a fresh random code: true if this room is new
@@ -409,10 +417,16 @@ export abstract class Hub<Msg extends { t: string; rid?: string }> extends Durab
     // other message can slip in between checking a name and taking it.
     const token = msg.token ?? randomHex(16);
     const tokenHash = await sha256(token);
+    // This connection may have been pushed out while that waited (too many
+    // unjoined ones at once): nobody's added for a socket that's gone.
+    if (ws.readyState !== WebSocket.OPEN) return;
     // Another hello on this socket may have finished while this one waited.
     if ((ws.deserializeAttachment() as Conn).person) throw new Refusal("badMessage", "already joined");
+    const full = () => {
+      this.refuse(ws, "full", "this room has as many connections as it can take", msg.rid);
+      ws.close(CLOSE_POLICY, "room is full");
+    };
     let id: string;
-    let fresh = false; // someone new, just added (taken out again if the room turns out full)
     if (msg.token) {
       const row = this.sql.exec<{ id: string }>("SELECT id FROM people WHERE token_hash = ?", tokenHash).toArray()[0];
       if (!row) throw new Refusal("badToken", "this room doesn't know you - join again");
@@ -422,28 +436,32 @@ export abstract class Hub<Msg extends { t: string; rid?: string }> extends Durab
       if (!name) throw new Refusal("badMessage", "pick a nickname");
       if (this.sql.exec("SELECT 1 FROM people WHERE name_key = ?", nameKey(name)).toArray().length)
         throw new Refusal("nameTaken", `someone here is already called ${name}`);
+      // Someone new, with every connection taken: told so - before anyone
+      // who's away is let go of to make them a place they can't have.
+      if (this.conns(ws).filter(([, c]) => c.person).length >= MAX_CONNECTIONS) return full();
       if (this.people().length >= MAX_PEOPLE && !this.forgetOne()) throw new Refusal("full", "this room has as many people as it can take");
       id = randomHex(8);
-      fresh = true;
       this.sql.exec("INSERT INTO people (id, token_hash, name, name_key, joined_at) VALUES (?, ?, ?, ?, ?)", id, tokenHash, name, nameKey(name), Date.now());
       if (this.meta("host") === null) this.setMeta("host", id);
     }
+    // One person, a few connections at most (a phone, and a reconnect that
+    // overlaps the one it replaces): another closes their oldest. So no one
+    // person's connections can fill the room - not even a seated one's,
+    // which nothing else would make way.
+    const mine = this.conns(ws)
+      .filter(([, c]) => c.person === id)
+      .sort(([, a], [, b]) => (a.opened ?? a.at) - (b.opened ?? b.at));
+    for (let i = 0; mine.length - i >= MAX_PER_PERSON; i++) await this.webSocketClose(mine[i][0], CLOSE_POLICY, "another connection");
     // The room full of joined connections: someone it must let back in (its
-    // host, a table's seated player) takes the place of a connection of
-    // someone it needn't keep - a watcher's, the one with the most open
-    // first. Anyone else is told it's full.
+    // host - or whoever the host passed from - or a table's seated player)
+    // takes the place of a connection of someone it needn't keep - a
+    // watcher's, the one with the most open first. Anyone else is told it's full.
     const joined = this.conns(ws).filter(([, c]) => c.person);
     if (joined.length >= MAX_CONNECTIONS) {
-      const kept = (p: string) => this.isHost(p) || !this.forgettable(p);
       const count = new Map<string, number>();
       for (const [, c] of joined) count.set(c.person!, (count.get(c.person!) ?? 0) + 1);
-      const spare = kept(id) ? joined.filter(([, c]) => !kept(c.person!)).sort(([, a], [, b]) => count.get(b.person!)! - count.get(a.person!)!)[0] : undefined;
-      if (!spare) {
-        if (fresh && !this.isHost(id)) this.sql.exec("DELETE FROM people WHERE id = ?", id);
-        this.refuse(ws, "full", "this room has as many connections as it can take", msg.rid);
-        ws.close(CLOSE_POLICY, "room is full");
-        return;
-      }
+      const spare = this.kept(id) ? joined.filter(([, c]) => !this.kept(c.person!)).sort(([, a], [, b]) => count.get(b.person!)! - count.get(a.person!)!)[0] : undefined;
+      if (!spare) return full();
       await this.webSocketClose(spare[0], CLOSE_POLICY, "room is full");
     }
     const first = !this.conns(ws).some(([, c]) => c.person === id);
@@ -468,9 +486,16 @@ export abstract class Hub<Msg extends { t: string; rid?: string }> extends Durab
   // The room full: let go of the first-joined person who isn't here, isn't
   // host and may be forgotten - their token stops working, so if they come
   // back they join afresh (their name free again). False if there's no one.
+  // Someone the room keeps a place for whatever else: its host, whoever the
+  // host passed from (it's theirs again when they're back), and anyone a
+  // room type won't forget (a table's seated players).
+  private kept(personId: string): boolean {
+    return this.isHost(personId) || this.meta<string>("hostFrom") === personId || !this.forgettable(personId);
+  }
+
   private forgetOne(): boolean {
     const online = this.online();
-    const gone = this.people().find((p) => !online.has(p.id) && !this.isHost(p.id) && this.forgettable(p.id));
+    const gone = this.people().find((p) => !online.has(p.id) && !this.kept(p.id));
     if (!gone) return false;
     this.sql.exec("DELETE FROM people WHERE id = ?", gone.id);
     return true;
@@ -519,8 +544,12 @@ export abstract class Hub<Msg extends { t: string; rid?: string }> extends Durab
     if (this.passHost(now)) this.changed();
     const next = await this.onAlarm(now);
     if (this.conns().length > 0 || next !== null) {
+      // The host gone: woken when they've been gone long enough to pass it
+      // on. Past that with nobody here it can pass to (only people watching),
+      // there's nothing to wake for - it's looked at again when someone
+      // arrives or takes a seat (hello, reconsiderHost), not every second.
       const gone = this.handsOnHost ? this.meta<number>("hostGone") : null;
-      const handOn = gone ? Math.max(now + 1000, gone + HOST_GONE_MS) : Infinity;
+      const handOn = gone && gone + HOST_GONE_MS > now ? gone + HOST_GONE_MS : Infinity;
       await this.ctx.storage.setAlarm(Math.min(next ?? Infinity, open ? now + SWEEP_MS : Infinity, handOn, now + IDLE_TTL_MS));
       return;
     }

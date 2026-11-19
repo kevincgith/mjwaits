@@ -132,7 +132,7 @@ export function RulesReference({ name, rules, onClose }: { name: string; rules: 
       <TileArtRemapContext.Provider value={pngs}>
       <div className="rr-overlay" role="dialog" aria-modal="true" aria-label="Rules reference">
         <div className="rr-toolbar">
-          <button type="button" className="sc-secondary" onClick={onClose}>
+          <button type="button" className="sc-secondary" onClick={onClose} data-back-close="over">
             Close
           </button>
           <span className="rr-toolbar-hint">A4 · choose "Save as PDF" in the print dialog</span>

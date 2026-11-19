@@ -23,9 +23,15 @@ export interface Env {
   TABLES: DurableObjectNamespace<Table>;
   ALLOWED_ORIGINS: string;
   TABLE_PAUSE_MS?: string; // how long a bot's move waits (tests: 0)
-  // Per address (wrangler.jsonc's ratelimits): rooms made, codes asked after.
+  // Per address (wrangler.jsonc's ratelimits): rooms made, codes asked
+  // after - and, each on its own count, a table's record fetched and a
+  // connection opened. (An address is a whole household's Wi-Fi: four phones
+  // at one table each fetch the record and reconnect, and mustn't run the
+  // lookups' count out between them.)
   CREATE_LIMIT?: RateLimit;
   LOOKUP_LIMIT?: RateLimit;
+  SCORES_LIMIT?: RateLimit;
+  CONNECT_LIMIT?: RateLimit;
 }
 
 // Whether this address is within `limiter`'s rate. (Cloudflare gives every
@@ -127,7 +133,7 @@ export default {
     if (scores) {
       if (!isAllowedOrigin(origin, env.ALLOWED_ORIGINS)) return json({ error: "origin not allowed" }, 403);
       if (request.method !== "GET") return json({ error: "method not allowed" }, 405, { Allow: "GET", ...cors(origin!) });
-      if (!(await within(env.LOOKUP_LIMIT, request))) return json({ error: "too many tries - wait a minute" }, 429, { "Retry-After": "60", ...cors(origin!) });
+      if (!(await within(env.SCORES_LIMIT, request))) return json({ error: "too many tries - wait a minute" }, 429, { "Retry-After": "60", ...cors(origin!) });
       const code = normalizeRoomCode(scores[1]);
       const game = code ? await env.TABLES.getByName(code).scores() : null;
       return game ? json(game, 200, cors(origin!)) : json({ error: "no record yet" }, 404, cors(origin!));
@@ -138,7 +144,7 @@ export default {
       if (!isAllowedOrigin(origin, env.ALLOWED_ORIGINS)) return new Response("origin not allowed", { status: 403 });
       if (request.method !== "GET" || request.headers.get("Upgrade")?.toLowerCase() !== "websocket")
         return new Response("expected a WebSocket upgrade", { status: 426, headers: { Upgrade: "websocket" } });
-      if (!(await within(env.LOOKUP_LIMIT, request))) return new Response("too many tries - wait a minute", { status: 429, headers: { "Retry-After": "60" } });
+      if (!(await within(env.CONNECT_LIMIT, request))) return new Response("too many tries - wait a minute", { status: 429, headers: { "Retry-After": "60" } });
       const code = normalizeRoomCode(ws[2]);
       if (!code) return new Response("no such room", { status: 404 });
       return stubFor(env, ws[1], code).fetch(request);

@@ -28,6 +28,9 @@ const WALL_LAND: Box = { l: 0.32, t: 0.32, r: 0.68, b: 0.68 };
 const SEAT_LAND: Box = { l: 0.18, t: 0.46, r: 0.82, b: 0.76 };
 const SEAT_KEEP: Box = { l: 0, t: 0.42, r: 1, b: 1 };
 const RIM = 0.012;
+// A throw asked for this long before there's a table to draw it on isn't
+// thrown late (ms).
+const LATE_MS = 700;
 
 // Told, as a throw's made, how long till its dice lie still (ms) - so the
 // roll above the table ends as they do.
@@ -44,15 +47,24 @@ interface Aim {
 }
 function useDice(dice: DiceOnTable | null, { land, keep, fence, blocks }: Aim, onThrown?: OnThrown) {
   const made = useRef<Thrown | null>(null);
+  // When these dice were first asked for: the table's drawn a moment after -
+  // or, the first time, only once its engine's been fetched.
+  const asked = useRef<{ key: string; at: number } | null>(null);
+  if (dice && asked.current?.key !== dice.key) asked.current = { key: dice.key, at: performance.now() };
   return (w: number): FeltScene => {
     if (!dice) return { pieces: [], quads: [] };
     if (made.current?.key !== dice.key) {
       const px = (b: Box) => ({ l: b.l * w, t: b.t * w, r: b.r * w, b: b.b * w });
       const box = px(land);
-      const still = !dice.thrown || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      // Just laid there, not thrown: set by hand; motion not wanted; or the
+      // table's only now there to throw them on, the roll long under way
+      // (thrown then, they'd fly in after the result was out).
+      const late = performance.now() - (asked.current?.at ?? 0) > LATE_MS;
+      const still = !dice.thrown || late || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
       const o = { key: dice.key, width: w, land: box, size: DIE_SIZE * w, values: dice.values };
       made.current = still ? laidDice(o) : throwDice({ ...o, keep: keep && px(keep), fence: fence?.(w), blocks: blocks?.(w), rim: RIM * w });
-      if (!still) onThrown?.(dice.key, (Math.max(...made.current.paths.map((p) => p.length - 1)) / THROW_FPS) * 1000);
+      // (A throw that's laid still is over at once: the roll above ends with it.)
+      if (dice.thrown) onThrown?.(dice.key, still ? 0 : (Math.max(...made.current.paths.map((p) => p.length - 1)) / THROW_FPS) * 1000);
     }
     const { dice: cubes, quads } = diceScene(made.current, w);
     return { pieces: [], quads, dice: cubes };

@@ -270,6 +270,40 @@ describe("periods", () => {
   });
 });
 
+describe("a Play game's 獎池", () => {
+  // As the Play tab records it: a draw, then everyone's 5 into the pot as an
+  // entry of its own at the same moment; a 自摸 takes the pot.
+  const payIn = (at: number): ScoreEvent => ({ t: "jackpotIn", at, shares: ["A", "B", "C", "D"].map((player) => ({ player, amount: 5 })) });
+  const played = game([
+    { t: "draw", at: 1 },
+    payIn(1),
+    { t: "draw", at: 2 },
+    payIn(2),
+    { t: "win", at: 3, winners: [{ seat: 0, tai: 3 }], from: null, source: "scoring", jackpotTo: "A" },
+  ]);
+
+  it("counts a draw's pay-in with that hand", () => {
+    const state = replay(played);
+    expect(state.hands.map((h) => [h.kind, h.deltas.B ?? 0, h.jackpotFed])).toEqual([
+      ["draw", -5, 20],
+      ["draw", -5, 20],
+      ["win", -3, 0],
+    ]);
+    expect(state.hands[1].totalsAfter).toEqual({ A: -10, B: -10, C: -10, D: -10 });
+    // Hand by hand it adds up to the totals.
+    for (const p of ["A", "B", "C", "D"]) expect(state.hands.reduce((s, h) => s + (h.deltas[p] ?? 0), 0)).toBe(state.totals[p]);
+    const b = playerStats(state, played).find((s) => s.player === "B")!;
+    expect(b.net).toBe(-13);
+    expect(b.worstHand).toMatchObject({ value: -5, hand: 1 });
+  });
+
+  it("leaves a pay-in made by hand at another time as an entry of its own", () => {
+    const state = replay(game([{ t: "draw", at: 1 }, payIn(9)]));
+    expect(state.hands[0]).toMatchObject({ jackpotFed: 0, deltas: {} });
+    expect(state.totals).toEqual({ A: -5, B: -5, C: -5, D: -5 });
+  });
+});
+
 describe("handsByPlayer", () => {
   it("lists each player's wins biggest first, players by their biggest hand", () => {
     const list = handsByPlayer(replay(game(EVENTS)));

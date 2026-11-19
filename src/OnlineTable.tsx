@@ -10,6 +10,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { seatWind } from "@mjwaits/shared/engine/game";
 import { MYSTERY_NAME, profileById } from "@mjwaits/shared/engine/bots";
 import { cleanNickname, normalizeRoomCode, ROOM_CODE_LENGTH } from "@mjwaits/shared/protocol/limits";
+import { rewriteAddress } from "./lib/backButton";
 import { BOT_SPEEDS, JACKPOTS, MYSTERY_BOT, TABLE_BOTS, type BotSpeed, type ChatMessage, TURN_TIMERS, type TableBot, type TableClientMessage, type TableSettings, type TableState } from "@mjwaits/shared/protocol/table";
 import { DEFAULT_SWAP_RULES } from "@mjwaits/shared/engine/swap";
 import { SWAP_PRESETS } from "./PlaySwap";
@@ -57,7 +58,7 @@ const WIND_TILES: Tile[] = [1, 2, 3, 4].map((rank) => ({ suit: "z", rank }));
 
 function BackButton({ onClick, label }: { onClick: () => void; label: string }) {
   return (
-    <button type="button" className="play-icon-button ot-back" onClick={onClick} aria-label={label}>
+    <button type="button" className="play-icon-button ot-back" onClick={onClick} aria-label={label} data-back-close="">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
         <path d="M15 5l-7 7 7 7" />
       </svg>
@@ -127,12 +128,17 @@ export function OnlineTable({ initialCode, onExit }: { initialCode: string | nul
   useEffect(() => {
     if (!code || !started) return;
     let live = true;
-    tableScores(code)
-      .then((g) => live && setScores(g))
-      // (Kept quiet - 戰況 just waits for the next try.)
-      .catch((e) => console.warn("Couldn't fetch the table's record", e));
+    // Once the entries have stopped coming for a moment - a hand's flowers
+    // and kongs arrive in a burst: one fetch for them, not one each.
+    const wait = window.setTimeout(() => {
+      tableScores(code)
+        .then((g) => live && setScores(g))
+        // (Kept quiet - 戰況 just waits for the next try.)
+        .catch((e) => console.warn("Couldn't fetch the table's record", e));
+    }, 700);
     return () => {
       live = false;
+      window.clearTimeout(wait);
     };
   }, [code, scoreCount, started]);
 
@@ -146,13 +152,13 @@ export function OnlineTable({ initialCode, onExit }: { initialCode: string | nul
     const url = new URL(window.location.href);
     if (code) url.searchParams.set("table", code);
     else url.searchParams.delete("table");
-    window.history.replaceState(null, "", url.pathname + url.search + url.hash);
+    rewriteAddress(url.pathname + url.search + url.hash);
   }, [code]);
   useEffect(
     () => () => {
       const url = new URL(window.location.href);
       url.searchParams.delete("table");
-      window.history.replaceState(null, "", url.pathname + url.search + url.hash);
+      rewriteAddress(url.pathname + url.search + url.hash);
     },
     []
   );

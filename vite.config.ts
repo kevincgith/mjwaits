@@ -74,7 +74,13 @@ function offlineManifest(): Plugin {
       const engine = (f: string) => /\/ort[-.]/.test(f)
       const gpu = (f: string) => /webgpu|asyncify|jsep/.test(f)
       const manifest = {
-        core: assets.filter(([f]) => !engine(f)),
+        // (With the learned opponents' model - small; the engine it runs on
+        // is the scanner's plain one, in that list.)
+        core: [
+          ...assets.filter(([f]) => !engine(f)),
+          ...model('mj-policy.onnx'),
+          ...(existsSync(join(outDir, 'model', 'mj-policy.json')) ? [['model/mj-policy.json', statSync(join(outDir, 'model', 'mj-policy.json')).size] as [string, number]] : []),
+        ],
         scanner: {
           wasm: [...assets.filter(([f]) => engine(f) && !gpu(f)), ...model('tile-detector.onnx')],
           webgpu: [...assets.filter(([f]) => engine(f) && gpu(f)), ...model('tile-detector-fp32.onnx')],

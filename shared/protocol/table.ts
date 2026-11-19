@@ -126,6 +126,8 @@ const TableClientSchema = tagged({
   // `here`: still watching - a table nobody's playing at themself asks every
   // few hands (TableState.asking), and deals on once anyone answers.
   here: object({ t: literal("here"), rid }),
+  // The time chip: ten seconds more on your clock - once a hand, as it runs out.
+  extend: object({ t: literal("extend"), step, rid }),
   ready: object({ t: literal("ready"), rid }),
   surrender: object({ t: literal("surrender"), holder: seat, rid }),
   // A hand over, losing hands hidden: show yours to the table.
@@ -252,6 +254,10 @@ export interface TableState {
   step: number;
   deadline: number | null;
   waitingOn: number[];
+  // The time chip: the seats that have used theirs this hand (yours always;
+  // another's only once it wouldn't say they can call the discard up now).
+  // Absent from a server not yet sending it.
+  chips?: number[];
   ready: number[];
   auto: number[]; // seats being played for, until their player is back
   shown: number[]; // the hand over, losing hands hidden: who has shown theirs

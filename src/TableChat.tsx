@@ -30,6 +30,7 @@ export function TableChat({ chat, onOpen }: { chat: OnlineChat; onOpen?: () => v
         className={`play-icon-button play-chat-button${chat.open ? " is-on" : ""}`}
         aria-label={chat.unread ? `Chat, ${chat.unread} new` : "Chat"}
         aria-expanded={chat.open}
+        data-back-close={chat.open ? "" : undefined}
         onClick={() => {
           if (!chat.open) onOpen?.();
           chat.setOpen(!chat.open);

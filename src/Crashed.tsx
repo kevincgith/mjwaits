@@ -9,6 +9,8 @@ interface Props {
   whole?: boolean;
   // What's showing: a different one (another tab) is tried afresh.
   resetKey?: string;
+  // As it fails: for whatever would only make it fail again to be let go of.
+  onCrash?: () => void;
   children: ReactNode;
 }
 
@@ -19,6 +21,7 @@ export class Crashed extends Component<Props, { error: unknown }> {
   }
   componentDidCatch(error: unknown, info: ErrorInfo) {
     console.error("MJWaits couldn't draw this", error, info.componentStack);
+    this.props.onCrash?.();
   }
   componentDidUpdate(prev: Props) {
     if (this.state.error !== null && prev.resetKey !== this.props.resetKey) this.setState({ error: null });

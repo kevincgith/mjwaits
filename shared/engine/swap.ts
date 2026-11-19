@@ -48,7 +48,18 @@ export const quickSwap = (rules: Pick<SwapRules, "quick"> | undefined) => rules?
 // (Quick swap: a take's tiles greyed where they lie - quickTake - not flown.)
 // And a person's give ending the round's give: its tiles still flying down
 // to their pile (given) - the first take waits for them to land.
-export const SWAP_PACE_MS = { deal: 3100, dice: 6100, given: 700, take: 1300, quickTake: 450, settle: 3400 };
+//
+// A round's end as a phone shows it - the last take's tiles flying, a beat,
+// the round's rows held, then every tile joining its hand - is timed by
+// these (the Play table reads them from here), and `settle` is their sum
+// with a margin: lengthen one, and the table waits that much longer. (They
+// were the phone's own, and grew past the table's wait: at fast bots the
+// dealer's first tile could land with the rows still sliding in.)
+export const SWAP_FLIGHT_MS = 750;
+export const SWAP_ROUND_HOLD_MS = 1400;
+export const SWAP_JOIN_MS = 600 + 3 * 200;
+export const SWAP_ROUND_END_MS = SWAP_FLIGHT_MS + 200 + SWAP_ROUND_HOLD_MS + SWAP_JOIN_MS + 150;
+export const SWAP_PACE_MS = { deal: 3100, dice: 6100, given: 700, take: 1300, quickTake: 450, settle: SWAP_ROUND_END_MS + 400 };
 
 // Each give and take has this long (seconds) - whatever the turn timer is,
 // off included. Out of time, it's done for you as a bot would.

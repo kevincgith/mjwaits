@@ -38,6 +38,8 @@ export function loadLearnedModel(): Promise<LearnedModel | null> {
       };
       return { run, styles: meta.styles, label: meta.label ?? "learned" };
     } catch {
+      // (No signal, say: asked again next time, not given up on till a reload.)
+      loading = null;
       return null;
     }
   })();

@@ -90,8 +90,11 @@ export interface Player {
   discards: Tile[];
   riichi?: Riichi;
   // 過水: passed up a win (not 叮) - no win, off a discard or drawn, till
-  // it throws a tile that doesn't complete its hand, or kongs (暗槓/加槓)
-  // with a hand that isn't complete.
+  // it throws a tile that doesn't complete its hand - or kongs one that
+  // doesn't: a kong's tile counts as a tile thrown, its own (暗槓/加槓) or
+  // one claimed (明槓). So a kong made with a win there to call - off a
+  // complete hand, or off a discard that would have won - is that win
+  // passed up, and the replacement can't win.
   overWater?: boolean;
   // Passed up a pung (or kong) of this tile: no calling it again till the
   // next draw or call - the same tile thrown by someone else meanwhile is barred.
@@ -825,9 +828,11 @@ export function applyTurnMove(state: GameState, move: TurnMove): GameState {
       if (liveTilesLeft(state) === 0) throw new Error("No kong once the wall is empty - nothing left to replace it");
       if (justClaimed(phase) && !(move.kind === "addedKong" && claimedPungTile(p) && sameTile(claimedPungTile(p)!, move.tile)))
         throw new Error("No kong straight after claiming a run or a pung - but the fourth of the pung just claimed");
-      // 過水 lifts with a kong, as with a throw, when the hand isn't already
-      // complete; konging off a complete hand keeps it.
-      if (p.overWater && !isWinningHand(p)) delete p.overWater;
+      // A kong's tile is as a tile thrown. Off a hand that's complete - a
+      // 自摸 there to call - the kong passes that win up: 過水, and no win on
+      // the replacement. Off any other hand, 過水 lifts, as with a throw.
+      if (isWinningHand(p)) passUp(p);
+      else delete p.overWater;
       if (move.kind === "concealedKong") {
         p.hand = removeTiles(p.hand, [move.tile, move.tile, move.tile, move.tile]);
         p.melds.push({ kind: "kong", tiles: [move.tile, move.tile, move.tile, move.tile], concealed: true, from: null });
@@ -979,6 +984,16 @@ export function remakeClaim(before: GameState, decisions: (Claim | null)[], seat
 // their mind, once they've seen who's taking the tile.
 export const SECOND_CHANCE_S = 5;
 
+// The time chip (as at a poker table): once a hand, a player whose clock is
+// nearly out - under TIME_CHIP_FROM_MS left - may add TIME_CHIP_MS to it.
+// On a turn, an answer to a discard, a 換牌 give or take; only with a timer
+// running.
+export const TIME_CHIP_MS = 10_000;
+export const TIME_CHIP_FROM_MS = 5_000;
+// After a 嗌錯, the least time there is to choose again (ms): the clock
+// otherwise runs on from where the taken-back call left it.
+export const RECHOOSE_MIN_MS = 3000;
+
 export interface SecondChance {
   // The call that's taking the tile, and who made it.
   call: Claim["kind"];
@@ -1095,7 +1110,11 @@ export function resolveClaims(state: GameState, decisions: (Claim | null)[]): Ga
     s.phase = { kind: "turn", seat: best, drawn: null, replacement: null, forbidden: [tile] };
     return s;
   }
-  // Exposed kong: replacement draw.
+  // Exposed kong: replacement draw. The kong's tile is as a tile thrown, here
+  // too: one they could have won on, kept for a kong, is a win passed up
+  // (passUp above; under 過水 already, it stays) - any other lifts 過水, and
+  // the replacement may win.
+  if (p.overWater && !isWinningHand(state.players[best], tile)) delete p.overWater;
   p.hand = removeTiles(p.hand, [tile, tile, tile]);
   p.melds.push({ kind: "kong", tiles: [tile, tile, tile, tile], concealed: false, from });
   const { tile: drawn, flowered, flowers } = drawInto(s, best, true);

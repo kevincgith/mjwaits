@@ -262,12 +262,17 @@ describe("the lobby", () => {
     await runInDurableObject(stubFor(code), (t: Table) => {
       expect((t as unknown as { passHost(now: number): boolean }).passHost(Date.now() + HOST_GONE_MS + 1000)).toBe(false);
     });
-    // Dan takes a seat: now the table may pass to him.
+    // The host long gone and nobody it can pass to: the table doesn't keep
+    // waking to look again (it did, every second, for as long as Dan watched).
+    await runInDurableObject(stubFor(code), (t: Table) => (t as unknown as { setMeta(k: string, v: unknown): void }).setMeta("hostGone", Date.now() - HOST_GONE_MS - 5000));
+    for (let i = 0; i < 2; i++) {
+      await runDurableObjectAlarm(stubFor(code));
+      const next = await runInDurableObject(stubFor(code), (_t: Table, st) => st.storage.getAlarm());
+      expect(next === null || next > Date.now() + 10_000).toBe(true);
+    }
+    // Dan takes a seat: the table's his there and then.
     dan.send({ t: "sit", seat: 2 });
-    await dan.table((s) => s.seats[2]?.kind === "human");
-    await runInDurableObject(stubFor(code), (t: Table) => {
-      expect((t as unknown as { passHost(now: number): boolean }).passHost(Date.now() + HOST_GONE_MS + 1000)).toBe(true);
-    });
+    expect((await dan.table((s) => s.seats[2]?.kind === "human")).host).toBe(danIn.id);
     dan.send({ t: "setBot", seat: 3, bot: "wall" });
     expect((await dan.table((s) => s.seats[3]?.kind === "bot")).host).toBe(danIn.id);
   });
@@ -566,6 +571,10 @@ describe("observers", () => {
     const again = await host.table((s) => !!s.asking, 80_000);
     expect(again.hand).toBe(2 * WATCH_HANDS);
     expect(host.errors).toEqual([]);
+    // Ended while it's asking: the question goes with the table.
+    host.send({ t: "end" });
+    const ended = await host.table((s) => s.phase === "ended");
+    expect(ended.asking).toBeFalsy();
   });
 });
 
@@ -576,6 +585,30 @@ describe("timers", () => {
     runInDurableObject(stubFor(code), (_t: Table, st) => {
       st.storage.sql.exec("UPDATE meta SET value = json_set(value, ?, json(?)) WHERE key = 'state'", path, JSON.stringify(value));
     });
+
+  it("gives ten seconds more for a time chip - once a hand, and only as the clock runs out", async () => {
+    const { code, host } = await withBots(0, { timer: 20 });
+    await runInDurableObject(stubFor(code), (t: Table) => {
+      (t as unknown as { pause: number }).pause = 700;
+    });
+    host.send({ t: "start" });
+    const s = await host.table((s) => !!s.options?.turn);
+    expect(s.chips).toEqual([]);
+    // Time enough yet: no chip.
+    host.send({ t: "extend", step: s.step });
+    expect((await host.error()).code).toBe("illegal");
+    // Three seconds left: ten more.
+    const left = Date.now() + 3000;
+    await patch(code, "$.deadline", left);
+    host.send({ t: "extend", step: s.step });
+    const more = await host.table((n) => (n.chips ?? []).includes(0));
+    expect(more.deadline).toBe(left + 10_000);
+    expect(more.step).toBe(s.step);
+    // Used: not again this hand, however little time's left.
+    await patch(code, "$.deadline", Date.now() + 2000);
+    host.send({ t: "extend", step: s.step });
+    expect((await host.error()).code).toBe("illegal");
+  });
 
   it("plays the drawn tile when the turn timer runs out", async () => {
     const { code, host } = await withBots(0, { timer: 10 });
@@ -1483,7 +1516,26 @@ describe("a second chance", () => {
     const punged = await host.table((s) => s.view?.phase.kind === "turn" && s.step > again.step);
     expect(punged.view!.players[1].melds.at(-1)).toMatchObject({ kind: "triplet" });
     expect(punged.view!.tableBonuses.find((b) => b.name === "嗌錯")).toBeUndefined();
-    expect(host.errors.concat(other.errors)).toEqual([]);
+    // One take-back to a discard: what's chosen after it stands.
+    expect(punged.options?.turn?.retract).toBeFalsy();
+    host.send({ t: "retract", step: punged.step });
+    expect((await host.error()).code).toBe("illegal");
+    expect(other.errors).toEqual([]);
+  });
+
+  it("gives no fresh clock to choose again after a 嗌錯: what was left of it", async () => {
+    const { code, host, step } = await claimWindow(["4556m1379t1357b1z", NONE], { timer: 20 });
+    host.send({ t: "claim", step, claim: { kind: "chow", tiles: [{ suit: "m", rank: 4 }, { suit: "m", rank: 6 }] } });
+    const called = await host.table((s) => !!s.options?.turn?.retract);
+    // Eight seconds left of their turn when they take it back.
+    const left = Date.now() + 8000;
+    await runInDurableObject(stubFor(code), (_t: Table, st) => {
+      st.storage.sql.exec("UPDATE meta SET value = json_set(value, '$.deadline', ?) WHERE key = 'state'", left);
+    });
+    host.send({ t: "retract", step: called.step });
+    const again = await host.table((s) => s.step > called.step && !!s.options?.claims.length);
+    expect(again.deadline).toBeLessThanOrEqual(left);
+    expect(again.deadline).toBeGreaterThan(Date.now() + 2000);
   });
 });
 

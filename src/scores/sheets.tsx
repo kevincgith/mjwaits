@@ -8,7 +8,7 @@ import { fullSnapshotOf, fullSnapshotUrl, snapshotOf, snapshotUrl } from "../lib
 import { drawSettleCard } from "../lib/settleImage";
 import qrcode from "qrcode-generator";
 import { createPortal } from "react-dom";
-import { WIND_CHARS, SEAT_AREAS, fmt, signed, colorOf, Icons, SectionHead, Monogram, type SheetFrame, Sheet, Keypad, Toggle, Stepper, NumberField, Segmented, PlayerOption } from "./shared";
+import { WIND_CHARS, SEAT_AREAS, fmt, cash, signed, colorOf, Icons, SectionHead, Monogram, type SheetFrame, Sheet, Keypad, Toggle, Stepper, NumberField, Segmented, PlayerOption } from "./shared";
 
 // ---- Setup -------------------------------------------------------------------
 
@@ -2114,7 +2114,9 @@ export function ClearableInput({
 export type GameLabel = { name: string; startedAt: number; startTime: string; endTime: string; location: string };
 
 // `footer`: anything else there is to do to this game, under its fields.
-export function NameSheet({ initial, onSave, onClose, footer }: { initial: GameLabel; onSave: (label: GameLabel) => void; onClose: () => void; footer?: ReactNode }) {
+// (Given the details as they stand in the sheet - typed, not yet saved - so
+// what it does can keep them.)
+export function NameSheet({ initial, onSave, onClose, footer }: { initial: GameLabel; onSave: (label: GameLabel) => void; onClose: () => void; footer?: (label: GameLabel) => ReactNode }) {
   const [text, setText] = useState(initial.name);
   const trimmed = text.trim();
   const day = (at: number) => {
@@ -2192,7 +2194,7 @@ export function NameSheet({ initial, onSave, onClose, footer }: { initial: GameL
         </label>
       </div>
       <span className="sc-help">Location, start and end are optional - left empty, they aren't shown.</span>
-      {footer}
+      {footer?.(label(trimmed))}
     </Sheet>
   );
 }
@@ -2315,7 +2317,7 @@ export function SettleSheet({
       .sort((a, b) => (state.totals[b] ?? 0) - (state.totals[a] ?? 0))
       .map((p) => `${p} ${signed(state.totals[p] ?? 0)}`),
     "",
-    ...(payments.length ? payments.map((p) => `${p.from} → ${p.to} $${fmt(p.amount)}`) : ["Everyone is level."]),
+    ...(payments.length ? payments.map((p) => `${p.from} → ${p.to} $${cash(p.amount)}`) : ["Everyone is level."]),
   ].join("\n");
   const copy = async () => {
     try {
@@ -2422,7 +2424,7 @@ export function SettleSheet({
               {p.from}
             </span>
             <span className="sc-pay-arrow">
-              <strong>${fmt(p.amount)}</strong>
+              <strong>${cash(p.amount)}</strong>
               <svg width="44" height="10" viewBox="0 0 44 10" aria-hidden="true">
                 <path d="M1 5h40M36 1l5 4-5 4" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
               </svg>

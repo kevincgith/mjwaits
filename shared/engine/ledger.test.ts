@@ -472,6 +472,14 @@ describe("牌型 details dropped from a game that's over", () => {
     expect(withoutPatternNotes(bare, 100)).toBe(bare);
   });
 
+  it("covers a taken-back hand too, so 重做 doesn't bring the details back", () => {
+    const takenBack: ScoreGame = { ...game([win(1, 3, 0)]), undone: [scored] };
+    expect(patternNoteCount(takenBack)).toBe(1);
+    const bare = withoutPatternNotes(takenBack, 99);
+    expect(patternNoteCount(bare)).toBe(0);
+    expect(bare.undone).toEqual([{ ...scored, winners: [{ seat: 0, tai: 35 }, { seat: 2, tai: 8 }] }]);
+  });
+
   it("is kept over an older backup's copy when merged", () => {
     const store = (history: ScoreGame[]): ScoreStore => ({ active: null, history, roster: [], settings: PLAIN });
     const bare = withoutPatternNotes(played, played.startedAt + 1000);
