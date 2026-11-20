@@ -45,19 +45,16 @@ export interface GLWall {
   topple: { at: number; step: number; dur: number };
 }
 
-// A 叮's coin: its declarer's seat wind.
-export type DingWind = "東" | "南" | "西" | "北";
-export const DING_WINDS: DingWind[] = ["東", "南", "西", "北"];
-
 export interface GLPond {
   tiles: Tile[];
   riichiAt?: number;
   pinLast: boolean;
-  // Where the others' 叮s fell in this pond - before tile `at` - by their
-  // declarers' winds, and how they're shown: a gold line and coin on that
-  // seam, or the tiles since on a new row.
-  dings?: { at: number; wind: DingWind }[];
-  dingMark?: "coin" | "row";
+  // Where each 叮 fell in this pond - before tile `at` (its own: its
+  // declaring tile, the first of the 叮) - by whose side declared it, and how
+  // they're shown: a bar in its colour (GLTableView.dingColours) on that
+  // seam, or the tiles since on a new row, the bar down its start.
+  dings?: { at: number; by: GLSide }[];
+  dingMark?: "bar" | "row";
 }
 
 // One of your concealed tiles - null when it's face down (watching, not seated).
@@ -132,6 +129,8 @@ export interface GLFlight {
 export interface GLTableView {
   walls: { right: GLWall; top: GLWall; left: GLWall };
   ponds: Record<GLSide, GLPond>;
+  // Each side's colour for its 叮's bars (its avatar's, or its own).
+  dingColours?: Record<GLSide, string>;
   mine: GLMine;
   // The discard up for grabs, in its bubble by the compass.
   spotlight: { tile: Tile; from: GLSide; key: string } | null;
@@ -150,4 +149,7 @@ export interface GLTableView {
   // 見牌 Seen copies: the tile you're holding - every other tile out in the
   // open (ponds, melds, bonus tiles) greyed, so its copies stand out.
   focus?: Tile | null;
+  // A 叮 player's plaque held: every tile out in the open greyed but those
+  // thrown since its 叮 - each pond's from this tile on - safe against it.
+  safeSince?: Partial<Record<GLSide, number>> | null;
 }

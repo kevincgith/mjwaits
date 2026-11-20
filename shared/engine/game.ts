@@ -81,7 +81,7 @@ export interface Riichi {
   ippatsu: boolean;
   // How many tiles each pond held when it was declared (by seat; its own the
   // tiles before its declaring one): every tile thrown since is past it - the
-  // new row a table starts at a 叮.
+  // new row a table starts at a 叮, its own pond's with the declaring tile.
   ponds?: number[];
   // Passed up a win (on a discard, or its own draw): no more wins this hand.
   passed?: boolean;
@@ -104,23 +104,25 @@ export interface Player {
   // next draw or call - the same tile thrown by someone else meanwhile is barred.
   passedPung?: Tile;
   // The tile it last threw, till its next draw or call: no claiming that
-  // tile back (pung, kong or run) - nor a run with the far end of the run it
-  // came out of (threw 1m from 123m: no run with 1m or 4m). See runBarred.
+  // tile back (pung, kong or run) - nor a run made with two tiles the thrown
+  // one made a run with too (threw 1m from 123m: no 234m off a 4m - a 456m
+  // off it is fine). See runBarred.
   threw?: Tile;
   // Has thrown a tile this hand (its pond can be empty again once a discard
   // is claimed): its first turn is behind it - for 地叮 / 人胡.
   played?: true;
 }
 
-// Whether `threw` (see Player.threw) bars taking `tile` into a run, holding
-// `hand`: it's the thrown tile, or the far end of a run the thrown tile
-// would have made with two tiles still held.
-export function runBarred(threw: Tile | undefined, tile: Tile, hand: Tile[]): boolean {
+// Whether `threw` (see Player.threw) bars taking `tile` into a run with the
+// ranks `a` and `b` (of its suit): it's the thrown tile, or the thrown tile
+// would have made a run with those same two - taking `tile` would only swap
+// one end of that run for the other (threw 5m, holding 67m: no 678m off an
+// 8m; 789m with 79m is a run 5m never fitted, so it's fine).
+export function runBarred(threw: Tile | undefined, tile: Tile, a: number, b: number): boolean {
   if (!threw || threw.suit !== tile.suit) return false;
   if (threw.rank === tile.rank) return true;
-  const has = (r: number) => hand.some((h) => h.suit === tile.suit && h.rank === r);
-  const d = tile.rank - threw.rank;
-  return (d === 3 && has(threw.rank + 1) && has(threw.rank + 2)) || (d === -3 && has(threw.rank - 1) && has(threw.rank - 2));
+  const [lo, hi] = [Math.min(a, b, threw.rank), Math.max(a, b, threw.rank)];
+  return hi - lo === 2 && new Set([a, b, threw.rank]).size === 3;
 }
 
 export type Phase =
@@ -670,7 +672,7 @@ export function claimOptions(s: GameState, seat: number): Claim[] {
       [tile.rank - 1, tile.rank + 1],
       [tile.rank + 1, tile.rank + 2],
     ]) {
-      if (has(a) && has(b) && !runBarred(p.threw, tile, p.hand)) opts.push({ kind: "chow", tiles: [t(a), t(b)] });
+      if (has(a) && has(b) && !runBarred(p.threw, tile, a, b)) opts.push({ kind: "chow", tiles: [t(a), t(b)] });
     }
   }
   return opts;
@@ -699,7 +701,7 @@ export function barredClaims(s: GameState, seat: number): Claim[] {
       [tile.rank - 1, tile.rank + 1],
       [tile.rank + 1, tile.rank + 2],
     ]) {
-      if (has(a) && has(b) && runBarred(p.threw, tile, p.hand)) out.push({ kind: "chow", tiles: [t(a), t(b)] });
+      if (has(a) && has(b) && runBarred(p.threw, tile, a, b)) out.push({ kind: "chow", tiles: [t(a), t(b)] });
     }
   }
   return out;
