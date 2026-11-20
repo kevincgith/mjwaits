@@ -116,6 +116,7 @@ export default function TableGL({
   sweep = false,
   onSweep,
   onPress,
+  onSeen,
   tileXRef,
   onCameraMove,
   onPeek,
@@ -135,6 +136,9 @@ export default function TableGL({
   // none - let go, or slid off it, which is no tap). `dropped`: the finger
   // went off your row altogether - the selection's cancelled too.
   onPress?: (index: number | null, dropped?: boolean) => void;
+  // A finger on a tile out in the open (a pond's, a meld's): its face (null:
+  // let go, or moved off) - for 見牌.
+  onSeen?: (face: string | null) => void;
   // Set to where one of your tiles is seen: the x of its middle, from your
   // row's box's left (null: not drawn) - for what's shown over it.
   tileXRef?: RefObject<((index: number) => number | null) | null>;
@@ -157,6 +161,7 @@ export default function TableGL({
   const [canvasKey, setCanvasKey] = useState(0);
   const engine = useRef<Engine | null>(null);
   const dims = useRef<Dims | null>(null);
+  // In 換牌: the widest your row has been, in its tiles' size (dims.hand).
   const keptWidth = useRef(0);
   const camera = useRef<CornerCamera>({ yaw: CORNER_YAW, tilt: CORNER_TILT });
   const viewRef = useRef(view);
@@ -175,6 +180,8 @@ export default function TableGL({
   onSweepRef.current = onSweep;
   const onPressRef = useRef(onPress);
   onPressRef.current = onPress;
+  const onSeenRef = useRef(onSeen);
+  onSeenRef.current = onSeen;
 
   useEffect(() => {
     let live = true;
@@ -244,10 +251,14 @@ export default function TableGL({
       const b = bubbleBox(dims.current);
       e.sizeBubbles(b.bw, b.bh, b.em, Math.min(3, window.devicePixelRatio || 1) * 1.5);
     }
-    // (In 換牌 your row keeps the widest it's been, so it never re-centres.)
-    dims.current.handMinWidth = viewRef.current.mine.sliding ? keptWidth.current : 0;
+    // (In 換牌 your row keeps the widest it's been, so it never re-centres -
+    // kept in tiles, not pixels: the screen can still be settling as Play
+    // opens, the tiles' size changing under it, and a width kept from before
+    // would push the row off centre.)
+    const H = dims.current.hand;
+    dims.current.handMinWidth = viewRef.current.mine.sliding ? keptWidth.current * H : 0;
     const layout = corner ? layoutCorner(viewRef.current, dims.current, camera.current) : layoutTable(viewRef.current, dims.current);
-    keptWidth.current = viewRef.current.mine.sliding ? Math.max(keptWidth.current, layout.hand.width) : 0;
+    keptWidth.current = viewRef.current.mine.sliding ? Math.max(keptWidth.current, layout.hand.width / H) : 0;
     racks.current = layout.felt.racks ?? [];
     middle.style.left = `${layout.middle.x}px`;
     middle.style.top = `${layout.middle.y}px`;
@@ -334,6 +345,12 @@ export default function TableGL({
     let holding = false;
     let slid = false;
     let dropped = false;
+    let seenOn = false;
+    const letSeen = () => {
+      if (!seenOn) return;
+      seenOn = false;
+      onSeenRef.current?.(null);
+    };
     const press = (i: number | null, gone = false) => {
       if (i === pressed && !gone) return;
       pressed = i;
@@ -368,6 +385,12 @@ export default function TableGL({
       dropped = false;
       if (!down || outside(e)) return;
       const i = tileAt(e);
+      // (On no tile of yours: perhaps one out in the open, for 見牌.)
+      const e3 = engine.current;
+      const p = at(e);
+      const seen = i === null && !sweepRef.current && e3 && e3.pickHand(p.x, p.y, root.clientWidth, root.clientHeight) === null ? e3.pickSeen(p.x, p.y, root.clientWidth, root.clientHeight) : null;
+      seenOn = seen !== null;
+      if (seen) onSeenRef.current?.(seen);
       holding = !sweepRef.current && i !== null;
       if (!sweepRef.current) return press(i);
       if (i === null) return;
@@ -376,6 +399,7 @@ export default function TableGL({
     };
     const onMove = (e: PointerEvent) => {
       if (!e.isPrimary) return;
+      if (seenOn && down && moved(e, down)) letSeen();
       // Held on a tile: it follows the finger along your row (between
       // tiles the last stays; over one that can't be played, none is
       // pressed); off the row, it's dropped. (Not by a tap's wobble: a
@@ -403,6 +427,7 @@ export default function TableGL({
       swept = i;
     };
     const onUp = (e: PointerEvent) => {
+      letSeen();
       const start = down;
       down = null;
       const held = pressed;
@@ -437,6 +462,7 @@ export default function TableGL({
       if (pile) onPileRef.current(pile[0] as GLSide, pile[1]);
     };
     const onCancel = () => {
+      letSeen();
       down = null;
       swept = null;
       dropped = true;

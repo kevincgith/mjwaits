@@ -100,6 +100,8 @@ export interface Piece {
   // 見牌 Seen copies unless it's a copy of the tile held (see seenCopies);
   // its fade's key.
   seen?: string;
+  // A meld's claimed tile, thrown since a held plaque's 叮: kept lit.
+  safe?: boolean;
 }
 
 // An animation: from when `key` first appears, after `delay` seconds, `dur`
@@ -113,7 +115,7 @@ export interface Anim {
 
 // Flat marks: shadows on the felt, the newest discard's pin, the hint and
 // danger marks under and over your tiles, the spotlight's bubble.
-export type QuadKind = "tray" | "shadow" | "row-shadow" | "pin" | "hint" | "ready" | "danger" | "bubble-top" | "bubble-bottom" | "bubble-left" | "bubble-right" | "picked" | "gap" | "ring" | "tile-ring" | `ding-${GLSide}`;
+export type QuadKind = "tray" | "shadow" | "row-shadow" | "pin" | "hint" | "ready" | "danger" | "bubble-top" | "bubble-bottom" | "bubble-left" | "bubble-right" | "picked" | "gap" | "ring" | "tile-ring" | `ding-${GLSide}` | `dingside-${GLSide}` | `dingtab-${GLSide}`;
 export interface Quad {
   kind: QuadKind;
   // The unit square (-0.5..0.5 each way, at z 0) to where it's drawn.
@@ -190,6 +192,8 @@ export const shadowAt = (x: number, y: number, em: number, rot = 0): Quad => ({
 // fourth stacked on its middle tile on the table - as MeldsView has them.
 interface Slot {
   face: string | null;
+  // Its meld's claimed tile, thrown since a held plaque's 叮 (safeSince).
+  safe?: boolean;
   // Bonus tiles in two rows (more than four of them): its place along its
   // row, and which row - -1 the far one, 1 the near (its tiles' feet),
   // the two touching.
@@ -231,8 +235,10 @@ export interface Group {
   // its player's hand goes down.
   flipAt?: number;
 }
-export const meldGroup = (m: GameMeld, hide: boolean, inRow: boolean, em: number): Group => {
-  const slots = meldSlots(m, hide, inRow);
+// `safe`: its claimed tile (the middle one - a run's is put there) was
+// thrown since a held plaque's 叮.
+export const meldGroup = (m: GameMeld, hide: boolean, inRow: boolean, em: number, safe = false): Group => {
+  const slots = meldSlots(m, hide, inRow).map((s, j) => (safe && j === 1 && !m.concealed ? { ...s, safe: true } : s));
   return { slots, em, pad: 0.04 * em, along: slots.length * 0.72 * em + 0.08 * em, across: 1.08 * em };
 };
 // Bonus tiles four fifths the size, in a group padded as a meld (by the meld's em).
@@ -263,7 +269,7 @@ export function placeGroup(g: Group, at: (k: number) => [number, number], rot: n
     const dy = owner * rowShift(s, g.em);
     const r = (rot * Math.PI) / 180;
     const [x, y] = [ax - Math.sin(r) * dy, ay + Math.cos(r) * dy];
-    pieces.push({ face: s.face ?? BACK, m: s.face ? lying(x, y, g.em, rot) : lyingDown(x, y, g.em, rot), shade, tint: 1, seen: `seen:${Math.round(x)}:${Math.round(y)}` });
+    pieces.push({ face: s.face ?? BACK, m: s.face ? lying(x, y, g.em, rot) : lyingDown(x, y, g.em, rot), shade, tint: 1, seen: `seen:${Math.round(x)}:${Math.round(y)}`, ...(s.safe ? { safe: true } : {}) });
     if (tableZ) quads.push(shadowAt(x, y, g.em, rot));
     // A kong's fourth, on the middle one (a hair above its face).
     if (s.top !== undefined) {
@@ -516,7 +522,7 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
     // that would wrap a meld that fits without them: then they're a column
     // of their own, toward the middle (flowersOwn).
     const room = cy1 - band[1];
-    const melds = seeThrough(which, w, w.melds.map((m) => ({ ...meldGroup(m, w.hideConcealed, false, T), flipAt: w.topple.at })));
+    const melds = seeThrough(which, w, w.melds.map((m, i) => ({ ...meldGroup(m, w.hideConcealed, false, T, i >= (view.safeSince?.[which]?.meld ?? Infinity)), flipAt: w.topple.at })));
     const columns = (colMax: number) => {
       const cs: Group[][] = [];
       let len = 0;
@@ -574,7 +580,7 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
   const tEdgeW = (tdrew || tw.win >= 0 ? tn * tp : (tn + 1) * tp) + 0.25 * Wt + tslot;
   const tEdgeH = 0.55 * Wt;
   const tFlowers = flowerGroup(top.flowers, T);
-  const tMelds = seeThrough("top", top, top.melds.map((m) => ({ ...meldGroup(m, top.hideConcealed, false, T), flipAt: top.topple.at })));
+  const tMelds = seeThrough("top", top, top.melds.map((m, i) => ({ ...meldGroup(m, top.hideConcealed, false, T, i >= (view.safeSince?.top?.meld ?? Infinity)), flipAt: top.topple.at })));
   const tGap = 0.15 * T;
   const meldsLong = sum(tMelds.map((g) => g.along + tGap));
   const laid = meldsLong + (tFlowers ? tFlowers.along + tGap : 0);
@@ -969,17 +975,40 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
       // (From the compass toward the pond's owner: where this one's share is.)
       const long = (rowDeep(lines[r]) < rowDepth ? TILE_W : TILE_H) * em;
       const part = long / same.length;
-      const deep = starts[r] * fit + (rowDeep(lines[r]) * fit - long) / 2 + (nth + 0.5) * part;
-      let x: number;
-      let y: number;
-      if (side === "top") [x, y] = [centreX + (centreX + limit / 2 - along - centreX) * fit, row2y1 - deep];
-      else if (side === "bottom") [x, y] = [centreX + (centreX - limit / 2 + along - centreX) * fit, row4y0 + 0.3 * T + deep];
-      else if (side === "left") [x, y] = [col2x1 - deep, midY + (midY - limit / 2 + along - midY) * fit];
-      else [x, y] = [col4x0 + deep, midY + (midY + limit / 2 - along - midY) * fit];
-      const z = THICK * em * 1.05;
-      const thin = 0.075 * Math.max(em, 0.7 * T);
-      const across = side === "top" || side === "bottom";
-      feltQuads.push({ kind: `ding-${g.by}`, m: chain(translate(x, y, z), rotateZ(across ? 0 : 90), scale(thin, part - (same.length > 1 ? 0.05 * em : 0) - 0.12 * em / same.length, 1)) });
+      const mid = starts[r] * fit + (rowDeep(lines[r]) * fit - long) / 2 + (nth + 0.5) * part;
+      // A point `deep` across the pond and `by` along its row from the seam
+      // (both as drawn; `by` < 0 back toward the row's start).
+      const at = (deep: number, by = 0): [number, number] => {
+        const a = along + by / fit;
+        if (side === "top") return [centreX + (centreX + limit / 2 - a - centreX) * fit, row2y1 - deep];
+        if (side === "bottom") return [centreX + (centreX - limit / 2 + a - centreX) * fit, row4y0 + 0.3 * T + deep];
+        if (side === "left") return [col2x1 - deep, midY + (midY - limit / 2 + a - midY) * fit];
+        return [col4x0 + deep, midY + (midY + limit / 2 - a - midY) * fit];
+      };
+      const top = THICK * em * 1.05;
+      const thin = 0.085 * Math.max(em, 0.7 * T);
+      const gap = same.length > 1 ? 0.05 * em : 0;
+      const turn = rotateZ(side === "top" || side === "bottom" ? 0 : 90);
+      // At a row's start (each row's, in New row): a line on the felt just
+      // before it, the row's depth - the one side no row lies against.
+      if (along === 0) {
+        const [lx, ly] = at(mid, -0.14 * em);
+        return void feltQuads.push({ kind: `dingtab-${g.by}`, m: chain(translate(lx, ly, 0.4), turn, scale(thin, part - gap - 0.1 * em, 1)) });
+      }
+      // On a seam: a ribbon across the tiles' tops along it, draped over the
+      // row's edge (a little darker, as the tiles' sides) to a short end on
+      // the felt, its near end tucked under the tiles - the first on the seam
+      // toward the compass, the last (sharing it) toward the owner.
+      const out = nth === 0 ? -1 : nth === same.length - 1 ? 1 : 0;
+      const [x, y] = at(mid + (out * gap) / 2);
+      feltQuads.push({ kind: `ding-${g.by}`, m: chain(translate(x, y, top), turn, scale(thin, part - gap, 1)) });
+      if (!out) return;
+      const edge = mid + (out * part) / 2;
+      const end = 0.3 * em;
+      const [dx, dy] = at(edge + out * 0.01 * em);
+      feltQuads.push({ kind: `dingside-${g.by}`, m: chain(translate(dx, dy, top / 2), turn, rotateX(90), scale(thin, top, 1)) });
+      const [tx, ty] = at(edge + (out * (end - thin)) / 2);
+      feltQuads.push({ kind: `dingtab-${g.by}`, m: chain(translate(tx, ty, 0.4), turn, scale(thin, end + thin, 1)) });
     });
   };
   (["top", "left", "right", "bottom"] as const).forEach((s) => pondTiles(s, view.ponds[s]));
@@ -1186,13 +1215,14 @@ function seenCopies(pieces: Piece[], focus: Tile | null | undefined) {
 }
 
 // A 叮 player's plaque held: every tile in the open greyed (as 見牌 does,
-// fading the same) but each pond's thrown since its 叮.
-function safeSince(pieces: Piece[], since: Partial<Record<GLSide, number>> | null | undefined) {
+// fading the same) but those thrown since its 叮 - in the ponds, and
+// claimed into melds.
+function safeSince(pieces: Piece[], since: GLTableView["safeSince"]) {
   if (!since) return;
   for (const p of pieces) {
-    if (!p.seen || p.face === BACK) continue;
+    if (!p.seen || p.face === BACK || p.safe) continue;
     const at = /^(top|bottom|left|right):pond:(\d+)$/.exec(p.seen);
-    if (!at || Number(at[2]) < (since[at[1] as GLSide] ?? Infinity)) p.tint = Math.min(p.tint, POND_GREY);
+    if (!at || Number(at[2]) < (since[at[1] as GLSide]?.pond ?? Infinity)) p.tint = Math.min(p.tint, POND_GREY);
   }
 }
 
@@ -1309,7 +1339,7 @@ function layoutHand(view: GLTableView, d: Dims, spots: Partial<Record<GLSide, Sp
   // Melds and flowers, a size down, flowers first; each lying at 32deg.
   const M = 0.74 * H;
   const flowers = flowerGroup(mine.flowers, M);
-  const melds = mine.melds.map((m) => meldGroup(m, mine.hideConcealed, true, M));
+  const melds = mine.melds.map((m, i) => meldGroup(m, mine.hideConcealed, true, M, i >= (view.safeSince?.bottom?.meld ?? Infinity)));
   // Your row running past the screen's edges (judged with the bonus tiles
   // in it, and a tile drawn): the bonus tiles move out a row, onto the
   // table just above it, from its left (bonusOut).
@@ -1348,6 +1378,7 @@ function layoutHand(view: GLTableView, d: Dims, spots: Partial<Record<GLSide, Sp
           tint: 1,
           anim: { key: `h:${named[gi]}:${k}`, delay: 0, dur: 0.5, pose: (t) => pose(keyframes(MINE_FRAMES, t)[0]) },
           seen: `h:${named[gi]}:${k}`,
+          ...(s.safe ? { safe: true } : {}),
         });
       });
       x += g.along + (gi < groups.length - 1 ? 0.12 * M : 0);

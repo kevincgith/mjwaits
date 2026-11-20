@@ -848,7 +848,7 @@ describe("game", () => {
 
     it("declares with a discard that leaves the hand ready - 天叮 on the dealer's first", () => {
       const s = declared();
-      expect(s.players[0].riichi).toEqual({ state: "heavenly-riichi", discard: 0, ippatsu: true, ponds: [0, 0, 0, 0] });
+      expect(s.players[0].riichi).toEqual({ state: "heavenly-riichi", discard: 0, ippatsu: true, ponds: [0, 0, 0, 0], melds: [0, 0, 0, 0] });
       const s0 = newGame();
       s0.players[0].hand = parseHand("123456789m111222t3t5z");
       s0.phase = { kind: "turn", seat: 0, drawn: t("z", 5), replacement: null };

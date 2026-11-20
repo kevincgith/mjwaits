@@ -12,13 +12,13 @@
 
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
-import { THICK, TILE_H, TILE_R, TILE_W, type Card, type Layout, type Piece, type Quad, type QuadKind } from "./layout";
+import { BACK, THICK, TILE_H, TILE_R, TILE_W, type Card, type Layout, type Piece, type Quad, type QuadKind } from "./layout";
 import type { Mat } from "./mat";
 import type { Atlas } from "./textures";
 import type { GLSide } from "./types";
 import { PLAQUE_RINGED } from "./cards";
 import { SEAT_TILE_RINGED } from "./diceScenes";
-import { bar, bubble, dingBar, gapOutline, peekTray, goldRing, pickedRim, pin, rowShadow, tileShadow, triangle } from "./textures";
+import { bar, bubble, dingStrip, dingTab, gapOutline, peekTray, goldRing, pickedRim, pin, rowShadow, tileShadow, triangle } from "./textures";
 
 const SIDES: GLSide[] = ["top", "bottom", "left", "right"];
 const MAX_FELT = 260;
@@ -430,12 +430,19 @@ class Space {
   // What's shown, and how it moves: when each animation began (by its
   // key, from the frame it first appeared), and each eased move under way.
   private pieces: Piece[] = [];
+  // Instance `i`'s face, if it's a tile out in the open (Piece.seen) face up.
+  seenFace(i: number): string | null {
+    const p = this.pieces[i];
+    return p?.seen && p.face !== BACK ? p.face : null;
+  }
   private quads = new Map<QuadKind, Quad[]>();
   private starts = new Map<string, number>();
   private eases = new Map<string, { from: THREE.Matrix4; to: Mat; start: number; dur: number; curve: (t: number) => number; lift: number; over: number }>();
   private shown = new Map<string, THREE.Matrix4>();
-  // Tints fading (Piece.fade): from, to, when it began, how long.
-  private fades = new Map<string, { from: number; to: number; start: number; dur: number }>();
+  // Tints fading (Piece.fade): from, to, when it began, how long - and
+  // whether its end's been written (frames can skip past it: a page in the
+  // background, a slow one).
+  private fades = new Map<string, { from: number; to: number; start: number; dur: number; done?: boolean }>();
   private fadeAt(f: { from: number; to: number; start: number; dur: number }, now: number) {
     const k = f.dur > 0 ? Math.min(1, Math.max(0, (now - f.start) / 1000 / f.dur)) : 1;
     return f.from + (f.to - f.from) * (k * k * (3 - 2 * k));
@@ -629,10 +636,11 @@ class Space {
       if (p.ease) this.shown.set(p.ease.key, mat.clone());
       this.tiles.setMatrixAt(i, mat);
       const f = p.fade && this.fades.get(p.fade.key);
-      if (f && f.dur > 0 && now - f.start < f.dur * 1000 + 50) {
+      if (f && f.dur > 0 && !f.done) {
         this.tint.setX(i, this.fadeAt(f, now));
         fading = true;
-        moving = true;
+        if (now - f.start >= f.dur * 1000) f.done = true;
+        else moving = true;
       }
     });
     this.tiles.instanceMatrix.needsUpdate = true;
@@ -714,7 +722,7 @@ export class Engine {
     this.felt.addMarks("ring", mark(goldRing(PLAQUE_RINGED)), 1, 0);
     this.felt.addMarks("tile-ring", mark(goldRing(SEAT_TILE_RINGED)), 1, 0);
     // 叮 marks: a line on each pond's seam (three 叮s in each of four ponds at most), and its coin.
-    for (const side of SIDES) this.felt.addMarks(`ding-${side}`, mark(dingBar("#ffd166")), 4, 2);
+    for (const side of SIDES) for (const [kind, paint] of this.dingPaints(side)) this.felt.addMarks(kind, mark(paint("#ffd166")), 4, 2);
     for (const side of ["top", "bottom", "left", "right"] as const) this.felt.addMarks(`bubble-${side}`, mark(bubble(10, 10, 1, side, 1)), 1, 2);
     this.hand.addMarks("row-shadow", mark(rowShadow()), 1, 0);
     this.hand.addMarks("hint", mark(bar("#ffd166")), MAX_HAND, 2);
@@ -722,18 +730,30 @@ export class Engine {
     this.hand.addMarks("danger", mark(bar("#ff6b5a")), MAX_HAND, 2);
   }
 
-  // Each side's 叮 bar, repainted when its colour changes.
+  // A side's 叮 ribbon - over the tiles, down the row's edge, its end on the
+  // felt - each painted in its colour.
+  private dingPaints(side: GLSide): [QuadKind, (colour: string) => HTMLCanvasElement][] {
+    return [
+      [`ding-${side}`, (c) => dingStrip(c)],
+      [`dingside-${side}`, (c) => dingStrip(c, true)],
+      [`dingtab-${side}`, dingTab],
+    ];
+  }
+
+  // Each side's 叮 ribbon, repainted when its colour changes.
   private dingPainted: Partial<Record<GLSide, string>> = {};
   dingColours(colours: Record<GLSide, string> | undefined) {
     if (!colours) return;
     for (const side of SIDES) {
       if (this.dingPainted[side] === colours[side]) continue;
       this.dingPainted[side] = colours[side];
-      const mat = this.felt.marks.get(`ding-${side}`)!.material as THREE.ShaderMaterial;
-      const old = mat.uniforms.uMap.value as THREE.Texture;
-      old.dispose();
-      this.kept.delete(old);
-      mat.uniforms.uMap.value = this.keep(canvasTexture(dingBar(colours[side])));
+      for (const [kind, paint] of this.dingPaints(side)) {
+        const mat = this.felt.marks.get(kind)!.material as THREE.ShaderMaterial;
+        const old = mat.uniforms.uMap.value as THREE.Texture;
+        old.dispose();
+        this.kept.delete(old);
+        mat.uniforms.uMap.value = this.keep(canvasTexture(paint(colours[side])));
+      }
     }
   }
 
@@ -854,6 +874,16 @@ export class Engine {
   pickPile(x: number, y: number, width: number, height: number): [string, number] | null {
     const i = this.pickIn(this.felt, x, y, width, height, (n) => this.felt.picks[n] !== undefined);
     return i === null ? null : this.felt.picks[i]!;
+  }
+
+  // The tile out in the open under a point (a pond's, a meld's - yours too -
+  // a bonus tile), for 見牌: its face.
+  pickSeen(x: number, y: number, width: number, height: number): string | null {
+    for (const space of [this.hand, this.felt]) {
+      const i = this.pickIn(space, x, y, width, height, (n) => space.seenFace(n) !== null);
+      if (i !== null) return space.seenFace(i);
+    }
+    return null;
   }
 
   private pickIn(space: Space, x: number, y: number, width: number, height: number, ok: (instance: number) => boolean): number | null {
