@@ -56,9 +56,6 @@ export interface Dims {
   // How far down the felt the row of what you take in 換牌 reaches, as seen
   // (its top edge, where it meets the felt's plane).
   rowTop?: number;
-  // In 換牌: your row's width so far, kept so the row doesn't re-centre as
-  // tiles leave it (set by TableGL while the swap's on).
-  handMinWidth?: number;
   // The felt's plane into your row's space so that it's drawn exactly where
   // the felt's own view draws it (from the middle of the row's top edge):
   // the two views differ only by where their perspective is from - a shear.
@@ -364,6 +361,8 @@ const SETTLE = bezier(0.2, 0.8, 0.3, 1);
 // down from above, waits for its room and goes straight into it.
 const SLIDE = bezier(0.3, 0.7, 0.2, 1);
 const SLIDE_S = 0.6;
+// A hand's tiles (16-tile mahjong), as your row holds them through 換牌.
+const FULL_HAND = 16;
 const SUIT_STEP_S = 0.2;
 const SLIDE_OVER = 0.9;
 // Your pile's tiles stand up from the felt this far (54deg), leaning back as your hand's do.
@@ -1490,9 +1489,12 @@ function layoutHand(view: GLTableView, d: Dims, spots: Partial<Record<GLSide, Sp
   });
   // No tile drawn: its place kept.
   if (mine.tiles.length && !mine.tiles.some((t) => t.drawn) && !winner) x += 0.3 * H + 0.746 * H;
-  // In 換牌 the row keeps its width (see handMinWidth) - it's centred, and
-  // re-centred as tiles leave it every tile would jump.
-  const width = Math.max(x, mine.sliding ? (d.handMinWidth ?? 0) : 0);
+  // In 換牌 the row keeps a full hand's room - it's centred, and re-centred
+  // as tiles leave it every tile would jump. (Worked out from the hand
+  // each time, never remembered: a width kept from an earlier moment - the
+  // screen still settling as Play opens - left the row off centre.)
+  const short = mine.sliding && !winner ? Math.max(0, FULL_HAND - mine.tiles.filter((t) => !t.drawn).length) : 0;
+  const width = x + short * 0.75 * H;
   // One soft shadow under the standing row.
   if (mine.tiles.length && !winner) quads.unshift({ kind: "row-shadow", m: chain(translate(width / 2, height - 0.05 * H, 0), scale(width - 0.2 * H + 0.36 * H, 0.3 * H + 0.36 * H, 1)) });
   // 換牌: what you've taken, above your hand - standing as your tiles do,
