@@ -302,11 +302,12 @@ export function bubble(bw: number, bh: number, em: number, from: "top" | "bottom
 }
 
 // What a peek's tiles stand on: as the discard's spotlight is, dark with a gold rim.
+// (Painted to its shape: TRAY_W places of 0.76 its tiles, by TRAY_H of them.)
 export function peekTray(): HTMLCanvasElement {
   const w = 1024;
-  const h = 394;
+  const h = 287;
   return paintCanvas(w, h, (ctx) => {
-    roundRect(ctx, 8, 8, w - 16, h - 16, 56);
+    roundRect(ctx, 8, 8, w - 16, h - 16, 40);
     ctx.fillStyle = "rgba(14, 18, 16, 0.84)";
     ctx.fill();
     ctx.lineWidth = 7;

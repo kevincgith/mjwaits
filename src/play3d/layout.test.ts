@@ -468,24 +468,43 @@ describe("a peek on the WebGL table", () => {
     expect(out.felt.glass).toEqual([]);
   });
 
-  it("lifts five real tiles out, the one by the finger biggest and most solid", () => {
+  it("stands seven real tiles up there at once, one size, solid - each tinted by its place from the finger", () => {
     const ps = lifted(layoutTable(table({ side: "left", at: 8, tiles }), DIMS).felt.glass!);
-    expect(ps).toHaveLength(5);
-    expect(ps.map((p) => p.tint)).toEqual([0.8, 0.95, 1, 0.95, 0.8]);
+    expect(ps).toHaveLength(7);
+    // (PEEK_TINT and its place across the screen: glassMaterial dims each
+    // point of it by how far it is, the last each side cut at the box's end.)
+    expect(ps.map((p) => p.tint - 10).sort((a, b) => a - b)).toEqual([-3, -2, -1, 0, 1, 2, 3]);
+    const byTint = [...ps].sort((a, b) => a.tint - b.tint).map((p) => p.m[12]);
+    for (let i = 1; i < byTint.length; i++) expect(byTint[i]).toBeGreaterThan(byTint[i - 1]);
     const sizes = ps.map((p) => size(p.m));
-    expect(sizes[2]).toBeGreaterThan(sizes[1]);
-    expect(sizes[1]).toBeGreaterThan(sizes[0]);
-    for (const p of ps) expect(p.anim).toBeDefined();
+    for (const s of sizes) expect(s).toBeCloseTo(sizes[0], 6);
+    // (No flight out of the rack.)
+    for (const p of ps) expect(p.anim).toBeUndefined();
   });
 
   it("stands them in a row, side by side, on the table", () => {
     for (const side of ["left", "right", "top"] as const) {
       const ps = lifted(layoutTable(table({ side, at: 8, tiles }), DIMS).felt.glass!);
       const xs = ps.map((p) => p.m[12]).sort((a, b) => a - b);
-      for (let i = 1; i < xs.length; i++) expect(xs[i] - xs[i - 1]).toBeGreaterThan(0.8 * DIMS.tile);
+      for (let i = 1; i < xs.length; i++) expect(xs[i] - xs[i - 1]).toBeGreaterThan(0.85 * DIMS.tile);
       for (const x of xs) expect(x > 0 && x < DIMS.feltW).toBe(true);
       expect(new Set(ps.map((p) => Math.round(p.m[13] / 12))).size).toBeLessThanOrEqual(2);
     }
+  });
+
+  it("stands them in a box upright behind them, its ends just past where the end tiles are cut", () => {
+    const out = layoutTable(table({ side: "top", at: 8, tiles }), DIMS).felt;
+    const tray = out.glassQuads!.find((q) => q.kind === "tray")!;
+    const ps = lifted(out.glass!);
+    const xs = ps.map((p) => p.m[12]);
+    const w = Math.hypot(tray.m[0], tray.m[1], tray.m[2]);
+    const pitch = (Math.max(...xs) - Math.min(...xs)) / 6;
+    // (Cut 3 places out; the box a margin past that.)
+    expect(w / 2).toBeGreaterThan(3 * pitch);
+    expect(w / 2).toBeLessThan(3.3 * pitch);
+    // Leant as the tiles are: its plane's normal the tiles' own.
+    const n = (m: number[] | Float32Array) => [m[8], m[9], m[10]].map((v) => v / Math.hypot(m[8], m[9], m[10]));
+    n(tray.m).forEach((v, i) => expect(v).toBeCloseTo(n(ps[0].m)[i], 6));
   });
 
   it("stands them on a tray, gone once it's let go", () => {
@@ -495,23 +514,26 @@ describe("a peek on the WebGL table", () => {
   });
 
   it("shows fewer at the end of the rack", () => {
-    expect(lifted(layoutTable(table({ side: "right", at: 0, tiles }), DIMS).felt.glass!)).toHaveLength(3);
+    expect(lifted(layoutTable(table({ side: "right", at: 0, tiles }), DIMS).felt.glass!)).toHaveLength(4);
   });
 
   it("makes the standing tiles it's looking through clear, and leaves the rest", () => {
     const out = layoutTable(table({ side: "top", at: 8, tiles }), DIMS);
-    expect(clear(out.felt.glass!)).toHaveLength(5);
+    expect(clear(out.felt.glass!)).toHaveLength(7);
     expect(clear(out.felt.glass!).every((p) => p.tint < 0.5)).toBe(true);
     const none = layoutTable(table({ side: null, at: 0, tiles: null }), DIMS);
-    expect(out.felt.pieces.length).toBe(none.felt.pieces.length - 5);
+    expect(out.felt.pieces.length).toBe(none.felt.pieces.length - 7);
   });
 
-  it("settles them back into the rack on letting go", () => {
+  it("is simply gone on letting go - no flight back into the rack", () => {
     const out = layoutTable(table({ side: "top", at: 8, tiles, closing: true }), DIMS);
-    const ps = lifted(out.felt.glass!);
-    expect(ps).toHaveLength(5);
-    for (const p of ps) expect(p.anim).toBeUndefined();
+    expect(lifted(out.felt.glass!)).toHaveLength(0);
     expect(clear(out.felt.glass!)).toHaveLength(0);
+  });
+  it("slides its tiles along with the finger", () => {
+    const at = (n: number) => lifted(layoutTable(table({ side: "top", at: n, tiles }), DIMS).felt.glass!);
+    const before = new Set(at(8).map((p) => p.ease!.key));
+    expect(at(9).filter((p) => before.has(p.ease!.key))).toHaveLength(6);
   });
 
   const kong = { kind: "kong" as const, tiles: [face(5), face(5), face(5), face(5)], concealed: true, from: null };
@@ -634,6 +656,23 @@ describe("叮 marks in the ponds", () => {
       ponds: at ? { bottom: full(at), right: full(at), top: full(at), left: full(at) } : { bottom: full(), right: full(), top: full(), left: full() },
     };
   };
+  it("New row: a row a 叮 starts begins where the first row does - its lines on the felt before it", () => {
+    for (const dims of [DIMS, PHONE]) {
+      const out = layoutTable(crowded("row", 6), dims);
+      for (const side of ["bottom", "top"] as const) {
+        // (Its start edge: a 叮 tile, laid the other way, is longer.)
+        const edge = (i: number) => {
+          const b = tileBox(out.felt.pieces.find((p) => p.seen === `${side}:pond:${i}`)!);
+          return side === "bottom" ? b.x0 : b.x1;
+        };
+        expect(Math.abs(edge(6) - edge(0))).toBeLessThan(1);
+        const first = tileBox(out.felt.pieces.find((p) => p.seen === `${side}:pond:6`)!);
+        const lines = barBoxes(out.felt.quads).filter((b) => b.y0 < first.y1 && first.y0 < b.y1 && Math.abs(b.x0 - first.x0) < 3 * dims.tile);
+        expect(lines).toHaveLength(4);
+        for (const b of lines) expect(side === "bottom" ? b.x1 <= first.x0 : b.x0 >= first.x1).toBe(true);
+      }
+    }
+  });
   // (A phone held sideways, as Play measures it: a smaller compass, the
   // ponds closer round it - their corners tighter.)
   const PHONE: Dims = { feltW: 801, feltH: 523, rem: 16, under: 48.38, hand: 53.75, tile: 39.78, wall: 28.64, wallTop: 38.58, middle: 21.5, compass: 45, handTop: 483.36, rowTop: 405.87, rowRoom: 932 };

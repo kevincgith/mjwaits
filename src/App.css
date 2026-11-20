@@ -6492,6 +6492,42 @@ html.playing body {
   }
 }
 
+/* 見牌 from the table: the tile held, in a bubble just above it (the
+   finger covers it, coming from below) - dark, ringed in gold, as the
+   discard's bubble is, its point down at the tile. */
+.play-seen-bubble {
+  position: absolute;
+  z-index: 6;
+  translate: -50% calc(-100% - 0.55rem);
+  padding: 0.35rem 0.45rem;
+  border: 2px solid rgba(255, 209, 102, 0.85);
+  border-radius: 0.8rem;
+  background: rgba(14, 18, 16, 0.92);
+  box-shadow: 0 0.35rem 0.9rem rgba(0, 0, 0, 0.45);
+  line-height: 0;
+  pointer-events: none;
+  transform-origin: 50% 100%;
+  animation: play-spot 0.16s ease-out both;
+}
+
+.play-seen-bubble::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  width: 0.7rem;
+  height: 0.7rem;
+  translate: -50% -50%;
+  rotate: 45deg;
+  border-right: 2px solid rgba(255, 209, 102, 0.85);
+  border-bottom: 2px solid rgba(255, 209, 102, 0.85);
+  background: rgb(14, 18, 16);
+}
+
+.play-seen-bubble .tile-glyph {
+  font-size: clamp(2.2rem, calc(13 * var(--vh)), 2.9rem);
+}
+
 /* ---- Call burst: a big 上 / 碰 / 槓 / 胡 by whoever called ----
    In the phone's own bold Chinese face (a brush face isn't on every phone,
    and the fallback serif looked odd), gold on a dark disc in a thin gold
@@ -6639,12 +6675,13 @@ html.playing body {
 }
 
 .play-call {
+  --play-call-h: clamp(2.8rem, calc(15 * var(--vh)), 3.8rem);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 0.15rem;
-  min-width: clamp(2.8rem, calc(15 * var(--vh)), 3.8rem);
-  height: clamp(2.8rem, calc(15 * var(--vh)), 3.8rem);
+  min-width: var(--play-call-h);
+  height: var(--play-call-h);
   padding: 0;
   border: 2px solid var(--play-gold-deep);
   border-radius: 999px;
@@ -6826,9 +6863,17 @@ html.playing body {
   line-height: 0;
 }
 
+/* A run's choice (and a kong's tile): the tiles two thirds of the badge's
+   height, easy to read - the pill made longer for them, its round ends
+   kept clear of the tiles' corners. */
 .play-call.is-chow-shape {
-  padding: 0 0.55rem;
-  font-size: clamp(1.3rem, calc(7 * var(--vh)), 1.8rem) !important;
+  gap: 0.04rem;
+  padding: 0 calc(0.36 * var(--play-call-h));
+}
+
+.play-call.is-chow-shape .tile-glyph,
+.play-call-tile .tile-glyph {
+  font-size: calc(0.66 * var(--play-call-h));
 }
 
 .play-hand {

@@ -138,7 +138,8 @@ export default function TableGL({
   onPress?: (index: number | null, dropped?: boolean) => void;
   // A finger on a tile out in the open (a pond's, a meld's): its face (null:
   // let go, or moved off) - for 見牌.
-  onSeen?: (face: string | null) => void;
+  // (Where it's seen, in the table's own pixels - for a bubble by it.)
+  onSeen?: (seen: { face: string; x: number; y: number } | null) => void;
   // Set to where one of your tiles is seen: the x of its middle, from your
   // row's box's left (null: not drawn) - for what's shown over it.
   tileXRef?: RefObject<((index: number) => number | null) | null>;
@@ -381,7 +382,8 @@ export default function TableGL({
       const p = at(e);
       const seen = i === null && !sweepRef.current && e3 && e3.pickHand(p.x, p.y, root.clientWidth, root.clientHeight) === null ? e3.pickSeen(p.x, p.y, root.clientWidth, root.clientHeight) : null;
       seenOn = seen !== null;
-      if (seen) onSeenRef.current?.(seen);
+      // (The bubble's point on the tile's top edge, at its middle.)
+      if (seen) onSeenRef.current?.({ face: seen.face, x: (seen.x0 + seen.x1) / 2, y: seen.y0 });
       holding = !sweepRef.current && i !== null;
       if (!sweepRef.current) return press(i);
       if (i === null) return;
