@@ -51,8 +51,9 @@ export interface GLPond {
   pinLast: boolean;
   // Where each 叮 fell in this pond - before tile `at` (its own: its
   // declaring tile, the first of the 叮) - by whose side declared it, and how
-  // they're shown: a bar in its colour (GLTableView.dingColours) on that
-  // seam, or the tiles since on a new row, the bar down its start.
+  // they're shown, each a bar on the felt in its colour
+  // (GLTableView.dingColours): in a gap the row opens there ("bar", Compact),
+  // or before the new row the tiles since start.
   dings?: { at: number; by: GLSide }[];
   dingMark?: "bar" | "row";
 }
