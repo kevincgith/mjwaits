@@ -331,7 +331,7 @@ interface Saved {
   speed?: Speed;
   oneTap?: boolean;
   seenCopies?: boolean; // 見牌: holding a tile greys the ponds' others (absent: on)
-  dingMarks?: DingMarks | "coin"; // 叮 marks: where a 叮 fell in each pond (absent, or "coin" as it was: bar)
+  dingMarks?: DingMarks | "coin"; // 叮 marks: where a 叮 fell in each pond (absent, or the old "coin": New row)
   sortOrder?: string; // 排序: the suits' order in your hand, as "mtbz" (absent: that)
   waits?: boolean; // 聽 Waits: what a ready hand waits on, and its 番 (absent: on)
   multiWin?: boolean; // 一炮多響 (else 截胡)
@@ -1245,7 +1245,7 @@ export function PlayPanel({
   const [seenCopies, setSeenCopies] = useState(() => saved?.seenCopies ?? true);
   // 叮 marks: where each 叮 fell in every pond - a bar in its declarer's
   // colour on the seam, or the tiles since on a new row (as a table does).
-  const [dingMarks, setDingMarks] = useState<DingMarks>(() => (saved?.dingMarks === "off" || saved?.dingMarks === "row" ? saved.dingMarks : "bar"));
+  const [dingMarks, setDingMarks] = useState<DingMarks>(() => (saved?.dingMarks === "off" || saved?.dingMarks === "bar" ? saved.dingMarks : "row"));
   // 排序 Sort order: the suits' order in your hand (萬 筒 索 字 as usual). A
   // tap on a suit moves it one earlier - the first, round to the end.
   const [sortOrder, setSortOrder] = useState(() => (isSuitOrder(saved?.sortOrder) ? saved.sortOrder : DEFAULT_SUIT_ORDER));
