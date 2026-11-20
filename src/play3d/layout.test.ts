@@ -540,3 +540,32 @@ describe("見牌 seen copies on the WebGL table", () => {
     expect(out.filter((p) => p.face === "m2").every((p) => p.tint < 1)).toBe(true);
   });
 });
+
+describe("叮 marks in the ponds", () => {
+  const m = (rank: number): Tile => ({ suit: "m", rank });
+  const pond = (n: number, extra = {}) => ({ tiles: Array.from({ length: n }, (_, i) => m((i % 9) + 1)), pinLast: false, ...extra });
+  const base = (): GLTableView => ({
+    ...take("bottom", 0),
+    piles: null,
+    rows: {},
+    flights: [],
+    ponds: { bottom: pond(8, { dings: [{ at: 5, by: "right" as const }] }), right: pond(8, { riichiAt: 4, dings: [{ at: 4, by: "right" as const }] }), top: pond(8), left: pond(8) },
+    dingColours: { bottom: "#ffd166", right: "#b3261e", top: "#2f6fb5", left: "#0e7c86" },
+  });
+
+  it("holding a 叮 player's plaque greys every pond tile but those thrown since its 叮", () => {
+    const out = layoutTable({ ...base(), safeSince: { bottom: 5, right: 5, top: 4, left: 4 } }, DIMS).felt.pieces;
+    const tint = (key: string) => out.find((p) => p.seen === key)!.tint;
+    expect(tint("bottom:pond:4")).toBeLessThan(1);
+    expect(tint("bottom:pond:5")).toBe(1);
+    expect(tint("right:pond:4")).toBeLessThan(1); // its own declaring tile
+    expect(tint("right:pond:5")).toBe(1);
+    expect(tint("top:pond:3")).toBeLessThan(1);
+    expect(tint("top:pond:4")).toBe(1);
+  });
+
+  it("draws each 叮 as a bar in its declarer's colour - one per seam", () => {
+    const quads = layoutTable(base(), DIMS).felt.quads;
+    expect(quads.filter((q) => q.kind === "ding-right")).toHaveLength(2);
+  });
+});

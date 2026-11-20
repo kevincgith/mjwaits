@@ -15,11 +15,12 @@ import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeom
 import { THICK, TILE_H, TILE_R, TILE_W, type Card, type Layout, type Piece, type Quad, type QuadKind } from "./layout";
 import type { Mat } from "./mat";
 import type { Atlas } from "./textures";
-import { DING_WINDS } from "./types";
+import type { GLSide } from "./types";
 import { PLAQUE_RINGED } from "./cards";
 import { SEAT_TILE_RINGED } from "./diceScenes";
-import { bar, bubble, dingCoin, dingLine, gapOutline, peekTray, goldRing, pickedRim, pin, rowShadow, tileShadow, triangle } from "./textures";
+import { bar, bubble, dingBar, gapOutline, peekTray, goldRing, pickedRim, pin, rowShadow, tileShadow, triangle } from "./textures";
 
+const SIDES: GLSide[] = ["top", "bottom", "left", "right"];
 const MAX_FELT = 260;
 const MAX_HAND = 48;
 // A peek's tiles: those seen through in the rack, and those lifted out of it.
@@ -713,13 +714,27 @@ export class Engine {
     this.felt.addMarks("ring", mark(goldRing(PLAQUE_RINGED)), 1, 0);
     this.felt.addMarks("tile-ring", mark(goldRing(SEAT_TILE_RINGED)), 1, 0);
     // 叮 marks: a line on each pond's seam (three 叮s in each of four ponds at most), and its coin.
-    this.felt.addMarks("ding-line", mark(dingLine()), 12, 2);
-    for (const w of DING_WINDS) this.felt.addMarks(`ding-${w}`, mark(dingCoin(w)), 4, 3);
+    for (const side of SIDES) this.felt.addMarks(`ding-${side}`, mark(dingBar("#ffd166")), 4, 2);
     for (const side of ["top", "bottom", "left", "right"] as const) this.felt.addMarks(`bubble-${side}`, mark(bubble(10, 10, 1, side, 1)), 1, 2);
     this.hand.addMarks("row-shadow", mark(rowShadow()), 1, 0);
     this.hand.addMarks("hint", mark(bar("#ffd166")), MAX_HAND, 2);
     this.hand.addMarks("ready", mark(triangle("#ffd23f")), MAX_HAND, 2);
     this.hand.addMarks("danger", mark(bar("#ff6b5a")), MAX_HAND, 2);
+  }
+
+  // Each side's 叮 bar, repainted when its colour changes.
+  private dingPainted: Partial<Record<GLSide, string>> = {};
+  dingColours(colours: Record<GLSide, string> | undefined) {
+    if (!colours) return;
+    for (const side of SIDES) {
+      if (this.dingPainted[side] === colours[side]) continue;
+      this.dingPainted[side] = colours[side];
+      const mat = this.felt.marks.get(`ding-${side}`)!.material as THREE.ShaderMaterial;
+      const old = mat.uniforms.uMap.value as THREE.Texture;
+      old.dispose();
+      this.kept.delete(old);
+      mat.uniforms.uMap.value = this.keep(canvasTexture(dingBar(colours[side])));
+    }
   }
 
   // The spotlight's bubbles, painted at the table's size.

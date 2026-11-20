@@ -256,6 +256,7 @@ export default function TableGL({
     const frame = readFrame(root, felt, hand);
     e.frame(frame, Math.min(3, window.devicePixelRatio || 1));
     if (corner) placeBadges(root, frame, dims.current.feltW);
+    e.dingColours(viewRef.current.dingColours);
     e.show(layout);
     e.render();
   });

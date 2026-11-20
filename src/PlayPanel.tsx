@@ -129,7 +129,7 @@ import { ReviewSheet, type Decision } from "./PlayReview";
 import { RecordSheet } from "./PlayRecord";
 import { isMuted, play as playSound, setMuted, wakeAudio, type Sound } from "./lib/sound";
 import { addHand, loadRecord, saveRecord, type Opponent } from "./lib/playRecord";
-import type { DingWind, GLFlight, GLMine, GLPile, GLSwapRow, GLTableView, GLWall, PeekSide } from "./play3d/types";
+import type { GLFlight, GLMine, GLPile, GLSwapRow, GLTableView, GLWall, PeekSide } from "./play3d/types";
 import { cornerDragged, hasPeeked, noteCornerDragged, notePeeked, wallCounts, type Observe, type ObserveMode } from "./lib/observer";
 import { mayPeek, peekView, type PeekView } from "@mjwaits/shared/engine/view";
 import { giverOrder, swapSlots } from "./play3d/swapOrder";
@@ -168,20 +168,60 @@ const englishName = (p: BotProfile) => p.name.split(" ").slice(1).join(" ");
 // colour (see .play-avatar.is-<id>).
 // A learned bot wears its personality's avatar with a ring; a mystery bot
 // a plain "?", whichever personality it is.
-const Avatar = ({ bot }: { bot: BotProfile }) => {
+// `colour`: this seat's own, when another seat's bot would wear the same.
+const Avatar = ({ bot, colour }: { bot: BotProfile; colour?: string | null }) => {
+  const paint = colour ? { background: colour } : undefined;
   if (mysteryStyle(bot))
     return (
-      <span className="play-avatar is-mystery" aria-hidden="true">
+      <span className="play-avatar is-mystery" style={paint} aria-hidden="true">
         ?
       </span>
     );
   const style = learnedStyle(bot);
   return (
-    <span className={`play-avatar is-${style ?? bot.id}${style ? " is-learned" : ""}`} aria-hidden="true">
+    <span className={`play-avatar is-${style ?? bot.id}${style ? " is-learned" : ""}`} style={paint} aria-hidden="true">
       {style ? profileById(style).name[0] : bot.name[0]}
     </span>
   );
 };
+// Each personality's colour (as .play-avatar.is-<id>), a mystery bot's grey,
+// and the colours a second bot of the same kind at the table wears instead.
+const BOT_COLOURS: Record<string, string> = {
+  grandmaster: "#7a4fb0",
+  veteran: "#2f6fb5",
+  speedster: "#d2691e",
+  hunter: "#b8860b",
+  wall: "#5b6670",
+  gambler: "#b3261e",
+  casual: "#2e8b57",
+};
+const MYSTERY_COLOUR = "#5d6670";
+const SPARE_COLOURS = ["#0e7c86", "#c2185b", "#7b5e3b", "#3f51b5"];
+const botColour = (bot: BotProfile) => (mysteryStyle(bot) ? MYSTERY_COLOUR : (BOT_COLOURS[learnedStyle(bot) ?? bot.id] ?? "#5c6b63"));
+const YOUR_COLOUR = "#ffd166";
+// Each seat's colour, all different: a bot's its own, or - taken by a seat
+// before it (a mystery's grey and the Iron Wall's count as one) - the first
+// spare free; you gold; another person a spare too.
+function seatColours(bots: (BotProfile | null | undefined)[], you: number): string[] {
+  const grey = (c: string) => (c === MYSTERY_COLOUR ? BOT_COLOURS.wall : c);
+  const used: string[] = [YOUR_COLOUR];
+  const spare = () => SPARE_COLOURS.find((c) => !used.includes(c)) ?? "#5c6b63";
+  const out = bots.map((bot) => {
+    if (!bot) return "";
+    const own = botColour(bot);
+    const colour = used.includes(grey(own)) ? spare() : own;
+    used.push(grey(colour));
+    return colour;
+  });
+  return out.map((c, seat) => {
+    if (c) return c;
+    if (seat === you) return YOUR_COLOUR;
+    const colour = spare();
+    used.push(colour);
+    return colour;
+  });
+}
+
 // A seat's bot by id: a personality, "net-<personality>" for a learned one,
 // or "mystery-<personality>" for one that doesn't say.
 const botById = (id: string): BotProfile =>
@@ -286,7 +326,7 @@ interface Saved {
   speed?: Speed;
   oneTap?: boolean;
   seenCopies?: boolean; // 見牌: holding a tile greys the ponds' others (absent: on)
-  dingMarks?: DingMarks; // 叮 marks: where a 叮 fell in each pond (absent: coin)
+  dingMarks?: DingMarks | "coin"; // 叮 marks: where a 叮 fell in each pond (absent, or "coin" as it was: bar)
   sortOrder?: string; // 排序: the suits' order in your hand, as "mtbz" (absent: that)
   waits?: boolean; // 聽 Waits: what a ready hand waits on, and its 番 (absent: on)
   multiWin?: boolean; // 一炮多響 (else 截胡)
@@ -522,11 +562,11 @@ function burstSound(label: string): Sound {
 }
 
 // 叮 marks: where each 叮 fell in the others' ponds.
-type DingMarks = "off" | "coin" | "row";
+type DingMarks = "off" | "bar" | "row";
 function DingMarksRow({ value, set }: { value: DingMarks; set: (v: DingMarks) => void }) {
   const choices: [DingMarks, string][] = [
     ["off", "Off"],
-    ["coin", "Coin"],
+    ["bar", "Bar"],
     ["row", "New row"],
   ];
   return (
@@ -1197,9 +1237,9 @@ export function PlayPanel({
   // 見牌 Seen copies: a tile held a moment greys every other tile
   // in the ponds - its copies already out stand out.
   const [seenCopies, setSeenCopies] = useState(() => saved?.seenCopies ?? true);
-  // 叮 marks: where each 叮 fell in the others' ponds - a gold line and coin
-  // on the seam, or the tiles since on a new row (as a table does).
-  const [dingMarks, setDingMarks] = useState<DingMarks>(() => saved?.dingMarks ?? "coin");
+  // 叮 marks: where each 叮 fell in every pond - a bar in its declarer's
+  // colour on the seam, or the tiles since on a new row (as a table does).
+  const [dingMarks, setDingMarks] = useState<DingMarks>(() => (saved?.dingMarks === "off" || saved?.dingMarks === "row" ? saved.dingMarks : "bar"));
   // 排序 Sort order: the suits' order in your hand (萬 筒 索 字 as usual). A
   // tap on a suit moves it one earlier - the first, round to the end.
   const [sortOrder, setSortOrder] = useState(() => (isSuitOrder(saved?.sortOrder) ? saved.sortOrder : DEFAULT_SUIT_ORDER));
@@ -1842,6 +1882,8 @@ export function PlayPanel({
   // One character for a seat: 你, a bot's avatar character, a person's initial.
   const initialOf = (seat: number) =>
     seat === HUMAN && seated ? "你" : bots[seat] ? (mysteryStyle(bots[seat]!) ? "?" : bots[seat]!.name[0]) : nameOf(seat).slice(0, 1).toUpperCase();
+  // Each seat's colour: its bot's, a second of a kind its own (seatColours).
+  const colours = seatColours([0, 1, 2, 3].map((s) => bots[s]), HUMAN);
   const [selected, setSelected] = useState<number | null>(null);
   // The tile a finger's held on in your row (see TableGL's onPress).
   const [pressed, setPressed] = useState<number | null>(null);
@@ -1854,6 +1896,22 @@ export function PlayPanel({
     const id = window.setTimeout(() => setHeldLong(true), SEEN_HOLD_MS);
     return () => window.clearTimeout(id);
   }, [isHeld]);
+  // A 叮 player's plaque held a moment (as a tile for 見牌): the tiles
+  // thrown since its 叮 stand out, the rest greyed.
+  const [plaqueDown, setPlaqueDown] = useState<number | null>(null);
+  const [plaqueHeld, setPlaqueHeld] = useState<number | null>(null);
+  useEffect(() => {
+    setPlaqueHeld(null);
+    if (plaqueDown === null) return;
+    const id = window.setTimeout(() => setPlaqueHeld(plaqueDown), SEEN_HOLD_MS);
+    return () => window.clearTimeout(id);
+  }, [plaqueDown]);
+  const plaqueHold = (seat: number) => ({
+    onPointerDown: () => game.players[seat].riichi?.ponds && setPlaqueDown(seat),
+    onPointerUp: () => setPlaqueDown(null),
+    onPointerCancel: () => setPlaqueDown(null),
+    onPointerLeave: () => setPlaqueDown(null),
+  });
   // Where the WebGL table draws one of your tiles (see TableGL's tileXRef).
   const tileXRef = useRef<((index: number) => number | null) | null>(null);
   const [burst, setBurst] = useState<{ seat: number; label: string; id: number; deltas?: number[] } | null>(null);
@@ -3671,9 +3729,9 @@ export function PlayPanel({
     ) : null;
   // A bot's name card - flat, over the corner of the table like a HUD.
   const badge = (seat: number) => (
-    <span className={`play-badge at-${SIDES[seat]}${activeSeat === seat ? " is-active" : ""}`}>
+    <span className={`play-badge at-${SIDES[seat]}${activeSeat === seat ? " is-active" : ""}${plaqueHeld === seat ? " is-held" : ""}`} {...plaqueHold(seat)}>
       <span className="play-badge-wind">{WIND_CHARS[seatWind(seat, game.dealer)]}</span>
-      {bots[seat] && <Avatar bot={bots[seat]!} />}
+      {bots[seat] && <Avatar bot={bots[seat]!} colour={colours[seat]} />}
       <span className="play-badge-name">
         <span className="play-badge-name-text">{nameOf(seat)}</span>
         <span className="play-badge-chips">
@@ -3756,19 +3814,20 @@ export function PlayPanel({
   // 見牌: the tile you're holding - held a moment, not tapped - its copies lit.
   const focusAt = seenCopies && pressing && heldLong ? pressed : null;
   const pondFocus = focusAt !== null ? (handTiles[focusAt] ?? null) : null;
-  // The others' 叮s in a pond: where each fell, by its declarer's wind.
+  // The 叮s in a pond: where each fell - its own at its declaring tile - by
+  // whose it was.
   const dingsIn = (seat: number) =>
     dingMarks === "off"
       ? []
       : [0, 1, 2, 3]
-          .filter((o) => o !== seat && game.players[o].riichi?.ponds)
-          .map((o) => ({ at: game.players[o].riichi!.ponds![seat], wind: WIND_CHARS[seatWind(o, game.dealer)] as DingWind }));
+          .filter((o) => game.players[o].riichi?.ponds)
+          .map((o) => ({ at: game.players[o].riichi!.ponds![seat], by: SIDES[o] }));
   const glPond = (seat: number) => ({
     tiles: showPiles ? [] : game.players[seat].discards,
     riichiAt: game.players[seat].riichi?.discard,
     pinLast: discardFrom === seat,
     dings: dingsIn(seat),
-    dingMark: dingMarks === "row" ? ("row" as const) : ("coin" as const),
+    dingMark: dingMarks === "row" ? ("row" as const) : ("bar" as const),
   });
   const spot =
     game.phase.kind === "claims"
@@ -3818,8 +3877,15 @@ export function PlayPanel({
     .map((f) => ({ id: f.id, from: SIDES[f.seat], place: f.place, to: SIDES[f.to], group: rowGroups(f.to).groups.indexOf(f.row!.group), slot: f.row!.place!, tile: f.tile, flip: !!f.flip, greyed: !!f.greyed }));
   const glView: GLTableView = {
     focus: pondFocus === BLANK ? null : pondFocus,
+    // (Its own pond's from the tile after its declaring one: that one's no
+    // safer than any other it threw.)
+    safeSince: (() => {
+      const ponds = plaqueHeld !== null ? game.players[plaqueHeld].riichi?.ponds : undefined;
+      return ponds ? Object.fromEntries([0, 1, 2, 3].map((s) => [SIDES[s], ponds[s] + (s === plaqueHeld ? 1 : 0)])) : null;
+    })(),
     walls: { right: glWall(1), top: glWall(2), left: glWall(3) },
     ponds: { bottom: glPond(HUMAN), right: glPond(1), top: glPond(2), left: glPond(3) },
+    dingColours: { bottom: colours[HUMAN], right: colours[1], top: colours[2], left: colours[3] },
     mine: {
       tiles: handTiles.map((t, i) => ({
         tile: t === BLANK ? null : t,

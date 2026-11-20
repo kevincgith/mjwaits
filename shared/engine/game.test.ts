@@ -263,18 +263,19 @@ describe("game", () => {
     expect(barredClaims(again, 1)).toEqual([]);
   });
 
-  it("no claim back - runs: from a tile just thrown, threw 1m from 123m, no 1m or 4m onto the 23m till the next draw", () => {
+  it("no claim back - runs: from a tile just thrown, threw 1m from 123m, no 1m or 4m onto the 23m till the next draw (other runs are fine)", () => {
     const s0 = newGame();
     // Seat 1 to throw, holding 123m and 56m.
     s0.players[1].hand = parseHand("123m56m111222t55b5z");
     s0.phase = { kind: "turn", seat: 1, drawn: null, replacement: null };
     const s = applyTurnMove(s0, { kind: "discard", tile: { suit: "m", rank: 1 } });
     expect(s.players[1].threw).toEqual({ suit: "m", rank: 1 });
-    // Seat 0, on its left, throws 4m: no run with it at all (greyed instead).
+    // Seat 0, on its left, throws 4m: no 234m (1m made a run with 23m too -
+    // greyed instead); 345m and 456m are runs 1m never fitted.
     const four = { ...s, phase: { kind: "claims" as const, from: 0, tile: { suit: "m" as const, rank: 4 } } };
     const runs = (cs: ReturnType<typeof claimOptions>) => cs.flatMap((c) => (c.kind === "chow" ? [c.tiles.map((t) => t.rank).join("")] : []));
-    expect(runs(claimOptions(four, 1))).toEqual([]);
-    expect(runs(barredClaims(four, 1))).toEqual(["23", "35", "56"]);
+    expect(runs(claimOptions(four, 1))).toEqual(["35", "56"]);
+    expect(runs(barredClaims(four, 1))).toEqual(["23"]);
     // 7m isn't barred: 567.
     expect(runs(claimOptions({ ...s, phase: { kind: "claims" as const, from: 0, tile: { suit: "m" as const, rank: 7 } } }, 1))).toEqual(["56"]);
     // 1m back: no run at all.
@@ -285,6 +286,17 @@ describe("game", () => {
     const drew = resolveClaims({ ...s, phase: { kind: "claims" as const, from: 0, tile: { suit: "z" as const, rank: 7 } } }, [null, null, null, null]);
     expect(drew.phase).toMatchObject({ kind: "turn", seat: 1 });
     expect(drew.players[1].threw).toBeUndefined();
+  });
+
+  it("no claim back - threw 5m from 56789m: an 8m from the left makes no 678m, but 789m is fine", () => {
+    const s0 = newGame();
+    s0.players[1].hand = parseHand("56789m111222t55b5z");
+    s0.phase = { kind: "turn", seat: 1, drawn: null, replacement: null };
+    const s = applyTurnMove(s0, { kind: "discard", tile: { suit: "m", rank: 5 } });
+    const eight = { ...s, phase: { kind: "claims" as const, from: 0, tile: { suit: "m" as const, rank: 8 } } };
+    const runs = (cs: ReturnType<typeof claimOptions>) => cs.flatMap((c) => (c.kind === "chow" ? [c.tiles.map((t) => t.rank).join("")] : []));
+    expect(runs(claimOptions(eight, 1))).toEqual(["79"]);
+    expect(runs(barredClaims(eight, 1))).toEqual(["67"]);
   });
 
   it("the claim-back and passed-pung bars last through the moves in between (not just the next step)", () => {
