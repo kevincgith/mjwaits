@@ -150,6 +150,8 @@ export interface GLTableView {
   // open (ponds, melds, bonus tiles) greyed, so its copies stand out.
   focus?: Tile | null;
   // A 叮 player's plaque held: every tile out in the open greyed but those
-  // thrown since its 叮 - each pond's from this tile on - safe against it.
-  safeSince?: Partial<Record<GLSide, number>> | null;
+  // thrown since its 叮 (its declaring tile too) - safe against it: each
+  // pond's from tile `pond` on, and the tile claimed into each meld from
+  // meld `meld` on.
+  safeSince?: Partial<Record<GLSide, { pond: number; meld: number }>> | null;
 }

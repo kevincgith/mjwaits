@@ -83,6 +83,9 @@ export interface Riichi {
   // tiles before its declaring one): every tile thrown since is past it - the
   // new row a table starts at a 叮, its own pond's with the declaring tile.
   ponds?: number[];
+  // And how many melds each seat had: every one since has its claimed tile
+  // thrown since the 叮 (an added kong keeps its pung's place).
+  melds?: number[];
   // Passed up a win (on a discard, or its own draw): no more wins this hand.
   passed?: boolean;
 }
@@ -805,6 +808,7 @@ export function applyTurnMove(state: GameState, move: TurnMove): GameState {
           discard: p.discards.length,
           ippatsu: true,
           ponds: s.players.map((o) => o.discards.length),
+          melds: s.players.map((o) => o.melds.length),
         };
       }
       // Throwing when it could have won on its own draw is passing up that win.

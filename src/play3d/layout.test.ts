@@ -554,14 +554,40 @@ describe("叮 marks in the ponds", () => {
   });
 
   it("holding a 叮 player's plaque greys every pond tile but those thrown since its 叮", () => {
-    const out = layoutTable({ ...base(), safeSince: { bottom: 5, right: 5, top: 4, left: 4 } }, DIMS).felt.pieces;
+    const since = (pond: number) => ({ pond, meld: Infinity });
+    const out = layoutTable({ ...base(), safeSince: { bottom: since(5), right: since(4), top: since(4), left: since(4) } }, DIMS).felt.pieces;
     const tint = (key: string) => out.find((p) => p.seen === key)!.tint;
     expect(tint("bottom:pond:4")).toBeLessThan(1);
     expect(tint("bottom:pond:5")).toBe(1);
-    expect(tint("right:pond:4")).toBeLessThan(1); // its own declaring tile
+    expect(tint("right:pond:3")).toBeLessThan(1);
+    expect(tint("right:pond:4")).toBe(1); // its own declaring tile
     expect(tint("right:pond:5")).toBe(1);
     expect(tint("top:pond:3")).toBeLessThan(1);
     expect(tint("top:pond:4")).toBe(1);
+  });
+
+  it("keeps lit the tile claimed into each meld made since the 叮 - not those before", () => {
+    const view = base();
+    const p = (rank: number): Tile => ({ suit: "t", rank });
+    const s = (rank: number): Tile => ({ suit: "b", rank });
+    view.walls.left = { ...view.walls.left, melds: [
+      { kind: "triplet", tiles: [p(5), p(5), p(5)], concealed: false, from: 0 },
+      { kind: "run", tiles: [s(3), s(4), s(5)], concealed: false, from: 0, claimed: s(4) },
+    ] };
+    const out = layoutTable({ ...view, safeSince: { bottom: { pond: 9, meld: 0 }, right: { pond: 9, meld: 0 }, top: { pond: 9, meld: 0 }, left: { pond: 9, meld: 1 } } }, DIMS).felt.pieces;
+    const tints = (face: string) => out.filter((q) => q.face === face).map((q) => q.tint);
+    expect(tints("b4")).toEqual([1]);
+    expect(tints("b3").every((t) => t < 1)).toBe(true);
+    expect(tints("t5").every((t) => t < 1)).toBe(true);
+  });
+
+  it("New row: each row the 叮s start has a line on the felt before it, not a ribbon over its tiles", () => {
+    const view = base();
+    view.ponds = { ...view.ponds, bottom: { ...view.ponds.bottom, dingMark: "row" } };
+    const quads = layoutTable(view, DIMS).felt.quads;
+    // (Right's own pond is still bars: its 叮 at a seam.)
+    expect(quads.filter((q) => q.kind === "ding-right")).toHaveLength(1);
+    expect(quads.filter((q) => q.kind === "dingtab-right")).toHaveLength(2);
   });
 
   it("draws each 叮 as a bar in its declarer's colour - one per seam", () => {

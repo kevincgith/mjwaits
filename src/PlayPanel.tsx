@@ -283,6 +283,11 @@ const SURRENDER_SHOW_MS = 4000;
 // 見牌 Seen copies: a tile held this long (ms) greys the ponds but its copies
 // - just longer than a tap, so it answers as soon as it's a hold.
 const SEEN_HOLD_MS = 250;
+// A tile's face (as Play's table names them: "m5") - a bonus tile's none.
+const tileOfFace = (face: string): Tile | null => {
+  const m = /^([mtbz])(\d)$/.exec(face);
+  return m ? { suit: m[1] as Tile["suit"], rank: Number(m[2]) } : null;
+};
 // A hand's end is seen on the table first - the 胡 / 自摸 called and the
 // hands laid down - and only then the result card: this long after a win,
 // less after a 流局 (no call to see).
@@ -1896,6 +1901,16 @@ export function PlayPanel({
     const id = window.setTimeout(() => setHeldLong(true), SEEN_HOLD_MS);
     return () => window.clearTimeout(id);
   }, [isHeld]);
+  // 見牌 from the table too: a tile out in the open (a pond's, a meld's)
+  // held a moment - its face (see TableGL's onSeen) - its copies lit.
+  const [seenDown, setSeenDown] = useState<string | null>(null);
+  const [seenHeld, setSeenHeld] = useState<string | null>(null);
+  useEffect(() => {
+    setSeenHeld(null);
+    if (seenDown === null) return;
+    const id = window.setTimeout(() => setSeenHeld(seenDown), SEEN_HOLD_MS);
+    return () => window.clearTimeout(id);
+  }, [seenDown]);
   // A 叮 player's plaque held a moment (as a tile for 見牌): the tiles
   // thrown since its 叮 stand out, the rest greyed.
   const [plaqueDown, setPlaqueDown] = useState<number | null>(null);
@@ -3814,6 +3829,7 @@ export function PlayPanel({
   // 見牌: the tile you're holding - held a moment, not tapped - its copies lit.
   const focusAt = seenCopies && pressing && heldLong ? pressed : null;
   const pondFocus = focusAt !== null ? (handTiles[focusAt] ?? null) : null;
+  const feltFocus = seenCopies && seenHeld ? tileOfFace(seenHeld) : null;
   // The 叮s in a pond: where each fell - its own at its declaring tile - by
   // whose it was.
   const dingsIn = (seat: number) =>
@@ -3876,12 +3892,12 @@ export function PlayPanel({
     .filter((f) => f.row?.place !== undefined && !landed.has(f.id))
     .map((f) => ({ id: f.id, from: SIDES[f.seat], place: f.place, to: SIDES[f.to], group: rowGroups(f.to).groups.indexOf(f.row!.group), slot: f.row!.place!, tile: f.tile, flip: !!f.flip, greyed: !!f.greyed }));
   const glView: GLTableView = {
-    focus: pondFocus === BLANK ? null : pondFocus,
-    // (Its own pond's from the tile after its declaring one: that one's no
-    // safer than any other it threw.)
+    focus: pondFocus === BLANK ? null : (pondFocus ?? feltFocus),
+    // (Its own pond's from its declaring tile; a 叮 from before the melds
+    // were kept lights no meld.)
     safeSince: (() => {
-      const ponds = plaqueHeld !== null ? game.players[plaqueHeld].riichi?.ponds : undefined;
-      return ponds ? Object.fromEntries([0, 1, 2, 3].map((s) => [SIDES[s], ponds[s] + (s === plaqueHeld ? 1 : 0)])) : null;
+      const r = plaqueHeld !== null ? game.players[plaqueHeld].riichi : undefined;
+      return r?.ponds ? Object.fromEntries([0, 1, 2, 3].map((s) => [SIDES[s], { pond: r.ponds![s], meld: r.melds?.[s] ?? Infinity }])) : null;
     })(),
     walls: { right: glWall(1), top: glWall(2), left: glWall(3) },
     ponds: { bottom: glPond(HUMAN), right: glPond(1), top: glPond(2), left: glPond(3) },
@@ -4246,7 +4262,7 @@ export function PlayPanel({
           </div>
         )}
         <Suspense fallback={null}>
-          <TableGL view={glView} rootRef={tableRef} feltRef={feltRef} handRef={myRowRef} middleRef={middleRef} onTile={tapTile} onPile={(side, i) => myTake && pickFrom(SIDES.indexOf(side), i)} sweep={swapGiving} onSweep={sweepTile} onPress={pressTile} tileXRef={tileXRef} onCameraMove={cameraMoved} onPeek={onPeek} />
+          <TableGL view={glView} rootRef={tableRef} feltRef={feltRef} handRef={myRowRef} middleRef={middleRef} onTile={tapTile} onPile={(side, i) => myTake && pickFrom(SIDES.indexOf(side), i)} sweep={swapGiving} onSweep={sweepTile} onPress={pressTile} onSeen={setSeenDown} tileXRef={tileXRef} onCameraMove={cameraMoved} onPeek={onPeek} />
         </Suspense>
 
         <div className={`play-me${autoplay ? " is-auto" : ""}`}>
