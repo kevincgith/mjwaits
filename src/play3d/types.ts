@@ -53,7 +53,7 @@ export interface GLPond {
   // declaring tile, the first of the 叮) - by whose side declared it, and how
   // they're shown, each a bar on the felt in its colour
   // (GLTableView.dingColours): in a gap the row opens there ("bar", Compact),
-  // or before the new row the tiles since start.
+  // or in one at the start of the new row the tiles since begin.
   dings?: { at: number; by: GLSide }[];
   dingMark?: "bar" | "row";
 }

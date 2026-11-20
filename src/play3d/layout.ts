@@ -846,8 +846,8 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
     const step = (i: number) => (i === pond.riichiAt ? 0.95 : 0.73) * T;
     const rowDepth = 0.93 * T;
     // The 叮s, each a bar on the felt in its declarer's colour: in New row,
-    // the tiles thrown since each start a row, the bar before it; in Compact,
-    // the row opens a gap where it fell, the bar in it - placed before its
+    // the tiles thrown since each start a row, the bar in a gap at its start;
+    // in Compact, the row opens a gap where it fell, the bar in it - before its
     // tile, or, none thrown since, where the next will go (`n`, a place held
     // for it - a new row shows nothing till its first tile).
     const dings = (pond.dings ?? []).map((g) => ({ ...g, at: Math.min(g.at, pond.tiles.length) }));
@@ -855,16 +855,22 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
     const n = pond.tiles.length;
     const bars = newRows ? dings.filter((g) => g.at < n) : dings;
     const held = !newRows && bars.some((g) => g.at === n) ? n + 1 : n;
-    // Compact's gaps: its bars a bar's width apart, padded each side - more
-    // on the near side in the side ponds, whose seams run away from you:
-    // there a tile hides the felt just past it, so the bars go clear of that.
+    // The bars' room in the row: a gap before the tile each 叮 fell at, the
+    // bars a bar's width apart, padded each side - more on the near side in
+    // the side ponds, whose rows run away from you: there a tile hides the
+    // felt just past it, so the bars go clear of that. In New row, the gap's
+    // at the start of the row it begins - its lines inside the pond's own
+    // room, not under the last pond's tiles at the corner - in yours and
+    // across's; the side ponds' rows start clear of any, so there the lines
+    // lie on the felt before the row, the tiles where they'd be.
     const BAR = 0.085 * T;
     const SEP = 0.05 * T;
     const PAD = 0.06 * T;
     const HIDE = 0.26 * T;
-    const [lead, trail] = side === "right" ? [HIDE, PAD] : side === "left" ? [PAD, HIDE] : [PAD, PAD];
+    const [lead, trail] = side === "left" ? [PAD, HIDE] : side === "right" && !newRows ? [HIDE, PAD] : [PAD, PAD];
+    const linesOut = newRows && (side === "left" || side === "right");
     const gapAt = (i: number) => {
-      const k = newRows ? 0 : bars.filter((g) => g.at === i).length;
+      const k = linesOut ? 0 : bars.filter((g) => g.at === i).length;
       return k ? lead + k * BAR + (k - 1) * SEP + trail : 0;
     };
     const room = (i: number) => gapAt(i) + step(i);
@@ -988,11 +994,10 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
       // (Across the pond from the compass toward its owner: the row's middle.)
       const deep = starts[r] * fit + (rowDeep(lines[r]) * fit) / 2;
       // Where it lies along the row (as laid out, before the pond's fitted).
-      let a = sum(lines[r].filter((j) => j < g.at).map(room)) + lead + nth * (BAR + SEP) + BAR / 2;
-      // New row: before the row, out from it, side by side - the left
-      // pond's rows start at its far end, so there out past where the first
-      // tile hides the felt.
-      if (newRows) a = -(0.14 * T + (side === "left" ? 0.36 * T : 0)) - nth * (BAR + SEP) - BAR / 2;
+      // (The side ponds' New row lines: before the row, out from it - the
+      // left pond's rows start at its far end, so there out past where the
+      // first tile hides the felt.)
+      const a = linesOut ? -(0.14 * T + (side === "left" ? 0.36 * T : 0)) - nth * (BAR + SEP) - BAR / 2 : sum(lines[r].filter((j) => j < g.at).map(room)) + lead + nth * (BAR + SEP) + BAR / 2;
       let x: number;
       let y: number;
       if (side === "top") [x, y] = [centreX + (limit / 2 - a) * fit, row2y1 - deep];
