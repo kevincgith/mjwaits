@@ -135,6 +135,7 @@ import { mayPeek, peekView, type PeekView } from "@mjwaits/shared/engine/view";
 import { giverOrder, swapSlots } from "./play3d/swapOrder";
 import { loadLearnedModel, type LearnedModel } from "./lib/ml/browser";
 import { learnedClaim, learnedTurnMove, type LearnedBot } from "./lib/ml/policy";
+import { seatColours } from "./lib/seatColours";
 import { claimDecisionAction, encodeObservation, legalActions, turnMoveAction } from "./lib/ml/encode";
 import { countRecorded, exportRecorded, finishHand, recordDecision } from "./lib/ml/recorder";
 
@@ -184,44 +185,6 @@ const Avatar = ({ bot, colour }: { bot: BotProfile; colour?: string | null }) =>
     </span>
   );
 };
-// Each personality's colour (as .play-avatar.is-<id>), a mystery bot's grey,
-// and the colours a second bot of the same kind at the table wears instead.
-const BOT_COLOURS: Record<string, string> = {
-  grandmaster: "#7a4fb0",
-  veteran: "#2f6fb5",
-  speedster: "#d2691e",
-  hunter: "#b8860b",
-  wall: "#5b6670",
-  gambler: "#b3261e",
-  casual: "#2e8b57",
-};
-const MYSTERY_COLOUR = "#5d6670";
-const SPARE_COLOURS = ["#0e7c86", "#c2185b", "#7b5e3b", "#3f51b5"];
-const botColour = (bot: BotProfile) => (mysteryStyle(bot) ? MYSTERY_COLOUR : (BOT_COLOURS[learnedStyle(bot) ?? bot.id] ?? "#5c6b63"));
-const YOUR_COLOUR = "#ffd166";
-// Each seat's colour, all different: a bot's its own, or - taken by a seat
-// before it (a mystery's grey and the Iron Wall's count as one) - the first
-// spare free; you gold; another person a spare too.
-function seatColours(bots: (BotProfile | null | undefined)[], you: number): string[] {
-  const grey = (c: string) => (c === MYSTERY_COLOUR ? BOT_COLOURS.wall : c);
-  const used: string[] = [YOUR_COLOUR];
-  const spare = () => SPARE_COLOURS.find((c) => !used.includes(c)) ?? "#5c6b63";
-  const out = bots.map((bot) => {
-    if (!bot) return "";
-    const own = botColour(bot);
-    const colour = used.includes(grey(own)) ? spare() : own;
-    used.push(grey(colour));
-    return colour;
-  });
-  return out.map((c, seat) => {
-    if (c) return c;
-    if (seat === you) return YOUR_COLOUR;
-    const colour = spare();
-    used.push(colour);
-    return colour;
-  });
-}
-
 // A seat's bot by id: a personality, "net-<personality>" for a learned one,
 // or "mystery-<personality>" for one that doesn't say.
 const botById = (id: string): BotProfile =>
@@ -1888,7 +1851,7 @@ export function PlayPanel({
   // One character for a seat: 你, a bot's avatar character, a person's initial.
   const initialOf = (seat: number) =>
     seat === HUMAN && seated ? "你" : bots[seat] ? (mysteryStyle(bots[seat]!) ? "?" : bots[seat]!.name[0]) : nameOf(seat).slice(0, 1).toUpperCase();
-  // Each seat's colour: its bot's, a second of a kind its own (seatColours).
+  // Each seat's colour, its avatar's and its marks' on the felt (seatColours).
   const colours = seatColours([0, 1, 2, 3].map((s) => bots[s]), HUMAN);
   const [selected, setSelected] = useState<number | null>(null);
   // The tile a finger's held on in your row (see TableGL's onPress).
@@ -1904,8 +1867,9 @@ export function PlayPanel({
   }, [isHeld]);
   // 見牌 from the table too: a tile out in the open (a pond's, a meld's)
   // held a moment - its face (see TableGL's onSeen) - its copies lit.
-  const [seenDown, setSeenDown] = useState<string | null>(null);
-  const [seenHeld, setSeenHeld] = useState<string | null>(null);
+  // (With where it's held: the tile shown in a bubble over the finger.)
+  const [seenDown, setSeenDown] = useState<{ face: string; x: number; y: number } | null>(null);
+  const [seenHeld, setSeenHeld] = useState<{ face: string; x: number; y: number } | null>(null);
   useEffect(() => {
     setSeenHeld(null);
     if (seenDown === null) return;
@@ -3747,7 +3711,7 @@ export function PlayPanel({
   const badge = (seat: number) => (
     <span className={`play-badge at-${SIDES[seat]}${activeSeat === seat ? " is-active" : ""}${plaqueHeld === seat ? " is-held" : ""}`} {...plaqueHold(seat)}>
       <span className="play-badge-wind">{WIND_CHARS[seatWind(seat, game.dealer)]}</span>
-      {bots[seat] && <Avatar bot={bots[seat]!} colour={colours[seat]} />}
+      {bots[seat] && <Avatar bot={bots[seat]!} colour={colours[seat].plaque} />}
       <span className="play-badge-name">
         <span className="play-badge-name-text">{nameOf(seat)}</span>
         <span className="play-badge-chips">
@@ -3830,7 +3794,7 @@ export function PlayPanel({
   // 見牌: the tile you're holding - held a moment, not tapped - its copies lit.
   const focusAt = seenCopies && pressing && heldLong ? pressed : null;
   const pondFocus = focusAt !== null ? (handTiles[focusAt] ?? null) : null;
-  const feltFocus = seenCopies && seenHeld ? tileOfFace(seenHeld) : null;
+  const feltFocus = seenCopies && seenHeld ? tileOfFace(seenHeld.face) : null;
   // The 叮s in a pond: where each fell - its own at its declaring tile - by
   // whose it was.
   const dingsIn = (seat: number) =>
@@ -3902,7 +3866,7 @@ export function PlayPanel({
     })(),
     walls: { right: glWall(1), top: glWall(2), left: glWall(3) },
     ponds: { bottom: glPond(HUMAN), right: glPond(1), top: glPond(2), left: glPond(3) },
-    dingColours: { bottom: colours[HUMAN], right: colours[1], top: colours[2], left: colours[3] },
+    dingColours: { bottom: colours[HUMAN].felt, right: colours[1].felt, top: colours[2].felt, left: colours[3].felt },
     mine: {
       tiles: handTiles.map((t, i) => ({
         tile: t === BLANK ? null : t,
@@ -4264,6 +4228,12 @@ export function PlayPanel({
         )}
         <Suspense fallback={null}>
           <TableGL view={glView} rootRef={tableRef} feltRef={feltRef} handRef={myRowRef} middleRef={middleRef} onTile={tapTile} onPile={(side, i) => myTake && pickFrom(SIDES.indexOf(side), i)} sweep={swapGiving} onSweep={sweepTile} onPress={pressTile} onSeen={setSeenDown} tileXRef={tileXRef} onCameraMove={cameraMoved} onPeek={onPeek} />
+          {/* 見牌 from the table: the tile held, in a bubble just above it - the finger covers it. */}
+          {feltFocus && seenHeld && (
+            <div className="play-seen-bubble" style={{ left: `clamp(2.5rem, ${seenHeld.x}px, calc(100% - 2.5rem))`, top: `max(${seenHeld.y}px, 4.6rem)` }} aria-hidden="true">
+              <TileGlyphSpan tile={feltFocus} />
+            </div>
+          )}
         </Suspense>
 
         <div className={`play-me${autoplay ? " is-auto" : ""}`}>

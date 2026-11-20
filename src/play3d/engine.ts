@@ -12,7 +12,7 @@
 
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
-import { BACK, THICK, TILE_H, TILE_R, TILE_W, type Card, type Layout, type Piece, type Quad, type QuadKind } from "./layout";
+import { BACK, PEEK_CUT, PEEK_PITCH, PEEK_TINT, THICK, TILE_H, TILE_R, TILE_W, type Card, type Layout, type Piece, type Quad, type QuadKind } from "./layout";
 import type { Mat } from "./mat";
 import type { Atlas } from "./textures";
 import type { GLSide } from "./types";
@@ -109,8 +109,10 @@ const TILE_VERTEX = /* glsl */ `
   varying float vShade;
   varying float vTint;
   varying vec4 vRect;
+  varying float vX;
   void main() {
     vUv = uv;
+    vX = position.x;
     vPart = aPart;
     vZ = position.z / ${THICK.toFixed(3)};
     // Its long sides (facing along y) shaded one way, its ends another,
@@ -129,6 +131,7 @@ const TILE_FRAGMENT_HEAD = /* glsl */ `
   varying float vShade;
   varying float vTint;
   varying vec4 vRect;
+  varying float vX;
   vec3 side(float z) {
     vec3 c = mix(${hex(0x1f7a32)}, ${hex(0x35a84a)}, clamp(z / 0.38, 0.0, 1.0));
     c = mix(c, ${hex(0x7fd98c)}, clamp((z - 0.38) / 0.08, 0.0, 1.0));
@@ -139,7 +142,11 @@ const TILE_FRAGMENT_HEAD = /* glsl */ `
 `;
 
 // A tile seen through (a peek): the same block, its body clear enough to see
-// the table behind it and its face nearly solid. `aTint` is how solid it is.
+// the table behind it and its face nearly solid. `aTint` is how solid it is
+// - or, from PEEK_TINT less its reach, a peek's own tile: solid, as your
+// row's tiles are, aTint - PEEK_TINT places from the finger across the
+// screen; dimmed in a gradient toward the window's ends, by how far each
+// point of it is, and cut off at them (half the last tile each side shown).
 const glassMaterial = (atlas: THREE.Texture, back: [number, number, number, number]) =>
   new THREE.ShaderMaterial({
     uniforms: { uAtlas: { value: atlas }, uBack: { value: new THREE.Vector4(...back) } },
@@ -149,6 +156,13 @@ const glassMaterial = (atlas: THREE.Texture, back: [number, number, number, numb
       void main() {
         vec3 c;
         float a;
+        if (vTint > ${(PEEK_TINT / 2).toFixed(1)}) {
+          float d = abs(vTint - ${PEEK_TINT.toFixed(1)} + vX / ${PEEK_PITCH.toFixed(3)});
+          if (d > ${PEEK_CUT.toFixed(1)}) discard;
+          c = vPart < 0.5 ? side(vZ) * (1.0 - vShade) : texture2D(uAtlas, vRect.xy + vUv * vRect.zw).rgb;
+          gl_FragColor = vec4(c * mix(1.0, 0.22, smoothstep(0.45, ${PEEK_CUT.toFixed(1)}, d)), 1.0);
+          return;
+        }
         if (vPart < 0.5) {
           c = mix(side(vZ) * (1.0 - vShade), vec3(0.86, 1.0, 0.9), 0.22);
           a = 0.58;
@@ -866,10 +880,22 @@ export class Engine {
 
   // The tile out in the open under a point (a pond's, a meld's - yours too -
   // a bonus tile), for 見牌: its face.
-  pickSeen(x: number, y: number, width: number, height: number): string | null {
+  // (And where it's seen, in the table's own pixels: its box on screen.)
+  pickSeen(x: number, y: number, width: number, height: number): { face: string; x0: number; x1: number; y0: number; y1: number } | null {
     for (const space of [this.hand, this.felt]) {
       const i = this.pickIn(space, x, y, width, height, (n) => space.seenFace(n) !== null);
-      if (i !== null) return space.seenFace(i);
+      if (i === null) continue;
+      const m = new THREE.Matrix4();
+      space.tiles.getMatrixAt(i, m);
+      m.premultiply(space.tiles.matrixWorld);
+      const xs: number[] = [];
+      const ys: number[] = [];
+      for (const cx of [-0.5, 0.5]) for (const cy of [-0.5, 0.5]) for (const cz of [0, 1]) {
+        const v = new THREE.Vector3(cx * TILE_W, cy * TILE_H, cz * THICK).applyMatrix4(m).applyMatrix4(space.camera.matrixWorldInverse).applyMatrix4(space.camera.projectionMatrix);
+        xs.push(((v.x + 1) / 2) * width);
+        ys.push(((1 - v.y) / 2) * height);
+      }
+      return { face: space.seenFace(i)!, x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) };
     }
     return null;
   }

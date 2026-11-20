@@ -307,9 +307,6 @@ function seeThrough(side: PeekSide, w: GLWall, groups: Group[]): Group[] {
   });
 }
 
-// A peek: how far either side of the finger it reaches; each tile by how far
-// from it - its size (in pond tiles) and how solid; how solid a tile seen
-// through in the rack is; how far back the lifted tiles lean from upright.
 // Seen copies: a pond's tiles other than the one you're holding, greyed
 // further than a 食替 tile (tint 0): 43% bright, mostly drained of colour.
 const POND_GREY = -0.5;
@@ -318,15 +315,27 @@ const POND_FADE_S = 0.2;
 // A concealed kong turned up at the hand's end, if its group doesn't say
 // when (flipAt): a beat after it's over.
 const KONG_FLIP_DELAY = 0.35;
-const PEEK_REACH = 2;
-const PEEK_SIZE = [1.3, 1.14, 1];
-const PEEK_SOLID = [1, 0.95, 0.8];
+// A peek: how far either side of the finger it reaches (the last each side
+// cut off at the box's end - PEEK_CUT places from the finger); its tiles' size (in pond
+// tiles) and how far apart (in their size); how solid a tile seen through in
+// the rack is; how far up from the felt they stand (leant back as your own
+// row's tiles are seen). They're solid, dimmed in a gradient toward the
+// window's ends: each tile's tint is PEEK_TINT + how many places from the
+// finger it is, across the screen (see glassMaterial).
+const PEEK_REACH = 3;
+export const PEEK_CUT = 3;
+const PEEK_SIZE = 1.2;
+export const PEEK_PITCH = 0.76;
+export const PEEK_TINT = 10;
 const PEEK_CLEAR = 0.32;
-const PEEK_LEAN = 66;
-// The tray a peek's tiles stand on: its width in the row's places, its depth
-// in pond tiles (the shape peekTray is painted to).
-export const TRAY_W = 5.4;
-export const TRAY_H = 2.2;
+const PEEK_LEAN = 54;
+// The box a peek's tiles stand in: upright behind them, at their lean - a
+// plain rectangle as you see it - its length in the row's places (to the
+// cut each side, and the margin it has above and below its tiles), and its
+// height in its tiles' size: theirs and that margin (the shape peekTray is
+// painted to).
+export const TRAY_W = 2 * PEEK_CUT + 0.4;
+export const TRAY_H = TILE_H + 0.45;
 
 // The standing hand's faces, as HandTilesView has them: blanks till it's laid
 // down; then sorted from its player's left, a winning tile at their right.
@@ -449,39 +458,35 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
     const tiles = reversed ? [...peek.tiles].reverse() : peek.tiles;
     // (A tile just drawn stands apart at the start of a reversed row, and isn't shown.)
     const skip = reversed && apart ? 1 : 0;
-    const pitch = 1.02 * T;
+    // (Side by side as your own row's tiles stand.)
+    const em = PEEK_SIZE * T;
+    const pitch = PEEK_PITCH * em;
     const side = rack.axis === "y";
-    const margin = 2.6 * pitch;
+    // (The window, TRAY_W places long, kept on the felt - and a side rack's
+    // out beside it, clear of the wall.)
+    const margin = (TRAY_W / 2 + 0.2) * pitch;
     const across = Math.max(margin, Math.min(d.feltW - margin, rack.centres[at]));
-    const middleX = side ? lane + dir * 2.5 * pitch : across;
+    const middleX = side ? lane + dir * (TRAY_W / 2 - 0.2) * pitch : across;
     const foot = side ? Math.max(cy0 + 1.7 * T, Math.min(cy1 - 1.5 * T, rack.centres[at] + 0.55 * T)) : lane + 1.4 * T;
-    // What they stand on, to keep them clear of whatever's on the table behind.
+    // The box they stand in, to keep them clear of whatever's on the table
+    // behind: just behind them, leant as they are (more room below them -
+    // their faces stand out in front of it, so are seen a little lower).
     if (!peek.closing) {
-      const tray = (s: number) => chain(translate(middleX, foot - 0.62 * T, 0.5), scale(TRAY_W * pitch * s, TRAY_H * T * s, 1));
+      const tray = (s: number) => chain(translate(middleX, foot, 0.14 * T), rotateX(-PEEK_LEAN), translate(0, (-TILE_H / 2 + 0.075) * em, -0.02 * em), scale(TRAY_W * pitch * s, TRAY_H * em * s, 1));
       glassQuads.push({ kind: "tray", m: tray(1), anim: { key: `tray:${rack.side}`, delay: 0, dur: 0.2, pose: (t) => tray(0.7 + 0.3 * SETTLE(t)) } });
     }
+    // (Let go, they're simply gone: the rack's own tiles solid again.)
+    if (peek.closing) return;
     for (let i = at - PEEK_REACH; i <= at + PEEK_REACH; i++) {
       const tile = tiles[i - skip];
       if (!tile || !poses[i]) continue;
-      const n = Math.abs(i - at);
       const key = `peek:${rack.side}:${i}`;
-      const em = PEEK_SIZE[n] * T;
-      const x = middleX + (side ? dir : 1) * (i - at) * pitch;
-      const yaw = (side ? dir : 1) * (i - at) * -4;
-      const lift = 0.14 * T;
-      const stood = (v: number, from: Mat): Mat => {
-        const fromScale = Math.hypot(from[0], from[1], from[2]);
-        const size = fromScale + (em - fromScale) * v;
-        const turn = (side ? (rack.side === "left" ? -90 : 90) : 180) * (1 - v);
-        return chain(translate(from[12] + (x - from[12]) * v, from[13] + (foot - from[13]) * v, lift * v), rotateZ(yaw * v + turn), rotateX(-90 + (90 - PEEK_LEAN) * v), translate(0, (-TILE_H / 2) * size, 0), scale(size));
-      };
-      const out = stood(1, poses[i]);
-      const face = faceOf(tile);
-      const ease = { key, dur: 0.18, curve: SETTLE };
-      if (peek.closing) glass.push({ face, m: poses[i], shade: LIT, tint: PEEK_SOLID[n], ease });
-      else {
-        glass.push({ face, m: out, shade: LIT, tint: PEEK_SOLID[n], ease, anim: { key: `${key}:out`, delay: 0, dur: 0.22, pose: (t) => stood(SETTLE(t), poses[i]) } });
-      }
+      const along = (side ? dir : 1) * (i - at);
+      const x = middleX + along * pitch;
+      // Standing in a straight row facing you, there at once (no flight
+      // out of the rack) - sliding along with the finger; solid, dimmed toward the ends.
+      const m = chain(translate(x, foot, 0.14 * T), rotateX(-PEEK_LEAN), translate(0, (-TILE_H / 2) * em, 0), scale(em));
+      glass.push({ face: faceOf(tile), m, shade: LIT, tint: PEEK_TINT + along, ease: { key, dur: 0.18, curve: SETTLE } });
     }
   };
 
@@ -838,6 +843,8 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
   }
 
   // ---- The ponds, each from the compass toward its player.
+  // (Each one's tiles on the felt, as laid: its box and size.)
+  const pondBoxes: Partial<Record<GLSide, { x0: number; x1: number; y0: number; y1: number; em: number }[]>> = {};
   const pondTiles = (side: GLSide, pond: GLPond) => {
     // (9 tiles a row on every side: the side ponds as long as the others.)
     const limit = 9 * 0.74 * T;
@@ -845,7 +852,7 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
     const step = (i: number) => (i === pond.riichiAt ? 0.95 : 0.73) * T;
     const rowDepth = 0.93 * T;
     // The 叮s, each a bar on the felt in its declarer's colour: in New row,
-    // the tiles thrown since each start a row, the bar in a gap at its start;
+    // the tiles thrown since each start a row, the bar on the felt before it;
     // in Compact, the row opens a gap where it fell, the bar in it - before its
     // tile, or, none thrown since, where the next will go (`n`, a place held
     // for it - a new row shows nothing till its first tile).
@@ -857,19 +864,17 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
     // The bars' room in the row: a gap before the tile each 叮 fell at, the
     // bars a bar's width apart, padded each side - more on the near side in
     // the side ponds, whose rows run away from you: there a tile hides the
-    // felt just past it, so the bars go clear of that. In New row, the gap's
-    // at the start of the row it begins - its lines inside the pond's own
-    // room, not under the last pond's tiles at the corner - in yours and
-    // across's; the side ponds' rows start clear of any, so there the lines
-    // lie on the felt before the row, the tiles where they'd be.
+    // felt just past it, so the bars go clear of that. In New row, no gap:
+    // the lines lie on the felt before the row, the tiles where they'd be
+    // (in yours and across's, clear of the side pond at that corner - the
+    // pond drawn a little smaller if they'd reach its tiles).
     const BAR = 0.085 * T;
     const SEP = 0.05 * T;
     const PAD = 0.06 * T;
     const HIDE = 0.26 * T;
-    const [lead, trail] = side === "left" ? [PAD, HIDE] : side === "right" && !newRows ? [HIDE, PAD] : [PAD, PAD];
-    const linesOut = newRows && (side === "left" || side === "right");
+    const [lead, trail] = side === "left" ? [PAD, HIDE] : side === "right" ? [HIDE, PAD] : [PAD, PAD];
     const gapAt = (i: number) => {
-      const k = linesOut ? 0 : bars.filter((g) => g.at === i).length;
+      const k = newRows ? 0 : bars.filter((g) => g.at === i).length;
       return k ? lead + k * BAR + (k - 1) * SEP + trail : 0;
     };
     const room = (i: number) => gapAt(i) + step(i);
@@ -910,8 +915,46 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
       const theirs = owned[side].filter((b) => b.y1 > y0 && b.y0 < y1);
       if (theirs.length) free = side === "left" ? col2x1 - Math.max(...theirs.map((b) => b.x1)) - gap : Math.min(...theirs.map((b) => b.x0)) - gap - col4x0;
     }
-    const fit = Math.round(Math.max(0.4, Math.min(1, free / depth)) * 100) / 100;
+    // Each 叮 bar's place on the felt, the pond drawn at `fit`.
+    const thinAt = (fit: number) => BAR * Math.max(fit, 0.7);
+    const barsAt = (fit: number) =>
+      bars.map((g) => {
+        const same = bars.filter((o) => o.at === g.at);
+        const nth = same.indexOf(g);
+        const r = lines.findIndex((l) => l.includes(g.at));
+        const long = (rowDeep(lines[r]) < rowDepth ? TILE_W : TILE_H) * T * fit - 0.1 * T * fit;
+        // (Across the pond from the compass toward its owner: the row's middle.)
+        const deep = starts[r] * fit + (rowDeep(lines[r]) * fit) / 2;
+        // Where it lies along the row (as laid out, before the pond's fitted).
+        // (New row's lines: before the row, out from it - the left pond's
+        // rows start at its far end, so there out past where the first tile
+        // hides the felt.)
+        const a = newRows ? -(0.14 * T + (side === "left" ? 0.36 * T : 0)) - nth * (BAR + SEP) - BAR / 2 : sum(lines[r].filter((j) => j < g.at).map(room)) + lead + nth * (BAR + SEP) + BAR / 2;
+        let x: number;
+        let y: number;
+        if (side === "top") [x, y] = [centreX + (limit / 2 - a) * fit, row2y1 - deep];
+        else if (side === "bottom") [x, y] = [centreX + (-limit / 2 + a) * fit, row4y0 + 0.3 * T + deep];
+        else if (side === "left") [x, y] = [col2x1 - deep, midY + (-limit / 2 + a) * fit];
+        else [x, y] = [col4x0 + deep, midY + (limit / 2 - a) * fit];
+        return { g, x, y, long };
+      });
+    let fit = Math.round(Math.max(0.4, Math.min(1, free / depth)) * 100) / 100;
+    // New row in yours and across's: the lines before a row start at the
+    // corner, by the side pond's first tiles there (yours by the left's,
+    // across's by the right's) - drawn a little smaller, step by step, till
+    // they're clear of them. (A tile hides the felt just past it, away from
+    // you: that's kept clear too.)
+    const corner = newRows ? (side === "bottom" ? pondBoxes.left : side === "top" ? pondBoxes.right : undefined) : undefined;
+    const hits = (f: number) => {
+      const thin = thinAt(f);
+      return barsAt(f).some((b) => {
+        const [hx, hy] = side === "top" || side === "bottom" ? [thin / 2, b.long / 2] : [b.long / 2, thin / 2];
+        return corner!.some((t) => b.x - hx < t.x1 + PAD && t.x0 - PAD < b.x + hx && b.y - hy < t.y1 + PAD && t.y0 - HIDE * t.em / T - PAD < b.y + hy);
+      });
+    };
+    if (corner?.length && bars.length) while (fit > 0.4 && hits(fit)) fit = Math.round((fit - 0.01) * 100) / 100;
     const em = T * fit;
+    pondBoxes[side] = [];
     pond.tiles.forEach((t, i) => {
       const r = lines.findIndex((l) => l.includes(i));
       const before = sum(lines[r].filter((j) => j < i).map(room)) + gapAt(i);
@@ -949,6 +992,8 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
       }
       const turned = (side === "left" || side === "right") !== riichi;
       const m = lying(x, y, em, rot);
+      const [hw, hh] = rot === 0 || rot === 180 ? [TILE_W / 2, TILE_H / 2] : [TILE_H / 2, TILE_W / 2];
+      pondBoxes[side]!.push({ x0: x - hw * em, x1: x + hw * em, y0: y - hh * em, y1: y + hh * em, em });
       // The newest discard drops onto the felt from a little above and settles.
       const drop =
         pond.pinLast && i === pond.tiles.length - 1
@@ -983,30 +1028,13 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
     });
     // The 叮 bars, lying on the felt across the row, as deep as its tiles.
     // (They keep a width to see however small the pond is drawn.)
-    const thin = BAR * Math.max(fit, 0.7);
+    const thin = thinAt(fit);
     const turn = rotateZ(side === "top" || side === "bottom" ? 0 : 90);
-    bars.forEach((g) => {
-      const same = bars.filter((o) => o.at === g.at);
-      const nth = same.indexOf(g);
-      const r = lines.findIndex((l) => l.includes(g.at));
-      const long = (rowDeep(lines[r]) < rowDepth ? TILE_W : TILE_H) * em - 0.1 * em;
-      // (Across the pond from the compass toward its owner: the row's middle.)
-      const deep = starts[r] * fit + (rowDeep(lines[r]) * fit) / 2;
-      // Where it lies along the row (as laid out, before the pond's fitted).
-      // (The side ponds' New row lines: before the row, out from it - the
-      // left pond's rows start at its far end, so there out past where the
-      // first tile hides the felt.)
-      const a = linesOut ? -(0.14 * T + (side === "left" ? 0.36 * T : 0)) - nth * (BAR + SEP) - BAR / 2 : sum(lines[r].filter((j) => j < g.at).map(room)) + lead + nth * (BAR + SEP) + BAR / 2;
-      let x: number;
-      let y: number;
-      if (side === "top") [x, y] = [centreX + (limit / 2 - a) * fit, row2y1 - deep];
-      else if (side === "bottom") [x, y] = [centreX + (-limit / 2 + a) * fit, row4y0 + 0.3 * T + deep];
-      else if (side === "left") [x, y] = [col2x1 - deep, midY + (-limit / 2 + a) * fit];
-      else [x, y] = [col4x0 + deep, midY + (limit / 2 - a) * fit];
-      feltQuads.push({ kind: `ding-${g.by}`, m: chain(translate(x, y, 0.4), turn, scale(thin, long, 1)) });
-    });
+    for (const b of barsAt(fit)) feltQuads.push({ kind: `ding-${b.g.by}`, m: chain(translate(b.x, b.y, 0.4), turn, scale(thin, b.long, 1)) });
   };
-  (["top", "left", "right", "bottom"] as const).forEach((s) => pondTiles(s, view.ponds[s]));
+  // (The side ponds first: yours and across's keep their New row lines
+  // clear of them.)
+  (["left", "right", "top", "bottom"] as const).forEach((s) => pondTiles(s, view.ponds[s]));
 
   // ---- The spotlight: the discard up for grabs, in a bubble standing up
   // off the felt by the compass, on its thrower's side.
