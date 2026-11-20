@@ -115,7 +115,7 @@ export interface Anim {
 
 // Flat marks: shadows on the felt, the newest discard's pin, the hint and
 // danger marks under and over your tiles, the spotlight's bubble.
-export type QuadKind = "tray" | "shadow" | "row-shadow" | "pin" | "hint" | "ready" | "danger" | "bubble-top" | "bubble-bottom" | "bubble-left" | "bubble-right" | "picked" | "gap" | "ring" | "tile-ring" | `ding-${GLSide}` | `dingside-${GLSide}` | `dingtab-${GLSide}`;
+export type QuadKind = "tray" | "shadow" | "row-shadow" | "pin" | "hint" | "ready" | "danger" | "bubble-top" | "bubble-bottom" | "bubble-left" | "bubble-right" | "picked" | "gap" | "ring" | "tile-ring" | `ding-${GLSide}`;
 export interface Quad {
   kind: QuadKind;
   // The unit square (-0.5..0.5 each way, at z 0) to where it's drawn.
@@ -845,27 +845,40 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
     // Each tile's length along its row, and the rows' depth.
     const step = (i: number) => (i === pond.riichiAt ? 0.95 : 0.73) * T;
     const rowDepth = 0.93 * T;
-    // The 叮s, each a bar in its declarer's colour: on a new row, the tiles
-    // thrown since each start one, the bar down its start; else the bar on
-    // the seam it fell at - placed where its tile is, or, before any tile's
-    // thrown since, where the next will go (`n`, a place held for it - a new
-    // row shows nothing till its first tile).
+    // The 叮s, each a bar on the felt in its declarer's colour: in New row,
+    // the tiles thrown since each start a row, the bar before it; in Compact,
+    // the row opens a gap where it fell, the bar in it - placed before its
+    // tile, or, none thrown since, where the next will go (`n`, a place held
+    // for it - a new row shows nothing till its first tile).
     const dings = (pond.dings ?? []).map((g) => ({ ...g, at: Math.min(g.at, pond.tiles.length) }));
     const newRows = pond.dingMark === "row";
     const n = pond.tiles.length;
     const bars = newRows ? dings.filter((g) => g.at < n) : dings;
     const held = !newRows && bars.some((g) => g.at === n) ? n + 1 : n;
+    // Compact's gaps: its bars a bar's width apart, padded each side - more
+    // on the near side in the side ponds, whose seams run away from you:
+    // there a tile hides the felt just past it, so the bars go clear of that.
+    const BAR = 0.085 * T;
+    const SEP = 0.05 * T;
+    const PAD = 0.06 * T;
+    const HIDE = 0.26 * T;
+    const [lead, trail] = side === "right" ? [HIDE, PAD] : side === "left" ? [PAD, HIDE] : [PAD, PAD];
+    const gapAt = (i: number) => {
+      const k = newRows ? 0 : bars.filter((g) => g.at === i).length;
+      return k ? lead + k * BAR + (k - 1) * SEP + trail : 0;
+    };
+    const room = (i: number) => gapAt(i) + step(i);
     const lines: number[][] = [[]];
     let len = 0;
     for (let i = 0; i < held; i++) {
-      const full = len + step(i) > limit + 0.01;
+      const full = len + room(i) > limit + 0.01;
       const fresh = newRows && dings.some((g) => g.at === i);
       if ((full || fresh) && lines[lines.length - 1].length) {
         lines.push([]);
         len = 0;
       }
       lines[lines.length - 1].push(i);
-      len += step(i);
+      len += room(i);
     }
     if (!held) return;
     // A size smaller when its rows would reach its owner's tiles - only as
@@ -896,7 +909,7 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
     const em = T * fit;
     pond.tiles.forEach((t, i) => {
       const r = lines.findIndex((l) => l.includes(i));
-      const before = sum(lines[r].filter((j) => j < i).map(step));
+      const before = sum(lines[r].filter((j) => j < i).map(room)) + gapAt(i);
       const riichi = i === pond.riichiAt;
       // A 叮 tile, laid the other way, sits flush with its row's compass side.
       const lean = riichi ? ((TILE_H - TILE_W) / 2) * T : 0;
@@ -963,52 +976,30 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
         feltQuads.push({ kind: "pin", m: at });
       }
     });
-    // The bars: each across its row, as deep as the row's tiles, on its seam -
-    // the near edge of its tile, the start of its row if it's first there.
-    // 叮s on the same seam share it, end to end from the compass out. A bar
-    // keeps a width to see however small its pond is drawn.
+    // The 叮 bars, lying on the felt across the row, as deep as its tiles.
+    // (They keep a width to see however small the pond is drawn.)
+    const thin = BAR * Math.max(fit, 0.7);
+    const turn = rotateZ(side === "top" || side === "bottom" ? 0 : 90);
     bars.forEach((g) => {
       const same = bars.filter((o) => o.at === g.at);
       const nth = same.indexOf(g);
       const r = lines.findIndex((l) => l.includes(g.at));
-      const along = sum(lines[r].filter((j) => j < g.at).map(step));
-      // (From the compass toward the pond's owner: where this one's share is.)
-      const long = (rowDeep(lines[r]) < rowDepth ? TILE_W : TILE_H) * em;
-      const part = long / same.length;
-      const mid = starts[r] * fit + (rowDeep(lines[r]) * fit - long) / 2 + (nth + 0.5) * part;
-      // A point `deep` across the pond and `by` along its row from the seam
-      // (both as drawn; `by` < 0 back toward the row's start).
-      const at = (deep: number, by = 0): [number, number] => {
-        const a = along + by / fit;
-        if (side === "top") return [centreX + (centreX + limit / 2 - a - centreX) * fit, row2y1 - deep];
-        if (side === "bottom") return [centreX + (centreX - limit / 2 + a - centreX) * fit, row4y0 + 0.3 * T + deep];
-        if (side === "left") return [col2x1 - deep, midY + (midY - limit / 2 + a - midY) * fit];
-        return [col4x0 + deep, midY + (midY + limit / 2 - a - midY) * fit];
-      };
-      const top = THICK * em * 1.05;
-      const thin = 0.085 * Math.max(em, 0.7 * T);
-      const gap = same.length > 1 ? 0.05 * em : 0;
-      const turn = rotateZ(side === "top" || side === "bottom" ? 0 : 90);
-      // At a row's start (each row's, in New row): a line on the felt just
-      // before it, the row's depth - the one side no row lies against.
-      if (along === 0) {
-        const [lx, ly] = at(mid, -0.14 * em);
-        return void feltQuads.push({ kind: `dingtab-${g.by}`, m: chain(translate(lx, ly, 0.4), turn, scale(thin, part - gap - 0.1 * em, 1)) });
-      }
-      // On a seam: a ribbon across the tiles' tops along it, draped over the
-      // row's edge (a little darker, as the tiles' sides) to a short end on
-      // the felt, its near end tucked under the tiles - the first on the seam
-      // toward the compass, the last (sharing it) toward the owner.
-      const out = nth === 0 ? -1 : nth === same.length - 1 ? 1 : 0;
-      const [x, y] = at(mid + (out * gap) / 2);
-      feltQuads.push({ kind: `ding-${g.by}`, m: chain(translate(x, y, top), turn, scale(thin, part - gap, 1)) });
-      if (!out) return;
-      const edge = mid + (out * part) / 2;
-      const end = 0.3 * em;
-      const [dx, dy] = at(edge + out * 0.01 * em);
-      feltQuads.push({ kind: `dingside-${g.by}`, m: chain(translate(dx, dy, top / 2), turn, rotateX(90), scale(thin, top, 1)) });
-      const [tx, ty] = at(edge + (out * (end - thin)) / 2);
-      feltQuads.push({ kind: `dingtab-${g.by}`, m: chain(translate(tx, ty, 0.4), turn, scale(thin, end + thin, 1)) });
+      const long = (rowDeep(lines[r]) < rowDepth ? TILE_W : TILE_H) * em - 0.1 * em;
+      // (Across the pond from the compass toward its owner: the row's middle.)
+      const deep = starts[r] * fit + (rowDeep(lines[r]) * fit) / 2;
+      // Where it lies along the row (as laid out, before the pond's fitted).
+      let a = sum(lines[r].filter((j) => j < g.at).map(room)) + lead + nth * (BAR + SEP) + BAR / 2;
+      // New row: before the row, out from it, side by side - the left
+      // pond's rows start at its far end, so there out past where the first
+      // tile hides the felt.
+      if (newRows) a = -(0.14 * T + (side === "left" ? 0.36 * T : 0)) - nth * (BAR + SEP) - BAR / 2;
+      let x: number;
+      let y: number;
+      if (side === "top") [x, y] = [centreX + (limit / 2 - a) * fit, row2y1 - deep];
+      else if (side === "bottom") [x, y] = [centreX + (-limit / 2 + a) * fit, row4y0 + 0.3 * T + deep];
+      else if (side === "left") [x, y] = [col2x1 - deep, midY + (-limit / 2 + a) * fit];
+      else [x, y] = [col4x0 + deep, midY + (limit / 2 - a) * fit];
+      feltQuads.push({ kind: `ding-${g.by}`, m: chain(translate(x, y, 0.4), turn, scale(thin, long, 1)) });
     });
   };
   (["top", "left", "right", "bottom"] as const).forEach((s) => pondTiles(s, view.ponds[s]));

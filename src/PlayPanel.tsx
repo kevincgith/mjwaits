@@ -566,12 +566,13 @@ function burstSound(label: string): Sound {
   return "bonus";
 }
 
-// 叮 marks: where each 叮 fell in the others' ponds.
+// 叮 marks: where each 叮 fell in each pond - a bar on the felt in a gap in
+// the row (Compact, saved as "bar"), or the tiles since on a new row.
 type DingMarks = "off" | "bar" | "row";
 function DingMarksRow({ value, set }: { value: DingMarks; set: (v: DingMarks) => void }) {
   const choices: [DingMarks, string][] = [
     ["off", "Off"],
-    ["bar", "Bar"],
+    ["bar", "Compact"],
     ["row", "New row"],
   ];
   return (

@@ -315,30 +315,15 @@ export function peekTray(): HTMLCanvasElement {
   });
 }
 
-// A 叮's ribbon in a pond (Play's 叮 marks), draped over the row on the seam
-// it fell at, in its declarer's colour: matte, a faint dark edge along it so
-// it holds on ivory and felt alike. `shade`: its part down the row's edge,
-// a little darker, as the tiles' sides are.
-export function dingStrip(colour: string, shade = false): HTMLCanvasElement {
-  return paintCanvas(16, 64, (ctx) => {
-    ctx.fillStyle = "rgba(20, 14, 4, 0.35)";
-    ctx.fillRect(0, 0, 16, 64);
-    ctx.fillStyle = colour;
-    ctx.fillRect(2, 0, 12, 64);
-    if (shade) {
-      ctx.fillStyle = "rgba(0, 0, 0, 0.22)";
-      ctx.fillRect(0, 0, 16, 64);
-    }
-  });
-}
-
-// Its end on the felt: rounded (its near end under the tiles).
-export function dingTab(colour: string): HTMLCanvasElement {
-  return paintCanvas(16, 64, (ctx) => {
-    roundRect(ctx, 0, 0, 16, 64, 8);
+// A 叮's bar in a pond (Play's 叮 marks), lying on the felt: a matte line in
+// its declarer's colour, rounded at its ends, a faint dark edge round it so
+// it holds on the felt whatever the colour.
+export function dingBar(colour: string): HTMLCanvasElement {
+  return paintCanvas(16, 192, (ctx) => {
+    roundRect(ctx, 0, 0, 16, 192, 8);
     ctx.fillStyle = "rgba(20, 14, 4, 0.35)";
     ctx.fill();
-    roundRect(ctx, 2, 2, 12, 60, 6);
+    roundRect(ctx, 2, 2, 12, 188, 6);
     ctx.fillStyle = colour;
     ctx.fill();
   });

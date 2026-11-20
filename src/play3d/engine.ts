@@ -18,7 +18,7 @@ import type { Atlas } from "./textures";
 import type { GLSide } from "./types";
 import { PLAQUE_RINGED } from "./cards";
 import { SEAT_TILE_RINGED } from "./diceScenes";
-import { bar, bubble, dingStrip, dingTab, gapOutline, peekTray, goldRing, pickedRim, pin, rowShadow, tileShadow, triangle } from "./textures";
+import { bar, bubble, dingBar, gapOutline, peekTray, goldRing, pickedRim, pin, rowShadow, tileShadow, triangle } from "./textures";
 
 const SIDES: GLSide[] = ["top", "bottom", "left", "right"];
 const MAX_FELT = 260;
@@ -721,8 +721,8 @@ export class Engine {
     this.felt.addMarks("gap", mark(gapOutline()), 32, 0);
     this.felt.addMarks("ring", mark(goldRing(PLAQUE_RINGED)), 1, 0);
     this.felt.addMarks("tile-ring", mark(goldRing(SEAT_TILE_RINGED)), 1, 0);
-    // 叮 marks: a line on each pond's seam (three 叮s in each of four ponds at most), and its coin.
-    for (const side of SIDES) for (const [kind, paint] of this.dingPaints(side)) this.felt.addMarks(kind, mark(paint("#ffd166")), 4, 2);
+    // (Each 叮's: a bar in each pond.)
+    for (const side of SIDES) this.felt.addMarks(`ding-${side}`, mark(dingBar("#ffd166")), 4, 2);
     for (const side of ["top", "bottom", "left", "right"] as const) this.felt.addMarks(`bubble-${side}`, mark(bubble(10, 10, 1, side, 1)), 1, 2);
     this.hand.addMarks("row-shadow", mark(rowShadow()), 1, 0);
     this.hand.addMarks("hint", mark(bar("#ffd166")), MAX_HAND, 2);
@@ -730,30 +730,18 @@ export class Engine {
     this.hand.addMarks("danger", mark(bar("#ff6b5a")), MAX_HAND, 2);
   }
 
-  // A side's 叮 ribbon - over the tiles, down the row's edge, its end on the
-  // felt - each painted in its colour.
-  private dingPaints(side: GLSide): [QuadKind, (colour: string) => HTMLCanvasElement][] {
-    return [
-      [`ding-${side}`, (c) => dingStrip(c)],
-      [`dingside-${side}`, (c) => dingStrip(c, true)],
-      [`dingtab-${side}`, dingTab],
-    ];
-  }
-
-  // Each side's 叮 ribbon, repainted when its colour changes.
+  // Each side's 叮 bars, repainted when its colour changes.
   private dingPainted: Partial<Record<GLSide, string>> = {};
   dingColours(colours: Record<GLSide, string> | undefined) {
     if (!colours) return;
     for (const side of SIDES) {
       if (this.dingPainted[side] === colours[side]) continue;
       this.dingPainted[side] = colours[side];
-      for (const [kind, paint] of this.dingPaints(side)) {
-        const mat = this.felt.marks.get(kind)!.material as THREE.ShaderMaterial;
-        const old = mat.uniforms.uMap.value as THREE.Texture;
-        old.dispose();
-        this.kept.delete(old);
-        mat.uniforms.uMap.value = this.keep(canvasTexture(paint(colours[side])));
-      }
+      const mat = this.felt.marks.get(`ding-${side}`)!.material as THREE.ShaderMaterial;
+      const old = mat.uniforms.uMap.value as THREE.Texture;
+      old.dispose();
+      this.kept.delete(old);
+      mat.uniforms.uMap.value = this.keep(canvasTexture(dingBar(colours[side])));
     }
   }
 

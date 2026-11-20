@@ -581,17 +581,56 @@ describe("叮 marks in the ponds", () => {
     expect(tints("t5").every((t) => t < 1)).toBe(true);
   });
 
-  it("New row: each row the 叮s start has a line on the felt before it, not a ribbon over its tiles", () => {
-    const view = base();
-    view.ponds = { ...view.ponds, bottom: { ...view.ponds.bottom, dingMark: "row" } };
-    const quads = layoutTable(view, DIMS).felt.quads;
-    // (Right's own pond is still bars: its 叮 at a seam.)
-    expect(quads.filter((q) => q.kind === "ding-right")).toHaveLength(1);
-    expect(quads.filter((q) => q.kind === "dingtab-right")).toHaveLength(2);
+  // Where a quad or a tile lies on the felt: its box, as drawn.
+  const box = (m: Parameters<typeof apply>[0], hx: number, hy: number) => {
+    const cs = [[-hx, -hy], [hx, -hy], [-hx, hy], [hx, hy]].map(([x, y]) => apply(m, x, y, 0));
+    return { x0: Math.min(...cs.map((c) => c[0])), x1: Math.max(...cs.map((c) => c[0])), y0: Math.min(...cs.map((c) => c[1])), y1: Math.max(...cs.map((c) => c[1])), z: cs[0][2] };
+  };
+  const tileBox = (p: Piece) => box(p.m, TILE_W / 2, TILE_H / 2);
+  const barBoxes = (quads: { kind: string; m: Parameters<typeof apply>[0] }[]) => quads.filter((q) => q.kind.startsWith("ding-")).map((q) => box(q.m, 0.5, 0.5));
+  const overlaps = (a: ReturnType<typeof box>, b: ReturnType<typeof box>) => a.x0 < b.x1 - 0.5 && b.x0 < a.x1 - 0.5 && a.y0 < b.y1 - 0.5 && b.y0 < a.y1 - 0.5;
+
+  it("Compact: the row opens a gap where a 叮 fell, its bar on the felt in it", () => {
+    const plain = layoutTable({ ...base(), ponds: { ...base().ponds, bottom: pond(8) } }, DIMS);
+    const out = layoutTable(base(), DIMS);
+    const x = (l: typeof out, i: number) => l.felt.pieces.find((p) => p.seen === `bottom:pond:${i}`)!.m[12];
+    const gap = x(out, 5) - x(out, 4) - (x(plain, 5) - x(plain, 4));
+    expect(gap).toBeGreaterThan(5);
+    const bar = out.felt.quads.find((q) => q.kind === "ding-right" && Math.abs(q.m[13] - out.felt.pieces.find((p) => p.seen === "bottom:pond:4")!.m[13]) < 30)!;
+    expect(bar.m[12]).toBeGreaterThan(tileBox(out.felt.pieces.find((p) => p.seen === "bottom:pond:4")!).x1);
+    expect(bar.m[12]).toBeLessThan(tileBox(out.felt.pieces.find((p) => p.seen === "bottom:pond:5")!).x0);
+    // (On the felt, under the tiles' tops.)
+    expect(barBoxes(out.felt.quads).every((b) => b.z < 1)).toBe(true);
   });
 
-  it("draws each 叮 as a bar in its declarer's colour - one per seam", () => {
-    const quads = layoutTable(base(), DIMS).felt.quads;
-    expect(quads.filter((q) => q.kind === "ding-right")).toHaveLength(2);
-  });
+  // The worst a pond can see: four 叮s at one place - its owner's and the
+  // other three - in full ponds, every one of them busy.
+  const crowded = (mark: "bar" | "row"): GLTableView => {
+    const all = SIDES.map((by) => ({ at: 6, by }));
+    const full = (riichiAt: number) => pond(22, { riichiAt, dingMark: mark, dings: all });
+    const v = base();
+    const melds = [
+      { kind: "kong" as const, tiles: [m(9), m(9), m(9), m(9)], concealed: false, from: 1 },
+      { kind: "triplet" as const, tiles: [m(5), m(5), m(5)], concealed: false, from: 2 },
+      { kind: "run" as const, tiles: [m(1), m(2), m(3)], concealed: false, from: 3, claimed: m(2) },
+    ];
+    const flowers = ([1, 2, 3, 4] as const).map((rank) => ({ kind: "flower" as const, rank }));
+    const busy = (w: GLWall): GLWall => ({ ...w, count: 7, melds, flowers });
+    return {
+      ...v,
+      walls: { right: busy(v.walls.right), top: busy(v.walls.top), left: busy(v.walls.left) },
+      mine: { ...v.mine, melds, flowers },
+      ponds: { bottom: full(6), right: full(6), top: full(6), left: full(6) },
+    };
+  };
+  for (const mark of ["row", "bar"] as const) {
+    it(`four 叮s at one place (${mark === "row" ? "New row" : "Compact"}): each bar clear of every tile on the table`, () => {
+      const out = layoutTable(crowded(mark), DIMS);
+      const bars = barBoxes(out.felt.quads);
+      expect(bars).toHaveLength(16);
+      const tiles = out.felt.pieces.map(tileBox);
+      for (const b of bars) expect(tiles.filter((t) => overlaps(b, t))).toEqual([]);
+    });
+  }
+
 });
