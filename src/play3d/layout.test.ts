@@ -605,9 +605,12 @@ describe("叮 marks in the ponds", () => {
 
   // The worst a pond can see: four 叮s at one place - its owner's and the
   // other three - in full ponds, every one of them busy.
-  const crowded = (mark: "bar" | "row"): GLTableView => {
-    const all = SIDES.map((by) => ({ at: 6, by }));
-    const full = (riichiAt: number) => pond(22, { riichiAt, dingMark: mark, dings: all });
+  // (`at`: where they fell - 0, before each pond's first discard: its first
+  // row full length, its bars at its start, by the corner the last pond's
+  // first row runs into.)
+  const crowded = (mark: "bar" | "row", at = 6): GLTableView => {
+    const all = SIDES.map((by) => ({ at, by }));
+    const full = (riichiAt?: number) => pond(22, { ...(riichiAt === undefined ? {} : { riichiAt }), dingMark: mark, dings: all });
     const v = base();
     const melds = [
       { kind: "kong" as const, tiles: [m(9), m(9), m(9), m(9)], concealed: false, from: 1 },
@@ -620,12 +623,15 @@ describe("叮 marks in the ponds", () => {
       ...v,
       walls: { right: busy(v.walls.right), top: busy(v.walls.top), left: busy(v.walls.left) },
       mine: { ...v.mine, melds, flowers },
-      ponds: { bottom: full(6), right: full(6), top: full(6), left: full(6) },
+      ponds: at ? { bottom: full(at), right: full(at), top: full(at), left: full(at) } : { bottom: full(), right: full(), top: full(), left: full() },
     };
   };
-  for (const mark of ["row", "bar"] as const) {
-    it(`four 叮s at one place (${mark === "row" ? "New row" : "Compact"}): each bar clear of every tile on the table`, () => {
-      const out = layoutTable(crowded(mark), DIMS);
+  // (A phone held sideways, as Play measures it: a smaller compass, the
+  // ponds closer round it - their corners tighter.)
+  const PHONE: Dims = { feltW: 801, feltH: 523, rem: 16, under: 48.38, hand: 53.75, tile: 39.78, wall: 28.64, wallTop: 38.58, middle: 21.5, compass: 45, handTop: 483.36, rowTop: 405.87, rowRoom: 932 };
+  for (const mark of ["row", "bar"] as const) for (const [size, dims] of [["the tests' table", DIMS], ["a phone", PHONE]] as const) for (const at of [6, 0]) {
+    it(`four 叮s at one place (${mark === "row" ? "New row" : "Compact"}, ${size}, at ${at}): each bar clear of every tile on the table`, () => {
+      const out = layoutTable(crowded(mark, at), dims);
       const bars = barBoxes(out.felt.quads);
       expect(bars).toHaveLength(16);
       const tiles = out.felt.pieces.map(tileBox);
