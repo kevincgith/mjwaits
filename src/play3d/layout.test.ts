@@ -311,11 +311,19 @@ describe("your row in 換牌", () => {
     const gave = [2, 5, 9];
     const tiles = before.mine.tiles.filter((_, i) => !gave.includes(i));
     const after = { ...before, mine: { ...before.mine, tiles, given: { key: 1, tiles: gave.map((i) => before.mine.tiles[i].tile), from: gave, count: 16 } } };
-    const a = layoutTable(after, { ...DIMS, handMinWidth: b.width }).hand;
-    expect(a.width).toBe(b.width);
+    // (No width remembered from before: worked out from the hand alone.)
+    const a = layoutTable(after, DIMS).hand;
+    expect(a.width).toBeCloseTo(b.width, 6);
     const first = (h: typeof a) => h.pieces.find((p) => p.hit === 0)!.m[12];
     expect(first(a)).toBeCloseTo(first(b), 3);
     expect(a.pieces.filter((p) => p.hit !== undefined).every((p) => (p.ease?.delay ?? 0) > 0)).toBe(true);
+  });
+  it("is as wide as a full hand is outside 換牌 - centred the same", () => {
+    const v = take("right", 1);
+    const tiles = Array.from({ length: 16 }, (_, i) => tile((i % 9) + 1));
+    const sliding = layoutTable({ ...v, piles: null, flights: [], rows: {}, mine: { ...v.mine, tiles, sliding: true } }, DIMS).hand;
+    const playing = layoutTable({ ...v, piles: null, flights: [], rows: {}, mine: { ...v.mine, tiles, sliding: false } }, DIMS).hand;
+    expect(sliding.width).toBeCloseTo(playing.width, 6);
   });
 });
 

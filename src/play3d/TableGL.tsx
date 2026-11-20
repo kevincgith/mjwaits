@@ -161,8 +161,6 @@ export default function TableGL({
   const [canvasKey, setCanvasKey] = useState(0);
   const engine = useRef<Engine | null>(null);
   const dims = useRef<Dims | null>(null);
-  // In 換牌: the widest your row has been, in its tiles' size (dims.hand).
-  const keptWidth = useRef(0);
   const camera = useRef<CornerCamera>({ yaw: CORNER_YAW, tilt: CORNER_TILT });
   const viewRef = useRef(view);
   viewRef.current = view;
@@ -251,14 +249,7 @@ export default function TableGL({
       const b = bubbleBox(dims.current);
       e.sizeBubbles(b.bw, b.bh, b.em, Math.min(3, window.devicePixelRatio || 1) * 1.5);
     }
-    // (In 換牌 your row keeps the widest it's been, so it never re-centres -
-    // kept in tiles, not pixels: the screen can still be settling as Play
-    // opens, the tiles' size changing under it, and a width kept from before
-    // would push the row off centre.)
-    const H = dims.current.hand;
-    dims.current.handMinWidth = viewRef.current.mine.sliding ? keptWidth.current * H : 0;
     const layout = corner ? layoutCorner(viewRef.current, dims.current, camera.current) : layoutTable(viewRef.current, dims.current);
-    keptWidth.current = viewRef.current.mine.sliding ? Math.max(keptWidth.current, layout.hand.width / H) : 0;
     racks.current = layout.felt.racks ?? [];
     middle.style.left = `${layout.middle.x}px`;
     middle.style.top = `${layout.middle.y}px`;
