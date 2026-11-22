@@ -44,6 +44,7 @@ export function seatState(view: TableView): SeatState {
     ...(p.riichi ? { riichi: { ...p.riichi, ...(p.riichi.ponds ? { ponds: turn(p.riichi.ponds) } : {}), ...(p.riichi.melds ? { melds: turn(p.riichi.melds) } : {}) } } : {}),
     ...(p.overWater ? { overWater: true } : {}),
     ...(p.passedPung ? { passedPung: p.passedPung } : {}),
+    ...(p.passedPungs ? { passedPungs: p.passedPungs } : {}),
     ...(p.threw ? { threw: p.threw } : {}),
     ...(p.played ? { played: true as const } : {}),
   }));
@@ -51,7 +52,9 @@ export function seatState(view: TableView): SeatState {
   let phase: Phase;
   let result: ResultView | null = null;
   const vp = view.phase;
-  if (vp.kind === "turn") phase = { ...vp, seat: toLocal(vp.seat) };
+  // (包自摸: whose discard a kong was claimed off - a seat too.)
+  const chain = (c: { bao?: number } | undefined) => (c && c.bao !== undefined ? { chain: { ...c, bao: toLocal(c.bao) } } : {});
+  if (vp.kind === "turn") phase = { ...vp, seat: toLocal(vp.seat), ...chain(vp.chain) } as Phase;
   else if (vp.kind === "claims") phase = { ...vp, from: toLocal(vp.from) };
   else if (vp.kind === "swap") {
     // The others' piles as backs (BLANK), yours as it is; seats turned.
@@ -72,6 +75,7 @@ export function seatState(view: TableView): SeatState {
       ...(r.pairs ? { pairs: r.pairs.map((p) => ({ ...p, winner: id(p.winner), payer: id(p.payer) })) } : {}),
       ...(r.alsoWon ? { alsoWon: r.alsoWon.map((w) => ({ ...w, winner: toLocal(w.winner) })) } : {}),
       ...(r.fanXue ? { fanXue: r.fanXue.map((f) => ({ ...f, from: toLocal(f.from), to: toLocal(f.to) })) } : {}),
+      ...(r.bao !== undefined ? { bao: toLocal(r.bao) } : {}),
     };
     // The game's own copy: the same, without scores (the table shows `result`'s).
     const { alsoWon, ...rest } = result;

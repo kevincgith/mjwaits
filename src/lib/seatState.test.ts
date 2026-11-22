@@ -143,3 +143,13 @@ describe("how the game's going, online", () => {
     expect(mine.sore[3][0]).toBe(feel.sore[0][1]);
   });
 });
+
+describe("包自摸, online", () => {
+  it("names the payer by your seat, not the table's", () => {
+    const s = midHand(6);
+    const over: GameState = { ...s, phase: { kind: "over", result: { winner: 2, from: null, tile: null, score: null, scoreError: null, deltas: [0, -30, 30, 0], bao: 1 } } };
+    // You're table seat 1 - the one paying: your seat 0.
+    expect(seatState(viewFor(over, 1)).result?.bao).toBe(0);
+    expect(seatState(viewFor(over, 3)).result?.bao).toBe(2);
+  });
+});

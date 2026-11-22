@@ -26,6 +26,7 @@ import {
   barredClaims,
   claimMatters,
   claimOptions,
+  hasPassedPung,
   tileCensus,
   forbiddenDiscards,
   HUMAN,
@@ -401,11 +402,11 @@ function WaitsCard({ tile, waits, anchorX }: { tile: Tile; waits: WaitValue[]; a
   );
 }
 
-const barredWhy = (c: Claim, p: { riichi?: { passed?: boolean }; passedPung?: Tile }, tile?: Tile | null) =>
+const barredWhy = (c: Claim, p: { riichi?: { passed?: boolean }; passedPung?: Tile; passedPungs?: Tile[] }, tile?: Tile | null) =>
   c.kind === "chow"
     ? "you just threw this run's tile - not back till you draw"
     : c.kind !== "win"
-      ? p.passedPung && tile && sameTile(p.passedPung, tile) ? "passed this pung - not again till you draw" : "you just threw this tile - not back till you draw"
+      ? tile && hasPassedPung(p, tile) ? "passed this pung - not again till you draw" : "you just threw this tile - not back till you draw"
       : p.riichi?.passed ? "叮: passed a win - no more this hand" : "過水 - no win till you throw or kong a tile that doesn't win";
 const claimLabel = (c: Claim) => (c.kind === "win" ? "胡" : c.kind === "kong" ? "槓" : c.kind === "pung" ? "碰" : "上");
 
@@ -1548,7 +1549,10 @@ export function PlayPanel({
     const prev = movesSeen.current.game;
     let decisions = movesSeen.current.decisions;
     const mine = game.players[HUMAN].discards;
-    if (prev?.phase.kind === "over" && game.phase.kind !== "over") decisions = [];
+    // A new hand - or another deal altogether (a new game started mid-hand, a
+    // table rejoined a hand later): nothing of the last one's to look back on.
+    const dealt = (g: GameState) => `${g.roundWind}.${g.dealer}.${g.dealerStreak}`;
+    if (prev && ((prev.phase.kind === "over" && game.phase.kind !== "over") || dealt(prev) !== dealt(game))) decisions = [];
     // (Someone watching has no discards of their own to look back on.)
     else if (prev && seated && prev.phase.kind === "turn" && prev.phase.seat === HUMAN && mine.length === prev.players[HUMAN].discards.length + 1)
       decisions = [...decisions, { before: prev, tile: mine[mine.length - 1] }];
@@ -1952,6 +1956,8 @@ export function PlayPanel({
     // (Nor saved while a new game's being set up: the game there stays as it
     // was till 開局 Start - a new one opened from Play's home isn't saved
     // over the one there till then. What was waiting from before goes now.)
+    // (An online table's game isn't this device's: the one kept here stays as it is.)
+    if (online) return;
     if (!ledgerStarted.current || setupOpen) return void pendingSave.current?.();
     const data: Saved = { game: localGame, totals: localTotals, hint, timer, opponents, randomOpponents, speed, oneTap, seenCopies, dingMarks, sortOrder, waits: showWaits, record, multiWin, multiWinSet, fanXue, baoZimo, secondChance: secondChanceOn, peeking: peekingOn, swapRules, jackpot, ledger: localLedger };
     // (Not saved: still waiting - tried again on leaving, or the next change.)
@@ -1963,7 +1969,7 @@ export function PlayPanel({
     pendingSave.current = write;
     const id = window.setTimeout(write, SAVE_DELAY_MS);
     return () => window.clearTimeout(id);
-  }, [localGame, localTotals, hint, timer, opponents, randomOpponents, speed, oneTap, seenCopies, dingMarks, sortOrder, showWaits, record, multiWin, multiWinSet, fanXue, baoZimo, secondChanceOn, peekingOn, swapRules, jackpot, localLedger, setupOpen]);
+  }, [localGame, localTotals, hint, timer, opponents, randomOpponents, speed, oneTap, seenCopies, dingMarks, sortOrder, showWaits, record, multiWin, multiWinSet, fanXue, baoZimo, secondChanceOn, peekingOn, swapRules, jackpot, localLedger, setupOpen, online]);
   // The page hidden or going (a phone may not come back to it): saved now.
   useEffect(() => {
     const now = () => pendingSave.current?.();
@@ -2431,7 +2437,8 @@ export function PlayPanel({
     }
     // (Held for a second chance: it's the answer to that that's recorded.)
     if (humanClaims.length && !autoplay) recordMine(1, claimDecisionAction(game, humanClaim));
-    settleClaim(game, decisions, humanClaim, humanClaim?.kind ?? null);
+    // (A first choice: `first` is for one made again after a 嗌錯.)
+    settleClaim(game, decisions, humanClaim, null);
   };
   // The discard resolved: your call (`claim`) with everyone else's answers -
   // a kong of yours held a beat first (see kongBeat), and a call taken back
@@ -3549,6 +3556,11 @@ export function PlayPanel({
     setRiichiArmed(false);
     setLastCall(null);
     setResultHidden(false);
+    // Nothing of the game left behind: its discards to review, a 投降 half
+    // tapped, the hand its recorded moves belong to.
+    movesSeen.current = { game: null, decisions: [] };
+    setSurrenderArmed(null);
+    handId.current = String(Date.now());
     const g = newGame({ multiWin, noFanXue: !fanXue, noBaoZimo: !baoZimo, noSecondChance: !secondChanceOn, swapRules });
     ledgerFrom.current = g;
     const fresh = newPlayLedger(playerNames(opponents), g.dealer);
@@ -3666,11 +3678,12 @@ export function PlayPanel({
   }, [over]);
   // On autoplay the next hand deals itself once the result has been up a while.
   useEffect(() => {
-    if (!autoplay || !over || cardHeld || online) return;
+    // (Not behind a new game's setup page: the game stays as it was till Start.)
+    if (!autoplay || !over || cardHeld || online || setupOpen) return;
     const t = window.setTimeout(() => nextHandWithSurrenders(), AUTOPLAY_NEXT_MS);
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoplay, over, cardHeld, game]);
+  }, [autoplay, over, cardHeld, game, setupOpen]);
   // Online, between hands: whether you've said you're ready, and who hasn't.
   const meReady = !!online && online.table.you !== null && online.table.ready.includes(online.table.you);
   const notReady = online && net ? online.table.waitingOn.filter((s) => s !== online.table.you).map((s) => nameOf(net.toLocal(s))) : [];

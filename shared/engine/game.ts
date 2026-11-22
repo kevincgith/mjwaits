@@ -106,6 +106,8 @@ export interface Player {
   // Passed up a pung (or kong) of this tile: no calling it again till the
   // next draw or call - the same tile thrown by someone else meanwhile is barred.
   passedPung?: Tile;
+  // Any passed before that one in the same go-around (see hasPassedPung).
+  passedPungs?: Tile[];
   // The tile it last threw, till its next draw or call: no claiming that
   // tile back (pung, kong or run) - nor a run made with two tiles the thrown
   // one made a run with too (threw 1m from 123m: no 234m off a 4m - a 456m
@@ -362,6 +364,7 @@ function cloneState(s: GameState): GameState {
       // (The bars on a claim back and a passed pung, kept - dropped here,
       // they were gone a step after they were set.)
       ...(p.passedPung ? { passedPung: { ...p.passedPung } } : {}),
+      ...(p.passedPungs ? { passedPungs: p.passedPungs.map((t) => ({ ...t })) } : {}),
       ...(p.threw ? { threw: { ...p.threw } } : {}),
       ...(p.played ? { played: true as const } : {}),
     })),
@@ -381,6 +384,7 @@ function drawInto(s: GameState, seat: number, fromBack: boolean): { tile: Tile |
   let flowers = 0;
   while (s.wall.length > DEAD_WALL_SIZE) {
     delete s.players[seat].passedPung; // a draw lifts a passed pung
+    delete s.players[seat].passedPungs;
     delete s.players[seat].threw; // and the bar on a claim back
     const w = back ? s.wall.pop()! : s.wall.shift()!;
     if ("bonus" in w) {
@@ -693,6 +697,10 @@ export type Claim =
   // `tiles` are the two from hand that go with the discard.
   | { kind: "chow"; tiles: [Tile, Tile] };
 
+// Passed up a pung of `tile` since its last draw or call (see Player.passedPung).
+export const hasPassedPung = (p: Pick<Player, "passedPung" | "passedPungs">, tile: Tile) =>
+  (!!p.passedPung && sameTile(p.passedPung, tile)) || !!p.passedPungs?.some((t) => sameTile(t, tile));
+
 export function claimOptions(s: GameState, seat: number): Claim[] {
   if (s.phase.kind !== "claims" || seat === s.phase.from) return [];
   const { from, tile } = s.phase;
@@ -704,7 +712,7 @@ export function claimOptions(s: GameState, seat: number): Claim[] {
   if (liveTilesLeft(s) === 0 || p.riichi || s.phase.robKong) return opts;
   const held = tileCount(p.hand, tile);
   // A passed pung, or the tile just thrown (no claim back).
-  const passed = (!!p.passedPung && sameTile(p.passedPung, tile)) || (!!p.threw && sameTile(p.threw, tile));
+  const passed = hasPassedPung(p, tile) || (!!p.threw && sameTile(p.threw, tile));
   if (held >= 3 && !passed) opts.push({ kind: "kong" });
   if (held >= 2 && !passed) opts.push({ kind: "pung" });
   if (seat === (from + 1) % SEATS && tile.suit !== "z") {
@@ -731,7 +739,7 @@ export function barredClaims(s: GameState, seat: number): Claim[] {
   const out: Claim[] = [];
   if (!canWin(p, tile) && isWinningHand(p, tile)) out.push({ kind: "win" });
   if (liveTilesLeft(s) === 0 || p.riichi || s.phase.robKong) return out;
-  if ((p.passedPung && sameTile(p.passedPung, tile)) || (p.threw && sameTile(p.threw, tile))) {
+  if (hasPassedPung(p, tile) || (p.threw && sameTile(p.threw, tile))) {
     const held = tileCount(p.hand, tile);
     if (held >= 3) out.push({ kind: "kong" });
     if (held >= 2) out.push({ kind: "pung" });
@@ -895,12 +903,17 @@ export function applyTurnMove(state: GameState, move: TurnMove): GameState {
         s.firstGoAround = false;
         return kongReplacement(s, seat);
       }
-      if (!p.melds.some((m) => m.kind === "triplet" && sameTile(m.tiles[0], move.tile))) throw new Error("No pung of that tile to add to");
+      const pung = p.melds.find((m) => m.kind === "triplet" && sameTile(m.tiles[0], move.tile));
+      if (!pung) throw new Error("No pung of that tile to add to");
+      // The fourth added to a pung just claimed is that discard konged, the
+      // long way round: 包自摸 is on its thrower all the same (see Chain.bao).
+      const chain = justClaimed(phase) && !s.noBaoZimo && pung.from !== null ? { kongs: 0, flowers: 0, bao: pung.from } : phase.chain;
+      if (chain) s.phase = { ...phase, chain: { ...chain } };
       p.hand = removeTiles(p.hand, [move.tile]);
       s.firstGoAround = false;
       // 搶槓: anyone who'd win on the added tile may take it first.
       if (s.players.some((pl, i) => i !== seat && canWin(pl, move.tile))) {
-        s.phase = { kind: "claims", from: seat, tile: move.tile, robKong: true, ...(phase.chain ? { chain: { ...phase.chain } } : {}) };
+        s.phase = { kind: "claims", from: seat, tile: move.tile, robKong: true, ...(chain ? { chain: { ...chain } } : {}) };
         return s;
       }
       return completeAddedKong(s, seat, move.tile);
@@ -1028,10 +1041,14 @@ export function remakeClaim(before: GameState, decisions: (Claim | null)[], seat
   const made = decisions.slice();
   made[seat] = claim;
   const s = resolveClaims(before, made);
-  if (takeBackCosts(first, claim?.kind ?? null)) {
-    (s.tableBonuses ??= []).push({ seat, name: "嗌錯", deltas: collectFromEach(seat, -WRONG_CALL_PENALTY), paid: false });
-    s.log.push(`Seat ${seat} took back a call (嗌錯)`);
-  }
+  return takeBackCosts(first, claim?.kind ?? null) ? chargeWrongCall(s, seat) : s;
+}
+
+// 嗌錯 for `seat` to pay, on a discard just resolved.
+export function chargeWrongCall(state: GameState, seat: number): GameState {
+  const s = cloneState(state);
+  (s.tableBonuses ??= []).push({ seat, name: "嗌錯", deltas: collectFromEach(seat, -WRONG_CALL_PENALTY), paid: false });
+  s.log.push(`Seat ${seat} took back a call (嗌錯)`);
   return s;
 }
 
@@ -1119,7 +1136,11 @@ export function resolveClaims(state: GameState, decisions: (Claim | null)[]): Ga
     if (seat !== from && decisions[seat]?.kind !== "win" && claimOptions(state, seat).some((c) => c.kind === "win")) passUp(pl);
     // And anyone who could have punged it and didn't, till their next draw.
     const d = decisions[seat]?.kind;
-    if (seat !== from && d !== "pung" && d !== "kong" && d !== "win" && claimOptions(state, seat).some((c) => c.kind === "pung")) pl.passedPung = { ...tile };
+    if (seat !== from && d !== "pung" && d !== "kong" && d !== "win" && claimOptions(state, seat).some((c) => c.kind === "pung")) {
+      // (One passed already this go-around stays barred too.)
+      if (pl.passedPung && !sameTile(pl.passedPung, tile)) pl.passedPungs = [...(pl.passedPungs ?? []), pl.passedPung];
+      pl.passedPung = { ...tile };
+    }
   });
   if (best === null) {
     // No one robbed the kong: it stands.
@@ -1138,6 +1159,7 @@ export function resolveClaims(state: GameState, decisions: (Claim | null)[]): Ga
   // And a passed pung, as a draw would: taking a run off a tile you hold a
   // pair of isn't passing it up for the rest of the go-around.
   delete p.passedPung;
+  delete p.passedPungs;
   if (state.phase.robKong) {
     // Robbed: the tile goes to the winner, and the pung stays a pung.
     p.hand.push(tile);

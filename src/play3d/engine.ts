@@ -883,7 +883,9 @@ export class Engine {
   // (And where it's seen, in the table's own pixels: its box on screen.)
   pickSeen(x: number, y: number, width: number, height: number): { face: string; x0: number; x1: number; y0: number; y1: number } | null {
     for (const space of [this.hand, this.felt]) {
-      const i = this.pickIn(space, x, y, width, height, (n) => space.seenFace(n) !== null);
+      // (The tile the finger's on, or none: not one behind it - a wall tile
+      // stood in front of a pond gives nothing to see.)
+      const i = this.pickIn(space, x, y, width, height, (n) => space.seenFace(n) !== null, false);
       if (i === null) continue;
       const m = new THREE.Matrix4();
       space.tiles.getMatrixAt(i, m);
@@ -900,7 +902,8 @@ export class Engine {
     return null;
   }
 
-  private pickIn(space: Space, x: number, y: number, width: number, height: number, ok: (instance: number) => boolean): number | null {
+  // `through`: past tiles that aren't `ok`, to the first that is - else only the nearest counts.
+  private pickIn(space: Space, x: number, y: number, width: number, height: number, ok: (instance: number) => boolean, through = true): number | null {
     space.scene.updateMatrixWorld();
     const ndc = (z: number) => new THREE.Vector3((x / width) * 2 - 1, 1 - (y / height) * 2, z).applyMatrix4(space.camera.projectionMatrixInverse);
     const near = ndc(-1);
@@ -911,7 +914,8 @@ export class Engine {
     space.tiles.computeBoundingSphere();
     const material = space.tiles.material as THREE.Material;
     material.side = THREE.DoubleSide;
-    const hit = this.ray.intersectObject(space.tiles, false).find((h) => h.instanceId !== undefined && ok(h.instanceId));
+    const hits = this.ray.intersectObject(space.tiles, false).filter((h) => h.instanceId !== undefined);
+    const hit = through ? hits.find((h) => ok(h.instanceId!)) : hits[0] && ok(hits[0].instanceId!) ? hits[0] : undefined;
     material.side = THREE.BackSide;
     return hit ? hit.instanceId! : null;
   }

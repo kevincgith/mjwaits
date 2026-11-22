@@ -27,6 +27,7 @@ export interface SeatView {
   overWater?: boolean; // your own only, likewise
   played?: true; // past its first turn (地叮 / 人胡)
   passedPung?: Tile; // your own only (it tells what you hold)
+  passedPungs?: Tile[]; // likewise
   threw?: Tile; // your own only: the last throw, barring a claim back of it
 }
 
@@ -148,6 +149,7 @@ export function viewFor(s: GameState, you: number, shown: (seat: number) => bool
       ...(open && p.overWater ? { overWater: true } : {}),
       ...(p.played ? { played: true as const } : {}),
       ...(seat === you && p.passedPung ? { passedPung: { ...p.passedPung } } : {}),
+      ...(seat === you && p.passedPungs ? { passedPungs: p.passedPungs.map((t) => ({ ...t })) } : {}),
       ...(seat === you && p.threw ? { threw: { ...p.threw } } : {}),
     };
   });

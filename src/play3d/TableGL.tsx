@@ -62,10 +62,14 @@ function feltYAt(f: Frame, screenY: number, x: number, depth: number): number {
 
 // Where a pointer is, in the table's own pixels - it's drawn turned a quarter
 // on a phone held upright.
-function pointerIn(root: HTMLElement, e: PointerEvent): DOMPoint {
+function pointerIn(root: HTMLElement, e: { clientX: number; clientY: number }): DOMPoint {
   const turn = new DOMMatrix(getComputedStyle(root).transform === "none" ? undefined : getComputedStyle(root).transform);
   return turn.inverse().transformPoint(new DOMPoint(e.clientX - root.offsetLeft, e.clientY - root.offsetTop));
 }
+
+// A context lost and not given back within this long (the page in view):
+// a new canvas, and the table started again on it.
+const CONTEXT_WAIT_MS = 4000;
 
 // A press on the page's own controls, not on the table - a sheet's dimmed
 // backdrop too (tapped to close it: not a tap on the tile under it).
@@ -291,16 +295,33 @@ export default function TableGL({
     // iOS drops the context when the app's put away: kept restorable, and
     // drawn again in full once it's back (three uploads everything again,
     // but only draws when told to) - and on coming back to the app.
-    const lost = (ev: Event) => ev.preventDefault();
+    // (Not given back at all - iOS, short of memory, needn't: started again
+    // on a new canvas, rather than a table with no tiles on it.)
+    let gone = false;
+    let wait = 0;
+    const giveUp = () => {
+      window.clearTimeout(wait);
+      if (gone && document.visibilityState === "visible") wait = window.setTimeout(() => gone && document.visibilityState === "visible" && setCanvasKey((k) => k + 1), CONTEXT_WAIT_MS);
+    };
+    const lost = (ev: Event) => {
+      ev.preventDefault();
+      gone = true;
+      giveUp();
+    };
     // (Again a frame later: the browser can show the first frame after a
     // restore blank, or black.)
     let again = 0;
     const restored = () => {
+      gone = false;
+      window.clearTimeout(wait);
       draw.current(true);
       cancelAnimationFrame(again);
       again = requestAnimationFrame(() => draw.current(false));
     };
-    const back = () => document.visibilityState === "visible" && draw.current(true);
+    const back = () => {
+      giveUp();
+      if (document.visibilityState === "visible") draw.current(true);
+    };
     canvas.addEventListener("webglcontextlost", lost);
     canvas.addEventListener("webglcontextrestored", restored);
     document.addEventListener("visibilitychange", back);
@@ -309,6 +330,7 @@ export default function TableGL({
       canvas.removeEventListener("webglcontextrestored", restored);
       document.removeEventListener("visibilitychange", back);
       cancelAnimationFrame(again);
+      window.clearTimeout(wait);
       watch.disconnect();
       engine.current = null;
       spent.add(canvas);
@@ -365,9 +387,13 @@ export default function TableGL({
     const onRow = (e: PointerEvent) => {
       const r = handRef.current?.getBoundingClientRect();
       if (!r) return false;
-      if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top) return true;
-      const e3 = engine.current;
+      // (In the table's own pixels, as every other press is read: on an
+      // upright phone the table's turned a quarter, and "below" is to the side.)
       const p = at(e);
+      const corners = [r.left, r.right].flatMap((clientX) => [r.top, r.bottom].map((clientY) => pointerIn(root, { clientX, clientY })));
+      const xs = corners.map((c) => c.x);
+      if (p.x >= Math.min(...xs) && p.x <= Math.max(...xs) && p.y >= Math.min(...corners.map((c) => c.y))) return true;
+      const e3 = engine.current;
       return !!e3 && e3.pickHand(p.x, p.y, root.clientWidth, root.clientHeight) !== null;
     };
     const onDown = (e: PointerEvent) => {
@@ -392,6 +418,8 @@ export default function TableGL({
     };
     const onMove = (e: PointerEvent) => {
       if (!e.isPrimary) return;
+      // Let go outside the window: no pointerup ever came.
+      if (e.pointerType === "mouse" && e.buttons === 0 && (down || holding || pressed !== null || swept !== null)) return onCancel();
       if (seenOn && down && moved(e, down)) letSeen();
       // Held on a tile: it follows the finger along your row (between
       // tiles the last stays; over one that can't be played, none is

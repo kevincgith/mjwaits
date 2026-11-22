@@ -19,7 +19,7 @@ export const seatsSeen = ({ mode, seat }: Observe): number[] => (mode === "pov" 
 const hidden = (m: MeldView): MeldView => ("hidden" in m || !(m.kind === "kong" && m.concealed) ? m : { kind: "kong", concealed: true, hidden: true, from: null });
 
 function closed(p: SeatView): SeatView {
-  const { overWater: _overWater, passedPung: _passedPung, threw: _threw, ...rest } = p;
+  const { overWater: _overWater, passedPung: _passedPung, passedPungs: _passedPungs, threw: _threw, ...rest } = p;
   return {
     ...rest,
     hand: null,
