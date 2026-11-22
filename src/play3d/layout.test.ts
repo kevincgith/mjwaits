@@ -698,3 +698,37 @@ describe("叮 marks in the ponds", () => {
   }
 
 });
+
+describe("a tile won off a discard", () => {
+  const tiles = [1, 2, 3, 4].map((rank) => ({ suit: "m" as const, rank }));
+  const base = take("bottom", 0);
+  const table = (view: Partial<GLTableView>) => layoutTable({ ...base, piles: {}, rows: {}, flights: [], ...view }, DIMS).felt;
+
+  it("stays in its thrower's pond as a ghost, rimmed - where it would lie as a tile", () => {
+    const pond = { tiles: [...tiles, { suit: "t" as const, rank: 9 }], pinLast: false };
+    for (const side of SIDES) {
+      const solid = table({ ponds: { ...base.ponds, [side]: pond } });
+      const won = table({ ponds: { ...base.ponds, [side]: { ...pond, wonLast: true } } });
+      const there = solid.pieces.find((p) => p.face === "t9")!;
+      expect(won.pieces.some((p) => p.face === "t9"), side).toBe(false);
+      expect(won.glass?.map((p) => p.face), side).toEqual(["t9"]);
+      expect(won.glass![0].m, side).toEqual(there.m);
+      expect(won.quads.filter((q) => q.kind === "won-gap").length, side).toBe(1);
+      expect(solid.quads.some((q) => q.kind === "won-gap"), side).toBe(false);
+      // (The rest of the pond as it was.)
+      expect(won.pieces.filter((p) => /^m[1-4]$/.test(p.face)).length, side).toBe(4);
+    }
+  });
+
+  it("is a ghost in a winner's hand who isn't shown holding it - in the same place", () => {
+    for (const side of ["left", "top", "right"] as const) {
+      const hand = { ...wall(4), down: true, tiles, winningTile: tiles[1] };
+      const real = table({ walls: { ...base.walls, [side]: hand } });
+      const ghost = table({ walls: { ...base.walls, [side]: { ...hand, winGhost: true } } });
+      expect(real.glass ?? [], side).toEqual([]);
+      expect(ghost.glass?.map((p) => p.face), side).toEqual(["m2"]);
+      expect(ghost.glass![0].m, side).toEqual(real.pieces.find((p) => p.face === "m2")!.m);
+      expect(ghost.pieces.filter((p) => /^m[1-4]$/.test(p.face)).map((p) => p.face).sort(), side).toEqual(["m1", "m3", "m4"]);
+    }
+  });
+});

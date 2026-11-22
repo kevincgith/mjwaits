@@ -112,7 +112,7 @@ export interface Anim {
 
 // Flat marks: shadows on the felt, the newest discard's pin, the hint and
 // danger marks under and over your tiles, the spotlight's bubble.
-export type QuadKind = "tray" | "shadow" | "row-shadow" | "pin" | "hint" | "ready" | "danger" | "bubble-top" | "bubble-bottom" | "bubble-left" | "bubble-right" | "picked" | "gap" | "ring" | "tile-ring" | `ding-${GLSide}`;
+export type QuadKind = "won-gap" | "tray" | "shadow" | "row-shadow" | "pin" | "hint" | "ready" | "danger" | "bubble-top" | "bubble-bottom" | "bubble-left" | "bubble-right" | "picked" | "gap" | "ring" | "tile-ring" | `ding-${GLSide}`;
 export interface Quad {
   kind: QuadKind;
   // The unit square (-0.5..0.5 each way, at z 0) to where it's drawn.
@@ -159,6 +159,9 @@ export interface Layout {
   // The compass's centre on the felt.
   middle: { x: number; y: number };
 }
+
+// A winning tile's ghost (see GLWall.winGhost): how clear (the glass's tint).
+export const GHOST_TINT = 0.85;
 
 export const UNSEEN = "z7";
 export const BACK = "back";
@@ -697,8 +700,9 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
         chain(translate(ox, edgeY0 - b, 0), rotateX(a), translate(0, (isWin ? 0.39 : 0.5) * Wt, 0), rotateZ(isWin ? 90 : 0), scale(Wt));
       const cx = ox;
       const cy = edgeY0 - 0.45 * Wt + (isWin ? 0.39 : 0.5) * Wt;
-      felt.push({ face: f, m: pose(0, 0.45 * Wt), shade: isWin ? TURNED : LIT, tint: 1, anim: topple(`top:down:${i}`, top, i, 90, 7, 0.45 * Wt, pose) });
-      feltQuads.push(landing(shadowAt(cx, cy, Wt, isWin ? 90 : 0), `top:down:${i}`, top, i));
+      const ghost = isWin && !!top.winGhost;
+      (ghost ? glass : felt).push({ face: f, m: pose(0, 0.45 * Wt), shade: isWin ? TURNED : LIT, tint: ghost ? GHOST_TINT : 1, anim: topple(`top:down:${i}`, top, i, 90, 7, 0.45 * Wt, pose) });
+      if (!ghost) feltQuads.push(landing(shadowAt(cx, cy, Wt, isWin ? 90 : 0), `top:down:${i}`, top, i));
     });
     if (!top.down) {
       // (In front of its melds, when they're in front of it.)
@@ -787,8 +791,9 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
       const pose = (a: number, b: number) => chain(translate(fx - dir * b, oy, 0), rotateY(a), translate(dir * reach, 0, 0), rotateZ(rot), scale(Wg));
       const cx = fx - dir * tb + dir * reach;
       const cy = oy;
-      felt.push({ face: f, m: pose(0, tb), shade: isWin ? LIT : TURNED, tint: 1, anim: topple(`${which}:down:${i}`, S.w, i, -90 * dir, -7 * dir, tb, pose) });
-      feltQuads.push(landing(shadowAt(cx, cy, Wg, rot), `${which}:down:${i}`, S.w, i));
+      const ghost = isWin && !!S.w.winGhost;
+      (ghost ? glass : felt).push({ face: f, m: pose(0, tb), shade: isWin ? LIT : TURNED, tint: ghost ? GHOST_TINT : 1, anim: topple(`${which}:down:${i}`, S.w, i, -90 * dir, -7 * dir, tb, pose) });
+      if (!ghost) feltQuads.push(landing(shadowAt(cx, cy, Wg, rot), `${which}:down:${i}`, S.w, i));
     });
     if (!S.w.down) {
       // (In front of its melds and bonus tiles.)
@@ -996,6 +1001,13 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
       const m = lying(x, y, em, rot);
       const [hw, hh] = rot === 0 || rot === 180 ? [TILE_W / 2, TILE_H / 2] : [TILE_H / 2, TILE_W / 2];
       pondBoxes[side]!.push({ x0: x - hw * em, x1: x + hw * em, y0: y - hh * em, y1: y + hh * em, em });
+      // Won off this pond: gone to its winner - a ghost of it where it lay,
+      // rimmed in gold, so what was thrown (and by whom) still shows.
+      if (pond.wonLast && i === pond.tiles.length - 1) {
+        glass.push({ face: faceOf(t), m, shade: turned ? TURNED : LIT, tint: GHOST_TINT });
+        feltQuads.push({ kind: "won-gap", m: chain(translate(x, y, 0.5), rotateZ(rot), scale(0.9 * em, 1.12 * em, 1)) });
+        return;
+      }
       // The newest discard drops onto the felt from a little above and settles.
       const drop =
         pond.pinLast && i === pond.tiles.length - 1

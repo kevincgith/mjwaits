@@ -6148,6 +6148,21 @@ html.playing body {
   font-weight: 700;
 }
 
+/* Whoever threw the tile a hand was won off, once it's over. */
+.play-dealt-in {
+  display: inline-grid;
+  place-items: center;
+  height: 1.15rem;
+  padding: 0 0.3rem;
+  border-radius: 0.3rem;
+  background: #2b2f2d;
+  border: 1px solid #ffd166;
+  color: #ffd166;
+  font-size: 0.68rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 .play-total {
   font-variant-numeric: tabular-nums;
   color: var(--play-on-felt-muted);

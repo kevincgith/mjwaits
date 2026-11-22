@@ -18,13 +18,13 @@ import type { Atlas } from "./textures";
 import type { GLSide } from "./types";
 import { PLAQUE_RINGED } from "./cards";
 import { SEAT_TILE_RINGED } from "./diceScenes";
-import { bar, bubble, dingBar, gapOutline, peekTray, goldRing, pickedRim, pin, rowShadow, tileShadow, triangle } from "./textures";
+import { bar, bubble, dingBar, gapOutline, wonOutline, peekTray, goldRing, pickedRim, pin, rowShadow, tileShadow, triangle } from "./textures";
 
 const SIDES: GLSide[] = ["top", "bottom", "left", "right"];
 const MAX_FELT = 260;
 const MAX_HAND = 48;
 // A peek's tiles: those seen through in the rack, and those lifted out of it.
-const MAX_GLASS = 16;
+const MAX_GLASS = 20; // (a peek's tiles, and a win's ghosts)
 // The Dice tab's dice.
 const MAX_DICE = 3;
 // A tile that would go over the others but only slides along: this long (s).
@@ -733,6 +733,8 @@ export class Engine {
     // (18: the Dice tab's counted run along a whole side.)
     this.felt.addMarks("picked", mark(pickedRim()), 18, 2);
     this.felt.addMarks("gap", mark(gapOutline()), 32, 0);
+    // A tile won off a discard: a gold rim round its ghost in the pond.
+    this.felt.addMarks("won-gap", mark(wonOutline()), 1, 0);
     this.felt.addMarks("ring", mark(goldRing(PLAQUE_RINGED)), 1, 0);
     this.felt.addMarks("tile-ring", mark(goldRing(SEAT_TILE_RINGED)), 1, 0);
     // (Each 叮's: a bar in each pond.)
