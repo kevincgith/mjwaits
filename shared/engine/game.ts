@@ -208,6 +208,10 @@ export interface GameState {
   // A number 0..1 per seat, drawn at the deal: how a bot feels about a long
   // shot this hand (see specialRoutes in bots.ts). Never sent to a phone.
   moods?: number[];
+  // How the game has been going, carried from hand to hand (see feelAfter):
+  // what the bots' tempers and grudges go by (bots.ts). Nothing hidden in
+  // it - it's all from hands everyone saw end.
+  feel?: Feel;
   // What the dice pay before the first discard (圍骰), per seat, and whether
   // the table has already paid it - so a reload can't pay it twice.
   diceBonus?: { name: string; deltas: number[]; paid: boolean };
@@ -504,6 +508,40 @@ function breakWall(wall: WallTile[], dice: Dice, dealer: number): WallTile[] {
   return [...wall.slice(at), ...wall.slice(0, at)];
 }
 
+// How the session is going for each seat, from the hands so far.
+export interface Feel {
+  // -1..1 per seat: on a losing run .. on a winning one. Each hand's tai
+  // moves it; it fades back toward 0 over a few hands.
+  form: number[];
+  // sore[a][b], 0..1: how sore seat `a` is at seat `b` - from dealing in to
+  // them (a lot), or their self-draws (a little). Fades too.
+  sore: number[][];
+}
+export const NO_FEEL = (): Feel => ({ form: [0, 0, 0, 0], sore: Array.from({ length: SEATS }, () => [0, 0, 0, 0]) });
+const FORM_KEEP = 0.65;
+const FORM_TAI = 80; // a hand's tai for a full step
+const SORE_KEEP = 0.7;
+const SORE_DEAL_IN = 0.6;
+const SORE_SELF_DRAW = 0.15;
+
+// `s.feel` after the hand `s` has just ended (see Feel).
+export function feelAfter(s: GameState): Feel {
+  const was = s.feel ?? NO_FEEL();
+  if (s.phase.kind !== "over") return was;
+  const r = s.phase.result;
+  const unit = (x: number) => Math.max(-1, Math.min(1, x));
+  const form = was.form.map((f, i) => unit(FORM_KEEP * f + (r.deltas[i] ?? 0) / FORM_TAI));
+  const sore = was.sore.map((row) => row.map((x) => x * SORE_KEEP));
+  const winners = r.winner === null ? [] : [r.winner, ...(r.alsoWon ?? []).map((w) => w.winner)];
+  for (const w of winners) {
+    if (r.from !== null) sore[r.from][w] = Math.min(1, sore[r.from][w] + SORE_DEAL_IN);
+    else for (let a = 0; a < SEATS; a++) if (a !== w) sore[a][w] = Math.min(1, sore[a][w] + SORE_SELF_DRAW);
+    // (A win off someone settles some of the score with them.)
+    if (r.from !== null) sore[w][r.from] *= 0.4;
+  }
+  return { form, sore };
+}
+
 export function newGame(opts: { multiWin?: boolean; noFanXue?: boolean; noBaoZimo?: boolean; noSecondChance?: boolean; swapRules?: SwapRules } = {}): GameState {
   return dealHand({ dealer: 0, roundWind: 1, dealerStreak: 0, ...opts });
 }
@@ -521,6 +559,7 @@ export function dealHand(
     noSecondChance?: boolean;
     fanXueDue?: GameState["fanXueDue"];
     swapRules?: SwapRules;
+    feel?: Feel;
   },
   wall?: WallTile[],
   random: Random = Math.random
@@ -547,6 +586,7 @@ export function dealHand(
     ...(opts.noSecondChance ? { noSecondChance: true } : {}),
     ...(opts.fanXueDue ? { fanXueDue: opts.fanXueDue } : {}),
     ...(opts.swapRules ? { swapRules: opts.swapRules } : {}),
+    ...(opts.feel ? { feel: opts.feel } : {}),
     ...(dice ? { dice } : {}),
   };
   const bonus = dice ? diceBonus(dice, opts.dealer) : null;
@@ -1312,7 +1352,7 @@ export function nextHand(s: GameState, wall?: WallTile[], random: Random = Math.
   const multiWin = s.multiWin;
   const swapRules = s.swapRules;
   const firstDealer = s.firstDealer ?? 0;
-  const carried = { firstDealer, lahs, multiWin, swapRules, noFanXue: s.noFanXue, noBaoZimo: s.noBaoZimo, noSecondChance: s.noSecondChance, fanXueDue: s.fanXueDue };
+  const carried = { firstDealer, lahs, multiWin, swapRules, noFanXue: s.noFanXue, noBaoZimo: s.noBaoZimo, noSecondChance: s.noSecondChance, fanXueDue: s.fanXueDue, feel: feelAfter(s) };
   // The dealer stays on a draw, or when among the winners.
   if (winner === null || winner === s.dealer || alsoWon?.some((w) => w.winner === s.dealer)) {
     return dealHand({ dealer: s.dealer, roundWind: s.roundWind, dealerStreak: s.dealerStreak + 1, ...carried }, wall, random);

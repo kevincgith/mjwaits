@@ -8040,6 +8040,23 @@ html.playing body {
   color: var(--text-muted);
 }
 
+/* What each bot was up to, now its hand's face up. */
+.play-result-thoughts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  font-size: 0.8rem;
+  line-height: 1.35;
+  color: var(--text-muted);
+  text-align: left;
+}
+.play-result-thoughts b {
+  color: var(--text);
+  font-weight: 600;
+  margin-right: 0.3em;
+}
+
 /* 投降, when the rules allow it: what it does, and a two-tap button. */
 .play-surrender {
   display: flex;

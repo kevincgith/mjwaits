@@ -98,6 +98,7 @@ export function seatState(view: TableView): SeatState {
     ...(view.diceBonus ? { diceBonus: { ...view.diceBonus, deltas: turn(view.diceBonus.deltas) } } : {}),
     tableBonuses: view.tableBonuses.map((b) => ({ ...b, seat: toLocal(b.seat), deltas: turn(b.deltas) })),
     ...(view.chase ? { chase: { ...view.chase, seat: toLocal(view.chase.seat) } } : {}),
+    ...(view.feel ? { feel: { form: turn(view.feel.form), sore: turn(view.feel.sore.map(turn)) } } : {}),
     multiWin: view.multiWin,
   };
   return { game, result, toLocal, toTable };

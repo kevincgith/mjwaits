@@ -96,6 +96,8 @@ import {
   randomStyle,
   rateDiscardsFor,
   speechOf,
+  botThoughts,
+  thoughtLine,
   type BotProfile,
   type CallKind,
   type Speech,
@@ -2145,18 +2147,26 @@ export function PlayPanel({
     const winners = scored.winner === null ? [] : [{ winner: scored.winner, score: scored.score }, ...(scored.alsoWon ?? [])];
     for (let seat = 0; seat < SEATS; seat++)
       history.current[seat] = [...history.current[seat], winners.some((w) => w.winner === seat) ? "win" : r.from === seat ? "dealIn" : "none"];
+    // Who's sore at whom going into this hand (see Feel): dealt in to them
+    // lately. And who sat under someone's 叮 without declaring.
+    const sore = (a: number, b: number) => (game.feel?.sore[a]?.[b] ?? 0) >= 0.4;
+    const pressured = (s: number) => !game.players[s].riichi && game.players.some((p, i) => i !== s && !!p.riichi);
     if (!winners.length) {
-      // 流局: a word or two round the table.
+      // 流局: a word or two round the table - relief, from under a 叮.
       const talkers = botSeats.filter((s) => Math.random() < chattiness(s) * 0.55).slice(0, 2);
-      talkers.forEach((s, i) => sayLater(400 + i * 900, s, "drawGame"));
+      talkers.forEach((s, i) => sayLater(400 + i * 900, s, pressured(s) && Math.random() < 0.5 ? "dodged" : "drawGame"));
       return;
     }
     // How big a win it was - the biggest, with more than one - so what's said fits.
     const tai = Math.max(...winners.map((w) => w.score?.total ?? 0));
     winners.forEach(({ winner, score }, i) => {
       const own = score?.total ?? 0;
-      const kind: keyof Speech =
-        own >= BIG_WIN_TAI && Math.random() < 0.75
+      // Off the one who'd been winning off it: evens. Off the same one again: thanks.
+      const again: keyof Speech | null =
+        r.from === null || r.robKong ? null : sore(winner, r.from) && Math.random() < 0.6 ? "revenge" : sore(r.from, winner) && Math.random() < 0.5 ? "feastAgain" : null;
+      const kind: keyof Speech = again
+        ? again
+        : own >= BIG_WIN_TAI && Math.random() < 0.75
           ? "bigWin"
           : isComeback(totals, r.deltas, winner) && Math.random() < 0.6
             ? "comeback"
@@ -2169,7 +2179,8 @@ export function PlayPanel({
                   : "win";
       sayLater(i * 700, winner, kind, { tai: own, own: true, ...(r.from !== null ? { target: r.from } : {}) });
     });
-    if (r.from !== null && !r.robKong) sayLater(600, r.from, situations(moodOf(r.from)).includes("cold") && Math.random() < 0.35 ? "cold" : "dealIn", { tai });
+    if (r.from !== null && !r.robKong)
+      sayLater(600, r.from, sore(r.from, winners[0].winner) && Math.random() < 0.6 ? "fedAgain" : situations(moodOf(r.from)).includes("cold") && Math.random() < 0.35 ? "cold" : "dealIn", { tai });
     else if (r.from !== null) sayLater(600, r.from, Math.random() < 0.7 ? "robbed" : "dealIn", { tai });
     const lookers = botSeats.filter((s) => s !== r.from && !winners.some((w) => w.winner === s));
     const looker = lookers[Math.floor(Math.random() * lookers.length)];
@@ -2183,7 +2194,8 @@ export function PlayPanel({
           : null;
     if (looker !== undefined && youAgain && Math.random() < 0.35 + chattiness(looker) * 0.5) sayLater(1500, looker, youAgain, { target: HUMAN, tai });
     else if (looker !== undefined && Math.random() < chattiness(looker) * 0.7) {
-      if (r.from !== null && Math.random() < 0.4) taunt(1500, looker, r.from, "dealInTaunt", tai);
+      if (pressured(looker) && Math.random() < 0.4) sayLater(1500, looker, "dodged");
+      else if (r.from !== null && Math.random() < 0.4) taunt(1500, looker, r.from, "dealInTaunt", tai);
       else sayLater(1500, looker, "othersWin", { target: winners[0].winner, tai });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -3593,6 +3605,17 @@ export function PlayPanel({
   const activeSeat = swapSettling ? null : game.phase.kind === "turn" ? game.phase.seat : game.phase.kind === "claims" ? game.phase.from : null;
   const over = game.phase.kind === "over";
   const result = over ? shownResult : null;
+  // What each bot was up to, from its hand now it's face up (see botThoughts)
+  // - with why, where its personality isn't a secret (or a network's).
+  const thoughts = result
+    ? botSeats
+        .map((seat) => {
+          const bot = bots[seat]!;
+          const all = botThoughts(game, seat, mysteryStyle(bot) || learnedStyle(bot) ? null : bot);
+          return { seat, lines: all.slice(0, 2).map((t) => thoughtLine(t, (s) => (isMe(s) ? "you" : nameOf(s)))) };
+        })
+        .filter((x) => x.lines.length > 0)
+    : [];
   // You won this hand: your tiles topple flat, as everyone's on the table do.
   const iWon = !!result && !!result.tile && (result.winner === HUMAN || !!result.alsoWon?.some((w) => w.winner === HUMAN));
   // The tile you won with, shown first: the one you drew, or the last of its kind.
@@ -4732,6 +4755,15 @@ export function PlayPanel({
                 </p>
               )}
               {milestones.length > 0 && <p className="play-result-milestone">🏅 First time: {milestones.join(" · ")}</p>}
+              {thoughts.length > 0 && (
+                <ul className="play-result-thoughts" aria-label="What the bots were up to">
+                  {thoughts.map(({ seat, lines }) => (
+                    <li key={seat}>
+                      <b>{nameOf(seat)}</b> {lines.join(" · ")}
+                    </li>
+                  ))}
+                </ul>
+              )}
               <div className="play-result-deltas">
                 {result.deltas.map((d, seat) => (
                   <span key={seat} className={d < 0 ? "is-neg" : d > 0 ? "is-pos" : undefined}>

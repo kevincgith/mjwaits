@@ -6,8 +6,10 @@
 // reads the table and how often it plays a little loose, the way people do.
 //
 // Taiwanese 16-tile has no 振聽 (furiten): a player can win off a tile they
-// threw earlier, so nothing is ever fully safe. A player's own discards and
-// their 筋 (suji) are only *safer*, never "genbutsu" as in riichi.
+// threw earlier, so a player's own discards and their 筋 (suji) are only
+// *safer*, never "genbutsu" as in riichi. Two kinds of tile are sure,
+// though (see sureSafe): against a declared 叮, anything thrown since - and
+// against anyone, the discard that's just gone by unclaimed.
 
 import {
   claimOptions,
@@ -20,8 +22,10 @@ import {
   riichiDiscards,
   riichiForcedDiscard,
   surrenderable,
+  swapDiscardBan,
   sameTile,
   secondChanceFan,
+  isWinningHand,
   SEATS,
   seatWind,
   unseenCounts,
@@ -44,7 +48,9 @@ export interface BotProfile {
   // 0..1: how much the hand's tai potential steers discards and calls.
   greed: number;
   // Won't take a win off a discard below this many tai while the wall is
-  // still deep (0 = takes every win).
+  // still deep (0 = takes every win). The hand's whole score, 底 and all -
+  // the smallest wins come to about 10. Never with 叮 declared: a 叮 hand
+  // that passes a win up can't win again.
   minTai: number;
   // 0..1: how readily it declares 叮 when ready (it then can't fold or
   // change its wait, but scores 叮 / 門清叮 and maybe 一發).
@@ -87,6 +93,15 @@ export interface BotProfile {
   longShot?: number;
   longShotFade?: number;
   longShotReach?: number;
+  // ---- Temper ----
+  // How its play shifts with the game (Feel.form, see inMood): what's added
+  // to each setting on a full losing run, and on a full winning one - less
+  // in between. None: it plays the same whatever the score.
+  temper?: { losing?: Shift; winning?: Shift };
+  // 0..1: how much it plays at whoever it's sore at (Feel.sore) - dealing in
+  // to them again costs it more, a win off them is never let go, and a 拉
+  // of theirs is given up less readily. Optional, default 0.
+  grudge?: number;
   // ---- Human feel ----
   // Softmax temperature over near-equal choices (0 = always the top pick).
   noise: number;
@@ -94,6 +109,21 @@ export interface BotProfile {
   // it would normally pass on.
   slip: number;
 }
+
+// The settings a temper can move, and how far each may go.
+const SHIFT_RANGE = {
+  speed: [0.3, 2],
+  greed: [0, 1],
+  minTai: [0, 30],
+  riichi: [0, 1],
+  callAppetite: [0, 1],
+  caution: [0, 1],
+  foldAt: [0.2, 1],
+  longShot: [0, 1],
+  noise: [0, 0.5],
+  slip: [0, 0.3],
+} as const;
+export type Shift = Partial<Record<keyof typeof SHIFT_RANGE, number>>;
 
 export const BOT_PROFILES: BotProfile[] = [
   {
@@ -106,7 +136,7 @@ export const BOT_PROFILES: BotProfile[] = [
     // settings (its evolved champion only tied them).
     id: "grandmaster",
     name: "宗師 Grandmaster",
-    blurb: "Evolution's strongest: plays at full speed, calls freely, chases value, declares 叮 almost every time and barely defends - while reading every discard.",
+    blurb: "Evolution's strongest: plays at full speed, calls freely, chases value, declares 叮 almost every time and barely defends - forgetting no discard.",
     speed: 1.6,
     greed: 0.556,
     minTai: 0,
@@ -114,7 +144,10 @@ export const BOT_PROFILES: BotProfile[] = [
     callAppetite: 0.882,
     caution: 0.035,
     foldAt: 1,
-    read: 0.95,
+    // (Arena, after the safe-tile fixes: 0.5 scored about 0.6 tai a hand over
+    // 0.95 in 25,600 hands of self-play, and drew level with the Veteran
+    // against the Hunter and Iron Wall, where 0.95 trailed it.)
+    read: 0.5,
     noise: 0,
     slip: 0,
     focus: 0,
@@ -122,6 +155,8 @@ export const BOT_PROFILES: BotProfile[] = [
     longShot: 0.9,
     longShotFade: 0.55,
     longShotReach: 3,
+    // Ice: the score doesn't move it, and it holds nothing against anyone.
+    grudge: 0,
   },
   {
     id: "veteran",
@@ -129,7 +164,7 @@ export const BOT_PROFILES: BotProfile[] = [
     blurb: "Quick and sharp: calls freely, usually declares 叮, lets a small win go early in the hand and defends a little.",
     speed: 1.477,
     greed: 0.05,
-    minTai: 4,
+    minTai: 12,
     riichi: 0.796,
     callAppetite: 0.95,
     caution: 0.224,
@@ -142,6 +177,9 @@ export const BOT_PROFILES: BotProfile[] = [
     longShot: 0.7,
     longShotFade: 0.5,
     longShotReach: 3,
+    // Steady: a little more careful when it's been losing.
+    temper: { losing: { caution: 0.12, minTai: -12 } },
+    grudge: 0.3,
   },
   {
     id: "speedster",
@@ -163,6 +201,9 @@ export const BOT_PROFILES: BotProfile[] = [
     longShot: 0.5,
     longShotFade: 0.4,
     longShotReach: 2,
+    // Behind, it wants any win at all, sooner: calls everything.
+    temper: { losing: { callAppetite: 0.03, speed: 0.3, caution: -0.2 }, winning: { caution: 0.15 } },
+    grudge: 0.4,
   },
   {
     id: "hunter",
@@ -170,7 +211,7 @@ export const BOT_PROFILES: BotProfile[] = [
     blurb: "Chases flushes, all-pungs and honours; passes on small wins early.",
     speed: 0.7,
     greed: 0.95,
-    minTai: 5,
+    minTai: 14,
     riichi: 0.7,
     callAppetite: 0.5,
     caution: 0.5,
@@ -182,6 +223,9 @@ export const BOT_PROFILES: BotProfile[] = [
     longShot: 0.95,
     longShotFade: 0.75,
     longShotReach: 4,
+    // Behind, only a big hand will do; ahead, it takes what comes.
+    temper: { losing: { minTai: 6, longShot: 0.05, callAppetite: -0.2 }, winning: { minTai: -14, callAppetite: 0.2 } },
+    grudge: 0.6,
   },
   {
     id: "wall",
@@ -189,7 +233,7 @@ export const BOT_PROFILES: BotProfile[] = [
     blurb: "Keeps 門清, rarely declares 叮, and shuts down completely against anyone who looks ready - deals in almost never.",
     speed: 1.094,
     greed: 0.209,
-    minTai: 1,
+    minTai: 0,
     riichi: 0.198,
     callAppetite: 0.081,
     caution: 0.877,
@@ -202,6 +246,9 @@ export const BOT_PROFILES: BotProfile[] = [
     longShot: 0.7,
     longShotFade: 0.5,
     longShotReach: 3,
+    // Ahead, it sits on its lead; behind, it has to come out and play.
+    temper: { losing: { riichi: 0.4, callAppetite: 0.35, foldAt: 0.25 }, winning: { caution: 0.12, foldAt: -0.08, riichi: -0.15 } },
+    grudge: 0.2,
   },
   {
     id: "gambler",
@@ -223,6 +270,9 @@ export const BOT_PROFILES: BotProfile[] = [
     longShot: 1,
     longShotFade: 0.85,
     longShotReach: 4,
+    // Tilts: losing, it chases bigger and wilder still - and never forgets who took its money.
+    temper: { losing: { greed: 0.4, speed: -0.4, slip: 0.06 }, winning: { greed: 0.2 } },
+    grudge: 0.9,
   },
   {
     id: "casual",
@@ -230,7 +280,7 @@ export const BOT_PROFILES: BotProfile[] = [
     blurb: "A friendly club player: calls freely and loves 叮, plays carefully, but forgets older discards and makes the odd lazy throw.",
     speed: 0.692,
     greed: 0.028,
-    minTai: 2,
+    minTai: 0,
     riichi: 0.994,
     callAppetite: 0.915,
     caution: 0.687,
@@ -244,6 +294,9 @@ export const BOT_PROFILES: BotProfile[] = [
     longShot: 0.5,
     longShotFade: 0.5,
     longShotReach: 2,
+    // Loses heart when it's losing: plays safe, declares less. Winning, it gets careless.
+    temper: { losing: { caution: 0.25, foldAt: -0.2, riichi: -0.35 }, winning: { slip: 0.06, caution: -0.25 } },
+    grudge: 0.5,
   },
 ];
 
@@ -282,6 +335,25 @@ export function learnedProfile(style: string): BotProfile {
 }
 
 export const profileById = (id: string): BotProfile => BOT_PROFILES.find((p) => p.id === id) ?? BOT_PROFILES.find((p) => p.id === "veteran")!;
+
+// The profile as it plays right now: its settings moved by its temper, by
+// how far its game has swung (Feel.form). A small swing moves nothing.
+export function inMood(profile: BotProfile, s: GameState, seat: number): BotProfile {
+  const form = s.feel?.form[seat] ?? 0;
+  const shift = form < 0 ? profile.temper?.losing : profile.temper?.winning;
+  const by = Math.abs(form);
+  if (!shift || by < MOOD_FROM) return profile;
+  const out = { ...profile };
+  for (const k of Object.keys(shift) as (keyof Shift)[]) {
+    const [lo, hi] = SHIFT_RANGE[k];
+    out[k] = clamp((profile[k] ?? 0) + shift[k]! * by, lo, hi);
+  }
+  return out;
+}
+const MOOD_FROM = 0.2;
+
+// How sore `seat` is at `o` right now, 0..1 (see Feel).
+export const soreAt = (s: GameState, seat: number, o: number): number => s.feel?.sore[seat]?.[o] ?? 0;
 
 // ---- Helpers ------------------------------------------------------------
 
@@ -495,19 +567,44 @@ export function tileRisk(s: GameState, viewer: number, o: number, tile: Tile, re
   return risk * own;
 }
 
+// A tile `o` certainly can't win on right now - anyone at the table can
+// tell, no reading needed:
+// - `o` has declared 叮: any tile thrown since (the declaring discard
+//   included). A 叮 hand's wait is fixed, and one that lets a win go by can
+//   never win again - so a tile that's been by it is safe for good.
+// - the discard that's just gone by unclaimed (過水): `o` didn't win on it,
+//   and hasn't thrown since.
+// `view`: the ponds as this player remembers them (see rememberedView) - a
+// forgotten discard gives nothing away.
+export function sureSafe(s: GameState, o: number, tile: Tile, view: GameState = s): boolean {
+  const last = s.chase;
+  if (last && sameTile(last.tile, tile) && s.phase.kind === "turn") return true;
+  const r = s.players[o].riichi;
+  if (!r) return false;
+  for (let i = 0; i < SEATS; i++) {
+    const pond = s.players[i].discards;
+    const since = i === o ? r.discard : r.ponds?.[i];
+    if (since === undefined) continue;
+    const from = Math.max(since, pond.length - view.players[i].discards.length);
+    for (let j = from; j < pond.length; j++) if (sameTile(pond[j], tile)) return true;
+  }
+  return false;
+}
+
 // The total danger of throwing `tile`: each opponent's risk weighted by how
 // likely they are to be ready, and by how much they'd collect (the dealer
 // adds 莊).
 // `view`: the table as this player remembers it (see rememberedView) - pond
 // reads come from it, while threat still counts every discard (how long a
 // pond is, anyone can see).
-export function danger(s: GameState, seat: number, tile: Tile, read: number, unseen: Map<string, number>, focus = 0, view: GameState = s, pullSense = 1): number {
+export function danger(s: GameState, seat: number, tile: Tile, read: number, unseen: Map<string, number>, focus = 0, view: GameState = s, pullSense = 1, grudge = 0): number {
   let d = 0;
   for (let o = 0; o < SEATS; o++) {
     if (o === seat) continue;
     const t = threat(s, o, read);
     if (t <= Math.max(0.02, focus)) continue;
-    d += t * dealInStake(s, seat, o, pullSense) * tileRisk(view, seat, o, tile, read, unseen);
+    if (sureSafe(s, o, tile, view)) continue;
+    d += t * dealInStake(s, seat, o, pullSense, grudge) * tileRisk(view, seat, o, tile, read, unseen);
   }
   return d;
 }
@@ -519,12 +616,14 @@ export function danger(s: GameState, seat: number, tile: Tile, read: number, uns
 // (counted at a third of its value, what it was likely to earn us). So a
 // tile `o` might want is far more dangerous than the same tile against a
 // player with no 拉 on us - defence becomes targeted.
-export function dealInStake(s: GameState, seat: number, o: number, sense = 1): number {
+// And a grudge: feeding the one it's sore at again stings past the tai.
+export function dealInStake(s: GameState, seat: number, o: number, sense = 1, grudge = 0): number {
   const dealer = o === s.dealer || seat === s.dealer ? 1.25 : 1;
   const add = lahAddOn(s.lahs, o, seat);
   const lost = add.kind === "踢" ? add.value / 3 : 0;
-  return dealer * (1 + (sense * (add.amount + lost)) / 26);
+  return dealer * (1 + (sense * (add.amount + lost)) / 26) * (1 + GRUDGE_STAKE * grudge * soreAt(s, seat, o));
 }
+const GRUDGE_STAKE = 0.8;
 
 // What 拉 adds to a win of ours, averaged over who might pay: each pull or
 // kick we hold an add-on for counts once (a self-draw collects them all).
@@ -557,9 +656,11 @@ export interface DiscardChoice {
 // A deterministic-by-default random source; the arena seeds it.
 export type Rng = () => number;
 
-function pick<T extends { score: number }>(options: T[], profile: BotProfile, rng: Rng): T {
+function pick<T extends { score: number; shanten: number }>(options: T[], profile: BotProfile, rng: Rng): T {
   const sorted = options.slice().sort((a, b) => b.score - a.score);
-  if (sorted.length > 1 && rng() < profile.slip) return sorted[1];
+  // A lazy throw: the next-best - but never one that sets the hand back (a
+  // ready hand broken up is no slip).
+  if (sorted.length > 1 && rng() < profile.slip) return sorted.slice(1).find((o) => o.shanten <= sorted[0].shanten) ?? sorted[0];
   if (profile.noise <= 0) return sorted[0];
   // Softmax over the options, so only near-equal ones get picked by chance.
   const top = sorted[0].score;
@@ -580,12 +681,8 @@ function folding(s: GameState, seat: number, sh: number, profile: BotProfile): b
   if (profile.foldAt >= 1) return false;
   let top = 0;
   for (let o = 0; o < SEATS; o++) if (o !== seat) top = Math.max(top, threat(s, o, profile.read));
-  // Most players fold only a hand that's 2+ from ready (or 1 from it with
-  // the wall nearly gone); the very cautious fold a 1-from-ready hand too,
-  // and drop even a ready one against a seat that's clearly ready.
-  if (sh >= 2 || (sh === 1 && (liveTilesLeft(s) < 20 || profile.caution >= 0.9))) return top >= profile.foldAt;
-  if (sh <= 0 && profile.caution >= 0.9) return top >= Math.min(0.9, profile.foldAt * 3);
-  return false;
+  // Only a hand that's 2+ from ready, or 1 from it with the wall nearly gone.
+  return (sh >= 2 || (sh === 1 && liveTilesLeft(s) < 20)) && top >= profile.foldAt;
 }
 
 // The chance this hand wins from here, given its shanten after the discard
@@ -623,6 +720,8 @@ const dealInCost = (sh: number, profile: BotProfile) => 26 * 2 * profile.caution
 // In arena play a tile at risk 1 against a ready seat won it about 1 time
 // in 9, so danger (risk x readiness, summed) converts to a deal-in chance.
 const DEAL_IN_PER_DANGER = 0.11;
+// About what a kong brings, in tai: its own, and the replacement draw.
+const KONG_WORTH = 3;
 
 // Every distinct legal discard, scored in tai. Building the hand is ranked
 // shanten-first (acceptance, then value, break ties) - in arena play that
@@ -652,7 +751,7 @@ export function rateDiscardsFor(s: GameState, seat: number, profile: BotProfile)
     const sh = shanten(rest, melds, routes);
     const acc = acceptance(rest, melds, sh, unseen, routes, anyKind);
     const value = handValue(s, seat, rest, p);
-    const d = danger(s, seat, t, profile.read, unseen, profile.focus, view, profile.pullSense ?? 1);
+    const d = danger(s, seat, t, profile.read, unseen, profile.focus, view, profile.pullSense ?? 1, profile.grudge ?? 0);
     // In shanten steps: one step = 1.
     const build = -sh + 0.5 * profile.speed * (acc / (acc + 25)) + 0.07 * profile.greed * value;
     out.push({ tile: t, shanten: sh, acceptance: acc, value, danger: d, score: 0, build });
@@ -685,9 +784,10 @@ export function botKongs(s: GameState): KongMove[] {
 // The move, and how hard it was to choose, 0..1 - the Play table uses it to
 // pace the bot like a person: an obvious throw goes at once, a close or
 // dangerous one gets a pause.
-export function botTurnFor(s: GameState, profile: BotProfile, rng: Rng = Math.random): { move: TurnMove; difficulty: number } {
+export function botTurnFor(s: GameState, own: BotProfile, rng: Rng = Math.random): { move: TurnMove; difficulty: number } {
   if (s.phase.kind !== "turn") throw new Error("Not a turn");
   const seat = s.phase.seat;
+  const profile = inMood(own, s, seat);
   const p = s.players[seat];
   if (canWin(p)) return { move: { kind: "selfDraw" }, difficulty: 0.2 };
   const forced = riichiForcedDiscard(s);
@@ -696,8 +796,16 @@ export function botTurnFor(s: GameState, profile: BotProfile, rng: Rng = Math.ra
   const best = options[0];
   if (liveTilesLeft(s) > 0 && !folding(s, seat, best.shanten, profile)) {
     for (const k of botKongs(s)) {
-      // An added kong costs nothing; a concealed one only if it doesn't set the hand back.
-      if (k.kind === "addedKong") return { move: k, difficulty: 0.3 };
+      if (k.kind === "addedKong") {
+        // Not when the tile does more kept (it gets the hand a step closer),
+        // nor when it's too likely to be robbed (搶槓) for what a kong brings.
+        const kept = options.find((o) => sameTile(o.tile, k.tile));
+        const without = shanten(removeTiles(p.hand, [k.tile]), meldsNeeded(p));
+        if (best.shanten < without) continue;
+        if (kept && DEAL_IN_PER_DANGER * kept.danger * dealInCost(without, profile) > KONG_WORTH) continue;
+        return { move: k, difficulty: 0.3 };
+      }
+      // A concealed one only if it doesn't set the hand back.
       const rest = removeTiles(p.hand, [k.tile, k.tile, k.tile, k.tile]);
       if (shanten(rest, meldsNeeded(p) - 1) <= best.shanten) return { move: k, difficulty: 0.6 };
     }
@@ -734,15 +842,18 @@ function winTai(s: GameState, seat: number): number {
   return secondChanceFan(s, seat, 0) ?? 0;
 }
 
-export function botClaimFor(s: GameState, seat: number, profile: BotProfile, rng: Rng = Math.random): Claim | null {
+export function botClaimFor(s: GameState, seat: number, own: BotProfile, rng: Rng = Math.random): Claim | null {
+  const profile = inMood(own, s, seat);
   const options = claimOptions(s, seat);
   if (options.length === 0 || s.phase.kind !== "claims") return null;
   const { tile, from } = s.phase;
   const p = s.players[seat];
   if (options.some((o) => o.kind === "win")) {
-    // The Hunter lets a small win go by while the wall is deep.
+    // The Hunter lets a small win go by while the wall is deep - never with
+    // 叮 declared (that hand couldn't win again), nor off someone it has a
+    // score to settle with.
     // (A 拉 or 踢 on the discarder counts toward it.)
-    if (profile.minTai > 0 && liveTilesLeft(s) > 36 && winTai(s, seat) + lahAddOn(s.lahs, seat, from).amount < profile.minTai) return null;
+    if (profile.minTai > 0 && !p.riichi && !bearsGrudge(s, seat, from, profile) && liveTilesLeft(s) > 36 && winTai(s, seat) + lahAddOn(s.lahs, seat, from).amount < profile.minTai) return null;
     return { kind: "win" };
   }
   const melds = meldsNeeded(p);
@@ -754,13 +865,17 @@ export function botClaimFor(s: GameState, seat: number, profile: BotProfile, rng
   // Shanten and value after the call and its best discard.
   const after = (used: Tile[], kind: "run" | "triplet" | "kong") => {
     const rest = removeTiles(p.hand, used);
+    // 食替, as the table bars it (waived when it leaves nothing to throw).
+    const ban = swapDiscardBan(tile, kind === "run" ? used : undefined);
+    const barred = (t: Tile) => ban.some((b) => sameTile(b, t));
+    const waived = rest.every(barred);
     const meld = { kind, tiles: [...used, tile], concealed: false, from };
     const p2: Player = { ...p, melds: [...p.melds, meld] };
     if (kind === "kong") return { sh: shanten(rest, melds - 1), value: handValue(s, seat, rest, p2) };
     let sh = Infinity;
     let value = 0;
     for (const t of rest) {
-      if (sameTile(t, tile)) continue; // 食替
+      if (!waived && barred(t)) continue;
       const r2 = removeTiles(rest, [t]);
       const s2 = shanten(r2, melds - 1);
       const v2 = handValue(s, seat, r2, p2);
@@ -796,13 +911,105 @@ export function botClaimFor(s: GameState, seat: number, profile: BotProfile, rng
 // rules allow; it gives up one once the 拉 is big enough for its taste -
 // keeping it means paying half again (and more) if the holder wins from it
 // once more, against the chance of 踢-ing it back for half.
+// (To someone it bears a grudge against, only a bigger one still.)
 export function botSurrenders(s: GameState, seat: number, profile: BotProfile): number[] {
   const eager = profile.surrender ?? 0.3;
   if (eager <= 0) return [];
   const threshold = 30 + (1 - eager) * 150;
   return surrenderable(s, seat)
-    .filter((l) => l.value >= threshold)
+    .filter((l) => l.value >= threshold * (1 + (profile.grudge ?? 0) * soreAt(s, seat, Number(l.holder))))
     .map((l) => Number(l.holder));
+}
+
+// Sore enough at `o`, and the kind to act on it.
+export const GRUDGE_FROM = 0.3;
+export const bearsGrudge = (s: GameState, seat: number, o: number, profile: BotProfile) => (profile.grudge ?? 0) * soreAt(s, seat, o) >= GRUDGE_FROM;
+
+// ---- After the hand: what it was up to -----------------------------------
+//
+// A line or two for the result card, from what's now face up: its hand, the
+// table, and - where its personality is known - why. With `profile` null (a
+// mystery bot, a person) only what the tiles themselves say.
+
+export type Aim = "flush" | "pungs" | "十六不搭" | "嚦咕嚦咕" | "十三么";
+export type Thought =
+  | { kind: "passed" } // let a win go by, and couldn't win after
+  | { kind: "ready"; waits: Tile[]; left: number } // waiting, and on how many still to come
+  | { kind: "folded"; against: number } // gave its hand up, afraid of that seat
+  | { kind: "away"; away: number; aim: Aim | null } // this far from ready, and what it was building
+  | { kind: "mood"; form: "losing" | "winning" } // its temper was up
+  | { kind: "sore"; at: number }; // it had a score to settle
+
+export function botThoughts(s: GameState, seat: number, own: BotProfile | null): Thought[] {
+  if (s.phase.kind !== "over") return [];
+  const r = s.phase.result;
+  if (r.winner === seat || r.alsoWon?.some((w) => w.winner === seat)) return [];
+  const p = s.players[seat];
+  const melds = meldsNeeded(p);
+  // (Face up, and a hand between turns.)
+  if (p.hand.length !== melds * 3 + 1 || p.hand.some((t) => t.rank === 0)) return [];
+  const profile = own && inMood(own, s, seat);
+  const out: Thought[] = [];
+  const sh = rawShanten(p.hand, melds);
+  if (p.overWater || p.riichi?.passed) out.push({ kind: "passed" });
+  if (sh <= 0) {
+    const unseen = unseenCounts(s, seat);
+    const waits = ALL_KINDS.filter((k) => isWinningHand(p, k));
+    out.push({ kind: "ready", waits, left: waits.reduce((n, k) => n + Math.max(0, unseen.get(tileKey(k)) ?? 0), 0) });
+  } else {
+    let against = -1;
+    for (let o = 0; o < SEATS; o++) if (o !== seat && (against < 0 || threat(s, o, profile?.read ?? 0) > threat(s, against, profile?.read ?? 0))) against = o;
+    if (profile && folding(s, seat, sh, profile)) out.push({ kind: "folded", against });
+    out.push({ kind: "away", away: sh, aim: aimOf(p, sh) });
+  }
+  if (own && profile !== own) out.push({ kind: "mood", form: (s.feel?.form[seat] ?? 0) < 0 ? "losing" : "winning" });
+  if (own) {
+    let at = -1;
+    for (let o = 0; o < SEATS; o++) if (o !== seat && bearsGrudge(s, seat, o, own) && (at < 0 || soreAt(s, seat, o) > soreAt(s, seat, at))) at = o;
+    if (at >= 0) out.push({ kind: "sore", at });
+  }
+  return out;
+}
+
+// What a hand that isn't ready was being built into, if it shows.
+function aimOf(p: Player, sh: number): Aim | null {
+  if (!p.melds.length) {
+    const d = specialDistances(p.hand);
+    if (d.orphans <= sh && d.orphans <= 3) return "十三么";
+    if (d.sixteen <= sh && d.sixteen <= 3) return "十六不搭";
+    if (d.pairs <= sh && d.pairs <= 2) return "嚦咕嚦咕";
+  }
+  const all = [...p.hand, ...p.melds.flatMap((m) => m.tiles)];
+  const suited = all.filter((t) => t.suit !== "z");
+  const top = Math.max(...["m", "t", "b"].map((suit) => suited.filter((t) => t.suit === suit).length));
+  if (suited.length >= 8 && top / suited.length >= 0.85) return "flush";
+  if (!p.melds.some((m) => m.kind === "run")) {
+    const counts = new Map<string, number>();
+    for (const t of p.hand) counts.set(tileKey(t), (counts.get(tileKey(t)) ?? 0) + 1);
+    if (p.melds.length + [...counts.values()].filter((c) => c >= 2).length >= 5) return "pungs";
+  }
+  return null;
+}
+
+const SUIT_WORD: Record<string, string> = { m: "萬", t: "筒", b: "索" };
+const tileWord = (t: Tile) => (t.suit === "z" ? "東南西北中發白"[t.rank - 1] : `${t.rank}${SUIT_WORD[t.suit] ?? ""}`);
+
+// A thought in words. `name`: what to call a seat ("you", a bot's name).
+export function thoughtLine(t: Thought, name: (seat: number) => string): string {
+  switch (t.kind) {
+    case "passed":
+      return "Let a win go by - and couldn't win after";
+    case "ready":
+      return t.waits.length ? `Ready, waiting on ${t.waits.map(tileWord).join(" ")} - ${t.left ? `${t.left} left` : "none left"}` : "Ready";
+    case "folded":
+      return `Gave the hand up - wary of ${name(t.against)}`;
+    case "away":
+      return `${t.away} from ready${t.aim ? `, building ${t.aim === "flush" ? "a flush" : t.aim === "pungs" ? "all pungs (對對胡)" : t.aim}` : ""}`;
+    case "mood":
+      return t.form === "losing" ? "On a losing run - and playing like it" : "On a winning run - and playing like it";
+    case "sore":
+      return `Had a score to settle with ${name(t.at)}`;
+  }
 }
 
 // A small seeded PRNG (mulberry32) for repeatable arena runs.

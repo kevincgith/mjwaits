@@ -119,6 +119,8 @@ export interface TableView {
   diceBonus?: GameState["diceBonus"];
   tableBonuses: TableBonus[];
   chase?: GameState["chase"];
+  // How the game's been going for each seat (see Feel) - by table seat.
+  feel?: GameState["feel"];
 }
 
 const copyTiles = (tiles: Tile[]) => tiles.map((t) => ({ suit: t.suit, rank: t.rank }));
@@ -209,5 +211,6 @@ export function viewFor(s: GameState, you: number, shown: (seat: number) => bool
     ...(s.diceBonus ? { diceBonus: structuredClone(s.diceBonus) } : {}),
     tableBonuses: structuredClone(s.tableBonuses ?? []),
     ...(s.chase ? { chase: structuredClone(s.chase) } : {}),
+    ...(s.feel ? { feel: structuredClone(s.feel) } : {}),
   };
 }
