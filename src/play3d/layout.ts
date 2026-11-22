@@ -462,12 +462,14 @@ export function layoutTable(view: GLTableView, d: Dims): Layout {
     const em = PEEK_SIZE * T;
     const pitch = PEEK_PITCH * em;
     const side = rack.axis === "y";
-    // (The window, TRAY_W places long, kept on the felt - and a side rack's
-    // out beside it, clear of the wall.)
+    // The window, TRAY_W places long, fixed in place - by the middle of the
+    // rack, kept on the felt (a side rack's out beside it, clear of the
+    // wall) - the tiles sliding through it as the finger runs along.
     const margin = (TRAY_W / 2 + 0.2) * pitch;
-    const across = Math.max(margin, Math.min(d.feltW - margin, rack.centres[at]));
+    const middle = (rack.centres[0] + rack.centres[rack.centres.length - 1]) / 2;
+    const across = Math.max(margin, Math.min(d.feltW - margin, middle));
     const middleX = side ? lane + dir * (TRAY_W / 2 - 0.2) * pitch : across;
-    const foot = side ? Math.max(cy0 + 1.7 * T, Math.min(cy1 - 1.5 * T, rack.centres[at] + 0.55 * T)) : lane + 1.4 * T;
+    const foot = side ? Math.max(cy0 + 1.7 * T, Math.min(cy1 - 1.5 * T, middle + 0.55 * T)) : lane + 1.4 * T;
     // The box they stand in, to keep them clear of whatever's on the table
     // behind: just behind them, leant as they are (more room below them -
     // their faces stand out in front of it, so are seen a little lower).
