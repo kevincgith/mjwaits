@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { BOT_PROFILES, botClaimFor, botTurnFor, botTurnMoveFor, danger, longShotChance, profileById, rateDiscardsFor, rememberedView, seededRng, specialRoutes, threat, tileRisk, SPEECH, speechOf, type BotProfile } from "@mjwaits/shared/engine/bots";
+import { BOT_PROFILES, botSurrenders, botThoughts, dealInStake, inMood, thoughtLine, botClaimFor, botTurnFor, botTurnMoveFor, danger, longShotChance, profileById, rateDiscardsFor, rememberedView, seededRng, specialRoutes, sureSafe, threat, tileRisk, SPEECH, speechOf, type BotProfile } from "@mjwaits/shared/engine/bots";
 import { runArena } from "./arena";
-import { applyTurnMove, dealHand, resolveClaims, secondChanceFan, SEATS, unseenCounts, type GameMeld, type GameState } from "@mjwaits/shared/engine/game";
+import { applyTurnMove, feelAfter, nextHand, NO_FEEL, dealHand, resolveClaims, secondChanceFan, SEATS, unseenCounts, type GameMeld, type GameState } from "@mjwaits/shared/engine/game";
 import { allTileKinds, parseHand, specialDistances, tileKey, type Tile } from "@mjwaits/shared/engine/mahjong";
 import { viewFor } from "@mjwaits/shared/engine/view";
 
@@ -279,5 +279,183 @@ describe("a bot's minimum for a win", () => {
     const wants = (minTai: number): BotProfile => ({ ...profileById("hunter"), minTai });
     expect(botClaimFor(s, 1, wants(worth), seededRng(1))).toEqual({ kind: "win" });
     expect(botClaimFor(s, 1, wants(worth + 1), seededRng(1))).toBeNull();
+  });
+});
+
+describe("the bots' fixes", () => {
+  const base = dealHand({ dealer: 0, roundWind: 1, dealerStreak: 0 });
+  const turn = (hand: string, drawn: Tile, melds: GameMeld[] = []): GameState => ({
+    ...withPlayer(base, 0, { hand: [...parseHand(hand), drawn], melds, flowers: [] }),
+    phase: { kind: "turn", seat: 0, drawn, replacement: null },
+  });
+  const pung = (tile: Tile, from = 1): GameMeld => ({ kind: "triplet", tiles: [tile, tile, tile], concealed: false, from });
+  const declared = { state: "riichi" as const, discard: 2, ippatsu: false, ponds: [3, 2, 1, 0], melds: [0, 0, 0, 0] };
+
+  it("a tile thrown since a 叮 was declared is safe against it - if remembered", () => {
+    let s = withPlayer(base, 1, { riichi: declared, discards: [t("z", 1), t("z", 2), t("b", 5)] });
+    s = withPlayer(s, 0, { discards: [t("m", 1), t("m", 2), t("m", 3), t("t", 5)] });
+    s = withPlayer(s, 2, { discards: [t("b", 1), t("b", 2), t("b", 3), t("b", 4), t("b", 6), t("b", 7), t("b", 8)] });
+    expect(sureSafe(s, 1, t("t", 5))).toBe(true); // thrown after
+    expect(sureSafe(s, 1, t("b", 5))).toBe(true); // its own declaring discard
+    expect(sureSafe(s, 1, t("m", 3))).toBe(false); // thrown before
+    expect(sureSafe(s, 1, t("z", 1))).toBe(false); // its own, before (no 振聽 here)
+    expect(sureSafe(s, 2, t("t", 5))).toBe(false); // and only against the 叮
+    const unseen = unseenCounts(s, 3);
+    expect(danger(s, 3, t("t", 5), 1, unseen, 0.99)).toBe(0);
+    expect(danger(s, 3, t("t", 6), 1, unseen, 0.99)).toBeGreaterThan(0);
+    // Seat 2's 2b went by the 叮 too - but a short memory has lost it.
+    expect(sureSafe(s, 1, t("b", 2))).toBe(true);
+    expect(sureSafe(s, 1, t("b", 2), rememberedView(s, 3, 0))).toBe(false);
+  });
+
+  it("the discard that's just gone by unclaimed is safe against everyone", () => {
+    const s: GameState = { ...turn("123456789m123456t5b", t("z", 1)), chase: { seat: 3, tile: t("b", 9), run: 1 } };
+    for (const o of [1, 2, 3]) expect(sureSafe(s, o, t("b", 9))).toBe(true);
+    expect(sureSafe(s, 1, t("b", 8))).toBe(false);
+  });
+
+  it("a lazy throw never breaks up a ready hand", () => {
+    // Ready by throwing 東 or 5b; anything else sets it back.
+    const s = turn("123456789m123456t5b", t("z", 1));
+    const lazy: BotProfile = { ...profileById("casual"), slip: 1, riichi: 0 };
+    for (let seed = 1; seed <= 20; seed++) {
+      const m = botTurnFor(s, lazy, seededRng(seed)).move;
+      expect(m.kind === "discard" && ["z1", "b5"].includes(tileKey(m.tile))).toBe(true);
+    }
+  });
+
+  it("a 叮 hand takes any win: passing would kill it", () => {
+    let s: GameState = { ...base, phase: { kind: "claims", from: 0, tile: t("b", 5) } };
+    s = withPlayer(s, 0, { discards: [t("b", 5)] });
+    s = withPlayer(s, 1, { hand: parseHand("123456789m123456t5b"), melds: [], flowers: [], discards: [t("z", 4)] });
+    const picky: BotProfile = { ...profileById("hunter"), minTai: 500 };
+    expect(botClaimFor(s, 1, picky, seededRng(1))).toBeNull();
+    expect(botClaimFor(withPlayer(s, 1, { ...s.players[1], riichi: { ...declared, discard: 0, ponds: [0, 0, 0, 0] } }), 1, picky, seededRng(1))).toEqual({ kind: "win" });
+  });
+
+  it("an added kong: not with a tile the hand needs", () => {
+    const gambler = profileById("gambler");
+    // 5m fills 4m-6m: kept, the hand is ready.
+    const needed = botTurnFor(turn("46m123456t78t99b" + "1z", t("m", 5), [pung(t("m", 5))]), gambler, seededRng(1)).move;
+    expect(needed.kind).toBe("discard");
+    // Nothing to do with it in hand: the kong.
+    const spare = botTurnFor(turn("123456789t99b1b" + "1z", t("m", 5), [pung(t("m", 5))]), gambler, seededRng(1)).move;
+    expect(spare).toEqual({ kind: "addedKong", tile: t("m", 5) });
+  });
+
+  it("a run isn't called for a throw 食替 bars", () => {
+    // Ready. 7m taken with 56m would need 4m thrown to stay ready - barred.
+    let s: GameState = { ...base, phase: { kind: "claims", from: 0, tile: t("m", 7) } };
+    s = withPlayer(s, 0, { discards: [t("m", 7)] });
+    s = withPlayer(s, 1, { hand: parseHand("456m123456t77t88b"), melds: [pung(t("z", 5), 2)], flowers: [], discards: [] });
+    const lazy: BotProfile = { ...profileById("casual"), slip: 1 };
+    expect(botClaimFor(s, 1, lazy, seededRng(1))).toBeNull();
+  });
+});
+
+describe("how the game's going", () => {
+  const base = dealHand({ dealer: 0, roundWind: 1, dealerStreak: 0 });
+  const over = (winner: number | null, from: number | null, deltas: number[], feel = NO_FEEL()): GameState => ({
+    ...base,
+    feel,
+    phase: { kind: "over", result: { winner, from, tile: null, score: null, scoreError: null, deltas } },
+  });
+
+  it("a deal-in leaves the payer sore at the winner, and both their form moved - fading hand by hand", () => {
+    const one = feelAfter(over(1, 0, [-40, 40, 0, 0]));
+    expect(one.sore[0][1]).toBeCloseTo(0.6);
+    expect(one.sore[2][1]).toBe(0);
+    expect(one.form[0]).toBeCloseTo(-0.5);
+    expect(one.form[1]).toBeCloseTo(0.5);
+    const two = feelAfter(over(null, null, [0, 0, 0, 0], one));
+    expect(two.sore[0][1]).toBeCloseTo(0.42);
+    expect(two.form[0]).toBeCloseTo(-0.325);
+    // Winning it back settles most of it.
+    const back = feelAfter(over(0, 1, [40, -40, 0, 0], one));
+    expect(back.sore[0][1]).toBeLessThan(0.2);
+    // A self-draw: everyone a little sore.
+    expect(feelAfter(over(2, null, [-20, -20, 60, -20])).sore.map((row) => row[2])).toEqual([0.15, 0.15, 0, 0.15]);
+  });
+
+  it("is carried to the next hand", () => {
+    expect(nextHand(over(1, 0, [-40, 40, 0, 0])).feel?.sore[0][1]).toBeCloseTo(0.6);
+  });
+
+  it("moves a bot with a temper - and not one without", () => {
+    const losing: GameState = { ...base, feel: { ...NO_FEEL(), form: [-1, -0.1, 1, 0] } };
+    const wall = profileById("wall");
+    expect(inMood(wall, losing, 0).riichi).toBeGreaterThan(wall.riichi); // behind: has to come out
+    expect(inMood(wall, losing, 2).caution).toBeGreaterThan(wall.caution); // ahead: sits on it
+    expect(inMood(wall, losing, 1)).toBe(wall); // a small swing: as ever
+    expect(inMood(wall, losing, 3)).toBe(wall);
+    const gm = profileById("grandmaster");
+    expect(inMood(gm, losing, 0)).toBe(gm);
+    // Never out of range.
+    for (const p of BOT_PROFILES) for (const seat of [0, 2]) {
+      const m = inMood(p, losing, seat);
+      expect(m.caution).toBeGreaterThanOrEqual(0);
+      expect(m.caution).toBeLessThanOrEqual(1);
+      expect(m.callAppetite).toBeLessThanOrEqual(1);
+      expect(m.minTai).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it("a grudge: feeding them again costs more, and their 拉 is given up less readily", () => {
+    const feel = NO_FEEL();
+    feel.sore[0][1] = 0.8;
+    const s: GameState = { ...base, feel };
+    expect(dealInStake(s, 0, 1, 1, 0.9)).toBeGreaterThan(dealInStake(s, 0, 2, 1, 0.9));
+    expect(dealInStake(s, 0, 1, 1, 0)).toBe(dealInStake(s, 0, 2, 1, 0));
+    const lah = { holder: "1", pulled: "0", count: 3, value: 100, lastWin: true };
+    const between: GameState = { ...over(1, 0, [-40, 40, 0, 0]), lahs: [lah] as GameState["lahs"] };
+    const eager: BotProfile = { ...profileById("wall"), surrender: 0.6, grudge: 0 };
+    if (botSurrenders(between, 0, eager).length) {
+      expect(botSurrenders({ ...between, feel }, 0, { ...eager, grudge: 1 })).toEqual([]);
+    }
+  });
+});
+
+describe("after the hand: what a bot was up to", () => {
+  const base = dealHand({ dealer: 0, roundWind: 1, dealerStreak: 0 });
+  const ended = (patch: Partial<GameState["players"][number]>, feel?: GameState["feel"]): GameState => ({
+    ...withPlayer(base, 1, { melds: [], flowers: [], discards: [], ...patch }),
+    ...(feel ? { feel } : {}),
+    phase: { kind: "over", result: { winner: null, from: null, tile: null, score: null, scoreError: null, deltas: [0, 0, 0, 0] } },
+  });
+  const name = (seat: number) => ["you", "A", "B", "C"][seat];
+
+  it("a ready hand: its waits, and how many were left", () => {
+    const [t1] = botThoughts(ended({ hand: parseHand("123456789m123456t5b") }), 1, null);
+    expect(t1.kind).toBe("ready");
+    expect(thoughtLine(t1, name)).toMatch(/^Ready, waiting on 5索 - \d left$/);
+  });
+
+  it("a win let go by", () => {
+    const all = botThoughts(ended({ hand: parseHand("123456789m123456t5b"), overWater: true }), 1, null);
+    expect(all[0]).toEqual({ kind: "passed" });
+  });
+
+  it("a hand far off: how far, and what it was building", () => {
+    const flush = botThoughts(ended({ hand: parseHand("134679m1z"), melds: [2, 5, 8].map((r): GameMeld => ({ kind: "triplet", tiles: [t("m", r), t("m", r), t("m", r)], concealed: false, from: 0 })) }), 1, null).find((t) => t.kind === "away");
+    expect(flush && flush.kind === "away" && flush.aim).toBe("flush");
+    expect(thoughtLine(flush!, name)).toMatch(/from ready, building a flush$/);
+  });
+
+  it("the winner's, a hidden hand's: nothing", () => {
+    const s = ended({ hand: parseHand("123456789m123456t5b") });
+    expect(botThoughts({ ...s, phase: { kind: "over", result: { winner: 1, from: null, tile: null, score: null, scoreError: null, deltas: [0, 0, 0, 0] } } }, 1, null)).toEqual([]);
+    expect(botThoughts(ended({ hand: Array.from({ length: 16 }, () => t("m", 0)) }), 1, null)).toEqual([]);
+  });
+
+  it("its temper and its grudges - only where its personality is known", () => {
+    const feel = NO_FEEL();
+    feel.form[1] = -0.9;
+    feel.sore[1][0] = 0.9;
+    const s = ended({ hand: parseHand("147m258t369b12345z19m") }, feel);
+    const kinds = (p: BotProfile | null) => botThoughts(s, 1, p).map((t) => t.kind);
+    expect(kinds(profileById("gambler"))).toEqual(expect.arrayContaining(["mood", "sore"]));
+    expect(kinds(null)).not.toEqual(expect.arrayContaining(["mood"]));
+    expect(kinds(null)).not.toEqual(expect.arrayContaining(["sore"]));
+    expect(thoughtLine({ kind: "sore", at: 0 }, name)).toBe("Had a score to settle with you");
   });
 });

@@ -61,6 +61,10 @@ export interface Speech {
   dice: string[]; // the dice paid out before the first discard (圍骰, 蛇骰)
   youCold: string[]; // you (the one playing) dealing in again and again
   youHot: string[]; // you winning again and again
+  dodged: string[]; // someone's 叮 came to nothing for it - no deal-in
+  revenge: string[]; // a win off the one it was sore at
+  fedAgain: string[]; // dealt in to the same one again
+  feastAgain: string[]; // the same one dealt in to it again
 }
 
 export const SPEECH: Record<string, Speech> = {

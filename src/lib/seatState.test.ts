@@ -131,3 +131,15 @@ describe("takenFaces", () => {
     });
   }
 });
+
+describe("how the game's going, online", () => {
+  it("comes with the view, turned to your seat", () => {
+    const feel = { form: [0.1, 0.2, 0.3, 0.4], sore: [0, 1, 2, 3].map((a) => [0, 1, 2, 3].map((b) => (a === b ? 0 : a + b / 10))) };
+    const s: GameState = { ...midHand(6), feel };
+    // You're table seat 1: your seat 0 is the table's 1, your 3 the table's 0.
+    const mine = seatState(viewFor(s, 1)).game.feel!;
+    expect(mine.form).toEqual([0.2, 0.3, 0.4, 0.1]);
+    expect(mine.sore[0][3]).toBe(feel.sore[1][0]);
+    expect(mine.sore[3][0]).toBe(feel.sore[0][1]);
+  });
+});
