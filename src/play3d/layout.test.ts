@@ -530,6 +530,17 @@ describe("a peek on the WebGL table", () => {
     expect(lifted(out.felt.glass!)).toHaveLength(0);
     expect(clear(out.felt.glass!)).toHaveLength(0);
   });
+  it("stays where it is as the finger runs along - the tiles slide through it", () => {
+    for (const side of ["left", "right", "top"] as const) {
+      const at = (n: number) => layoutTable(table({ side, at: n, tiles }), DIMS).felt;
+      const tray = (n: number) => at(n).glassQuads!.find((q) => q.kind === "tray")!.m;
+      expect(tray(3)[12]).toBeCloseTo(tray(11)[12], 6);
+      expect(tray(3)[13]).toBeCloseTo(tray(11)[13], 6);
+      const mid = (n: number) => lifted(at(n).glass!).find((p) => p.tint === 10)!.m;
+      expect(mid(3)[12]).toBeCloseTo(mid(11)[12], 6);
+      expect(mid(3)[13]).toBeCloseTo(mid(11)[13], 6);
+    }
+  });
   it("slides its tiles along with the finger", () => {
     const at = (n: number) => lifted(layoutTable(table({ side: "top", at: n, tiles }), DIMS).felt.glass!);
     const before = new Set(at(8).map((p) => p.ease!.key));
