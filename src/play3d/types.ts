@@ -35,6 +35,9 @@ export interface GLWall {
   drew: boolean;
   down: boolean;
   winningTile: Tile | null;
+  // Won off a discard someone else is shown holding (一炮多響: the one tile,
+  // more than one winner): this seat's is a ghost of it, see-through.
+  winGhost?: boolean;
   melds: GameMeld[];
   hideConcealed: boolean;
   flowers: BonusTile[];
@@ -56,6 +59,9 @@ export interface GLPond {
   // or in one at the start of the new row the tiles since begin.
   dings?: { at: number; by: GLSide }[];
   dingMark?: "bar" | "row";
+  // Its last tile was won off it: gone to its winner - a ghost of it where
+  // it lay, rimmed in gold.
+  wonLast?: boolean;
 }
 
 // One of your concealed tiles - null when it's face down (watching, not seated).

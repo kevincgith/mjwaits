@@ -3755,6 +3755,7 @@ export function PlayPanel({
           {seatTag(seat)}
           {seat === game.dealer && dealerChip}
           {game.players[seat].riichi && <span className="play-riichi">叮</span>}
+          {wonFrom === seat && <span className="play-dealt-in">出銃</span>}
           {peekers.includes(seat) && (
             <span className="play-peek-eye" role="status" aria-label="Peeking at you" title="Peeking at you">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -3781,6 +3782,12 @@ export function PlayPanel({
   // The tile a seat won with (to lay sideways in its hand), if it won.
   const wonWith = (seat: number) =>
     result && result.tile && (result.winner === seat || result.alsoWon?.some((w) => w.winner === seat)) ? result.tile : null;
+  // A tile won off a discard: the one who threw it (not a kong robbed - that
+  // tile never lay in a pond). It's gone to a winner; with more than one,
+  // the one tile is shown with you if you won, else with the first of them
+  // - the others hold a ghost of it.
+  const wonFrom = result && result.tile && result.winner !== null && result.from !== null && !result.robKong ? result.from : null;
+  const wonHolder = wonFrom === null ? null : wonWith(HUMAN) && seated ? HUMAN : result!.winner;
   // On your take: a tile of a pile picked, or put back.
   const pickFrom = (seat: number, i: number) => {
     if (!swapPhase) return;
@@ -3820,6 +3827,7 @@ export function PlayPanel({
       drew: !over && drewSeat === seat && !swapSettling,
       down,
       winningTile: wonWith(seat),
+      ...(wonFrom !== null && wonWith(seat) && seat !== wonHolder ? { winGhost: true } : {}),
       melds: p.melds,
       hideConcealed: hidden || (!over && !watch),
       flowers: settled?.flowers[seat] ?? p.flowers,
@@ -3840,7 +3848,9 @@ export function PlayPanel({
           .filter((o) => game.players[o].riichi?.ponds)
           .map((o) => ({ at: game.players[o].riichi!.ponds![seat], by: SIDES[o] }));
   const glPond = (seat: number) => ({
-    tiles: showPiles ? [] : game.players[seat].discards,
+    // (A tile won off this pond: its place kept, an outline - see GLPond.wonLast.)
+    tiles: showPiles ? [] : wonFrom === seat ? [...game.players[seat].discards, result!.tile!] : game.players[seat].discards,
+    ...(wonFrom === seat && !showPiles ? { wonLast: true } : {}),
     riichiAt: game.players[seat].riichi?.discard,
     pinLast: discardFrom === seat,
     dings: dingsIn(seat),
@@ -4458,6 +4468,7 @@ export function PlayPanel({
                 {talkChip(HUMAN)}
                 {game.dealer === HUMAN && dealerChip}
                 {me.riichi && <span className="play-riichi">叮</span>}
+                {wonFrom === HUMAN && seated && <span className="play-dealt-in">出銃</span>}
                 {lahChips(HUMAN)}
                 {bubbles[HUMAN] && (
                   <span key={bubbles[HUMAN].id} className="play-bubble is-mine" role="status" style={{ "--bubble-ms": `${bubbleMs(bubbles[HUMAN].text)}ms` } as CSSProperties}>

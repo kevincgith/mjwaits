@@ -234,6 +234,17 @@ export function gapOutline(): HTMLCanvasElement {
   });
 }
 
+// Where a tile won off a discard lay in its thrower's pond: its outline, in gold.
+export function wonOutline(): HTMLCanvasElement {
+  return paintCanvas(144, 182, (ctx) => {
+    roundRect(ctx, 6, 6, 132, 170, 16);
+    ctx.setLineDash([18, 10]);
+    ctx.lineWidth = 13;
+    ctx.strokeStyle = "#ffd166";
+    ctx.stroke();
+  });
+}
+
 // A hint's gold underline, or a risky tile's red bar.
 export function bar(colour: string): HTMLCanvasElement {
   return paintCanvas(128, 16, (ctx) => {
