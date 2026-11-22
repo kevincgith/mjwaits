@@ -1589,6 +1589,13 @@ describe("嗌錯 with a run passed over", () => {
     // Her pung let go: 5 to each.
     expect(ran.view!.tableBonuses.find((b) => b.name === "嗌錯")).toMatchObject({ seat: 2, deltas: [5, 5, -15, 5] });
     expect(ran.totals[2]).toBe(called.totals[2] - 15);
+    // Kevin takes his run back too (all he had: let go at once). Amy's 嗌錯
+    // still stands - his take-back doesn't hand it back to her.
+    expect(ran.options?.turn?.retract).toBe(true);
+    host.send({ t: "retract", step: ran.step });
+    const gone = await host.table((s) => s.step > ran.step && s.view?.phase.kind === "turn" && s.view.players[1].melds.length === ran.view!.players[1].melds.length - 1);
+    expect(gone.view!.tableBonuses.filter((b) => b.name === "嗌錯")).toMatchObject([{ seat: 2, deltas: [5, 5, -15, 5] }]);
+    expect(gone.totals[2]).toBeLessThanOrEqual(called.totals[2] - 15);
     expect(host.errors.concat(other.errors)).toEqual([]);
   });
 });

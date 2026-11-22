@@ -244,6 +244,28 @@ describe("game", () => {
     expect(drawn.players[2].passedPung).toBeUndefined();
   });
 
+  it("two pungs passed in one go-around: both stay barred", () => {
+    const z5 = { suit: "z" as const, rank: 5 };
+    const z1 = { suit: "z" as const, rank: 1 };
+    const s0 = newGame();
+    s0.players[0].hand = parseHand("12345m111222333t5z");
+    s0.players[3].hand = parseHand("123456789m125t55z11z");
+    const first = resolveClaims(applyTurnMove(s0, { kind: "discard", tile: z5 }), [null, null, null, null]);
+    // Seat 1 throws 1z: passed too.
+    const second = resolveClaims({ ...first, phase: { kind: "claims" as const, from: 1, tile: z1 } }, [null, null, null, null]);
+    // Seat 2 throws another 5z, then another 1z: neither is there to call.
+    for (const tile of [z5, z1]) {
+      const again = { ...second, phase: { kind: "claims" as const, from: 2, tile } };
+      expect(claimOptions(again, 3)).toEqual([]);
+      expect(barredClaims(again, 3).map((c) => c.kind)).toEqual(["pung"]);
+    }
+    // Its draw lifts both.
+    const drawn = resolveClaims({ ...second, phase: { kind: "claims" as const, from: 2, tile: { suit: "t", rank: 9 } } }, [null, null, null, null]);
+    expect(drawn.phase).toMatchObject({ kind: "turn", seat: 3 });
+    expect(drawn.players[3].passedPung).toBeUndefined();
+    expect(drawn.players[3].passedPungs).toBeUndefined();
+  });
+
   it("taking a run off a tile you hold a pair of lifts the passed pung: the next one thrown can be punged", () => {
     const m2 = { suit: "m" as const, rank: 2 };
     const s0 = newGame();
@@ -968,6 +990,30 @@ describe("game", () => {
       expect(r.deltas[2]).toBe(0);
       expect(r.deltas[3]).toBe(0);
       expect(r.deltas[1]).toBe(-r.deltas[0]);
+    });
+
+    it("the same by a pung and its fourth added at once: the long way round to that kong", () => {
+      const s0 = newGame();
+      s0.players.forEach((p) => ((p.flowers = []), (p.melds = [])));
+      s0.lahs = [];
+      s0.tableBonuses = [];
+      s0.players[1].hand = parseHand("555z123m456m789m111b2t");
+      s0.players[0].discards = [t("z", 5)];
+      s0.wall = [...s0.wall.filter((w) => !("bonus" in w)), { tile: t("t", 2) }];
+      s0.phase = { kind: "claims", from: 0, tile: t("z", 5) };
+      const punged = resolveClaims(s0, [null, { kind: "pung" }, null, null]);
+      const s = applyTurnMove(punged, { kind: "addedKong", tile: t("z", 5) });
+      if (s.phase.kind !== "turn") throw new Error("no turn");
+      expect(s.phase.chain).toEqual({ kongs: 1, flowers: 0, bao: 0 });
+      const won = applyTurnMove(s, { kind: "selfDraw" });
+      if (won.phase.kind !== "over") throw new Error("no win");
+      expect(won.phase.result.bao).toBe(0);
+      expect(won.phase.result.deltas[2]).toBe(0);
+      expect(won.phase.result.deltas[3]).toBe(0);
+      // (As the kong straight off the discard pays.)
+      const direct = applyTurnMove(konged([{ tile: t("t", 2) }]), { kind: "selfDraw" });
+      if (direct.phase.kind !== "over") throw new Error("no win");
+      expect(won.phase.result.deltas).toEqual(direct.phase.result.deltas);
     });
 
     it("holds through bonus tiles and another kong on the way", () => {

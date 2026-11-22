@@ -42,6 +42,8 @@ import {
   resolveClaims,
   KONG_BEAT_MS,
   remakeClaim,
+  chargeWrongCall,
+  takeBackCosts,
   winningClaimSeat,
   tileCensus,
   riichiDiscards,
@@ -144,11 +146,15 @@ interface Runtime {
   // for 嗌錯, until their discard. `unwaited`: who the window passed without
   // asking, for it to reopen to.
   // `first`: the first call they made on that discard (嗌錯's cost is by it).
-  lastCall?: { before: GameState; decisions: (Claim | null)[]; seat: number; first: Claim["kind"]; unwaited?: number[] } | null;
+  // `earlier`: 嗌錯 taken on that discard before this call was made (see earlierCalls).
+  lastCall?: { before: GameState; decisions: (Claim | null)[]; seat: number; first: Claim["kind"]; unwaited?: number[]; earlier?: { seat: number; kind: Claim["kind"] }[] } | null;
   // 嗌錯 taken: the seat choosing again on the discard, and the first call
   // they made on it - paid for at its resolve if they end with less (see
   // takeBackCosts).
   firstCall?: { seat: number; kind: Claim["kind"] } | null;
+  // Others who took a call back on this same discard before that: each
+  // still pays at its resolve, whoever takes theirs back after.
+  earlierCalls?: { seat: number; kind: Claim["kind"] }[] | null;
   // A person's kong on the discard, held till `endsAt` before it's made (its
   // replacement drawn) - everyone sees the 槓, and they may take it back.
   kongBeat?: { seat: number; endsAt: number } | null;
@@ -162,6 +168,10 @@ interface Runtime {
   asking?: boolean;
   // The time chip: who's used theirs this hand (by seat), and at which step.
   chips?: Record<number, number>;
+  // The step the discard now up was first asked about (a second chance or a
+  // 嗌錯 asks again, a step on): a chip used since is one used on it.
+  discardStep?: number;
+  discardKey?: string;
 }
 
 // A table nobody's playing at themself deals this many hands, then asks
@@ -388,8 +398,11 @@ export class Table extends Hub<TableMessage> {
     if (seat === null || rt.phase !== "playing") return;
     rt.away[seat] = Date.now();
     if (rt.peeks) delete rt.peeks[seat];
-    // The last person at the table gone: its clocks stop (see run).
+    // The last person at the table gone: its clocks stop (see run). Others
+    // still here: the table moves on at once if it was waiting on this one
+    // (the next hand, with everyone else ready).
     if (!this.attended()) rt.pausedAt ??= Date.now();
+    else this.advance(Date.now());
     this.save();
     void this.schedule();
   }
@@ -753,6 +766,14 @@ export class Table extends Hub<TableMessage> {
     const rt = this.rt;
     const g = rt.game!;
     rt.step++;
+    // A discard asked about for the first time (see discardStep).
+    if (g.phase.kind === "claims") {
+      const key = `${rt.hand}.${g.discardsMade}.${g.phase.robKong ? 1 : 0}`;
+      if (rt.discardKey !== key) {
+        rt.discardKey = key;
+        rt.discardStep = rt.step;
+      }
+    }
     rt.deadline = null;
     rt.heldDeadline = null;
     rt.botAt = null;
@@ -762,6 +783,7 @@ export class Table extends Hub<TableMessage> {
     rt.chanceSpent = false;
     rt.chanceKept = null;
     rt.firstCall = null;
+    rt.earlierCalls = null;
     rt.kongBeat = null;
     const timer = rt.settings.timer * 1000;
     if (g.phase.kind === "turn") {
@@ -972,7 +994,10 @@ export class Table extends Hub<TableMessage> {
     rt.kongBeat = null;
     // Chosen again after 嗌錯: paid for if it ends with less (see takeBackCosts).
     const first = rt.firstCall;
+    const earlier = (rt.earlierCalls ?? []).filter((e) => e.seat !== first?.seat);
     rt.game = first ? remakeClaim(before, decisions, first.seat, decisions[first.seat], first.kind) : resolveClaims(before, decisions);
+    for (const e of earlier) if (takeBackCosts(e.kind, decisions[e.seat]?.kind ?? null)) rt.game = chargeWrongCall(rt.game, e.seat);
+    const taken = [...earlier, ...(first ? [first] : [])];
     this.record(before, rt.game);
     const g = rt.game;
     // A person's call (not a win), for 嗌錯 - until their discard.
@@ -984,7 +1009,7 @@ export class Table extends Hub<TableMessage> {
         ? // (Chosen again after a 嗌錯 already, this one stands: one take-back to a discard.)
           first?.seat === caller
           ? null
-          : { before, decisions, seat: caller, first: call.kind, ...unwaited }
+          : { before, decisions, seat: caller, first: call.kind, ...unwaited, ...(taken.length ? { earlier: taken } : {}) }
         : null;
     // The turn on a call (下家's too: a pung or kong as well as a run).
     if (before.phase.kind === "claims" && g.phase.kind === "turn") {
@@ -1053,10 +1078,12 @@ export class Table extends Hub<TableMessage> {
     let decisions: (Claim | null)[];
     let first: Claim["kind"];
     let unwaited: number[];
+    let earlier: { seat: number; kind: Claim["kind"] }[];
     if (rt.kongBeat?.seat === seat) {
       decisions = this.answers();
       first = rt.firstCall?.seat === seat ? rt.firstCall.kind : "kong";
       unwaited = rt.unwaited ?? [];
+      earlier = [...(rt.earlierCalls ?? []), ...(rt.firstCall && rt.firstCall.seat !== seat ? [rt.firstCall] : [])];
     } else {
       const c = rt.lastCall!;
       const now = rt.game!;
@@ -1069,6 +1096,7 @@ export class Table extends Hub<TableMessage> {
       decisions = c.decisions;
       first = c.first;
       unwaited = c.unwaited ?? [];
+      earlier = c.earlier ?? [];
       rt.lastCall = null;
       rt.last = null;
     }
@@ -1080,10 +1108,14 @@ export class Table extends Hub<TableMessage> {
     const had = rt.deadline;
     const now = Date.now();
     this.newDecision(now, decisions.map((d, s) => (s === seat ? (only ? null : undefined) : unwaited.includes(s) ? undefined : d)));
-    if (had !== null && rt.deadline !== null) rt.deadline = Math.min(rt.deadline, Math.max(had, now + RECHOOSE_MIN_MS));
+    // (Unless the window now asks someone it had passed by: they've had no
+    // clock on this tile yet, and get a whole one.)
+    const asked = unwaited.some((s) => s !== seat && claimOptions(rt.game!, s).length > 0);
+    if (!asked && had !== null && rt.deadline !== null) rt.deadline = Math.min(rt.deadline, Math.max(had, now + RECHOOSE_MIN_MS));
     // (Its caller doesn't get to think again; a win let go by stays gone.)
     rt.chanceSpent = true;
     rt.firstCall = { seat, kind: first };
+    rt.earlierCalls = earlier.filter((e) => e.seat !== seat);
   }
 
   // Dice and flower bonuses, paid as they come up.
@@ -1388,7 +1420,7 @@ export class Table extends Hub<TableMessage> {
         g.phase.kind === "turn"
           ? { turn: { selfDraw: canWin(p), kongs: p.riichi || liveTilesLeft(g) === 0 ? [] : kongOptions(p, g.phase), riichi: riichiDiscards(g, seat), forbidden: forbiddenDiscards(g), ...(this.canRetract(seat) ? { retract: true } : {}) }, claims: [] }
           : rt.kongBeat?.seat === seat
-            ? { turn: null, claims: [], retract: true }
+            ? { turn: null, claims: [], ...(this.canRetract(seat) ? { retract: true } : {}) }
             : { turn: null, claims: g.phase.kind === "claims" ? claimOptions(g, seat).filter((c) => !rt.secondChance || this.chanceClaim(c)) : [] };
     }
     const people = this.people();
@@ -1413,7 +1445,7 @@ export class Table extends Hub<TableMessage> {
       // Who's used their time chip this hand - but not, of anyone else, one
       // being used on the discard up now: that would say who can call it.
       chips: Object.entries(rt.chips ?? {})
-        .filter(([s, step]) => Number(s) === seat || !(g?.phase.kind === "claims" && step === rt.step))
+        .filter(([s, step]) => Number(s) === seat || !(g?.phase.kind === "claims" && step >= (rt.discardStep ?? rt.step)))
         .map(([s]) => Number(s)),
       ready: rt.ready,
       auto: [...new Set([...rt.auto, ...(rt.chosen ?? [])])],

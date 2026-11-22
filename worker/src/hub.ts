@@ -527,9 +527,16 @@ export abstract class Hub<Msg extends { t: string; rid?: string }> extends Durab
   }
 
   // Wake the room at `at` (or sooner, if it's already due to wake sooner).
-  protected async wakeAt(at: number) {
-    const current = await this.ctx.storage.getAlarm();
-    if (current === null || at < current) await this.ctx.storage.setAlarm(at);
+  // (One at a time: two asking at once would each read the old alarm, and
+  // the later write - maybe the later time - would stand.)
+  private waking: Promise<void> = Promise.resolve();
+  protected wakeAt(at: number): Promise<void> {
+    const next = this.waking.then(async () => {
+      const current = await this.ctx.storage.getAlarm();
+      if (current === null || at < current) await this.ctx.storage.setAlarm(at);
+    });
+    this.waking = next.catch(() => {});
+    return next;
   }
 
   // ---- The alarm: the room type's timers, then expiry ---------------------------------

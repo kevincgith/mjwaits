@@ -104,14 +104,30 @@ export function FeltGL({ feltRef, scene, look }: { feltRef: RefObject<HTMLElemen
     [canvas.parentElement, felt].forEach((el) => el && watch.observe(el));
     // As Play's table: iOS drops the context when the app's put away - kept
     // restorable and drawn again once it's back.
-    const lost = (ev: Event) => ev.preventDefault();
+    // (Never given back: a new canvas, and the felt drawn again on it.)
+    let gone = false;
+    let wait = 0;
+    const giveUp = () => {
+      window.clearTimeout(wait);
+      if (gone && document.visibilityState === "visible") wait = window.setTimeout(() => gone && document.visibilityState === "visible" && setCanvasKey((k) => k + 1), 4000);
+    };
+    const lost = (ev: Event) => {
+      ev.preventDefault();
+      gone = true;
+      giveUp();
+    };
     let again = 0;
     const restored = () => {
+      gone = false;
+      window.clearTimeout(wait);
       draw.current();
       cancelAnimationFrame(again);
       again = requestAnimationFrame(() => draw.current());
     };
-    const back = () => document.visibilityState === "visible" && draw.current();
+    const back = () => {
+      giveUp();
+      if (document.visibilityState === "visible") draw.current();
+    };
     canvas.addEventListener("webglcontextlost", lost);
     canvas.addEventListener("webglcontextrestored", restored);
     document.addEventListener("visibilitychange", back);
@@ -119,6 +135,7 @@ export function FeltGL({ feltRef, scene, look }: { feltRef: RefObject<HTMLElemen
       canvas.removeEventListener("webglcontextlost", lost);
       canvas.removeEventListener("webglcontextrestored", restored);
       document.removeEventListener("visibilitychange", back);
+      window.clearTimeout(wait);
       cancelAnimationFrame(again);
       watch.disconnect();
       engine.current = null;
