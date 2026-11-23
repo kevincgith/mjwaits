@@ -14,6 +14,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 import "./App.css";
 import { usePickerLayout, type PickerLayout } from "./pickerLayout";
 import {
@@ -667,10 +668,10 @@ function TileButton({
   );
 }
 
-function HandTileButton({ tile, onClick }: { tile: Tile; onClick: () => void }) {
+function HandTileButton({ tile, onClick, newest = false }: { tile: Tile; onClick: () => void; newest?: boolean }) {
   const tap = useTap(onClick);
   return (
-    <button type="button" className="hand-tile-button" title={`Remove ${tileLabel(tile)}`} {...tap}>
+    <button type="button" className={`hand-tile-button${newest ? " is-newest" : ""}`} title={`Remove ${tileLabel(tile)}`} {...tap}>
       <TileGlyphSpan tile={tile} large />
     </button>
   );
@@ -709,18 +710,20 @@ function WinningTileHandButton({
   isWinning,
   onRemove,
   onToggleWinning,
+  newest = false,
 }: {
   tile: Tile;
   isWinning: boolean;
   onRemove: () => void;
   onToggleWinning: () => void;
+  newest?: boolean;
 }) {
   const tap = useTapAndLongPress(onRemove, onToggleWinning);
   const title = isWinning
     ? `${tileLabel(tile)} - 食胡 tile (tap to remove, long-press to unmark)`
     : `${tileLabel(tile)} - tap to remove, long-press to mark as the 食胡 tile`;
   return (
-    <button type="button" className="hand-tile-button" title={title} {...tap}>
+    <button type="button" className={`hand-tile-button${newest ? " is-newest" : ""}`} title={title} {...tap}>
       <TileGlyphSpan tile={tile} large highlight={isWinning} />
     </button>
   );
@@ -737,10 +740,12 @@ function DeclaredMeldButton({
   meld,
   onRemove,
   onToggleConcealed,
+  newest = false,
 }: {
   meld: DeclaredMeldTile;
   onRemove: () => void;
   onToggleConcealed: () => void;
+  newest?: boolean;
 }) {
   const isKong = meld.kind === "kong";
   const tap = useTapAndLongPress(onRemove, isKong ? onToggleConcealed : NOOP);
@@ -750,7 +755,7 @@ function DeclaredMeldButton({
   return (
     <button
       type="button"
-      className={meld.concealed ? "breakdown-group concealed-kong-meld meld-remove" : "breakdown-group meld-remove"}
+      className={`${meld.concealed ? "breakdown-group concealed-kong-meld meld-remove" : "breakdown-group meld-remove"}${newest ? " is-newest" : ""}`}
       title={title}
       {...tap}
     >
@@ -2427,6 +2432,18 @@ function Calculator({
     setText(formatHand(forDisplay(handRef.current, next)));
   };
   const handleReset = () => commitHand([]);
+  // ⌫ held: clears the hand, offering it back for a few seconds (withdrawn
+  // once tiles go in again).
+  const undoToast = useUndoToast();
+  const clearHandWithUndo = () => {
+    const tiles = handRef.current;
+    handleReset();
+    undoToast.show("Cleared 手牌", () => commitHand(tiles));
+  };
+  useEffect(() => {
+    if (undoToast.offered && hand.length > 0) undoToast.dismiss();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hand.length]);
   // The hand being entered, kept when the tab's left and back on return (a
   // hand from a link takes its place: see initialHand).
   useEffect(() => {
@@ -2493,6 +2510,11 @@ function Calculator({
   const handScannerRef = useRef<HandScannerHandle>(null);
   const [scanBusy, setScanBusy] = useState(false);
   const [pickerCollapsed, setPickerCollapsed] = useState(false);
+  // A wrapping hand grows the card over the 選牌 header, not the picker
+  // down - same as Scoring's (see useCardOverlap).
+  const waitsCardRef = useRef<HTMLDivElement>(null);
+  const waitsPickerRef = useRef<HTMLDivElement>(null);
+  useCardOverlap(waitsCardRef, () => waitsPickerRef.current?.firstElementChild, pickerCollapsed);
 
   // A share link opened on the Calculator (?calc=…) loads its hand once.
   useEffect(() => {
@@ -2652,11 +2674,13 @@ function Calculator({
         recheckUnless={(regions) => isCheckpointSize(regions.reduce((n, r) => n + r.detections.filter((d) => d.tile).length, 0))}
       />
 
+      {undoToast.toast}
+
       {/* The input area, laid out like the Scoring tab's: the hand first and
           sticky while the picker scrolls beneath it, at a fixed size so a
           tap never moves the picker. */}
       <div className="input-zone">
-        <div className="card hand-card">
+        <div className="card hand-card" ref={waitsCardRef}>
           {/* Like Scoring's card: just the box, its label inside while
               empty. Sort lives on the 選牌 header; the shanten count on the
               打牌 caption, where it explains the discards. */}
@@ -2669,7 +2693,8 @@ function Calculator({
                   <span className="hand-region-hint">or type notation</span>
                 </span>
               ) : (
-                displayHand.map((t) => <HandTileButton key={t.id} tile={t} onClick={() => removeTile(t.id)} />)
+                // The last tile in - ⌫'s next - is highlighted (sorted or not).
+                displayHand.map((t) => <HandTileButton key={t.id} tile={t} onClick={() => removeTile(t.id)} newest={hand.length > 1 && t.id === hand.at(-1)?.id} />)
               )}
             </div>
           </div>
@@ -2701,9 +2726,9 @@ function Calculator({
         </div>
 
         <CollapsiblePanel open={!pickerCollapsed}>
-          <div className="card picker-card">
+          <div className="card picker-card" ref={waitsPickerRef}>
             {pickerLayout === "numpad" ? (
-              <NumpadPicker renderTile={renderPickerTile} extraHonor={jokerButton} backspace={<BackspaceKey onClick={takeBackLast} disabled={hand.length === 0} />} />
+              <NumpadPicker renderTile={renderPickerTile} extraHonor={jokerButton} backspace={<BackspaceKey onClick={takeBackLast} onLongPress={clearHandWithUndo} disabled={hand.length === 0} />} />
             ) : (
             <div className="tile-picker">
               {SUIT_ORDER.map((suit) => (
@@ -2715,7 +2740,7 @@ function Calculator({
                       rather than taking a row of its own - and ⌫ the
                       corner after it, last of all. */}
                   {suit === "z" && jokerButton}
-                  {suit === "z" && <BackspaceKey onClick={takeBackLast} disabled={hand.length === 0} />}
+                  {suit === "z" && <BackspaceKey onClick={takeBackLast} onLongPress={clearHandWithUndo} disabled={hand.length === 0} />}
                 </div>
               ))}
             </div>
@@ -5230,6 +5255,140 @@ function ConfirmTextAction({ label, onConfirm, title }: { label: string; onConfi
   );
 }
 
+// On a phone, a hand that wraps grows the card down over the space below
+// it (the 選牌 header and the add-to buttons) instead of pushing the picker
+// down - the tiles stay exactly where the finger is. Only as far as 6px
+// above the picker's first row of tiles; past that the card pushes the
+// page down as usual. Done with a negative bottom margin the size of the
+// wrapped lines, so the card takes up its one-line height in the page.
+// At the page's top too - tiles tapped in from there stay put. What it
+// covers (the 選牌 header and its buttons) comes back gradually, never
+// in one jump: once the page settles with the card pinned, the covered
+// lines are swapped for the same amount of page scroll (nothing on
+// screen moves), so scrolling up then reveals the header like any other
+// content; at the top (card not pinned), a pull down uncovers it with the
+// finger. `released`: the wrapped lines given back to the page that way;
+// `releaseTo`: how many to give back at the next fit; `overlapNow`: what
+// the card is covering at the moment.
+// Shared by Scoring and Waits: `cardRef` the sticky hand card, `getTiles`
+// the picker's first row of tiles (its top is the limit), `pickerCollapsed`
+// turns it off.
+function useCardOverlap(cardRef: React.RefObject<HTMLDivElement | null>, getTiles: () => Element | null | undefined, pickerCollapsed: boolean) {
+  const naturalGap = useRef<number | null>(null);
+  const released = useRef(0);
+  const releaseTo = useRef<number | null>(null);
+  const overlapNow = useRef(0);
+  const fitCard = () => {
+    const card = cardRef.current;
+    const next = card?.nextElementSibling as HTMLElement | null | undefined;
+    const tiles = getTiles();
+    if (!card || !next) return;
+    if (naturalGap.current === null) {
+      // The space between the card and the 選牌 header (their margins
+      // collapse to the larger one), read before any overlap is applied.
+      naturalGap.current = Math.max(
+        parseFloat(getComputedStyle(card).marginBottom) || 0,
+        parseFloat(getComputedStyle(next).marginTop) || 0
+      );
+    }
+    let overlap = 0;
+    if (tiles && !pickerCollapsed && window.matchMedia("(max-width: 700px)").matches) {
+      // How much taller the boxes are than one line each.
+      let extra = 0;
+      card.querySelectorAll<HTMLElement>(".hand-display").forEach((box) => {
+        const kids = [...box.children].filter((k) => !(k as HTMLElement).classList.contains("box-clear-prompt"));
+        if (kids.length < 2) return;
+        const rects = kids.map((k) => k.getBoundingClientRect()).filter((r) => r.height > 0);
+        if (!rects.length) return;
+        const top = Math.min(...rects.map((r) => r.top));
+        const bottom = Math.max(...rects.map((r) => r.bottom));
+        const line = Math.max(...rects.map((r) => r.height));
+        extra += Math.max(0, bottom - top - line);
+      });
+      released.current = Math.min(extra, Math.max(released.current, releaseTo.current ?? 0));
+      extra -= released.current;
+      // Room from the card's one-line bottom down to 6px above the tiles -
+      // measured from the header, which moves with the page (the card may
+      // be pinned), plus the gap the card's margin currently takes away.
+      const room = tiles.getBoundingClientRect().top - next.getBoundingClientRect().top + naturalGap.current - 6;
+      overlap = Math.max(0, Math.min(Math.round(extra), Math.floor(room)));
+    }
+    releaseTo.current = null;
+    overlapNow.current = overlap;
+    // A negative margin collapses with the header's positive one into their
+    // sum, so this leaves the gap at naturalGap - overlap.
+    const headerMargin = parseFloat(getComputedStyle(next).marginTop) || 0;
+    const value = overlap ? `${headerMargin - naturalGap.current - overlap}px` : "";
+    if (card.style.marginBottom !== value) card.style.marginBottom = value;
+    // The 選牌 header fades as the card slides over it, so no sliver of it
+    // is left peeking out from under the card - and it fades back in as it
+    // comes out, rather than popping in.
+    const covered = Math.max(0, overlap - naturalGap.current) / Math.max(1, next.offsetHeight);
+    const opacity = covered > 0 ? String(Math.max(0, 1 - covered * 1.5).toFixed(2)) : "";
+    if (next.style.opacity !== opacity) next.style.opacity = opacity;
+  };
+  useLayoutEffect(fitCard);
+  const fitCardRef = useRef(fitCard);
+  fitCardRef.current = fitCard;
+  useEffect(() => {
+    // The card is pinned under the toolbar (its sticky top) - swapping its
+    // overlap for page scroll then leaves everything on screen where it is.
+    const pinned = () => {
+      const card = cardRef.current;
+      if (!card || window.scrollY <= 0) return false;
+      return card.getBoundingClientRect().top <= parseFloat(getComputedStyle(card).top) + 0.5;
+    };
+    let touching = false;
+    let settleTimer = 0;
+    // Once scrolling has stopped (no finger down, no glide), never during
+    // it: moving the page in the middle of a scroll fights it on iOS.
+    const settle = () => {
+      if (touching || !overlapNow.current || !pinned()) return;
+      const lines = overlapNow.current;
+      releaseTo.current = Infinity;
+      fitCardRef.current();
+      window.scrollBy(0, lines);
+    };
+    const scheduleSettle = () => {
+      clearTimeout(settleTimer);
+      settleTimer = window.setTimeout(settle, 160);
+    };
+    let pullFrom: number | null = null;
+    let pullBase = 0;
+    const onTouchStart = (e: TouchEvent) => {
+      touching = true;
+      clearTimeout(settleTimer);
+      pullFrom = window.scrollY <= 0 ? e.touches[0].clientY : null;
+      pullBase = released.current;
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      if (pullFrom === null || window.scrollY > 0) return;
+      const pull = e.touches[0].clientY - pullFrom;
+      if (pull <= 0 || !overlapNow.current) return;
+      releaseTo.current = pullBase + pull;
+      fitCardRef.current();
+    };
+    const onTouchEnd = () => {
+      touching = false;
+      pullFrom = null;
+      scheduleSettle();
+    };
+    window.addEventListener("scroll", scheduleSettle, { passive: true });
+    window.addEventListener("touchstart", onTouchStart, { passive: true });
+    window.addEventListener("touchmove", onTouchMove, { passive: true });
+    window.addEventListener("touchend", onTouchEnd, { passive: true });
+    window.addEventListener("touchcancel", onTouchEnd, { passive: true });
+    return () => {
+      clearTimeout(settleTimer);
+      window.removeEventListener("scroll", scheduleSettle);
+      window.removeEventListener("touchstart", onTouchStart);
+      window.removeEventListener("touchmove", onTouchMove);
+      window.removeEventListener("touchend", onTouchEnd);
+      window.removeEventListener("touchcancel", onTouchEnd);
+    };
+  }, []);
+}
+
 // Long-press a filled hand box (not a tile in it - tiles have their own
 // long-presses) to be asked, in a small prompt over the box, whether to
 // clear just that box. The hand cards have no label line or Clear links to
@@ -5301,6 +5460,8 @@ const GESTURES: { gesture: string; where: string; does: string }[] = [
   { gesture: "Long-press", where: "a declared kong", does: "Flip it between 明槓 and 暗槓" },
   { gesture: "Tap", where: "an empty part of 門前 / 手牌", does: "Point the picker at that box" },
   { gesture: "Long-press", where: "an empty part of 門前 / 手牌", does: "Clear just that box" },
+  { gesture: "Tap", where: "⌫", does: "Take back the last tile, meld or bonus tile added" },
+  { gesture: "Long-press", where: "⌫", does: "Clear the box being filled (the outlined one)" },
   { gesture: "Tap twice", where: "Reset / Clear", does: "The first tap turns it red; the second confirms" },
 ];
 
@@ -5602,15 +5763,109 @@ function RecentCalcRow({ entry, onLoad }: { entry: RecentCalcHand; onLoad: () =>
 // has scrolled away (html.header-hidden, set by App) - like an iOS title
 // bar. Tapping it goes back to the top.
 // The picker's ⌫: takes back the last tile (or meld, or bonus tile) added.
-function BackspaceKey({ onClick, disabled }: { onClick: () => void; disabled: boolean }) {
+// Held (`onLongPress`, where given): clears the whole box being filled -
+// the click that ends the hold doesn't also take a tile back.
+function BackspaceKey({ onClick, onLongPress, disabled }: { onClick: () => void; onLongPress?: () => void; disabled: boolean }) {
+  const press = useRef<{ timer: number | null; x: number; y: number; fired: boolean }>({ timer: null, x: 0, y: 0, fired: false });
+  // While held: the key fills from the left over LONG_PRESS_MS, so it's
+  // plain the box is about to be cleared (let go before it's full to stop).
+  const [holding, setHolding] = useState(false);
+  const cancel = () => {
+    if (press.current.timer !== null) window.clearTimeout(press.current.timer);
+    press.current.timer = null;
+    setHolding(false);
+  };
+  useEffect(
+    () => () => {
+      if (press.current.timer !== null) window.clearTimeout(press.current.timer);
+    },
+    []
+  );
+  const holdHandlers = onLongPress
+    ? {
+        onPointerDown: (e: ReactPointerEvent) => {
+          cancel();
+          press.current = { timer: null, x: e.clientX, y: e.clientY, fired: false };
+          setHolding(true);
+          press.current.timer = window.setTimeout(() => {
+            press.current.timer = null;
+            press.current.fired = true;
+            setHolding(false);
+            onLongPress();
+          }, LONG_PRESS_MS);
+        },
+        onPointerMove: (e: ReactPointerEvent) => {
+          if (Math.hypot(e.clientX - press.current.x, e.clientY - press.current.y) > 10) cancel();
+        },
+        onPointerUp: cancel,
+        onPointerCancel: cancel,
+        onPointerLeave: cancel,
+        onContextMenu: (e: React.MouseEvent) => e.preventDefault(),
+      }
+    : {};
   return (
-    <button type="button" className="backspace-key" onClick={onClick} disabled={disabled} aria-label="Remove the last tile added" title="Remove the last tile added">
+    <button
+      type="button"
+      className={`backspace-key${holding ? " is-holding" : ""}`}
+      style={{ "--hold-ms": `${LONG_PRESS_MS}ms` } as React.CSSProperties}
+      onClick={() => {
+        if (press.current.fired) {
+          press.current.fired = false;
+          return;
+        }
+        onClick();
+      }}
+      {...holdHandlers}
+      disabled={disabled}
+      aria-label="Remove the last tile added"
+      title={onLongPress ? "Remove the last tile added (hold: clear the box)" : "Remove the last tile added"}
+    >
       <svg width="26" height="20" viewBox="0 0 26 20" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
         <path d="M8 2h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H8l-6.5-8z" />
         <path d="M12 6.5l7 7M19 6.5l-7 7" />
       </svg>
     </button>
   );
+}
+
+// "Cleared 手牌 · Undo" over the tab bar for a few seconds after holding ⌫
+// clears a box - the hold has no confirm, so a slip costs one tap to undo.
+// `show(text, undo)` offers it (replacing any earlier one); `dismiss()`
+// withdraws it (the box was filled again, so there's nothing to put back).
+function useUndoToast() {
+  const [offer, setOffer] = useState<{ id: number; text: string; undo: () => void } | null>(null);
+  const timer = useRef(0);
+  const seq = useRef(0);
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+  const dismiss = () => {
+    window.clearTimeout(timer.current);
+    setOffer(null);
+  };
+  const show = (text: string, undo: () => void) => {
+    window.clearTimeout(timer.current);
+    const id = ++seq.current;
+    setOffer({ id, text, undo });
+    timer.current = window.setTimeout(() => setOffer((o) => (o?.id === id ? null : o)), 6000);
+  };
+  const toast =
+    offer &&
+    createPortal(
+      <div className="undo-toast" role="status" key={offer.id}>
+        <span className="undo-toast-text">{offer.text}</span>
+        <button
+          type="button"
+          className="undo-toast-action"
+          onClick={() => {
+            offer.undo();
+            dismiss();
+          }}
+        >
+          Undo
+        </button>
+      </div>,
+      document.body
+    );
+  return { show, dismiss, offered: offer !== null, toast };
 }
 
 function ToolbarLogo() {
@@ -5730,6 +5985,11 @@ function ScoringPanel({
   onIncomingRulesHandled?: () => void;
 }) {
   const [concealedTiles, setConcealedTiles] = useState<HandTile[]>([]);
+  // The 選牌 header's Sort toggle, like Waits': on (the default), 手牌 is
+  // shown sorted; off, in the order the tiles went in (concealedTiles keeps
+  // that order - a scan or a link comes in sorted).
+  const [sortMode, setSortMode] = useState(true);
+  const shownConcealed = useMemo(() => (sortMode ? (sortTiles(concealedTiles) as HandTile[]) : concealedTiles), [concealedTiles, sortMode]);
   const [declaredMelds, setDeclaredMelds] = useState<DeclaredMeldTile[]>([]);
   const [rulesOpen, setRulesOpen] = useState(false);
   // A shared rules link opens the sheet with them, to review before saving.
@@ -6076,71 +6336,28 @@ function ScoringPanel({
     trimScrollRoom();
   });
 
-  // On a phone, a hand that wraps grows the card down over the space below
-  // it (the 選牌 header and the add-to buttons) instead of pushing the picker
-  // down - the tiles stay exactly where the finger is. Only as far as 6px
-  // above the picker's first row of tiles; past that the card pushes the
-  // page down as usual. Done with a negative bottom margin the size of the
-  // wrapped lines, so the card takes up its one-line height in the page.
-  // At the page's top, though, it grows down as usual, the picker with it -
-  // there's nowhere further up to scroll to see what it would cover (the
-  // 選牌 header and its buttons). `released`: the wrapped lines given back
-  // that way, when the page was (or came back) to the top.
-  const naturalGap = useRef<number | null>(null);
-  const released = useRef(0);
-  const fitCard = () => {
+  useCardOverlap(handCardRef, () => addToRowRef.current?.nextElementSibling, pickerCollapsed);
+  // Once the card sits over the add-to buttons (the hand wrapped over them,
+  // or the page is scrolled under the pinned card), the outlined box shows
+  // which way the picker adds - 手牌 / 上 / 碰 / 明槓 / 暗槓 - in a chip
+  // (data-covering on the card; see .picker-mode-chip).
+  const markModeCovered = () => {
     const card = handCardRef.current;
-    const next = card?.nextElementSibling as HTMLElement | null | undefined;
-    const tiles = addToRowRef.current?.nextElementSibling;
-    if (!card || !next) return;
-    if (naturalGap.current === null) {
-      // The space between the card and the 選牌 header (their margins
-      // collapse to the larger one), read before any overlap is applied.
-      naturalGap.current = Math.max(
-        parseFloat(getComputedStyle(card).marginBottom) || 0,
-        parseFloat(getComputedStyle(next).marginTop) || 0
-      );
+    const buttons = addToRowRef.current?.querySelector(".segmented");
+    if (!card) return;
+    const covered =
+      !pickerCollapsed && !!buttons && card.getBoundingClientRect().bottom > buttons.getBoundingClientRect().top + buttons.getBoundingClientRect().height / 2;
+    if (covered !== (card.dataset.covering === "1")) {
+      if (covered) card.dataset.covering = "1";
+      else delete card.dataset.covering;
     }
-    let overlap = 0;
-    if (tiles && !pickerCollapsed && window.matchMedia("(max-width: 700px)").matches) {
-      // How much taller the boxes are than one line each.
-      let extra = 0;
-      card.querySelectorAll<HTMLElement>(".hand-display").forEach((box) => {
-        const kids = [...box.children].filter((k) => !(k as HTMLElement).classList.contains("box-clear-prompt"));
-        if (kids.length < 2) return;
-        const rects = kids.map((k) => k.getBoundingClientRect()).filter((r) => r.height > 0);
-        if (!rects.length) return;
-        const top = Math.min(...rects.map((r) => r.top));
-        const bottom = Math.max(...rects.map((r) => r.bottom));
-        const line = Math.max(...rects.map((r) => r.height));
-        extra += Math.max(0, bottom - top - line);
-      });
-      released.current = window.scrollY <= 0 ? extra : Math.min(released.current, extra);
-      extra -= released.current;
-      // Room from the card's one-line bottom down to 6px above the tiles -
-      // measured from the header, which moves with the page (the card may
-      // be pinned), plus the gap the card's margin currently takes away.
-      const room = tiles.getBoundingClientRect().top - next.getBoundingClientRect().top + naturalGap.current - 6;
-      overlap = Math.max(0, Math.min(Math.round(extra), Math.floor(room)));
-    }
-    // A negative margin collapses with the header's positive one into their
-    // sum, so this leaves the gap at naturalGap - overlap.
-    const headerMargin = parseFloat(getComputedStyle(next).marginTop) || 0;
-    const value = overlap ? `${headerMargin - naturalGap.current - overlap}px` : "";
-    if (card.style.marginBottom !== value) card.style.marginBottom = value;
-    // Once the card reaches the 選牌 header, hide the header rather than
-    // leave a sliver of it peeking out from under the card.
-    const hideHeader = overlap > naturalGap.current ? "hidden" : "";
-    if (next.style.visibility !== hideHeader) next.style.visibility = hideHeader;
   };
-  useLayoutEffect(fitCard);
-  const fitCardRef = useRef(fitCard);
-  fitCardRef.current = fitCard;
-  // Back at the top: the card lets go of what it's covering.
+  useLayoutEffect(markModeCovered);
+  const markModeCoveredRef = useRef(markModeCovered);
+  markModeCoveredRef.current = markModeCovered;
   useEffect(() => {
-    const onScroll = () => {
-      if (window.scrollY <= 0) fitCardRef.current();
-    };
+    // Two rect reads a scroll event - cheap enough to do straight away.
+    const onScroll = () => markModeCoveredRef.current();
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
@@ -6238,6 +6455,8 @@ function ScoringPanel({
   const bonusRef = useRef<BonusTile[]>([]);
   // What the picker's added, in order - for ⌫ (see takeBackLast).
   const addedOrder = useRef<({ kind: "tile" | "meld"; id: number } | { kind: "bonus"; tile: BonusTile })[]>([]);
+  // (Not a whole hand that came in at once - a scan or a link: only one
+  // that's being tapped in, where the last tile is the last one tapped.)
 
   const totalCopiesUsedRef = (tile: Tile): number => {
     let n = tileCount(concealedRef.current, tile);
@@ -6482,6 +6701,15 @@ function ScoringPanel({
   };
   const declaredEmpty = declaredMelds.length === 0 && bonusTiles.length === 0;
   const handEmpty = declaredEmpty && concealedTiles.length === 0;
+  // ⌫'s hold-to-clear undo: withdrawn once the cleared box is filled again
+  // (there'd be nothing sensible to put back over new tiles).
+  const undoToast = useUndoToast();
+  const undoBox = useRef<"hand" | "declared" | null>(null);
+  useEffect(() => {
+    if (!undoToast.offered) return;
+    if (undoBox.current === "hand" ? concealedTiles.length > 0 : !declaredEmpty) undoToast.dismiss();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [concealedTiles.length, declaredEmpty]);
 
   // Everything, plus any scan in progress (which would otherwise drop its
   // tiles straight back in).
@@ -6934,7 +7162,34 @@ function ScoringPanel({
 
   // One picker tile - shared by the Classic rows and the Numpad keypad, so
   // both layouts tap and long-press the same way.
-  const backspaceKey = <BackspaceKey onClick={takeBackLast} disabled={handEmpty} />;
+  // Held: clears the box the picker is filling (the outlined one) - 手牌,
+  // or 門前 with its bonus tiles - then offers it back (see useUndoToast).
+  const clearActiveBox = () => {
+    if (addTo === "hand") {
+      const tiles = concealedRef.current;
+      const winning = winningTile;
+      resetConcealed();
+      undoBox.current = "hand";
+      undoToast.show("Cleared 手牌", () => {
+        concealedRef.current = tiles;
+        setConcealedTiles(tiles);
+        setWinningTile(winning);
+      });
+    } else {
+      const melds = declaredRef.current;
+      const bonus = bonusRef.current;
+      resetDeclared();
+      undoBox.current = "declared";
+      undoToast.show("Cleared 門前", () => {
+        declaredRef.current = melds;
+        bonusRef.current = bonus;
+        setDeclaredMelds(melds);
+        setBonusTiles(bonus);
+      });
+    }
+  };
+  const activeBoxEmpty = addTo === "hand" ? concealedTiles.length === 0 : declaredEmpty;
+  const backspaceKey = <BackspaceKey onClick={takeBackLast} onLongPress={activeBoxEmpty ? undefined : clearActiveBox} disabled={handEmpty} />;
   const renderPickerTile = (t: Tile): ReactNode =>
     addTo === "hand" ? (
       <LongPressTileButton
@@ -7169,6 +7424,23 @@ function ScoringPanel({
     if (!projectedWaits || projectedSort === "tiles") return projectedWaits;
     return sortByScore(projectedWaits);
   }, [projectedWaits, projectedSort]);
+  // Always - one short, whole, or 食胡 marked too (a tile that's both the
+  // newest and the 食胡 tile: green fill, amber outline).
+  // What ⌫ takes back next: the last thing added that's still there (as
+  // takeBackLast finds it).
+  const lastAdded = (() => {
+    for (let i = addedOrder.current.length - 1; i >= 0; i--) {
+      const a = addedOrder.current[i];
+      if (a.kind === "bonus") {
+        if (bonusTiles.some((b) => b.kind === a.tile.kind && b.rank === a.tile.rank)) return a;
+      } else if (a.kind === "tile" ? concealedTiles.some((t) => t.id === a.id) : declaredMelds.some((m) => m.id === a.id)) return a;
+    }
+    return undefined;
+  })();
+  const newestConcealedId = lastAdded?.kind === "tile" ? lastAdded.id : undefined;
+  // The same for 門前: the meld (or bonus tile) just declared.
+  const newestMeldId = lastAdded?.kind === "meld" ? lastAdded.id : undefined;
+  const newestBonus = lastAdded?.kind === "bonus" ? lastAdded.tile : undefined;
 
   // Display order for the discard-options list: best tai first (ties to more
   // live tiles), or most live tiles first (ties to better tai) - payout vs
@@ -7511,7 +7783,7 @@ function ScoringPanel({
                 </span>
               ) : (
                 <span className="hand-strip-row hand-strip-tint is-concealed">
-                  {(sortTiles(concealedTiles) as HandTile[]).map((t) => (
+                  {shownConcealed.map((t) => (
                     <TileGlyphSpan key={t.id} tile={t} highlight={!nearComplete && isWinningTile(t)} />
                   ))}
                 </span>
@@ -7586,7 +7858,7 @@ function ScoringPanel({
                         <button
                           type="button"
                           key={`${tile.kind}${tile.rank}`}
-                          className="bonus-tile-remove"
+                          className={`bonus-tile-remove${newestBonus && newestBonus.kind === tile.kind && newestBonus.rank === tile.rank ? " is-newest" : ""}`}
                           onClick={() => removeBonusTile(tile)}
                           title={`${bonusTileLabel(tile)} - tap to remove`}
                         >
@@ -7601,11 +7873,13 @@ function ScoringPanel({
                       meld={meld}
                       onRemove={() => removeMeld(meld.id)}
                       onToggleConcealed={() => toggleMeldConcealed(meld.id)}
+                      newest={meld.id === newestMeldId}
                     />
                   ))}
                 </>
               )}
             </div>
+            {addTo !== "hand" && <span className="picker-mode-chip">{MELD_PICKER_LABELS[addTo]}</span>}
           </div>
           <div className={`hand-region${addTo === "hand" ? " is-target" : ""}`}>
             {/* Same as 門前: empty, the label sits inside the box (the
@@ -7626,9 +7900,10 @@ function ScoringPanel({
                 // hand yet - each projected wait supplies its own 食胡 tile - so the
                 // long-press marker is meaningless here: fall back to plain
                 // tap-to-remove tiles and drop the hint until the hand is whole.
-                (sortTiles(concealedTiles) as HandTile[]).map((t) =>
+                // The last tile in - ⌫'s next - is highlighted (sorted or not).
+                shownConcealed.map((t) =>
                   nearComplete ? (
-                    <HandTileButton key={t.id} tile={t} onClick={() => removeConcealedTile(t.id)} />
+                    <HandTileButton key={t.id} tile={t} onClick={() => removeConcealedTile(t.id)} newest={t.id === newestConcealedId} />
                   ) : (
                     <WinningTileHandButton
                       key={t.id}
@@ -7636,15 +7911,17 @@ function ScoringPanel({
                       isWinning={isWinningTile(t)}
                       onRemove={() => removeConcealedTile(t.id)}
                       onToggleWinning={() => toggleWinningTile(t)}
+                      newest={t.id === newestConcealedId}
                     />
                   )
                 )
               )}
             </div>
+            {addTo === "hand" && <span className="picker-mode-chip">手牌</span>}
           </div>
         </div>
 
-        <div className="section-head">
+        <div className="section-head picker-head">
           <button
             type="button"
             className="section-title section-title-toggle"
@@ -7656,6 +7933,15 @@ function ScoringPanel({
           </button>
           <PickerLayoutToggle />
           <span className="section-head-actions">
+            <button
+              type="button"
+              className={`region-toggle${sortMode ? " toggle-on" : ""}`}
+              onClick={() => setSortMode((v) => !v)}
+              aria-pressed={sortMode}
+              title={sortMode ? "Sort: on — new tiles are kept in order" : "Sort: off — new tiles keep input order"}
+            >
+              Sort
+            </button>
             {/* Empties both 門前 and 手牌 at once (the situation stays) -
                 shown only when there's something to clear. */}
             {!handEmpty && (
@@ -7682,6 +7968,7 @@ function ScoringPanel({
           </span>
         </div>
         {gesturesOpen && <GesturesSheet onClose={() => setGesturesOpen(false)} />}
+        {undoToast.toast}
 
         <CollapsiblePanel open={!pickerCollapsed}>
           <div className="card picker-card">
