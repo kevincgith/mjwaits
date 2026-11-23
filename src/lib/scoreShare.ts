@@ -158,7 +158,10 @@ export const GAME_HASH = "#z=";
 export function fullSnapshotOf(store: ScoreStore, game: ScoreGame, now = Date.now()): ScoreSnapshot {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { undone, ...kept } = game;
-  const colors = Object.fromEntries(store.roster.map((p) => [p.name, p.color]));
+  // This game's players only: the rest of the roster is nobody else's to
+  // read, and the link's check takes 64 names at most.
+  const players = new Set(replay(game).players);
+  const colors = Object.fromEntries(store.roster.filter((p) => players.has(p.name)).map((p) => [p.name, p.color]));
   return { ...snapshotOf(store, game, now), v: 2, game: kept, colors };
 }
 

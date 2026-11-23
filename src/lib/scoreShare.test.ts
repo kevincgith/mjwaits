@@ -41,6 +41,9 @@ describe("share snapshot", () => {
     expect(full.v).toBe(2);
     expect(full.game?.events).toHaveLength(2);
     expect(full.colors).toEqual({ Mandy: 3 });
+    // Only this game's players: nobody else on the roster goes in the link.
+    const crowd = { ...s, roster: [...s.roster, ...Array.from({ length: 80 }, (_, i) => ({ name: `P${i}`, color: i % 8 }))] };
+    expect(fullSnapshotOf(crowd, s.active!, 100).colors).toEqual({ Mandy: 3 });
     expect(await decodeFull(await encodeFull(full))).toEqual(full);
     const url = await fullSnapshotUrl(full, "https://example.test/mjwaits/");
     expect(url).toMatch(/#z=[\w-]+$/);

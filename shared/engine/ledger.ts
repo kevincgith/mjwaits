@@ -418,8 +418,10 @@ export function nextLahs(before: Lah[], pairs: PairPayment[], winnerNames: Set<s
   return [...next.values()];
 }
 
+// (Only what the record holds itself: a name like "toString" would otherwise
+// find the function every object inherits, and add a number to that.)
 const add = (rec: Record<string, number>, player: string, amount: number) => {
-  rec[player] = (rec[player] ?? 0) + amount;
+  rec[player] = (Object.hasOwn(rec, player) ? rec[player] : 0) + amount;
 };
 
 // A game's replay, worked out once per version of it: games are never changed
@@ -729,10 +731,13 @@ export function evenShares(pot: number, first: number): number[] {
 export const CHIP_POT = "彩池";
 
 // What's wrong with a player's name, if anything (to tell whoever typed it):
-// ">" joins two names in the ledger's "from>to" keys, and 彩池 is the pot's.
+// ">" joins two names in the ledger's "from>to" keys, 彩池 is the pot's, and
+// a name every object already has (constructor, toString…) would read back
+// as that, not as a score.
 export function nameProblem(name: string): string | null {
   if (name.includes(">")) return `Names can't have ">" in them.`;
   if (name.trim() === CHIP_POT) return `${CHIP_POT} is the Jackpot's name - pick another.`;
+  if (name.trim() in {}) return `"${name.trim()}" can't be used as a name - pick another.`;
   return null;
 }
 
@@ -868,9 +873,12 @@ export function mergeScores(here: ScoreStore, backup: ScoreStore): ScoreStore {
     if (!prev || changed(g) > changed(prev) || (changed(g) === changed(prev) && g.events.length > prev.events.length)) byId.set(g.id, g);
   };
   [here.active, ...here.history, backup.active, ...backup.history].forEach(add);
-  const activeId = here.active?.id ?? backup.active?.id ?? null;
-  const active = activeId ? (byId.get(activeId) ?? null) : null;
-  const history = [...byId.values()].filter((g) => g.id !== activeId).sort((a, b) => b.startedAt - a.startedAt);
+  // In progress: this device's, else the backup's - unless the copy kept has
+  // ended since (a backup saved mid-game, merged after the game was over):
+  // that one is history, not brought back to the table.
+  const active =
+    [here.active, backup.active].map((g) => (g ? byId.get(g.id) : undefined)).find((g) => g !== undefined && g.endedAt === undefined) ?? null;
+  const history = [...byId.values()].filter((g) => g !== active).sort((a, b) => b.startedAt - a.startedAt);
   const roster = here.roster.slice();
   for (const p of backup.roster) if (!roster.some((r) => r.name === p.name)) roster.push(p);
   return { active, history, roster, settings: here.settings };

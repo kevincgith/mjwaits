@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_SETTINGS, newGame, replay, type ScoreEvent, type ScoreGame } from "@mjwaits/shared/engine/ledger";
-import { changeKind, provisionalEast, sheetCsv, sheetRows } from "./scoreViews";
+import { changeKind, provisionalEast, sameEvent, sheetCsv, sheetRows } from "./scoreViews";
 
 const PLAIN = { ...DEFAULT_SETTINGS, dealerTai: 0, streakTai: 0, jackpot: false };
 const game = (events: ScoreEvent[], seats = ["A", "B", "C", "D"]): ScoreGame => ({ ...newGame(seats, 0, PLAIN), events });
@@ -60,6 +60,11 @@ describe("changeKind", () => {
     expect(changeKind([], [a])).toEqual({ kind: "added", surrenders: false });
     expect(changeKind([a, b], [a])).toEqual({ kind: "undone", surrenders: false });
     expect(changeKind([a, b], [{ ...a }, b])).toEqual({ kind: "fixed", surrenders: false });
+    // The same entry with its fields in another order (back from the room) is still that entry.
+    const { t, ...rest } = b;
+    expect(sameEvent(b, { ...rest, t } as typeof b)).toBe(true);
+    expect(sameEvent(b, undefined)).toBe(false);
+    expect(sameEvent(a, b)).toBe(false);
   });
 
   it("flags entries that are all 投降", () => {

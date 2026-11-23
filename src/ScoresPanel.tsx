@@ -26,7 +26,7 @@ import { Setup } from "./scores/sheets";
 import { Board } from "./scores/board";
 import { TrendChart, TrendSummary, PlayerCard, type StatsView, saveBackupFile, BackupCard, StatsPanel, HandsTable } from "./scores/stats";
 import { FollowView } from "./scores/online";
-import { entryByOf, LiveSheet, Toast, useHostLive, useToast } from "./scores/live";
+import { entryByOf, LiveSheet, Toast, useHostLive, useToast, type Problem } from "./scores/live";
 import { loadOnline, saveOnline, tokenFor, withoutRoom } from "./lib/online";
 import { Icons } from "./scores/shared";
 
@@ -257,8 +257,18 @@ export function ScoresPanel({
   // this phone's own games.
   const [followed, setFollowed] = useState<ScoreStore | null>(null);
   const [view, setView] = useState<StatsView>("trend");
+  // A hand from Scoring while someone else's game is on 戰況: this phone's own
+  // board isn't there to take it. Said, and let go of - not left to open its
+  // sheet whenever the followed game is left.
+  const [notice, setNotice] = useState<Problem | null>(null);
+  const noticeToast = useToast(notice);
   useEffect(() => {
     if (request || seatingResult) setSub("board");
+    if (request && following) {
+      setNotice({ code: "offline", message: "You're following another game - leave it (線上) to record this hand in your own", at: Date.now() });
+      onRequestDone();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [request, seatingResult]);
   const game = store.active;
   const state = useMemo(() => (game ? replay(game) : null), [game]);
@@ -333,6 +343,7 @@ export function ScoresPanel({
         ))}
       {liveOpen && <LiveSheet live={live} store={store} joinCode={joinCode} onFollow={follow} onClose={() => setLiveOpen(false)} />}
       {!following && <Toast toast={liveToast} />}
+      <Toast toast={noticeToast} />
     </section>
   );
 }
