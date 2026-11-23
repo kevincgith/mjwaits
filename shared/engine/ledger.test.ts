@@ -492,6 +492,8 @@ describe("names the ledger can't keep", () => {
   it("says what's wrong with a name that has > in it, or is the pot's", () => {
     expect(nameProblem("A>B")).toMatch(/>/);
     expect(nameProblem(` ${CHIP_POT} `)).toMatch(/Jackpot/);
+    expect(nameProblem("toString")).toMatch(/can't be used/);
+    expect(nameProblem("__proto__")).toMatch(/can't be used/);
     expect(nameProblem("Kevin")).toBeNull();
     expect(nameProblem("彩池王")).toBeNull();
   });
@@ -564,6 +566,18 @@ describe("Backup", () => {
     const newer = { ...g("x", 2, [draw]), updatedAt: 200 }; // two entries deleted since
     expect(mergeScores(store({ history: [older] }), store({ history: [newer] })).history[0].events).toHaveLength(1);
     expect(mergeScores(store({ history: [newer] }), store({ history: [older] })).history[0].events).toHaveLength(1);
+  });
+
+  it("leaves a game that has ended in the history, though a backup saved mid-game has it in progress", () => {
+    const midGame = { ...g("x", 2, [draw]), updatedAt: 100 };
+    const ended = { ...g("x", 2, [draw, draw]), endedAt: 300, updatedAt: 300 };
+    const m = mergeScores(store({ history: [ended] }), store({ active: midGame }));
+    expect(m.active).toBeNull();
+    expect(m.history).toEqual([ended]);
+    // Ended on the other device since: this one's copy isn't the game in progress any more.
+    const other = mergeScores(store({ active: midGame }), store({ history: [ended] }));
+    expect(other.active).toBeNull();
+    expect(other.history).toEqual([ended]);
   });
 
   it("restores the backup's game in progress onto an empty device", () => {

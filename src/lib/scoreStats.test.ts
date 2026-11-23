@@ -117,15 +117,15 @@ describe("playerStats", () => {
   });
 
   it("走勢: high and low, the deepest fall and biggest climb, form and swing", () => {
-    // A runs 0, 10, 19, 3, 0, 0, 8, -3 (局7: D's 自摸, its 踢 and 反雪).
+    // A runs 0, 10, 19, 3, 0, 0, 8, -4 (局7: D's 自摸, its 踢 and 反雪 - and C's 獎 after it, 1 from each).
     expect(stats.A.peak).toEqual({ value: 19, hand: 2 });
-    expect(stats.A.trough).toEqual({ value: -3, hand: 7 });
-    expect(stats.A.maxDrawdown).toEqual({ value: -22, from: 2, to: 7 });
+    expect(stats.A.trough).toEqual({ value: -4, hand: 7 });
+    expect(stats.A.maxDrawdown).toEqual({ value: -23, from: 2, to: 7 });
     expect(stats.A.maxRunUp).toEqual({ value: 19, from: 0, to: 2 });
     expect(stats.A.recovery).toBe(0);
     expect(stats.A.longestLosingRun).toBe(2);
-    expect(stats.A.recent).toEqual({ hands: 7, net: -3 });
-    expect(stats.A.avgSwing).toBeCloseTo(57 / 7);
+    expect(stats.A.recent).toEqual({ hands: 7, net: -4 });
+    expect(stats.A.avgSwing).toBeCloseTo(58 / 7);
   });
 
   it("marks the best and worst at the table", () => {
@@ -165,6 +165,18 @@ describe("trend, patterns, career and head-to-head", () => {
     const t = trend(replay(g1));
     expect(t.hands).toBe(7);
     expect(t.series.find((s) => s.player === "A")!.values.slice(0, 3)).toEqual([0, 10, 19]);
+  });
+
+  it("ends each line on the player's total, with what was recorded after the last hand", () => {
+    // (EVENTS ends on a 獎 for C, after the last hand.)
+    const state = replay(g1);
+    for (const s of trend(state).series) expect(s.values.at(-1)).toBe(state.totals[s.player]);
+    const career = careerTrend([g1], () => "day");
+    for (const s of career.series) expect(s.values.at(-1)).toBe(state.totals[s.player]);
+    const card = careerPlayerStats([g1], () => "day");
+    for (const [p, line] of card.series) expect(line.at(-1)).toBe(state.totals[p]);
+    const c = playerStats(state, g1).find((x) => x.player === "C")!;
+    expect(c.recent.net).toBe(c.net);
   });
 
   it("counts patterns from Scoring hands", () => {

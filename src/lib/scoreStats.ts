@@ -200,6 +200,13 @@ export const STAT_DIRECTION: Partial<Record<keyof PlayerStats, "high" | "low">> 
 
 const rate = (n: number, of: number) => (of > 0 ? n / of : null);
 
+// A player's running total after a hand, for 走勢. The game's last hand takes
+// in whatever was recorded after it (獎罰, 詐胡, the Jackpot handed out), so a
+// line ends on the player's total - as anything between two hands shows on
+// the later one.
+const totalAfter = (state: ReplayState, h: HandResult, player: string): number =>
+  (h === state.hands[state.hands.length - 1] ? state.totals[player] : h.totalsAfter[player]) ?? 0;
+
 function chainStat(chains: number[]): { count: number; times: number } | null {
   if (chains.length === 0) return null;
   const max = Math.max(...chains);
@@ -327,7 +334,7 @@ export function playerStats(state: ReplayState, game: ScoreGame): PlayerStats[] 
       avgDealInLoss: rate(sum(dealtIn), dealtIn.length),
       lahNet:
         pairsAsWinner.reduce((t, p) => t + (p.lahKind ? p.lah : 0), 0) - pairsAsPayer.reduce((t, p) => t + (p.lahKind ? p.lah : 0), 0),
-      ...trendOf(seated, player),
+      ...trendOf(state, seated, player),
       ...seating(hands, player),
       opponents: state.players
         .filter((q) => q !== player)
@@ -342,8 +349,8 @@ export function playerStats(state: ReplayState, game: ScoreGame): PlayerStats[] 
 // starting from 0, and what it did - its high and low, the deepest fall and
 // biggest climb, how much came back since the low, the longest losing run,
 // recent form and how much it moved per hand.
-function trendOf(seated: HandResult[], player: string) {
-  return curve([{ hand: 0, v: 0 }, ...seated.map((h) => ({ hand: h.hand, v: h.totalsAfter[player] ?? 0 }))]);
+function trendOf(state: ReplayState, seated: HandResult[], player: string) {
+  return curve([{ hand: 0, v: 0 }, ...seated.map((h) => ({ hand: h.hand, v: totalAfter(state, h, player) }))]);
 }
 
 // What a running total did, point by point from its start: one game's, or a
@@ -480,7 +487,7 @@ export function rankedBy(stats: PlayerStats[], key: keyof PlayerStats): { player
 export function trend(state: ReplayState): { hands: number; series: { player: string; values: (number | null)[] }[] } {
   const series = state.players.map((player) => ({
     player,
-    values: [0, ...state.hands.map((h) => (player in h.totalsAfter ? h.totalsAfter[player] : null))],
+    values: [0, ...state.hands.map((h) => (player in h.totalsAfter ? totalAfter(state, h, player) : null))],
   }));
   return { hands: state.hands.length, series };
 }
@@ -507,7 +514,7 @@ export function careerTrend(
     const game = `${g.name ? `${g.name} · ` : ""}${dayOf(g.startedAt)}`;
     starts.push(labels.length - 1);
     for (const h of state.hands) {
-      for (const p of players) values.get(p)!.push((carried.get(p) ?? 0) + (h.totalsAfter[p] ?? 0));
+      for (const p of players) values.get(p)!.push((carried.get(p) ?? 0) + totalAfter(state, h, p));
       labels.push(`${game} · 第${h.hand}局`);
     }
     for (const p of players) carried.set(p, (carried.get(p) ?? 0) + (state.totals[p] ?? 0));
@@ -644,7 +651,7 @@ export function careerPlayerStats(games: ScoreGame[], dayOf: (at: number) => str
       per.set(s.player, [...(per.get(s.player) ?? []), { s, game: g }]);
       const line = points.get(s.player) ?? [{ hand: 0, v: 0 }];
       const base = carried.get(s.player) ?? 0;
-      for (const h of state.hands) if (h.seatsAfter.includes(s.player)) line.push({ hand: h.hand, v: base + (h.totalsAfter[s.player] ?? 0), when });
+      for (const h of state.hands) if (h.seatsAfter.includes(s.player)) line.push({ hand: h.hand, v: base + totalAfter(state, h, s.player), when });
       points.set(s.player, line);
       carried.set(s.player, base + s.net);
     }

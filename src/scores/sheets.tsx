@@ -2298,8 +2298,10 @@ export function SettleSheet({
 }) {
   const [shareLink, setShareLink] = useState(false);
   const [imaging, setImaging] = useState(false);
-  // Saved since the last thing recorded? Then the game is safe to end.
-  const lastAt = game.events.length ? game.events[game.events.length - 1].at : game.startedAt;
+  // Saved since the game last changed? Then it's safe to end. (When it
+  // changed, not its last entry's time: a fix keeps the entry's own time, and
+  // a delete or 還原 leaves an older entry last.)
+  const lastAt = game.updatedAt ?? (game.events.length ? game.events[game.events.length - 1].at : game.startedAt);
   const backedUp = backedUpAt !== null && backedUpAt >= lastAt;
   const [multiplier, setMultiplier] = useState("1");
   // (Nothing readable in the box: said, with nothing to copy or share - not
@@ -2407,7 +2409,7 @@ export function SettleSheet({
       {/* Before ending: the game only lives on this phone. */}
       {!backedUp && game.events.length > 0 && (
         <div className="sc-row sc-row-boxed sc-backup-nudge">
-          <span className="sc-help">Not backed up since the last hand - save a file before you end the game.</span>
+          <span className="sc-help">Not backed up since the last change - save a file before you end the game.</span>
           <button type="button" className="sc-secondary" onClick={onBackup}>
             儲存 Save
           </button>
@@ -2581,7 +2583,8 @@ export function SettingsSheet({ settings, onSave, onClose }: { settings: ScoreSe
                           disabled={value === null}
                         />
                       ) : (
-                        <NumberField value={value ?? (DEFAULT_SETTINGS[key] as number)} onChange={(v) => set(key, v as never)} label={label} pill disabled={value === null} />
+                        // (1 at least: a 封頂 of 0 would refuse every key on every keypad.)
+                        <NumberField value={value ?? (DEFAULT_SETTINGS[key] as number)} onChange={(v) => set(key, Math.max(1, v) as never)} label={label} pill disabled={value === null} />
                       )}
                     </div>
                   </Fragment>

@@ -3,7 +3,7 @@
 
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { DEFAULT_SETTINGS, SEATS, previewWin, canRedo, redoEvent, replay, deleteEvent, replaceEvent, undoEvent, stepAt, handAt, withEvent, withEvents, type HandResult, type ReplayState, type ScoreEvent, type ScoreGame, type ScoreStore, chipMoves, playTimes } from "@mjwaits/shared/engine/ledger";
-import { changeKind, provisionalEast } from "../lib/scoreViews";
+import { changeKind, provisionalEast, sameEvent } from "../lib/scoreViews";
 import { WIND_CHARS, SEAT_AREAS, facing, FIT_MIN, FIT_GAP, type RecordRequest, type ScoreHandRequest, type SeatingResult, fmt, signed, tone, colorOf, Icons, Monogram, Sheet, withRoster } from "./shared";
 import { type HandInitial, type HandMode, HandSheet, SeatsSheet, LahSheet, JackpotSheet, NameSheet, SettleSheet, SettingsSheet, Confirm } from "./sheets";
 import { playerColor } from "../lib/picture";
@@ -386,6 +386,18 @@ export function Board({
   entryBy?: (index: number) => string | undefined;
 }) {
   const [sheet, setSheet] = useState<BoardSheet | null>(null);
+  // The entry picked in 最近, as it was then. A live game can change under an
+  // open sheet (someone else's 還原, or a new entry in its place): the sheet
+  // then closes rather than fix or delete whatever sits at that index now.
+  const [picked, setPicked] = useState<ScoreEvent | null>(null);
+  const pickedIndex = sheet?.kind === "entry" ? sheet.index : sheet?.kind === "hand" || sheet?.kind === "jackpot" ? sheet.editIndex : undefined;
+  const pickedGone = pickedIndex !== undefined && !sameEvent(game.events[pickedIndex], picked ?? undefined);
+  useEffect(() => {
+    if (!pickedGone) return;
+    setSheet(null);
+    flash("That entry was changed on another phone");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pickedGone]);
   // Back from the seat ceremony: 座位 opens with its seating, to confirm.
   useEffect(() => {
     if (!seatingResult) return;
@@ -951,7 +963,7 @@ export function Board({
         </div>
       )}
 
-      {sheet?.kind === "hand" && (
+      {sheet?.kind === "hand" && !pickedGone && (
         <HandSheet
           key={`${sheet.seat}-${sheet.mode ?? "win"}-${sheet.editIndex ?? "new"}`}
           store={store}
@@ -991,7 +1003,7 @@ export function Board({
           }}
         />
       )}
-      {sheet?.kind === "entry" && (
+      {sheet?.kind === "entry" && !pickedGone && (
         <EntrySheet
           label={describeEvent(game.events[sheet.index], state, sheet.index)}
           canEdit={["win", "bonus", "zhaHu", "jackpot", "jackpotIn"].includes(game.events[sheet.index]?.t ?? "")}
@@ -1025,7 +1037,10 @@ export function Board({
           store={store}
           game={game}
           state={state}
-          onPick={(index) => setSheet({ kind: "entry", index })}
+          onPick={(index) => {
+            setPicked(game.events[index]);
+            setSheet({ kind: "entry", index });
+          }}
           entryBy={entryBy}
           onUndo={() => undo(true)}
           onRedo={() => redo(true)}
@@ -1098,7 +1113,7 @@ export function Board({
           }}
         />
       )}
-      {sheet?.kind === "jackpot" && (
+      {sheet?.kind === "jackpot" && !pickedGone && (
         <JackpotSheet
           store={store}
           state={sheetState}

@@ -231,6 +231,11 @@ export function useHostLive(store: ScoreStore, setStore: (s: ScoreStore) => void
     onAdopt: (game) => {
       const now = storeRef.current;
       if (now.active?.id === game.id) setStore({ ...now, active: game });
+      // ...or one that landed just as the game was ended here: into the ended
+      // game, still ended - a new copy, so its end goes up again (the one
+      // sent first lost to that change) and sharing can stop.
+      else if (now.history.some((g) => g.id === game.id && g.endedAt !== undefined))
+        setStore({ ...now, history: now.history.map((g) => (g.id === game.id ? { ...game, endedAt: game.endedAt ?? g.endedAt, updatedAt: Date.now() } : g)) });
     },
   });
   const { room, send, me, gone } = live;

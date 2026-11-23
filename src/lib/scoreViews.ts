@@ -2,6 +2,7 @@
 // tested on its own: the 局 sheet's rows, the seat ceremony's provisional
 // East, and what kind of change just happened (for the 籌碼 card).
 
+import { stableJson } from "@mjwaits/shared/protocol/audit";
 import { handAt, stepAt, SEATS, type HandResult, type ReplayState, type ScoreEvent, type ScoreGame } from "@mjwaits/shared/engine/ledger";
 
 // ---- 局: the score sheet's rows ---------------------------------------------
@@ -76,8 +77,9 @@ export function changeKind(before: ScoreEvent[], after: ScoreEvent[]): { kind: "
 
 // The same entry: the same object here, or - a game that came over the
 // network, unpacked afresh with every update - the same contents.
-function sameEvent(a: ScoreEvent, b: ScoreEvent): boolean {
-  return a === b || JSON.stringify(a) === JSON.stringify(b);
+export function sameEvent(a: ScoreEvent | undefined, b: ScoreEvent | undefined): boolean {
+  // (Whatever order its fields come back in: the room's check rebuilds each entry.)
+  return a === b || (a !== undefined && b !== undefined && stableJson(a) === stableJson(b));
 }
 
 // ---- 局: the score sheet as a CSV file ---------------------------------------
