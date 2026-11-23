@@ -16361,3 +16361,171 @@ button.sc-stat:active {
     animation: none;
   }
 }
+
+/* Scoring's 選牌 header carries Sort, Clear, ? and the collapse toggle -
+   on a phone there's no room left for the English title beside them. */
+@media (max-width: 440px) {
+  .picker-head .section-title-en {
+    display: none;
+  }
+}
+
+/* ⌫ held: fills from the left over the hold, so it's plain the box is
+   about to be cleared (let go before it's full to stop). */
+.backspace-key {
+  position: relative;
+  overflow: hidden;
+}
+.backspace-key::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 59, 48, 0.22);
+  transform: scaleX(0);
+  transform-origin: left center;
+  pointer-events: none;
+}
+.backspace-key.is-holding::after {
+  transform: scaleX(1);
+  transition: transform var(--hold-ms, 500ms) linear;
+}
+
+/* "Cleared 手牌 · Undo", just above the tab bar on a phone. */
+.undo-toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(1rem + env(safe-area-inset-bottom));
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.55rem 0.6rem 0.55rem 1rem;
+  border-radius: 999px;
+  background: rgba(28, 28, 30, 0.92);
+  color: #fff;
+  font-size: 0.95rem;
+  box-shadow: var(--shadow-float);
+  transform: translateX(-50%);
+  animation: undo-toast-in 0.18s ease-out;
+  white-space: nowrap;
+}
+@media (max-width: 700px) {
+  .undo-toast {
+    bottom: calc(var(--tab-bar-h) + env(safe-area-inset-bottom) + 0.75rem);
+  }
+}
+.undo-toast-action {
+  padding: 0.3rem 0.75rem;
+  border: none;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  color: #6fdc8c;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+@keyframes undo-toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 0.5rem);
+  }
+}
+
+/* Which way the picker adds (手牌 / 上 / 碰 / 明槓 / 暗槓), on the outlined
+   box's top edge - only while the hand card is over the picker's own
+   buttons that would otherwise say so (data-covering, set by Scoring). */
+.panel .hand-card .hand-region {
+  position: relative;
+}
+.picker-mode-chip {
+  display: none;
+}
+.hand-card[data-covering] .hand-region.is-target .picker-mode-chip {
+  display: inline-flex;
+  position: absolute;
+  top: -0.5rem;
+  right: 0.6rem;
+  z-index: 3;
+  padding: 0 0.5rem;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--accent);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.1rem;
+  pointer-events: none;
+}
+
+/* The last tile in - ⌫'s next, Sort on or off - sits in a
+   soft green box (the same box as the 食胡 tile's amber one, which wins
+   if a tile is both). */
+.hand-tile-button.is-newest .tile-glyph:not(.wait-highlight)::before {
+  content: "";
+  position: absolute;
+  left: -0.08em;
+  right: -0.08em;
+  top: 0.15em;
+  height: 0.97em;
+  background: var(--accent-tint);
+  outline: 1px solid var(--accent-border-light);
+  border-radius: var(--radius-xs);
+  z-index: -1;
+}
+.hand-tile-button.is-newest .tile-glyph.tile-art:not(.wait-highlight)::before {
+  /* As the 食胡 box does on art tiles: hugging the face, an even margin. */
+  top: -0.007em;
+  height: 1.013em;
+  left: -0.02em;
+  right: -0.02em;
+}
+.hand-tile-button.is-newest .tile-glyph {
+  /* Its own layer, so the box sits behind the tile but in front of the
+     grey hand box. */
+  isolation: isolate;
+}
+
+/* The meld just declared - ⌫'s next - in the same soft green box (a
+   concealed kong: green fill, its amber outline). */
+.panel .hand-card .breakdown-group.meld-remove.is-newest {
+  background: var(--accent-tint);
+  outline: 1px solid var(--accent-border-light);
+}
+.panel .hand-card .breakdown-group.concealed-kong-meld.is-newest {
+  /* Both: the newest's green fill, the 暗槓's amber outline. */
+  outline-color: var(--warning-accent-1);
+}
+/* And a bonus tile just added. */
+.bonus-tile-remove.is-newest .tile-glyph {
+  isolation: isolate;
+}
+.bonus-tile-remove.is-newest .tile-glyph::before {
+  content: "";
+  position: absolute;
+  top: -0.007em;
+  height: 1.013em;
+  left: -0.02em;
+  right: -0.02em;
+  background: var(--accent-tint);
+  outline: 1px solid var(--accent-border-light);
+  border-radius: var(--radius-xs);
+  z-index: -1;
+}
+/* Newest and the 食胡 tile both: green fill, amber outline. */
+.hand-tile-button.is-newest .tile-glyph.wait-highlight::before {
+  /* Both: the newest's green fill, the 食胡 tile's amber outline. */
+  background: var(--accent-tint);
+}
+
+/* In the hand card every highlight box - the 食胡 tile's amber, a 暗槓's
+   amber, the newest green - has the same 1px outline. */
+.panel .hand-card .tile-glyph.wait-highlight::before {
+  outline-width: 1px;
+}
+
+/* A meld's box hugs its tiles as closely as a lone tile's does (0.05em of
+   the tile all round, the face's own inset included) - every meld, so one
+   doesn't change size when it becomes (or stops being) the newest. */
+.panel .hand-card .breakdown-group.meld-remove {
+  padding: calc(var(--tile-input) * 0.007) calc(var(--tile-input) * 0.02);
+}
