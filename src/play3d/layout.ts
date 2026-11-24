@@ -1425,13 +1425,14 @@ function layoutHand(view: GLTableView, d: Dims, spots: Partial<Record<GLSide, Sp
   // Your tiles: each in a 0.78em box, 0.75em apart; the drawn one 0.3em apart.
   const winner = mine.toppled;
   const tilesFrom = x;
-  // Each tile by what it is (the n-th of its kind), so in 換牌 it slides
-  // from where it was to where it's gone - a tile from your row too.
+  // Each tile by what it is (the n-th of its kind) in this deal, so in 換牌
+  // it slides from where it was to where it's gone - a tile from your row
+  // too - and a fresh deal's are all new, there at once.
   const seen = new Map<string, number>();
   const ident = (face: string) => {
     const n = seen.get(face) ?? 0;
     seen.set(face, n + 1);
-    return `id:${face}#${n}`;
+    return `id:${mine.deal ?? ""}:${face}#${n}`;
   };
   // Outside 換牌, likewise by what it is - and where, in a hand of so many -
   // so it eases only its own lift and drop: thrown, no other tile takes its

@@ -304,6 +304,16 @@ describe("your give on the WebGL table", () => {
 
 describe("your row in 換牌", () => {
   const tile = (rank: number) => ({ tile: { suit: "m" as const, rank }, drawn: false, selected: false, hint: false, danger: false, barred: false, winner: false, enabled: true });
+  it("knows its tiles by what they are within a deal - a fresh deal's are all new, so none slides from the last hand", () => {
+    const v = take("right", 1);
+    const row = (deal: string) => {
+      const out = layoutTable({ ...v, piles: null, flights: [], rows: {}, mine: { ...v.mine, tiles: Array.from({ length: 16 }, (_, i) => tile((i % 9) + 1)), sliding: true, deal } }, DIMS).hand;
+      return new Set(out.pieces.filter((p) => p.hit !== undefined).map((p) => p.ease!.key));
+    };
+    const [a, again, next] = [row("deal 1"), row("deal 1"), row("deal 2")];
+    expect([...a].every((k) => again.has(k))).toBe(true);
+    expect([...a].some((k) => next.has(k))).toBe(false);
+  });
   it("keeps its width as you give - nothing re-centres - and closes its gaps once the given tiles are clear", () => {
     const v = take("right", 1);
     const before = { ...v, piles: null, flights: [], rows: {}, mine: { ...v.mine, tiles: Array.from({ length: 16 }, (_, i) => tile((i % 9) + 1)), sliding: true } };

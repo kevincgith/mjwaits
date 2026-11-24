@@ -95,6 +95,9 @@ export interface GLMine {
   // 換牌 under way: tiles leaving and joining your hand slide to their new
   // places rather than jump.
   sliding: boolean;
+  // Which deal it is: 換牌's slides only within one - a fresh deal's tiles
+  // are new, there at once (never slid from where the last hand's stood).
+  deal?: string;
   // Your give, just made: the tiles you gave and where they stood in your
   // hand (of `count` tiles) - each flies down to your pile.
   given: { key: number; tiles: Tile[]; from: number[]; count: number } | null;
