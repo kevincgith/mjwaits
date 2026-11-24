@@ -3936,6 +3936,9 @@ export function PlayPanel({
       winLead: winIndex >= 0 ? WIN_TILE_LEAD : 0,
       hints: hint,
       sliding: !!swapPhase || swapFlying || swapJoining,
+      // (Each deal by its table hand online; here by its dice, dealer and
+      // round - all kept the whole hand, its last takes still joining.)
+      deal: JSON.stringify([online?.table.hand ?? null, game.dice ?? null, game.dealer, game.dealerStreak, game.roundWind]),
       given: swapPhase?.piles[HUMAN] ? glGiven : null,
     },
     spotlight: spot ? { tile: spot.tile, from: SIDES[spot.seat], key: spot.key } : null,
